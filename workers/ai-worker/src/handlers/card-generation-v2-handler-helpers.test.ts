@@ -159,11 +159,24 @@ test("有界修复必须取真正的计划目标，不许再 `as never` 塞替�
   // TypeScript 帮不上忙（`as never` 就是用来绕过它的），2026-09-21 那次真跑正是这么死的。
   const { readFileSync } = await import("node:fs");
   const source = readFileSync(new URL("./card-generation-v2-handler.ts", import.meta.url), "utf8");
-  const start = source.indexOf("async function boundedRepairCandidate");
-  assert.ok(start > 0, "找不到 boundedRepairCandidate，这条守卫要跟着改名一起改");
+  const start = source.indexOf("async function authorRepairedCandidateV2");
+  assert.ok(start > 0, "找不到 authorRepairedCandidateV2，这条守卫要跟着改名一起改");
   const region = source.slice(start, source.indexOf("const newRevisionId", start));
   assert.match(region, /planObjective:\s*plannedObjectiveForCandidateV2\(\s*input\.plan/,
     "修复路径没有从计划里取目标");
   assert.doesNotMatch(region, /as never/,
     "修复路径又用 `as never` 绕过 provider 入参类型——那会让 strategy 变成 undefined");
+});
+
+test("有界修复的出网那一半不收事务对象（接口层面就不接受，D5 §5.2 第二件）", async () => {
+  // 判据不是"我记得在事务外调它"，而是**类型上写不出**"顺手把 tx 传进来"：函数签名里
+  // 没有 tx 形参。这条把它钉在源码上，因为一旦有人补上 `tx: WorkerTransaction`，
+  // 调用点就会很自然地挪回事务里（regenerate 那条链改前就是这么长出来的）。
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("./card-generation-v2-handler.ts", import.meta.url), "utf8");
+  const start = source.indexOf("export async function authorRepairedCandidateV2");
+  assert.ok(start > 0, "找不到 authorRepairedCandidateV2，这条守卫要跟着改名一起改");
+  const signature = source.slice(start, source.indexOf("): Promise<", start));
+  assert.doesNotMatch(signature, /\btx\b|WorkerTransaction/,
+    "出网那一半又收事务对象了——它必须能在没有事务的地方被调用");
 });

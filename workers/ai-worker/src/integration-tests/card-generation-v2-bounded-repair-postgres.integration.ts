@@ -3,10 +3,16 @@
  *
  * 为什么现在有测试可以钉它（方案 §40）：这条分支过去只能靠"运气遇到一次真判 rewrite"，
  * 因为门是 `allowBoundedRepair && useLLM && providers && …`，而确定性 pedagogy 恒 pass。
- * 但真正需要的注入点产品里早就有——`boundedRepairCandidate` 的 author provider 是入参，
+ * 但真正需要的注入点产品里早就有——修复那一段的 author provider 是入参，
  * 计划目标也是从真计划里取的（`plannedObjectiveForCandidateV2`，§34 那次崩溃就是因为
  * 这里曾经塞了三字段替身）。所以这里不新开任何缝：直接拿一条真跑出来的候选，
  * 配一个脚本 author，把修复这一段跑完。
+ *
+ * 2026-09-25（#19 第二刀）：修复拆成"出网那一半"（`authorRepairedCandidateV2`，不收 tx）
+ * 与"落库那一半"（`insertRepairedCandidateV2`，只写），所以本文件的调用形状也跟着变成
+ * 三段：只读事务取材料 → 事务外叫作者 → 只写事务插入。**这不是测试的方便法门**，
+ * 而是 regenerate 那条链现在真实的形状（相位 2 由 `assertGenerationPhaseOutsideTransaction`
+ * 当场核过没有活动事务）。
  *
  * 钉住的六件事，每条都是这段代码的真实承诺（不是"函数跑过了"）：
  * 1. 作者收到的是**真计划目标**（strategy / practiceForm / sourceAtomIds 都在），
@@ -148,8 +154,10 @@ test("先用确定性管道跑出一条真 run（后面所有断言都要站在�
 
 test("有界修复：真计划目标交给作者、多出一行 revision=2、链回旧行、状态停在 authored", async () => {
   const handler = await import("../handlers/card-generation-v2-handler.ts");
-  const { withWorkerWorkspaceTransaction } = await import("../db.ts");
-  const repaired = await withWorkerWorkspaceTransaction(
+  const { withWorkerWorkspaceTransaction, currentWorkerWorkspaceTransaction } = await import("../db.ts");
+
+  // 相位 1：只读事务取材料。
+  const staged = await withWorkerWorkspaceTransaction(
     { workspaceId: WORKSPACE_ID, userId: null },
     async (tx) => {
       const ctx = await handler.loadV2RunInputs(tx, WORKSPACE_ID, runId);
@@ -159,51 +167,72 @@ test("有界修复：真计划目标交给作者、多出一行 revision=2、链
         WHERE workspace_id = '${WORKSPACE_ID}' AND run_id = '${runId}'
         ORDER BY plan_objective_local_id, revision LIMIT 1`) as unknown as Array<Record<string, unknown>>;
       assert.equal(rows.length, 1, "读不到候选行");
-      const original = rows[0];
-      const candidate = handler.candidateRowToObject(original, runId);
-
-      // 脚本作者：改掉题面（内容真的变了），并原样回传 evidenceSetHash
-      // （契约要求 provider 不得自报，否则 revision hash 与下游重算永久不一致）。
-      const authorCalls: Array<Record<string, unknown>> = [];
-      const authoringProvider: AuthoringProvider = {
-        authorCandidate: async (input: AuthoringProviderInput) => {
-          authorCalls.push(input as unknown as Record<string, unknown>);
-          return {
-            objective: { ...candidate.objective },
-            presentation: {
-              ...candidate.presentation,
-              front: { ...candidate.presentation.front, prompt: `${candidate.presentation.front.prompt}（重写过的题面）` },
-            },
-            evidenceSetHash: ctx.sealed.evidenceSetHash,
-            hints: original.hints,
-          } as unknown as AuthoringProviderOutput;
-          // jsonb 列回来是 unknown、候选与计划的合同类型又经两条解析路径各自成一份声明，
-          // 这里跨的是类型身份不是数据（同 `candidateRowToObject` 的写法）。
-        },
-      };
-
-      const final = await handler.boundedRepairCandidate(tx, {
-        runId,
-        workspaceId: WORKSPACE_ID,
-        // 同一个 CardPlanV2 经两条解析路径（worker 的 paths 与 api 服务那份声明）
-        // 会被 TS 当成两个不相关的类型；这里跨的是解析身份，不是数据。
-        plan: ctx.plan as unknown as Parameters<typeof handler.boundedRepairCandidate>[1]["plan"],
-        candidate,
-        sourceContent: ctx.sourceContent,
-        sealed: ctx.sealed,
-        authoringProvider,
-        semanticSpecHash: ctx.run.semantic_spec_hash as string,
-      });
-
-      return { original, final, planObjective: authorCalls[0]?.planObjective as Record<string, unknown> | undefined };
+      return { ctx, original: rows[0] };
     },
   );
+  const { ctx, original } = staged;
+  const candidate = handler.candidateRowToObject(original, runId);
 
-  const { original, final, planObjective } = repaired;
+  // 脚本作者：改掉题面（内容真的变了），并原样回传 evidenceSetHash
+  // （契约要求 provider 不得自报，否则 revision hash 与下游重算永久不一致）。
+  const authorCalls: Array<Record<string, unknown>> = [];
+  /** 作者被叫到那一刻的活动事务读数（负对照：事务里叫作者这件事必须有办法被抓到）。 */
+  let activeTransactionWhenAuthored: unknown = "作者压根没被调用";
+  const authoringProvider: AuthoringProvider = {
+    authorCandidate: async (input: AuthoringProviderInput) => {
+      authorCalls.push(input as unknown as Record<string, unknown>);
+      activeTransactionWhenAuthored = currentWorkerWorkspaceTransaction();
+      return {
+        objective: { ...candidate.objective },
+        presentation: {
+          ...candidate.presentation,
+          front: { ...candidate.presentation.front, prompt: `${candidate.presentation.front.prompt}（重写过的题面）` },
+        },
+        evidenceSetHash: ctx.sealed.evidenceSetHash,
+        hints: original.hints,
+      } as unknown as AuthoringProviderOutput;
+      // jsonb 列回来是 unknown、候选与计划的合同类型又经两条解析路径各自成一份声明，
+      // 这里跨的是类型身份不是数据（同 `candidateRowToObject` 的写法）。
+    },
+  };
+
+  // 相位 2：出网那一半——没有事务可传（这个函数不收 tx）。
+  const authored = await handler.authorRepairedCandidateV2({
+    runId,
+    workspaceId: WORKSPACE_ID,
+    // 同一个 CardPlanV2 经两条解析路径（worker 的 paths 与 api 服务那份声明）
+    // 会被 TS 当成两个不相关的类型；这里跨的是解析身份，不是数据。
+    plan: ctx.plan as unknown as Parameters<typeof handler.authorRepairedCandidateV2>[0]["plan"],
+    candidate,
+    sourceContent: ctx.sourceContent,
+    sealed: ctx.sealed,
+    authoringProvider,
+    semanticSpecHash: ctx.run.semantic_spec_hash as string,
+  });
+  // 相位 3：落库那一半——只写，自带一条短事务。
+  await withWorkerWorkspaceTransaction({ workspaceId: WORKSPACE_ID, userId: null }, async (tx) => {
+    await handler.insertRepairedCandidateV2(tx, {
+      runId,
+      workspaceId: WORKSPACE_ID,
+      candidate: authored.candidate,
+      hints: authored.hints,
+    });
+  });
+
+  const final = authored.candidate;
+  const planObjective = authorCalls[0]?.planObjective as Record<string, unknown> | undefined;
 
   // 1. 作者拿到的是真计划目标，不是三字段替身（§34 的崩溃点：替身没有 strategy，
   //    author 提示在 `spec.label` 上直接 TypeError）。
   assert.ok(planObjective, "作者压根没被调用");
+  // 1b. ……而且是在**没有活动事务**的时候被叫到的（#19：出网那一半不收 tx，也不自己开）。
+  //     这条挡的是"把出网那一半改成自带事务"这一种回归（那会让等模型的时间重新等于
+  //     持锁时间）；"调用方在外层套了事务"那一手不归它管，归相位 2 入口的边界探针
+  //     （`assertGenerationPhaseOutsideTransaction`）。
+  assert.equal(
+    activeTransactionWhenAuthored, undefined,
+    "作者是在一个活动事务里被叫到的——出网那一半自己开了事务",
+  );
   assert.equal(typeof planObjective.strategy, "string",
     "计划目标里没有 strategy → 又被换成替身了，提示构建会当场炸");
   assert.equal("practiceForm" in planObjective, true, "计划目标里没有 practiceForm → D6 的点名读不到");
@@ -254,11 +283,9 @@ test("同一条候选修两遍：唯一索引当场挡住，不多出一行", as
     SELECT count(*)::int AS n FROM card_generation_candidates_v2 WHERE run_id = ${runId}
   `)[0] as unknown as { n: number };
 
-  // 不用 assert.rejects(fn, /…/)：drizzle 把底层报错包成 `Failed query: …`，
-  // Postgres 的约束名只出现在 cause 里，只看 message 会把"被索引挡下"读成"没匹配上"。
-  let caught: unknown = null;
-  try {
-    await withWorkerWorkspaceTransaction({ workspaceId: WORKSPACE_ID, userId: null }, async (tx) => {
+  const staged = await withWorkerWorkspaceTransaction(
+    { workspaceId: WORKSPACE_ID, userId: null },
+    async (tx) => {
       const ctx = await handler.loadV2RunInputs(tx, WORKSPACE_ID, runId);
       // 拿**最初那条 revision**再修一次：第二次修复同样会产出 revision=2，
       // 撞的就是 0253 那条索引（"同一次崩溃的管道被重投、修了两遍"的形状）。
@@ -272,25 +299,41 @@ test("同一条候选修两遍：唯一索引当场挡住，不多出一行", as
             ORDER BY plan_objective_local_id LIMIT 1)
           AND revision = 1
         LIMIT 1`) as unknown as Array<Record<string, unknown>>;
-      const candidate = handler.candidateRowToObject(rows[0] as Record<string, unknown>, runId);
-      await handler.boundedRepairCandidate(tx, {
+      return { ctx, row: rows[0] as Record<string, unknown> };
+    },
+  );
+  const { ctx, row } = staged;
+  const candidate = handler.candidateRowToObject(row, runId);
+  const authored = await handler.authorRepairedCandidateV2({
+    runId,
+    workspaceId: WORKSPACE_ID,
+    // 同一个 CardPlanV2 经两条解析路径（worker 的 paths 与 api 服务那份声明）
+    // 会被 TS 当成两个不相关的类型；这里跨的是解析身份，不是数据。
+    plan: ctx.plan as unknown as Parameters<typeof handler.authorRepairedCandidateV2>[0]["plan"],
+    candidate,
+    sourceContent: ctx.sourceContent,
+    sealed: ctx.sealed,
+    authoringProvider: {
+      authorCandidate: async () => ({
+        objective: { ...candidate.objective },
+        presentation: { ...candidate.presentation, front: { ...candidate.presentation.front, prompt: "再改一次" } },
+        evidenceSetHash: ctx.sealed.evidenceSetHash,
+        hints: row.hints,
+      } as unknown as AuthoringProviderOutput),
+    },
+    semanticSpecHash: ctx.run.semantic_spec_hash as string,
+  });
+
+  // 不用 assert.rejects(fn, /…/)：drizzle 把底层报错包成 `Failed query: …`，
+  // Postgres 的约束名只出现在 cause 里，只看 message 会把"被索引挡下"读成"没匹配上"。
+  let caught: unknown = null;
+  try {
+    await withWorkerWorkspaceTransaction({ workspaceId: WORKSPACE_ID, userId: null }, async (tx) => {
+      await handler.insertRepairedCandidateV2(tx, {
         runId,
         workspaceId: WORKSPACE_ID,
-        // 同一个 CardPlanV2 经两条解析路径（worker 的 paths 与 api 服务那份声明）
-        // 会被 TS 当成两个不相关的类型；这里跨的是解析身份，不是数据。
-        plan: ctx.plan as unknown as Parameters<typeof handler.boundedRepairCandidate>[1]["plan"],
-        candidate,
-        sourceContent: ctx.sourceContent,
-        sealed: ctx.sealed,
-        authoringProvider: {
-          authorCandidate: async () => ({
-            objective: { ...candidate.objective },
-            presentation: { ...candidate.presentation, front: { ...candidate.presentation.front, prompt: "再改一次" } },
-            evidenceSetHash: ctx.sealed.evidenceSetHash,
-            hints: rows[0].hints,
-          } as unknown as AuthoringProviderOutput),
-        },
-        semanticSpecHash: ctx.run.semantic_spec_hash as string,
+        candidate: authored.candidate,
+        hints: authored.hints,
       });
     });
   } catch (error) {
