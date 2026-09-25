@@ -89,3 +89,6 @@ export const noteLearningRounds = pgTable(
     revisionCheck: check("nlr_revision_chk", sql`${t.revision} >= 1`),
   }),
 );
+
+export type NoteLearningRoundRow = typeof noteLearningRounds.$inferSelect;
+export type NoteLearningRoundInsert = typeof noteLearningRounds.$inferInsert;

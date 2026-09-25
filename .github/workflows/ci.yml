@@ -601,9 +601,10 @@ jobs:
             src/integration-tests/learning-runs-postgres.integration.ts \
             2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/learning-runs.tap"
 
-      # 39d W4-5 第一刀（2026-09-26）：轮次实体那张表的约束**就是**它的产品语义
-      # （部分唯一索引 / 身份不可改写 / revision 单调 / 终态双向判据 / 不给 worker 开读）。
-      # 三条连接都要给：夹具走 MIGRATOR，断言走受限的 API 角色，最后一条专门钉
+      # 39d W4-5 第一、二刀（2026-09-26）：轮次那张表的 DB 契约，加上服务层的 CAS 与
+      # 终态只读（脚本名 `test:learning-rounds:postgres` 带这两份）。
+      # 三条连接都要给：夹具走 MIGRATOR，库层断言走受限的 API 角色，服务层那份经
+      # `withWorkspaceTransaction` 也跑在 API 角色上，最后一条专门钉
       # "worker 读它是 permission denied 而不是 0 行"。缺任何一条这里会当场抛错，
       # 不会静默 skip（这是有意为之：0 行与没跑过是两种读数）。
       - name: Verify note learning round table constraints against postgres

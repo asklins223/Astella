@@ -16,7 +16,7 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "test:companion:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-migration-postgres.integration.ts src/integration-tests/companion-conversation-postgres.integration.ts",
-    "test:learning-rounds:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/note-learning-rounds-postgres.integration.ts",
+    "test:learning-rounds:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/note-learning-rounds-postgres.integration.ts src/integration-tests/note-learning-round-service-postgres.integration.ts",
     "test:companion-home-profile:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-home-profile-rls-postgres.integration.ts",
     "test:companion-runtime-fence:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-runtime-fence-postgres.integration.ts",
     "test:companion-actions:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-action-migration-postgres.integration.ts src/integration-tests/companion-action-rls-postgres.integration.ts src/integration-tests/companion-action-bridge-postgres.integration.ts",
