@@ -100,6 +100,11 @@ function installApi(
         getProjection: vi.fn(async () => ok({ primaryFocus: { state: "empty" } })),
       },
       note: {
+        // `api.note` 必须先摊开：这一整个 `note` 键会盖掉上面 `...api` 里那份，
+        // 于是 `window.ailearn.note.save` 变成 undefined。真窗口里这一发是「手动定版」
+        // 的唯一通道，盖掉它的下场是 `save("manual")` 抛 `not a function`、被 catch 咽成
+        // 「保存失败」，读起来跟"字没交出去"一模一样——那两条挂起的用例卡的正是这里。
+        ...api.note,
         get: vi.fn(async () => ok({
           noteId: NOTE_ID,
           title: "物理笔记",
@@ -343,11 +348,17 @@ describe("笔记页的主要动作", () => {
  *  4. 保存失败就不开始——不建"看起来已开始"的空轮次。
  */
 describe("笔记页的主要动作 · 有未提交编辑", () => {
-  /** 真实形状：编辑态改过字 → 切回阅读态时那次自动保存**没成功** → 字还在本机。 */
-  const dirty = { mode: "edit" as const, makeDirty: true, syncController: { fail: true } };
+  /**
+   * 真实形状：编辑态改过字 → 切回阅读态时那次自动保存**没成功** → 字还在本机。
+   * 每次调用都给**新的** `syncController`：这个开关用例会翻（失败→成功），
+   * 共用一份就等于让上一条用例决定下一条的起点。
+   */
+  function dirtyFixture() {
+    return { mode: "edit" as const, makeDirty: true, syncController: { fail: true } };
+  }
 
   it("没交出去的字还在时：两条路都摆出来，那颗按服务端动词画的按钮让位", async () => {
-    const { objectiveBlock } = await show([listItem()], dirty);
+    const { objectiveBlock } = await show([listItem()], dirtyFixture());
     const block = objectiveBlock()!;
     expect(block.querySelector(".notebook-objective__choices")).toBeTruthy();
     expect(screen.getByRole("button", { name: "先保存再开始" })).toBeTruthy();
@@ -357,7 +368,7 @@ describe("笔记页的主要动作 · 有未提交编辑", () => {
   });
 
   it("「按上次已保存内容开始」：原样开轮次，不替用户再存一次", async () => {
-    const { api } = await show([listItem()], dirty);
+    const { api } = await show([listItem()], dirtyFixture());
     const savesBeforeClick = api.note.save.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "按上次已保存内容开始" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
@@ -366,16 +377,16 @@ describe("笔记页的主要动作 · 有未提交编辑", () => {
   });
 
   /**
-   * 这两条**挂起**（`it.skip`），不是在别处另写一份绿的：夹具里那条文档传输的失败/成功
-   * 时序复现不出来——试过三版（按调用次给结果、可变开关、补 `draftGet/Save/Clear`），
-   * 点下去 `save("manual")` 会在这套替身里静默早退（`saveCalls=0`、`startCalls=0`，
-   * 而按钮既没禁用、也没有保存在飞），读到的中间态与真实 IPC 对不上。断言原样留着：
-   * 夹具哪天修好，这两条就该直接跑起来。真窗口剧本（39d W4-4 状态格里记着）是它们
-   * 真正的验收处——**不许**把它们改成"断言按钮存在"来假装绿。
+   * 这两条过去挂着（`it.skip`），当时记的原因是"夹具里那条文档传输的失败/成功时序复现不出来"。
+   * **那个归因是错的**：真因在夹具自己——`installApi` 里第二个 `note:` 键把 `...api` 摊进去的
+   * 那份盖掉了，`window.ailearn.note.save` 于是是 undefined；点「先保存再开始」抛
+   * `TypeError: api.note.save is not a function`，被 `save()` 的 catch 咽成一次"保存失败"，
+   * 屏上留下的读数与"字没交出去"完全同形（`saveCalls=0`、`startCalls=0`、按钮既没禁用也没有
+   * 保存在飞）。断言一直没改过：修的是夹具那一处覆盖（见 `installApi` 里的 `...api.note`）。
    */
-  it.skip("「先保存再开始」：先把字交出去，再开轮次", async () => {
+  it("「先保存再开始」：先把字交出去，再开轮次", async () => {
     // 第一次（切回阅读态那次）失败，第二次（手动那一发）成功。
-    const { api, syncController } = await show([listItem()], dirty);
+    const { api, syncController } = await show([listItem()], dirtyFixture());
     const savesBeforeClick = api.note.save.mock.calls.length;
     // 手动那一发要能交出去：把开关翻回来（这正是"再试一次"）。
     syncController.fail = false;
@@ -385,9 +396,9 @@ describe("笔记页的主要动作 · 有未提交编辑", () => {
     expect(api.learningRun.start).toHaveBeenCalledTimes(1);
   });
 
-  it.skip("保存失败就不开始：不建看起来已开始的空轮次", async () => {
+  it("保存失败就不开始：不建看起来已开始的空轮次", async () => {
     const { api, objectiveBlock, syncController } = await show([listItem()], {
-      ...dirty,
+      ...dirtyFixture(),
       manualSaveFails: true,
     });
     syncController.fail = false;
@@ -398,7 +409,16 @@ describe("笔记页的主要动作 · 有未提交编辑", () => {
     expect(api.learningRun.start).not.toHaveBeenCalled();
     // 失败要说得出口：这一页那条保存提示得亮（不是静默什么都不发生），
     // 而两条路仍在屏上——她可以再试一次，也可以按上次已保存的那一版开始。
-    expect(document.body.textContent).toContain("服务暂时没有返回可确认的结果。");
+    // 钉的是**这一发失败真该出现的那句话**：`note.save` 回来的是一条带
+    // `code: "api_unavailable"` 的网关错误，所以屏上走 `gatewayErrorMessage` 那一条分支
+    // （「学习服务暂时不可用；可以安全重试…」），不是非网关异常兜底的那句
+    // 「服务暂时没有返回可确认的结果。」——这一行原先写的正是后者，是当时根本走不到
+    // 失败分支时盲写的期望（见上面那段真因）。
+    const alert = [...document.querySelectorAll('[role="alert"]')].find((node) =>
+      (node.textContent ?? "").startsWith("保存没成功"));
+    expect(alert?.textContent).toBe("保存没成功：学习服务暂时不可用；可以安全重试，不会重复创建学习旅程。重试保存");
+    // 「可以安全重试」不是这句里的形容词：那颗按钮在这一刻必须真能点。
+    expect(alert?.querySelector("button")?.disabled).toBe(false);
     expect(objectiveBlock()!.querySelector(".notebook-objective__choices")).toBeTruthy();
   });
 });
