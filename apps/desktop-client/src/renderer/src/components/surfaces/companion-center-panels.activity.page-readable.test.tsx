@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { ActivityPanel } from "./companion-center-panels";
+import { primaryActionLabel } from "./objective-state-copy";
 import {
   companionJourneyBootstrapSchema,
   type CompanionJourneyBootstrap,
@@ -11,6 +12,10 @@ import {
   companionActivityDeliveryV1Schema,
   type CompanionActivityDeliveryV1,
 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import {
+  companionLearningContextV1Schema,
+  type CompanionLearningContextV1,
+} from "@ailearn/shared/companion-conversation-contracts";
 import { useRoomStore } from "../../app/room-store";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
 
@@ -98,6 +103,41 @@ function timeline(items: CompanionActivityDeliveryV1[] = []) {
 
 const unavailableSection = { ok: false, message: "服务暂时不可用" } as const;
 
+const RESUME_RUN_ID = "55555555-5555-4555-8555-555555555555";
+const RESUME_OBJECTIVE_ID = "66666666-6666-4666-8666-666666666666";
+
+/**
+ * 服务端 `resolveCompanionLearningContext` 的那一份 learning context，按合同形状给
+ * （走 schema 而不是手写对象：这一族字段加一个就得改这里，编出来的假形状测不到真屏）。
+ */
+function learningContextWithResume(
+  overrides: Partial<CompanionLearningContextV1> = {},
+): CompanionLearningContextV1 {
+  return companionLearningContextV1Schema.parse({
+    version: 1,
+    contextRevision: "a".repeat(64),
+    learningRunResumeCandidate: {
+      candidateId: "learning_run_resume",
+      runId: RESUME_RUN_ID,
+      title: "为什么走了索引还是慢",
+      targetSummary: "说得出索引失效的两种情形",
+      impactSummary: "恢复当前学习运行",
+      payloadSha256: "b".repeat(64),
+    },
+    learningRunStartCandidate: null,
+    ...overrides,
+  });
+}
+
+/** 「学习衔接」那一格里那张卡上的唯一一颗按钮。 */
+function resumeButton(): HTMLButtonElement | null {
+  const buttons = [...document.querySelectorAll(
+    'section[aria-label="学习衔接"] .companion-activity-card button',
+  )];
+  expect(buttons).toHaveLength(1);
+  return (buttons[0] as HTMLButtonElement) ?? null;
+}
+
 function renderPanel(props: Partial<ActivityPanelProps> = {}) {
   const base: ActivityPanelProps = {
     section: { ok: true, value: bootstrap() },
@@ -170,5 +210,39 @@ describe("伴星中心 · 动态：三段各说各的，折叠里的不算露出
   it("报错那一行写什么，statusLine 就是什么", () => {
     renderPanel({ error: "主动投递这次没读出来" });
     expect(publishedView()!.statusLine).toBe(document.querySelector(".companion-error")?.textContent);
+  });
+});
+
+/**
+ * 39d W4-2 登记的第三处词源（2026-09-25 收口）：这一格那颗恢复按钮过去硬写
+ * 「继续学习」，而同一个动作在列表／详情／首页／星图上由 `primaryActionLabel`
+ * 签发成「继续作答」——两块屏、一个动作、两个词。
+ *
+ * 两条断言方向不同，都要留着：
+ *  - **对账**：按钮上的字必须等于 `primaryActionLabel(resume_run)` 那句话——
+ *    两边任一改动都会红（改按钮的字面量 → 红；改签发处 → 红）；
+ *  - **落点**：点它调的是 `onResumeLearning(那一轮的 runId)`，不是别的动作——
+ *    否则对账那条换成一颗不恢复的按钮仍然绿。
+ */
+describe("伴星中心 · 动态：恢复那颗按钮与目标面共用一个词（39d W4-2）", () => {
+  it("按钮上的字就是 `primaryActionLabel` 对 resume_run 签发的那句话", () => {
+    renderPanel({ learningContextSection: { ok: true, value: learningContextWithResume() } });
+    const word = primaryActionLabel({
+      kind: "resume_run",
+      runId: RESUME_RUN_ID,
+      objectiveId: RESUME_OBJECTIVE_ID,
+    });
+    expect(word).toBe("继续作答");
+    expect(resumeButton()?.textContent).toBe(word);
+  });
+
+  it("点它就是接着跑那一轮，不带第二个动作", () => {
+    const resumed: string[] = [];
+    renderPanel({
+      learningContextSection: { ok: true, value: learningContextWithResume() },
+      onResumeLearning: (runId) => { resumed.push(runId); },
+    });
+    fireEvent.click(resumeButton()!);
+    expect(resumed).toEqual([RESUME_RUN_ID]);
   });
 });

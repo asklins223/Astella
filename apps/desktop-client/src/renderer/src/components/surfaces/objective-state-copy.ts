@@ -176,12 +176,22 @@ export function freshnessLabel(value: ObjectiveSurfaceFreshnessV3): string {
   }[value];
 }
 
+/**
+ * 「回到这一轮没跑完的地方」唯一的一个词。
+ *
+ * 两个读者：`primaryActionLabel`（列表／详情／首页／星图）与伴星中心「动态」那一格的
+ * 恢复按钮。服务端这一族动作里只有 `create_*`／`practice_only` 自带 `label`——
+ * `resume_run` 那一支没有这个字段（`learning-objective-surface-contracts.ts`），
+ * 所以这个词由本模块签发；再往按钮上写一遍字面量就是第二个来源（39d W4-2 第三处）。
+ */
+export const RESUME_RUN_ACTION_LABEL = "继续作答";
+
 export function primaryActionLabel(action: LearningObjectivePrimaryActionV3): string {
   switch (action.kind) {
     case "create_run":
     case "create_review_run":
     case "practice_only": return action.label;
-    case "resume_run": return "继续作答";
+    case "resume_run": return RESUME_RUN_ACTION_LABEL;
     case "wait_for_initial_validation": return "现在还不能正式答";
     case "view_successor": return "看新版本";
     case "refresh": return "重新读取";

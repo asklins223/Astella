@@ -8,6 +8,7 @@ import { CompanionQuoteBlock, CompanionRecordImage, MonthCalendar } from "../com
 import { CompanionSelect, type CompanionSelectOption } from "./companion-select";
 import { diaryDayLabel, shiftIsoDate, todayIsoDate } from "./companion-diary-day";
 import { formatDate, formatRelative } from "./surface-data";
+import { RESUME_RUN_ACTION_LABEL } from "./objective-state-copy";
 import { usePageReadableView } from "../hud/use-page-readable-view";
 import { HUD_PAGES } from "../hud/hud-pages";
 
@@ -370,7 +371,7 @@ export function ActivityPanel(props: ActivityPanelProps) {
       {!props.learningContextSection.ok
         ? <SectionState message={ACTIVITY_LINES.learningUnavailable} detail={props.learningContextSection.message} onRetry={props.onRetry} />
         : resumeCandidate
-          ? <article className="companion-activity-card"><div><strong>{resumeCandidate.title}</strong><p>{resumeCandidate.targetSummary}</p><small>{resumeCandidate.impactSummary}</small></div><button type="button" className="primary" onClick={() => props.onResumeLearning(resumeCandidate.runId)}>继续学习</button></article>
+          ? <article className="companion-activity-card"><div><strong>{resumeCandidate.title}</strong><p>{resumeCandidate.targetSummary}</p><small>{resumeCandidate.impactSummary}</small></div><button type="button" className="primary" onClick={() => props.onResumeLearning(resumeCandidate.runId)}>{RESUME_RUN_ACTION_LABEL}</button></article>
           : startCandidate
             ? <article className="companion-activity-card"><div><strong>{startCandidate.title}</strong><p>{startCandidate.targetSummary}</p><small>{startCandidate.impactSummary}</small></div><button type="button" onClick={() => props.onOpenObjective(startCandidate.objectiveId)}>查看目标</button></article>
             : <SectionState message={ACTIVITY_LINES.learningNothing.message} detail={ACTIVITY_LINES.learningNothing.detail} />}
