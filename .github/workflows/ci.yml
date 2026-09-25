@@ -601,8 +601,8 @@ jobs:
             src/integration-tests/learning-runs-postgres.integration.ts \
             2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/learning-runs.tap"
 
-      # 39d W4-5 第一、二刀（2026-09-26）：轮次那张表的 DB 契约，加上服务层的 CAS 与
-      # 终态只读（脚本名 `test:learning-rounds:postgres` 带这两份）。
+      # 39d W4-5 前三刀（2026-09-26）：轮次那张表的 DB 契约、服务层的 CAS 与终态只读、
+      # 路由的线上合同（脚本名 `test:learning-rounds:postgres` 带这三份）。
       # 三条连接都要给：夹具走 MIGRATOR，库层断言走受限的 API 角色，服务层那份经
       # `withWorkspaceTransaction` 也跑在 API 角色上，最后一条专门钉
       # "worker 读它是 permission denied 而不是 0 行"。缺任何一条这里会当场抛错，

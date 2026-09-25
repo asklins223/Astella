@@ -39,7 +39,7 @@ if (!fixtureUrl || !process.env.DATABASE_URL_API) {
 }
 const fixtureSql = postgres(fixtureUrl, { max: 4 });
 
-const HASH_A = "a".repeat(64);
+const HASH_A = "0f1e2d3c4b5a69788796a5b4c3d2e1f0"; // 真实主形状：32 位 md5（computeContentHash）
 
 let seeded: NotesOnlyWorkspaceFixture | null = null;
 let workspaceId = "";
@@ -266,7 +266,7 @@ test("服务层的入参判据给得出名字，而不是让库里的 CHECK 冒�
     })), "invalid_budget"],
     ["空问题", () => createRound(null as never, me(), createInput(noteA, versionA, { drivingQuestion: "   " })), "invalid_driving_question"],
     ["超长问题", () => createRound(null as never, me(), createInput(noteA, versionA, { drivingQuestion: "长".repeat(501) })), "invalid_driving_question"],
-    ["没有哈希", () => createRound(null as never, me(), createInput(noteA, versionA, { sourceContentHash: "a".repeat(63) })), "invalid_snapshot"],
+    ["短到不像哈希", () => createRound(null as never, me(), createInput(noteA, versionA, { sourceContentHash: "abc" })), "invalid_snapshot"],
   ];
   for (const [label, run, expected] of cases) {
     const result = await serviceCode(run);

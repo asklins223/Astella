@@ -40,7 +40,7 @@ const fixtureSql = postgres(fixtureUrl, { max: 4 });
 const apiSql = postgres(apiUrl, { max: 4 });
 const workerSql = postgres(workerUrl, { max: 4 });
 
-const HASH_A = "a".repeat(64);
+const HASH_A = "0f1e2d3c4b5a69788796a5b4c3d2e1f0"; // 真实主形状：32 位 md5（computeContentHash）
 
 type RoundInput = {
   workspaceId: string;
@@ -139,19 +139,24 @@ let versionC = "";
 /** 第四篇：给"两个人各占一条"那条用例用（C 已被上一条占掉）。 */
 let noteD = "";
 let versionD = "";
+/** 第五、六篇：留给"哈希形状"那两发正向用例，不与按人算那条共用一篇（共用就会撞名额）。 */
+let noteE = "";
+let versionE = "";
+let noteF = "";
+let versionF = "";
 /** 同一空间里的第二个人：§3.2 那句"同一用户、同一笔记"里的另一个"用户"。 */
 let peerUserId = "";
 
 const me = () => ({ workspaceId, userId });
 
 before(async () => {
-  seeded = await seedNotesOnlyWorkspace(fixtureSql, { noteCount: 4 });
+  seeded = await seedNotesOnlyWorkspace(fixtureSql, { noteCount: 6 });
   peerWorkspace = await seedNotesOnlyWorkspace(fixtureSql, { noteCount: 1 });
   workspaceId = seeded.workspaceId;
   peerWorkspaceId = peerWorkspace.workspaceId;
   userId = seeded.userId;
-  [noteA, noteB, noteC, noteD] = seeded.noteIds;
-  [versionA, versionB, versionC, versionD] = seeded.versionIds;
+  [noteA, noteB, noteC, noteD, noteE, noteF] = seeded.noteIds;
+  [versionA, versionB, versionC, versionD, versionE, versionF] = seeded.versionIds;
   peerUserId = randomUUID();
   await fixtureSql.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
@@ -252,10 +257,27 @@ test("三项预算没有默认值：少给一项就建不出这一轮", async ()
 test("快照引用三件：哈希列形状与「不内联正文」", async () => {
   await expectDbError("23514", () => (
     insertRound(apiSql, {
-      ...me(), noteId: noteB, noteVersionId: versionB, sourceContentHash: "a".repeat(63),
+      ...me(), noteId: noteB, noteVersionId: versionB, sourceContentHash: "a".repeat(7),
       drivingQuestion: "换一句才不被那条唯一索引先挡住",
     })
-  ), "63 位的 source_content_hash（D3 §2：整篇那一层哈希必填，不是备注）");
+  ), "7 位的 source_content_hash（D3 §2 要拦的是「没有哈希」这一件事）");
+  // 真实形状能进：`note_versions.content_hash` 今天的主形状是 **32 位 md5**
+  // （`computeContentHash` 用 md5，`note/content-hash.ts:25-28`；dev 库 1045 条实测）。
+  // 这一条是 09-26 把 CHECK 从"=64"改宽的因由——判据写错长度时，每一篇真实笔记
+  // 都开不出轮次，而这条断言用真形状（从那一版正文现算）把它钉住。
+  const realHash = await fixtureSql`
+    SELECT content_hash FROM note_versions WHERE id = ${versionA}
+  `;
+  const admissible = String(realHash[0].content_hash);
+  assert.equal(admissible.length >= 8, true, `夹具那一版的哈希本身不该短于判据下界：${admissible}`);
+  await insertRound(apiSql, {
+    ...me(), noteId: noteE, noteVersionId: versionE, sourceContentHash: admissible,
+    drivingQuestion: "用真实形状的那一份哈希开一轮",
+  });
+  await insertRound(apiSql, {
+    ...me(), noteId: noteF, noteVersionId: versionF, sourceContentHash: "a".repeat(64),
+    drivingQuestion: "将来换成 sha256 那种 64 位也收（判据拦的是没有哈希，不是某一种算法）",
+  });
 
   // `evidence_snapshot_ids` 默认 '{}'：没有摘录是合法形状（这一轮只引用了版本与哈希），
   // 但列本身 NOT NULL——读侧要能区分"没用摘录"与"没这一列"。

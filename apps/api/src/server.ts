@@ -22,6 +22,7 @@ import { activityRoutes } from "./modules/activity/routes.ts";
 import { uploadRoutes } from "./modules/upload/routes.ts";
 import { cardGenerationV2Routes } from "./modules/card-generation-v2/routes.ts";
 import { learningObjectiveRoutes } from "./modules/learning-objectives/routes.ts";
+import { noteLearningRoundRoutes } from "./modules/note-learning-rounds/routes.ts";
 import { learningDashboardRoutes } from "./modules/learning-dashboard/routes.ts";
 import { understandingTopologyV3Routes } from "./modules/understanding-v3/routes.ts";
 import { isCardGenerationV2Enabled } from "./config/learning-companion-flags.ts";
@@ -333,6 +334,9 @@ async function main() {
   // Plan 23 W2/W3：Objective Surface + Dashboard 读取端点（只读；V3 已完成预上线
   // 切流，能力状态由 shared capability contract 对外投影）。
   await app.register(learningObjectiveRoutes);
+  // 39d W4-5（2026-09-26）：轮次的读写入口。合同里三件事由服务端定
+  // （实际用哪一版正文、三项预算、终态与冲突要带回现在那一版），所以这一层不是薄壳。
+  await app.register(noteLearningRoundRoutes);
   await app.register(learningDashboardRoutes);
   await app.register(understandingTopologyV3Routes);
   await app.register(jobRoutes);

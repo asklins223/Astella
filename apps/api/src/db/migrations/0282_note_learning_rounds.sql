@@ -21,6 +21,10 @@
 --     `evidence_snapshot_ids`（这一轮用了哪几段摘录，锚点在 `evidence_snapshots_v2`，
 --     块级/来源级哈希与不可变副本各自已经在那两张表上）。D3 明确禁止"只存
 --     `noteVersionId`"，所以哈希与摘录集合是必填列的一部分，不是可省的备注。
+--     哈希那格**不限长度到 64**：09-26 落路由前实测 dev 库 1045 条 `note_versions`，
+--     主形状是 **32 位十六进制**（`computeContentHash` 用的是 md5，
+--     `apps/api/src/modules/note/content-hash.ts:25-28`），另有 10～40 位的历史/夹具值；
+--     判据要拦住的是"没有哈希"，不是"不是 sha256"。写成 8～128 就是把这两件事分开。
 --  5. **RLS**（§6.5）：ENABLE + FORCE，谓词是纯 `(workspace_id, user_id)` GUC 匹配。
 --     **这里没有 `CURRENT_USER = 'ailearn_worker'` 那一条旁路**（learning_runs 有），
 --     因为 D1 §6.5 写死了"轮次与学习线都不给 worker 开跨租户读"；连带也不给
@@ -77,7 +81,7 @@ CREATE TABLE public.note_learning_rounds (
   CONSTRAINT nlr_budget_model_calls_chk CHECK (max_model_calls >= 0),
   CONSTRAINT nlr_budget_wall_clock_chk CHECK (max_wall_clock_seconds >= 0),
   CONSTRAINT nlr_budget_tasks_chk CHECK (max_tasks >= 0),
-  CONSTRAINT nlr_source_hash_chk CHECK (char_length(source_content_hash) = 64)
+  CONSTRAINT nlr_source_hash_chk CHECK (char_length(source_content_hash) BETWEEN 8 AND 128)
 );
 
 --> statement-breakpoint

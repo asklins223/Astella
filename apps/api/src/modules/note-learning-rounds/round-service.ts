@@ -161,9 +161,12 @@ export async function createRound(
   if (!SOURCES.includes(input.drivingQuestionSource)) {
     throw new RoundServiceError("invalid_driving_question", "本轮问题的来源不认识");
   }
-  if (input.sourceContentHash.length !== 64) {
+  if (input.sourceContentHash.trim().length < 8 || input.sourceContentHash.length > 128) {
     // D3 §2：整篇那一层哈希是快照的必填一件，不是备注。少了它，"内容变没变"
     // 就只剩一个会跟着自动保存走的版本指针。
+    // 但**长度不绑 64**：`note_versions.content_hash` 今天的主形状是 32 位 md5
+    // （`note/content-hash.ts:25-28`，实测 dev 库 1045 条），判据要挡的是"没有哈希"，
+    // 不是"不是 sha256"——写成 64 会把每一篇真实笔记挡在轮次外面。
     throw new RoundServiceError("invalid_snapshot", "本轮必须带上它实际用的那份正文哈希");
   }
   assertBudgets(input.budgets);

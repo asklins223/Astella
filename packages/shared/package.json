@@ -316,6 +316,11 @@
       "import": "./src/room-projection-contracts.ts",
       "default": "./src/room-projection-contracts.ts"
     },
+    "./note-learning-round-contracts": {
+      "types": "./src/note-learning-round-contracts.ts",
+      "import": "./src/note-learning-round-contracts.ts",
+      "default": "./src/note-learning-round-contracts.ts"
+    },
     "./note-projection-contracts": {
       "types": "./src/note-projection-contracts.ts",
       "import": "./src/note-projection-contracts.ts",

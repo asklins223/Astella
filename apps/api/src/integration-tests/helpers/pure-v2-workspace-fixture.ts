@@ -96,6 +96,11 @@ export async function seedNotesOnlyWorkspace(
         VALUES (${versionIds[i]}, ${noteIds[i]}, ${workspaceId}, 1,
           ${tx.json({ blocks: [{ type: "paragraph", content: "只有笔记没有目标" }] })},
           'fixture-hash', ${userId})`;
+      // 把这一版**指过去**：`createNote` 那条生产写路径就是这么落的。以前只插版本、
+      // 不写 `notes.current_version_id`，于是"读这篇笔记的当前版本"一律返回 null
+      // （`getNoteWithVersion` 在指针为空处就退出）——0282 的轮次路由要靠这一格定
+      // "实际用哪一版正文"（PRD §3.4），拿这份夹具就永远只看到 note_not_found。
+      await tx`UPDATE notes SET current_version_id = ${versionIds[i]} WHERE id = ${noteIds[i]}`;
     }
   });
   const cleanup = async () => {
