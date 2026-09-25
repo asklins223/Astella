@@ -242,6 +242,8 @@ export const ROUND_COPY = {
   ask: "这一轮想弄懂什么？",
   start: "开始这一轮",
   starting: "正在开始…",
+  /** 已经有一轮在进行中时，那颗提交按钮是"改写这一句"，不是"再开一轮"。 */
+  save: "保存这个问题",
   revise: "换一个问题",
   saving: "正在改写…",
   end: "先到这里",
@@ -250,6 +252,21 @@ export const ROUND_COPY = {
   revisedLine: (revision: number) => `这一句话已经改过 ${revision - 1} 次。`,
   hint: "改这句话不用重编笔记；这一轮先只对你自己可见。",
 } as const;
+
+/**
+ * 那颗提交按钮的字。真窗口跑出来的第一个缺陷就在这里（2026-09-26，§16.16 实机读数）：
+ * 旧写法把"在途"与"空闲"两档接反了——已经有一轮在进行中、请求**根本没在跑**的时候
+ * 屏上写着「正在改写…」，而改写真的在跑时写的是「正在开始…」。
+ * "正在…"只许出现在真有一次请求在途的那一段时间里，这是这一页所有按钮共用的规矩。
+ */
+export function roundSubmitLabelV1(
+  busy: "start" | "revise" | "end" | null,
+  hasOpenRound: boolean,
+): string {
+  if (busy === "start") return ROUND_COPY.starting;
+  if (busy === "revise") return ROUND_COPY.saving;
+  return hasOpenRound ? ROUND_COPY.save : ROUND_COPY.start;
+}
 
 /** 预设 → 起步句。带上标题是为了让这句话在这篇笔记上是具体的，不是通用口号。 */
 export const ROUND_PRESETS_V1: ReadonlyArray<{
@@ -1714,7 +1731,7 @@ export function NotebookSurface() {
                   disabled={roundBusy !== null || roundDraft.trim().length === 0}
                   onClick={() => void submitRoundQuestion(openRound ? "revise" : "start")}
                 >
-                  {roundBusy === "start" || roundBusy === "revise" ? ROUND_COPY.starting : (openRound ? ROUND_COPY.saving : ROUND_COPY.start)}
+                  {roundSubmitLabelV1(roundBusy, openRound !== null)}
                 </button>
               </div>
               <p className="small notebook-note">{ROUND_COPY.hint}</p>

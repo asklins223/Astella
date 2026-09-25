@@ -556,6 +556,35 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
     });
   });
 
+  /**
+   * 2026-09-26 真窗口跑这张表单时抓到的第一个缺陷（`probe-note-round-form.mts`）：
+   * 旧写法把"在途"与"空闲"接反了——已经有一轮在进行中、什么都没在跑的时候屏上写着
+   * 「正在改写…」，而改写真的在跑时写着「正在开始…」。两档各钉一条，且必须同一条用例里
+   * 钉（只看空闲那一半，"把两个标签对调"这种改法照样绿）。
+   */
+  it("那颗提交按钮：空闲时写动词，只有一次请求真的在途时才写「正在…」", async () => {
+    const open = roundRow({ drivingQuestion: "判断为什么有索引，查询仍然可能慢", revision: 4 });
+    const { api, roundBlock } = await show([], { openRound: open });
+    fireEvent.click(screen.getByRole("button", { name: ROUND_COPY.revise }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const submit = roundBlock()!.querySelector<HTMLButtonElement>("button.primary");
+    expect(submit?.textContent).toBe(ROUND_COPY.save);
+    expect(submit?.disabled).toBe(false);
+
+    // 把那一发吊住，才能在"请求在途"这段时间里读屏——不是读一个我以为存在的瞬间。
+    let release: (value: unknown) => void = () => {};
+    api.noteLearningRound.revise.mockImplementationOnce(
+      () => new Promise((resolvePromise) => { release = resolvePromise; }),
+    );
+    fireEvent.click(submit!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(roundBlock()!.querySelector("button.primary")?.textContent).toBe(ROUND_COPY.saving);
+
+    release(ok(roundRow({ drivingQuestion: "换成了一句新的", revision: 5 })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(roundBlock()!.querySelector('[role="alert"]')).toBeNull();
+  });
+
   it("读那一轮失败不许把笔记本身顶掉（它是增补，不是页面的前提）", async () => {
     const { container, roundBlock } = await show([], { openRound: undefined });
     // 上面那条已经证明"没有轮次时表单在"；这一条要的是"读失败时表单也在、纸上还是笔记"。
