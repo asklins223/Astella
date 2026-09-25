@@ -1089,6 +1089,12 @@ export function NotebookSurface() {
       await reload({ silent: true });
     } catch (error) {
       setRoundFailure(gatewayErrorMessage(error));
+      // 失败也要把她带到**现在那一版**上去：真窗口实测（`probe-note-round-conflict.mts`），
+      // 迟到的那一发被服务端拒掉之后，屏上留着的还是那句已经不作数的草稿——
+      // "请先同步"这句话没有配一次同步，等于让她自己猜该按哪一版继续。
+      // 交出去的那一句不撤（输入框里那份是她的字），但那一行改回服务端读回来的那一条。
+      setRoundEditing(false);
+      await reload({ silent: true });
     } finally {
       setRoundBusy(null);
     }
@@ -1112,6 +1118,9 @@ export function NotebookSurface() {
       await reload({ silent: true });
     } catch (error) {
       setRoundFailure(gatewayErrorMessage(error));
+      // 收尾迟到（这一轮在别处被推进过）同一条规矩：换回服务端读回来的那一版，
+      // 那一行不撤——撤掉会被读成"已经收尾了"，而它其实什么都没发生。
+      await reload({ silent: true });
     } finally {
       setRoundBusy(null);
     }

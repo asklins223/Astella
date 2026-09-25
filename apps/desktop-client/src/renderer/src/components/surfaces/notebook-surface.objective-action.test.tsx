@@ -116,16 +116,26 @@ function installApi(
     openRound?: Record<string, unknown> | null;
     /** 这一篇的正文块。默认只有一段（即"没有小节"那一档，见结构另选那组用例）。 */
     blocks?: NoteBlockProjectionV1[];
+    /** 轮次回读的第 N 次给什么（缺省 = 每次都给 `openRound` 那一份）。 */
+    openSequence?: Record<string, unknown>[];
   } = {},
 ): Api {
   const syncController = options.syncController ?? { fail: false };
+  let openReads = 0;
   const api: Api = {
     objective: { list: vi.fn(list) },
     learningRun: {
       start: vi.fn(async () => ok({ runId: RUN_ID, snapshotId: "55555555-4555-4555-8555-555555555555" })),
     },
     noteLearningRound: {
-      open: vi.fn(async () => ok(options.openRound ?? null)),
+      // 轮次的回读**按调用次**给：迟到那一发的场景必须是"第一次读到旧版、
+    // 失败之后重读读到新版"，一份固定回读测不出"换回了现在那一版"。
+    open: vi.fn(async () => {
+      const rows = options.openSequence ?? [options.openRound ?? null];
+      const read = Math.min(openReads, rows.length - 1);
+      openReads += 1;
+      return ok(rows[read] ?? null);
+    }),
       create: vi.fn(async () => ok(roundRow())),
       revise: vi.fn(async () => ok(roundRow({ drivingQuestion: "先分清两种情况，再判断慢在哪一步", drivingQuestionRevision: 2, revision: 2 }))),
       close: vi.fn(async () => ok(roundRow({ phase: "closed", outcome: "partial", revision: 2, closedAt: "2026-09-26T05:00:00.000Z" }))),
@@ -212,6 +222,7 @@ async function show(
     /** undefined = 这一篇没有未完成的那一轮；给了就是屏上该显示它。 */
     openRound?: Record<string, unknown> | null;
     blocks?: NoteBlockProjectionV1[];
+    openSequence?: Record<string, unknown>[];
   } = {},
 ) {
   const syncController = options.syncController ?? { fail: false };
@@ -666,6 +677,61 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
     fireEvent.click([...again.roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.start)!);
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     expect(again.api.noteLearningRound.create.mock.calls[0][0].drivingQuestionSource).toBe("user_rewritten");
+  });
+
+  /** 迟到的那一发（§16.39 那一族在笔记页的落点）：服务端拒掉之后不许让她对着一句作废的话。 */
+  const CONFLICT = { ok: false as const, error: { code: "conflict", safeMessageKey: "error.conflict", retry: "user_action" } };
+  const CONFLICT_TEXT = "这条学习状态已经发生变化，请先同步后再继续。";
+
+  it("改写这一发迟到了：那一行换回服务端现在的那一版，失败那句照留", async () => {
+    const before = roundRow({ drivingQuestion: "本机读到的那一版", revision: 1 });
+    const now = roundRow({ drivingQuestion: "另一端改过的那一版", drivingQuestionRevision: 2, revision: 5 });
+    const { api, roundBlock } = await show([], { openRound: before, openSequence: [before, now] });
+    api.noteLearningRound.revise.mockResolvedValue(CONFLICT);
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.revise)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const input = roundBlock()!.querySelector("input#notebook-round-question") as HTMLInputElement;
+    await act(async () => { fireEvent.change(input, { target: { value: "本机这一发是迟到的" } }); });
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.save)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+
+    const shown = roundBlock()!.textContent ?? "";
+    expect(shown).toContain(ROUND_COPY.openLine("另一端改过的那一版"));
+    // 作废的那一句不再挂在屏上（输入框里她那份字还在状态里，但那一行说的是现在的事实）。
+    expect(shown).not.toContain("本机这一发是迟到的");
+    expect(roundBlock()!.querySelector('[role="alert"]')?.textContent).toBe(CONFLICT_TEXT);
+    expect(api.noteLearningRound.revise).toHaveBeenCalledTimes(1);
+  });
+
+  it("对照：这一发赶上了——屏上就是新的那一条，也没有告警", async () => {
+    const before = roundRow({ drivingQuestion: "本机读到的那一版", revision: 1 });
+    const after = roundRow({ drivingQuestion: "本机这一发赶上了", drivingQuestionRevision: 2, revision: 2 });
+    const { api, roundBlock } = await show([], { openRound: before, openSequence: [before, after] });
+    api.noteLearningRound.revise.mockResolvedValue(ok(after));
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.revise)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const input = roundBlock()!.querySelector("input#notebook-round-question") as HTMLInputElement;
+    await act(async () => { fireEvent.change(input, { target: { value: "本机这一发赶上了" } }); });
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.save)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+
+    const shown = roundBlock()!.textContent ?? "";
+    expect(shown).toContain(ROUND_COPY.openLine("本机这一发赶上了"));
+    expect(roundBlock()!.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("收尾这一发迟到了：那一行不撤（撤了会被读成「已经收尾」），并换回现在那一版", async () => {
+    const before = roundRow({ drivingQuestion: "本机读到的那一版", revision: 1 });
+    const now = roundRow({ drivingQuestion: "另一端推进过的那一版", revision: 5 });
+    const { api, roundBlock } = await show([], { openRound: before, openSequence: [before, now] });
+    api.noteLearningRound.close.mockResolvedValue(CONFLICT);
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.end)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+
+    const shown = roundBlock()!.textContent ?? "";
+    expect(shown).toContain(ROUND_COPY.openLine("另一端推进过的那一版"));
+    expect(shown).not.toContain(ROUND_COPY.openLine("本机读到的那一版"));
+    expect(roundBlock()!.querySelector('[role="alert"]')?.textContent).toBe(CONFLICT_TEXT);
   });
 
   it("没有小节的笔记不许多出那一行（结构是这篇的事实，不是界面的装饰）", async () => {
