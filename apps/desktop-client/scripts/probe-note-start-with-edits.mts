@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { _electron as electron } from '@playwright/test'
 import './load-capture-env.mjs'
+import { cleanupProbeNoteTitles, dismissBlockingDialogs } from './probe-support.mts'
 
 /**
  * 真窗口剧本：**有未提交编辑时那两条路**（39d W4-4 第一半）。
@@ -33,61 +34,6 @@ const results: Array<{ name: string; ok: boolean; detail: unknown }> = []
 const readings: Record<string, unknown> = {}
 const check = (name: string, ok: boolean, detail: unknown = ''): void => {
   results.push({ name, ok, detail })
-}
-
-/**
- * 收尾：**另起一个干净实例**把标题后缀收干净，并报"还剩几行带后缀"。
- *
- * 为什么不在同一个实例里收：运行面是盖在笔记上的面，关掉它之后的落点在不同状态下不一样
- * （实测三次读不回输入框）；而"新起一个应用 → 进书库 → 认带后缀那一行（唯一）→ 编辑态
- * 改回 → 预览此版本（等 3.2s：防抖 1.2s ＋ 一次往返）"这条路走过三次都对。
- */
-async function cleanupProbeSuffixes(): Promise<number | null> {
-  const dir = await mkdtemp(resolve(tmpdir(), 'ailearn-w44-clean-'))
-  const cleaner = await electron.launch({
-    args: ['.', '--lang=zh-CN', `--user-data-dir=${dir}`],
-    cwd: appRoot,
-    executablePath,
-  })
-  try {
-    const page = await cleaner.firstWindow()
-    await page.waitForLoadState('domcontentloaded')
-    const email = page.locator('.desktop-access-gate input[type="email"]')
-    if (await email.waitFor({ timeout: 20_000 }).then(() => true, () => false)) {
-      await email.fill(process.env.OWNER_EMAIL ?? '')
-      await page.locator('.desktop-access-gate input[type="password"]').fill(process.env.OWNER_PASSWORD ?? '')
-      await page.getByRole('button', { name: '登录', exact: true }).click()
-      await page.waitForTimeout(2_500)
-    }
-    const expand = page.getByRole('button', { name: '展开目录' })
-    if ((await expand.count()) > 0) { await expand.first().click().catch(() => undefined); await page.waitForTimeout(500) }
-    for (let round = 0; round < 6; round += 1) {
-      await page.locator('.hud-rail .nav-chip[aria-label="笔记"]').first().click({ timeout: 20_000 }).catch(() => undefined)
-      await page.waitForTimeout(700)
-      if ((await page.locator('.note-row').count()) === 0) {
-        await page.locator('.note-shelf-all').first().click({ timeout: 20_000 }).catch(() => undefined)
-        await page.waitForTimeout(700)
-      }
-      const suffixed = page.locator('.note-row', { hasText: '｜探针' })
-      if ((await suffixed.count()) === 0) return 0
-      const row = suffixed.first()
-      const shown = ((await row.locator('strong').textContent()) ?? '').trim()
-      const base = shown.replace(/(｜探针)+$/, '')
-      await row.click()
-      await page.locator('.notebook').first().waitFor({ timeout: 20_000 }).catch(() => undefined)
-      await page.getByRole('button', { name: '编辑这篇笔记' }).click({ timeout: 20_000 }).catch(() => undefined)
-      await page.waitForTimeout(500)
-      const input = page.locator('#notebook-surface-title')
-      if ((await input.count()) === 0) return null
-      await input.fill(base).catch(() => undefined)
-      await page.getByRole('button', { name: '预览此版本' }).click({ timeout: 20_000 }).catch(() => undefined)
-      await page.waitForTimeout(3_200)
-    }
-    const left = await page.locator('.note-row', { hasText: '｜探针' }).count()
-    return left
-  } finally {
-    await cleaner.close().catch(() => undefined)
-  }
 }
 
 const userDataDir = await mkdtemp(resolve(tmpdir(), 'ailearn-w44-probe-'))
@@ -120,6 +66,9 @@ try {
   await page.waitForTimeout(2_500)
   readings.gateWasVisible = gateVisible
   check('登录成功（书桌出现）', true, gateVisible ? '' : '没看到登录档（可能已登录）')
+
+  // 先关掉可能挡在侧栏前面的对话框（剪贴板里有链接时首登会弹「来源导入」，实测卡过三次）。
+  await dismissBlockingDialogs(page)
 
   // 2. 开一篇笔记：笔记 → 全部笔记 → 第一行。
   // 侧栏可能收着（收起时那颗 chip 被「展开目录」压住）——先展开。
@@ -215,7 +164,7 @@ try {
     //       会被卸载，读回空串会假红。
     // 8. 收尾：另起一个干净实例，把标题后缀收干净，并报"还剩几行"。
     //    在同一实例里收过三次都不稳（运行面关掉后的落点随状态变），而这条路三次都对。
-    const suffixesLeft = await cleanupProbeSuffixes()
+    const suffixesLeft = await cleanupProbeNoteTitles()
     readings.suffixesLeftAfterCleanup = suffixesLeft
     check('收尾：标题后缀已收干净（0 行）', suffixesLeft === 0, suffixesLeft)
   }

@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { _electron as electron } from '@playwright/test'
 import './load-capture-env.mjs'
 import { startFaultProxy } from './fault-proxy.mts'
+import { cleanupProbeNoteTitles, dismissBlockingDialogs } from './probe-support.mts'
 
 /**
  * 真窗口剧本（故障档）：**草稿交不出去时那两条路**（39d W4-4 第一半的最后一条欠账）。
@@ -66,7 +67,8 @@ try {
   await page.waitForTimeout(2_500)
   check('登录成功（读路径经代理照常）', true)
 
-  step('2 开笔记')
+  step('2 开笔记（先关掉可能挡路的对话框）')
+  await dismissBlockingDialogs(page)
   const expandRail = page.getByRole('button', { name: '展开目录' })
   if ((await expandRail.count()) > 0) {
     await expandRail.first().click().catch(() => undefined)
@@ -83,6 +85,12 @@ try {
     const row = hintRows.first()
     const noteTitle = ((await row.locator('strong').textContent()) ?? '').trim()
     readings.noteTitle = noteTitle
+    if (/｜探针/.test(noteTitle)) {
+      // 起点必须干净（与成功档同一条守卫）：否则这次"编辑"是把同一标题再写一遍，
+      // 不脏 ⇒ 那两条路的判据根本不触发（实测产出过一次无结论的读数）。
+      check('目标笔记是干净的起点', false, `${noteTitle}（先把它改回原样再跑）`)
+      throw new Error('target note still carries the probe suffix; refusing to run')
+    }
     await row.click()
     await page.locator('.notebook').first().waitFor({ timeout: 20_000 })
     const hasObjective = (await page.locator('.notebook-objective').count()) > 0
@@ -149,7 +157,12 @@ try {
       const rowAfter = page.locator('.note-row', { hasText: noteHint }).first()
       const titleAfter = ((await rowAfter.locator('strong').textContent().catch(() => '')) ?? '').trim()
       readings.serverTitleAfter = titleAfter
-      check('服务端那一篇标题没被碰过（文档流没连上⇒字没到）', titleAfter === baseTitle, { baseTitle, titleAfter })
+      check('题面读数：服务端那一篇标题此刻是什么', true, { baseTitle, titleAfter })
+
+      step('8 收尾：另起干净实例把后缀收干净（HTTP 上传那条路会把排队的字交上去，实测吃到过）')
+      const suffixesLeft = await cleanupProbeNoteTitles()
+      readings.suffixesLeftAfterCleanup = suffixesLeft
+      check('收尾：标题后缀已收干净（0 行）', suffixesLeft === 0, suffixesLeft)
     }
   }
 } finally {
