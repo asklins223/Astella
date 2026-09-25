@@ -601,6 +601,23 @@ jobs:
             src/integration-tests/learning-runs-postgres.integration.ts \
             2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/learning-runs.tap"
 
+      # 39d W4-5 第一刀（2026-09-26）：轮次实体那张表的约束**就是**它的产品语义
+      # （部分唯一索引 / 身份不可改写 / revision 单调 / 终态双向判据 / 不给 worker 开读）。
+      # 三条连接都要给：夹具走 MIGRATOR，断言走受限的 API 角色，最后一条专门钉
+      # "worker 读它是 permission denied 而不是 0 行"。缺任何一条这里会当场抛错，
+      # 不会静默 skip（这是有意为之：0 行与没跑过是两种读数）。
+      - name: Verify note learning round table constraints against postgres
+        working-directory: apps/api
+        env:
+          NODE_ENV: test
+          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
+          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
+          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
+        run: |
+          set -o pipefail
+          npm run test:learning-rounds:postgres \
+            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/note-learning-rounds.tap"
+
       # 39d W3-4（2026-09-25）：无卡目标的冻结链三分支（D1 §4.3）。夹具走 DATABASE_URL
       # （超级用户，只负责建数据），被测那一段 `withWorkspaceTransaction` 读
       # DATABASE_URL_API（受限角色，与生产同口径）——两个都要给，缺一个就是静默 skip。

@@ -131,6 +131,11 @@
       "import": "./src/db-schema/note.ts",
       "default": "./src/db-schema/note.ts"
     },
+    "./db-schema/note-learning-rounds": {
+      "types": "./src/db-schema/note-learning-rounds.ts",
+      "import": "./src/db-schema/note-learning-rounds.ts",
+      "default": "./src/db-schema/note-learning-rounds.ts"
+    },
     "./db-schema/search": {
       "types": "./src/db-schema/search.ts",
       "import": "./src/db-schema/search.ts",

@@ -55,6 +55,12 @@ export interface NotesOnlyWorkspaceFixture {
   workspaceId: string;
   userId: string;
   noteIds: string[];
+  /**
+   * 与 `noteIds` 同序的当前版本 id。以前只回笔记 id，要"某一版"的夹具只能自己再 INSERT
+   * 一份版本行——那种第二份写法正是"夹具与产品写路径各造各的"的起点
+   * （0282 的轮次表要 `note_version_id`，第一次撞上这件事）。
+   */
+  versionIds: string[];
   cleanup: () => Promise<void>;
 }
 
@@ -102,5 +108,5 @@ export async function seedNotesOnlyWorkspace(
       await tx`DELETE FROM users WHERE id = ${userId}`;
     });
   };
-  return { workspaceId, userId, noteIds, cleanup };
+  return { workspaceId, userId, noteIds, versionIds, cleanup };
 }
