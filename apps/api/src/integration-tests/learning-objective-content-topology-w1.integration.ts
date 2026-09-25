@@ -9,17 +9,22 @@
  *  5. 同一 objective revision + note version 重复绑定被唯一索引拒绝；
  *  6. 同一 objective revision + note version 重复绑定被唯一索引拒绝。
  *
- * 环境：DATABASE_URL_API_RLS（默认 ailearn_api，非 superuser——dev 的 ailearn 是
- * superuser，无条件绕过 RLS 即使 FORCE RLS 也不生效）。无 DB fail closed。
+ * 环境：`DATABASE_URL_API_RLS` **必填**——必须指向一个**非 superuser** 的角色
+ * （dev 的 ailearn 是 superuser：无条件绕过 RLS，即使 FORCE RLS 也不生效，于是隔离
+ * 断言全部假通过）。一次性库里那份 `DATABASE_URL_API`（ailearn_api）就是这种角色。
+ * 无 DB fail closed。
+ *
+ * 2026-09-25：以前这里缺变量会静默落到一个写死的开发库串（`ailearn_api@localhost`），
+ * 于是本机跑这套用例时其实是在**真实 dev 库**上验隔离——而那正是最不该被悄悄碰到的库。
+ * 现在缺变量当场喊（`testDatabaseUrl`）。
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const CONN =
-  process.env.DATABASE_URL_API_RLS ??
-  "postgres://ailearn_api:ailearn_dev@localhost:5432/ailearn";
+const CONN = testDatabaseUrl("DATABASE_URL_API_RLS");
 
 function mustConnect() {
   if (!CONN) {

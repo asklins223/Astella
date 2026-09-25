@@ -12,13 +12,12 @@ import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { learningObjectiveOriginsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { learningRuns } from "@ailearn/shared/db-schema/learning-runs";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
 const FIXTURE_WORKSPACE = "4f825f38-1a65-492a-8dec-c82868e6ea0f";
 const SYSTEM_USER = "00000000-0000-0000-0000-000000000000";
 
-if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
-}
+process.env.DATABASE_URL ??= testDatabaseUrl("DATABASE_URL");
 const [{ withWorkspaceTransaction }, { executeObjectiveOriginBackfill }, { reconcileObjectiveOrigins }] =
   await Promise.all([
     import("../db/client.ts"),

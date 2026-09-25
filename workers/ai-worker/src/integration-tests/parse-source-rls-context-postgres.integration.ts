@@ -26,10 +26,11 @@ import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import * as schema from "@ailearn/shared/db-schema";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
 const ADMIN_URL =
-  process.env.DATABASE_URL_MIGRATOR ?? "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
-process.env.DATABASE_URL_WORKER ??= "postgres://ailearn_worker:ailearn_dev@localhost:5432/ailearn";
+  testDatabaseUrl("DATABASE_URL_MIGRATOR");
+process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 process.env.DATABASE_URL_API ??= ADMIN_URL;
 
 const admin = postgres(ADMIN_URL, { max: 2 });

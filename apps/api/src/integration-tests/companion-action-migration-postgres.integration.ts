@@ -9,8 +9,9 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const CONN = process.env.DATABASE_URL_API ?? "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
+const CONN = testDatabaseUrl("DATABASE_URL_API");
 
 const sql = postgres(CONN, { max: 2 });
 

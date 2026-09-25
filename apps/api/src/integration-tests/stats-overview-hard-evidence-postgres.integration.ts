@@ -22,10 +22,9 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
-}
+process.env.DATABASE_URL ??= testDatabaseUrl("DATABASE_URL");
 
 // 造数走超级用户（`ailearn` 有 BYPASSRLS）；读数走产品入口 `getStatsOverview`
 // （内部 `withWorkspaceTransaction`）。注意后者**只 `set_config`、不 `SET LOCAL ROLE`**，

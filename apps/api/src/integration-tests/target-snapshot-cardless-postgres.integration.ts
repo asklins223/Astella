@@ -21,11 +21,12 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { seedV2Fixture, seedV2ObjectiveOnly, seedObjectiveNoteEvidence } from "./helpers/v2-card-fixture.ts";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const ADMIN_URL = process.env.DATABASE_URL ?? "postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn";
+const ADMIN_URL = testDatabaseUrl("DATABASE_URL");
 // 被测那一侧（`withWorkspaceTransaction`）读的是 API 角色：夹具写用 ADMIN，
 // 判据跑用受限角色——同一个池跑到底会让"绿"失去隔离意义（见项目记忆 dev RLS 眼罩）。
-process.env.DATABASE_URL_API ??= "postgres://ailearn_api:ailearn_dev@127.0.0.1:5432/ailearn";
+process.env.DATABASE_URL_API ??= testDatabaseUrl("DATABASE_URL_API");
 const admin = postgres(ADMIN_URL, { max: 2 });
 
 // 与 learning-runs-postgres 同口径：run 创建会写加密的私有解与 draft。

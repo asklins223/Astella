@@ -42,6 +42,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
 // ─── 环境准备（模块顶层，先于任何 handler/service 动态 import）─────────────
 
@@ -85,10 +86,9 @@ loadRepoEnv();
 process.env.CARD_GENERATION_V2_LLM = "true";
 process.env.AI_ENDPOINT_RESPONSE_TIMEOUT_MS ??= "600000";
 
-const ADMIN_URL = process.env.DATABASE_URL_MIGRATOR
-  ?? "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
+const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 // worker 侧以 ailearn_worker 角色消费 outbox（RLS NOBYPASSRLS 验证）。
-process.env.DATABASE_URL_WORKER ??= "postgres://ailearn_worker:ailearn_dev@localhost:5432/ailearn";
+process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 // api service 层（keep/activate/PREPARE）以 ailearn 角色执行。
 process.env.DATABASE_URL_API ??= ADMIN_URL;
 

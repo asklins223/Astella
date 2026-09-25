@@ -63,10 +63,10 @@ import {
   enumerateCandidateTargetUnits,
   summarizePracticeQuotaV2,
 } from "@ailearn/shared/card-generation-v2-pipeline";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const ADMIN_URL = process.env.DATABASE_URL_MIGRATOR
-  ?? "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
-process.env.DATABASE_URL_WORKER ??= "postgres://ailearn_worker:ailearn_dev@localhost:5432/ailearn";
+const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
+process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 process.env.DATABASE_URL_API ??= ADMIN_URL;
 // 零 AI 调用：`assertDeterministicProvidersAllowed` 要求 LLM 开关关着。
 delete process.env.CARD_GENERATION_V2_LLM;

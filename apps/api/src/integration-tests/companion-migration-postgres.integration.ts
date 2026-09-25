@@ -15,6 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Pool } from "pg";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
 const CONN = process.env.DATABASE_URL_API ?? process.env.DATABASE_URL;
 
@@ -117,7 +118,7 @@ test("0088：FORCE RLS 生效——ailearn_worker 无 session context 时查询�
   // ailearn_worker（非 superuser、非 BYPASSRLS，0088 已 grant SELECT）。
   const worker = new Pool({
     // 允许通过 DATABASE_URL_WORKER 覆盖（默认 dev 拓扑），避免硬编码连接串。
-    connectionString: process.env.DATABASE_URL_WORKER ?? "postgres://ailearn_worker:ailearn_dev@localhost:5432/ailearn",
+    connectionString: testDatabaseUrl("DATABASE_URL_WORKER"),
   });
   try {
     const { rows } = await worker.query(

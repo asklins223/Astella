@@ -14,10 +14,9 @@ import { eq } from "drizzle-orm";
 import { findPrivatePayloadLeaks, assertNoCardOrKeyPointNode } from "@ailearn/shared";
 import { learningObjectivesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { learningObjectiveOriginsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
-}
+process.env.DATABASE_URL ??= testDatabaseUrl("DATABASE_URL");
 // 自播种纯 V2 工作区（替代被 0176 清库抹掉的手工工作区 4f825f38-…）。
 const sql = (await import("postgres")).default(process.env.DATABASE_URL, { max: 1 });
 const { seedPureV2Workspace } = await import("./helpers/pure-v2-workspace-fixture.ts");

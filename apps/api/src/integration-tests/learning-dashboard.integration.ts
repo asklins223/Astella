@@ -10,10 +10,9 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { findPrivatePayloadLeaks } from "@ailearn/shared";
 import postgres from "postgres";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
-}
+process.env.DATABASE_URL ??= testDatabaseUrl("DATABASE_URL");
 const sql = postgres(process.env.DATABASE_URL, { max: 1 });
 const [{ withWorkspaceTransaction }, { buildLearningDashboardV2 }, { seedPureV2Workspace, seedNotesOnlyWorkspace }] =
   await Promise.all([

@@ -15,8 +15,9 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const CONN = process.env.DATABASE_URL_API ?? "postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn";
+const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL_API ??= CONN;
 // 跨 user 隔离断言必须用**不绕过 RLS** 的角色（超级用户会让隔离断言变成假通过），
 // 因此默认值保持受限的 ailearn_api，而不是回落到主连接。需要指向别的库时用
@@ -32,7 +33,12 @@ function deriveRestrictedApiUrl(main: string): string {
     url.password = process.env.API_PASSWORD ?? "ailearn_dev";
     return url.toString();
   } catch {
-    return "postgres://ailearn_api:ailearn_dev@127.0.0.1:5432/ailearn";
+    // 以前这里会静默回落一个写死的开发库串——那正是"夹具写进别人的 dev 库"的形状。
+    // 主连接串不可解析就没有正确的受限连接可派生，fail closed。
+    throw new Error(
+      "DATABASE_URL_API 不是可解析的连接串，派生不出受限（NOBYPASSRLS）连接；"
+        + "以前这里会静默用一个写死的开发库串。",
+    );
   }
 }
 const API_RLS_CONN = process.env.DATABASE_URL_API_RLS ?? deriveRestrictedApiUrl(CONN);

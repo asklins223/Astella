@@ -21,9 +21,9 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const ADMIN_URL = process.env.DATABASE_URL_MIGRATOR
-  ?? "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
+const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_API ??= ADMIN_URL;
 
 const admin = postgres(ADMIN_URL, { max: 2 });

@@ -32,9 +32,9 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { median, parseChatJsonCalls, percentile, type LlmCall } from "./v2-llm-bench-lib.ts";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const ADMIN_URL = process.env.DATABASE_URL_MIGRATOR
-  ?? "postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn";
+const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_API ??= ADMIN_URL;
 process.env.DATABASE_URL_WORKER ??= ADMIN_URL;
 

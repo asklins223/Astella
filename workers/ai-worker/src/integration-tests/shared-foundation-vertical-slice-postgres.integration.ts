@@ -33,9 +33,10 @@ import type {
   AiTaskDefinition,
   AiTaskReceipt,
 } from "@ailearn/shared/ai-task-kernel";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const ADMIN_CONN = process.env.DATABASE_URL ?? "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
-process.env.DATABASE_URL_WORKER ??= "postgres://ailearn_worker:ailearn_dev@127.0.0.1:5432/ailearn";
+const ADMIN_CONN = testDatabaseUrl("DATABASE_URL");
+process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 const admin = postgres(ADMIN_CONN, { max: 2 });
 
 const { runAiTask, classifyThrownAsStepFailure } = await import("@ailearn/shared/ai-task-kernel");

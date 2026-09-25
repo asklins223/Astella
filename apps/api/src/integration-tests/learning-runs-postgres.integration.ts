@@ -41,8 +41,9 @@ import {
 } from "@ailearn/shared";
 import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
 import { createLearningRunForTest, seedV2Fixture } from "./helpers/v2-card-fixture.ts";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const CONN = process.env.DATABASE_URL_API ?? "postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn";
+const CONN = testDatabaseUrl("DATABASE_URL_API");
 // db client 读取 DATABASE_URL_API；未设置时与 CONN 同源（本地 dev 默认）。
 process.env.DATABASE_URL_API ??= CONN;
 const sql = postgres(CONN, { max: 2 });

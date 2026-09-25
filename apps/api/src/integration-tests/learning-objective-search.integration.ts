@@ -12,20 +12,17 @@ import assert from "node:assert/strict";
 import { and, eq, sql } from "drizzle-orm";
 import { learningObjectivesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { searchDocuments } from "@ailearn/shared/db-schema/search";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const pgSql = (await import("postgres")).default(process.env.DATABASE_URL ?? "postgres://ailearn:ailearn_dev@localhost:5432/ailearn", { max: 1 });
+const pgSql = (await import("postgres")).default(testDatabaseUrl("DATABASE_URL"), { max: 1 });
 const { seedPureV2Workspace } = await import("./helpers/pure-v2-workspace-fixture.ts");
 // 自播种纯 V2 工作区（替代被 0176 清库抹掉的手工工作区 4f825f38-…）。
-if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
-}
+process.env.DATABASE_URL ??= testDatabaseUrl("DATABASE_URL");
 const pureV2 = await seedPureV2Workspace(pgSql, { objectiveCount: 3 });
 const FIXTURE_WORKSPACE = pureV2.workspaceId;
 const SYSTEM_USER = pureV2.userId;
 
-if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
-}
+process.env.DATABASE_URL ??= testDatabaseUrl("DATABASE_URL");
 const [{ withWorkspaceTransaction }, { reindexWorkspaceSearch, search }] =
   await Promise.all([
     import("../db/client.ts"),

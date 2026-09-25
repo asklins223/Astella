@@ -29,10 +29,9 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
-}
+process.env.DATABASE_URL ??= testDatabaseUrl("DATABASE_URL");
 
 // 造数走超级用户连接（`ailearn` 有 BYPASSRLS，且这三张表上没有触发器）；
 // 读取一律走产品代码 + `withWorkspaceTransaction`。

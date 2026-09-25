@@ -15,13 +15,13 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
 // 夹具（seed/清理/断言）走 migrator：它拥有这些表且 BYPASSRLS，而 ailearn_api 按
 // 最小权限并不具备 companion_agent_tool_calls 的 DELETE——不应为了测试放宽生产授权。
 // 被测函数则显式以 ailearn_worker 身份调用，那才是 worker tick 的真实身份。
-const CONN = process.env.DATABASE_URL_MIGRATOR ?? "postgres://ailearn_migrator:ailearn_dev@localhost:5432/ailearn";
-const WORKER_CONN = process.env.DATABASE_URL_WORKER
-  ?? "postgres://ailearn_worker:ailearn_dev@localhost:5432/ailearn";
+const CONN = testDatabaseUrl("DATABASE_URL_MIGRATOR");
+const WORKER_CONN = testDatabaseUrl("DATABASE_URL_WORKER");
 
 const sql = postgres(CONN, { max: 2 });
 const workerSql = postgres(WORKER_CONN, { max: 1 });

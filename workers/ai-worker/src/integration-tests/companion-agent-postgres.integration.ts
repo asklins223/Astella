@@ -19,8 +19,9 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const CONN = process.env.DATABASE_URL_API ?? "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
+const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL ??= CONN;
 // 强制 mock provider：验证 DB 编排与预算/fence，不产生外部模型调用或费用。
 delete process.env.TOKENRHYTHM_API_KEY;

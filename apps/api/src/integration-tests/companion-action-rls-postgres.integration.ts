@@ -9,12 +9,12 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const CONN = process.env.DATABASE_URL_API ?? "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
+const CONN = testDatabaseUrl("DATABASE_URL_API");
 // worker 连接必须与 API 连接指向同一个库：此前硬编码 dev 库，跑在专用测试库时
 // 会出现"数据写测试库、断言读 dev 库"的静默错配（本文件两处 worker 连接都受影响）。
-const WORKER_CONN = process.env.DATABASE_URL_WORKER
-  ?? "postgres://ailearn_worker:ailearn_dev@localhost:5432/ailearn";
+const WORKER_CONN = testDatabaseUrl("DATABASE_URL_WORKER");
 const sql = postgres(CONN, { max: 2 });
 
 after(() => sql.end({ timeout: 2 }));

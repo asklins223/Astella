@@ -14,8 +14,9 @@ import { sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import { canonicalJsonV1 } from "@ailearn/shared/content-hash";
 import { addV2ObjectiveToWorkspace, addV2ObjectiveWithoutCard, seedObjectiveNoteEvidence, cleanupWorkspaceTables } from "./helpers/v2-card-fixture.ts";
 import { withWorkspaceTransaction } from "../db/client.ts";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const CONN = process.env.DATABASE_URL_API ?? "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
+const CONN = testDatabaseUrl("DATABASE_URL_API");
 const sql = postgres(CONN, { max: 2 });
 
 // P5 §6.7 context-grant 签发依赖 AUTH_SURFACE_MANIFEST_SECRET（runbook P5 输入

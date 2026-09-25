@@ -17,13 +17,14 @@ import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { createLearningRunForTest, seedV2Fixture } from "./helpers/v2-card-fixture.ts";
 import { learningRunAssistanceConsequenceV1 } from "@ailearn/shared/learning-run-contracts";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
 // 测试专用 checkpoint 密钥（同 AUTH_SURFACE_MANIFEST_SECRET 模式；模块级
 // 读取发生在 import 时，必须在动态 import 前设置）。
 process.env.PROJECTION_CHECKPOINT_SECRET ??= "tool-gateway-integration-checkpoint-secret";
 process.env.AUTH_SURFACE_MANIFEST_SECRET ??= "tool-gateway-integration-test-secret";
 
-const CONN = process.env.DATABASE_URL_API ?? "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
+const CONN = testDatabaseUrl("DATABASE_URL_API");
 const sql = postgres(CONN, { max: 2 });
 
 after(async () => {

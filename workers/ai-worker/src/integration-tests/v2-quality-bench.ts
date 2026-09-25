@@ -44,9 +44,9 @@ import {
   type NormCandidateView,
   type ScoredPlanView,
 } from "../../../../packages/ai-quality/src/card-generation-v2/index.ts";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const ADMIN_URL = process.env.DATABASE_URL_MIGRATOR
-  ?? "postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn";
+const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_API ??= ADMIN_URL;
 process.env.DATABASE_URL_WORKER ??= ADMIN_URL;
 

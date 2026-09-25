@@ -18,9 +18,8 @@ import { eq, and } from "drizzle-orm";
 import { learningObjectivesV2, learningObjectiveOriginsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
 
 // db client 在 import 时读取 DATABASE_URL；必须先设置再动态 import。
-if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
-}
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+process.env.DATABASE_URL ??= testDatabaseUrl("DATABASE_URL");
 // 自播种纯 V2 工作区（替代被 0176 清库抹掉的手工工作区 4f825f38-…）。
 const pgSql = (await import("postgres")).default(process.env.DATABASE_URL, { max: 1 });
 const { seedPureV2Workspace } = await import("./helpers/pure-v2-workspace-fixture.ts");

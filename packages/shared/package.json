@@ -336,6 +336,11 @@
       "import": "./src/review-action-copy.ts",
       "default": "./src/review-action-copy.ts"
     },
+    "./integration-test-db-env": {
+      "types": "./src/integration-test-db-env.ts",
+      "import": "./src/integration-test-db-env.ts",
+      "default": "./src/integration-test-db-env.ts"
+    },
     "./note-visibility": {
       "types": "./src/note-visibility.ts",
       "import": "./src/note-visibility.ts",

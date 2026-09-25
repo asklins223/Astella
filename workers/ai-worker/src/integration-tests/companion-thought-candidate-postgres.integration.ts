@@ -24,10 +24,11 @@ import { sql as dsql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { companionLeakGateVersionV1 } from "@ailearn/shared/companion-leak-gates";
 import type { ThoughtMaterial } from "../handlers/companion-thought.ts";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const ADMIN_CONN = process.env.DATABASE_URL ?? "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
+const ADMIN_CONN = testDatabaseUrl("DATABASE_URL");
 // 必须在 import `../db.ts` **之前**设好：连接串在那个模块加载时求值。
-process.env.DATABASE_URL_WORKER ??= "postgres://ailearn_worker:ailearn_dev@127.0.0.1:5432/ailearn";
+process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 
 const admin = postgres(ADMIN_CONN, { max: 2 });
 const { buildDeterministicThoughts, insertThoughtCandidateV1 } = await import("../handlers/companion-thought.ts");

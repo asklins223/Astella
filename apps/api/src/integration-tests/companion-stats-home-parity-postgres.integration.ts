@@ -24,6 +24,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
 const CONN = process.env.DATABASE_URL;
 if (!CONN) {
@@ -83,8 +84,7 @@ function companionStats(workspaceId: string, userId: string): {
     encoding: "utf8",
     env: {
       ...process.env,
-      DATABASE_URL_WORKER: process.env.DATABASE_URL_WORKER
-        ?? "postgres://ailearn_worker:ailearn_dev@127.0.0.1:5432/ailearn",
+      DATABASE_URL_WORKER: testDatabaseUrl("DATABASE_URL_WORKER"),
     },
   });
   const parsed = JSON.parse(out) as { turns: { stats: { noteCount: number; activeCards: number; dueReviews: number } }[] };

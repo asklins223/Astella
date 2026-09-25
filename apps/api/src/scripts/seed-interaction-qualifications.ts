@@ -21,8 +21,9 @@
 
 import postgres from "postgres";
 import { createHash } from "node:crypto";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const CONN = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL_API ?? "postgres://ailearn:ailearn_dev@127.0.0.1:5432/ailearn";
+const CONN = process.env.DATABASE_URL_MIGRATOR ?? testDatabaseUrl("DATABASE_URL_API");
 const sql = postgres(CONN, { max: 2 });
 
 const DATASET_VERSION = "gold-structured-2026-08";

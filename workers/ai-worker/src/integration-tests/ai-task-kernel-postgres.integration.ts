@@ -25,9 +25,10 @@ import { sql as drizzleSql } from "drizzle-orm";
 // 值一律走下面的动态 import。（esbuild 不接受动态 import 的解构里带内联 `type`。）
 import type { AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
 import type { JobLeaseContext } from "../lib/job-lease.ts";
+import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const ADMIN_CONN = process.env.DATABASE_URL ?? "postgres://ailearn:ailearn_dev@localhost:5432/ailearn";
-process.env.DATABASE_URL_WORKER ??= "postgres://ailearn_worker:ailearn_dev@127.0.0.1:5432/ailearn";
+const ADMIN_CONN = testDatabaseUrl("DATABASE_URL");
+process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 
 const sql = postgres(ADMIN_CONN, { max: 2 });
 
