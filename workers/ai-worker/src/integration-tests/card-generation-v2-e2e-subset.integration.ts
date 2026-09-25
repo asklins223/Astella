@@ -1899,3 +1899,83 @@ test("长正文：源文本被截断时在 run 事件流里留痕（不是只在
   assert.equal(payload.usedLength, payload.limit, "用到的长度就是上限");
   assert.ok(payload.originalLength >= LONG.length, "原始长度不许被算小");
 });
+
+/**
+ * 39d W4-4 第二半：**重跑路径上的截断也要留痕**（四处进入点共用一份发射器）。
+ *
+ * 与上一条的区别是"谁来记"：主管线计划段自己会记（上一条用例钉的就是它），而
+ * regenerate／replan／recheck 走的是**共享只读加载器**——留痕由各自的写事务发射。
+ * 这一条真跑一遍"长正文 → 重生成"，断言事件数在重跑之后**恰好多一条**。
+ *
+ * 夹具要求两件事同时成立：①源文本超过 60000 字符（否则根本不截断）；②这一篇**能成卡**
+ * （重生成要先有一条 revision=1 的候选），所以第一段用的是既有用例里那份能成卡的定义，
+ * 其余是**各不相同**的长材料（若通篇重复同一句，planner 会按去重/可学性滤成 0 卡）。
+ */
+test("长正文 + 重生成：截断留痕在重跑路径上也会多记一条", async () => {
+  const TOPICS = ["缓存淘汰", "索引选择", "事务隔离", "锁粒度", "副本同步", "分片路由", "连接池", "查询重写"];
+  const LONG = [
+    "OSI 模型把网络通信分为七层：物理层负责比特流传输；数据链路层负责帧与纠错；"
+      + "网络层负责路由；传输层负责端到端传输；会话层负责会话管理；表示层负责数据格式转换；应用层提供应用接口。",
+    ...Array.from({ length: 760 }, (_, index) => (
+      `第 ${index + 1} 条：${TOPICS[index % TOPICS.length]} 的第 ${index + 1} 个观察点是——`
+      + `${TOPICS[(index + 3) % TOPICS.length]} 与 ${TOPICS[(index + 5) % TOPICS.length]} 在此处相互制约，`
+      + `判定要看 ${(index % 7) + 2} 个条件里先满足哪一个；` + "补充说明".repeat(14) + "。"
+    )),
+  ].join("\n");
+  assert.ok(LONG.length > 60_000, `夹具没撑过上限（只有 ${LONG.length} 字符）`);
+
+  const { versionId } = await seedNote("长正文重跑留痕", LONG);
+  const runId = (await createRun(versionId, `capregen-${randomUUID()}`, `capregen-key-${randomUUID()}`)).runId;
+  await runPipelineOnce();
+  await forceReviewReady(runId);
+  await forceCandidatesPassed(runId, "undecided");
+
+  const capEventCount = async (): Promise<number> => {
+    const rows = await admin`
+      SELECT count(*)::int AS n FROM card_generation_events_v2
+      WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}
+        AND event_type = 'card_generation.source_content_capped'`;
+    return rows[0].n as number;
+  };
+  const before = await capEventCount();
+  assert.ok(before >= 1, `计划段本该先留一条（拿到 ${before}）`);
+
+  const runRow = await admin`
+    SELECT review_draft_revision, card_content_epoch FROM card_generation_runs_v2 WHERE id = ${runId}`;
+  const planRows = await admin`
+    SELECT plan_revision_id, plan_version, plan_hash FROM card_generation_plans_v2
+    WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID} ORDER BY plan_version DESC LIMIT 1`;
+  const candRows = await admin`
+    SELECT candidate_id, candidate_revision_id, revision, candidate_revision_hash
+    FROM card_generation_candidates_v2
+    WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID} AND revision = 1`;
+  assert.ok(candRows.length >= 1, "长正文这一篇也要能成卡（否则重生成没对象）");
+  const old = candRows[0];
+
+  const { handleCandidateActionV2 } = await import(
+    "../../../../apps/api/src/modules/card-generation-v2/candidate-review-service.ts"
+  );
+  await handleCandidateActionV2(
+    { workspaceId: WORKSPACE_ID, userId: USER_ID },
+    {
+      version: 2,
+      runId,
+      expectedCardContentEpoch: Number(runRow[0].card_content_epoch),
+      expectedPlanVersion: Number(planRows[0].plan_version),
+      expectedPlanHash: planRows[0].plan_hash,
+      expectedReviewDraftRevision: Number(runRow[0].review_draft_revision),
+      action: {
+        type: "regenerate_candidate",
+        candidateId: old.candidate_id,
+        expectedRevision: old.revision,
+        expectedRevisionHash: old.candidate_revision_hash,
+        feedbackReasonCodes: ["surface_paraphrase"],
+      },
+    },
+    `capregen-action-${randomUUID()}`,
+  );
+  await runPipelineOnce();
+
+  const after = await capEventCount();
+  assert.equal(after, before + 1, `重跑路径必须再留一条（before=${before} after=${after}）`);
+});

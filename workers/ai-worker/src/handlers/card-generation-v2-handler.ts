@@ -1421,13 +1421,15 @@ async function runV2PlanPhase(
       evidenceCount: sealed.evidenceManifest.evidence.length,
       sourceTextLength: sourceContent.length,
     });
-    if (cappedSource.truncated) {
-      await insertEvent(tx, workspaceId, runId, "card_generation.source_content_capped", {
-        limit: V2_SOURCE_CONTENT_MAX_CHARS,
+    await emitSourceContentCapEvent(tx, {
+      workspaceId,
+      runId,
+      cap: {
+        truncated: cappedSource.truncated,
         originalLength: cappedSource.originalLength,
-        usedLength: sourceContent.length,
-      });
-    }
+        limit: V2_SOURCE_CONTENT_MAX_CHARS,
+      },
+    });
     await insertEvent(tx, workspaceId, runId, routeResult.route === "light"
       ? "pipeline.route.light"
       : "pipeline.route.standard", {
@@ -2849,10 +2851,11 @@ export async function loadV2RunInputs(tx: WorkerTransaction, workspaceId: string
     .map((b) => ({ blockId: b.id, type: b.type, content: b.content, ordinal: b.ordinal }));
   // 同 processCardGenerationPlan（M7）：源文本规模硬上限（超限截断 + 告警），
   // regenerate/replan/recheck 管道共用同一护栏，避免大笔记在重跑路径上再次膨胀。
-  const sourceContent = capSourceContentForPrompts(
+  const cappedSourceContent = capSourceContentForPrompts(
     scopedBlocks.map((b) => b.content).join("\n"),
     workspaceId,
-  ).content;
+  );
+  const sourceContent = cappedSourceContent.content;
 
   const existingObjRows = (await tx.execute(sql`
     SELECT lor.objective_id, lor.semantic_target_fingerprint,
@@ -2897,7 +2900,19 @@ export async function loadV2RunInputs(tx: WorkerTransaction, workspaceId: string
         planHash: planRows[0].plan_hash as string,
       };
 
-  return { run, inputSnapshot, semanticSpec, sealed, scopedBlocks, unsupportedSourceBlocks, sourceContent, existingObjectives, plan };
+  return {
+    run, inputSnapshot, semanticSpec, sealed, scopedBlocks, unsupportedSourceBlocks, sourceContent, existingObjectives, plan,
+    /**
+     * 这一次的 prompt 源文本有没有被规模上限截断（M7）。**调用方负责在自己的写事务里
+     * 把它变成事件**（`emitSourceContentCapEvent`）——这个加载器是只读的、且被
+     * regenerate／replan／recheck 三处共用，留痕不该由它自己写。
+     */
+    sourceContentCap: {
+      truncated: cappedSourceContent.truncated,
+      originalLength: cappedSourceContent.originalLength,
+      limit: V2_SOURCE_CONTENT_MAX_CHARS,
+    },
+  };
 }
 
 /**
@@ -3061,6 +3076,8 @@ async function processRegenerateCandidateJob(job: PendingOutboxJob, signal?: Abo
       signal,
       generationRequest: current.ctx.semanticSpec.semanticRequest,
     });
+    // 源文本被规模上限截断时留痕（四处进入点共用一份判据与载荷）。
+    await emitSourceContentCapEvent(tx, { workspaceId, runId, cap: current.ctx.sourceContentCap });
     await insertEvent(tx, workspaceId, runId, "card_candidate.regenerated", {
       candidateId: candidate.candidateId,
       previousRevisionId: candidate.candidateRevisionId,
@@ -3230,6 +3247,8 @@ async function processReplanSetJob(job: PendingOutboxJob, signal?: AbortSignal):
       signal,
       generationRequest: ctx.semanticSpec.semanticRequest,
     });
+    // 源文本被规模上限截断时留痕（四处进入点共用一份判据与载荷）。
+    await emitSourceContentCapEvent(tx, { workspaceId, runId, cap: ctx.sourceContentCap });
     await insertEvent(tx, workspaceId, runId, "card_generation.replan_completed", {
       planVersion: plan.planVersion,
       previousPlanRevisionId: prevPlanRevisionId,
@@ -3525,6 +3544,8 @@ async function processRecheckCandidateJob(job: PendingOutboxJob, signal?: AbortS
         reason: "all_candidates_failed_quality_gates",
       });
     }
+    // 源文本被规模上限截断时留痕（四处进入点共用一份判据与载荷）。
+    await emitSourceContentCapEvent(tx, { workspaceId, runId, cap: current.ctx.sourceContentCap });
     await insertEvent(tx, workspaceId, runId, "card_candidate.recheck_completed", {
       candidateId: candidate.candidateId,
       candidateRevisionId: candidate.candidateRevisionId,
@@ -3536,6 +3557,28 @@ async function processRecheckCandidateJob(job: PendingOutboxJob, signal?: AbortS
 }
 
 // ─── Bounded Repair（§12.5）──────────────────────────────────────────────
+
+/**
+ * 源文本被规模上限截断时的那一条留痕（39d W4-4：不许"静默截前半篇冒充整篇输入"）。
+ *
+ * 四处进入点共用这一份：主管线计划段、regenerate、replan、recheck。判据与载荷都只有
+ * 一处，免得"某一个进入点忘了记"。**只在真的截断时写**（没截断 = 没有这件事要记）。
+ */
+async function emitSourceContentCapEvent(
+  tx: WorkerTransaction,
+  input: {
+    workspaceId: string;
+    runId: string;
+    cap: { truncated: boolean; originalLength: number; limit: number };
+  },
+): Promise<void> {
+  if (!input.cap.truncated) return;
+  await insertEvent(tx, input.workspaceId, input.runId, "card_generation.source_content_capped", {
+    limit: input.cap.limit,
+    originalLength: input.cap.originalLength,
+    usedLength: input.cap.limit,
+  });
+}
 
 /**
  * 对失败候选做局部 repair 的**出网那一半**：调 author provider 重写 → 新 immutable
