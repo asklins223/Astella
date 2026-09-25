@@ -526,6 +526,26 @@ export function selectThoughtExpression(
   return null;
 }
 
+/**
+ * **候选原句自己也要过同一道闸**（39d W6-1 G10，2026-09-25）。
+ *
+ * 送达链上这一位原来写的是 `selectThoughtExpression([candidate.text], grounding) ?? candidate.text`：
+ * 兜底那一支把整道闸绕了过去——长度（气泡一句 80 字，而 `assistant_thoughts.text` 那一列的
+ * CHECK 允许 200）、内部 token／裸 uuid 回显、grounding 非空却一个实体都没命中，这三条在兜底
+ * 路上**一条都不成立**。送达前只另行补过"数字＋量词"那一条（下面那句 `readsOutStatistics`，
+ * 实机 2026-09-21 的"今晚这42分钟学得很扎实"就是从那道缝过去之后才拦下的），其余两条至今没人量。
+ *
+ * 返回 null 的意思不是"改写失败"，是**这一条此刻不能开口**：调用点把它压成 `suppressed`，
+ * 让改写去救、救不回来就不送。拿原句顶上等于宣称"闸拦不住产出侧"——重放台里 G10 那条判据
+ * 当时正是这么宣称的。
+ */
+export function finalizeThoughtExpression(
+  text: string,
+  grounding: readonly ThoughtGrounding[],
+): string | null {
+  return selectThoughtExpression([text], grounding);
+}
+
 /** 表达 prompt（切片③）：persona + 关系状态 + 当下事实 + 最近说过的话一起进。 */
 export function buildExpressionPrompt(args: {
   petName: string | null;
@@ -617,6 +637,19 @@ export async function insertThoughtCandidateV1(
     RETURNING id
   `);
   return (Array.isArray(rows) ? rows : [])[0]?.id ?? null;
+}
+
+/**
+ * 这一条念头压掉。四道判据（原句过不了同一道闸／洗掉占位符之后正文空了／统计读数／语义重复）
+ * 落的是同一个终态，同一段 UPDATE 抄到第四处正好是"三处各写一遍"长成的样子——收成一处。
+ */
+async function suppressThoughtCandidate(job: JobPayload, thoughtId: string): Promise<void> {
+  await withJobTransaction(job, async (tx) => {
+    await tx.execute(sql`
+      UPDATE assistant_thoughts SET status = 'suppressed', updated_at = now()
+      WHERE id = ${thoughtId}
+    `);
+  });
 }
 
 export async function runCompanionThought(job: JobPayload): Promise<void> {
@@ -956,7 +989,8 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
   for (const candidate of eligible.slice(0, 3)) {
     const thoughtId = candidateIds.get(candidate.dedupeKey);
     if (!thoughtId) continue;
-    let expression = selectThoughtExpression([candidate.text], candidate.grounding) ?? candidate.text;
+    // 候选原句先过同一道闸；过不了先记"此刻不能开口"，让下面那次改写去救。
+    let expression = finalizeThoughtExpression(candidate.text, candidate.grounding);
     try {
       const provider = await thoughtProvider();
       const raw = await runWithAbortBudget(
@@ -986,7 +1020,19 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
       const picked = selectThoughtExpression(variants, candidate.grounding, candidate.text);
       if (picked) expression = picked;
     } catch (err) {
-      logger.warn({ jobId: job.id, err: err instanceof Error ? err.message : String(err) }, "companion thought expression llm failed; template fallback");
+      logger.warn({ jobId: job.id, err: err instanceof Error ? err.message : String(err) }, "companion thought expression llm failed; keeping the validated base line");
+    }
+
+    // 原句过不了闸、改写也没救回来 ⇒ 这一条不送。过去这里没有这一道：兜底是
+    // `?? candidate.text`，等于把候选原句直接当定稿，长度／内部 token／grounding
+    // 落空三条判据在这条路上全部失效（判据与理由见 `finalizeThoughtExpression`）。
+    if (expression === null) {
+      logger.info(
+        { jobId: job.id, topic: candidate.topic },
+        "companion thought dropped: neither the candidate line nor a rewrite passed the expression guard",
+      );
+      await suppressThoughtCandidate(job, thoughtId);
+      continue;
     }
 
     // P2（39d W2-5）：气泡**没有读数目录**（她主动开口时没人在问），所以占位符一律
@@ -1000,12 +1046,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
     }
     expression = spanResolved.text;
     if (expression.trim().length === 0) {
-      await withJobTransaction(job, async (tx) => {
-        await tx.execute(sql`
-          UPDATE assistant_thoughts SET status = 'suppressed', updated_at = now()
-          WHERE id = ${thoughtId}
-        `);
-      });
+      await suppressThoughtCandidate(job, thoughtId);
       continue;
     }
 
@@ -1018,12 +1059,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
         { jobId: job.id, topic: candidate.topic },
         "companion thought dropped as statistics read-out",
       );
-      await withJobTransaction(job, async (tx) => {
-        await tx.execute(sql`
-          UPDATE assistant_thoughts SET status = 'suppressed', updated_at = now()
-          WHERE id = ${thoughtId}
-        `);
-      });
+      await suppressThoughtCandidate(job, thoughtId);
       continue;
     }
 
@@ -1045,12 +1081,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
       candidateEmbedding,
     })) {
       logger.info({ jobId: job.id, topic: candidate.topic }, "companion thought dropped as duplicate");
-      await withJobTransaction(job, async (tx) => {
-        await tx.execute(sql`
-          UPDATE assistant_thoughts SET status = 'suppressed', updated_at = now()
-          WHERE id = ${thoughtId}
-        `);
-      });
+      await suppressThoughtCandidate(job, thoughtId);
       continue;
     }
 

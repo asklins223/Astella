@@ -1,11 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { containsCompanionInternalToken } from "./companion-dialogue-content.ts";
 import {
   buildDeterministicThoughts,
   buildExpressionPrompt,
   cosineSimilarity,
   evaluateRoutineCueTiming,
+  finalizeThoughtExpression,
   isDuplicateThought,
   introducesUnverifiedNumbers,
   readsOutStatistics,
@@ -353,6 +355,41 @@ test("多候选挑一：第一个通过校验的胜出，全败返回 null", () 
   assert.equal(selectThoughtExpression(["跑题的", "聊聊「光的折射」。"], grounding), "聊聊「光的折射」。",
   );
   assert.equal(selectThoughtExpression(["跑题的", "也跑题"], grounding), null);
+});
+
+/**
+ * 39d W6-1 G10（2026-09-25）：候选**原句**自己也要过同一道闸。
+ * 送达链那一位过去写的是 `selectThoughtExpression([candidate.text], grounding) ?? candidate.text`，
+ * 兜底那一支让长度、内部 token、grounding 落空三条判据整条形同虚设——"这一句不能开口"
+ * 与"改写没成功"是两件事，前者必须一路压到不送。
+ * 四条各钉一个方向；正向对照那条证明判据真读到了句子（不是恒 null）。
+ */
+test("原句过不了闸就是 null：不许拿候选原句当兜底（39d W6-1 G10）", () => {
+  const grounding = [{ name: "光的折射", entityRef: "card:x" }];
+  // 正向对照：合规原句原样交回（顺带钉住 trim 这一步还在）。
+  assert.equal(finalizeThoughtExpression("聊聊「光的折射」。", grounding), "聊聊「光的折射」。");
+  assert.equal(finalizeThoughtExpression(" 聊聊「光的折射」。 ", grounding), "聊聊「光的折射」。");
+  // 超长：气泡一句 80 字，而 `assistant_thoughts.text` 那列的 CHECK 允许 200——
+  // 81～200 那一段正是过去能直接上屏的。
+  assert.equal(finalizeThoughtExpression("长".repeat(81), []), null);
+  // 裸 uuid（内部 token 泄露那一族）。
+  assert.equal(finalizeThoughtExpression("光的折射 423e4567-e89b-12d3-a456-426614174000", grounding), null);
+  // grounding 非空却一个实体都没命中。
+  assert.equal(finalizeThoughtExpression("随便聊聊天气吧。", grounding), null);
+});
+
+/**
+ * 同一处缝的静态闸：那条兜底写法不许回来。
+ * 判据匹配的是**调用形状**（`selectThoughtExpression([candidate.text]` 后面跟 `?? candidate.text`），
+ * 注释里提到这句也算——所以先把注释剥掉再数，否则这条闸会因为自己文件里的说明文字而红。
+ */
+test("送达链上没有『拿原句顶上』这条路（静态闸，39d W6-1 G10）", () => {
+  const source = readFileSync(new URL("./companion-thought.ts", import.meta.url), "utf8");
+  const code = source.split("\n").filter((line) => !line.trim().startsWith("*") && !line.trim().startsWith("//")).join("\n");
+  assert.match(code, /finalizeThoughtExpression\(candidate\.text, candidate\.grounding\)/,
+    "候选原句必须走 `finalizeThoughtExpression`——绕开它就是把整道表达闸关掉");
+  assert.doesNotMatch(code, /selectThoughtExpression\(\[candidate\.text\][^\n]*\?\?\s*candidate\.text/,
+    "「?? candidate.text」这一支会绕过长度／内部 token／grounding 落空三条判据");
 });
 
 test("表达 prompt：关系状态与最近说过的话都进 prompt", () => {
