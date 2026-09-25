@@ -4,8 +4,9 @@ import { noteDocResult, seedUpdate } from "../../test-support/note-doc-fixtures"
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { objectiveListItemV3Schema, type ObjectiveListItemV3 } from "@ailearn/shared/learning-objective-surface-contracts";
+import type { NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
 import { NotebookSurface } from "./notebook-surface";
-import { ROUND_COPY, ROUND_PRESETS_V1 } from "./notebook-surface";
+import { ROUND_COPY, ROUND_PRESETS_V1, STRUCTURE_QUESTION_LABEL_MAX_V1, STRUCTURE_QUESTION_LIMIT_V1, structureQuestionCandidatesV1 } from "./notebook-surface";
 import { useRoomStore } from "../../app/room-store";
 
 /**
@@ -109,7 +110,13 @@ function roundRow(overrides: Record<string, unknown> = {}) {
 
 function installApi(
   list: () => Promise<unknown>,
-  options: { syncController?: { fail: boolean }; manualSaveFails?: boolean; openRound?: Record<string, unknown> | null } = {},
+  options: {
+    syncController?: { fail: boolean };
+    manualSaveFails?: boolean;
+    openRound?: Record<string, unknown> | null;
+    /** 这一篇的正文块。默认只有一段（即"没有小节"那一档，见结构另选那组用例）。 */
+    blocks?: NoteBlockProjectionV1[];
+  } = {},
 ): Api {
   const syncController = options.syncController ?? { fail: false };
   const api: Api = {
@@ -161,7 +168,7 @@ function installApi(
             versionNo: 1,
             updatedAt: "2026-09-24T00:00:00.000Z",
             contentHash: "hash-abcdef12",
-            blocks: [{ ordinal: 1, type: "paragraph", content: "质量是惯性大小的唯一量度。" }],
+            blocks: options.blocks ?? [{ ordinal: 1, type: "paragraph", content: "质量是惯性大小的唯一量度。" }],
           },
         })),
         doc: {
@@ -204,6 +211,7 @@ async function show(
     manualSaveFails?: boolean;
     /** undefined = 这一篇没有未完成的那一轮；给了就是屏上该显示它。 */
     openRound?: Record<string, unknown> | null;
+    blocks?: NoteBlockProjectionV1[];
   } = {},
 ) {
   const syncController = options.syncController ?? { fail: false };
@@ -590,5 +598,79 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
     // 上面那条已经证明"没有轮次时表单在"；这一条要的是"读失败时表单也在、纸上还是笔记"。
     expect(roundBlock()).not.toBeNull();
     expect(container.querySelector(".reading-body")?.textContent).toContain("质量是惯性大小的唯一量度。");
+  });
+
+  /** §16.16 第二半的夹具：这一篇有哪几块正文。 */
+  const heading = (ordinal: number, content: string): NoteBlockProjectionV1 =>
+    ({ ordinal, type: "heading", content });
+  const paragraph = (ordinal: number, content: string): NoteBlockProjectionV1 =>
+    ({ ordinal, type: "paragraph", content });
+
+  it("判据：只认小节、取屏上那份字、复述题名与重复都不出、按块序取前三", () => {
+    const found = structureQuestionCandidatesV1([
+      paragraph(0, "开头一段没有小节的正文。"),
+      heading(1, "**质量与惯性**"),
+      heading(2, "两种理解"),
+      heading(3, "两种理解"),
+      heading(4, "物理笔记"),
+      heading(5, "物理笔记（用于验证定义类知识能否产出选择题）"),
+      heading(6, "第三个小节"),
+      heading(7, "第四个小节"),
+    ], "物理笔记");
+    // `**` 是 markdown 的标记、不是屏上的字：拿原文出题会把标记带进这一句（`conceptMark` 头上记过同形返工）。
+    expect(found.map((c) => c.label)).toEqual(["质量与惯性", "两种理解", "第三个小节"]);
+    expect(found.length).toBe(STRUCTURE_QUESTION_LIMIT_V1);
+    expect(found[0].question).toBe("先弄懂「质量与惯性」这一节在讲什么，以及它和整篇的关系");
+    // 没有小节 ⇒ 一颗都不出（不拿段落第一句冒充标题，那是排版猜测）
+    expect(structureQuestionCandidatesV1([paragraph(0, "只有一段。")], "物理笔记")).toEqual([]);
+    // 空题名（刚建出来还没起名的那一篇）也要能出题：那道"以题名开头"的排除对空串
+    // 会把**每一节**都判成复述题名，一颗都不剩。
+    expect(structureQuestionCandidatesV1([heading(0, "两种理解")], "").map((c) => c.label)).toEqual(["两种理解"]);
+  });
+
+  it("标签可以截断，放进问话的那一句必须用完整小节名（真窗口实测：带省略号的半截话读不通）", () => {
+    const long = "间隔重复与提取练习这两种做法在长期记忆上的差别到底在哪里";
+    const [only] = structureQuestionCandidatesV1([heading(0, long)], "物理笔记");
+    expect(only.label).toBe(`${long.slice(0, STRUCTURE_QUESTION_LABEL_MAX_V1)}…`);
+    expect(only.question).toBe(`先弄懂「${long}」这一节在讲什么，以及它和整篇的关系`);
+    expect(only.question).not.toContain("…");
+  });
+
+  it("有小节时那一组多摆几颗：点一颗放进来的就是带这节名字的问话，原样用记成 suggested", async () => {
+    const { api, roundBlock } = await show([], {
+      blocks: [paragraph(0, "开头一段。"), heading(1, "两种理解"), heading(2, "质量与惯性")],
+    });
+    expect(roundBlock()!.textContent).toContain(ROUND_COPY.fromStructure);
+    const firstChip = [...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === "两种理解");
+    expect(firstChip).toBeTruthy();
+    fireEvent.click(firstChip!);
+    const input = roundBlock()!.querySelector("input#notebook-round-question") as HTMLInputElement;
+    expect(input.value).toBe("先弄懂「两种理解」这一节在讲什么，以及它和整篇的关系");
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.start)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.noteLearningRound.create.mock.calls[0][0]).toMatchObject({
+      drivingQuestion: "先弄懂「两种理解」这一节在讲什么，以及它和整篇的关系",
+      drivingQuestionSource: "suggested",
+    });
+    // 在放进来的那句上改一个字 ⇒ 换档（"这句话是谁定的"跟着真实动作走，不是跟着入口走）
+    const again = await show([], {
+      blocks: [heading(1, "两种理解")],
+    });
+    // 两次 render 在同一份 document 里共存 ⇒ 第二次的点击要**限定在那一块里找**，
+    // 不能用 `screen.getByRole`（那会命中上一次渲染的同名那颗）。
+    const chip = [...again.roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === "两种理解");
+    expect(chip).toBeTruthy();
+    fireEvent.click(chip!);
+    const second = again.roundBlock()!.querySelector("input#notebook-round-question") as HTMLInputElement;
+    await act(async () => { fireEvent.change(second, { target: { value: `${second.value}，从哪一步开始` } }); });
+    fireEvent.click([...again.roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.start)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(again.api.noteLearningRound.create.mock.calls[0][0].drivingQuestionSource).toBe("user_rewritten");
+  });
+
+  it("没有小节的笔记不许多出那一行（结构是这篇的事实，不是界面的装饰）", async () => {
+    const { roundBlock } = await show([]);
+    // 对照在上一条：有小节时这一行一定出现，所以这里的"没有"测的是判据不是拼写。
+    expect(roundBlock()!.textContent).not.toContain(ROUND_COPY.fromStructure);
   });
 });

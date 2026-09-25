@@ -248,6 +248,7 @@ export const ROUND_COPY = {
   saving: "正在改写…",
   end: "先到这里",
   ending: "正在收尾…",
+  fromStructure: "或从这篇的小节里另选一句：",
   openLine: (question: string) => `这一轮：${question}`,
   revisedLine: (revision: number) => `这一句话已经改过 ${revision - 1} 次。`,
   hint: "改这句话不用重编笔记；这一轮先只对你自己可见。",
@@ -277,6 +278,61 @@ export const ROUND_PRESETS_V1: ReadonlyArray<{
   { key: "unfamiliar", label: "我完全不熟", starter: (title) => `先弄懂「${title}」在说什么，从头到尾有个站得住的解释` },
   { key: "try", label: "先让我试一下", starter: (title) => `先不看笔记，试试我能说出「${title}」里的哪几点` },
 ];
+
+/**
+ * 「从这篇的结构里另选一句」（§16.16 的第二半：用户否定推荐问题之后要有路可走）。
+ *
+ * 刻意**不调模型**：能出题的依据是这篇笔记里已经存在的小节标题，那是真实数据；
+ * 一次模型调用只是把同一件事变贵且不可复现。三件判据：
+ *  - 只认 `heading` 那一档——段落第一句当标题是**猜测**，这一页已经有过一次
+ *    "把排版猜测当依据"的返工（见 `conceptMark` 头上那段）；
+ *  - 字要取自**屏上显示的那一份**（`noteInlineDisplayText`），markdown 原文里的
+ *    `**`、`[]()` 会跟着进问题；
+ *  - 一节标题**复述整篇题名**（同名，或以题名开头再加一句限定）⇒ 不出：它没有把方向
+ *    收窄，选了它等于没选；
+ *  - 一颗上写的字要能放下，所以**标签**截断；但放进输入框的那句问话用**完整的小节名**
+ *    ——真窗口实测：把带省略号的小节名塞进「」里，出来的是一句读不通的话
+ *    （「学习科学术语定义集（用于验证定义类知识能否产出选…」）。
+ * 一篇没有小节的笔记就**一颗都不出**：没有结构就不发明结构。
+ */
+export const STRUCTURE_QUESTION_LIMIT_V1 = 3;
+
+/** 标签那一颗的宽度上限；超了就带省略号，只影响"看得见的字"，不影响放进问话的那一份。 */
+export const STRUCTURE_QUESTION_LABEL_MAX_V1 = 24;
+
+export type StructureQuestionCandidateV1 = {
+  readonly ordinal: number;
+  readonly label: string;
+  readonly question: string;
+};
+
+export function structureQuestionCandidatesV1(
+  blocks: readonly NoteBlockProjectionV1[],
+  noteTitle: string,
+): readonly StructureQuestionCandidateV1[] {
+  const title = noteTitle.trim();
+  const seen = new Set<string>();
+  const candidates: StructureQuestionCandidateV1[] = [];
+  for (const block of blocks) {
+    if (block.type !== "heading") continue;
+    const heading = noteInlineDisplayText(block.content).replace(/\s+/g, " ").trim();
+    if (heading.length === 0 || seen.has(heading)) continue;
+    // `startsWith` 已经含住"完全同名"那一档（变异验过：再写一条 `=== title` 是多余的，
+    // 摘掉它任何用例都不会红）。`title.length > 0` 那道挡不能省：空题名时
+    // `startsWith("")` 对每节都成立，会把一整组候选静默清空。
+    if (title.length > 0 && heading.startsWith(title)) continue;
+    seen.add(heading);
+    candidates.push({
+      ordinal: block.ordinal,
+      label: heading.length > STRUCTURE_QUESTION_LABEL_MAX_V1
+        ? `${heading.slice(0, STRUCTURE_QUESTION_LABEL_MAX_V1)}…`
+        : heading,
+      question: `先弄懂「${heading}」这一节在讲什么，以及它和整篇的关系`,
+    });
+    if (candidates.length >= STRUCTURE_QUESTION_LIMIT_V1) break;
+  }
+  return candidates;
+}
 
 /**
  * 那三个来源档不是三种表情，是"这句话是谁定的"这一件事实（§3.3）：
@@ -644,6 +700,12 @@ export function NotebookSurface() {
     [readSourceBlocks, objective],
   );
   const allBlocks = readSourceBlocks;
+  // §16.16 的第二半：这篇有小节时才多给几颗"从结构里另选"的起步句（用全部块，
+  // 不用阅读窗口那一段——结构是整篇的事实，不是当前滚到哪一屏）。
+  const structureQuestions = useMemo(
+    () => structureQuestionCandidatesV1(readSourceBlocks, docTitle),
+    [readSourceBlocks, docTitle],
+  );
   const readingBlocks = showAllBlocks || allBlocks.length <= READING_WINDOW
     ? allBlocks
     : allBlocks.slice(0, READING_WINDOW);
@@ -1734,6 +1796,26 @@ export function NotebookSurface() {
                   {roundSubmitLabelV1(roundBusy, openRound !== null)}
                 </button>
               </div>
+              {structureQuestions.length > 0 ? (
+                <div className="notebook-objective__choices">
+                  <p className="small notebook-note">{ROUND_COPY.fromStructure}</p>
+                  {structureQuestions.map((candidate) => (
+                    <button
+                      key={candidate.ordinal}
+                      type="button"
+                      className="button"
+                      disabled={roundBusy !== null}
+                      onClick={() => {
+                        setRoundStarter(candidate.question);
+                        setRoundDraft(candidate.question);
+                        if (roundFailure) setRoundFailure(null);
+                      }}
+                    >
+                      {candidate.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <p className="small notebook-note">{ROUND_COPY.hint}</p>
             </>
           )}

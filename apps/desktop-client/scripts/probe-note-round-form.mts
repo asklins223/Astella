@@ -120,10 +120,38 @@ try {
   check('句子为空时「开始这一轮」是禁用的', disabledWhenEmpty)
   await input.fill(starter)
 
+  // 1b) 「从这篇的结构里另选一句」（§16.16 第二半）：颗上的字必须真是纸上某一节的标题，
+  //     点它 = 把带这节名字的问话放进输入框。这一篇有 9 处小节（DB 里数过），所以这一组必须在。
+  const choicesGroups = roundBlock.locator('.notebook-objective__choices')
+  const structureGroup = choicesGroups.nth(1)
+  const chipCount = await structureGroup.locator('button').count()
+  readings.structureChipCount = chipCount
+  readings.structureLineShown = ((await roundBlock.locator('p.notebook-note').nth(1).textContent().catch(() => '')) ?? '').trim()
+  check('有小节的这篇摆出了"从小节里另选"那一组', chipCount > 0, chipCount)
+  const chipLabel = chipCount > 0 ? (((await structureGroup.locator('button').first().textContent()) ?? '').trim()) : ''
+  const paperHeadings = (await page.locator('.reading-body h3').allTextContents()).map((text) => text.replace(/\s+/g, ' ').trim())
+  // 那颗上写的必须是**纸上某一节显示出来的字**（超 24 字截断，与判据同一条规则）。
+  const shorten = (text: string): string => (text.length > 24 ? `${text.slice(0, 24)}…` : text)
+  check(
+    '那颗上写的字就是纸上某一节的标题（不是另拼的一份）',
+    paperHeadings.some((heading) => shorten(heading) === chipLabel),
+    { chipLabel, paperHeadings },
+  )
+  check('那颗上没有 markdown 标记', !/[*_[\]]/.test(chipLabel), chipLabel)
+
+  await structureGroup.locator('button').first().click({ timeout: 20_000 })
+  const questionSent = (await input.inputValue()).trim()
+  readings.questionSent = questionSent
+  check(
+    '点一颗放进来的就是"带这节名字"的那句问话',
+    questionSent.startsWith('先弄懂「') && questionSent.includes(chipLabel.replace(/…$/, '')),
+    questionSent,
+  )
+
   const noteVersionBefore = await readNoteVersionLabel(page)
   readings.noteVersionBefore = noteVersionBefore
 
-  // 3) 开一轮
+  // 2) 开一轮
   await startButton.click({ timeout: 20_000 })
   const started = await page
     .locator('.notebook-round', { hasText: '这一轮：' })
@@ -138,7 +166,7 @@ try {
   readings.linesAfterCreate = afterCreate
   check(
     '屏上那句就是送上去的那句（不是本机草稿的另一版）',
-    afterCreate.includes(`这一轮：${starter}`),
+    afterCreate.includes(`这一轮：${questionSent}`),
     afterCreate,
   )
   check('新开的一轮应当"没改过"', afterCreate.includes('这一句话已经改过 0 次。'), afterCreate)
@@ -149,7 +177,7 @@ try {
   await editInput.waitFor({ timeout: 20_000 })
   const prefilled = (await editInput.inputValue()).trim()
   readings.prefilledOnRevise = prefilled
-  check('进编辑态时输入框里是服务端那一条', prefilled === starter, prefilled)
+  check('进编辑态时输入框里是服务端那一条', prefilled === questionSent, prefilled)
 
   // 「空闲时那颗按钮写的是什么」——这一条测的是文案本身：正在进行中才许写"正在…"。
   const idleSubmitLabel = ((await page
@@ -159,7 +187,7 @@ try {
   readings.idleSubmitLabelWhileRevising = idleSubmitLabel
   check('空闲时那颗提交按钮不许写"正在…"', !idleSubmitLabel.startsWith('正在'), idleSubmitLabel)
 
-  const rewritten = `${starter.slice(0, 12)}，以及它为什么值得记`
+  const rewritten = `${questionSent.slice(0, 12)}，以及它为什么值得记`
   await editInput.fill(rewritten)
   await page.locator('.notebook-round button.primary').first().click({ timeout: 20_000 })
   const revisedShown = await page
