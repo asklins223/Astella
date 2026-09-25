@@ -777,6 +777,21 @@ jobs:
           node --import tsx --test src/integration-tests/ai-task-kernel-postgres.integration.ts \
             2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/ai-task-kernel.tap"
 
+      # 念头库那条 INSERT 的库级证据（39d #28）：走真角色、真 RLS、真 SQL——这张表
+      # 有过一次"语句写得对、角色没授权"的事故（缺 GRANT 时插入恒 0 行，念头库看着像
+      # "她从没想过任何事"），而写在大 handler 深处的那条 SQL 没有用例跑得动。
+      - name: Verify the thought-candidate insert against the real worker role
+        working-directory: workers/ai-worker
+        env:
+          NODE_ENV: test
+          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
+          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
+          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
+        run: |
+          set -o pipefail
+          node --import tsx --test src/integration-tests/companion-thought-candidate-postgres.integration.ts \
+            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/companion-thought-candidate.tap"
+
       - name: Verify every journal migration was applied
         working-directory: apps/api
         run: |
