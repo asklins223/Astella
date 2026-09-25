@@ -101,7 +101,11 @@ test("语义去重：单候选早退（不调用聚类）", () => {
 test("源文本上限：未超限原样返回；超限截断并标记", () => {
   const workspaceId = randomUUID();
   const small = "x".repeat(10);
-  assert.deepEqual(capSourceContentForPrompts(small, workspaceId), { content: small, truncated: false });
+  assert.deepEqual(capSourceContentForPrompts(small, workspaceId), {
+    content: small,
+    truncated: false,
+    originalLength: small.length,
+  });
 
   const huge = "y".repeat(V2_SOURCE_CONTENT_MAX_CHARS + 5_000);
   const capped = capSourceContentForPrompts(huge, workspaceId);

@@ -1089,9 +1089,9 @@ export const V2_SOURCE_CONTENT_MAX_CHARS = (() => {
 export function capSourceContentForPrompts(
   sourceContent: string,
   workspaceId: string,
-): { content: string; truncated: boolean } {
+): { content: string; truncated: boolean; originalLength: number } {
   if (sourceContent.length <= V2_SOURCE_CONTENT_MAX_CHARS) {
-    return { content: sourceContent, truncated: false };
+    return { content: sourceContent, truncated: false, originalLength: sourceContent.length };
   }
   logger.warn(
     {
@@ -1101,7 +1101,11 @@ export function capSourceContentForPrompts(
     },
     "V2 source content truncated for prompts (规模上限，防止 token/内存峰值)",
   );
-  return { content: sourceContent.slice(0, V2_SOURCE_CONTENT_MAX_CHARS), truncated: true };
+  return {
+    content: sourceContent.slice(0, V2_SOURCE_CONTENT_MAX_CHARS),
+    truncated: true,
+    originalLength: sourceContent.length,
+  };
 }
 
 /** 证据文本规模上限（M7）：逐条 + 合计双上限，超限时告警。 */
@@ -1395,10 +1399,16 @@ async function runV2PlanPhase(
     //    历史上大笔记可达数十万字符且无上限——现在经 capSourceContentForPrompts
     //    设硬上限（超限截断 + 告警），把单 job 内存峰值与 prompt token 规模钉住；
     //    sealed 证据的哈希/偏移闭包不受影响（证据文本另有逐条 + 合计双上限）。
-    const sourceContent = capSourceContentForPrompts(
+    /**
+     * M7 的规模上限是**截断**：这件事必须留痕（39d W4-4：不许"静默截前半篇冒充整篇输入"）。
+     * 只写日志的话，"这一轮其实只用了前 60000 字符"在 run 的事件流里**查不到**——
+     * 日志会滚走、也不按 run 归集。所以下面在同一写事务里记一条事件（与路由事件同处）。
+     */
+    const cappedSource = capSourceContentForPrompts(
       scopedBlocks.map((b) => b.content).join("\n"),
       workspaceId,
-    ).content;
+    );
+    const sourceContent = cappedSource.content;
 
     // 4a. R35/§10.2：显式管线路由（light/standard）——判定 + 事件 + 观测。
     //     路由不改变质量要求（Grounding/Pedagogy 仍独立成立），只决定编排标记。
@@ -1411,6 +1421,13 @@ async function runV2PlanPhase(
       evidenceCount: sealed.evidenceManifest.evidence.length,
       sourceTextLength: sourceContent.length,
     });
+    if (cappedSource.truncated) {
+      await insertEvent(tx, workspaceId, runId, "card_generation.source_content_capped", {
+        limit: V2_SOURCE_CONTENT_MAX_CHARS,
+        originalLength: cappedSource.originalLength,
+        usedLength: sourceContent.length,
+      });
+    }
     await insertEvent(tx, workspaceId, runId, routeResult.route === "light"
       ? "pipeline.route.light"
       : "pipeline.route.standard", {

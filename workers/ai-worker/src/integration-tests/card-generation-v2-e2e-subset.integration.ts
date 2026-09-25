@@ -1866,3 +1866,36 @@ test(
     `C16 run must end review_ready or needs_attention (got ${runState[0]?.status})`,
   );
 });
+
+/**
+ * 39d W4-4（第二半的第一件）：**prompt 源文本被截断时必须留痕**。
+ *
+ * M7 的规模上限就是"截断"：超限的源文本只把前 `V2_SOURCE_CONTENT_MAX_CHARS` 个字符交给
+ * 四阶段提示词。此前这件事只写一行日志——日志会滚走、也不按 run 归集，于是"这一轮其实
+ * 只用到前 60000 字符"在 run 的事件流里**查不到**，而 PRD §3.4 禁的正是"静默截取前半篇
+ * 却称为整篇输入"。现在它与路由事件同处（同一个写事务）留一条
+ * `card_generation.source_content_capped`。
+ *
+ * 不依赖真实模型：确定性管道照样先过计划段，而截断发生在计划段之前。
+ */
+test("长正文：源文本被截断时在 run 事件流里留痕（不是只在日志里）", async () => {
+  const LONG = Array.from({ length: 900 }, (_, index) => (
+    `第 ${index + 1} 段：这一段用来把源文本撑过规模上限，其中有一个可成卡的判断——`
+    + "冗长材料".repeat(40) + "。"
+  )).join("\n");
+  assert.ok(LONG.length > 60_000, `夹具没撑过上限（只有 ${LONG.length} 字符）`);
+
+  const { versionId } = await seedNote("长正文留痕", LONG);
+  const runId = (await createRun(versionId, `cap-${randomUUID()}`, `cap-key-${randomUUID()}`)).runId;
+  await runPipelineOnce();
+
+  const events = await admin`
+    SELECT payload FROM card_generation_events_v2
+    WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}
+      AND event_type = 'card_generation.source_content_capped'`;
+  assert.equal(events.length, 1, `必须恰好一条留痕（拿到 ${events.length} 条）`);
+  const payload = events[0].payload as { limit: number; originalLength: number; usedLength: number };
+  assert.ok(payload.originalLength > payload.limit, "原始长度必须大于上限");
+  assert.equal(payload.usedLength, payload.limit, "用到的长度就是上限");
+  assert.ok(payload.originalLength >= LONG.length, "原始长度不许被算小");
+});
