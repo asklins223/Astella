@@ -242,6 +242,7 @@ const ACTIVE_GENERATION_SUMMARIES = cardGenerationActiveSummaryListV1Schema.pars
     reviewDraftRevision: 1,
     updatedAt: "2026-08-23T00:00:01.000Z",
     recovery: null,
+      sourceCapped: null,
     route: { kind: "note.cardGeneration", cardGenerationRunId: "00000000-0000-4000-8000-000000000020" },
   }],
 });

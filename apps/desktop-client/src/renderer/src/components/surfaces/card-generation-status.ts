@@ -250,3 +250,15 @@ export function isLiveGenerationForNote(
 ): generation is CardGenerationActiveSummaryV1 {
   return Boolean(generation && generation.noteId === noteId && isNoteGenerationLive(generation.status));
 }
+
+/**
+ * 39d W4-4：生成被规模上限**截断**过时，如实说一句（PRD §3.4：不许"静默截取前半篇
+ * 却称为整篇输入"）。
+ *
+ * 读数来自服务端那一格 `sourceCapped`（它由 worker 的
+ * `card_generation.source_content_capped` 事件投影而来）——**界面不自己算**，
+ * 也不把"没截断"读成"整篇都读过了"：没截断时这一句根本不画。
+ */
+export function sourceCappedNotice(capped: { limit: number; originalLength: number }): string {
+  return `这一篇较长：本次只把前 ${capped.limit} 字（全文 ${capped.originalLength} 字）交给模型，其余部分这次没有参与生成。`;
+}

@@ -45,6 +45,7 @@ test("main-only run view projects without hashes", () => {
     currentPlanVersion: 0,
     reviewDraftRevision: 1,
     sourceOutdated: false,
+    sourceCapped: null,
     progress: { plannedCards: 0, authored: 0, gatePassed: 0, gateFailed: 0 },
     recovery: null,
     error: null,
@@ -87,6 +88,7 @@ test("Owner recovery summary is strict and carries only a safe navigation target
       reviewDraftRevision: 2,
       updatedAt: "2026-08-23T00:00:01.000Z",
       recovery: null,
+      sourceCapped: null,
       route: { kind: "note.cardGeneration", cardGenerationRunId: RUN_ID },
     }],
   });

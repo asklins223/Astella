@@ -122,6 +122,7 @@ export function projectCardGenerationActiveSummaryListV1(value: unknown) {
       reviewDraftRevision: run.reviewDraftRevision,
       updatedAt: run.updatedAt,
       recovery: run.recovery,
+      sourceCapped: run.sourceCapped,
       route: { kind: "note.cardGeneration", cardGenerationRunId: run.runId },
     })),
   });

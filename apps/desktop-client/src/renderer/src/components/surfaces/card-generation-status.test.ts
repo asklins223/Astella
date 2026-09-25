@@ -22,6 +22,7 @@ const summary = (overrides: Partial<CardGenerationActiveSummaryV1>): CardGenerat
   noteId: "bbbbbbb1-1111-4111-8111-111111111111",
   noteVersionId: "ccccccc1-1111-4111-8111-111111111111",
   status: "checking",
+  sourceCapped: null,
   currentPlanVersion: 1,
   reviewDraftRevision: 1,
   updatedAt: "2026-09-17T00:00:00.000Z",
@@ -207,4 +208,16 @@ describe("card-generation-status", () => {
     expect(done?.inFlight).toBe(false);
     expect(done?.eyebrow).toContain("共 4 步");
   });
+});
+
+/**
+ * 39d W4-4：截断说明的那一句话只有这一份（界面别处不再写第二句）。
+ * 判据是"它说的是服务端给的数"，不是"它长得像一句话"。
+ */
+it("截断说明用的是服务端那两个数，且不是笼统的'有点长'", async () => {
+  const { sourceCappedNotice } = await import("./card-generation-status");
+  const notice = sourceCappedNotice({ limit: 60_000, originalLength: 123_456 });
+  expect(notice).toContain("60000");
+  expect(notice).toContain("123456");
+  expect(notice).toContain("其余部分这次没有参与生成");
 });

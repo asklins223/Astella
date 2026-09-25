@@ -43,6 +43,7 @@ import {
 import {
   cardGenerationEntryLabel,
   cardGenerationStatusLabel,
+  sourceCappedNotice,
   isCardGenerationInFlight,
   isLiveGenerationForNote,
 } from "./card-generation-status";
@@ -1182,9 +1183,18 @@ export function NotebookSurface() {
   );
 
   const generationLiveNote = noteGeneration ? (
-    <p className="small notebook-note notebook-generation-live" role="status">
-      学习卡{cardGenerationStatusLabel(noteGeneration.status)} · 后台进行中，可随时回到本页，进度不会丢失。
-    </p>
+    <>
+      <p className="small notebook-note notebook-generation-live" role="status">
+        学习卡{cardGenerationStatusLabel(noteGeneration.status)} · 后台进行中，可随时回到本页，进度不会丢失。
+      </p>
+      {/* 39d W4-4：这次生成若被规模上限截断过，就在这儿说明白——"这一批只读到前半篇"
+          不能让用户以为整篇都被读过（读数来自服务端投影，不是这一页算的）。 */}
+      {noteGeneration.sourceCapped ? (
+        <p className="small notebook-note notebook-generation-capped" role="status">
+          {sourceCappedNotice(noteGeneration.sourceCapped)}
+        </p>
+      ) : null}
+    </>
   ) : null;
 
   /**

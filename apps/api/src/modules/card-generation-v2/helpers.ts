@@ -294,6 +294,33 @@ export async function computeSourceOutdatedForRunsV2(
   return outdatedByRunId;
 }
 
+/**
+ * 39d W4-4：这一批 run 里，哪些的 prompt 源文本被规模上限截断过（worker 的
+ * `card_generation.source_content_capped` 事件）。批量版：列表端点一次查完，
+ * 免得每行一次往返（与 `computeSourceOutdatedForRunsV2` 同一个理由）。
+ */
+export async function computeSourceCappedForRunsV2(
+  tx: ApiTransaction,
+  rows: Array<{ id: string }>,
+): Promise<Map<string, { limit: number; originalLength: number }>> {
+  const capped = new Map<string, { limit: number; originalLength: number }>();
+  if (rows.length === 0) return capped;
+  const ids = rows.map((row) => row.id);
+  const events = (await tx.execute(sql`
+    SELECT run_id, payload FROM public.card_generation_events_v2
+    WHERE run_id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})
+      AND event_type = 'card_generation.source_content_capped'
+  `)) as unknown as Array<{ run_id: string; payload: { limit?: unknown; originalLength?: unknown } | null }>;
+  for (const event of events) {
+    const limit = Number(event.payload?.limit ?? 0);
+    const originalLength = Number(event.payload?.originalLength ?? 0);
+    // 载荷读不出来就不装作"截断过"（宁可少说一句，也不编一个数上屏）。
+    if (!Number.isInteger(limit) || limit <= 0 || !Number.isInteger(originalLength) || originalLength <= 0) continue;
+    capped.set(String(event.run_id), { limit, originalLength });
+  }
+  return capped;
+}
+
 export async function serializeRunPublic(
   row: typeof cardGenerationRunsV2.$inferSelect,
   tx?: ApiTransaction,
@@ -301,6 +328,8 @@ export async function serializeRunPublic(
   // 批量算好的判据（见 `computeSourceOutdatedForRunsV2`）。给了就不再逐行查——列表端点
   // 靠它把 2N 次往返收成 2 次；不传时行为与逐行版完全一致。
   sourceOutdatedOverride?: boolean,
+  /** 同上（见 `computeSourceCappedForRunsV2`）；不传且给了 tx 时逐行查那一条 run。 */
+  sourceCappedOverride?: { limit: number; originalLength: number } | null,
 ) {
   let sourceOutdated = false;
   if (sourceOutdatedOverride !== undefined) {
@@ -313,6 +342,16 @@ export async function serializeRunPublic(
     } catch {
       // 如果查询失败（如 mock tx 不支持某些方法），保守返回 false
       sourceOutdated = false;
+    }
+  }
+  let sourceCapped: { limit: number; originalLength: number } | null = sourceCappedOverride ?? null;
+  if (sourceCappedOverride === undefined && tx) {
+    try {
+      const perRow = await computeSourceCappedForRunsV2(tx, [{ id: row.id }]);
+      sourceCapped = perRow.get(row.id) ?? null;
+    } catch {
+      // 读不出来就不说（与上面 sourceOutdated 同一条纪律：宁可少一句，不编一句）。
+      sourceCapped = null;
     }
   }
   return {
@@ -330,6 +369,7 @@ export async function serializeRunPublic(
     currentPlanVersion: row.currentPlanVersion,
     reviewDraftRevision: row.reviewDraftRevision,
     sourceOutdated,
+    sourceCapped,
     progress,
     recovery: projectCardGenerationRecoveryV1({
       runId: row.id,

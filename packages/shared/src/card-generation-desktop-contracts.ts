@@ -251,6 +251,15 @@ export const cardGenerationRunServerViewV2Schema = z.strictObject({
   currentPlanVersion: nonNegativeIntSchema,
   reviewDraftRevision: positiveIntSchema,
   sourceOutdated: z.boolean(),
+  /**
+   * 39d W4-4：本次生成被规模上限**截断**过（prompt 源文本只用了前 `limit` 个字符）。
+   * null = 没截断（这份正文完整参与了）。界面据此如实说明"这一批只依据前半篇"，
+   * 而不是让用户以为整篇都被读过（PRD §3.4 禁"静默截取前半篇并称为整篇输入"）。
+   */
+  sourceCapped: z.strictObject({
+    limit: positiveIntSchema,
+    originalLength: positiveIntSchema,
+  }).nullable(),
   /** 列表类读取不聚合进度，此时为 null（详情页才有值）。 */
   progress: cardGenerationProgressV1Schema.nullable(),
   recovery: cardGenerationRecoveryProjectionV1Schema.nullable(),
@@ -296,6 +305,11 @@ export const cardGenerationActiveSummaryV1Schema = z.strictObject({
   reviewDraftRevision: positiveIntSchema,
   updatedAt: isoTimestampSchema,
   recovery: cardGenerationRecoveryProjectionV1Schema.nullable(),
+  /** 同 `cardGenerationRunServerViewV2Schema.sourceCapped`：截断过就如实带着这一格。 */
+  sourceCapped: z.strictObject({
+    limit: positiveIntSchema,
+    originalLength: positiveIntSchema,
+  }).nullable(),
   route: z.strictObject({
     kind: z.literal("note.cardGeneration"),
     cardGenerationRunId: uuidSchema,
