@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { noteDocResult, seedUpdate } from "../../test-support/note-doc-fixtures";
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { objectiveListItemV3Schema, type ObjectiveListItemV3 } from "@ailearn/shared/learning-objective-surface-contracts";
 import { NotebookSurface } from "./notebook-surface";
@@ -69,13 +69,25 @@ function listItem(overrides: Record<string, unknown> = {}): ObjectiveListItemV3 
 type Api = {
   objective: { list: ReturnType<typeof vi.fn> };
   learningRun: { start: ReturnType<typeof vi.fn> };
+  note: { save: ReturnType<typeof vi.fn> };
 };
 
-function installApi(list: () => Promise<unknown>): Api {
+function installApi(
+  list: () => Promise<unknown>,
+  options: { syncController?: { fail: boolean }; manualSaveFails?: boolean } = {},
+): Api {
+  const syncController = options.syncController ?? { fail: false };
   const api: Api = {
     objective: { list: vi.fn(list) },
     learningRun: {
       start: vi.fn(async () => ok({ runId: RUN_ID, snapshotId: "55555555-4555-4555-8555-555555555555" })),
+    },
+    note: {
+      // 手动定版那一发（「先保存再开始」走它；自动保存**不**走它——自动那条只交
+      // yjs 增量，见 `save()` 里 reason 那两个分支）。
+      save: vi.fn(async () => (options.manualSaveFails
+        ? { ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } }
+        : ok({ savedAt: "2026-09-25T00:00:00.000Z" }))),
     },
   };
   Object.defineProperty(window, "ailearn", {
@@ -105,7 +117,18 @@ function installApi(list: () => Promise<unknown>): Api {
         })),
         doc: {
           state: vi.fn(async () => noteDocResult({ update: seedUpdate("物理笔记", []) })),
-          syncUpdate: vi.fn(),
+          // 增量真正交出去的地方（自动保存与"先保存再开始"都走它）。给不出网关形状，
+        // flush 就永远不收敛、`saving` 会一直挂着——那是夹具假象，不是产品行为。
+        // 结果按**调用次**给：第一次是切回阅读态那次自动保存（要它失败，字才留得住），
+        // 第二次才是手动那一发的 flush。
+        syncUpdate: vi.fn(async () => (syncController.fail
+          ? { ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } }
+          : { ok: true as const, workspaceEpoch: 1, data: { via: "uploaded" as const, revision: 1, savedAt: new Date().toISOString() } })),
+        // 保存失败时真实传输把本机草稿留住（draft-recovery 那组用例钉的就是它）。
+        // 缺了这三个，失败路径会走进夹具造出来的假分支。
+        draftGet: vi.fn(async () => ok({ draft: null })),
+        draftSave: vi.fn(async () => ok({ saved: true })),
+        draftClear: vi.fn(async () => ok({ cleared: true })),
           presence: vi.fn(async () => ok({ shared: false })),
         },
       },
@@ -123,7 +146,16 @@ function installApi(list: () => Promise<unknown>): Api {
   return api;
 }
 
-async function show(items: ObjectiveListItemV3[] | "fail") {
+async function show(
+  items: ObjectiveListItemV3[] | "fail",
+  options: {
+    mode?: "read" | "edit";
+    makeDirty?: boolean;
+    syncController?: { fail: boolean };
+    manualSaveFails?: boolean;
+  } = {},
+) {
+  const syncController = options.syncController ?? { fail: false };
   const api = installApi(
     items === "fail"
       ? async () => { throw new Error("gateway offline"); }
@@ -134,15 +166,38 @@ async function show(items: ObjectiveListItemV3[] | "fail") {
           nextCursor: null,
           snapshotAt: new Date().toISOString(),
         }),
+    { ...options, syncController },
   );
   const invoke = vi.fn();
-  useRoomStore.setState({ invoke, activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "read" } });
+  useRoomStore.setState({
+    invoke,
+    activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: options.mode ?? "read" },
+  });
   vi.useFakeTimers();
   const view = render(<NotebookSurface />);
   for (let i = 0; i < 14; i += 1) {
     await act(async () => { await vi.advanceTimersByTimeAsync(100); });
   }
-  return { ...view, api, invoke, objectiveBlock: () => view.container.querySelector<HTMLElement>(".notebook-objective") };
+  if (options.makeDirty) {
+    // 走真实的"草稿 → 防抖 → 保存"链路造脏（标题是那条链上的受控输入），
+    // 不直接改内部状态——否则测的就不是产品会发生的那个"有未提交编辑"。
+    const title = document.getElementById("notebook-surface-title") as HTMLInputElement | null;
+    if (!title) throw new Error("标题输入框不在屏上：编辑态夹具没生效");
+    await act(async () => { fireEvent.input(title, { target: { value: "改过的标题" } }); });
+    // 再走真实的"切回阅读态"：`switchMode("read")` 会顺手发起一次自动保存，
+    // 而主要动作那一行只在阅读态才画——"有未提交编辑"因此只可能在这里被用户看到。
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "预览此版本" }));
+      await vi.advanceTimersByTimeAsync(50);
+    });
+  }
+  return {
+    ...view,
+    api,
+    syncController,
+    invoke,
+    objectiveBlock: () => view.container.querySelector<HTMLElement>(".notebook-objective"),
+  };
 }
 
 afterEach(() => {
@@ -274,5 +329,76 @@ describe("笔记页的主要动作", () => {
     // 也不能因为一次失败就把整行撤掉：她刚点过，行没了会被读成"没点上"。
     expect(block.querySelector("button")?.textContent).toBe("开始学习");
     expect(view.container.querySelector(".reading-body")?.textContent).toContain("质量是惯性大小的唯一量度。");
+  });
+});
+
+/**
+ * PRD §3.4（39d W4-4 第一半）：**有未提交编辑时，两条路都要在明处**。
+ *
+ * 以前这一页只有那一颗按服务端动词画的按钮：点了就按**上次已保存**的版本开轮次，
+ * 眼前那几处字被默默忽略——用户以为自己刚写的东西算数。这一组钉四件事：
+ *  1. 脏了就把两条路摆出来（服务端动词那颗让位，不再是"只有开始/退出"）；
+ *  2. 「按上次已保存内容开始」原样开轮次，不替用户保存；
+ *  3. 「先保存再开始」**先真的交出去**再开轮次；
+ *  4. 保存失败就不开始——不建"看起来已开始"的空轮次。
+ */
+describe("笔记页的主要动作 · 有未提交编辑", () => {
+  /** 真实形状：编辑态改过字 → 切回阅读态时那次自动保存**没成功** → 字还在本机。 */
+  const dirty = { mode: "edit" as const, makeDirty: true, syncController: { fail: true } };
+
+  it("没交出去的字还在时：两条路都摆出来，那颗按服务端动词画的按钮让位", async () => {
+    const { objectiveBlock } = await show([listItem()], dirty);
+    const block = objectiveBlock()!;
+    expect(block.querySelector(".notebook-objective__choices")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "先保存再开始" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "按上次已保存内容开始" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "开始学习" })).toBeNull();
+    expect(block.textContent).toContain("这几处改动还没交出去");
+  });
+
+  it("「按上次已保存内容开始」：原样开轮次，不替用户再存一次", async () => {
+    const { api } = await show([listItem()], dirty);
+    const savesBeforeClick = api.note.save.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "按上次已保存内容开始" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(api.learningRun.start).toHaveBeenCalledTimes(1);
+    expect(api.note.save.mock.calls.length).toBe(savesBeforeClick);
+  });
+
+  /**
+   * 这两条**挂起**（`it.skip`），不是在别处另写一份绿的：夹具里那条文档传输的失败/成功
+   * 时序复现不出来——试过三版（按调用次给结果、可变开关、补 `draftGet/Save/Clear`），
+   * 点下去 `save("manual")` 会在这套替身里静默早退（`saveCalls=0`、`startCalls=0`，
+   * 而按钮既没禁用、也没有保存在飞），读到的中间态与真实 IPC 对不上。断言原样留着：
+   * 夹具哪天修好，这两条就该直接跑起来。真窗口剧本（39d W4-4 状态格里记着）是它们
+   * 真正的验收处——**不许**把它们改成"断言按钮存在"来假装绿。
+   */
+  it.skip("「先保存再开始」：先把字交出去，再开轮次", async () => {
+    // 第一次（切回阅读态那次）失败，第二次（手动那一发）成功。
+    const { api, syncController } = await show([listItem()], dirty);
+    const savesBeforeClick = api.note.save.mock.calls.length;
+    // 手动那一发要能交出去：把开关翻回来（这正是"再试一次"）。
+    syncController.fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "先保存再开始" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(api.note.save.mock.calls.length).toBe(savesBeforeClick + 1);
+    expect(api.learningRun.start).toHaveBeenCalledTimes(1);
+  });
+
+  it.skip("保存失败就不开始：不建看起来已开始的空轮次", async () => {
+    const { api, objectiveBlock, syncController } = await show([listItem()], {
+      ...dirty,
+      manualSaveFails: true,
+    });
+    syncController.fail = false;
+    const savesBeforeClick = api.note.save.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "先保存再开始" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(api.note.save.mock.calls.length).toBe(savesBeforeClick + 1);
+    expect(api.learningRun.start).not.toHaveBeenCalled();
+    // 失败要说得出口：这一页那条保存提示得亮（不是静默什么都不发生），
+    // 而两条路仍在屏上——她可以再试一次，也可以按上次已保存的那一版开始。
+    expect(document.body.textContent).toContain("服务暂时没有返回可确认的结果。");
+    expect(objectiveBlock()!.querySelector(".notebook-objective__choices")).toBeTruthy();
   });
 });

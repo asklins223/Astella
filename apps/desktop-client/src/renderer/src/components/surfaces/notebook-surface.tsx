@@ -338,6 +338,8 @@ export function NotebookSurface() {
   const [generationFailure, setGenerationFailure] = useState<string | null>(null);
   /** 这一次「开始学习/继续作答」在飞，按钮就地禁用，不再开第二条。 */
   const [startingNoteObjective, setStartingNoteObjective] = useState(false);
+  /** 「先保存再开始」正在交字的那一段（按钮上要如实说"正在保存…"）。 */
+  const [saveBeforeStart, setSaveBeforeStart] = useState(false);
   const [noteObjectiveFailure, setNoteObjectiveFailure] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [options, setOptions] = useState<GenerationOptions>(persistedGenerationOptions);
@@ -621,10 +623,15 @@ export function NotebookSurface() {
     setLocalBlock(block);
   }, [setLocalBlock]);
 
-  const save = useCallback(async (reason: "auto" | "manual") => {
+  /**
+   * 返回值 = "这一份草稿现在**确实**已经交出去了"（没改动也算：那它本来就是最新一版）。
+   * 需求方只有一个：笔记页那颗「先保存再开始」（39d W4-4）——保存失败时它绝不许开始，
+   * 否则就应了 PRD §3.4 那句"不创建看似已开始的空轮次"。调用点若不关心，忽略即可。
+   */
+  const save = useCallback(async (reason: "auto" | "manual"): Promise<boolean> => {
     const api = desktopApi();
     const current = data?.note ?? null;
-    if (!api || !current || !current.permissions.canSave || saving) return;
+    if (!api || !current || !current.permissions.canSave || saving) return false;
     if (!dirty) {
       // 审计 F36：手动定版的语义是"把此刻定成一个可回去的版本"，不是"把改动交出去"。
       // 自动保存 1.2 秒就把 dirty 清掉，原来那道 `!dirty` 早退于是让「保存」
@@ -634,7 +641,7 @@ export function NotebookSurface() {
         setReceipt({ savedAt: new Date().toISOString(), isAutosave: false, via: "no_change" });
         setSaveState("committed");
       }
-      return;
+      return true;
     }
     const nextTitle = titleValue;
     setSaving(true);
@@ -678,9 +685,11 @@ export function NotebookSurface() {
       // 编辑器整个卸掉——自动保存每按几下就来一次，那等于每次保存都把选区、滚动位置和
       // 还没交出去的字一起带走。版本号、权限那半边照样刷新。
       await reload({ silent: true });
+      return true;
     } catch (error) {
       setSaveState("error");
       setSaveFailure(gatewayErrorMessage(error));
+      return false;
     } finally {
       setSaving(false);
     }
@@ -868,6 +877,27 @@ export function NotebookSurface() {
     } finally {
       setStartingNoteObjective(false);
     }
+  };
+
+  /**
+   * PRD §3.4（39d W4-4）：**先保存再开始**。
+   *
+   * 未提交编辑或上次保存失败时，主要动作旁边必须同时给出这一条与「按上次已保存内容开始」，
+   * 不能默默忽略眼前那几处字。这一条要把字**真的交出去**才开轮次：保存失败就不开始
+   * （"不创建看似已开始的空轮次"），失败原因由这一页那条保存提示说明。
+   */
+  const startNoteObjectiveFromSavedEdits = async () => {
+    const target = noteObjective;
+    if (!target || startingNoteObjective || saveBeforeStart) return;
+    setSaveBeforeStart(true);
+    let saved = false;
+    try {
+      saved = await save("manual");
+    } finally {
+      setSaveBeforeStart(false);
+    }
+    if (!saved) return;
+    await startNoteObjective();
   };
 
   // Live status sync while this page stays open: one cardGeneration
@@ -1432,14 +1462,42 @@ export function NotebookSurface() {
           （`.notebook-actions`）是钉在纸面右下角的绝对定位，流内这一条要的是另一件事。 */}
       {noteObjective ? (
         <div className="notebook-objective">
-          <button
-            type="button"
-            className="button primary"
-            disabled={startingNoteObjective}
-            onClick={() => void startNoteObjective()}
-          >
-            {primaryActionLabel(noteObjective.primaryAction)}
-          </button>
+          {dirty || saveState === "error" ? (
+            /* PRD §3.4（39d W4-4）：眼前有没交出去的字（或上次保存失败）时，两条路都在明处。
+               单颗按钮那一条会**默默**按上次已保存的版本开轮次——用户以为自己写的字算数。 */
+            <>
+              <div className="notebook-objective__choices">
+                <button
+                  type="button"
+                  className="button primary"
+                  disabled={startingNoteObjective || saveBeforeStart || saving || !canSave}
+                  onClick={() => void startNoteObjectiveFromSavedEdits()}
+                >
+                  {saveBeforeStart ? "正在保存…" : "先保存再开始"}
+                </button>
+                <button
+                  type="button"
+                  className="button"
+                  disabled={startingNoteObjective || saveBeforeStart}
+                  onClick={() => void startNoteObjective()}
+                >
+                  {startingNoteObjective ? "正在准备…" : "按上次已保存内容开始"}
+                </button>
+              </div>
+              <p className="small notebook-note">
+                这几处改动还没交出去：先保存再开始，或按上次已保存的那一版开始。
+              </p>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="button primary"
+              disabled={startingNoteObjective}
+              onClick={() => void startNoteObjective()}
+            >
+              {primaryActionLabel(noteObjective.primaryAction)}
+            </button>
+          )}
           {noteObjective.freshness === "source_outdated" ? (
             <p className="small notebook-note">{freshnessLabel(noteObjective.freshness)}</p>
           ) : null}
