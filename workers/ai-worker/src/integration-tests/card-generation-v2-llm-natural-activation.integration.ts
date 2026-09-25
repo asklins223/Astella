@@ -191,6 +191,20 @@ async function waitForV2RunTerminal(runId: string, timeoutMs = 20 * 60_000): Pro
   throw new Error(`LLM pipeline did not reach a terminal state within ${timeoutMs / 60000} min`);
 }
 
+/**
+ * provider 能不能用：解析到 `mock` 就是没配（与 provider 层 fail-closed 的那条判据同源）。
+ * 返回非空字符串＝不可用，内容是给人看的 skip 理由。
+ */
+async function providerUnavailableReason(): Promise<string | null> {
+  const { resolveProviderSelection } = await import("../lib/ai-provider.ts");
+  const selection = await resolveProviderSelection(WORKSPACE_ID, USER_ID);
+  if ((selection.providerName ?? "mock").toLowerCase() === "mock") {
+    return "provider 未配置（解析到 mock）：本文件是真钱 E2E 台架，需要真实平台与密钥（config/ai-platforms.json + provider key）；"
+      + "配好再跑，或按 39d §18.1 把它并入每波末尾那一次真跑";
+  }
+  return null;
+}
+
 before(async () => {
   await admin.begin(async (tx) => {
     await tx`INSERT INTO users (id, email, password_hash)
@@ -226,7 +240,19 @@ const HEX64 = /^[0-9a-f]{64}$/;
 
 test("LLM 自然态全用户旅程：真实四阶段 → review_ready → §13.1 复验 → keep → 激活 → C5 PREPARE",
   { timeout: 25 * 60_000 },
-  async () => {
+  async (t) => {
+    /**
+     * provider 不可用时**显式 skip**，而不是挂十几分钟再报一句看不出原因的失败
+     * （39d §18.1 那条欠账）。判据用的是 provider 层自己的那一份：解析到 mock
+     * 就是"没配"——`buildCardGenerationProviders` 正是在这里 fail-closed 的。
+     * 这条预检只决定"要不要跑"，不改变任何断言：跑起来之后的行为一字未动。
+     */
+    const unavailable = await providerUnavailableReason();
+    if (unavailable) {
+      t.skip(unavailable);
+      return;
+    }
+
     // ── 1. 真实 LLM 管道 → 自然 review_ready ─────────────────────────────
     // 平台抖动容错：tokenrhythm 偶发 503/空输出/超时（R26–R31 已实证），
     // grounding 单次失败即 fail-closed（候选 failed → needs_attention，管道
@@ -251,6 +277,16 @@ test("LLM 自然态全用户旅程：真实四阶段 → review_ready → §13.1
         WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID} GROUP BY quality_state`;
       console.error(`[llm-e2e] attempt ${attempt}/3 terminal=${terminal} (平台抖动或 fail-closed；重试)`,
         JSON.stringify({ events: ev, candidates: cands }));
+      // 预检那一刻解析得到 provider、跑到一半却解析成 mock（配置被改／密钥轮换）：
+      // 这与"没配"是同一种情况，同样按 skip 处理，而不是让人读一句 category: unknown。
+      const attemptJob = await admin`
+        SELECT last_error FROM card_generation_run_outbox_v2
+        WHERE run_id = ${runId} ORDER BY created_at LIMIT 1`;
+      const attemptError = String(attemptJob[0]?.last_error ?? "");
+      if (/resolved to mock provider|missing API key or platform not configured/.test(attemptError)) {
+        t.skip(`provider 在跑动时解析成了 mock（配置变了？）：${attemptError.slice(0, 200)}`);
+        return;
+      }
       if (attempt === 3) {
         assert.equal(terminal, "review_ready",
           `LLM 管道 3 次尝试均未自然到达 review_ready（最后 ${terminal}）——平台不可用或候选持续 fail-closed`);
