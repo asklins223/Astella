@@ -95,6 +95,9 @@ try {
 
   const roundBlock = page.locator('.notebook-round').first()
   const objectiveBlock = page.locator('.notebook-objective:not(.notebook-round)')
+  // 先等投影**落定**再判"有没有"：这一块是笔记读回来之后另外两发（目标／那一轮）才画的，
+  // 一次 `count()` 读到 0 可能是"没赶上"而不是"没有"——那正是我在这条判据上写下的同形陷阱。
+  await page.locator('.notebook-objective').first().waitFor({ timeout: 15_000 }).catch(() => undefined)
   const noObjective = (await objectiveBlock.count()) === 0
   const blockPresent = (await roundBlock.count()) > 0
   const preLines = blockPresent ? await roundLines(roundBlock) : []
@@ -103,6 +106,7 @@ try {
   check('笔记页摆了轻量定向这一块', blockPresent, '读不到 .notebook-round')
   check('起点没有进行中的轮次（不接着别人的那一轮改）', preLines.every((line) => !line.startsWith('这一轮：')), preLines)
   if (!noObjective || !blockPresent || preLines.some((line) => line.startsWith('这一轮：'))) {
+    report()
     throw new Error('target note is not a clean no-objective, no-round note')
   }
 
@@ -260,10 +264,13 @@ async function readNoteVersionLabel(page: import('@playwright/test').Page): Prom
     .catch(() => null)
 }
 
-const failed = results.filter((entry) => !entry.ok)
-for (const entry of results) {
+function report(): void {
+  const failed = results.filter((entry) => !entry.ok)
+  for (const entry of results) {
   process.stdout.write(`${entry.ok ? 'ok  ' : 'RED '} ${entry.name}  ${entry.ok ? '' : JSON.stringify(entry.detail)}\n`)
 }
 process.stdout.write(`\n${results.length - failed.length}/${results.length} 通过\n`)
 process.stdout.write(`\n实测读数：\n${JSON.stringify(readings, null, 2)}\n`)
 if (failed.length > 0) process.exitCode = 1
+}
+report()

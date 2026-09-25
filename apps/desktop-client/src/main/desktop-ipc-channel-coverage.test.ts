@@ -276,6 +276,10 @@ describe("IPC 通道覆盖对账", () => {
         closedAt: "2026-09-25T05:00:00.000Z",
       }],
       hasMore: true,
+      // 照服务端真实回信的形状：`hasMore` 为真时 `nextCursor` 必须是本页最后一条的 id，
+      // 而"这一屏列了几轮"由服务端报（`shownCount`），不让界面拿数组长度冒充总数。
+      shownCount: 1,
+      nextCursor: "99999999-9999-4999-8999-999999999999",
     };
     const gateway = stubGateway({
       createNoteLearningRound: vi.fn(async () => round),
@@ -321,10 +325,16 @@ describe("IPC 通道覆盖对账", () => {
     // 那会变成"客户端决定了屏幕上看几轮"），而坏值在本机就挡掉。
     const historyHandler = (electronMock.handlers.get(DESKTOP_IPC_CHANNELS.noteLearningRoundHistory))!;
     const gotHistory = await historyHandler(event, { meta, noteId: NOTE_ID });
-    expect(requireData(gotHistory)).toMatchObject({ hasMore: true, items: [{ drivingQuestion: "上一轮的那句问题" }] });
-    expect(gateway.getNoteLearningRoundHistory).toHaveBeenCalledWith(NOTE_ID, undefined, meta.requestId);
+    expect(requireData(gotHistory)).toMatchObject({
+      hasMore: true,
+      nextCursor: "99999999-9999-4999-8999-999999999999",
+      items: [{ drivingQuestion: "上一轮的那句问题" }],
+    });
+    expect(gateway.getNoteLearningRoundHistory).toHaveBeenCalledWith({ noteId: NOTE_ID, limit: undefined, before: undefined }, meta.requestId);
     const badLimit = await historyHandler(event, { meta, noteId: NOTE_ID, limit: 0 } as never);
+    const badCursor = await historyHandler(event, { meta, noteId: NOTE_ID, before: "不是个 uuid" } as never);
     expect(badLimit.ok).toBe(false);
+    expect(badCursor.ok).toBe(false);
     expect(gateway.getNoteLearningRoundHistory).toHaveBeenCalledTimes(1);
   });
 });

@@ -135,7 +135,9 @@ export const reviseDrivingQuestionRequestV1Schema = z.strictObject({
  *     §10.3 原文里还包括"这一轮实际怎么走的"——那还没有落点，所以这里**不装**：
  *     台账里登记为欠，而不是先给一个语义不符的键。
  *
- * 分页这一版**没做**：只按"最近 N 条"回，`hasMore` 老老实实说还有。
+ * 分页走**游标**（`before` = 上一页最后一条的 id），不走 offset：这一张表按"新的在前"排，
+ * 中间插入一条新轮次就会让 offset 页整体错位，第 11 条被跳过或重复出现——那种错在读的人
+ * 那里看不出来，只会变成「我的记录少了」。
  */
 export const ROUND_HISTORY_DEFAULT_LIMIT_V1 = 10;
 export const ROUND_HISTORY_MAX_LIMIT_V1 = 20;
@@ -159,9 +161,40 @@ export const noteLearningRoundHistoryV1Schema = z.strictObject({
   noteId: z.string().uuid(),
   /** 新的在前；空数组是真的"这一篇还没有过轮次"，不是"读失败"。 */
   items: z.array(noteLearningRoundHistoryItemV1Schema).max(ROUND_HISTORY_MAX_LIMIT_V1),
-  /** 还有没有更早的（今天没有翻页游标，所以这一格只说"有/没有"）。 */
+  /** 还有没有更早的。它与 `nextCursor` 必须同向——见那一格的注释。 */
   hasMore: z.boolean(),
+  /**
+   * 下一页的游标（本页最后一条的 id）。**`hasMore === true` 时它不许是 null**：
+   * 界面据此决定"看更早的"那颗还在不在，一个"还有但给不出指针"的回执会让那一块
+   * 永远停在第一页而嘴上还说"更早的还能看"。
+   */
+  nextCursor: z.string().uuid().nullable(),
 });
+/**
+ * `hasMore` 与 `nextCursor` 必须同向，写在合同里而不是靠渲染层防：
+ * "还有更早的，但指针是 null"这种回执到了界面上就是一颗点不动的按钮，
+ * 或者一句"更早的还能看"配一个永远翻不过去的面。让服务端**发不出**这一份，
+ * 比让每一处读者各自躲它可靠。
+ */
+export const noteLearningRoundHistoryPageV1Schema = noteLearningRoundHistoryV1Schema
+  // 「更早的还有」与「这一屏列了几轮」是两件事：前者说本页之外的世界，后者说这一屏。
+  // 没有这一格，翻过一页之后屏幕上那句总数就只能拿"已加载条数"去冒充"总数"——
+  // 而那正是这一刀要拦的形状（见上面 `historyLead` 那条判据）。由服务端报数。
+  .extend({ shownCount: z.number().int().min(0) })
+  .refine(
+    (page) => !page.hasMore || page.nextCursor !== null,
+    { message: "hasMore 为真时必须给出 nextCursor", path: ["nextCursor"] },
+  );
 export type NoteLearningRoundHistoryV1 = z.infer<
-  typeof noteLearningRoundHistoryV1Schema
+  typeof noteLearningRoundHistoryPageV1Schema
 >;
+
+/**
+ * 记录那一条的查询参数（放在最后：它引用上面那一对常量，声明顺序不能倒）。
+ * 游标是**上一页最后一条的 id**，不是页码——按"新的在前"排的一张表，
+ * 中间插入一条就会让页码整体错位（第 11 条被跳过或重复），而读的人只看到"我的记录少了"。
+ */
+export const noteLearningRoundHistoryQueryV1Schema = z.strictObject({
+  limit: z.coerce.number().int().min(1).max(ROUND_HISTORY_MAX_LIMIT_V1).default(ROUND_HISTORY_DEFAULT_LIMIT_V1),
+  before: z.string().uuid().optional(),
+});

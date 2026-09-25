@@ -152,7 +152,7 @@ import {
 } from "./desktop-surface-contracts.ts";
 import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema } from "./learning-objective-surface-contracts.ts";
 import {
-  noteLearningRoundHistoryV1Schema,
+  noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundV1Schema,
   roundDrivingQuestionSourceV1Schema,
 } from "./note-learning-round-contracts.ts";
@@ -2419,11 +2419,15 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
     }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundV1Schema>>>;
     /**
      * 这一篇的轮次记录：新的在前，只回最近 `limit` 条，`hasMore` 老实说还有没有更早的
-     * （**分页这一版没做**，§10.3 要的是完整分页历史，那一半记在台账里）。
+     * 更早的还有（`nextCursor`），读完才罢休。§10.3 那句"完整分页历史"到这里才算闭环。
      */
-    history(input: { meta: RequestMetaV1; noteId: Uuid; limit?: number }): Promise<
-      GatewayResultV1<z.infer<typeof noteLearningRoundHistoryV1Schema>>
-    >;
+    history(input: {
+      meta: RequestMetaV1;
+      noteId: Uuid;
+      limit?: number;
+      /** 上一页最后一条的 id；给了就读得更早的那几轮。回读里的 `nextCursor` 就是它。 */
+      before?: string;
+    }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundHistoryPageV1Schema>>>;
   };
   readonly review: {
     getQueue(input: {

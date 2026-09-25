@@ -123,10 +123,13 @@ function installApi(
     roundHistory?: Record<string, unknown>;
     /** 那一发读失败（走网关那一条形状）。 */
     roundHistoryFails?: boolean;
+    /** 带游标那几发的回读，按调用次给（"更早的那一页、再更早的那一页"）。 */
+    olderPages?: Record<string, unknown>[];
   } = {},
 ): Api {
   const syncController = options.syncController ?? { fail: false };
   let openReads = 0;
+  let olderPageReads = 0;
   const api: Api = {
     objective: { list: vi.fn(list) },
     learningRun: {
@@ -134,9 +137,14 @@ function installApi(
     },
     noteLearningRound: {
       // 读失败走网关那一条（`{ok:false}`），不是抛异常：与真桥同一形状。
-      history: vi.fn(async () => (options.roundHistoryFails
+      history: vi.fn(async (input?: { before?: string }) => (options.roundHistoryFails
         ? { ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } }
-        : ok(options.roundHistory ?? { version: 1, noteId: NOTE_ID, items: [], hasMore: false }))),
+        // 带了游标就按调用次给"更早的那一页"：只有一页可给的话，"下一页是接上还是覆盖"
+        // 这件事根本没被走过。
+        : ok(input?.before && options.olderPages?.length
+          ? options.olderPages[Math.min(olderPageReads++, options.olderPages.length - 1)]
+          : options.roundHistory ?? { version: 1, noteId: NOTE_ID, items: [], hasMore: false, shownCount: 0, nextCursor: null }))),
+
       // 轮次的回读**按调用次**给：迟到那一发的场景必须是"第一次读到旧版、
     // 失败之后重读读到新版"，一份固定回读测不出"换回了现在那一版"。
     open: vi.fn(async () => {
@@ -175,8 +183,10 @@ function installApi(
         // 的唯一通道，盖掉它的下场是 `save("manual")` 抛 `not a function`、被 catch 咽成
         // 「保存失败」，读起来跟"字没交出去"一模一样——那两条挂起的用例卡的正是这里。
         ...api.note,
-        get: vi.fn(async () => ok({
-          noteId: NOTE_ID,
+        // 回读**按请求里那一篇**给：换篇的那条用例要看见另一篇，
+        // 一份写死 id 的夹具会让"上一篇的翻页记录跟着过来"这件事根本发生不了。
+        get: vi.fn(async (input?: { noteId?: string }) => ok({
+          noteId: input?.noteId ?? NOTE_ID,
           title: "物理笔记",
           sourceId: null,
           currentVersionId: VERSION_ID,
@@ -234,6 +244,7 @@ async function show(
     openSequence?: Record<string, unknown>[];
     roundHistory?: Record<string, unknown>;
     roundHistoryFails?: boolean;
+    olderPages?: Record<string, unknown>[];
   } = {},
 ) {
   const syncController = options.syncController ?? { fail: false };
@@ -776,7 +787,16 @@ function historyItem(overrides: Record<string, unknown> = {}) {
 }
 
 function historyOf(items: Record<string, unknown>[], hasMore = false) {
-  return { version: 1, noteId: NOTE_ID, items, hasMore };
+  // 真合同那五格（`hasMore` 为真时必须带游标；`shownCount` 由服务端报）。
+  const last = items[items.length - 1] as { roundId?: string } | undefined;
+  return {
+    version: 1,
+    noteId: NOTE_ID,
+    items,
+    hasMore,
+    shownCount: items.length,
+    nextCursor: hasMore ? (last?.roundId ?? null) : null,
+  };
 }
 
 function historyRows(): string[] {
@@ -814,21 +834,68 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
     expect(states).toEqual(["正在进行", "停住了", "走完了", "中途出了问题"]);
   });
 
-  it("只回了最近几条时不替整篇报总数；回全了才说「开过 N 轮」", async () => {
-    const truncated = await show([], {
-      roundHistory: historyOf([historyItem()], true),
+  it("翻两页都接在后面；翻到最后一页才许说「开过 N 轮」，那颗也随之消失", async () => {
+    const c1 = "77777777-8888-4888-8888-888888888888";
+    const c2 = "66666666-7777-4777-8777-777777777777";
+    const c3 = "55555555-6666-4666-8666-666666666666";
+    const { api, container } = await show([], {
+      roundHistory: historyOf([historyItem({ roundId: c1 })], true),
+      olderPages: [
+        historyOf([historyItem({ roundId: c2 })], true),
+        historyOf([historyItem({ roundId: c3 })], false),
+      ],
     });
-    // 两次 render 在同一份 document 里共存 ⇒ 每一发只看**自己那个 container**，
-    // 否则 `document.querySelector` 会永远命中第一次那一个（读出来像"文案没换"）。
-    const truncatedLine = truncated.container.querySelector(".notebook-round-history p");
-    expect(truncatedLine?.textContent).toContain("不止这些，先看最近这 1 轮：");
-    expect(truncatedLine?.textContent).not.toContain("这一篇开过");
+    const lead = () => container.querySelector(".notebook-round-history p")?.textContent ?? "";
+    const rows = () => container.querySelectorAll(".notebook-round-history__list li").length;
+    const button = () => container.querySelector(".notebook-round-history button");
+    expect(lead()).toContain("这一篇列到这里 1 轮，更早的还能看。");
+    expect(lead()).not.toContain("这一篇开过");
 
-    const complete = await show([], {
-      roundHistory: historyOf([historyItem({ roundId: "55555555-6666-4666-8666-666666666666" })], false),
+    fireEvent.click(button()!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(rows()).toBe(2);
+    expect(api.noteLearningRound.history.mock.calls[1][0]).toMatchObject({ before: c1 });
+
+    fireEvent.click(button()!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    // 第二页是**接在**第一页后面：覆盖式实现到这里只会剩 1 行。
+    expect(rows()).toBe(3);
+    expect(api.noteLearningRound.history.mock.calls[2][0]).toMatchObject({ before: c2 });
+    expect(lead()).toContain("这一篇开过 3 轮。");
+    expect(button()).toBeNull();
+  });
+
+  it("取下一页失败时不假装翻到了：那一页不加进来，话要说得出口", async () => {
+    const { container } = await show([], {
+      roundHistory: historyOf([historyItem({ roundId: "99999999-1111-4111-8111-111111111111" })], true),
+      olderPages: [{ version: 1, noteId: NOTE_ID, items: [], hasMore: true, shownCount: 0, nextCursor: null }],
     });
-    expect(complete.container.querySelector(".notebook-round-history p")?.textContent).toContain("这一篇开过 1 轮。");
-    expect(complete.container.querySelector(".notebook-round-history p")?.textContent).not.toContain("不止这些");
+    const before = container.querySelectorAll(".notebook-round-history__list li").length;
+    fireEvent.click(container.querySelector(".notebook-round-history button")!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(container.querySelectorAll(".notebook-round-history__list li").length).toBe(before);
+  });
+
+  it("翻出来的那几页跟着那一篇走：切到另一篇时不许把上一篇的更早记录接上", async () => {
+    const { container } = await show([], {
+      roundHistory: historyOf([
+        historyItem({ roundId: "aaaa1111-1111-4111-8111-111111111111" }),
+        historyItem({ roundId: "aaaa2222-2222-4222-8222-222222222222" }),
+      ], true),
+      olderPages: [historyOf([historyItem({ roundId: "aaaa3333-3333-4333-8333-333333333333" })], false),],
+    });
+    fireEvent.click(container.querySelector(".notebook-round-history button")!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(container.querySelectorAll(".notebook-round-history__list li")).toHaveLength(3);
+
+    useRoomStore.setState({
+      activeNoteRef: { noteId: "bbbb1111-1111-4111-8111-111111111111", noteVersionId: VERSION_ID, mode: "read" },
+    });
+    for (let i = 0; i < 6; i += 1) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+    }
+    // 另一篇的第一页还是那两条（同一份回读），但**不该**再带着上一篇翻出来的那一条。
+    expect(container.querySelectorAll(".notebook-round-history__list li")).toHaveLength(2);
   });
 
   it("这一篇还没有过轮次 ⇒ 那一块根本不在（不给页面添一行空话）", async () => {

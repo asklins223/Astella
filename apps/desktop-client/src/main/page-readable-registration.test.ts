@@ -84,8 +84,17 @@ function hostedPages(rawSource: string): string[] {
   const pages = new Set<string>();
   for (const match of source.matchAll(/useHudPage\("([a-z-]+)"[,)]/g)) pages.add(match[1]);
   for (const match of source.matchAll(/useHudPage\((?!["'])\s*([A-Za-z_][A-Za-z0-9_]*)\s*[,)]/g)) {
-    const declaration = new RegExp(`(?:const|let)\\s+${match[1]}\\s*(?::[^=]+)?=([^;]+);`).exec(source);
-    const initializer = declaration?.[1]?.trim() ?? "";
+    // **取调用点之前最近的那一次同名声明**，不是"文件里第一次出现"：
+    // 一个组件里可以有多个 `const page`（09-26 就真的撞上一次——翻页那发先声明了
+    // `const page = unwrapGatewayResult(...)`，于是笔记页两屏整个从分母上消失，
+    // 而"扫描器读到了东西"那条正控制照样绿，因为它数的是全仓总数）。
+    const callAt = match.index ?? 0;
+    const declarations = new RegExp(`(?:const|let)\\s+${match[1]}\\s*(?::[^=]+)?=([^;]+);`, "g");
+    let initializer = "";
+    for (const found of source.matchAll(declarations)) {
+      if ((found.index ?? 0) >= callAt) break;
+      initializer = found[1]?.trim() ?? "";
+    }
     for (const branch of initializer.matchAll(/\?\s*"([a-z-]+)"\s*:\s*"([a-z-]+)"/g)) {
       pages.add(branch[1]);
       pages.add(branch[2]);
@@ -267,6 +276,10 @@ describe("可读视图登记台账（W2-7）", () => {
     // ① 变量式调用点：屏名在声明的初始化式里（笔记页就是这个形状）。
     expect(hostedPages(
       `const page: HudPageId = mode === "edit" ? "note-edit" : "note-read";\nuseHudPage(page);`,
+    )).toEqual(["note-edit", "note-read"]);
+    // ①-b 同名声明出现多次：认**调用点前面最近那一条**，不认文件里第一条。
+    expect(hostedPages(
+      `const page = readSomething();\nconst page: HudPageId = mode === "edit" ? "note-edit" : "note-read";\nuseHudPage(page);`,
     )).toEqual(["note-edit", "note-read"]);
     // ② 变量式但顺着不到字面量 ⇒ 零屏（宁可少判，不许凭空造出一屏）。
     expect(hostedPages(`useHudPage(someOtherThing);`)).toEqual([]);

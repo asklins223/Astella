@@ -264,7 +264,9 @@ export const ROUND_COPY = {
    * 只说"最近的这几轮"，不替整篇报数。
    */
   historyLead: (count: number, hasMore: boolean) =>
-    hasMore ? `不止这些，先看最近这 ${count} 轮：` : `这一篇开过 ${count} 轮。`,
+    hasMore ? `这一篇列到这里 ${count} 轮，更早的还能看。` : `这一篇开过 ${count} 轮。`,
+  loadOlder: "看更早的几轮",
+  loadingOlder: "正在取更早的…",
   historyLine: (question: string) => `「${question}」`,
   /** §10.3 那一格里"完成／部分完成／中断"这三个字由这一处签发；`active` 不在其中。 */
   historyState: {
@@ -513,6 +515,18 @@ export function NotebookSurface() {
   const [roundStarter, setRoundStarter] = useState<string | null>(null);
   const [roundEditing, setRoundEditing] = useState(false);
   const [roundBusy, setRoundBusy] = useState<"start" | "revise" | "end" | null>(null);
+  /**
+   * 翻出来的那几页（第一页由投影自己读，往后每页累加在这里）。存着 `noteId` 并按它过滤，
+   * 而不是"切篇时记得清空"——后者靠一次副作用，漏一次就把上一篇的记录接在这一篇下面。
+   */
+  const [olderRounds, setOlderRounds] = useState<{
+    noteId: string;
+    items: NoteLearningRoundHistoryItemV1[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  } | null>(null);
+  const [olderBusy, setOlderBusy] = useState(false);
+  const [olderFailure, setOlderFailure] = useState<string | null>(null);
   const [roundFailure, setRoundFailure] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [options, setOptions] = useState<GenerationOptions>(persistedGenerationOptions);
@@ -1180,6 +1194,49 @@ export function NotebookSurface() {
       await reload({ silent: true });
     } finally {
       setRoundBusy(null);
+    }
+  };
+
+  const historyTail = olderRounds && olderRounds.noteId === note?.noteId ? olderRounds : null;
+  const historyItems: readonly NoteLearningRoundHistoryItemV1[] = [
+    ...(roundHistory?.items ?? []),
+    ...(historyTail?.items ?? []),
+  ];
+  const historyHasMore = historyTail ? historyTail.hasMore : (roundHistory?.hasMore ?? false);
+  const historyNextCursor = historyTail ? historyTail.nextCursor : (roundHistory?.nextCursor ?? null);
+
+  /** 「看更早的几轮」：带着游标再读一页，接在已经看到的那些后面（不覆盖）。 */
+  const loadOlderRounds = async () => {
+    const api = desktopApi();
+    const current = data?.note ?? null;
+    if (!api || !current || !historyHasMore || olderBusy) return;
+    setOlderBusy(true);
+    setOlderFailure(null);
+    try {
+      const response = await api.noteLearningRound.history({
+        meta: createRequestMeta(epochRef.current),
+        noteId: current.noteId,
+        before: historyNextCursor ?? undefined,
+      });
+      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+      // 变量别叫 `page`：`page-readable-registration.test.ts` 那道静态守卫是"顺着调用点
+      // 往前找同名声明"来认屏名的，同名的那一发会让它抓到错的初始化式、把两屏整个丢掉。
+      const olderPage = unwrapGatewayResult(response);
+      setOlderRounds((previous) => {
+        const base = previous && previous.noteId === current.noteId
+          ? previous
+          : { noteId: current.noteId, items: [], nextCursor: null, hasMore: false };
+        return {
+          noteId: current.noteId,
+          items: [...base.items, ...olderPage.items],
+          nextCursor: olderPage.nextCursor,
+          hasMore: olderPage.hasMore,
+        };
+      });
+    } catch (error) {
+      setOlderFailure(gatewayErrorMessage(error));
+    } finally {
+      setOlderBusy(false);
     }
   };
 
@@ -1890,11 +1947,11 @@ export function NotebookSurface() {
       ) : null}
       {/* 这一篇的轮次记录（PRD §10.3 读侧第一刀）。没有历史时一行都不多——空数组
           与"这篇还没开过轮"是同一件事，不必对用户播报；读失败也不报（这块是增补）。 */}
-      {roundHistory && roundHistory.items.length > 0 ? (
+      {historyItems.length > 0 ? (
         <section className="notebook-round-history">
-          <p className="small notebook-note">{ROUND_COPY.historyLead(roundHistory.items.length, roundHistory.hasMore)}</p>
+          <p className="small notebook-note">{ROUND_COPY.historyLead(historyItems.length, historyHasMore)}</p>
           <ol className="notebook-round-history__list">
-            {roundHistory.items.map((item) => (
+            {historyItems.map((item) => (
               <li key={item.roundId}>
                 <span className="small">{ROUND_DAY_FORMAT.format(new Date(item.startedAt))}</span>
                 <span className="small">{roundHistoryStateLabelV1(item)}</span>
@@ -1902,6 +1959,12 @@ export function NotebookSurface() {
               </li>
             ))}
           </ol>
+          {historyHasMore ? (
+            <button type="button" className="button" disabled={olderBusy} onClick={() => void loadOlderRounds()}>
+              {olderBusy ? ROUND_COPY.loadingOlder : ROUND_COPY.loadOlder}
+            </button>
+          ) : null}
+          {olderFailure ? <p className="small notebook-note" role="alert">{olderFailure}</p> : null}
         </section>
       ) : null}
       <div className="rule" />

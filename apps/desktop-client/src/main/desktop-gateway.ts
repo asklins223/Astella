@@ -296,7 +296,7 @@ import {
 } from "@ailearn/shared/desktop-surface-contracts";
 import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema, type ObjectiveListPageV3, type LearningObjectiveSurfaceV3 } from "@ailearn/shared/learning-objective-surface-contracts";
 import {
-  noteLearningRoundHistoryV1Schema,
+  noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundViewV1Schema,
   ROUND_HISTORY_DEFAULT_LIMIT_V1,
   type NoteLearningRoundHistoryV1,
@@ -2008,20 +2008,23 @@ export class DesktopGateway {
    * 记录那一条路由根本不回 404，把它折一次就会把"路由改了"读成"这篇没有历史"。
    */
   async getNoteLearningRoundHistory(
-    noteId: string,
-    limit: number = ROUND_HISTORY_DEFAULT_LIMIT_V1,
+    input: { noteId: string; limit?: number; before?: string },
     requestId?: string,
   ): Promise<NoteLearningRoundHistoryV1> {
     await this.ensureConnected(requestId);
+    const params = new URLSearchParams({ limit: String(input.limit ?? ROUND_HISTORY_DEFAULT_LIMIT_V1) });
+    if (input.before) params.set("before", this.safeUuid(input.before));
     const result = await this.request(
-      `/v2/notes/${this.safeUuid(noteId)}/learning-rounds?limit=${limit}`,
+      `/v2/notes/${this.safeUuid(input.noteId)}/learning-rounds?${params.toString()}`,
       { method: "GET" },
       true,
       false,
       requestId,
     );
     if (result.status >= 300) throw this.mapResponseError(result.status, result.headers);
-    const parsed = noteLearningRoundHistoryV1Schema.safeParse(result.body);
+    // 整份过合同（含 `hasMore` ⇒ `nextCursor` 那条 refine）：形状不对就报合同不受支持，
+    // 不在这里替服务端补一个游标。
+    const parsed = noteLearningRoundHistoryPageV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }

@@ -131,7 +131,7 @@ import {
 } from "@ailearn/shared/desktop-surface-contracts";
 import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema } from "@ailearn/shared/learning-objective-surface-contracts";
 import {
-  noteLearningRoundHistoryV1Schema,
+  noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundV1Schema,
   ROUND_HISTORY_MAX_LIMIT_V1,
   roundDrivingQuestionSourceV1Schema,
@@ -562,6 +562,7 @@ const noteLearningRoundHistoryInputSchema = z.strictObject({
   noteId: uuidSchema,
   // 上限在服务端合同那一格（同一个数），这里只做"坏值不往上传"。
   limit: z.number().int().min(1).max(ROUND_HISTORY_MAX_LIMIT_V1).optional(),
+  before: uuidSchema.optional(),
 });
 const noteLearningRoundCloseInputSchema = z.strictObject({
   ...m1InputBase,
@@ -2846,8 +2847,11 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
   installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundHistory, noteLearningRoundHistoryInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "note.detail");
     assertEpoch(input.meta, activeWorkspaceEpoch);
-    return gateway.getNoteLearningRoundHistory(input.noteId, input.limit, input.meta.requestId);
-  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundHistoryV1Schema);
+    return gateway.getNoteLearningRoundHistory(
+      { noteId: input.noteId, limit: input.limit, before: input.before },
+      input.meta.requestId,
+    );
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundHistoryPageV1Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundClose, noteLearningRoundCloseInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "note.detail");

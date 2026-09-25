@@ -14,7 +14,7 @@
  * 比 `expectedRevision` → 写的时候 `WHERE revision = 读过的那一版` 再比一次 rowCount。
  * 两道都要，少一道就是 lost update：N#7-9 那条注释在 journey 侧写的就是这个。
  */
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import { DomainError } from "@ailearn/shared";
 import {
@@ -267,30 +267,56 @@ export async function readRound(
 export type RoundHistoryPageV1 = {
   rows: NoteLearningRoundRow[];
   hasMore: boolean;
+  /** 这一屏列了几轮——与 `hasMore`（本页之外还有没有）是两件事，分开报。 */
+  shownCount: number;
 };
+
+export type RoundHistoryQueryV1 = { limit: number; beforeRoundId?: string };
 
 export async function listRoundHistory(
   tx: ApiTransaction,
   scope: RoundScopeV1,
   noteId: string,
-  limit: number,
+  query: RoundHistoryQueryV1,
 ): Promise<RoundHistoryPageV1> {
   // 那三格过滤里，**`userId` 那一格不是这道闸**：这张表是 FORCE RLS、策略就是
   // `(workspace_id, user_id)` 两列（0282），把 `eq(userId)` 摘掉，集测里"另一个人读这一篇"
   // 那条用例**照样绿**（09-26 变异验过）。留着它的理由是"读法要自己说清按什么筛"，
   // 而那条用例守的其实是"**带对了上下文**"——摘掉 `set_config` 时它会红（正向对照那一半）。
   // 别误以为它在守隔离：隔离由策略负责。
+  const scoped = [
+    eq(noteLearningRounds.workspaceId, scope.workspaceId),
+    eq(noteLearningRounds.userId, scope.userId),
+    eq(noteLearningRounds.noteId, noteId),
+  ];
+  if (query.beforeRoundId) {
+    // 游标先在自己这一篇里解析：拿别人的 id 过来要**报错**，不是"安静地当没给"——
+    // 后者会让那一页从最新一条重新开始，界面看着像"翻不动了"，而真实原因是给了个来路不对的指针。
+    const cursorRows = await tx
+      .select()
+      .from(noteLearningRounds)
+      .where(and(...scoped, eq(noteLearningRounds.id, query.beforeRoundId)))
+      .limit(1);
+    const cursor = cursorRows[0];
+    if (!cursor) throw new RoundServiceError("invalid_cursor", "这个游标不在这一篇的记录里");
+    // 键集分页（不是 offset）：`(时间, id)` 一起比，两列同值的行也不会跳过或重复。
+    // **两侧都留在 SQL 里比**：上面那次 `cursor` 读回来的 `created_at` 已经是 JS `Date`
+    // （毫秒精度），而 `created_at` 是微秒精度——拿它当界会既不算"更早"也不算"相等"，
+    // 于是与游标同一瞬间的那一行被整页跳过（这条是被"两行同一时刻"那个夹具抓出来的）。
+    scoped.push(sql`(${noteLearningRounds.createdAt}, ${noteLearningRounds.id}) < (
+      SELECT cursor_row.created_at, cursor_row.id
+      FROM note_learning_rounds cursor_row
+      WHERE cursor_row.id = ${query.beforeRoundId}::uuid
+    )`);
+  }
   const rows = await tx
     .select()
     .from(noteLearningRounds)
-    .where(and(
-      eq(noteLearningRounds.workspaceId, scope.workspaceId),
-      eq(noteLearningRounds.userId, scope.userId),
-      eq(noteLearningRounds.noteId, noteId),
-    ))
+    .where(and(...scoped))
     .orderBy(desc(noteLearningRounds.createdAt), desc(noteLearningRounds.id))
-    .limit(limit + 1);
-  return { rows: rows.slice(0, limit), hasMore: rows.length > limit };
+    .limit(query.limit + 1);
+  const page = rows.slice(0, query.limit);
+  return { rows: page, hasMore: rows.length > query.limit, shownCount: page.length };
 }
 
 /**

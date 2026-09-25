@@ -19,7 +19,7 @@ import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { closeDatabase } from "../db/client.ts";
 import {
-  noteLearningRoundHistoryV1Schema,
+  noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundV1Schema,
   ROUND_HISTORY_MAX_LIMIT_V1,
 } from "@ailearn/shared/note-learning-round-contracts";
@@ -145,7 +145,7 @@ async function closeOn(roundId: string, revision: number): Promise<void> {
 async function readHistory(url: string, bearer?: string) {
   const res = await call("GET", url, undefined, bearer ?? token);
   assert.equal(res.statusCode, 200, `${url} 应当读得到：${res.statusCode} ${res.body}`);
-  return noteLearningRoundHistoryV1Schema.parse(JSON.parse(res.body) as never);
+  return noteLearningRoundHistoryPageV1Schema.parse(JSON.parse(res.body) as never);
 }
 
 test("没登录进不来（这条路由不是只给脚本用的）", async () => {
@@ -380,4 +380,79 @@ test("没有轮次与读不到这一篇同形：都回空表（这一条读的�
 test("路径里那个 noteId 不是合法 id 就 400，不走「一片空白」那条安静路径", async () => {
   const res = await call("GET", "/v2/notes/not-a-uuid/learning-rounds");
   assert.equal(res.statusCode, 400, res.body);
+});
+
+test("游标翻页：两页并起来不重不漏，翻到最后一页才不再给指针", async () => {
+  for (const question of ["第一句", "第二句", "第三句", "第四句"]) {
+    const opened = await createOn(noteB, question);
+    await closeOn(opened.roundId as string, opened.revision as number);
+  }
+
+  const first = await readHistory(`/v2/notes/${noteB}/learning-rounds?limit=2`);
+  assert.equal(first.items.length, 2);
+  assert.equal(first.hasMore, true);
+  assert.equal(first.shownCount, 2);
+  assert.notEqual(first.nextCursor, null, "说还有更早的就必须给出指针");
+  assert.equal(first.nextCursor, first.items[1].roundId, "游标就是本页最后那一条");
+
+  const second = await readHistory(`/v2/notes/${noteB}/learning-rounds?limit=2&before=${first.nextCursor}`);
+  assert.equal(second.hasMore, false);
+  assert.equal(second.nextCursor, null, "翻到底了还给指针，界面就会留一颗点不动的按钮");
+
+  const ids = [...first.items, ...second.items].map((item) => item.roundId);
+  assert.equal(new Set(ids).size, 4, "两页并起来必须正好是这四轮：重一条或漏一条都是键集写错了");
+  assert.deepEqual(
+    [...second.items].map((item) => item.drivingQuestion),
+    ["第二句", "第一句"],
+    "第二页接着往**更早**走：新的在前，第一页吃掉最近两条",
+  );
+});
+
+test("游标来路不对就 400：安静回到第一页会把「翻不动了」读成「记录少了」", async () => {
+  const mine = await createOn(noteA, "记在 A 篇的那一轮");
+  const onA = await readHistory(`/v2/notes/${noteA}/learning-rounds?limit=20`);
+  assert.equal(onA.items[0].roundId, mine.roundId);
+
+  // ① 同一篇上的游标用在**另一篇**上（同一空间、同一个人：RLS 拦不住这种，只能靠这一格判据）；
+  // ② 一个根本不存在的 id。
+  const otherNote = await call("GET", `/v2/notes/${noteB}/learning-rounds?before=${mine.roundId as string}`);
+  assert.equal(otherNote.statusCode, 400, otherNote.body);
+  assert.equal(body(otherNote).error, "invalid_cursor");
+  const ghost = await call("GET", `/v2/notes/${noteA}/learning-rounds?before=${randomUUID()}`);
+  assert.equal(ghost.statusCode, 400, ghost.body);
+  assert.equal(body(ghost).error, "invalid_cursor");
+
+  // 正控制：同一篇上自己那条的游标照样能翻。
+  const okPage = await readHistory(`/v2/notes/${noteA}/learning-rounds?limit=20&before=${mine.roundId as string}`);
+  assert.deepEqual(okPage.items, [], "翻过最后一条之后就是空页，不是报错");
+});
+
+test("同一时刻开出的两轮也要不重不漏地翻完（游标里那一列 id 不是装饰）", async () => {
+  const opened = [];
+  for (const question of ["同时第一", "同时第二", "第三句"]) {
+    const created = await createOn(noteB, question);
+    await closeOn(created.roundId as string, created.revision as number);
+    opened.push(created.roundId as string);
+  }
+  // 把其中两行的 created_at 拧成**同一个瞬间**：真实里这会发生（并发首点、或时钟回拨），
+  // 而单行夹具永远撞不上——撞不上就永远测不出"只按时间翻页会跳过一条"。
+  // 这张表有"revision 不许原地不动"的触发器（CAS 的 DB 侧护栏），所以手工拧一列
+  // 也必须同时把 revision 前移——这条用例顺带证明那道触发器真的在挡静默改写。
+  await fixtureSql`UPDATE note_learning_rounds
+      SET created_at = transaction_timestamp(), revision = revision + 1
+      WHERE id = ${opened[0]}::uuid OR id = ${opened[1]}::uuid`;
+
+  const seen: string[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 4; page += 1) {
+    const res = await readHistory(
+      `/v2/notes/${noteB}/learning-rounds?limit=1${cursor ? `&before=${cursor}` : ""}`,
+    );
+    if (res.items.length === 0) break;
+    for (const item of res.items) assert.ok(!seen.includes(item.roundId), `第 ${page + 1} 页重复了 ${item.drivingQuestion}`);
+    seen.push(...res.items.map((item) => item.roundId));
+    cursor = res.nextCursor;
+    if (!res.hasMore) break;
+  }
+  assert.deepEqual(new Set(seen).size, 3, `三轮都要翻到且只翻一次，实到 ${seen.length} 条`);
 });

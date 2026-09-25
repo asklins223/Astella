@@ -30,11 +30,10 @@ import { getNoteWithVersion } from "../note/service.ts";
 import {
   advanceNoteLearningRoundRequestV1Schema,
   createNoteLearningRoundRequestV1Schema,
-  noteLearningRoundHistoryV1Schema,
+  noteLearningRoundHistoryQueryV1Schema,
+  noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundV1Schema,
   reviseDrivingQuestionRequestV1Schema,
-  ROUND_HISTORY_DEFAULT_LIMIT_V1,
-  ROUND_HISTORY_MAX_LIMIT_V1,
   type NoteLearningRoundV1Wire,
 } from "@ailearn/shared/note-learning-round-contracts";
 import {
@@ -50,17 +49,13 @@ import {
 } from "./round-service.ts";
 import { roundBudgetsV1 } from "./round-budgets.ts";
 
-/** `?limit=` 不给就是默认那几条；上限挡在合同那一格同一个数上（不给一个调用方抬高它）。 */
-const listQueryV1Schema = z.strictObject({
-  limit: z.coerce.number().int().min(1).max(ROUND_HISTORY_MAX_LIMIT_V1).default(ROUND_HISTORY_DEFAULT_LIMIT_V1),
-});
-
 const STATUS_BY_CODE: Record<string, 400 | 404 | 409 | 500> = {
   invalid_driving_question: 400,
   invalid_budget: 400,
   invalid_snapshot: 400,
   note_not_found: 404,
   round_not_found: 404,
+  invalid_cursor: 400,
   round_already_open: 409,
   stale_revision: 409,
   round_closed: 409,
@@ -164,16 +159,26 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
 
   app.get("/v2/notes/:noteId/learning-rounds", async (req, reply) => {
     const noteId = (req.params as { noteId?: string }).noteId ?? "";
-    const parsedQuery = listQueryV1Schema.safeParse(req.query ?? {});
+    const parsedQuery = noteLearningRoundHistoryQueryV1Schema.safeParse(req.query ?? {});
     if (!z.string().uuid().safeParse(noteId).success || !parsedQuery.success) {
       return reply.code(400).send({ error: "invalid_request", message: "读这一篇的轮次记录需要的字段不对" });
     }
     const scope = scopeOf(req);
-    const page = await withWorkspaceTransaction(scope, (tx) =>
-      listRoundHistory(tx, scope, noteId, parsedQuery.data.limit),
-    );
+    let page;
+    try {
+      page = await withWorkspaceTransaction(scope, (tx) =>
+        listRoundHistory(tx, scope, noteId, {
+          limit: parsedQuery.data.limit,
+          beforeRoundId: parsedQuery.data.before,
+        }),
+      );
+    } catch (err) {
+      // 游标来路不对是**调用方的错**（`invalid_cursor` → 400），不吞成空页：
+      // 空页会被界面读成"我的记录少了"，而真实原因是给了一个不属于这一篇的指针。
+      return replyRoundError(reply, err, "读这一篇的轮次记录没成功");
+    }
     // 回信整份过一遍合同：漂移要红在这里，而不是红成客户端"某一格 undefined"。
-    return noteLearningRoundHistoryV1Schema.parse({
+    return noteLearningRoundHistoryPageV1Schema.parse({
       version: 1 as const,
       noteId,
       items: page.rows.map((row) => ({
@@ -187,6 +192,9 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
         closedAt: row.closedAt ? row.closedAt.toISOString() : null,
       })),
       hasMore: page.hasMore,
+      // 游标就是本页最后那一条的 id（有"更早的"才给指针，两者不许分叉）。
+      nextCursor: page.hasMore && page.rows.length > 0 ? page.rows[page.rows.length - 1].id : null,
+      shownCount: page.shownCount,
     });
   });
 

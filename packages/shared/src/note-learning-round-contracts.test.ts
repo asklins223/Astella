@@ -17,6 +17,7 @@ import assert from "node:assert/strict";
 import {
   advanceNoteLearningRoundRequestV1Schema,
   createNoteLearningRoundRequestV1Schema,
+  noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundV1Schema,
 } from "./note-learning-round-contracts.ts";
 
@@ -120,6 +121,40 @@ test("终态两格与 phase 的关系在合同上也说得出（拒的是不可�
   assert.equal(noteLearningRoundV1Schema.safeParse(roundFixture({ phase: "closed", outcome: "superseded" })).success, true);
   assert.equal(
     noteLearningRoundV1Schema.safeParse(roundFixture({ outcome: "not_a_real_outcome" })).success,
+    false,
+  );
+});
+
+test("记录那一页的合同：游标坏形状拒，`hasMore` 与 `nextCursor` 不同向也拒", () => {
+  const page = (overrides: Record<string, unknown> = {}) => ({
+    version: 1,
+    noteId: NOTE_ID,
+    items: [],
+    hasMore: false,
+    shownCount: 0,
+    nextCursor: null,
+    ...overrides,
+  });
+  assert.equal(noteLearningRoundHistoryPageV1Schema.safeParse(page()).success, true, "正常回读该过");
+  assert.equal(
+    noteLearningRoundHistoryPageV1Schema.safeParse(page({ nextCursor: "not-an-uuid" })).success,
+    false,
+    "游标不是 id 就拒（宁可红在解析上，不要让一个坏指针变成安静地回到第一页）",
+  );
+  assert.equal(
+    noteLearningRoundHistoryPageV1Schema.safeParse(page({ hasMore: true, nextCursor: null })).success,
+    false,
+    "「还有更早的」却给不出指针：界面上就是一颗点不动的按钮，这份回信根本不该存在",
+  );
+  assert.equal(
+    noteLearningRoundHistoryPageV1Schema.safeParse(
+      page({ hasMore: true, nextCursor: ROUND_ID }),
+    ).success,
+    true,
+    "同向的那一半必须收得下，否则上一条是在拦真实回执",
+  );
+  assert.equal(
+    noteLearningRoundHistoryPageV1Schema.safeParse({ ...page(), extra: 1 }).success,
     false,
   );
 });
