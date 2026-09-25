@@ -18,7 +18,7 @@ import type {
   ObjectiveSurfaceFreshnessV3,
 } from "@ailearn/shared/learning-objective-surface-contracts";
 import type { NoteBlockProjectionV1, NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
-import type { NoteLearningRoundV1Wire } from "@ailearn/shared/note-learning-round-contracts";
+import type { NoteLearningRoundHistoryItemV1, NoteLearningRoundHistoryV1, NoteLearningRoundV1Wire } from "@ailearn/shared/note-learning-round-contracts";
 import { useRoomStore } from "../../app/room-store";
 import { SpaceShareButton, noteShareScopeLabel } from "../space-share-control";
 import type { NoteShareScopeV1 } from "@ailearn/shared/note-share-contracts";
@@ -102,6 +102,12 @@ type NotebookProjection = {
    * 不能把笔记本身顶掉。`null` 在这里是真值："这一篇现在没有进行中的一轮"。
    */
   readonly openRound: NoteLearningRoundV1Wire | null;
+  /**
+   * 这一篇的轮次记录（PRD §10.3 读侧第一刀）。**空数组是真值**："这一篇还没有过一轮"，
+   * 不是读失败——读失败走 `catch` 那条，同样是空表（这一块的纪律与上面两读一致：
+   * 它是增补，不许把笔记本身顶掉）。
+   */
+  readonly roundHistory: NoteLearningRoundHistoryV1 | null;
   readonly capabilities: CapabilityProjectionV1;
   /**
    * The workspace's one live Card Generation run (owner only; Member sees an
@@ -238,6 +244,9 @@ const EDITOR_TOOLS: readonly EditorToolSpec[] = [
  * 点它们只往输入框里放一句起步的话，那句话必须还能改——判据在 §16.16，
  * 换问题不需要重编这篇笔记。
  */
+/** 记录里那一行的日期（§10.3 只要"哪一天"，时刻在卡片历史那一侧看）。 */
+const ROUND_DAY_FORMAT = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "short", day: "numeric" });
+
 export const ROUND_COPY = {
   ask: "这一轮想弄懂什么？",
   start: "开始这一轮",
@@ -249,6 +258,26 @@ export const ROUND_COPY = {
   end: "先到这里",
   ending: "正在收尾…",
   fromStructure: "或从这篇的小节里另选一句：",
+  /**
+   * 那一块的第一句。`hasMore` 会改这句话的**量词**：只回了最近几条时报"开过 N 轮"
+   * 就是个假总数（§10.3 要的是完整历史，而这一版没做分页）——所以那种情况下
+   * 只说"最近的这几轮"，不替整篇报数。
+   */
+  historyLead: (count: number, hasMore: boolean) =>
+    hasMore ? `不止这些，先看最近这 ${count} 轮：` : `这一篇开过 ${count} 轮。`,
+  historyLine: (question: string) => `「${question}」`,
+  /** §10.3 那一格里"完成／部分完成／中断"这三个字由这一处签发；`active` 不在其中。 */
+  historyState: {
+    active: "正在进行",
+    paused: "停住了",
+    closed: "已收尾",
+  } as Record<"active" | "paused" | "closed", string>,
+  historyOutcome: {
+    completed: "走完了",
+    partial: "先到这里",
+    superseded: "被新的一轮替掉",
+    system_failure: "中途出了问题",
+  } as Record<"completed" | "partial" | "superseded" | "system_failure", string>,
   openLine: (question: string) => `这一轮：${question}`,
   revisedLine: (revision: number) => `这一句话已经改过 ${revision - 1} 次。`,
   hint: "改这句话不用重编笔记；这一轮先只对你自己可见。",
@@ -338,6 +367,18 @@ export function structureQuestionCandidatesV1(
  * 那三个来源档不是三种表情，是"这句话是谁定的"这一件事实（§3.3）：
  * 没点预设、整句自己写的 ⇒ authored；点了预设原样用 ⇒ suggested；点了又改 ⇒ rewritten。
  */
+/**
+ * 记录里那一格"这一轮到哪一步了"的**唯一**签发处（§10.3 的"完成／部分完成／中断"）。
+ * 终态才看 outcome；`active`/`paused` 没有 outcome（0282 的双向 CHECK 保证），
+ * 所以那种行只说状态、不猜原因。
+ */
+export function roundHistoryStateLabelV1(
+  item: Pick<NoteLearningRoundHistoryItemV1, "phase" | "outcome">,
+): string {
+  if (item.phase === "closed" && item.outcome) return ROUND_COPY.historyOutcome[item.outcome];
+  return ROUND_COPY.historyState[item.phase];
+}
+
 export function roundQuestionSourceV1(
   draft: string,
   starterApplied: string | null,
@@ -593,11 +634,26 @@ export function NotebookSurface() {
       openRound = null;
     }
 
+    // 记录那一发与上面两读同一纪律：自己吞异常。它读的是历史，
+    // 读失败最多是这一块不出现，不许把整篇笔记换成错误页。
+    let roundHistory: NotebookProjection["roundHistory"] = null;
+    try {
+      const historyResponse = await api.noteLearningRound.history({
+        meta: createRequestMeta(epochRef.current),
+        noteId: note.noteId,
+      });
+      if (historyResponse.workspaceEpoch) epochRef.current = historyResponse.workspaceEpoch;
+      roundHistory = unwrapGatewayResult(historyResponse);
+    } catch {
+      roundHistory = null;
+    }
+
     return {
       note,
       source,
       sourceFailure,
       openRound,
+      roundHistory,
       objective: focus && focus.objective.sources.primaryNote?.noteId === note.noteId
         ? focus.objective
         : null,
@@ -628,6 +684,7 @@ export function NotebookSurface() {
   /** 这一篇的学习目标主行动；读不到就是 null，那一行整个不画（W4-2 第三刀）。 */
   const noteObjective = data?.noteObjective ?? null;
   const openRound = data?.openRound ?? null;
+  const roundHistory = data?.roundHistory ?? null;
   const capabilities = data?.capabilities ?? null;
   const activeGenerations = data?.activeGeneration?.state === "data" ? data.activeGeneration.data : [];
   // 这篇笔记自己的在制批次。一个工作区可以同时有多篇笔记各自在制一批卡，所以
@@ -1830,6 +1887,22 @@ export function NotebookSurface() {
           )}
           {roundFailure ? <p className="small notebook-note" role="alert">{roundFailure}</p> : null}
         </div>
+      ) : null}
+      {/* 这一篇的轮次记录（PRD §10.3 读侧第一刀）。没有历史时一行都不多——空数组
+          与"这篇还没开过轮"是同一件事，不必对用户播报；读失败也不报（这块是增补）。 */}
+      {roundHistory && roundHistory.items.length > 0 ? (
+        <section className="notebook-round-history">
+          <p className="small notebook-note">{ROUND_COPY.historyLead(roundHistory.items.length, roundHistory.hasMore)}</p>
+          <ol className="notebook-round-history__list">
+            {roundHistory.items.map((item) => (
+              <li key={item.roundId}>
+                <span className="small">{ROUND_DAY_FORMAT.format(new Date(item.startedAt))}</span>
+                <span className="small">{roundHistoryStateLabelV1(item)}</span>
+                <span className="small notebook-note">{ROUND_COPY.historyLine(item.drivingQuestion)}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
       ) : null}
       <div className="rule" />
       <div className="reading-body">

@@ -2552,6 +2552,33 @@
   gap: 8px;
 }
 
+/* 这一篇的轮次记录（39d §10.3 读侧第一刀）。这一块**没有**借用上面那个基类：
+   它摆的不是动作，是一行一行的历史，所以自己一份规格，间距沿用这一页小字之间的 8px。
+   每一行三格（日期 / 状态 / 那一轮的问题）并排，窄屏换行而不是挤压。 */
+.hud-surface .notebook .notebook-round-history {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.hud-surface .notebook .notebook-round-history .notebook-note { margin-bottom: 0; }
+
+.hud-surface .notebook .notebook-round-history__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.hud-surface .notebook .notebook-round-history__list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 @media (max-width: 760px) {
   .hud-surface .notebook .notebook-actions { right: 18px; bottom: 14px; }
   .hud-surface .notebook .notebook-actions--editor { right: 18px; bottom: 26px; }

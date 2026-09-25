@@ -130,7 +130,12 @@ import {
   desktopSearchPageSchema,
 } from "@ailearn/shared/desktop-surface-contracts";
 import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema } from "@ailearn/shared/learning-objective-surface-contracts";
-import { noteLearningRoundV1Schema, roundDrivingQuestionSourceV1Schema } from "@ailearn/shared/note-learning-round-contracts";
+import {
+  noteLearningRoundHistoryV1Schema,
+  noteLearningRoundV1Schema,
+  ROUND_HISTORY_MAX_LIMIT_V1,
+  roundDrivingQuestionSourceV1Schema,
+} from "@ailearn/shared/note-learning-round-contracts";
 import { understandingTopologySnapshotV3Schema } from "@ailearn/shared/understanding-topology-v3-contracts";
 import { todayActivityV1Schema } from "@ailearn/shared/activity-surface-contracts";
 // 跨空间统计合同：输出校验器与网关共用同一份形状，渲染层不另抄一遍。
@@ -551,6 +556,12 @@ const noteLearningRoundReviseInputSchema = z.strictObject({
   expectedRevision: z.number().int().min(1),
   drivingQuestion: z.string().trim().min(1).max(500),
   drivingQuestionSource: roundDrivingQuestionSourceV1Schema,
+});
+const noteLearningRoundHistoryInputSchema = z.strictObject({
+  ...m1InputBase,
+  noteId: uuidSchema,
+  // 上限在服务端合同那一格（同一个数），这里只做"坏值不往上传"。
+  limit: z.number().int().min(1).max(ROUND_HISTORY_MAX_LIMIT_V1).optional(),
 });
 const noteLearningRoundCloseInputSchema = z.strictObject({
   ...m1InputBase,
@@ -2831,6 +2842,12 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
       drivingQuestionSource: input.drivingQuestionSource,
     }, input.meta.requestId);
   }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundV1Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundHistory, noteLearningRoundHistoryInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.getNoteLearningRoundHistory(input.noteId, input.limit, input.meta.requestId);
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundHistoryV1Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundClose, noteLearningRoundCloseInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "note.detail");

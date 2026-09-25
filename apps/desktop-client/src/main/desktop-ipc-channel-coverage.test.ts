@@ -241,7 +241,7 @@ describe("IPC 通道覆盖对账", () => {
    *  - `open` 在"这一篇没有未完成轮次"时回 `data: null`，不是 `ok:false`——
    *    每篇新笔记一进页面就吃一条红色提示，是这一族最常见的错法。
    */
-  it("轮次那四条：该转发的转发，该在本机挡下的不打网关", async () => {
+  it("轮次那五条：该转发的转发，该在本机挡下的不打网关", async () => {
     const round = {
       version: 1,
       roundId: "77777777-7777-4777-8777-777777777777",
@@ -262,9 +262,25 @@ describe("IPC 通道覆盖对账", () => {
       createdAt: "2026-09-26T04:00:00.000Z",
       updatedAt: "2026-09-26T04:00:00.000Z",
     };
+    const history = {
+      version: 1,
+      noteId: NOTE_ID,
+      items: [{
+        roundId: "99999999-9999-4999-8999-999999999999",
+        phase: "closed",
+        outcome: "partial",
+        drivingQuestion: "上一轮的那句问题",
+        drivingQuestionSource: "user_authored",
+        drivingQuestionRevision: 2,
+        startedAt: "2026-09-25T04:00:00.000Z",
+        closedAt: "2026-09-25T05:00:00.000Z",
+      }],
+      hasMore: true,
+    };
     const gateway = stubGateway({
       createNoteLearningRound: vi.fn(async () => round),
       getOpenNoteLearningRound: vi.fn(async () => null),
+      getNoteLearningRoundHistory: vi.fn(async () => history),
     } as never) as unknown as Record<string, ReturnType<typeof vi.fn>>;
     const { event } = await register(gateway as never);
 
@@ -300,5 +316,15 @@ describe("IPC 通道覆盖对账", () => {
     const opened = await (electronMock.handlers.get(DESKTOP_IPC_CHANNELS.noteLearningRoundOpen))!(event, { meta, noteId: NOTE_ID });
     expect(opened.ok).toBe(true);
     expect(requireData(opened)).toBeNull();
+
+    // 记录那一条：`limit` 不给就按服务端的默认档转发（本机不自己填一个数，
+    // 那会变成"客户端决定了屏幕上看几轮"），而坏值在本机就挡掉。
+    const historyHandler = (electronMock.handlers.get(DESKTOP_IPC_CHANNELS.noteLearningRoundHistory))!;
+    const gotHistory = await historyHandler(event, { meta, noteId: NOTE_ID });
+    expect(requireData(gotHistory)).toMatchObject({ hasMore: true, items: [{ drivingQuestion: "上一轮的那句问题" }] });
+    expect(gateway.getNoteLearningRoundHistory).toHaveBeenCalledWith(NOTE_ID, undefined, meta.requestId);
+    const badLimit = await historyHandler(event, { meta, noteId: NOTE_ID, limit: 0 } as never);
+    expect(badLimit.ok).toBe(false);
+    expect(gateway.getNoteLearningRoundHistory).toHaveBeenCalledTimes(1);
   });
 });

@@ -221,6 +221,31 @@ try {
     noteVersionBefore !== null && noteVersionBefore === noteVersionAfter,
     `${String(noteVersionBefore)} → ${String(noteVersionAfter)}`,
   )
+
+  // 7) §10.3 那一块：刚收尾的那一轮要出现在**这一篇的记录**里，
+  //    而且"开过 N 轮"那个 N 必须等于屏上行数（报一个屏上没有的数就是假总数）。
+  const history = page.locator('.notebook-round-history').first()
+  const historyShown = (await history.count()) > 0
+  const rows = historyShown
+    ? await history.locator('.notebook-round-history__list > li').allTextContents()
+    : []
+  readings.historyRowCount = rows.length
+  readings.historyLead = historyShown ? (((await history.locator('p').first().textContent()) ?? '').trim()) : ''
+  check('收尾之后那一块出现在这一篇的笔记页上', historyShown, readings.historyLead)
+  const closedRow = rows.find((row) => row.includes(rewritten)) ?? ''
+  check('记录里有刚收尾的那一轮，且带着终态那一格', closedRow.includes('先到这里'), { rows, closedRow })
+  const leadCount = Number((readings.historyLead.match(/开过 (\d+) 轮/) ?? [])[1] ?? '-1')
+  check('那句「开过 N 轮」的 N 就是屏上的行数', leadCount === rows.length, { lead: readings.historyLead, rows: rows.length })
+  // 三格（日期 / 状态 / 问题）在**同一行**上：这一条只有真窗口量得出来（jsdom 没有布局）。
+  const sameLine = await history.evaluate((block) => {
+    const spans = Array.from(block.querySelectorAll('.notebook-round-history__list li:first-child > span'))
+    const tops = spans.map((span) => Math.round(span.getBoundingClientRect().top))
+    return { spans: spans.length, distinctTops: [...new Set(tops)].length }
+  })
+  readings.rowSpansOnOneLine = sameLine
+  check('那一行的三格排在同一行（样式真接上了）',
+    sameLine.spans === 3 && sameLine.distinctTops === 1,
+    sameLine)
 } finally {
   await app.close().catch(() => undefined)
 }

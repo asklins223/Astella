@@ -152,6 +152,7 @@ import {
 } from "./desktop-surface-contracts.ts";
 import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema } from "./learning-objective-surface-contracts.ts";
 import {
+  noteLearningRoundHistoryV1Schema,
   noteLearningRoundV1Schema,
   roundDrivingQuestionSourceV1Schema,
 } from "./note-learning-round-contracts.ts";
@@ -336,6 +337,10 @@ export const DESKTOP_IPC_CHANNELS = {
   noteLearningRoundCreate: "ailearn.v1.noteLearningRound.create",
   noteLearningRoundRevise: "ailearn.v1.noteLearningRound.revise",
   noteLearningRoundClose: "ailearn.v1.noteLearningRound.close",
+  // 这一篇的轮次记录（PRD §10.3 的读侧第一刀）。单开一发而不是塞进 `open`：
+  // `open` 回的是"此刻那一轮"（没有就 404→null），而记录是"开过的每一轮"——
+  // 收尾之后 `open` 变 null、记录变长，两件事的读数本来就相反。
+  noteLearningRoundHistory: "ailearn.v1.noteLearningRound.history",
   understandingGetTopology: "ailearn.v1.understanding.getTopology",
   searchGlobal: "ailearn.v1.search.global",
   noteSave: "ailearn.v1.note.save",
@@ -2412,6 +2417,13 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
       expectedRevision: number;
       outcome: "completed" | "partial";
     }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundV1Schema>>>;
+    /**
+     * 这一篇的轮次记录：新的在前，只回最近 `limit` 条，`hasMore` 老实说还有没有更早的
+     * （**分页这一版没做**，§10.3 要的是完整分页历史，那一半记在台账里）。
+     */
+    history(input: { meta: RequestMetaV1; noteId: Uuid; limit?: number }): Promise<
+      GatewayResultV1<z.infer<typeof noteLearningRoundHistoryV1Schema>>
+    >;
   };
   readonly review: {
     getQueue(input: {

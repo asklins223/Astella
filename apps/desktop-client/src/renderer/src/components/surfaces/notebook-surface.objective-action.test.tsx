@@ -74,6 +74,7 @@ type Api = {
   note: { save: ReturnType<typeof vi.fn> };
   noteLearningRound: {
     open: ReturnType<typeof vi.fn>;
+    history: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     revise: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
@@ -118,6 +119,10 @@ function installApi(
     blocks?: NoteBlockProjectionV1[];
     /** 轮次回读的第 N 次给什么（缺省 = 每次都给 `openRound` 那一份）。 */
     openSequence?: Record<string, unknown>[];
+    /** 这一篇的轮次记录回读（缺省 = 空表，即"还没有过轮次"）。 */
+    roundHistory?: Record<string, unknown>;
+    /** 那一发读失败（走网关那一条形状）。 */
+    roundHistoryFails?: boolean;
   } = {},
 ): Api {
   const syncController = options.syncController ?? { fail: false };
@@ -128,6 +133,10 @@ function installApi(
       start: vi.fn(async () => ok({ runId: RUN_ID, snapshotId: "55555555-4555-4555-8555-555555555555" })),
     },
     noteLearningRound: {
+      // 读失败走网关那一条（`{ok:false}`），不是抛异常：与真桥同一形状。
+      history: vi.fn(async () => (options.roundHistoryFails
+        ? { ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } }
+        : ok(options.roundHistory ?? { version: 1, noteId: NOTE_ID, items: [], hasMore: false }))),
       // 轮次的回读**按调用次**给：迟到那一发的场景必须是"第一次读到旧版、
     // 失败之后重读读到新版"，一份固定回读测不出"换回了现在那一版"。
     open: vi.fn(async () => {
@@ -223,6 +232,8 @@ async function show(
     openRound?: Record<string, unknown> | null;
     blocks?: NoteBlockProjectionV1[];
     openSequence?: Record<string, unknown>[];
+    roundHistory?: Record<string, unknown>;
+    roundHistoryFails?: boolean;
   } = {},
 ) {
   const syncController = options.syncController ?? { fail: false };
@@ -738,5 +749,100 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
     const { roundBlock } = await show([]);
     // 对照在上一条：有小节时这一行一定出现，所以这里的"没有"测的是判据不是拼写。
     expect(roundBlock()!.textContent).not.toContain(ROUND_COPY.fromStructure);
+  });
+});
+
+/**
+ * 这一篇的轮次记录（PRD §10.3 读侧第一刀；39d W4-5 第四刀）。
+ *
+ * 钉的是四件**只有渲染层能钉**的：
+ *  1. 每一行把日期、状态那一格、那一轮的问题原文放在**同一行**上；
+ *  2. 状态那一格只有一个来源（`roundHistoryStateLabelV1`）：终态才看收尾原因；
+ *  3. 数量那句话不替整篇报假总数（只回了最近几条时不说"开过 N 轮"）；
+ *  4. 这一发读失败不许把笔记本身顶掉。
+ */
+function historyItem(overrides: Record<string, unknown> = {}) {
+  return {
+    roundId: "aaaaaaaa-1111-4111-8111-111111111111",
+    phase: "closed",
+    outcome: "partial",
+    drivingQuestion: "判断为什么有索引，查询仍然可能慢",
+    drivingQuestionSource: "suggested",
+    drivingQuestionRevision: 1,
+    startedAt: "2026-09-24T02:00:00.000Z",
+    closedAt: "2026-09-24T03:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function historyOf(items: Record<string, unknown>[], hasMore = false) {
+  return { version: 1, noteId: NOTE_ID, items, hasMore };
+}
+
+function historyRows(): string[] {
+  return [...document.querySelectorAll(".notebook-round-history__list li")].map((row) => row.textContent ?? "");
+}
+
+describe("这一篇的轮次记录（§10.3 读侧）", () => {
+  it("每一行：日期、状态那一格、那一轮的问题原文，都在同一行上", async () => {
+    await show([], {
+      roundHistory: historyOf([
+        historyItem({ roundId: "bbbbbbbb-1111-4111-8111-111111111111", drivingQuestion: "第二轮的那句问题", outcome: "superseded" }),
+        historyItem({ roundId: "cccccccc-1111-4111-8111-111111111111", drivingQuestion: "第一轮的那句问题" }),
+      ]),
+    });
+    const rows = historyRows();
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain("第二轮的那句问题");
+    expect(rows[0]).toContain("被新的一轮替掉");
+    expect(rows[1]).toContain("先到这里");
+    // 日期是真格式化出来的：只断言"含数字"太宽（startedAt 写成什么都含数字）。
+    expect(/年.*月.*日/.test(rows[0])).toBe(true);
+  });
+
+  it("状态那一格只有一个来源：终态看收尾原因，未完成的只看状态、不猜原因", async () => {
+    await show([], {
+      roundHistory: historyOf([
+        historyItem({ roundId: "11111111-2222-4222-8222-222222222222", phase: "active", outcome: null, closedAt: null }),
+        historyItem({ roundId: "22222222-3333-4333-8333-333333333333", phase: "paused", outcome: null, closedAt: null }),
+        historyItem({ roundId: "33333333-4444-4444-8444-444444444444", outcome: "completed", closedAt: "2026-09-25T03:00:00.000Z" }),
+        historyItem({ roundId: "44444444-5555-4555-8555-555555555555", outcome: "system_failure", closedAt: "2026-09-25T04:00:00.000Z" }),
+      ]),
+    });
+    const states = [...document.querySelectorAll(".notebook-round-history__list li")]
+      .map((row) => row.querySelectorAll("span")[1].textContent?.trim());
+    expect(states).toEqual(["正在进行", "停住了", "走完了", "中途出了问题"]);
+  });
+
+  it("只回了最近几条时不替整篇报总数；回全了才说「开过 N 轮」", async () => {
+    const truncated = await show([], {
+      roundHistory: historyOf([historyItem()], true),
+    });
+    // 两次 render 在同一份 document 里共存 ⇒ 每一发只看**自己那个 container**，
+    // 否则 `document.querySelector` 会永远命中第一次那一个（读出来像"文案没换"）。
+    const truncatedLine = truncated.container.querySelector(".notebook-round-history p");
+    expect(truncatedLine?.textContent).toContain("不止这些，先看最近这 1 轮：");
+    expect(truncatedLine?.textContent).not.toContain("这一篇开过");
+
+    const complete = await show([], {
+      roundHistory: historyOf([historyItem({ roundId: "55555555-6666-4666-8666-666666666666" })], false),
+    });
+    expect(complete.container.querySelector(".notebook-round-history p")?.textContent).toContain("这一篇开过 1 轮。");
+    expect(complete.container.querySelector(".notebook-round-history p")?.textContent).not.toContain("不止这些");
+  });
+
+  it("这一篇还没有过轮次 ⇒ 那一块根本不在（不给页面添一行空话）", async () => {
+    const { container } = await show([]);
+    // 缺省回读是空表；上面几条已经证明"有记录时这一块在"，所以这里的"不在"测的是判据。
+    expect(container.querySelector(".notebook-round-history")).toBeNull();
+  });
+
+  it("读记录失败不许把笔记顶掉：那一块不出现，纸上还是笔记", async () => {
+    const { api, container } = await show([], { roundHistoryFails: true });
+    expect(api.noteLearningRound.history).toHaveBeenCalled();
+    expect(container.querySelector(".notebook-round-history")).toBeNull();
+    expect(container.querySelector(".reading-body")?.textContent).toContain("质量是惯性大小的唯一量度。");
+    // 对照：同一页上"未完成那一轮"照常画（失败只撤掉它自己那一块，不牵连别人）。
+    expect(container.querySelector(".notebook-round")).toBeTruthy();
   });
 });

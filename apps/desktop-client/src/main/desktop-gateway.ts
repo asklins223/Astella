@@ -295,7 +295,13 @@ import {
   desktopAiAuditPageV1Schema,
 } from "@ailearn/shared/desktop-surface-contracts";
 import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema, type ObjectiveListPageV3, type LearningObjectiveSurfaceV3 } from "@ailearn/shared/learning-objective-surface-contracts";
-import { noteLearningRoundViewV1Schema, type NoteLearningRoundV1Wire } from "@ailearn/shared/note-learning-round-contracts";
+import {
+  noteLearningRoundHistoryV1Schema,
+  noteLearningRoundViewV1Schema,
+  ROUND_HISTORY_DEFAULT_LIMIT_V1,
+  type NoteLearningRoundHistoryV1,
+  type NoteLearningRoundV1Wire,
+} from "@ailearn/shared/note-learning-round-contracts";
 import { understandingTopologySnapshotV3Schema, type UnderstandingTopologySnapshotV3 } from "@ailearn/shared/understanding-topology-v3-contracts";
 import {
   activateCardCandidatesRequestV2Schema,
@@ -1994,6 +2000,30 @@ export class DesktopGateway {
     const parsed = noteLearningRoundViewV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data.round;
+  }
+
+  /**
+   * 这一篇的轮次记录（§10.3 读侧）。空表是真的"还没有过轮次"，不是失败——
+   * 所以这一发**不**像 `getOpenNoteLearningRound` 那样把 404 折成 null：
+   * 记录那一条路由根本不回 404，把它折一次就会把"路由改了"读成"这篇没有历史"。
+   */
+  async getNoteLearningRoundHistory(
+    noteId: string,
+    limit: number = ROUND_HISTORY_DEFAULT_LIMIT_V1,
+    requestId?: string,
+  ): Promise<NoteLearningRoundHistoryV1> {
+    await this.ensureConnected(requestId);
+    const result = await this.request(
+      `/v2/notes/${this.safeUuid(noteId)}/learning-rounds?limit=${limit}`,
+      { method: "GET" },
+      true,
+      false,
+      requestId,
+    );
+    if (result.status >= 300) throw this.mapResponseError(result.status, result.headers);
+    const parsed = noteLearningRoundHistoryV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
   }
 
   /**
