@@ -9,10 +9,19 @@ import {
   type WebContents
 } from 'electron'
 import { createReadStream } from 'node:fs'
-import { realpath, stat } from 'node:fs/promises'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { createAssetResponsePlan, mimeTypeForPath } from './asset-response'
+import { ARTIFACT_HOST, isArtifactFrameUrl, isArtifactId } from '../shared/artifact-frame'
+import {
+  artifactDocumentContentSecurityPolicy,
+  artifactFrameOrigin,
+  assembleArtifactDocument,
+  classifyFramePolicySubject,
+  isAllowedSubFrameNavigation,
+  rejectAllContentSecurityPolicy
+} from './artifact-surface'
 import { nativeWindowChrome, titleBarOverlayForTheme } from './window-chrome'
 import {
   WINDOW_STATE_CHANNEL,
@@ -91,6 +100,47 @@ function isWithin(rootPath: string, candidatePath: string): boolean {
   )
 }
 
+/**
+ * 产物在本机的落点：`<userData>/artifacts/<artifactId>.html`。
+ *
+ * 路径安全靠 `artifactId` 的形状（只认 uuid，见 `shared/artifact-frame.ts`）：没有 `..`、
+ * 没有分隔符可写，所以 `resolve` 之后一定落在 `artifacts/` 里。
+ *
+ * 本轮这一份由隔离探针（`scripts/probe-artifact-isolation.ts`）用夹具写入；产品侧的写入方
+ * 是"生成产物"那一段（W4-1 第二段）。**手写这段时不要把 `artifactId` 换成任意字符串**。
+ */
+function artifactSourcePath(artifactId: string): string {
+  return resolve(app.getPath('userData'), 'artifacts', `${artifactId}.html`)
+}
+
+/**
+ * `ailearn-app://artifact/<id>`：交给渲染进程读的是**组装好的那一份文档**
+ * （我们的模板 + 产物），配额在这里做第二道校验，超量整份拒绝（D4 §6）。
+ */
+async function artifactDocumentResponse(requestUrl: URL, method: string): Promise<Response> {
+  const artifactId = requestUrl.pathname.replace(/^\/+/, '')
+  if (!isArtifactId(artifactId)) return response(404, 'Not found', method)
+
+  let content: string
+  try {
+    content = await readFile(artifactSourcePath(artifactId), 'utf8')
+  } catch {
+    return response(404, 'Not found', method)
+  }
+
+  const assembled = assembleArtifactDocument({ artifactId, content })
+  if (!assembled.ok) return response(413, assembled.detail, method)
+
+  const document = assembled.document
+  return new Response(method === 'HEAD' ? null : document, {
+    status: 200,
+    headers: {
+      'Content-Length': String(Buffer.byteLength(document)),
+      'Content-Type': 'text/html; charset=utf-8'
+    }
+  })
+}
+
 function registerAppProtocol(): void {
   const rendererRoot = resolve(__dirname, '../renderer')
 
@@ -124,12 +174,22 @@ function registerAppProtocol(): void {
     }
 
     if (
-      requestUrl.hostname !== APP_HOST ||
+      requestUrl.hostname !== APP_HOST &&
+      requestUrl.hostname !== ARTIFACT_HOST
+    ) {
+      return response(403, 'Forbidden', request.method)
+    }
+
+    if (
       requestUrl.username !== '' ||
       requestUrl.password !== '' ||
       requestUrl.port !== ''
     ) {
       return response(403, 'Forbidden', request.method)
+    }
+
+    if (requestUrl.hostname === ARTIFACT_HOST) {
+      return artifactDocumentResponse(requestUrl, request.method)
     }
 
     let requestedPath: string
@@ -239,7 +299,10 @@ function rendererContentSecurityPolicy(): string {
     `connect-src 'self' blob:${devConnectSources}`,
     "worker-src 'self' blob:",
     "object-src 'none'",
-    "frame-src 'none'",
+    // D4 §3.4：本方案对既有防线的**全部改动只有这一条**——从 `'none'` 放开到
+    // "可以嵌入我们自己那个受限 origin"。主渲染进程自身的能力一条没变
+    //（script-src／img-src／connect-src／object-src 全不动）。
+    `frame-src ${artifactFrameOrigin()}`,
     "base-uri 'none'",
     "form-action 'self'"
   ].join('; ')
@@ -247,6 +310,11 @@ function rendererContentSecurityPolicy(): string {
 
 function isAllowedRendererRequest(target: string): boolean {
   if (target.startsWith('blob:') || target.startsWith('data:')) return true
+
+  // 产物文档走我们自己的第二个 host。**这不是放宽**：外连一条不放（下面那个 else 分支
+  // 仍然只认 app scheme 的 bundle），加进来的只是"主页面可以嵌入自己的一块受限面"。
+  // 产物文档自身不许有任何外部子资源——它的 CSP 里 `default-src 'none'`（artifact-surface.ts）。
+  if (isArtifactFrameUrl(target)) return true
 
   try {
     const targetUrl = new URL(target)
@@ -268,27 +336,68 @@ function isAllowedRendererRequest(target: string): boolean {
   }
 }
 
+/**
+ * 两道闸的计数（D4 §7.2 的"阳性对照先证明计数会动"）。
+ *
+ * 计数本身是产品路径的一部分（零成本），但**只有隔离探针读得到**：见下面那处
+ * `AILEARN_ISOLATION_PROBE=1` 的挂载——默认关着，也没有任何 IPC 通道碰它。
+ */
+const isolationGateCounters = {
+  blockedRequests: 0,
+  blockedNavigations: 0,
+  /**
+   * `will-frame-navigate` 一共触发了几次。它不是判据，是**诊断读数**：
+   * 第一轮实测里 T1b／T3b 两次子 frame 自导航没有把它打动（计数停在 0），
+   * 而 frame 确实被导航走了（落到错误页）——记这个数就是为了把
+   * "闸没拦"与"事件压根没来"分开（D4 §4.4 那句"事件名与覆盖范围必须实测"）。
+   */
+  frameNavigateEvents: 0
+}
+
+if (process.env.AILEARN_ISOLATION_PROBE === '1') {
+  ;(globalThis as Record<string, unknown>).__ailearnIsolationProbe = isolationGateCounters
+}
+
 function registerRendererSecurityPolicy(): void {
+  // 过滤器必须**逐 host 列**：`<all_urls>` 不匹配自定义 scheme（实测：漏了 artifact 这一条时，
+  // 产物文档既拿不到自己的 CSP，请求闸也不会拦它发出的外部请求）。
+  const appSchemeFilter = [`<all_urls>`, `${APP_SCHEME}://${APP_HOST}/*`, `${APP_SCHEME}://${ARTIFACT_HOST}/*`]
+
   session.defaultSession.webRequest.onBeforeRequest(
-    { urls: ['<all_urls>', `${APP_SCHEME}://${APP_HOST}/*`] },
+    { urls: appSchemeFilter },
     (details, callback) => {
-      callback({ cancel: !isAllowedRendererRequest(details.url) })
+      const allowed = isAllowedRendererRequest(details.url)
+      if (!allowed) isolationGateCounters.blockedRequests += 1
+      callback({ cancel: !allowed })
     }
   )
 
   session.defaultSession.webRequest.onHeadersReceived(
-    { urls: ['<all_urls>', `${APP_SCHEME}://${APP_HOST}/*`] },
+    { urls: appSchemeFilter },
     (details, callback) => {
       if (details.resourceType !== 'mainFrame' && details.resourceType !== 'subFrame') {
         callback({ responseHeaders: details.responseHeaders })
         return
       }
 
+      // 三路分流（D4 §3.4）：主页面套主策略；产物 origin 套产物策略；**其余一律收紧**——
+      // 以前这里只会套主策略，那对一帧不可信内容太宽。
+      const subject = classifyFramePolicySubject({
+        url: details.url,
+        rendererDevOrigin: configuredDevOrigin() ?? null
+      })
+      const policy =
+        subject === 'artifact'
+          ? artifactDocumentContentSecurityPolicy()
+          : subject === 'renderer'
+            ? rendererContentSecurityPolicy()
+            : rejectAllContentSecurityPolicy()
+
       const responseHeaders = { ...details.responseHeaders }
       for (const key of Object.keys(responseHeaders)) {
         if (key.toLowerCase() === 'content-security-policy') delete responseHeaders[key]
       }
-      responseHeaders['Content-Security-Policy'] = [rendererContentSecurityPolicy()]
+      responseHeaders['Content-Security-Policy'] = [policy]
       callback({ responseHeaders })
     }
   )
@@ -319,11 +428,52 @@ function hardenWebContents(contents: WebContents): void {
   contents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
   contents.on('will-navigate', (event, target) => {
-    if (!isAllowedNavigation(target)) event.preventDefault()
+    if (isAllowedNavigation(target)) return
+    isolationGateCounters.blockedNavigations += 1
+    event.preventDefault()
   })
 
   contents.on('will-redirect', (event, target) => {
-    if (!isAllowedNavigation(target)) event.preventDefault()
+    if (isAllowedNavigation(target)) return
+    isolationGateCounters.blockedNavigations += 1
+    event.preventDefault()
+  })
+
+  /**
+   * 子 frame 的导航（D4 §4.4）：上面那两条只覆盖主 frame。
+   *
+   * 只有一种放行：**宿主发起、且 frame 还在首次加载**、目标是我们自己的产物 origin。
+   * 产物自己发起的任何导航（`location.href=…`、`top.location=…`）都在这里被拒——
+   * 包括把自己导航到 `ailearn-app://bundle`（那一份文档带着 preload 桥，是探针要打的一发）。
+   *
+   * 判断依据取"发起者是不是这个 frame 自己"＋"这个 frame 当前还在不在初始文档"，
+   * 而不是"目标在不在允许集合"：后者放不住"从产物 origin 导航到主页面 origin"。
+   */
+  contents.on('will-frame-navigate', (details) => {
+    if (details.isMainFrame) return
+    isolationGateCounters.frameNavigateEvents += 1
+
+    const frame = details.frame
+    const initiator = details.initiator ?? null
+    const initiatedBySelf = Boolean(
+      frame &&
+        initiator &&
+        initiator.processId === frame.processId &&
+        initiator.routingId === frame.routingId
+    )
+
+    if (
+      isAllowedSubFrameNavigation({
+        target: details.url,
+        frameUrl: frame?.url ?? null,
+        initiatedBySelf
+      })
+    ) {
+      return
+    }
+
+    isolationGateCounters.blockedNavigations += 1
+    details.preventDefault()
   })
 
   contents.on('will-attach-webview', (event) => {

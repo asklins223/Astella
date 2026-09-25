@@ -144,7 +144,9 @@ form-action 'none';
 
 ### 4.2 请求闸保持不变，但必须**证明它拦到了**
 
-`onBeforeRequest` 已经取消一切非 app scheme／dev origin／`blob:`／`data:` 的请求（`index.ts:271-277`），这是**进程级**的一道，比子文档 CSP 更靠底层。本方案不动它。
+`onBeforeRequest` 已经取消一切非 app scheme／dev origin／`blob:`／`data:` 的请求（`index.ts:271-277`），这是**进程级**的一道，比子文档 CSP 更靠底层。本方案不动它的**判据**。
+
+**2026-09-25（W4-1 实测更正）**：「不动它」在**过滤器**那一层不成立——`webRequest` 的 url 过滤器里 `<all_urls>` **不匹配自定义 scheme**，而原先只列了 `ailearn-app://bundle/*`。第一轮探针正是因此读到"产物文档没有自己的 CSP"（fetch 被请求闸取消、`securitypolicyviolation` 一条都没有，看起来像"CSP 生效了"）。落地方案：把 `ailearn-app://artifact/*` 加进 `onBeforeRequest` 与 `onHeadersReceived` **两份**过滤器的同一份名单（`index.ts` 的 `appSchemeFilter`）。判据不放宽，只是让处理器真的看得到这个 host。
 
 **但"没动"不等于"有效"**：探针必须跑**阳性对照**——在产物里放一个外链 `<img>` 与一次 `fetch('https://example.com')`，确认主进程的 cancel 计数**动了**；动了之后，再跑正式产物确认不动。本仓库反复吃过的假绿形状就是"计数器不动，被读成零违规"。
 
@@ -160,6 +162,11 @@ form-action 'none';
 现状的 `will-navigate`／`will-redirect` 挂在 webContents 上、面向主 frame（`index.ts:321-327`）。子 frame 的导航需要 `will-frame-navigate`（或按当时 Electron 版本的等价事件）单独拒绝。
 
 **这一条必须在实施时核实事件名与覆盖范围，并以探针证明**（探针：在产物里 `location.href='ailearn-app://bundle/index.html'`，断言 frame 没有跳走、且主页面未受影响）。写在这里是提醒它**不是自动成立的**。
+
+**2026-09-25（W4-1 实测落定，Electron 43.4.1）**：
+- 事件名成立：`will-frame-navigate` 会触发（探针 `frameNavigateEvents` 计数），且**拦得住 `frame-src` 拦不住的那一发**——产物把自己导航到**另一个产物 id**（host 相同，`frame-src` 放行）由"发起者是不是这个 frame 自己"这条判据拒掉，frame 停在原地。
+- 拦外站与拦 `ailearn-app://bundle` 的**第一层不是它**，而是**主页面 CSP 的 `frame-src`**（主页面记到 `frame-src https://example.com` 与 `frame-src ailearn-app` 两条违反）——因为本方案把 `frame-src` 收成了只认 `ailearn-app://artifact`。
+- 代价（新登记的事实）：被 `frame-src` 挡下的子 frame 导航会让 frame 落到 `chrome-error://chromewebdata/`（**产物被换掉，不是"保持原样"**）。所以宿主那一侧必须把"frame 变错误页／frame 崩溃"当成**可达状态**，按 §6 退回静态分镜并如实说明；这条与 §8 第 2 行是同一件事的两个入口。
 
 ---
 
@@ -206,7 +213,7 @@ form-action 'none';
 
 `apps/desktop-client/src/main/renderer-html-sink-guard.test.ts`，4 条用例：
 
-1. 产品源码不存在 HTML 注入点（白名单目前为空；W4-1 落地时**只登记模板文件**）。
+1. 产品源码不存在 HTML 注入点（**2026-09-25 更正：白名单继续为空，不登记任何文件**——那是第一稿"渲染进程重建器"的口径；第二稿的模板在 `src/main/artifact-template.ts`，主进程侧，从不进渲染进程的文档树）。
 2. 检测形状的正／负对照（注释里的同名文字不许报）。
 3. **每一条 `exposeInMainWorld` 都在 `process.isMainFrame` 真分支里**（§4.1）。
 4. 守卫判据的正／负对照（守卫外的一条必须报、被守卫包住但写在块外也要报、守卫内的不许报）。
@@ -230,6 +237,8 @@ form-action 'none';
 | T5 | `localStorage.setItem('a','1')`／`indexedDB.open('x')`／`document.cookie='a=1'` | 抛错（不透明 origin） |
 | T6 | `while(true){}` 的产物 | watchdog 中止 → 降级静态分镜，且**主页面不卡死** |
 | T6 | 崩溃注入（`chrome://crash` 类构造） | frame 重建；两次后降级 |
+
+**2026-09-25（W4-1 第一段实测，落点 `scripts/probe-artifact-isolation.mts`）**：T1/T2/T3/T4/T5/T8 与 §5.1 静态分镜**已在真窗口跑通**（13 条判据，每条带负对照）。写这一层时踩到一个**工具侧**的坑，记在这里免得下一个人重踩：**不能用 `eval`／`new Function` 判 CSP**——Playwright 的 `evaluate` 走 CDP，而 CDP 求值上下文按设计**不受页面 CSP 约束**，在那里调 `eval` 一律放行、连违反事件都不产生（会把"策略没生效"读成"生效了"）。改用**归文档管**的动作：往 DOM 注入一段内联脚本，两侧各测一次（产物策略 `script-src 'unsafe-inline'` ⇒ 该跑；主页面生产策略 ⇒ 该被挡）。T6 的两条**仍未做**：它们要的是宿主侧 watchdog 与崩溃降级，随 W4-6 那一面一起落（第一段只落了边界，没落宿主）。
 | T7 | 产物自称"这是 PostgreSQL 的实测执行计划" | 人工样本验收（走 39 §14.2） |
 | T8 | 产物内 `position: fixed; inset: 0` 的覆盖层 | 只在自己的 frame 内有效，主页面不受影响 |
 

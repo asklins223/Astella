@@ -1,5 +1,5 @@
 /**
- * 打开产物 iframe **之前**必须成立的两条不变量（39d W0-4 / D4 §5.1）：
+ * 打开产物 iframe **之前**必须成立的两条不变量（39d W0-4 / D4 §4.1、§5.1）：
  *
  *   1. 渲染进程没有 HTML 注入点；
  *   2. preload 不在子 frame 暴露 IPC 桥。
@@ -12,14 +12,19 @@
  *
  * ## 1. 渲染进程没有 HTML 注入点
  *
- * 为什么现在就要它：D4 给动态讲解选的是**允许集合解析重建**（产物被解析成受限 AST，
- * 再重建为 React 元素），而不是沙箱 iframe。这条路的全部安全性都压在一个前提上——
- * **渲染进程里不存在"把一段字符串当 HTML 插进去"的落点**。今天这个前提是成立的
- * （产品源码 0 个注入点，`companion-markdown.tsx:21` 那段注释就是它的自述），但它
- * 从来没有被钉住：谁加一个 `dangerouslySetInnerHTML`，静默生效，没有任何东西会红。
+ * **口径已随 D4 第二稿更新（2026-09-25，W4-1）**：动态讲解最终选的是"整份 HTML ＋ 脚本、
+ * 跑在 `ailearn-app://artifact` 的不透明沙箱 frame 里"（D4 §0 那张决定表），**不是**
+ * 第一稿的"允许集合解析重建"。所以这条守卫今天守的是另一件事，但仍然要守：
  *
- * 所以顺序是**先上锁，再开新面**：W4-1 落地重建器之前先把这条现状钉死；等重建器来了，
- * 它必须在下面 ALLOWED 名单里显式登记（而且只登记 DOMParser，不许登记 innerHTML 类）。
+ *   - 产物**不许**进渲染进程的文档树。渲染进程持有 preload 桥与用户全部可见数据，
+ *     它的 CSP 还带着 `'unsafe-eval'`（D4 §8 第 5 行）——这里漏一段脚本，CSP 挡不住；
+ *   - 产物怎么执行是 frame 自己的事：那份文档里 `innerHTML` 随便用（我们的模板就用），
+ *     那条边界由 origin ＋ CSP ＋ 导航闸守，探针在
+ *     `scripts/probe-artifact-isolation.mts`。
+ *
+ * 因此 `ALLOWED` 名单**今天仍是空的，而且不再预期会有"模板文件"登记进来**：
+ * 模板在 `src/main/artifact-template.ts`（主进程侧，不在本守卫的扫描根里，也从不进渲染进程）。
+ * 谁要往 `src/renderer/**` 里加 DOMParser／innerHTML 落点，得先在这里登记并说明为什么。
  *
  * 放在 main 侧的理由与 `hud-substrate-guard.test.ts` 相同：读文件要 `node:fs`。
  *
@@ -114,8 +119,8 @@ describe("渲染进程没有 HTML 注入点（D4 §5.1）", () => {
 
     expect(
       violations.map((entry) => `${entry.file}: ${entry.hits.join(", ")}`),
-      "渲染进程出现了 HTML 注入点。动态讲解的产物必须走允许集合解析重建，"
-        + "不许新增 innerHTML 类落点；确需 DOMParser 请登记进本文件的 ALLOWED 名单。",
+      "渲染进程出现了 HTML 注入点。动态讲解的产物只许走 ailearn-app://artifact 那个隔离 frame，"
+        + "不许把产物内容（或任何字符串）当 HTML 插进渲染进程；确需 DOMParser 请登记进 ALLOWED 名单。",
     ).toEqual([]);
   });
 
