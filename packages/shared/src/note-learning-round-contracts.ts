@@ -120,3 +120,48 @@ export const reviseDrivingQuestionRequestV1Schema = z.strictObject({
    */
   drivingQuestionSource: roundDrivingQuestionSourceV1Schema,
 });
+
+/**
+ * 这一篇的轮次记录（PRD §10.3「按笔记、本人和工作区提供完整分页历史，显示日期、
+ * 本轮问题、…、完成／部分完成／中断」）。39d W4-5 第四刀先只做**读**这一半。
+ *
+ * 三条刻意的形状：
+ *  1. **只带屏幕上那一行用得着的六格**：`budgets` / `sourceContentHash` /
+ *     `evidenceSnapshotIds` / `noteVersionId` 都是服务端内部的依据与配额，
+ *     历史记录把它们发给客户端不会多说明一件事，只会让"哪一格是合同"变模糊。
+ *  2. `startedAt` 就是 `created_at`——但**换个名字**：那一行给用户看的是"哪一天"，
+ *     把 DB 列名直接端出去，以后"记录按什么时间排"一改，客户端就跟着一起错。
+ *  3. "实际方式"那一格今天只有 `drivingQuestionSource`（这句话是谁定的）能对上，
+ *     §10.3 原文里还包括"这一轮实际怎么走的"——那还没有落点，所以这里**不装**：
+ *     台账里登记为欠，而不是先给一个语义不符的键。
+ *
+ * 分页这一版**没做**：只按"最近 N 条"回，`hasMore` 老老实实说还有。
+ */
+export const ROUND_HISTORY_DEFAULT_LIMIT_V1 = 10;
+export const ROUND_HISTORY_MAX_LIMIT_V1 = 20;
+
+export const noteLearningRoundHistoryItemV1Schema = z.strictObject({
+  roundId: z.string().uuid(),
+  phase: roundPhaseV1Schema,
+  outcome: roundOutcomeV1Schema.nullable(),
+  drivingQuestion: z.string().min(1).max(500),
+  drivingQuestionSource: roundDrivingQuestionSourceV1Schema,
+  drivingQuestionRevision: z.number().int().min(1),
+  startedAt: z.string().datetime({ offset: true }),
+  closedAt: z.string().datetime({ offset: true }).nullable(),
+});
+export type NoteLearningRoundHistoryItemV1 = z.infer<
+  typeof noteLearningRoundHistoryItemV1Schema
+>;
+
+export const noteLearningRoundHistoryV1Schema = z.strictObject({
+  version: z.literal(1),
+  noteId: z.string().uuid(),
+  /** 新的在前；空数组是真的"这一篇还没有过轮次"，不是"读失败"。 */
+  items: z.array(noteLearningRoundHistoryItemV1Schema).max(ROUND_HISTORY_MAX_LIMIT_V1),
+  /** 还有没有更早的（今天没有翻页游标，所以这一格只说"有/没有"）。 */
+  hasMore: z.boolean(),
+});
+export type NoteLearningRoundHistoryV1 = z.infer<
+  typeof noteLearningRoundHistoryV1Schema
+>;

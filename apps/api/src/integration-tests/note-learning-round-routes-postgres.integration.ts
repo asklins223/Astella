@@ -18,7 +18,11 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { closeDatabase } from "../db/client.ts";
-import { noteLearningRoundV1Schema } from "@ailearn/shared/note-learning-round-contracts";
+import {
+  noteLearningRoundHistoryV1Schema,
+  noteLearningRoundV1Schema,
+  ROUND_HISTORY_MAX_LIMIT_V1,
+} from "@ailearn/shared/note-learning-round-contracts";
 import { seedNotesOnlyWorkspace, type NotesOnlyWorkspaceFixture } from "./helpers/pure-v2-workspace-fixture.ts";
 
 const fixtureUrl = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL;
@@ -38,6 +42,7 @@ let peerWorkspace: NotesOnlyWorkspaceFixture | null = null;
 let workspaceId = "";
 let userId = "";
 let noteA = "";
+let noteB = "";
 let versionA = "";
 let peerUserId = "";
 let token = "";
@@ -61,11 +66,11 @@ async function call(
 }
 
 before(async () => {
-  seeded = await seedNotesOnlyWorkspace(fixtureSql, { noteCount: 1 });
+  seeded = await seedNotesOnlyWorkspace(fixtureSql, { noteCount: 2 });
   peerWorkspace = await seedNotesOnlyWorkspace(fixtureSql, { noteCount: 1 });
   workspaceId = seeded.workspaceId;
   userId = seeded.userId;
-  [noteA] = seeded.noteIds;
+  [noteA, noteB] = seeded.noteIds;
   [versionA] = seeded.versionIds;
   peerUserId = randomUUID();
   await fixtureSql.begin(async (tx) => {
@@ -113,14 +118,34 @@ after(async () => {
 });
 
 /** 建一轮并把回读取回来（每一发都先过线上合同：合同漂移要红在这里，不是红成"页面上没东西"）。 */
-async function createOne(question: string): Promise<Record<string, unknown>> {
+async function createOn(noteId: string, question: string): Promise<Record<string, unknown>> {
   const res = await call("POST", "/v2/note-learning-rounds", {
-    noteId: noteA,
+    noteId,
     drivingQuestion: question,
     drivingQuestionSource: "suggested",
   });
   assert.equal(res.statusCode, 201, `创建应当成功：${res.statusCode} ${res.body}`);
   return noteLearningRoundV1Schema.parse(body(res).round as never) as unknown as Record<string, unknown>;
+}
+
+/** 开一轮（默认开在 A 篇上——大多数用例只关心 A 篇）。 */
+function createOne(question: string): Promise<Record<string, unknown>> {
+  return createOn(noteA, question);
+}
+
+/** 收尾那一发（记录里"终态那一格"要有出处，就得真有一次带 revision 的收尾）。 */
+async function closeOn(roundId: string, revision: number): Promise<void> {
+  const closed = await call("PATCH", `/v2/note-learning-rounds/${roundId}`, {
+    expectedRevision: revision,
+    action: { kind: "close", outcome: "partial" },
+  });
+  assert.equal(closed.statusCode, 200, closed.body);
+}
+
+async function readHistory(url: string, bearer?: string) {
+  const res = await call("GET", url, undefined, bearer ?? token);
+  assert.equal(res.statusCode, 200, `${url} 应当读得到：${res.statusCode} ${res.body}`);
+  return noteLearningRoundHistoryV1Schema.parse(JSON.parse(res.body) as never);
 }
 
 test("没登录进不来（这条路由不是只给脚本用的）", async () => {
@@ -272,4 +297,87 @@ test("预算那份 env 覆盖真的生效，且 0 是合法档（不是坏值）
   } finally {
     delete process.env.NOTE_ROUND_MAX_TASKS;
   }
+});
+
+// ─── 轮次记录（PRD §10.3 的读侧第一刀；39d W4-5 第四刀） ───────────────────────
+
+test("记录：开过的每一轮都在、新的在前，终态那一格带着收尾原因", async () => {
+  const first = await createOne("第一轮的那句问题");
+  await closeOn(first.roundId as string, first.revision as number);
+  await createOne("第二轮的那句问题");
+
+  const history = await readHistory(`/v2/notes/${noteA}/learning-rounds`);
+  assert.deepEqual(
+    history.items.map((item) => item.drivingQuestion),
+    ["第二轮的那句问题", "第一轮的那句问题"],
+    "顺序必须是新的在前：§10.3 那一页是从最近一轮往下读的",
+  );
+  assert.equal(history.hasMore, false);
+  // 未完成那一轮也在同一张记录里，且**没有** outcome：把「进行中」并进「部分完成」就分不开这两件事。
+  assert.equal(history.items[0].phase, "active");
+  assert.equal(history.items[0].outcome, null);
+  assert.equal(history.items[1].phase, "closed");
+  assert.equal(history.items[1].outcome, "partial");
+  assert.notEqual(history.items[1].closedAt, null, "收尾过的记录必须带着那个时间");
+  assert.ok(
+    new Date(history.items[1].startedAt).getTime() <= new Date(history.items[1].closedAt as string).getTime(),
+    "startedAt 必须不晚于 closedAt：两格若出自同一次 now()，这一页的时间就不可信",
+  );
+});
+
+test("记录只属于这一篇：另一篇的那一轮不混进来（同一个人、同一个空间）", async () => {
+  await createOne("记在 A 篇上的那一轮");
+  await createOn(noteB, "记在 B 篇上的那一轮");
+
+  const onA = await readHistory(`/v2/notes/${noteA}/learning-rounds`);
+  const onB = await readHistory(`/v2/notes/${noteB}/learning-rounds`);
+  assert.deepEqual(onA.items.map((item) => item.drivingQuestion), ["记在 A 篇上的那一轮"]);
+  assert.deepEqual(onB.items.map((item) => item.drivingQuestion), ["记在 B 篇上的那一轮"]);
+  assert.notEqual(onA.items[0].roundId, onB.items[0].roundId);
+});
+
+test("limit 说的是给几条，hasMore 说的是还有没有更早的", async () => {
+  for (const question of ["第一句", "第二句", "第三句"]) {
+    const opened = await createOn(noteB, question);
+    await closeOn(opened.roundId as string, opened.revision as number);
+  }
+
+  const capped = await readHistory(`/v2/notes/${noteB}/learning-rounds?limit=2`);
+  assert.deepEqual(capped.items.map((item) => item.drivingQuestion), ["第三句", "第二句"]);
+  assert.equal(capped.hasMore, true, "只给了两条却说没有更早的，这一页就会静默丢历史");
+
+  const all = await readHistory(`/v2/notes/${noteB}/learning-rounds`);
+  assert.equal(all.items.length, 3);
+  assert.equal(all.hasMore, false);
+});
+
+test("limit 的坏值一律 400，不进服务层（上限挡在合同那一个数上）", async () => {
+  for (const bad of ["0", "-1", "abc", String(ROUND_HISTORY_MAX_LIMIT_V1 + 1)]) {
+    const res = await call("GET", `/v2/notes/${noteA}/learning-rounds?limit=${bad}`);
+    assert.equal(res.statusCode, 400, `limit=${bad} 应当被挡，实到 ${res.statusCode} ${res.body}`);
+  }
+  const extra = await call("GET", `/v2/notes/${noteA}/learning-rounds?cursor=whatever`);
+  assert.equal(extra.statusCode, 400, "还没有翻页游标：多带一格就该红，而不是被静默忽略");
+});
+
+test("同空间另一个人读这一篇的记录是空的，且同一条里对照「我这里读得到」", async () => {
+  await createOne("只有开的人自己看得见的那一轮");
+  const peer = await readHistory(`/v2/notes/${noteA}/learning-rounds`, peerToken);
+  assert.deepEqual(peer.items, [], "RLS 没挡就等于把别人的学习记录端给了另一个人");
+  // 上一条那个「空」必须分得清是**拦**还是**根本读不到东西**，所以同一条里给正向对照。
+  const mine = await readHistory(`/v2/notes/${noteA}/learning-rounds`);
+  assert.equal(mine.items.length, 1, `本人那一发应当读得到：${JSON.stringify(mine.items)}`);
+});
+
+test("没有轮次与读不到这一篇同形：都回空表（这一条读的是历史，不是存在性）", async () => {
+  const empty = await readHistory(`/v2/notes/${noteA}/learning-rounds`);
+  assert.deepEqual(empty.items, []);
+  assert.equal(empty.hasMore, false);
+  const unknown = await readHistory(`/v2/notes/${randomUUID()}/learning-rounds`);
+  assert.deepEqual(unknown.items, []);
+});
+
+test("路径里那个 noteId 不是合法 id 就 400，不走「一片空白」那条安静路径", async () => {
+  const res = await call("GET", "/v2/notes/not-a-uuid/learning-rounds");
+  assert.equal(res.statusCode, 400, res.body);
 });

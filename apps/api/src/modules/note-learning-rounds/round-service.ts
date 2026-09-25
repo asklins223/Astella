@@ -257,6 +257,43 @@ export async function readRound(
 }
 
 /**
+ * 这一篇的轮次记录（PRD §10.3；读侧，见 `noteLearningRoundHistoryV1Schema` 头上那三条形状）。
+ *
+ * 排序按 `created_at` 新的在前，**再跟一列 `id` 兜底**：同一瞬间开出的两行（并发首点
+ * 真有可能同毫秒）没有第二列就会翻来覆去地换顺序。
+ * `hasMore` 靠多读一条算出来，不另发一次 `count(*)`——这一张表按篇筛完本来就只有几行，
+ * 而一次多余的聚合在分页真做出来之后还会变成"总数与翻页游标两套口径"那种分叉。
+ */
+export type RoundHistoryPageV1 = {
+  rows: NoteLearningRoundRow[];
+  hasMore: boolean;
+};
+
+export async function listRoundHistory(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  noteId: string,
+  limit: number,
+): Promise<RoundHistoryPageV1> {
+  // 那三格过滤里，**`userId` 那一格不是这道闸**：这张表是 FORCE RLS、策略就是
+  // `(workspace_id, user_id)` 两列（0282），把 `eq(userId)` 摘掉，集测里"另一个人读这一篇"
+  // 那条用例**照样绿**（09-26 变异验过）。留着它的理由是"读法要自己说清按什么筛"，
+  // 而那条用例守的其实是"**带对了上下文**"——摘掉 `set_config` 时它会红（正向对照那一半）。
+  // 别误以为它在守隔离：隔离由策略负责。
+  const rows = await tx
+    .select()
+    .from(noteLearningRounds)
+    .where(and(
+      eq(noteLearningRounds.workspaceId, scope.workspaceId),
+      eq(noteLearningRounds.userId, scope.userId),
+      eq(noteLearningRounds.noteId, noteId),
+    ))
+    .orderBy(desc(noteLearningRounds.createdAt), desc(noteLearningRounds.id))
+    .limit(limit + 1);
+  return { rows: rows.slice(0, limit), hasMore: rows.length > limit };
+}
+
+/**
  * 状态推进：`active ⇄ paused → closed`。
  *
  * noop 不写库也不推进 revision（判据在 reducer 里）；`expectedRevision` 与实际不一致

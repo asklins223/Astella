@@ -4,6 +4,7 @@
  *
  *   POST  /v2/note-learning-rounds                        —— 开一轮（快照与预算都在服务端定）
  *   GET   /v2/notes/:noteId/learning-round                —— 这一篇此刻未完成的那一轮
+ *   GET   /v2/notes/:noteId/learning-rounds               —— 这一篇的轮次记录（§10.3，读侧第一刀）
  *   PATCH /v2/note-learning-rounds/:roundId               —— 状态推进：pause / resume / close
  *   POST  /v2/note-learning-rounds/:roundId/driving-question —— 改写本轮问题
  *
@@ -29,13 +30,17 @@ import { getNoteWithVersion } from "../note/service.ts";
 import {
   advanceNoteLearningRoundRequestV1Schema,
   createNoteLearningRoundRequestV1Schema,
+  noteLearningRoundHistoryV1Schema,
   noteLearningRoundV1Schema,
   reviseDrivingQuestionRequestV1Schema,
+  ROUND_HISTORY_DEFAULT_LIMIT_V1,
+  ROUND_HISTORY_MAX_LIMIT_V1,
   type NoteLearningRoundV1Wire,
 } from "@ailearn/shared/note-learning-round-contracts";
 import {
   advanceRound,
   createRound,
+  listRoundHistory,
   readOpenRound,
   readRound,
   reviseDrivingQuestion,
@@ -44,6 +49,11 @@ import {
   type RoundScopeV1,
 } from "./round-service.ts";
 import { roundBudgetsV1 } from "./round-budgets.ts";
+
+/** `?limit=` 不给就是默认那几条；上限挡在合同那一格同一个数上（不给一个调用方抬高它）。 */
+const listQueryV1Schema = z.strictObject({
+  limit: z.coerce.number().int().min(1).max(ROUND_HISTORY_MAX_LIMIT_V1).default(ROUND_HISTORY_DEFAULT_LIMIT_V1),
+});
 
 const STATUS_BY_CODE: Record<string, 400 | 404 | 409 | 500> = {
   invalid_driving_question: 400,
@@ -150,6 +160,34 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: "round_not_found", message: "这一篇现在没有未完成的轮次" });
     }
     return { version: 1 as const, round: toWire(round) };
+  });
+
+  app.get("/v2/notes/:noteId/learning-rounds", async (req, reply) => {
+    const noteId = (req.params as { noteId?: string }).noteId ?? "";
+    const parsedQuery = listQueryV1Schema.safeParse(req.query ?? {});
+    if (!z.string().uuid().safeParse(noteId).success || !parsedQuery.success) {
+      return reply.code(400).send({ error: "invalid_request", message: "读这一篇的轮次记录需要的字段不对" });
+    }
+    const scope = scopeOf(req);
+    const page = await withWorkspaceTransaction(scope, (tx) =>
+      listRoundHistory(tx, scope, noteId, parsedQuery.data.limit),
+    );
+    // 回信整份过一遍合同：漂移要红在这里，而不是红成客户端"某一格 undefined"。
+    return noteLearningRoundHistoryV1Schema.parse({
+      version: 1 as const,
+      noteId,
+      items: page.rows.map((row) => ({
+        roundId: row.id,
+        phase: row.phase,
+        outcome: row.outcome,
+        drivingQuestion: row.drivingQuestion,
+        drivingQuestionSource: row.drivingQuestionSource,
+        drivingQuestionRevision: row.drivingQuestionRevision,
+        startedAt: row.createdAt.toISOString(),
+        closedAt: row.closedAt ? row.closedAt.toISOString() : null,
+      })),
+      hasMore: page.hasMore,
+    });
   });
 
   app.patch("/v2/note-learning-rounds/:roundId", async (req, reply) => {
