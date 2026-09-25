@@ -151,6 +151,10 @@ import {
   desktopAiAuditPageV1Schema,
 } from "./desktop-surface-contracts.ts";
 import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema } from "./learning-objective-surface-contracts.ts";
+import {
+  noteLearningRoundV1Schema,
+  roundDrivingQuestionSourceV1Schema,
+} from "./note-learning-round-contracts.ts";
 import { understandingTopologySnapshotV3Schema } from "./understanding-topology-v3-contracts.ts";
 import { todayActivityV1Schema } from "./activity-surface-contracts.ts";
 // 跨空间统计合同（每空间一行 + 合计）：服务端路由、网关、渲染层共用同一份形状。
@@ -325,6 +329,13 @@ export const DESKTOP_IPC_CHANNELS = {
   noteImageUpload: "ailearn.v1.note.image.upload",
   objectiveList: "ailearn.v1.objective.list",
   objectiveGet: "ailearn.v1.objective.get",
+  // 39d W4-3 第三刀：笔记页那张轻量定向表单。四发对应 §16.16 那条判据的四个动作
+  // （开、读、换问题、先到这里）。暂停/恢复这一版**不接**：§5.5 那句"没有其他活跃端
+  // 才标可恢复暂停"要先有端的活跃度判据，那是 §16.39 那一刀的活，不先挂空口。
+  noteLearningRoundOpen: "ailearn.v1.noteLearningRound.open",
+  noteLearningRoundCreate: "ailearn.v1.noteLearningRound.create",
+  noteLearningRoundRevise: "ailearn.v1.noteLearningRound.revise",
+  noteLearningRoundClose: "ailearn.v1.noteLearningRound.close",
   understandingGetTopology: "ailearn.v1.understanding.getTopology",
   searchGlobal: "ailearn.v1.search.global",
   noteSave: "ailearn.v1.note.save",
@@ -2364,6 +2375,43 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
      */
     list(input: { meta: RequestMetaV1; cursor?: string; limit?: number; lifecycle?: "active" | "archived" | "superseded"; noteId?: Uuid }): Promise<GatewayResultV1<z.infer<typeof objectiveListPageV3Schema>>>;
     get(input: { meta: RequestMetaV1; objectiveId: Uuid }): Promise<GatewayResultV1<z.infer<typeof learningObjectiveSurfaceV3Schema>>>;
+  };
+  /**
+   * 一篇笔记的「轮次」（39d W4-5 的表与服务，W4-3 的这张表单）。
+   *
+   * `open` 在**没有未完成轮次**时返回 `data: null` 而不是错误：那是一篇笔记第一次
+   * 开始之前的常态，把它报成失败会让每一篇新笔记一进页面就吃到一条红色提示。
+   * `create` 只交一句话与它的来源——**实际用哪一版正文由服务端读**（PRD §3.4），
+   * 三项预算也不在这里（§18.4 的试用前冻结项，由服务端那份常量签发）。
+   */
+  readonly noteLearningRound: {
+    open(input: { meta: RequestMetaV1; noteId: Uuid }): Promise<
+      GatewayResultV1<z.infer<typeof noteLearningRoundV1Schema> | null>
+    >;
+    create(input: {
+      meta: RequestMetaV1;
+      noteId: Uuid;
+      drivingQuestion: string;
+      drivingQuestionSource: z.infer<typeof roundDrivingQuestionSourceV1Schema>;
+    }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundV1Schema>>>;
+    /**
+     * 改写本轮问题（§3.3「用户可以改写这一句话」）。带 `expectedRevision`：两个窗口
+     * 同时开着时，后到的那一份要失败并拿到现在那一版，而不是悄悄覆盖。
+     */
+    revise(input: {
+      meta: RequestMetaV1;
+      roundId: Uuid;
+      expectedRevision: number;
+      drivingQuestion: string;
+      drivingQuestionSource: z.infer<typeof roundDrivingQuestionSourceV1Schema>;
+    }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundV1Schema>>>;
+    /** 「先到这里」：终态必须带原因（partial = 计划没走完就收尾），终态之后这一轮只读。 */
+    close(input: {
+      meta: RequestMetaV1;
+      roundId: Uuid;
+      expectedRevision: number;
+      outcome: "completed" | "partial";
+    }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundV1Schema>>>;
   };
   readonly review: {
     getQueue(input: {

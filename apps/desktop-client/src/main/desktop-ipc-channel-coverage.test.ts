@@ -231,4 +231,74 @@ describe("IPC 通道覆盖对账", () => {
     expect(extraField.ok).toBe(false);
     expect(syncNoteDocTitle).not.toHaveBeenCalled();
   });
+
+  /**
+   * 轮次那四条通道（39d W4-3 第三刀）。上面那份对账只保证"注册了"，
+   * 这里要的是它在边界层真的做该做的事：
+   *  - `create` 把三格与 requestId 原样交给网关（不多不少）；
+   *  - 渲染层想塞 `noteVersionId` 或交一句空话 ⇒ **本机**就挡下，网关一次都没被打
+   *    （那句"实际用哪一版正文由服务端读"要有人守，注释不算守）；
+   *  - `open` 在"这一篇没有未完成轮次"时回 `data: null`，不是 `ok:false`——
+   *    每篇新笔记一进页面就吃一条红色提示，是这一族最常见的错法。
+   */
+  it("轮次那四条：该转发的转发，该在本机挡下的不打网关", async () => {
+    const round = {
+      version: 1,
+      roundId: "77777777-7777-4777-8777-777777777777",
+      noteId: NOTE_ID,
+      phase: "active",
+      outcome: null,
+      drivingQuestion: "判断为什么有索引，查询仍然可能慢",
+      drivingQuestionSource: "suggested",
+      drivingQuestionRevision: 1,
+      noteVersionId: "88888888-8888-4888-8888-888888888888",
+      sourceContentHash: "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      evidenceSnapshotIds: [],
+      budgets: { maxModelCalls: 8, maxWallClockSeconds: 900, maxTasks: 6 },
+      revision: 1,
+      pausedAt: null,
+      resumedAt: null,
+      closedAt: null,
+      createdAt: "2026-09-26T04:00:00.000Z",
+      updatedAt: "2026-09-26T04:00:00.000Z",
+    };
+    const gateway = stubGateway({
+      createNoteLearningRound: vi.fn(async () => round),
+      getOpenNoteLearningRound: vi.fn(async () => null),
+    } as never) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    const { event } = await register(gateway as never);
+
+    const created = await (electronMock.handlers.get(DESKTOP_IPC_CHANNELS.noteLearningRoundCreate))!(event, {
+      meta,
+      noteId: NOTE_ID,
+      drivingQuestion: "判断为什么有索引，查询仍然可能慢",
+      drivingQuestionSource: "suggested",
+    });
+    expect(requireData(created)).toMatchObject({ roundId: round.roundId });
+    expect(gateway.createNoteLearningRound).toHaveBeenCalledWith(
+      { noteId: NOTE_ID, drivingQuestion: "判断为什么有索引，查询仍然可能慢", drivingQuestionSource: "suggested" },
+      meta.requestId,
+    );
+
+    const withVersion = await (electronMock.handlers.get(DESKTOP_IPC_CHANNELS.noteLearningRoundCreate))!(event, {
+      meta,
+      noteId: NOTE_ID,
+      drivingQuestion: "想自己指定版本",
+      drivingQuestionSource: "user_authored",
+      noteVersionId: round.noteVersionId,
+    } as never);
+    const blank = await (electronMock.handlers.get(DESKTOP_IPC_CHANNELS.noteLearningRoundCreate))!(event, {
+      meta,
+      noteId: NOTE_ID,
+      drivingQuestion: "   ",
+      drivingQuestionSource: "user_authored",
+    });
+    expect(withVersion.ok).toBe(false);
+    expect(blank.ok).toBe(false);
+    expect(gateway.createNoteLearningRound).toHaveBeenCalledTimes(1);
+
+    const opened = await (electronMock.handlers.get(DESKTOP_IPC_CHANNELS.noteLearningRoundOpen))!(event, { meta, noteId: NOTE_ID });
+    expect(opened.ok).toBe(true);
+    expect(requireData(opened)).toBeNull();
+  });
 });

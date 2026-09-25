@@ -130,6 +130,7 @@ import {
   desktopSearchPageSchema,
 } from "@ailearn/shared/desktop-surface-contracts";
 import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema } from "@ailearn/shared/learning-objective-surface-contracts";
+import { noteLearningRoundV1Schema, roundDrivingQuestionSourceV1Schema } from "@ailearn/shared/note-learning-round-contracts";
 import { understandingTopologySnapshotV3Schema } from "@ailearn/shared/understanding-topology-v3-contracts";
 import { todayActivityV1Schema } from "@ailearn/shared/activity-surface-contracts";
 // 跨空间统计合同：输出校验器与网关共用同一份形状，渲染层不另抄一遍。
@@ -534,6 +535,31 @@ const noteListInputSchema = z.strictObject({ ...m1InputBase, cursor: z.string().
 const noteCreateInputSchema = z.strictObject({ ...m1InputBase, request: desktopNoteCreateRequestSchema });
 const noteIdInputSchema = z.strictObject({ ...m1InputBase, noteId: uuidSchema });
 const objectiveListInputSchema = z.strictObject({ ...m1InputBase, cursor: z.string().min(1).max(128).optional(), limit: z.number().int().min(1).max(100).optional(), lifecycle: z.enum(["active", "archived", "superseded"]).optional(), noteId: uuidSchema.optional() });
+// 39d W4-3 第三刀：笔记页那张轻量定向表单。两发的输入都**没有**版本 id / 哈希 / 预算：
+// 那一版正文由服务端读（PRD §3.4），预算由服务端签发（§18.4）。本机这一层的 `.strict()`
+// 就是它的第一道闸——旧屏上带着的版本号想混进来，在这里就过不去。
+const noteLearningRoundOpenInputSchema = z.strictObject({ ...m1InputBase, noteId: uuidSchema });
+const noteLearningRoundCreateInputSchema = z.strictObject({
+  ...m1InputBase,
+  noteId: uuidSchema,
+  drivingQuestion: z.string().trim().min(1).max(500),
+  drivingQuestionSource: roundDrivingQuestionSourceV1Schema,
+});
+const noteLearningRoundReviseInputSchema = z.strictObject({
+  ...m1InputBase,
+  roundId: uuidSchema,
+  expectedRevision: z.number().int().min(1),
+  drivingQuestion: z.string().trim().min(1).max(500),
+  drivingQuestionSource: roundDrivingQuestionSourceV1Schema,
+});
+const noteLearningRoundCloseInputSchema = z.strictObject({
+  ...m1InputBase,
+  roundId: uuidSchema,
+  expectedRevision: z.number().int().min(1),
+  // UI 上只有两种收尾：走完了 / 先到这里。system_failure 与 superseded 是服务端
+  // 与"内容变了新开一轮"那两刀才会写的，不由这张表填。
+  outcome: z.enum(["completed", "partial"]),
+});
 const objectiveGetInputSchema = z.strictObject({ ...m1InputBase, objectiveId: uuidSchema });
 const searchGlobalInputSchema = z.strictObject({ ...m1InputBase, query: z.string().trim().min(1).max(500), type: z.enum(["note", "source", "objective"]).optional(), limit: z.number().int().min(1).max(50).optional(), cursor: z.string().min(1).max(512).optional() });
 const noteGetInputSchema = z.strictObject({ ...m1InputBase, noteId: uuidSchema });
@@ -2778,6 +2804,43 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     assertEpoch(input.meta, activeWorkspaceEpoch);
     return gateway.getObjective(input.objectiveId, input.meta.requestId);
   }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, learningObjectiveSurfaceV3Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundOpen, noteLearningRoundOpenInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.getOpenNoteLearningRound(input.noteId, input.meta.requestId);
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundV1Schema.nullable());
+
+  installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundCreate, noteLearningRoundCreateInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.createNoteLearningRound({
+      noteId: input.noteId,
+      drivingQuestion: input.drivingQuestion,
+      drivingQuestionSource: input.drivingQuestionSource,
+    }, input.meta.requestId);
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundV1Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundRevise, noteLearningRoundReviseInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.reviseNoteLearningRound({
+      roundId: input.roundId,
+      expectedRevision: input.expectedRevision,
+      drivingQuestion: input.drivingQuestion,
+      drivingQuestionSource: input.drivingQuestionSource,
+    }, input.meta.requestId);
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundV1Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundClose, noteLearningRoundCloseInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.closeNoteLearningRound({
+      roundId: input.roundId,
+      expectedRevision: input.expectedRevision,
+      outcome: input.outcome,
+    }, input.meta.requestId);
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundV1Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.understandingGetTopology, runtimeInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "understanding.graph");

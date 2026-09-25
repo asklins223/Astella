@@ -18,6 +18,7 @@ import type {
   ObjectiveSurfaceFreshnessV3,
 } from "@ailearn/shared/learning-objective-surface-contracts";
 import type { NoteBlockProjectionV1, NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
+import type { NoteLearningRoundV1Wire } from "@ailearn/shared/note-learning-round-contracts";
 import { useRoomStore } from "../../app/room-store";
 import { SpaceShareButton, noteShareScopeLabel } from "../space-share-control";
 import type { NoteShareScopeV1 } from "@ailearn/shared/note-share-contracts";
@@ -94,6 +95,13 @@ type NotebookProjection = {
      */
     readonly freshness: ObjectiveSurfaceFreshnessV3;
   } | null;
+  /**
+   * 这一篇此刻**未完成**的那一轮（39d W4-3 第三刀；表与服务是 W4-5）。
+   *
+   * 读不到 ⇒ null，那一整块不画——和上面 `noteObjective` 同一纪律：它是一块增补，
+   * 不能把笔记本身顶掉。`null` 在这里是真值："这一篇现在没有进行中的一轮"。
+   */
+  readonly openRound: NoteLearningRoundV1Wire | null;
   readonly capabilities: CapabilityProjectionV1;
   /**
    * The workspace's one live Card Generation run (owner only; Member sees an
@@ -222,6 +230,49 @@ const EDITOR_TOOLS: readonly EditorToolSpec[] = [
   { glyph: "⛓", label: "链接", title: "插入链接（⌘/Ctrl+K）", run: (editor) => editor.toggleLink("https://") },
 ];
 
+/*
+ * 轻量定向那张表单的全部字面（39d W4-3 第三刀；PRD §3.3）。一处一份：屏上这句话、
+ * 测试里的期望都从这里取。
+ *
+ * 两个预设不是"两个问题"，是**两种姿态**（§3.3 原话「我完全不熟」「先让我试一下」）：
+ * 点它们只往输入框里放一句起步的话，那句话必须还能改——判据在 §16.16，
+ * 换问题不需要重编这篇笔记。
+ */
+export const ROUND_COPY = {
+  ask: "这一轮想弄懂什么？",
+  start: "开始这一轮",
+  starting: "正在开始…",
+  revise: "换一个问题",
+  saving: "正在改写…",
+  end: "先到这里",
+  ending: "正在收尾…",
+  openLine: (question: string) => `这一轮：${question}`,
+  revisedLine: (revision: number) => `这一句话已经改过 ${revision - 1} 次。`,
+  hint: "改这句话不用重编笔记；这一轮先只对你自己可见。",
+} as const;
+
+/** 预设 → 起步句。带上标题是为了让这句话在这篇笔记上是具体的，不是通用口号。 */
+export const ROUND_PRESETS_V1: ReadonlyArray<{
+  readonly key: "unfamiliar" | "try";
+  readonly label: string;
+  readonly starter: (title: string) => string;
+}> = [
+  { key: "unfamiliar", label: "我完全不熟", starter: (title) => `先弄懂「${title}」在说什么，从头到尾有个站得住的解释` },
+  { key: "try", label: "先让我试一下", starter: (title) => `先不看笔记，试试我能说出「${title}」里的哪几点` },
+];
+
+/**
+ * 那三个来源档不是三种表情，是"这句话是谁定的"这一件事实（§3.3）：
+ * 没点预设、整句自己写的 ⇒ authored；点了预设原样用 ⇒ suggested；点了又改 ⇒ rewritten。
+ */
+export function roundQuestionSourceV1(
+  draft: string,
+  starterApplied: string | null,
+): "suggested" | "user_rewritten" | "user_authored" {
+  if (starterApplied === null) return "user_authored";
+  return draft.trim() === starterApplied.trim() ? "suggested" : "user_rewritten";
+}
+
 function desktopApi() {
   return typeof window === "undefined" ? undefined : window.ailearn;
 }
@@ -342,6 +393,13 @@ export function NotebookSurface() {
   /** 「先保存再开始」正在交字的那一段（按钮上要如实说"正在保存…"）。 */
   const [saveBeforeStart, setSaveBeforeStart] = useState(false);
   const [noteObjectiveFailure, setNoteObjectiveFailure] = useState<string | null>(null);
+  // 39d W4-3 第三刀：那张表单自己的三份状态。`roundStarter` 记住"这句是哪一颗预设放的"，
+  // 来源那一档（suggested / rewritten / authored）就靠它判，不靠猜用户改没改。
+  const [roundDraft, setRoundDraft] = useState("");
+  const [roundStarter, setRoundStarter] = useState<string | null>(null);
+  const [roundEditing, setRoundEditing] = useState(false);
+  const [roundBusy, setRoundBusy] = useState<"start" | "revise" | "end" | null>(null);
+  const [roundFailure, setRoundFailure] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [options, setOptions] = useState<GenerationOptions>(persistedGenerationOptions);
   const [showAllBlocks, setShowAllBlocks] = useState(false);
@@ -448,10 +506,25 @@ export function NotebookSurface() {
       noteObjective = null;
     }
 
+    // 39d W4-3 第三刀：这一篇有没有未完成的那一轮。和上面那两读一样自己吞异常——
+    // 老网关没有这条路由时不能让笔记页变成错误页。
+    let openRound: NotebookProjection["openRound"] = null;
+    try {
+      const roundResponse = await api.noteLearningRound.open({
+        meta: createRequestMeta(epochRef.current),
+        noteId: note.noteId,
+      });
+      if (roundResponse.workspaceEpoch) epochRef.current = roundResponse.workspaceEpoch;
+      openRound = unwrapGatewayResult(roundResponse);
+    } catch {
+      openRound = null;
+    }
+
     return {
       note,
       source,
       sourceFailure,
+      openRound,
       objective: focus && focus.objective.sources.primaryNote?.noteId === note.noteId
         ? focus.objective
         : null,
@@ -481,6 +554,7 @@ export function NotebookSurface() {
   const objective = data?.objective ?? null;
   /** 这一篇的学习目标主行动；读不到就是 null，那一行整个不画（W4-2 第三刀）。 */
   const noteObjective = data?.noteObjective ?? null;
+  const openRound = data?.openRound ?? null;
   const capabilities = data?.capabilities ?? null;
   const activeGenerations = data?.activeGeneration?.state === "data" ? data.activeGeneration.data : [];
   // 这篇笔记自己的在制批次。一个工作区可以同时有多篇笔记各自在制一批卡，所以
@@ -899,6 +973,69 @@ export function NotebookSurface() {
     }
     if (!saved) return;
     await startNoteObjective();
+  };
+
+  /**
+   * 提交这一轮的问题：没有进行中轮次时开一轮，已经有了就是改写那一句。
+   *
+   * 两条路共用一次提交，因为屏上只有一句话与一颗按钮——差别只在带不带
+   * `expectedRevision`（§16.39 那一族：后到的那一份要失败并拿到现在那一版，
+   * 而不是悄悄覆盖）。成功后走 silent 回读：句子上屏的是**服务端存下来的那一条**，
+   * 不是本机草稿（这里写过的失败形状：屏幕显示了自己拼的那句，库里却是另一句）。
+   */
+  const submitRoundQuestion = async (target: "start" | "revise") => {
+    const api = desktopApi();
+    const currentNote = data?.note ?? null;
+    const question = roundDraft.trim();
+    if (!api || !currentNote || question.length === 0 || roundBusy) return;
+    setRoundBusy(target);
+    setRoundFailure(null);
+    try {
+      const meta = createRequestMeta(epochRef.current);
+      const source = roundQuestionSourceV1(question, roundStarter);
+      const response = target === "start"
+        ? await api.noteLearningRound.create({ meta, noteId: currentNote.noteId, drivingQuestion: question, drivingQuestionSource: source })
+        : await api.noteLearningRound.revise({
+          meta,
+          roundId: openRound!.roundId,
+          expectedRevision: openRound!.revision,
+          drivingQuestion: question,
+          drivingQuestionSource: source,
+        });
+      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+      unwrapGatewayResult(response);
+      setRoundEditing(false);
+      setRoundDraft("");
+      setRoundStarter(null);
+      await reload({ silent: true });
+    } catch (error) {
+      setRoundFailure(gatewayErrorMessage(error));
+    } finally {
+      setRoundBusy(null);
+    }
+  };
+
+  /** 「先到这里」= 收尾成 partial。终态之后这一轮只读，服务端会拒掉后续每一次写。 */
+  const endNoteRound = async () => {
+    const api = desktopApi();
+    if (!api || !openRound || roundBusy) return;
+    setRoundBusy("end");
+    setRoundFailure(null);
+    try {
+      const response = await api.noteLearningRound.close({
+        meta: createRequestMeta(epochRef.current),
+        roundId: openRound.roundId,
+        expectedRevision: openRound.revision,
+        outcome: "partial",
+      });
+      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+      unwrapGatewayResult(response);
+      await reload({ silent: true });
+    } catch (error) {
+      setRoundFailure(gatewayErrorMessage(error));
+    } finally {
+      setRoundBusy(null);
+    }
   };
 
   // Live status sync while this page stays open: one cardGeneration
@@ -1513,6 +1650,77 @@ export function NotebookSurface() {
           ) : null}
           <p className="small notebook-note">{primaryActionDescription(noteObjective.primaryAction)}</p>
           {noteObjectiveFailure ? <p className="small notebook-note" role="alert">{noteObjectiveFailure}</p> : null}
+        </div>
+      ) : null}
+      {/* 39d W4-3 第三刀：轻量定向。这一篇**还没有目标**时才摆这张表单（§3.3 的"无目标表单"），
+          但已经有一轮在进行中时**一直显示它**——不然那一句被藏在别处，第二轮就再也换不掉。
+          它同样是增补：读不到就整块不画，不顶掉笔记本身。 */}
+      {openRound || !noteObjective ? (
+        <div className="notebook-objective notebook-round">
+          {openRound && !roundEditing ? (
+            <>
+              <p className="small notebook-note">{ROUND_COPY.openLine(openRound.drivingQuestion)}</p>
+              <p className="small notebook-note">{ROUND_COPY.revisedLine(openRound.drivingQuestionRevision)}</p>
+              <div className="notebook-objective__choices">
+                <button
+                  type="button"
+                  className="button"
+                  disabled={roundBusy !== null}
+                  onClick={() => { setRoundDraft(openRound.drivingQuestion); setRoundStarter(openRound.drivingQuestion); setRoundEditing(true); }}
+                >
+                  {ROUND_COPY.revise}
+                </button>
+                <button
+                  type="button"
+                  className="button"
+                  disabled={roundBusy !== null}
+                  onClick={() => void endNoteRound()}
+                >
+                  {roundBusy === "end" ? ROUND_COPY.ending : ROUND_COPY.end}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <label className="sr-only" htmlFor="notebook-round-question">{ROUND_COPY.ask}</label>
+              <input
+                id="notebook-round-question"
+                value={roundDraft}
+                maxLength={500}
+                placeholder={ROUND_COPY.ask}
+                disabled={roundBusy !== null}
+                onChange={(event) => setRoundDraft(event.target.value)}
+              />
+              <div className="notebook-objective__choices">
+                {ROUND_PRESETS_V1.map((preset) => (
+                  <button
+                    key={preset.key}
+                    type="button"
+                    className="button"
+                    disabled={roundBusy !== null}
+                    onClick={() => {
+                      const starter = preset.starter(docTitle);
+                      setRoundStarter(starter);
+                      setRoundDraft(starter);
+                      if (roundFailure) setRoundFailure(null);
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="button primary"
+                  disabled={roundBusy !== null || roundDraft.trim().length === 0}
+                  onClick={() => void submitRoundQuestion(openRound ? "revise" : "start")}
+                >
+                  {roundBusy === "start" || roundBusy === "revise" ? ROUND_COPY.starting : (openRound ? ROUND_COPY.saving : ROUND_COPY.start)}
+                </button>
+              </div>
+              <p className="small notebook-note">{ROUND_COPY.hint}</p>
+            </>
+          )}
+          {roundFailure ? <p className="small notebook-note" role="alert">{roundFailure}</p> : null}
         </div>
       ) : null}
       <div className="rule" />

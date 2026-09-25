@@ -309,6 +309,12 @@ const desktopApi: AILearnDesktopApiM2 = {
     list: (input) => invoke(DESKTOP_IPC_CHANNELS.objectiveList, input),
     get: (input) => invoke(DESKTOP_IPC_CHANNELS.objectiveGet, input)
   },
+  noteLearningRound: {
+    open: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundOpen, input),
+    create: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundCreate, input),
+    revise: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundRevise, input),
+    close: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundClose, input)
+  },
   understanding: {
     getTopology: (input) => invoke(DESKTOP_IPC_CHANNELS.understandingGetTopology, input)
   },

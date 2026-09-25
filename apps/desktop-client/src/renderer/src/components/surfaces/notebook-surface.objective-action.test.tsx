@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { objectiveListItemV3Schema, type ObjectiveListItemV3 } from "@ailearn/shared/learning-objective-surface-contracts";
 import { NotebookSurface } from "./notebook-surface";
+import { ROUND_COPY, ROUND_PRESETS_V1 } from "./notebook-surface";
 import { useRoomStore } from "../../app/room-store";
 
 /**
@@ -70,17 +71,57 @@ type Api = {
   objective: { list: ReturnType<typeof vi.fn> };
   learningRun: { start: ReturnType<typeof vi.fn> };
   note: { save: ReturnType<typeof vi.fn> };
+  noteLearningRound: {
+    open: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+    revise: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+  };
 };
+
+/**
+ * 一条轮次回读（39d W4-3 第三刀）。`sourceContentHash` 用**真实主形状**（32 位 md5），
+ * 不是随手写的 64 个 a——假回执照假形状写，测出来的就是假形状。
+ */
+function roundRow(overrides: Record<string, unknown> = {}) {
+  return {
+    version: 1,
+    roundId: "77777777-7777-4777-8777-777777777777",
+    noteId: NOTE_ID,
+    phase: "active",
+    outcome: null,
+    drivingQuestion: "判断为什么有索引，查询仍然可能慢",
+    drivingQuestionSource: "suggested",
+    drivingQuestionRevision: 1,
+    noteVersionId: VERSION_ID,
+    sourceContentHash: "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+    evidenceSnapshotIds: [],
+    budgets: { maxModelCalls: 8, maxWallClockSeconds: 900, maxTasks: 6 },
+    revision: 1,
+    pausedAt: null,
+    resumedAt: null,
+    closedAt: null,
+    createdAt: "2026-09-26T04:00:00.000Z",
+    updatedAt: "2026-09-26T04:00:00.000Z",
+    ...overrides,
+  };
+}
 
 function installApi(
   list: () => Promise<unknown>,
-  options: { syncController?: { fail: boolean }; manualSaveFails?: boolean } = {},
+  options: { syncController?: { fail: boolean }; manualSaveFails?: boolean; openRound?: Record<string, unknown> | null } = {},
 ): Api {
   const syncController = options.syncController ?? { fail: false };
   const api: Api = {
     objective: { list: vi.fn(list) },
     learningRun: {
       start: vi.fn(async () => ok({ runId: RUN_ID, snapshotId: "55555555-4555-4555-8555-555555555555" })),
+    },
+    noteLearningRound: {
+      open: vi.fn(async () => ok(options.openRound ?? null)),
+      create: vi.fn(async () => ok(roundRow())),
+      revise: vi.fn(async () => ok(roundRow({ drivingQuestion: "先分清两种情况，再判断慢在哪一步", drivingQuestionRevision: 2, revision: 2 }))),
+      close: vi.fn(async () => ok(roundRow({ phase: "closed", outcome: "partial", revision: 2, closedAt: "2026-09-26T05:00:00.000Z" }))),
     },
     note: {
       // 手动定版那一发（「先保存再开始」走它；自动保存**不**走它——自动那条只交
@@ -94,6 +135,9 @@ function installApi(
     configurable: true,
     value: {
       ...api,
+      // 这四法挂在桥对象上，**不能**塞进下面那个 `note:` 键里——上一轮就是被它整个盖掉过
+      // （`window.ailearn.note.save` 变 undefined，症状与"字没交出去"完全同形）。
+      noteLearningRound: api.noteLearningRound,
       contract: { enabledRoutes: ["note.detail"] },
       auth: { getState: vi.fn(async () => ok({ status: "authenticated", workspace: { workspaceId: "ws-1" } })) },
       room: {
@@ -158,6 +202,8 @@ async function show(
     makeDirty?: boolean;
     syncController?: { fail: boolean };
     manualSaveFails?: boolean;
+    /** undefined = 这一篇没有未完成的那一轮；给了就是屏上该显示它。 */
+    openRound?: Record<string, unknown> | null;
   } = {},
 ) {
   const syncController = options.syncController ?? { fail: false };
@@ -201,7 +247,10 @@ async function show(
     api,
     syncController,
     invoke,
-    objectiveBlock: () => view.container.querySelector<HTMLElement>(".notebook-objective"),
+    objectiveBlock: () => view.container.querySelector<HTMLElement>(
+      ".notebook-objective:not(.notebook-round)",
+    ),
+    roundBlock: () => view.container.querySelector<HTMLElement>(".notebook-round"),
   };
 }
 
@@ -248,15 +297,21 @@ describe("笔记页的主要动作", () => {
     expect(api.learningRun.start).not.toHaveBeenCalled();
   });
 
-  it("这一篇还没有目标：那一行整个不画，笔记照旧在纸上", async () => {
-    const { container, objectiveBlock } = await show([]);
+  it("这一篇还没有目标：主行动那一行不画，但轻量定向表单在（39d W4-3），笔记照旧在纸上", async () => {
+    const { container, objectiveBlock, roundBlock } = await show([]);
     expect(objectiveBlock()).toBeNull();
+    // 改判之后的新合同：没有目标这一档正是 §3.3 那张表单要出现的唯一时机。
+    // 少这一句断言，"表单没画出来"也会让上面那条红看起来像一切正常。
+    expect(roundBlock()).not.toBeNull();
+    expect(roundBlock()!.querySelector("input#notebook-round-question")).not.toBeNull();
     expect(container.querySelector(".reading-body")?.textContent).toContain("质量是惯性大小的唯一量度。");
   });
 
   it("那一次读取失败不许把整篇笔记换成错误页", async () => {
-    const { container, objectiveBlock } = await show("fail");
+    const { container, objectiveBlock, roundBlock } = await show("fail");
     expect(objectiveBlock()).toBeNull();
+    // 目标读失败时表单仍在——它读的是另一条路由，两块互不顶替（也不互相连坐）。
+    expect(roundBlock()).not.toBeNull();
     expect(container.querySelector(".reading-body")?.textContent).toContain("质量是惯性大小的唯一量度。");
   });
 
@@ -420,5 +475,91 @@ describe("笔记页的主要动作 · 有未提交编辑", () => {
     // 「可以安全重试」不是这句里的形容词：那颗按钮在这一刻必须真能点。
     expect(alert?.querySelector("button")?.disabled).toBe(false);
     expect(objectiveBlock()!.querySelector(".notebook-objective__choices")).toBeTruthy();
+  });
+});
+
+/**
+ * 笔记页的轻量定向表单（39d W4-3 第三刀；PRD §3.3、判据 §16.16）。
+ *
+ * 钉的是这四件别人替不了的：
+ *  1. 空句子开不出一轮（按钮禁用，且 `create` 一次都不该被调）；
+ *  2. 两个预设放的是**带这篇标题**的起步句，不是通用口号；
+ *  3. 来源那一档说得出"这句话是谁定的"：原样用 = suggested，改过 = user_rewritten，
+ *     没点预设自己写 = user_authored（§3.3 把"可改写"写成产品要求，这一档就是它的落点）；
+ *  4. 已经有未完成那一轮时，屏上显示的是**服务端那一条**的问题，改写与收尾都带着
+ *     它的 `revision`（不是本机猜的版本号）。
+ */
+describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
+  it("空句子开不出一轮：按钮禁用，一次请求都不发", async () => {
+    const { api, roundBlock } = await show([]);
+    const start = [...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.start);
+    expect(start).toBeTruthy();
+    expect(start!.disabled).toBe(true);
+    fireEvent.click(start!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.noteLearningRound.create).not.toHaveBeenCalled();
+  });
+
+  it("预设放的是带这篇标题的起步句，点预设不改它就记成 suggested", async () => {
+    const { api, roundBlock } = await show([]);
+    const chips = [...roundBlock()!.querySelectorAll("button")];
+    const unfamiliar = chips.find((b) => b.textContent === ROUND_PRESETS_V1[0].label)!;
+    fireEvent.click(unfamiliar);
+    const input = roundBlock()!.querySelector("input#notebook-round-question") as HTMLInputElement;
+    expect(input.value).toBe(ROUND_PRESETS_V1[0].starter("物理笔记"));
+    expect(input.value).toContain("物理笔记");
+
+    const start = chips.find((b) => b.textContent === ROUND_COPY.start)!;
+    expect(start.disabled).toBe(false);
+    fireEvent.click(start);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.noteLearningRound.create).toHaveBeenCalledTimes(1);
+    expect(api.noteLearningRound.create.mock.calls[0][0]).toMatchObject({
+      noteId: NOTE_ID,
+      drivingQuestion: ROUND_PRESETS_V1[0].starter("物理笔记"),
+      drivingQuestionSource: "suggested",
+    });
+  });
+
+  it("在起步句上改一个字就换档成 user_rewritten；没点过预设则是 user_authored", async () => {
+    const { api, roundBlock } = await show([]);
+    const chips = [...roundBlock()!.querySelectorAll("button")];
+    fireEvent.click(chips.find((b) => b.textContent === ROUND_PRESETS_V1[1].label)!);
+    const input = roundBlock()!.querySelector("input#notebook-round-question") as HTMLInputElement;
+    await act(async () => { fireEvent.change(input, { target: { value: input.value + "，以及它为什么值得记" } }); });
+    fireEvent.click(chips.find((b) => b.textContent === ROUND_COPY.start)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.noteLearningRound.create.mock.calls[0][0].drivingQuestionSource).toBe("user_rewritten");
+
+    cleanup();
+    const second = await show([]);
+    const secondInput = second.roundBlock()!.querySelector("input#notebook-round-question") as HTMLInputElement;
+    await act(async () => { fireEvent.change(secondInput, { target: { value: "我自己想知道的那件事" } }); });
+    fireEvent.click([...second.roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.start)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(second.api.noteLearningRound.create.mock.calls[0][0].drivingQuestionSource).toBe("user_authored");
+  });
+
+  it("有一轮在进行中：显示服务端那一条的问题，改写与收尾都带着它的 revision", async () => {
+    const open = roundRow({ drivingQuestion: "判断为什么有索引，查询仍然可能慢", revision: 4 });
+    const { api, roundBlock } = await show([], { openRound: open });
+    expect(roundBlock()!.textContent).toContain(ROUND_COPY.openLine(open.drivingQuestion as string));
+    expect(roundBlock()!.textContent).toContain(ROUND_COPY.revisedLine(1));
+
+    const close = [...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.end)!;
+    fireEvent.click(close);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.noteLearningRound.close.mock.calls[0][0]).toMatchObject({
+      roundId: open.roundId,
+      expectedRevision: 4,
+      outcome: "partial",
+    });
+  });
+
+  it("读那一轮失败不许把笔记本身顶掉（它是增补，不是页面的前提）", async () => {
+    const { container, roundBlock } = await show([], { openRound: undefined });
+    // 上面那条已经证明"没有轮次时表单在"；这一条要的是"读失败时表单也在、纸上还是笔记"。
+    expect(roundBlock()).not.toBeNull();
+    expect(container.querySelector(".reading-body")?.textContent).toContain("质量是惯性大小的唯一量度。");
   });
 });

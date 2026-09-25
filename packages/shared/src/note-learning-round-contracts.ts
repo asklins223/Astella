@@ -72,6 +72,17 @@ export const noteLearningRoundV1Schema = z.strictObject({
 });
 export type NoteLearningRoundV1Wire = z.infer<typeof noteLearningRoundV1Schema>;
 
+/**
+ * 路由的回信信封（`{ version, round }`）。单独成一个 schema 而不是让调用方
+ * 各自 `body.round`：网关、主进程出口 schema 与集测三处都要拆这一层，
+ * 各写一遍就会有一处忘了拆（症状是"合同解析不过"，报出来却像服务端返回坏了）。
+ */
+export const noteLearningRoundViewV1Schema = z.strictObject({
+  version: z.literal(1),
+  round: noteLearningRoundV1Schema,
+});
+export type NoteLearningRoundViewV1 = z.infer<typeof noteLearningRoundViewV1Schema>;
+
 export const createNoteLearningRoundRequestV1Schema = z.strictObject({
   noteId: z.string().uuid(),
   /**

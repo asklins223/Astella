@@ -295,6 +295,7 @@ import {
   desktopAiAuditPageV1Schema,
 } from "@ailearn/shared/desktop-surface-contracts";
 import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema, type ObjectiveListPageV3, type LearningObjectiveSurfaceV3 } from "@ailearn/shared/learning-objective-surface-contracts";
+import { noteLearningRoundViewV1Schema, type NoteLearningRoundV1Wire } from "@ailearn/shared/note-learning-round-contracts";
 import { understandingTopologySnapshotV3Schema, type UnderstandingTopologySnapshotV3 } from "@ailearn/shared/understanding-topology-v3-contracts";
 import {
   activateCardCandidatesRequestV2Schema,
@@ -1965,6 +1966,124 @@ export class DesktopGateway {
     const parsed = learningObjectiveSurfaceV3Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
+  }
+
+  /**
+   * 这一篇此刻**未完成**的那一轮；没有就返回 null（不是错误）。
+   *
+   * 只认服务端那个 `round_not_found` 码，其余状态一律照错误映射——
+   * 把"任何 404 都当没有"读出来，症状是登录过期/路径写错也一律显示成
+   * "这篇还没开始过"，那比多一条红更贵。
+   */
+  async getOpenNoteLearningRound(noteId: string, requestId?: string): Promise<NoteLearningRoundV1Wire | null> {
+    await this.ensureConnected(requestId);
+    const result = await this.request(
+      `/v2/notes/${this.safeUuid(noteId)}/learning-round`,
+      { method: "GET" },
+      true,
+      false,
+      requestId,
+      undefined,
+      true,
+    );
+    if (result.status >= 300) {
+      const roundNotFound = z.object({ error: z.literal("round_not_found") }).safeParse(result.body);
+      if (result.status === 404 && roundNotFound.success) return null;
+      throw this.mapResponseError(result.status, result.headers);
+    }
+    const parsed = noteLearningRoundViewV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data.round;
+  }
+
+  /**
+   * 开一轮：只交那一句话与它的来源。请求体里**没有**版本 id、没有哈希、没有预算
+   * （PRD §3.4 与 §18.4 都在服务端那一侧），合同是 `.strict()`，多带字段会被主进程
+   * 的 schema 先挡下，不会带着旧屏上的版本号去打服务端。
+   */
+  async createNoteLearningRound(
+    input: {
+      noteId: string;
+      drivingQuestion: string;
+      drivingQuestionSource: "suggested" | "user_rewritten" | "user_authored";
+    },
+    requestId?: string,
+  ): Promise<NoteLearningRoundV1Wire> {
+    await this.ensureConnected(requestId);
+    const result = await this.request(
+      "/v2/note-learning-rounds",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          noteId: input.noteId,
+          drivingQuestion: input.drivingQuestion,
+          drivingQuestionSource: input.drivingQuestionSource,
+        }),
+      },
+      true,
+      true,
+      requestId,
+    );
+    const parsed = noteLearningRoundViewV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data.round;
+  }
+
+  /** 改写本轮问题（§3.3「可以改写这一句话」——§16.16 那条判据的正身）。 */
+  async reviseNoteLearningRound(
+    input: { roundId: string; expectedRevision: number; drivingQuestion: string; drivingQuestionSource: "suggested" | "user_rewritten" | "user_authored" },
+    requestId?: string,
+  ): Promise<NoteLearningRoundV1Wire> {
+    return this.postNoteLearningRoundAction(
+      `/v2/note-learning-rounds/${this.safeUuid(input.roundId)}/driving-question`,
+      {
+        expectedRevision: input.expectedRevision,
+        drivingQuestion: input.drivingQuestion,
+        drivingQuestionSource: input.drivingQuestionSource,
+      },
+      requestId,
+    );
+  }
+
+  /** 「先到这里」= close(partial|completed)。终态之后服务端不再收任何写。 */
+  async closeNoteLearningRound(
+    input: { roundId: string; expectedRevision: number; outcome: "completed" | "partial" },
+    requestId?: string,
+  ): Promise<NoteLearningRoundV1Wire> {
+    return this.postNoteLearningRoundAction(
+      `/v2/note-learning-rounds/${this.safeUuid(input.roundId)}`,
+      { expectedRevision: input.expectedRevision, action: { kind: "close", outcome: input.outcome } },
+      requestId,
+      "PATCH",
+    );
+  }
+
+  /**
+   * 两条写路径共用一发：它们请求不同、回执同形（`{ version, round }`），
+   * 拆成两份就会有一处忘了拆信封或忘了带 requestId（这一族在本仓库红过不止一次）。
+   */
+  async postNoteLearningRoundAction(
+    path: string,
+    payload: Record<string, unknown>,
+    requestId?: string,
+    method: "POST" | "PATCH" = "POST",
+  ): Promise<NoteLearningRoundV1Wire> {
+    await this.ensureConnected(requestId);
+    const result = await this.request(
+      path,
+      {
+        method,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+      true,
+      true,
+      requestId,
+    );
+    const parsed = noteLearningRoundViewV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data.round;
   }
 
   async getUnderstandingTopology(requestId?: string): Promise<UnderstandingTopologySnapshotV3> {
