@@ -331,6 +331,11 @@
       "import": "./src/review-consumable-target.ts",
       "default": "./src/review-consumable-target.ts"
     },
+    "./review-action-copy": {
+      "types": "./src/review-action-copy.ts",
+      "import": "./src/review-action-copy.ts",
+      "default": "./src/review-action-copy.ts"
+    },
     "./note-visibility": {
       "types": "./src/note-visibility.ts",
       "import": "./src/note-visibility.ts",

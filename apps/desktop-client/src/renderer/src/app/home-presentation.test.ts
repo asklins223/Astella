@@ -68,7 +68,15 @@ function presentation(overrides: Partial<PresentationProjection> = {}): RoomProj
   return { ...EMPTY_ROOM, ...overrides } as RoomProjectionV1;
 }
 
-function primaryFocusData(availability: "available" | "unavailable" = "available"): RoomProjectionV1["primaryFocus"] {
+/**
+ * 动作里**必须带 `label`**：服务端在 `create_run`／`create_review_run`／`practice_only`
+ * 三种 kind 上都会签发词（`learningObjectivePrimaryActionV3Schema` 要求它），
+ * 房间主按钮读的就是这一份（39d W4-2 收口）——夹具少了它，测的就不是真实形状。
+ */
+function primaryFocusData(
+  availability: "available" | "unavailable" = "available",
+  action: Record<string, unknown> = { kind: "create_run", label: "开始学习" },
+): RoomProjectionV1["primaryFocus"] {
   return {
     state: "data",
     data: {
@@ -76,9 +84,7 @@ function primaryFocusData(availability: "available" | "unavailable" = "available
         content: { conceptLabel: "光合作用", presentation: { cardId: "card-1" } },
         sources: { primaryNote: null },
       },
-      action: availability === "available"
-        ? { availability: "available", action: { kind: "create_run" } }
-        : { availability: "unavailable", action: { kind: "create_run" } },
+      action: { availability, action },
     },
   } as unknown as RoomProjectionV1["primaryFocus"];
 }
@@ -145,6 +151,27 @@ describe("homePresentation", () => {
       sectionError: true,
       sectionStates: { primaryFocus: "error" },
     });
+  });
+
+  /**
+   * 39d W4-2 收口：房间主按钮的**词来自服务端动作**，这里原先自己写了一份
+   * （「继续学习／开始今日复习」），同一个动作在首页与列表／详情／笔记页各说一个词。
+   * 这一条钉两件事：词确实取自动作；到期复习那一句全应用只有一份（服务端也读它）。
+   */
+  it("takes the button verb from the server action instead of wording it locally", () => {
+    const dueReview = homePresentation(presentation({
+      primaryFocus: primaryFocusData("available", {
+        kind: "create_review_run",
+        label: "开始到期复习",
+      }),
+    }), false, null);
+    expect(dueReview.primaryLabel).toBe("开始到期复习");
+
+    const resumed = homePresentation(presentation({
+      primaryFocus: primaryFocusData("available", { kind: "resume_run" }),
+    }), false, null);
+    // 服务端不给 resume_run 发词，词由渲染端的唯一一份文案模块给（列表／详情同读它）。
+    expect(resumed.primaryLabel).toBe("继续作答");
   });
 
   it("preserves each summary section state instead of turning unknown values into zero", () => {

@@ -64,7 +64,7 @@ function stubGateway(
     readonly defer?: (input: { meta: unknown; request: { scheduleId: string; scheduleGeneration: number; deferredUntil: string; reasonCode: string } }) => Promise<unknown>;
     /**
      * 账号「作答方式」偏好这一条读口的答法。默认 `"any"`（未设置）；给
-     * `"reject"` 就是读不到——开始复习不能因此被挡住。
+     * `"reject"` 就是读不到——开始到期复习不能因此被挡住。
      */
     readonly answerMode?: "voice" | "silent" | "text" | "any" | "reject";
   } = {},
@@ -584,7 +584,7 @@ describe("ReviewSurface · 稍后提醒", () => {
     fireEvent.click(screen.getByRole("button", { name: "稍后提醒" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "正在延后…" })).toBeTruthy());
 
-    expect((screen.getByRole("button", { name: /开始复习/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /开始到期复习/ }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "查看来源" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -785,7 +785,7 @@ describe("ReviewSurface · 账号作答方式偏好（L15）", () => {
   async function startWith(answerMode: "voice" | "silent" | "text" | "reject") {
     const gateway = stubGateway(ONE, ONE_LABELS, false, { answerMode });
     render(<ReviewSurface />);
-    fireEvent.click(await screen.findByRole("button", { name: /开始复习/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /开始到期复习/ }));
     await waitFor(() => expect(gateway.learningRun.start).toHaveBeenCalledTimes(1));
     // `vi.fn()` 没有签名，`mock.calls` 推成 `[][0]`；这里按发出去的实际形状取。
     const [call] = gateway.learningRun.start.mock.calls as unknown as Array<[{

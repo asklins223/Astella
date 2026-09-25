@@ -25,6 +25,7 @@ import { HudPage } from "../hud/HudPage";
 import { useHudPage } from "../hud/use-hud-page";
 import { usePageReadableView } from "../hud/use-page-readable-view";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import { DUE_REVIEW_START_LABEL } from "@ailearn/shared/review-action-copy";
 import { matchesReviewTarget } from "../review-focus";
 import { SurfaceDataState, useDayAnchor } from "./surface-data";
 import {DECK_DRAG_SLOP, REVIEW_WINDOW_SIZE, deckDragOutcome, deckDragShift, reviewDeckPosition, reviewDeckRound, reviewOverdueLabel, reviewReasonFacts, reviewReasonSentence, reviewReasonTag, reviewSequenceAfter, reviewStartabilityLabel, reviewFormalValidationBlockedLabel, reviewWindowStart, uniqueReviewItems, type ReviewItem} from "./review-deck";
@@ -930,8 +931,8 @@ export function ReviewSurface() {
                 onRetry={boundary.kind === "error" ? () => reload() : undefined}
                 action={boundary.kind === "empty" ? (
                   <div className="actions">
-                    {/* 空队列的下一步是回到今日学习：主行动走主按钮，与
-                        「开始复习」共用同一套主按钮语言。 */}
+                    {/* 空队列的下一步是回到今日学习：主行动走主按钮，与卡面上那颗
+                        「开始到期复习」共用同一套主按钮语言。 */}
                     <button type="button" className="button primary" onClick={() => invoke("continue")}>
                       回到今日学习<ArrowRight size={15} aria-hidden="true" />
                     </button>
@@ -999,7 +1000,9 @@ export function ReviewSurface() {
                           >
                             {startingReviewId === item.reviewId
                               ? "正在准备…"
-                              : <>开始复习<ArrowRight size={15} aria-hidden="true" /></>}
+                              /* 词读共享常量（不是本地字面量）：同一个动作在笔记页／目标页
+                                 由服务端签发「开始到期复习」，这里少一个字就是两个来源。 */
+                              : <>{DUE_REVIEW_START_LABEL}<ArrowRight size={15} aria-hidden="true" /></>}
                           </button>
                         ) : (
                           <button type="button" className="button" disabled={busy} onClick={reload}>

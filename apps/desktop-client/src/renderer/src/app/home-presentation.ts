@@ -2,6 +2,8 @@ import type {
   RoomProjectionV1,
   RoomSectionStatusV1,
 } from "@ailearn/shared/room-projection-contracts";
+// 动作的词只有一份（列表／详情／笔记页也读它）：这里不再自己写一份。
+import { primaryActionLabel as surfacePrimaryActionLabel } from "../components/surfaces/objective-state-copy";
 import type { RoomIntent } from "./room-machine";
 
 type NoteRef = { readonly noteId: string; readonly noteVersionId: string; readonly title: string };
@@ -21,14 +23,25 @@ function roomIntent(value: RoomIntent | null): RoomIntent | null {
   return value;
 }
 
+/**
+ * 房间主按钮上的动词。
+ *
+ * **词从服务端签发的那一份读**（`objective-state-copy.primaryActionLabel`，它把
+ * `create_run`／`create_review_run`／`practice_only` 直接还给服务端写在动作里的
+ * `label`）——这里原先自己写了一份「继续学习／开始今日复习／开始学习」，于是
+ * 同一个动作在首页与列表／详情／笔记页各说一个词（39d W4-2 收口：那处欠账就是它）。
+ * 本函数只保留**这一面自己的判断**：哪些 kind 在这块屏上算"可以点着往前走"，
+ * 其余一律不在这里造句，回落到「查看当前目标」。
+ */
 function primaryActionLabel(projection: RoomProjectionV1 | null): string | null {
   if (projection?.primaryFocus.state !== "data") return null;
   const action = projection.primaryFocus.data.action;
   if (action.availability !== "available") return "查看当前目标";
   switch (action.action.kind) {
-    case "resume_run": return "继续学习";
-    case "create_review_run": return "开始今日复习";
-    case "create_run": return "开始学习";
+    case "resume_run":
+    case "create_review_run":
+    case "create_run":
+      return surfacePrimaryActionLabel(action.action);
     default: return "查看当前目标";
   }
 }

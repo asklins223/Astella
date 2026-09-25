@@ -21,6 +21,8 @@
  */
 import type { AnswerModePreferenceV1, LearningObjectivePrimaryActionV3 } from "@ailearn/shared";
 import { answerModeToResponsePreference, learningRunOutcomeSchema, startRunOriginV2 } from "@ailearn/shared";
+// 到期复习那一句话的唯一来源：桌面端复习面的主按钮读的是同一个常量（39d W4-2 收口）。
+import { DUE_REVIEW_START_LABEL } from "@ailearn/shared/review-action-copy";
 
 export interface ActionResolverInputV3 {
   objectiveId: string;
@@ -140,7 +142,7 @@ export function resolvePrimaryActionV3(
     return {
       kind: "create_review_run",
       objectiveId,
-      label: "开始到期复习",
+      label: DUE_REVIEW_START_LABEL,
       start: {
         version: 2,
         originV2: {
