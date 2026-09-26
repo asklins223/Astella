@@ -46,7 +46,6 @@ const DARK_FILES_AWAITING_REGISTRATION = new Set([
   "card-generation-v2-postgres.integration.ts",
   "card-generation-v2-redaction-quota.integration.ts",
   "companion-failed-partial-postgres.integration.ts",
-  "companion-memory-cross-space.integration.ts",
   "companion-note-visibility-postgres.integration.ts",
   "opencode-go-live.integration.ts",
 ]);

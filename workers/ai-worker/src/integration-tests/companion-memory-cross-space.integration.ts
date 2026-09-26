@@ -20,10 +20,36 @@ import { randomUUID } from "node:crypto";
 import { memoryScopeForKind } from "../handlers/companion-memory-extractor.ts";
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
-const CONN = testDatabaseUrl("DATABASE_URL_API");
-const sql = postgres(CONN, { max: 2 });
+// 两个池，分工写死在下面（这份文件曾经整份只有一条 `DATABASE_URL_API`：
+// 本机 dev 那个变量**是超户 ailearn**，于是"用超户建多空间"的意图落地成了"用 api 角色"，
+// 而铺开函数的 EXECUTE 只给了 `ailearn_worker`（0267:142）⇒ 换到 CI 的角色形状就是
+// `permission denied for function`。名字不等于角色，这一族已经踩过不止一次。）
+const ADMIN = testDatabaseUrl("DATABASE_URL");
+const sql = postgres(ADMIN, { max: 2 });
+/** 生产里真正调这个函数的是 worker（`handlers/companion-memory-extractor.ts:534`），
+ *  所以"能不能调"必须由 worker 池来验，不许由夹具池代跑。 */
+const workerSql = postgres(testDatabaseUrl("DATABASE_URL_WORKER"), { max: 2 });
 
 after(async () => {
+  // 这个文件以前**一行都不清**：库里留着按 `xspace-%@x.test` 数出来的 8 个用户与 16 个空间
+  // （09-22 那批本地跑的），每跑一次加一份。清理放在关池之前，并且回读计数证明清掉了。
+  await sql.begin(async (tx) => {
+    await tx`DELETE FROM assistant_memory_items WHERE user_id = ${userId}`;
+    const spaces = await tx`SELECT id FROM workspaces WHERE owner_id = ${userId}`;
+    for (const space of spaces) {
+      await tx`DELETE FROM workspace_members WHERE workspace_id = ${space.id}`;
+      await tx`DELETE FROM workspaces WHERE id = ${space.id}`;
+    }
+    await tx`DELETE FROM users WHERE id = ${userId}`;
+  });
+  const left = await sql`
+    SELECT (SELECT count(*) FROM users WHERE id = ${userId}) AS u,
+           (SELECT count(*) FROM assistant_memory_items WHERE user_id = ${userId}) AS m
+  `;
+  if (Number(left[0].u) + Number(left[0].m) !== 0) {
+    throw new Error("这一发种的行没清掉，共享 dev 库上属于我造的垃圾");
+  }
+  await workerSql.end({ timeout: 2 }).catch(() => undefined);
   await sql.end({ timeout: 2 }).catch(() => undefined);
 });
 
@@ -95,7 +121,7 @@ test("global 记忆被铺到该用户的每个活跃空间，workspace 记忆不
   const globalId = await insertMemory("preference", "global", `我习惯晚上学习 ${tag}`);
   const localId = await insertMemory("goal", "workspace", `这个空间的目标 ${tag}`);
 
-  await sql`
+  await workerSql`
     SELECT public.ailearn_fanout_global_companion_memory(${globalId}::uuid) AS inserted
   `;
 
@@ -110,7 +136,7 @@ test("global 记忆被铺到该用户的每个活跃空间，workspace 记忆不
   assert.equal((await rowsIn(spaceB, globalKey)).length, 1, "另一个空间没有拿到这条记忆");
 
   // 负向：空间内记忆没有被铺（它的 global_key 是 NULL，函数也直接返回 0）。
-  const localFan = await sql`
+  const localFan = await workerSql`
     SELECT public.ailearn_fanout_global_companion_memory(${localId}::uuid) AS inserted
   `;
   assert.equal(Number(localFan[0]?.inserted ?? 0), 0, "非 global 记忆不该被铺");
@@ -123,8 +149,8 @@ test("global 记忆被铺到该用户的每个活跃空间，workspace 记忆不
 
 test("幂等：同一条记忆重复铺不会在同一个空间里出现第二份", async () => {
   const id = await insertMemory("preference", "global", `重复铺的偏好 ${tag}`);
-  await sql`SELECT public.ailearn_fanout_global_companion_memory(${id}::uuid)`;
-  await sql`SELECT public.ailearn_fanout_global_companion_memory(${id}::uuid)`;
+  await workerSql`SELECT public.ailearn_fanout_global_companion_memory(${id}::uuid)`;
+  await workerSql`SELECT public.ailearn_fanout_global_companion_memory(${id}::uuid)`;
   const rows = await sql`
     SELECT workspace_id FROM assistant_memory_items
     WHERE user_id = ${userId} AND content = ${`重复铺的偏好 ${tag}`} AND deleted_at IS NULL
@@ -144,7 +170,7 @@ test("幂等：同一条记忆重复铺不会在同一个空间里出现第二�
 
 test("后来加入的新空间会补铺已有的 global 记忆", async () => {
   const id = await insertMemory("preference", "global", `别用太长的句子 ${tag}`);
-  await sql`SELECT public.ailearn_fanout_global_companion_memory(${id}::uuid)`;
+  await workerSql`SELECT public.ailearn_fanout_global_companion_memory(${id}::uuid)`;
   const keyRows = await sql`SELECT global_key FROM assistant_memory_items WHERE id = ${id}::uuid`;
   const globalKey = String(keyRows[0]?.global_key ?? "");
 
@@ -164,7 +190,7 @@ test("后来加入的新空间会补铺已有的 global 记忆", async () => {
 
 test("改一处、其余副本跟着走；删一处、其余一起消失", async () => {
   const id = await insertMemory("preference", "global", `会被改的偏好 ${tag}`);
-  await sql`SELECT public.ailearn_fanout_global_companion_memory(${id}::uuid)`;
+  await workerSql`SELECT public.ailearn_fanout_global_companion_memory(${id}::uuid)`;
   const keyRows = await sql`SELECT global_key FROM assistant_memory_items WHERE id = ${id}::uuid`;
   const globalKey = String(keyRows[0]?.global_key ?? "");
   assert.equal((await rowsIn(spaceA, globalKey)).length, 1);
