@@ -58,6 +58,19 @@ const app = await electron.launch({
   cwd: appRoot,
   executablePath,
 })
+// 临时 `--user-data-dir` 意味着**没有可复用的会话**：这道门每一家剧本都得自己过。
+// 这一段以前不在这里（它假定了持久会话），所以整份剧本在 `.notebook` 上等到超时——
+// 症状长得像"笔记页打不开"，真实原因是根本没登录。与其余探针同一形状。
+const loginPage = await app.firstWindow()
+await loginPage.waitForLoadState('domcontentloaded')
+const emailBox = loginPage.locator('.desktop-access-gate input[type="email"]')
+if (await emailBox.waitFor({ timeout: 20_000 }).then(() => true, () => false)) {
+  await emailBox.fill(process.env.OWNER_EMAIL ?? '')
+  await loginPage.locator('.desktop-access-gate input[type="password"]').fill(process.env.OWNER_PASSWORD ?? '')
+  await loginPage.getByRole('button', { name: '登录', exact: true }).click()
+}
+await loginPage.waitForTimeout(2_500)
+await dismissBlockingDialogs(loginPage)
 
 // 重新进这一篇一次：让第一屏由界面自己读出来（而不是我塞给它的）。
 // 注意书架可能已经是展开状态——那时再点 `.note-shelf-all` 会一直等不到，
@@ -148,7 +161,14 @@ try {
   readings.firstPageRows = firstPageCount
   readings.firstPageLead = (await historyLead(page).textContent() ?? '').trim()
   check('第一屏只给一页那么多（不是把 12 轮一次摊完）', firstPageCount === FIRST_PAGE_ROWS, firstPageCount)
-  check('还没翻完时那句不替整篇报总数', /列到这里/.test(readings.firstPageLead) && !/开过/.test(readings.firstPageLead), readings.firstPageLead)
+  // 旧判据是"没翻完就别提总数"（当时服务端根本没有总数，只能这样退让）。现在总数由服务端
+  // 报，那条保护换了个更硬的说法：**中途那句里的总数必须已经是全篇那个数**，
+  // 而"列了最近几条"必须等于本页条数——两件事各归各的来源，谁也不许冒充谁。
+  check('还没翻完时：总数已是全篇那个数，本页条数另说',
+    new RegExp(`这一篇开过 ${SEEDED_ROUNDS} 轮`).test(readings.firstPageLead)
+      && /这里列了最近 \d+ 轮，更早的还能看。/.test(readings.firstPageLead)
+      && !new RegExp(`这里列了最近 ${SEEDED_ROUNDS} 轮`).test(readings.firstPageLead),
+    readings.firstPageLead)
 
   await page.getByRole('button', { name: '看更早的几轮', exact: true }).click({ timeout: 20_000 })
   // 行数直接数（`waitFor` 落在"匹配多个"的定位器上是 strict violation，那不是产品的事）。
