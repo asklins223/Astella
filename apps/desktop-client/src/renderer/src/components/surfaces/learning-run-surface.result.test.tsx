@@ -575,6 +575,54 @@ describe("LearningRunSurface · 结算页结构", () => {
     expect(practice).not.toContain("还差");
   });
 
+  /**
+   * 39d W4-7 刀一的**读侧**：确定性那条链现在一位一格（`rubric:...#pos-N`），
+   * 这一支把两件事钉住——① 那句「N 个要点里证明了 M 个」按条目数数，所以聚合格必须被
+   * 逐位格**替掉**而不是并存（否则同一件事被数两遍）；② 不成立的那一位不许点出任何一项。
+   * 一句实话：`<details>` 在 jsdom 里点开也不会展开（没有默认行为），所以这里断言的是
+   * "折叠那行的条数 + 列表里的原文在 DOM 里"，展开态那一读仍欠真窗口。
+   */
+  it("确定性逐位反馈上屏：一位一格、计数那格不重复出现，不成立那一位不点出任何一项", async () => {
+    renderResult(1, resultWithRubric(2, {
+      outcome: "practice_completed",
+      demonstratedFacets: [],
+      gapFacets: [],
+      scheduleImpact: { kind: "none", reasonCode: "practice_only" },
+      assessment: {
+        source: "deterministic_structured",
+        status: "completed",
+        trustClass: "practice_only",
+        rubricResults: [
+          {
+            rubricItemId: "rubric:ordering:abc123#pos-1",
+            facet: "procedure",
+            verdict: "covered",
+            userFacingReason: "第 1 步放对了：「提起灭火器」",
+          },
+          {
+            rubricItemId: "rubric:ordering:abc123#pos-2",
+            facet: "procedure",
+            verdict: "missing",
+            userFacingReason: "第 2 步还不成立（这一步该放哪一项，这里不替你写出来）",
+          },
+        ],
+      },
+    }));
+    await waitFor(() => expect(document.querySelector(".learning-run-result-board")).not.toBeNull());
+
+    const summary = document.querySelector(".learning-run-result-rubric summary")?.textContent ?? "";
+    expect(summary).toContain("查看逐条判定 · 2 条");
+    const lines = [...document.querySelectorAll(".learning-run-result-rubric li")]
+      .map((item) => item.textContent ?? "");
+    expect(lines.filter((line) => line.includes("第 1 步放对了：「提起灭火器」"))).toHaveLength(1);
+    const notEstablished = lines.find((line) => line.includes("还不成立")) ?? "";
+    expect(notEstablished).not.toBe("");
+    expect(notEstablished).not.toContain("「");
+    expect(notEstablished).not.toContain("tok:");
+    // 这一档是练习，排程那一行仍走"练习不改复习"那句，不念按条目数数的那一句。
+    expect(scheduleRow()?.textContent ?? "").not.toContain("个要点里");
+  });
+
   it("拿不到本轮正文时，那颗按钮只承诺它真给的东西（审计 F29）", async () => {
     // `lockedAnswer` 是纯内存态：刷新、从历史重进、结算后再进来，客户端手里没有
     // 本轮正文（服务端从来没送过）。此前按钮一律写"看这次的答案与解释"，展开后
