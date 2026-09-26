@@ -171,7 +171,7 @@ after(async () => {
   // 整个文件就挂在超时上，看起来像"用例慢"——实测 240 秒）。
   let report;
   try {
-    report = await wipeCardGenerationFixtures(admin, [WORKSPACE_ID], [USER_ID]);
+    report = await wipeCardGenerationFixtures(admin, [WORKSPACE_ID], [USER_ID, ...createdMemberUserIds]);
   } finally {
     await admin.end({ timeout: 5 }).catch(() => undefined);
     const { closeDatabase } = await import("../../../../apps/api/src/db/client.ts");
@@ -2167,3 +2167,261 @@ test("长正文 + 重生成：截断留痕在重跑路径上也会多记一条",
   const after = await capEventCount();
   assert.equal(after, before + 1, `重跑路径必须再留一条（before=${before} after=${after}）`);
 });
+
+// ─── 那份冷却的三个写入点，各自配一把会红的尺（39d W7-2 射程补齐） ──────────
+
+/**
+ * 这一族用例只干一件事：把「翻开过答案要等的那份冷却」的三个写入点各自钉住。
+ *
+ * 之前只有"保存之后再翻开卡的答案"那一条路有对账（C18 那句），于是另外两处把延后量
+ * 退回写死 48 小时也照样整文件全绿——39d §19 登记的 M-7 / M-8 两支变异量到的就是这个。
+ * 三条路都走真实服务、真实库，并靠 `last_exposure_id` 这一格分清是谁写的那一行：
+ * 激活那一支不填它（它填的是"凭哪次曝光延后"留给 reveal 那两支），reveal 那两支一定填。
+ */
+const createdMemberUserIds: string[] = [];
+
+/** 容差 60 秒的理由与 C18 同一份：`created_at` 是库的时刻，延后量是服务端 JS 加出来的。 */
+const COOLDOWN_TOLERANCE_MS = 60_000;
+
+type SaveableCandidate = {
+  candidate_id: string;
+  candidate_revision_id: string;
+  revision: number;
+  candidate_revision_hash: string;
+};
+
+type ReminderRow = {
+  reminder_id: string;
+  status: string;
+  policy_version: string;
+  reminder_revision: number;
+  last_exposure_id: string | null;
+  qualification_not_before: Date;
+  created_at: Date;
+};
+
+function reminderDelayMs(row: ReminderRow): number {
+  return new Date(row.qualification_not_before).getTime() - new Date(row.created_at).getTime();
+}
+
+async function readReminderRows(userId: string, objectiveId: string): Promise<ReminderRow[]> {
+  return await admin`
+    SELECT reminder_id, status, policy_version, reminder_revision, last_exposure_id,
+           qualification_not_before, created_at
+    FROM initial_validation_reminders_v2
+    WHERE workspace_id = ${WORKSPACE_ID} AND user_id = ${userId} AND objective_id = ${objectiveId}
+    ORDER BY created_at`;
+}
+
+async function firstCandidateOf(runId: string, label: string): Promise<SaveableCandidate> {
+  const rows = await admin`
+    SELECT candidate_id, candidate_revision_id, revision, candidate_revision_hash
+    FROM card_generation_candidates_v2
+    WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}`;
+  assert.ok(rows.length >= 1, `${label} 需要至少一张能保存的候选`);
+  return rows[0] as SaveableCandidate;
+}
+
+/**
+ * 翻开这张候选的答案（§17.6 候选 reveal）——只写曝光台账，不建提醒。
+ *
+ * 这一步是 C46/C48 的关键：现网顺序本来就是"审核时先看答案，再按保存"，
+ * 而这条顺序今天一次都没在真库上走过（只有 `card-generation-v2-reveal-service.test.ts`
+ * 那份 mock 单测），所以激活那一发按曝光写延后的代码一直是没人读的。
+ */
+async function revealCandidateAnswerAs(
+  userId: string,
+  runId: string,
+  candidate: SaveableCandidate,
+  keyPrefix: string,
+): Promise<string> {
+  const { revealCandidateV2 } = await import(
+    "../../../../apps/api/src/modules/card-generation-v2/reveal-service.ts"
+  );
+  const reveal = await revealCandidateV2(
+    { workspaceId: WORKSPACE_ID, userId },
+    runId,
+    candidate.candidate_id,
+    Number(candidate.revision),
+    String(candidate.candidate_revision_hash),
+    `${keyPrefix}-reveal-${randomUUID()}`,
+  );
+  return reveal.exposureId;
+}
+
+/** 「保存到卡组」那一发（照 C45 的配方，只选第一张候选、不开复习）。 */
+async function saveFirstCandidate(
+  runId: string,
+  candidate: SaveableCandidate,
+  keyPrefix: string,
+): Promise<string> {
+  const { runRow, plan } = await loadRunAndPlanForActivation(runId);
+  const { activateCardCandidatesV2 } = await import(
+    "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
+  );
+  const { computeClientReviewHashV2 } = await import(
+    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+  );
+  const receipt = await activateCardCandidatesV2(
+    { workspaceId: WORKSPACE_ID, userId: USER_ID },
+    {
+      version: 2,
+      runId,
+      sourceSnapshotHash: runRow.source_snapshot_hash,
+      semanticSpecHash: runRow.semantic_spec_hash,
+      inputSnapshotHash: runRow.input_snapshot_hash,
+      expectedCardContentEpoch: Number(runRow.card_content_epoch),
+      planRevisionId: plan.plan_revision_id,
+      expectedPlanVersion: plan.plan_version,
+      planHash: plan.plan_hash,
+      selectedCandidates: [{
+        candidateRevisionId: candidate.candidate_revision_id,
+        candidateId: candidate.candidate_id,
+        revision: candidate.revision,
+        revisionHash: candidate.candidate_revision_hash,
+        candidateEvidenceBindingPlanHash: "a".repeat(64),
+        qualityReportHashes: [],
+        intent: { kind: "create_new" } as const,
+      }],
+      existingLifecycleActions: [],
+      expectedReviewDraftRevision: Number(runRow.review_draft_revision),
+      clientReviewHash: computeClientReviewHashV2({
+        runId,
+        expectedReviewDraftRevision: Number(runRow.review_draft_revision),
+        selected: [{
+          candidateId: candidate.candidate_id,
+          revision: candidate.revision,
+          revisionHash: candidate.candidate_revision_hash,
+        }],
+        reviewUiContractVersion: "review-ui-v1",
+      }),
+    },
+    `${keyPrefix}-activate-${randomUUID()}`,
+  );
+  return receipt.mappings[0].objectiveId;
+}
+
+async function cooldownFromSharedContract(): Promise<{ cooldownMs: number; policyVersion: string }> {
+  const contracts = await import("../../../../packages/shared/src/card-generation-v2-contracts.ts");
+  return {
+    cooldownMs: contracts.PRE_RUN_REVEAL_COOLDOWN_MS as number,
+    policyVersion: contracts.PRE_RUN_REVEAL_POLICY_VERSION as string,
+  };
+}
+
+/** 造一个真实的空间成员（提醒按人存，所以另一个人必须是真用户）。 */
+async function seedWorkspaceMember(role: "member" | "owner"): Promise<string> {
+  const userId = randomUUID();
+  createdMemberUserIds.push(userId);
+  await admin.begin(async (tx) => {
+    await tx`INSERT INTO users (id, email, password_hash)
+      VALUES (${userId}, ${`v2-member-${userId}@example.invalid`}, 'unused')`;
+    await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
+      VALUES (${WORKSPACE_ID}, ${userId}, ${role})`;
+  });
+  return userId;
+}
+
+test("C46：保存之前先翻开候选的答案 → 激活那一发自己写出延后的提醒", async () => {
+  const REFRACT_CONTENT =
+    "光的折射是指光从一种介质斜射入另一种介质时传播方向发生改变的现象；光从空气斜射入水中时，折射角小于入射角。";
+  const { versionId } = await seedNote("保存前翻答案", REFRACT_CONTENT);
+  const runId = (await createRun(versionId, `c46-${randomUUID()}`, `c46-key-${randomUUID()}`)).runId;
+  await runPipelineOnce();
+  await forceReviewReady(runId);
+  await forceCandidatesReviewedWithoutLeak(runId);
+
+  const candidate = await firstCandidateOf(runId, "C46");
+  await revealCandidateAnswerAs(USER_ID, runId, candidate, "c46");
+  const objectiveId = await saveFirstCandidate(runId, candidate, "c46");
+
+  const { cooldownMs, policyVersion } = await cooldownFromSharedContract();
+  const rows = await readReminderRows(USER_ID, objectiveId);
+  assert.equal(rows.length, 1, `保存那一发该建出恰好一条提醒（得到 ${rows.length} 条）`);
+  const row = rows[0];
+  assert.equal(row.status, "pending", "看过答案的人保存之后是「再等一等」，不是当场就能正式验证");
+  assert.equal(row.policy_version, policyVersion, "策略版本也从同一份共享合同取");
+  assert.equal(row.reminder_revision, 1, "这是这一发新建的第一版，不是别人那一版被改过");
+  assert.equal(row.last_exposure_id, null,
+    "这一行出自激活那一支——reveal 那两支写行时一定会填 last_exposure_id");
+  const delayMs = reminderDelayMs(row);
+  assert.ok(Math.abs(delayMs - cooldownMs) < COOLDOWN_TOLERANCE_MS,
+    `激活那一发写进库里的延后量必须就是那份共享冷却（实际 ${Math.round(delayMs / 1000)} 秒）`);
+});
+
+test("C47：没翻过答案就保存 → 提醒当场 ready，一天都不延后", async () => {
+  const RESPIRATION_CONTENT =
+    "细胞呼吸是细胞把有机物氧化分解、释放能量并生成 ATP 的过程；有氧呼吸的主要场所是线粒体。";
+  const { versionId } = await seedNote("没翻答案就保存", RESPIRATION_CONTENT);
+  const runId = (await createRun(versionId, `c47-${randomUUID()}`, `c47-key-${randomUUID()}`)).runId;
+  await runPipelineOnce();
+  await forceReviewReady(runId);
+  await forceCandidatesReviewedWithoutLeak(runId);
+
+  const candidate = await firstCandidateOf(runId, "C47");
+  const objectiveId = await saveFirstCandidate(runId, candidate, "c47");
+
+  const { policyVersion } = await cooldownFromSharedContract();
+  const rows = await readReminderRows(USER_ID, objectiveId);
+  assert.equal(rows.length, 1, `保存那一发该建出恰好一条提醒（得到 ${rows.length} 条）`);
+  const row = rows[0];
+  assert.equal(row.status, "ready", "没看过答案就不该被拖进冷却");
+  assert.equal(row.policy_version, policyVersion, "同一份策略版本，ready 也要写明凭哪条政策");
+  assert.equal(row.last_exposure_id, null, "这一行同样是激活那一支写的");
+  const delayMs = reminderDelayMs(row);
+  // 与 C46 配成一对：那一条钉「翻过答案 → 等满那份冷却」，这一条钉「没翻过 → 一等都不等」。
+  // 只有前一条时，把三元两侧写反（看过也立刻 ready、没看过也等 24 小时）是量不出来的。
+  assert.ok(Math.abs(delayMs) < COOLDOWN_TOLERANCE_MS,
+    `没翻过答案就不该延后（实际 ${Math.round(delayMs / 1000)} 秒）`);
+});
+
+test("C48：另一个人也翻过这张候选的答案 → 保存那一发替他映射曝光并写下同一份延后", async () => {
+  const ESTER_CONTENT =
+    "酯化反应是酸与醇作用生成酯和水的反应；一般由羧酸提供羟基、醇提供氢，反应可逆。";
+  const { versionId } = await seedNote("他人翻过答案", ESTER_CONTENT);
+  const runId = (await createRun(versionId, `c48-${randomUUID()}`, `c48-key-${randomUUID()}`)).runId;
+  await runPipelineOnce();
+  await forceReviewReady(runId);
+  await forceCandidatesReviewedWithoutLeak(runId);
+
+  const otherUserId = await seedWorkspaceMember("member");
+  // 一条如实的边界：这一条只在"API 那一发读得到别人那一行"的连接形状下成立。
+  // `card_exposure_ledger_v2` 的策略是**按人**挡的（`user_id = app.user_id`，只豁免
+  // `ailearn_worker`），所以换成受限角色跑这份文件时，激活那一发根本看不见别的成员的
+  // 曝光，这一条会红在「替他建的提醒得到 0 条」。同一次跑里 C46/C47 仍然绿——读自己那一行
+  // 没问题、读别人那一行读不到；而如果真是写入被政策挡下，整发激活会当场抛错，不会安静地
+  // 留 0 行。这条空转已登记在 39d §19，等 W7-3 一并裁，别把它当成用例写坏了。
+  const candidate = await firstCandidateOf(runId, "C48");
+  const otherExposureId = await revealCandidateAnswerAs(otherUserId, runId, candidate, "c48");
+  // 保存这一发是 USER_ID 按下的，他本人没翻过答案。
+  const objectiveId = await saveFirstCandidate(runId, candidate, "c48");
+
+  const { cooldownMs, policyVersion } = await cooldownFromSharedContract();
+
+  const mine = await readReminderRows(USER_ID, objectiveId);
+  assert.equal(mine.length, 1, "本人那一发也该有一条提醒");
+  assert.equal(mine[0].status, "ready", "本人没翻过答案，不该被别人的曝光拖进冷却");
+
+  const theirs = await readReminderRows(otherUserId, objectiveId);
+  assert.equal(theirs.length, 1,
+    `§17.5 step 10 要给同空间翻过答案的人也建一条提醒（得到 ${theirs.length} 条）`);
+  const row = theirs[0];
+  assert.equal(row.status, "pending", "替他写的那一条是「再等一等」");
+  assert.equal(row.policy_version, policyVersion, "同一份策略版本");
+  assert.equal(String(row.last_exposure_id), otherExposureId,
+    "替他写的那一条要写明是凭哪一次曝光延后的");
+  const delayMs = reminderDelayMs(row);
+  assert.ok(Math.abs(delayMs - cooldownMs) < COOLDOWN_TOLERANCE_MS,
+    `替别人延后的那一份也必须就是共享冷却（实际 ${Math.round(delayMs / 1000)} 秒）`);
+
+  // 那一跳的另一半：候选曝光映射成目标曝光，界面才知道"这个人已经看过答案"。
+  const mapped = await admin`
+    SELECT exposure_id, exposure_kind, source_candidate_exposure_id, idempotency_key
+    FROM learning_exposures_v2
+    WHERE workspace_id = ${WORKSPACE_ID} AND user_id = ${otherUserId} AND objective_id = ${objectiveId}`;
+  assert.equal(mapped.length, 1, "他的候选曝光要映射成目标曝光（否则下一批还会重复映射）");
+  assert.equal(mapped[0].exposure_kind, "answer_reveal", "映射出来的那一行仍要说清是翻开答案");
+  assert.equal(String(mapped[0].source_candidate_exposure_id), otherExposureId,
+    "映射行要指回真正那次候选曝光");
+});
+
