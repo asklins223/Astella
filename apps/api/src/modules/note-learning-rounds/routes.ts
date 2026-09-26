@@ -234,6 +234,8 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
       // 游标就是本页最后那一条的 id（有"更早的"才给指针，两者不许分叉）。
       nextCursor: page.hasMore && page.rows.length > 0 ? page.rows[page.rows.length - 1].id : null,
       shownCount: page.shownCount,
+      // 与游标无关的那个数：这一篇一共开过几轮（服务层用加游标前的条件算）。
+      totalCount: page.totalCount,
     });
   });
 

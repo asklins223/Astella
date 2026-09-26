@@ -134,10 +134,22 @@ test("记录那一页的合同：游标坏形状拒，`hasMore` 与 `nextCursor`
     items: [],
     hasMore: false,
     shownCount: 0,
+    totalCount: 0,
     nextCursor: null,
     ...overrides,
   });
   assert.equal(noteLearningRoundHistoryPageV1Schema.safeParse(page()).success, true, "正常回读该过");
+  // 总数不许比列出来的还少：某一侧数错了，让服务端发不出这一份比让读者各自躲可靠。
+  assert.equal(
+    noteLearningRoundHistoryPageV1Schema.safeParse(page({ shownCount: 2, totalCount: 1 })).success,
+    false,
+    "总数小于本页条数竟然过得去 ⇒ 那一格会当场变成第二个事实源",
+  );
+  assert.equal(
+    noteLearningRoundHistoryPageV1Schema.safeParse(page({ shownCount: 2, totalCount: 5 })).success,
+    true,
+    "翻到中途（列 2 共 5）是合法回读，不该被判成漂移",
+  );
   assert.equal(
     noteLearningRoundHistoryPageV1Schema.safeParse(page({ nextCursor: "not-an-uuid" })).success,
     false,

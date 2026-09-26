@@ -182,10 +182,26 @@ export const noteLearningRoundHistoryPageV1Schema = noteLearningRoundHistoryV1Sc
   // 「更早的还有」与「这一屏列了几轮」是两件事：前者说本页之外的世界，后者说这一屏。
   // 没有这一格，翻过一页之后屏幕上那句总数就只能拿"已加载条数"去冒充"总数"——
   // 而那正是这一刀要拦的形状（见上面 `historyLead` 那条判据）。由服务端报数。
-  .extend({ shownCount: z.number().int().min(0) })
+  .extend({
+    shownCount: z.number().int().min(0),
+    /**
+     * 这一篇**一共**开过几轮（与游标无关，翻到第几页都是这一个数）。
+     * 加它的理由：没有这一格，"练过几轮"这个总数要**翻到最后一页**才知道——
+     * 而 §16.16 后半那句判据（"在推荐页就取消 ⇒ 不增加学习轮数")要的是一个
+     * 当场可读的数。屏上那句在 `hasMore` 时只报"列到这里 M 轮"，不替整篇报数，
+     * 所以总数不是新造的第二个来源：它一直在那儿，只是没人算。
+     */
+    totalCount: z.number().int().min(0),
+  })
   .refine(
     (page) => !page.hasMore || page.nextCursor !== null,
     { message: "hasMore 为真时必须给出 nextCursor", path: ["nextCursor"] },
+  )
+  // 总数比列出来的还少 ⇒ 某一侧数错了。让服务端**发不出**这一份，
+  // 比让每一处读者各自躲它可靠（与上面那条同向判据同一个办法）。
+  .refine(
+    (page) => page.totalCount >= page.shownCount,
+    { message: "总数不许小于本页列出的轮数", path: ["totalCount"] },
   );
 export type NoteLearningRoundHistoryV1 = z.infer<
   typeof noteLearningRoundHistoryPageV1Schema

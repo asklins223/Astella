@@ -289,6 +289,8 @@ export type RoundHistoryPageV1 = {
   hasMore: boolean;
   /** 这一屏列了几轮——与 `hasMore`（本页之外还有没有）是两件事，分开报。 */
   shownCount: number;
+  /** 与游标无关：这一篇一共开过几轮（用加游标前的条件算）。 */
+  totalCount: number;
 };
 
 export type RoundHistoryQueryV1 = { limit: number; beforeRoundId?: string };
@@ -309,6 +311,7 @@ export async function listRoundHistory(
     eq(noteLearningRounds.userId, scope.userId),
     eq(noteLearningRounds.noteId, noteId),
   ];
+  const baseScoped = [...scoped];
   if (query.beforeRoundId) {
     // 游标先在自己这一篇里解析：拿别人的 id 过来要**报错**，不是"安静地当没给"——
     // 后者会让那一页从最新一条重新开始，界面看着像"翻不动了"，而真实原因是给了个来路不对的指针。
@@ -336,7 +339,20 @@ export async function listRoundHistory(
     .orderBy(desc(noteLearningRounds.createdAt), desc(noteLearningRounds.id))
     .limit(query.limit + 1);
   const page = rows.slice(0, query.limit);
-  return { rows: page, hasMore: rows.length > query.limit, shownCount: page.length };
+  // 总数用**加游标之前**的那份条件算：它答的是"这一篇一共开过几轮"，
+  // 与翻到第几页无关。（写成 `scoped` 就变成"剩下还有几轮"，那是另一个问题，
+  // 而且第二页会报出一个比上一页小的"总数"——合同那条 refine 会拦住，但拦不住
+  // 一个恰好只在第一页被看的错。）
+  const totalRows = await tx
+    .select({ total: sql`count(*)::int` })
+    .from(noteLearningRounds)
+    .where(and(...baseScoped));
+  return {
+    rows: page,
+    hasMore: rows.length > query.limit,
+    shownCount: page.length,
+    totalCount: Number(totalRows[0]?.total ?? 0),
+  };
 }
 
 /**

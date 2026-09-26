@@ -886,8 +886,9 @@ function historyItem(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function historyOf(items: Record<string, unknown>[], hasMore = false) {
-  // 真合同那五格（`hasMore` 为真时必须带游标；`shownCount` 由服务端报）。
+function historyOf(items: Record<string, unknown>[], hasMore = false, totalCount?: number) {
+  // 真合同那六格（`hasMore` 为真时必须带游标；`shownCount` 与 `totalCount` 都由服务端报）。
+  // `totalCount` 默认取屏上条数只是省事：**要验"两数分叉"的那条用例必须显式给它**。
   const last = items[items.length - 1] as { roundId?: string } | undefined;
   return {
     version: 1,
@@ -895,6 +896,7 @@ function historyOf(items: Record<string, unknown>[], hasMore = false) {
     items,
     hasMore,
     shownCount: items.length,
+    totalCount: totalCount ?? items.length,
     nextCursor: hasMore ? (last?.roundId ?? null) : null,
   };
 }
@@ -904,6 +906,34 @@ function historyRows(): string[] {
 }
 
 describe("这一篇的轮次记录（§10.3 读侧）", () => {
+  it("那句总数读的是服务端报的那一格，不是屏上列了几条", async () => {
+    // 两数分叉的形状只有构造出来才测得到：屏上列 2 条、这一篇其实开过 5 轮。
+    // 拿 `items.length` 当总数的那一行代码，在这份夹具下会写出「开过 2 轮」——当场红。
+    await show([], {
+      roundHistory: historyOf(
+        [
+          historyItem({ roundId: "dddddddd-1111-4111-8111-111111111111", drivingQuestion: "第五轮的那句问题" }),
+          historyItem({ roundId: "eeeeeeee-1111-4111-8111-111111111111", drivingQuestion: "第四轮的那句问题" }),
+        ],
+        true,
+        5,
+      ),
+    });
+    const lead = (document.querySelector(".notebook-round-history .small")?.textContent ?? "").trim();
+    expect(lead).toBe("这一篇开过 5 轮，这里列了最近 2 轮，更早的还能看。");
+  });
+
+  it("没有更早的了 ⇒ 只报总数，不再报「列了最近几条」", async () => {
+    await show([], {
+      roundHistory: historyOf([
+        historyItem({ roundId: "ffffffff-1111-4111-8111-111111111111", drivingQuestion: "唯一那一轮" }),
+      ]),
+    });
+    const lead = (document.querySelector(".notebook-round-history .small")?.textContent ?? "").trim();
+    expect(lead).toBe("这一篇开过 1 轮。");
+  });
+
+
   it("每一行：日期、状态那一格、那一轮的问题原文，都在同一行上", async () => {
     await show([], {
       roundHistory: historyOf([
@@ -939,17 +969,19 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
     const c2 = "66666666-7777-4777-8777-777777777777";
     const c3 = "55555555-6666-4666-8666-666666666666";
     const { api, container } = await show([], {
-      roundHistory: historyOf([historyItem({ roundId: c1 })], true),
+      // 三页都是同一篇的**同一份总数**（3 轮），每页只列 1 条——这才像真服务端回信。
+      roundHistory: historyOf([historyItem({ roundId: c1 })], true, 3),
       olderPages: [
-        historyOf([historyItem({ roundId: c2 })], true),
-        historyOf([historyItem({ roundId: c3 })], false),
+        historyOf([historyItem({ roundId: c2 })], true, 3),
+        historyOf([historyItem({ roundId: c3 })], false, 3),
       ],
     });
     const lead = () => container.querySelector(".notebook-round-history p")?.textContent ?? "";
     const rows = () => container.querySelectorAll(".notebook-round-history__list li").length;
     const button = () => container.querySelector(".notebook-round-history button");
-    expect(lead()).toContain("这一篇列到这里 1 轮，更早的还能看。");
-    expect(lead()).not.toContain("这一篇开过");
+    // 总数从第一页就是服务端的既成事实（不是"翻到底才知道"），但仍要说清"这里只列了 1 条"，
+    // 两件事各归各的来源：总数那格翻多少页都不动，"列了最近几条"随屏上涨。
+    expect(lead()).toContain("这一篇开过 3 轮，这里列了最近 1 轮，更早的还能看。");
 
     fireEvent.click(button()!);
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
@@ -961,14 +993,14 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
     // 第二页是**接在**第一页后面：覆盖式实现到这里只会剩 1 行。
     expect(rows()).toBe(3);
     expect(api.noteLearningRound.history.mock.calls[2][0]).toMatchObject({ before: c2 });
-    expect(lead()).toContain("这一篇开过 3 轮。");
+    expect(lead()).toBe("这一篇开过 3 轮。");
     expect(button()).toBeNull();
   });
 
   it("取下一页失败时不假装翻到了：那一页不加进来，话要说得出口", async () => {
     const { container } = await show([], {
       roundHistory: historyOf([historyItem({ roundId: "99999999-1111-4111-8111-111111111111" })], true),
-      olderPages: [{ version: 1, noteId: NOTE_ID, items: [], hasMore: true, shownCount: 0, nextCursor: null }],
+      olderPages: [{ version: 1, noteId: NOTE_ID, items: [], hasMore: true, shownCount: 0, totalCount: 1, nextCursor: null }],
     });
     const before = container.querySelectorAll(".notebook-round-history__list li").length;
     fireEvent.click(container.querySelector(".notebook-round-history button")!);

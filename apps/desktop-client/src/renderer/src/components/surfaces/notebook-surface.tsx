@@ -284,8 +284,10 @@ export const ROUND_COPY = {
    * 就是个假总数（§10.3 要的是完整历史，而这一版没做分页）——所以那种情况下
    * 只说"最近的这几轮"，不替整篇报数。
    */
-  historyLead: (count: number, hasMore: boolean) =>
-    hasMore ? `这一篇列到这里 ${count} 轮，更早的还能看。` : `这一篇开过 ${count} 轮。`,
+  historyLead: (total: number, shown: number, hasMore: boolean) =>
+    hasMore
+      ? `这一篇开过 ${total} 轮，这里列了最近 ${shown} 轮，更早的还能看。`
+      : `这一篇开过 ${total} 轮。`,
   loadOlder: "看更早的几轮",
   loadingOlder: "正在取更早的…",
   /** §10.3 那一格里"完成／部分完成／中断"这三个字由这一处签发；`active` 不在其中。 */
@@ -1525,6 +1527,11 @@ export function NotebookSurface() {
     ...(roundHistory?.items ?? []),
     ...(historyTail?.items ?? []),
   ];
+  /**
+   * 那句总数只读**服务端报的那一格**：`historyItems.length` 回答的是"这一屏列了几轮"，
+   * 不是"这一篇开过几轮"——翻过一页之后两者会分叉（§16.16 后半要的是后者）。
+   */
+  const historyTotal = historyTail?.totalCount ?? roundHistory?.totalCount ?? 0;
   const historyHasMore = historyTail ? historyTail.hasMore : (roundHistory?.hasMore ?? false);
   const historyNextCursor = historyTail ? historyTail.nextCursor : (roundHistory?.nextCursor ?? null);
 
@@ -2417,7 +2424,7 @@ export function NotebookSurface() {
           与"这篇还没开过轮"是同一件事，不必对用户播报；读失败也不报（这块是增补）。 */}
       {historyItems.length > 0 ? (
         <section className="notebook-round-history">
-          <p className="small notebook-note">{ROUND_COPY.historyLead(historyItems.length, historyHasMore)}</p>
+          <p className="small notebook-note">{ROUND_COPY.historyLead(historyTotal, historyItems.length, historyHasMore)}</p>
           <ol className="notebook-round-history__list">
             {historyItems.map((item) => (
               <li key={item.roundId}>
