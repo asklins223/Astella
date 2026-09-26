@@ -224,6 +224,53 @@ test("按 id 取整份：200 ＋ text/html ＋ 与库内逐字节相同（不套
   assert.equal(malformed.statusCode, 400, malformed.body);
 });
 
+test("§16.14 回看：关卷之后取到的仍是当时那一份产物字节，且回看一个字都不写", async () => {
+  const round = await createRound("先弄懂「提取练习」这一节在讲什么");
+  const view = parseView(await generateTeaching(round.roundId as string, round.revision as number));
+  const artifactId = view.artifact?.artifactId as string;
+  const fetchBefore = await call("GET", `/v2/note-learning-round-artifacts/${artifactId}`);
+  assert.equal(fetchBefore.statusCode, 200, fetchBefore.body);
+
+  const closed = await call("PATCH", `/v2/note-learning-rounds/${round.roundId as string}`, {
+    expectedRevision: round.revision as number,
+    action: { kind: "close", outcome: "completed" },
+  });
+  assert.equal(closed.statusCode, 200, closed.body);
+
+  // 关卷之后的那份"当时状态"：行数、内容、轮次行本身，全部以此刻为基准。
+  const artifactsBefore = await artifactRows(round.roundId as string);
+  const teachingsBefore = await teachingRows(round.roundId as string);
+  const rowBefore = await fixtureSql`
+    SELECT phase, revision, updated_at FROM note_learning_rounds WHERE id = ${round.roundId as string}`;
+  const roundsForNoteBefore = await fixtureSql`
+    SELECT count(*)::int AS n FROM note_learning_rounds WHERE note_id = ${round.noteId as string}`;
+
+  // ① 回看取到的必须**还是当时那一份**：引用不换、字节不差。
+  //    这一条防的是"历史不重新生成动画冒充当时内容"——重新生成会产出一行新产物，
+  //    字节也可能因输入漂移而变，两种都会在这里红。
+  const afterView = parseView(await call("GET", `/v2/note-learning-rounds/${round.roundId as string}/teaching`));
+  assert.equal(afterView.artifact?.artifactId, artifactId,
+    "关卷后回看换了一份产物 ⇒ 那是重新生成，不是回放当时那一份");
+  const fetchAfter = await call("GET", `/v2/note-learning-round-artifacts/${artifactId}`);
+  assert.equal(fetchAfter.statusCode, 200, fetchAfter.body);
+  assert.ok(fetchAfter.rawPayload.equals(fetchBefore.rawPayload), "同一 id 两次取回不一致");
+
+  // ② 回看不许写：两张产物/教学表一字未动，轮次行也不动（回看不推进计数器、不改时刻）。
+  assert.deepEqual(await artifactRows(round.roundId as string), artifactsBefore, "回看写动了产物表");
+  assert.deepEqual(await teachingRows(round.roundId as string), teachingsBefore, "回看写动了教学表");
+  assert.deepEqual(
+    await fixtureSql`SELECT phase, revision, updated_at FROM note_learning_rounds WHERE id = ${round.roundId as string}`,
+    rowBefore,
+    "回看改写了轮次行（phase/revision/updated_at 有一个动了）⇒ 回看变成了第二次结算",
+  );
+  // ③ 也不许多出一轮：回看不是"再练一次"。
+  assert.deepEqual(
+    await fixtureSql`SELECT count(*)::int AS n FROM note_learning_rounds WHERE note_id = ${round.noteId as string}`,
+    roundsForNoteBefore,
+    "回看之后这一篇的轮次数变了",
+  );
+});
+
 test("regenerate：两条教学各留自己的产物行（只追加），旧的那份仍然读得到", async () => {
   const round = await createRound("先弄懂「提取练习」这一节在讲什么");
   const first = parseView(await generateTeaching(round.roundId as string, round.revision as number));
