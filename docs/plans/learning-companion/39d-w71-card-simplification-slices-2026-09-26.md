@@ -67,6 +67,7 @@
 7. **确定性那一版不会改写内容**（它把原稿交回去，重检仍判同档 ⇒ 那张停在 `authored`）。这是把"离线这一档没有语义判断能力"摆明，而不是偷偷造一条捷径；真模型那一版换的只是 `deterministic.ts` 里那一个函数。
 7b. **改写这一档今天只有任务、没有入口**（2026-09-27 数出来的，别把它当成"接线已完成"）：`card_candidate_rewrite_v3` 在 `tasks.ts` 有定义、handler 会处理、集测里手工认领跑通过，但**全仓没有任何一处 `insert` 把它投进 outbox**——审核台上"改写这一张"那一发今天投的还是旧链的 `card_generation_regenerate_candidate`。同一次数的更大一圈：入口总控 `CARD_GENERATION_CHAIN` 只有一个读者（`generation-run-service.ts:433` 那发初次规划），审核台的四发与"再生成一次"那一发共五处都直接投旧 jobType，而总控函数是模块私有的（没 export），那五处**问不到它**。⇒ 翻开关只翻了一半不叫切换：W7-7 的完成判据现在是一条常驻守卫在管（`packages/shared/src/card-generation-chain-entry-inventory.test.ts`——旧链入口清单只能变短、改写任务什么时候接上入口就把那条删掉），不靠这份文档被人记住。
 8. **质量对比样本没做**：39 §8.6 末段那句"切入口之前比较质量与成本"要真模型才比得了，登记为欠账，与真模型 provider 同一批（每波末尾那一次真跑）。
+9. **真模型没接线期间，生产拿不到这条链**（2026-09-27 补的 L1 护栏）：`resolveCardGenerationV3Providers()` 在 `NODE_ENV=production` 且没显式 `V3_ALLOW_DETERMINISTIC_PROVIDERS=1` 时直接拒——否则把 `CARD_GENERATION_CHAIN=simplified_v3` 打开就会整批跑占位候选，而完成事件记的是 `modelCalls=2`，读数与真跑过模型一模一样。值配错（例如写了 `llm`）抛的也是**不可重试**那一类：配置缺失不该被 outbox 按 15/30/60/120/240s 退避连试六轮（V2 在 2026-09-17 为同一形状记过事故）。这一格不改变"真模型仍未接线"这件事，只保证没接线时生产跑不出东西。
 
 ## 5. 与其他任务的边界
 

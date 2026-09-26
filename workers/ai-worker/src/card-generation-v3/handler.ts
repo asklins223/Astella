@@ -42,6 +42,7 @@ import {
   loadV2RunInputs,
   type PendingOutboxJob,
 } from "../handlers/card-generation-v2-handler.ts";
+import { CardGenerationProviderError } from "../card-generation-v2/providers.ts";
 import {
   assembleCandidateEvidenceBindingPlanV2,
 } from "@ailearn/shared/card-generation-v2-pipeline";
@@ -637,16 +638,45 @@ async function writeSimplifiedCheckResults(
  * 拼的"这件事在生产里是一次显式配置，不是巧合。**要真模型时必须显式说**，并且今天
  * 直接失败——静默回落到确定性会让 §16.28 那句"2 次语义调用"读起来像跑过模型。
  */
+const CARD_GENERATION_V3_PROVIDER_ENV = "CARD_GENERATION_V3_PROVIDER";
+/** 与 V2 那道 `V2_ALLOW_DETERMINISTIC_PROVIDERS` 同方向的显式豁免（离线跑生产形状的库时才用）。 */
+const V3_ALLOW_DETERMINISTIC_ENV = "V3_ALLOW_DETERMINISTIC_PROVIDERS";
+
 export function resolveCardGenerationV3Providers(): CardGenerationSimplifiedProviders {
-  const kind = process.env.CARD_GENERATION_V3_PROVIDER ?? "deterministic";
+  const kind = process.env[CARD_GENERATION_V3_PROVIDER_ENV] ?? "deterministic";
   if (kind !== "deterministic") {
-    throw new Error(
-      `card-generation v3 provider "${kind}" 还没有接线（真模型那一版归每波末尾那一次真跑）`,
+    // 必须是**不可重试**那一类：这是配置缺失，不是网络抖动。上一版抛的是裸 `Error`，
+    // 而分发点按 `isNonRetryableErrorLike` 分类 ⇒ 一次拼错的 env 值会让 outbox 按
+    // 15/30/60/120/240s 退避连试六轮（V2 在 2026-09-17 就为同样的形状记过一次事故），
+    // 期间一次模型调用都没发生，用户看到的始终是"生成中"。
+    throw new CardGenerationProviderError(
+      "non-retryable",
+      `card-generation v3 provider "${kind}" 还没有接线（真模型那一版归每波末尾那一次真跑）；`
+      + ` unset ${CARD_GENERATION_V3_PROVIDER_ENV} 走确定性那一版`,
     );
   }
+  assertV3DeterministicProvidersAllowed();
   return {
     generate: createDeterministicCardGenerateV3Provider(),
     check: createDeterministicCardContentCheckV3Provider(),
     rewrite: createDeterministicCardCandidateRewriteV3Provider(),
   };
+}
+
+/**
+ * L1 护栏的 V3 版：确定性 provider 只允许用在离线/测试路径。
+ *
+ * 为什么新链更需要它：确定性那一版的"检查"不发网络，它对内容的判断是拼装的副产物，
+ * 而完成事件里记的是 `modelCalls=2`——在生产里让它悄悄跑完，等于用一次显式开关
+ * （`CARD_GENERATION_CHAIN=simplified_v3`）换到一批**看起来过了模型**的占位候选。
+ * 与 V2 那道护栏方向对称：生产要么显式配真模型，要么显式豁免（下面那个 env）。
+ */
+function assertV3DeterministicProvidersAllowed(): void {
+  if (process.env.NODE_ENV !== "production") return;
+  if (process.env[V3_ALLOW_DETERMINISTIC_ENV] === "1") return;
+  throw new CardGenerationProviderError(
+    "non-retryable",
+    "card-generation v3 deterministic providers are not allowed in production: "
+    + `真模型那一版还没接线，所以生产里不要打开简化链；离线复核请显式设 ${V3_ALLOW_DETERMINISTIC_ENV}=1`,
+  );
 }

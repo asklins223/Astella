@@ -841,3 +841,71 @@ test("增量改写：只重做被判 rewrite 的那一张，重检只看它，�
   ` as unknown as Array<{ n: number }>;
   assert.equal(Number(rewrittenEvents[0]?.n), 1, "改写这一发要留一条能对账的事件");
 });
+
+// ── provider 选择那两道闸的形状 ──────────────────────────────────────────
+//
+// 这两条不碰数据库，却落在这份文件里：`resolveCardGenerationV3Providers` 住在
+// `card-generation-v3/handler.ts`，那个模块（以及 `card-generation-v2/providers.ts`）
+// 一被 import 就会在模块作用域开一个 postgres 连接池。纯单测文件里没人负责关它，
+// 整个 worker 单测套件会挂在退出上；这份集测的 `after` 本来就关两条池。
+
+function withEnv<T>(overrides: Record<string, string | undefined>, run: () => T): T {
+  const previous = new Map<string, string | undefined>();
+  for (const key of Object.keys(overrides)) previous.set(key, process.env[key]);
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    return run();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+function captureThrow(run: () => unknown): unknown {
+  try {
+    run();
+  } catch (error) {
+    return error;
+  }
+  return null;
+}
+
+test("没接线的 provider 值抛的是不可重试那一类（裸 Error 会被 outbox 退避连试六轮）", async () => {
+  const { resolveCardGenerationV3Providers } = await import("../card-generation-v3/handler.ts");
+  const { isNonRetryableErrorLike } = await import("../handlers/card-generation-v2-handler.ts");
+
+  const error = withEnv({ CARD_GENERATION_V3_PROVIDER: "llm" },
+    () => captureThrow(resolveCardGenerationV3Providers));
+  assert.ok(error, "配了一个没接线的值却没抛：那等于静默回落到确定性那一版");
+  assert.equal(isNonRetryableErrorLike(error), true,
+    "这是配置缺失不是网络抖动。判成可重试时 outbox 会按 15/30/60/120/240s 退避连试六轮，"
+    + "期间一次模型调用都没发生，界面上始终是「生成中」（V2 在 2026-09-17 为同样的形状记过一次事故）");
+  assert.match(String((error as Error).message), /还没有接线/);
+});
+
+test("生产里不许悄悄用确定性 provider 跑简化链；豁免要显式给，离线路径不受影响", async () => {
+  const { resolveCardGenerationV3Providers } = await import("../card-generation-v3/handler.ts");
+  const { isNonRetryableErrorLike } = await import("../handlers/card-generation-v2-handler.ts");
+
+  // ① 生产 + 没豁免 ⇒ 抛，而且是不可重试（同一套分类器）
+  const blocked = withEnv({ NODE_ENV: "production", V3_ALLOW_DETERMINISTIC_PROVIDERS: undefined },
+    () => captureThrow(resolveCardGenerationV3Providers));
+  assert.ok(blocked, "生产里确定性 provider 没被挡住：完成事件会记下 modelCalls=2，读起来像跑过模型");
+  assert.equal(isNonRetryableErrorLike(blocked), true,
+    "护栏抛的也必须是不可重试那一类，否则一次配置漂移会变成六轮退避重试");
+
+  // ② 显式豁免 ⇒ 三份 provider 照旧交出来（离线复核生产形状的库时用）
+  const allowed = withEnv({ NODE_ENV: "production", V3_ALLOW_DETERMINISTIC_PROVIDERS: "1" },
+    () => resolveCardGenerationV3Providers());
+  assert.deepEqual(Object.keys(allowed).sort(), ["check", "generate", "rewrite"]);
+
+  // ③ 非生产（今天的测试与开发路径）⇒ 不被挡：这条护栏不能顺手把离线路径也关死
+  const offline = withEnv({ NODE_ENV: "test", V3_ALLOW_DETERMINISTIC_PROVIDERS: undefined },
+    () => resolveCardGenerationV3Providers());
+  assert.deepEqual(Object.keys(offline).sort(), ["check", "generate", "rewrite"]);
+});
