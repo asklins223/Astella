@@ -164,15 +164,56 @@ test("触发式：历史主动提示再多、刚说过话，都照样入队", as
 });
 
 /**
+ * 把账号状态写成"这一发要它这样"，并**回读证明真写进去了**。
+ *
+ * 这里原来是一条裸 `UPDATE user_companion_account_state …`，两层都不成立：
+ * ① `seedBase()` 根本不建这一行（1356 个用户里只有 12 个有账号状态行，没行＝默认值）；
+ * ② 这张表是 FORCE RLS，策略判的是 `user_id = current_setting('app.user_id')`，
+ *    不带上下文的事务里它匹配 **0 行**，而 postgres.js 不报错。
+ * ⇒ 那两道兜底闸一直在"读不到状态＝按默认放行"上跑，用例红了也说不清是产品的锅还是夹具的锅。
+ */
+async function writeAccountState(
+  scope: { workspaceId: string; userId: string },
+  values: { presence?: "online" | "dnd" | "offline"; globalEnabled?: boolean },
+): Promise<void> {
+  await sql.begin(async (tx) => {
+    // 这张表是 FORCE RLS、策略判的是 `user_id = current_setting('app.user_id')`。
+    // 以前这两条用例写的是一条**裸** `UPDATE user_companion_account_state …`：受限角色下
+    // 它匹配 0 行而 postgres.js 不报错（夹具确实建了那一行，所以红得莫名其妙），
+    // 超户形状则能写进去 ⇒ 同一份用例在两种角色下结论相反。带上下文写，并回读证明写成了。
+    await tx`SELECT set_config('app.workspace_id', ${scope.workspaceId}, true)`;
+    await tx`SELECT set_config('app.user_id', ${scope.userId}, true)`;
+    if (values.presence !== undefined) {
+      await tx`UPDATE user_companion_account_state
+        SET presence = ${{ presence: values.presence } as never} WHERE user_id = ${scope.userId}`;
+    }
+    if (values.globalEnabled !== undefined) {
+      await tx`UPDATE user_companion_account_state
+        SET global_enabled = ${values.globalEnabled} WHERE user_id = ${scope.userId}`;
+    }
+    const back = await tx`
+      SELECT presence, global_enabled FROM user_companion_account_state WHERE user_id = ${scope.userId}
+    `;
+    if (back.length !== 1) throw new Error("账号状态那一行没写到（上下文没带上就看不见它）");
+    if (values.presence !== undefined
+      && (back[0].presence as { presence?: string }).presence !== values.presence) {
+      throw new Error(`presence 没写成 ${values.presence}：${JSON.stringify(back[0].presence)}`);
+    }
+    if (values.globalEnabled !== undefined && back[0].global_enabled !== values.globalEnabled) {
+      throw new Error(`global_enabled 没写成 ${values.globalEnabled}`);
+    }
+  });
+}
+
+/**
  * "不进频率限制"不等于"无条件放行"——下面两条是反向兜底：
  * 方向改坏了（整个 hook 变成无条件写投递）时，这两条会红。
  */
 test("设备在勿扰：触发式也不推（气泡等用户回来）", async () => {
   const seeded = await seedBase();
+  const scope = { workspaceId: seeded.workspaceId, userId: seeded.userId };
   try {
-    await sql`UPDATE user_companion_account_state
-              SET presence = ${{ presence: "dnd" } as never} WHERE user_id = ${seeded.userId}`;
-    const scope = { workspaceId: seeded.workspaceId, userId: seeded.userId };
+    await writeAccountState(scope, { presence: "dnd" });
     await withWorkspaceTransaction(scope, (tx) =>
       hookProactiveOnRunCompleted(tx, scope, { runId: randomUUID(), outcome: "demonstrated" }),
     );
@@ -184,10 +225,9 @@ test("设备在勿扰：触发式也不推（气泡等用户回来）", async ()
 
 test("账号级总开关关掉：触发式同样不推", async () => {
   const seeded = await seedBase();
+  const scope = { workspaceId: seeded.workspaceId, userId: seeded.userId };
   try {
-    await sql`UPDATE user_companion_account_state
-              SET global_enabled = false WHERE user_id = ${seeded.userId}`;
-    const scope = { workspaceId: seeded.workspaceId, userId: seeded.userId };
+    await writeAccountState(scope, { globalEnabled: false });
     await withWorkspaceTransaction(scope, (tx) =>
       hookProactiveOnRunCompleted(tx, scope, { runId: randomUUID(), outcome: "demonstrated" }),
     );
