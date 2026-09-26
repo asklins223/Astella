@@ -34,12 +34,14 @@ import {
 } from "../../db/client.ts";
 import { requireSession } from "../identity/middleware.ts";
 import { getNoteWithVersion } from "../note/service.ts";
+import type { NoteLearningRoundRow } from "@ailearn/shared/db-schema/note-learning-rounds";
 import {
   advanceNoteLearningRoundRequestV1Schema,
   createNoteLearningRoundRequestV1Schema,
   createRoundTeachingRequestV1Schema,
   noteLearningRoundHistoryQueryV1Schema,
   noteLearningRoundHistoryPageV1Schema,
+  noteLearningRoundPersonalHistoryPageV1Schema,
   noteLearningRoundV1Schema,
   reviseDrivingQuestionRequestV1Schema,
   roundGapHelpV1Schema,
@@ -58,6 +60,8 @@ import {
   createTeaching,
   findReusableTeaching,
   listRoundHistory,
+  listPersonalRoundHistory,
+  type RoundHistoryFactsV1,
   readRoundHistoryFactsV1,
   listPlanRevisions,
   readOpenRound,
@@ -107,6 +111,32 @@ const teachingExplainProvider = deterministicTeachingExplainProviderV1();
 /** 内部形状 → 线上形状：时间是 ISO 字符串，且整份要过合同（合同漂移当场红）。 */
 function toWire(round: NoteLearningRoundV1): NoteLearningRoundV1Wire {
   return noteLearningRoundV1Schema.parse({ version: 1, ...round });
+}
+
+/**
+ * 一条轮次行 → 记录那一行（两个级别共用这一份，W4-8 刀二）：两格事实的取法与
+ * 「实际方式」的固定次序（讲过在前）只在这里说一次；本人那一级多带的两格由调用方补。
+ */
+function roundHistoryItemV1(
+  row: NoteLearningRoundRow,
+  facts: RoundHistoryFactsV1,
+): Record<string, unknown> {
+  return {
+    roundId: row.id,
+    phase: row.phase,
+    outcome: row.outcome,
+    drivingQuestion: row.drivingQuestion,
+    drivingQuestionSource: row.drivingQuestionSource,
+    drivingQuestionRevision: row.drivingQuestionRevision,
+    // 「实际方式」的次序固定（讲过在前），由**有没有发生**决定，不随查询回来的次序变。
+    actualModes: [
+      ...(facts.explainedRoundIds.has(row.id) ? ["explained" as const] : []),
+      ...(facts.practicedRoundIds.has(row.id) ? ["practiced" as const] : []),
+    ],
+    systemUncertain: facts.uncertainRoundIds.has(row.id),
+    startedAt: row.createdAt.toISOString(),
+    closedAt: row.closedAt ? row.closedAt.toISOString() : null,
+  };
 }
 
 function scopeOf(req: { session: { workspaceId: string; userId: string } }): RoundScopeV1 {
@@ -226,27 +256,55 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
     return noteLearningRoundHistoryPageV1Schema.parse({
       version: 1 as const,
       noteId,
-      items: page.rows.map((row) => ({
-        roundId: row.id,
-        phase: row.phase,
-        outcome: row.outcome,
-        drivingQuestion: row.drivingQuestion,
-        drivingQuestionSource: row.drivingQuestionSource,
-        drivingQuestionRevision: row.drivingQuestionRevision,
-        // 「实际方式」的次序固定（讲过在前），由**有没有发生**决定，不随查询回来的次序变。
-        actualModes: [
-          ...(facts.explainedRoundIds.has(row.id) ? ["explained" as const] : []),
-          ...(facts.practicedRoundIds.has(row.id) ? ["practiced" as const] : []),
-        ],
-        systemUncertain: facts.uncertainRoundIds.has(row.id),
-        startedAt: row.createdAt.toISOString(),
-        closedAt: row.closedAt ? row.closedAt.toISOString() : null,
-      })),
+      items: page.rows.map((row) => roundHistoryItemV1(row, facts)),
       hasMore: page.hasMore,
       // 游标就是本页最后那一条的 id（有"更早的"才给指针，两者不许分叉）。
       nextCursor: page.hasMore && page.rows.length > 0 ? page.rows[page.rows.length - 1].id : null,
       shownCount: page.shownCount,
       // 与游标无关的那个数：这一篇一共开过几轮（服务层用加游标前的条件算）。
+      totalCount: page.totalCount,
+    });
+  });
+
+  /**
+   * 记录的第二级：本人（跨笔记）那一页（PRD §10.3；39d W4-8 刀二）。
+   *
+   * 路径取 `GET /v2/note-learning-rounds`——与"开一轮"同路径不同方法，而不是再造一个
+   * 长得像 `/v2/learning-runs`（那是 run 族）的名字：那两个字符串在日志里差一个字母，
+   * 在人的眼睛里不差。查询参数直接复用按笔记那一份合同（形状同一件事，不抄第二份）。
+   */
+  app.get("/v2/note-learning-rounds", async (req, reply) => {
+    const parsedQuery = noteLearningRoundHistoryQueryV1Schema.safeParse(req.query ?? {});
+    if (!parsedQuery.success) {
+      return reply.code(400).send({ error: "invalid_request", message: "读我的轮次记录需要的字段不对" });
+    }
+    const scope = scopeOf(req);
+    let page;
+    let facts;
+    try {
+      ({ page, facts } = await withWorkspaceTransaction(scope, async (tx) => {
+        const history = await listPersonalRoundHistory(tx, scope, {
+          limit: parsedQuery.data.limit,
+          beforeRoundId: parsedQuery.data.before,
+        });
+        return {
+          page: history,
+          facts: await readRoundHistoryFactsV1(tx, history.rows.map((row) => row.round.id)),
+        };
+      }));
+    } catch (err) {
+      return replyRoundError(reply, err, "读我的轮次记录没成功");
+    }
+    return noteLearningRoundPersonalHistoryPageV1Schema.parse({
+      version: 1 as const,
+      items: page.rows.map((row) => ({
+        ...roundHistoryItemV1(row.round, facts),
+        noteId: row.noteId,
+        noteTitle: row.noteTitle,
+      })),
+      hasMore: page.hasMore,
+      nextCursor: page.hasMore && page.rows.length > 0 ? page.rows[page.rows.length - 1].round.id : null,
+      shownCount: page.shownCount,
       totalCount: page.totalCount,
     });
   });

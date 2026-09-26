@@ -20,6 +20,7 @@ import {
   createRoundTeachingRequestV1Schema,
   noteLearningRoundHistoryItemV1Schema,
   noteLearningRoundHistoryPageV1Schema,
+  noteLearningRoundPersonalHistoryPageV1Schema,
   noteLearningRoundV1Schema,
   roundTeachingViewV1Schema,
 } from "./note-learning-round-contracts.ts";
@@ -212,6 +213,63 @@ test("记录那一行：实际方式与系统不确定项都是必填格，档�
     noteLearningRoundHistoryItemV1Schema.safeParse(item({ systemUncertain: "not_assessable" })).success,
     false,
     "这一格是布尔：把 outcome 字符串塞进来会让它变成第二个事实源",
+  );
+});
+
+/**
+ * §10.3 第二级（本人、跨笔记）那一页（39d W4-8 刀二）。两条分页判据与按笔记那一级
+ * **共用同一份谓据**，所以这里两侧都要各测一次：只测一级就等于允许"哪天只改一边"。
+ */
+test("我的记录那一页：每行必带是哪一篇，两条分页判据对两个级别一起生效", () => {
+  const item = {
+    roundId: ROUND_ID,
+    phase: "closed",
+    outcome: "partial",
+    drivingQuestion: "判断为什么有索引，查询仍然可能慢",
+    drivingQuestionSource: "suggested",
+    drivingQuestionRevision: 1,
+    actualModes: ["practiced"],
+    systemUncertain: false,
+    startedAt: "2026-09-24T02:00:00.000Z",
+    closedAt: "2026-09-24T03:00:00.000Z",
+    noteId: NOTE_ID,
+    noteTitle: "学习科学术语定义集",
+  };
+  const page = (overrides: Record<string, unknown> = {}) => ({
+    version: 1,
+    items: [item],
+    hasMore: false,
+    nextCursor: null,
+    shownCount: 1,
+    totalCount: 1,
+    ...overrides,
+  });
+  assert.equal(noteLearningRoundPersonalHistoryPageV1Schema.safeParse(page()).success, true);
+  assert.equal(
+    noteLearningRoundPersonalHistoryPageV1Schema.safeParse({ ...page(), items: [{ ...item, noteTitle: "" }] }).success,
+    false,
+    "篇名空串该拒：这一级没有「眼前这篇」的上下文，出处不能是空的",
+  );
+  assert.equal(
+    noteLearningRoundPersonalHistoryPageV1Schema.safeParse({ ...page(), items: [{ ...item, noteId: undefined }] }).success,
+    false,
+    "少了是哪一篇，那一行就读不出归属",
+  );
+  assert.equal(
+    noteLearningRoundPersonalHistoryPageV1Schema.safeParse(page({ hasMore: true, nextCursor: null })).success,
+    false,
+    "同向判据（与按笔记那一级同一个函数）",
+  );
+  assert.equal(
+    noteLearningRoundPersonalHistoryPageV1Schema.safeParse(page({ shownCount: 2, totalCount: 1 })).success,
+    false,
+    "总数判据同样吃这一份",
+  );
+  // 页面上没有 noteId 这一格：这一级属于"我"，不属于某一篇；带上它就会有两个出处。
+  assert.equal(
+    noteLearningRoundPersonalHistoryPageV1Schema.safeParse({ ...page(), noteId: NOTE_ID }).success,
+    false,
+    "多带 noteId 该被 strictObject 拒掉",
   );
 });
 

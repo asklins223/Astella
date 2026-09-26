@@ -196,6 +196,15 @@ export const noteLearningRoundHistoryV1Schema = z.strictObject({
  * 或者一句"更早的还能看"配一个永远翻不过去的面。让服务端**发不出**这一份，
  * 比让每一处读者各自躲它可靠。
  */
+/**
+ * 分页回执的两条一致性判据。**两个级别共用这同一份**：写两遍就会有一天只改一边，
+ * 而这两条挡的恰好是"服务端发得出、界面上是坏按钮/坏总数"那两种形状。
+ */
+const historyCursorCoherentV1 = (page: { hasMore: boolean; nextCursor: string | null }) =>
+  !page.hasMore || page.nextCursor !== null;
+const historyCountsCoherentV1 = (page: { shownCount: number; totalCount: number }) =>
+  page.totalCount >= page.shownCount;
+
 export const noteLearningRoundHistoryPageV1Schema = noteLearningRoundHistoryV1Schema
   // 「更早的还有」与「这一屏列了几轮」是两件事：前者说本页之外的世界，后者说这一屏。
   // 没有这一格，翻过一页之后屏幕上那句总数就只能拿"已加载条数"去冒充"总数"——
@@ -211,19 +220,63 @@ export const noteLearningRoundHistoryPageV1Schema = noteLearningRoundHistoryV1Sc
      */
     totalCount: z.number().int().min(0),
   })
-  .refine(
-    (page) => !page.hasMore || page.nextCursor !== null,
-    { message: "hasMore 为真时必须给出 nextCursor", path: ["nextCursor"] },
-  )
+  .refine(historyCursorCoherentV1, {
+    message: "hasMore 为真时必须给出 nextCursor",
+    path: ["nextCursor"],
+  })
   // 总数比列出来的还少 ⇒ 某一侧数错了。让服务端**发不出**这一份，
   // 比让每一处读者各自躲它可靠（与上面那条同向判据同一个办法）。
-  .refine(
-    (page) => page.totalCount >= page.shownCount,
-    { message: "总数不许小于本页列出的轮数", path: ["totalCount"] },
-  );
+  .refine(historyCountsCoherentV1, {
+    message: "总数不许小于本页列出的轮数",
+    path: ["totalCount"],
+  });
 export type NoteLearningRoundHistoryV1 = z.infer<
   typeof noteLearningRoundHistoryPageV1Schema
 >;
+
+/**
+ * §10.3 那三级的第二级：**本人**（跨笔记）。39d W4-8 刀二。
+ *
+ * 与按笔记那一级的三点差别，都写在这份合同里而不是靠调用方记：
+ *  1. 每一行必须带**是哪一篇**（`noteId` + `noteTitle`）：这一级没有"眼前这篇"的上下文，
+ *     只有问题句子的那一行读不出是谁家的哪一篇。
+ *  2. 页上没有 `noteId`——它属于"我"，不属于某一篇。
+ *  3. 权限遮蔽那一档（§10.3 末段"失去笔记权限后只保留允许展示的非内容元数据"）
+ *     **不在这一级里现造**：那需要 D6 那一份权限投影（W5-6 名下）。这一版的读法是
+ *     "只列我此刻读得到的那一篇"（软删的不列），也就是**整行不出现**而不是换了标签——
+ *     造一个自命的"遮蔽"谓词会立刻变成第二个权限来源，那比少列几行更糟。已登记为欠。
+ */
+export const noteLearningRoundPersonalHistoryItemV1Schema =
+  noteLearningRoundHistoryItemV1Schema.extend({
+    noteId: z.string().uuid(),
+    noteTitle: z.string().min(1).max(500),
+  });
+export type NoteLearningRoundPersonalHistoryItemV1 = z.infer<
+  typeof noteLearningRoundPersonalHistoryItemV1Schema
+>;
+
+export const noteLearningRoundPersonalHistoryPageV1Schema = z
+  .strictObject({
+    version: z.literal(1),
+    items: z.array(noteLearningRoundPersonalHistoryItemV1Schema).max(ROUND_HISTORY_MAX_LIMIT_V1),
+    hasMore: z.boolean(),
+    nextCursor: z.string().uuid().nullable(),
+    shownCount: z.number().int().min(0),
+    /** 我在这个空间里**一共**开过几轮（与游标无关；同一句理由见上面那格）。 */
+    totalCount: z.number().int().min(0),
+  })
+  .refine(historyCursorCoherentV1, {
+    message: "hasMore 为真时必须给出 nextCursor",
+    path: ["nextCursor"],
+  })
+  .refine(historyCountsCoherentV1, {
+    message: "总数不许小于本页列出的轮数",
+    path: ["totalCount"],
+  });
+export type NoteLearningRoundPersonalHistoryV1 = z.infer<
+  typeof noteLearningRoundPersonalHistoryPageV1Schema
+>;
+
 
 /**
  * 记录那一条的查询参数（放在最后：它引用上面那一对常量，声明顺序不能倒）。

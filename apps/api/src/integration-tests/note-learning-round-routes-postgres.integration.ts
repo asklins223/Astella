@@ -476,6 +476,69 @@ test("记录那一行的两格新事实（§10.3／W4-8 刀一）：讲过、练
   assert.equal(byQuestion.get("只开了个头的那一轮")?.systemUncertain, false);
 });
 
+/**
+ * §10.3 第二级（本人、跨笔记）那一页（39d W4-8 刀二）。
+ * 三条各守一件事：跨不跨得开两篇、总数是不是那一份、"读不到的那一篇"是不是整行不出现。
+ */
+test("我的记录（跨笔记）：两篇的行都在、总数是同一份，回收站里那一篇整行不出现", async () => {
+  const onA = await createOn(noteA, "跨笔记记录：这一句在 A 篇");
+  await closeOn(onA.roundId as string, onA.revision as number);
+  const onB = await createOn(noteB, "跨笔记记录：这一句在 B 篇");
+  await closeOn(onB.roundId as string, onB.revision as number);
+
+  const personal = (url: string, bearer = token) => call("GET", url, undefined, bearer);
+  const first = body(await personal("/v2/note-learning-rounds?limit=10"));
+  const items = first.items as Record<string, unknown>[];
+  assert.equal(items.length, 2, `两篇各一轮应当列出两行：${JSON.stringify(first)}`);
+  assert.deepEqual(new Set(items.map((item) => item.noteId)), new Set([noteA, noteB]),
+    "这一级的每一行必须说得出是哪一篇，否则读的人只看到两句问题");
+  assert.equal(first.totalCount, 2);
+  assert.equal(first.shownCount, 2);
+  for (const item of items) {
+    assert.equal(typeof item.noteTitle, "string");
+    assert.ok((item.noteTitle as string).length > 0, "篇名空着等于那一行没带出处");
+  }
+
+  // 游标跨篇：第一页只给一条，第二页接的是**另一篇**那一条（不是同一篇的第二轮）。
+  const page1 = body(await personal("/v2/note-learning-rounds?limit=1"));
+  assert.equal(page1.hasMore, true, "还有更早的不给指针，界面就剩一颗点不动的按钮");
+  const page2 = body(await personal(`/v2/note-learning-rounds?limit=1&before=${page1.nextCursor as string}`));
+  const ids1 = (page1.items as Record<string, unknown>[]).map((item) => item.roundId);
+  const ids2 = (page2.items as Record<string, unknown>[]).map((item) => item.roundId);
+  assert.equal(new Set([...ids1, ...ids2]).size, 2, "两页并起来正好两行：跨篇翻页不许重也不许漏");
+  assert.equal(page2.totalCount, 2, "总数与游标无关：第二页报的还得是「一共两轮」，不是「剩下还有一轮」");
+  assert.equal(page2.hasMore, false);
+
+  // 回收站**不**挡这一级：那是一次可逆动作，为一篇收起的笔记藏掉一段真实历史，
+  // 等于把"删除中"读成"没发生过"。§10.3 说的是权限，不是回收站。
+  await fixtureSql`UPDATE notes SET deleted_at = now() WHERE id = ${noteB}`;
+  const afterTrash = body(await personal("/v2/note-learning-rounds?limit=10"));
+  assert.equal((afterTrash.items as Record<string, unknown>[]).length, 2,
+    "收进回收站就把那一行抹掉了 ⇒ 记录跟着一个可逆动作缩水");
+  assert.equal(afterTrash.totalCount, 2, "隐藏与否都要总数与列表吃同一份谓词");
+  // 立刻放回：这份夹具的 B 篇被后面几条用例共用，留着 deleted_at 会让它们
+  // 一个个报"创建应当成功：404"——红会看起来像产品坏了，其实是我漏了收尾。
+  await fixtureSql`UPDATE notes SET deleted_at = NULL WHERE id = ${noteB}`;
+
+  /**
+   * 权限那一轴按房子里那一份判据（`visibleNotesCondition`）：这篇被别人收回私有
+   * （不再 shared、也不是我写的）⇒ 我那一句连同篇名整行不出现。
+   * 这一档是"隐藏"，不是 §10.3 末段要的"只留非内容元数据"——那需要 D6 的权限投影
+   * （W5-6 名下）。在这里现造一套遮蔽规则就是第二个权限来源，比少列一行更糟，
+   * 所以只做"读不到就不列"，欠的那一档写在台账里。
+   */
+  await fixtureSql`UPDATE notes SET share_scope = 'private', created_by = ${peerUserId} WHERE id = ${noteB}`;
+  const afterUnshare = body(await personal("/v2/note-learning-rounds?limit=10"));
+  const keptIds = (afterUnshare.items as Record<string, unknown>[]).map((item) => item.roundId);
+  assert.deepEqual(keptIds, [onA.roundId], "别人收回私有的那一篇还在我的记录里出现");
+  assert.equal(afterUnshare.totalCount, 1, "总数还在报一个列不出来的数 ⇒ 两处谓词不同源");
+  await fixtureSql`UPDATE notes SET share_scope = 'shared', created_by = ${userId} WHERE id = ${noteB}`;
+
+  // 别人的上下文读不到我的任何一行（RLS；同空间另一个人也不行）。
+  const peerPage = body(await personal("/v2/note-learning-rounds?limit=10", peerToken));
+  assert.deepEqual(peerPage.items, [], "另一个人读到了我的轮次记录");
+});
+
 test("路径里那个 noteId 不是合法 id 就 400，不走「一片空白」那条安静路径", async () => {
   const res = await call("GET", "/v2/notes/not-a-uuid/learning-rounds");
   assert.equal(res.statusCode, 400, res.body);

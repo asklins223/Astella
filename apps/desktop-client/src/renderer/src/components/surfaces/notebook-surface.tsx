@@ -37,6 +37,7 @@ import {
   unwrapGatewayResult,
 } from "../../app/desktop-client";
 import { imageOnlyFiles } from "../../app/source-intake";
+import { ROUND_RECORD_COPY_V1, roundHistoryStateLabelV1, roundRecordDayV1, roundRecordModesLabelV1 } from "./round-record-copy";
 import { HudPage } from "../hud/HudPage";
 import { useHudPage } from "../hud/use-hud-page";
 import { usePageReadableView } from "../hud/use-page-readable-view";
@@ -260,9 +261,6 @@ const EDITOR_TOOLS: readonly EditorToolSpec[] = [
  * 点它们只往输入框里放一句起步的话，那句话必须还能改——判据在 §16.16，
  * 换问题不需要重编这篇笔记。
  */
-/** 记录里那一行的日期（§10.3 只要"哪一天"，时刻在卡片历史那一侧看）。 */
-const ROUND_DAY_FORMAT = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "short", day: "numeric" });
-
 export const ROUND_COPY = {
   ask: "这一轮想弄懂什么？",
   start: "开始这一轮",
@@ -292,34 +290,19 @@ export const ROUND_COPY = {
    * 就是个假总数（§10.3 要的是完整历史，而这一版没做分页）——所以那种情况下
    * 只说"最近的这几轮"，不替整篇报数。
    */
-  historyLead: (total: number, shown: number, hasMore: boolean) =>
-    hasMore
-      ? `这一篇开过 ${total} 轮，这里列了最近 ${shown} 轮，更早的还能看。`
-      : `这一篇开过 ${total} 轮。`,
-  loadOlder: "看更早的几轮",
-  loadingOlder: "正在取更早的…",
+  historyLead: ROUND_RECORD_COPY_V1.noteLead,
+  loadOlder: ROUND_RECORD_COPY_V1.loadOlder,
+  loadingOlder: ROUND_RECORD_COPY_V1.loadingOlder,
   /** §10.3 那一格里"完成／部分完成／中断"这三个字由这一处签发；`active` 不在其中。 */
-  historyState: {
-    active: "正在进行",
-    paused: "停住了",
-    closed: "已收尾",
-  } as Record<"active" | "paused" | "closed", string>,
+  historyState: ROUND_RECORD_COPY_V1.state,
   /**
    * §10.3 那一行的「实际方式」与「系统不确定项」（W4-8 刀一）。两格的字都**由服务端那两个
    * 事实决定**，界面不重算也不猜：没讲过也没练过时这两格整格不出（不是"这一轮什么都没干"
    * ——那需要另一种判断，而记录只报发生过什么）。
    */
-  historyMode: {
-    explained: "讲过",
-    practiced: "练过",
-  } as Record<"explained" | "practiced", string>,
-  historyUncertain: "这次有我们判不准的地方",
-  historyOutcome: {
-    completed: "走完了",
-    partial: "先到这里",
-    superseded: "被新的一轮替掉",
-    system_failure: "中途出了问题",
-  } as Record<"completed" | "partial" | "superseded" | "system_failure", string>,
+  historyMode: ROUND_RECORD_COPY_V1.mode,
+  historyUncertain: ROUND_RECORD_COPY_V1.uncertain,
+  historyOutcome: ROUND_RECORD_COPY_V1.outcome,
   /**
    * 教学面（39d W4-6 刀二）。这一轮讲没讲过、按哪一版讲的、依据是哪几段，
    * 这三句话由这一处签发——屏上与剧本读的是同一份（与状态那几档同一条规矩）。
@@ -485,12 +468,8 @@ export function structureQuestionCandidatesV1(
  * 终态才看 outcome；`active`/`paused` 没有 outcome（0282 的双向 CHECK 保证），
  * 所以那种行只说状态、不猜原因。
  */
-export function roundHistoryStateLabelV1(
-  item: Pick<NoteLearningRoundHistoryItemV1, "phase" | "outcome">,
-): string {
-  if (item.phase === "closed" && item.outcome) return ROUND_COPY.historyOutcome[item.outcome];
-  return ROUND_COPY.historyState[item.phase];
-}
+/** 搬去 `round-record-copy.ts` 了（两个级别共用）；这一行留着是让既有 import 路径不变。 */
+export { roundHistoryStateLabelV1 };
 
 export function roundQuestionSourceV1(
   draft: string,
@@ -2314,7 +2293,7 @@ export function NotebookSurface() {
                     <ol className="notebook-round-teaching__practice-list">
                       {roundPractices.map((practice) => (
                         <li key={practice.runId} className="small notebook-note">
-                          {ROUND_DAY_FORMAT.format(new Date(practice.startedAt))}
+                          {roundRecordDayV1(practice.startedAt)}
                           {" · "}
                           {roundPracticeStateLabelV1(practice)}
                         </li>
@@ -2502,12 +2481,12 @@ export function NotebookSurface() {
           <ol className="notebook-round-history__list">
             {historyItems.map((item) => (
               <li key={item.roundId}>
-                <span className="small notebook-round-history__day">{ROUND_DAY_FORMAT.format(new Date(item.startedAt))}</span>
+                <span className="small notebook-round-history__day">{roundRecordDayV1(item.startedAt)}</span>
                 <span className="small notebook-round-history__state">{roundHistoryStateLabelV1(item)}</span>
                 <span className="notebook-round-history__question">{item.drivingQuestion}</span>
                 {item.actualModes.length > 0 ? (
                   <span className="small notebook-round-history__modes" data-round-history-modes="true">
-                    {item.actualModes.map((mode) => ROUND_COPY.historyMode[mode]).join(" · ")}
+                    {roundRecordModesLabelV1(item.actualModes)}
                   </span>
                 ) : null}
                 {item.systemUncertain ? (

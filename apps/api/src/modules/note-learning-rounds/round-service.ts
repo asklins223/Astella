@@ -26,6 +26,8 @@ import {
   type NoteLearningRoundTeachingRow,
 } from "@ailearn/shared/db-schema/note-learning-rounds";
 import { learningRuns } from "@ailearn/shared/db-schema/learning-runs";
+import { notes } from "@ailearn/shared/db-schema/note";
+import { visibleNotesCondition } from "../note/visibility.ts";
 import {
   appendRoundPlanRevisionRequestV1Schema,
   roundPlanRevisionV1Schema,
@@ -409,6 +411,101 @@ export async function readRoundHistoryFactsV1(
     if (row.outcome === "not_assessable") uncertainRoundIds.add(row.roundId);
   }
   return { explainedRoundIds, practicedRoundIds, uncertainRoundIds };
+}
+
+/**
+ * §10.3 的第二级：本人（跨笔记）那一页（39d W4-8 刀二）。
+ *
+ * 与 `listRoundHistory` 同一套分页规矩（键集 `(created_at, id)`、总数用加游标**之前**
+ * 的条件算、多取一行只回答"还有没有更早的"），差别只有两处，且都不是省事出来的：
+ *  1. 不带走 `noteId` 那一格，改成**内连笔记**并只留"此刻读得到的那一篇"
+ *     （软删的不列）。§10.3 末段那档"失去权限后只保留非内容元数据"要的是 D6 的
+ *     权限投影（W5-6 名下）——在这里现造一个"遮蔽"谓词就是第二个权限来源，
+ *     比少列几行更糟，所以这一版是整行不出现，欠的那一档写在台账里。
+ *  2. 每一行带回 `noteId` 与 `noteTitle`：这一级没有"眼前这篇"的上下文，
+ *     只有问题句子的那一行读不出是谁家的哪一篇。
+ *
+ * 总数与列表吃**同一份谓词**（都带那次内连）：不共用就会报出一个"列不出来的数"，
+ * 合同里那条 `totalCount >= shownCount` 拦不住它（它只挡反方向）。
+ */
+export type RoundPersonalHistoryRowV1 = {
+  round: NoteLearningRoundRow;
+  noteId: string;
+  noteTitle: string;
+};
+
+export type RoundPersonalHistoryPageV1 = {
+  rows: RoundPersonalHistoryRowV1[];
+  hasMore: boolean;
+  shownCount: number;
+  totalCount: number;
+};
+
+export async function listPersonalRoundHistory(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  query: RoundHistoryQueryV1,
+): Promise<RoundPersonalHistoryPageV1> {
+  if (query.beforeRoundId) {
+    // 游标按"我自己的轮次"解析（不带那次内连）：位置由 `(created_at,id)` 定，
+    // 指到一篇收进回收站的轮次仍然是一个合法位置；指到**别人的**轮次才要报错。
+    const cursorRows = await tx
+      .select({ id: noteLearningRounds.id })
+      .from(noteLearningRounds)
+      .where(and(
+        eq(noteLearningRounds.workspaceId, scope.workspaceId),
+        eq(noteLearningRounds.userId, scope.userId),
+        eq(noteLearningRounds.id, query.beforeRoundId),
+      ))
+      .limit(1);
+    if (!cursorRows[0]) throw new RoundServiceError("invalid_cursor", "这个游标不在我的轮次记录里");
+  }
+  const sameJoin = eq(notes.id, noteLearningRounds.noteId);
+  const rows = await tx
+    .select({
+      round: noteLearningRounds,
+      noteId: notes.id,
+      noteTitle: notes.title,
+    })
+    .from(noteLearningRounds)
+    .innerJoin(notes, sameJoin)
+    .where(and(
+      eq(noteLearningRounds.workspaceId, scope.workspaceId),
+      eq(noteLearningRounds.userId, scope.userId),
+      // 房子里那一份可见性判据（`visibleNotesCondition`），不是这里另写的规则：
+      // 这一级会把别人的篇名与我那句问题一起端出去，那篇后来被收回私有就不该再出现。
+      // 回收站**不**挡：那是可逆动作，为一篇收起的笔记藏掉一段真实历史等于把
+      // "删除中"读成"没发生过"（§10.3 说的是权限，不是回收站）。
+      // 静态守卫 `note-visibility-read-sites.test.ts` 要求判据**就近**在每个笔记读点上，
+      // 所以下面那一发总数也各自带一次，而不是隔着几十行共用一个数组。
+      visibleNotesCondition(scope.userId),
+      ...(query.beforeRoundId ? [sql`(${noteLearningRounds.createdAt}, ${noteLearningRounds.id}) < (
+        SELECT cursor_row.created_at, cursor_row.id
+        FROM note_learning_rounds cursor_row
+        WHERE cursor_row.id = ${query.beforeRoundId}::uuid
+      )`] : []),
+    ))
+    .orderBy(desc(noteLearningRounds.createdAt), desc(noteLearningRounds.id))
+    .limit(query.limit + 1);
+  // 总数用**没带游标**的那一份条件：它答的是"我读得到的这些里一共几轮"，与翻到第几页无关。
+  // （试过用 `count(*) over ()` 在同一发里带出来——那会把游标也算进去，第二页报出
+  // "剩下还有几轮"，正是这一格要拦的形状；窗口计数与"与游标无关"不能同时成立。）
+  const totalRows = await tx
+    .select({ total: sql`count(*)::int` })
+    .from(noteLearningRounds)
+    .innerJoin(notes, sameJoin)
+    .where(and(
+      eq(noteLearningRounds.workspaceId, scope.workspaceId),
+      eq(noteLearningRounds.userId, scope.userId),
+      visibleNotesCondition(scope.userId),
+    ));
+  const page = rows.slice(0, query.limit);
+  return {
+    rows: page.map((row) => ({ round: row.round, noteId: row.noteId, noteTitle: row.noteTitle })),
+    hasMore: rows.length > query.limit,
+    shownCount: page.length,
+    totalCount: Number(totalRows[0]?.total ?? 0),
+  };
 }
 
 /**
