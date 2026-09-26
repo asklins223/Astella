@@ -144,6 +144,20 @@ CREATE UNIQUE INDEX review_schedules_pending_dimension_unique
 
 **2026-09-26 实测（W7-2 开工前把这一节走了一遍，读数在这里）**：dev 库现读 `review_schedules` **16 列、没有 `review_dimension`**（⇒ §3.2 那个键今天建不出来，加列是前置）；`pending` 按 `(workspace_id, user_id, subject_id)` 分组**冲突 0 组**（25 pending／10 completed／1 cancelled，`subject_type` 36 行全是 `card`）⇒ 上面第 2 步那套"保留链上最新、其余转 superseded"**今天没有对象可做**，加索引不需要存量清理；`pg_indexes` 只有 `review_schedules_pkey(id)` 与 `(id, workspace_id)` 两条唯一，`review_schedules_subject_idx (subject_type, subject_id)` 是普通索引 ⇒ 39 §15.3-18 要的唯一性至今**没有任何东西在保证**。结论：这一节的技术前置已量清（冲突 0），仍然缺的是**授权**——本文件不授权迁移，所以加列＋加索引与"把四处 `insert` 收成一个边界函数"要一起做，不能只加索引（加了索引而四处仍各自先查后写，只会把竞态从"多一条安排"变成"一次 500"）。
 
+### 3.4 落地记录（2026-09-26，迁移 0287 ＋边界函数 `ensurePendingReviewScheduleV2`）
+
+本节把上面三条判断变成一件可执行的事。实施时定了/改了这些：
+
+1. **列用 `NOT NULL DEFAULT ''`**，不选 `coalesce(...)` 那一边（§3.2 给的二选一）：新列没有存量行要回填，成本更低，而且"未指定维度"这一档**参与**唯一性这件事不依赖任何函数写法。
+2. **索引是部分的**（`WHERE status = 'pending'`），终态行留多行历史——`review_schedules_pending_subject_dim_unique`。
+3. **键里不放 `subject_type`**：现读 `CHECK ((subject_type = 'card'))`，放进去只会留一条绕过路（§3.2 第 1 条在库里的形状被证实）。
+4. **四处 `insert` 收进一个函数**：`apps/api/src/modules/review/review-schedule-boundary.ts` 的 `ensurePendingReviewScheduleV2(tx, …)`，`run-processing-tick.ts` 的两条 `create_initial` 与两条 successor 全部改走它。撞上已有安排时**关联而不是失败**，并把**库里那一条的实际到期时间**交回去——结算回执 `scheduleImpact.dueAt` 因此不会报出一个没人持有的日期（这正是 W7-2 判据"已有同目标安排显示沿用后的实际日期"要求的那件事）。
+5. **`ON CONFLICT DO NOTHING` 不带 target**：部分唯一索引的推断写法要在 drizzle 里重复谓词，写错一次就退化成"什么冲突都不拦"；不写 target 对所有唯一 violation 成立，代价是多一次回读。回读不到就抛，不猜一个 id 交出去。
+6. 索引与四处收口**必须同一批**：只加索引而四处仍裸 insert，症状从"多一条安排"变成"一次 23505"——这条用例现在有（集测第 4 条：绕过边界函数裸插第二行，数据库当场拒；第一次写它时红成 23502 `not_null_violation`，因为裸 insert 少给了 `subject_type`，认错成因就会以为索引没生效）。
+7. **W7-2 的第二颗按钮仍然没接**：现在有了可调用的一件事，但"保存＋授权"的组合命令、同一回执与重放语义是另一刀（`activation-service.ts` 那颗 advisory lock＋receipt 表是它的样板）。
+
+读数在 39d §19 同日那一行（含一次性库从 0001 重放 287 条迁移全过、集测 5/5）。
+
 **前置**：39d §1 的红线"涉及 schema 历史先确认开发库可重建"。dev 库可重建这一条在 W0-9 已确认过迁移账可用；但**加索引是一次正式迁移**，要登记 journal（39d §1 末条）。
 
 ---
