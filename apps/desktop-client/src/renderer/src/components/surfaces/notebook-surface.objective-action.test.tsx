@@ -160,6 +160,8 @@ function installApi(
     practices?: Record<string, unknown>[];
     /** 「练一道」那一发的起点；缺省 = 没有（无目标轮次）。 */
     practiceStart?: Record<string, unknown> | null;
+    /** 缺口帮助停止那一格（W4-6 刀四）；缺省 = 没停。 */
+    gapHelp?: Record<string, unknown>;
   } = {},
 ): Api {
   const syncController = options.syncController ?? { fail: false };
@@ -201,6 +203,7 @@ function installApi(
           teaching: rows[read] ?? null,
           practices: options.practices ?? [],
           practiceStart: options.practiceStart ?? null,
+          gapHelp: options.gapHelp ?? { stopped: false, consecutiveHelpCount: 0, threshold: 2 },
         });
       }),
       explain: vi.fn(async () => (options.explainFails
@@ -303,6 +306,7 @@ async function show(
     explainFails?: boolean;
     practices?: Record<string, unknown>[];
     practiceStart?: Record<string, unknown> | null;
+    gapHelp?: Record<string, unknown>;
   } = {},
 ) {
   const syncController = options.syncController ?? { fail: false };
@@ -1164,5 +1168,76 @@ describe("轮次里的练习（39d W4-6 刀三）", () => {
     expect(roundPracticeStateLabelV1({ phase: "active", outcome: null })).toBe("正在进行");
     expect(roundPracticeStateLabelV1({ phase: "paused", outcome: null })).toBe("停住了");
     expect(roundPracticeStateLabelV1({ phase: "cancelled", outcome: null })).toBe("中断了");
+  });
+});
+
+/**
+ * 缺口帮助停止之后的四选一（39d W4-6 刀四）。
+ *
+ * 这一组钉三件事：**停了才摆**（没停不许多一行）；四档里那三档真有去处——换解释走同一发
+ * 生成的 `regenerate`（同一问题落第二条）、回材料核对把依据那段带到眼前、先结束收尾这一轮；
+ * 唯一没接上的那档（补一节前置）**如实写出来**，不摆一颗按不动的按钮装作能用。
+ */
+describe("缺口帮助停止后的四选一（39d W4-6 刀四）", () => {
+  const stopped = { stopped: true, consecutiveHelpCount: 2, threshold: 2 };
+
+  it("停了才摆：那一句只说读数，四档都在（补前置如实说没接上）", async () => {
+    const { roundBlock } = await show([], { openRound: roundRow(), roundTeaching: teachingRow(), gapHelp: stopped });
+    const block = roundBlock()!;
+    expect(block.querySelector(".notebook-round-teaching__stop")).toBeTruthy();
+    expect(block.textContent).toContain(ROUND_COPY.teaching.stopLead(2));
+    // 那句话是对**读数**说的，不许变成对用户的判断。
+    expect(block.textContent).not.toContain("你没有改善");
+    const labels = [...block.querySelectorAll(".notebook-round-teaching__stop-options button")].map((b) => b.textContent);
+    expect(labels).toEqual([
+      ROUND_COPY.teaching.switchExplanation,
+      ROUND_COPY.teaching.backToMaterial,
+      ROUND_COPY.teaching.endRound,
+    ]);
+    expect(block.textContent).toContain(ROUND_COPY.teaching.addPrerequisiteUnavailable);
+    // 没接上的那一档**不是一颗按钮**（按不动的东西不该长得像能用）。
+    expect(labels).not.toContain(ROUND_COPY.teaching.addPrerequisite);
+  });
+
+  it("没停就不摆那一块", async () => {
+    const { roundBlock } = await show([], { openRound: roundRow(), roundTeaching: teachingRow() });
+    expect(roundBlock()!.querySelector(".notebook-round-teaching__stop")).toBeNull();
+  });
+
+  it("「换一种解释」发的是 regenerate：同一问题落第二条，不是复用", async () => {
+    const { api, roundBlock } = await show([], { openRound: roundRow(), roundTeaching: teachingRow(), gapHelp: stopped });
+    const button = [...roundBlock()!.querySelectorAll(".notebook-round-teaching__stop-options button")]
+      .find((b) => b.textContent === ROUND_COPY.teaching.switchExplanation)!;
+    fireEvent.click(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.noteLearningRound.explain).toHaveBeenCalledTimes(1);
+    expect(api.noteLearningRound.explain.mock.calls[0][0]).toMatchObject({ regenerate: true });
+  });
+
+  it("「回材料核对」把依据那一段带到眼前；「先结束这一轮」走的是收尾那一发", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const blocks: NoteBlockProjectionV1[] = [
+      { ordinal: 1, type: "heading", content: "## 间隔重复" },
+      { ordinal: 2, type: "paragraph", content: "间隔重复说的是在快要忘记的时候再见到它。" },
+    ];
+    const { api, roundBlock, container } = await show([], {
+      openRound: roundRow({ revision: 5 }),
+      blocks,
+      roundTeaching: teachingRow({ sourceBlockOrdinals: [1, 2] }),
+      gapHelp: stopped,
+    });
+    const options = (label: string) => [...roundBlock()!.querySelectorAll(".notebook-round-teaching__stop-options button")]
+      .find((b) => b.textContent === label)!;
+
+    scrollIntoView.mockClear();
+    fireEvent.click(options(ROUND_COPY.teaching.backToMaterial));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-block-ordinal="1"]')!.getAttribute("data-block-focused")).toBe("true");
+
+    fireEvent.click(options(ROUND_COPY.teaching.endRound));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.noteLearningRound.close.mock.calls[0][0]).toMatchObject({ expectedRevision: 5, outcome: "partial" });
   });
 });

@@ -2147,7 +2147,7 @@ export class DesktopGateway {
    * 所以这一发之后屏幕上那一行轮次与解释都来自同一次读回的版本，不会拼出一次错配。
    */
   async explainNoteLearningRoundTeaching(
-    input: { roundId: string; expectedRevision: number },
+    input: { roundId: string; expectedRevision: number; regenerate?: boolean },
     requestId?: string,
   ): Promise<RoundTeachingViewV1> {
     await this.ensureConnected(requestId);
@@ -2156,7 +2156,11 @@ export class DesktopGateway {
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ expectedRevision: input.expectedRevision }),
+        // `regenerate` 缺省不带（服务端默认 false = 同快照同问题复用既有那条）。
+        body: JSON.stringify({
+          expectedRevision: input.expectedRevision,
+          ...(input.regenerate ? { regenerate: true } : {}),
+        }),
       },
       true,
       true,

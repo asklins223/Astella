@@ -17,8 +17,10 @@ import assert from "node:assert/strict";
 import {
   advanceNoteLearningRoundRequestV1Schema,
   createNoteLearningRoundRequestV1Schema,
+  createRoundTeachingRequestV1Schema,
   noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundV1Schema,
+  roundTeachingViewV1Schema,
 } from "./note-learning-round-contracts.ts";
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
@@ -157,4 +159,74 @@ test("记录那一页的合同：游标坏形状拒，`hasMore` 与 `nextCursor`
     noteLearningRoundHistoryPageV1Schema.safeParse({ ...page(), extra: 1 }).success,
     false,
   );
+});
+
+/**
+ * 教学面那一份读的两格新合同（39d W4-6 刀三／刀四）：练过哪几道（`practices`）、
+ * 缺口帮助停没停（`gapHelp`）与「换一种解释」那一格（`regenerate`）。
+ */
+test("教学面读：practices 与 gapHelp 都是必填格，gapHelp 的三格有界", () => {
+  const base = {
+    version: 1,
+    round: {
+      version: 1,
+      roundId: "77777777-7777-4777-8777-777777777777",
+      noteId: "11111111-1111-4111-8111-111111111111",
+      phase: "active",
+      outcome: null,
+      drivingQuestion: "这一轮练过什么？",
+      drivingQuestionSource: "suggested",
+      drivingQuestionRevision: 1,
+      noteVersionId: "22222222-4222-4222-8222-222222222222",
+      sourceContentHash: "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      evidenceSnapshotIds: [],
+      budgets: { maxModelCalls: 8, maxWallClockSeconds: 900, maxTasks: 6 },
+      revision: 1,
+      pausedAt: null,
+      resumedAt: null,
+      closedAt: null,
+      createdAt: "2026-09-26T04:00:00.000Z",
+      updatedAt: "2026-09-26T04:00:00.000Z",
+    },
+    teaching: null,
+    practices: [
+      {
+        runId: "44444444-4444-4444-8444-444444444444",
+        phase: "completed",
+        outcome: "declared_unable",
+        startedAt: "2026-09-26T04:20:00.000Z",
+      },
+    ],
+    practiceStart: null,
+    gapHelp: { stopped: true, consecutiveHelpCount: 2, threshold: 2 },
+  };
+  assert.equal(roundTeachingViewV1Schema.safeParse(base).success, true);
+  // 少任何一格都是不合法的回信（客户端不许自己补默认值）。
+  for (const key of ["practices", "gapHelp", "practiceStart"] as const) {
+    const clone: Record<string, unknown> = { ...base };
+    delete clone[key];
+    assert.equal(roundTeachingViewV1Schema.safeParse(clone).success, false, `少了 ${key} 竟然过了`);
+  }
+  assert.equal(
+    roundTeachingViewV1Schema.safeParse({ ...base, gapHelp: { stopped: true, consecutiveHelpCount: -1, threshold: 2 } }).success,
+    false,
+  );
+  assert.equal(
+    roundTeachingViewV1Schema.safeParse({ ...base, gapHelp: { stopped: true, consecutiveHelpCount: 2, threshold: 0 } }).success,
+    false,
+  );
+  // 没结算的那一场：outcome 必须是 null（不是 0、不是空串）。
+  assert.equal(
+    roundTeachingViewV1Schema.safeParse({
+      ...base,
+      practices: [{ ...base.practices[0], phase: "active", outcome: null }],
+    }).success,
+    true,
+  );
+});
+
+test("「换一种解释」那一格：缺省合法，给了必须是布尔", () => {
+  assert.equal(createRoundTeachingRequestV1Schema.safeParse({ expectedRevision: 1 }).success, true);
+  assert.equal(createRoundTeachingRequestV1Schema.safeParse({ expectedRevision: 1, regenerate: true }).success, true);
+  assert.equal(createRoundTeachingRequestV1Schema.safeParse({ expectedRevision: 1, regenerate: "yes" }).success, false);
 });

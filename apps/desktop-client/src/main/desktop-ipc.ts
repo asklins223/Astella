@@ -573,6 +573,8 @@ const noteLearningRoundExplainInputSchema = z.strictObject({
   ...m1InputBase,
   roundId: uuidSchema,
   expectedRevision: z.number().int().min(1),
+  /** 「换一种解释」（W4-6 刀四）：跳过复用、同一问题落第二条。 */
+  regenerate: z.boolean().optional(),
 });
 const noteLearningRoundCloseInputSchema = z.strictObject({
   ...m1InputBase,
@@ -2873,7 +2875,7 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     requireM2Route(contract, "note.detail");
     assertEpoch(input.meta, activeWorkspaceEpoch);
     return gateway.explainNoteLearningRoundTeaching(
-      { roundId: input.roundId, expectedRevision: input.expectedRevision },
+      { roundId: input.roundId, expectedRevision: input.expectedRevision, regenerate: input.regenerate === true },
       input.meta.requestId,
     );
   }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, roundTeachingViewV1Schema);

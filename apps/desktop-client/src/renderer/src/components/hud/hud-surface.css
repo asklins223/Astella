@@ -2676,6 +2676,22 @@
 
 .hud-surface .notebook .notebook-round-teaching__practice-list li { margin: 0; }
 
+/* 停止自动加题之后那四选一（W4-6 刀四）：一句读数 + 一行选项；选项会折行，
+   不把它们压成一条（四档都要读得清）。 */
+.hud-surface .notebook .notebook-round-teaching__stop {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+}
+
+.hud-surface .notebook .notebook-round-teaching__stop-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 /* 依据点开的那一段短暂亮一下。色与正文里 `.mark` 的暖黄同一族（hud-pages.css），
    但这里是**块级**的"我在这儿"；不做动画——动效是产品设置里的一档。 */
 .hud-surface .notebook .reading-body .reading-block[data-block-focused="true"] {

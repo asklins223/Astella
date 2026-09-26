@@ -300,6 +300,12 @@ export type RoundTeachingV1 = z.infer<typeof roundTeachingV1Schema>;
  */
 export const createRoundTeachingRequestV1Schema = z.strictObject({
   expectedRevision: z.number().int().min(1),
+  /**
+   * 「换一种解释」（PRD §5.3 的四选一之一；§6 的"换解释才产生新版本"）。
+   * 默认 `false` = 同快照同问题已有就回既有那条（不重付）；`true` 时**跳过复用**，
+   * 在同一问题下再落一条（轮内序号 +1）——旧那条留着，历史不覆盖。
+   */
+  regenerate: z.boolean().optional(),
 });
 export type CreateRoundTeachingRequestV1 = z.infer<typeof createRoundTeachingRequestV1Schema>;
 
@@ -316,6 +322,20 @@ export const roundPracticeV1Schema = z.strictObject({
   startedAt: z.string().datetime({ offset: true }),
 });
 export type RoundPracticeV1 = z.infer<typeof roundPracticeV1Schema>;
+
+/**
+ * 缺口帮助停止那件事的读数（W4-6 刀四；PRD §5.3）。
+ *
+ * 判据（连续两次帮助后仍没有改善）在服务端算出，客户端**只呈现**：它是"这一轮要不要
+ * 继续自动加题"的决定，不是界面上的一次布局选择。带 `consecutiveHelpCount` 与
+ * `threshold` 是为了让那一句话能如实说"帮了几次、按几次算停"，而不是编一句量词。
+ */
+export const roundGapHelpV1Schema = z.strictObject({
+  stopped: z.boolean(),
+  consecutiveHelpCount: z.number().int().min(0),
+  threshold: z.number().int().min(1),
+});
+export type RoundGapHelpV1 = z.infer<typeof roundGapHelpV1Schema>;
 
 /** 「练一道」的起点：哪一条目标、以及那一发请求本体（形状与主行动共用）。 */
 export const roundPracticeStartV1Schema = z.strictObject({
@@ -350,5 +370,7 @@ export const roundTeachingViewV1Schema = z.strictObject({
    * 因为再开一场会撞上"同一目标同时两场进行中"这件不该发生的事。
    */
   practiceStart: roundPracticeStartV1Schema.nullable(),
+  /** 缺口帮助停止那一格（W4-6 刀四）：停没停、帮了几次、按几次算停。 */
+  gapHelp: roundGapHelpV1Schema,
 });
 export type RoundTeachingViewV1 = z.infer<typeof roundTeachingViewV1Schema>;

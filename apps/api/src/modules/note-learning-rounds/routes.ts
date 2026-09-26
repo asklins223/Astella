@@ -41,6 +41,7 @@ import {
   noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundV1Schema,
   reviseDrivingQuestionRequestV1Schema,
+  roundGapHelpV1Schema,
   roundPracticeStartV1Schema,
   roundTeachingViewV1Schema,
   type NoteLearningRoundV1Wire,
@@ -70,6 +71,7 @@ import {
   teachingFailureResponseV1,
 } from "./teaching-explain.ts";
 import { listNoteRoundPractices } from "../learning-runs/run-service.ts";
+import { readRoundGapHelpV1 } from "../learning-runs/gap-help-service.ts";
 import { listObjectiveSurfacesV3 } from "../learning-objectives/surface-service.ts";
 import { roundBudgetsV1 } from "./round-budgets.ts";
 
@@ -301,12 +303,16 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
         if (round.revision !== parsed.data.expectedRevision) {
           throw new RoundServiceError("stale_revision", "这一轮的状态已经变化，请刷新后重试");
         }
-        const reused = await findReusableTeaching(tx, scope, {
-          roundId,
-          kind: "explanation",
-          drivingQuestionRevision: round.drivingQuestionRevision,
-          snapshotHash: round.sourceContentHash,
-        });
+        // 「换一种解释」（`regenerate`）**跳过复用**：同一问题下再落一条（序号 +1），
+        // 旧那条留着（§6「换解释才产生新版本」）。默认那一档仍然先看有没有可复用的。
+        const reused = parsed.data.regenerate
+          ? null
+          : await findReusableTeaching(tx, scope, {
+            roundId,
+            kind: "explanation",
+            drivingQuestionRevision: round.drivingQuestionRevision,
+            snapshotHash: round.sourceContentHash,
+          });
         if (reused) return { round, kind: "reused", teaching: reused };
         const used = await countTeachings(tx, scope, roundId);
         // 预算判据在"要不要花这一发"之前：触顶了就不进入生成相位（D1 §3.2）。
@@ -320,7 +326,7 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
     if (frozen.kind === "reused") {
       // 复用那一发也要带上练习那两格（它们与"讲没讲过"无关，每次读都要有）。
       const extras = await withWorkspaceTransaction(scope, (tx) =>
-        buildRoundPracticeView(tx, scope, frozen.round));
+        buildRoundTeachingExtras(tx, scope, frozen.round));
       return reply.code(200).send(roundTeachingViewV1Schema.parse({
         version: 1 as const,
         round: toWire(frozen.round),
@@ -366,7 +372,7 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
         });
         const round = await readRound(tx, scope, roundId);
         if (!round) throw new RoundServiceError("round_not_found", "这一轮不存在（或对当前这个人不可见）");
-        return { round, teaching, extras: await buildRoundPracticeView(tx, scope, round) };
+        return { round, teaching, extras: await buildRoundTeachingExtras(tx, scope, round) };
       });
       return reply.code(201).send(roundTeachingViewV1Schema.parse({
         version: 1 as const,
@@ -403,7 +409,7 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
           drivingQuestionRevision: round.drivingQuestionRevision,
           snapshotHash: round.sourceContentHash,
         });
-        return { round, teaching, extras: await buildRoundPracticeView(tx, scope, round) };
+        return { round, teaching, extras: await buildRoundTeachingExtras(tx, scope, round) };
       });
     } catch (err) {
       return replyRoundError(reply, err, "读这一条解释没成功");
@@ -432,26 +438,40 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
  *     主行动的 `start`**，只有锚点换成这一轮（`note_round`）。这三个值只在
  *     `action-resolver` 里签发一次，客户端与这里都不另写。
  */
-async function buildRoundPracticeView(
+async function buildRoundTeachingExtras(
   tx: ApiTransaction,
   scope: RoundScopeV1,
   round: NoteLearningRoundV1,
-): Promise<{ practices: RoundPracticeV1[]; practiceStart: RoundPracticeStartV1 | null }> {
+): Promise<{
+  practices: RoundPracticeV1[];
+  practiceStart: RoundPracticeStartV1 | null;
+  gapHelp: ReturnType<typeof roundGapHelpV1Schema.parse>;
+}> {
   const practices = await listNoteRoundPractices(tx, scope, round.roundId);
+  // 缺口帮助停止那一格（W4-6 刀四）：判据在 learning-runs 那一侧算（它才看得见
+  // 帮助事件与结论），这里只把它读出来、过一遍合同。缺口身份不进线上合同（它由服务端
+  // 自己用），所以这里显式挑三格。
+  const gapHelp = await readRoundGapHelpV1(tx, scope, round.roundId);
+  const gapHelpWire = roundGapHelpV1Schema.parse({
+    stopped: gapHelp.stopped,
+    consecutiveHelpCount: gapHelp.consecutiveHelpCount,
+    threshold: gapHelp.threshold,
+  });
   const surfaces = await listObjectiveSurfacesV3(tx, scope, {
     lifecycle: "active",
     noteId: round.noteId,
     limit: 1,
   });
   const objective = surfaces.items[0];
-  if (!objective) return { practices, practiceStart: null };
+  if (!objective) return { practices, practiceStart: null, gapHelp: gapHelpWire };
   const action = objective.primaryAction;
   if (action.kind !== "create_run" && action.kind !== "practice_only") {
-    return { practices, practiceStart: null };
+    return { practices, practiceStart: null, gapHelp: gapHelpWire };
   }
   const objectiveId = objective.objectiveId;
   return {
     practices,
+    gapHelp: gapHelpWire,
     practiceStart: roundPracticeStartV1Schema.parse({
       objectiveId,
       start: {

@@ -300,6 +300,19 @@ export const ROUND_COPY = {
   teaching: {
     start: "先讲讲这一节",
     starting: "正在讲这一节…",
+    /**
+     * 缺口帮助停止之后摆的那四档（W4-6 刀四；PRD §5.3）。
+     *
+     * 第一句只说**读数**（帮了几次、还没有看到改善的证据），不许说成"你没弄懂"——
+     * 那是对用户下判断，而系统在这一档有的只是"没有证据"。
+     */
+    stopLead: (count: number) => `帮了 ${count} 次，还没有看到改善的证据——先不自动加题了。你想怎么走？`,
+    switchExplanation: "换一种解释",
+    addPrerequisite: "补一节前置",
+    /** 四档里唯一还没接上的一档：如实说，不摆一颗按不动的按钮装作能用。 */
+    addPrerequisiteUnavailable: "补一节前置还没接上：它要先生成前置内容，那是后面的事。",
+    backToMaterial: "回材料核对",
+    endRound: "先结束这一轮",
     /** 教学面里"练一道"（W4-6 刀三）：只在有 active 目标时出现。 */
     practice: "练一道",
     practicing: "正在开这一道…",
@@ -817,6 +830,8 @@ export function NotebookSurface() {
   const roundPractices = data?.roundTeachingView?.practices ?? [];
   /** 「练一道」那一发的起点；`null` = 没有可开的目标（无目标轮次不摆这颗按钮）。 */
   const roundPracticeStart = data?.roundTeachingView?.practiceStart ?? null;
+  /** 缺口帮助停止那一格（W4-6 刀四）：停了就摆四选一。 */
+  const roundGapHelp = data?.roundTeachingView?.gapHelp ?? null;
   const capabilities = data?.capabilities ?? null;
   const activeGenerations = data?.activeGeneration?.state === "data" ? data.activeGeneration.data : [];
   // 这篇笔记自己的在制批次。一个工作区可以同时有多篇笔记各自在制一批卡，所以
@@ -1356,7 +1371,7 @@ export function NotebookSurface() {
    * 屏上那句解释来自服务端存下来的那一条，不是本机拼的；③失败也要回读一次，
    * 把屏上换回现在那一版（§16.39 那条一样的道理）。
    */
-  const startRoundTeaching = async () => {
+  const startRoundTeaching = async (regenerate = false) => {
     const api = desktopApi();
     if (!api || !openRound || teachingBusy) return;
     setTeachingBusy(true);
@@ -1366,6 +1381,8 @@ export function NotebookSurface() {
         meta: createRequestMeta(epochRef.current),
         roundId: openRound.roundId,
         expectedRevision: openRound.revision,
+        // 「换一种解释」走同一发：服务端据此**跳过复用**，在同一问题下落第二条（序号 +1）。
+        ...(regenerate ? { regenerate: true } : {}),
       });
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       unwrapGatewayResult(response);
@@ -2164,6 +2181,49 @@ export function NotebookSurface() {
                   >
                     {practiceBusy ? ROUND_COPY.teaching.practicing : ROUND_COPY.teaching.practice}
                   </button>
+                ) : null}
+                {/* 缺口帮助停止之后摆的四选一（W4-6 刀四；PRD §5.3）。
+                    四档里三档今天真有去处（换解释＝同一问题落第二条；回材料核对＝把依据那段
+                    带到眼前；先结束＝收尾这一轮），「补一节前置」还没有接上——如实写出来，
+                    不摆一颗按不动的按钮装作能用。 */}
+                {roundGapHelp?.stopped ? (
+                  <div className="notebook-round-teaching__stop">
+                    <p className="small notebook-note">
+                      {ROUND_COPY.teaching.stopLead(roundGapHelp.consecutiveHelpCount)}
+                    </p>
+                    <div className="notebook-round-teaching__stop-options">
+                      <button
+                        type="button"
+                        className="button"
+                        disabled={teachingBusy || roundBusy !== null}
+                        onClick={() => void startRoundTeaching(true)}
+                      >
+                        {ROUND_COPY.teaching.switchExplanation}
+                      </button>
+                      <button
+                        type="button"
+                        className="button"
+                        disabled={teachingReferences.length === 0}
+                        onClick={() => {
+                          const first = teachingReferences[0];
+                          if (first) locateTeachingReference(first.ordinal);
+                        }}
+                      >
+                        {ROUND_COPY.teaching.backToMaterial}
+                      </button>
+                      <button
+                        type="button"
+                        className="button"
+                        disabled={roundBusy !== null}
+                        onClick={() => void endNoteRound()}
+                      >
+                        {ROUND_COPY.teaching.endRound}
+                      </button>
+                    </div>
+                    <p className="small notebook-note">
+                      {`${ROUND_COPY.teaching.addPrerequisite}：${ROUND_COPY.teaching.addPrerequisiteUnavailable}`}
+                    </p>
+                  </div>
                 ) : null}
                 {/* 教学面是隔离展示面（D4）的**预留挂载点**：刀五之前不挂 iframe，
                     挂上去时用 `artifact-frame-host` 自己的合同取属性，不在这里另写一份。 */}

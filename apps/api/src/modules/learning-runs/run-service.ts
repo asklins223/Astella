@@ -104,6 +104,7 @@ import {
   type RunPlannerTargetInput,
 } from "./run-planner.ts";
 import { isDeterministicStructuredPayload } from "./run-structured.ts";
+import { readRoundGapHelpV1 } from "./gap-help-service.ts";
 import { sha256Hex } from "@ailearn/shared/content-hash";
 import {
   freezeTargetSnapshotV2,
@@ -2078,6 +2079,26 @@ export async function applyAction(
       const followupId = String((input.action as { followupId?: string }).followupId ?? "");
       if (!checkpoint || !Array.isArray(checkpoint.allowedFollowupIds) || !checkpoint.allowedFollowupIds.includes(followupId)) {
         throw new LearningRunServiceError("followup_not_authorized", "该补充任务未获授权", 409);
+      }
+      // 39d W4-6 刀四（PRD §5.3）：这一轮已经停了（同一缺口连续两次帮助、还没有
+      // 改善的证据）时，即使客户端手里那颗按钮是**当时**签发的、还没消失，也不许
+      // 再激活补充任务——签发侧（tick 的 `supplementOffer`）从那之后就不再签发，
+      // 这一层防的是绕过（旧快照、手拼请求）。停在授权之后：未授权的 followupId
+      // 仍旧按原来的口径拒，不在这里替它说话。
+      const roundOrigin = run.origin as { kind?: unknown; roundId?: unknown } | null;
+      if (roundOrigin?.kind === "note_round" && typeof roundOrigin.roundId === "string") {
+        const gapHelp = await readRoundGapHelpV1(
+          tx,
+          { workspaceId: input.workspaceId, userId: input.userId },
+          roundOrigin.roundId,
+        );
+        if (gapHelp.stopped) {
+          throw new LearningRunServiceError(
+            "gap_help_stopped",
+            "这一轮已经帮过两次，还没有出现改善的证据——先让你选下一步：换个解释、补上缺的前置、回材料核对，或者先结束这一轮",
+            409,
+          );
+        }
       }
       // 单槽额度（与 tick 的 supplementOffer 同一条不变量）：用过就明确 409，
       // 不让下面写死 sequence 2 的插入去撞 learning_tasks_run_sequence_unique

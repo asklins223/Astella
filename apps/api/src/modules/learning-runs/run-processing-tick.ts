@@ -69,6 +69,7 @@ import {
 import { loadFrozenTargetSnapshotV2 } from "../card-generation-v2/target-snapshot-adapter.ts";
 import { insertDomainEvents } from "../card-generation-v2/helpers.ts";
 import { materializeCanonicalChangeSet, materializePracticeChangeSet } from "../understanding/projection-service.ts";
+import { readRoundGapHelpV1 } from "./gap-help-service.ts";
 
 /** 从严格 V2 run.origin 取目标 ID。 */
 function originObjectiveId(origin: unknown): string {
@@ -465,12 +466,54 @@ async function supplementOffer(
   // 缺的是结算闸要拿来做比对的原文证据，用户再写一段话也补不上（实机：两题各
   // 39 毫秒空判，第二次连按钮都消失了）。所以这一种原因下不签发它。
   if (reasonCode === "no_frozen_evidence") return [];
+  // 39d W4-6 刀四（PRD §5.3）：轮次里的练习，这一轮那条缺口已经连续两次帮助、
+  // 还没有改善的证据 ⇒ 不再自动加题，把选择权交回用户。
+  // 拦在签发口而不是某一个调用点：签发补充任务的地方不止一处（partial
+  // checkpoint、not_assessable、Commit 拒绝的收尾），它们共用这一条"还能不能
+  // 签发"的判断，拦在这里才不会有下一个口子漏签。
+  if (await noteRoundGapHelpStopped(tx, runId)) return [];
   const used = await tx
     .select({ id: learningTasks.id })
     .from(learningTasks)
     .where(and(eq(learningTasks.runId, runId), gte(learningTasks.sequence, 2)))
     .limit(1);
   return used.length > 0 ? [] : [SUPPLEMENT_FOLLOWUP_ID];
+}
+
+/**
+ * 这一场 run 是不是"轮次里已停"的练习（详情见 `gap-help-service.ts`）。
+ *
+ * 非 `note_round` 的 origin 在这一行就返回 false——别的来源（今日/复习/星图…）
+ * 一个字节都不受影响，这是硬边界：PRD §5.3 说的是"轮次里同一缺口连续两次帮助"，
+ * 别的入口没有"同一缺口"这个说法，就不能被这条规则顺手改掉。
+ *
+ * checkpoint 合同是 strict 的（多一个字段就会让整份 view 解析失败），所以
+ * "为什么停"只用"空数组"表达，界面读到的是按钮消失；理由留在这里与
+ * `gap-help-service.ts` 的注释里，不往合同里塞新字段。
+ */
+async function noteRoundGapHelpStopped(
+  tx: Parameters<Parameters<typeof withWorkspaceTransaction>[1]>[0],
+  runId: string,
+): Promise<boolean> {
+  const runRows = await tx
+    .select({
+      origin: learningRuns.origin,
+      workspaceId: learningRuns.workspaceId,
+      userId: learningRuns.userId,
+    })
+    .from(learningRuns)
+    .where(eq(learningRuns.id, runId))
+    .limit(1);
+  const run = runRows[0];
+  if (!run) return false;
+  const origin = run.origin as { kind?: unknown; roundId?: unknown } | null;
+  if (origin?.kind !== "note_round" || typeof origin.roundId !== "string") return false;
+  const gapHelp = await readRoundGapHelpV1(
+    tx,
+    { workspaceId: run.workspaceId, userId: run.userId },
+    origin.roundId,
+  );
+  return gapHelp.stopped;
 }
 
 /**
