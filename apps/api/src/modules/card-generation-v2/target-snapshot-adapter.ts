@@ -54,6 +54,7 @@ import type {
   ObjectiveRelationV2,
   PracticeItemV2,
 } from "@ailearn/shared/card-generation-v2-contracts";
+import { PRE_RUN_REVEAL_COOLDOWN_MS } from "@ailearn/shared/card-generation-v2-contracts";
 import type {
   EvidenceBindingTargetUnitV2,
   EvidenceBindingRelationV2,
@@ -91,9 +92,13 @@ export interface TargetSnapshotInput {
 
 const DEFAULT_TARGET_SNAPSHOT_POLICY_VERSION = "learning-target-snapshot-v2.1";
 const DEFAULT_PRE_RUN_REVEAL_POLICY_VERSION = "pre-run-reveal-v1";
-/** 默认 cooldown：暴露过后的资格延后窗口（§21.3/§30.2）。 */
-const REVEAL_COOLDOWN_MS = 24 * 60 * 60 * 1000;
-/** same-cue reveal 判定窗口（§15.2 受控 Reveal 的近期判定）。 */
+// 资格延后的那段 cooldown 住在共享合同里（`PRE_RUN_REVEAL_COOLDOWN_MS`）：屏幕上那句
+// 「保存进卡组之后要等 24 小时」与落库那行都读同一份，这里不再抄第二份。
+/**
+ * same-cue reveal 判定窗口（§15.2 受控 Reveal 的近期判定）——**与上面那条冷却是两个概念**
+ * （一个问"这次曝光还算不算近期"，一个问"正式验证什么时候才有资格"），只是今天同为 24 小时。
+ * 别顺手并成一个数：并了以后改任一条都会悄悄改另一条。
+ */
 const RECENT_REVEAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** §16.1 的 server-private 冻结结果（含完整对象与公共投影）。 */
@@ -293,7 +298,7 @@ async function loadPlanningExposure(
 
   let qualificationNotBefore: string | null = null;
   if (lastRevealMs !== null) {
-    const coolDownEnd = lastRevealMs + REVEAL_COOLDOWN_MS;
+    const coolDownEnd = lastRevealMs + PRE_RUN_REVEAL_COOLDOWN_MS;
     qualificationNotBefore = new Date(coolDownEnd).toISOString();
   }
 

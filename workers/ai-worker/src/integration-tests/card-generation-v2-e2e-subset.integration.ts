@@ -1798,9 +1798,33 @@ test("C18：reveal 激活卡 → exposure-first（先持久化再返回答案）
 
   // C44（前置部分）：activation 创建 Initial Validation Reminder——它是 Reminder 不是 Schedule
   const reminders = await admin`
-    SELECT reminder_id, status FROM initial_validation_reminders_v2
+    SELECT reminder_id, status, policy_version, qualification_not_before, created_at FROM initial_validation_reminders_v2
     WHERE workspace_id = ${WORKSPACE_ID} AND objective_id = ${mapping.objectiveId}`;
   assert.ok(reminders.length >= 1, "C44 activation must create initial validation reminder");
+  // 这一发在激活前看过答案，所以提醒要按那份共享的冷却延后，并且要写明它凭的是哪条策略。
+  // 屏幕上那句「保存进卡组之后要等 24 小时…」读的是**同一个常量**，于是"界面说的"与
+  // "库里写的"分叉这件事终于有了会红的地方。
+  // 容差留 60 秒而不是 0：`created_at` 走的是 Postgres 的默认（事务时刻），
+  // `qualification_not_before` 是服务端 JS 那一刻加出来的数，两个钟本来就会差几毫秒到几秒——
+  // 写"正好相等"就是一条会随机红的断言。60 秒仍然抓得住真正的错法：有人把这一处退回写死的
+  // 12/48 小时，差的是小时级，不是秒级。
+  const { PRE_RUN_REVEAL_COOLDOWN_MS, PRE_RUN_REVEAL_POLICY_VERSION } = await import(
+    "../../../../packages/shared/src/card-generation-v2-contracts.ts"
+  );
+  const revealed = reminders[0] as {
+    status: string;
+    policy_version: string;
+    qualification_not_before: Date;
+    created_at: Date;
+  };
+  assert.equal(revealed.policy_version, PRE_RUN_REVEAL_POLICY_VERSION,
+    "提醒那行写的策略版本要与共享合同同一份（三处字面量刚收成一份）");
+  const reminderDelayMs = new Date(revealed.qualification_not_before).getTime()
+    - new Date(revealed.created_at).getTime();
+  assert.ok(
+    Math.abs(reminderDelayMs - PRE_RUN_REVEAL_COOLDOWN_MS) < 60_000,
+    `看过答案之后的延后量应是那份共享冷却（实际 ${Math.round(reminderDelayMs / 1000)} 秒）`,
+  );
   assert.ok(reminders.every((r) => r.status === "pending" || r.status === "deferred"),
     `C44 reminder must be pending/deferred (got ${reminders.map((r) => r.status).join(",")})`);
   const schedAfterReveal = await admin`

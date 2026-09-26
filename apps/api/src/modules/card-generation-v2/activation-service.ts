@@ -66,6 +66,7 @@ import {
   type PracticeItemV2,
 } from "@ailearn/shared/card-generation-v2-contracts";
 import { isCardGenerationReviewOpen } from "@ailearn/shared/card-generation-desktop-contracts";
+import { PRE_RUN_REVEAL_COOLDOWN_MS, PRE_RUN_REVEAL_POLICY_VERSION } from "@ailearn/shared/card-generation-v2-contracts";
 import { closePendingSchedules } from "./card-service.ts";
 import { extractAnswerText, frontLeaksAnswerVerbatimV2 } from "@ailearn/shared/card-generation-v2-pipeline";
 import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
@@ -1828,12 +1829,18 @@ async function createInitialValidationReminder(
     .limit(1);
 
   const hasRevealExposure = exposures.length > 0;
-  const policyVersion = "pre-run-reveal-policy-v1";
+  const policyVersion = PRE_RUN_REVEAL_POLICY_VERSION;
   const now = new Date();
 
-  // 未 reveal 时立即 ready；已 reveal 时按 cooldown 延后 24h
+  // 未 reveal 时立即 ready；已 reveal 时按那份共享的冷却延后（屏幕上那句「等 24 小时」说的就是它）。
+  // 这一支今天没有会红的读数：把延后量写死成 48 小时，整份 e2e 集测仍 33/33 绿（实测）。
+  // 机制上的解释是同一条路径上提醒已被 `reveal` 那一步建过 ⇒ 这里的 upsert 撞部分唯一索引
+  // 走 `DO NOTHING`，所以 `qualification_not_before` 真正落库的那一次出自
+  // `card-service.deferReminderOnReveal`（C18 那条对账钉的就是它，写死 48 小时会红）。
+  // 注意分清两件事：**量到的是"没有用例走到"，不是"走不到"**——要测它得先造"提醒已 completed
+  // 之后仍有曝光"的形状，那支夹具记在 39d §19 的欠账里。
   const qualificationNotBefore = hasRevealExposure
-    ? new Date(now.getTime() + 24 * 60 * 60 * 1000) // 24h cooldown
+    ? new Date(now.getTime() + PRE_RUN_REVEAL_COOLDOWN_MS)
     : now;
 
   const reminderId = randomUUID();
@@ -2126,7 +2133,7 @@ async function upsertDeferredReminder(
     ))
     .limit(1);
   const now = new Date();
-  const deferred = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const deferred = new Date(now.getTime() + PRE_RUN_REVEAL_COOLDOWN_MS);
   if (existing.length === 0) {
     await tx.insert(initialValidationRemindersV2).values({
       workspaceId,
@@ -2136,7 +2143,7 @@ async function upsertDeferredReminder(
       exposureScopeId: scopeId,
       qualificationNotBefore: deferred,
       lastExposureId: exposureId,
-      policyVersion: "pre-run-reveal-policy-v1",
+      policyVersion: PRE_RUN_REVEAL_POLICY_VERSION,
       status: "pending",
       reminderRevision: 1,
     });

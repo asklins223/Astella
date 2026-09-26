@@ -1284,6 +1284,19 @@ export type CardActivationReceiptV2 = z.infer<
 
 // ─── §17.6 Reveal 请求/响应 ──────────────────────────────────────────────
 
+/**
+ * 「激活前 reveal」这一条策略的两个数，一份出处（计划 §6.5）。
+ *
+ * 冷却时长以前散在三处服务端代码与三句屏幕话里（每句都自己写「24 小时」）：屏幕上那句
+ * 承诺的就是这个数，所以它不能只活在 api 里——渲染层与落库那一行都要读同一份，
+ * 否则「界面说 24 小时、库里写着别的」不会有任何一处变红。
+ * 策略版本号同理（三处字面量）。**注意**：`target-snapshot-adapter.ts` 里那句
+ * `DEFAULT_PRE_RUN_REVEAL_POLICY_VERSION = "pre-run-reveal-v1"` 是**另一个值**，
+ * 它落在目标快照的哈希闭包里，并它等于改历史快照的 hash，所以这一刀不并（现读登记在 39d §19）。
+ */
+export const PRE_RUN_REVEAL_POLICY_VERSION = "pre-run-reveal-policy-v1";
+export const PRE_RUN_REVEAL_COOLDOWN_MS = 24 * 60 * 60 * 1_000;
+
 export const revealCandidateRequestV2Schema = z
   .strictObject({
     candidateId: z.string().uuid(),

@@ -35,7 +35,11 @@ import { visibleCardsCondition } from "../note/visibility.ts";
 import { loadEvidencePreviewItems } from "./evidence-preview.ts";
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
 import { frontLeaksAnswerVerbatimV2 } from "@ailearn/shared/card-generation-v2-pipeline";
-import { cardStrategyV2Schema } from "@ailearn/shared/card-generation-v2-contracts";
+import {
+  PRE_RUN_REVEAL_COOLDOWN_MS,
+  PRE_RUN_REVEAL_POLICY_VERSION,
+  cardStrategyV2Schema,
+} from "@ailearn/shared/card-generation-v2-contracts";
 import {
   parseLearningCardRevealV2,
   parsePublicLearningCardV2,
@@ -58,8 +62,8 @@ import {
   type RunContext,
 } from "./helpers.ts";
 
-export const PRE_RUN_REVEAL_POLICY_VERSION = "pre-run-reveal-policy-v1";
-export const REVEAL_COOLDOWN_MS = 24 * 60 * 60 * 1000; // V1 默认 cooldown 24h（§6.5）
+// 「激活前reveal」的策略版本号与冷却时长住在共享合同里（渲染层那句"要等 24 小时"读同一份）；
+// 这里以前各存一份字面量，两处 24 小时可以各改各的。
 const PUBLIC_SERIALIZATION_POLICY = "public-serialization-v1";
 const EVIDENCE_PREVIEW_POLICY = "evidence-preview-v1";
 
@@ -978,7 +982,7 @@ async function deferReminderOnReveal(
     .limit(1);
 
   const now = new Date();
-  const deferred = new Date(now.getTime() + REVEAL_COOLDOWN_MS);
+  const deferred = new Date(now.getTime() + PRE_RUN_REVEAL_COOLDOWN_MS);
 
   if (existing.length === 0) {
     const reminderId = randomUUID();

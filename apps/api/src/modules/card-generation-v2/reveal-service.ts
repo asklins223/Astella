@@ -15,6 +15,7 @@ import {
 import {
   parseCandidateRevealV2,
   type CandidateRevealV2,
+  PRE_RUN_REVEAL_POLICY_VERSION,
 } from "@ailearn/shared/card-generation-v2-contracts";
 import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
 import { loadEvidencePreviewItems } from "./evidence-preview.ts";
@@ -162,7 +163,7 @@ export async function revealCandidateV2(
       userId: ctx.userId,
       candidateRevisionId: candidate.candidateRevisionId,
       candidateRevisionHash: candidate.candidateRevisionHash,
-      revealPolicyVersion: "pre-run-reveal-policy-v1",
+      revealPolicyVersion: PRE_RUN_REVEAL_POLICY_VERSION,
     });
 
     await tx.insert(cardExposureLedgerV2).values({

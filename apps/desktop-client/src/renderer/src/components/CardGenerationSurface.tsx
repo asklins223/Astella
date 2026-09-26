@@ -11,6 +11,14 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { PRE_RUN_REVEAL_COOLDOWN_MS } from "@ailearn/shared/card-generation-v2-contracts";
+
+/**
+ * 屏幕上那三句「要等 24 小时」的小时数**不写第二份**：它是服务端那条资格冷却的换算，
+ * 常量在共享合同里（落库那行 `qualification_not_before` 读的也是同一份）。
+ * 改那个数会让屏幕与库里一起改；只改屏幕的字面量则会让两句分叉——所以这里没得选。
+ */
+const revealCooldownHours = Math.round(PRE_RUN_REVEAL_COOLDOWN_MS / 3_600_000);
 import type {
   CardActivationReceiptDesktopV1,
   CardGenerationCandidateV1,
@@ -174,7 +182,7 @@ function firstValidationLabel(exposure: CardGenerationExposureEligibilityV1 | nu
     // 这里说代价，不说术语：审核人真正要决定的是"要不要现在看答案"，
     // 代价是激活之后这张卡要等一天才能正式验证（复盘 #9）。
     case "eligible": return "保存进卡组后马上能正式验证";
-    case "wait_for_initial_validation": return "答案看过了：保存进卡组后要等 24 小时才能正式验证";
+    case "wait_for_initial_validation": return `答案看过了：保存进卡组后要等 ${revealCooldownHours} 小时才能正式验证`;
     default: return "还没读到结果";
   }
 }
@@ -1152,7 +1160,7 @@ export function CardGenerationSurface() {
                           ))}
                         </ul>
                       ) : <p className="small">这次候选没有附带可展示的来源片段。</p>}
-                      <p className="small">答案已经看过。这张卡保存进卡组之后要等 24 小时才能开始正式首次验证（这段时间随时可以练，只是不计入正式状态）；右侧「首次验证」会写明它的影响。</p>
+                      <p className="small">{`答案已经看过。这张卡保存进卡组之后要等 ${revealCooldownHours} 小时才能开始正式首次验证（这段时间随时可以练，只是不计入正式状态）；右侧「首次验证」会写明它的影响。`}</p>
                     </section>
                   ) : null}
                   {revealFailure ? (
@@ -1171,10 +1179,10 @@ export function CardGenerationSurface() {
                       type="button"
                       className="button"
                       disabled={revealing}
-                      title="先看过答案再决定保不保留。代价要说在前面：这张卡保存进卡组之后要等 24 小时才能做正式首次验证，期间只能练习。"
+                      title={`先看过答案再决定保不保留。代价要说在前面：这张卡保存进卡组之后要等 ${revealCooldownHours} 小时才能做正式首次验证，期间只能练习。`}
                       onClick={() => void revealCandidate(activeCandidate)}
                     >
-                      <Eye size={14} aria-hidden="true" />{revealing ? "正在读取答案…" : "查看答案与证据 · 首次验证延后 24 小时"}
+                      <Eye size={14} aria-hidden="true" />{revealing ? "正在读取答案…" : `查看答案与证据 · 首次验证延后 ${revealCooldownHours} 小时`}
                     </button>
                   ) : null}
                   {reviewOpen && isActionableUndecidedCandidate(activeCandidate) && rejectingId !== activeCandidate.candidateId ? (
