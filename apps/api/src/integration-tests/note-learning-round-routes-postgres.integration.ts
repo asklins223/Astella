@@ -677,3 +677,64 @@ test("读这一轮：这一篇后来又保存过一版时，回信里要说得�
   await closeOn(created.roundId as string, created.revision as number);
 });
 
+/**
+ * 「按当前内容新开一轮」（PRD §4.3 后半件）：封存旧的那一条与新建这一条是**一发事务**，
+ * 所以要一起钉三件事——旧轮进了终态且只读、新轮冻的是**现在这一版**、以及钥匙不对时
+ * **旧轮一点没动**（原子性；分开两次调用就正好漏掉这一格）。
+ */
+test("另起一轮：旧的那一条封存成 superseded，新的那一条冻住现在这一版，问题沿用", async () => {
+  const old = await createOne("索引为什么还可能让查询变慢");
+  const versionB = randomUUID();
+  await fixtureSql`INSERT INTO note_versions
+      (id, note_id, workspace_id, version_no, content_json, content_hash, created_by)
+    VALUES (${versionB}, ${noteA}, ${workspaceId}, 4243,
+      ${fixtureSql.json({ blocks: [{ type: "paragraph", content: "后来补的那一段" }] })},
+      'reopened-current', ${userId})`;
+  await fixtureSql`UPDATE notes SET current_version_id = ${versionB} WHERE id = ${noteA}`;
+  try {
+    const reopened = noteLearningRoundViewV1Schema.parse(body(await call(
+      "POST", `/v2/note-learning-rounds/${old.roundId as string}/reopen`,
+      { expectedRevision: old.revision as number },
+    )) as never);
+    assert.notEqual(reopened.round.roundId, old.roundId, "另起一轮必须是新的一条，不是在旧行上覆盖");
+    assert.equal(reopened.round.phase, "active");
+    assert.equal(reopened.round.drivingQuestion, old.drivingQuestion, "这一发改的是正文那一版，不是问题");
+    assert.equal(reopened.round.noteVersionId, versionB, "新轮必须冻在当前那一版上");
+    assert.equal(reopened.contentMoved, false, "刚按当前内容开的这一轮，不该一上来就说动过");
+
+    // 旧的那一条：进了终态、原因写的是被取代，且仍读得到（历史不重写）。
+    const oldRows = (await fixtureSql`
+      SELECT phase, outcome, closed_at IS NOT NULL AS closed FROM note_learning_rounds WHERE id = ${old.roundId as string}
+    `) as unknown as Array<{ phase: string; outcome: string | null; closed: boolean }>;
+    assert.equal(oldRows.length, 1);
+    assert.equal(oldRows[0]!.phase, "closed");
+    assert.equal(oldRows[0]!.outcome, "superseded", "被新开那一轮替掉，原因要说得出是 superseded");
+    assert.equal(oldRows[0]!.closed, true);
+    // 每篇每人只能有一条未完成的：新轮回读拿到的必须是**新**的那一条，旧的那条不再占名额。
+    const got = await call("GET", `/v2/notes/${noteA}/learning-round`);
+    assert.equal(got.statusCode, 200);
+    assert.equal(noteLearningRoundViewV1Schema.parse(body(got) as never).round.roundId,
+      reopened.round.roundId);
+  } finally {
+    await fixtureSql`UPDATE notes SET current_version_id = ${versionA} WHERE id = ${noteA}`;
+    await fixtureSql.begin(async (tx) => {
+      await tx`SELECT set_config('app.allow_history_mutation', 'on', true)`;
+      await tx`DELETE FROM note_versions WHERE id = ${versionB}`;
+    });
+  }
+});
+
+test("另起一轮：钥匙不对时旧轮一点没动（这两步是一发事务，不是两次调用）", async () => {
+  const open = await createOne("原子性这一格要有出处");
+  const stale = await call("POST", `/v2/note-learning-rounds/${open.roundId as string}/reopen`, {
+    expectedRevision: (open.revision as number) + 7,
+  });
+  assert.equal(stale.statusCode, 409, `钥匙不对必须被 CAS 挡回来：${stale.statusCode} ${stale.body}`);
+  const same = noteLearningRoundViewV1Schema.parse(
+    body(await call("GET", `/v2/notes/${noteA}/learning-round`)) as never,
+  );
+  assert.equal(same.round.roundId, open.roundId, "回滚之后手上这一条还得是原来那一条");
+  assert.equal(same.round.revision, open.revision, "封存在回滚里没发生：revision 不该前进");
+  assert.equal(same.round.phase, "active");
+});
+

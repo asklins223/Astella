@@ -613,6 +613,12 @@ const noteLearningRoundCloseInputSchema = z.strictObject({
 });
 // 「继续这一轮」：动作那一格不给界面填——这一发只可能是 resume，摆得出 pause 的入口
 // 就是那颗还没接的「暂停」按钮（§16.39 的活跃度判据没出处），本机先不收这个形状。
+// 「按当前内容新开一轮」同样只交 CAS 钥匙：正文那一版由服务端读，界面无从伪造。
+const noteLearningRoundReopenInputSchema = z.strictObject({
+  ...m1InputBase,
+  roundId: uuidSchema,
+  expectedRevision: z.number().int().min(1),
+});
 const noteLearningRoundResumeInputSchema = z.strictObject({
   ...m1InputBase,
   roundId: uuidSchema,
@@ -2960,6 +2966,15 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
 
   // 恢复那一发的出口过的是教学面那一份合同（不是光一行轮次）：网关在推进之后接着读回
   // 服务端那一份，界面拿到的就是屏上要摆的那一块，两边不可能拼出两个版本。
+  installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundReopen, noteLearningRoundReopenInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.reopenNoteLearningRound({
+      roundId: input.roundId,
+      expectedRevision: input.expectedRevision,
+    }, input.meta.requestId);
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundViewV1Schema);
+
   installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundResume, noteLearningRoundResumeInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "note.detail");
     assertEpoch(input.meta, activeWorkspaceEpoch);

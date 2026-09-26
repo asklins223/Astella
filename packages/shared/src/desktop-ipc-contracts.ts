@@ -341,6 +341,7 @@ export const DESKTOP_IPC_CHANNELS = {
   noteLearningRoundOpen: "ailearn.v1.noteLearningRound.open",
   noteLearningRoundCreate: "ailearn.v1.noteLearningRound.create",
   noteLearningRoundRevise: "ailearn.v1.noteLearningRound.revise",
+  noteLearningRoundReopen: "ailearn.v1.noteLearningRound.reopen",
   noteLearningRoundResume: "ailearn.v1.noteLearningRound.resume",
   noteLearningRoundClose: "ailearn.v1.noteLearningRound.close",
   // 这一篇的轮次记录（PRD §10.3 的读侧第一刀）。单开一发而不是塞进 `open`：
@@ -2415,6 +2416,13 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
      */
     open(input: { meta: RequestMetaV1; noteId: Uuid }): Promise<
       GatewayResultV1<z.infer<typeof noteLearningRoundViewV1Schema> | null>
+    >;
+    /**
+     * 「按当前内容新开一轮」：只交一把 CAS 钥匙，回的是新那一轮的信封
+     * （正文那一版、预算、本轮问题都由服务端自己取，见 D1 §3 那行 superseded 转移）。
+     */
+    reopen(input: { meta: RequestMetaV1; roundId: Uuid; expectedRevision: number }): Promise<
+      GatewayResultV1<z.infer<typeof noteLearningRoundViewV1Schema>>
     >;
     create(input: {
       meta: RequestMetaV1;

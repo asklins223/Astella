@@ -278,12 +278,14 @@ export const ROUND_COPY = {
    * 恢复不需要「暂停」那颗欠的那道活跃度判据——它是用户明确的动作。
    */
   resume: "继续这一轮",
+  reopenWithCurrent: "按当前内容新开一轮",
   /**
    * 这一轮冻的正文后来又保存过一版。与教学面那句 `teaching.staleVersion`（依据不再在这里定位）
    * 不是一句话，也与笔记页那颗"有内容更新"的徽标不是一句话（D3 §5.1 后果②：徽标说内容，这句说这一轮）。
    */
   contentMoved: "这一轮当时用的正文，这一篇后来又保存过一版。",
   resuming: "正在继续…",
+  reopening: "正在另起一轮…",
   /**
    * 迟到的那一句那三格（§16.39）。措辞按伴星那条口径走：说**这一发没进去**这个事实，
    * 不报"服务端版本号"这类她用不上的字，也不把她那句写成"作废"——它只是没交上去。
@@ -391,7 +393,7 @@ export function roundPracticeStateLabelV1(practice: Pick<RoundPracticeV1, "phase
  * （那颗提交按钮、教学面那几颗、输入框）的禁用判据是"这一块的某一发在途"——分成两份
  * 状态就会有一处忘了判，症状是"点两下发出两发"。
  */
-export type RoundBusyV1 = "start" | "revise" | "end" | "resume" | null;
+export type RoundBusyV1 = "start" | "revise" | "end" | "resume" | "reopen" | null;
 
 export function roundSubmitLabelV1(
   busy: RoundBusyV1,
@@ -1484,7 +1486,37 @@ export function NotebookSurface() {
     }
   };
 
-  /**
+    /**
+   * 「按当前内容新开一轮」（PRD §4.3 后半件，紧接上面那句「后来又保存过一版」）。
+   *
+   * 封存手上这一条与新建那一条在**服务端同一发事务**里做完：分两发调用会留下
+   * "旧的已封存、新的没建成"那个窗口，用户看到的是这一轮凭空没了。
+   * 与「继续这一轮」同一形状：带 CAS 钥匙、成功后 silent 回读、失败也回读一次。
+   * 只有上一行真的报了"动过"才摆这一颗——没问题时报这句话，就是无端的第二次确认。
+   */
+  const reopenNoteRound = async () => {
+    const api = desktopApi();
+    if (!api || !openRound || roundBusy) return;
+    setRoundBusy("reopen");
+    setRoundFailure(null);
+    try {
+      const response = await api.noteLearningRound.reopen({
+        meta: createRequestMeta(epochRef.current),
+        roundId: openRound.roundId,
+        expectedRevision: openRound.revision,
+      });
+      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+      unwrapGatewayResult(response);
+      await reload({ silent: true });
+    } catch (error) {
+      setRoundFailure(gatewayErrorMessage(error));
+      await reload({ silent: true });
+    } finally {
+      setRoundBusy(null);
+    }
+  };
+
+/**
    * 「先讲讲这一节」：让服务端生成这一轮当前问题下的一条解释（W4-6 刀二）。
    *
    * 三件事刻意与别的写动作同一形状：①带 `expectedRevision`——两发之间问题被改写或
@@ -2239,6 +2271,19 @@ export function NotebookSurface() {
                 {/* 只有**停住**的那一轮摆这一颗（phase 读的是服务端那一行，不是本机猜的）。
                     放在同一行里而不是另起一块：这一行本来就是"选一条"（`flex-wrap: wrap`），
                     窄屏换行，它不与「先到这里」抢位置——那两颗都是这一轮的出口。 */}
+                {/* 上一行报了「后来又保存过一版」才摆这一颗（§4.3 那两个选择里的后一个）；
+                    没报过就不出现——没有问题的时候报这句话，等于无端要人再确认一次。 */}
+                {openRoundContentMoved ? (
+                  <button
+                    type="button"
+                    className="button"
+                    data-round-reopen-current="true"
+                    disabled={roundBusy !== null}
+                    onClick={() => { void reopenNoteRound(); }}
+                  >
+                    {roundBusy === "reopen" ? ROUND_COPY.reopening : ROUND_COPY.reopenWithCurrent}
+                  </button>
+                ) : null}
                 {openRound.phase === "paused" ? (
                   <button
                     type="button"

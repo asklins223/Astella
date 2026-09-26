@@ -45,6 +45,7 @@ import {
   noteLearningRoundV1Schema,
   noteLearningRoundViewV1Schema,
   noteRoundContentMovedV1,
+  reopenNoteLearningRoundRequestV1Schema,
   reviseDrivingQuestionRequestV1Schema,
   roundGapHelpV1Schema,
   roundPracticeStartV1Schema,
@@ -67,6 +68,7 @@ import {
   readRoundHistoryFactsV1,
   listPlanRevisions,
   readNoteCurrentSourceHashV1,
+  reopenRoundWithCurrentContent,
   readOpenRound,
   readRound,
   readRoundArtifactHtml,
@@ -350,6 +352,42 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
         advanceRound(tx, scope, { roundId, expectedRevision: parsed.data.expectedRevision, action: parsed.data.action })));
     } catch (err) {
       return replyRoundError(reply, err, "推进这一轮没成功", (tx, s) => readRound(tx, s, roundId));
+    }
+  });
+
+  /**
+   * 「按当前内容新开一轮」（PRD §4.3 后半件）。封存旧的那一条与新建这一条在**同一发事务**里，
+   * 失败整体回滚——分开两次就会有一个窗口"旧轮已封存、新轮没建成"，用户看到的是那一轮没了。
+   * 回信是新那一轮的信封：界面拿它的 `round` 换掉手上那一条，`contentMoved` 也随之回到 false。
+   */
+  app.post("/v2/note-learning-rounds/:roundId/reopen", async (req, reply) => {
+    const roundId = (req.params as { roundId?: string }).roundId ?? "";
+    const parsed = reopenNoteLearningRoundRequestV1Schema.safeParse(req.body ?? {});
+    if (!z.string().uuid().safeParse(roundId).success || !parsed.success) {
+      return reply.code(400).send({ error: "invalid_request", message: "另起一轮需要的字段不对" });
+    }
+    const scope = scopeOf(req);
+    try {
+      return await withWorkspaceTransaction(scope, async (tx) => {
+        const current = await readRound(tx, scope, roundId);
+        if (!current) {
+          throw new RoundServiceError("round_not_found", "这一轮读不到（不是你的，或已经没有了）");
+        }
+        const found = await getNoteWithVersion(tx, current.noteId, scope.workspaceId, scope.userId);
+        if (!found) {
+          throw new RoundServiceError("note_not_found", "这一篇笔记现在读不到（不存在、不可见或已被收起）");
+        }
+        const { reopened } = await reopenRoundWithCurrentContent(tx, scope, {
+          roundId,
+          expectedRevision: parsed.data.expectedRevision,
+          noteVersionId: found.version.id,
+          sourceContentHash: found.version.contentHash,
+          budgets: roundBudgetsV1(),
+        });
+        return roundViewWire(tx, scope, reopened);
+      });
+    } catch (err) {
+      return replyRoundError(reply, err, "按当前内容另起一轮没成功", (tx, s) => readRound(tx, s, roundId));
     }
   });
 

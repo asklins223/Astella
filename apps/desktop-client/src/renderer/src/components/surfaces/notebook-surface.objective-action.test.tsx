@@ -31,6 +31,8 @@ const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 const VERSION_ID = "22222222-4222-4222-8222-222222222222";
 const OBJECTIVE_ID = "33333333-4333-4333-8333-333333333333";
 const RUN_ID = "44444444-4444-4444-8444-444444444444";
+// 另起一轮那一条的 id：用例要分清"屏上换成了新那一条"与"还是手上那一条"。
+const REOPENED_ROUND_ID = "77777777-4777-4777-8777-777777777777";
 
 const ok = <T,>(data: T) => ({ ok: true as const, workspaceEpoch: 1, data });
 
@@ -78,6 +80,7 @@ type Api = {
     history: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     revise: ReturnType<typeof vi.fn>;
+    reopen: ReturnType<typeof vi.fn>;
     resume: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
     teaching: ReturnType<typeof vi.fn>;
@@ -246,6 +249,13 @@ function installApi(
           gapHelp: options.gapHelp ?? { stopped: false, consecutiveHelpCount: 0, threshold: 2 },
           artifact: null,
         }))),
+      // 另起一轮那一发的回信是**新那一轮的信封**（与 `open` 同形，`contentMoved` 回到 false）：
+      // 服务端在同一发事务里封存旧的、按当前正文建新的，界面无从参与那一版是哪一版。
+      reopen: vi.fn(async () => ok({
+        version: 1 as const,
+        round: roundRow({ roundId: REOPENED_ROUND_ID, noteVersionId: "66666666-4666-4666-8666-666666666666" }),
+        contentMoved: false,
+      })),
       close: vi.fn(async () => ok(roundRow({ phase: "closed", outcome: "partial", revision: 2, closedAt: "2026-09-26T05:00:00.000Z" }))),
     },
     note: {
@@ -706,6 +716,25 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
    * 「正在改写…」，而改写真的在跑时写着「正在开始…」。两档各钉一条，且必须同一条用例里
    * 钉（只看空闲那一半，"把两个标签对调"这种改法照样绿）。
    */
+  it("那一行报了「后来又保存过一版」：旁边摆得出「按当前内容新开一轮」，带的是手上这一条的 revision", async () => {
+    const open = roundRow({ drivingQuestion: "索引为什么还是慢", revision: 3 });
+    const { api, roundBlock } = await show([], { openRound: open, contentMoved: true });
+    const button = roundBlock()!.querySelector("[data-round-reopen-current]") as HTMLButtonElement | null;
+    expect(button).not.toBeNull();
+    fireEvent.click(button!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.noteLearningRound.reopen.mock.calls[0][0]).toMatchObject({
+      roundId: open.roundId,
+      expectedRevision: 3,
+    });
+    // 点过之后屏上是**服务端读回来的那一条**（silent 回读）：这一发不拿回执自己拼状态。
+    expect(api.noteLearningRound.open).toHaveBeenCalledTimes(2);
+
+    // 没报那一行时这颗不出现：没有问题就报这句话，等于无端要人再确认一次。
+    const quiet = await show([], { openRound: open });
+    expect(quiet.roundBlock()!.querySelector("[data-round-reopen-current]")).toBeNull();
+  });
+
   it("这一轮冻的正文后来又保存过一版：那一行要说出来，没动时一个字不多", async () => {
     const open = roundRow({ drivingQuestion: "为什么有索引还是慢", revision: 2 });
     const moved = await show([], { openRound: open, contentMoved: true });

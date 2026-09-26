@@ -130,6 +130,17 @@ export type CreateNoteLearningRoundRequestV1 = z.infer<
   typeof createNoteLearningRoundRequestV1Schema
 >;
 
+/**
+ * 「按当前内容新开一轮」那一发的请求体。只要一把 CAS 钥匙：本轮问题、正文那一版、
+ * 预算都由服务端自己取（客户端不交任何内容字段，也就没有任何一格可被伪造）。
+ */
+export const reopenNoteLearningRoundRequestV1Schema = z.strictObject({
+  expectedRevision: z.number().int().min(1),
+});
+export type ReopenNoteLearningRoundRequestV1 = z.infer<
+  typeof reopenNoteLearningRoundRequestV1Schema
+>;
+
 export const advanceNoteLearningRoundRequestV1Schema = z.strictObject({
   expectedRevision: z.number().int().min(1),
   action: z.discriminatedUnion("kind", [

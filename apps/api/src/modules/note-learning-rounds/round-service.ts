@@ -168,6 +168,48 @@ export function isRoundOpenIndexViolation(err: unknown): boolean {
 const ROUND_OPEN_INDEX = "nlr_ws_user_note_open_unique";
 
 /** 归属三件套 + 那份快照引用都不在这里出现：它们**不可改写**（0282 的触发器），服务也不提供入口。 */
+/**
+ * 「按当前内容新开一轮」那一发（PRD §4.3 的后半件，D1 §3 那行
+ * `active/paused → closed(superseded) + 新轮 active`）。
+ *
+ * 两件事**必须在同一发事务里**：D1 §2 写的是"旧轮必须先落到终态，新轮才建得出来"，
+ * 而这条由那条"每人每篇一条未完成轮次"的唯一索引兜着——分开两次调用就会有一个窗口
+ * 旧轮已封存、新轮没建成（用户看到的是"我那一轮没了"）。任何一步失败整体回滚，
+ * 旧轮还停在原处、revision 也没动。
+ *
+ * 新轮沿用**同一个本轮问题**与它的来源：这一发换的是**正文那一版**，不是问题；
+ * 想同时换问题是另一发（`driving-question` 那一发改的是新开出来的那一条）。
+ */
+export async function reopenRoundWithCurrentContent(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  input: {
+    roundId: string;
+    expectedRevision: number;
+    noteVersionId: string;
+    sourceContentHash: string;
+    /** 预算由调用方签发（与 `createRound` 同一形状：服务层不自己拿那份常量）。 */
+    budgets: RoundBudgetsV1;
+  },
+  now: Date = new Date(),
+): Promise<{ superseded: NoteLearningRoundV1; reopened: NoteLearningRoundV1 }> {
+  const superseded = await advanceRound(tx, scope, {
+    roundId: input.roundId,
+    expectedRevision: input.expectedRevision,
+    action: { kind: "close", outcome: "superseded" },
+  }, now);
+  const reopened = await createRound(tx, scope, {
+    noteId: superseded.noteId,
+    noteVersionId: input.noteVersionId,
+    sourceContentHash: input.sourceContentHash,
+    evidenceSnapshotIds: [],
+    drivingQuestion: superseded.drivingQuestion,
+    drivingQuestionSource: superseded.drivingQuestionSource,
+    budgets: input.budgets,
+  }, now);
+  return { superseded, reopened };
+}
+
 export async function createRound(
   tx: ApiTransaction,
   scope: RoundScopeV1,

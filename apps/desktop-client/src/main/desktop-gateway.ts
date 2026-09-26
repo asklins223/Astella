@@ -2153,6 +2153,20 @@ export class DesktopGateway {
     requestId?: string,
     method: "POST" | "PATCH" = "POST",
   ): Promise<NoteLearningRoundV1Wire> {
+    return (await this.postNoteLearningRoundView(path, payload, requestId, method)).round;
+  }
+
+  /**
+   * 「按当前内容新开一轮」那一发要的是**整个信封**（新轮冻的正文就是现在这一版，
+   * `contentMoved` 必须当场回到 false），所以拆信封这一步单独成一个出口，
+   * 上面那两条写路径从它身上取 `.round`——一份解析，不会有一处忘了拆。
+   */
+  async postNoteLearningRoundView(
+    path: string,
+    payload: Record<string, unknown>,
+    requestId?: string,
+    method: "POST" | "PATCH" = "POST",
+  ): Promise<NoteLearningRoundViewV1> {
     await this.ensureConnected(requestId);
     const result = await this.request(
       path,
@@ -2167,7 +2181,19 @@ export class DesktopGateway {
     );
     const parsed = noteLearningRoundViewV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data.round;
+    return parsed.data;
+  }
+
+  /** 封存手上这一条并按**当前已保存的那一版**另起一轮（PRD §4.3 后半件）。 */
+  async reopenNoteLearningRound(
+    input: { roundId: string; expectedRevision: number },
+    requestId?: string,
+  ): Promise<NoteLearningRoundViewV1> {
+    return this.postNoteLearningRoundView(
+      `/v2/note-learning-rounds/${this.safeUuid(input.roundId)}/reopen`,
+      { expectedRevision: input.expectedRevision },
+      requestId,
+    );
   }
 
   /**
