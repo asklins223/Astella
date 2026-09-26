@@ -10,6 +10,7 @@ import { HudPage } from "../hud/HudPage";
 import { HudPicker } from "../hud/HudControls";
 import { useHudPage } from "../hud/use-hud-page";
 import { usePageReadableView } from "../hud/use-page-readable-view";
+import { freshnessLabel } from "./objective-state-copy";
 import { HUD_PAGES } from "../hud/hud-pages";
 import { SurfaceDataState, formatRelative, readAuthenticatedSession, useSurfaceProjection } from "./surface-data";
 
@@ -178,8 +179,17 @@ function previewParagraphs(preview: SearchPreview, query: string): string[] {
 function previewGap(preview: SearchPreview): string | null {
   if (preview.kind === "objective") {
     if (preview.detail.sources.missingOrigin) return "这条目标还没有出处，结论暂时追不回材料。";
-    if (preview.detail.content.freshness === "source_outdated") return "这条目标的来源已经过期，需要重新核对。";
-    if (preview.detail.content.freshness === "legacy_unreviewed") return "这条目标还未按当前来源核验过，结论可能已经漂移。";
+    /**
+     * 那两格**状态名一律取 `freshnessLabel` 那一份**，后半句才是搜索这一面自己的话。
+     * 同一个服务端值在笔记页说「来源已有更新」、在这里说「来源已经过期」，
+     * 是 `objective-state-copy` 这个模块存在时要拦的那一件事（它的注释写的就是这种形状）。
+     */
+    if (preview.detail.content.freshness === "source_outdated") {
+      return `${freshnessLabel(preview.detail.content.freshness)}——这一条要重新核对。`;
+    }
+    if (preview.detail.content.freshness === "legacy_unreviewed") {
+      return `${freshnessLabel(preview.detail.content.freshness)}——这条目标的结论可能已经漂移。`;
+    }
     if (preview.detail.personal.initialValidation?.status === "deferred") return "初次验证被推迟，证据仍待补齐。";
     return null;
   }

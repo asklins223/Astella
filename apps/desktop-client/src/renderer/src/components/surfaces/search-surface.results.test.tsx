@@ -16,6 +16,7 @@
 import { StrictMode } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { GatewayResultV1, SessionContextV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import { learningObjectiveSurfaceV3Schema } from "@ailearn/shared/learning-objective-surface-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../../app/room-store";
 import { SearchSurface } from "./search-surface";
@@ -68,7 +69,7 @@ function serverPage() {
   return { items, total: items.length, nextCursor: null };
 }
 
-function installApi() {
+function installApi(objectiveDetail?: unknown) {
   const calls: string[] = [];
   const api = {
     auth: { getState: vi.fn(async () => ok(session())) },
@@ -89,7 +90,10 @@ function installApi() {
       })),
     },
     source: { get: vi.fn() },
-    objective: { get: vi.fn(), list: vi.fn(async () => ok({ items: [], total: 0, nextCursor: null })) },
+    objective: {
+      get: vi.fn(async () => ok(objectiveDetail ?? {})),
+      list: vi.fn(async () => ok({ items: [], total: 0, nextCursor: null })),
+    },
   };
   Object.defineProperty(window, "ailearn", { configurable: true, value: api });
   return { api, calls };
@@ -134,5 +138,86 @@ describe("全局搜索 · 界面必须与服务端同一页同量", () => {
     expect(within(list).getByText("5 / 5 条")).toBeTruthy();
     // 三个键只发一条：同参发两条会让响应归属参与竞争（审计日志里的读数）。
     expect(calls).toEqual(["TTS"]);
+  });
+});
+
+const OBJECTIVE_ID = "55555555-5555-4555-8555-555555555555";
+const RUN_ID = "66666666-6666-4666-8666-666666666666";
+
+/** 走 schema.parse：夹具与合同一旦漂移，红在这里而不是红在页面上。 */
+function objectiveDetail(
+  freshness: "fresh" | "source_outdated" | "legacy_unreviewed",
+) {
+  return learningObjectiveSurfaceV3Schema.parse({
+    version: 3,
+    objectiveId: OBJECTIVE_ID,
+    surfaceRevision: 1,
+    lifecycleEpoch: 1,
+    content: {
+      conceptLabel: "理解 TTS",
+      publicSummary: "语音合成把文本转成可播放的波形。",
+      knowledgeForm: "fact",
+      cardStrategy: "why",
+      lifecycle: "active",
+      freshness,
+      presentation: { cardId: null, cardRevision: null, publicationRevision: null },
+      sourceLabel: null,
+    },
+    sources: { origins: [], primaryNote: null, missingOrigin: false },
+    personal: {
+      initialValidation: null,
+      activeRun: { runId: RUN_ID, phase: "checkpoint" },
+      review: null,
+      practiceTrailCount: 0,
+      lastCanonicalAt: null,
+    },
+    personalState: { state: "learning", activeRunId: RUN_ID },
+    lifecycle: { status: "active", successorObjectiveId: null },
+    primaryAction: { kind: "resume_run", runId: RUN_ID, objectiveId: OBJECTIVE_ID },
+    createdAt: "2026-08-16T09:00:00.000Z",
+    updatedAt: "2026-08-16T10:00:00.000Z",
+  });
+}
+
+/**
+ * 同一个服务端值只准一套词（39d D3 刀一·附 那条规则的第三个读者）。
+ *
+ * `objective-state-copy.freshnessLabel` 的注释写的就是这种形状：笔记页要附那枚徽标时，
+ * 如果每块屏各写一句，同一个 `freshness` 就会在两块屏上说两个词。搜索这一面此前正是
+ * 第二份词（「来源已经过期」对笔记页的「来源已有更新」）。
+ * 三条一起给：两个说法各自的状态名要跟服务端那一格同源，而 `fresh` 那一档**不该有这一行**
+ * ——少了反向那一条，"出现了"可以是任何东西让它出现。
+ */
+describe("全局搜索 · 缺口那一句的状态名与笔记页同源", () => {
+  async function openObjectivePreview(
+    freshness: "fresh" | "source_outdated" | "legacy_unreviewed",
+  ) {
+    installApi(objectiveDetail(freshness));
+    render(<StrictMode><SearchSurface /></StrictMode>);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "TTS" } });
+    const list = await screen.findByRole("listbox", { name: "搜索结果" });
+    const row = [...list.querySelectorAll("[role='option']")]
+      .find((element) => element.textContent?.includes("理解 TTS"));
+    if (!row) throw new Error("搜索结果里没有那条目标这一行（列表形状变了）");
+    fireEvent.click(row);
+    await waitFor(() => expect(window.ailearn.objective.get).toHaveBeenCalled());
+    return document.querySelectorAll(".margin-note");
+  }
+
+  it("来源已有更新那一档：状态名取共享那一份，后半句才是搜索自己的话", async () => {
+    const notes = await openObjectivePreview("source_outdated");
+    expect(notes).toHaveLength(1);
+    expect(notes[0].textContent).toBe("缺口来源已有更新——这一条要重新核对。");
+  });
+
+  it("旧来源待复核那一档：同样不另起一个词", async () => {
+    const notes = await openObjectivePreview("legacy_unreviewed");
+    expect(notes).toHaveLength(1);
+    expect(notes[0].textContent).toBe("缺口旧来源待复核——这条目标的结论可能已经漂移。");
+  });
+
+  it("对照：来源最新时，这一行一个字都不说", async () => {
+    const notes = await openObjectivePreview("fresh");
+    expect(notes).toHaveLength(0);
   });
 });
