@@ -269,3 +269,136 @@ test("边界依赖的那两样还在：部分唯一索引（schema＋迁移）�
   assert.ok(throwsWhenReadBackMisses(boundary),
     "边界丢了「冲突后回读不到就抛」那一档：那时它会安静交回一个猜出来的 id");
 });
+
+/**
+ * 下面这半数是另一件事：**唯一键带着 `review_dimension`，而读侧几乎都不认识这一维。**
+ *
+ * 0287 那把部分唯一索引的键是（空间、人、主体、维度），也就是"同一个目标可以同时挂着
+ * 两条待处理安排，只要维度不同"。今天没有一处调用方传过非空维度（下面第三条判据把这句话
+ * 钉住），所以这个口子是空的、无害的。但它是**W7-5 的杠杆**（"一次作答可关联多个合格目标、
+ * 每目标同一次日程最多提交一次"要靠这一维表达）。那一天到来时，如果读侧还按"一个目标一条
+ * 待处理"来读，症状会很 nasty：`count()` 那几处会重复计数（今日积压、首页那几个数），
+ * 队列那几处会挑错一条或挑两条，屏幕上就会出现"同一目标两个都到期"。
+ *
+ * 所以这里把 19 处"还不认维度"的读点逐文件登记成台账（新增读点、或某处改好了不清单，
+ * 两个方向都会红），并把"第一次有人传非空维度"做成一枚**触发器**：那一发会红，
+ * 红就是让那个人在同一批里处理读侧，而不是等线上出现两个数对不上。
+ */
+
+/**
+ * 读这张表的一处：它带没带维度判据。
+ *
+ * 窗口只到**这一条语句结束**（第一个 `;`，或下一处 `.from(`）为止，不是固定往后取若干字符：
+ * 第一版取 700 字符，于是同一文件里紧邻的两处读点会互相污染——前一处不筛维度的读，
+ * 因为窗口里捞到了后一处的 `reviewSchedules.reviewDimension` 被判成"认得维度"，
+ * 台账就这么少记一处（真造探针时才发现，见下面那条"邻近的第二处不许污染前一处"的用例）。
+ */
+function readSitesIn(file: string, source: string): Array<{ file: string; dimensionAware: boolean }> {
+  const out: Array<{ file: string; dimensionAware: boolean }> = [];
+  for (const match of source.matchAll(/\.from\(\s*reviewSchedules\s*\)/g)) {
+    const at = match.index ?? 0;
+    const tail = source.slice(at);
+    const endsAt = Math.min(
+      (tail.indexOf(";") === -1 ? Number.MAX_SAFE_INTEGER : tail.indexOf(";") + 1),
+      (tail.indexOf(".from(", 1) === -1 ? Number.MAX_SAFE_INTEGER : tail.indexOf(".from(", 1)),
+      900,
+    );
+    out.push({ file, dimensionAware: /reviewDimension/.test(tail.slice(0, endsAt)) });
+  }
+  return out;
+}
+
+/** 今天还不认识这一维的读点，按文件数（合计 19 处）。逐处修好就把对应那条删掉。 */
+const READERS_BLIND_TO_DIMENSION: Record<string, number> = {
+  "apps/api/src/modules/card-generation-v2/card-service.ts": 2,
+  "apps/api/src/modules/export/service.ts": 2,
+  "apps/api/src/modules/learning-dashboard/service.ts": 1,
+  "apps/api/src/modules/learning-objectives/surface-service.ts": 2,
+  "apps/api/src/modules/learning-runs/run-processing-tick.ts": 2,
+  "apps/api/src/modules/learning-runs/run-service.ts": 3,
+  "apps/api/src/modules/review/review-defer-service.ts": 1,
+  "apps/api/src/modules/review/service.ts": 1,
+  "apps/api/src/modules/stats/service.ts": 2,
+  "apps/api/src/modules/understanding-v3/topology-repository.ts": 1,
+  "apps/api/src/modules/understanding/projection-read-service.ts": 1,
+  "apps/api/src/modules/understanding/route-plan-service.ts": 1,
+};
+
+function blindReaderCounts(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const site of runtimeSources().flatMap((f) => readSitesIn(f.rel, f.text))) {
+    if (!site.dimensionAware) out[site.file] = (out[site.file] ?? 0) + 1;
+  }
+  return out;
+}
+
+/**
+ * 有没有**调用方**给边界传了非空维度（今天应该是零处）。
+ *
+ * 判据锚的是"这一发调用里带了 `reviewDimension` 那一格"，不是全文出现这个标识符——
+ * schema 里那一列的声明（`reviewDimension: text("review_dimension")`）与边界的入参类型
+ * 都含同名文本，按全文匹配会把它们误判成有人开始写维度（第一版就是这么红的）。
+ */
+function dimensionNamingCallersIn(file: string, text: string): string[] {
+  const out: string[] = [];
+  for (const match of text.matchAll(/ensurePendingReviewScheduleV2\s*\(/g)) {
+    const at = match.index ?? 0;
+    if (/reviewDimension\s*:/.test(text.slice(at, at + 900))) out.push(`${file}:这一发调用带了维度`);
+  }
+  return out;
+}
+
+function dimensionNamingCallers(): string[] {
+  // 边界文件自己排除：它体内那一处 `reviewDimension: dimension` 就是"往那一格写"的机制本身，
+  // 不是调用方。触发器要判的是**有没有人开始喂非空维度**。
+  return runtimeSources()
+    .filter((f) => f.rel !== BOUNDARY_FILE)
+    .flatMap((f) => dimensionNamingCallersIn(f.rel, f.text));
+}
+
+test("读侧台账的分母自证：20 处读点里只有边界自己那一处认得维度", () => {
+  const all = runtimeSources().flatMap((f) => readSitesIn(f.rel, f.text));
+  assert.equal(all.length, 20, `读点合计与现读数不同（得到 ${all.length}）：walk 坏了或有人新增/删了读点`);
+  assert.equal(all.filter((s) => s.dimensionAware).length, 1,
+    "认得维度的读点数量变了——只有边界那一条回读该认得");
+});
+
+test("读侧判据本身灵敏：带维度判据要认得出，不带的一处都不许算成认得", () => {
+  const aware = `const rows = await tx.select().from(reviewSchedules).where(and(
+    eq(reviewSchedules.workspaceId, workspaceId),
+    eq(reviewSchedules.reviewDimension, dimension),
+  ))`;
+  const blind = `const rows = await tx.select().from(reviewSchedules).where(and(
+    eq(reviewSchedules.workspaceId, workspaceId),
+    eq(reviewSchedules.subjectId, objectiveId),
+  ))`;
+  assert.deepEqual(readSitesIn("f.ts", aware).map((s) => s.dimensionAware), [true]);
+  assert.deepEqual(readSitesIn("f.ts", blind).map((s) => s.dimensionAware), [false]);
+  // 同一文件里紧邻的两处：不筛维度的那一处**不许**因为后面有人筛了就被判成认得。
+  const neighbor = `${blind};\n${aware};`;
+  assert.deepEqual(readSitesIn("f.ts", neighbor).map((s) => s.dimensionAware), [false, true],
+    "前一处被后一处的判据污染 ⇒ 台账会少记不认维度的读点");
+});
+
+test("不认维度的读点逐文件登记在案：新增一处红，改好一处就把那条删掉", () => {
+  assert.deepEqual(blindReaderCounts(), READERS_BLIND_TO_DIMENSION,
+    "读侧维度台账与代码不一致。新增读点：同一目标哪天有第二条维度安排时它会读错；"
+      + "改好了某处：把对应那条从清单里删掉（这份清单只能变短）。");
+});
+
+test("触发器：还没有任何调用方给边界传非空维度——第一次传的时候必须先处理读侧", () => {
+  const callers = dimensionNamingCallers();
+  const stillBlind = Object.values(blindReaderCounts()).reduce((a, b) => a + b, 0);
+  assert.deepEqual(callers, [],
+    `有 ${callers.length} 处开始给唯一调度边界传维度了（${callers.join("；")}）。`
+      + `这不是回退，是**要求**：同一批改完那 ${stillBlind} 处不认维度的读点（或逐条写明为什么不用改）`
+      + "并把上面那份台账改短——否则同一目标的两条安排会被那些读点重复计数或挑错一条。");
+  // 这条触发器自己也要灵敏：schema 里那一列的声明与边界的入参类型都含同名标识符，
+  // 第一版就是按全文匹配把它们误判成"有人开始写维度"而当场红。
+  assert.deepEqual(dimensionNamingCallersIn("schema.ts",
+    'reviewDimension: text("review_dimension").notNull().default(""),'), [],
+    "列声明被判成调用方传了维度");
+  assert.equal(dimensionNamingCallersIn("caller.ts",
+    `await ensurePendingReviewScheduleV2(tx, {\n  subjectId,\n  reviewDimension: "apply",\n})`).length, 1,
+    "真的传了维度却没被判出来 ⇒ 这枚触发器是空的");
+});
