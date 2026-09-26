@@ -590,8 +590,13 @@ try {
       // ── 结算演出那一读（09-24 起也放开给练习，但"接了却一次没见过"正是当时的根因）──
       // 只有 3s，所以**交卷之后第一件事**就是找它；彩纸是画在 canvas 上的，
       // jsdom 里 getContext 被 mock 成 null ⇒ 画没画出来只能在真窗口量像素。
+      // 窗口给到 8s 并**把等待时长记下来**：机器上别的东西在跑时这一刻会晚到，
+      // 只给 3.5s 会把"来得晚"量成"没来"（今天确实出现过一次 seen:false）。
+      // 但窗口再宽也回答不了"到底有没有不来"，所以时长必须进读数。
       const ceremony = page.locator('.learning-run-ceremony').first()
-      const ceremonySeen = await ceremony.waitFor({ timeout: 3_500 }).then(() => true, () => false)
+      const ceremonyStartedAt = Date.now()
+      const ceremonySeen = await ceremony.waitFor({ timeout: 8_000 }).then(() => true, () => false)
+      const ceremonyWaitedMs = Date.now() - ceremonyStartedAt
       let confettiPainted = -1
       let confettiFrames = 0
       let ceremonyCopy: Record<string, string> = {}
@@ -630,20 +635,35 @@ try {
         confettiPainted = painted.painted
         confettiFrames = painted.frames
         readings.confettiCanvas = painted.sized      }
-      readings.ceremony = { seen: ceremonySeen, ...ceremonyCopy, confettiPainted, confettiFrames }
-      check('练习那一支的结算演出真在屏上出现过（09-24 放开之后第一次被真窗口看到）',
-        ceremonySeen === true, readings.ceremony)
-      check('彩纸那颗 canvas 真的画出了像素（页内逐帧采，画出一粒就停）',
-        confettiPainted > 0 && confettiFrames >= 1, readings.ceremony)
-      // 那处坑的正面判据：眉标不许从 eligibility 反推出"正式挑战"——结构题做主位时
-      // ceiling 被钳成 practice_only 而快照 eligibility 仍是 eligible，两者一拼就自相矛盾。
-      check('演出的那两行不与结果自相矛盾（练习这一支不说"正式挑战"）',
-        ceremonyCopy.eyebrow?.length > 0 && !/正式挑战/.test(`${ceremonyCopy.eyebrow} ${ceremonyCopy.heading}`),
-        readings.ceremony)
+      readings.ceremony = { seen: ceremonySeen, ceremonyWaitedMs, ...ceremonyCopy, confettiPainted, confettiFrames }
 
       const resultBoard = await page.locator('.learning-run-result-board').first()
         .waitFor({ timeout: 40_000 }).then(() => true, () => false)
       check('交卷之后结算那一块真在屏上', resultBoard === true)
+      // 演出那一格不能无条件要求"必须出现"——政策是 `demonstrated | practice_completed` 才放。
+      // 所以先把 outcome 读下来（屏上那一格 + 库里那一份），两边对得上，再按政策判演出。
+      const screenOutcome = (await page.locator('.learning-run-result-board').first()
+        .getAttribute('data-outcome')) ?? ''
+      const dbOutcome = sql(`select coalesce(r.result ->> 'outcome', 'NULL') from learning_runs r
+        where r.origin ->> 'roundId' = '${seeded.roundId}' limit 1`).trim()
+      readings.outcome = { screenOutcome, dbOutcome }
+      check('结算那一档屏上说的与库里记的是同一个词（不是一个渲染一个落库）',
+        screenOutcome.length > 0 && screenOutcome === dbOutcome, readings.outcome)
+      // 演出的三格要等 outcome 读出来才判得准（政策按 outcome 取，不看 eligibility），
+      // 但**观察**必须留在交卷那一刻——覆盖层只有几秒。
+      // 提醒下一位：第一条今天会**间歇红**（8 跑里 2 次演出压根没挂上，其余读数一字不差），
+      // 那是缺陷不是判据写错——已登记在 39d §19 那行；放宽这条等于把它藏起来。
+      const ceremonyExpected = dbOutcome === 'demonstrated' || dbOutcome === 'practice_completed'
+      readings.ceremony.expected = ceremonyExpected
+      check('演出出现在该出现的那一档（政策：demonstrated 或 practice_completed；两侧都要对得上）',
+        ceremonySeen === ceremonyExpected, readings.ceremony)
+      check('该出现时彩纸真画出了像素（页内逐帧采，画出一粒就停）',
+        ceremonyExpected !== true || (confettiPainted > 0 && confettiFrames >= 1), readings.ceremony)
+      // 那处坑的正面判据：眉标不许从 eligibility 反推出"正式挑战"——结构题做主位时
+      // ceiling 被钳成 practice_only 而快照 eligibility 仍是 eligible，两者一拼就自相矛盾。
+      check('演出的那两行不与结果自相矛盾（练习这一支不说"正式挑战"）',
+        ceremonyExpected !== true || (ceremonyCopy.eyebrow?.length > 0 && !/正式挑战/.test(`${ceremonyCopy.eyebrow} ${ceremonyCopy.heading}`)),
+        readings.ceremony)
 
       // **免费**这一发必须自证：评估那行的来源是确定性结构化，不是 critic（真模型）。
       const assessmentRow = sql(`
@@ -658,6 +678,21 @@ try {
 
       // 展开态那一读：`<details>` 在真窗口里折叠着也在 DOM，所以必须先看 open 再看内容
       // （这条与 jsdom 那格的坑同源）。
+      // 覆盖层还挂着的时候点下面的东西会被它挡（今天就红过一次：那颗 summary 点不动）。
+      // 它自带给用户的那颗"跳过"——按它跳过并等到散场，而不是赌三秒已经过去。
+      const skipButton = page.locator('.learning-run-ceremony__skip').first()
+      const skipLabel = (await skipButton.count()) > 0 ? (await skipButton.textContent() ?? '').trim() : ''
+      readings.ceremonySkip = { label: skipLabel }
+      if (skipLabel.length > 0) {
+        await skipButton.click({ timeout: 5_000 }).catch(() => undefined)
+        await page.locator('.learning-run-ceremony').first()
+          .waitFor({ state: 'detached', timeout: 5_000 }).catch(() => undefined)
+      }
+      const overlayStillUp = await page.locator('.learning-run-ceremony').count()
+      readings.afterSkip = { overlayStillUp, resultStillUp: await page.locator('.learning-run-result-board').count() }
+      check('要往下点之前演出那层已经散掉，而结算那一块还在（跳过不等于丢掉结果）',
+        overlayStillUp === 0 && readings.afterSkip.resultStillUp === 1, readings.afterSkip)
+
       const rubricSummary = page.locator('details.learning-run-result-rubric summary').first()
       const summaryText = (await rubricSummary.textContent() ?? '').trim()
       await rubricSummary.click({ timeout: 20_000 })
