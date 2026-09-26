@@ -143,8 +143,9 @@ test("注册口径是「会执行它的那一行」：依赖声明里出现文�
   for (const name of ["history-search-postgres.integration.ts", "proactive-hook-postgres.integration.ts"]) {
     assert.ok(registeredNames().has(name), `${name} 没在任何脚本值里被点名（它仍是暗文件）`);
   }
-  const apiManifest = JSON.parse(readFileSync(join(REPO_ROOT, "apps/api/package.json"), "utf8")) as
-    Record<string, unknown>;
+  // 覆盖面不许只盯一份 manifest：同一只手会改错任何一个包。
+  const manifests = SURFACES.filter((rel) => rel.endsWith("package.json") && existsSync(join(REPO_ROOT, rel)));
+  assert.ok(manifests.length >= 4, `只扫到 ${manifests.length} 份 package.json ⇒ 声明位置那道形状闸基本没在扫`);
   const specifiers: Array<[string, string]> = [];
   const collect = (node: unknown, at: string): void => {
     if (typeof node === "string") { specifiers.push([at, node]); return; }
@@ -154,8 +155,11 @@ test("注册口径是「会执行它的那一行」：依赖声明里出现文�
     }
   };
   // 只看声明位置（overrides 是嵌套的，要往下走一层）；scripts 是执行位置，取值本来就该带空格。
-  for (const group of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies", "overrides"]) {
-    if (group in apiManifest) collect(apiManifest[group], group);
+  for (const rel of manifests) {
+    const parsed = JSON.parse(readFileSync(join(REPO_ROOT, rel), "utf8")) as Record<string, unknown>;
+    for (const group of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies", "overrides"]) {
+      if (group in parsed) collect(parsed[group], `${rel}·${group}`);
+    }
   }
   const spaced = specifiers.filter(([, value]) => /\s/.test(value));
   assert.deepEqual(spaced.map(([where]) => where), [],
