@@ -745,3 +745,4 @@ F42 收口（`settings-surface.tsx`）、F03 的"一屏只一个主操作"（`Wo
 08:24 新建且**当前是红的**（`expect(uploads).toHaveLength(1)` 拿到 0），
 `source-intake.ts` / `SourceIntake.tsx` 也在它的改动里。全量 desktop 套件因此会带 1 条红，
 **那不是本次修复批次造成的**；碰这两个文件之前先看 mtime 与 git status。
+
