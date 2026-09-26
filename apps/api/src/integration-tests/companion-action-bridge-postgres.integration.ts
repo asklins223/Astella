@@ -96,6 +96,65 @@ test("P5 §6.7：有进行中 learning run → learning_run_resume 候选非 nul
   }
 });
 
+/**
+ * §3.2「各入口使用同一优先规则」的**行为**判据（39d W4-2·补欠的那一条）。
+ *
+ * 上一格把三处手抄的顺位表收成一份之后，结构判据已经会红了，但"伴星到底端哪一条"
+ * 还没有一条端到端的用例——而那正是这次改动的可见后果：桥里那张旧表把 `create_run`
+ * 排在 `create_review_run` **之前**，她会把「开始学习」端在「到期复习」前面，
+ * 正是 §3.2 点名禁止的形状（"不能在笔记页推荐初学、首页强制复习、星图又恢复另一轮"）。
+ *
+ * 夹具按服务端真条件造：`loadReview`（`surface-service.ts:133-158`）只认
+ * `subject_type='card'` ＋ `subject_id=objectiveId` ＋ `status='pending'` 的那一条，
+ * `next_review_at <= now` 才算 due，`generation >= 1` 才落到 `create_review_run`
+ * （代次 0 会退回 `refresh`，那是另一件事）。
+ */
+test("§3.2 顺位：一条到期复习与一条开始学习同时在，她端的必须是到期复习那一条", async () => {
+  const { workspaceId, userId, cleanup } = await seedBase();
+  const plain = await addV2ObjectiveToWorkspace(sql, workspaceId, userId, {
+    objectiveStatement: "顺位测试：无安排的目标",
+    publicSummary: "顺位-无安排",
+    front: { cue: "顺位", prompt: "什么是顺位？" },
+  });
+  const review = await addV2ObjectiveToWorkspace(sql, workspaceId, userId, {
+    objectiveStatement: "顺位测试：有到期安排的目标",
+    publicSummary: "顺位-到期",
+    front: { cue: "顺位复习", prompt: "什么是顺位复习？" },
+  });
+  try {
+    // 阶段 A（还没挂安排时）：候选必须已经存在，且是这两条里的某一条——
+    // 少了这一格，阶段 B 的"选到了复习那一条"也可能是别的东西凑出来的。
+    const beforeCtx = await resolveCompanionLearningContext({ workspaceId, userId });
+    assert.ok(beforeCtx.learningRunStartCandidate, "两条 actionable 目标都在，start 候选却不存在");
+    assert.ok(
+      beforeCtx.learningRunStartCandidate!.objectiveId === plain.objectiveId
+      || beforeCtx.learningRunStartCandidate!.objectiveId === review.objectiveId,
+      "阶段 A 端出来的必须是这两条之一",
+    );
+
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      await tx`
+        INSERT INTO review_schedules
+          (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at,
+           interval_days, generation, policy_version, created_at, updated_at)
+        VALUES (${randomUUID()}, ${workspaceId}, ${userId}, 'card', ${review.objectiveId},
+                'pending', now() - interval '1 hour', 3, 1, 'precedence-fixture', now(), now())`;
+    });
+
+    // 阶段 B：挂上"已授权、已到期"的安排之后，她端的必须换到那一条。
+    const ctx = await resolveCompanionLearningContext({ workspaceId, userId });
+    assert.ok(ctx.learningRunStartCandidate, "端出安排之后 start 候选仍然存在");
+    assert.equal(ctx.learningRunStartCandidate!.objectiveId, review.objectiveId,
+      "§3.2：已授权的到期回访排在开始／继续探索之前");
+    assert.equal(ctx.learningRunStartCandidate!.originV2.kind, "review",
+      "端出来的那一条走的必须是复习那条 origin");
+  } finally {
+    await cleanup();
+  }
+});
+
 test("P5 §6.7：menu proposal create 原子（双消息 + proposal pending + action.proposed）", async () => {
   const { workspaceId, userId, cleanup } = await seedBase();
   // 2026-08-23 对齐：候选从 V2 objective 派生（learning_run_start）。

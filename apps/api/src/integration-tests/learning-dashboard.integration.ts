@@ -8,6 +8,7 @@
  */
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID as cryptoRandomUUID } from "node:crypto";
 import { findPrivatePayloadLeaks } from "@ailearn/shared";
 import postgres from "postgres";
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
@@ -23,6 +24,53 @@ const [{ withWorkspaceTransaction }, { buildLearningDashboardV2 }, { seedPureV2W
 
 const pureV2 = await seedPureV2Workspace(sql, { objectiveCount: 3 });
 const notesOnly = await seedNotesOnlyWorkspace(sql, { noteCount: 1 });
+
+/**
+ * §3.2 顺位在首页的**行为**判据（39d W4-2·补）。
+ *
+ * 旧的 `priorityScore` 把 `refresh`(5)／`view_successor`(6) 排在 `create_run`(3) **之后**，
+ * 于是 §3.2 的第一档"需要处理的内容／权限变化"在首页永远当不了主建议。
+ * 这里按服务端真条件造出那一档：一条 `pending` ＋ 已到期 ＋ **代次 0** 的安排，
+ * 解析器给的是 `refresh` 而不是 `create_review_run`（`action-resolver.ts:137-140` 明写
+ * 代次 < 1 不许端出复习），所以这一条同时钉住"两档不相混"。
+ */
+test("W3-07 §3.2 顺位：需要处理的内容排在开始学习之前，首页 hero 选它", async () => {
+  const seeded = await seedPureV2Workspace(sql, { objectiveCount: 2, statementPrefix: "顺位首页" });
+  try {
+    const targetId = seeded.objectiveIds[0];
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${seeded.workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${seeded.userId}, true)`;
+      await tx`
+        INSERT INTO review_schedules
+          (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at,
+           interval_days, generation, policy_version, created_at, updated_at)
+        VALUES (${cryptoRandomUUID()}, ${seeded.workspaceId}, ${seeded.userId},
+                'card', ${targetId}, 'pending', now() - interval '1 hour',
+                3, 0, 'precedence-fixture', now(), now())`;
+    });
+
+    const dashboard = await withWorkspaceTransaction(
+      { workspaceId: seeded.workspaceId, userId: seeded.userId },
+      (tx) => buildLearningDashboardV2(tx, { workspaceId: seeded.workspaceId, userId: seeded.userId }),
+    );
+    assert.ok(dashboard.primaryFocus, "有两条 active 目标时 hero 必须存在");
+    assert.equal(dashboard.primaryFocus!.action.kind, "refresh",
+      "代次 0 的到期安排必须落到 refresh（不是 create_review_run）");
+    assert.equal(dashboard.primaryFocus!.objective.objectiveId, targetId,
+      "§3.2 第一档「需要处理的内容／权限变化」必须排在开始学习之前");
+    // 反向对照：另一条目标今天判出来的必须是"开始学习"那一档——没有这条，
+    // "hero 选了 targetId"也可能是两条同种行动，顺位判据根本无从判起。
+    const other = dashboard.queue.find((item) => item.objective.objectiveId !== targetId);
+    assert.ok(other, "另一条目标要还在 hero 之后的清单里读得到");
+    assert.ok(
+      other!.action.kind === "create_run" || other!.action.kind === "create_review_run",
+      `另一条该是可开一轮的那一档，实际 ${other!.action.kind}`,
+    );
+  } finally {
+    await seeded.cleanup();
+  }
+});
 
 after(async () => {
   await pureV2.cleanup();
