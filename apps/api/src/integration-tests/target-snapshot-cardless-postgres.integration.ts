@@ -36,7 +36,7 @@ process.env.LEARNING_RUN_ENABLED ??= "true";
 process.env.LEARNING_DRAFT_ENC_KEY ??= "a".repeat(64);
 
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
-const { createRunV2, submitArtifact, getRunPublicView, revealRunTargetV2 } = await import(
+const { createRunV2, submitArtifact, getRunPublicView, revealRunTargetV2, applyAction } = await import(
   "../modules/learning-runs/run-service.ts"
 );
 const { runLearningRunProcessingTick } = await import("../modules/learning-runs/run-processing-tick.ts");
@@ -393,6 +393,33 @@ test("无卡快照走完提交→评估→结算，并在结果页揭示时记�
       "回出去的 exposureId 必须是库里那一笔的");
     assert.equal(secondReveal.exposureId, firstReveal.exposureId);
     assert.equal(secondReveal.answerText, firstReveal.answerText);
+
+    /**
+     * 同一格里登记的第二处「机制在、0 条用例读」：§16.36 那句「取消晚于成功提交时如实显示
+     * 已完成，不能抹掉回执」——completed 上那一发 `end` 走的是 break 返回 completed 快照
+     * （`run-service.ts:1872-1874`），既有用例只证它出现在 offered 名单里。
+     *
+     * 三条一起才叫"没抹"：那一行**逐字段**未动、快照仍说 completed、而这一发**确实被受理**
+     * （有 acceptedActionId）。少了最后一条，"什么都没变"也可以是命令根本没跑起来或被拒。
+     */
+    const beforeEnd = await admin`
+      SELECT phase, revision, runtime_epoch, result, terminal_reason_code, active_task_id
+      FROM learning_runs WHERE id = ${created.runId}`;
+    const endReceipt = await withWorkspaceTransaction(scope, (tx) => applyAction(tx, {
+      ...scope,
+      runId: created.runId,
+      runRevision: Number(beforeEnd[0].revision),
+      runtimeEpoch: Number(beforeEnd[0].runtime_epoch),
+      action: { kind: "end", abandonLockedEvidence: false },
+      idempotencyKey: `w34-end-${randomUUID()}`,
+    }));
+    assert.ok(endReceipt.acceptedActionId, "这一发要被受理，不是被拒之后假装没抹");
+    assert.equal(endReceipt.snapshot.phase, "completed");
+    assert.ok(endReceipt.snapshot.result, "已完成的结果不许被抹掉");
+    const afterEnd = await admin`
+      SELECT phase, revision, runtime_epoch, result, terminal_reason_code, active_task_id
+      FROM learning_runs WHERE id = ${created.runId}`;
+    assert.deepEqual(afterEnd[0], beforeEnd[0], "completed 上的 end 不许动那一行的任何一格");
   } finally {
     await seeded.cleanup();
   }
