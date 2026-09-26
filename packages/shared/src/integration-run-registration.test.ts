@@ -37,8 +37,6 @@ const SURFACE_DIRS = ["scripts"];
  */
 const DARK_FILES_AWAITING_REGISTRATION = new Set([
   "card-generation-v2-domain-events.integration.ts",
-  "learning-runs-demonstrated-postgres.integration.ts",
-  "learning-runs-structured-postgres.integration.ts",
   "card-generation-v2-bounded-repair-postgres.integration.ts",
   "card-generation-v2-c-cases.integration.ts",
   "card-generation-v2-live-progress-postgres.integration.ts",

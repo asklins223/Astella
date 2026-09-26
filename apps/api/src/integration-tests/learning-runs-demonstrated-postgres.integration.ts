@@ -35,8 +35,16 @@ const { runLearningRunProcessingTick } = await import(
   "../modules/learning-runs/run-processing-tick.ts"
 );
 
+/**
+ * 这一条打真模型、按 token 计费，所以**"配了凭据"不构成跑它的理由**。
+ * 以前这里的闸只有 `criticConfigured`：dev 与 CI 只要带着 `ASSESSMENT_CRITIC_*`
+ * 就会真跑一次并花钱。房子里那条约定早就立着（`REAL_MODEL_BATCH=1` 才跑，CI 永不设这个变量，
+ * 先例见本包 `learning-runs-postgres` 末尾那发），这里补上同一道闸——
+ * 两份"真跑"文件的闸不一样齐，就是迟早会被谁顺手跑一次。
+ */
 const criticConfigured =
-  Boolean(process.env.ASSESSMENT_CRITIC_URL?.trim())
+  process.env.REAL_MODEL_BATCH === "1"
+  && Boolean(process.env.ASSESSMENT_CRITIC_URL?.trim())
   && Boolean(
     process.env.ASSESSMENT_CRITIC_KEY?.trim() || process.env.DASHSCOPE_API_KEY?.trim(),
   );
