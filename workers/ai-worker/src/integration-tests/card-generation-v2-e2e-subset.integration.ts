@@ -54,6 +54,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { assertFixtureWipeClean, wipeCardGenerationFixtures } from "./card-generation-fixture-cleanup.ts";
 
 const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 // 测试体以 ailearn_worker 角色执行 pollV2Outbox（RLS NOBYPASSRLS 验证）。
@@ -163,18 +164,23 @@ before(async () => {
 });
 
 after(async () => {
-  await admin`DELETE FROM card_generation_runs_v2 WHERE workspace_id = ${WORKSPACE_ID}`.catch(() => undefined);
-  // 每个用例都建过自己的笔记：按空间收，别按那一个 id（漏一篇就会挡住下一轮跑）。
-  await admin`DELETE FROM notes WHERE workspace_id = ${WORKSPACE_ID}`.catch(() => undefined);
-  await admin`DELETE FROM workspace_members WHERE workspace_id = ${WORKSPACE_ID}`.catch(() => undefined);
-  await admin`DELETE FROM workspaces WHERE id = ${WORKSPACE_ID}`.catch(() => undefined);
-  await admin`DELETE FROM users WHERE id = ${USER_ID}`.catch(() => undefined);
-  await admin.end({ timeout: 5 });
-  const { closeDatabase } = await import("../../../../apps/api/src/db/client.ts");
-  await closeDatabase().catch(() => undefined);
-  // worker 侧独立连接池（ailearn_worker 角色）也必须关闭，否则进程挂起。
-  const { closeDatabase: closeWorkerDatabase } = await import("../db.ts");
-  await closeWorkerDatabase().catch(() => undefined);
+  // 清理交给那份共用台子。旧写法逐句 `.catch(() => undefined)`，而"先删空间再删用户"
+  // 每次都失败（`users.personal_workspace_id` 对 workspaces 是 ON DELETE RESTRICT）
+  // ⇒ 每轮留下一个空间与几张激活出来的卡，没人看得见。
+  // 顺序仍然是：清理 → **先把池关掉** → 再决定要不要喊（在池还开着的时候抛，
+  // 整个文件就挂在超时上，看起来像"用例慢"——实测 240 秒）。
+  let report;
+  try {
+    report = await wipeCardGenerationFixtures(admin, [WORKSPACE_ID], [USER_ID]);
+  } finally {
+    await admin.end({ timeout: 5 }).catch(() => undefined);
+    const { closeDatabase } = await import("../../../../apps/api/src/db/client.ts");
+    await closeDatabase().catch(() => undefined);
+    // worker 侧独立连接池（ailearn_worker 角色）也必须关闭，否则进程挂起。
+    const { closeDatabase: closeWorkerDatabase } = await import("../db.ts");
+    await closeWorkerDatabase().catch(() => undefined);
+  }
+  assertFixtureWipeClean(report);
 });
 
 test("C01：OSI 短笔记 → Auto → 推荐 1–2 张（review_ready）", async () => {
@@ -760,7 +766,7 @@ test("C45：开启复习那一档 → 恰一条待处理安排，回执报库里
 
   const rows = await admin`
     SELECT id, status, subject_type, review_dimension, interval_days, policy_version,
-           reason_code, next_review_at
+           reason_code, next_review_at, created_at
     FROM review_schedules
     WHERE workspace_id = ${WORKSPACE_ID} AND subject_id = ${objectiveId}`;
   assert.equal(rows.length, 1, `C45 恰好一行待处理安排（得到 ${rows.length} 行）`);
@@ -769,8 +775,14 @@ test("C45：开启复习那一档 → 恰一条待处理安排，回执报库里
   assert.equal(row.status, "pending", "新排的那一行必须是待处理");
   assert.equal(row.subject_type, "card", "安排挂在卡这一类主体上");
   assert.equal(row.review_dimension, "", "「保存并开启复习」排的是默认那一维度");
-  assert.equal(row.interval_days, 1, "首档 = discrete-v2 的第一档（1 天），不是「立刻可复习」");
-  assert.equal(row.policy_version, "discrete-v2", "C45 必须走真实策略版本");
+  // 那两个数不是这里该写死的字面量：首档由 discrete-v2 的阶梯导出，策略版本由那份模块导出。
+  // 对账的是"激活这一发有没有去读唯一出处"——调用方另写一份 `1` 或 `"discrete-v2"`，
+  // 阶梯改了它不会跟着改，屏幕上那句"第一次复习排在 X"就与策略悄悄分叉。
+  const { DISCRETE_V2_FIRST_INTERVAL_DAYS, DISCRETE_V2_POLICY_VERSION } = await import("@ailearn/shared");
+  assert.equal(row.interval_days, DISCRETE_V2_FIRST_INTERVAL_DAYS,
+    "首档 = discrete-v2 阶梯的头一档（这一发不许自带第二份天数）");
+  assert.equal(row.policy_version, DISCRETE_V2_POLICY_VERSION,
+    "策略版本也从那份模块取，不写第二份字符串");
   assert.equal(row.reason_code, "activation_authorized", "C45 那一行要写明是因为用户授权");
 
   // 回执里那句日期与库里那一行必须是同一个值——界面上"下一次是哪天"读的就是它。
@@ -783,12 +795,11 @@ test("C45：开启复习那一档 → 恰一条待处理安排，回执报库里
     new Date(row.next_review_at).toISOString(),
     "回执报的必须是库里那一行的实际到期时间",
   );
-  // 「保存进卡组之后要等 24 小时」是屏幕上那句话的根据：差值真的是一天，不是当场可复习。
-  const delayMs = new Date(row.next_review_at).getTime() - new Date(receipt.committedAt).getTime();
-  assert.ok(
-    Math.abs(delayMs - 24 * 60 * 60 * 1000) < 60_000,
-    `C45 首次到期应为约 24 小时后（实际 ${Math.round(delayMs / 1000)} 秒）`,
-  );
+  // 一行之内那两个字段必须自洽：到期差**正好等于** `interval_days` 天（同一时刻算出来的，
+  // 所以不用容差）。写死天数与写死时刻分叉时这里红，而不是等到屏幕上才发现。
+  const insideRowMs = new Date(row.next_review_at).getTime() - new Date(row.created_at).getTime();
+  assert.equal(insideRowMs, row.interval_days * 24 * 60 * 60 * 1000,
+    `C45 那一行的间隔与到期差要自洽（实际 ${Math.round(insideRowMs / 1000)} 秒 / ${row.interval_days} 天）`);
 
   // ③ 重放：同键同请求 → 同回执、`scheduling` 逐字相同，且库里仍只有一行。
   const replay = await activateCardCandidatesV2(

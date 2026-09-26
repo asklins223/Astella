@@ -130,6 +130,17 @@ function addMs(now: Date, ms: number): Date {
 }
 
 /**
+ * 阶梯的头一档 = "刚开始安排复习"那一格（39d W7-2 的「保存并开启复习」用的就是它）。
+ * 从阶梯导出，不再在别处写第二份 `1`：调用方一旦自己写天数，阶梯改了它不会跟着改。
+ */
+export const DISCRETE_V2_FIRST_INTERVAL_DAYS = DISCRETE_V2_INTERVAL_TIERS[0];
+
+/** 第一档的到期时刻：与 `DISCRETE_V2_FIRST_INTERVAL_DAYS` 同源，走同一个 `addMs` 护栏。 */
+export function discreteV2FirstDueAt(at: Date): Date {
+  return addMs(at, DISCRETE_V2_FIRST_INTERVAL_DAYS * MS_PER_DAY);
+}
+
+/**
  * Compute the effective due date: max(policyDue, unassistedEligibleAfter).
  * This ensures assisted/incorrect/unable users can't start a trusted review
  * before the exposure cooldown ends.

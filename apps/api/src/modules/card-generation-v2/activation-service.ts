@@ -70,6 +70,11 @@ import { closePendingSchedules } from "./card-service.ts";
 import { extractAnswerText, frontLeaksAnswerVerbatimV2 } from "@ailearn/shared/card-generation-v2-pipeline";
 import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
 import {
+  DISCRETE_V2_FIRST_INTERVAL_DAYS,
+  DISCRETE_V2_POLICY_VERSION,
+  discreteV2FirstDueAt,
+} from "@ailearn/shared";
+import {
   computeClientReviewHashV2,
   computeSemanticTargetFingerprintV2,
   computeTargetRevisionHashV2,
@@ -510,7 +515,8 @@ export async function activateCardCandidatesV2(
     // 那条待处理安排（39d W7-2 裁定 B）。三件事因此同时成立：不部分提交（这一发崩了
     // 保存一起回滚）、重放交回同一份回执（结果写进下面 receipt 的 `scheduling` 列）、
     // "现在该不该给"仍由队列既有判据决定——这里只排期，**不绕首次验证闸**。
-    // 首档取 discrete-v2 的第一档（1 天）：这一发是"开始安排"，不是"立刻可复习"。
+    // 首档取 discrete-v2 阶梯的头一档，天数与到期差都从那份策略导出：这里再写一遍
+    // `1` / `24 * 60 * 60 * 1000`，阶梯改了不会有人想起来改它。
     const authorizedAt = new Date();
     let scheduling: CardActivationReceiptV2["scheduling"];
     if (body.startReviewScheduling === true) {
@@ -520,10 +526,10 @@ export async function activateCardCandidatesV2(
           workspaceId: ctx.workspaceId,
           userId: ctx.userId,
           subjectId: mapping.objectiveId,
-          nextReviewAt: new Date(authorizedAt.getTime() + 24 * 60 * 60 * 1000),
-          intervalDays: 1,
+          nextReviewAt: discreteV2FirstDueAt(authorizedAt),
+          intervalDays: DISCRETE_V2_FIRST_INTERVAL_DAYS,
           generation: 1,
-          policyVersion: "discrete-v2",
+          policyVersion: DISCRETE_V2_POLICY_VERSION,
           reasonCode: "activation_authorized",
           at: authorizedAt,
         });

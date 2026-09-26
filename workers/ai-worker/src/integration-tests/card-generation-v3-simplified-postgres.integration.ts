@@ -26,6 +26,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { assertFixtureWipeClean, wipeCardGenerationFixtures } from "./card-generation-fixture-cleanup.ts";
 
 const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
@@ -240,42 +241,20 @@ after(async () => {
     await admin.end({ timeout: 5 });
     return;
   }
-  const wipe = async (table: string) => {
-    for (const workspaceId of [WORKSPACE_ID, OTHER_WORKSPACE_ID]) {
-      await admin.unsafe(`DELETE FROM ${table} WHERE workspace_id = '${workspaceId}'`).catch(() => undefined);
-    }
-  };
-  for (const table of [
-    "card_generation_run_progress_v2",
-    "card_generation_events_v2",
-    "card_candidate_quality_reports_v2",
-    "candidate_evidence_binding_plans_v2",
-    "card_generation_candidates_v2",
-    "card_generation_run_outbox_v2",
-    "card_generation_plans_v2",
-    "card_generation_runs_v2",
-  ]) {
-    await wipe(table);
+  // 清理整体交给那份共用台子（含"删完回读计数，不干净就抛"）。这里以前是一张手写表 +
+  // 每句 `.catch(() => undefined)`：删空间那句每次都失败（用户必须在前面）而没人知道。
+  // 清理 → **先关池** → 再决定要不要喊（池开着就抛，会把整个文件挂在超时上）。
+  let report;
+  try {
+    report = await wipeCardGenerationFixtures(admin, [WORKSPACE_ID, OTHER_WORKSPACE_ID], [USER_ID, OTHER_USER_ID]);
+  } finally {
+    await admin.end({ timeout: 5 }).catch(() => undefined);
+    const { closeDatabase: closeWorkerDatabase } = await import("../db.ts");
+    await closeWorkerDatabase().catch(() => undefined);
+    const { closeDatabase } = await import("../../../../apps/api/src/db/client.ts");
+    await closeDatabase().catch(() => undefined);
   }
-  await admin`DELETE FROM evidence_snapshots_v2 WHERE workspace_id = ${WORKSPACE_ID}`.catch(() => undefined);
-  await admin`DELETE FROM source_snapshots_v2 WHERE workspace_id = ${WORKSPACE_ID}`.catch(() => undefined);
-  for (const note of Object.values(notes)) {
-    if (!note) continue;
-    await admin`DELETE FROM note_blocks WHERE version_id = ${note.versionId}`.catch(() => undefined);
-    await admin`DELETE FROM note_versions WHERE id = ${note.versionId}`.catch(() => undefined);
-    await admin`DELETE FROM notes WHERE id = ${note.noteId}`.catch(() => undefined);
-  }
-  await admin`DELETE FROM workspace_members WHERE workspace_id = ${WORKSPACE_ID}`.catch(() => undefined);
-  await admin`DELETE FROM workspaces WHERE id = ${WORKSPACE_ID}`.catch(() => undefined);
-  await admin`DELETE FROM workspace_members WHERE workspace_id = ${OTHER_WORKSPACE_ID}`.catch(() => undefined);
-  await admin`DELETE FROM workspaces WHERE id = ${OTHER_WORKSPACE_ID}`.catch(() => undefined);
-  await admin`DELETE FROM users WHERE id = ${USER_ID}`.catch(() => undefined);
-  await admin`DELETE FROM users WHERE id = ${OTHER_USER_ID}`.catch(() => undefined);
-  await admin.end({ timeout: 5 });
-  const { closeDatabase: closeWorkerDatabase } = await import("../db.ts");
-  await closeWorkerDatabase().catch(() => undefined);
-  const { closeDatabase } = await import("../../../../apps/api/src/db/client.ts");
-  await closeDatabase().catch(() => undefined);
+  assertFixtureWipeClean(report);
 });
 
 test("入口总控：不设开关仍走旧链，设了才投简化链的 jobType", async () => {

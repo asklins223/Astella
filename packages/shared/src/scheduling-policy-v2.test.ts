@@ -9,9 +9,11 @@ import { describe, it } from "node:test";
 import {
   calculateDiscreteV2Schedule,
   effectiveReviewStart,
+  DISCRETE_V2_FIRST_INTERVAL_DAYS,
   DISCRETE_V2_INTERVAL_TIERS,
   DISCRETE_V2_LATER_DELAY_HOURS,
   DISCRETE_V2_POLICY_VERSION,
+  discreteV2FirstDueAt,
   DiscreteV2PolicyError,
   type DiscreteV2Input,
 } from "./scheduling-policy-v2.ts";
@@ -52,6 +54,36 @@ describe("discrete-v2 scheduling policy", () => {
 
     it("exports the correct policy version", () => {
       assert.equal(DISCRETE_V2_POLICY_VERSION, "discrete-v2");
+    });
+
+    /**
+     * 「保存并开启复习」那一档排的第一次复习就在头一档（39d W7-2）。
+     * 这一格存在的理由不是"1 天这个数对不对"，而是**它是从阶梯导出的**：
+     * 调用方一旦自己写 `1` 或 `24 * 60 * 60 * 1000`，阶梯改了那边不会跟着改，
+     * 屏幕上那句"第一次复习排在 X"就会与策略悄悄分叉。
+     */
+    it("first tier is derived from the ladder, and the first due date follows it", () => {
+      assert.equal(DISCRETE_V2_FIRST_INTERVAL_DAYS, DISCRETE_V2_INTERVAL_TIERS[0]);
+      assert.equal(DISCRETE_V2_FIRST_INTERVAL_DAYS, 1, "产品口径：刚开始安排就是 1 天后");
+      const due = discreteV2FirstDueAt(NOW);
+      assert.equal(due.getTime() - NOW.getTime(), DISCRETE_V2_FIRST_INTERVAL_DAYS * MS_PER_DAY);
+      // 与策略自己那份"correct 且当前已在头一档"的读数同一天：两处各算一套迟早分叉。
+      assert.equal(
+        due.getTime(),
+        calculateDiscreteV2Schedule({
+          ...baseInput(),
+          currentIntervalDays: DISCRETE_V2_FIRST_INTERVAL_DAYS,
+          outcome: "incorrect",
+        }).nextReviewAt.getTime(),
+        "reset 到 1 天与首档到期必须同源",
+      );
+    });
+
+    it("first due date refuses an unreadable clock instead of producing Invalid Date", () => {
+      assert.throws(
+        () => discreteV2FirstDueAt(new Date("not a date")),
+        (error: unknown) => (error as DiscreteV2PolicyError).code === "invalid_time",
+      );
     });
   });
 
