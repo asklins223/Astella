@@ -38,23 +38,39 @@ import {
   insertAuthoredCandidatesBatched,
   insertBindingPlanRow,
   insertEvent,
+  insertRepairedCandidateV2,
   loadV2RunInputs,
   type PendingOutboxJob,
 } from "../handlers/card-generation-v2-handler.ts";
 import {
   assembleCandidateEvidenceBindingPlanV2,
 } from "@ailearn/shared/card-generation-v2-pipeline";
-import type { CardHintPairV2, LearningCardCandidateRevisionV2 } from "@ailearn/shared/card-generation-v2-contracts";
+import type {
+  CardHintPairV2,
+  CardPlanV2,
+  LearningCardCandidateRevisionV2,
+} from "@ailearn/shared/card-generation-v2-contracts";
+import type { CardContentCheckV3Output } from "@ailearn/shared/card-generation-v3-contracts";
+import type { CardGenerateV3CandidateDraft } from "@ailearn/shared/card-generation-v3-contracts";
+import type { AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
 import { extractAtomsDeterministic } from "@ailearn/shared/card-generation-v2-pipeline";
 import {
   createCardGenerateV3Task,
   createCardContentCheckV3Task,
+  createCardCandidateRewriteV3Task,
+  type CardCandidateRewriteV3TaskInput,
   type CardContentCheckV3TaskInput,
+  type CardCandidateRewriteV3TaskOutput,
   type CardGenerateV3TaskInput,
   type CardGenerationV3ProviderPort,
 } from "./tasks.ts";
-import { assembleCardGenerationV3, runCardGenerateV3CandidateGates } from "./plan-assembly.ts";
 import {
+  assembleCardGenerationV3,
+  buildCandidateRevisionV3,
+  runCardGenerateV3CandidateGates,
+} from "./plan-assembly.ts";
+import {
+  createDeterministicCardCandidateRewriteV3Provider,
   createDeterministicCardContentCheckV3Provider,
   createDeterministicCardGenerateV3Provider,
 } from "./deterministic.ts";
@@ -67,6 +83,8 @@ import type {
 export interface CardGenerationSimplifiedProviders {
   readonly generate: CardGenerationV3ProviderPort<CardGenerateV3TaskInput>;
   readonly check: CardGenerationV3ProviderPort<CardContentCheckV3TaskInput>;
+  /** 增量改写（刀c）：`rewrite` 命中几张就有几次这个调用。 */
+  readonly rewrite: CardGenerationV3ProviderPort<CardCandidateRewriteV3TaskInput>;
 }
 
 /**
@@ -143,7 +161,9 @@ export async function processCardGenerationSimplifiedJob(
   const runId = job.runId;
   const generateCalls = counting(providers.generate);
   const checkCalls = counting(providers.check);
-  const modelCalls = () => generateCalls[1]() + checkCalls[1]();
+  const rewriteCalls = counting(providers.rewrite);
+  const rewriteCount = () => rewriteCalls[1]();
+  const modelCalls = () => generateCalls[1]() + checkCalls[1]() + rewriteCalls[1]();
 
   // ── 段 1：读（短事务，锁 run）──────────────────────────────────────────
   const prepared = await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
@@ -228,14 +248,7 @@ export async function processCardGenerationSimplifiedJob(
       prepare: async () => generateInput,
       commit: async () => {},
     });
-    const receipt = await generateTask.execute(generateInput, {
-      mode: "structured",
-      usageContext: { modelId: providers.generate.modelId, promptVersion: "card-generate-v3", resourceClass: "card_foreground" },
-      remainingMs: 240_000,
-      stepTimeoutMs: 120_000,
-      retryIndex: 0,
-      signal: signal ?? new AbortController().signal,
-    });
+    const receipt = await generateTask.execute(generateInput, taskEnvironment(providers.generate.modelId, signal));
     if (!receipt.ok) {
       // 输出形状不合合同 = 确定性失败（内核已按预算重试过一次），不重投。
       throw new Error(`card_generate_v3 output rejected: ${receipt.message}`);
@@ -327,29 +340,155 @@ export async function processCardGenerationSimplifiedJob(
     prepare: async () => checkInput,
     commit: async () => {},
   });
-  const checked = await checkTask.execute(checkInput, {
-    mode: "structured",
-    usageContext: { modelId: providers.check.modelId, promptVersion: "card-check-v3", resourceClass: "card_foreground" },
-    remainingMs: 240_000,
-    stepTimeoutMs: 120_000,
-    retryIndex: 0,
-    signal: signal ?? new AbortController().signal,
-  });
+  const checked = await checkTask.execute(checkInput, taskEnvironment(providers.check.modelId, signal));
   if (!checked.ok) throw new Error(`card_content_check_v3 output rejected: ${checked.message}`);
   const checkOutput: CardContentCheckV3TaskOutput = checked.output;
+
+  // ── 段 4b/4c：增量改写（只重做被判 rewrite 的那几张）＋一次只针对它们的重检 ──
+  let finalEntries = checkOutput.parsed.perCandidate.filter((entry) => entry.verdict !== "rewrite");
+  let finalCandidates = candidates;
+  const rewriteEntries = checkOutput.parsed.perCandidate.filter((entry) => entry.verdict === "rewrite");
+  if (rewriteEntries.length > 0) {
+    const rebuilt: LearningCardCandidateRevisionV2[] = [];
+    const task = createCardCandidateRewriteV3Task({
+      provider: rewriteCalls[0],
+      prepare: async () => { throw new Error("rewrite task 的输入由调用方逐张给"); },
+      commit: async () => {},
+    });
+    for (const entry of rewriteEntries) {
+      const previous = candidates.find(
+        (candidate) => candidate.planObjectiveLocalId === entry.objectiveLocalId,
+      );
+      if (!previous) continue;
+      const hints = hintsByCandidateRevisionId.get(previous.candidateRevisionId);
+      if (!hints) continue; // 提示是兄弟列；没有它就不改写（不许顺手把它清空）
+      const rewriteInput: CardCandidateRewriteV3TaskInput = {
+        runId,
+        sourceContent: loaded.sourceContent,
+        candidate: previous,
+        hints,
+        issues: entry.issues.map((issue) => ({ code: issue.code, detail: issue.detail })),
+        evidenceManifest: loaded.sealed.evidenceManifest,
+      };
+      const draft = await runRewriteOnce(task, rewriteInput, providers.rewrite.modelId, signal);
+      const built = buildCandidateRevisionV3({
+        draft,
+        plan: assembled?.plan ?? planFromCommittedCandidates(previous),
+        runId,
+        // 改写只改内容，不换题型：整批分配过的 strategy 沿用上一版那一份。
+        strategy: previous.presentation.strategy,
+        reasonCodes: [...previous.recommendation.reasonCodes, "content_check_rewrite"],
+        evidenceSetHash: loaded.sealed.evidenceSetHash,
+        previous,
+      });
+      rebuilt.push(built.candidate);
+      hintsByCandidateRevisionId.set(built.candidate.candidateRevisionId, built.hints);
+    }
+    if (rebuilt.length > 0) {
+      await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
+        for (const next of rebuilt) {
+          const previous = candidates.find(
+            (candidate) => candidate.candidateRevisionId === next.derivedFromCandidateRevisions.at(-1)?.candidateRevisionId,
+          )!;
+          // 旧修订不可变：只标 superseded，不覆盖、不删。
+          await tx.execute(sql`
+            UPDATE public.card_generation_candidates_v2
+            SET publish_state = 'superseded', updated_at = now()
+            WHERE candidate_revision_id = ${previous.candidateRevisionId} AND workspace_id = ${workspaceId}
+              AND publish_state = 'unpublished'
+          `);
+          await insertRepairedCandidateV2(tx, {
+            runId, workspaceId, candidate: next, hints: hintsByCandidateRevisionId.get(next.candidateRevisionId)!,
+          });
+          await insertEvent(tx, workspaceId, runId, "card_candidate.rewritten", {
+            candidateId: next.candidateId,
+            previousRevisionId: previous.candidateRevisionId,
+            newRevisionId: next.candidateRevisionId,
+            revision: next.revision,
+            rewriteCalls: rewriteCount(),
+          });
+        }
+        await fenceV2OutboxLease(tx, job);
+      }, { isolated: true });
+
+      const recheckInput: CardContentCheckV3TaskInput = {
+        runId,
+        sourceContent: loaded.sourceContent,
+        candidates: rebuilt.map((candidate) => ({
+          objectiveLocalId: candidate.planObjectiveLocalId,
+          candidate,
+        })),
+        evidenceManifest: loaded.sealed.evidenceManifest,
+      };
+      const recheckTask = createCardContentCheckV3Task({
+        provider: checkCalls[0],
+        prepare: async () => recheckInput,
+        commit: async () => {},
+      });
+      const recheckedReceipt = await recheckTask.execute(recheckInput, taskEnvironment(providers.check.modelId, signal));
+      if (!recheckedReceipt.ok) {
+        throw new Error(`card_content_check_v3 重检输出不合合同：${recheckedReceipt.message}`);
+      }
+      // **一轮为限**：重检之后还判 rewrite 的那些不再改写，停在 authored 等人工。
+      finalEntries = [...finalEntries, ...recheckedReceipt.output.parsed.perCandidate];
+      finalCandidates = [...candidates.filter((candidate) =>
+        !rebuilt.some((next) => next.planObjectiveLocalId === candidate.planObjectiveLocalId)), ...rebuilt];
+    }
+  }
 
   // ── 段 5：落库与终态（短事务）───────────────────────────────────────
   await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
     await writeSimplifiedCheckResults(tx, {
       workspaceId,
       runId,
-      candidates,
+      candidates: finalCandidates,
       sealed: loaded.sealed,
-      checked: checkOutput,
+      entries: finalEntries,
+      unchecked: checkOutput.unchecked,
       modelCalls: modelCalls(),
+      rewriteCalls: rewriteCount(),
     });
     await fenceV2OutboxLease(tx, job);
   }, { isolated: true });
+}
+
+/** 一次改写调用（内核那一次自动重试由 `execute` 的失败归类决定，这里不自己循环）。 */
+async function runRewriteOnce(
+  task: AiTaskDefinition<CardCandidateRewriteV3TaskInput, CardCandidateRewriteV3TaskOutput>,
+  input: CardCandidateRewriteV3TaskInput,
+  modelId: string,
+  signal?: AbortSignal,
+): Promise<CardGenerateV3CandidateDraft> {
+  const receipt = await task.execute(input, taskEnvironment(modelId, signal));
+  if (!receipt.ok) throw new Error(`card_candidate_rewrite_v3 输出不合合同：${receipt.message}`);
+  return receipt.output.draft;
+}
+
+function taskEnvironment(modelId: string, signal?: AbortSignal) {
+  return {
+    mode: "structured" as const,
+    usageContext: { modelId, promptVersion: "card-v3", resourceClass: "card_foreground" },
+    remainingMs: 240_000,
+    stepTimeoutMs: 120_000,
+    retryIndex: 0,
+    signal: signal ?? new AbortController().signal,
+  };
+}
+
+/** 重投路径上没有内存里的计划对象：从候选行自己的 plan 身份复原一份就够组装用了。 */
+function planFromCommittedCandidates(candidate: LearningCardCandidateRevisionV2): CardPlanV2 {
+  return {
+    version: 2,
+    planRevisionId: candidate.planRevisionId,
+    runId: candidate.runId,
+    inputSnapshotHash: candidate.planHash,
+    cardContentEpoch: candidate.cardContentEpoch,
+    planVersion: candidate.planVersion,
+    previousPlanRevisionId: null,
+    result: { kind: "no_cards_recommended", reasonCodes: ["no_learnable_objective"] },
+    atomDecisions: [],
+    planHash: candidate.planHash,
+  };
 }
 
 /** plan 行的写入形状与 V2 主管线一致（同一张表、同一批列）。 */
@@ -405,15 +544,17 @@ async function writeSimplifiedCheckResults(
     runId: string;
     candidates: LearningCardCandidateRevisionV2[];
     sealed: Awaited<ReturnType<typeof loadV2RunInputs>>["sealed"];
-    checked: CardContentCheckV3TaskOutput;
+    entries: CardContentCheckV3Output["perCandidate"];
+    unchecked: ReadonlyArray<string>;
     modelCalls: number;
+    rewriteCalls: number;
   },
 ): Promise<void> {
-  const { workspaceId, runId, candidates, sealed, checked } = args;
+  const { workspaceId, runId, candidates, sealed } = args;
   const byLocalId = new Map(candidates.map((candidate) => [candidate.planObjectiveLocalId, candidate]));
   const passedRevisionIds = new Set<string>();
 
-  for (const entry of checked.parsed.perCandidate) {
+  for (const entry of args.entries) {
     const candidate = byLocalId.get(entry.objectiveLocalId);
     if (!candidate) continue;
     const keepable = entry.verdict === "keep";
@@ -478,12 +619,13 @@ async function writeSimplifiedCheckResults(
   await insertEvent(tx, workspaceId, runId, "card_generation.simplified_completed", {
     modelCalls: args.modelCalls,
     passed: [...passedRevisionIds],
-    verdicts: checked.parsed.perCandidate.map((entry) => ({
+    verdicts: args.entries.map((entry) => ({
       objectiveLocalId: entry.objectiveLocalId,
       verdict: entry.verdict,
     })),
-    unchecked: checked.unchecked,
+    unchecked: args.unchecked,
     status,
+    rewriteCalls: args.rewriteCalls,
   });
 }
 
@@ -505,5 +647,6 @@ export function resolveCardGenerationV3Providers(): CardGenerationSimplifiedProv
   return {
     generate: createDeterministicCardGenerateV3Provider(),
     check: createDeterministicCardContentCheckV3Provider(),
+    rewrite: createDeterministicCardCandidateRewriteV3Provider(),
   };
 }

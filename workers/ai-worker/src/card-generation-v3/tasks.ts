@@ -24,13 +24,18 @@
  * 解析失败的一次自动重试会如实计成更多，那是失败路径不是成功路径）。
  */
 import {
+  cardCandidateRewriteV3OutputSchema,
   cardContentCheckV3OutputSchema,
   cardGenerateV3OutputSchema,
+  type CardCandidateRewriteV3Output,
   type CardContentCheckV3Output,
   type CardGenerateV3CandidateDraft,
   type CardGenerateV3Output,
 } from "@ailearn/shared/card-generation-v3-contracts";
-import type { LearningCardCandidateRevisionV2 } from "@ailearn/shared/card-generation-v2-contracts";
+import type {
+  CardHintPairV2,
+  LearningCardCandidateRevisionV2,
+} from "@ailearn/shared/card-generation-v2-contracts";
 import {
   computeGroundingReportHashV2,
   extractAnswerText,
@@ -445,3 +450,118 @@ export function createCardContentCheckV3Task(
 }
 
 export type { CardContentCheckV3TaskOutput, CardGenerateV3TaskOutput } from "./output-types.ts";
+
+// ── ③ 增量改写任务（card_candidate_rewrite_v3，刀c）─────────────────────
+
+/**
+ * 一次只改**一张**：`rewrite` 命中几张就有几次这个调用（§16.28 要求它们如实计入
+ * 调用数），改完对这些候选做一次重检就收口——不再有"修复—再检查"的第二轮。
+ */
+export interface CardCandidateRewriteV3TaskInput {
+  readonly runId: string;
+  readonly sourceContent: string;
+  readonly candidate: LearningCardCandidateRevisionV2;
+  /** 提示对是候选行的兄弟列、不在修订体里，所以要单独带进来（改写不许顺手把它们清了）。 */
+  readonly hints: CardHintPairV2;
+  /** 批量检查给这一张的那几条问题——改写的唯一依据，不自己发明要改什么。 */
+  readonly issues: ReadonlyArray<{ readonly code: string; readonly detail: string }>;
+  readonly evidenceManifest: AssemblerEvidenceManifest;
+}
+
+export interface CardCandidateRewriteV3TaskOutput {
+  readonly draft: CardGenerateV3CandidateDraft;
+}
+
+export function buildCardCandidateRewriteV3Prompt(
+  input: CardCandidateRewriteV3TaskInput,
+): string {
+  const evidence = input.evidenceManifest.evidence
+    .map((entry) => `- ${entry.evidenceSnapshotId}：${(entry.content ?? "").slice(0, 200)}`)
+    .join("\n");
+  const issues = input.issues.map((issue) => `- ${issue.code}：${issue.detail}`).join("\n");
+  const { candidate } = input;
+  return [
+    "你是学习卡改写助手。下面这张候选卡被内容检查判为「需要改写」。",
+    "请只针对列出的问题改这一张，不要换题型、不要扩目标、不要引用没给出的依据。",
+    "交回的仍是与生成任务同一种草稿形状（服务端会重算全部哈希）：",
+    '{"rewrites":[{"objectiveLocalId":"' + candidate.planObjectiveLocalId + '",',
+    ' "objectiveDraft":{…}, "presentationDraft":{…}, "hints":{"level1":"…","level2":"…"}}]}',
+    "",
+    `# 这一张要改的问题\n${issues || "（检查没写具体问题）"}`,
+    `# 现在的题面\n${candidate.presentation.front.cue} / ${candidate.presentation.front.prompt}`,
+    `# 现在的答案\n${extractAnswerText(candidate.objective.canonicalAnswer)}`,
+    `# 依据（sealed manifest）\n${evidence || "（这一版没有可引用的依据）"}`,
+  ].join("\n");
+}
+
+type RewritePrepare = AiTaskDefinition<CardCandidateRewriteV3TaskInput, CardCandidateRewriteV3TaskOutput>["prepare"];
+
+export interface CardCandidateRewriteV3TaskDeps {
+  readonly provider: CardGenerationV3ProviderPort<CardCandidateRewriteV3TaskInput>;
+  readonly prepare: RewritePrepare;
+  readonly commit: (ctx: AiTaskContext, attempt: AiAttemptToken, output: CardCandidateRewriteV3TaskOutput) => Promise<void>;
+  readonly budget?: AiTaskDefinition<CardCandidateRewriteV3TaskInput, CardCandidateRewriteV3TaskOutput>["budget"];
+}
+
+export function createCardCandidateRewriteV3Task(
+  deps: CardCandidateRewriteV3TaskDeps,
+): AiTaskDefinition<CardCandidateRewriteV3TaskInput, CardCandidateRewriteV3TaskOutput> {
+  const budget = deps.budget
+    ?? { maxModelCalls: 1, stepTimeoutMs: 120_000, taskDeadlineMs: 240_000, maxAutoRetries: 1 };
+  return {
+    id: "card_candidate_rewrite_v3",
+    version: 1,
+    mode: "structured",
+    resourceClass: "card_foreground",
+    budget,
+    completion: { kind: "structured_parsed" },
+    usageContext: { modelId: deps.provider.modelId, promptVersion: "card-rewrite-v3", resourceClass: "card_foreground" },
+    prepare: deps.prepare,
+    execute: async (input, env): Promise<AiStepResult<CardCandidateRewriteV3TaskOutput>> => {
+      const completion = await deps.provider.complete({
+        prompt: buildCardCandidateRewriteV3Prompt(input),
+        input,
+        signal: env.signal,
+      });
+      let drafts: CardCandidateRewriteV3Output;
+      try {
+        drafts = cardCandidateRewriteV3OutputSchema.parse(JSON.parse(completion.text));
+      } catch (error) {
+        const failure: ParseFailure = {
+          ok: false,
+          class: "output_shape",
+          message: `改写输出不符合 V3 合同：${(error as Error).message.slice(0, 400)}`,
+        };
+        return failure;
+      }
+      const wanted = input.candidate.planObjectiveLocalId;
+      const draft = drafts.rewrites.find((item) => item.objectiveLocalId === wanted);
+      if (!draft) {
+        const failure: ParseFailure = {
+          ok: false,
+          class: "output_shape",
+          message: `改写没有交回这一张（要的是 ${wanted}，给的是 ${drafts.rewrites.map((i) => i.objectiveLocalId).join("/") || "空"}）`,
+        };
+        return failure;
+      }
+      return {
+        ok: true,
+        output: { draft },
+        promptTokens: completion.promptTokens,
+        completionTokens: completion.completionTokens,
+      };
+    },
+    commit: async (ctx, attempt, output) => {
+      await deps.commit(ctx, attempt, output);
+      return {
+        outcome: "committed",
+        output,
+        usage: { modelCalls: 1, promptTokens: 0, completionTokens: 0, elapsedMs: 0, autoRetriesUsed: 0 },
+        failure: null,
+        preservedValidResult: false,
+        resumedFromCheckpoint: false,
+        modelCalls: 1,
+      };
+    },
+  };
+}

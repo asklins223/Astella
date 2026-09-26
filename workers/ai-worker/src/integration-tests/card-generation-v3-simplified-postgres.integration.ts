@@ -57,6 +57,7 @@ let simplifiedRunId = "";
 let controlRunId = "";
 let zeroCandidateRunId = "";
 let otherUserRunTarget = "";
+let rewriteRunId = "";
 
 async function seedNote(key: string, title: string, blocks: string[], owner: { workspaceId: string; userId: string } = { workspaceId: WORKSPACE_ID, userId: USER_ID }): Promise<NoteFixture> {
   const noteId = randomUUID();
@@ -217,6 +218,8 @@ before(async () => {
   // 测试要四个夹具就分开放，不去把那道闸调大。
   notes.other = await seedNote("other", "另一个空间的那一篇", LEARNABLE_BLOCKS,
     { workspaceId: OTHER_WORKSPACE_ID, userId: OTHER_USER_ID });
+  notes.rewrite = await seedNote("rewrite", "另一个空间要改写那一篇", LEARNABLE_BLOCKS,
+    { workspaceId: OTHER_WORKSPACE_ID, userId: OTHER_USER_ID });
 
   // 入口对照：不设总控 ⇒ 仍投旧 jobType。
   controlRunId = (await createRun(notes.control.versionId, `v3-control-${randomUUID()}`)).runId;
@@ -226,6 +229,8 @@ before(async () => {
   simplifiedRunId = (await createRun(notes.learnable.versionId, `v3-main-${randomUUID()}`)).runId;
   zeroCandidateRunId = (await createRun(notes.unlearnable.versionId, `v3-zero-${randomUUID()}`)).runId;
   otherUserRunTarget = (await createRun(notes.other.versionId, `v3-other-${randomUUID()}`,
+    { workspaceId: OTHER_WORKSPACE_ID, userId: OTHER_USER_ID })).runId;
+  rewriteRunId = (await createRun(notes.rewrite.versionId, `v3-rewrite-${randomUUID()}`,
     { workspaceId: OTHER_WORKSPACE_ID, userId: OTHER_USER_ID })).runId;
 });
 
@@ -380,9 +385,10 @@ test("端到端：两发语义调用走到 review_ready，候选带着 binding p
 
 test("检查失败不重跑生成：计划与首稿留着，重投从段 4 接上", async () => {
   const buildGenerate = countingGenerate();
-  const { createDeterministicCardContentCheckV3Provider } = await import(
-    "../card-generation-v3/deterministic.ts"
-  );
+  const {
+    createDeterministicCardCandidateRewriteV3Provider,
+    createDeterministicCardContentCheckV3Provider,
+  } = await import("../card-generation-v3/deterministic.ts");
   const { processCardGenerationSimplifiedJob } = await import("../card-generation-v3/handler.ts");
   const generate = await buildGenerate();
 
@@ -396,6 +402,7 @@ test("检查失败不重跑生成：计划与首稿留着，重投从段 4 接�
         modelId: "failing-v3",
         async complete() { throw new Error("provider 503：检查这一发没成"); },
       },
+      rewrite: await createDeterministicCardCandidateRewriteV3Provider(),
     },
   ), "provider 抛错必须让这一发失败");
   const planAfterFirst = await admin`
@@ -413,6 +420,7 @@ test("检查失败不重跑生成：计划与首稿留着，重投从段 4 接�
   await processCardGenerationSimplifiedJob(job2, {
     generate: replayGenerate,
     check: createDeterministicCardContentCheckV3Provider(),
+    rewrite: await createDeterministicCardCandidateRewriteV3Provider(),
   });
   assert.equal(replayGenerate.calls(), 1, "重投之后计数没涨——生成那一发没再付一次（§16.28 的另一半）");
   // 库里的两条事件各自记的是**本发之内**的调用数：第一遍付了生成（记在 plan_committed），
@@ -466,4 +474,86 @@ test("别人的空间读不到这条 run（RLS＋SQL 条件两道都在）", asy
     simplifiedRunId,
   );
   assert.ok(asOwner, "正控制：本人读得到自己那一条");
+});
+
+test("增量改写：只重做被判 rewrite 的那一张，重检只看它，调用数如实涨到 4", async () => {
+  const { processCardGenerationSimplifiedJob } = await import("../card-generation-v3/handler.ts");
+  const {
+    createDeterministicCardGenerateV3Provider,
+    createDeterministicCardCandidateRewriteV3Provider,
+  } = await import("../card-generation-v3/deterministic.ts");
+  const { runDeterministicGroundingContract } = await import(
+    "@ailearn/shared/card-generation-v2-pipeline"
+  );
+
+  const checkCallsWith: number[] = [];
+  const scriptedCheck = {
+    modelId: "scripted-check-v3",
+    async complete({ input }: { input: unknown }) {
+      const typed = input as {
+        candidates: Array<{ objectiveLocalId: string; candidate: { candidateRevisionId: string } }>;
+        evidenceManifest: never;
+      };
+      checkCallsWith.push(typed.candidates.length);
+      const perCandidate = [];
+      for (const [index, entry] of typed.candidates.entries()) {
+        const grounding = await runDeterministicGroundingContract(
+          entry.candidate as never, typed.evidenceManifest,
+        );
+        // 第一遍的第 1 张判"需要改写"，其余（含重检那一遍的所有张）判可保留。
+        const wantsRewrite = checkCallsWith.length === 1 && index === 0;
+        perCandidate.push({
+          objectiveLocalId: entry.objectiveLocalId,
+          verdict: wantsRewrite ? "rewrite" : "keep",
+          issues: wantsRewrite
+            ? [{ code: "front_leaks_answer", severity: "soft", detail: "题面太直，改写成需要回想" }]
+            : [],
+          grounding,
+        });
+      }
+      return { text: JSON.stringify({ perCandidate, setIssues: [] }) };
+    },
+  };
+
+  const job = await claimSimplifiedJob(rewriteRunId);
+  await processCardGenerationSimplifiedJob(job, {
+    generate: createDeterministicCardGenerateV3Provider(),
+    check: scriptedCheck,
+    rewrite: createDeterministicCardCandidateRewriteV3Provider(),
+  });
+
+  // **只重检受影响的那些**：第一遍看见整批，第二遍只看见被改写的那一张。
+  assert.ok(checkCallsWith.length === 2, `批量检查应该恰好两遍（首检＋重检），实到 ${checkCallsWith.length}`);
+  assert.ok(checkCallsWith[0]! > 1, "第一遍要看见整批（否则这一条测不到「只重检」这一半）");
+  assert.equal(checkCallsWith[1], 1, "重检只看被改写的那一张，不重跑整批");
+
+  const rows = await admin`
+    SELECT candidate_revision_id, revision, publish_state, quality_state, derived_from
+    FROM card_generation_candidates_v2
+    WHERE run_id = ${rewriteRunId}
+    ORDER BY candidate_id, revision
+  ` as unknown as Array<{
+    candidate_revision_id: string; revision: number; publish_state: string;
+    quality_state: string; derived_from: Array<{ revision: number }>;
+  }>;
+  const first = rows.filter((row) => row.revision === 1);
+  const second = rows.filter((row) => row.revision === 2);
+  assert.equal(second.length, 1, "被改写的那一张长出第二条修订");
+  assert.equal(first.length, checkCallsWith[0], "首稿那些行一条不少（旧修订不覆盖、不删）");
+  assert.ok(second[0]!.derived_from?.some((item) => item.revision === 1),
+    "新修订要指得回它自己那一版的前一修订");
+  const superseded = rows.filter((row) => row.publish_state === "superseded").length;
+  assert.equal(superseded, 1, "只有被替换掉的那一版被标 superseded");
+  assert.equal(second[0]!.quality_state, "passed", "改写后的那一版过了重检才算可保留");
+
+  const completed = await eventPayload(rewriteRunId, "card_generation.simplified_completed");
+  assert.equal(completed.modelCalls, 4,
+    "生成 1＋批量检查 1＋改写 1＋重检 1：多付的那两发要如实计入，不隐藏调用");
+  assert.equal(completed.rewriteCalls, 1);
+  assert.equal(await runStatus(rewriteRunId), "review_ready");
+  const rewrittenEvents = await admin`
+    SELECT count(*)::int AS n FROM card_generation_events_v2
+    WHERE run_id = ${rewriteRunId} AND event_type = 'card_candidate.rewritten'
+  ` as unknown as Array<{ n: number }>;
+  assert.equal(Number(rewrittenEvents[0]?.n), 1, "改写这一发要留一条能对账的事件");
 });

@@ -32,6 +32,7 @@ import type {
   CardGenerateV3CandidateDraft,
 } from "@ailearn/shared/card-generation-v3-contracts";
 import type {
+  CardCandidateRewriteV3TaskInput,
   CardContentCheckV3TaskInput,
   CardGenerateV3TaskInput,
   CardGenerationV3ProviderPort,
@@ -176,6 +177,31 @@ export function createDeterministicCardContentCheckV3Provider(): CardGenerationV
         });
       }
       return { text: JSON.stringify({ perCandidate, setIssues: [] }) };
+    },
+  };
+}
+
+/**
+ * 改写的确定性那一版：**它不会改写内容**，只把原稿交回去。
+ *
+ * 这不是偷懒，是把"离线这一档没有语义判断能力"这件事摆明——交回原稿之后重检会给出
+ * 同一档结论，那张候选就停在 `authored`（审核页看不见它，也不算通过）。真模型那一版
+ * 换的就是这个函数：外壳、身份重算、只重检受影响候选的那些判据都不动。
+ */
+export function createDeterministicCardCandidateRewriteV3Provider(): CardGenerationV3ProviderPort<CardCandidateRewriteV3TaskInput> {
+  return {
+    modelId: DETERMINISTIC_MODEL_ID,
+    async complete({ input }) {
+      return {
+        text: JSON.stringify({
+          rewrites: [{
+            objectiveLocalId: input.candidate.planObjectiveLocalId,
+            objectiveDraft: input.candidate.objective,
+            presentationDraft: input.candidate.presentation,
+            hints: input.hints,
+          }],
+        }),
+      };
     },
   };
 }

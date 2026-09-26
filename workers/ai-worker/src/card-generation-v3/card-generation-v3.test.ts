@@ -27,6 +27,7 @@ import {
 } from "./tasks.ts";
 import {
   assembleCardGenerationV3,
+  buildCandidateRevisionV3,
   runCardGenerateV3CandidateGates,
 } from "./plan-assembly.ts";
 import {
@@ -565,6 +566,71 @@ test("检查提示词：每一张候选与每条依据都要在场", () => {
   assert.ok(prompt.includes("因为那时重新编码最省力"), "答案要进检查的提示");
   assert.ok(prompt.includes("每一张候选都要有一条结论"), "漏一张的代价要说给模型");
 });
+
+// ── ⑦ 增量改写的身份（与首稿共用同一段组装）────────────────────────────
+
+test("改写：同一张卡长出新修订，旧修订留在 derivedFrom 里", () => {
+  const draft = candidateDraft("obj-1");
+  const first = buildCandidateRevisionV3({
+    draft, plan: assemblyPlanFor(draft), runId: RUN_ID,
+    strategy: "why", reasonCodes: ["priority-important"], evidenceSetHash: SNAPSHOT_HASH,
+  }).candidate;
+  const second = buildCandidateRevisionV3({
+    draft, plan: assemblyPlanFor(draft), runId: RUN_ID,
+    strategy: first.presentation.strategy, reasonCodes: ["content_check_rewrite"],
+    evidenceSetHash: SNAPSHOT_HASH, previous: first,
+  }).candidate;
+  assert.equal(second.candidateId, first.candidateId, "还是同一张卡");
+  assert.notEqual(second.candidateRevisionId, first.candidateRevisionId, "但是另一条修订");
+  assert.equal(second.revision, 2);
+  assert.deepEqual(second.derivedFromCandidateRevisions, [{
+    candidateRevisionId: first.candidateRevisionId,
+    candidateId: first.candidateId,
+    revision: 1,
+    revisionHash: first.candidateRevisionHash,
+  }]);
+  assert.notEqual(second.candidateRevisionHash, first.candidateRevisionHash,
+    "修订哈希必须跟着 revision 与 derivedFrom 一起变");
+
+  // 第二次改写：谱系必须**累积**，不是每次只指回上一版（少了这一半，
+  // "把展开写成覆盖"这种变异在 1→2 这一跳上是等价的、抓不住）。
+  const third = buildCandidateRevisionV3({
+    draft, plan: assemblyPlanFor(draft), runId: RUN_ID,
+    strategy: second.presentation.strategy, reasonCodes: ["content_check_rewrite"],
+    evidenceSetHash: SNAPSHOT_HASH, previous: second,
+  }).candidate;
+  assert.equal(third.revision, 3);
+  assert.deepEqual(third.derivedFromCandidateRevisions.map((item) => item.revision), [1, 2],
+    "旧修订按顺序全留在谱系里");
+});
+
+test("改写：题型沿用上一版那一份，模型漏填的依据沿用旧修订，哈希按补完之后重算", () => {
+  const draft = candidateDraft("obj-1");
+  const plan = assemblyPlanFor(draft);
+  const first = buildCandidateRevisionV3({
+    draft, plan, runId: RUN_ID, strategy: "cloze",
+    reasonCodes: ["priority-important"], evidenceSetHash: SNAPSHOT_HASH,
+  }).candidate;
+  const sloppy = structuredClone(draft);
+  sloppy.objectiveDraft.rubric.units[0]!.evidenceRefIds = [];
+  sloppy.presentationDraft.strategy = "recall"; // 模型想换题型——不算数
+  const second = buildCandidateRevisionV3({
+    draft: sloppy, plan, runId: RUN_ID, strategy: first.presentation.strategy,
+    reasonCodes: ["content_check_rewrite"], evidenceSetHash: SNAPSHOT_HASH, previous: first,
+  }).candidate;
+  assert.equal(second.presentation.strategy, "cloze", "改写只改内容，不换题型");
+  assert.deepEqual(second.objective.rubric.units[0]!.evidenceRefIds, [EVIDENCE_A],
+    "漏填依据的格子沿用上一版，否则重检必然被 no_evidence_reference 拒");
+  const { rubricHash: _supplied, ...withoutHash } = second.objective.rubric;
+  assert.equal(second.objective.rubric.rubricHash, computeRubricHashV2(withoutHash),
+    "补完依据之后哈希要重算");
+});
+
+function assemblyPlanFor(_draft: CardGenerateV3CandidateDraft) {
+  const assembled = assembleCardGenerationV3(assemblyInput([candidateDraft("obj-1")],
+    cardGenerateV3OutputSchema.parse(JSON.parse(generateJson([candidateDraft("obj-1")])))));
+  return assembled.plan;
+}
 
 function assemblyInput(
   acceptedCandidates: readonly CardGenerateV3CandidateDraft[],

@@ -29,6 +29,7 @@ import {
   type CardStrategyV2,
   type LearningCardCandidateRevisionV2,
   type NoCardReasonCodeV2,
+  type ObjectiveRubricV2,
   type PlannedObjectiveV2,
 } from "@ailearn/shared/card-generation-v2-contracts";
 import {
@@ -244,36 +245,16 @@ export function assembleCardGenerationV3(
   const candidates: LearningCardCandidateRevisionV2[] = [];
   const hintsByCandidateRevisionId = new Map<string, CardHintPairV2>();
   kept.forEach((entry, index) => {
-    const { draft } = entry;
-    const { rubricHash: _modelSuppliedRubricHash, ...rubricWithoutHash } = draft.objectiveDraft.rubric;
-    const objective = draft.objectiveDraft.practiceItem
-      ? draft.objectiveDraft
-      : {
-        ...draft.objectiveDraft,
-        practiceItem: derivePracticeItemFromCanonicalAnswer(draft.objectiveDraft.canonicalAnswer),
-      };
-    const candidateWithoutHash: Omit<LearningCardCandidateRevisionV2, "candidateRevisionHash"> = {
-      version: 2,
-      candidateRevisionId: randomUUID(),
-      candidateId: randomUUID(),
-      revision: 1,
+    const built = buildCandidateRevisionV3({
+      draft: entry.draft,
+      plan,
       runId: input.runId,
-      planRevisionId: plan.planRevisionId,
-      planVersion: plan.planVersion,
-      planHash: plan.planHash,
-      cardContentEpoch: plan.cardContentEpoch,
-      planObjectiveLocalId: draft.objectiveLocalId,
-      recommendation: { recommended: true, reasonCodes: objectives[index]!.reasonCodes },
-      derivedFromCandidateRevisions: [],
-      objective: { ...objective, rubric: { ...rubricWithoutHash, rubricHash: computeRubricHashV2(rubricWithoutHash) } },
-      presentation: { ...draft.presentationDraft, strategy: strategyAllocations[index]!.strategy },
+      strategy: strategyAllocations[index]!.strategy,
+      reasonCodes: objectives[index]!.reasonCodes,
       evidenceSetHash: input.evidenceSetHash,
-    };
-    candidates.push({
-      ...candidateWithoutHash,
-      candidateRevisionHash: computeCandidateRevisionHashV2(candidateWithoutHash),
     });
-    hintsByCandidateRevisionId.set(candidateWithoutHash.candidateRevisionId, draft.hints);
+    candidates.push(built.candidate);
+    hintsByCandidateRevisionId.set(built.candidate.candidateRevisionId, built.hints);
   });
 
   return { plan, candidates, hintsByCandidateRevisionId, dropped };
@@ -331,4 +312,85 @@ export function runCardGenerateV3CandidateGates(args: {
     }
   }
   return { kept, rejected, softCodesByCandidate };
+}
+// ── 单张候选的身份与哈希（首稿与增量改写共用这一段）─────────────────────
+
+export interface BuildCandidateRevisionV3Args {
+  readonly draft: CardGenerateV3CandidateDraft;
+  readonly plan: CardPlanV2;
+  readonly runId: string;
+  /** 首稿＝整批分配那一份；改写＝**沿用原候选的题型**（改写只改内容，不换形状）。 */
+  readonly strategy: CardStrategyV2;
+  readonly reasonCodes: readonly string[];
+  readonly evidenceSetHash: string;
+  /** 有上一版＝增量改写：同 `candidateId`、`revision + 1`、`derivedFrom` 追加一条。 */
+  readonly previous?: LearningCardCandidateRevisionV2;
+}
+
+/**
+ * 草稿 → 可审计的候选修订。
+ *
+ * 三条不许商量：`rubricHash` 丢弃重算；`practiceItem` 缺省时按答案派生（判分内容
+ * 必须进闭包）；改写**不丢原证据闭包**（`evidenceRefIds` 以传入草稿为准，但 rubric
+ * 单元里模型漏填的那些沿用上一版——否则"改写题面"会把有效证据悄悄清空，下游必然
+ * 被 `no_evidence_reference` 那道硬闸拒掉，这是 V2 修复链踩过的账）。
+ */
+export function buildCandidateRevisionV3(args: BuildCandidateRevisionV3Args): {
+  candidate: LearningCardCandidateRevisionV2;
+  hints: CardHintPairV2;
+} {
+  const { draft, plan, previous } = args;
+  const { rubricHash: _modelSuppliedRubricHash, ...rubricWithoutHash } = draft.objectiveDraft.rubric;
+  const previousUnits = new Map(
+    (previous?.objective.rubric.units ?? []).map((unit) => [unit.rubricUnitId, unit.evidenceRefIds]),
+  );
+  const objective = draft.objectiveDraft.practiceItem
+    ? draft.objectiveDraft
+    : {
+      ...draft.objectiveDraft,
+      practiceItem: derivePracticeItemFromCanonicalAnswer(draft.objectiveDraft.canonicalAnswer),
+    };
+  const mergedRubric: Omit<ObjectiveRubricV2, "rubricHash"> = {
+    version: rubricWithoutHash.version,
+    passingPolicy: rubricWithoutHash.passingPolicy,
+    units: rubricWithoutHash.units.map((unit) => ({
+      ...unit,
+      // 模型在改写时漏填依据的那几格沿用上一版——"改写题面"不许把有效证据清空。
+      evidenceRefIds: unit.evidenceRefIds.length > 0
+        ? unit.evidenceRefIds
+        : (previousUnits.get(unit.rubricUnitId) ?? unit.evidenceRefIds),
+    })),
+  };
+  const rubric: ObjectiveRubricV2 = { ...mergedRubric, rubricHash: computeRubricHashV2(mergedRubric) };
+  const candidateWithoutHash: Omit<LearningCardCandidateRevisionV2, "candidateRevisionHash"> = {
+    version: 2,
+    candidateRevisionId: randomUUID(),
+    candidateId: previous?.candidateId ?? randomUUID(),
+    revision: (previous?.revision ?? 0) + 1,
+    runId: args.runId,
+    planRevisionId: plan.planRevisionId,
+    planVersion: plan.planVersion,
+    planHash: plan.planHash,
+    cardContentEpoch: plan.cardContentEpoch,
+    planObjectiveLocalId: draft.objectiveLocalId,
+    recommendation: { recommended: true, reasonCodes: [...args.reasonCodes] },
+    derivedFromCandidateRevisions: previous
+      ? [...previous.derivedFromCandidateRevisions, {
+        candidateRevisionId: previous.candidateRevisionId,
+        candidateId: previous.candidateId,
+        revision: previous.revision,
+        revisionHash: previous.candidateRevisionHash,
+      }]
+      : [],
+    objective: { ...objective, rubric },
+    presentation: { ...draft.presentationDraft, strategy: args.strategy },
+    evidenceSetHash: args.evidenceSetHash,
+  };
+  return {
+    candidate: {
+      ...candidateWithoutHash,
+      candidateRevisionHash: computeCandidateRevisionHashV2(candidateWithoutHash),
+    },
+    hints: draft.hints,
+  };
 }

@@ -117,7 +117,23 @@ export const cardGenerateV3OutputSchema = z
   });
 export type CardGenerateV3Output = z.infer<typeof cardGenerateV3OutputSchema>;
 
-// ─── ② 内容检查任务（card_content_check_v3）──────────────────────────────
+// ─── ② 内容检查任务（card_content_check_v3）──────────────────────────────// ─── ③ 增量改写（card_candidate_rewrite_v3，刀c）────────────────────────
+
+/**
+ * 改写任务交回的仍然是**同一种草稿**（39c §6.1："改写走增量"）：形状不新造一份，
+ * 服务端组装走的也是 `plan-assembly.ts` 里那同一段。
+ *
+ * 一条 run 的默认路径仍然只有两次语义调用（生成＋批量检查）；`rewrite` 每命中一张
+ * 就多一发改写＋一次只针对这些候选的重检——那是要**如实计入**调用数的（§16.28：
+ * "结构修复与网络重试如实计入，不隐藏调用"），而不是再开一轮"修复—再检查"循环。
+ */
+export const cardCandidateRewriteV3OutputSchema = z.strictObject({
+  rewrites: z.array(cardGenerateV3CandidateDraftSchema).min(1).max(8),
+});
+export type CardCandidateRewriteV3Output = z.infer<
+  typeof cardCandidateRewriteV3OutputSchema
+>;
+
 
 /**
  * 逐候选裁决（39c §6.2 的三档）。`rewrite` 走增量改写（只重做受影响候选）；
