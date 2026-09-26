@@ -19,6 +19,7 @@ import {
   check,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -92,3 +93,44 @@ export const noteLearningRounds = pgTable(
 
 export type NoteLearningRoundRow = typeof noteLearningRounds.$inferSelect;
 export type NoteLearningRoundInsert = typeof noteLearningRounds.$inferInsert;
+
+/**
+ * 轮次计划的追加式修订 `note_learning_round_plan_revisions`（39d W4-5 第三刀；
+ * 迁移 0283）。D3 §5：「每次调整记一条：理由、时间、变更前后，不是覆盖写」。
+ *
+ * 每一版计划记 `plan`（roundPlanV1 合同）+ `reason`（1..500 字必填）+ `created_at`；
+ * 「变更前后」的前一版就是按 `planOrdinal` 读序的上一行。`roundRevision` 记写入时
+ * 轮次那个共用计数器的值（D1 §6.3：计划修订随写随推进 revision）——pause/resume
+ * 不产生计划行，所以这一列在这张表里不连续，状态变化与计划变化因此可区分。
+ *
+ * 只追加：DB 层触发器挡 UPDATE/DELETE（`app.allow_history_mutation` 绕行口子沿用
+ * 0180/0282 形状），权限层对 `ailearn_api` 只授 SELECT/INSERT。
+ */
+export const noteLearningRoundPlanRevisions = pgTable(
+  "note_learning_round_plan_revisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    roundId: uuid("round_id").notNull(),
+    /** 第几版计划（1 起，轮内单调）。 */
+    planOrdinal: integer("plan_ordinal").notNull(),
+    /** 写入时轮次的共享 revision（状态与计划共用那一个，D1 §6.3）。 */
+    roundRevision: integer("round_revision").notNull(),
+    /** 计划本体：roundPlanV1 合同形状（jsonb，服务层写入前过 schema）。 */
+    plan: jsonb("plan").notNull(),
+    /** 为什么改（D3 §5：没有理由的计划修订不落库）。 */
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    ordinalUnique: uniqueIndex("nlpr_round_ordinal_unique").on(t.roundId, t.planOrdinal),
+    ordinalCheck: check("nlpr_ordinal_chk", sql`${t.planOrdinal} >= 1`),
+    roundRevisionCheck: check("nlpr_round_revision_chk", sql`${t.roundRevision} >= 1`),
+    reasonLenCheck: check("nlpr_reason_len_chk", sql`char_length(${t.reason}) BETWEEN 1 AND 500`),
+    planJsonCheck: check("nlpr_plan_json_chk", sql`jsonb_typeof(${t.plan}) = 'object'`),
+  }),
+);
+
+export type NoteLearningRoundPlanRevisionRow = typeof noteLearningRoundPlanRevisions.$inferSelect;
+export type NoteLearningRoundPlanRevisionInsert = typeof noteLearningRoundPlanRevisions.$inferInsert;

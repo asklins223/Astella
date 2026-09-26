@@ -19,10 +19,13 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
+import { sql } from "drizzle-orm";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 import {
   advanceRound,
+  appendPlanRevision,
   createRound,
+  listPlanRevisions,
   readOpenRound,
   readRound,
   reviseDrivingQuestion,
@@ -79,12 +82,35 @@ before(async () => {
       VALUES (${peerUserId}, ${`peer-${peerUserId.slice(0, 8)}@example.test`}, 'h', 'member')`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
       VALUES (${workspaceId}, ${peerUserId}, 'member')`;
+    // 六条计划修订用例各拿一篇自己的笔记：同 (workspace,user,note) 至多一条
+    // 未完成轮次（0282 的部分唯一索引），共用一篇会互相撞"round_already_open"。
+    for (let i = 0; i < 6; i++) {
+      const noteId = randomUUID();
+      const versionId = randomUUID();
+      await tx`INSERT INTO notes (id, workspace_id, title, created_by)
+        VALUES (${noteId}, ${workspaceId}, ${`plan-fixture-${i}`}, ${userId})`;
+      await tx`INSERT INTO note_versions (id, note_id, workspace_id, version_no, content_json, content_hash, created_by)
+        VALUES (${versionId}, ${noteId}, ${workspaceId}, 1,
+          ${tx.json({ blocks: [{ type: "paragraph", content: "计划修订用例" }] })},
+          ${HASH_A}, ${userId})`;
+      planNotes.push({ noteId, versionId });
+    }
   });
 });
 
+/** 每条计划修订用例的专属笔记（与索引前的注释同因）。 */
+const planNotes: Array<{ noteId: string; versionId: string }> = [];
+
 after(async () => {
   if (seeded) {
-    await fixtureSql`DELETE FROM note_learning_rounds WHERE workspace_id = ${seeded.workspaceId}`;
+    const wsId = seeded.workspaceId;
+    // 计划修订表只追加（0283 触发器连超户也拦，绕行口子 = app.allow_history_mutation）：
+    // 先带口子删计划行，再删轮次，最后走夹具自己的清理（notes 级联到已空的轮次）。
+    await fixtureSql.begin(async (tx) => {
+      await tx`SELECT set_config('app.allow_history_mutation', 'on', true)`;
+      await tx`DELETE FROM note_learning_round_plan_revisions WHERE workspace_id = ${wsId}`;
+    });
+    await fixtureSql`DELETE FROM note_learning_rounds WHERE workspace_id = ${wsId}`;
     await seeded.cleanup();
   }
   if (peerUserId !== "") {
@@ -272,4 +298,160 @@ test("服务层的入参判据给得出名字，而不是让库里的 CHECK 冒�
     const result = await serviceCode(run);
     assert.equal(result.code, expected, `${label}：${result.message}`);
   }
+});
+
+// ─── 计划本体的追加式修订（39d W4-5 第三刀；D3 §5）───────────────────────
+
+const PLAN_V1 = {
+  version: 1 as const,
+  steps: [{ text: "先判断为什么有索引仍可能慢" }, { text: "对照两条访问路径的成本" }],
+  expectedScale: "两三个回合",
+  endCondition: "能自己说出至少两个让优化器放弃索引的条件",
+};
+
+function planInput(
+  roundId: string,
+  expectedRevision: number,
+  overrides: Partial<{ plan: unknown; reason: string }> = {},
+) {
+  return {
+    roundId,
+    expectedRevision,
+    plan: overrides.plan ?? PLAN_V1,
+    reason: overrides.reason ?? "根据先试的表现收窄范围",
+  };
+}
+
+test("计划修订：追加两版，读序就是「最初 → 现在」，共用计数器随写推进而 pause/resume 不产生计划行", async () => {
+  const created = await withWorkspaceTransaction(me(), (tx) =>
+    createRound(tx, me(), createInput(planNotes[0].noteId, planNotes[0].versionId)),
+  );
+
+  // 先来一次 pause→resume：状态变化推进共用计数器，但**不**产生计划行——
+  // 状态变化与计划变化可区分，靠的就是 round_revision 在计划表里不连续。
+  await withWorkspaceTransaction(me(), (tx) =>
+    advanceRound(tx, me(), { roundId: created.roundId, expectedRevision: created.revision, action: { kind: "pause" } }));
+  const resumed = await withWorkspaceTransaction(me(), (tx) =>
+    advanceRound(tx, me(), { roundId: created.roundId, expectedRevision: created.revision + 1, action: { kind: "resume" } }));
+  assert.equal(resumed.revision, 3);
+  assert.deepEqual(await withWorkspaceTransaction(me(), (tx) => listPlanRevisions(tx, me(), created.roundId)), [],
+    "还没提出计划时是空数组（那一轮只有一句话），不是错误");
+
+  const first = await withWorkspaceTransaction(me(), (tx) =>
+    appendPlanRevision(tx, me(), planInput(created.roundId, resumed.revision, {})));
+  assert.equal(first.planOrdinal, 1);
+  assert.equal(first.roundRevision, 4, "第一版计划落在共用计数器推进之后的那一格");
+  assert.deepEqual(first.plan, PLAN_V1);
+
+  const second = await withWorkspaceTransaction(me(), (tx) =>
+    appendPlanRevision(tx, me(), {
+      roundId: created.roundId,
+      expectedRevision: first.roundRevision,
+      plan: { ...PLAN_V1, steps: PLAN_V1.steps.slice(0, 1) },
+      reason: "先试已经会了第二条，缩短",
+    }));
+  assert.equal(second.planOrdinal, 2);
+  assert.equal(second.roundRevision, 5);
+
+  const revisions = await withWorkspaceTransaction(me(), (tx) => listPlanRevisions(tx, me(), created.roundId));
+  assert.equal(revisions.length, 2);
+  // 变更前后由相邻两行给出：第一版原样还在，不许被第二版覆盖（D3 §5 的红线）。
+  assert.equal(revisions[0].planOrdinal, 1);
+  assert.deepEqual(revisions[0].plan, PLAN_V1);
+  assert.equal(revisions[0].roundRevision, 4);
+  assert.equal(revisions[1].planOrdinal, 2);
+  assert.equal(revisions[1].plan.steps.length, 1);
+  assert.equal(revisions[1].reason, "先试已经会了第二条，缩短");
+
+  const round = await withWorkspaceTransaction(me(), (tx) => readRound(tx, me(), created.roundId));
+  assert.equal(round?.revision, 5, "轮次行的 revision 被两次计划修订推到 5（D1 §6.3 共用）");
+});
+
+test("计划修订：stale expectedRevision 被拒，库里一行都没多", async () => {
+  const created = await withWorkspaceTransaction(me(), (tx) =>
+    createRound(tx, me(), createInput(planNotes[1].noteId, planNotes[1].versionId)));
+  const result = await serviceCode(() => withWorkspaceTransaction(me(), (tx) =>
+    appendPlanRevision(tx, me(), planInput(created.roundId, created.revision + 3, {}))));
+  assert.equal(result.code, "stale_revision");
+  const rows = await withWorkspaceTransaction(me(), (tx) => listPlanRevisions(tx, me(), created.roundId));
+  assert.equal(rows.length, 0, "失败的追加不许留下半行");
+});
+
+test("计划修订：收尾之后终态只读，追加被拒", async () => {
+  const created = await withWorkspaceTransaction(me(), (tx) =>
+    createRound(tx, me(), createInput(planNotes[2].noteId, planNotes[2].versionId)));
+  await withWorkspaceTransaction(me(), (tx) =>
+    advanceRound(tx, me(), { roundId: created.roundId, expectedRevision: created.revision, action: { kind: "close", outcome: "completed" } }));
+  const result = await serviceCode(() => withWorkspaceTransaction(me(), (tx) =>
+    appendPlanRevision(tx, me(), planInput(created.roundId, created.revision + 1, {}))));
+  assert.equal(result.code, "round_closed");
+});
+
+test("计划修订：形状与理由在触库之前就有名字地被拒", async () => {
+  const created = await withWorkspaceTransaction(me(), (tx) =>
+    createRound(tx, me(), createInput(planNotes[3].noteId, planNotes[3].versionId)));
+  const cases: Array<[string, () => Promise<unknown>, string]> = [
+    ["零步骤的计划", () => withWorkspaceTransaction(me(), (tx) =>
+      appendPlanRevision(tx, me(), planInput(created.roundId, created.revision, { plan: { ...PLAN_V1, steps: [] } }))), "invalid_plan_revision"],
+    ["没有理由", () => withWorkspaceTransaction(me(), (tx) =>
+      appendPlanRevision(tx, me(), planInput(created.roundId, created.revision, { reason: "  " }))), "invalid_plan_revision"],
+  ];
+  for (const [label, run, expected] of cases) {
+    const result = await serviceCode(run);
+    assert.equal(result.code, expected, `${label}：${result.message}`);
+  }
+});
+
+test("计划修订：只追加是 DB 层的——UPDATE/DELETE 都被触发器拒，绕行口子只对显式维护路径开放", async () => {
+  const created = await withWorkspaceTransaction(me(), (tx) =>
+    createRound(tx, me(), createInput(planNotes[4].noteId, planNotes[4].versionId)));
+  await withWorkspaceTransaction(me(), (tx) =>
+    appendPlanRevision(tx, me(), planInput(created.roundId, created.revision, {})));
+
+  // 追加式在**触发器**上收口：迁移里只授 SELECT/INSERT，但 roles 步骤会把新表
+  // 权限放宽到 ALL（与 CI fresh-migrations 同序），所以这一腿实测拦住 UPDATE 的
+  // 是触发器而非表权限。drizzle 会把驱动错误包进 cause 链，沿链找那一句话。
+  await assert.rejects(
+    () => withWorkspaceTransaction(me(), async (tx) => {
+      await tx.execute(sql`UPDATE note_learning_round_plan_revisions SET reason = '改掉' WHERE workspace_id = ${workspaceId}`);
+    }),
+    (error: unknown) => {
+      const chain: string[] = [];
+      let e: unknown = error;
+      while (e instanceof Error && chain.length < 6) {
+        chain.push(e.message);
+        e = (e as { cause?: unknown }).cause;
+      }
+      assert.match(chain.join(" | "), /append-only: UPDATE is not allowed/,
+        `触发器先拦：沿 cause 链找到的是 ${chain.join(" | ")}`);
+      return true;
+    },
+  );
+
+  // 超户也绕不过触发器：不带绕行口子的 DELETE 必须红（append-only 的语义证据，
+  // 不是"权限挡的"那种假绿）。
+  await assert.rejects(
+    () => fixtureSql`DELETE FROM note_learning_round_plan_revisions WHERE workspace_id = ${workspaceId}`,
+    /append-only/,
+  );
+
+  // 带绕行口子（app.allow_history_mutation='on'）：显式维护路径删得掉——
+  // 这就是 after() 清理走的同一条路。
+  await fixtureSql.begin(async (tx) => {
+    await tx`SELECT set_config('app.allow_history_mutation', 'on', true)`;
+    const deleted = await tx`DELETE FROM note_learning_round_plan_revisions WHERE round_id = ${created.roundId} RETURNING plan_ordinal`;
+    assert.equal(deleted.length, 1, "绕行口子下恰好删掉这一轮的那一版");
+  });
+  const afterBypass = await withWorkspaceTransaction(me(), (tx) => listPlanRevisions(tx, me(), created.roundId));
+  assert.equal(afterBypass.length, 0);
+});
+
+test("计划修订：别人的轮次追加不进去（不泄露存在性）", async () => {
+  const created = await withWorkspaceTransaction(me(), (tx) =>
+    createRound(tx, me(), createInput(planNotes[5].noteId, planNotes[5].versionId)));
+  const result = await serviceCode(() => withWorkspaceTransaction(
+    { workspaceId, userId: peerUserId },
+    (tx) => appendPlanRevision(tx, { workspaceId, userId: peerUserId }, planInput(created.roundId, created.revision, {})),
+  ));
+  assert.equal(result.code, "round_not_found");
 });

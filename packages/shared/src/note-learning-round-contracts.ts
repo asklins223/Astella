@@ -198,3 +198,53 @@ export const noteLearningRoundHistoryQueryV1Schema = z.strictObject({
   limit: z.coerce.number().int().min(1).max(ROUND_HISTORY_MAX_LIMIT_V1).default(ROUND_HISTORY_DEFAULT_LIMIT_V1),
   before: z.string().uuid().optional(),
 });
+
+// ─── 轮次计划的追加式修订（39d W4-5 第三刀；表 0283，服务 round-service）───
+
+/**
+ * 一版计划的本体（D3 §5 / PRD §4.3）。**本轮问题不在这里**——它在轮次行的
+ * `drivingQuestion` 上，计划只是"怎么走"：几个要点步骤、预计量级、结束条件。
+ * §4.3 那句「试用默认可从 2–4 个相关要点起步」是产品初始参数，合同只定
+ * 1..8 的硬边界；起点值归 §18.4 的试用前冻结，不在这里替它编数。
+ */
+export const roundPlanStepV1Schema = z.strictObject({
+  text: z.string().trim().min(1).max(500),
+});
+export type RoundPlanStepV1 = z.infer<typeof roundPlanStepV1Schema>;
+
+export const roundPlanV1Schema = z.strictObject({
+  version: z.literal(1),
+  steps: z.array(roundPlanStepV1Schema).min(1).max(8),
+  /** 预计量级（一句话；§4.3「计划说明…预计量级」）。 */
+  expectedScale: z.string().trim().max(200).optional(),
+  /** 结束条件（一句话；到什么程度这一轮可以收）。 */
+  endCondition: z.string().trim().max(200).optional(),
+});
+export type RoundPlanV1 = z.infer<typeof roundPlanV1Schema>;
+
+/**
+ * 追加一版计划的请求。`expectedRevision` 必填（与 pause/resume/改写同一纪律：
+ * 写动作都带着它读过的那一版，§16.39 两个窗口的后到者必须失败）。
+ * `reason` 必填——D3 §5 的原话是"每次调整记一条：理由、时间、变更前后"，
+ * 没有理由的计划修订不落库。
+ */
+export const appendRoundPlanRevisionRequestV1Schema = z.strictObject({
+  expectedRevision: z.number().int().min(1),
+  plan: roundPlanV1Schema,
+  reason: z.string().trim().min(1).max(500),
+});
+export type AppendRoundPlanRevisionRequestV1 = z.infer<
+  typeof appendRoundPlanRevisionRequestV1Schema
+>;
+
+/** 一条已落库的计划修订（读侧形状；按 `planOrdinal` 升序就是「最初 → 现在」）。 */
+export const roundPlanRevisionV1Schema = z.strictObject({
+  version: z.literal(1),
+  planOrdinal: z.number().int().min(1),
+  /** 写入时轮次的共享 revision（状态与计划共用那一个，D1 §6.3）。 */
+  roundRevision: z.number().int().min(1),
+  plan: roundPlanV1Schema,
+  reason: z.string().min(1).max(500),
+  recordedAt: z.string().datetime({ offset: true }),
+});
+export type RoundPlanRevisionV1 = z.infer<typeof roundPlanRevisionV1Schema>;

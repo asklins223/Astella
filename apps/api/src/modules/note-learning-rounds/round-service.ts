@@ -19,8 +19,14 @@ import type { ApiTransaction } from "../../db/client.ts";
 import { DomainError } from "@ailearn/shared";
 import {
   noteLearningRounds,
+  noteLearningRoundPlanRevisions,
   type NoteLearningRoundRow,
 } from "@ailearn/shared/db-schema/note-learning-rounds";
+import {
+  appendRoundPlanRevisionRequestV1Schema,
+  roundPlanRevisionV1Schema,
+  type RoundPlanRevisionV1,
+} from "@ailearn/shared/note-learning-round-contracts";
 import {
   applyRoundAction,
   RoundTransitionError,
@@ -455,4 +461,125 @@ export async function reviseDrivingQuestion(
     .returning();
   if (updated.length !== 1) throw new RoundServiceError("stale_revision", "这一轮的状态已经变化，请刷新后重试");
   return toContract(updated[0]);
+}
+
+/**
+ * 追加一版计划（39d W4-5 第三刀；D3 §5「追加式修订：每次调整记一条：理由、时间、
+ * 变更前后，不是覆盖写」）。
+ *
+ * 三条与 pause/resume/改写同一纪律的判据：
+ *  - 轮次必须**开着**（active/paused）：closed 之后终态只读，计划不再变化；
+ *  - `expectedRevision` 必填且 CAS：计划修订随写随推进轮次那个**共用**计数器
+ *    （D1 §6.3），两个窗口的后到者必须失败而不是覆盖；
+ *  - `reason` 必填：没有理由的计划修订不落库（schema 层再挡一次）。
+ *
+ * `planOrdinal` 是"第几版计划"（1 起，轮内唯一）；`roundRevision` 记写入时共用
+ * 计数器的值——pause/resume 不产生计划行，所以这一列不连续，状态变化与计划
+ * 变化因此可区分。表本身只追加（0283 触发器 + 无 UPDATE/DELETE 权限）。
+ */
+export async function appendPlanRevision(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  request: { roundId: string; expectedRevision: number; plan: unknown; reason: string },
+  now: Date = new Date(),
+): Promise<RoundPlanRevisionV1> {
+  // 只校验"这一版计划"本身；roundId 是定位参数，不属于请求 schema 的字段。
+  const parsed = appendRoundPlanRevisionRequestV1Schema.safeParse({
+    expectedRevision: request.expectedRevision,
+    plan: request.plan,
+    reason: request.reason,
+  });
+  if (!parsed.success) {
+    throw new RoundServiceError("invalid_plan_revision", `这一版计划不合法：${parsed.error.issues[0]?.message ?? "形状不对"}`);
+  }
+  const { plan, reason } = parsed.data;
+
+  const rows = await tx
+    .select()
+    .from(noteLearningRounds)
+    .where(and(
+      eq(noteLearningRounds.id, request.roundId),
+      eq(noteLearningRounds.workspaceId, scope.workspaceId),
+      eq(noteLearningRounds.userId, scope.userId),
+    ))
+    .limit(1)
+    .for("update");
+  const row = rows[0];
+  if (!row) throw new RoundServiceError("round_not_found", "这一轮不存在（或对当前这个人不可见）");
+  if (row.phase === "closed") {
+    throw new RoundServiceError("round_closed", "这一轮已经收尾，终态只读：计划不再变化");
+  }
+  if (row.revision !== request.expectedRevision) {
+    throw new RoundServiceError("stale_revision", "这一轮的状态已经变化，请刷新后重试");
+  }
+
+  const ordinalRows = await tx
+    .select({ maxOrdinal: sql<number | null>`max(${noteLearningRoundPlanRevisions.planOrdinal})` })
+    .from(noteLearningRoundPlanRevisions)
+    .where(eq(noteLearningRoundPlanRevisions.roundId, row.id));
+  const nextOrdinal = Number(ordinalRows[0]?.maxOrdinal ?? 0) + 1;
+  const nextRoundRevision = row.revision + 1;
+
+  const inserted = await tx.insert(noteLearningRoundPlanRevisions).values({
+    workspaceId: scope.workspaceId,
+    userId: scope.userId,
+    roundId: row.id,
+    planOrdinal: nextOrdinal,
+    roundRevision: nextRoundRevision,
+    plan: plan as unknown as Record<string, unknown>,
+    reason,
+    createdAt: now,
+  }).returning();
+  const planRow = inserted[0];
+  if (!planRow) throw new RoundServiceError("create_failed", "这一版计划没落下来");
+
+  // 计划修订推进共用计数器（D1 §6.3）；写时再比一次读过的那一版。
+  const updated = await tx.update(noteLearningRounds)
+    .set({ revision: nextRoundRevision, updatedAt: now })
+    .where(and(
+      eq(noteLearningRounds.id, row.id),
+      eq(noteLearningRounds.workspaceId, scope.workspaceId),
+      eq(noteLearningRounds.userId, scope.userId),
+      eq(noteLearningRounds.revision, row.revision),
+    ))
+    .returning();
+  if (updated.length !== 1) throw new RoundServiceError("stale_revision", "这一轮的状态已经变化，请刷新后重试");
+
+  return roundPlanRevisionV1Schema.parse({
+    version: 1,
+    planOrdinal: planRow.planOrdinal,
+    roundRevision: planRow.roundRevision,
+    plan,
+    reason,
+    recordedAt: planRow.createdAt.toISOString(),
+  });
+}
+
+/**
+ * 这一轮的计划走过哪几版（D3 §5「历史记录实际走过的内容」）。按 `planOrdinal`
+ * 升序读，就是「最初 → 现在」；变更前后由相邻两行给出，不另存一份。
+ * 没有任何计划行 ⇒ 空数组（那一轮只有一句话，还没有计划——不是错误）。
+ */
+export async function listPlanRevisions(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  roundId: string,
+): Promise<RoundPlanRevisionV1[]> {
+  const rows = await tx
+    .select()
+    .from(noteLearningRoundPlanRevisions)
+    .where(and(
+      eq(noteLearningRoundPlanRevisions.roundId, roundId),
+      eq(noteLearningRoundPlanRevisions.workspaceId, scope.workspaceId),
+      eq(noteLearningRoundPlanRevisions.userId, scope.userId),
+    ))
+    .orderBy(noteLearningRoundPlanRevisions.planOrdinal);
+  return rows.map((row) => roundPlanRevisionV1Schema.parse({
+    version: 1,
+    planOrdinal: row.planOrdinal,
+    roundRevision: row.roundRevision,
+    plan: row.plan,
+    reason: row.reason,
+    recordedAt: row.createdAt.toISOString(),
+  }));
 }
