@@ -288,6 +288,13 @@ export type LearningRunOriginV1 =
       keyPointId: string;
       /** sandbox 模式：隔离教学空间 id（§16.4）；缺失时服务端校验拒绝。 */
       sandboxNamespaceId?: string;
+    }
+  | {
+      /** 笔记学习轮次内的练习（D1 §4.3 / 39d W4-5 ②）。 */
+      kind: "note_round";
+      roundId: string;
+      noteId: string;
+      keyPointId: string;
     };
 
 export type LearningRunReturnTargetV1 =
@@ -302,7 +309,9 @@ export type LearningRunReturnTargetV1 =
       routePlanId?: string;
     }
   | { kind: "today" }
-  | { kind: "onboarding"; destination: "today" | "card" | "star_map" };
+  | { kind: "onboarding"; destination: "today" | "card" | "star_map" }
+  // 回到这一轮所在的笔记（noteId 落点；roundId 供读侧定位）。
+  | { kind: "note_round"; roundId: string; noteId: string };
 
 export type LearningTaskSummaryV1 = {
   taskId: string;
@@ -940,6 +949,12 @@ export const learningRunOriginSchema = z.discriminatedUnion("kind", [
     keyPointId: z.string().uuid(),
     sandboxNamespaceId: z.string().uuid().optional(),
   }),
+  z.strictObject({
+    kind: z.literal("note_round"),
+    roundId: z.string().uuid(),
+    noteId: z.string().uuid(),
+    keyPointId: z.string().uuid(),
+  }),
 ]);
 
 export const learningRunReturnTargetSchema = z.discriminatedUnion("kind", [
@@ -967,6 +982,11 @@ export const learningRunReturnTargetSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("onboarding"),
     destination: z.enum(["today", "card", "star_map"]),
+  }),
+  z.strictObject({
+    kind: z.literal("note_round"),
+    roundId: z.string().uuid(),
+    noteId: z.string().uuid(),
   }),
 ]);
 

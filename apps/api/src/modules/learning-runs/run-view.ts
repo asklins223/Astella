@@ -75,6 +75,13 @@ export function normalizeOriginToV1(origin: unknown): LearningRunOriginV1 {
         keyPointId,
         ...(readString(o, "sandboxNamespaceId") ? { sandboxNamespaceId: readString(o, "sandboxNamespaceId") } : {}),
       };
+    case "note_round":
+      return {
+        kind: "note_round",
+        roundId: readString(o, "roundId") ?? "",
+        noteId: readString(o, "noteId") ?? "",
+        keyPointId,
+      };
     default:
       throw new Error(`run origin kind 非法: ${String(o.kind)}`);
   }
@@ -122,6 +129,12 @@ export function deriveReturnTargetV1(origin: unknown): LearningRunReturnTargetV1
       return {
         kind: "onboarding",
         destination: o.sampleMode === "sandbox" ? "today" : "card",
+      };
+    case "note_round":
+      return {
+        kind: "note_round",
+        roundId: readString(o, "roundId") ?? "",
+        noteId: readString(o, "noteId") ?? "",
       };
     default:
       throw new Error(`run origin kind 非法: ${String(o.kind)}`);

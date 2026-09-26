@@ -49,6 +49,7 @@ import {
 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { cardHintPairV2Schema, type CardHintPairV2 } from "@ailearn/shared/card-generation-v2-contracts";
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
+import { noteLearningRounds } from "@ailearn/shared/db-schema/note-learning-rounds";
 import { validationAssistanceExposures } from "@ailearn/shared/db-schema/validation-v2";
 import { companionSandboxNamespaces } from "@ailearn/shared/db-schema/companion-sandbox";
 import { understandingProjectionCheckpoints } from "@ailearn/shared/db-schema/understanding-projection";
@@ -621,6 +622,45 @@ async function resolveV2Scheduling(
       schedulerPolicyId: "discrete-v2",
     };
   }
+  // 笔记轮次内的练习（D1 §4.3 / 39d W4-5 ②）：
+  // - 轮次本身必须是**开着**的（active/paused）——closed 之后不可恢复，新学习
+  //   产生新轮次（D1 §5.1），把练习记到一个已封存的轮次上是静默改历史；
+  // - §9.1「结束一轮都不默认授权未来提醒」⇒ **从不 create_initial**；
+  // - §9.5/§9.6：同一目标已有 pending 安排时复用（这一次练习消费那一次日程），
+  //   没有就只保存学习事实（no_effect），不恢复订阅。
+  if (origin.kind === "note_round") {
+    const roundRows = await tx
+      .select({ id: noteLearningRounds.id, phase: noteLearningRounds.phase })
+      .from(noteLearningRounds)
+      .where(and(
+        eq(noteLearningRounds.id, origin.roundId),
+        eq(noteLearningRounds.workspaceId, scope.workspaceId),
+        eq(noteLearningRounds.userId, scope.userId),
+      ))
+      .limit(1);
+    const round = roundRows[0];
+    if (!round || (round.phase !== "active" && round.phase !== "paused")) {
+      throw new LearningRunServiceError(
+        "note_round_not_open",
+        "这一轮已经结束，请从笔记页开始新的一轮",
+        409,
+        { blockedReason: "round_not_open" },
+      );
+    }
+    const pending = await findPending();
+    if (pending) {
+      return {
+        kind: "consume_pending",
+        scheduleId: pending.id,
+        scheduleGeneration: pending.generation,
+        keyPointId: objectiveId,
+        targetFingerprint: semanticTargetFingerprint,
+        dueAt: new Date().toISOString(),
+        schedulerPolicyId: "discrete-v2",
+      };
+    }
+    return { kind: "no_effect", reasonCode: "not_authorized" };
+  }
   // today / onboarding：无调度效果。
   if (origin.kind === "onboarding" && origin.sampleMode === "sandbox") {
     return { kind: "no_effect", reasonCode: "sandbox" };
@@ -1132,6 +1172,9 @@ function deriveReturnTargetV2(origin: LearningRunOriginV2): LearningRunReturnTar
         kind: "onboarding",
         destination: origin.sampleMode === "sandbox" ? "today" : "card",
       };
+    case "note_round":
+      // 回到这一轮所在的笔记（D1 §4.3）；roundId 供读侧定位。
+      return { kind: "note_round", roundId: origin.roundId, noteId: origin.noteId };
   }
 }
 
@@ -1154,6 +1197,22 @@ async function resolveV2ReturnTargetAvailability(
   const target = context.returnTargetV2;
   if (target.kind === "today" || target.kind === "onboarding" || target.kind === "star_map") {
     return null;
+  }
+
+  // 笔记轮次：落点由**轮次行还在不在**证明（当前没有删除轮次的入口；行没了
+  // 属理论路径），回退到 today——与其他"目标消失"的回退同一形状。
+  if (target.kind === "note_round") {
+    const roundRows = await tx
+      .select({ id: noteLearningRounds.id })
+      .from(noteLearningRounds)
+      .where(and(
+        eq(noteLearningRounds.id, target.roundId),
+        eq(noteLearningRounds.workspaceId, input.workspaceId),
+        eq(noteLearningRounds.userId, input.userId),
+      ))
+      .limit(1);
+    if (roundRows[0]) return null;
+    return { reason: "return_target_deleted", fallbackTargetV2: { kind: "today" } };
   }
 
   const objectiveRows = await tx

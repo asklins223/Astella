@@ -78,6 +78,17 @@ describe("normalizeOriginToV1", () => {
     );
   });
 
+  it("note_round：roundId/noteId 透传，keyPointId 归一 alias（39d W4-5 ②）", () => {
+    const roundId = "9d8f6a5e-1111-4222-8333-444455556674";
+    const noteId = "0e8f6a5e-1111-4222-8333-444455556675";
+    assert.deepEqual(
+      normalizeOriginToV1({ kind: "note_round", roundId, noteId, objectiveId: OBJECTIVE }),
+      { kind: "note_round", roundId, noteId, keyPointId: OBJECTIVE },
+    );
+    // 缺 objectiveId：与其它 kind 同一口径 fail-loud（V1 快照必带目标引用）。
+    assert.throws(() => normalizeOriginToV1({ kind: "note_round", roundId, noteId }));
+  });
+
   it("缺 alias 或 kind 非法时 fail-loud", () => {
     assert.throws(() => normalizeOriginToV1({ kind: "card", cardId: CARD }));
     assert.throws(() => normalizeOriginToV1({ kind: "unknown_kind", objectiveId: OBJECTIVE }));
@@ -120,6 +131,15 @@ describe("deriveReturnTargetV1", () => {
     assert.deepEqual(
       deriveReturnTargetV1({ kind: "onboarding", objectiveId: OBJECTIVE, sampleMode: "sandbox" }),
       { kind: "onboarding", destination: "today" },
+    );
+  });
+
+  it("note_round：V1 合同为 {roundId, noteId}（回笔记落点）", () => {
+    const roundId = "9d8f6a5e-1111-4222-8333-444455556674";
+    const noteId = "0e8f6a5e-1111-4222-8333-444455556675";
+    assert.deepEqual(
+      deriveReturnTargetV1({ kind: "note_round", roundId, noteId, objectiveId: OBJECTIVE }),
+      { kind: "note_round", roundId, noteId },
     );
   });
 

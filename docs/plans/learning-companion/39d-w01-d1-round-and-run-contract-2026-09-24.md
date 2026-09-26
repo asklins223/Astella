@@ -186,12 +186,16 @@
 
 > **实现记录（2026-09-25，39d W3-4 第一步）**：上表三分支已落在 `apps/api/src/modules/card-generation-v2/target-snapshot-adapter.ts`（evidence closure 提到卡判定之前，新函数 `requireNoteBackedEvidence`），有卡那一条行为逐字未变。
 > **一处字面偏离记下**：原文写「evidence bindings 必须全部指向该 objective revision 冻结的笔记内容（经 `note_version_id`）」——实测 **`evidence_snapshots_v2` 上没有 `note_version_id`**（只有可空的 `note_id`），版本锚唯一存在 `learning_objective_origins_v2` 的 note 来源行上。因此实现成两条：**该修订有笔记版本锚** ＋ **每条依据的 `note_id` 都等于那篇笔记**。这比原文更严不更松（原文那条字面判据读不通）；要改判据前先读这两张表。
-> **仍未做**：下面这一档 `note_round` origin 需要 W4 的轮次实体才有 `roundId` 可填，本步未加（`run-view.ts` 与渲染层 `returnTargetLabel` 对新 kind 都会当场报错，那是加它时的护栏）。
+> **note_round origin 已落（2026-09-26，39d W4-5 ② / W3-4 ①）**：合同（V1＋V2 两套 zod 与类型）、`run-view.ts` 两处 fail-loud、`run-service.ts` 三处（deriveReturnTargetV2 / resolveV2Scheduling / resolveV2ReturnTargetAvailability）、渲染层两个 label switch。三条本文件没写死、实施时定下的语义：
+> ① **`objectiveId` 实际必填**（下面代码块里的 `objectiveId?` 不成立）：`normalizeOriginToV1` 对**每一种** kind 都 throw 缺 objectiveId，冻结链要求 active objective，`run-processing-tick` 的 `originObjectiveId` 缺失时静默回退 nil UUID——三道闸都过不去，可选形状在现有系统里不可表示，合同按必填写。
+> ② **调度决议**：轮次必须开着（active/paused，closed ⇒ 409 `note_round_not_open`）；有 pending 安排就 `consume_pending`（§9.5 同目标复用），**从不 `create_initial`**（§9.1：结束一轮不默认授权未来提醒），没有 pending ⇒ `no_effect/not_authorized`。
+> ③ **可用性回退**：轮次行还在 ⇒ 可用；行没了（理论路径，轮次无删除入口）⇒ `return_target_deleted` 且回退 `today`。
+> 尚未接的：渲染层 `routeForReturnTarget` 的非 review 分支今天一律 room.home（note_round 也不例外——出口真的落到笔记那一步要连着 room-store 的 open-notebook 链路一起设计，归 W4-6/W4-5 的 producer 批次）；主进程 `learning-run-return-resolver` 的路由词表是不带参的 kind 字符串，note_round 显式落 room.home（注释在案）；伴星 `learning-action-bridge` 的 `isLearningRunOriginV2` 未加 note_round（伴星还没有发起轮次练习的路径）。
 
 **新增的 origin**：`LearningRunOriginV1` 增加一种（现有 5 种不动）：
 
 ```ts
-| { kind: "note_round"; roundId: string; noteId: string; objectiveId?: string }
+| { kind: "note_round"; roundId: string; noteId: string; objectiveId: string }
 ```
 
 `learning_runs.origin` 是 jsonb、`return_target` 同形状 —— **零 schema 变更**。`returnTarget` 对应增加 `{ kind: "note_round"; roundId: string; noteId: string }`，用于"回轮次"和"回笔记"的落点。

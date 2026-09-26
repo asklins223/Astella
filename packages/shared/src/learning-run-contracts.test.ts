@@ -155,8 +155,17 @@ test("createLearningRunRequestSchema 拒绝非法 goal / 越界预算", () => {
   );
 });
 
-test("learningRunOriginSchema 接受全部 5 种 origin 并拒绝非法", () => {
+test("learningRunOriginSchema 接受全部 6 种 origin 并拒绝非法", () => {
   assert.equal(learningRunOriginSchema.parse({ kind: "today", keyPointId: uuid() }).kind, "today");
+  // note_round（39d W4-5 ②）：roundId/noteId/keyPointId 全必填。
+  assert.equal(
+    learningRunOriginSchema.parse({ kind: "note_round", roundId: uuid(), noteId: uuid(), keyPointId: uuid() }).kind,
+    "note_round",
+  );
+  assert.equal(
+    learningRunOriginSchema.safeParse({ kind: "note_round", roundId: uuid(), noteId: uuid() }).success,
+    false,
+  );
   assert.equal(
     learningRunOriginSchema.safeParse({ kind: "today", keyPointId: uuid(), extra: 1 }).success,
     false,

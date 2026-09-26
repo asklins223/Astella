@@ -384,6 +384,7 @@ function returnTargetLabel(target: LearningRunPublicSnapshotV2["returnTargetV2"]
     case "star_map": return "回到理解星图";
     case "today": return "回到今日学习";
     case "onboarding": return "继续首次设置";
+    case "note_round": return "回到这一轮";
   }
 }
 
@@ -593,6 +594,7 @@ function runOriginLabel(origin: LearningRunPublicSnapshotV2["originV2"]): string
     case "star_map": return "理解星图练习";
     case "today": return "今日学习";
     case "onboarding": return "首次练习";
+    case "note_round": return "这一轮的练习";
   }
 }
 

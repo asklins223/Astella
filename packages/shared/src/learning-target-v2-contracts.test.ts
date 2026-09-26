@@ -226,6 +226,25 @@ describe("learningRunOriginV2Schema", () => {
     assert.equal(result.kind, "today");
   });
 
+  it("parses note_round origin（39d W4-5 ②）", () => {
+    const origin = {
+      kind: "note_round",
+      roundId: FAKE_UUID,
+      noteId: FAKE_UUID,
+      objectiveId: FAKE_UUID,
+    };
+    const result = parseLearningRunOriginV2(origin);
+    assert.equal(result.kind, "note_round");
+  });
+
+  it("rejects note_round origin without objectiveId（冻结链要求 active objective，不造无目标的 run）", () => {
+    assert.throws(() => parseLearningRunOriginV2({
+      kind: "note_round",
+      roundId: FAKE_UUID,
+      noteId: FAKE_UUID,
+    }));
+  });
+
   it("rejects unknown origin kind", () => {
     assert.throws(() => parseLearningRunOriginV2({ kind: "unknown" }));
   });
@@ -243,6 +262,12 @@ describe("learningRunReturnTargetV2Schema", () => {
     const result = learningRunReturnTargetV2Schema.parse(target);
     assert.equal(result.kind, "onboarding");
     assert.equal((result as { destination: string }).destination, "card");
+  });
+
+  it("parses note_round return target", () => {
+    const target = { kind: "note_round" as const, roundId: FAKE_UUID, noteId: FAKE_UUID };
+    const result = learningRunReturnTargetV2Schema.parse(target);
+    assert.equal(result.kind, "note_round");
   });
 });
 

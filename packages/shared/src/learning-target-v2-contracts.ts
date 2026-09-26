@@ -65,6 +65,19 @@ export const learningRunOriginV2Schema = z.discriminatedUnion("kind", [
     objectiveId: z.string().uuid(),
     sandboxNamespaceId: z.string().uuid().optional(),
   }),
+  /**
+   * 笔记学习轮次内的练习（D1 §4.3 / 39d W4-5 ②）：这一道题归属于某一轮，
+   * `objectiveId` 是**必填**——LearningRun 的冻结链要求 active objective
+   * （无卡也必须有无卡依据），没有目标就没有可评估的题，轮次不为此造 run。
+   * 调度语义见 run-service 的 resolveV2Scheduling：有 pending 就消费（§9.5
+   * 同目标复用），**从不 create_initial**（§9.1：结束一轮不默认授权未来提醒）。
+   */
+  z.strictObject({
+    kind: z.literal("note_round"),
+    roundId: z.string().uuid(),
+    noteId: z.string().uuid(),
+    objectiveId: z.string().uuid(),
+  }),
 ]);
 export type LearningRunOriginV2 = z.infer<typeof learningRunOriginV2Schema>;
 
@@ -105,6 +118,12 @@ export const learningRunReturnTargetV2Schema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("onboarding"),
     destination: z.enum(["today", "card", "star_map"]),
+  }),
+  // 回到这一轮所在的笔记（noteId 落点；roundId 供读侧定位，D1 §4.3）。
+  z.strictObject({
+    kind: z.literal("note_round"),
+    roundId: z.string().uuid(),
+    noteId: z.string().uuid(),
   }),
 ]);
 export type LearningRunReturnTargetV2 = z.infer<

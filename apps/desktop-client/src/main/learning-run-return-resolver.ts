@@ -39,6 +39,12 @@ type ResolverContext = {
 export type LearningRunReturnRouteV1 = "review.queue" | "room.home";
 type ReturnRoute = LearningRunReturnRouteV1;
 
+/**
+ * note_round（笔记轮次，39d W4-5 ②）今天也落 room.home：这份解析器的路由词表
+ * 是**不带参数的 kind 字符串**，回笔记需要 { kind: "note.detail", noteId } 那种
+ * 带参形状——等这份解析器有真实生产消费方（pending-return 恢复链路）时一起扩，
+ * 不为没有读者的事先改合同。渲染层结果页的出口标签已按 note_round 单列。
+ */
 function routeForTarget(target: LearningRunReturnContractV2["returnTargetV2"]): ReturnRoute {
   return target.kind === "review" ? "review.queue" : "room.home";
 }
