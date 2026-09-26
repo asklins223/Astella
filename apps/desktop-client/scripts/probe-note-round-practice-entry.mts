@@ -103,6 +103,8 @@ const FIXTURE = {
     pairs: [
       { unitId: 'u-interval', left: '复习间隔', right: '长期记忆保持' },
       { unitId: 'u-recall', left: '主动回忆', right: '优于重复阅读' },
+      // 第三位：两位的排列只有"全对/全错"两种，同屏读不出"这一位成立、那一位不成立"这一对。
+      { unitId: 'u-spacing', left: '分散练习', right: '长期保持更稳' },
     ],
   }),
   learningSupport: JSON.stringify({ explanation: '利息加入本金继续生息' }),
@@ -496,16 +498,71 @@ try {
     // 交卷那颗要**真的动过一次**才放开（`structuredPartReady`：ordering 需 `orderingTouched`）。
     // 所以两种情形都要按一次抓取：顺序本来就错的，挪下去再挪回来（净变化为零、仍然错）；
     // 顺序本来全对的，挪一位制造出"至少一位不成立"。
-    const sameOrder = switchedPresented.join() === switchedCorrect.join()
-    await page.locator('.run-order-grip').first().focus()
-    await page.keyboard.press(' ')
-    await page.keyboard.press('ArrowDown')
-    if (sameOrder !== true) await page.keyboard.press('ArrowUp')
-    await page.keyboard.press(' ')
+    // 摆一个"恰好第一位成立、其余两位不成立"的顺序：两位的排列只有全对/全错两种，
+    // 同屏读不出那一对，所以夹具给到三项。移动用的是每行自带的那对上移/下移按钮
+    // ——一步一个位置，且每一步之后重读屏上顺序，不靠脚本自己数。
+    const labelLines = sql(`
+      select 'L|' || lbl.tok || '|' || lbl.lab
+      from learning_runs r
+      join learning_tasks tk on tk.run_id = r.id
+      join learning_task_variants v on v.task_id = tk.id
+      cross join lateral jsonb_each_text(v.interaction -> 'publicTokenLabels') as lbl(tok, lab)
+      where r.origin ->> 'roundId' = '${seeded.roundId}' and v.interaction ->> 'kind' = 'ordering'
+      limit 12`)
+      .split('\n').map((line) => line.trim()).filter((line) => line.startsWith('L|'))
+    const labelOf = new Map<string, string>(labelLines.map((line) => {
+      const parts = line.split('|')
+      return [parts[1] ?? '', (parts[2] ?? '').trim()] as [string, string]
+    }))
+    readings.labelOf = Object.fromEntries(labelOf)
+    check('题面那几项在库里都读得到标签（token 与 label 的条数对得上项数）',
+      labelOf.size === switchedPresented.length && switchedPresented.length >= 3,
+      { labels: readings.labelOf, items: switchedPresented.length })
+
+    const readLabels = async (): Promise<string[]> =>
+      (await page.locator('.run-order-list li .run-order-label').allTextContents())
+        .map((text) => text.replace(/\s+/g, ' ').trim())
+    // 屏上那句是「排序项 复习间隔」这种带前缀的形状，所以只按"包含库里那个标签"来认位。
+    const indexOfToken = (domLabels: string[], token: string): number => {
+      const wantedLabel = labelOf.get(token) ?? ''
+      return domLabels.findIndex((text) => wantedLabel.length > 0 && text.includes(wantedLabel))
+    }
+    const moveRow = async (index: number, direction: string): Promise<void> => {
+      await page.locator(`.run-order-list li[data-order-index="${index}"] .run-icon-button[aria-label*="${direction}"]`)
+        .first().click({ timeout: 10_000 })
+      await page.waitForTimeout(150)
+    }
+    // 目标：第 1 位放"应该的那一项"，后两位互换（于是同屏出现"成立"与"不成立"两种反馈）。
+    const targetTokens = [switchedCorrect[0], switchedCorrect[2], switchedCorrect[1]]
+    const moveLog: string[] = []
+    for (let position = 0; position < targetTokens.length; position += 1) {
+      const token = targetTokens[position] as string
+      let current = await readLabels()
+      let from = indexOfToken(current, token)
+      if (from < 0) {
+        check('要把的那一项在屏上读得到', false, { token, labels: Object.fromEntries(labelOf), current })
+        break
+      }
+      while (from > position) {
+        await moveRow(from, '上移')
+        moveLog.push(`${labelOf.get(token) ?? token}: ${from + 1} -> ${from}`)
+        current = await readLabels()
+        from = indexOfToken(current, token)
+        if (from < 0) break
+      }
+    }
+    readings.arrange = { targetTokens, moveLog, after: await readLabels() }
+    const arranged = await readLabels()
+    const placedTokens = targetTokens
+      .map((token, position) => ({ token, position, at: indexOfToken(arranged, token) }))
+      .filter((item) => item.at === item.position)
+      .map((item) => item.token)
+    check('按目标摆完之后屏上顺序真对得上（摆不动就不该继续读反馈）',
+      placedTokens.length === targetTokens.length, { placedTokens, targetTokens, after: readings.arrange.after })
     const finalOrder = (await page.locator('.run-order-list li[data-order-index]').evaluateAll(
       (nodes) => nodes.map((node) => node.textContent ?? ''),
     )).map((text) => text.replace(/^\s*\d+/, '').trim())
-    readings.finalOrder = { movedToMakeItWrong: sameOrder, finalOrder }
+    readings.finalOrder = { finalOrder, targetTokens }
     check('交换之后屏上这一列读得到（每一项都印得出文字）',
       finalOrder.length === switchedPresented.length && finalOrder.every((text) => text.length > 0),
       readings.finalOrder)
@@ -567,25 +624,24 @@ try {
         rows.length > 0 && rows.every((row) => row.head.length > 0 && row.reason.length > 0),
         readings.rubricRead)
       // 位置真值要从库里那两份对上：token→label 的映射 + 每个位子**应该**是哪一项。
-      const labelLines = sql(`
-        select 'L|' || lbl.tok || '|' || lbl.lab
-        from learning_runs r
-        join learning_tasks tk on tk.run_id = r.id
-        join learning_task_variants v on v.task_id = tk.id
-        cross join lateral jsonb_each_text(v.interaction -> 'publicTokenLabels') as lbl(tok, lab)
-        where r.origin ->> 'roundId' = '${seeded.roundId}' and v.interaction ->> 'kind' = 'ordering' limit 8`)
-        .split('\n').map((line) => line.trim()).filter((line) => line.startsWith('L|'))
-      const labelOf = new Map(labelLines.map((line) => {
-        const [, token, label] = line.split('|')
-        return [token, (label ?? '').trim()] as const
-      }))
+      // token→label 那份映射上面已经查过（一处一份），这里直接用。
       const expectedLabels = switchedCorrect.map((token) => labelOf.get(token) ?? '')
       const wrongPositions = finalOrder
         .map((placed, index) => ({ index, placed, expected: expectedLabels[index] ?? '' }))
         .filter((item) => item.placed !== item.expected)
       readings.positionTruth = { expectedLabels, placed: finalOrder, wrongPositions, rows }
-      check('这一发确实留下**至少一位放错**（不然"不成立那一位"那一腿没有对象）',
-        wrongPositions.length >= 1 && rows.length === finalOrder.length, { wrongPositions, rows })
+      const rightPositions = finalOrder
+        .map((placed, index) => ({ index, placed, expected: expectedLabels[index] ?? '' }))
+        .filter((item) => item.placed === item.expected)
+      readings.positionSplit = { rightPositions, wrongPositions }
+      check('这一发同屏留下"至少一位成立"与"至少一位不成立"（两位的排列读不出这一对）',
+        rightPositions.length >= 1 && wrongPositions.length >= 1 && rows.length === finalOrder.length,
+        readings.positionSplit)
+      // 成立那一位报的是**用户自己放在那一位的那一项**（他自己的文字，不新增答案信息）
+      const silentOnes = rightPositions.filter(({ index, placed }) => placed.length > 1
+        && !(rows[index]?.reason ?? '').includes(placed))
+      check('成立那一位说得出"这一步放对了"并且点出用户自己放的那一项', silentOnes.length === 0,
+        { silentOnes, rows, rightPositions })
       // 逐位反馈那句不许把"该放那一位的那一项"说出来——不成立的那一位尤其如此
       // （理由串原样送到客户端，替用户填正确项就等于绕过曝光记账）。
       const leaks = wrongPositions
