@@ -132,6 +132,7 @@ import {
 import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema } from "@ailearn/shared/learning-objective-surface-contracts";
 import {
   noteLearningRoundHistoryPageV1Schema,
+  noteLearningRoundPersonalHistoryPageV1Schema,
   noteLearningRoundV1Schema,
   ROUND_HISTORY_MAX_LIMIT_V1,
   roundDrivingQuestionSourceV1Schema,
@@ -568,6 +569,13 @@ const noteLearningRoundReviseInputSchema = z.strictObject({
   drivingQuestion: z.string().trim().min(1).max(500),
   drivingQuestionSource: roundDrivingQuestionSourceV1Schema,
 });
+const noteLearningRoundPersonalHistoryInputSchema = z.strictObject({
+  ...m1InputBase,
+  // 与按笔记那一条唯一的差别就是没有 noteId：这一页读的是"我"的所有轮次。
+  limit: z.number().int().min(1).max(ROUND_HISTORY_MAX_LIMIT_V1).optional(),
+  before: uuidSchema.optional(),
+});
+
 const noteLearningRoundHistoryInputSchema = z.strictObject({
   ...m1InputBase,
   noteId: uuidSchema,
@@ -2889,6 +2897,16 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
       drivingQuestionSource: input.drivingQuestionSource,
     }, input.meta.requestId);
   }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundV1Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundPersonalHistory, noteLearningRoundPersonalHistoryInputSchema, options, async (_event, _window, input) => {
+    // 路由与今日日志同一条：这块内容挂在**学习页**上，不在笔记页里。
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.getMyLearningRoundHistory(
+      { limit: input.limit, before: input.before },
+      input.meta.requestId,
+    );
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundPersonalHistoryPageV1Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundHistory, noteLearningRoundHistoryInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "note.detail");

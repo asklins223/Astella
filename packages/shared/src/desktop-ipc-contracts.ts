@@ -153,6 +153,7 @@ import {
 import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema } from "./learning-objective-surface-contracts.ts";
 import {
   noteLearningRoundHistoryPageV1Schema,
+  noteLearningRoundPersonalHistoryPageV1Schema,
   noteLearningRoundV1Schema,
   roundDrivingQuestionSourceV1Schema,
   roundTeachingViewV1Schema,
@@ -345,6 +346,8 @@ export const DESKTOP_IPC_CHANNELS = {
   // `open` 回的是"此刻那一轮"（没有就 404→null），而记录是"开过的每一轮"——
   // 收尾之后 `open` 变 null、记录变长，两件事的读数本来就相反。
   noteLearningRoundHistory: "ailearn.v1.noteLearningRound.history",
+  // §10.3 第二级（本人、跨笔记）：与上面那一条同一形状，只是不带 noteId（W4-8 刀二）。
+  noteLearningRoundPersonalHistory: "ailearn.v1.noteLearningRound.personalHistory",
   // 教学产物两发（39d W4-6 刀二）。与记录那一发同一个理由不塞进 `open`：`open` 回的是
   // **轮次行**（有没有这一轮），解释是另一张表上的产物（这一轮讲没讲过）——两件事的
   // 读数本来就不在一处，合成一发会让"没有解释"和"没有轮次"分不开。
@@ -2458,6 +2461,15 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
       /** 上一页最后一条的 id；给了就读得更早的那几轮。回读里的 `nextCursor` 就是它。 */
       before?: string;
     }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundHistoryPageV1Schema>>>;
+    /**
+     * 我的轮次记录（跨笔记，§10.3 第二级）。挂在**学习页**上，所以路由守卫与今日日志
+     * 同一条（`room.home`）；不带 noteId——这一页读的是"我"，不属于某一篇。
+     */
+    personalHistory(input: {
+      meta: RequestMetaV1;
+      limit?: number;
+      before?: string;
+    }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundPersonalHistoryPageV1Schema>>>;
     /**
      * 这一轮**当前问题版本**下的那条解释（W4-6 刀二）。
      *

@@ -297,10 +297,12 @@ import {
 import { objectiveListPageV3Schema, learningObjectiveSurfaceV3Schema, type ObjectiveListPageV3, type LearningObjectiveSurfaceV3 } from "@ailearn/shared/learning-objective-surface-contracts";
 import {
   noteLearningRoundHistoryPageV1Schema,
+  noteLearningRoundPersonalHistoryPageV1Schema,
   noteLearningRoundViewV1Schema,
   ROUND_HISTORY_DEFAULT_LIMIT_V1,
   roundTeachingViewV1Schema,
   type NoteLearningRoundHistoryV1,
+  type NoteLearningRoundPersonalHistoryV1,
   type NoteLearningRoundV1Wire,
   type RoundTeachingViewV1,
 } from "@ailearn/shared/note-learning-round-contracts";
@@ -2010,6 +2012,30 @@ export class DesktopGateway {
    * 所以这一发**不**像 `getOpenNoteLearningRound` 那样把 404 折成 null：
    * 记录那一条路由根本不回 404，把它折一次就会把"路由改了"读成"这篇没有历史"。
    */
+  /**
+   * 我的轮次记录（跨笔记，§10.3 第二级；39d W4-8 刀二）。与按笔记那一发同一套规矩：
+   * 空表是真的"我还没开过轮"，不折成 null；整份过合同，不在这里替服务端补游标。
+   */
+  async getMyLearningRoundHistory(
+    input: { limit?: number; before?: string },
+    requestId?: string,
+  ): Promise<NoteLearningRoundPersonalHistoryV1> {
+    await this.ensureConnected(requestId);
+    const params = new URLSearchParams({ limit: String(input.limit ?? ROUND_HISTORY_DEFAULT_LIMIT_V1) });
+    if (input.before) params.set("before", this.safeUuid(input.before));
+    const result = await this.request(
+      `/v2/note-learning-rounds?${params.toString()}`,
+      { method: "GET" },
+      true,
+      false,
+      requestId,
+    );
+    if (result.status >= 300) throw this.mapResponseError(result.status, result.headers);
+    const parsed = noteLearningRoundPersonalHistoryPageV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
   async getNoteLearningRoundHistory(
     input: { noteId: string; limit?: number; before?: string },
     requestId?: string,

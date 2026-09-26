@@ -316,6 +316,7 @@ const desktopApi: AILearnDesktopApiM2 = {
     resume: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundResume, input),
     close: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundClose, input),
     history: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundHistory, input),
+    personalHistory: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundPersonalHistory, input),
     teaching: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundTeaching, input),
     explain: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundExplain, input)
   },

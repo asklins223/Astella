@@ -1,4 +1,7 @@
 import { useMemo, useRef, useState } from "react";
+import { ROUND_RECORD_COPY_V1, roundHistoryStateLabelV1, roundRecordDayV1, roundRecordModesLabelV1 } from "./round-record-copy";
+import type { NoteLearningRoundPersonalHistoryItemV1, NoteLearningRoundPersonalHistoryV1 } from "@ailearn/shared/note-learning-round-contracts";
+
 import type { Ref } from "react";
 import {
   BookOpen,
@@ -18,7 +21,7 @@ import type { AllWorkspacesStatsOverviewV1 } from "@ailearn/shared/stats-overvie
 import { SETTINGS_ATTENTION_AI_CONSENT } from "../../app/companion-consent-gate";
 import { useRoomStore } from "../../app/room-store";
 import type { RoomIntent } from "../../app/room-machine";
-import { createRequestMeta, unwrapGatewayResult } from "../../app/desktop-client";
+import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
 import { HudPage } from "../hud/HudPage";
 import { useHudPage } from "../hud/use-hud-page";
 import { usePageReadableView } from "../hud/use-page-readable-view";
@@ -366,6 +369,72 @@ function LogRows({
   );
 }
 
+/**
+ * 我的轮次记录（§10.3 第二级）。一行只报服务端算出来的那几格：哪一天、哪一篇、
+ * 那一句问题、走到哪一步、实际发生过什么（讲过／练过）、有没有我们判不准的。
+ * 空表是真的"我还没开过轮"，不是读失败——读失败走 `failure` 那一条，两者不同字。
+ */
+function RoundRecordStream({
+  items,
+  total,
+  hasMore,
+  busy,
+  failure,
+  loadingText,
+  loadMoreText,
+  onLoadOlder,
+  onReload,
+}: {
+  readonly items: readonly NoteLearningRoundPersonalHistoryItemV1[];
+  readonly total: number;
+  readonly hasMore: boolean;
+  readonly busy: boolean;
+  readonly failure: string | null;
+  readonly loadingText: string;
+  readonly loadMoreText: string;
+  readonly onLoadOlder: () => void;
+  readonly onReload: () => void;
+}) {
+  return (
+    <section className="day-stream" aria-labelledby="today-round-record-title" data-round-record="true">
+      <h2 className="day-section-head" id="today-round-record-title">
+        <b>我学过的每一轮</b>
+        {items.length > 0 ? <span>{ROUND_RECORD_COPY_V1.personalLead(total, items.length, hasMore)}</span> : null}
+      </h2>
+      {failure ? (
+        <p className="day-log__note" role="alert">
+          {failure} <button type="button" className="button" onClick={onReload}>再读一次</button>
+        </p>
+      ) : null}
+      {items.length > 0 ? (
+        <ol className="day-log__stream" aria-label="我的学习轮次记录">
+          {items.map((item) => (
+            <li className="day-log__entry" key={item.roundId} data-round-record-row={item.roundId}>
+              <time className="day-log__time" dateTime={item.startedAt}>{roundRecordDayV1(item.startedAt)}</time>
+              <div className="day-log__body">
+                <span className="sr-only">{item.noteTitle} · </span>
+                <b>{item.drivingQuestion}</b>
+                <span className="small">
+                  {item.noteTitle} · {roundHistoryStateLabelV1(item)}
+                  {item.actualModes.length > 0 ? ` · ${roundRecordModesLabelV1(item.actualModes)}` : ""}
+                  {item.systemUncertain ? ` · ${ROUND_RECORD_COPY_V1.uncertain}` : ""}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ol>
+      ) : (failure ? null : (
+        <p className="day-stream__empty">还没有开过一轮。在任意一篇笔记上问一句"想弄懂什么"，这里就会记上。</p>
+      ))}
+      {hasMore ? (
+        <button type="button" className="button" disabled={busy} onClick={onLoadOlder}>
+          {busy ? loadingText : loadMoreText}
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
 /** 学习记录是主叙事；派生 job 保留可查，但默认收在“系统活动”里。 */
 function LogStream({
   rows,
@@ -562,6 +631,55 @@ export function StudySurface() {
     return unwrapGatewayResult(result);
   }, []);
 
+  /**
+   * 我的轮次记录（§10.3 第二级，跨笔记；39d W4-8 刀二）。今日日志是**一天**的窗口，
+   * 这一块是**全部**：同一页上两件事，所以各读各的，不让今日日志冒充完整记录。
+   */
+  const personalRounds = useSurfaceProjection<NoteLearningRoundPersonalHistoryV1>(async ({ workspaceEpoch }) => {
+    const meta = createRequestMeta(workspaceEpoch);
+    const result = await window.ailearn.noteLearningRound.personalHistory({ meta });
+    return unwrapGatewayResult(result);
+  }, []);
+  const [olderRounds, setOlderRounds] = useState<NoteLearningRoundPersonalHistoryV1 | null>(null);
+  const [olderRoundsBusy, setOlderRoundsBusy] = useState(false);
+  const [olderRoundsFailure, setOlderRoundsFailure] = useState<string | null>(null);
+  const roundRecordItems: readonly NoteLearningRoundPersonalHistoryItemV1[] = [
+    ...(personalRounds.data?.items ?? []),
+    ...(olderRounds?.items ?? []),
+  ];
+  // 那句总数只读服务端报的那一格；本页条数是另一件事（两数分叉过就会有一句假总数）。
+  const roundRecordTotal = olderRounds?.totalCount ?? personalRounds.data?.totalCount ?? 0;
+  const roundRecordHasMore = olderRounds ? olderRounds.hasMore : (personalRounds.data?.hasMore ?? false);
+  const roundRecordCursor = olderRounds ? olderRounds.nextCursor : (personalRounds.data?.nextCursor ?? null);
+
+  const loadOlderRoundRecords = async () => {
+    if (!roundRecordHasMore || olderRoundsBusy) return;
+    setOlderRoundsBusy(true);
+    setOlderRoundsFailure(null);
+    try {
+      const meta = createRequestMeta(personalRounds.epochRef.current ?? undefined);
+      const nextPage = unwrapGatewayResult(await window.ailearn.noteLearningRound.personalHistory({
+        meta,
+        before: roundRecordCursor ?? undefined,
+      }));
+      // 这里只存**翻回来的那几页**（第一页由投影自己带着）：把第一页也算进来，
+      // 屏上那份"已列出的行"就会被并两次——用例量到的是 5 行而不是 3 行。
+      setOlderRounds((previous) => ({
+        version: 1,
+        items: [...(previous?.items ?? []), ...nextPage.items],
+        hasMore: nextPage.hasMore,
+        nextCursor: nextPage.nextCursor,
+        // 累加的只有"列了几轮"；总数仍取服务端那一份（它与游标无关，翻不翻页都是那个数）。
+        shownCount: (previous?.items.length ?? 0) + nextPage.items.length,
+        totalCount: nextPage.totalCount,
+      }));
+    } catch (error) {
+      setOlderRoundsFailure(gatewayErrorMessage(error));
+    } finally {
+      setOlderRoundsBusy(false);
+    }
+  };
+
   const rows: readonly TodayLogRow[] = useMemo(() => (data ? buildTodayLogRows(data.events) : []), [data]);
   const groups: readonly TodayAnomalyGroup[] = useMemo(
     () => (data ? sortAnomalyGroups(buildTodayAnomalyGroups(data.anomalies)) : []),
@@ -726,6 +844,18 @@ export function StudySurface() {
               ) : null}
 
               <LogStream rows={rows} note={logNote} onOpen={openTarget} onPick={invoke} />
+
+              <RoundRecordStream
+                items={roundRecordItems}
+                total={roundRecordTotal}
+                hasMore={roundRecordHasMore}
+                busy={olderRoundsBusy}
+                failure={personalRounds.failure ?? olderRoundsFailure}
+                loadingText={ROUND_RECORD_COPY_V1.loadingOlder}
+                loadMoreText={ROUND_RECORD_COPY_V1.loadOlder}
+                onLoadOlder={() => void loadOlderRoundRecords()}
+                onReload={() => void personalRounds.reload()}
+              />
             </div>
 
             {/* 右栏两张卡：上面那张回答"我在别的空间还有多少没做"（这一页唯一

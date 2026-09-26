@@ -149,9 +149,41 @@ function allSpaces(overrides: Partial<AllWorkspacesStatsOverviewV1> = {}): AllWo
   };
 }
 
+/** 记录那一页（§10.3 第二级）的一页回执：默认空表，让既有用例只测今日日志。 */
+function roundPage(overrides: Record<string, unknown> = {}) {
+  return {
+    version: 1,
+    items: [],
+    hasMore: false,
+    nextCursor: null,
+    shownCount: 0,
+    totalCount: 0,
+    ...overrides,
+  };
+}
+
+function roundRecordItem(overrides: Record<string, unknown> = {}) {
+  return {
+    roundId: "b1111111-1111-4111-8111-111111111111",
+    phase: "closed",
+    outcome: "completed",
+    drivingQuestion: "判断为什么有索引，查询仍然可能慢",
+    drivingQuestionSource: "suggested",
+    drivingQuestionRevision: 1,
+    actualModes: ["explained", "practiced"],
+    systemUncertain: false,
+    startedAt: "2026-09-24T02:00:00.000Z",
+    closedAt: "2026-09-24T03:00:00.000Z",
+    noteId: "a1111111-1111-4111-8111-111111111111",
+    noteTitle: "学习科学术语定义集",
+    ...overrides,
+  };
+}
+
 function installApi(
   result: GatewayResultV1<TodayActivityV1> | Error,
   spacesResult: GatewayResultV1<AllWorkspacesStatsOverviewV1> | Error = ok(allSpaces()),
+  roundsResult: GatewayResultV1<unknown> = ok(roundPage()),
 ) {
   const getToday = vi.fn(async () => {
     if (result instanceof Error) throw result;
@@ -161,15 +193,17 @@ function installApi(
     if (spacesResult instanceof Error) throw spacesResult;
     return spacesResult;
   });
+  const rounds = vi.fn(async () => (typeof roundsResult === "object" ? roundsResult : ok(roundPage())));
   Object.defineProperty(window, "ailearn", {
     configurable: true,
     value: {
       auth: { getState: vi.fn(async () => ok(session())) },
       activity: { getToday },
       stats: { getOverviewAll },
+      noteLearningRound: { personalHistory: rounds },
     },
   });
-  return { getToday, getOverviewAll };
+  return { getToday, getOverviewAll, rounds };
 }
 
 /** 判断条按钮靠 scrollIntoView 把读者送到分诊区；这里换成本地 spy 才断言得到。 */
@@ -445,5 +479,88 @@ describe("all-spaces scope", () => {
     // 读不到就不给数字，也不留一行"合计"装作读到了。
     expect(document.querySelector(".day-spaces__total")).toBeNull();
     expect(screen.queryByRole("list", { name: "每个空间各自的进度" })).toBeNull();
+  });
+
+  it("lists my rounds across notes: the source note, what actually happened, and the cursor button", async () => {
+    const c1 = "b2222222-2222-4222-8222-222222222222";
+    const c2 = "b3333333-3333-4333-8333-333333333333";
+    installApi(ok(activity()), ok(allSpaces()), ok(roundPage({
+      items: [
+        roundRecordItem({ roundId: c1, drivingQuestion: "第一句：为什么慢", noteTitle: "索引与执行计划" }),
+        roundRecordItem({
+          roundId: c2,
+          drivingQuestion: "第二句：灭火器怎么用",
+          noteTitle: "消防疏散与灭火器使用",
+          outcome: "partial",
+          actualModes: ["practiced"],
+          systemUncertain: true,
+        }),
+      ],
+      shownCount: 2,
+      totalCount: 7,
+      hasMore: true,
+      nextCursor: c2,
+    })));
+    render(<StudySurface />);
+    const list = await screen.findByRole("list", { name: "我的学习轮次记录" });
+    const rows = within(list).queryAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain("索引与执行计划");
+    expect(rows[0].textContent).toContain("走完了");
+    expect(rows[0].textContent).toContain("讲过 · 练过");
+    expect(rows[1].textContent).toContain("先到这里");
+    // 「判不准」那一格只有服务端报了才有；没报的那一行一个字都不多。
+    expect(rows[0].textContent).not.toContain("这次有我们判不准的地方");
+    expect(rows[1].textContent).toContain("这次有我们判不准的地方");
+    // 还有更早的时，那句只报"列到这里"，不替整本记录报篇数；总数取服务端那一份。
+    expect(screen.getByText("我开过 7 轮，这里列了最近 2 轮，更早的还能看。")).toBeTruthy();
+  });
+
+  it("appends the older page instead of replacing it, and stops offering the button at the end", async () => {
+    const c1 = "c4444444-4444-4444-8444-444444444444";
+    const c2 = "c5555555-5555-4555-8555-555555555555";
+    const c3 = "c6666666-6666-4666-8666-666666666666";
+    const rounds = vi.fn(async () => ok(roundPage({
+      items: [roundRecordItem({ roundId: c1 }), roundRecordItem({ roundId: c2 })],
+      shownCount: 2, totalCount: 3, hasMore: true, nextCursor: c2,
+    })));
+    installApi(ok(activity()), ok(allSpaces()));
+    (window.ailearn as unknown as { noteLearningRound: { personalHistory: unknown } })
+      .noteLearningRound.personalHistory = rounds;
+    render(<StudySurface />);
+    const list = await screen.findByRole("list", { name: "我的学习轮次记录" });
+    expect(within(list).queryAllByRole("listitem")).toHaveLength(2);
+    // 第二跳：翻回来的那一页接在后面，不覆盖已经看到的那两行。
+    rounds.mockResolvedValueOnce(ok(roundPage({
+      items: [roundRecordItem({ roundId: c3 })],
+      shownCount: 1, totalCount: 3, hasMore: false, nextCursor: null,
+    })));
+    (screen.getByRole("button", { name: "看更早的几轮" } as never)).click();
+    await waitFor(() => expect(within(list).queryAllByRole("listitem")).toHaveLength(3));
+    expect(rounds).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("button", { name: "看更早的几轮" })).toBeNull();
+    expect(screen.getByText("我开过 3 轮，都在上面了。")).toBeTruthy();
+  });
+
+  it("keeps an empty record and a failed read as two different sentences", async () => {
+    installApi(ok(activity()), ok(allSpaces()), ok(roundPage()));
+    render(<StudySurface />);
+    expect(await screen.findByText(/还没有开过一轮/)).toBeTruthy();
+    expect(document.querySelector("[data-round-record] [role=alert]")).toBeNull();
+  });
+
+  it("shows the read failure in place with a retry instead of claiming there is no record", async () => {
+    installApi(ok(activity()), ok(allSpaces()), {
+      ok: false,
+      error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "later" },
+    } as unknown as GatewayResultV1<unknown>);
+    render(<StudySurface />);
+    const alert = await waitFor(() => {
+      const node = document.querySelector("[data-round-record] [role=alert]");
+      expect(node).not.toBeNull();
+      return node as Element;
+    });
+    expect(alert.textContent).toContain("再读一次");
+    expect(screen.queryByText(/还没有开过一轮/)).toBeNull();
   });
 });

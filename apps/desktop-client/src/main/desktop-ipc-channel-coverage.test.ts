@@ -347,6 +347,58 @@ describe("IPC 通道覆盖对账", () => {
   });
 
   /**
+   * 记录的第二级（本人、跨笔记，39d W4-8 刀二）过主进程这一发。
+   * 上一批我自己欠下的账：那时只有"声明数＝注册数"自动配平，没有一条正向读它。
+   * 替身照**真实服务端**回信给（每行带是哪一篇、两格事实是非默认值），
+   * 这样"哪一层悄悄丢掉一格"会在本机就红，而不是变成界面上一个 undefined。
+   */
+  it("我的记录那一条：不带 noteId 地转发，坏值在本机挡下", async () => {
+    const personalPage = {
+      version: 1,
+      items: [{
+        roundId: "99999999-9999-4999-8999-999999999999",
+        phase: "closed",
+        outcome: "completed",
+        drivingQuestion: "上一轮的那句问题",
+        drivingQuestionSource: "user_authored",
+        drivingQuestionRevision: 2,
+        actualModes: ["explained", "practiced"],
+        systemUncertain: true,
+        startedAt: "2026-09-25T04:00:00.000Z",
+        closedAt: "2026-09-25T05:00:00.000Z",
+        noteId: NOTE_ID,
+        noteTitle: "学习科学术语定义集",
+      }],
+      hasMore: true,
+      shownCount: 1,
+      totalCount: 4,
+      nextCursor: "99999999-9999-4999-8999-999999999999",
+    };
+    const gateway = stubGateway({
+      getMyLearningRoundHistory: vi.fn(async () => personalPage),
+    } as never) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    const { event } = await register(gateway as never);
+    const handler = (electronMock.handlers.get(DESKTOP_IPC_CHANNELS.noteLearningRoundPersonalHistory))!;
+
+    const got = await handler(event, { meta });
+    expect(requireData(got)).toMatchObject({
+      totalCount: 4,
+      items: [{ noteTitle: "学习科学术语定义集", actualModes: ["explained", "practiced"], systemUncertain: true }],
+    });
+    expect(gateway.getMyLearningRoundHistory).toHaveBeenCalledWith({ limit: undefined, before: undefined }, meta.requestId);
+
+    const badLimit = await handler(event, { meta, limit: 0 } as never);
+    const badCursor = await handler(event, { meta, before: "不是个 uuid" } as never);
+    // 这一级的语义就是"不属于某一篇"：带上 noteId 要在本机就被 strictObject 挡下，
+    // 不能让它悄悄变成一个按笔记筛的读法（那会有第二个出处）。
+    const withNoteId = await handler(event, { meta, noteId: NOTE_ID } as never);
+    expect(badLimit.ok).toBe(false);
+    expect(badCursor.ok).toBe(false);
+    expect(withNoteId.ok).toBe(false);
+    expect(gateway.getMyLearningRoundHistory).toHaveBeenCalledTimes(1);
+  });
+
+  /**
    * 「保存到卡组」与「保存并开启复习」共用同一条激活通道，差别只有那一档（39d W7-2 两颗按钮）。
    * 边界层要做的两件事：
    *  - 那一档**原样**交出去——主进程不替用户决定要不要开始安排复习（缺省尤其不许补成 `false`
