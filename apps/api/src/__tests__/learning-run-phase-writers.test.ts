@@ -16,6 +16,15 @@
  *     所以扫之前先剥注释；
  *  ③ `reasonCode: "stale"`（`run-processing-tick.ts:1948`／`:2027`）是**日程影响那一格的原因码**，
  *     与 run 的 phase 不共用词表，不许拿它当 `stale` 的写入方。
+ *
+ * **09-27 自查后加的第④条**（这一版原来错在写法上，结论侥幸没错）：本仓库有**两张表都用
+ * `phase` 这一列名**——轮次状态机也写 `phase: "active"`/`"paused"`（`round-service.ts:670`
+ * 那份 `next.state.phase`）。原来的"看到 `phase: "X"` 就算 run 的写入方"会把别的表的写入
+ * 算进来：实测 `active` 宽口径 5 个、窄口径只有 1 个。今天两档没人写的结论在两种口径下
+ * 都是 0，所以登记没错；但**方法**必须收窄，否则下一个真缺口能被别的表的一行掩盖掉。
+ * 同一天在另一枚守卫上刚犯过一次相邻的错（拿字面量断言"零生产者"，结果那一档是
+ * **变量形状**落库的），所以这里一并把变量形状管起来：落在 learningRuns 写入窗口里的
+ * `phase: <标识符>` 一律算"判不了"，必须显式登记，不许静默当"没人写"。
  */
 
 import assert from "node:assert/strict";
@@ -39,6 +48,14 @@ const LEDGER: Record<string, string> = {
   cancelled: "§16.36「取消晚于成功提交…当次显示『回答已保存，评估已取消』」那一刀的欠账（读在 run-service.ts:1617／:3121，写在等 W5-1 那条独立命令）",
   stale: "§5.5 之外没人定义过谁把 run 标成 stale；读同样在 run-service.ts:1617／:3121。要么给出写入方，要么把这档从合同里摘掉",
 };
+
+/**
+ * 落在 learningRuns 写入窗口里、但写入值是变量（字面量判不了落哪一档）的位置。
+ * 今天为空。有了就必须要么改掉字面量分支、要么在这里登记一行并写明它可能产出哪些档——
+ * **没有人工过账之前，这一枚守卫不许宣称任何一档"零写入方"**。
+ */
+const UNJUDGED_RUN_WRITES = new Set<string>([
+]);
 
 function stripComments(source: string): string {
   return source
@@ -72,31 +89,89 @@ type PhaseVerdict = {
   readers: string[];
 };
 
-/** 剥注释这件事归判定方，不归调用方——不然"注释不算写方"这条会随着调用点忘记剥而失效。 */
-function judge(phases: readonly string[], sources: Array<{ rel: string; text: string }>, rawSchemaText: string): PhaseVerdict[] {
+/** 一处 learningRuns 的写入语句：`.update(learningRuns)`／`.insert(learningRuns)`。 */
+const RUN_WRITE_WINDOW = 220;
+
+function runWritePositions(text: string): number[] {
+  const positions: number[] = [];
+  for (const match of text.matchAll(/(?:update|insert)\(learningRuns\)/g)) {
+    if (match.index !== undefined) positions.push(match.index);
+  }
+  return positions;
+}
+
+/** `phase:` 那一格离最近一处 run 写入语句有多近（没有就返回 -1）。 */
+function distanceToRunWrite(positions: number[], at: number): number {
+  let best = -1;
+  for (const position of positions) {
+    const delta = at - position;
+    if (delta >= 0 && delta <= RUN_WRITE_WINDOW && (best === -1 || delta < best)) best = delta;
+  }
+  return best;
+}
+
+/**
+ * 判定一档的写入方。**只认落在 learningRuns 写入窗口里的字面量**——
+ * 轮次状态机那张表也有一列叫 `phase`，宽口径会把它的写入算过来。
+ */
+function judge(phases: readonly string[], sources: Array<{ rel: string; text: string }>, rawSchemaText: string): {
+  verdicts: PhaseVerdict[];
+  unjudged: string[];
+} {
   const schemaText = stripComments(rawSchemaText);
-  return phases.map((phase) => {
+  const scoped = sources.map(({ rel, text: raw }) => {
+    const text = stripComments(raw);
+    return { rel, text, runWrites: runWritePositions(text) };
+  });
+  const unjudged: string[] = [];
+  const verdicts = phases.map((phase) => {
     const writers: string[] = [];
     const readers: string[] = [];
-    for (const { rel, text: raw } of sources) {
-      const text = stripComments(raw);
-      if (new RegExp(`phase:\\s*["']${phase}["']`).test(text)) writers.push(rel);
+    for (const { rel, text, runWrites } of scoped) {
+      for (const match of text.matchAll(new RegExp(`phase:\\s*["']${phase}["']`, "g"))) {
+        if (distanceToRunWrite(runWrites, match.index ?? 0) >= 0) writers.push(rel);
+      }
+      // 变量形状的写入判不了归谁：落在 run 写入窗口里的必须显式登记，不许当成"没人写"。
+      for (const match of text.matchAll(/phase:\s*([A-Za-z_$][\w$.]*)(?!\s*[:=])/g)) {
+        if (distanceToRunWrite(runWrites, match.index ?? 0) >= 0) unjudged.push(`${rel} → phase: ${match[1]}`);
+      }
       if (new RegExp(`phase\\s*===\\s*["']${phase}["']`).test(text)
         || new RegExp(`case\\s+["']${phase}["']`).test(text)) readers.push(rel);
     }
     return {
       phase,
-      writers,
+      writers: [...new Set(writers)],
       viaSchemaDefault: new RegExp(`default\\(\\s*["']${phase}["']\\s*\\)`).test(schemaText),
-      readers,
+      readers: [...new Set(readers)],
     };
   });
+  return { verdicts, unjudged: [...new Set(unjudged)] };
 }
 
 const phases = [...learningRunPhaseV2Schema.options];
 const sources = runtimeSources();
 const schemaText = readFileSync(resolve(REPO_ROOT, SCHEMA_FILE), "utf8");
-const verdicts = judge(phases, sources, schemaText);
+const { verdicts, unjudged } = judge(phases, sources, schemaText);
+
+test("写入方按**表**收窄：别的表那一列也叫 phase，不算 run 的写入方", () => {
+  // 轮次状态机确实写着 `phase: "active"`／`"paused"`（round-service.ts:670 那份 reducer 输出），
+  // 这条把"口径收窄"这件事钉住：如果哪天有人把窗口规则改宽，这里会先红。
+  const roundReducer = sources.find((item) => item.rel.endsWith("note-learning-rounds/round-reducer.ts"));
+  assert.ok(roundReducer, "轮次状态机那份文件不在了，这条自证就无从做起");
+  const activeVerdict = verdicts.find((item) => item.phase === "active");
+  assert.ok(activeVerdict && activeVerdict.writers.length > 0, "run 的 active 该有自己的写入方（run-service）");
+  assert.equal(activeVerdict.writers.some((rel) => rel.includes("note-learning-rounds")), false,
+    "轮次表的写入被算成了 run 的 phase 写入方");
+});
+
+test("变量形状的 run 写入判不了归谁，必须显式登记（今天登记的是零处）", () => {
+  assert.deepEqual(unjudged.filter((item) => !UNJUDGED_RUN_WRITES.has(item)), [],
+    "出现了 `phase: <变量>` 的 run 写入：字面量判不了它落哪一档，这一枚守卫就不能宣称『这一档没人写』——"
+    + "人工看过之后把它登记进 UNJUDGED_RUN_WRITES，或者改成字面量分支");
+  for (const entry of UNJUDGED_RUN_WRITES) {
+    assert.ok(unjudged.includes(entry), `登记过的 ${entry} 已经不在了，把这条登记删掉`);
+  }
+});
 
 test("分母自证：清单来自合同的 enum 本身，且两条已知形状各判各的", () => {
   assert.ok(phases.length >= 10, `phase 这一族至少该有十档，实际 ${phases.length}——分母读空了`);
@@ -135,19 +210,27 @@ test("台账登记的每一档今天确实无人写、且真的有人在读；�
   assert.deepEqual(problems, [], "台账与现状不一致");
 });
 
-test("判据自己的灵敏度：假数据喂出四种形状各判各的", () => {
+test("判据自己的灵敏度：假数据喂出五种形状各判各的", () => {
   const fake = [
     { rel: "apps/api/src/fake-a.ts", text: 'tx.update(learningRuns).set({ phase: "ended" })' },
     { rel: "apps/api/src/fake-b.ts", text: 'if (run.phase === "watched") { /* 读 */ }' },
     // 注释里出现的那一条**不许**算写入方。
     { rel: "apps/api/src/fake-c.ts", text: '// 将来会写 phase: "documented"\nconst x = 1;' },
+    // 别的表也叫 phase：窗口里没有 learningRuns 的写入语句，不算 run 的写入方。
+    { rel: "apps/api/src/fake-d.ts", text: 'tx.update(noteLearningRounds).set({ phase: "adjacent" })' },
+    // 变量形状的 run 写入：判不了归谁，得进 unjudged 清单。
+    { rel: "apps/api/src/fake-e.ts", text: 'tx.update(learningRuns).set({ phase: next.state.phase })' },
     { rel: "packages/shared/src/db-schema/fake.ts", text: 'phase: text("phase").default("seeded")' },
   ];
-  const out = judge(["ended", "watched", "documented", "seeded", "nobody"], fake, 'phase: text("phase").default("seeded")');
+  const { verdicts: out, unjudged: un } = judge(
+    ["ended", "watched", "documented", "adjacent", "seeded", "nobody"], fake, 'phase: text("phase").default("seeded")',
+  );
   const byPhase = new Map(out.map((item) => [item.phase, item]));
   assert.deepEqual(byPhase.get("ended")?.writers, ["apps/api/src/fake-a.ts"]);
   assert.deepEqual(byPhase.get("watched")?.readers, ["apps/api/src/fake-b.ts"]);
   assert.equal(byPhase.get("documented")?.writers.length, 0, "注释里的字面量被当成写入方了");
+  assert.equal(byPhase.get("adjacent")?.writers.length, 0, "别的表的 phase 写入被算成了 run 的");
+  assert.deepEqual(un, ["apps/api/src/fake-e.ts → phase: next.state.phase"], "变量形状的 run 写入没被挑出来");
   assert.equal(byPhase.get("seeded")?.viaSchemaDefault, true, "列默认值没被认成写入方");
   assert.equal(byPhase.get("nobody")?.writers.length, 0);
   assert.equal(byPhase.get("nobody")?.readers.length, 0);
