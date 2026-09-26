@@ -26,6 +26,41 @@ import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API_RLS");
 
+/**
+ * 把这一发自己种的 origin 行**真的**删掉，并在同一个 workspace 上下文里回读证明删干净了。
+ *
+ * 原来三处 `finally` 写的是 `DELETE … WHERE workspace_id = ?` 后面接一个 `.catch(() => {})`。
+ * 这张表是 FORCE RLS、连接又是 NOBYPASSRLS 的 `ailearn_api`：不带 `app.workspace_id` 的事务里
+ * USING 那一半就匹配 0 行 ⇒ 删不掉任何东西，而 `.catch` 把错误也一起咽了——**看起来很正常**。
+ * 实测这份文件跑一遍在库里留 3 行孤儿（跑前 26、跑后 29，`workspace_id` 在 `workspaces` 里不存在）。
+ * 这也是它一直没人敢跑的一半原因：跑一次脏一次。
+ */
+async function clearOwnOrigins(
+  sql: postgres.Sql,
+  workspaceId: string,
+  planted: number,
+): Promise<void> {
+  await sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+    // 先数"删之前看得见几行"。少了这一步，整个回读是**空转**的：上下文一丢，删不到行，
+    // 而同一事务里的回读也一样什么都看不见，`after === 0` 就恒真了。
+    const before = await tx`
+      SELECT count(*)::int AS n FROM learning_objective_origins_v2
+      WHERE workspace_id = ${workspaceId}
+    `;
+    assert.equal(before[0].n, planted,
+      `这一发本该种进 ${planted} 行、上下文里只看见 ${before[0].n} 行：受限角色下不带`
+      + ` workspace 上下文的读与写都是 0 行，回读也就白读`);
+    await tx`DELETE FROM learning_objective_origins_v2 WHERE workspace_id = ${workspaceId}`;
+    const left = await tx`
+      SELECT count(*)::int AS n FROM learning_objective_origins_v2
+      WHERE workspace_id = ${workspaceId}
+    `;
+    assert.equal(left[0].n, 0,
+      "种的 origin 行没删掉：受限角色下删 FORCE RLS 的表必须带 workspace 上下文");
+  });
+}
+
 function mustConnect() {
   if (!CONN) {
     throw new Error("DATABASE_URL_API_RLS 未配置——W1 集成测试要求真实 Postgres");
@@ -121,7 +156,7 @@ test("W1-04: Origin RLS 跨 workspace 隔离", async () => {
       /row-level security policy/,
     );
   } finally {
-    await sql`DELETE FROM learning_objective_origins_v2 WHERE workspace_id = ${wsA}`.catch(() => {});
+    await clearOwnOrigins(sql, wsA, 1);
     await sql.end();
   }
 });
@@ -181,7 +216,7 @@ test("W1-02: Origin kind 条件约束", async () => {
       `;
     });
   } finally {
-    await sql`DELETE FROM learning_objective_origins_v2 WHERE workspace_id = ${ws}`.catch(() => {});
+    await clearOwnOrigins(sql, ws, 1);
     await sql.end();
   }
 });
@@ -210,7 +245,7 @@ test("W1-03: 同一 objective revision + note version 重复绑定被唯一索�
       /loo_v2_note_binding_unique_idx/,
     );
   } finally {
-    await sql`DELETE FROM learning_objective_origins_v2 WHERE workspace_id = ${ws}`.catch(() => {});
+    await clearOwnOrigins(sql, ws, 1);
     await sql.end();
   }
 });

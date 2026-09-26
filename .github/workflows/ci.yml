@@ -567,6 +567,10 @@ jobs:
           NODE_ENV: test
           DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
           DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
+          # 整份只需要一条受限连接的隔离类文件：CI 的 `DATABASE_URL_API` 本来就是
+          # `ailearn_api`（NOBYPASSRLS），所以把它同名再给一份就能跑——本地同理由
+          # `scripts/with-restricted-db-urls.py` 注入。
+          DATABASE_URL_API_RLS: ${{ env.DATABASE_URL_API }}
         run: |
           set -o pipefail
           node --import tsx --test --test-concurrency=1 \
@@ -574,6 +578,7 @@ jobs:
             src/integration-tests/note-collaboration-postgres.integration.ts \
             src/integration-tests/learning-objective-search.integration.ts \
             src/integration-tests/learning-objective-parity.integration.ts \
+            src/integration-tests/learning-objective-content-topology-w1.integration.ts \
             src/integration-tests/card-generation-run-ownership-postgres.integration.ts \
             src/integration-tests/note-trash-card-serving-postgres.integration.ts \
             src/integration-tests/note-purge-soft-deleted-postgres.integration.ts \

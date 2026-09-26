@@ -13,6 +13,9 @@
 容器里的库名与端口沿用 `.env` 里那条 URL，只把主机名 `postgres` 换成 `127.0.0.1`
 （宿主进程在容器网络外，`@postgres:` 一律 `ENOTFOUND`）。
 
+另外还注入 `DATABASE_URL_API_RLS`（值与 `DATABASE_URL_API` 同一个角色）：整份只需要一条
+受限连接的隔离类文件用它，缺这个变量时那些文件当场 fail closed，于是永远没人跑过它们。
+
 用法：
     scripts/with-restricted-db-urls.py apps/api npm run test:companion-integration:postgres
 """
@@ -62,6 +65,12 @@ def main() -> int:
             die(f"`.env` 里缺 {role_key}，造不出 {url_key}（这个角色是 apply-roles.sh 建的）")
         role = url_key.removeprefix("DATABASE_URL_").lower()
         env[url_key] = f"postgres://ailearn_{role}:{quote(password, safe='')}@{reachable}/{database}"
+    # 有的用例整份只拿一条连接，而那条必须是 NOBYPASSRLS 的角色（RLS 隔离类）。
+    # 上面刚造出来的 `DATABASE_URL_API` 正是 CI 用的那一个角色，所以直接同名再给一份，
+    # 让这些文件在没有一次性库的机器上也跑得起来——它们的 `testDatabaseUrl` 是故意
+    # 缺串就当场喊的，别逼调用方去猜一个库名。
+    if env.get("DATABASE_URL_API"):
+        env["DATABASE_URL_API_RLS"] = env["DATABASE_URL_API"]
     # 夹具写入仍走超户那条：CI 的分工是"写用 migrator/超户、被测读数用受限角色"。
     for passthrough in ("DATABASE_URL", "DATABASE_URL_MIGRATOR"):
         if values.get(passthrough):
