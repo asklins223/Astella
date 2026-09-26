@@ -85,9 +85,29 @@
 
 D4 写入方（谁写 `artifacts/<id>.html`）：教学任务的动态产物经主进程写入（配额 512 KiB／20 000 标签已在 artifact-surface）；产物 id 回写进教学产物行（`artifact_id` 列，刀一预留或此刀加列）。宿主面挂进教学面；**T6 两条真窗口探针**（`while(true)` 产物、崩溃注入×2）与 §7.3 第三层在此跑。判据：§7.2 T6 原文两条＋"动态失败不冒充教学失败、不抹掉已有作答"。
 
+**落地记录（2026-09-26，刀五已落）**——实施时定了下面这些：
+
+1. **产物 HTML 不进渲染层**：教学面那一份读只带**引用**（`artifact: {artifactId, kind, createdAt}`）；HTML 由 main 按 id 去 `GET /v2/note-learning-round-artifacts/:artifactId` 取整份（不套 JSON 信封——消费方是主进程，它要字节原样落盘），过 D4 §8 的配额（**复用** `artifact-surface.ts` 已有的常量与口径，不另写一份数字）后写 `<userData>/artifacts/<id>.html`，frame 再从既定协议读。好处是三件事：HTML 只走一次网络与一次落盘、不额外穿过 IPC 的两层校验；渲染层拿不到 HTML，"顺手改一改再落盘"这条路不存在；落盘是**幂等**的（盘上已有就 `stored:false`，不重复下载）。
+2. **HTML 本体在独立的新表**（`note_learning_round_artifacts`，只追加、FORCE RLS、同 0282–0284 的形状），`artifact_id` 落在教学产物行上（设计件说的那一格）——因为"恢复与历史回放读同一产物"要按 id 读整份 HTML，而教学产物行本身是"解释文本"那一份。`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`：`note_learning_round_teachings` 的只追加触发器是行级的，不挡 ALTER。
+3. **确定性生产者先行**（`buildDeterministicArtifactHtmlV1`）：自包含 HTML（内联样式、不引用外部资源、不写脚本），把解释、例子与计划步骤渲染成分镜步骤；文本一律转义。真模型那一刀换的是这个函数。
+4. **落盘成功才挂宿主**：落盘失败时挂上去只会画出浏览器自己的错误页——所以失败就"不挂 + 如实说一句（动态这一版没打开）"，文字解释与练习照旧（"动态失败不冒充教学失败"）。
+5. **`motion` 接产品那一档设置**：`motionMode === "full"` 之外（lite／off）都当"减少动效"发给 frame，模板据此铺静态分镜。
+6. **T6 两条探针自己种数据**：临时 userData 里写夹具产物 HTML（`while(true)` 一份、"先报到再崩"一份）＋库里插一轮/一条教学产物/一份产物（`artifact_id` 指过去，换产物时带绕行口子改），收尾删干净。§7.2 第二条的"两次"＝宿主自己的重建上限（`MAX_FRAME_ATTEMPTS`），探针按**元素身份**数"换没换过 frame"。
+7. **真窗口剧本落地时读到的两条（2026-09-26 跑通，9/9）**：① 探针**首跑是红的**，红在"提示词只命中一篇笔记 0 行"——登录后落在**书桌**场景，而 `.note-row` 只存在于笔记库那一面墙上，所以任何要碰笔记列表的剧本都必须先走那三步（展开目录 → `nav-chip[aria-label="笔记"]` → `.note-shelf-all`），刀六那条剧本照抄这一段，别再重新发现一次；② 降级句在屏上是**两句拼起来**的（宿主自己那句"这份动态内容没能跑起来，已停止等待…"＋我们在 `ROUND_COPY.teaching.artifactFallback` 里那句），断言要挑自己那半句去对，别去对整段。
+
 ## 7. 刀六：§16.2／§16.3 案例收口
 
 已有基础先试略过（§16.2）与讲解两次停止（§16.3）端到端走通——它们是刀三＋刀四的组合验收，真窗口剧本，读数进 §19。
+
+**开工前先读这一条（2026-09-26 量清的前置障碍）**：这一刀的判据里「练一道」与四选一那两格都要求**目标在场**（`practiceStart` 读的是按 `noteId` 收窄的 active 目标），而 dev 库现在**没有任何 `origin_kind='note'` 的 active 目标**（`learning_objectives_v2` join `learning_objective_origins_v2` 按 `lifecycle='active'` 筛 = 0 行，2026-09-26 现读）。所以这一刀要么先在 dev 库上造一个带笔记依据的 active 目标（`apps/api/src/integration-tests/helpers/pure-v2-workspace-fixture.ts` 里那些 `addV2Objective…` 夹具是这个形状，但它们写的是集测库、不是 dev 库），要么把 §16.3 那一半按"四选一面在真窗口出现＋换解释真落第二条＋先结束不自动开下一轮"来收（这一半不需要目标，只需要 run＋hint 事件＋`result.outcome`，按 `gap-help-service.ts` 读的那几列种），并把 §16.2 的「练一道」真窗口正例如实留在欠账里。**别为了屏幕上有东西去改产品判据。**
+
+**落地记录（2026-09-26，刀六已落；这一刀做的是 §16.3 全部＋§16.2 的一半）**：
+
+1. **两份剧本，不是一个**：`probe-note-round-gap-help.mts`（§16.3，**30/30**）与 `probe-note-round-practice-entry.mts`（§16.2＋刀三入口正例，**9/9**）。分开的理由是两半的种数据不同——§16.3 要的是 run＋帮助事件，§16.2 要的是一个**有笔记依据的 active 目标**，合在一份里会让"目标在场"成为 §16.3 判据的隐式前提。
+2. **上面那条前置障碍已被解掉**（dev 库原本没有任何 `origin_kind='note'` 的 active 目标）：种法照 `v2-card-fixture.ts` 的 `insertObjectiveWithoutCard` ＋ `seedObjectiveNoteEvidence` 的形状，逐列抄进剧本，只有 `note_id`／`note_version_id` 指向这一篇真笔记。**别把这份剧本当作"造目标的台子"**——它种完就删，且删之前逐表对照过"没涨行"。
+3. **§16.2 那一半验的是"不堵路"**：这一轮从头到尾没生成过解释、也没有任何动态产物，而「练一道」照样出现且可点——这一条只在真窗口成立（起点是服务端从目标主行动签发的，jsdom 里证不伪）。
+4. **"点下去"没做，且是刻意的**：它会开出一场真 run，而 dev 库是共享开发库、worker 活着，全仓没有"按 run id 清 run"的现成次序（集成测试那套是 workspace 级清扫，会连 owner 的工作区一起删）。要做就先给那套次序，别用"清不干净"的代价换一条读数。
+5. **§16.3 的"不无限换题"量的是 run 数不是题面**：换解释之后这一轮的 run 仍是 2 条（教学产物从 1 条变 2 条）。这两件事容易混成一句"没多出题"，实际判据不同——多出来的是**解释**，不是**题**。
 
 ## 8. 依赖与顺序
 
