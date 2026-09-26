@@ -194,6 +194,10 @@ function computeActivationRequestHash(body: ActivateCardCandidatesRequestV2): st
     })),
     existingLifecycleActions: body.existingLifecycleActions,
     clientReviewHash: body.clientReviewHash,
+    // 要不要开始安排复习**是请求的一部分**，不是可以事后无视的一格：同一个键第二次带着
+    // 相反的那一档来，必须撞 409，而不是安安静静交回另一份世界的回执（那份回执写着
+    // "已排期"或"没排期"）。缺省与 `false` 折叠成同一档——两者副作用与回执都相同。
+    startReviewScheduling: body.startReviewScheduling === true,
   });
 }
 

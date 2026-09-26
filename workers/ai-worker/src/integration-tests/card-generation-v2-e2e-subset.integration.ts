@@ -28,6 +28,8 @@
  *   C22  同一 Idempotency-Key 重放 → 同 run，不产生重复 outbox/run；
  *   C23  activation 幂等重放 → 同 receipt；恰一 canonical mapping；重激活被拒；
  *   C25  activation 时 0 Schedule（不伪造排程）；
+ *   C45  开启复习那一档 → 恰一条 pending 安排、回执报库里实际日期、重放不重复排期、
+ *        同一把键翻那一档 409（39d W7-2 裁定 B 的服务端半边）；
  *   C32  跨 workspace 伪造 runId → 0 事件，内容零泄漏；
  *   C33  SSE 事件 payload 白名单：canonicalAnswer/私有字段不透传。
  *   R33  §17.5 step 17：post-activation 投影消费者——幂等对账台账、
@@ -664,6 +666,157 @@ test("C23+C25：activation 幂等重放同 receipt + 恰一 canonical mapping + 
     (err: unknown) => (err as { code?: string }).code === "invalid_state",
     "C23 re-activation of activated run must be rejected with invalid_state",
   );
+});
+
+/**
+ * C45：`startReviewScheduling: true` 那一档在**真库**上的形状（39d W7-2 裁定 B 的服务端半边）。
+ *
+ * 要量的是四件事，每一件都是屏幕上那句话的根据：
+ * ① 保存与排期在同一个事务里 → 回执说"排上了"，库里就得真有一行；
+ * ② 回执报的是**库里那一行的实际到期时间**，不是调用方自己算的那个（§16.35）；
+ * ③ 重放不重复排期（0287 那条部分唯一索引才是仲裁者）；
+ * ④ 同一把键翻掉那一档 → 409，被拒的那一发不留下任何安排。
+ *
+ * 默认那一档（不带这一格 → 0 条安排）由 C23/C25 守着，"已有同目标安排时 `created:false`
+ * 并沿用实际日期"由 `review-schedule-boundary-postgres.integration.ts` 守着：
+ * 在一条已经 activated 的 run 上没法自然长出第二次排期，硬造只会测到夹具。
+ */
+test("C45：开启复习那一档 → 恰一条待处理安排，回执报库里实际日期，重放不再排第二条", async (t) => {
+  const SCHEDULE_CONTENT =
+    "中和反应是酸与碱作用生成盐和水的反应；其实质是酸电离出的氢离子与碱电离出的氢氧根离子结合成水，同时放出热量。";
+  const { versionId } = await seedNote("开启复习", SCHEDULE_CONTENT);
+  const runId = (await createRun(versionId, `c45-${randomUUID()}`, `c45-key-${randomUUID()}`)).runId;
+  await runPipelineOnce();
+  await forceReviewReady(runId);
+  await forceCandidatesReviewedWithoutLeak(runId);
+
+  // 这一档**故意**在共用空间里留下真安排，而同文件还有 6 处按整空间数 `review_schedules`
+  // （C30/C44 断言 0 条）。所以自己收干净：`t.after` 保证半路红也照样删。
+  const createdScheduleIds: string[] = [];
+  t.after(async () => {
+    for (const scheduleId of createdScheduleIds) {
+      await admin`DELETE FROM review_schedules WHERE id = ${scheduleId} AND workspace_id = ${WORKSPACE_ID}`;
+    }
+  });
+
+  const { runRow, plan } = await loadRunAndPlanForActivation(runId);
+  const candidates = await admin`
+    SELECT candidate_id, candidate_revision_id, revision, candidate_revision_hash
+    FROM card_generation_candidates_v2
+    WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}`;
+  assert.ok(candidates.length >= 1, "C45 needs a candidate to save");
+  const first = candidates[0];
+
+  const { activateCardCandidatesV2 } = await import(
+    "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
+  );
+  const { computeClientReviewHashV2 } = await import(
+    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+  );
+  const clientReviewHash = computeClientReviewHashV2({
+    runId,
+    expectedReviewDraftRevision: Number(runRow.review_draft_revision),
+    selected: [{ candidateId: first.candidate_id, revision: first.revision, revisionHash: first.candidate_revision_hash }],
+    reviewUiContractVersion: "review-ui-v1",
+  });
+  const request = {
+    version: 2 as const,
+    runId,
+    sourceSnapshotHash: runRow.source_snapshot_hash,
+    semanticSpecHash: runRow.semantic_spec_hash,
+    inputSnapshotHash: runRow.input_snapshot_hash,
+    expectedCardContentEpoch: Number(runRow.card_content_epoch),
+    planRevisionId: plan.plan_revision_id,
+    expectedPlanVersion: plan.plan_version,
+    planHash: plan.plan_hash,
+    selectedCandidates: [{
+      candidateRevisionId: first.candidate_revision_id,
+      candidateId: first.candidate_id,
+      revision: first.revision,
+      revisionHash: first.candidate_revision_hash,
+      candidateEvidenceBindingPlanHash: "a".repeat(64),
+      qualityReportHashes: [],
+      intent: { kind: "create_new" } as const,
+    }],
+    existingLifecycleActions: [],
+    expectedReviewDraftRevision: Number(runRow.review_draft_revision),
+    clientReviewHash,
+    startReviewScheduling: true,
+  };
+  const key = `c45-activate-key-${randomUUID()}`;
+  const receipt = await activateCardCandidatesV2(
+    { workspaceId: WORKSPACE_ID, userId: USER_ID },
+    request,
+    key,
+  );
+
+  const objectiveId = receipt.mappings[0].objectiveId;
+  assert.ok(receipt.scheduling, "要了「开启复习」的回执必须说清排到了哪一天");
+  assert.equal(receipt.scheduling.length, 1, "C45 一张保存下来的目标恰一条排期结果");
+  assert.equal(receipt.scheduling[0].objectiveId, objectiveId, "排期结果要挂在真正建出来的那个目标上");
+  assert.equal(receipt.scheduling[0].created, true, "第一次开启应当是新建，不是凭空说「沿用了」");
+  const scheduleId = receipt.scheduling[0].scheduleId;
+  createdScheduleIds.push(scheduleId);
+
+  const rows = await admin`
+    SELECT id, status, subject_type, review_dimension, interval_days, policy_version,
+           reason_code, next_review_at
+    FROM review_schedules
+    WHERE workspace_id = ${WORKSPACE_ID} AND subject_id = ${objectiveId}`;
+  assert.equal(rows.length, 1, `C45 恰好一行待处理安排（得到 ${rows.length} 行）`);
+  const row = rows[0];
+  createdScheduleIds.push(row.id);
+  assert.equal(row.status, "pending", "新排的那一行必须是待处理");
+  assert.equal(row.subject_type, "card", "安排挂在卡这一类主体上");
+  assert.equal(row.review_dimension, "", "「保存并开启复习」排的是默认那一维度");
+  assert.equal(row.interval_days, 1, "首档 = discrete-v2 的第一档（1 天），不是「立刻可复习」");
+  assert.equal(row.policy_version, "discrete-v2", "C45 必须走真实策略版本");
+  assert.equal(row.reason_code, "activation_authorized", "C45 那一行要写明是因为用户授权");
+
+  // 回执里那句日期与库里那一行必须是同一个值——界面上"下一次是哪天"读的就是它。
+  // 说清它守到哪一步：第一次开启（`created:true`）时"库里那一行"就是这次写进去的，
+  // 把 534 行换成"报自己算的那个日期"这一变异**不会**红（变异 M-I 实测：C45 全绿）。
+  // "沿用了别人的安排时要报那一条的实际日期"由
+  // `review-schedule-boundary-postgres.integration.ts:95` 守着——只有那里能长出 `created:false`。
+  assert.equal(
+    receipt.scheduling[0].nextReviewAt,
+    new Date(row.next_review_at).toISOString(),
+    "回执报的必须是库里那一行的实际到期时间",
+  );
+  // 「保存进卡组之后要等 24 小时」是屏幕上那句话的根据：差值真的是一天，不是当场可复习。
+  const delayMs = new Date(row.next_review_at).getTime() - new Date(receipt.committedAt).getTime();
+  assert.ok(
+    Math.abs(delayMs - 24 * 60 * 60 * 1000) < 60_000,
+    `C45 首次到期应为约 24 小时后（实际 ${Math.round(delayMs / 1000)} 秒）`,
+  );
+
+  // ③ 重放：同键同请求 → 同回执、`scheduling` 逐字相同，且库里仍只有一行。
+  const replay = await activateCardCandidatesV2(
+    { workspaceId: WORKSPACE_ID, userId: USER_ID },
+    request,
+    key,
+  );
+  assert.equal(replay.receiptId, receipt.receiptId, "C45 replay must return same receipt");
+  assert.deepEqual(replay.scheduling, receipt.scheduling, "C45 重放交回的排期结果一格都不许变");
+  const rowsAfterReplay = await admin`
+    SELECT count(*)::int AS n FROM review_schedules
+    WHERE workspace_id = ${WORKSPACE_ID} AND subject_id = ${objectiveId} AND status = 'pending'`;
+  assert.equal(rowsAfterReplay[0].n, 1, "C45 重放不许再排第二条待处理安排");
+
+  // ④ 同一把键翻掉那一档 → 409，且被拒的那一发不留任何副作用。
+  await assert.rejects(
+    activateCardCandidatesV2(
+      { workspaceId: WORKSPACE_ID, userId: USER_ID },
+      { ...request, startReviewScheduling: false },
+      key,
+    ),
+    (err: unknown) => (err as { code?: string }).code === "idempotency_conflict",
+    "C45 同一把键只翻「开启复习」那一档必须撞 idempotency_conflict",
+  );
+  const rowsAfterConflict = await admin`
+    SELECT count(*)::int AS n FROM review_schedules
+    WHERE workspace_id = ${WORKSPACE_ID} AND subject_id = ${objectiveId}`;
+  assert.equal(rowsAfterConflict[0].n, 1, "被 409 拒掉的那一发不许留下第二条安排");
 });
 
 test("C20：反馈'太像原文'后重生成 → 新 revision，旧 revision 不可变（supersede 不覆盖）", async () => {

@@ -236,6 +236,29 @@ POST /...  { candidateIds: [...], subscribe: true|false, idempotencyKey }
 - 若该目标被"暂不安排"排除，**必须明示仍被暂停，只有用户选「恢复此目标并开启」才解除**（39 §15.3-16、§9.1 规则表的第三行）。
 - 若该目标已被笔记复习覆盖，界面说明"此内容已随笔记复习"，**且不增加第二个重复日程**（39 §8.3 末段）。
 
+### 5.4 落地记录（2026-09-26，服务端这一半的证据齐了；界面两颗按钮未接）
+
+**实现形状与本文件 §5.1 那段示意合同的差异，逐条写明**（示意合同当时是照着"新命令"写的，落的是既有那条激活命令，两处都按当前代码为准）：
+
+| §5.1 里那格 | 今天实际是什么 | 为什么不照示意做 |
+| --- | --- | --- |
+| `subscribe: true\|false` | 请求侧是 `startReviewScheduling?: boolean`，**未设＝只保存到卡组**（完全等于改前行为） | 加必填会让在途请求与旧客户端当场解析失败；缺省那一档必须是"没要授权"，不能是"默认授权" |
+| `saved: {cardIds}`／`combined` | 沿用 `card_activation_receipts_v2` 已有的 `mappings`／`lifecycleResults` 两列 | 这份回执有它自己的哈希闭包（`requestHash`／`responseHash`），再造一层 `combined` 枚举＝同一件事两个口径 |
+| `authorization.firstReviewAt` | `scheduling: [{objectiveId, scheduleId, nextReviewAt, created}]` 一列（0288，nullable jsonb，合同侧 `.optional()`） | 重放要能**原样交回**同一份回执，授权结果就必须落在回执上而不是每次重算；历史行交回 `undefined`（那一发在加列之前），不是空数组 |
+| `reason`（说明"沿用既有日期"） | **没有这一格**，由 `created: false` 表达 | 一句话与一个布尔在同一个回执里说同一件事，迟早分叉；界面要说的那句由 `created` 现派生 |
+
+**§5.2 三条硬约束现在各自有什么证据**（这是本格存在的理由——上一版这里只有单测，缺真库那条）：
+
+1. **不部分提交**：排期写在激活那**同一个事务**里（`activation-service.ts` step 8.6），崩了保存一起回滚——由事务本身保证，另有 C45 读回"回执说有 ⇒ 库里真有"。
+2. **幂等**：真库集测 `card-generation-v2-e2e-subset.integration.ts` 的 **C45** 一次跑完三件事：同一把键重放交回同一份 `receiptId` 与逐字不变的 `scheduling`、`review_schedules` 里 `pending` **仍只有一条**；同一把键第二次带着**相反那一档**来撞 `idempotency_conflict`，且被拒那一发不留安排。
+3. **通知不在这个事务里**：**还没有证据**。今天没有"通知未送达"这条可断路的落点（提醒的实际送达在 `assistant_deliveries` 那条链上，与本命令不同事务），§16.35 那一格留到两颗按钮落地时一并读。
+
+**这一刀顺手补的一处**：`computeActivationRequestHash` 原先没把 `startReviewScheduling` 算进去 ⇒ 同一把键带相反档位来会被判成同一发请求，安静交回另一份世界的回执。现在它进哈希（缺省与 `false` 折成同一档）。
+
+**§5.3 那条"显示沿用后的实际日期"落在哪里**：不在 C45。C45 走的是 `created:true` 那一支——那里"库里那一行"就是这次写进去的，报读来的值与报算出的值**同一瞬间**，断言分不开（变异实测：把 8.6 换成"报自己算的那个日期"，C45 全绿）。真正长得出 `created:false` 的是 `review-schedule-boundary-postgres.integration.ts:95`（同一格第二次调用不再插行、交回库里那一条的 id 与实际到期时间）。**判据记进 §10 那句"两条负面断言不成牙"的同族**：一条断言只能守它到得了的那一支，超出射程的话要在注释里收回。
+
+**仍欠**：桌面五层接线与两颗按钮（`CardGenerationSurface.review.test.tsx` 那条"只有「保存」这一档"的守卫用例届时**换成正向断言，不是删**）、上面第 3 条、真窗口读这一屏。
+
 ---
 
 ## 6. 决定五：排除优先于一切授权来源

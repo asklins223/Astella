@@ -233,6 +233,9 @@ function computeTestActivationRequestHash(body: ActivateCardCandidatesRequestV2)
     })),
     existingLifecycleActions: body.existingLifecycleActions,
     clientReviewHash: body.clientReviewHash,
+    // 与 `activation-service.ts:computeActivationRequestHash` 逐字同形：这一份是**镜像**，
+    // 服务端多算一格而这里不跟着改，下面所有"重放交回原回执"的用例都会先撞 409。
+    startReviewScheduling: body.startReviewScheduling === true,
   });
 }
 
@@ -552,6 +555,102 @@ describe("activateCardCandidatesV2 — idempotency", () => {
         { workspaceId: WORKSPACE_ID, userId: USER_ID },
         { ...request, clientReviewHash: "9".repeat(64) },
         "activate-key-001",
+      ),
+      (err: CardGenerationV2ServiceError) => {
+        assert.equal(err.code, "idempotency_conflict");
+        assert.equal(err.statusCode, 409);
+        return true;
+      },
+    );
+  });
+
+  /**
+   * 「要不要开始安排复习」是请求的一部分，不是可以事后无视的一格。
+   *
+   * 两条一对：先证明**同一档重放拿得回**那份带排期的回执（否则下面那条 409 只是"哈希
+   * 谁都配不上"），再证明**只翻那一档**必须撞 409。少了前一条，把 `requestHash` 改成
+   * 恒不相同也能让后一条绿。
+   */
+  it("带着「开启复习」那一档重放：同一把键拿回同一份带排期的回执", async () => {
+    const scheduling = [{
+      objectiveId: "00000000-0000-4000-8000-000000000013",
+      scheduleId: "00000000-0000-4000-8000-000000000015",
+      nextReviewAt: "2026-01-02T00:00:00.000Z",
+      created: true,
+    }];
+    const request = makeRequest({ startReviewScheduling: true });
+    setupActivationTx({
+      existingReceipt: {
+        workspaceId: WORKSPACE_ID,
+        userId: USER_ID,
+        runId: RUN_ID,
+        receiptId: "00000000-0000-4000-8000-000000000010",
+        idempotencyKey: "activate-key-sched",
+        requestHash: computeTestActivationRequestHash(request),
+        mappings: [{
+          candidateRevisionId: CANDIDATE_REVISION_ID,
+          candidateEvidenceBindingPlanId: "00000000-0000-4000-8000-000000000011",
+          candidateEvidenceBindingPlanHash: EVIDENCE_BINDING_PLAN_HASH,
+          cardId: "00000000-0000-4000-8000-000000000012",
+          objectiveId: "00000000-0000-4000-8000-000000000013",
+          objectiveRevisionId: "00000000-0000-4000-8000-000000000014",
+          publicationRevision: 1,
+          resultingEvidenceBindingSetHash: "b".repeat(64),
+        }],
+        lifecycleResults: [],
+        scheduling,
+        responseHash: "c".repeat(64),
+        committedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+
+    const replay = await activateCardCandidatesV2(
+      { workspaceId: WORKSPACE_ID, userId: USER_ID },
+      request,
+      "activate-key-sched",
+    );
+    assert.equal(replay.receiptId, "00000000-0000-4000-8000-000000000010");
+    assert.deepEqual(replay.scheduling, scheduling);
+  });
+
+  it("同一把键只翻「开启复习」那一档 → 409，不许交回另一份世界的回执", async () => {
+    const stored = {
+      workspaceId: WORKSPACE_ID,
+      userId: USER_ID,
+      runId: RUN_ID,
+      receiptId: "00000000-0000-4000-8000-000000000010",
+      idempotencyKey: "activate-key-sched",
+      // 库里那一行是按"这一发要排期"算的哈希存下的。
+      requestHash: computeTestActivationRequestHash(makeRequest({ startReviewScheduling: true })),
+      mappings: [{
+        candidateRevisionId: CANDIDATE_REVISION_ID,
+        candidateEvidenceBindingPlanId: "00000000-0000-4000-8000-000000000011",
+        candidateEvidenceBindingPlanHash: EVIDENCE_BINDING_PLAN_HASH,
+        cardId: "00000000-0000-4000-8000-000000000012",
+        objectiveId: "00000000-0000-4000-8000-000000000013",
+        objectiveRevisionId: "00000000-0000-4000-8000-000000000014",
+        publicationRevision: 1,
+        resultingEvidenceBindingSetHash: "b".repeat(64),
+      }],
+      lifecycleResults: [],
+      scheduling: [{
+        objectiveId: "00000000-0000-4000-8000-000000000013",
+        scheduleId: "00000000-0000-4000-8000-000000000015",
+        nextReviewAt: "2026-01-02T00:00:00.000Z",
+        created: true,
+      }],
+      responseHash: "c".repeat(64),
+      committedAt: new Date("2026-01-01T00:00:00Z"),
+    };
+    setupActivationTx({ existingReceipt: stored });
+
+    // 第二发带着同一把键说"这次不要排期"：它要的是一份**没有排期**的回执，
+    // 而库里那一行写着排过了。安静交回原回执=替用户决定了他没要的事。
+    await assert.rejects(
+      () => activateCardCandidatesV2(
+        { workspaceId: WORKSPACE_ID, userId: USER_ID },
+        makeRequest(),
+        "activate-key-sched",
       ),
       (err: CardGenerationV2ServiceError) => {
         assert.equal(err.code, "idempotency_conflict");
