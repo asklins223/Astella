@@ -42,6 +42,16 @@
 
 新 jobType `card_generation_simplified_v1` 进 outbox 分发，五段：短事务（装载快照＋已有目标摘要＋fence）→ 事务外生成 → 短事务（plan＋候选落库，复用 `insertAuthoredCandidatesBatched`）→ 事务外批量检查 → 短事务（质量报告＋状态：全部 keep ⇒ `review_ready`；有 rewrite ⇒ 增量改写一轮（只重做受影响候选，无再检查循环）；零候选 ⇒ `no_cards_recommended`；全不足 ⇒ `needs_attention`）。**入口选择**：run 创建请求带 `useSimplifiedChain: true`（沿用 0066 已有的 execution_mode 思路，但落在 v2 表的新列或 jobType 二选一，实施时定）。判据：一次性库集成——确定性 provider 下端到端 2 次调用到 review_ready；零候选路径；检查失败不重跑生成；候选出现在审核页且可"保留"。
 
+**落地记录（2026-09-26，刀b 已落）**——实施时改了/定了下面这些：
+
+1. **入口选了 jobType，没有给 v2 表加列**。生产侧唯一的入队点（`generation-run-service.ts`）按 `CARD_GENERATION_CHAIN` 决定投哪一种 jobType：**未设＝完全回到改前行为**（仍投 `card_generation_plan`），设成 `simplified_v3` 才投 `card_generation_simplified_v1`。选它的理由是"能整体撤掉"：W7-7 切入口时这个开关与旧 jobType 一起消失，不留下"表上有一列没人写"的残骸。
+2. **分发点仍在 V2 处理器的 switch 里，用动态 import 引 V3 的 handler**——V3 要复用 V2 的落库件，静态互相 import 是个环。为此从 V2 处理器改为公开的只有真正被用到的五个（`fenceV2OutboxLease`／`insertBindingPlanRow`／`insertEvent`／`loadV2RunInputs` 等＋`PendingOutboxJob` 类型）；一度顺手导出、后来核实没有调用方的四个（`loadSealedEvidence`／`loadCommittedFirstRevisions`／`insertEventsBatched`／`groundingContractToQualityReport`）已改回私有。
+3. **五段之间只有短事务，模型调用全在事务外面**；三处写事务在提交前都过 `fenceV2OutboxLease`（丢租约＝一个字的写都不许留下）。段 1 的状态门只放 `queued/planning/authoring/checking`——**`checking` 必须在里面**，否则"检查失败"这一类批次永远接不上（这一条是被变异 A 逼出来的：把 `checking` 拿掉，重投那条立刻红）。
+4. **`modelCalls` 记的是"本发之内"的调用数**，不是这一批的总账：半途失败过的批次，生成记在 `simplified_plan_committed`、检查记在 `simplified_completed`，两个数相加才是真付过的钱。这是把"报 N 次调用"落到库里时最容易骗人的一处，所以两条事件的数各钉一次——把完成事件写死成 2（变异 C）会红在重投那一条。
+5. **`rewrite` 这一档今天不假装能改写**（改写合同还没有，那是刀c）：判 rewrite 的候选 `quality_state` 停在 `authored`（审核页判"可保留"看 `passed`，所以它既不算通过也没被抹掉），报告与 issues 照实落库；只要还有 passed 的候选 run 就 `review_ready`，一张都不剩才 `needs_attention`。
+6. **质量报告是 V3 自己的一份合并形状**（`gate_version='card-content-check-v3'`，报告体里带着逐候选的 grounding 与 issues），不复用 V2 的 `groundingContractToQualityReport`——那一份只映射 grounding 一维，而这一版把两道 Critic 合成了一次检查。
+7. 读数台：`npm run test:card-generation-v3:postgres` ＋ CI 点名列一步（单文件，outbox 认领是全局的）。§16 那行"制卡族·一次性库"自此多一份：**四份 → 五份**（旧那句 40/40 是它当时那四份的数，没有替我这一份背书；本刀那份在一次性库上 5/5 连跑两遍、跑完六张表零残留）。
+
 ## 4. 刀c：增量改写与入口切换
 
 改写走增量（rewrite 候选各自一次改写调用＋只重检该候选）；质量对比样本（短长材料、无来源/矛盾材料——39 §8.6 末段的比较义务）在切入口之前跑；入口切换与旧链删除归 W7-7，不在本任务。
