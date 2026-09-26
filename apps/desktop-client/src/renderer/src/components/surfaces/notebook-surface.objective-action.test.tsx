@@ -69,6 +69,7 @@ function listItem(overrides: Record<string, unknown> = {}): ObjectiveListItemV3 
 }
 
 type Api = {
+  artifact: { ensure: ReturnType<typeof vi.fn> };
   objective: { list: ReturnType<typeof vi.fn> };
   learningRun: { start: ReturnType<typeof vi.fn> };
   note: { save: ReturnType<typeof vi.fn> };
@@ -162,6 +163,10 @@ function installApi(
     practiceStart?: Record<string, unknown> | null;
     /** 缺口帮助停止那一格（W4-6 刀四）；缺省 = 没停。 */
     gapHelp?: Record<string, unknown>;
+    /** 这一条解释的动态产物引用（W4-6 刀五）；缺省 = 没有动态版本。 */
+    artifact?: Record<string, unknown> | null;
+    /** 落盘那一发失败。 */
+    artifactEnsureFails?: boolean;
   } = {},
 ): Api {
   const syncController = options.syncController ?? { fail: false };
@@ -169,6 +174,13 @@ function installApi(
   let olderPageReads = 0;
   let teachingReads = 0;
   const api: Api = {
+    // 动态产物落盘那一发（W4-6 刀五）：跨桥只回"在不在盘上了"，渲染层读的是这一发的**成败**，
+    // 不是那一格（`stored:false`——本来就在——同样是成功）。
+    artifact: {
+      ensure: vi.fn(async () => (options.artifactEnsureFails
+        ? { ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } }
+        : ok({ stored: true }))),
+    },
     objective: { list: vi.fn(list) },
     learningRun: {
       start: vi.fn(async () => ok({ runId: RUN_ID, snapshotId: "55555555-4555-4555-8555-555555555555" })),
@@ -204,6 +216,7 @@ function installApi(
           practices: options.practices ?? [],
           practiceStart: options.practiceStart ?? null,
           gapHelp: options.gapHelp ?? { stopped: false, consecutiveHelpCount: 0, threshold: 2 },
+          artifact: options.artifact ?? null,
         });
       }),
       explain: vi.fn(async () => (options.explainFails
@@ -228,6 +241,7 @@ function installApi(
       // 这四法挂在桥对象上，**不能**塞进下面那个 `note:` 键里——上一轮就是被它整个盖掉过
       // （`window.ailearn.note.save` 变 undefined，症状与"字没交出去"完全同形）。
       noteLearningRound: api.noteLearningRound,
+      artifact: api.artifact,
       contract: { enabledRoutes: ["note.detail"] },
       auth: { getState: vi.fn(async () => ok({ status: "authenticated", workspace: { workspaceId: "ws-1" } })) },
       room: {
@@ -307,6 +321,8 @@ async function show(
     practices?: Record<string, unknown>[];
     practiceStart?: Record<string, unknown> | null;
     gapHelp?: Record<string, unknown>;
+    artifact?: Record<string, unknown> | null;
+    artifactEnsureFails?: boolean;
   } = {},
 ) {
   const syncController = options.syncController ?? { fail: false };
@@ -1239,5 +1255,61 @@ describe("缺口帮助停止后的四选一（39d W4-6 刀四）", () => {
     fireEvent.click(options(ROUND_COPY.teaching.endRound));
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     expect(api.noteLearningRound.close.mock.calls[0][0]).toMatchObject({ expectedRevision: 5, outcome: "partial" });
+  });
+});
+
+/**
+ * 动态产物的挂载（39d W4-6 刀五）。
+ *
+ * 这一组钉三件下沉到界面上的判断：
+ *  1. 有动态版本时才**发一次落盘**（幂等那一发由 main 负责，界面只管"确保"），
+ *     落盘成功之后隔离展示面的宿主才挂上去——**渲染层不拿 HTML**，只报 id；
+ *  2. 落盘失败**不冒充教学失败**：宿主不挂（不画浏览器自己的错误页），留一句如实说明，
+ *     而文字解释照旧在屏上；
+ *  3. 没有动态版本的那一条：不发那一发、也不多一行话。
+ */
+describe("动态产物的挂载（39d W4-6 刀五）", () => {
+  const artifact = {
+    version: 1,
+    artifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    kind: "dynamic_explanation",
+    createdAt: "2026-09-26T05:00:00.000Z",
+  };
+
+  it("有动态版本：发一次落盘（带 id），成功后挂上宿主", async () => {
+    const { api, container } = await show([], {
+      openRound: roundRow(),
+      roundTeaching: teachingRow(),
+      artifact,
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.artifact.ensure).toHaveBeenCalledTimes(1);
+    expect(api.artifact.ensure.mock.calls[0][0]).toMatchObject({ artifactId: artifact.artifactId });
+    const slot = container.querySelector(".notebook-round-teaching__artifact")!;
+    expect(slot.querySelector("iframe")).toBeTruthy();
+  });
+
+  it("落盘失败：不挂宿主、如实说一句，文字解释照旧", async () => {
+    const { container } = await show([], {
+      openRound: roundRow(),
+      roundTeaching: teachingRow(),
+      artifact,
+      artifactEnsureFails: true,
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    const slot = container.querySelector(".notebook-round-teaching__artifact")!;
+    expect(slot.querySelector("iframe")).toBeNull();
+    expect(slot.textContent).toContain(ROUND_COPY.teaching.artifactFailed);
+    // "动态失败不冒充教学失败"：解释与依据都还在。
+    expect(container.querySelector(".notebook-round-teaching__text")?.textContent?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("没有动态版本：不发那一发，也不多一行话", async () => {
+    const { api, container } = await show([], { openRound: roundRow(), roundTeaching: teachingRow() });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.artifact.ensure).not.toHaveBeenCalled();
+    const slot = container.querySelector(".notebook-round-teaching__artifact")!;
+    expect(slot.textContent?.trim()).toBe("");
+    expect(slot.querySelector("iframe")).toBeNull();
   });
 });

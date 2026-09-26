@@ -280,6 +280,7 @@ import {
   type NoteDocCacheKey,
   type NoteDocCacheStore,
 } from "./note-doc-cache-store.ts";
+import { ensureArtifactStored } from "./artifact-store";
 import type { WindowStateSnapshot } from "../shared/window-state";
 
 type WindowResolver = (contents: WebContents, sourceUrl: string) => BrowserWindow | null;
@@ -296,6 +297,15 @@ export type DesktopIpcRegistrationOptions = {
   readonly pendingReturnMarkerStore?: PendingReturnMarkerStore;
   /** 本机那份笔记文档的落盘口（决定 7：断网可编辑要能跨过重启）。 */
   readonly noteDocCache?: NoteDocCacheStore;
+  /**
+   * 动态产物的落盘根目录（39d W4-6 刀五）：`artifact-store.ts` 会在其下拼
+   * `artifacts/<id>.html`——必须与 `index.ts` 读侧 `artifactSourcePath` 同一个目录。
+   *
+   * 传**函数**而不是值：`desktop-ipc` 不 import Electron 的 `app`（通道覆盖那份测试的
+   * 替身里没有 `app.getPath`，模块加载期碰它就会红），生产由 `index.ts` 给
+   * `() => app.getPath("userData")`，测试给临时目录。
+   */
+  readonly artifactUserDataDir?: () => string;
 };
 
 const m1InputBase = { meta: requestMetaSchema };
@@ -575,6 +585,14 @@ const noteLearningRoundExplainInputSchema = z.strictObject({
   expectedRevision: z.number().int().min(1),
   /** 「换一种解释」（W4-6 刀四）：跳过复用、同一问题落第二条。 */
   regenerate: z.boolean().optional(),
+});
+// 39d W4-6 刀五：动态产物的"确保落盘"。渲染层只报一个 id（HTML 不穿 IPC）——
+// main 带会话令牌取整份、按 D4 的配额判完写进 `<userData>/artifacts/<id>.html`。
+const artifactEnsureInputSchema = z.strictObject({ ...m1InputBase, artifactId: uuidSchema });
+// 出口形状是合同里那一格：跨桥只说"在不在盘上了"。`ensureArtifactStored` 自己那一份
+// 结果里的 `bytes` 是 main 侧的诊断值（那边用例断它），界面不读，就不往合同里塞。
+const artifactEnsureResultSchema = z.strictObject({
+  stored: z.boolean(),
 });
 const noteLearningRoundCloseInputSchema = z.strictObject({
   ...m1InputBase,
@@ -1109,6 +1127,15 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     const snapshot = gateway.noteDocLocalSnapshot(noteId);
     if (!snapshot) return;
     await noteDocCache.set(key, { ...snapshot, epochAtRest: activeWorkspaceEpoch, updatedAt: new Date().toISOString() });
+  };
+  /**
+   * 产物往哪个 userData 写（39d W4-6 刀五）。缺注入就是接线错误：当场喊
+   * `configuration_error`，不许让"没落盘"在界面上装成"已经在了"。
+   */
+  const artifactUserDataDir = (): string => {
+    const resolveUserDataDir = options.artifactUserDataDir;
+    if (!resolveUserDataDir) throw new DesktopGatewayFailure("configuration_error", "user_action");
+    return resolveUserDataDir();
   };
   let activeWorkspaceEpoch = 0;
   let activeSubjectId: string | null = null;
@@ -2879,6 +2906,21 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
       input.meta.requestId,
     );
   }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, roundTeachingViewV1Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.artifactEnsure, artifactEnsureInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    // 落盘失败一律如实上抛（`ArtifactStoreFailure` 是网关失败的子类，`mapFailure` 会带着
+    // `code` 翻出去）：回一个 `stored:false` 会让界面把"没落下来"读成"已经在了"。
+    const ensured = await ensureArtifactStored(
+      { artifactId: input.artifactId, requestId: input.meta.requestId },
+      {
+        userDataDir: artifactUserDataDir(),
+        fetchArtifactHtml: (artifactId, requestId) => gateway.getNoteLearningRoundArtifactHtml(artifactId, requestId),
+      },
+    );
+    return { stored: ensured.stored };
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, artifactEnsureResultSchema);
 
   installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundClose, noteLearningRoundCloseInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "note.detail");

@@ -642,7 +642,10 @@ app.whenReady().then(async () => {
     // 决定 7：断网可编辑要能跨过重启，所以这份是本机的那一篇正文，落盘。
     noteDocCache: new FileNoteDocCacheStore(
       resolve(app.getPath('userData'), 'note-doc-cache.json')
-    )
+    ),
+    // 刀五：动态产物往这儿写。传函数不在注册期求值，与读侧 `artifactSourcePath`
+    // （上面那个）共用同一个 `app.getPath('userData')` 来源，落点必然一致。
+    artifactUserDataDir: () => app.getPath('userData')
   })
 
   app.on('web-contents-created', (_event, contents) => {

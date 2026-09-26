@@ -337,6 +337,28 @@ export const roundGapHelpV1Schema = z.strictObject({
 });
 export type RoundGapHelpV1 = z.infer<typeof roundGapHelpV1Schema>;
 
+/**
+ * 动态产物（W4-6 刀五；D4 §8 的隔离展示面）：一条教学产物带的整份 HTML。
+ *
+ * 三条形状上的硬约束：
+ *  - **这一格只带引用**（id／kind／时间），**HTML 不在这里**：它由 main 按 id 去
+ *    `GET /v2/note-learning-round-artifacts/:artifactId` 取整份（D4 §8：超配额是
+ *    "整份拒绝"，任何半份 HTML 在 frame 里只会画成怪东西）。渲染层拿不到 HTML，
+ *    也就不存在"渲染层顺手改一改再落盘"这条路；
+ *  - `artifactId` 是**文件名的唯一来源**（`<userData>/artifacts/<id>.html`），
+ *    桌面端拿它去 main 那一侧"确保落盘"，frame 的 URL 也由它算出来；
+ *  - `html` 过了 IPC 与文件两层，但**不是**信任边界：边界在 frame 的 sandbox 与 CSP
+ *    （host 组件与 `artifact-surface.ts` 那两层），这里只做大小与类型的形状校验。
+ */
+export const roundTeachingArtifactRefV1Schema = z.strictObject({
+  version: z.literal(1),
+  artifactId: z.string().uuid(),
+  /** 今天只有"动态讲解"一档；按知识形态选表达方式（§6.1）是后续刀。 */
+  kind: z.enum(["dynamic_explanation"]),
+  createdAt: z.string().datetime({ offset: true }),
+});
+export type RoundTeachingArtifactRefV1 = z.infer<typeof roundTeachingArtifactRefV1Schema>;
+
 /** 「练一道」的起点：哪一条目标、以及那一发请求本体（形状与主行动共用）。 */
 export const roundPracticeStartV1Schema = z.strictObject({
   objectiveId: z.string().uuid(),
@@ -372,5 +394,11 @@ export const roundTeachingViewV1Schema = z.strictObject({
   practiceStart: roundPracticeStartV1Schema.nullable(),
   /** 缺口帮助停止那一格（W4-6 刀四）：停没停、帮了几次、按几次算停。 */
   gapHelp: roundGapHelpV1Schema,
+  /**
+   * 这一条解释的动态产物（W4-6 刀五）。`null` = 这一条没有动态版本——
+   * **那不是失败**：文字解释照旧在 `teaching.content` 里，界面照旧要能读能练
+   * （"动态失败不冒充教学失败"）。
+   */
+  artifact: roundTeachingArtifactRefV1Schema.nullable(),
 });
 export type RoundTeachingViewV1 = z.infer<typeof roundTeachingViewV1Schema>;

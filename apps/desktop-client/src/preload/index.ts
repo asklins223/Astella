@@ -318,6 +318,11 @@ const desktopApi: AILearnDesktopApiM2 = {
     teaching: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundTeaching, input),
     explain: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundExplain, input)
   },
+  // 动态产物落盘（39d W4-6 刀五）：渲染层只报一个 id，整份 HTML 由 main 取回落盘，
+  // 宿主 frame 再从既定协议读——HTML 不穿这道桥。
+  artifact: {
+    ensure: (input) => invoke(DESKTOP_IPC_CHANNELS.artifactEnsure, input)
+  },
   understanding: {
     getTopology: (input) => invoke(DESKTOP_IPC_CHANNELS.understandingGetTopology, input)
   },

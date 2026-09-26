@@ -9,6 +9,7 @@
  *   POST  /v2/note-learning-rounds/:roundId/driving-question —— 改写本轮问题
  *   POST  /v2/note-learning-rounds/:roundId/teaching      —— 生成一条教学产物（W4-6 刀一）
  *   GET   /v2/note-learning-rounds/:roundId/teaching      —— 读这一轮当前问题下的那条教学产物
+ *   GET   /v2/note-learning-round-artifacts/:artifactId   —— 按 id 取整份动态产物 HTML（W4-6 刀五，不套信封）
  *
  * 三件事是这一层的职责，不是服务层的：
  *  1. **那一份"实际用 which 正文"由服务端定**（PRD §3.4）。`getNoteWithVersion` 里带着
@@ -43,6 +44,7 @@ import {
   reviseDrivingQuestionRequestV1Schema,
   roundGapHelpV1Schema,
   roundPracticeStartV1Schema,
+  roundTeachingArtifactRefV1Schema,
   roundTeachingViewV1Schema,
   type NoteLearningRoundV1Wire,
   type RoundPracticeStartV1,
@@ -59,6 +61,8 @@ import {
   listPlanRevisions,
   readOpenRound,
   readRound,
+  readRoundArtifactHtml,
+  readTeachingArtifactRef,
   reviseDrivingQuestion,
   RoundServiceError,
   type NoteLearningRoundV1,
@@ -326,7 +330,7 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
     if (frozen.kind === "reused") {
       // 复用那一发也要带上练习那两格（它们与"讲没讲过"无关，每次读都要有）。
       const extras = await withWorkspaceTransaction(scope, (tx) =>
-        buildRoundTeachingExtras(tx, scope, frozen.round));
+        buildRoundTeachingExtras(tx, scope, frozen.round, frozen.teaching.teachingId));
       return reply.code(200).send(roundTeachingViewV1Schema.parse({
         version: 1 as const,
         round: toWire(frozen.round),
@@ -357,22 +361,36 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
     // ── 相位 3：短事务写（只追加；轮内序号在服务层算）──
     try {
       const written = await withWorkspaceTransaction(scope, async (tx) => {
-        const teaching = await createTeaching(tx, scope, {
-          roundId,
-          expectedRevision: parsed.data.expectedRevision,
-          kind: "explanation",
-          content: {
-            explanation: generated.output.explanation,
-            ...(generated.output.example ? { example: generated.output.example } : {}),
+        const teaching = await createTeaching(
+          tx,
+          scope,
+          {
+            roundId,
+            expectedRevision: parsed.data.expectedRevision,
+            kind: "explanation",
+            content: {
+              explanation: generated.output.explanation,
+              ...(generated.output.example ? { example: generated.output.example } : {}),
+            },
+            sourceBlockOrdinals: generated.output.sourceBlockOrdinals,
+            snapshotHash: frozen.round.sourceContentHash,
+            drivingQuestionRevision: frozen.round.drivingQuestionRevision,
+            kernelTaskRef: generated.attemptRef,
+            // 刀五：动态版本的输入就是这一条解释本身（＋相位 1 冻结的那版计划步骤）。
+            artifact: {
+              explanation: generated.output.explanation,
+              ...(generated.output.example ? { example: generated.output.example } : {}),
+              planSteps: frozen.input.planSteps,
+            },
           },
-          sourceBlockOrdinals: generated.output.sourceBlockOrdinals,
-          snapshotHash: frozen.round.sourceContentHash,
-          drivingQuestionRevision: frozen.round.drivingQuestionRevision,
-          kernelTaskRef: generated.attemptRef,
-        });
+          {
+            // 产物失败不许让教学生成失败（D4 §6.2）：原因只留在服务端日志里。
+            reportArtifactFailure: (message) => req.log.error({ scope: "note-round-artifact" }, message),
+          },
+        );
         const round = await readRound(tx, scope, roundId);
         if (!round) throw new RoundServiceError("round_not_found", "这一轮不存在（或对当前这个人不可见）");
-        return { round, teaching, extras: await buildRoundTeachingExtras(tx, scope, round) };
+        return { round, teaching, extras: await buildRoundTeachingExtras(tx, scope, round, teaching.teachingId) };
       });
       return reply.code(201).send(roundTeachingViewV1Schema.parse({
         version: 1 as const,
@@ -409,7 +427,7 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
           drivingQuestionRevision: round.drivingQuestionRevision,
           snapshotHash: round.sourceContentHash,
         });
-        return { round, teaching, extras: await buildRoundTeachingExtras(tx, scope, round) };
+        return { round, teaching, extras: await buildRoundTeachingExtras(tx, scope, round, teaching?.teachingId ?? null) };
       });
     } catch (err) {
       return replyRoundError(reply, err, "读这一条解释没成功");
@@ -421,10 +439,38 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
       ...view.extras,
     });
   });
+
+  /**
+   * 按 id 取整份动态产物 HTML（W4-6 刀五；表 0285）。
+   *
+   * **不套 JSON 信封**：消费方是桌面主进程，它要的是字节原样落盘
+   * （`<userData>/artifacts/<id>.html`），包一层信封就得多一次拆封与一次转义。
+   * 单屏渲染也不在这里做——产物是"整份拒绝"的（超配额在写入那一刻已经挡住），
+   * 取到多少就交多少。
+   *
+   * 会话与 RLS 照旧：命中不了（不存在、别人的、或已被维护路径清掉）一律 404，
+   * **不在响应里区分这三种**——"这个 id 存不存在"本身也是一条不该漏的读。
+   */
+  app.get("/v2/note-learning-round-artifacts/:artifactId", async (req, reply) => {
+    const artifactId = (req.params as { artifactId?: string }).artifactId ?? "";
+    if (!z.string().uuid().safeParse(artifactId).success) {
+      return reply.code(400).send({ error: "invalid_request", message: "artifactId 不是一个合法 id" });
+    }
+    const scope = scopeOf(req);
+    const html = await withWorkspaceTransaction(scope, (tx) => readRoundArtifactHtml(tx, scope, artifactId));
+    if (html === null) {
+      return reply.code(404).send({ error: "artifact_not_found", message: "这份动态产物现在读不到（不存在或不可见）" });
+    }
+    return reply.type("text/html; charset=utf-8").send(html);
+  });
 }
 
 /**
- * 教学面额外那两格（W4-6 刀三）：这一轮**练过哪几道**，以及「练一道」那一发的**起点**。
+ * 教学面额外那几格（W4-6 刀三＋刀五）：这一轮**练过哪几道**、「练一道」那一发的**起点**，
+ * 以及**这一条教学的动态版本引用**（刀五：只带引用，HTML 由主进程按 id 另取）。
+ *
+ * `teachingId` 是"这一屏上摆的是哪一条教学产物"：`null`（还没生成过教学产物）⇒
+ * `artifact` 也是 `null`。**不做 phase 限制**：轮次关闭后历史回放要能取到同一份产物。
  *
  * 起点由服务端签发，规则三条：
  *  1. 目标必须是这一篇的 active 目标（与笔记页那颗主要动作同一条查询：
@@ -442,12 +488,17 @@ async function buildRoundTeachingExtras(
   tx: ApiTransaction,
   scope: RoundScopeV1,
   round: NoteLearningRoundV1,
+  teachingId: string | null,
 ): Promise<{
   practices: RoundPracticeV1[];
   practiceStart: RoundPracticeStartV1 | null;
   gapHelp: ReturnType<typeof roundGapHelpV1Schema.parse>;
+  artifact: ReturnType<typeof roundTeachingArtifactRefV1Schema.parse> | null;
 }> {
   const practices = await listNoteRoundPractices(tx, scope, round.roundId);
+  // 动态版本那一格（刀五）：读的是这一条教学行的 artifact_id 指向的产物行；
+  // 没有动态版本（还没生成 / 生成失败）就是 null——那不是失败（D4 §6.2）。
+  const artifact = teachingId ? await readTeachingArtifactRef(tx, scope, teachingId) : null;
   // 缺口帮助停止那一格（W4-6 刀四）：判据在 learning-runs 那一侧算（它才看得见
   // 帮助事件与结论），这里只把它读出来、过一遍合同。缺口身份不进线上合同（它由服务端
   // 自己用），所以这里显式挑三格。
@@ -463,14 +514,15 @@ async function buildRoundTeachingExtras(
     limit: 1,
   });
   const objective = surfaces.items[0];
-  if (!objective) return { practices, practiceStart: null, gapHelp: gapHelpWire };
+  if (!objective) return { practices, artifact, practiceStart: null, gapHelp: gapHelpWire };
   const action = objective.primaryAction;
   if (action.kind !== "create_run" && action.kind !== "practice_only") {
-    return { practices, practiceStart: null, gapHelp: gapHelpWire };
+    return { practices, artifact, practiceStart: null, gapHelp: gapHelpWire };
   }
   const objectiveId = objective.objectiveId;
   return {
     practices,
+    artifact,
     gapHelp: gapHelpWire,
     practiceStart: roundPracticeStartV1Schema.parse({
       objectiveId,

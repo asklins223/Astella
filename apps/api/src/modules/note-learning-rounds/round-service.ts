@@ -18,6 +18,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import { DomainError } from "@ailearn/shared";
 import {
+  noteLearningRoundArtifacts,
   noteLearningRounds,
   noteLearningRoundPlanRevisions,
   noteLearningRoundTeachings,
@@ -27,9 +28,11 @@ import {
 import {
   appendRoundPlanRevisionRequestV1Schema,
   roundPlanRevisionV1Schema,
+  roundTeachingArtifactRefV1Schema,
   roundTeachingContentV1Schema,
   roundTeachingV1Schema,
   type RoundPlanRevisionV1,
+  type RoundTeachingArtifactRefV1,
   type RoundTeachingKindV1,
   type RoundTeachingV1,
 } from "@ailearn/shared/note-learning-round-contracts";
@@ -40,6 +43,11 @@ import {
   type RoundOutcomeV1,
   type RoundPhaseV1,
 } from "./round-reducer.ts";
+import {
+  buildDeterministicArtifactHtmlV1,
+  ROUND_ARTIFACT_KIND_V1,
+  type RoundArtifactInputV1,
+} from "./round-artifact.ts";
 
 export class RoundServiceError extends DomainError {
   constructor(code: string, message: string) {
@@ -708,6 +716,12 @@ export function assertTeachingBudgetAvailable(round: NoteLearningRoundV1, used: 
  * 都不是（它是派生内容，不是这一轮走到哪一步）。所以这里没有 round 的 UPDATE——
  * CAS 由 `FOR UPDATE` 锁住那一行之后比一次承担；并发重复请求的"多落一条"由
  * `findReusableTeaching` 预读 + 轮内序号唯一索引兜底，而不是靠把 revision 吹大。
+ *
+ * 刀五（39d W4-6）在这里连带写**动态产物行**并把 id 回写到教学行上。顺序必须是
+ * **先生成内容 → 插产物行 → 插教学产物行（带 artifactId）**：教学表是只追加的
+ * （0284 触发器挡 UPDATE），`artifact_id` 只有在 INSERT 那一刻带得上。两条行同属
+ * 调用方的这一条短事务；产物那一半**怎么失败都不许把教学这一半拖下水**——
+ * 见 `insertTeachingArtifactV1`。
  */
 export async function createTeaching(
   tx: ApiTransaction,
@@ -721,9 +735,23 @@ export async function createTeaching(
     snapshotHash: string;
     drivingQuestionRevision: number;
     kernelTaskRef: string | null;
+    /**
+     * 动态产物的输入（刀五）。**省略 = 这一条只有文字形态**：`artifact_id` 留空，
+     * 与"产物生成失败"落在同一格（合同不区分这两件事——两者都是"没有动态版本"）。
+     */
+    artifact?: RoundArtifactInputV1;
   },
-  now: Date = new Date(),
+  options: {
+    now?: Date;
+    /**
+     * 产物失败的原因往哪说（路由把 `req.log` 传下来）。失败策略是"教学照常成功"，
+     * 所以这里不是错误出口，只是**把原因留在服务端日志里**的那一格。
+     */
+    reportArtifactFailure?: (message: string) => void;
+  } = {},
 ): Promise<RoundTeachingV1> {
+  const now = options.now ?? new Date();
+  const reportArtifactFailure = options.reportArtifactFailure ?? (() => {});
   const parsedContent = roundTeachingContentV1Schema.safeParse(request.content);
   if (!parsedContent.success) {
     throw new RoundServiceError(
@@ -765,6 +793,16 @@ export async function createTeaching(
     .where(eq(noteLearningRoundTeachings.roundId, row.id));
   const nextOrdinal = Number(ordinalRows[0]?.maxOrdinal ?? 0) + 1;
 
+  // 刀五的顺序：内容 → 产物行 → 教学行（教学表只追加，id 只能在插入那一刻带上）。
+  const artifactId = request.artifact
+    ? await insertTeachingArtifactV1(tx, scope, {
+      roundId: row.id,
+      input: request.artifact,
+      snapshotHash: request.snapshotHash,
+      createdAt: now,
+    }, reportArtifactFailure)
+    : null;
+
   const inserted = await tx.insert(noteLearningRoundTeachings).values({
     workspaceId: scope.workspaceId,
     userId: scope.userId,
@@ -778,9 +816,124 @@ export async function createTeaching(
     snapshotHash: request.snapshotHash,
     drivingQuestionRevision: request.drivingQuestionRevision,
     kernelTaskRef: request.kernelTaskRef,
+    artifactId,
     createdAt: now,
   }).returning();
   const teachingRow = inserted[0];
   if (!teachingRow) throw new RoundServiceError("create_failed", "这条教学产物没落下来");
   return toTeachingContract(teachingRow);
+}
+
+/**
+ * 写这一条教学的动态版本（刀五）。返回 `null` **永远不等于"这一条教学失败"**：
+ * D4 §6.2「动态失败不冒充教学失败」——生成失败或超配额时教学行照写、`artifact_id` 留空，
+ * 原因只进服务端日志。
+ *
+ * 为什么要套一层 SAVEPOINT（nested transaction）：产物 INSERT 一旦抛错（连接、约束、
+ * 权限），整个事务会进入 aborted 状态，后面那条教学行连写都写不下去——那就把"产物失败"
+ * 升级成了"教学失败"。保存点把失败圈在产物这一半里，回滚之后教学行照常落
+ * （`markdown-import-service.ts` 的单篇导入用的是同一形状）。
+ */
+async function insertTeachingArtifactV1(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  params: { roundId: string; input: RoundArtifactInputV1; snapshotHash: string; createdAt: Date },
+  reportFailure: (message: string) => void,
+): Promise<string | null> {
+  const built = buildDeterministicArtifactHtmlV1(params.input);
+  if (!built.ok) {
+    reportFailure(`这一条教学产物的动态版本没有生成（${built.reason}）：${built.detail}`);
+    return null;
+  }
+  try {
+    return await tx.transaction(async (artifactTx) => {
+      const inserted = await artifactTx.insert(noteLearningRoundArtifacts).values({
+        workspaceId: scope.workspaceId,
+        userId: scope.userId,
+        roundId: params.roundId,
+        kind: ROUND_ARTIFACT_KIND_V1,
+        html: built.html,
+        snapshotHash: params.snapshotHash,
+        createdAt: params.createdAt,
+      }).returning({ id: noteLearningRoundArtifacts.id });
+      const artifactRow = inserted[0];
+      if (!artifactRow) throw new Error("这一份动态产物没有落下来");
+      return artifactRow.id;
+    });
+  } catch (err) {
+    reportFailure(
+      `这一条教学产物的动态版本没有落库（教学那一半照常写）：${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
+}
+
+/**
+ * 一条教学产物的动态版本引用（刀五的读侧那一格）。`null` = 这一条没有动态版本——
+ * **不是失败**（D4 §6.2）：文字解释照旧在 `content` 里，界面照旧要能读能练。
+ *
+ * 不做 phase 限制：轮次关闭后历史回放要能取到同一份产物，所以只按"这条教学行现在
+ * 可见吗"读，不看轮次是不是开着。产物行读不到（不可见或已被维护路径清掉）也如实回
+ * `null`——渲染层据此决定挂不挂宿主，挂一个取不到的 id 只会画出浏览器自己的错误页。
+ */
+export async function readTeachingArtifactRef(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  teachingId: string,
+): Promise<RoundTeachingArtifactRefV1 | null> {
+  const teachingRows = await tx
+    .select({ artifactId: noteLearningRoundTeachings.artifactId })
+    .from(noteLearningRoundTeachings)
+    .where(and(
+      eq(noteLearningRoundTeachings.id, teachingId),
+      eq(noteLearningRoundTeachings.workspaceId, scope.workspaceId),
+      eq(noteLearningRoundTeachings.userId, scope.userId),
+    ))
+    .limit(1);
+  const artifactId = teachingRows[0]?.artifactId ?? null;
+  if (!artifactId) return null;
+
+  const artifactRows = await tx
+    .select({
+      id: noteLearningRoundArtifacts.id,
+      kind: noteLearningRoundArtifacts.kind,
+      createdAt: noteLearningRoundArtifacts.createdAt,
+    })
+    .from(noteLearningRoundArtifacts)
+    .where(and(
+      eq(noteLearningRoundArtifacts.id, artifactId),
+      eq(noteLearningRoundArtifacts.workspaceId, scope.workspaceId),
+      eq(noteLearningRoundArtifacts.userId, scope.userId),
+    ))
+    .limit(1);
+  const row = artifactRows[0];
+  if (!row) return null;
+  return roundTeachingArtifactRefV1Schema.parse({
+    version: 1,
+    artifactId: row.id,
+    kind: row.kind,
+    createdAt: row.createdAt.toISOString(),
+  });
+}
+
+/**
+ * 按 id 取整份动态产物 HTML（刀五的 GET 路由那一条读）。显式 (workspace, user) 过滤与
+ * 其余读法同形：命中不了（不存在或对当前这个人不可见）就回 `null`，由路由翻成 404。
+ * **不做 phase 限制**：历史回放取的就是旧轮次的同一份产物。
+ */
+export async function readRoundArtifactHtml(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  artifactId: string,
+): Promise<string | null> {
+  const rows = await tx
+    .select({ html: noteLearningRoundArtifacts.html })
+    .from(noteLearningRoundArtifacts)
+    .where(and(
+      eq(noteLearningRoundArtifacts.id, artifactId),
+      eq(noteLearningRoundArtifacts.workspaceId, scope.workspaceId),
+      eq(noteLearningRoundArtifacts.userId, scope.userId),
+    ))
+    .limit(1);
+  return rows[0]?.html ?? null;
 }

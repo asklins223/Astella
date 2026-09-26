@@ -145,6 +145,11 @@ export type NoteLearningRoundPlanRevisionInsert = typeof noteLearningRoundPlanRe
  * `kernelTaskRef` 可以为 NULL：确定性 provider 这一天不走内核任务，空值是真的"没有"。
  *
  * 只追加（0284 触发器挡 UPDATE/DELETE），不存"好不好／掌握度"（§6.7 同禁）。
+ *
+ * `artifactId` 指回这一条自己的那份动态产物（0285 的 `note_learning_round_artifacts`）：
+ * **可空——没有动态版本就是 NULL**（D4 §6.2："动态失败不冒充教学失败"，文字解释照旧
+ * 在 `content` 里）。注意这条列是 0285 用 `ALTER TABLE` 加的，而 0284 那条只追加触发器
+ * 只拦行级 UPDATE/DELETE（DDL 不产生行事件），所以"不可变表加列"这件事本身不冲突。
  */
 export const noteLearningRoundTeachings = pgTable(
   "note_learning_round_teachings",
@@ -167,6 +172,8 @@ export const noteLearningRoundTeachings = pgTable(
     drivingQuestionRevision: integer("driving_question_revision").notNull(),
     /** 内核任务/尝试的引用（回放与审计用）；确定性 provider 这一天为 NULL。 */
     kernelTaskRef: text("kernel_task_ref"),
+    /** 动态版本（0285）；NULL = 这一条只有文字形态。 */
+    artifactId: uuid("artifact_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -188,3 +195,47 @@ export const noteLearningRoundTeachings = pgTable(
 
 export type NoteLearningRoundTeachingRow = typeof noteLearningRoundTeachings.$inferSelect;
 export type NoteLearningRoundTeachingInsert = typeof noteLearningRoundTeachings.$inferInsert;
+
+/**
+ * 轮次的动态产物 `note_learning_round_artifacts`（39d W4-6 刀五；迁移 0285）。
+ *
+ * 为什么单独一张表而不是把 HTML 塞进教学产物行：**解释文本**与**整份动态 HTML** 是
+ * 两份寿命不同的东西——前者是"这一条讲了什么"（结构与依据都挂在那边），后者是
+ * D4 §8 隔离展示面的输入，桌面主进程按 id 取**整份**（不套 JSON 信封）落盘，frame
+ * 再从既定协议读。`round_id` 上刻意**没有唯一索引**：同一轮将来可以有多份动态版本
+ * （换解释、换表达方式），唯一性不在这里表达。
+ *
+ * 三条 CHECK 与 0285 同宽，其中最容易踩的一条是 `html` 的**字符**长度上界
+ * （524288，与 D4 §8 的 512 KiB 同宽；口径是字符而不是字节）——超配额是"整份拒绝"，
+ * 任何半份 HTML 在 frame 里只会画成怪东西，所以服务层的失败策略是"不写这一行"，
+ * 而不是截断一段塞进来。`snapshot_hash` 与 0284 同宽（8..128），理由与那边一样：
+ * 今天 `note_versions.content_hash` 的主形状是 32 位 md5。
+ *
+ * 只追加（0285 触发器挡 UPDATE/DELETE，`app.allow_history_mutation` 绕行口子）。
+ */
+export const noteLearningRoundArtifacts = pgTable(
+  "note_learning_round_artifacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    roundId: uuid("round_id").notNull(),
+    /** 今天只有 `dynamic_explanation` 一档（与教学产物表的 `kind` 分开记）。 */
+    kind: text("kind").notNull(),
+    /** 整份自包含 HTML 内容（放进桌面模板的那一份，不是整份文档）。 */
+    html: text("html").notNull(),
+    /** 生成时那一版正文的哈希（D3 §5 冻结语义）。 */
+    snapshotHash: text("snapshot_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    /** 按轮次读这一轮的产物（重放与审计）；「按 id 取整份」走主键。 */
+    roundCreatedIdx: index("nlra_round_created_idx").on(t.roundId, t.createdAt),
+    kindCheck: check("nlra_kind_chk", sql`${t.kind} IN ('dynamic_explanation')`),
+    htmlLenCheck: check("nlra_html_len_chk", sql`char_length(${t.html}) BETWEEN 1 AND 524288`),
+    snapshotHashCheck: check("nlra_snapshot_hash_chk", sql`char_length(${t.snapshotHash}) BETWEEN 8 AND 128`),
+  }),
+);
+
+export type NoteLearningRoundArtifactRow = typeof noteLearningRoundArtifacts.$inferSelect;
+export type NoteLearningRoundArtifactInsert = typeof noteLearningRoundArtifacts.$inferInsert;

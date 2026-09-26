@@ -341,6 +341,7 @@ import {
 } from "@ailearn/shared/card-generation-desktop-contracts";
 import { projectLearningDashboardToRoomProjection } from "./room-projection";
 import { computeClientReviewHashV2 } from "@ailearn/shared/card-generation-v2-hashing";
+import { ARTIFACT_MAX_BYTES } from "./artifact-surface";
 
 // 仅供 main 进程确保内部对话分段使用。产品界面与 renderer 合同不暴露
 // conversation 列表或标识，连续历史统一走 /companion/history。
@@ -5234,6 +5235,25 @@ export class DesktopGateway {
     });
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
+  }
+
+  /**
+   * 动态产物的整份 HTML（39d W4-6 刀五；`GET /v2/note-learning-round-artifacts/:artifactId`）。
+   *
+   * 消费方是主进程自己：服务端 200 回的是 `text/html` 原样整份（**不套 JSON 信封**），
+   * 这里要的就是字节原样，交给 `artifact-store.ts` 落盘后由隔离 frame 按同一 id 读。
+   * 配额用展示面的那一份常量（`artifact-surface.ts`）：这里先按上限截流，落盘前组装
+   * 时还会再判一次同一个数字，写侧与读侧不会各有一套"大小上限"。
+   */
+  async getNoteLearningRoundArtifactHtml(artifactId: string, requestId?: string): Promise<string> {
+    await this.ensureConnected(requestId);
+    const result = await this.requestBinaryBytes(
+      `/v2/note-learning-round-artifacts/${this.safeUuid(artifactId)}`,
+      { method: "GET" },
+      { accept: "text/html", contentTypePrefix: "text/html", maxBytes: ARTIFACT_MAX_BYTES },
+      requestId,
+    );
+    return Buffer.from(result.bytes).toString("utf8");
   }
 
   /**

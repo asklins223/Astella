@@ -49,6 +49,7 @@ import {
   parseCompanionInboxSseFrame,
   parseCompanionSseFrame,
 } from "./desktop-gateway";
+import { ARTIFACT_MAX_BYTES } from "./artifact-surface";
 
 const pairingSecret = Buffer.alloc(32, 9);
 const pairingSecretEncoded = pairingSecret.toString("base64url");
@@ -1481,6 +1482,73 @@ describe("DesktopGateway", () => {
       headers: { "Content-Type": "application/json" },
     });
     await expect(gateway.getSourceImage(request, "request-image-missing"))
+      .rejects.toMatchObject({ code: "not_found", retry: "never", httpStatus: 404 });
+  });
+
+  it("reads a note-learning-round artifact as the whole text/html body, with no JSON envelope", async () => {
+    const artifactId = "44444444-4444-4444-8444-444444444444";
+    const artifactRequests: Array<{
+      readonly path: string;
+      readonly accept: string | null;
+      readonly authorization: string | null;
+    }> = [];
+    // 非 ASCII 一律原样：服务端回的是整份 HTML 本体，网关只解码不改写。
+    const html = "<html><body><p>动态讲解 · 第一步</p></body></html>";
+    let artifactResponse = (): Response => new Response(html, {
+      status: 200,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/challenge")) {
+        return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      }
+      if (url.pathname.endsWith("/health")) return healthResponse();
+      if (url.pathname.startsWith("/v2/note-learning-round-artifacts/")) {
+        const headers = new Headers(init?.headers);
+        artifactRequests.push({
+          path: url.pathname,
+          accept: headers.get("Accept"),
+          authorization: headers.get("Authorization"),
+        });
+        return artifactResponse();
+      }
+      throw new Error(`unexpected URL ${url}`);
+    });
+
+    const gateway = new DesktopGateway(environment());
+    await gateway.connect();
+    Object.defineProperty(gateway, "token", { value: "test-artifact-token", writable: true });
+
+    await expect(gateway.getNoteLearningRoundArtifactHtml(artifactId, "request-artifact-html")).resolves.toBe(html);
+    expect(artifactRequests).toEqual([{
+      path: `/v2/note-learning-round-artifacts/${artifactId}`,
+      accept: "text/html",
+      authorization: "Bearer test-artifact-token",
+    }]);
+
+    // 服务端失败体（JSON）与超限都在网关被拒：字节不可能流进落盘口。
+    artifactResponse = () => new Response(JSON.stringify({ error: "not_found" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+    await expect(gateway.getNoteLearningRoundArtifactHtml(artifactId, "request-artifact-json"))
+      .rejects.toMatchObject({ code: "unsupported_contract", retry: "user_action" });
+
+    artifactResponse = () => new Response(new Uint8Array(ARTIFACT_MAX_BYTES + 1), {
+      status: 200,
+      headers: { "Content-Type": "text/html" },
+    });
+    await expect(gateway.getNoteLearningRoundArtifactHtml(artifactId, "request-artifact-oversized"))
+      .rejects.toMatchObject({ code: "unsupported_contract", retry: "user_action" });
+
+    // 找不到／不可见：服务端 404，如实透传（与取图那条同形）。
+    artifactResponse = () => new Response(JSON.stringify({ error: "not_found" }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    });
+    await expect(gateway.getNoteLearningRoundArtifactHtml(artifactId, "request-artifact-missing"))
       .rejects.toMatchObject({ code: "not_found", retry: "never", httpStatus: 404 });
   });
 

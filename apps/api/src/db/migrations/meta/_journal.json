@@ -1989,6 +1989,13 @@
       "when": 1789800007032,
       "tag": "0284_note_learning_round_teachings",
       "breakpoints": true
+    },
+    {
+      "idx": 284,
+      "version": "7",
+      "when": 1789800008032,
+      "tag": "0285_note_learning_round_artifacts",
+      "breakpoints": true
     }
   ]
 }

@@ -346,6 +346,11 @@ export const DESKTOP_IPC_CHANNELS = {
   // **轮次行**（有没有这一轮），解释是另一张表上的产物（这一轮讲没讲过）——两件事的
   // 读数本来就不在一处，合成一发会让"没有解释"和"没有轮次"分不开。
   noteLearningRoundTeaching: "ailearn.v1.noteLearningRound.teaching",
+  // 动态产物的"确保落盘"（39d W4-6 刀五）。**不是**"把 HTML 塞过 IPC"：渲染层只报
+  // 一个 id，main 带会话令牌去 API 取整份 HTML、按 D4 的配额检查后写进
+  // `<userData>/artifacts/<id>.html`，frame 再按同一 id 从既定协议读它。
+  // 这样 HTML 只走一次网络与一次落盘，不额外穿过 IPC 的两层校验。
+  artifactEnsure: "ailearn.v1.artifact.ensure",
   noteLearningRoundExplain: "ailearn.v1.noteLearningRound.explain",
   understandingGetTopology: "ailearn.v1.understanding.getTopology",
   searchGlobal: "ailearn.v1.search.global",
@@ -2457,6 +2462,19 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
       /** 「换一种解释」（W4-6 刀四）：跳过复用、同一问题落第二条。缺省 = 复用。 */
       regenerate?: boolean;
     }): Promise<GatewayResultV1<z.infer<typeof roundTeachingViewV1Schema>>>;
+  };
+  readonly artifact: {
+    /**
+     * 确保这一份动态产物已经落在本机（幂等：已在就是 `stored: false`）。
+     *
+     * 跨这道桥只回"在不在盘上了"这一格：字节数是 main 自己量出来的诊断值，
+     * 留在 `artifact-store.ts` 的结果里（那边的用例断它），**界面今天不读它**——
+     * 屏上那句"多大"的说法一旦上线，再把这一格放回合同里并让它真的上屏。
+     */
+    ensure(input: {
+      meta: RequestMetaV1;
+      artifactId: Uuid;
+    }): Promise<GatewayResultV1<{ stored: boolean }>>;
   };
   readonly review: {
     getQueue(input: {

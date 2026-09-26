@@ -165,7 +165,7 @@ test("记录那一页的合同：游标坏形状拒，`hasMore` 与 `nextCursor`
  * 教学面那一份读的两格新合同（39d W4-6 刀三／刀四）：练过哪几道（`practices`）、
  * 缺口帮助停没停（`gapHelp`）与「换一种解释」那一格（`regenerate`）。
  */
-test("教学面读：practices 与 gapHelp 都是必填格，gapHelp 的三格有界", () => {
+test("教学面读：practices／gapHelp／artifact 都是必填格，gapHelp 的三格有界，artifact 只带引用", () => {
   const base = {
     version: 1,
     round: {
@@ -199,14 +199,47 @@ test("教学面读：practices 与 gapHelp 都是必填格，gapHelp 的三格�
     ],
     practiceStart: null,
     gapHelp: { stopped: true, consecutiveHelpCount: 2, threshold: 2 },
+    // 动态产物那一格（W4-6 刀五）：`null` = 这一条没有动态版本，**不是**失败。
+    artifact: null,
   };
   assert.equal(roundTeachingViewV1Schema.safeParse(base).success, true);
   // 少任何一格都是不合法的回信（客户端不许自己补默认值）。
-  for (const key of ["practices", "gapHelp", "practiceStart"] as const) {
+  for (const key of ["practices", "gapHelp", "practiceStart", "artifact"] as const) {
     const clone: Record<string, unknown> = { ...base };
     delete clone[key];
     assert.equal(roundTeachingViewV1Schema.safeParse(clone).success, false, `少了 ${key} 竟然过了`);
   }
+  /**
+   * 这一格**只带引用**：整份 HTML 不在这里（它由主进程按 id 另取一次落盘，渲染层拿不到）。
+   * 所以"带 html 的那一份"必须被拒——这不是形状洁癖，而是刀五那条边界的唯一机械护栏：
+   * 一旦这一格能装 HTML，"顺手把正文塞过 IPC"就再也没有东西拦得住。
+   */
+  assert.equal(
+    roundTeachingViewV1Schema.safeParse({
+      ...base,
+      artifact: {
+        version: 1,
+        artifactId: "88888888-8888-4888-8888-888888888888",
+        kind: "dynamic_explanation",
+        createdAt: "2026-09-26T04:30:00.000Z",
+      },
+    }).success,
+    true,
+  );
+  assert.equal(
+    roundTeachingViewV1Schema.safeParse({
+      ...base,
+      artifact: {
+        version: 1,
+        artifactId: "88888888-8888-4888-8888-888888888888",
+        kind: "dynamic_explanation",
+        createdAt: "2026-09-26T04:30:00.000Z",
+        html: "<section>整份 HTML</section>",
+      },
+    }).success,
+    false,
+    "教学面那一份读竟然能带 HTML——刀五那条「HTML 不穿 IPC」没有护栏了",
+  );
   assert.equal(
     roundTeachingViewV1Schema.safeParse({ ...base, gapHelp: { stopped: true, consecutiveHelpCount: -1, threshold: 2 } }).success,
     false,

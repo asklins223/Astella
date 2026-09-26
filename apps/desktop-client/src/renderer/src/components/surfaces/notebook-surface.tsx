@@ -57,6 +57,7 @@ import {
 } from "./card-generation-status";
 import { freshnessLabel, primaryActionDescription, primaryActionLabel } from "./objective-state-copy";
 import { startObjectiveJourney } from "./objective-primary-action";
+import { ArtifactFrameHost } from "./artifact-frame-host";
 import { parseMarkdownTable } from "./note-blocks";
 import { isHorizontalRule, noteInlineDisplayText, noteInlineImages, renderNoteInline } from "./note-reading-inline";
 import { sourceImageObjectKeyFromUrl } from "@ailearn/shared/source-image-contracts";
@@ -313,6 +314,12 @@ export const ROUND_COPY = {
     addPrerequisiteUnavailable: "补一节前置还没接上：它要先生成前置内容，那是后面的事。",
     backToMaterial: "回材料核对",
     endRound: "先结束这一轮",
+    /**
+     * 动态产物（W4-6 刀五）。两句都只说这件事本身：动态这一版没起来**不是**
+     * 学习失败，文字解释与练习照旧（"动态失败不冒充教学失败"）。
+     */
+    artifactFailed: "这一版动态讲解没能打开；上面的文字解释照旧，可以继续读、继续练。",
+    artifactFallback: "动态这一版先停下了；步骤与解释在上面的文字里。",
     /** 教学面里"练一道"（W4-6 刀三）：只在有 active 目标时出现。 */
     practice: "练一道",
     practicing: "正在开这一道…",
@@ -632,6 +639,13 @@ export function NotebookSurface() {
   const [practiceBusy, setPracticeBusy] = useState(false);
   const [practiceFailure, setPracticeFailure] = useState<string | null>(null);
   /**
+   * 动态产物落盘那一发（W4-6 刀五）：`idle` 还没试 / `ready` 已在盘上可以挂宿主 /
+   * `failed` 如实说明。**只有这三档**：失败不是"落盘失败"，它连带把宿主也关掉——
+   * 让宿主去读一个不存在的文件，画出来的是浏览器自己的错误页，那不是我们的界面。
+   */
+  const [artifactState, setArtifactState] = useState<"idle" | "ready" | "failed">("idle");
+  const motionMode = useRoomStore((state) => state.motionMode);
+  /**
    * 依据里点开的那一段。它只是**屏幕上的注意力**（滚动 + 短暂高亮），不进任何写：
    * 值一过期就撤掉，不留"上次点到哪"这种会跟人走的读数。
    */
@@ -832,6 +846,8 @@ export function NotebookSurface() {
   const roundPracticeStart = data?.roundTeachingView?.practiceStart ?? null;
   /** 缺口帮助停止那一格（W4-6 刀四）：停了就摆四选一。 */
   const roundGapHelp = data?.roundTeachingView?.gapHelp ?? null;
+  /** 这一条解释的动态产物引用（W4-6 刀五）；`null` = 没有动态版本（不是失败）。 */
+  const roundArtifact = data?.roundTeachingView?.artifact ?? null;
   const capabilities = data?.capabilities ?? null;
   const activeGenerations = data?.activeGeneration?.state === "data" ? data.activeGeneration.data : [];
   // 这篇笔记自己的在制批次。一个工作区可以同时有多篇笔记各自在制一批卡，所以
@@ -929,6 +945,35 @@ export function NotebookSurface() {
       return block ? [{ ordinal, label: teachingReferenceLabelV1(block) }] : [];
     });
   }, [roundTeaching, teachingSnapshotIsReadVersion, allBlocks]);
+  /**
+   * 动态产物那一发：教学面读到"这一条有动态版本"时，让 main 去确保它已落盘
+   * （幂等——已经在盘上就不重复取）。**读不到文件不影响文字那半边**：失败只把
+   * 宿主关掉并留一句如实话。
+   *
+   * 依赖里只放 `artifactId` 与当前轮：切篇/换条之后要重新试一次；同一份不重复发。
+   */
+  useEffect(() => {
+    const artifactId = roundArtifact?.artifactId ?? null;
+    if (!artifactId) {
+      setArtifactState("idle");
+      return;
+    }
+    const api = desktopApi();
+    if (!api) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await api.artifact.ensure({ meta: createRequestMeta(epochRef.current), artifactId });
+        if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+        unwrapGatewayResult(response);
+        if (!cancelled) setArtifactState("ready");
+      } catch {
+        if (!cancelled) setArtifactState("failed");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [roundArtifact?.artifactId]);
+
   const readingBodyRef = useRef<HTMLDivElement | null>(null);
   /**
    * 点一颗依据：滚到那一段并短暂高亮。`scrollIntoView` **不用 smooth**——动效是
@@ -2225,9 +2270,23 @@ export function NotebookSurface() {
                     </p>
                   </div>
                 ) : null}
-                {/* 教学面是隔离展示面（D4）的**预留挂载点**：刀五之前不挂 iframe，
-                    挂上去时用 `artifact-frame-host` 自己的合同取属性，不在这里另写一份。 */}
-                <div className="notebook-round-teaching__artifact" data-artifact-slot="note-round-teaching" />
+                {/* 隔离展示面的挂载点（W4-6 刀五）：**落盘成功才挂**——让宿主去读一个
+                    不存在的文件，画出来的是浏览器自己的错误页。落盘失败时如实说一句，
+                    文字解释与练习照旧（"动态失败不冒充教学失败"）。
+                    `motion` 接产品那一档设置：`full` 之外（lite／off）都按"减少动效"走，
+                    模板会给静态分镜。 */}
+                <div className="notebook-round-teaching__artifact" data-artifact-slot="note-round-teaching">
+                  {roundArtifact && artifactState === "ready" ? (
+                    <ArtifactFrameHost
+                      artifactId={roundArtifact.artifactId}
+                      motion={motionMode === "full" ? "full" : "reduced"}
+                      fallback={<p className="small notebook-note">{ROUND_COPY.teaching.artifactFallback}</p>}
+                    />
+                  ) : null}
+                  {roundArtifact && artifactState === "failed" ? (
+                    <p className="small notebook-note" role="alert">{ROUND_COPY.teaching.artifactFailed}</p>
+                  ) : null}
+                </div>
               </div>
               {teachingFailure ? <p className="small notebook-note" role="alert">{teachingFailure}</p> : null}
               {practiceFailure ? <p className="small notebook-note" role="alert">{practiceFailure}</p> : null}
