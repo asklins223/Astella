@@ -36,12 +36,13 @@ type IdTarget = { readonly table: string; readonly column: string } | {
  */
 const PARAM_TARGETS: Readonly<Record<string, Readonly<Record<string, IdTarget>>>> = {
   companion_read_note: { noteId: { table: "notes", column: "id" } },
+  companion_read_source: { sourceId: { table: "sources", column: "id" } },
   companion_open_note: { noteId: { table: "notes", column: "id" } },
   companion_open_card: { cardId: { table: "learning_cards_v2", column: "card_id" } },
   companion_focus_graph: { objectiveId: { table: "learning_objectives_v2", column: "objective_id" } },
   // 可选参数（39d W2-1 的裁定）：给了就按那篇笔记收窄查找范围，所以目标仍是 notes。
   companion_start_learning: { noteId: { table: "notes", column: "id" } },
-  companion_resume_learning: { noteId: { table: "notes", column: "id" } },
+  companion_resume_learning: { runId: { table: "learning_runs", column: "id" } },
   companion_pause_learning: { runId: { table: "learning_runs", column: "id" } },
   companion_request_hint: {
     runId: { table: "learning_runs", column: "id" },

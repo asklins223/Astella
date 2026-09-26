@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { taskEntityFromPersistedPageContext } from "./companion-task-memory.ts";
 import { sql } from "drizzle-orm";
 import {
   AgentRole,
@@ -494,6 +495,189 @@ async function finishStep(
 /** 读出来的笔记正文进模型上下文的硬上限（工具输出另有 maxOutputChars 闸门）。 */
 const NOTE_READ_MAX_CHARS = 3_000;
 
+interface ReadPageBlock {
+  readonly ordinal: number;
+  readonly content: string;
+}
+
+interface ReadPage {
+  readonly body: string;
+  /** 本页实际读到的最后一个块序号；一块都没有时为 null。 */
+  readonly endOrdinal: number | null;
+  /** 单块超预算被切了文本（这一页在块中间结束）。 */
+  readonly blockTextTruncated: boolean;
+}
+
+/**
+ * 把块序列装进一页字符预算（39d W6-2 / 39b C5 的分页读取）。
+ *
+ * 装到预算为止就停；**至少装一块**——单块超预算时切那一块的文本并标
+ * `blockTextTruncated`，否则一篇"只有一段超长正文"的笔记永远一页都读不出来。
+ * 续读从 endOrdinal+1 继续（被切掉的那一段块内文本不回读，输出里如实标出）。
+ */
+export function paginateReadBlocks(blocks: readonly ReadPageBlock[], maxChars: number): ReadPage {
+  const parts: string[] = [];
+  let used = 0;
+  let endOrdinal: number | null = null;
+  let blockTextTruncated = false;
+  for (const block of blocks) {
+    const separator = parts.length > 0 ? "\n\n" : "";
+    const room = maxChars - used - separator.length;
+    if (room <= 0 && parts.length > 0) break;
+    // 整块装不下且**不是本页第一块** → 留给下一页。只有第一块才允许切：
+    // 否则每块都被切成半句拼进本页，用户读到的是被碎块化的正文。
+    if (block.content.length > room && parts.length > 0) break;
+    const text = block.content.length > room
+      ? block.content.slice(0, Math.max(room - 1, 0)) + "…"
+      : block.content;
+    parts.push(separator + text);
+    used += separator.length + text.length;
+    endOrdinal = block.ordinal;
+    if (text.length < block.content.length) {
+      blockTextTruncated = true;
+      break;
+    }
+  }
+  return { body: parts.join(""), endOrdinal, blockTextTruncated };
+}
+
+/** 来源没解析好时的那句照实说明（39b C5："来源没有解析或无权限时明确说明"）。 */
+function sourceNotReadyNote(status: string): string {
+  const wording: Record<string, string> = {
+    draft: "还没开始解析",
+    processing: "还在解析中",
+    failed: "解析失败了",
+    archived: "已归档",
+  };
+  return `这份来源${wording[status] ?? "还没解析好"}，现在读不到正文。不要假装读过，也不要凭标题猜内容。`;
+}
+
+/**
+ * 笔记读取的**数据装载半**（39d W6-2；集测直接调它，走的是与工具同一份生产 SQL，
+ * 不是复刻形状）。可见性与 read_note 的旧实现同一句话（noteVisibleSqlText）：
+ * 缺它时协作空间里成员甲的伴星能读出成员乙私有笔记的正文。
+ */
+export async function loadNoteReadPage(
+  tx: Parameters<Parameters<typeof withWorkerWorkspaceTransaction>[1]>[0],
+  input: { workspaceId: string; userId: string; noteId: string; startOrdinal: number; maxChars: number },
+): Promise<{
+  title: string; versionId: string; ageMinutes: number;
+  totalBlocks: number;
+  imageIds: string[]; imageTotal: number;
+  page: ReadPage;
+  truncated: boolean;
+  nextStartOrdinal: number | null;
+} | null> {
+  const heads = await tx.execute<NoteReadRow>(sql`
+    SELECT n.title,
+           n.current_version_id::text AS version_id,
+           (EXTRACT(EPOCH FROM (now() - n.updated_at)) / 60)::int AS age_minutes
+    FROM notes n
+    WHERE n.id = ${input.noteId}::uuid
+      AND n.workspace_id = ${input.workspaceId}
+      AND n.deleted_at IS NULL
+      AND ${sql.raw(noteVisibleSqlText("n", `'${input.userId}'::uuid`))}
+    LIMIT 1
+  `);
+  const head = heads[0];
+  if (!head) return null;
+  const blocks = await tx.execute<{ ordinal: string; content: string }>(sql`
+    SELECT nb.ordinal::text AS ordinal, nb.content
+    FROM note_blocks nb
+    WHERE nb.version_id = ${head.version_id}::uuid
+      AND nb.ordinal >= ${input.startOrdinal}
+    ORDER BY nb.ordinal
+  `);
+  const totals = await tx.execute<{ total: string }>(sql`
+    SELECT count(*)::text AS total FROM note_blocks nb
+    WHERE nb.version_id = ${head.version_id}::uuid
+  `);
+  const images = await tx.execute<{ id: string; total: string }>(sql`
+    SELECT a.id::text AS id, count(*) OVER () AS total
+    FROM note_image_assets a
+    WHERE a.workspace_id = ${input.workspaceId}
+      AND a.uploaded_for_note_id = ${input.noteId}::uuid
+      AND a.status = 'ready' AND a.deleted_at IS NULL
+    ORDER BY a.created_at DESC, a.id
+    LIMIT 6
+  `);
+  // 分页与续读指针在装载半里完成（组合点只有这一处）：工具与集测看到的是同一页。
+  const page = paginateReadBlocks(
+    blocks.map((row) => ({ ordinal: Number(row.ordinal), content: row.content })),
+    input.maxChars,
+  );
+  const totalBlocks = Number(totals[0]?.total ?? 0);
+  const nextStartOrdinal = page.endOrdinal !== null && page.endOrdinal < totalBlocks
+    ? page.endOrdinal + 1
+    : null;
+  return {
+    title: head.title,
+    versionId: head.version_id,
+    ageMinutes: head.age_minutes,
+    totalBlocks,
+    imageIds: images.map((row) => row.id),
+    imageTotal: Number(images[0]?.total ?? 0),
+    page,
+    truncated: nextStartOrdinal !== null || page.blockTextTruncated,
+    nextStartOrdinal,
+  };
+}
+
+/** 来源读取的数据装载半（39d W6-2）：未就绪时返回 status、不给段。 */
+export async function loadSourceReadPage(
+  tx: Parameters<Parameters<typeof withWorkerWorkspaceTransaction>[1]>[0],
+  input: { workspaceId: string; sourceId: string; startOrdinal: number; maxChars: number },
+): Promise<{
+  title: string; status: string; origin: string | null;
+  totalSegments: number;
+  page: ReadPage | null;
+  truncated: boolean;
+  nextStartOrdinal: number | null;
+} | null> {
+  const heads = await tx.execute<{ title: string; status: string; origin: string | null }>(sql`
+    SELECT s.title, s.status::text AS status, s.origin
+    FROM sources s
+    WHERE s.id = ${input.sourceId}::uuid
+      AND s.workspace_id = ${input.workspaceId}
+    LIMIT 1
+  `);
+  const head = heads[0];
+  if (!head) return null;
+  if (head.status !== "ready") {
+    return { title: head.title, status: head.status, origin: head.origin, totalSegments: 0, page: null, truncated: false, nextStartOrdinal: null };
+  }
+  const segments = await tx.execute<{ ordinal: string; text: string }>(sql`
+    SELECT sg.ordinal::text AS ordinal, sg.text
+    FROM source_segments sg
+    WHERE sg.source_id = ${input.sourceId}::uuid
+      AND sg.workspace_id = ${input.workspaceId}
+      AND sg.ordinal >= ${input.startOrdinal}
+    ORDER BY sg.ordinal
+  `);
+  const totals = await tx.execute<{ total: string }>(sql`
+    SELECT count(*)::text AS total FROM source_segments sg
+    WHERE sg.source_id = ${input.sourceId}::uuid
+      AND sg.workspace_id = ${input.workspaceId}
+  `);
+  const page = paginateReadBlocks(
+    segments.map((row) => ({ ordinal: Number(row.ordinal), content: row.text })),
+    input.maxChars,
+  );
+  const totalSegments = Number(totals[0]?.total ?? 0);
+  const nextStartOrdinal = page.endOrdinal !== null && page.endOrdinal < totalSegments
+    ? page.endOrdinal + 1
+    : null;
+  return {
+    title: head.title,
+    status: head.status,
+    origin: head.origin,
+    totalSegments,
+    page,
+    truncated: nextStartOrdinal !== null || page.blockTextTruncated,
+    nextStartOrdinal,
+  };
+}
+
 /**
  * 读图：原图字节上限。
  *
@@ -527,9 +711,9 @@ interface NoteSearchRow extends Record<string, unknown> {
 
 interface NoteReadRow extends Record<string, unknown> {
   title: string;
+  /** 这一版正文的稳定定位（读侧分页引用它 + 块序号，39d W6-2）。 */
+  version_id: string;
   age_minutes: number;
-  /** SQL 侧已 coalesce 成空串，这里不再允许 null。 */
-  body: string;
 }
 
 /** 一张可被 `companion_read_image` / `companion_show_image` 取到的图。 */
@@ -866,7 +1050,9 @@ async function executeReadTool(
           topK: limit * 2,
           provider,
           precomputedEmbedding: queryEmbedding,
-          currentScope: "workspace",
+          // 任务记忆按身份可见（39b C8）：本轮落在学习页/卡页时，绑定到这个
+          // run/card 的 task 记忆才可见；普通页推不出身份，task 行一概不可见。
+          taskEntity: taskEntityFromPersistedPageContext(event.read.pageContext),
         }),
       );
       const alreadyShown = new Set(event.read.activeMemories.map((memory) => memory.content));
@@ -1052,64 +1238,34 @@ async function executeReadTool(
     }
     case "companion_read_note": {
       const noteId = String(args.noteId);
+      // 分页续读（39d W6-2 / 39b C5）：startOrdinal 是上一页给的 nextStartOrdinal；
+      // 不给就从第一块读起。改前是"整篇聚合 → 静默截前 3000 字"，只有 truncated
+      // 标记没有出路——"解释最后一节"从此读不到。
+      const startOrdinal = typeof args.startOrdinal === "number"
+        && Number.isInteger(args.startOrdinal) && args.startOrdinal >= 1
+        ? args.startOrdinal
+        : 1;
       const note = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-        async (tx) => {
-          const rows = await tx.execute<NoteReadRow>(sql`
-            SELECT n.title,
-                   (EXTRACT(EPOCH FROM (now() - n.updated_at)) / 60)::int AS age_minutes,
-                   coalesce(string_agg(nb.content, E'\n\n' ORDER BY nb.ordinal), '') AS body
-            FROM notes n
-            LEFT JOIN note_blocks nb ON nb.version_id = n.current_version_id
-            WHERE n.id = ${noteId}::uuid
-              AND n.workspace_id = ${event.ctx.workspaceId}
-              AND n.deleted_at IS NULL
-              -- 归属边界与 HTTP 那一侧同一句话（@ailearn/shared/note-visibility）。
-              -- 缺这一句时，协作空间里成员甲的伴星能读出成员乙**私有笔记的正文**：
-              -- 空间隔离挡住了别的空间，挡不住同一个空间里的别人。
-              AND ${sql.raw(noteVisibleSqlText("n", `'${event.read.userId}'::uuid`))}
-            GROUP BY n.id, n.title, n.updated_at
-            LIMIT 1
-          `);
-          const head = rows[0];
-          if (!head) return null;
-          // 图片 id 跟着正文一起给，理由与 recall_memory 的 memoryId 同一条：
-          // companion_read_image 的参数只能来自这里。不返回，她只能编一个 uuid，
-          // 然后每次"看这张图"都失败成"找不到图"。
-          //
-          // 数量与 id 列表是两件事：列表按 6 条截断（免得一次给她几十个 uuid），
-          // 而**张数必须是全量**。`count(*) OVER ()` 在同一条查询里拿到总数，
-          // 不用二次往返。实机 2026-09-21 就是这个区别：那篇有 13 张图，
-          // 用截断后的列表长度当张数会让她对用户说"有 6 张"。
-          const images = await tx.execute<{ id: string; total: string }>(sql`
-            SELECT a.id::text AS id, count(*) OVER () AS total
-            FROM note_image_assets a
-            WHERE a.workspace_id = ${event.ctx.workspaceId}
-              AND a.uploaded_for_note_id = ${noteId}::uuid
-              AND a.status = 'ready' AND a.deleted_at IS NULL
-            ORDER BY a.created_at DESC, a.id
-            LIMIT 6
-          `);
-          return {
-            ...head,
-            imageIds: images.map((row) => row.id),
-            imageTotal: Number(images[0]?.total ?? 0),
-          };
-        },
+        (tx) => loadNoteReadPage(tx, {
+          workspaceId: event.ctx.workspaceId,
+          userId: event.read.userId,
+          noteId,
+          startOrdinal,
+          maxChars: NOTE_READ_MAX_CHARS,
+        }),
       );
       if (!note) throw new CompanionToolError("这个空间里没有这篇笔记");
-      const body = note.body.slice(0, NOTE_READ_MAX_CHARS);
+      const page = note.page;
+      const { truncated, nextStartOrdinal } = note;
       // 原文由服务端带出，不让模型转抄：她复述一遍就成了"引用"，而用户没法知道
       // 哪几个字是她改写的。这一块就是她读到的那几行，标题与时间跟着走。
-      const quoted = body.slice(0, 1_200);
+      const quoted = page.body.slice(0, 1_200);
       return {
         value: {
-          // 图片事实排在正文之前。**这不是修 bug，是防一个还没咬到的坑**：工具结果整包
-          // 会被 `maxOutputChars`(4000) 截尾，而 body 上限 3000 字——这次实测 envelope 只有
-          // 3255 字（截断没发生，实机 2026-09-21 量过），换成一篇更长的正文或以后放宽
-          // NOTE_READ_MAX_CHARS 时，排在尾部的 imageCount/imageNote 就会静默消失。
-          // 至于那一轮她为什么先说"里面没有截图"：不是这里被截了，是那句根本在**读之前**
-          // 就说出口了（零工具步），拦住它的是 `claimsLookupThatNeverRan` 的完成宣称档。
+          // 分页元数据排在 body **之前**：工具结果整包会被 maxOutputChars(4000)
+          // 截尾，而 body 上限 3000 字——nextStartOrdinal 是续读的唯一出路，
+          // 被截掉她就会把"这一页"当成"全文"。
           imageCount: note.imageTotal,
           ...(note.imageIds.length > 0 ? { imageAssetIds: note.imageIds } : {}),
           // 有图却看不了时，先把"正文里没有图片标记 ≠ 这篇没有图"讲明（她读的是
@@ -1124,19 +1280,79 @@ async function executeReadTool(
               }
             : {}),
           title: note.title,
-          updated: ageLabel(Number(note.age_minutes)),
-          body,
-          truncated: note.body.length > body.length,
+          updated: ageLabel(Number(note.ageMinutes)),
+          version: note.versionId,
+          startOrdinal,
+          ...(page.endOrdinal !== null ? { endOrdinal: page.endOrdinal } : {}),
+          totalBlocks: note.totalBlocks,
+          truncated,
+          ...(nextStartOrdinal !== null ? { nextStartOrdinal } : {}),
+          ...(page.blockTextTruncated ? { blockTextTruncated: true } : {}),
+          body: page.body,
         },
         blocks: quoted.length > 0
           ? [{
               type: "quote" as const,
-              label: `《${note.title.slice(0, 28)}》· ${ageLabel(Number(note.age_minutes))}`,
-              text: quoted + (body.length > quoted.length ? "…" : ""),
+              label: `《${note.title.slice(0, 28)}》· ${ageLabel(Number(note.ageMinutes))}`,
+              text: quoted + (page.body.length > quoted.length ? "…" : ""),
             }]
           : [],
-        safeSummary: `已读出笔记《${note.title.slice(0, 24)}》（${body.length} 字`
-          + `${note.imageTotal > 0 ? `，另附 ${note.imageTotal} 张图` : ""}）`,
+        safeSummary: `已读出笔记《${note.title.slice(0, 24)}》`
+          + `（${page.endOrdinal !== null ? `第 ${startOrdinal}–${page.endOrdinal} 块，共 ${note.totalBlocks} 块` : "无正文"}`
+          + `，${page.body.length} 字${note.imageTotal > 0 ? `，另附 ${note.imageTotal} 张图` : ""}）`,
+      };
+    }
+    case "companion_read_source": {
+      const sourceId = String(args.sourceId);
+      const startOrdinal = typeof args.startOrdinal === "number"
+        && Number.isInteger(args.startOrdinal) && args.startOrdinal >= 1
+        ? args.startOrdinal
+        : 1;
+      const source = await withWorkerWorkspaceTransaction(
+        { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+        (tx) => loadSourceReadPage(tx, {
+          workspaceId: event.ctx.workspaceId,
+          sourceId,
+          startOrdinal,
+          maxChars: NOTE_READ_MAX_CHARS,
+        }),
+      );
+      if (!source) throw new CompanionToolError("这个空间里没有这份来源");
+      if (source.page === null) {
+        return {
+          value: {
+            title: source.title,
+            status: source.status,
+            note: sourceNotReadyNote(source.status),
+          },
+          safeSummary: `来源《${source.title.slice(0, 24)}》还没解析好（${source.status}），正文读不到`,
+        };
+      }
+      const page = source.page;
+      const { truncated, nextStartOrdinal } = source;
+      const quoted = page.body.slice(0, 1_200);
+      return {
+        value: {
+          // 同 read_note：分页元数据在 body 之前，maxOutputChars 截尾不吞续读指针。
+          title: source.title,
+          ...(source.origin ? { origin: source.origin } : {}),
+          startOrdinal,
+          ...(page.endOrdinal !== null ? { endOrdinal: page.endOrdinal } : {}),
+          totalBlocks: source.totalSegments,
+          truncated,
+          ...(nextStartOrdinal !== null ? { nextStartOrdinal } : {}),
+          ...(page.blockTextTruncated ? { blockTextTruncated: true } : {}),
+          body: page.body,
+        },
+        blocks: quoted.length > 0
+          ? [{
+              type: "quote" as const,
+              label: `来源《${source.title.slice(0, 28)}》`,
+              text: quoted + (page.body.length > quoted.length ? "…" : ""),
+            }]
+          : [],
+        safeSummary: `已读出来源《${source.title.slice(0, 24)}》`
+          + `（${page.endOrdinal !== null ? `第 ${startOrdinal}–${page.endOrdinal} 段，共 ${source.totalSegments} 段` : "无正文"}，${page.body.length} 字）`,
       };
     }
     case "companion_read_image": {
@@ -1731,39 +1947,19 @@ async function buildActionPayload(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
-  // `noteId` 可选（39d W2-1）：给了就按那篇笔记收窄，修掉"服务端只能挑最近一条、
-  // 挑错用户看不出为什么"。**不做必填**的理由见 registry 里那段注释（数据不支持）。
-  const noteId = typeof args.noteId === "string" && args.noteId.length > 0
-    ? args.noteId
-    : null;
-
+  // `noteId`/`runId` **必填**（2026-09-26，W2-1 判据 1 转绿；39b C1 的处方落地）：
+  // consequential 写工具必须能指名对象——伴星入口是语境锚定的"学眼前这一篇"，
+  // noteId/runId 从页面上下文与 <this_turn_facts> 的回填拿；服务端不再"挑最近一条"
+  // （挑错用户看不出为什么——C1 的原诉）。resume 的 runId 在执行侧还有一道
+  // workspace+user 归属校验（learning-action-bridge 的 getRunPublicView）。
   if (toolName === "companion_resume_learning") {
-    const scoped = noteId !== null;
-    const rows = await withWorkerWorkspaceTransaction(
-      { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-      (tx) => tx.execute(sql`
-        SELECT r.id FROM learning_runs r
-        WHERE r.workspace_id = ${event.ctx.workspaceId}
-          AND r.user_id = ${event.read.userId}
-          AND r.phase IN ('preparing', 'active', 'assessing', 'checkpoint', 'committing', 'paused')
-          ${scoped
-            // 轮次归属哪篇笔记：经冻结快照的目标 → 目标的 note origin。
-            // 走 EXISTS 而不是 JOIN：一条 run 可能有多个快照版本，JOIN 会出重复行。
-            ? sql`AND EXISTS (
-                 SELECT 1 FROM learning_target_snapshots_v2 s
-                 JOIN learning_objective_origins_v2 o
-                   ON o.objective_id = s.objective_id AND o.workspace_id = r.workspace_id
-                 WHERE s.run_id = r.id AND o.note_id = ${noteId}::uuid
-               )`
-            : sql``}
-        ORDER BY r.updated_at DESC, r.id LIMIT 1
-      `),
-    );
-    const row = rows[0] as { id?: string } | undefined;
-    return row?.id ? { kind: "resume_learning_run", runId: row.id } : null;
+    const runId = typeof args.runId === "string" && args.runId.length > 0 ? args.runId : null;
+    if (!runId) return null;
+    return { kind: "resume_learning_run", runId };
   }
   if (toolName === "companion_start_learning") {
-    const scoped = noteId !== null;
+    const noteId = typeof args.noteId === "string" && args.noteId.length > 0 ? args.noteId : null;
+    if (!noteId) return null;
     const rows = await withWorkerWorkspaceTransaction(
       { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
       (tx) => tx.execute(sql`
@@ -1779,14 +1975,12 @@ async function buildActionPayload(
           -- 谓词让整条 SQL 在计划期就报 "column o.user_id does not exist"，
           -- companion_start_learning 永远不可用。归属边界是 workspace + RLS。
           AND o.lifecycle = 'active'
-          ${scoped
-            ? sql`AND EXISTS (
-                 SELECT 1 FROM learning_objective_origins_v2 g
-                 WHERE g.objective_id = o.objective_id
-                   AND g.workspace_id = o.workspace_id
-                   AND g.note_id = ${noteId}::uuid
-               )`
-            : sql``}
+          AND EXISTS (
+            SELECT 1 FROM learning_objective_origins_v2 g
+            WHERE g.objective_id = o.objective_id
+              AND g.workspace_id = o.workspace_id
+              AND g.note_id = ${noteId}::uuid
+          )
         ORDER BY o.updated_at DESC, o.objective_id LIMIT 1
       `),
     );

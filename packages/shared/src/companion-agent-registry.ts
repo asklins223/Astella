@@ -83,7 +83,14 @@ const REGISTERED_TOOLS: readonly RegisteredTool[] = [
   // 看不到任务队列」）。这些不是"锦上添花的工具"：没有它们，她能说的只有闲聊。
   // 描述统一写成"什么时候该调"，因为工具描述是她唯一能看到的用法说明。
   tool("companion_search_notes", "按关键词搜用户的笔记标题与正文，返回笔记 id/标题/时间。用户问「我之前记过什么」或要跳到某篇笔记时先用它。", "read", false, { type: "object", properties: { query: { type: "string", minLength: 1, maxLength: 120 }, limit: { type: "integer", minimum: 1, maximum: 10 } }, required: ["query"], additionalProperties: false }, z.object({ query: z.string().min(1).max(120), limit: z.number().int().min(1).max(10).optional() }).strict()),
-  tool("companion_read_note", "读出一篇笔记的正文内容（截断到几千字）。要引用、总结或核对用户写过什么时必须先读，不要凭标题猜内容。", "read", false, { type: "object", properties: { noteId: { type: "string", format: "uuid" } }, required: ["noteId"], additionalProperties: false }, z.object({ noteId: uuid }).strict()),
+  // 分页续读（39d W6-2 / 39b C5）：正文按块分页，`startOrdinal` 是续读的起点
+  // （上一页返回的 nextStartOrdinal）。不再"截前 3000 字假装读过"——返回体带
+  // 块序号、总块数与下一页起点，读不到结尾时按它续，不谎称已读全文。
+  tool("companion_read_note", "读出一篇笔记的正文内容（按块分页，一次约三千字）。要引用、总结或核对用户写过什么时必须先读，不要凭标题猜内容。正文没读完时（truncated=true）用返回的 nextStartOrdinal 作为 startOrdinal 续读，不要假装已经读过全文。", "read", false, { type: "object", properties: { noteId: { type: "string", format: "uuid" }, startOrdinal: { type: "integer", minimum: 1, description: "从第几个正文块开始读（续读时传上一页的 nextStartOrdinal）" } }, required: ["noteId"], additionalProperties: false }, z.object({ noteId: uuid, startOrdinal: z.number().int().min(1).optional() }).strict()),
+  // 来源正文读取（39d W6-2 / 39b C5："当前工具表没有来源正文读取工具"）：
+  // 分页形状与 read_note 相同；来源没解析好（draft/processing/failed）时如实说明，
+  // 不假装读过。凭据面不受影响——这不是页面读取，是材料读取，走材料可见性。
+  tool("companion_read_source", "读一份来源（原始材料）的解析正文（按段分页，一次约三千字）。用户引用的是来源原文、或要对照笔记与来源时先读它；没解析好（还在处理/失败/已归档）会照实说明，此时不要假装读过。正文没读完时用返回的 nextStartOrdinal 续读。", "read", false, { type: "object", properties: { sourceId: { type: "string", format: "uuid" }, startOrdinal: { type: "integer", minimum: 1, description: "从第几段开始读（续读时传上一页的 nextStartOrdinal）" } }, required: ["sourceId"], additionalProperties: false }, z.object({ sourceId: uuid, startOrdinal: z.number().int().min(1).optional() }).strict()),
   tool("companion_open_note", "跳到用户的一篇笔记（在应用里打开它）。", "read", false, { type: "object", properties: { noteId: { type: "string", format: "uuid" } }, required: ["noteId"], additionalProperties: false }, z.object({ noteId: uuid }).strict()),
   // 页面词表由 `COMPANION_PAGE_DESTINATIONS_V2`（companion-bridge-contracts）一处定义：
   // 枚举、中文页名、用户的口语别名都从同一张表生成，桌面端有落点的页面才进得了这里。
@@ -108,13 +115,16 @@ const REGISTERED_TOOLS: readonly RegisteredTool[] = [
   tool("companion_focus_graph", "聚焦知识图谱中的某个学习目标。", "reversible_low", false, { type: "object", properties: { objectiveId: { type: "string", format: "uuid" }, lens: { type: "string", enum: ["current_target", "evidence", "provenance", "issues"] } }, required: ["objectiveId", "lens"], additionalProperties: false }, z.object({ objectiveId: uuid, lens: z.enum(["current_target", "evidence", "provenance", "issues"]) }).strict()),
   // `noteId` **可选**（39d W2-1 的裁定，2026-09-24）：给了就按那篇笔记收窄查找范围，
   // 修掉"无法指名哪一篇、服务端只能挑最近一条"；不给就保持今天的行为。
-  // **不做必填**——查过数据：208 个 objective 里只有 22 个有 origin 行（其中 active 且带
-  // note origin 的 17 个），必填会让 194 个 active objective 里的 177 个失去入口，
-  // 违反 39b §11「中途任何一批停下，系统行为不会比今天差」。必填留给 W3-4
-  // （无卡目标进冻结链 + note-origin 目标创建路径落地之后）。
-  tool("companion_start_learning", "开始一个新的学习运行。用户说了是哪篇笔记时带上 noteId，就从那篇开始；没说就别猜。", "consequential", true, { type: "object", properties: { noteId: { type: "string", format: "uuid" } }, additionalProperties: false }, z.object({ noteId: uuid.optional() }).strict()),
-  // 同上：`noteId` 可选，给了就只在那篇笔记的轮次里找。
-  tool("companion_resume_learning", "恢复当前学习运行。用户说了是哪篇笔记时带上 noteId，就只恢复那篇上的轮次；没说就别猜。", "consequential", true, { type: "object", properties: { noteId: { type: "string", format: "uuid" } }, additionalProperties: false }, z.object({ noteId: uuid.optional() }).strict()),
+  // **改必填**（2026-09-26，W2-1 判据 1 转绿）：consequential 写工具必须能指名对象。
+  // 上面那段"不做必填"的裁定按它自己写的条件到期了——W3-4 已把无卡目标做实，
+  // 而伴星入口本来就是**语境锚定**的："学眼前这一篇"（39b C1 原话），noteId 从
+  // 页面上下文/事实块拿得到；无 note-origin 的目标继续走人的那条路（笔记页主行动）。
+  // 服务端不再"挑最近一条"（挑错用户看不出为什么——C1 的原诉）。
+  tool("companion_start_learning", "开始或继续这一篇笔记的学习。noteId 必填：从当前页面上下文或 <this_turn_facts> 里拿那篇笔记的 id，不要猜。服务端会在那篇笔记的目标上开出运行（没有卡也能开）。", "consequential", true, { type: "object", properties: { noteId: { type: "string", format: "uuid" } }, required: ["noteId"], additionalProperties: false }, z.object({ noteId: uuid }).strict()),
+  // 同批（C1 的处方原话"恢复接受明确 runId"）：runId 必填，来源是 <this_turn_facts>
+  // 的回填（"这篇已有 N 轮在暂停／进行中（runId=…）"）——多个候选时事实块会列出来，
+  // 缺失就说明缺失，不再由服务端默默挑最近一条。执行侧按 workspace+user 归属校验。
+  tool("companion_resume_learning", "恢复一次明确的学习运行。runId 必填：用 <this_turn_facts> 回填的那个 runId（多个候选就列给用户选）；没有就照实说，不要猜。", "consequential", true, { type: "object", properties: { runId: { type: "string", format: "uuid" } }, required: ["runId"], additionalProperties: false }, z.object({ runId: uuid }).strict()),
   // 以下动作改学习状态或排程数据：即使可逆也算 consequential，guided 档必须确认。
   // `format: "uuid"` 不是装饰：模型看得见的这份 schema 与下面 zod 那份**必须成对**。
   // 这三条原先写的是 `minLength/maxLength`，而 zod 收紧成 `uuid` —— 模型按宽的那份
