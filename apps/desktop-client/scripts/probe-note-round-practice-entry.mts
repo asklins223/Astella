@@ -585,6 +585,57 @@ try {
         submitEnabled === true || submitStatusText.length > 0, readings.submitGate)
       readings.submitLabel = (await submitButton.textContent() ?? '').trim()
       await submitButton.click({ timeout: 20_000 })
+      // ── 结算演出那一读（09-24 起也放开给练习，但"接了却一次没见过"正是当时的根因）──
+      // 只有 3s，所以**交卷之后第一件事**就是找它；彩纸是画在 canvas 上的，
+      // jsdom 里 getContext 被 mock 成 null ⇒ 画没画出来只能在真窗口量像素。
+      const ceremony = page.locator('.learning-run-ceremony').first()
+      const ceremonySeen = await ceremony.waitFor({ timeout: 3_500 }).then(() => true, () => false)
+      let confettiPainted = -1
+      let confettiSamples = 0
+      let ceremonyCopy: Record<string, string> = {}
+      if (ceremonySeen) {
+        ceremonyCopy = {
+          eyebrow: (await page.locator('.learning-run-ceremony__eyebrow').first().textContent() ?? '').trim(),
+          stamp: (await page.locator('.learning-run-ceremony__stamp').first().textContent() ?? '').replace(/\s+/g, ' ').trim(),
+          heading: (await page.locator('.learning-run-ceremony h2').first().textContent() ?? '').trim(),
+        }
+        // 彩纸是逐帧画上去的（rAF），交卷那一瞬的画布还是白的——只采一次会把"没画"量成"画了个空画布"。
+        const confetti = page.locator('canvas.learning-run-ceremony__confetti').first()
+        const samplePainted = async (): Promise<number> => confetti.evaluate((node) => {
+            const canvas = node as HTMLCanvasElement
+            const ctx = canvas.getContext('2d')
+            if (!ctx) return -1
+            const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+            let painted = 0
+            for (let i = 3; i < data.length; i += 4) {
+              if (data[i] > 0) painted += 1
+            }
+            return painted
+          }, { timeout: 600 }).catch(() => -1)
+        confettiPainted = 0
+        for (let sample = 0; sample < 30; sample += 1) {
+          if ((await page.locator('.learning-run-ceremony').count()) === 0) {
+            confettiSamples = sample
+            break
+          }
+          const painted = await samplePainted()
+          if (painted > confettiPainted) confettiPainted = painted
+          if (confettiPainted > 0) { confettiSamples = sample + 1; break }
+          await page.waitForTimeout(80)
+        }
+        if (confettiPainted === 0 && confettiSamples === 0) confettiSamples = 30
+      }
+      readings.ceremony = { seen: ceremonySeen, ...ceremonyCopy, confettiPainted, confettiSamples }
+      check('练习那一支的结算演出真在屏上出现过（09-24 放开之后第一次被真窗口看到）',
+        ceremonySeen === true, readings.ceremony)
+      check('彩纸那颗 canvas 真的画出了像素（逐帧采样，不是挂了个空画布）',
+        confettiPainted > 0 && confettiSamples < 30, readings.ceremony)
+      // 那处坑的正面判据：眉标不许从 eligibility 反推出"正式挑战"——结构题做主位时
+      // ceiling 被钳成 practice_only 而快照 eligibility 仍是 eligible，两者一拼就自相矛盾。
+      check('演出的那两行不与结果自相矛盾（练习这一支不说"正式挑战"）',
+        ceremonyCopy.eyebrow?.length > 0 && !/正式挑战/.test(`${ceremonyCopy.eyebrow} ${ceremonyCopy.heading}`),
+        readings.ceremony)
+
       const resultBoard = await page.locator('.learning-run-result-board').first()
         .waitFor({ timeout: 40_000 }).then(() => true, () => false)
       check('交卷之后结算那一块真在屏上', resultBoard === true)
