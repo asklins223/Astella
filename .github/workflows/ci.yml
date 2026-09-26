@@ -578,6 +578,17 @@ jobs:
             src/integration-tests/note-collaboration-postgres.integration.ts \
             src/integration-tests/learning-objective-search.integration.ts \
             src/integration-tests/route-contract-postgres.integration.ts \
+            src/integration-tests/learning-objective-immutability.integration.ts \
+            src/integration-tests/learning-objective-reconcile.integration.ts \
+            src/integration-tests/learning-objective-history-route.integration.ts \
+            src/integration-tests/learning-objective-origin-backfill.integration.ts \
+            src/integration-tests/understanding-topology-v3.integration.ts \
+            src/integration-tests/understanding-projection-postgres.integration.ts \
+            src/integration-tests/sandbox-and-star-map-postgres.integration.ts \
+            src/integration-tests/projection-pagination-postgres.integration.ts \
+            src/integration-tests/learning-run-origin-contract.integration.ts \
+            src/integration-tests/learning-metrics-postgres.integration.ts \
+            src/integration-tests/learning-dashboard.integration.ts \
             src/integration-tests/learning-objective-parity.integration.ts \
             src/integration-tests/learning-objective-content-topology-w1.integration.ts \
             src/integration-tests/card-generation-run-ownership-postgres.integration.ts \
