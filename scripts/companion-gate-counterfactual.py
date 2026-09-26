@@ -148,23 +148,39 @@ def text_of_blocks(blocks_json: str | None) -> str:
 
 def fetch_turns(days: int) -> dict:
     scripted = sorted(scripted_run_ids())
-    emails = sql_array(list(DEV_REAL_ACCOUNT_EMAILS))
+    email_in = ",".join("'" + e + "'" for e in DEV_REAL_ACCOUNT_EMAILS)
     window = f"r.created_at > now() - ({days} * interval '1 day')"
     counts = rows(f"""
         SELECT
-          (SELECT count(*) FROM users WHERE email IN ({",".join("'" + e + "'" for e in DEV_REAL_ACCOUNT_EMAILS)})) AS n_listed_users,
+          (SELECT count(*) FROM users WHERE email IN ({email_in})) AS n_listed_users,
           (SELECT count(*) FROM companion_turn_runs r WHERE {window}) AS n_all,
           (SELECT count(*) FROM companion_turn_runs r WHERE {window}
              AND r.id::text <> ALL({sql_array(scripted)})) AS n_minus_scripted,
           (SELECT count(*) FROM companion_turn_runs r WHERE {window}
              AND r.id::text <> ALL({sql_array(scripted)})
-             AND r.user_id IN (SELECT id FROM users WHERE email IN ({",".join("'" + e + "'" for e in DEV_REAL_ACCOUNT_EMAILS)}))
+             AND r.user_id IN (SELECT id FROM users WHERE email IN ({email_in}))
           ) AS n_real,
           (SELECT count(*) FROM companion_turn_runs r WHERE {window}
              AND r.id::text <> ALL({sql_array(scripted)})
-             AND r.user_id IN (SELECT id FROM users WHERE email IN ({",".join("'" + e + "'" for e in DEV_REAL_ACCOUNT_EMAILS)}))
+             AND r.user_id IN (SELECT id FROM users WHERE email IN ({email_in}))
              AND r.status = 'failed' AND coalesce(r.model_id, '') = ''
           ) AS n_no_model_failed
+    """)[0]
+    # 那一格现在要能报到成因，而不只是"有 N 条这种形状"。这一条的 WHERE 与上面那条
+    # `n_no_model_failed` 是同一套（窗口＋注册表＋账号名单）——同一套不靠人读，靠下面
+    # 那句 `n` 与它相等来验：谁改了单边过滤，两个数立刻对不上。
+    shape = rows(f"""
+        SELECT count(*) AS n,
+               count(*) FILTER (WHERE r.user_message_id IS NULL) AS without_user_message,
+               count(*) FILTER (WHERE r.user_message_id IS NOT NULL) AS with_user_message,
+               count(*) FILTER (WHERE r.assistant_message_id IS NOT NULL) AS with_assistant_message,
+               count(*) FILTER (WHERE r.leak_gate_version IS NOT NULL) AS with_gate_version,
+               max(to_char(r.created_at, 'YYYY-MM-DD HH24:00')) AS latest,
+               string_agg(DISTINCT coalesce(nullif(r.error_code, ''), '∅'), '/') AS error_codes
+        FROM companion_turn_runs r
+        WHERE {window} AND r.id::text <> ALL({sql_array(scripted)})
+          AND r.user_id IN (SELECT id FROM users WHERE email IN ({email_in}))
+          AND r.status = 'failed' AND coalesce(r.model_id, '') = ''
     """)[0]
     turns = rows(f"""
         SELECT r.id AS run_id, r.workspace_id, r.user_id, r.status,
@@ -181,10 +197,10 @@ def fetch_turns(days: int) -> dict:
         LEFT JOIN companion_messages aa ON aa.id = r.assistant_message_id
         WHERE {window} AND r.id::text <> ALL({sql_array(scripted)})
           AND r.user_id IN (SELECT id FROM users
-                            WHERE email IN ({",".join("'" + e + "'" for e in DEV_REAL_ACCOUNT_EMAILS)}))
+                            WHERE email IN ({email_in}))
         ORDER BY r.created_at
     """)
-    return {"counts": counts, "turns": turns}
+    return {"counts": counts, "turns": turns, "no_model_shape": shape}
 
 
 def fetch_tool_calls(days: int) -> dict[str, list[dict]]:
@@ -599,6 +615,7 @@ def main() -> int:
 
     data = fetch_turns(args.days)
     counts = data["counts"]
+    shape = data["no_model_shape"]
     # 两种"0 条真实样本"要先分开说清，而且都不值得再跑一遍判据桥（三分种白烧）：
     # 名单失效要去改 `DEV_REAL_ACCOUNT_EMAILS`，窗口空要换窗口。
     health = account_filter_health(int(counts["n_listed_users"]), int(counts["n_real"]))
@@ -631,14 +648,25 @@ def main() -> int:
     # 集测写进同一套库的行不在那张表里，只被账号名单挡住。所以这里把"挡得干不干净"印出来：
     # 真账号名下有多少行是「failed 且没选到模型」这一形状——这一格只报形状与稀释，不报成因。
     no_model_failed = int(counts["n_no_model_failed"])
+    if int(shape["n"]) != no_model_failed:
+        # 两条查询数的是同一形状、同一套过滤。对不上只有一个意思：有人改了其中一边。
+        # 这时候印出来的"成因分解"是给另一批行做的，比不印更坏。
+        raise SystemExit(f"拒绝下结论：「failed 且没选到模型」这一形状在两条查询里数出"
+                         f"{no_model_failed} 条与 {shape['n']} 条 ⇒ 计数格与归因格的过滤漂了")
     print(f"剔除：注册表 {len(scripted_run_ids())} 条（只有 `companion-turn-e2e-verify.py` 会登记）；"
           f"真账号名下「failed 且没选到模型」这一形状 **{no_model_failed} 条**")
     if no_model_failed:
-        # 这句话只能说形状，不能说成因：逐条看过时间分布（09-20…09-23，每分钟一条）之后，
-        # 它们更像真机上的失败回合（门禁／限流那类），不像集测夹具——把成因写死就是我又一次
-        # "计数当结论"。要拿它做排除，得先逐条归因。
-        print("        ↑ 这只报形状：这些行没有助手正文，判据对它们恒不触发，只会稀释分母；"
-              "至于它们是测试数据还是真机失败，未逐条归因前不下结论")
+        # 原先这一格只报形状、写着"未逐条归因前不下结论"。归因现在由这一条查询做：
+        # 没有 user 消息行 = 有脚本直接建 run（注册表漏登记的就是这一族，要去改登记）；
+        # 带用户消息而没选到模型 = 真机失败那一族（限流／同意／job 判死，不需要谁做动作）。
+        # 两族都不进证据，但**理由不同**，混成一句"26 条"就没法决定该去修哪一边。
+        print(f"        ↑ 逐条归因：{shape['without_user_message']} 条没有 user 消息行"
+              f"（夹具建 run 那一族）、{shape['with_user_message']} 条有用户消息但没选到模型"
+              f"（错误码 {shape['error_codes']}，真机失败那一族）；"
+              f"其中 {shape['with_assistant_message']} 条带助手正文（判据只对它有输入可言，"
+              f"其余 {no_model_failed - int(shape['with_assistant_message'])} 条只会稀释分母）；"
+              f"最新一条 {shape['latest']}，这一形状里带闸版本的 {shape['with_gate_version']} 条"
+              "⇒ 两种成因都已经被归因层挡在证据之外")
 
     # 1) 环境块重建（真 loadHereAndNow，按重放时刻；见文件头 §1）
     ambient: dict[str, dict] = {}
@@ -872,6 +900,10 @@ def main() -> int:
                 "listed_users_in_db": int(counts["n_listed_users"]),
                 "scripted_registry_ids": len(scripted_run_ids()),
                 "no_model_no_text_shape_under_real_accounts": no_model_failed,
+                # 这一形状的**成因分解**只在这里出一份：下游报告不许自己再连库数一遍。
+                "no_model_shape": {key: (None if value is None else
+                                         (int(value) if key != "latest" and key != "error_codes" else value))
+                                   for key, value in shape.items()},
             },
             "buckets": buckets, "fired": {g: v for g, v in fired.items() if v},
             # 去向的**唯一机器可读副本**在这里（正文那份是 39b §9.1）。下游报告不许
