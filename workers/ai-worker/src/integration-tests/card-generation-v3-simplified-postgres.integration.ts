@@ -589,6 +589,75 @@ test("保存那一发：新链的候选过得了真实激活，并按那一档�
   assert.equal(detail?.nextReviewAt, receipt.scheduling[0].nextReviewAt,
     "卡详情那一读要与卡列表同一判据，不许一处取最早、一处取最晚");
 
+  // 上面那两条钉的是"展示侧"。**队列那一读才是真的会消费这一行的地方**，而 D2 §3.5 的表里
+  // 只写了一句"队列本来就升序"——没有一条用例真去读过它。这里补上，并且先把一件事量清楚：
+  // 队列不按目标去重，它只按"到期才给"。所以同一个目标挂四条待处理时（回执那条 +1 天、
+  // 上面那条 +10 天，两条都没到期；再加两条已过点的），队列给的就是**过了点的那两条、同一张卡两次**。
+  //
+  // 维度名必须与上面那条夹具（`recall_probe`）不撞——0287 那把部分唯一索引管的就是
+  // （空间、人、目标、维度）里同为待处理的行，撞了会当场 23505（第一次写这里就撞过一次，
+  // 红的是夹具不是链）。
+  //
+  // **这一条是取证，不是承诺**：W7-5 那句"每目标同一次日程最多提交一次"要在队列这一发上
+  // 落一个按目标的仲裁者才算数；谁落了，下面那两句"给 2 条 / 同一张卡"会红，那时改成正向断言。
+  await admin`
+    INSERT INTO review_schedules
+      (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at,
+       interval_days, generation, policy_version, reason_code, review_dimension, created_at, updated_at)
+    VALUES (gen_random_uuid(), ${WORKSPACE_ID}, ${USER_ID}, 'card', ${mapping.objectiveId}, 'pending',
+            now() - interval '2 days', 4, 1, 'discrete-v2', 'two_due_dimension_fixture', 'apply_probe', now(), now())
+  `;
+  await admin`
+    INSERT INTO review_schedules
+      (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at,
+       interval_days, generation, policy_version, reason_code, review_dimension, created_at, updated_at)
+    VALUES (gen_random_uuid(), ${WORKSPACE_ID}, ${USER_ID}, 'card', ${mapping.objectiveId}, 'pending',
+            now() - interval '1 day', 4, 1, 'discrete-v2', 'two_due_dimension_fixture', 'express_probe', now(), now())
+  `;
+  t.after(async () => {
+    await admin`
+      DELETE FROM review_schedules
+      WHERE workspace_id = ${WORKSPACE_ID} AND reason_code = 'two_due_dimension_fixture'
+    `;
+  });
+
+  const { listReviews } = await import(
+    "../../../../apps/api/src/modules/review/service.ts"
+  );
+  type QueueRow = {
+    card: { id: string };
+    objective?: { id?: string } | null;
+    review: { nextReviewAt: Date; reviewDimension: string; status: string };
+  };
+  const queue = await listReviews(WORKSPACE_ID, { limit: 100 }, USER_ID) as unknown as
+    { items: QueueRow[]; total: number };
+  const forThisObjective = queue.items.filter(
+    (item) => item.objective?.id === mapping.objectiveId,
+  );
+  assert.equal(forThisObjective.length, 2,
+    `同一目标两条都到期时，队列按"行"给而不是按"目标"给（得到 ${forThisObjective.length} 条）：`
+      + "这一句是 W7-5 的取证，落了按目标的仲裁者请改成正向断言（同一目标只出一条、取最早）");
+  assert.equal(
+    new Set(forThisObjective.map((item) => item.card.id)).size, 1,
+    "那两条指向的是**同一张卡**——用户看到的会是这张卡的两次",
+  );
+  const queueStamps = forThisObjective.map((item) => new Date(item.review.nextReviewAt).getTime());
+  assert.ok(
+    queueStamps.every((value, index) => index === 0 || queueStamps[index - 1]! <= value),
+    `队列要按到期升序（实际 ${queueStamps.join(" → ")}）——展示侧报最早那一条，消费侧就得最先给那一条`,
+  );
+  // 队列那句"一条"是**到期过滤**给的，不是去重给的：这个目标此刻库里挂着三条待处理
+  // （回执那条 +1 天、上面那条 +10 天、以及两条已过点的），队列只给已过点的这两条。
+  const pendingCount = await admin`
+    SELECT count(*)::int AS n FROM review_schedules
+    WHERE workspace_id = ${WORKSPACE_ID} AND subject_id = ${mapping.objectiveId} AND status = 'pending'
+  ` as unknown as Array<{ n: number }>;
+  assert.equal(pendingCount[0]!.n, 4,
+    `这个目标此刻该挂着 4 条待处理（回执 1＋夹具 3，实际 ${pendingCount[0]!.n}）——`
+      + "分母变了，上面那两句判据就各说不上话了");
+  assert.ok(forThisObjective.every((item) => new Date(item.review.nextReviewAt).getTime() <= Date.now()),
+    "队列给的每一条都必须已过点（还没到期的那两条被挡在外面，这才是它只给两条的原因）");
+
   // 下游消费者也收到这一发：激活后排一条 post-activation 投影任务（与旧链同一条出口）。
   const dispatched = await admin`
     SELECT count(*)::int AS n FROM card_generation_run_outbox_v2

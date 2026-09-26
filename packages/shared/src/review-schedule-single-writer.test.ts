@@ -288,27 +288,44 @@ test("边界依赖的那两样还在：部分唯一索引（schema＋迁移）�
 /**
  * 读这张表的一处：它带没带维度判据。
  *
- * 窗口只到**这一条语句结束**（第一个 `;`，或下一处 `.from(`）为止，不是固定往后取若干字符：
+ * 两种形状都要收：查询构造器 `.from(reviewSchedules)`，以及关系.query 的
+ * `query.reviewSchedules.findMany(…)`。第一版只认前者，于是复习队列那一读（`review/service.ts:220`
+ * 分页取行、`:447` 按目标回查安排）**整段不在台账里**——台账写着 20 处、真实是 22 处，
+ * 而"分母自证"那条照样绿（它只数它自己认得的那种形状）。这就是分类边界上必须单造样本的原因。
+ *
+ * 窗口只到**这一条语句结束**（第一个 `;`，或下一处同类匹配点）为止，不是固定往后取若干字符：
  * 第一版取 700 字符，于是同一文件里紧邻的两处读点会互相污染——前一处不筛维度的读，
  * 因为窗口里捞到了后一处的 `reviewSchedules.reviewDimension` 被判成"认得维度"，
  * 台账就这么少记一处（真造探针时才发现，见下面那条"邻近的第二处不许污染前一处"的用例）。
  */
+const READ_SHAPES = [
+  /\.from\(\s*reviewSchedules\s*\)/,
+  /\.query\.reviewSchedules\.findMany\b/,
+];
+
 function readSitesIn(file: string, source: string): Array<{ file: string; dimensionAware: boolean }> {
-  const out: Array<{ file: string; dimensionAware: boolean }> = [];
-  for (const match of source.matchAll(/\.from\(\s*reviewSchedules\s*\)/g)) {
-    const at = match.index ?? 0;
+  const starts: number[] = [];
+  for (const shape of READ_SHAPES) {
+    for (const match of source.matchAll(new RegExp(shape.source, "g"))) starts.push(match.index ?? 0);
+  }
+  return starts.sort((a, b) => a - b).map((at) => {
     const tail = source.slice(at);
+    const nextShape = Math.min(
+      ...READ_SHAPES.map((shape) => {
+        const rest = tail.slice(1).search(new RegExp(shape.source, ""));
+        return rest === -1 ? Number.MAX_SAFE_INTEGER : rest + 1;
+      }),
+    );
     const endsAt = Math.min(
       (tail.indexOf(";") === -1 ? Number.MAX_SAFE_INTEGER : tail.indexOf(";") + 1),
-      (tail.indexOf(".from(", 1) === -1 ? Number.MAX_SAFE_INTEGER : tail.indexOf(".from(", 1)),
+      nextShape,
       900,
     );
-    out.push({ file, dimensionAware: /reviewDimension/.test(tail.slice(0, endsAt)) });
-  }
-  return out;
+    return { file, dimensionAware: /reviewDimension/.test(tail.slice(0, endsAt)) };
+  });
 }
 
-/** 今天还不认识这一维的读点，按文件数（合计 19 处）。逐处修好就把对应那条删掉。 */
+/** 今天还不认识这一维的读点，按文件数（合计 21 处）。逐处修好就把对应那条删掉。 */
 const READERS_BLIND_TO_DIMENSION: Record<string, number> = {
   "apps/api/src/modules/card-generation-v2/card-service.ts": 2,
   "apps/api/src/modules/export/service.ts": 2,
@@ -317,7 +334,7 @@ const READERS_BLIND_TO_DIMENSION: Record<string, number> = {
   "apps/api/src/modules/learning-runs/run-processing-tick.ts": 2,
   "apps/api/src/modules/learning-runs/run-service.ts": 3,
   "apps/api/src/modules/review/review-defer-service.ts": 1,
-  "apps/api/src/modules/review/service.ts": 1,
+  "apps/api/src/modules/review/service.ts": 3,
   "apps/api/src/modules/stats/service.ts": 2,
   "apps/api/src/modules/understanding-v3/topology-repository.ts": 1,
   "apps/api/src/modules/understanding/projection-read-service.ts": 1,
@@ -356,9 +373,9 @@ function dimensionNamingCallers(): string[] {
     .flatMap((f) => dimensionNamingCallersIn(f.rel, f.text));
 }
 
-test("读侧台账的分母自证：20 处读点里只有边界自己那一处认得维度", () => {
+test("读侧台账的分母自证：22 处读点里只有边界自己那一处认得维度", () => {
   const all = runtimeSources().flatMap((f) => readSitesIn(f.rel, f.text));
-  assert.equal(all.length, 20, `读点合计与现读数不同（得到 ${all.length}）：walk 坏了或有人新增/删了读点`);
+  assert.equal(all.length, 22, `读点合计与现读数不同（得到 ${all.length}）：walk 坏了或有人新增/删了读点`);
   assert.equal(all.filter((s) => s.dimensionAware).length, 1,
     "认得维度的读点数量变了——只有边界那一条回读该认得");
 });
@@ -378,6 +395,13 @@ test("读侧判据本身灵敏：带维度判据要认得出，不带的一处�
   const neighbor = `${blind};\n${aware};`;
   assert.deepEqual(readSitesIn("f.ts", neighbor).map((s) => s.dimensionAware), [false, true],
     "前一处被后一处的判据污染 ⇒ 台账会少记不认维度的读点");
+  // 关系.query 那一形（复习队列就是用它取行的）也必须进台账：只认 `.from(` 的判据会把整个
+  // `review/service.ts` 少记两处，而分母自证照样绿——这就是这一条要单独造样本的原因。
+  const relational = `const fetched = await queryDb.query.reviewSchedules.findMany({\n  where,\n  orderBy: (r) => [asc(r.nextReviewAt)],\n});`;
+  assert.deepEqual(readSitesIn("queue.ts", relational).map((s) => s.dimensionAware), [false],
+    "关系.query 的取行没被算成读点");
+  const relationalAware = `await queryDb.query.reviewSchedules.findMany({ where: eq(reviewSchedules.reviewDimension, d) });`;
+  assert.deepEqual(readSitesIn("queue.ts", relationalAware).map((s) => s.dimensionAware), [true]);
 });
 
 test("不认维度的读点逐文件登记在案：新增一处红，改好一处就把那条删掉", () => {
