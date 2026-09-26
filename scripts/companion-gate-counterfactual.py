@@ -661,7 +661,10 @@ def main() -> int:
         # 带用户消息而没选到模型 = 真机失败那一族（限流／同意／job 判死，不需要谁做动作）。
         # 两族都不进证据，但**理由不同**，混成一句"26 条"就没法决定该去修哪一边。
         print(f"        ↑ 逐条归因：{shape['without_user_message']} 条没有 user 消息行"
-              f"（夹具建 run 那一族）、{shape['with_user_message']} 条有用户消息但没选到模型"
+              f"（**不是建的时候没有**：0260 起这一列可空，而 `scripts/tmp-clean-scripted-rounds.py:128` "
+              f"会把清理过的 run 的它置 NULL。量到这 9 条全带 `job_id`，而夹具那一族不写 `job_id`，"
+              f"所以成因归到「写过用户消息、后被清理脚本摘掉」；那支脚本被 `.gitignore` 的"
+              f"`**/tmp-*.py` 挡着，默认 grep 看不见）；{shape['with_user_message']} 条有用户消息但没选到模型"
               f"（错误码 {shape['error_codes']}，真机失败那一族）；"
               f"其中 {shape['with_assistant_message']} 条带助手正文（判据只对它有输入可言，"
               f"其余 {no_model_failed - int(shape['with_assistant_message'])} 条只会稀释分母）；"
