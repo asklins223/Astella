@@ -299,8 +299,10 @@ import {
   noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundViewV1Schema,
   ROUND_HISTORY_DEFAULT_LIMIT_V1,
+  roundTeachingViewV1Schema,
   type NoteLearningRoundHistoryV1,
   type NoteLearningRoundV1Wire,
+  type RoundTeachingViewV1,
 } from "@ailearn/shared/note-learning-round-contracts";
 import { understandingTopologySnapshotV3Schema, type UnderstandingTopologySnapshotV3 } from "@ailearn/shared/understanding-topology-v3-contracts";
 import {
@@ -2117,6 +2119,53 @@ export class DesktopGateway {
     const parsed = noteLearningRoundViewV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data.round;
+  }
+
+  /**
+   * 这一轮当前问题版本下的那条解释（W4-6 刀二）。
+   *
+   * `teaching: null` 是**服务端的诚实回答**（还没讲过／问题刚被改写），不是错误——
+   * 所以这一发不折 404：轮次不存在才是错（`round_not_found`），交给错误映射。
+   */
+  async getNoteLearningRoundTeaching(roundId: string, requestId?: string): Promise<RoundTeachingViewV1> {
+    await this.ensureConnected(requestId);
+    const result = await this.request(
+      `/v2/note-learning-rounds/${this.safeUuid(roundId)}/teaching`,
+      { method: "GET" },
+      true,
+      false,
+      requestId,
+    );
+    if (result.status >= 300) throw this.mapResponseError(result.status, result.headers);
+    const parsed = roundTeachingViewV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+  /**
+   * 生成一条解释（W4-6 刀二）。回执带着**轮次与产物一起**（服务端定的形状），
+   * 所以这一发之后屏幕上那一行轮次与解释都来自同一次读回的版本，不会拼出一次错配。
+   */
+  async explainNoteLearningRoundTeaching(
+    input: { roundId: string; expectedRevision: number },
+    requestId?: string,
+  ): Promise<RoundTeachingViewV1> {
+    await this.ensureConnected(requestId);
+    const result = await this.request(
+      `/v2/note-learning-rounds/${this.safeUuid(input.roundId)}/teaching`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expectedRevision: input.expectedRevision }),
+      },
+      true,
+      true,
+      requestId,
+    );
+    if (result.status >= 300) throw this.mapResponseError(result.status, result.headers);
+    const parsed = roundTeachingViewV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
   }
 
   async getUnderstandingTopology(requestId?: string): Promise<UnderstandingTopologySnapshotV3> {

@@ -78,6 +78,8 @@ type Api = {
     create: ReturnType<typeof vi.fn>;
     revise: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
+    teaching: ReturnType<typeof vi.fn>;
+    explain: ReturnType<typeof vi.fn>;
   };
 };
 
@@ -109,6 +111,29 @@ function roundRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const ROUND_ID = "77777777-7777-4777-8777-777777777777";
+
+/**
+ * 一条教学产物的回读（39d W4-6 刀二）。形状照线上合同写：解释与例子在 `content` 里，
+ * 依据是块序号——它不是一段裸文本，也不是"根据笔记"一句话。
+ */
+function teachingRow(overrides: Record<string, unknown> = {}) {
+  return {
+    version: 1,
+    teachingId: "88888888-8888-4888-8888-888888888888",
+    roundId: ROUND_ID,
+    ordinal: 1,
+    kind: "explanation",
+    content: {
+      explanation: "「间隔重复」这一节说的是：在快要忘记的时候再见到它。",
+      example: "例如把新词放在第 1、3、7 天各见一次。",
+    },
+    sourceBlockOrdinals: [1, 2],
+    createdAt: "2026-09-26T04:10:00.000Z",
+    ...overrides,
+  };
+}
+
 function installApi(
   list: () => Promise<unknown>,
   options: {
@@ -125,11 +150,18 @@ function installApi(
     roundHistoryFails?: boolean;
     /** 带游标那几发的回读，按调用次给（"更早的那一页、再更早的那一页"）。 */
     olderPages?: Record<string, unknown>[];
+    /** 这一轮的解释（W4-6 刀二）；缺省 = 还没讲过。 */
+    roundTeaching?: Record<string, unknown> | null;
+    /** 解释那一读按调用次给（生成成功之后回读要拿到新的一条）。 */
+    teachingSequence?: (Record<string, unknown> | null)[];
+    /** 生成那一发失败（走网关那一条形状）。 */
+    explainFails?: boolean;
   } = {},
 ): Api {
   const syncController = options.syncController ?? { fail: false };
   let openReads = 0;
   let olderPageReads = 0;
+  let teachingReads = 0;
   const api: Api = {
     objective: { list: vi.fn(list) },
     learningRun: {
@@ -153,6 +185,17 @@ function installApi(
       openReads += 1;
       return ok(rows[read] ?? null);
     }),
+      // 解释那一读：按调用次给（首读"还没讲过"，生成之后回读拿到那一条）。
+      // 生成那一发自己走网关形状：失败时屏上不许装作已经讲过。
+      teaching: vi.fn(async () => {
+        const rows = options.teachingSequence ?? [options.roundTeaching ?? null];
+        const read = Math.min(teachingReads, rows.length - 1);
+        teachingReads += 1;
+        return ok({ version: 1, round: options.openRound ?? roundRow(), teaching: rows[read] ?? null });
+      }),
+      explain: vi.fn(async () => (options.explainFails
+        ? { ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } }
+        : ok({ version: 1, round: options.openRound ?? roundRow(), teaching: teachingRow() }))),
       create: vi.fn(async () => ok(roundRow())),
       revise: vi.fn(async () => ok(roundRow({ drivingQuestion: "先分清两种情况，再判断慢在哪一步", drivingQuestionRevision: 2, revision: 2 }))),
       close: vi.fn(async () => ok(roundRow({ phase: "closed", outcome: "partial", revision: 2, closedAt: "2026-09-26T05:00:00.000Z" }))),
@@ -245,6 +288,9 @@ async function show(
     roundHistory?: Record<string, unknown>;
     roundHistoryFails?: boolean;
     olderPages?: Record<string, unknown>[];
+    roundTeaching?: Record<string, unknown> | null;
+    teachingSequence?: (Record<string, unknown> | null)[];
+    explainFails?: boolean;
   } = {},
 ) {
   const syncController = options.syncController ?? { fail: false };
@@ -659,6 +705,11 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
     // 空题名（刚建出来还没起名的那一篇）也要能出题：那道"以题名开头"的排除对空串
     // 会把**每一节**都判成复述题名，一颗都不剩。
     expect(structureQuestionCandidatesV1([heading(0, "两种理解")], "").map((c) => c.label)).toEqual(["两种理解"]);
+    // 小节的存储形状**两种都有**（dev 库实测：6 条里 3 条带 `# `）：标记不许进标签，
+    // 也不许进那句问话——教学面的依据标签共用同一份归一化。
+    const marked = structureQuestionCandidatesV1([heading(0, "## 间隔重复")], "物理笔记");
+    expect(marked.map((c) => c.label)).toEqual(["间隔重复"]);
+    expect(marked[0].question).toBe("先弄懂「间隔重复」这一节在讲什么，以及它和整篇的关系");
   });
 
   it("标签可以截断，放进问话的那一句必须用完整小节名（真窗口实测：带省略号的半截话读不通）", () => {
@@ -911,5 +962,106 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
     expect(container.querySelector(".reading-body")?.textContent).toContain("质量是惯性大小的唯一量度。");
     // 对照：同一页上"未完成那一轮"照常画（失败只撤掉它自己那一块，不牵连别人）。
     expect(container.querySelector(".notebook-round")).toBeTruthy();
+  });
+});
+
+/**
+ * 教学面（39d W4-6 刀二）。
+ *
+ * 这一组钉四件**别的层替它证不了**的事：
+ *  1. 讲没讲过这件事只由服务端说：还没讲过就一颗按钮，点下去带着**读过的那一版** `revision`
+ *     发一发；成功了屏上那句解释来自服务端回读，不是本机拼的；
+ *  2. 依据要点得动：那一段真的有锚点、点一颗会把它标出来并滚过去，高亮自己会过期；
+ *  3. 快照不是屏幕上这一版时**不摆依据**（正文后来改过，块序号已经不是同一份材料），
+ *     并如实说一句——不假装定位得到；
+ *  4. 生成失败不装作已经讲过：错的句子照实说，那颗按钮还在。
+ */
+describe("笔记页的教学面（39d W4-6 刀二）", () => {
+  it("还没讲过：只有那颗按钮；点它带着 revision 发一发，屏上换成服务端回读的那条解释", async () => {
+    const open = roundRow({ revision: 3 });
+    const teaching = teachingRow();
+    const { api, roundBlock } = await show([], {
+      openRound: open,
+      teachingSequence: [null, teaching],
+    });
+    const block = roundBlock()!;
+    expect(block.querySelector(".notebook-round-teaching__text")).toBeNull();
+    const start = [...block.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.teaching.start)!;
+    expect(start).toBeTruthy();
+    fireEvent.click(start);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.noteLearningRound.explain.mock.calls[0][0]).toMatchObject({
+      roundId: ROUND_ID,
+      expectedRevision: 3,
+    });
+    // 屏上那一句是**回读**来的（第二读），不是发出去那一发自己拼的。
+    expect(roundBlock()!.querySelector(".notebook-round-teaching__text")?.textContent)
+      .toBe(teaching.content.explanation);
+    expect(api.noteLearningRound.teaching).toHaveBeenCalledTimes(2);
+  });
+
+  it("讲过了：解释、例子与依据都在；点一颗依据会把那一段标出来并滚过去，高亮自己过期", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const blocks: NoteBlockProjectionV1[] = [
+      { ordinal: 1, type: "heading", content: "## 间隔重复" },
+      { ordinal: 2, type: "paragraph", content: "间隔重复说的是在快要忘记的时候再见到它。" },
+    ];
+    const teaching = teachingRow({ sourceBlockOrdinals: [1, 2] });
+    const { roundBlock, container } = await show([], {
+      openRound: roundRow(),
+      blocks,
+      roundTeaching: teaching,
+    });
+    const block = roundBlock()!;
+    expect(block.querySelector(".notebook-round-teaching__text")?.textContent).toBe(teaching.content.explanation);
+    expect(block.textContent).toContain(`${ROUND_COPY.teaching.exampleLead}${teaching.content.example}`);
+    expect(block.textContent).toContain(ROUND_COPY.teaching.referencesLead);
+    // 那一颗的字**从材料里取**（小节取标题），不是"第 N 段"这种编号冒充。
+    const chip = [...block.querySelectorAll(".notebook-round-teaching__references button")]
+      .find((b) => b.textContent === "小节「间隔重复」")!;
+    expect(chip).toBeTruthy();
+    scrollIntoView.mockClear();
+    fireEvent.click(chip);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    const target = container.querySelector<HTMLElement>('[data-block-ordinal="1"]')!;
+    expect(target.getAttribute("data-block-focused")).toBe("true");
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    // 高亮只是"我在这儿"，过期就撤——不留"上次点到哪"这种会跟人走的读数。
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_500); });
+    expect(container.querySelector('[data-block-ordinal="1"]')!.getAttribute("data-block-focused")).toBeNull();
+  });
+
+  it("快照不是屏幕上这一版：依据不摆，换一句如实的话", async () => {
+    const { roundBlock } = await show([], {
+      openRound: roundRow({ noteVersionId: "99999999-9999-4999-8999-999999999999" }),
+      roundTeaching: teachingRow({ sourceBlockOrdinals: [1, 2] }),
+    });
+    const block = roundBlock()!;
+    expect(block.querySelector(".notebook-round-teaching__text")).toBeTruthy();
+    expect(block.querySelectorAll(".notebook-round-teaching__references").length).toBe(0);
+    expect(block.textContent).toContain(ROUND_COPY.teaching.staleVersion);
+  });
+
+  it("依据的序号在屏幕这一版里对不上：不瞎画，也不说那句「正文改过」", async () => {
+    const { roundBlock } = await show([], {
+      openRound: roundRow(),
+      blocks: [{ ordinal: 9, type: "paragraph", content: "这一段与那条解释无关。" }],
+      roundTeaching: teachingRow({ sourceBlockOrdinals: [42] }),
+    });
+    const block = roundBlock()!;
+    expect(block.querySelectorAll(".notebook-round-teaching__references").length).toBe(0);
+    expect(block.textContent).not.toContain(ROUND_COPY.teaching.staleVersion);
+  });
+
+  it("生成失败：那句错上屏，且屏上不装作已经讲过（按钮还在）", async () => {
+    const { api, roundBlock, container } = await show([], { openRound: roundRow(), explainFails: true });
+    const block = roundBlock()!;
+    fireEvent.click([...block.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.teaching.start)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.noteLearningRound.explain).toHaveBeenCalledTimes(1);
+    expect(container.querySelector(".notebook-round-teaching__text")).toBeNull();
+    expect([...block.querySelectorAll("button")].some((b) => b.textContent === ROUND_COPY.teaching.start)).toBe(true);
+    expect(container.querySelector('[role="alert"]')?.textContent?.trim().length ?? 0).toBeGreaterThan(0);
   });
 });

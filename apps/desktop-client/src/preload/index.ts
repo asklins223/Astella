@@ -314,7 +314,9 @@ const desktopApi: AILearnDesktopApiM2 = {
     create: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundCreate, input),
     revise: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundRevise, input),
     close: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundClose, input),
-    history: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundHistory, input)
+    history: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundHistory, input),
+    teaching: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundTeaching, input),
+    explain: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundExplain, input)
   },
   understanding: {
     getTopology: (input) => invoke(DESKTOP_IPC_CHANNELS.understandingGetTopology, input)

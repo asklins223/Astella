@@ -18,7 +18,12 @@ import type {
   ObjectiveSurfaceFreshnessV3,
 } from "@ailearn/shared/learning-objective-surface-contracts";
 import type { NoteBlockProjectionV1, NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
-import type { NoteLearningRoundHistoryItemV1, NoteLearningRoundHistoryV1, NoteLearningRoundV1Wire } from "@ailearn/shared/note-learning-round-contracts";
+import type {
+  NoteLearningRoundHistoryItemV1,
+  NoteLearningRoundHistoryV1,
+  NoteLearningRoundV1Wire,
+  RoundTeachingV1,
+} from "@ailearn/shared/note-learning-round-contracts";
 import { useRoomStore } from "../../app/room-store";
 import { SpaceShareButton, noteShareScopeLabel } from "../space-share-control";
 import type { NoteShareScopeV1 } from "@ailearn/shared/note-share-contracts";
@@ -108,6 +113,11 @@ type NotebookProjection = {
    * 它是增补，不许把笔记本身顶掉）。
    */
   readonly roundHistory: NoteLearningRoundHistoryV1 | null;
+  /**
+   * 这一轮当前问题版本下的那条解释（39d W4-6 刀二；表与服务是刀一那一批）。
+   * 与上面两读同一条纪律：读不到 ⇒ null 且整块退成"还没讲过"，不把笔记顶掉。
+   */
+  readonly roundTeaching: RoundTeachingV1 | null;
   readonly capabilities: CapabilityProjectionV1;
   /**
    * The workspace's one live Card Generation run (owner only; Member sees an
@@ -279,6 +289,21 @@ export const ROUND_COPY = {
     superseded: "被新的一轮替掉",
     system_failure: "中途出了问题",
   } as Record<"completed" | "partial" | "superseded" | "system_failure", string>,
+  /**
+   * 教学面（39d W4-6 刀二）。这一轮讲没讲过、按哪一版讲的、依据是哪几段，
+   * 这三句话由这一处签发——屏上与剧本读的是同一份（与状态那几档同一条规矩）。
+   */
+  teaching: {
+    start: "先讲讲这一节",
+    starting: "正在讲这一节…",
+    exampleLead: "例子：",
+    referencesLead: "依据（点开定位到正文）：",
+    /**
+     * 快照不是屏幕上这一版时，依据**不定位**：正文后来改过，块序号与屏上那段
+     * 已经不是同一份材料，照序号跳过去会把手指点到别处。话要如实说。
+     */
+    staleVersion: "这一轮是按开始那一版的正文讲的；正文后来改过，依据就不在这里定位了。",
+  },
   openLine: (question: string) => `这一轮：${question}`,
   revisedLine: (revision: number) => `这一句话已经改过 ${revision - 1} 次。`,
   hint: "改这句话不用重编笔记；这一轮先只对你自己可见。",
@@ -345,7 +370,7 @@ export function structureQuestionCandidatesV1(
   const candidates: StructureQuestionCandidateV1[] = [];
   for (const block of blocks) {
     if (block.type !== "heading") continue;
-    const heading = noteInlineDisplayText(block.content).replace(/\s+/g, " ").trim();
+    const heading = headingDisplayTextV1(block);
     if (heading.length === 0 || seen.has(heading)) continue;
     // `startsWith` 已经含住"完全同名"那一档（变异验过：再写一条 `=== title` 是多余的，
     // 摘掉它任何用例都不会红）。`title.length > 0` 那道挡不能省：空题名时
@@ -402,6 +427,32 @@ function formatClock(value: string | null | undefined): string {
     second: "2-digit",
     hour12: false,
   }).format(parsed);
+}
+
+/**
+ * 依据那一颗的字（39d W4-6 刀二）：**从材料里取**——小节取标题，其余取正文开头。
+ * 拼不出字（空块）时退成"第 N 段"：序号是屏幕上**真有的**东西，不是编的说法。
+ * 窗口按显示出来的字截（markdown 标记不占格子，同 `conceptMark` 那条规矩）。
+ */
+/**
+ * 一块小节标题在屏上该显示成什么。**真库里两种形状都有**（实测 dev 库 6 条小节里
+ * 3 条带 `# `）：有的存 `间隔重复`，有的存 `## 间隔重复`。剥标记这件事只写在这里，
+ * 教学面的依据标签与"从结构另选"的问话共用同一份——两处各写一遍，迟早一处漏。
+ */
+export function headingDisplayTextV1(block: NoteBlockProjectionV1): string {
+  return noteInlineDisplayText(block.content)
+    .replace(/^\s{0,3}#{1,6}\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function teachingReferenceLabelV1(block: NoteBlockProjectionV1, max = 16): string {
+  const text = block.type === "heading"
+    ? headingDisplayTextV1(block)
+    : noteInlineDisplayText(block.content).replace(/\s+/g, " ").trim();
+  if (text.length === 0) return `第 ${block.ordinal} 段`;
+  if (block.type === "heading") return `小节「${excerpt(text, max)}」`;
+  return excerpt(text, max);
 }
 
 function excerpt(value: string, max = 96): string {
@@ -527,6 +578,14 @@ export function NotebookSurface() {
   const [olderBusy, setOlderBusy] = useState(false);
   const [olderFailure, setOlderFailure] = useState<string | null>(null);
   const [roundFailure, setRoundFailure] = useState<string | null>(null);
+  /** 教学面（W4-6 刀二）：生成那一发在途、以及它自己的失败那一句。 */
+  const [teachingBusy, setTeachingBusy] = useState(false);
+  const [teachingFailure, setTeachingFailure] = useState<string | null>(null);
+  /**
+   * 依据里点开的那一段。它只是**屏幕上的注意力**（滚动 + 短暂高亮），不进任何写：
+   * 值一过期就撤掉，不留"上次点到哪"这种会跟人走的读数。
+   */
+  const [focusedBlockOrdinal, setFocusedBlockOrdinal] = useState<number | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [options, setOptions] = useState<GenerationOptions>(persistedGenerationOptions);
   const [showAllBlocks, setShowAllBlocks] = useState(false);
@@ -647,6 +706,22 @@ export function NotebookSurface() {
       openRound = null;
     }
 
+    // 教学产物那一读（W4-6 刀二）：只有真有一轮在进行中才有得读——没轮次就没有
+    // "这一轮讲了什么"。同样自己吞异常：读失败退成"还没讲过"，不是错误页。
+    let roundTeaching: NotebookProjection["roundTeaching"] = null;
+    if (openRound) {
+      try {
+        const teachingResponse = await api.noteLearningRound.teaching({
+          meta: createRequestMeta(epochRef.current),
+          roundId: openRound.roundId,
+        });
+        if (teachingResponse.workspaceEpoch) epochRef.current = teachingResponse.workspaceEpoch;
+        roundTeaching = unwrapGatewayResult(teachingResponse).teaching;
+      } catch {
+        roundTeaching = null;
+      }
+    }
+
     // 记录那一发与上面两读同一纪律：自己吞异常。它读的是历史，
     // 读失败最多是这一块不出现，不许把整篇笔记换成错误页。
     let roundHistory: NotebookProjection["roundHistory"] = null;
@@ -667,6 +742,7 @@ export function NotebookSurface() {
       sourceFailure,
       openRound,
       roundHistory,
+      roundTeaching,
       objective: focus && focus.objective.sources.primaryNote?.noteId === note.noteId
         ? focus.objective
         : null,
@@ -698,6 +774,8 @@ export function NotebookSurface() {
   const noteObjective = data?.noteObjective ?? null;
   const openRound = data?.openRound ?? null;
   const roundHistory = data?.roundHistory ?? null;
+  /** 这一轮当前问题下的那条解释；`null` = 还没讲过（W4-6 刀二）。 */
+  const roundTeaching = data?.roundTeaching ?? null;
   const capabilities = data?.capabilities ?? null;
   const activeGenerations = data?.activeGeneration?.state === "data" ? data.activeGeneration.data : [];
   // 这篇笔记自己的在制批次。一个工作区可以同时有多篇笔记各自在制一批卡，所以
@@ -780,6 +858,39 @@ export function NotebookSurface() {
     ? allBlocks
     : allBlocks.slice(0, READING_WINDOW);
   const hiddenBlockCount = allBlocks.length - readingBlocks.length;
+
+  // ── 教学面的依据（W4-6 刀二）──
+  // 只认**屏幕上这一版**能对上的块：这一轮的快照与屏幕上读的那一版不同时，块序号
+  // 已经不是同一份材料，照序号跳过去会点到别处——那种情况下不摆这几颗，话在
+  // `ROUND_COPY.teaching.staleVersion`（如实说，而不是假装定位得到）。
+  const teachingSnapshotIsReadVersion = Boolean(
+    openRound && note && openRound.noteVersionId === note.currentVersionId,
+  );
+  const teachingReferences = useMemo(() => {
+    if (!roundTeaching || !teachingSnapshotIsReadVersion) return [];
+    return roundTeaching.sourceBlockOrdinals.flatMap((ordinal) => {
+      const block = allBlocks.find((item) => item.ordinal === ordinal);
+      return block ? [{ ordinal, label: teachingReferenceLabelV1(block) }] : [];
+    });
+  }, [roundTeaching, teachingSnapshotIsReadVersion, allBlocks]);
+  const readingBodyRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * 点一颗依据：滚到那一段并短暂高亮。`scrollIntoView` **不用 smooth**——动效是
+   * 产品设置里的一档（那套在 D4 那一侧），这一处只负责"看得见"；高亮自己过期撤掉，
+   * 不留"上次点过哪"这种会跟人走的读数。
+   */
+  const locateTeachingReference = (ordinal: number): void => {
+    if (!readingBlocks.some((block) => block.ordinal === ordinal)) setShowAllBlocks(true);
+    setFocusedBlockOrdinal(ordinal);
+  };
+  useEffect(() => {
+    if (focusedBlockOrdinal === null) return;
+    const target = readingBodyRef.current?.querySelector(`[data-block-ordinal="${focusedBlockOrdinal}"]`);
+    // jsdom 没有布局也就没有 `scrollIntoView`；真窗口那一半由剧本量（那段真的动了）。
+    if (target && typeof target.scrollIntoView === "function") target.scrollIntoView({ block: "center" });
+    const timer = setTimeout(() => setFocusedBlockOrdinal(null), 2_400);
+    return () => clearTimeout(timer);
+  }, [focusedBlockOrdinal]);
 
   // 这篇笔记的全部图片，按正文顺序排好；顺带记下**每一块**第一张图在画廊里的序号，
   // 让正文里的缩略图点击时知道自己该开在哪一张。一块可以有好几张：编辑器里的图是
@@ -1193,6 +1304,36 @@ export function NotebookSurface() {
       await reload({ silent: true });
     } finally {
       setRoundBusy(null);
+    }
+  };
+
+  /**
+   * 「先讲讲这一节」：让服务端生成这一轮当前问题下的一条解释（W4-6 刀二）。
+   *
+   * 三件事刻意与别的写动作同一形状：①带 `expectedRevision`——两发之间问题被改写或
+   * 轮次被收尾时，后到的那一发必须失败并拿到现在那一版；②成功后走 silent 回读，
+   * 屏上那句解释来自服务端存下来的那一条，不是本机拼的；③失败也要回读一次，
+   * 把屏上换回现在那一版（§16.39 那条一样的道理）。
+   */
+  const startRoundTeaching = async () => {
+    const api = desktopApi();
+    if (!api || !openRound || teachingBusy) return;
+    setTeachingBusy(true);
+    setTeachingFailure(null);
+    try {
+      const response = await api.noteLearningRound.explain({
+        meta: createRequestMeta(epochRef.current),
+        roundId: openRound.roundId,
+        expectedRevision: openRound.revision,
+      });
+      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+      unwrapGatewayResult(response);
+      await reload({ silent: true });
+    } catch (error) {
+      setTeachingFailure(gatewayErrorMessage(error));
+      await reload({ silent: true });
+    } finally {
+      setTeachingBusy(false);
     }
   };
 
@@ -1880,6 +2021,50 @@ export function NotebookSurface() {
                   {roundBusy === "end" ? ROUND_COPY.ending : ROUND_COPY.end}
                 </button>
               </div>
+              {/* 教学面（39d W4-6 刀二）：这一轮的问题下面是"讲没讲过"。
+                  还没讲过就只有那颗按钮；讲过了就把解释、例子与依据摆出来。 */}
+              <div className="notebook-round-teaching">
+                {roundTeaching ? (
+                  <>
+                    <p className="notebook-round-teaching__text">{roundTeaching.content.explanation}</p>
+                    {roundTeaching.content.example ? (
+                      <p className="small notebook-note">
+                        {ROUND_COPY.teaching.exampleLead}{roundTeaching.content.example}
+                      </p>
+                    ) : null}
+                    {teachingReferences.length > 0 ? (
+                      <div className="notebook-round-teaching__references">
+                        <span className="small notebook-note">{ROUND_COPY.teaching.referencesLead}</span>
+                        {teachingReferences.map((item) => (
+                          <button
+                            key={item.ordinal}
+                            type="button"
+                            className="button"
+                            onClick={() => locateTeachingReference(item.ordinal)}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : !teachingSnapshotIsReadVersion ? (
+                      <p className="small notebook-note">{ROUND_COPY.teaching.staleVersion}</p>
+                    ) : null}
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={teachingBusy || roundBusy !== null}
+                    onClick={() => void startRoundTeaching()}
+                  >
+                    {teachingBusy ? ROUND_COPY.teaching.starting : ROUND_COPY.teaching.start}
+                  </button>
+                )}
+                {/* 教学面是隔离展示面（D4）的**预留挂载点**：刀五之前不挂 iframe，
+                    挂上去时用 `artifact-frame-host` 自己的合同取属性，不在这里另写一份。 */}
+                <div className="notebook-round-teaching__artifact" data-artifact-slot="note-round-teaching" />
+              </div>
+              {teachingFailure ? <p className="small notebook-note" role="alert">{teachingFailure}</p> : null}
             </>
           ) : (
             <>
@@ -1970,11 +2155,12 @@ export function NotebookSurface() {
         </section>
       ) : null}
       <div className="rule" />
-      <div className="reading-body">
+      <div className="reading-body" ref={readingBodyRef}>
         {readSourceBlocks.length ? readingBlocks.map((block) => (
           <ReadingBlock
             key={block.ordinal}
             block={block}
+            focused={focusedBlockOrdinal === block.ordinal}
             mark={mark?.ordinal === block.ordinal ? mark.range : null}
             workspaceEpoch={epochRef.current}
             gallery={noteImages.ordinalToStart.has(block.ordinal)
@@ -2298,7 +2484,41 @@ export function NotebookSurface() {
 }
 
 /** One stored block, drawn with the weight its own type carries on paper. */
-function ReadingBlock({
+/**
+ * 阅读正文里**每一块的锚点**（39d W4-6 刀二）：教学面的依据要能"点开定位到那一块"，
+ * 而在此之前正文里没有任何能指认某一段的东西。锚点包一层 `.reading-block`，样式表里
+ * 三条直接子选择器（`> p` / `> h3` / `> p.list-block`）跟着走进这一层——格线、
+ * 标题字号与列表缩进一个字都不变。`data-block-focused` 是"依据点开的那一段"的短暂高亮。
+ */
+function ReadingBlock(props: {
+  readonly block: NoteBlockProjectionV1;
+  /** 依据点开的那一段：短暂高亮（W4-6 刀二）。 */
+  readonly focused?: boolean;
+  readonly mark: readonly [number, number] | null;
+  readonly workspaceEpoch?: number;
+  readonly gallery?: {
+    readonly start: number;
+    readonly openAt: (index: number) => void;
+    readonly close: () => void;
+  };
+}) {
+  return (
+    <div
+      className="reading-block"
+      data-block-ordinal={props.block.ordinal}
+      {...(props.focused ? { "data-block-focused": "true" } : {})}
+    >
+      <ReadingBlockContent
+        block={props.block}
+        mark={props.mark}
+        workspaceEpoch={props.workspaceEpoch}
+        gallery={props.gallery}
+      />
+    </div>
+  );
+}
+
+function ReadingBlockContent({
   block,
   mark,
   workspaceEpoch,

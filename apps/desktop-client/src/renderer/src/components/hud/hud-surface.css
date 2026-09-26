@@ -2630,6 +2630,41 @@
   }
 }
 
+/* 教学面（39d W4-6 刀二）：这一轮的那条解释与它的依据。
+   排版沿用这一页小字之间的 8px；解释用正文的衬线体（它是"讲给你听的一段话"，
+   与工具行的 sans 小字不是一类东西），依据那几颗按行排、窄屏自己折。 */
+.hud-surface .notebook .notebook-round-teaching {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hud-line);
+}
+
+.hud-surface .notebook .notebook-round-teaching__text {
+  margin: 0;
+  font: 15px/1.75 "Noto Serif SC Variable", "Songti SC", serif;
+  color: var(--hud-ink);
+}
+
+.hud-surface .notebook .notebook-round-teaching__references {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud-surface .notebook .notebook-round-teaching__artifact:empty { display: none; }
+
+/* 依据点开的那一段短暂亮一下。色与正文里 `.mark` 的暖黄同一族（hud-pages.css），
+   但这里是**块级**的"我在这儿"；不做动画——动效是产品设置里的一档。 */
+.hud-surface .notebook .reading-body .reading-block[data-block-focused="true"] {
+  background: rgba(229, 185, 78, 0.22);
+  box-shadow: inset 3px 0 0 var(--hud-clay);
+}
+
 @media (max-width: 760px) {
   .hud-surface .notebook .notebook-actions { right: 18px; bottom: 14px; }
   .hud-surface .notebook .notebook-actions--editor { right: 18px; bottom: 26px; }
@@ -5554,8 +5589,8 @@
 /* 正文缩进对齐页边红线（`:before` 落在 left:32px），与标题同一条左边缘。 */
 
 /* ── 书写区：32px 一格的横线，行高就是格高 ── */
-.hud-surface .notebook .reading-body > p,
-.hud-surface .notebook .reading-body > h3,
+.hud-surface .notebook .reading-body > .reading-block > p,
+.hud-surface .notebook .reading-body > .reading-block > h3,
 .hud-surface .notebook .note-editor .ProseMirror :is(p, h1, h2, h3, h4, h5, h6),
 .hud-surface .notebook .note-editor .ProseMirror li {
   margin: 0;
@@ -5574,10 +5609,12 @@
 /* 标题在格子上占同样的行高，只是更重、更大。 */
 .hud-surface .notebook .note-editor .ProseMirror :is(h1, h2, h3) { font-size: 17px; }
 .hud-surface .notebook .note-editor .ProseMirror :is(h4, h5, h6) { font-size: 15px; }
-.hud-surface .notebook .reading-body > h3 { font-size: 17px; }
+.hud-surface .notebook .reading-body > .reading-block > h3 { font-size: 17px; }
 
+/* 每一块的锚点层（W4-6 刀二）：它不占格子、不带边距，只把"这一块是哪一段"写进 DOM，
+   好让教学面的依据能滚过来。 */
 /* 阅读页的列表块保留自己的悬挂缩进：格线照旧铺过左侧内边距。 */
-.hud-surface .notebook .reading-body > p.list-block { padding-left: 15px; text-indent: -10px; }
+.hud-surface .notebook .reading-body > .reading-block > p.list-block { padding-left: 15px; text-indent: -10px; }
 
 /* 阅读页贴上去的东西（代码块、表格、图片）也只留一格，别用生成样式表里的 15px。 */
 .hud-surface .notebook .reading-body :is(.code-block, .md-table, .reading-image) {

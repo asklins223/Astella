@@ -135,6 +135,7 @@ import {
   noteLearningRoundV1Schema,
   ROUND_HISTORY_MAX_LIMIT_V1,
   roundDrivingQuestionSourceV1Schema,
+  roundTeachingViewV1Schema,
 } from "@ailearn/shared/note-learning-round-contracts";
 import { understandingTopologySnapshotV3Schema } from "@ailearn/shared/understanding-topology-v3-contracts";
 import { todayActivityV1Schema } from "@ailearn/shared/activity-surface-contracts";
@@ -563,6 +564,15 @@ const noteLearningRoundHistoryInputSchema = z.strictObject({
   // 上限在服务端合同那一格（同一个数），这里只做"坏值不往上传"。
   limit: z.number().int().min(1).max(ROUND_HISTORY_MAX_LIMIT_V1).optional(),
   before: uuidSchema.optional(),
+});
+// 39d W4-6 刀二：教学产物的两发。读的那一发只带 roundId；生成那一发多一个
+// `expectedRevision`（两发之间问题被改写或轮次被收尾时，后到的那一发必须失败）——
+// 生成**不带**任何正文或预算：解释怎么生成是服务端内核任务的事（W4-6 刀一）。
+const noteLearningRoundTeachingInputSchema = z.strictObject({ ...m1InputBase, roundId: uuidSchema });
+const noteLearningRoundExplainInputSchema = z.strictObject({
+  ...m1InputBase,
+  roundId: uuidSchema,
+  expectedRevision: z.number().int().min(1),
 });
 const noteLearningRoundCloseInputSchema = z.strictObject({
   ...m1InputBase,
@@ -2852,6 +2862,21 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
       input.meta.requestId,
     );
   }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundHistoryPageV1Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundTeaching, noteLearningRoundTeachingInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.getNoteLearningRoundTeaching(input.roundId, input.meta.requestId);
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, roundTeachingViewV1Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundExplain, noteLearningRoundExplainInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.explainNoteLearningRoundTeaching(
+      { roundId: input.roundId, expectedRevision: input.expectedRevision },
+      input.meta.requestId,
+    );
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, roundTeachingViewV1Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundClose, noteLearningRoundCloseInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "note.detail");
