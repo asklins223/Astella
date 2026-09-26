@@ -65,27 +65,43 @@ function integrationFiles(): string[] {
   return out.sort();
 }
 
-/** CI 那份点名单里的**注释行**不算点名（否则在说明里提一句就"注册"了）。 */
-function surfaceText(rel: string): string {
-  const text = readFileSync(join(REPO_ROOT, rel), "utf8");
-  if (!rel.endsWith(".yml")) return text;
-  return text.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
+/**
+ * 一个注册面里**真会执行这份文件**的那部分文本。
+ *
+ * package.json 只取 `scripts` 的值。动因（2026-09-27）：`apps/api/package.json` 里
+ * `@ailearn/shared` 那条依赖声明被粘上了两个集成测试路径（接点名单时锚错了行），
+ * 而"整个文件里出现过文件名就算注册"的旧口径当场判成已注册——那两份集测其实没进任何脚本、
+ * 一次都没跑过。同一处损坏还让 pnpm 装不动：谁跑一次 `pnpm run` 就会把 `apps/api/node_modules`
+ * 剪掉一半。⇒ 声明位置与执行位置在判据里必须是两个地方。
+ *
+ * CI 那份点名单里的**注释行**不算点名（否则在说明里提一句就"注册"了）。
+ */
+function registrationText(rel: string, raw: string): string {
+  if (rel.endsWith(".json")) {
+    const parsed = JSON.parse(raw) as { scripts?: Record<string, string> };
+    return Object.values(parsed.scripts ?? {}).join("\n");
+  }
+  if (rel.endsWith(".yml")) {
+    return raw.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
+  }
+  return raw;
 }
 
 function registeredNames(): Set<string> {
-  const haystack: string[] = [];
+  const parts: string[] = [];
   for (const rel of SURFACES) {
-    if (existsSync(join(REPO_ROOT, rel))) haystack.push(surfaceText(rel));
+    if (!existsSync(join(REPO_ROOT, rel))) continue;
+    parts.push(registrationText(rel, readFileSync(join(REPO_ROOT, rel), "utf8")));
   }
   for (const dir of SURFACE_DIRS) {
     const abs = join(REPO_ROOT, dir);
     if (!existsSync(abs)) continue;
     for (const entry of readdirSync(abs)) {
       const full = join(abs, entry);
-      if (statSync(full).isFile()) haystack.push(readFileSync(full, "utf8"));
+      if (statSync(full).isFile()) parts.push(readFileSync(full, "utf8"));
     }
   }
-  const joined = haystack.join("\n");
+  const joined = parts.join("\n");
   return new Set(
     integrationFiles()
       .filter((f) => joined.includes(f.split("/").pop()!))
@@ -107,6 +123,44 @@ test("注册面判据是灵敏的：被点名的算注册，没人提的不算",
     "CI 点名单里那份被判成未注册 ⇒ 判据读不到注册面");
   assert.ok(!registered.has("这一份不存在.integration.ts"),
     "一个没人提的名字被判成已注册 ⇒ 判据恒真");
+});
+
+test("注册口径是「会执行它的那一行」：依赖声明里出现文件名不算注册", () => {
+  // 09-27 真实形状：两份集测被粘进 @ailearn/shared 的 specifier，脚本里一份都没有。
+  const corrupt = JSON.stringify({
+    scripts: { test: "node --import tsx --test $(find src -name '*.test.ts')" },
+    dependencies: { "@ailearn/shared": "file:../../packages/shared src/dark-one.integration.ts" },
+  });
+  assert.ok(!registrationText("apps/api/package.json", corrupt).includes("dark-one.integration.ts"),
+    "package.json 的 dependencies 被当成注册面 ⇒ 粘在声明里的文件名会替一份没人跑的集测作证");
+  const honest = JSON.stringify({
+    scripts: { "test:companion:postgres": "node --import tsx --test src/integration-tests/dark-two.integration.ts" },
+    dependencies: { "@ailearn/shared": "file:../../packages/shared" },
+  });
+  assert.ok(registrationText("apps/api/package.json", honest).includes("dark-two.integration.ts"),
+    "脚本值里的点名也不算了 ⇒ 收窄把真注册一起切掉了");
+  // 本轮修好的那两份：现在只活在脚本值里，声明行已经干净。
+  for (const name of ["history-search-postgres.integration.ts", "proactive-hook-postgres.integration.ts"]) {
+    assert.ok(registeredNames().has(name), `${name} 没在任何脚本值里被点名（它仍是暗文件）`);
+  }
+  const apiManifest = JSON.parse(readFileSync(join(REPO_ROOT, "apps/api/package.json"), "utf8")) as
+    Record<string, unknown>;
+  const specifiers: Array<[string, string]> = [];
+  const collect = (node: unknown, at: string): void => {
+    if (typeof node === "string") { specifiers.push([at, node]); return; }
+    if (!node || typeof node !== "object") return;
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      collect(value, `${at}.${key}`);
+    }
+  };
+  // 只看声明位置（overrides 是嵌套的，要往下走一层）；scripts 是执行位置，取值本来就该带空格。
+  for (const group of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies", "overrides"]) {
+    if (group in apiManifest) collect(apiManifest[group], group);
+  }
+  const spaced = specifiers.filter(([, value]) => /\s/.test(value));
+  assert.deepEqual(spaced.map(([where]) => where), [],
+    `声明位置里出现了带空白的取值（${spaced.map(([where, value]) => `${where}=${JSON.stringify(value)}`).join(", ")}）：`
+    + "像把测试路径粘进了依赖声明——这种形状让 pnpm 装不动，旧口径还会替暗文件作证");
 });
 
 test("每一份集成测试要么有注册面，要么在待办清单里（清单只能变短）", () => {
