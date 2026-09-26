@@ -146,6 +146,8 @@ function installApi(
     blocks?: NoteBlockProjectionV1[];
     /** 轮次回读的第 N 次给什么（缺省 = 每次都给 `openRound` 那一份）。 */
     openSequence?: Record<string, unknown>[];
+    /** 网关那一发回的信封里那个派生格（默认「没动」）。 */
+    contentMoved?: boolean;
     /** 这一篇的轮次记录回读（缺省 = 空表，即"还没有过轮次"）。 */
     roundHistory?: Record<string, unknown>;
     /** 那一发读失败（走网关那一条形状）。 */
@@ -204,7 +206,11 @@ function installApi(
       const rows = options.openSequence ?? [options.openRound ?? null];
       const read = Math.min(openReads, rows.length - 1);
       openReads += 1;
-      return ok(rows[read] ?? null);
+      // 网关 `noteLearningRound.open` 回的是那一层信封（`{version, round, contentMoved}`），
+      // 不是轮次记录本身——替身照线上形状来，别替渲染层省一步。
+      const row = rows[read] ?? null;
+      return ok(row === null ? null
+        : { version: 1 as const, round: row, contentMoved: options.contentMoved ?? false });
     }),
       // 解释那一读：按调用次给（首读"还没讲过"，生成之后回读拿到那一条）。
       // 生成那一发自己走网关形状：失败时屏上不许装作已经讲过。
@@ -328,6 +334,8 @@ async function show(
     openRound?: Record<string, unknown> | null;
     blocks?: NoteBlockProjectionV1[];
     openSequence?: Record<string, unknown>[];
+    /** 网关那一发回的信封里那个派生格（默认「没动」）。 */
+    contentMoved?: boolean;
     roundHistory?: Record<string, unknown>;
     roundHistoryFails?: boolean;
     olderPages?: Record<string, unknown>[];
@@ -698,6 +706,16 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
    * 「正在改写…」，而改写真的在跑时写着「正在开始…」。两档各钉一条，且必须同一条用例里
    * 钉（只看空闲那一半，"把两个标签对调"这种改法照样绿）。
    */
+  it("这一轮冻的正文后来又保存过一版：那一行要说出来，没动时一个字不多", async () => {
+    const open = roundRow({ drivingQuestion: "为什么有索引还是慢", revision: 2 });
+    const moved = await show([], { openRound: open, contentMoved: true });
+    expect(moved.roundBlock()!.querySelector("[data-round-content-moved]")?.textContent)
+      .toContain(ROUND_COPY.contentMoved);
+
+    const still = await show([], { openRound: open });
+    expect(still.roundBlock()!.querySelector("[data-round-content-moved]")).toBeNull();
+  });
+
   it("那颗提交按钮：空闲时写动词，只有一次请求真的在途时才写「正在…」", async () => {
     const open = roundRow({ drivingQuestion: "判断为什么有索引，查询仍然可能慢", revision: 4 });
     const { api, roundBlock } = await show([], { openRound: open });

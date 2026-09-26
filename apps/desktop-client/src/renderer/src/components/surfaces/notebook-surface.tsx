@@ -112,6 +112,8 @@ type NotebookProjection = {
    * 不能把笔记本身顶掉。`null` 在这里是真值："这一篇现在没有进行中的一轮"。
    */
   readonly openRound: NoteLearningRoundV1Wire | null;
+  /** 这一轮冻的正文，与这一篇现在已保存的那一版不是同一版（服务端算的，见 D3 §3 第 2 层）。 */
+  readonly openRoundContentMoved: boolean;
   /**
    * 这一篇的轮次记录（PRD §10.3 读侧第一刀）。**空数组是真值**："这一篇还没有过一轮"，
    * 不是读失败——读失败走 `catch` 那条，同样是空表（这一块的纪律与上面两读一致：
@@ -276,6 +278,11 @@ export const ROUND_COPY = {
    * 恢复不需要「暂停」那颗欠的那道活跃度判据——它是用户明确的动作。
    */
   resume: "继续这一轮",
+  /**
+   * 这一轮冻的正文后来又保存过一版。与教学面那句 `teaching.staleVersion`（依据不再在这里定位）
+   * 不是一句话，也与笔记页那颗"有内容更新"的徽标不是一句话（D3 §5.1 后果②：徽标说内容，这句说这一轮）。
+   */
+  contentMoved: "这一轮当时用的正文，这一篇后来又保存过一版。",
   resuming: "正在继续…",
   /**
    * 迟到的那一句那三格（§16.39）。措辞按伴星那条口径走：说**这一发没进去**这个事实，
@@ -780,15 +787,20 @@ export function NotebookSurface() {
     // 39d W4-3 第三刀：这一篇有没有未完成的那一轮。和上面那两读一样自己吞异常——
     // 老网关没有这条路由时不能让笔记页变成错误页。
     let openRound: NotebookProjection["openRound"] = null;
+    let openRoundContentMoved = false;
     try {
       const roundResponse = await api.noteLearningRound.open({
         meta: createRequestMeta(epochRef.current),
         noteId: note.noteId,
       });
       if (roundResponse.workspaceEpoch) epochRef.current = roundResponse.workspaceEpoch;
-      openRound = unwrapGatewayResult(roundResponse);
+      // 回的是那一层信封：`contentMoved` 是读侧现算的派生格，渲染层不许自己比版本号。
+      const view = unwrapGatewayResult(roundResponse);
+      openRound = view?.round ?? null;
+      openRoundContentMoved = view?.contentMoved ?? false;
     } catch {
       openRound = null;
+      openRoundContentMoved = false;
     }
 
     // 教学产物那一读（W4-6 刀二）：只有真有一轮在进行中才有得读——没轮次就没有
@@ -826,6 +838,7 @@ export function NotebookSurface() {
       source,
       sourceFailure,
       openRound,
+      openRoundContentMoved,
       roundHistory,
       roundTeachingView,
       objective: focus && focus.objective.sources.primaryNote?.noteId === note.noteId
@@ -858,6 +871,7 @@ export function NotebookSurface() {
   /** 这一篇的学习目标主行动；读不到就是 null，那一行整个不画（W4-2 第三刀）。 */
   const noteObjective = data?.noteObjective ?? null;
   const openRound = data?.openRound ?? null;
+  const openRoundContentMoved = data?.openRoundContentMoved ?? false;
   const roundHistory = data?.roundHistory ?? null;
   /** 这一轮当前问题下的那条解释；`null` = 还没讲过（W4-6 刀二）。 */
   const roundTeaching = data?.roundTeachingView?.teaching ?? null;
@@ -2215,6 +2229,11 @@ export function NotebookSurface() {
           {openRound && !roundEditing ? (
             <>
               <p className="small notebook-note" data-round-open-line="true">{ROUND_COPY.openLine(openRound.drivingQuestion)}</p>
+              {openRoundContentMoved ? (
+                <p className="small notebook-note" data-round-content-moved="true">
+                  {ROUND_COPY.contentMoved}
+                </p>
+              ) : null}
               <p className="small notebook-note">{ROUND_COPY.revisedLine(openRound.drivingQuestionRevision)}</p>
               <div className="notebook-objective__choices">
                 {/* 只有**停住**的那一轮摆这一颗（phase 读的是服务端那一行，不是本机猜的）。

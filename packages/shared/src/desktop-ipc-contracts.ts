@@ -155,6 +155,7 @@ import {
   noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundPersonalHistoryPageV1Schema,
   noteLearningRoundV1Schema,
+  noteLearningRoundViewV1Schema,
   roundDrivingQuestionSourceV1Schema,
   roundTeachingViewV1Schema,
 } from "./note-learning-round-contracts.ts";
@@ -2407,8 +2408,13 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
    * 三项预算也不在这里（§18.4 的试用前冻结项，由服务端那份常量签发）。
    */
   readonly noteLearningRound: {
+    /**
+     * 回的是**那一层信封**（`{version, round, contentMoved}`），不是轮次记录本身：
+     * `contentMoved`（这一轮冻的正文与这一篇现在已保存的那一版不同）是读侧现算的派生格，
+     * 塞进 `noteLearningRoundV1Schema` 就等于宣称它是轮次那一行的某一列。
+     */
     open(input: { meta: RequestMetaV1; noteId: Uuid }): Promise<
-      GatewayResultV1<z.infer<typeof noteLearningRoundV1Schema> | null>
+      GatewayResultV1<z.infer<typeof noteLearningRoundViewV1Schema> | null>
     >;
     create(input: {
       meta: RequestMetaV1;

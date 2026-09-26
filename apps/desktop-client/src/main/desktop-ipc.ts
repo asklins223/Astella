@@ -134,6 +134,7 @@ import {
   noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundPersonalHistoryPageV1Schema,
   noteLearningRoundV1Schema,
+  noteLearningRoundViewV1Schema,
   ROUND_HISTORY_MAX_LIMIT_V1,
   roundDrivingQuestionSourceV1Schema,
   roundTeachingViewV1Schema,
@@ -2875,7 +2876,7 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     requireM2Route(contract, "note.detail");
     assertEpoch(input.meta, activeWorkspaceEpoch);
     return gateway.getOpenNoteLearningRound(input.noteId, input.meta.requestId);
-  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundV1Schema.nullable());
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundViewV1Schema.nullable());
 
   installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundCreate, noteLearningRoundCreateInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "note.detail");

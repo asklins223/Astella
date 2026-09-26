@@ -299,6 +299,7 @@ import {
   noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundPersonalHistoryPageV1Schema,
   noteLearningRoundViewV1Schema,
+  type NoteLearningRoundViewV1,
   ROUND_HISTORY_DEFAULT_LIMIT_V1,
   roundTeachingViewV1Schema,
   type NoteLearningRoundHistoryV1,
@@ -1986,7 +1987,7 @@ export class DesktopGateway {
    * 把"任何 404 都当没有"读出来，症状是登录过期/路径写错也一律显示成
    * "这篇还没开始过"，那比多一条红更贵。
    */
-  async getOpenNoteLearningRound(noteId: string, requestId?: string): Promise<NoteLearningRoundV1Wire | null> {
+  async getOpenNoteLearningRound(noteId: string, requestId?: string): Promise<NoteLearningRoundViewV1 | null> {
     await this.ensureConnected(requestId);
     const result = await this.request(
       `/v2/notes/${this.safeUuid(noteId)}/learning-round`,
@@ -2004,7 +2005,7 @@ export class DesktopGateway {
     }
     const parsed = noteLearningRoundViewV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data.round;
+    return parsed.data;
   }
 
   /**
