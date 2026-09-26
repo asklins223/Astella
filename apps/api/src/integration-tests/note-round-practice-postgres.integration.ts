@@ -62,7 +62,7 @@ let app: Awaited<ReturnType<typeof Fastify>>;
 
 const body = (res: { body: string }): Record<string, unknown> => JSON.parse(res.body) as Record<string, unknown>;
 
-async function call(token: string, method: "POST" | "GET", url: string, payload?: Record<string, unknown>) {
+async function call(token: string, method: "POST" | "GET" | "PATCH", url: string, payload?: Record<string, unknown>) {
   return app.inject({
     method,
     url,
@@ -291,9 +291,116 @@ test("结算回轮次：结论读得出来，且轮次一个字没动（不重�
     const rounds = await fixtureSql`SELECT count(*)::int AS total FROM note_learning_rounds WHERE note_id = ${scenario.noteWithObjective}`;
     assert.equal(Number(rounds[0]?.total ?? 0), 1, "结算之后冒出了第二条轮次");
 
+    // 时序那一半的对照：这一场是**先判完再收尾**的，所以它属于"当时的结算"，
+    // 记录里那一格必须是 null。没有这一读，"晚于收尾"那个谓词其实没被任何断言读过
+    // （把 gt() 换成 isNotNull() 也照样全绿——本轮实测过一次，就是这么发现的）。
+    const lateGuard = await call(scenario.token, "PATCH", `/v2/note-learning-rounds/${round.roundId as string}`, {
+      // 结算不推进轮次那一发（上面刚断过 revision 一字未动），所以 CAS 用的就是开出来那一版。
+      expectedRevision: round.revision as number,
+      action: { kind: "close", outcome: "partial" },
+    });
+    assert.equal(lateGuard.statusCode, 200, `收尾应当成功：${lateGuard.statusCode} ${lateGuard.body}`);
+    const guardHistory = await call(scenario.token, "GET", `/v2/notes/${scenario.noteWithObjective}/learning-rounds`);
+    const guardItems = (JSON.parse(guardHistory.body) as { items: Record<string, unknown>[] }).items;
+    const guardRow = guardItems.find((item) => item.roundId === round.roundId);
+    assert.ok(guardRow, "记录里读不到刚收尾的这一轮");
+    assert.equal(guardRow.followUpSettledAt, null,
+      `先判完再收尾也被说成"后来才判出来"：${JSON.stringify(guardRow)}`);
+
     // 结算不重播奖励／不生成解释：练习是练习，不会顺手产出一条教学产物。
     const teachings = await fixtureSql`SELECT count(*)::int AS total FROM note_learning_round_teachings WHERE round_id = ${round.roundId as string}`;
     assert.equal(Number(teachings[0]?.total ?? 0), 0, "一场练习不该生成教学产物");
+  } finally {
+    await teardown(scenario);
+  }
+});
+
+/**
+ * §10.3 末段那一句："原内容与原回执不可覆盖，迟到判定和更正以**带时间的补充记录**展示，
+ * 区分'当时的结算'与'后续确认'"（39d W4-8 刀三）。这一条走的是**真路径**：
+ * 先把这一轮收尾，再让那一场的结算落下来——于是记录里那一行要出现"后来才判出来"，
+ * 而那一轮自己的行（问题、结论、计数器）一个字节都不许被这笔迟到的判定改动。
+ */
+test("收尾之后才判出来的那一笔：作为带时间的补充回执挂回原轮，不改当时那一格", async () => {
+  const scenario = await setup();
+  try {
+    const round = await openRound(scenario.token, scenario.noteWithObjective, "先收尾、后判出来的那一轮？");
+    const before = await readTeaching(scenario.token, round.roundId as string);
+    const created = await startPractice(scenario, before.practiceStart!);
+    const scope = { workspaceId: scenario.seeded.workspaceId, userId: scenario.seeded.userId };
+
+    const view = await withWorkspaceTransaction(scope, (tx) => getRunPublicView(tx, { ...scope, runId: created.runId }));
+    const task = view.activeTask!;
+    const variant = task.activeVariant;
+    await withWorkspaceTransaction(scope, (tx) => submitArtifact(tx, {
+      ...scope,
+      runId: created.runId,
+      taskId: view.activeTaskId!,
+      request: {
+        version: 1,
+        variantId: variant.variantId,
+        variantRevision: variant.revision,
+        runRevision: view.revision,
+        taskRevision: task.revision,
+        inputSchemaHash: variant.inputSchemaHash,
+        payload: { kind: "declared_unable", reasonCode: "cannot_recall" },
+        idempotencyKey: `w48-late-${randomUUID()}`,
+      },
+    }));
+
+    // 先收尾（这一发的 CAS 用的是开出来那一版；它不碰 run——run 留在 assessing 里等结算）。
+    const closed = await call(scenario.token, "PATCH", `/v2/note-learning-rounds/${round.roundId as string}`, {
+      expectedRevision: round.revision as number,
+      action: { kind: "close", outcome: "partial" },
+    });
+    assert.equal(closed.statusCode, 200, `收尾应当成功：${closed.statusCode} ${closed.body}`);
+    const closedRow = (await fixtureSql`
+      SELECT closed_at, phase, revision, driving_question, driving_question_revision
+        FROM note_learning_rounds WHERE id = ${round.roundId as string}`)[0] as Record<string, unknown>;
+    assert.equal(closedRow.phase, "closed");
+
+    // 收尾之后、结算之前先读一次：这一格此刻**必须还是空的**。有了这一读，
+    // 下一条那个"有值"才证得清是算出来的，不是替身或默认值一直挂在那儿。
+    const historyBeforeLate = await call(scenario.token, "GET", `/v2/notes/${scenario.noteWithObjective}/learning-rounds`);
+    assert.equal(historyBeforeLate.statusCode, 200, `读这一篇的记录应当成功：${historyBeforeLate.statusCode} ${historyBeforeLate.body}`);
+    const beforeLateParsed = JSON.parse(historyBeforeLate.body) as { items?: Record<string, unknown>[] };
+    assert.ok(Array.isArray(beforeLateParsed.items), `回信里没有 items：${historyBeforeLate.body.slice(0, 400)}`);
+    const beforeLateItems = beforeLateParsed.items;
+    const beforeLate = beforeLateItems.find((item) => item.roundId === round.roundId);
+    assert.ok(beforeLate, "记录里读不到刚收尾的这一轮");
+    assert.equal(beforeLate.followUpSettledAt, null,
+      `结算还没发生就有"后来才判出来"：${JSON.stringify(beforeLate)}`);
+
+    // 收尾之后才把结算推上去：这就是"迟到的那一笔"。
+    let phase = "";
+    for (let tick = 0; tick < 8; tick += 1) {
+      const result = await runLearningRunProcessingTick(`w48-late-${randomUUID()}`, 10);
+      assert.equal(result.failed, 0, `tick 报 failed=${result.failed}`);
+      const probe = await withWorkspaceTransaction(scope, (tx) => getRunPublicView(tx, { ...scope, runId: created.runId }));
+      phase = probe.phase;
+      if (phase === "completed" || phase === "checkpoint") break;
+    }
+    assert.equal(phase, "completed", "这一场练习走不到终态");
+
+    const history = await call(scenario.token, "GET", `/v2/notes/${scenario.noteWithObjective}/learning-rounds`);
+    assert.equal(history.statusCode, 200, `迟到之后读记录应当成功：${history.statusCode} ${history.body.slice(0, 300)}`);
+    const items = (JSON.parse(history.body) as { items: Record<string, unknown>[] }).items;
+    const mine = items.find((item) => item.roundId === round.roundId);
+    assert.ok(mine, "记录里读不到这一轮");
+    assert.equal(typeof mine.followUpSettledAt, "string",
+      `结算发生在收尾之后，那一格却是空的：${JSON.stringify(mine)}`);
+    assert.ok(new Date(String(mine.followUpSettledAt)).getTime() >= new Date(String(closedRow.closed_at)).getTime(),
+      `补充回执的时刻不早于收尾：${String(mine.followUpSettledAt)} vs ${String(closedRow.closed_at)}`);
+
+    // 迟到那一笔不许改动"当时"那一格：问题、计数器与收尾时刻一字未动
+    // （两次 SELECT 必须同一列集，否则这条 deepEqual 比的是形状不是事实——第一版就是这么假的红）。
+    const afterRow = (await fixtureSql`
+      SELECT phase, revision, driving_question, driving_question_revision, closed_at
+        FROM note_learning_rounds WHERE id = ${round.roundId as string}`)[0] as Record<string, unknown>;
+    assert.deepEqual(afterRow, closedRow, "迟到的结算改动了轮次行（当时的结算与后续确认必须分开）");
+
+    // 收尾与结算的**先后**是这一格唯一的内容：把两读放在一起，
+    // "任何一笔结算都被说成后续确认"这种写法当场红（上面那一读就是它的对照）。
   } finally {
     await teardown(scenario);
   }

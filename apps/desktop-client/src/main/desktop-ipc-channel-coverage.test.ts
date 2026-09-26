@@ -276,6 +276,8 @@ describe("IPC 通道覆盖对账", () => {
         // 穿得过 IPC 的 strictObject、不会被哪一层悄悄丢掉"（`totalCount` 那一课的形状）。
         actualModes: ["explained", "practiced"],
         systemUncertain: true,
+        // 「后续确认」也是必填格（同 `totalCount` 那一课：缺它=那一发在本机就判成合同不合规）
+        followUpSettledAt: "2026-09-26T01:02:03.000Z",
         startedAt: "2026-09-25T04:00:00.000Z",
         closedAt: "2026-09-25T05:00:00.000Z",
       }],
@@ -364,6 +366,8 @@ describe("IPC 通道覆盖对账", () => {
         drivingQuestionRevision: 2,
         actualModes: ["explained", "practiced"],
         systemUncertain: true,
+        // 「后续确认」也是必填格（同 `totalCount` 那一课：缺它=那一发在本机就判成合同不合规）
+        followUpSettledAt: "2026-09-26T01:02:03.000Z",
         startedAt: "2026-09-25T04:00:00.000Z",
         closedAt: "2026-09-25T05:00:00.000Z",
         noteId: NOTE_ID,

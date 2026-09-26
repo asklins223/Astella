@@ -172,6 +172,7 @@ function roundRecordItem(overrides: Record<string, unknown> = {}) {
     drivingQuestionRevision: 1,
     actualModes: ["explained", "practiced"],
     systemUncertain: false,
+    followUpSettledAt: null,
     startedAt: "2026-09-24T02:00:00.000Z",
     closedAt: "2026-09-24T03:00:00.000Z",
     noteId: "a1111111-1111-4111-8111-111111111111",
@@ -512,6 +513,8 @@ describe("all-spaces scope", () => {
     // 「判不准」那一格只有服务端报了才有；没报的那一行一个字都不多。
     expect(rows[0].textContent).not.toContain("这次有我们判不准的地方");
     expect(rows[1].textContent).toContain("这次有我们判不准的地方");
+    // 「后来才判出来」这一格：没有时刻就一个字都不多（不猜、不补默认）。
+    expect(rows[0].textContent).not.toContain("后来才判出来");
     // 还有更早的时，那句只报"列到这里"，不替整本记录报篇数；总数取服务端那一份。
     expect(screen.getByText("我开过 7 轮，这里列了最近 2 轮，更早的还能看。")).toBeTruthy();
   });

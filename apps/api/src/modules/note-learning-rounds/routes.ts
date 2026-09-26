@@ -134,6 +134,7 @@ function roundHistoryItemV1(
       ...(facts.practicedRoundIds.has(row.id) ? ["practiced" as const] : []),
     ],
     systemUncertain: facts.uncertainRoundIds.has(row.id),
+    followUpSettledAt: facts.followUpSettledAtByRoundId.get(row.id) ?? null,
     startedAt: row.createdAt.toISOString(),
     closedAt: row.closedAt ? row.closedAt.toISOString() : null,
   };

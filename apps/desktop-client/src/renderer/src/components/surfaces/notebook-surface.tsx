@@ -302,6 +302,7 @@ export const ROUND_COPY = {
    */
   historyMode: ROUND_RECORD_COPY_V1.mode,
   historyUncertain: ROUND_RECORD_COPY_V1.uncertain,
+  followUp: ROUND_RECORD_COPY_V1.followUp,
   historyOutcome: ROUND_RECORD_COPY_V1.outcome,
   /**
    * 教学面（39d W4-6 刀二）。这一轮讲没讲过、按哪一版讲的、依据是哪几段，
@@ -2487,6 +2488,11 @@ export function NotebookSurface() {
                 {item.actualModes.length > 0 ? (
                   <span className="small notebook-round-history__modes" data-round-history-modes="true">
                     {roundRecordModesLabelV1(item.actualModes)}
+                  </span>
+                ) : null}
+                {item.followUpSettledAt ? (
+                  <span className="small notebook-round-history__follow-up" data-round-history-follow-up="true">
+                    {ROUND_COPY.followUp(roundRecordDayV1(item.followUpSettledAt))}
                   </span>
                 ) : null}
                 {item.systemUncertain ? (

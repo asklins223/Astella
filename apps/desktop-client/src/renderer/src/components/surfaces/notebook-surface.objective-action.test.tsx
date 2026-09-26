@@ -934,6 +934,7 @@ function historyItem(overrides: Record<string, unknown> = {}) {
     // 不是可选项——要验"讲过／练过／判不准"的用例必须显式给 overrides。
     actualModes: [],
     systemUncertain: false,
+    followUpSettledAt: null,
     startedAt: "2026-09-24T02:00:00.000Z",
     closedAt: "2026-09-24T03:00:00.000Z",
     ...overrides,
@@ -1036,6 +1037,20 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
     expect(rows[3]).not.toContain("讲过");
     expect(rows[3]).not.toContain("练过");
     expect(rows[3]).not.toContain(ROUND_COPY.historyUncertain);
+  });
+
+  it("后来才判出来那一格：只有服务端给了时刻才上屏，且不改那一行说的那一版", async () => {
+    await show([], {
+      roundHistory: historyOf([
+        historyItem({ roundId: "f1111111-1111-4111-8111-111111111111", followUpSettledAt: "2026-09-26T01:02:03.000Z" }),
+        historyItem({ roundId: "f2222222-2222-4222-8222-222222222222" }),
+      ]),
+    });
+    const followUps = [...document.querySelectorAll("[data-round-history-follow-up]")].map((node) => node.textContent);
+    // 那句带时间（§10.3 要的是"补充记录"而不是把"当时"改掉），所以必须有日子。
+    expect(followUps).toEqual(["后来才判出来：2026年9月26日"]);
+    const rows = historyRows();
+    expect(rows[1]).not.toContain("后来才判出来");
   });
 
   it("翻两页都接在后面；翻到最后一页才许说「开过 N 轮」，那颗也随之消失", async () => {

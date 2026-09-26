@@ -14,7 +14,7 @@
  * 比 `expectedRevision` → 写的时候 `WHERE revision = 读过的那一版` 再比一次 rowCount。
  * 两道都要，少一道就是 lost update：N#7-9 那条注释在 journey 侧写的就是这个。
  */
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import { DomainError } from "@ailearn/shared";
 import {
@@ -25,7 +25,7 @@ import {
   type NoteLearningRoundRow,
   type NoteLearningRoundTeachingRow,
 } from "@ailearn/shared/db-schema/note-learning-rounds";
-import { learningRuns } from "@ailearn/shared/db-schema/learning-runs";
+import { learningRunEvents, learningRuns } from "@ailearn/shared/db-schema/learning-runs";
 import { notes } from "@ailearn/shared/db-schema/note";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import {
@@ -380,6 +380,8 @@ export type RoundHistoryFactsV1 = {
   explainedRoundIds: ReadonlySet<string>;
   practicedRoundIds: ReadonlySet<string>;
   uncertainRoundIds: ReadonlySet<string>;
+  /** §10.3 的「后续确认」：本轮收尾**之后**才落下来的结算时刻（一轮最多一个，取最晚那笔）。 */
+  followUpSettledAtByRoundId: ReadonlyMap<string, string>;
 };
 
 export async function readRoundHistoryFactsV1(
@@ -387,7 +389,12 @@ export async function readRoundHistoryFactsV1(
   roundIds: readonly string[],
 ): Promise<RoundHistoryFactsV1> {
   if (roundIds.length === 0) {
-    return { explainedRoundIds: new Set(), practicedRoundIds: new Set(), uncertainRoundIds: new Set() };
+    return {
+      explainedRoundIds: new Set(),
+      practicedRoundIds: new Set(),
+      uncertainRoundIds: new Set(),
+      followUpSettledAtByRoundId: new Map(),
+    };
   }
   const taughtRows = await tx
     .selectDistinct({ roundId: noteLearningRoundTeachings.roundId })
@@ -403,6 +410,39 @@ export async function readRoundHistoryFactsV1(
       sql`${learningRuns.origin} ->> 'kind' = 'note_round'`,
       inArray(sql`${learningRuns.origin} ->> 'roundId'`, [...roundIds]),
     ));
+  /**
+   * 「后续确认」那一格（§10.3：迟到判定以**带时间**的补充记录展示）。只认
+   * `learning_commit.completed` 那一笔——它是结算真落库的时刻；
+   * `learning_assessment.completed` 只是"判完了"，可能根本没走到结算，认它会把
+   * "判了但没挂上"说成"后来确认过"。与本轮 `closed_at` 比，严格大于才算"后来"。
+   * 收尾之后被显式放弃的那一场不写这笔事件，所以也不会假报。
+   */
+  const followUpRows = await tx
+    .select({
+      roundId: noteLearningRounds.id,
+      settledAt: sql<Date>`max(${learningRunEvents.occurredAt})`,
+    })
+    .from(noteLearningRounds)
+    .innerJoin(learningRuns, sql`${learningRuns.origin} ->> 'roundId' = ${noteLearningRounds.id}::text`)
+    .innerJoin(learningRunEvents, eq(learningRunEvents.runId, learningRuns.id))
+    .where(and(
+      inArray(noteLearningRounds.id, [...roundIds]),
+      isNotNull(noteLearningRounds.closedAt),
+      eq(learningRunEvents.eventType, "learning_commit.completed"),
+      gt(learningRunEvents.occurredAt, noteLearningRounds.closedAt),
+    ))
+    .groupBy(noteLearningRounds.id);
+  const followUpSettledAtByRoundId = new Map<string, string>(
+    followUpRows
+      .filter((row) => row.settledAt !== null)
+      // `max()` 走的是裸 sql 片段，drizzle 不替它做类型映射：驱动可能给回 Date，
+      // 也可能给回 ISO 文本（与连接池/解析设置有关）。两种都收，但都归一成合同那一份
+      // 带偏移的 ISO——不能把"拿到的形状"直接端进回信。
+      .map((row) => {
+        const value = row.settledAt as Date | string;
+        return [row.roundId, value instanceof Date ? value.toISOString() : new Date(value).toISOString()];
+      }),
+  );
   const explainedRoundIds = new Set(taughtRows.map((row) => row.roundId));
   const practicedRoundIds = new Set<string>();
   const uncertainRoundIds = new Set<string>();
@@ -410,7 +450,7 @@ export async function readRoundHistoryFactsV1(
     practicedRoundIds.add(row.roundId);
     if (row.outcome === "not_assessable") uncertainRoundIds.add(row.roundId);
   }
-  return { explainedRoundIds, practicedRoundIds, uncertainRoundIds };
+  return { explainedRoundIds, practicedRoundIds, uncertainRoundIds, followUpSettledAtByRoundId };
 }
 
 /**

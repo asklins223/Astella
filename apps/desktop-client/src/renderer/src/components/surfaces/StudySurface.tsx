@@ -418,6 +418,7 @@ function RoundRecordStream({
                   {item.noteTitle} · {roundHistoryStateLabelV1(item)}
                   {item.actualModes.length > 0 ? ` · ${roundRecordModesLabelV1(item.actualModes)}` : ""}
                   {item.systemUncertain ? ` · ${ROUND_RECORD_COPY_V1.uncertain}` : ""}
+                  {item.followUpSettledAt ? ` · ${ROUND_RECORD_COPY_V1.followUp(roundRecordDayV1(item.followUpSettledAt))}` : ""}
                 </span>
               </div>
             </li>

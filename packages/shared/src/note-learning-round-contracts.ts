@@ -169,6 +169,18 @@ export const noteLearningRoundHistoryItemV1Schema = z.strictObject({
    * 所以这一格不许被复用成"表现不好"，也不许把 `declared_unable`（她明说不会）算进来。
    */
   systemUncertain: z.boolean(),
+  /**
+   * 「后续确认」那一格（§10.3：迟到判定和更正以**带时间**的补充记录展示，区分
+   * "当时的结算"与"后续确认"）。取这一轮的练习 run 里**晚于本轮 `closedAt`** 的
+   * 最后一笔结算时刻；没有就是 null。
+   *
+   * 三个不是null也不行、是null也不行的边界，都在这一格的语义里：
+   *  - 轮次还开着（`closedAt` 为 null）⇒ 这一格必为 null：还没"当时"，谈不上"后来"；
+   *  - run 自己还在跑（没结算）⇒ null，不能把"没判完"说成"后来没判出来"；
+   *  - 收尾之后 run 被显式放弃 ⇒ 那一发不产生结算事件，也就不会假报"后来确认过"。
+   * 必填（不给 `.optional()`）与 `totalCount` 同一条理由：缺格会被读成"这次没查到"。
+   */
+  followUpSettledAt: z.string().datetime({ offset: true }).nullable(),
   startedAt: z.string().datetime({ offset: true }),
   closedAt: z.string().datetime({ offset: true }).nullable(),
 });

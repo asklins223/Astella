@@ -37,6 +37,8 @@ export const ROUND_RECORD_COPY_V1 = {
     practiced: "练过",
   } as Record<"explained" | "practiced", string>,
   uncertain: "这次有我们判不准的地方",
+  /** §10.3：迟到判定是**带时间的补充记录**，不是把"当时"那一格改掉。 */
+  followUp: (day: string) => `后来才判出来：${day}`,
   loadOlder: "看更早的几轮",
   loadingOlder: "正在取更早的…",
   /**

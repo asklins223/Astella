@@ -154,6 +154,31 @@ try {
       and (n.share_scope = 'shared' or n.created_by = '${owner[1]}')
   `))
 
+  /**
+   * 造一笔"迟到的结算"：给最新那一轮挂一场练习 run，再补一条**晚于该轮 closed_at** 的
+   * 结算事件——这就是 §10.3 那格的全部输入，不需要模型、不花钱。
+   * （对照另有一层：这一轮自己收尾之前的那些结算，永远不该出现在这一格里。）
+   */
+  const lateRoundId = sql(`select id from note_learning_rounds where note_id = '${noteIdA}' order by created_at desc limit 1`)
+  readings.lateRoundId = lateRoundId
+  sql(`
+    insert into learning_runs (id, workspace_id, user_id, origin, return_target, target_fingerprint, goal, phase)
+    select gen_random_uuid(), r.workspace_id, r.user_id,
+           jsonb_build_object('kind','note_round','roundId',r.id,'noteId',r.note_id,
+                              'objectiveId',gen_random_uuid()::text,'keyPointId',gen_random_uuid()::text),
+           jsonb_build_object('kind','note_round','roundId',r.id,'noteId',r.note_id),
+           '${'a'.repeat(64)}', 'stabilize', 'completed'
+    from note_learning_rounds r where r.id = '${lateRoundId}'
+  `)
+  sql(`
+    insert into learning_run_events (id, run_id, workspace_id, user_id, sequence, event_type, payload, occurred_at)
+    select gen_random_uuid(), lr.id, lr.workspace_id, lr.user_id, 1, 'learning_commit.completed', '{}'::jsonb,
+           coalesce(r.closed_at, now()) + interval '30 minutes'
+    from learning_runs lr
+    join note_learning_rounds r on r.id::text = lr.origin ->> 'roundId'
+    where r.id = '${lateRoundId}'
+  `)
+
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
   const expandRail = page.getByRole('button', { name: '展开目录' })
@@ -187,6 +212,12 @@ try {
 
   const lead = (await block.locator('h2 span').first().textContent())?.trim() ?? ''
   readings.leadSentence = lead
+  const followUpRows = (await rowLocators().allTextContents())
+    .map((text, index) => ({ index, text: text.replace(/\s+/g, ' '), hit: text.includes('后来才判出来') }))
+    .filter((row) => row.hit);
+  readings.followUpRows = followUpRows
+  check('「后来才判出来」只挂在真有一笔迟到结算的那一行上', followUpRows.length === 1, followUpRows)
+
   check('那句总数报的是服务端那份，并且说清只列了最近 10 行',
     lead === `我开过 ${readings.expectedTotal} 轮，这里列了最近 10 轮，更早的还能看。`, lead)
 
@@ -209,6 +240,7 @@ try {
     const ids = createdNoteIds.join("','")
     sql(`BEGIN; SELECT set_config('app.allow_history_mutation','on',true);
       DELETE FROM note_learning_round_teachings WHERE round_id IN (SELECT id FROM note_learning_rounds WHERE note_id IN ('${ids}'));
+      DELETE FROM learning_runs WHERE origin ->> 'roundId' IN (SELECT id::text FROM note_learning_rounds WHERE note_id IN ('${ids}'));
       DELETE FROM note_learning_rounds WHERE note_id IN ('${ids}');
       COMMIT;`)
   }
