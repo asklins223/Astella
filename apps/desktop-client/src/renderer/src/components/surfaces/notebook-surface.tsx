@@ -272,6 +272,12 @@ export const ROUND_COPY = {
   saving: "正在改写…",
   end: "先到这里",
   ending: "正在收尾…",
+  /**
+   * 「继续这一轮」（39d W4-5 ④ 的前置）：只有**停住**的那一轮摆这一颗。
+   * 恢复不需要「暂停」那颗欠的那道活跃度判据——它是用户明确的动作。
+   */
+  resume: "继续这一轮",
+  resuming: "正在继续…",
   fromStructure: "或从这篇的小节里另选一句：",
   /**
    * 那一块的第一句。`hasMore` 会改这句话的**量词**：只回了最近几条时报"开过 N 轮"
@@ -369,8 +375,15 @@ export function roundPracticeStateLabelV1(practice: Pick<RoundPracticeV1, "phase
   return "正在进行";
 }
 
+/**
+ * 轮次那一块里此刻在途的那一发。`"resume"` 与其余四档共用同一个状态，因为屏上那一整块
+ * （那颗提交按钮、教学面那几颗、输入框）的禁用判据是"这一块的某一发在途"——分成两份
+ * 状态就会有一处忘了判，症状是"点两下发出两发"。
+ */
+export type RoundBusyV1 = "start" | "revise" | "end" | "resume" | null;
+
 export function roundSubmitLabelV1(
-  busy: "start" | "revise" | "end" | null,
+  busy: RoundBusyV1,
   hasOpenRound: boolean,
 ): string {
   if (busy === "start") return ROUND_COPY.starting;
@@ -618,7 +631,7 @@ export function NotebookSurface() {
   const [roundDraft, setRoundDraft] = useState("");
   const [roundStarter, setRoundStarter] = useState<string | null>(null);
   const [roundEditing, setRoundEditing] = useState(false);
-  const [roundBusy, setRoundBusy] = useState<"start" | "revise" | "end" | null>(null);
+  const [roundBusy, setRoundBusy] = useState<RoundBusyV1>(null);
   /**
    * 翻出来的那几页（第一页由投影自己读，往后每页累加在这里）。存着 `noteId` 并按它过滤，
    * 而不是"切篇时记得清空"——后者靠一次副作用，漏一次就把上一篇的记录接在这一篇下面。
@@ -1409,6 +1422,36 @@ export function NotebookSurface() {
   };
 
   /**
+   * 「继续这一轮」= resume：把停住的那一轮接回进行中（39d W4-5 ④ 的前置）。
+   *
+   * 与另外三发同一形状：①带读过的那一版 `expectedRevision`（这一轮在别处被推进过时，
+   * 这一发要失败并拿到现在那一版）；②成功后走 **silent 回读**——屏上那一整块换的是
+   * 服务端读回来的那一份，不是这一发的回执自己拼的（刀二那条纪律）；③失败也回读一次，
+   * 留一句如实的话。已经 active 的轮次重复点不出第二个状态：noop 由服务端判（不推进计数器）。
+   */
+  const resumeNoteRound = async () => {
+    const api = desktopApi();
+    if (!api || !openRound || roundBusy) return;
+    setRoundBusy("resume");
+    setRoundFailure(null);
+    try {
+      const response = await api.noteLearningRound.resume({
+        meta: createRequestMeta(epochRef.current),
+        roundId: openRound.roundId,
+        expectedRevision: openRound.revision,
+      });
+      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+      unwrapGatewayResult(response);
+      await reload({ silent: true });
+    } catch (error) {
+      setRoundFailure(gatewayErrorMessage(error));
+      await reload({ silent: true });
+    } finally {
+      setRoundBusy(null);
+    }
+  };
+
+  /**
    * 「先讲讲这一节」：让服务端生成这一轮当前问题下的一条解释（W4-6 刀二）。
    *
    * 三件事刻意与别的写动作同一形状：①带 `expectedRevision`——两发之间问题被改写或
@@ -2144,6 +2187,19 @@ export function NotebookSurface() {
               <p className="small notebook-note">{ROUND_COPY.openLine(openRound.drivingQuestion)}</p>
               <p className="small notebook-note">{ROUND_COPY.revisedLine(openRound.drivingQuestionRevision)}</p>
               <div className="notebook-objective__choices">
+                {/* 只有**停住**的那一轮摆这一颗（phase 读的是服务端那一行，不是本机猜的）。
+                    放在同一行里而不是另起一块：这一行本来就是"选一条"（`flex-wrap: wrap`），
+                    窄屏换行，它不与「先到这里」抢位置——那两颗都是这一轮的出口。 */}
+                {openRound.phase === "paused" ? (
+                  <button
+                    type="button"
+                    className="button primary"
+                    disabled={roundBusy !== null}
+                    onClick={() => void resumeNoteRound()}
+                  >
+                    {roundBusy === "resume" ? ROUND_COPY.resuming : ROUND_COPY.resume}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="button"

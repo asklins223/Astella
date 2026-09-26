@@ -2096,6 +2096,27 @@ export class DesktopGateway {
   }
 
   /**
+   * 「继续这一轮」= resume（`paused → active`；W4-5 ④ 的前置那一发）。
+   *
+   * 推进那一发的回执里只有一行轮次，而恢复之后屏上要换回来的是教学面那一整块
+   * （问题／解释／练一道／缺口帮助），所以同一发里接着把该轮的教学面读回来交给界面——
+   * 界面不拿推进回执自己拼第二份（W4-6 刀二那条 silent 回读纪律在桥这一侧的落点）。
+   * 重复调用不推进计数器、`closed` 一律拒，两条判据都在服务端 reducer，这里不重述。
+   */
+  async resumeNoteLearningRound(
+    input: { roundId: string; expectedRevision: number },
+    requestId?: string,
+  ): Promise<RoundTeachingViewV1> {
+    await this.postNoteLearningRoundAction(
+      `/v2/note-learning-rounds/${this.safeUuid(input.roundId)}`,
+      { expectedRevision: input.expectedRevision, action: { kind: "resume" } },
+      requestId,
+      "PATCH",
+    );
+    return this.getNoteLearningRoundTeaching(input.roundId, requestId);
+  }
+
+  /**
    * 两条写路径共用一发：它们请求不同、回执同形（`{ version, round }`），
    * 拆成两份就会有一处忘了拆信封或忘了带 requestId（这一族在本仓库红过不止一次）。
    */

@@ -332,11 +332,16 @@ export const DESKTOP_IPC_CHANNELS = {
   objectiveList: "ailearn.v1.objective.list",
   objectiveGet: "ailearn.v1.objective.get",
   // 39d W4-3 第三刀：笔记页那张轻量定向表单。四发对应 §16.16 那条判据的四个动作
-  // （开、读、换问题、先到这里）。暂停/恢复这一版**不接**：§5.5 那句"没有其他活跃端
+  // （开、读、换问题、先到这里）。暂停这一版**仍不接**：§5.5 那句"没有其他活跃端
   // 才标可恢复暂停"要先有端的活跃度判据，那是 §16.39 那一刀的活，不先挂空口。
+  // **恢复接了**（W4-5 ④ 的前置）：恢复不需要那道判据——它是用户明确的动作，
+  // 而这一侧没有它就没有出口：任何一条从 API 造出来的 `paused` 轮次在界面上是永久死路
+  // （它还占着 §6.1 那条 `phase IN ('active','paused')` 的部分唯一索引的名额，
+  // 既继续不了也另开不了）。先有出口，§16.39 才谈得上把轮次扫进那个状态。
   noteLearningRoundOpen: "ailearn.v1.noteLearningRound.open",
   noteLearningRoundCreate: "ailearn.v1.noteLearningRound.create",
   noteLearningRoundRevise: "ailearn.v1.noteLearningRound.revise",
+  noteLearningRoundResume: "ailearn.v1.noteLearningRound.resume",
   noteLearningRoundClose: "ailearn.v1.noteLearningRound.close",
   // 这一篇的轮次记录（PRD §10.3 的读侧第一刀）。单开一发而不是塞进 `open`：
   // `open` 回的是"此刻那一轮"（没有就 404→null），而记录是"开过的每一轮"——
@@ -2421,6 +2426,22 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
       drivingQuestion: string;
       drivingQuestionSource: z.infer<typeof roundDrivingQuestionSourceV1Schema>;
     }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundV1Schema>>>;
+    /**
+     * 「继续这一轮」：`paused → active`（39d W4-5 ④ 的前置，走 `PATCH /v2/note-learning-rounds/:roundId`
+     * 的 `advanceNoteLearningRoundRequestV1Schema` 那一族动作里 `resume` 那一支）。
+     *
+     * 回的是**教学面那一份**（`roundTeachingViewV1Schema`）而不是光一行轮次：恢复之后屏上要换回来的
+     * 就是那一整块（问题／解释／练一道／缺口帮助），而它们只由服务端读回——推进那一发的回执里
+     * 只有轮次行，网关因此在其后接着读一次同一轮的教学面。渲染层不自己拼第二份。
+     *
+     * `expectedRevision` 必填、且**重复调用不推进计数器**（判据在服务端 reducer：已 active 就是 noop）；
+     * `closed` 轮次一律拒（终态只读）。
+     */
+    resume(input: {
+      meta: RequestMetaV1;
+      roundId: Uuid;
+      expectedRevision: number;
+    }): Promise<GatewayResultV1<z.infer<typeof roundTeachingViewV1Schema>>>;
     /** 「先到这里」：终态必须带原因（partial = 计划没走完就收尾），终态之后这一轮只读。 */
     close(input: {
       meta: RequestMetaV1;

@@ -78,6 +78,7 @@ type Api = {
     history: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     revise: ReturnType<typeof vi.fn>;
+    resume: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
     teaching: ReturnType<typeof vi.fn>;
     explain: ReturnType<typeof vi.fn>;
@@ -157,6 +158,8 @@ function installApi(
     teachingSequence?: (Record<string, unknown> | null)[];
     /** 生成那一发失败（走网关那一条形状）。 */
     explainFails?: boolean;
+    /** 「继续这一轮」那一发失败（走网关那一条形状）。 */
+    resumeFails?: boolean;
     /** 这一轮练过的那几道（W4-6 刀三）；缺省 = 还没练过。 */
     practices?: Record<string, unknown>[];
     /** 「练一道」那一发的起点；缺省 = 没有（无目标轮次）。 */
@@ -224,6 +227,19 @@ function installApi(
         : ok({ version: 1, round: options.openRound ?? roundRow(), teaching: teachingRow() }))),
       create: vi.fn(async () => ok(roundRow())),
       revise: vi.fn(async () => ok(roundRow({ drivingQuestion: "先分清两种情况，再判断慢在哪一步", drivingQuestionRevision: 2, revision: 2 }))),
+      // 恢复那一发的回信是**教学面那一份**（不是光一行轮次）：桥那一侧推进之后接着把
+      // 服务端那一份读回来，界面拿到的就是屏上要摆的那一块（这里照那个形状给）。
+      resume: vi.fn(async () => (options.resumeFails
+        ? { ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } }
+        : ok({
+          version: 1,
+          round: roundRow(),
+          teaching: null,
+          practices: options.practices ?? [],
+          practiceStart: options.practiceStart ?? null,
+          gapHelp: options.gapHelp ?? { stopped: false, consecutiveHelpCount: 0, threshold: 2 },
+          artifact: null,
+        }))),
       close: vi.fn(async () => ok(roundRow({ phase: "closed", outcome: "partial", revision: 2, closedAt: "2026-09-26T05:00:00.000Z" }))),
     },
     note: {
@@ -318,6 +334,7 @@ async function show(
     roundTeaching?: Record<string, unknown> | null;
     teachingSequence?: (Record<string, unknown> | null)[];
     explainFails?: boolean;
+    resumeFails?: boolean;
     practices?: Record<string, unknown>[];
     practiceStart?: Record<string, unknown> | null;
     gapHelp?: Record<string, unknown>;
@@ -1311,5 +1328,111 @@ describe("动态产物的挂载（39d W4-6 刀五）", () => {
     const slot = container.querySelector(".notebook-round-teaching__artifact")!;
     expect(slot.textContent?.trim()).toBe("");
     expect(slot.querySelector("iframe")).toBeNull();
+  });
+});
+
+/**
+ * 「继续这一轮」：停住的那一轮在屏幕上的那个出口（39d W4-5 ④ 的前置）。
+ *
+ * `paused → active` 那条判据在服务端 reducer（轮次族集测钉过），这里钉的是**这一侧欠的那一整条路**：
+ * 在接上这一发之前，任何一条被暂停的轮次（从 API 就造得出来）在界面上是永久死路——它既回不到
+ * 进行中，又还占着 §6.1 那个未完成名额（同一篇开不出第二轮）。四件里任何一件消失，症状都是
+ * "那一轮停在原地"：
+ *  1. 那颗按钮**只**在服务端那一行是 `paused` 时出现：`active` 与"这一篇没有未完成轮次"两种时候
+ *     都不在（摆错了地方就是在教用户"这里有个能继续的东西"，而它没有）；
+ *  2. 按下去交出去的是服务端那一行的 `roundId` 与读过的那一版 `expectedRevision`，不是本机记的数；
+ *  3. 成功之后屏上换读的是服务端读回来的那一条，而且是 **silent**（整屏换成加载态等于把她眼前
+ *     那份材料抽走一次，刀二那条纪律在恢复这一发上同样成立）；
+ *  4. 失败留一句如实的话，那一行不撤（撤了会被读成"已经继续了"，而它什么都没发生）。
+ */
+describe("停住的那一轮：「继续这一轮」（W4-5 ④ 的前置）", () => {
+  const pausedRow = (overrides: Record<string, unknown> = {}) => roundRow({
+    phase: "paused",
+    pausedAt: "2026-09-26T04:30:00.000Z",
+    revision: 3,
+    ...overrides,
+  });
+  const buttonNamed = (block: HTMLElement | null, label: string) =>
+    [...(block?.querySelectorAll("button") ?? [])].find((node) => node.textContent === label) ?? null;
+  const resumeButton = (block: HTMLElement | null) => buttonNamed(block, ROUND_COPY.resume);
+
+  it("那颗按钮只在服务端那一行是 paused 时出现；active 那一行与没有轮次时都不在", async () => {
+    const stopped = await show([], { openRound: pausedRow() });
+    expect(resumeButton(stopped.roundBlock())).toBeTruthy();
+
+    cleanup();
+    const running = await show([], { openRound: roundRow() });
+    expect(resumeButton(running.roundBlock())).toBeNull();
+
+    cleanup();
+    // 这一篇没有未完成轮次：那块摆的是那张表单（不是"停住的那一轮"），这颗按钮也不该在那儿。
+    const none = await show([]);
+    expect(none.roundBlock()!.textContent).toContain(ROUND_COPY.ask);
+    expect(resumeButton(none.roundBlock())).toBeNull();
+  });
+
+  it("按下去发的是服务端那一行的 id 与读过的那一版；在途那一秒按钮禁用，一次点击不重发", async () => {
+    const stopped = pausedRow({ drivingQuestion: "停住的那一轮的问题", revision: 5 });
+    const { api, roundBlock } = await show([], { openRound: stopped });
+    let settle: ((value: unknown) => void) | null = null;
+    api.noteLearningRound.resume.mockImplementationOnce(
+      () => new Promise((resolve) => { settle = resolve; }),
+    );
+    const button = resumeButton(roundBlock())!;
+    fireEvent.click(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(api.noteLearningRound.resume).toHaveBeenCalledTimes(1);
+    expect(api.noteLearningRound.resume.mock.calls[0][0]).toMatchObject({
+      roundId: stopped.roundId,
+      expectedRevision: 5,
+    });
+    expect(api.noteLearningRound.resume.mock.calls[0][0].meta).toBeTruthy();
+    // "正在…"只许出现在真有一次请求在途的那一段时间里（这一页所有按钮共用的规矩）
+    expect(button.textContent).toBe(ROUND_COPY.resuming);
+    expect(button.disabled).toBe(true);
+    await act(async () => { settle?.(ok({ version: 1, round: roundRow({ revision: 6 }) })); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.noteLearningRound.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it("成功之后屏上换读服务端读回来的那一条，且这一屏没被换成加载态", async () => {
+    const stopped = pausedRow({ drivingQuestion: "停住时那一句", revision: 4 });
+    const resumed = roundRow({
+      drivingQuestion: "接上之后服务端那一句",
+      revision: 5,
+      pausedAt: "2026-09-26T04:30:00.000Z",
+      resumedAt: "2026-09-26T05:00:00.000Z",
+    });
+    const { api, container, roundBlock } = await show([], { openRound: stopped, openSequence: [stopped, resumed] });
+    fireEvent.click(resumeButton(roundBlock())!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+
+    const shown = roundBlock()!.textContent ?? "";
+    expect(shown).toContain(ROUND_COPY.openLine("接上之后服务端那一句"));
+    expect(shown).not.toContain(ROUND_COPY.openLine("停住时那一句"));
+    // 那颗按钮随状态一起撤：它读的是服务端那一行，不是"我刚才按过了"。
+    expect(resumeButton(roundBlock())).toBeNull();
+    // silent 的那次回读：这一屏还是那张纸（非 silent 会把它整屏换成加载态）。
+    expect(container.textContent).not.toContain("正在读取真实笔记");
+    // 回读之后教学面也跟着换读服务端那一份（恢复那一发的回执不是本机拼的那一块）。
+    expect(api.noteLearningRound.teaching).toHaveBeenCalled();
+  });
+
+  it("失败：留一句如实的话，那一行不撤、那颗也还在（什么都没发生过）", async () => {
+    const stopped = pausedRow({ drivingQuestion: "还是停着的那一句", revision: 4 });
+    const { api, roundBlock } = await show([], {
+      openRound: stopped,
+      openSequence: [stopped, stopped],
+      resumeFails: true,
+    });
+    fireEvent.click(resumeButton(roundBlock())!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+
+    expect(roundBlock()!.querySelector('[role="alert"]')?.textContent).toBeTruthy();
+    const shown = roundBlock()!.textContent ?? "";
+    expect(shown).toContain(ROUND_COPY.openLine("还是停着的那一句"));
+    // 换回服务端那一版之后仍然是停着的：那颗按钮必须还在，否则这一发失败被她读成成功了。
+    expect(resumeButton(roundBlock())).toBeTruthy();
+    expect(resumeButton(roundBlock())!.textContent).toBe(ROUND_COPY.resume);
   });
 });

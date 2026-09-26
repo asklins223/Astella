@@ -602,6 +602,13 @@ const noteLearningRoundCloseInputSchema = z.strictObject({
   // 与"内容变了新开一轮"那两刀才会写的，不由这张表填。
   outcome: z.enum(["completed", "partial"]),
 });
+// 「继续这一轮」：动作那一格不给界面填——这一发只可能是 resume，摆得出 pause 的入口
+// 就是那颗还没接的「暂停」按钮（§16.39 的活跃度判据没出处），本机先不收这个形状。
+const noteLearningRoundResumeInputSchema = z.strictObject({
+  ...m1InputBase,
+  roundId: uuidSchema,
+  expectedRevision: z.number().int().min(1),
+});
 const objectiveGetInputSchema = z.strictObject({ ...m1InputBase, objectiveId: uuidSchema });
 const searchGlobalInputSchema = z.strictObject({ ...m1InputBase, query: z.string().trim().min(1).max(500), type: z.enum(["note", "source", "objective"]).optional(), limit: z.number().int().min(1).max(50).optional(), cursor: z.string().min(1).max(512).optional() });
 const noteGetInputSchema = z.strictObject({ ...m1InputBase, noteId: uuidSchema });
@@ -2931,6 +2938,17 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
       outcome: input.outcome,
     }, input.meta.requestId);
   }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundV1Schema);
+
+  // 恢复那一发的出口过的是教学面那一份合同（不是光一行轮次）：网关在推进之后接着读回
+  // 服务端那一份，界面拿到的就是屏上要摆的那一块，两边不可能拼出两个版本。
+  installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundResume, noteLearningRoundResumeInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.resumeNoteLearningRound({
+      roundId: input.roundId,
+      expectedRevision: input.expectedRevision,
+    }, input.meta.requestId);
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, roundTeachingViewV1Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.understandingGetTopology, runtimeInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "understanding.graph");
