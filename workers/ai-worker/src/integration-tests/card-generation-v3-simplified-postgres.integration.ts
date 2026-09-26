@@ -241,6 +241,10 @@ before(async () => {
     { workspaceId: FAIL_SHAPE_WORKSPACE_ID, userId: FAIL_SHAPE_USER_ID });
   notes.leasechange = await seedNote("leasechange", "跑完才发现租约易主那一发", LEARNABLE_BLOCKS,
     { workspaceId: FAIL_SHAPE_WORKSPACE_ID, userId: FAIL_SHAPE_USER_ID });
+  // 检查腿那一发放回**第二个空间**：第三个空间此刻已被前三条在制档占满（上限是产品策略的
+  // 3 个，这个夹具不调大那道闸），而它那两条 run 一条停在 planning、一条要停在 checking。
+  notes.checkbroken = await seedNote("checkbroken", "检查那一发不合合同", LEARNABLE_BLOCKS,
+    { workspaceId: OTHER_WORKSPACE_ID, userId: OTHER_USER_ID });
 
   // 入口对照：不设总控 ⇒ 仍投旧 jobType。
   controlRunId = (await createRun(notes.control.versionId, `v3-control-${randomUUID()}`)).runId;
@@ -1062,6 +1066,85 @@ test("生成那一发跑完才发现租约已易主：内核在提交前把它�
   assert.equal(outbox[0]?.lease_token, newLeaseToken,
     "迟到的那次失败**写不动**新主人的行：complete/fail 都带 lease_token 的 CAS，"
     + "对不上就是 0 行（不换 token 就退化成把别人正在跑的那一发判死）");
+});
+
+test("检查那一发两次都不合合同：生成那一发不重付，首稿留着但一张都不算通过", async () => {
+  const { processCardGenerationSimplifiedJob } = await import("../card-generation-v3/handler.ts");
+  const { isNonRetryableErrorLike } = await import("../handlers/card-generation-v2-handler.ts");
+  const {
+    createDeterministicCardGenerateV3Provider,
+  } = await import("../card-generation-v3/deterministic.ts");
+
+  const paid: string[] = [];
+  const countingGenerate = {
+    modelId: "counting-generate-v3",
+    async complete(request: Parameters<ReturnType<typeof createDeterministicCardGenerateV3Provider>["complete"]>[0]) {
+      paid.push("generate");
+      return createDeterministicCardGenerateV3Provider().complete(request);
+    },
+  };
+  const brokenCheck = {
+    modelId: "broken-check-v3",
+    async complete() {
+      paid.push("check");
+      return { text: "检查这一发交回的不是合同 JSON" };
+    },
+  };
+
+  const runId = (await createRun(notes.checkbroken.versionId, `v3-checkbroken-${randomUUID()}`,
+    { workspaceId: OTHER_WORKSPACE_ID, userId: OTHER_USER_ID })).runId;
+  const job = await claimSimplifiedJob(runId);
+
+  let thrown: unknown = null;
+  try {
+    await processCardGenerationSimplifiedJob(job, {
+      generate: countingGenerate,
+      check: brokenCheck,
+      rewrite: {
+        modelId: "must-not-be-called-rewrite",
+        async complete(): Promise<never> {
+          paid.push("rewrite");
+          throw new Error("测试桩：检查都没成，改写这一发不该发生");
+        },
+      },
+    });
+  } catch (error) {
+    thrown = error;
+  }
+  assert.ok(thrown instanceof Error, "检查没成必须让这一发失败：安静返回会被分发点记成 succeeded，"
+    + "库里留下一批从没检查过的候选而监控看着健康（记忆抽取为同样的形状记过一次事故）");
+  assert.match(thrown.message, /card_content_check_v3 output rejected/);
+  assert.deepEqual(paid, ["generate", "check", "check"],
+    "段 4 那一发同样有内核那一次补采样（这是「两腿都要量」的原因：上一格只量了生成那一腿）；"
+    + "而生成那一发**不重付**——计划已经落库，整批不从段 2 重来");
+  assert.equal(isNonRetryableErrorLike(thrown), true,
+    "同一句分类判据在第二腿上也成立：这一腿失败时钱已经花在「首稿＋两次检查」上，队列再重投只是"
+    + "把两次检查再花一遍，而形状不合合同的输出不会更好");
+
+  const planRows = await admin`
+    SELECT count(*)::int AS n FROM card_generation_plans_v2 WHERE run_id = ${runId}
+  ` as unknown as Array<{ n: number }>;
+  assert.equal(Number(planRows[0]?.n), 1, "段 3 已经提交过：这一版计划留着（重投从段 4 接上的前提）");
+  const states = await admin`
+    SELECT quality_state, count(*)::int AS n FROM card_generation_candidates_v2
+    WHERE run_id = ${runId} GROUP BY quality_state
+  ` as unknown as Array<{ quality_state: string; n: number }>;
+  assert.ok(states.length > 0, "首稿候选必须已经在库里——不然「一张都没通过」是空库读出来的假象");
+  assert.equal(states.length, 1,
+    "候选只该有一种 `quality_state`：混进 passed 或掉出牌堆都说明检查没成却有人替它判了结论");
+  assert.equal(states[0]?.quality_state, "authored",
+    "检查没成 ⇒ 一张都不许被记成 passed／也没被抹掉：停在 authored 等人工（§16.28 的另一半）");
+  assert.equal(await runStatus(runId), "checking",
+    "run 停在段 3 推到的那一档；终态由分发点写（那一转已在对照格里量过），handler 不偷写失败");
+
+  await assert.rejects(
+    () => createRun(notes.checkbroken.versionId, `v3-checkbroken-again-${randomUUID()}`,
+      { workspaceId: OTHER_WORKSPACE_ID, userId: OTHER_USER_ID }),
+    (error: unknown) => (error as { code?: string }).code === "note_generation_in_flight",
+    "**用户在这一刻看到什么**：这一批还挂在在制档，同一篇笔记开不出第二批。放开它的是分发点把"
+    + "这一发判成 `needs_attention`（`error_code` 不是 quality_gate_failed ⇒ 那道守卫认它不是活批）——"
+    + "所以「不可重试终结」对用户是「可以再点一次生成」，不是「这篇永远卡住」",
+  );
 });
 
 test("不可重试那一类经真分发点落库＝一次终结（上一条负向读数的对照格）", async () => {
