@@ -251,7 +251,11 @@ export async function processCardGenerationSimplifiedJob(
     });
     const receipt = await generateTask.execute(generateInput, taskEnvironment(providers.generate.modelId, signal));
     if (!receipt.ok) {
-      // 输出形状不合合同 = 确定性失败（内核已按预算重试过一次），不重投。
+      // 输出形状不合合同 ⇒ 这一发直接抛。以前这里写着"内核已按预算重试过一次"，那是
+      // 假的：这条链上没有人跑 `runAiTask`（见 `taskEnvironment`），声明的
+      // `maxAutoRetries: 1` 一次都不执行。而抛的是裸 Error ⇒ 分发点按**可重试**分类，
+      // outbox 会退避重投到 6 次上限、每次重新付生成那一发。两个读数都钉在
+      // card-generation-v3-simplified-postgres 集测里；接内核那一次要连同分类一起改。
       throw new Error(`card_generate_v3 output rejected: ${receipt.message}`);
     }
     generateOutput = receipt.output;
@@ -453,7 +457,7 @@ export async function processCardGenerationSimplifiedJob(
   }, { isolated: true });
 }
 
-/** 一次改写调用（内核那一次自动重试由 `execute` 的失败归类决定，这里不自己循环）。 */
+/** 一次改写调用：合不上合同就抛。这条链上没有第二次（内核不在场，见 `taskEnvironment`）。 */
 async function runRewriteOnce(
   task: AiTaskDefinition<CardCandidateRewriteV3TaskInput, CardCandidateRewriteV3TaskOutput>,
   input: CardCandidateRewriteV3TaskInput,
@@ -465,6 +469,13 @@ async function runRewriteOnce(
   return receipt.output.draft;
 }
 
+/**
+ * 手工搭一份**长得像内核**的环境，但这条链上没有内核：`card-generation-v3/` 里
+ * 没有 `runAiTask` 调用点，所以 `remainingMs`／`stepTimeoutMs` 只是填全了形状，
+ * 没人拿它们去组成超时信号，`retryIndex` 恒 0，任务声明的 `budget`（含
+ * `maxAutoRetries: 1`）全部不执行——一次调用就是一次调用。真正的闸只有调用方那份
+ * signal（租约丢失／整条管道预算）。欠的"进程内重试那一次"登记在 39d §19 W7-1。
+ */
 function taskEnvironment(modelId: string, signal?: AbortSignal) {
   return {
     mode: "structured" as const,

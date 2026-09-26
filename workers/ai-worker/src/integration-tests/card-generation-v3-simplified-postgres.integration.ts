@@ -39,6 +39,13 @@ const WORKSPACE_ID = randomUUID();
 const USER_ID = randomUUID();
 const OTHER_USER_ID = randomUUID();
 const OTHER_WORKSPACE_ID = randomUUID();
+/**
+ * 失败形状那两条专用的第三个空间：它们**故意**把 run 留在在制档
+ * （planning／needs_attention），放进前两个空间就等于依赖"前面那些测试都跑过并把
+ * 自己的 run 推到了终态"——按名字单跑一条时会撞 `生成并发已达上限（3 个在途 Run）`。
+ */
+const FAIL_SHAPE_USER_ID = randomUUID();
+const FAIL_SHAPE_WORKSPACE_ID = randomUUID();
 
 /** 一篇有可学正文的笔记（六句，每句都能抽出一个原子）。 */
 const LEARNABLE_BLOCKS = [
@@ -197,7 +204,7 @@ function countingGenerate() {
 
 before(async () => {
   await admin.begin(async (tx) => {
-    for (const id of [USER_ID, OTHER_USER_ID]) {
+    for (const id of [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID]) {
       await tx`INSERT INTO users (id, email, password_hash)
         VALUES (${id}, ${`cardgen-v3-${id}@example.invalid`}, 'unused')
         ON CONFLICT (id) DO NOTHING`;
@@ -206,10 +213,15 @@ before(async () => {
       VALUES (${WORKSPACE_ID}, ${USER_ID}, 'Card Gen V3 IT') ON CONFLICT (id) DO NOTHING`;
     await tx`INSERT INTO workspaces (id, owner_id, name)
       VALUES (${OTHER_WORKSPACE_ID}, ${OTHER_USER_ID}, 'Card Gen V3 Other IT') ON CONFLICT (id) DO NOTHING`;
+    await tx`INSERT INTO workspaces (id, owner_id, name)
+      VALUES (${FAIL_SHAPE_WORKSPACE_ID}, ${FAIL_SHAPE_USER_ID}, 'Card Gen V3 Fail Shape IT')
+      ON CONFLICT (id) DO NOTHING`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
       VALUES (${WORKSPACE_ID}, ${USER_ID}, 'owner') ON CONFLICT DO NOTHING`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
       VALUES (${OTHER_WORKSPACE_ID}, ${OTHER_USER_ID}, 'owner') ON CONFLICT DO NOTHING`;
+    await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
+      VALUES (${FAIL_SHAPE_WORKSPACE_ID}, ${FAIL_SHAPE_USER_ID}, 'owner') ON CONFLICT DO NOTHING`;
   });
 
   notes.learnable = await seedNote("learnable", "网络与加密的六句话", LEARNABLE_BLOCKS);
@@ -221,6 +233,12 @@ before(async () => {
     { workspaceId: OTHER_WORKSPACE_ID, userId: OTHER_USER_ID });
   notes.rewrite = await seedNote("rewrite", "另一个空间要改写那一篇", LEARNABLE_BLOCKS,
     { workspaceId: OTHER_WORKSPACE_ID, userId: OTHER_USER_ID });
+  // 下面两条各自要一篇笔记（一篇笔记同时只许一批在制），放在第三个空间：
+  // 那两条会把 run 故意留在在制档，占前两个空间的额度会让单跑一条时撞上限。
+  notes.outofcontract = await seedNote("outofcontract", "合同形状那一发", LEARNABLE_BLOCKS,
+    { workspaceId: FAIL_SHAPE_WORKSPACE_ID, userId: FAIL_SHAPE_USER_ID });
+  notes.deadend = await seedNote("deadend", "不可重试那一发", LEARNABLE_BLOCKS,
+    { workspaceId: FAIL_SHAPE_WORKSPACE_ID, userId: FAIL_SHAPE_USER_ID });
 
   // 入口对照：不设总控 ⇒ 仍投旧 jobType。
   controlRunId = (await createRun(notes.control.versionId, `v3-control-${randomUUID()}`)).runId;
@@ -246,7 +264,9 @@ after(async () => {
   // 清理 → **先关池** → 再决定要不要喊（池开着就抛，会把整个文件挂在超时上）。
   let report;
   try {
-    report = await wipeCardGenerationFixtures(admin, [WORKSPACE_ID, OTHER_WORKSPACE_ID], [USER_ID, OTHER_USER_ID]);
+    report = await wipeCardGenerationFixtures(admin,
+      [WORKSPACE_ID, OTHER_WORKSPACE_ID, FAIL_SHAPE_WORKSPACE_ID],
+      [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID]);
   } finally {
     await admin.end({ timeout: 5 }).catch(() => undefined);
     const { closeDatabase: closeWorkerDatabase } = await import("../db.ts");
@@ -908,4 +928,108 @@ test("生产里不许悄悄用确定性 provider 跑简化链；豁免要显式�
   const offline = withEnv({ NODE_ENV: "test", V3_ALLOW_DETERMINISTIC_PROVIDERS: undefined },
     () => resolveCardGenerationV3Providers());
   assert.deepEqual(Object.keys(offline).sort(), ["check", "generate", "rewrite"]);
+});
+
+// ── 简化链的失败形状：内核不在场时「重试那一次」到底归谁执行 ────────────────
+//
+// 任务定义上写着 `budget = { maxAutoRetries: 1, stepTimeoutMs: 120_000, … }`，而
+// `card-generation-v3/handler.ts` 调的是 `task.execute`（整条链上没有 `runAiTask`
+// 调用点）。于是"合不上合同就先再采样一次"这条声明今天一次都不落地——真正在重试
+// 的是**队列**：分发点 `processV2OutboxJob` 的 catch 用 `isNonRetryableErrorLike`
+// 分类，判成可重试就回 pending 退避重投（最多 6 次，每次重新付生成那一发）。
+// 下面两条一头钉住这个形状、另一头给出"分类真的决定库里的结局"的对照格。
+
+test("生成那一发合不上合同：进程内没有第二次，队列判成可重试（内核不在这条链上）", async () => {
+  const { processCardGenerationSimplifiedJob } = await import("../card-generation-v3/handler.ts");
+  const { isNonRetryableErrorLike } = await import("../handlers/card-generation-v2-handler.ts");
+
+  const paid: string[] = [];
+  const outOfContractGenerate = {
+    modelId: "out-of-contract-v3",
+    async complete() {
+      paid.push("generate");
+      return { text: "这一段不是合同要求的 JSON" };
+    },
+  };
+  const mustNotBeCalled = (name: string) => ({
+    modelId: `must-not-be-called-${name}`,
+    async complete(): Promise<never> {
+      paid.push(name);
+      throw new Error(`测试桩：${name} 这一发不该发生`);
+    },
+  });
+
+  const runId = (await createRun(notes.outofcontract.versionId, `v3-outofcontract-${randomUUID()}`,
+    { workspaceId: FAIL_SHAPE_WORKSPACE_ID, userId: FAIL_SHAPE_USER_ID })).runId;
+  const job = await claimSimplifiedJob(runId);
+
+  let thrown: unknown = null;
+  try {
+    await processCardGenerationSimplifiedJob(job, {
+      generate: outOfContractGenerate,
+      check: mustNotBeCalled("check"),
+      rewrite: mustNotBeCalled("rewrite"),
+    });
+  } catch (error) {
+    thrown = error;
+  }
+  assert.ok(thrown instanceof Error, "输出不合合同必须让这一发失败：静默返回会被分发点记成 succeeded，"
+    + "库里看着健康而一张卡都没生成（记忆抽取为同样的形状记过一次事故）");
+  assert.match(thrown.message, /card_generate_v3 output rejected/);
+  assert.deepEqual(paid, ["generate"],
+    "进程内一次都不许重试，也不许在后面两发上继续花钱：这条链没有内核，任务声明的 "
+    + "`maxAutoRetries: 1` 今天不执行——把它接成真的是 W7-1 欠的那一刀");
+  assert.equal(isNonRetryableErrorLike(thrown), false,
+    "**这一条钉的是今天的实情，不是裁定**：抛的是裸 Error ⇒ 分发点判成可重试 ⇒ outbox 会退避"
+    + "重投到 6 次上限，每次重新付生成那一发（确定性失败重投不会更好）。接内核时这一格必须"
+    + "连同「进程内先重试一次」一起改判，两个读数不许只改一个");
+
+  const planRows = await admin`
+    SELECT count(*)::int AS n FROM card_generation_plans_v2 WHERE run_id = ${runId}
+  ` as unknown as Array<{ n: number }>;
+  const candidateRows = await admin`
+    SELECT count(*)::int AS n FROM card_generation_candidates_v2 WHERE run_id = ${runId}
+  ` as unknown as Array<{ n: number }>;
+  assert.equal(Number(planRows[0]?.n), 0, "生成没成 ⇒ 段 3 没跑，不许留下半一份计划");
+  assert.equal(Number(candidateRows[0]?.n), 0);
+  assert.equal(await runStatus(runId), "planning",
+    "run 由段 1 推到 planning；失败终态是分发点/回收器的事，handler 自己不许偷写");
+});
+
+test("不可重试那一类经真分发点落库＝一次终结（上一条负向读数的对照格）", async () => {
+  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const runId = (await createRun(notes.deadend.versionId, `v3-deadend-${randomUUID()}`,
+    { workspaceId: FAIL_SHAPE_WORKSPACE_ID, userId: FAIL_SHAPE_USER_ID })).runId;
+  const job = await claimSimplifiedJob(runId);
+
+  // 走**真分发点**而不是直接调 handler：这一格要证的是"分类真的决定库里的结局"。
+  // `CARD_GENERATION_V3_PROVIDER` 给一个没接线的值 ⇒ provider 解析当场抛不可重试
+  // （一次模型调用都不发，所以这一格不花钱），由 catch 里那两行去回写 outbox 与 run。
+  const previousProvider = process.env.CARD_GENERATION_V3_PROVIDER;
+  process.env.CARD_GENERATION_V3_PROVIDER = "llm";
+  try {
+    await processV2OutboxJob(job);
+  } finally {
+    if (previousProvider === undefined) delete process.env.CARD_GENERATION_V3_PROVIDER;
+    else process.env.CARD_GENERATION_V3_PROVIDER = previousProvider;
+  }
+
+  const rows = await admin`
+    SELECT status, attempts, next_attempt_at, lease_token
+    FROM card_generation_run_outbox_v2
+    WHERE run_id = ${runId} AND job_type = 'card_generation_simplified_v1'
+  ` as unknown as Array<{ status: string; attempts: number; next_attempt_at: Date | null; lease_token: string | null }>;
+  assert.equal(rows[0]?.status, "failed",
+    "判成不可重试 ⇒ 直接终态。回 pending 就是上一条那格读到的六轮退避：一次配置漂移"
+    + "在界面上表现成长时间「生成中」而不是失败");
+  assert.equal(Number(rows[0]?.attempts), 1, "只算了这一次，没有偷偷多投");
+  assert.equal(rows[0]?.next_attempt_at, null, "留着下次可认领时间＝还会被认领，那就不是终结");
+  assert.equal(rows[0]?.lease_token, null, "租约要交还（不交还＝本进程之外没人接得住这一行）");
+  assert.equal(await runStatus(runId), "needs_attention",
+    "outbox 终态与 run 的可见状态必须在同一发里落地：只写 outbox 会让界面永远停在「生成中」");
+
+  const planRows = await admin`
+    SELECT count(*)::int AS n FROM card_generation_plans_v2 WHERE run_id = ${runId}
+  ` as unknown as Array<{ n: number }>;
+  assert.equal(Number(planRows[0]?.n), 0, "这一发一次模型都没发，不许有任何产出");
 });

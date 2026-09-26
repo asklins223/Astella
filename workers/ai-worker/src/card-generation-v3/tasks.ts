@@ -13,15 +13,18 @@
  *      （冻结 code `evidence_not_in_sealed_scope`），在组装之后跑一次，见
  *      `plan-assembly.ts` 的 `runCardGenerateV3ProgramChecks`。
  *   3. **任务外壳**（工厂）：execute = 组提示 → provider 端口 → 按合同解析（解析
- *      失败归类 output_shape，享受内核那一次自动重试）→ 盖章与程序校验。
+ *      失败归类 output_shape）→ 盖章与程序校验。
  *      prepare/commit 由调用方注入——生产接线（刀b）给 DB 版本，单测给内存版本。
+ *      **注意**：output_shape 在内核那张表里是"可重试"的，可这条链的生产接线直接调
+ *      `execute`（没有 `runAiTask`），所以那一发不会自动重试；`budget` 今天只是声明。
  *
  * **端口只有一条**：`complete({ prompt, input })`。确定性版本（`deterministic.ts`）
  * 与真模型版本实现同一个端口，因此两条路走的是同一段 execute、同一次解析、同一份
  * 校验——不是"测试跑一条捷径、生产跑另一条"。
  *
- * 模型调用计数是 §16.28 的判据：普通短文本成功路径**恰好 2 次**（每任务 1 次；
- * 解析失败的一次自动重试会如实计成更多，那是失败路径不是成功路径）。
+ * 模型调用计数是 §16.28 的判据：普通短文本成功路径**恰好 2 次**（每任务 1 次）。
+ * 失败路径今天**不**在这里加次数——没有内核在跑，output_shape 不会自动重试一次，
+ * 而是整发抛给分发点按可重试分类重投（重投不重付的那一段只覆盖已提交的计划）。
  */
 import {
   cardCandidateRewriteV3OutputSchema,
