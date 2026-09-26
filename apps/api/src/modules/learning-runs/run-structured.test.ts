@@ -15,6 +15,7 @@ import {
   generateStructuredBundleTask,
   generateTrueFalseTask,
   isDeterministicStructuredPayload,
+  orderingUnitFeedbackV1,
   splitClaimIntoTokens,
 } from "./run-structured.ts";
 
@@ -37,6 +38,13 @@ const choiceInput = {
 const trueFalseInput = {
   proposition: "间隔越长的复习对长期记忆一定越好。",
   expected: false,
+};
+
+/** 逐位反馈需要"有几位、其中几位对"才判得动，所以备一份四步的 claim（按逗号切成四个 token）。 */
+const fourStepTarget = {
+  keyPointId: "kp-4",
+  claim: "提起灭火器，拔掉保险销，握住喷管对准火焰根部，压下压把扫射根部",
+  quote: "灭火器四步。",
 };
 
 const matchingInput = {
@@ -233,6 +241,62 @@ test("assessStructuredPayload：ordering 全对/部分/空", () => {
     assessStructuredPayload("ordering", { orderedTokenIds: [] }, task.solution).verdict,
     "not_assessable",
   );
+});
+
+test("§5.4 逐位反馈：全对时每一位都点到用户自己放上那一项", () => {
+  const task = generateOrderingTask(fourStepTarget);
+  const correct = task.solution.correctTokenIds as string[];
+  const labels = task.publicTokenLabels as Record<string, string>;
+  const units = orderingUnitFeedbackV1({ orderedTokenIds: correct, correctTokenIds: correct, labels });
+  assert.equal(units.length, correct.length);
+  assert.deepEqual(units.map((unit) => unit.verdict), correct.map(() => "covered"));
+  assert.deepEqual(units.map((unit) => unit.unitKey), correct.map((_, index) => `pos-${index + 1}`));
+  units.forEach((unit, index) => {
+    assert.ok(
+      unit.userFacingReason.includes(labels[correct[index]] ?? ""),
+      `第 ${index + 1} 位要说得出用户放在这一位的那一项：${unit.userFacingReason}`,
+    );
+  });
+});
+
+test("§5.4 逐位反馈：不成立的那一位一个字都不写出该放什么", () => {
+  const task = generateOrderingTask(fourStepTarget);
+  const correct = task.solution.correctTokenIds as string[];
+  const labels = task.publicTokenLabels as Record<string, string>;
+  assert.ok(correct.length >= 3, "这份夹具需要至少三位，才能同时验到「错两位」与「其余原位」");
+  // 前两位互换、其余原位：判据要同时有 covered 与 missing 两类位子才成立。
+  const submitted = [correct[1], correct[0], ...correct.slice(2)];
+  const units = orderingUnitFeedbackV1({ orderedTokenIds: submitted, correctTokenIds: correct, labels });
+  assert.equal(units.length, correct.length, "位数按**正确序列**给全，不随提交长度缩");
+  assert.equal(units[0].verdict, "missing");
+  assert.equal(units[1].verdict, "missing");
+  for (let index = 2; index < correct.length; index += 1) {
+    assert.equal(units[index].verdict, "covered", `第 ${index + 1} 位没动过，必须说成立`);
+  }
+  const everyLabel = Object.values(labels);
+  for (const unit of units.filter((item) => item.verdict === "missing")) {
+    for (const label of everyLabel) {
+      assert.ok(
+        !unit.userFacingReason.includes(label),
+        `不成立的那一位不许提到任何一项的文字（那等于替用户写出答案）：${unit.userFacingReason}`,
+      );
+    }
+    assert.ok(!unit.userFacingReason.includes("tok:"), "内部 id 也不许漏进文案");
+  }
+});
+
+test("§5.4 逐位反馈：少交的那一位说「还空着」，位数仍按正确序列给全", () => {
+  const task = generateOrderingTask(fourStepTarget);
+  const correct = task.solution.correctTokenIds as string[];
+  const units = orderingUnitFeedbackV1({
+    orderedTokenIds: correct.slice(0, correct.length - 1),
+    correctTokenIds: correct,
+    labels: task.publicTokenLabels as Record<string, string>,
+  });
+  assert.equal(units.length, correct.length);
+  const last = units[units.length - 1];
+  assert.equal(last.verdict, "missing");
+  assert.match(last.userFacingReason, /还空着/);
 });
 
 test("assessStructuredPayload：relation 匹配/错误", () => {

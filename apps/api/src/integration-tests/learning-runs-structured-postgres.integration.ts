@@ -191,6 +191,119 @@ test("P4 纵切：structured 创建 → ordering 提交 → 确定性评估 → 
     assert.equal(trailRows.length, 1);
     assert.equal(trailRows[0].scope, "official_user");
 
+    // §5.4 逐位反馈：正确提交之后，除了聚合那一格，**每个位子都要有一格说"这一步放对了"**，
+    // 并且点得出用户自己放在那一位的那一项（这是他自己交上来的文字，不新增答案信息）。
+    const goodAssessment = await scoped(scope, (tx) => tx`
+      SELECT rubric_results FROM learning_assessments WHERE run_id = ${run.runId}
+    `);
+    const goodEntries = goodAssessment[0].rubric_results as Array<{
+      rubricItemId: string; verdict: string; userFacingReason: string;
+    }>;
+    const goodUnits = goodEntries.filter((item) => /#pos-\d+$/.test(item.rubricItemId));
+    assert.equal(goodUnits.length, correctOrder.length, "按正确序列的位数给格");
+    assert.deepEqual(goodUnits.map((item) => item.verdict), correctOrder.map(() => "covered"));
+    for (const [index, unit] of goodUnits.entries()) {
+      const ownLabel = Object.entries(labels).find(([id]) => id === correctOrder[index])?.[1] ?? "";
+      assert.ok(
+        unit.userFacingReason.includes(ownLabel),
+        `第 ${index + 1} 位要点出用户放在这一位的那一项：${unit.userFacingReason}`,
+      );
+    }
+
+  } finally {
+    await seeded.cleanup();
+  }
+});
+
+test("§5.4 逐位反馈（真 tick）：不成立的位子说不成立、一个字都不写出该放什么；结算那一档不改", async () => {
+  const seeded = await seed();
+  try {
+    const scope = { workspaceId: seeded.workspaceId, userId: seeded.userId };
+    const run = await withWorkspaceTransaction(scope, async (tx) =>
+      createLearningRunForTest(tx, {
+        ...scope,
+        request: {
+          originV2: { kind: "card", cardId: seeded.cardId, objectiveId: seeded.keyPointId },
+          goal: "stabilize",
+          responsePreference: "structured",
+          idempotencyKey: "p4-create-units",
+        },
+      }),
+    );
+    const ordering = run.activeTask!.activeVariant.interaction as unknown as {
+      publicTokenIds?: string[];
+      publicTokenLabels?: Record<string, string>;
+    };
+    const labels = ordering.publicTokenLabels ?? {};
+    const byLabel = (label: string) => Object.entries(labels).find(([, v]) => v === label)?.[0] ?? "";
+    // 故意交**反**的那一版：这一份提交里没有一个位子是对的，两类话术都要出现才判得动。
+    const reversed = [byLabel("主动回忆"), byLabel("复习间隔")];
+    assert.ok(reversed.every((id) => id !== ""), "夹具的两个 label 都要能反查回 token id");
+
+    await withWorkspaceTransaction(scope, async (tx) =>
+      submitArtifact(tx, {
+        ...scope,
+        runId: run.runId,
+        taskId: run.activeTaskId!,
+        request: {
+          version: 1 as const,
+          variantId: run.activeTask!.activeVariant.variantId,
+          variantRevision: run.activeTask!.activeVariant.revision,
+          inputSchemaHash: run.activeTask!.activeVariant.inputSchemaHash,
+          payload: {
+            kind: "ordering" as const,
+            orderedTokenIds: reversed,
+            interactionRefs: [] as string[],
+          } as never,
+          runRevision: run.revision,
+          taskRevision: run.activeTask!.revision,
+          idempotencyKey: "p4-submit-units",
+        },
+      }),
+    );
+    for (let round = 0; round < 6; round += 1) {
+      await runLearningRunProcessingTick(`p4-worker-units:${randomUUID()}`, 10);
+    }
+
+    const rows = await scoped(scope, (tx) => tx`
+      SELECT rubric_results, trust_class FROM learning_assessments WHERE run_id = ${run.runId}
+    `);
+    const entries = rows[0].rubric_results as Array<{
+      rubricItemId: string; verdict: string; userFacingReason: string;
+    }>;
+    const units = entries.filter((item) => /#pos-\d+$/.test(item.rubricItemId));
+    assert.equal(units.length, reversed.length, "每个位子都要有一格");
+    assert.deepEqual(units.map((item) => item.verdict), reversed.map(() => "missing"));
+    for (const unit of units) {
+      assert.match(unit.userFacingReason, /^第 \d+ 步还不成立/, `要说清是哪一位：${unit.userFacingReason}`);
+      for (const label of Object.values(labels)) {
+        assert.ok(
+          !unit.userFacingReason.includes(label),
+          `不成立的那一位不许写出该放什么（那是绕过曝光记账的泄题）：${unit.userFacingReason}`,
+        );
+      }
+      assert.ok(!unit.userFacingReason.includes("tok:"), "内部 id 不许漏进文案");
+    }
+    // 逐位格**替掉**了聚合计数那一格，不是加在它后面：结果页那句「N 个要点里证明了 M 个」
+    // 是按条目数数的（learning-run-surface.tsx:374），聚合格与它按位拆出的几格说的是同一件事，
+    // 两代同屏就是把一件事数两遍。所以条目数必须恰好等于位数，且不再有那条计数文案。
+    assert.equal(entries.length, reversed.length, "条目数＝位数，没有重复的那一格");
+    assert.ok(
+      entries.every((item) => /#pos-\d+$/.test(item.rubricItemId)),
+      "ordering 的每一格都得是按位那一格",
+    );
+    assert.ok(
+      !entries.some((item) => item.userFacingReason.includes("个位置正确")),
+      "那条计数文案不能再出现第二遍",
+    );
+    // 档位没被逐位反馈动到：错答仍是 practice_only、仍不产 schedule。
+    assert.equal(rows[0].trust_class, "practice_only");
+    const afterRun = await withWorkspaceTransaction(scope, async (tx) =>
+      getRunPublicView(tx, { ...scope, runId: run.runId }),
+    );
+    assert.equal(afterRun.phase, "completed");
+    assert.equal(afterRun.result?.outcome, "practice_completed");
+    assert.deepEqual(afterRun.result?.scheduleImpact, { kind: "none", reasonCode: "practice_only" });
   } finally {
     await seeded.cleanup();
   }

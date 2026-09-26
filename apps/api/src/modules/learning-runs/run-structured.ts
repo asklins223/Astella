@@ -572,6 +572,56 @@ export function assessStructuredPayload(
   return { verdict: "not_assessable", userFacingReason: "未知题型" };
 }
 
+// ─── 逐位反馈（39 §5.4：反馈先说"哪一步成立、缺哪一个条件"）────────────────
+
+export type StructuredUnitFeedbackV1 = {
+  unitKey: string;
+  verdict: "covered" | "missing";
+  userFacingReason: string;
+};
+
+/**
+ * 把**同一次比对**按位拆开——不是第二次判分。
+ *
+ * `assessStructuredPayload` 那份聚合今天给的是「2/4 个位置正确」：一个计数。
+ * 39 §5.4 明令"不只给对错、分数或泛泛鼓励"，而自由回答那一条链（模型判）早就逐条给出
+ * 「未提及……这一核心事实」这种**条件级**的话；确定性这一条链反而只交得出分数，
+ * 于是同一屏上两种题型反馈的**形状**不一样。这一支补齐的正是形状，不动聚合 verdict
+ * （上限、结算、`reportHash` 全部照旧——动它就是动调度）。
+ *
+ * 一条曝光边界，写死在这里：**说错的位子只说不成立，不写出那一位该放什么**。
+ * 理由串会原样送到客户端，替用户填上正确项等于绕开
+ * 「答案只在你主动查看时才下发并记账」（同文件 `choice` 那一支的注释）。
+ * 说对的位子报的是**用户自己放上这一位的那一项**，不新增答案信息。
+ * 顺带一句实话：任何逐位反馈（哪怕只报"3/4 对"）都留下排除法可推的余量，
+ * 这不是这一支新增的泄露——今天那个计数本身就够推出剩下两位互换了。
+ */
+export function orderingUnitFeedbackV1(input: {
+  orderedTokenIds: readonly string[];
+  correctTokenIds: readonly string[];
+  labels: Readonly<Record<string, string>>;
+}): StructuredUnitFeedbackV1[] {
+  return input.correctTokenIds.map((correctId, index) => {
+    const placedId = input.orderedTokenIds[index];
+    const position = index + 1;
+    if (placedId === correctId) {
+      const label = (input.labels[placedId ?? ""] ?? "").trim();
+      return {
+        unitKey: `pos-${position}`,
+        verdict: "covered",
+        userFacingReason: label ? `第 ${position} 步放对了：「${label}」` : `第 ${position} 步放对了`,
+      };
+    }
+    return {
+      unitKey: `pos-${position}`,
+      verdict: "missing",
+      userFacingReason: placedId
+        ? `第 ${position} 步还不成立（这一步该放哪一项，这里不替你写出来）`
+        : `第 ${position} 步还空着`,
+    };
+  });
+}
+
 // ─── V2：从 CanonicalAnswerV2 显式结构生成结构题（§16.5）─────────────────
 
 /**

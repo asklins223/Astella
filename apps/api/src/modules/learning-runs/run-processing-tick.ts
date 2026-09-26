@@ -1130,7 +1130,7 @@ async function finishStructuredAssessment(
   }
   if (!solution) throw new CriticOutputError("structured assessment: solution not readable");
 
-  const { assessStructuredPayload, assessStructuredBundlePayload } = await import("./run-structured.ts");
+  const { assessStructuredPayload, assessStructuredBundlePayload, orderingUnitFeedbackV1 } = await import("./run-structured.ts");
   // §5.3/§12.3 structured_bundle：一次 Assessment 评估整个 bundle Artifact
   // （逐 part 确定性对比，取最低 verdict；part 缺失/伪造在提交层已拒绝）。
   const assessment = payloadKind === "structured_bundle"
@@ -1140,12 +1140,44 @@ async function finishStructuredAssessment(
   const rubricTargetIds = Array.isArray(solution.rubricTargetIds)
     ? (solution.rubricTargetIds as string[])
     : [];
-  const rubricResults = rubricTargetIds.map((rubricItemId) => ({
-    rubricItemId,
-    facet: task.intent,
-    verdict: assessment.verdict,
-    userFacingReason: assessment.userFacingReason,
-  }));
+  /**
+   * §5.4 逐位反馈（39d W4-7 刀一）：ordering 今天能按位拆开，就**只报按位的这几格**，
+   * 不再另外留一格聚合计数。理由是一条数的问题：结果页那句「N 个要点里证明了 M 个」
+   * （`learning-run-surface.tsx:374`）是按条目数数的，聚合格与它按位拆出的那几格说的是
+   * **同一件事**，两代同屏就是把一件事数两遍——一个用户可见的数只准有一个来源。
+   *
+   * 不动的是判据本身：聚合 `assessment.verdict` 仍原样写进结算、上限与 `reportHash`
+   * （上面那两条都读它），这一刀只改"反馈说成什么形状"。
+   * 标签读在 `tx` 这一侧而不是私解那条连接：`interaction` 是公开面，
+   * worker 那条连接只该读私解（§16.1 的隔离就在这条分工上）。
+   */
+  let unitRows: Array<{ interaction: unknown }> = [];
+  if (payloadKind === "ordering" && artifact?.variantId) {
+    unitRows = await tx
+      .select({ interaction: learningTaskVariants.interaction })
+      .from(learningTaskVariants)
+      .where(eq(learningTaskVariants.id, artifact.variantId))
+      .limit(1);
+  }
+  const unitPrefix = rubricTargetIds[0] ?? `task:${command.taskId ?? command.artifactId ?? assessmentId}`;
+  const rubricResults = payloadKind === "ordering"
+    ? orderingUnitFeedbackV1({
+      orderedTokenIds: Array.isArray(payload.orderedTokenIds) ? (payload.orderedTokenIds as string[]) : [],
+      correctTokenIds: Array.isArray(solution.correctTokenIds) ? (solution.correctTokenIds as string[]) : [],
+      labels: ((unitRows[0]?.interaction as { publicTokenLabels?: Record<string, string> } | null)
+        ?.publicTokenLabels) ?? {},
+    }).map((unit) => ({
+      rubricItemId: `${unitPrefix}#${unit.unitKey}`,
+      facet: task.intent,
+      verdict: unit.verdict,
+      userFacingReason: unit.userFacingReason,
+    }))
+    : rubricTargetIds.map((rubricItemId) => ({
+      rubricItemId,
+      facet: task.intent,
+      verdict: assessment.verdict,
+      userFacingReason: assessment.userFacingReason,
+    }));
   const reportHash = sha256Hex(JSON.stringify({ assessmentId, payloadKind, verdict: assessment.verdict }));
   // §7.7：ceiling 从 qualification 数据推导（V1 无记录 → practice 上限）。
   // facet_eligible 且全部 covered → facet_evidence Commit（canonical facet
