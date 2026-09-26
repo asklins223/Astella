@@ -304,6 +304,16 @@ export const ROUND_COPY = {
     paused: "停住了",
     closed: "已收尾",
   } as Record<"active" | "paused" | "closed", string>,
+  /**
+   * §10.3 那一行的「实际方式」与「系统不确定项」（W4-8 刀一）。两格的字都**由服务端那两个
+   * 事实决定**，界面不重算也不猜：没讲过也没练过时这两格整格不出（不是"这一轮什么都没干"
+   * ——那需要另一种判断，而记录只报发生过什么）。
+   */
+  historyMode: {
+    explained: "讲过",
+    practiced: "练过",
+  } as Record<"explained" | "practiced", string>,
+  historyUncertain: "这次有我们判不准的地方",
   historyOutcome: {
     completed: "走完了",
     partial: "先到这里",
@@ -2495,6 +2505,16 @@ export function NotebookSurface() {
                 <span className="small notebook-round-history__day">{ROUND_DAY_FORMAT.format(new Date(item.startedAt))}</span>
                 <span className="small notebook-round-history__state">{roundHistoryStateLabelV1(item)}</span>
                 <span className="notebook-round-history__question">{item.drivingQuestion}</span>
+                {item.actualModes.length > 0 ? (
+                  <span className="small notebook-round-history__modes" data-round-history-modes="true">
+                    {item.actualModes.map((mode) => ROUND_COPY.historyMode[mode]).join(" · ")}
+                  </span>
+                ) : null}
+                {item.systemUncertain ? (
+                  <span className="small notebook-round-history__uncertain" data-round-history-uncertain="true">
+                    {ROUND_COPY.historyUncertain}
+                  </span>
+                ) : null}
               </li>
             ))}
           </ol>

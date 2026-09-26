@@ -25,6 +25,7 @@ import {
   type NoteLearningRoundRow,
   type NoteLearningRoundTeachingRow,
 } from "@ailearn/shared/db-schema/note-learning-rounds";
+import { learningRuns } from "@ailearn/shared/db-schema/learning-runs";
 import {
   appendRoundPlanRevisionRequestV1Schema,
   roundPlanRevisionV1Schema,
@@ -353,6 +354,61 @@ export async function listRoundHistory(
     shownCount: page.length,
     totalCount: Number(totalRows[0]?.total ?? 0),
   };
+}
+
+/**
+ * 记录那一行「实际方式」与「系统不确定项」两格的事实来源（PRD §10.3；39d W4-8 刀一）。
+ *
+ * 三条判据都是**发生过什么**，不是计划或配额，而且各只有一处来源：
+ *  - `explained` = 这一轮有教学产物行（0284 只追加，讲过一次就永远算讲过；
+ *    动态版生成失败不留 artifact 行，也不改变"讲过"这件事——D4 §6.2 那条分离）；
+ *  - `practiced` = 有以这一轮为锚的 run（`origin ->> 'roundId'`，锚点由 `routes.ts:533` 签发）。
+ *    **被中途放弃的也算发生过**：那一格答的是"这一轮练过没有"，不是"练出了什么"，
+ *    后者是 `outcome` 与 `systemUncertain` 的活；
+ *  - `systemUncertain` = 这一轮的某一笔判定是 `not_assessable`（我们判不了）。
+ *    与 §3.2 那条同一口径：`not_assessable` 不是她的缺口，`declared_unable`（她明说不会）
+ *    更不是——把后者算进这一格，等于把"她承认不会"报成"系统不确定"。
+ *
+ * 两次读都是**本页那几个 id 的 IN**，不是全表扫：一页最多 20 条（`ROUND_HISTORY_MAX_LIMIT_V1`），
+ * 教学侧走 0284 的 `(round_id, ordinal)`，run 侧走的是与 `round-activity-sweep.ts:225`
+ * 同一支 jsonb 读法（那张表今天很小，且已经按 (workspace,user) 收窄；哪天要加表达式索引，
+ * 加在这里这一支上，不要在界面侧另数一遍）。
+ */
+export type RoundHistoryFactsV1 = {
+  explainedRoundIds: ReadonlySet<string>;
+  practicedRoundIds: ReadonlySet<string>;
+  uncertainRoundIds: ReadonlySet<string>;
+};
+
+export async function readRoundHistoryFactsV1(
+  tx: ApiTransaction,
+  roundIds: readonly string[],
+): Promise<RoundHistoryFactsV1> {
+  if (roundIds.length === 0) {
+    return { explainedRoundIds: new Set(), practicedRoundIds: new Set(), uncertainRoundIds: new Set() };
+  }
+  const taughtRows = await tx
+    .selectDistinct({ roundId: noteLearningRoundTeachings.roundId })
+    .from(noteLearningRoundTeachings)
+    .where(inArray(noteLearningRoundTeachings.roundId, [...roundIds]));
+  const runRows = await tx
+    .select({
+      roundId: sql<string>`${learningRuns.origin} ->> 'roundId'`,
+      outcome: sql<string | null>`${learningRuns.result} ->> 'outcome'`,
+    })
+    .from(learningRuns)
+    .where(and(
+      sql`${learningRuns.origin} ->> 'kind' = 'note_round'`,
+      inArray(sql`${learningRuns.origin} ->> 'roundId'`, [...roundIds]),
+    ));
+  const explainedRoundIds = new Set(taughtRows.map((row) => row.roundId));
+  const practicedRoundIds = new Set<string>();
+  const uncertainRoundIds = new Set<string>();
+  for (const row of runRows) {
+    practicedRoundIds.add(row.roundId);
+    if (row.outcome === "not_assessable") uncertainRoundIds.add(row.roundId);
+  }
+  return { explainedRoundIds, practicedRoundIds, uncertainRoundIds };
 }
 
 /**

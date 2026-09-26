@@ -95,17 +95,36 @@ before(async () => {
  * 那一轮会让下一条的"创建成功"变成 409——那读起来像路由坏了，其实是上一发的残留。
  * 与真窗口剧本里那条「起点必须干净」的守卫同一条道理（那里记过一次"无结论读数"）。
  */
+/**
+ * 只追加那三张要带绕行口子一起清（同 `note-learning-round-teaching-postgres` 的 `wipeRounds`）：
+ * 这一刀之前本文件只清 `note_learning_rounds`，之所以一直没红，是因为这里从没生成过教学行。
+ * 今天「讲过」那一格要用真生产者种一条，于是父表那发 DELETE 在级联到子表时炸出
+ * `note_learning_round_teachings is append-only` —— 顺带量出一条**产品侧的真缺陷**，
+ * 已单独登记在 39d §19（外键级联被只追加触发器挡住 ⇒ 解散空间那类拆租户路径会失败）。
+ */
+async function wipeRounds(wsId: string): Promise<void> {
+  await fixtureSql.begin(async (tx) => {
+    await tx`SELECT set_config('app.allow_history_mutation', 'on', true)`;
+    // 次序不是风格：`teachings.artifact_id` 指向 artifacts（0285 末尾那道 ALTER），
+    // 先清 artifacts 会被这条外键挡回来（23503，本轮实测过一次）。
+    await tx`DELETE FROM note_learning_round_teachings WHERE workspace_id = ${wsId}`;
+    await tx`DELETE FROM note_learning_round_artifacts WHERE workspace_id = ${wsId}`;
+    await tx`DELETE FROM note_learning_round_plan_revisions WHERE workspace_id = ${wsId}`;
+    await tx`DELETE FROM note_learning_rounds WHERE workspace_id = ${wsId}`;
+  });
+}
+
 beforeEach(async () => {
-  await fixtureSql`DELETE FROM note_learning_rounds WHERE workspace_id = ${workspaceId}`;
+  await wipeRounds(workspaceId);
 });
 
 after(async () => {
   if (seeded) {
-    await fixtureSql`DELETE FROM note_learning_rounds WHERE workspace_id = ${seeded.workspaceId}`;
+    await wipeRounds(seeded.workspaceId);
     await seeded.cleanup();
   }
   if (peerWorkspace) {
-    await fixtureSql`DELETE FROM note_learning_rounds WHERE workspace_id = ${peerWorkspace.workspaceId}`;
+    await wipeRounds(peerWorkspace.workspaceId);
     await peerWorkspace.cleanup();
   }
   if (peerUserId !== "") {
@@ -375,6 +394,86 @@ test("没有轮次与读不到这一篇同形：都回空表（这一条读的�
   assert.equal(empty.hasMore, false);
   const unknown = await readHistory(`/v2/notes/${randomUUID()}/learning-rounds`);
   assert.deepEqual(unknown.items, []);
+});
+
+/**
+ * 挂在这一轮上的一场 run，带一个**已结算**的 outcome（§10.3 那两格的读法只看
+ * `origin ->> 'roundId'` 与 `result ->> 'outcome'`，与 `round-activity-sweep.ts:225` 同一支）。
+ * origin 四格取真生产的那一份（`routes.ts:533` 签发的形状），objectiveId 这里给一个
+ * 新 uuid 是有意的：这一条测的是"锚点指得回来"，不是目标本身存在——那条已经被
+ * `note-round-practice-postgres` 用真目标钉过，不在这里重复一份假 FK。
+ */
+async function seedRoundRun(roundId: string, noteId: string, outcome: string): Promise<void> {
+  await fixtureSql.begin(async (tx) => {
+    await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+    await tx`
+      INSERT INTO learning_runs (id, workspace_id, user_id, origin, return_target,
+                                 target_fingerprint, goal, phase, result)
+      VALUES (
+        ${randomUUID()}, ${workspaceId}, ${userId},
+        ${tx.json({
+          kind: "note_round", roundId, noteId,
+          objectiveId: randomUUID(), keyPointId: randomUUID(),
+        })},
+        ${tx.json({ kind: "note_round", roundId, noteId })},
+        ${"a".repeat(64)}, 'stabilize', 'completed',
+        ${tx.json({ outcome, demonstratedFacets: [], gapFacets: [], scheduleImpact: { kind: "none", reasonCode: "not_assessable" } })}
+      )`;
+  });
+}
+
+test("记录那一行的两格新事实（§10.3／W4-8 刀一）：讲过、练过、判不准各归各的来源", async () => {
+  // 解释要有正文可读：这份夹具原本只建到"有版本"，教学那一发要的是块内容
+  // （同一支种法见 `note-learning-round-teaching-postgres`，这里不另造第二套材料）。
+  await fixtureSql.begin(async (tx) => {
+    await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+    await tx`
+      INSERT INTO note_blocks (id, version_id, workspace_id, ordinal, type, content)
+      VALUES (${randomUUID()}, ${versionA}, ${workspaceId}, 1, 'paragraph',
+              '有索引，查询仍然可能慢：统计信息过期时优化器会选全表扫。')`;
+  });
+  // 同一篇同时只能开着一条，所以一轮一轮地走：开 → 造事实 → 收尾。
+  const explained = await createOn(noteA, "只讲过的那一轮");
+  const explainedId = explained.roundId as string;
+  const taught = await call("POST", `/v2/note-learning-rounds/${explainedId}/teaching`, {
+    expectedRevision: explained.revision as number,
+  });
+  assert.equal(taught.statusCode, 201, `生成解释应当成功：${taught.statusCode} ${taught.body}`);
+  // 生成那一发会不会推进计数器由服务端定，所以收尾用**读回来的那一份** revision，
+  // 不在这里猜一个数（猜错的症状是 CAS 失败，看着像"记录测不到讲过"）。
+  const afterTeach = await call("GET", `/v2/notes/${noteA}/learning-round`);
+  await closeOn(explainedId, (body(afterTeach).revision ?? explained.revision) as number);
+
+  const practiced = await createOn(noteA, "练过并且判不准的那一轮");
+  const practicedId = practiced.roundId as string;
+  await seedRoundRun(practicedId, noteA, "not_assessable");
+  await closeOn(practicedId, practiced.revision as number);
+
+  const declared = await createOn(noteA, "她自己说不会的那一轮");
+  const declaredId = declared.roundId as string;
+  await seedRoundRun(declaredId, noteA, "declared_unable");
+  await closeOn(declaredId, declared.revision as number);
+
+  const untouched = await createOn(noteA, "只开了个头的那一轮");
+  const untouchedId = untouched.roundId as string;
+  await closeOn(untouchedId, untouched.revision as number);
+
+  const page = await readHistory(`/v2/notes/${noteA}/learning-rounds?limit=10`);
+  const byQuestion = new Map<string, Record<string, unknown>>(
+    (page.items as Record<string, unknown>[]).map((item) => [item.drivingQuestion as string, item]),
+  );
+  assert.deepEqual(byQuestion.get("只讲过的那一轮")?.actualModes, ["explained"], "教学产物有行＝讲过，与练没练无关");
+  assert.deepEqual(byQuestion.get("练过并且判不准的那一轮")?.actualModes, ["practiced"], "有锚回这一轮的 run＝练过");
+  assert.equal(byQuestion.get("练过并且判不准的那一轮")?.systemUncertain, true, "not_assessable 就是系统的判不准");
+  assert.equal(
+    byQuestion.get("她自己说不会的那一轮")?.systemUncertain,
+    false,
+    "declared_unable 是她明说不会，不是我们判不了——算进来等于把她的坦白报成系统的无能",
+  );
+  assert.deepEqual(byQuestion.get("只开了个头的那一轮")?.actualModes, [], "两格都没发生过是一种真实状态，不是缺数据");
+  assert.equal(byQuestion.get("只开了个头的那一轮")?.systemUncertain, false);
 });
 
 test("路径里那个 noteId 不是合法 id 就 400，不走「一片空白」那条安静路径", async () => {

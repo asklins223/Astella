@@ -930,6 +930,10 @@ function historyItem(overrides: Record<string, unknown> = {}) {
     drivingQuestion: "判断为什么有索引，查询仍然可能慢",
     drivingQuestionSource: "suggested",
     drivingQuestionRevision: 1,
+    // §10.3 那两格（W4-8 刀一）默认取"什么都没发生过"那一档：它是一行的**事实**，
+    // 不是可选项——要验"讲过／练过／判不准"的用例必须显式给 overrides。
+    actualModes: [],
+    systemUncertain: false,
     startedAt: "2026-09-24T02:00:00.000Z",
     closedAt: "2026-09-24T03:00:00.000Z",
     ...overrides,
@@ -1012,6 +1016,26 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
     const states = [...document.querySelectorAll(".notebook-round-history__list li")]
       .map((row) => row.querySelectorAll("span")[1].textContent?.trim());
     expect(states).toEqual(["正在进行", "停住了", "走完了", "中途出了问题"]);
+  });
+
+  it("实际方式与系统不确定项：只把真发生过的那几档上屏，一格都不猜", async () => {
+    await show([], {
+      roundHistory: historyOf([
+        historyItem({ roundId: "a1111111-1111-4111-8111-111111111111", actualModes: ["explained", "practiced"] }),
+        historyItem({ roundId: "a2222222-2222-4222-8222-222222222222", actualModes: ["practiced"] }),
+        historyItem({ roundId: "a3333333-3333-4333-8333-333333333333", actualModes: [], systemUncertain: true }),
+        historyItem({ roundId: "a4444444-4444-4444-8444-444444444444", actualModes: [] }),
+      ]),
+    });
+    // 两格各自只有"发生过"才出那一档：次序由服务端定（讲过在前），界面不重排也不补默认。
+    expect([...document.querySelectorAll("[data-round-history-modes]")].map((node) => node.textContent))
+      .toEqual(["讲过 · 练过", "练过"]);
+    expect([...document.querySelectorAll("[data-round-history-uncertain]")].map((node) => node.textContent))
+      .toEqual([ROUND_COPY.historyUncertain]);
+    const rows = historyRows();
+    expect(rows[3]).not.toContain("讲过");
+    expect(rows[3]).not.toContain("练过");
+    expect(rows[3]).not.toContain(ROUND_COPY.historyUncertain);
   });
 
   it("翻两页都接在后面；翻到最后一页才许说「开过 N 轮」，那颗也随之消失", async () => {

@@ -18,6 +18,7 @@ import {
   advanceNoteLearningRoundRequestV1Schema,
   createNoteLearningRoundRequestV1Schema,
   createRoundTeachingRequestV1Schema,
+  noteLearningRoundHistoryItemV1Schema,
   noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundV1Schema,
   roundTeachingViewV1Schema,
@@ -170,6 +171,47 @@ test("记录那一页的合同：游标坏形状拒，`hasMore` 与 `nextCursor`
   assert.equal(
     noteLearningRoundHistoryPageV1Schema.safeParse({ ...page(), extra: 1 }).success,
     false,
+  );
+});
+
+/**
+ * §10.3 记录那一行的两格新事实（39d W4-8 刀一）：「实际方式」与「系统不确定项」。
+ * 两格都是**必填**——可选项会被读成"这次没读到"，而这一行要答的是"发生过什么"。
+ */
+test("记录那一行：实际方式与系统不确定项都是必填格，档位只有两档", () => {
+  const item = (overrides: Record<string, unknown> = {}) => ({
+    roundId: ROUND_ID,
+    phase: "closed",
+    outcome: "partial",
+    drivingQuestion: "判断为什么有索引，查询仍然可能慢",
+    drivingQuestionSource: "suggested",
+    drivingQuestionRevision: 1,
+    actualModes: ["explained", "practiced"],
+    systemUncertain: false,
+    startedAt: "2026-09-24T02:00:00.000Z",
+    closedAt: "2026-09-24T03:00:00.000Z",
+    ...overrides,
+  });
+  assert.equal(noteLearningRoundHistoryItemV1Schema.safeParse(item()).success, true, "两档都发生过该过");
+  assert.equal(
+    noteLearningRoundHistoryItemV1Schema.safeParse(item({ actualModes: [] })).success,
+    true,
+    "只开了个头（没讲也没练）是一种真实状态，不是坏数据",
+  );
+  assert.equal(
+    noteLearningRoundHistoryItemV1Schema.safeParse({ ...item(), actualModes: undefined }).success,
+    false,
+    "缺这一格竟过得去 ⇒ 它会变成界面侧的第二个来源（自己猜一个默认值）",
+  );
+  assert.equal(
+    noteLearningRoundHistoryItemV1Schema.safeParse(item({ actualModes: ["explained", "practiced", "dynamically_explained"] })).success,
+    false,
+    "第三档（表达方式分档）今天还没有落点，不许先占一个语义未定的键",
+  );
+  assert.equal(
+    noteLearningRoundHistoryItemV1Schema.safeParse(item({ systemUncertain: "not_assessable" })).success,
+    false,
+    "这一格是布尔：把 outcome 字符串塞进来会让它变成第二个事实源",
   );
 });
 

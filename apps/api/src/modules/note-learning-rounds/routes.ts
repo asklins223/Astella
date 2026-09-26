@@ -58,6 +58,7 @@ import {
   createTeaching,
   findReusableTeaching,
   listRoundHistory,
+  readRoundHistoryFactsV1,
   listPlanRevisions,
   readOpenRound,
   readRound,
@@ -204,13 +205,18 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
     }
     const scope = scopeOf(req);
     let page;
+    let facts;
     try {
-      page = await withWorkspaceTransaction(scope, (tx) =>
-        listRoundHistory(tx, scope, noteId, {
+      ({ page, facts } = await withWorkspaceTransaction(scope, async (tx) => {
+        const history = await listRoundHistory(tx, scope, noteId, {
           limit: parsedQuery.data.limit,
           beforeRoundId: parsedQuery.data.before,
-        }),
-      );
+        });
+        // 两格事实按**本页那几条**去数（同一份 RLS 上下文、同一发事务）：
+        // 先分页再数，而不是先数再分页——后者会把"这一篇前 20 轮"变成"全篇扫一遍"。
+        const historyFacts = await readRoundHistoryFactsV1(tx, history.rows.map((row) => row.id));
+        return { page: history, facts: historyFacts };
+      }));
     } catch (err) {
       // 游标来路不对是**调用方的错**（`invalid_cursor` → 400），不吞成空页：
       // 空页会被界面读成"我的记录少了"，而真实原因是给了一个不属于这一篇的指针。
@@ -227,6 +233,12 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
         drivingQuestion: row.drivingQuestion,
         drivingQuestionSource: row.drivingQuestionSource,
         drivingQuestionRevision: row.drivingQuestionRevision,
+        // 「实际方式」的次序固定（讲过在前），由**有没有发生**决定，不随查询回来的次序变。
+        actualModes: [
+          ...(facts.explainedRoundIds.has(row.id) ? ["explained" as const] : []),
+          ...(facts.practicedRoundIds.has(row.id) ? ["practiced" as const] : []),
+        ],
+        systemUncertain: facts.uncertainRoundIds.has(row.id),
         startedAt: row.createdAt.toISOString(),
         closedAt: row.closedAt ? row.closedAt.toISOString() : null,
       })),

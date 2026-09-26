@@ -133,9 +133,12 @@ export const reviseDrivingQuestionRequestV1Schema = z.strictObject({
  *     历史记录把它们发给客户端不会多说明一件事，只会让"哪一格是合同"变模糊。
  *  2. `startedAt` 就是 `created_at`——但**换个名字**：那一行给用户看的是"哪一天"，
  *     把 DB 列名直接端出去，以后"记录按什么时间排"一改，客户端就跟着一起错。
- *  3. "实际方式"那一格今天只有 `drivingQuestionSource`（这句话是谁定的）能对上，
- *     §10.3 原文里还包括"这一轮实际怎么走的"——那还没有落点，所以这里**不装**：
- *     台账里登记为欠，而不是先给一个语义不符的键。
+ *  3. "实际方式"与"系统不确定项"两格（39d W4-8 刀一补上）是**从发生过的事实派生**的，
+ *     不是客户端能算的：讲解过 = 这一轮有教学产物行，练过 = 有以这一轮为锚的 run，
+ *     不确定 = 那一轮里有一笔判定是我们**判不了**（`not_assessable`）。三者都由服务端
+ *     在同一份 RLS 上下文里数出来，界面不重算（同一句话只准一个来源）。
+ *     仍未落点的是"表达方式按知识形态选的那一档"（动态／对照／表格／结构，W4-6 名下）——
+ *     那一格今天只有"有没有动态版"这一个真实值，等分档真的建起来再进这一行，不提前占位。
  *
  * 分页走**游标**（`before` = 上一页最后一条的 id），不走 offset：这一张表按"新的在前"排，
  * 中间插入一条新轮次就会让 offset 页整体错位，第 11 条被跳过或重复出现——那种错在读的人
@@ -144,6 +147,13 @@ export const reviseDrivingQuestionRequestV1Schema = z.strictObject({
 export const ROUND_HISTORY_DEFAULT_LIMIT_V1 = 10;
 export const ROUND_HISTORY_MAX_LIMIT_V1 = 20;
 
+/**
+ * §10.3 那一行的「实际方式」：这一轮**真的**发生过什么。空数组是诚实的一种状态——
+ * 只开了个头、既没讲也没练，不是"数据没读到"。
+ */
+export const roundHistoryModeV1Schema = z.enum(["explained", "practiced"]);
+export type RoundHistoryModeV1 = z.infer<typeof roundHistoryModeV1Schema>;
+
 export const noteLearningRoundHistoryItemV1Schema = z.strictObject({
   roundId: z.string().uuid(),
   phase: roundPhaseV1Schema,
@@ -151,6 +161,14 @@ export const noteLearningRoundHistoryItemV1Schema = z.strictObject({
   drivingQuestion: z.string().min(1).max(500),
   drivingQuestionSource: roundDrivingQuestionSourceV1Schema,
   drivingQuestionRevision: z.number().int().min(1),
+  /** 集合语义，不重复也不排序成"看起来有序"：由服务端按发生与否给。 */
+  actualModes: z.array(roundHistoryModeV1Schema).max(2),
+  /**
+   * 「系统不确定项」：这一轮里有一笔 **`not_assessable`** 的判定。
+   * 与 §3.2 那条同一口径——`not_assessable` 不是她的缺口，是我们的判不了；
+   * 所以这一格不许被复用成"表现不好"，也不许把 `declared_unable`（她明说不会）算进来。
+   */
+  systemUncertain: z.boolean(),
   startedAt: z.string().datetime({ offset: true }),
   closedAt: z.string().datetime({ offset: true }).nullable(),
 });

@@ -272,6 +272,10 @@ describe("IPC 通道覆盖对账", () => {
         drivingQuestion: "上一轮的那句问题",
         drivingQuestionSource: "user_authored",
         drivingQuestionRevision: 2,
+        // §10.3 那两格给**非默认值**：这条通道对账要证的正是"服务端算出来的事实
+        // 穿得过 IPC 的 strictObject、不会被哪一层悄悄丢掉"（`totalCount` 那一课的形状）。
+        actualModes: ["explained", "practiced"],
+        systemUncertain: true,
         startedAt: "2026-09-25T04:00:00.000Z",
         closedAt: "2026-09-25T05:00:00.000Z",
       }],
