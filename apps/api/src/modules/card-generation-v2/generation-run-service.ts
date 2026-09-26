@@ -430,13 +430,25 @@ export async function createGenerationRunV2(
     await tx.insert(cardGenerationRunOutboxV2).values({
       workspaceId: ctx.workspaceId,
       runId,
-      jobType: "card_generation_plan",
+      jobType: simplifiedChainEnabledV3() ? "card_generation_simplified_v1" : "card_generation_plan",
       payload: { runId, workspaceId: ctx.workspaceId, semanticSpecHash },
       status: "pending",
     }).onConflictDoNothing();
 
     return { runId, status: "planning" };
   });
+}
+
+/**
+ * 制卡链总控：一处常量＋一个环境变量，**未设＝完全回到改前行为**（v2 四阶段）。
+ *
+ * 简化链（`simplified_v3`）今天只在显式打开时被领到；W7-7 切入口并把旧链删掉之后，
+ * 这个开关与旧 jobType 一起消失（不留新旧开关是 W7-7 的完成判据）。
+ */
+const CARD_GENERATION_CHAIN_ENV = "CARD_GENERATION_CHAIN";
+
+function simplifiedChainEnabledV3(): boolean {
+  return (process.env[CARD_GENERATION_CHAIN_ENV] ?? "v2").trim().toLowerCase() === "simplified_v3";
 }
 
 export async function getGenerationRunV2(ctx: RunContext, runId: string) {

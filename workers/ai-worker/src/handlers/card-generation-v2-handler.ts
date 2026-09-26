@@ -114,7 +114,7 @@ import type {
 
 // ─── Outbox claim ────────────────────────────────────────────────────────
 
-interface PendingOutboxJob {
+export interface PendingOutboxJob {
   id: string;
   workspaceId: string;
   runId: string;
@@ -345,7 +345,7 @@ export async function renewV2OutboxLease(jobId: string, leaseToken: string): Pro
  * token CAS makes the whole transaction roll back instead of leaving a late
  * candidate/run mutation behind.
  */
-async function fenceV2OutboxLease(tx: WorkerTransaction, job: PendingOutboxJob): Promise<void> {
+export async function fenceV2OutboxLease(tx: WorkerTransaction, job: PendingOutboxJob): Promise<void> {
   const rows = await tx.execute<{ id: string }>(sql`
     UPDATE public.card_generation_run_outbox_v2
     SET lease_expires_at = now() + make_interval(secs => ${V2_OUTBOX_LEASE_TIMEOUT_MS / 1000})
@@ -770,6 +770,15 @@ export async function processV2OutboxJob(job: PendingOutboxJob): Promise<void> {
       case "card_generation_recheck_candidate":
         await processRecheckCandidateJob(job, pipelineSignal);
         break;
+      case "card_generation_simplified_v1": {
+        // W7-1 刀b：简化链（两次语义调用）。动态 import 是为了避开静态环——
+        // V3 那一边要复用本文件的落库件（plan/候选/binding plan/事件），
+        // 而这里是分发点。
+        const { processCardGenerationSimplifiedJob, resolveCardGenerationV3Providers } =
+          await import("../card-generation-v3/handler.ts");
+        await processCardGenerationSimplifiedJob(job, resolveCardGenerationV3Providers(), pipelineSignal);
+        break;
+      }
       case "card_v2_post_activation":
         // §17.5 step 17：outbox 异步投影消费——按 receiptId 幂等对账
         // （receipt/cards/objectives 存在性 + lifecycle 校验），对账结果写入
@@ -3959,7 +3968,7 @@ function stripReportHash(report: { reportHash: string }) {
  * 注意：表/列名以 packages/shared db-schema 的 drizzle 定义为准
  * （candidate_evidence_binding_plans_v2，无 card_ 前缀）。）
  */
-async function insertBindingPlanRow(
+export async function insertBindingPlanRow(
   tx: WorkerTransaction,
   args: {
     runId: string;
@@ -3986,7 +3995,7 @@ async function insertBindingPlanRow(
 }
 
 /** 单条 V2 运行事件写入（一次 MAX + 一次 INSERT；语义同 api helpers.insertEvent）。 */
-async function insertEvent(
+export async function insertEvent(
   tx: WorkerTransaction,
   workspaceId: string,
   runId: string,

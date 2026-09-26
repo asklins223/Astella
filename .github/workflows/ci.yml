@@ -767,6 +767,22 @@ jobs:
             src/integration-tests/card-generation-v2-plan-commit-postgres.integration.ts \
             2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/card-gen-v2-plan-commit.tap"
 
+      # 制卡简化链（39d W7-1 刀b）：五段接线在真库上端到端——入口总控两档、
+      # §16.28 的 2 次语义调用（读库里的完成事件，不读进程内计数）、检查失败
+      # 不重跑生成、零候选是正常结果。单文件跑（outbox 认领是全局的）。
+      - name: Verify the simplified card generation chain end to end (single file)
+        working-directory: workers/ai-worker
+        env:
+          NODE_ENV: test
+          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
+          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
+          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
+        run: |
+          set -o pipefail
+          node --import tsx --test --test-concurrency=1 \
+            src/integration-tests/card-generation-v3-simplified-postgres.integration.ts \
+            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/card-gen-v3-simplified.tap"
+
       # 竖向样例（39c §9 第一步 / 39d W3-3）：一条链跑在公共运行基础上——生成→检查→
       # 保存一张卡→开放回答→评估，两种模式共用同一层外壳，失败分支与恢复逐条钉。
       # 单文件跑（自己种 jobs 行，但与制卡那两组同理会抢 outbox，保持一步一档）。
