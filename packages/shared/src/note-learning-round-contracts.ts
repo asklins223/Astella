@@ -82,8 +82,38 @@ export type NoteLearningRoundV1Wire = z.infer<typeof noteLearningRoundV1Schema>;
 export const noteLearningRoundViewV1Schema = z.strictObject({
   version: z.literal(1),
   round: noteLearningRoundV1Schema,
+  /**
+   * 这一轮当初冻结的那一版正文，与这一篇**现在已保存的那一版**不是同一版。
+   *
+   * PRD §4.3 那一行（"未完旅程遇到修改 ⇒ 提供「继续当时内容」或「按当前内容新开一轮」"）
+   * 要的就是这个事实；D3 §5.1 把它的**时机**拍在"打开这一篇读那一轮时"与"恢复那一发"，
+   * 所以它由读侧现算，不存成一列——存了就成第二个事实源，而且笔记再改一次它不会自己跟上。
+   *
+   * 两个边界写清楚，别让这句话说过头：
+   * ① 判的是**已保存的版本**。自动保存只改当前版本的块行、不刷 `note_versions.content_hash`
+   * （`note/document-state.ts:186-191` 明写不碰），所以"编辑框里改了但没保存"不在此列——
+   * 那一维归 W4-4 的"开始前一致性"，两句话不许合成一句（D3 §5.1 后果②）。
+   * ② 这一篇读不到当前版本时是 `false`：说不出新旧就不报消息，与 `checkSourceOutdated`
+   * 同口径（D3 §3.3）。
+   */
+  contentMoved: z.boolean(),
 });
 export type NoteLearningRoundViewV1 = z.infer<typeof noteLearningRoundViewV1Schema>;
+
+/**
+ * 那一版比较本身（纯函数，也是读侧唯一的判据）。比的是**内容哈希**而不是版本 id：
+ * `checkpointNote` 遇到与已有版本逐字相同的内容会**复用那一版**（`note/service.ts:611-625`），
+ * 所以"版本号变了"不等于"内容变了"；§4.3 要提醒的是后者。
+ */
+export function noteRoundContentMovedV1(input: {
+  /** 这一轮冻结时记下的正文哈希（`note_learning_rounds.source_content_hash`）。 */
+  frozenSourceContentHash: string;
+  /** 这一篇当前版本的正文哈希；`null`＝读不到当前版本（没指针，或这篇不可见）。 */
+  currentSourceContentHash: string | null;
+}): boolean {
+  if (input.currentSourceContentHash === null) return false;
+  return input.currentSourceContentHash !== input.frozenSourceContentHash;
+}
 
 export const createNoteLearningRoundRequestV1Schema = z.strictObject({
   noteId: z.string().uuid(),

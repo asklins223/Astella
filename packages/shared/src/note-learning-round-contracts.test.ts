@@ -23,6 +23,7 @@ import {
   noteLearningRoundPersonalHistoryPageV1Schema,
   noteLearningRoundV1Schema,
   roundTeachingViewV1Schema,
+  noteRoundContentMovedV1,
 } from "./note-learning-round-contracts.ts";
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
@@ -376,4 +377,23 @@ test("「换一种解释」那一格：缺省合法，给了必须是布尔", ()
   assert.equal(createRoundTeachingRequestV1Schema.safeParse({ expectedRevision: 1 }).success, true);
   assert.equal(createRoundTeachingRequestV1Schema.safeParse({ expectedRevision: 1, regenerate: true }).success, true);
   assert.equal(createRoundTeachingRequestV1Schema.safeParse({ expectedRevision: 1, regenerate: "yes" }).success, false);
+});
+
+// ─── noteRoundContentMovedV1（D3 §5.1 轮次侧那一格比较）───────────────────
+test("内容漂移：同一版哈希 ⇒ 没动", () => {
+  assert.equal(noteRoundContentMovedV1({
+    frozenSourceContentHash: "hash-a", currentSourceContentHash: "hash-a",
+  }), false);
+});
+
+test("内容漂移：哈希不一样 ⇒ 动过", () => {
+  assert.equal(noteRoundContentMovedV1({
+    frozenSourceContentHash: "hash-a", currentSourceContentHash: "hash-b",
+  }), true);
+});
+
+test("内容漂移：读不到当前版本 ⇒ 不报消息（与 checkSourceOutdated 同方向）", () => {
+  assert.equal(noteRoundContentMovedV1({
+    frozenSourceContentHash: "hash-a", currentSourceContentHash: null,
+  }), false);
 });

@@ -43,6 +43,8 @@ import {
   noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundPersonalHistoryPageV1Schema,
   noteLearningRoundV1Schema,
+  noteLearningRoundViewV1Schema,
+  noteRoundContentMovedV1,
   reviseDrivingQuestionRequestV1Schema,
   roundGapHelpV1Schema,
   roundPracticeStartV1Schema,
@@ -64,6 +66,7 @@ import {
   type RoundHistoryFactsV1,
   readRoundHistoryFactsV1,
   listPlanRevisions,
+  readNoteCurrentSourceHashV1,
   readOpenRound,
   readRound,
   readRoundArtifactHtml,
@@ -109,6 +112,26 @@ const STATUS_BY_CODE: Record<string, 400 | 404 | 409 | 500> = {
 const teachingExplainProvider = deterministicTeachingExplainProviderV1();
 
 /** 内部形状 → 线上形状：时间是 ISO 字符串，且整份要过合同（合同漂移当场红）。 */
+/**
+ * 轮次回信的那一层信封，**四个出口共用这一份**（开一轮／读这一轮／推进／改问题）。
+ * `contentMoved` 由读侧现算：这一轮冻的是哪一版正文写在轮次行上，而"现在那一版是谁"
+ * 只有这一刻读得到（D3 §5.1：时机就是"打开这一篇读那一轮"与"恢复那一发"）。
+ */
+async function roundViewWire(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  round: NoteLearningRoundV1,
+) {
+  return noteLearningRoundViewV1Schema.parse({
+    version: 1 as const,
+    round: toWire(round),
+    contentMoved: noteRoundContentMovedV1({
+      frozenSourceContentHash: round.sourceContentHash,
+      currentSourceContentHash: await readNoteCurrentSourceHashV1(tx, scope, round.noteId),
+    }),
+  });
+}
+
 function toWire(round: NoteLearningRoundV1): NoteLearningRoundV1Wire {
   return noteLearningRoundV1Schema.parse({ version: 1, ...round });
 }
@@ -208,7 +231,9 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
           budgets: roundBudgetsV1(),
         });
       });
-      return reply.code(201).send({ version: 1 as const, round: toWire(created) });
+      return reply.code(201).send(await withWorkspaceTransaction(scope, (tx) =>
+        roundViewWire(tx, scope, created),
+      ));
     } catch (err) {
       return replyRoundError(reply, err, "开这一轮没成功", (tx, s) => readOpenRound(tx, s, parsed.data.noteId));
     }
@@ -220,12 +245,15 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "invalid_request", message: "noteId 不是一个合法 id" });
     }
     const scope = scopeOf(req);
-    const round = await withWorkspaceTransaction(scope, (tx) => readOpenRound(tx, scope, noteId));
-    if (!round) {
+    const view = await withWorkspaceTransaction(scope, async (tx) => {
+      const round = await readOpenRound(tx, scope, noteId);
+      return round ? roundViewWire(tx, scope, round) : null;
+    });
+    if (!view) {
       // 这一格 404 不是"页面坏了"：这一篇没有未完成轮次是常态（第一次开始之前）。
       return reply.code(404).send({ error: "round_not_found", message: "这一篇现在没有未完成的轮次" });
     }
-    return { version: 1 as const, round: toWire(round) };
+    return view;
   });
 
   app.get("/v2/notes/:noteId/learning-rounds", async (req, reply) => {
@@ -318,10 +346,8 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
     }
     const scope = scopeOf(req);
     try {
-      const updated = await withWorkspaceTransaction(scope, (tx) =>
-        advanceRound(tx, scope, { roundId, expectedRevision: parsed.data.expectedRevision, action: parsed.data.action }),
-      );
-      return { version: 1 as const, round: toWire(updated) };
+      return await withWorkspaceTransaction(scope, async (tx) => roundViewWire(tx, scope, await
+        advanceRound(tx, scope, { roundId, expectedRevision: parsed.data.expectedRevision, action: parsed.data.action })));
     } catch (err) {
       return replyRoundError(reply, err, "推进这一轮没成功", (tx, s) => readRound(tx, s, roundId));
     }
@@ -335,15 +361,13 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
     }
     const scope = scopeOf(req);
     try {
-      const updated = await withWorkspaceTransaction(scope, (tx) =>
+      return await withWorkspaceTransaction(scope, async (tx) => roundViewWire(tx, scope, await
         reviseDrivingQuestion(tx, scope, {
           roundId,
           expectedRevision: parsed.data.expectedRevision,
           drivingQuestion: parsed.data.drivingQuestion,
           drivingQuestionSource: parsed.data.drivingQuestionSource,
-        }),
-      );
-      return { version: 1 as const, round: toWire(updated) };
+        })));
     } catch (err) {
       return replyRoundError(reply, err, "改写本轮问题没成功", (tx, s) => readRound(tx, s, roundId));
     }

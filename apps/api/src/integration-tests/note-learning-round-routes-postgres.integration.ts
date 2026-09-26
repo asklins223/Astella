@@ -21,6 +21,7 @@ import { closeDatabase } from "../db/client.ts";
 import {
   noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundV1Schema,
+  noteLearningRoundViewV1Schema,
   ROUND_HISTORY_MAX_LIMIT_V1,
 } from "@ailearn/shared/note-learning-round-contracts";
 import { seedNotesOnlyWorkspace, type NotesOnlyWorkspaceFixture } from "./helpers/pure-v2-workspace-fixture.ts";
@@ -628,3 +629,51 @@ test("同一时刻开出的两轮也要不重不漏地翻完（游标里那一�
   }
   assert.deepEqual(new Set(seen).size, 3, `三轮都要翻到且只翻一次，实到 ${seen.length} 条`);
 });
+
+/**
+ * D3 §5.1 的**轮次侧**：这一轮冻的那一版正文，与这一篇现在已保存的那一版是不是同一版。
+ *
+ * 三条各钉一个方向：刚开的这一轮必须说"没动"；保存出新版本之后要说"动了"（§4.3 那句
+ * 「继续当时内容／按当前内容新开一轮」要有事实依据才有得摆）；**把指针挪回去之后必须
+ * 重新说"没动"**——这一位不是一根只会变红的旗子，它跟着事实走。
+ */
+test("读这一轮：这一篇后来又保存过一版时，回信里要说得出这一点", async () => {
+  const created = await createOne("这一轮冻住的那一版正文");
+  const viewUrl = `/v2/notes/${noteA}/learning-round`;
+
+  const fresh = noteLearningRoundViewV1Schema.parse(
+    body(await call("GET", viewUrl)) as never,
+  );
+  assert.equal(fresh.round.roundId, created.roundId as string);
+  assert.equal(fresh.contentMoved, false, "刚冻的那一版就是现在这一版，不该报「动过」");
+
+  const versionB = randomUUID();
+  await fixtureSql`INSERT INTO note_versions
+      (id, note_id, workspace_id, version_no, content_json, content_hash, created_by)
+    VALUES (${versionB}, ${noteA}, ${workspaceId}, 4242,
+      ${fixtureSql.json({ blocks: [{ type: "paragraph", content: "后来补的一段" }] })},
+      'moved-by-a-save', ${userId})`;
+  await fixtureSql`UPDATE notes SET current_version_id = ${versionB} WHERE id = ${noteA}`;
+  try {
+    const moved = noteLearningRoundViewV1Schema.parse(
+      body(await call("GET", viewUrl)) as never,
+    );
+    assert.equal(moved.contentMoved, true,
+      "正文已经保存到另一版了，还报「没动」就是让界面说不出那句「先核对」");
+
+    // 反向：把指针挪回冻住的那一版，这一位必须跟着回到 false（不是单向旗子）。
+    await fixtureSql`UPDATE notes SET current_version_id = ${versionA} WHERE id = ${noteA}`;
+    const back = noteLearningRoundViewV1Schema.parse(
+      body(await call("GET", viewUrl)) as never,
+    );
+    assert.equal(back.contentMoved, false, "回到同一版还说动过，就是把这一位做成了噪音");
+  } finally {
+    await fixtureSql`UPDATE notes SET current_version_id = ${versionA} WHERE id = ${noteA}`;
+    await fixtureSql.begin(async (tx) => {
+      await tx`SELECT set_config('app.allow_history_mutation', 'on', true)`;
+      await tx`DELETE FROM note_versions WHERE id = ${versionB}`;
+    });
+  }
+  await closeOn(created.roundId as string, created.revision as number);
+});
+

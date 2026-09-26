@@ -26,7 +26,7 @@ import {
   type NoteLearningRoundTeachingRow,
 } from "@ailearn/shared/db-schema/note-learning-rounds";
 import { learningRunEvents, learningRuns } from "@ailearn/shared/db-schema/learning-runs";
-import { notes } from "@ailearn/shared/db-schema/note";
+import { noteVersions, notes } from "@ailearn/shared/db-schema/note";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import {
   appendRoundPlanRevisionRequestV1Schema,
@@ -243,6 +243,31 @@ export async function createRound(
 }
 
 /** 「继续学习」只恢复未终结轮次（§3.2）：这里就是那一档的读法。 */
+/**
+ * 这一篇**现在已保存的那一版**正文哈希（`note_versions.content_hash`）。
+ * 读不到（这篇不可见、或没有当前版本指针）时回 null——调用方据此**不报消息**，
+ * 与 `checkSourceOutdated` 同一个方向（D3 §3.3）。
+ * 只取那一列，不顺手把块读出来：这一发在每次打开轮次时都要跑。
+ */
+export async function readNoteCurrentSourceHashV1(
+  tx: ApiTransaction,
+  scope: { workspaceId: string; userId: string },
+  noteId: string,
+): Promise<string | null> {
+  const [row] = await tx
+    .select({ contentHash: noteVersions.contentHash })
+    .from(notes)
+    .innerJoin(noteVersions, eq(noteVersions.id, notes.currentVersionId))
+    .where(and(
+      eq(notes.id, noteId),
+      eq(notes.workspaceId, scope.workspaceId),
+      visibleNotesCondition(scope.userId),
+    ))
+    .limit(1);
+  return row?.contentHash ?? null;
+}
+
+
 export async function readOpenRound(
   tx: ApiTransaction,
   scope: RoundScopeV1,
