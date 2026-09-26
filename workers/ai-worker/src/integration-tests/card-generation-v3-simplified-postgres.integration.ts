@@ -383,6 +383,242 @@ test("端到端：两发语义调用走到 review_ready，候选带着 binding p
   assert.notEqual(kept[0]?.review_decision, "undecided", "保留之后那一格要改口");
 });
 
+/**
+ * 新链出的卡**保存得下来**（W7-1 与 W7-2 的接缝）。
+ *
+ * 上一条用例只走到"保留"。§16.28 那句"零候选是正常结果"讲的只是生成侧；这一发回答另一半：
+ * 简化链产的候选过不过得了现网那条真实激活命令（闭包重验、binding plan 资格、发布后那道泄题闸），
+ * 以及「保存并开启复习」那一档在这一发上接不接得住唯一调度边界。全程只用现网命令——
+ * 上一条用例已经 `keep` 过一张，这里直接拿它激活。
+ */
+test("保存那一发：新链的候选过得了真实激活，并按那一档排上唯一那条安排", async (t) => {
+  const kept = (await admin`
+    SELECT candidate_id, candidate_revision_id, revision, candidate_revision_hash,
+           evidence_binding_plan_hash, quality_state
+    FROM card_generation_candidates_v2
+    WHERE run_id = ${simplifiedRunId} AND review_decision = 'keep'
+    ORDER BY candidate_id LIMIT 1
+  ` as unknown as Array<{
+    candidate_id: string; candidate_revision_id: string; revision: number;
+    candidate_revision_hash: string; evidence_binding_plan_hash: string | null;
+    quality_state: string;
+  }>)[0];
+  assert.ok(kept, "上一条用例应当留下一张已保留的候选；没有就是夹具坏了");
+  assert.equal(kept.quality_state, "passed", "激活只接过了内容检查的候选");
+  assert.ok(kept.evidence_binding_plan_hash, "激活重验资格看的就是这一格");
+
+  const runRow = (await admin`
+    SELECT card_content_epoch, source_snapshot_hash, semantic_spec_hash, input_snapshot_hash,
+           review_draft_revision
+    FROM card_generation_runs_v2 WHERE id = ${simplifiedRunId}
+  ` as unknown as Array<Record<string, unknown>>)[0];
+  const planRow = (await admin`
+    SELECT plan_revision_id, plan_version, plan_hash FROM card_generation_plans_v2
+    WHERE run_id = ${simplifiedRunId} ORDER BY plan_version DESC LIMIT 1
+  ` as unknown as Array<Record<string, unknown>>)[0];
+  const { computeClientReviewHashV2 } = await import(
+    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+  );
+  const clientReviewHash = computeClientReviewHashV2({
+    runId: simplifiedRunId,
+    expectedReviewDraftRevision: Number(runRow!.review_draft_revision),
+    selected: [{
+      candidateId: kept.candidate_id,
+      revision: kept.revision,
+      revisionHash: kept.candidate_revision_hash,
+    }],
+    reviewUiContractVersion: "review-ui-v1",
+  });
+  const request = {
+    version: 2 as const,
+    runId: simplifiedRunId,
+    sourceSnapshotHash: String(runRow!.source_snapshot_hash),
+    semanticSpecHash: String(runRow!.semantic_spec_hash),
+    inputSnapshotHash: String(runRow!.input_snapshot_hash),
+    expectedCardContentEpoch: Number(runRow!.card_content_epoch),
+    planRevisionId: String(planRow!.plan_revision_id),
+    expectedPlanVersion: Number(planRow!.plan_version),
+    planHash: String(planRow!.plan_hash),
+    selectedCandidates: [{
+      candidateRevisionId: kept.candidate_revision_id,
+      candidateId: kept.candidate_id,
+      revision: kept.revision,
+      revisionHash: kept.candidate_revision_hash,
+      candidateEvidenceBindingPlanHash: kept.evidence_binding_plan_hash!,
+      qualityReportHashes: [],
+      intent: { kind: "create_new" } as const,
+    }],
+    existingLifecycleActions: [],
+    expectedReviewDraftRevision: Number(runRow!.review_draft_revision),
+    clientReviewHash,
+    startReviewScheduling: true,
+  };
+
+  const { activateCardCandidatesV2 } = await import(
+    "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
+  );
+  const ctx = { workspaceId: WORKSPACE_ID, userId: USER_ID };
+
+  // ── 两道"这一发凭什么算过"，先量再走成功路径 ─────────────────────────────
+  // 激活侧对依据本身做两件事：引用的证据快照此刻还得是 `usable`（§13.1），以及
+  // binding plan 冻住的那份**资格向量哈希**要与当场重算的一致（§13.3）。
+  // 只在成功路径上钉一句"能激活"，分不清"新链交的闭包是真的"与"那道闸被绕过了"。
+  const bindingPlanRow = (await admin`
+    SELECT target_unit_bindings, evidence_eligibility_vector_hash
+    FROM candidate_evidence_binding_plans_v2
+    WHERE run_id = ${simplifiedRunId} AND candidate_revision_id = ${kept.candidate_revision_id}
+  ` as unknown as Array<{ target_unit_bindings: unknown; evidence_eligibility_vector_hash: string | null }>)[0];
+  assert.ok(bindingPlanRow, "过了内容检查的候选必须留下 binding plan 行");
+  const frozenVectorHash = String(bindingPlanRow!.evidence_eligibility_vector_hash ?? "");
+  // 服务端对"占位形状"豁免这段比对（那是给手写夹具留的口子）。新链哪天改成写占位符，
+  // 这道闸就对这条链**静默失效**——所以这里把它钉成会红的东西。
+  assert.equal(/^([a-f0]{64}|0{64})$/.test(frozenVectorHash), false,
+    `新链不许交回占位资格向量（得到 ${frozenVectorHash.slice(0, 8)}…）`);
+  const bindings = (typeof bindingPlanRow!.target_unit_bindings === "string"
+    ? JSON.parse(bindingPlanRow!.target_unit_bindings)
+    : bindingPlanRow!.target_unit_bindings) as Array<Record<string, unknown>>;
+  const snapshotIds = [...new Set(bindings
+    .flatMap((entry) => typeof entry.evidenceSnapshotId === "string" ? [entry.evidenceSnapshotId] : []))];
+  assert.ok(snapshotIds.length > 0, "读不到这张候选引用的证据快照——那下面两条拒绝用例就是瞎测");
+  const [snapshotId] = snapshotIds;
+  const eligibilityBefore = (await admin`
+    SELECT status, eligibility_epoch, eligibility_vector_hash FROM evidence_eligibility_states_v2
+    WHERE workspace_id = ${WORKSPACE_ID} AND evidence_snapshot_id = ${snapshotId}
+  ` as unknown as Array<{ status: string; eligibility_epoch: number; eligibility_vector_hash: string }>)[0];
+  assert.ok(eligibilityBefore, "封存时该给被引用的快照留下一行资格状态");
+  const restoreEligibility = async () => {
+    await admin`
+      UPDATE evidence_eligibility_states_v2
+      SET status = ${eligibilityBefore!.status}, eligibility_epoch = ${eligibilityBefore!.eligibility_epoch},
+          eligibility_vector_hash = ${eligibilityBefore!.eligibility_vector_hash}
+      WHERE workspace_id = ${WORKSPACE_ID} AND evidence_snapshot_id = ${snapshotId}
+    `;
+  };
+  // 半路红了也要把资格状态还回去（这个文件的 `after()` 按 workspace 删行，删不掉别人那条）。
+  t.after(restoreEligibility);
+
+  const cardCount = async () => Number((await admin`
+    SELECT count(*)::int AS n FROM learning_cards_v2 WHERE workspace_id = ${WORKSPACE_ID}
+  ` as unknown as Array<{ n: number }>)[0]?.n);
+  const cardsBefore = await cardCount();
+
+  // ① 依据被撤销 ⇒ 拒，并且一格都不写。
+  await admin`
+    UPDATE evidence_eligibility_states_v2
+    SET status = 'revoked', eligibility_epoch = eligibility_epoch + 1
+    WHERE workspace_id = ${WORKSPACE_ID} AND evidence_snapshot_id = ${snapshotId}
+  `;
+  await assert.rejects(
+    () => activateCardCandidatesV2(ctx, request, `v3-revoked-${randomUUID()}`),
+    (error: unknown) => (error as { code?: string }).code === "evidence_revoked",
+    "依据撤销之后，新链的卡不许保存下来",
+  );
+  assert.equal(await cardCount(), cardsBefore, "被拒的那一发一张卡都不写（不部分提交）");
+  assert.equal(await runStatus(simplifiedRunId), "review_ready", "被拒之后这一轮还停在可审核，没有半推进");
+  await restoreEligibility();
+
+  // ② 闭包被改 ⇒ 也拒：证明激活真的比对了那份向量哈希，而不是只看它在不在。
+  //    挑的替身值含 `1`（不在豁免用到的 [a-f0] 里），否则会被那道豁免当成占位符放过。
+  await admin`
+    UPDATE candidate_evidence_binding_plans_v2
+    SET evidence_eligibility_vector_hash = ${"1".repeat(64)}
+    WHERE run_id = ${simplifiedRunId} AND candidate_revision_id = ${kept.candidate_revision_id}
+  `;
+  await assert.rejects(
+    () => activateCardCandidatesV2(ctx, request, `v3-tampered-${randomUUID()}`),
+    (error: unknown) => (error as { code?: string }).code === "stale_evidence",
+    "资格向量对不上时不许激活",
+  );
+  assert.equal(await cardCount(), cardsBefore, "第二发被拒同样不留卡");
+  await admin`
+    UPDATE candidate_evidence_binding_plans_v2
+    SET evidence_eligibility_vector_hash = ${frozenVectorHash}
+    WHERE run_id = ${simplifiedRunId} AND candidate_revision_id = ${kept.candidate_revision_id}
+  `;
+
+  // ── 两道闸都咬得住之后，再走成功那一发 ──────────────────────────────────
+  const receipt = await activateCardCandidatesV2(
+    ctx,
+    request,
+    `v3-activate-${randomUUID()}`,
+  );
+  const mapping = receipt.mappings[0]!;
+  assert.ok(mapping.cardId && mapping.objectiveId, "回执要指得出那张卡与那个目标");
+
+  // 那张卡表认的是业务列 `card_id`（`id` 是行主键，两者不同 uuid——第一次写这里用 `id`
+  // 查到 0 行，红的是我自己的查询形状，不是链）。
+  const cards = await admin`
+    SELECT lifecycle FROM learning_cards_v2 WHERE card_id = ${mapping.cardId} AND workspace_id = ${WORKSPACE_ID}
+  ` as unknown as Array<{ lifecycle: string }>;
+  assert.equal(cards.length, 1, "新链的卡真的落在现网那张卡上");
+  assert.equal(cards[0]!.lifecycle, "active");
+
+  // 「保存并开启复习」那一档在这一发上也成立：恰一条待处理安排，回执说的那天就是库里那天。
+  assert.ok(receipt.scheduling, "要了那一档就要交出排期结果");
+  assert.equal(receipt.scheduling[0].created, true, "第一次开启是新建，不是凭空说沿用");
+  const schedules = await admin`
+    SELECT id, status, next_review_at, reason_code FROM review_schedules
+    WHERE workspace_id = ${WORKSPACE_ID} AND subject_id = ${mapping.objectiveId}
+  ` as unknown as Array<{ id: string; status: string; next_review_at: Date; reason_code: string }>;
+  assert.equal(schedules.length, 1, "新链这一发也只留一条安排（挡它的是同一条唯一索引）");
+  assert.equal(schedules[0]!.status, "pending");
+  assert.equal(schedules[0]!.reason_code, "activation_authorized");
+  assert.equal(receipt.scheduling[0].nextReviewAt, new Date(schedules[0]!.next_review_at).toISOString());
+  for (const row of schedules) {
+    // 这个文件的 `after()` 原本没有卡片侧（此前没人激活过）；这一发起的账自己收。
+    t.after(async () => {
+      await admin`DELETE FROM review_schedules WHERE id = ${row.id} AND workspace_id = ${WORKSPACE_ID}`;
+    });
+  }
+
+  // 卡组那一读说的那天，必须就是回执说的那天——这一格是**另一条 SQL**（`card-service.ts`
+  // 的 `listActiveCardsV2` 自己 JOIN `review_schedules`），两处各读各的迟早分叉。
+  const { listActiveCardsV2, readPublicCardV2 } = await import(
+    "../../../../apps/api/src/modules/card-generation-v2/card-service.ts"
+  );
+  const listed = (await listActiveCardsV2(ctx, {})).items.find(
+    (card: { objectiveId: string }) => card.objectiveId === mapping.objectiveId,
+  ) as { nextReviewAt?: string; reviewStatus?: string } | undefined;
+  assert.ok(listed, "保存下来的卡要出现在现网那份卡列表里（那条读路就是界面读的）");
+  assert.equal(listed!.reviewStatus, "pending", "列表要说清这条安排是待处理");
+  assert.equal(listed!.nextReviewAt, receipt.scheduling[0].nextReviewAt,
+    "回执与卡列表两处读数不许各说一套");
+
+  // 两条待处理安排可以并存（唯一键里带着观察维度），那时"下一次复习"报哪一条**必须有仲裁者**。
+  // 判据拍成"最早那一条"：复习队列与目标面本来就按 `next_review_at ASC` 取（`hud-pages.ts`
+  // 那句"队列按升序"），卡侧那两处原先是 `DESC` ⇒ 同一目标两处会报出不同日期。
+  // 今天生产路径只写默认维度，撞不上；W7-5 一开始按维度排期就会撞上，所以现在就把它钉住。
+  await admin`
+    INSERT INTO review_schedules
+      (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at,
+       interval_days, generation, policy_version, reason_code, review_dimension, created_at, updated_at)
+    VALUES (gen_random_uuid(), ${WORKSPACE_ID}, ${USER_ID}, 'card', ${mapping.objectiveId}, 'pending',
+            now() + interval '10 days', 4, 1, 'discrete-v2', 'second_dimension_fixture', 'recall_probe', now(), now())
+  `;
+  t.after(async () => {
+    await admin`
+      DELETE FROM review_schedules
+      WHERE workspace_id = ${WORKSPACE_ID} AND reason_code = 'second_dimension_fixture'
+    `;
+  });
+  const listedWithSecond = (await listActiveCardsV2(ctx, {})).items.find(
+    (card: { objectiveId: string }) => card.objectiveId === mapping.objectiveId,
+  ) as { nextReviewAt?: string } | undefined;
+  assert.equal(listedWithSecond?.nextReviewAt, receipt.scheduling[0].nextReviewAt,
+    "同一目标多一条更晚的安排时，卡侧仍要报**最近的那一次**（与队列同一判据）");
+  const detail = await readPublicCardV2(ctx, mapping.cardId);
+  assert.equal(detail?.nextReviewAt, receipt.scheduling[0].nextReviewAt,
+    "卡详情那一读要与卡列表同一判据，不许一处取最早、一处取最晚");
+
+  // 下游消费者也收到这一发：激活后排一条 post-activation 投影任务（与旧链同一条出口）。
+  const dispatched = await admin`
+    SELECT count(*)::int AS n FROM card_generation_run_outbox_v2
+    WHERE run_id = ${simplifiedRunId} AND job_type = 'card_v2_post_activation'
+  ` as unknown as Array<{ n: number }>;
+  assert.equal(dispatched[0]!.n, 1, "新链的保存也要投出那一条后置投影任务");
+  assert.equal(await runStatus(simplifiedRunId), "activated");
+});
+
 test("检查失败不重跑生成：计划与首稿留着，重投从段 4 接上", async () => {
   const buildGenerate = countingGenerate();
   const {

@@ -16,7 +16,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import type { ApiTransaction } from "../../db/client.ts";
 import { clampLimit, clampOffset } from "../../lib/pagination-utils.ts";
@@ -640,7 +640,10 @@ export async function readPublicCardV2(
       eq(reviewSchedules.subjectType, "card"),
       eq(reviewSchedules.subjectId, card.objectiveId),
       eq(reviewSchedules.status, "pending"),
-    )).orderBy(desc(reviewSchedules.nextReviewAt)).limit(1);
+    // 一个目标可以同时有多条待处理安排（唯一键带着观察维度），"下一次复习"取**最早**那一条：
+    // 复习队列与目标面本来就按升序读（`hud-pages.ts` 那句"队列按 nextReviewAt 升序"），
+    // 这里曾经是 `desc` ⇒ 同一目标两处会报出不同日期，而屏幕上两处都说的是同一件事。
+    )).orderBy(asc(reviewSchedules.nextReviewAt)).limit(1);
     return parsePublicLearningCardV2({
       version: 2,
       cardId: card.cardId,
@@ -752,7 +755,7 @@ export async function listActiveCardsV2(
           eq(reviewSchedules.subjectType, "card"),
           eq(reviewSchedules.status, "pending"),
           inArray(reviewSchedules.subjectId, objectiveIds),
-        )).orderBy(desc(reviewSchedules.nextReviewAt))
+        )).orderBy(asc(reviewSchedules.nextReviewAt))  // 与上面那一读同一条判据：取最早
       : [];
     const schedByObjective = new Map<string, { status: string; nextReviewAt: Date }>();
     for (const s of schedRows) {
