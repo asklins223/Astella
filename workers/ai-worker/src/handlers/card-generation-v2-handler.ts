@@ -65,8 +65,6 @@ import {
   runGroundingCritic,
   runPedagogyCritic,
   runDeterministicFinalGates,
-  deterministicGroundingPrecheck,
-  deterministicPedagogyPrecheck,
   computeSemanticClustersV2,
   type GroundingCriticProvider,
   type PedagogyCriticProvider,
@@ -79,7 +77,8 @@ import type {
   PedagogyIssueCodeV2,
 } from "@ailearn/shared/card-quality-v2-contracts";
 import {
-  runCandidateDeterministicGatesV2,
+  buildCandidatePrecheck,
+  runDeterministicGroundingContract,
 } from "@ailearn/shared/card-generation-v2-pipeline";
 import {
   filterBlocksBySourceScope,
@@ -2052,28 +2051,7 @@ export function withBindingPlanHashes(
   return { ...next, reportHash: computePedagogyReportHash(next) };
 }
 
-/** 12.1 deterministic precheck（纯计算，无 IO）。 */
-export function buildCandidatePrecheck(
-  candidate: LearningCardCandidateRevisionV2,
-  sourceContent: string,
-  evidenceManifest: unknown,
-): { candidate: LearningCardCandidateRevisionV2; fatalPre: QualityIssue[]; softPre: QualityIssue[] } {
-  const precheckGating = runCandidateDeterministicGatesV2({
-    candidate,
-    evidenceManifest: evidenceManifest as never,
-  });
-  const groundingPre = deterministicGroundingPrecheck(candidate, sourceContent);
-  const pedagogyPre = deterministicPedagogyPrecheck(candidate, sourceContent);
-  const allPre = [...precheckGating, ...groundingPre, ...pedagogyPre];
-  return {
-    candidate,
-    fatalPre: allPre.filter((i) => i.severity === "hard"),
-    // 2026-08-25（AI 设计审计修复，§4.5 兑现注释承诺）：soft 信号不再算完
-    // 即弃——随 grounding 事件落审计面（排查误杀/漏检可取证），并注入
-    // Pedagogy Critic 的 per-candidate 输入作为风险参考。
-    softPre: allPre.filter((i) => i.severity === "soft"),
-  };
-}
+/** 12.1 deterministic precheck：实现自 2026-09-26 起在 `@ailearn/shared/card-generation-v2-pipeline`（V3 简化链共用一份判据）。 */
 
 /**
  * 12.2 grounding provider 调用（**纯网络，无 tx**）。
@@ -3920,44 +3898,7 @@ export async function insertRepairedCandidateV2(
 }
 
 // ─── 确定性辅助 ──────────────────────────────────────────────────────────
-
-/**
- * 确定性 Grounding：sealed 有证据时，逐一校验 answer/rubric 引用均落在
- * sealed evidence 范围内 → pass（保持离线/测试可用）。
- */
-async function runDeterministicGroundingContract(
-  candidate: LearningCardCandidateRevisionV2,
-  evidenceManifest: AssemblerEvidenceManifest,
-): Promise<Awaited<ReturnType<typeof runGroundingCritic>>> {
-  const reportId = randomUUID();
-  const allEntailed = evidenceManifest.evidence.length > 0;
-  const candidateSnapIds = [...candidate.objective.evidenceRefIds, ...candidate.objective.rubric.units.flatMap((u) => u.evidenceRefIds)];
-  const manifestIds = new Set(evidenceManifest.evidence.map((e) => e.evidenceSnapshotId));
-  const anyRefOutside = candidateSnapIds.length > 0 && candidateSnapIds.some((id) => !manifestIds.has(id));
-  const verdict = allEntailed && !anyRefOutside ? "pass" : "fail";
-  return {
-    version: 2,
-    reportId,
-    candidateRevisionId: candidate.candidateRevisionId,
-    candidateRevisionHash: candidate.candidateRevisionHash,
-    evidenceSetHash: computeCandidateEvidenceSetHashV2(evidenceManifest.evidence.map((e) => ({ evidenceSnapshotId: e.evidenceSnapshotId, evidenceSnapshotHash: e.evidenceSnapshotHash }))),
-    evidenceEligibilityVectorHash: candidate.evidenceSetHash,
-    inputHash: candidate.evidenceSetHash,
-    verdict,
-    answerUnits: [],
-    learningSupport: [],
-    relationSupport: [],
-    rubricSupport: [],
-    hardIssues: verdict === "fail" ? ["deterministic grounding failed"] : [],
-    criticVersion: "deterministic-grounding-v1",
-    reportHash: hashCanonicalV2("card-generation-v2/grounding-critic-report", {
-      candidateRevisionId: candidate.candidateRevisionId,
-      evidenceSetHash: computeCandidateEvidenceSetHashV2(evidenceManifest.evidence.map((e) => ({ evidenceSnapshotId: e.evidenceSnapshotId, evidenceSnapshotHash: e.evidenceSnapshotHash }))),
-      verdict,
-      hardIssues: verdict === "fail" ? ["deterministic grounding failed"] : [],
-    }),
-  };
-}
+// 确定性 Grounding 的实现在 `@ailearn/shared/card-generation-v2-pipeline`（W7-1 刀a 上移，V3 共用）。
 
 function groundingContractToQualityReport(
   contract: Awaited<ReturnType<typeof runGroundingCritic>>,

@@ -425,6 +425,11 @@
       "types": "./src/workspace-transaction.ts",
       "import": "./src/workspace-transaction.ts",
       "default": "./src/workspace-transaction.ts"
+    },
+    "./card-generation-v3-contracts": {
+      "types": "./src/card-generation-v3-contracts.ts",
+      "import": "./src/card-generation-v3-contracts.ts",
+      "default": "./src/card-generation-v3-contracts.ts"
     }
   },
   "dependencies": {

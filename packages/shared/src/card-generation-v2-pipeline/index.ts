@@ -24,3 +24,6 @@ export * from "./concurrency.ts";
 // DB 写入（snapshots/eligibility/binding plan 落库）在 apps/api 的 IO 壳。
 export * from "./evidence-seal-core.ts";
 export * from "./binding-plan-core.ts";
+// 2026-09-26（W7-1 刀a）：确定性预检与离线 grounding 自 worker handler 上移——
+// 简化链（V3）与 V2 主管线共用一份判据。
+export * from "./candidate-precheck.ts";
