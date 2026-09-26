@@ -1,5 +1,6 @@
 /**
- * learning_run 的 `phase` 取值台账：**有读的那一档，必须有写方；没人写就得在这里说明为什么**。
+ * learning_run 的 `phase` 取值台账：**两个方向都要有人**——有读的那一档必须有写方，
+ * 有写的那一档必须有人读；没人写就得在这里说明为什么，没人读也一样（反向那一腿见 `LEDGER_UNHEARD`）。
  *
  * 动因（39d §19 的 W6-3 那两行）：§16.36 要的「评估已取消」那一档，`cancelled` 在合同里活着、
  * 被两处读（`run-service.ts:1617` 与 `:3121`），**全仓没有一个写入方** ⇒ 那两条读分支恒不成立，
@@ -56,6 +57,14 @@ const LEDGER: Record<string, string> = {
  */
 const UNJUDGED_RUN_WRITES = new Set<string>([
 ]);
+
+/**
+ * 今天确实**没有读者**的那几档（09-27 实测：零档，这一张表是空的）。
+ * 有档进这张表就必须写清"谁以后会读它"，否则它就是 §19 里"合同里有、代码里也在读"那种形状的镜像——
+ * 只是这次是"状态机在落、没人认"。反向那一腿见同名用例。
+ */
+const LEDGER_UNHEARD: Record<string, string> = {
+};
 
 function stripComments(source: string): string {
   return source
@@ -171,6 +180,31 @@ test("变量形状的 run 写入判不了归谁，必须显式登记（今天登
   for (const entry of UNJUDGED_RUN_WRITES) {
     assert.ok(unjudged.includes(entry), `登记过的 ${entry} 已经不在了，把这条登记删掉`);
   }
+});
+
+/**
+ * 反方向那一腿：**有人写的每一档必须有人读**。
+ *
+ * 为什么两个方向都要钉（2026-09-27 实测过才补的）：今天 12 档里读者最少的是 `skipped`（1 处），
+ * 没有任何一档"写了没人读"——这一腿现在抓不到现存缺陷，它抓的是**下一刀**：往 enum 里加一档、
+ * 状态机开始往那儿落，而投影与桌面各按自己的 `switch`/`===` 认档，那一档进来就是一张没有分支的屏。
+ * 上一格那种"长得像已经做了"是恒不成立的分支，这一种是**恒不显示的分支**，同一类事故的两个方向。
+ *
+ * 判"没人读"用的是运行时源码里的两种认法（`phase === "X"` 与 `case "X"`），
+ * 与正向那腿同一套剥注释与目录口径；`readers` 已经在 verdict 里，不另起一套扫描。
+ */
+test("每一档要么有人读、要么在这里说明为什么没有人读（反向那一腿）", () => {
+  const unheard = verdicts.filter((item) => item.readers.length === 0);
+  assert.deepEqual(unheard.map((item) => item.phase).filter((phase) => !(phase in LEDGER_UNHEARD)), [],
+    "有一档状态机在往那儿落、却没有任何一处读它：要么补上认这一档的分支，要么登记它归哪一刀");
+  for (const phase of Object.keys(LEDGER_UNHEARD)) {
+    assert.ok(unheard.some((item) => item.phase === phase),
+      `${phase} 已经有读者了，把 LEDGER_UNHEARD 里那一格删掉`);
+  }
+  // 地板：这一腿不许在"全部读不到"的情况下静默成立（分母读空时 unheard 会一大片）。
+  const readCounts = verdicts.map((item) => item.readers.length);
+  assert.ok(Math.min(...readCounts) >= 0 && readCounts.filter((n) => n > 0).length >= phases.length - 1,
+    `只有 ${readCounts.filter((n) => n > 0).length}/${phases.length} 档读得到读者 ⇒ 认档的口径本身失效了，不是缺分支`);
 });
 
 test("分母自证：清单来自合同的 enum 本身，且两条已知形状各判各的", () => {
