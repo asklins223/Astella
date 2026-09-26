@@ -362,7 +362,11 @@ export async function importMarkdownNotes(
         // 等价性：importId 只有一个写入口（:192 `contentJson.importId = importId`，
         // 类型是 `string`），落库必然是 JSON 字符串，所以 `@> {"importId": $1}` 与
         // `->>'importId' = $1` 对全部现存行同解；且 importId 为空时根本不走这里（:319）。
-        sql`content_json @> jsonb_build_object('importId', ${importId})`,
+        // 那一句得补一个 `::text`：`jsonb_build_object` 的参数是 variadic "any"，
+        // 扩展协议下服务端拿不到类型就当场报 `could not determine data type of parameter`
+        // ——裸串在 simple 协议下能过，所以这条只在真跑幂等导入那一发上炸（角色无关，
+        // 超户也炸）。同仓先例：`companion-daily-summary-tick-window` 里那个 `${zone}::text`。
+        sql`content_json @> jsonb_build_object('importId', ${importId}::text)`,
       ),
     );
 
