@@ -70,6 +70,7 @@ import { PRE_RUN_REVEAL_COOLDOWN_MS, PRE_RUN_REVEAL_POLICY_VERSION } from "@aile
 import { closePendingSchedules } from "./card-service.ts";
 import { extractAnswerText, frontLeaksAnswerVerbatimV2 } from "@ailearn/shared/card-generation-v2-pipeline";
 import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+import { ANSWER_BEARING_EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
 import {
   DISCRETE_V2_FIRST_INTERVAL_DAYS,
   DISCRETE_V2_POLICY_VERSION,
@@ -2081,7 +2082,7 @@ async function mapCandidateExposuresToObjective(
       eq(cardExposureLedgerV2.workspaceId, ctx.workspaceId),
       eq(cardExposureLedgerV2.subjectKind, "candidate"),
       eq(cardExposureLedgerV2.subjectCandidateId, candidateId),
-      inArray(cardExposureLedgerV2.exposureKind, ["answer_reveal", "answer_editor_view"]),
+      inArray(cardExposureLedgerV2.exposureKind, [...ANSWER_BEARING_EXPOSURE_KINDS_V2]),
     ));
 
   const byUser = new Map<string, Array<typeof exposures[number]>>();

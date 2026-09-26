@@ -39,6 +39,7 @@ import { learningRuns, canonicalLearningEventOutbox, practiceTrailEventOutbox } 
 import { notes } from "@ailearn/shared/db-schema/note";
 import { visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
+import { EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
 import type {
   LearningObjectiveSurfaceV3,
   ObjectiveOriginV3,
@@ -161,7 +162,8 @@ async function loadReview(
 // ─── exposure / practiceOnly 判定（§7.4 Reveal 语义）─────────────────────
 
 /** §15.2 受控 Reveal exposure kinds（§16.2 只受控 Reveal 污染）。 */
-const REVEAL_EXPOSURE_KINDS = ["answer_reveal", "evidence_reveal", "answer_editor_view"] as const;
+// 成员表只有一份（`learning-card-v2-contracts.ts` 的 `EXPOSURE_KINDS_V2`）；这里只是转发命名。
+const REVEAL_EXPOSURE_KINDS = EXPOSURE_KINDS_V2;
 
 interface ExposureInfo {
   practiceOnly: boolean;

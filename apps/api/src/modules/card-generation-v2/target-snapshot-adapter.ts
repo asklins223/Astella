@@ -55,6 +55,7 @@ import type {
   PracticeItemV2,
 } from "@ailearn/shared/card-generation-v2-contracts";
 import { PRE_RUN_REVEAL_COOLDOWN_MS } from "@ailearn/shared/card-generation-v2-contracts";
+import { EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
 import type {
   EvidenceBindingTargetUnitV2,
   EvidenceBindingRelationV2,
@@ -290,7 +291,7 @@ async function loadPlanningExposure(
   const exposureIds = rows.map((r) => r.exposureId);
   // 只 count answer-bearing/受控 Reveal 类 exposure（§16.2 只受控 Reveal 污染）。
   const revealRows = rows.filter(
-    (r) => ["answer_reveal", "evidence_reveal", "answer_editor_view"].includes(r.exposureKind),
+    (r) => (EXPOSURE_KINDS_V2 as readonly string[]).includes(r.exposureKind),
   );
   const lastRevealMs = revealRows.length > 0 ? revealRows[0].exposedAt.getTime() : null;
   const sameCueRecentlyRevealed =

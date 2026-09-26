@@ -28,6 +28,7 @@ import {
   check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { EXPOSURE_KINDS_V2 } from "../learning-card-v2-contracts.ts";
 import { users } from "./identity.ts";
 import { notes, noteVersions } from "./note.ts";
 import { learningRuns } from "./learning-runs.ts";
@@ -353,7 +354,8 @@ export const cardExposureLedgerV2 = pgTable(
     wsUserObjIdx: index("ce_v2_ws_user_obj_idx").on(t.workspaceId, t.userId, t.subjectObjectiveId, sql`${t.exposedAt} DESC`, t.id),
     wsUserCandIdx: index("ce_v2_ws_user_cand_idx").on(t.workspaceId, t.userId, t.subjectCandidateId, sql`${t.exposedAt} DESC`, t.id),
     subjectCheck: check("ce_v2_subject_chk", sql`${t.subjectKind} IN ('candidate','objective')`),
-    kindCheck: check("ce_v2_kind_chk", sql`${t.exposureKind} IN ('answer_reveal','evidence_reveal','answer_editor_view')`),
+    // 取值表只有一份（`EXPOSURE_KINDS_V2`）：这一行以前是第五处手抄的清单。
+    kindCheck: check("ce_v2_kind_chk", sql`${t.exposureKind} IN (${sql.raw(EXPOSURE_KINDS_V2.map((kind) => `'${kind}'`).join(","))})`),
   }),
 );
 

@@ -35,6 +35,7 @@ import {
 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { learningRuns, canonicalLearningEventOutbox, practiceTrailEventOutbox } from "@ailearn/shared/db-schema/learning-runs";
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
+import { EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
 import { pickLatestCompletedRunV3, resolvePrimaryActionV3, type ActionResolverInputV3 } from "../learning-objectives/action-resolver.ts";
 import { readAnswerModePreference } from "../companion-shell/answer-mode-preference.ts";
 import { objectiveSurfaceFreshnessV1 } from "@ailearn/shared";
@@ -456,7 +457,8 @@ export async function buildTopologySnapshotV3(
   }
 
   // 批量查 exposure（practiceOnly 判定；§7.4 Reveal 语义）
-  const REVEAL_EXPOSURE_KINDS = ["answer_reveal", "evidence_reveal", "answer_editor_view"] as const;
+  // 成员表只有一份，这里只是转发命名（见 `EXPOSURE_KINDS_V2`）。
+  const REVEAL_EXPOSURE_KINDS = EXPOSURE_KINDS_V2;
   const exposureRows = objectiveIds.length > 0
     ? await tx
         .select({ objectiveId: learningExposuresV2.objectiveId })

@@ -18,6 +18,7 @@ import {
   PRE_RUN_REVEAL_POLICY_VERSION,
 } from "@ailearn/shared/card-generation-v2-contracts";
 import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+import { EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
 import { loadEvidencePreviewItems } from "./evidence-preview.ts";
 import {
   CardGenerationV2ServiceError,
@@ -54,7 +55,7 @@ export async function getCandidateExposureEligibilityV2(
         eq(cardExposureLedgerV2.subjectKind, "candidate"),
         eq(cardExposureLedgerV2.subjectCandidateId, candidateId),
         eq(cardExposureLedgerV2.subjectCandidateRevision, revision),
-        inArray(cardExposureLedgerV2.exposureKind, ["answer_reveal", "evidence_reveal", "answer_editor_view"]),
+        inArray(cardExposureLedgerV2.exposureKind, [...EXPOSURE_KINDS_V2]),
       ))
       .orderBy(desc(cardExposureLedgerV2.exposedAt), desc(cardExposureLedgerV2.id))
       .limit(1);

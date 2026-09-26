@@ -214,6 +214,30 @@ export type LearningCardRevealV2 = z.infer<typeof learningCardRevealV2Schema>;
  * `(workspaceId, userId, idempotencyKey)` 对 reveal mutation 唯一；
  * Ledger 以最大时间计算最近暴露。
  */
+/**
+ * 三档"揭示类"记账的**唯一成员表**：合同 enum、四处筛选、以及库里的
+ * `exposure_kind IN (...)` CHECK 都从这里出发。
+ *
+ * 以前这份成员关系被抄了五遍（本文件的 enum、`surface-service.ts:164`、
+ * `topology-repository.ts:459`、`reveal-service.ts:57`、`target-snapshot-adapter.ts:293`）。
+ * 加一档时少改一处**不会红**，只会让那一档在某个读点被静默漏掉——
+ * 而同一个值今天已经有一档是这样的：`evidence_reveal` 七处在读、**零处生产**
+ * （D7 §表 第 26 行实测过，但没落成会喊的东西；常驻判据见
+ * `learning-exposure-kinds.test.ts`）。
+ */
+export const EXPOSURE_KINDS_V2 = ["answer_reveal", "evidence_reveal", "answer_editor_view"] as const;
+/**
+ * 其中**答案级**的那两档（`activation-service` 判"这条候选的答案有没有被看过"用）。
+ * 单独立一个名字，而不是在那一处再抄一遍两档的字面量：抄第二次起，加一档时
+ * 那一处不会红，只会让新那一档在那个判定点被静默漏掉。
+ */
+export const ANSWER_BEARING_EXPOSURE_KINDS_V2 = ["answer_reveal", "answer_editor_view"] as const;
+export const learningExposureKindV2Schema = z.enum(EXPOSURE_KINDS_V2);
+export type ExposureKindV2 = (typeof EXPOSURE_KINDS_V2)[number];
+
+/** worker 那个分类器只会落这两档（答案本体／线索级）；第三档由审核台那一发写。 */
+export type AnswerOrClueExposureKindV2 = Extract<ExposureKindV2, "answer_reveal" | "evidence_reveal">;
+
 export const exposureV2Schema = z
   .strictObject({
     version: z.literal(2),
@@ -234,7 +258,7 @@ export const exposureV2Schema = z
         cardRevision: z.number().int().min(1).optional(),
       }),
     ]),
-    exposureKind: z.enum(["answer_reveal", "evidence_reveal", "answer_editor_view"]),
+    exposureKind: learningExposureKindV2Schema,
     contextHash: z.string().regex(/^[0-9a-f]{64}$/),
     idempotencyKey: z.string().min(1).max(200),
     exposedAt: z.string().datetime({ offset: true }),

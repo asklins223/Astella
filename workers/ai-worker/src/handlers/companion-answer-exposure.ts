@@ -21,6 +21,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { AnswerOrClueExposureKindV2 } from "@ailearn/shared/learning-card-v2-contracts";
 import { sql } from "drizzle-orm";
 import { computeExposureScopeIdV2 } from "@ailearn/shared/card-generation-v2-hashing";
 import type { WorkerTransaction } from "../db.ts";
@@ -61,7 +62,8 @@ export const EXPOSURE_OVERLAP_MIN_CHARS = 8;
 /** 题面被复述掉多少算"条件本体给了"——短题面按比例判，长题面按上面那条字数判。 */
 export const EXPOSURE_PROMPT_COVERAGE_MIN = 0.6;
 
-export type AnswerExposureKind = "answer_reveal" | "evidence_reveal";
+// 两档的名字取自唯一那份成员表（`EXPOSURE_KINDS_V2`），这里不再各写一遍字面量。
+export type AnswerExposureKind = AnswerOrClueExposureKindV2;
 
 export interface AnswerExposure {
   readonly kind: AnswerExposureKind;
