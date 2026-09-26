@@ -43,6 +43,14 @@ import {
 } from "@ailearn/shared/source-image-contracts";
 import type { GatewayErrorCode } from "@ailearn/shared/desktop-ipc-contracts";
 import {
+  cardGenerationRunServerViewV2Schema,
+  cardGenerationExposureEligibilityV1Schema,
+} from "@ailearn/shared/card-generation-desktop-contracts";
+import {
+  cardActivationReceiptV2Schema,
+  cardPlanV2Schema,
+} from "@ailearn/shared/card-generation-v2-contracts";
+import {
   DesktopGateway,
   DesktopGatewayFailure,
   parseCompanionAccountSseFrame,
@@ -1110,6 +1118,137 @@ describe("DesktopGateway", () => {
     expect(activeAuthorization).toBe("Bearer test-owner-token");
     expect(first.activeGenerationSummary).toEqual({ state: "data", data: ACTIVE_GENERATION_SUMMARIES.items });
     expect(second.activeGenerationSummary).toEqual(first.activeGenerationSummary);
+  });
+
+  /**
+   * 「保存并开启复习」这一档从主进程走到 HTTP 的那一段（39d W7-2 两颗按钮）。
+   *
+   * 为什么要在网关这一层再量一次：渲染层的用例只到 `window.ailearn` 为止，通道那一发
+   * 替身顶掉了整个网关——**这一档真正落到请求体上**这件事没人看过。这一格丢了，
+   * 屏幕上那颗按钮按下去仍然保存成功、仍然回一句"第一次复习排在…"（要是替身还带着排期），
+   * 而库里一条安排都不会有。两发一起量：要排期的带着 `true`，没说的**连键都不出现**
+   * （传输层不替用户补一个"不要"）。
+   */
+  it("激活那一发把那一档带到请求体上，没说的那一发不带这一格", async () => {
+    const runId = "55555555-5555-4555-8555-555555555555";
+    const objectiveId = "66666666-6666-4666-8666-666666666666";
+    const candidateId = "77777777-7777-4777-8777-777777777777";
+    const candidateRevisionId = "f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f0f0";
+    const noteId = "12121212-1212-4121-8121-121212121212";
+    const serverView = cardGenerationRunServerViewV2Schema.parse({
+      runId,
+      noteId,
+      noteVersionId: "88888888-8888-4888-8888-888888888888",
+      status: "review_ready",
+      cardContentEpoch: 1,
+      sourceSnapshotHash: "a".repeat(64),
+      semanticSpecHash: "b".repeat(64),
+      inputSnapshotHash: "c".repeat(64),
+      generationFingerprint: "d".repeat(64),
+      currentPlanVersion: 1,
+      reviewDraftRevision: 1,
+      sourceOutdated: false,
+      sourceCapped: null,
+      progress: { plannedCards: 1, authored: 1, gatePassed: 1, gateFailed: 0 },
+      recovery: null,
+      error: null,
+      createdAt: "2026-09-26T00:00:00.000Z",
+      updatedAt: "2026-09-26T00:00:01.000Z",
+    });
+    const plan = cardPlanV2Schema.parse({
+      version: 2,
+      planRevisionId: "99999999-9999-4999-8999-999999999999",
+      runId,
+      inputSnapshotHash: "c".repeat(64),
+      cardContentEpoch: 1,
+      planVersion: 1,
+      previousPlanRevisionId: null,
+      // 计划内容与这一发无关（网关只读那一张三元组），所以走合同里最小的那一支。
+      result: { kind: "no_cards_recommended", reasonCodes: ["no_learnable_objective"] },
+      atomDecisions: [],
+      planHash: "e".repeat(64),
+    });
+    const eligibility = cardGenerationExposureEligibilityV1Schema.parse({
+      version: 1,
+      runId,
+      candidateId,
+      candidateRevisionId,
+      revision: 1,
+      exposureStatus: "not_exposed",
+      initialValidationPolicyEffect: "eligible",
+      lastExposedAt: null,
+    });
+    const receipt = cardActivationReceiptV2Schema.parse({
+      version: 2,
+      receiptId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      workspaceId: noteId,
+      userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      runId,
+      idempotencyKey: "activate-key-1",
+      requestHash: "f".repeat(64),
+      mappings: [{
+        candidateRevisionId,
+        candidateEvidenceBindingPlanId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        candidateEvidenceBindingPlanHash: "1".repeat(64),
+        cardId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        objectiveId,
+        objectiveRevisionId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        publicationRevision: 1,
+        resultingEvidenceBindingSetHash: "2".repeat(64),
+      }],
+      lifecycleResults: [],
+      scheduling: [{
+        objectiveId,
+        scheduleId: "33333333-3333-4333-8333-333333333333",
+        nextReviewAt: "2026-09-27T12:00:00.000Z",
+        created: true,
+      }],
+      responseHash: "4".repeat(64),
+      committedAt: "2026-09-26T04:00:00.000Z",
+    });
+
+    const bodies: Record<string, unknown>[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const pathname = new URL(String(input)).pathname;
+      if (pathname.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (pathname.endsWith("/health")) return healthResponse();
+      if (pathname === `/v2/card-generation-runs/${runId}`) return new Response(JSON.stringify(serverView), { status: 200 });
+      if (pathname === `/v2/card-generation-runs/${runId}/plan`) return new Response(JSON.stringify(plan), { status: 200 });
+      if (pathname.endsWith("/exposure")) return new Response(JSON.stringify(eligibility), { status: 200 });
+      if (pathname === `/v2/card-generation-runs/${runId}/activate`) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        bodies.push(body);
+        return new Response(JSON.stringify(receipt), { status: 200 });
+      }
+      throw new Error(`unexpected URL ${pathname}`);
+    });
+
+    const gateway = new DesktopGateway(environment());
+    await gateway.connect();
+    const selection = (extra: Record<string, unknown> = {}) => ({
+      version: 1 as const,
+      runId,
+      selectedCandidates: [{
+        candidateRevisionId,
+        candidateId,
+        revision: 1,
+        revisionHash: "5".repeat(64),
+        candidateEvidenceBindingPlanHash: "1".repeat(64),
+        intent: { kind: "create_new" as const },
+      }],
+      existingLifecycleActions: [],
+      expectedReviewDraftRevision: 1,
+      ...extra,
+    });
+
+    const scheduled = await gateway.activateCardGeneration(runId, selection({ startReviewScheduling: true }), "cmd-scheduled");
+    expect(bodies[0]).toMatchObject({ startReviewScheduling: true });
+    // 回执那一格投影到桌面（`scheduleId` 不外传）。
+    expect(scheduled.scheduling).toEqual([{ objectiveId, nextReviewAt: "2026-09-27T12:00:00.000Z", created: true }]);
+
+    await gateway.activateCardGeneration(runId, selection(), "cmd-plain");
+    expect("startReviewScheduling" in bodies[1]).toBe(false);
+    expect("startReviewScheduling" in bodies[0]).toBe(true);
   });
 
   it("bridges companion home reads and room-profile CAS updates through strict API contracts", async () => {

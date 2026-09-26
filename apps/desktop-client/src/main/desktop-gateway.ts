@@ -4036,6 +4036,10 @@ export class DesktopGateway {
         existingLifecycleActions: request.existingLifecycleActions,
         expectedReviewDraftRevision: request.expectedReviewDraftRevision,
         clientReviewHash,
+        // 那一档原样带过去，不在这里替用户决定。**不写成 `=== true ? {…} : {}`**：
+        // 服务端把这一格算进请求哈希（缺省与 false 折成同一档），所以这一发到底要不要
+        // 排期必须跟着**这一次命令**走，不能由传输层补一个默认值。
+        startReviewScheduling: request.startReviewScheduling,
       });
       const result = await this.request(
         `/v2/card-generation-runs/${this.safeUuid(runId)}/activate`,

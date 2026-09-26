@@ -30,6 +30,7 @@ import {
   cardGenerationStatusLabel,
   cardGenerationSyncReportText,
   practiceQuotaLabel,
+  reviewSchedulingNotice,
   isCardGenerationInFlight,
   isCardGenerationReviewOpen,
   isCardGenerationReviewStage,
@@ -555,8 +556,12 @@ export function CardGenerationSurface() {
    * 「保留」就是排队：激活集合 = 全部已保留且可激活的候选，不再额外勾选。
    * 之前这里既要「保留」又要勾「加入待激活」，而计数只统计已保留的勾选，
    * 于是先勾后不保留会静默激活 0 张（2026-09-20 实走复盘 #1）。
+   *
+   * `startReviewScheduling` 是屏幕上那**两颗按钮**唯一的差别：为真时服务端在同一条命令里
+   * 给每个保存下来的目标建立/关联唯一那条待处理安排。它必须跟着这一次点击走——服务端把
+   * 这一格算进了请求哈希，同一把命令 id 带着相反那一档来是故意的冲突（409），不是重试。
    */
-  const activate = async () => {
+  const activate = async (startReviewScheduling: boolean) => {
     if (!run || !window.ailearn || busyAction) return;
     const selectedCandidates = candidates.filter(
       (candidate): candidate is CardGenerationCandidateV1 & { candidateEvidenceBindingPlanHash: string } =>
@@ -567,12 +572,14 @@ export function CardGenerationSurface() {
       setActionFailure("还有可以审核的候选，请逐张决定后再保存到卡组。");
       return;
     }
-    setBusyAction("activate");
+    setBusyAction(startReviewScheduling ? "activate-scheduling" : "activate");
     setActionFailure(null);
     try {
       const response = await window.ailearn.note.cardGeneration.activate({
         meta: createRequestMeta(epochRef.current),
-        commandId: createCommandId("card-generation-activate"),
+        commandId: createCommandId(
+          startReviewScheduling ? "card-generation-activate-review" : "card-generation-activate",
+        ),
         runId: run.runId,
         request: {
           version: 1,
@@ -587,6 +594,7 @@ export function CardGenerationSurface() {
           })),
           existingLifecycleActions: [],
           expectedReviewDraftRevision: run.reviewDraftRevision,
+          startReviewScheduling,
         },
       });
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
@@ -735,6 +743,9 @@ export function CardGenerationSurface() {
           { label: "候选", value: `${activeCandidateIndex + 1} / ${candidates.length}` },
           { label: "还没决定", value: `${actionableUndecidedCount} 张` },
           ...(practiceQuotaView ? [{ label: "练习件", value: shortLabel(practiceQuotaView) }] : []),
+          // 这一屏刚排上复习时，读页面的那条通道也要能说出这件事——否则伴星只知道
+          // "保存了几张"，不知道"复习从哪天开始"。
+          ...(receipt?.scheduling ? [{ label: "复习", value: shortLabel(reviewSchedulingNotice(receipt.scheduling)) }] : []),
         ],
         items: candidates.slice(0, 8).map((candidate, index) => ({
           ordinal: index + 1,
@@ -766,7 +777,7 @@ export function CardGenerationSurface() {
     };
   }, [
     activeCandidate, activeCandidateIndex, actionableUndecidedCount, candidates, failure,
-    landedCandidates, loading, noteTitle, page, practiceQuotaView, progressPercent, progressView, run,
+    landedCandidates, loading, noteTitle, page, practiceQuotaView, progressPercent, progressView, receipt, run,
   ]);
   usePageReadableView(readableView);
 
@@ -1240,7 +1251,14 @@ export function CardGenerationSurface() {
             ) : <p>候选一旦可审核，会在左侧一次出现一张。</p>}
             <div className="rule" />
             <p className="small">问题和目标一直是公开的；答案、评分依据和原文片段只在你主动查看时才给，并且会记下你看过一次 —— 上表的"首次验证"就是看过一次的后果。</p>
-            {receipt ? <p className="candidate-review-slip__receipt" role="status"><Check size={15} aria-hidden="true" />已确认 {receipt.mappings.length} 个目标映射</p> : null}
+            {receipt ? (
+              <p className="candidate-review-slip__receipt" role="status">
+                <Check size={15} aria-hidden="true" />已确认 {receipt.mappings.length} 个目标映射
+                {/* 「保存并开启复习」那一发要多说一句：排到了哪天、有没有哪张是沿用已有的安排。
+                    这一格**不在**只保存到卡组那一发出现——缺键就是"这次没排"，不是"排了 0 条"。 */}
+                {receipt.scheduling ? <span className="small">{` · ${reviewSchedulingNotice(receipt.scheduling)}`}</span> : null}
+              </p>
+            ) : null}
             <div className="candidate-review-slip__actions">
               {reviewOpen && actionableUndecidedCount > 0 ? (
                 // 曾经这一步会静默把所有"未决"候选打成未选中并丢弃（activation-service
@@ -1251,9 +1269,16 @@ export function CardGenerationSurface() {
               ) : null}
               {run?.recovery ? recoveryActions() : null}
               {reviewOpen && activatableCount > 0 ? (
-                <button type="button" className="button primary" disabled={busyAction !== null || actionableUndecidedCount > 0} onClick={() => void activate()}>
-                  {busyAction === "activate" ? "正在保存…" : `保存到卡组（${activatableCount} 张）`}<ArrowRight size={14} aria-hidden="true" />
-                </button>
+                <>
+                  <button type="button" className="button primary" disabled={busyAction !== null || actionableUndecidedCount > 0} onClick={() => void activate(false)}>
+                    {busyAction === "activate" ? "正在保存…" : `保存到卡组（${activatableCount} 张）`}<ArrowRight size={14} aria-hidden="true" />
+                  </button>
+                  {/* 两颗按钮只差"要不要开始安排复习"这一档，界面上却必须是两颗：
+                      合成一颗再加开关，开关的默认值就会替用户决定这件事。 */}
+                  <button type="button" className="button" disabled={busyAction !== null || actionableUndecidedCount > 0} onClick={() => void activate(true)}>
+                    {busyAction === "activate-scheduling" ? "正在保存并开启复习…" : `保存并开启复习（${activatableCount} 张）`}
+                  </button>
+                </>
               ) : null}
               {reviewOpen ? (
                 <button type="button" className="button" disabled={busyAction !== null} onClick={() => void close()}>

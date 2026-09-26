@@ -345,4 +345,84 @@ describe("IPC 通道覆盖对账", () => {
     expect(badCursor.ok).toBe(false);
     expect(gateway.getNoteLearningRoundHistory).toHaveBeenCalledTimes(1);
   });
+
+  /**
+   * 「保存到卡组」与「保存并开启复习」共用同一条激活通道，差别只有那一档（39d W7-2 两颗按钮）。
+   * 边界层要做的两件事：
+   *  - 那一档**原样**交出去——主进程不替用户决定要不要开始安排复习（缺省尤其不许补成 `false`
+   *    再往下传：那会把"这一发没说要"写成"这一发说了不要"）；
+   *  - 回执里"排到了哪天、是不是沿用"原样交回来。那一格要是被出口 schema 悄悄丢掉，
+   *    界面上那句「第一次复习排在 X」就永远不出现，而通道对账那两条仍然全绿。
+   * 顺带钉住"多带字段挡在本机"：否则"接受这一格"其实是"什么都接受"。
+   */
+  it("激活那一条：那一档原样交出去，回执的排期原样交回来，缺省与坏值都不往下传", async () => {
+    const runId = "44444444-4444-4444-8444-444444444444";
+    const objectiveId = "55555555-5555-5555-8555-555555555555";
+    const receipt = {
+      version: 1,
+      receiptId: "66666666-6666-6666-8666-666666666666",
+      runId,
+      mappings: [{
+        candidateRevisionId: "77777777-7777-7777-8777-777777777777",
+        cardId: "88888888-8888-8888-8888-888888888888",
+        objectiveId,
+        objectiveRevisionId: "99999999-9999-9999-8999-999999999999",
+        publicationRevision: 1,
+        resultingEvidenceBindingSetHash: "b".repeat(64),
+      }],
+      lifecycleResults: [],
+      scheduling: [{ objectiveId, nextReviewAt: "2026-09-27T04:00:00.000Z", created: true }],
+      committedAt: "2026-09-26T04:00:00.000Z",
+    };
+    const gateway = stubGateway({
+      getCapabilities: vi.fn(async () => ({ actionCapabilities: { "card_generation.activate": "allowed" } })),
+      watchCardGenerationEvents: vi.fn(async () => () => undefined),
+      activateCardGeneration: vi.fn(async () => receipt),
+    } as never) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    const { event } = await register(gateway as never);
+    const handler = electronMock.handlers.get(DESKTOP_IPC_CHANNELS.noteCardGenerationActivate);
+    expect(handler).toBeTruthy();
+    const called = () => gateway.activateCardGeneration.mock.calls.map(
+      (call) => (call[1] as { request?: unknown } & Record<string, unknown>).request ?? call[1],
+    );
+    const selection = (extra: Record<string, unknown> = {}) => ({
+      meta,
+      commandId: "activate-cmd-1",
+      runId,
+      request: {
+        version: 1,
+        runId,
+        selectedCandidates: [{
+          candidateRevisionId: "77777777-7777-7777-8777-777777777777",
+          candidateId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          revision: 1,
+          revisionHash: "a".repeat(64),
+          candidateEvidenceBindingPlanHash: "c".repeat(64),
+          intent: { kind: "create_new" },
+        }],
+        existingLifecycleActions: [],
+        expectedReviewDraftRevision: 1,
+        ...extra,
+      },
+    });
+
+    const scheduled = await handler!(event, selection({ startReviewScheduling: true }) as never);
+    expect(called()[0]).toMatchObject({ startReviewScheduling: true });
+    expect(requireData(scheduled).scheduling).toEqual([
+      { objectiveId, nextReviewAt: "2026-09-27T04:00:00.000Z", created: true },
+    ]);
+
+    await handler!(event, selection({ startReviewScheduling: false }) as never);
+    expect(called()[1]).toMatchObject({ startReviewScheduling: false });
+
+    await handler!(event, selection());
+    // 缺省那一发交回去的请求里**没有这一格**：主进程不补默认值。
+    expect(Object.keys(called()[2] as Record<string, unknown>)).not.toContain("startReviewScheduling");
+
+    const wrongType = await handler!(event, selection({ startReviewScheduling: "yes" }) as never);
+    const extraField = await handler!(event, selection({ subscribeReview: true }) as never);
+    expect(wrongType.ok).toBe(false);
+    expect(extraField.ok).toBe(false);
+    expect(gateway.activateCardGeneration).toHaveBeenCalledTimes(3);
+  });
 });

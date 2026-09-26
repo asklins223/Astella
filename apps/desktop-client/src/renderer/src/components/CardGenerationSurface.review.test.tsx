@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CardGenerationSurface } from "./CardGenerationSurface";
 import { useRoomStore } from "../app/room-store";
+import { formatDate } from "./surfaces/surface-data";
 
 /**
  * 候选审核页的合同：
@@ -18,6 +19,8 @@ import { useRoomStore } from "../app/room-store";
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 const VERSION_ID = "22222222-2222-4222-8222-222222222222";
 const RUN_ID = "aaaaaaa1-1111-4111-8111-111111111111";
+/** 取正午：机器时区在 ±12 小时之内都会把这一天读成同一天，日期断言才不绑时区。 */
+const FIRST_REVIEW_AT = "2026-09-27T12:00:00.000Z";
 
 type CandidateState = {
   candidateId: string;
@@ -30,12 +33,18 @@ type CandidateState = {
 
 type PracticeQuota = { requiredCount: number; metCount: number };
 
-function stubGateway(initial: readonly CandidateState[], runOverride: { status?: string; recovery?: unknown; progress?: Record<string, number> | null; practiceQuota?: PracticeQuota | null; evidencePreviews?: unknown[] } = {}) {
+/** 回执里那一格的样子：`created` 说这条是这一发排上的，还是沿用已有那一条。 */
+type SchedulingEntry = { objectiveId: string; nextReviewAt: string; created: boolean };
+
+function stubGateway(initial: readonly CandidateState[], runOverride: { status?: string; recovery?: unknown; progress?: Record<string, number> | null; practiceQuota?: PracticeQuota | null; evidencePreviews?: unknown[]; activationScheduling?: SchedulingEntry[] | null } = {}) {
   const state = {
     candidates: initial.map((candidate) => ({ ...candidate })),
     reviewCalls: [] as unknown[],
     revealCalls: [] as string[],
     exposureCalls: [] as string[],
+    // 两颗按钮走同一条命令，只差那一档 ⇒ 这一列读的是**每一次点击各自的那一档**
+    //（true / false），不是"点没点过"。
+    activateCalls: [] as unknown[],
     reviewFails: false,
     // 状态是活的：结束审核之后服务端会把 run 收成 closed_without_activation，
     // 后续 getRun 必须能读到这个新状态，否则「点完没反应」的缺陷会再次溜进来。
@@ -197,6 +206,40 @@ function stubGateway(initial: readonly CandidateState[], runOverride: { status?:
             data: { version: 1, runId: RUN_ID, status: "checking" as const },
           };
         }),
+        // 两颗按钮共用这一条。这份替身**照服务端那一条命令的规矩**回信：只有那一档为真
+        // 时才带 `scheduling`，为假时连键都不出现（服务端另有一条用例钉着这个形状：
+        // `card-generation-v2-activation-service.test.ts` 的"默认那一档连键都不出现"）。
+        // 反过来——替身不管请求怎么问都回一句"已排期"——界面上那句话就会永远绿。
+        activate: vi.fn(async (input: { request: Record<string, unknown> }) => {
+          state.activateCalls.push(input.request);
+          const scheduled = input.request.startReviewScheduling === true;
+          return {
+            ok: true as const,
+            workspaceEpoch: 1,
+            data: {
+              version: 1,
+              receiptId: "r-1",
+              runId: RUN_ID,
+              mappings: state.candidates.map((candidate) => ({
+                candidateRevisionId: `${candidate.candidateId}-rev`,
+                cardId: `card-${candidate.candidateId}`,
+                objectiveId: `obj-${candidate.candidateId}`,
+                objectiveRevisionId: `objrev-${candidate.candidateId}`,
+                publicationRevision: 1,
+                resultingEvidenceBindingSetHash: "b".repeat(64),
+              })),
+              lifecycleResults: [],
+              ...(scheduled
+                ? { scheduling: runOverride.activationScheduling ?? state.candidates.map((candidate) => ({
+                  objectiveId: `obj-${candidate.candidateId}`,
+                  nextReviewAt: FIRST_REVIEW_AT,
+                  created: true,
+                })) }
+                : {}),
+              committedAt: "2026-09-26T04:00:00.000Z",
+            },
+          };
+        }),
       },
     },
     subscriptions: {
@@ -246,31 +289,60 @@ describe("CardGenerationSurface · 候选审核", () => {
   });
 
   /**
-   * W7-2 的第二半（「保存并开启复习」）今天**不能摆这颗按钮**，原因是实测到的三条前置
-   * 都不在（39d-w02 §3.2/§3.3 设计过那个唯一键，但明写"不在本文件授权迁移"）：
-   *   ① `review_schedules` 没有 `review_dimension` 这一列（现读 16 列，2026-09-26）；
-   *   ② `pending` 上没有任何 `(workspace, user, subject, 维度)` 唯一索引——只有
-   *      `review_schedules_pkey(id)` 与 `(id, workspace_id)`，所以重放会**静默长出第二条安排**；
-   *   ③ 没有"唯一调度边界"那一个写入函数（四处 insert 仍在 `run-processing-tick.ts` 里
-   *      各自"先查后写"）。
-   * 在这一格摆一颗按得动却什么都不授权的按钮，就是拿界面承诺一件没有出处的业务。
-   * 这条用例的作用：把"还没做"钉成会红的东西——W7-2 真落那一刻，它必须被**换成正向断言**
-   * 而不是被删掉。
+   * 「保存并开启复习」今天有出处了，所以这一格按 §19 那条约定**换成正向断言**——
+   * 原来的守卫钉的是"0287 唯一键、边界函数、0288 回执那一格、真库集测 C45 都还没落"，
+   * 那四件都已交付（39d W7-2 两格）。这里量的是接线本身：两颗按钮的差别**真的到了请求里**、
+   * 只保存到卡组那一发**不多说一句**、沿用时报的是**那一条的日期**。
    */
-  it("只有「保存」这一档：「保存并开启复习」在唯一调度边界建好之前不摆上屏", async () => {
+  it("两颗按钮：那一档跟着这一次点击出去，屏幕上那句复习只在真的排期时出现", async () => {
     const { state } = stubGateway([
-      { candidateId: "cand-1", statement: "第一张", reviewDecision: "undecided", publishState: "unpublished" },
+      { candidateId: "cand-1", statement: "第一张", reviewDecision: "keep", publishState: "unpublished" },
     ]);
     useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
     render(<CardGenerationSurface />);
     await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: /^保留（等着保存到卡组）/ }));
-    await waitFor(() => expect(state.reviewCalls).toHaveLength(1));
-    // 正控制：没有这一句，下面两条"不存在"什么也证明不了（整块没画也会绿）。
-    const save = screen.getByRole("button", { name: /保存到卡组（1 张）/ });
-    expect(save.hasAttribute("disabled")).toBe(false);
-    expect(screen.queryByRole("button", { name: /开启复习/ })).toBeNull();
-    expect(screen.queryByText(/开启复习/)).toBeNull();
+
+    const saveOnly = screen.getByRole("button", { name: /保存到卡组（1 张）/ });
+    expect(saveOnly.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(saveOnly);
+    await waitFor(() => expect(state.activateCalls).toHaveLength(1));
+    expect(state.activateCalls[0]).toMatchObject({ startReviewScheduling: false });
+    // 只保存到卡组那一发**不多说一句**：回执没有那一格，屏上就不该出现复习的承诺。
+    expect(document.querySelector(".candidate-review-slip__receipt")?.textContent)
+      .toBe("已确认 1 个目标映射");
+    expect(screen.queryByText(/第一次复习排在/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /保存并开启复习（1 张）/ }));
+    await waitFor(() => expect(state.activateCalls).toHaveLength(2));
+    expect(state.activateCalls[1]).toMatchObject({ startReviewScheduling: true });
+    // 整句 `toBe`：这一屏以前吃过三次"把两句拼成屏幕上根本不存在的一句"。
+    await waitFor(() => expect(
+      document.querySelector(".candidate-review-slip__receipt")?.textContent,
+    ).toBe(`已确认 1 个目标映射 · 第一次复习排在 ${formatDate(FIRST_REVIEW_AT)}`));
+  });
+
+  /**
+   * 沿用已有安排那一支：屏幕上那个日期必须是**库里那一条的**（服务端已经把它算好交回来），
+   * 并且要说明是沿用——三条排期里两条沿用、一条新排时，报的是最早那一天。
+   */
+  it("沿用已有安排时，报的是那一条的日期并说明是沿用", async () => {
+    const { state } = stubGateway([
+      { candidateId: "cand-1", statement: "第一张", reviewDecision: "keep", publishState: "unpublished" },
+    ], {
+      activationScheduling: [
+        { objectiveId: "obj-cand-1", nextReviewAt: "2026-10-05T12:00:00.000Z", created: false },
+        { objectiveId: "obj-cand-2", nextReviewAt: "2026-09-27T12:00:00.000Z", created: true },
+        { objectiveId: "obj-cand-3", nextReviewAt: "2026-11-01T12:00:00.000Z", created: false },
+      ],
+    });
+    useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
+    render(<CardGenerationSurface />);
+    await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /保存并开启复习（1 张）/ }));
+    await waitFor(() => expect(state.activateCalls).toHaveLength(1));
+    await waitFor(() => expect(
+      document.querySelector(".candidate-review-slip__receipt")?.textContent,
+    ).toBe(`已确认 1 个目标映射 · 第一次复习排在 ${formatDate("2026-09-27T12:00:00.000Z")}（其中 2 张沿用已有的安排）`));
   });
 
   it("保留后卡片说出新状态，并自动走到下一张未决候选", async () => {

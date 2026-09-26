@@ -221,3 +221,25 @@ it("截断说明用的是服务端那两个数，且不是笼统的'有点长'",
   expect(notice).toContain("123456");
   expect(notice).toContain("其余部分这次没有参与生成");
 });
+
+/**
+ * 39d W7-2：「保存并开启复习」之后屏幕上那一句。
+ * 两件事各自会错：报哪个日期（多目标时要报**最早**那一条），以及有没有说清"这是沿用的"。
+ * 日期用同一个 formatter 组期望值——把句子写成字面量，测的就不是句子而是拼写。
+ */
+it("复习那句报最早的那一天，并且说清哪几张是沿用已有的安排", async () => {
+  const { reviewSchedulingNotice } = await import("./card-generation-status");
+  const { formatDate } = await import("./surface-data");
+  expect(reviewSchedulingNotice([
+    { objectiveId: "o1", nextReviewAt: "2026-10-05T12:00:00.000Z", created: true },
+    { objectiveId: "o2", nextReviewAt: "2026-09-27T12:00:00.000Z", created: true },
+  ])).toBe(`第一次复习排在 ${formatDate("2026-09-27T12:00:00.000Z")}`);
+  expect(reviewSchedulingNotice([
+    { objectiveId: "o1", nextReviewAt: "2026-09-27T12:00:00.000Z", created: true },
+    { objectiveId: "o2", nextReviewAt: "2026-10-05T12:00:00.000Z", created: false },
+  ])).toBe(`第一次复习排在 ${formatDate("2026-09-27T12:00:00.000Z")}（其中 1 张沿用已有的安排）`);
+  // 读不出日期时不编一个："还没排出来"是真的不知道，"9月27日"是猜。
+  expect(reviewSchedulingNotice([
+    { objectiveId: "o1", nextReviewAt: "2026-13-45T99:00:00.000Z", created: true },
+  ])).toBe("第一次复习的日期还没排出来");
+});

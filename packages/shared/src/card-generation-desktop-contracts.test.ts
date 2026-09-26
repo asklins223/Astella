@@ -8,9 +8,13 @@ import {
   cardGenerationExposureEligibilityV1Schema,
   cardGenerationCandidateV1Schema,
   desktopCreateCardGenerationRunRequestV2Schema,
+  desktopCardGenerationActivationSelectionV1Schema,
+  cardActivationReceiptDesktopV1Schema,
+  projectCardActivationReceiptV1,
   projectCardGenerationRunSnapshotV1,
   isCardGenerationReviewOpen,
 } from "./card-generation-desktop-contracts.ts";
+import { cardActivationReceiptV2Schema } from "./card-generation-v2-contracts.ts";
 
 const RUN_ID = "11111111-1111-4111-8111-111111111111";
 const NOTE_ID = "22222222-2222-4222-8222-222222222222";
@@ -192,4 +196,98 @@ test("review stays open for needs_attention runs as well as review_ready", () =>
   ]) {
     assert.equal(isCardGenerationReviewOpen(status), false, `${status} must not open the review`);
   }
+});
+
+const ACTIVATION_SELECTION = {
+  version: 1 as const,
+  runId: RUN_ID,
+  selectedCandidates: [{
+    candidateRevisionId: "77777777-7777-7777-8777-777777777777",
+    candidateId: "88888888-8888-8888-8888-888888888888",
+    revision: 1,
+    revisionHash: "a".repeat(64),
+    candidateEvidenceBindingPlanHash: "c".repeat(64),
+    intent: { kind: "create_new" as const },
+  }],
+  existingLifecycleActions: [],
+  expectedReviewDraftRevision: 1,
+};
+
+/**
+ * 「保存到卡组」与「保存并开启复习」共用这一条命令，只差那一档（39d W7-2 两颗按钮）。
+ * 这一格在边界层必须**过得去**——它过不去，那颗按钮按下去就是本机一条红，而屏幕上
+ * 那句「第一次复习排在 X」永远不会出现。同一发里钉住"缺省还是缺省"与"坏值进不来"：
+ * 只测接受，等于没测这一格的类型。
+ */
+test("activation selection carries the review-scheduling knob and stays strict", () => {
+  const scheduled = desktopCardGenerationActivationSelectionV1Schema.parse({
+    ...ACTIVATION_SELECTION,
+    startReviewScheduling: true,
+  });
+  assert.equal(scheduled.startReviewScheduling, true);
+  assert.equal(
+    desktopCardGenerationActivationSelectionV1Schema.parse(ACTIVATION_SELECTION).startReviewScheduling,
+    undefined,
+  );
+  // 缺省那一发交回去的请求里**不该有这一格**：补一个 `false` 就是把"没说"写成"说了不要"。
+  assert.equal("startReviewScheduling" in ACTIVATION_SELECTION, false);
+  assert.equal(
+    desktopCardGenerationActivationSelectionV1Schema.safeParse({
+      ...ACTIVATION_SELECTION,
+      startReviewScheduling: "yes",
+    }).success,
+    false,
+  );
+  assert.equal(
+    desktopCardGenerationActivationSelectionV1Schema.safeParse({
+      ...ACTIVATION_SELECTION,
+      subscribeReview: true,
+    }).success,
+    false,
+  );
+});
+
+/**
+ * 回执那一格穿过边界时的两种形状：排过期的带着「哪天、是不是沿用」，只保存到卡组那一发
+ * **连键都不出现**。`scheduleId` 不外传——界面上没有任何动作按安排 id 寻址。
+ */
+test("activation receipt projects the scheduling outcome, and omits the key when none was asked", () => {
+  const serverReceipt = (scheduling?: unknown) => cardActivationReceiptV2Schema.parse({
+    version: 2,
+    receiptId: "99999999-9999-9999-8999-999999999999",
+    workspaceId: NOTE_ID,
+    userId: VERSION_ID,
+    runId: RUN_ID,
+    idempotencyKey: "activate-key-1",
+    requestHash: "d".repeat(64),
+    mappings: [{
+      candidateRevisionId: "77777777-7777-7777-8777-777777777777",
+      candidateEvidenceBindingPlanId: "44444444-4444-4444-8444-444444444444",
+      candidateEvidenceBindingPlanHash: "c".repeat(64),
+      cardId: "88888888-8888-8888-8888-888888888888",
+      objectiveId: NOTE_ID,
+      objectiveRevisionId: VERSION_ID,
+      publicationRevision: 1,
+      resultingEvidenceBindingSetHash: "e".repeat(64),
+    }],
+    lifecycleResults: [],
+    ...(scheduling ? { scheduling } : {}),
+    responseHash: "f".repeat(64),
+    committedAt: "2026-09-26T04:00:00.000Z",
+  });
+
+  const scheduled = projectCardActivationReceiptV1(serverReceipt([{
+    objectiveId: NOTE_ID,
+    scheduleId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    nextReviewAt: "2026-09-27T12:00:00.000Z",
+    created: false,
+  }]));
+  assert.deepEqual(scheduled.scheduling, [
+    { objectiveId: NOTE_ID, nextReviewAt: "2026-09-27T12:00:00.000Z", created: false },
+  ]);
+  assert.equal("scheduleId" in (scheduled.scheduling?.[0] ?? {}), false);
+
+  const savedOnly = projectCardActivationReceiptV1(serverReceipt());
+  assert.equal("scheduling" in savedOnly, false, "只保存到卡组那一发不该带一个空数组冒充排过");
+  assert.deepEqual(cardActivationReceiptDesktopV1Schema.parse(savedOnly).mappings.length, 1);
 });

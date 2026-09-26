@@ -2,8 +2,10 @@ import type {
   CardGenerationActiveSummaryV1,
   CardGenerationPracticeQuotaV1,
   CardGenerationProgressV1,
+  CardActivationSchedulingV1,
 } from "@ailearn/shared/card-generation-desktop-contracts";
 import { isCardGenerationReviewOpen } from "@ailearn/shared/card-generation-desktop-contracts";
+import { formatDate } from "./surface-data";
 
 export { isCardGenerationReviewOpen };
 
@@ -261,4 +263,27 @@ export function isLiveGenerationForNote(
  */
 export function sourceCappedNotice(capped: { limit: number; originalLength: number }): string {
   return `这一篇较长：本次只把前 ${capped.limit} 字（全文 ${capped.originalLength} 字）交给模型，其余部分这次没有参与生成。`;
+}
+
+/**
+ * 「保存并开启复习」之后屏幕上那一句（39d W7-2）。
+ *
+ * 两种事实必须分得开：这一发**排上的**，和本来就有安排、**沿用下来**的——后者屏幕上
+ * 报的是库里那一条的实际到期时间（服务端已经把那个值交回来，不在这里重算）。
+ * 只给最早那一个日期：一次保存十几张时，逐条报日期读起来就是噪音，而"什么时候再来"
+ * 对用户是同一件事。
+ */
+export function reviewSchedulingNotice(
+  scheduling: CardActivationSchedulingV1[],
+): string {
+  const stamps = scheduling
+    .map((entry) => new Date(entry.nextReviewAt).valueOf())
+    .filter((value) => Number.isFinite(value));
+  // 日期读不出来时不许编一个："时间未提供"是这一屏既有的说法。
+  if (stamps.length === 0) return "第一次复习的日期还没排出来";
+  const earliest = formatDate(new Date(Math.min(...stamps)).toISOString());
+  const reused = scheduling.filter((entry) => !entry.created).length;
+  return reused === 0
+    ? `第一次复习排在 ${earliest}`
+    : `第一次复习排在 ${earliest}（其中 ${reused} 张沿用已有的安排）`;
 }

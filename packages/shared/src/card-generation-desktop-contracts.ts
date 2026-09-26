@@ -9,7 +9,6 @@
 
 import { z } from "zod";
 import {
-  activateCardCandidatesRequestV2Schema,
   cardGenerationRunStatusV2Schema,
   cardGenerationFeedbackReasonV2Schema,
   cardPlanV2Schema,
@@ -75,16 +74,6 @@ export type DesktopCardDetailThresholdV2 = z.infer<typeof cardDetailThresholdV2S
 export type DesktopCardStrategyV2 = z.infer<typeof cardStrategyV2Schema>;
 /** Why the writer is asking for a regeneration; the run contract's own vocabulary. */
 export type DesktopCardGenerationFeedbackReasonV2 = z.infer<typeof cardGenerationFeedbackReasonV2Schema>;
-export const desktopActivateCardCandidatesRequestV2Schema = activateCardCandidatesRequestV2Schema.pick({
-  version: true,
-  runId: true,
-  selectedCandidates: true,
-  existingLifecycleActions: true,
-  expectedReviewDraftRevision: true,
-  clientReviewHash: true,
-}).strict();
-export type DesktopActivateCardCandidatesRequestV2 = z.infer<typeof desktopActivateCardCandidatesRequestV2Schema>;
-
 /**
  * Renderer-safe activation selection.  Source/plan/quality closure hashes
  * stay in main; the renderer may only submit the exact public candidate
@@ -110,6 +99,12 @@ export const desktopCardGenerationActivationSelectionV1Schema = z.strictObject({
     expectedObjectiveLifecycleEpoch: positiveIntSchema,
   })).max(50),
   expectedReviewDraftRevision: positiveIntSchema,
+  /**
+   * 「保存并开启复习」那一档在界面上是**两颗不同的按钮**，不是同一颗的两种写法：
+   * 未设（= 只保存到卡组）与 `true` 走的是同一条命令，但服务端把这一格算进请求哈希，
+   * 所以同一把命令 id 翻那一档会被判成另一发请求（409），不会安静交回另一份回执。
+   */
+  startReviewScheduling: z.boolean().optional(),
 }).strict();
 export type DesktopCardGenerationActivationSelectionV1 = z.infer<typeof desktopCardGenerationActivationSelectionV1Schema>;
 
@@ -457,6 +452,18 @@ export const cardGenerationCloseResultV1Schema = z.strictObject({
 });
 export type CardGenerationCloseResultV1 = z.infer<typeof cardGenerationCloseResultV1Schema>;
 
+/**
+ * 一行复习授权结果（回执 `scheduling` 的元素）。单独给名字：界面上那句
+ * 「第一次复习排在 X / 其中 N 张沿用已有的安排」要按它写判据，不想在文案函数签名里
+ * 再抄一遍字段。
+ */
+export const cardActivationSchedulingEntryV1Schema = z.strictObject({
+  objectiveId: uuidSchema,
+  nextReviewAt: isoTimestampSchema,
+  created: z.boolean(),
+});
+export type CardActivationSchedulingV1 = z.infer<typeof cardActivationSchedulingEntryV1Schema>;
+
 export const cardActivationReceiptDesktopV1Schema = z.strictObject({
   version: z.literal(1),
   receiptId: uuidSchema,
@@ -476,6 +483,12 @@ export const cardActivationReceiptDesktopV1Schema = z.strictObject({
     resultingLifecycle: z.enum(["active", "archived", "superseded"]),
     resultingLifecycleEpoch: positiveIntSchema,
   })).max(50),
+  /**
+   * 「保存并开启复习」那一档的结果，按保存下来的目标一条。**optional**：只保存到卡组
+   * 那一发没有这一格（空数组会被读成"排了 0 条"，那是另一句谎）。`scheduleId` 不外传——
+   * 界面上没有任何动作按安排 id 寻址，多给一格只会多一条能写错的路。
+   */
+  scheduling: z.array(cardActivationSchedulingEntryV1Schema).min(1).max(50).optional(),
   committedAt: isoTimestampSchema,
 });
 export type CardActivationReceiptDesktopV1 = z.infer<typeof cardActivationReceiptDesktopV1Schema>;
@@ -519,6 +532,16 @@ export function projectCardActivationReceiptV1(value: z.infer<typeof cardActivat
       resultingLifecycle: result.resultingLifecycle,
       resultingLifecycleEpoch: result.resultingLifecycleEpoch,
     })),
+    // 只保存到卡组那一发**没有这一格**：交回"什么都不知道"（缺键），不是空数组。
+    ...(value.scheduling
+      ? {
+        scheduling: value.scheduling.map((entry) => ({
+          objectiveId: entry.objectiveId,
+          nextReviewAt: entry.nextReviewAt,
+          created: entry.created,
+        })),
+      }
+      : {}),
     committedAt: value.committedAt,
   });
 }

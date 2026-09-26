@@ -171,14 +171,12 @@ import type {
 } from "./card-generation-desktop-contracts.ts";
 
 export {
-  desktopActivateCardCandidatesRequestV2Schema,
   desktopCardGenerationActivationSelectionV1Schema,
   desktopCandidateReviewRequestV2Schema,
   desktopCreateCardGenerationRunRequestV2Schema,
   desktopRevealCandidateRequestV2Schema,
 } from "./card-generation-desktop-contracts.ts";
 export type {
-  DesktopActivateCardCandidatesRequestV2,
   DesktopCardGenerationActivationSelectionV1,
   DesktopCandidateReviewRequestV2,
   DesktopCreateCardGenerationRunRequestV2,
