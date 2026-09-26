@@ -45,6 +45,11 @@ import { voiceRoutes } from "./modules/learning-sessions/voice-routes.ts";
 import { desktopTrustRoutes, resolveApiBindHost } from "./modules/desktop-trust/routes.ts";
 import { cleanupExpiredSessions } from "./modules/identity/service.ts";
 import { purgeSoftDeletedNotes } from "./modules/note/maintenance.ts";
+import { sweepIdleNoteRoundsForPauseV1 } from "./modules/note-learning-rounds/round-activity-sweep.ts";
+import {
+  ENV_ROUND_ACTIVITY_SWEEP_INTERVAL,
+  roundActivitySweepIntervalMsV1,
+} from "./modules/note-learning-rounds/round-idle-pause-policy.ts";
 import { runLearningTtlMaintenance } from "./modules/learning-sessions/ttl-maintenance.ts";
 import { runLearningRunProcessingTick, setLearningRunProcessingWaker, closeStructuredSolutionSql } from "./modules/learning-runs/run-processing-tick.ts";
 import { createGracefulShutdown } from "./lib/graceful-shutdown.ts";
@@ -395,6 +400,7 @@ async function main() {
   let sessionCleanupTimer: NodeJS.Timeout | undefined;
   let notePurgeTimer: NodeJS.Timeout | undefined;
   let learningRunProcessingTimer: NodeJS.Timeout | undefined;
+  let roundActivitySweepTimer: NodeJS.Timeout | undefined;
   const shutdown = createGracefulShutdown({
     clearTimer: () => {
       // F5（审计 #13）：dbGaugeTimer 也纳入关停清理，避免优雅停机期间继续每
@@ -407,6 +413,8 @@ async function main() {
       notePurgeTimer = undefined;
       if (learningRunProcessingTimer) clearInterval(learningRunProcessingTimer);
       learningRunProcessingTimer = undefined;
+      if (roundActivitySweepTimer) clearInterval(roundActivitySweepTimer);
+      roundActivitySweepTimer = undefined;
     },
     // 先刷协同快照再关服务器：`onStoreDocument` 是 debounce 的，反过来会把窗口里
     // 最后一段编辑连同连接一起丢掉。
@@ -527,6 +535,50 @@ async function main() {
       }
     }, 6 * 60 * 60 * 1000); // 6 hours
     notePurgeTimer.unref();
+  }
+
+  // 39d W4-5 ④（PRD §3.2）：最后一个活跃端离开 ⇒ 把进行中的轮次标成可恢复暂停。
+  // **只能服务端扫，不能让正要离开的那一端报**（39d D1 §3.1 实现记录已拍），所以这里
+  // 是一条周期对账，不是任何事件钩子。总控一个常量＋一个环境变量：
+  //  - `NOTE_ROUND_IDLE_PAUSE_SWEEP_MS` 未设 ⇒ 默认 60 秒（`DEFAULT_ROUND_ACTIVITY_SWEEP_INTERVAL_MS`）；
+  //  - `off`／`disabled`／`none`／`0` ⇒ 关掉整条链路：既不跑启动那一发，也不建定时器，
+  //    等于完全回到本刀之前的行为（`roundActivitySweepIntervalMsV1()` 返回 null 时
+  //    扫描本体自己也拒绝写库，所以"关"不需要在这里再判一次）；
+  //  - 坏值（非整数、比租约续租节奏还密）⇒ 回落默认，**不**让一个写错的 env 把服务拦在起不来。
+  // 启动先跑一次（进程重启前留下的那一轮该由重启这一次收出来），之后按间隔跑，形状照
+  // 上面 `sessionCleanupTimer`／`notePurgeTimer` 那两条。
+  const roundActivitySweepIntervalMs = roundActivitySweepIntervalMsV1();
+  if (roundActivitySweepIntervalMs === null) {
+    app.log.info({ env: ENV_ROUND_ACTIVITY_SWEEP_INTERVAL }, "note round idle-pause sweep is off");
+  } else {
+    try {
+      const swept = await sweepIdleNoteRoundsForPauseV1();
+      if (swept.paused.length > 0) {
+        app.log.info(
+          { paused: swept.paused.length, scopesScanned: swept.scopesScanned },
+          "idle note rounds paused on startup",
+        );
+      }
+    } catch (err) {
+      app.log.error({ err }, "note round idle-pause sweep on startup failed");
+    }
+
+    if (!shutdown.isShuttingDown()) {
+      roundActivitySweepTimer = setInterval(async () => {
+        try {
+          const swept = await sweepIdleNoteRoundsForPauseV1();
+          if (swept.paused.length > 0) {
+            app.log.info(
+              { paused: swept.paused.length, scopesScanned: swept.scopesScanned },
+              "idle note rounds paused",
+            );
+          }
+        } catch (err) {
+          app.log.error({ err }, "note round idle-pause sweep failed");
+        }
+      }, roundActivitySweepIntervalMs);
+      roundActivitySweepTimer.unref();
+    }
   }
 
   // LR-PROC-01: learning_run_processing_outbox 消费（assessment_requested →
