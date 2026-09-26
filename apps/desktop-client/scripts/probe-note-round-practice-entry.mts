@@ -238,6 +238,8 @@ function wipe(seeded: Seeded): void {
  */
 const AMBIENT_GROWTH_ALLOWED_V1: Record<string, string> = {
   assistant_page_contexts: '活窗口的页面上下文簿记（伴星读页面那一族），开一次窗口必涨几行',
+  jobs: '共享工作区里活着的伴星调度器同一时刻会写念头 job（实测涨的是 companion_thought 行）。'
+    + '能不能算我的残留由上面那一格按 id 归属判，不靠这张表被放行',
   understanding_projection_checkpoints: '理解的增量投影读标（按 workspace+user 游标推进），'
     + '这一发提交了练习事件之后它自己往前挪一格；它没有 run_id 也没有 objective 归属，不是剧本种的行',
 }
@@ -591,7 +593,7 @@ try {
       const ceremony = page.locator('.learning-run-ceremony').first()
       const ceremonySeen = await ceremony.waitFor({ timeout: 3_500 }).then(() => true, () => false)
       let confettiPainted = -1
-      let confettiSamples = 0
+      let confettiFrames = 0
       let ceremonyCopy: Record<string, string> = {}
       if (ceremonySeen) {
         ceremonyCopy = {
@@ -599,37 +601,40 @@ try {
           stamp: (await page.locator('.learning-run-ceremony__stamp').first().textContent() ?? '').replace(/\s+/g, ' ').trim(),
           heading: (await page.locator('.learning-run-ceremony h2').first().textContent() ?? '').trim(),
         }
-        // 彩纸是逐帧画上去的（rAF），交卷那一瞬的画布还是白的——只采一次会把"没画"量成"画了个空画布"。
-        const confetti = page.locator('canvas.learning-run-ceremony__confetti').first()
-        const samplePainted = async (): Promise<number> => confetti.evaluate((node) => {
-            const canvas = node as HTMLCanvasElement
-            const ctx = canvas.getContext('2d')
-            if (!ctx) return -1
+        // 彩纸是逐帧画上去的（rAF），交卷那一瞬的画布还是白的——只采一次会把"来得及画"量成"没画"。
+        // 但**逐帧从外部采**也不行：一次 `getImageData` 走 CDP 往返要几百毫秒，全屏画布上还会撞超时，
+        // 于是采样窗口比演出本身还慢（今天就这么量出过一次假 0）。改成把轮询循环放进页面里：
+        // 一次往返、按 rAF 逐帧读，画出一粒就立刻停并回报帧数。
+        const painted = await ceremony.evaluate(async (root) => {
+          const canvas = root.querySelector('canvas.learning-run-ceremony__confetti') as HTMLCanvasElement | null
+          const ctx = canvas?.getContext('2d') ?? null
+          if (!canvas || !ctx) return { painted: -1, frames: 0, sized: `${canvas?.width ?? 0}x${canvas?.height ?? 0}` }
+          let best = 0
+          let frames = 0
+          const deadline = performance.now() + 2_500
+          while (performance.now() < deadline) {
+            frames += 1
             const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
-            let painted = 0
-            for (let i = 3; i < data.length; i += 4) {
-              if (data[i] > 0) painted += 1
+            let hit = 0
+            for (let index = 3; index < data.length; index += 4) {
+              if (data[index] > 0) hit += 1
             }
-            return painted
-          }, { timeout: 600 }).catch(() => -1)
-        confettiPainted = 0
-        for (let sample = 0; sample < 30; sample += 1) {
-          if ((await page.locator('.learning-run-ceremony').count()) === 0) {
-            confettiSamples = sample
-            break
+            if (hit > best) best = hit
+            if (best > 0) break
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
           }
-          const painted = await samplePainted()
-          if (painted > confettiPainted) confettiPainted = painted
-          if (confettiPainted > 0) { confettiSamples = sample + 1; break }
-          await page.waitForTimeout(80)
-        }
-        if (confettiPainted === 0 && confettiSamples === 0) confettiSamples = 30
-      }
-      readings.ceremony = { seen: ceremonySeen, ...ceremonyCopy, confettiPainted, confettiSamples }
+          return { painted: best, frames, sized: `${canvas.width}x${canvas.height}` }
+        }).catch((error: unknown) => ({
+          painted: -1, frames: 0, sized: String(error).slice(0, 120),
+        }))
+        confettiPainted = painted.painted
+        confettiFrames = painted.frames
+        readings.confettiCanvas = painted.sized      }
+      readings.ceremony = { seen: ceremonySeen, ...ceremonyCopy, confettiPainted, confettiFrames }
       check('练习那一支的结算演出真在屏上出现过（09-24 放开之后第一次被真窗口看到）',
         ceremonySeen === true, readings.ceremony)
-      check('彩纸那颗 canvas 真的画出了像素（逐帧采样，不是挂了个空画布）',
-        confettiPainted > 0 && confettiSamples < 30, readings.ceremony)
+      check('彩纸那颗 canvas 真的画出了像素（页内逐帧采，画出一粒就停）',
+        confettiPainted > 0 && confettiFrames >= 1, readings.ceremony)
       // 那处坑的正面判据：眉标不许从 eligibility 反推出"正式挑战"——结构题做主位时
       // ceiling 被钳成 practice_only 而快照 eligibility 仍是 eligible，两者一拼就自相矛盾。
       check('演出的那两行不与结果自相矛盾（练习这一支不说"正式挑战"）',
@@ -700,6 +705,48 @@ try {
         .map(({ index, expected }) => `第 ${index + 1} 位说出了「${expected}」`)
       check('不成立那一位一个字都不写出该放什么（不新增答案信息）', leaks.length === 0,
         { leaks, rows, wrongPositions })
+
+      // ── 揭示参考答案那一读（同一发仍然免费）──
+      // 记的就是今天那笔曝光账：`revealRunTargetV2` 靠 `idempotency_key = run-reveal:<runId>`
+      // 保证同一场只记一笔，且回出去的 exposureId 必须是库里那一笔的（撞键那一发此前回的是
+      // 当场新造的 uuid）。集测那头已经钉过；这一格钉的是**屏上**：揭示之前正文闩着、
+      // 揭示之后那句与库里那份 mapping 同源，而库里那笔账 kind=answer_reveal、记在没有卡的那条目标上。
+      const pairs = (JSON.parse(FIXTURE.canonicalAnswer) as { pairs: Array<{ left: string; right: string }> }).pairs
+      const answerBefore = await page.locator('.learning-run-result-reveal__answer').count()
+      const revealButton = page.getByRole('button', { name: '看参考答案与解释', exact: true })
+      const revealCount = await revealButton.count()
+      readings.reveal = { answerBefore, revealCount }
+      check('揭示之前屏上没有参考正文，那颗按钮在（不是把答案先摊在屏上）',
+        answerBefore === 0 && revealCount === 1, readings.reveal)
+      if (revealCount === 1) {
+        await revealButton.first().click({ timeout: 20_000 })
+        const answerText = (await page.locator('.learning-run-result-reveal__answer').first()
+          .textContent({ timeout: 20_000 }) ?? '').replace(/\s+/g, ' ').trim()
+        const missing = pairs.flatMap((pair) => [pair.left, pair.right]).filter((word) => !answerText.includes(word))
+        readings.reveal.answerText = answerText
+        readings.reveal.missingFromDbPairs = missing
+        check('揭示出来的那句把库里那份 mapping 的每一对左右项都说到了（不是客户端另拼一份）',
+          answerText.length > 0 && missing.length === 0, readings.reveal)
+
+        const exposureRow = sql(`
+          select e.exposure_kind, coalesce(e.card_id::text, 'NULL'),
+                 (select count(*) from learning_exposures_v2 e2
+                   where e2.idempotency_key = 'run-reveal:' || r.id::text)
+          from learning_runs r
+          join learning_exposures_v2 e on e.idempotency_key = 'run-reveal:' || r.id::text
+          where r.origin ->> 'roundId' = '${seeded.roundId}' limit 1`)
+        const [exposureKind, exposureCard, exposureCount] = exposureRow.split('|').map((part) => part.trim())
+        const exposureOnThisObjective = Number(sql(`
+          select count(*) from learning_runs r
+          join learning_exposures_v2 e on e.idempotency_key = 'run-reveal:' || r.id::text
+          where r.origin ->> 'roundId' = '${seeded.roundId}'
+            and e.objective_id = '${seeded.objectiveId}'`))
+        readings.exposure = { exposureKind, exposureCard, exposureCount, exposureOnThisObjective }
+        check('这一发的曝光账恰好一笔、记的是 answer_reveal 这一档（成员表只有一份那个词表）',
+          exposureCount === '1' && exposureKind === 'answer_reveal', readings.exposure)
+        check('无卡目标的那笔账记的就是没有卡（card_id 为空），且挂在这一条目标上',
+          exposureCard === 'NULL' && exposureOnThisObjective === 1, readings.exposure)
+      }
     }
   }
 
@@ -735,6 +782,33 @@ try {
       const after = workspaceCensus(seeded.workspaceId)
       const growth = diffCensus(censusBefore, after)
       readings.censusGrowth = growth
+      // 涨表本身不等于"我留了残留"：这个工作区是**共享的**——活着的伴星调度器会在同一时刻往里写
+      // `jobs`（实测这一发涨的是 `companion_thought` 行），与剧本无关。所以豁免不能靠"表名放行"，
+      // 要靠**归属**：把涨了的每一张表里所有 uuid 列拿本次种下的那批 id 过一遍，
+      // 只要有一行指得到我的 id，不管它在不在豁免名单里，一律红。
+      const seededIds = [
+        seeded.roundId, seeded.objectiveId, seeded.objectiveRevisionId,
+        seeded.evidenceSnapshotId, seeded.noteId,
+        ...(readings.runsWiped ? readings.runsWiped.runIds as string[] : []),
+      ]
+      const grownTables = Object.keys(growth)
+      const grownColumns = grownTables.length === 0 ? [] : sql(`
+        select c.table_name || '|' || c.column_name
+        from information_schema.columns c
+        where c.table_schema = 'public' and c.data_type = 'uuid'
+          and c.table_name in (${grownTables.map((table) => `'${table}'`).join(',')})`)
+        .split('\n').map((line) => line.trim()).filter(Boolean)
+      const attribution = grownColumns.length === 0 ? [] : sql(`
+        ${grownColumns.map((pair) => {
+          const [table, column] = pair.split('|')
+          return `select '${table}.${column}' as slot, count(*)::text as hits from public."${table}" `
+            + `where "${column}" in (${seededIds.map((id) => `'${id}'`).join(',')})`
+        }).join(' union all ')}`).split('\n').filter(Boolean)
+        .map((line) => line.split('|').map((part) => part.trim()))
+        .filter(([slot, hits]) => Number(hits) > 0 && slot.length > 0)
+      readings.censusAttribution = attribution
+      check('涨了的表里没有任何一行指得回本次种下的 id（并发写不等于我的残留）',
+        attribution.length === 0, { attribution, growth })
       // 有一张表的行不是剧本种的，而是**这个窗口自己在场**的簿记：伴星那条"她此刻在哪一屏"
       // 的行由活渲染层发布（W2-6 的 `readLivePageView` 读的就是它）。开一次真窗口就会涨几行，
       // 且只涨这一张——所以豁免名单是**指名道姓**的，并要求它这一轮真的出现（不再出现就得把条目删掉，
