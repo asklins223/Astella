@@ -1,12 +1,20 @@
 /**
- * `review_schedules` 的写入只有一个入口（39d W7-2 那条唯一调度边界的前置判据）。
+ * `review_schedules` 的写入只有一个入口，而"让一行变成待处理"也只许出现在那一个入口
+ * （39d W7-2 那条唯一调度边界的前置判据）。
  *
  * 为什么这条要常驻：D2 §3 把"建立/关联那一条待处理安排"收成唯一函数
  * `ensurePendingReviewScheduleV2`，并且与迁移 0287 那把**部分唯一索引同一批**落地。
  * 顺序或纪律反了都会更糟：只要还剩一处裸 `insert` 在写 `status = 'pending'`，
  * 症状就从"同一目标多一条安排"变成"那一次保存整发 23505"。2026-09-27 现读：
  * 运行时只有边界文件自己那一处写入，五个调用方（结算 tick 四条 ＋ 激活那一发）全部走函数。
- * 这条判据守的是**以后**——谁再加第六个写入口，这里先红，而不是等一次线上唯一冲突。
+ *
+ * **D2 §2.1 那句"没有任何调用方能直接写这张表"只做到了一半**：insert 全收进边界了，
+ * `update` 没收——运行时还有四处直接改这张表（结算消费掉那一条、继任那一发、卡归档时关掉、
+ * 「这一条先延后」只改时间列）。那四处都不做排期，也不把行写回待处理，所以真正需要一直
+ * 成立的那句话是收窄后的版本：**只有边界能让一行变成 `pending`**（那把索引只管新建，
+ * 从别处把一行拉回待处理就绕开它了）。于是这里两边都判：insert 的入口唯一，
+ * 而每一处 update 把 status 改成什么逐条登记在案——多一处、少一处、改成别的值、
+ * 或者写成取不出字面量的动态值，都会红。
  *
  * 顺带守住配对的那两样，缺任一这条边界就不成立：schema 与迁移里那把索引的名字还在，
  * 以及边界自己仍是"不带 target 的 `onConflictDoNothing()` ＋ 回读，回读不到就抛"。
@@ -136,6 +144,115 @@ test("配对判据自己也要灵敏：改名、换成覆盖写、去掉那一�
     "换成覆盖写后仍判成立 ⇒ 这条判据恒真");
   assert.ok(!throwsWhenReadBackMisses(boundary.replace("if (!existing) {", "if (never) {")),
     "去掉那一档后仍判成立 ⇒ 这条判据恒真");
+});
+
+/**
+ * 运行时里每一处 `.update(reviewSchedules)`，以及它把 `status` 改成了什么。
+ *
+ * 只取紧跟其后的那一个 `.set({…})` 块：drizzle 的更新形状在这里都是单行 set。
+ * `status` 的值取不成字面量（写的是变量、三元）时**如实报成"取不出"**——那种形状判成
+ * 违规（安全方向），因为"这处会不会把行变回待处理"就再也静态判不出来了。
+ */
+function statusUpdatesIn(file: string, source: string): Array<{ file: string; via: "update"; value: string | null; dynamic: boolean }> {
+  const out: Array<{ file: string; via: "update"; value: string | null; dynamic: boolean }> = [];
+  for (const match of source.matchAll(/\.update\(\s*reviewSchedules\s*\)/g)) {
+    const at = match.index ?? 0;
+    const setBlock = source.slice(at, at + 600).match(/\.set\(\s*\{([\s\S]*?)\}\s*\)/);
+    if (!setBlock) {
+      out.push({ file, via: "update", value: null, dynamic: true });
+      continue;
+    }
+    const status = setBlock[1].match(/\bstatus:\s*("([^"]*)"|'([^']*)'|[A-Za-z_$][\w$.]*)/);
+    if (!status) out.push({ file, via: "update", value: null, dynamic: false });
+    else if (status[2] !== undefined) out.push({ file, via: "update", value: status[2], dynamic: false });
+    else if (status[3] !== undefined) out.push({ file, via: "update", value: status[3], dynamic: false });
+    else out.push({ file, via: "update", value: status[1].trim(), dynamic: true });
+  }
+  return out;
+}
+
+/** 运行时每一处写入（insert 与 update）把 status 落在哪个值上。 */
+function pendingCapableSites(): Array<{ file: string; via: "insert" | "update"; value: string | null; dynamic: boolean }> {
+  const sites = runtimeSources().flatMap(({ rel, text }) => [
+    ...insertStatusesIn(rel, text),
+    ...statusUpdatesIn(rel, text),
+  ]);
+  return sites;
+}
+
+/** 读一处 insert 的 `.values({…})` 里 status 的字面量。 */
+function insertStatusesIn(file: string, source: string): Array<{ file: string; via: "insert"; value: string | null; dynamic: boolean }> {
+  const out: Array<{ file: string; via: "insert"; value: string | null; dynamic: boolean }> = [];
+  for (const match of source.matchAll(/\.insert\(\s*reviewSchedules\s*\)/g)) {
+    const at = match.index ?? 0;
+    const block = source.slice(at, at + 900).match(/\.values\(\s*\{([\s\S]*?)\}\s*\)/);
+    if (!block) {
+      out.push({ file, via: "insert", value: null, dynamic: true });
+      continue;
+    }
+    const status = block[1].match(/\bstatus:\s*("([^"]*)"|'([^']*)'|([A-Za-z_$][\w$.]*))/);
+    if (!status) out.push({ file, via: "insert", value: null, dynamic: false });
+    else if (status[2] !== undefined) out.push({ file, via: "insert", value: status[2], dynamic: false });
+    else if (status[3] !== undefined) out.push({ file, via: "insert", value: status[3], dynamic: false });
+    else out.push({ file, via: "insert", value: status[4], dynamic: true });
+  }
+  return out;
+}
+
+/**
+ * 运行时每一处 `.update(reviewSchedules)` 登记在案：它改的是哪一格、把 status 改成什么。
+ * D2 §2.1 那条"没有任何调用方能直接写这张表"只做到了一半——**insert 全收进边界了，
+ * update 没收**（这四处都不做排期，只让一行离开待处理或改一个延后时间）。所以这里判的是
+ * 那句更准的话：**只有边界能让一行变成 `pending`**，而要让这句话一直成立，这四处的
+ * status 目标就得逐条看得见（多一处、少一处、或改成别的值，都会红）。
+ */
+const REGISTERED_STATUS_UPDATES: Record<string, Array<string | null>> = {
+  // 一次作答消费掉那一条；两条是同一段里的两个分支（首次消费与继任那一发）。
+  "apps/api/src/modules/learning-runs/run-processing-tick.ts": ["completed", "completed"],
+  // 卡归档／被替代时关掉待处理那一条（lifecycle 那一发）。
+  "apps/api/src/modules/card-generation-v2/card-service.ts": ["cancelled"],
+  // 「这一条先延后」：只改 `user_deferred_until`，不碰 status。
+  "apps/api/src/modules/review/review-defer-service.ts": [null],
+};
+
+test("分母自证（改）：真的读到那四处 update，且没有第五处", () => {
+  const byFile: Record<string, Array<string | null>> = {};
+  for (const site of runtimeSources().flatMap((f) => statusUpdatesIn(f.rel, f.text))) {
+    (byFile[site.file] ??= []).push(site.dynamic ? null : site.value);
+    if (site.dynamic) {
+      throw new Error(`${site.file} 有一处 update 的 status 取不出字面量：那句话再也静态判不出来`);
+    }
+  }
+  assert.deepEqual(byFile, REGISTERED_STATUS_UPDATES,
+    "review_schedules 的 update 点与台账不一致：新增一处就要写清它把 status 改成什么（**不许改成 pending**），"
+      + "改掉一处就把这条删掉");
+});
+
+test("让一行变成待处理的写法只许在边界里（insert 与 update 一起判）", () => {
+  const pendingWriters = pendingCapableSites().filter((s) => s.value === "pending");
+  assert.ok(pendingWriters.length >= 1, "阳性对照：边界自己那一处 pending 写入没被读到 ⇒ 这条判据是空的");
+  const violators = pendingWriters.filter((s) => s.file !== BOUNDARY_FILE);
+  assert.deepEqual(violators, [],
+    `出现边界之外把安排改回待处理的写法：${violators.map((v) => `${v.file}(${v.via})`).join("，")}。`
+      + "0287 那把部分唯一索引只管「新建」那一侧，从别处把一行拉回 pending 会绕开它，"
+      + "同一目标就能安静长出第二条待处理安排。");
+  for (const site of pendingWriters) {
+    assert.equal(site.dynamic, false, `${site.file} 的 pending 写入是动态值，判据看不见那一格写的什么`);
+  }
+});
+
+test("判据对 update 也灵敏：改回待处理要抓到，改成完成与不碰 status 都不许误报", () => {
+  const backToPending = `await tx.update(reviewSchedules).set({ status: "pending", updatedAt: at }).where(eq(reviewSchedules.id, id))`;
+  const completes = `await tx.update(reviewSchedules).set({ status: "completed", lastReviewAt: at }).where(eq(reviewSchedules.id, id))`;
+  const touchesNoStatus = `await tx.update(reviewSchedules).set({ userDeferredUntil: input.deferredUntil }).where(eq(reviewSchedules.id, id))`;
+  const dynamic = `await tx.update(reviewSchedules).set({ status: nextStatus }).where(eq(reviewSchedules.id, id))`;
+  assert.deepEqual(statusUpdatesIn("f.ts", backToPending).map((s) => s.value), ["pending"],
+    "把行改回待处理却没抓到 ⇒ 判据读不到那一格");
+  assert.deepEqual(statusUpdatesIn("f.ts", completes).map((s) => s.value), ["completed"]);
+  assert.deepEqual(statusUpdatesIn("f.ts", touchesNoStatus).map((s) => s.value), [null],
+    "不碰 status 也被算成写待处理");
+  assert.deepEqual(statusUpdatesIn("f.ts", dynamic).map((s) => s.dynamic), [true],
+    "动态值被判成「没有 status」⇒ 那条安全方向失守：这种形状必须一直看得见");
 });
 
 test("边界依赖的那两样还在：部分唯一索引（schema＋迁移）与「冲突后回读、读不到就抛」", () => {
