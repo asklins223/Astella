@@ -638,12 +638,10 @@ export function NotebookSurface() {
    * 翻出来的那几页（第一页由投影自己读，往后每页累加在这里）。存着 `noteId` 并按它过滤，
    * 而不是"切篇时记得清空"——后者靠一次副作用，漏一次就把上一篇的记录接在这一篇下面。
    */
-  const [olderRounds, setOlderRounds] = useState<{
-    noteId: string;
-    items: NoteLearningRoundHistoryItemV1[];
-    nextCursor: string | null;
-    hasMore: boolean;
-  } | null>(null);
+  // 用合同那一份类型，不再手抄四格：上一刀加 `totalCount` 时，抄出来的那份形状
+  // 会静默少一格（`historyTotal` 读不到它，总数就退回 0），而 typecheck 只会红在
+  // 读它的那一行上，不会告诉你"这里本来该跟着长"。
+  const [olderRounds, setOlderRounds] = useState<NoteLearningRoundHistoryV1 | null>(null);
   const [olderBusy, setOlderBusy] = useState(false);
   const [olderFailure, setOlderFailure] = useState<string | null>(null);
   const [roundFailure, setRoundFailure] = useState<string | null>(null);
@@ -1557,10 +1555,16 @@ export function NotebookSurface() {
           ? previous
           : { noteId: current.noteId, items: [], nextCursor: null, hasMore: false };
         return {
+          version: 1,
           noteId: current.noteId,
           items: [...base.items, ...olderPage.items],
           nextCursor: olderPage.nextCursor,
           hasMore: olderPage.hasMore,
+          // 累加之后各归各位：屏上列了几轮 = 两批 items 之和；总数还是服务端那一份
+          // （它与游标无关，翻到第二页不会把它"翻小"）。少带任意一格，
+          // 合同类型现在会当场拦住——因为这份状态不再手抄形状。
+          shownCount: base.items.length + olderPage.items.length,
+          totalCount: olderPage.totalCount,
         };
       });
     } catch (error) {
