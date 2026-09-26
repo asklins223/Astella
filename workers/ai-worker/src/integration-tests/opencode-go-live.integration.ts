@@ -114,6 +114,17 @@ function agentTurnConfig() {
 
 // ─── 1. 配置解析 ─────────────────────────────────────────────────────────
 
+/**
+ * 那四条 `live:` 会真打外网并按 token 计费，所以它们**默认不跑**。
+ * 仓库里这条约定已经有出处（`apps/api` 的 `learning-runs-postgres` 末尾那发真跑：
+ * 付费用例只有 `REAL_MODEL_BATCH=1` 才跑，CI 永不设这个变量）。这份文件以前**一句闸都没有**
+ * ——把它接进任何自动跑的地方，就等于每次都可能花一笔钱；不接，它又永远是暗的。
+ * 加上闸之后两件事一起解决：免费的五道（config／registry／endpoint／factory）随时跑，
+ * 真连通那四道只有点名要跑时才跑。
+ */
+const LIVE_CALL_GATE =
+  process.env.REAL_MODEL_BATCH === "1" ? false : "真实网络＋按 token 计费：只有 REAL_MODEL_BATCH=1 才跑";
+
 test("config: agent_turn 解析到已配置平台与配置的模型", () => {
   const platform = resolveSystemPlatform("agent_turn");
   assert.ok(platform, "agent_turn 未解析");
@@ -121,7 +132,13 @@ test("config: agent_turn 解析到已配置平台与配置的模型", () => {
   assert.ok(platform.platformId, "agent_turn 未映射平台标识");
   assert.ok(platform.baseUrl, "agent_turn 未映射 baseUrl");
   assert.equal(platform.model, CONFIGURED_MODEL);
-  assert.match(platform.apiKey ?? "", /^sk-/);
+  // 凭据只看"在不在、像不像一句话"，不钉前缀、更不把值打出来：
+  // ① 各家 token 形状不同（这一条以前钉 /^sk-/，换成别的形状的 token 就红）；
+  // ② `assert.match` 失败时会把**整个 key 印进输出**——查密钥一律按长度判，
+  //    这条纪律在别处已经立着，这一次是它自己把话印了出来。
+  const apiKey = platform.apiKey ?? "";
+  assert.ok(apiKey.trim() === apiKey && apiKey.length >= 20,
+    `agent_turn 的凭据不成话（长度 ${apiKey.length}）`);
 });
 
 test("registry: 已配置平台已注册且声明 agent_turn 能力", () => {
@@ -188,7 +205,7 @@ test("factory: createProvider 产出实例，能力快照按平台配置生效",
 
 // ─── 3. 真实调用 ─────────────────────────────────────────────────────────
 
-test("live: chatCompletion 返回可用文本与 usage", { timeout: CALL_TIMEOUT_MS }, async () => {
+test("live: chatCompletion 返回可用文本与 usage", { timeout: CALL_TIMEOUT_MS, skip: LIVE_CALL_GATE }, async () => {
   const { providerName, config } = agentTurnConfig();
   const provider = createProvider(providerName, config);
   const result = await provider.chatCompletion(
@@ -208,7 +225,7 @@ test("live: chatCompletion 返回可用文本与 usage", { timeout: CALL_TIMEOUT
   assert.ok((result.usage.completionTokens ?? 0) > 0, "缺少 completionTokens");
 });
 
-test("live: executeAgentTurn 真实工具调用（native tools）", { timeout: CALL_TIMEOUT_MS }, async () => {
+test("live: executeAgentTurn 真实工具调用（native tools）", { timeout: CALL_TIMEOUT_MS, skip: LIVE_CALL_GATE }, async () => {
   const { providerName, config } = agentTurnConfig();
   const provider = createProvider(providerName, config);
   const result = await provider.executeAgentTurn!({
@@ -244,7 +261,7 @@ test("live: executeAgentTurn 真实工具调用（native tools）", { timeout: C
  * be passed back」；muse-spark 不要求但接受回传。硬编码 toolCalls（不带
  * reasoning）只能覆盖 muse-spark，因此这里必须走真实的两步。
  */
-test("live: 两轮工具循环（回放第一轮 reasoning 句柄）", { timeout: CALL_TIMEOUT_MS }, async () => {
+test("live: 两轮工具循环（回放第一轮 reasoning 句柄）", { timeout: CALL_TIMEOUT_MS, skip: LIVE_CALL_GATE }, async () => {
   const { providerName, config } = agentTurnConfig();
   const provider = createProvider(providerName, config);
   const tools = [{
@@ -291,7 +308,7 @@ test("live: 两轮工具循环（回放第一轮 reasoning 句柄）", { timeout
   assert.deepEqual(second.toolCalls, [], "最终答复不应再产生工具调用");
 });
 
-test("live: reasoning 句柄不含明文推理（隐私回归护栏）", { timeout: CALL_TIMEOUT_MS }, async () => {
+test("live: reasoning 句柄不含明文推理（隐私回归护栏）", { timeout: CALL_TIMEOUT_MS, skip: LIVE_CALL_GATE }, async () => {
   const { providerName, config } = agentTurnConfig();
   const provider = createProvider(providerName, config);
   const result = await provider.executeAgentTurn!({
@@ -311,7 +328,7 @@ test("live: reasoning 句柄不含明文推理（隐私回归护栏）", { timeo
   }
 });
 
-test("live: chatCompletionStream 逐增量返回全文", { timeout: CALL_TIMEOUT_MS }, async () => {
+test("live: chatCompletionStream 逐增量返回全文", { timeout: CALL_TIMEOUT_MS, skip: LIVE_CALL_GATE }, async () => {
   const { providerName, config } = agentTurnConfig();
   const provider = createProvider(providerName, config);
   const deltas: string[] = [];
@@ -326,7 +343,7 @@ test("live: chatCompletionStream 逐增量返回全文", { timeout: CALL_TIMEOUT
   assert.equal(deltas.join(""), result.content, "增量拼接与累计全文不一致");
 });
 
-test("live: /models 列出该模型（凭据对已配置端点有效）", { timeout: CALL_TIMEOUT_MS }, async () => {
+test("live: /models 列出该模型（凭据对已配置端点有效）", { timeout: CALL_TIMEOUT_MS, skip: LIVE_CALL_GATE }, async () => {
   const platform = resolveSystemPlatform("agent_turn");
   assert.ok(platform?.apiKey);
   assert.ok(platform.baseUrl);

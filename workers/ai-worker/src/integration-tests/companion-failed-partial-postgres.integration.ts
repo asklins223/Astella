@@ -30,7 +30,8 @@ after(async () => {
   await closeDatabase();
 });
 
-const { persistFailedPartial } = await import("../handlers/companion-dialogue.ts");
+const { persistFailedPartial, pickCompanionFailureFallbackLine } =
+  await import("../handlers/companion-dialogue.ts");
 
 async function seedBase(): Promise<{ workspaceId: string; userId: string }> {
   const ws = randomUUID();
@@ -143,7 +144,7 @@ test("失败留档：已下发的前缀落成一条 kind='error' 的 assistant �
   }
 });
 
-test("失败留档：太短不落（碎片是噪音，不是记录）", async () => {
+test("失败留档：太短时不落那句碎片，改落兜底话（fail-open；旧断言的是「什么都不落」）", async () => {
   const { workspaceId, userId } = await seedBase();
   const s = await seedRun(workspaceId, userId, "failed");
   try {
@@ -154,10 +155,17 @@ test("失败留档：太短不落（碎片是噪音，不是记录）", async ()
       runId: s.runId,
       deliveredText: "好，我",
     });
-    assert.equal(written, false);
+    // 这条用例原来钉的是"太短 ⇒ 不落、返回 false、库里零行"。那次改判有出处：
+    // 界面上什么都没有＝"她突然不理人"（抱怨 #4），于是实现换成 fail-open——
+    // 半句太短时**落一句诚实的兜底话**（`COMPANION_FAILURE_FALLBACK_LINES`，按 runId 确定性取）。
+    // 所以这里翻成两半：仍然"不落碎片原话"（那条护栏没撤），但必须留下一句能看见的话。
+    assert.equal(written, true);
     const after_ = await readPartial(workspaceId, userId, s.cid, s.runId);
-    assert.equal(after_.messages.length, 0);
-    assert.equal(after_.assistantMessageId, null);
+    assert.equal(after_.messages.length, 1, "太短也要留下一句，不能让用户面对空白");
+    assert.notEqual(after_.messages[0].text, "好，我", "碎片原话不许当记录落——这条仍是噪音判据");
+    assert.equal(after_.messages[0].text, pickCompanionFailureFallbackLine(s.runId),
+      "兜底话必须取自那一份话术表，不能在别处再写一遍");
+    assert.equal(after_.assistantMessageId, after_.messages[0].id);
   } finally {
     await s.cleanup();
   }
