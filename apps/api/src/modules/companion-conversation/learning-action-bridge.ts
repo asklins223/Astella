@@ -16,6 +16,7 @@ import { companionGroundedTutorGrantV1Schema, companionLearningContextV1Schema, 
 import { sha256Utf8V1, canonicalJsonV1 } from "@ailearn/shared/content-hash";
 import type { CompanionLearningContextV1, LearningRunOriginV2 } from "@ailearn/shared";
 import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
+import { primaryActionPrecedenceV3 } from "../learning-objectives/action-resolver.ts";
 // Plan 23 CS-05/CS-06：Objective Surface 派生 companion 上下文（不再依赖 V1 card_key_points.claim）。
 import {
   listObjectiveSurfacesV3,
@@ -155,20 +156,15 @@ async function resolveCompanionLearningContextInTransaction(
     lifecycle: "active",
   });
 
-  // 排序：resume_run > create_run > create_review_run > 其他；同一优先级
-  // 按 surface 顺位（已在 listObjectiveSurfacesV3 按 created_at DESC 返回）。
-  const rank = (kind: string): number => {
-    switch (kind) {
-      case "resume_run": return 0;
-      case "create_run": return 1;
-      case "create_review_run": return 2;
-      case "view_successor": return 3;
-      case "practice_only": return 4;
-      case "refresh": return 5;
-      default: return 6;
-    }
-  };
-  const sorted = [...objectives].sort((a, b) => rank(a.primaryAction.kind) - rank(b.primaryAction.kind));
+  /**
+   * 顺位取 §3.2 那一份唯一住处（`action-resolver.ts`），**这里不再抄表**。
+   * 此前这份本地表把 `create_run` 排在 `create_review_run` 之前——伴星会因此把
+   * 「开始学习」排在「到期复习」前面，正是 §3.2 明令不许的那种不一致
+   * （"不能在笔记页推荐初学、首页强制复习、星图又恢复另一轮"）。
+   */
+  const sorted = [...objectives].sort(
+    (a, b) => primaryActionPrecedenceV3(a.primaryAction.kind) - primaryActionPrecedenceV3(b.primaryAction.kind),
+  );
 
   // resume：带 activeRun 的第一个 Objective（typed resume_run）。
   let learningRunResumeCandidate: CompanionLearningContextV1["learningRunResumeCandidate"] = null;

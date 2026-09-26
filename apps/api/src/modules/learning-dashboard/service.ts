@@ -25,7 +25,7 @@ import {
   listObjectiveSurfacesV3,
   type SurfaceContext,
 } from "../learning-objectives/surface-service.ts";
-import { resolvePrimaryActionV3 } from "../learning-objectives/action-resolver.ts";
+import { primaryActionPrecedenceV3, resolvePrimaryActionV3 } from "../learning-objectives/action-resolver.ts";
 import {
   dashboardBuildDurationSeconds,
   dashboardEmptyWithActiveObjectivesTotal,
@@ -367,26 +367,14 @@ export async function buildLearningDashboardV2(
   };
 }
 
-/** W3-03 优先级：分数越低越优先。 */
+/**
+ * 首页主建议的顺位**不在这里抄一份表**——§3.2 那条优先规则只有一份住处
+ * （`action-resolver.ts` 的 `PRIMARY_ACTION_PRECEDENCE_V3`，39d W4-2 验收"各入口使用同一
+ * 优先规则"）。这里此前自己排了一遍，把 `refresh`／`view_successor`（"需要处理的内容／
+ * 权限变化"，§3.2 的第一档）压在 `create_run` 之后，两份表还互相矛盾。
+ */
 function priorityScore(surface: Awaited<ReturnType<typeof assembleObjectiveSurfaceV3>>): number {
-  switch (surface.primaryAction.kind) {
-    case "resume_run":
-      return 0;
-    case "create_review_run":
-      return 1;
-    case "create_run":
-      return surface.personal.initialValidation?.status === "ready" ? 2 : 3;
-    case "practice_only":
-      return 4;
-    case "refresh":
-      return 5;
-    case "view_successor":
-      return 6;
-    case "none":
-      return 7;
-    default:
-      return 8;
-  }
+  return primaryActionPrecedenceV3(surface.primaryAction.kind);
 }
 
 function priorityReasons(

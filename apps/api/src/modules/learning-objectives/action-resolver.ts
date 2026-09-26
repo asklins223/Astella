@@ -206,3 +206,44 @@ export function resolvePrimaryActionV3(
     start: startPayload(objectiveId, input.cardId, input.answerModePreference),
   };
 }
+
+/**
+ * §3.2 那一条优先规则的**唯一住处**（跨目标的顺位；本文件头部那张表管的是单条目标内部选谁）。
+ *
+ * 39d W4-2 的验收原话：「各入口使用同一优先规则，不能在笔记页推荐初学、首页强制复习、
+ * 星图又恢复另一轮」。今天量到三份手抄的表，其中两份与 §3.2 相反：
+ * - 首页 `learning-dashboard/service.ts` 的 `priorityScore`：`refresh`＝5、`view_successor`＝6，
+ *   都排在 `create_run`(3) **之后** ⇒ "需要处理的内容／权限变化"在首页永远排不到前面；
+ * - 伴星 `learning-action-bridge.ts` 的 `rank`：`create_run`(1) 排在 `create_review_run`(2)
+ *   **之前** ⇒ 她会把「开始学习」排在「到期复习」前面，正是 §3.2 禁的那件事；
+ * - 两份都没列 `wait_for_initial_validation` ⇒ 掉进各自 switch 的 default（首页给 8 分，
+ *   比「暂无可做的」还靠后）。
+ *
+ * 有两档并成一档，是**照合同写的实话**不是偷懒：§3.2 的第四档「最近结束一轮仍有明显缺口」
+ * 与第五档「开始或继续探索」今天**共用 `create_run` 这一个 kind**——上面那段注释明写
+ * "刻意不新增 kind，两种情况开出去的那一轮是同一件事，差别只在动词"。顺位表只看 kind，
+ * 所以这两档在这张表里就是同一带；要分开得先让合同给出可判的依据，而不是在顺位表里
+ * 重新去猜标签字面。
+ */
+export const PRIMARY_ACTION_PRECEDENCE_V3 = [
+  "view_successor",              // 需要处理的内容（被取代）
+  "refresh",                     // 权限／内容变化
+  "resume_run",                  // 用户仍愿意继续的适用未完轮次
+  "create_review_run",           // 已授权的到期回访
+  "practice_only",               // reveal 之后练习照给（§3.2 没给它一档，排在回访之后）
+  "wait_for_initial_validation", // 正式验证按时点等（同上）
+  "create_run",                  // 最近明确缺口 与 开始或继续探索（同一 kind，见上）
+  "none",                        // 当前没有可做的
+] as const satisfies readonly LearningObjectivePrimaryActionV3["kind"][];
+
+/**
+ * 顺位越小越优先。**没在表里的 kind 排到最后**，不是 -1——`indexOf` 的 -1 会被当成
+ * "最高优先"，那正好把"新增一档忘了登记"奖励成"它永远插队"。全覆盖由
+ * `primary-action-precedence.test.ts` 那条判据守着（新增 kind 不登记就红）。
+ */
+export function primaryActionPrecedenceV3(
+  kind: LearningObjectivePrimaryActionV3["kind"],
+): number {
+  const index = (PRIMARY_ACTION_PRECEDENCE_V3 as readonly string[]).indexOf(kind);
+  return index === -1 ? PRIMARY_ACTION_PRECEDENCE_V3.length : index;
+}
