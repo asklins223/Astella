@@ -1982,6 +1982,13 @@
       "when": 1789800006032,
       "tag": "0283_note_learning_round_plan_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 283,
+      "version": "7",
+      "when": 1789800007032,
+      "tag": "0284_note_learning_round_teachings",
+      "breakpoints": true
     }
   ]
 }

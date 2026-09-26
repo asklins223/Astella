@@ -7,6 +7,8 @@
  *   GET   /v2/notes/:noteId/learning-rounds               —— 这一篇的轮次记录（§10.3，读侧第一刀）
  *   PATCH /v2/note-learning-rounds/:roundId               —— 状态推进：pause / resume / close
  *   POST  /v2/note-learning-rounds/:roundId/driving-question —— 改写本轮问题
+ *   POST  /v2/note-learning-rounds/:roundId/teaching      —— 生成一条教学产物（W4-6 刀一）
+ *   GET   /v2/note-learning-rounds/:roundId/teaching      —— 读这一轮当前问题下的那条教学产物
  *
  * 三件事是这一层的职责，不是服务层的：
  *  1. **那一份"实际用 which 正文"由服务端定**（PRD §3.4）。`getNoteWithVersion` 里带着
@@ -24,22 +26,33 @@
  */
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
-import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
+import {
+  currentApiWorkspaceTransaction,
+  withWorkspaceTransaction,
+  type ApiTransaction,
+} from "../../db/client.ts";
 import { requireSession } from "../identity/middleware.ts";
 import { getNoteWithVersion } from "../note/service.ts";
 import {
   advanceNoteLearningRoundRequestV1Schema,
   createNoteLearningRoundRequestV1Schema,
+  createRoundTeachingRequestV1Schema,
   noteLearningRoundHistoryQueryV1Schema,
   noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundV1Schema,
   reviseDrivingQuestionRequestV1Schema,
+  roundTeachingViewV1Schema,
   type NoteLearningRoundV1Wire,
 } from "@ailearn/shared/note-learning-round-contracts";
 import {
   advanceRound,
+  assertTeachingBudgetAvailable,
+  countTeachings,
   createRound,
+  createTeaching,
+  findReusableTeaching,
   listRoundHistory,
+  listPlanRevisions,
   readOpenRound,
   readRound,
   reviseDrivingQuestion,
@@ -47,22 +60,37 @@ import {
   type NoteLearningRoundV1,
   type RoundScopeV1,
 } from "./round-service.ts";
+import {
+  deterministicTeachingExplainProviderV1,
+  loadTeachingSnapshotBlocks,
+  runTeachingExplainV1,
+  teachingFailureResponseV1,
+} from "./teaching-explain.ts";
 import { roundBudgetsV1 } from "./round-budgets.ts";
 
 const STATUS_BY_CODE: Record<string, 400 | 404 | 409 | 500> = {
   invalid_driving_question: 400,
   invalid_budget: 400,
   invalid_snapshot: 400,
+  invalid_teaching_content: 400,
   note_not_found: 404,
   round_not_found: 404,
   invalid_cursor: 400,
   round_already_open: 409,
   stale_revision: 409,
   round_closed: 409,
+  round_budget_exhausted: 409,
   invalid_transition: 409,
   outcome_required: 400,
   create_failed: 500,
 };
+
+/**
+ * 教学产物的 provider（今天的生产实现＝确定性；真模型那一刀换这里的一个赋值，
+ * 任务定义与外壳一个字不动）。放在路由层而不是服务层：provider 是"怎么生成"，
+ * 服务层只管"能不能落库"。
+ */
+const teachingExplainProvider = deterministicTeachingExplainProviderV1();
 
 /** 内部形状 → 线上形状：时间是 ISO 字符串，且整份要过合同（合同漂移当场红）。 */
 function toWire(round: NoteLearningRoundV1): NoteLearningRoundV1Wire {
@@ -236,4 +264,166 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
       return replyRoundError(reply, err, "改写本轮问题没成功", (tx, s) => readRound(tx, s, roundId));
     }
   });
+
+  /**
+   * 生成一条教学产物（W4-6 刀一）。
+   *
+   * 三相与制卡漏斗同形（W3-2 第三刀那条纪律）：短事务只读冻结输入 → **事务外**跑内核任务
+   * → 短事务只写。中间那一段拿不到 tx，"持锁等模型"在这条链上写不出来。
+   *
+   * 幂等：同快照、同问题版本的已有解释直接回（200），不重跑也不重付；真的生成了才是 201。
+   */
+  app.post("/v2/note-learning-rounds/:roundId/teaching", async (req, reply) => {
+    const roundId = (req.params as { roundId?: string }).roundId ?? "";
+    const parsed = createRoundTeachingRequestV1Schema.safeParse(req.body ?? {});
+    if (!z.string().uuid().safeParse(roundId).success || !parsed.success) {
+      return reply.code(400).send({ error: "invalid_request", message: "生成这一条解释需要的字段不对" });
+    }
+    const scope = scopeOf(req);
+    /** 相位 1 的产物：要么"已经有一条可复用的"，要么"冻结好了输入、等着生成"。 */
+    type FrozenPhase1 = { round: NoteLearningRoundV1 } & (
+      | { kind: "reused"; teaching: NonNullable<Awaited<ReturnType<typeof findReusableTeaching>>> }
+      | { kind: "generate"; ordinal: number; input: Awaited<ReturnType<typeof buildFrozenTeachingInput>> }
+    );
+    let frozen: FrozenPhase1;
+    try {
+      frozen = await withWorkspaceTransaction(scope, async (tx): Promise<FrozenPhase1> => {
+        const round = await readRound(tx, scope, roundId);
+        if (!round) throw new RoundServiceError("round_not_found", "这一轮不存在（或对当前这个人不可见）");
+        if (round.phase === "closed") {
+          throw new RoundServiceError("round_closed", "这一轮已经收尾，终态只读：不再生成新的教学内容");
+        }
+        if (round.revision !== parsed.data.expectedRevision) {
+          throw new RoundServiceError("stale_revision", "这一轮的状态已经变化，请刷新后重试");
+        }
+        const reused = await findReusableTeaching(tx, scope, {
+          roundId,
+          kind: "explanation",
+          drivingQuestionRevision: round.drivingQuestionRevision,
+          snapshotHash: round.sourceContentHash,
+        });
+        if (reused) return { round, kind: "reused", teaching: reused };
+        const used = await countTeachings(tx, scope, roundId);
+        // 预算判据在"要不要花这一发"之前：触顶了就不进入生成相位（D1 §3.2）。
+        assertTeachingBudgetAvailable(round, used);
+        return { round, kind: "generate", ordinal: used + 1, input: await buildFrozenTeachingInput(tx, scope, round) };
+      });
+    } catch (err) {
+      return replyRoundError(reply, err, "生成这一条解释没成功", (tx, s) => readRound(tx, s, roundId));
+    }
+
+    if (frozen.kind === "reused") {
+      return reply.code(200).send(roundTeachingViewV1Schema.parse({
+        version: 1 as const,
+        round: toWire(frozen.round),
+        teaching: frozen.teaching,
+      }));
+    }
+
+    // ── 相位 2：事务外生成（内核会自己核"当前有没有活动事务"，W3-2 那道闸门同样管这条链）──
+    const generated = await runTeachingExplainV1({
+      provider: teachingExplainProvider,
+      input: frozen.input,
+      scope,
+      round: {
+        roundId: frozen.round.roundId,
+        noteVersionId: frozen.round.noteVersionId,
+        sourceContentHash: frozen.round.sourceContentHash,
+      },
+      ordinal: frozen.ordinal,
+      currentActiveTransaction: currentApiWorkspaceTransaction,
+      reportDevelopmentError: (message) => req.log.error({ scope: "note-round-teaching" }, message),
+    });
+    if (!generated.ok) {
+      const mapped = teachingFailureResponseV1(generated);
+      return reply.code(mapped.status).send({ error: mapped.error, message: mapped.message });
+    }
+
+    // ── 相位 3：短事务写（只追加；轮内序号在服务层算）──
+    try {
+      const written = await withWorkspaceTransaction(scope, async (tx) => {
+        const teaching = await createTeaching(tx, scope, {
+          roundId,
+          expectedRevision: parsed.data.expectedRevision,
+          kind: "explanation",
+          content: {
+            explanation: generated.output.explanation,
+            ...(generated.output.example ? { example: generated.output.example } : {}),
+          },
+          sourceBlockOrdinals: generated.output.sourceBlockOrdinals,
+          snapshotHash: frozen.round.sourceContentHash,
+          drivingQuestionRevision: frozen.round.drivingQuestionRevision,
+          kernelTaskRef: generated.attemptRef,
+        });
+        const round = await readRound(tx, scope, roundId);
+        if (!round) throw new RoundServiceError("round_not_found", "这一轮不存在（或对当前这个人不可见）");
+        return { round, teaching };
+      });
+      return reply.code(201).send(roundTeachingViewV1Schema.parse({
+        version: 1 as const,
+        round: toWire(written.round),
+        teaching: written.teaching,
+      }));
+    } catch (err) {
+      return replyRoundError(reply, err, "这一条解释生成了但没能存下来", (tx, s) => readRound(tx, s, roundId));
+    }
+  });
+
+  /**
+   * 读这一轮**当前问题版本**下的那条解释（W4-6 刀一）。
+   *
+   * 只回与当前问题版本、当前快照匹配的那一条：问题被改写之后，旧问题下的解释不再代表
+   * 这一轮现在问的事——那种情况下诚实地说"还没有解释"（`teaching: null`），而不是把
+   * 上一版问题的解释摆在这一版问题下面。
+   */
+  app.get("/v2/note-learning-rounds/:roundId/teaching", async (req, reply) => {
+    const roundId = (req.params as { roundId?: string }).roundId ?? "";
+    if (!z.string().uuid().safeParse(roundId).success) {
+      return reply.code(400).send({ error: "invalid_request", message: "roundId 不是一个合法 id" });
+    }
+    const scope = scopeOf(req);
+    let view;
+    try {
+      view = await withWorkspaceTransaction(scope, async (tx) => {
+        const round = await readRound(tx, scope, roundId);
+        if (!round) throw new RoundServiceError("round_not_found", "这一轮不存在（或对当前这个人不可见）");
+        const teaching = await findReusableTeaching(tx, scope, {
+          roundId,
+          kind: "explanation",
+          drivingQuestionRevision: round.drivingQuestionRevision,
+          snapshotHash: round.sourceContentHash,
+        });
+        return { round, teaching };
+      });
+    } catch (err) {
+      return replyRoundError(reply, err, "读这一条解释没成功");
+    }
+    return roundTeachingViewV1Schema.parse({
+      version: 1 as const,
+      round: toWire(view.round),
+      teaching: view.teaching,
+    });
+  });
+}
+
+/**
+ * 冻结生成用的输入（只在相位 1 的短事务里读）：本轮问题 ＋ 最新计划（0283）＋
+ * **快照指向的那一版**正文块。读的是快照那一版而不是"现在这一版"——D3 §5：
+ * 内容变了就不复用旧产物，"这次解释按哪一版做的"由快照哈希回答。
+ */
+async function buildFrozenTeachingInput(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  round: NoteLearningRoundV1,
+) {
+  const [blocks, plans] = await Promise.all([
+    loadTeachingSnapshotBlocks(tx, scope.workspaceId, round.noteVersionId),
+    listPlanRevisions(tx, scope, round.roundId),
+  ]);
+  const latestPlan = plans.length > 0 ? plans[plans.length - 1] : null;
+  return {
+    drivingQuestion: round.drivingQuestion,
+    planSteps: latestPlan ? latestPlan.plan.steps.map((step) => step.text) : [],
+    blocks,
+  };
 }

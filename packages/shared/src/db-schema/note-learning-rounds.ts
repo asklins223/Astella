@@ -134,3 +134,57 @@ export const noteLearningRoundPlanRevisions = pgTable(
 
 export type NoteLearningRoundPlanRevisionRow = typeof noteLearningRoundPlanRevisions.$inferSelect;
 export type NoteLearningRoundPlanRevisionInsert = typeof noteLearningRoundPlanRevisions.$inferInsert;
+
+/**
+ * 轮次里的教学产物 `note_learning_round_teachings`（39d W4-6 刀一；迁移 0284）。
+ *
+ * 一轮的教学历史按 `ordinal` 读序；`content` 是结构化正文（explanation＋可选 example），
+ * `sourceBlockOrdinals` 是依据在快照里的定位（要能点开定位到那一块）。
+ * `snapshotHash` 与 `drivingQuestionRevision` 是**生成时刻**的凭据：哈希或问题版本变了
+ * 就不复用旧产物（D3 §5），服务层的"同快照同问题直接回既有那条"读的就是这两列。
+ * `kernelTaskRef` 可以为 NULL：确定性 provider 这一天不走内核任务，空值是真的"没有"。
+ *
+ * 只追加（0284 触发器挡 UPDATE/DELETE），不存"好不好／掌握度"（§6.7 同禁）。
+ */
+export const noteLearningRoundTeachings = pgTable(
+  "note_learning_round_teachings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    roundId: uuid("round_id").notNull(),
+    /** 这一轮的第几条教学产物（1 起，轮内唯一）。 */
+    ordinal: integer("ordinal").notNull(),
+    /** 今天只有 `explanation` 一档（按知识形态选的表达方式是后续刀）。 */
+    kind: text("kind").notNull(),
+    /** `roundTeachingContentV1` 形状（jsonb，服务层写入前过 schema）。 */
+    content: jsonb("content").notNull(),
+    /** 依据块在快照里的序号（要能点开定位，而不是只给一句"根据笔记"）。 */
+    sourceBlockOrdinals: integer("source_block_ordinals").array().notNull().default(sql`'{}'`),
+    /** 生成时那一版正文的哈希（D3 §5 冻结语义）。 */
+    snapshotHash: text("snapshot_hash").notNull(),
+    /** 生成时本轮问题的第几版；用户改写问题后必须能重新生成。 */
+    drivingQuestionRevision: integer("driving_question_revision").notNull(),
+    /** 内核任务/尝试的引用（回放与审计用）；确定性 provider 这一天为 NULL。 */
+    kernelTaskRef: text("kernel_task_ref"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    ordinalUnique: uniqueIndex("nlrt_round_ordinal_unique").on(t.roundId, t.ordinal),
+    ordinalCheck: check("nlrt_ordinal_chk", sql`${t.ordinal} >= 1`),
+    kindCheck: check("nlrt_kind_chk", sql`${t.kind} IN ('explanation')`),
+    contentJsonCheck: check("nlrt_content_json_chk", sql`jsonb_typeof(${t.content}) = 'object'`),
+    snapshotHashCheck: check(
+      "nlrt_snapshot_hash_chk",
+      sql`char_length(${t.snapshotHash}) BETWEEN 8 AND 128`,
+    ),
+    drivingQuestionRevisionCheck: check("nlrt_dq_revision_chk", sql`${t.drivingQuestionRevision} >= 1`),
+    sourceBlocksLenCheck: check(
+      "nlrt_source_blocks_len_chk",
+      sql`coalesce(array_length(${t.sourceBlockOrdinals}, 1), 0) <= 200`,
+    ),
+  }),
+);
+
+export type NoteLearningRoundTeachingRow = typeof noteLearningRoundTeachings.$inferSelect;
+export type NoteLearningRoundTeachingInsert = typeof noteLearningRoundTeachings.$inferInsert;

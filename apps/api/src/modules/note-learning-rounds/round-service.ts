@@ -20,12 +20,18 @@ import { DomainError } from "@ailearn/shared";
 import {
   noteLearningRounds,
   noteLearningRoundPlanRevisions,
+  noteLearningRoundTeachings,
   type NoteLearningRoundRow,
+  type NoteLearningRoundTeachingRow,
 } from "@ailearn/shared/db-schema/note-learning-rounds";
 import {
   appendRoundPlanRevisionRequestV1Schema,
   roundPlanRevisionV1Schema,
+  roundTeachingContentV1Schema,
+  roundTeachingV1Schema,
   type RoundPlanRevisionV1,
+  type RoundTeachingKindV1,
+  type RoundTeachingV1,
 } from "@ailearn/shared/note-learning-round-contracts";
 import {
   applyRoundAction,
@@ -582,4 +588,199 @@ export async function listPlanRevisions(
     reason: row.reason,
     recordedAt: row.createdAt.toISOString(),
   }));
+}
+
+// ─── 轮次里的教学产物（39d W4-6 刀一；表 0284）────────────────────────────
+
+function toTeachingContract(row: NoteLearningRoundTeachingRow): RoundTeachingV1 {
+  return roundTeachingV1Schema.parse({
+    version: 1,
+    teachingId: row.id,
+    roundId: row.roundId,
+    ordinal: row.ordinal,
+    kind: row.kind,
+    content: row.content,
+    sourceBlockOrdinals: row.sourceBlockOrdinals,
+    createdAt: row.createdAt.toISOString(),
+  });
+}
+
+/** 这一轮的教学产物（按 `ordinal` 升序 = 生成顺序）。空数组是真的"还没生成过"。 */
+export async function listTeachings(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  roundId: string,
+): Promise<RoundTeachingV1[]> {
+  const rows = await tx
+    .select()
+    .from(noteLearningRoundTeachings)
+    .where(and(
+      eq(noteLearningRoundTeachings.roundId, roundId),
+      eq(noteLearningRoundTeachings.workspaceId, scope.workspaceId),
+      eq(noteLearningRoundTeachings.userId, scope.userId),
+    ))
+    .orderBy(noteLearningRoundTeachings.ordinal);
+  return rows.map(toTeachingContract);
+}
+
+/**
+ * 能不能直接复用已有的那一条（W4-6 刀一那条"同快照重复请求返回同一条，不重付"）。
+ *
+ * 判据是三件全同：轮次、本轮问题版本、快照哈希（外加 `kind`）。**不靠**库里一条唯一索引：
+ * §16.3 的「换解释」将来要在同一个问题下落第二条（见 0284 的注释），唯一索引会把那个
+ * 产品选择挡在门外；这里读**最近一条**匹配行——只追加的表里同键只可能是重复请求造成的，
+ * 而重复请求本来就该拿到同一条。
+ */
+export async function findReusableTeaching(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  key: {
+    roundId: string;
+    kind: RoundTeachingKindV1;
+    drivingQuestionRevision: number;
+    snapshotHash: string;
+  },
+): Promise<RoundTeachingV1 | null> {
+  const rows = await tx
+    .select()
+    .from(noteLearningRoundTeachings)
+    .where(and(
+      eq(noteLearningRoundTeachings.roundId, key.roundId),
+      eq(noteLearningRoundTeachings.workspaceId, scope.workspaceId),
+      eq(noteLearningRoundTeachings.userId, scope.userId),
+      eq(noteLearningRoundTeachings.kind, key.kind),
+      eq(noteLearningRoundTeachings.drivingQuestionRevision, key.drivingQuestionRevision),
+      eq(noteLearningRoundTeachings.snapshotHash, key.snapshotHash),
+    ))
+    .orderBy(desc(noteLearningRoundTeachings.ordinal))
+    .limit(1);
+  return rows[0] ? toTeachingContract(rows[0]) : null;
+}
+
+/**
+ * 这一轮已经生成过几条教学产物——预算判据要的那个数。
+ *
+ * 今天"一次生成 = 一条产物"：确定性 provider 不花模型调用，接真模型那一刀之后
+ * 一次生成可能含自动重试（`maxAutoRetries`），那时候这个数不再等于"真实调用次数"，
+ * 要按内核回执把重试加进来（登记在 W4-6 的状态格里）。
+ */
+export async function countTeachings(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  roundId: string,
+): Promise<number> {
+  const rows = await tx
+    .select({ total: sql<number | null>`count(*)` })
+    .from(noteLearningRoundTeachings)
+    .where(and(
+      eq(noteLearningRoundTeachings.roundId, roundId),
+      eq(noteLearningRoundTeachings.workspaceId, scope.workspaceId),
+      eq(noteLearningRoundTeachings.userId, scope.userId),
+    ));
+  return Number(rows[0]?.total ?? 0);
+}
+
+/**
+ * 「这一轮还能不能再生成一条教学产物」（D1 §3.2 触顶行为 / 39 §6.2）。
+ *
+ * 触顶时说的话是 39 §6.2 给定的那三句：**保留已完成内容、可以继续阅读、可以稍后再试
+ * 或先结束**——不把资源限制说成用户能力不足，也不说成"学习失败了"。
+ *
+ * `used` 由调用方给（它刚读过，避免同一事务里再数一遍）；判据本身是纯函数，
+ * 便于"预算为 0 / 恰好用完 / 还有一格"三档各有一条用例。
+ */
+export function assertTeachingBudgetAvailable(round: NoteLearningRoundV1, used: number): void {
+  if (round.budgets.maxModelCalls - used < 1) {
+    throw new RoundServiceError(
+      "round_budget_exhausted",
+      "这一轮的模型调用预算已经用完，不再生成新的解释；已经拿到的内容不受影响，可以继续读，或先结束这一轮。",
+    );
+  }
+}
+
+/**
+ * 追加一条教学产物（只追加；0284 的触发器与权限层是最终防线）。
+ *
+ * 三条判据与前几个写动作同形：轮次必须开着（closed ⇒ `round_closed`）、
+ * `expectedRevision` 必须等于读过的那一版（`stale_revision`）、内容与依据先过合同。
+ *
+ * **不推进轮次 revision**：D1 §6.3 那个计数器是"状态与计划修订"共用的，教学产物两者
+ * 都不是（它是派生内容，不是这一轮走到哪一步）。所以这里没有 round 的 UPDATE——
+ * CAS 由 `FOR UPDATE` 锁住那一行之后比一次承担；并发重复请求的"多落一条"由
+ * `findReusableTeaching` 预读 + 轮内序号唯一索引兜底，而不是靠把 revision 吹大。
+ */
+export async function createTeaching(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  request: {
+    roundId: string;
+    expectedRevision: number;
+    kind: RoundTeachingKindV1;
+    content: unknown;
+    sourceBlockOrdinals: number[];
+    snapshotHash: string;
+    drivingQuestionRevision: number;
+    kernelTaskRef: string | null;
+  },
+  now: Date = new Date(),
+): Promise<RoundTeachingV1> {
+  const parsedContent = roundTeachingContentV1Schema.safeParse(request.content);
+  if (!parsedContent.success) {
+    throw new RoundServiceError(
+      "invalid_teaching_content",
+      `这条教学产物的内容不合法：${parsedContent.error.issues[0]?.message ?? "形状不对"}`,
+    );
+  }
+  const ordinals = request.sourceBlockOrdinals;
+  if (
+    !Array.isArray(ordinals)
+    || ordinals.length > 200
+    || ordinals.some((value) => !Number.isInteger(value) || value < 1)
+  ) {
+    throw new RoundServiceError("invalid_teaching_content", "依据块序号必须是 1 起的整数（最多 200 个）");
+  }
+
+  const rows = await tx
+    .select()
+    .from(noteLearningRounds)
+    .where(and(
+      eq(noteLearningRounds.id, request.roundId),
+      eq(noteLearningRounds.workspaceId, scope.workspaceId),
+      eq(noteLearningRounds.userId, scope.userId),
+    ))
+    .limit(1)
+    .for("update");
+  const row = rows[0];
+  if (!row) throw new RoundServiceError("round_not_found", "这一轮不存在（或对当前这个人不可见）");
+  if (row.phase === "closed") {
+    throw new RoundServiceError("round_closed", "这一轮已经收尾，终态只读：不再生成新的教学内容");
+  }
+  if (row.revision !== request.expectedRevision) {
+    throw new RoundServiceError("stale_revision", "这一轮的状态已经变化，请刷新后重试");
+  }
+
+  const ordinalRows = await tx
+    .select({ maxOrdinal: sql<number | null>`max(${noteLearningRoundTeachings.ordinal})` })
+    .from(noteLearningRoundTeachings)
+    .where(eq(noteLearningRoundTeachings.roundId, row.id));
+  const nextOrdinal = Number(ordinalRows[0]?.maxOrdinal ?? 0) + 1;
+
+  const inserted = await tx.insert(noteLearningRoundTeachings).values({
+    workspaceId: scope.workspaceId,
+    userId: scope.userId,
+    roundId: row.id,
+    ordinal: nextOrdinal,
+    kind: request.kind,
+    content: parsedContent.data as unknown as Record<string, unknown>,
+    sourceBlockOrdinals: ordinals,
+    // 哈希与问题版本记的是**生成时刻**的那两份（D3 §5）：轮次行上的哈希不可改写，
+    // 但"这条解释是按哪一版做的"只有写在产物行上才回答得了。
+    snapshotHash: request.snapshotHash,
+    drivingQuestionRevision: request.drivingQuestionRevision,
+    kernelTaskRef: request.kernelTaskRef,
+    createdAt: now,
+  }).returning();
+  const teachingRow = inserted[0];
+  if (!teachingRow) throw new RoundServiceError("create_failed", "这条教学产物没落下来");
+  return toTeachingContract(teachingRow);
 }

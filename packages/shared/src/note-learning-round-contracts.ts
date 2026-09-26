@@ -248,3 +248,68 @@ export const roundPlanRevisionV1Schema = z.strictObject({
   recordedAt: z.string().datetime({ offset: true }),
 });
 export type RoundPlanRevisionV1 = z.infer<typeof roundPlanRevisionV1Schema>;
+
+// ─── 轮次里的教学产物（39d W4-6 刀一；表 0284，服务 round-service）───
+
+/** 今天只有"解释"一档。压成布尔位会把将来按知识形态选的表达方式（§6.1）挤掉。 */
+export const roundTeachingKindV1Schema = z.enum(["explanation"]);
+export type RoundTeachingKindV1 = z.infer<typeof roundTeachingKindV1Schema>;
+
+/**
+ * 一条教学产物的正文（结构化，不是一段裸文本）：
+ *  - `explanation`：这一节在说什么；
+ *  - `example`：可选的一句例子（确定性 provider 只从材料里取，不自己编）；
+ *  - 依据（引用了哪些块）**不在正文里**，走 `sourceBlockOrdinals` 单独一格——
+ *    依据要能点开定位到那一块，塞进正文就只剩一句"根据笔记"。
+ *
+ * 上限 4000 字是形状上的界，不是产品的目标长度；真正的长度受表达方式控制（后续刀）。
+ */
+export const roundTeachingContentV1Schema = z.strictObject({
+  explanation: z.string().trim().min(1).max(4_000),
+  example: z.string().trim().min(1).max(4_000).optional(),
+});
+export type RoundTeachingContentV1 = z.infer<typeof roundTeachingContentV1Schema>;
+
+/**
+ * 一条已落库的教学产物（读侧形状）。
+ *
+ * **不带 `snapshotHash` / `drivingQuestionRevision`**：它们是服务端"要不要复用旧产物"的
+ * 凭据（D3 §5），发给客户端不会多说明一件事——沿用轮次记录那一刀的同一条判据
+ * （屏幕上用不着的格子不进合同）。
+ */
+export const roundTeachingV1Schema = z.strictObject({
+  version: z.literal(1),
+  teachingId: z.string().uuid(),
+  roundId: z.string().uuid(),
+  /** 这一轮的第几条教学产物（1 起）。 */
+  ordinal: z.number().int().min(1),
+  kind: roundTeachingKindV1Schema,
+  content: roundTeachingContentV1Schema,
+  /** 依据块在快照里的序号（点开依据时按它定位）。 */
+  sourceBlockOrdinals: z.array(z.number().int().min(1)).max(200),
+  createdAt: z.string().datetime({ offset: true }),
+});
+export type RoundTeachingV1 = z.infer<typeof roundTeachingV1Schema>;
+
+/**
+ * 生成一条教学产物的请求。`expectedRevision` 必填，与 pause/resume/改写/计划修订
+ * 同一纪律：**带着你读过的那一版来**——用户在两发之间改了本轮问题或收了尾，
+ * 后到的那一发必须失败，而不是给一个已经不对的版本生成一条新的解释。
+ */
+export const createRoundTeachingRequestV1Schema = z.strictObject({
+  expectedRevision: z.number().int().min(1),
+});
+export type CreateRoundTeachingRequestV1 = z.infer<typeof createRoundTeachingRequestV1Schema>;
+
+/**
+ * 教学产物的回信（生成与读取同一份形状）：**轮次与产物一起回**。
+ * "解释是按哪一版问题、哪一版正文生成的"只能由服务端说，客户端拿两发去拼
+ * 迟早会拼出一次错配；顺带，生成那一发也会让屏幕上那一行轮次刷新到最新 revision。
+ */
+export const roundTeachingViewV1Schema = z.strictObject({
+  version: z.literal(1),
+  round: noteLearningRoundV1Schema,
+  /** 还没有生成过就是 `null`（打开教学面但还没点"开始"），不是"读失败"。 */
+  teaching: roundTeachingV1Schema.nullable(),
+});
+export type RoundTeachingViewV1 = z.infer<typeof roundTeachingViewV1Schema>;
