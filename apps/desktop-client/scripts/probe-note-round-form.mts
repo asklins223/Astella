@@ -241,14 +241,21 @@ try {
   const leadCount = Number((readings.historyLead.match(/开过 (\d+) 轮/) ?? [])[1] ?? '-1')
   check('那句「开过 N 轮」的 N 就是屏上的行数', leadCount === rows.length, { lead: readings.historyLead, rows: rows.length })
   // 三格（日期 / 状态 / 问题）在**同一行**上：这一条只有真窗口量得出来（jsdom 没有布局）。
+  // "同一行"要按**垂直区间有没有公共带**判，不是比 `top`：三格字号不同（日期与状态是小字、
+  // 问题是正文号），基线对齐时它们的 top 本来就不齐——上一版比 top，改完样式的第一次跑
+  // 就报 `distinctTops: 2`，红的是量法不是界面。
   const sameLine = await history.evaluate((block) => {
     const spans = Array.from(block.querySelectorAll('.notebook-round-history__list li:first-child > span'))
-    const tops = spans.map((span) => Math.round(span.getBoundingClientRect().top))
-    return { spans: spans.length, distinctTops: [...new Set(tops)].length }
+    const rects = spans.map((span) => span.getBoundingClientRect())
+    const bandTop = Math.max(...rects.map((rect) => rect.top))
+    const bandBottom = Math.min(...rects.map((rect) => rect.bottom))
+    const rowBottom = Math.max(...rects.map((rect) => rect.bottom))
+    const rowTop = Math.min(...rects.map((rect) => rect.top))
+    return { spans: spans.length, sharedBand: Math.round(bandBottom - bandTop), rowHeight: Math.round(rowBottom - rowTop) }
   })
   readings.rowSpansOnOneLine = sameLine
   check('那一行的三格排在同一行（样式真接上了）',
-    sameLine.spans === 3 && sameLine.distinctTops === 1,
+    sameLine.spans === 3 && sameLine.sharedBand > 0 && sameLine.rowHeight < 34,
     sameLine)
 } finally {
   await app.close().catch(() => undefined)

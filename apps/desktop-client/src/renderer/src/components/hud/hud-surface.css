@@ -2552,31 +2552,82 @@
   gap: 8px;
 }
 
-/* 这一篇的轮次记录（39d §10.3 读侧第一刀）。这一块**没有**借用上面那个基类：
-   它摆的不是动作，是一行一行的历史，所以自己一份规格，间距沿用这一页小字之间的 8px。
-   每一行三格（日期 / 状态 / 那一轮的问题）并排，窄屏换行而不是挤压。 */
+/* 那一句话的输入框。父容器是 `align-items: flex-start`，不给宽度它就缩成浏览器默认
+   那只白框（真窗口看下去：纸是奶油色衬线，框是白底黑边，一眼是外来的）。
+   规格照这一页既有的行内改名框（`.note-rename-input`）：透明底、只留一条下划线。 */
+.hud-surface .notebook .notebook-round__question {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2px 0 5px;
+  color: var(--hud-ink);
+  font: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid var(--hud-line-strong);
+  border-radius: 0;
+}
+
+.hud-surface .notebook .notebook-round__question::placeholder { color: var(--hud-soft); opacity: 1; }
+.hud-surface .notebook .notebook-round__question:focus { outline: none; border-bottom-color: var(--hud-clay); }
+.hud-surface .notebook .notebook-round__hint { margin: 2px 0 0; }
+
+/* 这一篇的轮次记录（39d §10.3）。上一版三格都挂 `.small` 又挤在同一条 flex 里，
+   真窗口看下去是 12 行没有轨的小字墙：日期长短不一让状态那列左右跳，问题里本来就有的
+   「」又被外层再套一层。所以：三格各占一列、按列对齐、行与行之间一条细线，
+   问题用正文色不缩号。窄屏改成一格一行，而不是把三格压扁。 */
 .hud-surface .notebook .notebook-round-history {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 8px;
   margin: 0 0 10px;
 }
 
 .hud-surface .notebook .notebook-round-history .notebook-note { margin-bottom: 0; }
 
+/* 那颗"看更早的"不许跟着容器拉满宽度：这一块是 `align-items: stretch`（为了列表占满），
+   拉满之后它变成一条和页面底部动作条贴在一起的巨型胶囊（真窗口看到的正是这个）。 */
+.hud-surface .notebook .notebook-round-history > .button { align-self: flex-start; }
+
 .hud-surface .notebook .notebook-round-history__list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  padding-left: 1.2em;
+  gap: 0;
+  width: 100%;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
 }
 
 .hud-surface .notebook .notebook-round-history__list li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: 8.5em 6.5em minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--hud-line);
+}
+
+.hud-surface .notebook .notebook-round-history__list li:first-child { border-top: 0; padding-top: 2px; }
+
+.hud-surface .notebook .notebook-round-history__day {
+  color: var(--hud-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-surface .notebook .notebook-round-history__state { color: var(--hud-soft); }
+
+.hud-surface .notebook .notebook-round-history__question {
+  color: var(--hud-ink);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 860px) {
+  .hud-surface .notebook .notebook-round-history__list li {
+    grid-template-columns: 1fr;
+    gap: 1px;
+  }
 }
 
 @media (max-width: 760px) {

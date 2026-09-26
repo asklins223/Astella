@@ -267,7 +267,6 @@ export const ROUND_COPY = {
     hasMore ? `这一篇列到这里 ${count} 轮，更早的还能看。` : `这一篇开过 ${count} 轮。`,
   loadOlder: "看更早的几轮",
   loadingOlder: "正在取更早的…",
-  historyLine: (question: string) => `「${question}」`,
   /** §10.3 那一格里"完成／部分完成／中断"这三个字由这一处签发；`active` 不在其中。 */
   historyState: {
     active: "正在进行",
@@ -1887,6 +1886,7 @@ export function NotebookSurface() {
               <label className="sr-only" htmlFor="notebook-round-question">{ROUND_COPY.ask}</label>
               <input
                 id="notebook-round-question"
+                className="notebook-round__question"
                 value={roundDraft}
                 maxLength={500}
                 placeholder={ROUND_COPY.ask}
@@ -1920,24 +1920,26 @@ export function NotebookSurface() {
                 </button>
               </div>
               {structureQuestions.length > 0 ? (
-                <div className="notebook-objective__choices">
-                  <p className="small notebook-note">{ROUND_COPY.fromStructure}</p>
-                  {structureQuestions.map((candidate) => (
-                    <button
-                      key={candidate.ordinal}
-                      type="button"
-                      className="button"
-                      disabled={roundBusy !== null}
-                      onClick={() => {
-                        setRoundStarter(candidate.question);
-                        setRoundDraft(candidate.question);
-                        if (roundFailure) setRoundFailure(null);
-                      }}
-                    >
-                      {candidate.label}
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <p className="small notebook-note notebook-round__hint">{ROUND_COPY.fromStructure}</p>
+                  <div className="notebook-objective__choices">
+                    {structureQuestions.map((candidate) => (
+                      <button
+                        key={candidate.ordinal}
+                        type="button"
+                        className="button"
+                        disabled={roundBusy !== null}
+                        onClick={() => {
+                          setRoundStarter(candidate.question);
+                          setRoundDraft(candidate.question);
+                          if (roundFailure) setRoundFailure(null);
+                        }}
+                      >
+                        {candidate.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
               ) : null}
               <p className="small notebook-note">{ROUND_COPY.hint}</p>
             </>
@@ -1953,9 +1955,9 @@ export function NotebookSurface() {
           <ol className="notebook-round-history__list">
             {historyItems.map((item) => (
               <li key={item.roundId}>
-                <span className="small">{ROUND_DAY_FORMAT.format(new Date(item.startedAt))}</span>
-                <span className="small">{roundHistoryStateLabelV1(item)}</span>
-                <span className="small notebook-note">{ROUND_COPY.historyLine(item.drivingQuestion)}</span>
+                <span className="small notebook-round-history__day">{ROUND_DAY_FORMAT.format(new Date(item.startedAt))}</span>
+                <span className="small notebook-round-history__state">{roundHistoryStateLabelV1(item)}</span>
+                <span className="notebook-round-history__question">{item.drivingQuestion}</span>
               </li>
             ))}
           </ol>

@@ -101,11 +101,13 @@ try {
   const hintRows = page.locator('.note-row', { hasText: NOTE_HINT })
   if ((await hintRows.count()) !== 1) {
     check('提示词只命中一篇笔记', false, `命中 ${await hintRows.count()} 行——歧义时什么都不碰`)
+    report()
     throw new Error('probe note hint is ambiguous; refusing to write anything')
   }
   const noteId = sql(`select id from notes where deleted_at is null and title = '${NOTE_HINT}'`)
   if (!/^[0-9a-f-]{36}$/.test(noteId)) {
     check('这句标题在库里只对应一篇', false, noteId)
+    report()
     throw new Error('exact-title lookup did not resolve to exactly one note')
   }
   readings.noteId = noteId
@@ -114,7 +116,8 @@ try {
   const left = sql(`select count(*) from note_learning_rounds where note_id = '${noteId}'`)
   readings.rowsBeforeSeed = Number(left)
   if (Number(left) !== 0) {
-    check('起点这篇没有残留的轮次', false, `库里有 ${left} 行——先清掉再跑`)
+    check('起点这篇没有残留的轮次', false, `库里有 ${left} 行——先清掉再跑（别的剧本留下的也算）`)
+    report()
     throw new Error('residual rounds on the target note')
   }
 
@@ -172,10 +175,13 @@ try {
   readings.roundsLeftInDev = Number(sql('select count(*) from note_learning_rounds'))
 }
 
-const failed = results.filter((entry) => !entry.ok)
-for (const entry of results) {
+function report(): void {
+  const failed = results.filter((entry) => !entry.ok)
+  for (const entry of results) {
   process.stdout.write(`${entry.ok ? 'ok  ' : 'RED '} ${entry.name}  ${entry.ok ? '' : JSON.stringify(entry.detail)}\n`)
 }
 process.stdout.write(`\n${results.length - failed.length}/${results.length} 通过\n`)
 process.stdout.write(`\n实测读数：\n${JSON.stringify(readings, null, 2)}\n`)
 if (failed.length > 0) process.exitCode = 1
+}
+report()
