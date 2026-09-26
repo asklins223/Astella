@@ -7,6 +7,11 @@ import { randomUUID } from 'node:crypto'
 import { _electron as electron } from '@playwright/test'
 import './load-capture-env.mjs'
 import { dismissBlockingDialogs } from './probe-support.mts'
+// 按 run id 清 run 的那份清单只有这一处；剧本与集测共用同一份，不各抄一遍表名单。
+import {
+  learningRunCleanupStepsV1,
+  renderPsqlStatementV1,
+} from '../../../apps/api/src/integration-tests/helpers/learning-run-cleanup.ts'
 
 /**
  * 真窗口剧本：**PRD §16.2 已有基础且时间有限**里「不用先看完动画才允许作答」那一半
@@ -20,10 +25,12 @@ import { dismissBlockingDialogs } from './probe-support.mts'
  * （`buildRoundTeachingExtras`），"服务端签发的那一份真的被摆到屏幕上"这件事在 jsdom 里
  * 不可能被证伪（与 W4-3／W4-6 那几张表单同一条理由）。
  *
- * **本剧本停在点下去之前**：点「练一道」会开出一场**真 run**，而 dev 库是共享的
- * 开发库、worker 是活着的（`ailearn-dev-worker-1`），run 的写面不由剧本决定；
- * 全仓没有任何按 run id 清 run 的现成顺序（集成测试那一套是 workspace 级清扫，
- * 会连 owner 的工作区一起删）。这一段登记为欠账，见剧本末尾那段注释。
+ * **09-27 起这一步真的点下去了**。此前停在按钮之前，理由不是驱动不了，是**没有清理路**：
+ * "全仓没有任何按 run id 清 run 的现成顺序，集成测试那一套是 workspace 级清扫，会连 owner 的工作区一起删"。
+ * 那条路现在有了（`apps/api/src/integration-tests/helpers/learning-run-cleanup.ts`，集测 `ec977047`），
+ * 本剧本就按同一份清单收尾（**不另抄一份表名单**——抄了就会分叉，这一族已经错过两次）。
+ * 点的这一发只**开** run、不作答、不提交：结构化那条链要花钱的是提交之后的评估，
+ * 而开 run 全程是同步规划（`planV2Run`），所以这一发在活 worker 面前也不会产生任何模型调用。
  *
  * 它**自己种数据**：一轮 active 的轮次 ＋ 一个**有笔记依据**的 active 目标
  * （四张目标行 ＋ 依据五件，形状照 `apps/api/src/integration-tests/helpers/
@@ -173,15 +180,24 @@ function seedObjectiveAndRound(
 }
 
 /**
- * 收尾：目标那几行 ＋ 轮次那几行（本剧本**不点**「练一道」，所以没有 run 要清）。
+ * 收尾：这一轮开出来的 run（按 run id 那份清单）＋ 目标那几行 ＋ 轮次那几行。
  * 三张表都是追加-only：带 `app.allow_history_mutation` 口子删；RLS 那一对配置同一个事务。
  */
 function wipe(seeded: Seeded): void {
+  // run 必须**先于**目标与轮次删：`learning_target_snapshots_v2` 对 run 是 RESTRICT，
+  // 而目标那一头的删除也会被 run 挂着——顺序错了整笔事务回滚，看着像"删不掉"。
+  const runIds = sql(`select id from public.learning_runs where origin ->> 'roundId' = '${seeded.roundId}'`)
+    .split('\n').map((line) => line.trim()).filter(Boolean)
+  const runStatements = runIds.flatMap((runId) =>
+    learningRunCleanupStepsV1().map((step) => `${renderPsqlStatementV1(step, runId)};`),
+  )
+  readings.runsWiped = { runIds, statements: runStatements.length }
   sql([
     'BEGIN;',
     `SELECT set_config('app.allow_history_mutation', 'on', true);`,
     `SELECT set_config('app.workspace_id', '${seeded.workspaceId}', true);`,
     `SELECT set_config('app.user_id', '${seeded.userId}', true);`,
+    ...runStatements,
     `DELETE FROM learning_objective_evidence_bindings_v2 WHERE objective_revision_id = '${seeded.objectiveRevisionId}';`,
     `DELETE FROM learning_objective_origins_v2 WHERE objective_id = '${seeded.objectiveId}';`,
     `DELETE FROM learning_objective_revisions_v2 WHERE objective_id = '${seeded.objectiveId}';`,
@@ -201,6 +217,14 @@ function wipe(seeded: Seeded): void {
  * 为什么要有这一格：收尾"删干净了"不能只报自己删的那几句 DELETE——留下的是别的表
  * 里的行（一张表一张表数一遍才是证据）。前后两张表逐表比，涨了的名字直接进报告。
  */
+/**
+ * 逐表对照里**指名道姓**豁免的那一张：伴星"她此刻在哪一屏"的上下文行，由活渲染层自己发布，
+ * 不是剧本种的（它涨恰恰是"真窗口真的开过"的证据）。豁免只在"这一轮它确实涨了"时成立。
+ */
+const AMBIENT_GROWTH_ALLOWED_V1: Record<string, string> = {
+  assistant_page_contexts: '活窗口的页面上下文簿记（伴星读页面那一族），开一次窗口必涨几行',
+}
+
 function workspaceCensus(workspaceId: string): Record<string, number> {
   const tables = sql(`select string_agg(table_name, ' ' order by table_name) from information_schema.columns
     where table_schema = 'public' and column_name = 'workspace_id'`).split(/\s+/).filter(Boolean)
@@ -285,6 +309,14 @@ try {
   }
 
   // ── 种数据：一轮 active ＋ 一个有笔记依据的 active 目标 ──
+  // 起点先做一次逐表点数。这一格从前**从来没跑过**：`censusBefore` 声明了、收尾也读了，
+  // 但整份文件里没有任何一处给它赋值 ⇒ `if (censusBefore)` 恒假，"逐表前后对照"那条判据
+  // 一直是空转（而剧本头部写着它存在）。现在补上赋值，并在下面用"故意不清 run"的变异验它会红。
+  censusBefore = workspaceCensus(workspaceId)
+  readings.censusBaselineTables = Object.keys(censusBefore).length
+  check('起点逐表点数读到了东西（这个工作区不是空的 ⇒ 那条对照判据不会空转）',
+    Object.keys(censusBefore).length > 0, readings.censusBaselineTables)
+
   seeded = seedObjectiveAndRound(noteId, workspaceId, userId, noteVersionId, contentHash)
   readings.seeded = { roundId: seeded.roundId, objectiveId: seeded.objectiveId }
   const objectiveRowsOk = Number(sql(`select count(*) from learning_objectives_v2 where objective_id = '${seeded.objectiveId}' and lifecycle = 'active'`))
@@ -321,10 +353,26 @@ try {
   readings.noteObjectiveBlock = noteObjectiveVisible
   check('这一篇的目标那一块也真在（"有目标"不是只在一处投影上成立）', noteObjectiveVisible === 1, noteObjectiveVisible)
 
-  // 没有划掉的那一步：点「练一道」会开出一场真 run（欠账，见文件头）。
-  readings.clickedPractice = false
-  readings.openRunRows = Number(sql(`select count(*) from learning_runs where origin ->> 'roundId' = '${seeded.roundId}'`))
-  check('这一版剧本没有点下去（所以库里不该有这一轮的 run）', readings.openRunRows === 0, readings.openRunRows)
+  // 真的点下去：这一发从前是欠账（没有清理路），现在点得起——收尾按那份清单把 run 清掉。
+  await practiceButton.first().click({ timeout: 20_000 })
+  const runOnScreen = await page.locator('.learning-run-primary-content').first()
+    .waitFor({ timeout: 25_000 }).then(() => true, () => false)
+  readings.clickedPractice = true
+  readings.runOnScreen = runOnScreen
+  check('点「练一道」之后屏上真的出现了那一场 run 的作答面', runOnScreen === true)
+
+  // 屏上那一发必须能在服务端读到，而且**只有这一场**挂在轮次上（多点一次就会多开一场）。
+  const openRuns = sql(`select id, phase from public.learning_runs where origin ->> 'roundId' = '${seeded.roundId}'`)
+    .split('\n').map((line) => line.trim()).filter(Boolean)
+  readings.openRunRows = openRuns
+  check('库里挂着这一轮的 run 恰好一场（不是两场、也不是屏上有但库里没有）', openRuns.length === 1, openRuns)
+  check('那一场的 origin 带的是这一轮的 roundId 与这一篇的 noteId', (() => {
+    const runId = openRuns[0]?.split('|')[0]?.trim() ?? ''
+    if (!runId) return false
+    const matched = Number(sql(`select count(*) from public.learning_runs
+      where id = '${runId}' and origin ->> 'kind' = 'note_round' and origin ->> 'noteId' = '${noteId}'`))
+    return matched === 1
+  })(), readings.openRunRows)
 } catch (error) {
   check('剧本自己没跑完', false, error instanceof Error ? error.message : String(error))
 } finally {
@@ -350,8 +398,14 @@ try {
       const after = workspaceCensus(seeded.workspaceId)
       const growth = diffCensus(censusBefore, after)
       readings.censusGrowth = growth
-      check('这个工作区里没有哪张表因为这次剧本涨了行数（逐表前后对照）',
-        Object.keys(growth).length === 0, growth)
+      // 有一张表的行不是剧本种的，而是**这个窗口自己在场**的簿记：伴星那条"她此刻在哪一屏"
+      // 的行由活渲染层发布（W2-6 的 `readLivePageView` 读的就是它）。开一次真窗口就会涨几行，
+      // 且只涨这一张——所以豁免名单是**指名道姓**的，并要求它这一轮真的出现（不再出现就得把条目删掉，
+      // 免得豁免变成免检通道）。其余任何一张表涨了行数，一律红。
+      const unexplained = Object.keys(growth).filter((table) => !(table in AMBIENT_GROWTH_ALLOWED_V1))
+      const exemptionsUnused = Object.keys(AMBIENT_GROWTH_ALLOWED_V1).filter((table) => !(table in growth))
+      check('这个工作区里没有哪张表因为这次剧本涨了行数（只有豁免名单里那一张除外）',
+        unexplained.length === 0 && exemptionsUnused.length === 0, { unexplained, exemptionsUnused })
     }
   }
   report()
