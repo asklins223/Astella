@@ -586,6 +586,27 @@ try {
       check('动过一次顺序之后交卷那颗放开；没放开就得屏上说得出一句理由（不许静默灰着）',
         submitEnabled === true || submitStatusText.length > 0, readings.submitGate)
       readings.submitLabel = (await submitButton.textContent() ?? '').trim()
+      // 交卷之前先在页内立个证人：从这一刻起记录覆盖层的每次挂载／散场。
+      // 没有它，"产品没响"与"我看得太晚"分不开——上一轮我差点把后者登记成缺陷。
+      await page.evaluate(() => {
+        const w = window as unknown as { __ceremonyTrail?: Array<{ atMs: number; kind: string; hasCanvas: boolean }> }
+        w.__ceremonyTrail = []
+        const startedAt = Date.now()
+        const isCeremony = (node: Node): node is HTMLElement =>
+          node instanceof HTMLElement && node.classList.contains('learning-run-ceremony')
+        new MutationObserver((mutations) => {
+          for (const mutation of mutations) {
+            mutation.addedNodes.forEach((node) => {
+              if (isCeremony(node)) w.__ceremonyTrail?.push(
+                { atMs: Date.now() - startedAt, kind: 'add', hasCanvas: !!node.querySelector('canvas') })
+            })
+            mutation.removedNodes.forEach((node) => {
+              if (isCeremony(node)) w.__ceremonyTrail?.push(
+                { atMs: Date.now() - startedAt, kind: 'remove', hasCanvas: !!node.querySelector('canvas') })
+            })
+          }
+        }).observe(document.body, { childList: true, subtree: true })
+      })
       await submitButton.click({ timeout: 20_000 })
       // ── 结算演出那一读（09-24 起也放开给练习，但"接了却一次没见过"正是当时的根因）──
       // 只有 3s，所以**交卷之后第一件事**就是找它；彩纸是画在 canvas 上的，
@@ -597,26 +618,17 @@ try {
       const ceremonyStartedAt = Date.now()
       const ceremonySeen = await ceremony.waitFor({ timeout: 8_000 }).then(() => true, () => false)
       const ceremonyWaitedMs = Date.now() - ceremonyStartedAt
-      let confettiPainted = -1
-      let confettiFrames = 0
-      let ceremonyCopy: Record<string, string> = {}
-      if (ceremonySeen) {
-        ceremonyCopy = {
-          eyebrow: (await page.locator('.learning-run-ceremony__eyebrow').first().textContent() ?? '').trim(),
-          stamp: (await page.locator('.learning-run-ceremony__stamp').first().textContent() ?? '').replace(/\s+/g, ' ').trim(),
-          heading: (await page.locator('.learning-run-ceremony h2').first().textContent() ?? '').trim(),
-        }
-        // 彩纸是逐帧画上去的（rAF），交卷那一瞬的画布还是白的——只采一次会把"来得及画"量成"没画"。
-        // 但**逐帧从外部采**也不行：一次 `getImageData` 走 CDP 往返要几百毫秒，全屏画布上还会撞超时，
-        // 于是采样窗口比演出本身还慢（今天就这么量出过一次假 0）。改成把轮询循环放进页面里：
-        // 一次往返、按 rAF 逐帧读，画出一粒就立刻停并回报帧数。
-        const painted = await ceremony.evaluate(async (root) => {
-          const canvas = root.querySelector('canvas.learning-run-ceremony__confetti') as HTMLCanvasElement | null
-          const ctx = canvas?.getContext('2d') ?? null
-          if (!canvas || !ctx) return { painted: -1, frames: 0, sized: `${canvas?.width ?? 0}x${canvas?.height ?? 0}` }
-          let best = 0
-          let frames = 0
-          const deadline = performance.now() + 2_500
+      // 文案与像素**一次往返取全**：分开读会把自己读崩——覆盖层只活 3s，
+      // 一条条 `textContent()` 的 CDP 往返一慢，读到第三条时元素已经没了（今天就这样把剧本弄挂过）。
+      const observed = ceremonySeen ? await ceremony.evaluate(async (root) => {
+        const text = (selector: string) => (root.querySelector(selector)?.textContent ?? '')
+          .replace(/\s+/g, ' ').trim()
+        const canvas = root.querySelector('canvas.learning-run-ceremony__confetti') as HTMLCanvasElement | null
+        const ctx = canvas?.getContext('2d') ?? null
+        let painted = canvas && ctx ? 0 : -1
+        let frames = 0
+        if (canvas && ctx) {
+          const deadline = performance.now() + 2_200
           while (performance.now() < deadline) {
             frames += 1
             const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
@@ -624,17 +636,37 @@ try {
             for (let index = 3; index < data.length; index += 4) {
               if (data[index] > 0) hit += 1
             }
-            if (hit > best) best = hit
-            if (best > 0) break
+            if (hit > painted) painted = hit
+            if (painted > 0) break
             await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
           }
-          return { painted: best, frames, sized: `${canvas.width}x${canvas.height}` }
-        }).catch((error: unknown) => ({
-          painted: -1, frames: 0, sized: String(error).slice(0, 120),
-        }))
-        confettiPainted = painted.painted
-        confettiFrames = painted.frames
-        readings.confettiCanvas = painted.sized      }
+        }
+        return {
+          eyebrow: text('.learning-run-ceremony__eyebrow'),
+          stamp: text('.learning-run-ceremony__stamp'),
+          heading: text('h2'),
+          painted,
+          frames,
+          size: canvas ? `${canvas.width}x${canvas.height}` : 'no-canvas',
+        }
+      }).catch(() => null) : null
+      const ceremonyCopy = observed ?? { eyebrow: '', stamp: '', heading: '' }
+      const confettiPainted = observed?.painted ?? -1
+      const confettiFrames = observed?.frames ?? 0
+      readings.confettiCanvas = observed?.size ?? ''
+      const ceremonyTrail = await page.evaluate(() => (
+        (window as unknown as { __ceremonyTrail?: Array<{ atMs: number; kind: string; hasCanvas: boolean }> }).__ceremonyTrail ?? []
+      ))
+      readings.ceremonyTrail = ceremonyTrail
+      // 决策那一侧自己带旗子（`data-acknowledgement`，由 `setResultAcknowledgementActive(playsCeremony)` 写）。
+      // 从没挂过而旗子是 idle ⇒ 决策那一步就没让它响，不是渲染掉了。
+      readings.ceremonyDecision = {
+        decisionFlag: await page.locator('.learning-run-result-board').first()
+          .getAttribute('data-acknowledgement').catch(() => null),
+      }
+      check('页内证人和我对覆盖层的观察一致（分不清"没响"与"看晚了"的时候，这条先红）',
+        ceremonySeen === ceremonyTrail.some((entry) => entry.kind === 'add'),
+        { ceremonySeen, ceremonyWaitedMs, ceremonyTrail })
       readings.ceremony = { seen: ceremonySeen, ceremonyWaitedMs, ...ceremonyCopy, confettiPainted, confettiFrames }
 
       const resultBoard = await page.locator('.learning-run-result-board').first()
@@ -655,14 +687,18 @@ try {
       // 那是缺陷不是判据写错——已登记在 39d §19 那行；放宽这条等于把它藏起来。
       const ceremonyExpected = dbOutcome === 'demonstrated' || dbOutcome === 'practice_completed'
       readings.ceremony.expected = ceremonyExpected
-      check('演出出现在该出现的那一档（政策：demonstrated 或 practice_completed；两侧都要对得上）',
-        ceremonySeen === ceremonyExpected, readings.ceremony)
-      check('该出现时彩纸真画出了像素（页内逐帧采，画出一粒就停）',
-        ceremonyExpected !== true || (confettiPainted > 0 && confettiFrames >= 1), readings.ceremony)
+      const ceremonyMountedEver = ceremonyTrail.some((entry) => entry.kind === 'add')
+      readings.ceremony.mountedEver = ceremonyMountedEver
+      // 判"该不该有"用证人，不用"我抓没抓到"：窗口只有 8s，来晚了我什么也读不到。
+      check('演出在该出现的那一档挂载过（政策：demonstrated 或 practice_completed）',
+        ceremonyMountedEver === ceremonyExpected, readings.ceremony)
+      check('该出现且抓到时，彩纸真画出了像素（没抓到就明说是量法受限，不赖产品）',
+        !(ceremonyExpected === true && ceremonySeen === true)
+        || (confettiPainted > 0 && confettiFrames >= 1), readings.ceremony)
       // 那处坑的正面判据：眉标不许从 eligibility 反推出"正式挑战"——结构题做主位时
       // ceiling 被钳成 practice_only 而快照 eligibility 仍是 eligible，两者一拼就自相矛盾。
-      check('演出的那两行不与结果自相矛盾（练习这一支不说"正式挑战"）',
-        ceremonyExpected !== true || (ceremonyCopy.eyebrow?.length > 0 && !/正式挑战/.test(`${ceremonyCopy.eyebrow} ${ceremonyCopy.heading}`)),
+      check('抓到的那一次里，演出的两行不与结果自相矛盾（练习这一支不说"正式挑战"）',
+        !(ceremonyExpected === true && ceremonySeen === true) || (ceremonyCopy.eyebrow?.length > 0 && !/正式挑战/.test(`${ceremonyCopy.eyebrow} ${ceremonyCopy.heading}`)),
         readings.ceremony)
 
       // **免费**这一发必须自证：评估那行的来源是确定性结构化，不是 critic（真模型）。
