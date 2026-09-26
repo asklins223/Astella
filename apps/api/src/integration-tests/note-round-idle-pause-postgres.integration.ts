@@ -510,7 +510,7 @@ test("归属：定点那一发只看得见自己，不带 scope 那一发才把�
   assert.equal(otherAfterScoped.phase, "active");
   assert.equal(otherAfterScoped.revision, 1);
 
-  // 不带 scope：走 `workspace_members` 那条枚举。少了这一发，枚举函数写坏（返回空数组）
+  // 不带 scope：走 0286 那支预筛函数挑候选。少了这一发，枚举函数写坏（返回空数组）
   // 上面所有定点用例照样全绿——那才是这一刀最要命的假绿。
   const sweptAll = await sweepIdleNoteRoundsForPauseV1();
   assert.ok(sweptAll.scopesScanned >= 2, `枚举到的空间数：${sweptAll.scopesScanned}`);
@@ -519,6 +519,46 @@ test("归属：定点那一发只看得见自己，不带 scope 那一发才把�
     "paused",
     "不带 scope 的扫描没把另一个空间收进来 ⇒ 定时任务在生产里只会扫到眼前这一个空间",
   );
+});
+
+test("预筛只回候选：扫描的事务次数＝候选数，而不是成员数", async () => {
+  // 这一条钉的是 0286 那支函数**存在的理由**。少了它，把枚举改回 `workspace_members`
+  // 照样能让上面所有用例全绿——因为定点那一发根本不经过枚举，而"全空间"那一条只断言
+  // `>= 2`。代价（每趟 1 330 次事务）与"空空间被白扫"这两件事会一起静默回来。
+  const stale = await seedNotesScope();
+  const staleRound = await seedActiveRound(stale, {
+    noteId: stale.noteIds[0]!, noteVersionId: stale.versionIds[0]!, question: "过宽限期的那一条",
+  });
+  const fresh = await seedNotesScope();
+  const freshRound = await seedActiveRound(fresh, {
+    noteId: fresh.noteIds[0]!, noteVersionId: fresh.versionIds[0]!, question: "还没到宽限期的那一条",
+    ageMs: 1_000,
+  });
+  const done = await seedNotesScope();
+  const closedRound = await seedClosedRound(done, {
+    noteId: done.noteIds[0]!, noteVersionId: done.versionIds[0]!, question: "已经收尾的那一条",
+  });
+  // 两个**一个轮次都没有**的在册空间：枚举走成员表就会把它们也算进事务数。
+  await seedNotesScope();
+  await seedNotesScope();
+
+  const candidates = (await asApp(stale, (tx) => tx`
+    SELECT workspace_id, user_id, round_id, last_changed_at
+      FROM public.ailearn_note_rounds_idle_for_pause(${ROUND_IDLE_PAUSE_GRACE_MS_V1})`
+  )) as unknown as Array<{ round_id: string }>;
+  const candidateIds = candidates.map((row) => row.round_id);
+  assert.ok(candidateIds.includes(staleRound), "该挑的没挑出来 ⇒ 真过期的轮次等不到暂停");
+  assert.ok(!candidateIds.includes(freshRound),
+    "没过宽限期的也被挑出来了 ⇒ 函数在替扫描做决定，而不是只给候选");
+  assert.ok(!candidateIds.includes(closedRound),
+    "终态行被挑出来 ⇒ 扫描会去转一个已经收尾的轮次（PRD 禁止）");
+
+  const swept = await sweepIdleNoteRoundsForPauseV1();
+  assert.equal(swept.scopesScanned, candidateIds.length,
+    `事务次数应当等于候选数：扫了 ${swept.scopesScanned} 个空间而候选只有 ${candidateIds.length} 个`
+    + " ⇒ 枚举退回成员表了，空出来的空间又被白扫一遍");
+  assert.ok(swept.paused.map((row) => row.roundId).includes(staleRound),
+    "候选里那条真该被停住（否则事务数对了也没用）");
 });
 
 test("off 档：不建定时器之外，扫描本体被直调也一个字都不写（＝改前行为）", async () => {
