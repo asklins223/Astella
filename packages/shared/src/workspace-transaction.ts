@@ -213,3 +213,52 @@ export function assertOutsideWorkspaceTransaction(options: {
   options.reportDevelopmentError?.(message);
   throw new ExternalCallInsideTransactionError(message);
 }
+
+/**
+ * 各进程把自己的事务作用域读者登记进来，公共 HTTP 出口（`public-json-http`）就能
+ * 在**一个地方**对"所有已登记作用域"做同一条检查（W3-2 的 provider 层闸门）。
+ *
+ * 为什么是注册制而不是传参：`public-json-http` 被两个进程共用（worker 的 provider
+ * transport、api 的 critic/转写），shared 不能 import 任何一侧的 ALS 模块。读者在
+ * 模块加载时注册一次（worker `db.ts` / api `db/client.ts`），出口对全部已登记读者
+ * 逐个取 `current()`——任何一个非 `undefined` 即拒绝。
+ *
+ * 返回注销函数（测试用）；生产路径注册一次后不再注销。
+ */
+interface RegisteredActiveTransactionReader {
+  readonly label: string;
+  readonly read: () => unknown;
+  readonly reportDevelopmentError?: (message: string) => void;
+}
+
+const activeTransactionReaders = new Set<RegisteredActiveTransactionReader>();
+
+export function registerActiveTransactionReader(reader: RegisteredActiveTransactionReader): () => void {
+  activeTransactionReaders.add(reader);
+  return () => activeTransactionReaders.delete(reader);
+}
+
+/**
+ * 公共 HTTP 出口的那道检查：对全部已登记的事务作用域读者逐个取当前值，
+ * 有任何一个落在活动事务里就拒绝（与 `assertOutsideWorkspaceTransaction` 同一判据、
+ * 同一错误类型——这里只是"读者由注册表提供"的变体）。
+ *
+ * 没有任何读者注册时直接放行：出口闸门是各进程主动接线的，测试进程没接闸门
+ * 就不应被它拦（夹具的事务里做 HTTP 是测试自己的事，不归这道闸管）。
+ */
+export function assertOutsideRegisteredTransactions(options: {
+  readonly boundary: string;
+  readonly caller: string;
+}): void {
+  for (const reader of activeTransactionReaders) {
+    const active = reader.read();
+    if (active === undefined) continue;
+    const message =
+      `外部调用被拒：${options.boundary}（调用点 ${options.caller}）落在活动事务里`
+      + `（作用域 ${reader.label}）。`
+      + "持业务行锁等外部响应会把并发读写一起钉住（39c §5.2 / D5 §5.1 实测两处）。"
+      + "正确形状是三段：短事务准备 → 事务外执行 → 短事务核对并保存。";
+    reader.reportDevelopmentError?.(message);
+    throw new ExternalCallInsideTransactionError(message);
+  }
+}

@@ -32,10 +32,8 @@ import { sql } from "drizzle-orm";
 import {
   db,
   withWorkerWorkspaceTransaction,
-  currentWorkerWorkspaceTransaction,
   type WorkerTransaction,
 } from "../db.ts";
-import { assertOutsideWorkspaceTransaction } from "@ailearn/shared/workspace-transaction";
 import { logger } from "../lib/logger.ts";
 import { runWithAbortTimeout } from "../lib/handler-timeout.ts";
 import type { CardGenerationUsageTotals } from "../card-generation-v2/providers.ts";
@@ -857,26 +855,12 @@ function assertDeterministicProvidersAllowed(useLLM: boolean): void {
 }
 
 /**
- * 出网相位（D5 §5.2 的"事务外执行"那一段）入口的边界探针。
- *
- * 为什么要在**这里**再核一次：制卡链的 provider 调用还没接上 D5 那道 provider 层闸门
- * （漏斗仍有三处进入点事务内调模型，见 W3-2 状态格 ⑤），所以"这一段没有事务"目前没有
- * 第二个地方替它作证。探针读的是 `currentWorkerWorkspaceTransaction()`（ALS），
- * 因此**隐式外层事务**——把相位 2 顺手挪回某个事务里——一样会被当场拒掉，而不是靠
- * "代码文本里没有 transaction"这种假绿。
- *
- * 它管得住的回归只有一种：**整个相位被挪回事务里**（这条链改前的形状）。把相位里
- * 单独一次调用包起来这种更细的走样它抓不到——那要等 provider 层那道闸门；接上之后
- * 这一处就该撤（同一个判据不留两个来源）。
+ * （2026-09-26 撤除的相位探针 `assertGenerationPhaseOutsideTransaction`：
+ * 它读的是 `currentWorkerWorkspaceTransaction()`，与公共 HTTP 出口那道闸
+ * （`registerActiveTransactionReader` → `assertOutsideRegisteredTransactions`）
+ * 是同一个判据的两个来源——出口闸接上之后按"同一个判据不留两个来源"撤除，
+ * 现在由 `@ailearn/shared/public-json-http` 的两个出口统一执行这条检查。）
  */
-function assertGenerationPhaseOutsideTransaction(caller: string): void {
-  assertOutsideWorkspaceTransaction({
-    boundary: "AI 模型调用（制卡 V2 的出网相位）",
-    caller,
-    activeTransaction: currentWorkerWorkspaceTransaction(),
-    reportDevelopmentError: (message) => logger.error({ caller }, message),
-  });
-}
 
 // ─── Post-Activation Projection Consumer（§17.5 step 17，R33）─────────────
 
@@ -1846,10 +1830,16 @@ async function runV2AuthoringPhase(
 }
 
 /**
- * 阶段二的后半段：复用审计 + 双 Critic + deck gate + 终态（重新锁 run 的一个事务）。
+ * 阶段二的后半段：复用审计 + 双 Critic + deck gate + 终态。
  *
  * 候选行在这之前**已经逐张提交**（A1·B2），所以这一段只做两件事：把"哪几张是复用的"
  * 记进事件流，以及对已提交的行下门禁结论。
+ *
+ * 2026-09-26（W3-2 第三刀）：整段从"重新锁 run 的一个事务"改成三相——短事务读
+ * （`loadV2RunInputs`）→ 事务外判定（`judgeFunnelStage`：pedagogy 兜底重跑与有界修复
+ * 作者不再持 run 的行锁）→ 短事务写（重验＋复用事件＋`checking`＋`commitFunnelStage`
+ * ＋fence）。材料在出网期间变了就抛可重试丢掉这一遍判定，与 regenerate/recheck 相位 3
+ * 同一守卫形状。
  *
  * 为什么"跳过作者"要留事件：库里"这一遍直接用了已提交的那条"与"这一遍又写了一次
  * 却被五列唯一索引挡下"是完全同形的（行数、身份都看不出差别）。没有这条事件，
@@ -1873,10 +1863,52 @@ async function reviewAndFinalizeV2Candidates(input: {
   inputSnapshotHash: string;
 }): Promise<void> {
   const { job, workspaceId, runId } = input;
+  // 相位 1：只读——重新按当前版本读回 run / 证据闭包：这段的一切判定都要站在
+  // **已提交**的数据上，而不是作者阶段那份内存快照（§39 B3）。
+  const ctx = await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, (tx) =>
+    loadV2RunInputs(tx, workspaceId, runId),
+  );
+
+  // 相位 2：出网判定。grounding 已按候选流水线预计算；pedagogy 兜底重跑与有界修复
+  // 的作者调用在这里发生——不再持有 run 的行锁（39d W3-2 第三刀）。
+  const judgment = await judgeFunnelStage({
+    runId,
+    workspaceId,
+    run: ctx.run as unknown as { input_snapshot_hash: string; semantic_spec_hash: string },
+    plan: ctx.plan ?? input.plan,
+    candidates: input.candidates,
+    sealed: ctx.sealed,
+    sourceContent: ctx.sourceContent,
+    existingObjectives: ctx.existingObjectives,
+    providers: input.providers,
+    signal: input.signal,
+    // 按候选流水线预计算的 grounding 结果：跳过判定段内部的 provider 波。
+    precomputedGrounding: input.precomputedGrounding,
+    // 与 grounding 波并发算出的投机 pedagogy（集合未变则直接复用，省一个阶段）。
+    precomputedPedagogy: input.precomputedPedagogy,
+    // M4：用户 generation 请求（semanticRequest），透传给 Pedagogy Critic。
+    generationRequest: input.semanticRequest,
+  });
+
+  // 相位 3：写。重验（与 regenerate/recheck 相位 3 同款）：计划/证据/run 行在出网
+  // 期间变了 → 抛可重试丢掉这一遍判定，job 重走一遍；没变才落库。
   await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
-    // 重新按当前版本读回 run / 证据闭包：这段的一切判定都要站在**已提交**的数据上，
-    // 而不是作者阶段那份内存快照（§39 B3）。
-    const ctx = await loadV2RunInputs(tx, workspaceId, runId);
+    const current = await loadV2RunInputs(tx, workspaceId, runId);
+    if (
+      String(current.run.input_snapshot_hash) !== String(ctx.run.input_snapshot_hash)
+      || current.sealed.evidenceSetHash !== ctx.sealed.evidenceSetHash
+      || String(current.run.status) !== String(ctx.run.status)
+      || Number(current.run.current_plan_version) !== Number(ctx.run.current_plan_version)
+      || (current.plan === null) !== (ctx.plan === null)
+      || (current.plan !== null && ctx.plan !== null
+        && (String(current.plan.planHash) !== String(ctx.plan.planHash)
+          || String(current.plan.planRevisionId) !== String(ctx.plan.planRevisionId)))
+    ) {
+      throw new CardGenerationProviderErrorLike(
+        true,
+        "review inputs changed while the gates were being judged; this pass is discarded",
+      );
+    }
     if (input.reusedCandidates.length > 0) {
       await insertEventsBatched(tx, workspaceId, runId, input.reusedCandidates.map((candidate) => ({
         eventType: "card_candidate.authored_reused",
@@ -1894,25 +1926,7 @@ async function reviewAndFinalizeV2Candidates(input: {
     `);
 
     // 12-16. Per-candidate critics + assembler + deterministic gates + deck gate + 终态
-    await critiqueAndFinalizeCandidates(tx, {
-      runId,
-      workspaceId,
-      run: ctx.run as unknown as { input_snapshot_hash: string; semantic_spec_hash: string },
-      plan: ctx.plan ?? input.plan,
-      candidates: input.candidates,
-      sealed: ctx.sealed,
-      sourceContent: ctx.sourceContent,
-      existingObjectives: ctx.existingObjectives,
-      providers: input.providers,
-      signal: input.signal,
-      // 按候选流水线预计算的 grounding 结果：跳过本函数内部的 provider 波，
-      // 直接进入串行收尾（写入顺序/事件/判定完全不变）。
-      precomputedGrounding: input.precomputedGrounding,
-      // 与 grounding 波并发算出的投机 pedagogy（集合未变则直接复用，省一个阶段）。
-      precomputedPedagogy: input.precomputedPedagogy,
-      // M4：用户 generation 请求（semanticRequest），透传给 Pedagogy Critic。
-      generationRequest: input.semanticRequest,
-    });
+    await commitFunnelStage(tx, { runId, workspaceId, judgment });
     await fenceV2OutboxLease(tx, job);
     // M5：本次 job 执行的 LLM 用量汇总（成本审计；此前 result.usage 被整体丢弃，
     // 系统无法回答"一个 run 实际花了多少 token"）。
@@ -2112,8 +2126,70 @@ export async function callGroundingCritic(args: {
  * rewrite / drop）各来一次，从而确定性地走到"有界修复 + 丢卡"这条尾段。
  * 过去这条分支只能靠运气（确定性 pedagogy 恒 pass），运行时行为未因此改变。
  */
-export async function critiqueAndFinalizeCandidates(
-  tx: WorkerTransaction,
+/**
+ * 漏斗（双 Critic + deck gate + 终态）的**判定／落库两半**（39d W3-2 第三刀）。
+ *
+ * 改前整条漏斗挤在调用方的事务里：grounding 波、pedagogy 兜底重跑、有界修复的
+ * 作者调用都发生在事务内，run 的行锁被按住的时长 = 模型响应的时长。现在拆成：
+ *
+ * - `judgeFunnelStage`：**没有事务、不碰数据库**。grounding/pedagogy/修复作者全部
+ *   在这里出网，其余是纯计算；产物是一份 `FunnelJudgment`（判定结论＋待写清单）。
+ *   可重试错误在这里抛出——此时一个字节都没写，与改前"整条事务回滚、DB 无半写"
+ *   的语义逐字一致。
+ * - `commitFunnelStage`：在调用方的短事务里**只做写**，写入顺序与拆分前逐条一致
+ *   （binding plan → 候选状态 → grounding 事件 → 去重 → 修复候选与 recheck job →
+ *   pedagogy 丢弃 → 质量报告 → pedagogy 事件 → 配额 → 终态）。它不持有 providers，
+ *   类型上就写不出"事务内调模型"。
+ *
+ * 四条调用方（主管线尾段 / regenerate / replan / recheck）都改为"短事务读 →
+ * 事务外判 → 短事务写（含重验）"的三相形状。
+ */
+export interface FunnelJudgment {
+  /** 全部候选的 grounding 质量报告（含合成的 grounding_failed）。 */
+  qualityReports: QualityReportV2[];
+  /** 通过 grounding 的候选：组装好的 binding plan，按候选顺序（落库顺序与其一致）。 */
+  bindingPlans: Array<{
+    candidate: LearningCardCandidateRevisionV2;
+    result: ReturnType<typeof assembleCandidateEvidenceBindingPlanV2>;
+  }>;
+  candidateStatusUpdates: Array<{
+    candidateRevisionId: string;
+    newQualityState: string;
+    bindingPlanHash: string | null;
+  }>;
+  groundingEvents: Array<{ eventType: string; payload: Record<string, unknown> }>;
+  /** 语义去重落选的候选（12.4）：落库为 failed + 可解释事件。 */
+  droppedDuplicates: Array<{
+    candidate: LearningCardCandidateRevisionV2;
+    relation: "duplicate" | "mergeable";
+    keptCandidateId: string;
+    clusterId: string;
+  }>;
+  /** 有界修复产出的新 revision + 它的 hints（判定段出网产出，落库在 commit 半）。 */
+  repairedRevisions: Array<{ candidate: LearningCardCandidateRevisionV2; hints: CardHintPairV2 }>;
+  /** 是否真的发生过修复（pedagogy rewrite 且修完——影响 pedagogy_passed 判定）。 */
+  repaired: boolean;
+  /** 本次投递的 recheck job 数（16 终态的 awaiting_recheck 分支用）。 */
+  pendingRecheckCount: number;
+  /** pedagogy 过滤后没进牌堆、也不是 rewrite 的候选（§52 的 dropped 回写）。 */
+  droppedByPedagogy: LearningCardCandidateRevisionV2[];
+  /** 最终牌堆（deck gate 的输入与 review_ready 事件的来源）。 */
+  survivors: LearningCardCandidateRevisionV2[];
+  finalGate: Awaited<ReturnType<typeof runDeterministicFinalGates>>;
+  bindingPlanHashesByRevision: Record<string, string>;
+  /** 16 终态的落库动作与载荷。 */
+  terminal:
+    | { kind: "no_cards" }
+    | { kind: "awaiting_recheck"; pendingRecheckCount: number }
+    | { kind: "needs_attention"; reason: "all_candidates_failed_quality_gates" | "deck_gate_failed" }
+    | { kind: "review_ready" };
+  /** 配额点名之后的缺额事件载荷；null = 没有缺额（或没有幸存者）。 */
+  quotaShort: { requiredCount: number; metCount: number; misses: unknown[] } | null;
+  /** per-candidate pedagogy 事件（R35/§17.7）。 */
+  pedagogyEvents: Array<{ eventType: string; payload: Record<string, unknown> }>;
+}
+
+export async function judgeFunnelStage(
   input: {
     runId: string;
     workspaceId: string;
@@ -2145,7 +2221,7 @@ export async function critiqueAndFinalizeCandidates(
      */
     precomputedPedagogy?: SpeculativePedagogy | null;
   },
-): Promise<void> {
+): Promise<FunnelJudgment> {
   const {
     runId,
     workspaceId,
@@ -2163,13 +2239,14 @@ export async function critiqueAndFinalizeCandidates(
 
     // 12. Per-candidate critics + assembler + deterministic gates
     const qualityReports: QualityReportV2[] = [];
-    const groundingContractReports: Record<string, Awaited<ReturnType<typeof runGroundingCritic>>> = {};
+    const bindingPlans: FunnelJudgment["bindingPlans"] = [];
     const bindingPlanHashesByRevision: Record<string, string> = {};
     // 2026-08-25（AI 设计审计修复）：per-candidate soft precheck 信号（供
     // Pedagogy Critic 输入参考与审计）。
     const softSignalsByCandidate: Record<string, QualityIssue[]> = {};
     const passedCandidates: LearningCardCandidateRevisionV2[] = [];
-    // 批量写：候选状态更新与 grounding 事件在循环内累积，循环后一次性 flush
+    // 批量写：候选状态更新与 grounding 事件在循环内累积，由 commitFunnelStage
+    // 在短事务里一次性落库（拆分前是循环后 flush，顺序不变）。
     const candidateStatusUpdates: Array<{
       candidateRevisionId: string;
       newQualityState: string;
@@ -2257,8 +2334,8 @@ export async function critiqueAndFinalizeCandidates(
 
           if (groundingContract.verdict === "pass") {
             // 2026-08-24（§4.4 第二批）：plan 组装走 shared 纯逻辑层；
-            // 持久化（INSERT binding plan 行）由下方 worker 本地 IO 实现——
-            // 与 api 的 persistCandidateEvidenceBindingPlanV2 落同一张表、
+            // 持久化（INSERT binding plan 行）由 commitFunnelStage 在短事务里
+            // 实现——与 api 的 persistCandidateEvidenceBindingPlanV2 落同一张表、
             // 同样的列闭包（R32：完整 bindings 条目）。
             const binding = assembleCandidateEvidenceBindingPlanV2({
               runId,
@@ -2268,14 +2345,8 @@ export async function critiqueAndFinalizeCandidates(
               evidenceManifest: sealed.evidenceManifest,
               eligibilityVector: sealed.eligibility,
             });
-            await insertBindingPlanRow(tx, {
-              runId,
-              workspaceId,
-              candidate,
-              result: binding,
-            });
+            bindingPlans.push({ candidate, result: binding });
             bindingPlanHash = binding.bindingPlanHash;
-            groundingContractReports[candidate.candidateRevisionId] = groundingContract;
           }
           qualityReport = groundingContractToQualityReport(groundingContract);
         } catch (err) {
@@ -2364,23 +2435,8 @@ export async function critiqueAndFinalizeCandidates(
       if (groundingPassed) passedCandidates.push(candidate);
     }
 
-    // 批量 flush candidate 状态更新（单次 VALUES 更新）
-    if (candidateStatusUpdates.length > 0) {
-      await tx.execute(sql`
-        UPDATE public.card_generation_candidates_v2 AS c
-        SET quality_state = v.new_quality_state, updated_at = now(),
-            evidence_binding_plan_hash = v.binding_plan_hash
-        FROM (VALUES
-          ${sql.join(candidateStatusUpdates.map((u) => sql`(${u.candidateRevisionId}::uuid, ${u.newQualityState}, ${u.bindingPlanHash})`), sql`, `)}
-        ) AS v(candidate_revision_id, new_quality_state, binding_plan_hash)
-        WHERE c.candidate_revision_id = v.candidate_revision_id
-          AND c.workspace_id = ${workspaceId}
-      `);
-    }
-    // 批量写 grounding 事件（一次 MAX + 一次多行 INSERT）
-    if (groundingEvents.length > 0) {
-      await insertEventsBatched(tx, workspaceId, runId, groundingEvents);
-    }
+    // （拆分前这里的"批量 flush 候选状态 + grounding 事件"两段写移进了
+    // commitFunnelStage；判定的累积在上面循环里完成，顺序不变。）
 
     // 12.4 Global Selector / Merge / Dedup（§10.1 step 8，M6 接线）
     //
@@ -2395,28 +2451,9 @@ export async function critiqueAndFinalizeCandidates(
     // 每个 duplicate/mergeable 簇保留一个候选（保持 authoring 顺序 = 计划顺序），
     // 其余标记 quality_state='failed' 并写可解释事件（它们确实未通过 §13.2 的
     // deck 级去重裁决，revision 记录保持不可变、不删除）。deck gate 的语义聚类
-    // 检查保留为 backstop——去重后不应再有命中。
+    // 检查保留为 backstop——去重后不应再有命中。（落库在 commitFunnelStage。）
     const { kept: dedupedCandidates, dropped: droppedDuplicates } = selectDistinctCandidatesV2(passedCandidates);
     if (droppedDuplicates.length > 0) {
-      await tx.execute(sql`
-        UPDATE public.card_generation_candidates_v2
-        SET quality_state = 'failed', updated_at = now()
-        WHERE workspace_id = ${workspaceId}
-          AND candidate_revision_id IN (${sql.join(
-            droppedDuplicates.map((d) => sql`${d.candidate.candidateRevisionId}::uuid`),
-            sql`, `,
-          )})
-      `);
-      await insertEventsBatched(tx, workspaceId, runId, droppedDuplicates.map((d) => ({
-        eventType: "card_candidate.dropped_semantic_duplicate",
-        payload: {
-          candidateId: d.candidate.candidateId,
-          candidateRevisionId: d.candidate.candidateRevisionId,
-          relation: d.relation,
-          keptCandidateId: d.keptCandidateId,
-          clusterId: d.clusterId,
-        },
-      })));
       logger.warn({
         runId,
         droppedCount: droppedDuplicates.length,
@@ -2505,6 +2542,10 @@ export async function critiqueAndFinalizeCandidates(
     // 13.1 依据 pedagogy 结论过滤候选
     let afterRepair = readyCandidates;
     let repaired = false;
+    /** 有界修复产出的新 revision + hints（判定段只出网，落库在 commitFunnelStage）。 */
+    const repairedRevisions: FunnelJudgment["repairedRevisions"] = [];
+    /** pedagogy 过滤后没进牌堆、也不是 rewrite 的候选（§52 的 dropped 回写名单）。 */
+    let droppedByPedagogy: LearningCardCandidateRevisionV2[] = [];
     /**
      * 本次已投递的 recheck job 数。
      *
@@ -2521,17 +2562,15 @@ export async function critiqueAndFinalizeCandidates(
       const rewriteSet = new Set(pc.filter((p) => p.verdict === "rewrite").map((p) => p.candidateId));
       // bounded repair：每个失败候选最多 repair 一次
       if (allowBoundedRepair && providers && rewriteSet.size > 0 && !repaired) {
-        const repairedRevisions: LearningCardCandidateRevisionV2[] = [];
         for (const c of afterRepair) {
           if (rewriteSet.has(c.candidateId)) {
+            // 出网半（作者重写）留在判定段；落库半（新 revision 行 + recheck job）
+            // 在 commitFunnelStage——拆分前两者交替发生在事务里。
             const authoredRepair = await authorRepairedCandidateV2({
               runId, workspaceId, plan, candidate: c, sourceContent, sealed,
               authoringProvider: providers.author, semanticSpecHash: run.semantic_spec_hash,
             });
-            await insertRepairedCandidateV2(tx, {
-              runId, workspaceId, candidate: authoredRepair.candidate, hints: authoredRepair.hints,
-            });
-            repairedRevisions.push(authoredRepair.candidate);
+            repairedRevisions.push({ candidate: authoredRepair.candidate, hints: authoredRepair.hints });
             repaired = true;
           }
         }
@@ -2544,30 +2583,9 @@ export async function critiqueAndFinalizeCandidates(
           // 保持 authored 状态，由候选审核页的 recheck 流程重新走质量门禁。
           // keep 候选照常 review_ready。
           afterRepair = afterRepair.filter((c) => !rewriteSet.has(c.candidateId));
-
-          // 生成主流程也必须真正触发这条 recheck 流程。此前这里只写入
-          // authored revision，却没有 enqueue recheck job，导致候选审核页
-          // 永远展示“重新检查中”，并且启用按钮一直被锁住。
+          // recheck job 的投递在 commitFunnelStage（生成主流程也必须真正触发
+          // 这条 recheck 流程，否则候选审核页永远展示"重新检查中"）。
           pendingRecheckCount = repairedRevisions.length;
-          for (const repairedCandidate of repairedRevisions) {
-            await tx.execute(sql`
-              INSERT INTO public.card_generation_run_outbox_v2
-                (id, workspace_id, run_id, job_type, payload, status)
-              VALUES (
-                ${randomUUID()}, ${workspaceId}, ${runId},
-                'card_generation_recheck_candidate',
-                ${JSON.stringify({
-                  runId,
-                  workspaceId,
-                  candidateId: repairedCandidate.candidateId,
-                  candidateRevisionId: repairedCandidate.candidateRevisionId,
-                  revision: repairedCandidate.revision,
-                  reason: 'bounded_repair',
-                })}::jsonb,
-                'pending'
-              )
-            `);
-          }
         }
       }
       afterRepair = afterRepair.filter((c) => keepSet.has(c.candidateId) || rewriteSet.has(c.candidateId));
@@ -2587,25 +2605,9 @@ export async function critiqueAndFinalizeCandidates(
        *   也没事件（这正是今天它的行为）。
        */
       const inDeckIds = new Set(afterRepair.map((c) => c.candidateId));
-      const droppedByPedagogy = readyCandidates.filter((c) =>
+      droppedByPedagogy = readyCandidates.filter((c) =>
         !inDeckIds.has(c.candidateId) && !rewriteSet.has(c.candidateId));
-      if (droppedByPedagogy.length > 0) {
-        await tx.execute(sql`
-          UPDATE public.card_generation_candidates_v2
-          SET quality_state = 'dropped', updated_at = now()
-          WHERE workspace_id = ${workspaceId}
-            AND candidate_revision_id IN (${sql.join(
-              droppedByPedagogy.map((c) => sql`${c.candidateRevisionId}::uuid`), sql`, `)})
-        `);
-        await insertEventsBatched(tx, workspaceId, runId, droppedByPedagogy.map((c) => ({
-          eventType: "card_candidate.dropped",
-          payload: {
-            candidateId: c.candidateId,
-            candidateRevisionId: c.candidateRevisionId,
-            relation: "pedagogy_drop",
-          },
-        })));
-      }
+      // （§52 的 dropped 回写与事件移进 commitFunnelStage；判定段只算名单。）
     }
 
     // 14. deck gate（含 binding plan hashes）
@@ -2659,22 +2661,9 @@ export async function critiqueAndFinalizeCandidates(
       plan.result.kind === "author_candidates" ? plan.result.activationHardMax : 0,
     );
 
-    // 15. 持久化质量报告（card_candidate_quality_reports_v2，真实 reportHash，批量）
-    const reportsToInsert = qualityReports.filter(
-      (qr) => typeof qr.reportHash === "string" && qr.reportHash.length === 64,
-    );
-    if (reportsToInsert.length > 0) {
-      await tx.execute(sql`
-        INSERT INTO public.card_candidate_quality_reports_v2
-          (id, workspace_id, run_id, candidate_revision_id, report_type, input_hash,
-           report, verdict, gate_version, report_hash)
-        VALUES ${sql.join(reportsToInsert.map((qr) => sql`(
-          ${randomUUID()}, ${workspaceId}, ${runId}, ${qr.candidateRevisionId},
-          ${qr.reportType}, ${qr.inputHash}, ${JSON.stringify(qr)}::jsonb,
-          ${qr.verdict}, ${qr.gateVersion}, ${qr.reportHash}
-        )`), sql`, `)}
-      `);
-    }
+    // 15/15b/16（拆分后）：质量报告、pedagogy 事件、配额缺额与终态全部在判定段
+    // **算好**（写入清单进 FunnelJudgment），由 commitFunnelStage 在短事务里按
+    // 拆分前的顺序落库。
 
     // 15b. R35/§17.7：per-candidate pedagogy 事件（此前缺失生产者，批量写）。
     // 2026-08-25（AI 设计审计修复）：payload 携带冻结 issue code，语义裁决可审计。
@@ -2694,9 +2683,6 @@ export async function critiqueAndFinalizeCandidates(
         },
       };
     });
-    if (pedagogyEvents.length > 0) {
-      await insertEventsBatched(tx, workspaceId, runId, pedagogyEvents);
-    }
 
     // 16. 终态判定
     const survivors = afterRepair;
@@ -2704,6 +2690,7 @@ export async function critiqueAndFinalizeCandidates(
     // 否则"这批一道练习件都没有"与"配额被无声跳过"在数据上同形（v24 之前那个
     // 读不出供给的坑换个位置重演）。只算**形状对上**的：要求 single_choice 却交了
     // ordering，整批的模态铺开并没有发生。
+    let quotaShort: FunnelJudgment["quotaShort"] = null;
     if (survivors.length > 0) {
       const quota = summarizePracticeQuotaV2(
         budgetedPlanObjectives(plan),
@@ -2720,17 +2707,196 @@ export async function critiqueAndFinalizeCandidates(
         })),
       );
       if (quota.misses.length > 0) {
-        await insertEvent(tx, workspaceId, runId, "card_generation.practice_quota_short", {
-          requiredCount: quota.requiredCount,
-          metCount: quota.metCount,
-          misses: quota.misses,
-        });
+        quotaShort = { requiredCount: quota.requiredCount, metCount: quota.metCount, misses: quota.misses };
       }
     }
+
     // R35/§12.5：pedagogy set-level `no_cards` 结论 → 成功终态
     // no_cards_recommended（不落 needs_attention；0 卡是可解释的成功结果）。
     const pedagogyNoCards = pedagogyReport?.verdict === "no_cards";
+    let terminal: FunnelJudgment["terminal"];
     if (pedagogyNoCards) {
+      terminal = { kind: "no_cards" };
+    } else if (survivors.length === 0 || !finalGate.passed) {
+      if (survivors.length === 0 && pendingRecheckCount > 0) {
+        // 候选全部被判 rewrite、新 revision 正在复核：保持"生成中"，由 recheck 收口
+        // （避免用户看到 needs_attention 的假失败）。
+        terminal = { kind: "awaiting_recheck", pendingRecheckCount };
+      } else {
+        terminal = {
+          kind: "needs_attention",
+          reason: survivors.length === 0
+            ? "all_candidates_failed_quality_gates"
+            : "deck_gate_failed",
+        };
+      }
+    } else {
+      terminal = { kind: "review_ready" };
+    }
+
+    return {
+      qualityReports,
+      bindingPlans,
+      candidateStatusUpdates,
+      groundingEvents,
+      droppedDuplicates,
+      repairedRevisions,
+      repaired,
+      pendingRecheckCount,
+      droppedByPedagogy,
+      survivors,
+      finalGate,
+      bindingPlanHashesByRevision,
+      terminal,
+      quotaShort,
+      pedagogyEvents,
+    };
+}
+
+/**
+ * 漏斗的落库半：在调用方的短事务里把 `judgeFunnelStage` 的判定按**拆分前的顺序**
+ * 写完。这里没有 providers、没有模型调用——类型上就写不出"事务内调模型"。
+ * 写入顺序与拆分前逐条一致：
+ * binding plan 行 → 候选状态批量 UPDATE → grounding 事件 → 语义去重落选 →
+ * 修复候选 + recheck job → pedagogy 丢弃回写 → 质量报告 → pedagogy 事件 →
+ * 配额缺额 → 终态。
+ */
+export async function commitFunnelStage(
+  tx: WorkerTransaction,
+  input: {
+    runId: string;
+    workspaceId: string;
+    judgment: FunnelJudgment;
+  },
+): Promise<void> {
+  const { runId, workspaceId, judgment: j } = input;
+
+  // 12.3 binding plan 行（按候选顺序，与拆分前循环内的逐条 INSERT 一致）
+  for (const { candidate, result } of j.bindingPlans) {
+    await insertBindingPlanRow(tx, {
+      runId,
+      workspaceId,
+      candidate,
+      result,
+    });
+  }
+
+  // 批量 flush candidate 状态更新（单次 VALUES 更新）
+  if (j.candidateStatusUpdates.length > 0) {
+    await tx.execute(sql`
+      UPDATE public.card_generation_candidates_v2 AS c
+      SET quality_state = v.new_quality_state, updated_at = now(),
+          evidence_binding_plan_hash = v.binding_plan_hash
+      FROM (VALUES
+        ${sql.join(j.candidateStatusUpdates.map((u) => sql`(${u.candidateRevisionId}::uuid, ${u.newQualityState}, ${u.bindingPlanHash})`), sql`, `)}
+      ) AS v(candidate_revision_id, new_quality_state, binding_plan_hash)
+      WHERE c.candidate_revision_id = v.candidate_revision_id
+        AND c.workspace_id = ${workspaceId}
+    `);
+  }
+  // 批量写 grounding 事件（一次 MAX + 一次多行 INSERT）
+  if (j.groundingEvents.length > 0) {
+    await insertEventsBatched(tx, workspaceId, runId, j.groundingEvents);
+  }
+
+  // 12.4 语义去重落选：failed + 可解释事件（revision 记录不可变、不删除）。
+  if (j.droppedDuplicates.length > 0) {
+    await tx.execute(sql`
+      UPDATE public.card_generation_candidates_v2
+      SET quality_state = 'failed', updated_at = now()
+      WHERE workspace_id = ${workspaceId}
+        AND candidate_revision_id IN (${sql.join(
+          j.droppedDuplicates.map((d) => sql`${d.candidate.candidateRevisionId}::uuid`),
+          sql`, `,
+        )})
+    `);
+    await insertEventsBatched(tx, workspaceId, runId, j.droppedDuplicates.map((d) => ({
+      eventType: "card_candidate.dropped_semantic_duplicate",
+      payload: {
+        candidateId: d.candidate.candidateId,
+        candidateRevisionId: d.candidate.candidateRevisionId,
+        relation: d.relation,
+        keptCandidateId: d.keptCandidateId,
+        clusterId: d.clusterId,
+      },
+    })));
+  }
+
+  // 13.1 有界修复的落库半：新 revision（authored，不进牌堆）+ recheck job 投递。
+  for (const repaired of j.repairedRevisions) {
+    await insertRepairedCandidateV2(tx, {
+      runId, workspaceId, candidate: repaired.candidate, hints: repaired.hints,
+    });
+  }
+  if (j.repairedRevisions.length > 0) {
+    for (const repaired of j.repairedRevisions) {
+      await tx.execute(sql`
+        INSERT INTO public.card_generation_run_outbox_v2
+          (id, workspace_id, run_id, job_type, payload, status)
+        VALUES (
+          ${randomUUID()}, ${workspaceId}, ${runId},
+          'card_generation_recheck_candidate',
+          ${JSON.stringify({
+            runId,
+            workspaceId,
+            candidateId: repaired.candidate.candidateId,
+            candidateRevisionId: repaired.candidate.candidateRevisionId,
+            revision: repaired.candidate.revision,
+            reason: 'bounded_repair',
+          })}::jsonb,
+          'pending'
+        )
+      `);
+    }
+  }
+
+  // §52：牌堆定论之后，把"过了各自门禁但没进这一批"的候选回写成 `dropped`。
+  if (j.droppedByPedagogy.length > 0) {
+    await tx.execute(sql`
+      UPDATE public.card_generation_candidates_v2
+      SET quality_state = 'dropped', updated_at = now()
+      WHERE workspace_id = ${workspaceId}
+        AND candidate_revision_id IN (${sql.join(
+          j.droppedByPedagogy.map((c) => sql`${c.candidateRevisionId}::uuid`), sql`, `)})
+    `);
+    await insertEventsBatched(tx, workspaceId, runId, j.droppedByPedagogy.map((c) => ({
+      eventType: "card_candidate.dropped",
+      payload: {
+        candidateId: c.candidateId,
+        candidateRevisionId: c.candidateRevisionId,
+        relation: "pedagogy_drop",
+      },
+    })));
+  }
+
+  // 15. 持久化质量报告（card_candidate_quality_reports_v2，真实 reportHash，批量）
+  const reportsToInsert = j.qualityReports.filter(
+    (qr) => typeof qr.reportHash === "string" && qr.reportHash.length === 64,
+  );
+  if (reportsToInsert.length > 0) {
+    await tx.execute(sql`
+      INSERT INTO public.card_candidate_quality_reports_v2
+        (id, workspace_id, run_id, candidate_revision_id, report_type, input_hash,
+         report, verdict, gate_version, report_hash)
+      VALUES ${sql.join(reportsToInsert.map((qr) => sql`(
+        ${randomUUID()}, ${workspaceId}, ${runId}, ${qr.candidateRevisionId},
+        ${qr.reportType}, ${qr.inputHash}, ${JSON.stringify(qr)}::jsonb,
+        ${qr.verdict}, ${qr.gateVersion}, ${qr.reportHash}
+      )`), sql`, `)}
+    `);
+  }
+
+  // 15b. per-candidate pedagogy 事件
+  if (j.pedagogyEvents.length > 0) {
+    await insertEventsBatched(tx, workspaceId, runId, j.pedagogyEvents);
+  }
+
+  // 16. 终态
+  if (j.quotaShort) {
+    await insertEvent(tx, workspaceId, runId, "card_generation.practice_quota_short", j.quotaShort);
+  }
+  switch (j.terminal.kind) {
+    case "no_cards": {
       await insertEvent(tx, workspaceId, runId, "card_generation.no_cards_recommended", {
         reason: "pedagogy_no_cards",
       });
@@ -2741,57 +2907,57 @@ export async function critiqueAndFinalizeCandidates(
       `);
       return;
     }
-    if (survivors.length === 0 || !finalGate.passed) {
-      // 全部失败或 deck-level hard gate 不通过：若无候选通过且 pedagogy 未给
-      // no_cards 结论 → needs_attention（§12.5/§13.2）。
+    case "awaiting_recheck": {
       await insertEvent(tx, workspaceId, runId, "card_generation.deck_gate_report", {
-        passed: finalGate.passed,
-        issues: finalGate.gateReport.issues,
+        passed: j.finalGate.passed,
+        issues: j.finalGate.gateReport.issues,
       });
-      if (survivors.length === 0 && pendingRecheckCount > 0) {
-        // 候选全部被判 rewrite、新 revision 正在复核：保持"生成中"，由 recheck 收口
-        // （避免用户看到 needs_attention 的假失败）。
-        await tx.execute(sql`
-          UPDATE public.card_generation_runs_v2
-          SET status = 'checking', error_code = NULL, error_message = NULL, updated_at = now()
-          WHERE id = ${runId} AND workspace_id = ${workspaceId}
-        `);
-        await insertEvent(tx, workspaceId, runId, "card_generation.awaiting_recheck", {
-          pendingRecheckCount,
-        });
-        return;
-      }
+      await tx.execute(sql`
+        UPDATE public.card_generation_runs_v2
+        SET status = 'checking', error_code = NULL, error_message = NULL, updated_at = now()
+        WHERE id = ${runId} AND workspace_id = ${workspaceId}
+      `);
+      await insertEvent(tx, workspaceId, runId, "card_generation.awaiting_recheck", {
+        pendingRecheckCount: j.terminal.pendingRecheckCount,
+      });
+      return;
+    }
+    case "needs_attention": {
       // 2026-09-18：把失败原因**落库到 run 行**（此前只写进事件流，run.error_code
       // 为 null）。恢复投影需要据此判断"这次失败是否可就地重试"——用户端不是事件流
       // 消费者，它只读 run 行；没有这个码，唯一候选被 critic 否决的 run 会被当成
       // "服务端需要进一步处理"的黑盒，用户只能重开一次全新生成。
+      await insertEvent(tx, workspaceId, runId, "card_generation.deck_gate_report", {
+        passed: j.finalGate.passed,
+        issues: j.finalGate.gateReport.issues,
+      });
       await tx.execute(sql`
         UPDATE public.card_generation_runs_v2
         SET status = 'needs_attention', error_code = 'quality_gate_failed', updated_at = now()
         WHERE id = ${runId} AND workspace_id = ${workspaceId}
       `);
       await insertEvent(tx, workspaceId, runId, "card_generation.needs_attention", {
-        reason: survivors.length === 0
-          ? "all_candidates_failed_quality_gates"
-          : "deck_gate_failed",
+        reason: j.terminal.reason,
       });
       return;
     }
-
-    // review_ready
-    await tx.execute(sql`
-      UPDATE public.card_generation_runs_v2
-      SET status = 'review_ready', error_code = NULL, error_message = NULL, updated_at = now()
-      WHERE id = ${runId} AND workspace_id = ${workspaceId}
-    `);
-    await insertEventsBatched(tx, workspaceId, runId, survivors.map((candidate) => ({
-      eventType: "card_candidate.review_ready",
-      payload: {
-        candidateId: candidate.candidateId,
-        candidateRevisionId: candidate.candidateRevisionId,
-        candidateEvidenceBindingPlanHash: bindingPlanHashesByRevision[candidate.candidateRevisionId] ?? null,
-      },
-    })));
+    case "review_ready": {
+      await tx.execute(sql`
+        UPDATE public.card_generation_runs_v2
+        SET status = 'review_ready', error_code = NULL, error_message = NULL, updated_at = now()
+        WHERE id = ${runId} AND workspace_id = ${workspaceId}
+      `);
+      await insertEventsBatched(tx, workspaceId, runId, j.survivors.map((candidate) => ({
+        eventType: "card_candidate.review_ready",
+        payload: {
+          candidateId: candidate.candidateId,
+          candidateRevisionId: candidate.candidateRevisionId,
+          candidateEvidenceBindingPlanHash: j.bindingPlanHashesByRevision[candidate.candidateRevisionId] ?? null,
+        },
+      })));
+      return;
+    }
+  }
 }
 
 // ─── 公共加载器（regenerate/replan 复用）──────────────────────────────────
@@ -2917,17 +3083,17 @@ export async function loadV2RunInputs(tx: WorkerTransaction, workspaceId: string
 
 /**
  * §17.4 regenerate_candidate：worker 重写该候选 → 新 immutable revision →
- * 重跑双 Critic + deck gate（复用 critiqueAndFinalizeCandidates）。
+ * 重跑双 Critic + deck gate（漏斗的 judge/commit 两半）。
  * 旧 revision 只 supersede、不覆盖；重写失败 → run needs_attention（fail closed）。
  *
  * 2026-09-25（#19 第二刀）：与 `processRecheckCandidateJob` 同一形状——**读 → 出网 → 写**
  * 三相。改前整条链在一个事务里：作者重写（这条链最贵最慢的一次调用）与两道 Critic
  * 都发生在事务内，于是 run 的行锁被按住的时长 = 模型响应的时长。
  *
- * 相位 2 里没有任何事务（进入时由 `assertGenerationPhaseOutsideTransaction` 当场核），
- * 所以出网不再等于持锁。落库仍在相位 3 的短事务里，顺序与改前一致（supersede →
- * `regenerating` 事件 → 新 revision → 门禁 → `regenerated` 事件），中间只多一步重验：
- * 材料变了就抛可重试，把这一遍判定丢掉、照新材料重走，而不是把过期结论写进牌堆。
+ * 2026-09-26（W3-2 第三刀）：漏斗判定整体收进相位 2——预计算 pedagogy 失败或序列
+ * 守卫不过时的兜底重跑，从此也发生在**没有事务**的地方（改前它落回相位 3 的写
+ * 事务里）。相位 3 只落库（supersede → `regenerating` 事件 → 新 revision →
+ * 门禁结论 → `regenerated` 事件）；出网期间的边界由公共 HTTP 出口的闸门执行。
  */
 async function processRegenerateCandidateJob(job: PendingOutboxJob, signal?: AbortSignal): Promise<void> {
   const { workspaceId, runId } = job;
@@ -2957,8 +3123,8 @@ async function processRegenerateCandidateJob(job: PendingOutboxJob, signal?: Abo
   const run = ctx.run;
   const candidate = staged.candidate;
 
-  // 相位 2：出网。作者重写与两道 Critic 都发生在**没有事务**的地方。
-  assertGenerationPhaseOutsideTransaction(`card-generation-v2 regenerate@${runId}`);
+  // 相位 2：出网。作者重写与两道 Critic 都发生在**没有事务**的地方
+  // （边界由公共 HTTP 出口的闸门执行：任何一次落在事务里的模型请求都会被当场拒绝）。
   const providers = useLLM
     ? await buildProvidersForRun({ workspaceId, job, semanticSpec: ctx.semanticSpec, governanceContext })
     : null;
@@ -3019,6 +3185,26 @@ async function processRegenerateCandidateJob(job: PendingOutboxJob, signal?: Abo
         })
     : null;
 
+  // 相位 2 收尾：漏斗判定（grounding 已在上面出网；pedagogy 兜底重跑在这里——
+  // 预计算失败或序列守卫不过时，它发生在**没有事务**的地方，不再落回相位 3 的
+  // 写事务里。39d W3-2 第三刀）。
+  const judgment = await judgeFunnelStage({
+    runId,
+    workspaceId,
+    run: run as unknown as { input_snapshot_hash: string; semantic_spec_hash: string },
+    plan,
+    candidates: [newRevision],
+    sealed: ctx.sealed,
+    sourceContent: ctx.sourceContent,
+    existingObjectives: ctx.existingObjectives,
+    providers,
+    precomputedGrounding: new Map([[newRevision.candidateRevisionId, groundingOutcome]]),
+    precomputedPedagogy,
+    allowBoundedRepair: false,
+    signal,
+    generationRequest: ctx.semanticSpec.semanticRequest,
+  });
+
   // 相位 3：写。这一段里没有任何 provider 调用。
   await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
     throwIfPipelineAborted(signal);
@@ -3059,23 +3245,9 @@ async function processRegenerateCandidateJob(job: PendingOutboxJob, signal?: Abo
       runId, workspaceId, candidate: newRevision, hints: authored.hints,
     });
 
-    // §17.4：新 revision 完整重跑门禁（grounding + pedagogy + deck gate）
-    await critiqueAndFinalizeCandidates(tx, {
-      runId,
-      workspaceId,
-      run: current.ctx.run as unknown as { input_snapshot_hash: string; semantic_spec_hash: string },
-      plan: current.plan,
-      candidates: [newRevision],
-      sealed: current.ctx.sealed,
-      sourceContent: current.ctx.sourceContent,
-      existingObjectives: current.ctx.existingObjectives,
-      providers,
-      precomputedGrounding: new Map([[newRevision.candidateRevisionId, groundingOutcome]]),
-      precomputedPedagogy,
-      allowBoundedRepair: false,
-      signal,
-      generationRequest: current.ctx.semanticSpec.semanticRequest,
-    });
+    // §17.4：新 revision 完整重跑门禁（grounding + pedagogy + deck gate）——
+    // 判定在相位 2 完成，这里只落库。
+    await commitFunnelStage(tx, { runId, workspaceId, judgment });
     // 源文本被规模上限截断时留痕（四处进入点共用一份判据与载荷）。
     await emitSourceContentCapEvent(tx, { workspaceId, runId, cap: current.ctx.sourceContentCap });
     await insertEvent(tx, workspaceId, runId, "card_candidate.regenerated", {
@@ -3105,7 +3277,10 @@ async function processReplanSetJob(job: PendingOutboxJob, signal?: AbortSignal):
     ? await resolveCardGenerationGovernance(workspaceId, runId)
     : null;
 
-  await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
+  // 相位 1：只读的一小段事务——读输入、状态门闩、旧计划 revision（一个字节都不写）。
+  // （39d W3-2 第三刀：改前整个 job 挤在一个事务里——planner、author、双 Critic、
+  // 有界修复全在事务内出网，run 的行锁被按住 = 整条重排的模型时长。）
+  const staged = await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
     throwIfPipelineAborted(signal);
     const ctx = await loadV2RunInputs(tx, workspaceId, runId);
     const run = ctx.run;
@@ -3120,46 +3295,116 @@ async function processReplanSetJob(job: PendingOutboxJob, signal?: AbortSignal):
       // jobType 状态门闩不合法：确定性业务违约，非重试
       throw new CardGenerationProviderErrorLike(false, `replan requires review_ready/needs_attention/checking run (got ${String(run.status)})`);
     }
-    const providers = useLLM
-      ? await buildProvidersForRun({ workspaceId, job, semanticSpec: ctx.semanticSpec, governanceContext })
-      : null;
-
-    // 1. 重跑 planner（同输入；feedback 偏好为 soft，仅 LLM 模式消费）
-    throwIfPipelineAborted(signal);
-    const plannerResult = await executePlanner({
-      runId,
-      workspaceId,
-      inputSnapshot: ctx.inputSnapshot,
-      semanticSpec: ctx.semanticSpec,
-      blocks: ctx.scopedBlocks,
-      unsupportedSourceBlocks: ctx.unsupportedSourceBlocks,
-      existingObjectives: ctx.existingObjectives,
-      clientHardMaxCards: ctx.inputSnapshot?.rawRequest?.quantity?.hardMaxCards,
-      extractionProvider: providers ? providers.plannerExtraction : undefined,
-      evidenceList: ctx.sealed.evidenceManifest.evidence.map((e) => ({
-        evidenceSnapshotId: e.evidenceSnapshotId,
-        quoteHash: e.quoteHash ?? null,
-      })),
-      signal,
-    });
     const prevPlanRows = (await tx.execute(sql`
       SELECT plan_revision_id FROM public.card_generation_plans_v2
       WHERE run_id = ${runId} AND workspace_id = ${workspaceId}
         AND plan_version = ${run.current_plan_version}
       LIMIT 1
     `)) as Array<{ plan_revision_id: string }>;
-    const prevPlanRevisionId = prevPlanRows[0]?.plan_revision_id ?? null;
-    const newPlanVersion = Number(run.current_plan_version) + 1;
-
-    // 2. 新版本 plan + 重算 planHash（§11.6 canonical 序列化）
-    const { planHash: _dropped, ...planWithoutHash } = plannerResult.plan;
-    const finalPlan: Awaited<ReturnType<typeof executePlanner>>["plan"] = {
-      ...planWithoutHash,
-      planVersion: newPlanVersion,
-      previousPlanRevisionId: prevPlanRevisionId,
-      planHash: "",
+    return {
+      ctx,
+      prevPlanRevisionId: prevPlanRows[0]?.plan_revision_id ?? null,
+      readAtPlanVersion: Number(run.current_plan_version),
+      readAtStatus: String(run.status),
     };
-    const plan = { ...finalPlan, planHash: computeCardPlanHashV2(finalPlan) };
+  });
+  const { ctx, prevPlanRevisionId } = staged;
+  const run = ctx.run;
+
+  // 相位 2：出网——planner、author、漏斗判定全部发生在**没有事务**的地方。
+  const providers = useLLM
+    ? await buildProvidersForRun({ workspaceId, job, semanticSpec: ctx.semanticSpec, governanceContext })
+    : null;
+
+  // 1. 重跑 planner（同输入；feedback 偏好为 soft，仅 LLM 模式消费）
+  throwIfPipelineAborted(signal);
+  const plannerResult = await executePlanner({
+    runId,
+    workspaceId,
+    inputSnapshot: ctx.inputSnapshot,
+    semanticSpec: ctx.semanticSpec,
+    blocks: ctx.scopedBlocks,
+    unsupportedSourceBlocks: ctx.unsupportedSourceBlocks,
+    existingObjectives: ctx.existingObjectives,
+    clientHardMaxCards: ctx.inputSnapshot?.rawRequest?.quantity?.hardMaxCards,
+    extractionProvider: providers ? providers.plannerExtraction : undefined,
+    evidenceList: ctx.sealed.evidenceManifest.evidence.map((e) => ({
+      evidenceSnapshotId: e.evidenceSnapshotId,
+      quoteHash: e.quoteHash ?? null,
+    })),
+    signal,
+  });
+  const newPlanVersion = Number(run.current_plan_version) + 1;
+
+  // 2. 新版本 plan + 重算 planHash（§11.6 canonical 序列化）
+  const { planHash: _dropped, ...planWithoutHash } = plannerResult.plan;
+  const finalPlan: Awaited<ReturnType<typeof executePlanner>>["plan"] = {
+    ...planWithoutHash,
+    planVersion: newPlanVersion,
+    previousPlanRevisionId: prevPlanRevisionId,
+    planHash: "",
+  };
+  const plan = { ...finalPlan, planHash: computeCardPlanHashV2(finalPlan) };
+
+  // 3. 全量重新 author（并发；落库在相位 3）
+  throwIfPipelineAborted(signal);
+  const authorResult = await executeAuthor({
+    runId,
+    workspaceId,
+    plan,
+    sourceContent: ctx.sourceContent,
+    semanticSpecHash: run.semantic_spec_hash as string,
+    provider: providers?.author ?? new DeterministicAuthoringProvider(),
+    evidenceList: ctx.sealed.evidenceManifest.evidence.map((e) => ({
+      evidenceSnapshotId: e.evidenceSnapshotId,
+      quoteHash: e.quoteHash ?? null,
+    })),
+    // M2：同主管线——sealed manifest 的 evidenceSetHash 参与 revision hash 闭包。
+    evidenceSetHash: ctx.sealed.evidenceSetHash,
+    signal,
+    // 2026-09-17（性能改造）：与主管线一致，replan 的 author 也并发。
+    providerConcurrency: V2_STAGE_CONCURRENCY,
+  });
+  const candidates = authorResult.candidates.map((c) => {
+    if (c.evidenceSetHash !== ctx.sealed.evidenceSetHash) {
+      throw new CardGenerationProviderErrorLike(
+        false,
+        `candidate evidence set hash closure mismatch: candidate=${c.evidenceSetHash} sealed=${ctx.sealed.evidenceSetHash}`,
+      );
+    }
+    return c;
+  });
+
+  // 4. 漏斗判定（grounding 波 + pedagogy + 有界修复，全部出网）
+  const judgment = await judgeFunnelStage({
+    runId,
+    workspaceId,
+    run: run as unknown as { input_snapshot_hash: string; semantic_spec_hash: string },
+    plan,
+    candidates,
+    sealed: ctx.sealed,
+    sourceContent: ctx.sourceContent,
+    existingObjectives: ctx.existingObjectives,
+    providers,
+    signal,
+    generationRequest: ctx.semanticSpec.semanticRequest,
+  });
+
+  // 相位 3：写。重验（与 regenerate/recheck 同款）：输入快照/证据闭包/计划版本/
+  // 状态门闩在出网期间变了 → 抛可重试丢掉这一遍，job 重走一遍。
+  await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
+    const current = await loadV2RunInputs(tx, workspaceId, runId);
+    if (
+      String(current.run.input_snapshot_hash) !== String(ctx.run.input_snapshot_hash)
+      || current.sealed.evidenceSetHash !== ctx.sealed.evidenceSetHash
+      || Number(current.run.current_plan_version) !== staged.readAtPlanVersion
+      || !["review_ready", "needs_attention", "checking"].includes(String(current.run.status))
+    ) {
+      throw new CardGenerationProviderErrorLike(
+        true,
+        "replan inputs changed while planning/authoring/judging; this pass is discarded",
+      );
+    }
 
     await tx.execute(sql`
       INSERT INTO public.card_generation_plans_v2
@@ -3175,7 +3420,7 @@ async function processReplanSetJob(job: PendingOutboxJob, signal?: AbortSignal):
       )
     `);
 
-    // 3. 旧计划未激活候选 supersede（immutable，不删除）；review_decision 取
+    // 旧计划未激活候选 supersede（immutable，不删除）；review_decision 取
     // CHECK 枚举值 'reject'（§11.4 状态机合法迁移）。
     await tx.execute(sql`
       UPDATE public.card_generation_candidates_v2
@@ -3184,41 +3429,13 @@ async function processReplanSetJob(job: PendingOutboxJob, signal?: AbortSignal):
         AND plan_version = ${run.current_plan_version} AND publish_state = 'unpublished'
     `);
 
-    // 4. run 推进到 authoring + 新 current_plan_version
+    // run 推进到 authoring + 新 current_plan_version
     await tx.execute(sql`
       UPDATE public.card_generation_runs_v2
       SET current_plan_version = ${newPlanVersion}, status = 'authoring', updated_at = now()
       WHERE id = ${runId} AND workspace_id = ${workspaceId}
     `);
 
-    // 5. 全量重新 author + 持久化候选
-    throwIfPipelineAborted(signal);
-    const authorResult = await executeAuthor({
-      runId,
-      workspaceId,
-      plan,
-      sourceContent: ctx.sourceContent,
-      semanticSpecHash: run.semantic_spec_hash as string,
-      provider: providers?.author ?? new DeterministicAuthoringProvider(),
-      evidenceList: ctx.sealed.evidenceManifest.evidence.map((e) => ({
-        evidenceSnapshotId: e.evidenceSnapshotId,
-        quoteHash: e.quoteHash ?? null,
-      })),
-      // M2：同主管线——sealed manifest 的 evidenceSetHash 参与 revision hash 闭包。
-      evidenceSetHash: ctx.sealed.evidenceSetHash,
-      signal,
-      // 2026-09-17（性能改造）：与主管线一致，replan 的 author 也并发。
-      providerConcurrency: V2_STAGE_CONCURRENCY,
-    });
-    const candidates = authorResult.candidates.map((c) => {
-      if (c.evidenceSetHash !== ctx.sealed.evidenceSetHash) {
-        throw new CardGenerationProviderErrorLike(
-          false,
-          `candidate evidence set hash closure mismatch: candidate=${c.evidenceSetHash} sealed=${ctx.sealed.evidenceSetHash}`,
-        );
-      }
-      return c;
-    });
     // M8（2026-09-15 管线评审）：此前 replan 逐候选 INSERT + 逐候选 insertEvent
     // （每候选 2 次 SQL，且每次事件插入还带一次 MAX 往返——20 卡 ≈ 120 次
     // round-trip），在已经很长的 run 行锁窗口内继续放大延迟。改为与主管线一致的
@@ -3228,25 +3445,13 @@ async function processReplanSetJob(job: PendingOutboxJob, signal?: AbortSignal):
       tx, workspaceId, runId, candidates, authorResult.hintsByCandidateRevisionId,
     );
 
-    // 6. checking → 重跑双 Critic + deck gate（§17.4 新计划必须完整过门禁）
+    // checking → 终态由漏斗落库半给出（§17.4 新计划必须完整过门禁）
     await tx.execute(sql`
       UPDATE public.card_generation_runs_v2
       SET status = 'checking', error_code = NULL, error_message = NULL, updated_at = now()
       WHERE id = ${runId} AND workspace_id = ${workspaceId}
     `);
-    await critiqueAndFinalizeCandidates(tx, {
-      runId,
-      workspaceId,
-      run: run as unknown as { input_snapshot_hash: string; semantic_spec_hash: string },
-      plan,
-      candidates,
-      sealed: ctx.sealed,
-      sourceContent: ctx.sourceContent,
-      existingObjectives: ctx.existingObjectives,
-      providers,
-      signal,
-      generationRequest: ctx.semanticSpec.semanticRequest,
-    });
+    await commitFunnelStage(tx, { runId, workspaceId, judgment });
     // 源文本被规模上限截断时留痕（四处进入点共用一份判据与载荷）。
     await emitSourceContentCapEvent(tx, { workspaceId, runId, cap: ctx.sourceContentCap });
     await insertEvent(tx, workspaceId, runId, "card_generation.replan_completed", {
@@ -3360,8 +3565,9 @@ async function loadSingleCandidateJobSubjectV2(
  * 已经建好、并且已经被真实流量跑过的两套入参：
  * - `precomputedGrounding`：按 `candidateRevisionId` 逐位供入，漏斗里缺任何一格都
  *   fail-closed 抛错（不会静默跳过判定）；
- * - `precomputedPedagogy`：走原有的**严格序列相等**守卫，守卫不过它自己在事务内重跑，
- *   所以预计算最多省一次调用、绝不会错用一次判定。
+ * - `precomputedPedagogy`：走原有的**严格序列相等**守卫，守卫不过时由漏斗判定段
+ *   （相位 2 的事务外那一段）按最终集合重跑，所以预计算最多省一次调用、绝不会
+ *   错用一次判定。
  *
  * 事务外那一段读到的材料会过期，相位 3 因此重验：候选仍未启用、run 仍在可复核状态、
  * **计划与证据闭包逐字没变**（哈希变了＝刚才那两次判定读的是旧材料，判不得，改判重试
@@ -3396,8 +3602,8 @@ async function processRecheckCandidateJob(job: PendingOutboxJob, signal?: AbortS
   const run = ctx.run;
   const candidate = staged.candidate;
 
-  // 相位 2：出网。这一段的 provider 调用发生在**没有事务**的地方。
-  assertGenerationPhaseOutsideTransaction(`card-generation-v2 recheck@${runId}`);
+  // 相位 2：出网。这一段的 provider 调用发生在**没有事务**的地方（边界由公共
+  // HTTP 出口的闸门执行：任何一次落在事务里的模型请求都会被当场拒绝）。
   const providers = useLLM
     ? await buildProvidersForRun({ workspaceId, job, semanticSpec: ctx.semanticSpec, governanceContext })
     : null;
@@ -3416,8 +3622,8 @@ async function processRecheckCandidateJob(job: PendingOutboxJob, signal?: AbortS
   /**
    * pedagogy 只在"这一版显然进得了牌堆"时才预先发起：确定性 fatal、调用出错、
    * grounding 判 fail 三种情况下漏斗会把候选剔掉、根本不需要集合级判定，先问就是
-   * 白花钱。真判错了（漏斗仍然要评审）漏斗按原路径在事务内自己跑一次——**贵一次，
-   * 不会少一次**。
+   * 白花钱。真判错了（漏斗仍然要评审）漏斗在**事务外**自己跑一次——**贵一次，
+   * 不会少一次**（改前它落回写事务里，W3-2 第三刀已搬出）。
    */
   const worthPrecomputingPedagogy =
     groundingOutcome.fatalPre.length === 0 && !groundingOutcome.error && groundingOutcome.contract?.verdict === "pass";
@@ -3447,6 +3653,31 @@ async function processRecheckCandidateJob(job: PendingOutboxJob, signal?: AbortS
         })
     : null;
 
+  // 相位 2 收尾：漏斗判定。预计算 pedagogy 失败（catch→null）或序列守卫不过时的
+  // 兜底重跑在这里发生——**没有事务**（改前它落回相位 3 的写事务里，注释里那句
+  // "贵一次，不会少一次"保留，只是不再顺带按住 run 的行锁。39d W3-2 第三刀）。
+  const judgment = await judgeFunnelStage({
+    runId,
+    workspaceId,
+    run: run as unknown as { input_snapshot_hash: string; semantic_spec_hash: string },
+    plan,
+    candidates: [candidate],
+    sealed: ctx.sealed,
+    sourceContent: ctx.sourceContent,
+    existingObjectives: ctx.existingObjectives,
+    providers,
+    precomputedGrounding: new Map([[candidate.candidateRevisionId, groundingOutcome]]),
+    precomputedPedagogy,
+    // The initial generation already consumed the single bounded repair
+    // budget. A recheck must only rerun the gates for this immutable
+    // authored revision; allowing another repair here creates an unbounded
+    // recheck → authored-revision chain when the critic keeps returning
+    // `rewrite`.
+    allowBoundedRepair: false,
+    signal,
+    generationRequest: ctx.semanticSpec.semanticRequest,
+  });
+
   // 相位 3：写。这一段里没有任何 provider 调用。
   await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
     throwIfPipelineAborted(signal);
@@ -3471,28 +3702,9 @@ async function processRecheckCandidateJob(job: PendingOutboxJob, signal?: AbortS
         "recheck inputs changed while the gates were being judged; this pass is discarded",
       );
     }
-    // 完整重跑门禁（§12.2/§12.3：编辑/合并产物无绕 Gate 权）
-    await critiqueAndFinalizeCandidates(tx, {
-      runId,
-      workspaceId,
-      run: current.ctx.run as unknown as { input_snapshot_hash: string; semantic_spec_hash: string },
-      plan: current.plan,
-      candidates: [candidate],
-      sealed: current.ctx.sealed,
-      sourceContent: current.ctx.sourceContent,
-      existingObjectives: current.ctx.existingObjectives,
-      providers,
-      precomputedGrounding: new Map([[candidate.candidateRevisionId, groundingOutcome]]),
-      precomputedPedagogy,
-      // The initial generation already consumed the single bounded repair
-      // budget. A recheck must only rerun the gates for this immutable
-      // authored revision; allowing another repair here creates an unbounded
-      // recheck → authored-revision chain when the critic keeps returning
-      // `rewrite`.
-      allowBoundedRepair: false,
-      signal,
-      generationRequest: current.ctx.semanticSpec.semanticRequest,
-    });
+    // 完整重跑门禁（§12.2/§12.3：编辑/合并产物无绕 Gate 权）——判定在相位 2
+    // 完成，这里只落库。
+    await commitFunnelStage(tx, { runId, workspaceId, judgment });
     // 单个候选复核失败不应让同一 run 中其它仍可启用的最新候选
     // 一并进入 needs_attention；用户仍应能保留并启用通过门禁的候选。
     // 只有没有任何最新 passed 候选时，才维持 fail-closed 的 needs_attention。

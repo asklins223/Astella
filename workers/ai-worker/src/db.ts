@@ -7,6 +7,7 @@ import * as schema from "@ailearn/shared/db-schema";
 // 逐字拷贝，且 NULL vs 空串的 set_config 坑只在 worker 侧被修过。
 import {
   WorkspaceTransactionScope,
+  registerActiveTransactionReader,
   type ActiveWorkspaceTransaction,
   type WorkspaceScopeContext,
 } from "@ailearn/shared/workspace-transaction";
@@ -124,6 +125,14 @@ export async function setWorkerTransactionContext(
 export function currentWorkerWorkspaceTransaction(): unknown {
   return workerScope.current();
 }
+
+// W3-2 的 provider 层闸门（D5 §5.2 第二件的收口）：把这份作用域读者登记给
+// 公共 HTTP 出口（`@ailearn/shared/public-json-http`），模型/转写/向量请求从此
+// 在出口处统一拒绝"落在工作区事务里"的调用——不再依赖每个出网相位各自探针。
+registerActiveTransactionReader({
+  label: "ai-worker",
+  read: currentWorkerWorkspaceTransaction,
+});
 
 export interface WorkerWorkspaceTransactionOptions {
   /**

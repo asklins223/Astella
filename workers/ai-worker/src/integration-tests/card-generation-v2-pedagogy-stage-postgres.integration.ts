@@ -470,17 +470,22 @@ test("脚本 pedagogy 三种裁决各来一次：修好的不进牌堆、recheck
   );
   const candidateById = new Map(seeded.map((c) => [c.candidateId, c]));
 
-  const stageResult = await withWorkerWorkspaceTransaction(
+  // 漏斗拆分后（39d W3-2 第三刀）的合同：判定段**不碰数据库**（grounding/pedagogy/
+  // 修复作者全部发生在没有事务的地方），落库走独立的短事务。测试照同一形状：
+  // 相位 1 只读取输入 → 相位 2 事务外判定 → 相位 3 短事务落库。
+  const ctx = await withWorkerWorkspaceTransaction(
     { workspaceId: WORKSPACE_ID, userId: null },
-    async (tx) => {
-      const ctx = await handler.loadV2RunInputs(tx, WORKSPACE_ID, runId);
-      assert.ok(ctx.plan, "确定性管道没落下计划行");
-      const deckRows = seeded.map((c) => ({ ...c }));
+    (tx) => handler.loadV2RunInputs(tx, WORKSPACE_ID, runId),
+  );
+  assert.ok(ctx.plan, "确定性管道没落下计划行");
+  const deckRows = seeded.map((c) => ({ ...c }));
 
-      // 脚本 grounding 交的是**完整**的逐项报告：binding plan 组装对每个 answer unit /
-      // 教学支撑字段 / 关系 / rubric unit 都要求一条 entailed/supported 且引用真证据，
-      // 缺一项就 fail-closed（确定性支路交空数组，所以那边一张也进不了牌堆）。
-      const grounding: GroundingCriticProvider = {
+  let stageResult: { authorCalls: AuthoringProviderInput[]; pedagogyCalls: number };
+  {
+  // 脚本 grounding 交的是**完整**的逐项报告：binding plan 组装对每个 answer unit /
+  // 教学支撑字段 / 关系 / rubric unit 都要求一条 entailed/supported 且引用真证据，
+  // 缺一项就 fail-closed（确定性支路交空数组，所以那边一张也进不了牌堆）。
+  const grounding: GroundingCriticProvider = {
         evaluate: async (input: GroundingCriticInput) => {
           const candidate = input.candidate;
           const evidenceIds = (input.evidenceManifest?.evidence ?? [])
@@ -585,22 +590,29 @@ test("脚本 pedagogy 三种裁决各来一次：修好的不进牌堆、recheck
         }),
       };
 
-      await handler.critiqueAndFinalizeCandidates(tx, {
-        runId,
-        workspaceId: WORKSPACE_ID,
-        run: ctx.run as unknown as { input_snapshot_hash: string; semantic_spec_hash: string },
-        plan: ctx.plan,
-        candidates: deckRows,
-        sealed: ctx.sealed,
-        sourceContent: ctx.sourceContent,
-        existingObjectives: ctx.existingObjectives,
-        providers: providers as unknown as Parameters<typeof handler.critiqueAndFinalizeCandidates>[1]["providers"],
-        allowBoundedRepair: true,
-        generationRequest: ctx.semanticSpec.semanticRequest,
-      });
-      return { authorCalls, pedagogyCalls };
-    },
+  // 相位 2：判定——没有事务。漏斗的 provider 调用（grounding 波、pedagogy、
+  // 有界修复作者）全部发生在事务外。
+  const judgment = await handler.judgeFunnelStage({
+    runId,
+    workspaceId: WORKSPACE_ID,
+    run: ctx.run as unknown as { input_snapshot_hash: string; semantic_spec_hash: string },
+    plan: ctx.plan,
+    candidates: deckRows,
+    sealed: ctx.sealed,
+    sourceContent: ctx.sourceContent,
+    existingObjectives: ctx.existingObjectives,
+    providers: providers as unknown as Parameters<typeof handler.judgeFunnelStage>[0]["providers"],
+    allowBoundedRepair: true,
+    generationRequest: ctx.semanticSpec.semanticRequest,
+  });
+
+  // 相位 3：落库——独立的短事务，只写判定产出的清单。
+  await withWorkerWorkspaceTransaction(
+    { workspaceId: WORKSPACE_ID, userId: null },
+    (tx) => handler.commitFunnelStage(tx, { runId, workspaceId: WORKSPACE_ID, judgment }),
   );
+  stageResult = { authorCalls, pedagogyCalls };
+  }
 
   // 本批事件（一次读，两处用）。若一条候选都没过门禁，pedagogy 根本不会被调用——
   // 那时"0 !== 1"本身没有诊断价值，所以把失败原因一起带进断言消息。

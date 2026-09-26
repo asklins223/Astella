@@ -9,6 +9,7 @@ import * as schema from "@ailearn/shared/db-schema";
 // API 侧的角色差异（必须带已认证 actor）与连接策略（隔离级别、慢事务日志）。
 import {
   WorkspaceTransactionScope,
+  registerActiveTransactionReader,
   type ActiveWorkspaceTransaction,
   type WorkspaceScopeContext,
 } from "@ailearn/shared/workspace-transaction";
@@ -116,6 +117,15 @@ const apiScope = new WorkspaceTransactionScope<string, ApiTransaction>({
 export function currentApiWorkspaceTransaction(): unknown {
   return apiScope.current();
 }
+
+// W3-2 的 provider 层闸门（D5 §5.2 第二件的收口）：把这份作用域读者登记给
+// 公共 HTTP 出口（`@ailearn/shared/public-json-http`）。API 侧的 critic/转写都已
+// 在内核的事务外段执行（W3-5），这道闸保证以后没有人能把它们挪回事务里。
+registerActiveTransactionReader({
+  label: "api",
+  read: currentApiWorkspaceTransaction,
+  reportDevelopmentError: (message) => logger.error({ scope: "api-transaction" }, message),
+});
 
 type ActiveApiWorkspaceTransaction = ActiveWorkspaceTransaction<string, ApiTransaction> & {
   /**

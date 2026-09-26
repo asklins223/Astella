@@ -2,6 +2,7 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpsRequest, type RequestOptions } from "node:https";
 import { isIP, type LookupFunction } from "node:net";
 import type { Readable } from "node:stream";
+import { assertOutsideRegisteredTransactions } from "./workspace-transaction.ts";
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const CONNECT_TIMEOUT_MS = 10_000;
@@ -190,6 +191,13 @@ export const postJsonToPublicEndpoint: PublicJsonRequester = async (
   signal,
 ) => {
   const parsed = new URL(url);
+  // W3-2 的 provider 层闸门：模型／转写／向量 HTTP 一律不许落在工作区事务里
+  // （39c §5.2）。各进程在模块加载时把自己那份事务作用域读者登记进来
+  // （worker `db.ts` / api `db/client.ts`），这里对全部读者逐个取当前值。
+  assertOutsideRegisteredTransactions({
+    boundary: "公共 AI HTTP 出口（模型/转写/向量请求）",
+    caller: parsed.host,
+  });
   if (parsed.protocol !== "https:") throw new Error("AI endpoints must use HTTPS");
   if (parsed.username || parsed.password) throw new Error("AI endpoint URL credentials are not allowed");
   const pinned = await resolvePublicAddress(parsed.hostname);
@@ -301,6 +309,11 @@ export const postSseToPublicEndpoint: PublicStreamingRequester = async (
   signal,
 ) => {
   const parsed = new URL(url);
+  // 与 postJsonToPublicEndpoint 同一道闸（流式出口同样不许落在工作区事务里）。
+  assertOutsideRegisteredTransactions({
+    boundary: "公共 AI HTTP 出口（流式请求）",
+    caller: parsed.host,
+  });
   if (parsed.protocol !== "https:") throw new Error("AI endpoints must use HTTPS");
   if (parsed.username || parsed.password) throw new Error("AI endpoint URL credentials are not allowed");
   const pinned = await resolvePublicAddress(parsed.hostname);

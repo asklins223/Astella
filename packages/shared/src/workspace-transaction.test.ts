@@ -3,8 +3,10 @@ import { test } from "node:test";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import {
+  assertOutsideRegisteredTransactions,
   assertOutsideWorkspaceTransaction,
   ExternalCallInsideTransactionError,
+  registerActiveTransactionReader,
   WorkspaceTransactionScope,
   type ActiveWorkspaceTransaction,
   type WorkspaceContextQueryable,
@@ -239,4 +241,46 @@ test("隐式外层事务也要被拒：判据不是「这段代码里有没有 t
   });
   // 事务之外同一个深层函数正常放行——"被拒"来自作用域，不是来自函数本身。
   await assert.doesNotReject(() => middleLayer());
+});
+
+// ── 注册式读者（W3-2 的公共 HTTP 出口闸门）────────────────────────────────
+
+test("注册式读者：出口对已登记作用域逐个取当前值，任一非 undefined 即拒绝", async () => {
+  const scope = makeScope<string>(false);
+  const context = scope.normalize({ workspaceId: WORKSPACE_ID, userId: USER_ID });
+  const { queryable } = makeQueryable();
+  const active: ActiveWorkspaceTransaction<string, WorkspaceContextQueryable> = {
+    context, transaction: queryable, open: true,
+  };
+  const reported: string[] = [];
+  const unregister = registerActiveTransactionReader({
+    label: "test-scope",
+    read: () => scope.current(),
+    reportDevelopmentError: (message) => reported.push(message),
+  });
+
+  const check = () => assertOutsideRegisteredTransactions({
+    boundary: "公共 AI HTTP 出口", caller: "public-json-http.test",
+  });
+
+  // 什么都没注册 / 读者返回 undefined：放行。
+  assert.doesNotThrow(check);
+  assert.deepEqual(reported, []);
+
+  await scope.run(active, async () => {
+    assert.throws(() => check(), ExternalCallInsideTransactionError);
+    assert.equal(reported.length, 1);
+    // 错误消息必须能回答"哪个作用域、哪类调用、该改成什么形状"。
+    assert.match(reported[0], /test-scope/);
+    assert.match(reported[0], /公共 AI HTTP 出口/);
+    assert.match(reported[0], /短事务准备/);
+  });
+
+  // 退出作用域后放行；注销之后读者不再参与判定。
+  assert.doesNotThrow(check);
+  unregister();
+  await scope.run(active, async () => {
+    assert.doesNotThrow(check);
+    assert.equal(reported.length, 1);
+  });
 });
