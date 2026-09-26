@@ -46,6 +46,7 @@ import {
 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { noteBlocks } from "@ailearn/shared/db-schema/note";
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
+import { ensurePendingReviewScheduleV2 } from "../review/review-schedule-boundary.ts";
 import {
   calculateDiscreteV2Schedule,
 } from "@ailearn/shared";
@@ -1864,23 +1865,22 @@ async function applyDemonstratedSchedule(
       now: at,
       unassistedEligibleAfter: null,
     });
-    await tx.insert(reviewSchedules).values({
+    const scheduled = await ensurePendingReviewScheduleV2(tx, {
       workspaceId: command.workspaceId,
       userId: command.userId,
       // V2 objective 维度：subjectType="card" + subjectId=objectiveId（§29.4
       // 惯例；与 surface-service/card-service 读取端一致）。
-      subjectType: "card",
       subjectId: authorization.keyPointId,
-      status: "pending",
       nextReviewAt: decision.nextReviewAt,
       intervalDays: decision.afterIntervalDays,
       generation: 1,
       policyVersion: decision.policyVersion,
       reasonCode: decision.reasonCode,
-      createdAt: at,
-      updatedAt: at,
+      at,
     });
-    return { kind: "created", dueAt: decision.nextReviewAt.toISOString(), policyReason: "demonstrated" };
+    // dueAt 取**库里那一条**的到期时间：这一格已被占（并发/重放）时，屏幕上
+    // 不能出现一个没人持有的日期。
+    return { kind: "created", dueAt: scheduled.nextReviewAt.toISOString(), policyReason: "demonstrated" };
   }
   if (authorization.kind === "consume_pending") {
     const currentRows = await tx
@@ -1915,24 +1915,21 @@ async function applyDemonstratedSchedule(
       // generation 已变化：0 schedule 副作用（不猜）。
       return { kind: "none", reasonCode: "stale" };
     }
-    await tx.insert(reviewSchedules).values({
+    const successor = await ensurePendingReviewScheduleV2(tx, {
       workspaceId: command.workspaceId,
       userId: command.userId,
-      subjectType: "card",
       subjectId: authorization.keyPointId,
-      status: "pending",
       nextReviewAt: decision.nextReviewAt,
       intervalDays: decision.afterIntervalDays,
       generation: authorization.scheduleGeneration + 1,
       supersedesScheduleId: authorization.scheduleId,
       policyVersion: decision.policyVersion,
       reasonCode: decision.reasonCode,
-      createdAt: at,
-      updatedAt: at,
+      at,
     });
     return {
       kind: "rescheduled",
-      dueAt: decision.nextReviewAt.toISOString(),
+      dueAt: successor.nextReviewAt.toISOString(),
       consumedScheduleId: authorization.scheduleId,
       policyReason: "demonstrated",
     };
@@ -1958,21 +1955,18 @@ async function applyUnableSchedule(
   });
   if (authorization.kind === "create_initial") {
     const decision = calculateUnableDecision(1);
-    await tx.insert(reviewSchedules).values({
+    const scheduled = await ensurePendingReviewScheduleV2(tx, {
       workspaceId: command.workspaceId,
       userId: command.userId,
-      subjectType: "card",
       subjectId: authorization.keyPointId,
-      status: "pending",
       nextReviewAt: decision.nextReviewAt,
       intervalDays: decision.afterIntervalDays,
       generation: 1,
       policyVersion: decision.policyVersion,
       reasonCode: decision.reasonCode,
-      createdAt: at,
-      updatedAt: at,
+      at,
     });
-    return { kind: "created", dueAt: decision.nextReviewAt.toISOString(), policyReason: "declared_unable" };
+    return { kind: "created", dueAt: scheduled.nextReviewAt.toISOString(), policyReason: "declared_unable" };
   }
   if (authorization.kind === "consume_pending") {
     const currentRows = await tx
@@ -2000,24 +1994,21 @@ async function applyUnableSchedule(
       // generation 已变化：0 schedule 副作用（不猜）。
       return { kind: "none", reasonCode: "stale" };
     }
-    await tx.insert(reviewSchedules).values({
+    const successor = await ensurePendingReviewScheduleV2(tx, {
       workspaceId: command.workspaceId,
       userId: command.userId,
-      subjectType: "card",
       subjectId: authorization.keyPointId,
-      status: "pending",
       nextReviewAt: decision.nextReviewAt,
       intervalDays: decision.afterIntervalDays,
       generation: authorization.scheduleGeneration + 1,
       supersedesScheduleId: authorization.scheduleId,
       policyVersion: decision.policyVersion,
       reasonCode: decision.reasonCode,
-      createdAt: at,
-      updatedAt: at,
+      at,
     });
     return {
       kind: "rescheduled",
-      dueAt: decision.nextReviewAt.toISOString(),
+      dueAt: successor.nextReviewAt.toISOString(),
       consumedScheduleId: authorization.scheduleId,
       policyReason: "declared_unable",
     };

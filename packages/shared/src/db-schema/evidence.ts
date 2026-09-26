@@ -7,6 +7,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { reviewStatusEnum } from "./enums.ts";
 import { users } from "./identity.ts";
 
@@ -30,6 +31,9 @@ export const reviewSchedules = pgTable(
     policyVersion: text("policy_version"), // discrete-v2
     reasonCode: text("reason_code"),
     supersedesScheduleId: uuid("supersedes_schedule_id"),
+    // 0287（D2 §3.2 第 3 条）：这条安排服务哪个观察维度；空串 = 未指定维度。
+    // **不可空**是判据的一部分——可空列在唯一索引里不参与比较，那一档会整个漏掉。
+    reviewDimension: text("review_dimension").notNull().default(""),
     // 方案 16 §18.1 defer_review：用户队列"展示层延后"（不改 official
     // next_review_at、不消费 schedule、不创建 successor；仅队列 UI 展示）。
     userDeferredUntil: timestamp("user_deferred_until", { withTimezone: true }),
@@ -46,5 +50,12 @@ export const reviewSchedules = pgTable(
     workspaceStatusNextIdx: index("review_schedules_workspace_status_next_idx")
       .on(t.workspaceId, t.status, t.nextReviewAt),
 
-    idWorkspaceUnique: uniqueIndex("review_schedules_id_workspace_unique").on(t.id, t.workspaceId),}),
+    idWorkspaceUnique: uniqueIndex("review_schedules_id_workspace_unique").on(t.id, t.workspaceId),
+    // 0287（39 §15.3-18 / D2 §3.2）：待处理的那一份唯一；终态行允许同一目标留多行历史，
+    // 所以这是**部分**唯一索引，且键里不放 subject_type（它被 CHECK 成恒为 card，
+    // 放进去只会留一条绕过唯一性的路）。
+    pendingSubjectDimUnique: uniqueIndex("review_schedules_pending_subject_dim_unique")
+      .on(t.workspaceId, t.userId, t.subjectId, t.reviewDimension)
+      .where(sql`${t.status} = 'pending'`),
+  }),
 );

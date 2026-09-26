@@ -783,6 +783,21 @@ jobs:
             src/integration-tests/card-generation-v3-simplified-postgres.integration.ts \
             2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/card-gen-v3-simplified.tap"
 
+      # 唯一调度边界（39d W7-2 前置 / D2 §3）：0287 那条部分唯一索引真的在挡重复，
+      # 而边界函数复用时报的是库里那一条的实际到期时间（不是自己算的那个）。
+      - name: Verify the single review-schedule boundary (single file)
+        working-directory: apps/api
+        env:
+          NODE_ENV: test
+          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
+          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
+          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
+        run: |
+          set -o pipefail
+          node --import tsx --test --test-concurrency=1 \
+            src/integration-tests/review-schedule-boundary-postgres.integration.ts \
+            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/review-schedule-boundary.tap"
+
       # 竖向样例（39c §9 第一步 / 39d W3-3）：一条链跑在公共运行基础上——生成→检查→
       # 保存一张卡→开放回答→评估，两种模式共用同一层外壳，失败分支与恢复逐条钉。
       # 单文件跑（自己种 jobs 行，但与制卡那两组同理会抢 outbox，保持一步一档）。

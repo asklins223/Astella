@@ -1024,6 +1024,25 @@ test("E04：review origin → consume_pending 授权 → declared_unable 提交 
   }
 });
 
+/**
+ * 0287 之后：同一 (空间, 人, 目标, 维度) 的**待处理**安排只能有一份
+ * （`review_schedules_pending_subject_dim_unique`，判据是 39 §15.3-18 / D2 §3.2）。
+ * 这条用例本来连着插三条 pending（due→future→cooldown）来分别命中三种拒绝分支，
+ * 那个形状在新不变量下**不可能存在**——生产里同一目标只会有一份待办，
+ * 消费时旧的转终态、再排 successor。所以每次插入前先把手上那一份标 superseded：
+ * 断言的指向（拿这一条 scheduleId 去发起、要得到这一个 409）一个字都没放宽。
+ */
+async function supersedePendingSchedules(
+  scope: { workspaceId: string; userId: string },
+  subjectId: string,
+): Promise<void> {
+  await scoped(scope, (tx) => tx`
+    UPDATE review_schedules SET status = 'superseded', updated_at = now()
+    WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
+      AND subject_id = ${subjectId} AND status = 'pending'
+  `);
+}
+
 test("REVIEW-QUEUE-PROJECTION-01：真实 V2 queue identity 与 direct startability preconditions", async () => {
   const seeded = await seed();
   const scope = { workspaceId: seeded.workspaceId, userId: seeded.userId };
@@ -1031,6 +1050,7 @@ test("REVIEW-QUEUE-PROJECTION-01：真实 V2 queue identity 与 direct startabil
   try {
     const auth = { authorization: `Bearer ${seeded.token}` };
     const dueScheduleId = randomUUID();
+    await supersedePendingSchedules(scope, seeded.keyPointId);
     await scoped(scope, (tx) => tx`
       INSERT INTO review_schedules (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at, interval_days, generation, policy_version, reason_code, created_at, updated_at)
       VALUES (${dueScheduleId}, ${seeded.workspaceId}, ${seeded.userId}, 'card', ${seeded.keyPointId}, 'pending', now() - interval '1 minute', 1, 12, 'discrete-v2', 'initial_validation', now(), now())
@@ -1101,6 +1121,7 @@ test("REVIEW-QUEUE-PROJECTION-01：真实 V2 queue identity 与 direct startabil
     assert.equal(staleGenerationStart.json().error, "schedule_generation_changed");
 
     const futureScheduleId = randomUUID();
+    await supersedePendingSchedules(scope, seeded.keyPointId);
     await scoped(scope, (tx) => tx`
       INSERT INTO review_schedules (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at, interval_days, generation, policy_version, reason_code, created_at, updated_at)
       VALUES (${futureScheduleId}, ${seeded.workspaceId}, ${seeded.userId}, 'card', ${seeded.keyPointId}, 'pending', now() + interval '1 hour', 1, 13, 'discrete-v2', 'initial_validation', now(), now())
@@ -1121,6 +1142,7 @@ test("REVIEW-QUEUE-PROJECTION-01：真实 V2 queue identity 与 direct startabil
     assert.equal(futureStart.json().blockedReason, "not_due");
 
     const cooldownScheduleId = randomUUID();
+    await supersedePendingSchedules(scope, seeded.keyPointId);
     await scoped(scope, (tx) => tx`
       INSERT INTO review_schedules (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at, interval_days, generation, policy_version, reason_code, created_at, updated_at)
       VALUES (${cooldownScheduleId}, ${seeded.workspaceId}, ${seeded.userId}, 'card', ${seeded.keyPointId}, 'pending', now() - interval '1 minute', 1, 14, 'discrete-v2', 'initial_validation', now(), now())
