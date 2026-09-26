@@ -830,6 +830,15 @@ BEGIN
   -- learning-run 处理 tick 的 claim/mark、voice artifact 与 stream event TTL、
   -- proactive delivery 清理、ai_audit_log 保留期清理、可恢复 journey 查询）。
   -- 逐条列出而非按前缀放行：worker 专用函数必须继续保持 api 无权（见下方校验）。
+  -- 0286：轮次空闲暂停的候选预筛（SECURITY DEFINER／migrator owner BYPASSRLS 才能越过
+  -- FORCE RLS 挑候选）。调用方是 API 进程里那条定时对账，**不给 worker**（D1 §6.5）。
+  IF to_regprocedure('public.ailearn_note_rounds_idle_for_pause(integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.ailearn_note_rounds_idle_for_pause(integer)
+      FROM PUBLIC, ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_note_rounds_idle_for_pause(integer)
+      TO ailearn_api;
+  END IF;
+
   IF to_regprocedure('public.ailearn_claim_run_processing(text,integer,integer,timestamp with time zone)') IS NOT NULL THEN
     REVOKE ALL ON FUNCTION public.ailearn_claim_run_processing(text, integer, integer, timestamp with time zone)
       FROM PUBLIC, ailearn_worker;
@@ -1356,6 +1365,8 @@ BEGIN
       to_regprocedure('public.inner_product(vector,vector)')
     -- API 独占的 SECURITY DEFINER 函数（与上方显式白名单一一对应）。
     AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_note_rounds_idle_for_pause(integer)')
+    AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_claim_run_processing(text,integer,integer,timestamp with time zone)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_mark_run_processing_processed(uuid,text,timestamp with time zone)')
@@ -1421,6 +1432,7 @@ BEGIN
       ('ailearn_api', 'ailearn_retire_workspace_memories_on_departure(uuid,uuid)'),
       ('ailearn_api', 'ailearn_dissolve_workspace(uuid,uuid)'),
       ('ailearn_api', 'ailearn_find_resumable_companion_journey(uuid,uuid)'),
+      ('ailearn_api', 'ailearn_note_rounds_idle_for_pause(integer)'),
       ('ailearn_api', 'ailearn_claim_run_processing(text,integer,integer,timestamp with time zone)'),
       ('ailearn_api', 'ailearn_mark_run_processing_processed(uuid,text,timestamp with time zone)'),
       ('ailearn_api', 'ailearn_expire_pending_voice_artifacts(integer)'),

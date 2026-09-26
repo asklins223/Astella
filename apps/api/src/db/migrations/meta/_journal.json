@@ -1996,6 +1996,13 @@
       "when": 1789800008032,
       "tag": "0285_note_learning_round_artifacts",
       "breakpoints": true
+    },
+    {
+      "idx": 285,
+      "version": "7",
+      "when": 1789800009032,
+      "tag": "0286_note_round_idle_candidates",
+      "breakpoints": true
     }
   ]
 }

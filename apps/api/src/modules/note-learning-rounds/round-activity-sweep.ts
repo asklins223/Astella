@@ -15,11 +15,13 @@
  *    **没有** worker 旁路（D1 §6.5）：裸读 0 行、只设 `app.workspace_id` 也是 0 行，
  *    必须两个 GUC 都带上才看得见（本仓库那一条"裸读也要带两个 set_config"的旧坑，同一族）。
  *    所以扫描不是"一条 SQL 扫全库"，而是**逐 scope 开一个带上下文的事务**。
- *  - 待扫的 scope 从 `workspace_members` 枚举：那张表的 RESTRICTIVE 守卫带
- *    "没设上下文就放行"那一支（0257 为登录路径开的），实测 `ailearn_api` 裸读得到全部成员行。
- *    这与 `note/maintenance.ts:36-48` 那次"按空间一个个扫"是同一个道理，也踩在同一处：
- *    `notes`/`note_learning_rounds` 这一类没有空值分支的表**不能**裸扫，那样扫出来恒 0 行、
- *    整条链路会静默不干活。
+ *  - 待扫的 scope 由 **0286 那支预筛函数**给（`ailearn_note_rounds_idle_for_pause`）：
+ *    它以 `SECURITY DEFINER`（owner `ailearn_migrator`，带 BYPASSRLS）跨租户挑出
+ *    "active 且已过宽限期"的 (空间,人)，扫描只对这批开事务。为什么不裸枚举
+ *    `workspace_members`：那样每一趟的代价随**成员数**长，而不是随在学的轮次长——
+ *    实测 1 330 条成员 ⇒ 2149 / 2026 / 1846 ms 且停掉 0 条（39d §19 同日那行）。
+ *    预筛只是**候选**，不是判决：每个 scope 里那三格证据仍在带 GUC 的事务里重读一遍，
+ *    所以函数多算或漏算都不会把一个不该停的轮次停下来。
  *
  * ─── 一处已知的窗口，写在这里而不是藏起来
  *  读租约与写那一行之间仍可能有人正好回来 publish 一份新上下文：那一发**挡不住**，
@@ -29,7 +31,6 @@
  */
 import { and, asc, eq, gt, isNull, notInArray, sql } from "drizzle-orm";
 import { db, withWorkspaceTransaction } from "../../db/client.ts";
-import { workspaceMembers } from "@ailearn/shared/db-schema/identity";
 import { assistantPageContexts } from "@ailearn/shared/db-schema/companion-bridge";
 import { learningRuns } from "@ailearn/shared/db-schema/learning-runs";
 import { noteLearningRounds } from "@ailearn/shared/db-schema/note-learning-rounds";
@@ -38,6 +39,7 @@ import {
   evaluateRoundIdlePauseV1,
   LEARNING_RUN_TERMINAL_PHASES_V1,
   ROUND_ACTIVITY_SWEEP_MAX_ROUNDS_PER_SCOPE_V1,
+  ROUND_IDLE_PAUSE_GRACE_MS_V1,
   roundActivitySweepDisabledNoteV1,
   roundActivitySweepIntervalMsV1,
   type RoundIdlePauseBlockerV1,
@@ -126,15 +128,13 @@ export async function sweepIdleNoteRoundsForPauseV1(
  * 会把配额占满、饿死后面的笔记"是同一件事的另一半）。
  */
 async function listSweepScopes(): Promise<RoundScopeV1[]> {
-  const rows = await db
-    .selectDistinct({
-      workspaceId: workspaceMembers.workspaceId,
-      userId: workspaceMembers.userId,
-    })
-    .from(workspaceMembers)
-    .where(isNull(workspaceMembers.leftAt))
-    .orderBy(workspaceMembers.workspaceId, workspaceMembers.userId);
-  return rows.map((row) => ({ workspaceId: row.workspaceId, userId: row.userId }));
+  // `as unknown as`：drizzle 给 postgres.js 的返回类型是 RowList，直接 cast 成数组会撞
+  // TS2352（本仓库踩过）；这里的形状由那支函数的 RETURNS TABLE 定，不是猜的。
+  const rows = (await db.execute(
+    sql`SELECT DISTINCT workspace_id, user_id
+          FROM public.ailearn_note_rounds_idle_for_pause(${ROUND_IDLE_PAUSE_GRACE_MS_V1})`,
+  )) as unknown as ReadonlyArray<{ workspace_id: string; user_id: string }>;
+  return rows.map((row) => ({ workspaceId: row.workspace_id, userId: row.user_id }));
 }
 
 async function runSweep(
