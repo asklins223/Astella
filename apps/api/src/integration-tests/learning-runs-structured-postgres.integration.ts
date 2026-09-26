@@ -15,6 +15,14 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { createLearningRunForTest, seedV2Fixture } from "./helpers/v2-card-fixture.ts";
+import {
+  learningRunCleanupStepsV1,
+  learningRunIdColumnsQueryV1,
+  learningRunResidueSlotsV1,
+  nonzeroResidueV1,
+  renderPsqlResidueQueryV1,
+  renderPsqlStatementV1,
+} from "./helpers/learning-run-cleanup.ts";
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
@@ -41,7 +49,7 @@ function scoped<T>(
 }
 
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
-const { submitArtifact, getRunPublicView } = await import(
+const { submitArtifact, getRunPublicView, revealRunTargetV2 } = await import(
   "../modules/learning-runs/run-service.ts"
 );
 const { runLearningRunProcessingTick, closeStructuredSolutionSql } = await import(
@@ -531,6 +539,149 @@ test("P4 repair 纵切：repair 偏好 → repair 主 Variant → 正确操作 �
       SELECT count(*)::int AS n FROM review_schedules WHERE workspace_id = ${seeded.workspaceId}
     `;
     assert.equal(schedCount[0].n, 0, "facet 结算 0 schedule");
+  } finally {
+    await seeded.cleanup();
+  }
+});
+
+/**
+ * 按 run id 清一场 run。这一份顺序是**真窗口那一读的卡点**：
+ * `probe-note-round-practice-entry.mts` 停在「练一道」之前，写的理由就是"全仓没有按 run id 清 run 的
+ * 现成顺序，集成测试那套是 workspace 级清扫，会连 owner 的工作区一起删"。
+ *
+ * 三步各钉一件事，少任何一步这条用例都不算证明了什么：
+ * ① 清之前 A **确实留下了账**（含那一笔只能靠 `idempotency_key = 'run-reveal:<runId>'` 认出的曝光）
+ *    ——没有这一格，"清完是零"完全可能是读瞎（受限角色无上下文时那是一眼看不出的 0 行）；
+ * ② 清之后**现扫**零残差：扫描用的列名单是从 `information_schema` 现读的（认 `*_run_id` 这个形状，
+ *    不抄表名单）⇒ 将来新出现一张挂着 run id、而那份手写清单没管的表，会在这里点名，不会静默留下；
+ * ③ 另一场 run B **原样留着** ⇒ 这一套不是 workspace 级清扫（那正是剧本不敢用它的理由）。
+ *    这一腿**没有配变异**，而且是故意的：`renderPsqlStatementV1` 每一步的右值只能是那个 uuid
+ *    （`assertLearningRunIdV1` 卡死形状），拼不出"按 workspace 删"的谓词 ⇒ 过度删除在这一套的数据形状里
+ *    是**拼不出来**的，不靠用例守着。试过把它改成 `column: "workspace_id"` 来制造过度删除，
+ *    结果红的不是这一腿，是"run 本体没删掉"那一腿（右值仍是 run uuid，什么都匹配不上）——
+ *    这条负向读数记在这里，免得下一个人以为对照腿验过了。
+ *
+ * 清与扫都走带上下文的事务（`scoped`），与文件顶上那段"裸 SQL 校验必须带 workspace/user"同一条理由。
+ */
+test("按 run id 清一场 run：清前有账、清后零残差、且只清这一场", async () => {
+  const seeded = await seed();
+  const scope = { workspaceId: seeded.workspaceId, userId: seeded.userId };
+
+  const residueSlots = async (): Promise<Array<{ table_name: string; column_name: string }>> =>
+    scoped(scope, (tx) => tx.unsafe(learningRunIdColumnsQueryV1) as Promise<Array<{
+      table_name: string; column_name: string;
+    }>>);
+
+  const residueFor = async (runId: string): Promise<string[]> => {
+    const columns = await residueSlots();
+    // 地板：发现查询读空 ⇒ 后面的"零残差"是空转，不是干净。
+    assert.ok(columns.length > 10,
+      `只现读到 ${columns.length} 列在挂 run id ⇒ information_schema 那一读本身空了`);
+    const slots = learningRunResidueSlotsV1(
+      columns.map((row) => ({ tableName: row.table_name, columnName: row.column_name })),
+    );
+    const rows = await scoped(scope, (tx) =>
+      tx.unsafe(renderPsqlResidueQueryV1(slots, runId)) as Promise<Array<{ slot: string; remaining: string }>>);
+    return nonzeroResidueV1(rows);
+  };
+
+  const cleanRun = async (runId: string): Promise<Array<{ slot: string; deleted: number }>> => {
+    const report: Array<{ slot: string; deleted: number }> = [];
+    for (const step of learningRunCleanupStepsV1()) {
+      const deleted = await scoped(scope, async (tx) => {
+        if (step.maintenanceHatch === "allow_history_mutation") {
+          // 只在这一步开维护闸门（生产路径一处都不设它），且 `set_config(..., true)` 是事务级。
+          await tx`SELECT set_config('app.allow_history_mutation', 'on', true)`;
+        }
+        const rows = await tx.unsafe(`${renderPsqlStatementV1(step, runId)} returning 1`);
+        return rows.length;
+      });
+      report.push({ slot: step.slot, deleted });
+    }
+    return report;
+  };
+
+  const openRun = async (key: string) => {
+    const created = await withWorkspaceTransaction(scope, async (tx) =>
+      createLearningRunForTest(tx, {
+        ...scope,
+        request: {
+          originV2: { kind: "card", cardId: seeded.cardId, objectiveId: seeded.keyPointId },
+          goal: "stabilize",
+          responsePreference: "structured",
+          idempotencyKey: key,
+        },
+      }),
+    );
+    return created;
+  };
+
+  try {
+    const runA = await openRun("run-cleanup-a");
+    const runB = await openRun("run-cleanup-b");
+
+    // A 走完整一条：ordering 提交 → 确定性评估（全程不调模型）→ **结算之后**才 reveal。
+    // 顺序不是随手排的：`revealRunTargetV2` 第一道门就是"这一场有没有 result"
+    // （`run-service.ts:1517`，没有就 409 `reveal_not_available`），先点揭示会得到一句真拒绝。
+    const ordering = runA.activeTask?.activeVariant.interaction as unknown as {
+      publicTokenIds?: string[];
+      publicTokenLabels?: Record<string, string>;
+    };
+    assert.equal(ordering.publicTokenIds?.length ?? 0, 2, "这一格要的是两位的 ordering 题");
+    const labels = ordering.publicTokenLabels ?? {};
+    const ordered = Object.entries(labels).sort((a, b) => (a[1] < b[1] ? -1 : 1)).map(([id]) => id);
+    await withWorkspaceTransaction(scope, async (tx) =>
+      submitArtifact(tx, {
+        ...scope,
+        runId: runA.runId,
+        taskId: runA.activeTaskId!,
+        request: {
+          version: 1 as const,
+          variantId: runA.activeTask!.activeVariant.variantId,
+          variantRevision: runA.activeTask!.activeVariant.revision,
+          inputSchemaHash: runA.activeTask!.activeVariant.inputSchemaHash,
+          payload: { kind: "ordering" as const, orderedTokenIds: ordered, interactionRefs: [] as string[] } as never,
+          runRevision: runA.revision,
+          taskRevision: runA.activeTask!.revision,
+          idempotencyKey: "run-cleanup-a-submit",
+        },
+      }),
+    );
+    for (let round = 0; round < 6; round += 1) {
+      await runLearningRunProcessingTick(`run-cleanup-a:${randomUUID()}`, 10);
+    }
+    // 结算之后才揭示答案：这一步种下那一笔**只能靠 idempotency_key 认出归属**的曝光。
+    await withWorkspaceTransaction(scope, async (tx) =>
+      revealRunTargetV2(tx, { ...scope, runId: runA.runId }));
+
+    // ① 清之前：A 确实留下了账，而且留下的正是那一笔认得出 run 的曝光。
+    const beforeA = await residueFor(runA.runId);
+    assert.ok(beforeA.length > 0, "A 什么都没留下 ⇒ 后面的『清完为零』什么都不是（读瞎的形状）");
+    assert.ok(beforeA.some((item) => item.startsWith("learning_exposures_v2")),
+      `A 没被现扫认到曝光那一格（它是靠 idempotency_key 挂着的）：${beforeA.join(", ")}`);
+
+    // ② 清：每一步都报删了几行；曝光那一步必须是**真删掉了行**，不是"守卫放过去了"。
+    const report = await cleanRun(runA.runId);
+    const exposureStep = report.find((item) => item.slot.startsWith("learning_exposures_v2"));
+    assert.ok(exposureStep && exposureStep.deleted === 1,
+      `曝光那一格没删掉恰好一行：${JSON.stringify(exposureStep)} ⇒ 要么守卫没让路，要么那一笔根本不在`);
+    const runStep = report.find((item) => item.slot === "learning_runs（其余 13 张 CASCADE 跟着走）");
+    assert.ok(runStep && runStep.deleted === 1, `run 本体没删掉：${JSON.stringify(runStep)}`);
+
+    const afterA = await residueFor(runA.runId);
+    assert.deepEqual(afterA, [], `清完仍有残差（清单该补上这些格）：${afterA.join(", ")}`);
+
+    // ③ 对照：B 一行不少地留在原处。
+    const bResidue = await residueFor(runB.runId);
+    assert.ok(bResidue.length > 0, "对照那场 run 也被清了 ⇒ 这一套其实是 workspace 级清扫");
+    const bRow = await scoped(scope, (tx) => tx`
+      SELECT count(*)::int AS n FROM learning_runs WHERE id = ${runB.runId}
+    `);
+    assert.equal(bRow[0].n, 1, "对照那场 run 的行没了");
+    const bAssess = await scoped(scope, (tx) => tx`
+      SELECT count(*)::int AS n FROM learning_assessments WHERE run_id = ${runB.runId}
+    `);
+    assert.equal(bAssess[0].n, 0, "B 只创建过、没提交过，不该有评估行（这一格钉的是夹具自己，不是清理）");
   } finally {
     await seeded.cleanup();
   }
