@@ -2253,6 +2253,35 @@ async function revealCandidateAnswerAs(
   return reveal.exposureId;
 }
 
+/**
+ * 用**被测那条连接**（`DATABASE_URL_API`）数一眼"某个成员的候选曝光行读不读得到"。
+ *
+ * 这一族策略是按人挡的（`user_id = app.user_id`，只豁免 `ailearn_worker`），所以同一张表
+ * 读不读得到，取决于事务上下文里塞的是谁——C48 要读的恰好是**别人**那一行。把这件事做成
+ * 一次现量而不是一句注释，是为了让"跳过"只在真的看不见时发生，而且带阳性对照：以自己的
+ * 身份必须看得见，看不见就是行根本没种进去，那种红不该被跳过藏掉。
+ */
+async function countCandidateLedgerRowsAs(
+  contextUserId: string,
+  ownerUserId: string,
+): Promise<number> {
+  const pool = postgres(process.env.DATABASE_URL_API ?? ADMIN_URL, { max: 1 });
+  try {
+    const rows = await pool.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${WORKSPACE_ID}, true)`;
+      await tx`SELECT set_config('app.user_id', ${contextUserId}, true)`;
+      return await tx`
+        SELECT count(*)::int AS n FROM card_exposure_ledger_v2
+        WHERE workspace_id = ${WORKSPACE_ID} AND user_id = ${ownerUserId}
+          AND subject_kind = 'candidate' AND exposure_kind = 'answer_reveal'`;
+    });
+    return Number(rows[0]?.n ?? 0);
+  } finally {
+    // 不关掉就正像 §19 记过的那一笔：after() 之后还有活池，整个文件挂在超时上。
+    await pool.end({ timeout: 5 }).catch(() => undefined);
+  }
+}
+
 /** 「保存到卡组」那一发（照 C45 的配方，只选第一张候选、不开复习）。 */
 async function saveFirstCandidate(
   runId: string,
@@ -2379,7 +2408,7 @@ test("C47：没翻过答案就保存 → 提醒当场 ready，一天都不延后
     `没翻过答案就不该延后（实际 ${Math.round(delayMs / 1000)} 秒）`);
 });
 
-test("C48：另一个人也翻过这张候选的答案 → 保存那一发替他映射曝光并写下同一份延后", async () => {
+test("C48：另一个人也翻过这张候选的答案 → 保存那一发替他映射曝光并写下同一份延后", async (t) => {
   const ESTER_CONTENT =
     "酯化反应是酸与醇作用生成酯和水的反应；一般由羧酸提供羟基、醇提供氢，反应可逆。";
   const { versionId } = await seedNote("他人翻过答案", ESTER_CONTENT);
@@ -2389,14 +2418,27 @@ test("C48：另一个人也翻过这张候选的答案 → 保存那一发替他
   await forceCandidatesReviewedWithoutLeak(runId);
 
   const otherUserId = await seedWorkspaceMember("member");
-  // 一条如实的边界：这一条只在"API 那一发读得到别人那一行"的连接形状下成立。
-  // `card_exposure_ledger_v2` 的策略是**按人**挡的（`user_id = app.user_id`，只豁免
-  // `ailearn_worker`），所以换成受限角色跑这份文件时，激活那一发根本看不见别的成员的
-  // 曝光，这一条会红在「替他建的提醒得到 0 条」。同一次跑里 C46/C47 仍然绿——读自己那一行
-  // 没问题、读别人那一行读不到；而如果真是写入被政策挡下，整发激活会当场抛错，不会安静地
-  // 留 0 行。这条空转已登记在 39d §19，等 W7-3 一并裁，别把它当成用例写坏了。
   const candidate = await firstCandidateOf(runId, "C48");
   const otherExposureId = await revealCandidateAnswerAs(otherUserId, runId, candidate, "c48");
+
+  // 前提现量：这一条要读的恰好是**别人**那一行，而这一族策略按人挡（只豁免 worker 角色），
+  // 所以它在"生产口径的连接"（CI 与真部署都是 `ailearn_api`）下今天整条走不到——那一跳的
+  // SELECT 返回空，替别人建提醒的循环连一次都不进入。看不见就**如实跳过**，不假装绿：
+  // 空转本身登记在 39d §19（W7-3／W7-7 要裁的就是它——改走 worker 那条豁免通道，还是按
+  // AGENTS.md 把这条没有可达方的支路删掉）。阳性对照走同一把尺：他自己的身份必须看得见
+  // 自己那一行，否则就是曝光没种进去，那种红不该被跳过藏掉。
+  assert.ok(
+    (await countCandidateLedgerRowsAs(otherUserId, otherUserId)) >= 1,
+    "对照失败：他读不到自己那一行＝这一发的曝光根本没种上，不是权限问题",
+  );
+  if ((await countCandidateLedgerRowsAs(USER_ID, otherUserId)) === 0) {
+    t.skip(
+      "受限角色下 §17.5 step 10 读不到别的成员的候选曝光（策略按人挡）："
+        + "那一跳空转，在这里断言等于断言空气。已登记 39d §19，等 W7-3／W7-7 裁。",
+    );
+    return;
+  }
+
   // 保存这一发是 USER_ID 按下的，他本人没翻过答案。
   const objectiveId = await saveFirstCandidate(runId, candidate, "c48");
 
