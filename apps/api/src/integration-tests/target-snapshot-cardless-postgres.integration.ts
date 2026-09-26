@@ -362,9 +362,10 @@ test("无卡快照走完提交→评估→结算，并在结果页揭示时记�
 
     // 结果页揭示目标：这一步写 learning_exposures_v2，卡的两个键必须为空、
     // 目标的两个键必须有值（D7：帮助/暴露的记账归到目标修订，不归卡）。
-    await withWorkspaceTransaction(scope, (tx) => revealRunTargetV2(tx, { ...scope, runId: created.runId }));
+    const firstReveal = await withWorkspaceTransaction(scope, (tx) =>
+      revealRunTargetV2(tx, { ...scope, runId: created.runId }));
     const exposures = await admin`
-      SELECT card_id, card_revision, objective_id, objective_revision, exposure_kind
+      SELECT card_id, card_revision, objective_id, objective_revision, exposure_kind, exposure_id
       FROM learning_exposures_v2
       WHERE workspace_id = ${seeded.workspaceId} AND objective_id = ${seeded.objectiveId}`;
     assert.equal(exposures.length, 1, "无卡目标的揭示没有记账（漏记就等于泄题不留痕）");
@@ -372,6 +373,26 @@ test("无卡快照走完提交→评估→结算，并在结果页揭示时记�
     assert.equal(exposures[0].card_revision, null);
     assert.equal(String(exposures[0].objective_id), seeded.objectiveId);
     assert.ok(Number(exposures[0].objective_revision) >= 1, "暴露记账必须归到某一版目标");
+
+    /**
+     * 这一族机制早就在（`run-reveal:＜runId＞` 那把幂等键＋`onConflictDoNothing`），
+     * 但 **0 条用例读过**（39d §19 的 W6-3 那格把它登记成"最容易事后被顺口当已覆盖"）。
+     * 三条判据各自拦一种失效：
+     *  ① 重复那一发不记第二笔——去掉那把键的 runId 归属就会长出第二行；
+     *  ② 第二次**回出去的 id 是库里那一笔的**——不修的话两次调用回两个 id，
+     *     合同里 `exposureId` 就成了第二个来源（这一条也是本轮真修的东西）；
+     *  ③ 揭示内容两次照旧回同一份——去重不许顺手把答案也吞掉。
+     */
+    const secondReveal = await withWorkspaceTransaction(scope, (tx) =>
+      revealRunTargetV2(tx, { ...scope, runId: created.runId }));
+    const exposuresAfterRetry = await admin`
+      SELECT count(*)::int AS n FROM learning_exposures_v2
+      WHERE workspace_id = ${seeded.workspaceId} AND objective_id = ${seeded.objectiveId}`;
+    assert.equal(exposuresAfterRetry[0].n, 1, "重复揭示记了第二笔（重试不该再涨学习账）");
+    assert.equal(secondReveal.exposureId, String(exposures[0].exposure_id),
+      "回出去的 exposureId 必须是库里那一笔的");
+    assert.equal(secondReveal.exposureId, firstReveal.exposureId);
+    assert.equal(secondReveal.answerText, firstReveal.answerText);
   } finally {
     await seeded.cleanup();
   }

@@ -1548,10 +1548,15 @@ export async function revealRunTargetV2(
     ...(target.learningSupport?.workedExample?.trim() ? { workedExample: target.learningSupport.workedExample.trim() } : {}),
   };
 
-  const exposureId = crypto.randomUUID();
-  await tx.insert(learningExposuresV2).values({
+  /**
+   * 同一 run 只记一笔：重复点开结果页不产生新账目（§16.19「重试不再次记学习」）。
+   * 但**第二次回出去的 id 必须是库里那一笔的**——两次调用回两个 id，合同里
+   * `exposureId` 那一格就成了第二个来源（这一族此前 0 条用例读，见 39d §19 的 W6-3 那格）。
+   */
+  const idempotencyKey = `run-reveal:${run.id}`;
+  const inserted = await tx.insert(learningExposuresV2).values({
     workspaceId: input.workspaceId,
-    exposureId,
+    exposureId: crypto.randomUUID(),
     userId: run.userId,
     objectiveId: snapshot.objectiveId,
     objectiveRevision: snapshot.objectiveRevision,
@@ -1559,9 +1564,18 @@ export async function revealRunTargetV2(
     cardRevision: snapshot.cardRevision,
     exposureKind: "answer_reveal",
     contextHash: computeExposureScopeIdV2({ workspaceId: input.workspaceId, objectiveId: snapshot.objectiveId }),
-    // 同一 run 只记一笔：重复点开结果页不产生新账目，揭示内容本身幂等。
-    idempotencyKey: `run-reveal:${run.id}`,
-  }).onConflictDoNothing();
+    idempotencyKey,
+  }).onConflictDoNothing().returning({ exposureId: learningExposuresV2.exposureId });
+  // 撞了唯一键 ⇒ 那一笔一定在（同一发事务里刚写的），取回来的是它的 id，不是猜的。
+  const exposureId = inserted[0]?.exposureId ?? (await tx
+    .select({ exposureId: learningExposuresV2.exposureId })
+    .from(learningExposuresV2)
+    .where(and(
+      eq(learningExposuresV2.workspaceId, input.workspaceId),
+      eq(learningExposuresV2.userId, run.userId),
+      eq(learningExposuresV2.idempotencyKey, idempotencyKey),
+    ))
+    .limit(1))[0].exposureId;
 
   return learningRunTargetRevealV2Schema.parse({
     version: 2,
