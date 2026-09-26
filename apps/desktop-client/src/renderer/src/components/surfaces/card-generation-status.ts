@@ -287,3 +287,15 @@ export function reviewSchedulingNotice(
   if (stamps.length === 0) return "第一次复习的日期还没排出来";
   return `第一次复习排在 ${formatDate(new Date(Math.min(...stamps)).toISOString())}`;
 }
+
+/**
+ * 「保存到卡组」那一发（没要复习）在回执上说的一句（39d W7-2）。
+ *
+ * 这一句**不从 `receipt.scheduling` 缺不缺键来判**：0288 加那一列之前落库的历史回执
+ * 也缺同一个键，那一格分不开"这次没要复习"与"那一批在加列之前保存"两件事；
+ * 而**按下的是哪颗按钮**分得开。两颗按钮的区别必须在回执上看得见，否则用户只有
+ * 在点完之后才知道自己刚才要的是哪一种。
+ */
+export function saveOnlyReceiptNotice(): string {
+  return "这次只保存到卡组，没有安排复习";
+}

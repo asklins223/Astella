@@ -229,7 +229,9 @@ function stubGateway(initial: readonly CandidateState[], runOverride: { status?:
                 resultingEvidenceBindingSetHash: "b".repeat(64),
               })),
               lifecycleResults: [],
-              ...(scheduled
+              // `activationScheduling: null` 是专门留给"历史回执"那一档的：要了复习，
+              // 但回执里**没有**那一格（0288 之前落库的那批就是这个形状）。
+              ...(scheduled && runOverride.activationScheduling !== null
                 ? { scheduling: runOverride.activationScheduling ?? state.candidates.map((candidate) => ({
                   objectiveId: `obj-${candidate.candidateId}`,
                   nextReviewAt: FIRST_REVIEW_AT,
@@ -307,9 +309,11 @@ describe("CardGenerationSurface · 候选审核", () => {
     fireEvent.click(saveOnly);
     await waitFor(() => expect(state.activateCalls).toHaveLength(1));
     expect(state.activateCalls[0]).toMatchObject({ startReviewScheduling: false });
-    // 只保存到卡组那一发**不多说一句**：回执没有那一格，屏上就不该出现复习的承诺。
+    // 只保存到卡组那一发**也要说一句**，但说的是另一件事：这一发没要复习。
+    // 两句必须分得开——两颗按钮的区别如果只在按钮的字面上，回执上看不出来，
+    // 用户就要等到下一次看到复习日期才知道自己刚才按的是哪颗。
     expect(document.querySelector(".candidate-review-slip__receipt")?.textContent)
-      .toBe("已确认 1 个目标映射");
+      .toBe("已确认 1 个目标映射 · 这次只保存到卡组，没有安排复习");
     expect(screen.queryByText(/第一次复习排在/)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /保存并开启复习（1 张）/ }));
@@ -319,6 +323,28 @@ describe("CardGenerationSurface · 候选审核", () => {
     await waitFor(() => expect(
       document.querySelector(".candidate-review-slip__receipt")?.textContent,
     ).toBe(`已确认 1 个目标映射 · 第一次复习排在 ${formatDate(FIRST_REVIEW_AT)}`));
+  });
+
+  /**
+   * 这一条是上一那条里"按键判、不按回执缺不缺键判"那个选择的**唯一反例**：
+   * 0288 给回执加 `scheduling` 之前落库的那一批，问的是复习、回执里没有那一格。
+   * 要是照"缺键＝这次没要复习"来写，屏幕上就会对着一张已经排好复习的卡说
+   * "没有安排复习"——那是句假话，而且假得很像话（那一格真的不在）。
+   */
+  it("要了复习而回执没有那一格（加列之前的历史回执）时，说日期还没排出来，不说没安排", async () => {
+    const { state } = stubGateway([
+      { candidateId: "cand-1", statement: "第一张", reviewDecision: "keep", publishState: "unpublished" },
+    ], { activationScheduling: null });
+    useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
+    render(<CardGenerationSurface />);
+    await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /保存并开启复习（1 张）/ }));
+    await waitFor(() => expect(state.activateCalls).toHaveLength(1));
+    await waitFor(() => expect(
+      document.querySelector(".candidate-review-slip__receipt")?.textContent,
+    ).toBe("已确认 1 个目标映射 · 第一次复习的日期还没排出来"));
+    expect(document.querySelector(".candidate-review-slip__receipt")?.textContent)
+      .not.toContain("没有安排复习");
   });
 
   /**

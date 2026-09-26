@@ -39,6 +39,7 @@ import {
   cardGenerationSyncReportText,
   practiceQuotaLabel,
   reviewSchedulingNotice,
+  saveOnlyReceiptNotice,
   isCardGenerationInFlight,
   isCardGenerationReviewOpen,
   isCardGenerationReviewStage,
@@ -266,7 +267,22 @@ export function CardGenerationSurface() {
   const [landedCandidates, setLandedCandidates] = useState<CardGenerationCandidateV1[]>([]);
   const [practiceQuota, setPracticeQuota] = useState<CardGenerationPracticeQuotaV1 | null>(null);
   const [activeCandidateId, setActiveCandidateId] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<CardActivationReceiptDesktopV1 | null>(null);
+  /**
+   * 回执与"这一发按下的是哪颗按钮"存在**同一个对象**里：屏幕上那句与伴星读的那一格
+   * 必须从同一处派生。判"这一发有没有要复习"也不能看 `receipt.scheduling` 缺不缺键——
+   * 0288 加那一列之前的历史回执缺同一个键，那一格分不开两种事。
+   */
+  const [activation, setActivation] = useState<{
+    receipt: CardActivationReceiptDesktopV1;
+    askedForScheduling: boolean;
+  } | null>(null);
+  const receipt = activation?.receipt ?? null;
+  /** 这一发的复习那一句；null = 这一屏还没有回执。 */
+  const schedulingNotice = activation
+    ? activation.askedForScheduling
+      ? reviewSchedulingNotice(activation.receipt.scheduling ?? [])
+      : saveOnlyReceiptNotice()
+    : null;
   const [loading, setLoading] = useState(true);
   /** The page-level read failed; an action's own failure never lands here. */
   const [failure, setFailure] = useState<string | null>(null);
@@ -416,7 +432,7 @@ export function CardGenerationSurface() {
     setLandedCandidates([]);
     setPracticeQuota(null);
     setActiveCandidateId(null);
-    setReceipt(null);
+    setActivation(null);
     setFailure(null);
     setActionFailure(null);
     setReveal(null);
@@ -607,7 +623,7 @@ export function CardGenerationSurface() {
       });
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       const nextReceipt = unwrapGatewayResult(response);
-      setReceipt(nextReceipt);
+      setActivation({ receipt: nextReceipt, askedForScheduling: startReviewScheduling });
       await load(false);
     } catch (error) {
       setActionFailure(gatewayErrorMessage(error));
@@ -751,9 +767,9 @@ export function CardGenerationSurface() {
           { label: "候选", value: `${activeCandidateIndex + 1} / ${candidates.length}` },
           { label: "还没决定", value: `${actionableUndecidedCount} 张` },
           ...(practiceQuotaView ? [{ label: "练习件", value: shortLabel(practiceQuotaView) }] : []),
-          // 这一屏刚排上复习时，读页面的那条通道也要能说出这件事——否则伴星只知道
-          // "保存了几张"，不知道"复习从哪天开始"。
-          ...(receipt?.scheduling ? [{ label: "复习", value: shortLabel(reviewSchedulingNotice(receipt.scheduling)) }] : []),
+          // 这一屏刚做过那一发时，读页面的那条通道也要能说出这件事——否则伴星只知道
+          // "保存了几张"，不知道"复习从哪天开始"（或不知道这次**没**要复习）。
+          ...(schedulingNotice ? [{ label: "复习", value: shortLabel(schedulingNotice) }] : []),
         ],
         items: candidates.slice(0, 8).map((candidate, index) => ({
           ordinal: index + 1,
@@ -786,6 +802,7 @@ export function CardGenerationSurface() {
   }, [
     activeCandidate, activeCandidateIndex, actionableUndecidedCount, candidates, failure,
     landedCandidates, loading, noteTitle, page, practiceQuotaView, progressPercent, progressView, receipt, run,
+    schedulingNotice,
   ]);
   usePageReadableView(readableView);
 
@@ -1262,9 +1279,9 @@ export function CardGenerationSurface() {
             {receipt ? (
               <p className="candidate-review-slip__receipt" role="status">
                 <Check size={15} aria-hidden="true" />已确认 {receipt.mappings.length} 个目标映射
-                {/* 「保存并开启复习」那一发要多说一句：排到了哪天、有没有哪张是沿用已有的安排。
-                    这一格**不在**只保存到卡组那一发出现——缺键就是"这次没排"，不是"排了 0 条"。 */}
-                {receipt.scheduling ? <span className="small">{` · ${reviewSchedulingNotice(receipt.scheduling)}`}</span> : null}
+                {/* 「保存并开启复习」那一发要多说一句：排到了哪天；「保存到卡组」那一发
+                    也要说一句它**没**排复习——两颗按钮的区别要在回执上看得见。 */}
+                {schedulingNotice ? <span className="small">{` · ${schedulingNotice}`}</span> : null}
               </p>
             ) : null}
             <div className="candidate-review-slip__actions">
