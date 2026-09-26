@@ -19,8 +19,10 @@ import {
   buildCardContentCheckV3Prompt,
   createCardGenerateV3Task,
   createCardContentCheckV3Task,
+  createCardCandidateRewriteV3Task,
   stampCardContentCheckV3Output,
   validateCardGenerateV3Drafts,
+  type CardCandidateRewriteV3TaskInput,
   type CardContentCheckV3TaskInput,
   type CardGenerateV3TaskInput,
   type CardGenerationV3ProviderPort,
@@ -654,3 +656,50 @@ function assemblyInput(
     sealedEvidence,
   };
 }
+
+// ── ⑦ 预算要自洽：`maxModelCalls` 得容得下"首次＋那一次自动重试" ──────────────
+
+test("三个任务的默认预算自洽：maxModelCalls ≥ 1 + maxAutoRetries（不然那一次重试花不出去）", () => {
+  // 2026-09-27 接内核当天量到的：这三份默认写的是 `maxModelCalls: 1`，而内核在**发出
+  // 下一次之前**检查调用数预算 ⇒ `maxAutoRetries: 1` 那一发根本没机会花，回执还把它
+  // 报成 `timeout`／"model call budget reached"——一次合同形状失败被读成一次超时。
+  // 在没人跑内核的那段日子里这个矛盾是安静的：两个数都不执行，所以谁也不冲突。
+  const idleProvider = <TInput,>(): CardGenerationV3ProviderPort<TInput> => ({
+    modelId: "idle",
+    async complete(): Promise<never> {
+      throw new Error("这条用例只读预算，不发调用");
+    },
+  });
+  // `prepare` 在这里永远不被调（这条用例只读工厂交出来的预算），所以三份都给一份
+  // 会喊的实现：真被调到了就是这条用例走偏了，不许安静地拿夹具凑一次准备。
+  const noPrepare = async (): Promise<never> => {
+    throw new Error("这条用例只读预算，不跑准备段");
+  };
+  const definitions = [
+    createCardGenerateV3Task({
+      provider: idleProvider<CardGenerateV3TaskInput>(),
+      prepare: noPrepare,
+      commit: async () => {},
+    }),
+    createCardContentCheckV3Task({
+      provider: idleProvider<CardContentCheckV3TaskInput>(),
+      prepare: noPrepare,
+      commit: async () => {},
+    }),
+    createCardCandidateRewriteV3Task({
+      provider: idleProvider<CardCandidateRewriteV3TaskInput>(),
+      prepare: noPrepare,
+      commit: async () => {},
+    }),
+  ];
+  assert.equal(definitions.length, 3, "三个任务定义一个都不能漏：它们共用同一份默认预算");
+  for (const definition of definitions) {
+    assert.ok(
+      definition.budget.maxModelCalls >= 1 + definition.budget.maxAutoRetries,
+      `${definition.id}：预算容不下自己声明的重试（maxModelCalls=${definition.budget.maxModelCalls}，`
+      + `首次＋maxAutoRetries=${definition.budget.maxAutoRetries} 要 ${1 + definition.budget.maxAutoRetries} 发）`,
+    );
+    assert.ok(definition.budget.stepTimeoutMs <= definition.budget.taskDeadlineMs,
+      `${definition.id}：单步上界比整任务上界还大 ⇒ 那道上界永远轮不到，是假的`);
+  }
+});

@@ -1,8 +1,9 @@
 /**
  * 制卡简化链（V3）的 job 接线（39d W7-1 刀b；39c §6.1–6.2、39 §8.6）。
  *
- * 五段，与设计件 §3 一一对应——**每一次模型调用都在事务外面**（W3-2 那道出口闸门
- * 同样管这条链），每一段事务都短到只装读写：
+ * 五段，与设计件 §3 一一对应——**每一次模型调用都在事务外面**（四发都跑在公共任务
+ * 内核上，那道出口闸门由内核的 `currentActiveTransaction` 端口在发调用之前核一次，
+ * 见 `runV3TaskOnKernel`），每一段事务都短到只装读写：
  *
  *   1. 短事务：`loadV2RunInputs`（FOR UPDATE 锁 run、读回快照正文/sealed 依据/已有
  *      目标）＋状态门＋把 run 推到 `planning`；
@@ -17,10 +18,10 @@
  * - **重投不重付**：段 4/5 失败（可重试）时 job 会回到 pending 重跑，那时这一版计划
  *   与首稿候选**已经在库里**，于是整条链从段 4 接上——生成那一发不再发生。§16.28 的
  *   "检查失败不重跑生成"就是这一段判据；
- * - **`rewrite` 这一档今天不假装能改写**：增量改写是刀c 的活（还没有改写合同）。
- *   检查判 rewrite 的候选不进牌堆（`quality_state` 停在 `authored`，审核页判"可保留"
- *   看的是 `passed`，所以它既不会被当成通过也不会被抹掉），报告与 issues 照实落库，
- *   run 只要还有 passed 的候选就 `review_ready`，一张都不剩才 `needs_attention`。
+ * - **`rewrite` 这一档**（刀c 已落地）：检查判 rewrite 的候选**逐张**改写一次，再只针对
+ *   它们重检一轮；重检还判 rewrite 的那些不再改写，`quality_state` 停在 `authored`
+ *   （审核页判"可保留"看的是 `passed`，所以它既不会被当成通过也不会被抹掉），报告与
+ *   issues 照实落库，run 只要还有 passed 的候选就 `review_ready`，一张都不剩才 `needs_attention`。
  *
  * 语义调用数由这里**自己数**并写进完成事件（`modelCalls`）——§16.28 那句"普通短文本
  * 成功路径刚好 2 次"要能在库里读到，而不是只在进程里断言一次。
@@ -28,6 +29,7 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import {
+  currentWorkerWorkspaceTransaction,
   withWorkerWorkspaceTransaction,
   type WorkerTransaction,
 } from "../db.ts";
@@ -40,6 +42,7 @@ import {
   insertEvent,
   insertRepairedCandidateV2,
   loadV2RunInputs,
+  renewV2OutboxLease,
   type PendingOutboxJob,
 } from "../handlers/card-generation-v2-handler.ts";
 import { CardGenerationProviderError } from "../card-generation-v2/providers.ts";
@@ -52,8 +55,14 @@ import type {
   LearningCardCandidateRevisionV2,
 } from "@ailearn/shared/card-generation-v2-contracts";
 import type { CardContentCheckV3Output } from "@ailearn/shared/card-generation-v3-contracts";
-import type { CardGenerateV3CandidateDraft } from "@ailearn/shared/card-generation-v3-contracts";
-import type { AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
+import {
+  runAiTask,
+  type AiAttemptToken,
+  type AiStepFailure,
+  type AiTaskContext,
+  type AiTaskDefinition,
+  type AiTaskReceipt,
+} from "@ailearn/shared/ai-task-kernel";
 import { extractAtomsDeterministic } from "@ailearn/shared/card-generation-v2-pipeline";
 import {
   createCardGenerateV3Task,
@@ -61,7 +70,6 @@ import {
   createCardCandidateRewriteV3Task,
   type CardCandidateRewriteV3TaskInput,
   type CardContentCheckV3TaskInput,
-  type CardCandidateRewriteV3TaskOutput,
   type CardGenerateV3TaskInput,
   type CardGenerationV3ProviderPort,
 } from "./tasks.ts";
@@ -201,6 +209,16 @@ export async function processCardGenerationSimplifiedJob(
   const activationHardMax = Math.min(8, Number(semanticRequest.quantity.hardMaxCards ?? 8) || 8);
   const userRequest = semanticRequest.feedbackContext?.optionalNote ?? null;
 
+  /**
+   * 这一发领到的四模型调用共用的内核接线上下文：输入快照身份（note 版本＋它的哈希）
+   * 与租约都来自同一处，四发不各写一遍（写四遍就会有第四遍和第一遍不一样那一天）。
+   */
+  const runOnKernel = <TInput, TOutput>(
+    definition: AiTaskDefinition<TInput, TOutput>,
+    input: TInput,
+  ): Promise<AiTaskReceipt<TOutput>> => runV3TaskOnKernel(definition, input, job,
+    String(loaded.run.note_version_id), loaded.inputSnapshot.inputSnapshotHash, signal);
+
   // ── 段 2/3：生成＋落库；已经有这一版候选了就从段 4 接上（重投不重付）────
   let candidates: LearningCardCandidateRevisionV2[];
   let hintsByCandidateRevisionId: Map<string, CardHintPairV2>;
@@ -249,16 +267,13 @@ export async function processCardGenerationSimplifiedJob(
       prepare: async () => generateInput,
       commit: async () => {},
     });
-    const receipt = await generateTask.execute(generateInput, taskEnvironment(providers.generate.modelId, signal));
-    if (!receipt.ok) {
-      // 输出形状不合合同 ⇒ 这一发直接抛。以前这里写着"内核已按预算重试过一次"，那是
-      // 假的：这条链上没有人跑 `runAiTask`（见 `taskEnvironment`），声明的
-      // `maxAutoRetries: 1` 一次都不执行。而抛的是裸 Error ⇒ 分发点按**可重试**分类，
-      // outbox 会退避重投到 6 次上限、每次重新付生成那一发。两个读数都钉在
-      // card-generation-v3-simplified-postgres 集测里；接内核那一次要连同分类一起改。
-      throw new Error(`card_generate_v3 output rejected: ${receipt.message}`);
+    const ran = await runOnKernel(generateTask, generateInput);
+    if (ran.outcome !== "committed" || !ran.output) {
+      // 内核已经按预算把那一次补采样花掉了（`maxAutoRetries: 1`）。还不合合同就是
+      // 确定性失败：抛**不可重试**那一类，队列再重投只会把同一笔钱再烧一遍。
+      throw kernelFailureError("card_generate_v3", ran.failure);
     }
-    generateOutput = receipt.output;
+    generateOutput = ran.output;
 
     const planRevisionId = randomUUID();
     assembled = assembleCardGenerationV3({
@@ -345,9 +360,11 @@ export async function processCardGenerationSimplifiedJob(
     prepare: async () => checkInput,
     commit: async () => {},
   });
-  const checked = await checkTask.execute(checkInput, taskEnvironment(providers.check.modelId, signal));
-  if (!checked.ok) throw new Error(`card_content_check_v3 output rejected: ${checked.message}`);
-  const checkOutput: CardContentCheckV3TaskOutput = checked.output;
+  const ranCheck = await runOnKernel(checkTask, checkInput);
+  if (ranCheck.outcome !== "committed" || !ranCheck.output) {
+    throw kernelFailureError("card_content_check_v3", ranCheck.failure);
+  }
+  const checkOutput: CardContentCheckV3TaskOutput = ranCheck.output;
 
   // ── 段 4b/4c：增量改写（只重做被判 rewrite 的那几张）＋一次只针对它们的重检 ──
   let finalEntries = checkOutput.parsed.perCandidate.filter((entry) => entry.verdict !== "rewrite");
@@ -375,7 +392,11 @@ export async function processCardGenerationSimplifiedJob(
         issues: entry.issues.map((issue) => ({ code: issue.code, detail: issue.detail })),
         evidenceManifest: loaded.sealed.evidenceManifest,
       };
-      const draft = await runRewriteOnce(task, rewriteInput, providers.rewrite.modelId, signal);
+      const ranRewrite = await runOnKernel(task, rewriteInput);
+      if (ranRewrite.outcome !== "committed" || !ranRewrite.output) {
+        throw kernelFailureError("card_candidate_rewrite_v3", ranRewrite.failure);
+      }
+      const draft = ranRewrite.output.draft;
       const built = buildCandidateRevisionV3({
         draft,
         plan: assembled?.plan ?? planFromCommittedCandidates(previous),
@@ -430,12 +451,12 @@ export async function processCardGenerationSimplifiedJob(
         prepare: async () => recheckInput,
         commit: async () => {},
       });
-      const recheckedReceipt = await recheckTask.execute(recheckInput, taskEnvironment(providers.check.modelId, signal));
-      if (!recheckedReceipt.ok) {
-        throw new Error(`card_content_check_v3 重检输出不合合同：${recheckedReceipt.message}`);
+      const ranRecheck = await runOnKernel(recheckTask, recheckInput);
+      if (ranRecheck.outcome !== "committed" || !ranRecheck.output) {
+        throw kernelFailureError("card_content_check_v3（重检）", ranRecheck.failure);
       }
       // **一轮为限**：重检之后还判 rewrite 的那些不再改写，停在 authored 等人工。
-      finalEntries = [...finalEntries, ...recheckedReceipt.output.parsed.perCandidate];
+      finalEntries = [...finalEntries, ...ranRecheck.output.parsed.perCandidate];
       finalCandidates = [...candidates.filter((candidate) =>
         !rebuilt.some((next) => next.planObjectiveLocalId === candidate.planObjectiveLocalId)), ...rebuilt];
     }
@@ -457,34 +478,73 @@ export async function processCardGenerationSimplifiedJob(
   }, { isolated: true });
 }
 
-/** 一次改写调用：合不上合同就抛。这条链上没有第二次（内核不在场，见 `taskEnvironment`）。 */
-async function runRewriteOnce(
-  task: AiTaskDefinition<CardCandidateRewriteV3TaskInput, CardCandidateRewriteV3TaskOutput>,
-  input: CardCandidateRewriteV3TaskInput,
-  modelId: string,
-  signal?: AbortSignal,
-): Promise<CardGenerateV3CandidateDraft> {
-  const receipt = await task.execute(input, taskEnvironment(modelId, signal));
-  if (!receipt.ok) throw new Error(`card_candidate_rewrite_v3 输出不合合同：${receipt.message}`);
-  return receipt.output.draft;
+/**
+ * 这条链的四发模型调用都跑在**公共任务内核**上（2026-09-27 接上；在那之前这里是
+ * `task.execute` 直调，任务声明的 `budget` 一格都不落地：`maxAutoRetries: 1` 一次
+ * 不重试，`stepTimeoutMs`／`taskDeadlineMs` 也没人拿它们去组成超时信号）。接上之后
+ * 由内核执行的四件事：
+ *
+ *   - 首次＋至多一次自动重试，且只对 `AI_TASK_RETRYABLE_FAILURE_CLASSES` 那三档
+ *     （transport／timeout／output_shape）——权限、内容版本、实质质量不重花钱；
+ *   - 单步与整任务的 wall-clock 上界（超时信号由内核合成，不在这里手工搭）；
+ *   - "模型调用不许落在活动事务里"那道出口闸（`currentActiveTransaction` 是必填
+ *     端口：做成可选就等于让"忘记核对"成为一种可以通过的形状）；
+ *   - 提交前核对这一次尝试还作数——租约判据复用 `renewV2OutboxLease` 那一份实现，
+ *     不在这条链上再起第二个来源（D5 §4.1：租约换了 ⇒ 旧输出不许提交）。
+ *
+ * `prepare` 被换成"把调用方已经备好的输入原样交回去"：这一条链的输入在段 1／段 4
+ * 就读好了（rewrite 那一份还是逐张给的），内核那次"短事务准备"在这里是空操作。
+ */
+async function runV3TaskOnKernel<TInput, TOutput>(
+  definition: AiTaskDefinition<TInput, TOutput>,
+  input: TInput,
+  job: PendingOutboxJob,
+  noteVersionId: string,
+  inputSnapshotHash: string,
+  signal: AbortSignal | undefined,
+): Promise<AiTaskReceipt<TOutput>> {
+  const ctx: AiTaskContext = {
+    workspaceId: job.workspaceId,
+    userId: null,
+    // 与另外三个服务端发起的任务同一取值（`run-critic`／`teaching-explain`／语音转写）：
+    // 这一发不是用户授权档位里的某一次动作，是后台管道替用户跑完的一步。
+    permissionLevel: "server",
+    inputSnapshotRef: { kind: "note_version", id: noteVersionId, hash: inputSnapshotHash },
+    signal: signal ?? new AbortController().signal,
+  };
+  const attempt: AiAttemptToken = {
+    taskId: definition.id,
+    taskVersion: definition.version,
+    attemptId: `${job.id}:${job.leaseToken}`,
+    leaseToken: job.leaseToken,
+    idempotencyKey: `${definition.id}:${job.runId}:${job.id}`,
+    workspaceId: job.workspaceId,
+    userId: null,
+  };
+  return runAiTask({ ...definition, prepare: async () => input }, {
+    ctx,
+    attempt,
+    currentActiveTransaction: currentWorkerWorkspaceTransaction,
+    reportDevelopmentError: (message) => logger.error({ jobId: job.id, runId: job.runId }, message),
+    verifyAttempt: () => renewV2OutboxLease(job.id, job.leaseToken),
+  });
 }
 
 /**
- * 手工搭一份**长得像内核**的环境，但这条链上没有内核：`card-generation-v3/` 里
- * 没有 `runAiTask` 调用点，所以 `remainingMs`／`stepTimeoutMs` 只是填全了形状，
- * 没人拿它们去组成超时信号，`retryIndex` 恒 0，任务声明的 `budget`（含
- * `maxAutoRetries: 1`）全部不执行——一次调用就是一次调用。真正的闸只有调用方那份
- * signal（租约丢失／整条管道预算）。欠的"进程内重试那一次"登记在 39d §19 W7-1。
+ * 内核回执 → 这一发该抛的那一类错。**分类决定 outbox 会不会再烧一次钱**（两个读数
+ * 各钉一格在 `card-generation-v3-simplified-postgres.integration.ts`）：
+ * `output_shape` 是确定性失败，而内核已经按预算把那一次补采样花掉了，队列再重投只是
+ * 把同一笔钱再烧一遍 ⇒ 判**不可重试**（这正是接内核之前那句"内核已按预算重试过一次"
+ * 该有却没有的落点）。其余类别留在可重试那一侧——被 abort 与整条管道预算那两档，
+ * 分发点自己会改成不可重试（`processV2OutboxJob` 的 catch）。
  */
-function taskEnvironment(modelId: string, signal?: AbortSignal) {
-  return {
-    mode: "structured" as const,
-    usageContext: { modelId, promptVersion: "card-v3", resourceClass: "card_foreground" },
-    remainingMs: 240_000,
-    stepTimeoutMs: 120_000,
-    retryIndex: 0,
-    signal: signal ?? new AbortController().signal,
-  };
+function kernelFailureError(taskId: string, failure: AiStepFailure | null): Error {
+  const judged: AiStepFailure = failure
+    ?? { ok: false, class: "submission_failed", message: `${taskId} 的回执既不是 committed，也没带失败类别` };
+  return new CardGenerationProviderError(
+    judged.class === "output_shape" ? "non-retryable" : "retryable",
+    `${taskId} output rejected: ${judged.class} — ${judged.message}`.slice(0, 600),
+  );
 }
 
 /** 重投路径上没有内存里的计划对象：从候选行自己的 plan 身份复原一份就够组装用了。 */

@@ -47,6 +47,7 @@ import {
 } from "@ailearn/shared/card-generation-v2-pipeline";
 import type {
   AiAttemptToken,
+  AiTaskBudget,
   AiTaskContext,
   AiTaskDefinition,
   AiStepResult,
@@ -177,6 +178,22 @@ export function validateCardGenerateV3Drafts(
 /** 兼容既有读法的导出（同名旧函数已收窄成"草稿级"）。 */
 export const validateCardGenerateV3Output = validateCardGenerateV3Drafts;
 
+/**
+ * 三个任务共用的默认预算（调用方可以整份换掉）。
+ *
+ * **`maxModelCalls: 2` 不是"允许调两次模型"，是"首次＋内核那一次结构修复"这两发**，
+ * 与另外三个跑在内核上的任务同一取值（`run-critic`／`teaching-explain`／语音转写都
+ * 是 2）。写成 1 会出事而且是安静的：内核在**发出下一次之前**检查调用数预算，于是
+ * `maxAutoRetries: 1` 那一发根本没机会花，回执还把它报成 `timeout`／"model call
+ * budget reached"——一次合同形状失败被读成了一次超时（2026-09-27 接内核当天量到的）。
+ */
+const V3_TASK_DEFAULT_BUDGET: AiTaskBudget = {
+  maxModelCalls: 2,
+  stepTimeoutMs: 120_000,
+  taskDeadlineMs: 240_000,
+  maxAutoRetries: 1,
+};
+
 type GeneratePrepare = AiTaskDefinition<CardGenerateV3TaskInput, CardGenerateV3TaskOutput>["prepare"];
 
 export interface CardGenerateV3TaskDeps {
@@ -190,7 +207,7 @@ export function createCardGenerateV3Task(
   deps: CardGenerateV3TaskDeps,
 ): AiTaskDefinition<CardGenerateV3TaskInput, CardGenerateV3TaskOutput> {
   const budget = deps.budget
-    ?? { maxModelCalls: 1, stepTimeoutMs: 120_000, taskDeadlineMs: 240_000, maxAutoRetries: 1 };
+    ?? V3_TASK_DEFAULT_BUDGET;
   return {
     id: "card_generate_v3",
     version: 1,
@@ -402,7 +419,7 @@ export function createCardContentCheckV3Task(
   deps: CardContentCheckV3TaskDeps,
 ): AiTaskDefinition<CardContentCheckV3TaskInput, CardContentCheckV3TaskOutput> {
   const budget = deps.budget
-    ?? { maxModelCalls: 1, stepTimeoutMs: 120_000, taskDeadlineMs: 240_000, maxAutoRetries: 1 };
+    ?? V3_TASK_DEFAULT_BUDGET;
   return {
     id: "card_content_check_v3",
     version: 1,
@@ -510,7 +527,7 @@ export function createCardCandidateRewriteV3Task(
   deps: CardCandidateRewriteV3TaskDeps,
 ): AiTaskDefinition<CardCandidateRewriteV3TaskInput, CardCandidateRewriteV3TaskOutput> {
   const budget = deps.budget
-    ?? { maxModelCalls: 1, stepTimeoutMs: 120_000, taskDeadlineMs: 240_000, maxAutoRetries: 1 };
+    ?? V3_TASK_DEFAULT_BUDGET;
   return {
     id: "card_candidate_rewrite_v3",
     version: 1,

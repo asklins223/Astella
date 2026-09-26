@@ -239,6 +239,8 @@ before(async () => {
     { workspaceId: FAIL_SHAPE_WORKSPACE_ID, userId: FAIL_SHAPE_USER_ID });
   notes.deadend = await seedNote("deadend", "不可重试那一发", LEARNABLE_BLOCKS,
     { workspaceId: FAIL_SHAPE_WORKSPACE_ID, userId: FAIL_SHAPE_USER_ID });
+  notes.leasechange = await seedNote("leasechange", "跑完才发现租约易主那一发", LEARNABLE_BLOCKS,
+    { workspaceId: FAIL_SHAPE_WORKSPACE_ID, userId: FAIL_SHAPE_USER_ID });
 
   // 入口对照：不设总控 ⇒ 仍投旧 jobType。
   controlRunId = (await createRun(notes.control.versionId, `v3-control-${randomUUID()}`)).runId;
@@ -930,16 +932,15 @@ test("生产里不许悄悄用确定性 provider 跑简化链；豁免要显式�
   assert.deepEqual(Object.keys(offline).sort(), ["check", "generate", "rewrite"]);
 });
 
-// ── 简化链的失败形状：内核不在场时「重试那一次」到底归谁执行 ────────────────
+// ── 简化链的失败形状：那"一次重试"由谁执行、判成可重试与不可重试各落到什么 ──────
 //
-// 任务定义上写着 `budget = { maxAutoRetries: 1, stepTimeoutMs: 120_000, … }`，而
-// `card-generation-v3/handler.ts` 调的是 `task.execute`（整条链上没有 `runAiTask`
-// 调用点）。于是"合不上合同就先再采样一次"这条声明今天一次都不落地——真正在重试
-// 的是**队列**：分发点 `processV2OutboxJob` 的 catch 用 `isNonRetryableErrorLike`
-// 分类，判成可重试就回 pending 退避重投（最多 6 次，每次重新付生成那一发）。
-// 下面两条一头钉住这个形状、另一头给出"分类真的决定库里的结局"的对照格。
+// 2026-09-27 之前这条链是 `task.execute` 直调（`runAiTask` 零调用点），任务声明的
+// `budget = { maxAutoRetries: 1, stepTimeoutMs: 120_000, taskDeadlineMs: 240_000 }`
+// 一格都不落地，而抛裸 Error 又让**队列**去重投六轮、每轮重新付生成那一发。四发现有
+// 内核在跑：合同形状先在进程内补采样一次（预算给的那一次），还不合就判不可重试终结。
+// 下面两条一头钉住这条新形状，另一头给出"分类真的决定库里的结局"的对照格。
 
-test("生成那一发合不上合同：进程内没有第二次，队列判成可重试（内核不在这条链上）", async () => {
+test("生成那一发合不上合同：内核按预算补那一次采样，然后判不可重试（队列不再重付）", async () => {
   const { processCardGenerationSimplifiedJob } = await import("../card-generation-v3/handler.ts");
   const { isNonRetryableErrorLike } = await import("../handlers/card-generation-v2-handler.ts");
 
@@ -976,13 +977,12 @@ test("生成那一发合不上合同：进程内没有第二次，队列判成�
   assert.ok(thrown instanceof Error, "输出不合合同必须让这一发失败：静默返回会被分发点记成 succeeded，"
     + "库里看着健康而一张卡都没生成（记忆抽取为同样的形状记过一次事故）");
   assert.match(thrown.message, /card_generate_v3 output rejected/);
-  assert.deepEqual(paid, ["generate"],
-    "进程内一次都不许重试，也不许在后面两发上继续花钱：这条链没有内核，任务声明的 "
-    + "`maxAutoRetries: 1` 今天不执行——把它接成真的是 W7-1 欠的那一刀");
-  assert.equal(isNonRetryableErrorLike(thrown), false,
-    "**这一条钉的是今天的实情，不是裁定**：抛的是裸 Error ⇒ 分发点判成可重试 ⇒ outbox 会退避"
-    + "重投到 6 次上限，每次重新付生成那一发（确定性失败重投不会更好）。接内核时这一格必须"
-    + "连同「进程内先重试一次」一起改判，两个读数不许只改一个");
+  assert.deepEqual(paid, ["generate", "generate"],
+    "恰好两发 = 首次＋内核按 `maxAutoRetries: 1` 补的那一次结构修复：多一发说明有人手工又加了一层循环，"
+    + "少一发说明预算没接上（这两格在 09-27 之前都是实情的反面：一次不补，队列却补五轮）");
+  assert.equal(isNonRetryableErrorLike(thrown), true,
+    "合同形状是确定性失败，那一次补采样已经在进程内花掉了 ⇒ 队列再重投只是把同一笔钱再烧一遍。"
+    + "判成可重试时 outbox 会按 15/30/60/120/240s 退避重投到 6 次上限");
 
   const planRows = await admin`
     SELECT count(*)::int AS n FROM card_generation_plans_v2 WHERE run_id = ${runId}
@@ -994,6 +994,74 @@ test("生成那一发合不上合同：进程内没有第二次，队列判成�
   assert.equal(Number(candidateRows[0]?.n), 0);
   assert.equal(await runStatus(runId), "planning",
     "run 由段 1 推到 planning；失败终态是分发点/回收器的事，handler 自己不许偷写");
+});
+
+test("生成那一发跑完才发现租约已易主：内核在提交前把它挡下，迟到的失败也写不动新主人的行", async () => {
+  const { processCardGenerationSimplifiedJob } = await import("../card-generation-v3/handler.ts");
+  const {
+    createDeterministicCardCandidateRewriteV3Provider,
+    createDeterministicCardGenerateV3Provider,
+    createDeterministicCardContentCheckV3Provider,
+  } = await import("../card-generation-v3/deterministic.ts");
+
+  const runId = (await createRun(notes.leasechange.versionId, `v3-leasechange-${randomUUID()}`,
+    { workspaceId: FAIL_SHAPE_WORKSPACE_ID, userId: FAIL_SHAPE_USER_ID })).runId;
+  const job = await claimSimplifiedJob(runId);
+  const newLeaseToken = randomUUID();
+
+  let calls = 0;
+  const stealingGenerate = {
+    modelId: "lease-stealing-v3",
+    async complete(request: Parameters<ReturnType<typeof createDeterministicCardGenerateV3Provider>["complete"]>[0]) {
+      calls += 1;
+      if (calls === 1) {
+        // 生产的成因是回收器把超期租约交给了别人（`reapStaleV2OutboxJobs`：attempts+1
+        // → 退避 → 回 pending → 另一发认领并写入新 token）。测试直接把 token 换掉，
+        // 造成的就是这个结果：本进程这一次尝试从此不再作数。
+        await admin`
+          UPDATE card_generation_run_outbox_v2 SET lease_token = ${newLeaseToken} WHERE id = ${job.id}
+        `;
+      }
+      return createDeterministicCardGenerateV3Provider().complete(request);
+    },
+  };
+
+  let thrown: unknown = null;
+  try {
+    await processCardGenerationSimplifiedJob(job, {
+      generate: stealingGenerate,
+      check: createDeterministicCardContentCheckV3Provider(),
+      rewrite: createDeterministicCardCandidateRewriteV3Provider(),
+    });
+  } catch (error) {
+    thrown = error;
+  }
+  assert.ok(thrown instanceof Error, "输出已经拿到了，但这一发不再作数 ⇒ 必须失败，不许当成功提交");
+  assert.match(thrown.message, /lease_lost/,
+    "**归因要落到内核那一层**：D5 §4.1 的『租约换了 ⇒ 旧尝试的输出不许提交』是 `verifyAttempt` "
+    + "这个端口在做的事。段 3 事务里那道 `fenceV2OutboxLease` 也会挡（它的话是 "
+    + "「V2 outbox lease lost before transaction commit」），但那已经是**跑完模型、进了事务**之后——"
+    + "两个来源判的是同一件事的两端，这里要读到的是前面那一端");
+  assert.equal(calls, 1,
+    "钱是花出去了（这一次调用真实发生），被挡下的是提交；`lease_lost` 不在可重试那三档里，"
+    + "所以内核不会拿着同一份输入再采样一次");
+
+  const planRows = await admin`
+    SELECT count(*)::int AS n FROM card_generation_plans_v2 WHERE run_id = ${runId}
+  ` as unknown as Array<{ n: number }>;
+  const candidateRows = await admin`
+    SELECT count(*)::int AS n FROM card_generation_candidates_v2 WHERE run_id = ${runId}
+  ` as unknown as Array<{ n: number }>;
+  assert.equal(Number(planRows[0]?.n), 0, "旧尝试的输出不许变成库里的计划行");
+  assert.equal(Number(candidateRows[0]?.n), 0);
+  assert.equal(await runStatus(runId), "planning", "run 停在段 1 推到的那一档，没有迟到写入");
+
+  const outbox = await admin`
+    SELECT status, lease_token FROM card_generation_run_outbox_v2 WHERE id = ${job.id}
+  ` as unknown as Array<{ status: string; lease_token: string | null }>;
+  assert.equal(outbox[0]?.lease_token, newLeaseToken,
+    "迟到的那次失败**写不动**新主人的行：complete/fail 都带 lease_token 的 CAS，"
+    + "对不上就是 0 行（不换 token 就退化成把别人正在跑的那一发判死）");
 });
 
 test("不可重试那一类经真分发点落库＝一次终结（上一条负向读数的对照格）", async () => {
