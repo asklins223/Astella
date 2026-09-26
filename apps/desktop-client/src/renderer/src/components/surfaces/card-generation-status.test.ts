@@ -224,10 +224,13 @@ it("截断说明用的是服务端那两个数，且不是笼统的'有点长'",
 
 /**
  * 39d W7-2：「保存并开启复习」之后屏幕上那一句。
- * 两件事各自会错：报哪个日期（多目标时要报**最早**那一条），以及有没有说清"这是沿用的"。
+ * 会错的两件事各自钉住：报哪个日期（多目标时要报**最早**那一条），以及**不许**替服务端
+ * 那一格编出用户读不懂的说法——`created:false` 这一发今天没有生产者（排期的目标是这条
+ * 命令刚 mint 出来的），所以屏幕上永远不该出现"其中 N 张沿用已有的安排"。第二条期望就是
+ * 钉这一句：哪天要把它加回来，得先给那一格一个生产者与一条会红的用例（见 39d D2 §5.4）。
  * 日期用同一个 formatter 组期望值——把句子写成字面量，测的就不是句子而是拼写。
  */
-it("复习那句报最早的那一天，并且说清哪几张是沿用已有的安排", async () => {
+it("复习那句只报最早的那一天，不替今天没有生产者的那一格编说法", async () => {
   const { reviewSchedulingNotice } = await import("./card-generation-status");
   const { formatDate } = await import("./surface-data");
   expect(reviewSchedulingNotice([
@@ -237,7 +240,7 @@ it("复习那句报最早的那一天，并且说清哪几张是沿用已有的�
   expect(reviewSchedulingNotice([
     { objectiveId: "o1", nextReviewAt: "2026-09-27T12:00:00.000Z", created: true },
     { objectiveId: "o2", nextReviewAt: "2026-10-05T12:00:00.000Z", created: false },
-  ])).toBe(`第一次复习排在 ${formatDate("2026-09-27T12:00:00.000Z")}（其中 1 张沿用已有的安排）`);
+  ])).toBe(`第一次复习排在 ${formatDate("2026-09-27T12:00:00.000Z")}`);
   // 读不出日期时不编一个："还没排出来"是真的不知道，"9月27日"是猜。
   expect(reviewSchedulingNotice([
     { objectiveId: "o1", nextReviewAt: "2026-13-45T99:00:00.000Z", created: true },

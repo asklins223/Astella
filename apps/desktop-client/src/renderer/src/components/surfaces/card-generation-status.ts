@@ -268,10 +268,14 @@ export function sourceCappedNotice(capped: { limit: number; originalLength: numb
 /**
  * 「保存并开启复习」之后屏幕上那一句（39d W7-2）。
  *
- * 两种事实必须分得开：这一发**排上的**，和本来就有安排、**沿用下来**的——后者屏幕上
- * 报的是库里那一条的实际到期时间（服务端已经把那个值交回来，不在这里重算）。
  * 只给最早那一个日期：一次保存十几张时，逐条报日期读起来就是噪音，而"什么时候再来"
- * 对用户是同一件事。
+ * 对用户本来就是同一件事。
+ *
+ * 这里**不报"其中几张沿用了已有的安排"**，因为那一格今天没有生产者：回执里每条的
+ * `created` 出自服务端 8.6 那一步，而它排期的主体（目标）是在同一条命令里刚 mint 出来的
+ * uuid，所以"这个目标已经有一条待处理安排"在今天不可能成立，`created` 恒真。
+ * 哪天它真的可能为假（W7-3 把持续授权接进同一格、W7-8 的手动安排），把这句话连同
+ * 一条会红的用例一起加回来，别只补文案。
  */
 export function reviewSchedulingNotice(
   scheduling: CardActivationSchedulingV1[],
@@ -281,9 +285,5 @@ export function reviewSchedulingNotice(
     .filter((value) => Number.isFinite(value));
   // 日期读不出来时不许编一个："时间未提供"是这一屏既有的说法。
   if (stamps.length === 0) return "第一次复习的日期还没排出来";
-  const earliest = formatDate(new Date(Math.min(...stamps)).toISOString());
-  const reused = scheduling.filter((entry) => !entry.created).length;
-  return reused === 0
-    ? `第一次复习排在 ${earliest}`
-    : `第一次复习排在 ${earliest}（其中 ${reused} 张沿用已有的安排）`;
+  return `第一次复习排在 ${formatDate(new Date(Math.min(...stamps)).toISOString())}`;
 }

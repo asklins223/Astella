@@ -270,7 +270,7 @@ POST /...  { candidateIds: [...], subscribe: true|false, idempotencyKey }
 | `subscribe: true\|false` | 请求侧是 `startReviewScheduling?: boolean`，**未设＝只保存到卡组**（完全等于改前行为） | 加必填会让在途请求与旧客户端当场解析失败；缺省那一档必须是"没要授权"，不能是"默认授权" |
 | `saved: {cardIds}`／`combined` | 沿用 `card_activation_receipts_v2` 已有的 `mappings`／`lifecycleResults` 两列 | 这份回执有它自己的哈希闭包（`requestHash`／`responseHash`），再造一层 `combined` 枚举＝同一件事两个口径 |
 | `authorization.firstReviewAt` | `scheduling: [{objectiveId, scheduleId, nextReviewAt, created}]` 一列（0288，nullable jsonb，合同侧 `.optional()`） | 重放要能**原样交回**同一份回执，授权结果就必须落在回执上而不是每次重算；历史行交回 `undefined`（那一发在加列之前），不是空数组 |
-| `reason`（说明"沿用既有日期"） | **没有这一格**，由 `created: false` 表达 | 一句话与一个布尔在同一个回执里说同一件事，迟早分叉；界面要说的那句由 `created` 现派生 |
+| `reason`（说明"沿用既有日期"） | **没有这一格**，由 `created: false` 表达 | 一句话与一个布尔在同一个回执里说同一件事，迟早分叉。**09-27 更正**：这一格今天在这条命令上恒真（见下面"8.6 那一发的可达性"），所以屏幕上由它派生的那句话已经撤掉，不是"现派生" |
 
 **§5.2 三条硬约束现在各自有什么证据**（这是本格存在的理由——上一版这里只有单测，缺真库那条）：
 
@@ -282,13 +282,17 @@ POST /...  { candidateIds: [...], subscribe: true|false, idempotencyKey }
 
 **§5.3 那条"显示沿用后的实际日期"落在哪里**：不在 C45。C45 走的是 `created:true` 那一支——那里"库里那一行"就是这次写进去的，报读来的值与报算出的值**同一瞬间**，断言分不开（变异实测：把 8.6 换成"报自己算的那个日期"，C45 全绿）。真正长得出 `created:false` 的是 `review-schedule-boundary-postgres.integration.ts:95`（同一格第二次调用不再插行、交回库里那一条的 id 与实际到期时间）。**判据记进 §10 那句"两条负面断言不成牙"的同族**：一条断言只能守它到得了的那一支，超出射程的话要在注释里收回。
 
-**界面那一半落在哪一格（同日，刀二）**：两颗按钮 `保存到卡组（N 张）` 与 `保存并开启复习（N 张）` 接的是**同一条命令**，差别只有 §5.1 那一格；它走的是渲染层安全的那份**选择合同**（`desktopCardGenerationActivationSelectionV1.startReviewScheduling?: boolean`），主进程照旧自己读私有闭包、自己算 `clientReviewHash`，网关把那一格**原样**写进请求体。回执投影到桌面时**丢掉 `scheduleId`**（界面上没有任何动作按安排 id 寻址，多给一格只会多一条能写错的路），只保存到卡组那一发**连键都不出现**。屏幕上那句话一份判据：`reviewSchedulingNotice()`（在 `card-generation-status.ts`，与这一屏其余"把状态翻成话"的地方同一处）报**最早**那一天，有沿用的加「其中 N 张沿用已有的安排」，日期读不出来报「还没排出来」。
+**8.6 那一发的可达性（2026-09-27 量）**：`created` 在**这条命令**上恒真，不是"今天没测到假的那一支"而是**造不出真现场**。逐条核过：① `mapping.objectiveId` 出自 `createOrUpdateObjectiveAndCard` 里 `const objectiveId = randomUUID()`（`activation-service.ts:865`），目标是在这条命令内部 mint 的，保存之前不可能有挂着它的待处理安排；② 激活侧没有任何"关联到已有目标"的分支——`target_equivalent_update` 与 `associate_existing` 只活在合同与 mock 单测里，服务端运行时没有任何一处读 `intent.kind`（现读 `apps/api/src/modules/card-generation-v2/activation-service.ts` 0 处）；③ 重放走的是**已存回执**（C45 ③ 交回逐字相同的 `scheduling`），不会重新派生 `created`。⇒ 唯一能长出 `created:false` 的是别的调用方先给同一个目标排上队，那要有别的路径写 `subject_id = 这个新目标`：今天只有 `run-processing-tick` 的观察侧（它排在激活之后，排的是**当时已存在**的目标）与 W7-3／W7-8 计划里的持续授权／手动安排。
+　**这条读数换掉了两处说法**：界面上那句「其中 N 张沿用已有的安排」被撤（`reviewSchedulingNotice()` 现在只报最早那一天），因为它是**服务端内部概念**加一个没有生产者的分支；`activation-service.ts` 8.6 那一段的注释与 C45 的 `created` 断言各写了一句射程说明——**恢复条件**：给那一格一个生产者（W7-3 或 W7-8 落进同一格）时，连同屏幕那句话与一条会红的用例一起加回来。变异读数：把 8.6 的 `created: authorized.created` 换成写死的 `false` ⇒ **C45 当场红**（这一格真要变可达，这里先响一次）。
 
-**§16.35 三条硬约束的读者**（本文件的判据要在界面上被读到才算完）：不部分提交与幂等那两条的读点是网关那一发——**丢了那一格**（变异 M-1）或**传输层自己补一个默认为真**（M-2）各红一句，缺省那一发交出去的请求里连键都没有；"沿用报实际日期"那一条的读点是屏幕上那句（`Math.min` 换成 `Math.max` 红两条：文案函数与那颗按钮那屏）。
 
-**只剩两件**：① 上面第 3 条——"通知未送达不改变保存/授权成功"要先有一个**可断路的落点**（今天提醒走 `assistant_deliveries` 那条链，与本命令不同事务，所以界面上也没有可吹的牛）；② 这一屏的真窗口读数。
 
----
+**界面那一半落在哪一格（09-26 刀二，句子本身在 09-27 改过一次）**：两颗按钮 `保存到卡组（N 张）` 与 `保存并开启复习（N 张）` 接的是**同一条命令**，差别只有 §5.1 那一格；它走的是渲染层安全的那份**选择合同**（`desktopCardGenerationActivationSelectionV1.startReviewScheduling?: boolean`），主进程照旧自己读私有闭包、自己算 `clientReviewHash`，网关把那一格**原样**写进请求体。回执投影到桌面时**丢掉 `scheduleId`**（界面上没有任何动作按安排 id 寻址，多给一格只会多一条能写错的路），只保存到卡组那一发**连键都不出现**。屏幕上那句话一份判据：`reviewSchedulingNotice()`（在 `card-generation-status.ts`，与这一屏其余"把状态翻成话"的地方同一处）报**最早**那一天，日期读不出来报「还没排出来」——**不再报"其中 N 张沿用已有的安排"**，理由与恢复条件见上面"8.6 那一发的可达性"；这一条现在由 `card-generation-status.test.ts` 里那条"只报最早那一天，不替今天没有生产者的那一格编说法"钉住（拿一条 `created:false` 的假回执喂它，交回的仍然是光句子）。
+
+
+**§16.35 三条硬约束各自的读者**（本文件的判据要在界面上被读到才算完）：不部分提交与幂等那两条的读点是网关那一发——**丢了那一格**（变异 M-1）或**传输层自己补一个默认为真**（M-2）各红一句，缺省那一发交出去的请求里连键都没有；"沿用报实际日期"那一条的读点**不在屏幕上**（屏幕今天没有那句话，见上面"8.6 那一发的可达性"），在 `review-schedule-boundary-postgres.integration.ts:95` 与 C45 那条 `created` 断言（写死 `false` 会红）。屏幕上仍然守着的是"报最早那一天"：`Math.min` 换成 `Math.max` 红两条（文案函数与那颗按钮那屏）。
+
+**只剩两件**：① 上面第 3 条——"通知未送达不改变保存/授权成功"要先有一个**可断路的落点**（今天提醒走 `assistant_deliveries` 那条链，与本命令不同事务，所以界面上也没有可吹的牛）；② 这一屏的真窗口读数。---
 
 ## 6. 决定五：排除优先于一切授权来源
 

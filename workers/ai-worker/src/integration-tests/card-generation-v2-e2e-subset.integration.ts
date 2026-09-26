@@ -761,6 +761,10 @@ test("C45：开启复习那一档 → 恰一条待处理安排，回执报库里
   assert.equal(receipt.scheduling.length, 1, "C45 一张保存下来的目标恰一条排期结果");
   assert.equal(receipt.scheduling[0].objectiveId, objectiveId, "排期结果要挂在真正建出来的那个目标上");
   assert.equal(receipt.scheduling[0].created, true, "第一次开启应当是新建，不是凭空说「沿用了」");
+  // 这一条今天同时是**可达性读数**：排期的主体（目标）是这条命令里刚 mint 出来的 uuid，
+  // 所以 `created` 在这里恒真——界面上那句「其中 N 张沿用已有的安排」没有生产者，已经撤掉
+  // （恢复条件写在 `activation-service.ts` 的 8.6 与 39d D2 §5.4）。把 `authorized.created`
+  // 换成写死的 `false` 会让这条红，也就是这一格真要变可达时，这里先响一次。
   const scheduleId = receipt.scheduling[0].scheduleId;
   createdScheduleIds.push(scheduleId);
 

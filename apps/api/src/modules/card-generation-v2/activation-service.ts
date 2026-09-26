@@ -538,6 +538,11 @@ export async function activateCardCandidatesV2(
           objectiveId: mapping.objectiveId,
           scheduleId: authorized.scheduleId,
           // 复用已有安排时报的是**库里那一条的实际到期时间**，不是这次算出来的。
+          // 一句射程说明：这一发今天**只会走 `created: true`**——`mapping.objectiveId` 是
+          // 本条命令里刚 mint 出来的 uuid（`createOrUpdateObjectiveAndCard`），不可能在保存
+          // 之前就挂着一条待处理安排。`false` 那一档要等到有别的路径先给同一个目标排上队
+          // （W7-3 持续授权／W7-8 手动安排）才会活；界面那句"其中 N 张沿用已有的安排"因此
+          // 已经撤掉，恢复它的条件写在这里与 39d D2 §5.4，别只把文案加回来。
           nextReviewAt: new Date(authorized.nextReviewAt).toISOString(),
           created: authorized.created,
         });
