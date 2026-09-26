@@ -399,6 +399,16 @@ test("游标翻页：两页并起来不重不漏，翻到最后一页才不再�
   assert.equal(second.hasMore, false);
   assert.equal(second.nextCursor, null, "翻到底了还给指针，界面就会留一颗点不动的按钮");
 
+  /**
+   * 总数与游标无关：这一篇一共开过 4 轮，第一页列 2 条、第二页列 2 条，
+   * 两页报的总数都必须是 4。服务层那发 `count` 若写成"带游标的条件"（＝剩下还有几轮），
+   * 第二页会报 2 —— 这一条当场红。合同里的 `totalCount >= shownCount` 拦不住它，
+   * 因为 2 >= 2 自己成立：只有跨页对齐才看得见。
+   */
+  assert.equal(first.totalCount, 4, "中途那一页的总数就应当是全篇那个数");
+  assert.equal(second.totalCount, first.totalCount, "总数不许随翻页变小（那是在报「剩下还有几轮」）");
+  assert.equal(second.shownCount, 2, "本页条数另说：它随翻页变");
+
   const ids = [...first.items, ...second.items].map((item) => item.roundId);
   assert.equal(new Set(ids).size, 4, "两页并起来必须正好是这四轮：重一条或漏一条都是键集写错了");
   assert.deepEqual(
