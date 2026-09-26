@@ -558,6 +558,9 @@ jobs:
       # companion-bridge-postgres 是 09-24 才接进来的（doc 37 通用读页面）：这条链路
       # 此前只在本地手动跑过，写入侧（readable_view 落列、只改视图也要换 revision）
       # 没有任何 CI 覆盖。
+      # evidence-anchor-version-drift-postgres（09-26，39d D3 §3 第 2 层）：卡片的"原文依据"
+      # 在笔记**显式保存开新版**之后永远说自己落点还在——锚点块 id 是版本内新建的，旧行不再被改。
+      # 这一族只有连真库才测得出来（要真建版本、真投影块行、真密封），且它是界面那句话的唯一来源。
       - name: Verify note document state and collaboration authorization behaviour
         working-directory: apps/api
         env:
@@ -577,6 +580,7 @@ jobs:
             src/integration-tests/stats-pending-review-equals-queue-postgres.integration.ts \
             src/integration-tests/workspace-departure-memory-retirement-postgres.integration.ts \
             src/integration-tests/evidence-quote-copy-retrieval-postgres.integration.ts \
+            src/integration-tests/evidence-anchor-version-drift-postgres.integration.ts \
             src/integration-tests/workspace-dissolve-postgres.integration.ts \
             src/integration-tests/workspace-dissolve-route-postgres.integration.ts \
             src/integration-tests/companion-bridge-postgres.integration.ts \

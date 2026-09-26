@@ -69,6 +69,11 @@ const SYSTEM_LEVEL_READS: Record<string, number> = {
   // 按人筛会少报，而少报一个"会毁掉多少"的数字比多报更糟。这里只回四个整数，
   // 不回任何一篇的标题或正文。（同一处读点在卡片棘轮里另计一次。）
   "modules/identity/service.ts": 1,
+  // 证据预览要把锚点重落到**当前版本**的块行上（39d D3 §3 第 2 层）：从 `notes` 只取
+  // `current_version_id` 一列，不回任何正文。从这里出去的文字由调用方各自的对象判据
+  // 挡着（卡列表 `visibleCardsCondition`、候选 reveal 的 run/candidate 归属）。
+  // 这里按人再筛一次会把"看不见这篇笔记"当成"落点还在"——正是这一刀在修的那个瞎法。
+  "modules/card-generation-v2/evidence-preview.ts": 1,
 };
 
 /**
