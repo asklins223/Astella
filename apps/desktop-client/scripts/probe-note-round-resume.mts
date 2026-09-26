@@ -247,6 +247,40 @@ try {
     })
   check('停过这件事留在屏上读得到的那一行里（问题没被换掉、也没多一行假状态）',
     stillTracked && buttonsAfterResume.includes('先到这里'), readings.buttonsAfterResume)
+
+  // ── §16.39 那一族的另一条腿：**别处已经推进过这一轮**时，本机这发迟到不许盖掉它 ──
+  // 上一段证的是"没人动过 ⇒ 点得动"；这一段证"有人动过 ⇒ 点不动、且不动的是那一份现在的"。
+  // 两件事一起才叫"两个窗口恢复的是同一轮"，只测前者会把 CAS 那条路整个漏掉。
+  // 形状照 `probe-note-round-conflict.mts`：外部只推 `revision`（句子与状态都不改），
+  // 于是本机手里那一版**看起来仍然可用**——这正是最容易静默覆盖的那种漂移。
+  // 先把这一轮**停回去**：`phase='paused'` ＋ `paused_at` ＋ 计数器前进一步，
+  // 这三件事一起写正是服务端扫描那条路的产物（`advanceRound` 的 pause 就写这些列），
+  // 所以这里不是在编一个界面到不了的状态。
+  sql(`update note_learning_rounds
+         set phase = 'paused', paused_at = now(), revision = revision + 1, updated_at = now()
+       where id = '${roundId}' and phase = 'active'`)
+  await navToNote(page)
+  const reappeared = await waitButton(page, true)
+  check('外部把这一轮停回去之后，重进这一篇读得到那颗按钮', reappeared, roundId)
+  if (reappeared) {
+    // 界面手里那一版**到此不再刷新**：推进计数器必须发生在这一次读之后。
+    // 顺序反了就是假绿——界面带着新版点下去会"成功"，CAS 那条路一个字都没测到。
+    sql(`update note_learning_rounds set revision = revision + 5, updated_at = now() where id = '${roundId}'`)
+    readings.revisionBeforeStaleClick = firstValue(sql(`select revision from note_learning_rounds where id = '${roundId}'`))
+    await resumeButton(page).first().click({ timeout: 20_000 })
+    await page.waitForTimeout(2_500)
+    const rowAfterStale = firstValue(sql(`
+      select phase || '/' || revision || '/' || coalesce(resumed_at is not null, false)
+        from note_learning_rounds where id = '${roundId}'`))
+    readings.rowAfterStaleClick = rowAfterStale
+    // 判据两条：状态**没被这发改写**（仍是 paused、revision 还是外部那一个），
+    // 且屏上留下一句如实的话（不是"什么都没发生"，也不是把别人的那一版盖掉）。
+    check('迟到那一发没改成：库里仍是 paused、revision 还是别处那一个',
+      rowAfterStale.startsWith(`paused/${readings.revisionBeforeStaleClick}/`), rowAfterStale)
+    const staleAlert = ((await page.locator('.notebook-round [role="alert"]').first().textContent().catch(() => '')) ?? '').trim()
+    readings.staleAlert = staleAlert
+    check('迟到那一发在屏上有如实的一句（不许装成"已经继续了"）', staleAlert.length > 0, staleAlert)
+  }
 } catch (error) {
   // 剧本自己没跑完也要先把已得的读数印出来（同刀二那条教训：读数不该被抛掉）。
   check('剧本自己没跑完', false, error instanceof Error ? error.message : String(error))
