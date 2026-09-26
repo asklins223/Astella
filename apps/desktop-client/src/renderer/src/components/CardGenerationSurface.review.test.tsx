@@ -292,7 +292,7 @@ describe("CardGenerationSurface · 候选审核", () => {
    * 「保存并开启复习」今天有出处了，所以这一格按 §19 那条约定**换成正向断言**——
    * 原来的守卫钉的是"0287 唯一键、边界函数、0288 回执那一格、真库集测 C45 都还没落"，
    * 那四件都已交付（39d W7-2 两格）。这里量的是接线本身：两颗按钮的差别**真的到了请求里**、
-   * 只保存到卡组那一发**不多说一句**、沿用时报的是**那一条的日期**。
+   * 只保存到卡组那一发**不多说一句**、排上之后报的是**库里那一条的日期**。
    */
   it("两颗按钮：那一档跟着这一次点击出去，屏幕上那句复习只在真的排期时出现", async () => {
     const { state } = stubGateway([
@@ -322,10 +322,13 @@ describe("CardGenerationSurface · 候选审核", () => {
   });
 
   /**
-   * 沿用已有安排那一支：屏幕上那个日期必须是**库里那一条的**（服务端已经把它算好交回来），
-   * 并且要说明是沿用——三条排期里两条沿用、一条新排时，报的是最早那一天。
+   * 回执里混着 `created:false` 的那一发（**这条命令今天交不出这种回执**——排期的目标是
+   * 它自己刚 mint 出来的，见 39d §19 与 D2 §5.4「8.6 那一发的可达性」）：屏上仍然只报
+   * **最早那一天**，不因为那一格多说话。这一条与 `card-generation-status.test.ts` 里那条
+   * 同方向，差别在这里量的是**屏幕上真的印出来什么**（含前缀「已确认 N 个目标映射」），
+   * 所以哪天有人把括号那句加回 `reviewSchedulingNotice`，红的是这一屏而不只是那个函数。
    */
-  it("沿用已有安排时，报的是那一条的日期并说明是沿用", async () => {
+  it("回执里混着沿用那一格时，屏幕只报最早那一天，不多说一句", async () => {
     const { state } = stubGateway([
       { candidateId: "cand-1", statement: "第一张", reviewDecision: "keep", publishState: "unpublished" },
     ], {
@@ -342,7 +345,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     await waitFor(() => expect(state.activateCalls).toHaveLength(1));
     await waitFor(() => expect(
       document.querySelector(".candidate-review-slip__receipt")?.textContent,
-    ).toBe(`已确认 1 个目标映射 · 第一次复习排在 ${formatDate("2026-09-27T12:00:00.000Z")}（其中 2 张沿用已有的安排）`));
+    ).toBe(`已确认 1 个目标映射 · 第一次复习排在 ${formatDate("2026-09-27T12:00:00.000Z")}`));
   });
 
   it("保留后卡片说出新状态，并自动走到下一张未决候选", async () => {
