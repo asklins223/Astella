@@ -343,7 +343,7 @@ export function HomeV2Provider({ children }: { readonly children: ReactNode }) {
         break;
       case "current-target":
         detail = home.hasFocus ? "今天的主目标已经定下" : "还没定下今天的主目标";
-        meta = home.hasFocus ? "查看这个目标" : "去学习卡里定一张";
+        meta = home.hasFocus ? "查看这个目标" : "从一篇笔记开始学习";
         break;
       case "companion-center":
         detail = companionHome.projection?.profileSummary.name

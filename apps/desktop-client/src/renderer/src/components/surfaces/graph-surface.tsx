@@ -167,10 +167,11 @@ function toUniverseGraph(
   const graphNodes: GraphNode[] = nodes.map((node) => {
     const id = graphNodeKey(node);
     if (isObjectiveNode(node)) {
-      // The evidence halo needs a coverage value. The V3 contract does not
-      // carry one yet, so the supported_by degree lights the arc until real
-      // coverage arrives: one evidence = 20%, saturating at five.
-      const evidenceDegreeForNode = Math.min(5, evidenceDegree.get(id) ?? 0);
+      // 证据光晕只表达"有真实学习足迹"这一事实（PRD §11.4：星体的光痕可以
+      // 表达真实学习足迹，但**不许**把证据条数画成理解百分比——改前
+      // "一条证据 = 20%、五条封顶"的弧就是那个禁令指的形状）。V3 合同没有
+      // 覆盖度字段；在真覆盖度到来之前，光痕只有"有/没有"两档。
+      const evidenceDegreeForNode = evidenceDegree.get(id) ?? 0;
       return {
         id,
         entityId: node.nodeRef.objectiveId,
@@ -179,7 +180,7 @@ function toUniverseGraph(
         description: node.publicSummary,
         state: objectiveUniverseState(node.personal.state),
         parentId: null,
-        evidenceCoverage: evidenceDegreeForNode > 0 ? evidenceDegreeForNode / 5 : null,
+        evidenceCoverage: evidenceDegreeForNode > 0 ? 1 : null,
         metadata: { objectiveState: node.personal.state },
       };
     }
@@ -673,7 +674,7 @@ export function GraphSurface() {
           <div className="universe-status-overlay">
             <section className="universe-status-card" aria-busy={loading || undefined} role={failure ? "alert" : "status"}>
               <span className="universe-status-orbit" aria-hidden="true">{failure ? <CircleHelp size={20} /> : rawGraph.nodes.length > 0 ? <Search size={20} /> : <Network size={20} />}</span>
-              {loading ? <><strong>正在点亮你的知识宇宙</strong><p>计算星系位置、关系光路与证据信号…</p></> : failure ? <><strong>理解星图暂时不可用</strong><p>{failure}</p><button type="button" onClick={() => void reload()}>重新读取</button></> : rawGraph.nodes.length === 0 ? <><strong>这片宇宙还没有星体</strong><p>先从来源写下笔记并形成学习卡，真实路径会在这里出现。</p><button type="button" onClick={() => invoke("open-sources")}><BookOpenText size={14} />查看来源库</button></> : <><strong>这个星域里没有匹配项</strong><p>清除搜索或切回“全部”即可恢复。</p><button type="button" onClick={() => { setQuery(""); setStateFilter("all"); setFitRequest((value) => value + 1); }}>显示全部星体</button></>}
+              {loading ? <><strong>正在点亮你的知识宇宙</strong><p>计算星系位置、关系光路与证据信号…</p></> : failure ? <><strong>理解星图暂时不可用</strong><p>{failure}</p><button type="button" onClick={() => void reload()}>重新读取</button></> : rawGraph.nodes.length === 0 ? <><strong>这片宇宙还没有星体</strong><p>从来源写下笔记，星体就会在这里出现——不需要先制卡；学习之后，真实的路径与证据会随之生长。</p><button type="button" onClick={() => invoke("open-sources")}><BookOpenText size={14} />查看来源库</button></> : <><strong>这个星域里没有匹配项</strong><p>清除搜索或切回“全部”即可恢复。</p><button type="button" onClick={() => { setQuery(""); setStateFilter("all"); setFitRequest((value) => value + 1); }}>显示全部星体</button></>}
             </section>
           </div>
         ) : null}

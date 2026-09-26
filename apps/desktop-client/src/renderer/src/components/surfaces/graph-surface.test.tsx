@@ -227,7 +227,9 @@ describe("GraphSurface · Web 成熟版 Understanding Universe 移植", () => {
     render(<GraphSurface />);
 
     expect(await screen.findByText("这片宇宙还没有星体")).toBeTruthy();
-    expect(screen.getByText(/先从来源写下笔记并形成学习卡/)).toBeTruthy();
+    // W6-5：星图空态不许把制卡当前提（39 §11.2 有正文的笔记无需制卡即可出现）。
+    expect(screen.getByText(/不需要先制卡/)).toBeTruthy();
+    expect(screen.queryByText(/形成学习卡/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "查看来源库" }));
     expect(invoke).toHaveBeenCalledWith("open-sources");
   });
