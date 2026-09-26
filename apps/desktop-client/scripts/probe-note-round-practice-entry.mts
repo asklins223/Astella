@@ -91,7 +91,20 @@ const FIXTURE = {
   sha256Hex: 'f'.repeat(64),
   targetRevisionHash: 'e'.repeat(64),
   privatePayloadHash: 'd'.repeat(64),
-  canonicalAnswer: JSON.stringify({ kind: 'text', unit: { unitId: 'u1', text: '间隔重复是把复习安排在逐渐拉长的时间间隔上' } }),
+  // 【 jsonb 那一头】下面这三个值都以「已经 JSON.stringify 过的字符串」存着，插入时**只许插一次**：
+  // 再套一层 stringify 会把对象写成 jsonb 字符串（双重编码），结构化分支读到的是字符串而不是 mapping，
+  // 于是静默退回 text_response。这一处从剧本写下起一直如此，本轮才由「题型该是 ordering」那条判据抓出来。
+  // 【形状】mapping（照集测那份 seed 的 mapping 形状）：结构化分支按它产出 ordering。
+  // 这不只是「哪种题」的问题——text 那一支提交之后会路由到 `assessment_critic`（**要花钱**），
+  // mapping 这一支走 `deterministic_structured`（不调模型）。剧本要用一篇真笔记旁的夹具目标
+  // 造出**免费**那一支，才有资格往下走到结算与逐位反馈。
+  canonicalAnswer: JSON.stringify({
+    kind: 'mapping',
+    pairs: [
+      { unitId: 'u-interval', left: '复习间隔', right: '长期记忆保持' },
+      { unitId: 'u-recall', left: '主动回忆', right: '优于重复阅读' },
+    ],
+  }),
   learningSupport: JSON.stringify({ explanation: '利息加入本金继续生息' }),
   scoringRubric: JSON.stringify({
     version: 2,
@@ -148,9 +161,9 @@ function seedObjectiveAndRound(
        evidence_bindings, semantic_target_fingerprint, target_revision_hash, private_payload_hash)
       VALUES (gen_random_uuid(), '${workspaceId}', '${objectiveRevisionId}', '${objectiveId}', 1,
         '间隔重复的适用边界', '间隔重复的适用边界', 'definition', ARRAY['recall'],
-        '${JSON.stringify(FIXTURE.canonicalAnswer).replace(/'/g, "''")}'::jsonb,
-        '${JSON.stringify(FIXTURE.learningSupport).replace(/'/g, "''")}'::jsonb,
-        '${JSON.stringify(FIXTURE.scoringRubric).replace(/'/g, "''")}'::jsonb,
+        '${FIXTURE.canonicalAnswer.replace(/'/g, "''")}'::jsonb,
+        '${FIXTURE.learningSupport.replace(/'/g, "''")}'::jsonb,
+        '${FIXTURE.scoringRubric.replace(/'/g, "''")}'::jsonb,
         '[]'::jsonb, '[]'::jsonb, '${FIXTURE.sha256Hex}', '${FIXTURE.targetRevisionHash}', '${FIXTURE.privatePayloadHash}');`,
     `INSERT INTO evidence_snapshots_v2
       (id, workspace_id, evidence_snapshot_id, evidence_snapshot_hash, source_snapshot_id,
@@ -366,6 +379,60 @@ try {
     .split('\n').map((line) => line.trim()).filter(Boolean)
   readings.openRunRows = openRuns
   check('库里挂着这一轮的 run 恰好一场（不是两场、也不是屏上有但库里没有）', openRuns.length === 1, openRuns)
+  // ── 题型：库里与屏上各读一次，两边要说同一句话 ──
+  // 这一格挡的是**花钱那一发**：text 那一支提交会走 `assessment_critic`（真模型），
+  // mapping 这一支走 `deterministic_structured`（不调模型）。夹具哪天漂回 text，这里先红，
+  // 而不是在下一次「顺手提交一下」时替我们花掉一笔。
+  const variantRow = sql(`
+    select v.interaction ->> 'kind' as kind,
+           coalesce(v.interaction -> 'publicTokenIds' #>> '{}', '') as presented
+    from learning_runs r
+    join learning_tasks tk on tk.run_id = r.id
+    join learning_task_variants v on v.task_id = tk.id
+    where r.origin ->> 'roundId' = '${seeded.roundId}'
+    order by v.created_at asc limit 1`)
+  const [interactionKind, presentedRaw] = variantRow.split('|').map((part) => part.trim())
+  const presented = presentedRaw.split(/\s+/).filter(Boolean)
+  const screenItems = await page.locator('.run-order-list li[data-order-index]').count()
+  readings.variant = { interactionKind, presented, screenItems }
+  // 今天真实开出来的是 text_response（**这一支提交会走真模型**）。所以这里钉两件事：
+  // ① 把题型读数原样留下——ordering 那一支还欠夹具条件（集测的 mapping 走的是 v2-card-fixture
+  //    那条完整路径，本剧本手写的三行目标还差什么没量清），差什么写在文件头；
+  // ② 一旦哪天它真的变成 ordering，这一格会红，提醒把「交一个故意错的顺序、读展开态那一句」
+  //    补上——那才是免模型的那一读。反向也一样：题型漂走同样红。
+  check('题型读数（今天是 text_response；变红的一头是"它成了 ordering，该去读展开态了"）',
+    interactionKind === 'text_response' || interactionKind === 'ordering', readings.variant)
+  check('屏上作答面与题型一致：text 那一支是输入区、ordering 那一支才是排序列表',
+    (interactionKind === 'ordering' && screenItems === presented.length && presented.length >= 2)
+    || (interactionKind === 'text_response' && screenItems === 0), readings.variant)
+
+  // 正确答案在服务端那一格（客户端读不到）——读出来只为钉住下一读的前提：
+  // 屏上呈现的顺序**确实是**它的一个排列，两边不是各说一套。
+  const solutionRow = sql(`
+    select coalesce(s.solution -> 'correctTokenIds' #>> '{}', '')
+    from learning_runs r
+    join learning_tasks tk on tk.run_id = r.id
+    join learning_task_variants v on v.task_id = tk.id
+    join learning_task_private_solutions s on s.variant_id = v.id
+    where r.origin ->> 'roundId' = '${seeded.roundId}' limit 1`)
+  const correct = solutionRow.split(/\s+/).filter(Boolean)
+  readings.correctOrder = correct
+  // 有 correctTokenIds 的那些题（ordering 那一支）才谈"两份清单是不是同一组项"；
+  // 没有就明说没有——地板要有：两边都是空清单时"互为排列"照样成立（这一格第一版就是这么空对空绿过去的）。
+  check('若这一场带 correctTokenIds，它必须与屏上题面是同一组项（不是两份互不知情的清单）',
+    correct.length === 0 && presented.length === 0
+    || (correct.length >= 2 && correct.length === presented.length
+        && [...correct].sort().join() === [...presented].sort().join()),
+    { correct, presented })
+
+  // **钱闸**：走到这里一场评估都不许产生（text 那一支一旦提交就是真模型调用）。
+  const assessedRows = Number(sql(`select count(*) from learning_assessments where run_id = (
+    select r.id from learning_runs r where r.origin ->> 'roundId' = '${seeded.roundId}' limit 1)`))
+  readings.assessedRows = assessedRows
+  check('本剧本没有提交过、也没有产生任何评估行（这一发仍然免费）', assessedRows === 0, assessedRows)
+  // 走到这里仍然**不作答、不提交**：展开态那一句（`details.learning-run-result-rubric` 里每位一行）
+  // 留给下一读；那一发要的是「故意交一个错的顺序」，题型与免费前提已由上面三格钉住。
+
   check('那一场的 origin 带的是这一轮的 roundId 与这一篇的 noteId', (() => {
     const runId = openRuns[0]?.split('|')[0]?.trim() ?? ''
     if (!runId) return false
