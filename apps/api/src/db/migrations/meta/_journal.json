@@ -2019,5 +2019,21 @@
       "tag": "0288_activation_receipt_scheduling",
       "breakpoints": true
     }
+,
+{
+          "idx": 288,
+          "version": "7",
+          "when": 1789800012032,
+          "tag": "0289_round_append_only_allows_cascade",
+          "breakpoints": true
+    }
+,
+{
+          "idx": 289,
+          "version": "7",
+          "when": 1789800013032,
+          "tag": "0290_dissolve_workspace_history_hatch",
+          "breakpoints": true
+    }
   ]
 }

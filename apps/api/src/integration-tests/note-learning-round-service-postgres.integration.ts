@@ -84,7 +84,8 @@ before(async () => {
       VALUES (${workspaceId}, ${peerUserId}, 'member')`;
     // 六条计划修订用例各拿一篇自己的笔记：同 (workspace,user,note) 至多一条
     // 未完成轮次（0282 的部分唯一索引），共用一篇会互相撞"round_already_open"。
-    for (let i = 0; i < 6; i++) {
+    // 第七篇是 0289 级联豁免那条用例的（它也开一轮，同样不能与别人共用）。
+    for (let i = 0; i < 7; i++) {
       const noteId = randomUUID();
       const versionId = randomUUID();
       await tx`INSERT INTO notes (id, workspace_id, title, created_by)
@@ -434,6 +435,27 @@ test("计划修订：只追加是 DB 层的——UPDATE/DELETE 都被触发器�
     () => fixtureSql`DELETE FROM note_learning_round_plan_revisions WHERE workspace_id = ${workspaceId}`,
     /append-only/,
   );
+
+  /**
+   * 0289 那一条级联豁免的正向对照（上一格登记 P0 时说过，豁免本身没有测试读它）。
+   * 判据是"祖先那一轮已经不在"，所以：删父行 ⇒ 子行跟着走；而**别的轮次的子行**
+   * 一行都不许被这一发带走（否则这条豁免就成了空挡一切的口子）。
+   */
+  const cascadeRound = await withWorkspaceTransaction(me(), (tx) =>
+    createRound(tx, me(), createInput(planNotes[6].noteId, planNotes[6].versionId)));
+  await withWorkspaceTransaction(me(), (tx) =>
+    appendPlanRevision(tx, me(), planInput(cascadeRound.roundId, cascadeRound.revision, {})));
+  await fixtureSql`DELETE FROM note_learning_rounds WHERE id = ${cascadeRound.roundId}`;
+  const goneRounds = await fixtureSql`SELECT count(*)::int AS n FROM note_learning_rounds WHERE id = ${cascadeRound.roundId}`;
+  const goneRevisions = await fixtureSql`
+    SELECT count(*)::int AS n FROM note_learning_round_plan_revisions WHERE round_id = ${cascadeRound.roundId}`;
+  const otherRevisions = await fixtureSql`
+    SELECT count(*)::int AS n FROM note_learning_round_plan_revisions WHERE round_id = ${created.roundId}`;
+  assert.equal(Number(goneRounds[0].n), 0, "父行没删掉，这一条测不到级联");
+  assert.equal(Number(goneRevisions[0].n), 0,
+    "0289 的级联豁免没生效：删父行仍然被子表守卫挡在半路（那条 P0 的形状）");
+  assert.equal(Number(otherRevisions[0].n), 1,
+    "别轮次的子行被一起删了 ⇒ 这条豁免不是按'祖先还活不活'判，而是空挡了一切");
 
   // 带绕行口子（app.allow_history_mutation='on'）：显式维护路径删得掉——
   // 这就是 after() 清理走的同一条路。

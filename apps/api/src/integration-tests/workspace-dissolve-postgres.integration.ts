@@ -40,6 +40,21 @@ const globalMemory = randomUUID();
 const workspaceMemory = randomUUID();
 const noteId = randomUUID();
 
+/**
+ * 笔记学习轮次族（0282–0285）的一整套行——这一组是 2026-09-26 量到的那条 P0 的现场：
+ * 三张子表的"只追加"守卫把 UPDATE 与 DELETE 一起挡了，而父表 `note_learning_rounds`
+ * 那把 `nlr_identity_immutable` 只挡改不挡删。于是解散沿外键级联下来时，子表在半路抛
+ * `P0001 … append-only: DELETE is not allowed`，整个解散事务回滚。
+ * 四张表都要种：只种父表测不出来（那正是 F43 当年"真解散验通"的形状——当时这几张表还没有）。
+ */
+const roundVersionId = randomUUID();
+const roundId = randomUUID();
+const planRevisionId = randomUUID();
+const teachingId = randomUUID();
+const artifactId = randomUUID();
+/** 真实主形状是 32 位 md5（0282/0284 那条注释记过：写成 64 会把真笔记挡在外面）。 */
+const ROUND_SNAPSHOT_HASH = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+
 /** 清单从 catalog 现生成，不手抄——手抄那份会随新迁移悄悄漏表。 */
 async function workspaceTables(): Promise<string[]> {
   const rows = await admin`
@@ -78,6 +93,30 @@ before(async () => {
     // 这就是实测里 92/105 那种形状：跟人绑定的记忆未必要跟着空间一起死）。
     await tx`INSERT INTO notes (id, workspace_id, title, created_by)
       VALUES (${noteId}, ${ws}, 'dissolve-me', ${owner})`;
+    // 这一篇上真的开过一轮、改过一次计划、讲过一次课、还有一份动态产物——四张表一起种。
+    await tx`INSERT INTO note_versions (id, note_id, workspace_id, version_no, content_json, content_hash, created_by)
+      VALUES (${roundVersionId}, ${noteId}, ${ws}, 1,
+              ${tx.json({ blocks: [{ type: "paragraph", content: "有索引，查询仍然可能慢" }] })}, 'dis-ver-hash', ${owner})`;
+    await tx`INSERT INTO note_learning_rounds (id, workspace_id, user_id, note_id, phase, outcome,
+              driving_question, driving_question_source, driving_question_revision,
+              note_version_id, source_content_hash, evidence_snapshot_ids,
+              max_model_calls, max_wall_clock_seconds, max_tasks, revision, closed_at)
+      VALUES (${roundId}, ${ws}, ${owner}, ${noteId}, 'closed', 'partial',
+              '为什么有索引还是慢', 'suggested', 1,
+              ${roundVersionId}, ${ROUND_SNAPSHOT_HASH}, '{}',
+              8, 900, 6, 3, now())`;
+    await tx`INSERT INTO note_learning_round_plan_revisions (id, workspace_id, user_id, round_id,
+              plan_ordinal, round_revision, plan, reason)
+      VALUES (${planRevisionId}, ${ws}, ${owner}, ${roundId}, 1, 1,
+              ${tx.json({ items: [{ key: "explain", label: "先讲清多一跳访问的代价" }] })}, '换成先讲代价')`;
+    await tx`INSERT INTO note_learning_round_artifacts (id, workspace_id, user_id, round_id, kind, html, snapshot_hash)
+      VALUES (${artifactId}, ${ws}, ${owner}, ${roundId}, 'dynamic_explanation',
+              '<section class="ailearn-artifact-pane" data-artifact-step="0"></section>', ${ROUND_SNAPSHOT_HASH})`;
+    await tx`INSERT INTO note_learning_round_teachings (id, workspace_id, user_id, round_id, ordinal, kind,
+              content, source_block_ordinals, snapshot_hash, driving_question_revision, artifact_id)
+      VALUES (${teachingId}, ${ws}, ${owner}, ${roundId}, 1, 'explanation',
+              ${tx.json({ explanation: "统计信息过期时优化器会选全表扫" })}, '{1}',
+              ${ROUND_SNAPSHOT_HASH}, 1, ${artifactId})`;
     await tx`INSERT INTO assistant_memory_items (id, workspace_id, user_id, kind, content, scope)
       VALUES (${globalMemory}, ${ws}, ${owner}, 'preference', '属于人的那条', 'global'),
               (${workspaceMemory}, ${ws}, ${owner}, 'preference', '关联空间的那条', 'workspace')`;
@@ -170,11 +209,37 @@ test("解散预览：数得出这个空间里有多少东西，且只数这个�
 });
 
 test("解散：逐表清干净、属于人的记忆活着、审计留得下", async () => {
+  /**
+   * 先做阳性对照：轮次族那四张表**确实各有行**，否则下面那句"解散后为 0"可以靠
+   * "从来没种进去"蒙过去（这条用例要钉的正是 2026-09-26 那条 P0：解散沿外键级联
+   * 清这四张表时，被三张子表的只追加守卫挡在半路）。
+   */
+  const ROUND_TABLES = [
+    "note_learning_rounds",
+    "note_learning_round_plan_revisions",
+    "note_learning_round_teachings",
+    "note_learning_round_artifacts",
+  ] as const;
+  for (const table of ROUND_TABLES) {
+    const seeded = await admin.unsafe(
+      `SELECT count(*)::int AS n FROM public.${table} WHERE workspace_id = '${ws}'::uuid`,
+    );
+    assert.ok(Number(seeded[0].n) >= 1, `起点就没种 ${table} ⇒ 这一条测不到级联清理`);
+  }
+
   const result = await api`
     SELECT public.ailearn_dissolve_workspace(${ws}::uuid, ${owner}::uuid) AS counts
   `;
   const counts = result[0].counts as Record<string, number>;
   assert.ok((counts.notes ?? 0) >= 1, `返回计数里没有 notes：${JSON.stringify(counts)}`);
+
+  for (const table of ROUND_TABLES) {
+    const left = await admin.unsafe(
+      `SELECT count(*)::int AS n FROM public.${table} WHERE workspace_id = '${ws}'::uuid`,
+    );
+    assert.equal(Number(left[0].n), 0,
+      `解散之后 ${table} 里还留着这个空间的行（只追加守卫挡住外键级联的那条 P0）`);
+  }
 
   const left = await admin`SELECT id FROM notes WHERE id = ${noteId}`;
   assert.equal(left.length, 0, "空间里的笔记成了孤儿（102 张表只有 13 张有外键，靠 CASCADE 清不掉）");
