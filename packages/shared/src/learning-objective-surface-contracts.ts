@@ -155,6 +155,38 @@ export type ObjectiveSurfaceFreshnessV3 = z.infer<
   typeof objectiveSurfaceFreshnessV3Schema
 >;
 
+/**
+ * 「这条目标的来源更新了吗」那一份比较，**全仓只准这一处**（39d D3 §5.1 末段：判定不许各写一份）。
+ * 今天它被抄在三地上（`learning-objectives/surface-service.ts` 的详情与列表两格、
+ * `understanding-v3/topology-repository.ts` 的星图那一格），三地的输入形状不同而规则相同——
+ * 规则相同的东西有三份，就是同一颗目标在首页与星图上各说一句话的预备状态。
+ *
+ * 三档的取法：
+ *  - 连一条来源行都没有 ⇒ `legacy_unreviewed`（无从判断，不是"没更新"）；
+ *  - 某个笔记锚点记着它当初对齐哪一版，而那一版已经不是这篇的当前版 ⇒ `source_outdated`；
+ *  - 其余一律 `fresh`，**包括"这篇读不到"与"这篇没有当前版本指针"**。
+ *
+ * 最后那条方向是刻意的：说不出新旧就不报消息。与 api 侧 `checkSourceOutdated`
+ * （`card-generation-v2/helpers.ts`）同口径，理由见 D3 §3.3——把"没有指针"报成"内容更新了"，
+ * 用户会跑去核对一篇其实没动过的笔记。
+ */
+export function objectiveSurfaceFreshnessV1(input: {
+  /** 这颗目标一共有几条来源行（含非笔记来源）。零条即 legacy。 */
+  originCount: number;
+  /** 来源里属于笔记的那些锚点；`noteVersionId` 为 null 表示当初就没记版本，不参与比较。 */
+  noteAnchors: Array<{ noteId: string; noteVersionId: string | null }>;
+  /** 该笔记的当前版本：null＝没有指针，undefined＝这篇读不到（无权限或已消失）。 */
+  currentVersionIdOf: (noteId: string) => string | null | undefined;
+}): ObjectiveSurfaceFreshnessV3 {
+  if (input.originCount === 0) return "legacy_unreviewed";
+  const outdated = input.noteAnchors.some((anchor) => {
+    if (anchor.noteVersionId === null) return false;
+    const current = input.currentVersionIdOf(anchor.noteId);
+    return typeof current === "string" && current !== anchor.noteVersionId;
+  });
+  return outdated ? "source_outdated" : "fresh";
+}
+
 export const objectivePersonalStateV3Schema = z.enum([
   "unvalidated",
   "learning",

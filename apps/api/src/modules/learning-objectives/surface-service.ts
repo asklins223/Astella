@@ -46,8 +46,14 @@ import type {
   ObjectivePersonalStateV3,
   KnowledgeFormV2,
   ObjectiveSurfaceLifecycleV3,
+  ObjectiveSurfaceFreshnessV3,
 } from "@ailearn/shared";
-import { DomainError, cardStrategyV2Schema, learningRunOutcomeSchema } from "@ailearn/shared";
+import {
+  DomainError,
+  cardStrategyV2Schema,
+  learningRunOutcomeSchema,
+  objectiveSurfaceFreshnessV1,
+} from "@ailearn/shared";
 import { listOriginsByObjective, rowToWire } from "./origin-service.ts";
 import { pickLatestCompletedRunV3, resolvePrimaryActionV3, type ActionResolverInputV3 } from "./action-resolver.ts";
 import { readAnswerModePreference } from "../companion-shell/answer-mode-preference.ts";
@@ -200,10 +206,15 @@ async function computeFreshness(
   tx: ApiTransaction,
   ctx: SurfaceContext,
   origins: ObjectiveOriginV3[],
-): Promise<"fresh" | "source_outdated" | "legacy_unreviewed"> {
+): Promise<ObjectiveSurfaceFreshnessV3> {
   const noteOrigins = origins.filter((o) => o.kind === "note");
   if (noteOrigins.length === 0) {
-    return origins.length === 0 ? "legacy_unreviewed" : "fresh";
+    // 没有笔记锚点就没必要读笔记表；零条来源那一档由同一份判据给。
+    return objectiveSurfaceFreshnessV1({
+      originCount: origins.length,
+      noteAnchors: [],
+      currentVersionIdOf: () => undefined,
+    });
   }
   const noteIds = [
     ...new Set(
@@ -222,18 +233,11 @@ async function computeFreshness(
       inArray(notes.id, noteIds),
     ));
   const currentByNote = new Map(noteRows.map((n) => [n.id, n.currentVersionId]));
-  // 修复：origin.noteVersionId 为 null 时（手动迁移/早期数据），
-  // 无法做版本比较，不应误判为 source_outdated。只有当 origin 有明确
-  // noteVersionId 且与当前版本不一致时才标记 outdated。
-  const outdated = noteOrigins.some(
-    (o) =>
-      o.kind === "note" &&
-      o.noteVersionId !== null &&
-      currentByNote.get(o.noteId) !== null &&
-      currentByNote.get(o.noteId) !== undefined &&
-      currentByNote.get(o.noteId) !== o.noteVersionId,
-  );
-  return outdated ? "source_outdated" : "fresh";
+  return objectiveSurfaceFreshnessV1({
+    originCount: origins.length,
+    noteAnchors: noteOrigins.map((o) => ({ noteId: o.noteId, noteVersionId: o.noteVersionId })),
+    currentVersionIdOf: (noteId) => currentByNote.get(noteId) ?? null,
+  });
 }
 
 // ─── RL-09 指标：surface 装配耗时计时 ──────────────────────────────────────
@@ -1016,23 +1020,14 @@ async function batchAssembleObjectiveSurfacesV3(
       }
     }
 
-    // freshness
-    let freshness: "fresh" | "source_outdated" | "legacy_unreviewed" = "fresh";
-    const noteOrigins = origins.filter((o) => o.kind === "note");
-    if (noteOrigins.length === 0) {
-      freshness = origins.length === 0 ? "legacy_unreviewed" : "fresh";
-    } else {
-      const outdated = noteOrigins.some((o) => {
-        if (o.kind !== "note") return false;
-        // 修复：origin.noteVersionId 为 null 时不参与版本比较（同 computeFreshness）。
-        if (o.noteVersionId === null) return false;
-        const noteRow = noteById.get(o.noteId);
-        return noteRow && noteRow.currentVersionId !== null
-          && noteRow.currentVersionId !== undefined
-          && noteRow.currentVersionId !== o.noteVersionId;
-      });
-      freshness = outdated ? "source_outdated" : "fresh";
-    }
+    // freshness：与详情那一格共用同一份判据（D3 §5.1「不许各写一份比较」）。
+    const freshness = objectiveSurfaceFreshnessV1({
+      originCount: origins.length,
+      noteAnchors: origins
+        .filter((o) => o.kind === "note")
+        .map((o) => ({ noteId: o.noteId, noteVersionId: o.noteVersionId })),
+      currentVersionIdOf: (noteId) => noteById.get(noteId)?.currentVersionId ?? null,
+    });
 
     // personal states
     const ivRow = ivByObjective.get(objectiveId);

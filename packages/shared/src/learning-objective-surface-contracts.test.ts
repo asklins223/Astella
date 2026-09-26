@@ -15,6 +15,7 @@ import {
   objectiveOriginV3Schema,
   learningObjectiveTopologyEventV2Schema,
   findPrivatePayloadLeaks,
+  objectiveSurfaceFreshnessV1,
 } from "./learning-objective-surface-contracts.ts";
 import { publicLearningCardV2Schema } from "./learning-card-v2-contracts.ts";
 
@@ -272,4 +273,83 @@ test("W1-18: V1 PublicLearningCardV2 stays byte-frozen (version 2, no surface le
     publicLearningCardV2Schema.safeParse({ ...card, version: 3 }).success,
     false,
   );
+});
+
+// ─── objectiveSurfaceFreshnessV1：那份比较的唯一一份（39d D3 §5.1）──────────
+// 三档各有正反两向；"读不到这篇"与"这篇没有指针"两格钉的是**不报消息**那一侧，
+// 把它们写成 outdated 会让用户去核对一篇其实没动的笔记。
+
+const ANCHOR_NOTE = "00000000-0000-4000-8000-0000000000a1";
+const ANCHOR_V1 = "00000000-0000-4000-8000-0000000000b1";
+const ANCHOR_V2 = "00000000-0000-4000-8000-0000000000b2";
+
+function freshnessOf(
+  origins: Array<{ noteId: string | null; noteVersionId: string | null }>,
+  currentById: Map<string, string | null>,
+) {
+  return objectiveSurfaceFreshnessV1({
+    originCount: origins.length,
+    noteAnchors: origins
+      .filter((o) => o.noteId !== null)
+      .map((o) => ({ noteId: String(o.noteId), noteVersionId: o.noteVersionId })),
+    currentVersionIdOf: (noteId) => currentById.get(noteId) ?? null,
+  });
+}
+
+test("freshness：连一条来源都没有 ⇒ legacy_unreviewed（无从判断，不是「没更新」）", () => {
+  assert.equal(objectiveSurfaceFreshnessV1({
+    originCount: 0, noteAnchors: [], currentVersionIdOf: () => undefined,
+  }), "legacy_unreviewed");
+});
+
+test("freshness：当前版本与锚点那一版不同 ⇒ source_outdated", () => {
+  assert.equal(freshnessOf(
+    [{ noteId: ANCHOR_NOTE, noteVersionId: ANCHOR_V1 }],
+    new Map([[ANCHOR_NOTE, ANCHOR_V2]]),
+  ), "source_outdated");
+});
+
+test("freshness：还是那一版 ⇒ fresh", () => {
+  assert.equal(freshnessOf(
+    [{ noteId: ANCHOR_NOTE, noteVersionId: ANCHOR_V1 }],
+    new Map([[ANCHOR_NOTE, ANCHOR_V1]]),
+  ), "fresh");
+});
+
+test("freshness：锚点当初没记版本 ⇒ fresh（不参与比较）", () => {
+  assert.equal(freshnessOf(
+    [{ noteId: ANCHOR_NOTE, noteVersionId: null }],
+    new Map([[ANCHOR_NOTE, ANCHOR_V2]]),
+  ), "fresh");
+});
+
+test("freshness：这篇没有当前版本指针 ⇒ fresh（说不出新旧就不报消息）", () => {
+  assert.equal(freshnessOf(
+    [{ noteId: ANCHOR_NOTE, noteVersionId: ANCHOR_V1 }],
+    new Map([[ANCHOR_NOTE, null]]),
+  ), "fresh");
+});
+
+test("freshness：这篇根本读不到（无权限或已消失）⇒ fresh，且不许反过来泄露可见性", () => {
+  // 与"没有指针"是两格：读侧传进来的是 undefined（表里没这一行），不是 null。
+  assert.equal(objectiveSurfaceFreshnessV1({
+    originCount: 1,
+    noteAnchors: [{ noteId: ANCHOR_NOTE, noteVersionId: ANCHOR_V1 }],
+    currentVersionIdOf: () => undefined,
+  }), "fresh");
+});
+
+test("freshness：多条锚点里只要有一条对上新版就算 outdated，非笔记来源不参与", () => {
+  const anchors = [
+    { noteId: ANCHOR_NOTE, noteVersionId: ANCHOR_V1 },
+    { noteId: "00000000-0000-4000-8000-0000000000a2", noteVersionId: ANCHOR_V1 },
+  ];
+  assert.equal(freshnessOf(anchors, new Map([[ANCHOR_NOTE, ANCHOR_V2]])), "source_outdated");
+  assert.equal(freshnessOf(anchors, new Map([[ANCHOR_NOTE, ANCHOR_V1]])), "fresh");
+});
+
+test("freshness：有来源但都不是笔记（manual/imported）⇒ fresh，不是 legacy", () => {
+  assert.equal(objectiveSurfaceFreshnessV1({
+    originCount: 2, noteAnchors: [], currentVersionIdOf: () => undefined,
+  }), "fresh");
 });

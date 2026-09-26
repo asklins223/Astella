@@ -37,6 +37,7 @@ import { learningRuns, canonicalLearningEventOutbox, practiceTrailEventOutbox } 
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
 import { pickLatestCompletedRunV3, resolvePrimaryActionV3, type ActionResolverInputV3 } from "../learning-objectives/action-resolver.ts";
 import { readAnswerModePreference } from "../companion-shell/answer-mode-preference.ts";
+import { objectiveSurfaceFreshnessV1 } from "@ailearn/shared";
 import type {
   UnderstandingNodeProjectionV3,
   UnderstandingEdgeProjectionV3,
@@ -539,23 +540,15 @@ export async function buildTopologySnapshotV3(
     if (objective.lifecycle === "active" && origins.length === 0) {
       missingOriginObjectiveIds.push(objective.objectiveId);
     }
-    // §18.4 freshness：origins 为空 → legacy_unreviewed；Note 新版本 →
-    // source_outdated；其余 → fresh。与 surface-service computeFreshness 对齐。
-    let freshness: "fresh" | "source_outdated" | "legacy_unreviewed" = "fresh";
-    if (origins.length === 0) {
-      freshness = "legacy_unreviewed";
-    } else {
-      // 与 surface-service computeFreshness 对齐：只检查 note origin。
-      const noteOrigins = origins.filter((o) => o.originKind === "note" && o.noteId);
-      const outdated = noteOrigins.some((o) => {
-        const currentVersion = o.noteId ? noteCurrentVersionById.get(o.noteId) : undefined;
-        return currentVersion !== null
-          && currentVersion !== undefined
-          && o.noteVersionId !== null
-          && currentVersion !== o.noteVersionId;
-      });
-      if (outdated) freshness = "source_outdated";
-    }
+    // §18.4 freshness：与目标表面（详情与列表两格）**同一份判据**——这一档以前是抄第三份，
+    // 三处各写一遍比较就意味着同一颗目标可以在首页与星图上各说一句话（39d D3 §5.1）。
+    const freshness = objectiveSurfaceFreshnessV1({
+      originCount: origins.length,
+      noteAnchors: origins
+        .filter((o) => o.originKind === "note" && o.noteId !== null)
+        .map((o) => ({ noteId: String(o.noteId), noteVersionId: o.noteVersionId })),
+      currentVersionIdOf: (noteId) => noteCurrentVersionById.get(noteId) ?? null,
+    });
     const activeRun = runByObjective.get(objective.objectiveId);
     const schedule = scheduleByObjective.get(objective.objectiveId);
     const reviewDue = schedule && schedule.nextReviewAt.getTime() <= Date.now();
