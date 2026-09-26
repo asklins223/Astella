@@ -33,6 +33,7 @@ import {
   createCommandId,
   createRequestMeta,
   gatewayErrorMessage,
+  RendererGatewayError,
   unwrapGatewayResult,
 } from "../../app/desktop-client";
 import { imageOnlyFiles } from "../../app/source-intake";
@@ -278,6 +279,13 @@ export const ROUND_COPY = {
    */
   resume: "继续这一轮",
   resuming: "正在继续…",
+  /**
+   * 迟到的那一句那三格（§16.39）。措辞按伴星那条口径走：说**这一发没进去**这个事实，
+   * 不报"服务端版本号"这类她用不上的字，也不把她那句写成"作废"——它只是没交上去。
+   */
+  lostDraft: (question: string) => `这一句没有交上去，先替你留着：${question}`,
+  applyLost: "把这一句改到新版本上",
+  dropLost: "不要这一句了",
   fromStructure: "或从这篇的小节里另选一句：",
   /**
    * 那一块的第一句。`hasMore` 会改这句话的**量词**：只回了最近几条时报"开过 N 轮"
@@ -645,6 +653,16 @@ export function NotebookSurface() {
   const [olderBusy, setOlderBusy] = useState(false);
   const [olderFailure, setOlderFailure] = useState<string | null>(null);
   const [roundFailure, setRoundFailure] = useState<string | null>(null);
+  /**
+   * 迟到的那一句（§16.39 的"另一份草稿明确保留为冲突"，39d W4-5 第四刀）。
+   *
+   * 被服务端判成 conflict 的那一发要做两件事，缺一不可：那一行换回**现在那一版**
+   * （真窗口实测过不换的害处：她对着作废的那句继续），同时她交出去的那一句
+   * **不许消失**——顶掉与拼进新版本是同一处缺陷的两种画法，PRD 两个都不要。
+   * 所以这里存的是「句子＋当时用的那句引子」这一对：`roundQuestionSourceV1` 按
+   * 引子判 source，只留句子会把她原本算 `suggested` 的那一发改记成 `user_authored`。
+   */
+  const [roundLostDraft, setRoundLostDraft] = useState<{ question: string; starter: string | null } | null>(null);
   /** 教学面（W4-6 刀二）：生成那一发在途、以及它自己的失败那一句。 */
   const [teachingBusy, setTeachingBusy] = useState(false);
   const [teachingFailure, setTeachingFailure] = useState<string | null>(null);
@@ -1381,14 +1399,25 @@ export function NotebookSurface() {
       setRoundEditing(false);
       setRoundDraft("");
       setRoundStarter(null);
+      setRoundLostDraft(null);
       await reload({ silent: true });
     } catch (error) {
       setRoundFailure(gatewayErrorMessage(error));
+      // 只有服务端**明确拒掉**（conflict：这一轮在别处被推进过／已经收尾／已经有开着的一轮）
+      // 才敢说那一句没进去。网络与超时不能这样报——那一发的结果本机不知道，
+      // 把"可能已经写成功"说成"替你留着"，是拿一次假回执盖掉真回执。
+      if (error instanceof RendererGatewayError && error.code === "conflict") {
+        setRoundLostDraft({ question, starter: roundStarter });
+        setRoundDraft("");
+        setRoundStarter(null);
+        setRoundEditing(false);
+      }
       // 失败也要把她带到**现在那一版**上去：真窗口实测（`probe-note-round-conflict.mts`），
       // 迟到的那一发被服务端拒掉之后，屏上留着的还是那句已经不作数的草稿——
       // "请先同步"这句话没有配一次同步，等于让她自己猜该按哪一版继续。
-      // 交出去的那一句不撤（输入框里那份是她的字），但那一行改回服务端读回来的那一条。
-      setRoundEditing(false);
+      // 交出去的那一句不撤：conflict 时它搬去下面那一行，其余失败**留在输入框里**
+      // （不退出编辑态）——那一发可能已经写成功，说"替你留着"是拿一次假回执盖掉真
+      // 回执，但直接退编辑态又会让下一次「换一个问题」把它覆盖掉，两种都不能做。
       await reload({ silent: true });
     } finally {
       setRoundBusy(null);
@@ -2195,7 +2224,7 @@ export function NotebookSurface() {
         <div className="notebook-objective notebook-round">
           {openRound && !roundEditing ? (
             <>
-              <p className="small notebook-note">{ROUND_COPY.openLine(openRound.drivingQuestion)}</p>
+              <p className="small notebook-note" data-round-open-line="true">{ROUND_COPY.openLine(openRound.drivingQuestion)}</p>
               <p className="small notebook-note">{ROUND_COPY.revisedLine(openRound.drivingQuestionRevision)}</p>
               <div className="notebook-objective__choices">
                 {/* 只有**停住**的那一轮摆这一颗（phase 读的是服务端那一行，不是本机猜的）。
@@ -2422,6 +2451,37 @@ export function NotebookSurface() {
             </>
           )}
           {roundFailure ? <p className="small notebook-note" role="alert">{roundFailure}</p> : null}
+          {/* 迟到那一句那一行（§16.39）。放在编辑态之外：这一条讲的是"上一发没进去"，
+              与她此刻是不是正在打下一句无关。两颗按钮都不改写服务端那一行——
+              "改到新版本上"只是把句子交回输入框，合不合得上由下一次提交去判。 */}
+          {roundLostDraft ? (
+            <div className="notebook-round__lost">
+              <p className="small notebook-note" data-round-lost="true">{ROUND_COPY.lostDraft(roundLostDraft.question)}</p>
+              <div className="notebook-objective__choices">
+                <button
+                  type="button"
+                  className="button"
+                  disabled={roundBusy !== null}
+                  onClick={() => {
+                    setRoundDraft(roundLostDraft.question);
+                    setRoundStarter(roundLostDraft.starter);
+                    setRoundLostDraft(null);
+                    setRoundEditing(true);
+                  }}
+                >
+                  {ROUND_COPY.applyLost}
+                </button>
+                <button
+                  type="button"
+                  className="button"
+                  disabled={roundBusy !== null}
+                  onClick={() => setRoundLostDraft(null)}
+                >
+                  {ROUND_COPY.dropLost}
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
       {/* 这一篇的轮次记录（PRD §10.3 读侧第一刀）。没有历史时一行都不多——空数组

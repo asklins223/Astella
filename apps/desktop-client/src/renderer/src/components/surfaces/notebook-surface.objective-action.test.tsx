@@ -196,7 +196,7 @@ function installApi(
         // 这件事根本没被走过。
         : ok(input?.before && options.olderPages?.length
           ? options.olderPages[Math.min(olderPageReads++, options.olderPages.length - 1)]
-          : options.roundHistory ?? { version: 1, noteId: NOTE_ID, items: [], hasMore: false, shownCount: 0, nextCursor: null }))),
+          : options.roundHistory ?? { version: 1, noteId: NOTE_ID, items: [], hasMore: false, shownCount: 0, totalCount: 0, nextCursor: null }))),
 
       // 轮次的回读**按调用次**给：迟到那一发的场景必须是"第一次读到旧版、
     // 失败之后重读读到新版"，一份固定回读测不出"换回了现在那一版"。
@@ -805,7 +805,7 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
   const CONFLICT = { ok: false as const, error: { code: "conflict", safeMessageKey: "error.conflict", retry: "user_action" } };
   const CONFLICT_TEXT = "这条学习状态已经发生变化，请先同步后再继续。";
 
-  it("改写这一发迟到了：那一行换回服务端现在的那一版，失败那句照留", async () => {
+  it("改写这一发迟到了：那一行换回服务端现在的那一版，失败那句照留，她那一句留在下面（§16.39）", async () => {
     const before = roundRow({ drivingQuestion: "本机读到的那一版", revision: 1 });
     const now = roundRow({ drivingQuestion: "另一端改过的那一版", drivingQuestionRevision: 2, revision: 5 });
     const { api, roundBlock } = await show([], { openRound: before, openSequence: [before, now] });
@@ -817,12 +817,62 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
     fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.save)!);
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
 
-    const shown = roundBlock()!.textContent ?? "";
-    expect(shown).toContain(ROUND_COPY.openLine("另一端改过的那一版"));
-    // 作废的那一句不再挂在屏上（输入框里她那份字还在状态里，但那一行说的是现在的事实）。
-    expect(shown).not.toContain("本机这一发是迟到的");
+    // 那一行只说现在的事实：作废的那一句不许挂在它上面（这一条是原判据，收窄到那一格，不删）。
+    expect(roundBlock()!.querySelector("[data-round-open-line]")?.textContent)
+      .toBe(ROUND_COPY.openLine("另一端改过的那一版"));
+    // 但这一句必须还在屏上：PRD 要"明确保留为冲突"，顶掉与拼进新版本是同一处缺陷的两种画法。
+    expect(roundBlock()!.querySelector("[data-round-lost]")?.textContent)
+      .toBe(ROUND_COPY.lostDraft("本机这一发是迟到的"));
     expect(roundBlock()!.querySelector('[role="alert"]')?.textContent).toBe(CONFLICT_TEXT);
     expect(api.noteLearningRound.revise).toHaveBeenCalledTimes(1);
+  });
+
+  it("迟到那一句「把这一句改到新版本上」：句子回输入框、引子跟着走、那一行收掉", async () => {
+    const before = roundRow({ drivingQuestion: "本机读到的那一版", revision: 1 });
+    const now = roundRow({ drivingQuestion: "另一端改过的那一版", drivingQuestionRevision: 2, revision: 5 });
+    const { api, roundBlock } = await show([], { openRound: before, openSequence: [before, now] });
+    api.noteLearningRound.revise.mockResolvedValue(CONFLICT);
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.revise)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const input = roundBlock()!.querySelector("input#notebook-round-question") as HTMLInputElement;
+    await act(async () => { fireEvent.change(input, { target: { value: "本机这一发是迟到的" } }); });
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.save)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.applyLost)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const reopened = roundBlock()!.querySelector("input#notebook-round-question") as HTMLInputElement;
+    expect(reopened.value).toBe("本机这一发是迟到的");
+    expect(roundBlock()!.querySelector("[data-round-lost]")).toBeNull();
+    // 引子没被换掉：她原本自己打的那一句，重来一次还是同一档 source。
+    // 断言读**第二次**那一发——第一次是刚才被拒的那一发，它的 source 早就定了，
+    // 拿 `calls[0]` 判这一条等于没判（变异自证时就是这么发现的）。
+    api.noteLearningRound.revise.mockResolvedValue(ok(now));
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.save)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    const sources = api.noteLearningRound.revise.mock.calls.map((call) => call[0].drivingQuestionSource);
+    expect(sources).toEqual(["user_rewritten", "user_rewritten"]);
+    expect(api.noteLearningRound.revise.mock.calls[1][0].drivingQuestion).toBe("本机这一发是迟到的");
+  });
+
+  it("对照：不是 conflict 的失败不许说「替你留着」，也不许把她那句抹掉", async () => {
+    const before = roundRow({ drivingQuestion: "本机读到的那一版", revision: 1 });
+    const { api, roundBlock } = await show([], { openRound: before, openSequence: [before] });
+    api.noteLearningRound.revise.mockResolvedValue({
+      ok: false as const,
+      error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" },
+    });
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.revise)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const input = roundBlock()!.querySelector("input#notebook-round-question") as HTMLInputElement;
+    await act(async () => { fireEvent.change(input, { target: { value: "这一发不知道有没有进去" } }); });
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.save)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+
+    expect(roundBlock()!.querySelector("[data-round-lost]")).toBeNull();
+    // 留在编辑态：她那一句还在输入框里，下一次「换一个问题」不会把它覆盖掉。
+    const stillThere = roundBlock()!.querySelector("input#notebook-round-question") as HTMLInputElement;
+    expect(stillThere.value).toBe("这一发不知道有没有进去");
   });
 
   it("对照：这一发赶上了——屏上就是新的那一条，也没有告警", async () => {

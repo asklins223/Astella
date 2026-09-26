@@ -141,15 +141,36 @@ try {
 
   const afterConflict = await lines()
   const alertText = ((await roundBlock.locator('[role="alert"]').first().textContent().catch(() => '')) ?? '').trim()
+  const lostText = ((await roundBlock.locator('[data-round-lost]').first().textContent().catch(() => '')) ?? '').trim()
+  const openLine = ((await roundBlock.locator('[data-round-open-line]').first().textContent().catch(() => '')) ?? '').trim()
   readings.linesAfterConflict = afterConflict
   readings.alertAfterConflict = alertText
-  check('迟到的那一发没把现在那一版盖掉（屏上不许留本机那句）',
-    !afterConflict.some((line) => line.includes('本机这一发是迟到的')), afterConflict)
+  readings.lostLineAfterConflict = lostText
+  const staleSentence = `${stalePrefill.slice(0, 10)}，本机这一发是迟到的`
+  // 这一条原来写的是"屏上不许留本机那句"（整块判断）。§16.39 要的是两件一起成立：
+  // **那一行**不许说作废的话，而那一句本身必须还在屏上——所以判据收到那一格上，
+  // 整块的反向判断留着会继续钉住一个合同不要的行为（顶掉草稿与拼进新版本是同一种画法）。
+  check('那一行不带本机那句（它只说现在的事实）',
+    !openLine.includes('本机这一发是迟到的') && openLine === `这一轮：${STALE_TEXT}`, openLine)
+  check('她交出去那一句明确留在屏上（§16.39「保留为冲突」）',
+    lostText === `这一句没有交上去，先替你留着：${staleSentence}`, lostText)
   // 这一条是本剧本要钉的产品判据：失败之后屏上留下的**应该是服务端现在那一版**，
   // 不是本机那份已被淘汰的草稿（只写一句"失败了"，她眼前还是一句已经不作数的问题）。
   check('失败之后屏上换成服务端现在那一版',
     afterConflict.includes(`这一轮：${STALE_TEXT}`),
     { nowShown: afterConflict, alert: alertText })
+
+  // 第三腿：「把这一句改到新版本上」——句子回输入框、那一行收掉；服务端那一行不动。
+  await page.getByRole('button', { name: '把这一句改到新版本上', exact: true }).click({ timeout: 20_000 })
+  await page.waitForTimeout(600)
+  const reopened = page.locator('#notebook-round-question')
+  await reopened.waitFor({ timeout: 20_000 })
+  readings.reappliedValue = (await reopened.inputValue()).trim()
+  readings.lostLineAfterReapply = ((await roundBlock.locator('[data-round-lost]').count()) ?? 0)
+  check('那一句交回她手上：输入框里就是她原来打的那句',
+    (await reopened.inputValue()).trim() === staleSentence, readings.reappliedValue)
+  check('改到新版本上之后那一行收掉（不留两份）',
+    readings.lostLineAfterReapply === 0, readings.lostLineAfterReapply)
 } finally {
   await app.close().catch(() => undefined)
   // 收尾：这一篇的轮次全部撤掉（探针不在共享 dev 库里留痕），并复量到 0。

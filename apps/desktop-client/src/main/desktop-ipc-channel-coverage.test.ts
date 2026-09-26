@@ -279,6 +279,10 @@ describe("IPC 通道覆盖对账", () => {
       // 照服务端真实回信的形状：`hasMore` 为真时 `nextCursor` 必须是本页最后一条的 id，
       // 而"这一屏列了几轮"由服务端报（`shownCount`），不让界面拿数组长度冒充总数。
       shownCount: 1,
+      // 总数那一格是 `9d012b82` 起合同里的**必填**（`totalCount >= shownCount`），
+      // 这份替身当时漏了它 → 回执在本机就被 `strictObject` 判成 `unsupported_contract`。
+      // 值照真实服务端：`hasMore` 为真时总数一定大于本页条数，写 1 会把"还有更早的"说成没有。
+      totalCount: 3,
       nextCursor: "99999999-9999-4999-8999-999999999999",
     };
     const gateway = stubGateway({
