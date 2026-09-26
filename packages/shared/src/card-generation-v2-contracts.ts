@@ -1206,6 +1206,12 @@ export const activateCardCandidatesRequestV2Schema = z
       .max(50),
     expectedReviewDraftRevision: z.number().int().min(1),
     clientReviewHash: z.string().regex(/^[0-9a-f]{64}$/),
+    /**
+     * 「保存并开启复习」那颗按钮的一档：未设或 false = **只保存到卡组**（改前行为）。
+     * 真的开也要**不绕首次验证闸**——排上安排，"现在该不该给"仍由队列既有的
+     * startability / cooldown 判据决定（裁定与理由在 39d §19 2026-09-26 那一行）。
+     */
+    startReviewScheduling: z.boolean().optional(),
   })
   .strict();
 export type ActivateCardCandidatesRequestV2 = z.infer<
@@ -1250,6 +1256,24 @@ export const cardActivationReceiptV2Schema = z
         }),
       )
       .max(50),
+    /**
+     * 这一发建立/关联到的复习安排，按保存的目标一条。**optional 而不是 nullable 必填**：
+     * 改列之前的历史回执照原样交回，加必填会让重放当场解析失败。
+     * `created` 说的是"这条是这次建的还是沿用已有那一条"——`nextReviewAt` 两种情况
+     * 都是**库里那一条的实际到期时间**，界面不许报一个没人持有的日期。
+     */
+    scheduling: z
+      .array(
+        z.strictObject({
+          objectiveId: z.string().uuid(),
+          scheduleId: z.string().uuid(),
+          nextReviewAt: z.string().datetime({ offset: true }),
+          created: z.boolean(),
+        }),
+      )
+      .min(1)
+      .max(50)
+      .optional(),
     responseHash: z.string().regex(/^[0-9a-f]{64}$/),
     committedAt: z.string().datetime({ offset: true }),
   })

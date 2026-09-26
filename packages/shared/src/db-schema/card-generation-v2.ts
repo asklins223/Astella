@@ -398,6 +398,9 @@ export const cardActivationReceiptsV2 = pgTable(
     requestHash: text("request_hash").notNull(),
     mappings: jsonb("mappings").notNull(),
     lifecycleResults: jsonb("lifecycle_results").notNull().default(sql`'[]'::jsonb`),
+    // 0288：「保存并开启复习」建立/关联到的安排（每目标一条）。可空——历史行没有这一格，
+    // 合同侧因此写 optional；不塞进 mappings 是让"映射"只指一件事。
+    scheduling: jsonb("scheduling"),
     responseHash: text("response_hash").notNull(),
     committedAt: timestamp("committed_at", { withTimezone: true }).defaultNow().notNull(),
   },

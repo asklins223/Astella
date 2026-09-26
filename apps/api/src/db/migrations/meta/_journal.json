@@ -2011,5 +2011,13 @@
       "tag": "0287_review_schedule_dimension_unique",
       "breakpoints": true
     }
+,
+    {
+      "idx": 287,
+      "version": "7",
+      "when": 1789800011032,
+      "tag": "0288_activation_receipt_scheduling",
+      "breakpoints": true
+    }
   ]
 }

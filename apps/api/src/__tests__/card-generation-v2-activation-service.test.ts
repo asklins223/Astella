@@ -440,6 +440,52 @@ describe("activateCardCandidatesV2 — idempotency", () => {
     );
 
     assert.equal(result.receiptId, "00000000-0000-4000-8000-000000000010");
+    // 0288 加列之前的历史行**没有** `scheduling` 这一格：交回 undefined 而不是空数组——
+    // "这一发没要授权"与"这一发发生在加列之前"是两件事，合成一件就把历史说成了当下。
+    assert.equal(result.scheduling, undefined);
+  });
+
+  it("重放交回原回执里的复习授权结果，一格都不少（0288 的 scheduling 列）", async () => {
+    const request = makeRequest();
+    const scheduling = [{
+      objectiveId: "00000000-0000-4000-8000-000000000013",
+      scheduleId: "00000000-0000-4000-8000-000000000015",
+      nextReviewAt: "2026-01-02T00:00:00.000Z",
+      created: false,
+    }];
+    setupActivationTx({
+      existingReceipt: {
+        workspaceId: WORKSPACE_ID,
+        userId: USER_ID,
+        runId: RUN_ID,
+        receiptId: "00000000-0000-4000-8000-000000000010",
+        idempotencyKey: "activate-key-001",
+        requestHash: computeTestActivationRequestHash(request),
+        mappings: [{
+          candidateRevisionId: CANDIDATE_REVISION_ID,
+          candidateEvidenceBindingPlanId: "00000000-0000-4000-8000-000000000011",
+          candidateEvidenceBindingPlanHash: EVIDENCE_BINDING_PLAN_HASH,
+          cardId: "00000000-0000-4000-8000-000000000012",
+          objectiveId: "00000000-0000-4000-8000-000000000013",
+          objectiveRevisionId: "00000000-0000-4000-8000-000000000014",
+          publicationRevision: 1,
+          resultingEvidenceBindingSetHash: "b".repeat(64),
+        }],
+        lifecycleResults: [],
+        // 库里 jsonb 存的就是数组本身（复用与新建都靠 `created` 说清楚）。
+        scheduling,
+        responseHash: "c".repeat(64),
+        committedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+
+    const result = await activateCardCandidatesV2(
+      { workspaceId: WORKSPACE_ID, userId: USER_ID },
+      request,
+      "activate-key-001",
+    );
+    // 客户端没收到响应再来一次，拿回的必须**还是那一份**——包括"这次是沿用不是新建"。
+    assert.deepEqual(result.scheduling, scheduling);
   });
 
   it("rejects a modified payload for an existing idempotency key", async () => {

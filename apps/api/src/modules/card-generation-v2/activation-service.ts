@@ -28,6 +28,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { withWorkspaceTransaction } from "../../db/client.ts";
+import { ensurePendingReviewScheduleV2 } from "../review/review-schedule-boundary.ts";
 import type { ApiTransaction } from "../../db/client.ts";
 import {
   cardGenerationRunsV2,
@@ -239,6 +240,11 @@ export async function activateCardCandidatesV2(
         requestHash: row.requestHash,
         mappings: row.mappings as CardActivationReceiptV2["mappings"],
         lifecycleResults: row.lifecycleResults as CardActivationReceiptV2["lifecycleResults"],
+        // 加列之前的历史行没有这一格：交回 undefined 而不是造一个空数组——
+        // "这一发没要授权"与"这一发发生在加列之前"是两件事。
+        ...(row.scheduling == null
+          ? {}
+          : { scheduling: row.scheduling as CardActivationReceiptV2["scheduling"] }),
         responseHash: row.responseHash,
         committedAt: row.committedAt.toISOString(),
       };
@@ -496,6 +502,37 @@ export async function activateCardCandidatesV2(
     // 出现在列表与复习队列里。
     await retireSupersededRun(tx, ctx, run.supersedesRunId, mappings);
 
+    // 8.6 「保存并开启复习」那一档：**同一个事务里**为每个保存下来的目标建立/关联唯一
+    // 那条待处理安排（39d W7-2 裁定 B）。三件事因此同时成立：不部分提交（这一发崩了
+    // 保存一起回滚）、重放交回同一份回执（结果写进下面 receipt 的 `scheduling` 列）、
+    // "现在该不该给"仍由队列既有判据决定——这里只排期，**不绕首次验证闸**。
+    // 首档取 discrete-v2 的第一档（1 天）：这一发是"开始安排"，不是"立刻可复习"。
+    const authorizedAt = new Date();
+    let scheduling: CardActivationReceiptV2["scheduling"];
+    if (body.startReviewScheduling === true) {
+      scheduling = [];
+      for (const mapping of mappings) {
+        const authorized = await ensurePendingReviewScheduleV2(tx, {
+          workspaceId: ctx.workspaceId,
+          userId: ctx.userId,
+          subjectId: mapping.objectiveId,
+          nextReviewAt: new Date(authorizedAt.getTime() + 24 * 60 * 60 * 1000),
+          intervalDays: 1,
+          generation: 1,
+          policyVersion: "discrete-v2",
+          reasonCode: "activation_authorized",
+          at: authorizedAt,
+        });
+        scheduling.push({
+          objectiveId: mapping.objectiveId,
+          scheduleId: authorized.scheduleId,
+          // 复用已有安排时报的是**库里那一条的实际到期时间**，不是这次算出来的。
+          nextReviewAt: new Date(authorized.nextReviewAt).toISOString(),
+          created: authorized.created,
+        });
+      }
+    }
+
     // 9. 计算 requestHash
     // 10. 生成 receiptId
     const receiptId = randomUUID();
@@ -503,6 +540,8 @@ export async function activateCardCandidatesV2(
       receiptId,
       mappings,
       lifecycleResults,
+      // 回执说了什么，哈希就得盖住什么——不然 `scheduling` 被改了也没人发现。
+      scheduling: scheduling ?? null,
     });
 
     // 11. 持久化 receipt
@@ -515,6 +554,7 @@ export async function activateCardCandidatesV2(
       requestHash,
       mappings,
       lifecycleResults,
+      scheduling: scheduling ?? null,
       responseHash: finalResponseHash,
     });
 
@@ -629,6 +669,7 @@ export async function activateCardCandidatesV2(
       requestHash,
       mappings,
       lifecycleResults,
+      ...(scheduling ? { scheduling } : {}),
       responseHash: finalResponseHash,
       committedAt: new Date().toISOString(),
     };
