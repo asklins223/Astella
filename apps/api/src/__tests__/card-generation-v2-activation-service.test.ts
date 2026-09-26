@@ -488,6 +488,48 @@ describe("activateCardCandidatesV2 — idempotency", () => {
     assert.deepEqual(result.scheduling, scheduling);
   });
 
+  /**
+   * 未设 `startReviewScheduling` = **只保存到卡组**（改前行为）：回执里那一格整个不存在，
+   * 不是空数组——"这次没要授权"与"这一发发生在 0288 加列之前"是两件事，合成一件就把
+   * 历史说成了当下。把服务端判据写成 `!== false`（默认开）会红在这里。
+   */
+  it("默认那一档不授权复习：重放交回的回执里没有 scheduling 这一格", async () => {
+    const request = makeRequest();
+    assert.equal(request.startReviewScheduling, undefined, "夹具本身不许顺手带上那一档");
+    setupActivationTx({
+      existingReceipt: {
+        workspaceId: WORKSPACE_ID,
+        userId: USER_ID,
+        runId: RUN_ID,
+        receiptId: "00000000-0000-4000-8000-000000000010",
+        idempotencyKey: "activate-key-001",
+        requestHash: computeTestActivationRequestHash(request),
+        // 回执合同的 mappings 是 min(1)——空数组会被 parse 先拒掉，那样测的就不是
+        // "默认档不带 scheduling"了。给一条真的映射。
+        mappings: [{
+          candidateRevisionId: CANDIDATE_REVISION_ID,
+          candidateEvidenceBindingPlanId: "00000000-0000-4000-8000-000000000011",
+          candidateEvidenceBindingPlanHash: EVIDENCE_BINDING_PLAN_HASH,
+          cardId: "00000000-0000-4000-8000-000000000012",
+          objectiveId: "00000000-0000-4000-8000-000000000013",
+          objectiveRevisionId: "00000000-0000-4000-8000-000000000014",
+          publicationRevision: 1,
+          resultingEvidenceBindingSetHash: "b".repeat(64),
+        }],
+        lifecycleResults: [],
+        responseHash: "c".repeat(64),
+        committedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    const result = await activateCardCandidatesV2(
+      { workspaceId: WORKSPACE_ID, userId: USER_ID },
+      request,
+      "activate-key-001",
+    );
+    assert.equal(result.scheduling, undefined);
+    assert.ok(!("scheduling" in result), "连键都不该出现——空数组也是一种谎");
+  });
+
   it("rejects a modified payload for an existing idempotency key", async () => {
     const request = makeRequest();
     const existingReceipt = {
