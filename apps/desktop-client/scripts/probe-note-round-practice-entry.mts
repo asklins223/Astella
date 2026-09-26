@@ -236,7 +236,11 @@ function wipe(seeded: Seeded): void {
  */
 const AMBIENT_GROWTH_ALLOWED_V1: Record<string, string> = {
   assistant_page_contexts: '活窗口的页面上下文簿记（伴星读页面那一族），开一次窗口必涨几行',
+  understanding_projection_checkpoints: '理解的增量投影读标（按 workspace+user 游标推进），'
+    + '这一发提交了练习事件之后它自己往前挪一格；它没有 run_id 也没有 objective 归属，不是剧本种的行',
 }
+/** 一张豁免表一次窗口能涨的上限：超过就不是"簿记"的形状了，宁可红。 */
+const AMBIENT_GROWTH_CEILING_V1 = 50
 
 function workspaceCensus(workspaceId: string): Record<string, number> {
   const tables = sql(`select string_agg(table_name, ' ' order by table_name) from information_schema.columns
@@ -385,7 +389,9 @@ try {
   // 而不是在下一次「顺手提交一下」时替我们花掉一笔。
   const variantRow = sql(`
     select v.interaction ->> 'kind' as kind,
-           coalesce(v.interaction -> 'publicTokenIds' #>> '{}', '') as presented
+           coalesce((select string_agg(item, ' ' order by ord)
+                       from jsonb_array_elements_text(v.interaction -> 'publicTokenIds')
+                            with ordinality as x(item, ord)), '') as presented
     from learning_runs r
     join learning_tasks tk on tk.run_id = r.id
     join learning_task_variants v on v.task_id = tk.id
@@ -409,7 +415,9 @@ try {
   // 正确答案在服务端那一格（客户端读不到）——读出来只为钉住下一读的前提：
   // 屏上呈现的顺序**确实是**它的一个排列，两边不是各说一套。
   const solutionRow = sql(`
-    select coalesce(s.solution -> 'correctTokenIds' #>> '{}', '')
+    select coalesce((select string_agg(item, ' ' order by ord)
+                        from jsonb_array_elements_text(s.solution -> 'correctTokenIds')
+                             with ordinality as x(item, ord)), '')
     from learning_runs r
     join learning_tasks tk on tk.run_id = r.id
     join learning_task_variants v on v.task_id = tk.id
@@ -432,6 +440,161 @@ try {
   check('本剧本没有提交过、也没有产生任何评估行（这一发仍然免费）', assessedRows === 0, assessedRows)
   // 走到这里仍然**不作答、不提交**：展开态那一句（`details.learning-run-result-rubric` 里每位一行）
   // 留给下一读；那一发要的是「故意交一个错的顺序」，题型与免费前提已由上面三格钉住。
+
+  // ── 换成免模型那一支：屏上那颗「改做排序题」真的可达吗 ──
+  // 「练一道」那一发带的不是 structured（服务端只在显式 structured 时才把结构题放主位），
+  // 所以开出来是 text_response；但**备位结构题**由服务端随 allowedActions 下发，
+  // 用户自己就能换过去（`run-planner.ts:447` 那条 wantsStructured 之外还有 alternative 一支）。
+  // 这一格要量的就是这条换路在真窗口里到不到位——不到位，展开态那一读就永远只能停在这边。
+  const switchToOrdering = page.getByRole('button', { name: '改做排序题', exact: true })
+  const switchCount = await switchToOrdering.count()
+  readings.switchToOrdering = { count: switchCount }
+  check('屏上出现「改做排序题」那颗（备位结构题由服务端签发、用户可自己换过去）', switchCount === 1, readings.switchToOrdering)
+  if (switchCount === 1) {
+    await switchToOrdering.first().click({ timeout: 20_000 })
+    const orderingOnScreen = await page.locator('.run-order-list li[data-order-index]').first()
+      .waitFor({ timeout: 25_000 }).then(() => true, () => false)
+    const orderingItems = await page.locator('.run-order-list li[data-order-index]').count()
+    readings.afterSwitch = { orderingOnScreen, orderingItems }
+    check('换过去之后屏上真的是那条可拖的排序列表（不是原地没换）',
+      orderingOnScreen === true && orderingItems >= 2, readings.afterSwitch)
+
+    // 换完之后库里那一档必须是 ordering，且带 correctTokenIds（下面按它造一个故意错的顺序）。
+    const switchedRow = sql(`
+      select v.interaction ->> 'kind' as kind,
+             coalesce((select string_agg(item, ' ' order by ord)
+                         from jsonb_array_elements_text(v.interaction -> 'publicTokenIds')
+                              with ordinality as x(item, ord)), '') as presented
+      from learning_runs r
+      join learning_tasks tk on tk.run_id = r.id
+      join learning_task_variants v on v.task_id = tk.id
+      where r.origin ->> 'roundId' = '${seeded.roundId}' and v.interaction ->> 'kind' = 'ordering'
+      limit 1`)
+    const [switchedKind, switchedPresentedRaw] = switchedRow.split('|').map((part) => part.trim())
+    const switchedPresented = switchedPresentedRaw.split(/\s+/).filter(Boolean)
+    const switchedSolution = sql(`
+      select coalesce((select string_agg(item, ' ' order by ord)
+                        from jsonb_array_elements_text(s.solution -> 'correctTokenIds')
+                             with ordinality as x(item, ord)), '')
+      from learning_runs r
+      join learning_tasks tk on tk.run_id = r.id
+      join learning_task_variants v on v.task_id = tk.id
+      join learning_task_private_solutions s on s.variant_id = v.id
+      where r.origin ->> 'roundId' = '${seeded.roundId}' and v.interaction ->> 'kind' = 'ordering' limit 1`)
+    const switchedCorrect = switchedSolution.split(/\s+/).filter(Boolean)
+    readings.orderingTask = {
+      kind: switchedKind, presented: switchedPresented, correct: switchedCorrect,
+    }
+    check('换过去之后库里那一档是 ordering，且题面与 correctTokenIds 是同一组项',
+      switchedKind === 'ordering' && switchedCorrect.length === switchedPresented.length
+      && switchedCorrect.length >= 2
+      && [...switchedCorrect].sort().join() === [...switchedPresented].sort().join(),
+      readings.orderingTask)
+
+    // 故意留一位放错：呈现顺序若已经全对，就用键盘抓取把第 1 项挪到第 2 位（两位一起错也算错，
+    // 但**至少有一位不成立**才是这一读要的那一句）。
+    // 交卷那颗要**真的动过一次**才放开（`structuredPartReady`：ordering 需 `orderingTouched`）。
+    // 所以两种情形都要按一次抓取：顺序本来就错的，挪下去再挪回来（净变化为零、仍然错）；
+    // 顺序本来全对的，挪一位制造出"至少一位不成立"。
+    const sameOrder = switchedPresented.join() === switchedCorrect.join()
+    await page.locator('.run-order-grip').first().focus()
+    await page.keyboard.press(' ')
+    await page.keyboard.press('ArrowDown')
+    if (sameOrder !== true) await page.keyboard.press('ArrowUp')
+    await page.keyboard.press(' ')
+    const finalOrder = (await page.locator('.run-order-list li[data-order-index]').evaluateAll(
+      (nodes) => nodes.map((node) => node.textContent ?? ''),
+    )).map((text) => text.replace(/^\s*\d+/, '').trim())
+    readings.finalOrder = { movedToMakeItWrong: sameOrder, finalOrder }
+    check('交换之后屏上这一列读得到（每一项都印得出文字）',
+      finalOrder.length === switchedPresented.length && finalOrder.every((text) => text.length > 0),
+      readings.finalOrder)
+
+    // 交卷：那颗主按钮的字面由服务端/组件决定，这里不猜——把屏上可见按钮都打出来，按"提交/交"命中，
+    // 命中不了就红（readings.screenButtons 会带着当时的原文，下次不用再猜）。
+    readings.screenButtons = (await page.locator('button:visible').allTextContents())
+      .map((text) => text.trim()).filter(Boolean).slice(0, 40)
+    const submitButton = page.locator('button:visible', { hasText: /^(交上去|提交回答|提交|就这样|看结果)$/ }).first()
+    const submitFound = (await submitButton.count()) > 0
+    check('屏上找得到交卷那颗（找不到就把可见按钮原样打出来，不静默跳过这一读）', submitFound, {
+      submitFound, buttons: readings.screenButtons,
+    })
+    if (submitFound) {
+      const submitStatusText = (await page.locator('[role="status"]').allTextContents())
+        .map((text) => text.trim()).filter(Boolean).slice(0, 8)
+      const submitEnabled = await submitButton.isEnabled()
+      readings.submitGate = { enabled: submitEnabled, statusText: submitStatusText }
+      check('动过一次顺序之后交卷那颗放开；没放开就得屏上说得出一句理由（不许静默灰着）',
+        submitEnabled === true || submitStatusText.length > 0, readings.submitGate)
+      readings.submitLabel = (await submitButton.textContent() ?? '').trim()
+      await submitButton.click({ timeout: 20_000 })
+      const resultBoard = await page.locator('.learning-run-result-board').first()
+        .waitFor({ timeout: 40_000 }).then(() => true, () => false)
+      check('交卷之后结算那一块真在屏上', resultBoard === true)
+
+      // **免费**这一发必须自证：评估那行的来源是确定性结构化，不是 critic（真模型）。
+      const assessmentRow = sql(`
+        select a.source, a.status, coalesce(jsonb_array_length(a.rubric_results), 0)
+        from learning_assessments a join learning_runs r on r.id = a.run_id
+        where r.origin ->> 'roundId' = '${seeded.roundId}' limit 1`)
+      const [assessmentSource, assessmentStatus, rubricEntryCount] = assessmentRow
+        .split('|').map((part) => part.trim())
+      readings.assessment = { source: assessmentSource, status: assessmentStatus, entries: Number(rubricEntryCount) }
+      check('那一发的评估来源是 deterministic_structured（**没有花一次模型**）',
+        assessmentSource === 'deterministic_structured', readings.assessment)
+
+      // 展开态那一读：`<details>` 在真窗口里折叠着也在 DOM，所以必须先看 open 再看内容
+      // （这条与 jsdom 那格的坑同源）。
+      const rubricSummary = page.locator('details.learning-run-result-rubric summary').first()
+      const summaryText = (await rubricSummary.textContent() ?? '').trim()
+      await rubricSummary.click({ timeout: 20_000 })
+      const detailsOpen = await page.locator('details.learning-run-result-rubric')
+        .first().evaluate((node) => (node as HTMLDetailsElement).open)
+      const rubricRows = await page.locator('details.learning-run-result-rubric li[data-verdict]').all()
+      const rows = []
+      for (const row of rubricRows) {
+        rows.push({
+          verdict: (await row.getAttribute('data-verdict')) ?? '',
+          head: (await row.locator('.learning-run-result-rubric__head').textContent() ?? '').trim(),
+          reason: (await row.locator('p').textContent() ?? '').trim(),
+        })
+      }
+      readings.rubricRead = { summaryText, detailsOpen, rows }
+      check('展开之后"每位一行"真的在屏上，且条数与摘要那句、与题面位数是同一个数',
+        detailsOpen === true && rows.length === switchedCorrect.length
+        && summaryText.includes(String(rows.length)), readings.rubricRead)
+      check('每一位都说得出一句话（不是只有个判定标签）',
+        rows.length > 0 && rows.every((row) => row.head.length > 0 && row.reason.length > 0),
+        readings.rubricRead)
+      // 位置真值要从库里那两份对上：token→label 的映射 + 每个位子**应该**是哪一项。
+      const labelLines = sql(`
+        select 'L|' || lbl.tok || '|' || lbl.lab
+        from learning_runs r
+        join learning_tasks tk on tk.run_id = r.id
+        join learning_task_variants v on v.task_id = tk.id
+        cross join lateral jsonb_each_text(v.interaction -> 'publicTokenLabels') as lbl(tok, lab)
+        where r.origin ->> 'roundId' = '${seeded.roundId}' and v.interaction ->> 'kind' = 'ordering' limit 8`)
+        .split('\n').map((line) => line.trim()).filter((line) => line.startsWith('L|'))
+      const labelOf = new Map(labelLines.map((line) => {
+        const [, token, label] = line.split('|')
+        return [token, (label ?? '').trim()] as const
+      }))
+      const expectedLabels = switchedCorrect.map((token) => labelOf.get(token) ?? '')
+      const wrongPositions = finalOrder
+        .map((placed, index) => ({ index, placed, expected: expectedLabels[index] ?? '' }))
+        .filter((item) => item.placed !== item.expected)
+      readings.positionTruth = { expectedLabels, placed: finalOrder, wrongPositions, rows }
+      check('这一发确实留下**至少一位放错**（不然"不成立那一位"那一腿没有对象）',
+        wrongPositions.length >= 1 && rows.length === finalOrder.length, { wrongPositions, rows })
+      // 逐位反馈那句不许把"该放那一位的那一项"说出来——不成立的那一位尤其如此
+      // （理由串原样送到客户端，替用户填正确项就等于绕过曝光记账）。
+      const leaks = wrongPositions
+        .filter(({ index, expected }) => expected.length > 1 && (rows[index]?.reason ?? '').includes(expected))
+        .map(({ index, expected }) => `第 ${index + 1} 位说出了「${expected}」`)
+      check('不成立那一位一个字都不写出该放什么（不新增答案信息）', leaks.length === 0,
+        { leaks, rows, wrongPositions })
+    }
+  }
 
   check('那一场的 origin 带的是这一轮的 roundId 与这一篇的 noteId', (() => {
     const runId = openRuns[0]?.split('|')[0]?.trim() ?? ''
@@ -470,9 +633,16 @@ try {
       // 且只涨这一张——所以豁免名单是**指名道姓**的，并要求它这一轮真的出现（不再出现就得把条目删掉，
       // 免得豁免变成免检通道）。其余任何一张表涨了行数，一律红。
       const unexplained = Object.keys(growth).filter((table) => !(table in AMBIENT_GROWTH_ALLOWED_V1))
+      const tooMuch = Object.entries(growth)
+        // 判的是**涨幅**，不是行数：那张投影读标表本来就有 57 行，这一次只挪了 1 行。
+        .filter(([table, [from, to]]) => table in AMBIENT_GROWTH_ALLOWED_V1 && to - from > AMBIENT_GROWTH_CEILING_V1)
+        .map(([table]) => table)
+      // "这一轮没涨的那张豁免表"只登记、不红：拿它当红等于要求每张簿记表每次都必须动，
+      // 而它不动只是那条豁免该被剪掉，并不会藏住新的残留（别的表涨了照样落在 unexplained）。
       const exemptionsUnused = Object.keys(AMBIENT_GROWTH_ALLOWED_V1).filter((table) => !(table in growth))
-      check('这个工作区里没有哪张表因为这次剧本涨了行数（只有豁免名单里那一张除外）',
-        unexplained.length === 0 && exemptionsUnused.length === 0, { unexplained, exemptionsUnused })
+      readings.censusExemptions = { used: Object.keys(growth).filter((table) => table in AMBIENT_GROWTH_ALLOWED_V1), exemptionsUnused }
+      check('这个工作区里没有哪张表因为这次剧本涨了行数（只有点名豁免那两张、且涨幅像簿记）',
+        unexplained.length === 0 && tooMuch.length === 0, { unexplained, tooMuch, growth })
     }
   }
   report()
