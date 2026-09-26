@@ -8,6 +8,7 @@
  */
 
 import { sql } from "drizzle-orm";
+import { taskEntityFromPersistedPageContext } from "./companion-task-memory.ts";
 import { logger } from "../lib/logger.ts";
 import type { EmbeddingProviderLike } from "./companion-memory-vector.ts";
 import { retrieveCompanionMemories } from "./companion-memory-vector.ts";
@@ -42,39 +43,6 @@ const MEMORY_REF_CONTENT_MAX = 80;
 // 此处保留作为防御性上限，防止历史残留或手动写入的超长内容进入 prompt。
 const MEMORY_CONTENT_MAX = 200;
 const MEMORY_BUDGET_MAX = 1000;
-
-/** 学习任务类页面 → 记忆检索使用 task scope；其余页面用 workspace。 */
-const TASK_SCOPE_PAGE_KINDS = new Set(["card", "learning_run", "review"]);
-
-/**
- * 从 Bridge page context 推导记忆检索的 currentScope（§9.2.2）。
- *
- * 修复（2026-08-19 审查）：此前硬编码 currentScope='workspace'，导致 extractor
- * 允许写入的 scope='task' 记忆永远召回不到、scope 维度形同虚设。现按页面类型
- * 推导：学习卡/学习运行/复习页 → 'task'，其余 → 'workspace'。
- * （scope='global' 的记忆在 SQL 中始终参与召回，无需在此传递。）
- */
-export function deriveMemoryScope(pageContext: unknown): "workspace" | "task" {
-  if (pageContext == null) return "workspace";
-  let parsed: unknown = pageContext;
-  if (typeof parsed === "string") {
-    try {
-      parsed = JSON.parse(parsed);
-    } catch {
-      return "workspace";
-    }
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "workspace";
-  const container = parsed as { context?: unknown };
-  const context = (
-    container.context && typeof container.context === "object" && !Array.isArray(container.context)
-      ? container.context
-      : parsed
-  ) as { pageKind?: unknown };
-  return typeof context.pageKind === "string" && TASK_SCOPE_PAGE_KINDS.has(context.pageKind)
-    ? "task"
-    : "workspace";
-}
 
 /**
  * 检索查询文本（向量检索与 keyword fallback 共用同一份）。
@@ -139,7 +107,7 @@ export async function assembleCompanionContext(
     {
       topK: 8,
       provider: input.provider ?? null,
-      currentScope: deriveMemoryScope(input.pageContext),
+      taskEntity: taskEntityFromPersistedPageContext(input.pageContext),
       precomputedEmbedding: input.queryEmbedding,
     },
   );

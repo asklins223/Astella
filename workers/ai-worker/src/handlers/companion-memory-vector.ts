@@ -8,6 +8,7 @@
  */
 
 import { sql } from "drizzle-orm";
+import type { CompanionTaskEntityRef } from "./companion-task-memory.ts";
 import { logger } from "../lib/logger.ts";
 
 export interface RetrievedMemory {
@@ -155,12 +156,52 @@ function mergeUniqueMemories(primary: RetrievedMemory[], extra: RetrievedMemory[
 /** 关键词降级检索：不依赖 embedding provider。
  *  §2.4.3：按关键词匹配 + importance/pinned/updated_at 规则排序。
  *  §9.2.2：scope 过滤与向量检索一致——workspace / global / 当前 scope 均可召回。 */
+/**
+ * scope='task' 行的可见性谓词（39d W6-2 / 39b C8）。
+ *
+ * 改前：`scope = ${taskEntity}`——任何 task 页的召回都看得见**所有** task 行，
+ * "这一轮的临时状态"会漏进"那一轮"。现在 task 行必须与**当前任务身份**在
+ * `memory_links` 上有绑定（entity_type/entity_id 相等且未 orphaned）才可见；
+ * 当前上下文推不出身份（taskEntity=null）⇒ 一条 task 行都看不见。
+ * workspace/global 两档不受影响。
+ */
+function taskScopeVisibility(
+  taskEntity: CompanionTaskEntityRef | null,
+  scope: { workspaceId: string; userId: string },
+  columnPrefix: "" | "m.",
+): ReturnType<typeof sql> {
+  // 列前缀必须 raw：普通插值会被 drizzle 参数化成 `$3scope`（非法 SQL，
+  // 集测当场抓到）。前缀只有 "" / "m." 两个已知值，raw 是安全的。
+  // 另一个坑（同一次集测抓到）：外层 id 不能写裸 `id`——子查询里它先解析成
+  // memory_links 自己的主键，`ml.memory_id = ml.id` 永远不匹配。外层列必须
+  // 全限定（keyword 路径无别名 ⇒ assistant_memory_items.，vector 路径 ⇒ m.）。
+  const prefix = sql.raw(columnPrefix === "" ? "assistant_memory_items." : columnPrefix);
+  if (!taskEntity) {
+    return sql` AND (${prefix}scope = 'workspace' OR ${prefix}scope = 'global' OR FALSE)`;
+  }
+  return sql` AND (
+    ${prefix}scope = 'workspace' OR ${prefix}scope = 'global'
+    OR (
+      ${prefix}scope = 'task'
+      AND EXISTS (
+        SELECT 1 FROM memory_links ml
+        WHERE ml.memory_id = ${prefix}id
+          AND ml.entity_type = ${taskEntity.entityType}
+          AND ml.entity_id = ${taskEntity.entityId}
+          AND ml.orphaned = false
+          AND ml.workspace_id = ${scope.workspaceId}
+          AND ml.user_id = ${scope.userId}
+      )
+    )
+  )`;
+}
+
 export async function retrieveCompanionMemoriesKeyword(
   tx: Executor,
   scope: { workspaceId: string; userId: string },
   query: string,
   topK = 8,
-  currentScope = "workspace",
+  taskEntity: CompanionTaskEntityRef | null = null,
   opts: KeywordRetrievalOptions = {},
 ): Promise<MemoryRetrievalResult> {
   const startedAt = performance.now();
@@ -212,7 +253,7 @@ export async function retrieveCompanionMemoriesKeyword(
       AND dismissed_at IS NULL
       AND candidate = false
       AND archived_at IS NULL
-      AND (scope = 'workspace' OR scope = 'global' OR scope = ${currentScope})
+      ${taskScopeVisibility(taskEntity, scope, "")}
       ${missingEmbeddingFilter}
       ${keywordFilter}
     ORDER BY pinned DESC, importance DESC, updated_at DESC
@@ -229,7 +270,7 @@ export async function retrieveCompanionMemoriesVector(
   query: string,
   provider: EmbeddingProviderLike,
   topK = 8,
-  currentScope = "workspace",
+  taskEntity: CompanionTaskEntityRef | null = null,
   /**
    * 事务外预计算的查询向量。缺省时本函数自行调用 provider.embed——
    * 那是外部 HTTP 往返，调用方若已持有 RLS 事务必须改用预计算值。
@@ -239,7 +280,7 @@ export async function retrieveCompanionMemoriesVector(
   const startedAt = performance.now();
   const vector = precomputedEmbedding ?? await provider.embed(query.slice(0, 1000));
   if (!vector || vector.length === 0) {
-    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, currentScope);
+    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity);
   }
   const queryVec = JSON.stringify(vector);
   try {
@@ -264,7 +305,7 @@ export async function retrieveCompanionMemoriesVector(
         AND m.candidate = false
         AND m.archived_at IS NULL
         AND m.embedding_status = 'ready'
-        AND (m.scope = 'workspace' OR m.scope = 'global' OR m.scope = ${currentScope})
+        ${taskScopeVisibility(taskEntity, scope, "m.")}
         -- AI P1（2026-09-15 审计）：只比较**同一向量空间**的向量。此前不校验
         -- e.model_revision，换过 embedding 模型（如 bge-m3 1024 维 → 别的 1536 维
         -- 模型，或同维不同模型）后，旧向量会与新查询向量一起参与 <=> 计算——维度
@@ -304,7 +345,7 @@ export async function retrieveCompanionMemoriesVector(
       scope,
       query,
       topK,
-      currentScope,
+      taskEntity,
       { onlyMissingEmbeddingForModel: provider.embeddingModelId },
     );
     const items = mergeUniqueMemories(vectorItems, supplement.items).slice(0, topK);
@@ -316,7 +357,7 @@ export async function retrieveCompanionMemoriesVector(
   } catch (error) {
     // pgvector 查询失败（扩展/索引/类型问题）不阻塞对话，降级 keyword。
     logger.warn({ err: error }, "companion memory vector retrieval failed, falling back to keyword");
-    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, currentScope);
+    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity);
   }
 }
 
@@ -328,7 +369,8 @@ export async function retrieveCompanionMemories(
   opts: {
     topK?: number;
     provider?: EmbeddingProviderLike | null;
-    currentScope?: string;
+    /** 当前任务身份（39b C8）：有它 task 行才按绑定可见，没有则 task 行不可见。 */
+    taskEntity?: CompanionTaskEntityRef | null;
     signal?: AbortSignal;
     /**
      * 事务外预计算的查询向量：
@@ -339,12 +381,12 @@ export async function retrieveCompanionMemories(
   } = {},
 ): Promise<MemoryRetrievalResult> {
   const topK = opts.topK ?? 8;
-  const currentScope = opts.currentScope ?? "workspace";
+  const taskEntity = opts.taskEntity ?? null;
   if (!isMemoryVectorEnabled() || !opts.provider) {
-    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, currentScope);
+    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity);
   }
   if (opts.precomputedEmbedding === null) {
-    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, currentScope);
+    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity);
   }
   try {
     return await retrieveCompanionMemoriesVector(
@@ -353,11 +395,11 @@ export async function retrieveCompanionMemories(
       query,
       opts.provider,
       topK,
-      currentScope,
+      taskEntity,
       opts.precomputedEmbedding,
     );
   } catch (error) {
     logger.warn({ err: error }, "companion memory retrieval failed, using keyword fallback");
-    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, currentScope);
+    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity);
   }
 }

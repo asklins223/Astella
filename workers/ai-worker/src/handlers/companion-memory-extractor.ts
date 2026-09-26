@@ -9,6 +9,7 @@
  */
 
 import { z } from "zod";
+import { taskEntityFromPersistedPageContext, type CompanionTaskEntityRef } from "./companion-task-memory.ts";
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { readJobPayloadString } from "@ailearn/shared";
@@ -281,12 +282,15 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
   // runId 是 companion_turn_runs 的 ID，需通过它获取 user_message_id 和
   // conversation_id，再关联查询 companion_messages。
   const context = await withJobTransaction(job, async (tx) => {
-    const runRows = await tx.execute<{ user_message_id: string; conversation_id: string }>(sql`
-      SELECT user_message_id, conversation_id FROM companion_turn_runs
+    const runRows = await tx.execute<{ user_message_id: string; conversation_id: string; page_context: unknown }>(sql`
+      SELECT user_message_id, conversation_id, page_context FROM companion_turn_runs
       WHERE id = ${runId}
     `);
     const run = runRows[0];
-    if (!run) return { userText: "", assistantText: "", recent: [] };
+    // 任务身份只认**服务端落库**的 page_context（39b C8）：learning_run→runId、
+    // card/review→cardId；推不出就是 null，task 记忆会因此降级 workspace。
+    const taskEntity = taskEntityFromPersistedPageContext(run.page_context);
+    if (!run) return { userText: "", assistantText: "", recent: [], taskEntity: null };
 
     const userRows = await tx.execute<{ blocks: unknown }>(sql`
       SELECT blocks FROM companion_messages
@@ -332,7 +336,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
           : "",
       }));
 
-    return { userText, assistantText, recent };
+    return { userText, assistantText, recent, taskEntity };
   });
 
   if (!context.userText.trim() && !context.assistantText.trim()) {
@@ -439,6 +443,9 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
 
   // 用户明确"忽略"过的事，下一轮抽取不能再当成新事端上来（doc 34 L14 的后半）。
   let skippedDismissedTwins = 0;
+  // 本轮的页面身份（39b C8）：有它 task 记忆才落 task 档并绑定；没有就全部降级 workspace。
+  const taskEntity: CompanionTaskEntityRef | null = context.taskEntity;
+  let taskScopeDowngrades = 0;
 
   await withJobTransaction(job, async (tx) => {
     // 稳定 P1-1（2026-09-15 审计）：提交前重新校验并续租租约（TOCTOU 围栏）。
@@ -453,7 +460,14 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       const sourceEventId = `memory-extract:${runId}:${index}`;
       // scope 由种类 + 绑定判据决定，不采信模型给的 scope（见 memoryScopeForKind）。
       // 两道判据任一判本地就本地，服务端规则可以否决模型的 portable。
-      const scope = memoryScopeForKind(candidate.kind, candidate.scope, candidate.binding, candidate.content);
+      const derivedScope = memoryScopeForKind(candidate.kind, candidate.scope, candidate.binding, candidate.content);
+      // 任务记忆必须带身份（39b C8）：落不了 memory_links 绑定的 task 记忆降级
+      // workspace——"缺绑定不能默认为全任务通用"，而 workspace 是它安全的家。
+      let scope = derivedScope;
+      if (scope === "task" && !taskEntity) {
+        scope = "workspace";
+        taskScopeDowngrades += 1;
+      }
       // 同一空间里已经有一条**被本人忽略过**的同类同内容记忆，就整条跳过：
       // 不写候选、不发气泡、不铺跨空间。判据与 api 侧冲突分组共用同一个数（见
       // MEMORY_CONTENT_SIMILARITY_THRESHOLD），否则同一句话会在一边算重复、
@@ -496,6 +510,24 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
         // 只对 global 调；函数自己也会再判一次 scope，双保险。
         // 铺开失败不该让整轮记忆丢掉——它是"多带一份"的增强，不是主路径；
         // 但也不能静默：日志里留一行，否则"另一个空间怎么不记得"会查无实据。
+        if (scope === "task" && taskEntity) {
+          // 任务身份绑定（39b C8）：召回侧只对"当前身份与此绑定相等"的上下文
+          // 放行 task 行。绑定行失败不阻塞记忆本身（记忆还在，只是这一轮退化为
+          // workspace 可见），但要留日志——"为什么另一轮看不见"得查得到。
+          try {
+            await tx.execute(sql`
+              INSERT INTO memory_links (workspace_id, user_id, memory_id, entity_type, entity_id, auto_linked)
+              VALUES (${job.workspaceId}, ${userId}, ${memoryId}::uuid,
+                      ${taskEntity.entityType}, ${taskEntity.entityId}, true)
+              ON CONFLICT (memory_id, entity_type, entity_id) DO NOTHING
+            `);
+          } catch (error) {
+            logger.warn(
+              { memoryId, taskEntity, error: (error as Error).message },
+              "task memory link failed; the memory stays workspace-visible this round",
+            );
+          }
+        }
         if (scope === "global") {
           try {
             const fanned = await tx.execute<{ inserted: number }>(sql`

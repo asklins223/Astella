@@ -1,25 +1,35 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { deriveMemoryScope } from "./companion-context-orchestrator.ts";
+import { taskEntityFromPersistedPageContext } from "./companion-task-memory.ts";
 
-test("学习任务类页面（card/learning_run/review）推导为 task scope", () => {
-  assert.equal(deriveMemoryScope({ pageKind: "card" }), "task");
-  assert.equal(deriveMemoryScope({ pageKind: "learning_run" }), "task");
-  assert.equal(deriveMemoryScope({ pageKind: "review" }), "task");
+const UUID_A = "0f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f0";
+const UUID_B = "1f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f0";
+
+test("learning_run 页 → 绑定 learning_run:runId（39b C8）", () => {
+  assert.deepEqual(
+    taskEntityFromPersistedPageContext({ context: { pageKind: "learning_run", runId: UUID_A, taskId: UUID_B } }),
+    { entityType: "learning_run", entityId: UUID_A },
+  );
 });
 
-test("非学习页面推导为 workspace scope", () => {
-  assert.equal(deriveMemoryScope({ pageKind: "today" }), "workspace");
-  assert.equal(deriveMemoryScope({ pageKind: "note" }), "workspace");
-  assert.equal(deriveMemoryScope({ pageKind: "settings" }), "workspace");
-  assert.equal(deriveMemoryScope(null), "workspace");
-  assert.equal(deriveMemoryScope(undefined), "workspace");
-  assert.equal(deriveMemoryScope({}), "workspace");
+test("card/review 页 → 绑定 card:cardId", () => {
+  assert.deepEqual(
+    taskEntityFromPersistedPageContext({ context: { pageKind: "card", cardId: UUID_A } }),
+    { entityType: "card", entityId: UUID_A },
+  );
+  assert.deepEqual(
+    taskEntityFromPersistedPageContext({ context: { pageKind: "review", cardId: UUID_B, keyPointId: UUID_A } }),
+    { entityType: "card", entityId: UUID_B },
+  );
 });
 
-test("兼容 JSON 字符串与 { context: {...} } 包裹形态", () => {
-  assert.equal(deriveMemoryScope(JSON.stringify({ pageKind: "learning_run" })), "task");
-  assert.equal(deriveMemoryScope({ context: { pageKind: "card" } }), "task");
-  assert.equal(deriveMemoryScope(JSON.stringify({ context: { pageKind: "today" } })), "workspace");
-  assert.equal(deriveMemoryScope("not-json{{"), "workspace");
+test("推不出身份的场景一律 null：非任务页 / 缺 id / id 不是 uuid / 形状不对", () => {
+  assert.equal(taskEntityFromPersistedPageContext({ context: { pageKind: "today" } }), null);
+  assert.equal(taskEntityFromPersistedPageContext({ context: { pageKind: "note" } }), null);
+  assert.equal(taskEntityFromPersistedPageContext({ context: { pageKind: "learning_run" } }), null);
+  assert.equal(taskEntityFromPersistedPageContext({ context: { pageKind: "card", cardId: "not-a-uuid" } }), null);
+  assert.equal(taskEntityFromPersistedPageContext({ context: null }), null);
+  assert.equal(taskEntityFromPersistedPageContext(null), null);
+  assert.equal(taskEntityFromPersistedPageContext("not-an-object"), null);
+  assert.equal(taskEntityFromPersistedPageContext(undefined), null);
 });

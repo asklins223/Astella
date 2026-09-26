@@ -83,6 +83,7 @@ export const TOOL_LABELS: Record<string, string> = {
   companion_recall_memory: "正在想你说过的事",
   companion_search_notes: "正在翻你的笔记",
   companion_read_note: "正在读那篇笔记",
+  companion_read_source: "正在读来源正文",
   companion_get_learning_stats: "正在看你的学习数据",
   companion_list_task_queue: "正在看你的任务队列",
   companion_list_due_reviews: "正在看到期复习",

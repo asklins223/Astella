@@ -135,9 +135,31 @@ test("keyword fallback scope 过滤包含 global（scope 死维度修复）", as
     { workspaceId: "w", userId: "u" },
     "光合",
     8,
-    "task",
   );
-  assert.ok(tx.queries[0].includes("'workspace' OR scope = 'global' OR scope ="));
+  assert.ok(tx.queries[0].includes("scope = 'workspace'"), "workspace 档在");
+  assert.ok(tx.queries[0].includes("scope = 'global'"), "global 档在");
+});
+
+test("无任务身份时 task 行不可见；有身份时按 memory_links 绑定放行（39b C8）", async () => {
+  const noEntity = capturingTx([ROW]);
+  await retrieveCompanionMemoriesKeyword(noEntity as never, { workspaceId: "w", userId: "u" }, "光合", 8);
+  assert.ok(noEntity.queries[0].includes("OR FALSE"), "无身份 ⇒ task 档显式排除（短路常量，不是漏写）");
+  assert.ok(!noEntity.queries[0].includes("memory_links"), "无身份 ⇒ 不放行 task 行（无 links 判据）");
+
+  const withEntity = capturingTx([ROW]);
+  await retrieveCompanionMemoriesKeyword(
+    withEntity as never,
+    { workspaceId: "w", userId: "u" },
+    "光合",
+    8,
+    { entityType: "learning_run", entityId: "0f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f0" },
+  );
+  assert.ok(withEntity.queries[0].includes("memory_links"));
+  // entity_type/entityId 是绑定参数（drizzle 参数化），SQL 文本里只见占位符——
+  // 这里钉结构：links 子查询存在、按 orphaned 与 workspace/user 收口。
+  assert.ok(withEntity.queries[0].includes("ml.orphaned = false"));
+  assert.ok(withEntity.queries[0].includes("ml.workspace_id"));
+  assert.ok(withEntity.queries[0].includes("ml.user_id"));
 });
 
 test("keyword fallback 返回 active 记忆并按 importance/pinned 排序", async () => {
@@ -348,16 +370,20 @@ test("补召回 SQL 必须带与主查询一致的 scope 过滤，且只取缺 r
   };
   const tx = routingTx([], []);
   await retrieveCompanionMemoriesVector(
-    tx as never, { workspaceId: "w", userId: "u" }, "光合", provider, 8, "task",
+    tx as never,
+    { workspaceId: "w", userId: "u" },
+    "光合",
+    provider,
+    8,
+    { entityType: "learning_run", entityId: "0f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f0" },
   );
   const supplement = tx.queries.find((q) => !q.includes("<=>"));
   assert.ok(supplement, "必须发出补召回查询");
-  // 2026-08-22 审查那条不变量换了宿主，不能丢：补召回的 scope 条件必须与主查询同形，
-  // 否则跨 scope 的 pending 记忆会被错误召回/漏召回。
-  assert.ok(
-    supplement.includes("scope = 'workspace' OR scope = 'global' OR scope ="),
-    `补召回缺 scope 过滤: ${supplement}`,
-  );
+  // 2026-08-22 审查那条不变量换了宿主，不能丢：补召回的 scope 条件必须与主查询同形
+  //（现在包括 task 档的绑定判据），否则跨 scope 的 pending 记忆会被错误召回/漏召回。
+  assert.ok(supplement.includes("scope = 'workspace'") && supplement.includes("scope = 'global'"),
+    `补召回缺 workspace/global 档: ${supplement}`);
+  assert.ok(supplement.includes("memory_links"), `补召回缺与主查询同形的 task 绑定判据: ${supplement}`);
   assert.ok(supplement.includes("NOT EXISTS"), "必须只取向量侧看不见的行");
   assert.ok(supplement.includes("embedding_status <> 'ready'"), "pending 行要被纳入");
   assert.ok(supplement.includes("mock-v1"), "必须按当前 embedding 模型判定可见性");
