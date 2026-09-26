@@ -231,7 +231,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     expect(screen.queryByText("提取练习强迫大脑重建记忆痕迹。")).toBeNull();
   });
 
-  it("仍有可审核候选时，已保留的卡不能提前激活", async () => {
+  it("仍有可审核候选时，已保留的卡不能提前保存到卡组", async () => {
     const { state } = stubGateway([
       { candidateId: "cand-1", statement: "第一张", reviewDecision: "undecided", publishState: "unpublished" },
       { candidateId: "cand-2", statement: "第二张", reviewDecision: "undecided", publishState: "unpublished" },
@@ -239,9 +239,9 @@ describe("CardGenerationSurface · 候选审核", () => {
     useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
     render(<CardGenerationSurface />);
     await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: /^保留（进入激活队列）/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^保留（等着保存到卡组）/ }));
     await waitFor(() => expect(state.reviewCalls).toHaveLength(1));
-    expect(screen.getByRole("button", { name: /激活 1 个目标/ }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: /保存到卡组（1 张）/ }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByText(/还有 1 张可以审核的卡没有决定/)).toBeTruthy();
   });
 
@@ -264,10 +264,10 @@ describe("CardGenerationSurface · 候选审核", () => {
     useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
     render(<CardGenerationSurface />);
     await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: /^保留（进入激活队列）/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^保留（等着保存到卡组）/ }));
     await waitFor(() => expect(state.reviewCalls).toHaveLength(1));
     // 正控制：没有这一句，下面两条"不存在"什么也证明不了（整块没画也会绿）。
-    const save = screen.getByRole("button", { name: /激活 1 个目标/ });
+    const save = screen.getByRole("button", { name: /保存到卡组（1 张）/ });
     expect(save.hasAttribute("disabled")).toBe(false);
     expect(screen.queryByRole("button", { name: /开启复习/ })).toBeNull();
     expect(screen.queryByText(/开启复习/)).toBeNull();
@@ -282,7 +282,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     render(<CardGenerationSurface />);
 
     await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: /^保留（进入激活队列）/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^保留（等着保存到卡组）/ }));
 
     await waitFor(() => expect(state.reviewCalls).toHaveLength(1));
     expect(state.reviewCalls[0]).toMatchObject({ type: "keep", candidateId: "cand-1" });
@@ -308,7 +308,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     expect(meta()).not.toContain("还有");
     expect(meta()).not.toContain("未决");
 
-    fireEvent.click(screen.getByRole("button", { name: /^保留（进入激活队列）/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^保留（等着保存到卡组）/ }));
     await waitFor(() => expect(state.reviewCalls).toHaveLength(1));
     await waitFor(() => expect(meta()).toContain("2 张还没决定"));
   });
@@ -480,7 +480,7 @@ describe("CardGenerationSurface · 候选审核", () => {
 
     await waitFor(() => expect(screen.getByText("被重复判掉的那张")).toBeTruthy());
     expect(screen.getAllByText("没进这批牌堆").length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: /^保留（进入激活队列）/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^保留（等着保存到卡组）/ })).toBeNull();
   });
 
   it("这批没点名要练习件时，头部不提练习件计数", async () => {
@@ -532,7 +532,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
     render(<CardGenerationSurface />);
 
-    await waitFor(() => expect(screen.getAllByText("已保留 · 在激活队列里").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("已保留 · 等着保存到卡组").length).toBeGreaterThan(0));
     fireEvent.click(screen.getByRole("button", { name: /撤销决定/ }));
 
     await waitFor(() => expect(state.reviewCalls).toHaveLength(1));
@@ -558,7 +558,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     expect(screen.getByText("来源第 3 段")).toBeTruthy();
     expect(screen.getByText("测试效应在多项研究中被重复。")).toBeTruthy();
     // 曝光有后果，而且后果是服务端的预检结果，不是一句笼统的说明。
-    await waitFor(() => expect(screen.getByText("答案看过了：激活后要等 24 小时才能正式验证")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("答案看过了：保存进卡组后要等 24 小时才能正式验证")).toBeTruthy());
     expect(screen.getByText(/不计入正式状态/)).toBeTruthy();
     expect(screen.getByText(/已查看/)).toBeTruthy();
   });
@@ -608,12 +608,12 @@ describe("CardGenerationSurface · 候选审核", () => {
     render(<CardGenerationSurface />);
 
     await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: /^保留（进入激活队列）/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^保留（等着保存到卡组）/ }));
 
     await waitFor(() => expect(screen.getByText(/这一步没成功/)).toBeTruthy());
     // 候选卡与它的决定按钮仍在原地。
     expect(screen.getByText("第一张")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^保留（进入激活队列）/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^保留（等着保存到卡组）/ })).toBeTruthy();
   });
 
   /**
@@ -642,14 +642,14 @@ describe("CardGenerationSurface · 候选审核", () => {
 
     // 页面身份仍是候选审核，候选卡与决定按钮都在。
     await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
-    const keep = screen.getByRole("button", { name: /^保留（进入激活队列）/ });
+    const keep = screen.getByRole("button", { name: /^保留（等着保存到卡组）/ });
     expect(screen.getByRole("button", { name: /不保留/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: "结束本次审核" })).toBeTruthy();
 
     fireEvent.click(keep);
     await waitFor(() => expect(state.reviewCalls).toHaveLength(1));
     expect(state.reviewCalls[0]).toMatchObject({ type: "keep", candidateId: "cand-1" });
-    await waitFor(() => expect(screen.getAllByText("已保留 · 在激活队列里").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("已保留 · 等着保存到卡组").length).toBeGreaterThan(0));
   });
 
   /**
@@ -716,7 +716,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     await waitFor(() => expect(gateway.note.cardGeneration.close).toHaveBeenCalledTimes(1));
     // 而且点完之后这一屏必须真的离开审核态：出口消失、状态说出新结论。
     await waitFor(() => expect(screen.queryByRole("button", { name: "结束本次审核" })).toBeNull());
-    expect(screen.getAllByText("已结束，未激活").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("已结束，没有保存到卡组").length).toBeGreaterThan(0);
   });
 
   /**

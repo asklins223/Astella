@@ -373,7 +373,7 @@ describe("CardGenerationSurface · packaged 冒烟选择器契约", () => {
     expect(container.querySelector(".candidate-review-slip__actions")?.textContent)
       .toContain("还有 1 张可以审核的卡没有决定");
 
-    // 保留之后 meta 行给出「已保留 · 在激活队列里」，脚本用这句话判断提交成功。
+    // 保留之后 meta 行给出「已保留 · 等着保存到卡组」，脚本用这句话判断提交成功。
     fireEvent.click(within(container).getByRole("button", { name: /^保留/ }));
     await waitFor(() => expect(container.querySelector(".candidate-card__meta")?.textContent).toContain("已保留"));
     await waitFor(() => expect(container.querySelector(".candidate-review-slip__actions")?.textContent)
@@ -383,8 +383,8 @@ describe("CardGenerationSurface · packaged 冒烟选择器契约", () => {
     // （2026-09-20 实走复盘 #1：既要保留又要勾选，而计数只统计已保留的勾选，
     //  先勾后不保留会静默激活 0 张）。
     expect(container.querySelector(".candidate-activation-choice")).toBeNull();
-    const activateButton = await waitFor(() => within(container).getByRole("button", { name: /^激活 \d+ 个目标/ }));
-    expect(activateButton.textContent).toContain("激活 1 个目标");
+    const activateButton = await waitFor(() => within(container).getByRole("button", { name: /^保存到卡组（\d+ 张）/ }));
+    expect(activateButton.textContent).toContain("保存到卡组（1 张）");
     fireEvent.click(activateButton);
 
     // 真实回执：.candidate-review-slip__receipt 里的「已确认 N 个目标映射」。

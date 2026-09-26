@@ -140,7 +140,7 @@ describe("NotebookSurface · 生成参数与反馈重生成", () => {
     render(<NotebookSurface />);
 
     await openSettings();
-    await waitFor(() => expect(screen.getByText(/上次生成已结束，未激活/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/上次生成已结束，没有保存到卡组/)).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: "卡片太多" }));
     fireEvent.change(screen.getByLabelText("重新生成的补充说明"), { target: { value: "最多 5 张" } });

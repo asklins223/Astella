@@ -81,13 +81,13 @@ function candidateDecisionLabel(candidate: CardGenerationCandidateV1): string {
   if (candidate.qualityState === "dropped") return "没进这批牌堆";
   if (candidate.qualityState === "failed") return "质量检查未通过";
   if (candidate.qualityState === "checking" || candidate.qualityState === "authored") return "还在检查";
-  if (candidate.publishState === "activated") return "已激活";
-  if (candidate.publishState === "activation_failed") return "激活没成功";
+  if (candidate.publishState === "activated") return "已保存进卡组";
+  if (candidate.publishState === "activation_failed") return "保存没成功";
   if (candidate.publishState === "superseded" || candidate.publishState === "expired") return "已失效";
   if (candidate.reviewDecision === "reject") return "已拒绝";
   // keep/merged used to fall through to "待审核", so a candidate the reviewer had
   // just accepted still looked undecided.
-  if (candidate.reviewDecision === "keep") return "已保留 · 在激活队列里";
+  if (candidate.reviewDecision === "keep") return "已保留 · 等着保存到卡组";
   if (candidate.reviewDecision === "merged") return "已合并";
   return "待审核";
 }
@@ -172,8 +172,8 @@ function firstValidationLabel(exposure: CardGenerationExposureEligibilityV1 | nu
   switch (exposure.initialValidationPolicyEffect) {
     // 这里说代价，不说术语：审核人真正要决定的是"要不要现在看答案"，
     // 代价是激活之后这张卡要等一天才能正式验证（复盘 #9）。
-    case "eligible": return "激活后马上能正式验证";
-    case "wait_for_initial_validation": return "答案看过了：激活后要等 24 小时才能正式验证";
+    case "eligible": return "保存进卡组后马上能正式验证";
+    case "wait_for_initial_validation": return "答案看过了：保存进卡组后要等 24 小时才能正式验证";
     default: return "还没读到结果";
   }
 }
@@ -564,7 +564,7 @@ export function CardGenerationSurface() {
     );
     if (selectedCandidates.length === 0) return;
     if (candidates.some(isActionableUndecidedCandidate)) {
-      setActionFailure("还有可以审核的候选，请逐张决定后再激活。");
+      setActionFailure("还有可以审核的候选，请逐张决定后再保存到卡组。");
       return;
     }
     setBusyAction("activate");
@@ -652,7 +652,7 @@ export function CardGenerationSurface() {
     ["读取笔记", "核对封存下来的原文版本"],
     ["形成问题", "围绕主张生成可验证候选"],
     ["对齐证据", "核对质量门与证据绑定"],
-    ["等待审核", "由你决定保留、丢弃或激活"],
+    ["等待审核", "由你决定保留、丢弃或保存到卡组"],
   ] as const;
   /**
    * 进度头条：第几步、完成几步、整体百分比。百分比 = (已完成阶段 + 当前阶段内的
@@ -1141,7 +1141,7 @@ export function CardGenerationSurface() {
                           ))}
                         </ul>
                       ) : <p className="small">这次候选没有附带可展示的来源片段。</p>}
-                      <p className="small">答案已经看过。这张卡激活之后要等 24 小时才能开始正式首次验证（这段时间随时可以练，只是不计入正式状态）；右侧「首次验证」会写明它的影响。</p>
+                      <p className="small">答案已经看过。这张卡保存进卡组之后要等 24 小时才能开始正式首次验证（这段时间随时可以练，只是不计入正式状态）；右侧「首次验证」会写明它的影响。</p>
                     </section>
                   ) : null}
                   {revealFailure ? (
@@ -1160,7 +1160,7 @@ export function CardGenerationSurface() {
                       type="button"
                       className="button"
                       disabled={revealing}
-                      title="先看过答案再决定保不保留。代价要说在前面：这张卡激活之后要等 24 小时才能做正式首次验证，期间只能练习。"
+                      title="先看过答案再决定保不保留。代价要说在前面：这张卡保存进卡组之后要等 24 小时才能做正式首次验证，期间只能练习。"
                       onClick={() => void revealCandidate(activeCandidate)}
                     >
                       <Eye size={14} aria-hidden="true" />{revealing ? "正在读取答案…" : "查看答案与证据 · 首次验证延后 24 小时"}
@@ -1172,7 +1172,7 @@ export function CardGenerationSurface() {
                         <X size={14} aria-hidden="true" />不保留
                       </button>
                       <button type="button" className="button primary" disabled={busyAction !== null} onClick={() => void review(activeCandidate, "keep")}>
-                        <Check size={14} aria-hidden="true" />{busyAction === `${activeCandidate.candidateId}:keep` ? "正在保留…" : "保留（进入激活队列）"}
+                        <Check size={14} aria-hidden="true" />{busyAction === `${activeCandidate.candidateId}:keep` ? "正在保留…" : "保留（等着保存到卡组）"}
                       </button>
                     </>
                   ) : null}
@@ -1222,7 +1222,7 @@ export function CardGenerationSurface() {
             {run?.recovery && activeCandidate ? (
               <p className="small candidate-review-slip__recovery">
                 <CircleAlert size={13} aria-hidden="true" />
-                这次生成有候选没有通过整体门禁，但通过门禁的候选仍然由你决定 —— 保留、丢弃、激活都照常可用。
+                这次生成有候选没有通过整体门禁，但通过门禁的候选仍然由你决定 —— 保留、丢弃、保存到卡组都照常可用。
               </p>
             ) : null}
             {activeCandidate ? (
@@ -1246,13 +1246,13 @@ export function CardGenerationSurface() {
                 // 曾经这一步会静默把所有"未决"候选打成未选中并丢弃（activation-service
                 // 的 not_selected_at_activation），而界面上没有任何一句话提到这个后果。
                 <p className="small">
-                  还有 {actionableUndecidedCount} 张可以审核的卡没有决定。请先逐张保留或不保留，再激活。
+                  还有 {actionableUndecidedCount} 张可以审核的卡没有决定。请先逐张保留或不保留，再保存到卡组。
                 </p>
               ) : null}
               {run?.recovery ? recoveryActions() : null}
               {reviewOpen && activatableCount > 0 ? (
                 <button type="button" className="button primary" disabled={busyAction !== null || actionableUndecidedCount > 0} onClick={() => void activate()}>
-                  {busyAction === "activate" ? "正在激活…" : `激活 ${activatableCount} 个目标`}<ArrowRight size={14} aria-hidden="true" />
+                  {busyAction === "activate" ? "正在保存…" : `保存到卡组（${activatableCount} 张）`}<ArrowRight size={14} aria-hidden="true" />
                 </button>
               ) : null}
               {reviewOpen ? (

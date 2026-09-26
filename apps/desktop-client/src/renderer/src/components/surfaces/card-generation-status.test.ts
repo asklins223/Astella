@@ -90,7 +90,7 @@ describe("card-generation-status", () => {
       expect(isCardGenerationInFlight(status)).toBe(true);
       expect(isCardGenerationReviewStage(status)).toBe(false);
     }
-    // activating 双态：页面还在审核版式，同时服务端正在提交激活（转圈）。
+    // activating 双态：页面还在审核版式，同时服务端正在保存到卡组（转圈）。
     expect(isCardGenerationInFlight("activating")).toBe(true);
     expect(isCardGenerationReviewStage("activating")).toBe(true);
     // 审核页静态状态。

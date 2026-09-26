@@ -22,9 +22,9 @@ export const cardGenerationStatusLabels: Record<string, string> = {
   review_ready: "等待审核",
   no_cards_recommended: "没有推荐候选",
   needs_attention: "需要处理",
-  activating: "正在提交激活",
-  activated: "已收到激活结果",
-  closed_without_activation: "已结束，未激活",
+  activating: "正在保存到卡组",
+  activated: "卡组已收到结果",
+  closed_without_activation: "已结束，没有保存到卡组",
   failed: "生成失败",
   cancelled: "已取消",
   stale: "来源已过期",
@@ -226,7 +226,7 @@ export function practiceQuotaLabel(quota: CardGenerationPracticeQuotaV1 | null):
 export function cardGenerationEntryLabel(status: string): string {
   if (status === "review_ready") return "审核学习卡";
   if (status === "needs_attention") return "处理生成任务";
-  if (status === "activating") return "查看激活进度";
+  if (status === "activating") return "查看保存进度";
   return "查看生成进度";
 }
 
