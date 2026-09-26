@@ -245,6 +245,34 @@ describe("CardGenerationSurface · 候选审核", () => {
     expect(screen.getByText(/还有 1 张可以审核的卡没有决定/)).toBeTruthy();
   });
 
+  /**
+   * W7-2 的第二半（「保存并开启复习」）今天**不能摆这颗按钮**，原因是实测到的三条前置
+   * 都不在（39d-w02 §3.2/§3.3 设计过那个唯一键，但明写"不在本文件授权迁移"）：
+   *   ① `review_schedules` 没有 `review_dimension` 这一列（现读 16 列，2026-09-26）；
+   *   ② `pending` 上没有任何 `(workspace, user, subject, 维度)` 唯一索引——只有
+   *      `review_schedules_pkey(id)` 与 `(id, workspace_id)`，所以重放会**静默长出第二条安排**；
+   *   ③ 没有"唯一调度边界"那一个写入函数（四处 insert 仍在 `run-processing-tick.ts` 里
+   *      各自"先查后写"）。
+   * 在这一格摆一颗按得动却什么都不授权的按钮，就是拿界面承诺一件没有出处的业务。
+   * 这条用例的作用：把"还没做"钉成会红的东西——W7-2 真落那一刻，它必须被**换成正向断言**
+   * 而不是被删掉。
+   */
+  it("只有「保存」这一档：「保存并开启复习」在唯一调度边界建好之前不摆上屏", async () => {
+    const { state } = stubGateway([
+      { candidateId: "cand-1", statement: "第一张", reviewDecision: "undecided", publishState: "unpublished" },
+    ]);
+    useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
+    render(<CardGenerationSurface />);
+    await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /^保留（进入激活队列）/ }));
+    await waitFor(() => expect(state.reviewCalls).toHaveLength(1));
+    // 正控制：没有这一句，下面两条"不存在"什么也证明不了（整块没画也会绿）。
+    const save = screen.getByRole("button", { name: /激活 1 个目标/ });
+    expect(save.hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByRole("button", { name: /开启复习/ })).toBeNull();
+    expect(screen.queryByText(/开启复习/)).toBeNull();
+  });
+
   it("保留后卡片说出新状态，并自动走到下一张未决候选", async () => {
     const { state } = stubGateway([
       { candidateId: "cand-1", statement: "第一张", reviewDecision: "undecided", publishState: "unpublished" },

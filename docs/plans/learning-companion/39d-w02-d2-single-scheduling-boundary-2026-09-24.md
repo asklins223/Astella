@@ -142,6 +142,8 @@ CREATE UNIQUE INDEX review_schedules_pending_dimension_unique
 2. 有冲突 → 按"保留 `supersededScheduleId` 链上最新的那一行、其余转 `superseded` 并写 `supersedes_schedule_id`"处理，**不物理删除**（历史要留）；
 3. 2 行悬空引用单独列表，交产品确认后处理（**不许按标题猜造**——39 §8.5 的取向）。
 
+**2026-09-26 实测（W7-2 开工前把这一节走了一遍，读数在这里）**：dev 库现读 `review_schedules` **16 列、没有 `review_dimension`**（⇒ §3.2 那个键今天建不出来，加列是前置）；`pending` 按 `(workspace_id, user_id, subject_id)` 分组**冲突 0 组**（25 pending／10 completed／1 cancelled，`subject_type` 36 行全是 `card`）⇒ 上面第 2 步那套"保留链上最新、其余转 superseded"**今天没有对象可做**，加索引不需要存量清理；`pg_indexes` 只有 `review_schedules_pkey(id)` 与 `(id, workspace_id)` 两条唯一，`review_schedules_subject_idx (subject_type, subject_id)` 是普通索引 ⇒ 39 §15.3-18 要的唯一性至今**没有任何东西在保证**。结论：这一节的技术前置已量清（冲突 0），仍然缺的是**授权**——本文件不授权迁移，所以加列＋加索引与"把四处 `insert` 收成一个边界函数"要一起做，不能只加索引（加了索引而四处仍各自先查后写，只会把竞态从"多一条安排"变成"一次 500"）。
+
 **前置**：39d §1 的红线"涉及 schema 历史先确认开发库可重建"。dev 库可重建这一条在 W0-9 已确认过迁移账可用；但**加索引是一次正式迁移**，要登记 journal（39d §1 末条）。
 
 ---
