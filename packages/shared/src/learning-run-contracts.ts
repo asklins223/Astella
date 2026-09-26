@@ -1356,6 +1356,27 @@ export const assessmentPublicSchema = baseVersionSchema
 
 // ─── result / run public ─────────────────────────────────────────────────
 
+/**
+ * Run 走到哪一步（`learning_runs.phase` 的线上字面量）。这段枚举此前在**本文件里内联**
+ * （快照那一处），39d W4-6 刀三的轮次读侧还要第二遍——收成一个具名合同，两处共用：
+ * 漂移要红在这一个地方。终止态里那条只认三档的窄枚举（`ended|cancelled|stale`）
+ * 是**另一件事**（结果回执那一路），不并进来。
+ */
+export const learningRunPhaseSchema = z.enum([
+  "preparing",
+  "active",
+  "assessing",
+  "checkpoint",
+  "committing",
+  "paused",
+  "completed",
+  "ended",
+  "skipped",
+  "cancelled",
+  "stale",
+  "recoverable_error",
+]);
+
 export const learningRunOutcomeSchema = z.enum([
   "demonstrated",
   "partial",
@@ -1454,20 +1475,7 @@ export const learningRunPublicSchema = baseVersionSchema
         reasonCode: z.enum(["practice", "diagnostic", "sandbox", "not_eligible"]),
       }),
     ]),
-    phase: z.enum([
-      "preparing",
-      "active",
-      "assessing",
-      "checkpoint",
-      "committing",
-      "paused",
-      "completed",
-      "ended",
-      "skipped",
-      "cancelled",
-      "stale",
-      "recoverable_error",
-    ]),
+    phase: learningRunPhaseSchema,
     timeBudgetSeconds: z.number().int().min(30).max(180),
     plannedActiveSeconds: z.number().int().min(0).max(180),
     activeSecondsUsed: z.number().int().min(0),

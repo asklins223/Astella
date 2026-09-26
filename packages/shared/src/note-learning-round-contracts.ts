@@ -18,6 +18,8 @@
  *     恢复同一轮时，后到的那一份草稿必须失败，而不是覆盖）。
  */
 import { z } from "zod";
+import { learningRunOutcomeSchema, learningRunPhaseSchema } from "./learning-run-contracts.ts";
+import { objectiveRunStartV3Schema } from "./learning-objective-surface-contracts.ts";
 
 export const roundPhaseV1Schema = z.enum(["active", "paused", "closed"]);
 export type RoundPhaseV1Wire = z.infer<typeof roundPhaseV1Schema>;
@@ -302,6 +304,27 @@ export const createRoundTeachingRequestV1Schema = z.strictObject({
 export type CreateRoundTeachingRequestV1 = z.infer<typeof createRoundTeachingRequestV1Schema>;
 
 /**
+ * 这一轮里练过的那一道（W4-6 刀三）。四格都来自 run 行本身：
+ * `phase` 是它走到哪一步，`outcome` 是结算之后的结论（没结算是 `null`），
+ * `startedAt` 是它什么时候开的。**不带详情链接**：run 的路由与结果页已经各有自己的读，
+ * 这里只回答"这一轮练过几次、各自怎么样了"。
+ */
+export const roundPracticeV1Schema = z.strictObject({
+  runId: z.string().uuid(),
+  phase: learningRunPhaseSchema,
+  outcome: learningRunOutcomeSchema.nullable(),
+  startedAt: z.string().datetime({ offset: true }),
+});
+export type RoundPracticeV1 = z.infer<typeof roundPracticeV1Schema>;
+
+/** 「练一道」的起点：哪一条目标、以及那一发请求本体（形状与主行动共用）。 */
+export const roundPracticeStartV1Schema = z.strictObject({
+  objectiveId: z.string().uuid(),
+  start: objectiveRunStartV3Schema,
+});
+export type RoundPracticeStartV1 = z.infer<typeof roundPracticeStartV1Schema>;
+
+/**
  * 教学产物的回信（生成与读取同一份形状）：**轮次与产物一起回**。
  * "解释是按哪一版问题、哪一版正文生成的"只能由服务端说，客户端拿两发去拼
  * 迟早会拼出一次错配；顺带，生成那一发也会让屏幕上那一行轮次刷新到最新 revision。
@@ -311,5 +334,21 @@ export const roundTeachingViewV1Schema = z.strictObject({
   round: noteLearningRoundV1Schema,
   /** 还没有生成过就是 `null`（打开教学面但还没点"开始"），不是"读失败"。 */
   teaching: roundTeachingV1Schema.nullable(),
+  /**
+   * 这一轮里开出去的练习（W4-6 刀三；经 `learning_runs.origin ->> 'roundId'` 反查）。
+   * 这是 W4-5 那笔「轮次 ↔ LearningRun 连接」的**读侧**：在那之前，"这一轮里做过一次
+   * 练习"在任何屏上都读不出来。空数组是真的"还没练过"，不是读失败。
+   */
+  practices: z.array(roundPracticeV1Schema).max(50),
+  /**
+   * 「练一道」那一发的起点。**服务端签发**：`goal` / `requestedTimeBudgetSeconds` /
+   * `responsePreference` 三个值与目标的主行动**同一份来源**（`startPayloadForOrigin`），
+   * 这里只把锚点换成这一轮（`originV2.kind = note_round`）——客户端不拼这些参数。
+   *
+   * 没有 active 目标 ⇒ `null`（无目标的轮次不出现「练一道」：练习只在目标存在时开 run）；
+   * 目标此刻的主行动不是"开一场新的"（例如已有一场开着要走 `resume_run`）⇒ 也 `null`，
+   * 因为再开一场会撞上"同一目标同时两场进行中"这件不该发生的事。
+   */
+  practiceStart: roundPracticeStartV1Schema.nullable(),
 });
 export type RoundTeachingViewV1 = z.infer<typeof roundTeachingViewV1Schema>;

@@ -41,8 +41,11 @@ import {
   noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundV1Schema,
   reviseDrivingQuestionRequestV1Schema,
+  roundPracticeStartV1Schema,
   roundTeachingViewV1Schema,
   type NoteLearningRoundV1Wire,
+  type RoundPracticeStartV1,
+  type RoundPracticeV1,
 } from "@ailearn/shared/note-learning-round-contracts";
 import {
   advanceRound,
@@ -66,6 +69,8 @@ import {
   runTeachingExplainV1,
   teachingFailureResponseV1,
 } from "./teaching-explain.ts";
+import { listNoteRoundPractices } from "../learning-runs/run-service.ts";
+import { listObjectiveSurfacesV3 } from "../learning-objectives/surface-service.ts";
 import { roundBudgetsV1 } from "./round-budgets.ts";
 
 const STATUS_BY_CODE: Record<string, 400 | 404 | 409 | 500> = {
@@ -313,10 +318,14 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
     }
 
     if (frozen.kind === "reused") {
+      // 复用那一发也要带上练习那两格（它们与"讲没讲过"无关，每次读都要有）。
+      const extras = await withWorkspaceTransaction(scope, (tx) =>
+        buildRoundPracticeView(tx, scope, frozen.round));
       return reply.code(200).send(roundTeachingViewV1Schema.parse({
         version: 1 as const,
         round: toWire(frozen.round),
         teaching: frozen.teaching,
+        ...extras,
       }));
     }
 
@@ -357,12 +366,13 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
         });
         const round = await readRound(tx, scope, roundId);
         if (!round) throw new RoundServiceError("round_not_found", "这一轮不存在（或对当前这个人不可见）");
-        return { round, teaching };
+        return { round, teaching, extras: await buildRoundPracticeView(tx, scope, round) };
       });
       return reply.code(201).send(roundTeachingViewV1Schema.parse({
         version: 1 as const,
         round: toWire(written.round),
         teaching: written.teaching,
+        ...written.extras,
       }));
     } catch (err) {
       return replyRoundError(reply, err, "这一条解释生成了但没能存下来", (tx, s) => readRound(tx, s, roundId));
@@ -393,7 +403,7 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
           drivingQuestionRevision: round.drivingQuestionRevision,
           snapshotHash: round.sourceContentHash,
         });
-        return { round, teaching };
+        return { round, teaching, extras: await buildRoundPracticeView(tx, scope, round) };
       });
     } catch (err) {
       return replyRoundError(reply, err, "读这一条解释没成功");
@@ -402,8 +412,54 @@ export async function noteLearningRoundRoutes(app: FastifyInstance) {
       version: 1 as const,
       round: toWire(view.round),
       teaching: view.teaching,
+      ...view.extras,
     });
   });
+}
+
+/**
+ * 教学面额外那两格（W4-6 刀三）：这一轮**练过哪几道**，以及「练一道」那一发的**起点**。
+ *
+ * 起点由服务端签发，规则三条：
+ *  1. 目标必须是这一篇的 active 目标（与笔记页那颗主要动作同一条查询：
+ *     `listObjectiveSurfacesV3` 的 `noteId` 收窄），没有 ⇒ `practiceStart = null`
+ *     ——无目标的轮次不出现「练一道」（练习只在目标存在时开 run）。
+ *  2. 目标此刻的主行动必须是"开一场新的"（`create_run` / `practice_only`）：
+ *     `resume_run` 意味着这个目标已有一场开着（再开一场会同时两场进行中），
+ *     `create_review_run` 是**日程锚定**的复习（把它改锚到这一轮等于把一次到期复习
+ *     悄悄变成轮次练习）——两类都如实回 null，不在这一层替它们折算。
+ *  3. `goal` / `requestedTimeBudgetSeconds` / `responsePreference` **原样取自那一发
+ *     主行动的 `start`**，只有锚点换成这一轮（`note_round`）。这三个值只在
+ *     `action-resolver` 里签发一次，客户端与这里都不另写。
+ */
+async function buildRoundPracticeView(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  round: NoteLearningRoundV1,
+): Promise<{ practices: RoundPracticeV1[]; practiceStart: RoundPracticeStartV1 | null }> {
+  const practices = await listNoteRoundPractices(tx, scope, round.roundId);
+  const surfaces = await listObjectiveSurfacesV3(tx, scope, {
+    lifecycle: "active",
+    noteId: round.noteId,
+    limit: 1,
+  });
+  const objective = surfaces.items[0];
+  if (!objective) return { practices, practiceStart: null };
+  const action = objective.primaryAction;
+  if (action.kind !== "create_run" && action.kind !== "practice_only") {
+    return { practices, practiceStart: null };
+  }
+  const objectiveId = objective.objectiveId;
+  return {
+    practices,
+    practiceStart: roundPracticeStartV1Schema.parse({
+      objectiveId,
+      start: {
+        ...action.start,
+        originV2: { kind: "note_round", roundId: round.roundId, noteId: round.noteId, objectiveId },
+      },
+    }),
+  };
 }
 
 /**

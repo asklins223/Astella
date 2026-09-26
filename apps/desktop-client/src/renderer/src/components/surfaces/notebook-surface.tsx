@@ -22,7 +22,9 @@ import type {
   NoteLearningRoundHistoryItemV1,
   NoteLearningRoundHistoryV1,
   NoteLearningRoundV1Wire,
+  RoundPracticeV1,
   RoundTeachingV1,
+  RoundTeachingViewV1,
 } from "@ailearn/shared/note-learning-round-contracts";
 import { useRoomStore } from "../../app/room-store";
 import { SpaceShareButton, noteShareScopeLabel } from "../space-share-control";
@@ -114,10 +116,12 @@ type NotebookProjection = {
    */
   readonly roundHistory: NoteLearningRoundHistoryV1 | null;
   /**
-   * 这一轮当前问题版本下的那条解释（39d W4-6 刀二；表与服务是刀一那一批）。
+   * 教学面那一整发（39d W4-6 刀二／刀三）：这一轮当前问题下的解释、这一轮练过哪几道、
+   * 以及「练一道」那一发的起点。**收回一份**而不是散成三个字段：它们本来就在同一发
+   * 回信里（服务端一次说清"这一轮现在是什么样"），分开存会让三者有时间差。
    * 与上面两读同一条纪律：读不到 ⇒ null 且整块退成"还没讲过"，不把笔记顶掉。
    */
-  readonly roundTeaching: RoundTeachingV1 | null;
+  readonly roundTeachingView: RoundTeachingViewV1 | null;
   readonly capabilities: CapabilityProjectionV1;
   /**
    * The workspace's one live Card Generation run (owner only; Member sees an
@@ -296,6 +300,10 @@ export const ROUND_COPY = {
   teaching: {
     start: "先讲讲这一节",
     starting: "正在讲这一节…",
+    /** 教学面里"练一道"（W4-6 刀三）：只在有 active 目标时出现。 */
+    practice: "练一道",
+    practicing: "正在开这一道…",
+    practicesLead: "这一轮练过：",
     exampleLead: "例子：",
     referencesLead: "依据（点开定位到正文）：",
     /**
@@ -315,6 +323,32 @@ export const ROUND_COPY = {
  * 屏上写着「正在改写…」，而改写真的在跑时写的是「正在开始…」。
  * "正在…"只许出现在真有一次请求在途的那一段时间里，这是这一页所有按钮共用的规矩。
  */
+/**
+ * 一场练习现在到哪一步（W4-6 刀三）：**一处签发**，屏上与剧本读同一份。
+ *
+ * 结算过 ⇒ 说结论（七档与 run 自己的 `result.outcome` 一一对应，不另造词）；
+ * 没结算 ⇒ 按 phase 说"正在进行／停住了／中断了"。`not_assessable` 不是"没弄通"，
+ * 它是"这一次判不了"——两者都是要走下去的状态，说法必须分开（§3.2 那条老规矩）。
+ */
+export const ROUND_PRACTICE_OUTCOME_LABEL_V1: Record<string, string> = {
+  demonstrated: "做出来了",
+  partial: "做出一部分",
+  needs_repair: "还有一处要补",
+  not_assessable: "这一次判不了",
+  practice_completed: "练完了",
+  skipped: "跳过了",
+  declared_unable: "说没想起来",
+};
+
+export function roundPracticeStateLabelV1(practice: Pick<RoundPracticeV1, "phase" | "outcome">): string {
+  if (practice.outcome) {
+    return ROUND_PRACTICE_OUTCOME_LABEL_V1[practice.outcome] ?? practice.outcome;
+  }
+  if (practice.phase === "paused") return "停住了";
+  if (["ended", "cancelled", "stale", "completed", "skipped"].includes(practice.phase)) return "中断了";
+  return "正在进行";
+}
+
 export function roundSubmitLabelV1(
   busy: "start" | "revise" | "end" | null,
   hasOpenRound: boolean,
@@ -581,6 +615,9 @@ export function NotebookSurface() {
   /** 教学面（W4-6 刀二）：生成那一发在途、以及它自己的失败那一句。 */
   const [teachingBusy, setTeachingBusy] = useState(false);
   const [teachingFailure, setTeachingFailure] = useState<string | null>(null);
+  /** 「练一道」（W4-6 刀三）：开那场 run 的在途与它自己的失败那一句。 */
+  const [practiceBusy, setPracticeBusy] = useState(false);
+  const [practiceFailure, setPracticeFailure] = useState<string | null>(null);
   /**
    * 依据里点开的那一段。它只是**屏幕上的注意力**（滚动 + 短暂高亮），不进任何写：
    * 值一过期就撤掉，不留"上次点到哪"这种会跟人走的读数。
@@ -708,7 +745,7 @@ export function NotebookSurface() {
 
     // 教学产物那一读（W4-6 刀二）：只有真有一轮在进行中才有得读——没轮次就没有
     // "这一轮讲了什么"。同样自己吞异常：读失败退成"还没讲过"，不是错误页。
-    let roundTeaching: NotebookProjection["roundTeaching"] = null;
+    let roundTeachingView: NotebookProjection["roundTeachingView"] = null;
     if (openRound) {
       try {
         const teachingResponse = await api.noteLearningRound.teaching({
@@ -716,9 +753,9 @@ export function NotebookSurface() {
           roundId: openRound.roundId,
         });
         if (teachingResponse.workspaceEpoch) epochRef.current = teachingResponse.workspaceEpoch;
-        roundTeaching = unwrapGatewayResult(teachingResponse).teaching;
+        roundTeachingView = unwrapGatewayResult(teachingResponse);
       } catch {
-        roundTeaching = null;
+        roundTeachingView = null;
       }
     }
 
@@ -742,7 +779,7 @@ export function NotebookSurface() {
       sourceFailure,
       openRound,
       roundHistory,
-      roundTeaching,
+      roundTeachingView,
       objective: focus && focus.objective.sources.primaryNote?.noteId === note.noteId
         ? focus.objective
         : null,
@@ -775,7 +812,11 @@ export function NotebookSurface() {
   const openRound = data?.openRound ?? null;
   const roundHistory = data?.roundHistory ?? null;
   /** 这一轮当前问题下的那条解释；`null` = 还没讲过（W4-6 刀二）。 */
-  const roundTeaching = data?.roundTeaching ?? null;
+  const roundTeaching = data?.roundTeachingView?.teaching ?? null;
+  /** 这一轮练过的那几道（W4-6 刀三；空数组 = 还没练过）。 */
+  const roundPractices = data?.roundTeachingView?.practices ?? [];
+  /** 「练一道」那一发的起点；`null` = 没有可开的目标（无目标轮次不摆这颗按钮）。 */
+  const roundPracticeStart = data?.roundTeachingView?.practiceStart ?? null;
   const capabilities = data?.capabilities ?? null;
   const activeGenerations = data?.activeGeneration?.state === "data" ? data.activeGeneration.data : [];
   // 这篇笔记自己的在制批次。一个工作区可以同时有多篇笔记各自在制一批卡，所以
@@ -1334,6 +1375,43 @@ export function NotebookSurface() {
       await reload({ silent: true });
     } finally {
       setTeachingBusy(false);
+    }
+  };
+
+  /**
+   * 「练一道」（W4-6 刀三）：用**服务端签发的那份起点**开一场 run。
+   *
+   * 刻意不自己拼请求：`start` 里那几格（goal／时长／怎么答／锚点）都来自服务端
+   * ——拼一份就等于在这一页埋下第二个来源（W4-2 第五刀收的就是这一族）。
+   * 开出去之后与主要动作走同一条路：接上旅程界面，这一页 silent 回读一次
+   * （新一轮的练习随即出现在"这一轮练过"里）。
+   */
+  const startRoundPractice = async () => {
+    const practiceStartValue = roundPracticeStart;
+    if (!practiceStartValue || practiceBusy) return;
+    setPracticeBusy(true);
+    setPracticeFailure(null);
+    try {
+      setActiveObjectiveId(practiceStartValue.objectiveId);
+      await startObjectiveJourney(
+        {
+          kind: "create_run",
+          objectiveId: practiceStartValue.objectiveId,
+          label: ROUND_COPY.teaching.practice,
+          start: practiceStartValue.start,
+        },
+        {
+          epochRef,
+          setActiveObjectiveId,
+          setActiveRunId,
+          openRunSurface: () => invoke("validate"),
+          reload: () => reload({ silent: true }),
+        },
+      );
+    } catch (error) {
+      setPracticeFailure(gatewayErrorMessage(error));
+    } finally {
+      setPracticeBusy(false);
     }
   };
 
@@ -2060,11 +2138,39 @@ export function NotebookSurface() {
                     {teachingBusy ? ROUND_COPY.teaching.starting : ROUND_COPY.teaching.start}
                   </button>
                 )}
+                {/* 这一轮练过哪几道（W4-6 刀三）：与"讲没讲过"无关，所以不放在上面那一支里
+                    ——先练后讲、或者只看不练的那一轮，这一格照样要有。 */}
+                {roundPractices.length > 0 ? (
+                  <div className="notebook-round-teaching__practices">
+                    <span className="small notebook-note">{ROUND_COPY.teaching.practicesLead}</span>
+                    <ol className="notebook-round-teaching__practice-list">
+                      {roundPractices.map((practice) => (
+                        <li key={practice.runId} className="small notebook-note">
+                          {ROUND_DAY_FORMAT.format(new Date(practice.startedAt))}
+                          {" · "}
+                          {roundPracticeStateLabelV1(practice)}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : null}
+                {/* 「练一道」：起点是服务端签发的（没有 active 目标就没有这一格）。 */}
+                {roundPracticeStart ? (
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={practiceBusy}
+                    onClick={() => void startRoundPractice()}
+                  >
+                    {practiceBusy ? ROUND_COPY.teaching.practicing : ROUND_COPY.teaching.practice}
+                  </button>
+                ) : null}
                 {/* 教学面是隔离展示面（D4）的**预留挂载点**：刀五之前不挂 iframe，
                     挂上去时用 `artifact-frame-host` 自己的合同取属性，不在这里另写一份。 */}
                 <div className="notebook-round-teaching__artifact" data-artifact-slot="note-round-teaching" />
               </div>
               {teachingFailure ? <p className="small notebook-note" role="alert">{teachingFailure}</p> : null}
+              {practiceFailure ? <p className="small notebook-note" role="alert">{practiceFailure}</p> : null}
             </>
           ) : (
             <>

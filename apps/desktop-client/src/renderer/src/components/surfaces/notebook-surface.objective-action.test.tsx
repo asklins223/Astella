@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { objectiveListItemV3Schema, type ObjectiveListItemV3 } from "@ailearn/shared/learning-objective-surface-contracts";
 import type { NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
 import { NotebookSurface } from "./notebook-surface";
-import { ROUND_COPY, ROUND_PRESETS_V1, STRUCTURE_QUESTION_LABEL_MAX_V1, STRUCTURE_QUESTION_LIMIT_V1, structureQuestionCandidatesV1 } from "./notebook-surface";
+import { ROUND_COPY, ROUND_PRESETS_V1, STRUCTURE_QUESTION_LABEL_MAX_V1, STRUCTURE_QUESTION_LIMIT_V1, roundPracticeStateLabelV1, structureQuestionCandidatesV1 } from "./notebook-surface";
 import { useRoomStore } from "../../app/room-store";
 
 /**
@@ -156,6 +156,10 @@ function installApi(
     teachingSequence?: (Record<string, unknown> | null)[];
     /** 生成那一发失败（走网关那一条形状）。 */
     explainFails?: boolean;
+    /** 这一轮练过的那几道（W4-6 刀三）；缺省 = 还没练过。 */
+    practices?: Record<string, unknown>[];
+    /** 「练一道」那一发的起点；缺省 = 没有（无目标轮次）。 */
+    practiceStart?: Record<string, unknown> | null;
   } = {},
 ): Api {
   const syncController = options.syncController ?? { fail: false };
@@ -191,7 +195,13 @@ function installApi(
         const rows = options.teachingSequence ?? [options.roundTeaching ?? null];
         const read = Math.min(teachingReads, rows.length - 1);
         teachingReads += 1;
-        return ok({ version: 1, round: options.openRound ?? roundRow(), teaching: rows[read] ?? null });
+        return ok({
+          version: 1,
+          round: options.openRound ?? roundRow(),
+          teaching: rows[read] ?? null,
+          practices: options.practices ?? [],
+          practiceStart: options.practiceStart ?? null,
+        });
       }),
       explain: vi.fn(async () => (options.explainFails
         ? { ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } }
@@ -291,6 +301,8 @@ async function show(
     roundTeaching?: Record<string, unknown> | null;
     teachingSequence?: (Record<string, unknown> | null)[];
     explainFails?: boolean;
+    practices?: Record<string, unknown>[];
+    practiceStart?: Record<string, unknown> | null;
   } = {},
 ) {
   const syncController = options.syncController ?? { fail: false };
@@ -1063,5 +1075,94 @@ describe("笔记页的教学面（39d W4-6 刀二）", () => {
     expect(container.querySelector(".notebook-round-teaching__text")).toBeNull();
     expect([...block.querySelectorAll("button")].some((b) => b.textContent === ROUND_COPY.teaching.start)).toBe(true);
     expect(container.querySelector('[role="alert"]')?.textContent?.trim().length ?? 0).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * 轮次里的练习（39d W4-6 刀三）。
+ *
+ * 这一组钉三件别的层替它证不了的事：
+ *  1. 「练一道」只在**服务端给了起点**时出现（无目标的轮次没有这一颗），
+ *     按下去发出去的就是服务端那一份 `start`——这一页不自己拼 goal／时长／锚点；
+ *  2. 开出去之后接上旅程界面（与主要动作同一条路），不是"点了没反应"；
+ *  3. 练过的几道在屏上带日期与结论，措辞由一处签发（结算后说结论、没结算说进行到哪）。
+ */
+describe("轮次里的练习（39d W4-6 刀三）", () => {
+  const practiceStart = {
+    objectiveId: OBJECTIVE_ID,
+    start: {
+      version: 2,
+      originV2: {
+        kind: "note_round",
+        roundId: ROUND_ID,
+        noteId: NOTE_ID,
+        objectiveId: OBJECTIVE_ID,
+      },
+      goal: "stabilize",
+      requestedTimeBudgetSeconds: 180,
+      responsePreference: "adaptive",
+    },
+  };
+
+  it("有起点才摆「练一道」：按下去发的就是服务端那一份 start，随即接上旅程界面", async () => {
+    const { api, invoke, roundBlock } = await show([], {
+      openRound: roundRow(),
+      roundTeaching: teachingRow(),
+      practiceStart,
+    });
+    const button = [...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.teaching.practice);
+    expect(button).toBeTruthy();
+    fireEvent.click(button!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(api.learningRun.start).toHaveBeenCalledTimes(1);
+    const input = api.learningRun.start.mock.calls[0][0] as { request: unknown };
+    // 逐字节比：这一页若自己拼一份 start，最可能拼错的就是锚点那一格
+    // （note_round 的 objectiveId 是必填，缺了服务端会拒）。
+    expect(input.request).toEqual(practiceStart.start);
+    expect((input.request as { originV2: { kind: string } }).originV2.kind).toBe("note_round");
+    expect(invoke).toHaveBeenCalledWith("validate");
+    expect(useRoomStore.getState().activeRunId).toBe(RUN_ID);
+  });
+
+  it("没有起点（无目标的轮次）：不摆「练一道」，其余教学面照旧", async () => {
+    const { roundBlock } = await show([], { openRound: roundRow(), roundTeaching: teachingRow() });
+    const block = roundBlock()!;
+    expect([...block.querySelectorAll("button")].some((b) => b.textContent === ROUND_COPY.teaching.practice)).toBe(false);
+    // 对照：解释还在（"没有练一道"不是"整块没画"）。
+    expect(block.querySelector(".notebook-round-teaching__text")).toBeTruthy();
+  });
+
+  it("练过的几道带日期与结论；没结算的那一场说「正在进行」", async () => {
+    const { roundBlock } = await show([], {
+      openRound: roundRow(),
+      roundTeaching: teachingRow(),
+      practices: [
+        { runId: RUN_ID, phase: "completed", outcome: "declared_unable", startedAt: "2026-09-26T04:20:00.000Z" },
+        {
+          runId: "99999999-9999-4999-8999-999999999999",
+          phase: "active",
+          outcome: null,
+          startedAt: "2026-09-26T05:20:00.000Z",
+        },
+      ],
+    });
+    const block = roundBlock()!;
+    expect(block.textContent).toContain(ROUND_COPY.teaching.practicesLead);
+    const items = [...block.querySelectorAll(".notebook-round-teaching__practice-list li")].map((li) => li.textContent?.trim() ?? "");
+    expect(items.length).toBe(2);
+    // 结算过的那一场说的是结论那一档的字（不是"完成了"这种笼统话）。
+    expect(items[0]).toContain(roundPracticeStateLabelV1({ phase: "completed", outcome: "declared_unable" }));
+    expect(items[0]).toContain("2026");
+    // 还没结算的那一场说"正在进行"，不说结论。
+    expect(items[1]).toContain("正在进行");
+  });
+
+  it("那一格的措辞由一处签发：七种结论各有自己的话，没结论时按 phase 说状态", () => {
+    expect(roundPracticeStateLabelV1({ phase: "completed", outcome: "demonstrated" })).toBe("做出来了");
+    expect(roundPracticeStateLabelV1({ phase: "completed", outcome: "needs_repair" })).toBe("还有一处要补");
+    expect(roundPracticeStateLabelV1({ phase: "completed", outcome: "not_assessable" })).toBe("这一次判不了");
+    expect(roundPracticeStateLabelV1({ phase: "active", outcome: null })).toBe("正在进行");
+    expect(roundPracticeStateLabelV1({ phase: "paused", outcome: null })).toBe("停住了");
+    expect(roundPracticeStateLabelV1({ phase: "cancelled", outcome: null })).toBe("中断了");
   });
 });

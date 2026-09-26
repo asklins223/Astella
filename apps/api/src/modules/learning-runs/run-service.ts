@@ -86,6 +86,8 @@ import {
   learningRunTargetPublicV2Schema,
   learningRunTargetRevealV2Schema,
 } from "@ailearn/shared";
+import { learningRunOutcomeSchema } from "@ailearn/shared/learning-run-contracts";
+import type { RoundPracticeV1 } from "@ailearn/shared/note-learning-round-contracts";
 import { computeExposureScopeIdV2 } from "@ailearn/shared/card-generation-v2-hashing";
 import { extractAnswerText } from "@ailearn/shared/card-generation-v2-pipeline";
 import {
@@ -1039,6 +1041,49 @@ function originObjectiveId(origin: unknown): string {
     if (typeof objectiveId === "string") return objectiveId;
   }
   return "";
+}
+
+/**
+ * 这一轮里开出去的练习（W4-6 刀三）：`origin ->> 'roundId'` 反查，按开出的先后排。
+ *
+ * 为什么读侧要单独有这一发：W4-5 ② 把 `note_round` 这个 origin 落地了，但**没有任何
+ * 地方读得出来"这一轮里做过一次练习"**——轮次读合同里那一格在那之前是空的。这是那笔
+ * producer 欠账的读半边（写半边就是用户在轮次里点「练一道」）。
+ *
+ * 四格都取自 run 行本身：`phase` 是它走到哪一步，`outcome` 只在**结算之后**才有
+ * （`result` 里的那一档），`startedAt` 是它什么时候开的。空数组是真的"还没练过"。
+ */
+export async function listNoteRoundPractices(
+  tx: ApiTransaction,
+  scope: { workspaceId: string; userId: string },
+  roundId: string,
+): Promise<RoundPracticeV1[]> {
+  const rows = await tx
+    .select({
+      runId: learningRuns.id,
+      phase: learningRuns.phase,
+      result: learningRuns.result,
+      createdAt: learningRuns.createdAt,
+    })
+    .from(learningRuns)
+    .where(and(
+      eq(learningRuns.workspaceId, scope.workspaceId),
+      eq(learningRuns.userId, scope.userId),
+      sql`${learningRuns.origin} ->> 'roundId' = ${roundId}`,
+    ))
+    .orderBy(asc(learningRuns.createdAt));
+  return rows.map((row) => {
+    const outcome = (row.result as { outcome?: unknown } | null)?.outcome;
+    // 只认得出名字的那几档：`result` 是一个历史形状自由的 jsonb，读侧**不许**
+    // 把里面不认识的东西端出去（合同收不下就会在客户端变成"整份拒收"）。
+    const parsed = typeof outcome === "string" ? learningRunOutcomeSchema.safeParse(outcome) : null;
+    return {
+      runId: row.runId,
+      phase: row.phase,
+      outcome: parsed?.success ? parsed.data : null,
+      startedAt: row.createdAt.toISOString(),
+    };
+  });
 }
 
 export async function getRunPublicView(

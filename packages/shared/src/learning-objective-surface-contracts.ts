@@ -76,7 +76,8 @@ export type ObjectiveOriginV3 = z.infer<typeof objectiveOriginV3Schema>;
 // ─── W1-10: LearningObjectivePrimaryActionV3 ─────────────────────────────
 // 前端不得根据 label 或本地时间推断 action（§7.5/§29.1）。action 只携带安全参数。
 
-const objectiveRunStartV3Schema = z.strictObject({
+/** 「开始这一场」那一发的起点（主行动与轮次内练习共用同一份形状：唯一来源）。 */
+export const objectiveRunStartV3Schema = z.strictObject({
   version: z.literal(2),
   originV2: learningRunOriginV2Schema,
   goal: z.enum(["stabilize", "clarify", "repair", "transfer", "explore"]),

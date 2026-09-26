@@ -109,7 +109,12 @@ try {
   const objectiveBlock = page.locator('.notebook-objective:not(.notebook-round)')
   const noObjective = (await objectiveBlock.count()) === 0
   check('这一篇没有活动目标（所以摆的是那张表单）', noObjective, noObjective ? '' : '读到了主要动作那一行')
-  if (!noObjective) {
+  // 正控制：光看"没有主行动那一行"分不开"这一篇没有目标"与"这一页整个投影读失败了"
+  // （本轮真踩过：服务端 restart 窗口里，两件事在屏上长得一模一样）。表格子必须真在。
+  const formPresent = (await roundBlock.locator('#notebook-round-question').count()) > 0
+  readings.roundFormPresent = formPresent
+  check('轻量定向那张表单真在屏上（不是"投影读失败了"冒充没有目标）', formPresent)
+  if (!noObjective || !formPresent) {
     report()
     throw new Error('target note has an active objective; the light form is not rendered')
   }
@@ -218,6 +223,16 @@ try {
     check('这一轮有依据可点（那一篇的小节里有可讲的正文）', false, 'chipLabels 为空')
   }
 
+  // ── 「练一道」那一格（W4-6 刀三）：这一篇**没有目标**，所以它必须不在 ──
+  // 正的那一半（有目标时点一下真的开出一场 run）按设计件的判据走集测——真窗口里点它
+  // 会写出一场真 run，而清掉一场 run 要按 v2-card-fixture 那份 ~30 张表的次序删，
+  // 剧本里再抄一份迟早只对上一半。这里钉的是"不该出现时不出现"这一半。
+  const practiceButtonCount = await roundBlock
+    .locator('.notebook-round-teaching button', { hasText: '练一道' })
+    .count()
+  readings.practiceButtonCount = practiceButtonCount
+  check('没有目标的那一轮不摆「练一道」', practiceButtonCount === 0, practiceButtonCount)
+
   // ── 第四步「收尾」：先到这里 → 那一行与教学面一起撤掉，库里那一轮是终态 ──
   await page.getByRole('button', { name: '先到这里', exact: true }).click({ timeout: 20_000 })
   const closed = await page
@@ -234,6 +249,9 @@ try {
   const teachingRows = sql(`select count(*) from note_learning_round_teachings t join note_learning_rounds r on r.id = t.round_id where r.note_id = '${noteId}'`)
   readings.teachingRowsAfterClose = teachingRows
   check('收尾不删教学产物（那是历史，只追加）', Number(teachingRows) === 1, teachingRows)
+} catch (error) {
+  // 剧本自己没跑完也要先把已得的读数印出来（观感那一刀的同一条教训：读数不该被抛掉）。
+  check('剧本自己没跑完', false, error instanceof Error ? error.message : String(error))
 } finally {
   await app.close().catch(() => undefined)
   if (process.env.PROBE_ALLOW_DB === '1' && noteId.length > 0) {
@@ -242,6 +260,7 @@ try {
     readings.roundsLeftForNote = Number(sql(`select count(*) from note_learning_rounds where note_id = '${noteId}'`))
     readings.roundsLeftInDev = Number(sql('select count(*) from note_learning_rounds'))
   }
+  report()
 }
 
 function report(): void {
@@ -253,4 +272,3 @@ function report(): void {
   process.stdout.write(`\n实测读数：\n${JSON.stringify(readings, null, 2)}\n`)
   if (failed.length > 0) process.exitCode = 1
 }
-report()
