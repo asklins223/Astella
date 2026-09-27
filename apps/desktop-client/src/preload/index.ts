@@ -364,6 +364,14 @@ const desktopApi: AILearnDesktopApiM2 = {
     holdObjective: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewHoldObjective, input),
     resumeObjective: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewResumeObjective, input)
   },
+  // 判定的争议（39 §14.2、§16.11、§16.25）。只有**人能按的**四条：
+  // `recheck` 与 `correction` 的写入方是系统，不挂在这里（理由见共享通道表那段）。
+  assessmentDispute: {
+    get: (input) => invoke(DESKTOP_IPC_CHANNELS.assessmentDisputeGet, input),
+    open: (input) => invoke(DESKTOP_IPC_CHANNELS.assessmentDisputeOpen, input),
+    supplement: (input) => invoke(DESKTOP_IPC_CHANNELS.assessmentDisputeSupplement, input),
+    close: (input) => invoke(DESKTOP_IPC_CHANNELS.assessmentDisputeClose, input)
+  },
   learningRun: {
     get: (input) => invoke(DESKTOP_IPC_CHANNELS.learningRunGet, input),
     start: (input) => invoke(DESKTOP_IPC_CHANNELS.learningRunStart, input),

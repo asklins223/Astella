@@ -161,6 +161,14 @@ import {
   objectiveResumeCommandV2Schema,
   objectiveResumeResultV2Schema,
 } from "@ailearn/shared/review-queue-v2-contracts";
+import {
+  openAssessmentDisputeCommandV2Schema,
+  openAssessmentDisputeResultV2Schema,
+  closeAssessmentDisputeCommandV2Schema,
+  closeAssessmentDisputeResultV2Schema,
+  supplementAssessmentDisputeCommandV2Schema,
+  assessmentDisputeEnvelopeV2Schema,
+} from "@ailearn/shared/assessment-dispute-rules-v2";
 import { roomProjectionV1Schema } from "@ailearn/shared/room-projection-contracts";
 import {
   companionAccountPatchSchema,
@@ -538,6 +546,18 @@ const reviewDeferInputSchema = z.strictObject({ ...m1InputBase, request: reviewD
 // W7-3 刀三：两条目标级排除动作。输入形状取共享合同那两份，渲染层少写一份 zod。
 const reviewHoldObjectiveInputSchema = z.strictObject({ ...m1InputBase, request: objectiveHoldCommandV2Schema });
 const reviewResumeObjectiveInputSchema = z.strictObject({ ...m1InputBase, request: objectiveResumeCommandV2Schema });
+// 判定的争议（39 §14.2、§16.11、§16.25）。四条输入形状全部取共享合同那几份，
+// 渲染层少写一份 zod；`assessmentId` 在**每一条**上而不是外层，理由见共享那份的注释。
+const assessmentDisputeGetInputSchema = z.strictObject({ ...m1InputBase, assessmentId: uuidSchema });
+const assessmentDisputeOpenInputSchema = z.strictObject({ ...m1InputBase, request: openAssessmentDisputeCommandV2Schema });
+const assessmentDisputeSupplementInputSchema = z.strictObject({ ...m1InputBase, request: supplementAssessmentDisputeCommandV2Schema });
+const assessmentDisputeCloseInputSchema = z.strictObject({ ...m1InputBase, request: closeAssessmentDisputeCommandV2Schema });
+/**
+ * 补充说明那一发的回执只认这一句 `accepted`（网关那一层的理由见它的注释）。
+ * 单独起名而不是就地内联，是因为 `installHandler` 的输出校验走泛型 `TOutput`：
+ * 内联的匿名 schema 会让 TS 推不出 `input` 的形状（`_type.meta` 退化成 `unknown`）。
+ */
+const assessmentDisputeSupplementResultV2Schema = z.strictObject({ accepted: z.literal(true) });
 const sourceListInputSchema = z.strictObject({ ...m1InputBase, cursor: z.string().min(1).max(128).optional(), limit: z.number().int().min(1).max(100).optional(), status: z.string().min(1).max(32).optional() });
 const sourceCreateInputSchema = z.strictObject({ ...m1InputBase, request: desktopSourceCreateRequestSchema });
 const sourceGetInputSchema = z.strictObject({ ...m1InputBase, sourceId: uuidSchema });
@@ -3383,6 +3403,44 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     assertEpoch(input.meta, activeWorkspaceEpoch);
     return gateway.resumeObjectiveForReview(input.request, input.meta.requestId);
   }, undefined, objectiveResumeResultV2Schema);
+
+  // ─── 判定的争议（39 §14.2、§16.11、§16.25）────────────────────────────────
+  //
+  // 一整组此前在客户端**不存在**，而结果页已经印着"也可以现在结束争议、把这一项
+  // 暂不安排"——那句话承诺了一个点不到的入口（§16.11／16.22／16.25 三条验收
+  // 都要求用户能提出或查看异议，按现状它们都无法验收）。
+  //
+  // 面只认 `learningRun.detail`：争议是**一次判定的**个人数据，挂在别的面上等于
+  // 让它在没有那条判定的上下文里也能被提交。三条写都走 `assertEpoch`（fail closed）：
+  // 切空间之后带着旧 epoch 回来开一份争议，等于在**新**空间里对一条不存在的判定申诉。
+  //
+  // 刻意只有这四条：`recheck` 与 `correction` 的写入方是系统而不是人
+  // （§14.2「系统基于原题、原回答和依据进行一次重新检查」），挂上来就是把一次复核
+  // 变成一个能被重复按下的按钮，而 §16.22 的验收原话是"争议不形成死循环"。
+
+  installHandler(DESKTOP_IPC_CHANNELS.assessmentDisputeGet, assessmentDisputeGetInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "learningRun.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.getAssessmentDispute(input.assessmentId, input.meta.requestId);
+  }, undefined, assessmentDisputeEnvelopeV2Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.assessmentDisputeOpen, assessmentDisputeOpenInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "learningRun.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.openAssessmentDispute(input.request, input.meta.requestId);
+  }, undefined, openAssessmentDisputeResultV2Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.assessmentDisputeSupplement, assessmentDisputeSupplementInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "learningRun.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.supplementAssessmentDispute(input.request, input.meta.requestId);
+  }, undefined, assessmentDisputeSupplementResultV2Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.assessmentDisputeClose, assessmentDisputeCloseInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "learningRun.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.closeAssessmentDispute(input.request, input.meta.requestId);
+  }, undefined, closeAssessmentDisputeResultV2Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.activityGetToday, activityGetTodayInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");

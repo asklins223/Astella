@@ -249,6 +249,16 @@ export type RecordLearningRunActivityLeaseRequestV2 = z.infer<typeof recordLearn
  * 结果载荷一起下发。canonicalAnswer / rubric criterion 仍不进公开边界。
  */
 export const learningRunResultAssessmentV2Schema = z.strictObject({
+  /**
+   * 这一次判定的 id——§14.2 争议、§16.25 更正都是**指向一次具体判定**的，
+   * 界面要能开一份争议就得先拿得到它。
+   *
+   * **可选**而不是必填：这一格是后来才补投影的，此前写下的 `learning_runs.result`
+   * 里没有它。与 `submitted` 同一个理由（下面那行注释写着"老 run 可以完全没有"）——
+   * 硬做成必填会让**所有历史结果**在解析时整片报错，而那些结果本身是好的。
+   * 读不到就不给争议入口，而不是拿一个猜出来的 id 去提交。
+   */
+  assessmentId: z.string().uuid().optional(),
   source: z.enum(["assessment_critic", "deterministic_declared_unable", "deterministic_structured"]),
   status: z.enum(["queued", "running", "completed", "not_assessable", "failed"]),
   trustClass: z.string().nullable(),

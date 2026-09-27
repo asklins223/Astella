@@ -39,6 +39,14 @@ import type {
   ObjectiveResumeCommandV2,
   ObjectiveResumeResultV2,
 } from "./review-queue-v2-contracts.ts";
+import { assessmentDisputeEnvelopeV2Schema } from "./assessment-dispute-rules-v2.ts";
+import type {
+  CloseAssessmentDisputeCommandV2,
+  CloseAssessmentDisputeResultV2,
+  OpenAssessmentDisputeCommandV2,
+  OpenAssessmentDisputeResultV2,
+  SupplementAssessmentDisputeCommandV2,
+} from "./assessment-dispute-rules-v2.ts";
 import { roomProjectionV1Schema } from "./room-projection-contracts.ts";
 import {
   companionHomeProjectionV1Schema,
@@ -413,6 +421,19 @@ export const DESKTOP_IPC_CHANNELS = {
   // "恢复并开启"列成两件不同的事，合成一颗开关会把中间那半句折叠掉。
   reviewHoldObjective: "ailearn.v1.review.holdObjective",
   reviewResumeObjective: "ailearn.v1.review.resumeObjective",
+  // 判定的争议（39 §14.2、§16.11、§16.25）。**四条用户能按的通道**，
+  // 刻意少于服务端那六条：`recheck` 与 `correction` 的写入方是系统，不是人
+  // （§14.2「**系统**基于原题、原回答和依据进行一次重新检查」）。
+  // 把它们也挂上 preload，等于把一次复核变成一个能被重复按下的按钮，
+  // 而 §16.22 的验收原话是「争议**不形成死循环**」。
+  //
+  // 另开一个命名空间而不是塞进 `review`：那边是「复习排期」，这边是「一次判定的异议」，
+  // 两者唯一的交集是 `close(holdObjective)` 顺带写的那一条目标级排除（§9.1 行 2），
+  // 合成一个命名空间会让「改期」和「申诉」在界面上长得一样。
+  assessmentDisputeGet: "ailearn.v1.assessmentDispute.get",
+  assessmentDisputeOpen: "ailearn.v1.assessmentDispute.open",
+  assessmentDisputeSupplement: "ailearn.v1.assessmentDispute.supplement",
+  assessmentDisputeClose: "ailearn.v1.assessmentDispute.close",
   learningRunGet: "ailearn.v1.learningRun.get",
   learningRunStart: "ailearn.v1.learningRun.start",
   learningRunGetDraft: "ailearn.v1.learningRun.getDraft",
@@ -2571,6 +2592,49 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
      */
     resumeObjective(input: { meta: RequestMetaV1; request: ObjectiveResumeCommandV2 }): Promise<
       GatewayResultV1<ObjectiveResumeResultV2>
+    >;
+  };
+  /**
+   * 判定的争议与更正（39 §14.2、§16.11、§16.25）。
+   *
+   * 这一整套此前**客户端一行都没有**：服务端 `run-dispute-routes.ts` 六条齐了、
+   * `server.ts:380` 也注册了，而结果页已经印着「也可以现在结束争议、把这一项
+   * 暂不安排」——那句话向用户承诺了一个点不到的地方（§16.11／16.22／16.25
+   * 三条验收都要求用户能提出或查看异议，按现状它们都无法验收）。
+   *
+   * 四条，缺的 `recheck` / `correction` 是**故意不给**：写入方是系统，见通道表那段。
+   */
+  readonly assessmentDispute: {
+    /**
+     * 读回这一份判定上的争议。`dispute: null` 是**正常回执**不是失败——界面要先问
+     * 一句「有没有得吵」才决定那颗入口显不显示，报成错误会让入口永远出不来。
+     */
+    get(input: { meta: RequestMetaV1; assessmentId: Uuid }): Promise<
+      GatewayResultV1<z.infer<typeof assessmentDisputeEnvelopeV2Schema>>
+    >;
+    /**
+     * 开一份争议。`statement` 必填（服务端同形）：没有理由的「我不同意」进不了复核。
+     * 已开过一份时服务端回 200 + `created: false`（幂等回执），409 只留给"别的冲突"。
+     */
+    open(input: { meta: RequestMetaV1; request: OpenAssessmentDisputeCommandV2 }): Promise<
+      GatewayResultV1<OpenAssessmentDisputeResultV2>
+    >;
+    /**
+     * 补充说明。§14.2 明写允许，且**不重开**已落库的复核——所以这条在
+     * `recheck_upheld` 之后仍然可用（那正是"维持之后用户再补充"的产品路径）。
+     */
+    supplement(input: { meta: RequestMetaV1; request: SupplementAssessmentDisputeCommandV2 }): Promise<
+      GatewayResultV1<{ accepted: true }>
+    >;
+    /**
+     * 结束争议；`holdObjective: true` 时顺带把该项设成「暂不安排」（§14.2）。
+     *
+     * 三档 `outcome` 都要念出来，`hold_unavailable` 尤其不能当成成功：那一格是
+     * 「争议结束了，但排除没落上」，界面若显示成"已暂不安排"就是假回执。
+     * `dismissedPendingSchedules` 是这颗按钮唯一看得见的副作用，必须报。
+     */
+    close(input: { meta: RequestMetaV1; request: CloseAssessmentDisputeCommandV2 }): Promise<
+      GatewayResultV1<CloseAssessmentDisputeResultV2>
     >;
   };
   readonly understanding: {

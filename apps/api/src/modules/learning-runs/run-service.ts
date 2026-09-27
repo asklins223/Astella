@@ -1491,6 +1491,7 @@ async function loadResultAssessmentV2(
 ): Promise<LearningRunResultAssessmentV2 | undefined> {
   const rows = await tx
     .select({
+      id: learningAssessments.id,
       source: learningAssessments.source,
       status: learningAssessments.status,
       trustClass: learningAssessments.trustClass,
@@ -1506,6 +1507,10 @@ async function loadResultAssessmentV2(
   const row = rows[0];
   if (!row) return undefined;
   const parsed = learningRunResultAssessmentV2Schema.safeParse({
+    // §14.2：争议与更正都挂在**一次具体判定**上，界面要开得起来先得拿得到这个 id。
+    // 与 `submitted` 同一个理由做成可选——老 result 里没有这一格，解析不过就整块
+    // 不投影，而不是拿一个猜出来的 id 去提交一份申诉。
+    assessmentId: row.id,
     source: row.source,
     status: row.status,
     trustClass: row.trustClass,

@@ -321,6 +321,73 @@ export const closeAssessmentDisputeV2Schema = z.strictObject({
 });
 export type CloseAssessmentDisputeV2Input = z.infer<typeof closeAssessmentDisputeV2Schema>;
 
+// ─── 桌面侧要发的**三条请求体** ────────────────────────────────────────────
+
+/**
+ * 与服务端那份同形，但在这里另起一个名字：IPC 合同是渲染层唯一看得见的形状，
+ * 它必须自带一份，缺字段时渲染层先红，而不是运行时从主进程报一个没有上下文的 400。
+ * （与 `review-queue-v2-contracts.ts` 里 `objectiveHoldCommandV2Schema` 同一个理由。）
+ *
+ * `assessmentId` 在**每一条**上而不是只放在外层：§14.4「争议是个人数据」，读别人的
+ * 那一判定服务端只能回 404，把这个 id 放在信封外层会让它看起来像是可以复用的
+ * 「当前判定」，而它其实每次都指向一条**具体的、可能被遮蔽的**历史判定。
+ */
+export const openAssessmentDisputeCommandV2Schema = openAssessmentDisputeV2Schema;
+export type OpenAssessmentDisputeCommandV2 = z.infer<typeof openAssessmentDisputeCommandV2Schema>;
+
+export const supplementAssessmentDisputeCommandV2Schema = z.strictObject({
+  assessmentId: z.string().uuid(),
+  supplement: z.string().min(1).max(2000),
+});
+export type SupplementAssessmentDisputeCommandV2 = z.infer<
+  typeof supplementAssessmentDisputeCommandV2Schema
+>;
+
+/**
+ * 「结束争议」＋「把该项暂不安排」是**一颗按钮上的两格**，不是两颗按钮
+ * （§14.2：「仍有争议时可结束并将该项暂不安排」）。
+ *
+ * `holdObjective: true` 而服务端判出 `hold_unavailable` 时，那一格**照常结束争议**、
+ * 只把没能落排除这件事如实回来说明——所以这条命令**不带 noteId**：排除的可用性由
+ * 服务端按目标自己的绑定判断（`decideDisputeCloseV2` 的 `noteBindingAvailable`），
+ * 渲染层自造一个「当前笔记」塞进去只会变成第二个可能说谎的来源。
+ */
+export const closeAssessmentDisputeCommandV2Schema = z.strictObject({
+  assessmentId: z.string().uuid(),
+  holdObjective: z.boolean().default(false),
+  note: z.string().max(500).optional(),
+});
+export type CloseAssessmentDisputeCommandV2 = z.infer<typeof closeAssessmentDisputeCommandV2Schema>;
+
+// ─── 桌面侧的**四条回执**（`run-dispute-routes.ts` 逐条同形）────────────────
+
+/** 开一份争议。`created: false` = 原来就开着这一份（幂等回执，不是新一次）。 */
+export const openAssessmentDisputeResultV2Schema = z.strictObject({
+  version: z.literal(2),
+  disputeId: z.string().uuid(),
+  status: assessmentDisputeStatusV2Schema,
+  created: z.boolean(),
+});
+export type OpenAssessmentDisputeResultV2 = z.infer<typeof openAssessmentDisputeResultV2Schema>;
+
+
+/**
+ * 结束争议的回执。`outcome` 是**判据的结果**而不是「成功了」：
+ * `hold_objective` / `close_without_hold` / `hold_unavailable` 三档各有各的话要说
+ * （`decideDisputeCloseV2` 的注释解释了为什么第三档不能静默降级成第一档）。
+ *
+ * `dismissedPendingSchedules` 必须念出来：撤下了几条此刻排着的待办是「结束并暂不安排」
+ * 唯一看得见的副作用，不报它，那颗按钮看起来像什么也没做。
+ */
+export const closeAssessmentDisputeResultV2Schema = z.strictObject({
+  version: z.literal(2),
+  disputeId: z.string().uuid(),
+  status: assessmentDisputeStatusV2Schema,
+  outcome: z.enum(["hold_objective", "close_without_hold", "hold_unavailable"]),
+  dismissedPendingSchedules: z.number().int().min(0),
+});
+export type CloseAssessmentDisputeResultV2 = z.infer<typeof closeAssessmentDisputeResultV2Schema>;
+
 /** 读侧：一份争议在界面上要能说清的全部内容。 */
 export const assessmentDisputeViewV2Schema = z.strictObject({
   version: z.literal(2),
@@ -348,3 +415,79 @@ export const assessmentDisputeViewV2Schema = z.strictObject({
   resolvedAt: isoTimestampV2Schema.nullable(),
 });
 export type AssessmentDisputeViewV2 = z.infer<typeof assessmentDisputeViewV2Schema>;
+
+export const assessmentDisputeEnvelopeV2Schema = z.strictObject({
+  version: z.literal(2),
+  dispute: assessmentDisputeViewV2Schema.nullable(),
+});
+export type AssessmentDisputeEnvelopeV2 = z.infer<typeof assessmentDisputeEnvelopeV2Schema>;
+
+/**
+ * 读侧。`dispute: null` 是**正常状态**而不是错误：界面要先问一句「有没有得吵」
+ * 才决定显不显示入口，把「还没有争议」报成失败会让那颗入口永远出不来。
+ */
+
+/**
+ * 争议**状态**到界面话术的**唯一**映射（§14.2「展示维持／修正／仍无法判断的理由」）。
+ *
+ * 放在共享层而不是渲染层：结果页、笔记历史、未来的复核台都要念这一份，
+ * 写在组件里就变成三处各抄一遍，而 `recheck_undetermined`（维持争议状态、不强行选一方）
+ * 恰恰是最容易被抄错成「已关闭」的那一档——抄错的后果是让用户以为争议已经翻篇。
+ *
+ * `recheckReason: null` 时**不说结论**，只说还没复核：判据是
+ * `assessmentDisputeViewV2Schema` 上那句注释（不要显示成「维持」）。
+ */
+export type AssessmentDisputeSurfaceCopyV2 = {
+  readonly headline: string;
+  readonly detail: string;
+  /** `true` 时界面要明确告诉用户「这次不推进复习」——§16.22 的读侧语义。 */
+  readonly withholdsConclusion: boolean;
+  /** `true` 时不该再出现「补充说明」入口：§14.2「不能反复要求用户接受同一判定」。 */
+  readonly acceptsSupplement: boolean;
+};
+
+export function assessmentDisputeSurfaceCopyV2(
+  view: AssessmentDisputeViewV2,
+): AssessmentDisputeSurfaceCopyV2 {
+  const reason = view.recheckReason;
+  const reasonLine = reason ? `理由：${reason}` : "复核还没做，暂时不显示结论。";
+  switch (view.status) {
+    case "open":
+      return {
+        headline: "你提了异议，这次先不推进复习。",
+        detail: reasonLine,
+        withholdsConclusion: true,
+        acceptsSupplement: true,
+      };
+    case "recheck_undetermined":
+      // §14.2 末句：「判断仍不可靠时**维持争议状态**，不强行选一方作为事实。」
+      // 所以这一档既不能说「已关闭」，也不能说「维持原判」——`upheld` 才是后者。
+      return {
+        headline: "复核之后仍然无法可靠判断，这份异议保持未决。",
+        detail: reasonLine,
+        withholdsConclusion: true,
+        acceptsSupplement: true,
+      };
+    case "recheck_upheld":
+      return {
+        headline: "复核之后维持原来的判定。",
+        detail: reasonLine,
+        withholdsConclusion: false,
+        acceptsSupplement: true,
+      };
+    case "recheck_corrected":
+      return {
+        headline: "复核之后修正了原来的判定，你原来的回答仍然保留。",
+        detail: reasonLine,
+        withholdsConclusion: false,
+        acceptsSupplement: false,
+      };
+    case "closed_held":
+      return {
+        headline: "这份异议已结束，这一项已设为「暂不安排」。",
+        detail: reasonLine,
+        withholdsConclusion: false,
+        acceptsSupplement: false,
+      };
+  }
+}

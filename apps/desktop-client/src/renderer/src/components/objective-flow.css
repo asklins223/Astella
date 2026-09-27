@@ -572,6 +572,39 @@
 .hud-surface .learning-run-result-rubric li[data-verdict="covered"] .learning-run-result-rubric__head { color: var(--quest-grass-text); }
 .hud-surface .learning-run-result-rubric li[data-verdict="missing"] .learning-run-result-rubric__head,
 .hud-surface .learning-run-result-rubric li[data-verdict="contradicted"] .learning-run-result-rubric__head { color: var(--quest-clay-deep); }
+
+/* 判定的异议（39 §14.2、§16.11、§16.25）：结算纸面外的一张**便签**。
+   不是管理台表单——所以用纸签的奶油边、不规则柔圆角与一枚小印章，而不是
+   分栏、细边框和表格。压在结算纸面下面，**不占伴星座位**。 */
+.hud-surface .assessment-dispute-strip { display: grid; align-content: start; gap: 11px; margin-top: 16px; padding: 16px 18px; border: 1px solid var(--quest-line); border-left: 4px solid var(--quest-water-deep); border-radius: 17px 21px 16px 20px; background: rgba(255, 252, 235, 0.52); }
+.hud-surface .assessment-dispute-strip[data-state="none"] { border-left-color: var(--quest-line-strong); }
+.hud-surface .assessment-dispute-strip[data-status="recheck_undetermined"] { border-left-color: var(--quest-clay-deep); }
+.hud-surface .assessment-dispute-strip[data-status="recheck_corrected"],
+.hud-surface .assessment-dispute-strip[data-status="closed_held"] { border-left-color: var(--quest-grass-text); }
+.hud-surface .assessment-dispute-strip > b { color: var(--quest-ink); font-size: 15px; }
+.hud-surface .assessment-dispute-strip__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.hud-surface .assessment-dispute-strip__head b { color: var(--quest-ink); font-size: 15px; }
+.hud-surface .assessment-dispute-strip__stamp { color: var(--quest-clay-deep); font-size: 12px; font-weight: 850; }
+.hud-surface .assessment-dispute-strip__hint { margin: 0; color: var(--quest-soft); font-size: 13px; line-height: 1.6; }
+.hud-surface .assessment-dispute-strip__notice,
+.hud-surface .assessment-dispute-strip__failure { margin: 0; font-size: 13px; line-height: 1.6; }
+.hud-surface .assessment-dispute-strip__notice { color: var(--quest-grass-text); }
+.hud-surface .assessment-dispute-strip__failure { color: var(--quest-clay-deep); }
+.hud-surface .assessment-dispute-strip__reasons { display: grid; gap: 4px; margin: 0; }
+.hud-surface .assessment-dispute-strip__reasons dt { color: var(--quest-soft); font-size: 12px; font-weight: 850; }
+.hud-surface .assessment-dispute-strip__reasons dd { display: grid; gap: 3px; margin: 0 0 7px; color: var(--quest-ink); font-size: 14px; line-height: 1.62; }
+.hud-surface .assessment-dispute-strip__reasons dd small { color: var(--quest-soft); font-size: 12px; }
+.hud-surface .assessment-dispute-strip__correction { display: grid; gap: 4px; }
+.hud-surface .assessment-dispute-strip__form { display: grid; gap: 10px; }
+.hud-surface .assessment-dispute-strip__kinds { display: flex; flex-wrap: wrap; gap: 8px; }
+.hud-surface .assessment-dispute-strip__kind { min-height: 40px; padding: 8px 14px; color: var(--quest-soft); font-size: 13px; font-weight: 850; cursor: pointer; border: 1px solid var(--quest-line); border-radius: 15px 13px 16px 12px; background: rgba(255, 255, 255, 0.12); }
+.hud-surface .assessment-dispute-strip__kind[data-selected="true"] { color: var(--quest-ink); border-color: var(--quest-water-deep); background: rgba(57, 121, 135, 0.14); }
+.hud-surface .assessment-dispute-strip__label { color: var(--quest-ink); font-size: 13px; font-weight: 850; }
+.hud-surface .assessment-dispute-strip textarea { width: 100%; padding: 11px 13px; color: var(--quest-ink); font: inherit; font-size: 14px; line-height: 1.6; border: 1px solid var(--quest-line); border-radius: 14px 17px 13px 16px; background: rgba(255, 255, 255, 0.17); }
+.hud-surface .assessment-dispute-strip__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.hud-surface .assessment-dispute-strip__actions .button { min-height: 44px; }
+.hud-surface .assessment-dispute-strip__hold { display: inline-flex; align-items: center; gap: 8px; color: var(--quest-soft); font-size: 13px; line-height: 1.5; cursor: pointer; }
+.hud-surface .assessment-dispute-strip__open { justify-self: start; }
 .hud-surface .learning-run-result-rubric li p { margin: 4px 0 0; color: var(--quest-soft); font-size: 14px; line-height: 1.6; }
 .hud-surface .learning-run-result-reveal { margin-top: 14px; }
 .hud-surface .learning-run-result-reveal .button { min-height: 44px; }

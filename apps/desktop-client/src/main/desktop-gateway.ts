@@ -116,6 +116,14 @@ import {
   objectiveResumeCommandV2Schema,
   objectiveResumeResultV2Schema,
 } from "@ailearn/shared/review-queue-v2-contracts";
+import {
+  closeAssessmentDisputeCommandV2Schema,
+  closeAssessmentDisputeResultV2Schema,
+  openAssessmentDisputeCommandV2Schema,
+  openAssessmentDisputeResultV2Schema,
+  supplementAssessmentDisputeCommandV2Schema,
+  assessmentDisputeEnvelopeV2Schema,
+} from "@ailearn/shared/assessment-dispute-rules-v2";
 import { todayActivityV1Schema } from "@ailearn/shared/activity-surface-contracts";
 import { roomProjectionV1Schema, type RoomProjectionV1 } from "@ailearn/shared/room-projection-contracts";
 import {
@@ -1770,6 +1778,115 @@ export class DesktopGateway {
       body: JSON.stringify(objectiveResumeCommandV2Schema.parse(request)),
     }, true, true, requestId);
     const parsed = objectiveResumeResultV2Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+  // ─── 判定的争议（39 §14.2、§16.11、§16.25）────────────────────────────────
+  //
+  // 服务端六条齐了、客户端此前**一条都没有**：结果页已经印着"也可以现在结束争议"，
+  // 而用户点不到。这一组把那四句承诺接上。
+  //
+  // 四条里的**取舍**（为什么不给 recheck / correction）：那两条的写入方是系统而不是
+  // 人（§14.2"系统基于原题、原回答和依据进行一次重新检查"）。挂上 preload 就等于
+  // 把一次复核变成一个能被重复按下的按钮，而 §16.22 的验收原话是"争议不形成死循环"。
+
+  /**
+   * 读回这一次判定上的争议。
+   *
+   * **404 照常当失败抛出，不翻成 `dispute: null`**：§14.4 争议是个人数据，读别人的
+   * 那一判定服务端只能回 404；翻成"没有争议"会让界面显示"你还没有提过异议"——
+   * 那是在告诉用户一件关于**别人**的事。"本来就没有争议"服务端回的是 200 + null。
+   */
+  async getAssessmentDispute(
+    assessmentId: string,
+    requestId?: string,
+  ): Promise<z.infer<typeof assessmentDisputeEnvelopeV2Schema>> {
+    await this.ensureConnected(requestId);
+    const safeAssessmentId = this.safeUuid(assessmentId);
+    const result = await this.request(
+      `/learning/assessments/${safeAssessmentId}/disputes`,
+      { method: "GET" },
+      true,
+      true,
+      requestId,
+    );
+    const parsed = assessmentDisputeEnvelopeV2Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+  /**
+   * 开一份争议（"我不同意这次判定"）。
+   *
+   * `created: false` = 原来就开着这一份，**照常当成功交回**而不是当失败：那是幂等
+   * 重试（§9.5"历史回放、重新打开结果和刷新页面均无新的学习或调度影响"），
+   * 报 409 会让界面提示"出错了"而实际上什么也没坏。
+   */
+  async openAssessmentDispute(
+    request: z.infer<typeof openAssessmentDisputeCommandV2Schema>,
+    requestId?: string,
+  ): Promise<z.infer<typeof openAssessmentDisputeResultV2Schema>> {
+    await this.ensureConnected(requestId);
+    const body = openAssessmentDisputeCommandV2Schema.parse(request);
+    const result = await this.request(
+      `/learning/assessments/${body.assessmentId}/disputes`,
+      { method: "POST", body: JSON.stringify({ kind: body.kind, statement: body.statement }) },
+      true,
+      true,
+      requestId,
+    );
+    const parsed = openAssessmentDisputeResultV2Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+  /**
+   * 补充说明。§14.2 明写允许，且**不重开**已落库的复核。
+   *
+   * 只校验服务端那一句 `accepted: true`，不去认它的其余字段——这一发除"收到了"
+   * 之外没有别的可回执，而多解析一个字段就多一个"服务端加字段时桌面静默丢弃"的地方。
+   * 界面要显示复核理由，靠 `getAssessmentDispute` 重新读那一份。
+   */
+  async supplementAssessmentDispute(
+    request: z.infer<typeof supplementAssessmentDisputeCommandV2Schema>,
+    requestId?: string,
+  ): Promise<{ accepted: true }> {
+    await this.ensureConnected(requestId);
+    const body = supplementAssessmentDisputeCommandV2Schema.parse(request);
+    const result = await this.request(
+      `/learning/assessments/${body.assessmentId}/disputes/supplement`,
+      { method: "POST", body: JSON.stringify({ supplement: body.supplement }) },
+      true,
+      true,
+      requestId,
+    );
+    const parsed = z.strictObject({ accepted: z.literal(true) }).safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return { accepted: true };
+  }
+
+  /**
+   * 结束争议；`holdObjective: true` 顺带把该项设成「暂不安排」（§14.2）。
+   *
+   * 三档 `outcome` 逐档交回，**不合并成"已完成"**：第三档 `hold_unavailable` 是
+   * 「争议结束了，但排除没落上」（`decideDisputeCloseV2` 的注释解释了为什么不能
+   * 静默降级），桌面若把它显示成"已暂不安排"就是一句假回执。
+   */
+  async closeAssessmentDispute(
+    request: z.input<typeof closeAssessmentDisputeCommandV2Schema>,
+    requestId?: string,
+  ): Promise<z.infer<typeof closeAssessmentDisputeResultV2Schema>> {
+    await this.ensureConnected(requestId);
+    const body = closeAssessmentDisputeCommandV2Schema.parse(request);
+    const result = await this.request(
+      `/learning/assessments/${body.assessmentId}/disputes/close`,
+      { method: "POST", body: JSON.stringify({ holdObjective: body.holdObjective, note: body.note }) },
+      true,
+      true,
+      requestId,
+    );
+    const parsed = closeAssessmentDisputeResultV2Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }

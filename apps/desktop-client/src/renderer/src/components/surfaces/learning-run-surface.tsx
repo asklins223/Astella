@@ -42,6 +42,7 @@ import {
   RendererGatewayError,
   unwrapGatewayResult,
 } from "../../app/desktop-client";
+import { AssessmentDisputeStrip } from "./assessment-dispute-strip";
 import { useRoomStore } from "../../app/room-store";
 import { useCompanionHomeProjection } from "../../app/companion-home-projection";
 import { speakCompanionLine, type CompanionSpeechHandle } from "../../app/companion-voice-playback";
@@ -2744,6 +2745,19 @@ function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) 
                 <p>{terminalCopy[terminal!.reasonCode]}</p>
               </div>
             )}
+            {/* 判定的异议（§14.2、§16.11、§16.25）。挂在结算纸面**外面**而不是
+                「学习状态变化」那一格里：那一格是**系统在陈述结果**，而这一条是
+                **用户对结果的回答**，两者同格会让"我不同意"看起来像结论的一部分。
+                id 取 `result.assessment.assessmentId`（服务端刚补上的投影）——没有它
+                就不给入口：那意味着没有一次**具体判定**可争议（§14.2 争议挂在一次
+                判定上），而拿一个猜出来的 id 去提交申诉比不给按钮更坏。 */}
+            {result?.assessment?.assessmentId ? (
+              <AssessmentDisputeStrip
+                assessmentId={result.assessment.assessmentId}
+                workspaceEpoch={epochRef.current}
+                onWorkspaceEpoch={(next) => { epochRef.current = next; }}
+              />
+            ) : null}
             {result?.assessment?.rubricResults.length ? (
               <details className="learning-run-result-rubric">
                 <summary>查看逐条判定 · {result.assessment.rubricResults.length} 条</summary>
