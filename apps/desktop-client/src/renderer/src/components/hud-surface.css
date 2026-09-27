@@ -82,3 +82,29 @@
   border-radius: 999px;
   cursor: pointer;
 }
+
+/* 今日复习那三颗动作（39d W7-4 刀十三）。
+ *
+ * **并排、不嵌套**在"那一张纸签"外面：那一件是「现在最值得做什么」，这三颗是「这一批
+ * 怎么调」；混在一张纸签上会让「减量」读成「换一件事」。
+ *
+ * 那一行 `screenLine` 是**服务端**生成的（§12 表「剩余需求不伪称完成」），字号比主句
+ * 小一档、墨色更轻——它是"做完之后的账"，不是"接下来做什么"。 */
+.hud-today-batch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  inline-size: 260px;
+}
+
+.hud-today-batch__line {
+  margin: 0;
+  font-size: 0.86em;
+  color: color-mix(in srgb, var(--hud-ink, #6b5a41) 72%, transparent);
+  line-height: 1.4;
+}
+
+.hud-today-batch__actions {
+  display: flex;
+  gap: 8px;
+}

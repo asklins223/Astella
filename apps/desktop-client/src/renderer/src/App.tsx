@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { HudRoomControl } from "./components/hud/HudRoomControl";
 import { RoomStage } from "./components/RoomStage";
 import { TaskSurface } from "./components/TaskSurface";
-import { HomeSuggestionCard } from "./components/surfaces/HomeSuggestionCard";
+import { HomeSuggestionCard, TodayBatchOptions } from "./components/surfaces/HomeSuggestionCard";
 import { SourceIntakeHost } from "./components/SourceIntake";
 import { RunRecoveryNotice } from "./components/RunRecoveryNotice";
 import { CompanionPresence } from "./components/companion/CompanionPresence";
@@ -138,6 +138,7 @@ export function RoomExperience() {
           一旦她进了任何一页，"现在最值得做什么"就不是那一页的问题了。而它不碰
           房间构图，所以伴星与座位的预算不变（AGENTS.md）。 */}
       {!surface ? (
+        <>
         <HomeSuggestionCard
           // 设备时区（CompanionHud 那一处也是这么读的，保持一致）。§12.1 那个「本次」
           // 的边界由**服务端**按收到的这一格算，本层只负责原样传上去。
@@ -148,6 +149,14 @@ export function RoomExperience() {
           // cast 能过类型但屏上什么都不会发生。**类型过了不等于功能在了**。
           onNewNote={() => invoke("open-sources")}
         />
+        {/* 今日复习那三颗动作（§12 表「今日复习」行：减量／暂停／恢复）。它**不是**首页
+            那"一件"的一部分——那一件是"现在最值得做什么"，这三颗是"这一批怎么调"；
+            两件事混在一张纸签上会让"减量"读成"换一件事"。所以并排、不嵌套。 */}
+        <TodayBatchOptions
+          timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+          epochRef={homeEpochRef}
+        />
+        </>
       ) : null}
       <HudRoomControl />
       {surface
