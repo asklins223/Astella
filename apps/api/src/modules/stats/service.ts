@@ -86,21 +86,26 @@ export async function getStatsOverview(workspaceId: string, userId: string): Pro
     tx
       .select({ count: count() })
       .from(reviewSchedules)
-      .innerJoin(
-        learningObjectivesV2,
-        and(
-          eq(learningObjectivesV2.workspaceId, reviewSchedules.workspaceId),
-          eq(learningObjectivesV2.objectiveId, reviewSchedules.subjectId),
-        ),
-      )
       .where(and(
         eq(reviewSchedules.workspaceId, workspaceId),
         // 归因到人：0240 起 user_id 可为 NULL（系统级到期投影，人人可见），
         // 所以放行 NULL 与「我自己的」，挡掉「别人的」。
         or(isNull(reviewSchedules.userId), eq(reviewSchedules.userId, userId)),
         eq(reviewSchedules.status, ReviewStatus.PENDING),
-        eq(reviewSchedules.subjectType, "card"),
         lt(reviewSchedules.nextReviewAt, now),
+        // 延长期内的不算「到期」——与下面 pendingReviewCount 那一条同一句。
+        or(
+          isNull(reviewSchedules.userDeferredUntil),
+          lte(reviewSchedules.userDeferredUntil, now),
+        ),
+        // 2026-09-27：这一条此前**没有**收进共享判据，于是它是整个 `/stats/overview`
+        // 里唯一还会把「已暂不安排／争议未决／来源笔记已回收／卡已停用」的目标算成
+        // 到期的一块。`objectiveReviewDueCount` 是公开合同字段（stats-overview-contracts），
+        // 与同一响应里的 `pendingReviewCount` 答的不是同一件事——正是
+        // `review-consumable-target.ts` 头注里记的那句「她说 2 项 / 首页说 3 项」。
+        // 顺带去掉那个 innerJoin：它只按 (workspace, objectiveId) 连，比判据里那条
+        // EXISTS 弱（不判 lifecycle、不判活卡、不判来源笔记），留着就是同一件事两处各判一次。
+        reviewScheduleTargetsConsumableCardPredicate(),
       )),
   ]);
   const activeObjectiveCount = Number(activeObjectiveRows[0]?.count ?? 0);

@@ -9,12 +9,16 @@
  * 而四处到期读数此前**一条 dispute 都不读**，于是结算页已经写着"复核之前这次不推进
  * 复习"，同一件事在队列里又到期冒出来：文案与行为自相矛盾。
  *
- * 判据落在 `packages/shared/review-consumable-target.ts`——那是队列／首页／看板／伴星
- * 四处共用的唯一一处。本份把**四处一起**钉住，而不是只钉队列：
+ * 判据落在 `packages/shared/review-consumable-target.ts`——那是下面六处共用的唯一一处。
+ * 本份把**六处一起**钉住，而不是只钉队列：
  *  1. `listReviews`（用户点进去看到的队列）
  *  2. `getStatsOverview().pendingReviewCount`（首页那颗数）
- *  3. `buildLearningDashboardV2`（学习看板）
- *  4. 伴星 `readLearningStats().dueReviews`（经判据桥，**受限 worker 角色**）
+ *  3. `getStatsOverview().objectiveReviewDueCount`（**同一份响应里的另一个到期数**；
+ *     它此前是全 `/stats/overview` 里唯一没收进共享判据的一块，于是同一份响应里
+ *     两个"到期"答的不是同一件事）
+ *  4. `buildLearningDashboardV2`（学习看板）
+ *  5. 伴星 `readLearningStats().dueReviews`（经判据桥，**受限 worker 角色**）
+ *  6.（间接）`GET /reviews/v2/queue` 的 total 与上面第 1 条同源
  * 少一处就还会出现"她说 2 项、点进队列 1 条"的老岔口。
  *
  * 负对照同样重要：`upheld`（复核维持）**必须放行**。§16.22 要挡的是死循环，
@@ -82,9 +86,9 @@ function companionDueReviews(workspaceId: string, userId: string): number {
   return parsed.turns[0].stats.dueReviews;
 }
 
-/** 四处读数一次性取齐，断言写成**彼此相等**而不是各写一个魔数。 */
-async function readAllFour(): Promise<{
-  queue: number; home: number; dashboard: number; companion: number;
+/** 六处读数一次性取齐，断言写成**彼此相等**而不是各写一个魔数。 */
+async function readAllSix(): Promise<{
+  queue: number; home: number; homeObjectiveDue: number; dashboard: number; companion: number;
 }> {
   const queue = await listReviews(ctx.workspaceId, { includeAll: false, limit: 50 }, ctx.userId);
   const overview = await getStatsOverview(ctx.workspaceId, ctx.userId);
@@ -93,6 +97,9 @@ async function readAllFour(): Promise<{
   return {
     queue: queue.total,
     home: Number(overview.pendingReviewCount),
+    // 同一个响应里的**另一个**到期数。它此前是全 `/stats/overview` 里唯一没收进
+    // 共享判据的一块，于是同一份响应里两个"到期"答的不是同一件事。
+    homeObjectiveDue: Number(overview.objectiveReviewDueCount),
     dashboard: Number((dashboard as { counts?: { reviewsDue?: number } })?.counts?.reviewsDue ?? -1),
     companion: companionDueReviews(ctx.workspaceId, ctx.userId),
   };
@@ -183,12 +190,12 @@ after(async () => {
   await closeDatabase();
 });
 
-test("基线：两条都到点、四处读数一致且都算 2", async () => {
-  const readings = await readAllFour();
+test("基线：两条都到点、六处读数一致且都算 2", async () => {
+  const readings = await readAllSix();
   assertAllFourEqual(readings, 2, "夹具没造出两条都到点的待办，或某处读数口径已经分岔");
 });
 
-test("开一份未复核的争议：被质疑的那条从四处一起消失，对照片不动", async () => {
+test("开一份未复核的争议：被质疑的那条从六处一起消失，对照片不动", async () => {
   await withWorkspaceTransaction(ctx, (tx) => disputes.openAssessmentDisputeV2(tx, {
     ...ctx,
     assessmentId,
@@ -197,7 +204,7 @@ test("开一份未复核的争议：被质疑的那条从四处一起消失，�
     at,
   }));
 
-  const readings = await readAllFour();
+  const readings = await readAllSix();
   assertAllFourEqual(readings, 1, "争议未决时那一半没有被挡住（§16.22 读侧）");
   // 对照片必须还在——否则这条用例证明的是"少了一个"而不是"少了该少的那一个"。
   const queue = await listReviews(ctx.workspaceId, { includeAll: false, limit: 50 }, ctx.userId);
@@ -232,7 +239,7 @@ test("负对照：复核结论是 upheld 时必须放行（§16.22 挡的是死�
     at,
   }));
 
-  const readings = await readAllFour();
+  const readings = await readAllSix();
   assertAllFourEqual(
     readings,
     2,
@@ -248,6 +255,6 @@ test("收尾：关闭争议后读数不变（关闭本身不该让一条已维�
     note: "认可复核结论。",
     at,
   }));
-  const readings = await readAllFour();
+  const readings = await readAllSix();
   assertAllFourEqual(readings, 2, "关闭并认可之后读数变了");
 });

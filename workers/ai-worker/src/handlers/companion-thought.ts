@@ -46,7 +46,7 @@ import {
   unwrapCompanionJsonEnvelope,
 } from "./companion-dialogue-content.ts";
 import { enqueueSystemEventDelivery } from "./companion-delivery-write.ts";
-import { loadHereAndNow, renderHereAndNow } from "./companion-here-and-now.ts";
+import { loadHereAndNow, renderHereAndNow, visibleCompanionDueReviewCondition } from "./companion-here-and-now.ts";
 import { readStreakDays, resolveFactSpans } from "./companion-fact-spans.ts";
 import type { JobPayload } from "./index.ts";
 
@@ -661,15 +661,21 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
     const today = new Date().toISOString().slice(0, 10);
     const rows = await tx.execute<MaterialRow>(sql`
       SELECT
-        (SELECT count(*)::int FROM review_schedules
-          WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId}
-          AND status = 'pending' AND next_review_at <= now()
-          AND (user_deferred_until IS NULL OR user_deferred_until <= now())) AS ready_reviews,
-        (SELECT count(*)::int FROM review_schedules
-          WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId}
-          AND status = 'pending'
-          AND coalesce(user_deferred_until, next_review_at) > now()
-          AND coalesce(user_deferred_until, next_review_at) <= now() + interval '12 hours') AS due_soon_reviews,
+        -- 2026-09-27：这两条此前是**手抄**的到期判据，没有共享判据，于是她
+        -- 会把「已暂不安排 / 争议未决 / 来源笔记已回收 / 卡已停用」的目标也算成
+        -- ready_reviews，并把那张卡的 cue 念出来。共享判据要的是 s 这套列引用，
+        -- 所以 FROM 上补了别名——判据本身收列引用，不拼表名。
+        (SELECT count(*)::int FROM review_schedules s
+          WHERE s.workspace_id = ${job.workspaceId} AND s.user_id = ${userId}
+          AND s.status = 'pending' AND s.next_review_at <= now()
+          AND (s.user_deferred_until IS NULL OR s.user_deferred_until <= now())
+          AND ${visibleCompanionDueReviewCondition()}) AS ready_reviews,
+        (SELECT count(*)::int FROM review_schedules s
+          WHERE s.workspace_id = ${job.workspaceId} AND s.user_id = ${userId}
+          AND s.status = 'pending'
+          AND coalesce(s.user_deferred_until, s.next_review_at) > now()
+          AND coalesce(s.user_deferred_until, s.next_review_at) <= now() + interval '12 hours'
+          AND ${visibleCompanionDueReviewCondition()}) AS due_soon_reviews,
         (SELECT COALESCE(familiarity, 0) FROM pet_profiles
           WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId} LIMIT 1) AS familiarity,
         (SELECT speaking_style FROM pet_profiles
@@ -710,6 +716,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
           WHERE s.workspace_id = ${job.workspaceId} AND s.user_id = ${userId}
             AND s.status = 'pending' AND s.next_review_at <= now()
             AND (s.user_deferred_until IS NULL OR s.user_deferred_until <= now())
+            AND ${visibleCompanionDueReviewCondition()}
             AND nullif(btrim(c.front->>'cue'), '') IS NOT NULL
           ORDER BY s.next_review_at LIMIT 3) t) AS due_titles,
         (SELECT coalesce(array_agg(t.cue), '{}') FROM (
@@ -722,6 +729,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
             AND s.status = 'pending'
             AND coalesce(s.user_deferred_until, s.next_review_at) > now()
             AND coalesce(s.user_deferred_until, s.next_review_at) <= now() + interval '12 hours'
+            AND ${visibleCompanionDueReviewCondition()}
             AND nullif(btrim(c.front->>'cue'), '') IS NOT NULL
           ORDER BY coalesce(s.user_deferred_until, s.next_review_at) LIMIT 3) t) AS soon_titles
     `);

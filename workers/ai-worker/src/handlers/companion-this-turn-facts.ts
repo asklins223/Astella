@@ -33,7 +33,7 @@ import { sql } from "drizzle-orm";
 import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
 import type { WorkerTransaction } from "../db.ts";
 import { noteSearchTerms } from "./companion-dialogue-content.ts";
-import { ageLabel, visibleCompanionCardSourceCondition } from "./companion-here-and-now.ts";
+import { ageLabel, visibleCompanionCardSourceCondition, visibleCompanionDueReviewCondition } from "./companion-here-and-now.ts";
 import type { LivePageView } from "./companion-live-view.ts";
 import { findNearestNoteTitle, findNoteRuns, type NoteRunRow } from "./companion-note-reads.ts";
 
@@ -266,6 +266,8 @@ async function findCards(
 ): Promise<CardFactRow[]> {
   if (terms.length === 0) return [];
   const match = termMatchChain((term) => sql`c.front->>'cue' ILIKE ${`%${term}%`}`, terms);
+  // 争议未决、已暂不安排或来源笔记已回收的目标不接排期，但 LEFT JOIN 仍保留用户问到的卡；
+  // 把这个判据放进 WHERE 会连卡片本身一起过滤掉。
   const rows = await tx.execute<CardFactRow>(sql`
     SELECT c.card_id, c.front->>'cue' AS cue,
            s.status AS schedule_status,
@@ -274,9 +276,10 @@ async function findCards(
            (s.next_review_at IS NOT NULL AND s.next_review_at <= now()) AS overdue
     FROM learning_cards_v2 c
     LEFT JOIN review_schedules s
-      ON s.workspace_id = c.workspace_id AND s.subject_type = 'card'
+     ON s.workspace_id = c.workspace_id AND s.subject_type = 'card'
      AND s.subject_id = c.objective_id AND s.status = 'pending'
      AND (s.user_id = ${scope.userId} OR s.user_id IS NULL)
+     AND ${visibleCompanionDueReviewCondition()}
     WHERE c.workspace_id = ${scope.workspaceId} AND c.lifecycle = 'active'
       AND ${visibleCompanionCardSourceCondition(scope.userId)}
       AND ${match}

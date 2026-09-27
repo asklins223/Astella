@@ -6,7 +6,14 @@
  * 以前它数的是"全部 pending 排程"——不判到点、不判延后、不判卡还可不可消费，
  * 于是恒大于列表，而且两份判据各写一遍、改一处不会让另一处红。
  *
- * 三种排程各一条：到点的、没到点的、到点但她说过"稍后"的。
+ * 三条排程各属**一个不同的目标**：到点的、没到点的、到点但本人说过"稍后"的。
+ *
+ * 为什么不共用一个目标插三条：0287 加了
+ * `review_schedules_pending_subject_dim_unique`（`WHERE status = 'pending'`），
+ * 同一目标同一维度只允许一条待办。旧版夹具给**同一个**目标插三条，在 `before`
+ * 里就撞 23505 —— 报出来的错看着像新功能坏了，其实是夹具早已不合法。
+ * 这也顺带说明 0287 那条注释里的判断是对的：把 insert 收进单一调度边界之前，
+ * "先查后写"写出来的就是这种一条一条撞索引的夹具。
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -19,11 +26,15 @@ if (!CONN) {
 }
 const sql = postgres(CONN, { max: 3 });
 
-const { seedV2Fixture } = await import("./helpers/v2-card-fixture.ts");
+const { seedV2Fixture, addV2ObjectiveToWorkspace } = await import("./helpers/v2-card-fixture.ts");
 const { listReviews } = await import("../modules/review/service.ts");
 const { getStatsOverview } = await import("../modules/stats/service.ts");
 
 const seeded: Awaited<ReturnType<typeof seedV2Fixture>>[] = [];
+/** 三条排程各自的目标：到期 / 未到期 / 到点但被"稍后"挡住。 */
+let dueObjectiveId = "";
+let futureObjectiveId = "";
+let deferredObjectiveId = "";
 
 async function insertSchedule(
   target: { workspaceId: string; userId: string; objectiveId: string },
@@ -48,12 +59,29 @@ async function insertSchedule(
   });
 }
 
+/** 同一个工作区里再长一个目标 + 一张活卡（0287 之后不能再靠"多插一条"造场景）。 */
+async function addObjective(workspaceId: string, userId: string, label: string): Promise<string> {
+  const added = await addV2ObjectiveToWorkspace(sql, workspaceId, userId, {
+    objectiveStatement: `理解${label}`,
+    publicSummary: label,
+  });
+  return added.objectiveId;
+}
+
 before(async () => {
   const target = await seedV2Fixture(sql);
   seeded.push(target);
-  await insertSchedule(target, { nextReviewDays: -1 });
-  await insertSchedule(target, { nextReviewDays: 2 });
-  await insertSchedule(target, { nextReviewDays: -1, deferredDaysFromNow: 1 });
+  dueObjectiveId = target.objectiveId;
+  futureObjectiveId = await addObjective(target.workspaceId, target.userId, "未来到期");
+  deferredObjectiveId = await addObjective(target.workspaceId, target.userId, "被稍后挡住");
+
+  const scope = { workspaceId: target.workspaceId, userId: target.userId };
+  await insertSchedule({ ...scope, objectiveId: dueObjectiveId }, { nextReviewDays: -1 });
+  await insertSchedule({ ...scope, objectiveId: futureObjectiveId }, { nextReviewDays: 2 });
+  await insertSchedule(
+    { ...scope, objectiveId: deferredObjectiveId },
+    { nextReviewDays: -1, deferredDaysFromNow: 1 },
+  );
 });
 
 after(async () => {
@@ -68,6 +96,9 @@ test("读数对得上：只有到点且没被「稍后」挡住的那条算待�
   const queue = await listReviews(target.workspaceId, { includeAll: false, limit: 50 }, target.userId);
   const overview = await getStatsOverview(target.workspaceId, target.userId);
   assert.equal(queue.total, 1, `夹具三条排程应当只剩 1 条到点，实际 ${queue.total} 条——队列判据变了`);
+  // 还要确认"剩的那一条"确实是被留下��那条，而不是碰巧只剩某一条。
+  const subjects = queue.items.map((item) => item.objective?.id ?? item.review.subjectId);
+  assert.deepEqual(subjects, [dueObjectiveId], "留下的是别的目标：到点与延后判据挂到了同一处");
   assert.equal(
     overview.pendingReviewCount,
     queue.total,
