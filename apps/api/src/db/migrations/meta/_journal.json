@@ -2157,6 +2157,13 @@
       "when": 1790906400004,
       "tag": "0308_drop_card_generation_run_progress_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 308,
+      "version": "7",
+      "when": 1790906400005,
+      "tag": "0309_narrow_run_singleton_job_type_idx",
+      "breakpoints": true
     }
   ]
 }

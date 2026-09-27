@@ -625,10 +625,16 @@ export const cardGenerationRunOutboxV2 = pgTable(
       .where(sql`${t.status} = 'pending'`),
     // 0163（第六轮）：唯一约束收窄为每 run 单例 job 类型——recheck/regenerate
     // 是 per-candidate 语义（同 run 多候选需多 job），全类型唯一会静默吞掉
-    // 第二个 job。部分唯一索引只对 plan/post_activation 生效。
+    // 第二个 job。**0309 把谓词收窄到只剩还活着的那一档**：旧四阶段链的
+    // `card_generation_plan` 在 9470b601 之后既没人投递、也没有处理器认领（库里那
+    // 674 行全是**终态**，而唯一性只在插入时检查）——所以删掉它那一支是零后果。
+    // 与 `policies.stageRuntimes` **不同**：那一条进 `semanticSpecHash`，动它会打掉
+    // 在途 run 的重放前提；**索引谓词不进任何哈希**。
+    // ⚠️ 这一行是**已提交迁移的 1:1 镜像**：改它必须与新迁移 0309 一起改，
+    // 两处不一致比「旧名字出现在谓词里」严重得多。
     runJobUnique: uniqueIndex("cgro_v2_run_singleton_job_type_unique")
       .on(t.runId, t.jobType)
-      .where(sql`${t.jobType} IN ('card_generation_plan', 'card_v2_post_activation')`),
+      .where(sql`${t.jobType} IN ('card_v2_post_activation')`),
   }),
 );
 

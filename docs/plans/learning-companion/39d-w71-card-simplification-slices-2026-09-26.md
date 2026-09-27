@@ -251,6 +251,17 @@ HEAD），按 hunk 拆开只提自己那 58 行。
    写着「读取端因此可以在『实时读数 / 候选表』之间整体换源」——换源已经发生过了，而
    **那个形状要留着**（桌面合同同形的 `cardGenerationProgressV1Schema` 还在用）。
 
+2. ~~**0163 那个「每 run 单例 job 类型」的部分唯一索引：谓词里那一档旧名字没人写了**~~
+   —— **这一格 2026-09-27 结清**（0309）。`card_generation_plan`（旧四阶段链的出图 job）
+   **既没人投递、也没有处理器认领**：全仓对这两个字符串的引用只剩 0163 那一行谓词与
+   `db-schema/card-generation-v2.ts` 那份**已提交迁移的 1:1 镜像**。
+   **库里有 674 行，全是终态**（639 `completed` ＋ 35 `failed`，创建于 08-19 … 09-24，
+   即旧链还在跑的那段日子）——**所以收窄是零后果**：唯一性只在插入时检查、不是对存量补检，
+   而既然没有代码再投递，就永远不会再有插入。
+   **必须新迁移 ＋ 镜像跟着改两处一起**（`card-generation-chain-entry-inventory.test.ts`
+   的注释说得很直白：**镜像与迁移不一致，比旧名字出现在谓词里严重得多**）。
+   与 `policies.stageRuntimes` **不同**：**索引谓词不进任何哈希**，它只影响数据库怎么存。
+
 2. **`policies.stageRuntimes` 已经没有运行时读者，但还在被播种。**
    唯一的消费者是旧链 `CardGenerationProviderRuntime` 那句按裸阶段名匹配采样参数的
    `find`；简化链的采样参数写在 `card-generation-v3/tasks.ts` 的任务定义里。
