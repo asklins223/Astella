@@ -2020,6 +2020,7 @@ test(
  * 不依赖真实模型：确定性管道照样先过计划段，而截断发生在计划段之前。
  */
 test("长正文：源文本被截断时在 run 事件流里留痕（不是只在日志里）", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 规模护栏已补进简化链：这一格量的正是那条留痕
   const LONG = Array.from({ length: 900 }, (_, index) => (
     `第 ${index + 1} 段：这一段用来把源文本撑过规模上限，其中有一个可成卡的判断——`
     + "冗长材料".repeat(40) + "。"

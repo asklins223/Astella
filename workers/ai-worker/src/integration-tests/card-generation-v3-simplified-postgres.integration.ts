@@ -356,6 +356,14 @@ test("端到端：两发语义调用走到 review_ready，候选带着 binding p
   const completed = await eventPayload(simplifiedRunId, "card_generation.simplified_completed");
   assert.equal(completed.modelCalls, 2,
     "§16.28：普通短文本成功路径刚好 2 次语义调用（这条读数是库里的，不是进程里的）");
+  // 反向一格：规模留痕**只在真截断时**才有。这一篇是六句短正文，谁要是把发射器改成
+  // 无条件写、或者把上限调小到正常笔记都被截，这一格就红（正面那格在 e2e 的
+  // 「长正文留痕」那条：它换到默认档之后量的就是"整批只留一条痕"）。
+  const capEvents = await admin`
+    SELECT count(*)::int AS n FROM card_generation_events_v2
+    WHERE run_id = ${simplifiedRunId} AND event_type = 'card_generation.source_content_capped'
+  ` as unknown as Array<{ n: number }>;
+  assert.equal(capEvents[0]?.n, 0, "没截断就不许留痕（短正文这一批发出 0 条）");
 
   const planRows = await admin`
     SELECT plan_revision_id, plan_version, plan_hash, result ->> 'kind' AS kind

@@ -3800,10 +3800,12 @@ async function processRecheckCandidateJob(job: PendingOutboxJob, signal?: AbortS
 /**
  * 源文本被规模上限截断时的那一条留痕（39d W4-4：不许"静默截前半篇冒充整篇输入"）。
  *
- * 四处进入点共用这一份：主管线计划段、regenerate、replan、recheck。判据与载荷都只有
+ * 旧链四处进入点共用这一份：主管线计划段、regenerate、replan、recheck。判据与载荷都只有
+ * 简化链（39d W7-7 刀二之后）也算一个进入点：它经 `loadV2RunInputs` 拿到的就是截断过的
+ * 源文本，留痕与旧链同判据——不然"新链少一道护栏"只能靠测试搬档时才发现。
  * 一处，免得"某一个进入点忘了记"。**只在真的截断时写**（没截断 = 没有这件事要记）。
  */
-async function emitSourceContentCapEvent(
+export async function emitSourceContentCapEvent(
   tx: WorkerTransaction,
   input: {
     workspaceId: string;

@@ -36,6 +36,7 @@ import {
 import { logger } from "../lib/logger.ts";
 import {
   candidateRowToObject,
+  emitSourceContentCapEvent,
   fenceV2OutboxLease,
   insertAuthoredCandidatesBatched,
   insertBindingPlanRow,
@@ -43,6 +44,7 @@ import {
   insertRepairedCandidateV2,
   loadV2RunInputs,
   renewV2OutboxLease,
+  V2_SOURCE_CONTENT_MAX_CHARS,
   type PendingOutboxJob,
 } from "../handlers/card-generation-v2-handler.ts";
 import { CardGenerationProviderError } from "../card-generation-v2/providers.ts";
@@ -124,6 +126,25 @@ const REFINE_RUNNABLE_STATUSES_V3 = new Set(["review_ready", "needs_attention"])
  */
 function jobModeV3(job: PendingOutboxJob): "generate" | "replan" {
   return (job.payload as { mode?: string }).mode === "replan" ? "replan" : "generate";
+}
+
+/**
+ * 送进模型的 block 文本总量上限。
+ *
+ * `loadV2RunInputs` 只对"拼起来的源文本"施了这道上限（旧链的 author prompt 用的就是那份），
+ * 而简化链的生成输入直接交 block 列表——不补这一刀，60k 那道护栏在这条链上等于没有：
+ * 提示词规模与单 job 内存峰值都是按这份列表算的。额度按 ordinal 顺序给，与
+ * `capSourceContentForPrompts` "截前留后"的方向一致；留痕由段 3 的写事务经同一份发射器记。
+ */
+function capV3PromptBlocks(
+  blocks: ReadonlyArray<{ blockId: string; ordinal: number; content: string }>,
+): Array<{ blockId: string; ordinal: number; text: string }> {
+  let remaining = V2_SOURCE_CONTENT_MAX_CHARS;
+  return blocks.map((block) => {
+    const allowed = Math.max(0, Math.min(block.content.length, remaining));
+    remaining -= allowed;
+    return { blockId: block.blockId, ordinal: block.ordinal, text: block.content.slice(0, allowed) };
+  });
 }
 
 /** 数端口被打了几发（§16.28 的读数来源）。 */
@@ -277,11 +298,7 @@ export async function processCardGenerationSimplifiedJob(
     const generateInput: CardGenerateV3TaskInput = {
       runId,
       noteTitle,
-      noteBlocks: loaded.scopedBlocks.map((block) => ({
-        blockId: block.blockId,
-        ordinal: block.ordinal,
-        text: block.content,
-      })),
+      noteBlocks: capV3PromptBlocks(loaded.scopedBlocks),
       existingObjectives: loaded.existingObjectives.map((objective) => ({
         objectiveId: objective.objectiveId,
         statement: objective.objectiveStatement,
@@ -369,6 +386,12 @@ export async function processCardGenerationSimplifiedJob(
         droppedDrafts: generateOutput!.droppedCandidates,
         assemblyDropped: assembled!.dropped,
         gateRejected: gateRejections,
+      });
+      // 源文本被规模上限截断过就要留痕（39d W4-4 那条判据，简化链此前没人记）：
+      // `loadV2RunInputs` 交回来的已经是截断过的文本，只读加载器不发事件，
+      // 所以由这一段的写事务记——与旧链四处进入点同一份发射器。
+      await emitSourceContentCapEvent(tx, {
+        workspaceId, runId, cap: loaded.sourceContentCap,
       });
       await fenceV2OutboxLease(tx, job);
     }, { isolated: true });
