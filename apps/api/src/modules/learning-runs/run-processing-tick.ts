@@ -54,6 +54,12 @@ import {
 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { noteBlocks } from "@ailearn/shared/db-schema/note";
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
+// W7-8 刀二：判据在纯函数里（§9.1「自动策略不能悄悄把提醒提前」），这一层只负责
+// 把那一列读出来递给它，并把「抬过」如实带回。
+import {
+  decideNextReviewAtWithManualDateV2,
+  type ManualDateConstraintEndedV2,
+} from "@ailearn/shared/review-manual-date-constraint-v2";
 import { EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
 import { ensurePendingReviewScheduleV2 } from "../review/review-schedule-boundary.ts";
 // 39d W5-5：§14.2「待复核时不持续放大结论」的那一闸。与上面那道笔记依据闸并排调用。
@@ -2009,6 +2015,61 @@ async function disputeAllowsScheduleChange(
   return blocked.blocked ? { allowed: false, reasonCode: blocked.reasonCode } : { allowed: true };
 }
 
+/**
+ * W7-8 刀二：把 §9.1「在手动日期约束仍有效时，自动策略不能悄悄把提醒提前」接进结算。
+ *
+ * ## 这一格今天是怎么坏的
+ *
+ * 到期队列那一读**认** `review_schedules.user_deferred_until`（`review/service.ts:190`），
+ * 所以"延后到那天之前不该出现在队列里"这一半成立。另一半没有：四个写入点都直接落
+ * `nextReviewAt: decision.nextReviewAt`——**不读那一列**。她选了"下周三"而策略算出
+ * "后天"，提醒就悄悄提前了，而且没有任何一处会留痕。
+ *
+ * ## 为什么在这一层读，而不是让 `ensurePendingReviewScheduleV2` 自己去夹
+ *
+ * 那一支是"唯一写入安排"的**边界**（`review-schedule-boundary.ts`，两条链与四处调用
+ * 共用）。让它顺手读 `user_deferred_until` 看起来更省事，但它写的是**排期**，
+ * 而手动日期是**展示层的延后**（§18.1/§18.3 那一族：只改展示的时间列，官方到期不变）。
+ * 让边界替展示层改官方日期，就把两件事搅在一起了——而这正是本仓库反复记的同一个错。
+ * 所以读在结算这一层，判在纯函数里，写的仍是边界。
+ *
+ * ## `requirementChanged` 为什么给的是"那一格被消费过没有"
+ *
+ * §9.1「手动日期约束属于**本次需求版本**」。消费掉的那一格（`consumed`/`superseded`）
+ * 就是需求换版的那一刻：她已经按那条手动日期走完了一轮，约束不该再压住下一轮。
+ */
+async function clampToManualDateV2(
+  tx: Parameters<Parameters<typeof withWorkspaceTransaction>[1]>[0],
+  input: {
+    workspaceId: string;
+    userId: string;
+    subjectId: string;
+    policyNextReviewAt: Date;
+    /** 本次需求是否已换版（那一格被消费／被继任取代）。 */
+    requirementChanged: boolean;
+  },
+): Promise<{ nextReviewAt: Date; raisedByConstraint: boolean; constraint: ManualDateConstraintEndedV2 }> {
+  const rows = await tx
+    .select({ manualDeferredUntil: reviewSchedules.userDeferredUntil })
+    .from(reviewSchedules)
+    .where(and(
+      eq(reviewSchedules.workspaceId, input.workspaceId),
+      eq(reviewSchedules.userId, input.userId),
+      eq(reviewSchedules.subjectId, input.subjectId),
+    ))
+    .limit(1);
+  const decided = decideNextReviewAtWithManualDateV2({
+    policyNextReviewAt: input.policyNextReviewAt,
+    manualDeferredUntil: rows[0]?.manualDeferredUntil ?? null,
+    requirementChanged: input.requirementChanged,
+  });
+  return {
+    nextReviewAt: decided.nextReviewAt,
+    raisedByConstraint: decided.raisedByConstraint,
+    constraint: decided.constraint,
+  };
+}
+
 async function applyDemonstratedSchedule(
   tx: Parameters<Parameters<typeof withWorkspaceTransaction>[1]>[0],
   command: CommandRow,
@@ -2044,13 +2105,32 @@ async function applyDemonstratedSchedule(
       now: at,
       unassistedEligibleAfter: null,
     });
+    // W7-8 刀二：先把策略算出来的那一天过一遍手动日期约束。
+    const clamped = await clampToManualDateV2(tx, {
+      workspaceId: command.workspaceId,
+      userId: command.userId,
+      subjectId: authorization.keyPointId,
+      policyNextReviewAt: decision.nextReviewAt,
+      // 继任那一支：那一格刚被消费 ⇒ 需求已换版；新建那一支没有换版。
+      requirementChanged: false,
+    });
+    if (clamped.raisedByConstraint) {
+      // 「不能悄悄」：抬过要留痕，否则日志与回执里看不出这一天被人动过。
+      console.warn("[schedule] 手动日期约束抬过了策略日期", {
+        workspaceId: command.workspaceId, subjectId: authorization.keyPointId,
+        policy: decision.nextReviewAt.toISOString(), clamped: clamped.nextReviewAt.toISOString(),
+        constraint: clamped.constraint,
+      });
+    }
     const scheduled = await ensurePendingReviewScheduleV2(tx, {
       workspaceId: command.workspaceId,
       userId: command.userId,
       // V2 objective 维度：subjectType="card" + subjectId=objectiveId（§29.4
       // 惯例；与 surface-service/card-service 读取端一致）。
       subjectId: authorization.keyPointId,
-      nextReviewAt: decision.nextReviewAt,
+      // §9.1「在手动日期约束仍有效时，自动策略不能悄悄把提醒提前」——这一格此前
+      // 直接落策略日期，于是她选的日期会被悄悄提前。
+      nextReviewAt: clamped.nextReviewAt,
       intervalDays: decision.afterIntervalDays,
       generation: 1,
       policyVersion: decision.policyVersion,
@@ -2095,11 +2175,30 @@ async function applyDemonstratedSchedule(
       // generation 已变化：0 schedule 副作用（不猜）。
       return { kind: "none", reasonCode: "stale" };
     }
+    // W7-8 刀二：先把策略算出来的那一天过一遍手动日期约束。
+    const successorClamped = await clampToManualDateV2(tx, {
+      workspaceId: command.workspaceId,
+      userId: command.userId,
+      subjectId: authorization.keyPointId,
+      policyNextReviewAt: decision.nextReviewAt,
+      // 继任那一支：那一格刚被消费 ⇒ 需求已换版；新建那一支没有换版。
+      requirementChanged: true,
+    });
+    if (successorClamped.raisedByConstraint) {
+      // 「不能悄悄」：抬过要留痕，否则日志与回执里看不出这一天被人动过。
+      console.warn("[schedule] 手动日期约束抬过了策略日期", {
+        workspaceId: command.workspaceId, subjectId: authorization.keyPointId,
+        policy: decision.nextReviewAt.toISOString(), clamped: successorClamped.nextReviewAt.toISOString(),
+        constraint: successorClamped.constraint,
+      });
+    }
     const successor = await ensurePendingReviewScheduleV2(tx, {
       workspaceId: command.workspaceId,
       userId: command.userId,
       subjectId: authorization.keyPointId,
-      nextReviewAt: decision.nextReviewAt,
+      // 继任那一支：那一格刚被消费掉 ⇒ **本次需求已换版**，所以约束到此结束
+      // （§9.1「手动日期约束属于本次需求版本，不能变成永久禁止以后安排的规则」）。
+      nextReviewAt: successorClamped.nextReviewAt,
       intervalDays: decision.afterIntervalDays,
       generation: authorization.scheduleGeneration + 1,
       supersedesScheduleId: authorization.scheduleId,
@@ -2146,11 +2245,30 @@ async function applyUnableSchedule(
   });
   if (authorization.kind === "create_initial") {
     const decision = calculateUnableDecision(1);
+    // W7-8 刀二：先把策略算出来的那一天过一遍手动日期约束。
+    const clamped = await clampToManualDateV2(tx, {
+      workspaceId: command.workspaceId,
+      userId: command.userId,
+      subjectId: authorization.keyPointId,
+      policyNextReviewAt: decision.nextReviewAt,
+      // 继任那一支：那一格刚被消费 ⇒ 需求已换版；新建那一支没有换版。
+      requirementChanged: false,
+    });
+    if (clamped.raisedByConstraint) {
+      // 「不能悄悄」：抬过要留痕，否则日志与回执里看不出这一天被人动过。
+      console.warn("[schedule] 手动日期约束抬过了策略日期", {
+        workspaceId: command.workspaceId, subjectId: authorization.keyPointId,
+        policy: decision.nextReviewAt.toISOString(), clamped: clamped.nextReviewAt.toISOString(),
+        constraint: clamped.constraint,
+      });
+    }
     const scheduled = await ensurePendingReviewScheduleV2(tx, {
       workspaceId: command.workspaceId,
       userId: command.userId,
       subjectId: authorization.keyPointId,
-      nextReviewAt: decision.nextReviewAt,
+      // §9.1「在手动日期约束仍有效时，自动策略不能悄悄把提醒提前」——这一格此前
+      // 直接落策略日期，于是她选的日期会被悄悄提前。
+      nextReviewAt: clamped.nextReviewAt,
       intervalDays: decision.afterIntervalDays,
       generation: 1,
       policyVersion: decision.policyVersion,
@@ -2186,11 +2304,30 @@ async function applyUnableSchedule(
       // generation 已变化：0 schedule 副作用（不猜）。
       return { kind: "none", reasonCode: "stale" };
     }
+    // W7-8 刀二：先把策略算出来的那一天过一遍手动日期约束。
+    const successorClamped = await clampToManualDateV2(tx, {
+      workspaceId: command.workspaceId,
+      userId: command.userId,
+      subjectId: authorization.keyPointId,
+      policyNextReviewAt: decision.nextReviewAt,
+      // 继任那一支：那一格刚被消费 ⇒ 需求已换版；新建那一支没有换版。
+      requirementChanged: true,
+    });
+    if (successorClamped.raisedByConstraint) {
+      // 「不能悄悄」：抬过要留痕，否则日志与回执里看不出这一天被人动过。
+      console.warn("[schedule] 手动日期约束抬过了策略日期", {
+        workspaceId: command.workspaceId, subjectId: authorization.keyPointId,
+        policy: decision.nextReviewAt.toISOString(), clamped: successorClamped.nextReviewAt.toISOString(),
+        constraint: successorClamped.constraint,
+      });
+    }
     const successor = await ensurePendingReviewScheduleV2(tx, {
       workspaceId: command.workspaceId,
       userId: command.userId,
       subjectId: authorization.keyPointId,
-      nextReviewAt: decision.nextReviewAt,
+      // 继任那一支：那一格刚被消费掉 ⇒ **本次需求已换版**，所以约束到此结束
+      // （§9.1「手动日期约束属于本次需求版本，不能变成永久禁止以后安排的规则」）。
+      nextReviewAt: successorClamped.nextReviewAt,
       intervalDays: decision.afterIntervalDays,
       generation: authorization.scheduleGeneration + 1,
       supersedesScheduleId: authorization.scheduleId,
