@@ -2136,6 +2136,13 @@
       "when": 1790906400001,
       "tag": "0305_daily_review_batches_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 305,
+      "version": "7",
+      "when": 1790906400002,
+      "tag": "0306_home_suggestion_dismissals_v2",
+      "breakpoints": true
     }
   ]
 }

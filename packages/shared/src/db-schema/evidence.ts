@@ -229,3 +229,36 @@ export const dailyReviewBatchesV2 = pgTable(
     bumpCountCheck: check("drb_v2_bump_count_chk", sql`${t.bumpCount} >= 0`),
   }),
 );
+
+/**
+ * 首页那一件的「换一个／暂不处理」（39d W7-4 刀五；39 §12.1）。
+ *
+ * §12.1：「可**换一个**或**暂不处理**。…用户略过后**本次**不反复推荐同一项。」
+ *
+ * **「本次」是这一张表的全部难点。** 落成**永久**黑名单是省事写法，而那正是 §12.1
+ * 明确不要的：她今天不想做某件事，明天那件事又到期了，首页却再也不提——**建议变成一个
+ * 慢慢烂掉的角落**。只放前端内存也不行：刷新一次页面就回来了，而"我说了暂不处理"是
+ * **她刚做过的一个决定**，刷新不该撤销它。
+ *
+ * 所以落点是**日历日**（她的时区），与 §9.4 的"本批"边界同源。
+ */
+export const homeSuggestionDismissalsV2 = pgTable(
+  "home_suggestion_dismissals_v2",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    dayKey: text("day_key").notNull(),
+    /** 候选那一项的 key（**不是** objectiveId：同一颗目标可能既是未完轮次又是已授权回访）。 */
+    itemKey: text("item_key").notNull(),
+    /** `swapped` = 换一个；`dismissed` = 暂不处理。两者都只影响**本次**，但屏上念不同的话。 */
+    action: text("action").$type<"swapped" | "dismissed">().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // 一天同一项只记一次：点两下不会产生两行，而「换一个」之后再「暂不处理」应当
+    // **升级**那一行而不是并排两行（屏上只念最后一次）。
+    dayItemUnique: uniqueIndex("hsd_v2_ws_user_day_item_uq").on(t.workspaceId, t.userId, t.dayKey, t.itemKey),
+    dayLookup: index("hsd_v2_ws_user_day_idx").on(t.workspaceId, t.userId, t.dayKey),
+  }),
+);
