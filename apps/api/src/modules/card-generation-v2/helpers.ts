@@ -35,6 +35,24 @@ export class CardGenerationV2ServiceError extends CardGenerationPipelineErrorV2 
 
 export const NO_STORE = { "Cache-Control": "private, no-store" } as const;
 
+/**
+ * 制卡链总控（39d W7-7 刀一：默认档翻到简化链，并且它第一次管到**全部六个入口**）。
+ *
+ * 改前的事实：这个开关是 `generation-run-service` 的模块私有函数，只管第一次生成那一发，
+ * 审核台上的四发与"再生成一次"直接投旧链的 jobType——于是"开关打开了"≠"这条链在跑"，
+ * 同一篇笔记上会同时出现两批来自不同链的候选（入口台账记在
+ * `packages/shared/src/card-generation-chain-entry-inventory.test.ts`）。
+ *
+ * 判据取向：`v2` 要**显式写**才回到旧四阶段（改前的默认档），其它任何值都走简化链。
+ * 也就是说坏值落在新的默认档上，而不是把一条要退役的链复活——翻档的理由写在
+ * 39d §19 的 W7-7 那行，删除整条旧链与这个开关是它的下一刀（W7-7 刀二，不留新旧开关）。
+ */
+export const CARD_GENERATION_CHAIN_ENV = "CARD_GENERATION_CHAIN";
+
+export function cardGenerationSimplifiedChainV3(): boolean {
+  return (process.env[CARD_GENERATION_CHAIN_ENV] ?? "simplified_v3").trim().toLowerCase() !== "v2";
+}
+
 export type RunContext = { workspaceId: string; userId: string };
 
 /**

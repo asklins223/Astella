@@ -3,8 +3,11 @@
  *
  * 这份文件要结掉的是 §16.28 那三条判据里"只在库里看得见"的部分：
  *
- * 1. **入口总控是真的**——不设 `CARD_GENERATION_CHAIN` 时投的仍是旧 jobType（完全回到
- *    改前行为），设成 `simplified_v3` 才投 `card_generation_simplified_v1`；
+ * 1. **总控翻到了简化链那一档**（W7-7 刀一）——未设 `CARD_GENERATION_CHAIN` 投
+ *    `card_generation_simplified_v1`，显式 `v2` 仍完整回到旧 jobType（off 档＝改前行为）；
+ * 1b. **审核台上那三档走的是同一条腿**（同一刀）：逐候选重检（`card_candidate_refine_v3`
+ *    `mode:"recheck"`）、按反馈重生成（`mode:"rewrite"`，出新修订、旧的标 superseded）、
+ *    整批重排（同一 jobType 带 `mode:"replan"`，上一版没激活的候选让路）；
  * 2. **普通短文本成功路径刚好 2 次语义调用**——这条读数由 handler 自己数并写进
  *    `card_generation.simplified_completed` 事件（`modelCalls`），不是进程内断言一次
  *    就完了；零候选那一路是 **1 次**（只有生成，检查没有对象）；
@@ -46,6 +49,12 @@ const OTHER_WORKSPACE_ID = randomUUID();
  */
 const FAIL_SHAPE_USER_ID = randomUUID();
 const FAIL_SHAPE_WORKSPACE_ID = randomUUID();
+/**
+ * W7-7 刀一那三档（逐候选重检／按反馈重生成／整批重排）自己的第四个空间：
+ * 在制 run 上限是产品策略的 3，前三个空间各自的夹具已经把额度排满了。
+ */
+const REFINE_USER_ID = randomUUID();
+const REFINE_WORKSPACE_ID = randomUUID();
 
 /** 一篇有可学正文的笔记（六句，每句都能抽出一个原子）。 */
 const LEARNABLE_BLOCKS = [
@@ -66,6 +75,9 @@ let controlRunId = "";
 let zeroCandidateRunId = "";
 let otherUserRunTarget = "";
 let rewriteRunId = "";
+let refineRunId = "";
+/** 后面三档共用的主体：整批那一发跑完才落库的那张 passed 修订。 */
+let refineSubjectRevisionId = "";
 
 async function seedNote(key: string, title: string, blocks: string[], owner: { workspaceId: string; userId: string } = { workspaceId: WORKSPACE_ID, userId: USER_ID }): Promise<NoteFixture> {
   const noteId = randomUUID();
@@ -131,32 +143,45 @@ async function eventPayload(runId: string, eventType: string): Promise<Record<st
 }
 
 /**
- * 认领本 run 的简化链 job（退回 pending 与认领写在同一事务里，见集测先例的说明）。
+ * 认领本 run 的一条简化链 job（退回 pending 与认领写在同一事务里，见集测先例的说明）。
+ *
+ * 默认领整批那一发；`jobType` 给逐候选那一发用——两种 job 的认领路径必须同一份，
+ * 否则测试自己造出一条生产没有的"只有整批能被认领"的形状。
  *
  * `replay: true` 是给"第一遍死在段 4"那一发用的：生产的做法是回收器发现租约过期
  * （`reapStaleV2OutboxJobs`：attempts+1 → 退避 → 回 pending），测试直接造成这个结果。
  * 只有这份夹具自己持有那条租约（一次性库、没有第二个 poller），所以敢覆盖它。
  */
-async function claimSimplifiedJob(runId: string, options: { replay?: boolean } = {}) {
+async function claimSimplifiedJob(
+  runId: string,
+  options: { replay?: boolean; jobType?: string } = {},
+) {
+  const jobType = options.jobType ?? "card_generation_simplified_v1";
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const leaseToken = randomUUID();
     const claimed = await admin.begin(async (tx) => {
       const states = await tx`
         SELECT status FROM card_generation_run_outbox_v2
-        WHERE run_id = ${runId} AND job_type = 'card_generation_simplified_v1' FOR UPDATE
+        WHERE run_id = ${runId} AND job_type = ${jobType} FOR UPDATE
       ` as unknown as Array<{ status: string }>;
       if (states[0]?.status === "processing" && !options.replay) return null;
       await tx`
         UPDATE card_generation_run_outbox_v2
         SET status = 'pending', lease_token = NULL, lease_expires_at = NULL,
             started_at = NULL, processed_at = NULL, next_attempt_at = NULL
-        WHERE run_id = ${runId} AND job_type = 'card_generation_simplified_v1'
+        WHERE run_id = ${runId} AND job_type = ${jobType} AND status <> 'completed'
       `;
+      // 同一 run 同一 jobType 可以有多条（重排、逐候选那几发）——按 `created_at` 取最早
+      // 那条还没跑的。`UPDATE ... ORDER BY` Postgres 不支持，所以先子查询定行。
       const rows = await tx`
         UPDATE card_generation_run_outbox_v2
         SET status = 'processing', started_at = now(),
             lease_expires_at = now() + interval '30 minutes', lease_token = ${leaseToken}
-        WHERE run_id = ${runId} AND job_type = 'card_generation_simplified_v1' AND status = 'pending'
+        WHERE id = (
+          SELECT id FROM card_generation_run_outbox_v2
+          WHERE run_id = ${runId} AND job_type = ${jobType} AND status = 'pending'
+          ORDER BY created_at LIMIT 1
+        )
         RETURNING id, workspace_id, run_id, job_type, payload
       ` as unknown as Array<{ id: string; workspace_id: string; run_id: string;
         job_type: string; payload: Record<string, unknown> }>;
@@ -204,7 +229,7 @@ function countingGenerate() {
 
 before(async () => {
   await admin.begin(async (tx) => {
-    for (const id of [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID]) {
+    for (const id of [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID, REFINE_USER_ID]) {
       await tx`INSERT INTO users (id, email, password_hash)
         VALUES (${id}, ${`cardgen-v3-${id}@example.invalid`}, 'unused')
         ON CONFLICT (id) DO NOTHING`;
@@ -216,6 +241,11 @@ before(async () => {
     await tx`INSERT INTO workspaces (id, owner_id, name)
       VALUES (${FAIL_SHAPE_WORKSPACE_ID}, ${FAIL_SHAPE_USER_ID}, 'Card Gen V3 Fail Shape IT')
       ON CONFLICT (id) DO NOTHING`;
+    await tx`INSERT INTO workspaces (id, owner_id, name)
+      VALUES (${REFINE_WORKSPACE_ID}, ${REFINE_USER_ID}, 'Card Gen V3 Refine IT')
+      ON CONFLICT (id) DO NOTHING`;
+    await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
+      VALUES (${REFINE_WORKSPACE_ID}, ${REFINE_USER_ID}, 'owner') ON CONFLICT DO NOTHING`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
       VALUES (${WORKSPACE_ID}, ${USER_ID}, 'owner') ON CONFLICT DO NOTHING`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
@@ -246,17 +276,25 @@ before(async () => {
   notes.checkbroken = await seedNote("checkbroken", "检查那一发不合合同", LEARNABLE_BLOCKS,
     { workspaceId: OTHER_WORKSPACE_ID, userId: OTHER_USER_ID });
 
-  // 入口对照：不设总控 ⇒ 仍投旧 jobType。
+  // 入口对照：这一篇在**显式 `v2`** 下创建 ⇒ 投的必须是旧 jobType（off 档要能整条回到改前）。
+  process.env.CARD_GENERATION_CHAIN = "v2";
   controlRunId = (await createRun(notes.control.versionId, `v3-control-${randomUUID()}`)).runId;
+  delete process.env.CARD_GENERATION_CHAIN;
 
-  // 打开总控 ⇒ 三条简化链的 run。
-  process.env.CARD_GENERATION_CHAIN = "simplified_v3";
+  // 其余都是默认档（未设总控）⇒ 简化链。
   simplifiedRunId = (await createRun(notes.learnable.versionId, `v3-main-${randomUUID()}`)).runId;
   zeroCandidateRunId = (await createRun(notes.unlearnable.versionId, `v3-zero-${randomUUID()}`)).runId;
   otherUserRunTarget = (await createRun(notes.other.versionId, `v3-other-${randomUUID()}`,
     { workspaceId: OTHER_WORKSPACE_ID, userId: OTHER_USER_ID })).runId;
   rewriteRunId = (await createRun(notes.rewrite.versionId, `v3-rewrite-${randomUUID()}`,
     { workspaceId: OTHER_WORKSPACE_ID, userId: OTHER_USER_ID })).runId;
+  // W7-7 刀一的三档（逐候选重检／按反馈重生成／整批重排）共用这一条 run：它们按定义
+  // 发生在"已经有一批可审核候选"之后，一条 run 连着走才看得出彼此的影响。
+  // 放在**自己那一个空间**：前三个空间的在制额度已经排满（上限 3 是产品策略，不调大）。
+  notes.refine = await seedNote("refine", "独立空间要逐候选处理那一篇", LEARNABLE_BLOCKS,
+    { workspaceId: REFINE_WORKSPACE_ID, userId: REFINE_USER_ID });
+  refineRunId = (await createRun(notes.refine.versionId, `v3-refine-${randomUUID()}`,
+    { workspaceId: REFINE_WORKSPACE_ID, userId: REFINE_USER_ID })).runId;
 });
 
 after(async () => {
@@ -271,8 +309,8 @@ after(async () => {
   let report;
   try {
     report = await wipeCardGenerationFixtures(admin,
-      [WORKSPACE_ID, OTHER_WORKSPACE_ID, FAIL_SHAPE_WORKSPACE_ID],
-      [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID]);
+      [WORKSPACE_ID, OTHER_WORKSPACE_ID, FAIL_SHAPE_WORKSPACE_ID, REFINE_WORKSPACE_ID],
+      [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID, REFINE_USER_ID]);
   } finally {
     await admin.end({ timeout: 5 }).catch(() => undefined);
     const { closeDatabase: closeWorkerDatabase } = await import("../db.ts");
@@ -283,9 +321,11 @@ after(async () => {
   assertFixtureWipeClean(report);
 });
 
-test("入口总控：不设开关仍走旧链，设了才投简化链的 jobType", async () => {
+test("入口总控翻到了简化链那一档，而 off 档完整回到改前那条链", async () => {
+  // 这两格读的是**同一个夹具里两篇只差环境变量的 run**：默认档（未设）投新链，
+  // 显式 `v2` 投旧链。少了后一格，"翻默认档"与"删了旧链"在库里就分不出来。
   assert.equal(await outboxJobType(controlRunId), "card_generation_plan",
-    "默认档必须完全回到改前行为");
+    "`CARD_GENERATION_CHAIN=v2` 这一档要能完全回到改前行为（含 jobType）");
   assert.equal(await outboxJobType(simplifiedRunId), "card_generation_simplified_v1");
   assert.equal(await outboxJobType(zeroCandidateRunId), "card_generation_simplified_v1");
 });
@@ -1232,4 +1272,191 @@ test("不可重试那一类经真分发点落库＝一次终结（上一条负�
     SELECT count(*)::int AS n FROM card_generation_plans_v2 WHERE run_id = ${runId}
   ` as unknown as Array<{ n: number }>;
   assert.equal(Number(planRows[0]?.n), 0, "这一发一次模型都没发，不许有任何产出");
+});
+
+// ─── W7-7 刀一：审核台上的三档（逐候选重检／按反馈重生成／整批重排）─────────────
+//
+// 这三格走的是**真分发点**（`processV2OutboxJob`）：要证的不是某个函数能被调起，而是
+// 入口投出去的那两种 jobType 真有人领、领了之后库里留下的是同一套规则下的形状。
+// 生产里这些行由 `candidate-review-service` 入队；这里直接写行是为了绕开审核草稿那一套
+// 前置（它在 api 包的单测里已有覆盖），**jobType 与 payload 的字段名保持与那边一致**。
+
+async function enqueueRefineJob(input: {
+  runId: string;
+  workspaceId: string;
+  candidateRevisionId: string;
+  mode: "recheck" | "rewrite";
+  feedbackReasonCodes?: string[];
+}): Promise<void> {
+  await admin`
+    INSERT INTO card_generation_run_outbox_v2 (id, workspace_id, run_id, job_type, payload, status)
+    VALUES (${randomUUID()}, ${input.workspaceId}, ${input.runId}, 'card_candidate_refine_v3',
+      ${admin.json({
+        runId: input.runId,
+        workspaceId: input.workspaceId,
+        candidateRevisionId: input.candidateRevisionId,
+        mode: input.mode,
+        ...(input.feedbackReasonCodes ? { feedbackReasonCodes: input.feedbackReasonCodes } : {}),
+      })}, 'pending')
+  `;
+}
+
+/** 这一 run 的某一条修订的库内读数（内容哈希、发布态、质量态、修订号）。 */
+async function candidateRevisionReadout(runId: string, candidateRevisionId: string) {
+  const rows = await admin`
+    SELECT candidate_id, revision, publish_state, quality_state, candidate_revision_hash, plan_version
+    FROM card_generation_candidates_v2
+    WHERE run_id = ${runId} AND candidate_revision_id = ${candidateRevisionId}
+    LIMIT 1
+  ` as unknown as Array<{ candidate_id: string; revision: number; publish_state: string;
+    quality_state: string; candidate_revision_hash: string; plan_version: number }>;
+  return rows[0] ?? null;
+}
+
+/**
+ * 这一发真被领走并跑完了吗。分发点（`processV2OutboxJob`）把失败写成 outbox 行而不抛给
+ * 调用方，所以只看库里的变化读不出"它根本没跑"——上面那一格就是这么漏过一次
+ * NOT NULL 违例：候选没落库，测试却往下走，报出来的是"旧修订没让路"。
+ */
+async function assertJobCompleted(jobId: string): Promise<void> {
+  const rows = await admin`
+    SELECT status, last_error FROM card_generation_run_outbox_v2 WHERE id = ${jobId} LIMIT 1
+  ` as unknown as Array<{ status: string; last_error: string | null }>;
+  assert.equal(rows[0]?.status, "completed",
+    `job 没有跑完：status=${String(rows[0]?.status)}／error=${String(rows[0]?.last_error).slice(0, 300)}`);
+}
+
+/** 这一条修订上落了几份质量报告。 */
+async function countReports(candidateRevisionId: string): Promise<number> {
+  const rows = await admin`
+    SELECT count(*)::int AS n FROM card_candidate_quality_reports_v2
+    WHERE candidate_revision_id = ${candidateRevisionId}
+  ` as unknown as Array<{ n: number }>;
+  return Number(rows[0]?.n ?? 0);
+}
+
+test("简化链先把这一 run 推到 review_ready（后面三档都要一个有可审核候选的 run）", async () => {
+  const job = await claimSimplifiedJob(refineRunId);
+  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  await processV2OutboxJob(job);
+  await assertJobCompleted(job.id);
+  assert.equal(await runStatus(refineRunId), "review_ready");
+  const passed = await admin`
+    SELECT candidate_revision_id FROM card_generation_candidates_v2
+    WHERE run_id = ${refineRunId} AND quality_state = 'passed' AND publish_state = 'unpublished'
+    ORDER BY created_at LIMIT 1
+  ` as unknown as Array<{ candidate_revision_id: string }>;
+  assert.ok(passed[0], "先要有一张 passed 的候选，后面三档才有主体");
+  refineSubjectRevisionId = passed[0].candidate_revision_id;
+});
+
+test("逐候选那一发·重检：只重过检查这条腿，内容一字不动、不出新修订", async () => {
+  const beforeReadout = await candidateRevisionReadout(refineRunId, refineSubjectRevisionId);
+  assert.ok(beforeReadout, "主体修订必须读得到，否则下面全部判据都是空集");
+  const reportsBefore = await countReports(refineSubjectRevisionId);
+
+  await enqueueRefineJob({
+    runId: refineRunId,
+    workspaceId: REFINE_WORKSPACE_ID,
+    candidateRevisionId: refineSubjectRevisionId,
+    mode: "recheck",
+  });
+  const job = await claimSimplifiedJob(refineRunId, { jobType: "card_candidate_refine_v3" });
+  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  await processV2OutboxJob(job);
+  await assertJobCompleted(job.id);
+
+  const after = await candidateRevisionReadout(refineRunId, refineSubjectRevisionId);
+  assert.equal(after?.candidate_revision_hash, beforeReadout.candidate_revision_hash,
+    "重检不许改用户写好的内容——那等于替他决定怎么改");
+  assert.equal(Number(after?.revision), Number(beforeReadout.revision), "重检不出新修订");
+  assert.equal(after?.publish_state, "unpublished", "重检通过的那一张还在审核台上");
+  assert.equal(after?.quality_state, "passed");
+  assert.equal(await runStatus(refineRunId), "review_ready");
+  const reportsAfter = await countReports(refineSubjectRevisionId);
+  assert.ok(reportsAfter === reportsBefore + 1,
+    `重检要留下一份新报告（读到 ${reportsAfter}，原本 ${reportsBefore}）——没有它这条腿等于没跑`);
+  const completed = await eventPayload(refineRunId, "card_generation.simplified_completed");
+  assert.equal(Number(completed.modelCalls), 1,
+    "重检一张只有检查这一发：读成 0 是白跑，读成 2 是多付了一发");
+});
+
+test("逐候选那一发·按反馈重生成：出新修订、旧的标 superseded，两发调用记全", async () => {
+  const previous = refineSubjectRevisionId;
+  const beforeReadout = await candidateRevisionReadout(refineRunId, previous);
+  assert.ok(beforeReadout);
+
+  await enqueueRefineJob({
+    runId: refineRunId,
+    workspaceId: REFINE_WORKSPACE_ID,
+    candidateRevisionId: previous,
+    mode: "rewrite",
+    feedbackReasonCodes: ["too_shallow"],
+  });
+  const job = await claimSimplifiedJob(refineRunId, { jobType: "card_candidate_refine_v3" });
+  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  await processV2OutboxJob(job);
+  await assertJobCompleted(job.id);
+
+  const superseded = await candidateRevisionReadout(refineRunId, previous);
+  assert.equal(superseded?.publish_state, "superseded",
+    "旧修订不可变但要让路——还挂着 unpublished 就是审核台上摆出两张同目标的卡");
+  const rows = await admin`
+    SELECT candidate_revision_id, revision, publish_state, quality_state
+    FROM card_generation_candidates_v2
+    WHERE run_id = ${refineRunId} AND candidate_id = ${beforeReadout.candidate_id}
+    ORDER BY revision DESC LIMIT 2
+  ` as unknown as Array<{ candidate_revision_id: string; revision: number;
+    publish_state: string; quality_state: string }>;
+  assert.equal(Number(rows[0]?.revision), Number(beforeReadout.revision) + 1,
+    "重生成必须落在**下一条修订**上，同一条 candidate_id");
+  assert.equal(rows[0]?.publish_state, "unpublished");
+  const rewritten = await eventPayload(refineRunId, "card_candidate.rewritten");
+  assert.equal(rewritten.reason, "user_feedback",
+    "事件要分得清这次改写是用户点的还是检查判的——归错了，成本就记不到人头上");
+  const completed = await eventPayload(refineRunId, "card_generation.simplified_completed");
+  assert.equal(Number(completed.modelCalls), 2,
+    "改写一发＋检查一发；少记就是这一发没真发出去");
+  refineSubjectRevisionId = String(rows[0].candidate_revision_id);
+});
+
+test("整批重排那一档：同一 run 再开一版计划，上一版没激活的候选让路", async () => {
+  const planBefore = await admin`
+    SELECT current_plan_version FROM card_generation_runs_v2 WHERE id = ${refineRunId} LIMIT 1
+  ` as unknown as Array<{ current_plan_version: number }>;
+  const previousVersion = Number(planBefore[0]?.current_plan_version);
+  const stillUnpublishedBefore = await admin`
+    SELECT count(*)::int AS n FROM card_generation_candidates_v2
+    WHERE run_id = ${refineRunId} AND publish_state = 'unpublished'
+  ` as unknown as Array<{ n: number }>;
+  assert.ok(Number(stillUnpublishedBefore[0]?.n) > 0, "重排前得有没激活的候选，否则\"让路\"判据是空集");
+
+  await admin`
+    INSERT INTO card_generation_run_outbox_v2 (id, workspace_id, run_id, job_type, payload, status)
+    VALUES (${randomUUID()}, ${REFINE_WORKSPACE_ID}, ${refineRunId}, 'card_generation_simplified_v1',
+      ${admin.json({ runId: refineRunId, workspaceId: REFINE_WORKSPACE_ID, mode: "replan" })}, 'pending')
+  `;
+  const job = await claimSimplifiedJob(refineRunId);
+  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  await processV2OutboxJob(job);
+  await assertJobCompleted(job.id);
+
+  const planAfter = await admin`
+    SELECT current_plan_version FROM card_generation_runs_v2 WHERE id = ${refineRunId} LIMIT 1
+  ` as unknown as Array<{ current_plan_version: number }>;
+  assert.equal(Number(planAfter[0]?.current_plan_version), previousVersion + 1,
+    "重排要开新一版计划；版本号不动就是它接上了上一版（那是\"换一批\"最坏的失败形状）");
+  const leftovers = await admin`
+    SELECT count(*)::int AS n FROM card_generation_candidates_v2
+    WHERE run_id = ${refineRunId} AND plan_version < ${previousVersion + 1}
+      AND publish_state = 'unpublished'
+  ` as unknown as Array<{ n: number }>;
+  assert.equal(Number(leftovers[0]?.n), 0,
+    "上一版没激活的候选必须全部 superseded——留着就是审核台同时摆出两批");
+  const freshOnStage = await admin`
+    SELECT count(*)::int AS n FROM card_generation_candidates_v2
+    WHERE run_id = ${refineRunId} AND plan_version = ${previousVersion + 1}
+  ` as unknown as Array<{ n: number }>;
+  assert.ok(Number(freshOnStage[0]?.n) > 0, "这一版要有新候选落在台上");
+  assert.equal(await runStatus(refineRunId), "review_ready");
 });

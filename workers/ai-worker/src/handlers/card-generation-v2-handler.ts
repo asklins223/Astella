@@ -770,40 +770,14 @@ export async function processV2OutboxJob(job: PendingOutboxJob): Promise<void> {
       case "card_generation_recheck_candidate":
         await processRecheckCandidateJob(job, pipelineSignal);
         break;
-      case "card_generation_simplified_v1": {
-        // W7-1 刀b：简化链（两次语义调用）。动态 import 是为了避开静态环——
-        // V3 那一边要复用本文件的落库件（plan/候选/binding plan/事件），
-        // 而这里是分发点。
-        const {
-          processCardGenerationSimplifiedJob,
-          resolveCardGenerationV3Providers,
-          cardGenerationV3LlmRequested,
-        } = await import("../card-generation-v3/handler.ts");
-        let llmTransport: import("../card-generation-v3/llm-provider.ts").CardGenerationV3ChatTransport
-          | undefined;
-        if (cardGenerationV3LlmRequested()) {
-          // 与 V2 四阶段同一一份治理出口：run 的主人、同意/外发政策、provider 选择与
-          // `ai_audit_log` 的唯一写入口都在 `resolveGovernedCardGenerationProvider` 那一处，
-          // V3 不另起第二份（operation 记 `card_generation_v3`，两条链的账要分得开）。
-          const context = await resolveCardGenerationGovernance(job.workspaceId, job.runId);
-          const { resolveGovernedCardGenerationProvider } = await import("../card-generation-v2/providers.ts");
-          const { asCardGenerationV3Transport } = await import("../card-generation-v3/llm-provider.ts");
-          llmTransport = asCardGenerationV3Transport(await resolveGovernedCardGenerationProvider({
-            workspaceId: job.workspaceId,
-            userId: context.userId,
-            operation: "card_generation_v3",
-            chainLabel: "card-generation-v3",
-            llmModeLabel: "CARD_GENERATION_V3_PROVIDER",
-            governance: context.governance,
-          }));
-        }
-        await processCardGenerationSimplifiedJob(
-          job,
-          resolveCardGenerationV3Providers(llmTransport ? { transport: llmTransport } : undefined),
-          pipelineSignal,
-        );
+      case "card_generation_simplified_v1":
+        // W7-1 刀b：简化链（默认路径两次语义调用）。W7-7 刀一起它是唯一在投的链。
+        await runSimplifiedChainV3Job(job, pipelineSignal, "generate");
         break;
-      }
+      case "card_candidate_refine_v3":
+        // W7-7 刀一：审核台上的「编辑后重检」「按反馈重生成」——同一批腿，只作用于这一张。
+        await runSimplifiedChainV3Job(job, pipelineSignal, "refine");
+        break;
       case "card_v2_post_activation":
         // §17.5 step 17：outbox 异步投影消费——按 receiptId 幂等对账
         // （receipt/cards/objectives 存在性 + lifecycle 校验），对账结果写入
@@ -861,6 +835,47 @@ export async function processV2OutboxJob(job: PendingOutboxJob): Promise<void> {
  * provider 侧也会在看到已 abort 的 signal 时立即失败；此处的显式检查保证
  * **不再发起新的调用**（而不是发出后再中止），把成本损失压到最小。
  */
+/**
+ * 简化链两种 job 的共用接线（39d W7-1 刀b 建立，W7-7 刀一接上第二种 job）。
+ *
+ * 动态 import 是为了避开静态环——V3 那一边要复用本文件的落库件（plan/候选/binding
+ * plan/事件），而这里是分发点。**provider 组装只写一份**：整批与逐候选两种 job 如果
+ * 各搭一遍治理出口，哪天同意/外发政策只改一边就有一条链悄悄绕过它。
+ */
+async function runSimplifiedChainV3Job(
+  job: PendingOutboxJob,
+  signal: AbortSignal | undefined,
+  kind: "generate" | "refine",
+): Promise<void> {
+  const v3 = await import("../card-generation-v3/handler.ts");
+  let llmTransport: import("../card-generation-v3/llm-provider.ts").CardGenerationV3ChatTransport
+    | undefined;
+  if (v3.cardGenerationV3LlmRequested()) {
+    // 与 V2 四阶段同一一份治理出口：run 的主人、同意/外发政策、provider 选择与
+    // `ai_audit_log` 的唯一写入口都在 `resolveGovernedCardGenerationProvider` 那一处，
+    // V3 不另起第二份（operation 记 `card_generation_v3`，两条链的账要分得开）。
+    const context = await resolveCardGenerationGovernance(job.workspaceId, job.runId);
+    const { resolveGovernedCardGenerationProvider } = await import("../card-generation-v2/providers.ts");
+    const { asCardGenerationV3Transport } = await import("../card-generation-v3/llm-provider.ts");
+    llmTransport = asCardGenerationV3Transport(await resolveGovernedCardGenerationProvider({
+      workspaceId: job.workspaceId,
+      userId: context.userId,
+      operation: "card_generation_v3",
+      chainLabel: "card-generation-v3",
+      llmModeLabel: "CARD_GENERATION_V3_PROVIDER",
+      governance: context.governance,
+    }));
+  }
+  const providers = v3.resolveCardGenerationV3Providers(
+    llmTransport ? { transport: llmTransport } : undefined,
+  );
+  if (kind === "refine") {
+    await v3.processCardCandidateRefineV3Job(job, providers, signal);
+    return;
+  }
+  await v3.processCardGenerationSimplifiedJob(job, providers, signal);
+}
+
 function throwIfPipelineAborted(signal: AbortSignal | undefined): void {
   if (!signal?.aborted) return;
   const reason = signal.reason;

@@ -728,9 +728,9 @@ describe("handleCandidateActionV2 — merge", () => {
         `merge-key-${candId}`,
       );
       const recheck = insertCalls.filter((i) =>
-        i.values.jobType === "card_generation_recheck_candidate",
+        i.values.jobType === "card_candidate_refine_v3",
       );
-      assert.equal(recheck.length, 1, `merge(${candId}) 应派发一条 recheck job`);
+      assert.equal(recheck.length, 1, `merge(${candId}) 应派发一条逐候选重检 job`);
       return recheck;
     }
 
@@ -739,10 +739,12 @@ describe("handleCandidateActionV2 — merge", () => {
     const second = await runMerge("00000000-0000-4000-8000-00000000000b", "crev-b");
     assert.equal(first[0].values.runId, RUN_ID);
     assert.equal(second[0].values.runId, RUN_ID);
-    // 不同候选 → 两条 recheck 载荷不同（candidateId 藏于 payload），均成功入队。
-    const firstCandidate = (first[0].values.payload as { candidateId?: unknown }).candidateId;
-    const secondCandidate = (second[0].values.payload as { candidateId?: unknown }).candidateId;
-    assert.notEqual(firstCandidate, secondCandidate, "两次 recheck 应针对不同候选");
+    // 不同候选 → 两条载荷指向的修订不同（worker 就按 `candidateRevisionId` 认领主体）。
+    const firstRevision = (first[0].values.payload as { candidateRevisionId?: unknown }).candidateRevisionId;
+    const secondRevision = (second[0].values.payload as { candidateRevisionId?: unknown }).candidateRevisionId;
+    assert.notEqual(firstRevision, secondRevision, "两次重检应针对不同修订");
+    assert.equal((first[0].values.payload as { mode?: unknown }).mode, "recheck",
+      "合并产物只重过检查这一条腿，不改用户合好的内容");
   });
 });
 

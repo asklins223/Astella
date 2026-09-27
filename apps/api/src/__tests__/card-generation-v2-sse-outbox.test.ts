@@ -99,7 +99,7 @@ describe("createGenerationRunV2 — outbox enqueue", () => {
 
       // Verify outbox row was inserted
       const outboxInsert = insertCalls.find(
-        (c) => c.values && c.values.jobType === "card_generation_plan",
+        (c) => c.values && c.values.jobType === "card_generation_simplified_v1",
       );
       assert.ok(outboxInsert, "must insert a card_generation_run_outbox_v2 row");
       assert.equal(

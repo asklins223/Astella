@@ -301,7 +301,7 @@ describe("createGenerationRunV2", () => {
 
     const outboxInsert = insertCalls.find((i) => i.table === cardGenerationRunOutboxV2);
     assert.ok(outboxInsert, "should have enqueued a worker outbox job");
-    assert.equal(outboxInsert!.values.jobType, "card_generation_plan");
+    assert.equal(outboxInsert!.values.jobType, "card_generation_simplified_v1");
     assert.equal(outboxInsert!.values.status, "pending");
 
     // 状态迁移：queued → source_sealing → planning（§17.2 状态机）

@@ -108,6 +108,23 @@ export interface CardGenerationSimplifiedProviders {
  */
 const RUNNABLE_STATUSES = new Set(["queued", "planning", "authoring", "checking"]);
 const FIRST_RUN_STATUSES = new Set(["queued"]);
+/**
+ * 整批那一发的两种来意（39d W7-7）：`generate` 是第一次生成（run 从 `queued` 起步），
+ * `replan` 是审核台上的「换一批」与质量门失败后的「再生成一次」——同一个 run 上再开
+ * 一版计划，旧版没激活的候选要让路。
+ */
+const REPLAN_RUN_STATUSES = new Set(["review_ready", "needs_attention", "checking"]);
+/** 逐候选那一发（重检／按反馈重生成）只在"这一批已经摆到审核台上"时接手。 */
+const REFINE_RUNNABLE_STATUSES_V3 = new Set(["review_ready", "needs_attention"]);
+
+/**
+ * 整批那一发的来意写在 payload 里而不是另开 jobType：两种来意跑的是同一条五段链、
+ * 同一批门禁与同一个终态判据，只有状态门与"上一版要让路"这一格不同。
+ * 未写 `mode` ＝第一次生成（老 payload 一字节都不用改）。
+ */
+function jobModeV3(job: PendingOutboxJob): "generate" | "replan" {
+  return (job.payload as { mode?: string }).mode === "replan" ? "replan" : "generate";
+}
 
 /** 数端口被打了几发（§16.28 的读数来源）。 */
 function counting<T>(inner: CardGenerationV3ProviderPort<T>): [CardGenerationV3ProviderPort<T>, () => number] {
@@ -175,14 +192,14 @@ export async function processCardGenerationSimplifiedJob(
   const generateCalls = counting(providers.generate);
   const checkCalls = counting(providers.check);
   const rewriteCalls = counting(providers.rewrite);
-  const rewriteCount = () => rewriteCalls[1]();
   const modelCalls = () => generateCalls[1]() + checkCalls[1]() + rewriteCalls[1]();
 
   // ── 段 1：读（短事务，锁 run）──────────────────────────────────────────
+  const replanning = jobModeV3(job) === "replan";
   const prepared = await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
     const loaded = await loadV2RunInputs(tx, workspaceId, runId);
     const status = String(loaded.run.status);
-    if (!RUNNABLE_STATUSES.has(status)) {
+    if (!(replanning ? REPLAN_RUN_STATUSES : RUNNABLE_STATUSES).has(status)) {
       return { kind: "skipped" as const, status };
     }
     await fenceV2OutboxLease(tx, job);
@@ -191,6 +208,14 @@ export async function processCardGenerationSimplifiedJob(
       await tx.execute(sql`
         UPDATE public.card_generation_runs_v2
         SET status = 'planning', error_code = NULL, error_message = NULL, updated_at = now()
+        WHERE id = ${runId} AND workspace_id = ${workspaceId}
+      `);
+    } else if (replanning) {
+      // 重排在即：run 立刻回到工作态并清掉上一次的失败码，用户点完就看见"又动起来了"
+      // （与旧的 run 级就地重试同一口径——停在新结果出来之前的一直是「需要处理」）。
+      await tx.execute(sql`
+        UPDATE public.card_generation_runs_v2
+        SET status = 'checking', error_code = NULL, error_message = NULL, updated_at = now()
         WHERE id = ${runId} AND workspace_id = ${workspaceId}
       `);
     }
@@ -229,10 +254,15 @@ export async function processCardGenerationSimplifiedJob(
   let generateOutput: CardGenerateV3TaskOutput | null = null;
   let gateRejections: ReadonlyArray<{ objectiveLocalId: string; codes: string[] }> = [];
   let assembled: CardGenerateV3AssemblyResult | null = null;
-  // 重投时这一版计划可能已经落库：`current_plan_version` 只在段 3 提交成功后才前进，
-  // 所以这里同时探一下"还没推进的那一版"，避免把同一批候选写在两个版本号下。
+  /**
+   * 重投时这一版计划可能已经落库：`current_plan_version` 只在段 3 提交成功后才前进，
+   * 所以这里同时探一下"还没推进的那一版"，避免把同一批候选写在两个版本号下。
+   *
+   * 重排那一发**不探上一版**：上一版是用户刚刚看过、正要被换掉的那一批，接上它就等于
+   * 「换一批」按钮把旧候选又检查了一遍（旧链在段 3 就把上一版没激活的候选 supersede 掉）。
+   */
   const already = (await loadCommittedSimplifiedPlan(workspaceId, runId, planVersion))
-    ?? (await loadCommittedSimplifiedPlan(workspaceId, runId, Number(loaded.run.current_plan_version)));
+    ?? (replanning ? null : await loadCommittedSimplifiedPlan(workspaceId, runId, Number(loaded.run.current_plan_version)));
   if (already && already.candidates.length > 0
     && already.candidates[0].planVersion !== planVersion) {
     planVersion = already.candidates[0].planVersion;
@@ -312,6 +342,16 @@ export async function processCardGenerationSimplifiedJob(
       await insertAuthoredCandidatesBatched(
         tx, workspaceId, runId, candidates, hintsByCandidateRevisionId, { skipExisting: true },
       );
+      if (replanning) {
+        // 换一批＝上一版没激活的候选让路（`activated`/`expired` 不在里面，已经进牌堆的
+        // 那张不会因为用户重排而消失）。不挡掉的话审核台会同时摆出两批候选。
+        await tx.execute(sql`
+          UPDATE public.card_generation_candidates_v2
+          SET publish_state = 'superseded', updated_at = now()
+          WHERE workspace_id = ${workspaceId} AND run_id = ${runId}
+            AND plan_version < ${planVersion} AND publish_state = 'unpublished'
+        `);
+      }
       await tx.execute(sql`
         UPDATE public.card_generation_runs_v2
         SET status = 'checking', current_plan_version = ${planVersion}, updated_at = now()
@@ -349,6 +389,54 @@ export async function processCardGenerationSimplifiedJob(
     return;
   }
 
+  await runContentCheckLegV3({
+    job,
+    workspaceId,
+    runId,
+    loaded,
+    plan: assembled?.plan ?? null,
+    candidates,
+    hintsByCandidateRevisionId,
+    runOnKernel,
+    checkProvider: checkCalls[0],
+    rewriteProvider: rewriteCalls[0],
+    rewriteCount: rewriteCalls[1],
+    modelCalls,
+  });
+}
+
+/**
+ * 内容检查这一段（设计件的段 4／4b／5）抽成一条可复用的腿：整批生成走它，审核台上的
+ * 「编辑后重检」「按反馈重生成」也走它（39d W7-7；39c §9 表的处置列那句
+ * "用户改写走统一候选生成模式和增量检查"）。
+ *
+ * 抽出来的时候一行判据都没改——重检一张与重检一批在门禁、binding plan、报告落库、
+ * run 终态上必须是同一套规则，起第二条腿迟早两条不一样。
+ */
+async function runContentCheckLegV3(args: {
+  job: PendingOutboxJob;
+  workspaceId: string;
+  runId: string;
+  loaded: Awaited<ReturnType<typeof loadV2RunInputs>>;
+  plan: CardGenerateV3AssemblyResult["plan"] | null;
+  candidates: LearningCardCandidateRevisionV2[];
+  hintsByCandidateRevisionId: Map<string, CardHintPairV2>;
+  runOnKernel: <TInput, TOutput>(
+    definition: AiTaskDefinition<TInput, TOutput>,
+    input: TInput,
+  ) => Promise<AiTaskReceipt<TOutput>>;
+  checkProvider: CardGenerationV3ProviderPort<CardContentCheckV3TaskInput>;
+  rewriteProvider: CardGenerationV3ProviderPort<CardCandidateRewriteV3TaskInput>;
+  rewriteCount: () => number;
+  modelCalls: () => number;
+}): Promise<void> {
+  const {
+    job, workspaceId, runId, loaded, plan, runOnKernel,
+    checkProvider, rewriteProvider, rewriteCount, modelCalls,
+  } = args;
+  let candidates = args.candidates;
+  const hintsByCandidateRevisionId = args.hintsByCandidateRevisionId;
+
   // ── 段 4：批量内容检查（事务外）──────────────────────────────────────
   const checkInput: CardContentCheckV3TaskInput = {
     runId,
@@ -360,7 +448,7 @@ export async function processCardGenerationSimplifiedJob(
     evidenceManifest: loaded.sealed.evidenceManifest,
   };
   const checkTask = createCardContentCheckV3Task({
-    provider: checkCalls[0],
+    provider: checkProvider,
     prepare: async () => checkInput,
     commit: async () => {},
   });
@@ -377,7 +465,7 @@ export async function processCardGenerationSimplifiedJob(
   if (rewriteEntries.length > 0) {
     const rebuilt: LearningCardCandidateRevisionV2[] = [];
     const task = createCardCandidateRewriteV3Task({
-      provider: rewriteCalls[0],
+      provider: rewriteProvider,
       prepare: async () => { throw new Error("rewrite task 的输入由调用方逐张给"); },
       commit: async () => {},
     });
@@ -403,7 +491,7 @@ export async function processCardGenerationSimplifiedJob(
       const draft = ranRewrite.output.draft;
       const built = buildCandidateRevisionV3({
         draft,
-        plan: assembled?.plan ?? planFromCommittedCandidates(previous),
+        plan: plan ?? planFromCommittedCandidates(previous),
         runId,
         // 改写只改内容，不换题型：整批分配过的 strategy 沿用上一版那一份。
         strategy: previous.presentation.strategy,
@@ -415,31 +503,16 @@ export async function processCardGenerationSimplifiedJob(
       hintsByCandidateRevisionId.set(built.candidate.candidateRevisionId, built.hints);
     }
     if (rebuilt.length > 0) {
-      await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
-        for (const next of rebuilt) {
-          const previous = candidates.find(
-            (candidate) => candidate.candidateRevisionId === next.derivedFromCandidateRevisions.at(-1)?.candidateRevisionId,
-          )!;
-          // 旧修订不可变：只标 superseded，不覆盖、不删。
-          await tx.execute(sql`
-            UPDATE public.card_generation_candidates_v2
-            SET publish_state = 'superseded', updated_at = now()
-            WHERE candidate_revision_id = ${previous.candidateRevisionId} AND workspace_id = ${workspaceId}
-              AND publish_state = 'unpublished'
-          `);
-          await insertRepairedCandidateV2(tx, {
-            runId, workspaceId, candidate: next, hints: hintsByCandidateRevisionId.get(next.candidateRevisionId)!,
-          });
-          await insertEvent(tx, workspaceId, runId, "card_candidate.rewritten", {
-            candidateId: next.candidateId,
-            previousRevisionId: previous.candidateRevisionId,
-            newRevisionId: next.candidateRevisionId,
-            revision: next.revision,
-            rewriteCalls: rewriteCount(),
-          });
-        }
-        await fenceV2OutboxLease(tx, job);
-      }, { isolated: true });
+      await commitRewrittenRevisionsV3({
+        job,
+        workspaceId,
+        runId,
+        previousCandidates: candidates,
+        rebuilt,
+        hintsByCandidateRevisionId,
+        rewriteCalls: rewriteCount(),
+        rewriteReason: "content_check",
+      });
 
       const recheckInput: CardContentCheckV3TaskInput = {
         runId,
@@ -451,7 +524,7 @@ export async function processCardGenerationSimplifiedJob(
         evidenceManifest: loaded.sealed.evidenceManifest,
       };
       const recheckTask = createCardContentCheckV3Task({
-        provider: checkCalls[0],
+        provider: checkProvider,
         prepare: async () => recheckInput,
         commit: async () => {},
       });
@@ -480,6 +553,191 @@ export async function processCardGenerationSimplifiedJob(
     });
     await fenceV2OutboxLease(tx, job);
   }, { isolated: true });
+}
+
+/**
+ * 改写落库的那一发：旧修订只标 `superseded`（不可变），新修订插成兄弟行。
+ * 整批链的段 4b 与审核台上「按反馈重生成」共用这一处——同一张表上写出来的形状
+ * 必须一样，起第二份就会有一天只改一边。
+ */
+async function commitRewrittenRevisionsV3(args: {
+  job: PendingOutboxJob;
+  workspaceId: string;
+  runId: string;
+  previousCandidates: ReadonlyArray<LearningCardCandidateRevisionV2>;
+  rebuilt: ReadonlyArray<LearningCardCandidateRevisionV2>;
+  hintsByCandidateRevisionId: Map<string, CardHintPairV2>;
+  rewriteCalls: number;
+  rewriteReason: "content_check" | "user_feedback";
+}): Promise<void> {
+  const { job, workspaceId, runId, previousCandidates, rebuilt, hintsByCandidateRevisionId } = args;
+  await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
+    for (const next of rebuilt) {
+      const previous = previousCandidates.find(
+        (candidate) => candidate.candidateRevisionId
+          === next.derivedFromCandidateRevisions.at(-1)?.candidateRevisionId,
+      )!;
+      await tx.execute(sql`
+        UPDATE public.card_generation_candidates_v2
+        SET publish_state = 'superseded', updated_at = now()
+        WHERE candidate_revision_id = ${previous.candidateRevisionId} AND workspace_id = ${workspaceId}
+          AND publish_state = 'unpublished'
+      `);
+      await insertRepairedCandidateV2(tx, {
+        runId, workspaceId, candidate: next, hints: hintsByCandidateRevisionId.get(next.candidateRevisionId)!,
+      });
+      await insertEvent(tx, workspaceId, runId, "card_candidate.rewritten", {
+        candidateId: next.candidateId,
+        previousRevisionId: previous.candidateRevisionId,
+        newRevisionId: next.candidateRevisionId,
+        revision: next.revision,
+        rewriteCalls: args.rewriteCalls,
+        reason: args.rewriteReason,
+      });
+    }
+    await fenceV2OutboxLease(tx, job);
+  }, { isolated: true });
+}
+
+/**
+ * 审核台上的两发（39d W7-7；39c §9 处置列："用户改写走统一候选生成模式和增量检查"）：
+ *
+ *   - `recheck`：编辑／合并之后的新修订只重过检查这一条腿，不改用户写好的内容；
+ *   - `rewrite`：用户点了「按反馈重生成」，先按他给的因由改写这一张，再走同一条检查腿。
+ *
+ * 与整批链共用 `runContentCheckLegV3`，所以门禁、binding plan、质量报告、run 终态
+ * 是同一套规则——一张与一批在判据上没有区别，区别只在候选数。
+ */
+export async function processCardCandidateRefineV3Job(
+  job: PendingOutboxJob,
+  providers: CardGenerationSimplifiedProviders,
+  signal?: AbortSignal,
+): Promise<void> {
+  const workspaceId = job.workspaceId;
+  const runId = job.runId;
+  const payload = job.payload as {
+    candidateRevisionId?: string;
+    mode?: "recheck" | "rewrite";
+    feedbackReasonCodes?: string[];
+  };
+  const candidateRevisionId = String(payload.candidateRevisionId ?? "");
+  if (candidateRevisionId === "") {
+    // 缺主体不是"没活干"：把它当 no-op 完成，那条候选会永远停在 `checking`。
+    throw new CardGenerationProviderError(
+      "non-retryable",
+      "card_candidate_refine_v3 的 payload 缺 candidateRevisionId",
+    );
+  }
+  const checkCalls = counting(providers.check);
+  const rewriteCalls = counting(providers.rewrite);
+  const modelCalls = () => checkCalls[1]() + rewriteCalls[1]();
+
+  const prepared = await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
+    const loaded = await loadV2RunInputs(tx, workspaceId, runId);
+    const status = String(loaded.run.status);
+    // 只接受"这一批已经摆到审核台上"的两个状态：`queued/planning/authoring/checking`
+    // 是整批那一发的地盘，从这里插进去会让两条 job 同时写同一个 run 的候选行。
+    if (!REFINE_RUNNABLE_STATUSES_V3.has(status)) return { kind: "skipped" as const, status };
+    const rows = (await tx.execute(sql`
+      SELECT * FROM public.card_generation_candidates_v2
+      WHERE workspace_id = ${workspaceId} AND run_id = ${runId}
+        AND candidate_revision_id = ${candidateRevisionId}
+      LIMIT 1
+    `)) as unknown as Array<Record<string, unknown>>;
+    if (rows.length === 0) {
+      // 这一发要领的修订已经不在了（用户又改了一次／整批重规划换了版本）。后到的那一发
+      // 会把它自己的结论写进 run，所以这里按 no-op 收口，不把 run 打成 needs_attention。
+      return { kind: "vanished" as const };
+    }
+    const subject = candidateRowToObject(rows[0], runId);
+    const hints = (rows[0].hints ?? null) as CardHintPairV2 | null;
+    if (!hints) {
+      throw new CardGenerationProviderError(
+        "non-retryable",
+        `候选修订 ${candidateRevisionId} 没有提示对（兄弟列缺失），改写与检查都不做`,
+      );
+    }
+    await fenceV2OutboxLease(tx, job);
+    return { kind: "ready" as const, loaded, subject, hints };
+  }, { isolated: true });
+
+  if (prepared.kind !== "ready") {
+    // `skipped`＝这一批还没摆到审核台上（或终态了）；`vanished`＝要领的那条修订已经被
+    // 更新的一版换掉。两种都按 no-op 收口：把 run 打成 needs_attention 会替用户否决
+    // 一批他没否决过的候选。
+    logger.info({ runId, candidateRevisionId, kind: prepared.kind, status: prepared.kind === "skipped" ? prepared.status : null },
+      "[v3-refine] nothing to refine on this run, job is a no-op");
+    return;
+  }
+  const { loaded, hints } = prepared;
+  let subject = prepared.subject;
+  const hintsByCandidateRevisionId = new Map<string, CardHintPairV2>([[subject.candidateRevisionId, hints]]);
+
+  const runOnKernel = <TInput, TOutput>(
+    definition: AiTaskDefinition<TInput, TOutput>,
+    input: TInput,
+  ): Promise<AiTaskReceipt<TOutput>> => runV3TaskOnKernel(definition, input, job,
+    String(loaded.run.note_version_id), loaded.inputSnapshot.inputSnapshotHash, signal);
+
+  if (payload.mode === "rewrite") {
+    const task = createCardCandidateRewriteV3Task({
+      provider: rewriteCalls[0],
+      prepare: async () => { throw new Error("rewrite task 的输入由调用方逐张给"); },
+      commit: async () => {},
+    });
+    const codes = (payload.feedbackReasonCodes ?? []).filter((code) => code !== "");
+    const rewriteInput: CardCandidateRewriteV3TaskInput = {
+      runId,
+      sourceContent: loaded.sourceContent,
+      candidate: subject,
+      hints,
+      issues: codes.length > 0
+        ? codes.map((code) => ({ code, detail: `用户在审核台上选了这一档反馈：${code}` }))
+        : [{ code: "user_regenerate_requested", detail: "用户要求重做这一张，没有给出具体因由" }],
+      evidenceManifest: loaded.sealed.evidenceManifest,
+    };
+    const ran = await runOnKernel(task, rewriteInput);
+    if (ran.outcome !== "committed" || !ran.output) {
+      throw kernelFailureError("card_candidate_rewrite_v3（用户要求重做）", ran.failure);
+    }
+    const built = buildCandidateRevisionV3({
+      draft: ran.output.draft,
+      plan: planFromCommittedCandidates(subject),
+      runId,
+      strategy: subject.presentation.strategy,
+      reasonCodes: [...subject.recommendation.reasonCodes, "user_regenerate"],
+      evidenceSetHash: loaded.sealed.evidenceSetHash,
+      previous: subject,
+    });
+    // 提示对是候选行的兄弟列（NOT NULL），落库那一发从这张表里取它。
+    hintsByCandidateRevisionId.set(built.candidate.candidateRevisionId, built.hints);
+    await commitRewrittenRevisionsV3({
+      job,
+      workspaceId,
+      runId,
+      previousCandidates: [subject],
+      rebuilt: [built.candidate],
+      hintsByCandidateRevisionId,
+      rewriteCalls: rewriteCalls[1](),
+      rewriteReason: "user_feedback",
+    });
+    subject = built.candidate;
+  }
+
+  await runContentCheckLegV3({
+    job,
+    workspaceId,
+    runId,
+    loaded,
+    plan: null,
+    candidates: [subject],
+    hintsByCandidateRevisionId,
+    runOnKernel,
+    checkProvider: checkCalls[0],
+    rewriteProvider: rewriteCalls[0],
+    rewriteCount: rewriteCalls[1],
+    modelCalls,
+  });
 }
 
 /**

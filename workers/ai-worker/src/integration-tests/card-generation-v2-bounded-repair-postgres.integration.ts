@@ -45,6 +45,8 @@ import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 process.env.DATABASE_URL_API ??= ADMIN_URL;
+// 这份网测的是旧四阶段链：总控的默认档已翻到简化链（39d W7-7 刀一），这里显式站在 v2 那一档。
+process.env.CARD_GENERATION_CHAIN = "v2";
 // 确定性管道：不出网、不花钱（`assertDeterministicProvidersAllowed` 要求的就是这个）。
 delete process.env.CARD_GENERATION_V2_LLM;
 

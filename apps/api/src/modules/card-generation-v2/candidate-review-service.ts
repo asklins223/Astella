@@ -29,6 +29,7 @@ import {
 } from "@ailearn/shared/card-generation-v2-hashing";
 import {
   CardGenerationV2ServiceError,
+  cardGenerationSimplifiedChainV3,
   insertEvent,
   applyPatch,
   getCandidateForAction,
@@ -381,19 +382,22 @@ async function handleEdit(
     touchesAnswer: candidateActionTouchesAnswerV2(action),
   });
 
-  // §12.2/§12.3：编辑后必须重跑 Grounding/Pedagogy Critic——派发 worker job，
-  // 由 worker 对新 revision 完整重跑门禁（旧 revision 不可变，不覆盖）。
-  // 0163（round-6）：部分唯一约束仅限 plan/post_activation 单例——重复派发 ON CONFLICT DO NOTHING。
+  // §12.2/§12.3：编辑后必须重跑门禁——派发 worker job，由 worker 对新 revision 完整重跑
+  // 门禁（旧 revision 不可变，不覆盖）。
+  // 39d W7-7 刀一：默认走简化链的**逐候选**那一档；`v2` 那一档仍要问总控——这个开关
+  // 从前只管第一次生成那一发，审核台上那四发直接投旧链，于是"开关打开"≠"这条链在跑"。
+  // 0163（round-6）：部分唯一约束仅限单例 job 类型——per-candidate 语义同 run 可多行。
   await tx.insert(cardGenerationRunOutboxV2).values({
     workspaceId: ctx.workspaceId,
     runId,
-    jobType: "card_generation_recheck_candidate",
+    jobType: cardGenerationSimplifiedChainV3() ? "card_candidate_refine_v3" : "card_generation_recheck_candidate",
     payload: {
       runId,
       workspaceId: ctx.workspaceId,
       candidateId: candidate.candidateId,
       candidateRevisionId: newCandidateRevisionId,
       revision: newRevision,
+      mode: "recheck",
       reason: "edit",
     },
     status: "pending",
@@ -545,17 +549,18 @@ async function handleMerge(
   });
 
   // §12.2/§12.3：合并产物必须重跑门禁——派发 worker job（父候选已 merged 不可激活）。
-  // 0163（round-6）：部分唯一约束仅限 plan/post_activation 单例——重复派发 ON CONFLICT DO NOTHING。
+  // 39d W7-7 刀一：默认走简化链的逐候选那一档，`v2` 那一档保留完整旧载荷。
   await tx.insert(cardGenerationRunOutboxV2).values({
     workspaceId: ctx.workspaceId,
     runId,
-    jobType: "card_generation_recheck_candidate",
+    jobType: cardGenerationSimplifiedChainV3() ? "card_candidate_refine_v3" : "card_generation_recheck_candidate",
     payload: {
       runId,
       workspaceId: ctx.workspaceId,
       candidateId: mergedCandidateId,
       candidateRevisionId: newCandidateRevisionId,
       revision: newRevision,
+      mode: "recheck",
       reason: "merge",
     },
     status: "pending",
@@ -623,17 +628,20 @@ async function handleRegenerateCandidate(
       eq(cardGenerationCandidatesV2.workspaceId, ctx.workspaceId),
     ));
 
-  // 派发 worker job：重新 author 该候选并重跑双 Critic + deck gate
+  // 派发 worker job：39d W7-7 刀一——默认走简化链的逐候选那一档，`mode: "rewrite"` 让
+  // worker 先按用户给的因由改写这一张，再走与整批同一条检查腿（39c §9："用户改写走统一
+  // 候选生成模式和增量检查"）。`v2` 那一档仍是旧链的"重新 author ＋双 Critic"。
   await tx.insert(cardGenerationRunOutboxV2).values({
     workspaceId: ctx.workspaceId,
     runId,
-    jobType: "card_generation_regenerate_candidate",
+    jobType: cardGenerationSimplifiedChainV3() ? "card_candidate_refine_v3" : "card_generation_regenerate_candidate",
     payload: {
       runId,
       workspaceId: ctx.workspaceId,
       candidateId: candidate.candidateId,
       candidateRevisionId: candidate.candidateRevisionId,
       revision: candidate.revision,
+      mode: "rewrite",
       feedbackReasonCodes: action.feedbackReasonCodes,
     },
     status: "pending",
@@ -656,14 +664,30 @@ async function handleReplanSet(
   runId: string,
   action: Extract<CandidateActionV2, { type: "replan_set" }>,
 ) {
-  // 派发 worker job：新 plan revision + 旧计划未激活候选 supersede + 重新 author
+  // 39d W7-7 刀一：整批重规划走简化链的**重排**那一档（同一 run 再开一版计划，
+  // 上一版没激活的候选由 worker 标 superseded 让路）。
+  //
+  // 这一发与另外三发不一样：它付的是一整批的钱。审核台上没有 idempotencyKey 那样的
+  // 重放收敛兜底，连点两下就会排两队模型调用——所以入队前先看这一 run 是否还有在飞的
+  // 任务（与 `retryGenerationRunV2` 同一道闸、同一口径）。
+  const inFlight = await tx.execute(sql`
+    SELECT id FROM public.card_generation_run_outbox_v2
+    WHERE workspace_id = ${ctx.workspaceId} AND run_id = ${runId}
+      AND status IN ('pending', 'processing')
+    LIMIT 1
+  `);
+  if ((inFlight as unknown as Array<{ id: string }>).length > 0) {
+    throw new CardGenerationV2ServiceError("retry_in_flight", 409, "这次运行仍在处理中，请稍后再试");
+  }
+
   await tx.insert(cardGenerationRunOutboxV2).values({
     workspaceId: ctx.workspaceId,
     runId,
-    jobType: "card_generation_replan_set",
+    jobType: cardGenerationSimplifiedChainV3() ? "card_generation_simplified_v1" : "card_generation_replan_set",
     payload: {
       runId,
       workspaceId: ctx.workspaceId,
+      mode: "replan",
       feedbackReasonCodes: action.feedbackReasonCodes,
     },
     status: "pending",

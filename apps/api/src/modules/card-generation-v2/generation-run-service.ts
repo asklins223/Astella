@@ -36,6 +36,7 @@ import {
   checkSourceOutdated,
   computeSourceOutdatedForRunsV2,
   computeSourceCappedForRunsV2,
+  cardGenerationSimplifiedChainV3,
   insertEvent,
   readGenerationProgressV2,
   serializeRunPublic,
@@ -424,31 +425,24 @@ export async function createGenerationRunV2(
       note: "awaiting worker",
     });
 
-    // §17.2: Enqueue worker job for Planner/Author/Critic pipeline
-    // W#2（round-5）+ 0163（round-6）：0163 部分唯一约束仅限 plan/post_activation 单例
-    // （每 run 该 jobType 恰一个）——重复入队（API 重试/双击）须 ON CONFLICT DO NOTHING，否则抛 unique_violation 500。
+    // §17.2 + 39d W7-7 刀一：默认档翻到简化链（`card_generation_simplified_v1`）。
+    // 旧链那一档要显式写 `CARD_GENERATION_CHAIN=v2` 才回得去——总控今天管到**全部六个
+    // 入口**（从前它只管这一发，审核台上那四发绕开它直接投旧链）。删掉这个开关与旧链
+    // 一起是刀二。
+    // W#2（round-5）+ 0163（round-6）：这里的 ON CONFLICT DO NOTHING 防重复入队
+    // （API 重试/双击）抛 unique_violation 500。这一发今天撞不到约束——同
+    // idempotencyKey 的重复请求在上面就收敛成严格重放了，走不到这里；保留是因为它
+    // 免费，且 `(run_id, job_type)` 的部分唯一索引还在（post_activation 用得上）。
     await tx.insert(cardGenerationRunOutboxV2).values({
       workspaceId: ctx.workspaceId,
       runId,
-      jobType: simplifiedChainEnabledV3() ? "card_generation_simplified_v1" : "card_generation_plan",
+      jobType: cardGenerationSimplifiedChainV3() ? "card_generation_simplified_v1" : "card_generation_plan",
       payload: { runId, workspaceId: ctx.workspaceId, semanticSpecHash },
       status: "pending",
     }).onConflictDoNothing();
 
     return { runId, status: "planning" };
   });
-}
-
-/**
- * 制卡链总控：一处常量＋一个环境变量，**未设＝完全回到改前行为**（v2 四阶段）。
- *
- * 简化链（`simplified_v3`）今天只在显式打开时被领到；W7-7 切入口并把旧链删掉之后，
- * 这个开关与旧 jobType 一起消失（不留新旧开关是 W7-7 的完成判据）。
- */
-const CARD_GENERATION_CHAIN_ENV = "CARD_GENERATION_CHAIN";
-
-function simplifiedChainEnabledV3(): boolean {
-  return (process.env[CARD_GENERATION_CHAIN_ENV] ?? "v2").trim().toLowerCase() === "simplified_v3";
 }
 
 export async function getGenerationRunV2(ctx: RunContext, runId: string) {
@@ -713,15 +707,15 @@ export async function cancelGenerationRunV2(ctx: RunContext, runId: string) {
  * 就地重试一次质量门禁失败的 run（2026-09-18，补齐产品缺口）。
  *
  * ## 为什么需要它
- * 当**唯一候选**被 critic 否决（例如 pedagogy 判 `multiple_learning_objectives`）时，
- * 整条 run 会终态化为 `needs_attention`，且没有候选可审核。此前恢复契约只签发
+ * 当**唯一候选**没被放行（例如批量内容检查判它依据不足）时，整条 run 会终态化为
+ * `needs_attention`，且没有候选可审核。此前恢复契约只签发
  * `return_note` / `start_new_generation`——用户唯一的出路是**回笔记重开一次全新生成**：
- * 重新封存来源、重跑 planner、重付全部 token（实测一次 25–55s），而失败往往只是
- * critic 的一次判断波动（同一 prompt 的相邻两次运行结论可以不同）。
+ * 重新封存来源、重跑整条链、重付全部 token（实测一次 25–55s），而失败往往只是
+ * 检查的一次判断波动（同一 prompt 的相邻两次运行结论可以不同）。
  *
  * 这个入口让"再试一次"变成一次显式、低成本、用户可见的选择：复用已经封存的来源与
- * 输入快照，只派发一次**重规划**（新 plan revision + supersede 旧候选 + 重新 author），
- * 走的是 worker 早已实现并状态门闩受限的 `card_generation_replan_set` 任务。
+ * 输入快照，只派发一次**重排**（简化链的 `mode: "replan"` 那一档：新 plan revision +
+ * 上一版没激活的候选 supersede + 重新生成并检查）。
  *
  * ## 为什么不是自动重试
  * 契约与既有纪律一致：恢复动作只由服务端签发、由**用户点击**触发。自动重试会把
@@ -796,13 +790,14 @@ export async function retryGenerationRunV2(ctx: RunContext, runId: string) {
       throw new CardGenerationV2ServiceError("stale_run_status", 409, "运行状态已被并发修改，请刷新");
     }
 
-    // 复用既有的 replan 任务：新 plan revision + supersede 旧候选 + 重新 author。
+    // 39d W7-7 刀一：就地重试走简化链的**重排**那一档（`mode: "replan"`）——同一 run
+    // 上再开一版计划，上一版没激活的候选由 worker 标 superseded 让路。
     // 不传 feedbackReasonCodes —— 用户没有给反馈，他只是要求再试一次。
     await tx.insert(cardGenerationRunOutboxV2).values({
       workspaceId: ctx.workspaceId,
       runId,
-      jobType: "card_generation_replan_set",
-      payload: { runId, workspaceId: ctx.workspaceId },
+      jobType: cardGenerationSimplifiedChainV3() ? "card_generation_simplified_v1" : "card_generation_replan_set",
+      payload: { runId, workspaceId: ctx.workspaceId, mode: "replan" },
       status: "pending",
     });
 
