@@ -1159,6 +1159,144 @@ async function createOrUpdateObjectiveAndCard(
       };
     }
 
+    case "reuse_existing_objective": {
+      // 39d W7-5 刀四 · §4.2「同一篇笔记已有目标时，新的轮次先匹配和**复用**适用
+      // 目标，再创建确实新增的目标」。
+      //
+      // **这一支就是 §16.38 那个洞的闭合处**。此前无论审核台怎么选，`create_new`
+      // 都会 mint 一颗**刚出炉**的 objectiveId，于是排期闸（`ensurePendingReviewScheduleV2`
+      // 按 `mapping.objectiveId` 问 0295）结构上永远问不到「这颗目标被本人暂不安排」。
+      // 现在这条 intent 让"这颗目标已经存在"成为**读得出来的**事实，排期闸问得到
+      // 真的那个 id。
+      //
+      // **只建卡，不建目标、不建修订**：复用的是**身份**（那颗目标是谁），不是她的
+      // 内容——§4.2「不按标题相似自动继承**能力证据**」，所以这里一个字都不动那颗
+      // 目标已有的陈述与证据绑定。要改内容走 `target_equivalent_update` 那一档。
+      const existingRows = await tx.select().from(learningObjectivesV2).where(and(
+        eq(learningObjectivesV2.objectiveId, intent.objectiveId),
+        eq(learningObjectivesV2.workspaceId, ctx.workspaceId),
+        // 归档／被替代的目标**不接新卡**：§8.5「停用卡从复习中移除但保留历史」，
+        // 而把新卡挂到一条已退役的目标上，等于用一次"复用"把它复活。
+        eq(learningObjectivesV2.lifecycle, "active"),
+      )).limit(1);
+      const existing = existingRows[0];
+      if (!existing) {
+        throw new CardGenerationV2ServiceError(
+          "reusable_objective_gone",
+          409,
+          "这颗目标已经不在了（可能已归档或被新版本替代），这一发没有生效；请重新审核这一批。",
+        );
+      }
+      // 乐观并发：她在审核期间把这颗目标归档或换版了，这一发必须失败而不是继续挂。
+      if (existing.lifecycleEpoch !== intent.expectedObjectiveLifecycleEpoch) {
+        throw new CardGenerationV2ServiceError(
+          "stale_objective_lifecycle",
+          409,
+          "这颗目标刚刚变动过，这一发没有生效；请刷新后重新保存。",
+        );
+      }
+      const existingRevisionRows = await tx.select().from(learningObjectiveRevisionsV2).where(and(
+        eq(learningObjectiveRevisionsV2.objectiveRevisionId, existing.currentObjectiveRevisionId),
+        eq(learningObjectiveRevisionsV2.workspaceId, ctx.workspaceId),
+      )).limit(1);
+      const existingRevision = existingRevisionRows[0];
+      if (!existingRevision) {
+        throw new CardGenerationV2ServiceError(
+          "reusable_objective_revision_missing",
+          409,
+          "这颗目标的当前修订读不到，这一发没有生效；请刷新后重新保存。",
+        );
+      }
+
+      const reuseCardId = randomUUID();
+      // 公开载荷哈希要用**既有目标**的 id／修订号／摘要／形态——那是"这张卡讲的是
+      // 哪一件事"的真实身份。拿新候选的内容去算，会交出一份"讲的是另一件事"的
+      // 公开载荷，而库里那颗目标一个字没改。
+      const reuseCardPresentationHash = computeCardPresentationHashV2({
+        workspaceId: ctx.workspaceId,
+        cardId: reuseCardId,
+        cardRevision: 1,
+        front: presentationDraft.front,
+        strategy: presentationDraft.strategy,
+        publicSerializationPolicyVersion: "card-public-serialization-v1",
+      });
+      const reusePublicPayloadHash = computeCardPublicationPublicPayloadHashV2({
+        workspaceId: ctx.workspaceId,
+        cardId: reuseCardId,
+        publicationRevision: 1,
+        cardPresentationHash: reuseCardPresentationHash,
+        objectiveId: intent.objectiveId,
+        objectiveRevision: existingRevision.revision,
+        publicSummaryHash: hashCanonicalV2("objective-public-summary-v2", existingRevision.publicSummary),
+        knowledgeForm: existingRevision.knowledgeForm,
+        lifecycle: "active",
+        sourceLabel: null,
+        publicSerializationPolicyVersion: "card-public-serialization-v1",
+      });
+      const reuseRevealPayloadHash = computeCardPublicationRevealPayloadHashV2({
+        workspaceId: ctx.workspaceId,
+        cardId: reuseCardId,
+        publicationRevision: 1,
+        targetRevisionHash: existingRevision.targetRevisionHash,
+        evidencePreviewPolicyVersion: "evidence-preview-v1",
+      });
+
+      await tx.insert(learningCardsV2).values({
+        workspaceId: ctx.workspaceId,
+        cardId: reuseCardId,
+        objectiveId: intent.objectiveId,
+        noteVersionId,
+        cardRevision: 1,
+        currentPublicationRevision: 1,
+        lifecycle: "active",
+        front: presentationDraft.front,
+        publicSummary: existingRevision.publicSummary,
+        knowledgeForm: existingRevision.knowledgeForm,
+        strategy: presentationDraft.strategy,
+        sourceLabel: null,
+        presentationHash: reuseCardPresentationHash,
+      });
+      await insertCardRevisionRow(tx, ctx.workspaceId, {
+        cardId: reuseCardId,
+        revision: 1,
+        front: presentationDraft.front,
+        strategy: presentationDraft.strategy,
+        presentationHash: reuseCardPresentationHash,
+      });
+      await tx.insert(learningCardPublicationRevisionsV2).values({
+        workspaceId: ctx.workspaceId,
+        cardId: reuseCardId,
+        publicationRevision: 1,
+        cardRevision: 1,
+        objectiveId: intent.objectiveId,
+        objectiveRevision: existingRevision.revision,
+        lifecycleAtPublication: "active",
+        publicPayloadHash: reusePublicPayloadHash,
+        revealPayloadHash: reuseRevealPayloadHash,
+      });
+      // 血缘仍然要写：§4.2「笔记订阅覆盖此后在这篇笔记中实际学过…的核心目标」——
+      // 复用不取消血缘，反而是这条血缘把"这颗目标属于这一篇"记实了。
+      await writeActivationNoteOrigin(tx, ctx.workspaceId, {
+        originId: randomUUID(),
+        objectiveId: intent.objectiveId,
+        objectiveRevisionId: existingRevision.objectiveRevisionId,
+        noteVersionId,
+      });
+
+      return {
+        cardId: reuseCardId,
+        objectiveId: intent.objectiveId,
+        objectiveRevisionId: existingRevision.objectiveRevisionId,
+        publicationRevision: 1,
+        // 这一张卡的依据绑定**没有**动：目标已有的证据绑定就是这颗目标的依据。
+        // 交回候选自己算的那一份会让审核台显示"这张卡绑了 N 条依据"而库里那颗目标
+        // 的绑定并不是那 N 条——比不显示更坏。
+        resultingEvidenceBindingSetHash: null,
+        bindingPlanId: null,
+        bindingPlanHash: null,
+      };
+    }
+
     case "presentation_update": {
       // 更新现有 Card 的 presentation（front/strategy 变更）
       // CAS 校验（方案20 §17.5）：expectedPublicationRevision + expectedPublicPayloadHash
