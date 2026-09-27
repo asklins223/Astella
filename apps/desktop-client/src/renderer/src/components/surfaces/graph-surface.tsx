@@ -69,6 +69,34 @@ type ObjectiveNode = Extract<UnderstandingNodeProjectionV3, { nodeRef: { kind: "
 const EMPTY_GRAPH: UnderstandingGraph = { nodes: [], edges: [] };
 const SEARCH_RESULT_LIMIT = 8;
 const RELATION_LIMIT = 8;
+/**
+ * 建议关系那一档的屏上说法（§11.3）。
+ *
+ * **三档都要有句子**：缺一档渲染出来就是 `undefined`，而那正是「屏上出现一个没人
+ * 读得懂的状态」的那一类。措辞不用「已确认／待确认」这类后台词——它是给人看的，
+ * 说的是「系统觉得这条关系成立，但那条只是它猜的」。
+ */
+/** 决策表用的语义关系四档（与 `personalRelationKindV2Schema` 同一份字面量）。 */
+const SEMANTIC_RELATIONS = ["prerequisite", "explains", "contrasts", "relates_to"] as const;
+
+/**
+ * 从 `reasonCodes` 里取那条**具体的**语义关系。
+ *
+ * 取不到就落 `relates_to`（总称那一档），而不是 `undefined`：键对不上的后果是
+ * 这次表态落在另一条边上，而那一条用户根本看不到——**一个静默写到别处去的表态**
+ * 比一次明确的失败更难查。
+ */
+function SEMANTIC_RELATION_FROM_REASON_CODES(reasonCodes: readonly string[]) {
+  const hit = reasonCodes.find((code) => (SEMANTIC_RELATIONS as readonly string[]).includes(code));
+  return (hit ?? "relates_to") as (typeof SEMANTIC_RELATIONS)[number];
+}
+
+const RELATION_STAMP_LABEL: Readonly<Record<"confirmed" | "dismissed" | "suggested", string>> = {
+  suggested: "系统猜的一条，���没当成真的",
+  confirmed: "你确认过了",
+  dismissed: "你收起了这条",
+};
+
 /** Same identity trick as `EMPTY_IDS` — a new `[]` per render would refresh
  *  `validEdges` and invalidate the canvas scene cache on every parent render. */
 const NO_EDGES: GraphEdge[] = [];
@@ -276,8 +304,63 @@ export function GraphSurface() {
     { refreshOnFocus: true },
   );
 
+  /**
+   * 39d W8-2 · §11.3：本人对一条建议关系的表态。
+   *
+   * **本地先改、重取在后**：服务端把表态折进 ETag（`topologyRevision` 只哈希两端点
+   * 与 kind，不含本人的态度），所以「写完再重取」这一发有可能拿到与上一次**逐字节相同**
+   * 的 ETag → 304 → 界面什么都不会变。用户在真窗口里看到的是"我按了，什么都没发生，
+   * 而且没有报错"。所以这里先按本地结论改边，再在后台重取对齐。
+   */
+  const epochRef = useRef(0);
+  const [stampingEdgeId, setStampingEdgeId] = useState<string | null>(null);
+  const [relationStamps, setRelationStamps] = useState<Record<string, "confirmed" | "dismissed">>({});
+  const [relationStampError, setRelationStampError] = useState<string | null>(null);
+
+  const stampRelationDecision = async (
+    edge: UnderstandingEdgeProjectionV3,
+    decision: "confirmed" | "dismissed",
+  ) => {
+    if (edge.from.kind !== "objective" || edge.to.kind !== "objective") return;
+    // 语义关系（prerequisite／explains／contrasts）**不是** `edge.kind`：拓扑那五档
+    // `relates_to` 是"这两个目标之间有一条语义关系"的总称，具体是哪一种在
+    // `reasonCodes[0]`（`topology-repository` 从 revision 的 relations 投影过来）。
+    // 拿 `edge.kind` 去问排除表，键永远对不上——**结构上问不到**。
+    const relation = SEMANTIC_RELATION_FROM_REASON_CODES(edge.reasonCodes);
+    setStampingEdgeId(edge.edgeId);
+    setRelationStampError(null);
+    const previous = relationStamps[edge.edgeId];
+    // 乐观：先把它改过去。失败时回滚并**说出来**——静默回滚等于用户白按了一次。
+    setRelationStamps((current) => ({ ...current, [edge.edgeId]: decision }));
+    try {
+      await unwrapGatewayResult(await window.ailearn.understanding.setRelationDecision({
+        meta: createRequestMeta(epochRef.current),
+        fromObjectiveId: edge.from.id,
+        toObjectiveId: edge.to.id,
+        relation,
+        decision,
+      }));
+      setRelationStamps((current) => ({ ...current, [edge.edgeId]: decision }));
+    } catch {
+      setRelationStamps((current) => {
+        const next = { ...current };
+        if (previous) next[edge.edgeId] = previous; else delete next[edge.edgeId];
+        return next;
+      });
+      setRelationStampError("这一下没有生效，再试一次。");
+    } finally {
+      setStampingEdgeId(null);
+    }
+  };
+
   const projections = useMemo(() => data?.nodes ?? [], [data]);
-  const topologyEdges = useMemo(() => data?.edges ?? [], [data]);
+  const topologyEdges = useMemo(
+    () => (data?.edges ?? []).map((edge) => {
+      const local = relationStamps[edge.edgeId];
+      return local === undefined ? edge : { ...edge, relationStatus: local, countsAsEstablished: local === "confirmed" };
+    }),
+    [data, relationStamps],
+  );
   const projectionByKey = useMemo(
     () => new Map(projections.map((node) => [graphNodeKey(node), node])),
     [projections],
@@ -653,10 +736,38 @@ export function GraphSurface() {
                 <section className="universe-detail-relations">
                   <div className="universe-detail-section-title"><span>真实光路</span><small>{selectedNeighbors.length > RELATION_LIMIT ? `显示前 ${RELATION_LIMIT} 条，共 ${selectedNeighbors.length} 条` : selectedNeighbors.length ? "选择一条光路继续探索" : "暂无相邻星体"}</small></div>
                   {selectedNeighbors.length ? <div>{selectedNeighbors.slice(0, RELATION_LIMIT).map(({ edge, node }) => (
-                    <button key={edge.edgeId} type="button" className="universe-detail-relation" onClick={() => revealProjection(node)}>
-                      <i className={`is-${node.nodeRef.kind === "objective" ? "card" : node.nodeRef.kind === "evidence" ? "key_point" : node.nodeRef.kind}`} aria-hidden="true" />
-                      <span><small>{graphEdgeKindLabel(edge.kind)} · {graphNodeKindLabel(node.nodeRef.kind)}</small><strong>{graphNodeLabel(node)}</strong></span><ChevronRight size={14} />
-                    </button>
+                    <div key={edge.edgeId} className="universe-detail-relation-row">
+                      <button type="button" className="universe-detail-relation" onClick={() => revealProjection(node)}>
+                        <i className={`is-${node.nodeRef.kind === "objective" ? "card" : node.nodeRef.kind === "evidence" ? "key_point" : node.nodeRef.kind}`} aria-hidden="true" />
+                        <span><small>{graphEdgeKindLabel(edge.kind)} · {graphNodeKindLabel(node.nodeRef.kind)}</small><strong>{graphNodeLabel(node)}</strong></span><ChevronRight size={14} />
+                      </button>
+                      {edge.decidable ? (
+                        // 39d W8-2 · §11.3。两颗按钮**只给可表态的那一类边**：
+                        // 材料血缘（引用自／取代）与证据链接是"材料怎么来的"，
+                        // 不是任何人的看法，没有「我不这么认为」这一档。
+                        //
+                        // 视觉上是一张压在边上面的**小纸签**，不是两颗同级按钮——
+                        // 它是"我对这条关系的看法"，而上面那行是"这条关系本身"。
+                        // 两件事的量级不同，摆成同级会让整屏读成一张关系管理表。
+                        <div className={`universe-relation-stamp is-${edge.relationStatus ?? "suggested"}`}>
+                          <span className="universe-relation-stamp__label">{RELATION_STAMP_LABEL[edge.relationStatus ?? "suggested"]}</span>
+                          <div className="universe-relation-stamp__actions">
+                            <button
+                              type="button"
+                              aria-pressed={edge.relationStatus === "confirmed"}
+                              disabled={stampingEdgeId === edge.edgeId}
+                              onClick={() => stampRelationDecision(edge, "confirmed")}
+                            >{edge.relationStatus === "confirmed" ? "已确认" : "确认"}</button>
+                            <button
+                              type="button"
+                              aria-pressed={edge.relationStatus === "dismissed"}
+                              disabled={stampingEdgeId === edge.edgeId}
+                              onClick={() => stampRelationDecision(edge, "dismissed")}
+                            >{edge.relationStatus === "dismissed" ? "已收起" : "收起这条"}</button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
                   ))}</div> : <p className="universe-detail-description">这是一颗暂时独立的星体，还没有可追溯的直接关系。</p>}
                 </section>
               </div>

@@ -142,3 +142,19 @@ export const personalRelationDecisionViewV2Schema = z.strictObject({
   noteId: z.string().uuid().nullable(),
 });
 export type PersonalRelationDecisionViewV2 = z.infer<typeof personalRelationDecisionViewV2Schema>;
+
+/**
+ * 记一次表态的回执（写侧）。
+ *
+ * **`changed: false` 走 HTTP 304 而不是 200**：用户重复点一次「确认」不该在审计里
+ * 留两条记录。桌面那一侧把 304 当成"没变"而不是失败（见 `desktop-gateway.ts`）——
+ * 把它转成异常会让屏上弹一个错，而用户做的事完全正确。
+ */
+export const setPersonalRelationDecisionV2ResultSchema = z.strictObject({
+  version: z.literal(2),
+  changed: z.boolean(),
+  decision: personalRelationDecisionViewV2Schema,
+});
+export type SetPersonalRelationDecisionV2Result = z.infer<
+  typeof setPersonalRelationDecisionV2ResultSchema
+>;

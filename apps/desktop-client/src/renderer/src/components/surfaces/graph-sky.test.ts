@@ -82,6 +82,9 @@ function edge(
     from: { kind: from.nodeRef.kind, id: nodeIdOf(from) },
     to: { kind: to.nodeRef.kind, id: nodeIdOf(to) },
     reasonCodes: [],
+    // 夹具默认**不可表态**：材料血缘边不该有「确认／隐藏」两颗按钮（§11.3
+    // 「材料血缘与教学关系使用不同表达」）。要测可表态的那一族时单独传 true。
+    decidable: false,
   };
 }
 

@@ -91,6 +91,7 @@ function snapshot(overrides: Partial<{ nodes: UnderstandingNodeProjectionV3[]; e
       from: { kind: "note", id: NOTE_ID },
       to: { kind: "objective", id: OBJECTIVE_ID },
       reasonCodes: [],
+      decidable: false,
     },
     {
       edgeId: "edge-evidence-objective",
@@ -98,6 +99,7 @@ function snapshot(overrides: Partial<{ nodes: UnderstandingNodeProjectionV3[]; e
       from: { kind: "objective", id: OBJECTIVE_ID },
       to: { kind: "evidence", id: EVIDENCE_ID },
       reasonCodes: [],
+      decidable: false,
     },
     {
       edgeId: "edge-source-note",
@@ -105,6 +107,7 @@ function snapshot(overrides: Partial<{ nodes: UnderstandingNodeProjectionV3[]; e
       from: { kind: "source", id: SOURCE_ID },
       to: { kind: "note", id: NOTE_ID },
       reasonCodes: [],
+      decidable: false,
     },
   ];
   return {

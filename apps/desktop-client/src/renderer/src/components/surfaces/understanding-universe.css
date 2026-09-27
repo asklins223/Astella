@@ -2228,3 +2228,106 @@
   background: var(--universe-ac-plate);
   box-shadow: 0 14px 30px rgba(45, 28, 17, 0.24), 0 3px 9px rgba(45, 28, 17, 0.13);
 }
+
+/* ─── 39d W8-2 · §11.3：本人对一条建议关系的「表态纸签」 ───────────────
+ *
+ * 视觉语汇取书房里**已经有的那一族**：奶油纸面 + 一点点翘起的纸角 + 一道虚线边。
+ * 它是压在边上面的一张**小纸签**，不是两颗同级按钮——上面那行是"这条关系本身"，
+ * 这一张是"我对它的看法"，两件事的量级不同；摆成同级会让整屏读成一张关系管理表，
+ * 而那正是 AGENTS.md 明写不许出现的后台面板。
+ *
+ * 三档各有一个色：待确认最浅（系统只是猜的）、确认是薄荷、收起是暖灰。
+ * **颜色不是唯一信息源**——每一档都另有一句人话（`RELATION_STAMP_LABEL`），
+ * 且按钮用 `aria-pressed` 说出当前档，所以色弱与读屏都拿得到。
+ */
+.universe-detail-relation-row {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.universe-relation-stamp {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0 1.4rem;
+  padding: 0.3rem 0.5rem 0.32rem 0.65rem;
+  border-radius: 0.7rem 0.55rem 0.8rem 0.5rem;
+  /* 不规则柔圆角：书房那一族的书页手感，不是等半径的胶囊 */
+  background: var(--hud-paper, #fdf6e6);
+  box-shadow: 0 1px 0 rgba(120, 92, 56, 0.14);
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.universe-relation-stamp.is-suggested {
+  /* 待确认：虚线边 = 还没定。§11.3「模型推测的关系先作为待确认建议」 */
+  border: 1px dashed rgba(120, 92, 56, 0.4);
+  color: var(--hud-ink-muted, #6b5a45);
+}
+
+.universe-relation-stamp.is-confirmed {
+  border: 1px solid rgba(94, 168, 140, 0.5);
+  background: linear-gradient(180deg, #f2fbf6 0%, #e8f6ee 100%);
+}
+
+.universe-relation-stamp.is-dismissed {
+  border: 1px solid rgba(150, 138, 120, 0.35);
+  background: #f3efe6;
+  color: var(--hud-ink-muted, #6b5a45);
+}
+
+.universe-relation-stamp__label {
+  /* 纸签上那一句：说"你确认过了"而不是状态名 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.universe-relation-stamp__actions {
+  display: flex;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+}
+
+.universe-relation-stamp__actions button {
+  /* 触感按钮：奶油纸面 + 一道下沿阴影，按下去要"陷进去" */
+  font: inherit;
+  font-size: 0.74rem;
+  padding: 0.18rem 0.5rem;
+  border-radius: 0.5rem 0.45rem 0.55rem 0.42rem;
+  border: 1px solid rgba(120, 92, 56, 0.32);
+  background: #fffaf0;
+  color: var(--hud-ink, #3f3427);
+  box-shadow: 0 1px 0 rgba(120, 92, 56, 0.18);
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.universe-relation-stamp__actions button:hover:not(:disabled) {
+  background: #fff4dd;
+}
+
+.universe-relation-stamp__actions button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.universe-relation-stamp__actions button[aria-pressed="true"] {
+  /* 当前档：加一道内凹的薄荷边，而不是换个底色 */
+  border-color: rgba(94, 168, 140, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(94, 168, 140, 0.35);
+  background: #f0f9f4;
+}
+
+.universe-relation-stamp__actions button:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .universe-relation-stamp__actions button {
+    transition: none;
+  }
+}

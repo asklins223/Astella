@@ -2,6 +2,12 @@ import { noteReflectionPageV1Schema, noteReflectionWriteResultV1Schema, type Not
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
+import {
+  setPersonalRelationDecisionV2ResultSchema,
+  type PersonalRelationDecisionV2,
+  type PersonalRelationKindV2Wire,
+  type SetPersonalRelationDecisionV2Result,
+} from "@ailearn/shared/personal-relation-decision-rules-v2";
 import { learningDashboardV2Schema, type LearningDashboardV2 } from "@ailearn/shared";
 import { allWorkspacesStatsOverviewSchema, type AllWorkspacesStatsOverviewV1 } from "@ailearn/shared/stats-overview-contracts";
 import {
@@ -331,6 +337,11 @@ import {
   type RoundTeachingViewV1,
 } from "@ailearn/shared/note-learning-round-contracts";
 import { noteRouteCoverageV1Schema, type NoteRouteCoverageV1 } from "@ailearn/shared/note-route-coverage-v2";
+import {
+  recordRecallSourceRevealResultV1Schema,
+  type RecallWaitingKindV1,
+  type RecordRecallSourceRevealResultV1,
+} from "@ailearn/shared/recall-waiting-v2-contracts";
 import { understandingTopologySnapshotV3Schema, type UnderstandingTopologySnapshotV3 } from "@ailearn/shared/understanding-topology-v3-contracts";
 import {
   activateCardCandidatesRequestV2Schema,
@@ -2342,6 +2353,35 @@ export class DesktopGateway {
   }
 
   /**
+   * 「先看笔记」那一发（39d W5-4；PRD §7.1、§16.24）。
+   *
+   * **它是一次暴露记账，不是导航**：界面自己跳去笔记页，这一发只保证
+   * 「读过正文」这件事落进 `learning_exposures_v2`。回执整份过合同——
+   * `conditionsAfter` 与 `userFacingLabel` 是屏上那句话的来源，形状漂了要在这里红。
+   */
+  async recordRecallSourceReveal(
+    input: { objectiveId: string; waitingKind: RecallWaitingKindV1; idempotencyKey: string },
+    requestId?: string,
+  ): Promise<RecordRecallSourceRevealResultV1> {
+    await this.ensureConnected(requestId);
+    const result = await this.request(
+      "/v2/reviews/v2/recall-source-reveal",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...input, version: 2 }),
+      },
+      true,
+      true,
+      requestId,
+    );
+    if (result.status >= 300) throw this.mapResponseError(result.status, result.headers);
+    const parsed = recordRecallSourceRevealResultV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+  /**
    * 这一篇的**核心路线**（39d W4-5 ③；PRD §4.4）：跨全部轮次、按核心问题归并。
    *
    * 与上面 `getNoteLearningRoundHistory` 的分工写在这里免得下次有人合成一发：
@@ -2592,6 +2632,34 @@ export class DesktopGateway {
     await this.ensureConnected(requestId);
     const result = await this.request("/v3/understanding/topology", { method: "GET" }, true, true, requestId);
     const parsed = understandingTopologySnapshotV3Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+  /**
+   * 记一次本人对建议关系的表态（39d W8-2；§11.3、§16.20）。
+   *
+   * **只写本人那一行**：不改公共 relations、不改 lifecycle、不产生学习记录或复习安排，
+   * 别人的视图里读不到这一下（§11.3「用户确认首先只影响本人的学习视图；写入共享关系
+   * 需具备材料编辑权并明确作用范围」）。
+   *
+   * 幂等那一条由服务端判并回 304；这里**不**把 304 当失败转成异常——用户重复点一次
+   * 「确认」不该在审计里留两条记录，也不该让屏上弹一个错。
+   */
+  async setPersonalRelationDecision(input: {
+    fromObjectiveId: string;
+    toObjectiveId: string;
+    relation: PersonalRelationKindV2Wire;
+    decision: PersonalRelationDecisionV2;
+    noteId?: string;
+  }, requestId?: string): Promise<SetPersonalRelationDecisionV2Result | { unchanged: true }> {
+    await this.ensureConnected(requestId);
+    const result = await this.request("/v3/understanding/relation-decisions", {
+      method: "POST",
+      body: JSON.stringify({ ...input, evidence: {} }),
+    }, true, true, requestId, undefined, true);
+    if (result.status === 304) return { unchanged: true };
+    const parsed = setPersonalRelationDecisionV2ResultSchema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }

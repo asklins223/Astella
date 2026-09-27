@@ -1,3 +1,7 @@
+import {
+  setPersonalRelationDecisionV2ResultSchema,
+  setPersonalRelationDecisionV2Schema,
+} from "@ailearn/shared/personal-relation-decision-rules-v2";
 import { noteReflectionPageV1Schema, noteReflectionCommandV1Schema, noteReflectionWriteResultV1Schema } from "@ailearn/shared/note-learning-reflection-contracts";
 import { BrowserWindow, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent, type WebContents } from "electron";
 import { randomBytes } from "node:crypto";
@@ -141,6 +145,10 @@ import {
   roundTeachingViewV1Schema,
 } from "@ailearn/shared/note-learning-round-contracts";
 import { noteRouteCoverageV1Schema } from "@ailearn/shared/note-route-coverage-v2";
+import {
+  recordRecallSourceRevealRequestV1Schema,
+  recordRecallSourceRevealResultV1Schema,
+} from "@ailearn/shared/recall-waiting-v2-contracts";
 import { understandingTopologySnapshotV3Schema } from "@ailearn/shared/understanding-topology-v3-contracts";
 import { todayActivityV1Schema } from "@ailearn/shared/activity-surface-contracts";
 // 跨空间统计合同：输出校验器与网关共用同一份形状，渲染层不另抄一遍。
@@ -631,6 +639,16 @@ const noteLearningRoundHistoryInputSchema = z.strictObject({
  * 它按 noteId 读而不是按 roundId 读——§4.4 明写「不要求把它们保存在一个永不
  * 结束的大轮次里」，所以"跨轮"是**这一篇**的属性，不是某一轮的属性。
  */
+/**
+ * 「先看笔记」那一发的输入（39d W5-4）。
+ * **不带任何"我看过多少"的自报**——§14.1.1「不靠自报自动补签」是同一条纪律的另一面：
+ * 这一发命令本身发生了，就是发生过。
+ */
+const recordRecallSourceRevealInputSchema = z.strictObject({
+  ...m1InputBase,
+  ...recordRecallSourceRevealRequestV1Schema.shape,
+});
+
 const noteLearningRoundRouteInputSchema = z.strictObject({
   ...m1InputBase,
   noteId: uuidSchema,
@@ -678,6 +696,19 @@ const noteLearningRoundResumeInputSchema = z.strictObject({
   expectedRevision: z.number().int().min(1),
 });
 const objectiveGetInputSchema = z.strictObject({ ...m1InputBase, objectiveId: uuidSchema });
+// 39d W8-2：业务形状**直接用 shared 那一份**（桌面不许自己再抄一份 zod），
+// 外面只补 meta 基座。抄一份的后果是 shared 加一档时这里悄悄落后，而 IPC 层
+// 是唯一会把非法输入放进业务服务的地方。
+// `evidence` 那格**不**进 IPC 侧：让渲染层有机会把任意 JSON 塞进一条
+// 「用户按了一颗按钮」的请求里，是不该开的口子（服务端那侧仍然有默认值）。
+const setPersonalRelationDecisionInputSchema = z.strictObject({
+  ...m1InputBase,
+  fromObjectiveId: uuidSchema,
+  toObjectiveId: uuidSchema,
+  relation: setPersonalRelationDecisionV2Schema.shape.relation,
+  decision: setPersonalRelationDecisionV2Schema.shape.decision,
+  noteId: setPersonalRelationDecisionV2Schema.shape.noteId,
+});
 const searchGlobalInputSchema = z.strictObject({ ...m1InputBase, query: z.string().trim().min(1).max(500), type: z.enum(["note", "source", "objective"]).optional(), limit: z.number().int().min(1).max(50).optional(), cursor: z.string().min(1).max(512).optional() });
 const noteGetInputSchema = z.strictObject({ ...m1InputBase, noteId: uuidSchema });
 // The caller names the version it is reading as current, so the history can mark
@@ -3073,6 +3104,32 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     return gateway.getUnderstandingTopology(input.meta.requestId);
   }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, understandingTopologySnapshotV3Schema);
 
+  // 39d W8-2。**用同一个 `understanding.graph` 路由门控**：这是同一个面上的读写，
+  // 拆成两个 kind 只会让人以为「能看星图的人不能表态、而能表态的人看不到星图」。
+  installHandler(
+    DESKTOP_IPC_CHANNELS.understandingSetRelationDecision,
+    setPersonalRelationDecisionInputSchema,
+    options,
+    async (_event, _window, input) => {
+      requireM2Route(contract, "understanding.graph");
+      assertEpoch(input.meta, activeWorkspaceEpoch);
+      const result = await gateway.setPersonalRelationDecision({
+        fromObjectiveId: input.fromObjectiveId,
+        toObjectiveId: input.toObjectiveId,
+        relation: input.relation,
+        decision: input.decision,
+        ...(input.noteId ? { noteId: input.noteId } : {}),
+      }, input.meta.requestId);
+      // 没变（304）不是失败：用户重复点一次「确认」不该弹错。形状也统一成一个 zod，
+      // 让渲染层不必先分辨「是变了还是没变」才敢读 `.changed`。
+      return "unchanged" in result
+        ? { version: 2 as const, changed: false, decision: { ...input, version: 2 as const, noteId: input.noteId ?? null } }
+        : result;
+    },
+    () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined,
+    setPersonalRelationDecisionV2ResultSchema,
+  );
+
   installHandler(DESKTOP_IPC_CHANNELS.searchGlobal, searchGlobalInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "search.global");
     assertEpoch(input.meta, activeWorkspaceEpoch);
@@ -3409,6 +3466,19 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     assertEpoch(input.meta, activeWorkspaceEpoch);
     return gateway.deferReview(input.request, input.meta.requestId);
   }, undefined, reviewDeferResultV2Schema);
+
+  // 「先看笔记」（39d W5-4；PRD §7.1、§16.24）。路由门与 `reviewDefer` 同一条：
+  // 它长在复习队列这一屏上，而那一屏的路由就是 `review.queue`。
+  // **返回 schema 必填**：回执那两格（条件上限与屏上那句话）是服务端签发的，
+  // 形状漂了要在这里红成"合同不受支持"，而不是漂到界面上某一句 undefined。
+  installHandler(DESKTOP_IPC_CHANNELS.reviewRecordRecallSourceReveal, recordRecallSourceRevealInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "review.queue");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.recordRecallSourceReveal(
+      { objectiveId: input.objectiveId, waitingKind: input.waitingKind, idempotencyKey: input.idempotencyKey },
+      input.meta.requestId,
+    );
+  }, undefined, recordRecallSourceRevealResultV1Schema);
 
   // W7-3 刀三：目标级「暂不安排」／「恢复并开启」（39 §9.1 行 2、行 3）。
   //

@@ -333,7 +333,8 @@ const desktopApi: AILearnDesktopApiM2 = {
     ensure: (input) => invoke(DESKTOP_IPC_CHANNELS.artifactEnsure, input)
   },
   understanding: {
-    getTopology: (input) => invoke(DESKTOP_IPC_CHANNELS.understandingGetTopology, input)
+    getTopology: (input) => invoke(DESKTOP_IPC_CHANNELS.understandingGetTopology, input),
+    setRelationDecision: (input) => invoke(DESKTOP_IPC_CHANNELS.understandingSetRelationDecision, input)
   },
   search: {
     global: (input) => invoke(DESKTOP_IPC_CHANNELS.searchGlobal, input),
@@ -361,6 +362,8 @@ const desktopApi: AILearnDesktopApiM2 = {
   review: {
     getQueue: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewGetQueue, input),
     defer: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewDefer, input),
+    // 「先看笔记」（39d W5-4；§7.1）：一次暴露记账，界面自己跳去笔记页。
+    recordRecallSourceReveal: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewRecordRecallSourceReveal, input),
     // W7-3 刀三：目标级「暂不安排」与「恢复并开启」。两条分开的通道——
     // §9.1 规则表把它们列成两件事，合成一颗开关会把中间那半句折叠掉。
     holdObjective: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewHoldObjective, input),

@@ -160,3 +160,39 @@ test("判据对三处退化各自灵敏（源码级变异）", () => {
   assert.ok(!/\.sort\(\)/.test(unordered.slice(unordered.indexOf("const parts"), unordered.indexOf("return parts"))),
     "变异③没有真的去掉排序");
 });
+
+/**
+ * ⚠️ `decidable` **每一条边都必须在**（不是只有可表态的那些）。
+ *
+ * 漏掉它的症状是**静默**的：桌面按 `decidable` 决定给不给「确认／隐藏」两颗按钮，
+ * 缺这一列 ⇒ 整张星图**没有一颗按钮**，而服务端一切正常、集成测试全绿、页面上
+ * 没有任何报错。那是最难发现的一类退化，所以用一条判据钉住。
+ */
+test("每一条边都带 decidable —— 漏一列的后果是屏上一颗按钮都没有且无报错", () => {
+  const out = applyPersonalDecisionsToSnapshotV2({ snapshot: SNAPSHOT, decisions: [] });
+  for (const edge of out.edges) {
+    assert.equal(typeof edge.decidable, "boolean",
+      `边 ${String(edge.edgeId)} 没有 decidable：桌面会因此不给任何按钮，而没有任何东西会报错`);
+  }
+  // 可表态的那一族为 true，其余为 false —— 不许整张图一律 true 或一律 false
+  assert.equal(byId(out, "e-rel-1").decidable, true, "语义关系边应当可表态");
+  for (const id of ["e-src-1", "e-sup-1", "e-evi-1"]) {
+    assert.equal(byId(out, id).decidable, false, `${id} 是材料血缘／证据链接，不该可表态`);
+  }
+  // 可表态的边必须同时带那两列（缺了界面就画不出"待确认"那一档）
+  for (const edge of out.edges) {
+    if (edge.decidable === true) {
+      assert.ok("relationStatus" in edge, `可表态的边 ${String(edge.edgeId)} 没有 relationStatus`);
+      assert.ok("countsAsEstablished" in edge, `可表态的边 ${String(edge.edgeId)} 没有 countsAsEstablished`);
+    }
+  }
+});
+
+/** 变异自证：漏掉 decidable（服务端"忘了发"那一刀）必须被上面那条抓住。 */
+test("判据对「服务端漏发 decidable」灵敏", () => {
+  const stripped = applyPersonalDecisionsToSnapshotV2({ snapshot: SNAPSHOT, decisions: [] })
+    .edges.map(({ decidable: _dropped, ...rest }) => rest);
+  const missing = stripped.filter((edge) => typeof (edge as { decidable?: unknown }).decidable !== "boolean");
+  assert.equal(missing.length, stripped.length,
+    "正控制：去掉 decidable 之后每一条边都应该缺这一列（否则这条自证没在证任何东西）");
+});

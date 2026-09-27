@@ -129,12 +129,39 @@ export type EvidenceNodeProjectionV3 = z.infer<typeof evidenceNodeProjectionV3Sc
 
 // ─── edges ──────────────────────────────────────────────────────────────
 
+/**
+ * 边上**本人这一份**的表态投影（39d W8-2；39 §11.3、§16.20）。
+ *
+ * 三列都是**投影**，不是公共拓扑的一部分：公共 `edges` 与 `topologyRevision`
+ * 不含它们（否则公共拓扑会被一个人的看法污染，而 §11.3 明写确认"首先只影响
+ * 本人的学习视图"）。
+ *
+ * **为什么 `decidable` 是必填而另两列是可选**：
+ *  - `decidable` 每一条边都有（血缘边与证据链接**不可**表态），界面据它决定给不给
+ *    「确认／隐藏」两颗按钮——不给，就不存在"我能不能把这张纸藏起来"这个问题；
+ *  - `relationStatus`／`countsAsEstablished` 只在**可表态**的那一类边上有。给不可表态的
+ *    边也补上这两列，会让"待确认建议"这个词去套一条材料血缘边，而 §11.3 明写
+ *    「材料血缘与教学关系使用不同表达」。
+ */
+export const understandingRelationEdgeStatusV3Schema = z.enum([
+  "confirmed",
+  "dismissed",
+  "suggested",
+]);
+export type UnderstandingRelationEdgeStatusV3 = z.infer<typeof understandingRelationEdgeStatusV3Schema>;
+
 export const understandingEdgeProjectionV3Schema = z.strictObject({
   edgeId: z.string().min(1).max(200),
   kind: understandingEdgeKindV3Schema,
   from: understandingNodeRefV3Schema,
   to: understandingNodeRefV3Schema,
   reasonCodes: z.array(z.string().min(1)).max(10).default([]),
+  /** 这条边本人能不能表态（`relates_to` 那一族才能）。 */
+  decidable: z.boolean().default(false),
+  /** 仅 `decidable: true` 时有：这一档是**读侧补出来的**，库里只存两种表态。 */
+  relationStatus: understandingRelationEdgeStatusV3Schema.optional(),
+  /** 只有「已确认」才算成立的关系；待确认建议**不**进任何"正式掌握"的计算（§11.3）。 */
+  countsAsEstablished: z.boolean().optional(),
 });
 export type UnderstandingEdgeProjectionV3 = z.infer<
   typeof understandingEdgeProjectionV3Schema

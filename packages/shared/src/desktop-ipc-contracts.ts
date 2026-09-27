@@ -9,6 +9,10 @@ import { noteReflectionPageV1Schema, noteReflectionCommandV1Schema, noteReflecti
 
 import { z } from "zod";
 import {
+  setPersonalRelationDecisionV2ResultSchema,
+  setPersonalRelationDecisionV2Schema,
+} from "./personal-relation-decision-rules-v2.ts";
+import {
   CAPABILITY_IDS,
   capabilityIdSchema,
   type CapabilityId,
@@ -184,6 +188,10 @@ import {
   roundTeachingViewV1Schema,
 } from "./note-learning-round-contracts.ts";
 import { noteRouteCoverageV1Schema } from "./note-route-coverage-v2.ts";
+import {
+  recordRecallSourceRevealRequestV1Schema,
+  recordRecallSourceRevealResultV1Schema,
+} from "./recall-waiting-v2-contracts.ts";
 import { understandingTopologySnapshotV3Schema } from "./understanding-topology-v3-contracts.ts";
 import { todayActivityV1Schema } from "./activity-surface-contracts.ts";
 // 跨空间统计合同（每空间一行 + 合计）：服务端路由、网关、渲染层共用同一份形状。
@@ -397,6 +405,9 @@ export const DESKTOP_IPC_CHANNELS = {
   artifactEnsure: "ailearn.v1.artifact.ensure",
   noteLearningRoundExplain: "ailearn.v1.noteLearningRound.explain",
   understandingGetTopology: "ailearn.v1.understanding.getTopology",
+  // 39d W8-2：本人对一条建议关系的表态。**与读那条拓扑分开的通道**——
+  // 写与读混在一个通道里，界面就会在读回执的同时把整张星图重取一遍。
+  understandingSetRelationDecision: "ailearn.v1.understanding.setRelationDecision",
   searchGlobal: "ailearn.v1.search.global",
   noteSave: "ailearn.v1.note.save",
   // 批次 4.3：笔记协同。渲染进程不能直连 WS（sandbox + CSP + onBeforeRequest 三层
@@ -435,6 +446,12 @@ export const DESKTOP_IPC_CHANNELS = {
   // 但读的是"我"而不是"当前空间"。
   statsGetOverviewAll: "ailearn.v1.stats.getOverviewAll",
   reviewDefer: "ailearn.v1.review.defer",
+  /**
+   * 「先看笔记」（39d W5-4；PRD §7.1）。挂在 `review` 命名空间下而不是
+   * `learningRun`：**等待态这一段还没有 run**（题目还在生成），而这一发
+   * 必须在那时候就成立——挂到 learningRun 下会让人以为"没有 run 就没法记账"。
+   */
+  reviewRecordRecallSourceReveal: "ailearn.v1.review.recordRecallSourceReveal",
   // W7-3 刀三：目标级「暂不安排」与「恢复并开启」（39 §9.1 行 2、行 3）。
   // 两条**分开的**通道而不是一个 toggle —— §9.1 规则表把"设排除"与
   // "恢复并开启"列成两件不同的事，合成一颗开关会把中间那半句折叠掉。
@@ -2617,6 +2634,20 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
       GatewayResultV1<z.infer<typeof reviewDeferResultV2Schema>>
     >;
     /**
+     * 「先看笔记」（39d W5-4；PRD §7.1、§16.24）。
+     *
+     * **它是一次暴露记账，不是导航**：界面自己跳去笔记页；这一发只保证
+     * 「读过正文」这件事落进暴露账，于是之后的判定按已看过材料处理。
+     *
+     * `conditionsAfter` 与 `userFacingLabel` 由服务端签发，界面**只呈现**
+     * ——屏上那句话与"这一次的条件上限"是同一份事实的两个读法。
+     */
+    recordRecallSourceReveal(input: {
+      meta: RequestMetaV1;
+    } & z.infer<typeof recordRecallSourceRevealRequestV1Schema>): Promise<
+      GatewayResultV1<z.infer<typeof recordRecallSourceRevealResultV1Schema>>
+    >;
+    /**
      * 把一个目标设成「暂不安排」（39 §9.1 行 2）。只停这一个目标：别的目标、别的
      * 授权来源、以及已经记下的历史观察都不动。回执里的 `dismissedPendingSchedules`
      * 要在屏上念出来——立排除必须有看得见的后果，否则那句话只挡未来不挡现在。
@@ -2733,6 +2764,19 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
   };
   readonly understanding: {
     getTopology(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof understandingTopologySnapshotV3Schema>>>;
+    /**
+     * 39d W8-2：本人对一条建议关系表态。**返回值统一成一个形状**——没变（304）也
+     * 回 `{ changed: false }` 而不是让渲染层先分辨状态码才敢读，那一分歧迟早会
+     * 被写成某个调用点的 `?? {}`。
+     */
+    setRelationDecision(input: {
+      meta: RequestMetaV1;
+      fromObjectiveId: string;
+      toObjectiveId: string;
+      relation: z.infer<typeof setPersonalRelationDecisionV2Schema>["relation"];
+      decision: z.infer<typeof setPersonalRelationDecisionV2Schema>["decision"];
+      noteId?: string | null;
+    }): Promise<GatewayResultV1<z.infer<typeof setPersonalRelationDecisionV2ResultSchema>>>;
   };
   readonly search: {
     global(input: { meta: RequestMetaV1; query: string; type?: "note" | "source" | "objective"; limit?: number; offset?: number }): Promise<GatewayResultV1<z.infer<typeof desktopSearchPageSchema>>>;
