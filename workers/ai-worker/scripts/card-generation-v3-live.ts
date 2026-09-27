@@ -188,6 +188,15 @@ async function main(): Promise<number> {
   );
   const wipe = await wipeCardGenerationFixtures(admin, [workspaceId], [userId]);
   console.log(`[v3-live] verdict=${ok ? "review_ready" : "NOT review_ready"} wipe=${JSON.stringify(wipe)}`);
+  // 三个池都要关：这一发为了走真入口还间接开了 api 与 worker 各自的连接池，只关 `admin`
+  // 会让进程挂在那里不退（实测挂过一次，四条 idle 连接把一次性库 `ailearn_cardtest`
+  // 挡得没法重建——下一次真跑前必须先清点上一发的收尾）。
+  const { closeDatabase: closeWorkerDatabase } = await import("../db.ts");
+  await closeWorkerDatabase().catch(() => undefined);
+  const { closeDatabase: closeApiDatabase } = await import(
+    "../../../apps/api/src/db/client.ts"
+  );
+  await closeApiDatabase().catch(() => undefined);
   await admin.end({ timeout: 5 });
   return ok ? 0 : 4;
 }
