@@ -19,13 +19,16 @@ import type {
 } from "../card-generation-v2-contracts.ts";
 import { computeCandidateEvidenceSetHashV2 } from "../card-generation-v2-hashing.ts";
 import { hashCanonicalV2 } from "../hash-canonical-v2.ts";
-import type { GroundingCriticReportV2 } from "../card-quality-v2-contracts.ts";
+import type {
+  GroundingCriticReportV2,
+  QualityIssue,
+} from "../card-quality-v2-contracts.ts";
 import type { AssemblerEvidenceManifest } from "./binding-plan-core.ts";
-import {
-  deterministicGroundingPrecheck,
-  deterministicPedagogyPrecheck,
-  type QualityIssue,
-} from "./critic-service.ts";
+
+// `QualityIssue` 是两份 precheck 与门禁共同的结论形状，住在质量合同里（四阶段 Critic
+// 删除后不再有"critic 服务"这一层）；这里原样转出去，`@ailearn/shared/card-generation-v2-pipeline`
+// 那把 barrel 的读法不变。
+export type { QualityIssue } from "../card-quality-v2-contracts.ts";
 import { runCandidateDeterministicGatesV2 } from "./deterministic-gates.ts";
 
 export interface CandidatePrecheckV2 {
@@ -142,5 +145,173 @@ function answerUnitIdsV2(answer: CanonicalAnswerV2): string[] {
     case "comparison": return answer.rows.map((row) => row.unitId);
     case "formula": return [answer.unitId];
     case "code": return [answer.unitId];
+  }
+}
+
+// ─── 两份确定性 precheck（原住 critic-service.ts，2026-09-27 随四阶段 Critic 删除搬来）──
+// 判据一字未改，只是搬到唯一的消费者旁边：`buildCandidatePrecheck` 与
+// `runDeterministicGroundingContract` 都直接用它们（简化链 V3 经这两个入口拿同一套结论）。
+/**
+ * 确定性 Grounding precheck（§10.1 step 6）。不调用模型，纯规则。
+ */
+export function deterministicGroundingPrecheck(
+  candidate: LearningCardCandidateRevisionV2,
+  sourceContent: string,
+): QualityIssue[] {
+  const issues: QualityIssue[] = [];
+  const answer = candidate.objective.canonicalAnswer;
+
+  // Check: answer text must not be empty
+  if (answer.kind === "text" && answer.unit.text.trim().length === 0) {
+    issues.push({
+      code: "empty_answer",
+      severity: "hard",
+      detail: "Canonical answer text is empty",
+      answerUnitIds: [answer.unit.unitId],
+    });
+  }
+
+  // Check: answer must be supportable by source (basic overlap check)
+  const answerText = extractAnswerText(answer);
+  if (answerText && sourceContent.length > 0) {
+    const answerLower = answerText.toLowerCase();
+    const sourceLower = sourceContent.toLowerCase();
+
+    // Try word-level overlap first (for Latin scripts)
+    const answerWords = new Set(answerLower.split(/\s+/).filter((w) => w.length > 3));
+    if (answerWords.size > 3) {
+      let overlapCount = 0;
+      for (const word of answerWords) {
+        if (sourceLower.includes(word)) overlapCount++;
+      }
+      if (overlapCount / answerWords.size < 0.2) {
+        issues.push({
+          code: "answer_not_grounded",
+          // 2026-08-16（实机验证修复）：按方案 20 §13.1「字符重合只能作为风险
+          // 信号，不能作为教学转换是否发生的充分条件」，重叠检查从 hard 降级
+          // 为 soft——真实 LLM 的教学转换（尤其中文改写）与原文词/字重叠天然
+          // 偏低，hard 会误杀合法候选（deepseek-v4-flash 实测 100% 被拒）。
+          severity: "soft",
+          detail: "Canonical answer has <20% word overlap with source content",
+        });
+      }
+    } else {
+      // Fallback: character-level overlap (for CJK or short text)
+      const answerChars = new Set<string>();
+      for (let i = 0; i < answerLower.length - 1; i++) {
+        const bigram = answerLower.slice(i, i + 2);
+        if (bigram.trim().length === 2) answerChars.add(bigram);
+      }
+      if (answerChars.size > 5) {
+        let charOverlap = 0;
+        for (const bigram of answerChars) {
+          if (sourceLower.includes(bigram)) charOverlap++;
+        }
+        if (charOverlap / answerChars.size < 0.15) {
+          issues.push({
+            code: "answer_not_grounded",
+            // 2026-08-16：同词级检查，按 §13.1 降级为 soft 风险信号。
+            severity: "soft",
+            detail: "Canonical answer has <15% character overlap with source content",
+          });
+        }
+      }
+    }
+  }
+
+  // Check: rubric units must reference answer units
+  const answerUnitIds = new Set(answerUnitIdsV2(answer));
+  for (const unit of candidate.objective.rubric.units) {
+    for (const ansId of unit.answerUnitIds) {
+      if (!answerUnitIds.has(ansId)) {
+        issues.push({
+          code: "rubric_references_missing_answer_unit",
+          severity: "hard",
+          detail: `Rubric unit ${unit.rubricUnitId} references non-existent answer unit ${ansId}`,
+          answerUnitIds: [ansId],
+        });
+      }
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * 确定性 Pedagogy precheck（step 6 补充信号）。不作为最终教学价值判定，
+ * 教学价值由独立的 contract 级 Pedagogy provider 判定（§12.4）。
+ *
+ * 2026-08-24（AI 设计审查 §4.5 认识论分工）：front 泄题的子串匹配分支从
+ * hard 降级为 soft——"正面是否以改写方式泄露答案"是语义判断，正则子串匹配
+ * 的残余假阳不可归零；逐字照抄类机械泄题已由 deterministic-gates 的
+ * frontLeakageGate（压缩标点 ≥12 连续字符同一）承担 hard 判定。本 precheck
+ * 命中仅产生 surface_paraphrase_only（soft）风险信号，语义裁决归 Pedagogy
+ * Critic 的冻结 code front_leaks_answer。
+ */
+export function deterministicPedagogyPrecheck(
+  candidate: LearningCardCandidateRevisionV2,
+  _sourceContent: string,
+): QualityIssue[] {
+  const issues: QualityIssue[] = [];
+  const front = candidate.presentation.front;
+  const answerText = extractAnswerText(candidate.objective.canonicalAnswer);
+
+  // Check: front must not leak answer——降级为 soft 风险信号（见函数头注释）
+  if (answerText && front.prompt) {
+    const answerLower = answerText.toLowerCase();
+    const promptLower = front.prompt.toLowerCase();
+    if (answerLower.length > 20 && promptLower.includes(answerLower.slice(0, 50))) {
+      const firstAnswerUnitId = extractFirstAnswerUnitId(candidate.objective.canonicalAnswer);
+      issues.push({
+        code: "surface_paraphrase_only",
+        severity: "soft",
+        detail: "Front prompt contains answer text (risk signal; semantic verdict deferred to pedagogy critic)",
+        answerUnitIds: firstAnswerUnitId ? [firstAnswerUnitId] : undefined,
+      });
+    }
+  }
+
+  // Check: cue must not be identical to claim
+  if (front.cue === candidate.objective.objectiveStatement) {
+    issues.push({
+      code: "cue_is_claim_copy",
+      severity: "hard",
+      detail: "Front cue is identical to objective statement (surface paraphrase)",
+    });
+  }
+
+  // Check: estimatedReviewSeconds must be reasonable
+  if (candidate.presentation.estimatedReviewSeconds < 10) {
+    issues.push({
+      code: "review_time_too_short",
+      severity: "soft",
+      detail: "Estimated review time < 10 seconds suggests trivial card",
+    });
+  }
+
+  return issues;
+}
+
+function extractAnswerText(answer: CanonicalAnswerV2): string {
+  switch (answer.kind) {
+    case "text": return answer.unit.text;
+    case "bullets": return answer.items.map((i) => i.text).join(" ");
+    case "ordered_steps": return answer.steps.map((s) => s.text).join(" ");
+    case "mapping": return answer.pairs.map((p) => `${p.left}=${p.right}`).join(" ");
+    case "comparison": return answer.rows.map((r) => r.values.join(" ")).join(" ");
+    case "formula": return answer.latex;
+    case "code": return answer.code;
+  }
+}
+
+function extractFirstAnswerUnitId(answer: CanonicalAnswerV2): string | null {
+  switch (answer.kind) {
+    case "text": return answer.unit.unitId;
+    case "bullets": return answer.items[0]?.unitId ?? null;
+    case "ordered_steps": return answer.steps[0]?.unitId ?? null;
+    case "mapping": return answer.pairs[0]?.unitId ?? null;
+    case "comparison": return answer.rows[0]?.unitId ?? null;
+    case "formula": return answer.unitId;
+    case "code": return answer.unitId;
   }
 }

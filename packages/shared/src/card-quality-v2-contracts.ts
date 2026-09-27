@@ -361,3 +361,15 @@ export function parseEvidenceEligibilityStateV2(
 export function parseEvidenceBindingV2(input: unknown): EvidenceBindingV2 {
   return evidenceBindingV2Schema.parse(input);
 }
+
+// ─── 程序侧质量结论的最小形状（原住 card-generation-v2-pipeline/critic-service.ts）──
+// 2026-09-27（W7-7 刀二）四阶段 Critic 删除后，这里只剩两份**确定性 precheck** 与门禁还在产出的
+// 那种结论；两份 precheck 搬进 candidate-precheck.ts（它唯一的消费者），这个类型放在两份都够得着
+// 的合同里，不再让一条已删的链留着一个叫 critic-service 的模块。
+export interface QualityIssue {
+  code: string;
+  severity: "hard" | "soft";
+  detail: string;
+  evidenceRefIds?: string[];
+  answerUnitIds?: string[];
+}

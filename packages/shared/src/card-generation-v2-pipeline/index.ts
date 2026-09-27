@@ -1,7 +1,7 @@
 /**
  * Card Generation V2 pipeline 纯逻辑层（方案 20 C2/C3/R4）。
  *
- * 2026-08-24（AI 设计审查 §4.4 修复）：planner / author / critic /
+ * 2026-08-24（AI 设计审查 §4.4 修复）：planner / author /
  * deterministic-gates / concept-label 自 apps/api 下沉至此——五个模块均为
  * 纯逻辑（不触 DB/provider），apps/api 与 workers/ai-worker 作为平级消费者
  * 引用本子路径，消除 worker 内 `../../../../apps/api/src/...` 反向路径依赖。
@@ -15,7 +15,6 @@
 
 export * from "./planner-service.ts";
 export * from "./author-service.ts";
-export * from "./critic-service.ts";
 export * from "./deterministic-gates.ts";
 export * from "./concept-label.ts";
 // 2026-09-17（性能改造）：阶段内有界并发（author/grounding 由逐候选串行改为并发）。

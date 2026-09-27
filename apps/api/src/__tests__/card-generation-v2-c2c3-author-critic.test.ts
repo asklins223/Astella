@@ -5,9 +5,12 @@
  * 1. DeterministicAuthoringProvider 正确生成 candidate；
  * 2. candidateRevisionHash 正确计算；
  * 3. deterministic grounding precheck 检测答案未 grounding；
- * 4. deterministic pedagogy precheck 检测 front 泄漏答案；
- * 5. final gates 阻断 hard issue；
- * 6. merge/dedup 正确合并。
+ * 4. deterministic pedagogy precheck 检测 front 泄漏答案。
+ *
+ * 2026-09-27（39d W7-7 刀二）：原来的第 5、6 节（final gates 阻断 hard issue、
+ * merge/dedup 合并）随四阶段 Critic 一起删除——那两件的判据对象（集合级 deck gate 与
+ * Global Selector 去重）在简化链上不产出对应结构。两份 precheck 今天仍在线上被调用
+ * （`buildCandidatePrecheck` 与离线 grounding 走的就是它们），所以这两节留着。
  */
 
 import { test, describe } from "node:test";
@@ -22,8 +25,6 @@ import {
 import {
   deterministicGroundingPrecheck,
   deterministicPedagogyPrecheck,
-  runDeterministicFinalGates,
-  mergeDuplicateCandidates,
 } from "@ailearn/shared/card-generation-v2-pipeline";
 import type {
   CardPlanV2,
@@ -339,116 +340,5 @@ describe("C3: Pedagogy Critic Precheck", () => {
     const issues = deterministicPedagogyPrecheck(candidate, "source content here");
     const hardIssues = issues.filter((i) => i.severity === "hard");
     assert.equal(hardIssues.length, 0);
-  });
-});
-
-describe("C3: Final Gates", () => {
-  test("passes when all candidates pass critics", () => {
-    const candidate = makeMockCandidate();
-    const groundingReport = {
-      reportId: "r1", reportType: "grounding" as const,
-      candidateRevisionId: candidate.candidateRevisionId,
-      candidateRevisionHash: candidate.candidateRevisionHash,
-      inputHash: "d".repeat(64), version: 2, reportHash: "",
-      issues: [], verdict: "passed" as const, gateVersion: "v1",
-    };
-    const pedagogyReport = { ...groundingReport, reportType: "pedagogy" as const, reportId: "r2" };
-    const plan = makeMockPlan();
-    const result = runDeterministicFinalGates(
-      [candidate], [groundingReport], [pedagogyReport],
-      { planRevisionId: plan.planRevisionId, planVersion: plan.planVersion, planHash: plan.planHash, runId: plan.runId },
-      3,
-    );
-    assert.ok(result.passed);
-    assert.equal(result.gateReport.finalCount, 1);
-  });
-
-  test("fails when candidate fails grounding", () => {
-    const candidate = makeMockCandidate();
-    const groundingReport = {
-      reportId: "r1", reportType: "grounding" as const,
-      candidateRevisionId: candidate.candidateRevisionId,
-      candidateRevisionHash: candidate.candidateRevisionHash,
-      inputHash: "d".repeat(64), version: 2, reportHash: "",
-      issues: [{ code: "bad", severity: "hard" as const, detail: "test" }],
-      verdict: "failed" as const, gateVersion: "v1",
-    };
-    const pedagogyReport = {
-      reportId: "r2", reportType: "pedagogy" as const,
-      candidateRevisionId: candidate.candidateRevisionId,
-      candidateRevisionHash: candidate.candidateRevisionHash,
-      inputHash: "d".repeat(64), version: 2, reportHash: "",
-      issues: [], verdict: "passed" as const, gateVersion: "v1",
-    };
-    const plan = makeMockPlan();
-    const result = runDeterministicFinalGates(
-      [candidate], [groundingReport], [pedagogyReport],
-      { planRevisionId: plan.planRevisionId, planVersion: plan.planVersion, planHash: plan.planHash, runId: plan.runId },
-      3,
-    );
-    assert.ok(!result.passed);
-    assert.ok(result.gateReport.issues.some((i) => i.code === "candidate_revision_mismatch"));
-  });
-
-  test("detects semantic duplicates", () => {
-    const candidate1 = makeMockCandidate();
-    const candidate2 = makeMockCandidate({
-      candidateId: randomUUID(),
-      candidateRevisionId: randomUUID(),
-    });
-    // Same objective statement
-    const groundingReport = {
-      reportId: "r1", reportType: "grounding" as const,
-      candidateRevisionId: candidate1.candidateRevisionId,
-      candidateRevisionHash: candidate1.candidateRevisionHash,
-      inputHash: "d".repeat(64), version: 2, reportHash: "",
-      issues: [], verdict: "passed" as const, gateVersion: "v1",
-    };
-    const pedagogyReport = {
-      reportId: "r2", reportType: "pedagogy" as const,
-      candidateRevisionId: candidate1.candidateRevisionId,
-      candidateRevisionHash: candidate1.candidateRevisionHash,
-      inputHash: "d".repeat(64), version: 2, reportHash: "",
-      issues: [], verdict: "passed" as const, gateVersion: "v1",
-    };
-    const groundingReport2 = { ...groundingReport, candidateRevisionId: candidate2.candidateRevisionId, candidateRevisionHash: candidate2.candidateRevisionHash };
-    const pedagogyReport2 = { ...pedagogyReport, candidateRevisionId: candidate2.candidateRevisionId, candidateRevisionHash: candidate2.candidateRevisionHash };
-    const plan = makeMockPlan();
-    const result = runDeterministicFinalGates(
-      [candidate1, candidate2], [groundingReport, groundingReport2], [pedagogyReport, pedagogyReport2],
-      { planRevisionId: plan.planRevisionId, planVersion: plan.planVersion, planHash: plan.planHash, runId: plan.runId },
-      3,
-    );
-    assert.ok(!result.passed);
-    assert.ok(result.gateReport.issues.some((i) => i.code === "semantic_duplicate"));
-  });
-});
-
-describe("C3: Merge/Dedup", () => {
-  test("merges candidates with same objective statement", () => {
-    const c1 = makeMockCandidate();
-    const c2 = makeMockCandidate({
-      candidateId: randomUUID(),
-      candidateRevisionId: randomUUID(),
-    });
-    const { merged, mergeMap } = mergeDuplicateCandidates([c1, c2]);
-    assert.equal(merged.length, 1);
-    assert.equal(mergeMap.size, 1);
-    assert.equal(mergeMap.get(c2.candidateId), c1.candidateId);
-  });
-
-  test("does not merge candidates with different statements", () => {
-    const c1 = makeMockCandidate();
-    const c2 = makeMockCandidate({
-      candidateId: randomUUID(),
-      candidateRevisionId: randomUUID(),
-      objective: {
-        ...c1.objective,
-        objectiveStatement: "不同的目标声明",
-      },
-    });
-    const { merged, mergeMap } = mergeDuplicateCandidates([c1, c2]);
-    assert.equal(merged.length, 2);
-    assert.equal(mergeMap.size, 0);
   });
 });

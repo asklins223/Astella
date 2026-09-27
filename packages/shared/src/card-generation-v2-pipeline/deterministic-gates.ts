@@ -37,7 +37,7 @@ import type {
   CanonicalAnswerV2,
   CardStrategyV2,
 } from "../card-generation-v2-contracts.ts";
-import type { QualityIssue } from "./critic-service.ts";
+import type { QualityIssue } from "../card-quality-v2-contracts.ts";
 
 /** 证据跨度校验所需的 sealed manifest 结构子集。 */
 export interface EvidenceSpanManifest {
