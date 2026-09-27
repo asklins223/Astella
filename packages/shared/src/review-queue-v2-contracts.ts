@@ -317,3 +317,34 @@ export const todayBatchOptionResultV2Schema = z.strictObject({
   screenLine: z.string().min(1),
 });
 export type TodayBatchOptionResultV2 = z.infer<typeof todayBatchOptionResultV2Schema>;
+
+/**
+ * 今日复习那一批的读侧 wire（39d W7-4 刀十四；39 §12 表「今日复习」行）。
+ *
+ * ## 为什么**逐项**带 `reasonLine`
+ *
+ * 那一行第二列写的是「一批有限任务，**展示选择原因**」。「展示」两个字是判据：屏上
+ * 必须能说出**每一道为什么在这一批里**，而不是只说"你有 5 道"。所以 wire 逐项带理由，
+ * 而不是一个笼统的批次说明。
+ *
+ * ## `deferredCount` 单独一列
+ *
+ * §9.4 末段「系统结束本批后可以看到『今天先到这里；另外还有可回访内容』」。那个数
+ * **必须**由服务端给（判据的 `deferredCount`），渲染层自己数就是"屏上编一个数"。
+ */
+export const todayBatchWireV2Schema = z.strictObject({
+  /** 本批的项。**长度由锁定规则决定**，不由"现在有多少到期"决定。 */
+  items: z.array(z.strictObject({
+    objectiveId: z.string().uuid(),
+    /** 它为什么在这一批里（到期／轮换抽查）——屏上要念出来。 */
+    reason: z.enum(["due_now", "rotation_stale", "user_asked_more"]),
+    reasonLine: z.string().min(1),
+  })),
+  /** 本批**开始时**锁的长度。 */
+  lockedLength: z.number().int().min(0),
+  /** §9.4 末段那个数：没进这一批、但可以回访的还有多少。 */
+  deferredCount: z.number().int().min(0),
+  /** 今天这一批现在**停着**吗（0307 那一列）。停着时屏上画「接着做」而不是「先停一下」。 */
+  paused: z.boolean(),
+});
+export type TodayBatchWireV2 = z.infer<typeof todayBatchWireV2Schema>;

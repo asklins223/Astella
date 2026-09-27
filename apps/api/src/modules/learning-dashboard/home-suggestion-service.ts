@@ -271,3 +271,41 @@ async function countBatchItemsDoneV2(
     ));
   return done.length;
 }
+
+/**
+ * 今日复习那一批的**读侧那一发**（39d W7-4 刀十四；§12 表「今日复习」行）。
+ *
+ * 走的是刀一/二/三那一套（`todayLimitedBatchV2`），所以**这一批与首页那一件是同一批**——
+ * 这正是刀一把规则做成纯函数要换来的东西。
+ *
+ * **暂停时返回空 items 而不是 0 道**：停着的那一批里"有几道"仍然是那几道，屏上要念
+ * 的是「先停在这里，剩下 N 道还在」（§12 表「剩余需求不伪称完成」），而返回空 items
+ * 会让屏上画出一个"今天没有任务"的框——那是 §12.1 明写不许制造的那一句。
+ */
+export async function readTodayBatchV2(
+  tx: ApiTransaction,
+  ctx: HomeScope & { timeZone: string; now?: Date; userAskedForMore?: number },
+): Promise<{
+  items: Array<{ objectiveId: string; reason: "due_now" | "rotation_stale" | "user_asked_more"; reasonLine: string }>;
+  lockedLength: number;
+  deferredCount: number;
+  paused: boolean;
+}> {
+  const now = ctx.now ?? new Date();
+  const { todayLimitedBatchV2, isBatchPausedV2 } = await import("./daily-batch-lock-service.ts");
+  const lockInput = { workspaceId: ctx.workspaceId, userId: ctx.userId, timeZone: ctx.timeZone, now };
+  const [{ paused }, batch] = await Promise.all([
+    isBatchPausedV2(tx, lockInput),
+    todayLimitedBatchV2(tx, { ...lockInput, userAskedForMore: ctx.userAskedForMore }),
+  ]);
+  return {
+    items: batch.items.map((item) => ({
+      objectiveId: item.objectiveId,
+      reason: item.reason,
+      reasonLine: item.reasonLine,
+    })),
+    lockedLength: batch.lockedLength,
+    deferredCount: batch.deferredCount,
+    paused,
+  };
+}

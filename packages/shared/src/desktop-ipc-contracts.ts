@@ -46,6 +46,7 @@ import type {
   HomeSuggestionActionResultV2,
   TodayBatchOptionCommandV2,
   TodayBatchOptionResultV2,
+  TodayBatchWireV2,
 } from "./review-queue-v2-contracts.ts";
 import { assessmentDisputeEnvelopeV2Schema } from "./assessment-dispute-rules-v2.ts";
 import type {
@@ -447,6 +448,7 @@ export const DESKTOP_IPC_CHANNELS = {
   homeSuggestionRead: "ailearn.v1.home.suggestion.read",
   homeSuggestionAct: "ailearn.v1.home.suggestion.act",
   todayBatchOption: "ailearn.v1.home.todayBatch.option",
+  todayBatchRead: "ailearn.v1.home.todayBatch.read",
   // 判定的争议（39 §14.2、§16.11、§16.25）。**四条用户能按的通道**，
   // 刻意少于服务端那六条：`recheck` 与 `correction` 的写入方是系统，不是人
   // （§14.2「**系统**基于原题、原回答和依据进行一次重新检查」）。
@@ -2675,6 +2677,15 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
      */
     actOnTodayBatch(input: { meta: RequestMetaV1; request: TodayBatchOptionCommandV2 }): Promise<
       GatewayResultV1<TodayBatchOptionResultV2>
+    >;
+    /**
+     * 今日复习那一批的读侧（§12 表「今日复习」行「一批有限任务，**展示选择原因**」）。
+     *
+     * `timeZone` 同样**由客户端带上来**：它决定 0305/0306 那两处的「今天」是哪一天，
+     * 而按 UTC 算会在她的午夜前后切错一次——**那一次恰好是「她刚做完今天」的时候**。
+     */
+    readTodayBatch(input: { meta: RequestMetaV1; timeZone: string }): Promise<
+      GatewayResultV1<TodayBatchWireV2>
     >;
   };
   /**

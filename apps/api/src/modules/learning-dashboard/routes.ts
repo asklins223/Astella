@@ -8,7 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { requireSession } from "../identity/middleware.ts";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import { buildLearningDashboardV2 } from "./service.ts";
-import { actOnHomeSuggestionV2, actOnTodayBatchV2, readHomeSuggestionV2 } from "./home-suggestion-service.ts";
+import { actOnHomeSuggestionV2, actOnTodayBatchV2, readHomeSuggestionV2, readTodayBatchV2 } from "./home-suggestion-service.ts";
 import {
   homeSuggestionActionCommandV2Schema,
   todayBatchOptionCommandV2Schema,
@@ -54,6 +54,21 @@ export async function learningDashboardRoutes(app: FastifyInstance) {
       }),
     );
     return reply.code(200).header("Cache-Control", "private, no-store").send(suggestion);
+  });
+
+  // 今日复习那一批的读侧（39d W7-4 刀十四）。走的是刀一/二/三那一套，所以**这一批
+  // 与首页那一件是同一批**。
+  app.get("/home/v2/today-batch", async (req, reply) => {
+    const query = req.query as { timeZone?: string };
+    const batch = await withWorkspaceTransaction(
+      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      (tx) => readTodayBatchV2(tx, {
+        workspaceId: req.session.workspaceId,
+        userId: req.session.userId,
+        timeZone: (query.timeZone ?? "UTC").trim(),
+      }),
+    );
+    return reply.code(200).header("Cache-Control", "private, no-store").send(batch);
   });
 
   // 今日复习那三个动作（39d W7-4 刀十二；§12 表「今日复习」行）。**三档走同一发**：

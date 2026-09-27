@@ -376,6 +376,9 @@ const desktopApi: AILearnDesktopApiM2 = {
     actOnHomeSuggestion: (input) => invoke(DESKTOP_IPC_CHANNELS.homeSuggestionAct, input),
     // 今日复习那三个动作（减量／暂停／恢复，§12 表「今日复习」行）。
     actOnTodayBatch: (input) => invoke(DESKTOP_IPC_CHANNELS.todayBatchOption, input)
+    ,
+    // 今日复习那一批的读侧（逐项带「为什么在这一批里」）。
+    readTodayBatch: (input) => invoke(DESKTOP_IPC_CHANNELS.todayBatchRead, input)
   },
   // 判定的争议（39 §14.2、§16.11、§16.25）。只有**人能按的**四条：
   // `recheck` 与 `correction` 的写入方是系统，不挂在这里（理由见共享通道表那段）。
