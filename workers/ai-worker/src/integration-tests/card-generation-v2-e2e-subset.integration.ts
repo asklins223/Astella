@@ -291,6 +291,7 @@ test("C03：临时待办 → no_cards_recommended 成功终态，0 Candidate/Car
 });
 
 test("C22：同一 Idempotency-Key 重放 → 同 run，不产生重复 outbox/run", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 摘档试搬：这一条判的东西两链都该成立
   const { versionId } = await seedNote("C22", OSI_CONTENT);
   const key = `c22-key-${randomUUID()}`;
   // §17.1：幂等重放的定义是"同一 key **且同一 payload**"。payload 里含
@@ -307,10 +308,12 @@ test("C22：同一 Idempotency-Key 重放 → 同 run，不产生重复 outbox/r
     WHERE workspace_id = ${WORKSPACE_ID} AND idempotency_key = ${key}`;
   assert.equal(runCount[0].n, 1, "C22 must create exactly one run row");
 
+  // 判的是"重放没有多入队一枚 job"，与这一发投到哪条链无关——所以不再按 jobType 过滤
+  // （旧写法钉着 `card_generation_plan`，那正是它搬不到默认档的唯一原因）。
   const outboxCount = await admin`
     SELECT count(*)::int AS n FROM card_generation_run_outbox_v2
-    WHERE run_id = ${first.runId} AND job_type = 'card_generation_plan'`;
-  assert.equal(outboxCount[0].n, 1, "C22 must enqueue exactly one plan job");
+    WHERE run_id = ${first.runId}`;
+  assert.equal(outboxCount[0].n, 1, "C22 must enqueue exactly one job");
 });
 
 test("C33：SSE 事件 payload 白名单 — canonicalAnswer/私有字段不透传", async () => {
@@ -332,6 +335,7 @@ test("C33：SSE 事件 payload 白名单 — canonicalAnswer/私有字段不透�
 });
 
 test("C02：单一重要定义 → 0–1 张；泄题候选被门禁阻断（不可 review-ready）", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 这一条本来就在默认档上量过：它判的是门禁阻断，与哪条链出题无关
   const DEFINITION_CONTENT =
     "机会成本是指为了得到某种东西而必须放弃的其他东西的价值；在决策中，选择某方案就意味着放弃次优方案所能带来的收益。";
   const { versionId } = await seedNote("定义", DEFINITION_CONTENT);
@@ -492,7 +496,8 @@ async function loadRunAndPlanForActivation(runId: string) {
 }
 
 test("C17：reject all → closed_without_activation 成功终态，0 active Card，不视为技术失败", async () => {
-  const { versionId } = await seedNote("全部拒绝", OSI_CONTENT);
+  delete process.env.CARD_GENERATION_CHAIN; // 摘档试搬：这一条判的东西两链都该成立
+  const { versionId } = await seedNote("全部拒绝", DUAL_CHAIN_CONTENT);
   const runId = (await createRun(versionId, `c17-${randomUUID()}`, `c17-key-${randomUUID()}`)).runId;
   await runPipelineOnce();
   // C17：候选保持管线自然状态（undecided）；仅代设 run 为人工审核阶段
@@ -521,7 +526,8 @@ test("C17：reject all → closed_without_activation 成功终态，0 active Car
 });
 
 test("C23+C25：activation 幂等重放同 receipt + 恰一 canonical mapping + 0 Schedule", async () => {
-  const { versionId } = await seedNote("激活", OSI_CONTENT);
+  delete process.env.CARD_GENERATION_CHAIN; // 摘档试搬：这一条判的东西两链都该成立
+  const { versionId } = await seedNote("激活", DUAL_CHAIN_CONTENT);
   const runId = (await createRun(versionId, `c23-${randomUUID()}`, `c23-key-${randomUUID()}`)).runId;
   await runPipelineOnce();
   await forceReviewReady(runId);
@@ -1240,10 +1246,9 @@ test("C24：非法 schema / hash mismatch → fail closed（0 低质激活）", 
 });
 
 test("C30：archive Card/Objective → lifecycle archived + epoch 前移，历史可读，不产生排程", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 摘档试搬：这一条判的东西两链都该成立
   // 激活一张卡（强制审核态，同 C23 流程）→ archive
-  const ARCHIVE_CONTENT =
-    "哈希函数把任意长度输入映射为固定长度输出；好的哈希函数应具备雪崩效应，输入微小变化即导致输出大变。";
-  const { versionId } = await seedNote("归档", ARCHIVE_CONTENT);
+  const { versionId } = await seedNote("归档", DUAL_CHAIN_CONTENT);
   const runId = (await createRun(versionId, `c30-${randomUUID()}`, `c30-key-${randomUUID()}`)).runId;
   await runPipelineOnce();
   await forceReviewReady(runId);
@@ -2300,9 +2305,8 @@ async function seedWorkspaceMember(role: "member" | "owner"): Promise<string> {
 }
 
 test("C46：保存之前先翻开候选的答案 → 激活那一发自己写出延后的提醒", async () => {
-  const REFRACT_CONTENT =
-    "光的折射是指光从一种介质斜射入另一种介质时传播方向发生改变的现象；光从空气斜射入水中时，折射角小于入射角。";
-  const { versionId } = await seedNote("保存前翻答案", REFRACT_CONTENT);
+  delete process.env.CARD_GENERATION_CHAIN; // 摘档试搬：这一条判的东西两链都该成立
+  const { versionId } = await seedNote("保存前翻答案", DUAL_CHAIN_CONTENT);
   const runId = (await createRun(versionId, `c46-${randomUUID()}`, `c46-key-${randomUUID()}`)).runId;
   await runPipelineOnce();
   await forceReviewReady(runId);

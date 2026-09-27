@@ -209,7 +209,7 @@ test("判据本身灵敏：三元、变量式、没问过总控，三种写法�
  */
 const PER_CASE_SWITCH_FILES: Record<string, { minSwitches: number }> = {
   // e2e 那 12 处 = 11 条已搬用例 + 1 格"档位真切了"的探针（探针不算用例，但少它整套做法失去读数）。
-  "workers/ai-worker/src/integration-tests/card-generation-v2-e2e-subset.integration.ts": { minSwitches: 12 },
+  "workers/ai-worker/src/integration-tests/card-generation-v2-e2e-subset.integration.ts": { minSwitches: 18 },
   "workers/ai-worker/src/integration-tests/card-generation-v2-live-progress-postgres.integration.ts": { minSwitches: 6 },
   "workers/ai-worker/src/integration-tests/card-generation-v2-c-cases.integration.ts": { minSwitches: 2 },
 };
