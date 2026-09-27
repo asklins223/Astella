@@ -28,6 +28,14 @@ const quote = "间隔重复是在快要忘记时再次主动提取，而不是�
 const safeQuote = "先遮住答案，再从记忆中回想。";
 const editedQuote = "间隔重复通常在接近遗忘时主动提取，具体时机还要结合材料难度。";
 const supplementedEvidenceQuote = "复习间隔应结合材料类型、预期保持时长与学习者基础确定。";
+const indexSuspectQuote = "复合索引缺少最左列条件就无法使用索引";
+const indexSafeQuote = "小表或匹配行数很多时，查询优化器可能选择顺序扫描。";
+const indexSuspectUnit = { unitId: "suspect-index-unit", fact: indexSuspectQuote,
+  criterion: "判断复合索引的使用条件", facet: "explain", sourceBlockOrdinal: 2, quote: indexSuspectQuote };
+const indexSafeUnit = { unitId: "safe-index-unit", fact: indexSafeQuote,
+  criterion: "说明小表或大量匹配行时选择顺序扫描的原因", facet: "explain", sourceBlockOrdinal: 3, quote: indexSafeQuote };
+const indexClaimTarget = { conceptLabel: "数据库索引", objectiveStatement: "解释复合索引条件与顺序扫描选择",
+  publicSummary: "索引适用条件与查询计划", knowledgeForm: "causal_model", units: [indexSuspectUnit, indexSafeUnit] };
 const target = { conceptLabel: "间隔重复", objectiveStatement: "解释间隔重复的时机和练习方式", publicSummary: "间隔与主动提取",
   knowledgeForm: "causal_model", units: [{ unitId: "private-unit-1", fact: "间隔重复需要接近遗忘时进行主动提取。",
     criterion: "说明时机与主动提取两项必要条件", facet: "explain", sourceBlockOrdinal: 2, quote }] };
@@ -44,6 +52,9 @@ let rejectGrounding = false;
 let rejectTeaching = false;
 let omitTarget = false;
 let suspectClaim = false;
+let suspectOnly = false;
+let proposeExistingSafeUnit = false;
+let indexClaimJourney = false;
 let recheckingEditedSuspect = false;
 let supplementingSuspect = false;
 let failTransport = false;
@@ -61,17 +72,26 @@ const requester: PublicJsonRequester = async (_url, _headers, body, signal) => {
   if (checking && supplementingSuspect) assert.match(request.messages[0].content, new RegExp(supplementedEvidenceQuote));
   if (!checking && hold) { entered?.(); await hold; }
   const activeSuspect = suspectClaim && !recheckingEditedSuspect && !supplementingSuspect;
-  const activeTarget = supplementingSuspect ? sourceRecheckedTarget : recheckingEditedSuspect ? recheckedTarget : target;
+  const activeTarget = indexClaimJourney ? indexClaimTarget
+    : supplementingSuspect ? sourceRecheckedTarget : recheckingEditedSuspect ? recheckedTarget
+    : proposeExistingSafeUnit ? { ...target, units: [safeUnit] } : target;
+  const proposedUnits = indexClaimJourney
+    ? (suspectOnly ? [indexSuspectUnit] : [indexSuspectUnit, indexSafeUnit])
+    : [activeTarget.units[0], ...(activeSuspect && !suspectOnly ? [safeUnit] : [])];
+  const suspectUnitId = indexClaimJourney ? indexSuspectUnit.unitId : "private-unit-1";
+  const suspectQuote = indexClaimJourney ? indexSuspectQuote : quote;
   return { status: 200, statusText: "OK", body: { choices: [{ message: { content: JSON.stringify(checking
     ? { teachingSupported: !rejectTeaching, teachingReason: rejectTeaching ? "讲解补造神经机制" : "讲解与原文一致",
       teachingSegments: [{ ordinal: 1, supported: !rejectTeaching, reason: rejectTeaching ? "没有机制依据" : "与原文一致" }], objectiveSupported: !omitTarget,
-      units: omitTarget ? [] : [activeTarget.units[0], ...(activeSuspect ? [safeUnit] : [])].map((unit) => ({
+      units: omitTarget ? [] : proposedUnits.map((unit) => ({
         unitId: unit.unitId, factSupported: !rejectGrounding, criterionSupported: true, reason: "本轮原文支持这个知识点",
       })),
-      suspectClaims: activeSuspect ? [{ unitIds: ["private-unit-1"], sourceBlockOrdinal: 2, sourceQuote: quote,
+      suspectClaims: activeSuspect ? [{ unitIds: [suspectUnitId], sourceBlockOrdinal: 2, sourceQuote: suspectQuote,
         reason: "这条主张看起来省略了可能改变结论的条件，值得再核对。" }] : [] }
-    : { explanation: "把重见材料隔开，并先尝试从记忆中提取，才能检验自己能否想起来。", sourceBlockOrdinals: [2, ...(activeSuspect ? [3] : [])],
-      target: omitTarget ? null : activeSuspect ? { ...target, units: [...target.units, safeUnit] } : activeTarget }) } }] } };
+      : { explanation: "把重见材料隔开，并先尝试从记忆中提取，才能检验自己能否想起来。", sourceBlockOrdinals: [2, ...(activeSuspect && !suspectOnly ? [3] : [])],
+      target: omitTarget ? null : activeSuspect
+        ? { ...activeTarget, units: proposedUnits }
+        : activeTarget }) } }] } };
 };
 const app = Fastify({ logger: false });
 const scope = () => ({ workspaceId: fixture.workspaceId, userId: fixture.userId });
@@ -86,7 +106,7 @@ async function close(round: { roundId: string; revision: number }) {
 }
 
 before(async () => {
-  fixture = await seedNotesOnlyWorkspace(admin, { noteCount: 1 });
+  fixture = await seedNotesOnlyWorkspace(admin, { noteCount: 2 });
   await admin`INSERT INTO note_blocks (id,workspace_id,version_id,ordinal,type,content) VALUES
     (${randomUUID()},${fixture.workspaceId},${fixture.versionIds[0]},1,'heading','## 间隔重复'),
     (${randomUUID()},${fixture.workspaceId},${fixture.versionIds[0]},2,'paragraph',${quote}),
@@ -266,6 +286,177 @@ test("suspect factual claim stays visible while only the independently safe unit
     const reread = await call("GET", `/v2/note-learning-rounds/${round.roundId}/teaching`);
     assert.equal(reread.json().teaching.content.suspectClaims?.[0]?.reason, "这条主张看起来省略了可能改变结论的条件，值得再核对。");
   } finally { suspectClaim = false; await close(round); }
+});
+
+test("a next-day suspect-only revisit gets no formal grading target and leaves the safe unit's interval alone", async () => {
+  const indexVersionId = randomUUID();
+  const scheduleId = randomUUID();
+  let activeRound: { roundId: string; revision: number } | null = null;
+  let safeObjectiveId = "";
+  const indexNoteId = fixture.noteIds[1];
+  const originalVersionId = fixture.versionIds[1];
+  await admin`
+    INSERT INTO note_versions (id, note_id, workspace_id, version_no, content_json, content_hash, created_by)
+    VALUES (${indexVersionId}, ${indexNoteId}, ${fixture.workspaceId}, 4247,
+      ${admin.json({ blocks: [
+        { type: 'heading', content: '## 复合索引与执行计划' },
+        { type: 'paragraph', content: indexSuspectQuote },
+        { type: 'paragraph', content: indexSafeQuote },
+      ] })}, 'next-day-index-claim-fixture', ${fixture.userId})`;
+  await admin`INSERT INTO note_blocks (id, workspace_id, version_id, ordinal, type, content) VALUES
+    (${randomUUID()}, ${fixture.workspaceId}, ${indexVersionId}, 1, 'heading', '## 复合索引与执行计划'),
+    (${randomUUID()}, ${fixture.workspaceId}, ${indexVersionId}, 2, 'paragraph', ${indexSuspectQuote}),
+    (${randomUUID()}, ${fixture.workspaceId}, ${indexVersionId}, 3, 'paragraph', ${indexSafeQuote})`;
+  await admin`UPDATE notes SET current_version_id=${indexVersionId} WHERE id=${indexNoteId}`;
+  indexClaimJourney = true;
+  suspectClaim = true;
+  suspectOnly = false;
+  try {
+    // Day one: the explanation may lead into the independently supported query-planner unit,
+    // but the absolute composite-index claim itself must be removed from the frozen target.
+    activeRound = await open(indexNoteId);
+    const dayOne = await call("POST", `/v2/note-learning-rounds/${activeRound.roundId}/teaching`, { expectedRevision: activeRound.revision });
+    assert.equal(dayOne.statusCode, 201, dayOne.body);
+    const dayOneView = roundTeachingViewV1Schema.parse(dayOne.json());
+    assert.equal(dayOneView.teaching?.content.suspectClaims?.[0]?.sourceQuote, indexSuspectQuote);
+    assert.ok(dayOneView.practiceStart, "the independent safe unit can still be practised");
+    safeObjectiveId = dayOneView.practiceStart.objectiveId;
+    const safeTarget = await admin`
+      SELECT revision.canonical_answer, objective.current_objective_revision_id
+      FROM learning_objectives_v2 AS objective
+      JOIN learning_objective_revisions_v2 AS revision
+        ON revision.objective_revision_id = objective.current_objective_revision_id
+      WHERE objective.workspace_id=${fixture.workspaceId} AND objective.objective_id=${safeObjectiveId}`;
+    assert.deepEqual(safeTarget[0].canonical_answer.items.map((item: { unitId: string }) => item.unitId), ["safe-index-unit"]);
+    const safeRevisionId = safeTarget[0].current_objective_revision_id;
+    await admin`INSERT INTO review_schedules
+      (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at, interval_days, generation, policy_version, reason_code, created_at, updated_at)
+      VALUES (${scheduleId}, ${fixture.workspaceId}, ${fixture.userId}, 'card', ${safeObjectiveId}, 'pending', now() + interval '3 days', 3, 2, 'discrete-v2', 'initial_validation', now(), now())`;
+    await close(activeRound);
+    const dayOneRoundId = activeRound.roundId;
+    activeRound = null;
+    // Give the second visit a reproducible one-day gap without waiting in real time. This mutates
+    // only this isolated fixture row and leaves its frozen note/version reference untouched.
+    await admin.begin(async (tx) => {
+      await tx`SELECT set_config('app.allow_history_mutation', 'on', true)`;
+      await tx`UPDATE note_learning_rounds SET created_at=created_at - interval '1 day',
+        updated_at=updated_at - interval '1 day', revision=revision + 1 WHERE id=${dayOneRoundId}`;
+    });
+
+    // Day two is a suspect-only revisit. This route does not collect a user's answer; it proves
+    // the stronger boundary that no formal target or scoring run is issued for this claim, so no
+    // correct verdict or interval transition can be created from repeating it here.
+    suspectOnly = true;
+    activeRound = await open(indexNoteId);
+    const objectivesBefore = await admin`SELECT count(*)::int AS n FROM learning_objectives_v2 WHERE workspace_id=${fixture.workspaceId}`;
+    const runsBefore = await admin`SELECT count(*)::int AS n FROM learning_runs WHERE workspace_id=${fixture.workspaceId}`;
+    const secondVisit = await call("POST", `/v2/note-learning-rounds/${activeRound.roundId}/teaching`, { expectedRevision: activeRound.revision });
+    assert.equal(secondVisit.statusCode, 201, secondVisit.body);
+    const dayTwoView = roundTeachingViewV1Schema.parse(secondVisit.json());
+    assert.equal(dayTwoView.teaching?.content.suspectClaims?.[0]?.sourceQuote, indexSuspectQuote);
+    assert.equal(dayTwoView.practiceStart, null, "the accurately repeated suspect claim has no assessment entry");
+    const binding = await admin`SELECT 1 FROM note_learning_round_targets WHERE round_id=${activeRound.roundId}`;
+    assert.equal(binding.length, 0, "there is no hidden assessment target to score");
+    const objectivesAfter = await admin`SELECT count(*)::int AS n FROM learning_objectives_v2 WHERE workspace_id=${fixture.workspaceId}`;
+    assert.equal(objectivesAfter[0].n, objectivesBefore[0].n, "repetition does not mint a formal objective");
+    const runsAfter = await admin`SELECT count(*)::int AS n FROM learning_runs WHERE workspace_id=${fixture.workspaceId}`;
+    assert.equal(runsAfter[0].n, runsBefore[0].n, "a suspect-only revisit cannot issue a grading run");
+    const safeAfter = await admin`SELECT current_objective_revision_id FROM learning_objectives_v2
+      WHERE workspace_id=${fixture.workspaceId} AND objective_id=${safeObjectiveId}`;
+    assert.equal(safeAfter[0].current_objective_revision_id, safeRevisionId, "the unrelated safe target is unchanged");
+    const scheduleAfter = await admin`SELECT status, interval_days, generation FROM review_schedules WHERE id=${scheduleId}`;
+    assert.deepEqual(scheduleAfter[0], { status: "pending", interval_days: 3, generation: 2 },
+      "the unrelated safe unit keeps its existing interval unchanged");
+  } finally {
+    indexClaimJourney = false;
+    suspectClaim = false;
+    suspectOnly = false;
+    if (activeRound) await close(activeRound);
+    await admin`DELETE FROM review_schedules WHERE id=${scheduleId}`;
+    await admin`UPDATE notes SET current_version_id=${originalVersionId} WHERE id=${indexNoteId}`;
+  }
+});
+
+test("when every proposed unit is suspect, the round has no objective or practice schedule", async () => {
+  const round = await open();
+  suspectClaim = true;
+  suspectOnly = true;
+  const before = await admin`SELECT count(*)::int AS n FROM learning_objectives_v2 WHERE workspace_id=${fixture.workspaceId}`;
+  const beforeSchedules = await admin`SELECT count(*)::int AS n FROM review_schedules WHERE workspace_id=${fixture.workspaceId}`;
+  try {
+    const response = await call("POST", `/v2/note-learning-rounds/${round.roundId}/teaching`, { expectedRevision: round.revision });
+    assert.equal(response.statusCode, 201, response.body);
+    const view = roundTeachingViewV1Schema.parse(response.json());
+    assert.ok(view.teaching?.content.suspectClaims?.length);
+    assert.equal(view.practiceStart, null, "待核对的唯一主张不签发正式练习入口");
+    const after = await admin`SELECT count(*)::int AS n FROM learning_objectives_v2 WHERE workspace_id=${fixture.workspaceId}`;
+    assert.equal(after[0].n, before[0].n, "不能为待核对主张创建正式能力目标");
+    const bindings = await admin`SELECT 1 FROM note_learning_round_targets WHERE round_id=${round.roundId}`;
+    assert.equal(bindings.length, 0);
+    const afterSchedules = await admin`SELECT count(*)::int AS n FROM review_schedules WHERE workspace_id=${fixture.workspaceId}`;
+    assert.equal(afterSchedules[0].n, beforeSchedules[0].n, "没有目标就没有可推进的复习间隔");
+  } finally {
+    suspectClaim = false;
+    suspectOnly = false;
+    await close(round);
+  }
+});
+
+test("a suspect-only round cannot borrow an older safe objective as its assessment target", async () => {
+  const safeRound = await open();
+  proposeExistingSafeUnit = true;
+  let suspectRound: { roundId: string; revision: number } | null = null;
+  let safeObjectiveId = "";
+  try {
+    const safeTeaching = await call("POST", `/v2/note-learning-rounds/${safeRound.roundId}/teaching`, { expectedRevision: safeRound.revision });
+    assert.equal(safeTeaching.statusCode, 201, safeTeaching.body);
+    const safeView = roundTeachingViewV1Schema.parse(safeTeaching.json());
+    assert.ok(safeView.practiceStart, "the earlier, independently supported unit has a normal practice entry");
+    safeObjectiveId = safeView.practiceStart.objectiveId;
+    const original = await admin`
+      SELECT objective.lifecycle, objective.current_objective_revision_id, revision.canonical_answer
+      FROM learning_objectives_v2 AS objective
+      JOIN learning_objective_revisions_v2 AS revision
+        ON revision.objective_revision_id = objective.current_objective_revision_id
+      WHERE objective.workspace_id=${fixture.workspaceId} AND objective.objective_id=${safeObjectiveId}`;
+    assert.equal(original.length, 1);
+    assert.deepEqual(original[0].canonical_answer.items.map((item: { unitId: string }) => item.unitId), ["safe-unit-2"]);
+
+    await close(safeRound);
+    proposeExistingSafeUnit = false;
+    suspectClaim = true;
+    suspectOnly = true;
+    suspectRound = await open();
+    const beforeObjectives = await admin`SELECT count(*)::int AS n FROM learning_objectives_v2 WHERE workspace_id=${fixture.workspaceId}`;
+    const beforeSchedules = await admin`SELECT count(*)::int AS n FROM review_schedules WHERE workspace_id=${fixture.workspaceId}`;
+
+    const suspectTeaching = await call("POST", `/v2/note-learning-rounds/${suspectRound.roundId}/teaching`, { expectedRevision: suspectRound.revision });
+    assert.equal(suspectTeaching.statusCode, 201, suspectTeaching.body);
+    const suspectView = roundTeachingViewV1Schema.parse(suspectTeaching.json());
+    assert.ok(suspectView.teaching?.content.suspectClaims?.length);
+    assert.equal(suspectView.practiceStart, null, "a prior safe target cannot stand in for this suspect-only round");
+    const roundTargets = await admin`SELECT 1 FROM note_learning_round_targets WHERE round_id=${suspectRound.roundId}`;
+    assert.equal(roundTargets.length, 0);
+    const afterObjectives = await admin`SELECT count(*)::int AS n FROM learning_objectives_v2 WHERE workspace_id=${fixture.workspaceId}`;
+    const afterSchedules = await admin`SELECT count(*)::int AS n FROM review_schedules WHERE workspace_id=${fixture.workspaceId}`;
+    assert.equal(afterObjectives[0].n, beforeObjectives[0].n, "the suspect unit must not create a second formal objective");
+    assert.equal(afterSchedules[0].n, beforeSchedules[0].n, "repeating the suspect unit must not create or advance a review interval");
+    const preserved = await admin`
+      SELECT objective.lifecycle, objective.current_objective_revision_id, revision.canonical_answer
+      FROM learning_objectives_v2 AS objective
+      JOIN learning_objective_revisions_v2 AS revision
+        ON revision.objective_revision_id = objective.current_objective_revision_id
+      WHERE objective.workspace_id=${fixture.workspaceId} AND objective.objective_id=${safeObjectiveId}`;
+    assert.equal(preserved[0].lifecycle, original[0].lifecycle);
+    assert.equal(preserved[0].current_objective_revision_id, original[0].current_objective_revision_id);
+    assert.deepEqual(preserved[0].canonical_answer, original[0].canonical_answer, "the older safe target remains unchanged");
+  } finally {
+    proposeExistingSafeUnit = false;
+    suspectClaim = false;
+    suspectOnly = false;
+    if (suspectRound) await close(suspectRound);
+    else await close(safeRound);
+  }
 });
 
 test("editing a warned source rechecks only that unit and leaves the safe target and schedule untouched", async () => {

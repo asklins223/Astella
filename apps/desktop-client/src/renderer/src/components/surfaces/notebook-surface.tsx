@@ -754,6 +754,7 @@ export function NotebookSurface() {
   const saveRef = useRef<() => void>(() => {});
   const [mode, setMode] = useState<"read" | "edit">("read");
   const [leaf, setLeaf] = useState<"reading" | "learning" | "history">("reading");
+  const autoFocusedSuspectNoteRef = useRef<string | null>(null);
   const [showAllBlocks, setShowAllBlocks] = useState(false);
   const [showAllReadingSections, setShowAllReadingSections] = useState(false);
   const [focusedBlockOrdinal, setFocusedBlockOrdinal] = useState<number | null>(null);
@@ -1045,6 +1046,23 @@ export function NotebookSurface() {
       latestGenerationRun,
     } satisfies NotebookProjection;
   }, [activeNoteRef?.noteId]);
+
+  // A note with an unresolved factual warning should open on the learning leaf,
+  // where the original quote and its reason live. This makes a next-day return
+  // surface the caution immediately without taking the reader away from the
+  // familiar notebook HUD; choosing another paper tab remains under the
+  // reader's control.
+  useEffect(() => {
+    if (!data) return;
+    const hasUnresolvedSuspectClaim = Boolean(data.roundTeachingView?.teaching?.content.suspectClaims?.length);
+    if (!hasUnresolvedSuspectClaim) {
+      autoFocusedSuspectNoteRef.current = null;
+      return;
+    }
+    if (autoFocusedSuspectNoteRef.current === data.note.noteId) return;
+    autoFocusedSuspectNoteRef.current = data.note.noteId;
+    setLeaf("learning");
+  }, [data?.note.noteId, data?.roundTeachingView]);
 
   // The pill returns to whatever opened this note: the library, the
   // card-generation workbench the reader stepped out of, or the star map a

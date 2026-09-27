@@ -40,20 +40,25 @@ export function classifySuspectClaimEditV1(input: {
   claim: RoundSuspectClaimV1;
   previousBlockText: string | null;
   currentBlockText: string | null;
+  previousOtherBlockTexts?: readonly string[];
+  currentOtherBlockTexts?: readonly string[];
 }): SuspectClaimEditStatusV1 {
   const { claim, previousBlockText, currentBlockText } = input;
   if (claim.sourceBlockOrdinal === null || claim.sourceQuote === null
     || previousBlockText === null || currentBlockText === null) return "uncertain";
-  const start = previousBlockText.indexOf(claim.sourceQuote);
-  if (start < 0 || previousBlockText.indexOf(claim.sourceQuote, start + 1) >= 0) return "uncertain";
+  const quote = claim.sourceQuote;
+  const start = previousBlockText.indexOf(quote);
+  if (start < 0 || previousBlockText.indexOf(quote, start + 1) >= 0) return "uncertain";
   if (previousBlockText === currentBlockText) return "unchanged";
-  const currentSlice = currentBlockText.slice(start, start + claim.sourceQuote.length);
+  if (input.previousOtherBlockTexts?.some((text) => text === currentBlockText)
+    || input.currentOtherBlockTexts?.some((text) => text.includes(quote))) return "uncertain";
+  const currentSlice = currentBlockText.slice(start, start + quote.length);
   // A different edit in this same evidence block (such as adding a verified source
   // excerpt beside the claim) can change whether the unit is supportable. Recheck it.
-  if (currentSlice === claim.sourceQuote) return "changed";
+  if (currentSlice === quote) return "changed";
   // If the old quote still exists elsewhere, its changed location cannot tell us
   // whether the claim itself changed. Keep the warning instead of fuzzy-reanchoring it.
-  if (currentBlockText.includes(claim.sourceQuote)) return "uncertain";
+  if (currentBlockText.includes(quote)) return "uncertain";
   return "changed";
 }
 
@@ -116,17 +121,28 @@ export async function readSuspectClaimFollowUpV1(
     .from(noteBlocks)
     .where(and(eq(noteBlocks.workspaceId, scope.workspaceId), inArray(noteBlocks.versionId, versionIds)));
   const previousTextByKey = new Map(previousBlocks.map((block) => [`${block.versionId}:${block.ordinal}`, block.text]));
+  const previousBlocksByVersion = new Map<string, typeof previousBlocks>();
+  for (const block of previousBlocks) {
+    const prior = previousBlocksByVersion.get(block.versionId) ?? [];
+    previousBlocksByVersion.set(block.versionId, [...prior, block]);
+  }
   const currentTextByOrdinal = new Map(currentBlocks.map((block) => [block.ordinal, block.text]));
   const recheckTargets: SuspectClaimRecheckTargetV1[] = [];
   const pendingByKey = new Map<string, RoundSuspectClaimV1>();
 
   for (const [unitId, previous] of selectedByUnitId) {
     const claim = previous.claim;
+    const previousVersionBlocks = previousBlocksByVersion.get(previous.noteVersionId) ?? [];
+    const currentOrdinal = claim.sourceBlockOrdinal;
     const status = classifySuspectClaimEditV1({
       claim,
-      previousBlockText: claim.sourceBlockOrdinal === null ? null
-        : previousTextByKey.get(`${previous.noteVersionId}:${claim.sourceBlockOrdinal}`) ?? null,
-      currentBlockText: claim.sourceBlockOrdinal === null ? null : currentTextByOrdinal.get(claim.sourceBlockOrdinal) ?? null,
+      previousBlockText: currentOrdinal === null
+        ? null : previousTextByKey.get(`${previous.noteVersionId}:${currentOrdinal}`) ?? null,
+      currentBlockText: currentOrdinal === null ? null : currentTextByOrdinal.get(currentOrdinal) ?? null,
+      previousOtherBlockTexts: currentOrdinal === null ? [] : previousVersionBlocks
+        .filter((block) => block.ordinal !== currentOrdinal).map((block) => block.text),
+      currentOtherBlockTexts: currentOrdinal === null ? [] : currentBlocks
+        .filter((block) => block.ordinal !== currentOrdinal).map((block) => block.text),
     });
     if (status === "changed" && claim.sourceBlockOrdinal !== null && claim.sourceQuote !== null) {
       recheckTargets.push({ unitId, sourceBlockOrdinal: claim.sourceBlockOrdinal, sourceQuote: claim.sourceQuote, reason: claim.reason });

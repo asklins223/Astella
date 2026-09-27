@@ -23,6 +23,10 @@ test("只在原引用段落变更后重检；原文移位时保留待核对", ()
   assert.equal(classifySuspectClaimEditV1({ claim,
     previousBlockText: "前言。复合索引缺少最左列条件就无法使用索引。", currentBlockText: "新前言。复合索引缺少最左列条件就无法使用索引。" }), "uncertain",
   "quote relocation does not get fuzzy-matched to a new position");
+  assert.equal(classifySuspectClaimEditV1({ claim,
+    previousBlockText: "复合索引缺少最左列条件就无法使用索引。", currentBlockText: "另一段新内容。",
+    currentOtherBlockTexts: ["前言。复合索引缺少最左列条件就无法使用索引。"] }), "uncertain",
+  "moving the quoted claim to another block is not treated as an edit at the old ordinal");
 });
 
 test("无法精确定位或当前块消失时不自动重检", () => {

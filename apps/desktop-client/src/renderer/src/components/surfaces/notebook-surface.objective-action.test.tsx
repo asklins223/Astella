@@ -55,6 +55,7 @@ function listItem(overrides: Record<string, unknown> = {}): ObjectiveListItemV3 
     cardStrategy: null,
     lifecycle: "active",
     freshness: "fresh",
+    primaryNoteId: NOTE_ID,
     primaryNoteTitle: "物理笔记",
     createdAt: "2026-09-20T09:00:00.000Z",
     personalState: { state: "unvalidated", activeRunId: null },
