@@ -210,7 +210,6 @@ test("判据本身灵敏：三元、变量式、没问过总控，三种写法�
 const PER_CASE_SWITCH_FILES: Record<string, { minSwitches: number }> = {
   // e2e 那 12 处 = 11 条已搬用例 + 1 格"档位真切了"的探针（探针不算用例，但少它整套做法失去读数）。
   "workers/ai-worker/src/integration-tests/card-generation-v2-e2e-subset.integration.ts": { minSwitches: 25 },
-  "workers/ai-worker/src/integration-tests/card-generation-v2-live-progress-postgres.integration.ts": { minSwitches: 6 },
   "workers/ai-worker/src/integration-tests/card-generation-v2-c-cases.integration.ts": { minSwitches: 2 },
 };
 
@@ -226,5 +225,44 @@ test("逐用例档位：摘档的那几份都有每发复位，且条数没有�
       + "要搬回去就把这台账一起改小并写明原因");
     assert.ok(!source.includes("TEMP-REPRO"),
       `${rel} 里留着临时复现用的改动没回：TEMP-REPRO 这类标记不许进版本`);
+  }
+});
+
+/**
+ * **钉回旧链的赋值处**逐文件登记，只许变短（与上面入口台账同法）。
+ *
+ * 为什么另起一格：`minSwitches` 读的是"摘档"那一行，所以一份文件整份钉回 `v2`、或新起
+ * 一份钉档的集测，它看不见。W7-7 刀二删的是旧链本体：每随链退场一份网，这里的数字就该
+ * 掉一格；**涨上去就是有人把判据搬回旧链**。
+ * 只扫 worker 的集测目录——`apps/api/src/__tests__/card-generation-v2-chain-gate.test.ts`
+ * 里那两处是总控自己的单测（它必须两档都试），不是"还钉着旧链"。
+ * 到 0 那天（旧链与总控一起删）这一格连同这张表一起退场。
+ */
+const V2_PIN_SITES: Record<string, number> = {
+  "workers/ai-worker/src/integration-tests/card-generation-v2-e2e-subset.integration.ts": 2,
+  "workers/ai-worker/src/integration-tests/card-generation-v2-c-cases.integration.ts": 2,
+  "workers/ai-worker/src/integration-tests/card-generation-v2-llm-natural-activation.integration.ts": 1,
+  // 这一处不是"还钉着旧链"，是 off 档对照格自己现钉现摘（验总控能整条回到改前）。
+  "workers/ai-worker/src/integration-tests/card-generation-v3-simplified-postgres.integration.ts": 1,
+};
+
+test("钉回旧链的赋值处：逐文件登记、只许变短，没登记的算漏", () => {
+  const dirName = "workers/ai-worker/src/integration-tests";
+  const found = new Map<string, number>();
+  for (const name of readdirSync(join(REPO_ROOT, dirName))) {
+    if (!name.endsWith(".integration.ts")) continue;
+    const rel = `${dirName}/${name}`;
+    const pins = [...readFileSync(join(REPO_ROOT, rel), "utf8")
+      .matchAll(/process\.env\.CARD_GENERATION_CHAIN\s*=\s*"v2"/g)].length;
+    if (pins > 0) found.set(rel, pins);
+  }
+  assert.ok(found.size > 0, "一份钉档的集测都没扫到 ⇒ 这条守卫已经读不到东西");
+  for (const [rel, pins] of found) {
+    const cap = V2_PIN_SITES[rel];
+    assert.ok(cap !== undefined, `${rel} 在钉旧档却没登记 ⇒ 台账留在原地就是在说谎`);
+    assert.ok(pins <= cap, `${rel} 的钉档处数从 ${cap} 涨到 ${pins}：判据不许搬回旧链`);
+  }
+  for (const rel of Object.keys(V2_PIN_SITES)) {
+    assert.ok(found.has(rel), `${rel} 登记着钉档、实际已经没有了 ⇒ 把这行台账删掉`);
   }
 });

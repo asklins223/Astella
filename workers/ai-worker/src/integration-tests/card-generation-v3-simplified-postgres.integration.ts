@@ -445,6 +445,64 @@ test("端到端：两发语义调用走到 review_ready，候选带着 binding p
 });
 
 /**
+ * 旧链那份网里"重投同一个 run 的 job 不写第二份"随链退场（39d W7-7 刀二），**判据本身搬到这里**：
+ * 它判的是 outbox 的重复投递，与哪条链出题无关。
+ *
+ * 三条"什么都没变"不够判：安静让路与半路炸了读数一样（旧链那条当年就是这么写的）。所以这里
+ * 同时钉两件事——这一发**被受理过**（那条已 completed 的 job 重新认领、又结算回 completed），
+ * 以及它走的是哪条路（入口状态门认出 run 已不在可跑档就 return，不重付生成那一发）。
+ */
+test("重放防护（自旧链改接）：重投整批那一发不新增计划、不新增候选、不重复留痕，终态不动", async () => {
+  const probe = async () => {
+    const rows = await admin`
+      SELECT
+        (SELECT COUNT(*) FROM card_generation_plans_v2 WHERE run_id = ${simplifiedRunId}) AS plans,
+        (SELECT COUNT(*) FROM card_generation_candidates_v2
+           WHERE run_id = ${simplifiedRunId}) AS candidates,
+        (SELECT COUNT(*) FROM card_generation_events_v2
+           WHERE run_id = ${simplifiedRunId}
+             AND event_type IN ('card_generation.simplified_completed',
+                                'card_generation.simplified_plan_committed')) AS trace_events,
+        (SELECT status FROM card_generation_runs_v2 WHERE id = ${simplifiedRunId}) AS status
+    ` as unknown as Array<{ plans: string; candidates: string; trace_events: string; status: string }>;
+    return rows[0]!;
+  };
+  const baseline = await probe();
+  assert.ok(Number(baseline.candidates) >= 1, "上一发没在这条 run 上落下候选，重放无从比对");
+
+  // 换一把新租约把**已经结算过的那条整批 job** 再投一遍：等价于回收器发现租约过期之后
+  // 另一个 worker 重投这一行。
+  const freshToken = randomUUID();
+  const claimed = await admin`
+    UPDATE card_generation_run_outbox_v2
+    SET status = 'processing', started_at = now(),
+        lease_expires_at = now() + interval '30 minutes', lease_token = ${freshToken}
+    WHERE run_id = ${simplifiedRunId} AND job_type = 'card_generation_simplified_v1'
+      AND status = 'completed'
+    RETURNING id, workspace_id, run_id, job_type, payload
+  ` as unknown as Array<{ id: string; workspace_id: string; run_id: string;
+    job_type: string; payload: Record<string, unknown> }>;
+  assert.equal(claimed.length, 1, "本 run 该有一条已完成的整批 job（上一条用例跑的就是它）");
+  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  await processV2OutboxJob({
+    id: claimed[0]!.id, workspaceId: claimed[0]!.workspace_id, runId: claimed[0]!.run_id,
+    jobType: claimed[0]!.job_type, payload: claimed[0]!.payload, leaseToken: freshToken,
+  });
+
+  const replayed = await probe();
+  assert.equal(replayed.candidates, baseline.candidates, "重投写出了第二份候选");
+  assert.equal(replayed.plans, baseline.plans, "重投又落了一版计划");
+  assert.equal(replayed.trace_events, baseline.trace_events, "重投把生成/完成那两发留痕又发了一遍");
+  assert.equal(replayed.status, baseline.status, "重投把已经定下来的终态挪走了");
+
+  const jobState = await admin`
+    SELECT status, last_error FROM card_generation_run_outbox_v2 WHERE id = ${claimed[0]!.id}
+  ` as unknown as Array<{ status: string; last_error: string | null }>;
+  assert.equal(jobState[0]!.status, "completed",
+    `重投没有被安静让路，而是停在 ${jobState[0]!.status}：${jobState[0]!.last_error ?? "无错误信息"}`);
+});
+
+/**
  * 新链出的卡**保存得下来**（W7-1 与 W7-2 的接缝）。
  *
  * 上一条用例只走到"保留"。§16.28 那句"零候选是正常结果"讲的只是生成侧；这一发回答另一半：
