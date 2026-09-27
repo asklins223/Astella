@@ -71,10 +71,28 @@ test("争议种类：union、zod 与 0296 的 CHECK 是同一份", () => {
     "adv2_kind_chk");
 });
 
-test("争议状态：zod 与 0296 的 CHECK 是同一份", () => {
-  assertSameMembers("status", assessmentDisputeStatusV2Schema.options,
-    ["open", "recheck_upheld", "recheck_corrected", "recheck_undetermined", "closed_held"] as AssessmentDisputeStatusV2[],
-    "adv2_status_chk");
+test("争议状态：zod 与 **0310 之后**的 CHECK 是同一份（第四档有自己的状态名）", () => {
+  const fromZod = assessmentDisputeStatusV2Schema.options;
+  assert.deepEqual([...fromZod].sort(),
+    ["closed_held", "open", "recheck_corrected", "recheck_over_broad", "recheck_undetermined", "recheck_upheld"],
+    "状态应当是六档：第四档要有**自己的**状态名，复用 undetermined 就等于把它放行了");
+  const widened = outcomeWideningSql.match(/status IN \(([^)]*)\)/);
+  assert.ok(widened, `在 ${OUTCOME_WIDENING_MIGRATION} 里读不到 status 的 CHECK 列表（判据可能指错了地方）`);
+  assert.deepEqual(
+    [...widened[1]!.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!).sort(),
+    [...fromZod].sort(),
+    "0310 的 status CHECK 与 zod 枚举不同宽",
+  );
+  assert.match(outcomeWideningSql, /DROP CONSTRAINT IF EXISTS assessment_disputes_v2_status_chk/,
+    "0310 没有 DROP 旧的 status CHECK：两条并存时旧的那条会把新状态拒掉");
+  // 0296 停在五档 —— 钉住"最终形状来自 0310"这件事，免得有人把常量改回去
+  assert.deepEqual(
+    [...migrationSql.match(/CONSTRAINT adv2_status_chk CHECK \(status IN \(([^)]*)\)\)/)![1]!
+      .matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!).sort(),
+    ["closed_held", "open", "recheck_corrected", "recheck_undetermined", "recheck_upheld"],
+    "0296 的 status CHECK 不该被就地改宽——它已经应用到 dev 库与一次性库，"
+    + "改它会让『已应用的迁移』与『仓库里的定义』分叉",
+  );
 });
 
 test("复核四档：zod 与 **0310 之后**的 CHECK 是同一份（§14.2 由三档扩为四档）", () => {

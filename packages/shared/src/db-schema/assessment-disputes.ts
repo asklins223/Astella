@@ -104,12 +104,12 @@ export const assessmentDisputesV2 = pgTable(
     ),
     statusChk: check(
       "assessment_disputes_v2_status_chk",
-      sql`${t.status} IN ('open', 'recheck_upheld', 'recheck_corrected', 'recheck_undetermined', 'closed_held')`,
+      sql`${t.status} IN ('open', 'recheck_upheld', 'recheck_corrected', 'recheck_over_broad', 'recheck_undetermined', 'closed_held')`,
     ),
     // §16.22 的硬闸：至多一次重新检查。
     recheckOnceChk: check("assessment_disputes_v2_recheck_once_chk", sql`${t.recheckCount} <= 1`),
     /**
-     * 复核三态与 `recheck_count`／`recheck_outcome` 必须一致。
+     * 复核**四档**与 `recheck_count`／`recheck_outcome` 必须一致（2026-09-27 由三档扩为四档）。
      *
      * 分成两条 CHECK 而不是一条，是因为它们的失败形状不同：`status='open'` 却带着
      * 结论，是"有结论没走状态"；带着结论但 `recheck_count=0`，是"复核没计数"——

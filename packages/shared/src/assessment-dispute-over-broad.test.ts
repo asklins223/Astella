@@ -178,11 +178,15 @@ test("变异自证：把第四档从源码删掉，这几处判据必须同时�
 
   // 变异②：让第四档走 use_as_is（把系统自己的错误变成用户的进度）
   const useAsIs = source.replace(
-    /if \(input\.recheckOutcome === "over_broad"\) \{[\s\S]*?\n  \}/,
-    'if (input.recheckOutcome === "over_broad") {\n    return { action: "use_as_is", suspendsArtifactReuse: true, reasonCode: "recheck_upheld" };\n  }',
+    /if \(input\.recheckOutcome === "over_broad"\) \{[\s\S]*?reasonCode: "recheck_original_too_broad" \};/,
+    'if (input.recheckOutcome === "over_broad") {\n    return { action: "use_as_is", suspendsArtifactReuse: true, reasonCode: "recheck_upheld" };\n  };',
   );
   assert.notEqual(useAsIs, source, "变异②造不出差异 ⇒ 判据恒真");
-  assert.ok(!/recheck_original_too_broad/.test(useAsIs), "变异②没有真的把第四档改成 use_as_is");
+  // 量**排期那一处**而不是全文件：文件里另有一处文档注释提到这个 reasonCode，
+  // 全文件判据会在变异已经生效时仍然绿——那种"变异跑了但没证明任何事"最费时间。
+  const gateBody = useAsIs.slice(useAsIs.indexOf('if (input.recheckOutcome === "over_broad")'));
+  assert.ok(!/recheck_original_too_broad/.test(gateBody.slice(0, 600)),
+    "变异②没有真的把第四档改成 use_as_is");
 
   // 变异③：把公开合同收窄回三档
   const threeStates = source.replace(/"over_broad",\s*/g, "");

@@ -22,3 +22,14 @@ ALTER TABLE public.assessment_disputes_v2
 -- 存量为不受影响：三档期间写入的行全部落在新集合内，逐行不变。
 COMMENT ON CONSTRAINT assessment_disputes_v2_outcome_chk ON public.assessment_disputes_v2 IS
   '复核结论四档：upheld 原判站得住 / corrected 原判偏严 / over_broad 原判过宽 / undetermined 判不出来（39 §14.2，2026-09-27 由三档扩为四档）';
+
+-- `status` 那一列同样要放宽：第四档需要一个**自己的**状态名。
+-- 复用 `recheck_undetermined` 看起来省事，但 §16.22 的读侧是按状态分别判的
+-- （`recheck_upheld` 放行、其余扣住），合成一个状态就等于把「原判被否定了」
+-- 也放行了——那正是这一档要防的事。
+ALTER TABLE public.assessment_disputes_v2
+  DROP CONSTRAINT IF EXISTS assessment_disputes_v2_status_chk;
+
+ALTER TABLE public.assessment_disputes_v2
+  ADD CONSTRAINT assessment_disputes_v2_status_chk
+  CHECK (status IN ('open', 'recheck_upheld', 'recheck_corrected', 'recheck_over_broad', 'recheck_undetermined', 'closed_held'));

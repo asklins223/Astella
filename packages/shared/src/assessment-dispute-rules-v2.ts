@@ -65,7 +65,8 @@ export type AssessmentDisputeRecheckOutcomeV2 =
 export type AssessmentDisputeStatusV2 =
   | "open" // 已受理，尚未复核
   | "recheck_upheld" // 复核维持
-  | "recheck_corrected" // 复核修正原判
+  | "recheck_corrected" // 复核修正原判（原判偏严）
+  | "recheck_over_broad" // 复核认为原判过宽（**这一档有自己的状态名**，不复用 undetermined）
   | "recheck_undetermined" // 复核仍无法判断（**争议保持未决**，不是关闭）
   | "closed_held"; // 本人选择结束并把该项暂不安排
 
@@ -428,6 +429,7 @@ export const assessmentDisputeStatusV2Schema = z.enum([
   "open",
   "recheck_upheld",
   "recheck_corrected",
+  "recheck_over_broad",
   "recheck_undetermined",
   "closed_held",
 ]);
@@ -561,11 +563,52 @@ export type CloseAssessmentDisputeCommandV2 = z.infer<typeof closeAssessmentDisp
 // ─── 桌面侧的**四条回执**（`run-dispute-routes.ts` 逐条同形）────────────────
 
 /** 开一份争议。`created: false` = 原来就开着这一份（幂等回执，不是新一次）。 */
+/**
+ * 开争议的回执，**拆成两步**（§10.3「区分『当时的结算』与『后续确认」」）。
+ *
+ * ## 为什么拆
+ *
+ * 这一发会**等**那一次系统复核跑完（真模型实测 2.8–3.0 秒）。两件事发生在同一发里，
+ * 而它们的性质完全不同：
+ *  - 「异议记下了」＝ **当时的结算**：用户按了按钮，事实立刻成立；
+ *  - 「复核怎么看」＝ **后续确认**：它需要一次模型调用，可能成功、可能跳过、可能失败。
+ *
+ * 把两者塞进一个扁平的 `status` 字段，就会有两个后果：①用户等 3 秒期间不知道自己按的
+ * 那一下有没有生效（于是会重复点，而重复点就是 §16.22 那个可重复动作）；②复核失败时
+ * 那一发要么整体报错、要么假装成功——前者让用户以为异议没记下来，后者是假回执。
+ *
+ * ## 不做成 fire-and-forget
+ *
+ * 挂成后台 job、立即回执，屏上那颗按钮就会变成一个**能被按的重复动作**：
+ * 按一次开一份争议、按两次开两份，§16.22 的死循环立刻有了一个新入口。
+ * 所以这里保留等待，只把**回执的形状**拆开：第一步永远先成立，第二步自己带时间戳。
+ */
+export const openAssessmentDisputeRecheckReceiptV2Schema = z.strictObject({
+  /** 固定为「后续确认」：这一格永远不是当时的结算。 */
+  stage: z.literal("supplementary"),
+  status: z.enum(["committed", "skipped", "failed"]),
+  /** 复核落库的时刻。**它与「异议记下」不是同一刻**，屏上要分开显示。 */
+  decidedAt: z.string().datetime({ offset: true }),
+  /** `committed` 时才有；其余两档为 null（不是「没有结论」，是「这一档还没有结论」）。 */
+  outcome: assessmentDisputeRecheckOutcomeV2Schema.nullable(),
+  /** 复核者自己那一句理由 + 与之差的对照说明（§14.2「展示理由」）。 */
+  reason: z.string().nullable(),
+  /** 没跑成时说清是哪一种，别让屏上只剩一句「复核还没做」。 */
+  reasonCode: z.string().nullable(),
+});
+export type OpenAssessmentDisputeRecheckReceiptV2 = z.infer<
+  typeof openAssessmentDisputeRecheckReceiptV2Schema
+>;
+
 export const openAssessmentDisputeResultV2Schema = z.strictObject({
   version: z.literal(2),
   disputeId: z.string().uuid(),
   status: assessmentDisputeStatusV2Schema,
   created: z.boolean(),
+  /** 「当时的结算」那一句。屏上**先**说这一句，第二步是补充。 */
+  recordedLine: z.string(),
+  /** 「后续确认」。一定有这一格（哪怕是 skipped），这样屏上不必猜有没有发生过复核。 */
+  recheck: openAssessmentDisputeRecheckReceiptV2Schema,
 });
 export type OpenAssessmentDisputeResultV2 = z.infer<typeof openAssessmentDisputeResultV2Schema>;
 
@@ -667,6 +710,19 @@ export function assessmentDisputeSurfaceCopyV2(
         withholdsConclusion: true,
         acceptsSupplement: true,
       };
+    case "recheck_over_broad":
+      // 第四档。**与 `undetermined` 说两句话**：那一档是"系统还没想清楚"，
+      // 这一档是"系统想清楚了，上次判宽了"。用户该做的事不同——
+      // 前者可以补充说明再等一次，后者该回原回答重看。
+      return {
+        headline: "复核之后，上次那条判定偏宽了：原回答并没有满足条件，那一次不算达成。",
+        detail: reasonLine,
+        withholdsConclusion: true,
+        // 不接受补充说明：§14.2「不能反复要求用户接受同一判定」。
+        // 补充说明只能改变"判不出来"那一档（证据确实缺一块），而这一档的结论已定，
+        // 再补充也不会让一条已经过宽的判定重新成立。
+        acceptsSupplement: false,
+      };
     case "recheck_upheld":
       return {
         headline: "复核之后维持原来的判定。",
@@ -688,5 +744,49 @@ export function assessmentDisputeSurfaceCopyV2(
         withholdsConclusion: false,
         acceptsSupplement: false,
       };
+  }
+}
+
+/**
+ * 复核**四档**各有一句人话（§14.2「展示维持／修正／仍无法判断的理由」，四档扩后同理）。
+ *
+ * **写成人话而不是状态名的原因**：状态名是给数据库与测试看的。屏上念
+ * `recheck_original_too_broad` 没有人读得懂，而「上次说答对的那次，这次重新看下来
+ * 没成立」是用户能据此行动的句子。四个键一个都不能少——少一个就会有那一档落进兜底，
+ * 而兜底句对任何已知档都不该生效（与台账里那条 `schedule-copy` 判据同一形状）。
+ */
+export const RECHECK_OUTCOME_LINE_V2: Readonly<Record<AssessmentDisputeRecheckOutcomeV2, string>> = {
+  upheld: "重新看过一次，上次的判断站得住。",
+  corrected: "重新看过一次，上次判严了：原回答其实已经满足条件，已按更正记录改正。",
+  over_broad: "重新看过一次，上次判宽了：原回答并没有满足条件，那一次的达成不成立。",
+  undetermined: "这一次仍然判断不了：两种可能都有，暂不采信任何一方。",
+};
+
+/**
+ * 开争议那两步回执的屏上文案（**唯一出处**）。
+ *
+ * 第一步与第二步是**两句话**，不是一句加个尾巴：第一步回答"我按的那一下生效了吗"，
+ * 第二步回答"系统怎么看"。合成一句的后果就是用户在等第二句时不知道第一句已成立，
+ * 于是重复点——而重复点就是 §16.22 的可重复动作。
+ */
+export function disputeReceiptLinesV2(input: {
+  readonly created: boolean;
+  readonly recheck: OpenAssessmentDisputeRecheckReceiptV2;
+}): { readonly first: string; readonly second: string } {
+  const first = input.created
+    ? "异议已经记下了。这一次先不推进复习。"
+    : "这份异议之前已经记过，这次没有重复记。";
+  switch (input.recheck.status) {
+    case "committed":
+      return {
+        first,
+        second: RECHECK_OUTCOME_LINE_V2[input.recheck.outcome ?? "undetermined"],
+      };
+    case "skipped":
+      // **不说「正在处理」**：那一刻没有东西在处理（这一发已经等完了）。
+      // 说「正在处理」会让用户以为再等一会儿就有结果，而实际出口是他自己结束争议。
+      return { first, second: "系统这次没能重新看一遍（暂时不能这样做）。你可以补充说明，或结束这份异议并暂不安排。" };
+    case "failed":
+      return { first, second: "系统这次没能重新看一遍。你可以补充说明，或结束这份异议并暂不安排。" };
   }
 }

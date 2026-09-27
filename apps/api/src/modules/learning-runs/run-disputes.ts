@@ -207,7 +207,41 @@ export async function scheduleBlockedByDisputeV2(
   | { readonly blocked: true; readonly reasonCode: "assessment_disputed" }
   | { readonly blocked: false }
 > {
+  const resolution = await disputeScheduleResolutionV2(tx, input);
+  // 只投影"挡不挡"：这道闸的对外形状被 `assessment-disputes-postgres.integration.ts`
+  // 与 `disputed-objective-due-queue-postgres.integration.ts` 逐字段断言过，
+  // 把"可应用的那条更正"漏出去会让那两份的形状漂移。
+  return resolution.blocked ? { blocked: true, reasonCode: "assessment_disputed" } : { blocked: false };
+}
+
+/**
+ * 上面那道闸的**完整**读数：挡不挡，以及（不挡时）有没有一条「该由本次结算消费
+ * 一次」的更正。
+ *
+ * 两格合取，来自同一个循环——**不允许**分别实现：一个目标上可以同时挂着多条活争议
+ * （§9.1 明写「一个目标可能同时被笔记与卡片授权覆盖」），所以
+ *   - 任何一条仍然 withholds ⇒ 整条挡（§14.2「待复核时不持续放大结论」），连
+ *     「可应用」那一格也不给；
+ *   - 全部都有结论、且其中至少一条判成 `apply_correction_once` ⇒ 不挡，并把那一条交回
+ *     调用方去**消费一次**（`markCorrectionAppliedV2`），随后由唯一调度边界按全部适用
+ *     事实重算（§9.6「需要重新计算时仍经唯一调度服务……给出一次明确回执」）。
+ *
+ * 消费一次之后就落到 `correction_already_applied`（仍然 withholds）：§16.22 的
+ * 「不能反复要求用户接受同一判定」对"消费"同样成立——同一次更正不被消费第二次。
+ * 那之后这个目标上这次观察不再被放大，用户的出口是结束争议并暂不安排（§14.2）。
+ */
+export async function disputeScheduleResolutionV2(
+  tx: DisputeTx,
+  input: { workspaceId: string; userId: string; objectiveId: string },
+): Promise<
+  | { readonly blocked: true; readonly reasonCode: "assessment_disputed"; readonly correctionToApply: null }
+  | {
+    readonly blocked: false;
+    readonly correctionToApply: { readonly assessmentId: string; readonly disputeId: string } | null;
+  }
+> {
   const disputes = await liveDisputesForObjectiveV2(tx, input);
+  let pending: { assessmentId: string; disputeId: string } | null = null;
   for (const dispute of disputes) {
     const correction = await findCorrectionForDisputeV2(tx, {
       workspaceId: input.workspaceId,
@@ -219,9 +253,15 @@ export async function scheduleBlockedByDisputeV2(
       recheckOutcome: dispute.recheckOutcome,
       correctionAlreadyApplied: dispute.correctionAppliedAt !== null || correction?.appliedAt != null,
     });
-    if (decided.action !== "use_as_is") return { blocked: true, reasonCode: "assessment_disputed" };
+    if (decided.action === "use_as_is") continue;
+    if (decided.action === "apply_correction_once") {
+      if (!pending) pending = { assessmentId: dispute.assessmentId, disputeId: dispute.id };
+      continue;
+    }
+    // 仍 withholds（未复核／仍无法判断／更正已应用过）⇒ 整条挡，且不给"可应用"。
+    return { blocked: true, reasonCode: "assessment_disputed", correctionToApply: null };
   }
-  return { blocked: false };
+  return { blocked: false, correctionToApply: pending };
 }
 
 // ─── 写侧 ─────────────────────────────────────────────────────────────────
@@ -371,6 +411,10 @@ export async function completeDisputeRecheckV2(
   const statusByOutcome: Record<AssessmentDisputeRecheckOutcomeV2, DisputeRow["status"]> = {
     upheld: "recheck_upheld",
     corrected: "recheck_corrected",
+    // 原判过宽：状态名要说得出「宽」，**不能**复用 `recheck_undetermined`——
+    // §16.22 的读侧是按状态**分别**判的（`recheck_upheld` 放行、其余扣住），
+    // 合成一个状态就等于把「原判被否定了」也放行。
+    over_broad: "recheck_over_broad",
     undetermined: "recheck_undetermined",
   };
   // `recheckCount` 一次就是 1（判据已挡住 0→2）。同时写进 WHERE，
