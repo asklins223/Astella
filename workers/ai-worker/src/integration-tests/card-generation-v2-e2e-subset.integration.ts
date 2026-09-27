@@ -188,6 +188,24 @@ async function seedNote(
   return { versionId, blockId, noteId };
 }
 
+const CODE_SNIPPET = "def fib(n):\n    return n if n < 2 else fib(n-1) + fib(n-2)";
+
+/** 一篇只有一个 code block 的笔记（region evidence 未实现 ⇒ 这一发必须被拒绝）。 */
+async function seedCodeOnlyNote(title: string): Promise<string> {
+  const codeNoteId = await createNote(title);
+  const codeVersionId = randomUUID();
+  seedVersionCounter += 1;
+  await admin.begin(async (tx) => {
+    await tx`INSERT INTO note_versions (id, note_id, workspace_id, version_no, content_json, content_hash, created_by)
+      VALUES (${codeVersionId}, ${codeNoteId}, ${WORKSPACE_ID}, ${seedVersionCounter}, ${tx.json({ blocks: [{ type: "code", content: CODE_SNIPPET }] })}, 'v2-e2e-hash-code', ${USER_ID})
+      ON CONFLICT (id) DO NOTHING`;
+    await tx`INSERT INTO note_blocks (id, version_id, workspace_id, type, content, ordinal)
+      VALUES (${randomUUID()}, ${codeVersionId}, ${WORKSPACE_ID}, 'code', ${CODE_SNIPPET}, 1)
+      ON CONFLICT (id) DO NOTHING`;
+  });
+  return codeVersionId;
+}
+
 async function createRun(versionId: string, clientRequestId: string, idempotencyKey: string) {
   const { createGenerationRunV2 } = await import(
     "../../../../apps/api/src/modules/card-generation-v2/generation-run-service.ts"
@@ -250,7 +268,10 @@ after(async () => {
 });
 
 test("C01：OSI 短笔记 → Auto → 推荐 1–2 张（review_ready）", async () => {
-  const { versionId } = await seedNote("OSI", OSI_CONTENT);
+  delete process.env.CARD_GENERATION_CHAIN; // 判的是"短笔记出 1–2 张并到可审核态"，两链同形
+  // 正文换成两条链都出得了卡的那一份：OSI 那句是"整句列举"，在新链会被自己的
+  // 题面门挡下（拿它判"少出卡"就会红在 0 张，与这条要判的事无关）。卡数判据一字未动。
+  const { versionId } = await seedNote("OSI", DUAL_CHAIN_CONTENT);
   const runId = (await createRun(versionId, `c01-${randomUUID()}`, `c01-key-${randomUUID()}`)).runId;
   await runPipelineOnce();
 
@@ -268,11 +289,6 @@ test("C01：OSI 短笔记 → Auto → 推荐 1–2 张（review_ready）", asyn
     `C01 must recommend 1-2 candidates (got ${candidateCount[0].n})`,
   );
 
-  // R35/§10.2：纯文本 micro-note 必须显式路由到轻链路
-  const lightEvent = await admin`
-    SELECT count(*)::int AS n FROM card_generation_events_v2
-    WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID} AND event_type = 'pipeline.route.light'`;
-  assert.equal(lightEvent[0].n, 1, "C01 must be routed to the light pipeline (pipeline.route.light)");
 });
 
 test("C03：临时待办 → no_cards_recommended 成功终态，0 Candidate/Card/Objective/Schedule", async () => {
@@ -1117,37 +1133,21 @@ test("C36：纯感想 → no_cards_recommended 成功终态，不伪造 first_ca
 });
 
 test("C10：代码块不被文本归一化——typed evidence 缺失时拒绝而非产出乱码卡", async () => {
-  const CODE_SNIPPET = "def fib(n):\n    return n if n < 2 else fib(n-1) + fib(n-2)";
+  delete process.env.CARD_GENERATION_CHAIN; // 判的是"非文本模态不许被归一化成证据"，与出题的链无关
   // 纯代码笔记：region evidence（R5 声称）未实现 → 拒绝路径
-  const codeNoteId = await createNote("纯代码笔记");
-  const codeVersionId = randomUUID();
-  const codeBlockId = randomUUID();
-  seedVersionCounter += 1;
-  await admin.begin(async (tx) => {
-    await tx`INSERT INTO note_versions (id, note_id, workspace_id, version_no, content_json, content_hash, created_by)
-      VALUES (${codeVersionId}, ${codeNoteId}, ${WORKSPACE_ID}, ${seedVersionCounter}, ${tx.json({ blocks: [{ type: "code", content: CODE_SNIPPET }] })}, 'v2-e2e-hash-code', ${USER_ID})
-      ON CONFLICT (id) DO NOTHING`;
-    await tx`INSERT INTO note_blocks (id, version_id, workspace_id, type, content, ordinal)
-      VALUES (${codeBlockId}, ${codeVersionId}, ${WORKSPACE_ID}, 'code', ${CODE_SNIPPET}, 1)
-      ON CONFLICT (id) DO NOTHING`;
-  });
+  const codeVersionId = await seedCodeOnlyNote("纯代码笔记");
   const codeRunId = (await createRun(codeVersionId, `c10a-${randomUUID()}`, `c10a-key-${randomUUID()}`)).runId;
   await runPipelineOnce();
   const codeRunState = await admin`
     SELECT status FROM card_generation_runs_v2 WHERE id = ${codeRunId}`;
   assert.equal(codeRunState[0]?.status, "no_cards_recommended",
     "C10 code-only note must be rejected (no_cards_recommended), not turned into a garbled card");
-  // R35/§10.2：非文本模态必须显式路由到标准链路
-  const standardEvent = await admin`
-    SELECT count(*)::int AS n FROM card_generation_events_v2
-    WHERE run_id = ${codeRunId} AND workspace_id = ${WORKSPACE_ID} AND event_type = 'pipeline.route.standard'`;
-  assert.equal(standardEvent[0].n, 1, "C10 code-only note must be routed to the standard pipeline");
   const codeCands = await admin`
     SELECT count(*)::int AS n FROM card_generation_candidates_v2 WHERE run_id = ${codeRunId}`;
   assert.equal(codeCands[0].n, 0, "C10 code-only note must produce 0 candidates");
 
   // 混合笔记（文本 + 代码）：文本成候选，代码不被文本归一化进 evidence
-  const TEXT_PART = "机会成本是指为了得到某种东西而必须放弃的其他东西的价值。";
+  const TEXT_PART = DUAL_CHAIN_CONTENT; // 换正文：判据仍是"文本成候选、代码不进证据"
   const mixedNoteId = await createNote("文本加代码混合笔记");
   const mixedVersionId = randomUUID();
   const mixedBlockA = randomUUID();
@@ -1180,7 +1180,17 @@ test("C10：代码块不被文本归一化——typed evidence 缺失时拒绝�
     SELECT count(*)::int AS n, count(*) FILTER (WHERE quality_state = 'passed')::int AS passed
     FROM card_generation_candidates_v2 WHERE run_id = ${mixedRunId}`;
   assert.ok(mixedCands[0].n >= 1, "C10 mixed note must produce candidates from the text part");
-  assert.equal(mixedCands[0].passed, 0, "C10 must fail closed (0 passed) until typed code evidence exists");
+  // 这条用例真正要守的是「代码不许被文本归一化进卡」——链无关，所以按内容判：
+  // 任何一条候选（含被挡下的）的正文里都不许出现那段代码。
+  const bodies = await admin`
+    SELECT objective_draft::text AS body FROM card_generation_candidates_v2
+    WHERE run_id = ${mixedRunId} AND workspace_id = ${WORKSPACE_ID}`;
+  assert.ok(bodies.length >= 1, "判据要有对象：混合笔记至少要落一条候选行");
+  assert.ok(bodies.every((row) => !String(row.body).includes("fib")),
+    "C10 代码内容不许出现在任何候选正文里（题面、答案、评分点都不行）");
+  // 旧链在这里还要"整批 0 passed"（region evidence 未实现就整篇不发卡）。简化链交回来的
+  // 是"文本那张成卡、代码不进证据"——两种都 fail-closed，但保守程度不同，这一档差异
+  // 单独留在钉旧档的那格里判（见下一条用例），不在这里偷偷放宽也不偷偷改掉。
 });
 
 test("C24：非法 schema / hash mismatch → fail closed（0 低质激活）", async () => {
@@ -2476,3 +2486,53 @@ test("C48：另一个人也翻过这张候选的答案 → 保存那一发替他
     "映射行要指回真正那次候选曝光");
 });
 
+/**
+ * 39d W7-7 刀二：`pipeline.route.light|standard` 是四阶段链独有的分类器
+ * （`classifyV2PipelineRoute`），简化链没有这一步。这两句原先挂在 C01 与 C10 里，
+ * 把两条与链无关的判据一起钉在旧档上——拆出来之后各判各的，删旧链时只删这一格。
+ */
+test("路由分类器：纯文本 micro-note 走轻链路、含非文本模态走标准链路（旧链独有，随链删）", async () => {
+  const { versionId } = await seedNote("路由轻链路", OSI_CONTENT);
+  const lightRunId = (await createRun(versionId, `route-light-${randomUUID()}`,
+    `route-light-key-${randomUUID()}`)).runId;
+  await runPipelineOnce();
+  const light = await admin`
+    SELECT count(*)::int AS n FROM card_generation_events_v2
+    WHERE run_id = ${lightRunId} AND workspace_id = ${WORKSPACE_ID}
+      AND event_type = 'pipeline.route.light'`;
+  assert.equal(light[0].n, 1, "纯文本 micro-note 必须显式记一条轻链路路由（不许静默）");
+
+  const codeVersionId = await seedCodeOnlyNote("路由标准链路");
+  const standardRunId = (await createRun(codeVersionId, `route-standard-${randomUUID()}`,
+    `route-standard-key-${randomUUID()}`)).runId;
+  await runPipelineOnce();
+  const standard = await admin`
+    SELECT count(*)::int AS n FROM card_generation_events_v2
+    WHERE run_id = ${standardRunId} AND workspace_id = ${WORKSPACE_ID}
+      AND event_type = 'pipeline.route.standard'`;
+  assert.equal(standard[0].n, 1, "含非文本模态的笔记必须走标准链路（不许被当成 micro-note）");
+});
+
+/**
+ * 39d W7-7 刀二：C10 的「整批 0 passed」是旧链独有的保守档位
+ *
+ * 同一篇"文本＋代码"的混合笔记，旧链在 region evidence 未实现时**整篇不发卡**；
+ * 简化链发的是文本那张、代码不进证据（那条链无关的判据留在 C10 里）。两种都是
+ * fail-closed，但保守程度不一样，所以拆成两格各判各的：这一格钉旧档，随链一起删；
+ * 不许因为新链不这么判就把那一格改成新链的形状。
+ */
+test("混合笔记在旧链上整批不发卡（比新链更保守的一档，随链删）", async () => {
+  const { versionId } = await seedNote("混合保守", [
+    "中和反应是酸与碱作用生成盐和水的反应；它的实质是两种离子结合成水，同时放出热量。",
+    "def fib(n):\n    return n if n < 2 else fib(n-1) + fib(n-2)",
+  ]);
+  await admin`
+    UPDATE note_blocks SET type = 'code'
+    WHERE version_id = ${versionId} AND workspace_id = ${WORKSPACE_ID} AND ordinal = 2`;
+  const runId = (await createRun(versionId, `c10c-${randomUUID()}`, `c10c-key-${randomUUID()}`)).runId;
+  await runPipelineOnce();
+  const passed = await admin`
+    SELECT count(*)::int AS n FROM card_generation_candidates_v2
+    WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID} AND quality_state = 'passed'`;
+  assert.equal(passed[0].n, 0, "旧链：region evidence 未实现时整批不可审核（0 passed）");
+});
