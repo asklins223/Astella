@@ -31,8 +31,11 @@ import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 process.env.DATABASE_URL_API ??= ADMIN_URL;
-// 这一份今天**不钉档**（2026-09-27 在默认档上逐条量过：tombstone 与 §22.6 配额各一条，2/2）。
-// 它测的是依据遮蔽与配额，不是哪条链出几张卡——所以旧链删掉之后这一份该活着。
+// 摘档要先解决一件事：单独跑这一份在默认档上 2/2（连跑两次都量过），但**十份连着跑时
+// C31 红在"Missing expected rejection: activation must be rejected after redaction"**
+// ——它与排在它前面的文件有状态耦合。拆出那个耦合之前，这份仍钉 v2（钉档不是结论，是
+// "今天还没有单独证明它能扛住整网顺序"的记号）。
+process.env.CARD_GENERATION_CHAIN = "v2";
 
 const admin = postgres(ADMIN_URL, { max: 2 });
 

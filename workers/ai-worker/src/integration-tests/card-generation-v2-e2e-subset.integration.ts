@@ -131,6 +131,17 @@ const OSI_CONTENT =
   "OSI 模型把网络通信分为七层：物理层负责比特流传输；数据链路层负责帧与纠错；网络层负责路由；传输层负责端到端传输；会话层负责会话管理；表示层负责数据格式转换；应用层提供应用接口。";
 const TODO_CONTENT = "明天上午 10 点开会；下午交周报；记得买牛奶。";
 
+/**
+ * 一份两条链都出得了候选的正文：C45 在默认档上量过它出得来卡，旧链也一样。
+ *
+ * 为什么要换正文：审核台那两条测的是**改写与重跑门禁这条路径**，不是出题质量。原来那份
+ * "机会成本…"正文在新链上会被确定性作者交出一份题面照抄答案单元的草稿，被我们自己的
+ * `front_leaks_answer` 闸门整批剔除 ⇒ 夹具拿不到候选，用例红在"C15 needs a candidate"
+ * 这种与它要判的东西无关的地方。换正文是为了让判据回到它该判的那件事上。
+ */
+const DUAL_CHAIN_CONTENT =
+  "中和反应是酸与碱作用生成盐和水的反应；其实质是酸电离出的氢离子与碱电离出的氢氧根离子结合成水，同时放出热量。";
+
 let seedVersionCounter = 0;
 
 async function seedNote(
@@ -883,11 +894,10 @@ test("C45：开启复习那一档 → 恰一条待处理安排，回执报库里
 });
 
 test("C20：反馈'太像原文'后重生成 → 新 revision，旧 revision 不可变（supersede 不覆盖）", async () => {
-  // 内容不得与已激活过的 OSI 相同（planner 对 existing objective 去重会返回 0 卡）；
-  // 且须能通过确定性 learnability 过滤（机会成本内容已在 C02 验证可产候选）
-  const REGEN_CONTENT =
-    "机会成本是指为了得到某种东西而必须放弃的其他东西的价值；在决策中，选择某方案就意味着放弃次优方案所能带来的收益。";
-  const { versionId } = await seedNote("重生成", REGEN_CONTENT);
+  delete process.env.CARD_GENERATION_CHAIN; // 夹具换成两链都出得了卡的正文之后，这一条走默认档
+  // 内容不得与已激活过的正文重复（planner 对 existing objective 去重会返回 0 卡），
+  // 且两条链都得从它出得出候选——两件事都由 `DUAL_CHAIN_CONTENT` 那一段注释与 C45 量过。
+  const { versionId } = await seedNote("重生成", DUAL_CHAIN_CONTENT);
   const runId = (await createRun(versionId, `c20-${randomUUID()}`, `c20-key-${randomUUID()}`)).runId;
   await runPipelineOnce();
   await forceReviewReady(runId);
@@ -935,10 +945,12 @@ test("C20：反馈'太像原文'后重生成 → 新 revision，旧 revision 不
     SELECT quality_state FROM card_generation_candidates_v2
     WHERE candidate_revision_id = ${old.candidate_revision_id} AND workspace_id = ${WORKSPACE_ID}`;
   assert.equal(checkingRows[0].quality_state, "checking", "C20 candidate must be checking while worker rewrites");
+  // 默认档下这一发派的是逐候选那一档（`card_candidate_refine_v3`，mode=rewrite）；
+  // 这一格判的还是同一件事：**点了「按反馈重生成」必须真的排出一发改写这一张的任务**。
   const outboxRows = await admin`
     SELECT count(*)::int AS n FROM card_generation_run_outbox_v2
-    WHERE run_id = ${runId} AND job_type = 'card_generation_regenerate_candidate'`;
-  assert.equal(outboxRows[0].n, 1, "C20 must enqueue regenerate job");
+    WHERE run_id = ${runId} AND job_type IN ('card_generation_regenerate_candidate', 'card_candidate_refine_v3')`;
+  assert.equal(outboxRows[0].n, 1, "C20 must enqueue a rewrite job for this candidate");
 
   // worker 处理：新 revision 写入，旧 revision supersede（不覆盖）
   await runPipelineOnce();
@@ -968,8 +980,13 @@ test("C20：反馈'太像原文'后重生成 → 新 revision，旧 revision 不
     "../../../../apps/api/src/modules/card-generation-v2/generation-run-service.ts"
   );
   const events = await getGenerationRunEventsV2({ workspaceId: WORKSPACE_ID, userId: USER_ID }, runId);
-  assert.ok(events.some((e) => e.eventType === "card_candidate.regenerated"),
-    "C20 must record card_candidate.regenerated event");
+  // 同一句话的两种写法：旧链记 `card_candidate.regenerated`，新链的逐候选那一发记
+  // `card_candidate.rewritten`（带 `reason:"user_feedback"`，正是"用户点的重生成"那一档）。
+  // 上面那几格已经量过新修订真的长出、旧修订只标 superseded，所以这里要的是留痕本身。
+  assert.ok(events.some((e) => e.eventType === "card_candidate.regenerated"
+    || (e.eventType === "card_candidate.rewritten"
+      && (e.payload as { reason?: string } | undefined)?.reason === "user_feedback")),
+    "C20 must record that the user-requested rewrite happened");
 });
 
 test("C20b：replan_set → 新 immutable plan revision（v2），旧候选 supersede，全量重生成", async () => {
@@ -1931,9 +1948,8 @@ test("C18：reveal 激活卡 → exposure-first（先持久化再返回答案）
 });
 
 test("C15：审核中 edit 答案 → 新 revision + worker 重跑门禁（checking → 终态），旧 revision 不可变", async () => {
-  const EDIT_CONTENT =
-    "机会成本是指为了得到某种东西而必须放弃的其他东西的价值；在决策中，选择某方案就意味着放弃次优方案所能带来的收益。";
-  const { versionId } = await seedNote("审核中编辑", EDIT_CONTENT);
+  delete process.env.CARD_GENERATION_CHAIN; // 夹具换成两链都出得了卡的正文之后，这一条走默认档
+  const { versionId } = await seedNote("审核中编辑", DUAL_CHAIN_CONTENT);
   const runId = (await createRun(versionId, `c15-${randomUUID()}`, `c15-key-${randomUUID()}`)).runId;
   await runPipelineOnce();
   await forceReviewReady(runId);
@@ -1993,8 +2009,10 @@ test("C15：审核中 edit 答案 → 新 revision + worker 重跑门禁（check
 
   const outboxRows = await admin`
     SELECT count(*)::int AS n FROM card_generation_run_outbox_v2
-    WHERE run_id = ${runId} AND job_type = 'card_generation_recheck_candidate'`;
-  assert.equal(outboxRows[0].n, 1, "C15 edit must enqueue recheck job");
+    WHERE run_id = ${runId}
+      AND job_type IN ('card_generation_recheck_candidate', 'card_candidate_refine_v3')`;
+  // 默认档下是逐候选那一档（mode=recheck）：判据不变——**编辑后的新修订必须被排去重跑门禁**。
+  assert.equal(outboxRows[0].n, 1, "C15 edit must enqueue a recheck job");
 
   // worker 重跑门禁
   await runPipelineOnce();
@@ -2012,8 +2030,12 @@ test("C15：审核中 edit 答案 → 新 revision + worker 重跑门禁（check
     "../../../../apps/api/src/modules/card-generation-v2/generation-run-service.ts"
   );
   const events = await getGenerationRunEventsV2({ workspaceId: WORKSPACE_ID, userId: USER_ID }, runId);
-  assert.ok(events.some((e) => e.eventType === "card_candidate.recheck_completed"),
-    "C15 must record recheck_completed event");
+  // 两条链各留自己那一发完成事件：旧链 `card_candidate.recheck_completed`，新链是检查
+  // 那条腿的 `card_generation.simplified_completed`。要的是"重跑真的跑完了并留下痕迹"，
+  // 不是某个名字——名字换了判据不能跟着失效。
+  assert.ok(events.some((e) => e.eventType === "card_candidate.recheck_completed"
+    || e.eventType === "card_generation.simplified_completed"),
+    "C15 must record a completed-recheck event");
 });
 
 // 2026-09-25：这条曾因为**产品缺陷**被显式 skip（合并产物写死 `revision = 1`，与第一个
