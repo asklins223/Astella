@@ -40,7 +40,7 @@ export type HudPlate =
 export type HudCompanionSeat = "left" | "right" | "none";
 
 export type CompanionSurfacePolicy = Readonly<{
-  /** hidden=不挂载资源；home=全身房间角色；ambient=任务页半身；assessment=测评边缘入口。 */
+  /** 任务页保留可见角色；assessment=正式作答边缘陪伴（可见且静默）。hidden 仅用于明确的关闭/不可用状态。 */
   mode: "hidden" | "home" | "ambient" | "assessment";
   seat: HudCompanionSeat;
   framing: "full" | "bust";
@@ -198,7 +198,7 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     subtitle: "目标不是列表，而是一张正在推进的理解路线",
     plate: "workshop",
     companion: {
-      mode: "hidden", seat: "none", framing: "bust", interaction: "none", proactive: "silent", draggable: false,
+      mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
     },
   },
   "goal-detail": {
@@ -208,7 +208,7 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     subtitle: "围绕一个主张查看证据、出处、版本和验证入口",
     plate: "workshop",
     companion: {
-      mode: "hidden", seat: "none", framing: "bust", interaction: "none", proactive: "silent", draggable: false,
+      mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
     },
   },
   generating: {
@@ -267,7 +267,7 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     subtitle: "问题怎么问，桌面就提供怎样的作答工具",
     plate: "review",
     companion: {
-      mode: "hidden", seat: "none", framing: "bust", interaction: "none", proactive: "silent", draggable: false,
+      mode: "assessment", seat: "right", framing: "bust", interaction: "none", proactive: "silent", draggable: false,
     },
     wide: true,
   },

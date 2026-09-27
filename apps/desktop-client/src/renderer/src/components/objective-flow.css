@@ -324,24 +324,17 @@
 .hud-surface .objective-brief__dossier-body { padding: 4px clamp(24px, 4vw, 54px) 18px; color: var(--quest-soft); font-size: 14px; }
 .hud-surface .objective-brief__revision { padding: 10px clamp(24px, 4vw, 54px) 16px; color: var(--quest-soft); background: var(--quest-paper); font-size: 12px; }
 
-/* Focus mode: room chrome and companion yield to the current question. */
+/* Formal answers suppress room navigation; the companion keeps its shared
+   side seat and stays silent. Paper geometry comes from the common HUD. */
 .desktop-app.hud-surface.page-16 .room-control,
 .desktop-app.hud-surface.page-16 .hud-rail,
 .desktop-app.hud-surface.page-16 .home-v2-compact-nav,
-.desktop-app.hud-surface.page-16 .return-home,
-.desktop-app.hud-surface.page-16 .companion-presence,
-.desktop-app.hud-surface.page-16 .companion-unavailable-notice,
-.desktop-app.hud-surface.page-16 .companion-restore-chip { display: none; }
-.desktop-app.hud-surface .task-surface--validation:has(.learning-run-focus) { background: #274c3e; }
+.desktop-app.hud-surface.page-16 .return-home { display: none; }
 .desktop-app.hud-surface .task-surface--validation:has(.learning-run-result-board) {
   background-image: linear-gradient(rgba(36, 75, 58, 0.1), rgba(36, 75, 58, 0.1)), url("/assets/objective-flow/result-arrival-v1.png");
   background-color: #dbe9c9;
 }
 .desktop-app.hud-surface .task-surface--validation:has(.learning-run-primary-content)::after { display: none; }
-.desktop-app.hud-surface.page-16 .content.full,
-.desktop-app.hud-surface.page-16.companion-absent .content.full {
-  inset: 0 !important;
-}
 .desktop-app.hud-surface.page-17 .return-home { display: none; }
 .hud-surface .learning-run-primary-content { position: relative; width: 100%; height: 100%; min-width: 0; min-height: 0; }
 .hud-surface .learning-run-focus,
@@ -765,21 +758,9 @@
 }
 
 @media (max-width: 760px) {
-  .desktop-app.hud-surface.page-17 .companion-presence,
-  .desktop-app.hud-surface.page-17 .companion-hud,
-  .desktop-app.hud-surface.page-17 .companion-unavailable-notice,
-  .desktop-app.hud-surface.page-17 .companion-restore-chip,
   .desktop-app.hud-surface.page-17 .hud-rail,
   .desktop-app.hud-surface.page-17 .home-v2-compact-nav,
   .desktop-app.hud-surface.page-17 .room-control { display: none; }
-  .desktop-app.hud-surface.page-10 .approved-surface__content,
-  .desktop-app.hud-surface.page-11 .approved-surface__content { right: 14px; }
-  .desktop-app.hud-surface.page-16 .content.full,
-  .desktop-app.hud-surface.page-16.companion-absent .content.full { inset: 13px 11px 12px !important; }
-  .desktop-app.hud-surface.page-17 .content.full,
-  .desktop-app.hud-surface.page-17.companion-absent .content.full { right: 10px; left: 10px; }
-  .hud-surface .task-surface--objective-detail .approved-surface__content,
-  .desktop-app.hud-surface[data-directory-rail="collapsed"] .task-surface--objective-detail .approved-surface__content { right: 14px; left: 54px; }
   .hud-surface .objective-expedition__focus {
     height: auto;
     min-height: 0;
@@ -860,8 +841,6 @@
 }
 
 @media (max-height: 460px) {
-  .desktop-app.hud-surface.page-16 .content.full,
-  .desktop-app.hud-surface.page-16.companion-absent .content.full { inset: 7px 9px !important; }
   .hud-surface .learning-run-arrival { min-height: 170px; padding: 11px 19px 13px; }
   .hud-surface .learning-run-arrival::after { width: 60px; top: 34px; border-width: 4px; }
   .hud-surface .learning-run-arrival h2 { max-width: 26ch; font-size: 22px; }

@@ -1424,11 +1424,14 @@ export function CompanionPresence() {
     if (!app) return undefined;
     const reserveExtra = Math.round(Math.max(0, companionScale - 1) * 240);
     const compactReserveExtra = Math.round(reserveExtra * 0.45);
+    // The right-hand companion's three action buttons extend towards the paper.
+    // Reserve their 44px diameter plus a 12px gap, as well as the character.
+    const rightActionGutter = companionPolicy.interaction === "none" ? 0 : 56;
     app.classList.toggle("companion-absent", presenceHidden || companionUnavailable);
-    app.style.setProperty("--companion-seat-right", `${245 + reserveExtra}px`);
+    app.style.setProperty("--companion-seat-right", `${245 + reserveExtra + rightActionGutter}px`);
     app.style.setProperty("--companion-seat-left", `${365 + reserveExtra}px`);
     app.style.setProperty("--companion-seat-left-collapsed", `${335 + reserveExtra}px`);
-    app.style.setProperty("--companion-seat-right-compact", `${124 + compactReserveExtra}px`);
+    app.style.setProperty("--companion-seat-right-compact", `${124 + compactReserveExtra + rightActionGutter / 2}px`);
     app.style.setProperty("--companion-seat-left-compact", `${194 + compactReserveExtra}px`);
     app.style.setProperty("--companion-seat-left-collapsed-compact", `${178 + compactReserveExtra}px`);
     app.style.setProperty("--companion-universe-seat-gutter", `${340 + reserveExtra}px`);
@@ -1444,7 +1447,7 @@ export function CompanionPresence() {
       app.style.removeProperty("--companion-universe-seat-gutter");
       app.style.removeProperty("--companion-universe-seat-gutter-compact");
     };
-  }, [companionScale, companionUnavailable, presenceHidden]);
+  }, [companionPolicy.interaction, companionScale, companionUnavailable, presenceHidden]);
 
   // 分层 Escape：历史先返回更多，其余交互返回关闭态。
   useEffect(() => {
@@ -1582,7 +1585,7 @@ export function CompanionPresence() {
           ) : null}
           {companionVisualOnly && status === "ready" ? (
             <span className="companion-surface-label" aria-hidden="true">
-              {assessmentMode ? "需要提示？" : `${windowLive2DModelDescriptor(companionModelId).displayName} · 伴星`}
+              {companionPolicy.interaction === "none" ? "安静陪你" : assessmentMode ? "需要提示？" : `${windowLive2DModelDescriptor(companionModelId).displayName} · 伴星`}
             </span>
           ) : null}
           {/* 「被叫醒的中介帧」（方案 §5 第 4 项）：她"转过头来"的那一下。纯装饰，

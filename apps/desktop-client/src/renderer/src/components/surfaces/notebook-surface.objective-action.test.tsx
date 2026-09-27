@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { noteDocResult, seedUpdate } from "../../test-support/note-doc-fixtures";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { objectiveListItemV3Schema, type ObjectiveListItemV3 } from "@ailearn/shared/learning-objective-surface-contracts";
 import type { NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
@@ -336,6 +336,7 @@ function installApi(
 async function show(
   items: ObjectiveListItemV3[] | "fail",
   options: {
+    leaf?: "reading" | "learning" | "history";
     mode?: "read" | "edit";
     makeDirty?: boolean;
     syncController?: { fail: boolean };
@@ -396,6 +397,9 @@ async function show(
       await vi.advanceTimersByTimeAsync(50);
     });
   }
+  // The HUD opens on the note leaf; these behavior tests enter the learning leaf.
+  const leafName = options.leaf === "reading" ? "笔记正文" : options.leaf === "history" || options.roundHistory ? /^学习记录/ : "本轮学习";
+  await act(async () => { fireEvent.click(within(view.container).getByRole("button", { name: leafName })); });
   return {
     ...view,
     api,
@@ -416,6 +420,19 @@ afterEach(() => {
 });
 
 describe("笔记页的主要动作", () => {
+  it("正文册页先显示笔记，翻到学习页才露出本轮表单，记录空页能回到学习", async () => {
+    await show([], { leaf: "reading" });
+    expect(screen.getByRole("region", { name: "笔记正文" })).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: ROUND_COPY.ask })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "本轮学习" }));
+    expect(screen.getByRole("textbox", { name: ROUND_COPY.ask })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "笔记正文" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "学习记录" }));
+    expect(screen.getByText("还没留下学习记录。")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "去开始这一轮" }));
+    expect(screen.getByRole("textbox", { name: ROUND_COPY.ask })).toBeTruthy();
+  });
+
   it("按钮上就是服务端那个动词，下面跟着它那一句理由", async () => {
     const { objectiveBlock } = await show([listItem()]);
     const block = objectiveBlock()!;

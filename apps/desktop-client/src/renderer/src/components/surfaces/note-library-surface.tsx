@@ -25,6 +25,8 @@ import {
   useSurfaceProjection,
 } from "./surface-data";
 import { useSourceImage } from "./source-image";
+import { Search } from "lucide-react";
+import "./note-hud.css";
 
 /**
  * Page 07 has two views over the same records, because a shelf and a library
@@ -492,6 +494,7 @@ export function NoteLibrarySurface() {
   const submitSearch = (event: React.FormEvent) => {
     event.preventDefault();
     setQuery(draft);
+    setView("index");
   };
 
   const createButton = (primary: boolean) => (
@@ -625,6 +628,13 @@ export function NoteLibrarySurface() {
       {blocked || emptyPage ? state : null}
       {!blocked && !emptyPage ? (
         !showIndex ? (
+          <div className="note-library-desk">
+            <form className="search-line note-shelf-search" onSubmit={submitSearch} role="search">
+              <Search size={18} aria-hidden="true" />
+              <label className="sr-only" htmlFor="note-shelf-query">搜索笔记标题</label>
+              <input id="note-shelf-query" value={draft} placeholder="找找哪篇笔记…" onChange={(event) => setDraft(event.currentTarget.value)} />
+              <button type="submit" className="button">找笔记</button>
+            </form>
           <div className="note-shelf">
             <section className="current-note">
               {/* 整张卡都要能点开（复盘 #16：只有标题那一下能点，点正文、点空白都没反应）。
@@ -703,6 +713,7 @@ export function NoteLibrarySurface() {
               ))}
             </section>
           </div>
+          </div>
         ) : (
           <section className="source-index note-index" aria-label={trash ? `回收站 · ${trash.items.length} 篇` : "全部笔记"}>
             {/* Search and the time tabs filter the live list; the trash is a
@@ -712,7 +723,7 @@ export function NoteLibrarySurface() {
             {trash === null ? (
               <>
                 <form className="search-line" onSubmit={submitSearch} role="search">
-                  <span aria-hidden="true">⌕</span>
+                  <Search size={18} aria-hidden="true" />
                   <label className="sr-only" htmlFor="note-index-query">搜索笔记标题</label>
                   <input
                     id="note-index-query"

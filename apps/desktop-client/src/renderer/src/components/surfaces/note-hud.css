@@ -1,0 +1,143 @@
+/* A notebook in the room, with paper bookmarks. This extends the V3.1 HUD;
+   the paper, companion seat, typography and buttons stay with the shared HUD. */
+.hud-surface .note-library-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+  min-height: 0;
+}
+
+.hud-surface .note-library-desk .note-shelf-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  margin: 0;
+  padding: 6px 10px 6px 18px;
+  color: var(--hud-soft);
+  border: 3px solid rgba(255, 252, 235, 0.78);
+  border-radius: 19px 24px 17px 22px;
+  background: var(--hud-paper);
+  box-shadow: var(--hud-shadow-small);
+}
+
+.hud-surface .note-shelf-search input { min-width: 0; flex: 1; font-size: 14px; }
+.hud-surface .note-shelf-search input::placeholder { color: var(--hud-soft); opacity: 1; }
+.hud-surface .note-library-desk .note-shelf { flex: 1; min-height: 0; height: auto; }
+.hud-surface .note-library-desk .current-note { min-height: 0; overflow: hidden; }
+.hud-surface .note-library-desk .current-note h2 { font-size: 24px; line-height: 1.5; }
+.hud-surface .note-library-desk .notebooks { min-height: 0; }
+.hud-surface .note-library-desk .book-cover { padding-left: 24px; }
+.hud-surface .note-library-desk .book-cover::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  border-radius: 2px;
+  background: rgba(255, 249, 235, 0.3);
+  box-shadow: 3px 0 5px rgba(48, 35, 26, 0.16);
+  pointer-events: none;
+}
+.hud-surface .note-library-desk .book-cover h3 { font-size: 16px; }
+
+/* The reading, learning and history bookmarks turn one paper, rather than
+   splitting the room into a workbench and a management sidebar. */
+.hud-surface .notebook-hud .notebook-leaves {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 20px 0 18px;
+  padding: 8px 0 14px;
+  background: var(--hud-cream);
+}
+
+.hud-surface .notebook-hud .notebook-leaf {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 39px;
+  padding: 8px 15px;
+  color: var(--hud-ink);
+  border: 3px solid rgba(255, 252, 235, 0.78);
+  border-radius: 12px 17px 10px 14px;
+  background: var(--hud-paper-deep);
+  box-shadow: 0 4px 9px rgba(48, 35, 26, 0.14);
+  font: 650 14px/1.4 "Noto Sans SC Variable", "PingFang SC", sans-serif;
+  cursor: pointer;
+  transform: rotate(-1deg);
+  transition: transform 180ms var(--hud-ease-out), background-color 180ms var(--hud-ease-out), box-shadow 180ms var(--hud-ease-out);
+}
+.hud-surface .notebook-hud .notebook-leaf--learning { background: var(--hud-mint); transform: rotate(1deg); }
+.hud-surface .notebook-hud .notebook-leaf--history { background: var(--hud-butter); }
+.hud-surface .notebook-hud .notebook-leaf[aria-pressed="true"] {
+  color: #3e2d22;
+  border-color: #af522c;
+  background: var(--hud-peach);
+  transform: translateY(-3px) rotate(0);
+  box-shadow: 0 6px 12px rgba(67, 43, 27, 0.18);
+}
+.hud-surface .notebook-hud .notebook-leaf:hover { transform: translateY(-2px) scale(1.02); }
+.hud-surface .notebook-hud .notebook-leaf:active { transform: scale(0.96); transition-duration: 110ms; }
+.hud-surface .notebook-hud .notebook-leaf:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.hud-surface .notebook-hud .notebook-leaf-page[hidden] { display: none; }
+.hud-surface .notebook-hud .notebook-leaf-page { padding: 2px 0 14px; }
+.hud-surface .notebook-hud[data-mode="read"] .notebook-scroll { padding-bottom: 12px; }
+.hud-surface .notebook-hud[data-mode="read"] .notebook-actions {
+  position: static;
+  flex: none;
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--hud-line);
+}
+
+
+.hud-surface .notebook-hud .notebook-leaf-intro { margin: 6px 0 22px; }
+.hud-surface .notebook-hud .notebook-leaf-intro h3 { margin: 0 0 8px; color: var(--hud-ink); font: 650 22px/1.5 "Noto Serif SC Variable", "Songti SC", serif; }
+.hud-surface .notebook-hud .notebook-leaf-intro p { margin: 0; color: var(--hud-soft); font-size: 14px; line-height: 1.8; }
+.hud-surface .notebook-hud .notebook-round { gap: 14px; width: 100%; }
+.hud-surface .notebook-hud .notebook-round__question {
+  min-height: 48px;
+  padding: 12px 15px;
+  color: var(--hud-ink);
+  border: 2px solid var(--hud-line-strong);
+  border-radius: 13px;
+  background: var(--hud-paper-light);
+  font-size: 15px;
+  line-height: 1.7;
+}
+.hud-surface .notebook-hud .notebook-round__question::placeholder { color: var(--hud-soft); opacity: 1; }
+.hud-surface .notebook-hud .notebook-objective__choices { gap: 9px; }
+.hud-surface .notebook-hud .notebook-note { font-size: 13px; line-height: 1.8; }
+.hud-surface .notebook-hud .notebook-round-teaching__text { font-size: 16px; line-height: 1.9; }
+.hud-surface .notebook-hud .notebook-round-history__list { margin-top: 18px; }
+.hud-surface .notebook-hud .notebook-round-history__list li { gap: 6px 14px; padding: 14px 0; }
+.hud-surface .notebook-hud .notebook-round-history__question { font-size: 14px; line-height: 1.8; }
+.hud-surface .notebook-hud .notebook-history-empty { padding: 32px 18px; color: var(--hud-soft); text-align: center; }
+.hud-surface .notebook-hud .notebook-history-empty > svg { color: var(--hud-green); }
+.hud-surface .notebook-hud .notebook-history-empty p { margin: 12px 0; }
+.hud-surface .notebook-hud .notebook-history-empty .button { margin-top: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-surface .notebook-hud .notebook-leaf { transition: none; transform: none; }
+  .hud-surface .notebook-hud .notebook-leaf:is(:hover, :active, [aria-pressed="true"]) { transform: none; }
+}
+
+@media (max-width: 760px) {
+  .hud-surface .note-library-desk { gap: 8px; }
+  .hud-surface .note-library-desk .note-shelf-search { min-height: 36px; padding: 4px 8px 4px 12px; }
+  .hud-surface .note-library-desk .note-shelf-search input { font-size: 12px; }
+  .hud-surface .note-library-desk .current-note h2 { font-size: 17px; }
+  .hud-surface .note-library-desk .book-cover h3 { font-size: 12px; }
+  .hud-surface .notebook-hud .notebook-leaves { gap: 5px; margin: 10px 0; padding: 5px 0 9px; }
+  .hud-surface .notebook-hud .notebook-leaf { gap: 4px; min-height: 33px; padding: 6px 9px; font-size: 12px; }
+  .hud-surface .notebook-hud .notebook-leaf > svg { width: 13px; height: 13px; }
+  .hud-surface .notebook-hud .notebook-leaf-intro h3 { font-size: 18px; }
+  .hud-surface .notebook-hud .notebook-note { font-size: 12px; }
+}

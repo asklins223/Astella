@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
+import { BookOpen, History, LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
+import "./note-hud.css";
 import type { CapabilityProjectionV1 } from "@ailearn/shared/desktop-ipc-contracts";
 import type {
   CardGenerationActiveSummaryV1,
@@ -607,6 +608,10 @@ export function NotebookSurface() {
   const syncedNoteRef = useRef<string | null>(null);
   const saveRef = useRef<() => void>(() => {});
   const [mode, setMode] = useState<"read" | "edit">("read");
+  const [leaf, setLeaf] = useState<"reading" | "learning" | "history">("reading");
+  const leafScrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { setLeaf("reading"); }, [activeNoteRef?.noteId]);
+  useEffect(() => { if (leafScrollRef.current) leafScrollRef.current.scrollTop = 0; }, [leaf]);
   /**
    * `title` 是**本机改过、还没写进文档**的那一份，`null` = 这一屏没改过标题，
    * 于是标题框画文档 `meta` 里的那一份（别人改名会跟着动）。正文不在这里存副本，
@@ -1018,6 +1023,7 @@ export function NotebookSurface() {
    * 不留"上次点过哪"这种会跟人走的读数。
    */
   const locateTeachingReference = (ordinal: number): void => {
+    setLeaf("reading");
     if (!readingBlocks.some((block) => block.ordinal === ordinal)) setShowAllBlocks(true);
     setFocusedBlockOrdinal(ordinal);
   };
@@ -1897,7 +1903,7 @@ export function NotebookSurface() {
   const generationAction = noteGeneration ? (
     <button
       type="button"
-      className="button primary"
+      className={mode === "read" ? "button" : "button primary"}
       title="这次生成在后台进行，来回翻看不会打断它"
       onClick={openGeneration}
     >
@@ -1910,7 +1916,7 @@ export function NotebookSurface() {
     <button
       type="button"
       ref={generationTriggerRef}
-      className="button primary"
+      className={mode === "read" ? "button" : "button primary"}
       disabled={!generationEnabled || startingGeneration}
       title={generationReason ?? "查看本次学习卡生成方案"}
       onClick={() => setOptionsOpen(true)}
@@ -2185,13 +2191,12 @@ export function NotebookSurface() {
   const readPageBody = note ? (
     <>
       <div className="version-ribbon">
-        <span>阅读</span>
         <span>
           {readingUnversionedContent
             ? "未定版的当前内容"
             : `版本 v${note.currentVersion.versionNo}`}
         </span>
-        <span>来源片段 {segments.length}</span>
+        {segments.length > 0 ? <span>来源片段 {segments.length}</span> : null}
         <NotebookPresence peers={noteDocLive.presencePeers} selfName={presenceName} />
         {shareStateControls}
       </div>
@@ -2199,8 +2204,55 @@ export function NotebookSurface() {
       <div className="meta">
         <span>{formatRelative(note.currentVersion.updatedAt)}</span>
         <span>{note.sourceId ? `关联来源 ${source?.source.title ?? "暂时读不到"}` : "未关联来源"}</span>
-        <span>{objective ? `学习卡：${objective.content.conceptLabel ?? "未命名学习卡"}` : "未关联学习卡"}</span>
       </div>
+      <nav className="notebook-leaves" aria-label="笔记册页">
+        <button type="button" className="notebook-leaf notebook-leaf--reading" aria-pressed={leaf === "reading"} aria-controls="notebook-reading-leaf" onClick={() => setLeaf("reading")}><BookOpen size={16} aria-hidden="true" />笔记正文</button>
+        <button type="button" className="notebook-leaf notebook-leaf--learning" aria-pressed={leaf === "learning"} aria-controls="notebook-learning-leaf" onClick={() => setLeaf("learning")}><Sparkles size={16} aria-hidden="true" />本轮学习</button>
+        <button type="button" className="notebook-leaf notebook-leaf--history" aria-pressed={leaf === "history"} aria-controls="notebook-history-leaf" onClick={() => setLeaf("history")}><History size={16} aria-hidden="true" />学习记录{historyTotal > 0 ? ` · ${historyTotal}` : ""}</button>
+      </nav>
+      <section id="notebook-reading-leaf" className="notebook-leaf-page" aria-label="笔记正文" hidden={leaf !== "reading"}>
+      <div className="reading-body" ref={readingBodyRef}>
+        {readSourceBlocks.length ? readingBlocks.map((block) => (
+          <ReadingBlock
+            key={block.ordinal}
+            block={block}
+            focused={focusedBlockOrdinal === block.ordinal}
+            mark={mark?.ordinal === block.ordinal ? mark.range : null}
+            workspaceEpoch={epochRef.current}
+            gallery={noteImages.ordinalToStart.has(block.ordinal)
+              ? {
+                start: noteImages.ordinalToStart.get(block.ordinal)!,
+                openAt: (index: number) => noteGallery.openAt(index),
+                close: noteGallery.close,
+              }
+              : undefined}
+          />
+        )) : <p className="small">这一版正文还没有段落。</p>}
+        {hiddenBlockCount > 0 ? (
+          <div className="actions reading-more">
+            <button type="button" className="button" onClick={() => setShowAllBlocks(true)}>
+              展开剩余 {hiddenBlockCount} 段
+            </button>
+          </div>
+        ) : null}
+      </div>
+      <div className="provenance-line">
+        <span>来源：{sourceTitle}</span>
+        <span>
+          {readingUnversionedContent
+            ? `未定版的当前内容 · 已存版本 v${note.currentVersion.versionNo}`
+            : `不可变版本：v${note.currentVersion.versionNo} · ${note.currentVersion.contentHash.slice(0, 8)}`}
+        </span>
+        <span>最近验证：{validationLabel}</span>
+      </div>
+      {/* The pasted source clips read as part of the provenance cluster, so they
+          sit in the flow right after it. They used to hang absolute off the
+          paper's right edge; real excerpts ran long and the sticky notes
+          covered body text and table columns. */}
+      {clips}
+      </section>
+      <section id="notebook-learning-leaf" className="notebook-leaf-page notebook-leaf-page--learning" aria-label="本轮学习" hidden={leaf !== "learning"}>
+        <div className="notebook-leaf-intro"><h3>{openRound ? "沿着这一句，继续往前" : "今天想弄懂哪一点？"}</h3><p>从这篇笔记里挑一个问题，我们一起来看看。</p></div>
       {/* 这一篇的学习区（39d W4-2 第三刀）：只放一个主要动作和一句理由。
           字面全部来自 `objective-state-copy` 那两份唯一口径（服务端 label 优先），
           这一页不另写词；执行走 `startObjectiveJourney` 那一条唯一的路。
@@ -2538,6 +2590,9 @@ export function NotebookSurface() {
           ) : null}
         </div>
       ) : null}
+      </section>
+      <section id="notebook-history-leaf" className="notebook-leaf-page" aria-label="学习记录" hidden={leaf !== "history"}>
+        <div className="notebook-leaf-intro"><h3>这篇笔记的学习足迹</h3></div>
       {/* 这一篇的轮次记录（PRD §10.3 读侧第一刀）。没有历史时一行都不多——空数组
           与"这篇还没开过轮"是同一件事，不必对用户播报；读失败也不报（这块是增补）。 */}
       {historyItems.length > 0 ? (
@@ -2575,46 +2630,24 @@ export function NotebookSurface() {
           {olderFailure ? <p className="small notebook-note" role="alert">{olderFailure}</p> : null}
         </section>
       ) : null}
-      <div className="rule" />
-      <div className="reading-body" ref={readingBodyRef}>
-        {readSourceBlocks.length ? readingBlocks.map((block) => (
-          <ReadingBlock
-            key={block.ordinal}
-            block={block}
-            focused={focusedBlockOrdinal === block.ordinal}
-            mark={mark?.ordinal === block.ordinal ? mark.range : null}
-            workspaceEpoch={epochRef.current}
-            gallery={noteImages.ordinalToStart.has(block.ordinal)
-              ? {
-                start: noteImages.ordinalToStart.get(block.ordinal)!,
-                openAt: (index: number) => noteGallery.openAt(index),
-                close: noteGallery.close,
-              }
-              : undefined}
-          />
-        )) : <p className="small">这一版正文还没有段落。</p>}
-        {hiddenBlockCount > 0 ? (
-          <div className="actions reading-more">
-            <button type="button" className="button" onClick={() => setShowAllBlocks(true)}>
-              展开剩余 {hiddenBlockCount} 段
-            </button>
+        {historyItems.length === 0 ? (
+          <div className="notebook-history-empty">
+            <History size={28} aria-hidden="true" />
+            {roundHistory ? (
+              <>
+                <p>还没留下学习记录。</p>
+                <p className="small">挑一个想弄懂的问题，开始后就会记在这里。</p>
+                <button type="button" className="button primary" onClick={() => setLeaf("learning")}>去开始这一轮</button>
+              </>
+            ) : (
+              <>
+                <p role="status">学习记录暂时没读到。</p>
+                <button type="button" className="button" onClick={() => void reload({ silent: true })}>重新读取记录</button>
+              </>
+            )}
           </div>
         ) : null}
-      </div>
-      <div className="provenance-line">
-        <span>来源：{sourceTitle}</span>
-        <span>
-          {readingUnversionedContent
-            ? `未定版的当前内容 · 已存版本 v${note.currentVersion.versionNo}`
-            : `不可变版本：v${note.currentVersion.versionNo} · ${note.currentVersion.contentHash.slice(0, 8)}`}
-        </span>
-        <span>最近验证：{validationLabel}</span>
-      </div>
-      {/* The pasted source clips read as part of the provenance cluster, so they
-          sit in the flow right after it. They used to hang absolute off the
-          paper's right edge; real excerpts ran long and the sticky notes
-          covered body text and table columns. */}
-      {clips}
+      </section>
       {/* Leaving the editor now commits the pending draft first, so a reader who
           lands here must be told what happened to it instead of seeing the older
           server text with no explanation. */}
@@ -2669,14 +2702,15 @@ export function NotebookSurface() {
   const readPageActions = note ? (
     <div className="actions notebook-actions">
       {!note.permissions.canEdit ? <span className="tag">只读</span> : null}
+      {leaf === "reading" ? <button type="button" className="button primary" onClick={() => setLeaf("learning")}>{openRound ? "继续这一轮" : "学这一篇"}</button> : null}
       {note.permissions.canEdit ? (
-        <button type="button" className="button primary" onClick={() => switchMode("edit")}>
+        <button type="button" className="button" onClick={() => switchMode("edit")}>
           编辑这篇笔记
         </button>
       ) : null}
-      <button type="button" className="button" onClick={openSource} disabled={!note.sourceId}>
+      {note.sourceId ? <button type="button" className="button" onClick={openSource}>
         查看关联来源
-      </button>
+      </button> : null}
       {versionAndOptionsToggles}
       {generationAction}
     </div>
@@ -2855,7 +2889,7 @@ export function NotebookSurface() {
     <>
       <HudPage page={page}>
         <article
-          className="notebook"
+          className="notebook notebook-hud"
           aria-busy={loading || undefined}
           data-mode={mode}
           data-note-paper-image-drop={paperAcceptsImages ? "" : undefined}
@@ -2873,7 +2907,7 @@ export function NotebookSurface() {
           {!loading && !failure && note ? (
             <>
               {mode === "edit" ? editChrome : null}
-              <div className="notebook-scroll">{mode === "edit" ? editPageBody : readPageBody}</div>
+              <div className="notebook-scroll" ref={leafScrollRef}>{mode === "edit" ? editPageBody : readPageBody}</div>
               {mode === "edit" ? (
                 <>
                   {editPageActions}

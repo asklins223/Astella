@@ -13,7 +13,7 @@ export function HudPage({
 }: {
   readonly page: HudPageId;
   readonly children: ReactNode;
-  /** LearningRun pages keep a full-width paper and hide the companion. */
+  /** LearningRun papers reserve the companion seat even when using the wide layout. */
   readonly wide?: boolean;
 }) {
   const definition = HUD_PAGES[page];
