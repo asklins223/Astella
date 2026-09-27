@@ -256,7 +256,15 @@ HEAD），按 hunk 拆开只提自己那 58 行。
    它是 `db-schema` 与迁移两份镜像的共同文本，改了就不 1:1，所以入口台账那格"旧 jobType
    一处不许留"显式跳过 `packages/shared/src/db-schema/`，并在守卫的注释里写明理由。
    要收的是：把谓词里的旧名字换掉或删掉那一支（`card_v2_post_activation` 那一支还在执法）。
-4. **`run-io.ts` 里四件 helper 只剩模块内消费者**：`EMPTY_HINTS`、`insertEventsBatched`、
-   `AUTHORED_CANDIDATE_COLUMNS`、`authoredCandidateValues`。收回 `export` 是纯收窄，
-   与本轮的删除不同类，留在这里当一条明确的待办（`capEvidenceTextForPrompts` 与两个
-   `V2_EVIDENCE_*` 上限**不是**死码——它们被共用的 `loadV2RunInputs` 调着，两条链同一份）。
+4. ~~**`run-io.ts` 里四件 helper 只剩模块内消费者**~~ —— **这一格 2026-09-27 结清**。
+   四件里 **`AUTHORED_CANDIDATE_COLUMNS` 与 `authoredCandidateValues` 本来就没 `export`**
+   （模块私有，`run-io.ts:566/574`），所以那一半**早就是完成的**——登记时把它算成待办，
+   是登记的人**没有逐个核过 `export` 关键字**。剩下两件（`EMPTY_HINTS`、
+   `insertEventsBatched`）确认 0 外部引用后收回了 `export`（纯收窄，不删）。
+   **教训**：「只剩模块内消费者」这个判断**要在 `export` 关键字上核**，而不是凭函数名猜；
+   凭猜登记出来的待办会让下一个人白跑一趟，而它读起来还像一条真的缺口。
+
+   ⚠️ **不要照这一格去动 `capEvidenceTextForPrompts`、`capSourceContentForPrompts`、
+   `candidateRowToObject`、`emitSourceContentCapEvent`、`loadSealedEvidence` 或两个
+   `V2_EVIDENCE_*` 上限**——它们**现在都有外部调用者**（分别 2/1/1/3 处，以及被共用的
+   `loadV2RunInputs` 调着），删了会当场断链。

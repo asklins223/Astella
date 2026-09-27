@@ -521,7 +521,7 @@ export async function insertEvent(
  * 顺序分配 seq，避免逐事件 MAX 查询 + INSERT 的 N+1 round-trip。
  * 仅在事务内调用（调用方已持有 run 行锁/事务上下文）。
  */
-export async function insertEventsBatched(
+async function insertEventsBatched(
   tx: WorkerTransaction,
   workspaceId: string,
   runId: string,
@@ -548,7 +548,7 @@ export async function insertEventsBatched(
  * 落库缺省值。作者链路总会给出提示，这里只兜住"确实没有提示"的行（历史数据、
  * 以及不经过作者的未来来源）；读取方见到空 level1 时退回按卡片结构派生的提示。
  */
-export const EMPTY_HINTS: CardHintPairV2 = { level1: "", level2: "" };
+const EMPTY_HINTS: CardHintPairV2 = { level1: "", level2: "" };
 
 /**
  * 批量持久化刚 author 出来的候选（一次多行 INSERT + 一次批量事件）。
