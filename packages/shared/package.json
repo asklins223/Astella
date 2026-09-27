@@ -136,6 +136,11 @@
       "import": "./src/db-schema/personal-objective-bindings.ts",
       "default": "./src/db-schema/personal-objective-bindings.ts"
     },
+    "./db-schema/personal-relation-decisions": {
+      "types": "./src/db-schema/personal-relation-decisions.ts",
+      "import": "./src/db-schema/personal-relation-decisions.ts",
+      "default": "./src/db-schema/personal-relation-decisions.ts"
+    },
     "./db-schema/note": {
       "types": "./src/db-schema/note.ts",
       "import": "./src/db-schema/note.ts",
@@ -321,6 +326,11 @@
       "import": "./src/review-authorization-rules-v2.ts",
       "default": "./src/review-authorization-rules-v2.ts"
     },
+    "./objective-card-groups-v2": {
+      "types": "./src/objective-card-groups-v2.ts",
+      "import": "./src/objective-card-groups-v2.ts",
+      "default": "./src/objective-card-groups-v2.ts"
+    },
     "./assessment-dispute-rules-v2": {
       "types": "./src/assessment-dispute-rules-v2.ts",
       "import": "./src/assessment-dispute-rules-v2.ts",
@@ -330,6 +340,16 @@
       "types": "./src/personal-binding-link-rules-v2.ts",
       "import": "./src/personal-binding-link-rules-v2.ts",
       "default": "./src/personal-binding-link-rules-v2.ts"
+    },
+    "./personal-relation-decision-rules-v2": {
+      "types": "./src/personal-relation-decision-rules-v2.ts",
+      "import": "./src/personal-relation-decision-rules-v2.ts",
+      "default": "./src/personal-relation-decision-rules-v2.ts"
+    },
+    "./help-condition-rules-v2": {
+      "types": "./src/help-condition-rules-v2.ts",
+      "import": "./src/help-condition-rules-v2.ts",
+      "default": "./src/help-condition-rules-v2.ts"
     },
     "./formal-assessment-guard-contracts": {
       "types": "./src/formal-assessment-guard-contracts.ts",
