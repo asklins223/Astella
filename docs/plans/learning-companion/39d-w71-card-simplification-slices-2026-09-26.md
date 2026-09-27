@@ -125,7 +125,8 @@
 | --- | --- |
 | **（2026-09-27 刀二第①步已删）** `card-generation-v2-postgres`（V2 纵切）、`-plan-commit-postgres`、`-pedagogy-stage-postgres`、`-bounded-repair-postgres`、`-per-candidate-commit-postgres` 五份整文件 | 断言对象全是四阶段独有的东西：纵切那条管道本身、投机 pedagogy 与双 Critic（39c §9 点名要删）、有界修复循环（39c §6.1 取消自动修复）、逐候选各一次提交（新链一次生成出一批，没有逐候选 author 循环）。同步清掉的注册面：CI 点名单里 plan-commit 那一步、`integration-run-registration` 待办清单里那两行（清单 7→5）、`check-a1-landed.sh` ⑥ 那三条指向已删文件的签名；`insertRepairedCandidateV2` 的注释改口——它那格用例没了，这条不变量如今只有 0253 索引本身在执法 |
 | `card-generation-v2-llm-natural-activation`（真实四阶段全旅程） | 同上；它的"全旅程"那一半在 V3 那份集测里已有对应格。**这一份要单独删**：它第 86 行自己把 `CARD_GENERATION_V2_LLM` 写成 `"true"`（摘环境变量拦不住），跑它＝付费，2026-09-27 我把它抄进批次名单就造成过一次未经点头的真模型尝试 |
-| e2e 里的 C04（Atom 重复决策）、C05/C06/C08/C09（planner 怎么切目标）、C13（pedagogy hard fail 词表）、C14（deck gate 合并/drop）、C20b（旧 replan_set） | 判据对象是 planner/Critic 的中间产物，新链不产出这些结构。**未随第①步删**：它们住在幸存的 `e2e-subset` 里，要连着旧链代码一起走（刀二第②步） |
+| e2e 里的 C04（Atom 重复决策）、C05/C06/C08/C09（planner 怎么切目标）、C13（pedagogy hard fail 词表）、C14（deck gate 合并/drop） | **已删（同日第②步的头一刀，7 格 136 行）**：判据对象是 planner/Critic 的中间产物，新链不产出这些结构。**C20b 不在这一批里**——它在刀一之后已经改成判"换一批"那一档（`mode=replan`，走默认档），是幸存判据不是旧链判据；当时那张表把它列进来是错的，这里改口。删后这份 37 条变 **30 条**（29 过／1 跳过，跳过那条仍是 C48 的受限角色前提），`tsc` 0（没有留下没人用的 helper）。 |
+| **同一份文件剩下的活儿（量出来的，不是估的）**：把整份摘到默认档 = **16 红／13 过／1 跳过** | 那 13 条过的＝已搬的 12 条判据＋分档探针；**剩下 16 条是要逐条搬的**：C01、C22、C07、C12、C17、C23+C25、C21、C10、C24、C30、§10.5、C16、长正文留痕两格、C46。这条读数是"什么时候能删总控"的闸门：**这份不摘档，开关就删不掉**（开关一删，这 16 条会一路红到底，而且再也回不去）。 |
 
 ### 7.2 摘档实测（2026-09-27）：十份一起摘掉是 41 条红，所以按份量、按份量
 

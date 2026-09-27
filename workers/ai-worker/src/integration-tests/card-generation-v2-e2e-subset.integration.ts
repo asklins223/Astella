@@ -352,50 +352,7 @@ test("C02：单一重要定义 → 0–1 张；泄题候选被门禁阻断（不
   assert.notEqual(runState[0]?.status, "activated", "C02 run must not be activated");
 });
 
-test("C04：重复两次相同段落 → 卡数不增加，Atom 有重复决策记录", async () => {
-  const SINGLE = "TCP 提供可靠有序的字节流传输，通过确认与重传机制保证数据不丢失不重复。";
-  const { versionId: singleVersionId } = await seedNote("单段", SINGLE);
-  const { versionId: dupVersionId } = await seedNote("重复段", SINGLE + SINGLE);
-  const singleRun = (await createRun(singleVersionId, `c04a-${randomUUID()}`, `c04a-key-${randomUUID()}`)).runId;
-  const dupRun = (await createRun(dupVersionId, `c04b-${randomUUID()}`, `c04b-key-${randomUUID()}`)).runId;
-  await runPipelineOnce();
 
-  const countFor = async (runId: string) => {
-    const rows = await admin`
-      SELECT count(*)::int AS n FROM card_generation_candidates_v2
-      WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}`;
-    return rows[0].n;
-  };
-  const singleCount = await countFor(singleRun);
-  const dupCount = await countFor(dupRun);
-  assert.equal(dupCount, singleCount, "C04 duplicated paragraph must not increase card count");
-
-  const decisions = await admin`
-    SELECT atom_decisions FROM card_generation_plans_v2
-    WHERE run_id = ${dupRun} AND workspace_id = ${WORKSPACE_ID}`;
-  assert.ok(decisions.length >= 1, "C04 plan must exist");
-  const atoms = decisions.flatMap((d) => (d.atom_decisions ?? []) as Array<{ decision: string }>);
-  assert.ok(
-    atoms.some((a) => a.decision === "omit_duplicate"),
-    `C04 atom decisions must record omit_duplicate (got ${atoms.map((a) => a.decision).join(",")})`,
-  );
-});
-
-test("C05：两条强相关事实 → 合并为一个检索目标（恰 1 候选）", async () => {
-  const RELATED_CONTENT =
-    "光合作用分为光反应与暗反应两个阶段；光反应发生在叶绿体类囊体薄膜上，产生 ATP 与 NADPH；暗反应在叶绿体基质中进行，利用 ATP 与 NADPH 把二氧化碳固定为有机物。";
-  const { versionId } = await seedNote("光合作用", RELATED_CONTENT);
-  const runId = (await createRun(versionId, `c05-${randomUUID()}`, `c05-key-${randomUUID()}`)).runId;
-  await runPipelineOnce();
-
-  const candidates = await admin`
-    SELECT objective_draft FROM card_generation_candidates_v2
-    WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}`;
-  assert.equal(candidates.length, 1, "C05 two related facts must merge into exactly 1 candidate");
-  const statement = String((candidates[0].objective_draft as { objectiveStatement?: string })?.objectiveStatement ?? "");
-  assert.ok(statement.includes("光反应") && statement.includes("暗反应"),
-    `C05 merged objective must cover both facts (got ${statement.slice(0, 80)})`);
-});
 
 test("C07：否定/数字/单位与适用边界 → 错误候选不可 review-ready（fail closed）", async () => {
   const BOUNDARY_CONTENT =
@@ -436,27 +393,6 @@ test("C12：Prompt Injection Note — 不能改 budget/policy，0 passed/0 Card/
   assert.notEqual(runState[0]?.status, "activated", "C12 run must not be activated");
 });
 
-test("C13：Candidate 纯改写原文 → Pedagogy hard fail；0 passed（drop，不 fallback）", async () => {
-  const COPY_CONTENT =
-    "数据库事务具有原子性、一致性、隔离性、持久性四个特性；原子性指事务内所有操作要么全部完成要么全部不执行。";
-  const { versionId } = await seedNote("纯改写", COPY_CONTENT);
-  const runId = (await createRun(versionId, `c13-${randomUUID()}`, `c13-key-${randomUUID()}`)).runId;
-  await runPipelineOnce();
-
-  const candidates = await admin`
-    SELECT quality_state FROM card_generation_candidates_v2
-    WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}`;
-  assert.ok(candidates.length >= 1, "C13 author must produce candidates");
-  assert.ok(
-    candidates.every((c) => c.quality_state === "failed"),
-    `C13 copy candidates must all hard-fail (got ${candidates.map((c) => c.quality_state).join(",")})`,
-  );
-  const runState = await admin`SELECT status FROM card_generation_runs_v2 WHERE id = ${runId}`;
-  assert.equal(runState[0]?.status, "needs_attention",
-    "C13 run must end needs_attention (no fallback to review_ready)");
-  const passed = candidates.filter((c) => c.quality_state === "passed");
-  assert.equal(passed.length, 0, "C13 0 passed candidates");
-});
 
 test("C32：跨 workspace 伪造 runId → 0 事件，内容零泄漏", async () => {
   delete process.env.CARD_GENERATION_CHAIN; // 这一条测的是链本身之外的东西，走默认档
@@ -1071,81 +1007,9 @@ test("C20b：replan_set → 新 immutable plan revision（v2），旧候选 supe
     "C20b must record a completed-replan event");
 });
 
-test("C06：两个真正独立目标 → 恰 2 候选，互不合并", async () => {
-  const TWO_FACTS =
-    "TCP 提供可靠有序的字节流传输。水在标准大气压下 100 摄氏度沸腾。";
-  const { versionId } = await seedNote("独立两事实", TWO_FACTS);
-  const runId = (await createRun(versionId, `c06-${randomUUID()}`, `c06-key-${randomUUID()}`)).runId;
-  await runPipelineOnce();
 
-  const candidates = await admin`
-    SELECT objective_draft FROM card_generation_candidates_v2
-    WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}`;
-  assert.equal(candidates.length, 2, "C06 two independent facts must produce exactly 2 candidates");
-  const statements = candidates.map((c) =>
-    String((c.objective_draft as { objectiveStatement?: string }).objectiveStatement ?? ""));
-  assert.ok(
-    statements.some((st) => st.includes("TCP")) && statements.some((st) => st.includes("沸腾")),
-    "C06 candidates must cover both facts (not merged)",
-  );
-});
 
-test("C08：步骤流程单句 → 1 候选（不按步骤拆成多卡），rubric 含答案单元", async () => {
-  const STEPS =
-    "制作一杯手冲咖啡：第一步研磨咖啡豆，第二步注入热水焖蒸，第三步缓慢注水萃取，第四步倒出咖啡液。";
-  const { versionId } = await seedNote("步骤", STEPS);
-  const runId = (await createRun(versionId, `c08-${randomUUID()}`, `c08-key-${randomUUID()}`)).runId;
-  await runPipelineOnce();
 
-  const candidates = await admin`
-    SELECT objective_draft FROM card_generation_candidates_v2
-    WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}`;
-  assert.equal(candidates.length, 1, "C08 steps-in-one-sentence must not be split into 4 cards");
-  const obj = candidates[0].objective_draft as {
-    rubric?: { units?: Array<{ answerUnitIds?: string[] }> };
-  };
-  const units = obj.rubric?.units ?? [];
-  assert.ok(units.length >= 1, "C08 rubric must have units");
-  assert.ok(
-    units.every((u) => (u.answerUnitIds?.length ?? 0) >= 1),
-    "C08 rubric units must carry answer unit ids (answer units exist)",
-  );
-});
-
-test("C09：比较材料 → 同一比较维度成卡（knowledgeForm=comparison），不拆成两个孤立定义", async () => {
-  const COMPARE =
-    "比较 REST 与 GraphQL：REST 使用多个端点，缓存友好；GraphQL 单端点按需取数，灵活但缓存复杂。";
-  const { versionId } = await seedNote("比较", COMPARE);
-  const runId = (await createRun(versionId, `c09-${randomUUID()}`, `c09-key-${randomUUID()}`)).runId;
-  await runPipelineOnce();
-
-  const candidates = await admin`
-    SELECT objective_draft FROM card_generation_candidates_v2
-    WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}`;
-  assert.equal(candidates.length, 1, "C09 comparison must produce 1 card (same dimension)");
-  const obj = candidates[0].objective_draft as { knowledgeForm?: string; objectiveStatement?: string };
-  assert.equal(obj.knowledgeForm, "comparison", `C09 must keep comparison form (got ${obj.knowledgeForm})`);
-  const stmt = obj.objectiveStatement ?? "";
-  assert.ok(stmt.includes("REST") && stmt.includes("GraphQL"),
-    "C09 card must cover both sides of the comparison");
-});
-
-test("C14：两个语义重复候选 → 0 passed（全局合并/drop 语义，不可同时激活）", async () => {
-  const NEAR_DUP =
-    "分布式共识指多个节点对同一值达成一致。共识算法就是让多个节点就同一个值达成一致的方法。";
-  const { versionId } = await seedNote("语义重复", NEAR_DUP);
-  const runId = (await createRun(versionId, `c14-${randomUUID()}`, `c14-key-${randomUUID()}`)).runId;
-  await runPipelineOnce();
-
-  const candidates = await admin`
-    SELECT quality_state FROM card_generation_candidates_v2
-    WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}`;
-  assert.equal(candidates.length, 2, "C14 near-duplicate sentences yield 2 candidate rows");
-  const passed = candidates.filter((c) => c.quality_state === "passed");
-  assert.equal(passed.length, 0, "C14 duplicate candidates must not both pass (cannot activate)");
-  const runState = await admin`SELECT status FROM card_generation_runs_v2 WHERE id = ${runId}`;
-  assert.notEqual(runState[0]?.status, "activated", "C14 run must not be activated");
-});
 
 test("C21：生成期间编辑 Note → 本次绑定 sealed 旧版本，不读取新版本", async () => {
   const V1_CONTENT = "机会成本是指为了得到某种东西而必须放弃的其他东西的价值。";
