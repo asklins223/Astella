@@ -24,7 +24,7 @@ export class ObjectiveHoldNoteNotFoundV2 extends Error {
     super("note_not_found");
   }
 }
-import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
+import type { ApiTransaction } from "../../db/client.ts";
 
 type HoldTx = ApiTransaction;
 
@@ -39,8 +39,6 @@ export const resumeObjectiveRequestV2Schema = z.strictObject({
   objectiveId: z.string().uuid(),
   releaseReason: z.string().min(1).max(120).optional(),
 });
-/** `withWorkspaceTransaction` 要的上下文（两个字段就够，不引第二份定义）。 */
-type RunContext = { workspaceId: string; userId: string };
 type HoldRow = typeof objectiveReviewHoldsV2.$inferSelect;
 
 export interface ObjectiveHoldV2View {
