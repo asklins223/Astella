@@ -243,3 +243,80 @@ test("W7-9 刀三 正对照：伴星的投递仍走那个 SECURITY DEFINER 函�
     "伴星提醒的投递函数不见了：换掉它之前先读它头上那段注释——"
     + "「dev 正常、生产静默什么都不做」是这类定时器最难查的失效方式。");
 });
+
+/**
+ * W7-9 刀四：「**进度与回执与实际业务一致**」今天**结构上成立**（39 §16.31 后半）。
+ *
+ * ## 成立在哪
+ *
+ * 伴星报的那些学习数字（到期数、任务队列、这一轮做到哪）**都出自一个共用的读器**
+ * `readLearningStats`（`workers/ai-worker/src/handlers/companion-here-and-now.ts`）：
+ * 她答话的口径与"用户问到学习数据时先注入的真值"是**同一个数**。
+ *
+ * 那个读器的到期数**直接数 `review_schedules`**（`status='pending' AND
+ * next_review_at <= now()`），**不是**从别处推的——所以伴星嘴里那个「待复习 N」与
+ * 复习队列是**同一份事实**。
+ *
+ * ## 为什么还要钉
+ *
+ * 这三样（共用读器、直接数 `review_schedules`、队列与到期同一个子查询）**都长得像实现
+ * 细节**。任何一次"给伴星加一个更快的统计"（比如从 `companion_reminders` 数、或从
+ * 任务队列推）都会让两处分叉，而**屏上读不出来**：伴星说"还有 3 张要复习"，而复习
+ * 那一屏列着 5 张，两边各自都像对的。
+ */
+test("W7-9 刀四：伴星的学习数字出自**一个共用读器**（两处不各写一份）", () => {
+  const runtime = readFileSync(
+    join(REPO, "workers/ai-worker/src/handlers/companion-agent-runtime.ts"),
+    "utf8",
+  );
+  // 工具那一支必须调 `readLearningStats`，不许自己再查一遍。
+  const branchStart = runtime.indexOf('case "companion_get_learning_stats"');
+  assert.ok(branchStart > 0, "那一支不见了：这一格要按新形状重写");
+  const branch = runtime.slice(branchStart, branchStart + 900);
+  assert.match(branch, /readLearningStats\(/,
+    "伴星的学习统计不调共用读器了：她答话的口径与注入的真值会分叉，"
+    + "而两处各自都像对的。");
+});
+
+test("W7-9 刀四 正对照：那个读器的到期数**直接数 `review_schedules`**", () => {
+  const reader = readFileSync(
+    join(REPO, "workers/ai-worker/src/handlers/companion-here-and-now.ts"),
+    "utf8",
+  );
+  // 直接数排期表，而不是从任务队列或伴星自己的提醒推。
+  assert.match(
+    reader,
+    /count\(\*\)\s*FROM review_schedules[\s\S]{0,200}status = 'pending'[\s\S]{0,120}next_review_at <= now\(\)/,
+    "共用读器的到期数不直接数 `review_schedules` 了：伴星嘴里那个「待复习 N」"
+    + "于是和复习队列不是同一份事实——**屏上读不出来**。",
+  );
+  // 三条查询同源：外层别名固定为 s（该文件自己的注释就是这么写的）。
+  assert.ok((reader.match(/FROM review_schedules s/g) ?? []).length >= 2,
+    "到期数与别的那几条不再同源了：同一份事实被数成了两个口径");
+});
+
+test("W7-9 刀四 正对照：伴星**不把自己的提醒**算进「待复习」", () => {
+  // ⚠️ 第一版我写的是「读器里不许出现 `companion_reminders`」——**过宽**，当场红了。
+  // 实读：它**确实**读那张表，但读的是**「下一条待兑现的提醒」**（`SELECT text …
+  // LIMIT 1`）——那是给伴星念的一句提醒，**不是复习到期数**。两件事。
+  //
+  // 所以这一格要断言的是**那两件事不许混**：数到期的那几条查询里不许出现它，
+  // 而它自己那一条必须是**独立语句 + LIMIT 1**（"念一条"而不是"数一遍"）。
+  const reader = readFileSync(
+    join(REPO, "workers/ai-worker/src/handlers/companion-here-and-now.ts"),
+    "utf8",
+  );
+  // ① 数到期的那几条（`FROM review_schedules s`）里不许有它。
+  const reviewBlocks = [...reader.matchAll(/\(\s*SELECT count\(\*\)[\s\S]{0,220}?\)/g)].map((m) => m[0]);
+  assert.ok(reviewBlocks.length >= 2, `到期相关的子查询只找到 ${reviewBlocks.length} 处：这一格要按新形状重写`);
+  for (const block of reviewBlocks) {
+    assert.ok(!/companion_reminders/.test(block),
+      "到期数那条查询里出现了 companion_reminders：那就不是复习到期数了，"
+      + "而它会被当成复习到期数报出去——**屏上读不出来**。");
+  }
+  // ② 它自己那一条必须**独立语句 + LIMIT 1**（"念一条"），不是并进到期那一族。
+  const reminderQuery = reader.match(/SELECT text,[\s\S]{0,300}?FROM companion_reminders[\s\S]{0,300}?;/);
+  assert.ok(reminderQuery, "读不到伴星那条提醒查询了：这一格要按新形状重写");
+  assert.match(reminderQuery[0], /LIMIT 1/,
+    "伴星那条提醒不再是「念一条」了：它变成了数一遍，而那会被读成待复习的条数。");
+});
