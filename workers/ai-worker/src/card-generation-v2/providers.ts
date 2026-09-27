@@ -1383,6 +1383,77 @@ function finalizePedagogyReport(raw: Record<string, unknown>): PedagogyCriticRep
 // ─── Factory ─────────────────────────────────────────────────────────────
 
 /**
+ * 治理上下文 → 一份**可以外发**的 provider。四步只做一次：同意/外发政策检查、
+ * provider 选择、mock 的 fail-fast、`ai_audit_log` 的唯一写入口。
+ *
+ * 这一段从 `buildCardGenerationProviders` 里原样搬出来（2026-09-27），因为制卡简化链
+ * （V3）也要真模型那一版，而它能复用的恰好只有这四步——V3 剩下的事只有"发几次、按
+ * 什么合同解析"（见 `card-generation-v3/llm-provider.ts`）。两条链各写一遍这四步，
+ * 漂移的会是"什么算配置缺失"这件本该全仓一个答案的事。
+ */
+export async function resolveGovernedCardGenerationProvider(input: {
+  workspaceId: string;
+  userId: string | null;
+  /** 审计行上的 operation（`ai_audit_log` 按它归类，两条链要分得开）。 */
+  operation: string;
+  /** 错误消息里的链名：配置漂移那句要指得回**这一条链自己的开关**。 */
+  chainLabel: "card-generation-v2" | "card-generation-v3";
+  /** 只进错误消息：这一条链自己的环境变量名。 */
+  llmModeLabel: string;
+  governance?: AIGovernanceContext;
+  providerName?: string;
+  providerConfig?: AIProviderRuntimeConfig;
+  providerInstance?: AIProvider;
+}): Promise<AIProvider> {
+  // 治理上下文必须在事务**外**解析好传进来（0237 之后同意是账号级的，读
+  // `user_ai_settings` 要带 `app.user_id`，而管道的大事务以 `userId: null` 打开）。
+  const governance = input.providerInstance
+    ? null
+    : input.governance ?? await resolveAIGovernanceContext(input.workspaceId, input.userId);
+  if (governance && !governance.consentOk) throw new AIConsentRequiredError();
+
+  let providerName = input.providerName;
+  let providerConfig = input.providerConfig;
+  if (!providerName && !input.providerInstance) {
+    const selection = await resolveProviderSelection(
+      input.workspaceId,
+      input.userId ?? undefined,
+      governance ? { providerName: governance.providerName, providerConfig: governance.providerConfig } : undefined,
+    );
+    providerName = selection.providerName;
+    providerConfig = selection.config;
+  }
+  // §10.5/§29.2：LLM 模式解析到 mock = 配置缺失（apiKey 未设置/平台未配置）。
+  // 禁止静默用 MockProvider 生成可发布假内容——fail fast，非重试错误，job 直接 failed。
+  // 2026-09-17（实机事故修复）：此处此前抛的是**裸 Error，只设置 `retryable=false`**，
+  // 而 handler 的 `isNonRetryableErrorLike` 只识别类实例上的 `kind` 字段——于是一个被
+  // 本行显式标记为"不可重试"的配置错误被判成可重试：outbox 按 15/30/60/120/240s 退避
+  // 重试 6 次（dev 库实测 7m45s 墙钟），期间**一次 LLM 调用都没有发生**，用户只看到
+  // "生成中"然后 needs_attention。改用携带 `kind` 的 CardGenerationProviderError。
+  if (!input.providerInstance && (providerName ?? "mock").toLowerCase() === "mock") {
+    throw new CardGenerationProviderError(
+      "non-retryable",
+      `${input.chainLabel} LLM mode resolved to mock provider: missing API key or platform not configured. `
+      + `Set the provider env vars or unset ${input.llmModeLabel} (fail closed, no mock fallback)`,
+    );
+  }
+  const rawProvider: AIProvider = input.providerInstance
+    ?? createProvider(providerName ?? "mock", providerConfig ?? {});
+  return governance
+    ? createGovernedProvider(
+        rawProvider,
+        governance,
+        input.workspaceId,
+        // AI P0-8（2026-09-15 审计）：制卡是最重的 LLM 消费者，接上 ai_audit_log 的
+        // 唯一写入口（userId 为 null 时按契约不写审计行）。
+        input.userId
+          ? { userId: input.userId, operation: input.operation, dataCategories: ["note_content"] }
+          : undefined,
+      )
+    : rawProvider;
+}
+
+/**
  * 构造真实四阶段 providers。
  * 若传入 `providerInstance` 则直接使用（测试注入 mock）；否则按治理上下文解析。
  */
@@ -1411,52 +1482,17 @@ export async function buildCardGenerationProviders(input: {
    */
   usageTotals: () => CardGenerationUsageTotals;
 }> {
-  const governance = input.providerInstance
-    ? null
-    : input.governance ?? await resolveAIGovernanceContext(input.workspaceId, input.userId);
-  if (governance && !governance.consentOk) throw new AIConsentRequiredError();
-
-  let providerName = input.providerName;
-  let providerConfig = input.providerConfig;
-  if (!providerName && !input.providerInstance) {
-    const selection = await resolveProviderSelection(
-      input.workspaceId,
-      input.userId ?? undefined,
-      governance ? { providerName: governance.providerName, providerConfig: governance.providerConfig } : undefined,
-    );
-    providerName = selection.providerName;
-    providerConfig = selection.config;
-  }
-  // §10.5/§29.2：LLM 模式（CARD_GENERATION_V2_LLM=true）解析到 mock = 配置缺失
-  // （apiKey 未设置/平台未配置）。禁止静默用 MockProvider 生成可发布假内容——
-  // fail fast，非重试错误，job 直接 failed，绝不带病生成。
-  if (!input.providerInstance && (providerName ?? "mock").toLowerCase() === "mock") {
-    // 2026-09-17（实机事故修复）：此处此前抛的是**裸 Error，只设置 `retryable=false`**，
-    // 而 handler 的 `isNonRetryableErrorLike` 只识别类实例上的 `kind` 字段——
-    // 于是一个被本行显式标记为"不可重试"的配置错误被判成可重试：outbox 按
-    // 15/30/60/120/240s 退避重试 6 次（dev 库实测 7m45s 墙钟），期间**一次 LLM
-    // 调用都没有发生**，用户只看到"生成中"然后 needs_attention。
-    // 改用本模块的 CardGenerationProviderError（携带 kind），与 planner/author/
-    // grounding/pedagogy 各路径的错误形状保持一致。
-    throw new CardGenerationProviderError(
-      "non-retryable",
-      "card-generation-v2 LLM mode resolved to mock provider: missing API key or platform not configured. "
-      + "Set the provider env vars or unset CARD_GENERATION_V2_LLM (fail closed, no mock fallback)",
-    );
-  }
-  const rawProvider: AIProvider = input.providerInstance ?? createProvider(providerName ?? "mock", providerConfig ?? {});
-  const provider = governance
-    ? createGovernedProvider(
-        rawProvider,
-        governance,
-        input.workspaceId,
-        // AI P0-8（2026-09-15 审计）：V2 是本系统最重的 LLM 消费者，同样接上
-        // ai_audit_log 的唯一写入口（userId 为 null 时按契约不写审计行）。
-        input.userId
-          ? { userId: input.userId, operation: "card_generation_v2", dataCategories: ["note_content"] }
-          : undefined,
-      )
-    : rawProvider;
+  const provider = await resolveGovernedCardGenerationProvider({
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    operation: "card_generation_v2",
+    chainLabel: "card-generation-v2",
+    llmModeLabel: "CARD_GENERATION_V2_LLM",
+    governance: input.governance,
+    providerName: input.providerName,
+    providerConfig: input.providerConfig,
+    providerInstance: input.providerInstance,
+  });
   const runtime = new CardGenerationProviderRuntime({
     provider,
     stageRuntimes: buildStageRuntimes(input.semanticSpec),

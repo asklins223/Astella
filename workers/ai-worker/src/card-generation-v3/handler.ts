@@ -74,6 +74,10 @@ import {
   type CardGenerationV3ProviderPort,
 } from "./tasks.ts";
 import {
+  createCardGenerationV3LlmProviders,
+  type CardGenerationV3ChatTransport,
+} from "./llm-provider.ts";
+import {
   assembleCardGenerationV3,
   buildCandidateRevisionV3,
   runCardGenerateV3CandidateGates,
@@ -713,18 +717,37 @@ const CARD_GENERATION_V3_PROVIDER_ENV = "CARD_GENERATION_V3_PROVIDER";
 /** 与 V2 那道 `V2_ALLOW_DETERMINISTIC_PROVIDERS` 同方向的显式豁免（离线跑生产形状的库时才用）。 */
 const V3_ALLOW_DETERMINISTIC_ENV = "V3_ALLOW_DETERMINISTIC_PROVIDERS";
 
-export function resolveCardGenerationV3Providers(): CardGenerationSimplifiedProviders {
+/**
+ * 这一发要不要走真模型（分发点用它决定要不要先去解析治理上下文）。
+ * 判据与 `resolveCardGenerationV3Providers` 是同一份：两处各读一次 env 就会有一天不一致。
+ */
+export function cardGenerationV3LlmRequested(): boolean {
+  return (process.env[CARD_GENERATION_V3_PROVIDER_ENV] ?? "deterministic") !== "deterministic";
+}
+
+/**
+ * `transport` 由分发点带着**治理上下文解析出来的那一份**进来（同意/外发政策与 provider
+ * 选择都按 (workspace, user) 判，见 `resolveGovernedCardGenerationProvider`）。
+ * 配了真模型却没拿到 transport ⇒ 抛不可重试，**不静默回落确定性**：回落会让 §16.28
+ * 那句"2 次语义调用"读起来像跑过模型，而库里躺的是占位内容。
+ */
+export function resolveCardGenerationV3Providers(input?: {
+  transport: CardGenerationV3ChatTransport;
+}): CardGenerationSimplifiedProviders {
   const kind = process.env[CARD_GENERATION_V3_PROVIDER_ENV] ?? "deterministic";
   if (kind !== "deterministic") {
-    // 必须是**不可重试**那一类：这是配置缺失，不是网络抖动。上一版抛的是裸 `Error`，
-    // 而分发点按 `isNonRetryableErrorLike` 分类 ⇒ 一次拼错的 env 值会让 outbox 按
-    // 15/30/60/120/240s 退避连试六轮（V2 在 2026-09-17 就为同样的形状记过一次事故），
-    // 期间一次模型调用都没发生，用户看到的始终是"生成中"。
-    throw new CardGenerationProviderError(
-      "non-retryable",
-      `card-generation v3 provider "${kind}" 还没有接线（真模型那一版归每波末尾那一次真跑）；`
-      + ` unset ${CARD_GENERATION_V3_PROVIDER_ENV} 走确定性那一版`,
-    );
+    if (!input?.transport) {
+      // 必须是**不可重试**那一类：这是配置缺失，不是网络抖动。抛裸 `Error` 会让分发点
+      // 按可重试分类，outbox 按 15/30/60/120/240s 退避连试六轮，期间一次模型调用都没
+      // 发生（V2 在 2026-09-17 就为同样的形状记过一次事故）。
+      throw new CardGenerationProviderError(
+        "non-retryable",
+        `card-generation v3 provider "${kind}" 需要一份按治理上下文解析出来的 transport`
+        + `（run 的主人、同意与 provider 选择都在那一发里判）；单独调用拿不到 ⇒ 拒绝，`
+        + `不回落到确定性。unset ${CARD_GENERATION_V3_PROVIDER_ENV} 走确定性那一版`,
+      );
+    }
+    return createCardGenerationV3LlmProviders({ transport: input.transport });
   }
   assertV3DeterministicProvidersAllowed();
   return {

@@ -774,9 +774,34 @@ export async function processV2OutboxJob(job: PendingOutboxJob): Promise<void> {
         // W7-1 刀b：简化链（两次语义调用）。动态 import 是为了避开静态环——
         // V3 那一边要复用本文件的落库件（plan/候选/binding plan/事件），
         // 而这里是分发点。
-        const { processCardGenerationSimplifiedJob, resolveCardGenerationV3Providers } =
-          await import("../card-generation-v3/handler.ts");
-        await processCardGenerationSimplifiedJob(job, resolveCardGenerationV3Providers(), pipelineSignal);
+        const {
+          processCardGenerationSimplifiedJob,
+          resolveCardGenerationV3Providers,
+          cardGenerationV3LlmRequested,
+        } = await import("../card-generation-v3/handler.ts");
+        let llmTransport: import("../card-generation-v3/llm-provider.ts").CardGenerationV3ChatTransport
+          | undefined;
+        if (cardGenerationV3LlmRequested()) {
+          // 与 V2 四阶段同一一份治理出口：run 的主人、同意/外发政策、provider 选择与
+          // `ai_audit_log` 的唯一写入口都在 `resolveGovernedCardGenerationProvider` 那一处，
+          // V3 不另起第二份（operation 记 `card_generation_v3`，两条链的账要分得开）。
+          const context = await resolveCardGenerationGovernance(job.workspaceId, job.runId);
+          const { resolveGovernedCardGenerationProvider } = await import("../card-generation-v2/providers.ts");
+          const { asCardGenerationV3Transport } = await import("../card-generation-v3/llm-provider.ts");
+          llmTransport = asCardGenerationV3Transport(await resolveGovernedCardGenerationProvider({
+            workspaceId: job.workspaceId,
+            userId: context.userId,
+            operation: "card_generation_v3",
+            chainLabel: "card-generation-v3",
+            llmModeLabel: "CARD_GENERATION_V3_PROVIDER",
+            governance: context.governance,
+          }));
+        }
+        await processCardGenerationSimplifiedJob(
+          job,
+          resolveCardGenerationV3Providers(llmTransport ? { transport: llmTransport } : undefined),
+          pipelineSignal,
+        );
         break;
       }
       case "card_v2_post_activation":

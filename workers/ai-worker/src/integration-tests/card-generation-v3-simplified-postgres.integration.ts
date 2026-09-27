@@ -911,7 +911,7 @@ test("没接线的 provider 值抛的是不可重试那一类（裸 Error 会被
   assert.equal(isNonRetryableErrorLike(error), true,
     "这是配置缺失不是网络抖动。判成可重试时 outbox 会按 15/30/60/120/240s 退避连试六轮，"
     + "期间一次模型调用都没发生，界面上始终是「生成中」（V2 在 2026-09-17 为同样的形状记过一次事故）");
-  assert.match(String((error as Error).message), /还没有接线/);
+  assert.match(String((error as Error).message), /需要一份按治理上下文解析出来的 transport/);
 });
 
 test("生产里不许悄悄用确定性 provider 跑简化链；豁免要显式给，离线路径不受影响", async () => {
@@ -924,6 +924,20 @@ test("生产里不许悄悄用确定性 provider 跑简化链；豁免要显式�
   assert.ok(blocked, "生产里确定性 provider 没被挡住：完成事件会记下 modelCalls=2，读起来像跑过模型");
   assert.equal(isNonRetryableErrorLike(blocked), true,
     "护栏抛的也必须是不可重试那一类，否则一次配置漂移会变成六轮退避重试");
+
+  // ①b 真模型那一档的"离线出口"此刻是**关着的**：默认档的确定性 provider 已经不算离线。
+  // 唯一能挡住"把开关一翻就整批发占位内容"的，是带不带 transport 这一道（分发点在
+  // `processV2OutboxJob` 里按 run 的主人与同意解析它）。这一格钉的就是那个"不静默回落"。
+  const unwired = withEnv({ NODE_ENV: "development", CARD_GENERATION_V3_PROVIDER: "llm" },
+    () => captureThrow(resolveCardGenerationV3Providers));
+  assert.ok(unwired, "配了真模型的值却没给 transport，必须抛而不是安静回落到确定性");
+  assert.match(String((unwired as Error).message), /不回落到确定性/);
+  const wired = withEnv({ NODE_ENV: "development", CARD_GENERATION_V3_PROVIDER: "llm" },
+    () => resolveCardGenerationV3Providers({
+      transport: { modelId: "fake-v3", async chatCompletion() { return { content: "{}", usage: {} }; } },
+    }));
+  assert.deepEqual(Object.keys(wired).sort(), ["check", "generate", "rewrite"],
+    "带着 transport 时三份端口都交得出来——真模型那一条路今天是接上的（花钱那一次另算）");
 
   // ② 显式豁免 ⇒ 三份 provider 照旧交出来（离线复核生产形状的库时用）
   const allowed = withEnv({ NODE_ENV: "production", V3_ALLOW_DETERMINISTIC_PROVIDERS: "1" },
