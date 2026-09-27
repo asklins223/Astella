@@ -115,6 +115,8 @@ import {
   homeSuggestionWireV2Schema,
   homeSuggestionActionCommandV2Schema,
   homeSuggestionActionResultV2Schema,
+  todayBatchOptionCommandV2Schema,
+  todayBatchOptionResultV2Schema,
   objectiveHoldCommandV2Schema,
   objectiveHoldResultV2Schema,
   objectiveResumeCommandV2Schema,
@@ -328,6 +330,7 @@ import {
   type NoteLearningRoundV1Wire,
   type RoundTeachingViewV1,
 } from "@ailearn/shared/note-learning-round-contracts";
+import { noteRouteCoverageV1Schema, type NoteRouteCoverageV1 } from "@ailearn/shared/note-route-coverage-v2";
 import { understandingTopologySnapshotV3Schema, type UnderstandingTopologySnapshotV3 } from "@ailearn/shared/understanding-topology-v3-contracts";
 import {
   activateCardCandidatesRequestV2Schema,
@@ -1830,6 +1833,26 @@ export class DesktopGateway {
     return parsed.data;
   }
 
+  /**
+   * 今日复习那三个动作（§12 表「今日复习」行：减量／暂停／恢复）。
+   *
+   * 回执里那句 `screenLine` **由服务端按真读数生成**，渲染层原样念——渲染层自己拼的
+   * 话，迟早有一处忘了带「剩下 N 道」（§12 表「剩余需求不伪称完成」）。
+   */
+  async actOnTodayBatch(
+    request: z.infer<typeof todayBatchOptionCommandV2Schema>,
+    requestId?: string,
+  ): Promise<z.infer<typeof todayBatchOptionResultV2Schema>> {
+    await this.ensureConnected(requestId);
+    const result = await this.request("/home/v2/today-batch/option", {
+      method: "POST",
+      body: JSON.stringify(request),
+    }, true, true, requestId);
+    const parsed = todayBatchOptionResultV2Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
   /** 「换一个」/「暂不处理」。回执**顺带**交回下一件（屏上按一下要立刻看到另一件）。 */
   async actOnHomeSuggestion(
     request: z.infer<typeof homeSuggestionActionCommandV2Schema>,
@@ -2314,6 +2337,35 @@ export class DesktopGateway {
     // 整份过合同（含 `hasMore` ⇒ `nextCursor` 那条 refine）：形状不对就报合同不受支持，
     // 不在这里替服务端补一个游标。
     const parsed = noteLearningRoundHistoryPageV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+  /**
+   * 这一篇的**核心路线**（39d W4-5 ③；PRD §4.4）：跨全部轮次、按核心问题归并。
+   *
+   * 与上面 `getNoteLearningRoundHistory` 的分工写在这里免得下次有人合成一发：
+   * 那一发是**按轮次**的时间线，这一发是**按核心问题**的跨轮汇总。
+   *
+   * 规矩与那一发同款：**不**把 404 折成 null。理由不同但同样重要——`route` 的
+   * 404 是"这一篇你读不到"（`round_not_found`），折成 null 会被界面读成
+   * "这一篇没有核心问题"，而 §13.4 要求"这一篇你看不见"与"这一篇还没纳入过
+   * 任何核心问题"是两句不同的话。前者是权限问题，后者是内容状态。
+   */
+  async getNoteRouteCoverage(
+    input: { noteId: string },
+    requestId?: string,
+  ): Promise<NoteRouteCoverageV1> {
+    await this.ensureConnected(requestId);
+    const result = await this.request(
+      `/v2/notes/${this.safeUuid(input.noteId)}/learning-route`,
+      { method: "GET" },
+      true,
+      false,
+      requestId,
+    );
+    if (result.status >= 300) throw this.mapResponseError(result.status, result.headers);
+    const parsed = noteRouteCoverageV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }

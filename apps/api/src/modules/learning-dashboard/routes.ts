@@ -8,8 +8,11 @@ import type { FastifyInstance } from "fastify";
 import { requireSession } from "../identity/middleware.ts";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import { buildLearningDashboardV2 } from "./service.ts";
-import { actOnHomeSuggestionV2, readHomeSuggestionV2 } from "./home-suggestion-service.ts";
-import { homeSuggestionActionCommandV2Schema } from "@ailearn/shared/review-queue-v2-contracts";
+import { actOnHomeSuggestionV2, actOnTodayBatchV2, readHomeSuggestionV2 } from "./home-suggestion-service.ts";
+import {
+  homeSuggestionActionCommandV2Schema,
+  todayBatchOptionCommandV2Schema,
+} from "@ailearn/shared/review-queue-v2-contracts";
 
 export async function learningDashboardRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireSession);
@@ -51,6 +54,23 @@ export async function learningDashboardRoutes(app: FastifyInstance) {
       }),
     );
     return reply.code(200).header("Cache-Control", "private, no-store").send(suggestion);
+  });
+
+  // 今日复习那三个动作（39d W7-4 刀十二；§12 表「今日复习」行）。**三档走同一发**：
+  // 分成三个入口就是三处会分叉，而其中一处很可能忘了把 `remaining` 原样带回判据。
+  app.post("/home/v2/today-batch/option", async (req, reply) => {
+    const body = todayBatchOptionCommandV2Schema.parse(req.body);
+    const result = await withWorkspaceTransaction(
+      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      (tx) => actOnTodayBatchV2(tx, {
+        workspaceId: req.session.workspaceId,
+        userId: req.session.userId,
+        timeZone: body.timeZone,
+        action: body.action,
+        reduceBy: body.reduceBy,
+      }),
+    );
+    return reply.code(200).header("Cache-Control", "private, no-store").send(result);
   });
 
   app.post("/home/v2/suggestion/action", async (req, reply) => {

@@ -322,6 +322,8 @@ const desktopApi: AILearnDesktopApiM2 = {
     close: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundClose, input),
     history: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundHistory, input),
     personalHistory: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundPersonalHistory, input),
+    // 核心路线（39d W4-5 ③；§4.4）：跨全部轮次、按核心问题归并，只带 noteId。
+    route: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundRoute, input),
     teaching: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundTeaching, input),
     explain: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundExplain, input)
   },
@@ -371,7 +373,9 @@ const desktopApi: AILearnDesktopApiM2 = {
     // W7-4 刀七：首页「只推一件」。`timeZone` 由**渲染层**读出来带上来（§12.1「本次」
     // 的边界按她的日历日算；在这里猜一次就会把她的午夜切错）。
     readHomeSuggestion: (input) => invoke(DESKTOP_IPC_CHANNELS.homeSuggestionRead, input),
-    actOnHomeSuggestion: (input) => invoke(DESKTOP_IPC_CHANNELS.homeSuggestionAct, input)
+    actOnHomeSuggestion: (input) => invoke(DESKTOP_IPC_CHANNELS.homeSuggestionAct, input),
+    // 今日复习那三个动作（减量／暂停／恢复，§12 表「今日复习」行）。
+    actOnTodayBatch: (input) => invoke(DESKTOP_IPC_CHANNELS.todayBatchOption, input)
   },
   // 判定的争议（39 §14.2、§16.11、§16.25）。只有**人能按的**四条：
   // `recheck` 与 `correction` 的写入方是系统，不挂在这里（理由见共享通道表那段）。

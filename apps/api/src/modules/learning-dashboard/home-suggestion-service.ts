@@ -32,7 +32,12 @@ import {
   type HomeSuggestionActionV2,
 } from "./home-suggestion-actions-service.ts";
 import { loadLimitedBatchV2 } from "./learning-batch-service.ts";
-import { readOrStartDailyBatchV2 } from "./daily-batch-lock-service.ts";
+import {
+  isBatchPausedV2,
+  readOrStartDailyBatchV2,
+  setBatchPausedV2,
+  shrinkBatchV2,
+} from "./daily-batch-lock-service.ts";
 
 export type HomeScope = { workspaceId: string; userId: string };
 
@@ -159,4 +164,110 @@ export async function actOnHomeSuggestionV2(
     action: ctx.action,
   });
   return { action: ctx.action, suggestion: await readHomeSuggestionV2(tx, { ...ctx, now }) };
+}
+
+/**
+ * 今日复习那三个动作的**那一发**（39d W7-4 刀十二；§12 表「今日复习」行）。
+ *
+ * 三档走**同一发**：它们只差 `action` 那一档与屏上的文案，而分成三个入口就是三处会
+ * 分叉——其中一处很可能忘了把 `remaining` 原样带回判据，而那正是 §12 表「剩余需求
+ * 不伪称完成」那一格要防的。
+ *
+ * ## `remaining` 从**库里数**，不是从入参拿
+ *
+ * 数法：**已锁长度 减去 已被消费掉的那几道**。也就是"这一批本来有多长、其中几道已经
+ * 做了"。这个数**只能从库里数**——入参带一个数上来的话，那一句「剩下 N 道还在」就
+ * 变成屏上的一句断言，而它没跟任何东西对过账。
+ *
+ * 减量之后再数时，**已做的那几道不因为批次变短而消失**：她已经做了的那几道是她做了
+ * 的。所以 `remaining = max(0, 新长度 − 已做)`，而"已做"要按**这一批的项**数，不是按
+ * 新长度截断——否则减量到 2 就会说"你做了 3 道、今天到此为止"，那是把三道做掉的事实
+ * 抹成 2。
+ */
+export async function actOnTodayBatchV2(
+  tx: ApiTransaction,
+  ctx: HomeScope & {
+    timeZone: string;
+    action: "reduce" | "pause" | "resume";
+    reduceBy?: number;
+    now?: Date;
+  },
+): Promise<{
+  action: "reduce" | "pause" | "resume";
+  lockedLength: number;
+  paused: boolean;
+  remaining: number;
+  screenLine: string;
+}> {
+  const now = ctx.now ?? new Date();
+  const { decideTodayBatchOptionV2 } = await import("@ailearn/shared/today-batch-options-v2");
+  const lockInput = { workspaceId: ctx.workspaceId, userId: ctx.userId, timeZone: ctx.timeZone, now };
+
+  const lockedLengthBefore = await readOrStartDailyBatchV2(tx, { ...lockInput });
+  // 库里数「已做」：今天这一批的项里，被消费掉的那几道。
+  const doneCount = await countBatchItemsDoneV2(tx, { ...ctx, now });
+  const remainingBefore = Math.max(0, lockedLengthBefore - doneCount);
+
+  let lockedLength = lockedLengthBefore;
+  let paused = (await isBatchPausedV2(tx, lockInput)).paused;
+  if (ctx.action === "reduce") {
+    lockedLength = (await shrinkBatchV2(tx, { ...lockInput, by: ctx.reduceBy ?? 0 })).lockedLength;
+  } else {
+    const set = await setBatchPausedV2(tx, { ...lockInput, paused: ctx.action === "pause" });
+    lockedLength = set.lockedLength;
+    paused = set.paused;
+  }
+
+  // **已做的不因为批次变短而消失**——她已经做了的那几道是她做了的。所以减量到 2 之后
+  // 说"你做了 3 道"是**对的**，而把三道抹成 2 才是失真。
+  const remaining = Math.max(0, lockedLength - doneCount);
+  const decided = decideTodayBatchOptionV2(
+    { lockedLength, remaining, paused, reduceBy: ctx.reduceBy },
+    ctx.action,
+  );
+  return {
+    action: decided.action,
+    lockedLength: decided.lockedLength,
+    paused: decided.paused,
+    remaining: remainingBefore,
+    screenLine: decided.screenLine,
+  };
+}
+
+/**
+ * 今天这一批里**已做**的数。
+ *
+ * 口径：**0305 那一行的 `created_at` 之后**被消费掉的安排数。不用"今天"做下界是因为
+ * 按 UTC 切会在她的午夜前后数错，而那一次恰好是"她刚做完今天"的时候。
+ *
+ * 宁可多算一道不可少算：多算让"剩下 N 道"偏小（保守），少算让它偏大——**后者才是
+ * "伪称完成"那一侧**。这一句写在这里，是为了让下一次收紧它的人知道现在为什么这么松。
+ */
+async function countBatchItemsDoneV2(
+  tx: ApiTransaction,
+  ctx: HomeScope & { timeZone: string; now: Date },
+): Promise<number> {
+  const { and, eq, gte } = await import("drizzle-orm");
+  const { dailyReviewBatchesV2, reviewSchedules } = await import("@ailearn/shared/db-schema/evidence");
+  const { dayKeyForV2 } = await import("./daily-batch-lock-service.ts");
+  const dayRows = await tx
+    .select({ createdAt: dailyReviewBatchesV2.createdAt })
+    .from(dailyReviewBatchesV2)
+    .where(and(
+      eq(dailyReviewBatchesV2.workspaceId, ctx.workspaceId),
+      eq(dailyReviewBatchesV2.userId, ctx.userId),
+      eq(dailyReviewBatchesV2.dayKey, dayKeyForV2(ctx.now, ctx.timeZone)),
+    ))
+    .limit(1);
+  if (!dayRows[0]) return 0;
+  const done = await tx
+    .select({ id: reviewSchedules.id })
+    .from(reviewSchedules)
+    .where(and(
+      eq(reviewSchedules.workspaceId, ctx.workspaceId),
+      eq(reviewSchedules.userId, ctx.userId),
+      eq(reviewSchedules.status, "completed"),
+      gte(reviewSchedules.updatedAt, dayRows[0].createdAt),
+    ));
+  return done.length;
 }

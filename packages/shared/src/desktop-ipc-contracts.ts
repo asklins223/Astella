@@ -44,6 +44,8 @@ import type {
   HomeSuggestionWireV2,
   HomeSuggestionActionCommandV2,
   HomeSuggestionActionResultV2,
+  TodayBatchOptionCommandV2,
+  TodayBatchOptionResultV2,
 } from "./review-queue-v2-contracts.ts";
 import { assessmentDisputeEnvelopeV2Schema } from "./assessment-dispute-rules-v2.ts";
 import type {
@@ -444,6 +446,7 @@ export const DESKTOP_IPC_CHANNELS = {
   reviewSubscriptionListNotes: "ailearn.v1.review.subscription.listNotes",
   homeSuggestionRead: "ailearn.v1.home.suggestion.read",
   homeSuggestionAct: "ailearn.v1.home.suggestion.act",
+  todayBatchOption: "ailearn.v1.home.todayBatch.option",
   // 判定的争议（39 §14.2、§16.11、§16.25）。**四条用户能按的通道**，
   // 刻意少于服务端那六条：`recheck` 与 `correction` 的写入方是系统，不是人
   // （§14.2「**系统**基于原题、原回答和依据进行一次重新检查」）。
@@ -2662,6 +2665,16 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
      */
     actOnHomeSuggestion(input: { meta: RequestMetaV1; request: HomeSuggestionActionCommandV2 }): Promise<
       GatewayResultV1<HomeSuggestionActionResultV2>
+    >;
+    /**
+     * 今日复习那三个动作（§12 表「今日复习」行：可换顺序、减量、延后、暂停）。
+     *
+     * **共用一个 schema**：三个入口就是三处会分叉，而其中一处很可能忘了把 `remaining`
+     * 原样带回判据。回执交回**读出来的那一句**——渲染层自己拼的话，迟早有一处忘了带
+     * 「剩下 N 道」（§12 表「剩余需求不伪称完成」）。
+     */
+    actOnTodayBatch(input: { meta: RequestMetaV1; request: TodayBatchOptionCommandV2 }): Promise<
+      GatewayResultV1<TodayBatchOptionResultV2>
     >;
   };
   /**

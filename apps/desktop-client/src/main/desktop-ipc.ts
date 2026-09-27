@@ -140,6 +140,7 @@ import {
   roundDrivingQuestionSourceV1Schema,
   roundTeachingViewV1Schema,
 } from "@ailearn/shared/note-learning-round-contracts";
+import { noteRouteCoverageV1Schema } from "@ailearn/shared/note-route-coverage-v2";
 import { understandingTopologySnapshotV3Schema } from "@ailearn/shared/understanding-topology-v3-contracts";
 import { todayActivityV1Schema } from "@ailearn/shared/activity-surface-contracts";
 // 跨空间统计合同：输出校验器与网关共用同一份形状，渲染层不另抄一遍。
@@ -160,6 +161,8 @@ import {
   homeSuggestionWireV2Schema,
   homeSuggestionActionCommandV2Schema,
   homeSuggestionActionResultV2Schema,
+  todayBatchOptionCommandV2Schema,
+  todayBatchOptionResultV2Schema,
   objectiveHoldCommandV2Schema,
   objectiveHoldResultV2Schema,
   objectiveResumeCommandV2Schema,
@@ -621,6 +624,16 @@ const noteLearningRoundHistoryInputSchema = z.strictObject({
   // 上限在服务端合同那一格（同一个数），这里只做"坏值不往上传"。
   limit: z.number().int().min(1).max(ROUND_HISTORY_MAX_LIMIT_V1).optional(),
   before: uuidSchema.optional(),
+});
+
+/**
+ * 核心路线那一发（39d W4-5 ③；PRD §4.4）。**只带 `noteId`**：
+ * 它按 noteId 读而不是按 roundId 读——§4.4 明写「不要求把它们保存在一个永不
+ * 结束的大轮次里」，所以"跨轮"是**这一篇**的属性，不是某一轮的属性。
+ */
+const noteLearningRoundRouteInputSchema = z.strictObject({
+  ...m1InputBase,
+  noteId: uuidSchema,
 });
 // 39d W4-6 刀二：教学产物的两发。读的那一发只带 roundId；生成那一发多一个
 // `expectedRevision`（两发之间问题被改写或轮次被收尾时，后到的那一发必须失败）——
@@ -2987,6 +3000,12 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     );
   }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundHistoryPageV1Schema);
 
+  installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundRoute, noteLearningRoundRouteInputSchema, options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.getNoteRouteCoverage({ noteId: input.noteId }, input.meta.requestId);
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteRouteCoverageV1Schema);
+
   installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundTeaching, noteLearningRoundTeachingInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "note.detail");
     assertEpoch(input.meta, activeWorkspaceEpoch);
@@ -3452,6 +3471,15 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     assertEpoch(input.meta, activeWorkspaceEpoch);
     return gateway.readHomeSuggestion(input.timeZone, input.meta.requestId);
   }, undefined, homeSuggestionWireV2Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.todayBatchOption, z.strictObject({
+    ...m1InputBase,
+    request: todayBatchOptionCommandV2Schema,
+  }), options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.library");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.actOnTodayBatch(input.request, input.meta.requestId);
+  }, undefined, todayBatchOptionResultV2Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.homeSuggestionAct, z.strictObject({
     ...m1InputBase,

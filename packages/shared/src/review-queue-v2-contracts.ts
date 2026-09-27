@@ -284,3 +284,36 @@ export const homeSuggestionActionResultV2Schema = z.strictObject({
   suggestion: homeSuggestionWireV2Schema,
 });
 export type HomeSuggestionActionResultV2 = z.infer<typeof homeSuggestionActionResultV2Schema>;
+
+/**
+ * 今日复习那三个动作的五层合同（39d W7-4 刀十二；39 §12 表「今日复习」行）。
+ *
+ * ## 三个动作**共用一个 schema**
+ *
+ * 减量／暂停／恢复只差 `action` 那一档与屏上的文案，而分成三个入口就是三处会分叉
+ * ——其中一处很可能忘了把 `remaining` 原样带回判据（刀十那一格正是在防这个）。
+ *
+ * ## 回执交回**读出来的那一句**
+ *
+ * §12 表第三列最后那半句是「**剩余需求不伪称完成**」。这一句由服务端按真读数生成，
+ * 渲染层**原样念**——渲染层自己拼的话，迟早有一处忘了带「剩下 N 道」。
+ */
+export const todayBatchOptionCommandV2Schema = z.strictObject({
+  action: z.enum(["reduce", "pause", "resume"]),
+  /** `action: "reduce"` 时才看它；<= 0 视为 0（不是"重算今天该有多少道"）。 */
+  reduceBy: z.number().int().min(0).optional(),
+  timeZone: z.string().min(1),
+});
+export type TodayBatchOptionCommandV2 = z.infer<typeof todayBatchOptionCommandV2Schema>;
+
+export const todayBatchOptionResultV2Schema = z.strictObject({
+  action: z.enum(["reduce", "pause", "resume"]),
+  /** 改完之后今天这一批锁定的新长度（**暂停那一档不变**——长度是记录，不是当前值）。 */
+  lockedLength: z.number().int().min(0),
+  paused: z.boolean(),
+  /** §12 表「剩余需求不伪称完成」——三档都原样带出去。 */
+  remaining: z.number().int().min(0),
+  /** 屏上那一行的**读法**，由服务端按真读数生成。 */
+  screenLine: z.string().min(1),
+});
+export type TodayBatchOptionResultV2 = z.infer<typeof todayBatchOptionResultV2Schema>;
