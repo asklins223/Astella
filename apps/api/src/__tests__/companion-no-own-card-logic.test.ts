@@ -166,3 +166,80 @@ test("W7-9 刀二 正对照：伴星**能**提议的仍然只有学习轮次那�
   assert.ok(bridge.includes("expectedContextRevision"),
     "提议体里那个乐观令牌不见了：并发时伴星会拿一份过期的上下文去做决定。");
 });
+
+/**
+ * W7-9 刀三：「**持续授权/停订经唯一调度**」今天**成立**——而 `companion_reminders`
+ * **不是第二条调度路径**（39 §16.31）。
+ *
+ * ## 刀三开题那一轮我以为查到了问题，核完三问之后结论相反
+ *
+ * 开题时看到伴星 `companion_schedule_reminder` 往 `companion_reminders` 写，而复习走
+ * `review_schedules`，于是疑心有第二条路径。**核完三问，结论是它们不是同一件事**：
+ *
+ *  1. **不是同一概念的两份实现。** `companion_reminders` 的列是
+ *     `text / fire_at / status / note_id`——**没有 `subject_type`、`subject_id`、
+ *     `review_dimension`，也没有 `reminder_kind`**。它压根**不是一个复习主体**。
+ *     `review_schedules.reminder_kind='one_time'` 那一档是**挂在某颗目标上的一次性复习
+ *     提醒**；伴星那条是「提醒我三���后交某篇笔记」——自由文本 ＋ 笔记范围。
+ *  2. **停订管不到它，也不需要管。** 0303 的订阅以
+ *     `(subject_type, subject_id)` 为键（`note` 或 `objective`）。`companion_reminders`
+ *     **不在那个键空间里**，所以「暂停卡片订阅」对它没有语义——这不是漏，是它本来就不
+ *     是复习授权。
+ *  3. **屏上不是同一个队列。** 复习到期队列（`review/service.ts`）**不读**伴星那张表
+ *     （0 处引用）；伴星的投递走 `ailearn_fire_due_companion_reminders()` 这个
+ *     SECURITY DEFINER 函数（迁移 0238），一分钟一次。
+ *
+ * ## 那为什么还要钉
+ *
+ * 因为**「两处都叫『提醒』」这件事本身会误导下一个人**。开题那一轮我自己就信了
+ * 半个钟头。§16.31 那一格要防的是"伴星另起一套排期"，而这一格今天**不成立**——
+ * 但它**读起来像可疑**，所以把它连同「为什么不是可疑」一起钉住。
+ */
+test("W7-9 刀三：`companion_reminders` **不是复习排期表**（没有复习主体那几列）", () => {
+  // 判据的**形状**在迁移与 drizzle 声明两处都核——只核一处的话，那一处改了另一处会绿。
+  const migration = readFileSync(
+    join(REPO, "apps/api/src/db/migrations/0238_companion_reminders.sql"),
+    "utf8",
+  );
+  // ⚠️ **只有迁移这一处**：全仓**没有** `companionReminders` 的 drizzle 声明——这张表
+  // 只活在 SQL 迁移里，访问全走 `tx.execute(sql\`…\`)`（agent-runtime 那一支与 0238 的
+  // SECURITY DEFINER 函数）。第一版判据按"迁移 ＋ drizzle 两处都核"写，于是对着一个
+  // **不存在的第二处**红了——**判据按想象写，比判据写错更贵**，它会让人以为代码有问题。
+  // 所以改成核迁移这一处，并把"没有 drizzle 声明"这件事本身记进注释。
+  for (const [name, text] of [["迁移", migration]] as const) {
+    assert.ok(text.includes("companion_reminders"), `${name} 里找不到 companion_reminders`);
+    // 复习主体那几列**一律不许有**。
+    for (const forbidden of ["subject_type", "subject_id", "review_dimension", "reminder_kind"]) {
+      assert.ok(!new RegExp(`${forbidden}\\s+[a-z]`).test(text),
+        `companion_reminders 上多了 ${forbidden}：它**开始像一个复习主体**了，`
+        + "而 §16.31「伴星不另起一套排期」那一格就不成立了——"
+        + "要么它就该并进 review_schedules，要么这一格要重新判。");
+    }
+  }
+});
+
+test("W7-9 刀三 正对照：复习那条路**不读**伴星那张表（两处各读各的）", () => {
+  const offenders: string[] = [];
+  for (const dir of [
+    join(REPO, "apps/api/src/modules/review"),
+    join(REPO, "apps/api/src/modules/card-generation-v2"),
+  ]) {
+    for (const { file, text } of sourcesIn(dir)) {
+      if (text.includes("companion_reminders")) offenders.push(file);
+    }
+  }
+  assert.deepEqual(offenders, [],
+    "复习那条路读伴星那张表了：两条路一旦互相读，「经唯一调度」就变成了「经两条互相读的调度」。");
+});
+
+test("W7-9 刀三 正对照：伴星的投递仍走那个 SECURITY DEFINER 函数（0238 的形状没变）", () => {
+  const scheduler = readFileSync(
+    join(REPO, "workers/ai-worker/src/handlers/companion-reminder-scheduler.ts"),
+    "utf8",
+  );
+  // 它必须**不能**被改成一条普通的 SELECT：那一句的注释里写着为什么（生产 worker 非
+  // superuser、无 BYPASSRLS，直接 SELECT 会被 RLS 滤成空集——dev 正常、生产静默）。
+  assert.match(scheduler, /ailearn_fire_due_companion_reminders/,
+    "伴星提醒的投递函数不见了：换掉它之前先读它头上那段注释——"
+    + "「dev 正常、生产静默什么都不做」是这类定时器最难查的失效方式。");
+});
