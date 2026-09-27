@@ -990,6 +990,7 @@ test("C20：反馈'太像原文'后重生成 → 新 revision，旧 revision 不
 });
 
 test("C20b：replan_set → 新 immutable plan revision（v2），旧候选 supersede，全量重生成", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 换一批这一发在刀一有对应档位（mode=replan）
   const REPLAN_CONTENT =
     "快速排序的平均时间复杂度为 O(n log n)，最坏情况为 O(n²)；归并排序时间复杂度恒为 O(n log n)，但需要额外 O(n) 空间。";
   const { versionId } = await seedNote("重计划", REPLAN_CONTENT);
@@ -1061,8 +1062,12 @@ test("C20b：replan_set → 新 immutable plan revision（v2），旧候选 supe
     "../../../../apps/api/src/modules/card-generation-v2/generation-run-service.ts"
   );
   const events = await getGenerationRunEventsV2({ workspaceId: WORKSPACE_ID, userId: USER_ID }, runId);
-  assert.ok(events.some((e) => e.eventType === "card_generation.replan_completed"),
-    "C20b must record card_generation.replan_completed event");
+  // 上面那一串判据（两版计划、新版本指向旧 revision、哈希变了、旧候选整批让路、run 指向
+  // v2）本来就是链无关的；只有留痕的名字各条链不同：旧链 `replan_completed`，新链是整批
+  // 那一发的 `simplified_completed`。要的是"重排真的跑完并留了痕"。
+  assert.ok(events.some((e) => e.eventType === "card_generation.replan_completed"
+    || e.eventType === "card_generation.simplified_completed"),
+    "C20b must record a completed-replan event");
 });
 
 test("C06：两个真正独立目标 → 恰 2 候选，互不合并", async () => {
