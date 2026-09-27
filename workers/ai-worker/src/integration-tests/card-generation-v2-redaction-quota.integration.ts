@@ -37,15 +37,13 @@ process.env.DATABASE_URL_API ??= ADMIN_URL;
 // ② "两个文件共用写死的 workspace" 这个猜测**被否掉**——本目录 10 份全用 `randomUUID()`。
 // 剩下最像的是 C31 等一个异步消费者（遮蔽之后要靠 outbox 那一发把 eligibility 翻过来），
 // 整网跑时它没在断言之前落定——**这句还没量过**。所以钉档只是记号，别读成"与链有关"。
-// **机制层面已收窄，但仍未证实**（下一手从这里接）：那发取证据快照用的是
-// `WHERE workspace_id = … ORDER BY created_at DESC LIMIT 1`（本文件 :252-257），两点都不稳：
-// ① 不按 run 收口——这份文件自己就为多条 run 各 seal 一批快照（配额那几发也在同一空间建行）；
-// ② `created_at` 在同一事务/同一时钟刻度里并列，没有第二排序键 ⇒ 落哪一行由数据库决定。
-// 想按 run 收口有个坑：`evidence_snapshots_v2` **没有 run 列**（只有 `source_snapshot_id`、
-// `note_id`、`block_id`，见 `card-generation-v2.ts:717-735`），所以要么经本 run 的
-// input/source snapshot 关联过去，要么直接取"这条候选的 binding 真引用的那张"。
-// 后一种更对：C31 要判的是"撤掉候选实际引用的证据 ⇒ 激活被拒"，引用关系本来就该由夹具显式建立，
-// 而不是"从全空间最新的一行里猜一个"。**这一改法还没验证能杀掉间歇**，所以钉档继续留着。
+// **上一发写在这里的"机制已收窄"是错的，撤回**：那发取快照确实是 workspace 范围、
+// 也没有第二排序键（这一点成立，是潜在脆弱），但它**不是这发间歇红的因**——同一个
+// `snapshotId` 变量既喂给 `activateFirstCandidate`（写出引用它的 binding plan）、又喂给
+// `recordEvidenceRedactionV2`（:306-310 与 :145-153）；落在哪一行都不影响这两者一致。
+// 红的时候 `assert.rejects` 报的是 "Missing expected rejection"，也就是激活**成功返回**了；
+// 所以下一手该查的是激活那道门为什么没拒（读的是 `activation-service.ts:419-426` 那条
+// `usableSnapshot` 集合），而不是再猜夹具取行。**目前状态：未定位的间歇红，八对配对不复现。**
 process.env.CARD_GENERATION_CHAIN = "v2";
 
 const admin = postgres(ADMIN_URL, { max: 2 });
