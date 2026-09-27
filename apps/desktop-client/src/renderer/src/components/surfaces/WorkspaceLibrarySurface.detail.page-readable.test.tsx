@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { learningObjectiveSurfaceV3Schema } from "@ailearn/shared/learning-objective-surface-contracts";
 import { ObjectiveDetailSurface } from "./WorkspaceLibrarySurface";
@@ -32,7 +32,12 @@ function origin(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function detail(origins: ReturnType<typeof origin>[], primaryNote: Record<string, unknown> | null, personal: Record<string, unknown> = {}) {
+function detail(
+  origins: ReturnType<typeof origin>[],
+  primaryNote: Record<string, unknown> | null,
+  personal: Record<string, unknown> = {},
+  overrides: { readonly noteChangeImpact?: unknown; readonly primaryAction?: unknown } = {},
+) {
   return learningObjectiveSurfaceV3Schema.parse({
     version: 3,
     objectiveId: OBJECTIVE_ID,
@@ -49,6 +54,7 @@ function detail(origins: ReturnType<typeof origin>[], primaryNote: Record<string
       sourceLabel: null,
     },
     sources: { origins, primaryNote, missingOrigin: false },
+    noteChangeImpact: overrides.noteChangeImpact ?? null,
     personal: {
       initialValidation: null,
       activeRun: null,
@@ -60,7 +66,7 @@ function detail(origins: ReturnType<typeof origin>[], primaryNote: Record<string
     },
     personalState: { state: "unvalidated", activeRunId: null },
     lifecycle: { status: "active", successorObjectiveId: null },
-    primaryAction: {
+    primaryAction: overrides.primaryAction ?? {
       kind: "create_run",
       objectiveId: OBJECTIVE_ID,
       label: "开始首次验证",
@@ -179,6 +185,54 @@ describe("挑战简报：她说出的每一句都是屏上写着的", () => {
     expect(facts.get("当前旅程")).toBe("回答已锁定，正在评估");
     expect(view.metrics?.find((entry) => entry.label === "复习安排")?.value).toBe("已经到期");
     expect(facts.get("复习安排")).toBe("已经到期");
+  });
+
+  it("到期复习的笔记依据变化时，伴星给出核对入口并直达受影响笔记", async () => {
+    const note = origin();
+    const invoke = vi.fn();
+    useRoomStore.setState({ invoke, activeNoteRef: null });
+    const noteChangeImpact = {
+      noteId: note.noteId,
+      status: "affected",
+      layer: 3,
+      reasonCode: "quoted_text_changed",
+      evidenceCount: 1,
+      unchangedEvidenceCount: 0,
+      changedEvidenceCount: 1,
+      uncertainEvidenceCount: 0,
+      evidenceDetails: [],
+      evidenceDetailsOmittedCount: 0,
+    };
+    const reviewAction = {
+      kind: "create_review_run",
+      objectiveId: OBJECTIVE_ID,
+      label: "开始到期复习",
+      start: {
+        version: 2,
+        originV2: { kind: "card", cardId: "00000000-0000-4000-8000-000000000003", objectiveId: OBJECTIVE_ID },
+        goal: "stabilize",
+        requestedTimeBudgetSeconds: 180,
+        responsePreference: "adaptive",
+      },
+    };
+    await renderDetail(detail([note], {
+      noteId: note.noteId,
+      noteVersionId: note.noteVersionId,
+      title: "物理笔记",
+    }, {
+      review: { status: "due", scheduleId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", generation: 1, dueAt: "2026-09-24T00:00:00.000Z" },
+    }, { noteChangeImpact, primaryAction: reviewAction }));
+
+    expect(screen.getByRole("status").textContent).toContain("伴星发现这张卡引用的笔记有新变化");
+    expect(publishedView()!.statusLine).toBe("先核对原文再开始复习");
+    fireEvent.click(screen.getByRole("button", { name: "先核对原文" }));
+
+    expect(useRoomStore.getState().activeNoteRef).toEqual({
+      noteId: note.noteId,
+      noteVersionId: note.noteVersionId,
+      mode: "read",
+    });
+    expect(invoke).toHaveBeenCalledWith("open-notebook");
   });
 
   it("还没选卡：登记的是外框那一格与空态那一句，不编任何一张卡", async () => {

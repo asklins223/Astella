@@ -22,7 +22,7 @@ import type {
   UnderstandingGraphFilterV1,
   UnderstandingLensV1,
 } from "@ailearn/shared";
-import { learningRunPublicSchema } from "@ailearn/shared";
+import { LEARNING_RUN_ASSISTANCE_POLICY_V1, learningRunPublicSchema } from "@ailearn/shared";
 
 function readString(source: unknown, key: string): string | undefined {
   if (!source || typeof source !== "object") return undefined;
@@ -302,7 +302,10 @@ export function buildRunPublicView(input: RunViewInput): LearningRunPublicV1 {
           revision: activeVariantRow.revision,
         },
         availableAlternatives: alternatives,
-        assistancePolicy: { hintLevels: activeTaskRow.hintLevels, exposureLowersTrust: true },
+        assistancePolicy: {
+          hintLevels: activeTaskRow.hintLevels,
+          exposureLowersTrust: LEARNING_RUN_ASSISTANCE_POLICY_V1.exposureLowersTrust,
+        },
         status: activeTaskRow.status,
         revision: activeTaskRow.revision,
       };

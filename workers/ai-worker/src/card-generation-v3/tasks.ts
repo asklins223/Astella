@@ -404,22 +404,37 @@ export interface CardContentCheckV3TaskInput {
 }
 
 export function buildCardContentCheckV3Prompt(input: CardContentCheckV3TaskInput): string {
-  const manifest = input.evidenceManifest.evidence
-    .map((entry) => `- ${entry.evidenceSnapshotId}：${(entry.content ?? "").slice(0, 200)}`)
-    .join("\n");
+  const evidenceById = new Map(input.evidenceManifest.evidence.map((entry) => [entry.evidenceSnapshotId, entry]));
   const candidates = input.candidates
-    .map(({ objectiveLocalId, candidate }) => [
-      `### 候选 ${objectiveLocalId}`,
-      `解释：${candidate.objective.learningSupport.explanation}`,
-      `答案：${extractAnswerText(candidate.objective.canonicalAnswer)}`,
-      `题面：${candidate.presentation.front.cue} / ${candidate.presentation.front.prompt}`,
-    ].join("\n"))
+    .map(({ objectiveLocalId, candidate }) => {
+      const citedEvidence = candidate.objective.evidenceRefIds
+        .slice(0, 12)
+        .map((evidenceId) => {
+          const entry = evidenceById.get(evidenceId);
+          return entry
+            ? `- ${entry.evidenceSnapshotId}：${(entry.content ?? "").slice(0, 1500)}`
+            : null;
+        })
+        .filter((item): item is string => item !== null)
+        .join("\n");
+      return [
+        `### 候选 ${objectiveLocalId}`,
+        `目标主张：${candidate.objective.objectiveStatement}`,
+        `解释：${candidate.objective.learningSupport.explanation}`,
+        `答案：${extractAnswerText(candidate.objective.canonicalAnswer)}`,
+        `题面：${candidate.presentation.front.cue} / ${candidate.presentation.front.prompt}`,
+        `本候选引用的封存原文（可疑时 sourceQuote 必须逐字取自这里）：\n${citedEvidence || "（无可读的引用原文）"}`,
+      ].join("\n");
+    })
     .join("\n\n");
   return [
     "你是学习卡内容检查助手。对下面每一张候选卡独立判断：",
     '- "keep"：依据支持、答案可用、题面清楚——可交给用户保留；',
     '- "rewrite"：内容方向可以但需要改写（说明改什么）；',
     '- "insufficient"：依据不足或存在实质疑点——不得作为标准答案。',
+    "只把具体且可能影响理解的事实疑点标为待核对；主张过度绝对、漏掉会改变结论的重要条件、或与其引用原文内部矛盾时，单独标记 code=\"suspect_claim\"、severity=\"hard\"，verdict 必须是 \"insufficient\"。",
+    "suspect_claim 必须提供 sourceQuote：逐字复制该候选所引用的封存原文中能定位疑点的最短完整句段，并在 detail 里写清疑点和需要核对的原因。不能精确引用时不要伪造引句，仍然判 insufficient 并说明无法定位。",
+    "仅仅没有外部来源不等于事实可疑；不要把缺少外部引文、措辞偏好或没有影响结论的轻微省略单独判为 suspect_claim。不得把其他候选的问题扩散到本候选。",
     // 第十一发/十二发的现场：提示词还在要 grounding 报告（模型照办），而合同已经从"逐条宽进"
     // 收紧到只收裁决——于是每一条都因多带一个键被剔掉，整批变成 unchecked。
     "只交裁决与原因即可：依据支持报告（答案单元/教学支撑/评分依据的逐项 entailed/unsupported）**由服务端按确定性合同自己算**，不要交。",
@@ -427,9 +442,8 @@ export function buildCardContentCheckV3Prompt(input: CardContentCheckV3TaskInput
     "**每一张候选都要有一条结论**，漏掉一张就等于那张没被检查过。",
     "严格按以下 JSON 形状回答：",
     '{"perCandidate":[{"objectiveLocalId":"id","verdict":"keep|rewrite|insufficient",'
-    + '"issues":[{"code":"…","severity":"hard|soft","detail":"…"}]}],"setIssues":[]}',
+    + '"issues":[{"code":"…","severity":"hard|soft","detail":"…","sourceQuote":"仅可疑主张时填写"}]}],"setIssues":[]}',
     "",
-    `# 依据（sealed manifest）\n${manifest || "（这一版没有可引用的依据）"}`,
     `# 候选\n${candidates}`,
   ].join("\n");
 }
@@ -452,8 +466,31 @@ export async function stampCardContentCheckV3Output(
     const candidate = byLocalId.get(entry.objectiveLocalId);
     if (!candidate) continue; // 模型凭空多出来的候选：不入库也不给它盖章。
     seen.add(entry.objectiveLocalId);
+    const citedEvidence = new Map(
+      input.evidenceManifest.evidence
+        .filter((evidence) => candidate.objective.evidenceRefIds.includes(evidence.evidenceSnapshotId))
+        .map((evidence) => [evidence.evidenceSnapshotId, evidence.content ?? ""]),
+    );
+    const issues = entry.issues.map((issue) => {
+      if (issue.code === "suspect_claim_location_missing") {
+        return { ...issue, severity: "hard" as const, sourceQuote: undefined };
+      }
+      if (issue.code !== "suspect_claim") return issue;
+      const sourceQuote = issue.sourceQuote?.trim();
+      const quoteIsCited = Boolean(sourceQuote)
+        && [...citedEvidence.values()].some((content) => content.includes(sourceQuote!));
+      if (quoteIsCited) return { ...issue, severity: "hard" as const, sourceQuote };
+      return {
+        code: "suspect_claim_location_missing",
+        severity: "hard" as const,
+        detail: `可疑事实主张未能在本候选引用的封存原文中精确定位，需先人工核对。${issue.detail}`,
+      };
+    });
+    const hasSuspectClaim = issues.some((issue) =>
+      issue.code === "suspect_claim" || issue.code === "suspect_claim_location_missing");
+    const verdict = hasSuspectClaim ? "insufficient" : entry.verdict;
     const { reportHash: _modelSuppliedHash, ...reportWithoutHash } = entry.grounding;
-    const modelHardIssues = entry.issues
+    const modelHardIssues = issues
       .filter((issue) => issue.severity === "hard")
       .map((issue) => `${issue.code}: ${issue.detail}`);
     const report = {
@@ -463,16 +500,18 @@ export async function stampCardContentCheckV3Output(
       evidenceSetHash: candidate.evidenceSetHash,
       evidenceEligibilityVectorHash: candidate.evidenceSetHash,
       inputHash: candidate.evidenceSetHash,
-      verdict: entry.verdict === "insufficient" ? ("fail" as const) : ("pass" as const),
+      verdict: verdict === "insufficient" ? ("fail" as const) : ("pass" as const),
       // 判"依据不足"却一条硬问题都没给：结论仍然成立（那张不能交给用户），但报告
       // 不能带着空的 hardIssues 落库——下游按 hardIssues 取证据，空的会被读成"没有
       // 问题"。这里补一条自己的口径，不替模型编内容。
-      hardIssues: entry.verdict !== "insufficient"
+      hardIssues: verdict !== "insufficient"
         ? []
         : (modelHardIssues.length > 0 ? modelHardIssues : ["insufficient_without_hard_issue"]),
     };
     stamped.push({
       ...entry,
+      verdict,
+      issues,
       grounding: {
         ...report,
         reportHash: computeGroundingReportHashV2({

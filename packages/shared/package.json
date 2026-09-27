@@ -126,6 +126,16 @@
       "import": "./src/db-schema/learning-runs.ts",
       "default": "./src/db-schema/learning-runs.ts"
     },
+    "./db-schema/assessment-disputes": {
+      "types": "./src/db-schema/assessment-disputes.ts",
+      "import": "./src/db-schema/assessment-disputes.ts",
+      "default": "./src/db-schema/assessment-disputes.ts"
+    },
+    "./db-schema/personal-objective-bindings": {
+      "types": "./src/db-schema/personal-objective-bindings.ts",
+      "import": "./src/db-schema/personal-objective-bindings.ts",
+      "default": "./src/db-schema/personal-objective-bindings.ts"
+    },
     "./db-schema/note": {
       "types": "./src/db-schema/note.ts",
       "import": "./src/db-schema/note.ts",
@@ -311,6 +321,16 @@
       "import": "./src/review-authorization-rules-v2.ts",
       "default": "./src/review-authorization-rules-v2.ts"
     },
+    "./assessment-dispute-rules-v2": {
+      "types": "./src/assessment-dispute-rules-v2.ts",
+      "import": "./src/assessment-dispute-rules-v2.ts",
+      "default": "./src/assessment-dispute-rules-v2.ts"
+    },
+    "./personal-binding-link-rules-v2": {
+      "types": "./src/personal-binding-link-rules-v2.ts",
+      "import": "./src/personal-binding-link-rules-v2.ts",
+      "default": "./src/personal-binding-link-rules-v2.ts"
+    },
     "./formal-assessment-guard-contracts": {
       "types": "./src/formal-assessment-guard-contracts.ts",
       "import": "./src/formal-assessment-guard-contracts.ts",
@@ -346,10 +366,20 @@
       "import": "./src/review-consumable-target.ts",
       "default": "./src/review-consumable-target.ts"
     },
+    "./scheduling-policy-v2": {
+      "types": "./src/scheduling-policy-v2.ts",
+      "import": "./src/scheduling-policy-v2.ts",
+      "default": "./src/scheduling-policy-v2.ts"
+    },
     "./review-action-copy": {
       "types": "./src/review-action-copy.ts",
       "import": "./src/review-action-copy.ts",
       "default": "./src/review-action-copy.ts"
+    },
+    "./review-reminder-contracts": {
+      "types": "./src/review-reminder-contracts.ts",
+      "import": "./src/review-reminder-contracts.ts",
+      "default": "./src/review-reminder-contracts.ts"
     },
     "./integration-test-db-env": {
       "types": "./src/integration-test-db-env.ts",

@@ -2010,30 +2010,27 @@
       "when": 1789800010032,
       "tag": "0287_review_schedule_dimension_unique",
       "breakpoints": true
-    }
-,
+    },
     {
       "idx": 287,
       "version": "7",
       "when": 1789800011032,
       "tag": "0288_activation_receipt_scheduling",
       "breakpoints": true
-    }
-,
-{
-          "idx": 288,
-          "version": "7",
-          "when": 1789800012032,
-          "tag": "0289_round_append_only_allows_cascade",
-          "breakpoints": true
-    }
-,
-{
-          "idx": 289,
-          "version": "7",
-          "when": 1789800013032,
-          "tag": "0290_dissolve_workspace_history_hatch",
-          "breakpoints": true
+    },
+    {
+      "idx": 288,
+      "version": "7",
+      "when": 1789800012032,
+      "tag": "0289_round_append_only_allows_cascade",
+      "breakpoints": true
+    },
+    {
+      "idx": 289,
+      "version": "7",
+      "when": 1789800013032,
+      "tag": "0290_dissolve_workspace_history_hatch",
+      "breakpoints": true
     },
     {
       "idx": 290,
@@ -2069,6 +2066,49 @@
       "when": 1790553600000,
       "tag": "0295_objective_review_holds_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 295,
+      "version": "7",
+      "when": 1790640000000,
+      "tag": "0296_assessment_disputes_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 296,
+      "version": "7",
+      "when": 1790726400000,
+      "tag": "0297_review_schedule_reminder_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 297,
+      "version": "7",
+      "when": 1790812800000,
+      "tag": "0298_note_learning_round_artifact_failures",
+      "breakpoints": true
+    },
+    {
+      "idx": 298,
+      "version": "7",
+      "when": 1790734800000,
+      "tag": "0299_reminder_note_subject",
+      "breakpoints": true
+    },
+    {
+      "idx": 299,
+      "version": "7",
+      "when": 1790738400000,
+      "tag": "0300_personal_objective_bindings_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 300,
+      "version": "7",
+      "when": 1790816400000,
+      "tag": "0301_learning_assessment_cancelled",
+      "breakpoints": true
     }
+
   ]
 }

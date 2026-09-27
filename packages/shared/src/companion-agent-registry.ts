@@ -144,7 +144,13 @@ const REGISTERED_TOOLS: readonly RegisteredTool[] = [
   // 换算在服务端按账号时区做（这里挡住 ISO/UTC 写法，否则她会两种格式混发）。
   // 可逆、低风险、不改学习状态 → guided 档也直接执行：用户刚亲口说的"提醒我"，
   // 再弹一次"确定吗"是噪音。
-  tool("companion_schedule_reminder", "在用户指定的时间主动提醒他一件事。用户说「提醒我三点开会」时调用。", "reversible_low", false, { type: "object", properties: { text: { type: "string", minLength: 1, maxLength: 200 }, fireAtLocal: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}(:\\d{2})?$" } }, required: ["text", "fireAtLocal"], additionalProperties: false }, z.object({ text: z.string().min(1).max(200), fireAtLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?$/) }).strict()),
+  // `noteId` 可选（39d W5-6 刀三；39 §16.13）：提醒是在说某篇笔记时**要**带上它。
+  // 不带的后果是具体的——共享撤回之后，兑现函数无从知道这条提醒说的是哪篇，
+  // 那句写进 text 的篇名照样到点弹出来。判据在迁移 0299 的兑现闸。
+  // 可选而不是必填：约一半的提醒是「提醒我三点开会」，根本没有笔记。
+  // 残留缺口（服务端管不住）：模型把篇名写进 text 却**没**传 noteId，仍然会漏。
+  // 要关掉那半句得让提醒文本本身经过脱敏、或由服务端按笔记拼装，不在本刀射程内。
+  tool("companion_schedule_reminder", "在用户指定的时间主动提醒他一件事。用户说「提醒我三点开会」时调用。如果这条提醒是在说某一篇笔记的内容，把那个 noteId 一并带上——共享被撤回后，带 noteId 的提醒会自动不再兑现。", "reversible_low", false, { type: "object", properties: { text: { type: "string", minLength: 1, maxLength: 200 }, fireAtLocal: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}(:\\d{2})?$" }, noteId: { type: "string", format: "uuid" } }, required: ["text", "fireAtLocal"], additionalProperties: false }, z.object({ text: z.string().min(1).max(200), fireAtLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?$/), noteId: uuid.optional() }).strict()),
   tool("companion_list_reminders", "查看还没有兑现的提醒（含原定时间）。", "read", false, emptyParameters, emptyArguments),
   tool("companion_cancel_reminder", "取消一条还没兑现的提醒；不给 reminderId 就取消最近的那条。", "reversible_low", false, { type: "object", properties: { reminderId: { type: "string", format: "uuid" } }, additionalProperties: false }, z.object({ reminderId: uuid.optional() }).strict()),
   // 记忆与活动流（方案 29 §4.3/§4.4，抱怨 #3/#6）。

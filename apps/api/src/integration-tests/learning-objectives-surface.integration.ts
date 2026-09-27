@@ -14,8 +14,16 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { findPrivatePayloadLeaks } from "@ailearn/shared";
+import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+import { objectiveListItemV3Schema } from "@ailearn/shared/learning-objective-surface-contracts";
 import { eq, and } from "drizzle-orm";
-import { learningObjectivesV2, learningObjectiveOriginsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+import {
+  evidenceQuoteCopiesV2,
+  evidenceSnapshotsV2,
+  learningObjectivesV2,
+  learningObjectiveOriginsV2,
+} from "@ailearn/shared/db-schema/card-generation-v2";
+import { noteBlocks, noteVersions, notes } from "@ailearn/shared/db-schema/note";
 
 // db client 在 import 时读取 DATABASE_URL；必须先设置再动态 import。
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
@@ -26,11 +34,12 @@ const { seedPureV2Workspace } = await import("./helpers/pure-v2-workspace-fixtur
 const pureV2 = await seedPureV2Workspace(pgSql, { objectiveCount: 3 });
 const FIXTURE_WORKSPACE = pureV2.workspaceId;
 const SYSTEM_USER = pureV2.userId;
-const [{ withWorkspaceTransaction }, { assembleObjectiveSurfaceV3 }, { createObjectiveOrigin, listOriginsByObjective }] =
+const [{ withWorkspaceTransaction }, { assembleObjectiveSurfaceV3, toObjectiveListItemV3 }, { createObjectiveOrigin, listOriginsByObjective }, { readNoteChangeImpactsV1 }] =
   await Promise.all([
     import("../db/client.ts"),
     import("../modules/learning-objectives/surface-service.ts"),
     import("../modules/learning-objectives/origin-service.ts"),
+    import("../modules/learning-objectives/change-impact-service.ts"),
   ]);
 
 after(async () => {
@@ -175,4 +184,117 @@ test("W2-01/W2-02: Origin 幂等创建 + Surface sources 立即反映 + revision
           eq(learningObjectiveOriginsV2.originId, originId),
         )),
   );
+});
+
+test("D3: note-filtered objective list distinguishes preserved, changed, and unavailable evidence", async () => {
+  const objectiveId = await firstActiveObjectiveId();
+  const noteId = randomUUID();
+  const oldVersionId = randomUUID();
+  const currentVersionId = randomUUID();
+  const oldBlockId = randomUUID();
+  const currentBlockId = randomUUID();
+  const evidenceWithCopyId = randomUUID();
+  const evidenceWithoutCopyId = randomUUID();
+  const sourceSnapshotId = randomUUID();
+  const quote = "甲句子不变。";
+  const oldBlockContent = `${quote}旧段落`;
+  const changedBlockContent = "甲句子改了。旧段落";
+  const quoteHash = hashCanonicalV2("evidence-quote", { quote });
+
+  const objectiveRevisionId = await withWorkspaceTransaction(
+    { workspaceId: FIXTURE_WORKSPACE, userId: SYSTEM_USER },
+    async (tx) => {
+      const [objective] = await tx.select({ revisionId: learningObjectivesV2.currentObjectiveRevisionId })
+        .from(learningObjectivesV2)
+        .where(and(eq(learningObjectivesV2.workspaceId, FIXTURE_WORKSPACE), eq(learningObjectivesV2.objectiveId, objectiveId)))
+        .limit(1);
+      assert.ok(objective?.revisionId);
+
+      await tx.insert(notes).values({
+        id: noteId,
+        workspaceId: FIXTURE_WORKSPACE,
+        title: "D3 影响判定夹具",
+        createdBy: SYSTEM_USER,
+        shareScope: "private",
+      });
+      await tx.insert(noteVersions).values([
+        { id: oldVersionId, noteId, workspaceId: FIXTURE_WORKSPACE, versionNo: 1,
+          contentJson: { blocks: [{ type: "paragraph", content: oldBlockContent }] },
+          contentHash: "11111111111111111111111111111111", createdBy: SYSTEM_USER },
+        { id: currentVersionId, noteId, workspaceId: FIXTURE_WORKSPACE, versionNo: 2,
+          contentJson: { blocks: [{ type: "paragraph", content: changedBlockContent }] },
+          contentHash: "22222222222222222222222222222222", createdBy: SYSTEM_USER },
+      ]);
+      await tx.update(notes).set({ currentVersionId }).where(eq(notes.id, noteId));
+      await tx.insert(noteBlocks).values([
+        { id: oldBlockId, versionId: oldVersionId, workspaceId: FIXTURE_WORKSPACE, ordinal: 1, type: "paragraph", content: oldBlockContent },
+        { id: currentBlockId, versionId: currentVersionId, workspaceId: FIXTURE_WORKSPACE, ordinal: 1, type: "paragraph", content: changedBlockContent },
+      ]);
+      await tx.insert(evidenceSnapshotsV2).values([
+        { workspaceId: FIXTURE_WORKSPACE, evidenceSnapshotId: evidenceWithCopyId, evidenceSnapshotHash: "a".repeat(64),
+          sourceSnapshotId, noteId, blockId: oldBlockId, startOffset: 0, endOffset: quote.length,
+          quoteHash, blockContentHash: hashCanonicalV2("block", { content: oldBlockContent }), sourceContentHash: "b".repeat(64) },
+        { workspaceId: FIXTURE_WORKSPACE, evidenceSnapshotId: evidenceWithoutCopyId, evidenceSnapshotHash: "c".repeat(64),
+          sourceSnapshotId, noteId, blockId: oldBlockId, startOffset: 0, endOffset: quote.length,
+          quoteHash, blockContentHash: hashCanonicalV2("block", { content: oldBlockContent }), sourceContentHash: "b".repeat(64) },
+      ]);
+      await tx.insert(evidenceQuoteCopiesV2).values({
+        workspaceId: FIXTURE_WORKSPACE, evidenceSnapshotId: evidenceWithCopyId, quoteText: quote, quoteHash,
+      });
+      await createObjectiveOrigin(tx, FIXTURE_WORKSPACE, {
+        originId: randomUUID(), objectiveId, objectiveRevisionId: objective.revisionId,
+        kind: "note", noteId, noteVersionId: oldVersionId,
+        evidenceSnapshotIds: [evidenceWithCopyId, evidenceWithoutCopyId],
+      });
+      return objective.revisionId;
+    },
+  );
+  assert.ok(objectiveRevisionId);
+
+  const readImpact = () => withWorkspaceTransaction(
+    { workspaceId: FIXTURE_WORKSPACE, userId: SYSTEM_USER },
+    (tx) => readNoteChangeImpactsV1(tx, { workspaceId: FIXTURE_WORKSPACE, userId: SYSTEM_USER }, noteId, [objectiveId]),
+  );
+
+  const changed = (await readImpact()).get(objectiveId);
+  assert.equal(changed?.status, "affected");
+  assert.equal(changed?.layer, 3);
+  assert.equal(changed?.changedEvidenceCount, 1);
+  assert.equal(changed?.uncertainEvidenceCount, 1, "缺原文副本的那条依据必须保留为不确定");
+  assert.equal(changed?.reasonCode, "mixed_evidence");
+  assert.ok(changed);
+  const changedSurface = await withWorkspaceTransaction(
+    { workspaceId: FIXTURE_WORKSPACE, userId: SYSTEM_USER },
+    (tx) => assembleObjectiveSurfaceV3(tx, { workspaceId: FIXTURE_WORKSPACE, userId: SYSTEM_USER }, objectiveId),
+  );
+  assert.equal(changedSurface.noteChangeImpact?.status, "affected");
+  assert.equal(changedSurface.noteChangeImpact?.reasonCode, "mixed_evidence");
+  assert.equal(changedSurface.noteChangeImpact?.evidenceDetails[0]?.currentQuote, "甲句子改了。");
+  const changedItem = await withWorkspaceTransaction(
+    { workspaceId: FIXTURE_WORKSPACE, userId: SYSTEM_USER },
+    async () => objectiveListItemV3Schema.parse(toObjectiveListItemV3(changedSurface, changed)),
+  );
+  assert.equal(changedItem.noteChangeImpact?.status, "affected");
+  assert.equal(changedItem.freshness, "source_outdated", "内容新鲜度与目标证据影响必须分开提供");
+
+  await withWorkspaceTransaction(
+    { workspaceId: FIXTURE_WORKSPACE, userId: SYSTEM_USER },
+    (tx) => tx.update(noteBlocks).set({ content: oldBlockContent }).where(eq(noteBlocks.id, currentBlockId)),
+  );
+  const preserved = (await readImpact()).get(objectiveId);
+  assert.equal(preserved?.status, "unaffected");
+  assert.equal(preserved?.layer, 2, "同序号块哈希相同是最高确定度的未受影响证据");
+  const preservedSurface = await withWorkspaceTransaction(
+    { workspaceId: FIXTURE_WORKSPACE, userId: SYSTEM_USER },
+    (tx) => assembleObjectiveSurfaceV3(tx, { workspaceId: FIXTURE_WORKSPACE, userId: SYSTEM_USER }, objectiveId),
+  );
+  assert.equal(preservedSurface.noteChangeImpact, null, "unchanged evidence does not add a pause notice to the objective detail");
+
+  await withWorkspaceTransaction(
+    { workspaceId: FIXTURE_WORKSPACE, userId: SYSTEM_USER },
+    (tx) => tx.update(noteBlocks).set({ content: `${quote}新添例子` }).where(eq(noteBlocks.id, currentBlockId)),
+  );
+  const missingCopy = (await readImpact()).get(objectiveId);
+  assert.equal(missingCopy?.status, "uncertain", "引用仍在但旧副本缺失时不能替它宣告未受影响");
+  assert.equal(missingCopy?.layer, 4);
 });

@@ -1986,6 +1986,22 @@ test("长正文：源文本被截断时在 run 事件流里留痕（不是只在
   assert.ok(payload.originalLength > payload.limit, "原始长度必须大于上限");
   assert.equal(payload.usedLength, payload.limit, "用到的长度就是上限");
   assert.ok(payload.originalLength >= LONG.length, "原始长度不许被算小");
+
+  // 事件不是只在 DB 里存在：笔记页依赖 API run view → desktop active-summary 投影。
+  // 用本次真实 run 走过这两层，钉住上屏读数仍来自事件里的同一组数字。
+  const { getGenerationRunV2 } = await import(
+    "../../../../apps/api/src/modules/card-generation-v2/generation-run-service.ts"
+  );
+  const runView = await getGenerationRunV2({ workspaceId: WORKSPACE_ID, userId: USER_ID }, runId);
+  assert.ok(runView, "API 必须能读回刚才的 run");
+  const { projectCardGenerationActiveSummaryListV1 } = await import(
+    "../../../../apps/api/src/modules/card-generation-v2/desktop-projection.ts"
+  );
+  const summary = projectCardGenerationActiveSummaryListV1([runView]);
+  assert.deepEqual(summary.items[0]?.sourceCapped, {
+    limit: payload.limit,
+    originalLength: payload.originalLength,
+  }, "笔记页投影必须保留事件中的真实截断范围");
 });
 
 /**
@@ -2363,4 +2379,4 @@ test("C48：另一个人也翻过这张候选的答案 → 保存那一发替他
   assert.equal(mapped[0].exposure_kind, "answer_reveal", "映射出来的那一行仍要说清是翻开答案");
   assert.equal(String(mapped[0].source_candidate_exposure_id), otherExposureId,
     "映射行要指回真正那次候选曝光");
-});\n
+});

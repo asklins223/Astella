@@ -15,6 +15,7 @@
  * 两道都要，少一道就是 lost update：N#7-9 那条注释在 journey 侧写的就是这个。
  */
 import { and, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm";
+import { z } from "zod";
 import type { ApiTransaction } from "../../db/client.ts";
 import { DomainError } from "@ailearn/shared";
 import {
@@ -39,6 +40,7 @@ import {
   type RoundTeachingKindV1,
   type RoundTeachingV1,
 } from "@ailearn/shared/note-learning-round-contracts";
+import { noteReflectionTeachingSnapshotV1Schema, type NoteReflectionTeachingSnapshotV1 } from "@ailearn/shared/note-learning-reflection-contracts";
 import {
   applyRoundAction,
   RoundTransitionError,
@@ -51,6 +53,7 @@ import {
   ROUND_ARTIFACT_KIND_V1,
   type RoundArtifactInputV1,
 } from "./round-artifact.ts";
+import { recordArtifactFailureV1, type ArtifactFailureReasonV1, type ArtifactFailureStageV1 } from "./artifact-failure.ts";
 
 export class RoundServiceError extends DomainError {
   constructor(code: string, message: string) {
@@ -315,18 +318,24 @@ export async function readOpenRound(
   scope: RoundScopeV1,
   noteId: string,
 ): Promise<NoteLearningRoundV1 | null> {
+  // 39d W5-6 刀一（§16.13「失权后不能靠旧快照继续学习」）：这一级返回的是**本轮问题**，
+  // 那是那篇笔记的内容。以前这里只按 (workspace, user) 过滤，于是作者把共享撤回之后，
+  // 那一轮仍能被读出来并继续——冻结快照成了绕过权限的通道。
+  // 判据取房子里那一份 `visibleNotesCondition`，不另写规则。
   const rows = await tx
-    .select()
+    .select({ round: noteLearningRounds })
     .from(noteLearningRounds)
+    .innerJoin(notes, eq(notes.id, noteLearningRounds.noteId))
     .where(and(
       eq(noteLearningRounds.workspaceId, scope.workspaceId),
       eq(noteLearningRounds.userId, scope.userId),
       eq(noteLearningRounds.noteId, noteId),
       inArray(noteLearningRounds.phase, ["active", "paused"]),
+      visibleNotesCondition(scope.userId),
     ))
     .orderBy(desc(noteLearningRounds.createdAt))
     .limit(1);
-  return rows[0] ? toContract(rows[0]) : null;
+  return rows[0] ? toContract(rows[0].round) : null;
 }
 
 export async function readRound(
@@ -334,16 +343,20 @@ export async function readRound(
   scope: RoundScopeV1,
   roundId: string,
 ): Promise<NoteLearningRoundV1 | null> {
+  // 同 `readOpenRound`：这一级返回整份轮次（含驱动问题与冻结快照的引用），
+  // 所以要跟着来源笔记判。回收站**不**挡——那是可逆动作（理由见 `listPersonalRoundHistory`）。
   const rows = await tx
-    .select()
+    .select({ round: noteLearningRounds })
     .from(noteLearningRounds)
+    .innerJoin(notes, eq(notes.id, noteLearningRounds.noteId))
     .where(and(
       eq(noteLearningRounds.id, roundId),
       eq(noteLearningRounds.workspaceId, scope.workspaceId),
       eq(noteLearningRounds.userId, scope.userId),
+      visibleNotesCondition(scope.userId),
     ))
     .limit(1);
-  return rows[0] ? toContract(rows[0]) : null;
+  return rows[0] ? toContract(rows[0].round) : null;
 }
 
 /**
@@ -381,6 +394,15 @@ export async function listRoundHistory(
     eq(noteLearningRounds.userId, scope.userId),
     eq(noteLearningRounds.noteId, noteId),
   ];
+  // 39d W5-6 刀二（§16.13）：这一级返回整页轮次（含**驱动问题**），是笔记内容。
+  // 它此前只按 (workspace, user, noteId) 筛，而路由 `GET /notes/:noteId/rounds`
+  // 也不先验笔记——于是作者撤回共享之后，那一页历史连同每一轮的问法照样端得出去。
+  //
+  // 判据**在三发里各写一遍**，不塞进上面那个 `scoped` 数组、也不包一层本地 helper：
+  // 那条棘轮按「读点就近 ±12 行里有没有 `visibleNotesCondition` 这个字面量」判，
+  // 共享数组让另外两发旁边看不到那句话（被报成漏写），包一层 `gate()` 更是把
+  // 字面量藏进函数体里、连第一发也一起瞎。写三份既过了棘轮，也让每一发自说自明。
+  // 回收站不挡（可逆动作，理由同 `listPersonalRoundHistory`）。
   const baseScoped = [...scoped];
   if (query.beforeRoundId) {
     // 游标先在自己这一篇里解析：拿别人的 id 过来要**报错**，不是"安静地当没给"——
@@ -388,7 +410,8 @@ export async function listRoundHistory(
     const cursorRows = await tx
       .select()
       .from(noteLearningRounds)
-      .where(and(...scoped, eq(noteLearningRounds.id, query.beforeRoundId)))
+      .innerJoin(notes, eq(notes.id, noteLearningRounds.noteId))
+      .where(and(...scoped, eq(noteLearningRounds.id, query.beforeRoundId), visibleNotesCondition(scope.userId)))
       .limit(1);
     const cursor = cursorRows[0];
     if (!cursor) throw new RoundServiceError("invalid_cursor", "这个游标不在这一篇的记录里");
@@ -403,12 +426,13 @@ export async function listRoundHistory(
     )`);
   }
   const rows = await tx
-    .select()
+    .select({ round: noteLearningRounds })
     .from(noteLearningRounds)
-    .where(and(...scoped))
+    .innerJoin(notes, eq(notes.id, noteLearningRounds.noteId))
+    .where(and(...scoped, visibleNotesCondition(scope.userId)))
     .orderBy(desc(noteLearningRounds.createdAt), desc(noteLearningRounds.id))
     .limit(query.limit + 1);
-  const page = rows.slice(0, query.limit);
+  const page = rows.slice(0, query.limit).map((row) => row.round);
   // 总数用**加游标之前**的那份条件算：它答的是"这一篇一共开过几轮"，
   // 与翻到第几页无关。（写成 `scoped` 就变成"剩下还有几轮"，那是另一个问题，
   // 而且第二页会报出一个比上一页小的"总数"——合同那条 refine 会拦住，但拦不住
@@ -416,7 +440,8 @@ export async function listRoundHistory(
   const totalRows = await tx
     .select({ total: sql`count(*)::int` })
     .from(noteLearningRounds)
-    .where(and(...baseScoped));
+    .innerJoin(notes, eq(notes.id, noteLearningRounds.noteId))
+    .where(and(...baseScoped, visibleNotesCondition(scope.userId)));
   return {
     rows: page,
     hasMore: rows.length > query.limit,
@@ -885,6 +910,7 @@ function toTeachingContract(row: NoteLearningRoundTeachingRow): RoundTeachingV1 
     kind: row.kind,
     content: row.content,
     sourceBlockOrdinals: row.sourceBlockOrdinals,
+    personalSources: row.personalSourceSnapshots,
     createdAt: row.createdAt.toISOString(),
   });
 }
@@ -895,16 +921,22 @@ export async function listTeachings(
   scope: RoundScopeV1,
   roundId: string,
 ): Promise<RoundTeachingV1[]> {
+  // 39d W5-6 刀一（§16.13）：这一级返回**讲解正文**，以前只按 (workspace, user) 过滤。
+  // 这条是扩展棘轮时才发现的——第一刀我按"哪些读点返回笔记内容"手工点了一遍，
+  // 漏了它；是 ratchet 把整族摆出来之后才量到的，所以那一族守卫不是摆设。
   const rows = await tx
-    .select()
+    .select({ teaching: noteLearningRoundTeachings })
     .from(noteLearningRoundTeachings)
+    .innerJoin(noteLearningRounds, eq(noteLearningRounds.id, noteLearningRoundTeachings.roundId))
+    .innerJoin(notes, eq(notes.id, noteLearningRounds.noteId))
     .where(and(
       eq(noteLearningRoundTeachings.roundId, roundId),
       eq(noteLearningRoundTeachings.workspaceId, scope.workspaceId),
       eq(noteLearningRoundTeachings.userId, scope.userId),
+      visibleNotesCondition(scope.userId),
     ))
     .orderBy(noteLearningRoundTeachings.ordinal);
-  return rows.map(toTeachingContract);
+  return rows.map((row) => toTeachingContract(row.teaching));
 }
 
 /**
@@ -923,11 +955,17 @@ export async function findReusableTeaching(
     kind: RoundTeachingKindV1;
     drivingQuestionRevision: number;
     snapshotHash: string;
+    personalSources?: NoteReflectionTeachingSnapshotV1[];
   },
 ): Promise<RoundTeachingV1 | null> {
+  // 39d W5-6 刀一（§16.13）：讲解**正文**经 round 间接取自那篇笔记，所以要经
+  // round → notes 带上可见性判据。这条读点以前只按 (workspace, user) 过滤，
+  // 共享撤回之后仍能复用缓存讲解。回收站不挡，理由同 `readOpenRound`。
   const rows = await tx
-    .select()
+    .select({ teaching: noteLearningRoundTeachings })
     .from(noteLearningRoundTeachings)
+    .innerJoin(noteLearningRounds, eq(noteLearningRounds.id, noteLearningRoundTeachings.roundId))
+    .innerJoin(notes, eq(notes.id, noteLearningRounds.noteId))
     .where(and(
       eq(noteLearningRoundTeachings.roundId, key.roundId),
       eq(noteLearningRoundTeachings.workspaceId, scope.workspaceId),
@@ -935,10 +973,18 @@ export async function findReusableTeaching(
       eq(noteLearningRoundTeachings.kind, key.kind),
       eq(noteLearningRoundTeachings.drivingQuestionRevision, key.drivingQuestionRevision),
       eq(noteLearningRoundTeachings.snapshotHash, key.snapshotHash),
+      visibleNotesCondition(scope.userId),
     ))
-    .orderBy(desc(noteLearningRoundTeachings.ordinal))
-    .limit(1);
-  return rows[0] ? toTeachingContract(rows[0]) : null;
+    .orderBy(desc(noteLearningRoundTeachings.ordinal));
+  // POST passes the learner's explicit selection (including []), which is part of
+  // the idempotency key. GET omits it and should read the latest teaching for
+  // this question/snapshot regardless of whether that teaching used private context.
+  const expected = key.personalSources;
+  const match = rows.find(({ teaching }) => {
+    const actual = z.array(noteReflectionTeachingSnapshotV1Schema).max(3).safeParse(teaching.personalSourceSnapshots);
+    return actual.success && (expected === undefined || JSON.stringify(actual.data) === JSON.stringify(expected));
+  });
+  return match ? toTeachingContract(match.teaching) : null;
 }
 
 /**
@@ -990,6 +1036,7 @@ export async function createTeaching(
     kind: RoundTeachingKindV1;
     content: unknown;
     sourceBlockOrdinals: number[];
+    personalSources?: NoteReflectionTeachingSnapshotV1[];
     snapshotHash: string;
     drivingQuestionRevision: number;
     kernelTaskRef: string | null;
@@ -1025,6 +1072,8 @@ export async function createTeaching(
   ) {
     throw new RoundServiceError("invalid_teaching_content", "依据块序号必须是 1 起的整数（最多 200 个）");
   }
+  const personalSources = z.array(noteReflectionTeachingSnapshotV1Schema).max(3).safeParse(request.personalSources ?? []);
+  if (!personalSources.success) throw new RoundServiceError("invalid_teaching_content", "私人理解来源快照不合法");
 
   const rows = await tx
     .select()
@@ -1052,14 +1101,18 @@ export async function createTeaching(
   const nextOrdinal = Number(ordinalRows[0]?.maxOrdinal ?? 0) + 1;
 
   // 刀五的顺序：内容 → 产物行 → 教学行（教学表只追加，id 只能在插入那一刻带上）。
-  const artifactId = request.artifact
+  // `artifactWrite` 带回来的 `failure` **不在这里落库**：产物构建发生在教学行之前，那时
+  // 还没有 teaching_id 可挂（0298 头注「为什么 teaching_id 可空」）。留到教学行落库之后
+  // 那一段再写，那时能挂到具体的一条讲解上。
+  const artifactWrite = request.artifact
     ? await insertTeachingArtifactV1(tx, scope, {
       roundId: row.id,
       input: request.artifact,
       snapshotHash: request.snapshotHash,
       createdAt: now,
     }, reportArtifactFailure)
-    : null;
+    : { artifactId: null, failure: null };
+  const artifactId = artifactWrite.artifactId;
 
   const inserted = await tx.insert(noteLearningRoundTeachings).values({
     workspaceId: scope.workspaceId,
@@ -1069,6 +1122,7 @@ export async function createTeaching(
     kind: request.kind,
     content: parsedContent.data as unknown as Record<string, unknown>,
     sourceBlockOrdinals: ordinals,
+    personalSourceSnapshots: personalSources.data as unknown as unknown[],
     // 哈希与问题版本记的是**生成时刻**的那两份（D3 §5）：轮次行上的哈希不可改写，
     // 但"这条解释是按哪一版做的"只有写在产物行上才回答得了。
     snapshotHash: request.snapshotHash,
@@ -1079,6 +1133,21 @@ export async function createTeaching(
   }).returning();
   const teachingRow = inserted[0];
   if (!teachingRow) throw new RoundServiceError("create_failed", "这条教学产物没落下来");
+  // §16.4「动态交付失败记录保留」：教学行已经落下来了，此刻才有 teaching_id 可挂，
+  // 所以失败留痕写在这里而不是构建那一侧。**写失败不许影响这一行**——它记的是一件独立
+  // 的事（D4 §6.2：动态失败不冒充教学失败），所以刻意不包 SAVEPOINT：真写不进去时
+  // 整发失败，比"教学行落了但失败原因丢了"更容易被发现。
+  if (artifactWrite.failure) {
+    await recordArtifactFailureV1(tx, scope, {
+      roundId: row.id,
+      teachingId: teachingRow.id,
+      stage: artifactWrite.failure.stage,
+      reason: artifactWrite.failure.reason,
+      detail: artifactWrite.failure.detail,
+      snapshotHash: request.snapshotHash,
+      createdAt: now,
+    });
+  }
   return toTeachingContract(teachingRow);
 }
 
@@ -1097,14 +1166,31 @@ async function insertTeachingArtifactV1(
   scope: RoundScopeV1,
   params: { roundId: string; input: RoundArtifactInputV1; snapshotHash: string; createdAt: Date },
   reportFailure: (message: string) => void,
-): Promise<string | null> {
+): Promise<{
+  artifactId: string | null;
+  /**
+   * 失败详情，**回传给调用方去落库**（0298 `note_learning_round_artifact_failures`），
+   * 而不再只是进一次日志。§16.4 验收第一句要的就是"失败原因事后读得到"，而日志做不到。
+   * 形状与迁移 0298 的 `nlraf_stage_reason_chk` 同一组取值。
+   */
+  failure: {
+    stage: ArtifactFailureStageV1;
+    reason: ArtifactFailureReasonV1;
+    detail: string;
+  } | null;
+}> {
   const built = buildDeterministicArtifactHtmlV1(params.input);
   if (!built.ok) {
     reportFailure(`这一条教学产物的动态版本没有生成（${built.reason}）：${built.detail}`);
-    return null;
+    // `buildDeterministicArtifactHtmlV1` 的 reason 与 0298 的 build 档两档同宽；
+    // 对不上就在这里炸，不让它落到库 CHECK 上半夜拒一次。
+    if (built.reason !== "empty" && built.reason !== "over_quota") {
+      throw new Error(`产物构建失败的 reason 不在 0298 的 build 档里：${built.reason}`);
+    }
+    return { artifactId: null, failure: { stage: "build", reason: built.reason, detail: built.detail } };
   }
   try {
-    return await tx.transaction(async (artifactTx) => {
+    const artifactId = await tx.transaction(async (artifactTx) => {
       const inserted = await artifactTx.insert(noteLearningRoundArtifacts).values({
         workspaceId: scope.workspaceId,
         userId: scope.userId,
@@ -1118,11 +1204,11 @@ async function insertTeachingArtifactV1(
       if (!artifactRow) throw new Error("这一份动态产物没有落下来");
       return artifactRow.id;
     });
+    return { artifactId, failure: null };
   } catch (err) {
-    reportFailure(
-      `这一条教学产物的动态版本没有落库（教学那一半照常写）：${err instanceof Error ? err.message : String(err)}`,
-    );
-    return null;
+    const message = err instanceof Error ? err.message : String(err);
+    reportFailure(`这一条教学产物的动态版本没有落库（教学那一半照常写）：${message}`);
+    return { artifactId: null, failure: { stage: "persist", reason: "persist_failed", detail: message } };
   }
 }
 
@@ -1142,10 +1228,15 @@ export async function readTeachingArtifactRef(
   const teachingRows = await tx
     .select({ artifactId: noteLearningRoundTeachings.artifactId })
     .from(noteLearningRoundTeachings)
+    .innerJoin(noteLearningRounds, eq(noteLearningRounds.id, noteLearningRoundTeachings.roundId))
+    .innerJoin(notes, eq(notes.id, noteLearningRounds.noteId))
     .where(and(
       eq(noteLearningRoundTeachings.id, teachingId),
       eq(noteLearningRoundTeachings.workspaceId, scope.workspaceId),
       eq(noteLearningRoundTeachings.userId, scope.userId),
+      // 39d W5-6 刀一：只回一个 artifactId 指针，但**拿到它就能取到 HTML**，
+      // 所以指针本身也是一扇门——失权之后不该再递出这把钥匙。
+      visibleNotesCondition(scope.userId),
     ))
     .limit(1);
   const artifactId = teachingRows[0]?.artifactId ?? null;
@@ -1184,13 +1275,18 @@ export async function readRoundArtifactHtml(
   scope: RoundScopeV1,
   artifactId: string,
 ): Promise<string | null> {
+  // 39d W5-6 刀一（§16.13／§14.4）：**整份动态讲解 HTML** 是受保护内容里最直接的一份，
+  // 以前只按 (workspace, user) 过滤——共享撤回之后仍然取得到。经 round → notes 判可见性。
   const rows = await tx
     .select({ html: noteLearningRoundArtifacts.html })
     .from(noteLearningRoundArtifacts)
+    .innerJoin(noteLearningRounds, eq(noteLearningRounds.id, noteLearningRoundArtifacts.roundId))
+    .innerJoin(notes, eq(notes.id, noteLearningRounds.noteId))
     .where(and(
       eq(noteLearningRoundArtifacts.id, artifactId),
       eq(noteLearningRoundArtifacts.workspaceId, scope.workspaceId),
       eq(noteLearningRoundArtifacts.userId, scope.userId),
+      visibleNotesCondition(scope.userId),
     ))
     .limit(1);
   return rows[0]?.html ?? null;

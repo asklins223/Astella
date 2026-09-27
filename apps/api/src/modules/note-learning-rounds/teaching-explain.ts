@@ -14,11 +14,14 @@ import {
 } from "@ailearn/shared/ai-task-kernel";
 import type { RoundTeachingContentV1 } from "@ailearn/shared/note-learning-round-contracts";
 import type { RoundTargetDraft } from "./round-target-contract.ts";
+import type { NoteReflectionTeachingSnapshotV1 } from "@ailearn/shared/note-learning-reflection-contracts";
+import type { RoundSuspectClaimV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { SuspectClaimRecheckTargetV1 } from "./suspect-claim-recheck.ts";
 
 export const NOTE_TEACHING_EXPLAIN_TASK_ID = "note_teaching_explain_v1";
-export const NOTE_TEACHING_EXPLAIN_TASK_VERSION = 1;
+export const NOTE_TEACHING_EXPLAIN_TASK_VERSION = 2;
 /** 提示词与输出合同的版本（回执与审计用）。 */
-export const NOTE_TEACHING_EXPLAIN_PROMPT_VERSION = "note-teaching-explain-v1";
+export const NOTE_TEACHING_EXPLAIN_PROMPT_VERSION = "note-teaching-explain-v2";
 
 /**
  * 快照正文块（**引用，不带别的**）：`ordinal` 是它在快照里的位置，也是产物行
@@ -32,7 +35,16 @@ export type TeachingExplainInputV1 = {
   /** 最新一版计划的步骤文字（0283）；没有计划就是空数组。 */
   planSteps: string[];
   blocks: TeachingExplainBlockV1[];
+  /** Explicitly selected private notes; contextual only, never evidence for targets. */
+  personalSources?: NoteReflectionTeachingSnapshotV1[];
+  /** Previously flagged units whose exact quoted source slice changed in this note version. */
+  suspectRechecks?: SuspectClaimRecheckTargetV1[];
+  /** Warnings stay visible until a matching rechecked unit is independently accepted. */
+  pendingSuspectClaims?: RoundSuspectClaimV1[];
 };
+
+/** Material-only input allowed at the formal grounding and target-freeze boundary. */
+export type TeachingEvidenceInputV1 = Pick<TeachingExplainInputV1, "drivingQuestion" | "planSteps" | "blocks">;
 
 export type TeachingExplainOutputV1 = RoundTeachingContentV1 & { sourceBlockOrdinals: number[]; target?: RoundTargetDraft | null };
 

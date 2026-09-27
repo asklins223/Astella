@@ -6,7 +6,7 @@ import { noteLearningReflections as reflections } from "@ailearn/shared/db-schem
 import { learningArtifacts, learningRuns } from "@ailearn/shared/db-schema/learning-runs";
 import { artifactPayloadSchema } from "@ailearn/shared/learning-run-contracts";
 import { roundTeachingContentV1Schema } from "@ailearn/shared/note-learning-round-contracts";
-import { noteReflectionV1Schema, type ReflectionSourceV1 } from "@ailearn/shared/note-learning-reflection-contracts";
+import { noteReflectionTeachingSnapshotV1Schema, noteReflectionV1Schema, type NoteReflectionTeachingSnapshotV1, type ReflectionSourceV1 } from "@ailearn/shared/note-learning-reflection-contracts";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { RoundServiceError, type RoundScopeV1 } from "./round-service.ts";
 
@@ -67,6 +67,44 @@ async function sourceFor(tx: ApiTransaction, scope: RoundScopeV1, noteId: string
   const [source] = await readSources(tx, scope, noteId, { teachingIds: ref.kind === "teaching" ? [ref.id] : [], answerIds: ref.kind === "answer" ? [ref.id] : [] });
   if (!source) throw new RoundServiceError("reflection_source_not_found", "这条学习记录现在不能收藏，请重新读取这一轮。");
   return source;
+}
+/** Resolve explicitly selected private notes inside the teaching freeze transaction. */
+export async function readPersonalTeachingSources(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  noteId: string,
+  reflectionIds: string[],
+): Promise<NoteReflectionTeachingSnapshotV1[]> {
+  if (reflectionIds.length > 3 || new Set(reflectionIds).size !== reflectionIds.length) {
+    throw new RoundServiceError("invalid_teaching_content", "一次讲解最多选三条不同的本人私有备注");
+  }
+  await requireVisibleNote(tx, scope, noteId);
+  if (reflectionIds.length === 0) return [];
+  const rows = await tx.select().from(reflections).where(and(
+    owned(scope, noteId), inArray(reflections.id, reflectionIds),
+  ));
+  if (rows.length !== reflectionIds.length) {
+    throw new RoundServiceError("reflection_source_not_found", "所选私有备注已变化，请重新读取后再开始讲解");
+  }
+  const teachings = rows.flatMap((row) => row.teachingId ? [row.teachingId] : []);
+  const answers = rows.flatMap((row) => row.answerArtifactId ? [row.answerArtifactId] : []);
+  const sources = await readSources(tx, scope, noteId, { teachingIds: teachings, answerIds: answers });
+  const bySource = new Map(sources.map((source) => [key(source), source]));
+  const snapshots = reflectionIds.map((reflectionId) => {
+    const row = rows.find((candidate) => candidate.id === reflectionId)!;
+    const source = bySource.get(row.teachingId ? `teaching:${row.teachingId}` : `answer:${row.answerArtifactId}`);
+    if (!source) throw new RoundServiceError("reflection_source_not_found", "所选私有备注的原始学习记录已不可用");
+    return noteReflectionTeachingSnapshotV1Schema.parse({
+      reflectionId: row.id,
+      revision: row.revision,
+      source,
+      annotation: row.annotation,
+    });
+  });
+  if (snapshots.reduce((size, item) => size + item.source.text.length + item.annotation.length, 0) > 12_000) {
+    throw new RoundServiceError("invalid_teaching_content", "所选私人理解文字较长，请减少条数或先缩短批注");
+  }
+  return snapshots;
 }
 export async function listNoteReflections(tx: ApiTransaction, scope: RoundScopeV1, noteId: string, query: { roundId?: string; before?: string; reflectionId?: string }) {
   await requireVisibleNote(tx, scope, noteId);

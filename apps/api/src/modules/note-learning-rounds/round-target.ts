@@ -16,9 +16,10 @@ import {
 import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
 import { objectiveRubricV2Schema, type CanonicalAnswerV2 } from "@ailearn/shared/card-generation-v2-contracts";
 import { createObjectiveOrigin } from "../learning-objectives/origin-service.ts";
+import { visibleObjectivesCondition } from "../note/visibility.ts";
 import { roundTargetDraftSchema, type RoundTargetDraft } from "./round-target-contract.ts";
 import type { RoundTargetGroundingReport } from "./target-grounding.ts";
-import type { TeachingExplainInputV1 } from "./teaching-explain.ts";
+import type { TeachingEvidenceInputV1 } from "./teaching-explain.ts";
 import { RoundServiceError, type RoundScopeV1, type NoteLearningRoundV1 } from "./round-service.ts";
 
 export async function readRoundTargetId(tx: ApiTransaction, scope: RoundScopeV1, round: NoteLearningRoundV1): Promise<string | null> {
@@ -30,10 +31,11 @@ export async function readRoundTargetId(tx: ApiTransaction, scope: RoundScopeV1,
 
 /** Only independently checked, exactly quoted units can enter the ordinary target freeze chain. */
 export async function persistRoundTarget(tx: ApiTransaction, scope: RoundScopeV1, round: NoteLearningRoundV1,
-  input: TeachingExplainInputV1, proposal: RoundTargetDraft, report: RoundTargetGroundingReport): Promise<string> {
+  input: TeachingEvidenceInputV1, proposal: RoundTargetDraft, report: RoundTargetGroundingReport): Promise<string> {
   const draft = roundTargetDraftSchema.parse(proposal);
   if (!report.teachingSupported || !report.objectiveSupported || report.units.length !== draft.units.length
     || new Set(report.units.map((unit) => unit.unitId)).size !== draft.units.length
+    || report.suspectClaims.some((claim) => claim.unitIds.some((unitId) => draft.units.some((unit) => unit.unitId === unitId)))
     || draft.units.some((unit) => !report.units.some((check) => check.unitId === unit.unitId && check.factSupported && check.criterionSupported))) {
     throw new RoundServiceError("invalid_teaching_content", "练习目标还没有通过依据核查");
   }
@@ -52,6 +54,7 @@ export async function persistRoundTarget(tx: ApiTransaction, scope: RoundScopeV1
   const existing = (await tx.select().from(learningObjectivesV2).where(and(
     eq(learningObjectivesV2.workspaceId, scope.workspaceId), eq(learningObjectivesV2.semanticIdentityClassId, identity),
     eq(learningObjectivesV2.lifecycle, "active"),
+    visibleObjectivesCondition(scope.userId, learningObjectivesV2.objectiveId),
   )).limit(1))[0];
   let objectiveId: string;
   let objectiveRevisionId: string;

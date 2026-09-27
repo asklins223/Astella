@@ -273,6 +273,13 @@ const scheduleReasonLabels: Record<string, string> = {
   diagnostic_only: "本次属于诊断，不改变复习",
   sandbox: "本次在沙盒范围，不改变复习",
   not_assessable: "本次回答无法评估",
+  note_evidence_changed: "笔记依据有变化，这次没有推进复习；先回笔记核对原文。",
+  // 39 §9.1 行 2：本人对这个目标说了「暂不安排」。这一直缺，于是走到下面那个
+  // `?? impact.reasonCode` 的兜底，把内部词 `objective_held` 直接念给用户听了。
+  objective_held: "你给这个目标设了「暂不安排」，这次没有推进复习。",
+  // 39 §14.2（39d W5-5）：这个目标上有一份还没结论的争议。与上一条要说不同的话——
+  // 那一条是「我说了以后别排」，这一条是「上次判定我还在申诉，先别把它的结论推得更远」。
+  assessment_disputed: "上次的判定你提了异议，复核之前这次不推进复习；也可以现在结束争议、把这一项暂不安排。",
   skipped: "本次已跳过",
   ended: "旅程提前结束",
   stale: "内容已变化",

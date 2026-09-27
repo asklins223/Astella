@@ -156,6 +156,46 @@ export type ObjectiveSurfaceFreshnessV3 = z.infer<
 >;
 
 /**
+ * A read-only, note-specific explanation of whether the evidence behind an
+ * objective still applies to the current saved note. This is deliberately
+ * separate from `freshness`: the latter says that the note has a newer
+ * version, while this result says whether the cited material changed.
+ */
+export const objectiveNoteChangeEvidenceV1Schema = z.strictObject({
+  evidenceIndex: z.number().int().min(1),
+  previousOrdinal: z.number().int().min(1).nullable(),
+  previousQuote: z.string().max(1200).nullable(),
+  currentQuote: z.string().max(1200).nullable(),
+  previousQuoteTruncated: z.boolean(),
+  currentQuoteTruncated: z.boolean(),
+});
+export type ObjectiveNoteChangeEvidenceV1 = z.infer<typeof objectiveNoteChangeEvidenceV1Schema>;
+
+export const objectiveNoteChangeImpactV1Schema = z.strictObject({
+  noteId: z.string().uuid(),
+  status: z.enum(["unaffected", "affected", "uncertain"]),
+  layer: z.number().int().min(1).max(4),
+  reasonCode: z.enum([
+    "explicit_change_relation",
+    "stable_anchor_unchanged",
+    "quoted_text_unchanged",
+    "quoted_text_changed",
+    "insufficient_evidence",
+    "mixed_evidence",
+  ]),
+  evidenceCount: z.number().int().min(0),
+  unchangedEvidenceCount: z.number().int().min(0),
+  changedEvidenceCount: z.number().int().min(0),
+  uncertainEvidenceCount: z.number().int().min(0),
+  /** User-visible old/current excerpts for inline verification; quote copies stay out of generic surfaces. */
+  evidenceDetails: z.array(objectiveNoteChangeEvidenceV1Schema).max(200),
+  evidenceDetailsOmittedCount: z.number().int().min(0),
+});
+export type ObjectiveNoteChangeImpactV1 = z.infer<
+  typeof objectiveNoteChangeImpactV1Schema
+>;
+
+/**
  * 「这条目标的来源更新了吗」那一份比较，**全仓只准这一处**（39d D3 §5.1 末段：判定不许各写一份）。
  * 今天它被抄在三地上（`learning-objectives/surface-service.ts` 的详情与列表两格、
  * `understanding-v3/topology-repository.ts` 的星图那一格），三地的输入形状不同而规则相同——
@@ -235,6 +275,8 @@ export const learningObjectiveSurfaceV3Schema = z.strictObject({
       .nullable(),
     missingOrigin: z.boolean(),
   }),
+  /** D3: only changed or unverifiable note evidence is surfaced; null means no pause is needed. */
+  noteChangeImpact: objectiveNoteChangeImpactV1Schema.nullable(),
   personal: z.strictObject({
     initialValidation: z
       .strictObject({
@@ -297,6 +339,8 @@ export const objectiveListItemV3Schema = z.strictObject({
   cardStrategy: cardStrategyV2Schema.nullable(),
   lifecycle: objectiveSurfaceLifecycleV3Schema,
   freshness: objectiveSurfaceFreshnessV3Schema,
+  /** D3 §3：仅当列表按 noteId 筛选时提供该篇笔记的目标级影响结果。 */
+  noteChangeImpact: objectiveNoteChangeImpactV1Schema.nullable().default(null),
   primaryNoteTitle: z.string().min(1).max(500).nullable(),
   /** 创建时间（ISO 8601）；用于前端 newest/oldest 排序，与服务端 cursor 排序一致。 */
   createdAt: z.string().datetime({ offset: true }),

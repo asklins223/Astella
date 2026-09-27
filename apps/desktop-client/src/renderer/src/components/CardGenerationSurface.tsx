@@ -731,6 +731,8 @@ export function CardGenerationSurface() {
   const activeCandidate = candidates.find((candidate) => candidate.candidateId === activeCandidateId)
     ?? candidates[0]
     ?? null;
+  const suspectClaimIssues = activeCandidate?.qualityIssues.filter((issue) =>
+    issue.code === "suspect_claim" || issue.code === "suspect_claim_location_missing") ?? [];
   const activeCandidateIndex = activeCandidate ? candidates.indexOf(activeCandidate) : 0;
   /**
    * 审核是否开着 —— 由 run 状态决定，`needs_attention` 也算（见共享谓词）。
@@ -1126,6 +1128,23 @@ export function CardGenerationSurface() {
                     <p className="small candidate-card__reasons">
                       建议依据：{activeCandidate.recommendation.reasonCodes.join(" · ")}
                     </p>
+                  ) : null}
+                  {suspectClaimIssues.length > 0 ? (
+                    <section className="candidate-suspect-note" aria-label="待核对的可疑主张" role="note">
+                      <h3><CircleAlert size={17} aria-hidden="true" />待核对的可疑主张</h3>
+                      <p>这是待核对提示，不是系统断言原句一定错误。核对清楚前，它不能成为标准答案、正式能力判断或复习卡依据。</p>
+                      <ul>
+                        {suspectClaimIssues.map((issue, index) => (
+                          <li key={`${activeCandidate.candidateRevisionId}:${issue.code}:${index}`}>
+                            {issue.sourceQuote ? <blockquote>“{issue.sourceQuote}”</blockquote> : (
+                              <blockquote>原文位置还没能可靠定位，请回到这条笔记核对。</blockquote>
+                            )}
+                            <p>{issue.detail}</p>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="candidate-suspect-note__footer">这张候选已被质量检查拦下，不能保存为标准复习卡；其它候选仍分别审核。</p>
+                    </section>
                   ) : null}
                   <div className="answer-slip">
                     <small>学习卡摘要</small>

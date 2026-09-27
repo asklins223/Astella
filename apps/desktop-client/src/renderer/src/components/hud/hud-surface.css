@@ -3813,6 +3813,22 @@
   overflow-wrap: anywhere;
 }
 
+/* A changed source gets a small pinned note on the paper card, with the same
+   warm ink and butter accent as the Animal Crossing study HUD. */
+.hud-surface .deck-card.front .deck-card__note-impact {
+  display: flex;
+  align-self: flex-start;
+  align-items: flex-start;
+  gap: 5px;
+  max-width: 100%;
+  margin: 8px 0 0;
+  color: var(--hud-ink);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.hud-surface .deck-card__note-impact > svg { flex: 0 0 auto; margin-top: 1px; color: var(--hud-clay); }
+.hud-surface .deck-card__note-impact strong { color: var(--hud-clay); }
 /* The mockup writes the action row inline; the integration layer owns it so the
    narrow layout can move it together with the card. left/right 43px 对齐卡片
    自身的 43px 内边距：按钮与正文共用同一条左边缘。 */
@@ -4268,6 +4284,8 @@
   .hud-surface .deck-card.front { padding-top: 18px; padding-bottom: 24px; }
   .hud-surface .deck-card.front h2 { -webkit-line-clamp: 2; font-size: 13px; }
   .hud-surface .deck-card.front .sub { -webkit-line-clamp: 1; }
+  .hud-surface .deck-card.front .deck-card__note-impact { gap: 2px; margin-top: 3px; font-size: 5px; }
+  .hud-surface .deck-card.front .deck-card__note-impact > svg { width: 7px; height: 7px; }
   .hud-surface .deck-card.front .actions .button { min-height: 18px; padding: 0 6px; font-size: 5px; }
   .hud-surface .deck-card .meta .deck-card__state { padding: 1px 4px; font-size: 5px; }
   .hud-surface .deck-nav { gap: 6px; }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BookmarkPlus, Pencil, X } from "lucide-react";
+import { BookmarkPlus, Pencil, Sparkles, X } from "lucide-react";
 import type { NoteReflectionCommandV1, NoteReflectionPageV1, NoteReflectionV1, ReflectionSourceV1 } from "@ailearn/shared/note-learning-reflection-contracts";
 import { createRequestMeta, gatewayErrorMessage, RendererGatewayError, unwrapGatewayResult } from "../../app/desktop-client";
 import { PendingReflectionAppendError, reflectionDocumentLines } from "./note-reflection-document";
@@ -12,6 +12,9 @@ type Props = {
   canAppend: boolean;
   shared: boolean;
   openSources?: boolean;
+  canUseForTeaching?: boolean;
+  selectedForTeaching?: string[];
+  onSelectionChange?: (ids: string[]) => void;
   onAppend: (source: ReflectionSourceV1, annotation: string) => Promise<boolean>;
   onInspectBody: () => void;
 };
@@ -140,9 +143,20 @@ export function NoteReflectionShelf(props: Props) {
         }}>{bodyPending ? "回正文检查" : "先不留"}</button></div>
     </form> : null}
     {page?.items.length ? <div className="note-reflection-bookmarks"><h4>本人私有备注</h4>
+      {props.canUseForTeaching ? <p className="small notebook-note">勾选最多三条，供下一次个人讲解参考。选中的文字会随这次讲解发送给 AI；只作理解背景，不进正文、卡片或正式判定。</p> : null}
       {page.items.map(item => <article key={item.reflectionId}>
         <details><summary>{originLabel(item.source)} · {new Date(item.createdAt).toLocaleDateString("zh-CN")} · {item.source.question}</summary><p className="note-reflection-source-text">{item.source.text}</p></details>
         {item.annotation ? <p className="note-reflection-annotation">本人批注：{item.annotation}</p> : null}
+        {props.canUseForTeaching ? <label className="note-reflection-use-context"
+          data-selected={props.selectedForTeaching?.includes(item.reflectionId) ? "true" : "false"}><input type="checkbox"
+          checked={props.selectedForTeaching?.includes(item.reflectionId) ?? false}
+          disabled={busy || (!props.selectedForTeaching?.includes(item.reflectionId) && (props.selectedForTeaching?.length ?? 0) >= 3)}
+          onChange={(event) => {
+            const selected = props.selectedForTeaching ?? [];
+            props.onSelectionChange?.(event.target.checked
+              ? [...selected, item.reflectionId]
+              : selected.filter(id => id !== item.reflectionId));
+          }} /><Sparkles size={14} aria-hidden="true" /><span>作为下一次讲解的个人参考</span></label> : null}
         <div className="note-reflection-actions"><button type="button" className="text-action" disabled={busy || bodyPending} onClick={() => choose(item.source, item)}><Pencil size={14} aria-hidden="true" />修改批注</button>
           <button type="button" className="text-action" disabled={busy || bodyPending} onClick={() => void write({ kind: "remove", reflectionId: item.reflectionId, expectedRevision: item.revision })}><X size={14} aria-hidden="true" />取消收藏</button></div>
       </article>)}

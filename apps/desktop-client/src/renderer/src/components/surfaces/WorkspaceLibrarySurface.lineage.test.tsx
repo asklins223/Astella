@@ -54,6 +54,7 @@ function detail(
       sourceLabel: null,
     },
     sources: { origins, primaryNote: null, missingOrigin: false },
+    noteChangeImpact: null,
     personal: {
       initialValidation: null, activeRun: null, review: null,
       practiceTrailCount: personal?.practiceTrailCount ?? 0, lastCanonicalAt: null,

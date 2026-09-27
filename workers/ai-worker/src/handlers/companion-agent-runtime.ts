@@ -1818,6 +1818,12 @@ async function executeDirectTool(
     }
     case "companion_schedule_reminder": {
       const text = String(args.text).slice(0, 200);
+      // 39d W5-6 刀三（§16.13）：模型说这条提醒是在说哪篇笔记时，把那个 noteId 记下来。
+      // 兑现闸据此在共享撤回后不再投递（迁移 0299）。**服务端校验它**：模型可能给
+      // 一篇他此刻读不到的笔记，或者干脆编一个 id——那两种都要在这里挡掉，
+      // 否则就是"我给了一条指向受保护内容的提醒"当成合法的。读不到就当没传
+      // （落 NULL），**不报错**：用户要的是一句提醒，不是被权限问题拦住。
+      const noteId = typeof args.noteId === "string" ? args.noteId : null;
       // "YYYY-MM-DD HH:MM"[:SS] → 该用户时区的挂钟时间 → UTC 绝对时刻。
       // 时区算术全交给 Postgres（AT TIME ZONE 对 timestamp 恰好产出 timestamptz）：
       // 模型给的"明早九点"如果被按 UTC 解释，提醒会差八个小时——那是这条能力
@@ -1826,13 +1832,26 @@ async function executeDirectTool(
       const created = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         async (tx) => {
+          let subjectNoteId: string | null = null;
+          if (noteId) {
+            const visible = await tx.execute<{ id: string }>(sql`
+              SELECT id::text AS id FROM notes
+               WHERE id = ${noteId}::uuid
+                 AND workspace_id = ${event.ctx.workspaceId}
+                 AND deleted_at IS NULL
+                 AND (share_scope = 'shared' OR created_by = ${event.read.userId})
+               LIMIT 1
+            `);
+            subjectNoteId = (Array.isArray(visible) ? visible : [])[0]?.id ?? null;
+          }
           const rows = await tx.execute<{ id: string; fire_at_local: string; in_minutes: number }>(sql`
-            INSERT INTO companion_reminders (workspace_id, user_id, text, fire_at)
+            INSERT INTO companion_reminders (workspace_id, user_id, text, fire_at, note_id)
             VALUES (
               ${event.ctx.workspaceId},
               ${event.read.userId},
               ${text},
-              (${local}::timestamp AT TIME ZONE ${tzSubquery(event.read.userId)})
+              (${local}::timestamp AT TIME ZONE ${tzSubquery(event.read.userId)}),
+              ${subjectNoteId}::uuid
             )
             RETURNING id::text AS id,
                       to_char(fire_at AT TIME ZONE ${tzSubquery(event.read.userId)},
@@ -2172,6 +2191,45 @@ export function companionStepToolShape(args: {
     tools,
     toolChoice: tools.length > 0 && args.requiresTool && args.toolCallCount === 0 ? "required" : "auto",
   };
+}
+
+/**
+ * 某些 OpenAI-compatible 端点不接受 `tool_choice: "required"`。只在 provider
+ * 明确返回这一个合同错误时，才用已配置的跨模型兜底重发同一请求；其余错误仍按原
+ * 路径失败，避免把鉴权、限流或网络故障误当成模型能力差异。
+ */
+export async function executeCompanionAgentTurnWithToolChoiceFallback(args: {
+  request: AgentTurnRequest;
+  provider: AIProvider;
+  fallbackProvider?: AIProvider;
+  signal: AbortSignal;
+  onFallback?: (error: ProviderRequestError, fallbackProvider: AIProvider) => void;
+}): Promise<{ result: AgentTurnResult; provider: AIProvider }> {
+  if (typeof args.provider.executeAgentTurn !== "function") {
+    throw new Error("provider does not support companion agent turns");
+  }
+  try {
+    return {
+      result: await args.provider.executeAgentTurn(args.request, args.signal),
+      provider: args.provider,
+    };
+  } catch (error) {
+    const fallback = args.fallbackProvider;
+    const canRetryOnFallback = args.request.toolChoice === "required"
+      && args.request.tools.length > 0
+      && error instanceof ProviderRequestError
+      && error.providerCode === "MODEL_TOOL_CHOICE_NOT_SUPPORTED"
+      && typeof fallback?.executeAgentTurn === "function"
+      && fallback !== args.provider
+      && fallback.modelId !== args.provider.modelId;
+    if (!canRetryOnFallback || !fallback?.executeAgentTurn) throw error;
+
+    args.onFallback?.(error, fallback);
+    return {
+      result: await fallback.executeAgentTurn(args.request, args.signal),
+      provider: fallback,
+    };
+  }
 }
 
 export function steerableToolNames(
@@ -3133,7 +3191,7 @@ export async function runCompanionAgentLoop(args: {
     // 换成**另一个模型**（companion_fallback 槽）。指名道姓让她去调工具都换不来一次
     // 真实调用（实机 2026-09-21 两次：steer 之后回"这次真的用工具查过了，两个词各搜了
     // 一遍"，tools 仍是 0），缺的不是指令而是听得懂指令的模型——再说第三遍只是多烧一步。
-    const stepProvider = steerSwapToFallback
+    let stepProvider = steerSwapToFallback
       && typeof args.fallbackProvider?.executeAgentTurn === "function"
       ? args.fallbackProvider
       : args.provider;
@@ -3155,6 +3213,23 @@ export async function runCompanionAgentLoop(args: {
         throw new CompanionAgentBudgetExceededError("companion agent deadline exceeded");
       }
       const providerCallTimeout = Math.min(resolveProviderCallTimeout("companion_agent"), remainingMs);
+      const executeBufferedTurn = async (signal: AbortSignal): Promise<AgentTurnResult> => {
+        const execution = await executeCompanionAgentTurnWithToolChoiceFallback({
+          request: stepRequest,
+          provider: stepProvider,
+          fallbackProvider: args.fallbackProvider,
+          signal,
+          onFallback: (error, fallbackProvider) => logger.warn({
+            runId: args.read.runId,
+            stepCount,
+            providerCode: error.providerCode,
+            primaryModelId: stepProvider.modelId,
+            fallbackModelId: fallbackProvider.modelId,
+          }, "companion required tool_choice is unsupported; retrying on cross-model fallback"),
+        });
+        stepProvider = execution.provider;
+        return execution.result;
+      };
       /**
        * 这一步能不能走流式（2026-09-19 ④-b）。
        *
@@ -3213,7 +3288,7 @@ export async function runCompanionAgentLoop(args: {
           && Date.now() < deadlineAt;
         const runBuffered = (): Promise<AgentTurnResult> =>
           runWithAbortBudget(
-            (signal) => stepProvider.executeAgentTurn!(stepRequest, signal),
+            executeBufferedTurn,
             args.ctx.signal,
             Math.min(providerCallTimeout, Math.max(1, deadlineAt - Date.now())),
           );
@@ -3256,7 +3331,7 @@ export async function runCompanionAgentLoop(args: {
         }
       } else {
         result = await runWithAbortBudget(
-          (signal) => stepProvider.executeAgentTurn!(stepRequest, signal),
+          executeBufferedTurn,
           args.ctx.signal,
           providerCallTimeout,
         );

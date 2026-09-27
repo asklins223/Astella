@@ -13,6 +13,18 @@ const RETRYABLE_ASSESSMENT_STATUSES: ReadonlyArray<NonNullable<LearningRunPublic
 ];
 
 /**
+ * 可以被「停止本次评估」收掉的那两档（§5.5；0301 那一刀）。
+ *
+ * 与 `RETRYABLE_ASSESSMENT_STATUSES` 是**不同的集合**，不要合并：`failed` 可以重试也可以
+ * 取消（它既没有结果也没有在跑），但把取消建立在"可重试"上会让「重试」与「取消」这两个
+ * 独立动作再次耦在一起——而 §5.5 要求它们是三个独立动作里的两个。
+ */
+const CANCELLABLE_ASSESSMENT_STATUSES: ReadonlyArray<NonNullable<LearningRunPublicV1["activeAssessment"]>["status"]> = [
+  "queued",
+  "running",
+];
+
+/**
  * Project only server-authorized action templates. The renderer must consume
  * this exact union; it must never infer an action from phase or local state.
  */
@@ -68,6 +80,21 @@ export function buildLearningRunAllowedActionsV2(view: LearningRunPublicV1): Lea
     // （阶段无在锁证据，无需 abandonLockedEvidence）。
     actions.push({ version: 2, kind: "end", abandonLockedEvidence: false, confirmationRequired: true });
   } else if (view.phase === "assessing" || view.phase === "committing") {
+    // §5.5 三个独立动作：在途评估时除了「先到这里」（那要 abandon 掉已锁定的作答）之外，
+    // 还有一个**不放弃作答**的出路——明确停止本次评估。少了它，这一档就只剩"要么让评估
+    // 跑完、要么丢掉我刚答的"二选一（D7 §7 明写结束活动默认允许评估完成）。
+    //
+    // **只在评估确实未终态时宣告**：completed / not_assessable 的那一发不接受取消
+    // （§5.5「已先完成提交的判定不因后到取消而消失」），cancelled 的更不接受
+    // （重放由状态机的幂等分支处理）。宣告一个注定 409 的动作 = 界面摆一颗按不动的按钮。
+    if (view.activeAssessment && CANCELLABLE_ASSESSMENT_STATUSES.includes(view.activeAssessment.status)) {
+      actions.push({
+        version: 2,
+        kind: "cancel_assessment",
+        assessmentId: view.activeAssessment.assessmentId,
+        confirmationRequired: true,
+      });
+    }
     actions.push({ version: 2, kind: "end", abandonLockedEvidence: true, confirmationRequired: true });
   } else if (view.phase === "preparing") {
     actions.push({ version: 2, kind: "end", abandonLockedEvidence: false, confirmationRequired: true });

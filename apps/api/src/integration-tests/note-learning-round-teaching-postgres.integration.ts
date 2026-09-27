@@ -21,6 +21,12 @@ import {
   roundTeachingViewV1Schema,
   type RoundTeachingV1,
 } from "@ailearn/shared/note-learning-round-contracts";
+import type {
+  TeachingEvidenceInputV1,
+  TeachingExplainInputV1,
+  TeachingExplainProviderV1,
+} from "../modules/note-learning-rounds/teaching-explain.ts";
+import type { RoundTargetGrounder } from "../modules/note-learning-rounds/target-grounding.ts";
 import { findReusableTeaching, listTeachings } from "../modules/note-learning-rounds/round-service.ts";
 import { seedNotesOnlyWorkspace, type NotesOnlyWorkspaceFixture } from "./helpers/pure-v2-workspace-fixture.ts";
 
@@ -36,6 +42,21 @@ const { authRoutes } = await import("../modules/identity/routes.ts");
 const { deterministicTeachingExplainProviderV1 } = await import("../modules/note-learning-rounds/teaching-explain.ts");
 const { noteLearningRoundRoutes } = await import("../modules/note-learning-rounds/routes.ts");
 const { issueSession } = await import("../modules/identity/service.ts");
+const teachingInputs: TeachingExplainInputV1[] = [];
+const evidenceInputs: TeachingEvidenceInputV1[] = [];
+const deterministicProvider = deterministicTeachingExplainProviderV1();
+const trackingProvider: TeachingExplainProviderV1 = async (input, step) => {
+  teachingInputs.push(input);
+  return deterministicProvider(input, step);
+};
+const evidenceOnlyGrounder: RoundTargetGrounder = async ({ input }) => {
+  evidenceInputs.push(input);
+  return { approved: false, report: {
+    teachingSupported: true, teachingReason: "test evidence only",
+    teachingSegments: [{ ordinal: 1, supported: true, reason: "test evidence only" }],
+    objectiveSupported: false, units: [], suspectClaims: [],
+  }, modelCalls: 0 };
+};
 
 let seeded: NotesOnlyWorkspaceFixture | null = null;
 let peerWorkspace: NotesOnlyWorkspaceFixture | null = null;
@@ -112,8 +133,8 @@ before(async () => {
   await app.register(sensible);
   await app.register(authRoutes);
   await app.register(noteLearningRoundRoutes, { teaching: {
-    provider: deterministicTeachingExplainProviderV1(), modelId: "offline-test", external: false,
-  } });
+    provider: trackingProvider, modelId: "offline-test", external: false,
+  }, targetGrounder: evidenceOnlyGrounder });
   await app.ready();
   token = (await issueSession(userId, workspaceId)).token;
 });
@@ -205,6 +226,67 @@ test("重复请求：同快照同问题回 200 与同一条（不重付），库
   const read = await call("GET", `/v2/note-learning-rounds/${round.roundId}/teaching`);
   assert.equal(read.statusCode, 200, read.body);
   assert.equal(parseView(read).teaching?.teachingId, firstView.teaching?.teachingId);
+});
+
+test("显式私人来源只影响本次讲解，快照可回放且正式核查拿不到私人文字", async () => {
+  teachingInputs.length = 0;
+  evidenceInputs.length = 0;
+  const round = await createRound("先弄懂「提取练习」这一节在讲什么");
+  const first = parseView(await generateTeaching(round.roundId as string, round.revision as number));
+  const firstTeaching = first.teaching as RoundTeachingV1;
+  const privateText = "只给本人讲解参考的私密记号-风铃-731";
+  const savedResponse = await call("POST", `/v2/notes/${noteA}/learning-reflections`, {
+    source: { kind: "teaching", id: firstTeaching.teachingId }, annotation: privateText,
+  });
+  assert.equal(savedResponse.statusCode, 200, savedResponse.body);
+  const saved = body(savedResponse);
+  const reflectionId = String(saved.reflectionId);
+
+  const selectedResponse = await call("POST", `/v2/note-learning-rounds/${round.roundId}/teaching`, {
+    expectedRevision: round.revision, regenerate: true, personalReflectionIds: [reflectionId],
+  });
+  assert.equal(selectedResponse.statusCode, 201, selectedResponse.body);
+  const selected = parseView(selectedResponse).teaching as RoundTeachingV1;
+  const frozenSource = selected.personalSources?.[0];
+  assert.ok(frozenSource);
+  assert.equal(frozenSource.reflectionId, reflectionId);
+  assert.equal(frozenSource.revision, 1);
+  assert.equal(frozenSource.annotation, privateText);
+  assert.equal(frozenSource.source.ref.id, firstTeaching.teachingId);
+  assert.deepEqual(teachingInputs.at(-1)?.personalSources, [frozenSource]);
+
+  const evidenceInput = evidenceInputs.at(-1);
+  assert.ok(evidenceInput);
+  assert.equal("personalSources" in evidenceInput, false);
+  assert.equal(JSON.stringify(evidenceInput).includes(privateText), false);
+
+  const replay = await call("GET", `/v2/note-learning-rounds/${round.roundId}/teaching`);
+  assert.equal(replay.statusCode, 200, replay.body);
+  assert.deepEqual(parseView(replay).teaching, selected);
+  const duplicate = await call("POST", `/v2/note-learning-rounds/${round.roundId}/teaching`, {
+    expectedRevision: round.revision, personalReflectionIds: [reflectionId],
+  });
+  assert.equal(duplicate.statusCode, 200, duplicate.body);
+  assert.equal(parseView(duplicate).teaching?.teachingId, selected.teachingId);
+
+  const changedAnnotation = "修订后的私人理解-仍不应改写旧讲解";
+  const changed = await call("PATCH", `/v2/notes/${noteA}/learning-reflections/${reflectionId}`, {
+    expectedRevision: 1, annotation: changedAnnotation,
+  });
+  assert.equal(changed.statusCode, 200, changed.body);
+  const rowsAfterEdit = await teachingRows(round.roundId as string);
+  const frozenRow = rowsAfterEdit.find((row) => row.id === selected.teachingId);
+  const storedSources = frozenRow?.personal_source_snapshots as unknown[] | undefined;
+  assert.deepEqual(storedSources?.[0], frozenSource);
+
+  const refreshed = await call("POST", `/v2/note-learning-rounds/${round.roundId}/teaching`, {
+    expectedRevision: round.revision, personalReflectionIds: [reflectionId],
+  });
+  assert.equal(refreshed.statusCode, 201, refreshed.body);
+  const refreshedTeaching = parseView(refreshed).teaching as RoundTeachingV1;
+  assert.notEqual(refreshedTeaching.teachingId, selected.teachingId);
+  assert.equal(refreshedTeaching.personalSources?.[0]?.revision, 2);
+  assert.equal(refreshedTeaching.personalSources?.[0]?.annotation, changedAnnotation);
 });
 
 test("改写问题之后：旧解释留着不删，新解释另起一条；未生成前 GET 如实回 null", async () => {

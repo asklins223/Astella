@@ -56,6 +56,7 @@ function surfaceFixture(): Record<string, unknown> {
       primaryNote: { noteId: NOTE, noteVersionId: NOTE_VERSION, title: "光学原理笔记" },
       missingOrigin: false,
     },
+    noteChangeImpact: null,
     personal: {
       initialValidation: null,
       activeRun: { runId: RUN, phase: "active" },

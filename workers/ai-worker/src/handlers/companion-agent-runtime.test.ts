@@ -20,6 +20,7 @@ import {
   actionSteerBudget,
   companionStepRequiresTool,
   companionStepToolShape,
+  executeCompanionAgentTurnWithToolChoiceFallback,
   joinVisibleSegmentsDeduped,
   partitionPersonaPatch,
   planStepSteer,
@@ -34,8 +35,10 @@ import {
 import { NOTE_SEARCH_MAX_TERMS, noteSearchTerms } from "./companion-dialogue-content.ts";
 import { companionNeedsTool } from "./companion-tool-intent.ts";
 import { MockProvider } from "../lib/providers/mock.ts";
+import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import { CompanionStreamStoppedError } from "./companion-dialogue-stream.ts";
 import type { AIProvider } from "../lib/ai-provider.ts";
+import type { AgentTurnRequest, AgentTurnResult } from "@ailearn/shared";
 
 test("工具解析：只读权限下不存在任何写工具", () => {
   const readOnlyTools = resolveAllCompanionAgentTools("read_only");
@@ -773,6 +776,128 @@ test("read_current_page：工具已注册、是读类、只读权限下也给她
 });
 
 // ── 39d W2-4：动作通道收口（P3-alt + `tools`/`tool_choice` 那对不变量） ─────
+
+test("required tool_choice 不受支持时，同一请求只切一次跨模型兜底", async () => {
+  const request = {
+    role: "companion_agent",
+    systemPrompt: "测试",
+    messages: [{ role: "user", content: "打开笔记" }],
+    tools: [{ name: "companion_read_context", description: "读取上下文", parameters: {} }],
+    toolChoice: "required",
+    maxTokens: 100,
+    temperature: 0.4,
+  } as AgentTurnRequest;
+  const signal = new AbortController().signal;
+  const unsupported = new ProviderRequestError({
+    provider: "openai_compatible",
+    status: 400,
+    providerCode: "MODEL_TOOL_CHOICE_NOT_SUPPORTED",
+  });
+  let primaryCalls = 0;
+  let fallbackCalls = 0;
+  let fallbackNotice: ProviderRequestError | undefined;
+  const primary = {
+    id: "openai_compatible",
+    modelId: "qwen3.8-flash",
+    executeAgentTurn: async (actualRequest: AgentTurnRequest, actualSignal?: AbortSignal) => {
+      primaryCalls += 1;
+      assert.strictEqual(actualRequest, request);
+      assert.strictEqual(actualSignal, signal);
+      throw unsupported;
+    },
+  } as unknown as AIProvider;
+  const fallback = {
+    id: "openai_compatible",
+    modelId: "THUDM/GLM-4-9B-0414",
+    executeAgentTurn: async (actualRequest: AgentTurnRequest, actualSignal?: AbortSignal) => {
+      fallbackCalls += 1;
+      assert.strictEqual(actualRequest, request, "fallback 必须保留 tools 与 toolChoice 原样");
+      assert.equal(actualRequest.toolChoice, "required");
+      assert.ok(actualRequest.tools.length > 0);
+      assert.strictEqual(actualSignal, signal);
+      return {
+        content: null,
+        toolCalls: [{ id: "call_1", name: "companion_read_context", arguments: {} }],
+        finishReason: "tool_calls",
+        usage: null,
+        providerRequestId: null,
+      } as AgentTurnResult;
+    },
+  } as unknown as AIProvider;
+
+  const execution = await executeCompanionAgentTurnWithToolChoiceFallback({
+    request,
+    provider: primary,
+    fallbackProvider: fallback,
+    signal,
+    onFallback: (error) => { fallbackNotice = error; },
+  });
+
+  assert.equal(primaryCalls, 1);
+  assert.equal(fallbackCalls, 1);
+  assert.strictEqual(fallbackNotice, unsupported);
+  assert.strictEqual(execution.provider, fallback);
+  assert.equal(execution.result.toolCalls?.length, 1);
+});
+
+test("工具兜底只处理 required 能力错误，不吞其他错误或同模型配置", async () => {
+  const baseRequest = {
+    role: "companion_agent",
+    systemPrompt: "测试",
+    messages: [{ role: "user", content: "打开笔记" }],
+    tools: [{ name: "companion_read_context", description: "读取上下文", parameters: {} }],
+    toolChoice: "required",
+    maxTokens: 100,
+    temperature: 0.4,
+  } as AgentTurnRequest;
+  const unsupported = new ProviderRequestError({
+    provider: "openai_compatible", status: 400, providerCode: "MODEL_TOOL_CHOICE_NOT_SUPPORTED",
+  });
+  const cases: Array<{ label: string; request: AgentTurnRequest; error: Error; fallbackModelId: string }> = [
+    { label: "auto 请求", request: { ...baseRequest, toolChoice: "auto" }, error: unsupported, fallbackModelId: "other-model" },
+    {
+      label: "其他 provider 错误",
+      request: baseRequest,
+      error: new ProviderRequestError({ provider: "openai_compatible", status: 429, providerCode: "RATE_LIMITED" }),
+      fallbackModelId: "other-model",
+    },
+    { label: "同模型", request: baseRequest, error: unsupported, fallbackModelId: "qwen3.8-flash" },
+    { label: "空工具面", request: { ...baseRequest, tools: [] }, error: unsupported, fallbackModelId: "other-model" },
+  ];
+
+  for (const testCase of cases) {
+    let fallbackCalls = 0;
+    const primary = {
+      id: "primary", modelId: "qwen3.8-flash",
+      executeAgentTurn: async () => { throw testCase.error; },
+    } as unknown as AIProvider;
+    const fallback = {
+      id: "fallback", modelId: testCase.fallbackModelId,
+      executeAgentTurn: async () => {
+        fallbackCalls += 1;
+        return {
+          content: "unexpected",
+          toolCalls: [],
+          finishReason: "stop",
+          usage: null,
+          providerRequestId: null,
+        } as AgentTurnResult;
+      },
+    } as unknown as AIProvider;
+
+    await assert.rejects(
+      executeCompanionAgentTurnWithToolChoiceFallback({
+        request: testCase.request,
+        provider: primary,
+        fallbackProvider: fallback,
+        signal: new AbortController().signal,
+      }),
+      (error) => error === testCase.error,
+      testCase.label,
+    );
+    assert.equal(fallbackCalls, 0, testCase.label);
+  }
+});
 
 test("P3-alt：分类器读不到（null）按「要工具」走，只有明确说了 false 才算不要", async () => {
   // 三值里 null 不是"不需要"，是**没读到答复**（超时／异常／形状不对）。原判据

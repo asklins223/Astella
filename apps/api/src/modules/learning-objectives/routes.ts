@@ -20,6 +20,7 @@ import {
 } from "./surface-service.ts";
 import { readObjectiveHistoryV3 } from "./history-route-service.ts";
 import { executeObjectiveOriginBackfill } from "./origin-migration.ts";
+import { readNoteChangeImpactsV1 } from "./change-impact-service.ts";
 
 /**
  * 2026-09 后端审查修复：`?limit=abc` 此前经 Number() 变成 NaN，下游
@@ -65,9 +66,15 @@ export async function learningObjectiveRoutes(app: FastifyInstance) {
           limit: query.limit ?? 20,
           noteId: query.noteId,
         });
+        const noteChangeImpacts = query.noteId
+          ? await readNoteChangeImpactsV1(tx, ctx, query.noteId, page.items.map((item) => item.objectiveId))
+          : new Map();
         return {
           version: 3,
-          items: page.items.map(toObjectiveListItemV3),
+          items: page.items.map((item) => toObjectiveListItemV3(
+            item,
+            noteChangeImpacts.get(item.objectiveId) ?? null,
+          )),
           total: page.total,
           nextCursor: page.nextCursor,
           snapshotAt: new Date().toISOString(),

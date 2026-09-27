@@ -43,6 +43,7 @@ function detail(primaryNote: { noteId: string; noteVersionId: string; title: str
       sourceLabel: null,
     },
     sources: { origins: [], primaryNote, missingOrigin: false },
+    noteChangeImpact: null,
     personal: {
       initialValidation: null,
       activeRun: { runId: RUN_ID, phase: "checkpoint" },

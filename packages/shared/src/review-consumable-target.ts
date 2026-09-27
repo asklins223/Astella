@@ -21,16 +21,58 @@ import { reviewSchedules } from "./db-schema/evidence.ts";
  * `ref` 收的是**排程表的三列引用**而不是表名/别名：调用方的 FROM 各不相同（drizzle 会
  * 把 `reviewSchedules` 渲染成别名 `"reviewSchedules"`，worker 那边是 `FROM review_schedules s`），
  * 而"哪一列"才是判据真正要的东西。拼表名会让两边各写一次别名，那正是本函数要消灭的东西。
+ *
+ * ## 争议未决的不进队列（2026-09-27，§16.22 / §14.2）
+ *
+ * 这条判据原先只判"卡还能不能消费"，**不读争议**，于是四处的到期读数会把一条正被
+ * 争议的目标照常算作"今天该复习"：写侧 `scheduleBlockedByDisputeV2` 只挡"再排一条
+ * 继任"（`run-processing-tick` 的 `applyDemonstratedSchedule` / `applyUnableSchedule`，
+ * 位置在 `consume_pending` 之前），已经排好的那行仍是 `pending` 且照样到期。
+ * 撤销只有一条路——用户勾"结束并暂不安排"，`holdObjectiveFromReviewV2` 才会把它改成
+ * `dismissed`；**不结争议就永远到期**。更糟的是结算页已经写着"复核之前这次不推进
+ * 复习"，同一件事在队列里又到期冒出来，文案与行为自相矛盾。
+ *
+ * 判据必须与写侧**同一份语义**，不能硬判 `status='open'`：`decideDisputedObservationV2`
+ * 在复核结论是 `upheld` 时返回 `use_as_is`（这是 §16.22 防死循环的刻意设计——维护之后
+ * 不该再压住这一项）。翻成 SQL 就是一行：
+ *
+ *   活争议（`closed_at IS NULL`）且 `recheck_outcome IS DISTINCT FROM 'upheld'` → 挡住
+ *
+ * 逐档对照 `decideDisputedObservationV2`：`null`→`withhold_conclusion` 挡；`undetermined`
+ * →`withhold_conclusion` 挡；`corrected`→ 两条分支写侧都是 `blocked:true`（未应用走
+ * `apply_correction_once`、已应用走 `withhold_conclusion`），一并挡；`upheld`→`use_as_is`
+ * 放行。`correction_applied_at` 因此不必进 WHERE——`corrected` 两档读侧同挡。
+ *
+ * 匹配用**排程行自己的 `user_id`**，不是调用方的 userId：§14.4 争议是个人数据，
+ * 而 `reviewSchedules.userId` 允许为 NULL（系统排期）。这样一处写法同时覆盖
+ * "本人队列""首页读数 `user_id IS NULL OR =本人`""看板"和 worker 的 `s.user_id`，
+ * 不必让每个调用方各自把 userId 传进来再传错。
  */
 export function reviewScheduleTargetsConsumableCardPredicate(
-  ref: { subjectType: SQLWrapper; subjectId: SQLWrapper; workspaceId: SQLWrapper } = {
+  ref: {
+    subjectType: SQLWrapper;
+    subjectId: SQLWrapper;
+    workspaceId: SQLWrapper;
+    /** 排程行自己的 `user_id` 列。争议是个人数据（§14.4），匹配必须按它。 */
+    userId: SQLWrapper;
+  } = {
     subjectType: reviewSchedules.subjectType,
     subjectId: reviewSchedules.subjectId,
     workspaceId: reviewSchedules.workspaceId,
+    userId: reviewSchedules.userId,
   },
 ): SQL<boolean> {
   return sql<boolean>`(
-    ${ref.subjectType} = 'card'
+    NOT EXISTS (
+      SELECT 1
+      FROM assessment_disputes_v2 AS v2_consumer_dispute
+      WHERE v2_consumer_dispute.objective_id = ${ref.subjectId}
+        AND v2_consumer_dispute.workspace_id = ${ref.workspaceId}
+        AND v2_consumer_dispute.user_id = ${ref.userId}
+        AND v2_consumer_dispute.closed_at IS NULL
+        AND v2_consumer_dispute.recheck_outcome IS DISTINCT FROM 'upheld'
+    )
+    AND ${ref.subjectType} = 'card'
     AND EXISTS (
       SELECT 1
       FROM learning_objectives_v2 AS v2_consumer_obj

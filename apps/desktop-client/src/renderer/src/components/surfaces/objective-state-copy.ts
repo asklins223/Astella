@@ -10,6 +10,7 @@
 // feature-flags、provider-capabilities）拖进 renderer 的编译与打包图里。
 import type {
   LearningObjectivePrimaryActionV3,
+  ObjectiveNoteChangeImpactV1,
   ObjectiveSurfaceFreshnessV3,
   ObjectivePersonalStateV3,
 } from "@ailearn/shared/learning-objective-surface-contracts";
@@ -174,6 +175,32 @@ export function freshnessLabel(value: ObjectiveSurfaceFreshnessV3): string {
     source_outdated: "来源已有更新",
     legacy_unreviewed: "旧来源待复核",
   }[value];
+}
+
+/**
+ * 目标所引用的笔记内容有没有变化，与来源版本是否更新是两件事。
+ * 笔记页把这句放在原有学习动作旁边，语气只描述证据情况，不代替用户做决定。
+ */
+export function objectiveNoteChangeImpactCopy(
+  impact: ObjectiveNoteChangeImpactV1 | null | undefined,
+): string | null {
+  if (!impact) return null;
+  if (impact.reasonCode === "explicit_change_relation") {
+    return "这条目标有明确的改动关系，先核对旧记录再继续。";
+  }
+  if (impact.reasonCode === "mixed_evidence") {
+    return "这条目标有引用段落变了，也有旧证据无法比对；先核对原文。";
+  }
+  if (impact.status === "affected") {
+    return "引用的段落有改动，先核对原文再继续。";
+  }
+  if (impact.status === "uncertain") {
+    return "旧证据不够完整，暂时不能判断这次变化；先回原文核对。";
+  }
+  if (impact.reasonCode === "stable_anchor_unchanged") {
+    return "这次笔记更新没碰到引用的段落，这条目标可以照常用。";
+  }
+  return "引用的句子还在；旁边的补充没有影响这条目标。";
 }
 
 /**

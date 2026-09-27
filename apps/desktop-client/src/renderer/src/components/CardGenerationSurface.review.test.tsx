@@ -25,6 +25,7 @@ const FIRST_REVIEW_AT = "2026-09-27T12:00:00.000Z";
 type CandidateState = {
   candidateId: string;
   qualityState?: string;
+  qualityIssues?: Array<{ code: string; severity: "hard" | "soft"; detail: string; sourceQuote?: string }>;
   practiceItem?: { kind: string; optionCount?: number } | null;
   statement: string;
   reviewDecision: string;
@@ -88,6 +89,7 @@ function stubGateway(initial: readonly CandidateState[], runOverride: { status?:
     candidateEvidenceBindingPlanHash: "plan-hash",
     publishState: candidate.publishState,
     qualityState: candidate.qualityState ?? "passed",
+    qualityIssues: candidate.qualityIssues ?? [],
     practiceItem: candidate.practiceItem ?? null,
     strategy: "why",
     transformationKind: "mechanism_reconstruction",
@@ -662,6 +664,33 @@ describe("CardGenerationSurface · 候选审核", () => {
     await waitFor(() => expect(screen.getByText("答案看过了：保存进卡组后要等 24 小时才能正式验证")).toBeTruthy());
     expect(screen.getByText(/不计入正式状态/)).toBeTruthy();
     expect(screen.getByText(/已查看/)).toBeTruthy();
+  });
+
+  it("可疑主张在候选面直接标出原句和原因，并且没有保留入口", async () => {
+    const sourceQuote = "复合索引缺少最左列条件就无法使用索引";
+    stubGateway([
+      {
+        candidateId: "suspect-1",
+        statement: "复合索引何时无法使用",
+        qualityState: "failed",
+        qualityIssues: [{
+          code: "suspect_claim",
+          severity: "hard",
+          detail: "“无法”是过度绝对的表述，应核对列顺序、谓词条件和优化器行为。",
+          sourceQuote,
+        }],
+        reviewDecision: "undecided",
+        publishState: "unpublished",
+      },
+    ]);
+    useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
+    render(<CardGenerationSurface />);
+
+    await waitFor(() => expect(screen.getByText("待核对的可疑主张")).toBeTruthy());
+    expect(screen.getByText(`“${sourceQuote}”`)).toBeTruthy();
+    expect(screen.getByText(/不是系统断言原句一定错误/)).toBeTruthy();
+    expect(screen.getByText(/“无法”是过度绝对的表述/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /保留（等着保存到卡组）/ })).toBeNull();
   });
 
   it("证据落点变了的时候，界面把「变了」说出来，而不是安静地少一条依据", async () => {

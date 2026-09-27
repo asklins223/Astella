@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../../app/room-store";
 import { ReviewSurface } from "./ReviewSurface";
 import type { ReviewItem } from "./review-deck";
+import type { ObjectiveNoteChangeImpactV1 } from "@ailearn/shared/learning-objective-surface-contracts";
 
 /**
  * Page 15 reads its whole reason slip out of the queue, so the wiring between
@@ -36,11 +37,30 @@ function item(reviewId: string, objectiveId: string, overrides: Partial<ReviewIt
   };
 }
 
-function objectiveSurface(objectiveId: string, label: string) {
+const IMPACTED_NOTE_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const IMPACTED_NOTE_VERSION_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
+function objectiveSurface(
+  objectiveId: string,
+  label: string,
+  noteChangeImpact: ObjectiveNoteChangeImpactV1 | null = null,
+) {
   return {
     objectiveId,
     content: { conceptLabel: label, publicSummary: `${label}的公开摘要`, sourceLabel: null },
-    sources: { primaryNote: null },
+    sources: {
+      primaryNote: noteChangeImpact ? {
+        noteId: noteChangeImpact.noteId,
+        noteVersionId: IMPACTED_NOTE_VERSION_ID,
+        title: "原文笔记",
+      } : null,
+      origins: noteChangeImpact ? [{
+        kind: "note" as const,
+        noteId: noteChangeImpact.noteId,
+        noteVersionId: IMPACTED_NOTE_VERSION_ID,
+      }] : [],
+    },
+    noteChangeImpact,
   };
 }
 
@@ -67,6 +87,7 @@ function stubGateway(
      * `"reject"` 就是读不到——开始到期复习不能因此被挡住。
      */
     readonly answerMode?: "voice" | "silent" | "text" | "any" | "reject";
+    readonly noteChangeImpacts?: Readonly<Record<string, ObjectiveNoteChangeImpactV1 | null>>;
   } = {},
 ) {
   const queueResult = queueFailure
@@ -115,7 +136,7 @@ function stubGateway(
       get: vi.fn(async ({ objectiveId }: { objectiveId: string }) => {
         const label = labels[objectiveId];
         if (!label) throw new Error("objective read failed");
-        return { ok: true as const, data: objectiveSurface(objectiveId, label) };
+        return { ok: true as const, data: objectiveSurface(objectiveId, label, options.noteChangeImpacts?.[objectiveId] ?? null) };
       }),
     },
     learningRun: {
@@ -550,6 +571,40 @@ describe("ReviewSurface · card state", () => {
     await waitFor(() => expect(deck.querySelector(".deck-card.front h2")?.textContent)
       .toBe("这张卡暂时读不到标题"));
     expect(within(deck as HTMLElement).queryByText("正在读取这张卡的问题…")).toBeNull();
+  });
+
+  it("pauses a changed-evidence card and opens the exact source note for checking", async () => {
+    const invoke = vi.fn();
+    useRoomStore.setState({ invoke, activeNoteRef: null });
+    const impact: ObjectiveNoteChangeImpactV1 = {
+      noteId: IMPACTED_NOTE_ID,
+      status: "affected",
+      layer: 2,
+      reasonCode: "quoted_text_changed",
+      evidenceCount: 1,
+      unchangedEvidenceCount: 0,
+      changedEvidenceCount: 1,
+      uncertainEvidenceCount: 0,
+      evidenceDetails: [],
+      evidenceDetailsOmittedCount: 0,
+    };
+    stubGateway([THREE[0]], { "objective-a": "反馈设计" }, false, {
+      noteChangeImpacts: { "objective-a": impact },
+    });
+    render(<ReviewSurface />);
+
+    const checkButton = await screen.findByRole("button", { name: /先核对原文/ });
+    expect(screen.getByText(/这张卡借用的原文有新变化/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /开始到期复习/ })).toBeNull();
+
+    fireEvent.click(checkButton);
+
+    expect(useRoomStore.getState().activeNoteRef).toEqual({
+      noteId: IMPACTED_NOTE_ID,
+      noteVersionId: IMPACTED_NOTE_VERSION_ID,
+      mode: "read",
+    });
+    expect(invoke).toHaveBeenCalledWith("open-notebook");
   });
 });
 

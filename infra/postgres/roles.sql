@@ -324,6 +324,12 @@ BEGIN
     'learning_run_idempotency',
     'learning_task_presentation_history',
     'learning_task_variants',
+    -- 0296：争议表。到期复习判据（`packages/shared/review-consumable-target.ts`）
+    -- 现在读它——§16.22「争议项不自动重新入队」在**读侧**的那一半就落在这条共享
+    -- 判据上，伴星的到期读数与到期清单都走它。缺 SELECT 的表现不是报错，而是伴星
+    -- 报出的到期数**比队列多**，还把一条正被质疑的目标照常念出来：worker 侧那三条
+    -- 查询各自 catch 过错误，permission denied 到不了用户眼前。
+    'assessment_disputes_v2',
     'understanding_change_sets',
     'understanding_projection_checkpoints',
     'understanding_route_plans',
@@ -1140,7 +1146,12 @@ BEGIN
       ('learning_objective_lineage_v2', true, true, false, false),
       ('learning_exposures_v2', true, true, false, false),
       ('card_candidate_quality_reports_v2', true, true, false, false),
-      ('card_candidate_feedback_v2', true, true, false, false)
+      ('card_candidate_feedback_v2', true, true, false, false),
+      -- 0296：**只读**。worker 侧唯一的读点是到期复习判据里那个
+      -- `NOT EXISTS (... assessment_disputes_v2 ...)`（§16.22 读侧）。
+      -- 不给 INSERT/UPDATE/DELETE：开争议与复核都只由 API 的 run-disputes 做，
+      -- worker 写它就是绕开"一个判定至多一份争议"与"复核至多一次"那两条库级闸。
+      ('assessment_disputes_v2', true, false, false, false)
   ), actual AS (
     SELECT
       c.relname AS table_name,

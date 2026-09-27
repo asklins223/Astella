@@ -8,7 +8,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { ArrowLeft, ArrowRight, RotateCcw } from "lucide-react";
+import { ArrowLeft, ArrowRight, Leaf, RotateCcw } from "lucide-react";
 import type { LearningObjectiveSurfaceV3 } from "@ailearn/shared/learning-objective-surface-contracts";
 import type { ReviewQueueV2 } from "@ailearn/shared/review-queue-v2-contracts";
 import type { AnswerModePreferenceV1 } from "@ailearn/shared/companion-shell-contracts";
@@ -805,6 +805,17 @@ export function ReviewSurface() {
     return "来自复习队列里的这张卡";
   };
 
+  const openNoteEvidence = (surface: LearningObjectiveSurfaceV3 | null, noteId: string) => {
+    const origin = surface?.sources.origins.find((candidate) =>
+      candidate.kind === "note" && candidate.noteId === noteId);
+    setActiveNoteRef({
+      noteId,
+      noteVersionId: origin?.kind === "note" ? origin.noteVersionId : null,
+      mode: "read",
+    });
+    invoke("open-notebook");
+  };
+
   /** 同一学习卡在这批到期项里还有几张卡 —— 不是「牵动了几个目标」。 */
   const relatedCards = front && queue
     ? queue.items.filter((item) => item.objectiveId === front.objectiveId).length
@@ -821,7 +832,13 @@ export function ReviewSurface() {
   const isReturnTarget = Boolean(front && matchesReviewTarget(front, activeReviewTarget));
   const readyCount = queue?.items.filter((item) => item.startability.kind === "ready").length ?? 0;
   /** The card's own state chip; `null` while the card can simply be started. */
-  const blockedLabel = front && front.startability.kind !== "ready" ? reviewStartabilityLabel(front) : null;
+  const frontNoteImpact = frontSurface?.noteChangeImpact ?? null;
+  const noteEvidenceNeedsCheck = Boolean(frontNoteImpact && frontNoteImpact.status !== "unaffected");
+  const blockedLabel = noteEvidenceNeedsCheck
+    ? "先核对原文"
+    : front && front.startability.kind !== "ready"
+      ? reviewStartabilityLabel(front)
+      : null;
   /** 位置行对齐服务端总数：已载入 20 张不等于队列只有 20 张。 */
   const deckTotal = Math.max(queue?.total ?? 0, queue?.items.length ?? 0);
   /**
@@ -946,6 +963,9 @@ export function ReviewSurface() {
               const isFront = item.reviewId === front?.reviewId;
               const surface = objectives[item.objectiveId] ?? null;
               const stateLabel = item.startability.kind === "ready" ? null : reviewStartabilityLabel(item);
+              const noteImpact = isFront ? surface?.noteChangeImpact ?? null : null;
+              const needsNoteCheck = Boolean(noteImpact && noteImpact.status !== "unaffected");
+              const cardStateLabel = needsNoteCheck ? "先核对原文" : stateLabel;
               // 审计 F28：只有当前这张需要印缺口说明；后面的卡在它成为当前卡时再印。
               const evidenceGapLabel = isFront ? reviewFormalValidationBlockedLabel(item) : null;
               return (
@@ -964,7 +984,7 @@ export function ReviewSurface() {
                     <div className="meta">
                       <span>{reviewDeckPosition(seat, deckTotal)}</span>
                       <span>{reviewDeckRound(item.scheduleGeneration)}</span>
-                      {stateLabel ? <span className="tag deck-card__state">{stateLabel}</span> : null}
+                      {cardStateLabel ? <span className="tag deck-card__state">{cardStateLabel}</span> : null}
                     </div>
                     <h2 id={isFront ? "review-deck-question" : undefined}>{questionOf(item)}</h2>
                     <p className="sub">{originOf(item)}</p>
@@ -987,11 +1007,31 @@ export function ReviewSurface() {
                         </button>
                       </p>
                     ) : null}
+                    {needsNoteCheck && noteImpact ? (
+                      <p className="small deck-card__note-impact" role="status">
+                        <Leaf size={14} aria-hidden="true" />
+                        <span>
+                          <strong>伴星提醒：</strong>
+                          {noteImpact.status === "affected"
+                            ? "这张卡借用的原文有新变化，先回去看一眼。"
+                            : "暂时对不上这张卡的原文依据，先回笔记核对。"}
+                        </span>
+                      </p>
+                    ) : null}
                   </div>
                   {isFront ? (
                     <>
                       <div className="actions">
-                        {item.startability.kind === "ready" ? (
+                        {needsNoteCheck ? (
+                          <button
+                            type="button"
+                            className="button primary"
+                            disabled={busy}
+                            onClick={() => noteImpact && openNoteEvidence(surface, noteImpact.noteId)}
+                          >
+                            先核对原文<ArrowRight size={15} aria-hidden="true" />
+                          </button>
+                        ) : item.startability.kind === "ready" ? (
                           <button
                             type="button"
                             className="button primary"

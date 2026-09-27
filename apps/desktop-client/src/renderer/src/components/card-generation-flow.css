@@ -76,6 +76,14 @@
 .hud-surface .candidate-card__prompt { margin: 10px 0 0; padding: 14px 17px; color: #274536; border-left: 5px solid var(--card-accent); border-radius: 9px 15px 11px 15px; background: #e7efd9; font: 690 clamp(16px, 1.4vw, 20px)/1.55 "Noto Serif SC Variable", "Songti SC", serif; }
 .hud-surface .candidate-card__refs,
 .hud-surface .candidate-card__reasons { font-size: 12px; }
+.hud-surface .candidate-suspect-note { margin: 13px 0 10px; padding: 14px 16px; color: #49361f; border: 3px solid rgba(255, 252, 235, .9); border-radius: 20px 25px 21px 27px; background: var(--hud-butter); }
+.hud-surface .candidate-suspect-note h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 7px; color: #874425; font: 760 18px/1.35 "Noto Serif SC Variable", "Songti SC", serif; }
+.hud-surface .candidate-suspect-note > p { margin: 5px 0; color: #55452f; font-size: 12px; line-height: 1.6; }
+.hud-surface .candidate-suspect-note ul { display: grid; gap: 8px; margin: 8px 0; padding: 0; list-style: none; }
+.hud-surface .candidate-suspect-note li { padding-top: 8px; border-top: 1px dashed rgba(98, 68, 37, .32); }
+.hud-surface .candidate-suspect-note blockquote { margin: 0 0 5px; color: #382a1d; font: 650 14px/1.6 "Noto Serif SC Variable", "Songti SC", serif; }
+.hud-surface .candidate-suspect-note li p { margin: 0; color: #58472f; font-size: 12px; line-height: 1.6; }
+.hud-surface .candidate-suspect-note .candidate-suspect-note__footer { margin-top: 8px; color: #713d27; font-weight: 750; }
 .hud-surface .candidate-study-card .answer-slip { margin-top: auto; padding: 12px 15px; border-radius: 12px 16px 13px 17px; background: #f1e6bd; }
 .hud-surface .candidate-study-card .answer-slip small { font-size: 11px; }
 .hud-surface .candidate-study-card .answer-slip strong { font-size: 14px; }

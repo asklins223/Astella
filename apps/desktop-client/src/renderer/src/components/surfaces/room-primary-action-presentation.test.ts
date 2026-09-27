@@ -37,6 +37,7 @@ function objectiveWithRun(activeRun: { runId: string; phase: string } | null) {
       sourceLabel: null,
     },
     sources: { origins: [], primaryNote: null, missingOrigin: false },
+    noteChangeImpact: null,
     personal: {
       initialValidation: null,
       activeRun,

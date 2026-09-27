@@ -30,6 +30,7 @@ function surface(
       sourceLabel: null,
     },
     sources: { origins: [], primaryNote: null, missingOrigin: false },
+    noteChangeImpact: null,
     personal: {
       initialValidation: null,
       activeRun: null,

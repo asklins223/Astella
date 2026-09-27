@@ -791,6 +791,37 @@ jobs:
             src/integration-tests/card-generation-v3-simplified-postgres.integration.ts \
             2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/card-gen-v3-simplified.tap"
 
+      # 提醒的来源笔记闸（39d W5-6 刀三；39 §16.13 后半「通知不泄露受保护内容」）：
+      # 迁移 0299 之前提醒表只有 text 一列，兑现函数无从知道一条提醒在说哪篇笔记——
+      # 共享撤回之后，写进正文的那句篇名照样到点弹出来。这一步钉：仍共享时照常兑现、
+      # 撤回后置 cancelled **且不投递**、空 note_id 的存量行不受影响、软删同样掐、
+      # 作者对自己那篇私有笔记仍然拿得到（判据第二支）。
+      - name: Verify reminder note-subject gate (39d W5-6 knife 3)
+        working-directory: apps/api
+        env:
+          NODE_ENV: test
+          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
+          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
+        run: |
+          set -o pipefail
+          npm run test:reminder-subject-gate:postgres \
+            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/reminder-note-subject.tap"
+
+      # 只读成员的本人可见目标绑定（39d W5-6 刀四；39 §4.2、§16.20）：一个**不是那篇笔记
+      # 作者**的成员能对着共享笔记立下自己的学习计划，且只对本人可见、公开血缘表一行不多。
+      # 迁移 0300 之前他其实无处可写——公共血缘表是空间共用的，写进去会让另一位成员看到
+      # 一条他没写过的目标。RLS 那一半必须跑在受限角色上才量得到。
+      - name: Verify personal objective bindings for read-only members (39d W5-6 knife 4)
+        working-directory: apps/api
+        env:
+          NODE_ENV: test
+          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
+          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
+        run: |
+          set -o pipefail
+          npm run test:personal-binding:postgres \
+            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/personal-objective-binding.tap"
+
       # 唯一调度边界（39d W7-2 前置 / D2 §3）：0287 那条部分唯一索引真的在挡重复，
       # 而边界函数复用时报的是库里那一条的实际到期时间（不是自己算的那个）。
       - name: Verify the single review-schedule boundary (single file)
@@ -805,6 +836,22 @@ jobs:
           node --import tsx --test --test-concurrency=1 \
             src/integration-tests/review-schedule-boundary-postgres.integration.ts \
             2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/review-schedule-boundary.tap"
+
+      # 争议与更正（39d W5-5；39 §14.2、§16.11、§16.22、§16.25）：一个判定至多一份争议、
+      # 复核至多一次、更正只追加且不改原判、两档不混算、争议是个人数据、结束并暂不安排
+      # 真的落到 0295 那张排除表。索引与 CHECK 全部从裸 SQL 那一侧量，不复述 schema。
+      - name: Verify assessment disputes and corrections (39d W5-5)
+        working-directory: apps/api
+        env:
+          NODE_ENV: test
+          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
+          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
+          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
+        run: |
+          set -o pipefail
+          node --import tsx --test --test-concurrency=1 \
+            src/integration-tests/assessment-disputes-postgres.integration.ts \
+            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/assessment-disputes.tap"
 
       # 竖向样例（39c §9 第一步 / 39d W3-3）：一条链跑在公共运行基础上——生成→检查→
       # 保存一张卡→开放回答→评估，两种模式共用同一层外壳，失败分支与恢复逐条钉。
@@ -833,6 +880,16 @@ jobs:
           set -o pipefail
           node --import tsx --test src/integration-tests/ai-task-kernel-postgres.integration.ts \
             2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/ai-task-kernel.tap"
+
+      - name: Verify API database session timeout backstops
+        working-directory: apps/api
+        env:
+          NODE_ENV: test
+          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
+        run: |
+          set -o pipefail
+          node --import tsx --test src/integration-tests/database-session-timeouts.integration.ts \
+            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/database-session-timeouts.tap"
 
       # 公共 HTTP 出口闸门（39d W3-2 第三刀）：worker 进程在模块加载时把事务作用域
       # 读者登记给 `@ailearn/shared/public-json-http`；这份对照证"登记不是摆设"——

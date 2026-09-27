@@ -789,6 +789,14 @@ export function ObjectiveDetailSurface() {
   const evidenceSnapshotCount = objective?.sources.origins.reduce((sum, origin) => sum + origin.evidenceSnapshotIds.length, 0) ?? 0;
   const detailMode = objective ? runModePresentation(objective.primaryAction) : null;
   const previousResult = objective?.personal.latestResult;
+  const noteChangeImpact = objective?.noteChangeImpact ?? null;
+  const needsNoteEvidenceCheck = Boolean(noteChangeImpact && noteChangeImpact.status !== "unaffected");
+  const reviewNeedsNoteCheck = Boolean(needsNoteEvidenceCheck && objective?.primaryAction.kind === "create_review_run");
+  const noteEvidenceNotice = noteChangeImpact?.status === "affected"
+    ? "伴星发现这张卡引用的笔记有新变化，先核对原文再开始复习。"
+    : noteChangeImpact?.status === "uncertain"
+      ? "伴星暂时对不上这张卡的原文依据，先回笔记核对一下。"
+      : null;
   /**
    * 打开"这个目标自己的"主笔记（审计 F05）。
    *
@@ -799,6 +807,18 @@ export function ObjectiveDetailSurface() {
    */
   const openPrimaryNote = (note: { readonly noteId: string; readonly noteVersionId: string }) => {
     setActiveNoteRef({ noteId: note.noteId, noteVersionId: note.noteVersionId });
+    invoke("open-notebook");
+  };
+
+  const openNoteEvidence = () => {
+    if (!noteChangeImpact) return;
+    const origin = objective?.sources.origins.find((candidate) =>
+      candidate.kind === "note" && candidate.noteId === noteChangeImpact.noteId);
+    setActiveNoteRef({
+      noteId: noteChangeImpact.noteId,
+      noteVersionId: origin?.kind === "note" ? origin.noteVersionId : null,
+      mode: "read",
+    });
     invoke("open-notebook");
   };
 
@@ -843,7 +863,7 @@ export function ObjectiveDetailSurface() {
     return {
       pageId: "goal_detail",
       title: (content.conceptLabel ?? "未命名学习卡").slice(0, 120),
-      statusLine: objectiveStateHint(detailState).slice(0, 160),
+      statusLine: (reviewNeedsNoteCheck ? "先核对原文再开始复习" : objectiveStateHint(detailState)).slice(0, 160),
       metrics: [
         { label: "卡型", value: cardStrategyLabel(content.cardStrategy).slice(0, 40) },
         { label: "状态", value: formatObjectiveState(detailState).slice(0, 40) },
@@ -878,9 +898,9 @@ export function ObjectiveDetailSurface() {
             })),
           }
         : {}),
-      ...(detailNotice ? { notice: detailNotice } : {}),
+      ...(noteEvidenceNotice ? { notice: noteEvidenceNotice.slice(0, 160) } : detailNotice ? { notice: detailNotice } : {}),
     };
-  }, [activeObjectiveId, content, detailNotice, detailState, objective]);
+  }, [activeObjectiveId, content, detailNotice, detailState, noteEvidenceNotice, objective, reviewNeedsNoteCheck]);
   usePageReadableView(briefReadableView);
 
   return (
@@ -924,12 +944,26 @@ export function ObjectiveDetailSurface() {
                 </ul>
               </div>
               <div className="objective-brief__launchpad">
-                <p id="objective-next-action-state">{objectiveStateHint(detailState)}</p>
-                <button type="button" className="objective-brief__launch" disabled={starting || !isActionable(objective.primaryAction)} onClick={() => void startAction()} aria-labelledby="objective-next-action-verb" aria-describedby="objective-next-action-state objective-next-action-why">
-                  <strong id="objective-next-action-verb">{starting ? "正在准备" : previousResult && objective.primaryAction.kind === "create_run" ? "再挑战一次" : primaryActionLabel(objective.primaryAction)}</strong>
-                  <span aria-hidden="true">{starting ? <LoaderCircle size={22} /> : objective.primaryAction.kind === "refresh" ? <RefreshCw size={22} /> : <ArrowRight size={22} />}</span>
+                <p id="objective-next-action-state">{reviewNeedsNoteCheck ? "先核对原文再开始复习" : objectiveStateHint(detailState)}</p>
+                {noteEvidenceNotice ? (
+                  <p className="objective-brief__note-evidence" role="status">
+                    <Leaf size={15} aria-hidden="true" />
+                    <span>{noteEvidenceNotice}</span>
+                    {!reviewNeedsNoteCheck ? <button type="button" className="objective-brief__evidence-link" onClick={openNoteEvidence}>翻开原文</button> : null}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  className="objective-brief__launch"
+                  disabled={starting || (!reviewNeedsNoteCheck && !isActionable(objective.primaryAction))}
+                  onClick={() => reviewNeedsNoteCheck ? openNoteEvidence() : void startAction()}
+                  aria-labelledby="objective-next-action-verb"
+                  aria-describedby="objective-next-action-state objective-next-action-why"
+                >
+                  <strong id="objective-next-action-verb">{reviewNeedsNoteCheck ? "先核对原文" : starting ? "正在准备" : previousResult && objective.primaryAction.kind === "create_run" ? "再挑战一次" : primaryActionLabel(objective.primaryAction)}</strong>
+                  <span aria-hidden="true">{reviewNeedsNoteCheck ? <BookOpenText size={22} /> : starting ? <LoaderCircle size={22} /> : objective.primaryAction.kind === "refresh" ? <RefreshCw size={22} /> : <ArrowRight size={22} />}</span>
                 </button>
-                <small id="objective-next-action-why">{primaryActionDescription(objective.primaryAction)}</small>
+                <small id="objective-next-action-why">{reviewNeedsNoteCheck ? "回到笔记，核对旧句和现句后再继续。" : primaryActionDescription(objective.primaryAction)}</small>
               </div>
             </section>
             {actionFailure ? <p className="v3-action-error" role="alert"><AlertTriangle size={14} aria-hidden="true" />{actionFailure}</p> : null}

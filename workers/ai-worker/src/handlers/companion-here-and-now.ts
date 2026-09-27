@@ -71,6 +71,10 @@ export function visibleCompanionDueReviewCondition() {
     subjectType: sql`s.subject_type`,
     subjectId: sql`s.subject_id`,
     workspaceId: sql`s.workspace_id`,
+    // 争议按个人读（§14.4），所以传排程行自己的 user_id，而不是这一圈查询的
+    // 本人 id——三条伴星查询的 WHERE 都已经各自带了 `s.user_id = 本人`，
+    // 这里再传一遍只会多一处可能与 WHERE 走岔的口径。
+    userId: sql`s.user_id`,
   });
 }
 

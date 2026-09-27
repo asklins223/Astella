@@ -47,9 +47,11 @@ const poolMax = Math.max(15, Math.min(64, workerConcurrency * 4));
  * 不会重启。给出确定上界（默认 60s，须小于 120s 租约，使语句先报错再由
  * 租约/reaper 兜底，而不是静默占槽）。
  *
- * 只设 statement_timeout，**刻意不设** idle_in_transaction_session_timeout：
- * V2 管道（H4）在事务内做 LLM HTTP 调用，事务此时 idle-in-transaction，
- * 设短了会掐断整条管道。
+ * W3-2 后备边界：40 个真实 prepare/commit 事务段在并行 API 连接下的基线
+ * p50=14.23 ms、p95=37 ms、max=50.41 ms；真实 provider 请求等待约 40 秒期间
+ * `pg_stat_activity` 看到 worker 会话为 idle、idle-in-transaction 为 0，并发写 9 ms 完成。
+ * 设置 5 秒 lock_timeout 与 15 秒 idle-in-transaction 超时，
+ * 分别收住锁等待和事务内应用层空等；外部模型请求由事务边界闸拒绝，不依赖此超时。
  */
 export function resolveWorkerStatementTimeoutMs(
   raw: string | undefined = process.env.WORKER_STATEMENT_TIMEOUT_MS,
@@ -58,9 +60,30 @@ export function resolveWorkerStatementTimeoutMs(
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 60_000;
 }
 
+function resolvePositiveDatabaseTimeoutMs(raw: string | undefined, fallback: number): number {
+  const parsed = Number(raw ?? fallback);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function resolveWorkerLockTimeoutMs(
+  raw: string | undefined = process.env.WORKER_LOCK_TIMEOUT_MS,
+): number {
+  return resolvePositiveDatabaseTimeoutMs(raw, 5_000);
+}
+
+export function resolveWorkerIdleInTransactionTimeoutMs(
+  raw: string | undefined = process.env.WORKER_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+): number {
+  return resolvePositiveDatabaseTimeoutMs(raw, 15_000);
+}
+
 const queryClient = postgres(connectionString, {
   max: poolMax,
-  connection: { statement_timeout: resolveWorkerStatementTimeoutMs() },
+  connection: {
+    statement_timeout: resolveWorkerStatementTimeoutMs(),
+    lock_timeout: resolveWorkerLockTimeoutMs(),
+    idle_in_transaction_session_timeout: resolveWorkerIdleInTransactionTimeoutMs(),
+  },
 });
 export const db = drizzle(queryClient, { schema });
 

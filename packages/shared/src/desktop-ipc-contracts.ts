@@ -2518,6 +2518,8 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
       expectedRevision: number;
       /** 「换一种解释」（W4-6 刀四）：跳过复用、同一问题落第二条。缺省 = 复用。 */
       regenerate?: boolean;
+      /** 由本人逐条勾选的私有纸签，只用于这一次个人讲解。 */
+      personalReflectionIds?: Uuid[];
     }): Promise<GatewayResultV1<z.infer<typeof roundTeachingViewV1Schema>>>;
   };
   readonly artifact: {

@@ -62,6 +62,17 @@ export const learningRunAllowedActionSchema = z.discriminatedUnion("kind", [
   z.strictObject({ version: z.literal(2), kind: z.literal("retry_prepare") }),
   z.strictObject({ version: z.literal(2), kind: z.literal("retry_assessment"), assessmentId: z.string().uuid() }),
   z.strictObject({ version: z.literal(2), kind: z.literal("retry_commit") }),
+  /**
+   * §5.5 三个独立动作里的中间那个（0301 那一刀）。带 `assessmentId` 是为了「已完成的那一次」
+   * 与「在跑的那一次」分得开——一个 run 可以先后有多次 assessment。
+   * `confirmationRequired` 固定为 true：它收掉的是一次真实评估，不该一点就掉。
+   */
+  z.strictObject({
+    version: z.literal(2),
+    kind: z.literal("cancel_assessment"),
+    assessmentId: z.string().uuid(),
+    confirmationRequired: z.literal(true),
+  }),
   z.strictObject({
     version: z.literal(2),
     kind: z.literal("end"),

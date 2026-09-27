@@ -239,6 +239,14 @@ export const cardContentCheckV3VerdictSchema = z.enum([
 ]);
 export type CardContentCheckV3Verdict = z.infer<typeof cardContentCheckV3VerdictSchema>;
 
+/** An issue may quote the exact sealed source span for a suspected factual claim. */
+export const cardContentCheckV3IssueSchema = z.strictObject({
+  code: z.string().min(1).max(120),
+  severity: z.enum(["hard", "soft"]),
+  detail: z.string().min(1).max(2000),
+  sourceQuote: z.string().min(1).max(2000).optional(),
+});
+
 /**
  * 逐候选的检查结论。`grounding` 带 **grounding 级**的依据支持报告：
  * 审核页的"可保留"门槛要求候选带 binding plan hash，而 binding plan 的组装
@@ -256,30 +264,14 @@ export type CardContentCheckV3Verdict = z.infer<typeof cardContentCheckV3Verdict
 export const cardContentCheckV3EntryContentSchema = z.strictObject({
   objectiveLocalId: z.string().min(1).max(160),
   verdict: cardContentCheckV3VerdictSchema,
-  issues: z
-    .array(
-      z.strictObject({
-        code: z.string().min(1).max(120),
-        severity: z.enum(["hard", "soft"]),
-        detail: z.string().min(1).max(2000),
-      }),
-    )
-    .max(40),
+  issues: z.array(cardContentCheckV3IssueSchema).max(40),
 });
 
 export const cardContentCheckV3EntrySchema = z.strictObject({
   objectiveLocalId: z.string().min(1).max(160),
   verdict: cardContentCheckV3VerdictSchema,
   /** 39c §6.2："有问题的候选单独显示原因"；措辞类是建议不升级整批失败。 */
-  issues: z
-    .array(
-      z.strictObject({
-        code: z.string().min(1).max(120),
-        severity: z.enum(["hard", "soft"]),
-        detail: z.string().min(1).max(2000),
-      }),
-    )
-    .max(40),
+  issues: z.array(cardContentCheckV3IssueSchema).max(40),
   grounding: groundingCriticReportV2Schema,
 });
 

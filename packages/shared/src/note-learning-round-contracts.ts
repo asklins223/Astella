@@ -18,8 +18,12 @@
  *     恢复同一轮时，后到的那一份草稿必须失败，而不是覆盖）。
  */
 import { z } from "zod";
+import { noteReflectionTeachingSnapshotV1Schema } from "./note-learning-reflection-contracts.ts";
 import { learningRunOutcomeSchema, learningRunPhaseSchema } from "./learning-run-contracts.ts";
-import { objectiveRunStartV3Schema } from "./learning-objective-surface-contracts.ts";
+import {
+  objectiveNoteChangeImpactV1Schema,
+  objectiveRunStartV3Schema,
+} from "./learning-objective-surface-contracts.ts";
 
 export const roundPhaseV1Schema = z.enum(["active", "paused", "closed"]);
 export type RoundPhaseV1Wire = z.infer<typeof roundPhaseV1Schema>;
@@ -95,8 +99,10 @@ export const noteLearningRoundViewV1Schema = z.strictObject({
    * 那一维归 W4-4 的"开始前一致性"，两句话不许合成一句（D3 §5.1 后果②）。
    * ② 这一篇读不到当前版本时是 `false`：说不出新旧就不报消息，与 `checkSourceOutdated`
    * 同口径（D3 §3.3）。
-   */
+  */
   contentMoved: z.boolean(),
+  /** 这一轮当前绑定目标所引用的笔记依据变化；读侧现算，与正文版本提示分开。 */
+  noteChangeImpact: objectiveNoteChangeImpactV1Schema.nullable(),
 });
 export type NoteLearningRoundViewV1 = z.infer<typeof noteLearningRoundViewV1Schema>;
 
@@ -397,6 +403,19 @@ export const roundPlanViewV1Schema = z.strictObject({
 export const roundTeachingKindV1Schema = z.enum(["explanation"]);
 export type RoundTeachingKindV1 = z.infer<typeof roundTeachingKindV1Schema>;
 
+/** A likely-factual issue worth a learner's review; it is not a claim that the note is wrong. */
+export const roundSuspectClaimV1Schema = z.strictObject({
+  unitIds: z.array(z.string().min(1).max(160)).min(1).max(6),
+  sourceBlockOrdinal: z.number().int().positive().nullable(),
+  sourceQuote: z.string().min(4).max(2_000).nullable(),
+  reason: z.string().trim().min(1).max(1_000),
+  /** True when the source slice changed but this claim still lacks an accepted recheck. */
+  sourceChanged: z.boolean().optional(),
+}).refine((claim) => (claim.sourceBlockOrdinal === null) === (claim.sourceQuote === null), {
+  message: "claim source location and quote must both be present or both be null",
+});
+export type RoundSuspectClaimV1 = z.infer<typeof roundSuspectClaimV1Schema>;
+
 /**
  * 一条教学产物的正文（结构化，不是一段裸文本）：
  *  - `explanation`：这一节在说什么；
@@ -409,6 +428,8 @@ export type RoundTeachingKindV1 = z.infer<typeof roundTeachingKindV1Schema>;
 export const roundTeachingContentV1Schema = z.strictObject({
   explanation: z.string().trim().min(1).max(4_000),
   example: z.string().trim().min(1).max(4_000).optional(),
+  /** Retained with the immutable teaching row so the review warning survives reloads. */
+  suspectClaims: z.array(roundSuspectClaimV1Schema).max(6).optional(),
 });
 export type RoundTeachingContentV1 = z.infer<typeof roundTeachingContentV1Schema>;
 
@@ -429,6 +450,8 @@ export const roundTeachingV1Schema = z.strictObject({
   content: roundTeachingContentV1Schema,
   /** 依据块在快照里的序号（点开依据时按它定位）。 */
   sourceBlockOrdinals: z.array(z.number().int().min(1)).max(200),
+  /** Private understanding explicitly chosen by the learner for this explanation. */
+  personalSources: z.array(noteReflectionTeachingSnapshotV1Schema).max(3).optional(),
   createdAt: z.string().datetime({ offset: true }),
 });
 export type RoundTeachingV1 = z.infer<typeof roundTeachingV1Schema>;
@@ -446,6 +469,9 @@ export const createRoundTeachingRequestV1Schema = z.strictObject({
    * 在同一问题下再落一条（轮内序号 +1）——旧那条留着，历史不覆盖。
    */
   regenerate: z.boolean().optional(),
+  /** At most three private notes, selected by the user for this one teaching request. */
+  personalReflectionIds: z.array(z.string().uuid()).max(3).default([])
+    .refine((ids) => new Set(ids).size === ids.length, "private source ids must be unique"),
 });
 export type CreateRoundTeachingRequestV1 = z.infer<typeof createRoundTeachingRequestV1Schema>;
 
@@ -476,6 +502,88 @@ export const roundGapHelpV1Schema = z.strictObject({
   threshold: z.number().int().min(1),
 });
 export type RoundGapHelpV1 = z.infer<typeof roundGapHelpV1Schema>;
+
+/**
+ * 「补一节前置」那件事的读数（W4-6 刀四·正面要求那一档；PRD §16.3、§5.3、§4.3）。
+ *
+ * 这一格是 §16.3 验收那句「系统提出**可能**缺少一个前置定义，并**说明新增学习量**」的
+ * 落点——停下来的那四档里 `add_prerequisite` 之前只有一个说明文字，是因为这三样都算不出来：
+ * 缺哪个、依据是哪几段、要补多少。
+ *
+ * 两条形状上的硬约束：
+ *  - **`kind` 判别而不是三个可空字段**：没有提案与"有一个提案但依据为空"是两句不同的话，
+ *    用可空字段表达就会有一段代码要靠"两个都空"反推，而那种反推迟早漏一档。
+ *  - **`reason` 两档分开**（材料里挑不出来 / 挑得出来但都已讲过）：§5.3 规定前者不许编造
+ *    过程，后者说明"这一轮没有更前面可补的了"——那不是系统的失败，是这轮的情况。
+ *
+ * **它不含"补出来的内容"**：补是另一次教学产物（W4-6 刀五往后），这一格只给"缺哪儿、
+ * 依据、多少"，好让界面摆得出"现在补／留到以后"（§4.3）。把它说成"已经补好了"是本
+ * 合同明确不表达的意思。
+ */
+const roundPrerequisiteNoneV1Schema = z.strictObject({
+    kind: z.literal("none"),
+    reason: z.enum(["no_usable_material", "nothing_beyond_current"]),
+  });
+const roundPrerequisiteCandidateV1Schema = z.strictObject({
+    kind: z.literal("candidate"),
+    /** 措辞是"可能缺"而不是"你缺"：模型推测只能给建议，不能给诊断（§5.3、D3）。 */
+    label: z.string().min(1).max(300),
+    /** 依据的本轮快照块序号，界面要点得开、用户要核得对。 */
+    evidenceBlockOrdinals: z.array(z.number().int().positive()).min(1).max(3),
+    /** 新增学习量＝要读几段（§16.3 要"说明"的那一个数）。 */
+    estimatedSteps: z.number().int().positive(),
+    /** §5.3「较大分支交给用户选择」：超过冻结阈值就要她选"现在补／留到以后"。 */
+    largeBranch: z.boolean(),
+  });
+export const roundPrerequisiteV1Schema = z.discriminatedUnion("kind", [
+  roundPrerequisiteNoneV1Schema,
+  roundPrerequisiteCandidateV1Schema,
+]);
+export type RoundPrerequisiteV1 = z.infer<typeof roundPrerequisiteV1Schema>;
+
+/** 提案 + 判定它的那个缺口 + 冻结阈值（§18.4 冻结项，界面据此说明"较大"的界线从哪来）。 */
+const roundPrerequisiteViewContextV1Schema = {
+  gap: z.strictObject({ objectiveId: z.string().uuid(), intent: z.string().nullable() }).nullable(),
+  largeBranchThreshold: z.number().int().min(0),
+};
+export const roundPrerequisiteViewV1Schema = z.discriminatedUnion("kind", [
+  roundPrerequisiteNoneV1Schema.extend(roundPrerequisiteViewContextV1Schema),
+  roundPrerequisiteCandidateV1Schema.extend(roundPrerequisiteViewContextV1Schema),
+]);
+export type RoundPrerequisiteViewV1 = z.infer<typeof roundPrerequisiteViewV1Schema>;
+
+/**
+ * 动态产物**失败**的那一次（W4-6 刀五·失败侧；§16.4「动态交付失败记录保留」）。
+ *
+ * 它与同一格里那个 `artifact`（成功时的引用）是**两件不同的事**：
+ *  - `artifact: null` 是**状态**："这一条没有动态版本"（D4 §6.2）——可能从没请求过；
+ *  - `artifactFailure: {...}` 是**事件**："试过，没成，原因是这个"。
+ *
+ * 合成一个可空字段（`artifact: { ref?, failure? }`）看着更整齐，但会让"没请求过"与
+ * "请求了但失败了"共用一条分支，而 §6.2 恰恰要求界面对这两句说不同的话。
+ *
+ * `stage × reason` 穷举（与迁移 0298 的 CHECK 同一组），`detail` 是人读的那一句、
+ * 上界 500；`teachingId` 可空 = 产物构建时教学行还没落库。
+ */
+export const roundArtifactFailureV1Schema = z.discriminatedUnion("stage", [
+  z.strictObject({
+    stage: z.literal("build"),
+    reason: z.enum(["empty", "over_quota"]),
+    detail: z.string().max(500),
+    teachingId: z.string().uuid().nullable(),
+    snapshotHash: z.string().min(8).max(128),
+    at: z.string().datetime({ offset: true }),
+  }),
+  z.strictObject({
+    stage: z.literal("persist"),
+    reason: z.literal("persist_failed"),
+    detail: z.string().max(500),
+    teachingId: z.string().uuid().nullable(),
+    snapshotHash: z.string().min(8).max(128),
+    at: z.string().datetime({ offset: true }),
+  }),
+]);
+export type RoundArtifactFailureV1 = z.infer<typeof roundArtifactFailureV1Schema>;
 
 /**
  * 动态产物（W4-6 刀五；D4 §8 的隔离展示面）：一条教学产物带的整份 HTML。
@@ -535,6 +643,10 @@ export const roundTeachingViewV1Schema = z.strictObject({
   practiceStart: roundPracticeStartV1Schema.nullable(),
   /** 缺口帮助停止那一格（W4-6 刀四）：停没停、帮了几次、按几次算停。 */
   gapHelp: roundGapHelpV1Schema,
+  /** 前置候选与其缺口依据（W4-6 刀四·正面要求；为空也必须明确给出判定原因）。 */
+  prerequisite: roundPrerequisiteViewV1Schema,
+  /** 动态产物最近一次失败（与 artifact=null 代表的“未成功产物”状态分开）。 */
+  artifactFailure: roundArtifactFailureV1Schema.nullable(),
   /**
    * 这一条解释的动态产物（W4-6 刀五）。`null` = 这一条没有动态版本——
    * **那不是失败**：文字解释照旧在 `teaching.content` 里，界面照旧要能读能练

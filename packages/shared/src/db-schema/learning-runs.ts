@@ -67,7 +67,13 @@ export type LearningTaskVariantStatus = (typeof LearningTaskVariantStatusValues)
 export const LearningRunArtifactStatusValues = ["locked", "superseded", "abandoned"] as const;
 export type LearningRunArtifactStatus = (typeof LearningRunArtifactStatusValues)[number];
 
-export const LearningAssessmentStatusValues = ["queued", "running", "completed", "not_assessable", "failed"] as const;
+/**
+ * `cancelled` 是 0301 那一档：§5.5 三个独立动作里的「明确停止本次评估」。
+ * 它**不含** `report_hash`——被取消的评估本来就没有报告，而
+ * `learning_assessments_terminal_report_check`（0116）只对 completed/not_assessable 要求报告。
+ * 「迟到报告不采纳」由迁移 0301 的触发器执法，不靠每一处 UPDATE 自己记得带条件。
+ */
+export const LearningAssessmentStatusValues = ["queued", "running", "completed", "not_assessable", "failed", "cancelled"] as const;
 export type LearningAssessmentStatus = (typeof LearningAssessmentStatusValues)[number];
 
 export const LearningRunEventTypeValues = [

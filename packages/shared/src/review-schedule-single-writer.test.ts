@@ -216,9 +216,14 @@ const REGISTERED_STATUS_UPDATES: Record<string, Array<string | null>> = {
   // 「这个目标暂不安排」：把该目标此刻待处理的那几条撤下（39 §9.1 行 2；迁移 0295）。
   // 撤的是 `dismissed`（本人不要这条了），不是 `cancelled`（系统撤），更不是 pending。
   "apps/api/src/modules/review/objective-review-holds.ts": ["dismissed"],
+  // 「这次提醒我处理了」：把**一次性**提醒关成 `completed`（39 §9.1 末段、§16.24；迁移 0297）。
+  // 它只改这一条、不建继任、不碰学习观察——与上面那处 `dismissed` 的区别要说得出：
+  // 那一处是"以后都别给我排"，这一处是"这一次我处理过了"，两句话在 §9.1 的规则表里
+  // 是两行（W5-4 刀一；服务里那一档 `not_one_time` 就是不让它吃掉持续安排的那一条）。
+  "apps/api/src/modules/review/one-time-reminder-service.ts": ["completed"],
 };
 
-test("分母自证（改）：真的读到那五处 update，且没有第六处", () => {
+test("分母自证（改）：真的读到那六处 update，且没有第七处", () => {
   const byFile: Record<string, Array<string | null>> = {};
   for (const site of runtimeSources().flatMap((f) => statusUpdatesIn(f.rel, f.text))) {
     (byFile[site.file] ??= []).push(site.dynamic ? null : site.value);
@@ -328,8 +333,15 @@ function readSitesIn(file: string, source: string): Array<{ file: string; dimens
   });
 }
 
-/** 今天还不认识这一维的读点，按文件数（合计 21 处）。逐处修好就把对应那条删掉。 */
-const READERS_BLIND_TO_DIMENSION: Record<string, number> = {
+/**
+ * 今天还不认识这一维的读点，按文件数（合计 22 处）。逐处修好就把对应那条删掉。
+ *
+ * 值的第二种形状是 `{ count, reason }`：**读点照旧登记在案**，同时写明为什么它这一处
+ * 不用改成按维度筛。台账不许因为"这一处没关系"就少登一条——那正是它当初漏登的那一类；
+ * 写明理由，理由本身也在这份文件里对着代码，过期了会有人看见。
+ */
+type BlindReaderEntry = number | { readonly count: number; readonly reason: string };
+const READERS_BLIND_TO_DIMENSION: Record<string, BlindReaderEntry> = {
   "apps/api/src/modules/card-generation-v2/card-service.ts": 2,
   "apps/api/src/modules/export/service.ts": 2,
   "apps/api/src/modules/learning-dashboard/service.ts": 1,
@@ -338,11 +350,29 @@ const READERS_BLIND_TO_DIMENSION: Record<string, number> = {
   "apps/api/src/modules/learning-runs/run-service.ts": 3,
   "apps/api/src/modules/review/review-defer-service.ts": 1,
   "apps/api/src/modules/review/service.ts": 3,
+  // W5-4 刀一（0297）：这一处**按主键**读一行——用户处理的是界面上那颗具体提醒，
+  // 它的身份就是这一行的 id（`eq(reviewSchedules.id, ...)` 加空间与人）。
+  // "同一目标两条不同维度的安排会被重复计数"这个风险在这里不存在：一次读取返回至多一行，
+  // 而那一行正是她点的那个。补一个维度条件只会要求客户端同时交出维度（队列今天不下发它），
+  // 或者把一条合法的处理判成冲突。
+  "apps/api/src/modules/review/one-time-reminder-service.ts": {
+    count: 1,
+    reason: "按主键读单行；acknowledge 处理的是这一个 schedule 实例，不是「同一目标的那一格」",
+  },
   "apps/api/src/modules/stats/service.ts": 2,
   "apps/api/src/modules/understanding-v3/topology-repository.ts": 1,
   "apps/api/src/modules/understanding/projection-read-service.ts": 1,
   "apps/api/src/modules/understanding/route-plan-service.ts": 1,
 };
+
+/** 台账的两种形状归一成"这一文件有几处"，让比对只有一个分母。 */
+function expectedBlindCounts(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [file, entry] of Object.entries(READERS_BLIND_TO_DIMENSION)) {
+    out[file] = typeof entry === "number" ? entry : entry.count;
+  }
+  return out;
+}
 
 function blindReaderCounts(): Record<string, number> {
   const out: Record<string, number> = {};
@@ -376,9 +406,9 @@ function dimensionNamingCallers(): string[] {
     .flatMap((f) => dimensionNamingCallersIn(f.rel, f.text));
 }
 
-test("读侧台账的分母自证：22 处读点里只有边界自己那一处认得维度", () => {
+test("读侧台账的分母自证：23 处读点里只有边界自己那一处认得维度", () => {
   const all = runtimeSources().flatMap((f) => readSitesIn(f.rel, f.text));
-  assert.equal(all.length, 22, `读点合计与现读数不同（得到 ${all.length}）：walk 坏了或有人新增/删了读点`);
+  assert.equal(all.length, 23, `读点合计与现读数不同（得到 ${all.length}）：walk 坏了或有人新增/删了读点`);
   assert.equal(all.filter((s) => s.dimensionAware).length, 1,
     "认得维度的读点数量变了——只有边界那一条回读该认得");
 });
@@ -408,9 +438,25 @@ test("读侧判据本身灵敏：带维度判据要认得出，不带的一处�
 });
 
 test("不认维度的读点逐文件登记在案：新增一处红，改好一处就把那条删掉", () => {
-  assert.deepEqual(blindReaderCounts(), READERS_BLIND_TO_DIMENSION,
+  assert.deepEqual(blindReaderCounts(), expectedBlindCounts(),
     "读侧维度台账与代码不一致。新增读点：同一目标哪天有第二条维度安排时它会读错；"
       + "改好了某处：把对应那条从清单里删掉（这份清单只能变短）。");
+});
+
+test("写明「不用改」的那几条，理由不许是空话：每一处都要说清它为什么不会被维度重复计数", () => {
+  const explained = Object.entries(READERS_BLIND_TO_DIMENSION)
+    .filter(([, entry]) => typeof entry !== "number")
+    .map(([file, entry]) => ({ file, reason: (entry as { reason: string }).reason }));
+  for (const { file, reason } of explained) {
+    assert.ok(reason.length >= 20, `${file} 登记了"不用改"，理由却只有 ${reason.length} 个字`);
+    // 理由里必须指认这一处**实际**按什么读——只说"没关系"的那些，早晚会碰上真有关系的那个。
+    const source = readFileSync(join(REPO_ROOT, file), "utf8");
+    const keyedByRow = source.includes("eq(reviewSchedules.id,");
+    assert.ok(
+      keyedByRow || /计数|聚合|单行|至多一行/.test(reason),
+      `${file} 的理由没有指认这一处按什么读，也没有说明它为什么不会被重复计数`,
+    );
+  }
 });
 
 test("触发器：还没有任何调用方给边界传非空维度——第一次传的时候必须先处理读侧", () => {

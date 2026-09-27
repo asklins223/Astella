@@ -38,6 +38,92 @@ const GUARD_TOKENS = [
 ];
 
 /**
+ * **经轮次间接取笔记内容**那一族（39d W5-6 刀一新增）。
+ *
+ * 为什么不并进上面那份 `READ_PATTERNS`：上面那组认的是「这一发直接读 `notes`」，
+ * 而轮次的讲解与产物读点是 `from(noteLearningRoundTeachings)`、
+ * `from(noteLearningRoundArtifacts)`——它们**根本不碰 `notes` 表**，内容是经
+ * `roundId → noteLearningRounds.noteId → notes` 间接取到的。
+ *
+ * 于是 2026-09-27 量到一个真实破口：`readRound` / `readOpenRound` /
+ * `findReusableTeaching` / `readTeachingArtifactRef` / `readRoundArtifactHtml`
+ * 五个读点全都只按 `(workspace, user)` 过滤，作者撤回共享之后**本轮问题、缓存讲解
+ * 与整份讲解 HTML 仍然取得到**（§16.13「失权后不能靠旧快照继续学习」、
+ * §14.4「失权后停止受保护内容的展示、练习与外发」），而这条棘轮**全绿**——
+ * 守卫是绿的而产品规则已破，那比缺功能更难发现，所以这一族必须单独立一组模式。
+ *
+ * 口径与上面那组一致：**就近** ±12 行窗口里必须有判据，不是文件级计数。
+ *
+ * **刀二之后这一族扩到 `noteLearningRounds` 本身**（刀一只认了两张内容表）。
+ * 那一族量下来 15 处，逐条看过之后：**一处是真缺口**——`listRoundHistory` 返回整页
+ * 轮次含驱动问题，而路由 `GET /notes/:noteId/rounds` 不先验笔记，于是撤回共享之后
+ * 那一页历史照样端得出去（已补判据）。其余 14 处按"不取内容"或"下游已过闸"逐条
+ * 写明理由列进豁免，不是"一次性全豁免"。
+ */
+const ROUND_INDIRECT_READ_PATTERNS = [
+  /\bfrom\(noteLearningRoundTeachings\)/g,
+  /\bfrom\(noteLearningRoundArtifacts\)/g,
+  /\bfrom\(noteLearningRounds\)/g,
+];
+
+/**
+ * 这一族里逐条豁免的读点（同样只许随修好而变小）。
+ * 数字是"这一族里抵不上判据的条数"，理由逐条写明。
+ *
+ * `round-service.ts` 的十处，按所在函数逐个看过（函数边界 479/576/650/721/795/997/1030/1223）：
+ *  - `readRoundHistoryFactsV1` 里的 `selectDistinct({ roundId })`（讲过没有）与
+ *    `from(noteLearningRounds)` 那发（练过没有／系统不确定）：返回的形状是几个 **id**
+ *    的集合，**没有正文**。这一整个函数**连 `scope` 都不收**——入参就是调用方已经验过
+ *    的 id 列表，这是设计不是疏漏：它去数事实，不去端内容。
+ *  - `listPersonalRoundHistory` 里那处 `select({ id })`：游标/存在性检查；同一个函数里
+ *    真正取内容的那两发自己带了判据。
+ *  - `advanceRound`／`reviseDrivingQuestion`／`appendPlanRevision` 三个写路径的整行 CAS 读
+ *    （都带 `.for("update")`）：调用方每一条都先过 `readRound`（已按笔记判过可见性，
+ *    判不过去路由直接 404），所以这一发在写之前拿不到"失权之后还能改"的机会。
+ *  - `countTeachings`：`count(*)`，只数条数。
+ *  - `createTeaching` 里 `max(ordinal)`：写路径上给新产物算序号。
+ *  - `readTeachingArtifactRef` 的**第二发**（取 artifact 元数据）：它的 `artifactId` 是
+ *    从**上一发**取的，而上一发已经带了判据；这一发只取 id/kind/createdAt，不含 html。
+ *
+ * `reflection-service.ts` 的两处都在 `requireVisibleNote` 下游：那一发带了
+ * `visibleNotesCondition`，而且 `.for("share")` 把整段读与共享撤回串行化
+ * （共享是显式动作，这一发就是为它准备的）。一处取讲解正文、一处只取 id 做存在性检查。
+ *
+ * `prerequisite-proposal.ts` 的那处是**这条棘轮当场抓到的**：那个文件在刀一之后
+ * 才落盘，它第一句就是 `readRound`（已按笔记判过可见性，判不过去直接回
+ * `no_usable_material`），自己那一发只取 `sourceBlockOrdinals`——块序号，不是正文。
+ *
+ * `round-activity-sweep.ts` 是后台清扫器：定时跨用户跑，只取 `{ id, noteId }` 去过期，
+ * 不返回任何内容给查看者。
+ *
+ * `run-service.ts` 的两处分别是"这一轮现在什么相位"（`{ id, phase }`，`note_round`
+ * 起手时挑未完轮次，而那条起手路先过 `resolveV2OriginExtras`）与
+ * "返回目标还在不在"（`{ id }`，跳转可用性，与卡片那一族同一条口径）。
+ *
+ * 带 stale 检查：豁免数比实际多会红，所以有人把闸补上，这里必须跟着减。
+ */
+const ROUND_INDIRECT_SYSTEM_LEVEL_READS: Record<string, number> = {
+  "modules/note-learning-rounds/round-service.ts": 10,
+  "modules/note-learning-rounds/reflection-service.ts": 2,
+  "modules/note-learning-rounds/prerequisite-proposal.ts": 1,
+  "modules/note-learning-rounds/round-activity-sweep.ts": 1,
+  "modules/learning-runs/run-service.ts": 2,
+};
+
+/**
+ * 两个**点名的**轮次读函数必须自带判据。
+ *
+ * 为什么点名而不靠模式：`from(noteLearningRounds)` 在这个文件里有 15 处，混着写路径
+ * 与列表读，按模式一刀切要么全红要么全豁免（见上面那段）。但"读回整份轮次"这两处
+ * 是 §16.13 那条产品规则**最直接**的落点（冻结快照就是从这里端出去的），
+ * 它们必须被这一条钉住，而且这一条要能独立红。
+ */
+const ROUND_CONTENT_READERS: Array<{ file: string; fn: string }> = [
+  { file: "modules/note-learning-rounds/round-service.ts", fn: "readRound" },
+  { file: "modules/note-learning-rounds/round-service.ts", fn: "readOpenRound" },
+];
+
+/**
  * 系统级读点：这些位置没有"查看者"可言，也不该有。
  *
  * - `note/maintenance.ts`、`scripts/cleanup-soft-deleted-notes.ts`：定时物理清理，
@@ -176,7 +262,20 @@ function sourceFiles(dir: string): string[] {
  * 整行 `select()`，也算取内容（整行必然带上这两列）。
  */
 const CARD_READ_PATTERNS = [/\bfrom\(learningCardsV2\)/g, /\bFROM\s+learning_cards_v2\b/gi];
-const CARD_GUARD_TOKENS = ["visibleCardsCondition", "visibleNotesCondition", "eq(notes.createdBy"];
+const CARD_GUARD_TOKENS = [
+  "visibleCardsCondition",
+  "visibleNotesCondition",
+  "eq(notes.createdBy",
+  // 2026-09-27（39d W5-6 刀三）：目标级的同一句话也是**跟着笔记判**——
+  // `visibleObjectivesCondition` 走的是「目标 → 卡 → 笔记」那一支（见
+  // `modules/note/visibility.ts` 的注释），所以它算带上判据，不算漏。
+  //
+  // 补这一条是被这个守卫抓出来的：`modules/review/shared-card-review-service.ts`
+  // 落盘后一分钟这里就红了，那一处其实带着 `visibleObjectivesCondition`，
+  // 只是 token 表里没有它。**不是**把那处列进豁免——豁免的前提是"没有判据"，
+  // 它有；这里要做的是让守卫认得它。
+  "visibleObjectivesCondition",
+];
 const CARD_SYSTEM_LEVEL_READS: Record<string, number> = {
   // 解散先睹计数：同上，只数不取内容（判据与理由见笔记棘轮里同一条豁免）。
   "modules/identity/service.ts": 1,
@@ -215,7 +314,24 @@ function unguarded(
   tokens: string[],
   forward = 12,
 ): string[] {
-  const source = stripComments(readFileSync(file, "utf8"));
+  return unguardedInSource(readFileSync(file, "utf8"), rel, patterns, tokens, forward);
+}
+
+/**
+ * 同一套窗口逻辑，喂源码文本而不是文件路径。
+ *
+ * 拆出来是为了让"判据自己能红"这件事**真的能测**：第一版把灵敏度断言写成对着
+ * `/tmp/某个不存在的路径` 调 `unguarded`，结果 ENOENT——那条断言从来没量过任何东西，
+ * 是空的。拆成吃文本之后，合成一段"确实漏了判据"的源码就能当场量它抓不抓得到。
+ */
+function unguardedInSource(
+  rawSource: string,
+  rel: string,
+  patterns: RegExp[],
+  tokens: string[],
+  forward = 12,
+): string[] {
+  const source = stripComments(rawSource);
   const lines = source.split("\n");
   const out: string[] = [];
   for (const pattern of patterns) {
@@ -250,6 +366,91 @@ test("每一处笔记读点都就近带上可见性判据（或有写明理由�
   }
   assert.deepEqual(offenders, [], "新增的笔记读点没带可见性判据（或判据离得太远）：\n" + offenders.join("\n"));
   assert.deepEqual(staleExemptions, [], "系统级豁免比实际需要的多（棘轮只能缩短）：\n" + staleExemptions.join("\n"));
+});
+
+test("经轮次间接取笔记内容的读点同样要带判据（§16.13 失权后不能靠旧快照继续学）", () => {
+  const offenders: string[] = [];
+  const staleExemptions: string[] = [];
+  for (const file of sourceFiles(join(API_ROOT, "modules"))) {
+    const rel = relative(API_ROOT, file).split("\\").join("/");
+    const allowance = ROUND_INDIRECT_SYSTEM_LEVEL_READS[rel] ?? 0;
+    const misses = unguarded(file, rel, ROUND_INDIRECT_READ_PATTERNS, GUARD_TOKENS);
+    if (misses.length > allowance) {
+      offenders.push(`${rel}: ${misses.length} 处经轮次取笔记内容的读点没带判据，豁免只给了 ${allowance} 个 → ${misses.join(", ")}`);
+    }
+    if (allowance > misses.length) {
+      staleExemptions.push(`${rel}: 这一族的豁免写了 ${allowance} 个，实际只有 ${misses.length} 处没带判据——调下来`);
+    }
+  }
+  assert.deepEqual(offenders, [],
+    "经轮次间接取笔记内容的读点没带可见性判据（这一族以前不在棘轮里，W5-6 刀一的破口就是从这里漏过去的）：\n"
+    + offenders.join("\n"));
+  assert.deepEqual(staleExemptions, [],
+    "这一族的豁免比实际需要的多（棘轮只能缩短）：\n" + staleExemptions.join("\n"));
+});
+
+test("点名的两个轮次读函数自带判据，且这一条能独立红", () => {
+  const missing: string[] = [];
+  for (const { file, fn } of ROUND_CONTENT_READERS) {
+    const source = stripComments(readFileSync(join(API_ROOT, file), "utf8"));
+    const at = source.indexOf(`function ${fn}(`);
+    assert.notEqual(at, -1, `${file} 里找不到 ${fn}：守卫该跟着改名一起改`);
+    // 取这个函数体（到下一个顶层 function 为止），判据必须落在**它里面**，
+    // 而不是文件里别处某一处——后者正是"同一文件里别处的判据把它蒙过去"。
+    const rest = source.slice(at);
+    const next = rest.slice(1).search(/\n(?:export )?(?:async )?function \w/);
+    const body = next === -1 ? rest : rest.slice(0, next + 1);
+    if (!GUARD_TOKENS.some((token) => body.includes(token))) {
+      missing.push(`${file}:${fn}`);
+    }
+  }
+  assert.deepEqual(missing, [],
+    "读回整份轮次的读点没带可见性判据：共享撤回之后冻结快照会继续被端出去（§16.13）\n" + missing.join("\n"));
+});
+
+test("这一族的判据自己站得住：豁免指向的文件在，且窗口逻辑仍能抓到漏网的", () => {
+  for (const rel of Object.keys(ROUND_INDIRECT_SYSTEM_LEVEL_READS)) {
+    assert.equal(statSync(join(API_ROOT, rel)) !== null, true, `${rel} 已经不在了，豁免要删`);
+  }
+  // 灵敏度一：同一段源码，补了判据读出 0，去掉判据必须读出 1。
+  // （这一条第一版写成对 `/tmp/某个不存在的路径` 调 `unguarded`，结果是 ENOENT——
+  //   也就是说它从来没量过任何东西。拆成吃文本之后才量得到。）
+  const template = [
+    "async function fake() {",
+    "  const rows = await tx",
+    "    .select()",
+    "    .from(noteLearningRoundTeachings)",
+    "    .where(and(",
+    "      eq(noteLearningRoundTeachings.roundId, roundId),",
+    "      %TOKEN%",
+    "    ));",
+    "  return rows;",
+    "}",
+  ].join("\n");
+  const guarded = template.replace("%TOKEN%", "visibleNotesCondition(scope.userId)");
+  const bare = template.replace("%TOKEN%", "eq(x, 1)");
+  assert.deepEqual(
+    unguardedInSource(guarded, "synthetic", ROUND_INDIRECT_READ_PATTERNS, GUARD_TOKENS),
+    [],
+    "带了判据的合成源码被误报了，判据太宽",
+  );
+  assert.equal(
+    unguardedInSource(bare, "synthetic", ROUND_INDIRECT_READ_PATTERNS, GUARD_TOKENS).length,
+    1,
+    "去掉判据的合成源码没被抓到，判据已经瞎了",
+  );
+  // 灵敏度二：判据离读点太远（> forward 行）也必须被抓到——那正是"同一文件里别处的
+  // 判据把它蒙过去"的形状。
+  const far = template.replace("%TOKEN%", "").replace(
+    "    ));",
+    "    ));\n" + Array.from({ length: 20 }, () => "  // filler").join("\n")
+      + "\n  const guard = visibleNotesCondition(scope.userId);",
+  );
+  assert.equal(
+    unguardedInSource(far, "synthetic", ROUND_INDIRECT_READ_PATTERNS, GUARD_TOKENS).length,
+    1,
+    "判据离读点 20 行仍然算抵上了，窗口形同文件级计数",
+  );
 });
 
 test("返回正文的卡片读点都带上「跟着来源笔记判」", () => {

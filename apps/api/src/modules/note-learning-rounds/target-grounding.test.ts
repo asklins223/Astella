@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createRoundTargetGrounder } from "./target-grounding.ts";
+import { createRoundTargetGrounder, selectGroundedRoundTarget } from "./target-grounding.ts";
 import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
 
 const config = { url: "https://example.test/chat/completions", key: "test", model: "grounder" };
@@ -15,7 +15,7 @@ const options = {
 };
 const unit = { unitId: "unit-1", factSupported: true, criterionSupported: true, reason: "原文有两个条件" };
 const reply = (output: object) => ({ status: 200, statusText: "OK", body: { choices: [{ message: { content: JSON.stringify({
-  teachingSupported: true, teachingReason: "讲解只解释原文条件", teachingSegments: [{ ordinal: 1, supported: true, reason: "解释原文条件" }], ...output,
+  teachingSupported: true, teachingReason: "讲解只解释原文条件", teachingSegments: [{ ordinal: 1, supported: true, reason: "解释原文条件" }], suspectClaims: [], ...output,
 }) } }] } });
 
 test("grounding requires objective, fact and criterion support, with the complete exact unit set", async () => {
@@ -52,6 +52,52 @@ test("unsupported explanation is rejected even when every target unit is support
     return reply({ teachingSupported: false, teachingReason: "解释补入原文没有的因果机制", objectiveSupported: true, units: [unit] });
   })(options);
   assert.equal(result.approved, false); assert.equal(result.report?.teachingSupported, false);
+});
+
+test("a located suspect factual claim remains a warning and prevents a formal target", async () => {
+  const sourceQuote = "复合索引缺少最左列条件就无法使用索引";
+  const target = { ...options.target, units: [{ ...options.target.units[0], fact: sourceQuote, quote: sourceQuote }] };
+  const result = await createRoundTargetGrounder(config, async (_url, _headers, body) => {
+    const prompt = JSON.stringify(body);
+    assert.match(prompt, /仅仅因为材料没有外部来源，不算可疑/);
+    assert.match(prompt, /sourceQuote 必须逐字复制/);
+    return reply({ objectiveSupported: true, units: [unit], suspectClaims: [{ unitIds: ["unit-1"], sourceBlockOrdinal: 1,
+      sourceQuote, reason: "该说法过于绝对，索引是否可用还取决于查询条件与优化器判断。" }] });
+  })({ ...options, target, input: { ...options.input, blocks: [{ ordinal: 1, type: "paragraph", text: `笔记：${sourceQuote}。` }] } });
+  assert.equal(result.report?.teachingSupported, true);
+  assert.equal(result.approved, false);
+  assert.deepEqual(result.report?.suspectClaims, [{ unitIds: ["unit-1"], sourceBlockOrdinal: 1, sourceQuote,
+    reason: "该说法过于绝对，索引是否可用还取决于查询条件与优化器判断。" }]);
+});
+
+test("a fabricated or mismatched claim quote is withheld while the suspect-claim hold remains", async () => {
+  const result = await createRoundTargetGrounder(config, async () => reply({ objectiveSupported: true, units: [unit], suspectClaims: [{
+    unitIds: ["unit-1"], sourceBlockOrdinal: 1, sourceQuote: "原文里不存在的事实句子", reason: "可能漏掉重要条件。",
+  }] }))({ ...options, input: { ...options.input, blocks: [{ ordinal: 1, type: "paragraph", text: "原文只有真实存在的句子。" }] } });
+  assert.equal(result.approved, false);
+  assert.equal(result.report?.suspectClaims[0].sourceBlockOrdinal, null);
+  assert.equal(result.report?.suspectClaims[0].sourceQuote, null);
+});
+
+test("a suspect unit is excluded while an independently supported unit remains practiceable", async () => {
+  const safeUnit = { unitId: "unit-2", fact: "检索练习要求学习者先从记忆中回想答案", criterion: "指出先回想再核对", facet: "explain" as const,
+    sourceBlockOrdinal: 2, quote: "先遮住答案，再从记忆中回想。" };
+  const target = { ...options.target, units: [{ ...options.target.units[0], fact: "复合索引缺少最左列条件就无法使用索引",
+    quote: "复合索引缺少最左列条件就无法使用索引" }, safeUnit] };
+  const report = await createRoundTargetGrounder(config, async () => reply({ objectiveSupported: true, units: [unit,
+    { unitId: "unit-2", factSupported: true, criterionSupported: true, reason: "第二段原文直接说明先回想" }], suspectClaims: [{
+    unitIds: ["unit-1"], sourceBlockOrdinal: 1, sourceQuote: "复合索引缺少最左列条件就无法使用索引",
+    reason: "这条说法可能忽略索引可用性与查询条件之间的关系。",
+  }] }))({ ...options, target, input: { ...options.input, blocks: [
+    { ordinal: 1, type: "paragraph", text: "复合索引缺少最左列条件就无法使用索引。" },
+    { ordinal: 2, type: "paragraph", text: "先遮住答案，再从记忆中回想。" },
+  ] } });
+  const selected = selectGroundedRoundTarget(target, report.report);
+  assert.equal(report.approved, false, "the original mixed target is not wholly approved");
+  assert.deepEqual(selected?.target.units.map((candidate) => candidate.unitId), ["unit-2"]);
+  assert.equal(selected?.target.objectiveStatement.includes("复合索引"), false);
+  assert.deepEqual(selected?.report.units.map((candidate) => candidate.unitId), ["unit-2"]);
+  assert.deepEqual(selected?.report.suspectClaims[0].unitIds, ["unit-1"]);
 });
 
 test("material without an assessable target still receives an independent teaching check", async () => {

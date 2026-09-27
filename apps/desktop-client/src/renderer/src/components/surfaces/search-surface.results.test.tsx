@@ -164,6 +164,7 @@ function objectiveDetail(
       sourceLabel: null,
     },
     sources: { origins: [], primaryNote: null, missingOrigin: false },
+    noteChangeImpact: null,
     personal: {
       initialValidation: null,
       activeRun: { runId: RUN_ID, phase: "checkpoint" },

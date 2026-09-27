@@ -22,6 +22,14 @@ export const noteReflectionV1Schema = z.strictObject({
   createdAt: z.string().datetime({ offset: true }),
 });
 export type NoteReflectionV1 = z.infer<typeof noteReflectionV1Schema>;
+/** Private user understanding, frozen when the learner explicitly reuses it for teaching. */
+export const noteReflectionTeachingSnapshotV1Schema = z.strictObject({
+  reflectionId: z.string().uuid(),
+  revision: z.number().int().min(1),
+  source: reflectionSourceV1Schema,
+  annotation: z.string().max(4_000),
+});
+export type NoteReflectionTeachingSnapshotV1 = z.infer<typeof noteReflectionTeachingSnapshotV1Schema>;
 export const noteReflectionPageV1Schema = z.strictObject({
   version: z.literal(1),
   items: z.array(noteReflectionV1Schema).max(20),

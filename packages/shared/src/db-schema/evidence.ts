@@ -14,6 +14,16 @@ import { users, workspaces } from "./identity.ts";
 import { notes } from "./note.ts";
 
 /**
+ * `review_schedules` 那一列 `reminder_kind` 的取值（迁移 0297；39 §9.1 末段）。
+ *
+ * **两处字面量、一处判据**：`$type` 用的这个联合与迁移里的 CHECK 各写了一份，而
+ * `review-reminder-kind-guard.test.ts` 逐字比对这两份并在两个方向都变异自证。
+ * 抄第二份省事，少一个判据就等于"改了 schema 忘了改迁移"这种红灯永远不亮。
+ */
+export const ReviewReminderKindValues = ["one_time", "sustained"] as const;
+export type ReviewReminderKind = (typeof ReviewReminderKindValues)[number];
+
+/**
  * 复习计划（对齐产品文档 §9.5）。
  * 由 learning-run commit 驱动生成，按离散档位调度下次复习时间。
  */
@@ -39,6 +49,12 @@ export const reviewSchedules = pgTable(
     // 方案 16 §18.1 defer_review：用户队列"展示层延后"（不改 official
     // next_review_at、不消费 schedule、不创建 successor；仅队列 UI 展示）。
     userDeferredUntil: timestamp("user_deferred_until", { withTimezone: true }),
+    // 0297（W5-4 刀一；39 §9.1 末段）：这一条是「仅提醒这一次」还是「持续安排复习」。
+    // 两种来意共用同一把唯一键（同一目标同一维度只挂一条待处理），差别只有"处理掉之后
+    // 会不会自己长出下一次"——所以它是一列而不是另一张表，理由见迁移头注。
+    // **不可空且默认 sustained**：存量三个写入方里有两个按定义是持续的，而把存量判成
+    // one_time 会让那些行在处理后静默不再排下一次，且没有任何人授权过这件事。
+    reminderKind: text("reminder_kind").$type<ReviewReminderKind>().notNull().default("sustained"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     // CONC-10: updatedAt 记录最近一次 status 变更时间。
     // deleteNote 取消计划时设为 deletedAt，restoreDeletedNote 恢复时

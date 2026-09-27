@@ -130,6 +130,7 @@ import {
 import { buildRunPublicView, deriveReturnTargetV1 } from "./run-view.ts";
 import { decryptDraftPayload, encryptDraftPayload, isDraftEncryptionAvailable } from "./run-draft-crypto.ts";
 import { buildLearningRunAllowedActionsV2 } from "./run-action-availability.ts";
+import { readObjectiveNoteChangeImpactV1 } from "../learning-objectives/change-impact-service.ts";
 
 // ─── 服务接口（路由层注入）───────────────────────────────────────────────
 
@@ -523,6 +524,27 @@ async function resolveV2Scheduling(
   objectiveId: string,
   semanticTargetFingerprint: string,
 ): Promise<SchedulingAuthorizationV1> {
+  if (origin.kind === "review" || origin.kind === "card" || origin.kind === "star_map" || origin.kind === "note_round") {
+    const noteImpact = await readObjectiveNoteChangeImpactV1(tx, scope, objectiveId, {
+      lockSourceNotes: true,
+      includeUnchanged: true,
+    });
+    if (noteImpact && noteImpact.status !== "unaffected") {
+      if (origin.kind === "review") {
+        throw new LearningRunServiceError(
+          "review_note_evidence_changed",
+          "这项复习依赖的笔记证据已变化或无法核对，请先回笔记核对原文；这条复习安排仍保留。",
+          409,
+          { blockedReason: "note_evidence_changed" },
+        );
+      }
+      // Old-round practice may continue against its frozen snapshot, but it
+      // must not consume or create a schedule whose note evidence is no longer
+      // current and verifiable.
+      return { kind: "no_effect", reasonCode: "note_evidence_changed" };
+    }
+  }
+
   const findPending = async () => {
     const rows = await tx
       .select({ id: reviewSchedules.id, generation: reviewSchedules.generation })
@@ -1924,6 +1946,66 @@ export async function applyAction(
       }
       await insertRunEvent(tx, input, "learning_run.ended", {}, at, run.eventCursor);
       break;
+    }
+    case "cancel_assessment": {
+      // §5.5「用户明确选择『停止本次评估』则保存原回答，停止该任务后续尝试，迟到报告不作为
+      // 有效判定或调度依据；当次显示『回答已保存，评估已取消』」。
+      //
+      // 这一格**不改 run 的 phase**——结束活动是另一个独立动作（§5.5 原话：「结束活动、取消
+      // AI 任务和撤销未来复习授权是三个独立动作」）。取消评估之后 run 仍可继续：用户可以
+      // 直接结束，也可以重试一次评估（`retry_assessment`），而 §14.1.1 明确「允许未来一次
+      // 条件清楚的新尝试」。
+      if (run.phase === "completed") {
+        // §5.5「已先完成提交的判定不因后到取消而消失，显示实际回执」——这一发是**幂等**
+        // 而不是 409：她要的结果（看到实际回执）此刻已经成立，报冲突会让她以为该结果丢了。
+        const current = await getRunPublicView(tx, { workspaceId: input.workspaceId, userId: input.userId, runId: run.id });
+        const snapshot = { actionResult: "assessment_already_final", assessmentId: input.action.assessmentId, snapshot: current };
+        await writeLedger(requestHash, snapshot, "assessment_already_final", acceptedActionId);
+        return { ok: true, kind: "cancel_assessment", acceptedActionId, snapshot } as never;
+      }
+      if (run.phase !== "assessing" && run.phase !== "committing" && run.phase !== "recoverable_error") {
+        throw invalidPhase(run.phase ?? "none", "active");
+      }
+      const targeted = await tx
+        .update(learningAssessments)
+        .set({ status: "cancelled", rubricResults: [], trustClass: null, reportHash: null, updatedAt: at })
+        .where(and(
+          eq(learningAssessments.id, input.action.assessmentId),
+          eq(learningAssessments.runId, run.id),
+          eq(learningAssessments.workspaceId, input.workspaceId),
+          eq(learningAssessments.userId, input.userId),
+          // 只收**未终态**的那一条：completed / not_assessable 是"已经判出来的结果"，
+          // cancelled 是"不再要这个结果"，两者是两句不同的话（见上面那个 completed 分支）。
+          inArray(learningAssessments.status, ["queued", "running"]),
+        ))
+        .returning({ id: learningAssessments.id });
+      if (targeted.length === 0) {
+        // 认得出这条 id 但它已是终态，与压根不认得这一条要分开说：前者是"它已经判完了"，
+        // 后者是"这一发指向了一个不存在的东西"。
+        const existing = await tx
+          .select({ status: learningAssessments.status })
+          .from(learningAssessments)
+          .where(and(
+            eq(learningAssessments.id, input.action.assessmentId),
+            eq(learningAssessments.runId, run.id),
+            eq(learningAssessments.workspaceId, input.workspaceId),
+            eq(learningAssessments.userId, input.userId),
+          ))
+          .limit(1);
+        if (existing[0]) {
+          throw new LearningRunServiceError("assessment_already_final", "这次评估已经有结果了，取消不会抹掉它。", 409);
+        }
+        throw new LearningRunServiceError("assessment_not_found", "找不到这次评估。", 404);
+      }
+      // 原回答**保留**：只改 assessment 那一行，artifact 与 run 一律不动——
+      // §16.36「后者原回答保留且显示评估已取消」。
+      await tx.update(learningRuns).set({ revision: run.revision + 1, updatedAt: at }).where(eq(learningRuns.id, run.id));
+      await insertRunEvent(tx, input, "learning_assessment.cancelled",
+        { assessmentId: input.action.assessmentId, answerPreserved: true }, at, run.eventCursor);
+      const cancelledView = await getRunPublicView(tx, { workspaceId: input.workspaceId, userId: input.userId, runId: run.id });
+      const cancelledSnapshot = { actionResult: "assessment_cancelled", assessmentId: input.action.assessmentId, snapshot: cancelledView };
+      await writeLedger(requestHash, cancelledSnapshot, "assessment_cancelled", acceptedActionId);
+      return { ok: true, kind: "cancel_assessment", acceptedActionId, snapshot: cancelledSnapshot } as never;
     }
     case "request_hint": {
       if (run.phase !== "active" || !run.activeTaskId) throw invalidPhase(run.phase ?? "none", "active");

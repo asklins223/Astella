@@ -271,11 +271,13 @@ test("契约：目标「暂不安排」与「恢复」两条 route 的形状", a
     assert.equal(twice.json().alreadyHeld, true, "连点两下不该把第二次说成刚立上");
 
     // 4) 恢复：第一次 released=true，再恢复一次如实回 false（"本来就没在排除中"≠"已恢复"）
+    // `noteId` 自 2026-09-27 起必填：这一发不再只是解除排除，它会写 `review_schedules`，
+    // 排的是"这一篇的这个目标"，所以要由服务端判可见性。少传就是 400。
     const resumed = await app.inject({
       method: "POST",
       url: "/reviews/v2/objectives/resume",
       headers: auth,
-      payload: { objectiveId },
+      payload: { noteId, objectiveId },
     });
     assert.equal(resumed.statusCode, 200);
     assert.equal(resumed.json().released, true);
@@ -283,7 +285,7 @@ test("契约：目标「暂不安排」与「恢复」两条 route 的形状", a
       method: "POST",
       url: "/reviews/v2/objectives/resume",
       headers: auth,
-      payload: { objectiveId },
+      payload: { noteId, objectiveId },
     });
     assert.equal(again.json().released, false);
 

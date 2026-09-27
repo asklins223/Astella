@@ -44,6 +44,7 @@ import type {
   LearningObjectiveSurfaceV3,
   ObjectiveOriginV3,
   ObjectiveListItemV3,
+  ObjectiveNoteChangeImpactV1,
   ObjectivePersonalStateV3,
   KnowledgeFormV2,
   ObjectiveSurfaceLifecycleV3,
@@ -58,6 +59,7 @@ import {
 import { listOriginsByObjective, rowToWire } from "./origin-service.ts";
 import { pickLatestCompletedRunV3, resolvePrimaryActionV3, type ActionResolverInputV3 } from "./action-resolver.ts";
 import { readAnswerModePreference } from "../companion-shell/answer-mode-preference.ts";
+import { readObjectiveNoteChangeImpactV1 } from "./change-impact-service.ts";
 import { surfaceQueryDurationSeconds, surfaceSlowQueryTotal } from "../../lib/metrics.ts";
 
 export class ObjectiveNotFoundError extends DomainError {
@@ -345,6 +347,7 @@ async function assembleObjectiveSurfaceV3Inner(
   }
 
   const freshness = await computeFreshness(tx, ctx, origins);
+  const noteChangeImpact = await readObjectiveNoteChangeImpactV1(tx, ctx, objectiveId);
 
   // Bug 10 修复：loadActiveRun 查询的活跃 run 是 runIdRows 的子集。
   // 合并为一次查询：先查该 objective 的所有 runs（含 phase + origin），
@@ -541,6 +544,7 @@ async function assembleObjectiveSurfaceV3Inner(
       primaryNote,
       missingOrigin: origins.length === 0,
     },
+    noteChangeImpact,
     personal: {
       initialValidation,
       activeRun,
@@ -1128,6 +1132,9 @@ async function batchAssembleObjectiveSurfacesV3(
         primaryNote,
         missingOrigin: origins.length === 0,
       },
+      // Batch/list reads keep the detail-only verification projection out of
+      // this N-object assembler; note-filtered list rows own their own impact.
+      noteChangeImpact: null,
       personal: {
         initialValidation,
         activeRun,
@@ -1150,7 +1157,10 @@ async function batchAssembleObjectiveSurfacesV3(
 }
 
 /** 列表 item（轻量；W3 卡库用）。 */
-export function toObjectiveListItemV3(surface: LearningObjectiveSurfaceV3): ObjectiveListItemV3 {
+export function toObjectiveListItemV3(
+  surface: LearningObjectiveSurfaceV3,
+  noteChangeImpact: ObjectiveNoteChangeImpactV1 | null = null,
+): ObjectiveListItemV3 {
   return {
     objectiveId: surface.objectiveId,
     surfaceRevision: surface.surfaceRevision,
@@ -1160,6 +1170,7 @@ export function toObjectiveListItemV3(surface: LearningObjectiveSurfaceV3): Obje
     cardStrategy: surface.content.cardStrategy,
     lifecycle: surface.content.lifecycle,
     freshness: surface.content.freshness,
+    noteChangeImpact,
     primaryNoteTitle: surface.sources.primaryNote?.title ?? null,
     createdAt: surface.createdAt,
     personalState: surface.personalState,

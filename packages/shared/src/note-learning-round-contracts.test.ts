@@ -22,7 +22,9 @@ import {
   noteLearningRoundHistoryPageV1Schema,
   noteLearningRoundPersonalHistoryPageV1Schema,
   noteLearningRoundV1Schema,
+  roundTeachingContentV1Schema,
   roundTeachingViewV1Schema,
+  roundPrerequisiteViewV1Schema,
   noteRoundContentMovedV1,
 } from "./note-learning-round-contracts.ts";
 
@@ -31,6 +33,24 @@ const ROUND_ID = "22222222-2222-4222-8222-222222222222";
 const VERSION_ID = "33333333-3333-4333-8333-333333333333";
 /** 真实主形状：32 位 md5（`apps/api/src/modules/note/content-hash.ts:25-28`）。 */
 const MD5_HASH = "726f6b03d3d48cc646abd3b370ce97e8";
+
+test("教学记录可选保留疑点主张，原文引句和块定位必须成对", () => {
+  const base = { explanation: "这次解释有材料支持。" };
+  assert.equal(roundTeachingContentV1Schema.safeParse(base).success, true, "历史教学记录仍可读取");
+  assert.equal(roundTeachingContentV1Schema.safeParse({ ...base, suspectClaims: [{ unitIds: ["unit-1"],
+    sourceBlockOrdinal: 2, sourceQuote: "笔记里的准确原句", reason: "这条说法值得再核对。" }] }).success, true);
+  assert.equal(roundTeachingContentV1Schema.safeParse({ ...base, suspectClaims: [{ unitIds: ["unit-1"],
+    sourceBlockOrdinal: null, sourceQuote: "笔记里的准确原句", reason: "定位字段不一致。" }] }).success, false);
+});
+
+test("前置提案视图合并缺口上下文时仍按严格判别联合解析", () => {
+  const none = { kind: "none", reason: "no_usable_material", gap: null, largeBranchThreshold: 3 };
+  assert.deepEqual(roundPrerequisiteViewV1Schema.parse(none), none);
+  const candidate = { kind: "candidate", label: "理解查找条件", evidenceBlockOrdinals: [2], estimatedSteps: 1,
+    largeBranch: false, gap: null, largeBranchThreshold: 3 };
+  assert.deepEqual(roundPrerequisiteViewV1Schema.parse(candidate), candidate);
+  assert.equal(roundPrerequisiteViewV1Schema.safeParse({ ...none, unexpected: true }).success, false);
+});
 
 function roundFixture(overrides: Record<string, unknown> = {}) {
   return {
@@ -315,12 +335,14 @@ test("教学面读：practices／gapHelp／artifact 都是必填格，gapHelp �
     ],
     practiceStart: null,
     gapHelp: { stopped: true, consecutiveHelpCount: 2, threshold: 2 },
+    prerequisite: { kind: "none", reason: "no_usable_material", gap: null, largeBranchThreshold: 3 },
+    artifactFailure: null,
     // 动态产物那一格（W4-6 刀五）：`null` = 这一条没有动态版本，**不是**失败。
     artifact: null,
   };
   assert.equal(roundTeachingViewV1Schema.safeParse(base).success, true);
   // 少任何一格都是不合法的回信（客户端不许自己补默认值）。
-  for (const key of ["plans", "practices", "gapHelp", "practiceStart", "artifact"] as const) {
+  for (const key of ["plans", "practices", "gapHelp", "prerequisite", "artifactFailure", "practiceStart", "artifact"] as const) {
     const clone: Record<string, unknown> = { ...base };
     delete clone[key];
     assert.equal(roundTeachingViewV1Schema.safeParse(clone).success, false, `少了 ${key} 竟然过了`);

@@ -17,13 +17,18 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 // `tx.execute(...)` 里的 tx 是 drizzle 的，要的是 drizzle 的 sql 标签；
 // 这个文件顶层那条 `sql` 是 postgres.js 的**连接**（夹具用），两者同名会撞成
 // `query.getSQL is not a function`——所以这里显式起个别名。
 import { sql as drizzleSql } from "drizzle-orm";
 // 类型是编译期擦掉的，所以静态 import 不会破坏"连接串在 `../db.ts` 加载时求值"那件事；
 // 值一律走下面的动态 import。（esbuild 不接受动态 import 的解构里带内联 `type`。）
+import { AgentRole, type AgentTurnRequest } from "@ailearn/shared";
 import type { AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
+import { resolveSystemPlatform } from "@ailearn/shared/platform-config-node";
 import type { JobLeaseContext } from "../lib/job-lease.ts";
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
@@ -33,8 +38,16 @@ process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 const sql = postgres(ADMIN_CONN, { max: 2 });
 
 const { runAiTask } = await import("@ailearn/shared/ai-task-kernel");
-const { withWorkerWorkspaceTransaction, closeDatabase, currentWorkerWorkspaceTransaction } = await import("../db.ts");
+const {
+  withWorkerWorkspaceTransaction,
+  closeDatabase,
+  currentWorkerWorkspaceTransaction,
+  resolveWorkerStatementTimeoutMs,
+  resolveWorkerLockTimeoutMs,
+  resolveWorkerIdleInTransactionTimeoutMs,
+} = await import("../db.ts");
 const { isJobLeaseActive, lockJobLease } = await import("../lib/job-lease.ts");
+const { createProvider } = await import("../lib/ai-provider.ts");
 const { MockProvider } = await import("../lib/providers/mock.ts");
 
 const workspaceId = randomUUID();
@@ -94,6 +107,7 @@ async function seedJob(leaseToken: string): Promise<SeededJob> {
 interface Trace {
   phases: string[];
   committedTitles: string[];
+  transactionDurationsMs?: number[];
 }
 
 function buildDefinition(job: SeededJob, trace: Trace, titleTag: string): AiTaskDefinition<string, string> {
@@ -109,10 +123,13 @@ function buildDefinition(job: SeededJob, trace: Trace, titleTag: string): AiTask
     // 短事务准备
     prepare: async () => {
       trace.phases.push("prepare");
-      return await withWorkerWorkspaceTransaction({ workspaceId, userId: ownerId }, async (tx) => {
+      const startedAt = performance.now();
+      const input = await withWorkerWorkspaceTransaction({ workspaceId, userId: ownerId }, async (tx) => {
         const rows = await tx.execute<{ id: string }>(drizzleSql`SELECT id FROM jobs WHERE id = ${job.id}`);
         return rows.length > 0 ? "input" : "missing";
       });
+      trace.transactionDurationsMs?.push(performance.now() - startedAt);
+      return input;
     },
     // 事务外执行：这里**没有** tx 可拿（D5 §5.2 第一件是类型，不是纪律）
     execute: async (input) => {
@@ -129,6 +146,7 @@ function buildDefinition(job: SeededJob, trace: Trace, titleTag: string): AiTask
       // 提交的租约身份**就是尝试令牌**——生产里两者是同一条 `jobs` 行的同一列，
       // 分成两个来源就会出现"核对放过、写入拒收"这种自相矛盾的闸。
       const live: JobLeaseContext = { ...job, leaseToken: attemptToken.leaseToken };
+      const startedAt = performance.now();
       await withWorkerWorkspaceTransaction({ workspaceId, userId: ownerId }, async (tx) => {
         await lockJobLease(tx, live);
         // blocks 走 `JSON.stringify(...)::jsonb`：文本参数再显式 cast 才是 JSON 对象，
@@ -139,6 +157,7 @@ function buildDefinition(job: SeededJob, trace: Trace, titleTag: string): AiTask
                   ${JSON.stringify([{ type: "text", text: output }])}::jsonb, ${"0".repeat(64)})
         `);
       });
+      trace.transactionDurationsMs?.push(performance.now() - startedAt);
       trace.committedTitles.push(output);
       return {
         outcome: "committed" as const, output,
@@ -180,6 +199,47 @@ test("接真租约跑通一段：prepare→execute→commit 各自一个事务�
   assert.equal(rows.length, 1);
   assert.match(JSON.stringify(rows[0].blocks), /ok\|/, "落库的正文该是模型那一步产出的内容");
   assert.equal(receipt.usage.modelCalls, 1);
+});
+
+test("W3-2 bounded transaction baseline: prepare/commit phase durations", async () => {
+  const durations: number[] = [];
+  for (let index = 0; index < 20; index += 1) {
+    const job = await seedJob(`lease-${randomUUID().slice(0, 8)}`);
+    const trace: Trace = { phases: [], committedTitles: [], transactionDurationsMs: durations };
+    const receipt = await runAiTask(buildDefinition(job, trace, `baseline-${index}`), {
+      ctx: context(),
+      attempt: attemptFor(job),
+      currentActiveTransaction: currentWorkerWorkspaceTransaction,
+      verifyAttempt: (attempt) => isJobLeaseActive({ ...job, leaseToken: attempt.leaseToken }),
+    });
+    assert.equal(receipt.outcome, "committed", `第 ${index + 1} 个短事务样本失败`);
+  }
+  const sorted = [...durations].sort((left, right) => left - right);
+  const quantile = (fraction: number) => sorted[Math.max(0, Math.ceil(sorted.length * fraction) - 1)] ?? 0;
+  assert.equal(sorted.length, 40, "每个样本应测到 prepare 与 commit 两个事务");
+  const result = {
+    n: sorted.length,
+    p50Ms: Math.round(quantile(0.5) * 100) / 100,
+    p95Ms: Math.round(quantile(0.95) * 100) / 100,
+    maxMs: Math.round((sorted.at(-1) ?? 0) * 100) / 100,
+  };
+  assert.ok(result.maxMs < 5_000, `短事务基线超过 5 秒复核门：${JSON.stringify(result)}`);
+  console.log(`W3-2 bounded transaction baseline: ${JSON.stringify(result)}`);
+});
+
+test("W3-2 worker DB session has statement, lock, and idle-transaction backstops", async () => {
+  const rows = await withWorkerWorkspaceTransaction({ workspaceId, userId: ownerId }, (tx) =>
+    tx.execute<{ name: string; setting: string }>(drizzleSql`
+      SELECT name, setting FROM pg_settings
+      WHERE name IN ('statement_timeout', 'lock_timeout', 'idle_in_transaction_session_timeout')
+    `));
+  const settings = Object.fromEntries(rows.map((row) => [row.name, Number(row.setting)]));
+  assert.equal(settings.statement_timeout, resolveWorkerStatementTimeoutMs());
+  assert.equal(settings.lock_timeout, resolveWorkerLockTimeoutMs());
+  assert.equal(settings.idle_in_transaction_session_timeout, resolveWorkerIdleInTransactionTimeoutMs());
+  assert.equal(settings.lock_timeout, 5_000, "默认锁等待上界应来自已测量的 5 秒策略");
+  assert.equal(settings.idle_in_transaction_session_timeout, 15_000, "默认事务空等上界应来自已测量的 15 秒策略");
+  console.log(`W3-2 worker DB backstops: ${JSON.stringify(settings)}`);
 });
 
 test("reaper 重领之后，旧令牌的晚到结果提交不出去（真 `jobs` 行说的，不是测试说的）", async () => {
@@ -253,6 +313,189 @@ test("取消落在提交之前：库里一行都不留", async () => {
   assert.equal(trace.committedTitles.length, 0);
   const after = await sql`SELECT count(*)::int AS n FROM companion_messages WHERE workspace_id = ${workspaceId}`;
   assert.equal(after[0].n, before[0].n, "取消之后仍然写了业务行");
+});
+
+test("真实模型慢调用期间不持业务事务与行锁（W3-2，需 REAL_MODEL_BATCH=1）", {
+  skip: process.env.REAL_MODEL_BATCH === "1" ? false : "真实 provider＋隔离 PostgreSQL；每波专项真跑才开启",
+}, async () => {
+  const platform = resolveSystemPlatform("agent_turn");
+  assert.ok(platform, "agent_turn provider 没有配置");
+  const provider = createProvider(platform.type, {
+    apiKey: platform.apiKey,
+    baseUrl: platform.baseUrl,
+    model: platform.model,
+    visionModel: platform.visionModel,
+    options: platform.options,
+  });
+  assert.ok(provider.executeAgentTurn, "配置的 provider 没有 executeAgentTurn");
+
+  const job = await seedJob(`lease-${randomUUID().slice(0, 8)}`);
+  const trace: Trace = { phases: [], committedTitles: [] };
+  const definition = {
+    ...buildDefinition(job, trace, "real-model"),
+    id: "kernel-real-model-lock-probe",
+    usageContext: {
+      modelId: provider.modelId,
+      promptVersion: "w3-2-real-model-lock-probe-v1",
+      resourceClass: "interactive_ai",
+    },
+    budget: {
+      maxModelCalls: 1,
+      stepTimeoutMs: 100_000,
+      taskDeadlineMs: 110_000,
+      maxAutoRetries: 0,
+    },
+  };
+  const request: AgentTurnRequest = {
+    role: AgentRole.COMPANION_AGENT,
+    systemPrompt: "你正在进行一个合成的性能探针。严格按用户要求生成长篇中文说明，不要询问问题。",
+    messages: [{
+      role: "user",
+      content: "请写一篇关于检索练习与间隔复习如何配合的中文说明，分 10 段，每段约 160 字，总计不少于 1600 个汉字。每段要有不同的学习场景和可执行建议，只写正文，不要标题、列表或总结。",
+    }],
+    tools: [],
+    toolChoice: "auto",
+    maxTokens: 2_400,
+    temperature: 0.4,
+    model: platform.model,
+  };
+  const observation: {
+    provider: string;
+    model: string;
+    elapsedMs: number;
+    outputCharacters: number;
+    promptTokens: number;
+    completionTokens: number;
+    finishReason: string;
+    providerCallSucceeded: boolean | null;
+    providerError: { name: string; code: string | null; status: number | null; providerCode: string | null } | null;
+    sampledDuringProviderCall: boolean;
+    transactionActiveDuringProviderCall: boolean;
+    workerIdleSessions: number;
+    idleWorkerTransactions: number;
+    concurrentWrite: { blocked: boolean; elapsedMs: number } | null;
+  } = {
+    provider: provider.id,
+    model: provider.modelId,
+    elapsedMs: 0,
+    outputCharacters: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    finishReason: "unknown",
+    providerCallSucceeded: null,
+    providerError: null,
+    sampledDuringProviderCall: false,
+    transactionActiveDuringProviderCall: false,
+    workerIdleSessions: 0,
+    idleWorkerTransactions: 0,
+    concurrentWrite: null,
+  };
+  const definitionWithRealModel: typeof definition = {
+    ...definition,
+    execute: async (_input, env) => {
+      trace.phases.push("execute");
+      const realRequestStartedAt = Date.now();
+      let settled = false;
+      const responsePromise = provider.executeAgentTurn!(request, env.signal).finally(() => {
+        settled = true;
+      });
+      // 等 provider 已经处于请求中再探同一 jobs 行；过短的返回不会冒充慢调用证据。
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 750));
+      observation.sampledDuringProviderCall = !settled;
+      observation.transactionActiveDuringProviderCall = currentWorkerWorkspaceTransaction() !== undefined;
+      if (observation.sampledDuringProviderCall) {
+        const sessions = await sql`
+          SELECT
+            count(*) FILTER (WHERE state = 'idle')::int AS idle_sessions,
+            count(*) FILTER (WHERE state = 'idle in transaction')::int AS idle_transactions
+          FROM pg_stat_activity
+          WHERE datname = current_database() AND usename = 'ailearn_worker'
+        `;
+        observation.workerIdleSessions = Number(sessions[0]?.idle_sessions ?? 0);
+        observation.idleWorkerTransactions = Number(sessions[0]?.idle_transactions ?? 0);
+        observation.concurrentWrite = await tryConcurrentUpdate(job.id);
+      }
+      let response: Awaited<ReturnType<NonNullable<typeof provider.executeAgentTurn>>>;
+      try {
+        response = await responsePromise;
+        observation.providerCallSucceeded = true;
+      } catch (error) {
+        observation.providerCallSucceeded = false;
+        const shaped = error instanceof Error
+          ? error as Error & { code?: unknown; status?: unknown; providerCode?: unknown }
+          : null;
+        observation.providerError = {
+          name: error instanceof Error ? error.name.slice(0, 80) : "UnknownError",
+          code: typeof shaped?.code === "string" ? shaped.code.slice(0, 80) : null,
+          status: typeof shaped?.status === "number" ? shaped.status : null,
+          providerCode: typeof shaped?.providerCode === "string" ? shaped.providerCode.slice(0, 120) : null,
+        };
+        throw error;
+      } finally {
+        observation.elapsedMs = Date.now() - realRequestStartedAt;
+      }
+      observation.outputCharacters = response.content?.length ?? 0;
+      observation.promptTokens = response.usage?.promptTokens ?? 0;
+      observation.completionTokens = response.usage?.completionTokens ?? 0;
+      observation.finishReason = response.finishReason;
+      return {
+        ok: true as const,
+        // 只把长度和用量送进任务输出，绝不把模型正文写入夹具或 artifact。
+        output: `real-model|chars=${observation.outputCharacters}`,
+        promptTokens: observation.promptTokens,
+        completionTokens: observation.completionTokens,
+      };
+    },
+  };
+  const receipt = await runAiTask(definitionWithRealModel, {
+    ctx: context(),
+    attempt: attemptFor(job),
+    currentActiveTransaction: currentWorkerWorkspaceTransaction,
+    verifyAttempt: (attempt) => isJobLeaseActive({ ...job, leaseToken: attempt.leaseToken }),
+  });
+  if (observation.elapsedMs === 0) observation.elapsedMs = receipt.usage.elapsedMs;
+  const artifactDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../.impeccable/companion");
+  await mkdir(artifactDir, { recursive: true });
+  const artifactPath = resolve(artifactDir, `w32-real-model-lock-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+  const safeArtifact = {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    mode: "synthetic-real-provider-through-ai-task-kernel",
+    outcome: receipt.outcome,
+    usage: receipt.usage,
+    failureClass: receipt.failure?.class ?? null,
+    observation,
+  };
+  await writeFile(artifactPath, JSON.stringify(safeArtifact, null, 2) + "\n", "utf8");
+
+  const acceptedOutputCapFailure = receipt.outcome === "failed"
+    && receipt.failure?.class === "transport"
+    && observation.providerCallSucceeded === false
+    && observation.providerError?.code === "output_truncated";
+  assert.ok(
+    receipt.outcome === "committed" || acceptedOutputCapFailure,
+    `长时间 provider 请求既没有成功提交，也不是已确认的输出上限响应（${receipt.failure?.class ?? "unknown failure"}）`,
+  );
+  assert.equal(observation.sampledDuringProviderCall, true, "provider 返回过快，未观测到请求进行中的窗口");
+  assert.equal(observation.transactionActiveDuringProviderCall, false, "真实 provider 请求期间仍处于 worker 事务作用域");
+  assert.ok(observation.workerIdleSessions > 0, "真实请求期间 worker 池没有可用的 idle 会话");
+  assert.equal(observation.idleWorkerTransactions, 0, "pg_stat_activity 观察到 worker 连接处于 idle in transaction");
+  assert.ok(observation.concurrentWrite, "没有在 provider 请求进行中执行并发写探针");
+  assert.equal(observation.concurrentWrite.blocked, false, "真实模型等待期间，并发写被行锁钉住");
+  assert.ok(observation.concurrentWrite.elapsedMs < 400, `并发写耗时 ${observation.concurrentWrite.elapsedMs}ms`);
+  assert.ok(observation.elapsedMs >= 30_000, `真实模型调用只耗时 ${observation.elapsedMs}ms，未满足 30 秒慢调用判据`);
+  if (receipt.outcome === "committed") {
+    assert.equal(observation.providerCallSucceeded, true);
+    assert.ok(observation.outputCharacters > 0, "模型没有返回正文");
+    assert.deepEqual(trace.phases, ["prepare", "execute", "commit"]);
+    assert.equal(trace.committedTitles.length, 1);
+  } else {
+    assert.equal(observation.providerCallSucceeded, false);
+    assert.deepEqual(trace.phases, ["prepare", "execute"], "provider 失败后不应开启提交事务");
+    assert.equal(trace.committedTitles.length, 0);
+  }
+  assert.equal(receipt.usage.modelCalls, 1, "专项探针只允许发出一次付费模型调用");
+  console.log(`W3-2 real-model observation: ${JSON.stringify({ artifactPath, ...observation, outcome: receipt.outcome })}`);
 });
 
 /**

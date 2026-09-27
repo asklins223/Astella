@@ -166,6 +166,8 @@ export const noteLearningRoundTeachings = pgTable(
     content: jsonb("content").notNull(),
     /** 依据块在快照里的序号（要能点开定位，而不是只给一句"根据笔记"）。 */
     sourceBlockOrdinals: integer("source_block_ordinals").array().notNull().default(sql`'{}'`),
+    /** Explicitly selected private notes frozen for this teaching; never part of public note evidence. */
+    personalSourceSnapshots: jsonb("personal_source_snapshots").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
     /** 生成时那一版正文的哈希（D3 §5 冻结语义）。 */
     snapshotHash: text("snapshot_hash").notNull(),
     /** 生成时本轮问题的第几版；用户改写问题后必须能重新生成。 */
@@ -190,6 +192,7 @@ export const noteLearningRoundTeachings = pgTable(
       "nlrt_source_blocks_len_chk",
       sql`coalesce(array_length(${t.sourceBlockOrdinals}, 1), 0) <= 200`,
     ),
+    personalSourcesCheck: check("nlrt_personal_sources_chk", sql`jsonb_typeof(${t.personalSourceSnapshots}) = 'array' AND jsonb_array_length(${t.personalSourceSnapshots}) <= 3`),
   }),
 );
 
@@ -239,3 +242,50 @@ export const noteLearningRoundArtifacts = pgTable(
 
 export type NoteLearningRoundArtifactRow = typeof noteLearningRoundArtifacts.$inferSelect;
 export type NoteLearningRoundArtifactInsert = typeof noteLearningRoundArtifacts.$inferInsert;
+
+/**
+ * 轮次动态产物的**失败**留痕（迁移 0298；39d W4-6 刀五·失败侧；§16.4 验收第一句）。
+ *
+ * 与上面那张**不是一张表的两个状态位**，理由三条（迁移头注有完整版）：
+ *  1. 失败今天只进 `req.log.error`，日志不是学习事实——重启就没了，历史页与试用分析读不到；
+ *  2. `note_learning_round_teachings.artifact_id` 留空是一个**状态**（"没有动态版本"，
+ *     D4 §6.2 动态失败不冒充教学失败），而本表记的是**事件**：先失败一次、重试成功，
+ *     那一次失败仍要在——状态位只能留最后一次，重试成功会把原因抹掉。
+ *  3. 所以 `stage × reason` 用**一条 CHECK 穷举组合**，不是两列各自 IN：两列各自合法
+ *     而组合不存在（`persist` + `over_quota`）是那种只有一条用例撞得上、事后查不到
+ *     成因的形状。
+ *
+ * `teachingId` **可空**：产物在教学行落库**之前**构建，构建失败时那一行还不存在。
+ * 留空而不是猜一个；读侧据此知道"这是一次没能归到具体讲解的失败"。
+ *
+ * 不建唯一索引：用户可重试（§6.2），每次失败都是一件独立的事，折叠成一行就抹掉了次数。
+ */
+export const noteLearningRoundArtifactFailures = pgTable(
+  "note_learning_round_artifact_failures",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    roundId: uuid("round_id").notNull(),
+    teachingId: uuid("teaching_id").references(() => noteLearningRoundTeachings.id, { onDelete: "cascade" }),
+    stage: text("stage").notNull(), // build | persist
+    reason: text("reason").notNull(), // empty | over_quota | persist_failed
+    detail: text("detail").notNull().default(""),
+    snapshotHash: text("snapshot_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    roundCreatedIdx: index("nlraf_round_created_idx").on(t.workspaceId, t.userId, t.roundId, t.createdAt),
+    teachingIdx: index("nlraf_teaching_idx").on(t.teachingId),
+    detailLenCheck: check("nlraf_detail_chk", sql`char_length(${t.detail}) <= 500`),
+    snapshotHashCheck: check("nlraf_snapshot_hash_chk", sql`char_length(${t.snapshotHash}) BETWEEN 8 AND 128`),
+    // 与迁移 0298 的同名 CHECK 同一份规则。
+    stageReasonCheck: check("nlraf_stage_reason_chk", sql`(
+      (${t.stage} = 'build' AND ${t.reason} IN ('empty', 'over_quota'))
+      OR (${t.stage} = 'persist' AND ${t.reason} = 'persist_failed')
+    )`),
+  }),
+);
+
+export type NoteLearningRoundArtifactFailureRow = typeof noteLearningRoundArtifactFailures.$inferSelect;
+export type NoteLearningRoundArtifactFailureInsert = typeof noteLearningRoundArtifactFailures.$inferInsert;

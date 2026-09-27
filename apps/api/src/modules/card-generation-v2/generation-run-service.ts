@@ -9,6 +9,7 @@ import {
   cardGenerationRunsV2,
   cardGenerationPlansV2,
   cardGenerationCandidatesV2,
+  cardCandidateQualityReportsV2,
   cardGenerationEventsV2,
   cardGenerationRunOutboxV2,
   cardGenerationSemanticSpecsV2,
@@ -29,7 +30,10 @@ import {
   computeInputSnapshotHashV2,
 } from "@ailearn/shared/card-generation-v2-hashing";
 import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
-import { isCardGenerationReviewOpen } from "@ailearn/shared/card-generation-desktop-contracts";
+import {
+  cardGenerationCandidateQualityIssueV1Schema,
+  isCardGenerationReviewOpen,
+} from "@ailearn/shared/card-generation-desktop-contracts";
 import {
   sanitizeEventPayloadV2,
   CardGenerationV2ServiceError,
@@ -559,7 +563,39 @@ export async function getGenerationRunCandidatesV2(ctx: RunContext, runId: strin
             AND newer.revision > ${cardGenerationCandidatesV2.revision}
         )`,
       ));
-    const candidates = latest.map(serializeCandidatePublic);
+    const qualityIssuesByRevisionId = new Map<string, ReturnType<typeof serializeCandidatePublic>["qualityIssues"]>();
+    if (latest.length > 0) {
+      const qualityReports = await tx.select({
+        candidateRevisionId: cardCandidateQualityReportsV2.candidateRevisionId,
+        report: cardCandidateQualityReportsV2.report,
+      }).from(cardCandidateQualityReportsV2)
+        .where(and(
+          eq(cardCandidateQualityReportsV2.workspaceId, ctx.workspaceId),
+          eq(cardCandidateQualityReportsV2.reportType, "grounding"),
+          inArray(cardCandidateQualityReportsV2.candidateRevisionId, latest.map((row) => row.candidateRevisionId)),
+        ))
+        .orderBy(desc(cardCandidateQualityReportsV2.createdAt));
+
+      for (const qualityReport of qualityReports) {
+        // Reports are immutable and tied to the exact revision. If a rerun wrote
+        // more than one report, the ordered first row is the current result.
+        if (qualityIssuesByRevisionId.has(qualityReport.candidateRevisionId)) continue;
+        const rawIssues = qualityReport.report && typeof qualityReport.report === "object"
+          ? (qualityReport.report as { issues?: unknown }).issues
+          : undefined;
+        const issues = Array.isArray(rawIssues)
+          ? rawIssues.flatMap((issue) => {
+            const parsed = cardGenerationCandidateQualityIssueV1Schema.safeParse(issue);
+            return parsed.success ? [parsed.data] : [];
+          }).slice(0, 40)
+          : [];
+        qualityIssuesByRevisionId.set(qualityReport.candidateRevisionId, issues);
+      }
+    }
+    const candidates = latest.map((row) => serializeCandidatePublic(
+      row,
+      qualityIssuesByRevisionId.get(row.candidateRevisionId) ?? [],
+    ));
 
     const planRows = await tx.select({ result: cardGenerationPlansV2.result }).from(cardGenerationPlansV2)
       .where(and(

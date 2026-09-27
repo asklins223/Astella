@@ -595,6 +595,8 @@ const noteLearningRoundExplainInputSchema = z.strictObject({
   expectedRevision: z.number().int().min(1),
   /** 「换一种解释」（W4-6 刀四）：跳过复用、同一问题落第二条。 */
   regenerate: z.boolean().optional(),
+  personalReflectionIds: z.array(uuidSchema).max(3).optional()
+    .refine((ids) => ids === undefined || new Set(ids).size === ids.length, "private source ids must be unique"),
 });
 // 39d W4-6 刀五：动态产物的"确保落盘"。渲染层只报一个 id（HTML 不穿 IPC）——
 // main 带会话令牌取整份、按 D4 的配额判完写进 `<userData>/artifacts/<id>.html`。
@@ -2947,7 +2949,8 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     requireM2Route(contract, "note.detail");
     assertEpoch(input.meta, activeWorkspaceEpoch);
     return gateway.explainNoteLearningRoundTeaching(
-      { roundId: input.roundId, expectedRevision: input.expectedRevision, regenerate: input.regenerate === true },
+      { roundId: input.roundId, expectedRevision: input.expectedRevision, regenerate: input.regenerate === true,
+        personalReflectionIds: input.personalReflectionIds ?? [] },
       input.meta.requestId,
     );
   }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, roundTeachingViewV1Schema);

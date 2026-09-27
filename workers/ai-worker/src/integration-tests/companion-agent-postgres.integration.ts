@@ -197,6 +197,98 @@ test("Agent：闲聊轮次正常收尾——有终态答复、不乱冻结确认
   }
 });
 
+test("§16.39(a)：闲聊那一圈不许留下任何正式学习记录的行", async () => {
+  const { workspaceId, userId } = await seedBase();
+  const f = await seedAgentRun(workspaceId, userId, { userText: "你好呀" });
+  /**
+   * 逐表数行，而不是数"有没有 proposal"。
+   *
+   * 上面那条 `s.proposals.length === 0` 证不了这件事：mock provider
+   * （`src/lib/providers/mock.ts`）永远只挑 `companion_read_context`，所以它
+   * **结构上不可能**让模型调起写工具——那条断言证明的是"mock 不会提议"，
+   * 不是"系统不让提议"。而伴星此刻**确实**还持着 6 条会写正式学习记录的工具
+   * （`COMPANION_PROPOSAL_EXECUTED_TOOLS`：start/resume/pause learning、
+   * request_hint、switch_task_variant、defer_review），默认 `guided` 档全在面上。
+   *
+   * §16.39(a)「临时问答不自动生成正式学习记录或卡片」今天靠的是"模型没提议"
+   * 这一件偶然的事，没有任何判据钉住它。钉在**行数**上：只要哪天有人给闲聊路径
+   * 接上直接写库的分支（绕过提案确认），这里立刻红。
+   *
+   * 覆盖面是半边的——它管的是"服务端没有偷偷写库"，管不了"模型将来是否会提议
+   * 一条写工具"。后者要真正解决，得在工具面按本轮性质收窄
+   * （`resolveAllCompanionAgentTools` 加一个 turnKind 入参），那要动
+   * `packages/shared/src/companion-agent-registry.ts` 与
+   * `companion-agent-runtime.ts`——两个文件当时都在别的会话里在途，故不在此刀。
+   */
+  const LEARNING_TABLES = [
+    "learning_runs",
+    "learning_tasks",
+    "learning_task_variants",
+    "learning_artifacts",
+    "learning_assessments",
+    "learning_target_snapshots_v2",
+    "learning_cards_v2",
+    "learning_objectives_v2",
+    "review_schedules",
+  ] as const;
+
+  async function countLearningRows(): Promise<Record<string, number>> {
+    return sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      const out: Record<string, number> = {};
+      for (const table of LEARNING_TABLES) {
+        // 表名来自上面的白名单常量，不接受外部输入。
+        const rows = await tx.unsafe(
+          `SELECT count(*)::int AS n FROM ${table} WHERE workspace_id = $1`,
+          [workspaceId],
+        );
+        out[table] = Number(rows[0].n);
+      }
+      return out;
+    });
+  }
+
+  try {
+    const before = await countLearningRows();
+    await invoke(workspaceId, userId, { runId: f.runId });
+    const after = await countLearningRows();
+    for (const table of LEARNING_TABLES) {
+      assert.equal(
+        after[table],
+        before[table],
+        `一句"你好呀"之后 \`${table}\` 多出/少了行——临时问答不生成正式学习记录（§16.39(a)）`,
+      );
+    }
+
+    /**
+     * 反向对照：先证明这把尺子**量得到东西**。
+     *
+     * 没有这一段，上面那些 `0 === 0` 可能全是假的——RLS 把行挡住、列名写错、
+     * 作用域写错，三种错法都会让计数恒为 0，用例照样全绿。这正是 mock provider
+     * 让上一条 `proposals.length === 0` 失明的那一类。造一行出来，量到 +1 才算
+     * 尺子成立；这一行随夹具按工作区级联删掉。
+     */
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      await tx`INSERT INTO review_schedules
+          (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at,
+           interval_days, generation, policy_version, reason_code, created_at, updated_at)
+        VALUES (${randomUUID()}, ${workspaceId}, ${userId}, 'card', ${randomUUID()},
+          'pending', now(), 1, 1, 's1639-probe', 'fixture', now(), now())`;
+    });
+    const probe = await countLearningRows();
+    assert.equal(
+      probe.review_schedules,
+      before.review_schedules + 1,
+      "反向对照：故意插的一行没被量到——这把尺子量不到东西，上面那些 0===0 是假的",
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test("Agent：工具循环的审计行与 agent.tool SSE 事件符合共享合同", async () => {
   const { workspaceId, userId } = await seedBase();
   // mock provider 会被指示调用 companion_read_context；工具面每轮全给，

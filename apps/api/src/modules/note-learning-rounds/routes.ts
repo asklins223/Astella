@@ -50,6 +50,9 @@ import {
   reopenNoteLearningRoundRequestV1Schema,
   reviseDrivingQuestionRequestV1Schema,
   roundGapHelpV1Schema,
+  roundArtifactFailureV1Schema,
+  roundSuspectClaimV1Schema,
+  roundPrerequisiteViewV1Schema,
   roundPracticeStartV1Schema,
   roundPlanViewV1Schema,
   roundTeachingArtifactRefV1Schema,
@@ -57,6 +60,7 @@ import {
   type NoteLearningRoundV1Wire,
   type RoundPracticeStartV1,
   type RoundPracticeV1,
+  type RoundSuspectClaimV1,
 } from "@ailearn/shared/note-learning-round-contracts";
 import {
   advanceRound,
@@ -93,11 +97,16 @@ import { requireAiConsent } from "../identity/ai-consent-gate.ts";
 import { finishRoundModelAttempt, reserveRoundModelAttempt, type RoundModelAttempt } from "./model-attempt.ts";
 import { listNoteRoundPractices } from "../learning-runs/run-service.ts";
 import { readRoundGapHelpV1 } from "../learning-runs/gap-help-service.ts";
+import { readRoundPrerequisiteProposalV1 } from "./prerequisite-proposal.ts";
+import { readLatestArtifactFailureV1 } from "./artifact-failure.ts";
 import { assembleObjectiveSurfaceV3, listObjectiveSurfacesV3 } from "../learning-objectives/surface-service.ts";
-import { createRoundTargetGrounder, type RoundTargetGrounder } from "./target-grounding.ts";
+import { readNoteChangeImpactsV1 } from "../learning-objectives/change-impact-service.ts";
+import { createRoundTargetGrounder, selectGroundedRoundTarget, type RoundTargetGrounder } from "./target-grounding.ts";
 import { persistRoundTarget, readRoundTargetId } from "./round-target.ts";
 import { roundBudgetsV1 } from "./round-budgets.ts";
 import { noteReflectionRoutes } from "./reflection-routes.ts";
+import { readPersonalTeachingSources } from "./reflection-service.ts";
+import { constrainTargetToSuspectRechecksV1, readSuspectClaimFollowUpV1 } from "./suspect-claim-recheck.ts";
 
 const STATUS_BY_CODE: Record<string, 400 | 404 | 409 | 500 | 503> = {
   invalid_driving_question: 400,
@@ -106,6 +115,7 @@ const STATUS_BY_CODE: Record<string, 400 | 404 | 409 | 500 | 503> = {
   invalid_snapshot: 400,
   invalid_teaching_content: 400,
   note_not_found: 404,
+  reflection_source_not_found: 404,
   round_not_found: 404,
   invalid_cursor: 400,
   round_already_open: 409,
@@ -119,6 +129,32 @@ const STATUS_BY_CODE: Record<string, 400 | 404 | 409 | 500 | 503> = {
   create_failed: 500,
 };
 
+function mergeSuspectWarningsV1(input: {
+  readonly pending: readonly RoundSuspectClaimV1[];
+  readonly newlyReported: readonly RoundSuspectClaimV1[];
+  readonly resolvedUnitIds: ReadonlySet<string>;
+}): RoundSuspectClaimV1[] {
+  const byUnitId = new Map<string, RoundSuspectClaimV1>();
+  for (const claim of input.pending) {
+    for (const unitId of claim.unitIds) {
+      if (input.resolvedUnitIds.has(unitId)) continue;
+      byUnitId.set(unitId, roundSuspectClaimV1Schema.parse({ ...claim, unitIds: [unitId] }));
+    }
+  }
+  // The latest independent report supersedes the carried warning for that same unit.
+  for (const claim of input.newlyReported) {
+    for (const unitId of claim.unitIds) byUnitId.set(unitId, roundSuspectClaimV1Schema.parse({ ...claim, unitIds: [unitId] }));
+  }
+  const grouped = new Map<string, RoundSuspectClaimV1>();
+  for (const claim of byUnitId.values()) {
+    const key = JSON.stringify([claim.sourceBlockOrdinal, claim.sourceQuote, claim.reason, claim.sourceChanged ?? false]);
+    const prior = grouped.get(key);
+    grouped.set(key, roundSuspectClaimV1Schema.parse({ ...claim,
+      unitIds: [...new Set([...(prior?.unitIds ?? []), ...claim.unitIds])] }));
+  }
+  return [...grouped.values()].slice(0, 6);
+}
+
 /** 内部形状 → 线上形状：时间是 ISO 字符串，且整份要过合同（合同漂移当场红）。 */
 /**
  * 轮次回信的那一层信封，**四个出口共用这一份**（开一轮／读这一轮／推进／改问题）。
@@ -130,6 +166,10 @@ async function roundViewWire(
   scope: RoundScopeV1,
   round: NoteLearningRoundV1,
 ) {
+  const targetId = await readRoundTargetId(tx, scope, round);
+  const noteChangeImpact = targetId
+    ? (await readNoteChangeImpactsV1(tx, scope, round.noteId, [targetId])).get(targetId) ?? null
+    : null;
   return noteLearningRoundViewV1Schema.parse({
     version: 1 as const,
     round: toWire(round),
@@ -137,6 +177,7 @@ async function roundViewWire(
       frozenSourceContentHash: round.sourceContentHash,
       currentSourceContentHash: await readNoteCurrentSourceHashV1(tx, scope, round.noteId),
     }),
+    noteChangeImpact,
   });
 }
 
@@ -521,6 +562,9 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
         if (!await getNoteWithVersion(tx, round.noteId, scope.workspaceId, scope.userId)) {
           throw new RoundServiceError("note_not_found", "这篇笔记现在不可见，不能继续生成内容");
         }
+        const personalSources = await readPersonalTeachingSources(
+          tx, scope, round.noteId, parsed.data.personalReflectionIds,
+        );
         // 「换一种解释」（`regenerate`）**跳过复用**：同一问题下再落一条（序号 +1），
         // 旧那条留着（§6「换解释才产生新版本」）。默认那一档仍然先看有没有可复用的。
         const reused = parsed.data.regenerate
@@ -530,6 +574,7 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
             kind: "explanation",
             drivingQuestionRevision: round.drivingQuestionRevision,
             snapshotHash: round.sourceContentHash,
+            personalSources,
           });
         if (reused) return { round, kind: "reused", teaching: reused,
           extras: await buildRoundTeachingExtras(tx, scope, round, reused.teachingId) };
@@ -538,7 +583,8 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
         }
         const used = await countTeachings(tx, scope, roundId);
         const attempt = await reserveRoundModelAttempt(tx, scope, round, teaching.modelId);
-        return { round, kind: "generate", ordinal: used + 1, input: await buildFrozenTeachingInput(tx, scope, round), attempt };
+        return { round, kind: "generate", ordinal: used + 1,
+          input: await buildFrozenTeachingInput(tx, scope, round, personalSources), attempt };
       });
     } catch (err) {
       return replyRoundError(reply, err, "生成这一条解释没成功", (tx, s) => readRound(tx, s, roundId));
@@ -576,21 +622,40 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
       const mapped = teachingFailureResponseV1(generated);
       return reply.code(mapped.status).send({ error: mapped.error, message: mapped.message });
     }
+    const evidenceInput = {
+      drivingQuestion: frozen.input.drivingQuestion,
+      planSteps: frozen.input.planSteps,
+      blocks: frozen.input.blocks,
+    };
+    const targetProposal = constrainTargetToSuspectRechecksV1(
+      generated.output.target ?? null,
+      frozen.input.suspectRechecks ?? [],
+    );
     // Independently check the explanation as well as the optional private target.
     // Explicit offline fixtures without a grounder use their recorded teaching; production never skips this gate.
-    const grounded = teaching.external || options.targetGrounder || generated.output.target ? await targetGrounder({
-      target: generated.output.target ?? null, teaching: { explanation: generated.output.explanation, example: generated.output.example },
-      input: frozen.input, maxCalls: frozen.attempt.maxCalls - generated.modelCalls,
+    const grounded = teaching.external || options.targetGrounder || targetProposal ? await targetGrounder({
+      target: targetProposal, teaching: { explanation: generated.output.explanation, example: generated.output.example },
+      input: evidenceInput,
+      maxCalls: frozen.attempt.maxCalls - generated.modelCalls,
       maxDurationMs: frozen.attempt.deadlineAt - Date.now(), scope,
       round: { roundId, noteVersionId: frozen.round.noteVersionId, sourceContentHash: frozen.round.sourceContentHash },
       attemptId: frozen.attempt.id, currentActiveTransaction: currentApiWorkspaceTransaction,
-    }) : { approved: false, report: { teachingSupported: true, teachingReason: "explicit offline fixture", teachingSegments: [], objectiveSupported: false, units: [] }, modelCalls: 0 };
+    }) : { approved: false, report: { teachingSupported: true, teachingReason: "explicit offline fixture", teachingSegments: [], objectiveSupported: false, units: [], suspectClaims: [] }, modelCalls: 0 };
     const modelCalls = generated.modelCalls + grounded.modelCalls;
     if (!grounded.report?.teachingSupported) {
       await withWorkspaceTransaction(scope, (tx) => finishRoundModelAttempt(tx, scope, frozen.attempt, modelCalls, false));
       return reply.code(422).send({ error: "teaching_grounding_failed",
         message: "这次讲解的依据还没核对通过，暂时没有展示；可以重试或先继续读笔记" });
     }
+    const acceptedTarget = selectGroundedRoundTarget(targetProposal, grounded.report);
+    const recheckIds = new Set((frozen.input.suspectRechecks ?? []).map((claim) => claim.unitId));
+    const resolvedUnitIds = new Set((acceptedTarget?.target.units ?? [])
+      .map((unit) => unit.unitId).filter((unitId) => recheckIds.has(unitId)));
+    const suspectClaims = mergeSuspectWarningsV1({
+      pending: frozen.input.pendingSuspectClaims ?? [],
+      newlyReported: grounded.report?.suspectClaims ?? [],
+      resolvedUnitIds,
+    });
 
     // ── 相位 3：短事务写（只追加；轮内序号在服务层算）──
     try {
@@ -610,8 +675,10 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
             content: {
               explanation: generated.output.explanation,
               ...(generated.output.example ? { example: generated.output.example } : {}),
+              ...(suspectClaims.length ? { suspectClaims } : {}),
             },
             sourceBlockOrdinals: generated.output.sourceBlockOrdinals,
+            personalSources: frozen.input.personalSources ?? [],
             snapshotHash: frozen.round.sourceContentHash,
             drivingQuestionRevision: frozen.round.drivingQuestionRevision,
             kernelTaskRef: generated.attemptRef,
@@ -627,9 +694,7 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
             reportArtifactFailure: (message) => req.log.error({ scope: "note-round-artifact" }, message),
           },
         );
-        if (grounded.approved && grounded.report && generated.output.target) {
-          await persistRoundTarget(tx, scope, frozen.round, frozen.input, generated.output.target, grounded.report);
-        }
+        if (acceptedTarget) await persistRoundTarget(tx, scope, frozen.round, evidenceInput, acceptedTarget.target, acceptedTarget.report);
         const round = await readRound(tx, scope, roundId);
         if (!round) throw new RoundServiceError("round_not_found", "这一轮不存在（或对当前这个人不可见）");
         return { round, teaching, extras: await buildRoundTeachingExtras(tx, scope, round, teaching.teachingId) };
@@ -740,6 +805,10 @@ async function buildRoundTeachingExtras(
   plans: Awaited<ReturnType<typeof listPlanRevisions>>;
   practiceStart: RoundPracticeStartV1 | null;
   gapHelp: ReturnType<typeof roundGapHelpV1Schema.parse>;
+  /** 「补一节前置」提案（W4-6 刀四·正面要求；§16.3）。停下来的四档里那一档靠它。 */
+  prerequisite: ReturnType<typeof roundPrerequisiteViewV1Schema.parse>;
+  /** 动态产物最近一次失败（§16.4）。与上面那个 `artifact` 分开：那个是状态，这个是事件。 */
+  artifactFailure: ReturnType<typeof roundArtifactFailureV1Schema.parse> | null;
   artifact: ReturnType<typeof roundTeachingArtifactRefV1Schema.parse> | null;
 }> {
   const practices = await listNoteRoundPractices(tx, scope, round.roundId);
@@ -756,6 +825,19 @@ async function buildRoundTeachingExtras(
     consecutiveHelpCount: gapHelp.consecutiveHelpCount,
     threshold: gapHelp.threshold,
   });
+  // 「补一节前置」那一格（W4-6 刀四·正面要求；§16.3 验收那句"说明新增学习量"）。
+  // 缺口身份**直接沿用**上面那份 `gapHelp.gap` —— 同一条缺口身份只能有一个来源
+  // （gap-help-service 头注第 3 条），这里再拼一次就会让"判的是哪条缺口"与"给哪条建议"分家。
+  const prerequisiteWire = roundPrerequisiteViewV1Schema.parse(
+    await readRoundPrerequisiteProposalV1(tx, scope, round.roundId, gapHelp.gap),
+  );
+  // 动态产物失败留痕的读侧（§16.4 验收第一句「动态交付失败记录保留」）。只取最近一次：
+  // 界面要回答的是"这一版的动态讲解为什么没打开"（§6.2），那一句对应最后一次；全量留给
+  // 历史与分析那一层，不进教学面。
+  const artifactFailureRaw = await readLatestArtifactFailureV1(tx, scope, round.roundId);
+  const artifactFailureWire = artifactFailureRaw
+    ? roundArtifactFailureV1Schema.parse(artifactFailureRaw)
+    : null;
   const targetId = await readRoundTargetId(tx, scope, round);
   const targetSurface = targetId ? await assembleObjectiveSurfaceV3(tx, scope, targetId) : null;
   // Once teaching has proposed the current question's target, an unrelated old
@@ -763,10 +845,10 @@ async function buildRoundTeachingExtras(
   const objective = targetSurface ?? (teachingId ? null : (await listObjectiveSurfacesV3(tx, scope, {
     lifecycle: "active", noteId: round.noteId, limit: 1,
   })).items[0]);
-  if (!objective) return { practices, plans, artifact, practiceStart: null, gapHelp: gapHelpWire };
+  if (!objective) return { practices, plans, artifact, practiceStart: null, gapHelp: gapHelpWire, prerequisite: prerequisiteWire, artifactFailure: artifactFailureWire };
   const action = objective.primaryAction;
   if (action.kind !== "create_run" && action.kind !== "practice_only") {
-    return { practices, plans, artifact, practiceStart: null, gapHelp: gapHelpWire };
+    return { practices, plans, artifact, practiceStart: null, gapHelp: gapHelpWire, prerequisite: prerequisiteWire, artifactFailure: artifactFailureWire };
   }
   const objectiveId = objective.objectiveId;
   return {
@@ -774,6 +856,8 @@ async function buildRoundTeachingExtras(
     plans,
     artifact,
     gapHelp: gapHelpWire,
+    prerequisite: prerequisiteWire,
+    artifactFailure: artifactFailureWire,
     practiceStart: roundPracticeStartV1Schema.parse({
       objectiveId,
       start: {
@@ -793,15 +877,20 @@ async function buildFrozenTeachingInput(
   tx: ApiTransaction,
   scope: RoundScopeV1,
   round: NoteLearningRoundV1,
+  personalSources: Awaited<ReturnType<typeof readPersonalTeachingSources>> = [],
 ) {
   const [blocks, plans] = await Promise.all([
     loadTeachingSnapshotBlocks(tx, scope.workspaceId, round.noteVersionId),
     listPlanRevisions(tx, scope, round.roundId),
   ]);
   const latestPlan = plans.length > 0 ? plans[plans.length - 1] : null;
+  const suspectFollowUp = await readSuspectClaimFollowUpV1(tx, scope, round, blocks);
   return {
     drivingQuestion: round.drivingQuestion,
     planSteps: latestPlan ? latestPlan.plan.steps.map((step) => step.text) : [],
     blocks,
+    personalSources,
+    suspectRechecks: suspectFollowUp.recheckTargets,
+    pendingSuspectClaims: suspectFollowUp.pendingClaims,
   };
 }

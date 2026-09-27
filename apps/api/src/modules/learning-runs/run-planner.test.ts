@@ -22,7 +22,11 @@ import {
   buildSchedulePolicySummary,
   type RunViewInput,
 } from "./run-view.ts";
-import { learningRunPublicSchema, taskInteractionSchema } from "@ailearn/shared";
+import {
+  LEARNING_RUN_ASSISTANCE_POLICY_V1,
+  learningRunPublicSchema,
+  taskInteractionSchema,
+} from "@ailearn/shared";
 
 const target: RunPlannerTargetInput = {
   keyPointId: "11111111-1111-4111-8111-111111111111",
@@ -249,7 +253,10 @@ test("buildRunPublicView：activeTask 完整合同 + 备选 descriptors", () => 
   assert.equal(view.activeTask.activeVariant.interaction.kind, "text_response");
   assert.equal(view.activeTask.availableAlternatives.length, 1);
   assert.equal(view.activeTask.availableAlternatives[0].family, "voice");
-  assert.equal(view.activeTask.assistancePolicy.exposureLowersTrust, true);
+  assert.equal(
+    view.activeTask.assistancePolicy.exposureLowersTrust,
+    LEARNING_RUN_ASSISTANCE_POLICY_V1.exposureLowersTrust,
+  );
 });
 
 test("buildRunPublicView：无 activeTaskId 时 activeTask 为 null（未激活不预取 payload）", () => {

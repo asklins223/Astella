@@ -31,6 +31,7 @@ import { learningMetricRoutes } from "./modules/observability/routes.ts";
 import { companionConversationRoutes, companionConversationManagementRoutes, companionExportRoutes, continuousHistoryRoutes } from "./modules/companion-conversation/index.ts";
 import { startCompanionNotifyListener, stopCompanionNotifyListener } from "./modules/companion-conversation/companion-notify.ts";
 import { learningRunRoutes } from "./modules/learning-runs/run-routes.ts";
+import { learningDisputeRoutes } from "./modules/learning-runs/run-dispute-routes.ts";
 import { companionBridgeRoutes } from "./modules/companion-bridge/routes.ts";
 import { companionJourneyRoutes } from "./modules/companion-journey/routes.ts";
 import { understandingProjectionRoutes } from "./modules/understanding/projection-routes.ts";
@@ -373,6 +374,10 @@ async function main() {
       "postgres://ailearn:ailearn_dev@postgres:5432/ailearn",
   );
   await app.register(learningRunRoutes);
+  // 39d W5-5：§14.2 的争议与更正。与 learningRunRoutes 分开注册而不是并进去，
+  // 是因为它服务的是**判定的读侧与更正**（§16.25 的一半在结算那一侧），
+  // 与 run 的生命周期写入不是同一条链。
+  await app.register(learningDisputeRoutes);
   await app.register(companionBridgeRoutes);
   await app.register(companionJourneyRoutes);
   await app.register(understandingProjectionRoutes);

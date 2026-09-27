@@ -2252,7 +2252,7 @@ export class DesktopGateway {
    * 所以这一发之后屏幕上那一行轮次与解释都来自同一次读回的版本，不会拼出一次错配。
    */
   async explainNoteLearningRoundTeaching(
-    input: { roundId: string; expectedRevision: number; regenerate?: boolean },
+    input: { roundId: string; expectedRevision: number; regenerate?: boolean; personalReflectionIds?: string[] },
     requestId?: string,
   ): Promise<RoundTeachingViewV1> {
     await this.ensureConnected(requestId);
@@ -2265,6 +2265,7 @@ export class DesktopGateway {
         body: JSON.stringify({
           expectedRevision: input.expectedRevision,
           ...(input.regenerate ? { regenerate: true } : {}),
+          ...(input.personalReflectionIds?.length ? { personalReflectionIds: input.personalReflectionIds.map((id) => this.safeUuid(id)) } : {}),
         }),
       },
       true,

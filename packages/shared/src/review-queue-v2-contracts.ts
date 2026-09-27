@@ -3,7 +3,11 @@
 import { z } from "zod";
 
 const cursorV2Schema = z.string().min(1).max(128);
-const isoTimestampV2Schema = z.string().datetime({ offset: true });
+/**
+ * 排期那一族共用的时间形状（队列、延后、单次提醒）。导出而不是各抄一份：
+ * 这三处对"带时区的 ISO 串"的收紧程度必须一样，抄开之后改一处就会安静地放过另一种。
+ */
+export const isoTimestampV2Schema = z.string().datetime({ offset: true });
 
 /**
  * 到期队列只会返回「已到期」的排期（`nextReviewAt <= now()`，见

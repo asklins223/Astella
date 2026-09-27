@@ -147,9 +147,15 @@ $DB_NAME is ready (all migrations applied, role grants applied, RLS catalog comp
     node --import tsx --test src/integration-tests/queue-postgres.integration.ts
 
   需要超级用户连接的用例（投影分页、拓扑等，夹具自己写数据）:
+    DATABASE_URL='$DATABASE_URL_DISPOSABLE' \\
     DATABASE_URL_API='$DATABASE_URL_DISPOSABLE' \\
     DATABASE_URL_MIGRATOR='$DATABASE_URL_DISPOSABLE' \\
     DATABASE_URL_WORKER='$DATABASE_URL_DISPOSABLE'
+
+  注意 DATABASE_URL 不是多余的：多数用例经 packages/shared 的
+  integration-test-db-env 读的是它，缺了它会以
+  「集成测试缺少 DATABASE_URL」直接失败——只设 API/MIGRATOR/WORKER 三个
+  变量会在 60 个用例上白跑一遍（实测 2026-09-27）。
 
 注意：这些用例会往库里写夹具并做清理，但**不要**把这个库当成长期状态；
 任何一次运行后都可直接重跑本脚本回到干净状态。

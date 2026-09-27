@@ -27,6 +27,7 @@ function generationSummary(status: string, overrides: Record<string, unknown> = 
     status,
     currentPlanVersion: 1,
     reviewDraftRevision: 1,
+    sourceCapped: null,
     updatedAt: new Date().toISOString(),
     recovery: null,
     route: { kind: "note.cardGeneration", cardGenerationRunId: RUN_ID },
@@ -34,7 +35,11 @@ function generationSummary(status: string, overrides: Record<string, unknown> = 
   };
 }
 
-function stubGateway(initialGenerationStatus: string | null, extraSummaries: object[] = [], options: { startRejects?: boolean } = {}) {
+function stubGateway(
+  initialGenerationStatus: string | null,
+  extraSummaries: object[] = [],
+  options: { startRejects?: boolean; summaryOverrides?: Record<string, unknown> } = {},
+) {
   const state = {
     generationStatus: initialGenerationStatus,
     projectionReads: 0,
@@ -57,7 +62,7 @@ function stubGateway(initialGenerationStatus: string | null, extraSummaries: obj
         state: "data",
         data: [
           ...extraSummaries,
-          ...(state.generationStatus ? [generationSummary(state.generationStatus)] : []),
+          ...(state.generationStatus ? [generationSummary(state.generationStatus, options.summaryOverrides)] : []),
         ],
       }
       : { state: "empty" },
@@ -139,6 +144,24 @@ afterEach(() => {
 });
 
 describe("NotebookSurface · 学习卡生成状态同步", () => {
+  it("服务端投影标记正文被截断时如实显示覆盖范围", async () => {
+    stubGateway("checking", [], { summaryOverrides: { sourceCapped: { limit: 60_000, originalLength: 123_456 } } });
+    useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
+    const { findByText } = render(<NotebookSurface />);
+
+    expect(await findByText("这一篇较长：本次只把前 60000 字（全文 123456 字）交给模型，其余部分这次没有参与生成。"))
+      .toBeTruthy();
+  });
+
+  it("服务端没有报告截断时不显示覆盖范围提示", async () => {
+    stubGateway("checking");
+    useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
+    const { container, findByTitle } = render(<NotebookSurface />);
+
+    await findByTitle("这次生成在后台进行，来回翻看不会打断它");
+    expect(container.querySelector(".notebook-generation-capped")).toBeNull();
+  });
+
   it("本笔记有进行中的 run 时，入口变成查看进度且不重复 start", async () => {
     const { state } = stubGateway("checking");
     useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });

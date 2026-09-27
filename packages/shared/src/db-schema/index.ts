@@ -17,6 +17,8 @@ export * from "./search.ts";
 export * from "./validation-v2.ts";
 export * from "./card-generation-v2.ts";
 export * from "./learning-runs.ts";
+export * from "./assessment-disputes.ts";
+export * from "./personal-objective-bindings.ts";
 export * from "./companion-bridge.ts";
 export * from "./companion-journey.ts";
 export * from "./understanding-projection.ts";

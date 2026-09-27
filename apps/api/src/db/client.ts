@@ -44,13 +44,13 @@ const connectionString = resolveConnectionString();
  * 语句（锁等待、半开连接）会**永久**占住一个池连接；API 单池只有 25 个连接，
  * 且后台 tick 与请求共用同一池。给出确定上界。
  *
- * 只设 statement_timeout，**刻意不设** idle_in_transaction_session_timeout：
- * V2 制卡管道会在事务内做分钟级 LLM HTTP 调用（见 card-generation-v2-handler.ts
- * 的 H4 说明），事务在调用期间处于 idle-in-transaction 状态，设短了会把整条
- * 管道掐断。
+ * W3-2 后备边界：worker 的真实 prepare/commit 事务段基线 n=40，p50=14.23 ms、
+ * p95=37 ms、max=50.41 ms；另一次真实 provider 请求测得事务作用域为空、并发写可用。
+ * API 与 worker 同样设置 5 秒 lock_timeout、15 秒 idle-in-transaction 超时，收住锁等待与事务内
+ * 应用层空等；模型/外部 HTTP 由共享事务边界闸拒绝，不能靠超时允许其在事务里运行。
  *
- * 该值也是 run-processing-tick 的 private-solution 池（P1-2）共用的唯一解析点，
- * 避免第二处 env 解析漂移。
+ * 这些解析器也供 run-processing-tick 的 private-solution 池（P1-2）共用，
+ * 避免两份连接的超时配置漂移。
  */
 export function resolveApiStatementTimeoutMs(
   raw: string | undefined = process.env.API_STATEMENT_TIMEOUT_MS,
@@ -59,12 +59,33 @@ export function resolveApiStatementTimeoutMs(
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 60_000;
 }
 
+function resolvePositiveDatabaseTimeoutMs(raw: string | undefined, fallback: number): number {
+  const parsed = Number(raw ?? fallback);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function resolveApiLockTimeoutMs(
+  raw: string | undefined = process.env.API_LOCK_TIMEOUT_MS,
+): number {
+  return resolvePositiveDatabaseTimeoutMs(raw, 5_000);
+}
+
+export function resolveApiIdleInTransactionTimeoutMs(
+  raw: string | undefined = process.env.API_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+): number {
+  return resolvePositiveDatabaseTimeoutMs(raw, 15_000);
+}
+
 // PERF-WN: 单 postgres 池承载常规请求 + SSE 轮询 + 后台任务；max=10 在大量
 // 长连接轮询/并发请求时成为瓶颈（配合 inbox/companion SSE 连接上限使用）。
 // 提到 25 摊薄峰值排队，仍受 DB 端 max_connections 约束。
 const queryClient = postgres(connectionString, {
   max: 25,
-  connection: { statement_timeout: resolveApiStatementTimeoutMs() },
+  connection: {
+    statement_timeout: resolveApiStatementTimeoutMs(),
+    lock_timeout: resolveApiLockTimeoutMs(),
+    idle_in_transaction_session_timeout: resolveApiIdleInTransactionTimeoutMs(),
+  },
 });
 let closePromise: Promise<void> | null = null;
 

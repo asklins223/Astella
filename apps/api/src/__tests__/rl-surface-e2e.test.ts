@@ -54,6 +54,7 @@ function makeSurface(overrides: Partial<LearningObjectiveSurfaceV3> = {}): Learn
       primaryNote: { noteId: NOTE_ID, noteVersionId: "44444444-4444-4444-8444-444444444444", title: "来源笔记" },
       missingOrigin: false,
     },
+    noteChangeImpact: null,
     personal: {
       initialValidation: null,
       activeRun: null,
@@ -117,6 +118,7 @@ describe("RL-06: 纯 V2 workspace 全链路", () => {
       cardStrategy: "recall",
       lifecycle: "active",
       freshness: "fresh",
+      noteChangeImpact: null,
       primaryNoteTitle: "来源笔记",
       createdAt: "2026-08-18T00:00:00.000Z",
       personalState: { state: "unvalidated", activeRunId: null },

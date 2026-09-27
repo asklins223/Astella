@@ -33,6 +33,15 @@ const nonNegativeIntSchema = z.number().int().min(0);
 const isoTimestampSchema = z.string().datetime({ offset: true });
 const hashSchema = z.string().regex(/^[0-9a-f]{64}$/);
 
+/** Candidate-local quality notes, projected for the exact latest revision only. */
+export const cardGenerationCandidateQualityIssueV1Schema = z.strictObject({
+  code: z.string().min(1).max(120),
+  severity: z.enum(["hard", "soft"]),
+  detail: z.string().min(1).max(2000),
+  sourceQuote: z.string().min(1).max(2000).optional(),
+});
+export type CardGenerationCandidateQualityIssueV1 = z.infer<typeof cardGenerationCandidateQualityIssueV1Schema>;
+
 export const desktopCreateCardGenerationRunRequestV2Schema = createCardGenerationRunRequestV2Schema.superRefine((value, context) => {
   if (value.sourceScope.kind !== "whole_note") {
     context.addIssue({
@@ -372,6 +381,7 @@ export const cardGenerationCandidateV1Schema = z.strictObject({
   candidateEvidenceBindingPlanHash: hashSchema.nullable(),
   candidateRevisionHash: hashSchema,
   qualityState: z.enum(["authored", "checking", "passed", "failed", "dropped"]),
+  qualityIssues: z.array(cardGenerationCandidateQualityIssueV1Schema).max(40),
   /**
    * 审核页只需要"这张卡配了哪种客观题、几个候选"。选项文本与正确项**不下发**：
    * 它们属于判分内容，随列表下发等于绕过答案查看记账。

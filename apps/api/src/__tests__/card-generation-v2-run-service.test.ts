@@ -17,6 +17,7 @@ import { db } from "../db/client.ts";
 import {
   cardGenerationRunsV2,
   cardGenerationPlansV2,
+  cardCandidateQualityReportsV2,
   cardGenerationEventsV2,
   cardGenerationRunOutboxV2,
 } from "@ailearn/shared/db-schema/card-generation-v2";
@@ -527,13 +528,30 @@ describe("getGenerationRunCandidatesV2", () => {
           if (table === cardGenerationPlansV2) {
             return { where: () => ({ limit: async () => [] }) };
           }
+          if (table === cardCandidateQualityReportsV2) {
+            return {
+              where: () => ({
+                orderBy: async () => [{
+                  candidateRevisionId: "c1-rev",
+                  report: {
+                    issues: [{
+                      code: "suspect_claim",
+                      severity: "hard",
+                      detail: "请核对这条主张。",
+                      sourceQuote: "原文逐字引句。",
+                    }],
+                  },
+                }],
+              }),
+            };
+          }
           // candidates query：新形状是 `select().from().where(...)`，没有 orderBy 层。
           return {
             where: (filter: unknown) => {
               candidatesFilter = filter;
               return [
-                { ...makeBaseCandidateRow(), candidateId: "c1", revision: 2 },
-                { ...makeBaseCandidateRow(), candidateId: "c2", revision: 3 },
+                { ...makeBaseCandidateRow(), candidateId: "c1", candidateRevisionId: "c1-rev", revision: 2 },
+                { ...makeBaseCandidateRow(), candidateId: "c2", candidateRevisionId: "c2-rev", revision: 3 },
               ];
             },
           };
@@ -571,6 +589,13 @@ describe("getGenerationRunCandidatesV2", () => {
     assert.match(sqlText, /newer\.revision >/);
     assert.equal(result!.candidates[1].candidateId, "c2");
     assert.equal(result!.candidates[1].revision, 3);
+    assert.deepEqual(result!.candidates[0].qualityIssues, [{
+      code: "suspect_claim",
+      severity: "hard",
+      detail: "请核对这条主张。",
+      sourceQuote: "原文逐字引句。",
+    }]);
+    assert.deepEqual(result!.candidates[1].qualityIssues, [], "问题只随精确候选修订回传");
   });
 
   /**
@@ -607,6 +632,9 @@ describe("getGenerationRunCandidatesV2", () => {
           }
           if (table === cardGenerationPlansV2) {
             return { where: () => ({ limit: async () => [{ result: planResult }] }) };
+          }
+          if (table === cardCandidateQualityReportsV2) {
+            return { where: () => ({ orderBy: async () => [] }) };
           }
           return { where: () => candidates };
         },
@@ -653,6 +681,9 @@ describe("getGenerationRunCandidatesV2", () => {
           if (table === cardGenerationPlansV2) {
             return { where: () => ({ limit: async () => [{ result: planResult }] }) };
           }
+          if (table === cardCandidateQualityReportsV2) {
+            return { where: () => ({ orderBy: async () => [] }) };
+          }
           return { where: () => candidates };
         },
       }),
@@ -687,6 +718,9 @@ describe("getGenerationRunCandidatesV2", () => {
           }
           if (table === cardGenerationPlansV2) {
             return { where: () => ({ limit: async () => [{ result: planResult }] }) };
+          }
+          if (table === cardCandidateQualityReportsV2) {
+            return { where: () => ({ orderBy: async () => [] }) };
           }
           return {
             where: () => [makeBaseCandidateRow()],

@@ -50,6 +50,7 @@ function makeSurface(overrides: Partial<LearningObjectiveSurfaceV3> = {}): Learn
       primaryNote: { noteId: NOTE_ID, noteVersionId: NOTE_VERSION_ID, title: "来源笔记" },
       missingOrigin: false,
     },
+    noteChangeImpact: null,
     personal: {
       initialValidation: null,
       activeRun: null,
@@ -77,6 +78,7 @@ function makeListItem(overrides: Partial<ObjectiveListItemV3> = {}): ObjectiveLi
     cardStrategy: surface.content.cardStrategy,
     lifecycle: surface.content.lifecycle,
     freshness: surface.content.freshness,
+    noteChangeImpact: null,
     primaryNoteTitle: surface.sources.primaryNote?.title ?? null,
     createdAt: surface.createdAt,
     personalState: { state: "unvalidated" as const, activeRunId: null },

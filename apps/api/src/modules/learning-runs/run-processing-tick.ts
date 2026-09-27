@@ -25,7 +25,14 @@ import { and, eq, gte, inArray, sql, desc } from "drizzle-orm";
 import type { StructuredTaskKind } from "./run-structured.ts";
 import { isDeterministicStructuredPayload } from "./run-structured.ts";
 import { uncoveredFacets } from "./run-result-facets.ts";
-import { db, resolveApiStatementTimeoutMs, withWorkspaceTransaction, currentApiWorkspaceTransaction } from "../../db/client.ts";
+import {
+  db,
+  resolveApiStatementTimeoutMs,
+  resolveApiLockTimeoutMs,
+  resolveApiIdleInTransactionTimeoutMs,
+  withWorkspaceTransaction,
+  currentApiWorkspaceTransaction,
+} from "../../db/client.ts";
 import {
   canonicalLearningEventOutbox,
   learningAssessments,
@@ -47,6 +54,9 @@ import {
 import { noteBlocks } from "@ailearn/shared/db-schema/note";
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
 import { ensurePendingReviewScheduleV2 } from "../review/review-schedule-boundary.ts";
+// 39d W5-5：§14.2「待复核时不持续放大结论」的那一闸。与上面那道笔记依据闸并排调用。
+import { scheduleBlockedByDisputeV2 } from "./run-disputes.ts";
+import { readObjectiveNoteChangeImpactV1 } from "../learning-objectives/change-impact-service.ts";
 import {
   calculateDiscreteV2Schedule,
 } from "@ailearn/shared";
@@ -1065,7 +1075,12 @@ const structuredSolutionSql = postgres(
     // 稳定 P1-2（2026-09-15 审计）：此前该池无语句超时，一条挂起的
     // private-solution 读会钉住 tick 的整条串行链（server.ts 的 tick 是
     // 单个 setTimeout 链，无总预算）。给出确定上界。
-    connection: { statement_timeout: resolveApiStatementTimeoutMs() },
+    // W3-2：该池与 API 主池共用语句、锁等待与 idle-in-transaction 三个限值。
+    connection: {
+      statement_timeout: resolveApiStatementTimeoutMs(),
+      lock_timeout: resolveApiLockTimeoutMs(),
+      idle_in_transaction_session_timeout: resolveApiIdleInTransactionTimeoutMs(),
+    },
   },
 );
 
@@ -1871,6 +1886,47 @@ async function hookJourneyOnRunCompleted(
 }
 
 /** demonstrated 的 schedule 处理：按 discrete-v2 推进。 */
+async function noteEvidenceAllowsScheduleChange(
+  tx: Parameters<Parameters<typeof withWorkspaceTransaction>[1]>[0],
+  command: CommandRow,
+  authorization: SchedulingAuthorizationV1,
+): Promise<boolean> {
+  if (authorization.kind !== "create_initial" && authorization.kind !== "consume_pending") return true;
+  const impact = await readObjectiveNoteChangeImpactV1(tx, {
+    workspaceId: command.workspaceId,
+    userId: command.userId,
+  }, authorization.keyPointId, { lockSourceNotes: true, includeUnchanged: true });
+  return impact === null || impact.status === "unaffected";
+}
+
+/**
+ * 39d W5-5 / §14.2「待复核时不持续放大结论」：这个目标上有一份还没结论的争议时，
+ * 本次结算**不动排期**。
+ *
+ * 与上面那道笔记依据闸并排，位置也在它之后、**消费 pending 之前**——`consume_pending`
+ * 那一档会把那条待办写成 `completed` 再排一条继任，先消费后挡就会把用户队列里那一条
+ * 变成一个没有对象的提醒（§8.5 明写不能留下无对象的提醒）。
+ *
+ * 判据在 `run-disputes.ts` 的 `scheduleBlockedByDisputeV2`，那一侧复用
+ * `decideDisputedObservationV2`：复核"维持"之后放行，冻着不放就变成 §16.22 那条
+ * "反复要求用户接受同一判定"。这里只做调用与回执，不重写规则。
+ */
+async function disputeAllowsScheduleChange(
+  tx: Parameters<Parameters<typeof withWorkspaceTransaction>[1]>[0],
+  command: CommandRow,
+  authorization: SchedulingAuthorizationV1,
+): Promise<{ allowed: true } | { allowed: false; reasonCode: "assessment_disputed" }> {
+  if (authorization.kind !== "create_initial" && authorization.kind !== "consume_pending") {
+    return { allowed: true };
+  }
+  const blocked = await scheduleBlockedByDisputeV2(tx, {
+    workspaceId: command.workspaceId,
+    userId: command.userId,
+    objectiveId: authorization.keyPointId,
+  });
+  return blocked.blocked ? { allowed: false, reasonCode: blocked.reasonCode } : { allowed: true };
+}
+
 async function applyDemonstratedSchedule(
   tx: Parameters<Parameters<typeof withWorkspaceTransaction>[1]>[0],
   command: CommandRow,
@@ -1882,6 +1938,15 @@ async function applyDemonstratedSchedule(
   // 不消费 pending、不创建 successor（canonical facet observation 照常发布）。
   if (disposition === "facet_evidence") {
     return { kind: "none", reasonCode: "facet_only" };
+  }
+  if (!await noteEvidenceAllowsScheduleChange(tx, command, authorization)) {
+    return { kind: "none", reasonCode: "note_evidence_changed" };
+  }
+  // §14.2「待复核时不持续放大结论」：争议未决就不推进复习间隔。与上面那道闸并排，
+  // 同样挡在 consume_pending 之前——先消费再挡会留下一个没有对象的提醒（§8.5）。
+  const disputeGate = await disputeAllowsScheduleChange(tx, command, authorization);
+  if (!disputeGate.allowed) {
+    return { kind: "none", reasonCode: disputeGate.reasonCode };
   }
   // 证据存在性：cardKeyPoints.quote 读取已退役。可走到 Commit 的
   // canonical run 必然已通过 V2 evidence closure 复验（revalidateV2CommitEpochs
@@ -1979,6 +2044,16 @@ async function applyUnableSchedule(
   authorization: SchedulingAuthorizationV1,
   at: Date,
 ): Promise<LearningRunResultV1["scheduleImpact"]> {
+  if (!await noteEvidenceAllowsScheduleChange(tx, command, authorization)) {
+    return { kind: "none", reasonCode: "note_evidence_changed" };
+  }
+  // §14.2「未经确认的争议结果**不继续作为负面推荐依据**」——这一档比 demonstrated
+  // 更该挡：`declared_unable` 本身就是负面结论，被申诉期间继续拿它推排程，
+  // 等于让一次未确认的判定持续把用户往回拽。
+  const disputeGate = await disputeAllowsScheduleChange(tx, command, authorization);
+  if (!disputeGate.allowed) {
+    return { kind: "none", reasonCode: disputeGate.reasonCode };
+  }
   const calculateUnableDecision = (currentIntervalDays: number) => calculateDiscreteV2Schedule({
     currentIntervalDays,
     outcome: "unable",

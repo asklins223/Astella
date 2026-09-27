@@ -557,6 +557,12 @@ export type LearningRunResultV1 = {
           | "not_assessable"
           // 39 §9.1 行 2（与上面那份 zod 枚举同批改；这里是手写镜像那一半）
           | "objective_held"
+          | "note_evidence_changed"
+          // 39 §14.2「待复核时不持续放大结论」：这个目标上有一份**还没结论**的争议，
+          // 所以这一次结算不推进复习间隔。与 `objective_held` 分开是两句话——
+          // 那一条是"本人说了以后别给我排"，这一条是"我正在问上一次判得对不对，
+          // 先别把它的结论推得更远"。§14.2 也给了出口：结束并暂不安排。
+          | "assessment_disputed"
           | "skipped"
           | "ended"
           | "stale";
@@ -727,7 +733,7 @@ export type SchedulingAuthorizationV1 =
   | { kind: "record_only"; reasonCode: "facet_only" | "not_published_target" }
   | {
       kind: "no_effect";
-      reasonCode: "practice" | "diagnostic" | "sandbox" | "not_authorized";
+      reasonCode: "practice" | "diagnostic" | "sandbox" | "not_authorized" | "note_evidence_changed";
     };
 
 export type PrivateRunContractV1 = {
@@ -805,6 +811,19 @@ export type LearningRunActionV1 =
   | { kind: "retry_prepare" }
   | { kind: "retry_assessment"; assessmentId: string }
   | { kind: "retry_commit" }
+  /**
+   * §5.5 三个独立动作里的中间那个：结束活动 / **取消 AI 任务** / 撤销未来复习授权。
+   *
+   * 为什么必须与 `end` 分开而不是给它加一档布尔：`end` 在 assessing/committing 下默认
+   * 要求 `abandonLockedEvidence`（丢掉已锁定的作答），而 D7 §7 明写结束活动**默认允许**
+   * 已受理回答的评估完成。合成一档就等于逼用户在「让评估跑完」和「丢掉我的作答」之间二选一，
+   * 而 §16.36 的验收要的正是「前者历史可补充结果不重开轮次、后者原回答保留且显示评估已取消」。
+   *
+   * **带 `assessmentId` 是为了不接受一份已经完成的判定**：那一发在 completed /
+   * not_assessable 下必须 409（§5.5「已先完成提交的判定不因后到取消而消失」），
+   * 而仅凭 runId 判不出来——一个 run 可以先后有多次 assessment。
+   */
+  | { kind: "cancel_assessment"; assessmentId: string }
   | { kind: "end"; abandonLockedEvidence: boolean };
 
 export type LearningRunActionRequestV1 = {
@@ -1403,6 +1422,11 @@ export const learningRunScheduleImpactSchema = z.discriminatedUnion("kind", [
       // 39 §9.1 行 2：本人给这个目标立了"暂不安排"⇒ 本轮结算没有排下一次。
       // 与 "not_authorized"（从没开过）分开，因为是两种要对用户说不同的话的事。
       "objective_held",
+      "note_evidence_changed",
+      // 39 §14.2「待复核时不持续放大结论」（W5-5 结算侧执法那一发）。
+      // 与 "objective_held" 分开是因为界面上要对用户说不同的话：一个是本人主动
+      // 说了"以后别排"，一个是"上次判定我还在申诉，先别推进"。
+      "assessment_disputed",
       "skipped",
       "ended",
       "stale",

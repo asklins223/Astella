@@ -36,6 +36,16 @@ export interface EnsurePendingReviewScheduleV2Input {
   readonly reasonCode: string;
   readonly supersedesScheduleId?: string | null;
   readonly at: Date;
+  /**
+   * 0297（W5-4 刀一）：「仅提醒这一次」还是「持续安排复习」。缺省 = 持续。
+   *
+   * 这一格**只在新建时**写进去；撞上已有安排时以**库里那一条的档位**为准，不覆盖
+   * （同 `nextReviewAt` 那条纪律）。理由是 §9.1 末段：两种来意共用同一把唯一键，是同一项
+   * 记忆需求的两种授权档位；如果这里按"新来的这一发更具体"去覆盖，一位已经持续订阅的
+   * 用户点一次「仅提醒这一次」就会把自己的订阅降级成一次性的，而界面上没有任何一句提示
+   * 说过这件事。所以覆盖权留给用户显式改期/停订那两条命令，不给排期这一发。
+   */
+  readonly reminderKind?: "one_time" | "sustained";
 }
 
 export interface EnsurePendingReviewScheduleV2Result {
@@ -50,6 +60,12 @@ export interface EnsurePendingReviewScheduleV2Result {
    * 把那条交回你"，与"根本不许排"是两件要对用户说不同的话的事。
    */
   readonly held: boolean;
+  /**
+   * 库里那一行**实际的**档位（0297）。新建时等于传进来的那个；复用时以那一行为准——
+   * 调用方要能如实回答"她点的『仅提醒这一次』是不是真的变成一次性的"，而不是回自己
+   * 算的那个（与 `nextReviewAt` 同一纪律）。
+   */
+  readonly reminderKind: "one_time" | "sustained";
 }
 
 /**
@@ -69,13 +85,14 @@ export async function ensurePendingReviewScheduleV2(
   input: EnsurePendingReviewScheduleV2Input,
 ): Promise<EnsurePendingReviewScheduleV2Result> {
   const dimension = input.reviewDimension ?? "";
+  const reminderKind = input.reminderKind ?? "sustained";
   const hold = await liveHoldForObjectiveV2(tx, {
     workspaceId: input.workspaceId,
     userId: input.userId,
     objectiveId: input.subjectId,
   });
   if (hold) {
-    return { scheduleId: null, nextReviewAt: null, created: false, held: true };
+    return { scheduleId: null, nextReviewAt: null, created: false, held: true, reminderKind };
   }
   const inserted = await tx
     .insert(reviewSchedules)
@@ -85,6 +102,7 @@ export async function ensurePendingReviewScheduleV2(
       subjectType: "card",
       subjectId: input.subjectId,
       reviewDimension: dimension,
+      reminderKind,
       status: "pending",
       nextReviewAt: input.nextReviewAt,
       intervalDays: input.intervalDays,
@@ -103,10 +121,15 @@ export async function ensurePendingReviewScheduleV2(
       nextReviewAt: inserted[0].nextReviewAt,
       created: true,
       held: false,
+      reminderKind,
     };
   }
   const [existing] = await tx
-    .select({ id: reviewSchedules.id, nextReviewAt: reviewSchedules.nextReviewAt })
+    .select({
+      id: reviewSchedules.id,
+      nextReviewAt: reviewSchedules.nextReviewAt,
+      reminderKind: reviewSchedules.reminderKind,
+    })
     .from(reviewSchedules)
     .where(and(
       eq(reviewSchedules.workspaceId, input.workspaceId),
@@ -128,5 +151,7 @@ export async function ensurePendingReviewScheduleV2(
     nextReviewAt: existing.nextReviewAt,
     created: false,
     held: false,
+    // 复用时以库里那一行为准，**不**用这一发传进来的档位（见入参注释第 4 段）。
+    reminderKind: existing.reminderKind,
   };
 }

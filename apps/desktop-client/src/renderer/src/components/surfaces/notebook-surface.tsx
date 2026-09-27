@@ -18,6 +18,7 @@ import type { DesktopNoteVersionItem, DesktopSourceDetail } from "@ailearn/share
 import type {
   LearningObjectivePrimaryActionV3,
   LearningObjectiveSurfaceV3,
+  ObjectiveNoteChangeImpactV1,
   ObjectiveSurfaceFreshnessV3,
 } from "@ailearn/shared/learning-objective-surface-contracts";
 import type { NoteBlockProjectionV1, NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
@@ -60,7 +61,7 @@ import {
   isCardGenerationInFlight,
   isLiveGenerationForNote,
 } from "./card-generation-status";
-import { freshnessLabel, primaryActionDescription, primaryActionLabel } from "./objective-state-copy";
+import { freshnessLabel, objectiveNoteChangeImpactCopy, primaryActionDescription, primaryActionLabel } from "./objective-state-copy";
 import { startObjectiveJourney } from "./objective-primary-action";
 import { ArtifactFrameHost } from "./artifact-frame-host";
 import { parseMarkdownTable } from "./note-blocks";
@@ -100,6 +101,7 @@ type NotebookProjection = {
   readonly noteObjective: {
     readonly objectiveId: string;
     readonly primaryAction: LearningObjectivePrimaryActionV3;
+    readonly noteChangeImpact: ObjectiveNoteChangeImpactV1 | null;
     /**
      * §3.2 第六种情况（正文有实质修改）不看这一页自己的版本号——服务端已经按
      * origin 的 `noteVersionId` 与笔记当前版本比过（`surface-service.ts` 的
@@ -117,6 +119,8 @@ type NotebookProjection = {
   readonly openRound: NoteLearningRoundV1Wire | null;
   /** 这一轮冻的正文，与这一篇现在已保存的那一版不是同一版（服务端算的，见 D3 §3 第 2 层）。 */
   readonly openRoundContentMoved: boolean;
+  /** 这一轮绑定目标的引用依据变化；与正文版本提示分开显示。 */
+  readonly openRoundNoteChangeImpact: ObjectiveNoteChangeImpactV1 | null;
   /**
    * 这一篇的轮次记录（PRD §10.3 读侧第一刀）。**空数组是真值**："这一篇还没有过一轮"，
    * 不是读失败——读失败走 `catch` 那条，同样是空表（这一块的纪律与上面两读一致：
@@ -153,6 +157,7 @@ const AUTOSAVE_DELAY_MS = 1_200;
  * without hiding anything: the rest is one click away.
  */
 const READING_WINDOW = 200;
+const NOTEBOOK_STRUCTURE_PAGE_SIZE_V1 = 12;
 
 /**
  * What a generation run is asked for. These are the run contract's own knobs —
@@ -525,6 +530,54 @@ export function headingDisplayTextV1(block: NoteBlockProjectionV1): string {
     .trim();
 }
 
+export type NotebookReadingSectionV1 = {
+  readonly startOrdinal: number;
+  readonly title: string;
+  /** Non-empty blocks after the heading; this is content presence, not learning progress. */
+  readonly bodyBlockCount: number;
+};
+
+/**
+ * A verifiable outline for long notes (W4-4). It follows headings already present in the
+ * current block list and counts non-empty body blocks under each one. It never invents a
+ * heading or interprets content presence as teaching readiness or user mastery.
+ */
+export function notebookReadingSectionsV1(
+  blocks: readonly NoteBlockProjectionV1[],
+): readonly NotebookReadingSectionV1[] {
+  const hasHeadings = blocks.some((block) => block.type === "heading");
+  const sections: NotebookReadingSectionV1[] = [];
+  let current: { startOrdinal: number; title: string; bodyBlockCount: number } | null = null;
+  const flush = () => {
+    if (current) sections.push(current);
+    current = null;
+  };
+
+  for (const block of blocks) {
+    if (block.type === "heading") {
+      flush();
+      current = {
+        startOrdinal: block.ordinal,
+        title: headingDisplayTextV1(block) || "未命名小节",
+        bodyBlockCount: 0,
+      };
+      continue;
+    }
+
+    if (!current && block.content.trim().length > 0) {
+      current = {
+        startOrdinal: block.ordinal,
+        title: hasHeadings ? "开篇" : "未分节正文",
+        bodyBlockCount: 0,
+      };
+    }
+    if (current && block.content.trim().length > 0) current.bodyBlockCount += 1;
+  }
+
+  flush();
+  return sections;
+}
+
 export function teachingReferenceLabelV1(block: NoteBlockProjectionV1, max = 16): string {
   const text = block.type === "heading"
     ? headingDisplayTextV1(block)
@@ -585,6 +638,59 @@ function sentenceRange(text: string, at: number, length: number): readonly [numb
   return [start, end];
 }
 
+/** Shared HUD notice for a note objective or its active learning round. */
+function NoteChangeImpactNotice({
+  impact,
+  context,
+}: {
+  impact: ObjectiveNoteChangeImpactV1 | null;
+  context?: "objective" | "round";
+}) {
+  const copy = objectiveNoteChangeImpactCopy(impact);
+  if (!copy || !impact) return null;
+  const notice = (
+    <>
+      <p className="small notebook-note" data-note-change-impact="true">{copy}</p>
+      {impact.status !== "unaffected" ? (
+        <details
+          className="notebook-objective__impact-evidence"
+          data-note-change-evidence="true"
+          {...(context === "round" ? { "data-round-note-change-evidence": "true" } : {})}
+        >
+          <summary>展开核对当时与现在的依据</summary>
+          {impact.evidenceDetails.map((detail) => (
+            <div className="notebook-objective__impact-excerpt" key={detail.evidenceIndex}>
+              <p className="small notebook-note">
+                <strong>依据 {detail.evidenceIndex} · 当时 · {detail.previousOrdinal ? `第 ${detail.previousOrdinal} 段` : "原文位置不明"}</strong>
+                <br />
+                {detail.previousQuote === null
+                  ? "当时的引用原文没有可核对的副本。"
+                  : `${detail.previousQuote}${detail.previousQuoteTruncated ? "…（节录）" : ""}`}
+              </p>
+              <p className="small notebook-note">
+                <strong>当前 · 同段同位置</strong>
+                <br />
+                {detail.currentQuote === null
+                  ? "当前版本没有可定位的对应段落。"
+                  : `${detail.currentQuote}${detail.currentQuoteTruncated ? "…（节录）" : ""}`}
+              </p>
+            </div>
+          ))}
+          {impact.evidenceDetails.length === 0 ? (
+            <p className="small notebook-note">这条目标还没有可展示的历史引用；请回笔记正文核对。</p>
+          ) : null}
+          {impact.evidenceDetailsOmittedCount > 0 ? (
+            <p className="small notebook-note">另有 {impact.evidenceDetailsOmittedCount} 条依据未展开。</p>
+          ) : null}
+        </details>
+      ) : null}
+    </>
+  );
+  return context === "round"
+    ? <div data-round-note-change-impact="true">{notice}</div>
+    : notice;
+}
+
 /** Page 08 / 09 / 22 — the note as one paper, read, written or discussed. */
 export function NotebookSurface() {
   const invoke = useRoomStore((state) => state.invoke);
@@ -614,9 +720,15 @@ export function NotebookSurface() {
   const saveRef = useRef<() => void>(() => {});
   const [mode, setMode] = useState<"read" | "edit">("read");
   const [leaf, setLeaf] = useState<"reading" | "learning" | "history">("reading");
+  const [showAllBlocks, setShowAllBlocks] = useState(false);
+  const [showAllReadingSections, setShowAllReadingSections] = useState(false);
+  const [focusedBlockOrdinal, setFocusedBlockOrdinal] = useState<number | null>(null);
   const leafScrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     setLeaf(activeNoteRef?.learningRoundId ? "history" : "reading");
+    setShowAllBlocks(false);
+    setShowAllReadingSections(false);
+    setFocusedBlockOrdinal(null);
     setReflectionRoundId(activeNoteRef?.learningRoundId);
     appendedReflections.current.clear();
   }, [activeNoteRef?.noteId, activeNoteRef?.learningRoundId]);
@@ -677,6 +789,7 @@ export function NotebookSurface() {
   /** 教学面（W4-6 刀二）：生成那一发在途、以及它自己的失败那一句。 */
   const [teachingBusy, setTeachingBusy] = useState(false);
   const [teachingFailure, setTeachingFailure] = useState<string | null>(null);
+  const [teachingReflectionIds, setTeachingReflectionIds] = useState<string[]>([]);
   /** 「练一道」（W4-6 刀三）：开那场 run 的在途与它自己的失败那一句。 */
   const [practiceBusy, setPracticeBusy] = useState(false);
   const [practiceFailure, setPracticeFailure] = useState<string | null>(null);
@@ -691,10 +804,8 @@ export function NotebookSurface() {
    * 依据里点开的那一段。它只是**屏幕上的注意力**（滚动 + 短暂高亮），不进任何写：
    * 值一过期就撤掉，不留"上次点到哪"这种会跟人走的读数。
    */
-  const [focusedBlockOrdinal, setFocusedBlockOrdinal] = useState<number | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [options, setOptions] = useState<GenerationOptions>(persistedGenerationOptions);
-  const [showAllBlocks, setShowAllBlocks] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const generationTriggerRef = useRef<HTMLButtonElement>(null);
   const closeGenerationSetup = () => {
@@ -791,6 +902,7 @@ export function NotebookSurface() {
         noteObjective = {
           objectiveId: item.objectiveId,
           primaryAction: item.primaryAction,
+          noteChangeImpact: item.noteChangeImpact ?? null,
           freshness: item.freshness,
         };
       }
@@ -802,6 +914,7 @@ export function NotebookSurface() {
     // 老网关没有这条路由时不能让笔记页变成错误页。
     let openRound: NotebookProjection["openRound"] = null;
     let openRoundContentMoved = false;
+    let openRoundNoteChangeImpact: ObjectiveNoteChangeImpactV1 | null = null;
     try {
       const roundResponse = await api.noteLearningRound.open({
         meta: createRequestMeta(epochRef.current),
@@ -812,9 +925,11 @@ export function NotebookSurface() {
       const view = unwrapGatewayResult(roundResponse);
       openRound = view?.round ?? null;
       openRoundContentMoved = view?.contentMoved ?? false;
+      openRoundNoteChangeImpact = view?.noteChangeImpact ?? null;
     } catch {
       openRound = null;
       openRoundContentMoved = false;
+      openRoundNoteChangeImpact = null;
     }
 
     // 教学产物那一读（W4-6 刀二）：只有真有一轮在进行中才有得读——没轮次就没有
@@ -853,6 +968,7 @@ export function NotebookSurface() {
       sourceFailure,
       openRound,
       openRoundContentMoved,
+      openRoundNoteChangeImpact,
       roundHistory,
       roundTeachingView,
       objective: focus && focus.objective.sources.primaryNote?.noteId === note.noteId
@@ -894,7 +1010,9 @@ export function NotebookSurface() {
   /** 这一篇的学习目标主行动；读不到就是 null，那一行整个不画（W4-2 第三刀）。 */
   const noteObjective = data?.noteObjective ?? null;
   const openRound = data?.openRound ?? null;
+  useEffect(() => { setTeachingReflectionIds([]); }, [activeNoteRef?.noteId, openRound?.roundId]);
   const openRoundContentMoved = data?.openRoundContentMoved ?? false;
+  const openRoundNoteChangeImpact = data?.openRoundNoteChangeImpact ?? null;
   const roundHistory = data?.roundHistory ?? null;
   /** 这一轮当前问题下的那条解释；`null` = 还没讲过（W4-6 刀二）。 */
   const roundTeaching = data?.roundTeachingView?.teaching ?? null;
@@ -988,6 +1106,14 @@ export function NotebookSurface() {
     ? allBlocks
     : allBlocks.slice(0, READING_WINDOW);
   const hiddenBlockCount = allBlocks.length - readingBlocks.length;
+  const readingSections = useMemo(
+    () => notebookReadingSectionsV1(allBlocks),
+    [allBlocks],
+  );
+  const visibleReadingSections = showAllReadingSections
+    ? readingSections
+    : readingSections.slice(0, NOTEBOOK_STRUCTURE_PAGE_SIZE_V1);
+  const hiddenReadingSectionCount = readingSections.length - visibleReadingSections.length;
 
   // ── 教学面的依据（W4-6 刀二）──
   // 只认**屏幕上这一版**能对上的块：这一轮的快照与屏幕上读的那一版不同时，块序号
@@ -1546,7 +1672,7 @@ export function NotebookSurface() {
    * 屏上那句解释来自服务端存下来的那一条，不是本机拼的；③失败也要回读一次，
    * 把屏上换回现在那一版（§16.39 那条一样的道理）。
    */
-  const startRoundTeaching = async (regenerate = false) => {
+  const startRoundTeaching = async (regenerate = false, personalReflectionIds = teachingReflectionIds) => {
     const api = desktopApi();
     if (!api || !openRound || teachingBusy) return;
     setTeachingBusy(true);
@@ -1556,11 +1682,13 @@ export function NotebookSurface() {
         meta: createRequestMeta(epochRef.current),
         roundId: openRound.roundId,
         expectedRevision: openRound.revision,
+        personalReflectionIds,
         // 「换一种解释」走同一发：服务端据此**跳过复用**，在同一问题下落第二条（序号 +1）。
         ...(regenerate ? { regenerate: true } : {}),
       });
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       unwrapGatewayResult(response);
+      setTeachingReflectionIds([]);
       await reload({ silent: true });
     } catch (error) {
       setTeachingFailure(gatewayErrorMessage(error));
@@ -2227,6 +2355,48 @@ export function NotebookSurface() {
         <button type="button" className="notebook-leaf notebook-leaf--history" aria-pressed={leaf === "history"} aria-controls="notebook-history-leaf" onClick={() => setLeaf("history")}><History size={16} aria-hidden="true" />学习记录{historyTotal > 0 ? ` · ${historyTotal}` : ""}</button>
       </nav>
       <section id="notebook-reading-leaf" className="notebook-leaf-page" aria-label="笔记正文" hidden={leaf !== "reading"}>
+      {allBlocks.length > READING_WINDOW && readingSections.length > 0 ? (
+        <nav className="notebook-reading-outline" aria-label="正文小节目录">
+          <div className="notebook-reading-outline__heading">
+            <span className="notebook-reading-outline__title">从纸签跳读</span>
+            <span className="notebook-reading-outline__hint">{readingSections.length} 枚纸签 · 点选回到正文原位</span>
+            {readingSections.length > NOTEBOOK_STRUCTURE_PAGE_SIZE_V1 ? (
+              <button
+                type="button"
+                className="notebook-reading-outline__toggle"
+                aria-expanded={showAllReadingSections}
+                onClick={() => setShowAllReadingSections((expanded) => !expanded)}
+              >
+                {showAllReadingSections ? "收起后面的纸签" : `看看另外 ${hiddenReadingSectionCount} 枚纸签`}
+              </button>
+            ) : null}
+          </div>
+          <ol>
+            {visibleReadingSections.map((section, index) => {
+              const contentLabel = section.bodyBlockCount > 0 ? "有正文" : "只有标题";
+              return (
+                <li key={section.startOrdinal}>
+                  <button
+                    type="button"
+                    className="notebook-reading-outline__bookmark"
+                    aria-label={`跳到${section.title}，${contentLabel}`}
+                    data-reading-section-ordinal={section.startOrdinal}
+                    onClick={() => locateTeachingReference(section.startOrdinal)}
+                  >
+                    <span className="notebook-reading-outline__name">
+                      <span className="notebook-reading-outline__number" aria-hidden="true">{index + 1}</span>
+                      <span>{section.title}</span>
+                    </span>
+                    <span className={`notebook-reading-outline__presence${section.bodyBlockCount === 0 ? " is-heading-only" : ""}`}>
+                      {contentLabel}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+      ) : null}
       <div className="reading-body" ref={readingBodyRef}>
         {readSourceBlocks.length ? readingBlocks.map((block) => (
           <ReadingBlock
@@ -2317,6 +2487,7 @@ export function NotebookSurface() {
           {noteObjective.freshness === "source_outdated" ? (
             <p className="small notebook-note">{freshnessLabel(noteObjective.freshness)}</p>
           ) : null}
+          <NoteChangeImpactNotice impact={noteObjective.noteChangeImpact} />
           <p className="small notebook-note">{primaryActionDescription(noteObjective.primaryAction)}</p>
           {noteObjectiveFailure ? <p className="small notebook-note" role="alert">{noteObjectiveFailure}</p> : null}
         </div>
@@ -2334,6 +2505,7 @@ export function NotebookSurface() {
                   {ROUND_COPY.contentMoved}
                 </p>
               ) : null}
+              <NoteChangeImpactNotice impact={openRoundNoteChangeImpact} context="round" />
               <p className="small notebook-note">{ROUND_COPY.revisedLine(openRound.drivingQuestionRevision)}</p>
               {data?.roundTeachingView?.plans.length ? (
                 <div className="notebook-round__plan" aria-label="这一轮的学习路线">
@@ -2394,6 +2566,29 @@ export function NotebookSurface() {
                 {roundTeaching ? (
                   <>
                     <p className="notebook-round-teaching__text">{roundTeaching.content.explanation}</p>
+                    {roundTeaching.content.suspectClaims?.length ? (
+                      <section className="notebook-round-teaching__suspect-claims" aria-label="需要核对的事实主张">
+                        <h4>有一处事实主张想请你核对</h4>
+                        {roundTeaching.content.suspectClaims.map((claim, index) => (
+                          <article key={`${claim.unitIds.join("-")}-${index}`}>
+                            {claim.sourceQuote ? (
+                              <>
+                                <p className="notebook-round-teaching__suspect-label">
+                                  {claim.sourceChanged ? "修改前的原句（待核对）" : "笔记里的原句"}
+                                </p>
+                                <blockquote>{claim.sourceQuote}</blockquote>
+                              </>
+                            ) : (
+                              <p className="notebook-round-teaching__suspect-unlocated">原文位置还没能可靠定位</p>
+                            )}
+                            <p>{claim.reason}</p>
+                          </article>
+                        ))}
+                        <p className="notebook-round-teaching__suspect-footnote">
+                          这是待核对提示，不表示原文已经判错。核对前，本轮不会把相关主张记作正式学习目标或安排复习。修改原句或在这段补入已核对的来源后，新开一轮会只重查这条主张。
+                        </p>
+                      </section>
+                    ) : null}
                     {roundTeaching.content.example ? (
                       <p className="small notebook-note">
                         {ROUND_COPY.teaching.exampleLead}{roundTeaching.content.example}
@@ -2416,17 +2611,38 @@ export function NotebookSurface() {
                     ) : !teachingSnapshotIsReadVersion ? (
                       <p className="small notebook-note">{ROUND_COPY.teaching.staleVersion}</p>
                     ) : null}
+                    {roundTeaching.personalSources?.length ? (
+                      <div className="notebook-round-teaching__personal-sources">
+                        <p className="small notebook-note">这次讲解参考了你主动选的 {roundTeaching.personalSources.length} 条私有理解，内容按当时版本留在本轮记录里。</p>
+                        <ul>{roundTeaching.personalSources.map((item) => <li key={item.reflectionId}>
+                          <details>
+                            <summary className="small notebook-note">{item.source.ref.kind === "teaching" ? "AI 整理建议" : "本人原话"} · {item.source.question} · 私有备注第 {item.revision} 版</summary>
+                            <p className="note-reflection-source-text">{item.source.text}</p>
+                            {item.annotation ? <p className="note-reflection-annotation">当时的本人批注：{item.annotation}</p> : null}
+                          </details>
+                        </li>)}</ul>
+                        <p className="small notebook-note">它们只作本人理解背景，不作为笔记依据或正式判定，也没有写入共享正文。</p>
+                      </div>
+                    ) : null}
                   </>
                 ) : (
                   <button
                     type="button"
                     className="button"
                     disabled={teachingBusy || roundBusy !== null}
-                    onClick={() => void startRoundTeaching()}
+                    onClick={() => void startRoundTeaching(false)}
                   >
-                    {teachingBusy ? ROUND_COPY.teaching.starting : ROUND_COPY.teaching.start}
+                    {teachingBusy ? ROUND_COPY.teaching.starting : teachingReflectionIds.length
+                      ? `参考 ${teachingReflectionIds.length} 条个人理解开始讲解`
+                      : ROUND_COPY.teaching.start}
                   </button>
                 )}
+                {roundTeaching && teachingReflectionIds.length > 0 ? (
+                  <button type="button" className="button" disabled={teachingBusy || roundBusy !== null}
+                    onClick={() => void startRoundTeaching(true, teachingReflectionIds)}>
+                    {teachingBusy ? ROUND_COPY.teaching.starting : `带着这 ${teachingReflectionIds.length} 条私有理解再讲一次`}
+                  </button>
+                ) : null}
                 {/* 这一轮练过哪几道（W4-6 刀三）：与"讲没讲过"无关，所以不放在上面那一支里
                     ——先练后讲、或者只看不练的那一轮，这一格照样要有。 */}
                 {roundPractices.length > 0 ? (
@@ -2468,9 +2684,11 @@ export function NotebookSurface() {
                         type="button"
                         className="button"
                         disabled={teachingBusy || roundBusy !== null}
-                        onClick={() => void startRoundTeaching(true)}
+                        onClick={() => void startRoundTeaching(true, teachingReflectionIds)}
                       >
-                        {ROUND_COPY.teaching.switchExplanation}
+                        {teachingReflectionIds.length
+                          ? `参考 ${teachingReflectionIds.length} 条私有理解再讲一次`
+                          : ROUND_COPY.teaching.switchExplanation}
                       </button>
                       <button
                         type="button"
@@ -2691,6 +2909,9 @@ export function NotebookSurface() {
         refreshKey={`${roundTeaching?.teachingId ?? ""}:${roundPractices.map(p => `${p.runId}:${p.phase}`).join(",")}`}
         workspaceEpoch={epochRef.current} canAppend={canSave && Boolean(noteDocLive.fragment) && !saving} shared={note.shareScope === "shared"}
         openSources={leaf === "history" && Boolean(reflectionRoundId)}
+        canUseForTeaching={leaf !== "history" && Boolean(openRound)}
+        selectedForTeaching={teachingReflectionIds}
+        onSelectionChange={setTeachingReflectionIds}
         onInspectBody={() => { setMode("read"); setLeaf("reading"); }}
         onAppend={async (source, annotation) => {
           if (!note.permissions.canSave || !noteDocLive.fragment || saving) throw new Error("正文此刻不可编辑，请回到笔记核对权限和保存状态。");
