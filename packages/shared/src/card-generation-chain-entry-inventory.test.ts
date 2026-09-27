@@ -197,3 +197,34 @@ test("判据本身灵敏：三元、变量式、没问过总控，三种写法�
   assert.deepEqual(enqueueSitesIn("f.ts", otherTable), [],
     "别的表的 jobType 也被收进来了 ⇒ 台账会被不相干的功能误伤");
 });
+
+/**
+ * 逐用例档位（`delete process.env.CARD_GENERATION_CHAIN`）的守卫（39d W7-7 刀二期间加的）。
+ *
+ * 为什么需要：搬到默认档的判据现在靠"文件头钉 `v2` ＋ 该条用例开头摘档位"这套写法。
+ * 它有两种静默失效：① 摘了档位却没有每发复位 ⇒ 档位漏给后面的用例，那些用例**看起来绿**、
+ * 实际跑的链与台账不符；② 有人把某条 `delete` 删了（或探针那一格被当冗余清理）⇒ 台账里
+ * "已搬到默认档"的条数缩水，而没有任何东西会变红。所以这里既查复位，也把条数当**只涨不跌**
+ * 的棘轮钉住（继续搬用例就把它涨上去，往回偷偷搬就红）。
+ */
+const PER_CASE_SWITCH_FILES: Record<string, { minSwitches: number }> = {
+  // e2e 那 12 处 = 11 条已搬用例 + 1 格"档位真切了"的探针（探针不算用例，但少它整套做法失去读数）。
+  "workers/ai-worker/src/integration-tests/card-generation-v2-e2e-subset.integration.ts": { minSwitches: 12 },
+  "workers/ai-worker/src/integration-tests/card-generation-v2-live-progress-postgres.integration.ts": { minSwitches: 6 },
+  "workers/ai-worker/src/integration-tests/card-generation-v2-c-cases.integration.ts": { minSwitches: 2 },
+};
+
+test("逐用例档位：摘档的那几份都有每发复位，且条数没有缩水", () => {
+  for (const [rel, expected] of Object.entries(PER_CASE_SWITCH_FILES)) {
+    const source = readFileSync(join(REPO_ROOT, rel), "utf8");
+    const switches = [...source.matchAll(/delete process\.env\.CARD_GENERATION_CHAIN/g)].length;
+    assert.ok(switches > 0, `${rel} 已经不在台账里了？台账里还有它`);
+    assert.ok(/beforeEach\(\(\) => \{ process\.env\.CARD_GENERATION_CHAIN = "v2"; \}\)/.test(source),
+      `${rel} 摘了档位却没有每发复位 ⇒ 档位会漏给后面的用例，那些用例绿的是另一条链`);
+    assert.ok(switches >= expected.minSwitches,
+      `${rel} 的摘档处数从 ${expected.minSwitches} 掉到 ${switches}：有人把用例搬回旧链或删掉了探针，`
+      + "要搬回去就把这台账一起改小并写明原因");
+    assert.ok(!source.includes("TEMP-REPRO"),
+      `${rel} 里留着临时复现用的改动没回：TEMP-REPRO 这类标记不许进版本`);
+  }
+});
