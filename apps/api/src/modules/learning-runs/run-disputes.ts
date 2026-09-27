@@ -119,20 +119,19 @@ export async function findDisputeForAssessmentV2(
  * 同一形状。`objectiveId` 为 null 时返回 null：那一次观察没挂目标，判不出受影响目标，
  * 也就没有"按目标暂停复用"可执行——§14.2 的挂起只能挂到有确定目标的那一次。
  */
-export async function liveDisputeForObjectiveV2(
+export async function liveDisputesForObjectiveV2(
   tx: DisputeTx,
   input: { workspaceId: string; userId: string; objectiveId: string | null },
-): Promise<DisputeRow | null> {
-  if (!input.objectiveId) return null;
-  const rows = await tx.select().from(assessmentDisputesV2).where(and(
+): Promise<DisputeRow[]> {
+  if (!input.objectiveId) return [];
+  return await tx.select().from(assessmentDisputesV2).where(and(
     eq(assessmentDisputesV2.workspaceId, input.workspaceId),
     eq(assessmentDisputesV2.userId, input.userId),
     eq(assessmentDisputesV2.objectiveId, input.objectiveId),
     // "未结束"就是 closed_at IS NULL——不是"没有 recheck_undetermined"。
     // §14.2 让"仍无法判断"维持争议状态，那一档至今没有结论，正是本函数要捞出来的那一档。
     isNull(assessmentDisputesV2.closedAt),
-  )).limit(1);
-  return rows[0] ?? null;
+  ));
 }
 
 /** 这次更正有没有已经被应用过（判据二"只许应用一次"的读数）。 */
@@ -208,20 +207,21 @@ export async function scheduleBlockedByDisputeV2(
   | { readonly blocked: true; readonly reasonCode: "assessment_disputed" }
   | { readonly blocked: false }
 > {
-  const dispute = await liveDisputeForObjectiveV2(tx, input);
-  if (!dispute) return { blocked: false };
-  const correction = await findCorrectionForDisputeV2(tx, {
-    workspaceId: input.workspaceId,
-    userId: input.userId,
-    disputeId: dispute.id,
-  });
-  const decided = decideDisputedObservationV2({
-    hasLiveDispute: true,
-    recheckOutcome: dispute.recheckOutcome,
-    correctionAlreadyApplied: dispute.correctionAppliedAt !== null || correction?.appliedAt != null,
-  });
-  if (decided.action === "use_as_is") return { blocked: false };
-  return { blocked: true, reasonCode: "assessment_disputed" };
+  const disputes = await liveDisputesForObjectiveV2(tx, input);
+  for (const dispute of disputes) {
+    const correction = await findCorrectionForDisputeV2(tx, {
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      disputeId: dispute.id,
+    });
+    const decided = decideDisputedObservationV2({
+      hasLiveDispute: true,
+      recheckOutcome: dispute.recheckOutcome,
+      correctionAlreadyApplied: dispute.correctionAppliedAt !== null || correction?.appliedAt != null,
+    });
+    if (decided.action !== "use_as_is") return { blocked: true, reasonCode: "assessment_disputed" };
+  }
+  return { blocked: false };
 }
 
 // ─── 写侧 ─────────────────────────────────────────────────────────────────

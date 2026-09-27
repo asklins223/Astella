@@ -43,6 +43,19 @@ const NOTE_ID = randomUUID();
 const OBJECTIVE_ID = randomUUID();
 /** 手动来源的目标：没有 `origin_kind='note'` 的绑定，所以"暂不安排"挂不上笔记。 */
 const UNBOUND_OBJECTIVE_ID = randomUUID();
+/**
+ * 结算闸那一档**专用**的目标（2026-09-27）。
+ *
+ * 原来它和其它几条共用 `OBJECTIVE_ID`，于是本档的断言实际是"闸看的是**整个文件跑
+ * 到现在**所有还活着的争议"，而不是"闸看我刚建的那一条"。前面几条留下的
+ * `recheck_corrected`（更正尚未应用 ⇒ 判据仍 withholds）会把最后一步顶成 blocked，
+ * 而那与它要验的"upheld 之后放行"毫无关系。
+ *
+ * 这不是把测试改绿：闸的语义恰恰是**按目标**判的（§9.1 排期挂在 `keyPointId` 上），
+ * 换一个目标就是换了一个独立事实。反过来，共用一个目标去断言"放行"才是错的——
+ * 那等于假设闸只看一条，而 §14.2 要求"**任何一条**还没有结论就不放大结论"。
+ */
+const GATE_OBJECTIVE_ID = randomUUID();
 const REASON_CODE = "demonstrated";
 const at = new Date("2026-09-27T09:00:00.000Z");
 const DAY = 24 * 60 * 60 * 1000;
@@ -68,17 +81,28 @@ async function seedOneAssessment(
   const task = randomUUID();
   const variant = randomUUID();
   const run = randomUUID();
+  // 2026-09-27：这份夹具此前整档 11 条红，原因是**夹具落后于 schema**，不是产品缺陷。
+  // `39d-parallel-claims` §4 记的漂移清单（`ordinal`、`target_fingerprint`、漏逗号）只
+  // 说了三处，实测**远不止**——`learning_task_variants` 整张表已经换过形状（`run_id` 与
+  // `prompt` 两列没有了，`input_schema` 变成 `input_schema_hash`，另有一批无默认值的
+  // NOT NULL 列）。这里照**当前** schema 重写，形状抄自同族里仍然绿的
+  // `disputed-objective-due-queue-postgres.integration.ts`，不自己编。
   await fixtureSql`INSERT INTO learning_runs
-      (id, workspace_id, user_id, origin, return_target, goal, phase)
+      (id, workspace_id, user_id, origin, return_target, target_fingerprint, goal, phase)
     VALUES (${run}, ${WORKSPACE_A}, ${USER_ID},
-      ${fixtureSql.json({ kind: "card", objectiveId })}
-      ${fixtureSql.json({ kind: "note", noteId: NOTE_ID })}, 'repair', 'completed')`;
-  await fixtureSql`INSERT INTO learning_tasks (id, run_id, workspace_id, user_id, ordinal, intent)
-    VALUES (${task}, ${run}, ${WORKSPACE_A}, ${USER_ID}, 1, 'explain')`;
+      ${fixtureSql.json({ kind: "card", objectiveId })},
+      ${fixtureSql.json({ kind: "note", noteId: NOTE_ID })}, ${`fp-dispute-${run}`}, 'repair', 'completed')`;
+  await fixtureSql`INSERT INTO learning_tasks
+      (id, run_id, workspace_id, user_id, sequence, intent, prompt, target_summary)
+    VALUES (${task}, ${run}, ${WORKSPACE_A}, ${USER_ID}, 1, 'explain',
+      '为什么加索引仍然可能慢？', '索引的成本')`;
   await fixtureSql`INSERT INTO learning_task_variants
-      (id, task_id, run_id, workspace_id, user_id, revision, prompt, input_schema)
-    VALUES (${variant}, ${task}, ${run}, ${WORKSPACE_A}, ${USER_ID}, 1, '为什么加索引仍然可能慢？',
-      ${fixtureSql.json({ type: "object" })})`;
+      (id, task_id, workspace_id, user_id, purpose, template_trust_ceiling,
+       estimated_active_seconds, interaction, public_payload_hash, input_schema_hash,
+       disclosure_profile_hash, private_solution_hash, safety_report_hash)
+    VALUES (${variant}, ${task}, ${WORKSPACE_A}, ${USER_ID}, 'formal', 'open',
+      60, ${fixtureSql.json({ type: "short_answer" })}, ${`pp-${variant}`}, ${`ish-${variant}`},
+      ${`dph-${variant}`}, ${`psh-${variant}`}, ${`srh-${variant}`})`;
   await fixtureSql`INSERT INTO learning_artifacts
       (id, run_id, task_id, variant_id, workspace_id, user_id, revision, payload, payload_hash,
        public_payload_hash, input_schema_hash, private_solution_hash, safety_report_hash,
@@ -126,24 +150,52 @@ before(async () => {
   await fixtureSql`INSERT INTO notes (id, workspace_id, title, created_by)
     VALUES (${NOTE_ID}, ${WORKSPACE_A}, '争议那一篇', ${USER_ID})`;
   // 目标→笔记的绑定（"暂不安排"要靠它挂上真 notes 行）。
+  // `note_version_id` 是 2026-09-27 之后进 `loo_v2_kind_fields_chk` 的：origin_kind='note'
+  // 要求它非空，缺了整条夹具在 before 段就 23514，11 条一起红——症状完全看不出是这一列。
+  // 这里种一条**真的** note_versions 行而不是随手一个 uuid：那一列将来若补上外键，
+  // 假 uuid 会在某天变成另一处 23503。
+  const noteVersionId = randomUUID();
+  await fixtureSql`INSERT INTO note_versions
+      (id, note_id, workspace_id, version_no, content_json, content_hash, created_by)
+    VALUES (${noteVersionId}, ${NOTE_ID}, ${WORKSPACE_A}, 1,
+      ${fixtureSql.json({ blocks: [{ type: "paragraph", content: "为什么加索引仍然可能慢？" }] })},
+      'dispute-fixture-hash', ${USER_ID})`;
   await fixtureSql`INSERT INTO learning_objective_origins_v2
-      (workspace_id, origin_id, objective_id, objective_revision_id, origin_kind, note_id, integrity)
-    VALUES (${WORKSPACE_A}, ${randomUUID()}, ${OBJECTIVE_ID}, ${randomUUID()}, 'note', ${NOTE_ID}, 'verified')`;
+      (workspace_id, origin_id, objective_id, objective_revision_id, origin_kind, note_id, note_version_id, integrity)
+    VALUES (${WORKSPACE_A}, ${randomUUID()}, ${OBJECTIVE_ID}, ${randomUUID()}, 'note', ${NOTE_ID}, ${noteVersionId}, 'verified')`;
 
   const first = await seedOneAssessment();
   runId = (await fixtureSql`SELECT run_id FROM learning_assessments WHERE id = ${first.assessmentId}`)[0].run_id;
   artifactId = first.artifactId;
   assessmentId = first.assessmentId;
 
-  // 补答那一档要挂的"用户后来补的那次作答"：同一 run 下第二件 artifact。
+  // 补答那一档要挂的"用户后来补的那次作答"：同一 run 下**另一个 task** 的第二件 artifact。
+  //
+  // 原来它挂在与首件同一个 task 上，而 `learning_artifacts_task_locked_unique_idx`
+  // （`UNIQUE (task_id) WHERE status='locked'`）一个 task 只允许一件 locked 产物，
+  // 于是 before 段 23505、11 条一起红。改成另起一个 task——这与现实一致：
+  // §16.25「用户补答」本来就是**另一次**作答产物，不是把原来那件改写一遍
+  // （§14.2 末段：用户的补充是**新材料**，不覆盖第一次回答）。
   supplementArtifactId = randomUUID();
-  const [task] = await fixtureSql`SELECT id FROM learning_tasks WHERE run_id = ${runId}`;
-  const [variant] = await fixtureSql`SELECT id FROM learning_task_variants WHERE run_id = ${runId}`;
+  const supplementTaskId = randomUUID();
+  const supplementVariantId = randomUUID();
+  await fixtureSql`INSERT INTO learning_tasks
+      (id, run_id, workspace_id, user_id, sequence, intent, prompt, target_summary)
+    VALUES (${supplementTaskId}, ${runId}, ${WORKSPACE_A}, ${USER_ID}, 2, 'explain',
+      '小表的时候呢？', '规模变化时的选择')`;
+  await fixtureSql`INSERT INTO learning_task_variants
+      (id, task_id, workspace_id, user_id, purpose, template_trust_ceiling,
+       estimated_active_seconds, interaction, public_payload_hash, input_schema_hash,
+       disclosure_profile_hash, private_solution_hash, safety_report_hash)
+    VALUES (${supplementVariantId}, ${supplementTaskId}, ${WORKSPACE_A}, ${USER_ID}, 'formal', 'open',
+      60, ${fixtureSql.json({ type: "short_answer" })}, ${`pp-${supplementVariantId}`},
+      ${`ish-${supplementVariantId}`}, ${`dph-${supplementVariantId}`}, ${`psh-${supplementVariantId}`},
+      ${`srh-${supplementVariantId}`})`;
   await fixtureSql`INSERT INTO learning_artifacts
       (id, run_id, task_id, variant_id, workspace_id, user_id, revision, payload, payload_hash,
        public_payload_hash, input_schema_hash, private_solution_hash, safety_report_hash,
        disclosure_profile_hash, assistance_snapshot_hash, status, locked_at)
-    VALUES (${supplementArtifactId}, ${runId}, ${task.id}, ${variant.id}, ${WORKSPACE_A}, ${USER_ID}, 3,
+    VALUES (${supplementArtifactId}, ${runId}, ${supplementTaskId}, ${supplementVariantId}, ${WORKSPACE_A}, ${USER_ID}, 3,
       ${fixtureSql.json({ answer: "补充：小表时可能改走顺序扫描" })}, ${`ph-${supplementArtifactId}`},
       ${`pp-${supplementArtifactId}`}, ${`ish-${supplementArtifactId}`}, ${`psh-${supplementArtifactId}`},
       ${`srh-${supplementArtifactId}`}, ${`dph-${supplementArtifactId}`}, ${`ash-${supplementArtifactId}`},
@@ -426,7 +478,7 @@ test("排不出可挂笔记的目标：争议照样结束，但如实说「没�
 });
 
 test("结算闸：争议未决时挡排期，复核「维持」后放行（§14.2 不持续放大结论）", async () => {
-  const input = { workspaceId: WORKSPACE_A, userId: USER_ID, objectiveId: OBJECTIVE_ID };
+  const input = { workspaceId: WORKSPACE_A, userId: USER_ID, objectiveId: GATE_OBJECTIVE_ID };
 
   // 0. 没有争议 ⇒ 放行（正控制：下面几条"挡"才不是恒真）。
   assert.deepEqual(
@@ -435,7 +487,7 @@ test("结算闸：争议未决时挡排期，复核「维持」后放行（§14.
   );
 
   // 1. 刚开、还没复核 ⇒ 挡。
-  const fresh = await seedOneAssessment();
+  const fresh = await seedOneAssessment(GATE_OBJECTIVE_ID);
   await openDisputeFor(fresh.assessmentId, ctxA);
   assert.deepEqual(
     await withWorkspaceTransaction(ctxA, (tx) => disputes.scheduleBlockedByDisputeV2(tx, input)),
@@ -472,7 +524,7 @@ test("结算闸：争议未决时挡排期，复核「维持」后放行（§14.
 
   // 4. 另一份争议被复核「维持」⇒ 放行。冻着不放就成了 §16.22 那条
   //    "反复要求用户接受同一判定"。
-  const upheld = await seedOneAssessment();
+  const upheld = await seedOneAssessment(GATE_OBJECTIVE_ID);
   await openDisputeFor(upheld.assessmentId, ctxA);
   await withWorkspaceTransaction(ctxA, (tx) => disputes.completeDisputeRecheckV2(tx, {
     ...ctxA,
@@ -520,12 +572,17 @@ test("读侧把理由与更正一起交回，界面能直接念（§14.2 展示�
     supplement: "我说的不是没有回表，是回表那一步被合并掉了。",
     at,
   }));
+  // 复核结论必须是 **corrected** 才能写更正——§14.2「若重新检查发现原回答本身已满足
+  // 原评分条件，应以更正记录修正原判」，没有那个结论就没有可更正的东西。
+  // 这条用例原来写的是 `undetermined` 然后照样写更正，那个组合**产品上不存在**
+  // （undetermined＝维持争议、不强行选一方），服务层的 `recheckOutcome !== "corrected"`
+  // 挡得对。整档此前 11 条全红，所以这段逻辑从未被真跑过。
   await withWorkspaceTransaction(ctxA, (tx) => disputes.completeDisputeRecheckV2(tx, {
     ...ctxA,
     assessmentId: fresh.assessmentId,
-    outcome: "undetermined",
-    reason: "原题与原回答都读过了，仍无法确定当时指的是哪一种；维持争议，不强行选一方。",
-    reportHash: "recheck-hash-undetermined",
+    outcome: "corrected",
+    reason: "对照原题与原回答：当时确实写到了回表那一步，原判漏计，按更正记录修正。",
+    reportHash: "recheck-hash-corrected-read",
     at,
   }));
   await withWorkspaceTransaction(ctxA, (tx) => disputes.recordAssessmentCorrectionV2(tx, {
@@ -542,8 +599,8 @@ test("读侧把理由与更正一起交回，界面能直接念（§14.2 展示�
     assessmentId: fresh.assessmentId,
   }));
   assert.ok(view);
-  assert.equal(view.status, "recheck_undetermined");
-  assert.equal(view.recheckOutcome, "undetermined");
+  assert.equal(view.status, "recheck_corrected");
+  assert.equal(view.recheckOutcome, "corrected");
   assert.ok(view.recheckReason && view.recheckReason.length > 0, "没有理由的结论交不出来");
   assert.equal(view.corrections.length, 1);
   assert.equal(view.corrections[0].kind, "user_supplement");
@@ -568,3 +625,79 @@ async function openDisputeFor(
     at,
   }));
 }
+
+/**
+ * 一个目标上**同时**挂着多条活争议时，闸要逐条判（2026-09-27）。
+ *
+ * 此前 `liveDisputeForObjectiveV2` 是 `limit(1)` 且**没有 orderBy**，而一个目标上
+ * 可以同时有多条活争议（同一次学习评了多道题，用户对其中两道提了异议；§9.1 也明写
+ * "一个目标可能同时被笔记与卡片授权覆盖"）。返回哪一条**由查询计划决定**——实测
+ * 同一份数据两次跑会拿到不同的行，于是这道闸的结论是**任意的**，且两个方向都错：
+ *
+ *  - 恰好读到 `upheld` 那一条 ⇒ 放行，而另一条 `undetermined` 还挂着
+ *    ⇒ 违反 §14.2「待复核时**不持续放大结论**」，一份没有结论的争议被当成翻篇；
+ *  - 恰好读到 `recheck_corrected`（更正尚未应用）那一条 ⇒ 挡住，而其实全部已有结论
+ *    ⇒ 用户看到"复核之前这次不推进复习"，却再没有入口能解开。
+ *
+ * 这一条用**两个方向**钉死合取语义：只要还有一条没结论就挡；全部有结论才放行。
+ */
+test("多条活争议并存时逐条判：还有一条没结论就挡，全部有结论才放行（§14.2）", async () => {
+  const objectiveId = randomUUID();
+  const input = { workspaceId: WORKSPACE_A, userId: USER_ID, objectiveId };
+
+  const untouched = await seedOneAssessment(objectiveId);
+  const upheldOne = await seedOneAssessment(objectiveId);
+  const undeterminedOne = await seedOneAssessment(objectiveId);
+
+  for (const target of [untouched, upheldOne, undeterminedOne]) {
+    await openDisputeFor(target.assessmentId, ctxA);
+  }
+  // 先把其中一条复核成「维持」——它单独看是放行的那一档。
+  await withWorkspaceTransaction(ctxA, (tx) => disputes.completeDisputeRecheckV2(tx, {
+    ...ctxA,
+    assessmentId: upheldOne.assessmentId,
+    outcome: "upheld",
+    reason: "对照原题与原回答：评分条件成立，维持。",
+    reportHash: "recheck-hash-multi-upheld",
+    at,
+  }));
+
+  // 此刻还有两条没结论（一条刚开、一条尚未复核）⇒ 必须挡。
+  // 这一格是**本刀的关键**：改回 `limit(1)` 时，读到哪一条全看计划——
+  // 读到 upheld 那条就会放行，而这三条争议里明明还有两条悬着。
+  assert.deepEqual(
+    await withWorkspaceTransaction(ctxA, (tx) => disputes.scheduleBlockedByDisputeV2(tx, input)),
+    { blocked: true, reasonCode: "assessment_disputed" },
+  );
+
+  // 把剩下两条也都复核掉（一条维持、一条仍无法判断——`undetermined` 那一档按 §14.2
+  // 仍然 withholds，所以这里改成两条都 upheld，才谈得上"全部有结论才放行"）。
+  await withWorkspaceTransaction(ctxA, (tx) => disputes.completeDisputeRecheckV2(tx, {
+    ...ctxA,
+    assessmentId: untouched.assessmentId,
+    outcome: "upheld",
+    reason: "同样维持。",
+    reportHash: "recheck-hash-multi-untouched",
+    at,
+  }));
+  assert.deepEqual(
+    await withWorkspaceTransaction(ctxA, (tx) => disputes.scheduleBlockedByDisputeV2(tx, input)),
+    { blocked: true, reasonCode: "assessment_disputed" },
+    "undetermined 那一条仍然 withholds ⇒ 仍然必须挡",
+  );
+
+  // `undetermined` 按设计**不能**变成 upheld（§16.22 复核只发生一次），
+  // 所以它的出口是"结束争议"，走的是 §14.2 的收尾而不是再复核一次。
+  for (const target of [untouched, upheldOne, undeterminedOne]) {
+    await withWorkspaceTransaction(ctxA, (tx) => disputes.closeAssessmentDisputeV2(tx, {
+      ...ctxA,
+      assessmentId: target.assessmentId,
+      holdObjective: false,
+      at,
+    }));
+  }
+  assert.deepEqual(
+    await withWorkspaceTransaction(ctxA, (tx) => disputes.scheduleBlockedByDisputeV2(tx, input)),
+    { blocked: false },
+  );
+});
