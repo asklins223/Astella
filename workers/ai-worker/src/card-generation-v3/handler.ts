@@ -46,6 +46,8 @@ import {
   loadV2RunInputs,
   V2_SOURCE_CONTENT_MAX_CHARS,
 } from "../card-generation-v2/run-io.ts";
+// W7-5 刀三：复用的读侧（按 (工作区, 笔记) 收窄的既有目标 ＋ 它们的块锚与形态）。
+import { loadReusableObjectivesForNoteV2 } from "../card-generation-v2/objective-reuse-lookup.ts";
 import {
   fenceV2OutboxLease,
   renewV2OutboxLease,
@@ -355,6 +357,17 @@ export async function processCardGenerationSimplifiedJob(
       atoms: atomsForRun,
       sealedEvidence: loaded.sealed.evidenceManifest.evidence,
       preferredStrategies: semanticRequest.preferredStrategies,
+      // W7-5 刀三：这一篇里已有哪些目标可供复用。读侧**按 (工作区, 笔记) 收窄**
+      // （§4.2「默认去重范围是同工作区、同笔记」，跨笔记不自动抵扣），块锚按块去重，
+      // 形态取当前修订，归档／被替代的不进候选。判据在 `decideObjectiveReuseV2`
+      // （纯函数）里，装配那一层只负责递给它。
+      reusableObjectives: await withWorkerWorkspaceTransaction(
+        { workspaceId, userId: null },
+        (readTx) => loadReusableObjectivesForNoteV2(readTx, {
+          workspaceId,
+          noteId: String((loaded.run as { note_id?: string | null }).note_id ?? ""),
+        }),
+      ),
     });
     const gated = runCardGenerateV3CandidateGates({
       assembled,

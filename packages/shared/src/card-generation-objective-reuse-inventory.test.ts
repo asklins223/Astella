@@ -49,17 +49,20 @@ const read = (relative: string): string => readFileSync(join(REPO_ROOT, relative
 
 const REVIEW_SURFACE = "apps/desktop-client/src/renderer/src/components/CardGenerationSurface.tsx";
 const ACTIVATION_SERVICE = "apps/api/src/modules/card-generation-v2/activation-service.ts";
-const V3_CONTRACTS = "packages/shared/src/card-generation-v3-contracts.ts";
+const V2_CONTRACTS = "packages/shared/src/card-generation-v2-contracts.ts";
 const PLAN_ASSEMBLY = "workers/ai-worker/src/card-generation-v3/plan-assembly.ts";
 
 /** 复用的四件：产出信号 → 计划里的既有动作 → 客户端意图 → 闸看得见。 */
 const REUSE_LINKS = [
   {
-    id: "v3-output-carries-reuse-signal",
-    file: V3_CONTRACTS,
-    /** `objectiveProposals` 那一段里有没有"这条提案复用哪个既有目标"的字段。 */
-    present: /existingObjectiveId|reusesObjectiveId|reuseObjectiveId/,
-    label: "简化链的提案形状带不带复用指针",
+    id: "plan-change-context-carries-reuse-signal",
+    // 刀三落地时把这一条从 V3 的提案形状挪到了 **V2 的计划合同**上：复用指针是
+    // `plannedObjectiveV2Schema.changeContext` 的第四档，而 `objectiveProposals`
+    // 只是提案（§4.2「不按标题相似自动继承」⇒ 不问模型"这条我见过"）。
+    // 指向错的文件会让这条台账永远读成"还没做"——而它其实已经做了。
+    file: V2_CONTRACTS,
+    present: /kind: z\.literal\("reuse_existing_objective"\)/,
+    label: "计划合同的 changeContext 带不带复用那一档",
   },
   {
     id: "plan-assembly-emits-existing-actions",
@@ -86,14 +89,24 @@ const REUSE_LINKS = [
   },
 ] as const;
 
-test("§16.38 目标复用台账：四件里今天有 0 件", () => {
+test("§16.38 目标复用台账：还差哪几件，说清楚是哪几件", () => {
   const present = REUSE_LINKS.filter((link) => link.present.test(read(link.file)));
+  const missing = REUSE_LINKS.filter((link) => !link.present.test(read(link.file)));
+  // 台账**报告剩下的**，而不是恒报"还差四件"：刀三落地之后剩下的是激活那一侧，
+  // 继续说"还差四件"会让人以为刀三没做，从而重做一遍。
   assert.deepEqual(
-    present.map((link) => link.id),
-    [],
-    `目标复用已经落地了（${present.map((l) => l.label).join("、")}）——`
-    + "请把本台账改成正向断言，并把 §16.38 记成已通过；"
-    + "别让这份文件继续说「还差四件」。",
+    missing.map((link) => link.id),
+    [
+      "plan-assembly-emits-existing-actions",
+      "review-surface-not-hardcoded-create-new",
+      "create-new-can-reach-an-existing-objective",
+    ],
+    `目标复用的台账变了：现在**已落地** ${present.length} 件（`
+    + `${present.map((l) => l.label).join("、") || "无"}），**还差** ${missing.length} 件（`
+    + `${missing.map((l) => l.label).join("、") || "无"}）。`
+    + "如果剩下的也做完了，请把这一格改成正向断言并把 §16.38 记成已通过；"
+    + "如果已落地的那几件变了位置，请改本台账指向的文件与模式——"
+    + "指向错的台账比没有台账更坏：它会让人重做已经做完的事。",
   );
 });
 

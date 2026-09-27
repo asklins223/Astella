@@ -426,6 +426,30 @@ export const plannedObjectiveV2Schema = z
         expectedObjectiveRevision: z.number().int().min(1),
         expectedObjectiveLifecycleEpoch: z.number().int().min(1),
       }),
+      /**
+       * 39d W7-5 刀三 · §4.2「同一篇笔记已有目标时，新的轮次先**匹配和复用**适用
+       * 目标，再创建确实新增的目标」。
+       *
+       * **为什么不是 `update_existing`**：那一档是"这张卡已经存在、改它的卡面"，
+       * 带 `cardId` 与三个乐观并发令牌；而这里要表达的是"**这颗目标已经存在**，
+       * 这张新卡挂到它下面"——没有既有的卡可以改，令牌也无从取。两者混在一档里，
+       * 激活那一侧就得靠"有没有 cardId"去猜意图。
+       *
+       * **`basis` 写成字面量而不是自由文本**：它是 `decideObjectiveReuseV2` 交回的
+       * 那一档，可枚举、可审计。`evidence` 记的是**判据输入**（共有哪几个块、什么
+       * 形态），不是一句"判定为同一条"——哪天块变了或形态变了，这条记录读得出
+       * 当初凭什么说它们是同一条（与 0300 的 `link_evidence` 同一纪律）。
+       */
+      z.strictObject({
+        kind: z.literal("reuse_existing_objective"),
+        objectiveId: z.string().uuid(),
+        basis: z.literal("same_note_same_block_same_form"),
+        evidence: z.strictObject({
+          candidateBlockIds: z.array(z.string().uuid()).min(1).max(20),
+          sharedBlockIds: z.array(z.string().uuid()).min(1).max(20),
+          knowledgeForm: z.string().min(1).max(60),
+        }),
+      }),
     ]),
   })
   .strict();

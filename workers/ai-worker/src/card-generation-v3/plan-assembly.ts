@@ -49,6 +49,12 @@ import {
   type CardGenerateV3CandidateDraft,
   type CardGenerateV3DraftOutput,
 } from "@ailearn/shared/card-generation-v3-contracts";
+// W7-5 刀三：判据是**纯函数**（不查库、不看模型输出），所以装配这一层只负责
+// 把"新候选的块"与"读侧给来的既有目标"递给它，然后照它交回的结论改 changeContext。
+import {
+  decideObjectiveReuseV2,
+  type ObjectiveReuseCandidateV2,
+} from "@ailearn/shared/objective-reuse-rules-v2";
 
 export interface CardGenerateV3AssemblyInput {
   readonly generated: CardGenerateV3DraftOutput;
@@ -69,6 +75,14 @@ export interface CardGenerateV3AssemblyInput {
   readonly sealedEvidence: readonly SealedEvidenceEntryV2[];
   /** 本轮生效的题型偏好（整批分配的输入之一）。 */
   readonly preferredStrategies?: readonly CardStrategyV2[];
+  /**
+   * W7-5 刀三：这一篇里**已有**的目标，连同它们的块锚与形态（读侧
+   * `loadReusableObjectivesForNoteV2` 的产出，已经按 (工作区, 笔记) 收窄）。
+   *
+   * 缺省 `[]`＝这一篇还没有任何目标（首篇笔记那一档），全部 `create_new`——
+   * 那是判据的输入，不是"复用被关掉了"。
+   */
+  readonly reusableObjectives?: readonly ObjectiveReuseCandidateV2[];
 }
 
 export interface CardGenerateV3AssemblyResult {
@@ -196,6 +210,67 @@ export function assembleCardGenerationV3(
   const strategyAllocations = allocateStrategies(forms, input.preferredStrategies);
   const practiceAllocations = allocatePracticeForms(forms);
 
+  // 原子 → 块：候选的依据最终落在**块**上，而判据要比的也是块。
+  //
+  // 走的不是"原子自己带 blockId"——`ExtractedKnowledgeAtom` **没有**那一列，它带的是
+  // `evidenceRefIds`（依据快照 id）。块 id 在 sealed 清单上（`evidenceSnapshotId → blockId`），
+  // 所以要经证据换算。**这是第一版写错的地方**：`atom.blockId` 不存在，tsc 立刻报出来，
+  // 而如果它存在却指错东西，`tsc` 是不会说的——所以换算这一步照着真实形状写。
+  const blockIdByEvidenceSnapshotId = new Map(
+    input.sealedEvidence.map((entry) => [entry.evidenceSnapshotId, entry.blockId]),
+  );
+  const blockIdsForSourceAtoms = (sourceAtomIds: readonly string[]): string[] => {
+    const atomById = new Map(input.atoms.map((atom) => [atom.atomId, atom]));
+    return [...new Set(sourceAtomIds.flatMap((atomId) => {
+      const atom = atomById.get(atomId);
+      if (!atom) return [];
+      // 块 id 有两条路：`sourceSectionKeys`（确定性抽取器直接带块 id）与
+      // `evidenceRefIds` 经 sealed 清单换算（模型抽取那一种）。**先走前者**——
+      // `extractAtomsDeterministic` 产出的原子 `evidenceRefIds` 是**空数组**
+      // （`planner-service.ts:114`），只走后者会一块都换算不出来，复用就永远不命中。
+      // 两条都走：一条空、另一条有值时，块集是它们的并集。
+      const fromSections = atom.sourceSectionKeys.filter((key) => key.length > 0);
+      const fromEvidence = atom.evidenceRefIds
+        .map((snapshotId) => blockIdByEvidenceSnapshotId.get(snapshotId))
+        .filter((id): id is string => Boolean(id));
+      return [...fromSections, ...fromEvidence];
+    }))];
+  };
+
+  /**
+   * W7-5 刀三：对每一条目标**跑一次判据**。判据是纯函数（`decideObjectiveReuseV2`），
+   * 它不知道模型、不知道库里有什么，只看"新候选的块 ∩ 既有目标的块"与形态。
+   * 命中就把 `changeContext` 换成复用那一档，并在 `reasonCodes` 里记下判据依据。
+   *
+   * **为什么不让模型说"这条我见过"**：§4.2「系统无法确定一个主张是否与历史相同
+   * 时保留差异，不按标题相似自动继承能力证据」。模型的"我见过"既不可复核也不可
+   * 重算；块交集可以。
+   */
+  const reuseByLocalId = new Map<string, Extract<PlannedObjectiveV2["changeContext"], { kind: "reuse_existing_objective" }>>();
+  const reuseCandidates = input.reusableObjectives ?? [];
+  if (reuseCandidates.length > 0) {
+    for (const entry of kept) {
+      const candidateBlockIds = blockIdsForSourceAtoms(entry.sourceAtomIds);
+      const decided = decideObjectiveReuseV2({
+        candidateBlockIds,
+        knowledgeForm: entry.draft.objectiveDraft.knowledgeForm,
+        existing: reuseCandidates,
+      });
+      if (decided.outcome === "reuse") {
+        reuseByLocalId.set(entry.draft.objectiveLocalId, {
+          kind: "reuse_existing_objective",
+          objectiveId: decided.objectiveId,
+          basis: decided.basis,
+          evidence: {
+            candidateBlockIds: decided.evidence.candidateBlockIds as [string, ...string[]],
+            sharedBlockIds: decided.evidence.sharedBlockIds as [string, ...string[]],
+            knowledgeForm: decided.evidence.knowledgeForm,
+          },
+        });
+      }
+    }
+  }
+
   const objectives: PlannedObjectiveV2[] = kept.map((entry, index) => {
     const proposal = generated.objectiveProposals.find(
       (item) => item.objectiveLocalId === entry.draft.objectiveLocalId,
@@ -206,6 +281,10 @@ export function assembleCardGenerationV3(
     ];
     if (strategyAllocations[index]?.reasonCode) reasonCodes.push(strategyAllocations[index]!.reasonCode!);
     if (practiceAllocations[index]?.reasonCode) reasonCodes.push(practiceAllocations[index]!.reasonCode!);
+    const reuse = reuseByLocalId.get(entry.draft.objectiveLocalId);
+    // 复用的理由码要**进 planHash 的闭包**（它在 objective 上），所以"为什么落到
+    // 既有目标上"是可复核的，而不是只在内存里存在过。
+    if (reuse) reasonCodes.push(`reuse-${reuse.basis}`);
     return {
       objectiveLocalId: entry.draft.objectiveLocalId,
       objectiveStatement: entry.draft.objectiveDraft.objectiveStatement.slice(0, 2000),
@@ -216,7 +295,7 @@ export function assembleCardGenerationV3(
       sourceAtomIds: entry.sourceAtomIds.slice(0, 100),
       reasonCodes: reasonCodes.slice(0, 20),
       estimatedReviewCostSeconds: entry.draft.presentationDraft.estimatedReviewSeconds,
-      changeContext: { kind: "create_new" },
+      changeContext: reuse ?? { kind: "create_new" },
     };
   });
 
@@ -230,11 +309,13 @@ export function assembleCardGenerationV3(
       existingActions: [],
     },
     [
-      ...objectives.flatMap((objective) => objective.sourceAtomIds.map((atomId) => ({
-        atomId,
-        decision: "create_objective" as const,
-        objectiveLocalId: objective.objectiveLocalId,
-      }))),
+      ...objectives.flatMap((objective) => objective.sourceAtomIds.map((atomId) => (
+        objective.changeContext.kind === "reuse_existing_objective"
+          // 复用那一条的原子记成"已被既有目标覆盖"——这份决定里"哪个原子去了哪里"
+          // 是要能被读出来的（复盘里问过"候选为什么变少"，同一条纪律）。
+          ? { atomId, decision: "covered_by_existing_objective" as const, existingLearningObjectiveId: objective.changeContext.objectiveId }
+          : { atomId, decision: "create_objective" as const, objectiveLocalId: objective.objectiveLocalId }
+      ))),
       ...input.atoms
         .filter((atom) => !claimedAtoms.has(atom.atomId))
         .map((atom) => ({ atomId: atom.atomId, decision: "omit_over_budget" as const })),

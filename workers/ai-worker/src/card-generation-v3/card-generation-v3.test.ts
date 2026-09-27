@@ -879,3 +879,110 @@ test("三个任务的默认预算自洽：maxModelCalls ≥ 1 + maxAutoRetries�
       `${definition.id}：单步上界比整任务上界还大 ⇒ 那道上界永远轮不到，是假的`);
   }
 });
+
+// ── W7-5 刀三：复用的判据接到装配这一层（39 §4.2 第三段）──────────────────
+//
+// 刀一钉的是判据本身（纯函数），刀二钉的是读侧；这一组钉的是**两者接上了**：
+// 装配那一层真的按判据的结论改 `changeContext`，而不是各算各的。
+//
+// 钉四件：
+//  1. **命中 ⇒ changeContext 变成复用那一档**，并带上**可复核的判据证据**
+//     （共有哪几个块、什么形态）——不是一句"判定为同一条"。
+//  2. **`atomDecisions` 说得出原子去了哪里**：复用的那些记成
+//     `covered_by_existing_objective`。"候选为什么落在既有目标上"要能从计划里读出来。
+//  3. **正对照：不命中 ⇒ 仍然是 `create_new`**（首篇笔记那一档，以及块不交集那一档）。
+//  4. **正对照：形态不同 ⇒ 仍然是 `create_new`**，哪怕块完全一样。
+//
+// 变异自证：把 `decideObjectiveReuseV2` 的调用换成恒 `create_new` ⇒ ① 与 ② 两条红；
+// 把块的换算断掉（候选块恒为空）⇒ ① ② 红且 ③ 仍绿（说明"不命中"那一支没被弄坏）。
+const REUSE_OBJECTIVE_ID = "00000000-0000-4000-8000-0000000000ee";
+
+/** 这一批候选的**实际**知识形态——由展开器判定，用例不写死一个词。 */
+function assembledForm(): string {
+  const probe = assembleCardGenerationV3(assemblyInput([candidateContent("obj-1")],
+    cardGenerateV3OutputSchema.parse(JSON.parse(generateJson([candidateContent("obj-1")])))));
+  return probe.plan.result.kind === "author_candidates"
+    ? probe.plan.result.objectives[0]!.knowledgeForm
+    : "fact";
+}
+
+function reuseInput(over: Record<string, unknown> = {}) {
+  return {
+    ...assemblyInput([candidateContent("obj-1")],
+      cardGenerateV3OutputSchema.parse(JSON.parse(generateJson([candidateContent("obj-1")])))),
+    // 形态取**展开器实际判的那一个**：第一版把它写死成 "fact"，而展开器给的是
+    // `causal_model`（判分点 facet 推出来的），于是永远不命中——红在
+    // 「同块同形态命中」那一条。用例不替展开器决定形态。
+    reusableObjectives: [{
+      objectiveId: REUSE_OBJECTIVE_ID,
+      blockIds: [BLOCK_ONE],
+      knowledgeForm: assembledForm(),
+    }],
+    ...over,
+  };
+}
+
+test("W7-5 刀三：同块同形态命中 ⇒ 计划里那条目标是「复用既有目标」，并带判据证据", () => {
+  const assembled = assembleCardGenerationV3(
+    reuseInput() as unknown as Parameters<typeof assembleCardGenerationV3>[0],
+  );
+  const objective = assembled.plan.result.kind === "author_candidates"
+    ? assembled.plan.result.objectives[0]
+    : null;
+  assert.ok(objective, "计划里应当有目标");
+  assert.equal(objective.changeContext.kind, "reuse_existing_objective");
+  if (objective.changeContext.kind !== "reuse_existing_objective") return;
+  assert.equal(objective.changeContext.objectiveId, REUSE_OBJECTIVE_ID);
+  assert.equal(objective.changeContext.basis, "same_note_same_block_same_form");
+  // 判据证据要**能复核**：共有哪几个块、什么形态，都交回计划里。
+  assert.deepEqual(objective.changeContext.evidence.sharedBlockIds, [BLOCK_ONE]);
+  assert.equal(objective.changeContext.evidence.knowledgeForm, assembledForm(),
+    "判据证据里交回的形态要与判据实际用的那个一致");
+  // 理由码进 planHash 的闭包，所以"为什么落到既有目标上"不是只在内存里存在过。
+  assert.ok(objective.reasonCodes.includes("reuse-same_note_same_block_same_form"), objective.reasonCodes.join(","));
+});
+
+test("W7-5 刀三：atomDecisions 说得出复用的原子去了哪一条既有目标", () => {
+  const assembled = assembleCardGenerationV3(
+    reuseInput() as unknown as Parameters<typeof assembleCardGenerationV3>[0],
+  );
+  const decisions = assembled.plan.atomDecisions;
+  assert.ok(decisions.length > 0, "这一批候选应当有原子决定");
+  for (const decision of decisions) {
+    if (decision.decision === "omit_over_budget") continue;
+    // 复用那一档记的是"被既有目标覆盖"，且点名是哪一条。
+    assert.equal(decision.decision, "covered_by_existing_objective", decision.decision);
+    if (decision.decision === "covered_by_existing_objective") {
+      assert.equal(decision.existingLearningObjectiveId, REUSE_OBJECTIVE_ID);
+    }
+  }
+});
+
+test("W7-5 刀三 正对照：块不交集 ⇒ 仍然是 create_new（确实新增的内容）", () => {
+  const assembled = assembleCardGenerationV3(reuseInput({
+    reusableObjectives: [{
+      objectiveId: REUSE_OBJECTIVE_ID,
+      // 另一块：这一条是这篇里别处出处的另一件事。
+      blockIds: ["bbbb0000-0000-4000-8000-0000000000ff"],
+      knowledgeForm: "fact",
+    }],
+  }) as unknown as Parameters<typeof assembleCardGenerationV3>[0]);
+  const objective = assembled.plan.result.kind === "author_candidates"
+    ? assembled.plan.result.objectives[0]
+    : null;
+  assert.equal(objective?.changeContext.kind, "create_new");
+});
+
+test("W7-5 刀三 正对照：形态不同 ⇒ 仍然是 create_new，哪怕块完全一样", () => {
+  const assembled = assembleCardGenerationV3(reuseInput({
+    reusableObjectives: [{
+      objectiveId: REUSE_OBJECTIVE_ID,
+      blockIds: [BLOCK_ONE],
+      knowledgeForm: assembledForm() === "fact" ? "application_rule" : "fact",
+    }],
+  }) as unknown as Parameters<typeof assembleCardGenerationV3>[0]);
+  const objective = assembled.plan.result.kind === "author_candidates"
+    ? assembled.plan.result.objectives[0]
+    : null;
+  assert.equal(objective?.changeContext.kind, "create_new");
+});
