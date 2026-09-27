@@ -34,6 +34,7 @@ function listItem(overrides: Record<string, unknown> = {}) {
     cardStrategy: "why",
     lifecycle: "active",
     freshness: "fresh",
+    primaryNoteId: "11111111-1111-4111-8111-111111111111",
     primaryNoteTitle: "物理笔记",
     createdAt: new Date().toISOString(),
     personalState: { state: "unvalidated", activeRunId: null },
@@ -147,5 +148,78 @@ describe("理解目标列表行", () => {
     // 时间点必须渲染成"月日 时分"，不能把 ISO 串漏到界面上。
     expect(rowText()).toMatch(/\d+月\d+日 \d{2}:\d{2} 后才能正式答/);
     expect(rowText()).not.toContain(notBefore.toISOString());
+  });
+});
+
+/**
+ * W7-6 刀二：卡库**顶层按笔记成组**（39 §8.5 第一、二段）。
+ *
+ * 钉的是屏上那一层，纯函数那一层（键是 noteId、三档互斥、未关联排最后）由
+ * `packages/shared/src/objective-card-groups-v2.test.ts` 钉住——这里钉的是
+ * **它真的被画出来了**：组头存在、三个数分开写、未关联那一组有自己的样子。
+ *
+ * 每格带正控制：① 的反向是"没有笔记的那些**不**进真实笔记的组"；② 的反向是
+ * "三个数合成一个总数"（那会让"两张要核对"看不见）；③ 的反向是"未关联组排在最前"。
+ */
+describe("卡库按笔记成组（39 §8.5）", () => {
+  const NOTE_A = "11111111-1111-4111-8111-111111111111";
+  const NOTE_B = "22222222-2222-4222-8222-222222222222";
+  const future = () => new Date(Date.now() + 5 * 86_400_000).toISOString();
+  const row = (over: Record<string, unknown>) => listItem({ ...over });
+
+  async function renderIndex(items: Array<Record<string, unknown>>) {
+    installApi(items);
+    render(<ObjectiveLibrarySurface />);
+    await openIndex();
+  }
+
+  function groupHeads(): HTMLElement[] {
+    return [...document.querySelectorAll<HTMLElement>(".v3-note-group")];
+  }
+
+  it("顶层按笔记成组，一篇一个组；组头那三个数分开写", async () => {
+    await renderIndex([
+      row({ objectiveId: "00000000-0000-4000-8000-0000000000a1", primaryNoteId: NOTE_A, primaryNoteTitle: "力学笔记" }),
+      row({ objectiveId: "00000000-0000-4000-8000-0000000000a2", primaryNoteId: NOTE_A, primaryNoteTitle: "力学笔记" }),
+      row({
+        objectiveId: "00000000-0000-4000-8000-0000000000b1",
+        primaryNoteId: NOTE_B,
+        primaryNoteTitle: "光学笔记",
+        progress: { practiceTrailCount: 0, lastCanonicalAt: null, reviewDueAt: future(), initialValidation: null, validationNotBefore: null },
+      }),
+    ]);
+    const heads = groupHeads();
+    expect(heads.length).toBe(2);
+    // 组头那三个数**各自带标签**（§8.5「状态来源不同应分别标明」）。合成一个总数
+    // 就看不出"这张要核对、那张只是没到期"。
+    expect(heads[0]!.textContent).toContain("待复习");
+    expect(heads[0]!.textContent).toContain("可用");
+    expect(heads[0]!.textContent).toContain("待核对");
+    // 光学那篇有一张排着期的 ⇒ 它的「待复习」是 1，力学那篇是 0。
+    expect(heads[1]!.textContent).toContain("待复习 1");
+    expect(heads[0]!.textContent).toContain("待复习 0");
+  });
+
+  it("正对照：没有笔记的那些进「未关联笔记」组，且不混进真实笔记的组", async () => {
+    await renderIndex([
+      row({ objectiveId: "00000000-0000-4000-8000-0000000000a1", primaryNoteId: NOTE_A, primaryNoteTitle: "力学笔记" }),
+      // id 为 null **但标题有值** ⇒ 仍进未关联（§8.5「不按标题猜造」）。
+      row({ objectiveId: "00000000-0000-4000-8000-0000000000c1", primaryNoteId: null, primaryNoteTitle: "看起来像笔记的标题" }),
+    ]);
+    const heads = groupHeads();
+    expect(heads.length).toBe(2);
+    const ungrouped = heads.find((h) => h.dataset.noteGroup === "ungrouped");
+    expect(ungrouped).toBeTruthy();
+    expect(ungrouped!.textContent).toContain("未关联笔记");
+    // 它排**最后**：真实笔记的组才是主要内容（§8.5 末段：这是切换盘点期的遗留）。
+    expect(groupHeads().at(-1)!.dataset.noteGroup).toBe("ungrouped");
+  });
+
+  it("组内的卡行仍然是原来那些行（分组不换掉行的内容与入口）", async () => {
+    await renderIndex([
+      row({ objectiveId: "00000000-0000-4000-8000-0000000000a1", primaryNoteId: NOTE_A, primaryNoteTitle: "力学笔记", conceptLabel: "惯性与质量" }),
+    ]);
+    expect(document.querySelectorAll(".v3-goal-row").length).toBe(1);
+    expect(document.querySelector(".v3-goal-row__title")?.textContent).toBe("惯性与质量");
   });
 });

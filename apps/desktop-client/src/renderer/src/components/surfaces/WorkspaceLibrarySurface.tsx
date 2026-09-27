@@ -52,6 +52,7 @@ import { learningRunPhaseLabels } from "./learning-run-surface";
 import { startObjectiveJourney } from "./objective-primary-action";
 import { ObjectiveProgressBand } from "./ObjectiveProgressBand";
 import { progressSegmentForState } from "./objective-progress-band";
+import { groupObjectiveCardsByNoteV2 } from "@ailearn/shared/objective-card-groups-v2";
 import {
   freshnessLabel,
   formatObjectiveDateTime,
@@ -405,6 +406,18 @@ export function ObjectiveLibrarySurface() {
     () => orderObjectivesForQuest(visibleGoals, primaryFocusId, queuePriorityIds),
     [primaryFocusId, queuePriorityIds, visibleGoals],
   );
+  /**
+   * W7-6 刀二：§8.5「**顶层按笔记显示卡组**，一篇笔记至多一个组；组内才展示卡片」。
+   *
+   * 分组是 `groupObjectiveCardsByNoteV2` 那份**纯函数**算的，不在这里另写一遍——
+   * 键必须是 `noteId`（按标题分组＝同一篇改标题就分家、两篇同名就并家），
+   * 「未关联笔记」是一个组且排在最后（§8.5「不按标题猜造」），三档互斥且
+   * 待核对先判。判据都在 `packages/shared/src/objective-card-groups-v2.test.ts`。
+   *
+   * 过滤与搜索**先于**分组：§8.5「按内容搜索可以找到卡片并显示所属笔记，不只搜索
+   * 组标题」——搜到的是卡，它所在的组跟着出现；而不是先分组再在组标题里搜。
+   */
+  const noteGroups = useMemo(() => groupObjectiveCardsByNoteV2(visibleGoals), [visibleGoals]);
   const questGroups = useMemo(() => {
     const groups: Record<ObjectiveQuestRegion, ObjectiveListItemV3[]> = { ready: [], active: [], mastered: [] };
     for (const item of orderedVisibleGoals) groups[objectiveQuestRegion(item.personalState.state)].push(item);
@@ -656,24 +669,44 @@ export function ObjectiveLibrarySurface() {
                 ))}
               </div>
               <ul ref={listRef} className="v3-goal-list" onScroll={(event) => { writeObjectiveLibraryView({ scrollTop: event.currentTarget.scrollTop }); }}>
-                {visibleGoals.map((item) => (
-                  <li key={item.objectiveId}>
-                    <button type="button" className="v3-goal-row" onClick={() => openObjective(item.objectiveId)}>
-                      <span className={`v3-goal-row__marker v3-goal-row__marker--${objectiveStateTone(item.personalState.state)}`} aria-hidden="true" />
-                      <span className="v3-goal-row__body">
-                        <span className="v3-goal-row__title">{item.conceptLabel ?? item.primaryNoteTitle ?? "未命名学习卡"}</span>
-                        <span className="v3-goal-row__summary">{item.publicSummary}</span>
-                        <span className="v3-objective-tags">
-                          <span className="objective-card-type objective-card-type--row" data-empty={item.cardStrategy ? "false" : "true"}><span>卡型</span><strong>{cardStrategyLabel(item.cardStrategy)}</strong></span>
-                          <span className={`v3-objective-state v3-objective-state--${objectiveStateTone(item.personalState.state)}`} title={objectiveStateHint(item.personalState.state)}>
-                            <CircleDot size={12} aria-hidden="true" />{formatObjectiveState(item.personalState.state)}
-                          </span>
-                          <span className="v3-goal-row__facts">{formatKnowledgeForm(item.knowledgeForm)}{objectiveProgressChips(item.progress).map((chip) => <Fragment key={chip}>&nbsp;· {chip}</Fragment>)}</span>
-                          <span className="v3-goal-row__meta">建于 {formatDate(item.createdAt)}</span>
-                        </span>
+                {/* W7-6 刀二：§8.5 的顶层——按笔记成组，组内才展示卡片。
+                    组头那三个数**分开写、各自带标签**（§8.5「状态来源不同应分别标明」）：
+                    「待复习」是排期行在的那些，「可用」是还排不上也用得上的，
+                    「待核对」是引用的原文变了或对不上的。三者不是同一根状态轴上的三档，
+                    合成一个数字就看不出"两张卡要核对、一张只是没到期"。 */}
+                {noteGroups.map((group) => (
+                  <li key={group.noteKey} className="v3-note-group" data-note-group={group.ungrouped ? "ungrouped" : "group"}>
+                    <div className="v3-note-group__head">
+                      <strong className="v3-note-group__title">{group.title}</strong>
+                      <span className="v3-note-group__counts">
+                        <span className="v3-note-group__count v3-note-group__count--due" title="有回访安排在等着（含还没到期的）">待复习 {group.dueCount}</span>
+                        <span className="v3-note-group__count v3-note-group__count--usable" title="可以随时练，没有到期也没有要核对的">可用 {group.usableCount}</span>
+                        <span className="v3-note-group__count v3-note-group__count--check" title="引用的原文变了或对不上，先核对再练">待核对 {group.needsCheckCount}</span>
                       </span>
-                      <span className="v3-goal-row__next"><small>进入详情</small><ChevronRight size={16} aria-hidden="true" /></span>
-                    </button>
+                      {group.ungrouped ? <small className="v3-note-group__note">这些卡没有关联笔记，按它们自己的目标继续练。</small> : null}
+                    </div>
+                    <ul className="v3-note-group__items">
+                      {group.items.map((item) => (
+                        <li key={item.objectiveId}>
+                          <button type="button" className="v3-goal-row" onClick={() => openObjective(item.objectiveId)}>
+                            <span className={`v3-goal-row__marker v3-goal-row__marker--${objectiveStateTone(item.personalState.state)}`} aria-hidden="true" />
+                            <span className="v3-goal-row__body">
+                              <span className="v3-goal-row__title">{item.conceptLabel ?? "未命名学习卡"}</span>
+                              <span className="v3-goal-row__summary">{item.publicSummary}</span>
+                              <span className="v3-objective-tags">
+                                <span className="objective-card-type objective-card-type--row" data-empty={item.cardStrategy ? "false" : "true"}><span>卡型</span><strong>{cardStrategyLabel(item.cardStrategy)}</strong></span>
+                                <span className={`v3-objective-state v3-objective-state--${objectiveStateTone(item.personalState.state)}`} title={objectiveStateHint(item.personalState.state)}>
+                                  <CircleDot size={12} aria-hidden="true" />{formatObjectiveState(item.personalState.state)}
+                                </span>
+                                <span className="v3-goal-row__facts">{formatKnowledgeForm(item.knowledgeForm)}{objectiveProgressChips(item.progress).map((chip) => <Fragment key={chip}>&nbsp;· {chip}</Fragment>)}</span>
+                                <span className="v3-goal-row__meta">建于 {formatDate(item.createdAt)}</span>
+                              </span>
+                            </span>
+                            <span className="v3-goal-row__next"><small>进入详情</small><ChevronRight size={16} aria-hidden="true" /></span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   </li>
                 ))}
                 {!visibleGoals.length ? <li className="v3-goal-list__empty" role="status"><Search size={19} aria-hidden="true" /><strong>已载入范围内没有匹配目标</strong><span>{page?.nextCursor ? "可以继续读取后面的目标，或更换条件。" : "换一个关键词或筛选条件。"}</span></li> : null}

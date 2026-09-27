@@ -37,6 +37,7 @@ function listItem(index: number, overrides: Record<string, unknown> = {}) {
     cardStrategy: "why",
     lifecycle: "active",
     freshness: "fresh",
+    primaryNoteId: "11111111-1111-4111-8111-111111111111",
     primaryNoteTitle: "物理笔记",
     createdAt: new Date().toISOString(),
     personalState: { state: "unvalidated", activeRunId: null },

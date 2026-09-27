@@ -940,3 +940,40 @@
   .hud-surface .objective-card-type > strong { font-size: 14px; }
   .hud-surface .objective-card-type--row > strong { font-size: 12px; }
 }
+
+/* ─── W7-6 刀二：卡库按笔记成组（39 §8.5 第一、二段）─────────────────────
+   一篇笔记一个组，组内才展示卡片。视觉沿用书房里既有的「册页」语汇：
+   组头是一张压在册页上的**书脊签**（左侧一道实边 + 奶油纸面），不是一条分隔线，
+   更不是后台那种带小标题的分区——那会把这个页面读成"列表管理面板"。
+   「未关联笔记」那一组用虚线书脊，与真实笔记区分开（§8.5「不按标题猜造」）。 */
+.hud-surface .v3-note-group { margin: 0 0 14px; padding: 0; list-style: none; }
+.hud-surface .v3-note-group:last-child { margin-bottom: 4px; }
+.hud-surface .v3-note-group__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  margin: 0 0 6px;
+  padding: 6px 11px 6px 12px;
+  border-left: 3px solid var(--hud-clay);
+  border-radius: 0 11px 11px 0;
+  background: var(--hud-paper-light);
+}
+.hud-surface .v3-note-group[data-note-group="ungrouped"] .v3-note-group__head {
+  border-left-style: dashed;
+  border-left-color: var(--hud-soft);
+}
+.hud-surface .v3-note-group__title { color: var(--hud-ink); font-size: 15px; font-weight: 700; letter-spacing: 0.01em; }
+.hud-surface .v3-note-group__counts { display: inline-flex; flex-wrap: wrap; gap: 4px 9px; }
+/* 三个数**各自带标签、各自一种颜色**：§8.5「状态来源不同应分别标明」。
+   合成一个总数会让人以为"待复习 5"里包含要核对的那两张。 */
+.hud-surface .v3-note-group__count { font-size: 12px; line-height: 1.6; white-space: nowrap; }
+.hud-surface .v3-note-group__count::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 4px; border-radius: 50%; vertical-align: 1px; }
+.hud-surface .v3-note-group__count--due { color: var(--hud-gold); }
+.hud-surface .v3-note-group__count--due::before { background: var(--hud-gold); }
+.hud-surface .v3-note-group__count--usable { color: var(--hud-green); }
+.hud-surface .v3-note-group__count--usable::before { background: var(--hud-green); }
+.hud-surface .v3-note-group__count--check { color: var(--hud-clay); }
+.hud-surface .v3-note-group__count--check::before { background: var(--hud-clay); }
+.hud-surface .v3-note-group__note { flex-basis: 100%; color: var(--hud-soft); font-size: 12px; line-height: 1.7; }
+.hud-surface .v3-note-group__items { margin: 0; padding: 0; list-style: none; }
