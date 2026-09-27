@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
 import { useRoomStore } from "../../app/room-store";
 import { createRequestMeta, unwrapGatewayResult } from "../../app/desktop-client";
@@ -6,6 +6,7 @@ import { HudPage } from "../hud/HudPage";
 import { useHudPage } from "../hud/use-hud-page";
 import { usePageReadableView } from "../hud/use-page-readable-view";
 import { learningPhaseLabel } from "./learning-run-surface";
+import { TodayBatchSurface } from "./TodayBatchSurface";
 import { SurfaceDataState, formatRelative, useSurfaceProjection } from "./surface-data";
 
 /**
@@ -31,6 +32,13 @@ export function ResumableSurface() {
   });
 
   const summary = data?.activeRunSummary ?? null;
+
+  // W7-4 刀十五：今日复习那一批（§12 表「今日复习」行）。挂在这一页**之内**而不是新开
+  // 一个 surface id —— `room-machine.ts` 的 `RoomSurface` 是全房间共享的枚举，而它此刻
+  // 可能正被并行会话改；为一个读侧新开一个 id 要动它，换来的是一次合并冲突的风险。
+  // **这一条是取舍，不是终局。**
+  const batchTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const batchEpochRef = useRef<number | undefined>(undefined);
   const items = useMemo(() => (summary?.state === "data" ? summary.data.items : []), [summary]);
   const total = summary?.state === "data" ? summary.data.activeCount : 0;
   /**
@@ -88,6 +96,9 @@ export function ResumableSurface() {
     invoke("validate");
   };
 
+  {/* 今日复习那一批（§12 表「今日复习」行）：逐项念出选择原因 ＋ 那个「另外还有
+      N 道可回访」的数 ＋ 三颗调整动作。 */}
+  <TodayBatchSurface timeZone={batchTimeZone} epochRef={batchEpochRef} />
   return (
     <HudPage page="resumable">
       <section className="resumable-index" aria-labelledby="resumable-title">

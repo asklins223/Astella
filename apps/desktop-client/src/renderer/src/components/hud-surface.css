@@ -108,3 +108,59 @@
   display: flex;
   gap: 8px;
 }
+
+/* 今日复习那一批（39d W7-4 刀十五；§12 表「今日复习」行）。
+ *
+ * 逐项一行的册页感：左边一枚小纸签写**为什么**（到期／久未回访／你加了量），右边
+ * 那一句是服务端给的原文。理由那一列用更轻的墨——它是**附带的那一句**，而 §12.1
+ * 整章的用意是"说得清为什么是这一件"。 */
+.hud-batch {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hud-batch__title {
+  margin: 0;
+  font-size: 1.05em;
+}
+
+.hud-batch__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hud-batch__item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--hud-paper, #fdf6e3);
+  border: 1px solid color-mix(in srgb, var(--hud-ink, #6b5a41) 30%, transparent);
+  border-radius: 12px 10px 14px 8px;
+}
+
+.hud-batch__tag {
+  flex: none;
+  padding: 1px 8px;
+  font-size: 0.8em;
+  color: var(--hud-ink, #6b5a41);
+  background: var(--hud-mint, #d9f0dd);
+  border-radius: 999px;
+}
+
+.hud-batch__why {
+  font-size: 0.92em;
+  color: color-mix(in srgb, var(--hud-ink, #6b5a41) 78%, transparent);
+  line-height: 1.4;
+}
+
+.hud-batch__line {
+  margin: 0;
+  font-size: 0.9em;
+  color: color-mix(in srgb, var(--hud-ink, #6b5a41) 72%, transparent);
+}
