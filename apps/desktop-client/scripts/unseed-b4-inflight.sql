@@ -5,11 +5,11 @@ BEGIN;
 DELETE FROM card_generation_candidates_v2
 WHERE run_id IN (SELECT id FROM card_generation_runs_v2 WHERE idempotency_key = 'b4-live-probe-2026-09-22');
 
+-- 0308：`card_generation_run_progress_v2` 已随旧四阶段链一起删掉（零写零读），
+-- 所以这一块 unseed 不再碰它——留着会当场报 relation does not exist。
 DELETE FROM card_generation_plans_v2
 WHERE run_id IN (SELECT id FROM card_generation_runs_v2 WHERE idempotency_key = 'b4-live-probe-2026-09-22');
 
-DELETE FROM card_generation_run_progress_v2
-WHERE run_id IN (SELECT id FROM card_generation_runs_v2 WHERE idempotency_key = 'b4-live-probe-2026-09-22');
 
 DELETE FROM card_generation_runs_v2 WHERE idempotency_key = 'b4-live-probe-2026-09-22';
 

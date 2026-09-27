@@ -1453,11 +1453,15 @@ export function parseCandidateRevealV2(input: unknown): CandidateRevealV2 {
 // ─── 0249 实时进度读数（migration 0249，计划 §21 的 A2）─────────────────────
 
 /**
- * 写进 `card_generation_run_progress_v2.progress` 的形状。它与桌面合同里的
- * `cardGenerationProgressV1Schema` **同形**（同样那四格计数），读取端因此可以在
- * "实时读数 / 候选表"之间整体换源，界面不必知道数字是从哪来的。
+ * 生成进度的四格计数。它与桌面合同里的 `cardGenerationProgressV1Schema` **同形**。
  *
- * 定义在服务端合同而不是复用桌面合同：这张表是 worker→API 的内部通道，
+ * ⚠️ **它现在没有表了**：39d §7.5 结清那一格时，`card_generation_run_progress_v2`
+ * （0249）连同旧四阶段链一起被 0308 删掉了——那张表零写零读，界面上"第几步"看
+ * `run.status`、分子分母看计划行与候选表。**这个形状仍然留着**，因为它是「进度」在
+ * 合同层的那份定义；只是**没有哪张表在存它**。别因为它没有表就去删它——桌面合同那边
+ * 同形的 `cardGenerationProgressV1Schema` 还在用。
+ *
+ * 定义在服务端合同而不是复用桌面合同：那张表曾是 worker→API 的内部通道，
  * 它的合同不该由桌面端文件来定。
  */
 export const cardGenerationLiveProgressV2Schema = z.strictObject({

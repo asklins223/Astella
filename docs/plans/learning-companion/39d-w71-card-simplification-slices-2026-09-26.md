@@ -235,15 +235,22 @@ HEAD），按 hunk 拆开只提自己那 58 行。
 
 写在这里而不是任务清单里，因为下一刀开工时要先能读到"为什么今天没删"。
 
-1. **0249 那张实时读数表：现在零写、零读。**
-   `writeCardGenerationLiveProgress` 的两个调用点都在旧链的作者循环里（旧
-   `handlers/card-generation-v2-handler.ts:1143`、`:1192`），随链一起删了；api 读侧那第三路
-   （`helpers.ts` 里 `LIVE_PROGRESS_STATUSES` 那一段带活租约 JOIN 的读取）一并撤掉，
-   `readGenerationProgressV2` 因此少一个 `runStatus` 参数（全仓一个调用方）。
-   今天界面上的"第几步"看 `run.status`，分子分母看计划行与候选表——§7.3 那把尺量的就是这件事。
-   剩 `card_generation_run_progress_v2` 表本体、迁移 0249、`infra/postgres/roles.sql` 两行、
-   `packages/shared/src/db-schema/card-generation-v2.ts:641` 与夹具清理清单里那一行。
-   **删它要新迁移＋动 journal＋roles 清单三份注册面**，与代码删除不同一种风险，故另立。
+1. ~~**0249 那张实时读数表：现在零写、零读。**~~ —— **这一格 2026-09-27 结清**（0308）。
+   五份注册面**逐份核过、逐份清掉**：drizzle 声明（`card-generation-v2.ts:641`，全仓除
+   自身外**零引用**）、迁移 0249（**保留**，历史迁移不改）、journal、**新迁移 0308**
+   （`DROP TABLE IF EXISTS`）、`infra/postgres/roles.sql` **两行**（含其 0249 注释）、
+   以及 `card-generation-fixture-cleanup.ts` 那一行。
+
+   **删它**不会**打掉任何重放前提**——这与第 2 条**不同**：`policies.stageRuntimes` 进
+   `semanticSpecHash`（审计闭包），删字段＝改哈希＝在途 run 的重放前提被打掉；而
+   **这张表不在任何哈希、任何幂等键、任何回执里**，它是一张纯读数投影。
+
+   **顺带清掉两处会当场坏掉的引用**：`apps/desktop-client/scripts/unseed-b4-inflight.sql`
+   里那个 `DELETE FROM card_generation_run_progress_v2`——表没了它会报 relation does not
+   exist（**已实测整段跑通**）；以及 `card-generation-v2-contracts.ts` 里那段注释，它还
+   写着「读取端因此可以在『实时读数 / 候选表』之间整体换源」——换源已经发生过了，而
+   **那个形状要留着**（桌面合同同形的 `cardGenerationProgressV1Schema` 还在用）。
+
 2. **`policies.stageRuntimes` 已经没有运行时读者，但还在被播种。**
    唯一的消费者是旧链 `CardGenerationProviderRuntime` 那句按裸阶段名匹配采样参数的
    `find`；简化链的采样参数写在 `card-generation-v3/tasks.ts` 的任务定义里。

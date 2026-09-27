@@ -43,7 +43,6 @@ const FIXTURE_TABLES = [
   "card_activation_receipts_v2",
   "review_schedules",
   "card_candidate_feedback_v2",
-  "card_generation_run_progress_v2",
   "card_generation_events_v2",
   "card_candidate_quality_reports_v2",
   "candidate_evidence_binding_plans_v2",
