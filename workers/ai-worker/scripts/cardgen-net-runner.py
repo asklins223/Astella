@@ -69,6 +69,9 @@ def main() -> int:
     })
     env.pop("CARD_GENERATION_V2_LLM", None)
     env.pop("CARD_GENERATION_CHAIN", None)
+    # 以 "--" 开头的参数原样透传给 node --test（用来单跑一条：--test-name-pattern）。
+    passthrough = [a for a in args if a.startswith("--")]
+    args = [a for a in args if not a.startswith("--")]
     files = args or FAMILY
     if PAID in files and os.environ.get("APPROVE_LLM_SPEND") != "1":
         print(f"{PAID} 会打真模型（按次付费）。要跑它请单独一次、并带 APPROVE_LLM_SPEND=1。",
@@ -79,7 +82,7 @@ def main() -> int:
           f"CARD_GENERATION_V2_LLM 已摘｜{len(files)} 份文件", flush=True)
     return subprocess.run(
         ["node", "--import", "tsx", "--test", "--test-concurrency=1",
-         *(f"{TEST_DIR}/{f}" for f in files)],
+         *passthrough, *(f"{TEST_DIR}/{f}" for f in files)],
         cwd=PACKAGE, env=env,
     ).returncode
 
