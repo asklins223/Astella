@@ -28,7 +28,8 @@
  */
 import {
   cardCandidateRewriteV3OutputSchema,
-  cardContentCheckV3OutputSchema,
+  cardContentCheckV3EntrySchema,
+  cardContentCheckV3EnvelopeSchema,
   cardGenerateV3CandidateContentSchema,
   cardGenerateV3ObjectiveProposalSchema,
   type CardContentCheckV3Output,
@@ -234,7 +235,10 @@ export function buildCardGenerateV3Prompt(input: CardGenerateV3TaskInput): strin
     "你是学习卡制卡助手。下面给出一篇笔记的正文、可用依据、已有目标与用户请求。",
     "请选出最多 " + input.activationHardMax + " 个值得制卡的目标，并为每个目标出一张候选卡的完整草稿。",
     "只依据正文作答；每张卡的 evidenceRefIds 只能从下面的\"可用依据\"里选；",
-    "没有值得制卡的内容就返回 no_cards_recommended，不要凑数。",
+    // 第九发真模型对着一篇六句事实的笔记直接返回 no_cards（1 发、~32 s、零错误）——
+    // 那句"没有值得制卡的就不凑数"被当成了出口。零候选是**正常结果**，但不该是模型偷懒的
+    // 默认；把两个方向都说清楚：能独立成题的一句就该出一张，整篇都提不出点才 no_cards。
+    "正文里每一句能独立成题的事实、机制或对比都值得制卡；只有整篇都提不出一个值得记的点，才返回 no_cards_recommended（那是正常结果，不是失败）。",
     "严格按以下 JSON 形状回答（不加任何其他文字）：",
     '{"planIntent":{"kind":"author_candidates","recommendedCardCount":n} 或 ' +
     '{"kind":"no_cards_recommended","reasonCodes":[…}],',
@@ -559,7 +563,14 @@ export function createCardContentCheckV3Task(
       });
       let parsed: CardContentCheckV3Output;
       try {
-        parsed = cardContentCheckV3OutputSchema.parse(JSON.parse(completion.text));
+        // 逐条宽进：不过的那条**不交上来**（stamp 会按"没检查过"记账），其余照常。
+        const envelope = cardContentCheckV3EnvelopeSchema.parse(JSON.parse(completion.text));
+        const entries = [];
+        for (const rawEntry of envelope.perCandidate) {
+          const one = cardContentCheckV3EntrySchema.safeParse(rawEntry);
+          if (one.success) entries.push(one.data);
+        }
+        parsed = { perCandidate: entries, setIssues: envelope.setIssues };
       } catch (error) {
         const failure: ParseFailure = {
           ok: false,

@@ -261,6 +261,24 @@ export const cardContentCheckV3EntrySchema = z.strictObject({
   grounding: groundingCriticReportV2Schema,
 });
 
+/**
+ * 检查腿的**逐条宽进**信封：`perCandidate` 先收 `unknown[]`，由调用方逐条按
+ * `cardContentCheckV3EntrySchema` 解析——一条检查结论不合合同只让**那一条**变成
+ * "没检查过"（`stampCardContentCheckV3Output` 会按 insufficient＋`check_missing` 记账），
+ * 不该把整批判成 `output_shape`（第十发真模型在 `grounding.version` 上正是这么整批红的）。
+ */
+export const cardContentCheckV3EnvelopeSchema = z.strictObject({
+  perCandidate: z.array(z.unknown()).max(8),
+  setIssues: z
+    .array(
+      z.strictObject({
+        code: z.string().min(1).max(120),
+        detail: z.string().min(1).max(2000),
+      }),
+    )
+    .max(20),
+});
+
 export const cardContentCheckV3OutputSchema = z
   .strictObject({
     perCandidate: z.array(cardContentCheckV3EntrySchema).max(8),
