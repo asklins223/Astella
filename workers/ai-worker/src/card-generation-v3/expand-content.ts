@@ -77,6 +77,16 @@ function buildCanonicalAnswer(content: CardGenerateV3CandidateContent): Canonica
   }
 }
 
+/**
+ * 片段序号的**两种写法**：合同写 1 起，但真模型会写 0 起（第七发就是被 `too_small` 整批拒的）。
+ * 判据只有一条：出现 0 且没有出现等于片段数的越界值 ⇒ 按 0 起解释，整体 +1。
+ * 序号约定不是教学质量问题，不该用"整批红一次"来教。
+ */
+function normalizePartIndexesV3(indexes: readonly number[], partCount: number): number[] {
+  const zeroBased = indexes.includes(0) && !indexes.includes(partCount);
+  return indexes.map((n) => (zeroBased ? n + 1 : n));
+}
+
 export interface ExpandCandidateContentV3 {
   readonly draft: CardGenerateV3CandidateDraft;
   /** 被丢掉的悬空引用条数（模型指了不存在的片段号）。 */
@@ -90,14 +100,16 @@ export function expandCardGenerateV3ContentV3(input: {
   proposal: CardGenerateV3ObjectiveProposal | undefined;
 }): ExpandCandidateContentV3 {
   const { content, proposal } = input;
+  const partCount = content.answerParts.length;
   const known = new Set<string>(
-    Array.from({ length: content.answerParts.length }, (_, index) => `au-${index + 1}`),
+    Array.from({ length: partCount }, (_, index) => `au-${index + 1}`),
   );
   let droppedPartRefs = 0;
   const units: RubricUnitV2[] = [];
   content.judgingPoints.forEach((point, index) => {
-    const answerUnitIds = [...new Set(point.partIndexes.map((n) => `au-${n}`))].filter((id) => known.has(id));
-    droppedPartRefs += point.partIndexes.length - answerUnitIds.length;
+    const indexes = normalizePartIndexesV3(point.partIndexes, partCount);
+    const answerUnitIds = [...new Set(indexes.map((n) => `au-${n}`))].filter((id) => known.has(id));
+    droppedPartRefs += indexes.length - answerUnitIds.length;
     if (answerUnitIds.length === 0) return;
     units.push({
       rubricUnitId: `ru-${index + 1}`,

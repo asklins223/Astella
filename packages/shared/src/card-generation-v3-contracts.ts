@@ -81,8 +81,12 @@ export const cardGenerateV3CandidateContentSchema = z.strictObject({
         facet: taskIntentSchema,
         criterion: z.string().min(1).max(2000),
         required: z.boolean(),
-        /** 1 起的答案片段序号（服务端换成 `au-*`）。 */
-        partIndexes: z.array(z.number().int().min(1).max(40)).min(1).max(40),
+        /**
+         * 答案片段序号，**1 起**（服务端换成 `au-*`）。允许 0：第七发真模型就是写了 0 起的
+         * 序号被 `too_small` 整批拒掉——序号约定不该是整批红的原因，展开器会按"含 0 且不
+         * 含越界值"判出 0 起写法并整体 +1（见 `normalizePartIndexesV3`）。
+         */
+        partIndexes: z.array(z.number().int().min(0).max(40)).min(1).max(40),
       }),
     )
     .min(1).max(40),

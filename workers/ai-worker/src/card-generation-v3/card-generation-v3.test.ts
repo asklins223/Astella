@@ -725,6 +725,15 @@ test("展开器：悬空引用丢掉、steps 只有一段退回 bullets、提案
     proposal,
   });
   assert.equal(empty.rubricEmpty, true);
+  // 0 起的序号（第七发真模型的写法）要按 0 起解释，别让整批红在约定上。
+  const zeroBased = expandCardGenerateV3ContentV3({
+    content: { ...messy, judgingPoints: [{ facet: "recall", criterion: "0 起", required: true, partIndexes: [0] }] },
+    proposal,
+  });
+  assert.deepEqual(zeroBased.draft.objectiveDraft.rubric.units[0]!.answerUnitIds, ["au-1"],
+    "含 0 且不含越界值 ⇒ 整体 +1；序号约定不该用整批红来教");
+  assert.equal(zeroBased.droppedPartRefs, 0);
+
   // 提案对不上**在合同那一层就被拒**（判据只有一处）：展开器不写第二个答案。
   assert.throws(() => expandCardGenerateV3OutputV3({
     planIntent: { kind: "author_candidates", recommendedCardCount: 2 },
