@@ -40,7 +40,26 @@ export type AssessmentDisputeKindV2 =
  * **不强行选一方作为事实**"。少了 `undetermined` 就会逼系统二选一，那正是 §14.2
  * 明写不许做的事。
  */
-export type AssessmentDisputeRecheckOutcomeV2 = "upheld" | "corrected" | "undetermined";
+/**
+ * 复核结论，**四档**（2026-09-27 由三档扩为四档；39 §14.2）。
+ *
+ * 前三档对应"原判对不对"，第四档对应"**原判太宽松**"——它此前无处可归：
+ * 真模型实测遇到过这一种（原判 `covered`，原回答其实只有"记不清了"，
+ * 复核逐条判 `missing`）。三档里它只能落进 `undetermined`，而那是**另一句话**：
+ * `undetermined`＝复核自己也判不准（§14.2"不强行选一方"），
+ * `over_broad`＝复核**可靠地**说原判把没答对的算成了答对。
+ * 两者对用户是两件不同的事：一个是"系统还没想清楚"，一个是"上次说答对的那次不算"。
+ *
+ * - `upheld`：原判站得住（逐条无变化）
+ * - `corrected`：原判**偏严**——原判说没达成，复核说达成了（全部变化都是升档）
+ * - `over_broad`：原判**过宽**——原判说达成，复核说没达成（全部变化都是降档）
+ * - `undetermined`：判不出来（升档与降档混在一起、逐条 id 对不齐、或模型自述与逐条之差打架）
+ */
+export type AssessmentDisputeRecheckOutcomeV2 =
+  | "upheld"
+  | "corrected"
+  | "over_broad"
+  | "undetermined";
 
 /** 争议行自身的生命周期。`recheck_*` 三态与 `recheck_outcome` 一一对应，不重复表达。 */
 export type AssessmentDisputeStatusV2 =
@@ -121,6 +140,17 @@ export function decideDisputedObservationV2(input: {
   if (input.recheckOutcome === "undetermined") {
     // 维持争议状态，**不强行选一方**（§14.2 末句）。所以它仍然不发结论。
     return { action: "withhold_conclusion", suspendsArtifactReuse: true, reasonCode: "recheck_undetermined" };
+  }
+  if (input.recheckOutcome === "over_broad") {
+    // 原判过宽：**绝不能走 `use_as_is`**。那一档的字面意思是"原判站得住，照用"，
+    // 而这一档恰恰是原判被复核**否定**了——照用等于让一个已被推翻的"这是独立表现"
+    // 去推进复习间隔，那是把系统自己的错误变成用户的进度。
+    //
+    // 也**不是** `apply_correction_once`：那一档是"把原判改成达成"，而这里没有
+    // 任何可升档的东西（全部变化都是降档），没有可写的更正。
+    // 所以：扣住这一次观察的结论，让它不进排期；争议保持未决，用户仍可补充说明、
+    // 或按 §16.22 结束并暂不安排。reasonCode 单独一档，屏上要说得出区别。
+    return { action: "withhold_conclusion", suspendsArtifactReuse: true, reasonCode: "recheck_original_too_broad" };
   }
   if (input.recheckOutcome === "upheld") {
     return { action: "use_as_is", suspendsArtifactReuse: true, reasonCode: "recheck_upheld" };
@@ -232,6 +262,139 @@ export function disputeIsPersonalOnlyV2(): {
   };
 }
 
+// ─── 规则六：复核结论由「逐条判定之差」定档（§14.2、§8.6、§16.25）────────
+
+/**
+ * 比对用的最小形状：只要 id 与判定，理由与出处都归调用方。
+ *
+ * 一次重新检查的**报告 wire 合同**在下面 wire 那一节（`disputeRecheckReportV2Schema`）——
+ * 它要用到本节之后才声明的 `assessmentDisputeRecheckOutcomeV2Schema`，放在这里会在
+ * 模块加载期就撞 TDZ（"红在文件没加载"那一族）。
+ */
+export interface DisputeRecheckVerdictPairV2 {
+  readonly rubricItemId: string;
+  readonly verdict: string;
+}
+
+/**
+ * 复核者逐条重判的结果与原判之差（`derivation` 那条判据的原料）。
+ *
+ * 三档的来历只有一句话：**"修正"必须是"原来没达成的那些，原回答其实达成了"。**
+ *  - 一条都没变 ⇒ 维持（§14.2「维持」）。
+ *  - 有变化，且**每一条**都变成 `covered` ⇒ 修正（§14.2 末段「若重新检查发现原回答
+ *    本身已满足原评分条件，应以更正记录修正原判」）。只增不减是"纠正系统误判"的
+ *    确切形状：更正记录不该顺手引入一条新的、更严的指控。
+ *  - 其它任何形状（有的变成达成、有的反而变差；或干脆只是措辞不同）⇒ 仍无法判断。
+ *    §14.2「判断仍不可靠时维持争议状态，**不强行选一方作为事实**」——混合的那一档
+ *    正是"强行选一方"最像的地方。
+ *
+ * 逐条 id 集合不齐（多一条、少一条、重复）也归第三档：判不出差就等于没有结论，
+ * 而"没有结论"在这一层与"仍无法判断"是同一件事。
+ */
+export function decideRecheckVerdictDiffV2(input: {
+  readonly originalVerdicts: readonly DisputeRecheckVerdictPairV2[];
+  readonly recheckedVerdicts: readonly DisputeRecheckVerdictPairV2[];
+}): {
+  readonly derivation: "upheld" | "corrected" | "over_broad" | "undetermined";
+  /** 逐条 id 集合对不齐（多一条／少一条／重复）：连"之差"都算不出来。 */
+  readonly shapeMismatch: boolean;
+  readonly changedUnitIds: readonly string[];
+  readonly upgradedUnitIds: readonly string[];
+  readonly notCoveredUnitIds: readonly string[];
+} {
+  const original = new Map(input.originalVerdicts.map((v) => [v.rubricItemId, v.verdict]));
+  const rechecked = new Map(input.recheckedVerdicts.map((v) => [v.rubricItemId, v.verdict]));
+  const shapeMatches =
+    original.size === rechecked.size
+    && input.originalVerdicts.length === original.size
+    && input.recheckedVerdicts.length === rechecked.size
+    && [...rechecked.keys()].every((id) => original.has(id));
+
+  if (!shapeMatches) {
+    return {
+      derivation: "undetermined",
+      shapeMismatch: true,
+      changedUnitIds: [],
+      upgradedUnitIds: [],
+      notCoveredUnitIds: [],
+    };
+  }
+
+  const changed: string[] = [];
+  const upgraded: string[] = [];
+  const notCovered: string[] = [];
+  for (const [unitId, next] of rechecked) {
+    const previous = original.get(unitId);
+    if (previous === next) continue;
+    changed.push(unitId);
+    if (next === "covered") upgraded.push(unitId);
+    else notCovered.push(unitId);
+  }
+  changed.sort();
+  upgraded.sort();
+  notCovered.sort();
+
+  if (changed.length === 0) {
+    return { derivation: "upheld", shapeMismatch: false, changedUnitIds: changed, upgradedUnitIds: [], notCoveredUnitIds: [] };
+  }
+  if (notCovered.length === 0 && upgraded.length > 0) {
+    return { derivation: "corrected", shapeMismatch: false, changedUnitIds: changed, upgradedUnitIds: upgraded, notCoveredUnitIds: [] };
+  }
+  // 全是降档 ⇒ **原判过宽**。与 `corrected` 严格对称：那一档是"原判偏严"，
+  // 这一档是"原判偏松"。两者都必须单独成档——混进 `undetermined` 就等于把
+  // 「系统确认上次判宽了」说成「系统还没想清楚」，而用户该做的两件事完全不同。
+  if (upgraded.length === 0 && notCovered.length > 0) {
+    return { derivation: "over_broad", shapeMismatch: false, changedUnitIds: changed, upgradedUnitIds: [], notCoveredUnitIds: notCovered };
+  }
+  return { derivation: "undetermined", shapeMismatch: false, changedUnitIds: changed, upgradedUnitIds: upgraded, notCoveredUnitIds: notCovered };
+}
+
+/**
+ * 真正落库的那一档：**模型说的** 对上 **逐条之差推出来的**。
+ *
+ * §14.2 明写三个结论都要能展示，而"展示"的前提是它站得住。模型自己说的话不是证据，
+ * 它逐条判了什么才是——所以：
+ *
+ *  - 两者一致 ⇒ 照记那一档，`disagreementNote` 为空串（理由直接用复核者自己那一句）；
+ *  - 两者不一致 ⇒ **记「仍无法判断」**，并交回一句要接在理由后面的说明。既不把没依据
+ *    的"维持／修正"放过去（那是假回执：屏上写"已修正"而库里一条判定都没变），也不把
+ *    复核者的诚实自述推翻（§14.2 要的那扇出口必须一直开着）。
+ *
+ * 记「仍无法判断」不是失败：那一档正是 §14.2 规定的行为，而且它不是死路——用户
+ * 可以补充说明、可以结束并暂不安排（§16.22 的出口）。
+ */
+export function decideRecheckOutcomeV2(input: {
+  readonly claimed: AssessmentDisputeRecheckOutcomeV2;
+  readonly originalVerdicts: readonly DisputeRecheckVerdictPairV2[];
+  readonly recheckedVerdicts: readonly DisputeRecheckVerdictPairV2[];
+}): {
+  readonly outcome: AssessmentDisputeRecheckOutcomeV2;
+  readonly derivation: "upheld" | "corrected" | "over_broad" | "undetermined";
+  readonly disagrees: boolean;
+  /** 接在复核者自己那一句理由**后面**的话；一致时为空串。 */
+  readonly disagreementNote: string;
+} {
+  const diff = decideRecheckVerdictDiffV2(input);
+  if (diff.derivation === input.claimed) {
+    return { outcome: input.claimed, derivation: diff.derivation, disagrees: false, disagreementNote: "" };
+  }
+  const upgraded = diff.upgradedUnitIds.length;
+  const notCovered = diff.notCoveredUnitIds.length;
+  const summary = diff.shapeMismatch
+    ? "复核给出的逐条判定与原判对不上号（条数或 id 不齐）"
+    : [
+      `${diff.changedUnitIds.length} 条逐条判定发生变化`,
+      upgraded > 0 ? `其中 ${upgraded} 条改为达成` : "",
+      notCovered > 0 ? `${notCovered} 条不是达成` : "",
+    ].filter((part) => part.length > 0).join("、");
+  return {
+    outcome: "undetermined",
+    derivation: diff.derivation,
+    disagrees: true,
+    disagreementNote: `（附：${summary}，与复核自己说的结论对不上；按「不强行选一方」记为仍无法判断）`,
+  };
+}
+
 // ─── wire 合同（路由与桌面共用）────────────────────────────────────────────
 const isoTimestampV2Schema = z.string().datetime({ offset: true });
 
@@ -246,6 +409,7 @@ export type AssessmentDisputeKindV2Wire = z.infer<typeof assessmentDisputeKindV2
 export const assessmentDisputeRecheckOutcomeV2Schema = z.enum([
   "upheld",
   "corrected",
+  "over_broad",
   "undetermined",
 ]);
 export type AssessmentDisputeRecheckOutcomeV2Wire = z.infer<
@@ -273,6 +437,41 @@ export const assessmentCorrectionKindV2Schema = z.enum([
   "system_misjudgment",
   "user_supplement",
 ]);
+
+/**
+ * 一次重新检查里**每条 rubric 的独立判定**。取值与开放回答评估那条 critic 的
+ * 枚举同形（`run-critic.ts` 的 `RubricVerdictOutput.verdict`）——不是抄，是同一件
+ * 东西：判"这一条评分条件被答案覆盖了没有"。换成另一套取值就会出现"复核说达成、
+ * 原判说没达成"这种没法比的形状，`decideRecheckVerdictDiffV2` 的"之差"也就无从算起。
+ */
+export const disputeRecheckUnitVerdictV2Schema = z.enum([
+  "covered",
+  "partial",
+  "missing",
+  "contradicted",
+  "not_assessable",
+]);
+export type DisputeRecheckUnitVerdictV2 = z.infer<typeof disputeRecheckUnitVerdictV2Schema>;
+
+/**
+ * **一次重新检查的报告 wire 合同**：三档结论 ＋ 一句理由 ＋ 逐条判定。
+ *
+ * 逐条判定必填（`.min(1)`）而不是可选：§14.2 要展示的是"基于原题、原回答和依据"
+ * 得出的理由，而一个没有任何逐条依据的"我判你错了"无法与原判对照——定档判据
+ * （`decideRecheckVerdictDiffV2`）完全建立在逐条判定上。§8.6「不得把同一次生成的
+ * 自评直接当成独立评估」在这里也有形状：复核者交的是**它自己逐条重判的结果**，
+ * 不是把原判抄一遍或换个说法。
+ */
+export const disputeRecheckReportV2Schema = z.strictObject({
+  outcome: assessmentDisputeRecheckOutcomeV2Schema,
+  reason: z.string().min(1).max(2000),
+  verdicts: z.array(z.strictObject({
+    rubricItemId: z.string().min(1),
+    verdict: disputeRecheckUnitVerdictV2Schema,
+    unitReason: z.string().min(1).max(500),
+  })).min(1).max(80),
+});
+export type DisputeRecheckReportV2 = z.infer<typeof disputeRecheckReportV2Schema>;
 
 /** 开一份争议。`statement` 是必填：没有理由的"我不同意"没法进复核。 */
 export const openAssessmentDisputeV2Schema = z.strictObject({

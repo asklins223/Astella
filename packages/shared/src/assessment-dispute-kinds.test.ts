@@ -27,7 +27,15 @@ import {
 } from "./assessment-dispute-rules-v2.ts";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..", "..", "..");
+/**
+ * 迁移源。**注意 0310**：0296 建立了这张表，而 0310 把复核结论从三档扩成四档
+ * （加了 `over_broad`）。读 0296 会读到过时的 CHECK——那一族判据的全部价值
+ * 就是「拿现读的事实对账」，而 0296 已经不是最终形状了。
+ * 下面另有一条判据钉住「最终形状来自哪一条」，免得这个常量被改回 0296。
+ */
 const MIGRATION = "0296_assessment_disputes_v2.sql";
+/** 覆写 outcome CHECK 的那一条（读这一份才是当前的库形状）。 */
+const OUTCOME_WIDENING_MIGRATION = "0310_assessment_dispute_over_broad_outcome.sql";
 
 /** 把 CHECK 里 `IN (…)` 的取值抠出来；`kind` 写成 `${t.kind} IN (…)` 也能匹配。 */
 function checkValues(sqlText: string, constraint: string): string[] {
@@ -40,6 +48,9 @@ function checkValues(sqlText: string, constraint: string): string[] {
 }
 
 const migrationSql = readFileSync(join(REPO_ROOT, "apps/api/src/db/migrations", MIGRATION), "utf8");
+const outcomeWideningSql = readFileSync(
+  join(REPO_ROOT, "apps/api/src/db/migrations", OUTCOME_WIDENING_MIGRATION), "utf8",
+);
 
 /** TS union 与 zod enum 必须是同一份：`union` 少一档 = 那个读点编不过，`enum` 少一档 = 静默拒。 */
 function assertSameMembers(
@@ -66,10 +77,23 @@ test("争议状态：zod 与 0296 的 CHECK 是同一份", () => {
     "adv2_status_chk");
 });
 
-test("复核三态：zod 与 0296 的 CHECK 是同一份（少了 undetermined 就会逼系统二选一）", () => {
-  assertSameMembers("recheckOutcome", assessmentDisputeRecheckOutcomeV2Schema.options,
-    ["upheld", "corrected", "undetermined"] as AssessmentDisputeRecheckOutcomeV2[],
-    "adv2_outcome_chk");
+test("复核四档：zod 与 **0310 之后**的 CHECK 是同一份（§14.2 由三档扩为四档）", () => {
+  const fromZod = assessmentDisputeRecheckOutcomeV2Schema.options;
+  assert.deepEqual([...fromZod].sort(), ["corrected", "over_broad", "undetermined", "upheld"],
+    "复核结论应当是四档：原判站得住／原判偏严／原判过宽／仍无法判断");
+  // CHECK 读 **0310**（它 DROP 旧约束后重建），不是 0296 —— 0296 停在三档。
+  const widened = outcomeWideningSql.match(/IN \(([^)]*)\)/);
+  assert.ok(widened, `在 ${OUTCOME_WIDENING_MIGRATION} 里读不到 outcome 的 CHECK 列表（判据可能指错了地方）`);
+  assert.deepEqual(
+    [...widened[1]!.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!).sort(),
+    [...fromZod].sort(),
+    "0310 的 CHECK 与 zod 枚举不同宽：加一档要连着改迁移",
+  );
+  // 钉住「最终形状来自哪一条」：0310 必须真的 DROP 掉 0296 建的那条约束再重建，
+  // 否则两条 CHECK 会并存，而 Postgres 会**同时**执行它们 —— 新档会被旧的那条拒掉，
+  // 症状是"枚举有四档、落库报 check_violation"。
+  assert.match(outcomeWideningSql, /DROP CONSTRAINT IF EXISTS assessment_disputes_v2_outcome_chk/,
+    "0310 没有 DROP 旧约束：两条 CHECK 并存时旧的那条会把新档拒掉");
 });
 
 test("更正两档：zod 与 0296 的 CHECK 是同一份（§16.25 两者不混算）", () => {
@@ -89,6 +113,7 @@ test("union 覆盖 zod 的每一档：少一档时这里是类型错，不是运
   const outcomeUnion: Record<AssessmentDisputeRecheckOutcomeV2, true> = {
     upheld: true,
     corrected: true,
+    over_broad: true,
     undetermined: true,
   };
   const correctionUnion: Record<AssessmentCorrectionKindV2, true> = {

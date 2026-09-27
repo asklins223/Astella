@@ -125,7 +125,7 @@ export const assessmentDisputesV2 = pgTable(
     ),
     outcomeChk: check(
       "assessment_disputes_v2_outcome_chk",
-      sql`${t.recheckOutcome} IS NULL OR ${t.recheckOutcome} IN ('upheld', 'corrected', 'undetermined')`,
+      sql`${t.recheckOutcome} IS NULL OR ${t.recheckOutcome} IN ('upheld', 'corrected', 'over_broad', 'undetermined')`,
     ),
     statementChk: check("assessment_disputes_v2_statement_chk", sql`length(${t.statement}) > 0`),
     revisionChk: check("assessment_disputes_v2_revision_chk", sql`${t.artifactRevision} >= 1`),
