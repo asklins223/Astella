@@ -92,7 +92,7 @@ function SEMANTIC_RELATION_FROM_REASON_CODES(reasonCodes: readonly string[]) {
 }
 
 const RELATION_STAMP_LABEL: Readonly<Record<"confirmed" | "dismissed" | "suggested", string>> = {
-  suggested: "系统猜的一条，���没当成真的",
+  suggested: "系统猜的一条，还没当成真的",
   confirmed: "你确认过了",
   dismissed: "你收起了这条",
 };
