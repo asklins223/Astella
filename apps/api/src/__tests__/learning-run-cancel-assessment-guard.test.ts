@@ -26,6 +26,8 @@ const AVAIL_FILE = join(REPO_ROOT, "apps/api/src/modules/learning-runs/run-actio
 const SCHEMA_FILE = join(REPO_ROOT, "packages/shared/src/db-schema/learning-runs.ts");
 const MIGRATION_FILE = join(REPO_ROOT, "apps/api/src/db/migrations/0301_learning_assessment_cancelled.sql");
 const CONTRACTS_FILE = join(REPO_ROOT, "packages/shared/src/learning-run-contracts.ts");
+const ROUTES_FILE = join(REPO_ROOT, "apps/api/src/modules/learning-runs/run-routes.ts");
+const SURFACE_FILE = join(REPO_ROOT, "apps/desktop-client/src/renderer/src/components/surfaces/learning-run-surface.tsx");
 
 /** 剥掉注释：源码形状判据要判代码。 */
 function codeOnly(text: string): string {
@@ -108,6 +110,106 @@ test("投影与状态机一致：只在未终态时宣告那颗按钮（宣告�
   // H1 那一格（retry_assessment）不能被这次改动带坏
   assert.match(avail, /RETRYABLE_ASSESSMENT_STATUSES\.includes\(view\.activeAssessment\.status\)/,
     "可重试那一档的判据被动到了");
+});
+
+/**
+ * 上面那条量的是 **TS union**，而 wire 上真正执法的是另外三处。三处都合法地「有这一档」
+ * 或者「合法地少一档」时，TS 不会报错、判据也全绿，而命令**发不出去**。
+ *
+ * 真实事故就是这一形状：action union 有、`learning_assessments.status` 有、
+ * `run-service.ts` 的 `case` 有、`allowedActions` 会宣告它——但
+ *  ① `learningRunActionSchema`（**zod**，V2 请求的 `action` 字段用它）没有这一档，
+ *    `run-routes.ts` 的 `parseBody(app, learningRunActionRequestV2Schema, …)` 在那一层
+ *    就拒掉，`applyAction` 那个 case 永远进不去；
+ *  ② `isV2ActionAllowed` 的 `switch` 少一个 case（不穷尽时 TS **不报错**，回调返回
+ *    类型含 undefined），于是就算发得出去也 409；
+ *  ③ 渲染层 `actionLinks` 是 `filter(…includes(kind))` 白名单式的一行，漏一档＝屏上
+ *    根本没有那颗按钮，而 `actionRequestFor` 的 switch 同样不穷尽。
+ *
+ * 四处都"看起来有"或"看起来该有"，没有任何一条判据量到它们。**所以下面这几条量的是
+ * 执法点本身，不是声明点。**
+ */
+test("执法点①：wire 的 zod 有这一档（TS union 有 ≠ 发得出去）", () => {
+  const contracts = readFileSync(CONTRACTS_FILE, "utf8");
+  // learningRunActionSchema 是 z.discriminatedUnion("kind", [...])，逐个 variant 量。
+  const at = contracts.indexOf('export const learningRunActionSchema = z.discriminatedUnion("kind", [');
+  assert.ok(at > 0, "读不到 learningRunActionSchema（判据可能指错了地方）");
+  const body = contracts.slice(at, contracts.indexOf("\n]);", at));
+  assert.match(body, /kind: z\.literal\("cancel_assessment"\)[\s\S]{0,120}assessmentId/,
+    "learningRunActionSchema 里没有带 assessmentId 的 cancel_assessment："
+    + "run-routes 的 parseBody 会在 zod 那一层拒掉整发命令，applyAction 那个 case 永远进不去");
+  assert.match(body, /kind: z\.literal\("end"\)/,
+    "end 那一档不见了：取消必须是**另一个**动作，不能顶掉它");
+});
+
+test("执法点②：isV2ActionAllowed 的 switch 有这一档（不穷尽的 switch 不报错）", () => {
+  const routes = readFileSync(ROUTES_FILE, "utf8");
+  const at = routes.indexOf("function isV2ActionAllowed(");
+  assert.ok(at > 0, "读不到 isV2ActionAllowed（判据可能指错了地方）");
+  const body = routes.slice(at, routes.indexOf("\n}\n", at));
+  assert.match(body, /case "cancel_assessment":/,
+    "isV2ActionAllowed 没有这一档：服务端会宣告一颗注定 409 的动作，"
+    + "屏上按下去只得到「该 action 不在服务端签发的允许集合中」");
+  // 指名要连 assessmentId 一起对，否则一次 run 的两次评估分不清收的是哪一次
+  assert.match(body, /case "cancel_assessment":[\s\S]{0,200}allowed\.assessmentId/,
+    "这一档没有把 assessmentId 一起比对");
+});
+
+test("执法点③④：屏上真的有这颗按钮（白名单 ＋ 请求映射 ＋ 出口那一排）", () => {
+  const surface = readFileSync(SURFACE_FILE, "utf8");
+  // ③ actionLinks 的白名单式 filter：漏一档＝整条链接被丢掉。
+  // **判据必须钉那一行本身**，不能只量 `action.kind === "cancel_assessment"` 出现过——
+  // `isExitAction` 里也有同一句，量宽了就会在白名单仍然缺着的时候给出假绿
+  // （这正是本刀第一版的写法，变异③④当场戳穿）。
+  assert.match(surface, /snapshot\.allowedActions\.filter\(\(action\) => action\.kind === "cancel_assessment"\)/,
+    "actionLinks 那几行 filter 没有把 cancel_assessment 接进来：屏上根本没有那颗按钮");
+  // actionRequestFor：不接就是发出去一个 undefined 的 action
+  assert.match(surface, /case "cancel_assessment":[\s\S]{0,160}assessmentId/,
+    "actionRequestFor 没有这一档：按下去发出去的 action 是 undefined");
+  // §5.5「三个独立动作」：出口那一排要同时承载，不能是一颗
+  assert.ok(!/const exitAction = actionLinks\.find\(/.test(surface),
+    "出口仍然是 find(...) 单数：评估在途时 cancel_assessment 与 end 同时被宣告，只有一颗进得来，"
+    + "另一颗连「更多选择」都进不去（moreActions 用 -quickActionKeys 过滤）");
+  assert.match(surface, /isExitAction[\s\S]{0,200}"cancel_assessment"/,
+    "cancel_assessment 没有被算成出口动作：它会被塞进「更多选择」，而 §5.5 要求它看得见");
+  // 措辞：不能写成「取消评估」——那听起来像把作答也收走了
+  assert.match(surface, /case "cancel_assessment": return "停止本次评估"/,
+    "这颗按钮没有独立措辞（或措辞与 §5.5 的分工不符）：三个动作分量不同，字面不该长得像");
+});
+
+/**
+ * 变异自证：把上面三条各自指着的执法点去掉，这三条必须**各自**红。
+ * 一条判据如果三处都漏也能绿，那它量的就不是执法点。
+ */
+test("判据对「三处执法点各漏一处」灵敏", () => {
+  const surface = readFileSync(SURFACE_FILE, "utf8");
+  const contracts = readFileSync(CONTRACTS_FILE, "utf8");
+  const routes = readFileSync(ROUTES_FILE, "utf8");
+
+  // ① wire 缺这一档 ⇒ 执法点① 红
+  const wireDropped = contracts.replace(
+    /\s*z\.strictObject\(\{ kind: z\.literal\("cancel_assessment"\), assessmentId: z\.string\(\)\.uuid\(\) \}\),/,
+    "",
+  );
+  assert.notEqual(wireDropped, contracts, "变异①造不出差异 ⇒ 判据恒真（正则是指错了地方）");
+  assert.ok(!/kind: z\.literal\("cancel_assessment"\)/.test(
+    wireDropped.slice(wireDropped.indexOf('learningRunActionSchema = z.discriminatedUnion'), wireDropped.indexOf("\n]);", wireDropped.indexOf('learningRunActionSchema = z.discriminatedUnion'))),
+  ), "变异①没有真的删掉 wire 那一档");
+
+  // ② switch 缺这一档 ⇒ 执法点② 红
+  const switchDropped = routes.replace(/\s*case "cancel_assessment":\s*\n?\s*return action\.kind === "cancel_assessment"[^\n]*\n/, "\n");
+  assert.notEqual(switchDropped, routes, "变异②造不出差异 ⇒ 判据恒真");
+  const isV2Body = (text: string) => {
+    const a = text.indexOf("function isV2ActionAllowed(");
+    return text.slice(a, text.indexOf("\n}\n", a));
+  };
+  assert.ok(!/case "cancel_assessment":/.test(isV2Body(switchDropped)), "变异②没有真的删掉 switch 那一档");
+
+  // ③④ 屏上缺这颗按钮 ⇒ 执法点③ 红
+  const surfaceDropped = surface.replace(/\s*\.\.\.snapshot\.allowedActions\.filter\(\(action\) => action\.kind === "cancel_assessment"\),/, "");
+  assert.notEqual(surfaceDropped, surface, "变异③④造不出差异 ⇒ 判据恒真");
+  assert.ok(!/snapshot\.allowedActions\.filter\(\(action\) => action\.kind === "cancel_assessment"\)/.test(surfaceDropped),
+    "变异③④没有真的删掉白名单那一行");
 });
 
 test("action union 带上 assessmentId：仅凭 runId 判不出「已完成的那一次」", () => {

@@ -497,3 +497,26 @@ claims §4 记的漂移清单**只列了三处，实测远不止**。补在这�
 **那个状态组合产品上不存在**（§14.2：`undetermined`＝维持争议、不强行选一方，
 没有可更正的东西）。服务层挡得对，测试错。因为整档此前 11 条全红，这段逻辑
 **一次都没被执行过**。
+
+---
+
+## 9. 给 W7 那一路：`activation-service.ts` 把可见性棘轮顶红了（2026-09-27 晚）
+
+`note-visibility-read-sites.test.ts` 那条「返回正文的目标读点都带上『跟着来源笔记判』」
+现在红着，**归属是 W7**，不是别人的：
+
+```
+modules/card-generation-v2/activation-service.ts: 9 处目标读点没带判据，豁免只给了 7 个
+→ 1238 / 1418 / 1546 / 1979 / 2252 (from(learningObjectivesV2))
++ 734 / 1270 / 1498 / 1569 (from(learningObjectiveRevisionsV2))
+```
+
+成因是 §6.1 认领的那一刀（`reuse_existing_objective`）给 `activation-service.ts` 增加了
+目标读点，而 `OBJECTIVE_SYSTEM_LEVEL_READS` 里的豁免数还停在 7。
+
+**请你们自己改，不要由别人代改。** 理由是那条判据的棘轮方向是**只许变短**
+（同一条用例的另一半就在断言「豁免比实际需要的多」）：为了让它绿而把豁免调大，
+需要有人真读一遍那 9 处到底该不该带可见性判据——那是产品判断，不是抄个数字。
+
+`activateCardCandidatesV2` 那一族（约 10 条红，`suspect_claim` 形状）与本条无关，
+归属 W5-2／W7-7，两条路自行认领。

@@ -136,6 +136,14 @@ function isV2ActionAllowed(
         return action.kind === "activate_followup" && action.followupId === allowed.followupId;
       case "retry_assessment":
         return action.kind === "retry_assessment" && action.assessmentId === allowed.assessmentId;
+      // §5.5「停止本次评估」。**这一格此前整个缺着**，而 `allowedActions` 里确实有这一档
+      // （`run-action-availability.ts` 在评估未终态时会宣告它）——`switch` 不穷尽时
+      // TS 不报错（回调返回类型含 undefined），于是一发注定 409 的动作被宣告出去，
+      // 屏上按下去只得到「该 action 不在服务端签发的允许集合中」。
+      // 与 `retry_assessment` 同一形状：指名要连 `assessmentId` 一起对，
+      // 否则一次 run 的两次评估分不清收的是哪一次。
+      case "cancel_assessment":
+        return action.kind === "cancel_assessment" && action.assessmentId === allowed.assessmentId;
       case "end":
         return action.kind === "end" && action.abandonLockedEvidence === allowed.abandonLockedEvidence;
     }

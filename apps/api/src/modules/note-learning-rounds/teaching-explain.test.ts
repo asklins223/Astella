@@ -152,7 +152,14 @@ test("内核外壳：可重试的失败按 maxAutoRetries 重试一次，第二�
   assert.equal((result as { class: string }).class, "output_shape");
   // 首次 + 1 次自动重试（预算里的 maxAutoRetries=1）——这条链真跑两次。
   assert.equal(calls, 2);
-  assert.match(result.attemptRef, /note_teaching_explain_v1@v1/);
+  // **引用常量而不是写死字面量**：这两条曾经写死 `@v1`，而实现把 NOTE_TEACHING_EXPLAIN_TASK_VERSION 提到 2 之后它们一直红着——「实现改了、用例没跟上」的典型形状。写死字面量等于把下一次版本提升也变成一次红。
+  // 失败那一发的前缀匹配不是宽松，是**它本来就多一个 `:failed` 后缀**：成功那一条是精确相等，
+  // 失败这一条是「同一个 id@版本，后面缀着失败态」。两条原本一个用 match 一个用 equal，
+  // 这里保留这个差别而不是统一成一种——把它们写成同一种断言，等于丢掉「失败态有后缀」这条信息。
+  assert.ok(
+    result.attemptRef.startsWith(`${NOTE_TEACHING_EXPLAIN_TASK_ID}@v${NOTE_TEACHING_EXPLAIN_TASK_VERSION}:`),
+    `失败那一次的 attemptRef 应以 id@版本: 开头并缀着失败态，实际是 ${result.attemptRef}`,
+  );
 });
 
 test("内核外壳：invalid_input 不重试（材料问题重试一百次也一样）", async () => {
@@ -173,7 +180,7 @@ test("内核外壳：成功那一发带回执引用，输出原样交给调用�
   });
   const result = await runWithProvider(provider, 3);
   assert.equal(result.ok, true);
-  assert.equal(result.attemptRef, "note_teaching_explain_v1@v1");
+  assert.equal(result.attemptRef, `${NOTE_TEACHING_EXPLAIN_TASK_ID}@v${NOTE_TEACHING_EXPLAIN_TASK_VERSION}`);
   assert.deepEqual((result as { output: TeachingExplainOutputV1 }).output.sourceBlockOrdinals, [1]);
 });
 

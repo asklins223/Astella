@@ -1700,6 +1700,19 @@ export const learningRunActionSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("retry_prepare") }),
   z.strictObject({ kind: z.literal("retry_assessment"), assessmentId: z.string().uuid() }),
   z.strictObject({ kind: z.literal("retry_commit") }),
+  /**
+   * §5.5 三个独立动作里的中间那个（39d W5-1）。**带 `assessmentId` 是为了让执法的那一层
+   * 有指名可对**：一次 run 可以先后有多次 assessment，不指名就分不清收的是哪一次。
+   *
+   * 它此前只存在于 **allowed** 那一侧（`learningRunAllowedActionSchema`）而漏在这一侧，
+   * 于是整条命令在 `run-routes.ts` 的 `parseBody` 就被 zod 拒掉，`applyAction` 里那个
+   * `case` 永远进不去——服务端能力、可用动作宣告、幂等账本三处都写好了，命令发不出去。
+   *
+   * **`confirmationRequired` 不在这一格**：它是 allowed 那侧的 UI 提示位
+   * （`learning-run-surface.tsx` 的 `actionRequestFor` 负责剥掉 `version` 与它），
+   * 把它塞进请求形状就等于让一次确认仪式变成 wire 合同的一部分。
+   */
+  z.strictObject({ kind: z.literal("cancel_assessment"), assessmentId: z.string().uuid() }),
   z.strictObject({ kind: z.literal("end"), abandonLockedEvidence: z.boolean() }),
 ]);
 

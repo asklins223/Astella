@@ -527,6 +527,13 @@ function actionRequestFor(action: LearningRunAllowedActionV2): DesktopLearningRu
       return { kind: action.kind, followupId: action.followupId };
     case "retry_assessment":
       return { kind: action.kind, assessmentId: action.assessmentId };
+    // §5.5「用户明确选择『停止本次评估』则保存原回答，停止该任务后续尝试」。
+    // **这一格此前整个缺着**，而服务端已经会宣告这一档——`actionRequestFor` 的
+    // `switch` 不穷尽时 TS 同样不报错，于是那颗按钮（如果画了）按下去发出去的
+    // 是一个 `undefined` 的 action。指名要带 `assessmentId`：一次 run 可以先后有多次
+    // assessment，剥掉它就分不清收的是哪一次。
+    case "cancel_assessment":
+      return { kind: action.kind, assessmentId: action.assessmentId };
     case "end":
       return { kind: action.kind, abandonLockedEvidence: action.abandonLockedEvidence };
   }
@@ -564,6 +571,10 @@ function actionLabel(action: LearningRunAllowedActionV2): string {
     case "retry_prepare": return "重新准备";
     case "retry_assessment": return "重新评估";
     case "retry_commit": return "重试记录结果";
+    // §5.5 三个独立动作的中间那个。**措辞不写「取消评估」**：那听起来像把这一轮的
+    // 作答也收走了，而这颗按钮收的只是**这一次判定**——原回答留着，用户之后仍然可以
+    // 「重新评估」。三个动作的分量不一样，字面就不该长得像。
+    case "cancel_assessment": return "停止本次评估";
     case "end": return "安全退出";
   }
 }
@@ -2535,6 +2546,10 @@ function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) 
   const actionLinks = [
     ...alternativeActions,
     ...snapshot.allowedActions.filter((action) => ["pause", "resume", "request_hint", "activate_followup", "finish_current_evidence", "finish_without_commit", "retry_prepare", "retry_assessment", "retry_commit"].includes(action.kind)),
+    // §5.5「停止本次评估」此前**根本进不了 actionLinks**：这一行是白名单式的
+    // `filter(...includes)`，漏掉一档就等于服务端宣告了而屏上没有——和 wire 那一侧
+    // 漏 `cancel_assessment` 是同一个病的两个器官（都在"合法地少一档"的地方）。
+    ...snapshot.allowedActions.filter((action) => action.kind === "cancel_assessment"),
     ...snapshot.allowedActions.filter((action) => ["skip_run", "end"].includes(action.kind)),
   ];
   const switchAction = actionLinks.find((action) => action.kind === "switch_variant");
@@ -2552,8 +2567,9 @@ function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) 
    * 退出动作必须摆在明面上（复盘 #12）：此前 `更多选择` 的 details 折叠了「稍后再做」，
    * 用户在无障碍树里根本找不到它——折叠区里的东西对键盘和读屏都不存在。
    * `end` 在其它阶段是唯一出口，同样直给。
+   *
+   * **这里曾经是一颗（`find`）而不是一组**，拆分见下面 `quickActions.push(...)` 的注释。
    */
-  const exitAction = actionLinks.find((action) => action.kind === "skip_run" || action.kind === "end");
   /**
    * checkpoint 的下一步（补充证据 / 结束但不改变复习 / 结算当前证据）是**用户的选择**，
    * 不是后台在准备什么——它们必须在明面上（2026-09-21 实机截图：藏在「更多选择」里，
@@ -2580,7 +2596,13 @@ function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) 
   if (nextHintAction) quickActions.push(nextHintAction);
   else if (hintLadder.length > 0) quickActions.push(hintLadder[hintLadder.length - 1]!);
   quickActions.push(...checkpointActions);
-  if (exitAction) quickActions.push(exitAction);
+  // 出口是**一组**而不是一颗。评估在途时服务端会同时宣告 `cancel_assessment` 与 `end`，
+  // 此前这里是 `find(...)` 单数，只有一颗能进 `quickActions`；另一颗连「更多选择」都
+  // 进不去（`moreActions` 用 `-quickActionKeys` 过滤，而它压根不在 `quickActions` 里）。
+  // §5.5「结束活动、取消 AI 任务和撤销未来复习授权是三个独立动作」要求出口这一排
+  // **同时**承载它们，否则评估在途时用户为了不等下去只能放弃刚答完的那道题。
+  // 判据内联而不是复用下面的 `isExitAction`：那一条定义在这一行之后（`const` 不提升）。
+  quickActions.push(...actionLinks.filter((action) => action.kind === "skip_run" || action.kind === "cancel_assessment" || action.kind === "end"));
   const quickActionKeys = new Set(quickActions.map(actionKey));
   /**
    * 出口（离开这次作答）与求助（换个走法继续）是两类东西，此前却和主按钮平铺在
@@ -2588,8 +2610,19 @@ function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) 
    * 第二排（31 号文档 P19，1440×810 实测 dock 高 123px、两排在 y=625 与 y=693）。
    * 现在分成定死的两排——出口在上、主按钮在下排右端，不再靠换行碰运气。
    */
-  const isExitAction = (action: LearningRunAllowedActionV2) => action.kind === "skip_run" || action.kind === "end";
-  const exitActions = quickActions.filter(isExitAction);
+  const isExitAction = (action: LearningRunAllowedActionV2) => action.kind === "skip_run" || action.kind === "cancel_assessment" || action.kind === "end";
+  /**
+   * 「停止本次评估」放在出口那一排，且**排在 `end` 前面**。
+   *
+   * 理由是 §5.5 那一段的原话：评估在途时，屏上原本只有「安全退出」一颗出口，而那一颗
+   * 要 `abandonLockedEvidence: true`——用户为了不等下去，只能把刚答完的那道题扔掉。
+   * §5.5 明确「结束活动、取消 AI 任务和撤销未来复习授权是三个独立动作」，所以第三条
+   * 出路必须**看得见**，而不是塞进「更多选择」让人以为只能等。
+   *
+   * 顺序也是语义：先停这一次判定（作答留着，之后还能「重新评估」），再谈放弃作答。
+   * 两个都摆在同一排时，把轻的放前面，重的读起来才是"升级"而不是"倒退"。
+   */
+  const exitActions = quickActions.filter(isExitAction).sort((a, b) => (a.kind === "end" ? 1 : 0) - (b.kind === "end" ? 1 : 0));
   const helpActions = quickActions.filter((action) => !isExitAction(action) && action !== checkpointPrimaryAction);
   const quickButton = (action: LearningRunAllowedActionV2, primary = false) => {
     const isHint = action.kind === "request_hint";
