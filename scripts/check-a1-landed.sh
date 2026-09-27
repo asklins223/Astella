@@ -39,22 +39,20 @@ PY
 
 # ⑥ 这条链后来交付的东西，逐个对 **HEAD** 核（不是工作树——未提交的不算落地）。
 #    想临时加一条：CHECK_A1_EXTRA="路径::签名" bash scripts/check-a1-landed.sh
+#    2026-09-27（39d W7-7 刀二）：四阶段链与它的逐候选 author 循环已删除，下面这份签名里
+#    原先那四条（commitAuthoredCandidateV2／runV2PlanPhase／loadCommittedFirstRevisions／
+#    pg_advisory_xact_lock）随链退场。上面 ②③④⑤ 量的也都是**旧链的写盘形状**，
+#    今天读出 0 是正确答案（简化链一批一次提交，见 39d-w71 §7.5 第 1 条）。
 echo "⑥ 这条链交付过的签名，逐个对 HEAD 核:"
-H_WORKERS="workers/ai-worker/src/handlers"
 H_DESK="apps/desktop-client/src/renderer/src/components"
-SIG_LIST="sig|${H_WORKERS}/card-generation-v2-handler.ts|commitAuthoredCandidateV2
-sig|${H_WORKERS}/card-generation-v2-handler.ts|runV2PlanPhase
-sig|${H_WORKERS}/card-generation-v2-handler.ts|loadCommittedFirstRevisions
-sig|${H_WORKERS}/card-generation-v2-handler.ts|pg_advisory_xact_lock
-sig|${H_DESK}/CardGenerationSurface.tsx|card-generation-landing
+SIG_LIST="sig|${H_DESK}/CardGenerationSurface.tsx|card-generation-landing
 sig|${H_DESK}/surfaces/card-generation-status.ts|isLandedCandidate
 sig|${H_DESK}/CardGenerationSurface.live-candidates.test.tsx|已写出
 file|apps/api/src/db/migrations/0253_candidate_objective_revision_unique.sql|
 sig|apps/api/src/db/migrations/meta/_journal.json|0253_candidate_objective_revision_unique
 file|apps/desktop-client/scripts/verify-b4-landing-live.mjs|
 file|apps/desktop-client/scripts/seed-b4-inflight.sql|
-file|apps/desktop-client/scripts/unseed-b4-inflight.sql|
-file|apps/api/src/probes/tmp-b4-http-probe.mts|"
+file|apps/desktop-client/scripts/unseed-b4-inflight.sql|"
 if [ -n "${CHECK_A1_EXTRA:-}" ]; then
   SIG_LIST="${SIG_LIST}
 sig|${CHECK_A1_EXTRA%%::*}|${CHECK_A1_EXTRA##*::}"
