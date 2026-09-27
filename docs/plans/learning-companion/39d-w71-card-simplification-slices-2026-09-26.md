@@ -138,8 +138,8 @@
 | 文件 | 默认档实测 | 处理 |
 | --- | --- | --- |
 | `card-generation-v2-redaction-quota` | **2/2** | ✅ 今天已摘档：它测的是依据遮蔽（tombstone＋eligibility 前移）与 §22.6 配额，与哪条链出几张卡无关 |
-| `card-generation-v2-live-progress` | 6/8 | 部分摘：红的那两条是"作者循环里的 tick 落盘"与"重投同一 run 不新增 authored 事件"——都是旧链的逐候选写盘形状；租约 fence、终态退役、外层回滚不影响读数那几条是机制，改接到新链的写入点后整份可摘 |
-| `card-generation-v2-c-cases` | 2/3 | 红的是 C38（PREPARE 后 target-equivalent 修订），它读的是旧计划的修订谱系 |
+| `card-generation-v2-live-progress` | 6/8 → **已搬 6 条（整份 8/8）** | 部分摘：红的那两条是"作者循环里的 tick 落盘"与"重投同一 run 不新增 authored 事件"——都是旧链的逐候选写盘形状；租约 fence、终态退役、外层回滚不影响读数那几条是机制，改接到新链的写入点后整份可摘 |
+| `card-generation-v2-c-cases` | 2/3 → **已搬 2 条（整份 3/3）** | 红的是 C38（PREPARE 后 target-equivalent 修订），它读的是旧计划的修订谱系 |
 | `card-generation-v2-e2e-subset` | 13/36 → **已搬 8 条** | 同日改成**按用例分档**：文件头仍钉 `v2`，`beforeEach` 每发复位，8 条与链无关的（C03/C33/C32/C36/C5/§17.5/C18/C45）在开头摘掉档位走默认档。搬动本身要有读数，所以加了一格**分档探针**：同一文件里连开两条 run，复位那条必须是 `card_generation_plan`、摘档那条必须是 `card_generation_simplified_v1`——没有它，"已搬走"只是注释里的主张。剩下 28 条按 §7.1/§7.2 分：判 planner 中间产物的随链删，判激活/幂等/reveal 的逐条改接。13 条已经在默认档上过（含 C33 SSE 白名单、C32 跨空间伪造 runId、C03 零候选、C45 开启复习那一档等）；红的那 23 条按 §7.1/§7.2 分：判 planner 中间产物的随链删，判激活/幂等/reveal 的逐条改接 |
 | `card-generation-v2-plan-commit` | 0/4 | 全删（对象是旧 plan 提交形状） |
 | `card-generation-v2-pedagogy-stage-postgres` | 0/3 | 全删（投机 pedagogy＋双 Critic 结算等式） |
@@ -149,6 +149,7 @@
 | `card-generation-v2-llm-natural-activation` | 0/1（且单独跑会挂到超时） | 这份要真 provider 配置，不在今天这张网里跑；随链删 |
 
 **规则**：一份文件只有在默认档上**逐条量过全绿**才摘档；摘档的提交说明里写清它是量过的（不是"应该无关"）。
+**当天做完的**：把上面那张表从"整份能不能摘"改成"逐条能不能摘"——文件头钉 `v2`、`beforeEach` 每发复位、与链无关的条目在开头摘档位。已搬到默认档的共 **18 条**（redaction-quota 整份 2、e2e 8、live-progress 6、c-cases 2），搬完这四份各自 8/8、37/37、3/3、2/2，十份一起跑 **82/82**（不含 `llm-natural-activation`——它要真 provider 配置，单独跑会挂到超时，不在这张网里）。
 合计 23/64 通过——这也说明 §7.1 那张"随链删"的清单是主体，先把该删的删掉比先改接更省事，
 但**顺序不能反**：先删链会让那 41 条一起变成"没人测了"，所以先摘得动一份是一份，
 剩下判中间产物的那批随链删，判机制的那批改接。

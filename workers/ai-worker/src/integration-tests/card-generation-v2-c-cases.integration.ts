@@ -20,7 +20,7 @@
  *     workers/ai-worker/src/integration-tests/card-generation-v2-c-cases.integration.ts
  */
 
-import { after, before, test } from "node:test";
+import { beforeEach, after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
@@ -32,6 +32,9 @@ process.env.DATABASE_URL_API ??= ADMIN_URL;
 // 2026-09-27 实测：这一份在默认档（简化链）上 2/2 通过 ⇒ **不再钉档**，它就是新链的网。
 // 其余九份仍钉 v2：同一天把十份一起摘掉是 41 条红，逐份的量过才敢摘（分诊见 39d-w71 §7）。
 process.env.CARD_GENERATION_CHAIN = "v2";
+
+// 按用例分档（与 `card-generation-v2-e2e-subset` 同一做法，理由与探针写在那份文件里）。
+beforeEach(() => { process.env.CARD_GENERATION_CHAIN = "v2"; });
 
 const admin = postgres(ADMIN_URL, { max: 2 });
 
@@ -350,6 +353,7 @@ after(async () => {
 });
 
 test("C27：presentation-only Card edit → 旧 Run 可读、objective/mastery identity 不重置", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 机制格，与哪条链出几张卡无关 ⇒ 走默认档
   const { versionId } = await seedNote("C27", CONTENT_A);
   const { mapping } = await activate(versionId, { kind: "create_new" });
 
@@ -409,6 +413,7 @@ test("C27：presentation-only Card edit → 旧 Run 可读、objective/mastery i
 });
 
 test("C28：answer/rubric semantic change → 新 Objective ID；旧对象 supersede；lineage 完整；0 Schedule", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 机制格，与哪条链出几张卡无关 ⇒ 走默认档
   const { versionId: v1 } = await seedNote("C28-D", CONTENT_D);
   const { mapping: m1 } = await activate(v1, { kind: "create_new" });
 

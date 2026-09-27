@@ -13,7 +13,7 @@
  *   node --import tsx --test workers/ai-worker/src/integration-tests/card-generation-v2-live-progress-postgres.integration.ts
  */
 
-import { after, before, test } from "node:test";
+import { beforeEach, after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
@@ -26,6 +26,9 @@ process.env.DATABASE_URL_API ??= ADMIN_URL;
 // 2026-09-27 实测：这一份在默认档（简化链）上 2/2 通过 ⇒ **不再钉档**，它就是新链的网。
 // 其余九份仍钉 v2：同一天把十份一起摘掉是 41 条红，逐份的量过才敢摘（分诊见 39d-w71 §7）。
 process.env.CARD_GENERATION_CHAIN = "v2";
+
+// 按用例分档（与 `card-generation-v2-e2e-subset` 同一做法，理由与探针写在那份文件里）。
+beforeEach(() => { process.env.CARD_GENERATION_CHAIN = "v2"; });
 
 const admin = postgres(ADMIN_URL, { max: 2 });
 
@@ -139,6 +142,7 @@ async function readRunView() {
 }
 
 test("读数在提交前就可见：写一次 → 行在、数字在、API 视图也带上了", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 机制格，与哪条链出几张卡无关 ⇒ 走默认档
   const { writeCardGenerationLiveProgress } = await import("../handlers/card-generation-v2-handler.ts");
   const job = await claimPlanJob();
 
@@ -164,6 +168,7 @@ test("读数在提交前就可见：写一次 → 行在、数字在、API 视�
 });
 
 test("fence：租约被抢走后，旧 worker 的写入 0 影响、内容不变", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 机制格，与哪条链出几张卡无关 ⇒ 走默认档
   const { writeCardGenerationLiveProgress } = await import("../handlers/card-generation-v2-handler.ts");
   const job = await claimPlanJob();
   assert.equal(await writeCardGenerationLiveProgress(job, {
@@ -188,6 +193,7 @@ test("fence：租约被抢走后，旧 worker 的写入 0 影响、内容不变"
 });
 
 test("租约一死，读取端就不再信这条读数（回到候选表的真 0）", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 机制格，与哪条链出几张卡无关 ⇒ 走默认档
   const { writeCardGenerationLiveProgress } = await import("../handlers/card-generation-v2-handler.ts");
   const job = await claimPlanJob();
   await admin`UPDATE card_generation_runs_v2 SET status = 'authoring' WHERE id = ${runId}`;
@@ -206,6 +212,7 @@ test("租约一死，读取端就不再信这条读数（回到候选表的真 0
 });
 
 test("到终态之后读数退役：候选表才是真相，读数不得反超", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 机制格，与哪条链出几张卡无关 ⇒ 走默认档
   const { writeCardGenerationLiveProgress } = await import("../handlers/card-generation-v2-handler.ts");
   const job = await claimPlanJob();
   assert.equal(await writeCardGenerationLiveProgress(job, {
@@ -229,6 +236,7 @@ test("到终态之后读数退役：候选表才是真相，读数不得反超",
  * 外层事务（改前红）；只有自己提交才留得下。
  */
 test("tick 不加入调用方的事务：外层回滚，读数仍在", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 机制格，与哪条链出几张卡无关 ⇒ 走默认档
   const { writeCardGenerationLiveProgress } = await import("../handlers/card-generation-v2-handler.ts");
   const { withWorkerWorkspaceTransaction } = await import("../db.ts");
   const job = await claimPlanJob();
@@ -327,6 +335,7 @@ test("真跑一遍确定性管道：作者循环里的 tick 确实落了盘", as
  * 迟到的 complete 必须 0 行，重投必须立刻可行而不是等 30 分钟。
  */
 test("交还租约：迟到的完成写不进去，reaper 当场就能重投", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 机制格，与哪条链出几张卡无关 ⇒ 走默认档
   const {
     releaseV2OutboxLease, completeV2OutboxJob,
   } = await import("../handlers/card-generation-v2-handler.ts");
