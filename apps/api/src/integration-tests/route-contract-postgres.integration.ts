@@ -213,3 +213,97 @@ test("契约：/import/markdown 相同 importId 幂等（F-033）", async () => 
     await app.close();
   }
 });
+
+/**
+ * 「暂不安排」两条入口的路由契约（39d W7-3 刀一）。
+ *
+ * 服务层的判据在 `review-schedule-boundary-postgres` 那份里已经量过，那一份调的是函数——
+ * 函数绿不等于**这门有人打得开**：状态码、请求校验、以及"笔记不存在"要回 404 而不是
+ * 让外键抛 500，全都只在路由这一层成立。这一格也是那两条 route 目前唯一的读数。
+ */
+test("契约：目标「暂不安排」与「恢复」两条 route 的形状", async () => {
+  const identity = await seedIdentity();
+  const app = await buildApp();
+  const noteId = randomUUID();
+  const objectiveId = randomUUID();
+  try {
+    const auth = { authorization: `Bearer ${identity.token}` };
+    await sql`INSERT INTO notes (id, workspace_id, created_by, title)
+      VALUES (${noteId}, ${identity.workspaceId}, ${identity.userId}, '暂不安排契约那一篇')`;
+
+    // 1) 请求体非法 ⇒ 400，且形状与全仓统一（{error, message}）
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/reviews/v2/objectives/hold",
+      headers: auth,
+      payload: { noteId: "not-a-uuid", objectiveId },
+    });
+    assert.equal(rejected.statusCode, 400);
+    assert.deepEqual(rejected.json(), { error: "validation", message: "参数非法" });
+
+    // 2) 笔记不存在 ⇒ 404 一句人话，不是外键的 500
+    const missingNote = await app.inject({
+      method: "POST",
+      url: "/reviews/v2/objectives/hold",
+      headers: auth,
+      payload: { noteId: randomUUID(), objectiveId },
+    });
+    assert.equal(missingNote.statusCode, 404);
+    assert.equal(missingNote.json().error, "note_not_found");
+
+    // 3) 立排除：第一次是"这次立的"，连点第二下如实说"已经在排除中"（幂等，不重复立）
+    const first = await app.inject({
+      method: "POST",
+      url: "/reviews/v2/objectives/hold",
+      headers: auth,
+      payload: { noteId, objectiveId },
+    });
+    assert.equal(first.statusCode, 200);
+    assert.equal(first.json().alreadyHeld, false);
+    assert.equal(first.json().dismissedPendingSchedules, 0,
+      "这个目标此刻没有待处理的安排可撤——那个数只能是真数出来的，不能是估的");
+    const twice = await app.inject({
+      method: "POST",
+      url: "/reviews/v2/objectives/hold",
+      headers: auth,
+      payload: { noteId, objectiveId },
+    });
+    assert.equal(twice.json().alreadyHeld, true, "连点两下不该把第二次说成刚立上");
+
+    // 4) 恢复：第一次 released=true，再恢复一次如实回 false（"本来就没在排除中"≠"已恢复"）
+    const resumed = await app.inject({
+      method: "POST",
+      url: "/reviews/v2/objectives/resume",
+      headers: auth,
+      payload: { objectiveId },
+    });
+    assert.equal(resumed.statusCode, 200);
+    assert.equal(resumed.json().released, true);
+    const again = await app.inject({
+      method: "POST",
+      url: "/reviews/v2/objectives/resume",
+      headers: auth,
+      payload: { objectiveId },
+    });
+    assert.equal(again.json().released, false);
+
+    const live = await sql`
+      SELECT count(*)::int AS n FROM objective_review_holds_v2
+      WHERE workspace_id = ${identity.workspaceId} AND objective_id = ${objectiveId}
+        AND released_at IS NULL
+    `;
+    assert.equal(Number(live[0].n), 0, "恢复之后不该还有活的排除");
+    // 没被恢复之前那次"连点"只留一份活行，恢复后全部盖时间戳 ⇒ 历史行还在（不删历史）。
+    const history = await sql`
+      SELECT count(*)::int AS n FROM objective_review_holds_v2
+      WHERE objective_id = ${objectiveId}
+    `;
+    assert.equal(Number(history[0].n), 1,
+      "两次设排除命中同一份活行 ⇒ 表上只该有一条历史，部分唯一索引在路由这一发也生效");
+  } finally {
+    await sql`DELETE FROM objective_review_holds_v2 WHERE workspace_id = ${identity.workspaceId}`;
+    await sql`DELETE FROM notes WHERE id = ${noteId}`;
+    await app.close();
+    await identity.cleanup();
+  }
+});
