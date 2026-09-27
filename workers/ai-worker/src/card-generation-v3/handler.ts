@@ -574,6 +574,12 @@ async function runContentCheckLegV3(args: {
       modelCalls: modelCalls(),
       rewriteCalls: rewriteCount(),
     });
+    // 规模留痕按"这一发真的读过截断文本"记一次：整批那一发在段 3 已经记过，
+    // 这里再记就会把同一批数成两条；逐候选那一发（重检／按反馈改写）不经过段 3，
+    // 而它同样经 `loadV2RunInputs` 拿到截断过的源文本——所以由这一处记。
+    if (job.jobType === "card_candidate_refine_v3") {
+      await emitSourceContentCapEvent(tx, { workspaceId, runId, cap: loaded.sourceContentCap });
+    }
     await fenceV2OutboxLease(tx, job);
   }, { isolated: true });
 }

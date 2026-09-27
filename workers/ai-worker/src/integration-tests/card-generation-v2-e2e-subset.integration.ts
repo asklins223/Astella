@@ -1032,7 +1032,8 @@ test("C20b：replan_set → 新 immutable plan revision（v2），旧候选 supe
 
 
 test("C21：生成期间编辑 Note → 本次绑定 sealed 旧版本，不读取新版本", async () => {
-  const V1_CONTENT = "机会成本是指为了得到某种东西而必须放弃的其他东西的价值。";
+  delete process.env.CARD_GENERATION_CHAIN; // 判的是"这一批绑的是 sealed 那一版"，与哪条链出题无关；只换了 v1 正文
+  const V1_CONTENT = DUAL_CHAIN_CONTENT;
   const V2_CONTENT = "完全不同的新内容：量子计算利用叠加与纠缠原理，可并行处理大量状态。";
   const { versionId: v1Id, noteId: raceNoteId } = await seedNote("编辑竞态", V1_CONTENT);
   const runId = (await createRun(v1Id, `c21-${randomUUID()}`, `c21-key-${randomUUID()}`)).runId;
@@ -1061,7 +1062,7 @@ test("C21：生成期间编辑 Note → 本次绑定 sealed 旧版本，不读�
   const v1Blocks = await admin`
     SELECT content FROM note_blocks WHERE version_id = ${v1Id}`;
   assert.ok(
-    v1Blocks.some((b) => b.content.includes("机会成本")),
+    v1Blocks.some((b) => b.content.includes("中和反应")),
     "C21 sealed source must be v1 content",
   );
 });
@@ -1170,6 +1171,7 @@ test("C10：代码块不被文本归一化——typed evidence 缺失时拒绝�
 });
 
 test("C24：非法 schema / hash mismatch → fail closed（0 低质激活）", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 数 job 那一格不再按旧链 jobType 过滤之后，这条判的就是"损坏 spec 必非重试失败"
   // 场景 1：损坏 semantic_spec → worker zod 校验失败 → job 失败（非重试），0 候选 0 卡
   const { versionId } = await seedNote("非法schema", OSI_CONTENT);
   const corruptRunId = (await createRun(versionId, `c24a-${randomUUID()}`, `c24a-key-${randomUUID()}`)).runId;
@@ -1179,7 +1181,7 @@ test("C24：非法 schema / hash mismatch → fail closed（0 低质激活）", 
   await runPipelineOnce();
   const jobs = await admin`
     SELECT status, attempts, last_error FROM card_generation_run_outbox_v2
-    WHERE run_id = ${corruptRunId} AND job_type = 'card_generation_plan'`;
+    WHERE run_id = ${corruptRunId} AND status <> 'pending'`;
   assert.equal(jobs[0].status, "failed", "C24 corrupted spec job must fail (non-retryable)");
   assert.ok(String(jobs[0].last_error ?? "").includes("schema violation"),
     `C24 job error must cite schema violation (got ${jobs[0].last_error})`);
@@ -2084,6 +2086,7 @@ test("长正文 + 重生成：截断留痕在重跑路径上也会多记一条",
   const runId = (await createRun(versionId, `capregen-${randomUUID()}`, `capregen-key-${randomUUID()}`)).runId;
   await runPipelineOnce();
   await forceReviewReady(runId);
+  delete process.env.CARD_GENERATION_CHAIN; // 逐候选那一发的规模留痕已补进简化链段 5（补之前红在 before=1 after=1）
   await forceCandidatesPassed(runId, "undecided");
 
   const capEventCount = async (): Promise<number> => {
@@ -2362,6 +2365,7 @@ test("C47：没翻过答案就保存 → 提醒当场 ready，一天都不延后
   assert.equal(rows.length, 1, `保存那一发该建出恰好一条提醒（得到 ${rows.length} 条）`);
   const row = rows[0];
   assert.equal(row.status, "ready", "没看过答案就不该被拖进冷却");
+  delete process.env.CARD_GENERATION_CHAIN; // 提醒冷却这一格量的东西在激活之后，两条链同一份判据
   assert.equal(row.policy_version, policyVersion, "同一份策略版本，ready 也要写明凭哪条政策");
   assert.equal(row.last_exposure_id, null, "这一行同样是激活那一支写的");
   const delayMs = reminderDelayMs(row);
@@ -2388,6 +2392,7 @@ test("C48：另一个人也翻过这张候选的答案 → 保存那一发替他
   // 所以它在"生产口径的连接"（CI 与真部署都是 `ailearn_api`）下今天整条走不到——那一跳的
   // SELECT 返回空，替别人建提醒的循环连一次都不进入。看不见就**如实跳过**，不假装绿：
   // 空转本身登记在 39d §19（W7-3／W7-7 要裁的就是它——改走 worker 那条豁免通道，还是按
+  delete process.env.CARD_GENERATION_CHAIN; // 同 C47：判的是别人那次曝光的映射，与出题的链无关
   // AGENTS.md 把这条没有可达方的支路删掉）。阳性对照走同一把尺：他自己的身份必须看得见
   // 自己那一行，否则就是曝光没种进去，那种红不该被跳过藏掉。
   assert.ok(
