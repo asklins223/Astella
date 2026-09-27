@@ -150,6 +150,10 @@
 
 **规则**：一份文件只有在默认档上**逐条量过全绿**才摘档；摘档的提交说明里写清它是量过的（不是"应该无关"）。
 **当天做完的**：把上面那张表从"整份能不能摘"改成"逐条能不能摘"——文件头钉 `v2`、`beforeEach` 每发复位、与链无关的条目在开头摘档位。已搬到默认档的共 **18 条**（redaction-quota 整份 2、e2e 8、live-progress 6、c-cases 2），搬完这四份各自 8/8、37/37、3/3、2/2，十份一起跑 **82/82**（不含 `llm-natural-activation`——它要真 provider 配置，单独跑会挂到超时，不在这张网里）。
+**审核台那两条已真搬过去（同日稍后）**：C15／C20 现在走默认档，判据从名字改回它该判的事——派的 job 认逐候选那一发（`card_candidate_refine_v3`，`mode` 分 recheck／rewrite），留痕事件认 `card_candidate.rewritten` 且**要求 `reason` 是用户反馈那一档**，C15 认检查腿的 `card_generation.simplified_completed`。夹具换成正面写明原因的一份正文：原来那份在新链上被我们自己的 `front_leaks_answer` 闸门整批剔除，用例红在「needs a candidate」，红点与它要判的东西无关。`e2e-subset` 37/37。这两格顺带补上新链缺的一层覆盖——此前 refine 两档只有手工插 outbox 行的集测，现在是从真实审核动作打进去的。
+
+**另记一条网的缺陷**：`redaction-quota` 单独跑 2/2（连跑两次都量过），但十份连着跑时 C31 红在 `Missing expected rejection: activation must be rejected after redaction` —— 它与排在它前面的文件有状态耦合。已重新钉回 v2，并把这句写在文件头上：**钉档在这里不是结论，是「还没单独证明它能扛住整网顺序」的记号**。拆那个耦合属刀二前置。
+
 **试搬审核台那四条的实测（同日，随后回退）**：C15／C20／C20b 摘档后各红在三处不同的地方——`C15/C20 needs a candidate`（夹具用的是短正文笔记，简化链那侧的确定性作者对它的产出与旧 planner 不同，拿不到 `revision = 1` 的主体）、`C20b must record card_generation.replan_completed event`（断的是旧链的事件名；新链重排那一发写的是 `simplified_plan_committed` 与 `simplified_completed`）。结论：**刀一接上 refine/replan 只是把路径建好，这四条要搬还得先改夹具与事件名**，不是删一行钉档就行；回退之后 `e2e-subset` 回到 37/37。搬这四条属于刀二，落点就是上面三条读数。
 
 合计 23/64 通过——这也说明 §7.1 那张"随链删"的清单是主体，先把该删的删掉比先改接更省事，
