@@ -24,6 +24,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { reviewSubscriptionsV2 } from "@ailearn/shared/db-schema/evidence";
 import { notes } from "@ailearn/shared/db-schema/note";
+import { learningObjectiveOriginsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { applySourcePauseV2, type ReviewAuthorizationSourceV2 } from "@ailearn/shared/review-authorization-rules-v2";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import type { ApiTransaction } from "../../db/client.ts";
@@ -90,6 +91,12 @@ type ReviewScope = { workspaceId: string; userId: string };
 /**
  * 某个主体此刻**有哪些活着**的来源。这正是 `applySourcePauseV2` 要的那份
  * `sources`——它此前只能由调用方自己编，而调用方手里没有这张表。
+ *
+ * ⚠️ 对 `note` 主体**只查得出笔记订阅自己**：卡片订阅的主体是**目标**，不是那篇笔记。
+ * 要回答 §9.1 行 1 那句「暂停笔记复习时说明**已单独开启的卡片**是否继续」，必须另外
+ * 走 `stillCoveredForNoteV2` 把这篇底下的目标一并看——只用这一个函数，屏上会在
+ * "那张卡明明还开着"的时候显示成已停止。（第一版就是只用了它，集成档当场红在
+ * `[] !== ['card_review']`；那条红是本刀量到的真缺口，不是夹具问题。）
  */
 export async function liveSourcesForSubjectV2(
   tx: SubTx,
@@ -106,6 +113,66 @@ export async function liveSourcesForSubjectV2(
       eq(reviewSubscriptionsV2.status, "active"),
     ));
   return rows.map((row) => row.source as ReviewAuthorizationSourceV2);
+}
+
+/**
+ * 停用一篇笔记的订阅之后，**这篇底下是否还有单独开启的卡片订阅**（§9.1 行 1）。
+ *
+ * 判据是 origin 血缘（`learning_objective_origins_v2` 的 note 档），不是"这篇的
+ * 所有目标"：§9.1 说笔记订阅覆盖的是「此后在这篇笔记中**实际学过**、或经本人声明／
+ * 首次回忆确认需要维护的核心目标」，而卡片订阅是**按目标**单独开的。一张与这篇
+ * 毫无血缘关系的卡，不该因为她停了这一篇就被算成"还撑着"。
+ */
+export async function stillCoveredForNoteV2(
+  tx: SubTx,
+  input: ReviewScope & { noteId: string },
+): Promise<ReviewAuthorizationSourceV2[]> {
+  const rows = await tx
+    .select({ source: reviewSubscriptionsV2.source })
+    .from(reviewSubscriptionsV2)
+    .innerJoin(
+      learningObjectiveOriginsV2,
+      and(
+        eq(learningObjectiveOriginsV2.objectiveId, reviewSubscriptionsV2.subjectId),
+        eq(learningObjectiveOriginsV2.workspaceId, input.workspaceId),
+        eq(learningObjectiveOriginsV2.originKind, "note"),
+        eq(learningObjectiveOriginsV2.noteId, input.noteId),
+      ),
+    )
+    .where(and(
+      eq(reviewSubscriptionsV2.workspaceId, input.workspaceId),
+      eq(reviewSubscriptionsV2.userId, input.userId),
+      eq(reviewSubscriptionsV2.subjectType, "objective"),
+      eq(reviewSubscriptionsV2.status, "active"),
+    ));
+  const sources: ReviewAuthorizationSourceV2[] = [];
+  for (const row of rows) {
+    const source = row.source as ReviewAuthorizationSourceV2;
+    if (!sources.includes(source)) sources.push(source);
+  }
+  return sources;
+}
+
+/**
+ * 一发停用/开启之后，**这份安排还由谁撑着**。`note` 那一档要把卡片订阅算进来
+ * （§9.1 行 1「暂停笔记复习时说明已单独开启的卡片是否继续」），`objective` 那一档
+ * 只查自己——把两档混成一个函数，正是第一版把卡片那档漏掉的原因。
+ */
+async function stillCoveredAfterV2(
+  tx: SubTx,
+  input: ReviewScope & { source: ReviewAuthorizationSourceV2; subjectId: string },
+): Promise<ReviewAuthorizationSourceV2[]> {
+  const subjectType = REVIEW_SUBSCRIPTION_SUBJECT_TYPE[input.source];
+  if (subjectType === "objective") {
+    return liveSourcesForSubjectV2(tx, { ...input, subjectType, subjectId: input.subjectId });
+  }
+  const sources = await liveSourcesForSubjectV2(tx, { ...input, subjectType, subjectId: input.subjectId });
+  for (const source of await stillCoveredForNoteV2(tx, {
+    workspaceId: input.workspaceId, userId: input.userId, noteId: input.subjectId,
+  })) {
+    if (!sources.includes(source)) sources.push(source);
+  }
+  return sources;
 }
 
 /**
@@ -213,7 +280,7 @@ export async function activateReviewSubscriptionV2(
     ))
     .returning();
   if (resumed[0]) {
-    const sources = await liveSourcesForSubjectV2(tx, { ...input, subjectType, subjectId: input.subjectId });
+    const sources = await stillCoveredAfterV2(tx, { ...input, subjectId: input.subjectId });
     return { subscription: toView(resumed[0]), changed: true, stillCoveredBy: sources };
   }
   const inserted = await tx.insert(reviewSubscriptionsV2).values({
@@ -237,7 +304,7 @@ export async function activateReviewSubscriptionV2(
     where: eq(reviewSubscriptionsV2.status, "active"),
   }).returning();
   if (inserted[0]) {
-    const sources = await liveSourcesForSubjectV2(tx, { ...input, subjectType, subjectId: input.subjectId });
+    const sources = await stillCoveredAfterV2(tx, { ...input, subjectId: input.subjectId });
     return { subscription: toView(inserted[0]), changed: true, stillCoveredBy: sources };
   }
   // 撞了那把部分唯一索引 ⇒ 已经有一份活着的；交回它，不报"我开的"。
@@ -254,7 +321,7 @@ export async function activateReviewSubscriptionV2(
     // 比交回一句"已开启"而库里没有活行要诚实。
     throw new Error("review subscription 写入被挡但读不到活行：并发停用，请重试这一发");
   }
-  const sources = await liveSourcesForSubjectV2(tx, { ...input, subjectType, subjectId: input.subjectId });
+  const sources = await stillCoveredAfterV2(tx, { ...input, subjectId: input.subjectId });
   return { subscription: toView(existing[0]), changed: false, stillCoveredBy: sources };
 }
 
@@ -301,16 +368,19 @@ export async function pauseReviewSubscriptionV2(
     return {
       subscription: toView(existing[0]),
       changed: false,
-      stillCoveredBy: applySourcePauseV2({ sources: before, pausedSource: input.source }).stillCoveredBy,
+      // 走 `stillCoveredAfterV2` 而不是拿 `before` 减一下：那一支已经是"现在还剩谁"，
+      // 规则表行 1 要的正是这个读数，不是停之前那一列的算术。
+      stillCoveredBy: await stillCoveredAfterV2(tx, { ...input, subjectId: input.subjectId }),
     };
   }
-  // `applySourcePauseV2` 交回的是**停之后**还剩谁——屏上那句"仍由 X 继续安排"
-  // 就是它。`remainingSources` 与 `stillCoveredBy` 此刻同值，分开取是为了让规则表
-  // 行 1 那两列各自可读，而不是让调用方自己认"哪个字段是我要的那一个"。
-  const decided = applySourcePauseV2({ sources: before, pausedSource: input.source });
+  // `before` 仍然要算：它是 `applySourcePauseV2` 唯一的入参，而那一格是"同一个主体上
+  // 别的来源"——**它管不到别的主体的来源**。§9.1 行 1 要的那句「暂停笔记复习时说明
+  // **已单独开启的卡片**是否继续」跨到了另一个主体（卡片订阅挂在目标上），所以最终
+  // 交回的是两者的并集：规则表判同一主体，`stillCoveredForNoteV2` 判跨主体。
+  applySourcePauseV2({ sources: before, pausedSource: input.source });
   return {
     subscription: toView(paused[0]),
     changed: true,
-    stillCoveredBy: decided.remainingSources,
+    stillCoveredBy: await stillCoveredAfterV2(tx, { ...input, subjectId: input.subjectId }),
   };
 }

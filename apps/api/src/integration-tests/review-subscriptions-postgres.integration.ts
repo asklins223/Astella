@@ -38,6 +38,7 @@ const { eq } = await import("drizzle-orm");
 const USER_ID = randomUUID();
 const WORKSPACE_ID = randomUUID();
 const NOTE_ID = randomUUID();
+const NOTE_VERSION_ID = randomUUID();
 const OBJECTIVE_ID = randomUUID();
 const ctx = { workspaceId: WORKSPACE_ID, userId: USER_ID };
 
@@ -50,8 +51,25 @@ before(async () => {
     VALUES (${WORKSPACE_ID}, ${USER_ID}, 'owner')`;
   // `share_scope='shared'`：§9.1 的订阅是**空间里**的持续授权；私有笔记上那条读侧
   // 本来就只在本人可见范围内，写 private 会让这一格测成可见性而不是来源。
+  // 先建笔记再建版本、最后回填 `current_version_id`：那条外键
+  // （`notes_current_version_workspace_fk`）要求版本行已经存在，所以第一版把
+  // 两个 id 一次插进去当场被拒。
   await fixtureSql`INSERT INTO notes (id, workspace_id, created_by, title, share_scope)
     VALUES (${NOTE_ID}, ${WORKSPACE_ID}, ${USER_ID}, '订阅来源那一篇', 'shared')`;
+  // `content_json` 是 jsonb、`created_by` 与 `workspace_id` 都必填——照线上列写，
+  // 手写一个"看起来对"的版本行只会被这些列名一条条教回来。
+  await fixtureSql`INSERT INTO note_versions
+      (id, note_id, workspace_id, version_no, content_json, created_by, content_hash)
+    VALUES (${NOTE_VERSION_ID}, ${NOTE_ID}, ${WORKSPACE_ID}, 1, ${JSON.stringify({ blocks: [{ ordinal: 1, text: '正文' }] })}::jsonb, ${USER_ID}, ${"0".repeat(32)})`;
+  await fixtureSql`UPDATE notes SET current_version_id = ${NOTE_VERSION_ID} WHERE id = ${NOTE_ID}`;
+  // 血缘行：§9.1 行 1 那句「暂停笔记复习时说明**已单独开启的卡片**是否继续」要靠它
+  // 判"这张卡是不是这篇的"。没有这一行，屏上会在卡明明开着时显示成已停止——
+  // 这条红是第一版真的量出来的（集成档红在 `[] !== ['card_review']`）。
+  // `note_version_id` 也要给：那张表有 `loo_v2_kind_fields_chk`，note 档要求
+  // note_id 与 note_version_id 同时非空。第一版只给了 note_id，当场被那条约束挡下。
+  await fixtureSql`INSERT INTO learning_objective_origins_v2
+      (workspace_id, origin_id, objective_id, objective_revision_id, origin_kind, note_id, note_version_id)
+    VALUES (${WORKSPACE_ID}, ${randomUUID()}, ${OBJECTIVE_ID}, ${randomUUID()}, 'note', ${NOTE_ID}, ${NOTE_VERSION_ID})`;
 });
 
 after(async () => {
@@ -102,13 +120,16 @@ test("W7-3 刀五：停一个来源不碰另一个，且 stillCoveredBy 交回�
 });
 
 test("W7-3 刀五：连点两下不长出两份；恢复改 status 所以授权时间与范围留着", async () => {
+  // 另起一颗目标：第一组已经把 OBJECTIVE_ID 开成 active 了，共用同一颗会让
+  // `first.changed` 读到 false——那是**夹具串味**，不是被测逻辑在骗人。
+  const ownObjectiveId = randomUUID();
   await withWorkspaceTransaction(ctx, async (tx) => {
     const first = await activateReviewSubscriptionV2(tx, {
-      ...ctx, source: "card_review", subjectId: OBJECTIVE_ID, scopeNote: "维护这张卡的提取目标。",
+      ...ctx, source: "card_review", subjectId: ownObjectiveId, scopeNote: "维护这张卡的提取目标。",
     });
     assert.equal(first.changed, true);
     const again = await activateReviewSubscriptionV2(tx, {
-      ...ctx, source: "card_review", subjectId: OBJECTIVE_ID, scopeNote: "维护这张卡的提取目标。",
+      ...ctx, source: "card_review", subjectId: ownObjectiveId, scopeNote: "维护这张卡的提取目标。",
     });
     assert.equal(again.changed, false, "已经是活着的了：连点两下不该长出两份，也不该说「刚刚开好了」");
 
@@ -120,13 +141,16 @@ test("W7-3 刀五：连点两下不长出两份；恢复改 status 所以授权�
     // 两个来源都没有 ⇒ 这一份不再被安排。屏上这时才可以说"已停止安排"。
     assert.deepEqual([...pausedTwice.stillCoveredBy], []);
 
-    const resumed = await activateReviewSubscriptionV2(tx, { ...ctx, source: "card_review", subjectId: OBJECTIVE_ID });
+    // 先停一次再恢复：恢复那一格量的是"从 paused 改回 active"，对着一份还活着的
+    // 订阅调它交回的是 `changed:false`（那一档在上一段已经量过了）。
+    await pauseReviewSubscriptionV2(tx, { ...ctx, source: "card_review", subjectId: ownObjectiveId });
+    const resumed = await activateReviewSubscriptionV2(tx, { ...ctx, source: "card_review", subjectId: ownObjectiveId });
     assert.equal(resumed.changed, true);
     // 恢复**改 status**而不是插第二条：授权时间与那句范围说明都留着。
     assert.equal(resumed.subscription.createdAt, first.subscription.createdAt);
     assert.equal(resumed.subscription.scopeNote, "维护这张卡的提取目标。");
     const rows = await tx.select().from(reviewSubscriptionsV2)
-      .where(eq(reviewSubscriptionsV2.subjectId, OBJECTIVE_ID));
+      .where(eq(reviewSubscriptionsV2.subjectId, ownObjectiveId));
     assert.equal(rows.length, 1, "恢复不许插第二行（不只靠那把部分唯一索引）");
   });
 });
