@@ -1,0 +1,84 @@
+
+/* 书桌上那「一件」（39d W7-4 刀八；39 §12.1）。
+ *
+ * 物件与纸面语言：一张**便签**，不是一块面板。理由那一行用更轻的墨，屏上读成"附带的一
+ * 句"而不是"第二行标题"——§12.1 那句话的用途就是解释，不是抢主句。
+ *
+ * 宽度按 260px 而不是 100%：书桌还要坐着伴星（AGENTS.md 的座位预算），纸签不许把桌
+ * 面占满。 */
+.hud-desk-next {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  inline-size: 260px;
+  padding: 12px 14px;
+  background: var(--hud-paper, #fdf6e3);
+  border: 2px solid var(--hud-ink, #6b5a41);
+  border-radius: 14px 12px 16px 10px;
+  box-shadow: 2px 3px 0 rgb(107 90 65 / 18%);
+}
+
+.hud-desk-next__headline {
+  margin: 0;
+  font-weight: 700;
+  color: var(--hud-ink, #6b5a41);
+  line-height: 1.35;
+}
+
+/* 理由：**必须**念得出来（§12.1「推荐附一句理由」），但不能与主句同重。 */
+.hud-desk-next__reason {
+  margin: 0;
+  font-size: 0.86em;
+  color: color-mix(in srgb, var(--hud-ink, #6b5a41) 72%, transparent);
+  line-height: 1.4;
+}
+
+.hud-desk-next__actions {
+  display: flex;
+  gap: 8px;
+  margin-block-start: 4px;
+}
+
+.hud-desk-next__act {
+  padding: 5px 10px;
+  font: inherit;
+  color: var(--hud-ink, #6b5a41);
+  background: var(--hud-mint, #d9f0dd);
+  border: 2px solid var(--hud-ink, #6b5a41);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.hud-desk-next__act--quiet {
+  background: transparent;
+}
+
+.hud-desk-next__act:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* 空态那一档是**入口**，不是建议：所以它是一排小字按钮，没有纸签的边框——屏上读成
+ * "你现在可以开始的地方"，而不是"系统给你的一个任务"。 */
+.hud-desk-elsewhere {
+  inline-size: 260px;
+}
+
+.hud-desk-elsewhere__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hud-desk-elsewhere__entry {
+  padding: 4px 10px;
+  font: inherit;
+  color: var(--hud-ink, #6b5a41);
+  background: var(--hud-paper, #fdf6e3);
+  border: 1px dashed color-mix(in srgb, var(--hud-ink, #6b5a41) 60%, transparent);
+  border-radius: 999px;
+  cursor: pointer;
+}
