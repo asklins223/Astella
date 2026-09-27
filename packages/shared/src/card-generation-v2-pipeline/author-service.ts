@@ -20,10 +20,8 @@
  * 该模块是 card-generation-v2 pipeline 的 canonical authoring 实现。
  */
 
-import { randomUUID } from "node:crypto";
 import type {
   CardPlanV2,
-  LearningCardCandidateRevisionV2,
   LearningObjectiveDraftV2,
   CardPresentationDraftV2,
   ObjectiveRubricV2,
@@ -35,15 +33,11 @@ import type {
   TeachingTransformationV2,
 } from "../card-generation-v2-contracts.ts";
 import {
-  computeCandidateRevisionHashV2,
   computeRubricHashV2,
 } from "../card-generation-v2-hashing.ts";
 import { hashCanonicalV2 } from "../hash-canonical-v2.ts";
-import { derivePracticeItemFromCanonicalAnswer } from "../card-generation-v2-contracts.ts";
-import { DomainError } from "../domain-error.ts";
 import { deriveConceptLabel } from "./concept-label.ts";
 import { taskIntentsForStrategy } from "./planner-service.ts";
-import { DEFAULT_V2_STAGE_CONCURRENCY, mapWithConcurrency } from "./concurrency.ts";
 
 // ─── Authoring Provider 接口 ─────────────────────────────────────────────
 
@@ -90,64 +84,15 @@ export interface AuthoringProviderOutput {
   hints: CardHintPairV2;
 }
 
-// ─── Author Service ──────────────────────────────────────────────────────
-
-export interface AuthorInput {
-  runId: string;
-  workspaceId: string;
-  plan: CardPlanV2;
-  sourceContent: string;
-  semanticSpecHash: string;
-  /** 注入的模型 authoring provider */
-  provider: AuthoringProvider;
-  /** R26：sealed evidence 清单（透传给 provider 供 prompt 引用） */
-  evidenceList?: Array<{ evidenceSnapshotId: string; quoteHash?: string | null }>;
-  /**
-   * M2（2026-09-15 管线评审）：sealed manifest 的 evidenceSetHash。
-   *
-   * 存在时**以它为准**参与 candidateRevisionHash 计算（provider 自报值不参与），
-   * 保证 revision hash 的闭包输入与落库的 `evidence_set_hash` 列一致。
-   */
-  evidenceSetHash?: string;
-  /** 调用方取消信号（租约丢失 / 管道预算耗尽），透传到 provider/LLM 调用。 */
-  signal?: AbortSignal;
-  /**
-   * 阶段内并发上限（2026-09-17 性能改造）。
-   *
-   * Author 各候选之间无数据依赖，串行调用时墙钟 = N × 单次 provider 延迟。
-   * 默认 `DEFAULT_V2_STAGE_CONCURRENCY`；调用方（worker）可用
-   * `V2_STAGE_CONCURRENCY` 覆盖。结果**保序**，与串行版本逐字一致。
-   */
-  providerConcurrency?: number;
-}
-
-/** 一次出卡的结果：候选修订（参与审计哈希）+ 它自带的提示（不参与）。 */
-export interface AuthoredCandidate {
-  candidate: LearningCardCandidateRevisionV2;
-  hints: CardHintPairV2;
-}
-
-export interface AuthorResult {
-  candidates: LearningCardCandidateRevisionV2[];
-  /**
-   * 提示按 candidateRevisionId 索引，**不放进候选对象**：
-   * `computeCandidateRevisionHashV2` 对整个候选对象取哈希，那会把提示并进判分内容的
-   * 审计链。持久化时它是候选行的兄弟列（迁移 0234）。
-   */
-  hintsByCandidateRevisionId: Map<string, CardHintPairV2>;
-}
+// ─── 出卡预算（一处收敛）──────────────────────────────────────────────────
 
 /**
- * Author 的候选预算（§8.5）：`plan.activationHardMax`，**不得扩大**。
+ * 一次生成**实际该出几张卡**的预算，从计划结果里取，两处消费者共用同一份。
  *
- * 2026-09-17（修复交付失败）：handler 的注释一直写着"budget = plan.activationHardMax，
- * 不得扩大"，但实现是"对 plan.result.objectives 全量出卡"。当计划里的目标数**超过**
- * 预算（micro-note 上限 3、客户端 hardMaxCards、服务端上限都可能小于目标池）时，
- * 产出的候选数就会超过 `activationHardMax`，deck gate 以 `count_out_of_plan`
- * **硬失败整条 run**——内容是全部通过 grounding + pedagogy 的，却交付不了。
- *
- * 现在预算在 shared 层收敛成单一实现：`executeAuthor` 与 worker 的按候选流水线都
- * 只对预算内的目标出卡，decisions 里被截断的原子由 planner 记 `omit_over_budget`。
+ * 事故记录（2026-09-17）：planner 的目标池在被客户端 hardMaxCards 或服务端上限
+ * 截断之前可以先更长，于是出卡数超过 `activationHardMax`，deck gate 以
+ * `count_out_of_plan` **硬失败整条 run**——内容全部通过门禁，却一张都交付不了。
+ * 修法就是把"预算内"这一步收进一处，被截断的原子由 planner 记 `omit_over_budget`。
  */
 export function budgetedPlanObjectives(plan: Pick<CardPlanV2, "result">): PlannedObjectiveV2[] {
   if (plan.result.kind !== "author_candidates") return [];
@@ -155,146 +100,6 @@ export function budgetedPlanObjectives(plan: Pick<CardPlanV2, "result">): Planne
   return plan.result.objectives.slice(0, budget);
 }
 
-/**
- * 取回某个候选所属的**计划目标**——有界修复（重写这张卡）时要拿它当 author 的入参。
- *
- * 以前修复路径是现场拼一个只有三个字段的目标、再 `as never` 塞进 provider，于是
- * `planObjective.strategy` 是 undefined，author 提示在 `spec.label` 上直接 TypeError
- * （2026-09-21 真跑第一次尝试就死在这里：pedagogy 判 `repair` → 修复 → 崩 → job 重投，
- * 一整批已付费的调用作废）。计划目标是 provider 合同的一部分，不该由调用方即兴造。
- */
-export function plannedObjectiveForCandidateV2(
-  plan: CardPlanV2,
-  planObjectiveLocalId: string,
-): PlannedObjectiveV2 {
-  const found = budgetedPlanObjectives(plan)
-    .find((objective) => objective.objectiveLocalId === planObjectiveLocalId);
-  if (!found) {
-    throw new Error(`V2 candidate points at a plan objective outside this plan: ${planObjectiveLocalId}`);
-  }
-  return found;
-}
-
-/**
- * 为**单个** PlannedObjective 生成候选 revision（§11.5 的单候选形式）。
- *
- * 2026-09-17（极限延迟改造）：拆出本函数是为了让调用方能做**按候选流水线**——
- * 候选 i 的 grounding 可以在候选 i 的 author 一返回时就发起，而不必等"全部
- * author 完成"再统一进入 grounding 波。两种调度的调用次数与数据完全相同，但
- * 墙钟从 `max(author_i) + max(grounding_i)` 变为 `max(author_i + grounding_i)`：
- * 单次延迟方差越大（实测 p50 7s / p90 12s / max 37s），收益越明显。
- *
- * `executeAuthor` 保留为"并发 + 保序"的批量入口（replan 等路径仍用它），
- * 两者共用同一份校验/冻结逻辑。
- */
-export async function authorCandidateForObjective(
-  input: AuthorInput,
-  planObj: PlannedObjectiveV2,
-): Promise<AuthoredCandidate> {
-  const providerOutput = await input.provider.authorCandidate({
-    planObjective: planObj,
-    sourceContent: input.sourceContent,
-    semanticSpecHash: input.semanticSpecHash,
-    planHash: input.plan.planHash,
-    evidenceList: input.evidenceList,
-    evidenceSetHash: input.evidenceSetHash,
-    signal: input.signal,
-  });
-
-  // Validate rubric hash
-  const expectedRubricHash = computeRubricHashV2(
-    stripRubricHash(providerOutput.objective.rubric),
-  );
-  if (expectedRubricHash !== providerOutput.objective.rubric.rubricHash) {
-    throw new AuthorValidationError(
-      "rubric_hash_mismatch",
-      `Rubric hash mismatch for objective ${planObj.objectiveLocalId}`,
-    );
-  }
-
-  // v23（方案 D6）：作者没交练习件、但答案本身就是有序/成对结构时，零模型派生一道。
-  // 放在 revision hash 之前 —— 练习件是判分内容，必须进闭包。
-  const objectiveWithPracticeItem = providerOutput.objective.practiceItem
-    ? providerOutput.objective
-    : {
-      ...providerOutput.objective,
-      practiceItem: derivePracticeItemFromCanonicalAnswer(providerOutput.objective.canonicalAnswer),
-    };
-
-  // Build candidate revision
-  const candidateId = randomUUID();
-  const candidateRevisionId = randomUUID();
-  const revision = 1;
-
-  // M2（管线评审）：evidenceSetHash 取调用方给出的 sealed manifest 值（权威），
-  // provider 只在调用方未提供时自报。它必须与 candidateRevisionHash 的闭包
-  // 输入一致——否则落库的 revision hash 与任何下游独立重算的值 mismatch。
-  const evidenceSetHash = input.evidenceSetHash ?? providerOutput.evidenceSetHash;
-
-  const candidateWithoutHash: Omit<LearningCardCandidateRevisionV2, "candidateRevisionHash"> = {
-    version: 2,
-    candidateRevisionId,
-    candidateId,
-    revision,
-    runId: input.runId,
-    planRevisionId: input.plan.planRevisionId,
-    planVersion: input.plan.planVersion,
-    planHash: input.plan.planHash,
-    cardContentEpoch: input.plan.cardContentEpoch,
-    planObjectiveLocalId: planObj.objectiveLocalId,
-    recommendation: {
-      recommended: true,
-      reasonCodes: planObj.reasonCodes,
-    },
-    derivedFromCandidateRevisions: [],
-    objective: objectiveWithPracticeItem,
-    presentation: providerOutput.presentation,
-    evidenceSetHash,
-  };
-
-  const candidateRevisionHash = computeCandidateRevisionHashV2(candidateWithoutHash);
-  // 提示与候选并行返回：它不进 candidateRevisionHash 的输入对象。
-  return { candidate: { ...candidateWithoutHash, candidateRevisionHash }, hints: providerOutput.hints };
-}
-
-/**
- * §11.5: 执行 Candidate Authoring（批量入口）。
- *
- * 2026-09-17（性能改造）：provider 调用由"逐候选串行 await"改为**有界并发**，
- * 候选之间没有数据依赖，因此并发不改变任何输入；结果按下标保序，rubric hash
- * 校验、candidateId 分配与数组顺序与串行版本完全一致。
- *
- * 失败语义不变：任一候选失败即整体抛出，`AuthorValidationError`
- * （rubric hash mismatch）仍是确定性失败。
- */
-export async function executeAuthor(input: AuthorInput): Promise<AuthorResult> {
-  if (input.plan.result.kind !== "author_candidates") {
-    // no_cards_recommended: Author 不调用
-    return { candidates: [], hintsByCandidateRevisionId: new Map() };
-  }
-  // §8.5：只对预算内的目标出卡（超出预算会让 deck gate 以 count_out_of_plan 硬失败）。
-  const authored = await mapWithConcurrency(
-    budgetedPlanObjectives(input.plan),
-    input.providerConcurrency ?? DEFAULT_V2_STAGE_CONCURRENCY,
-    (planObj) => authorCandidateForObjective(input, planObj),
-  );
-  return {
-    candidates: authored.map((entry) => entry.candidate),
-    hintsByCandidateRevisionId: new Map(
-      authored.map((entry) => [entry.candidate.candidateRevisionId, entry.hints]),
-    ),
-  };
-}
-
-// ─── Deterministic Authoring Fallback ────────────────────────────────────
-
-/**
- * 确定性 Authoring fallback：不调用模型，从 PlannedObjective 直接构建
- * 最小可用的 objective draft + presentation draft。
- *
- * 仅用于测试或模型不可用时的 deterministic precheck。
- * 方案 20 §10.5 禁止把此 fallback 作为最终发布——必须经 Critic 门禁。
- */
 export class DeterministicAuthoringProvider implements AuthoringProvider {
   async authorCandidate(input: AuthoringProviderInput): Promise<AuthoringProviderOutput> {
     const { planObjective, sourceContent } = input;
@@ -402,18 +207,6 @@ export function countAnswerUnits(answer: CanonicalAnswerV2): number {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
-function stripRubricHash(rubric: ObjectiveRubricV2): Omit<ObjectiveRubricV2, "rubricHash"> {
-  const { rubricHash: _, ...rest } = rubric;
-  return rest;
-}
-
-/**
- * 兜底提示对：作者没交出提示（或走确定性链路）时，用**这张卡自己的**结构信息拼出来。
- *
- * 只使用不会把答案送进提示的原料：概念标签、知识形态、答案单元的**数量**、题型。
- * 单元文本本身绝不进提示——那等于把 canonicalAnswer 提前下发。
- * 常量表（learning-runs 的 buildDeterministicHint）只在连这些都拿不到时才退回去。
- */
 export function fallbackCardHints(input: {
   conceptLabel: string;
   knowledgeForm: KnowledgeFormV2;
@@ -477,8 +270,3 @@ function mapKnowledgeFormToTransformation(form: KnowledgeFormV2): TeachingTransf
 
 // ─── Errors ──────────────────────────────────────────────────────────────
 
-export class AuthorValidationError extends DomainError {
-  constructor(code: string, message: string) {
-    super({ name: "AuthorValidationError", code, message, statusCode: 500 });
-  }
-}

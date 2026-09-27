@@ -353,15 +353,6 @@ describe("冻结的原文副本（0275 / L21 §1）", () => {
     assert.equal(items[0].sourceState, "located");
     assert.equal(items[0].originalPreview, null);
   });
-
-  it("ref 解析器只认自己写的那种格式", async () => {
-    const { parseProtectedQuoteRefV2 } = await import("@ailearn/shared/card-generation-v2-pipeline");
-    const id = "11111111-1111-4111-8111-111111111111";
-    assert.equal(parseProtectedQuoteRefV2(`evidence://snapshot/${id}`), id);
-    assert.equal(parseProtectedQuoteRefV2(null), null);
-    assert.equal(parseProtectedQuoteRefV2("evidence://snapshot/不是uuid"), null);
-    assert.equal(parseProtectedQuoteRefV2(`https://example.com/${id}`), null);
-  });
 });
 
 describe("证据预览只剩一个读点", () => {

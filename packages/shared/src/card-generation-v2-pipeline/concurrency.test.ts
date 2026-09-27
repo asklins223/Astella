@@ -10,10 +10,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  DEFAULT_V2_STAGE_CONCURRENCY,
-  MAX_V2_STAGE_CONCURRENCY,
   mapWithConcurrency,
-  resolveV2StageConcurrency,
 } from "./concurrency.ts";
 
 test("保序：返回值下标与输入下标严格对应（完成顺序打乱也不影响）", async () => {
@@ -77,14 +74,4 @@ test("空输入不启动任何任务", async () => {
   });
   assert.deepEqual(result, []);
   assert.equal(called, 0);
-});
-
-test("配置解析：非法值回退默认，超上界被夹紧", () => {
-  assert.equal(resolveV2StageConcurrency(undefined), DEFAULT_V2_STAGE_CONCURRENCY);
-  assert.equal(resolveV2StageConcurrency("abc"), DEFAULT_V2_STAGE_CONCURRENCY);
-  assert.equal(resolveV2StageConcurrency("0"), DEFAULT_V2_STAGE_CONCURRENCY);
-  assert.equal(resolveV2StageConcurrency("-3"), DEFAULT_V2_STAGE_CONCURRENCY);
-  assert.equal(resolveV2StageConcurrency("2.5"), DEFAULT_V2_STAGE_CONCURRENCY);
-  assert.equal(resolveV2StageConcurrency("6"), 6);
-  assert.equal(resolveV2StageConcurrency("9999"), MAX_V2_STAGE_CONCURRENCY);
 });

@@ -319,21 +319,4 @@ export class CardGenerationPipelineErrorV2 extends DomainError {
 }
 
 
-/** `protectedQuoteRef` 的唯一格式（0275 / doc 34 L21 §1）。写侧与读侧都从这里走。 */
-export const PROTECTED_QUOTE_REF_PREFIX = "evidence://snapshot/";
 
-const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-/**
- * 解析 protected ref → `evidence_snapshot_id`；格式不对就返回 null，不猜。
- *
- * 这条函数是 L21 §1 缺的那一半：合同里"经 protected ref 访问"此前没有实现，
- * 而 ref 里装的还是一个凭空抽的随机号（不是任何存在的 id）。
- * 注意：**解得开不等于取不到**——0275 之前的存量行 ref 格式正确却指向不存在的对象，
- * 所以副本一律按 `evidence_snapshot_id` 查，不按 ref 里那个号查。
- */
-export function parseProtectedQuoteRefV2(ref: string | null | undefined): string | null {
-  if (typeof ref !== "string" || !ref.startsWith(PROTECTED_QUOTE_REF_PREFIX)) return null;
-  const rest = ref.slice(PROTECTED_QUOTE_REF_PREFIX.length);
-  return UUID_TEXT.test(rest) ? rest : null;
-}

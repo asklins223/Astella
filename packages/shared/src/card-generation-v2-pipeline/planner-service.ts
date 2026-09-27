@@ -42,7 +42,7 @@ import type {
   CardStrategyV2,
   PracticeItemFormV2,
 } from "../card-generation-v2-contracts.ts";
-import { CardStrategyValuesV2, practiceFormsForKnowledgeForm } from "../card-generation-v2-contracts.ts";
+import { practiceFormsForKnowledgeForm } from "../card-generation-v2-contracts.ts";
 import type { TaskIntentV1 } from "../learning-run-contracts.ts";
 import {
   computeCardPlanHashV2,
@@ -588,10 +588,6 @@ const STRATEGIES_FOR_KNOWLEDGE_FORM: Record<KnowledgeFormV2, readonly CardStrate
   application_rule: ["application", "why"],
 };
 
-/** 该知识形态最自然的题型。 */
-export function strategyForKnowledgeForm(form: KnowledgeFormV2): CardStrategyV2 {
-  return STRATEGIES_FOR_KNOWLEDGE_FORM[form]?.[0] ?? "recall";
-}
 
 export interface StrategyAllocation {
   strategy: CardStrategyV2;
@@ -789,16 +785,6 @@ function isPracticeFormWideEnough(
   return true;
 }
 
-/** 供 author 提示使用：全部题型枚举。 */
-export const ALL_CARD_STRATEGIES: readonly CardStrategyV2[] = CardStrategyValuesV2;
-
-/**
- * 题型 → 作答任务意图。
- *
- * learning-runs 构造作答通道时读的是 objective.preferredTaskIntents，**不是**
- * `presentation.strategy`（strategy 至今只用于卡片展示标签），因此必须由同一处
- * 决定两者，否则会出现"填空题面 + 解释类作答通道"的错位。
- */
 const TASK_INTENTS_FOR_STRATEGY: Record<CardStrategyV2, readonly TaskIntentV1[]> = {
   recall: ["recall"],
   cloze: ["recall"],

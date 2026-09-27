@@ -481,6 +481,56 @@ test("盖章：模型给的身份与哈希不采信；漏检的候选按没检�
   assert.equal(missing.stamped.perCandidate[0]?.issues[0]?.code, "check_missing");
 });
 
+test("可疑主张盖章：只接受本候选封存引文中的原句，并强制挡住错误 verdict", async () => {
+  const assembled = assembleCardGenerationV3(assemblyInput(expandToDrafts([candidateContent("obj-1")]),
+    expandCardGenerateV3OutputV3(JSON.parse(generateJson([candidateContent("obj-1")]))).output));
+  const candidate = assembled.candidates[0]!;
+  const sourceQuote = evidenceManifest.evidence[0]!.content!;
+  const input = checkInput([
+    { objectiveLocalId: "suspect-valid", candidate },
+    { objectiveLocalId: "suspect-unlocated", candidate },
+    { objectiveLocalId: "unrelated-clear", candidate },
+  ]);
+  const stamped = await stampCardContentCheckV3Output({
+    perCandidate: [
+      {
+        objectiveLocalId: "suspect-valid",
+        verdict: "keep",
+        issues: [{ code: "suspect_claim", severity: "soft", detail: "这句的绝对化结论需要核对。", sourceQuote }],
+        grounding: groundingReportFixture(),
+      },
+      {
+        objectiveLocalId: "suspect-unlocated",
+        verdict: "keep",
+        issues: [{ code: "suspect_claim", severity: "hard", detail: "原句无法被可靠定位。", sourceQuote: "凭空编造的引句" }],
+        grounding: groundingReportFixture(),
+      },
+      {
+        objectiveLocalId: "unrelated-clear",
+        verdict: "keep",
+        issues: [],
+        grounding: groundingReportFixture(),
+      },
+    ],
+    setIssues: [],
+  }, input);
+
+  const valid = stamped.stamped.perCandidate.find((entry) => entry.objectiveLocalId === "suspect-valid")!;
+  assert.equal(valid.verdict, "insufficient", "suspect_claim 必须盖成失败，即使模型交回 keep");
+  assert.equal(valid.issues[0]?.severity, "hard");
+  assert.equal(valid.issues[0]?.sourceQuote, sourceQuote);
+  assert.equal(valid.grounding.verdict, "fail");
+
+  const unlocated = stamped.stamped.perCandidate.find((entry) => entry.objectiveLocalId === "suspect-unlocated")!;
+  assert.equal(unlocated.verdict, "insufficient");
+  assert.equal(unlocated.issues[0]?.code, "suspect_claim_location_missing");
+  assert.equal("sourceQuote" in unlocated.issues[0]!, false, "不把模型编造的引句展示成原文");
+
+  const clear = stamped.stamped.perCandidate.find((entry) => entry.objectiveLocalId === "unrelated-clear")!;
+  assert.equal(clear.verdict, "keep", "问题按候选隔离，不牵连同批的正常候选");
+  assert.equal(clear.grounding.verdict, "pass");
+});
+
 // ── ⑤ 整批分配 ─────────────────────────────────────────────────────────
 
 test("整批分配：题型同时落到计划目标与候选题面，模型自选的那一份被覆盖", () => {
@@ -523,6 +573,31 @@ test("组装：模型给的 rubricHash 被丢弃重算，候选的 planHash 就�
     "展开器放的那个占位必须被组装层丢掉重算（模型根本不再交哈希这一格）");
   assert.equal(candidate.planHash, assembled.plan.planHash);
   assert.equal(candidate.planRevisionId, assembled.plan.planRevisionId);
+});
+
+test("组装：两级提示是候选行的兄弟列，不进候选修订哈希", async () => {
+  // 2026-09-27 从旧链 C2 那节搬来（`executeAuthor` 随四阶段链删除）。
+  // 不能拿"两次组装的哈希相等"当判据——`candidateRevisionId` 每次都是新 uuid，两次组装
+  // 本来就不可能相等（第一版我就栽在这里）。改问那件真正不变的事：**被哈希的那一份里没有提示**。
+  const { computeCandidateRevisionHashV2 } = await import(
+    "@ailearn/shared/card-generation-v2-hashing"
+  );
+  const content = candidateContent("obj-1");
+  const assembled = assembleCardGenerationV3(
+    assemblyInput([content],
+      expandCardGenerateV3OutputV3(JSON.parse(generateJson([content]))).output),
+  );
+  const candidate = assembled.candidates[0]!;
+  assert.equal("hints" in candidate, false,
+    "提示被并进候选对象了——那它就并进判分内容的审计闭包");
+  assert.notEqual(
+    computeCandidateRevisionHashV2({ ...candidate, hints: content.hints } as never),
+    candidate.candidateRevisionHash,
+    "把提示塞进被哈希的那一份，哈希却没变 ⇒ 这条判据读不到东西",
+  );
+  assert.equal(assembled.hintsByCandidateRevisionId.get(candidate.candidateRevisionId)?.level1,
+    content.hints.level1,
+    "提示得从兄弟列那一路交出去，否则上面两句只是什么都没带");
 });
 
 // ── ⑥ 零候选是正常结果 ─────────────────────────────────────────────────
@@ -571,6 +646,9 @@ test("检查提示词：每一张候选与每条依据都要在场", () => {
   assert.ok(prompt.includes("复习点为什么安排在快忘的时候"), "题面要进检查的提示");
   assert.ok(prompt.includes("因为那时重新编码最省力"), "答案要进检查的提示");
   assert.ok(prompt.includes("每一张候选都要有一条结论"), "漏一张的代价要说给模型");
+  assert.ok(prompt.includes("sourceQuote 必须逐字取自这里"), "疑点必须指向本候选自己的原文");
+  assert.ok(prompt.includes("没有外部来源不等于事实可疑"), "不能把缺外部引用误报成事实问题");
+  assert.ok(prompt.includes('code=\"suspect_claim\"'), "要显式区分可疑主张和一般证据不足");
 });
 
 // ── ⑦ 增量改写的身份（与首稿共用同一段组装）────────────────────────────

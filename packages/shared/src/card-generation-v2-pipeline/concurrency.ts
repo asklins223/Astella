@@ -14,26 +14,6 @@
  *   其余在途调用由调用方决定是否 abort（见 handler 的 stageAbort）。
  */
 
-/** 阶段内默认并发上限。保守取值：N≤4 时一波跑完，N=20 时 5 波。 */
-export const DEFAULT_V2_STAGE_CONCURRENCY = 4;
-
-/** 并发上限的硬上界（防御性：env 写错不该把 provider 打挂）。 */
-export const MAX_V2_STAGE_CONCURRENCY = 32;
-
-/** 解析并发配置：非法值（NaN/小数/非正数/超上界）一律回退默认。 */
-export function resolveV2StageConcurrency(raw: unknown): number {
-  const parsed = Number(raw ?? DEFAULT_V2_STAGE_CONCURRENCY);
-  if (!Number.isInteger(parsed) || parsed <= 0) return DEFAULT_V2_STAGE_CONCURRENCY;
-  return Math.min(parsed, MAX_V2_STAGE_CONCURRENCY);
-}
-
-/**
- * 有界并发 map：保持输入顺序返回结果。
- *
- * 任一 `fn` 抛错时整体 reject（错误即第一个 reject 的那个，不保证是下标最小的）；
- * 已在途的调用不会被取消——调用方若要止损，应把取消信号传进 `fn`（handler 的
- * grounding 阶段就是这么做的：可重试错误立即 abort 其余在途调用）。
- */
 export async function mapWithConcurrency<T, R>(
   items: readonly T[],
   limit: number,

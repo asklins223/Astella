@@ -16,7 +16,6 @@ import { test } from "node:test";
 import {
   allocatePracticeForms,
   allocateStrategies,
-  strategyForKnowledgeForm,
   summarizePracticeQuotaV2,
   type DeliveredPracticeV2,
 } from "./index.ts";
@@ -26,11 +25,6 @@ const strategiesOf = (
   forms: KnowledgeFormV2[],
   preferred?: CardStrategyV2[],
 ): CardStrategyV2[] => allocateStrategies(forms, preferred).map((a) => a.strategy);
-
-test("cloze 在兜底映射上可达：单一事实类知识优先出补全题", () => {
-  assert.equal(strategyForKnowledgeForm("fact"), "cloze");
-  assert.deepEqual(strategiesOf(["fact"]), ["cloze"]);
-});
 
 test("未勾选题型时，按知识形态的最自然题型出题", () => {
   assert.deepEqual(strategiesOf(["comparison", "causal_model", "sequence", "boundary"]),

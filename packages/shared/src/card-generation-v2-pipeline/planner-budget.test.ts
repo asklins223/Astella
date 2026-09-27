@@ -20,12 +20,10 @@ import { test } from "node:test";
 import {
   executePlanner,
   budgetedPlanObjectives,
-  plannedObjectiveForCandidateV2,
-  DeterministicAuthoringProvider,
   MICRO_NOTE_MAX_CARDS,
   type SourceBlockInput,
 } from "./index.ts";
-import { cardPlanV2Schema, CardStrategyValuesV2 as cardStrategyValues } from "../card-generation-v2-contracts.ts";
+import { cardPlanV2Schema } from "../card-generation-v2-contracts.ts";
 import type { ExtractedKnowledgeAtom } from "./planner-service.ts";
 
 function blocks(content: string): SourceBlockInput[] {
@@ -170,26 +168,32 @@ test("§8.5：客户端 hardMaxCards 同样约束目标数", async () => {
   assert.equal(cardPlanV2Schema.safeParse(plan).success, true);
 });
 
-test("§8.5：预算内的目标全部出卡，author 不得越预算", async () => {
-  const { plan } = await planFor(10);
-  const budgeted = budgetedPlanObjectives(plan);
-  assert.equal(budgeted.length, MICRO_NOTE_MAX_CARDS);
-
-  const { executeAuthor } = await import("./author-service.ts");
-  const result = await executeAuthor({
-    runId: "11111111-1111-4111-8111-111111111111",
-    workspaceId: "ws-00000000-0000-4000-8000-000000000001",
-    plan,
-    sourceContent: "微笔记内容",
-    semanticSpecHash: "f".repeat(64),
-    provider: new DeterministicAuthoringProvider(),
-  });
-  assert.equal(result.candidates.length, MICRO_NOTE_MAX_CARDS, "候选数不得超过 activationHardMax");
-  assert.deepEqual(
-    result.candidates.map((c) => c.planObjectiveLocalId),
-    budgeted.map((o) => o.objectiveLocalId),
-    "候选必须与预算内目标一一对应且保序",
-  );
+test("§8.5：出卡预算在 shared 这一处收敛，超预算的目标根本进不了出卡", () => {
+  // 2026-09-27：原来这一格往下接 `executeAuthor`，量"候选数与预算一一对应且保序"。那层
+  // author 驱动随四阶段链删除；"一一对应"今天由简化链的组装层守——候选引用没提案过的
+  // localId 会被剔掉并留因（`card-generation-v3.test.ts` 的「合同即闸」那格）。
+  // 留在这里的是那件会硬失败整条 run 的事：预算必须先收敛，否则内容全过门禁也交付不了
+  // （deck gate 以 `count_out_of_plan` 拒掉整条链的旧账）。
+  // 计划直接构造，不从 planner 走：planner 自己已经截过一刀，走它那条路"没超预算"是常态，
+  // 那条 slice 到底有没有被调用就读不出来。
+  const objectives = (n: number) => Array.from({ length: n }, (_, i) => ({
+    objectiveLocalId: `obj-${i + 1}`,
+    objectiveStatement: `第 ${i + 1} 条目标`,
+    priority: "important" as const,
+    knowledgeForm: "fact" as const,
+    evidenceRefIds: [],
+    strategy: "recall" as const,
+    rationale: "夹具",
+  }));
+  const over = budgetedPlanObjectives({
+    result: { kind: "author_candidates", activationHardMax: 2, objectives: objectives(5) },
+  } as never);
+  assert.deepEqual(over.map((o) => o.objectiveLocalId), ["obj-1", "obj-2"],
+    "预算之外的目标必须按顺序留在预算内那一截之后");
+  const within = budgetedPlanObjectives({
+    result: { kind: "author_candidates", activationHardMax: 9, objectives: objectives(5) },
+  } as never);
+  assert.equal(within.length, 5, "不超预算时不许误伤（截断不误伤那条判据的同一形状）");
 });
 
 test("§8.5：不超预算时行为不变（截断不误伤）", async () => {
@@ -203,25 +207,4 @@ test("§8.5：不超预算时行为不变（截断不误伤）", async () => {
   );
 });
 
-/**
- * 有界修复必须拿**真正的计划目标**当 author 入参（2026-09-21 真跑第一次尝试的死因：
- * 修复路径现场拼了个三字段替身再 `as never`，`planObjective.strategy` 是 undefined，
- * 提示构建读 `spec.label` 直接 TypeError，整批已付费调用作废）。
- */
-test("修复路径取回的计划目标带 strategy 与 practiceForm；对不上就喊，不静默给替身", async () => {
-  const { plan } = await planFor(3) as never as { plan: Parameters<typeof plannedObjectiveForCandidateV2>[0] };
-  const objectives = budgetedPlanObjectives(plan as never);
-  assert.ok(objectives.length >= 1, "夹具计划没有目标，这条用例无从判断");
 
-  const first = objectives[0]!;
-  const found = plannedObjectiveForCandidateV2(plan as never, first.objectiveLocalId);
-  assert.equal(found.objectiveLocalId, first.objectiveLocalId);
-  // 这两件事正是替身缺的：strategy 决定题面写法，practiceForm 决定配额点名。
-  assert.ok(cardStrategyValues.includes(found.strategy), `strategy 不在枚举里：${String(found.strategy)}`);
-  assert.ok("practiceForm" in found, "计划目标里没有 practiceForm 键，配额会无声消失");
-
-  assert.throws(
-    () => plannedObjectiveForCandidateV2(plan as never, "obj-不在这份计划里"),
-    /obj-不在这份计划里/,
-  );
-});
