@@ -44,11 +44,16 @@ process.env.DATABASE_URL_API ??= ADMIN_URL;
 // 红的时候 `assert.rejects` 报的是 "Missing expected rejection"，也就是激活**成功返回**了；
 // 所以下一手该查的是激活那道门为什么没拒（读的是 `activation-service.ts:419-426` 那条
 // `usableSnapshot` 集合），而不是再猜夹具取行。**目前状态：未定位的间歇红，八对配对不复现。**
-// `??=` 而不是 `=`：这一份的钉档要能被一次复现临时翻掉（`CARD_GENERATION_CHAIN=simplified_v3`
-// 跑整网），而**不需要往版本里留一行临时改动**——上一发我就是那么干的，把未提交的翻转
-// 挂在长时间后台验证上，既可能被别人的提交一起带走，也可能被并行的读写搅浑自己的结果。
-// 其余九份仍是硬赋值：它们钉 v2 是有对象的（四阶段链本身），不该被一次环境改动松开。
-process.env.CARD_GENERATION_CHAIN ??= "v2";
+// **2026-09-27 这一发又红了一次（整网第 2 次、累计 2/20），而那两条前置自证都过了**：
+// ⇒ "读不到该修订的 binding plan" 这一条走法被排除，剩下两种待测——② 条目在、但
+// `bindingEntryEvidenceSnapshotIds` 从夹具写的那个形状里抽不出 snapshotId
+// （`uniqueSnapshotIds` 为空 ⇒ 不查 eligibility）；③ 候选压根不在 `candidateByRev` 里
+// （`activation-service.ts:409` 的 `if (c)` 一假，整条门直接跳过，激活成功返回）。
+// 下一手就在这两处各加一格前置，不要再来一轮"猜一个因"。
+// 这一份**不钉档**（2026-09-27）：C31 那发只在整网见过一次红，累计 1/19
+// （单跑 10 次全绿、与八份逐对配对 0 复现、整网两次绿一次红）。一次观察既证不了因，
+// 也不够正当化一道长期防护——所以摘档，把上面那格前置自证留下：下一次红要自己说清
+// 踩中的是哪条放行走法。钉档曾经是"还没证明它稳"，那个理由不成立。
 // **下一手该装哪儿（本轮读代码读出来的两条"整段跳过"分支，未验证是否为因）**：
 // `activation-service.ts:350-368/419-426` 那道门有两种情况下**根本不会拒**——
 // ① `bindingByRev` 里取不到这一条修订的 binding plan（`bindingPlanRow` 为空）；
@@ -376,6 +381,21 @@ test("§15.7/C31：Evidence Redaction — tombstone + eligibility 前移 + 幂�
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { runRow, plan, first } = await loadRunPlan(run2);
+  // C31 的门有两条会**整段放行**的走法：读不到这一条修订的 binding plan，或那份
+  // `target_unit_bindings` 不是非空数组（于是 eligibility 根本不查）。任一条成立，激活都会
+  // 成功返回，红就只剩一句 "Missing expected rejection"——那是一句不交代原因的话。
+  // 这一格是**前置自证**：夹具自己写的那份 binding plan 必须读得回来、且真的带条目，
+  // 下一次再偶发红，报的是哪一条放行走法被踩中，而不是让我们再猜一轮。
+  const bindingProbe = await admin`
+    SELECT count(*)::int AS rows,
+           coalesce(sum(jsonb_array_length(target_unit_bindings))
+             FILTER (WHERE jsonb_typeof(target_unit_bindings) = 'array'), 0)::int AS unit_rows
+    FROM candidate_evidence_binding_plans_v2
+    WHERE workspace_id = ${WORKSPACE_ID} AND candidate_revision_id = ${first.candidate_revision_id}`;
+  assert.ok(Number(bindingProbe[0]?.rows ?? 0) >= 1,
+    "C31 前置：这一条修订读不到 binding plan 行 ⇒ 门会整段放行（激活必不被拒）");
+  assert.ok(Number(bindingProbe[0]?.unit_rows ?? 0) >= 1,
+    "C31 前置：binding plan 里抽不出任何条目 ⇒ `uniqueSnapshotIds` 为空，门同样整段放行");
   const { computeCandidateEvidenceBindingPlanHashV2, computeClientReviewHashV2 } = await import(
     "../../../../packages/shared/src/card-generation-v2-hashing.ts"
   );
