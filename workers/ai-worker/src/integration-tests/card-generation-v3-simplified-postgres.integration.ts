@@ -1161,6 +1161,49 @@ test("检查那一发两次都不合合同：生成那一发不重付，首稿�
   );
 });
 
+test("翻到真模型那一档但平台/同意没配好：一次都不外发，且当场终结不重投（走真分发点）", async () => {
+  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  const runId = (await createRun(notes.deadend.versionId, `v3-llm-refuse-${randomUUID()}`,
+    { workspaceId: FAIL_SHAPE_WORKSPACE_ID, userId: FAIL_SHAPE_USER_ID })).runId;
+  const job = await claimSimplifiedJob(runId);
+
+  const previousProvider = process.env.CARD_GENERATION_V3_PROVIDER;
+  process.env.CARD_GENERATION_V3_PROVIDER = "llm";
+  try {
+    await processV2OutboxJob(job);
+  } finally {
+    if (previousProvider === undefined) delete process.env.CARD_GENERATION_V3_PROVIDER;
+    else process.env.CARD_GENERATION_V3_PROVIDER = previousProvider;
+  }
+
+  const rows = await admin`
+    SELECT status, attempts, last_error FROM card_generation_run_outbox_v2
+    WHERE id = ${job.id}
+  ` as unknown as Array<{ status: string; attempts: number; last_error: string | null }>;
+  assert.equal(rows[0]?.status, "failed",
+    "这一档的拒绝必须是**不可重试**那一类：配置没配好不会被退避重投修好，六轮之后仍然需要处理");
+  assert.equal(Number(rows[0]?.attempts), 1);
+  assert.match(String(rows[0]?.last_error),
+    /resolved to mock provider|consent|not configured|未配置|同意/,
+    "两条拒发理由（平台没配 key / 账号没签同意）任一条成立都是同一件产品事实：没配好就不外发。"
+    + `实到：${String(rows[0]?.last_error).slice(0, 160)}`);
+
+  const audit = await admin`
+    SELECT count(*)::int AS n FROM ai_audit_log WHERE workspace_id = ${FAIL_SHAPE_WORKSPACE_ID}
+  ` as unknown as Array<{ n: number }>;
+  assert.equal(Number(audit[0]?.n), 0,
+    "**这一格真正要的那个数**：`ai_audit_log` 是模型调用的唯一写入口，0 行＝没有任何字节离开过进程");
+  const planRows = await admin`
+    SELECT count(*)::int AS n FROM card_generation_plans_v2 WHERE run_id = ${runId}
+  ` as unknown as Array<{ n: number }>;
+  const candidateRows = await admin`
+    SELECT count(*)::int AS n FROM card_generation_candidates_v2 WHERE run_id = ${runId}
+  ` as unknown as Array<{ n: number }>;
+  assert.equal(Number(planRows[0]?.n), 0, "拒发之后库里不许有半份产出");
+  assert.equal(Number(candidateRows[0]?.n), 0);
+  assert.equal(await runStatus(runId), "needs_attention");
+});
+
 test("不可重试那一类经真分发点落库＝一次终结（上一条负向读数的对照格）", async () => {
   const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
   const runId = (await createRun(notes.deadend.versionId, `v3-deadend-${randomUUID()}`,
