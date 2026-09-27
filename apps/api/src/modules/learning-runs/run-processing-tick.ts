@@ -48,11 +48,13 @@ import {
   evidenceEligibilityStatesV2,
   evidenceSnapshotsV2,
   initialValidationRemindersV2,
+  learningExposuresV2,
   learningObjectivesV2,
   learningObjectiveRevisionsV2,
 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { noteBlocks } from "@ailearn/shared/db-schema/note";
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
+import { EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
 import { ensurePendingReviewScheduleV2 } from "../review/review-schedule-boundary.ts";
 // 39d W5-5：§14.2「待复核时不持续放大结论」的那一闸。与上面那道笔记依据闸并排调用。
 import { scheduleBlockedByDisputeV2 } from "./run-disputes.ts";
@@ -720,7 +722,7 @@ async function prepareCriticAssessment(
   const input = await gatherCriticInput(tx, command);
   // 提示暴露仍只能按 practice 结算，但要保留逐 rubric 的诊断反馈，不能跳过
   // Critic 而把用户的回答一律写成空结果。
-  const hintExposure = await hasHintExposure(tx, command.runId);
+  const hintExposure = await hasHintExposure(tx, command);
   const variantCeiling = await readVariantCeiling(tx, command.artifactId);
   process.stderr.write(`[run-tick] prepare ok for assessment=${assessmentId}\n`);
   return {
@@ -770,7 +772,7 @@ async function finishCriticAssessmentWrite(
   }
   // 防御性二次读取：即使未来放宽 assessing 期间的辅助动作，也不会让晚到的
   // hint 把独立作答误记为正式掌握。
-  const hintExposure = hintExposureAtPrepare || await hasHintExposure(tx, command.runId);
+  const hintExposure = hintExposureAtPrepare || await hasHintExposure(tx, command);
   const allCovered = verdicts.length > 0 && verdicts.every((v) => v.verdict === "covered");
 
   // §7.7 上限钳制：评估结果与提交 Variant 的 templateTrustCeiling 取最小。
@@ -995,19 +997,99 @@ async function gatherCriticInput(
   };
 }
 
+/**
+ * 评估期"近期揭示"窗口。**必须与规划期那一份相等**
+ * （`target-snapshot-adapter.ts` 的 `RECENT_REVEAL_WINDOW_MS`）——两处判的是同一个
+ * "近期"，不相等就会出现"出题时算近期、锁定时不算"或反过来的分岔。没有从 shared
+ * 抽一个共同常量，是因为那会把 card-generation-v2 拖进 learning-runs 的依赖图；
+ * 改用一条守卫钉住两份相等（`learning-run-locked-answer-exposure-guard.test.ts`）。
+ */
+const ASSESSMENT_REVEAL_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 「这一次作答**带没带帮助**」——§16.37(a) 与 §7.7 上限钳制的输入。
+ *
+ * 两个读侧，缺一不可：
+ *  1. `learning_task.hint_requested` 事件（同 run 内请求过提示）；
+ *  2. `learning_exposures_v2` 里**这一次回答锁定之前**已经落在本人身上的
+ *     受控 Reveal（`answer_reveal` / `evidence_reveal` / `answer_editor_view`）。
+ *
+ * ## 第二个读侧为什么以 `locked_at` 为界，而不是"现在"
+ *
+ * §14.1.1 加粗那句：「**以回答锁定先后为界，而不是评分返回时间**」。
+ * 现实里最常见的一串是「答完 → 看卡背 → 评分稍后才返回」：那次揭示发生在
+ * **答案已经锁定之后**，按"现在"去算就会把一份**已经锁定**的独立回答降成
+ * `practice_only`——§16.37(a) 当场反向。
+ *
+ * 所以这里不是"run 期间出现过任何 exposure"，而是：
+ * **以这一次评估所评那件产物的 `locked_at` 当作"现在"**，再套用规划期那道
+ * 闸同一个**有界窗口**。两个性质一次拿到：
+ *  - 揭示早于锁定、且在窗口内 → 这次作答确实带着帮助 ⇒ 降级；
+ *  - 揭示晚于锁定（差值为负）⇒ 窗口不成立 ⇒ 不降级。
+ *
+ * 规划期那道闸（`target-snapshot-adapter.ts` 的 `loadPlanningExposure`）判的是
+ * **出题时**有没有近期揭示；这一道判的是**锁定时**。两者之间的差集正是
+ * 「先出题、后揭示、再作答」——那才是被漏掉的那一种。
+ *
+ * `locked_at` 的凭据是现成的：`learning_artifacts.locked_at`，且
+ * `CHECK (status <> 'locked' OR locked_at IS NOT NULL)` 保证锁定行必有它。
+ * 读不到 `locked_at`（脏数据）时**只留第一道闸**：不凭空把一份回答降级，
+ * 也不凭空放行——降级与否仍由 ceiling 钳制那一层 fail closed 兜着。
+ */
 async function hasHintExposure(
   tx: Parameters<Parameters<typeof withWorkspaceTransaction>[1]>[0],
-  runId: string,
+  command: { runId: string; artifactId?: string | null },
 ): Promise<boolean> {
   const rows = await tx
     .select({ id: learningRunEvents.id })
     .from(learningRunEvents)
     .where(and(
-      eq(learningRunEvents.runId, runId),
+      eq(learningRunEvents.runId, command.runId),
       eq(learningRunEvents.eventType, "learning_task.hint_requested"),
     ))
     .limit(1);
-  return rows.length > 0;
+  if (rows.length > 0) return true;
+
+  if (!command.artifactId) return false;
+  const lockedRows = await tx
+    .select({ lockedAt: learningArtifacts.lockedAt })
+    .from(learningArtifacts)
+    .where(eq(learningArtifacts.id, command.artifactId))
+    .limit(1);
+  const lockedAt = lockedRows[0]?.lockedAt ?? null;
+  if (!lockedAt) return false;
+
+  // 目标取自 `learning_runs.origin->>'objectiveId'`（与 run-disputes 同一读法）：
+  // 揭示是按目标记的，而这次作答评的也是这个目标。取不到就不加第二道闸。
+  const runRows = await tx
+    .select({
+      workspaceId: learningRuns.workspaceId,
+      userId: learningRuns.userId,
+      objectiveId: sql<string | null>`${learningRuns.origin} ->> 'objectiveId'`,
+    })
+    .from(learningRuns)
+    .where(eq(learningRuns.id, command.runId))
+    .limit(1);
+  const run = runRows[0];
+  if (!run?.objectiveId) return false;
+
+  const exposureRows = await tx
+    .select({ exposedAt: learningExposuresV2.exposedAt })
+    .from(learningExposuresV2)
+    .where(and(
+      eq(learningExposuresV2.workspaceId, run.workspaceId),
+      eq(learningExposuresV2.userId, run.userId),
+      eq(learningExposuresV2.objectiveId, run.objectiveId),
+      inArray(learningExposuresV2.exposureKind, [...EXPOSURE_KINDS_V2]),
+    ))
+    .orderBy(desc(learningExposuresV2.exposedAt))
+    .limit(1);
+  const lastExposedAt = exposureRows[0]?.exposedAt ?? null;
+  if (!lastExposedAt) return false;
+
+  // **负差值就是 §16.37(a) 那一格**：揭示发生在锁定之后，不降级。
+  const gapMs = lockedAt.getTime() - lastExposedAt.getTime();
+  return gapMs >= 0 && gapMs < ASSESSMENT_REVEAL_WINDOW_MS;
 }
 
 /** 提交 Artifact 的 Variant ceiling（§7.7 上限钳制的权威输入）。 */

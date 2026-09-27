@@ -117,3 +117,55 @@ test("action union 带上 assessmentId：仅凭 runId 判不出「已完成的�
   assert.match(contracts, /\| \{ kind: "end"; abandonLockedEvidence: boolean \}/,
     "end 那一档不见了：取消必须是**另一个**动作，不能顶掉它");
 });
+
+/**
+ * 三处 status 枚举**同宽**。
+ *
+ * 写下这三条是因为本刀第一版真的漏了一处：schema 的 `LearningAssessmentStatusValues` 加了
+ * `cancelled`、公开合同 `AssessmentPublicV1.status` 没加，于是投影层那个 `as never` 的 cast
+ * 失守，`tsc` 在**离那次改动很远的地方**报了一个语义不明的错（`run-service.ts:1184` 整个对象
+ * 不匹配 `AssessmentRow`）。症状离病因很远，是这类不同步最费时间的地方——所以钉住。
+ */
+test("三处 status 枚举同宽：schema / 公开合同 / 数据库 CHECK", () => {
+  const schema = readFileSync(SCHEMA_FILE, "utf8");
+  const contracts = readFileSync(CONTRACTS_FILE, "utf8");
+  const migration = readFileSync(MIGRATION_FILE, "utf8");
+
+  const schemaSet = schema.match(/LearningAssessmentStatusValues = \[([^\]]*)\]/);
+  assert.ok(schemaSet, "读不到 schema 的 status 枚举（判据可能指错了地方）");
+  const contractSet = contracts.match(
+    /export type AssessmentPublicV1 = \{[\s\S]{0,900}?status: ([^;]+);/,
+  );
+  assert.ok(contractSet, "读不到 AssessmentPublicV1.status（判据可能指错了地方）");
+
+  // TS 那边写双引号、SQL CHECK 里写单引号，两种都要认——第一版只认双引号，
+  // 于是 migrationSet 读出来是空数组，这条判据在真出事时会给出「两边都是空」的假绿。
+  const pick = (text: string) => [...text.matchAll(/["']([a-z_]+)["']/g)].map((m) => m[1]!);
+  const fromSchema = pick(schemaSet[1]!).sort();
+  const fromContract = pick(contractSet[1]!).sort();
+  assert.deepEqual(fromContract, fromSchema,
+    `公开合同的 status 与 schema 枚举不同宽：schema=${fromSchema.join(",")} 合同=${fromContract.join(",")}。`
+    + "少写一档会让投影层在给那一行做 cast 时失守，而那处失守要到真的产生那一档才暴露。");
+
+  const migrationSet = migration.match(
+    /learning_assessments_status_check CHECK \(status IN \(([^)]*)\)\)/,
+  );
+  assert.ok(migrationSet, "读不到迁移 0301 的 status CHECK（判据可能指错了地方）");
+  const fromMigration = pick(migrationSet[1]!).sort();
+  assert.deepEqual(fromMigration, fromSchema,
+    `迁移的 CHECK 与 schema 枚举不同宽：schema=${fromSchema.join(",")} 迁移=${fromMigration.join(",")}`);
+});
+
+test("判据对「漏一处」灵敏：从公开合同里删掉 cancelled，这一条必须红", () => {
+  const schemaSet = readFileSync(SCHEMA_FILE, "utf8").match(
+    /LearningAssessmentStatusValues = \[([^\]]*)\]/,
+  )!;
+  // TS 那边写双引号、SQL CHECK 里写单引号，两种都要认——第一版只认双引号，
+  // 于是 migrationSet 读出来是空数组，这条判据在真出事时会给出「两边都是空」的假绿。
+  const pick = (text: string) => [...text.matchAll(/["']([a-z_]+)["']/g)].map((m) => m[1]!);
+  const fromSchema = pick(schemaSet[1]!).sort();
+  // 模拟「第一版真的漏了的那一处」：公开合同少一档。
+  const drifted = fromSchema.filter((k) => k !== "cancelled");
+  assert.notDeepEqual(drifted, fromSchema,
+    "这条判据没造出差异 ⇒ 它恒真（数据库枚举里恰好有 cancelled，把它剔掉应当造出不同）");
+});

@@ -514,7 +514,13 @@ export type AssessmentPublicV1 = {
   taskId: string;
   artifactId: string;
   source: "assessment_critic" | "deterministic_declared_unable" | "deterministic_structured";
-  status: "queued" | "running" | "completed" | "not_assessable" | "failed";
+  /**
+   * 与 `LearningAssessmentStatusValues` 同宽——`cancelled`（0301；§5.5「停止本次评估」）
+   * 是终态且**不含** `reportHash`（被取消的评估本来就没有报告）。
+   * 这一格**必须**跟住 schema 那一列：少写一档，投影层就会在给 `cancelled` 的那一行做
+   * `as never` 之类的 cast，而那处 cast 的失守要到真的取消一次才暴露。
+   */
+  status: "queued" | "running" | "completed" | "not_assessable" | "failed" | "cancelled";
   rubricResults: Array<{
     rubricItemId: string;
     facet: TaskIntentV1;
@@ -1343,7 +1349,7 @@ export const assessmentPublicSchema = baseVersionSchema
     taskId: z.string().uuid(),
     artifactId: z.string().uuid(),
     source: z.enum(["assessment_critic", "deterministic_declared_unable", "deterministic_structured"]),
-    status: z.enum(["queued", "running", "completed", "not_assessable", "failed"]),
+    status: z.enum(["queued", "running", "completed", "not_assessable", "failed", "cancelled"]),
     rubricResults: z.array(
       z
         .object({
@@ -1358,9 +1364,9 @@ export const assessmentPublicSchema = baseVersionSchema
     reportHash: z.string().min(1).nullable(),
   })
   .strict()
-  // §12.4：queued/running/failed 时 rubricResults=[]、trustClass=null、reportHash=null。
+  // §12.4/§5.5：queued/running/failed/cancelled 时 rubricResults=[]、trustClass=null、reportHash=null。
   .superRefine((value, ctx) => {
-    if (value.status === "queued" || value.status === "running" || value.status === "failed") {
+    if (value.status === "queued" || value.status === "running" || value.status === "failed" || value.status === "cancelled") {
       if (value.rubricResults.length > 0 || value.trustClass !== null || value.reportHash !== null) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

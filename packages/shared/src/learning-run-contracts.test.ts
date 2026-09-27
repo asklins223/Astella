@@ -275,6 +275,8 @@ test("assessmentPublicSchema：非终态不得携带 rubric/trust/report；终�
     reportHash: null,
   };
   assert.equal(assessmentPublicSchema.parse(base).status, "queued");
+  assert.equal(assessmentPublicSchema.parse({ ...base, status: "cancelled" }).status, "cancelled");
+  assert.equal(assessmentPublicSchema.safeParse({ ...base, status: "cancelled", reportHash: "stale-report" }).success, false);
   assert.equal(
     assessmentPublicSchema.safeParse({
       ...base,

@@ -1,32 +1,38 @@
 /**
- * §16.37(a)「第一份已锁定回答不被正常事后揭示降级」的**现状守卫**（39d W5-1；PRD §14.1.1）。
+ * §16.37(a)「第一份已锁定回答不被正常事后揭示降级」的守卫（39d W5-1；PRD §14.1.1）。
  *
  * ## 这一条钉的是什么
  *
- * §16.37(a) 今天**恰好**成立，但成立的方式经不起追问：
+ * 评估期那道闸（`run-processing-tick.ts` 的 `hasHintExposure`）要回答的是
+ * 「这一次作答**带没带帮助**」，而「帮助」有两个来源：
  *
- *  - **规划期**那道闸（`target-snapshot-adapter.ts`）**读** `learning_exposures_v2`，
- *    按 `RECENT_REVEAL_WINDOW_MS = 24h` 把目标降成 `practice_only`；
- *  - **评估期**那道闸（`run-processing-tick.ts` 的 `hasHintExposure`）**只读**
- *    `learning_run_events` 里 `learning_task.hint_requested`，**完全不读 exposure 表**。
+ *  - 同 run 内请求过提示（`learning_task.hint_requested` 事件）；
+ *  - **这一次回答锁定之前**，本人已经看过这个目标的受控 Reveal
+ *    （`learning_exposures_v2` 的 `answer_reveal` / `evidence_reveal` /
+ *    `answer_editor_view`）。
  *
- * 于是"答完 → 看卡背 → 评分稍后返回"这一串里，评估期那道闸看不到刚才那次揭示，
- * 这次已锁定的回答**没有被降级**——§16.37(a) 因此成立。
+ * 第二个来源以前**没有**被读。现实里最常见的一串是「答完 → 看卡背 → 评分稍后才
+ * 返回」：那次揭示发生在**答案已经锁定之后**，按"现在"去算就会把一份**已经锁定**
+ * 的独立回答降成 `practice_only`——§16.37(a) 当场反向。
  *
- * **但它是两道闸串联出来的，不是哪一道闸自己保证的。** 谁给 `hasHintExposure` 加上
- * exposure 读侧（那看起来只是"补全一处漏读"），它就会在**答案锁定之后**看到那次揭示，
- * 把一份已经锁定的回答降级——§16.37(a) 当场反向，而**没有一条测试会红**。
+ * ## 所以判据是"以锁定先后为界"，不是"以评分返回时间"
  *
- * ## 为什么正确的修法不是"加读侧"
+ * §14.1.1 加粗那句：「**以回答锁定先后为界，而不是评分返回时间**」。
+ * 这条不是口号，`learning_artifacts.locked_at` 就是那个界，且
+ * `CHECK (status <> 'locked' OR locked_at IS NOT NULL)` 保证锁定行必有它。
+ * 于是判据是：**以 `locked_at` 当作"现在"**，再套规划期同一个有界窗口。
+ * 两个性质一次拿到：
  *
- * §14.1.1 加粗那句是「**以回答锁定先后为界，而不是评分返回时间**」。要让
- * `hasHintExposure` 读 exposure，必须先能回答"这条 exposure 发生在答案锁定之前还是之后"，
- * 而今天**没有这个判据**：锁定的凭据只有 `runtime_epoch` 与 `revision`，两者都不是时间戳，
- * 拿来比"揭示发生得更早还是更晚"是编的。所以 W5-1 主体那一格在补上"锁定时刻"这一列
- * （数据面＋契约）之前**不能**动这一处——那不是补一处漏读，那是换一套证据条件算法。
+ *  - 揭示早于锁定且在窗口内 → 这次作答确实带着帮助 ⇒ 降级；
+ *  - 揭示晚于锁定（差值为负）⇒ 窗口不成立 ⇒ **不降级**。
  *
- * 这一份是**纯守卫**：不改任何运行行为，只把上面那串推理钉住，并在有人动它时给出
- * "要做什么才允许动"而不是一句"别动"。
+ * 2026-09-27 之前的这一份守卫断言的是"**不许**加读侧"，理由是"锁定时刻今天没有
+ * 数据面"。那条理由**实测是错的**（`locked_at` 一直在），所以本份把它改写成
+ * "加读侧，但**必须按 locked_at 截断**"——真正要防的不是"有读侧"，是
+ * "**没有边界的读侧**"。
+ *
+ * 底下还有一层保险：`practice_only` 那次评估不写 canonical 事件
+ * （`evaluated` → `trustClass` → 结算那一层）。本份钉住它仍然在。
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -52,18 +58,44 @@ function hasHintExposureBody(): string {
   return tick.slice(at, next === -1 ? tick.length : next + 2);
 }
 
-test("评估期那道闸今天**不**读 exposure 表——这是 §16.37(a) 成立的原因", () => {
+test("评估期那道闸读 exposure 表——「出题后、锁定前」的揭示是以前唯一被漏掉的那一种", () => {
   const body = hasHintExposureBody();
   assert.ok(body.includes("learningRunEvents"), "读不到 learningRunEvents 那个读点（判据可能指错了地方）");
-  assert.ok(!/learningExposures|learning_exposures/.test(body),
-    "hasHintExposure 现在读了 learning_exposures。**这一条不能顺手改**："
-    + "§14.1.1 的判据是「以回答锁定先后为界，而不是评分返回时间」，而锁定时刻今天"
-    + "没有数据面（只有 runtime_epoch 与 revision，都不是时间戳）。加上读侧会让一份"
-    + "**已经锁定**的回答被事后那次揭示降级——§16.37(a) 当场反向。"
-    + "要动这里，先补「锁定时刻」那一列与契约，再按锁定前后分档；见 39d W5-1。");
+  assert.ok(/learningExposures|learning_exposures/.test(body),
+    "hasHintExposure 又不读 exposure 表了：那么「先出题、后揭示、再作答」这一种"
+    + "仍然会按独立作答结算——那正是这道闸存在的理由。");
 });
 
-test("规划期那道闸读 exposure，且有一个有界窗口（它是今天的第一道保险）", () => {
+test("⚠️ 那个读侧**必须**以 locked_at 为界——这是 §16.37(a) 全部的重量所在", () => {
+  const body = hasHintExposureBody();
+  assert.ok(/lockedAt/.test(body),
+    "hasHintExposure 读了 exposure 却没有按 locked_at 截断——**这会让 §16.37(a) 反向**："
+    + "「答完 → 看卡背 → 评分稍后返回」这一串里，那次揭示会被算成「作答时带着帮助」，"
+    + "把一份**已经锁定**的独立回答降成 practice_only。");
+  // 差值必须与 0 比过：只有「揭示早于锁定」才降级。
+  assert.ok(/gapMs\s*>=\s*0|0\s*<=\s*gapMs/.test(body),
+    "读不到「差值非负」那一处判定：晚于锁定的揭示也会被算进去，§16.37(a) 反向。");
+});
+
+test("判据对「无边界读侧」灵敏：去掉 locked_at 截断，这一条必须红", () => {
+  // 同一份源码上做内存变异，不改生产文件。恒真的守卫比没有守卫更坏。
+  // 变异的是**危险的那一版**（有 exposure 读、没有 locked_at 截断）——
+  // 上一份守卫写的是「加读侧就红」，那在前提被证伪之后就变成了给正确改法设障。
+  const body = hasHintExposureBody();
+  const unbounded = body
+    .replace(/lockedAt\.getTime\(\)\s*-\s*lastExposedAt\.getTime\(\)/, "Date.now() - lastExposedAt.getTime()")
+    .replace(/gapMs\s*>=\s*0\s*&&\s*/, "");
+  assert.ok(
+    !/lockedAt/.test(unbounded) || !/gapMs\s*>=\s*0/.test(unbounded),
+    "变异没落在正确位置：守卫读不到那一处",
+  );
+  assert.ok(
+    /lockedAt/.test(body) && /gapMs\s*>=\s*0/.test(body),
+    "变异后守卫仍判成立 ⇒ 这条判据恒真",
+  );
+});
+
+test("规划期那道闸读 exposure，且有一个有界窗口（它是第一道保险）", () => {
   assert.ok(/learningExposures|learning_exposures/.test(adapter),
     "target-snapshot-adapter 里读不到 exposure 的读点（判据可能指错了地方）");
   // 「近期」必须**有界**：一个无界的窗口会把「一般教学经历」永久变成「不能独立提取」，
@@ -72,38 +104,28 @@ test("规划期那道闸读 exposure，且有一个有界窗口（它是今天�
     "读不到那个有界窗口常量：没有界的话，一般教学经历会永久压住独立提取");
 });
 
-test("两道闸的串联：规划期降 ceiling ⇒ practice_only 不产生 canonical 事实", () => {
-  // 第二道保险在提交侧：ceiling 被钳到 practice_only 的那一次评估不写 canonical 事件。
-  // 这一条同时说明为什么"给 hasHintExposure 加读侧"今天未必立刻炸出用户可见故障——
-  // 但它**会**让 §16.37(a) 的判据反向（上面那条已经钉了），所以仍然不许顺手加。
+test("两道闸的窗口必须相等（否则会出现「出题算近期、锁定不算」的分岔）", () => {
+  const planning = Number(adapter.match(/RECENT_REVEAL_WINDOW_MS\s*=\s*(\d+)/)?.[1]);
+  const assessing = Number(tick.match(/ASSESSMENT_REVEAL_WINDOW_MS\s*=\s*(\d+)/)?.[1]);
+  assert.ok(Number.isFinite(planning), "读不到规划期那个窗口常量");
+  assert.ok(Number.isFinite(assessing), "读不到评估期那个窗口常量");
+  assert.equal(assessing, planning,
+    `两处判的是同一个"近期"，窗口却不同：规划期 ${planning}ms、评估期 ${assessing}ms。`
+    + "不相等就会出现同一段经历在两个时点被分成两档。");
+});
+
+test("第二道保险：practice_only 不产生 canonical 事实（降级不等于把学习记没了）", () => {
+  // ceiling 被钳到 practice_only 的那一次评估不写 canonical 事件。
   assert.match(tick, /practice_only/,
     "tick 里读不到 practice_only 那一档（判据可能指错了地方）");
   assert.match(tick, /ceilingOrder/,
     "读不到 ceiling 钳制那张顺序表");
 });
 
-test("揭示路径与评估路径今天不相交（§16.37(a) 的第三道保险）", () => {
-  // `reveal_not_available` 要求 run 已结算：答完之后再揭示走的是**另一条**路径，
-  // 它不会再回到评估那一步。三道保险叠起来，所以今天看不出问题——也正因如此，
-  // 拆掉任何一道都不会立刻有测试变红，这一份守卫才有必要。
+test("揭示路径与评估路径今天不相交（第三道保险：答完之后再揭示走的是另一条）", () => {
+  // `reveal_not_available` 要求 run 已结算：答完之后再揭示不会再回到评估那一步。
   const runService = codeOnly(readFileSync(
     join(REPO_ROOT, "apps/api/src/modules/learning-runs/run-service.ts"), "utf8"));
   assert.ok(runService.includes("reveal_not_available"),
     "run-service 里读不到 reveal_not_available（判据可能指错了地方）");
-});
-
-test("判据对「加读侧」灵敏：给 hasHintExposure 塞一句 exposure 读，这一条必须红", () => {
-  // 同一份源码上做内存变异，不改生产文件。恒真的守卫比没有守卫更坏。
-  const mutated = hasHintExposureBody().replace(
-    "const rows = await tx",
-    "const _exposureRows = await tx.select({ id: learningExposuresV2.id }).from(learningExposuresV2);\n  const rows = await tx",
-  );
-  assert.ok(
-    /learningExposures|learning_exposures/.test(mutated),
-    "变异没落在正确位置：守卫读不到那一处",
-  );
-  assert.ok(
-    !/learningExposures|learning_exposures/.test(hasHintExposureBody()),
-    "变异后守卫仍判成立 ⇒ 这条判据恒真",
-  );
 });
