@@ -8,10 +8,18 @@
  *
  * ## 块锚从哪里来
  *
- * `learning_objective_origins_v2.evidence_snapshot_ids` → `evidence_snapshots_v2`
- * 的 `block_id`。那一步 join 是必要的：候选锚的是**块**，而目标存的是**证据快照**
- * ——不 join 就只能拿快照 id 去比，那等于把"同一处出处"判成"同一张快照"，
- * 而同一块切两段会封出两个快照 id，复用就会漏。
+ * **当前修订的 `evidence_bindings` → `evidence_snapshots_v2.block_id`**。
+ *
+ * ⚠️ **不是** `learning_objective_origins_v2.evidence_snapshot_ids`。那一列在制卡
+ * 激活建出来时**是空的**：`writeActivationNoteOrigin`（`origin-service.ts:229`）调
+ * `createObjectiveOrigin` 时根本没传 `evidenceSnapshotIds`，落库走默认值 `[]`。
+ * 于是每一颗经激活建出来的目标都没有块锚，判据每次都走 `no_block_anchor`
+ * （§4.2「保留差异」那一档），**复用一次都不命中**。这是 C49（§16.38 的真库读数）
+ * 量出来的——第一版读侧对着一个**生产里不存在的形状**绿了两轮。
+ *
+ * 依据在**修订的 `evidence_bindings`** 里，那才是"这颗目标的依据"本身。join 仍
+ * 必要：候选锚的是**块**，那里存的是**证据快照**；不 join 就只能拿快照 id 去比，
+ * 那等于把"同一处出处"判成"同一张快照"，而同一块切两段会封出两个快照 id。
  *
  * ## 形态从哪来
  *
@@ -47,15 +55,28 @@ export async function loadReusableObjectivesForNoteV2(
            COALESCE(
              ARRAY(
                SELECT DISTINCT es.block_id
-               FROM public.learning_objective_origins_v2 loo
+               FROM (
+                 -- evidence_bindings 这一列**两种形状都存在**：对象（键＝bindingId，
+                 -- 值＝那一条 binding）与数组（激活 create_new 写的是 canonicalBindings
+                 -- 数组）。两种 jsonb_* 函数都对不上的形状会**直接抛错**，所以按
+                 -- jsonb_typeof 分流、只走对的那一支，别无脑都跑一遍。
+                 -- 第一版只走 jsonb_array_elements、第二版只走 jsonb_each，各自被生产
+                 -- 的另一种形状当场教回来一次。
+                 SELECT elem ->> 'evidenceSnapshotId' AS snapshot_id
+                 FROM jsonb_array_elements(
+                        CASE WHEN jsonb_typeof(lor.evidence_bindings) = 'array'
+                             THEN lor.evidence_bindings ELSE '[]'::jsonb END) AS elem
+                 UNION ALL
+                 SELECT val ->> 'evidenceSnapshotId'
+                 FROM jsonb_each(
+                        CASE WHEN jsonb_typeof(lor.evidence_bindings) = 'object'
+                             THEN lor.evidence_bindings ELSE '{}'::jsonb END) AS kv(key, val)
+               ) AS binding
                JOIN public.evidence_snapshots_v2 es
-                 ON es.evidence_snapshot_id = ANY (loo.evidence_snapshot_ids)
-                AND es.workspace_id = loo.workspace_id
-               WHERE loo.objective_id = lo.objective_id
-                 AND loo.workspace_id = ${input.workspaceId}
-                 AND loo.origin_kind = 'note'
-                 AND loo.note_id = ${input.noteId}
-                 AND es.block_id IS NOT NULL
+                 ON es.evidence_snapshot_id = binding.snapshot_id::uuid
+                AND es.workspace_id = ${input.workspaceId}
+               WHERE es.block_id IS NOT NULL
+                 AND es.note_id = ${input.noteId}
                ORDER BY es.block_id
              ),
              ARRAY[]::uuid[]
