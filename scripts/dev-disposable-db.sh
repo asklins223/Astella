@@ -75,17 +75,44 @@ set +a
 DB_HOST="${REQUESTED_HOST:-127.0.0.1}"
 DB_PORT="${REQUESTED_PORT:-5432}"
 
-PG_CONTAINER="$("${COMPOSE[@]}" ps -q postgres 2>/dev/null || true)"
-if [ -z "$PG_CONTAINER" ]; then
-  echo "dev postgres container is not running; start the stack first (make up)" >&2
-  exit 2
+# ── 连库方式：daemon 可达即可，不依赖 docker CLI ────────────────────────────
+# 为什么改：docker CLI 不在 PATH 的机器上（daemon 在跑、127.0.0.1:5432 可达）
+# 本脚本会直接拒绝，于是真库集测只能落**共享 dev 库**——而那一族判据的前提是
+# 「库里只有自己的夹具」，不满足时制卡那几份会报**假失败**（"worker must process
+# outbox jobs (got 0)"／"生成并发已达上限"），症状完全不像环境问题。
+# 一次性库纪律是那批判据的地基，所以这里让它不再依赖 CLI。
+PG_CONTAINER=""
+if command -v docker >/dev/null 2>&1; then
+  PG_CONTAINER="$("${COMPOSE[@]}" ps -q postgres 2>/dev/null || true)"
 fi
 
 psql_admin() { # psql_admin <dbname> [extra psql args...]
   local db="$1"; shift
-  docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" "$PG_CONTAINER" \
-    psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$db" "$@"
+  if [ -n "$PG_CONTAINER" ]; then
+    docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" "$PG_CONTAINER" \
+      psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$db" "$@"
+    return $?
+  fi
+  # 退回直连 + 极小的 psql 替身（用仓库自己的 pg 驱动，不装任何新东西）。
+  # **ON_ERROR_STOP=1 的等价物**：替身自己在任何一条语句失败时以非零退出。
+  PGPASSWORD="$POSTGRES_PASSWORD" node "$REPO_ROOT/scripts/psql-lite.mjs" \
+    -h "$DB_HOST" -p "$DB_PORT" -U "$POSTGRES_USER" -d "$db" "$@"
 }
+
+if [ -z "$PG_CONTAINER" ]; then
+  # 连不上就在这里停。**不能让失败延后到每一条命令各自报一次**：
+  # 那种报错离病因有三层（CLI 缺失 / 端口 / 密码），而症状最终会表现成
+  # "worker must process outbox jobs (got 0)"——那离病因隔了整整一层台账。
+  if ! PGPASSWORD="$POSTGRES_PASSWORD" node "$REPO_ROOT/scripts/psql-lite.mjs" \
+       -h "$DB_HOST" -p "$DB_PORT" -U "$POSTGRES_USER" -d postgres \
+       -q -t -A -c 'SELECT 1' >/dev/null 2>&1; then
+    echo "cannot reach postgres at $DB_HOST:$DB_PORT as \"$POSTGRES_USER\"." >&2
+    echo "The container path is unavailable (docker CLI not on PATH) and the direct" >&2
+    echo "connection failed. Fix that before anything else: otherwise every later" >&2
+    echo "failure shows up as 'worker must process outbox jobs (got 0)'." >&2
+    exit 2
+  fi
+fi
 
 apply_roles() { # apply_roles <dbname> <true|false>
   psql_admin "$1" \
