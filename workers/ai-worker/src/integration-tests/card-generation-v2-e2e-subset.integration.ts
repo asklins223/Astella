@@ -49,7 +49,7 @@
  *     workers/ai-worker/src/integration-tests/card-generation-v2-e2e-subset.integration.ts
  */
 
-import { after, before, test } from "node:test";
+import { after, before, test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
@@ -64,6 +64,44 @@ process.env.DATABASE_URL_API ??= ADMIN_URL;
 // 2026-09-27 实测：这一份在默认档（简化链）上 2/2 通过 ⇒ **不再钉档**，它就是新链的网。
 // 其余九份仍钉 v2：同一天把十份一起摘掉是 41 条红，逐份的量过才敢摘（分诊见 39d-w71 §7）。
 process.env.CARD_GENERATION_CHAIN = "v2";
+
+/**
+ * 这份文件今天**按用例分档**（2026-09-27 逐条在默认档上量过，分诊表在
+ * `39d-w71-card-simplification-slices-2026-09-26.md` §7.2）。每发开始前把档位复位到
+ * 文件头那一档，被搬走的用例在开头自己 `delete`——复位写在 `beforeEach` 里，
+ * 某条用例中途抛错也不会把档位漏给下一条（那是最容易骗过自己的串味）。
+ */
+beforeEach(() => { process.env.CARD_GENERATION_CHAIN = "v2"; });
+
+/**
+ * 这一格是上面那套按用例分档的**正控制**：同一份文件里连着开两条 run，一条按复位后的
+ * `v2`、一条把档位摘掉走默认档，两条排出去的 jobType 必须不一样。
+ *
+ * 为什么要它：搬过来的用例在两条链上**都可能绿**（很多判据与链无关），于是"删掉一行
+ * `delete`"这种退化不会让任何一条用例变红——那时"已经搬到默认档"就只是一句写在注释里的
+ * 主张。这一格把主张变成读数。
+ */
+test("分档探针：复位走 v2，摘掉档位走简化链，同一份文件里两条 run 的 jobType 不同", async () => {
+  // 两篇笔记：一篇同时只许挂一批在制（`note_generation_in_flight`），探针要两条并存的 run
+  // 就只能给每条一篇自己的正文。
+  const legacyVersionId = (await seedNote("链档探针旧", OSI_CONTENT)).versionId;
+  const legacyRunId = (await createRun(legacyVersionId, `chain-probe-legacy-${randomUUID()}`,
+    `chain-probe-legacy-key-${randomUUID()}`)).runId;
+  delete process.env.CARD_GENERATION_CHAIN;
+  const defaultVersionId = (await seedNote("链档探针新", OSI_CONTENT)).versionId;
+  const defaultRunId = (await createRun(defaultVersionId, `chain-probe-default-${randomUUID()}`,
+    `chain-probe-default-key-${randomUUID()}`)).runId;
+
+  const rows = await admin`
+    SELECT run_id, job_type FROM card_generation_run_outbox_v2
+    WHERE run_id IN (${legacyRunId}, ${defaultRunId})
+  ` as unknown as Array<{ run_id: string; job_type: string }>;
+  const byRun = new Map(rows.map((row) => [row.run_id, row.job_type]));
+  assert.equal(byRun.get(legacyRunId), "card_generation_plan",
+    "复位那一发没走 v2 ⇒ `beforeEach` 没生效，下面所有'已搬走'的用例读数全部作废");
+  assert.equal(byRun.get(defaultRunId), "card_generation_simplified_v1",
+    "摘掉档位那一发没走简化链 ⇒ 那 8 条用例其实一直还在旧链上，注释在说谎");
+});
 
 const admin = postgres(ADMIN_URL, { max: 2 });
 
@@ -213,6 +251,7 @@ test("C01：OSI 短笔记 → Auto → 推荐 1–2 张（review_ready）", asyn
 });
 
 test("C03：临时待办 → no_cards_recommended 成功终态，0 Candidate/Card/Objective/Schedule", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 这一条测的是链本身之外的东西，走默认档
   const { versionId } = await seedNote("待办", TODO_CONTENT);
   const runId = (await createRun(versionId, `c03-${randomUUID()}`, `c03-key-${randomUUID()}`)).runId;
   await runPipelineOnce();
@@ -263,6 +302,7 @@ test("C22：同一 Idempotency-Key 重放 → 同 run，不产生重复 outbox/r
 });
 
 test("C33：SSE 事件 payload 白名单 — canonicalAnswer/私有字段不透传", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 这一条测的是链本身之外的东西，走默认档
   const { versionId } = await seedNote("SSE", OSI_CONTENT);
   const runId = (await createRun(versionId, `c33-${randomUUID()}`, `c33-key-${randomUUID()}`)).runId;
   await runPipelineOnce();
@@ -407,6 +447,7 @@ test("C13：Candidate 纯改写原文 → Pedagogy hard fail；0 passed（drop�
 });
 
 test("C32：跨 workspace 伪造 runId → 0 事件，内容零泄漏", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 这一条测的是链本身之外的东西，走默认档
   const { versionId } = await seedNote("受害笔记", OSI_CONTENT);
   const victimRunId = (await createRun(versionId, `c32-${randomUUID()}`, `c32-key-${randomUUID()}`)).runId;
   await runPipelineOnce();
@@ -691,6 +732,7 @@ test("C23+C25：activation 幂等重放同 receipt + 恰一 canonical mapping + 
  * 在一条已经 activated 的 run 上没法自然长出第二次排期，硬造只会测到夹具。
  */
 test("C45：开启复习那一档 → 恰一条待处理安排，回执报库里实际日期，重放不再排第二条", async (t) => {
+  delete process.env.CARD_GENERATION_CHAIN; // 这一条测的是链本身之外的东西，走默认档
   const SCHEDULE_CONTENT =
     "中和反应是酸与碱作用生成盐和水的反应；其实质是酸电离出的氢离子与碱电离出的氢氧根离子结合成水，同时放出热量。";
   const { versionId } = await seedNote("开启复习", SCHEDULE_CONTENT);
@@ -1115,6 +1157,7 @@ test("C21：生成期间编辑 Note → 本次绑定 sealed 旧版本，不读�
 });
 
 test("C36：纯感想 → no_cards_recommended 成功终态，不伪造 first_card/first_run/schedule", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 这一条测的是链本身之外的东西，走默认档
   // 前置测试（C23）已在本 workspace 激活过卡，故用前后差值断言本次 0 副作用
   const baselineCards = (await admin`
     SELECT count(*)::int AS n FROM learning_cards_v2 WHERE workspace_id = ${WORKSPACE_ID}`)[0].n;
@@ -1409,6 +1452,7 @@ test("C30：archive Card/Objective → lifecycle archived + epoch 前移，历�
 });
 
 test("C5：LearningRun PREPARE 冻结 LearningTargetSnapshotV2（真实 DB + 幂等重放 + 公共投影无答案泄漏）", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 这一条测的是链本身之外的东西，走默认档
   const PREPARE_CONTENT =
     "遗忘曲线：刚学过的内容遗忘最快，随后遗忘速度减慢；间隔复习应在遗忘发生前安排，并逐步拉长复习间隔。";
   const { versionId } = await seedNote("PREPARE", PREPARE_CONTENT);
@@ -1580,6 +1624,7 @@ test("C5：LearningRun PREPARE 冻结 LearningTargetSnapshotV2（真实 DB + 幂
 });
 
 test("§17.5 step 17：post-activation 投影消费者——幂等对账台账 + 失败 fail-closed（R33）", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 这一条测的是链本身之外的东西，走默认档
   // 复用 C5 的最小激活路径（无 binding plan 行也允许——激活端退化为空集）。
   // 内容须避开本套件已激活过的主题（planner existing-objective 去重会 0 卡）。
   const PA_CONTENT =
@@ -1726,6 +1771,7 @@ test("§10.5：CARD_GENERATION_V2_LLM=true 但无 provider key → fail-closed�
 });
 
 test("C18：reveal 激活卡 → exposure-first（先持久化再返回答案）+ 幂等重放同 exposure", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 这一条测的是链本身之外的东西，走默认档
   const REVEAL_CONTENT =
     "牛顿第二定律：物体加速度与所受合外力成正比，与质量成反比，公式 F=ma；方向与合外力方向一致。";
   const { versionId } = await seedNote("reveal", REVEAL_CONTENT);
