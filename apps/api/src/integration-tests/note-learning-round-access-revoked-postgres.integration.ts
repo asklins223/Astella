@@ -99,7 +99,7 @@ before(async () => {
         (id, workspace_id, user_id, round_id, ordinal, kind, content, source_block_ordinals,
          personal_source_snapshots, snapshot_hash, driving_question_revision, artifact_id)
       VALUES (${teaching}, ${workspaceId}, ${authorId}, ${roundId}, 1, 'explanation',
-        ${tx.json(TEACHING_CONTENT)}, ${tx.array([0])}, ${tx.json([])}, ${HASH}, 1, ${artifact})`;
+        ${tx.json(TEACHING_CONTENT)}, ${`{0}`}::int[], ${tx.json([])}, ${HASH}, 1, ${artifact})`;
   });
   teachingId = teaching;
   artifactId = artifact;

@@ -190,6 +190,12 @@ const OBJECTIVE_GUARD_TOKENS = [
  * 只能随着修好而变小。
  */
 const OBJECTIVE_SYSTEM_LEVEL_READS: Record<string, number> = {
+  // 39d W5-6 刀六：`linkPersonalBindingToObjectiveV2` 里那一发只为**判据快照**取两列——
+  // `current_objective_revision_id` 与 `revision`（"当初凭什么说它们是同一条"的那份记录）。
+  // 没有题面、没有概念标题，所以不是内容读点。真正的可见性在**上一个函数**
+  // `listBindingLinkCandidatesV2` 里判着，那一发返回题面，那一发带了
+  // `visibleObjectivesCondition`（写在 join 条件上）。
+  "modules/learning-objectives/personal-binding-service.ts": 2,
   // 生成与激活侧：调用方刚提交的那一批的闭环（能走到这里说明这篇笔记对他可读），
   // 以及按 objectiveId 精确取一行的 CAS。
   "modules/card-generation-v2/activation-service.ts": 7,

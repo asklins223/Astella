@@ -1,0 +1,229 @@
+/**
+ * **本人对建议关系**的确认／隐藏（39d W5-6 刀七；39 §11.3、§16.20、§4.2）。
+ *
+ * 写入侧只做三件事，每一件都对应 §11.3 的一句：
+ *  1. **两端都要读得到**（`decideRelationDecisionV2` 的 `missing_endpoints`）。首期以单篇
+ *     笔记中可核对关系为主，而模型推测的前置关系可能指向他读不到的另一篇——确认一条自己
+ *     端点都看不见的关系没有意义，他确认不了自己没看过的东西。
+ *  2. **只写那一张按人收的表**（`relationsWritesNothingSharedV2()` 把其余五条钉成 `false`）。
+ *     公共 `relations` jsonb 是材料血缘，随目标修订定版；往里写 `confirmedBy` 就是把个人
+ *     数据烧进公共快照，正是 §11.3「不能让只读成员的确认修改公共知识结构」要禁止的。
+ *  3. **改主意走 UPDATE**（0302 那条唯一索引把 decision 排除在键外），所以读侧不必判
+ *     "哪一行更新"——§11.3「用户可纠正或隐藏」要的就是这个不分叉。
+ *
+ * 共享结构那半边（`decideSharedRelationWriteV2`）**不在这一份里执行**：把一条确认写进公共
+ * 关系需要材料编辑权 + 明确作用范围，那是公共材料的写路径，与 0300/0296 同一支思路，
+ * 但它的调用点是编辑动作那一侧，不在这里凭空开一个口。
+ */
+import { and, eq, sql } from "drizzle-orm";
+import {
+  personalRelationDecisionsV2,
+  type PersonalRelationKindV2,
+} from "@ailearn/shared/db-schema/personal-relation-decisions";
+import { notes } from "@ailearn/shared/db-schema/note";
+import { learningObjectiveOriginsV2, learningObjectivesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+import {
+  decideRelationDecisionV2,
+  type PersonalRelationDecisionV2,
+} from "@ailearn/shared/personal-relation-decision-rules-v2";
+import { visibleNotesCondition } from "../note/visibility.ts";
+import type { ApiTransaction } from "../../db/client.ts";
+
+/** 两端有读不到的那一个——要让界面说清"哪一端读不到"，不是笼统一句"不行"。 */
+export class RelationEndpointNotReadableV2 extends Error {
+  constructor(readonly side: "from" | "to" | "both") {
+    super(`relation_endpoint_not_readable:${side}`);
+  }
+}
+
+export class RelationSelfLoopV2 extends Error {
+  constructor() {
+    super("relation_self_loop");
+  }
+}
+
+function toView(row: typeof personalRelationDecisionsV2.$inferSelect) {
+  return {
+    version: 2 as const,
+    fromObjectiveId: row.fromObjectiveId,
+    toObjectiveId: row.toObjectiveId,
+    relation: row.relation,
+    decision: row.decision,
+    noteId: row.noteId,
+  };
+}
+
+/** 这个目标本人在哪一篇上——用来判"两端都读得到"。没有绑定就等于读不到。 */
+async function readableNoteForObjectiveV2(
+  tx: ApiTransaction,
+  input: { workspaceId: string; userId: string; objectiveId: string },
+): Promise<string | null> {
+  const rows = await tx
+    .select({ noteId: notes.id })
+    .from(learningObjectiveOriginsV2)
+    .innerJoin(learningObjectivesV2, and(
+      eq(learningObjectivesV2.workspaceId, learningObjectiveOriginsV2.workspaceId),
+      eq(learningObjectivesV2.objectiveId, learningObjectiveOriginsV2.objectiveId),
+    ))
+    .innerJoin(notes, and(
+      eq(notes.id, learningObjectiveOriginsV2.noteId),
+      eq(notes.workspaceId, learningObjectiveOriginsV2.workspaceId),
+    ))
+    .where(and(
+      eq(learningObjectiveOriginsV2.workspaceId, input.workspaceId),
+      eq(learningObjectiveOriginsV2.objectiveId, input.objectiveId),
+      eq(learningObjectiveOriginsV2.originKind, "note"),
+      eq(learningObjectivesV2.lifecycle, "active"),
+      // 判据取房子里那一份 `visibleNotesCondition`（不是在 where 里再抄一遍
+      // `share_scope = 'shared' OR created_by = ...`）——这一族是目标读点棘轮盯着的。
+      visibleNotesCondition(input.userId),
+    ))
+    .limit(1);
+  return rows[0]?.noteId ?? null;
+}
+
+/**
+ * 记一次确认／隐藏。改主意就再调一次——0302 那条唯一索引保证同一条边只留一行。
+ *
+ * `noteId` **不接受请求体给的值**（虽然合同里带着它）：两端在不在同一篇、以及本人读不读得到，
+ * 都由服务端从公共血缘 + 可见性判据查出来。给了也当没给。
+ */
+export async function setPersonalRelationDecisionV2(
+  tx: ApiTransaction,
+  input: {
+    workspaceId: string;
+    userId: string;
+    fromObjectiveId: string;
+    toObjectiveId: string;
+    relation: PersonalRelationKindV2;
+    decision: PersonalRelationDecisionV2;
+    evidence?: Record<string, unknown>;
+    at: Date;
+  },
+): Promise<{ row: ReturnType<typeof toView>; changed: boolean }> {
+  if (input.fromObjectiveId === input.toObjectiveId) throw new RelationSelfLoopV2();
+
+  const [fromNote, toNote] = await Promise.all([
+    readableNoteForObjectiveV2(tx, {
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      objectiveId: input.fromObjectiveId,
+    }),
+    readableNoteForObjectiveV2(tx, {
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      objectiveId: input.toObjectiveId,
+    }),
+  ]);
+  const decided = decideRelationDecisionV2({
+    fromReadable: fromNote !== null,
+    toReadable: toNote !== null,
+    sameObjective: input.fromObjectiveId === input.toObjectiveId,
+    decision: input.decision,
+  });
+  if (!decided.allowed) {
+    // 端点读不到要说清是哪一端：笼统一句"不行"会让她以为是关系本身有问题。
+    // 判据函数只回一个 reason（它不必知道是哪一端——那是这里的事），
+    // 所以「哪一端」直接从上面那两次查询的本地变量读。
+    const side = fromNote === null && toNote === null ? "both"
+      : fromNote === null ? "from" : "to";
+    throw new RelationEndpointNotReadableV2(side);
+  }
+  // 两端在**同一篇**时才记 noteId；跨篇的首期不记（§11.3「首期以单篇笔记中可核对关系为主」），
+  // 于是 note_id 可空这一档在读侧只有一个含义：这条不属于任何一篇。
+  const noteId = fromNote !== null && fromNote === toNote ? fromNote : null;
+
+  // 改主意走 upsert：键是 (ws, user, from, to, relation)，**不含 decision**，
+  // 所以重复点是同一行被改写，不会长出"确认"与"隐藏"两行。
+  const rows = await tx
+    .insert(personalRelationDecisionsV2)
+    .values({
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      noteId,
+      fromObjectiveId: input.fromObjectiveId,
+      toObjectiveId: input.toObjectiveId,
+      relation: input.relation,
+      decision: input.decision,
+      evidence: input.evidence ?? {},
+      createdAt: input.at,
+      updatedAt: input.at,
+    })
+    .onConflictDoUpdate({
+      target: [
+        personalRelationDecisionsV2.workspaceId,
+        personalRelationDecisionsV2.userId,
+        personalRelationDecisionsV2.fromObjectiveId,
+        personalRelationDecisionsV2.toObjectiveId,
+        personalRelationDecisionsV2.relation,
+      ],
+      set: {
+        decision: input.decision,
+        evidence: input.evidence ?? {},
+        noteId,
+        updatedAt: input.at,
+      },
+    })
+    .returning();
+  return { row: toView(rows[0]), changed: true };
+}
+
+/** 本人在某一篇（或整个空间）上对关系边做过的全部表态。 */
+export async function listPersonalRelationDecisionsV2(
+  tx: ApiTransaction,
+  input: { workspaceId: string; userId: string; noteId?: string; limit?: number },
+): Promise<Array<ReturnType<typeof toView>>> {
+  const rows = await tx
+    .select()
+    .from(personalRelationDecisionsV2)
+    .where(and(
+      eq(personalRelationDecisionsV2.workspaceId, input.workspaceId),
+      eq(personalRelationDecisionsV2.userId, input.userId),
+      ...(input.noteId ? [eq(personalRelationDecisionsV2.noteId, input.noteId)] : []),
+    ))
+    .orderBy(sql`${personalRelationDecisionsV2.updatedAt} DESC`)
+    .limit(input.limit ?? 100);
+  return rows.map(toView);
+}
+
+/**
+ * 把本人的表态叠到一批建议边上——读侧那一半（§11.3「首先只影响本人的学习视图」）。
+ *
+ * 纯函数、不碰库：它只回答"这一条边在**这个人**眼里算什么"。调用方拿到建议边 + 本人的
+ * 表，叠完就是这一篇在他视图里的样子；别人看到的是他们自己那张表的结果。
+ *
+ * 三档输出对应 §11.3 的措辞：
+ *  - `confirmed` —— 已确认，可以当实线呈现；
+ *  - `dismissed` —— 本人藏起来了，**不呈现**（不是"弱化"，是不画）；
+ *  - `suggested` —— 没表态，按待确认建议处理：§11.3「先作为待确认建议，
+ *    **不自动成为实线或影响正式掌握**」，所以它必须能拿"正式性"单独问一句。
+ */
+export function applyPersonalRelationDecisionsV2<T extends {
+  fromObjectiveId: string;
+  toObjectiveId: string;
+  relation: string;
+}>(input: {
+  readonly suggested: readonly T[];
+  readonly decisions: ReadonlyArray<{
+    fromObjectiveId: string;
+    toObjectiveId: string;
+    relation: string;
+    decision: PersonalRelationDecisionV2;
+  }>;
+}): ReadonlyArray<T & { relationStatus: "confirmed" | "dismissed" | "suggested"; countsAsEstablished: boolean }> {
+  // 键用可读分隔符而不是裸拼接：`(from, to, relation)` 三元组直接拼字符串时，
+  // 分隔符一旦混进去就分不开两对不同的边。这里显式写成 `from | to | relation`。
+  const key = (a: { fromObjectiveId: string; toObjectiveId: string; relation: string }) =>
+    `${a.fromObjectiveId} | ${a.toObjectiveId} | ${a.relation}`;
+  const mine = new Map(input.decisions.map((d) => [key(d), d.decision]));
+  return input.suggested.map((edge) => {
+    const decision = mine.get(key(edge)) ?? "suggested";
+    return {
+      ...edge,
+      relationStatus: decision,
+      // 只有**已确认**才算"成立的关系"；待确认建议不因模型推测而成为实线，
+      // 也不进任何"正式掌握"的计算（§11.3 那一整句）。
+      countsAsEstablished: decision === "confirmed",
+    };
+  });
+}

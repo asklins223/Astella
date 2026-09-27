@@ -29,7 +29,7 @@ import {
   decideBindingLinkV2,
   type BindingLinkCandidateV2,
 } from "@ailearn/shared/personal-binding-link-rules-v2";
-import { visibleNotesCondition } from "../note/visibility.ts";
+import { visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
 import type { ApiTransaction } from "../../db/client.ts";
 
 type BindingRow = typeof personalObjectiveBindingsV2.$inferSelect;
@@ -252,9 +252,16 @@ export async function listBindingLinkCandidatesV2(
       conceptLabel: learningObjectiveRevisionsV2.conceptLabel,
     })
     .from(learningObjectiveOriginsV2)
+    // 这一发返回**目标正文**（题面 + 概念标题），所以要按「目标 → 卡 → 笔记」判可见性。
+    // 判据写在 **join 条件**里而不是 where：对 inner join 两者等价，而「join 上本人看得见的
+    // 目标」比「join 完再筛」更贴近这句话本来的意思。
+    // 有人会问：绑定建立那一刻已经验过「读得到那篇笔记」了，为什么还要再判一次？
+    // 因为那是**另一次调用**——那一发在这里之外。把「上游验过了」当豁免理由，等于让这一发
+    // 在绑定行被别处改过之后仍然照读。成本是一次 EXISTS，划算。
     .innerJoin(learningObjectivesV2, and(
       eq(learningObjectivesV2.workspaceId, learningObjectiveOriginsV2.workspaceId),
       eq(learningObjectivesV2.objectiveId, learningObjectiveOriginsV2.objectiveId),
+      visibleObjectivesCondition(input.userId, learningObjectivesV2.objectiveId),
     ))
     .innerJoin(learningObjectiveRevisionsV2, and(
       eq(learningObjectiveRevisionsV2.workspaceId, learningObjectivesV2.workspaceId),

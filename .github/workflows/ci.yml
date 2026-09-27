@@ -822,6 +822,21 @@ jobs:
           npm run test:personal-binding:postgres \
             2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/personal-objective-binding.tap"
 
+      # 本人对建议关系的确认／隐藏（39d W5-6 刀七；39 §11.3、§16.20）：只读成员能对共享笔记里的
+      # 关系表态（不需要公共编辑权），而表态**不改公共 relations、不改 lifecycle、不产生任何
+      # 学习记录或复习安排**，别人的视图里读不到他这一下。迁移 0302 之前星图里既没有
+      # 「待确认／已确认」的分层，也没有任何按人存表态的地方。
+      - name: Verify personal relation decisions (39d W5-6 knife 7)
+        working-directory: apps/api
+        env:
+          NODE_ENV: test
+          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
+          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
+        run: |
+          set -o pipefail
+          npm run test:personal-relation-decision:postgres \
+            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/personal-relation-decision.tap"
+
       # 唯一调度边界（39d W7-2 前置 / D2 §3）：0287 那条部分唯一索引真的在挡重复，
       # 而边界函数复用时报的是库里那一条的实际到期时间（不是自己算的那个）。
       - name: Verify the single review-schedule boundary (single file)
