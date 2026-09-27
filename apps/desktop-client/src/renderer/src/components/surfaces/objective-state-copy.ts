@@ -18,6 +18,7 @@ import type {
 import type {
   ObjectiveHoldResultV2,
   ObjectiveResumeResultV2,
+  ReviewAuthorizationSourceV2Wire,
 } from "@ailearn/shared/review-queue-v2-contracts";
 
 const STATE_COPY: Record<ObjectivePersonalStateV3, { label: string; hint: string }> = {
@@ -317,4 +318,63 @@ export function objectiveResumeNotice(receipt: ObjectiveResumeResultV2): string 
     ? `已经排上，第一次回访在 ${when}。`
     : `沿用已经排好的安排，回访在 ${when}。`;
   return receipt.released ? scheduled : `本来就没有在暂不安排中；${scheduled}`;
+}
+
+// ─── W7-3 刀六：订阅来源分别开停的人话（39 §9.1 第一段与规则表行 1）──
+//
+// 这一族与上面的「暂不安排」同一理由放在这里：**一个服务端值只许有一份人话**。
+// 笔记页、书房页、伴星读页面都要说"这次停的是哪一个来源、还有什么在撑着"。
+//
+// 规则表行 1 逼出三句必须分开的话：
+//  1. 停一个来源 ≠ 停掉整篇（`stillCoveredBy` 非空时）；
+//  2. `changed: false` 是「本来就在那一档」，不是「刚刚改好了」；
+//  3. 范围说明（`scopeNote`）要念出来——§9.1「开启时用一句话说明这个持续范围」。
+
+export const REVIEW_SOURCE_LABEL: Record<ReviewAuthorizationSourceV2Wire, string> = {
+  note_subscription: "笔记订阅",
+  card_review: "卡片复习",
+};
+
+/** 开关本身：一颗开关拨的是**一个来源**，所以标签要带上是谁。 */
+export function reviewSourceSwitchLabel(source: ReviewAuthorizationSourceV2Wire, active: boolean): string {
+  return active
+    ? `停用${REVIEW_SOURCE_LABEL[source]}`
+    : `开启${REVIEW_SOURCE_LABEL[source]}`;
+}
+
+export function reviewSourceScopeHint(subscription: {
+  readonly source: ReviewAuthorizationSourceV2Wire;
+  readonly scopeNote: string;
+  readonly status: "active" | "paused";
+  readonly createdAt: string;
+}): string {
+  const since = subscription.status === "active"
+    ? "现在在持续回访"
+    : `你在 ${formatObjectiveDateTime(subscription.createdAt)} 之后停用了它`;
+  return `${since}：${subscription.scopeNote}`;
+}
+
+/**
+ * 一发开/停之后的回执。
+ *
+ * **三句话的顺序不能换**：先说这一发的结果（开好了/停掉了/本来就在），再说范围与
+ * 还有什么在撑着。用户要能回答"我刚才那一下到底改了什么"。
+ *
+ * `stillCoveredBy` 为空与非空是两句不同的话，且**非空时要点名**——§9.1 规则表行 1
+ * 「其他来源仍有效时**显示原因**」。只说"已停用"会让用户以为整篇都不提醒了，
+ * 而她那张卡明明还开着。
+ */
+export function reviewSubscriptionNotice(result: {
+  readonly subscription: { readonly source: ReviewAuthorizationSourceV2Wire; readonly status: "active" | "paused" };
+  readonly changed: boolean;
+  readonly stillCoveredBy: readonly ReviewAuthorizationSourceV2Wire[];
+}): string {
+  const who = REVIEW_SOURCE_LABEL[result.subscription.source];
+  const lead = result.changed
+    ? (result.subscription.status === "active" ? `已开启${who}。` : `已停用${who}。`)
+    : `本来就${result.subscription.status === "active" ? "开着" : "停着"}，这次没有改动。`;
+  if (result.stillCoveredBy.length === 0) {
+    return `${lead}现在没有别的来源撑着它，这一份不再被安排。`;
+  }
+  return `${lead}仍由${result.stillCoveredBy.map((source) => REVIEW_SOURCE_LABEL[source]).join("、")}继续安排。`;
 }

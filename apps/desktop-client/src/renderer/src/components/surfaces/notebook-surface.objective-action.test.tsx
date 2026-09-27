@@ -78,6 +78,10 @@ type Api = {
   review: {
     holdObjective: ReturnType<typeof vi.fn>;
     resumeObjective: ReturnType<typeof vi.fn>;
+    /** W7-3 刀六：订阅来源分别开停。 */
+    activateSubscription: ReturnType<typeof vi.fn>;
+    pauseSubscription: ReturnType<typeof vi.fn>;
+    listNoteSubscriptions: ReturnType<typeof vi.fn>;
   };
   learningRun: { start: ReturnType<typeof vi.fn> };
   note: { save: ReturnType<typeof vi.fn> };
@@ -192,6 +196,12 @@ function installApi(
     dismissedPendingSchedules?: number;
     /** 恢复那一发是新建还是沿用；缺省 created。 */
     resumeScheduled?: "created" | "reused_existing";
+    /** 这一篇的订阅读侧（缺省＝没订阅过）。 */
+    noteSubscriptions?: Record<string, unknown>[];
+    /** 开/停那一发失败（走网关那一条形状）。 */
+    subscriptionFails?: boolean;
+    /** 停用那一发交回"还有什么在撑着"；缺省＝空（不再被安排）。 */
+    stillCoveredBy?: ("note_subscription" | "card_review")[];
   } = {},
 ): Api {
   const syncController = options.syncController ?? { fail: false };
@@ -214,6 +224,26 @@ function installApi(
     // "设排除"与"恢复并开启"列成两件不同的事，用一个替身会让人以为它们是同一发。
     // 回执形状照线上合同写（`dismissedPendingSchedules`、`scheduled` 三档分两档回执）。
     review: {
+      // W7-3 刀六：订阅读侧默认"这一篇没有订阅过"，于是屏上是"开启"那一档；
+      // 给了 `noteSubscriptions` 就按那份回——**连暂停的也列**，因为开关要能拨回"开"。
+      listNoteSubscriptions: vi.fn(async () => ok({
+        version: 2 as const,
+        items: options.noteSubscriptions ?? [],
+      })),
+      activateSubscription: vi.fn(async () => (options.subscriptionFails
+        ? { ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } }
+        : ok({
+          subscription: { source: "note_subscription" as const, subjectType: "note" as const, subjectId: NOTE_ID, status: "active" as const, scopeNote: "持续回访这篇里学过的东西。", createdAt: new Date().toISOString(), pausedAt: null },
+          changed: true,
+          stillCoveredBy: options.stillCoveredBy ?? [],
+        }))),
+      pauseSubscription: vi.fn(async () => (options.subscriptionFails
+        ? { ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } }
+        : ok({
+          subscription: { source: "note_subscription" as const, subjectType: "note" as const, subjectId: NOTE_ID, status: "paused" as const, scopeNote: "持续回访这篇里学过的东西。", createdAt: new Date().toISOString(), pausedAt: new Date().toISOString() },
+          changed: true,
+          stillCoveredBy: options.stillCoveredBy ?? [],
+        }))),
       holdObjective: vi.fn(async () => (options.holdFails
         ? { ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } }
         : ok({
@@ -419,6 +449,12 @@ async function show(
     dismissedPendingSchedules?: number;
     /** 恢复那一发是新建还是沿用；缺省 created。 */
     resumeScheduled?: "created" | "reused_existing";
+    /** 这一篇的订阅读侧（缺省＝没订阅过）。 */
+    noteSubscriptions?: Record<string, unknown>[];
+    /** 开/停那一发失败（走网关那一条形状）。 */
+    subscriptionFails?: boolean;
+    /** 停用那一发交回"还有什么在撑着"；缺省＝空（不再被安排）。 */
+    stillCoveredBy?: ("note_subscription" | "card_review")[];
   } = {},
 ) {
   const syncController = options.syncController ?? { fail: false };
@@ -571,7 +607,7 @@ describe("笔记页的主要动作", () => {
     expect(input.limit).toBe(1);
   });
 
-  it("只画服务端排在前面的那一个，同一篇上的第二个目标不并成第二颗按钮", async () => {
+  it("只画服务端排在前面的那一个主动作，同一篇上的第二个目标不混进来", async () => {
     const second = listItem({
       objectiveId: "66666666-4666-4666-8666-666666666666",
       primaryAction: { kind: "resume_run", runId: RUN_ID, objectiveId: "66666666-4666-4666-8666-666666666666" },
@@ -579,17 +615,20 @@ describe("笔记页的主要动作", () => {
     // 夹具故意回两条：`limit: 1` 只是请求，服务端真回几条不由客户端保证——
     // 这一页必须只取第一条，否则"一个主要动作"这句话就是空的。
     const { objectiveBlock } = await show([listItem(), second]);
-    const buttons = [...objectiveBlock()!.querySelectorAll("button")];
+    const buttons = [...objectiveBlock()!.querySelectorAll("button.primary")];
     expect(buttons.map((button) => button.textContent)).toEqual(["开始学习"]);
   });
 
   it("正文已有新版本 ⇒ 主动作附一枚「来源已有更新」，最新时不画", async () => {
     const stale = await show([listItem({ freshness: "source_outdated" })]);
-    const lines = [...stale.objectiveBlock()!.querySelectorAll("p")].map((p) => p.textContent);
+    const primaryCopy = (block: HTMLElement) => [...block.children]
+      .filter((child): child is HTMLParagraphElement => child instanceof HTMLParagraphElement)
+      .map((paragraph) => paragraph.textContent);
+    const lines = primaryCopy(stale.objectiveBlock()!);
     expect(lines).toEqual(["来源已有更新", "开始学习，完成后会写回这一题的真实状态。"]);
 
     const fresh = await show([listItem({ freshness: "fresh" })]);
-    expect([...fresh.objectiveBlock()!.querySelectorAll("p")].map((p) => p.textContent))
+    expect(primaryCopy(fresh.objectiveBlock()!))
       .toEqual(["开始学习，完成后会写回这一题的真实状态。"]);
   });
 
@@ -1955,5 +1994,95 @@ describe("笔记页：目标级「暂不安排」/「恢复并开启」", () => 
     expect(within(block).getByRole("alert")).toBeTruthy();
     // 这一格是第 3 件事的正控制：失败时那句「已经排上…」不许还在。
     expect(within(block).queryByText(/沿用已经排好的安排/)).toBeNull();
+  });
+});
+
+/**
+ * W7-3 刀六：笔记订阅那一档（39 §9.1 第一段与规则表行 1）。
+ *
+ * 钉的是规则表行 1 那一句，以及它的三处会被折叠掉的地方：
+ *  1. **两颗开关而不是一颗 toggle**——「两种意图可以分别存在」，合成一颗就把
+ *     "停哪一个"变成系统的默认。
+ *  2. **停用那一发要念出「仍由 X 继续安排」**（`stillCoveredBy` 非空时）。只说
+ *     "已停用"会让用户以为整篇都不提醒了，而她那张卡明明还开着——这比多显示
+ *     一行字重要得多，所以它是本组的主断言。
+ *  3. **连暂停的也读**：开关要能拨回"开"，只读活着的那些就等于"停过的那篇
+ *     从此找不到"。
+ *
+ * 每格带正控制：①的反向是"没订阅时那一档在屏上"；②的反向是"空数组说另一句"；
+ * ③的反向是"停过的那份出现在屏上且开关在关的位置"。
+ */
+describe("笔记页：笔记订阅（39 §9.1 规则表行 1）", () => {
+  const active = {
+    source: "note_subscription" as const,
+    subjectType: "note" as const,
+    subjectId: NOTE_ID,
+    status: "active" as const,
+    scopeNote: "持续回访这篇里学过的东西。",
+    createdAt: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+    pausedAt: null,
+  };
+  const paused = { ...active, status: "paused" as const, pausedAt: new Date().toISOString() };
+
+  it("正对照：这一篇没订阅过时，那一档在屏上，标签说得出「开启笔记订阅」", async () => {
+    const { objectiveBlock } = await show([listItem()]);
+    const block = objectiveBlock()!;
+    expect(within(block).getByRole("button", { name: "开启笔记订阅" })).toBeTruthy();
+    // 停用那一颗**不在**：没订阅就没有"停"可停。
+    expect(within(block).queryByRole("button", { name: "停用笔记订阅" })).toBeNull();
+  });
+
+  it("订阅开着时换上去的是「停用笔记订阅」，并且范围说明念出来", async () => {
+    const { objectiveBlock } = await show([listItem()], { noteSubscriptions: [active] });
+    const block = objectiveBlock()!;
+    expect(within(block).getByRole("button", { name: "停用笔记订阅" })).toBeTruthy();
+    // §9.1「开启时用一句话说明这个持续范围」——那句话要能念出来。
+    expect(within(block).getByText(/持续回访这篇里学过的东西/).textContent).toContain("现在在持续回访");
+  });
+
+  it("停用那一发：仍有卡片订阅时，屏上必须念「仍由卡片复习继续安排」", async () => {
+    const view = await show([listItem()], { noteSubscriptions: [active], stillCoveredBy: ["card_review"] });
+    const block = view.objectiveBlock()!;
+    await act(async () => {
+      fireEvent.click(within(block).getByRole("button", { name: "停用笔记订阅" }));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(view.api.review.pauseSubscription).toHaveBeenCalledTimes(1);
+    const sent = view.api.review.pauseSubscription.mock.calls[0][0];
+    expect(sent.request).toEqual({ source: "note_subscription", subjectId: NOTE_ID });
+    const said = within(block).getByText(/仍由/).textContent;
+    expect(said).toContain("已停用笔记订阅");
+    expect(said).toContain("卡片复习");
+  });
+
+  it("正对照：停用之后没有任何来源撑着时，说的是另一句", async () => {
+    const view = await show([listItem()], { noteSubscriptions: [active], stillCoveredBy: [] });
+    const block = view.objectiveBlock()!;
+    await act(async () => {
+      fireEvent.click(within(block).getByRole("button", { name: "停用笔记订阅" }));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const said = within(block).getByText(/不再被安排/).textContent;
+    expect(said).toContain("已停用笔记订阅");
+    expect(said).not.toContain("仍由");
+  });
+
+  it("停过的那一份也出现在屏上，开关在「开启」那一档（能拨回去）", async () => {
+    const { objectiveBlock } = await show([listItem()], { noteSubscriptions: [paused] });
+    const block = objectiveBlock()!;
+    expect(within(block).getByRole("button", { name: "开启笔记订阅" })).toBeTruthy();
+    // 暂停那一刻的时间要念出来：屏上要能说"她什么时候停的"。
+    expect(within(block).getByText(/停用了它/).textContent).toContain("持续回访这篇里学过的东西");
+  });
+
+  it("失败时屏上有 alert，且**不同时挂着一句成功回执**", async () => {
+    const view = await show([listItem()], { noteSubscriptions: [active], subscriptionFails: true });
+    const block = view.objectiveBlock()!;
+    await act(async () => {
+      fireEvent.click(within(block).getByRole("button", { name: "停用笔记订阅" }));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(within(block).getByRole("alert")).toBeTruthy();
+    expect(within(block).queryByText(/已停用笔记订阅/)).toBeNull();
   });
 });

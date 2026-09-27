@@ -14,6 +14,8 @@ import type {
   DesktopCardStrategyV2,
 } from "@ailearn/shared/card-generation-desktop-contracts";
 import type { RoomProjectionV1 } from "@ailearn/shared/room-projection-contracts";
+import { reviewSubscriptionV2Schema } from "@ailearn/shared/review-queue-v2-contracts";
+import type { z } from "zod";
 import type { DesktopNoteVersionItem, DesktopSourceDetail } from "@ailearn/shared/desktop-surface-contracts";
 import type {
   LearningObjectivePrimaryActionV3,
@@ -22,6 +24,8 @@ import type {
   ObjectiveReviewHoldV1,
   ObjectiveSurfaceFreshnessV3,
 } from "@ailearn/shared/learning-objective-surface-contracts";
+/** W7-3 刀六：笔记订阅那一行。取共享合同那份，渲染层不再自己拼形状。 */
+type NoteReviewSubscriptionV1 = z.infer<typeof reviewSubscriptionV2Schema>;
 import type { NoteBlockProjectionV1, NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
 import type {
   NoteLearningRoundHistoryItemV1,
@@ -64,6 +68,9 @@ import {
 } from "./card-generation-status";
 import {
   freshnessLabel,
+  reviewSourceScopeHint,
+  reviewSourceSwitchLabel,
+  reviewSubscriptionNotice,
   objectiveHoldActionDescription,
   objectiveHoldNotice,
   objectiveNoteChangeImpactCopy,
@@ -136,6 +143,14 @@ type NotebookProjection = {
    * 不能把笔记本身顶掉。`null` 在这里是真值："这一篇现在没有进行中的一轮"。
    */
   readonly openRound: NoteLearningRoundV1Wire | null;
+  /**
+   * W7-3 刀六：这一篇的**笔记订阅**（39 §9.1 第一段）。
+   *
+   * `null` = 这一篇没有订阅过（屏上给"开启"那一档）；有一份就画出那一档，
+   * `status` 决定开关在"开"还是"关"。读不到也走 `null`——它和上面那些读一样是
+   * **增补**，不能把笔记本身顶掉。
+   */
+  readonly noteSubscription: NoteReviewSubscriptionV1 | null;
   /** 这一轮冻的正文，与这一篇现在已保存的那一版不是同一版（服务端算的，见 D3 §3 第 2 层）。 */
   readonly openRoundContentMoved: boolean;
   /** 这一轮绑定目标的引用依据变化；与正文版本提示分开显示。 */
@@ -786,6 +801,10 @@ export function NotebookSurface() {
    * "操作时说明"），把它塞进 error 那条通道就等于成功时什么都不说。
    */
   const [reviewHoldBusy, setReviewHoldBusy] = useState<"hold" | "resume" | null>(null);
+  /** W7-3 刀六：订阅那一发在进行中（"开"与"停"共用一颗闸，同一篇不该并发两发）。 */
+  const [subscriptionBusy, setSubscriptionBusy] = useState<"activate" | "pause" | null>(null);
+  const [subscriptionNotice, setSubscriptionNotice] = useState<string | null>(null);
+  const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
   const [reviewHoldNotice, setReviewHoldNotice] = useState<string | null>(null);
   const [reviewHoldError, setReviewHoldError] = useState<string | null>(null);
   // 39d W4-3 第三刀：那张表单自己的三份状态。`roundStarter` 记住"这句是哪一颗预设放的"，
@@ -940,6 +959,21 @@ export function NotebookSurface() {
       noteObjective = null;
     }
 
+    // W7-3 刀六：这一篇的笔记订阅。**读不到也是 null**（老网关没这条路由 / 没订阅过 /
+    // 读取失败三件事在屏上是同一句话：这里没有那颗开关），和上面那些读同一纪律。
+    let noteSubscription: NotebookProjection["noteSubscription"] = null;
+    try {
+      const subResponse = await api.review.listNoteSubscriptions({ meta: createRequestMeta(epochRef.current) });
+      if (subResponse.workspaceEpoch) epochRef.current = subResponse.workspaceEpoch;
+      const found = unwrapGatewayResult(subResponse).items
+        .find((item) => item.subjectType === "note" && item.subjectId === note.noteId);
+      noteSubscription = found
+        ? { source: found.source, subjectType: found.subjectType, subjectId: found.subjectId, status: found.status, scopeNote: found.scopeNote, createdAt: found.createdAt, pausedAt: found.pausedAt }
+        : null;
+    } catch {
+      noteSubscription = null;
+    }
+
     // 39d W4-3 第三刀：这一篇有没有未完成的那一轮。和上面那两读一样自己吞异常——
     // 老网关没有这条路由时不能让笔记页变成错误页。
     let openRound: NotebookProjection["openRound"] = null;
@@ -1005,6 +1039,7 @@ export function NotebookSurface() {
         ? focus.objective
         : null,
       noteObjective,
+    noteSubscription,
       capabilities: unwrapGatewayResult(capabilityResponse),
       activeGeneration: projection.activeGenerationSummary,
       latestGenerationRun,
@@ -1039,6 +1074,8 @@ export function NotebookSurface() {
   const objective = data?.objective ?? null;
   /** 这一篇的学习目标主行动；读不到就是 null，那一行整个不画（W4-2 第三刀）。 */
   const noteObjective = data?.noteObjective ?? null;
+  /** W7-3 刀六：这一篇的笔记订阅；读不到＝没有那一档开关（与上面同一纪律）。 */
+  const noteSubscription = data?.noteSubscription ?? null;
   const openRound = data?.openRound ?? null;
   useEffect(() => { setTeachingReflectionIds([]); }, [activeNoteRef?.noteId, openRound?.roundId]);
   const openRoundContentMoved = data?.openRoundContentMoved ?? false;
@@ -1581,6 +1618,38 @@ export function NotebookSurface() {
       setReviewHoldError(gatewayErrorMessage(error));
     } finally {
       setReviewHoldBusy(null);
+    }
+  };
+
+  /**
+   * W7-3 刀六：这一篇的**笔记订阅**开／停（39 §9.1 第一段与规则表行 1）。
+   *
+   * 两处与「暂不安排」那一族同源、且都写在这里而不是散进 JSX：
+   *  1. 成功后**回读**。开关拨完之后屏上那个"开／关"必须来自服务端存下来的那一条，
+   *     不是本地改 state——本地改的后果是这一页说"已停用"而库里没有。
+   *  2. 回执**整句念出来**。§9.1 规则表行 1「其他来源仍有效时**显示原因**」是
+   *     那一格存在的理由：停笔记订阅而那张卡还单独开着时，只说"已停用"会让用户
+   *     以为整篇都不提醒了。`reviewSubscriptionNotice` 按 `stillCoveredBy` 分两句。
+   */
+  const runNoteSubscriptionAction = async (kind: "activate" | "pause") => {
+    const api = desktopApi();
+    const currentNote = data?.note ?? null;
+    if (!api || !currentNote || subscriptionBusy) return;
+    setSubscriptionBusy(kind);
+    setSubscriptionError(null);
+    setSubscriptionNotice(null);
+    try {
+      const request = { source: "note_subscription" as const, subjectId: currentNote.noteId };
+      const response = kind === "activate"
+        ? await api.review.activateSubscription({ meta: createRequestMeta(epochRef.current), request })
+        : await api.review.pauseSubscription({ meta: createRequestMeta(epochRef.current), request });
+      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+      setSubscriptionNotice(reviewSubscriptionNotice(unwrapGatewayResult(response)));
+      await reload({ silent: true });
+    } catch (error) {
+      setSubscriptionError(gatewayErrorMessage(error));
+    } finally {
+      setSubscriptionBusy(null);
     }
   };
 
@@ -2596,6 +2665,39 @@ export function NotebookSurface() {
             )}
             {reviewHoldNotice ? <p className="small notebook-note" data-review-hold-notice="true">{reviewHoldNotice}</p> : null}
             {reviewHoldError ? <p className="small notebook-note" role="alert" data-review-hold-error="true">{reviewHoldError}</p> : null}
+            {/* W7-3 刀六：笔记订阅那一档。它与上面那颗是**两件不同的事**（§9.1
+                「两种意图可以分别存在」）——所以分开一行、各自一颗开关，而不是
+                一颗 toggle：合成一颗会把"停哪一个"变成系统的默认。范围说明
+                （`scopeNote`）要念出来，§9.1 要求"开启时用一句话说明这个持续范围"。 */}
+            <div className="notebook-objective__source" data-note-subscription="true">
+              {noteSubscription ? (
+                <>
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={subscriptionBusy !== null}
+                    onClick={() => void runNoteSubscriptionAction("pause")}
+                  >
+                    {subscriptionBusy === "pause" ? "正在处理…" : reviewSourceSwitchLabel("note_subscription", true)}
+                  </button>
+                  <p className="small notebook-note">{reviewSourceScopeHint(noteSubscription)}</p>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={subscriptionBusy !== null}
+                    onClick={() => void runNoteSubscriptionAction("activate")}
+                  >
+                    {subscriptionBusy === "activate" ? "正在处理…" : reviewSourceSwitchLabel("note_subscription", false)}
+                  </button>
+                  <p className="small notebook-note">开启后，这篇里学过或已确认要维护的目标会持续回访。</p>
+                </>
+              )}
+              {subscriptionNotice ? <p className="small notebook-note" data-subscription-notice="true">{subscriptionNotice}</p> : null}
+              {subscriptionError ? <p className="small notebook-note" role="alert" data-subscription-error="true">{subscriptionError}</p> : null}
+            </div>
           </div>
           {noteObjectiveFailure ? <p className="small notebook-note" role="alert">{noteObjectiveFailure}</p> : null}
         </div>

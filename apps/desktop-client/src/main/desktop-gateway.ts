@@ -111,10 +111,13 @@ import {
 } from "@ailearn/shared/learning-run-v2-contracts";
 import { reviewDeferRequestV2Schema, reviewDeferResultV2Schema, reviewQueueV2Schema } from "@ailearn/shared/review-queue-v2-contracts";
 import {
+  noteReviewSubscriptionsV2Schema,
   objectiveHoldCommandV2Schema,
   objectiveHoldResultV2Schema,
   objectiveResumeCommandV2Schema,
   objectiveResumeResultV2Schema,
+  reviewSubscriptionCommandV2Schema,
+  reviewSubscriptionResultV2Schema,
 } from "@ailearn/shared/review-queue-v2-contracts";
 import {
   closeAssessmentDisputeCommandV2Schema,
@@ -1758,6 +1761,56 @@ export class DesktopGateway {
       body: JSON.stringify(objectiveHoldCommandV2Schema.parse(request)),
     }, true, true, requestId);
     const parsed = objectiveHoldResultV2Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+  /**
+   * W7-3 刀六：订阅来源**分别**开停（39 §9.1 第一段与规则表行 1）。
+   *
+   * 两条命令而不是一颗 toggle。回执里的 `stillCoveredBy` 必须 `safeParse` 过——
+   * 那一格是屏上「仍由 X 继续安排」那句话的**唯一**出处，缺了它界面会静默念成
+   * "已停止安排"，而那张卡明明还开着。
+   */
+  private async postReviewSubscription(
+    path: "/reviews/v2/subscriptions/activate" | "/reviews/v2/subscriptions/pause",
+    request: z.infer<typeof reviewSubscriptionCommandV2Schema>,
+    requestId?: string,
+  ): Promise<z.infer<typeof reviewSubscriptionResultV2Schema>> {
+    await this.ensureConnected(requestId);
+    const result = await this.request(path, {
+      method: "POST",
+      body: JSON.stringify(reviewSubscriptionCommandV2Schema.parse(request)),
+    }, true, true, requestId);
+    const parsed = reviewSubscriptionResultV2Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+  async activateReviewSubscription(
+    request: z.infer<typeof reviewSubscriptionCommandV2Schema>,
+    requestId?: string,
+  ): Promise<z.infer<typeof reviewSubscriptionResultV2Schema>> {
+    return this.postReviewSubscription("/reviews/v2/subscriptions/activate", request, requestId);
+  }
+
+  async pauseReviewSubscription(
+    request: z.infer<typeof reviewSubscriptionCommandV2Schema>,
+    requestId?: string,
+  ): Promise<z.infer<typeof reviewSubscriptionResultV2Schema>> {
+    return this.postReviewSubscription("/reviews/v2/subscriptions/pause", request, requestId);
+  }
+
+  /**
+   * 笔记订阅的读侧。**连暂停的也读**：屏上那颗开关要能拨回"开"，只读活着的那些
+   * 就等于"停过的那篇从此找不到"。
+   */
+  async listNoteReviewSubscriptions(
+    requestId?: string,
+  ): Promise<z.infer<typeof noteReviewSubscriptionsV2Schema>> {
+    await this.ensureConnected(requestId);
+    const result = await this.request("/reviews/v2/subscriptions/notes", { method: "GET" }, true, true, requestId);
+    const parsed = noteReviewSubscriptionsV2Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }

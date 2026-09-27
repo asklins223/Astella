@@ -362,7 +362,12 @@ const desktopApi: AILearnDesktopApiM2 = {
     // W7-3 刀三：目标级「暂不安排」与「恢复并开启」。两条分开的通道——
     // §9.1 规则表把它们列成两件事，合成一颗开关会把中间那半句折叠掉。
     holdObjective: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewHoldObjective, input),
-    resumeObjective: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewResumeObjective, input)
+    resumeObjective: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewResumeObjective, input),
+    // W7-3 刀六：订阅来源分别开停。三条通道而不是一颗 toggle——§9.1 明写
+    // 「两种意图可以分别存在」，合成一颗开关会把"停哪一个"变成系统的默认。
+    activateSubscription: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewSubscriptionActivate, input),
+    pauseSubscription: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewSubscriptionPause, input),
+    listNoteSubscriptions: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewSubscriptionListNotes, input)
   },
   // 判定的争议（39 §14.2、§16.11、§16.25）。只有**人能按的**四条：
   // `recheck` 与 `correction` 的写入方是系统，不挂在这里（理由见共享通道表那段）。

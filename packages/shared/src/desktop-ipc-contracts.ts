@@ -38,6 +38,9 @@ import type {
   ObjectiveHoldResultV2,
   ObjectiveResumeCommandV2,
   ObjectiveResumeResultV2,
+  ReviewSubscriptionCommandV2Wire,
+  ReviewSubscriptionResultV2Wire,
+  NoteReviewSubscriptionsV2Wire,
 } from "./review-queue-v2-contracts.ts";
 import { assessmentDisputeEnvelopeV2Schema } from "./assessment-dispute-rules-v2.ts";
 import type {
@@ -421,6 +424,11 @@ export const DESKTOP_IPC_CHANNELS = {
   // "恢复并开启"列成两件不同的事，合成一颗开关会把中间那半句折叠掉。
   reviewHoldObjective: "ailearn.v1.review.holdObjective",
   reviewResumeObjective: "ailearn.v1.review.resumeObjective",
+  // W7-3 刀六：订阅来源分别开停。**三条**通道（开／停／读），不是一颗 toggle——
+  // §9.1 明写"两种意图可以分别存在"，合成一颗开关会把"停哪一个"变成系统的默认。
+  reviewSubscriptionActivate: "ailearn.v1.review.subscription.activate",
+  reviewSubscriptionPause: "ailearn.v1.review.subscription.pause",
+  reviewSubscriptionListNotes: "ailearn.v1.review.subscription.listNotes",
   // 判定的争议（39 §14.2、§16.11、§16.25）。**四条用户能按的通道**，
   // 刻意少于服务端那六条：`recheck` 与 `correction` 的写入方是系统，不是人
   // （§14.2「**系统**基于原题、原回答和依据进行一次重新检查」）。
@@ -2592,6 +2600,24 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
      */
     resumeObjective(input: { meta: RequestMetaV1; request: ObjectiveResumeCommandV2 }): Promise<
       GatewayResultV1<ObjectiveResumeResultV2>
+    >;
+    /**
+     * 开启（或重新开启）一个来源。回执里的 `stillCoveredBy` 要**念出来**：
+     * §9.1 规则表行 1「其他来源仍有效时显示原因」。
+     */
+    activateSubscription(input: { meta: RequestMetaV1; request: ReviewSubscriptionCommandV2Wire }): Promise<
+      GatewayResultV1<ReviewSubscriptionResultV2Wire>
+    >;
+    /**
+     * 停用一个来源。**只停这一个**——屏上必须能念出「仍由 X 继续安排」，
+     * 否则用户以为整篇都停了，而那张卡还开着（§9.1「不偷偷联动」）。
+     */
+    pauseSubscription(input: { meta: RequestMetaV1; request: ReviewSubscriptionCommandV2Wire }): Promise<
+      GatewayResultV1<ReviewSubscriptionResultV2Wire>
+    >;
+    /** 笔记那一屏的读侧。**连暂停的也列**：开关要能拨回"开"。 */
+    listNoteSubscriptions(input: { meta: RequestMetaV1 }): Promise<
+      GatewayResultV1<NoteReviewSubscriptionsV2Wire>
     >;
   };
   /**

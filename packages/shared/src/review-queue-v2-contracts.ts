@@ -169,3 +169,64 @@ export const objectiveResumeCommandV2Schema = z.strictObject({
   releaseReason: z.string().min(1).max(120).optional(),
 });
 export type ObjectiveResumeCommandV2 = z.infer<typeof objectiveResumeCommandV2Schema>;
+
+// ─── W7-3 刀六：订阅来源分别开停的屏上合同（39 §9.1 第一段与规则表行 1）──
+//
+// **两条命令而不是一颗 toggle**：§9.1 明写「两种意图可以分别存在」，规则表行 1
+// 写的是「暂停/移除笔记订阅或卡片订阅 ⇒ **仅停用该授权来源**」。合成一颗开关会把
+// "停哪一个"变成系统的默认，而那正是"偷偷联动"。
+//
+// `stillCoveredBy` 是这一族存在的理由（规则表行 1「其他来源仍有效时**显示原因**」）：
+// 停掉笔记订阅而那张卡还单独开着时，屏上必须说"仍由卡片复习继续安排"。**空数组
+// 与非空数组是两句话**，所以它是一个字段而不是一个布尔——布尔会让"还有别人撑着"
+// 与"没有人撑着了"在界面上说成同一句。
+
+/** 授权来源的词表。与服务端 `REVIEW_SUBSCRIPTION_SUBJECT_TYPE` 同源，不另抄一份。 */
+export const reviewAuthorizationSourceV2Schema = z.enum(["note_subscription", "card_review"]);
+export type ReviewAuthorizationSourceV2Wire = z.infer<typeof reviewAuthorizationSourceV2Schema>;
+
+/** 主体类型：`note` 是整篇笔记的订阅，`objective` 是那颗目标的卡片订阅。 */
+export const reviewSubscriptionSubjectTypeV2Schema = z.enum(["note", "objective"]);
+export type ReviewSubscriptionSubjectTypeV2 = z.infer<typeof reviewSubscriptionSubjectTypeV2Schema>;
+
+/** 两条命令共用的请求体（`subjectId` 按 `source` 判它该是笔记还是目标）。 */
+export const reviewSubscriptionCommandV2Schema = z.strictObject({
+  source: reviewAuthorizationSourceV2Schema,
+  subjectId: z.string().uuid(),
+  /** 开启时那句话（§9.1「开启时用一句话说明这个持续范围」）。停用时可省。 */
+  scopeNote: z.string().min(1).max(500).optional(),
+  reasonCode: z.string().min(1).max(120).optional(),
+});
+export type ReviewSubscriptionCommandV2Wire = z.infer<typeof reviewSubscriptionCommandV2Schema>;
+
+export const reviewSubscriptionV2Schema = z.strictObject({
+  source: reviewAuthorizationSourceV2Schema,
+  subjectType: reviewSubscriptionSubjectTypeV2Schema,
+  subjectId: z.string().uuid(),
+  status: z.enum(["active", "paused"]),
+  scopeNote: z.string().min(1).max(500),
+  createdAt: isoTimestampV2Schema,
+  pausedAt: isoTimestampV2Schema.nullable(),
+});
+export type ReviewSubscriptionV2Wire = z.infer<typeof reviewSubscriptionV2Schema>;
+
+/**
+ * 两条命令的回执**同形**——这不是偷懒，是 §9.1 行 1 的形状：开与停是同一份授权
+ * 的两个动作，屏上要回答的是同一个问题（「现在是什么状态、还有什么在撑着」）。
+ * 分成两个 schema 只会让两处各写一遍那三个字段。
+ */
+export const reviewSubscriptionResultV2Schema = z.strictObject({
+  subscription: reviewSubscriptionV2Schema,
+  /** 这次是真的开了/停了，还是本来就在那一档。连点两下不该让人以为它改了什么。 */
+  changed: z.boolean(),
+  /** 空数组 = 这一份不再被安排；非空 = 仍由这些来源撑着（屏上要把它们念出来）。 */
+  stillCoveredBy: z.array(reviewAuthorizationSourceV2Schema),
+});
+export type ReviewSubscriptionResultV2Wire = z.infer<typeof reviewSubscriptionResultV2Schema>;
+
+/** 笔记那一屏的读侧：订阅了哪几篇，**连暂停的也列**——开关要能拨回"开"。 */
+export const noteReviewSubscriptionsV2Schema = z.strictObject({
+  version: z.literal(2),
+  items: z.array(reviewSubscriptionV2Schema),
+});
+export type NoteReviewSubscriptionsV2Wire = z.infer<typeof noteReviewSubscriptionsV2Schema>;

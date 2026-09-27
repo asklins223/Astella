@@ -156,10 +156,13 @@ import {
 } from "@ailearn/shared/learning-run-v2-contracts";
 import { reviewDeferRequestV2Schema, reviewDeferResultV2Schema, reviewQueueV2Schema } from "@ailearn/shared/review-queue-v2-contracts";
 import {
+  noteReviewSubscriptionsV2Schema,
   objectiveHoldCommandV2Schema,
   objectiveHoldResultV2Schema,
   objectiveResumeCommandV2Schema,
   objectiveResumeResultV2Schema,
+  reviewSubscriptionCommandV2Schema,
+  reviewSubscriptionResultV2Schema,
 } from "@ailearn/shared/review-queue-v2-contracts";
 import {
   openAssessmentDisputeCommandV2Schema,
@@ -546,6 +549,8 @@ const reviewDeferInputSchema = z.strictObject({ ...m1InputBase, request: reviewD
 // W7-3 刀三：两条目标级排除动作。输入形状取共享合同那两份，渲染层少写一份 zod。
 const reviewHoldObjectiveInputSchema = z.strictObject({ ...m1InputBase, request: objectiveHoldCommandV2Schema });
 const reviewResumeObjectiveInputSchema = z.strictObject({ ...m1InputBase, request: objectiveResumeCommandV2Schema });
+// W7-3 刀六：订阅两条命令共用一份输入形状（`source` 判 `subjectId` 该是什么）。
+const reviewSubscriptionInputSchema = z.strictObject({ ...m1InputBase, request: reviewSubscriptionCommandV2Schema });
 // 判定的争议（39 §14.2、§16.11、§16.25）。四条输入形状全部取共享合同那几份，
 // 渲染层少写一份 zod；`assessmentId` 在**每一条**上而不是外层，理由见共享那份的注释。
 const assessmentDisputeGetInputSchema = z.strictObject({ ...m1InputBase, assessmentId: uuidSchema });
@@ -3403,6 +3408,34 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     assertEpoch(input.meta, activeWorkspaceEpoch);
     return gateway.resumeObjectiveForReview(input.request, input.meta.requestId);
   }, undefined, objectiveResumeResultV2Schema);
+
+  // W7-3 刀六：订阅来源分别开停（39 §9.1 第一段与规则表行 1）。
+  //
+  // 路由门用**同一份** `OBJECTIVE_REVIEW_ACTION_ROUTES` 清单再加两个订阅面
+  // （`note.library` 是"哪几篇订阅了"那一屏）。写成两份清单就会有一天只改一处，
+  // 于是同一颗开关在笔记页能拨、在书房页报 `route_not_available`。
+  const SUBSCRIPTION_ROUTES: readonly DesktopRouteKindM2[] = [
+    ...OBJECTIVE_REVIEW_ACTION_ROUTES,
+    "note.library",
+  ];
+
+  installHandler(DESKTOP_IPC_CHANNELS.reviewSubscriptionActivate, reviewSubscriptionInputSchema, options, async (_event, _window, input) => {
+    requireAnyM2Route(contract, SUBSCRIPTION_ROUTES);
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.activateReviewSubscription(input.request, input.meta.requestId);
+  }, undefined, reviewSubscriptionResultV2Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.reviewSubscriptionPause, reviewSubscriptionInputSchema, options, async (_event, _window, input) => {
+    requireAnyM2Route(contract, SUBSCRIPTION_ROUTES);
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.pauseReviewSubscription(input.request, input.meta.requestId);
+  }, undefined, reviewSubscriptionResultV2Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.reviewSubscriptionListNotes, z.strictObject(m1InputBase), options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.library");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.listNoteReviewSubscriptions(input.meta.requestId);
+  }, undefined, noteReviewSubscriptionsV2Schema);
 
   // ─── 判定的争议（39 §14.2、§16.11、§16.25）────────────────────────────────
   //
