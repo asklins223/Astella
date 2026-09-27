@@ -2122,7 +2122,20 @@
       "when": 1790820000000,
       "tag": "0303_review_subscriptions_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 303,
+      "version": "7",
+      "when": 1790906400000,
+      "tag": "0304_note_round_dynamic_artifact_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 304,
+      "version": "7",
+      "when": 1790906400001,
+      "tag": "0305_daily_review_batches_v2",
+      "breakpoints": true
     }
-
   ]
 }

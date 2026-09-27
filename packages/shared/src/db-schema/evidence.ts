@@ -190,3 +190,42 @@ export const reviewSubscriptionsV2 = pgTable(
     scopeCheck: check("rs_v2_scope_chk", sql`${t.scopeNote} <> ''`),
   }),
 );
+
+/**
+ * **"今天这一批"的锁**（39d W7-4 刀三；39 §9.4 第一段）。
+ *
+ * §9.4：「批次一旦开始，**不因后台新任务到期不断增加长度**；用户主动加量才加入新的任务。」
+ *
+ * 这一张表就是那句话的落点。它**一天一行**，记的是**长度**与**加量**——不是今天出了
+ * 几题（那是 `review_schedules` 的账，在这里再记一份就会有两本账），也不是这一批里有
+ * 哪几道（那会随消费逐条消失，而 §9.4 恰恰要"今天先到这里"这句话活过这一批里的任何
+ * 一行）。
+ *
+ * 落一张"天"粒度的表而不是往 `review_schedules` 上加一列：排期是**派生**的，被消费掉
+ * 就没了，而批次长度是**她今天看到的那个列表**的性质。
+ */
+export const dailyReviewBatchesV2 = pgTable(
+  "daily_review_batches_v2",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    /** 她时区下的日历日（`YYYY-MM-DD`）。跨日另起一批：§9.4 的"本批"边界是"今天"。 */
+    dayKey: text("day_key").notNull(),
+    /** 本批开始时锁的长度。刀一的 `lockedLength` 读它。 */
+    lockedLength: integer("locked_length").notNull(),
+    /** 主动点过几次「再来几道」。和长度分开记：屏上要说得清"这批怎么变成现在这么长的"。 */
+    bumpCount: integer("bump_count").notNull().default(0),
+    /** 一共加了多少题。 */
+    bumpedBy: integer("bumped_by").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // 一天一行：续同一批时读它、加量时改它。§9.4 那句话唯一可能的落点就是这一行。
+    dayUnique: uniqueIndex("drb_v2_ws_user_day_uq").on(t.workspaceId, t.userId, t.dayKey),
+    // 锁下的长度至少要盖住她加的那些：否则"加量"这一发在约束上就是无效的。
+    lengthCoversBumps: check("drb_v2_length_covers_bumps", sql`${t.lockedLength} >= ${t.bumpedBy}`),
+    bumpCountCheck: check("drb_v2_bump_count_chk", sql`${t.bumpCount} >= 0`),
+  }),
+);
