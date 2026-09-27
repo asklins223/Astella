@@ -127,3 +127,47 @@ test("§8.5「保存第一张卡时才建立可见组」那一侧：空输入不
   // 在读侧能钉住的那一半（另一半是保存那一发才建组，属 W7-2 那一侧）。
   assert.deepEqual(groupObjectiveCardsByNoteV2([]), []);
 });
+
+/**
+ * W7-6 尾：「**保存第一张卡才建可见组**」今天**结构上成立**（39 §9.4 / §12 表
+ * 「卡库」行：一篇至多一组，**保存第一张卡才建可见组**）。
+ *
+ * ## 成立在哪：**组是派生的，不是存的**
+ *
+ * 全库**没有**组表（`%group%` / `%bundle%` 一张都没有），而 `groupObjectiveCardsByNoteV2`
+ * 是**纯函数**——把手上那批卡按 `primaryNoteId` 分桶。于是：
+ *
+ *  - **一个组存在 ⇔ 那一篇底下至少有一张卡。** 「保存第一张卡才建可见组」不是一条被
+ *    执行的规定，而是**没有别的东西能让一个空组存在**。要造一个空组，就得先存一张卡。
+ *  - **「一篇至多一组」**同理：键就是 `noteId`，同一个 `noteId` 只落一个桶。
+ *
+ * ## 为什么还要钉
+ *
+ * 因为**加一张组表**是这条产品线上的自然下一步（要支持"重命名组""排序""归档组"就得存），
+ * 而**加了它之后这一格会静默失效**：新表里预先插一行空组，屏上就出现一个"0 张卡"的组，
+ * 而 §9.4 那一句话没有任何判据挡着。**这一格失效时的症状是屏上多一个空文件夹**——
+ * 不报错、不崩，只是多了一样东西。
+ */
+test("W7-6 尾：组是**派生**的——全库没有组表", () => {
+  // 这一格是**读**库得到的结论，写成判据就是"不许出现一张组表"。
+  // 但判据不能开库（单测环境没有库），所以改成盯住**派生这一半**：纯函数 + 键即 noteId。
+  const items: ObjectiveListItemV2Input[] = [];
+  // 没有任何输入 ⇒ 没有任何组。**这正是"空组不存在"的形状**。
+  const groups = groupObjectiveCardsByNoteV2(items);
+  assert.equal(groups.length, 0,
+    "空输入产出了组：那意味着组不是派生的，而是别处存着的一行——"
+    + "「保存第一张卡才建可见组」会静默失效。");
+});
+
+test("W7-6 尾 正对照：保存第一张卡 ⇒ 那个组**立刻出现**（而只有那一组）", () => {
+  const first = groupObjectiveCardsByNoteV2([item({ primaryNoteId: NOTE_A, primaryNoteTitle: "力学笔记" })]);
+  assert.equal(first.length, 1, "一张卡 ⇒ 一组");
+  assert.equal(first[0]!.noteKey, NOTE_A);
+  // 第二张同篇的卡**并进同一组**（一篇至多一组），不产生第二个。
+  const second = groupObjectiveCardsByNoteV2([
+    item({ primaryNoteId: NOTE_A, primaryNoteTitle: "力学笔记" }),
+    item({ primaryNoteId: NOTE_A, primaryNoteTitle: "力学笔记" }),
+  ]);
+  assert.equal(second.length, 1, "同一篇的两张卡 ⇒ 仍然一组（§9.4「一篇至多一组」）");
+  assert.equal(second[0]!.items.length, 2);
+});
