@@ -30,6 +30,7 @@
 import { and, eq, inArray, isNull, max } from "drizzle-orm";
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
 import { objectiveReviewHoldsV2 } from "@ailearn/shared/db-schema/evidence";
+import { visibleObjectivesCondition } from "../note/visibility.ts";
 import { learningObjectivesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
 import {
   planLimitedBatchV2,
@@ -85,6 +86,11 @@ export async function loadLimitedBatchV2(
       inArray(learningObjectivesV2.objectiveId, observedIds),
       // 归档／被替代的目标不进回访批次：§8.5「停用卡从复习中移除但保留历史」。
       eq(learningObjectivesV2.lifecycle, "active"),
+      // **可见性判据（跟着来源笔记判）**——§8.5 那一族：目标的可见性由它那些卡的
+      // 来源笔记决定。这一条是 `note-visibility-read-sites` 那把守卫抓出来的：
+      // 少了它，**一颗来源笔记已被保护/删掉的目标照样会进这一批**——而这一批是要
+      // 在书桌上念出题面的。`lifecycle='active'` **不是**可见性判据，它只管退役。
+      visibleObjectivesCondition(input.userId, learningObjectivesV2.objectiveId),
     ));
   const liveIds = objectives.map((row) => row.objectiveId);
 
