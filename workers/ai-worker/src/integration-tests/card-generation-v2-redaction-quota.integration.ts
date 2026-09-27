@@ -45,6 +45,13 @@ process.env.DATABASE_URL_API ??= ADMIN_URL;
 // 所以下一手该查的是激活那道门为什么没拒（读的是 `activation-service.ts:419-426` 那条
 // `usableSnapshot` 集合），而不是再猜夹具取行。**目前状态：未定位的间歇红，八对配对不复现。**
 process.env.CARD_GENERATION_CHAIN = "v2";
+// **下一手该装哪儿（本轮读代码读出来的两条"整段跳过"分支，未验证是否为因）**：
+// `activation-service.ts:350-368/419-426` 那道门有两种情况下**根本不会拒**——
+// ① `bindingByRev` 里取不到这一条修订的 binding plan（`bindingPlanRow` 为空）；
+// ② `targetUnitBindings` 不是数组，或 `bindingEntryEvidenceSnapshotIds` 从夹具写的那份
+//    结构里抽不出任何 snapshotId（`uniqueSnapshotIds.length === 0` ⇒ 不查 eligibility，
+//    内层循环空转 ⇒ 一路放行）。两种都正好产生 "Missing expected rejection"（激活成功返回），
+// 与红相一致。**下一步是在这两条上打点复现，不是再换解释**。
 
 const admin = postgres(ADMIN_URL, { max: 2 });
 
