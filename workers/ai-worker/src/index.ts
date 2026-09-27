@@ -17,12 +17,16 @@ import { tickCompanionProposalExpiry } from "./handlers/companion-proposal-expir
 import { tickCompanionRunReconcile } from "./handlers/companion-run-reconcile-scheduler.ts";
 import { tickCompanionReminderDelivery } from "./handlers/companion-reminder-scheduler.ts";
 import {
-  getV2OutboxInflightCount,
   pollV2Outbox,
-  releaseInflightV2OutboxLeases,
   V2_POLL_TICK_BUDGET_MS,
-  waitForV2OutboxDrain,
 } from "./handlers/card-generation-v2-handler.ts";
+// 队列与租约在 39d W7-7 刀二里搬进 `card-generation-v2/outbox-queue.ts`：
+// 在途计数、排空等待、关停时交还租约都归那一处，worker 入口不再绕道旧 handler 拿。
+import {
+  getV2OutboxInflightCount,
+  releaseInflightV2OutboxLeases,
+  waitForV2OutboxDrain,
+} from "./card-generation-v2/outbox-queue.ts";
 
 import { runWithAbortTimeout } from "./lib/handler-timeout.ts";
 import { resolveHandlerTimeout, RESOLVED_TIMEOUT_INFO } from "./lib/handler-timeout-config.ts";

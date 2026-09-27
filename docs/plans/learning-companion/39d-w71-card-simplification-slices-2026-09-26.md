@@ -219,11 +219,7 @@ HEAD），按 hunk 拆开只提自己那 58 行。
 简化链集测 4 处动态 import）都由 `tsc` 逼着重指，不靠记忆。事故注释跟着代码一起走。
 
 **剩下的砖与量好的边界**（按依赖排序，一次搬一块）：
-① 队列与租约：`PendingOutboxJob`、`V2_OUTBOX_LEASE_TIMEOUT_MS`／`V2_PIPELINE_BUDGET_MS`／
-`V2_LEASE_RENEWAL_INTERVAL_MS`／`V2_OUTBOX_MAX_CONCURRENCY`／`V2_POLL_TIMEOUT_MS`、
-`v2Inflight`（Map，`pollV2Outbox` 是它除队列外的唯一写者）、claim/renew/fence/release/
-releaseInflight/complete/fail/reap。要把 `v2Inflight` 与 `isRetryableProviderError` 一起导出，
-`pollV2Outbox`＋`processV2OutboxJob` 留在 handler（它们调阶段代码，跟过去就成循环 import）。
+① **队列与租约：同日搬完**——`outbox-queue.ts`（457 行）装走 `PendingOutboxJob`、四个租约/预算/并发常量、`v2Inflight`（导出给 `pollV2Outbox` 用，它是唯一的另一个写者）、claim/renew/fence/release/releaseInflight/complete/fail/reap，以及 `sanitizeOperationalError`（错误文本落库前那份统一脱敏，两条链与 worker 入口共用）。`pollV2Outbox` 与 `processV2OutboxJob` **故意留下**：前者要调后者的分发，跟过去就成 `handler → queue → handler` 的循环 import。改指的消费方：`index.ts`（3 个符号）、v3 handler（fence/renew/类型）、live-progress 集测（2 处动态 import）。旧 handler 4385→**3916** 行。
 ② 候选行读写与落库原语：`candidateRowToObject`、`insertAuthoredCandidatesBatched`、
 `insertBindingPlanRow`、`insertEvent`、`insertRepairedCandidateV2`、`loadV2RunInputs`、
 `emitSourceContentCapEvent`、`capSourceContentForPrompts` 与三个上限常量、

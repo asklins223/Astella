@@ -116,7 +116,7 @@ async function claimPlanJob() {
         started_at = NULL, processed_at = NULL, next_attempt_at = NULL
     WHERE run_id = ${runId} AND job_type = 'card_generation_plan'
   `;
-  const { claimV2OutboxJobs } = await import("../handlers/card-generation-v2-handler.ts");
+  const { claimV2OutboxJobs } = await import("../card-generation-v2/outbox-queue.ts");
   const jobs = await claimV2OutboxJobs(20);
   const job = jobs.find((candidate) => candidate.runId === runId);
   assert.ok(job, `未认领到本 run 的 outbox job（认领到 ${jobs.length} 条）`);
@@ -257,7 +257,7 @@ test("tick 不加入调用方的事务：外层回滚，读数仍在", async () 
 test("交还租约：迟到的完成写不进去，reaper 当场就能重投", async () => {
   const {
     releaseV2OutboxLease, completeV2OutboxJob,
-  } = await import("../handlers/card-generation-v2-handler.ts");
+  } = await import("../card-generation-v2/outbox-queue.ts");
   const job = await claimPlanJob();
 
   assert.equal(await releaseV2OutboxLease(job.id, job.leaseToken), true);

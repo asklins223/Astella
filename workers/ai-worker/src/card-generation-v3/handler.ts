@@ -37,16 +37,18 @@ import { logger } from "../lib/logger.ts";
 import {
   candidateRowToObject,
   emitSourceContentCapEvent,
-  fenceV2OutboxLease,
   insertAuthoredCandidatesBatched,
   insertBindingPlanRow,
   insertEvent,
   insertRepairedCandidateV2,
   loadV2RunInputs,
-  renewV2OutboxLease,
   V2_SOURCE_CONTENT_MAX_CHARS,
-  type PendingOutboxJob,
 } from "../handlers/card-generation-v2-handler.ts";
+import {
+  fenceV2OutboxLease,
+  renewV2OutboxLease,
+  type PendingOutboxJob,
+} from "../card-generation-v2/outbox-queue.ts";
 import { CardGenerationProviderError } from "../card-generation-v2/providers.ts";
 import {
   assembleCandidateEvidenceBindingPlanV2,
