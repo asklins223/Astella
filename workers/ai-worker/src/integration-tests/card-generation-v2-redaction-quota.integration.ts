@@ -31,10 +31,12 @@ import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 process.env.DATABASE_URL_API ??= ADMIN_URL;
-// 摘档要先解决一件事：单独跑这一份在默认档上 2/2（连跑两次都量过），但**十份连着跑时
-// C31 红在"Missing expected rejection: activation must be rejected after redaction"**
-// ——它与排在它前面的文件有状态耦合。拆出那个耦合之前，这份仍钉 v2（钉档不是结论，是
-// "今天还没有单独证明它能扛住整网顺序"的记号）。
+// 摘档之前要先定位一件事：单独跑这一份在默认档上 2/2（连跑两次都量过），但**十份连着跑时
+// C31 红在"Missing expected rejection: activation must be rejected after redaction"**。
+// 当天量到的只是排除项：① 前面接 `e2e-subset` 或 `live-progress` 各跑一次都不红；
+// ② "两个文件共用写死的 workspace" 这个猜测**被否掉**——本目录 10 份全用 `randomUUID()`。
+// 剩下最像的是 C31 等一个异步消费者（遮蔽之后要靠 outbox 那一发把 eligibility 翻过来），
+// 整网跑时它没在断言之前落定——**这句还没量过**。所以钉档只是记号，别读成"与链有关"。
 process.env.CARD_GENERATION_CHAIN = "v2";
 
 const admin = postgres(ADMIN_URL, { max: 2 });
