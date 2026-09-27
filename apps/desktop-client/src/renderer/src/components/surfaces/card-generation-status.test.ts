@@ -246,3 +246,24 @@ it("复习那句只报最早的那一天，不替今天没有生产者的那一�
     { objectiveId: "o1", nextReviewAt: "2026-13-45T99:00:00.000Z", created: true },
   ])).toBe("第一次复习的日期还没排出来");
 });
+
+/**
+ * 「暂不安排」那一档（W7-3 刀一）。这一格的生产者是真的：服务端唯一调度边界先看活行，
+ * 挡下来的那几条在回执里带 `held: true` 且**没有日期**。
+ *
+ * 判据钉的是两件事：那几条不能混进"第一次复习排在 X"（它们什么都没排），并且数得出来。
+ * 少了后半句，用户点了"保存并开启复习"看到一句只讲排上的那几张，就会以为全部生效了。
+ */
+it("被「暂不安排」挡住的那几条不进日期，但要单独数给本人看", async () => {
+  const { reviewSchedulingNotice } = await import("./card-generation-status");
+  const { formatDate } = await import("./surface-data");
+  expect(reviewSchedulingNotice([
+    { objectiveId: "o1", nextReviewAt: "2026-09-27T12:00:00.000Z", created: true, held: false },
+    { objectiveId: "o2", created: false, held: true },
+    { objectiveId: "o3", created: false, held: true },
+  ])).toBe(`第一次复习排在 ${formatDate("2026-09-27T12:00:00.000Z")}；还有 2 个目标在你标的「暂不安排」里`);
+  // 一张都没排上时不能说"排在 X"，也不能只说"还没排出来"——那句会把本人的排除读成系统失败。
+  expect(reviewSchedulingNotice([
+    { objectiveId: "o1", created: false, held: true },
+  ])).toBe("这次没有排出新的复习；还有 1 个目标在你标的「暂不安排」里");
+});

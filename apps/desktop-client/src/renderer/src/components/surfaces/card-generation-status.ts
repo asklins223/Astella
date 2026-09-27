@@ -271,21 +271,28 @@ export function sourceCappedNotice(capped: { limit: number; originalLength: numb
  * 只给最早那一个日期：一次保存十几张时，逐条报日期读起来就是噪音，而"什么时候再来"
  * 对用户本来就是同一件事。
  *
- * 这里**不报"其中几张沿用了已有的安排"**，因为那一格今天没有生产者：回执里每条的
- * `created` 出自服务端 8.6 那一步，而它排期的主体（目标）是在同一条命令里刚 mint 出来的
- * uuid，所以"这个目标已经有一条待处理安排"在今天不可能成立，`created` 恒真。
- * 哪天它真的可能为假（W7-3 把持续授权接进同一格、W7-8 的手动安排），把这句话连同
- * 一条会红的用例一起加回来，别只补文案。
+ * 「其中 N 个还在暂不安排里」这句是 W7-3 刀一落进来时才有的：回执里那一档叫 `held`，
+ * 意思是"这个目标被你自己标了暂不安排，所以这一发什么都没排"。这一段注释以前写的是
+ * "今天没有生产者、别只补文案"——生产者是 `ensurePendingReviewScheduleV2` 里那一句
+ * 先看活行的判据，配套的会红的用例在同名的 `card-generation-status.test.ts` 里。
+ *
+ * 沿用那句（`created` 为假）仍然没报：`held` 与"沿用已有那一条"是两件事，别混着念。
  */
 export function reviewSchedulingNotice(
   scheduling: CardActivationSchedulingV1[],
 ): string {
   const stamps = scheduling
-    .map((entry) => new Date(entry.nextReviewAt).valueOf())
+    .map((entry) => (entry.nextReviewAt ? new Date(entry.nextReviewAt).valueOf() : Number.NaN))
     .filter((value) => Number.isFinite(value));
+  // 被"暂不安排"挡住的那几条**没有日期可读**（服务端那一发什么都没写），所以它们不进
+  // 最早日期，只进这一句计数——不然屏幕上会出现"第一次复习排在 X"而 X 不含那几张。
+  const heldCount = scheduling.filter((entry) => entry.held === true).length;
+  const heldClause = heldCount > 0 ? `；还有 ${heldCount} 个目标在你标的「暂不安排」里` : "";
   // 日期读不出来时不许编一个："时间未提供"是这一屏既有的说法。
-  if (stamps.length === 0) return "第一次复习的日期还没排出来";
-  return `第一次复习排在 ${formatDate(new Date(Math.min(...stamps)).toISOString())}`;
+  if (stamps.length === 0) {
+    return heldCount > 0 ? `这次没有排出新的复习${heldClause}` : "第一次复习的日期还没排出来";
+  }
+  return `第一次复习排在 ${formatDate(new Date(Math.min(...stamps)).toISOString())}${heldClause}`;
 }
 
 /**
