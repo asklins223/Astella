@@ -359,12 +359,8 @@ test("合同即闸：no_cards 还带着候选 ⇒ output_shape", async () => {
 
 test("§16.28：普通成功路径 generate 1 发 + check 1 发 = 恰好 2 次语义调用", async () => {
   const checkJson = JSON.stringify({
-    perCandidate: [{
-      objectiveLocalId: "obj-1",
-      verdict: "keep",
-      issues: [],
-      grounding: groundingReportFixture(),
-    }],
+    // 检查腿只交裁决与原因（grounding 由任务侧现算）：多带一个键就会被逐条宽进剔掉。
+    perCandidate: [{ objectiveLocalId: "obj-1", verdict: "keep", issues: [] }],
     setIssues: [],
   });
   const provider = scriptedProvider([generateJson([candidateContent("obj-1")]), checkJson]);

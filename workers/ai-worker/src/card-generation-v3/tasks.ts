@@ -420,12 +420,14 @@ export function buildCardContentCheckV3Prompt(input: CardContentCheckV3TaskInput
     '- "keep"：依据支持、答案可用、题面清楚——可交给用户保留；',
     '- "rewrite"：内容方向可以但需要改写（说明改什么）；',
     '- "insufficient"：依据不足或存在实质疑点——不得作为标准答案。',
-    "每一项都必须带 grounding 报告（对答案单元/教学支撑/关系/评分依据逐项给出 entailed/unsupported 与证据 id）；",
+    // 第十一发/十二发的现场：提示词还在要 grounding 报告（模型照办），而合同已经从"逐条宽进"
+    // 收紧到只收裁决——于是每一条都因多带一个键被剔掉，整批变成 unchecked。
+    "只交裁决与原因即可：依据支持报告（答案单元/教学支撑/评分依据的逐项 entailed/unsupported）**由服务端按确定性合同自己算**，不要交。",
     "证据引用只能用给出的证据 id；身份与哈希字段服务端会重算，不用自己凑。",
     "**每一张候选都要有一条结论**，漏掉一张就等于那张没被检查过。",
     "严格按以下 JSON 形状回答：",
-    '{"perCandidate":[{"objectiveLocalId":"id","verdict":"keep|rewrite|insufficient","issues":[{"code":"…","severity":"hard|soft","detail":"…"}],',
-    ' "grounding":{…grounding 报告…}}],"setIssues":[]}',
+    '{"perCandidate":[{"objectiveLocalId":"id","verdict":"keep|rewrite|insufficient",'
+    + '"issues":[{"code":"…","severity":"hard|soft","detail":"…"}]}],"setIssues":[]}',
     "",
     `# 依据（sealed manifest）\n${manifest || "（这一版没有可引用的依据）"}`,
     `# 候选\n${candidates}`,
@@ -568,9 +570,16 @@ export function createCardContentCheckV3Task(
         const envelope = cardContentCheckV3EnvelopeSchema.parse(JSON.parse(completion.text));
         const byLocalId = new Map(input.candidates.map((entry) => [entry.objectiveLocalId, entry.candidate]));
         const entries = [];
+        const dropReasons: string[] = [];
         for (const rawEntry of envelope.perCandidate) {
           const one = cardContentCheckV3EntryContentSchema.safeParse(rawEntry);
-          if (!one.success) continue;
+          if (!one.success) {
+            // 留因：整批四张全被剔时只有这一句能说明模型把哪一格写歪了（读 last_error 就够，
+            // 不用再花一发去猜）。只留前三条 issue，别把 last_error 撑爆。
+            dropReasons.push(one.error.issues.slice(0, 3)
+              .map((issue) => `${issue.path.join(".") || "(根)"}: ${issue.message}`).join("；"));
+            continue;
+          }
           const candidate = byLocalId.get(one.data.objectiveLocalId);
           if (!candidate) continue;
           entries.push({
@@ -579,6 +588,15 @@ export function createCardContentCheckV3Task(
             issues: one.data.issues,
             grounding: await runDeterministicGroundingContract(candidate, input.evidenceManifest),
           });
+        }
+        if (entries.length === 0 && envelope.perCandidate.length > 0) {
+          // 一条都没解析出来 = 这一批发出去没有任何东西被检查过。静默变成 unchecked 会让
+          // 完成事件看起来"跑完了"，而真相是检查腿一个字都没读进去。
+          return {
+            ok: false,
+            class: "output_shape",
+            message: `检查腿逐条解析后一条不剩（收到 ${envelope.perCandidate.length} 条）：${dropReasons.join(" | ").slice(0, 600)}`,
+          };
         }
         parsed = { perCandidate: entries, setIssues: envelope.setIssues };
       } catch (error) {

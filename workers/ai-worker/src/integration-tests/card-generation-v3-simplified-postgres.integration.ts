@@ -792,10 +792,6 @@ test("增量改写：只重做被判 rewrite 的那一张，重检只看它，�
     createDeterministicCardGenerateV3Provider,
     createDeterministicCardCandidateRewriteV3Provider,
   } = await import("../card-generation-v3/deterministic.ts");
-  const { runDeterministicGroundingContract } = await import(
-    "@ailearn/shared/card-generation-v2-pipeline"
-  );
-
   const checkCallsWith: number[] = [];
   const scriptedCheck = {
     modelId: "scripted-check-v3",
