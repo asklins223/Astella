@@ -50,10 +50,18 @@ function codeOnly(text: string): string {
 const tick = codeOnly(readFileSync(TICK_FILE, "utf8"));
 const adapter = codeOnly(readFileSync(ADAPTER_FILE, "utf8"));
 
-/** `hasHintExposure` 那个函数的函数体（按 `async function` 到下一个顶层声明）。 */
+/**
+ * 帮助条件那个读侧的函数体（按 `async function` 到下一个顶层声明）。
+ *
+ * **它原先叫 `hasHintExposure`**，返回的是 boolean，判据逐字照着那个名字写。
+ * 39d W5-1 主体刀二把它换成 `readHelpConditionV2` 并返回四档——因为 boolean
+ * 那一档在下游是「读不到回执 ⇒ 没有被帮助 ⇒ 可以是独立表现」，而 §14.1.1 说的是
+ * 「判不出来 ⇒ 不签发独立证据」。**两个读侧读同一批事实是「两个来源」那类病**，
+ * 所以这里合并成一个，判据跟着指向合并后的那一个。
+ */
 function hasHintExposureBody(): string {
-  const at = tick.indexOf("async function hasHintExposure(");
-  assert.ok(at > 0, "run-processing-tick 里读不到 hasHintExposure ⇒ 这条判据空转（函数被改名或挪走了）");
+  const at = tick.indexOf("async function readHelpConditionV2(");
+  assert.ok(at > 0, "run-processing-tick 里读不到 readHelpConditionV2 ⇒ 这条判据空转（函数被改名或挪走了）");
   const next = tick.indexOf("\n}\n", at);
   return tick.slice(at, next === -1 ? tick.length : next + 2);
 }
@@ -62,14 +70,14 @@ test("评估期那道闸读 exposure 表——「出题后、锁定前」的揭�
   const body = hasHintExposureBody();
   assert.ok(body.includes("learningRunEvents"), "读不到 learningRunEvents 那个读点（判据可能指错了地方）");
   assert.ok(/learningExposures|learning_exposures/.test(body),
-    "hasHintExposure 又不读 exposure 表了：那么「先出题、后揭示、再作答」这一种"
+    "那个读侧又不读 exposure 表了：那么「先出题、后揭示、再作答」这一种"
     + "仍然会按独立作答结算——那正是这道闸存在的理由。");
 });
 
 test("⚠️ 那个读侧**必须**以 locked_at 为界——这是 §16.37(a) 全部的重量所在", () => {
   const body = hasHintExposureBody();
   assert.ok(/lockedAt/.test(body),
-    "hasHintExposure 读了 exposure 却没有按 locked_at 截断——**这会让 §16.37(a) 反向**："
+    "读侧读了 exposure 却没有按 locked_at 截断——**这会让 §16.37(a) 反向**："
     + "「答完 → 看卡背 → 评分稍后返回」这一串里，那次揭示会被算成「作答时带着帮助」，"
     + "把一份**已经锁定**的独立回答降成 practice_only。");
   // 差值必须与 0 比过：只有「揭示早于锁定」才降级。
@@ -83,7 +91,7 @@ test("判据对「无边界读侧」灵敏：去掉 locked_at 截断，这一条
   // 上一份守卫写的是「加读侧就红」，那在前提被证伪之后就变成了给正确改法设障。
   const body = hasHintExposureBody();
   const unbounded = body
-    .replace(/lockedAt\.getTime\(\)\s*-\s*lastExposedAt\.getTime\(\)/, "Date.now() - lastExposedAt.getTime()")
+    .replace(/answerLockedAt\.getTime\(\)\s*-\s*helpPresentedAt\.getTime\(\)/, "Date.now() - helpPresentedAt.getTime()")
     .replace(/gapMs\s*>=\s*0\s*&&\s*/, "");
   assert.ok(
     !/lockedAt/.test(unbounded) || !/gapMs\s*>=\s*0/.test(unbounded),

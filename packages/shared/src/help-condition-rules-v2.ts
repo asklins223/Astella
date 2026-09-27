@@ -131,3 +131,56 @@ export function helpConditionNeedsCooldownV2(condition: HelpConditionV2): boolea
 export function helpConditionCountsAsIndependentV2(condition: HelpConditionV2): boolean {
   return condition === "independent";
 }
+
+/**
+ * 借助完成冷却的天数（§9.3「提示后完成 → 保留借助条件，不提升为独立成功」；
+ * §9.3 同时写明「**不把延长间隔当奖励**」）。
+ *
+ * **两个常数而不是一个**，因为两件事的分量不同：
+ *  - `assisted` 是**确凿**的借助——回执确认了呈现就在锁定之前。这次该等的时长按
+ *    "用户要有机会自己再试一次"给，两天。
+ *  - `unreconcilable` 是**判不出来**，不是"确凿的借助"（§14.1.1 那一档：保留回答但
+ *    不签发独立证据）。它已经明确"至多允许一次条件清楚的新尝试"——冷却的作用是
+ *    **让那次新尝试真的发生在条件清楚的时候**，所以要更短：一天。
+ *
+ * 给 `unreconcilable` 更长的冷却，等于把"我不知道"惩罚成"你被帮过"，而 §14.1.1
+ * 明写「不靠自报自动补签」——同一个道理：不确定不该比确定的更重。
+ *
+ * **策略版本**跟着这两个数走：改它们等于改一次间隔策略，必须能被审计读出来
+ * （§9.2「安排回执」要带原因，§9.3「具体间隔算法……记录策略版本」）。
+ */
+export const HELP_COOLDOWN_DAYS_ASSISTED = 2;
+export const HELP_COOLDOWN_DAYS_UNRECONCILABLE = 1;
+
+/**
+ * 把这一档换算成 `unassistedEligibleAfter`（`calculateDiscreteV2Schedule` 的入参）。
+ *
+ * **返回 `null` 的两种含义必须分开看**：
+ *  - `independent` —— 判得出来且确实没有帮助，**不该有冷却**；
+ *  - `unknown_no_evidence` —— 连判的东西都没有，**同样不该有冷却**，
+ *    但它**不签发独立证据**（那是 `helpConditionCountsAsIndependentV2` 的事，
+ *    排期这一侧看不见）。把两者合成同一个 `null` 正是今天那三处写死 `null` 的病：
+ *    排期只看得见 `null`，于是「判不出来」与「确凿独立」在下游**完全一样**。
+ *
+ * 冷却的**起算点**是本次观察的时刻 `at`，不是锁定时刻——锁定时刻已经过去，
+ * 拿它加天数会算出一个过去的时间点，而 `effectiveDueDate` 取的是
+ * `max(policyDue, unassistedEligibleAfter)`，传一个过去时间等于什么都没说。
+ */
+export function helpConditionCooldownAfterV2(input: {
+  readonly condition: HelpConditionV2;
+  /** 本次观察落库的时刻。冷却从它起算。 */
+  readonly at: Date;
+  /** 策略版本，随冷却天数一起进审计（§9.3「记录策略版本」）。 */
+  readonly policyVersion?: string;
+}): { readonly eligibleAfter: Date | null; readonly days: number; readonly policyVersion: string } {
+  const policyVersion = input.policyVersion ?? `help-cooldown-v1`;
+  const days = helpConditionNeedsCooldownV2(input.condition)
+    ? input.condition === "assisted" ? HELP_COOLDOWN_DAYS_ASSISTED : HELP_COOLDOWN_DAYS_UNRECONCILABLE
+    : 0;
+  return {
+    // `null` 才是"这一排期没有被帮助条件顶住"；给一个过去的日期等于给了个假门。
+    eligibleAfter: days === 0 ? null : new Date(input.at.getTime() + days * 24 * 60 * 60 * 1000),
+    days,
+    policyVersion,
+  };
+}

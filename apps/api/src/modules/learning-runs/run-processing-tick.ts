@@ -21,7 +21,13 @@
  * 进程内存构造）。
  */
 
-import { and, eq, gte, inArray, sql, desc } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, sql, desc } from "drizzle-orm";
+import {
+  decideHelpConditionV2,
+  helpConditionCooldownAfterV2,
+  helpConditionCountsAsIndependentV2,
+  type HelpConditionV2,
+} from "@ailearn/shared/help-condition-rules-v2";
 import type { StructuredTaskKind } from "./run-structured.ts";
 import { isDeterministicStructuredPayload } from "./run-structured.ts";
 import { uncoveredFacets } from "./run-result-facets.ts";
@@ -63,7 +69,7 @@ import {
 import { EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
 import { ensurePendingReviewScheduleV2 } from "../review/review-schedule-boundary.ts";
 // 39d W5-5：§14.2「待复核时不持续放大结论」的那一闸。与上面那道笔记依据闸并排调用。
-import { scheduleBlockedByDisputeV2 } from "./run-disputes.ts";
+import { disputeScheduleResolutionV2, markCorrectionAppliedV2 } from "./run-disputes.ts";
 import { readObjectiveNoteChangeImpactV1 } from "../learning-objectives/change-impact-service.ts";
 import {
   calculateDiscreteV2Schedule,
@@ -705,7 +711,7 @@ interface CriticAssessmentContext {
   assessmentId: string;
   at: Date;
   input: CriticInput;
-  hintExposure: boolean;
+  helpCondition: HelpConditionV2;
   variantCeiling: string | null;
   returnTarget: unknown;
   runtimeEpoch: number;
@@ -728,14 +734,14 @@ async function prepareCriticAssessment(
   const input = await gatherCriticInput(tx, command);
   // 提示暴露仍只能按 practice 结算，但要保留逐 rubric 的诊断反馈，不能跳过
   // Critic 而把用户的回答一律写成空结果。
-  const hintExposure = await hasHintExposure(tx, command);
+  const helpCondition = await readHelpConditionV2(tx, command);
   const variantCeiling = await readVariantCeiling(tx, command.artifactId);
   process.stderr.write(`[run-tick] prepare ok for assessment=${assessmentId}\n`);
   return {
     assessmentId,
     at,
     input,
-    hintExposure,
+    helpCondition,
     variantCeiling,
     returnTarget: run.returnTarget,
     runtimeEpoch: run.runtimeEpoch,
@@ -753,7 +759,7 @@ async function finishCriticAssessmentWrite(
     assessmentId,
     at,
     input,
-    hintExposure: hintExposureAtPrepare,
+    helpCondition: helpConditionAtPrepare,
     variantCeiling,
     returnTarget,
     runtimeEpoch,
@@ -778,14 +784,18 @@ async function finishCriticAssessmentWrite(
   }
   // 防御性二次读取：即使未来放宽 assessing 期间的辅助动作，也不会让晚到的
   // hint 把独立作答误记为正式掌握。
-  const hintExposure = hintExposureAtPrepare || await hasHintExposure(tx, command);
+  const helpCondition = helpConditionAtPrepare ?? await readHelpConditionV2(tx, command);
   const allCovered = verdicts.length > 0 && verdicts.every((v) => v.verdict === "covered");
 
   // §7.7 上限钳制：评估结果与提交 Variant 的 templateTrustCeiling 取最小。
   // practice/diagnostic/facet ceiling 的 Variant 即使全对也绝不能达 mastery——
   // 否则 practice Run 换模态（switch_variant 到 standby）即可绕过上限。
   const ceilingOrder = ["practice_only", "diagnostic_only", "facet_eligible", "mastery_eligible"] as const;
-  const evaluated = hintExposure
+  // §14.1.1：只有 `independent` 那一档能签发独立证据。`unreconcilable`（判不出来）
+  // 与 `unknown_no_evidence`（连判的东西都没有）都**不**算——这里原先判的是
+  // 「有没有提示过」，读不到回执时它返回 false，于是「判不出来」被当成「确凿独立」。
+  const notIndependent = !helpConditionCountsAsIndependentV2(helpCondition);
+  const evaluated = notIndependent
     ? "practice_only"
     : allCovered
       ? "mastery_eligible"
@@ -806,16 +816,16 @@ async function finishCriticAssessmentWrite(
     verdict: v.verdict,
     userFacingReason: v.userFacingReason,
   }));
-  const reportHash = sha256Hex(JSON.stringify({ assessmentId, verdicts, hintExposure, variantCeiling }));
+  const reportHash = sha256Hex(JSON.stringify({ assessmentId, verdicts, helpCondition, variantCeiling }));
   await tx.update(learningAssessments)
     .set({ status: "completed", rubricResults, trustClass, reportHash, updatedAt: at })
     .where(eq(learningAssessments.id, assessmentId));
   await appendRunEvent(tx, command, "learning_assessment.completed", { assessmentId }, at);
 
-  if (hintExposure || !allCovered || trustClass === "practice_only" || trustClass === "diagnostic_only") {
+  if (notIndependent || !allCovered || trustClass === "practice_only" || trustClass === "diagnostic_only") {
     // 提示暴露 / 部分覆盖 / ceiling 钳制为 practice 或 diagnostic：
     // 均不进入 canonical Commit。
-    if (hintExposure || trustClass === "practice_only" || trustClass === "diagnostic_only") {
+    if (notIndependent || trustClass === "practice_only" || trustClass === "diagnostic_only") {
       const result: LearningRunResultV1 = {
         outcome: "practice_completed",
         demonstratedFacets: [],
@@ -1013,60 +1023,54 @@ async function gatherCriticInput(
 const ASSESSMENT_REVEAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
- * 「这一次作答**带没带帮助**」——§16.37(a) 与 §7.7 上限钳制的输入。
+ * 这一次作答的**帮助条件**（§14.1.1；39d W5-1 主体刀二）。
  *
- * 两个读侧，缺一不可：
- *  1. `learning_task.hint_requested` 事件（同 run 内请求过提示）；
- *  2. `learning_exposures_v2` 里**这一次回答锁定之前**已经落在本人身上的
- *     受控 Reveal（`answer_reveal` / `evidence_reveal` / `answer_editor_view`）。
+ * ## 为什么它是**唯一**一个读侧
  *
- * ## 第二个读侧为什么以 `locked_at` 为界，而不是"现在"
+ * 此前有**两个**读侧读同一批事实：`hasHintExposure`（决定 `trustClass`）与三处
+ * 写死 `unassistedEligibleAfter: null` 的排期调用。两个来源必然有一天说不一样的话，
+ * 而它们今天说的正好是相反的两句：
+ *  - 证据侧：`读不到回执 ⇒ 没有被帮助 ⇒ 可以是独立表现`；
+ *  - 规则侧（§14.1.1）：`判不出来 ⇒ 保留回答但**不签发**独立证据`。
  *
- * §14.1.1 加粗那句：「**以回答锁定先后为界，而不是评分返回时间**」。
- * 现实里最常见的一串是「答完 → 看卡背 → 评分稍后才返回」：那次揭示发生在
- * **答案已经锁定之后**，按"现在"去算就会把一份**已经锁定**的独立回答降成
- * `practice_only`——§16.37(a) 当场反向。
+ * 于是把两个读侧收成这一个：**四档**由 `decideHelpConditionV2` 判一次，
+ * 证据侧读 `helpConditionCountsAsIndependentV2`、排期侧读 `helpConditionCooldownAfterV2`，
+ * 两边同源。写死 `null` 那种「判不出来＝确凿独立」的形状没有第二处可以藏。
  *
- * 所以这里不是"run 期间出现过任何 exposure"，而是：
- * **以这一次评估所评那件产物的 `locked_at` 当作"现在"**，再套用规划期那道
- * 闸同一个**有界窗口**。两个性质一次拿到：
- *  - 揭示早于锁定、且在窗口内 → 这次作答确实带着帮助 ⇒ 降级；
- *  - 揭示晚于锁定（差值为负）⇒ 窗口不成立 ⇒ 不降级。
+ * **三样入参都取自既有读侧，没有新建事实类别**（39b §9.7 / 39 §15.3-19 的纪律）：
+ *  - 锁定时刻：`learning_artifacts.lockedAt`（§14.1.1 的界就在这里）；
+ *  - 帮助**请求**时刻：`learning_task.hint_requested` 事件；
+ *  - 帮助**呈现**回执：`learning_exposures_v2` 里落在同一目标上的最近一条。
  *
- * 规划期那道闸（`target-snapshot-adapter.ts` 的 `loadPlanningExposure`）判的是
- * **出题时**有没有近期揭示；这一道判的是**锁定时**。两者之间的差集正是
- * 「先出题、后揭示、再作答」——那才是被漏掉的那一种。
- *
- * `locked_at` 的凭据是现成的：`learning_artifacts.locked_at`，且
- * `CHECK (status <> 'locked' OR locked_at IS NOT NULL)` 保证锁定行必有它。
- * 读不到 `locked_at`（脏数据）时**只留第一道闸**：不凭空把一份回答降级，
- * 也不凭空放行——降级与否仍由 ceiling 钳制那一层 fail closed 兜着。
+ * **取不到锁定时刻就落 `unknown_no_evidence`**，不猜：没有锁定记录就无从谈先后，
+ * 而猜成 `independent` 正是今天那个 bug 的另一副面孔。
  */
-async function hasHintExposure(
+async function readHelpConditionV2(
   tx: Parameters<Parameters<typeof withWorkspaceTransaction>[1]>[0],
   command: { runId: string; artifactId?: string | null },
-): Promise<boolean> {
-  const rows = await tx
-    .select({ id: learningRunEvents.id })
-    .from(learningRunEvents)
-    .where(and(
-      eq(learningRunEvents.runId, command.runId),
-      eq(learningRunEvents.eventType, "learning_task.hint_requested"),
-    ))
-    .limit(1);
-  if (rows.length > 0) return true;
-
-  if (!command.artifactId) return false;
+): Promise<HelpConditionV2> {
+  if (!command.artifactId) return "unknown_no_evidence";
   const lockedRows = await tx
     .select({ lockedAt: learningArtifacts.lockedAt })
     .from(learningArtifacts)
     .where(eq(learningArtifacts.id, command.artifactId))
     .limit(1);
-  const lockedAt = lockedRows[0]?.lockedAt ?? null;
-  if (!lockedAt) return false;
+  const answerLockedAt = lockedRows[0]?.lockedAt ?? null;
+  if (!answerLockedAt) return "unknown_no_evidence";
 
-  // 目标取自 `learning_runs.origin->>'objectiveId'`（与 run-disputes 同一读法）：
-  // 揭示是按目标记的，而这次作答评的也是这个目标。取不到就不加第二道闸。
+  const hintRows = await tx
+    .select({ occurredAt: learningRunEvents.occurredAt })
+    .from(learningRunEvents)
+    .where(and(
+      eq(learningRunEvents.runId, command.runId),
+      eq(learningRunEvents.eventType, "learning_task.hint_requested"),
+    ))
+    .orderBy(asc(learningRunEvents.occurredAt))
+    .limit(1);
+  // 取**最早**那一条：判定问的是「锁定前有没有请求过帮助」，不是「最后一次」。
+  // 取最近那一条会让同一次作答里先要提示、后要提示的轮次把前面那次藏掉。
+  const helpRequestedAt = hintRows[0]?.occurredAt ?? null;
+
   const runRows = await tx
     .select({
       workspaceId: learningRuns.workspaceId,
@@ -1077,25 +1081,45 @@ async function hasHintExposure(
     .where(eq(learningRuns.id, command.runId))
     .limit(1);
   const run = runRows[0];
-  if (!run?.objectiveId) return false;
 
-  const exposureRows = await tx
-    .select({ exposedAt: learningExposuresV2.exposedAt })
-    .from(learningExposuresV2)
-    .where(and(
-      eq(learningExposuresV2.workspaceId, run.workspaceId),
-      eq(learningExposuresV2.userId, run.userId),
-      eq(learningExposuresV2.objectiveId, run.objectiveId),
-      inArray(learningExposuresV2.exposureKind, [...EXPOSURE_KINDS_V2]),
-    ))
-    .orderBy(desc(learningExposuresV2.exposedAt))
-    .limit(1);
-  const lastExposedAt = exposureRows[0]?.exposedAt ?? null;
-  if (!lastExposedAt) return false;
+  let helpPresentedAt: Date | null = null;
+  if (run?.objectiveId) {
+    const exposureRows = await tx
+      .select({ exposedAt: learningExposuresV2.exposedAt })
+      .from(learningExposuresV2)
+      .where(and(
+        eq(learningExposuresV2.workspaceId, run.workspaceId),
+        eq(learningExposuresV2.userId, run.userId),
+        eq(learningExposuresV2.objectiveId, run.objectiveId),
+        inArray(learningExposuresV2.exposureKind, [...EXPOSURE_KINDS_V2]),
+      ))
+      .orderBy(asc(learningExposuresV2.exposedAt))
+      .limit(1);
+    helpPresentedAt = exposureRows[0]?.exposedAt ?? null;
+  }
 
-  // **负差值就是 §16.37(a) 那一格**：揭示发生在锁定之后，不降级。
-  const gapMs = lockedAt.getTime() - lastExposedAt.getTime();
-  return gapMs >= 0 && gapMs < ASSESSMENT_REVEAL_WINDOW_MS;
+  // **窗口不是可选项**：§16.37(a) 与 §16.21 判的是「**这次**作答有没有被帮助」，
+  // 不是「这个目标上曾经被帮助过」。同篇笔记昨天的一次提示会让今天的作答落进
+  // 「借助完成」——那会让用户看到一份从没借过手的回答被记成借助，而它在屏上无法自辩。
+  //
+  // 窗口与规划期那道闸**必须相等**（有守卫钉住），否则会出现「出题算近期、锁定不算」
+  // 的分岔：同一份揭示在两个时刻得到两个答案。
+  const gapMs = helpPresentedAt ? answerLockedAt.getTime() - helpPresentedAt.getTime() : null;
+  const presentedWithinWindow =
+    gapMs !== null && gapMs >= 0 && gapMs < ASSESSMENT_REVEAL_WINDOW_MS;
+
+  // `reconcilable` 是「今天有没有能力把锁定前是否呈现过帮助判清楚」的**能力开关**，
+  // 不由本次作答决定。有了锁定时刻就有比较的基准，所以这一侧是 `true`；
+  // 取不到目标时仍返回 true —— `decideHelpConditionV2` 会因为没有呈现回执而落
+  // `unreconcilable`，那正是「请求过但对不上」该去的那一档，而不是悄悄放行。
+  return decideHelpConditionV2({
+    answerLockedAt,
+    helpRequestedAt,
+    // 窗口外的那次呈现按「没对上」处理 ⇒ 请求过帮助就落 `unreconcilable`，
+    // 而**不是**被当成「确凿独立」放行。判不出来与确凿独立在下游必须长得不一样。
+    helpPresentedAt: presentedWithinWindow ? helpPresentedAt : null,
+    reconcilable: true,
+  });
 }
 
 /** 提交 Artifact 的 Variant ceiling（§7.7 上限钳制的权威输入）。 */
@@ -1995,24 +2019,45 @@ async function noteEvidenceAllowsScheduleChange(
  * 那一档会把那条待办写成 `completed` 再排一条继任，先消费后挡就会把用户队列里那一条
  * 变成一个没有对象的提醒（§8.5 明写不能留下无对象的提醒）。
  *
- * 判据在 `run-disputes.ts` 的 `scheduleBlockedByDisputeV2`，那一侧复用
- * `decideDisputedObservationV2`：复核"维持"之后放行，冻着不放就变成 §16.22 那条
- * "反复要求用户接受同一判定"。这里只做调用与回执，不重写规则。
+ * 判据在 `run-disputes.ts`，那一侧复用 `decideDisputedObservationV2`：复核"维持"之后
+ * 放行，冻着不放就变成 §16.22 那条"反复要求用户接受同一判定"。这里只做调用与回执，
+ * 不重写规则。
+ *
+ * **W5-5 第五刀（2026-09-27，系统侧复核落地之后）多走的那一步**：复核结论是"修正"时，
+ * 更正记录由 `dispute-recheck.ts` 的 `commit` 写好、但**尚未被消费**。这一次结算就是它
+ * 的消费者：`disputeScheduleResolutionV2` 交回"该消费哪一条"，这里调
+ * `markCorrectionAppliedV2` **消费一次**，然后照常往下走唯一调度边界重算（§9.6「需要
+ * 重新计算时仍经唯一调度服务，基于全部适用事实和当前授权给出一次明确回执」）。
+ * 不这么做，那条更正就是一条"有人写、没人读"的记录——`markCorrectionAppliedV2` 至今
+ * 零生产调用方，也正是 §16.25 要防的"两种更正混算"里最容易发生的那一种。
  */
 async function disputeAllowsScheduleChange(
   tx: Parameters<Parameters<typeof withWorkspaceTransaction>[1]>[0],
   command: CommandRow,
   authorization: SchedulingAuthorizationV1,
+  at: Date,
 ): Promise<{ allowed: true } | { allowed: false; reasonCode: "assessment_disputed" }> {
   if (authorization.kind !== "create_initial" && authorization.kind !== "consume_pending") {
     return { allowed: true };
   }
-  const blocked = await scheduleBlockedByDisputeV2(tx, {
+  const resolution = await disputeScheduleResolutionV2(tx, {
     workspaceId: command.workspaceId,
     userId: command.userId,
     objectiveId: authorization.keyPointId,
   });
-  return blocked.blocked ? { allowed: false, reasonCode: blocked.reasonCode } : { allowed: true };
+  if (resolution.blocked) return { allowed: false, reasonCode: resolution.reasonCode };
+  if (resolution.correctionToApply) {
+    // 只许一次：已应用过的那一次被 `markCorrectionAppliedV2` 判成 `alreadyApplied` 并
+    // **不**重置应用时间（§9.6「不能重复消费同一日程」）。它幂等，所以重放结算命令
+    // 不会把同一次更正消费第二遍。
+    await markCorrectionAppliedV2(tx, {
+      workspaceId: command.workspaceId,
+      userId: command.userId,
+      assessmentId: resolution.correctionToApply.assessmentId,
+      at,
+    });
+  }
+  return { allowed: true };
 }
 
 /**
@@ -2077,6 +2122,12 @@ async function applyDemonstratedSchedule(
   at: Date,
   disposition?: string,
 ): Promise<LearningRunResultV1["scheduleImpact"]> {
+  // 39d W5-1 主体刀二：**借助完成冷却**的真正起算点。此前这三处把
+  // `unassistedEligibleAfter` 写死成 `null`，而 `null` 在策略里的含义是
+  // 「没有需要冷却的帮助」＝「这次是独立表现」——于是「判不出来」与「确凿独立」
+  // 在下游完全一样，§14.1.1「保留回答但不签发独立证据」被解成了反面。
+  const helpCondition = await readHelpConditionV2(tx, command);
+  const helpCooldown = helpConditionCooldownAfterV2({ condition: helpCondition, at });
   // §13.6：facet_evidence（partial/结构化 facet 结算）0 schedule effect——
   // 不消费 pending、不创建 successor（canonical facet observation 照常发布）。
   if (disposition === "facet_evidence") {
@@ -2087,7 +2138,7 @@ async function applyDemonstratedSchedule(
   }
   // §14.2「待复核时不持续放大结论」：争议未决就不推进复习间隔。与上面那道闸并排，
   // 同样挡在 consume_pending 之前——先消费再挡会留下一个没有对象的提醒（§8.5）。
-  const disputeGate = await disputeAllowsScheduleChange(tx, command, authorization);
+  const disputeGate = await disputeAllowsScheduleChange(tx, command, authorization, at);
   if (!disputeGate.allowed) {
     return { kind: "none", reasonCode: disputeGate.reasonCode };
   }
@@ -2103,7 +2154,7 @@ async function applyDemonstratedSchedule(
       hasValidServerQuestion: true,
       hasHardEvidence,
       now: at,
-      unassistedEligibleAfter: null,
+      unassistedEligibleAfter: helpCooldown.eligibleAfter,
     });
     // W7-8 刀二：先把策略算出来的那一天过一遍手动日期约束。
     const clamped = await clampToManualDateV2(tx, {
@@ -2158,7 +2209,7 @@ async function applyDemonstratedSchedule(
       hasValidServerQuestion: true,
       hasHardEvidence,
       now: at,
-      unassistedEligibleAfter: null,
+      unassistedEligibleAfter: helpCooldown.eligibleAfter,
     });
     const consumed = await tx
       .update(reviewSchedules)
@@ -2225,13 +2276,19 @@ async function applyUnableSchedule(
   authorization: SchedulingAuthorizationV1,
   at: Date,
 ): Promise<LearningRunResultV1["scheduleImpact"]> {
+  // 39d W5-1 主体刀二：**借助完成冷却**的真正起算点。此前这三处把
+  // `unassistedEligibleAfter` 写死成 `null`，而 `null` 在策略里的含义是
+  // 「没有需要冷却的帮助」＝「这次是独立表现」——于是「判不出来」与「确凿独立」
+  // 在下游完全一样，§14.1.1「保留回答但不签发独立证据」被解成了反面。
+  const helpCondition = await readHelpConditionV2(tx, command);
+  const helpCooldown = helpConditionCooldownAfterV2({ condition: helpCondition, at });
   if (!await noteEvidenceAllowsScheduleChange(tx, command, authorization)) {
     return { kind: "none", reasonCode: "note_evidence_changed" };
   }
   // §14.2「未经确认的争议结果**不继续作为负面推荐依据**」——这一档比 demonstrated
   // 更该挡：`declared_unable` 本身就是负面结论，被申诉期间继续拿它推排程，
   // 等于让一次未确认的判定持续把用户往回拽。
-  const disputeGate = await disputeAllowsScheduleChange(tx, command, authorization);
+  const disputeGate = await disputeAllowsScheduleChange(tx, command, authorization, at);
   if (!disputeGate.allowed) {
     return { kind: "none", reasonCode: disputeGate.reasonCode };
   }
@@ -2241,7 +2298,7 @@ async function applyUnableSchedule(
     hasValidServerQuestion: true,
     hasHardEvidence: true,
     now: at,
-    unassistedEligibleAfter: null,
+      unassistedEligibleAfter: helpCooldown.eligibleAfter,
   });
   if (authorization.kind === "create_initial") {
     const decision = calculateUnableDecision(1);
