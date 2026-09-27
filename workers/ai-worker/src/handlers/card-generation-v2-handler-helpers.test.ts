@@ -9,6 +9,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomUUID } from "node:crypto";
+import { DomainError } from "@ailearn/shared";
 
 import {
   capSourceContentForPrompts,
@@ -74,4 +75,13 @@ test("错误分类：CardGenerationProviderError 类实例按 kind 判定（cano
 test("错误分类：未标注的普通错误保持可重试（不误伤瞬态故障）", () => {
   assert.equal(isNonRetryableErrorLike(new Error("socket hang up")), false);
   assert.equal(isNonRetryableErrorLike("ECONNRESET"), false);
+});
+
+test("错误分类：明确的 4xx 领域拒绝不可重试，5xx 领域错误保留重试", () => {
+  assert.equal(isNonRetryableErrorLike(new DomainError({
+    name: "AIConsentRequiredError", code: "ai_consent_required", message: "consent required", statusCode: 403,
+  })), true);
+  assert.equal(isNonRetryableErrorLike(new DomainError({
+    name: "UpstreamUnavailableError", code: "upstream_unavailable", message: "try again", statusCode: 503,
+  })), false);
 });

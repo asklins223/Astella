@@ -9,6 +9,7 @@
  */
 
 import { CardGenerationPipelineErrorV2 } from "@ailearn/shared/card-generation-v2-pipeline";
+import { DomainError } from "@ailearn/shared";
 
 /**
  * 判别错误是否不可重试（provider 5xx/429/408/超时 → retryable；
@@ -27,6 +28,9 @@ import { CardGenerationPipelineErrorV2 } from "@ailearn/shared/card-generation-v
 export function isNonRetryableErrorLike(error: unknown): boolean {
   // 本地可分类错误（CardGenerationProviderErrorLike 携带 `retryable` 布尔）。
   if (error instanceof CardGenerationProviderErrorLike) return !error.retryable;
+  // 治理拒绝（未同意、外发策略禁止、provider 未配置）是共享领域错误；4xx 表示
+  // 当前请求条件下确定不能执行，退避不会改变授权或配置。5xx 仍留给瞬态重试。
+  if (error instanceof DomainError) return error.statusCode < 500;
   // providers.ts（独立模块，避免循环依赖）抛出的 CardGenerationProviderError：
   // 类实例走 `kind`；历史/裸 Error 形态走 `retryable`。两者都给出明确结论时
   // 以 `kind` 为准（它是 canonical 形状）。

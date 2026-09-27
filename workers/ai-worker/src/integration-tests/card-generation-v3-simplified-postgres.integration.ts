@@ -58,6 +58,9 @@ const REFINE_WORKSPACE_ID = randomUUID();
 /** 全被内容门禁挡下的那一发也要一个自己的空间（在制额度是产品策略 3 个）。 */
 const GATEALL_USER_ID = randomUUID();
 const GATEALL_WORKSPACE_ID = randomUUID();
+/** 可疑主张内容检查需要独立额度，避免依赖其他用例的终态。 */
+const SUSPECT_USER_ID = randomUUID();
+const SUSPECT_WORKSPACE_ID = randomUUID();
 
 /** 一篇有可学正文的笔记（六句，每句都能抽出一个原子）。 */
 const LEARNABLE_BLOCKS = [
@@ -68,6 +71,9 @@ const LEARNABLE_BLOCKS = [
   "TLS 握手在应用层数据之前完成，它协商的是加密套件和会话密钥。",
   "TCP 的重传由超时或重复确认触发，不由应用层自己决定何时重发。",
 ];
+const INDEX_SUSPECT_CLAIM = "复合索引缺少最左列条件就无法使用索引";
+const INDEX_SUSPECT_SOURCE = `${INDEX_SUSPECT_CLAIM}，因为最左列缺失会让数据库无法使用这个索引。该说法适用于所有查询条件。`;
+const INDEX_SAFE_CLAIM = "即使存在可用索引，如果表很小或一次查询会匹配表中大部分记录，数据库也可能选择顺序扫描，因为读取整张小表的成本更低。";
 /** 一篇抽不出可学原子的笔记（句子都短于阈值或是操作记录）：零候选是正常结果。 */
 const UNLEARNABLE_BLOCKS = ["见附件。", "待定。", "TODO 补。"];
 
@@ -82,6 +88,7 @@ let rewriteRunId = "";
 let refineRunId = "";
 /** 后面三档共用的主体：整批那一发跑完才落库的那张 passed 修订。 */
 let refineSubjectRevisionId = "";
+let suspectRunId = "";
 
 async function seedNote(key: string, title: string, blocks: string[], owner: { workspaceId: string; userId: string } = { workspaceId: WORKSPACE_ID, userId: USER_ID }): Promise<NoteFixture> {
   const noteId = randomUUID();
@@ -234,7 +241,7 @@ function countingGenerate() {
 before(async () => {
   await admin.begin(async (tx) => {
     for (const id of [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID, REFINE_USER_ID,
-      GATEALL_USER_ID]) {
+      GATEALL_USER_ID, SUSPECT_USER_ID]) {
       await tx`INSERT INTO users (id, email, password_hash)
         VALUES (${id}, ${`cardgen-v3-${id}@example.invalid`}, 'unused')
         ON CONFLICT (id) DO NOTHING`;
@@ -252,8 +259,13 @@ before(async () => {
     await tx`INSERT INTO workspaces (id, owner_id, name)
       VALUES (${GATEALL_WORKSPACE_ID}, ${GATEALL_USER_ID}, 'Card Gen V3 All Gated IT')
       ON CONFLICT (id) DO NOTHING`;
+    await tx`INSERT INTO workspaces (id, owner_id, name)
+      VALUES (${SUSPECT_WORKSPACE_ID}, ${SUSPECT_USER_ID}, 'Card Gen V3 Suspect Claim IT')
+      ON CONFLICT (id) DO NOTHING`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
       VALUES (${GATEALL_WORKSPACE_ID}, ${GATEALL_USER_ID}, 'owner') ON CONFLICT DO NOTHING`;
+    await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
+      VALUES (${SUSPECT_WORKSPACE_ID}, ${SUSPECT_USER_ID}, 'owner') ON CONFLICT DO NOTHING`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
       VALUES (${REFINE_WORKSPACE_ID}, ${REFINE_USER_ID}, 'owner') ON CONFLICT DO NOTHING`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
@@ -303,6 +315,11 @@ before(async () => {
     { workspaceId: GATEALL_WORKSPACE_ID, userId: GATEALL_USER_ID });
   allGatedRunId = (await createRun(notes.allgated.versionId, `v3-allgated-${randomUUID()}`,
     { workspaceId: GATEALL_WORKSPACE_ID, userId: GATEALL_USER_ID })).runId;
+  notes.suspect = await seedNote("suspect", "待核对主张的候选门禁",
+    [INDEX_SUSPECT_SOURCE, INDEX_SAFE_CLAIM],
+    { workspaceId: SUSPECT_WORKSPACE_ID, userId: SUSPECT_USER_ID });
+  suspectRunId = (await createRun(notes.suspect.versionId, `v3-suspect-${randomUUID()}`,
+    { workspaceId: SUSPECT_WORKSPACE_ID, userId: SUSPECT_USER_ID })).runId;
 });
 
 after(async () => {
@@ -318,8 +335,9 @@ after(async () => {
   try {
     report = await wipeCardGenerationFixtures(admin,
       [WORKSPACE_ID, OTHER_WORKSPACE_ID, FAIL_SHAPE_WORKSPACE_ID, REFINE_WORKSPACE_ID,
-        GATEALL_WORKSPACE_ID],
-      [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID, REFINE_USER_ID, GATEALL_USER_ID]);
+        GATEALL_WORKSPACE_ID, SUSPECT_WORKSPACE_ID],
+      [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID, REFINE_USER_ID, GATEALL_USER_ID,
+        SUSPECT_USER_ID]);
   } finally {
     await admin.end({ timeout: 5 }).catch(() => undefined);
     const { closeDatabase: closeWorkerDatabase } = await import("../db.ts");
@@ -1597,4 +1615,173 @@ test("每句都被内容门禁挡下的那一发：终态要带得上那两道�
     `终态要带得上门码 front_leaks_answer（拿到 ${JSON.stringify(reasons)}；${diagnosis}）`);
   assert.ok(reasons.includes("cue_is_claim_copy"),
     `终态要带得上门码 cue_is_claim_copy（拿到 ${JSON.stringify(reasons)}；${diagnosis}）`);
+});
+
+test("待核对主张即使被检查器建议保留，也不能进入可保留候选", async () => {
+  const { processCardGenerationSimplifiedJob } = await import("../card-generation-v3/handler.ts");
+  const {
+    createDeterministicCardCandidateRewriteV3Provider,
+    createDeterministicCardContentCheckV3Provider,
+    createDeterministicCardGenerateV3Provider,
+  } = await import("../card-generation-v3/deterministic.ts");
+
+  const job = await claimSimplifiedJob(suspectRunId);
+  const generate = createDeterministicCardGenerateV3Provider();
+  const groundingCheck = createDeterministicCardContentCheckV3Provider();
+  const suspectCandidateGenerate = {
+    modelId: `${generate.modelId}-suspect-fixture`,
+    async complete(request: Parameters<typeof generate.complete>[0]) {
+      const raw = JSON.parse((await generate.complete(request)).text) as {
+        planIntent: { kind: "author_candidates"; recommendedCardCount: number } | { kind: "no_cards_recommended"; reasonCodes: string[] };
+        objectiveProposals: Array<Record<string, unknown> & { objectiveLocalId: string }>;
+        candidates: Array<Record<string, unknown> & { objectiveLocalId: string }>;
+      };
+      const sourceBlock = request.input.noteBlocks.find((block) => block.text.includes(INDEX_SUSPECT_CLAIM));
+      const sourceEvidence = sourceBlock
+        ? request.input.evidence.find((evidence) => evidence.blockId === sourceBlock.blockId)
+        : undefined;
+      const template = raw.candidates[0];
+      const templateProposal = template
+        ? raw.objectiveProposals.find((proposal) => proposal.objectiveLocalId === template.objectiveLocalId)
+        : undefined;
+      if (!sourceEvidence || !template || !templateProposal) {
+        throw new Error("suspect-card fixture needs one safe candidate and the exact suspect source evidence");
+      }
+      // The deterministic extractor ranks this short note's safe sentence first. Add one valid
+      // source-bound candidate here so the integration test exercises the server's suspect gate,
+      // independently of extractor ranking; all worker persistence, checking and review paths stay real.
+      const objectiveLocalId = "suspect-index-claim-fixture";
+      raw.objectiveProposals.push({
+        ...templateProposal,
+        objectiveLocalId,
+        objectiveStatement: INDEX_SUSPECT_CLAIM,
+        knowledgeForm: "application_rule",
+        priority: "important",
+        rationale: "核查复合索引最左列条件的适用范围。",
+      });
+      raw.candidates.push({
+        ...template,
+        objectiveLocalId,
+        conceptLabel: "复合索引适用条件",
+        publicSummary: "复合索引的前导列条件",
+        answerForm: "prose",
+        answerParts: [{ text: INDEX_SUSPECT_CLAIM }],
+        judgingPoints: [{ facet: "explain", criterion: "说明这条绝对表述声称的复合索引使用条件。", required: true, partIndexes: [1] }],
+        explanation: `待核对原句：${INDEX_SUSPECT_CLAIM}`,
+        front: { cue: "复合索引的前导列", prompt: "这条笔记中的复合索引断言说，缺少什么条件时无法使用索引？" },
+        evidenceSnapshotIds: [sourceEvidence.evidenceSnapshotId],
+      });
+      raw.planIntent = { kind: "author_candidates", recommendedCardCount: raw.candidates.length };
+      return { text: JSON.stringify(raw) };
+    },
+  };
+  // 这里不测模型能否识别语义疑点（由任务单测覆盖）；集测模拟内容检查对一条候选
+  // 发出 suspect_claim，同时故意保留 verdict=keep，验证服务端持久化与审核 API 不能被覆盖。
+  const suspectAwareCheck = {
+    modelId: "suspect-claim-check-fixture",
+    async complete(request: Parameters<typeof groundingCheck.complete>[0]) {
+      const baseline = JSON.parse((await groundingCheck.complete(request)).text) as {
+        perCandidate: Array<Record<string, unknown> & { objectiveLocalId: string; issues: unknown[] }>;
+        setIssues: unknown[];
+      };
+      const suspectLocalId = request.input.candidates.find((entry) =>
+        request.input.evidenceManifest.evidence.some((evidence) =>
+          entry.candidate.objective.evidenceRefIds.includes(evidence.evidenceSnapshotId)
+          && evidence.content?.includes(INDEX_SUSPECT_CLAIM),
+        ),
+      )?.objectiveLocalId;
+      const perCandidate = baseline.perCandidate.map((entry) => {
+        if (entry.objectiveLocalId !== suspectLocalId) return entry;
+        const candidate = request.input.candidates.find((item) => item.objectiveLocalId === entry.objectiveLocalId)?.candidate;
+        const citedSuspectSource = request.input.evidenceManifest.evidence.find((evidence) =>
+          candidate?.objective.evidenceRefIds.includes(evidence.evidenceSnapshotId)
+          && Boolean(evidence.content?.includes(INDEX_SUSPECT_CLAIM)));
+        if (!citedSuspectSource?.content) return entry;
+        return {
+          ...entry,
+          // 刻意模拟检查器误把“keep”与疑点并列交回；服务端盖章必须仍强制失败。
+          verdict: "keep",
+          issues: [...entry.issues, {
+            code: "suspect_claim",
+            severity: "soft",
+            detail: "该引用主张有一个可能影响理解的事实条件尚未核实。",
+            sourceQuote: citedSuspectSource.content.includes(INDEX_SUSPECT_CLAIM)
+              ? INDEX_SUSPECT_CLAIM : citedSuspectSource.content,
+          }],
+        };
+      });
+      return { text: JSON.stringify({ perCandidate, setIssues: baseline.setIssues }) };
+    },
+  };
+
+  await processCardGenerationSimplifiedJob(job, {
+    generate: suspectCandidateGenerate,
+    check: suspectAwareCheck,
+    rewrite: createDeterministicCardCandidateRewriteV3Provider(),
+  });
+
+  const suspectCandidates = await admin`
+    SELECT candidate.candidate_id, candidate.candidate_revision_id, candidate.candidate_revision_hash,
+           candidate.revision, candidate.quality_state, candidate.review_decision,
+           candidate.evidence_binding_plan_hash, report.verdict AS report_verdict,
+           report.report -> 'issues' AS issues
+    FROM card_generation_candidates_v2 AS candidate
+    JOIN card_candidate_quality_reports_v2 AS report
+      ON report.candidate_revision_id = candidate.candidate_revision_id
+     AND report.gate_version = 'card-content-check-v3'
+    WHERE candidate.run_id = ${suspectRunId}
+      AND report.report -> 'issues' @> '[{"code":"suspect_claim"}]'::jsonb
+  ` as unknown as Array<{
+    candidate_id: string; candidate_revision_id: string; candidate_revision_hash: string;
+    revision: number; quality_state: string; review_decision: string;
+    evidence_binding_plan_hash: string | null; report_verdict: string; issues: unknown;
+  }>;
+  assert.equal(suspectCandidates.length, 1,
+    "检查器标记的候选应带着 suspect_claim 报告持久化");
+  assert.equal(await runStatus(suspectRunId), "review_ready",
+    "独立安全候选仍可进入审核台，疑点不能拖住同批安全候选");
+  const suspect = suspectCandidates[0]!;
+  const suspectIssues = suspect.issues as Array<{ code?: string; sourceQuote?: string }>;
+  assert.equal(suspectIssues.find((issue) => issue.code === "suspect_claim")?.sourceQuote, INDEX_SUSPECT_CLAIM,
+    "候选直接引用方案 39 §16.26 的待核对绝对表述");
+  assert.equal(suspect.quality_state, "failed",
+    "即使检查器同时建议 keep，suspect_claim 也必须由服务端盖成失败");
+  assert.equal(suspect.report_verdict, "failed");
+  assert.equal(suspect.review_decision, "undecided");
+  assert.equal(suspect.evidence_binding_plan_hash, null,
+    "待核对候选不能获得审核页和激活流程要求的通过绑定计划");
+
+  const run = (await admin`
+    SELECT card_content_epoch, current_plan_version, review_draft_revision
+    FROM card_generation_runs_v2 WHERE id = ${suspectRunId}
+  ` as unknown as Array<{ card_content_epoch: number; current_plan_version: number; review_draft_revision: number }>)[0];
+  const plan = (await admin`
+    SELECT plan_hash FROM card_generation_plans_v2 WHERE run_id = ${suspectRunId} ORDER BY plan_version DESC LIMIT 1
+  ` as unknown as Array<{ plan_hash: string }>)[0];
+  const { handleCandidateActionV2 } = await import(
+    "../../../../apps/api/src/modules/card-generation-v2/candidate-review-service.ts"
+  );
+  await assert.rejects(
+    () => handleCandidateActionV2(
+      { workspaceId: SUSPECT_WORKSPACE_ID, userId: SUSPECT_USER_ID },
+      {
+        version: 2,
+        runId: suspectRunId,
+        expectedCardContentEpoch: Number(run!.card_content_epoch),
+        expectedPlanVersion: Number(run!.current_plan_version),
+        expectedPlanHash: plan!.plan_hash,
+        expectedReviewDraftRevision: Number(run!.review_draft_revision),
+        action: {
+          type: "keep",
+          candidateId: suspect.candidate_id,
+          expectedRevision: Number(suspect.revision),
+          expectedRevisionHash: suspect.candidate_revision_hash,
+        },
+      },
+      `v3-suspect-keep-${randomUUID()}`,
+    ),
+    (error) => error instanceof Error
+      && (error as Error & { code?: string }).code === "invalid_quality_state",
+    "审核服务必须拒绝保留待核对候选，阻止它成为带标准答案的正式复习卡",
+  );
 });
