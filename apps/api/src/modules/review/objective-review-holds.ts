@@ -169,19 +169,3 @@ export async function releaseObjectiveHoldV2(
     .returning({ id: objectiveReviewHoldsV2.id });
   return { released: updated.length > 0 };
 }
-
-/** 本人在这篇笔记里当前被排除的目标——读模型要标"暂不安排中"就靠这一次读全部。 */
-export async function listObjectiveHoldsV2(
-  ctx: RunContext,
-  noteId: string,
-): Promise<ObjectiveHoldV2View[]> {
-  return withWorkspaceTransaction(ctx, async (tx) => {
-    const rows = await tx.select().from(objectiveReviewHoldsV2).where(and(
-      eq(objectiveReviewHoldsV2.workspaceId, ctx.workspaceId),
-      eq(objectiveReviewHoldsV2.userId, ctx.userId),
-      eq(objectiveReviewHoldsV2.noteId, noteId),
-      LIVE,
-    ));
-    return rows.map(toView);
-  });
-}
