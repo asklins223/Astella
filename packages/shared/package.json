@@ -341,6 +341,11 @@
       "import": "./src/review-manual-date-constraint-v2.ts",
       "default": "./src/review-manual-date-constraint-v2.ts"
     },
+    "./limited-batch-v2": {
+      "types": "./src/limited-batch-v2.ts",
+      "import": "./src/limited-batch-v2.ts",
+      "default": "./src/limited-batch-v2.ts"
+    },
     "./assessment-dispute-rules-v2": {
       "types": "./src/assessment-dispute-rules-v2.ts",
       "import": "./src/assessment-dispute-rules-v2.ts",
@@ -375,6 +380,11 @@
       "types": "./src/note-learning-round-contracts.ts",
       "import": "./src/note-learning-round-contracts.ts",
       "default": "./src/note-learning-round-contracts.ts"
+    },
+    "./note-route-coverage-v2": {
+      "types": "./src/note-route-coverage-v2.ts",
+      "import": "./src/note-route-coverage-v2.ts",
+      "default": "./src/note-route-coverage-v2.ts"
     },
     "./note-projection-contracts": {
       "types": "./src/note-projection-contracts.ts",
