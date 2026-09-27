@@ -48,6 +48,7 @@ const REPO_ROOT = join(import.meta.dirname, "..", "..", "..");
 const read = (relative: string): string => readFileSync(join(REPO_ROOT, relative), "utf8");
 
 const REVIEW_SURFACE = "apps/desktop-client/src/renderer/src/components/CardGenerationSurface.tsx";
+void REVIEW_SURFACE;
 const ACTIVATION_SERVICE = "apps/api/src/modules/card-generation-v2/activation-service.ts";
 const V2_CONTRACTS = "packages/shared/src/card-generation-v2-contracts.ts";
 const PLAN_ASSEMBLY = "workers/ai-worker/src/card-generation-v3/plan-assembly.ts";
@@ -75,17 +76,22 @@ const REUSE_LINKS = [
     label: "计划装配不再恒发 `existingActions: []`",
   },
   {
-    id: "review-surface-not-hardcoded-create-new",
-    file: REVIEW_SURFACE,
-    present: /intent:\s*\{\s*kind:\s*"(target_equivalent_update|update_existing)"/,
-    label: "审核台不再把 intent 写死成 create_new",
+    // 这一条原写成「审核台不再把 intent 写死成 create_new」，**方向是错的**：
+    // 复用是**计划里已经做完的判断**（带 `planHash`），让客户端再发一次 intent 等于
+    // 让它复述一个无从复核的结论——可能拿着旧计划、可能对着错误的候选。改成查
+    // **服务端那一侧重定向**是否在位，而审核台**仍然**发 `create_new`。
+    id: "activation-redirects-create-new-to-reuse",
+    file: ACTIVATION_SERVICE,
+    present: /if \(intent\.kind === "create_new"\) \{\s*const reuse = resolveReuseFromPlanV2\(/,
+    label: "激活那一侧把 create_new 重定向到复用（裁决留在服务端）",
   },
   {
-    id: "create-new-can-reach-an-existing-objective",
+    // 这一条**不再是"create_new 先匹配"**——刀四之后重定向发生在服务端，而复用那一支
+    // 根本不插新目标。所以要钉的是后者：那才是"复用真的发生了"的形状。
+    id: "reuse-branch-does-not-create-a-new-objective",
     file: ACTIVATION_SERVICE,
-    /** `create_new` 那一支第一件事是 mint；复用落地后它必须先问一次"这篇有没有适用目标"。 */
-    present: /existingObjectivesInNote|matchExistingObjective|resolveReusableObjective/,
-    label: "create_new 先匹配同篇既有目标再决定新建",
+    present: /case "reuse_existing_objective"[\s\S]{0,4000}?tx\.insert\(learningCardsV2\)/,
+    label: "复用那一支只铸新卡、不插新目标（§4.2「复用只搬身份」）",
   },
 ] as const;
 
@@ -98,8 +104,6 @@ test("§16.38 目标复用台账：还差哪几件，说清楚是哪几件", () 
     missing.map((link) => link.id),
     [
       "plan-assembly-emits-existing-actions",
-      "review-surface-not-hardcoded-create-new",
-      "create-new-can-reach-an-existing-objective",
     ],
     `目标复用的台账变了：现在**已落地** ${present.length} 件（`
     + `${present.map((l) => l.label).join("、") || "无"}），**还差** ${missing.length} 件（`
@@ -107,6 +111,17 @@ test("§16.38 目标复用台账：还差哪几件，说清楚是哪几件", () 
     + "如果剩下的也做完了，请把这一格改成正向断言并把 §16.38 记成已通过；"
     + "如果已落地的那几件变了位置，请改本台账指向的文件与模式——"
     + "指向错的台账比没有台账更坏：它会让人重做已经做完的事。",
+  );
+});
+
+test("设计决定：审核台**仍然**发 create_new——复用是服务端照计划重定向的结果", () => {
+  // 反向的一格。台账原来把「审核台不再写死 create_new」当成一环，那方向是错的：
+  // 复用是**计划里已经做完的判断**（带 `planHash`），让客户端再发一次 intent 等于让它
+  // 复述一个它无从复核的结论——可能拿着旧计划、可能对着错误的候选。裁决留在一处。
+  assert.match(
+    read(REVIEW_SURFACE),
+    /intent:\s*\{\s*kind:\s*"create_new"\s*\}/,
+    "审核台开始自己发复用意图了：那一档是服务端照计划重定向的结果。",
   );
 });
 

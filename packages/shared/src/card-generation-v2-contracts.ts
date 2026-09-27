@@ -1187,20 +1187,17 @@ export const activationIntentV2Schema = z.discriminatedUnion("kind", [
     expectedObjectiveLifecycleEpoch: z.number().int().min(1),
   }),
   /**
-   * W7-5 刀四 · §4.2「同一篇笔记已有目标时，新的轮次先**匹配和复用**适用目标，
-   * 再创建确实新增的目标」。
+   * W7-5 刀四 · §4.2「同一篇笔记已有目标时，新的轮次先**匹配和复用**适用目标」。
    *
-   * **为什么必须是一档新的 intent，而不是让客户端在 `create_new` 里"顺便"带上
-   * 目标 id**：`create_new` 的语义是"建一颗新目标"，而排期闸
-   * （`ensurePendingReviewScheduleV2`）是按 `mapping.objectiveId` 问目标级排除的
-   * ——§16.38 那个洞正是"客户端说 create_new，于是 mint 一个刚问不到排除的新 id"。
-   * 把它塞进 `create_new` 的可选字段里，那一格就**结构上**回到"可能带、可能不带"，
-   * 洞还在，只是更难看见。一档独立的 intent 让"这颗目标已经存在"成为**读得出来的
-   * 事实**。
+   * **这一档是服务端自己用的，不是客户端发的。** 复用是**计划里已经做完的判断**
+   * （`plan-assembly` 那一步跑判据，结果带 `planHash`），激活这一侧照计划**重定向**
+   * `create_new`，而不是要求审核台再声明一次——客户端可能拿着旧计划、可能对着错误的
+   * 候选发，而这里有一份权威计划。
    *
-   * **`expectedObjectiveLifecycleEpoch` 是乐观并发令牌**：那颗既有目标若在她审核
-   * 期间被归档或退役，这一发必须失败而不是把新卡挂到一条已退役的目标上
-   * （§8.5「停用卡从复习中移除但保留历史」）。
+   * 放在 `activationIntentV2Schema` 里而不是另设一个内部类型，是为了让**一次函数
+   * 递归**能走到复用那一支（`create_new` 分支里重定向过来），省掉一次 250 行
+   * switch 的整体重写。它仍是 `strictObject`，客户端**能**发——但没有任何入口会发，
+   * 而服务端在 `create_new` 里已经先判过一次了。
    */
   z.strictObject({
     kind: z.literal("reuse_existing_objective"),

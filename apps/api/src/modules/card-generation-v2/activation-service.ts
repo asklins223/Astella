@@ -533,7 +533,7 @@ export async function activateCardCandidatesV2(
     // 故维持逐候选顺序写（N≤50，schema 上限）。
     const mappings: ReceiptMapping[] = [];
     for (const selected of body.selectedCandidates) {
-      const mapping = await activateSingleCandidate(tx, ctx, body.runId, run.noteVersionId, selected);
+      const mapping = await activateSingleCandidate(tx, ctx, body.runId, run.noteVersionId, selected, plan);
       mappings.push(mapping);
     }
 
@@ -778,6 +778,8 @@ async function activateSingleCandidate(
   runId: string,
   noteVersionId: string,
   selected: SelectedCandidate,
+  /** W7-5 刀四：那份权威计划（`create_new` 的复用重定向要照它走）。 */
+  plan: typeof cardGenerationPlansV2.$inferSelect | null,
 ): Promise<ReceiptMapping> {
   // 加载候选并 CAS 校验
   const candidateRows = await tx.select().from(cardGenerationCandidatesV2)
@@ -808,7 +810,7 @@ async function activateSingleCandidate(
   const {
     cardId, objectiveId, objectiveRevisionId, publicationRevision,
     resultingEvidenceBindingSetHash, bindingPlanId, bindingPlanHash,
-  } = await createOrUpdateObjectiveAndCard(tx, ctx, runId, noteVersionId, candidate, selected.intent);
+  } = await createOrUpdateObjectiveAndCard(tx, ctx, runId, noteVersionId, candidate, selected.intent, plan);
 
   // 标记候选为 activated
   await tx.update(cardGenerationCandidatesV2)
@@ -834,6 +836,38 @@ async function activateSingleCandidate(
 
 // ─── 创建/更新 Objective + Card ──────────────────────────────────────────────
 
+/**
+ * W7-5 刀四：从**权威计划**里读出"这条候选要落到哪颗既有目标上"。
+ *
+ * 候选 → `plan_objective_local_id` → 计划 `result.objectives` 里那一条 → 它的
+ * `changeContext`。判据本身在 `@ailearn/shared/objective-reuse-rules-v2`（纯函数），
+ * 装配那一步已经跑过；这里**只读结果，不重跑**——重跑一遍就会有两个地方能给出不同的
+ * 结论，而其中一份没有 `planHash` 背书。
+ *
+ * **读不到计划 / 读不到那条目标 / `changeContext` 不是复用那档** ⇒ 返回 null，
+ * 也就是照原样建一颗新目标。§4.2「无法确定时保留差异」在读侧是同一句话：
+ * 拿不到权威判断时，**新建**是可发现的那一侧。
+ */
+function resolveReuseFromPlanV2(
+  planResult: unknown,
+  planObjectiveLocalId: string | null,
+): { objectiveId: string; expectedObjectiveLifecycleEpoch: number } | null {
+  if (!planResult || typeof planResult !== "object") return null;
+  if (!planObjectiveLocalId) return null;
+  const result = (planResult as { kind?: string; objectives?: unknown[] });
+  if (result.kind !== "author_candidates" || !Array.isArray(result.objectives)) return null;
+  const objective = result.objectives.find((item) => (
+    typeof item === "object" && item !== null
+    && (item as { objectiveLocalId?: string }).objectiveLocalId === planObjectiveLocalId
+  )) as { changeContext?: { kind?: string; objectiveId?: string } } | undefined;
+  const changeContext = objective?.changeContext;
+  if (!changeContext || changeContext.kind !== "reuse_existing_objective") return null;
+  if (typeof changeContext.objectiveId !== "string") return null;
+  // `lifecycleEpoch` 由复用那一支自己去读那一行并 CAS（`expectedObjectiveLifecycleEpoch`
+  // 在那里被比对）；这里只负责把**哪一颗**带出来。
+  return { objectiveId: changeContext.objectiveId, expectedObjectiveLifecycleEpoch: 0 };
+}
+
 async function createOrUpdateObjectiveAndCard(
   tx: ApiTransaction,
   ctx: RunContext,
@@ -841,6 +875,12 @@ async function createOrUpdateObjectiveAndCard(
   noteVersionId: string,
   candidate: typeof cardGenerationCandidatesV2.$inferSelect,
   intent: ActivationIntentV2,
+  /**
+   * W7-5 刀四：那份**权威计划**。复用是计划里已经做完的判断（`plan-assembly` 那一步），
+   * 所以激活这一侧照着它重定向，而不是要求审核台再发一次 intent——客户端可能拿着旧
+   * 计划、可能对着错误的候选发，而这里有一份带 `planHash` 的计划。
+   */
+  plan?: typeof cardGenerationPlansV2.$inferSelect | null,
 ): Promise<{
   cardId: string;
   objectiveId: string;
@@ -896,6 +936,29 @@ async function createOrUpdateObjectiveAndCard(
       422,
       "卡片正面逐字照抄了答案，不能发布；请在候选审核中修改正面或拒绝该候选",
     );
+  }
+
+  // 39d W7-5 刀四 · §4.2「同一篇笔记已有目标时，新的轮次先匹配和**复用**适用目标」。
+  //
+  // **复用是服务端在计划里已经做完的判断**（`plan-assembly` 那一步，判据见
+  // `@ailearn/shared/objective-reuse-rules-v2`），所以**不要求审核台再发一次 intent**：
+  // 客户端可能拿着旧计划、可能对着错误的候选发，而这里有一份带 `planHash` 的权威计划。
+  // 裁决留在一处——`create_new` 在这里被**重定向**到复用那一支，客户端那侧一个字不改。
+  //
+  // §16.38 那个洞正是"客户端说 create_new ⇒ mint 一颗刚出炉的 objectiveId ⇒ 排期闸
+  // 结构上问不到 0295"。重定向之后 `mapping.objectiveId` 是**真的**那颗目标，
+  // 闸问得到，于是"这颗目标被本人暂不安排"拦得住。
+  if (intent.kind === "create_new") {
+    const reuse = resolveReuseFromPlanV2(plan?.result, candidate.planObjectiveLocalId);
+    if (reuse) {
+      return createOrUpdateObjectiveAndCard(tx, ctx, runId, noteVersionId, candidate, {
+        kind: "reuse_existing_objective",
+        objectiveId: reuse.objectiveId,
+        // 乐观令牌由**服务端当前读到的那一行**给出：客户端无从判断一颗目标的
+        // lifecycleEpoch（它只在计划里见过一个 id），而服务端读的就是权威值。
+        expectedObjectiveLifecycleEpoch: reuse.expectedObjectiveLifecycleEpoch,
+      });
+    }
   }
 
   switch (intent.kind) {
@@ -1195,6 +1258,15 @@ async function createOrUpdateObjectiveAndCard(
           "这颗目标刚刚变动过，这一发没有生效；请刷新后重新保存。",
         );
       }
+      // `currentObjectiveRevisionId` 可空（刚建、还没指向任何修订的行）——那种行不是
+      // "可复用的目标"，直接当读不到处理，不拿 null 去查。
+      if (!existing.currentObjectiveRevisionId) {
+        throw new CardGenerationV2ServiceError(
+          "reusable_objective_revision_missing",
+          409,
+          "这颗目标还没有可复用的修订，这一发没有生效；请重新审核这一批。",
+        );
+      }
       const existingRevisionRows = await tx.select().from(learningObjectiveRevisionsV2).where(and(
         eq(learningObjectiveRevisionsV2.objectiveRevisionId, existing.currentObjectiveRevisionId),
         eq(learningObjectiveRevisionsV2.workspaceId, ctx.workspaceId),
@@ -1288,10 +1360,14 @@ async function createOrUpdateObjectiveAndCard(
         objectiveId: intent.objectiveId,
         objectiveRevisionId: existingRevision.objectiveRevisionId,
         publicationRevision: 1,
-        // 这一张卡的依据绑定**没有**动：目标已有的证据绑定就是这颗目标的依据。
-        // 交回候选自己算的那一份会让审核台显示"这张卡绑了 N 条依据"而库里那颗目标
-        // 的绑定并不是那 N 条——比不显示更坏。
-        resultingEvidenceBindingSetHash: null,
+        // 这一张卡的依据绑定**没有**动：目标**已有**的证据绑定就是这颗目标的依据。
+        // 所以交回的是既有那一份算出来的哈希，而不是新候选自己算的那一份——交后者会让
+        // 审核台显示"这张卡绑了 N 条依据"而库里那颗目标的绑定并不是那 N 条，比不显示
+        // 更坏；交 `null` 也不行：那一格不是"没有绑定"，是"绑定没变"。
+        resultingEvidenceBindingSetHash: computeEvidenceBindingSetHashV2(
+          ((existingRevision.evidenceBindings ?? []) as Array<{ bindingId: string; bindingHash: string }>)
+            .map((b) => ({ bindingId: b.bindingId, evidenceBindingHash: b.bindingHash })),
+        ),
         bindingPlanId: null,
         bindingPlanHash: null,
       };
@@ -1949,7 +2025,7 @@ async function createOrUpdateObjectiveAndCard(
       }
 
       // 委托到 create_new 逻辑
-      const replacedMapping = await createOrUpdateObjectiveAndCard(tx, ctx, runId, noteVersionId, candidate, { kind: "create_new" });
+      const replacedMapping = await createOrUpdateObjectiveAndCard(tx, ctx, runId, noteVersionId, candidate, { kind: "create_new" }, plan);
 
       // R33/C28：§15.3/§18.2 objective lineage——语义替换记 supersede 关系
       //（predecessor=旧 objective 当前 revision，successor=新 objective revision 1）。
