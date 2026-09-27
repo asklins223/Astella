@@ -14,10 +14,10 @@ import { randomUUID } from "node:crypto";
 
 import {
   capSourceContentForPrompts,
-  isNonRetryableErrorLike,
   selectDistinctCandidatesV2,
   V2_SOURCE_CONTENT_MAX_CHARS,
 } from "./card-generation-v2-handler.ts";
+import { isNonRetryableErrorLike } from "../card-generation-v2/retry-classification.ts";
 import type { LearningCardCandidateRevisionV2 } from "@ailearn/shared/card-generation-v2-contracts";
 
 function candidate(statement: string, evidenceRefIds: string[] = []): LearningCardCandidateRevisionV2 {

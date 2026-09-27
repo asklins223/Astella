@@ -1026,7 +1026,7 @@ function captureThrow(run: () => unknown): unknown {
 
 test("没接线的 provider 值抛的是不可重试那一类（裸 Error 会被 outbox 退避连试六轮）", async () => {
   const { resolveCardGenerationV3Providers } = await import("../card-generation-v3/handler.ts");
-  const { isNonRetryableErrorLike } = await import("../handlers/card-generation-v2-handler.ts");
+  const { isNonRetryableErrorLike } = await import("../card-generation-v2/retry-classification.ts");
 
   const error = withEnv({ CARD_GENERATION_V3_PROVIDER: "llm" },
     () => captureThrow(resolveCardGenerationV3Providers));
@@ -1039,7 +1039,7 @@ test("没接线的 provider 值抛的是不可重试那一类（裸 Error 会被
 
 test("生产里不许悄悄用确定性 provider 跑简化链；豁免要显式给，离线路径不受影响", async () => {
   const { resolveCardGenerationV3Providers } = await import("../card-generation-v3/handler.ts");
-  const { isNonRetryableErrorLike } = await import("../handlers/card-generation-v2-handler.ts");
+  const { isNonRetryableErrorLike } = await import("../card-generation-v2/retry-classification.ts");
 
   // ① 生产 + 没豁免 ⇒ 抛，而且是不可重试（同一套分类器）
   const blocked = withEnv({ NODE_ENV: "production", V3_ALLOW_DETERMINISTIC_PROVIDERS: undefined },
@@ -1083,7 +1083,7 @@ test("生产里不许悄悄用确定性 provider 跑简化链；豁免要显式�
 
 test("生成那一发合不上合同：内核按预算补那一次采样，然后判不可重试（队列不再重付）", async () => {
   const { processCardGenerationSimplifiedJob } = await import("../card-generation-v3/handler.ts");
-  const { isNonRetryableErrorLike } = await import("../handlers/card-generation-v2-handler.ts");
+  const { isNonRetryableErrorLike } = await import("../card-generation-v2/retry-classification.ts");
 
   const paid: string[] = [];
   const outOfContractGenerate = {
@@ -1207,7 +1207,7 @@ test("生成那一发跑完才发现租约已易主：内核在提交前把它�
 
 test("检查那一发两次都不合合同：生成那一发不重付，首稿留着但一张都不算通过", async () => {
   const { processCardGenerationSimplifiedJob } = await import("../card-generation-v3/handler.ts");
-  const { isNonRetryableErrorLike } = await import("../handlers/card-generation-v2-handler.ts");
+  const { isNonRetryableErrorLike } = await import("../card-generation-v2/retry-classification.ts");
   const {
     createDeterministicCardGenerateV3Provider,
   } = await import("../card-generation-v3/deterministic.ts");

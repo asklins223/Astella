@@ -204,3 +204,34 @@ HEAD），按 hunk 拆开只提自己那 58 行。
 要留的是读侧那半句：`LIVE_PROGRESS_STATUSES` 与那个 JOIN 上还挂着"陈旧读数自动不可见"这条判据——
 如果哪天新链又出现"长时间持有但未提交的进度"，得重新判断，而不是默认那张表还活着。
 （这一条从"待修的洞"改成"随链退场 + 一条读侧保留判据"，是把没量过的话写成了量过的话的当场纠正。）
+
+### 7.4 内核搬家：旧 handler 里两条链共用的部分，一块一块搬（2026-09-27 开搬）
+
+为什么要搬：撤开关之后要删的是旧四段链的阶段代码，但 `handlers/card-generation-v2-handler.ts`
+（4329 行）里还住着**两条链共用**的东西——outbox 认领/租约/完成/失败/回收、错误可重试分类、
+候选行读写、binding plan 与事件落库、实时进度写入器。混在一起时"删旧链"＝在一份四千行文件里
+做外科手术；搬干净之后才是一次整文件删除。
+
+**已经搬走的第一块**：`card-generation-v2/retry-classification.ts`（74 行）——
+`isNonRetryableErrorLike`、`isRetryableProviderError`、`CardGenerationProviderErrorLike`。
+选它开头不是因为小，是因为它是纯函数＋一个轻量错误类，**零 DB 依赖**；旧 handler 里
+28 处 `throw new CardGenerationProviderErrorLike(...)` 与三个消费方（helpers 单测、
+简化链集测 4 处动态 import）都由 `tsc` 逼着重指，不靠记忆。事故注释跟着代码一起走。
+
+**剩下的砖与量好的边界**（按依赖排序，一次搬一块）：
+① 队列与租约：`PendingOutboxJob`、`V2_OUTBOX_LEASE_TIMEOUT_MS`／`V2_PIPELINE_BUDGET_MS`／
+`V2_LEASE_RENEWAL_INTERVAL_MS`／`V2_OUTBOX_MAX_CONCURRENCY`／`V2_POLL_TIMEOUT_MS`、
+`v2Inflight`（Map，`pollV2Outbox` 是它除队列外的唯一写者）、claim/renew/fence/release/
+releaseInflight/complete/fail/reap。要把 `v2Inflight` 与 `isRetryableProviderError` 一起导出，
+`pollV2Outbox`＋`processV2OutboxJob` 留在 handler（它们调阶段代码，跟过去就成循环 import）。
+② 候选行读写与落库原语：`candidateRowToObject`、`insertAuthoredCandidatesBatched`、
+`insertBindingPlanRow`、`insertEvent`、`insertRepairedCandidateV2`、`loadV2RunInputs`、
+`emitSourceContentCapEvent`、`capSourceContentForPrompts` 与三个上限常量、
+`selectDistinctCandidatesV2`、`writeCardGenerationLiveProgress`——这些是 v3 此刻正在 import 的。
+③ 搬完 ①② 之后剩下的才是四阶段链本体（planner/author/双 Critic/有界修复/投机 pedagogy），
+那一块整删。
+
+**两条已经踩过的危险**：一是别按"连续行段"整块切——第一次我按 115–693 切，把留在原地的
+`writeCardGenerationLiveProgress` 的文档注释切成断头（`tsc` 当场 25 个语法错），回退用的办法是
+把 HEAD 内容写回该文件（那份文件当时只有我在改，先 `git status --porcelain <path>` 确认过），
+不是 `git checkout`；二是每次脚本改完必须核行数增减等于预期，并且跑 `tsc` 看**真退出码**。
