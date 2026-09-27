@@ -336,6 +336,11 @@
       "import": "./src/objective-reuse-rules-v2.ts",
       "default": "./src/objective-reuse-rules-v2.ts"
     },
+    "./review-manual-date-constraint-v2": {
+      "types": "./src/review-manual-date-constraint-v2.ts",
+      "import": "./src/review-manual-date-constraint-v2.ts",
+      "default": "./src/review-manual-date-constraint-v2.ts"
+    },
     "./assessment-dispute-rules-v2": {
       "types": "./src/assessment-dispute-rules-v2.ts",
       "import": "./src/assessment-dispute-rules-v2.ts",
