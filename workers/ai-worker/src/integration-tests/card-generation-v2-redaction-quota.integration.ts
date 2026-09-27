@@ -44,7 +44,11 @@ process.env.DATABASE_URL_API ??= ADMIN_URL;
 // 红的时候 `assert.rejects` 报的是 "Missing expected rejection"，也就是激活**成功返回**了；
 // 所以下一手该查的是激活那道门为什么没拒（读的是 `activation-service.ts:419-426` 那条
 // `usableSnapshot` 集合），而不是再猜夹具取行。**目前状态：未定位的间歇红，八对配对不复现。**
-process.env.CARD_GENERATION_CHAIN = "v2";
+// `??=` 而不是 `=`：这一份的钉档要能被一次复现临时翻掉（`CARD_GENERATION_CHAIN=simplified_v3`
+// 跑整网），而**不需要往版本里留一行临时改动**——上一发我就是那么干的，把未提交的翻转
+// 挂在长时间后台验证上，既可能被别人的提交一起带走，也可能被并行的读写搅浑自己的结果。
+// 其余九份仍是硬赋值：它们钉 v2 是有对象的（四阶段链本身），不该被一次环境改动松开。
+process.env.CARD_GENERATION_CHAIN ??= "v2";
 // **下一手该装哪儿（本轮读代码读出来的两条"整段跳过"分支，未验证是否为因）**：
 // `activation-service.ts:350-368/419-426` 那道门有两种情况下**根本不会拒**——
 // ① `bindingByRev` 里取不到这一条修订的 binding plan（`bindingPlanRow` 为空）；
