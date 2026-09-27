@@ -35,6 +35,7 @@ const fixtureSql = postgres(fixtureUrl, { max: 4 });
 const { default: Fastify } = await import("fastify");
 const { default: sensible } = await import("@fastify/sensible");
 const { authRoutes } = await import("../modules/identity/routes.ts");
+const { deterministicTeachingExplainProviderV1 } = await import("../modules/note-learning-rounds/teaching-explain.ts");
 const { noteLearningRoundRoutes } = await import("../modules/note-learning-rounds/routes.ts");
 const { issueSession } = await import("../modules/identity/service.ts");
 
@@ -85,7 +86,9 @@ before(async () => {
   app = Fastify({ logger: false });
   await app.register(sensible);
   await app.register(authRoutes);
-  await app.register(noteLearningRoundRoutes);
+  await app.register(noteLearningRoundRoutes, { teaching: {
+    provider: deterministicTeachingExplainProviderV1(), modelId: "offline-test", external: false,
+  } });
   await app.ready();
   token = (await issueSession(userId, workspaceId)).token;
   peerToken = (await issueSession(peerUserId, workspaceId)).token;
@@ -176,7 +179,7 @@ test("没登录进不来（这条路由不是只给脚本用的）", async () =>
 test("创建：服务端定那一版正文，预算由服务端签发，回执过线上合同", async () => {
   const round = await createOne("判断为什么有索引，查询仍然可能慢");
   assert.equal(round.phase, "active");
-  assert.equal(round.revision, 1);
+  assert.equal(round.revision, 2, "创建后追加初始计划，推进同一个轮次计数器");
   assert.equal(round.drivingQuestionRevision, 1);
   // 那两格必须**等于服务端读到的那一版**——请求体里压根没有它们。
   assert.equal(round.noteVersionId, versionA);
@@ -253,7 +256,7 @@ test("改写本轮问题：句子与两个计数器一起动；终态之后改�
   assert.equal(round.drivingQuestion, "先分清两种情况，再判断慢在哪一步");
   assert.equal(round.drivingQuestionSource, "user_rewritten");
   assert.equal(round.drivingQuestionRevision, 2);
-  assert.equal(round.revision, Number(created.revision) + 1);
+  assert.equal(round.revision, Number(created.revision) + 2, "改写问题与追加计划分别推进轮次计数器");
 
   const closed = await call("PATCH", `/v2/note-learning-rounds/${created.roundId}`, {
     expectedRevision: round.revision, action: { kind: "close", outcome: "partial" },
@@ -701,6 +704,11 @@ test("另起一轮：旧的那一条封存成 superseded，新的那一条冻住
     assert.equal(reopened.round.drivingQuestion, old.drivingQuestion, "这一发改的是正文那一版，不是问题");
     assert.equal(reopened.round.noteVersionId, versionB, "新轮必须冻在当前那一版上");
     assert.equal(reopened.contentMoved, false, "刚按当前内容开的这一轮，不该一上来就说动过");
+    const newPlan = await call("GET", `/v2/note-learning-rounds/${reopened.round.roundId}/plans`);
+    assert.equal(newPlan.statusCode, 200);
+    const plans = body(newPlan).plans as Array<{ plan: unknown }>;
+    assert.equal(plans.length, 1, "另起一轮也必须带上新的阅读路线");
+    assert.match(JSON.stringify(plans[0].plan), /索引为什么还可能让查询变慢/);
 
     // 旧的那一条：进了终态、原因写的是被取代，且仍读得到（历史不重写）。
     const oldRows = (await fixtureSql`
@@ -737,4 +745,3 @@ test("另起一轮：钥匙不对时旧轮一点没动（这两步是一发事�
   assert.equal(same.round.revision, open.revision, "封存在回滚里没发生：revision 不该前进");
   assert.equal(same.round.phase, "active");
 });
-

@@ -1624,6 +1624,27 @@ describe("DesktopGateway", () => {
       .rejects.toMatchObject({ code: "not_found", retry: "never", httpStatus: 404 });
   });
 
+  it.each([
+    [422, "teaching_grounding_failed", "teaching_grounding_failed"],
+    [503, "teaching_model_unconfigured", "teaching_model_unconfigured"],
+    [409, "teaching_in_progress", "teaching_in_progress"],
+    [409, "round_budget_exhausted", "round_budget_exhausted"],
+    [400, "teaching_grounding_failed", "validation"],
+  ])("keeps teaching failure %i/%s actionable without forwarding server prose", async (status, token, code) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (url.pathname.endsWith("/health")) return healthResponse();
+      return new Response(JSON.stringify({ error: token, message: "private provider detail must not cross IPC" }), { status: Number(status) });
+    });
+    const gateway = new DesktopGateway(environment()); await gateway.connect();
+    Object.defineProperty(gateway, "token", { value: "test-token", writable: true });
+    const failure = await gateway.explainNoteLearningRoundTeaching({ roundId: "44444444-4444-4444-8444-444444444444", expectedRevision: 2 })
+      .catch((error: unknown) => error);
+    expect(failure).toMatchObject({ code, httpStatus: status });
+    expect((failure as Error).message).not.toContain("private provider detail");
+  });
+
   it("reads a note-learning-round artifact as the whole text/html body, with no JSON envelope", async () => {
     const artifactId = "44444444-4444-4444-8444-444444444444";
     const artifactRequests: Array<{

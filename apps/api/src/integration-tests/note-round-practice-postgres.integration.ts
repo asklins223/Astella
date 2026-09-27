@@ -46,6 +46,7 @@ const { seedV2Fixture, seedObjectiveNoteEvidence } = await import("./helpers/v2-
 const { default: Fastify } = await import("fastify");
 const { default: sensible } = await import("@fastify/sensible");
 const { authRoutes } = await import("../modules/identity/routes.ts");
+const { deterministicTeachingExplainProviderV1 } = await import("../modules/note-learning-rounds/teaching-explain.ts");
 const { noteLearningRoundRoutes } = await import("../modules/note-learning-rounds/routes.ts");
 const { issueSession } = await import("../modules/identity/service.ts");
 
@@ -156,7 +157,9 @@ before(async () => {
   app = Fastify({ logger: false });
   await app.register(sensible);
   await app.register(authRoutes);
-  await app.register(noteLearningRoundRoutes);
+  await app.register(noteLearningRoundRoutes, { teaching: {
+    provider: deterministicTeachingExplainProviderV1(), modelId: "offline-test", external: false,
+  } });
   await app.ready();
 });
 

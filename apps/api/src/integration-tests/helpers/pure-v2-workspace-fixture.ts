@@ -10,7 +10,7 @@
  */
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import { seedV2Fixture, addV2ObjectiveToWorkspace } from "./v2-card-fixture.ts";
+import { seedV2Fixture, addV2ObjectiveToWorkspace, cleanupWorkspaceTables } from "./v2-card-fixture.ts";
 
 export interface PureV2WorkspaceFixture {
   workspaceId: string;
@@ -103,15 +103,7 @@ export async function seedNotesOnlyWorkspace(
       await tx`UPDATE notes SET current_version_id = ${versionIds[i]} WHERE id = ${noteIds[i]}`;
     }
   });
-  const cleanup = async () => {
-    await sql.begin(async (tx) => {
-      await tx`DELETE FROM note_blocks WHERE workspace_id = ${workspaceId}`;
-      await tx`DELETE FROM note_versions WHERE workspace_id = ${workspaceId}`;
-      await tx`DELETE FROM notes WHERE workspace_id = ${workspaceId}`;
-      await tx`DELETE FROM workspace_members WHERE workspace_id = ${workspaceId}`;
-      await tx`DELETE FROM workspaces WHERE id = ${workspaceId}`;
-      await tx`DELETE FROM users WHERE id = ${userId}`;
-    });
-  };
+  // Notes-only fixtures can now create real objectives/runs through the round route.
+  const cleanup = () => cleanupWorkspaceTables(sql, workspaceId, userId);
   return { workspaceId, userId, noteIds, versionIds, cleanup };
 }

@@ -116,6 +116,14 @@ export function gatewayErrorMessage(error: unknown): string {
     // 也落不到正文上（会挂成进不来的结构）。所以这句只说下一步做什么，不说做不到的事。
     case "note_doc_stale":
       return "这篇笔记的编辑起点已经过期（本机这份和服务端对不上），这次改动没有存进去。退出这篇重新打开就能继续写。";
+    case "teaching_grounding_failed":
+      return "这次讲解的依据还没核对通过，暂时没有展示。可以重试，或先继续读笔记。";
+    case "teaching_model_unconfigured":
+      return "讲解模型还没有配置，已有内容保留；配置好 AI 服务后再来。";
+    case "teaching_in_progress":
+      return "这一轮正在准备讲解，稍后刷新就能接回；不用重复生成。";
+    case "round_budget_exhausted":
+      return "这一轮的生成次数或等待预算已用完。已有内容保留，可以继续读或先到这里。";
     case "result_unknown":
       return "上一动作的结果尚未确认；请先同步当前学习状态，客户端不会重复提交。";
     case "rate_limited": {

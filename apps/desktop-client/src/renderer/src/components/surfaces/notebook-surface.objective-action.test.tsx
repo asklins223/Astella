@@ -159,6 +159,7 @@ function installApi(
     olderPages?: Record<string, unknown>[];
     /** 这一轮的解释（W4-6 刀二）；缺省 = 还没讲过。 */
     roundTeaching?: Record<string, unknown> | null;
+    plans?: Record<string, unknown>[];
     /** 解释那一读按调用次给（生成成功之后回读要拿到新的一条）。 */
     teachingSequence?: (Record<string, unknown> | null)[];
     /** 生成那一发失败（走网关那一条形状）。 */
@@ -224,6 +225,7 @@ function installApi(
         return ok({
           version: 1,
           round: options.openRound ?? roundRow(),
+          plans: options.plans ?? [],
           teaching: rows[read] ?? null,
           practices: options.practices ?? [],
           practiceStart: options.practiceStart ?? null,
@@ -243,6 +245,7 @@ function installApi(
         : ok({
           version: 1,
           round: roundRow(),
+          plans: options.plans ?? [],
           teaching: null,
           practices: options.practices ?? [],
           practiceStart: options.practiceStart ?? null,
@@ -351,6 +354,7 @@ async function show(
     roundHistoryFails?: boolean;
     olderPages?: Record<string, unknown>[];
     roundTeaching?: Record<string, unknown> | null;
+    plans?: Record<string, unknown>[];
     teachingSequence?: (Record<string, unknown> | null)[];
     explainFails?: boolean;
     resumeFails?: boolean;
@@ -653,7 +657,7 @@ describe("笔记页的主要动作 · 有未提交编辑", () => {
  * 笔记页的轻量定向表单（39d W4-3 第三刀；PRD §3.3、判据 §16.16）。
  *
  * 钉的是这四件别人替不了的：
- *  1. 空句子开不出一轮（按钮禁用，且 `create` 一次都不该被调）；
+ *  1. 不填句子也能开始，由服务端建议本轮问题；
  *  2. 两个预设放的是**带这篇标题**的起步句，不是通用口号；
  *  3. 来源那一档说得出"这句话是谁定的"：原样用 = suggested，改过 = user_rewritten，
  *     没点预设自己写 = user_authored（§3.3 把"可改写"写成产品要求，这一档就是它的落点）；
@@ -661,14 +665,30 @@ describe("笔记页的主要动作 · 有未提交编辑", () => {
  *     它的 `revision`（不是本机猜的版本号）。
  */
 describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
-  it("空句子开不出一轮：按钮禁用，一次请求都不发", async () => {
+  it("当前内容定版失败不创建空轮次，明确选择上次保存内容才允许开始", async () => {
+    const { api, roundBlock } = await show([], { manualSaveFails: true });
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((button) => button.textContent === ROUND_COPY.start)!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    expect(api.noteLearningRound.create).not.toHaveBeenCalled();
+    expect(roundBlock()!.textContent).toContain("还没有开始新的一轮");
+    fireEvent.click(screen.getByRole("button", { name: "按上次已保存内容开始" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    expect(api.noteLearningRound.create).toHaveBeenCalledTimes(1);
+    expect(api.note.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("不填问题也能直接开始：服务端从已保存笔记提议问题", async () => {
     const { api, roundBlock } = await show([]);
     const start = [...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.start);
     expect(start).toBeTruthy();
-    expect(start!.disabled).toBe(true);
+    expect(start!.disabled).toBe(false);
     fireEvent.click(start!);
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
-    expect(api.noteLearningRound.create).not.toHaveBeenCalled();
+    expect(api.noteLearningRound.create).toHaveBeenCalledTimes(1);
+    expect(api.note.save).toHaveBeenCalledTimes(1);
+    expect(api.note.save.mock.invocationCallOrder[0]).toBeLessThan(api.noteLearningRound.create.mock.invocationCallOrder[0]);
+    expect(api.noteLearningRound.create.mock.calls[0][0]).toMatchObject({ noteId: NOTE_ID });
+    expect(api.noteLearningRound.create.mock.calls[0][0]).not.toHaveProperty("drivingQuestion");
   });
 
   it("预设放的是带这篇标题的起步句，点预设不改它就记成 suggested", async () => {
@@ -1211,6 +1231,17 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
  *  4. 生成失败不装作已经讲过：错的句子照实说，那颗按钮还在。
  */
 describe("笔记页的教学面（39d W4-6 刀二）", () => {
+  it("恢复学习页展示服务端最新路线，不把旧计划摆成当前计划", async () => {
+    const plan = (ordinal: number, text: string) => ({ version: 1, planOrdinal: ordinal, roundRevision: ordinal + 1,
+      plan: { version: 1, steps: [{ text }], expectedScale: "一个要点", endCondition: "解释适用条件" },
+      reason: "本轮问题调整", recordedAt: "2026-09-27T00:00:00.000Z" });
+    const { roundBlock } = await show([], { openRound: roundRow(), plans: [plan(1, "旧路线"), plan(2, "先分清索引与扫描范围")] });
+    const block = roundBlock()!;
+    expect(block.textContent).toContain("先分清索引与扫描范围");
+    expect(block.textContent).toContain("一个要点");
+    expect(block.textContent).not.toContain("旧路线");
+  });
+
   it("还没讲过：只有那颗按钮；点它带着 revision 发一发，屏上换成服务端回读的那条解释", async () => {
     const open = roundRow({ revision: 3 });
     const teaching = teachingRow();

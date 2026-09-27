@@ -304,6 +304,7 @@ test("教学面读：practices／gapHelp／artifact 都是必填格，gapHelp �
       updatedAt: "2026-09-26T04:00:00.000Z",
     },
     teaching: null,
+    plans: [],
     practices: [
       {
         runId: "44444444-4444-4444-8444-444444444444",
@@ -319,7 +320,7 @@ test("教学面读：practices／gapHelp／artifact 都是必填格，gapHelp �
   };
   assert.equal(roundTeachingViewV1Schema.safeParse(base).success, true);
   // 少任何一格都是不合法的回信（客户端不许自己补默认值）。
-  for (const key of ["practices", "gapHelp", "practiceStart", "artifact"] as const) {
+  for (const key of ["plans", "practices", "gapHelp", "practiceStart", "artifact"] as const) {
     const clone: Record<string, unknown> = { ...base };
     delete clone[key];
     assert.equal(roundTeachingViewV1Schema.safeParse(clone).success, false, `少了 ${key} 竟然过了`);

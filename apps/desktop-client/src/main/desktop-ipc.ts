@@ -560,7 +560,7 @@ const noteLearningRoundOpenInputSchema = z.strictObject({ ...m1InputBase, noteId
 const noteLearningRoundCreateInputSchema = z.strictObject({
   ...m1InputBase,
   noteId: uuidSchema,
-  drivingQuestion: z.string().trim().min(1).max(500),
+  drivingQuestion: z.string().trim().min(1).max(500).optional(),
   drivingQuestionSource: roundDrivingQuestionSourceV1Schema,
 });
 const noteLearningRoundReviseInputSchema = z.strictObject({

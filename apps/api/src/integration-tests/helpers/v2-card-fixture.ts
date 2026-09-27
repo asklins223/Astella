@@ -171,6 +171,8 @@ export async function cleanupWorkspaceTables(
     await tx`SELECT set_config('app.user_id', ${userId}, true)`;
     // 不可变触发器受控旁路（迁移 0180）：仅本清理事务内放行对 V2 追加-only 表的 DELETE。
     await tx`SELECT set_config('app.allow_history_mutation', 'on', true)`;
+    await tx`DELETE FROM note_learning_rounds WHERE workspace_id = ${workspaceId}`;
+    await tx`DELETE FROM semantic_support_reports_v2 WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM learning_target_snapshots_v2 WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM learning_card_publication_revisions_v2 WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM learning_card_revisions_v2 WHERE workspace_id = ${workspaceId}`;
@@ -180,6 +182,7 @@ export async function cleanupWorkspaceTables(
     await tx`DELETE FROM learning_objective_origins_v2 WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM learning_objectives_v2 WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM evidence_eligibility_states_v2 WHERE workspace_id = ${workspaceId}`;
+    await tx`DELETE FROM evidence_quote_copies_v2 WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM evidence_snapshots_v2 WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM learning_exposures_v2 WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM initial_validation_reminders_v2 WHERE workspace_id = ${workspaceId}`;

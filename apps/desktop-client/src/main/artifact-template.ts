@@ -12,7 +12,8 @@
  *   产物在 `#ailearn-artifact-root` 里渲染，并可选地登记
  *   `window.__artifact = { stepCount: n, render(i) }`。
  *   登记了步数，宿主就能切静态分镜（每一步都可见、可读，不丢步骤）；
- *   没登记就是"单帧内容"，静态分镜退化为原样显示这一帧。
+ *   服务端已生成的静态 section 按 data-artifact-step 计数并原样保留；
+ *   其余没有登记的内容按单帧显示。
  */
 const ARTIFACT_DOCUMENT_TEMPLATE = `<!doctype html>
 <html lang="zh-CN">
@@ -53,7 +54,7 @@ const ARTIFACT_DOCUMENT_TEMPLATE = `<!doctype html>
 
   function stepCount() {
     var a = artifact();
-    if (!a) return 0;
+    if (!a) return root ? root.querySelectorAll('[data-artifact-step]').length : 0;
     if (typeof a.stepCount === 'number' && isFinite(a.stepCount) && a.stepCount > 0) return a.stepCount;
     if (a.steps && typeof a.steps.length === 'number') return a.steps.length;
     return 0;
@@ -74,6 +75,8 @@ const ARTIFACT_DOCUMENT_TEMPLATE = `<!doctype html>
   // 静态分镜（D4 §5.1）：每一步各渲染一次并把那一刻的 DOM 铺成一列。
   // 步数不变、内容不丢；如实取舍是 canvas 像素与脚本状态不在快照里。
   function staticStoryboard() {
+    // Server-authored panes are already a storyboard; do not duplicate the whole document per step.
+    if (!artifact()) return;
     var count = stepCount();
     if (!root || count <= 0) return;
     var snapshots = [];

@@ -33,6 +33,7 @@ const fixtureSql = postgres(fixtureUrl, { max: 4 });
 const { default: Fastify } = await import("fastify");
 const { default: sensible } = await import("@fastify/sensible");
 const { authRoutes } = await import("../modules/identity/routes.ts");
+const { deterministicTeachingExplainProviderV1 } = await import("../modules/note-learning-rounds/teaching-explain.ts");
 const { noteLearningRoundRoutes } = await import("../modules/note-learning-rounds/routes.ts");
 const { issueSession } = await import("../modules/identity/service.ts");
 
@@ -103,10 +104,16 @@ before(async () => {
         VALUES (${randomUUID()}, ${versionA}, ${workspaceId}, ${ordinal}, ${type}, ${content})`;
     }
   });
+  await fixtureSql`UPDATE note_versions v SET content_json = jsonb_build_object('blocks',
+    (SELECT jsonb_agg(jsonb_build_object('type', b.type, 'content', b.content) ORDER BY b.ordinal)
+     FROM note_blocks b WHERE b.version_id = v.id))
+    WHERE v.workspace_id = ${workspaceId} AND EXISTS (SELECT 1 FROM note_blocks b WHERE b.version_id = v.id)`;
   app = Fastify({ logger: false });
   await app.register(sensible);
   await app.register(authRoutes);
-  await app.register(noteLearningRoundRoutes);
+  await app.register(noteLearningRoundRoutes, { teaching: {
+    provider: deterministicTeachingExplainProviderV1(), modelId: "offline-test", external: false,
+  } });
   await app.ready();
   token = (await issueSession(userId, workspaceId)).token;
 });
@@ -362,7 +369,8 @@ test("快照换了就不复用：同轮次同问题、不同快照哈希 ⇒ 复
   await fixtureSql.begin(async (tx) => {
     const versionId = randomUUID();
     await tx`INSERT INTO note_versions (id, note_id, workspace_id, version_no, content_json, content_hash, created_by)
-      VALUES (${versionId}, ${noteB}, ${workspaceId}, 2, ${tx.json({ blocks: [] })}, 'changed-hash', ${userId})`;
+      VALUES (${versionId}, ${noteB}, ${workspaceId}, 2,
+        ${tx.json({ blocks: [{ type: 'paragraph', content: '换了正文之后这一段才是材料。' }] })}, 'changed-hash', ${userId})`;
     await tx`UPDATE notes SET current_version_id = ${versionId} WHERE id = ${noteB}`;
     await tx`INSERT INTO note_blocks (id, version_id, workspace_id, ordinal, type, content)
       VALUES (${randomUUID()}, ${versionId}, ${workspaceId}, 1, 'paragraph', '换了正文之后这一段才是材料。')`;

@@ -124,6 +124,16 @@
 .hud-surface .notebook-hud .notebook-history-empty p { margin: 12px 0; }
 .hud-surface .notebook-hud .notebook-history-empty .button { margin-top: 8px; }
 
+.hud-surface .notebook-hud .notebook-round__plan {
+  margin: 12px 0;
+  padding: 12px 16px;
+  border: 1px dashed var(--hud-line);
+  border-radius: 18px 14px 21px 12px;
+  background: var(--hud-paper-light);
+}
+.hud-surface .notebook-hud .notebook-round__plan ol { margin: 6px 0; padding-left: 22px; }
+.hud-surface .notebook-hud .notebook-round__plan li { margin: 5px 0; line-height: 1.65; }
+
 @media (prefers-reduced-motion: reduce) {
   .hud-surface .notebook-hud .notebook-leaf { transition: none; transform: none; }
   .hud-surface .notebook-hud .notebook-leaf:is(:hover, :active, [aria-pressed="true"]) { transform: none; }

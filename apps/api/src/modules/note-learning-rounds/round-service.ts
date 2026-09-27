@@ -965,24 +965,6 @@ export async function countTeachings(
 }
 
 /**
- * 「这一轮还能不能再生成一条教学产物」（D1 §3.2 触顶行为 / 39 §6.2）。
- *
- * 触顶时说的话是 39 §6.2 给定的那三句：**保留已完成内容、可以继续阅读、可以稍后再试
- * 或先结束**——不把资源限制说成用户能力不足，也不说成"学习失败了"。
- *
- * `used` 由调用方给（它刚读过，避免同一事务里再数一遍）；判据本身是纯函数，
- * 便于"预算为 0 / 恰好用完 / 还有一格"三档各有一条用例。
- */
-export function assertTeachingBudgetAvailable(round: NoteLearningRoundV1, used: number): void {
-  if (round.budgets.maxModelCalls - used < 1) {
-    throw new RoundServiceError(
-      "round_budget_exhausted",
-      "这一轮的模型调用预算已经用完，不再生成新的解释；已经拿到的内容不受影响，可以继续读，或先结束这一轮。",
-    );
-  }
-}
-
-/**
  * 追加一条教学产物（只追加；0284 的触发器与权限层是最终防线）。
  *
  * 三条判据与前几个写动作同形：轮次必须开着（closed ⇒ `round_closed`）、

@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { eq } from "drizzle-orm";
 import { userAiSettings } from "@ailearn/shared/db-schema/identity";
-import { db } from "../../db/client.ts";
+import { withWorkspaceTransaction } from "../../db/client.ts";
 
 /**
  * 外发同意门（doc 34 L13）。
@@ -15,18 +15,17 @@ import { db } from "../../db/client.ts";
  * 判据只写一次，且与 `identity/invite-service.ts` 里那句 `ai_consent` 完全同一形状
  * （`consentAt && consentVersion`）：两处各写一份，迟早一处放宽一处收紧。
  *
- * `users` 表没有启用 RLS，所以这里用 `db` 直读是安全的（这一判定见
- * `docs/plans/34-…` §1.2 ③ 的全量清点，不是"看起来没事"）。
+ * 同意存于按用户隔离的 `user_ai_settings`；读取必须设置当前用户上下文。
  */
-export async function hasExternalAiConsent(userId: string): Promise<boolean> {
-  const row = await db
+export async function hasExternalAiConsent(scope: { workspaceId: string; userId: string }): Promise<boolean> {
+  const row = await withWorkspaceTransaction(scope, (tx) => tx
     .select({
       consentAt: userAiSettings.consentAt,
       consentVersion: userAiSettings.consentVersion,
     })
     .from(userAiSettings)
-    .where(eq(userAiSettings.userId, userId))
-    .limit(1);
+    .where(eq(userAiSettings.userId, scope.userId))
+    .limit(1));
   return Boolean(row[0]?.consentAt && row[0]?.consentVersion);
 }
 
@@ -40,10 +39,10 @@ export async function requireAiConsent(
   req: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
-  if (await hasExternalAiConsent(req.session.userId)) return;
+  if (await hasExternalAiConsent(req.session)) return;
   // 403 + 一个可判定的错误码：桌面端据此说"先去设置里同意"，而不是"语音坏了"。
   await reply.code(403).send({
     error: "ai_consent_required",
-    message: "还没有同意使用 AI 服务，语音合成与转写暂时不可用。",
+    message: "还没有同意使用 AI 服务，请先在设置中确认后再使用 AI 功能。",
   });
 }

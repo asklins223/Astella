@@ -1,45 +1,30 @@
-/**
- * 教学产物：解释生成（39d W4-6 刀一；内核任务 `note_teaching_explain_v1`）。
- *
- * 这一刀只做"解释＋示例"的文字表达，**确定性 provider 先行**（离线可测、不花模型钱）；
- * 真模型（按知识形态选表达方式、动态产物）在后续刀里接同一个任务定义——换的是 provider，
- * 不是外壳。四条边界先钉死（见 [39d-w46](./39d-w46-teaching-flow-slices-2026-09-26.md) §1）：
- *
- *   1. **解释不判分**：这里只产出解释与示例，不产生 LearningRun、不产生能力证据、
- *      不进调度（W4-3 ⑥ 的 A 否决案继续成立：拿笔记原文当标准答案＝把复述当能力判定）。
- *   2. **产物绑定快照**：输入里的正文块来自轮次行上那份不可改写的快照
- *      （`noteVersionId` + `sourceContentHash`），依据块序号是**快照里的定位**。
- *   3. **例子里只说材料里有的**：确定性 provider 的 `example` 只从材料里取（含
- *      "例如／比如／举例"的那一块），拼不出来就没有这一格——不自己编。
- *   4. **预算触顶不是学习失败**：触顶那一档在服务层（`assertTeachingBudgetAvailable`），
- *      这里只负责"生成"本身。
- *
- * 为什么跑在 API 侧（而不是 worker 的 job）：发起它的是用户当下的一次动作
- * （打开教学面、点"开始讲"），它要的是**一次往返内**的答复；与评估那一步同一个理由
- * （`learning_assessments` 也是 API 侧的写）。内核外壳给的是"事务外执行 + 单步超时 +
- * 有界重试 + 尝试身份"，不是"必须进队列"。
+/** Teaching kernel: real model in production, explicit deterministic provider in offline tests.
+ * Saved note-version blocks are frozen before external calls. Explanations do not
+ * award mastery; proposed practice targets require a separate grounding check.
+ * The persisted attempt ledger owns round budgets, including failed calls.
  */
 import { randomUUID } from "node:crypto";
 import { asc, and, eq } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
-import { noteBlocks } from "@ailearn/shared/db-schema/note";
+import { noteBlocks, noteVersions } from "@ailearn/shared/db-schema/note";
 import {
   runAiTask,
   type AiStepResult,
   type AiTaskDefinition,
 } from "@ailearn/shared/ai-task-kernel";
 import type { RoundTeachingContentV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { RoundTargetDraft } from "./round-target-contract.ts";
 
 export const NOTE_TEACHING_EXPLAIN_TASK_ID = "note_teaching_explain_v1";
 export const NOTE_TEACHING_EXPLAIN_TASK_VERSION = 1;
-/** 提示词与输出合同的版本（回执与审计用；确定性 provider 下它标记的是这一步的形状版本）。 */
+/** 提示词与输出合同的版本（回执与审计用）。 */
 export const NOTE_TEACHING_EXPLAIN_PROMPT_VERSION = "note-teaching-explain-v1";
 
 /**
  * 快照正文块（**引用，不带别的**）：`ordinal` 是它在快照里的位置，也是产物行
  * `source_block_ordinals` 记的那个数——依据要能点开定位到那一块。
  */
-export type TeachingExplainBlockV1 = { ordinal: number; type: string; text: string };
+export type TeachingExplainBlockV1 = { ordinal: number; type: string; text: string; blockId?: string };
 
 /** 任务输入：本轮问题 ＋ 最新计划 ＋ 快照正文块（＋ 形状提示由块自带的 `type` 给出）。 */
 export type TeachingExplainInputV1 = {
@@ -49,7 +34,7 @@ export type TeachingExplainInputV1 = {
   blocks: TeachingExplainBlockV1[];
 };
 
-export type TeachingExplainOutputV1 = RoundTeachingContentV1 & { sourceBlockOrdinals: number[] };
+export type TeachingExplainOutputV1 = RoundTeachingContentV1 & { sourceBlockOrdinals: number[]; target?: RoundTargetDraft | null };
 
 /**
  * provider 端口：把"怎么生成"与"什么时候允许再花一次钱"分开（内核只管后者）。
@@ -184,6 +169,8 @@ export type NoteTeachingExplainTaskDepsV1 = {
   /** 冻结好的输入（路由在短事务里读齐：轮次＋快照块＋最新计划）。 */
   input: TeachingExplainInputV1;
   usageContext?: AiTaskDefinition<TeachingExplainInputV1, TeachingExplainOutputV1>["usageContext"];
+  maxModelCalls?: number;
+  maxDurationMs?: number;
 };
 
 export function createNoteTeachingExplainTaskV1(
@@ -196,10 +183,10 @@ export function createNoteTeachingExplainTaskV1(
     // 用户当下在等这一发：走交互名额，不与批量制卡抢（D5 §3 第 2 条）。
     resourceClass: "interactive_ai",
     budget: {
-      // 今天确定性 provider 不调模型；这个数按"接真模型时一次生成＋一次结构修复"给。
-      maxModelCalls: 2,
-      stepTimeoutMs: TEACHING_STEP_TIMEOUT_MS,
-      taskDeadlineMs: TEACHING_TASK_DEADLINE_MS,
+      // Transport retries consume the same reserved call budget.
+      maxModelCalls: deps.maxModelCalls ?? 2,
+      stepTimeoutMs: Math.min(TEACHING_STEP_TIMEOUT_MS, deps.maxDurationMs ?? TEACHING_TASK_DEADLINE_MS),
+      taskDeadlineMs: Math.min(TEACHING_TASK_DEADLINE_MS, deps.maxDurationMs ?? TEACHING_TASK_DEADLINE_MS),
       maxAutoRetries: 1,
     },
     completion: { kind: "structured_parsed" },
@@ -227,15 +214,7 @@ export function createNoteTeachingExplainTaskV1(
   };
 }
 
-/**
- * 跑一次"生成解释"的内核任务（**事务外**：内核自己会核当前作用域有没有活动事务，
- * W3-2 第三刀那道闸门对这条链同样生效）。
- *
- * 幂等键＝`round:{roundId}:explain:{snapshotHash}:{ordinal}`（W4-6 刀一的约定）：
- * 同快照同序号复用，不重付模型钱。今天"要不要复用"由服务层预读决定（重复请求根本
- * 不走这里），所以没有挂检查点端口；接真模型那一刀再按内核回执把检查点落到它自己的
- * 物理形状上（W3-3 已经把那个形状定在 `jobs.payload`，而这一条链今天没有 jobs 行）。
- */
+/** Runs outside database transactions; the route persists the kernel receipt and call count. */
 export async function runTeachingExplainV1(options: {
   provider: TeachingExplainProviderV1;
   input: TeachingExplainInputV1;
@@ -245,8 +224,15 @@ export async function runTeachingExplainV1(options: {
   ordinal: number;
   currentActiveTransaction: () => unknown;
   reportDevelopmentError?: (message: string) => void;
-}): Promise<AiStepResult<TeachingExplainOutputV1> & { attemptRef: string }> {
-  const task = createNoteTeachingExplainTaskV1({ provider: options.provider, input: options.input });
+  modelId?: string;
+  maxModelCalls?: number;
+  maxDurationMs?: number;
+  attemptId?: string;
+}): Promise<AiStepResult<TeachingExplainOutputV1> & { attemptRef: string; modelCalls: number }> {
+  const task = createNoteTeachingExplainTaskV1({ provider: options.provider, input: options.input,
+    maxModelCalls: options.maxModelCalls, maxDurationMs: options.maxDurationMs,
+    usageContext: { modelId: options.modelId ?? "deterministic", promptVersion: NOTE_TEACHING_EXPLAIN_PROMPT_VERSION,
+      resourceClass: "interactive_ai" } });
   const receipt = await runAiTask(task, {
     ctx: {
       workspaceId: options.scope.workspaceId,
@@ -262,7 +248,7 @@ export async function runTeachingExplainV1(options: {
     attempt: {
       taskId: task.id,
       taskVersion: task.version,
-      attemptId: randomUUID(),
+      attemptId: options.attemptId ?? randomUUID(),
       leaseToken: `note-round:${options.round.roundId}`,
       idempotencyKey: `round:${options.round.roundId}:explain:${options.round.sourceContentHash}:${options.ordinal}`,
       workspaceId: options.scope.workspaceId,
@@ -274,7 +260,7 @@ export async function runTeachingExplainV1(options: {
 
   if (receipt.outcome !== "committed" && receipt.outcome !== "resumed_and_committed") {
     const failure = receipt.failure ?? { ok: false as const, class: "transport" as const, message: receipt.outcome };
-    return { ...failure, attemptRef: `${task.id}@v${task.version}:${receipt.outcome}` };
+    return { ...failure, attemptRef: `${task.id}@v${task.version}:${receipt.outcome}`, modelCalls: receipt.modelCalls };
   }
   if (!receipt.output) {
     return {
@@ -282,9 +268,10 @@ export async function runTeachingExplainV1(options: {
       class: "transport",
       message: "内核回执说提交了，却没有输出",
       attemptRef: `${task.id}@v${task.version}:empty`,
+      modelCalls: receipt.modelCalls,
     };
   }
-  return { ok: true, output: receipt.output, attemptRef: `${task.id}@v${task.version}` };
+  return { ok: true, output: receipt.output, attemptRef: `${task.id}@v${task.version}`, modelCalls: receipt.modelCalls };
 }
 
 /**
@@ -299,7 +286,7 @@ export function teachingFailureResponseV1(failure: { class: string; message: str
   error: string;
   message: string;
 } {
-  if (failure.class === "invalid_input") {
+  if (failure.class === "invalid_input" && failure.message !== "teaching_model_unconfigured") {
     return {
       status: 409,
       error: "teaching_material_missing",
@@ -324,10 +311,20 @@ export async function loadTeachingSnapshotBlocks(
   workspaceId: string,
   versionId: string,
 ): Promise<TeachingExplainBlockV1[]> {
+  const [version] = await tx.select({ content: noteVersions.contentJson }).from(noteVersions)
+    .where(and(eq(noteVersions.id, versionId), eq(noteVersions.workspaceId, workspaceId))).limit(1);
+  const content = version?.content as { blocks?: Array<{ type?: unknown; content?: unknown }> } | undefined;
+  const frozen = (Array.isArray(content?.blocks) ? content.blocks : []).map((block, index) => ({
+    ordinal: index + 1, type: typeof block.type === "string" ? block.type : "paragraph",
+    text: typeof block.content === "string" ? block.content : "",
+  }));
   const rows = await tx
-    .select({ ordinal: noteBlocks.ordinal, type: noteBlocks.type, content: noteBlocks.content })
+    .select({ blockId: noteBlocks.id, ordinal: noteBlocks.ordinal, type: noteBlocks.type, content: noteBlocks.content })
     .from(noteBlocks)
     .where(and(eq(noteBlocks.versionId, versionId), eq(noteBlocks.workspaceId, workspaceId)))
     .orderBy(asc(noteBlocks.ordinal));
-  return rows.map((row) => ({ ordinal: row.ordinal, type: row.type, text: row.content }));
+  // note_blocks follow the live editing document. Only content_json is the saved
+  // immutable version; attach a locator only when the live row still matches it.
+  return frozen.map((block) => ({ ...block, blockId: rows.find((row) => row.ordinal === block.ordinal
+    && row.content === block.text && row.type === block.type)?.blockId }));
 }

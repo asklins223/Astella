@@ -2067,7 +2067,7 @@ export class DesktopGateway {
   async createNoteLearningRound(
     input: {
       noteId: string;
-      drivingQuestion: string;
+      drivingQuestion?: string;
       drivingQuestionSource: "suggested" | "user_rewritten" | "user_authored";
     },
     requestId?: string,
@@ -5534,10 +5534,19 @@ const NOTE_DOMAIN_ERROR_CODES: Record<string, GatewayErrorCode> = {
 /** 403 上唯一被翻成专用码的 token（doc 34 L13：没签同意不是没权限）。 */
 const CONSENT_REQUIRED_TOKEN = "ai_consent_required";
 
+const NOTE_TEACHING_DOMAIN_CODES: Record<string, { status: number; code: GatewayErrorCode }> = {
+  teaching_grounding_failed: { status: 422, code: "teaching_grounding_failed" },
+  teaching_model_unconfigured: { status: 503, code: "teaching_model_unconfigured" },
+  teaching_in_progress: { status: 409, code: "teaching_in_progress" },
+  round_budget_exhausted: { status: 409, code: "round_budget_exhausted" },
+};
+
 function domainErrorCode(status: number, body: unknown): GatewayErrorCode | null {
   if (!body || typeof body !== "object" || !("error" in body)) return null;
   const token = (body as { error?: unknown }).error;
   if (typeof token !== "string") return null;
+  const teachingCode = NOTE_TEACHING_DOMAIN_CODES[token];
+  if (teachingCode?.status === status) return teachingCode.code;
   // 403 上只认这一个 token：登录那一族的字符串是**路由内**的约定
   // （`not_found` 在邀请那条路上意思是"邀请码无效"，在取图上意思是"文件没了"）。
   // 把它们放到 403 上一起认，就会把一次取图失败说成邀请码问题。

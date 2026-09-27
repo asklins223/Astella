@@ -1,23 +1,7 @@
 // @vitest-environment jsdom
 
-/**
- * 审计 F36：**「提交并确认」在正常写作节奏里一次都点不到**。
- *
- * 现场是这样断的：提示语让用户去点「提交并确认」，而屏上唯一的控件叫「立即保存」，
- * 它的渲染条件是 `canSave && dirty`——自动保存在停顿 1.2 秒后就把 `dirty` 清掉，
- * 于是这个按钮只在两次按键之间闪一下。⌘S 走同一个 `save()`，首行 `!dirty` 直接
- * return，**没有任何提示**，用户分不清是没生效还是没必要。版本历史因此永远只有
- * 建笔记那一个空 v1。
- *
- * 这一组钉住解耦后的三条：
- *  1. 按钮常驻（不脏时也在），名字与纸面提示、版本历史里那句是同一个；
- *  2. 那颗按钮现在叫「保存」（审计 F54：它一直叫「提交并确认」，而正文早就自动保存好了，
- *     这个名字让人以为"系统在等我来确认存盘"）；
- *  3. 干净态屏上不出现第二颗带"保存"字样的按钮；
- *  2. 没改动时点它给出可读回执，且**不**白造一个版本（`note.save` 不被调用）；
- *  3. ⌘S 在没改动时同样有回执，不再静默。
- *
- * 输入走标题字段：它是真实受控 input，与正文共用同一条「草稿 → 防抖 → 保存」链路。
+/** Explicit saves checkpoint the current document even after autosave cleared local dirty state.
+ * Deduplicating unchanged versions belongs to the server, never the renderer.
  */
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -157,7 +141,7 @@ describe("NotebookSurface · 手动定版（审计 F36）", () => {
     expect(screen.queryByRole("button", { name: /重试保存/ })).toBeNull();
   });
 
-  it("没改动时点它给回执，不白造一个版本", async () => {
+  it("自动同步后的干净态仍向服务端请求定版", async () => {
     const { state } = await renderEditor();
 
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
@@ -165,8 +149,8 @@ describe("NotebookSurface · 手动定版（审计 F36）", () => {
       await vi.advanceTimersByTimeAsync(100);
     });
 
-    expect(saveLine()).toContain("没有新的改动，还是那一版");
-    expect(state.saveCalls).toBe(0);
+    expect(saveLine()).toContain("已保存");
+    expect(state.saveCalls).toBe(1);
   });
 
   it("有改动时点它真的定出一版，回执写明已保存", async () => {
@@ -182,7 +166,7 @@ describe("NotebookSurface · 手动定版（审计 F36）", () => {
     expect(saveLine()).toContain("已保存");
   });
 
-  it("⌘S 在没改动时也给同一句回执，不再静默", async () => {
+  it("⌘S 在干净态也向服务端请求定版", async () => {
     await renderEditor();
 
     const title = document.getElementById("notebook-surface-title") as HTMLInputElement;
@@ -193,6 +177,6 @@ describe("NotebookSurface · 手动定版（审计 F36）", () => {
       await vi.advanceTimersByTimeAsync(100);
     });
 
-    expect(saveLine()).toContain("没有新的改动，还是那一版");
+    expect(saveLine()).toContain("已保存");
   });
 });

@@ -117,13 +117,8 @@ export function noteRoundContentMovedV1(input: {
 
 export const createNoteLearningRoundRequestV1Schema = z.strictObject({
   noteId: z.string().uuid(),
-  /**
-   * 必填。§3.3 那条"系统先提出一句、用户可以改写"里的**提议**这一步还没实现
-   * （W4-3 的下一件，第一版按台账定的做法是确定性取笔记结构里第一处可教的判断，
-   * 不先花一次模型调用）——所以这里宁可要调用方显式给一句话，
-   * **不装成"服务端会自己想办法提一句"**。
-   */
-  drivingQuestion: z.string().trim().min(1).max(500),
+  /** Omission accepts the server suggestion from the saved note; blank input is invalid. */
+  drivingQuestion: z.string().trim().min(1).max(500).optional(),
   drivingQuestionSource: roundDrivingQuestionSourceV1Schema.default("suggested"),
 });
 export type CreateNoteLearningRoundRequestV1 = z.infer<
@@ -391,6 +386,11 @@ export const roundPlanRevisionV1Schema = z.strictObject({
 });
 export type RoundPlanRevisionV1 = z.infer<typeof roundPlanRevisionV1Schema>;
 
+export const roundPlanViewV1Schema = z.strictObject({
+  version: z.literal(1), round: noteLearningRoundV1Schema,
+  plans: z.array(roundPlanRevisionV1Schema),
+});
+
 // ─── 轮次里的教学产物（39d W4-6 刀一；表 0284，服务 round-service）───
 
 /** 今天只有"解释"一档。压成布尔位会把将来按知识形态选的表达方式（§6.1）挤掉。 */
@@ -514,6 +514,7 @@ export type RoundPracticeStartV1 = z.infer<typeof roundPracticeStartV1Schema>;
 export const roundTeachingViewV1Schema = z.strictObject({
   version: z.literal(1),
   round: noteLearningRoundV1Schema,
+  plans: z.array(roundPlanRevisionV1Schema),
   /** 还没有生成过就是 `null`（打开教学面但还没点"开始"），不是"读失败"。 */
   teaching: roundTeachingV1Schema.nullable(),
   /**

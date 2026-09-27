@@ -804,6 +804,10 @@ export const gatewayErrorCodeValues = [
    * 就没了"，服务端当时回的是一句 200。
    */
   "note_doc_stale",
+  "teaching_grounding_failed",
+  "teaching_model_unconfigured",
+  "teaching_in_progress",
+  "round_budget_exhausted",
   // Auth-form outcomes. The API answers these with distinct `error` tokens in
   // its response body; the desktop gateway maps them through so the sign-in and
   // sign-up forms can say what actually went wrong instead of collapsing every
@@ -2427,7 +2431,7 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
     create(input: {
       meta: RequestMetaV1;
       noteId: Uuid;
-      drivingQuestion: string;
+      drivingQuestion?: string;
       drivingQuestionSource: z.infer<typeof roundDrivingQuestionSourceV1Schema>;
     }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundV1Schema>>>;
     /**

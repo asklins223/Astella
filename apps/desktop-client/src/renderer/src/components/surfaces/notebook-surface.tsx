@@ -626,10 +626,8 @@ export function NotebookSurface() {
     /**
      * 这一次走的是长连接还是 HTTP。它不是装饰：流式那条只说明"本机已并进文档"，
      * 服务端落盘还要等 Hocuspocus 的 debounce，保存行不能说成"已保存"。
-     * `no_change` 是第三种回执：手动定版时本机没有未提交改动，这一次什么都没写，
-     * 如实说"这已经是一个版本了"（审计 F36）。
      */
-    via: "stream" | "uploaded" | "unchanged" | "queued" | "no_change";
+    via: "stream" | "uploaded" | "unchanged" | "queued";
   } | null>(null);
   const [saveFailure, setSaveFailure] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
@@ -1111,17 +1109,9 @@ export function NotebookSurface() {
     const api = desktopApi();
     const current = data?.note ?? null;
     if (!api || !current || !current.permissions.canSave || saving) return false;
-    if (!dirty) {
-      // 审计 F36：手动定版的语义是"把此刻定成一个可回去的版本"，不是"把改动交出去"。
-      // 自动保存 1.2 秒就把 dirty 清掉，原来那道 `!dirty` 早退于是让「保存」
-      // 与 ⌘S 在正常写作节奏里永远静默无反应——用户分不清是没生效还是没必要。
-      // 没有改动时如实回一句"这已经是一个版本了"，自动那条仍然静默（它是 debounce 的）。
-      if (reason === "manual") {
-        setReceipt({ savedAt: new Date().toISOString(), isAutosave: false, via: "no_change" });
-        setSaveState("committed");
-      }
-      return true;
-    }
+    // Autosave flushes the live document; only the server checkpoint can say
+    // whether it already has a saved version. Explicit saves always reach it.
+    if (!dirty && reason === "auto") return true;
     const nextTitle = titleValue;
     setSaving(true);
     setSaveState("saving");
@@ -1387,18 +1377,25 @@ export function NotebookSurface() {
    * 而不是悄悄覆盖）。成功后走 silent 回读：句子上屏的是**服务端存下来的那一条**，
    * 不是本机草稿（这里写过的失败形状：屏幕显示了自己拼的那句，库里却是另一句）。
    */
-  const submitRoundQuestion = async (target: "start" | "revise") => {
+  const submitRoundQuestion = async (target: "start" | "revise", snapshot: "current" | "last_saved" = "current") => {
     const api = desktopApi();
     const currentNote = data?.note ?? null;
     const question = roundDraft.trim();
-    if (!api || !currentNote || question.length === 0 || roundBusy) return;
+    if (!api || !currentNote || (target === "revise" && question.length === 0) || roundBusy) return;
     setRoundBusy(target);
     setRoundFailure(null);
     try {
+      if (target === "start" && snapshot === "current" && currentNote.permissions.canSave) {
+        if (!await save("manual")) {
+          setRoundFailure("这次保存没有完成，还没有开始新的一轮。当前内容保留，可以重试保存。");
+          return;
+        }
+      }
       const meta = createRequestMeta(epochRef.current);
       const source = roundQuestionSourceV1(question, roundStarter);
       const response = target === "start"
-        ? await api.noteLearningRound.create({ meta, noteId: currentNote.noteId, drivingQuestion: question, drivingQuestionSource: source })
+        ? await api.noteLearningRound.create({ meta, noteId: currentNote.noteId,
+          ...(question ? { drivingQuestion: question } : {}), drivingQuestionSource: source })
         : await api.noteLearningRound.revise({
           meta,
           roundId: openRound!.roundId,
@@ -1745,7 +1742,7 @@ export function NotebookSurface() {
               ? receipt.via === "queued"
                 ? "没网，先记在本机，联网后自动保存"
                 : receipt.via === "stream" ? "已写入，正在同步" : "已自动保存"
-              : receipt.via === "no_change" ? "没有新的改动，还是那一版" : "已保存"} · ${formatClock(receipt.savedAt)}`
+              : "已保存"} · ${formatClock(receipt.savedAt)}`
           : "● 已经存好，和服务器上的版本一致";
 
   /**
@@ -2319,6 +2316,15 @@ export function NotebookSurface() {
                 </p>
               ) : null}
               <p className="small notebook-note">{ROUND_COPY.revisedLine(openRound.drivingQuestionRevision)}</p>
+              {data?.roundTeachingView?.plans.length ? (
+                <div className="notebook-round__plan" aria-label="这一轮的学习路线">
+                  <p className="small notebook-note">这次一起走的小路线</p>
+                  <ol>{data.roundTeachingView.plans.at(-1)!.plan.steps.map((step, index) => (
+                    <li key={index}>{step.text}</li>
+                  ))}</ol>
+                  <p className="small notebook-note">{data.roundTeachingView.plans.at(-1)!.plan.expectedScale}</p>
+                </div>
+              ) : null}
               <div className="notebook-objective__choices">
                 {/* 只有**停住**的那一轮摆这一颗（phase 读的是服务端那一行，不是本机猜的）。
                     放在同一行里而不是另起一块：这一行本来就是"选一条"（`flex-wrap: wrap`），
@@ -2495,6 +2501,7 @@ export function NotebookSurface() {
             </>
           ) : (
             <>
+              {!openRound ? <p className="small notebook-note">可以直接开始，伴星会从这篇笔记提一个问题。也可以写下你想弄懂的事。</p> : null}
               <label className="sr-only" htmlFor="notebook-round-question">{ROUND_COPY.ask}</label>
               <input
                 id="notebook-round-question"
@@ -2525,11 +2532,17 @@ export function NotebookSurface() {
                 <button
                   type="button"
                   className="button primary"
-                  disabled={roundBusy !== null || roundDraft.trim().length === 0}
+                  disabled={roundBusy !== null || saving || (openRound !== null && roundDraft.trim().length === 0)}
                   onClick={() => void submitRoundQuestion(openRound ? "revise" : "start")}
                 >
                   {roundSubmitLabelV1(roundBusy, openRound !== null)}
                 </button>
+                {!openRound && (dirty || saveState === "error") ? (
+                  <button type="button" className="button" disabled={roundBusy !== null || saving}
+                    onClick={() => void submitRoundQuestion("start", "last_saved")}>
+                    按上次已保存内容开始
+                  </button>
+                ) : null}
               </div>
               {structureQuestions.length > 0 ? (
                 <>
