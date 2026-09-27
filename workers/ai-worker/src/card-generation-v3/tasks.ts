@@ -159,8 +159,31 @@ function contractSheetV3(node: unknown, path: string, out: string[], depth = 0):
       }
       return;
     }
-    default:
+    case "ZodEffects":
+      // `.refine()`/`.transform()` 包着的那一层才是形状本体，剥开继续走。
+      contractSheetV3((n as { _def?: { schema?: unknown } })._def?.schema ?? null, path, out, depth + 1);
       return;
+    case "ZodUnion":
+    case "ZodDiscriminatedUnion": {
+      const options = (n as { options?: unknown[] }).options ?? [];
+      out.push(`${path} 取以下任一形状：${options.length} 种`);
+      for (const option of options) contractSheetV3(option, `${path}(任一)`, out, depth + 1);
+      return;
+    }
+    case "ZodLiteral":
+      // 字面量多半是判别式的取值（`kind:"pairs"` 那一类），不写出来的话，展开成 7 个
+      // "必填：kind、items" 的形状对模型等于没说。
+      out.push(`${path} 只能取：${String((n as { _def?: { value?: unknown } })._def?.value ?? "")}`);
+      return;
+    default: {
+      // 标量叶子（字符串/数字/布尔）不值得占一行；认不出的**结构**类型才必须喊出来——
+      // 静默跳过就等于把那一层留给模型猜，而猜错要等下一次真调用才看得见。
+      const scalar = new Set(["ZodString", "ZodNumber", "ZodBoolean", "ZodNull", "ZodDate",
+        "ZodNaN", "ZodBigint", "ZodUndefined", "ZodNever", "ZodAny", "ZodUnknown"]);
+      const typeName = n._def?.typeName ?? "?";
+      if (path && !scalar.has(typeName)) out.push(`${path} 形状未展开（${typeName}）——这一层模型只能猜`);
+      return;
+    }
   }
 }
 
