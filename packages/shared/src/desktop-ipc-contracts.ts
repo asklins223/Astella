@@ -41,6 +41,9 @@ import type {
   ReviewSubscriptionCommandV2Wire,
   ReviewSubscriptionResultV2Wire,
   NoteReviewSubscriptionsV2Wire,
+  HomeSuggestionWireV2,
+  HomeSuggestionActionCommandV2,
+  HomeSuggestionActionResultV2,
 } from "./review-queue-v2-contracts.ts";
 import { assessmentDisputeEnvelopeV2Schema } from "./assessment-dispute-rules-v2.ts";
 import type {
@@ -429,6 +432,8 @@ export const DESKTOP_IPC_CHANNELS = {
   reviewSubscriptionActivate: "ailearn.v1.review.subscription.activate",
   reviewSubscriptionPause: "ailearn.v1.review.subscription.pause",
   reviewSubscriptionListNotes: "ailearn.v1.review.subscription.listNotes",
+  homeSuggestionRead: "ailearn.v1.home.suggestion.read",
+  homeSuggestionAct: "ailearn.v1.home.suggestion.act",
   // 判定的争议（39 §14.2、§16.11、§16.25）。**四条用户能按的通道**，
   // 刻意少于服务端那六条：`recheck` 与 `correction` 的写入方是系统，不是人
   // （§14.2「**系统**基于原题、原回答和依据进行一次重新检查」）。
@@ -2618,6 +2623,23 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
     /** 笔记那一屏的读侧。**连暂停的也列**：开关要能拨回"开"。 */
     listNoteSubscriptions(input: { meta: RequestMetaV1 }): Promise<
       GatewayResultV1<NoteReviewSubscriptionsV2Wire>
+    >;
+    /**
+     * 首页书桌那**一件**（§12.1「首页只推荐一件现在值得做的事」）。
+     *
+     * 读侧带 `timeZone` 而不是服务端猜：§12.1 那句「用户略过后**本次**不反复推荐
+     * 同一项」的「本次」按**她的日历日**算（刀五的 0306），而按 UTC 算会在她的午夜
+     * 前后切错一次——那一次恰好是"她刚做完今天"的时候。
+     */
+    readHomeSuggestion(input: { meta: RequestMetaV1; timeZone: string }): Promise<
+      GatewayResultV1<HomeSuggestionWireV2>
+    >;
+    /**
+     * 「换一个」/「暂不处理」。回执**顺带**交回下一件——屏上按一下就要立刻看到另一件，
+     * 而不是"空一下再刷"。
+     */
+    actOnHomeSuggestion(input: { meta: RequestMetaV1; request: HomeSuggestionActionCommandV2 }): Promise<
+      GatewayResultV1<HomeSuggestionActionResultV2>
     >;
   };
   /**

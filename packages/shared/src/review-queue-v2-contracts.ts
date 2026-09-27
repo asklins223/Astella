@@ -230,3 +230,57 @@ export const noteReviewSubscriptionsV2Schema = z.strictObject({
   items: z.array(reviewSubscriptionV2Schema),
 });
 export type NoteReviewSubscriptionsV2Wire = z.infer<typeof noteReviewSubscriptionsV2Schema>;
+
+/**
+ * 首页「只推一件」的五层合同（39d W7-4 刀六；39 §12.1）。
+ *
+ * ## 为什么单独一份 wire 而不是直接用纯函数的类型
+ *
+ * `decideHomeSuggestionV2` 的返回里 `kind` 是**可辨联合**，而屏上要按 `kind` 分成两棵
+ * 完全不同的树（有建议 ⇒ 一张便签；没建议 ⇒ 三个入口）。让渲染层**先**解成 union 会
+ * 让"忘了判 `kind`"变成运行时事故而不是类型错误——所以这里把两档**显式**列成两个
+ * schema，`kind` 用 `literal` 钉死。
+ *
+ * ## 「换一个」返回的是**下一件**，不是"请再读一次"
+ *
+ * 屏上按一下「换一个」，要立刻看到**另一件**，而不是"空一下再刷"。所以这一发的回执
+ * 交回**已经算好的下一件**（判据在服务端跑完），渲染层不重排。
+ */
+export const homeSuggestionWireV2Schema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("suggested"),
+    /** 判据选出来的那一件（§12.1「只推荐一件」）。 */
+    itemKey: z.string().min(1),
+    kindOfItem: z.enum(["user_named", "unfinished_run", "authorized_review"]),
+    headline: z.string().min(1),
+    /** §12.1「推荐附一句理由」——**必填且非空**：空理由就是一句没有出处的断言。 */
+    reasonLine: z.string().min(1),
+    /** 同档里还有几件可换。0 ⇒ 那颗「换一个」**不画**，而不是画一颗按了没反应的。 */
+    swappableCount: z.number().int().min(0),
+  }),
+  z.strictObject({
+    kind: z.literal("nothing_due"),
+    /**
+     * §12.1「没有到期需求不制造"今日任务"」——这一档给的是**入口**，不是建议。
+     * 空数组也是合法读数（那三件事都用不了时）。
+     */
+    emptyActions: z.array(z.enum(["new_note", "write_from_source", "resume_reading"])),
+  }),
+]);
+export type HomeSuggestionWireV2 = z.infer<typeof homeSuggestionWireV2Schema>;
+
+/** 「换一个」/「暂不处理」两个动作的命令。两颗按钮共用一个 schema 而不各写一份。 */
+export const homeSuggestionActionCommandV2Schema = z.strictObject({
+  itemKey: z.string().min(1),
+  action: z.enum(["swapped", "dismissed"]),
+  timeZone: z.string().min(1),
+});
+export type HomeSuggestionActionCommandV2 = z.infer<typeof homeSuggestionActionCommandV2Schema>;
+
+/** 两个动作的回执：**顺带**交回下一件，省掉渲染层再发一次读。 */
+export const homeSuggestionActionResultV2Schema = z.strictObject({
+  action: z.enum(["swapped", "dismissed"]),
+  /** 记下去之后**现在**该推的那一件；`nothing_due` 时就是空态。 */
+  suggestion: homeSuggestionWireV2Schema,
+});
+export type HomeSuggestionActionResultV2 = z.infer<typeof homeSuggestionActionResultV2Schema>;
