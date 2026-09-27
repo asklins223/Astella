@@ -32,6 +32,7 @@ import {
   learningObjectiveDraftV2Schema,
 } from "./card-generation-v2-contracts.ts";
 import { groundingCriticReportV2Schema } from "./card-quality-v2-contracts.ts";
+import { taskIntentSchema } from "./learning-run-contracts.ts";
 
 // ─── ① 生成任务（card_generate_v3）──────────────────────────────────────
 
@@ -53,7 +54,57 @@ export type CardGenerateV3ObjectiveProposal = z.infer<
   typeof cardGenerateV3ObjectiveProposalSchema
 >;
 
-/** 生成任务的一条候选草稿：内容齐全，但所有哈希与身份由服务端计算。 */
+/** 一行的答案片段：`label` 只在 pairs 那一支用得上（左边）。 */
+export const cardGenerateV3AnswerPartSchema = z.strictObject({
+  text: z.string().min(1).max(4000),
+  label: z.string().min(1).max(300).optional(),
+});
+
+/**
+ * **模型真正被要求交的那一份**（39d W7-1 附刀七：模型只交内容，V2 形状由服务端展开）。
+ *
+ * 三条边界都是六发真模型换来的：不交 id／`*Hash`／`relations`（那是脚手架，也是模型必然
+ * 出错的地方）；不选七支判别式（`answerForm` 只留四种产出型，comparison/formula/code
+ * 由服务端按内容展开）；判分点只指"第几个答案片段"（1 起），不指 unit id——引用由服务端
+ * 重指，模型永远看不见自己起的名字会不会悬空。
+ */
+export const cardGenerateV3CandidateContentSchema = z.strictObject({
+  objectiveLocalId: z.string().min(1).max(160),
+  /** 概念级标题（名词短语，不是 cue／prompt／整句命题）。 */
+  conceptLabel: z.string().min(1).max(200),
+  publicSummary: z.string().min(1).max(1500),
+  answerForm: z.enum(["prose", "bullets", "steps", "pairs"]),
+  answerParts: z.array(cardGenerateV3AnswerPartSchema).min(1).max(40),
+  judgingPoints: z
+    .array(
+      z.strictObject({
+        facet: taskIntentSchema,
+        criterion: z.string().min(1).max(2000),
+        required: z.boolean(),
+        /** 1 起的答案片段序号（服务端换成 `au-*`）。 */
+        partIndexes: z.array(z.number().int().min(1).max(40)).min(1).max(40),
+      }),
+    )
+    .min(1).max(40),
+  explanation: z.string().min(1).max(6000),
+  boundary: z.string().min(1).max(3000).optional(),
+  misconception: z.string().min(1).max(3000).optional(),
+  workedExample: z.string().min(1).max(6000).optional(),
+  front: z.strictObject({
+    cue: z.string().min(1).max(2000),
+    prompt: z.string().min(1).max(2000),
+    context: z.string().min(1).max(3000).optional(),
+  }),
+  hints: cardHintPairV2Schema,
+  estimatedReviewSeconds: z.number().int().min(1).max(3600),
+  /** 只能取提示里「可用依据」列出的那些 id（服务端仍会按 sealed 清单复检）。 */
+  evidenceSnapshotIds: z.array(z.string().uuid()).min(1).max(100),
+});
+export type CardGenerateV3CandidateContent = z.infer<
+  typeof cardGenerateV3CandidateContentSchema
+>;
+
+/** 生成任务的一条候选草稿（**服务端内部形状**，展开之后的产物）。 */
 export const cardGenerateV3CandidateDraftSchema = z.strictObject({
   /** 必须指向上面的 objectiveProposals 之一（superRefine 钉）。 */
   objectiveLocalId: z.string().min(1).max(160),
@@ -90,7 +141,7 @@ export const cardGenerateV3OutputSchema = z
     objectiveProposals: z
       .array(cardGenerateV3ObjectiveProposalSchema)
       .max(12),
-    candidates: z.array(cardGenerateV3CandidateDraftSchema).max(8),
+    candidates: z.array(cardGenerateV3CandidateContentSchema).max(8),
   })
   .strict()
   .superRefine((output, ctx) => {
@@ -117,6 +168,18 @@ export const cardGenerateV3OutputSchema = z
   });
 export type CardGenerateV3Output = z.infer<typeof cardGenerateV3OutputSchema>;
 
+/**
+ * **服务端内部形状**（脚手架搭好之后）的同一份输出：模型交上面那份内容，
+ * `expandCardGenerateV3OutputV3` 搭成这一份；下游（草稿级程序校验、组装、落库、审核页）
+ * 读的一直是它——V2 的候选表与 binding plan 吃的就是 `learningObjectiveDraftV2`。
+ */
+export const cardGenerateV3DraftOutputSchema = z.strictObject({
+  planIntent: cardGenerateV3PlanIntentSchema,
+  objectiveProposals: z.array(cardGenerateV3ObjectiveProposalSchema).max(12),
+  candidates: z.array(cardGenerateV3CandidateDraftSchema).max(8),
+});
+export type CardGenerateV3DraftOutput = z.infer<typeof cardGenerateV3DraftOutputSchema>;
+
 // ─── ② 内容检查任务（card_content_check_v3）──────────────────────────────// ─── ③ 增量改写（card_candidate_rewrite_v3，刀c）────────────────────────
 
 /**
@@ -128,7 +191,7 @@ export type CardGenerateV3Output = z.infer<typeof cardGenerateV3OutputSchema>;
  * "结构修复与网络重试如实计入，不隐藏调用"），而不是再开一轮"修复—再检查"循环。
  */
 export const cardCandidateRewriteV3OutputSchema = z.strictObject({
-  rewrites: z.array(cardGenerateV3CandidateDraftSchema).min(1).max(8),
+  rewrites: z.array(cardGenerateV3CandidateContentSchema).min(1).max(8),
 });
 export type CardCandidateRewriteV3Output = z.infer<
   typeof cardCandidateRewriteV3OutputSchema

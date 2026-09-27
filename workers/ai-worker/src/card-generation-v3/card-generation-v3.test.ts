@@ -27,6 +27,7 @@ import {
   type CardGenerateV3TaskInput,
   type CardGenerationV3ProviderPort,
 } from "./tasks.ts";
+import { expandCardGenerateV3OutputV3 } from "./expand-content.ts";
 import {
   assembleCardGenerationV3,
   buildCandidateRevisionV3,
@@ -39,7 +40,10 @@ import {
 import { cardGenerateV3OutputSchema } from "@ailearn/shared/card-generation-v3-contracts";
 import { KnowledgeFormValuesV2 } from "@ailearn/shared/card-generation-v2-contracts";
 import type {
+  CardGenerateV3CandidateContent,
   CardGenerateV3CandidateDraft,
+  CardGenerateV3DraftOutput,
+  CardGenerateV3Output,
 } from "@ailearn/shared/card-generation-v3-contracts";
 import type { LearningCardCandidateRevisionV2 } from "@ailearn/shared/card-generation-v2-contracts";
 import type { AiTaskContext } from "@ailearn/shared/ai-task-kernel";
@@ -108,69 +112,63 @@ function entry(evidenceSnapshotId: string, blockId: string): SealedEvidenceEntry
   };
 }
 
-/** 一份能过 `cardGenerateV3OutputSchema` 的候选草稿（真合同形状，不是随手拼的）。 */
-function candidateDraft(
+/** 一份能过 `cardGenerateV3OutputSchema` 的候选**内容**（模型交的那一份小形状）。 */
+function candidateContent(
   objectiveLocalId: string,
-  evidenceRefIds: string[] = [EVIDENCE_A],
-): CardGenerateV3CandidateDraft {
+  evidenceSnapshotIds: string[] = [EVIDENCE_A],
+): CardGenerateV3CandidateContent {
   return {
     objectiveLocalId,
-    objectiveDraft: {
-      objectiveStatement: "说得出间隔重复为什么把复习点安排在即将遗忘的时候",
-      publicSummary: "复习点与遗忘曲线",
-      conceptLabel: "间隔重复",
-      knowledgeForm: "causal_model",
-      preferredTaskIntents: ["recall"],
-      canonicalAnswer: {
-        kind: "text",
-        unit: { unitId: "u1", text: "因为那时重新编码最省力，保持最久。" },
-      },
-      learningSupport: { explanation: "它把复习安排在快忘的时候，而不是集中重读。" },
-      rubric: {
-        version: 2,
-        units: [{
-          rubricUnitId: "ru1",
-          facet: "recall",
-          criterion: "能说出复习点安排在即将遗忘的理由",
-          required: true,
-          answerUnitIds: ["u1"],
-          evidenceRefIds,
-        }],
-        passingPolicy: { requireAllRequiredUnits: true, allowContradiction: false },
-        // 模型自己凑的一个：服务端必须丢掉重算（测试就钉这个"丢掉"真发生了）。
-        rubricHash: "0".repeat(64),
-      },
-      relations: [],
-      difficulty: "introductory",
-      evidenceRefIds,
-    },
-    presentationDraft: {
-      strategy: "recall",
-      transformationKind: "mechanism_reconstruction",
-      front: { cue: "复习点为什么安排在快忘的时候", prompt: "用一句话说出理由" },
-      estimatedReviewSeconds: 30,
-    },
+    conceptLabel: "间隔重复",
+    publicSummary: "复习点与遗忘曲线",
+    answerForm: "prose",
+    answerParts: [{ text: "因为那时重新编码最省力，保持最久。" }],
+    judgingPoints: [{
+      facet: "recall",
+      criterion: "能说出复习点安排在即将遗忘的理由",
+      required: true,
+      partIndexes: [1],
+    }],
+    explanation: "它把复习安排在快忘的时候，而不是集中重读。",
+    front: { cue: "复习点为什么安排在快忘的时候", prompt: "用一句话说出理由" },
     hints: { level1: "想想遗忘曲线", level2: "关键词：重新编码" },
+    estimatedReviewSeconds: 30,
+    evidenceSnapshotIds,
   };
 }
 
+/** 内容 → 展开后的草稿（走**生产那一份**展开器；用例不自己搭脚手架）。 */
+function expandToDrafts(contents: readonly CardGenerateV3CandidateContent[]): CardGenerateV3CandidateDraft[] {
+  return expandCardGenerateV3OutputV3({
+    planIntent: { kind: "author_candidates", recommendedCardCount: Math.max(contents.length, 1) },
+    objectiveProposals: contents.map((content) => ({
+      objectiveLocalId: content.objectiveLocalId,
+      objectiveStatement: content.publicSummary,
+      priority: "important",
+      knowledgeForm: "causal_model",
+      rationale: "用例夹具",
+    })),
+    candidates: contents,
+  }).output.candidates;
+}
+
 function generateJson(
-  drafts: CardGenerateV3CandidateDraft[],
+  contents: CardGenerateV3CandidateContent[],
   intent: Record<string, unknown> = {
     kind: "author_candidates",
-    recommendedCardCount: drafts.length,
+    recommendedCardCount: contents.length,
   },
 ): string {
   return JSON.stringify({
     planIntent: intent,
-    objectiveProposals: drafts.map((draft) => ({
-      objectiveLocalId: draft.objectiveLocalId,
-      objectiveStatement: draft.objectiveDraft.objectiveStatement,
+    objectiveProposals: contents.map((content) => ({
+      objectiveLocalId: content.objectiveLocalId,
+      objectiveStatement: "说得出间隔重复为什么把复习点安排在即将遗忘的时候",
       priority: "important",
-      knowledgeForm: draft.objectiveDraft.knowledgeForm,
+      knowledgeForm: "causal_model",
       rationale: "这一句在正文里说清了机制",
     })),
-    candidates: drafts,
+    candidates: contents,
   });
 }
 
@@ -280,13 +278,13 @@ test("提示词组装：正文块、可用依据、已有目标、预算上限�
 
 test("草稿级校验：重复 localId 与超上限逐个剔除并留因", () => {
   const drafts = [
-    candidateDraft("obj-1"),
-    candidateDraft("obj-1"),
-    candidateDraft("obj-2"),
-    candidateDraft("obj-3"),
-    candidateDraft("obj-4"),
+    candidateContent("obj-1"),
+    candidateContent("obj-1"),
+    candidateContent("obj-2"),
+    candidateContent("obj-3"),
+    candidateContent("obj-4"),
   ];
-  const { kept, dropped } = validateCardGenerateV3Drafts(drafts, { activationHardMax: 3 });
+  const { kept, dropped } = validateCardGenerateV3Drafts(expandToDrafts(drafts), { activationHardMax: 3 });
   assert.deepEqual(kept.map((draft) => draft.objectiveLocalId), ["obj-1", "obj-2", "obj-3"]);
   assert.deepEqual(dropped.map((item) => item.objectiveLocalId), ["obj-1", "obj-4"]);
   assert.ok(dropped[0]!.reason.includes("重复"));
@@ -295,14 +293,14 @@ test("草稿级校验：重复 localId 与超上限逐个剔除并留因", () =>
 
 test("一份判据：依据越界不在草稿级判，留给组装后的确定性闸", () => {
   // A 在清单里（所以组装能定位到原子），C 不在——越界那一条要能被组装后的闸逮住。
-  const outOfScope = candidateDraft("obj-1", [EVIDENCE_A, EVIDENCE_C]);
-  const { kept, dropped } = validateCardGenerateV3Drafts([outOfScope], { activationHardMax: 3 });
+  const outOfScope = candidateContent("obj-1", [EVIDENCE_A, EVIDENCE_C]);
+  const { kept, dropped } = validateCardGenerateV3Drafts(expandToDrafts([outOfScope]), { activationHardMax: 3 });
   assert.equal(kept.length, 1, "草稿级不判依据越界（判据在 deterministic gates 那一份里）");
   assert.deepEqual(dropped, []);
 
   const assembled = assembleCardGenerationV3({
-    generated: cardGenerateV3OutputSchema.parse(JSON.parse(generateJson([outOfScope]))),
-    acceptedCandidates: [outOfScope],
+    generated: expandCardGenerateV3OutputV3(JSON.parse(generateJson([outOfScope]))).output,
+    acceptedCandidates: expandToDrafts([outOfScope]),
     runId: RUN_ID,
     planRevisionId: PLAN_REVISION_ID,
     planVersion: 1,
@@ -328,8 +326,7 @@ test("一份判据：依据越界不在草稿级判，留给组装后的确定�
 // ── ② 合同即闸 ─────────────────────────────────────────────────────────
 
 test("合同即闸：候选引用未提案的 localId ⇒ output_shape", async () => {
-  const draft = candidateDraft("obj-1");
-  const broken = JSON.parse(generateJson([draft]));
+  const broken = JSON.parse(generateJson([candidateContent("obj-1")]));
   broken.candidates[0].objectiveLocalId = "obj-不存在";
   const provider = scriptedProvider([JSON.stringify(broken)]);
   const task = createCardGenerateV3Task({
@@ -343,7 +340,7 @@ test("合同即闸：候选引用未提案的 localId ⇒ output_shape", async (
 });
 
 test("合同即闸：no_cards 还带着候选 ⇒ output_shape", async () => {
-  const withCandidates = JSON.parse(generateJson([candidateDraft("obj-1")]));
+  const withCandidates = JSON.parse(generateJson([candidateContent("obj-1")]));
   withCandidates.planIntent = { kind: "no_cards_recommended", reasonCodes: ["no_learnable_objective"] };
   const provider = scriptedProvider([JSON.stringify(withCandidates)]);
   const task = createCardGenerateV3Task({
@@ -359,7 +356,6 @@ test("合同即闸：no_cards 还带着候选 ⇒ output_shape", async () => {
 // ── ③ §16.28 的调用数 ──────────────────────────────────────────────────
 
 test("§16.28：普通成功路径 generate 1 发 + check 1 发 = 恰好 2 次语义调用", async () => {
-  const draft = candidateDraft("obj-1");
   const checkJson = JSON.stringify({
     perCandidate: [{
       objectiveLocalId: "obj-1",
@@ -369,7 +365,7 @@ test("§16.28：普通成功路径 generate 1 发 + check 1 发 = 恰好 2 次�
     }],
     setIssues: [],
   });
-  const provider = scriptedProvider([generateJson([draft]), checkJson]);
+  const provider = scriptedProvider([generateJson([candidateContent("obj-1")]), checkJson]);
   const committed: string[] = [];
 
   const generate = createCardGenerateV3Task({
@@ -381,7 +377,7 @@ test("§16.28：普通成功路径 generate 1 发 + check 1 发 = 恰好 2 次�
   assert.ok(generated.ok);
   await generate.commit(taskContext, attemptFixture("card_generate_v3"), generated.output);
 
-  const assembled = assembleCardGenerationV3(assemblyInput([draft], generated.output.parsed));
+  const assembled = assembleCardGenerationV3(assemblyInput(expandToDrafts([candidateContent("obj-1")]), generated.output.parsed));
   const input = checkInputFor(assembled);
   const check = createCardContentCheckV3Task({
     provider: provider as CardGenerationV3ProviderPort<CardContentCheckV3TaskInput>,
@@ -462,8 +458,8 @@ test("确定性那一版：挂不上依据的那一块不出卡", async () => {
 });
 
 test("盖章：模型给的身份与哈希不采信；漏检的候选按没检查过记账", async () => {
-  const assembled = assembleCardGenerationV3(assemblyInput([candidateDraft("obj-1")],
-    cardGenerateV3OutputSchema.parse(JSON.parse(generateJson([candidateDraft("obj-1")])))));
+  const assembled = assembleCardGenerationV3(assemblyInput(expandToDrafts([candidateContent("obj-1")]),
+    expandCardGenerateV3OutputV3(JSON.parse(generateJson([candidateContent("obj-1")]))).output));
   const candidate = assembled.candidates[0]!;
   const input = checkInput([{ objectiveLocalId: "obj-1", candidate }]);
   const stamped = await stampCardContentCheckV3Output({
@@ -491,13 +487,21 @@ test("盖章：模型给的身份与哈希不采信；漏检的候选按没检�
 
 test("整批分配：题型同时落到计划目标与候选题面，模型自选的那一份被覆盖", () => {
   // 草稿的 strategy 一律写 recall；三种形态一批出下来不该还是三张同型。
-  const drafts = [
-    candidateDraft("obj-1"),
-    { ...candidateDraft("obj-2"), objectiveDraft: { ...candidateDraft("obj-2").objectiveDraft, knowledgeForm: "fact" as const } },
-    { ...candidateDraft("obj-3"), objectiveDraft: { ...candidateDraft("obj-3").objectiveDraft, knowledgeForm: "sequence" as const } },
-  ];
-  const assembled = assembleCardGenerationV3(assemblyInput(drafts,
-    cardGenerateV3OutputSchema.parse(JSON.parse(generateJson(drafts)))));
+  // 知识形态现在是**提案**那一列的事（内容里没有它）：三种形态一批出下来不该还是三张同型。
+  const contents = [candidateContent("obj-1"), candidateContent("obj-2"), candidateContent("obj-3")];
+  const forms = ["causal_model", "fact", "sequence"] as const;
+  const expandedBatch = expandCardGenerateV3OutputV3({
+    planIntent: { kind: "author_candidates", recommendedCardCount: 3 },
+    objectiveProposals: contents.map((content, index) => ({
+      objectiveLocalId: content.objectiveLocalId,
+      objectiveStatement: `第 ${index + 1} 条的陈述`,
+      priority: "important",
+      knowledgeForm: forms[index]!,
+      rationale: "用例夹具",
+    })),
+    candidates: contents,
+  }).output;
+  const assembled = assembleCardGenerationV3(assemblyInput(expandedBatch.candidates, expandedBatch));
   if (assembled.plan.result.kind !== "author_candidates") assert.fail("这一批应该有目标");
   const strategies = assembled.plan.result.objectives.map((objective) => objective.strategy);
   assert.ok(new Set(strategies).size > 1, `整批题型不该全同型：${strategies.join("/")}`);
@@ -511,13 +515,14 @@ test("整批分配：题型同时落到计划目标与候选题面，模型自�
 });
 
 test("组装：模型给的 rubricHash 被丢弃重算，候选的 planHash 就是计划那一份", () => {
-  const draft = candidateDraft("obj-1");
-  const assembled = assembleCardGenerationV3(assemblyInput([draft],
-    cardGenerateV3OutputSchema.parse(JSON.parse(generateJson([draft])))));
+  const expanded = expandToDrafts([candidateContent("obj-1")]);
+  const assembled = assembleCardGenerationV3(assemblyInput(expanded,
+    expandCardGenerateV3OutputV3(JSON.parse(generateJson([candidateContent("obj-1")]))).output));
   const candidate = assembled.candidates[0]!;
-  const { rubricHash, ...withoutHash } = draft.objectiveDraft.rubric;
+  const { rubricHash: placeholder, ...withoutHash } = expanded[0]!.objectiveDraft.rubric;
   assert.equal(candidate.objective.rubric.rubricHash, computeRubricHashV2(withoutHash));
-  assert.notEqual(rubricHash, candidate.objective.rubric.rubricHash);
+  assert.notEqual(placeholder, candidate.objective.rubric.rubricHash,
+    "展开器放的那个占位必须被组装层丢掉重算（模型根本不再交哈希这一格）");
   assert.equal(candidate.planHash, assembled.plan.planHash);
   assert.equal(candidate.planRevisionId, assembled.plan.planRevisionId);
 });
@@ -525,11 +530,11 @@ test("组装：模型给的 rubricHash 被丢弃重算，候选的 planHash 就�
 // ── ⑥ 零候选是正常结果 ─────────────────────────────────────────────────
 
 test("no_cards：模型给的理由码折进冻结词表，折不进时按服务端自己的读数说", () => {
-  const noCards = (reasonCodes: string[]) => cardGenerateV3OutputSchema.parse({
+  const noCards = (reasonCodes: string[]) => expandCardGenerateV3OutputV3({
     planIntent: { kind: "no_cards_recommended", reasonCodes },
     objectiveProposals: [],
     candidates: [],
-  });
+  }).output;
   const atoms = extractAtomsDeterministic(noteBlocks.map((block) => ({
     blockId: block.blockId, type: "text", content: block.text, ordinal: block.ordinal,
   })));
@@ -552,7 +557,7 @@ test("no_cards：模型给的理由码折进冻结词表，折不进时按服务
 });
 
 test("全被剔除时计划仍然出得来，并把剔除原因带回给作业层", () => {
-  const orphan = candidateDraft("obj-1", ["9f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f9"]);
+  const orphan = candidateContent("obj-1", ["9f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f9"]);
   const assembled = assembleCardGenerationV3(assemblyInput([orphan],
     cardGenerateV3OutputSchema.parse(JSON.parse(generateJson([orphan])))));
   assert.equal(assembled.plan.result.kind, "no_cards_recommended");
@@ -561,8 +566,8 @@ test("全被剔除时计划仍然出得来，并把剔除原因带回给作业�
 });
 
 test("检查提示词：每一张候选与每条依据都要在场", () => {
-  const assembled = assembleCardGenerationV3(assemblyInput([candidateDraft("obj-1")],
-    cardGenerateV3OutputSchema.parse(JSON.parse(generateJson([candidateDraft("obj-1")])))));
+  const assembled = assembleCardGenerationV3(assemblyInput([candidateContent("obj-1")],
+    cardGenerateV3OutputSchema.parse(JSON.parse(generateJson([candidateContent("obj-1")])))));
   const prompt = buildCardContentCheckV3Prompt(checkInputFor(assembled));
   assert.ok(prompt.includes(EVIDENCE_A), "依据 id 要进检查的提示");
   assert.ok(prompt.includes("复习点为什么安排在快忘的时候"), "题面要进检查的提示");
@@ -573,13 +578,13 @@ test("检查提示词：每一张候选与每条依据都要在场", () => {
 // ── ⑦ 增量改写的身份（与首稿共用同一段组装）────────────────────────────
 
 test("改写：同一张卡长出新修订，旧修订留在 derivedFrom 里", () => {
-  const draft = candidateDraft("obj-1");
+  const draft = expandToDrafts([candidateContent("obj-1")])[0]!;
   const first = buildCandidateRevisionV3({
-    draft, plan: assemblyPlanFor(draft), runId: RUN_ID,
+    draft, plan: assemblyPlanFor(candidateContent("obj-1")), runId: RUN_ID,
     strategy: "why", reasonCodes: ["priority-important"], evidenceSetHash: SNAPSHOT_HASH,
   }).candidate;
   const second = buildCandidateRevisionV3({
-    draft, plan: assemblyPlanFor(draft), runId: RUN_ID,
+    draft, plan: assemblyPlanFor(candidateContent("obj-1")), runId: RUN_ID,
     strategy: first.presentation.strategy, reasonCodes: ["content_check_rewrite"],
     evidenceSetHash: SNAPSHOT_HASH, previous: first,
   }).candidate;
@@ -598,7 +603,7 @@ test("改写：同一张卡长出新修订，旧修订留在 derivedFrom 里", (
   // 第二次改写：谱系必须**累积**，不是每次只指回上一版（少了这一半，
   // "把展开写成覆盖"这种变异在 1→2 这一跳上是等价的、抓不住）。
   const third = buildCandidateRevisionV3({
-    draft, plan: assemblyPlanFor(draft), runId: RUN_ID,
+    draft, plan: assemblyPlanFor(candidateContent("obj-1")), runId: RUN_ID,
     strategy: second.presentation.strategy, reasonCodes: ["content_check_rewrite"],
     evidenceSetHash: SNAPSHOT_HASH, previous: second,
   }).candidate;
@@ -608,8 +613,8 @@ test("改写：同一张卡长出新修订，旧修订留在 derivedFrom 里", (
 });
 
 test("改写：题型沿用上一版那一份，模型漏填的依据沿用旧修订，哈希按补完之后重算", () => {
-  const draft = candidateDraft("obj-1");
-  const plan = assemblyPlanFor(draft);
+  const draft = expandToDrafts([candidateContent("obj-1")])[0]!;
+  const plan = assemblyPlanFor(candidateContent("obj-1"));
   const first = buildCandidateRevisionV3({
     draft, plan, runId: RUN_ID, strategy: "cloze",
     reasonCodes: ["priority-important"], evidenceSetHash: SNAPSHOT_HASH,
@@ -629,21 +634,34 @@ test("改写：题型沿用上一版那一份，模型漏填的依据沿用旧�
     "补完依据之后哈希要重算");
 });
 
-function assemblyPlanFor(_draft: CardGenerateV3CandidateDraft) {
-  const assembled = assembleCardGenerationV3(assemblyInput([candidateDraft("obj-1")],
-    cardGenerateV3OutputSchema.parse(JSON.parse(generateJson([candidateDraft("obj-1")])))));
+function assemblyPlanFor(_draft: CardGenerateV3CandidateContent) {
+  const assembled = assembleCardGenerationV3(assemblyInput([candidateContent("obj-1")],
+    cardGenerateV3OutputSchema.parse(JSON.parse(generateJson([candidateContent("obj-1")])))));
   return assembled.plan;
 }
 
 function assemblyInput(
-  acceptedCandidates: readonly CardGenerateV3CandidateDraft[],
-  generated: ReturnType<typeof cardGenerateV3OutputSchema.parse>,
+  accepted: readonly (CardGenerateV3CandidateContent | CardGenerateV3CandidateDraft)[],
+  generated: CardGenerateV3DraftOutput | CardGenerateV3Output,
   atoms = extractAtomsDeterministic(noteBlocks.map((block) => ({
     blockId: block.blockId, type: "text", content: block.text, ordinal: block.ordinal,
   }))),
 ) {
+  // 夹具两种都给得进来：内容形状（模型交的那一份）或已经展开的草稿。
+  // 内容在这里过**生产那一份**展开器，用例不自己搭脚手架。
+  const acceptedCandidates = accepted.every((c) => "objectiveDraft" in c)
+    ? accepted as readonly CardGenerateV3CandidateDraft[]
+    : expandToDrafts(accepted as readonly CardGenerateV3CandidateContent[]);
+  // 第二份（模型输出）同理：内容形状的在这里过同一个展开器。
+  const asDraftOutput = (() => {
+    const first = generated.candidates[0];
+    if (generated.candidates.length === 0) return expandCardGenerateV3OutputV3(generated).output;
+    return first && "objectiveDraft" in first
+      ? generated as CardGenerateV3DraftOutput
+      : expandCardGenerateV3OutputV3(generated).output;
+  })();
   return {
-    generated,
+    generated: asDraftOutput,
     acceptedCandidates,
     runId: RUN_ID,
     planRevisionId: PLAN_REVISION_ID,
@@ -673,56 +691,46 @@ test("生成提示词里列出了 knowledgeForm 的每一个合法取值", () =>
 
 // ── ⑨ 服务端所有的格子：补 id、重指引用、合同表里不再向模型要 ──────────────
 
-test("stampServerOwnedDraftIdsV3：缺的 id 按顺序补、引用重指、relations 整条拿掉", async () => {
-  const { stampServerOwnedDraftIdsV3 } = await import("./draft-ids.ts");
-  const EVIDENCE_ID = "3f1b1f4c-6d7a-4b1e-9b6f-2a8c1d5e7f90";
-  const parsed = {
-    candidates: [{
-      objectiveDraft: {
-        canonicalAnswer: { kind: "bullets", items: [{ text: "第一格" }, { text: "第二格" }] },
-        rubric: { version: 2, units: [
-          { facet: "recall", criterion: "说出两格", required: true, answerUnitIds: ["我起的名字"],
-            evidenceRefIds: [EVIDENCE_ID], contradictionRules: [] },
-        ] },
-        relations: [{ relationId: "", fromAnswerUnitId: "a", toAnswerUnitId: "b",
-          kind: "before", evidenceRefIds: [EVIDENCE_ID], relationHash: "0".repeat(64) }],
-      },
-    }],
+test("展开器：悬空引用丢掉、steps 只有一段退回 bullets、提案对不上的候选剔除", async () => {
+  const { expandCardGenerateV3ContentV3, expandCardGenerateV3OutputV3 } = await import("./expand-content.ts");
+  const proposal = {
+    objectiveLocalId: "obj-1",
+    objectiveStatement: "说得出间隔重复为什么把复习点安排在即将遗忘的时候",
+    priority: "important" as const,
+    knowledgeForm: "causal_model" as const,
+    rationale: "用例夹具",
   };
-  const report = stampServerOwnedDraftIdsV3(parsed);
-  const draft = parsed.candidates[0].objectiveDraft;
-  assert.deepEqual((draft.canonicalAnswer as { items: Array<{ unitId?: string }> }).items
-    .map((item) => item.unitId), ["au-c1-1", "au-c1-2"], "答案单元的 id 由服务端按顺序补");
-  const unit = (draft.rubric as { units: Array<Record<string, unknown>> }).units[0]!;
-  assert.equal(unit.rubricUnitId, "ru-c1-1");
-  assert.deepEqual(unit.answerUnitIds, ["au-c1-1"],
-    "模型自起的名字必须重指到服务端 id：留着就是过了 schema 却留悬空引用，只有落库后的投影会炸");
-  assert.deepEqual(draft.relations, [], "relations 整条由服务端拿掉（那条 64 位哈希不该由模型交）");
-  assert.deepEqual(report,
-    { answerUnits: 2, rubricUnits: 1, repointedRefs: 1, droppedRelations: 1, stampedHashes: 0 },
-    "补了多少要数得出来——这是「这一批里有多少格子不是模型给的」的读数");
-  const empty = stampServerOwnedDraftIdsV3({ nope: 1 });
-  assert.deepEqual(empty,
-    { answerUnits: 0, rubricUnits: 0, repointedRefs: 0, droppedRelations: 0, stampedHashes: 0 },
-    "形状对不上时不崩、也不假装补过");
-});
+  // 判分点指了不存在的片段号（3）：那一条丢掉并计数，剩下的照旧。
+  const messy = {
+    ...candidateContent("obj-1"),
+    answerForm: "steps" as const,
+    answerParts: [{ text: "只有一段" }],
+    judgingPoints: [
+      { facet: "recall" as const, criterion: "指得到", required: true, partIndexes: [1] },
+      { facet: "explain" as const, criterion: "指空气", required: true, partIndexes: [3] },
+    ],
+  };
+  const one = expandCardGenerateV3ContentV3({ content: messy, proposal });
+  assert.equal(one.droppedPartRefs, 1, "指不到片段的引用要丢掉并计数（留着就是悬空引用）");
+  assert.equal(one.draft.objectiveDraft.rubric.units.length, 1);
+  assert.deepEqual(one.draft.objectiveDraft.rubric.units[0]!.answerUnitIds, ["au-1"],
+    "片段序号要换成服务端 id");
+  assert.equal(one.draft.objectiveDraft.canonicalAnswer.kind, "bullets",
+    "`ordered_steps` 合同要 ≥2 段：只给一段就退回 bullets，而不是让整发红在片段数上");
+  assert.deepEqual(one.draft.objectiveDraft.relations, [], "relations 一律由服务端置空");
 
-test("合同表里不再向模型要服务端 id，也不往 relations 里递归列格子", async () => {
-  const prompt = buildCardGenerateV3Prompt(generateInput);
-  // 只判**合同表那些行**：紧随其后那段实话里本来就要点名这些格子（"服务端会补"），
-  // 拿整块文本去比会把自己的说明当成违例——第一版就是这么红的，红得没有信息量。
-  const sheetLines = prompt.split("\n").filter((line) => line.startsWith("- "));
-  assert.ok(sheetLines.length > 10, `合同表一行都没展开就是空表（空表比缺格更坏）：${sheetLines.length}`);
-  for (const owned of ["rubricUnitId", "relationId", "fromAnswerUnitId", "relationHash", "unitId"]) {
-    assert.ok(!sheetLines.some((line) => line.includes(owned)),
-      `${owned} 由服务端补／拿掉，却还挂在"必填"清单里：同一份提示词里说了两句相反的话`);
-  }
-  assert.ok(!sheetLines.some((line) => line.includes("objectiveDraft.relations")),
-    "整棵 relations 不要了就不该再往里列格子（模型照着填反而必然红）");
-  assert.ok(sheetLines.some((line) => line.includes("rubric.units[]")),
-    "深一层（判分点）必须真的被列出来：以前深度上限把这一层截掉，表看着全、模型照样撞");
-  assert.ok(prompt.includes("服务端会补") && prompt.includes("relations` 不用交"),
-    "收掉的格子要用一句实话说明（服务端会补 id、relations 不用交），否则模型只会猜");
+  // 一条判分点都指不到 ⇒ 这一张不能进牌堆；提案对不上的候选也不进。
+  const empty = expandCardGenerateV3ContentV3({
+    content: { ...messy, judgingPoints: [{ facet: "recall", criterion: "指空气", required: true, partIndexes: [9] }] },
+    proposal,
+  });
+  assert.equal(empty.rubricEmpty, true);
+  // 提案对不上**在合同那一层就被拒**（判据只有一处）：展开器不写第二个答案。
+  assert.throws(() => expandCardGenerateV3OutputV3({
+    planIntent: { kind: "author_candidates", recommendedCardCount: 2 },
+    objectiveProposals: [proposal],
+    candidates: [candidateContent("obj-1"), candidateContent("obj-2")],
+  }), /unknown objectiveLocalId/);
 });
 
 // ── ⑦ 预算要自洽：`maxModelCalls` 得容得下"首次＋那一次自动重试" ──────────────

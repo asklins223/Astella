@@ -18,6 +18,18 @@
  * 它把 `criticVersion: "deterministic-grounding-v1"` 原样带在报告里，**不装作做过
  * 语义判断**——真模型那一刀换的是这个文件里的两个函数，外壳与判据不动。
  */
+const FACET_BY_KNOWLEDGE_FORM_V3: Record<string, "recall" | "paraphrase" | "explain" | "example" | "apply" | "boundary" | "procedure" | "relate" | "repair"> = {
+  fact: "recall",
+  definition: "paraphrase",
+  relationship: "relate",
+  comparison: "relate",
+  sequence: "procedure",
+  procedure: "procedure",
+  causal_model: "explain",
+  boundary: "boundary",
+  application_rule: "apply",
+};
+
 import {
   DeterministicAuthoringProvider,
   allocateStrategies,
@@ -25,11 +37,11 @@ import {
   runDeterministicGroundingContract,
   type SourceBlockInput,
 } from "@ailearn/shared/card-generation-v2-pipeline";
+import { contentFromObjectiveDraftV3 } from "./expand-content.ts";
 import type { PlannedObjectiveV2 } from "@ailearn/shared/card-generation-v2-contracts";
-import { computeRubricHashV2 } from "@ailearn/shared/card-generation-v2-hashing";
 import type {
   CardGenerateV3ObjectiveProposal,
-  CardGenerateV3CandidateDraft,
+  CardGenerateV3CandidateContent,
 } from "@ailearn/shared/card-generation-v3-contracts";
 import type {
   CardCandidateRewriteV3TaskInput,
@@ -89,7 +101,7 @@ export function createDeterministicCardGenerateV3Provider(): CardGenerationV3Pro
 
       // 题型整批分配在这里也走一遍——决定题型的是批次，不是逐张出题的那一方。
       const allocations = allocateStrategies(usable.map((entry) => entry.atom.knowledgeFormHint));
-      const candidates: CardGenerateV3CandidateDraft[] = [];
+      const candidates: CardGenerateV3CandidateContent[] = [];
       const proposals: CardGenerateV3ObjectiveProposal[] = [];
 
       for (const [index, entry] of usable.entries()) {
@@ -110,6 +122,10 @@ export function createDeterministicCardGenerateV3Provider(): CardGenerationV3Pro
           estimatedReviewCostSeconds: Math.min(300, Math.max(30, entry.atom.proposition.length)),
           changeContext: { kind: "create_new" },
         };
+        // 确定性这一版也只交**内容**（模型那一份小形状）：脚手架由
+        // `expandCardGenerateV3ContentV3` 搭，两条路共用同一个端口、同一份展开。
+        // 题面与两级提示仍取自离线作者——它那两句是**不泄答案**的（闸门判
+        // `front_leaks_answer`／`cue_is_claim_copy`，第一版我拿目标陈述当 cue，整批被拦）。
         const drafted = await author.authorCandidate({
           planObjective,
           sourceContent,
@@ -118,28 +134,24 @@ export function createDeterministicCardGenerateV3Provider(): CardGenerationV3Pro
           evidenceList: entry.evidenceRefIds.map((evidenceSnapshotId) => ({ evidenceSnapshotId })),
           evidenceSetHash: input.inputSnapshotHash,
         });
-        // 确定性作者给不出依据（它的证据数组是空的），这里按块把真依据补上，
-        // 并因为 rubric 单元变了而重算 rubricHash（服务端组装时还会再算一次）。
-        const objective = {
-          ...drafted.objective,
-          evidenceRefIds: entry.evidenceRefIds,
-          rubric: {
-            ...drafted.objective.rubric,
-            units: drafted.objective.rubric.units.map((unit) => ({
-              ...unit,
-              evidenceRefIds: entry.evidenceRefIds,
-            })),
-          },
-        };
-        const { rubricHash: _previous, ...rubricWithoutHash } = objective.rubric;
+        const proposition = entry.atom.proposition;
         candidates.push({
           objectiveLocalId,
-          objectiveDraft: {
-            ...objective,
-            rubric: { ...rubricWithoutHash, rubricHash: computeRubricHashV2(rubricWithoutHash) },
-          },
-          presentationDraft: drafted.presentation,
+          conceptLabel: planObjective.objectiveStatement.slice(0, 200),
+          publicSummary: planObjective.objectiveStatement.slice(0, 1500),
+          answerForm: "prose",
+          answerParts: [{ text: proposition.slice(0, 4000) }],
+          judgingPoints: [{
+            facet: FACET_BY_KNOWLEDGE_FORM_V3[entry.atom.knowledgeFormHint] ?? "recall",
+            criterion: `说出这一句的关键点：${proposition.slice(0, 200)}`,
+            required: true,
+            partIndexes: [1],
+          }],
+          explanation: proposition.slice(0, 6000),
+          front: drafted.presentation.front,
           hints: drafted.hints,
+          estimatedReviewSeconds: planObjective.estimatedReviewCostSeconds,
+          evidenceSnapshotIds: entry.evidenceRefIds,
         });
         proposals.push({
           objectiveLocalId,
@@ -193,13 +205,14 @@ export function createDeterministicCardCandidateRewriteV3Provider(): CardGenerat
     modelId: DETERMINISTIC_MODEL_ID,
     async complete({ input }) {
       return {
+        // 走反向映射交回**内容**：同一个端口两条路说同一句话（重形状只在服务端内部流动）。
         text: JSON.stringify({
-          rewrites: [{
+          rewrites: [contentFromObjectiveDraftV3({
             objectiveLocalId: input.candidate.planObjectiveLocalId,
-            objectiveDraft: input.candidate.objective,
-            presentationDraft: input.candidate.presentation,
+            draft: input.candidate.objective,
+            presentation: input.candidate.presentation,
             hints: input.hints,
-          }],
+          })],
         }),
       };
     },

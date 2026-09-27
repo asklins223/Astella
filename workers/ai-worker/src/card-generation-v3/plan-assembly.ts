@@ -47,11 +47,11 @@ import {
 } from "@ailearn/shared/card-generation-v2-pipeline";
 import {
   type CardGenerateV3CandidateDraft,
-  type CardGenerateV3Output,
+  type CardGenerateV3DraftOutput,
 } from "@ailearn/shared/card-generation-v3-contracts";
 
 export interface CardGenerateV3AssemblyInput {
-  readonly generated: CardGenerateV3Output;
+  readonly generated: CardGenerateV3DraftOutput;
   /** 过程序校验后**留下**的候选草稿（顺序即落库顺序）。 */
   readonly acceptedCandidates: readonly CardGenerateV3CandidateDraft[];
   readonly runId: string;

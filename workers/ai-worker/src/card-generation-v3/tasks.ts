@@ -29,13 +29,11 @@
 import {
   cardCandidateRewriteV3OutputSchema,
   cardContentCheckV3OutputSchema,
-  cardGenerateV3CandidateDraftSchema,
+  cardGenerateV3CandidateContentSchema,
   cardGenerateV3ObjectiveProposalSchema,
-  cardGenerateV3OutputSchema,
-  type CardCandidateRewriteV3Output,
   type CardContentCheckV3Output,
   type CardGenerateV3CandidateDraft,
-  type CardGenerateV3Output,
+  type CardGenerateV3DraftOutput,
 } from "@ailearn/shared/card-generation-v3-contracts";
 import type {
   CardHintPairV2,
@@ -61,7 +59,7 @@ import type {
   CardGenerateV3DroppedCandidate,
   CardGenerateV3TaskOutput,
 } from "./output-types.ts";
-import { stampServerOwnedDraftIdsV3 } from "./draft-ids.ts";
+import { expandCardGenerateV3OutputV3 } from "./expand-content.ts";
 
 /** execute 的解析失败形状（内核 AiStepFailure 的结构复刻）。 */
 interface ParseFailure {
@@ -216,7 +214,7 @@ function contractSheetForV3(schemas: Record<string, unknown>): string {
 
 const CANDIDATE_SHEET_V3 = contractSheetForV3({
   objectiveProposals: cardGenerateV3ObjectiveProposalSchema,
-  candidates: cardGenerateV3CandidateDraftSchema,
+  candidates: cardGenerateV3CandidateContentSchema,
 });
 
 export function buildCardGenerateV3Prompt(input: CardGenerateV3TaskInput): string {
@@ -339,13 +337,10 @@ export function createCardGenerateV3Task(
         input,
         signal: env.signal,
       });
-      let parsed: CardGenerateV3Output;
+      let parsed: CardGenerateV3DraftOutput;
       try {
-        // 解析之前先把**服务端所有**的格子补好/拿掉（id、引用、relations）——
-        // 放在 parse 之后就来不及了：那一层就是判 `output_shape` 的地方。
-        const draft = JSON.parse(completion.text);
-        stampServerOwnedDraftIdsV3(draft);
-        parsed = cardGenerateV3OutputSchema.parse(draft);
+        // 模型交的是**内容**（四种产出型＋判分点只指片段序号），V2 那套脚手架由服务端搭。
+        parsed = expandCardGenerateV3OutputV3(JSON.parse(completion.text)).output;
       } catch (error) {
         const failure: ParseFailure = {
           ok: false,
@@ -663,9 +658,26 @@ export function createCardCandidateRewriteV3Task(
         input,
         signal: env.signal,
       });
-      let drafts: CardCandidateRewriteV3Output;
+      let drafts: { rewrites: CardGenerateV3CandidateDraft[] };
       try {
-        drafts = cardCandidateRewriteV3OutputSchema.parse(JSON.parse(completion.text));
+        // 改写交回的仍是同一份**内容**：目标陈述与知识形态沿用上一版（不让模型在改写里改目标）。
+        const rewritten = cardCandidateRewriteV3OutputSchema.parse(JSON.parse(completion.text));
+        const previous = input.candidate as unknown as {
+          planObjectiveLocalId: string; objectiveStatement?: string; knowledgeForm?: string;
+        };
+        drafts = {
+          rewrites: expandCardGenerateV3OutputV3({
+            planIntent: { kind: "author_candidates", recommendedCardCount: 1 },
+            objectiveProposals: [{
+              objectiveLocalId: previous.planObjectiveLocalId,
+              objectiveStatement: previous.objectiveStatement ?? rewritten.rewrites[0]!.publicSummary,
+              priority: "critical",
+              knowledgeForm: previous.knowledgeForm ?? "fact",
+              rationale: "改写沿用上一版的目标陈述",
+            }],
+            candidates: rewritten.rewrites,
+          }).output.candidates,
+        };
       } catch (error) {
         const failure: ParseFailure = {
           ok: false,

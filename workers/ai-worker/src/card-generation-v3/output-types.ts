@@ -6,7 +6,7 @@
  */
 import type {
   CardContentCheckV3Output,
-  CardGenerateV3Output,
+  CardGenerateV3DraftOutput,
 } from "@ailearn/shared/card-generation-v3-contracts";
 
 export interface CardGenerateV3DroppedCandidate {
@@ -15,7 +15,7 @@ export interface CardGenerateV3DroppedCandidate {
 }
 
 export interface CardGenerateV3TaskOutput {
-  readonly parsed: CardGenerateV3Output;
+  readonly parsed: CardGenerateV3DraftOutput;
   /** 程序校验剔除的候选与原因（39c §6.1：剔除留痕，不让整份输出陪葬）。 */
   readonly droppedCandidates: ReadonlyArray<CardGenerateV3DroppedCandidate>;
   /** 剔除后仍可落库的候选数；commit 据此写 plan＋候选行。 */
