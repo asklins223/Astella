@@ -26,7 +26,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import { ensurePendingReviewScheduleV2 } from "../review/review-schedule-boundary.ts";
 import type { ApiTransaction } from "../../db/client.ts";
@@ -136,6 +136,24 @@ function bindingEntryEvidenceSnapshotIds(entry: Record<string, unknown>): string
     return [entry.evidenceSnapshotId];
   }
   return [];
+}
+
+/**
+ * 同一条修订可以有**多份** binding plan 行（首次生成、重检、按反馈改写各插一行；
+ * 这张表只有 `binding_plan_id` 是唯一键，`candidate_revision_id` 上是普通索引）。
+ * 门要读的是这条修订**当前带着**的那一份——候选行的 `evidence_binding_plan_hash`
+ * 指它（worker 插行的同一步就把该列写成这行的 hash）——不是"查询顺手返回的最后一份"。
+ * 此前三处读点分别用 `new Map(rows.map(...))` 和不带 ORDER BY 的 `.limit(1)` 把多行
+ * 收敛成一行，于是同一份数据两次查询可能一个放行一个拒绝；§13.1 那道 revoked 证据门
+ * 就是其中一处。候选没带 hash（历史行、手写夹具）时退到"排序后的最后一份"，
+ * 仍然是确定的，不再依赖物理顺序。调用方必须按 (created_at, id) 升序把全量行交进来。
+ */
+function pickCurrentBindingPlanV2<T extends { bindingPlanHash: string }>(
+  rows: readonly T[],
+  namedHash: string | null | undefined,
+): T | undefined {
+  const named = namedHash ? rows.find((r) => r.bindingPlanHash === namedHash) : undefined;
+  return named ?? rows[rows.length - 1];
 }
 
 /**
@@ -341,8 +359,16 @@ export async function activateCardCandidatesV2(
             inArray(candidateEvidenceBindingPlansV2.candidateRevisionId, selectedRevisionIds),
             eq(candidateEvidenceBindingPlansV2.workspaceId, ctx.workspaceId),
           ))
+          // 一条修订可能有多行（首次生成／重检／改写各插一行），要按确定顺序全量取回，
+          // 再由 `pickCurrentBindingPlanV2` 按候选带着的那份 hash 选一行。
+          .orderBy(asc(candidateEvidenceBindingPlansV2.createdAt), asc(candidateEvidenceBindingPlansV2.id))
       : [];
-    const bindingByRev = new Map(bindingPlanRows.map((r) => [r.candidateRevisionId, r]));
+    const bindingRowsByRev = new Map<string, typeof bindingPlanRows>();
+    for (const row of bindingPlanRows) {
+      const bucket = bindingRowsByRev.get(row.candidateRevisionId);
+      if (bucket) bucket.push(row);
+      else bindingRowsByRev.set(row.candidateRevisionId, [row]);
+    }
     // 收集全部 evidence snapshot id（去重）后批量查询可用性。
     // R32：条目为完整 binding 形状（单数 evidenceSnapshotId，见 §14.3
     // candidateEvidenceBindingPlanV2Schema.bindings）；此前读取复数
@@ -416,7 +442,10 @@ export async function activateCardCandidatesV2(
           throw new CardGenerationV2ServiceError("quality_gate_failed", 409, "候选未通过质量门禁，只有 passed 状态的候选可以激活");
         }
         // §13.1: 验证 evidence_eligibility_states_v2 表证据可用性
-        const bindingPlanRow = bindingByRev.get(selected.candidateRevisionId);
+        const bindingPlanRow = pickCurrentBindingPlanV2(
+          bindingRowsByRev.get(selected.candidateRevisionId) ?? [],
+          c.evidenceBindingPlanHash,
+        );
         if (bindingPlanRow && Array.isArray(bindingPlanRow.targetUnitBindings)) {
           const bindings = bindingPlanRow.targetUnitBindings as Array<Record<string, unknown>>;
           const bindSnapshotIds = bindings.flatMap(bindingEntryEvidenceSnapshotIds);
@@ -895,14 +924,16 @@ async function createOrUpdateObjectiveAndCard(
       // §17.5 step 9 / §12.2：从 exact CandidateEvidenceBindingPlanV2 机械映射
       // canonical bindings（不能新增/删除/改变支持强度）；plan 缺失时退化为空集
       // （R4 前的过渡态），一旦 assembler 产出 plan，此路径即携带真实闭包。
+      // 这条映射出的闭包会被持久化进学习目标，所以同样只准读候选当前带着的那一份：
+      // 不带 ORDER BY 的 `.limit(1)` 在一条修订有多行时读的是物理顺序。
       const planRows = await tx.select()
         .from(candidateEvidenceBindingPlansV2)
         .where(and(
           eq(candidateEvidenceBindingPlansV2.candidateRevisionId, candidate.candidateRevisionId),
           eq(candidateEvidenceBindingPlansV2.workspaceId, ctx.workspaceId),
         ))
-        .limit(1);
-      const bindingPlan = planRows[0] ?? null;
+        .orderBy(asc(candidateEvidenceBindingPlansV2.createdAt), asc(candidateEvidenceBindingPlansV2.id));
+      const bindingPlan = pickCurrentBindingPlanV2(planRows, candidate.evidenceBindingPlanHash) ?? null;
       const canonicalBindings: Array<{
         bindingId: string;
         targetUnit: { kind: string; [k: string]: unknown };
@@ -1645,8 +1676,10 @@ async function createOrUpdateObjectiveAndCard(
           eq(candidateEvidenceBindingPlansV2.candidateRevisionId, candidate.candidateRevisionId),
           eq(candidateEvidenceBindingPlansV2.workspaceId, ctx.workspaceId),
         ))
-        .limit(1);
-      const proposedEvidenceBindingPlanHash = bindingPlanRows[0]?.bindingPlanHash
+        .orderBy(asc(candidateEvidenceBindingPlansV2.createdAt), asc(candidateEvidenceBindingPlansV2.id));
+      const proposedEvidenceBindingPlanHash = pickCurrentBindingPlanV2(
+        bindingPlanRows, candidate.evidenceBindingPlanHash,
+      )?.bindingPlanHash
         ?? hashCanonicalV2("candidate-evidence-binding-plan-v2", { candidateRevisionId: candidate.candidateRevisionId });
       const computedEquivalenceHash = hashCanonicalV2("objective-equivalence-report-v2", {
         objectiveId: intent.objectiveId,

@@ -183,6 +183,13 @@ async function activateFirstCandidate(runId: string, snapshotId: string, snapsho
             ${first.candidate_revision_id}, ${first.candidate_revision_hash},
             ${plan.plan_revision_id}, ${plan.plan_version}, ${plan.plan_hash},
             ${JSON.stringify(bindings)}, ${bindingPlanHash}, ${"a".repeat(64)})`;
+  // 手写 plan 行之后要把它"点名"到候选行上：§13.1 那道门读的是候选行的
+  // `evidence_binding_plan_hash` 所指的那一份（生产里 worker 插 plan 的同一步就写这个列），
+  // 不是查询顺手返回的最后一份。不点名就等于让夹具依赖物理顺序。
+  await admin`
+    UPDATE card_generation_candidates_v2
+    SET evidence_binding_plan_hash = ${bindingPlanHash}, updated_at = now()
+    WHERE workspace_id = ${WORKSPACE_ID} AND candidate_revision_id = ${first.candidate_revision_id}`;
   const { activateCardCandidatesV2 } = await import(
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
@@ -421,48 +428,95 @@ test("§15.7/C31：Evidence Redaction — tombstone + eligibility 前移 + 幂�
             ${first.candidate_revision_id}, ${first.candidate_revision_hash},
             ${plan.plan_revision_id}, ${plan.plan_version}, ${plan.plan_hash},
             ${JSON.stringify(bindings)}, ${bindingPlanHash}, ${"a".repeat(64)})`;
+  // 手写 plan 行之后要把它"点名"到候选行上：§13.1 那道门读的是候选行的
+  // `evidence_binding_plan_hash` 所指的那一份（生产里 worker 插 plan 的同一步就写这个列），
+  // 不是查询顺手返回的最后一份。不点名就等于让夹具依赖物理顺序。
+  await admin`
+    UPDATE card_generation_candidates_v2
+    SET evidence_binding_plan_hash = ${bindingPlanHash}, updated_at = now()
+    WHERE workspace_id = ${WORKSPACE_ID} AND candidate_revision_id = ${first.candidate_revision_id}`;
   const clientReviewHash = computeClientReviewHashV2({
     runId: run2,
     expectedReviewDraftRevision: Number(runRow.review_draft_revision),
     selected: [{ candidateId: first.candidate_id, revision: first.revision, revisionHash: first.candidate_revision_hash }],
     reviewUiContractVersion: "review-ui-v1",
   });
-  const key2 = `rq-activate-after-redact-${randomUUID()}`;
+  const c31Body = {
+    version: 2 as const,
+    runId: run2,
+    sourceSnapshotHash: runRow.source_snapshot_hash,
+    semanticSpecHash: runRow.semantic_spec_hash,
+    inputSnapshotHash: runRow.input_snapshot_hash,
+    expectedCardContentEpoch: Number(runRow.card_content_epoch),
+    planRevisionId: plan.plan_revision_id,
+    expectedPlanVersion: Number(plan.plan_version),
+    planHash: plan.plan_hash,
+    selectedCandidates: [{
+      candidateRevisionId: first.candidate_revision_id,
+      candidateId: first.candidate_id,
+      revision: first.revision,
+      revisionHash: first.candidate_revision_hash,
+      candidateEvidenceBindingPlanHash: bindingPlanHash,
+      qualityReportHashes: [],
+      intent: { kind: "create_new" } as const,
+    }],
+    existingLifecycleActions: [],
+    expectedReviewDraftRevision: Number(runRow.review_draft_revision),
+    clientReviewHash,
+  };
+  /** 同一份请求体重投一发（只换幂等键）：门读的是库里的点名，不是请求里那份 hash。 */
+  const activateC31 = () => activateCardCandidatesV2(
+    { workspaceId: WORKSPACE_ID, userId: USER_ID }, c31Body, `rq-c31-${randomUUID()}`,
+  );
   await assert.rejects(
-    activateCardCandidatesV2(
-      { workspaceId: WORKSPACE_ID, userId: USER_ID },
-      {
-        version: 2,
-        runId: run2,
-        sourceSnapshotHash: runRow.source_snapshot_hash,
-        semanticSpecHash: runRow.semantic_spec_hash,
-        inputSnapshotHash: runRow.input_snapshot_hash,
-        expectedCardContentEpoch: Number(runRow.card_content_epoch),
-        planRevisionId: plan.plan_revision_id,
-        expectedPlanVersion: Number(plan.plan_version),
-        planHash: plan.plan_hash,
-        selectedCandidates: [{
-          candidateRevisionId: first.candidate_revision_id,
-          candidateId: first.candidate_id,
-          revision: first.revision,
-          revisionHash: first.candidate_revision_hash,
-          candidateEvidenceBindingPlanHash: bindingPlanHash,
-          qualityReportHashes: [],
-          intent: { kind: "create_new" } as const,
-        }],
-        existingLifecycleActions: [],
-        expectedReviewDraftRevision: Number(runRow.review_draft_revision),
-        clientReviewHash,
-      },
-      key2,
-    ),
+    activateC31(),
     (err: unknown) => (err as { code?: string }).code === "evidence_revoked",
     "C31: activation must be rejected after redaction (evidence_revoked)",
   );
   const receiptsAfter = await admin`
     SELECT count(*)::int AS n FROM card_activation_receipts_v2
-    WHERE workspace_id = ${WORKSPACE_ID} AND idempotency_key = ${key2}`;
+    WHERE workspace_id = ${WORKSPACE_ID} AND run_id = ${run2}`;
   assert.equal(receiptsAfter[0].n, 0, "rejected activation must leave 0 receipts");
+
+  // ── 常驻守卫：一条修订有多份 binding plan 行时，门只准读"候选点名的那一份" ──
+  // 这张表只有 `binding_plan_id` 是唯一键，`candidate_revision_id` 上是普通索引：首次生成、
+  // 重检、按反馈改写各会留下一行。此前这道门把多行收敛成一行用的是 `new Map(rows.map(...))`
+  // ——最后一行胜出，而"最后"由物理布局决定。C31 那发间歇红（整网 2/20、单跑全绿）正是这个
+  // 形状：同一条修订上同时挂着链自己写的那一份（证据都还可用）与本夹具写的这一份（证据已遮蔽）。
+  // 下面把**干净的那一份插在最后**再投一发，仍然必须拒。改回按查询返回顺序取行 → 这一格红。
+  // 反方向不必再加一格：本用例前半段 §15.7 那次**成功**激活走的是同一套点名读取
+  // （它的候选同样带着链写的那一份），"点名干净 ⇒ 放行"已经被它覆盖。
+  const otherPlanRows = await admin`
+    SELECT binding_plan_hash, target_unit_bindings FROM candidate_evidence_binding_plans_v2
+    WHERE workspace_id = ${WORKSPACE_ID} AND candidate_revision_id = ${first.candidate_revision_id}
+      AND binding_plan_hash <> ${bindingPlanHash}
+    ORDER BY created_at, id LIMIT 1`;
+  const otherPlan = (otherPlanRows as unknown as Array<{
+    binding_plan_hash: string; target_unit_bindings: unknown;
+  }>)[0];
+  assert.ok(otherPlan,
+    "守卫前提：这条修订上还得有第二份 plan 行（链写的那一份），否则这一格无从判起");
+  const cleanBindings = (typeof otherPlan!.target_unit_bindings === "string"
+    ? JSON.parse(otherPlan!.target_unit_bindings)
+    : otherPlan!.target_unit_bindings) as Array<Record<string, unknown>>;
+  const cleanSnapshotIds = [...new Set(cleanBindings
+    .flatMap((e) => (typeof e.evidenceSnapshotId === "string" ? [e.evidenceSnapshotId] : [])))];
+  assert.ok(cleanSnapshotIds.length > 0,
+    "守卫前提：第二份 plan 行里抽不出证据快照 ⇒ 它本来就管不到资格判定");
+  await admin`
+    INSERT INTO candidate_evidence_binding_plans_v2
+      (id, workspace_id, binding_plan_id, run_id, candidate_revision_id,
+       candidate_revision_hash, plan_revision_id, plan_version, plan_hash,
+       target_unit_bindings, binding_plan_hash, evidence_eligibility_vector_hash)
+    VALUES (${randomUUID()}, ${WORKSPACE_ID}, ${randomUUID()}, ${run2},
+            ${first.candidate_revision_id}, ${first.candidate_revision_hash},
+            ${plan.plan_revision_id}, ${plan.plan_version}, ${plan.plan_hash},
+            ${JSON.stringify(cleanBindings)}, ${"e".repeat(64)}, ${"a".repeat(64)})`;
+  await assert.rejects(
+    activateC31(),
+    (err: unknown) => (err as { code?: string }).code === "evidence_revoked",
+    "C31 守卫：后插的那一份干净 plan 不许把候选点名的那一份（证据已遮蔽）遮掉",
+  );
 
   // ── redaction 后：PREPARE 必须 fail closed（§16.2）──
   //
