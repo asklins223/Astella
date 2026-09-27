@@ -29,3 +29,4 @@ export * from "./companion.ts";
 export * from "./companion-conversations.ts";
 export * from "./learning-metrics.ts";
 export * from "./note-learning-rounds.ts";
+export * from "./note-learning-reflections.ts";

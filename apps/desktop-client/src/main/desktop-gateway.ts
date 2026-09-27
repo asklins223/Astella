@@ -1,3 +1,4 @@
+import { noteReflectionPageV1Schema, noteReflectionWriteResultV1Schema, type NoteReflectionCommandV1 } from "@ailearn/shared/note-learning-reflection-contracts";
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
@@ -2202,6 +2203,35 @@ export class DesktopGateway {
    * `teaching: null` 是**服务端的诚实回答**（还没讲过／问题刚被改写），不是错误——
    * 所以这一发不折 404：轮次不存在才是错（`round_not_found`），交给错误映射。
    */
+  async listNoteReflections(input: { noteId: string; roundId?: string; before?: string; reflectionId?: string }, requestId?: string) {
+    await this.ensureConnected(requestId);
+    const query = new URLSearchParams();
+    if (input.roundId) query.set("roundId", this.safeUuid(input.roundId));
+    if (input.before) query.set("before", this.safeUuid(input.before));
+    if (input.reflectionId) query.set("reflectionId", this.safeUuid(input.reflectionId));
+    const result = await this.request(`/v2/notes/${this.safeUuid(input.noteId)}/learning-reflections?${query}`, { method: "GET" }, true, true, requestId);
+    if (result.status >= 300) throw this.mapResponseError(result.status, result.headers);
+    const parsed = noteReflectionPageV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+  async writeNoteReflection(noteId: string, command: NoteReflectionCommandV1, requestId?: string) {
+    await this.ensureConnected(requestId);
+    const base = `/v2/notes/${this.safeUuid(noteId)}/learning-reflections`;
+    const result = await this.request(command.kind === "create" ? base : `${base}/${this.safeUuid(command.reflectionId)}`, {
+      method: command.kind === "create" ? "POST" : command.kind === "update" ? "PATCH" : "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(command.kind === "create" ? { source: command.source, annotation: command.annotation }
+        : command.kind === "update" ? { expectedRevision: command.expectedRevision, annotation: command.annotation }
+          : { expectedRevision: command.expectedRevision }),
+    }, true, true, requestId);
+    if (result.status >= 300) throw this.mapResponseError(result.status, result.headers);
+    const parsed = noteReflectionWriteResultV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
   async getNoteLearningRoundTeaching(roundId: string, requestId?: string): Promise<RoundTeachingViewV1> {
     await this.ensureConnected(requestId);
     const result = await this.request(
@@ -5535,6 +5565,7 @@ const NOTE_DOMAIN_ERROR_CODES: Record<string, GatewayErrorCode> = {
 const CONSENT_REQUIRED_TOKEN = "ai_consent_required";
 
 const NOTE_TEACHING_DOMAIN_CODES: Record<string, { status: number; code: GatewayErrorCode }> = {
+  reflection_stale_revision: { status: 409, code: "reflection_stale_revision" },
   teaching_grounding_failed: { status: 422, code: "teaching_grounding_failed" },
   teaching_model_unconfigured: { status: 503, code: "teaching_model_unconfigured" },
   teaching_in_progress: { status: 409, code: "teaching_in_progress" },

@@ -1,3 +1,5 @@
+import { NoteReflectionShelf } from "./note-reflection-shelf";
+import { stageReflectionAppend } from "./note-reflection-document";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BookOpen, History, LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
@@ -602,6 +604,9 @@ export function NotebookSurface() {
     return account.displayName?.trim() || account.email.split("@")[0]?.trim() || null;
   });
   const setReturnTarget = useRoomStore((state) => state.setReturnTarget);
+  const [reflectionRoundId, setReflectionRoundId] = useState<string | undefined>(undefined);
+  const appendedReflections = useRef(new Map<string, string>());
+  const reflectionShelfRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<NoteMarkdownEditorHandle | null>(null);
   const editorPaneRef = useRef<HTMLDivElement>(null);
   const epochRef = useRef<number | undefined>(undefined);
@@ -610,7 +615,11 @@ export function NotebookSurface() {
   const [mode, setMode] = useState<"read" | "edit">("read");
   const [leaf, setLeaf] = useState<"reading" | "learning" | "history">("reading");
   const leafScrollRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => { setLeaf("reading"); }, [activeNoteRef?.noteId]);
+  useEffect(() => {
+    setLeaf("reading");
+    setReflectionRoundId(undefined);
+    appendedReflections.current.clear();
+  }, [activeNoteRef?.noteId]);
   useEffect(() => { if (leafScrollRef.current) leafScrollRef.current.scrollTop = 0; }, [leaf]);
   /**
    * `title` 是**本机改过、还没写进文档**的那一份，`null` = 这一屏没改过标题，
@@ -1154,6 +1163,7 @@ export function NotebookSurface() {
       // 编辑器整个卸掉——自动保存每按几下就来一次，那等于每次保存都把选区、滚动位置和
       // 还没交出去的字一起带走。版本号、权限那半边照样刷新。
       await reload({ silent: true });
+      if (reason === "manual") appendedReflections.current.clear();
       return true;
     } catch (error) {
       setSaveState("error");
@@ -2617,6 +2627,13 @@ export function NotebookSurface() {
                 <span className="small notebook-round-history__day">{roundRecordDayV1(item.startedAt)}</span>
                 <span className="small notebook-round-history__state">{roundHistoryStateLabelV1(item)}</span>
                 <span className="notebook-round-history__question">{item.drivingQuestion}</span>
+                {item.actualModes.length ? <button type="button" className="text-action" onClick={() => {
+                  setReflectionRoundId(item.roundId);
+                  requestAnimationFrame(() => {
+                    reflectionShelfRef.current?.scrollIntoView({ block: "start" });
+                    reflectionShelfRef.current?.querySelector("summary")?.focus();
+                  });
+                }}>留下这一轮的理解</button> : null}
                 {item.actualModes.length > 0 ? (
                   <span className="small notebook-round-history__modes" data-round-history-modes="true">
                     {roundRecordModesLabelV1(item.actualModes)}
@@ -2661,6 +2678,17 @@ export function NotebookSurface() {
           </div>
         ) : null}
       </section>
+      <div className="note-reflection-anchor" ref={reflectionShelfRef}><NoteReflectionShelf key={note.noteId} noteId={note.noteId} roundId={leaf === "history" ? reflectionRoundId : openRound?.roundId}
+        refreshKey={`${roundTeaching?.teachingId ?? ""}:${roundPractices.map(p => `${p.runId}:${p.phase}`).join(",")}`}
+        workspaceEpoch={epochRef.current} canAppend={canSave && Boolean(noteDocLive.fragment) && !saving} shared={note.shareScope === "shared"}
+        openSources={leaf === "history" && Boolean(reflectionRoundId)}
+        onInspectBody={() => { setMode("read"); setLeaf("reading"); }}
+        onAppend={async (source, annotation) => {
+          if (!note.permissions.canSave || !noteDocLive.fragment || saving) throw new Error("正文此刻不可编辑，请回到笔记核对权限和保存状态。");
+          stageReflectionAppend(noteDocLive.fragment, note.noteId, source, annotation, appendedReflections.current);
+          const saved = await save("manual");
+          return saved;
+        }} /></div>
       {/* Leaving the editor now commits the pending draft first, so a reader who
           lands here must be told what happened to it instead of seeing the older
           server text with no explanation. */}

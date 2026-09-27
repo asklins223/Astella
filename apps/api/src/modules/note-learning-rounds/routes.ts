@@ -97,6 +97,7 @@ import { assembleObjectiveSurfaceV3, listObjectiveSurfacesV3 } from "../learning
 import { createRoundTargetGrounder, type RoundTargetGrounder } from "./target-grounding.ts";
 import { persistRoundTarget, readRoundTargetId } from "./round-target.ts";
 import { roundBudgetsV1 } from "./round-budgets.ts";
+import { noteReflectionRoutes } from "./reflection-routes.ts";
 
 const STATUS_BY_CODE: Record<string, 400 | 404 | 409 | 500 | 503> = {
   invalid_driving_question: 400,
@@ -223,6 +224,7 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
   };
   const targetGrounder = options.targetGrounder ?? createRoundTargetGrounder(modelConfig);
   app.addHook("preHandler", requireSession);
+  noteReflectionRoutes(app);
 
   app.post("/v2/note-learning-rounds", async (req, reply) => {
     const parsed = createNoteLearningRoundRequestV1Schema.safeParse(req.body ?? {});

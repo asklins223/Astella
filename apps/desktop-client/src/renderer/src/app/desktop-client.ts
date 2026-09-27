@@ -116,6 +116,8 @@ export function gatewayErrorMessage(error: unknown): string {
     // 也落不到正文上（会挂成进不来的结构）。所以这句只说下一步做什么，不说做不到的事。
     case "note_doc_stale":
       return "这篇笔记的编辑起点已经过期（本机这份和服务端对不上），这次改动没有存进去。退出这篇重新打开就能继续写。";
+    case "reflection_stale_revision":
+      return "另一处已修改这条批注。你的文字还在；重新读取后，核对新的批注再保存。";
     case "teaching_grounding_failed":
       return "这次讲解的依据还没核对通过，暂时没有展示。可以重试，或先继续读笔记。";
     case "teaching_model_unconfigured":

@@ -430,6 +430,16 @@
       "types": "./src/card-generation-v3-contracts.ts",
       "import": "./src/card-generation-v3-contracts.ts",
       "default": "./src/card-generation-v3-contracts.ts"
+    },
+    "./note-learning-reflection-contracts": {
+      "types": "./src/note-learning-reflection-contracts.ts",
+      "import": "./src/note-learning-reflection-contracts.ts",
+      "default": "./src/note-learning-reflection-contracts.ts"
+    },
+    "./db-schema/note-learning-reflections": {
+      "types": "./src/db-schema/note-learning-reflections.ts",
+      "import": "./src/db-schema/note-learning-reflections.ts",
+      "default": "./src/db-schema/note-learning-reflections.ts"
     }
   },
   "dependencies": {

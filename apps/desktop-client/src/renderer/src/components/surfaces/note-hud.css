@@ -151,3 +151,30 @@
   .hud-surface .notebook-hud .notebook-leaf-intro h3 { font-size: 18px; }
   .hud-surface .notebook-hud .notebook-note { font-size: 12px; }
 }
+
+/* A folded paper tuck within the notebook; the room and companion keep their seat. */
+.hud-surface .note-reflection-tuck { margin: 24px 0 12px; padding: 14px 18px; background: var(--hud-paper-deep); border: 3px solid var(--hud-cream); border-radius: 17px 23px 16px 20px; box-shadow: var(--hud-shadow-small); color: var(--hud-ink); overflow-wrap: anywhere; }
+.hud-surface .note-reflection-anchor { scroll-margin-top: 88px; }
+.hud-surface .note-reflection-tuck > summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-weight: 700; cursor: pointer; min-height: 30px; }
+.hud-surface .note-reflection-tuck > summary span { color: var(--hud-soft); font-size: 13px; }
+.hud-surface .note-reflection-tuck h4 { margin: 20px 0 10px; font-size: 17px; }
+.hud-surface .note-reflection-tuck p { white-space: pre-wrap; line-height: 1.8; }
+.hud-surface .note-reflection-tuck summary:focus-visible { outline: 3px solid var(--hud-green); outline-offset: 5px; border-radius: 8px; }
+.hud-surface .note-reflection-sources, .hud-surface .note-reflection-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.hud-surface .note-reflection-sources .button { display: grid; gap: 3px; max-width: min(100%, 320px); text-align: left; }
+.hud-surface .note-reflection-source-chip__excerpt { font-size: 12px; font-weight: 500; opacity: .8; line-height: 1.5; }
+.hud-surface .note-reflection-sources .button[aria-pressed="true"] { background: var(--hud-mint); }
+.hud-surface .note-reflection-compose { margin-top: 18px; }
+.hud-surface .note-reflection-compose > label { display: grid; gap: 8px; margin: 16px 0; font-weight: 650; }
+.hud-surface .note-reflection-compose textarea { width: 100%; box-sizing: border-box; padding: 12px 14px; min-height: 88px; resize: vertical; color: var(--hud-ink); background: var(--hud-cream); border: 2px solid var(--hud-paper); border-radius: 12px 16px 13px 15px; font: inherit; line-height: 1.7; }
+.hud-surface .note-reflection-compose textarea::placeholder { color: var(--hud-soft); opacity: 1; }
+.hud-surface .note-reflection-compose textarea:focus-visible { outline: 3px solid var(--hud-green); outline-offset: 3px; }
+.hud-surface .note-reflection-compose fieldset { display: grid; gap: 10px; margin: 16px 0; padding: 0; border: 0; }
+.hud-surface .note-reflection-compose legend { margin-bottom: 10px; font-weight: 700; }
+.hud-surface .note-reflection-compose fieldset label { display: flex; gap: 8px; align-items: baseline; }
+.hud-surface .note-reflection-compose input { accent-color: var(--hud-green); }
+.hud-surface .note-reflection-original > summary, .hud-surface .note-reflection-bookmarks summary { cursor: pointer; color: var(--hud-soft); line-height: 1.7; }
+.hud-surface .note-reflection-preview { margin: 18px 0; padding: 14px 18px; border-radius: 13px 17px 12px 15px; background: var(--hud-cream); }
+.hud-surface .note-reflection-bookmarks article { padding: 16px 0; border-bottom: 1px dashed var(--hud-paper); }
+.hud-surface .note-reflection-actions .text-action { display: inline-flex; gap: 5px; align-items: center; min-height: 32px; }
+.hud-surface .note-reflection-actions { margin-top: 14px; }

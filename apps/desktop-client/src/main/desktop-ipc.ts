@@ -1,3 +1,4 @@
+import { noteReflectionPageV1Schema, noteReflectionCommandV1Schema, noteReflectionWriteResultV1Schema } from "@ailearn/shared/note-learning-reflection-contracts";
 import { BrowserWindow, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent, type WebContents } from "electron";
 import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
@@ -2914,6 +2915,18 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
       input.meta.requestId,
     );
   }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteLearningRoundPersonalHistoryPageV1Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.noteReflectionList, z.strictObject({ ...m1InputBase, noteId: uuidSchema, roundId: uuidSchema.optional(), before: uuidSchema.optional(), reflectionId: uuidSchema.optional() }), options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.listNoteReflections({ noteId: input.noteId, roundId: input.roundId, before: input.before, reflectionId: input.reflectionId }, input.meta.requestId);
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteReflectionPageV1Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.noteReflectionWrite, z.strictObject({ ...m1InputBase, noteId: uuidSchema, command: noteReflectionCommandV1Schema }), options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.writeNoteReflection(input.noteId, noteReflectionCommandV1Schema.parse(input.command), input.meta.requestId);
+  }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, noteReflectionWriteResultV1Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundHistory, noteLearningRoundHistoryInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "note.detail");

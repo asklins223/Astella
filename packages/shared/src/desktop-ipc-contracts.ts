@@ -1,3 +1,4 @@
+import { noteReflectionPageV1Schema, noteReflectionCommandV1Schema, noteReflectionWriteResultV1Schema } from "./note-learning-reflection-contracts.ts";
 /**
  * Electron desktop boundary contracts for the first Golden Slice.
  *
@@ -338,6 +339,8 @@ export const DESKTOP_IPC_CHANNELS = {
   // 而这一侧没有它就没有出口：任何一条从 API 造出来的 `paused` 轮次在界面上是永久死路
   // （它还占着 §6.1 那条 `phase IN ('active','paused')` 的部分唯一索引的名额，
   // 既继续不了也另开不了）。先有出口，§16.39 才谈得上把轮次扫进那个状态。
+  noteReflectionList: "ailearn.v1.noteReflection.list",
+  noteReflectionWrite: "ailearn.v1.noteReflection.write",
   noteLearningRoundOpen: "ailearn.v1.noteLearningRound.open",
   noteLearningRoundCreate: "ailearn.v1.noteLearningRound.create",
   noteLearningRoundRevise: "ailearn.v1.noteLearningRound.revise",
@@ -804,6 +807,7 @@ export const gatewayErrorCodeValues = [
    * 就没了"，服务端当时回的是一句 200。
    */
   "note_doc_stale",
+  "reflection_stale_revision",
   "teaching_grounding_failed",
   "teaching_model_unconfigured",
   "teaching_in_progress",
@@ -2412,6 +2416,10 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
    * `create` 只交一句话与它的来源——**实际用哪一版正文由服务端读**（PRD §3.4），
    * 三项预算也不在这里（§18.4 的试用前冻结项，由服务端那份常量签发）。
    */
+  readonly noteReflection: {
+    list(input: { meta: RequestMetaV1; noteId: Uuid; roundId?: Uuid; before?: Uuid; reflectionId?: Uuid }): Promise<GatewayResultV1<z.infer<typeof noteReflectionPageV1Schema>>>;
+    write(input: { meta: RequestMetaV1; noteId: Uuid; command: z.infer<typeof noteReflectionCommandV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteReflectionWriteResultV1Schema>>>;
+  };
   readonly noteLearningRound: {
     /**
      * 回的是**那一层信封**（`{version, round, contentMoved}`），不是轮次记录本身：
