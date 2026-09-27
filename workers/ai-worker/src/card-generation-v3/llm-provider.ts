@@ -54,6 +54,15 @@ function chatCompletionPort<TInput>(
     temperature: 0,
     responseFormat: "json_object",
     disableThinking: true,
+    // 第四发真模型的现场：合同已经逐层说清了，报错换成 `Unterminated string in JSON at
+    // position 13488` 且**没有任何 zod 路径**——那是输出被 `max_tokens` 截断，不是模型乱写。
+    // 整张合同表现场 40 行，一批 4 张卡每题还带 canonicalAnswer/rubric/relations，
+    // 平台默认那一档装不下。
+    // **今天只能这样判**：`ChatResult` 只有 `{content, usage}`，没有 `finishReason`，
+    // 所以端口分不清"被截断"与"模型给了段坏 JSON"（两者今天都会归 `output_shape` 并判
+    // 不可重试——分类上不出错，但归因会误导人）。要分开得先给 ChatResult 加 finishReason，
+    // 那是 provider 层的事，登记为欠口，不在这里靠猜 completionTokens 造假判据。
+    maxTokens: 8000,
   };
   return {
     modelId: transport.modelId,
