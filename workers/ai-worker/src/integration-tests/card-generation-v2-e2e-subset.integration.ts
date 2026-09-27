@@ -811,6 +811,9 @@ test("C45：开启复习那一档 → 恰一条待处理安排，回执报库里
   // （恢复条件写在 `activation-service.ts` 的 8.6 与 39d D2 §5.4）。把 `authorized.created`
   // 换成写死的 `false` 会让这条红，也就是这一格真要变可达时，这里先响一次。
   const scheduleId = receipt.scheduling[0].scheduleId;
+  // `held` 那一档没有 id 可交回（服务端什么都没写），所以合同里它是可空的；这一条测的
+  // 恰是"新建成功"那一格，读不到 id 就是判据本身没成立——喊出来，不要偷偷转成字符串。
+  assert.ok(scheduleId, "C45 要回读那一行：`created: true` 却没有 scheduleId");
   createdScheduleIds.push(scheduleId);
 
   const rows = await admin`
