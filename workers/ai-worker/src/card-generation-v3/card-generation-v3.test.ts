@@ -37,6 +37,7 @@ import {
   createDeterministicCardContentCheckV3Provider,
 } from "./deterministic.ts";
 import { cardGenerateV3OutputSchema } from "@ailearn/shared/card-generation-v3-contracts";
+import { KnowledgeFormValuesV2 } from "@ailearn/shared/card-generation-v2-contracts";
 import type {
   CardGenerateV3CandidateDraft,
 } from "@ailearn/shared/card-generation-v3-contracts";
@@ -656,6 +657,19 @@ function assemblyInput(
     sealedEvidence,
   };
 }
+
+// ── ⑧ 提示词必须把合同那些枚举取值**逐字**列出来 ──────────────────────────
+
+test("生成提示词里列出了 knowledgeForm 的每一个合法取值", () => {
+  // 2026-09-27 真模型第一发的原样现场：提示词写的是 `"knowledgeForm":"…"`，那九个词模型
+  // 一个都没见过，于是它交了 "procedural"（合同要 "procedure"）⇒ output_shape ⇒
+  // 补采样再来一遍还是同一个词 ⇒ 整批 0 候选、needs_attention。
+  const prompt = buildCardGenerateV3Prompt(generateInput);
+  for (const form of KnowledgeFormValuesV2) {
+    assert.ok(prompt.includes(form),
+      `提示词里没列出 "${form}"：取值没现出来，模型就会自己造近义词（这一格红过就是那个形状）`);
+  }
+});
 
 // ── ⑦ 预算要自洽：`maxModelCalls` 得容得下"首次＋那一次自动重试" ──────────────
 

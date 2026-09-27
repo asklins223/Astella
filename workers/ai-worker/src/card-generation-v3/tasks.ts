@@ -39,6 +39,9 @@ import type {
   CardHintPairV2,
   LearningCardCandidateRevisionV2,
 } from "@ailearn/shared/card-generation-v2-contracts";
+// 词表的**那一份数组**（不是类型）：提示词里必须把合法取值逐字列出来，而列第二份就会和
+// 合同分叉——2026-09-27 第一发真模型栽的正是这一格。
+import { KnowledgeFormValuesV2 } from "@ailearn/shared/card-generation-v2-contracts";
 import {
   computeGroundingReportHashV2,
   extractAnswerText,
@@ -130,7 +133,10 @@ export function buildCardGenerateV3Prompt(input: CardGenerateV3TaskInput): strin
     '{"planIntent":{"kind":"author_candidates","recommendedCardCount":n} 或 ' +
     '{"kind":"no_cards_recommended","reasonCodes":[…}],',
     ' "objectiveProposals":[{"objectiveLocalId":"id","objectiveStatement":"…","priority":"critical|important|optional",',
-    ' "knowledgeForm":"…","rationale":"为什么值得记"}],',
+    // 每一个枚举取值都要**在提示词里现出来**：上一版这里只写 `"knowledgeForm":"…"`，那九个
+    // 词模型一个都没见过，于是第一发真模型交了 "procedural"（合同要 "procedure"）——
+    // 同一件事的近义词，整批 0 候选。列表从合同那份数组现取，不抄第二份。
+    ' "knowledgeForm":"' + KnowledgeFormValuesV2.join("|") + '","rationale":"为什么值得记"}],',
     ' "candidates":[{"objectiveLocalId":"id","objectiveDraft":{…完整的 objective 草稿…},',
     ' "presentationDraft":{…}, "hints":{"level1":"…","level2":"…"}}]}',
     "（objectiveDraft 里的 rubricHash 服务端会重算，不用自己凑。）",
