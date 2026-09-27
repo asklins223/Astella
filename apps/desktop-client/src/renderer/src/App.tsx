@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { HudRoomControl } from "./components/hud/HudRoomControl";
 import { RoomStage } from "./components/RoomStage";
 import { TaskSurface } from "./components/TaskSurface";
+import { HomeSuggestionCard } from "./components/surfaces/HomeSuggestionCard";
 import { SourceIntakeHost } from "./components/SourceIntake";
 import { RunRecoveryNotice } from "./components/RunRecoveryNotice";
 import { CompanionPresence } from "./components/companion/CompanionPresence";
@@ -67,6 +68,8 @@ export function RoomExperience() {
   const home = homePresentation(projection, loading, failure);
   const theme = useRoomStore((state) => state.theme);
   const surface = useRoomStore((state) => state.surface);
+  /** 首页那一件那一发的 workspaceEpoch：它自己回写，别人不共享（省得两处抢）。 */
+  const homeEpochRef = useRef<number | undefined>(undefined);
   const invoke = useRoomStore((state) => state.invoke);
   const setActiveNoteRef = useRoomStore((state) => state.setActiveNoteRef);
   const setActiveObjectiveId = useRoomStore((state) => state.setActiveObjectiveId);
@@ -130,6 +133,22 @@ export function RoomExperience() {
           自己会在有 surface 或首启引导开着时返回 null。以前它跟着 v1 走，
           意味着一改成 v2 首页，"上一次生成没跑完"就再也没人说了。 */}
       <RunRecoveryNotice />
+      {/* 书桌那「一件」（39d W7-4 刀九；39 §12.1「首页只推荐一件现在值得做的事」）。
+          挂在恢复横幅旁边而不是 `<main>` 里：它**只在没有 surface 开着**时出现——
+          一旦她进了任何一页，"现在最值得做什么"就不是那一页的问题了。而它不碰
+          房间构图，所以伴星与座位的预算不变（AGENTS.md）。 */}
+      {!surface ? (
+        <HomeSuggestionCard
+          // 设备时区（CompanionHud 那一处也是这么读的，保持一致）。§12.1 那个「本次」
+          // 的边界由**服务端**按收到的这一格算，本层只负责原样传上去。
+          timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+          epochRef={homeEpochRef}
+          // 「新建笔记」落到房间现有的**资料入口**：那里是写新笔记的地方。
+          // 一开始我写的是 invoke("new-note" as never)——那是我编的一个 intent，
+          // cast 能过类型但屏上什么都不会发生。**类型过了不等于功能在了**。
+          onNewNote={() => invoke("open-sources")}
+        />
+      ) : null}
       <HudRoomControl />
       {surface
         ? <HudReturn label={returnTarget?.label ?? "返回学习空间"} onReturn={returnTarget?.run ?? (() => invoke("home"))} />
