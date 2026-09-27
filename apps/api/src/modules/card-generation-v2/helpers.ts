@@ -14,9 +14,12 @@ import {
 import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
 import { noteBlocks, notes } from "@ailearn/shared/db-schema/note";
 import { visibleNotesCondition } from "../note/visibility.ts";
-import { cardGenerationRunStatusV2Schema, cardGenerationLiveProgressV2Schema, cardPlanResultV2Schema, isCandidateReviewReadyV2, type CandidateQualityStateV2, type PracticeItemFormV2 } from "@ailearn/shared/card-generation-v2-contracts";
+import { cardGenerationRunStatusV2Schema, cardPlanResultV2Schema, isCandidateReviewReadyV2, type CandidateQualityStateV2, type PracticeItemFormV2 } from "@ailearn/shared/card-generation-v2-contracts";
 import { projectCardGenerationRecoveryV1 } from "./desktop-projection.ts";
-import type { CardGenerationProgressV1 } from "@ailearn/shared/card-generation-desktop-contracts";
+import type {
+  CardGenerationCandidateQualityIssueV1,
+  CardGenerationProgressV1,
+} from "@ailearn/shared/card-generation-desktop-contracts";
 // 2026-08-24（AI 设计审查 §4.4 第二批）：ServiceError 继承 shared 纯逻辑层的
 // CardGenerationPipelineErrorV2——seal/binding-plan 纯函数抛出 shared 类，
 // API 错误边界通过同一继承链识别 code/statusCode。
@@ -34,24 +37,6 @@ export class CardGenerationV2ServiceError extends CardGenerationPipelineErrorV2 
 }
 
 export const NO_STORE = { "Cache-Control": "private, no-store" } as const;
-
-/**
- * 制卡链总控（39d W7-7 刀一：默认档翻到简化链，并且它第一次管到**全部六个入口**）。
- *
- * 改前的事实：这个开关是 `generation-run-service` 的模块私有函数，只管第一次生成那一发，
- * 审核台上的四发与"再生成一次"直接投旧链的 jobType——于是"开关打开了"≠"这条链在跑"，
- * 同一篇笔记上会同时出现两批来自不同链的候选（入口台账记在
- * `packages/shared/src/card-generation-chain-entry-inventory.test.ts`）。
- *
- * 判据取向：`v2` 要**显式写**才回到旧四阶段（改前的默认档），其它任何值都走简化链。
- * 也就是说坏值落在新的默认档上，而不是把一条要退役的链复活——翻档的理由写在
- * 39d §19 的 W7-7 那行，删除整条旧链与这个开关是它的下一刀（W7-7 刀二，不留新旧开关）。
- */
-export const CARD_GENERATION_CHAIN_ENV = "CARD_GENERATION_CHAIN";
-
-export function cardGenerationSimplifiedChainV3(): boolean {
-  return (process.env[CARD_GENERATION_CHAIN_ENV] ?? "simplified_v3").trim().toLowerCase() !== "v2";
-}
 
 export type RunContext = { workspaceId: string; userId: string };
 
@@ -142,29 +127,24 @@ export async function checkSourceOutdated(
   return hashCanonicalV2("card-generation-v2/source-content", { blockContents }) !== runSourceContentHash;
 }
 /**
- * 哪些状态下"候选表还数不出真相"，因而要信实时读数（0249）。
- * 正是管道还在跑的这三态；到了终态，候选已经提交，读数自然退役（它也不会再被更新）。
- */
-const LIVE_PROGRESS_STATUSES = new Set(["planning", "authoring", "checking"]);
-
-/**
  * 一次生成的逐候选进度聚合（2026-09-20 实走复盘 #2）。
  *
- * `run.status` 到 `authoring` 就停住不动，候选是一张张写出来的，所以进度必须回到
- * 候选表上数。取每个 candidate 的**最新修订**再分组——一次生成里同一候选会被改写
- * 多次（rewrite 路径），按行数会虚高。
+ * 读数只从两处来：**分母**是当版计划里的 `recommendedCardCount`，**分子**是候选表按
+ * candidate 最新修订数出来的张数（一次生成里同一候选会被改写多次，按行数会虚高）。
  *
- * 但候选表本身也救不了"正在生成的那几分钟"：整条管道跑在一个事务里，候选行要到
- * 提交才可见，所以 `authoring` 期间的读数**恒为 0**（两次真跑实测）。0249 起 worker
- * 每写完一张就用一个毫秒级短事务把读数写到 `card_generation_run_progress_v2`，
- * 未到终态时优先信它——见下面的 `LIVE_PROGRESS_STATUSES`。
+ * 0249 那张实时读数表（`card_generation_run_progress_v2`）在这里曾经有第三路：四阶段链
+ * 整条管道跑在一个事务里，候选行要到提交才可见，所以"生成中"那几分钟数候选表恒为 0，
+ * worker 每写完一张就用毫秒级短事务把读数写进那张表，未到终态时优先信它。
+ * 2026-09-27（39d W7-7 刀二）删掉那条链之后这一路没有写入者了：简化链是段 3 先提交计划
+ * 与候选、段 4 才发检查那一发，`checking` 期间候选表数得出的就是**真数**，而 `planning`
+ * 那一段计划还不存在——写一份"0 张"的读数不会让屏幕更有信息量，只会多一个可以被质疑的
+ * 来源（这段判断量在 39d-w71 §7.3）。表与迁移暂留（删表要动迁移与 roles 清单，另立一刀）。
  */
 export async function readGenerationProgressV2(
   tx: ApiTransaction,
   workspaceId: string,
   runId: string,
   currentPlanVersion: number,
-  runStatus: string,
 ): Promise<CardGenerationProgressV1> {
   const progress: CardGenerationProgressV1 = {
     plannedCards: 0, authored: 0, gatePassed: 0, gateFailed: 0,
@@ -196,31 +176,6 @@ export async function readGenerationProgressV2(
   progress.gatePassed = counts.get("passed") ?? 0;
   progress.gateFailed = counts.get("failed") ?? 0;
   progress.authored = [...counts.values()].reduce((sum, count) => sum + count, 0);
-  if (LIVE_PROGRESS_STATUSES.has(runStatus)) {
-    const liveRows = await tx.execute(sql`
-      SELECT p.progress AS progress
-      FROM public.card_generation_run_progress_v2 p
-      -- 只认"这条读数出自一条还活着的租约"。写读数的短事务自己也核这一条，但那一侧
-      -- 拦不住"worker 崩了、读数留在半路"——加了这个 JOIN，租约过期后陈旧读数就自动
-      -- 不可见，界退回候选表（此时是 0，那也是真的 0）。
-      JOIN public.card_generation_run_outbox_v2 j
-        ON j.run_id = p.run_id
-       AND j.status = 'processing'
-       AND j.lease_token = p.lease_token
-       AND j.lease_expires_at > now()
-      WHERE p.workspace_id = ${workspaceId} AND p.run_id = ${runId}
-      LIMIT 1
-    `);
-    const live = cardGenerationLiveProgressV2Schema.safeParse(
-      (liveRows[0] as { progress?: unknown } | undefined)?.progress ?? null,
-    );
-    if (live.success) {
-      // 取 max：读数是"已写到哪"，候选表是"已提交到哪"，任何一方都不该被对方抹掉。
-      // 门数（gatePassed/gateFailed）只从候选表来——它们只在提交后才有意义。
-      progress.plannedCards = Math.max(progress.plannedCards, live.data.plannedCards);
-      progress.authored = Math.max(progress.authored, live.data.authored);
-    }
-  }
   return progress;
 }
 
@@ -403,7 +358,10 @@ export async function serializeRunPublic(
   };
 }
 
-export function serializeCandidatePublic(row: typeof cardGenerationCandidatesV2.$inferSelect) {
+export function serializeCandidatePublic(
+  row: typeof cardGenerationCandidatesV2.$inferSelect,
+  qualityIssues: readonly CardGenerationCandidateQualityIssueV1[] = [],
+) {
   const presentation = row.presentationDraft as {
     strategy: string;
     transformationKind: string;
@@ -465,6 +423,7 @@ export function serializeCandidatePublic(row: typeof cardGenerationCandidatesV2.
     candidateEvidenceBindingPlanHash: row.evidenceBindingPlanHash,
     candidateRevisionHash: row.candidateRevisionHash,
     qualityState: row.qualityState,
+    qualityIssues: [...qualityIssues],
     practiceItem: practiceItemSummary,
     reviewDecision: row.reviewDecision,
     publishState: row.publishState,

@@ -1,12 +1,10 @@
 /**
- * 2026-09-15（管线评审 M6/M7）回归：Card Generation V2 handler 的确定性辅助。
+ * 制卡内核里两份纯逻辑的回归（2026-09-15 管线评审 M6/M7 起，2026-09-27 刀二随旧链删余）。
  *
- * - selectDistinctCandidatesV2：§10.1 step 8 Global Selector / Merge / Dedup
- *   此前**从未接线**——语义重复候选一路走到 deck gate 被判 deck 级 hard issue，
- *   整个 run 进 needs_attention（同主题多篇笔记时高频发生）。现在在 grounding
- *   之后、Pedagogy 之前完成去重选择。
- * - capSourceContentForPrompts：源文本规模硬上限（此前无上限，大笔记可达
- *   数十万字符并贯穿四阶段 prompt/内存）。
+ * - `capSourceContentForPrompts`（`card-generation-v2/run-io.ts`）：源文本规模硬上限。
+ *   旧链的四阶段 prompt 与简化链的 block 列表输入都受它管（后者是刀二补的那一格）。
+ * - `isNonRetryableErrorLike`（`card-generation-v2/retry-classification.ts`）：
+ *   "这一发错误能不能重投"的分类，两种形状都要认（下面第三格钉的就是那次事故）。
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -16,87 +14,7 @@ import {
   capSourceContentForPrompts,
   V2_SOURCE_CONTENT_MAX_CHARS,
 } from "../card-generation-v2/run-io.ts";
-import { selectDistinctCandidatesV2 } from "./card-generation-v2-handler.ts";
 import { isNonRetryableErrorLike } from "../card-generation-v2/retry-classification.ts";
-import type { LearningCardCandidateRevisionV2 } from "@ailearn/shared/card-generation-v2-contracts";
-
-function candidate(statement: string, evidenceRefIds: string[] = []): LearningCardCandidateRevisionV2 {
-  return {
-    version: 2,
-    candidateRevisionId: randomUUID(),
-    candidateId: randomUUID(),
-    revision: 1,
-    runId: randomUUID(),
-    planRevisionId: randomUUID(),
-    planVersion: 1,
-    planHash: "b".repeat(64),
-    cardContentEpoch: 1,
-    planObjectiveLocalId: `obj-${statement}`,
-    recommendation: { recommended: true, reasonCodes: [] },
-    derivedFromCandidateRevisions: [],
-    objective: {
-      objectiveStatement: statement,
-      publicSummary: statement,
-      conceptLabel: statement.slice(0, 20),
-      knowledgeForm: "fact",
-      preferredTaskIntents: ["recall"],
-      canonicalAnswer: { kind: "text", unit: { unitId: "ans-1", text: statement } },
-      learningSupport: { explanation: statement },
-      rubric: {
-        version: 2,
-        units: [{
-          rubricUnitId: "rubric-1",
-          facet: "recall",
-          criterion: statement,
-          required: true,
-          answerUnitIds: ["ans-1"],
-          evidenceRefIds: [],
-        }],
-        passingPolicy: { requireAllRequiredUnits: true, allowContradiction: false },
-        rubricHash: "e".repeat(64),
-      },
-      relations: [],
-      difficulty: "introductory",
-      evidenceRefIds,
-    },
-    presentation: {
-      strategy: "recall",
-      transformationKind: "retrieval_definition",
-      front: { cue: statement, prompt: `请回答：${statement}` },
-      estimatedReviewSeconds: 40,
-    },
-    evidenceSetHash: "c".repeat(64),
-    candidateRevisionHash: "a".repeat(64),
-  } as LearningCardCandidateRevisionV2;
-}
-
-test("语义去重：完全相同的 statement 只保留 authoring 顺序最前的一个", () => {
-  const first = candidate("牛顿第二定律的公式表述");
-  const dup = candidate("牛顿第二定律的公式表述");
-  const other = candidate("光合作用的暗反应阶段产物");
-  const { kept, dropped } = selectDistinctCandidatesV2([first, dup, other]);
-  assert.deepEqual(kept.map((c) => c.candidateId), [first.candidateId, other.candidateId]);
-  assert.equal(dropped.length, 1);
-  assert.equal(dropped[0].candidate.candidateId, dup.candidateId);
-  assert.equal(dropped[0].relation, "duplicate");
-  assert.equal(dropped[0].keptCandidateId, first.candidateId);
-  assert.ok(dropped[0].clusterId.length > 0);
-});
-
-test("语义去重：候选互不相同（无簇）→ 全部保留、无落选", () => {
-  const a = candidate("牛顿第二定律的公式表述");
-  const b = candidate("光合作用的暗反应阶段产物");
-  const { kept, dropped } = selectDistinctCandidatesV2([a, b]);
-  assert.equal(kept.length, 2);
-  assert.equal(dropped.length, 0);
-});
-
-test("语义去重：单候选早退（不调用聚类）", () => {
-  const only = candidate("牛顿第二定律的公式表述");
-  const { kept, dropped } = selectDistinctCandidatesV2([only]);
-  assert.equal(kept.length, 1);
-  assert.equal(dropped.length, 0);
-});
 
 test("源文本上限：未超限原样返回；超限截断并标记", () => {
   const workspaceId = randomUUID();
@@ -142,7 +60,7 @@ test("错误分类：同类裸 Error 标记 retryable=true 时仍按可重试处
 });
 
 test("错误分类：CardGenerationProviderError 类实例按 kind 判定（canonical 形状）", async () => {
-  const { CardGenerationProviderError } = await import("../card-generation-v2/providers.ts");
+  const { CardGenerationProviderError } = await import("../card-generation-v2/governed-provider.ts");
   assert.equal(
     isNonRetryableErrorLike(new CardGenerationProviderError("non-retryable", "config error")),
     true,
@@ -156,31 +74,4 @@ test("错误分类：CardGenerationProviderError 类实例按 kind 判定（cano
 test("错误分类：未标注的普通错误保持可重试（不误伤瞬态故障）", () => {
   assert.equal(isNonRetryableErrorLike(new Error("socket hang up")), false);
   assert.equal(isNonRetryableErrorLike("ECONNRESET"), false);
-});
-
-test("有界修复必须取真正的计划目标，不许再 `as never` 塞替身（读源码守卫）", async () => {
-  // 上一条用例测的是 helper 自己；这条守的是**调用点**：修复路径一旦回到现场拼对象，
-  // TypeScript 帮不上忙（`as never` 就是用来绕过它的），2026-09-21 那次真跑正是这么死的。
-  const { readFileSync } = await import("node:fs");
-  const source = readFileSync(new URL("./card-generation-v2-handler.ts", import.meta.url), "utf8");
-  const start = source.indexOf("async function authorRepairedCandidateV2");
-  assert.ok(start > 0, "找不到 authorRepairedCandidateV2，这条守卫要跟着改名一起改");
-  const region = source.slice(start, source.indexOf("const newRevisionId", start));
-  assert.match(region, /planObjective:\s*plannedObjectiveForCandidateV2\(\s*input\.plan/,
-    "修复路径没有从计划里取目标");
-  assert.doesNotMatch(region, /as never/,
-    "修复路径又用 `as never` 绕过 provider 入参类型——那会让 strategy 变成 undefined");
-});
-
-test("有界修复的出网那一半不收事务对象（接口层面就不接受，D5 §5.2 第二件）", async () => {
-  // 判据不是"我记得在事务外调它"，而是**类型上写不出**"顺手把 tx 传进来"：函数签名里
-  // 没有 tx 形参。这条把它钉在源码上，因为一旦有人补上 `tx: WorkerTransaction`，
-  // 调用点就会很自然地挪回事务里（regenerate 那条链改前就是这么长出来的）。
-  const { readFileSync } = await import("node:fs");
-  const source = readFileSync(new URL("./card-generation-v2-handler.ts", import.meta.url), "utf8");
-  const start = source.indexOf("export async function authorRepairedCandidateV2");
-  assert.ok(start > 0, "找不到 authorRepairedCandidateV2，这条守卫要跟着改名一起改");
-  const signature = source.slice(start, source.indexOf("): Promise<", start));
-  assert.doesNotMatch(signature, /\btx\b|WorkerTransaction/,
-    "出网那一半又收事务对象了——它必须能在没有事务的地方被调用");
 });

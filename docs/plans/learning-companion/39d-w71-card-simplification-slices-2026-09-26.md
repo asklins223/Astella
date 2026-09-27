@@ -228,3 +228,35 @@ HEAD），按 hunk 拆开只提自己那 58 行。
 `writeCardGenerationLiveProgress` 的文档注释切成断头（`tsc` 当场 25 个语法错），回退用的办法是
 把 HEAD 内容写回该文件（那份文件当时只有我在改，先 `git status --porcelain <path>` 确认过），
 不是 `git checkout`；二是每次脚本改完必须核行数增减等于预期，并且跑 `tsc` 看**真退出码**。
+
+---
+
+### 7.5 收口之后剩下的四件（2026-09-27 刀二落地时逐条量过，都不是"顺手能删"的）
+
+写在这里而不是任务清单里，因为下一刀开工时要先能读到"为什么今天没删"。
+
+1. **0249 那张实时读数表：现在零写、零读。**
+   `writeCardGenerationLiveProgress` 的两个调用点都在旧链的作者循环里（旧
+   `handlers/card-generation-v2-handler.ts:1143`、`:1192`），随链一起删了；api 读侧那第三路
+   （`helpers.ts` 里 `LIVE_PROGRESS_STATUSES` 那一段带活租约 JOIN 的读取）一并撤掉，
+   `readGenerationProgressV2` 因此少一个 `runStatus` 参数（全仓一个调用方）。
+   今天界面上的"第几步"看 `run.status`，分子分母看计划行与候选表——§7.3 那把尺量的就是这件事。
+   剩 `card_generation_run_progress_v2` 表本体、迁移 0249、`infra/postgres/roles.sql` 两行、
+   `packages/shared/src/db-schema/card-generation-v2.ts:641` 与夹具清理清单里那一行。
+   **删它要新迁移＋动 journal＋roles 清单三份注册面**，与代码删除不同一种风险，故另立。
+2. **`policies.stageRuntimes` 已经没有运行时读者，但还在被播种。**
+   唯一的消费者是旧链 `CardGenerationProviderRuntime` 那句按裸阶段名匹配采样参数的
+   `find`；简化链的采样参数写在 `card-generation-v3/tasks.ts` 的任务定义里。
+   它仍进 `semanticSpecHash`（审计闭包），删字段＝改哈希＝在途 run 与逐候选改写的重放前提被
+   打掉，而且 `generationStageRuntimeSnapshotV2Schema` 是 `min(1)` 必填。
+   配套还欠一份判据："删字段前后的哈希闭包要各自量一次"。播种处见
+   `apps/api/src/modules/card-generation-v2/generation-run-service.ts` 的 `stageRuntimes:` 块
+   （注释已改成说明"为什么今天还留着"）。
+3. **迁移 0163 那个部分唯一索引谓词里还写着 `'card_generation_plan'`。**
+   它是 `db-schema` 与迁移两份镜像的共同文本，改了就不 1:1，所以入口台账那格"旧 jobType
+   一处不许留"显式跳过 `packages/shared/src/db-schema/`，并在守卫的注释里写明理由。
+   要收的是：把谓词里的旧名字换掉或删掉那一支（`card_v2_post_activation` 那一支还在执法）。
+4. **`run-io.ts` 里四件 helper 只剩模块内消费者**：`EMPTY_HINTS`、`insertEventsBatched`、
+   `AUTHORED_CANDIDATE_COLUMNS`、`authoredCandidateValues`。收回 `export` 是纯收窄，
+   与本轮的删除不同类，留在这里当一条明确的待办（`capEvidenceTextForPrompts` 与两个
+   `V2_EVIDENCE_*` 上限**不是**死码——它们被共用的 `loadV2RunInputs` 调着，两条链同一份）。

@@ -36,7 +36,6 @@ import {
   checkSourceOutdated,
   computeSourceOutdatedForRunsV2,
   computeSourceCappedForRunsV2,
-  cardGenerationSimplifiedChainV3,
   insertEvent,
   readGenerationProgressV2,
   serializeRunPublic,
@@ -261,24 +260,13 @@ export async function createGenerationRunV2(
         targetPolicyVersion: "target-v1",
         cardContractVersion: "learning-card-v2" as const,
         targetSnapshotVersion: "learning-target-snapshot-v2" as const,
-        // 2026-08-24：补全四阶段 stageRuntimes——worker 端 sampling(stage) 已按
-        // 裸阶段名匹配（providers.ts），此前只种 planner 时 author/critic 三阶段
-        // 的 per-run 采样配置会被静默忽略。promptVersion 与 workers
-        // card-generation-v2/prompts.ts 的 CARD_GENERATION_V2_PROMPT_VERSION
-        // bump 同步；本数组参与 semanticSpecHash，是审计闭包的一部分。
-        // 2026-08-24（§4.5）：v3 —— pedagogy 增补中文语义裁决基准（atomicity/
-        // 改写式泄题自确定性 gate 降级 soft 后由 Critic 承担 hard 判定）。
-        // 2026-09-15（管线评审 H3/M3）：v4 —— planner prompt 补不可信数据边界 +
-        // 可用证据 ID 列表（worker prompts.ts CARD_GENERATION_V2_PROMPT_VERSION 同步）。
-        // 2026-09-18：v19 —— 三个类级修复（作者不得补充证据未陈述的内容 /
-        // front 短术语泄漏的逐词自检 + pedagogy 扩判 / 零卡单一判据）。
-        // 2026-09-18（晚）：v20 —— 作者提示词开放 canonicalAnswer 五种形态
-        // （ordered_steps/mapping/comparison 此前从未被教过，导致排序/关系练习题
-        // 零生成）+ preferredTaskIntents 按知识形态选择（此前模板硬编码 recall）+
-        // rubric 覆盖整组答案单元。
-        // 2026-09-20：v21 —— 题型（strategy）改由 planner 在整批目标上确定性分配，
-        // author 提示按分配到的题型出模板与示例（此前模板与示例都写死 recall，且用户
-        // 勾选的 preferredStrategies 从未进入提示，导致整批卡全是同一题型）。
+        // 这份 stageRuntimes 种子今天**没有任何运行时读者**：它唯一的消费者是四阶段链的
+        // `CardGenerationProviderRuntime`（按裸阶段名匹配采样参数），那条链已随 39d W7-7 刀二
+        // 删除；简化链的采样参数写在 `card-generation-v3/tasks.ts` 的任务定义里。
+        // 留着它是因为 `policies` 整块进 `semanticSpecHash`（审计闭包），删字段＝改哈希，
+        // 会打掉在途 run 与逐候选改写的重放前提，所以这一刀不在此处（另立，见 39d-w71 §7.4 末）。
+        // `promptVersion` 那一串（v19→v27）是旧链提示词的版本史，原样冻结；
+        // bump 历史与逐版原因在 git 里，不在这里。
         stageRuntimes: [
           {
             stage: "planner" as const,
@@ -425,10 +413,7 @@ export async function createGenerationRunV2(
       note: "awaiting worker",
     });
 
-    // §17.2 + 39d W7-7 刀一：默认档翻到简化链（`card_generation_simplified_v1`）。
-    // 旧链那一档要显式写 `CARD_GENERATION_CHAIN=v2` 才回得去——总控今天管到**全部六个
-    // 入口**（从前它只管这一发，审核台上那四发绕开它直接投旧链）。删掉这个开关与旧链
-    // 一起是刀二。
+    // §17.2 + 39d W7-7：第一次生成排的就是简化链的整批那一发（`card_generation_simplified_v1`）。
     // W#2（round-5）+ 0163（round-6）：这里的 ON CONFLICT DO NOTHING 防重复入队
     // （API 重试/双击）抛 unique_violation 500。这一发今天撞不到约束——同
     // idempotencyKey 的重复请求在上面就收敛成严格重放了，走不到这里；保留是因为它
@@ -436,7 +421,7 @@ export async function createGenerationRunV2(
     await tx.insert(cardGenerationRunOutboxV2).values({
       workspaceId: ctx.workspaceId,
       runId,
-      jobType: cardGenerationSimplifiedChainV3() ? "card_generation_simplified_v1" : "card_generation_plan",
+      jobType: "card_generation_simplified_v1",
       payload: { runId, workspaceId: ctx.workspaceId, semanticSpecHash },
       status: "pending",
     }).onConflictDoNothing();
@@ -454,7 +439,7 @@ export async function getGenerationRunV2(ctx: RunContext, runId: string) {
     // 进度只在单 run 读取时聚合：这是生成工作台与笔记页订阅后重读的那一条，
     // 列表接口（active runs）不带，避免每次房间刷新都多打一遍候选表。
     const progress = await readGenerationProgressV2(
-      tx, ctx.workspaceId, runId, rows[0].currentPlanVersion, rows[0].status,
+      tx, ctx.workspaceId, runId, rows[0].currentPlanVersion,
     );
     return serializeRunPublic(rows[0], tx, progress);
   });
@@ -790,13 +775,13 @@ export async function retryGenerationRunV2(ctx: RunContext, runId: string) {
       throw new CardGenerationV2ServiceError("stale_run_status", 409, "运行状态已被并发修改，请刷新");
     }
 
-    // 39d W7-7 刀一：就地重试走简化链的**重排**那一档（`mode: "replan"`）——同一 run
-    // 上再开一版计划，上一版没激活的候选由 worker 标 superseded 让路。
+    // 39d W7-7：就地重试走简化链的**重排**那一档（同一发 jobType，`mode: "replan"` 区分来意）
+    // ——同一 run 上再开一版计划，上一版没激活的候选由 worker 标 superseded 让路。
     // 不传 feedbackReasonCodes —— 用户没有给反馈，他只是要求再试一次。
     await tx.insert(cardGenerationRunOutboxV2).values({
       workspaceId: ctx.workspaceId,
       runId,
-      jobType: cardGenerationSimplifiedChainV3() ? "card_generation_simplified_v1" : "card_generation_replan_set",
+      jobType: "card_generation_simplified_v1",
       payload: { runId, workspaceId: ctx.workspaceId, mode: "replan" },
       status: "pending",
     });

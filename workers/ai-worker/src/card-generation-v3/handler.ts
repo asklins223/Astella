@@ -51,7 +51,7 @@ import {
   renewV2OutboxLease,
   type PendingOutboxJob,
 } from "../card-generation-v2/outbox-queue.ts";
-import { CardGenerationProviderError } from "../card-generation-v2/providers.ts";
+import { CardGenerationProviderError } from "../card-generation-v2/governed-provider.ts";
 import {
   assembleCandidateEvidenceBindingPlanV2,
 } from "@ailearn/shared/card-generation-v2-pipeline";
@@ -1017,21 +1017,33 @@ async function writeSimplifiedCheckResults(
 /**
  * 这条链今天的 provider 选择（一处常量＋一个环境变量，坏值不回落）。
  *
- * `CARD_GENERATION_V3_PROVIDER` 未设＝确定性那一版：这条链只在生产侧显式打开时才被
- * 领到（见 api 的 `CARD_GENERATION_CHAIN`），所以"库里出现的简化链产物都是确定性
- * 拼的"这件事在生产里是一次显式配置，不是巧合。**要真模型时必须显式说**，并且今天
- * 直接失败——静默回落到确定性会让 §16.28 那句"2 次语义调用"读起来像跑过模型。
+ * `CARD_GENERATION_V3_PROVIDER` 未设＝确定性那一版：今天它是这条链在生产里的唯一档位开关
+ * （旧链与它的 `CARD_GENERATION_CHAIN` 已随 39d W7-7 刀二删除），所以"库里出现的简化链
+ * 产物都是确定性拼的"这件事在生产里是一次显式配置，不是巧合。**要真模型时必须显式说**，
+ * 并且今天直接失败——静默回落到确定性会让 §16.28 那句"2 次语义调用"读起来像跑过模型。
  */
 const CARD_GENERATION_V3_PROVIDER_ENV = "CARD_GENERATION_V3_PROVIDER";
-/** 与 V2 那道 `V2_ALLOW_DETERMINISTIC_PROVIDERS` 同方向的显式豁免（离线跑生产形状的库时才用）。 */
+/** 与旧链那道 `V2_ALLOW_DETERMINISTIC_PROVIDERS` 同方向的显式豁免（离线跑生产形状的库时才用）。 */
 const V3_ALLOW_DETERMINISTIC_ENV = "V3_ALLOW_DETERMINISTIC_PROVIDERS";
+
+/**
+ * 档位取值只有一处读法：`cardGenerationV3LlmRequested()` 与
+ * `resolveCardGenerationV3Providers()` 各读一次 env，就会有一天不一致。
+ *
+ * 空串按"未设"处理，不算真模型：`${VAR:-}` 这类 compose 写法很常见，若按"非 deterministic"
+ * 判，一次留白的配置就会把这一发悄悄翻成**按次付费**那一档。
+ */
+function cardGenerationV3ProviderKind(): string {
+  const raw = (process.env[CARD_GENERATION_V3_PROVIDER_ENV] ?? "").trim();
+  return raw === "" ? "deterministic" : raw;
+}
 
 /**
  * 这一发要不要走真模型（分发点用它决定要不要先去解析治理上下文）。
  * 判据与 `resolveCardGenerationV3Providers` 是同一份：两处各读一次 env 就会有一天不一致。
  */
 export function cardGenerationV3LlmRequested(): boolean {
-  return (process.env[CARD_GENERATION_V3_PROVIDER_ENV] ?? "deterministic") !== "deterministic";
+  return cardGenerationV3ProviderKind() !== "deterministic";
 }
 
 /**
@@ -1043,7 +1055,7 @@ export function cardGenerationV3LlmRequested(): boolean {
 export function resolveCardGenerationV3Providers(input?: {
   transport: CardGenerationV3ChatTransport;
 }): CardGenerationSimplifiedProviders {
-  const kind = process.env[CARD_GENERATION_V3_PROVIDER_ENV] ?? "deterministic";
+  const kind = cardGenerationV3ProviderKind();
   if (kind !== "deterministic") {
     if (!input?.transport) {
       // 必须是**不可重试**那一类：这是配置缺失，不是网络抖动。抛裸 `Error` 会让分发点
@@ -1071,8 +1083,8 @@ export function resolveCardGenerationV3Providers(input?: {
  *
  * 为什么新链更需要它：确定性那一版的"检查"不发网络，它对内容的判断是拼装的副产物，
  * 而完成事件里记的是 `modelCalls=2`——在生产里让它悄悄跑完，等于用一次显式开关
- * （`CARD_GENERATION_CHAIN=simplified_v3`）换到一批**看起来过了模型**的占位候选。
- * 与 V2 那道护栏方向对称：生产要么显式配真模型，要么显式豁免（下面那个 env）。
+ * （`CARD_GENERATION_V3_PROVIDER`）换到一批**看起来过了模型**的占位候选。
+ * 与旧链那道护栏方向对称：生产要么显式配真模型，要么显式豁免（下面那个 env）。
  */
 function assertV3DeterministicProvidersAllowed(): void {
   if (process.env.NODE_ENV !== "production") return;

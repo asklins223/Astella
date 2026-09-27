@@ -297,15 +297,11 @@ services:
       # worker actually reads are declared here.
       COMPANION_DIALOGUE_V1_ENABLED: ${COMPANION_DIALOGUE_V1_ENABLED:-true}
       COMPANION_VOICE_DIALOGUE_V1_ENABLED: ${COMPANION_VOICE_DIALOGUE_V1_ENABLED:-true}
-      # 方案 20：V2 价值优先生成的四个阶段 LLM 模式只在 worker 侧生效。
-      CARD_GENERATION_V2_LLM: ${CARD_GENERATION_V2_LLM:-true}
-      # 2026-09-17：author/grounding 逐候选调用的**阶段内并发上限**（此前硬串行：
-      # 墙钟 = N × 单次 provider 延迟）。默认 12：服务端卡上限 20，取 12 让实测
-      # 规模（N≈5）一波跑完；实测 6 并发无限流。调大可能触发 provider 429。
-      V2_STAGE_CONCURRENCY: ${V2_STAGE_CONCURRENCY:-12}
-      # 2026-09-17：投机 pedagogy（与 grounding 波并发，集合未变则复用）。
-      # 关掉即为"grounding 完成后再调 pedagogy"的确定性调度。
-      V2_SPECULATIVE_PEDAGOGY: ${V2_SPECULATIVE_PEDAGOGY:-1}
+      # 制卡的模型档位开关（39d W7-7 刀二之后只剩这一个）：未设 = 确定性替身，
+      # 设成 `llm` = 真模型（按次付费）。旧链那三把（CARD_GENERATION_V2_LLM /
+      # V2_STAGE_CONCURRENCY / V2_SPECULATIVE_PEDAGOGY）随四阶段链一起没有读取者了，
+      # 留着会让"改了这行就等于换了模型档位"成为假话。
+      CARD_GENERATION_V3_PROVIDER: ${CARD_GENERATION_V3_PROVIDER:-deterministic}
       # 方案 16 伴星记忆抽取/向量/总结/日记（dev 默认开启）。
       COMPANION_MEMORY_EXTRACTOR_V1: ${COMPANION_MEMORY_EXTRACTOR_V1:-true}
       COMPANION_MEMORY_VECTOR_V1: ${COMPANION_MEMORY_VECTOR_V1:-true}

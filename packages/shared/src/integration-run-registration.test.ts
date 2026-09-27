@@ -34,12 +34,12 @@ const SURFACE_DIRS = ["scripts"];
 /**
  * 已知"没有任何注册面"的存量（2026-09-26 逐份数出来的 27 份）。
  * 这条清单是**待办**，不是永久豁免：每接进一份点名单就该短一行。
+ * 2026-09-27 短两行：`card-generation-v2-live-progress-postgres` 与
+ * `card-generation-v2-llm-natural-activation` 随四阶段链一起删除（判据对象没了）。
  */
 const DARK_FILES_AWAITING_REGISTRATION = new Set([
   "card-generation-v2-domain-events.integration.ts",
   "card-generation-v2-c-cases.integration.ts",
-  "card-generation-v2-live-progress-postgres.integration.ts",
-  "card-generation-v2-llm-natural-activation.integration.ts",
   "card-generation-v2-redaction-quota.integration.ts",
 ]);
 

@@ -74,7 +74,6 @@ const UNLEARNABLE_BLOCKS = ["见附件。", "待定。", "TODO 补。"];
 type NoteFixture = { noteId: string; versionId: string };
 const notes: Record<string, NoteFixture> = {};
 let simplifiedRunId = "";
-let controlRunId = "";
 let zeroCandidateRunId = "";
 /** 每句都被内容门禁挡下的那一发（终态要带得上门码）。 */
 let allGatedRunId = "";
@@ -267,7 +266,6 @@ before(async () => {
 
   notes.learnable = await seedNote("learnable", "网络与加密的六句话", LEARNABLE_BLOCKS);
   notes.unlearnable = await seedNote("unlearnable", "会议记录", UNLEARNABLE_BLOCKS);
-  notes.control = await seedNote("control", "入口对照那一篇", LEARNABLE_BLOCKS);
   // 一篇挂在**另一个空间**的笔记：本空间的在制 run 上限是产品策略（3 个），
   // 测试要四个夹具就分开放，不去把那道闸调大。
   notes.other = await seedNote("other", "另一个空间的那一篇", LEARNABLE_BLOCKS,
@@ -287,12 +285,6 @@ before(async () => {
   notes.checkbroken = await seedNote("checkbroken", "检查那一发不合合同", LEARNABLE_BLOCKS,
     { workspaceId: OTHER_WORKSPACE_ID, userId: OTHER_USER_ID });
 
-  // 入口对照：这一篇在**显式 `v2`** 下创建 ⇒ 投的必须是旧 jobType（off 档要能整条回到改前）。
-  process.env.CARD_GENERATION_CHAIN = "v2";
-  controlRunId = (await createRun(notes.control.versionId, `v3-control-${randomUUID()}`)).runId;
-  delete process.env.CARD_GENERATION_CHAIN;
-
-  // 其余都是默认档（未设总控）⇒ 简化链。
   simplifiedRunId = (await createRun(notes.learnable.versionId, `v3-main-${randomUUID()}`)).runId;
   zeroCandidateRunId = (await createRun(notes.unlearnable.versionId, `v3-zero-${randomUUID()}`)).runId;
   otherUserRunTarget = (await createRun(notes.other.versionId, `v3-other-${randomUUID()}`,
@@ -338,11 +330,11 @@ after(async () => {
   assertFixtureWipeClean(report);
 });
 
-test("入口总控翻到了简化链那一档，而 off 档完整回到改前那条链", async () => {
-  // 这两格读的是**同一个夹具里两篇只差环境变量的 run**：默认档（未设）投新链，
-  // 显式 `v2` 投旧链。少了后一格，"翻默认档"与"删了旧链"在库里就分不出来。
-  assert.equal(await outboxJobType(controlRunId), "card_generation_plan",
-    "`CARD_GENERATION_CHAIN=v2` 这一档要能完全回到改前行为（含 jobType）");
+test("入口排出去的就是简化链那一发（库里读得出 jobType）", async () => {
+  // 这一格原来还有第二半：显式写 `CARD_GENERATION_CHAIN=v2` 要能整条回到改前那条链。
+  // 2026-09-27 刀二收口把总控与旧链一起删了，那一半随它的判据对象退场；
+  // 剩下的这一读数仍然要有人从库里取——入口写错 jobType 时 worker 会把它判成
+  // unknown jobType 并打成 needs_attention，那是"要跑一次才知道"的错。
   assert.equal(await outboxJobType(simplifiedRunId), "card_generation_simplified_v1");
   assert.equal(await outboxJobType(zeroCandidateRunId), "card_generation_simplified_v1");
 });
@@ -1038,7 +1030,9 @@ test("没接线的 provider 值抛的是不可重试那一类（裸 Error 会被
 });
 
 test("生产里不许悄悄用确定性 provider 跑简化链；豁免要显式给，离线路径不受影响", async () => {
-  const { resolveCardGenerationV3Providers } = await import("../card-generation-v3/handler.ts");
+  const { resolveCardGenerationV3Providers, cardGenerationV3LlmRequested } = await import(
+    "../card-generation-v3/handler.ts"
+  );
   const { isNonRetryableErrorLike } = await import("../card-generation-v2/retry-classification.ts");
 
   // ① 生产 + 没豁免 ⇒ 抛，而且是不可重试（同一套分类器）
@@ -1061,6 +1055,17 @@ test("生产里不许悄悄用确定性 provider 跑简化链；豁免要显式�
     }));
   assert.deepEqual(Object.keys(wired).sort(), ["check", "generate", "rewrite"],
     "带着 transport 时三份端口都交得出来——真模型那一条路今天是接上的（花钱那一次另算）");
+
+  // ①c 留白不等于"要真模型"：`${CARD_GENERATION_V3_PROVIDER:-}` 这种 compose 写法很常见，
+  // 若按"非 deterministic"判，一次留白的配置就会把这一发悄悄翻成**按次付费**那一档。
+  // 变异自证：把 `cardGenerationV3ProviderKind()` 的空串归一化拿掉，这一格红。
+  const blank = withEnv({ NODE_ENV: "development", CARD_GENERATION_V3_PROVIDER: "" },
+    () => captureThrow(resolveCardGenerationV3Providers));
+  assert.equal(blank, null, "空串被当成了真模型档位 ⇒ 一次留白的配置就变成按次付费");
+  const blankRequested = withEnv({ NODE_ENV: "development", CARD_GENERATION_V3_PROVIDER: "   " },
+    () => cardGenerationV3LlmRequested());
+  assert.equal(blankRequested, false,
+    "分发点与解析函数必须同一份判据：这一格与上面那条不一致，就意味着一处当留白、另一处当付费");
 
   // ② 显式豁免 ⇒ 三份 provider 照旧交出来（离线复核生产形状的库时用）
   const allowed = withEnv({ NODE_ENV: "production", V3_ALLOW_DETERMINISTIC_PROVIDERS: "1" },

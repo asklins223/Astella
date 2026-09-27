@@ -20,7 +20,7 @@
  *     workers/ai-worker/src/integration-tests/card-generation-v2-c-cases.integration.ts
  */
 
-import { beforeEach, after, before, test } from "node:test";
+import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
@@ -29,12 +29,6 @@ import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 process.env.DATABASE_URL_API ??= ADMIN_URL;
-// 2026-09-27 实测：这一份在默认档（简化链）上 2/2 通过 ⇒ **不再钉档**，它就是新链的网。
-// 其余九份仍钉 v2：同一天把十份一起摘掉是 41 条红，逐份的量过才敢摘（分诊见 39d-w71 §7）。
-process.env.CARD_GENERATION_CHAIN = "v2";
-
-// 按用例分档（与 `card-generation-v2-e2e-subset` 同一做法，理由与探针写在那份文件里）。
-beforeEach(() => { process.env.CARD_GENERATION_CHAIN = "v2"; });
 
 const admin = postgres(ADMIN_URL, { max: 2 });
 
@@ -190,7 +184,7 @@ async function activate(versionId: string, intent: { kind: "create_new" } | {
       computeRelationsHashV2,
     } = await import("../../../../packages/shared/src/card-generation-v2-hashing.ts");
     const candRow = await admin`
-      SELECT objective_draft FROM card_generation_candidates_v2
+      SELECT objective_draft, evidence_binding_plan_hash FROM card_generation_candidates_v2
       WHERE candidate_revision_id = ${first.candidate_revision_id} AND workspace_id = ${WORKSPACE_ID}`;
     const objectiveDraft = candRow[0].objective_draft as {
       objectiveStatement: string;
@@ -214,7 +208,19 @@ async function activate(versionId: string, intent: { kind: "create_new" } | {
       rubricHash,
       relationsHash,
     });
-    const proposedEvidenceBindingPlanHash = hashCanonicalV2("candidate-evidence-binding-plan-v2", {
+    // §5.4 那份重算闭包里 `proposedEvidenceBindingPlanHash` 取的是这条修订**自己点名的
+    // 那一份** plan 行（没有点名才退到按 (created_at, id) 的最后一份）——与
+    // `activation-service.ts:1671` 同一读法。旧链在生成路径上不写这一行，所以夹具此前
+    // 拿"无行 ⇒ 退化公式"就算得平；简化链生成时写一份并点名进候选行，照真实合同取才两链都成立。
+    const planRows = await admin`
+      SELECT binding_plan_hash FROM candidate_evidence_binding_plans_v2
+      WHERE workspace_id = ${WORKSPACE_ID} AND candidate_revision_id = ${first.candidate_revision_id}
+      ORDER BY created_at, id
+    ` as unknown as Array<{ binding_plan_hash: string }>;
+    const namedPlanHash = String(candRow[0].evidence_binding_plan_hash ?? "");
+    const proposedEvidenceBindingPlanHash = (
+      planRows.find((row) => row.binding_plan_hash === namedPlanHash) ?? planRows.at(-1)
+    )?.binding_plan_hash ?? hashCanonicalV2("candidate-evidence-binding-plan-v2", {
       candidateRevisionId: first.candidate_revision_id,
     });
     // 服务端用当前 objective revision（DB 现值）作为 priorObjectiveRevisionId。
@@ -353,7 +359,6 @@ after(async () => {
 });
 
 test("C27：presentation-only Card edit → 旧 Run 可读、objective/mastery identity 不重置", async () => {
-  delete process.env.CARD_GENERATION_CHAIN; // 机制格，与哪条链出几张卡无关 ⇒ 走默认档
   const { versionId } = await seedNote("C27", CONTENT_A);
   const { mapping } = await activate(versionId, { kind: "create_new" });
 
@@ -413,7 +418,6 @@ test("C27：presentation-only Card edit → 旧 Run 可读、objective/mastery i
 });
 
 test("C28：answer/rubric semantic change → 新 Objective ID；旧对象 supersede；lineage 完整；0 Schedule", async () => {
-  delete process.env.CARD_GENERATION_CHAIN; // 机制格，与哪条链出几张卡无关 ⇒ 走默认档
   const { versionId: v1 } = await seedNote("C28-D", CONTENT_D);
   const { mapping: m1 } = await activate(v1, { kind: "create_new" });
 

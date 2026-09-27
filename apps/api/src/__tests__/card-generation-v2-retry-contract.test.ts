@@ -63,13 +63,16 @@ describe("card-generation run 级就地重试：API ↔ worker 状态门闩契�
     );
   });
 
-  it("重试服务派发的是简化链的重排那一档（默认档），旧链只在显式 v2 时回得去", () => {
-    // 认的是**代码形状**（`jobType:` 的三元里真分支是新链），不是"文件里没出现过那个词"：
+  it("重试服务派发的是简化链的重排那一发（旧链与总控一起删除后，这里只有一个答案）", () => {
+    // 认的是**代码形状**（那一发的 `jobType:` 字面量），不是"文件里没出现过那个词"：
     // 上一版的判据被一句过时的注释满足了，注释改之前它一直绿着，代码早就翻了链。
+    // 刀一之前这一格读的是三元真分支；刀二删掉旧链之后没有第二档可读，判据随之收窄成
+    // "这一发的 jobType 必须是简化链的整批那一发"，旧 jobType 若被写回来，
+    // `card-generation-chain-entry-inventory` 那格台账会红。
     assert.match(
       apiRetryServiceSource,
-      /jobType:\s*cardGenerationSimplifiedChainV3\(\)\s*\?\s*"card_generation_simplified_v1"\s*:\s*"card_generation_replan_set"/,
-      "retryGenerationRunV2 必须问总控，且默认那一档是带 `mode: \"replan\"` 的简化链任务",
+      /jobType:\s*"card_generation_simplified_v1"/,
+      "retryGenerationRunV2 必须派简化链的整批任务（带 `mode: \"replan\"`）",
     );
     assert.match(
       apiRetryServiceSource,

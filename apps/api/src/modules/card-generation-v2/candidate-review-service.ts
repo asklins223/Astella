@@ -29,7 +29,6 @@ import {
 } from "@ailearn/shared/card-generation-v2-hashing";
 import {
   CardGenerationV2ServiceError,
-  cardGenerationSimplifiedChainV3,
   insertEvent,
   applyPatch,
   getCandidateForAction,
@@ -384,13 +383,13 @@ async function handleEdit(
 
   // §12.2/§12.3：编辑后必须重跑门禁——派发 worker job，由 worker 对新 revision 完整重跑
   // 门禁（旧 revision 不可变，不覆盖）。
-  // 39d W7-7 刀一：默认走简化链的**逐候选**那一档；`v2` 那一档仍要问总控——这个开关
-  // 从前只管第一次生成那一发，审核台上那四发直接投旧链，于是"开关打开"≠"这条链在跑"。
+  // 39d W7-7：审核台上的每一发都走简化链的**逐候选**那一档——刀一之前这个判断只成立于
+  // 第一次生成那一发，审核台那几发绕开总控直投旧链。
   // 0163（round-6）：部分唯一约束仅限单例 job 类型——per-candidate 语义同 run 可多行。
   await tx.insert(cardGenerationRunOutboxV2).values({
     workspaceId: ctx.workspaceId,
     runId,
-    jobType: cardGenerationSimplifiedChainV3() ? "card_candidate_refine_v3" : "card_generation_recheck_candidate",
+    jobType: "card_candidate_refine_v3",
     payload: {
       runId,
       workspaceId: ctx.workspaceId,
@@ -549,11 +548,11 @@ async function handleMerge(
   });
 
   // §12.2/§12.3：合并产物必须重跑门禁——派发 worker job（父候选已 merged 不可激活）。
-  // 39d W7-7 刀一：默认走简化链的逐候选那一档，`v2` 那一档保留完整旧载荷。
+  // 39d W7-7：合并产物走逐候选那一档（与编辑后重检同一发、同一个 mode）。
   await tx.insert(cardGenerationRunOutboxV2).values({
     workspaceId: ctx.workspaceId,
     runId,
-    jobType: cardGenerationSimplifiedChainV3() ? "card_candidate_refine_v3" : "card_generation_recheck_candidate",
+    jobType: "card_candidate_refine_v3",
     payload: {
       runId,
       workspaceId: ctx.workspaceId,
@@ -628,13 +627,12 @@ async function handleRegenerateCandidate(
       eq(cardGenerationCandidatesV2.workspaceId, ctx.workspaceId),
     ));
 
-  // 派发 worker job：39d W7-7 刀一——默认走简化链的逐候选那一档，`mode: "rewrite"` 让
-  // worker 先按用户给的因由改写这一张，再走与整批同一条检查腿（39c §9："用户改写走统一
-  // 候选生成模式和增量检查"）。`v2` 那一档仍是旧链的"重新 author ＋双 Critic"。
+  // 派发 worker job：39d W7-7——逐候选那一发的 `mode: "rewrite"` 让 worker 先按用户给的
+  // 因由改写这一张，再走与整批同一条检查腿（39c §9："用户改写走统一候选生成模式和增量检查"）。
   await tx.insert(cardGenerationRunOutboxV2).values({
     workspaceId: ctx.workspaceId,
     runId,
-    jobType: cardGenerationSimplifiedChainV3() ? "card_candidate_refine_v3" : "card_generation_regenerate_candidate",
+    jobType: "card_candidate_refine_v3",
     payload: {
       runId,
       workspaceId: ctx.workspaceId,
@@ -664,7 +662,7 @@ async function handleReplanSet(
   runId: string,
   action: Extract<CandidateActionV2, { type: "replan_set" }>,
 ) {
-  // 39d W7-7 刀一：整批重规划走简化链的**重排**那一档（同一 run 再开一版计划，
+  // 39d W7-7：整批重规划走简化链的**重排**那一档（同一 run 再开一版计划，
   // 上一版没激活的候选由 worker 标 superseded 让路）。
   //
   // 这一发与另外三发不一样：它付的是一整批的钱。审核台上没有 idempotencyKey 那样的
@@ -683,7 +681,7 @@ async function handleReplanSet(
   await tx.insert(cardGenerationRunOutboxV2).values({
     workspaceId: ctx.workspaceId,
     runId,
-    jobType: cardGenerationSimplifiedChainV3() ? "card_generation_simplified_v1" : "card_generation_replan_set",
+    jobType: "card_generation_simplified_v1",
     payload: {
       runId,
       workspaceId: ctx.workspaceId,

@@ -323,12 +323,13 @@ services:
       # actually reads are declared here.
       COMPANION_DIALOGUE_V1_ENABLED: ${COMPANION_DIALOGUE_V1_ENABLED:-true}
       COMPANION_VOICE_DIALOGUE_V1_ENABLED: ${COMPANION_VOICE_DIALOGUE_V1_ENABLED:-false}
-      CARD_GENERATION_V2_LLM: ${CARD_GENERATION_V2_LLM:-false}
-      # 2026-09-17：author/grounding 阶段内并发上限（此前硬串行）。
-      # 默认 12：让实测规模（N≈5）一波跑完；provider 配额紧张时下调。
-      V2_STAGE_CONCURRENCY: ${V2_STAGE_CONCURRENCY:-12}
-      # 2026-09-17：投机 pedagogy 开关（默认开）。
-      V2_SPECULATIVE_PEDAGOGY: ${V2_SPECULATIVE_PEDAGOGY:-1}
+      # 制卡唯一的模型档位开关（39d W7-7 刀二之后）。**未设 = 确定性替身 = 生产直接拒发**：
+      # `resolveCardGenerationV3Providers()` 在 NODE_ENV=production 且没显式
+      # V3_ALLOW_DETERMINISTIC_PROVIDERS=1 时抛不可重试错误（L1 护栏，理由见
+      # 39d-w71 §5 第 9 条）。也就是说这条链接线真模型之前，生产部署出不来卡。
+      # 旧链那三把（CARD_GENERATION_V2_LLM / V2_STAGE_CONCURRENCY / V2_SPECULATIVE_PEDAGOGY）
+      # 随四阶段链一起已经没有读取者，故从这份文件里删除。
+      CARD_GENERATION_V3_PROVIDER: ${CARD_GENERATION_V3_PROVIDER:-deterministic}
       COMPANION_MEMORY_EXTRACTOR_V1: ${COMPANION_MEMORY_EXTRACTOR_V1:-true}
       COMPANION_MEMORY_VECTOR_V1: ${COMPANION_MEMORY_VECTOR_V1:-true}
       COMPANION_SUMMARIZER_V1: ${COMPANION_SUMMARIZER_V1:-true}
