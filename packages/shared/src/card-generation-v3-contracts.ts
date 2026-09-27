@@ -177,6 +177,32 @@ export type CardGenerateV3Output = z.infer<typeof cardGenerateV3OutputSchema>;
  * `expandCardGenerateV3OutputV3` 搭成这一份；下游（草稿级程序校验、组装、落库、审核页）
  * 读的一直是它——V2 的候选表与 binding plan 吃的就是 `learningObjectiveDraftV2`。
  */
+/**
+ * **逐候选宽进**的信封（运行时走这一份）：计划意图与提案仍严格校验，`candidates` 先收
+ * `unknown[]`，由展开器逐条按 `cardGenerateV3CandidateContentSchema` 解析——**一条候选少给
+ * 一格不该让整批红**（第八发真模型就是少了个 `front.cue` 把整批判成 `output_shape`）。
+ * 剔掉的候选要**带原文原因**记账，不是静默丢。
+ */
+export const cardGenerateV3OutputEnvelopeSchema = z
+  .strictObject({
+    planIntent: cardGenerateV3PlanIntentSchema,
+    objectiveProposals: z.array(cardGenerateV3ObjectiveProposalSchema).max(12),
+    candidates: z.array(z.unknown()).max(8),
+  })
+  .superRefine((output, ctx) => {
+    // 计划意图与提案**这一层仍然严格**（那是"零候选是正常结果"那条纪律的一部分）；
+    // 宽进只放宽到"每条候选自己的内容"。
+    if (output.planIntent.kind !== "author_candidates"
+      && (output.candidates.length > 0 || output.objectiveProposals.length > 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "no_cards_recommended must not carry candidates or objective proposals",
+        path: ["candidates"],
+      });
+    }
+  });
+export type CardGenerateV3OutputEnvelope = z.infer<typeof cardGenerateV3OutputEnvelopeSchema>;
+
 export const cardGenerateV3DraftOutputSchema = z.strictObject({
   planIntent: cardGenerateV3PlanIntentSchema,
   objectiveProposals: z.array(cardGenerateV3ObjectiveProposalSchema).max(12),

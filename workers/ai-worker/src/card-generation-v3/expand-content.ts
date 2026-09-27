@@ -17,13 +17,13 @@
  *  - `practiceItem` 不生成：`plan-assembly.ts` 那条"缺省时按答案派生"的规则照旧生效。
  */
 import {
+  cardGenerateV3CandidateContentSchema,
   cardGenerateV3DraftOutputSchema,
-  cardGenerateV3OutputSchema,
+  cardGenerateV3OutputEnvelopeSchema,
   type CardGenerateV3CandidateContent,
   type CardGenerateV3CandidateDraft,
   type CardGenerateV3DraftOutput,
   type CardGenerateV3ObjectiveProposal,
-  type CardGenerateV3Output,
 } from "@ailearn/shared/card-generation-v3-contracts";
 import type {
   CanonicalAnswerV2,
@@ -171,25 +171,45 @@ export interface ExpandOutputV3 {
   readonly output: CardGenerateV3DraftOutput;
   readonly droppedEmptyRubric: number;
   readonly droppedPartRefs: number;
+  /** 内容合同没过的候选：**逐条**剔除并留因（一条少给一格不该让整批红）。 */
+  readonly droppedInvalid: ReadonlyArray<{ readonly objectiveLocalId: string; readonly reason: string }>;
 }
 
-/** 整份生成输出：内容 → 脚手架搭好的草稿。 */
+/** 整份生成输出：内容 → 脚手架搭好的草稿（逐候选宽进、逐条留因）。 */
 export function expandCardGenerateV3OutputV3(raw: unknown): ExpandOutputV3 {
-  const parsed = cardGenerateV3OutputSchema.parse(raw) as CardGenerateV3Output;
+  const parsed = cardGenerateV3OutputEnvelopeSchema.parse(raw);
+  const drafts: CardGenerateV3CandidateDraft[] = [];
+  const droppedInvalid: Array<{ objectiveLocalId: string; reason: string }> = [];
+  let droppedEmptyRubric = 0;
+  let droppedPartRefs = 0;
   if (parsed.planIntent.kind !== "author_candidates") {
     return {
       output: cardGenerateV3DraftOutputSchema.parse({ ...parsed, candidates: [] }),
-      droppedEmptyRubric: 0, droppedPartRefs: 0,
+      droppedEmptyRubric: 0, droppedPartRefs: 0, droppedInvalid: [],
     };
   }
   const proposals = new Map(parsed.objectiveProposals.map((p) => [p.objectiveLocalId, p]));
-  const drafts: CardGenerateV3CandidateDraft[] = [];
-  let droppedEmptyRubric = 0;
-  let droppedPartRefs = 0;
-  for (const content of parsed.candidates) {
-    // 提案对不上在**合同那一层**就被拒了（`cardGenerateV3OutputSchema` 的 superRefine）：
-    // 判据只有那一处，这里不写第二个"对不上怎么办"的答案。
-    const proposal = proposals.get(content.objectiveLocalId)!;
+  for (const rawCandidate of parsed.candidates) {
+    const localId = (rawCandidate as { objectiveLocalId?: unknown })?.objectiveLocalId;
+    const parsedCandidate = cardGenerateV3CandidateContentSchema.safeParse(rawCandidate);
+    if (!parsedCandidate.success) {
+      droppedInvalid.push({
+        objectiveLocalId: typeof localId === "string" ? localId : `#${droppedInvalid.length + 1}`,
+        // 只留第一条与路径：整段 zod 消息会把 last_error 撑爆，也读不出重点。
+        reason: parsedCandidate.error.issues
+          .slice(0, 3)
+          .map((issue) => `${issue.path.join(".") || "(根)"}: ${issue.message}`)
+          .join("；"),
+      });
+      continue;
+    }
+    const content = parsedCandidate.data;
+    const proposal = proposals.get(content.objectiveLocalId);
+    if (!proposal) {
+      // 提案对不上的引用在**合同那一层**就该被拒（信封不判，这里判）：仍旧剔掉并留因。
+      droppedInvalid.push({ objectiveLocalId: content.objectiveLocalId, reason: "引用了未提案的 objectiveLocalId" });
+      continue;
+    }
     const expanded = expandCardGenerateV3ContentV3({ content, proposal });
     droppedPartRefs += expanded.droppedPartRefs;
     if (expanded.rubricEmpty) { droppedEmptyRubric += 1; continue; }
@@ -197,7 +217,7 @@ export function expandCardGenerateV3OutputV3(raw: unknown): ExpandOutputV3 {
   }
   return {
     output: cardGenerateV3DraftOutputSchema.parse({ ...parsed, candidates: drafts }),
-    droppedEmptyRubric, droppedPartRefs,
+    droppedEmptyRubric, droppedPartRefs, droppedInvalid,
   };
 }
 
@@ -231,17 +251,15 @@ export function contentFromObjectiveDraftV3(input: {
     }
   })();
   const indexOfUnit = new Map(unitTexts.map((u, index) => [u.unitId, index + 1]));
-  const answerForm = answer.kind === "bullets" || answer.kind === "ordered_steps" || answer.kind === "mapping"
-    ? (answer.kind === "ordered_steps" ? "steps" : answer.kind === "mapping" ? "pairs" : "bullets")
-    : "prose";
+  const answerForm = answer.kind === "ordered_steps" ? "steps"
+    : answer.kind === "mapping" ? "pairs"
+      : answer.kind === "bullets" ? "bullets" : "prose";
   const judgingPoints = draft.rubric.units
     .map((unit) => ({
       facet: unit.facet,
       criterion: unit.criterion,
       required: unit.required,
-      partIndexes: unit.answerUnitIds
-        .map((id) => indexOfUnit.get(id) ?? 0)
-        .filter((n) => n > 0),
+      partIndexes: unit.answerUnitIds.map((id) => indexOfUnit.get(id) ?? 0).filter((n) => n > 0),
     }))
     .filter((point) => point.partIndexes.length > 0);
   return {

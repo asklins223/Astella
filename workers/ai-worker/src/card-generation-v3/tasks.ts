@@ -59,7 +59,7 @@ import type {
   CardGenerateV3DroppedCandidate,
   CardGenerateV3TaskOutput,
 } from "./output-types.ts";
-import { expandCardGenerateV3OutputV3 } from "./expand-content.ts";
+import { expandCardGenerateV3OutputV3, type ExpandOutputV3 } from "./expand-content.ts";
 
 /** execute 的解析失败形状（内核 AiStepFailure 的结构复刻）。 */
 interface ParseFailure {
@@ -338,9 +338,11 @@ export function createCardGenerateV3Task(
         signal: env.signal,
       });
       let parsed: CardGenerateV3DraftOutput;
+      let expansion: ExpandOutputV3 = { output: null as never, droppedEmptyRubric: 0, droppedPartRefs: 0, droppedInvalid: [] };
       try {
         // 模型交的是**内容**（四种产出型＋判分点只指片段序号），V2 那套脚手架由服务端搭。
-        parsed = expandCardGenerateV3OutputV3(JSON.parse(completion.text)).output;
+        expansion = expandCardGenerateV3OutputV3(JSON.parse(completion.text));
+        parsed = expansion.output;
       } catch (error) {
         const failure: ParseFailure = {
           ok: false,
@@ -350,11 +352,16 @@ export function createCardGenerateV3Task(
         return failure;
       }
       const { kept, dropped } = validateCardGenerateV3Drafts(parsed.candidates, input);
+      // 逐条剔掉的候选要**带因**交出去：静默丢等于"零候选"读起来像模型没出卡。
+      const droppedAll = [
+        ...expansion.droppedInvalid.map((item) => ({ objectiveLocalId: item.objectiveLocalId, reason: item.reason })),
+        ...dropped,
+      ];
       return {
         ok: true,
         output: {
           parsed: kept.length === parsed.candidates.length ? parsed : { ...parsed, candidates: kept },
-          droppedCandidates: dropped,
+          droppedCandidates: droppedAll,
           acceptedCount: kept.length,
         },
         promptTokens: completion.promptTokens,

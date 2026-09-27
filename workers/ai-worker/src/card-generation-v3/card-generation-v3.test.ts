@@ -325,7 +325,7 @@ test("一份判据：依据越界不在草稿级判，留给组装后的确定�
 
 // ── ② 合同即闸 ─────────────────────────────────────────────────────────
 
-test("合同即闸：候选引用未提案的 localId ⇒ output_shape", async () => {
+test("合同即闸：候选引用未提案的 localId ⇒ 那一条剔掉并留因（整批不红）", async () => {
   const broken = JSON.parse(generateJson([candidateContent("obj-1")]));
   broken.candidates[0].objectiveLocalId = "obj-不存在";
   const provider = scriptedProvider([JSON.stringify(broken)]);
@@ -335,8 +335,10 @@ test("合同即闸：候选引用未提案的 localId ⇒ output_shape", async (
     commit: async () => { throw new Error("不许 commit"); },
   });
   const receipt = await task.execute(generateInput, environment(provider.modelId));
-  assert.ok(!receipt.ok, "越引用的候选必须在解析这一层就被拒");
-  assert.equal(receipt.class, "output_shape");
+  assert.ok(receipt.ok, `整批不该为一条坏候选红掉：${receipt.ok ? "" : receipt.message}`);
+  assert.equal(receipt.output.acceptedCount, 0, "坏的那一条不许变成草稿");
+  assert.match(receipt.output.droppedCandidates[0]!.reason, /未提案/,
+    "剔掉要带因——静默丢会让零候选读起来像模型没出卡（第八发真模型少一格 front.cue 时同样按这条走）");
 });
 
 test("合同即闸：no_cards 还带着候选 ⇒ output_shape", async () => {
@@ -734,12 +736,27 @@ test("展开器：悬空引用丢掉、steps 只有一段退回 bullets、提案
     "含 0 且不含越界值 ⇒ 整体 +1；序号约定不该用整批红来教");
   assert.equal(zeroBased.droppedPartRefs, 0);
 
-  // 提案对不上**在合同那一层就被拒**（判据只有一处）：展开器不写第二个答案。
-  assert.throws(() => expandCardGenerateV3OutputV3({
+  // 提案对不上：逐条剔掉并留因（宽进只到"每条候选自己的内容"，提案这一层仍然严格）。
+  const withUnmatched = expandCardGenerateV3OutputV3({
     planIntent: { kind: "author_candidates", recommendedCardCount: 2 },
     objectiveProposals: [proposal],
     candidates: [candidateContent("obj-1"), candidateContent("obj-2")],
-  }), /unknown objectiveLocalId/);
+  });
+  assert.equal(withUnmatched.output.candidates.length, 1);
+  assert.equal(withUnmatched.droppedInvalid.length, 1);
+  assert.match(withUnmatched.droppedInvalid[0]!.reason, /未提案/);
+  // 一条少给一格（第八发真模型的 front.cue）：只剔那一条，其余照常。
+  const partial = expandCardGenerateV3OutputV3({
+    planIntent: { kind: "author_candidates", recommendedCardCount: 2 },
+    objectiveProposals: [proposal],
+    candidates: [
+      candidateContent("obj-1"),
+      (() => { const c = candidateContent("obj-1"); delete (c as { front?: unknown }).front; return c; })(),
+    ],
+  });
+  assert.equal(partial.output.candidates.length, 1, "少一格的候选只剔它自己");
+  assert.equal(partial.droppedInvalid.length, 1);
+  assert.match(partial.droppedInvalid[0]!.reason, /front/);
 });
 
 // ── ⑦ 预算要自洽：`maxModelCalls` 得容得下"首次＋那一次自动重试" ──────────────
