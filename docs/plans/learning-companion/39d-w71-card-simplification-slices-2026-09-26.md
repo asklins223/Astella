@@ -108,3 +108,48 @@
 - 审核页（W7-2）消费的候选合同不变——新链产出与 V2 同表同形状，"保存到卡组 / 保存并开启复习"的组合命令（W7-2）不受影响。
 - 伴星入口（W7-9）依赖本任务的提案接口：情境制卡携带同一材料版本与目标范围调用同一生成任务。
 - 一次回答/一次需求消费的调度语义（W7-5/W7-8）不在本任务。
+
+---
+
+## 7. W7-7 刀二的分诊表：旧链那份网里，哪些随链删、哪些必须先改接（2026-09-27 逐条读用例名与断言）
+
+**为什么先做这张表**：刀二看起来是"删 6 000 行"，实际不是。旧链的十份集测里有一批用例
+测的**不是四阶段链本身**，而是激活、幂等、租约、配额、可见性、reveal 闸门——它们今天
+只是"借那条链跑一遍"。跟着链一起删，等于把与链无关的产品判据也删了；不删而直接翻入口，
+它们整片红（2026-09-27 实测：入口一翻，`e2e-subset` 25 条红，其中至少 12 条与链无关）。
+所以顺序只能是：先按这张表把"必须活下来的"改接到新链，再删链，最后删开关。
+
+### 7.1 随旧链一起删（断言的就是四阶段独有的东西）
+
+| 用例／文件 | 为什么只能随链走 |
+| --- | --- |
+| `card-generation-v2-postgres`（V2 纵切 seal → planner/author/critics → review_ready） | 文件名就是那条管道 |
+| `card-generation-v2-plan-commit`、`-pedagogy-stage-postgres`（投机 pedagogy、三种裁决、头部配额等式） | 投机 pedagogy 与双 Critic 是 39c §9 处置列里点名要删的 |
+| `card-generation-v2-bounded-repair-postgres`（有界修复、同一条修两遍被唯一索引挡） | 自动修复循环取消 = 39c §6.1 |
+| `card-generation-v2-per-candidate-commit-postgres`（每张候选各一次提交、重放不再调作者） | 新链是"一次生成出一批"，没有逐候选 author 循环 |
+| `card-generation-v2-llm-natural-activation`（真实四阶段全旅程） | 同上；它的"全旅程"那一半在 V3 那份集测里已有对应格 |
+| e2e 里的 C04（Atom 重复决策）、C05/C06/C08/C09（planner 怎么切目标）、C13（pedagogy hard fail 词表）、C14（deck gate 合并/drop）、C20b（旧 replan_set） | 判据对象是 planner/Critic 的中间产物，新链不产出这些结构 |
+
+### 7.2 必须先改接到新链才能删链（与链无关的产品判据）
+
+C22 幂等重放、C33 SSE payload 白名单、C32 跨 workspace 伪造 runId、C17 reject-all 成功终态、
+C23+C25 激活幂等与 canonical mapping、C45 开启复习那一档、C30 archive 与 epoch 前移、
+C5 PREPARE 冻结目标快照、§17.5 post-activation 投影消费者、§10.5 无 key 时 fail-closed、
+C18 reveal 先持久化、C46/C47/C48 翻过答案才算 ready、长正文截断留痕（两条）、
+`c-cases` 的 C27/C28/C38（presentation-only 与语义变更的对象谱系）、
+`redaction-quota` 两条（tombstone 与 §22.6 配额）。
+
+这些今天全走 `createGenerationRunV2` + `pollV2Outbox`，所以入口一翻就读到另一条链的产出。
+改接的做法只有两种可接受：① 让它们走新链并**逐条复核断言仍成立**（不许为了让它绿而放宽）；
+② 把"与链无关"的那部分改成直接摆库里的行、只测自己那件事（例如配额、租约 fence、幂等）。
+选哪一条按用例定，写在刀二的提交说明里。
+
+### 7.3 分诊时新发现的洞（不属于刀二，但是刀一翻默认档的直接后果）
+
+`card_generation_run_progress_v2`（迁移 0249 那张"生成过程实时读数"）今天**只有旧链写**：
+`grep writeCardGenerationLiveProgress workers/ai-worker/src/card-generation-v3/*` 命中 0 个文件。
+默认档已翻到简化链 ⇒ 现网新生成的 run 不再有实时进度可读，而 `live-progress` 那 8 条用例
+测的正是这张表（含"fence：租约被抢走后旧 worker 0 影响"这类与链无关的安全判据）。
+两件事要做：① 新链在段与段之间写这份读数（一次批量只有一发生成＋一发检查，读数点位
+与旧链不同，要按新链的段来定）；② 那 8 条里"租约/退役/不回滚"的机制格改接到新链的写入点。
+这一条优先于删除：不补就是"生成中"那一屏在默认档上变成死的。
