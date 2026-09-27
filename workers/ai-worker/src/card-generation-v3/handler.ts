@@ -34,6 +34,8 @@ import {
   type WorkerTransaction,
 } from "../db.ts";
 import { logger } from "../lib/logger.ts";
+// 读侧与落库原语（39d W7-7 刀二·内核搬家第三块）：简化链与旧链共用同一份，
+// 所以引的是模块本体，不再绕旧 handler。
 import {
   candidateRowToObject,
   emitSourceContentCapEvent,
@@ -43,7 +45,7 @@ import {
   insertRepairedCandidateV2,
   loadV2RunInputs,
   V2_SOURCE_CONTENT_MAX_CHARS,
-} from "../handlers/card-generation-v2-handler.ts";
+} from "../card-generation-v2/run-io.ts";
 import {
   fenceV2OutboxLease,
   renewV2OutboxLease,

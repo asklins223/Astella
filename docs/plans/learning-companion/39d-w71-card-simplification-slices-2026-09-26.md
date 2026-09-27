@@ -219,12 +219,9 @@ HEAD），按 hunk 拆开只提自己那 58 行。
 简化链集测 4 处动态 import）都由 `tsc` 逼着重指，不靠记忆。事故注释跟着代码一起走。
 
 **剩下的砖与量好的边界**（按依赖排序，一次搬一块）：
-① **队列与租约：同日搬完**——`outbox-queue.ts`（457 行）装走 `PendingOutboxJob`、四个租约/预算/并发常量、`v2Inflight`（导出给 `pollV2Outbox` 用，它是唯一的另一个写者）、claim/renew/fence/release/releaseInflight/complete/fail/reap，以及 `sanitizeOperationalError`（错误文本落库前那份统一脱敏，两条链与 worker 入口共用）。`pollV2Outbox` 与 `processV2OutboxJob` **故意留下**：前者要调后者的分发，跟过去就成 `handler → queue → handler` 的循环 import。改指的消费方：`index.ts`（3 个符号）、v3 handler（fence/renew/类型）、live-progress 集测（2 处动态 import）。旧 handler 4385→**3916** 行。
-② 候选行读写与落库原语：`candidateRowToObject`、`insertAuthoredCandidatesBatched`、
-`insertBindingPlanRow`、`insertEvent`、`insertRepairedCandidateV2`、`loadV2RunInputs`、
-`emitSourceContentCapEvent`、`capSourceContentForPrompts` 与三个上限常量、
-`selectDistinctCandidatesV2`、`writeCardGenerationLiveProgress`——这些是 v3 此刻正在 import 的。
-③ 搬完 ①② 之后剩下的才是四阶段链本体（planner/author/双 Critic/有界修复/投机 pedagogy），
+① **队列与租约：同日搬完**——`outbox-queue.ts`（457 行）装走 `PendingOutboxJob`、四个租约/预算/并发常量、`v2Inflight`（导出给 `pollV2Outbox` 用，它是唯一的另一个写者）、claim/renew/fence/release/releaseInflight/complete/fail/reap，以及 `sanitizeOperationalError`（错误文本落库前那份统一脱敏，两条链与 worker 入口共用）。`pollV2Outbox` 与 `processV2OutboxJob` **故意留下**：前者要调后者的分发，跟过去就成 `handler → queue → handler` 的循环 import。改指的消费方：`index.ts`（3 个符号）、v3 handler（fence/renew/类型）、live-progress 集测（2 处动态 import）。旧 handler 4385→**3916** 行（砖②之后 3313）。
+② **候选行读写与落库原语：同日搬完**——`run-io.ts`（662 行）接走 `loadV2RunInputs`（两条链共用的一只读器）、`loadSealedEvidence`、`candidateRowToObject`、`insertEvent`/`insertEventsBatched`、`insertBindingPlanRow`、`insertAuthoredCandidatesBatched` 与其列闭包（`AUTHORED_CANDIDATE_COLUMNS`/`authoredCandidateValues`/`EMPTY_HINTS`）、`insertRepairedCandidateV2`、`emitSourceContentCapEvent`、三个 prompt 规模上限与两份截断器。旧 handler 里没人读的 shared import 一并清掉（`noUnusedLocals` 替我盯），只有旧 handler 在用的 `isUniqueEventSeqCollision` **搬回去了**——它不是共用件，留在共用模块里就是「看着共用其实没人用」。
+③ ①②③ 三块搬完之后，剩下的就是四阶段链本体（planner/author/双 Critic/有界修复/投机 pedagogy），
 那一块整删。
 
 **两条已经踩过的危险**：一是别按"连续行段"整块切——第一次我按 115–693 切，把留在原地的
