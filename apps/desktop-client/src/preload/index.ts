@@ -367,7 +367,11 @@ const desktopApi: AILearnDesktopApiM2 = {
     // 「两种意图可以分别存在」，合成一颗开关会把"停哪一个"变成系统的默认。
     activateSubscription: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewSubscriptionActivate, input),
     pauseSubscription: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewSubscriptionPause, input),
-    listNoteSubscriptions: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewSubscriptionListNotes, input)
+    listNoteSubscriptions: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewSubscriptionListNotes, input),
+    // W7-4 刀七：首页「只推一件」。`timeZone` 由**渲染层**读出来带上来（§12.1「本次」
+    // 的边界按她的日历日算；在这里猜一次就会把她的午夜切错）。
+    readHomeSuggestion: (input) => invoke(DESKTOP_IPC_CHANNELS.homeSuggestionRead, input),
+    actOnHomeSuggestion: (input) => invoke(DESKTOP_IPC_CHANNELS.homeSuggestionAct, input)
   },
   // 判定的争议（39 §14.2、§16.11、§16.25）。只有**人能按的**四条：
   // `recheck` 与 `correction` 的写入方是系统，不挂在这里（理由见共享通道表那段）。

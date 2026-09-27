@@ -157,6 +157,9 @@ import {
 import { reviewDeferRequestV2Schema, reviewDeferResultV2Schema, reviewQueueV2Schema } from "@ailearn/shared/review-queue-v2-contracts";
 import {
   noteReviewSubscriptionsV2Schema,
+  homeSuggestionWireV2Schema,
+  homeSuggestionActionCommandV2Schema,
+  homeSuggestionActionResultV2Schema,
   objectiveHoldCommandV2Schema,
   objectiveHoldResultV2Schema,
   objectiveResumeCommandV2Schema,
@@ -3436,6 +3439,28 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     assertEpoch(input.meta, activeWorkspaceEpoch);
     return gateway.listNoteReviewSubscriptions(input.meta.requestId);
   }, undefined, noteReviewSubscriptionsV2Schema);
+
+  // ─── 首页「只推一件」（39d W7-4 刀七；39 §12.1）────────────────────────
+  //
+  // 两条都挂 `note.library` 的 M2 路线门槛：首页那件读的是**目标与轮次**，与笔记屏
+  // 同属"学习空间"这一族，而把它挂到一个更宽的门槛上就等于让它在未初始化时先露头。
+  installHandler(DESKTOP_IPC_CHANNELS.homeSuggestionRead, z.strictObject({
+    ...m1InputBase,
+    timeZone: z.string().min(1),
+  }), options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.library");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.readHomeSuggestion(input.timeZone, input.meta.requestId);
+  }, undefined, homeSuggestionWireV2Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.homeSuggestionAct, z.strictObject({
+    ...m1InputBase,
+    request: homeSuggestionActionCommandV2Schema,
+  }), options, async (_event, _window, input) => {
+    requireM2Route(contract, "note.library");
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.actOnHomeSuggestion(input.request, input.meta.requestId);
+  }, undefined, homeSuggestionActionResultV2Schema);
 
   // ─── 判定的争议（39 §14.2、§16.11、§16.25）────────────────────────────────
   //

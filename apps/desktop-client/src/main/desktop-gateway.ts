@@ -112,6 +112,9 @@ import {
 import { reviewDeferRequestV2Schema, reviewDeferResultV2Schema, reviewQueueV2Schema } from "@ailearn/shared/review-queue-v2-contracts";
 import {
   noteReviewSubscriptionsV2Schema,
+  homeSuggestionWireV2Schema,
+  homeSuggestionActionCommandV2Schema,
+  homeSuggestionActionResultV2Schema,
   objectiveHoldCommandV2Schema,
   objectiveHoldResultV2Schema,
   objectiveResumeCommandV2Schema,
@@ -1805,6 +1808,43 @@ export class DesktopGateway {
    * 笔记订阅的读侧。**连暂停的也读**：屏上那颗开关要能拨回"开"，只读活着的那些
    * 就等于"停过的那篇从此找不到"。
    */
+  /**
+   * W7-4 刀七：首页「只推一件」（§12.1）。
+   *
+   * `timeZone` **原样传给服务端**而不是在这里转成本地时区：那一格决定"本次"的边界
+   * （0306 按她的日历日），服务端按收到的那个算——本机时区与她的设置不一致时，
+   * 在这里转一次就会把她的午夜切错，而那一次恰好是"她刚做完今天"的时候。
+   */
+  async readHomeSuggestion(
+    timeZone: string,
+    requestId?: string,
+  ): Promise<z.infer<typeof homeSuggestionWireV2Schema>> {
+    await this.ensureConnected(requestId);
+    const result = await this.request(
+      `/home/v2/suggestion?timeZone=${encodeURIComponent(timeZone)}`,
+      { method: "GET" },
+      true, true, requestId,
+    );
+    const parsed = homeSuggestionWireV2Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+  /** 「换一个」/「暂不处理」。回执**顺带**交回下一件（屏上按一下要立刻看到另一件）。 */
+  async actOnHomeSuggestion(
+    request: z.infer<typeof homeSuggestionActionCommandV2Schema>,
+    requestId?: string,
+  ): Promise<z.infer<typeof homeSuggestionActionResultV2Schema>> {
+    await this.ensureConnected(requestId);
+    const result = await this.request("/home/v2/suggestion/action", {
+      method: "POST",
+      body: JSON.stringify(request),
+    }, true, true, requestId);
+    const parsed = homeSuggestionActionResultV2Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
   async listNoteReviewSubscriptions(
     requestId?: string,
   ): Promise<z.infer<typeof noteReviewSubscriptionsV2Schema>> {

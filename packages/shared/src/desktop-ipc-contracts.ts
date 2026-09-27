@@ -180,6 +180,7 @@ import {
   roundDrivingQuestionSourceV1Schema,
   roundTeachingViewV1Schema,
 } from "./note-learning-round-contracts.ts";
+import { noteRouteCoverageV1Schema } from "./note-route-coverage-v2.ts";
 import { understandingTopologySnapshotV3Schema } from "./understanding-topology-v3-contracts.ts";
 import { todayActivityV1Schema } from "./activity-surface-contracts.ts";
 // 跨空间统计合同（每空间一行 + 合计）：服务端路由、网关、渲染层共用同一份形状。
@@ -371,6 +372,15 @@ export const DESKTOP_IPC_CHANNELS = {
   // `open` 回的是"此刻那一轮"（没有就 404→null），而记录是"开过的每一轮"——
   // 收尾之后 `open` 变 null、记录变长，两件事的读数本来就相反。
   noteLearningRoundHistory: "ailearn.v1.noteLearningRound.history",
+  /**
+   * 这一篇的**核心路线**（39d W4-5 ③；PRD §4.4）：跨全部轮次、按核心问题归并。
+   *
+   * **单开一发，不塞进 `history`**：那一发是**按轮次**的时间线（§10.3 一行一轮），
+   * 这一发是**按核心问题**的跨轮汇总（§4.4「已走完这份核心路线」那句话的来源）。
+   * 两者在屏上摆的地方不同、口径不同、失败时的退路也不同——合成一发就会出现
+   * 「记录读到了但路线读失败」被读成「没有路线」。
+   */
+  noteLearningRoundRoute: "ailearn.v1.noteLearningRound.route",
   // §10.3 第二级（本人、跨笔记）：与上面那一条同一形状，只是不带 noteId（W4-8 刀二）。
   noteLearningRoundPersonalHistory: "ailearn.v1.noteLearningRound.personalHistory",
   // 教学产物两发（39d W4-6 刀二）。与记录那一发同一个理由不塞进 `open`：`open` 回的是
@@ -2541,6 +2551,18 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
       limit?: number;
       before?: string;
     }): Promise<GatewayResultV1<z.infer<typeof noteLearningRoundPersonalHistoryPageV1Schema>>>;
+    /**
+     * 这一篇的核心路线（39d W4-5 ③；PRD §4.4）：跨全部轮次、按核心问题归并。
+     *
+     * 与 `history` 的分工：那一发按**轮次**列时间线，这一发按**核心问题**说
+     * 「这一篇走到哪」。§4.4 的门槛是「纳入的每个核心问题都实际学过，
+     * 或有适用证据可略过重复教学」——所以回信里 `verdict.kind` 是**服务端裁决**，
+     * 界面不许自己数一遍再自己下结论（那正是这批代码一直在拆的第二个来源）。
+     */
+    route(input: {
+      meta: RequestMetaV1;
+      noteId: Uuid;
+    }): Promise<GatewayResultV1<z.infer<typeof noteRouteCoverageV1Schema>>>;
     /**
      * 这一轮**当前问题版本**下的那条解释（W4-6 刀二）。
      *

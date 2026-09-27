@@ -8,6 +8,8 @@ import type { FastifyInstance } from "fastify";
 import { requireSession } from "../identity/middleware.ts";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import { buildLearningDashboardV2 } from "./service.ts";
+import { actOnHomeSuggestionV2, readHomeSuggestionV2 } from "./home-suggestion-service.ts";
+import { homeSuggestionActionCommandV2Schema } from "@ailearn/shared/review-queue-v2-contracts";
 
 export async function learningDashboardRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireSession);
@@ -26,5 +28,43 @@ export async function learningDashboardRoutes(app: FastifyInstance) {
     // 只哈希稳定内容（见 service.ts），内容不变时返回 304。
     reply.header("cache-control", "private, no-cache");
     return dashboard;
+  });
+
+  // ─── 首页「只推一件」（39d W7-4 刀六；39 §12.1）──────────────────────────
+  //
+  // 两条路由只差一个动作，而**分开写就是两处会分叉**（其中一处很可能忘了把"今天已
+  // 略过的那几项"喂回判据）——所以读侧与动作走**同一个服务函数**，动作那一发顺带
+  // 交回下一件：屏上按一下「换一个」要立刻看到另一件，而不是"空一下再刷"。
+  //
+  // `timeZone` **由客户端带上来**而不是服务端猜：§12.1 那句「用户略过后**本次**不
+  // 反复推荐同一项」的「本次」按**她的日历日**算（0306），而按 UTC 算会在她的午夜前后
+  // 切错一次——那一次恰好是"她刚做完今天"的时候。
+  app.get("/home/v2/suggestion", async (req, reply) => {
+    const query = req.query as { timeZone?: string };
+    const timeZone = (query.timeZone ?? "UTC").trim();
+    const suggestion = await withWorkspaceTransaction(
+      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      (tx) => readHomeSuggestionV2(tx, {
+        workspaceId: req.session.workspaceId,
+        userId: req.session.userId,
+        timeZone,
+      }),
+    );
+    return reply.code(200).header("Cache-Control", "private, no-store").send(suggestion);
+  });
+
+  app.post("/home/v2/suggestion/action", async (req, reply) => {
+    const body = homeSuggestionActionCommandV2Schema.parse(req.body);
+    const result = await withWorkspaceTransaction(
+      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      (tx) => actOnHomeSuggestionV2(tx, {
+        workspaceId: req.session.workspaceId,
+        userId: req.session.userId,
+        timeZone: body.timeZone,
+        itemKey: body.itemKey,
+        action: body.action,
+      }),
+    );
+    return reply.code(200).header("Cache-Control", "private, no-store").send(result);
   });
 }
