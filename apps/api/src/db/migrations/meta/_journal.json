@@ -2108,6 +2108,20 @@
       "when": 1790816400000,
       "tag": "0301_learning_assessment_cancelled",
       "breakpoints": true
+    },
+    {
+      "idx": 301,
+      "version": "7",
+      "when": 1790742000000,
+      "tag": "0302_personal_relation_decisions_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 302,
+      "version": "7",
+      "when": 1790820000000,
+      "tag": "0303_review_subscriptions_v2",
+      "breakpoints": true
     }
 
   ]

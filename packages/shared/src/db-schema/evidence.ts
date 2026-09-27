@@ -122,3 +122,71 @@ export const objectiveReviewHoldsV2 = pgTable(
     reasonCheck: check("orh_v2_reason_chk", sql`${t.reasonCode} <> ''`),
   }),
 );
+
+/**
+ * 持续回访授权的**来源记法**（39 §9.1 第一段与第三段；39d W7-3 刀五）。
+ *
+ * §9.1 明写两句话，今天它们都没有落点：
+ *  - 「笔记的『安排以后复习』…卡片的『开启复习』…**两种意图可以分别存在**」；
+ *  - 「一个目标可能同时被笔记与卡片授权覆盖。**内部维护授权来源**，避免重复建立
+ *    相同目标、相同回访目的的待办；取消一项授权不误删另一项」。
+ *
+ * 在这张表之前，`ReviewAuthorizationSourceV2`（`note_subscription` / `card_review`）
+ * 只活在 `@ailearn/shared/review-authorization-rules-v2` 的类型里：**没有任何地方
+ * 写它、也没有任何地方读它**，于是「暂停笔记复习时说明已单独开启的卡片是否继续」
+ * 这句话没有可查的来源，"分别开停"也没有那颗开关能拨。
+ *
+ * **主体分两种**（`subjectType`），这不是把两个东西硬塞进一张表：
+ *  - `note` → 笔记订阅。§9.1「笔记订阅覆盖此后在这篇笔记中实际学过、或经本人声明／
+ *    首次回忆确认需要维护的核心目标」——它是**整篇**的持续授权，不是逐目标的。
+ *  - `objective` → 卡片订阅。「卡片的『开启复习』表示维护具体提取目标」，主体就是
+ *    那个目标（与 `review_schedules.subject_id` 同形，不设外键：目标被合并或退役
+ *    时不该顺手删掉她的授权记录，那会变成"悄悄取消订阅"）。
+ *
+ * **暂停保留行，不删**（`status='paused'` + `paused_at`）：§9.1「暂停只停该来源」
+ * 说的是停，不是撤销授权。留着行，屏上那颗开关才在"关"的位置上，下次恢复也不必
+ * 重新问一遍"你当时授权的范围是哪些目标"。唯一性同样只作用在**活着的那一份**上
+ * （部分唯一索引），与 0287／0295 同一套形状。
+ *
+ * 提醒与排除都**不在**这张表里：一次性提醒是 `reminder_kind='one_time'` 的那条排程，
+ * 目标排除是 `objective_review_holds_v2`。三件事各有一张表，是为了让"取消一项授权
+ * 不误删另一项"这句话在结构上成立——它们本来就不该互相覆盖。
+ */
+export const reviewSubscriptionsV2 = pgTable(
+  "review_subscriptions_v2",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    /** 见 `ReviewAuthorizationSourceV2`；词表在那份规则模块里，这里只存它交出来的值。 */
+    source: text("source").notNull(),
+    /** `note` = 笔记订阅（整篇）；`objective` = 卡片订阅（那个目标）。 */
+    subjectType: text("subject_type").notNull(),
+    /** `note` 档是笔记 id，`objective` 档是目标 id。**不设外键**，理由见头注。 */
+    subjectId: uuid("subject_id").notNull(),
+    status: text("status").notNull().default("active"),
+    /** §9.1 第一句那句话要能被屏上念出来，所以范围是**必填**，不是省略。 */
+    scopeNote: text("scope_note").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
+    pauseReason: text("pause_reason"),
+  },
+  (t) => ({
+    // 一个（空间, 人, 来源, 主体）只能有一份**活着**的授权。暂停留行 ⇒ 恢复是
+    // 改 status 而不是插第二条，于是"她什么时候授权的"这件事不会因为暂停而丢。
+    liveUnique: uniqueIndex("rs_v2_ws_user_source_subject_live_idx")
+      .on(t.workspaceId, t.userId, t.source, t.subjectType, t.subjectId)
+      .where(sql`${t.status} = 'active'`),
+    // 「这条安排还由谁撑着」那一发：调度边界每次问「覆盖我的来源有哪些」都走它。
+    liveLookupIdx: index("rs_v2_ws_user_subject_live_idx")
+      .on(t.workspaceId, t.userId, t.subjectType, t.subjectId)
+      .where(sql`${t.status} = 'active'`),
+    // 暂停的时间不能早于授权：反过来那一份读出来会读成"我暂停过一句还没说过的话"。
+    pausedCheck: check(
+      "rs_v2_paused_chk",
+      sql`(${t.status} = 'active' AND ${t.pausedAt} IS NULL) OR (${t.status} = 'paused' AND ${t.pausedAt} IS NOT NULL)`,
+    ),
+    scopeCheck: check("rs_v2_scope_chk", sql`${t.scopeNote} <> ''`),
+  }),
+);

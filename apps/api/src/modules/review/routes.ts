@@ -24,6 +24,14 @@ import {
   requestOneTimeReminderV2,
 } from "./one-time-reminder-service.ts";
 import {
+  activateReviewSubscriptionV2,
+  listNoteSubscriptionsV2,
+  pauseReviewSubscriptionV2,
+  ReviewSubscriptionNoteNotFoundV2,
+  reviewSubscriptionCommandV2Schema,
+  type SubscriptionChangeV2,
+} from "./review-subscriptions.ts";
+import {
   acknowledgeOneTimeReminderResultV2Schema,
   acknowledgeOneTimeReminderV2Schema,
   requestOneTimeReminderResultV2Schema,
@@ -311,5 +319,87 @@ export async function reviewRoutes(app: FastifyInstance) {
       }
       throw error;
     }
+  });
+
+  // ─── W7-3 刀五：订阅来源分别开停（39 §9.1 第一段与规则表行 1）────────────
+  //
+  // **两条而不是一颗 toggle**：§9.1 明写"两种意图可以分别存在"，规则表行 1
+  // 写的是「暂停/移除笔记订阅或卡片订阅 ⇒ **仅停用该授权来源**」。合成一颗开关
+  // 会把"停哪一个"这个用户在按之前必须能选的东西变成系统的默认——那正是"偷偷
+  // 联动"，只是换了个更隐蔽的形状。
+  //
+  // `stillCoveredBy` 是这一格存在的理由（§9.1 行 1「其他来源仍有效时**显示原因**」）：
+  // 停掉笔记订阅而那张卡还单独开着时，屏上必须说"仍由卡片复习继续安排"，而不是
+  // 显示成已停。两个字段都回，是因为"这次没改动"（连点两下）与"停掉了但别人还
+  // 撑着"是两件不同的事，合成一个布尔会被念成同一句。
+  const subscriptionBody = (change: SubscriptionChangeV2) => ({
+    source: change.subscription.source,
+    subjectType: change.subscription.subjectType,
+    subjectId: change.subscription.subjectId,
+    status: change.subscription.status,
+    scopeNote: change.subscription.scopeNote,
+    createdAt: change.subscription.createdAt,
+    pausedAt: change.subscription.pausedAt,
+    changed: change.changed,
+    stillCoveredBy: change.stillCoveredBy,
+  });
+
+  app.post("/reviews/v2/subscriptions/activate", async (req, reply) => {
+    const parsed = reviewSubscriptionCommandV2Schema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "validation", message: "参数非法" });
+    }
+    try {
+      const change = await withWorkspaceTransaction(
+        { workspaceId: req.session.workspaceId, userId: req.session.userId },
+        (tx) => activateReviewSubscriptionV2(tx, {
+          workspaceId: req.session.workspaceId,
+          userId: req.session.userId,
+          ...parsed.data,
+        }),
+      );
+      return reply.code(200).header("Cache-Control", "private, no-store").send(subscriptionBody(change));
+    } catch (error) {
+      if (error instanceof ReviewSubscriptionNoteNotFoundV2) {
+        return reply.code(404).send({ error: "note_not_found", message: "这篇笔记不在你的书房里" });
+      }
+      throw error;
+    }
+  });
+
+  app.post("/reviews/v2/subscriptions/pause", async (req, reply) => {
+    const parsed = reviewSubscriptionCommandV2Schema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "validation", message: "参数非法" });
+    }
+    try {
+      const change = await withWorkspaceTransaction(
+        { workspaceId: req.session.workspaceId, userId: req.session.userId },
+        (tx) => pauseReviewSubscriptionV2(tx, {
+          workspaceId: req.session.workspaceId,
+          userId: req.session.userId,
+          ...parsed.data,
+        }),
+      );
+      return reply.code(200).header("Cache-Control", "private, no-store").send(subscriptionBody(change));
+    } catch (error) {
+      if (error instanceof ReviewSubscriptionNoteNotFoundV2) {
+        return reply.code(404).send({ error: "note_not_found", message: "这篇笔记不在你的书房里" });
+      }
+      throw error;
+    }
+  });
+
+  // 笔记那一屏的读侧：她订阅了哪几篇，**连暂停的也列出来**——开关要能拨回"开"，
+  // 只列活着的那一批就等于"停过的那篇从此找不到"。
+  app.get("/reviews/v2/subscriptions/notes", async (req, reply) => {
+    const items = await withWorkspaceTransaction(
+      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      (tx) => listNoteSubscriptionsV2(tx, {
+        workspaceId: req.session.workspaceId,
+        userId: req.session.userId,
+      }),
+    );
+    return reply.code(200).header("Cache-Control", "private, no-store").send({ version: 2, items });
   });
 }
