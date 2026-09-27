@@ -39,6 +39,34 @@ command -v node >/dev/null || { echo "node not found on PATH" >&2; exit 2; }
 command -v docker >/dev/null || { echo "docker not found on PATH" >&2; exit 2; }
 
 DB_NAME="${STAGE_ONE_DB:-ailearn_stage1_gate}"
+# ── 并行会话护栏 ────────────────────────────────────────────────────────────
+# 一次性库是**整份共享**的：它承载"库里只有自己的夹具"这个前提，所以两个会话拿
+# 同一个库跑断言依赖空库的用例，第二个不是"红"，是**假红**（另一边的夹具还在）。
+# 实测 2026-09-27：两个会话同时在跑 `note-learning-round-artifact-postgres`，进程
+# CPU 时间几乎不动、整组卡住 40 分钟——症状看着像用例死锁，真因是抢库。
+#
+# 所以这里放一把按库名取的锁：锁在、持有进程还活着，就直接拒绝并告诉你要另起一个
+# 库名，而不是让你等一个永远不会结束的东西。
+LOCK_DIR="${TMPDIR:-/tmp}/stage-one-gate-locks"
+mkdir -p "$LOCK_DIR"
+LOCK_FILE="$LOCK_DIR/$DB_NAME.lock"
+acquire_lock() {
+  if ( set -o noclobber; printf '%s\n' "$$" >"$LOCK_FILE" ) 2>/dev/null; then
+    printf '%s\n' "$$" >"$LOCK_FILE"   # noclobber 只保证创建，再写一次确保内容是本进程
+    return 0
+  fi
+  local holder
+  holder="$(cat "$LOCK_FILE" 2>/dev/null || true)"
+  if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+    echo "另一个会话（pid $holder）正在用一次性库 $DB_NAME。" >&2
+    echo "并行跑会互相污染夹具、得到假红或整组卡住。请换一个库名：" >&2
+    echo "    STAGE_ONE_DB=ailearn_gate_\$\$ bash scripts/verify-stage-one.sh $*" >&2
+    exit 3
+  fi
+  printf '%s\n' "$$" >"$LOCK_FILE"   # 持有者已死（上一轮被杀），接管
+}
+release_lock() { rm -f "$LOCK_FILE"; }
+trap 'release_lock' EXIT
 
 # ── 组 → 集成档。名字与 apps/api、workers/ai-worker 的 npm script 对齐 ────
 # 注意：数组**不能**叫 GROUPS——那是 bash 的特殊变量（当前用户的组 ID），
@@ -112,6 +140,9 @@ want_all=0
 for s in "${SELECTED[@]}"; do [ "$s" = "all" ] && want_all=1; done
 
 # ── 一次性库 ────────────────────────────────────────────────────────────────
+# 取锁放在最前面：抢不到就别开库，免得两个人各建一次、跑各的。
+acquire_lock "$@"
+
 # 已就绪就复用：重建要导 223 条迁移，每次几十秒起步，而同一轮验收通常要跑好几组。
 if [ "$FRESH" = 1 ]; then
   echo "==> --fresh：重建 $DB_NAME"
@@ -150,15 +181,26 @@ export QUEUE_TEST_WORKER_B_DATABASE_URL="$(printf "$ROLE_CONN" worker)"
 export CI=1
 
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/stage-one-gate-XXXXXX")"
-trap 'rm -rf "$LOG_DIR"' EXIT
+# 刻意**不**在退出时删日志。整份脚本存在的意义就是"红了能去看为什么"，
+# 而 `trap 'rm -rf' EXIT` 会把刚打印出去的路径变成一句空话（第一版就这么写的，
+# 跑完七组红，指向的七个文件全都不存在）。全绿时才清。
+cleanup_logs() { [ ${#FAILED_GROUPS[@]} -gt 0 ] || rm -rf "$LOG_DIR"; }
+# 一个进程只留一个 EXIT trap：后设的会顶掉先设的，所以释放锁与清日志合在一起。
+trap 'release_lock; cleanup_logs' EXIT
 
 TOTAL_PASS=0; TOTAL_FAIL=0; FAILED_GROUPS=()
-printf '\n%-12s %-8s %-8s %-8s\n' "GROUP" "PASS" "FAIL" "SECONDS"
+printf '\n%-16s %-8s %-8s %-8s\n' "SUITE" "PASS" "FAIL" "SECONDS"
 printf '%s\n' "------------------------------------------------------------"
 
-run_suite() { # run_suite <log-label> <dir> <npm-script>
-  local label="$1" dir="$2" script="$3" log="$LOG_DIR/$1.log"
-  local out start end pass fail
+# 组名里带 `/`（companion/w），而日志名直接拿它拼路径就会去建一个不存在的子目录。
+slug() { printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '-'; }
+
+run_suite() { # run_suite <label> <dir> <npm-script>
+  local label="$1" dir="$2" script="$3"
+  # 文件名带 npm script 名：一组要跑两档时，两份日志不能互相覆盖
+  # （第一版按组名命名，第二档把第一档的失败现场直接冲掉了）。
+  local log="$LOG_DIR/$(slug "$label")__$(slug "$script").log"
+  local start end pass fail
   start=$(date +%s)
   ( cd "$dir" && npm run --silent "$script" ) >"$log" 2>&1
   end=$(date +%s)
@@ -166,9 +208,14 @@ run_suite() { # run_suite <log-label> <dir> <npm-script>
   pass=$(grep -E '^# pass [0-9]+$' "$log" | tail -1 | awk '{print $3}')
   fail=$(grep -E '^# fail [0-9]+$' "$log" | tail -1 | awk '{print $3}')
   pass="${pass:-0}"; fail="${fail:-0}"
-  printf '%-12s %-8s %-8s %-8s\n' "$label" "$pass" "$fail" "$((end - start))"
+  printf '%-16s %-8s %-8s %-8s\n' "$label" "$pass" "$fail" "$((end - start))"
   TOTAL_PASS=$((TOTAL_PASS + pass)); TOTAL_FAIL=$((TOTAL_FAIL + fail))
-  [ "$fail" -gt 0 ] && { FAILED_GROUPS+=("$label"); echo "    -> $log"; }
+  if [ "$fail" -gt 0 ]; then
+    FAILED_GROUPS+=("$label($script)")
+    # 直接把那几行 not ok 摘出来，省得再开一次日志找。
+    grep -E "^not ok" "$log" | head -3 | sed 's/^/      /'
+    echo "      -> $log"
+  fi
   return 0
 }
 
@@ -190,10 +237,16 @@ printf 'TOTAL pass=%s fail=%s\n' "$TOTAL_PASS" "$TOTAL_FAIL"
 if [ ${#FAILED_GROUPS[@]} -gt 0 ]; then
   printf 'failing: %s\n' "${FAILED_GROUPS[*]}"
   echo
-  echo "提醒：红的用例只说明这一组没过。写进 39d 台账时仍要区分"
-  echo "「实现缺失」「用例本身钉了旧链路」「环境/夹具问题」三种原因——"
-  echo "台账里 C31/C16 那几行记的就是第三类：断言钉了已经删掉的旧链，"
-  echo "红得跟新功能没关系。"
+  echo "完整日志（每档一份，含 TAP 原文）：$LOG_DIR"
+  echo
+  echo "提醒一：红的用例只说明这一组没过。写进 39d 台账时仍要区分"
+  echo "「实现缺失」「用例本身钉了旧链路 / 夹具已不合法」「环境问题」三种原因——"
+  echo "台账里 C31/C16 那几行记的就是第三类，红得跟新功能没关系。"
+  echo
+  echo "提醒二：**全绿也不等于任何 §16 案例已验收**。这里量的是「某组集成档绿不绿」，"
+  echo "不是「产品规则成立」。§16 的验收还要真窗口、真实模型样本与并发场景；"
+  echo "映射与口径见 docs/plans/learning-companion/39d-parallel-claims-2026-09-27.md。"
   exit 1
 fi
-echo "全绿。这仍然不等于任何 §16 案例已验收——见 docs/plans/learning-companion/39d-stage-one-gate-runner.md"
+echo "全绿。这仍然不等于任何 §16 案例已验收——口径见"
+echo "docs/plans/learning-companion/39d-parallel-claims-2026-09-27.md"
