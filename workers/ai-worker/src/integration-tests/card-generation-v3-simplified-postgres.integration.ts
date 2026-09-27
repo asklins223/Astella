@@ -55,6 +55,9 @@ const FAIL_SHAPE_WORKSPACE_ID = randomUUID();
  */
 const REFINE_USER_ID = randomUUID();
 const REFINE_WORKSPACE_ID = randomUUID();
+/** 全被内容门禁挡下的那一发也要一个自己的空间（在制额度是产品策略 3 个）。 */
+const GATEALL_USER_ID = randomUUID();
+const GATEALL_WORKSPACE_ID = randomUUID();
 
 /** 一篇有可学正文的笔记（六句，每句都能抽出一个原子）。 */
 const LEARNABLE_BLOCKS = [
@@ -73,6 +76,8 @@ const notes: Record<string, NoteFixture> = {};
 let simplifiedRunId = "";
 let controlRunId = "";
 let zeroCandidateRunId = "";
+/** 每句都被内容门禁挡下的那一发（终态要带得上门码）。 */
+let allGatedRunId = "";
 let otherUserRunTarget = "";
 let rewriteRunId = "";
 let refineRunId = "";
@@ -229,7 +234,8 @@ function countingGenerate() {
 
 before(async () => {
   await admin.begin(async (tx) => {
-    for (const id of [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID, REFINE_USER_ID]) {
+    for (const id of [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID, REFINE_USER_ID,
+      GATEALL_USER_ID]) {
       await tx`INSERT INTO users (id, email, password_hash)
         VALUES (${id}, ${`cardgen-v3-${id}@example.invalid`}, 'unused')
         ON CONFLICT (id) DO NOTHING`;
@@ -244,6 +250,11 @@ before(async () => {
     await tx`INSERT INTO workspaces (id, owner_id, name)
       VALUES (${REFINE_WORKSPACE_ID}, ${REFINE_USER_ID}, 'Card Gen V3 Refine IT')
       ON CONFLICT (id) DO NOTHING`;
+    await tx`INSERT INTO workspaces (id, owner_id, name)
+      VALUES (${GATEALL_WORKSPACE_ID}, ${GATEALL_USER_ID}, 'Card Gen V3 All Gated IT')
+      ON CONFLICT (id) DO NOTHING`;
+    await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
+      VALUES (${GATEALL_WORKSPACE_ID}, ${GATEALL_USER_ID}, 'owner') ON CONFLICT DO NOTHING`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
       VALUES (${REFINE_WORKSPACE_ID}, ${REFINE_USER_ID}, 'owner') ON CONFLICT DO NOTHING`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
@@ -295,6 +306,11 @@ before(async () => {
     { workspaceId: REFINE_WORKSPACE_ID, userId: REFINE_USER_ID });
   refineRunId = (await createRun(notes.refine.versionId, `v3-refine-${randomUUID()}`,
     { workspaceId: REFINE_WORKSPACE_ID, userId: REFINE_USER_ID })).runId;
+  notes.allgated = await seedNote("allgated", "两句都被题面门挡下那一发",
+    ["TCP 提供可靠有序的字节流传输。水在标准大气压下 100 摄氏度沸腾。"],
+    { workspaceId: GATEALL_WORKSPACE_ID, userId: GATEALL_USER_ID });
+  allGatedRunId = (await createRun(notes.allgated.versionId, `v3-allgated-${randomUUID()}`,
+    { workspaceId: GATEALL_WORKSPACE_ID, userId: GATEALL_USER_ID })).runId;
 });
 
 after(async () => {
@@ -309,8 +325,9 @@ after(async () => {
   let report;
   try {
     report = await wipeCardGenerationFixtures(admin,
-      [WORKSPACE_ID, OTHER_WORKSPACE_ID, FAIL_SHAPE_WORKSPACE_ID, REFINE_WORKSPACE_ID],
-      [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID, REFINE_USER_ID]);
+      [WORKSPACE_ID, OTHER_WORKSPACE_ID, FAIL_SHAPE_WORKSPACE_ID, REFINE_WORKSPACE_ID,
+        GATEALL_WORKSPACE_ID],
+      [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID, REFINE_USER_ID, GATEALL_USER_ID]);
   } finally {
     await admin.end({ timeout: 5 }).catch(() => undefined);
     const { closeDatabase: closeWorkerDatabase } = await import("../db.ts");
@@ -1533,4 +1550,46 @@ test("整批重排那一档：同一 run 再开一版计划，上一版没激活
   ` as unknown as Array<{ n: number }>;
   assert.ok(Number(freshOnStage[0]?.n) > 0, "这一版要有新候选落在台上");
   assert.equal(await runStatus(refineRunId), "review_ready");
+});
+
+// 与"零候选是正常结果"那格成一对：那一格判的是**抽不出原子**（provider 自己交回
+// no_cards_recommended 并带冻结理由码）；这一格判的是**抽得出、也交了草稿，却被内容
+// 门禁全数挡下**。以前这一支收口时递的是空数组，库里只剩"这篇没出卡"，
+// 而 `gateRejected` 里明明写着是哪两道门挡的——原因拿在手里被丢掉。
+test("每句都被内容门禁挡下的那一发：终态要带得上那两道门的名字", async () => {
+  const job = await claimSimplifiedJob(allGatedRunId);
+  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  await processV2OutboxJob(job);
+
+  assert.equal(await runStatus(allGatedRunId), "no_cards_recommended",
+    "全被挡下也是正常收口，不许打成 needs_attention 让用户以为系统坏了");
+  const candidates = await admin`
+    SELECT count(*)::int AS n FROM card_generation_candidates_v2 WHERE run_id = ${allGatedRunId}
+  ` as unknown as Array<{ n: number }>;
+  assert.equal(Number(candidates[0]?.n), 0, "被挡下的草稿不许落库成候选");
+
+  // 正向对照：这一篇抽得出两个原子、两道门各点名一次——少了下面这两句，
+  // "终态带原因"那条判据可以被"根本没出题"混过去。
+  const committed = await eventPayload(allGatedRunId, "card_generation.simplified_plan_committed");
+  assert.equal(Number(committed.atomCount), 2, "这一篇抽得出两个原子");
+  const rejected = committed.gateRejected as unknown[] | undefined;
+  assert.ok(Array.isArray(rejected) && rejected.length === 2,
+    `两道门要各点名一次（拿到 ${JSON.stringify(committed.gateRejected)}）`);
+
+  const payload = await eventPayload(allGatedRunId, "card_generation.no_cards_recommended");
+  const reasons = (payload.reasonCodes as string[]) ?? [];
+  // 这一格在整网里红过（单跑绿）：红的时候光说"拿不到 []"没法定位是哪一支收的口，
+  // 所以把计划的形状一起报出来——`no_cards_recommended`（压根没出题）与
+  // `author_candidates`（出了题又被挡）走的是两条不同的收口。
+  const planShape = await admin`
+    SELECT result ->> 'kind' AS kind, result -> 'reasonCodes' AS provider_reasons
+    FROM card_generation_plans_v2 WHERE run_id = ${allGatedRunId}
+    ORDER BY plan_version DESC LIMIT 1
+  ` as unknown as Array<{ kind: string; provider_reasons: string[] }>;
+  const diagnosis = `plan=${JSON.stringify(planShape[0] ?? null)} `
+    + `atomCount=${String(committed.atomCount)} 门点名=${JSON.stringify(committed.gateRejected)}`;
+  assert.ok(reasons.includes("front_leaks_answer"),
+    `终态要带得上门码 front_leaks_answer（拿到 ${JSON.stringify(reasons)}；${diagnosis}）`);
+  assert.ok(reasons.includes("cue_is_claim_copy"),
+    `终态要带得上门码 cue_is_claim_copy（拿到 ${JSON.stringify(reasons)}；${diagnosis}）`);
 });

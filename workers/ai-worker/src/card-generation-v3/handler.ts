@@ -421,7 +421,12 @@ export async function processCardGenerationSimplifiedJob(
   if (candidates.length === 0) {
     // 重投路径下这一版计划本身就是 no_cards（上面已处理），到这里说明库里没有
     // 可检查的东西——照实收口，不发模型调用。
-    await finishNoCards(job, [], modelCalls());
+    // 但**原因要跟着走**：走到这一支的那一发是"抽得出原子、也交了草稿，却被内容门禁
+    // 全数挡下"，`gateRejections` 里写着是哪几道门挡的。以前这里递一个空数组，
+    // 终态就只剩"这篇没出卡"三个字——2026-09-27 量 C16 那篇（两句都被题面门挡下）时，
+    // 就是这么把已知的原因丢掉的。
+    await finishNoCards(job, [...new Set(gateRejections.flatMap((entry) => entry.codes))],
+      modelCalls());
     return;
   }
 
