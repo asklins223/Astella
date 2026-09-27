@@ -156,7 +156,8 @@
 
 **到目前为止搬到默认档的判据总数：19 条**（`e2e-subset` 11：C03/C33/C32/C36/C5/§17.5/C18/C45/C15/C20/C20b；`live-progress` 6 条机制格；`c-cases` 2 条对象谱系格）。`redaction-quota` 那 2 条因整网顺序耦合钉回 v2（见上面那条缺陷记录），不算已搬。
 
-**另记一条网的缺陷**：`redaction-quota` 单独跑 2/2（连跑两次都量过），但十份连着跑时 C31 红在 `Missing expected rejection: activation must be rejected after redaction` —— 它与排在它前面的文件有状态耦合。已重新钉回 v2，并把这句写在文件头上：**钉档在这里不是结论，是「还没单独证明它能扛住整网顺序」的记号**。**这条耦合当天只量到排除项，没定位到原因**：前面接 `e2e-subset` 或 `live-progress` 各一次都不红；"两个文件共用写死的 workspace" 这个猜测被否掉（本目录 10 份全用 `randomUUID()`）。剩下最像的是 C31 依赖一个异步消费者（遮蔽之后要靠 outbox 那一发把 eligibility 翻过来），整网跑时它没在断言之前落定——这句**还没量过**。拆它属刀二前置，别再往上加解释。
+**另记一条网的缺陷**：`redaction-quota` 单独跑 2/2（连跑两次都量过），但十份连着跑时 C31 红在 `Missing expected rejection: activation must be rejected after redaction` —— 它与排在它前面的文件有状态耦合。已重新钉回 v2，并把这句写在文件头上：**钉档在这里不是结论，是「还没单独证明它能扛住整网顺序」的记号**。**这条耦合当天只量到排除项，没定位到原因**：前面接 `e2e-subset` 或 `live-progress` 各一次都不红；"两个文件共用写死的 workspace" 这个猜测被否掉（本目录 10 份全用 `randomUUID()`）。**随后钉住它的是否定，不是原因**：把它左边那八份文件逐对配对跑过（每对之前重建一次性库）——`e2e-subset`、`live-progress`、`plan-commit`、`pedagogy-stage`、`bounded-repair`、`per-candidate-commit`、`postgres` 纵切、`c-cases`——**八对全部 0 复现**。加上单跑两次 2/2、整网十份里一次绿一次红，今天能说的只是：**这是一发未定位的间歇不稳定**。"与排在它前面的文件有状态耦合"那句推测撤回；C31 的遮蔽与激活都是同步服务调用，所以"等异步消费者"那半句也撤回。钉档留着，含义改成"这发还没稳定到能摘档"；刀二第一手是复现并修它，而不是再换一个解释。
+
 
 **试搬审核台那四条的实测（同日，随后回退）**：C15／C20／C20b 摘档后各红在三处不同的地方——`C15/C20 needs a candidate`（夹具用的是短正文笔记，简化链那侧的确定性作者对它的产出与旧 planner 不同，拿不到 `revision = 1` 的主体）、`C20b must record card_generation.replan_completed event`（断的是旧链的事件名；新链重排那一发写的是 `simplified_plan_committed` 与 `simplified_completed`）。结论：**刀一接上 refine/replan 只是把路径建好，这四条要搬还得先改夹具与事件名**，不是删一行钉档就行；回退之后 `e2e-subset` 回到 37/37。搬这四条属于刀二，落点就是上面三条读数。
 
