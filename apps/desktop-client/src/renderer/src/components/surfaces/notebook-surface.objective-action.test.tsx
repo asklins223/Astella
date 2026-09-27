@@ -340,6 +340,7 @@ async function show(
   items: ObjectiveListItemV3[] | "fail",
   options: {
     leaf?: "reading" | "learning" | "history";
+    learningRoundId?: string;
     mode?: "read" | "edit";
     makeDirty?: boolean;
     syncController?: { fail: boolean };
@@ -381,7 +382,7 @@ async function show(
   const invoke = vi.fn();
   useRoomStore.setState({
     invoke,
-    activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: options.mode ?? "read" },
+    activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: options.mode ?? "read", learningRoundId: options.learningRoundId },
   });
   vi.useFakeTimers();
   const view = render(<NotebookSurface />);
@@ -403,7 +404,7 @@ async function show(
   }
   // The HUD opens on the note leaf; these behavior tests enter the learning leaf.
   const leafName = options.leaf === "reading" ? "笔记正文" : options.leaf === "history" || options.roundHistory ? /^学习记录/ : "本轮学习";
-  await act(async () => { fireEvent.click(within(view.container).getByRole("button", { name: leafName })); });
+  if (!options.learningRoundId) await act(async () => { fireEvent.click(within(view.container).getByRole("button", { name: leafName })); });
   return {
     ...view,
     api,
@@ -424,6 +425,22 @@ afterEach(() => {
 });
 
 describe("笔记页的主要动作", () => {
+  it("结果页带轮次回来时直接定位并聚焦学习足迹里的理解纸签", async () => {
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      const view = await show([], { learningRoundId: ROUND_ID });
+      expect(within(view.container).getByRole("button", { name: /^学习记录/ }).getAttribute("aria-pressed")).toBe("true");
+      const shelf = view.container.querySelector<HTMLElement>(".note-reflection-anchor");
+      expect(shelf?.querySelector(".note-reflection-tuck[open]")).not.toBeNull();
+      expect(scrollIntoView.mock.contexts).toContain(shelf);
+      expect(document.activeElement).toBe(shelf?.querySelector("summary"));
+    } finally {
+      if (originalScrollIntoView) Element.prototype.scrollIntoView = originalScrollIntoView;
+      else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+  });
   it("正文册页先显示笔记，翻到学习页才露出本轮表单，记录空页能回到学习", async () => {
     await show([], { leaf: "reading" });
     expect(screen.getByRole("region", { name: "笔记正文" })).toBeTruthy();

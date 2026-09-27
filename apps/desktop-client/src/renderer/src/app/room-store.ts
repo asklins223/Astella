@@ -93,6 +93,8 @@ export type NoteTargetRef = {
   /** 唯一消费方 notebook-surface 只按 noteId 读当前版本；缺版本就如实为 null。 */
   readonly noteVersionId: string | null;
   readonly mode?: "read" | "edit";
+  /** Explicit result-page handoff to this round's voluntary reflection tuck. */
+  readonly learningRoundId?: string;
 };
 export type ReviewTargetRef = { readonly scheduleId: string; readonly objectiveId: string };
 /** 顶栏空间胶囊要说的三件事：在哪个空间、什么身份、是不是自己的空间。 */

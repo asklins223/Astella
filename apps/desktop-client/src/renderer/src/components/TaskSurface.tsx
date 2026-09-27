@@ -60,8 +60,9 @@ function ValidationSurface() {
   const activeRunId = useRoomStore((state) => state.activeRunId);
   const clearActiveRun = useRoomStore((state) => state.setActiveRunId);
   const setActiveObjectiveId = useRoomStore((state) => state.setActiveObjectiveId);
+  const setActiveNoteRef = useRoomStore((state) => state.setActiveNoteRef);
   const setNavigationGuard = useRoomStore((state) => state.setNavigationGuard);
-  const handleRunExit = useCallback(async (runId: string, request?: { route: DesktopRouteV1; objectiveId?: string }) => {
+  const handleRunExit = useCallback(async (runId: string, request?: { route: DesktopRouteV1; objectiveId?: string; reflectionRoundId?: string }) => {
     // Remove the sensitive Player tree before asking main to resolve the
     // return route. Main may then complete FormalAssessmentGuard release only
     // after the renderer has yielded a frame with the task context unmounted.
@@ -80,13 +81,17 @@ function ValidationSurface() {
         resolvedRoute = { kind: "room.home" };
       }
     }
-    invoke(resolvedRoute.kind === "review.queue" ? "review" : "home");
+    if (resolvedRoute.kind === "note.detail") {
+      setActiveNoteRef({ noteId: resolvedRoute.noteId, noteVersionId: null, mode: "read",
+        learningRoundId: request?.route.kind === "note.detail" && request.route.noteId === resolvedRoute.noteId ? request.reflectionRoundId : undefined });
+      invoke("open-notebook");
+    } else invoke(resolvedRoute.kind === "review.queue" ? "review" : "home");
     if (request?.objectiveId) {
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
       setActiveObjectiveId(request.objectiveId);
       invoke("open-objective");
     }
-  }, [clearActiveRun, invoke, setActiveObjectiveId]);
+  }, [clearActiveRun, invoke, setActiveNoteRef, setActiveObjectiveId]);
 
   useEffect(() => {
     if (!activeRunId) {

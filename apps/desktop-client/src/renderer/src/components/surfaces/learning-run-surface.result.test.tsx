@@ -134,8 +134,8 @@ function stubGateway(resultPayload: unknown, rubricLength = 12, snapshotPayload 
         version: 2,
         runId: RUN_ID,
         snapshotId: SNAPSHOT_ID,
-        originV2: origin,
-        returnTargetV2: returnTarget,
+        originV2: snapshotPayload.originV2,
+        returnTargetV2: snapshotPayload.returnTargetV2,
         status: "learning_result",
         httpStatus: 200,
         result,
@@ -375,6 +375,50 @@ describe("LearningRunSurface · 结算页结构", () => {
     expect(onExit).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "返回学习空间" }));
     expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it("无卡笔记练习的结果页可自愿回写，并带着真实轮次回笔记", async () => {
+    const noteId = "00000000-0000-4000-8000-0000000000b1";
+    const roundId = "00000000-0000-4000-8000-0000000000b2";
+    const noteOrigin = { kind: "note_round", noteId, roundId, objectiveId: OBJECTIVE_ID } as const;
+    const noteReturn = { kind: "note_round", noteId, roundId } as const;
+    const snapshot = learningRunPublicSnapshotV2Schema.parse({ ...completedSnapshot(), originV2: noteOrigin,
+      returnTargetV2: noteReturn, target: { ...completedSnapshot().target, cardId: null } });
+    const result = resultWithRubric(0, { originV2: noteOrigin, returnTargetV2: noteReturn,
+      outcome: "practice_completed", demonstratedFacets: [], scheduleImpact: { kind: "none", reasonCode: "practice_only" } });
+    const onExit = vi.fn((_request?: unknown) => {});
+    renderResult(0, result, onExit, snapshot);
+    await screen.findByRole("button", { name: "留下这次的理解" });
+    expect(screen.queryByRole("button", { name: "查看学习卡" })).toBeNull();
+    expect(screen.getByRole("button", { name: "回到这篇笔记" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "留下这次的理解" }));
+    expect(onExit.mock.calls[0]?.[0]).toEqual({ route: { kind: "note.detail", noteId }, reflectionRoundId: roundId });
+  });
+
+  it("独立运行页也先经主进程导航，再把回写轮次交给笔记册页", async () => {
+    const noteId = "00000000-0000-4000-8000-0000000000b1";
+    const roundId = "00000000-0000-4000-8000-0000000000b2";
+    const noteOrigin = { kind: "note_round", noteId, roundId, objectiveId: OBJECTIVE_ID } as const;
+    const noteReturn = { kind: "note_round", noteId, roundId } as const;
+    const snapshot = learningRunPublicSnapshotV2Schema.parse({ ...completedSnapshot(), originV2: noteOrigin,
+      returnTargetV2: noteReturn, target: { ...completedSnapshot().target, cardId: null } });
+    const result = resultWithRubric(0, { originV2: noteOrigin, returnTargetV2: noteReturn,
+      outcome: "practice_completed", demonstratedFacets: [], scheduleImpact: { kind: "none", reasonCode: "practice_only" } });
+    stubGateway(result, 0, snapshot);
+    const api = window.ailearn!;
+    const route = { kind: "note.detail" as const, noteId };
+    vi.mocked(api.navigation.resolve).mockResolvedValue({ ok: true, workspaceEpoch: 1,
+      data: { current: { scope: "workspace", workspaceEpoch: 1, route } } } as never);
+    vi.mocked(api.navigation.go).mockResolvedValue({ ok: true, workspaceEpoch: 1,
+      data: { current: { scope: "workspace", workspaceEpoch: 1, route } } } as never);
+    useRoomStore.setState({ activeRunId: RUN_ID, activeObjectiveId: OBJECTIVE_ID });
+    render(<LearningRunSurface />);
+    fireEvent.click(await screen.findByRole("button", { name: "留下这次的理解" }));
+    await waitFor(() => expect(useRoomStore.getState().activeNoteRef).toEqual({
+      noteId, noteVersionId: null, mode: "read", learningRoundId: roundId,
+    }));
+    expect(useRoomStore.getState().surface).toBe("notebook");
+    expect(api.navigation.resolve).toHaveBeenCalledWith(expect.objectContaining({ route, learningRunId: RUN_ID }));
   });
 
   // ---- B1：结算页的反馈必须兑现（31 号文档 P1 / P3 / P6）----

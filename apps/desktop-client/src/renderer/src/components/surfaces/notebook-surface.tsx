@@ -616,10 +616,10 @@ export function NotebookSurface() {
   const [leaf, setLeaf] = useState<"reading" | "learning" | "history">("reading");
   const leafScrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    setLeaf("reading");
-    setReflectionRoundId(undefined);
+    setLeaf(activeNoteRef?.learningRoundId ? "history" : "reading");
+    setReflectionRoundId(activeNoteRef?.learningRoundId);
     appendedReflections.current.clear();
-  }, [activeNoteRef?.noteId]);
+  }, [activeNoteRef?.noteId, activeNoteRef?.learningRoundId]);
   useEffect(() => { if (leafScrollRef.current) leafScrollRef.current.scrollTop = 0; }, [leaf]);
   /**
    * `title` 是**本机改过、还没写进文档**的那一份，`null` = 这一屏没改过标题，
@@ -879,6 +879,15 @@ export function NotebookSurface() {
   }, [invoke, setReturnTarget]);
 
   const note = data?.note ?? null;
+  useEffect(() => {
+    if (!activeNoteRef?.learningRoundId || note?.noteId !== activeNoteRef.noteId ||
+      reflectionRoundId !== activeNoteRef.learningRoundId || leaf !== "history" || mode !== "read") return;
+    const frame = requestAnimationFrame(() => {
+      reflectionShelfRef.current?.scrollIntoView({ block: "start" });
+      reflectionShelfRef.current?.querySelector("summary")?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeNoteRef?.noteId, activeNoteRef?.learningRoundId, note?.noteId, reflectionRoundId, leaf, mode]);
   const source = data?.source ?? null;
   const sourceFailure = data?.sourceFailure ?? null;
   const objective = data?.objective ?? null;

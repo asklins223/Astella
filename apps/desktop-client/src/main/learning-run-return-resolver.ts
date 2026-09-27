@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
-  desktopRouteKindSchema,
+  desktopRouteSchema,
+  type DesktopRouteV1,
 } from "@ailearn/shared/desktop-ipc-contracts";
 import {
   learningRunReturnContractV2Schema,
@@ -13,8 +14,8 @@ import type { PendingReturnMarkerStore } from "./pending-return-marker-store";
 export const learningRunReturnResolutionV1Schema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("stay_in_run"), runId: z.string().uuid() }),
   z.strictObject({ kind: z.literal("pending"), marker: pendingReturnMarkerV2Schema }),
-  z.strictObject({ kind: z.literal("navigate"), route: desktopRouteKindSchema, runId: z.string().uuid() }),
-  z.strictObject({ kind: z.literal("fallback"), route: desktopRouteKindSchema, runId: z.string().uuid() }),
+  z.strictObject({ kind: z.literal("navigate"), route: desktopRouteSchema, runId: z.string().uuid() }),
+  z.strictObject({ kind: z.literal("fallback"), route: desktopRouteSchema, runId: z.string().uuid() }),
   z.strictObject({ kind: z.literal("unavailable"), runId: z.string().uuid(), reason: z.enum(["route_not_available", "target_unavailable"]) }),
 ]);
 export type LearningRunReturnResolutionV1 = z.infer<typeof learningRunReturnResolutionV1Schema>;
@@ -36,21 +37,17 @@ type ResolverContext = {
   now?: () => Date;
 };
 
-export type LearningRunReturnRouteV1 = "review.queue" | "room.home";
+export type LearningRunReturnRouteV1 = Extract<DesktopRouteV1, { kind: "review.queue" | "room.home" | "note.detail" }>;
 type ReturnRoute = LearningRunReturnRouteV1;
 
-/**
- * note_round（笔记轮次，39d W4-5 ②）今天也落 room.home：这份解析器的路由词表
- * 是**不带参数的 kind 字符串**，回笔记需要 { kind: "note.detail", noteId } 那种
- * 带参形状——等这份解析器有真实生产消费方（pending-return 恢复链路）时一起扩，
- * 不为没有读者的事先改合同。渲染层结果页的出口标签已按 note_round 单列。
- */
 function routeForTarget(target: LearningRunReturnContractV2["returnTargetV2"]): ReturnRoute {
-  return target.kind === "review" ? "review.queue" : "room.home";
+  return target.kind === "review" ? { kind: "review.queue" }
+    : target.kind === "note_round" ? { kind: "note.detail", noteId: target.noteId }
+      : { kind: "room.home" };
 }
 
 function hasRoute(context: ResolverContext, route: ReturnRoute): boolean {
-  return desktopRouteKindSchema.safeParse(route).success && context.enabledRoutes.includes(route);
+  return context.enabledRoutes.includes(route.kind);
 }
 
 /**
@@ -62,6 +59,11 @@ export function routeForLearningRunReturn(input: unknown): LearningRunReturnRout
   const contract = learningRunReturnContractV2Schema.parse(input);
   const target = contract.status === "unavailable" ? contract.fallbackTargetV2 : contract.returnTargetV2;
   return target ? routeForTarget(target) : null;
+}
+
+export function matchesLearningRunReturnRoute(expected: LearningRunReturnRouteV1, requested: DesktopRouteV1): boolean {
+  if (expected.kind !== requested.kind) return false;
+  return expected.kind !== "note.detail" || (requested.kind === "note.detail" && expected.noteId === requested.noteId);
 }
 
 function pendingMarker(contract: LearningRunReturnContractV2, context: ResolverContext): PendingReturnMarkerV2 {

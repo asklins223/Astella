@@ -275,7 +275,7 @@ import { candidateRevealV2Schema } from "@ailearn/shared/card-generation-v2-cont
 import { DesktopGateway, DesktopGatewayFailure, type SessionCredentialStore } from "./desktop-gateway";
 import { createSessionCredentialStore } from "./session-credential-store";
 import { FormalAssessmentGuard, type CompanionDeliveryKind } from "./formal-assessment-guard";
-import { recoverPendingReturnMarker, resolveLearningRunReturn, routeForLearningRunReturn } from "./learning-run-return-resolver";
+import { matchesLearningRunReturnRoute, recoverPendingReturnMarker, resolveLearningRunReturn, routeForLearningRunReturn } from "./learning-run-return-resolver";
 import { MemoryPendingReturnMarkerStore, type PendingReturnMarkerStore } from "./pending-return-marker-store";
 import {
   MemoryNoteDocCacheStore,
@@ -1787,8 +1787,8 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
   ): Promise<void> => {
     const contractValue = await gateway.getLearningRunReturnContract(runId, requestId);
     await resolveReturnContract(contractValue);
-    const resolvedRouteKind = routeForLearningRunReturn(contractValue);
-    if (!resolvedRouteKind || requestedRoute.kind !== resolvedRouteKind) {
+    const resolvedRoute = routeForLearningRunReturn(contractValue);
+    if (!resolvedRoute || !matchesLearningRunReturnRoute(resolvedRoute, requestedRoute)) {
       throw new DesktopGatewayFailure("invalid_navigation", "user_action");
     }
     // The API's V2 return contract already authorizes and resolves the

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MemoryPendingReturnMarkerStore } from "./pending-return-marker-store";
-import { recoverPendingReturnMarker, resolveLearningRunReturn, routeForLearningRunReturn } from "./learning-run-return-resolver";
+import { matchesLearningRunReturnRoute, recoverPendingReturnMarker, resolveLearningRunReturn, routeForLearningRunReturn } from "./learning-run-return-resolver";
 
 const common = {
   version: 2 as const,
@@ -20,13 +20,13 @@ describe("learning-run-return-resolver", () => {
       sourceChange: { kind: "canonical", canonicalEventId: "event-1" },
       currentCheckpoint: { version: 1, workspaceId: common.originV2.objectiveId, userId: common.originV2.objectiveId, token: "private", capturedAt: "now" },
       retryAfterMs: 1000,
-    })).toBe("room.home");
+    })).toEqual({ kind: "room.home" });
     expect(routeForLearningRunReturn({
       ...common,
       returnTargetV2: { kind: "review", scheduleId: "00000000-0000-4000-8000-000000000005", objectiveId: common.originV2.objectiveId },
       status: "no_projection_change",
       sourceChange: { kind: "none" },
-    })).toBe("review.queue");
+    })).toEqual({ kind: "review.queue" });
     expect(routeForLearningRunReturn({
       ...common,
       status: "unavailable",
@@ -74,7 +74,7 @@ describe("learning-run-return-resolver", () => {
       sourceChange: { kind: "none" },
     }, { ...context, enabledRoutes: ["room.home"] })).toEqual({
       kind: "navigate",
-      route: "room.home",
+      route: { kind: "room.home" },
       runId: common.runId,
     });
     expect(resolveLearningRunReturn({
@@ -94,7 +94,30 @@ describe("learning-run-return-resolver", () => {
       returnTargetV2: { kind: "review", scheduleId: "00000000-0000-4000-8000-000000000005", objectiveId: common.originV2.objectiveId },
       status: "no_projection_change",
       sourceChange: { kind: "none" },
-    }, context)).toEqual({ kind: "navigate", route: "review.queue", runId: common.runId });
+    }, context)).toEqual({ kind: "navigate", route: { kind: "review.queue" }, runId: common.runId });
+  });
+
+  it("preserves the server-proved note id in a note-round return", () => {
+    const noteId = "00000000-0000-4000-8000-000000000006";
+    const noteRound = {
+      ...common,
+      originV2: { kind: "note_round", noteId, roundId: "00000000-0000-4000-8000-000000000007", objectiveId: common.originV2.objectiveId },
+      returnTargetV2: { kind: "note_round", noteId, roundId: "00000000-0000-4000-8000-000000000007" },
+      status: "no_projection_change",
+      sourceChange: { kind: "none" },
+    };
+    expect(routeForLearningRunReturn(noteRound)).toEqual({ kind: "note.detail", noteId });
+    expect(matchesLearningRunReturnRoute({ kind: "note.detail", noteId }, { kind: "note.detail", noteId })).toBe(true);
+    expect(matchesLearningRunReturnRoute({ kind: "note.detail", noteId }, {
+      kind: "note.detail", noteId: "00000000-0000-4000-8000-000000000008",
+    })).toBe(false);
+    expect(matchesLearningRunReturnRoute({ kind: "note.detail", noteId }, { kind: "room.home" })).toBe(false);
+    expect(resolveLearningRunReturn(noteRound, { ...context, enabledRoutes: ["note.detail"] })).toEqual({
+      kind: "navigate", route: { kind: "note.detail", noteId }, runId: common.runId,
+    });
+    expect(resolveLearningRunReturn(noteRound, { ...context, enabledRoutes: ["room.home"] })).toEqual({
+      kind: "unavailable", reason: "route_not_available", runId: common.runId,
+    });
   });
 
   it("uses only the server-provided fallback target for deleted/forbidden return targets", () => {
@@ -106,7 +129,7 @@ describe("learning-run-return-resolver", () => {
     };
     expect(resolveLearningRunReturn(unavailable, context)).toEqual({
       kind: "fallback",
-      route: "review.queue",
+      route: { kind: "review.queue" },
       runId: common.runId,
     });
     expect(resolveLearningRunReturn(unavailable, { ...context, enabledRoutes: ["room.home"] })).toEqual({

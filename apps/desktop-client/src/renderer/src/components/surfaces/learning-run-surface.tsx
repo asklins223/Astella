@@ -389,7 +389,9 @@ function returnTargetLabel(target: LearningRunPublicSnapshotV2["returnTargetV2"]
 }
 
 function routeForReturnTarget(target: LearningRunPublicSnapshotV2["returnTargetV2"]): DesktopRouteV1 {
-  return target.kind === "review" ? { kind: "review.queue" } : { kind: "room.home" };
+  return target.kind === "review" ? { kind: "review.queue" }
+    : target.kind === "note_round" ? { kind: "note.detail", noteId: target.noteId }
+      : { kind: "room.home" };
 }
 
 function emptyPartAnswer(part: StructuredPartPublicV1): StructuredPartAnswerV1 {
@@ -1347,7 +1349,7 @@ function InteractionEditor({
 
 type LearningRunBodyProps = {
   readonly runId: string;
-  readonly onExit: (request?: { route: DesktopRouteV1; objectiveId?: string }) => void;
+  readonly onExit: (request?: { route: DesktopRouteV1; objectiveId?: string; reflectionRoundId?: string }) => void;
   readonly onPageChange: (page: "assessment" | "result") => void;
 };
 
@@ -2510,7 +2512,8 @@ function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) 
     : returnContract?.returnTargetV2 ?? null;
   const returnTarget = contractTarget ?? snapshot.returnTargetV2;
   const exitRoute = routeForReturnTarget(returnTarget);
-  const exitDestinationLabel = exitRoute.kind === "review.queue" ? "回到复习队列" : "返回学习空间";
+  const exitDestinationLabel = exitRoute.kind === "review.queue" ? "回到复习队列"
+    : exitRoute.kind === "note.detail" ? "回到这篇笔记" : "返回学习空间";
   // 「同步中」是内部词：用户要知道的不是数据在同步，而是回去之后落点还没定。
   const resultReturnLabel = returnContract?.status === "projection_pending" ? `确认中 · ${exitDestinationLabel}` : exitDestinationLabel;
   const nextChallengeLabel = result?.outcome === "declared_unable"
@@ -2811,7 +2814,10 @@ function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) 
             <button type="button" className="button primary" onClick={() => onExit({ route: exitRoute })}>
               <ArrowLeft size={15} aria-hidden="true" />{resultReturnLabel}
             </button>
-            <button type="button" className="button" onClick={openObjective}>查看学习卡</button>
+            {returnTarget.kind === "note_round" ? <button type="button" className="button" onClick={() => onExit({
+              route: { kind: "note.detail", noteId: returnTarget.noteId }, reflectionRoundId: returnTarget.roundId,
+            })}>留下这次的理解</button> : null}
+            {snapshot.target.cardId ? <button type="button" className="button" onClick={openObjective}>查看学习卡</button> : null}
           </div>
         </section>
         </>
@@ -3069,7 +3075,7 @@ type LearningRunSurfaceProps = {
    * (the one that releases the FormalAssessmentGuard through main's route
    * resolver); when absent this surface resolves the same route itself.
    */
-  readonly onExit?: (request?: { route: DesktopRouteV1; objectiveId?: string }) => void;
+  readonly onExit?: (request?: { route: DesktopRouteV1; objectiveId?: string; reflectionRoundId?: string }) => void;
 };
 
 /** Pages 16/17 — one multi-format LearningRun workbench and its evidence report. */
@@ -3077,11 +3083,12 @@ export function LearningRunSurface({ onExit }: LearningRunSurfaceProps = {}) {
   const activeRunId = useRoomStore((state) => state.activeRunId);
   const setActiveRunId = useRoomStore((state) => state.setActiveRunId);
   const setActiveObjectiveId = useRoomStore((state) => state.setActiveObjectiveId);
+  const setActiveNoteRef = useRoomStore((state) => state.setActiveNoteRef);
   const invoke = useRoomStore((state) => state.invoke);
   const [page, setPage] = useState<"assessment" | "result">("assessment");
   useHudPage(page);
 
-  const exitRun = useCallback(async (request?: { route: DesktopRouteV1; objectiveId?: string }) => {
+  const exitRun = useCallback(async (request?: { route: DesktopRouteV1; objectiveId?: string; reflectionRoundId?: string }) => {
     if (onExit) {
       onExit(request);
       return;
@@ -3115,13 +3122,17 @@ export function LearningRunSurface({ onExit }: LearningRunSurfaceProps = {}) {
       // replayed by the renderer. Fall back to the review queue intent.
       route = { kind: "room.home" };
     }
-    invoke(route.kind === "review.queue" ? "review" : "home");
+    if (route.kind === "note.detail") {
+      setActiveNoteRef({ noteId: route.noteId, noteVersionId: null, mode: "read",
+        learningRoundId: request?.route.kind === "note.detail" && request.route.noteId === route.noteId ? request.reflectionRoundId : undefined });
+      invoke("open-notebook");
+    } else invoke(route.kind === "review.queue" ? "review" : "home");
     if (request?.objectiveId) {
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
       setActiveObjectiveId(request.objectiveId);
       invoke("open-objective");
     }
-  }, [activeRunId, invoke, onExit, setActiveObjectiveId, setActiveRunId]);
+  }, [activeRunId, invoke, onExit, setActiveNoteRef, setActiveObjectiveId, setActiveRunId]);
 
   return (
     <HudPage page={page}>
