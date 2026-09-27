@@ -42,7 +42,6 @@ PY
 echo "⑥ 这条链交付过的签名，逐个对 HEAD 核:"
 H_WORKERS="workers/ai-worker/src/handlers"
 H_DESK="apps/desktop-client/src/renderer/src/components"
-H_TESTS="workers/ai-worker/src/integration-tests"
 SIG_LIST="sig|${H_WORKERS}/card-generation-v2-handler.ts|commitAuthoredCandidateV2
 sig|${H_WORKERS}/card-generation-v2-handler.ts|runV2PlanPhase
 sig|${H_WORKERS}/card-generation-v2-handler.ts|loadCommittedFirstRevisions
@@ -50,9 +49,6 @@ sig|${H_WORKERS}/card-generation-v2-handler.ts|pg_advisory_xact_lock
 sig|${H_DESK}/CardGenerationSurface.tsx|card-generation-landing
 sig|${H_DESK}/surfaces/card-generation-status.ts|isLandedCandidate
 sig|${H_DESK}/CardGenerationSurface.live-candidates.test.tsx|已写出
-sig|${H_TESTS}/card-generation-v2-pedagogy-stage-postgres.integration.ts|practice_quota_short
-sig|${H_TESTS}/card-generation-v2-plan-commit-postgres.integration.ts|xmin
-sig|${H_TESTS}/card-generation-v2-per-candidate-commit-postgres.integration.ts|replan
 file|apps/api/src/db/migrations/0253_candidate_objective_revision_unique.sql|
 sig|apps/api/src/db/migrations/meta/_journal.json|0253_candidate_objective_revision_unique
 file|apps/desktop-client/scripts/verify-b4-landing-live.mjs|

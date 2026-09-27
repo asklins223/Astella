@@ -123,12 +123,9 @@
 
 | 用例／文件 | 为什么只能随链走 |
 | --- | --- |
-| `card-generation-v2-postgres`（V2 纵切 seal → planner/author/critics → review_ready） | 文件名就是那条管道 |
-| `card-generation-v2-plan-commit`、`-pedagogy-stage-postgres`（投机 pedagogy、三种裁决、头部配额等式） | 投机 pedagogy 与双 Critic 是 39c §9 处置列里点名要删的 |
-| `card-generation-v2-bounded-repair-postgres`（有界修复、同一条修两遍被唯一索引挡） | 自动修复循环取消 = 39c §6.1 |
-| `card-generation-v2-per-candidate-commit-postgres`（每张候选各一次提交、重放不再调作者） | 新链是"一次生成出一批"，没有逐候选 author 循环 |
-| `card-generation-v2-llm-natural-activation`（真实四阶段全旅程） | 同上；它的"全旅程"那一半在 V3 那份集测里已有对应格 |
-| e2e 里的 C04（Atom 重复决策）、C05/C06/C08/C09（planner 怎么切目标）、C13（pedagogy hard fail 词表）、C14（deck gate 合并/drop）、C20b（旧 replan_set） | 判据对象是 planner/Critic 的中间产物，新链不产出这些结构 |
+| **（2026-09-27 刀二第①步已删）** `card-generation-v2-postgres`（V2 纵切）、`-plan-commit-postgres`、`-pedagogy-stage-postgres`、`-bounded-repair-postgres`、`-per-candidate-commit-postgres` 五份整文件 | 断言对象全是四阶段独有的东西：纵切那条管道本身、投机 pedagogy 与双 Critic（39c §9 点名要删）、有界修复循环（39c §6.1 取消自动修复）、逐候选各一次提交（新链一次生成出一批，没有逐候选 author 循环）。同步清掉的注册面：CI 点名单里 plan-commit 那一步、`integration-run-registration` 待办清单里那两行（清单 7→5）、`check-a1-landed.sh` ⑥ 那三条指向已删文件的签名；`insertRepairedCandidateV2` 的注释改口——它那格用例没了，这条不变量如今只有 0253 索引本身在执法 |
+| `card-generation-v2-llm-natural-activation`（真实四阶段全旅程） | 同上；它的"全旅程"那一半在 V3 那份集测里已有对应格。**这一份要单独删**：它第 86 行自己把 `CARD_GENERATION_V2_LLM` 写成 `"true"`（摘环境变量拦不住），跑它＝付费，2026-09-27 我把它抄进批次名单就造成过一次未经点头的真模型尝试 |
+| e2e 里的 C04（Atom 重复决策）、C05/C06/C08/C09（planner 怎么切目标）、C13（pedagogy hard fail 词表）、C14（deck gate 合并/drop）、C20b（旧 replan_set） | 判据对象是 planner/Critic 的中间产物，新链不产出这些结构。**未随第①步删**：它们住在幸存的 `e2e-subset` 里，要连着旧链代码一起走（刀二第②步） |
 
 ### 7.2 摘档实测（2026-09-27）：十份一起摘掉是 41 条红，所以按份量、按份量
 

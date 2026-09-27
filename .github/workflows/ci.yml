@@ -775,19 +775,6 @@ jobs:
             src/integration-tests/card-generation-v2-e2e-subset.integration.ts \
             2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/card-gen-v2-ccases.tap"
 
-      - name: Verify card generation V2 plan commit (single file)
-        working-directory: workers/ai-worker
-        env:
-          NODE_ENV: test
-          DATABASE_URL_MIGRATOR: ${{ env.DATABASE_URL_MIGRATOR }}
-          DATABASE_URL_API: ${{ env.DATABASE_URL_API }}
-          DATABASE_URL_WORKER: ${{ env.DATABASE_URL_WORKER }}
-        run: |
-          set -o pipefail
-          node --import tsx --test --test-concurrency=1 \
-            src/integration-tests/card-generation-v2-plan-commit-postgres.integration.ts \
-            2>&1 | tee "$RUNNER_TEMP/postgres-test-logs/card-gen-v2-plan-commit.tap"
-
       # 制卡简化链（39d W7-1 刀b）：五段接线在真库上端到端——入口总控两档、
       # §16.28 的 2 次语义调用（读库里的完成事件，不读进程内计数）、检查失败
       # 不重跑生成、零候选是正常结果。单文件跑（outbox 认领是全局的）。

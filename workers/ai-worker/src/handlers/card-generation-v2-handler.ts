@@ -3909,8 +3909,9 @@ export async function authorRepairedCandidateV2(input: {
  * 有界修复的**落库那一半**：只写，不出网。
  *
  * 刻意不用 `ON CONFLICT DO NOTHING`：同一目标重复修复会产出同样的 `revision + 1`，必须
- * 当场撞 0253 那条唯一索引（见 `card-generation-v2-bounded-repair-postgres.integration.ts`
- * 第二条用例）。静默跳过会让第二次修复带着一个库里不存在的 revision 继续跑门禁。
+ * 当场撞 0253 那条唯一索引。静默跳过会让第二次修复带着一个库里不存在的 revision 继续跑门禁。
+ * （钉这条的用例是 `card-generation-v2-bounded-repair-postgres.integration.ts`，
+ * 已随四阶段链在 39d W7-7 刀二删掉——这条不变量现在只有索引本身在执法。）
  */
 export async function insertRepairedCandidateV2(
   tx: WorkerTransaction,

@@ -1,7 +1,8 @@
 /**
  * 方案 20 §28 — Card V2 E2E C-subset（真实 postgres + API service + worker）。
  *
- * 在 C0 纵切测试（card-generation-v2-postgres.integration.ts）之上追加可用子集：
+ * 这些用例原本是在 C0 纵切（`card-generation-v2-postgres.integration.ts`）之上追加的可用子集；
+ * 那份纵切断言的就是四阶段管道本身，已随 39d W7-7 刀二删掉，本文件是这条链剩下的端到端读数。
  *   C01  OSI 短笔记 → Auto → 推荐 1–2 张（无分层摘要堆叠）；
  *   C02  单一重要定义 → 0–1 张；泄题候选被门禁阻断（0 passed，不可 review-ready）；
  *   C03  临时待办 → `no_cards_recommended` 成功终态，0 Candidate/Card/Objective/Schedule；

@@ -34,14 +34,9 @@ TEST_DIR = "src/integration-tests"
 # 它按名字跑就是真模型、按次付费。2026-09-27 把它抄进批次名单，结果整网挂在那一发上
 # 轮询到 600s 被我杀掉，那期间那一发已经在打真 provider。
 FAMILY = [
-    "card-generation-v2-bounded-repair-postgres.integration.ts",
     "card-generation-v2-c-cases.integration.ts",
     "card-generation-v2-e2e-subset.integration.ts",
     "card-generation-v2-live-progress-postgres.integration.ts",
-    "card-generation-v2-pedagogy-stage-postgres.integration.ts",
-    "card-generation-v2-per-candidate-commit-postgres.integration.ts",
-    "card-generation-v2-plan-commit-postgres.integration.ts",
-    "card-generation-v2-postgres.integration.ts",
     "card-generation-v2-redaction-quota.integration.ts",
     "card-generation-v3-simplified-postgres.integration.ts",
 ]
