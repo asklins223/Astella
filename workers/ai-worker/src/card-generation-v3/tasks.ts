@@ -30,6 +30,7 @@ import {
   cardCandidateRewriteV3OutputSchema,
   cardContentCheckV3OutputSchema,
   cardGenerateV3CandidateDraftSchema,
+  cardGenerateV3ObjectiveProposalSchema,
   cardGenerateV3OutputSchema,
   type CardCandidateRewriteV3Output,
   type CardContentCheckV3Output,
@@ -42,7 +43,6 @@ import type {
 } from "@ailearn/shared/card-generation-v2-contracts";
 // 词表的**那一份数组**（不是类型）：提示词里必须把合法取值逐字列出来，而列第二份就会和
 // 合同分叉——2026-09-27 第一发真模型栽的正是这一格。
-import { KnowledgeFormValuesV2 } from "@ailearn/shared/card-generation-v2-contracts";
 import {
   computeGroundingReportHashV2,
   extractAnswerText,
@@ -116,16 +116,65 @@ export interface CardGenerateV3TaskInput {
  * 合同某一层**必须给出的键**，现取不抄：`safeParse(undefined)` 过得了的就是可选项。
  * 用这个判据而不是读 zod 的内部标记——升级 zod 版本时内部标记会变，而"不给行不行"这件事不会。
  */
-function requiredContractKeysV3(layer: unknown): string {
-  const shape = (layer as { shape?: Record<string, unknown> }).shape ?? {};
-  return Object.entries(shape)
-    .filter(([, field]) => (field as { safeParse: (v: unknown) => { success: boolean } })
-      .safeParse(undefined).success === false)
-    .map(([key]) => key)
-    .join("、");
+
+/**
+ * 把一份 zod 合同展开成**逐层的必填清单与取值表**（提示词用）。
+ *
+ * 为什么必须整个展开而不是补一两格：三发真模型各栽在一层上——`knowledgeForm:"…"`（词没列）
+ * → `objectiveDraft:{…完整对象…}`（键没列）→ `preferredTaskIntents[0]`（**再往里一层**没列）。
+ * 手补是"报错一层补一层"，每次一发真调用；这一份是"合同里模型要填的每一层一次性说出来"。
+ * 判"必填"用 `safeParse(undefined)` 过不过（`.optional()`／可空的会过），不读 zod 内部标记；
+ * 递归深度设上限是因为 `relations` 这类会自引用。
+ */
+function contractSheetV3(node: unknown, path: string, out: string[], depth = 0): void {
+  if (depth > 4 || node === null || typeof node !== "object") return;
+  const n = node as {
+    _def?: { typeName?: string; innerType?: unknown; type?: unknown };
+    shape?: Record<string, unknown>; element?: unknown; options?: readonly string[];
+  };
+  // 这里**只能**按 `_def.typeName` 分派：`instanceof z.ZodObject` 在跨包时恒为假
+  // （合同在 `@ailearn/shared` 里用另一份 zod 实例构造），第一次试就输出了空表——
+  // 空表比缺这一格更坏，因为它看起来像"已经说清楚了"。
+  // 注意只在这里读类型名；"这一格必填吗"仍然用 `safeParse(undefined)` 判，不读内部标记。
+  switch (n._def?.typeName) {
+    case "ZodOptional":
+    case "ZodNullable":
+      contractSheetV3(n._def?.innerType ?? null, path, out, depth + 1);
+      return;
+    case "ZodArray":
+      contractSheetV3(n.element, `${path}[]`, out, depth + 1);
+      return;
+    case "ZodEnum":
+      out.push(`${path || "（根）"} 只能取：${(n.options ?? []).join("|")}`);
+      return;
+    case "ZodObject": {
+      const shape = n.shape ?? {};
+      const required = Object.entries(shape)
+        .filter(([, field]) => (field as { safeParse: (v: unknown) => { success: boolean } })
+          .safeParse(undefined).success === false)
+        .map(([key]) => key);
+      if (path) out.push(`${path} 必填：${required.join("、") || "（这一层没有必填）"}`);
+      for (const [key, field] of Object.entries(shape)) {
+        contractSheetV3(field, path ? `${path}.${key}` : key, out, depth + 1);
+      }
+      return;
+    }
+    default:
+      return;
+  }
 }
 
-const draftShape = cardGenerateV3CandidateDraftSchema.shape;
+function contractSheetForV3(schemas: Record<string, unknown>): string {
+  const lines: string[] = [];
+  for (const [root, schema] of Object.entries(schemas)) contractSheetV3(schema, root, lines);
+  // 同一层重复出现（数组元素与父对象各报一次）时去重，提示词不要注水。
+  return [...new Set(lines)].map((line) => `- ${line}`).join("\n");
+}
+
+const CANDIDATE_SHEET_V3 = contractSheetForV3({
+  objectiveProposals: cardGenerateV3ObjectiveProposalSchema,
+  candidates: cardGenerateV3CandidateDraftSchema,
+});
 
 export function buildCardGenerateV3Prompt(input: CardGenerateV3TaskInput): string {
   const blocks = input.noteBlocks
@@ -148,21 +197,11 @@ export function buildCardGenerateV3Prompt(input: CardGenerateV3TaskInput): strin
     "严格按以下 JSON 形状回答（不加任何其他文字）：",
     '{"planIntent":{"kind":"author_candidates","recommendedCardCount":n} 或 ' +
     '{"kind":"no_cards_recommended","reasonCodes":[…}],',
-    ' "objectiveProposals":[{"objectiveLocalId":"id","objectiveStatement":"…","priority":"critical|important|optional",',
-    // 每一个枚举取值都要**在提示词里现出来**：上一版这里只写 `"knowledgeForm":"…"`，那九个
-    // 词模型一个都没见过，于是第一发真模型交了 "procedural"（合同要 "procedure"）——
-    // 同一件事的近义词，整批 0 候选。列表从合同那份数组现取，不抄第二份。
-    ' "knowledgeForm":"' + KnowledgeFormValuesV2.join("|") + '","rationale":"为什么值得记"}],',
-    ' "candidates":[{"objectiveLocalId":"id",',
-    // 第二发真模型的现场：`"objectiveDraft":{…完整的 objective 草稿…}` 是一个省略号占位，
-    // 于是模型整个对象交空 ⇒ `objectiveStatement`/`publicSummary` 缺失 ⇒ 同一格近因复发。
-    // 必填清单从合同那份 shape 现取（`.optional()`/可空的 `safeParse(undefined)` 会过，
-    // 真必填的不过），不抄第二份；服务端自己会重算的那几格明说"不用凑"。
-    '  "objectiveDraft":{"这一层必须给出的键":"' + requiredContractKeysV3(draftShape.objectiveDraft) + '"}（'
-    + "其中 rubricHash／身份／哈希类由服务端重算，不用自己凑）,",
-    '  "presentationDraft":{"这一层必须给出的键":"' + requiredContractKeysV3(draftShape.presentationDraft)
-    + '"}（strategy 由服务端在整批上分配）, "hints":{"level1":"…","level2":"…"}}]}',
-    "（objectiveDraft 里的 rubricHash 服务端会重算，不用自己凑。）",
+    ' "objectiveProposals":[…], "candidates":[…]}',
+    "# 这两块的合同（逐层必填键与合法取值，服务端按同一份 schema 校验；少一格就会被判 output_shape）",
+    CANDIDATE_SHEET_V3,
+    "（哈希与身份（rubricHash／reportHash／id／strategy）服务端会重算或整批分配，不用自己凑；",
+    "evidenceRefIds 只能取下面「可用依据」里出现过的 id。）",
     "",
     `# 笔记标题\n${input.noteTitle}`,
     `# 正文（快照 ${input.inputSnapshotHash.slice(0, 12)}，版本 v${input.planVersion}，内容纪元 ${input.cardContentEpoch}）\n${blocks}`,
