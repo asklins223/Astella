@@ -262,6 +262,20 @@ HEAD），按 hunk 拆开只提自己那 58 行。
    的注释说得很直白：**镜像与迁移不一致，比旧名字出现在谓词里严重得多**）。
    与 `policies.stageRuntimes` **不同**：**索引谓词不进任何哈希**，它只影响数据库怎么存。
 
+2. **`policies.stageRuntimes` 已经没有运行时读者，但还在被播种**——**删它的前置已在
+   2026-09-28 量完**（`packages/shared/src/generation-semantic-spec-hash-closure.test.ts`）。
+   同一个域标签 `card-generation-v2/semantic-spec`、同一份种子，两个值：
+   ```
+   含 stageRuntimes:   08260691b1d04c9bb362a1298b3ff8eb35824e5322074f24c6232294542794cd
+   不含 stageRuntimes: 3661149df68241220b76f0ce8ecbcf8e3dd03f52a5652cafc86aa022cc0deeba
+   ```
+   **这两个数只是「闭包会变」的一次演示**，不是「删了它会打掉多少行」的答案——后者要拿
+   第二个数去和在途 run 存的 `generationSemanticSpecHash` 对。**那一步刻意没做**：
+   在还没决定「删不删」之前去数要作废多少行，是**替一个还没做的决定做事**。
+   判据里**单独钉住**了「域标签全仓只许有一个地方写」（它只在
+   `card-generation-v2-hashing.ts` 里）——因为它正是「两个数能不能放一起比」的**唯一**
+   判据，而量闭包最常见的错就是「一处在生成时算、一处在脚本里算」，脚本那处手写了标签。
+
 2. **`policies.stageRuntimes` 已经没有运行时读者，但还在被播种。**
    唯一的消费者是旧链 `CardGenerationProviderRuntime` 那句按裸阶段名匹配采样参数的
    `find`；简化链的采样参数写在 `card-generation-v3/tasks.ts` 的任务定义里。
