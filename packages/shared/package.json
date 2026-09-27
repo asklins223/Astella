@@ -306,6 +306,11 @@
       "import": "./src/review-queue-v2-contracts.ts",
       "default": "./src/review-queue-v2-contracts.ts"
     },
+    "./review-authorization-rules-v2": {
+      "types": "./src/review-authorization-rules-v2.ts",
+      "import": "./src/review-authorization-rules-v2.ts",
+      "default": "./src/review-authorization-rules-v2.ts"
+    },
     "./formal-assessment-guard-contracts": {
       "types": "./src/formal-assessment-guard-contracts.ts",
       "import": "./src/formal-assessment-guard-contracts.ts",
