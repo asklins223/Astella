@@ -61,6 +61,7 @@ import type {
   CardGenerateV3DroppedCandidate,
   CardGenerateV3TaskOutput,
 } from "./output-types.ts";
+import { stampServerOwnedDraftIdsV3 } from "./draft-ids.ts";
 
 /** execute 的解析失败形状（内核 AiStepFailure 的结构复刻）。 */
 interface ParseFailure {
@@ -118,6 +119,20 @@ export interface CardGenerateV3TaskInput {
  */
 
 /**
+ * 这些格子是**服务端所有**的：由 `stampServerOwnedDraftIdsV3` 在解析之前补好或整棵拿掉，
+ * 因此既不许出现在提示词的"必填"清单里，也不许往里递归列格子——一边叫模型发明 id、
+ * 一边说服务端会替它算，是同一份提示词里的两句话（五发真模型里最后那一格就是这么红的）。
+ */
+const SERVER_OWNED_LEAVES_V3 = [
+  "unitId", "rubricUnitId", "relations", "relationId", "fromAnswerUnitId", "toAnswerUnitId",
+];
+
+/** 一切 `*Hash` 都由服务端重算（`plan-assembly.ts` 丢弃模型给的那份再算一次），因此也不许出现在"必填"里。 */
+function isServerOwnedKeyV3(key: string): boolean {
+  return SERVER_OWNED_LEAVES_V3.includes(key) || key.endsWith("Hash");
+}
+
+/**
  * 把一份 zod 合同展开成**逐层的必填清单与取值表**（提示词用）。
  *
  * 为什么必须整个展开而不是补一两格：三发真模型各栽在一层上——`knowledgeForm:"…"`（词没列）
@@ -127,7 +142,9 @@ export interface CardGenerateV3TaskInput {
  * 递归深度设上限是因为 `relations` 这类会自引用。
  */
 function contractSheetV3(node: unknown, path: string, out: string[], depth = 0): void {
-  if (depth > 4 || node === null || typeof node !== "object") return;
+  // 上限 8：先前定 4 正好把 `rubric.units[].…` 这一类截掉——真模型第五发撞的就是
+  // 那一层，而表上看起来"已经说全了"（比缺格更坏的是**看起来不缺**）。
+  if (depth > 8 || node === null || typeof node !== "object") return;
   const n = node as {
     _def?: { typeName?: string; innerType?: unknown; type?: unknown };
     shape?: Record<string, unknown>; element?: unknown; options?: readonly string[];
@@ -150,11 +167,14 @@ function contractSheetV3(node: unknown, path: string, out: string[], depth = 0):
     case "ZodObject": {
       const shape = n.shape ?? {};
       const required = Object.entries(shape)
+        .filter(([key]) => !isServerOwnedKeyV3(key))
         .filter(([, field]) => (field as { safeParse: (v: unknown) => { success: boolean } })
           .safeParse(undefined).success === false)
         .map(([key]) => key);
       if (path) out.push(`${path} 必填：${required.join("、") || "（这一层没有必填）"}`);
       for (const [key, field] of Object.entries(shape)) {
+        // 服务端整棵拿掉的子树（`relations`）不再向模型要，也不往里递归列格子。
+        if (isServerOwnedKeyV3(key)) continue;
         contractSheetV3(field, path ? `${path}.${key}` : key, out, depth + 1);
       }
       return;
@@ -224,6 +244,11 @@ export function buildCardGenerateV3Prompt(input: CardGenerateV3TaskInput): strin
     "# 这两块的合同（逐层必填键与合法取值，服务端按同一份 schema 校验；少一格就会被判 output_shape）",
     CANDIDATE_SHEET_V3,
     "（哈希与身份（rubricHash／reportHash／id／strategy）服务端会重算或整批分配，不用自己凑；",
+    // 上面那句在第五发之前是不够的：`unitId`／`rubricUnitId` 与整棵 `relations` 当时还挂在
+    // "必填"清单里，模型只能发明它们。现在这些格子由服务端补／拿掉，话要说两句才对齐。
+    "答案单元的 `unitId`、判分点的 `rubricUnitId` 服务端会补；`answerUnitIds` 请在你自己给这些",
+    "单元起的名字之间互相引用（对不上时服务端按位置重指）。`relations` 不用交：图边由服务端推导，",
+    "模型交的那份会被整条拿掉（`relationHash` 是 64 位哈希，本来就不该由你算）。",
     "evidenceRefIds 只能取下面「可用依据」里出现过的 id。）",
     "",
     `# 笔记标题\n${input.noteTitle}`,
@@ -316,7 +341,11 @@ export function createCardGenerateV3Task(
       });
       let parsed: CardGenerateV3Output;
       try {
-        parsed = cardGenerateV3OutputSchema.parse(JSON.parse(completion.text));
+        // 解析之前先把**服务端所有**的格子补好/拿掉（id、引用、relations）——
+        // 放在 parse 之后就来不及了：那一层就是判 `output_shape` 的地方。
+        const draft = JSON.parse(completion.text);
+        stampServerOwnedDraftIdsV3(draft);
+        parsed = cardGenerateV3OutputSchema.parse(draft);
       } catch (error) {
         const failure: ParseFailure = {
           ok: false,

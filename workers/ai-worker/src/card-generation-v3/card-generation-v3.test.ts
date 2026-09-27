@@ -671,6 +671,60 @@ test("生成提示词里列出了 knowledgeForm 的每一个合法取值", () =>
   }
 });
 
+// ── ⑨ 服务端所有的格子：补 id、重指引用、合同表里不再向模型要 ──────────────
+
+test("stampServerOwnedDraftIdsV3：缺的 id 按顺序补、引用重指、relations 整条拿掉", async () => {
+  const { stampServerOwnedDraftIdsV3 } = await import("./draft-ids.ts");
+  const EVIDENCE_ID = "3f1b1f4c-6d7a-4b1e-9b6f-2a8c1d5e7f90";
+  const parsed = {
+    candidates: [{
+      objectiveDraft: {
+        canonicalAnswer: { kind: "bullets", items: [{ text: "第一格" }, { text: "第二格" }] },
+        rubric: { version: 2, units: [
+          { facet: "recall", criterion: "说出两格", required: true, answerUnitIds: ["我起的名字"],
+            evidenceRefIds: [EVIDENCE_ID], contradictionRules: [] },
+        ] },
+        relations: [{ relationId: "", fromAnswerUnitId: "a", toAnswerUnitId: "b",
+          kind: "before", evidenceRefIds: [EVIDENCE_ID], relationHash: "0".repeat(64) }],
+      },
+    }],
+  };
+  const report = stampServerOwnedDraftIdsV3(parsed);
+  const draft = parsed.candidates[0].objectiveDraft;
+  assert.deepEqual((draft.canonicalAnswer as { items: Array<{ unitId?: string }> }).items
+    .map((item) => item.unitId), ["au-c1-1", "au-c1-2"], "答案单元的 id 由服务端按顺序补");
+  const unit = (draft.rubric as { units: Array<Record<string, unknown>> }).units[0]!;
+  assert.equal(unit.rubricUnitId, "ru-c1-1");
+  assert.deepEqual(unit.answerUnitIds, ["au-c1-1"],
+    "模型自起的名字必须重指到服务端 id：留着就是过了 schema 却留悬空引用，只有落库后的投影会炸");
+  assert.deepEqual(draft.relations, [], "relations 整条由服务端拿掉（那条 64 位哈希不该由模型交）");
+  assert.deepEqual(report,
+    { answerUnits: 2, rubricUnits: 1, repointedRefs: 1, droppedRelations: 1, stampedHashes: 0 },
+    "补了多少要数得出来——这是「这一批里有多少格子不是模型给的」的读数");
+  const empty = stampServerOwnedDraftIdsV3({ nope: 1 });
+  assert.deepEqual(empty,
+    { answerUnits: 0, rubricUnits: 0, repointedRefs: 0, droppedRelations: 0, stampedHashes: 0 },
+    "形状对不上时不崩、也不假装补过");
+});
+
+test("合同表里不再向模型要服务端 id，也不往 relations 里递归列格子", async () => {
+  const prompt = buildCardGenerateV3Prompt(generateInput);
+  // 只判**合同表那些行**：紧随其后那段实话里本来就要点名这些格子（"服务端会补"），
+  // 拿整块文本去比会把自己的说明当成违例——第一版就是这么红的，红得没有信息量。
+  const sheetLines = prompt.split("\n").filter((line) => line.startsWith("- "));
+  assert.ok(sheetLines.length > 10, `合同表一行都没展开就是空表（空表比缺格更坏）：${sheetLines.length}`);
+  for (const owned of ["rubricUnitId", "relationId", "fromAnswerUnitId", "relationHash", "unitId"]) {
+    assert.ok(!sheetLines.some((line) => line.includes(owned)),
+      `${owned} 由服务端补／拿掉，却还挂在"必填"清单里：同一份提示词里说了两句相反的话`);
+  }
+  assert.ok(!sheetLines.some((line) => line.includes("objectiveDraft.relations")),
+    "整棵 relations 不要了就不该再往里列格子（模型照着填反而必然红）");
+  assert.ok(sheetLines.some((line) => line.includes("rubric.units[]")),
+    "深一层（判分点）必须真的被列出来：以前深度上限把这一层截掉，表看着全、模型照样撞");
+  assert.ok(prompt.includes("服务端会补") && prompt.includes("relations` 不用交"),
+    "收掉的格子要用一句实话说明（服务端会补 id、relations 不用交），否则模型只会猜");
+});
+
 // ── ⑦ 预算要自洽：`maxModelCalls` 得容得下"首次＋那一次自动重试" ──────────────
 
 test("三个任务的默认预算自洽：maxModelCalls ≥ 1 + maxAutoRetries（不然那一次重试花不出去）", () => {
