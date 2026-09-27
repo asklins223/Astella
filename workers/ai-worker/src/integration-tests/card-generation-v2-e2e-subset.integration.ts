@@ -145,11 +145,19 @@ const DUAL_CHAIN_CONTENT =
 
 let seedVersionCounter = 0;
 
+/**
+ * `content` 可以是一整段，也可以是**一段一个 block** 的列表。
+ *
+ * 简化链的确定性作者按块出题（`card-generation-v3` 里没有把一段切成多个目标的那一腿），
+ * 所以"要两条候选"的夹具（C16 的 merge）必须真的给两个 block——把两句拼进一段，
+ * 在旧链够用了（planner 会按事实切），在新链只会出一条。
+ */
 async function seedNote(
   title: string,
-  content: string,
+  content: string | readonly string[],
 ): Promise<{ versionId: string; blockId: string; noteId: string }> {
   const versionId = randomUUID();
+  const blocks = Array.isArray(content) ? content : [content];
   const blockId = randomUUID();
   const noteId = await createNote(title);
   // note_versions_unique_idx 约束 (note_id, version_no) 唯一：全局递增的
@@ -166,11 +174,16 @@ async function seedNote(
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
       VALUES (${WORKSPACE_ID}, ${USER_ID}, 'owner') ON CONFLICT DO NOTHING`;
     await tx`INSERT INTO note_versions (id, note_id, workspace_id, version_no, content_json, content_hash, created_by)
-      VALUES (${versionId}, ${noteId}, ${WORKSPACE_ID}, ${seedVersionCounter}, ${tx.json({ blocks: [{ type: "paragraph", content }] })}, 'v2-e2e-hash', ${USER_ID})
+      VALUES (${versionId}, ${noteId}, ${WORKSPACE_ID}, ${seedVersionCounter},
+              ${tx.json({ blocks: blocks.map((text) => ({ type: "paragraph", content: text })) })},
+              'v2-e2e-hash', ${USER_ID})
       ON CONFLICT (id) DO NOTHING`;
-    await tx`INSERT INTO note_blocks (id, version_id, workspace_id, type, content, ordinal)
-      VALUES (${blockId}, ${versionId}, ${WORKSPACE_ID}, 'paragraph', ${content}, 1)
-      ON CONFLICT (id) DO NOTHING`;
+    for (const [ordinal, text] of blocks.entries()) {
+      await tx`INSERT INTO note_blocks (id, version_id, workspace_id, type, content, ordinal)
+        VALUES (${ordinal === 0 ? blockId : randomUUID()}, ${versionId}, ${WORKSPACE_ID},
+                'paragraph', ${text}, ${ordinal + 1})
+        ON CONFLICT (id) DO NOTHING`;
+    }
   });
   return { versionId, blockId, noteId };
 }
@@ -1937,8 +1950,19 @@ test("C15：审核中 edit 答案 → 新 revision + worker 重跑门禁（check
 test(
   "C16：merge 两个候选 → 新 derived 候选 + lineage；父候选 merged 不可激活；合并产物重跑门禁",
   async () => {
-  const MERGE_CONTENT =
-    "TCP 提供可靠有序的字节流传输。水在标准大气压下 100 摄氏度沸腾。";
+  delete process.env.CARD_GENERATION_CHAIN; // merge 判的是审核台那一步，两链同形；换的只是夹具形状
+  // 旧夹具是一个 block 两句话：旧链的 planner 会按事实切成两个目标，简化链的确定性作者
+  // 按块出题——那一发只落一条候选（2026-09-27 量过 `atoms:2`，两句分别被
+  // `front_leaks_answer`／`cue_is_claim_copy` 挡下），merge 于是没有对象可合。
+  // 换成"一句一块"、句子取自简化链集测里量过出得来卡的那一批——判据本身一个字没改。
+  const MERGE_CONTENT = [
+    "TCP 建立连接时双方各自确认一次序号，确认完成之后才开始传数据。",
+    "HTTP 是无状态协议，服务端默认不记得上一个请求发生过什么。",
+    "对称加密的密钥必须事先约定好，非对称加密用公钥加密、私钥解密。",
+    "DNS 解析先把域名换成 IP 地址，之后才向目标服务器发起连接。",
+    "TLS 握手在应用层数据之前完成，它协商的是加密套件和会话密钥。",
+    "TCP 的重传由超时或重复确认触发，不由应用层自己决定何时重发。",
+  ];
   const { versionId } = await seedNote("合并", MERGE_CONTENT);
   const runId = (await createRun(versionId, `c16-${randomUUID()}`, `c16-key-${randomUUID()}`)).runId;
   await runPipelineOnce();
@@ -1956,6 +1980,9 @@ test(
     WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID} AND revision = 1
     ORDER BY candidate_id`;
   assert.ok(candRows.length >= 2, "C16 needs two candidates");
+  // 这条判的是"合并两个候选"，不是"一次合并整批"：六句在新链会出三张左右，
+  // 多出来的那些留着不动，后面的 lineage 与重跑门禁只跟着被合并的这两条走。
+  const mergeTargets = candRows.slice(0, 2);
 
   const { handleCandidateActionV2 } = await import(
     "../../../../apps/api/src/modules/card-generation-v2/candidate-review-service.ts"
@@ -1971,14 +1998,14 @@ test(
       expectedReviewDraftRevision: Number(runRow[0].review_draft_revision),
       action: {
         type: "merge",
-        candidateIds: candRows.map((c) => c.candidate_id),
-        expectedRevisions: candRows.map((c) => ({
+        candidateIds: mergeTargets.map((c) => c.candidate_id),
+        expectedRevisions: mergeTargets.map((c) => ({
           candidateId: c.candidate_id,
           revision: c.revision,
           hash: c.candidate_revision_hash,
         })),
         mergedDraft: {
-          objectiveStatement: "TCP 传输特性与水沸腾条件（合并产物）",
+          objectiveStatement: "两条来源候选的合并产物（本用例只判合并这一发）",
           explanation: "合并后的统一解释",
         },
       },
@@ -1996,19 +2023,29 @@ test(
   assert.equal(merged.length, 1, "C16 must create exactly 1 merged candidate");
   const derived = (merged[0].derived_from ?? []) as Array<{ candidateRevisionId: string }>;
   assert.equal(derived.length, 2, "C16 merged candidate must carry 2-parent lineage");
-  // 父候选 = 排除合并产物自身（合并产物也是 revision=1）
-  const parents = await admin`
-    SELECT review_decision FROM card_generation_candidates_v2
+  const parentRows = await admin`
+    SELECT candidate_id, review_decision FROM card_generation_candidates_v2
     WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}
-      AND revision = 1 AND candidate_id != ${merged[0].candidate_id}`;
-  assert.equal(parents.length, 2, "C16 must have exactly 2 parents");
-  assert.ok(parents.every((p) => p.review_decision === "merged"),
+      AND candidate_id = ANY(${mergeTargets.map((c) => c.candidate_id)}::uuid[])`;
+  assert.equal(parentRows.length, 2, "C16 的两条父候选都要还在（被合并是改状态不是删行）");
+  assert.ok(parentRows.every((row) => row.review_decision === "merged"),
     "C16 parents must be marked merged (cannot activate)");
+  // 没被合并的兄弟必须原样留着：旧写法"除产物外只剩两条"会把"这一篇只出了两张卡"
+  // 一起判掉，正文一换形状就红在无关的地方。
+  const siblings = await admin`
+    SELECT count(*)::int AS n FROM card_generation_candidates_v2
+    WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}
+      AND candidate_id != ${merged[0].candidate_id}
+      AND NOT (candidate_id = ANY(${mergeTargets.map((c) => c.candidate_id)}::uuid[]))
+      AND review_decision = 'merged'`;
+  assert.equal(siblings[0].n, 0, "C16 只准动被合并的那两条，没参与的候选不许被顺带标掉");
 
+  // 判的是"合并要排出一发、而且那一发指的是合并产物这条修订"——两链 jobType 不同，
+  // 按字面量数会把这条判据钉在链上（正是它搬不动的另一半原因）。
   const outboxRows = await admin`
     SELECT count(*)::int AS n FROM card_generation_run_outbox_v2
-    WHERE run_id = ${runId} AND job_type = 'card_generation_recheck_candidate'`;
-  assert.equal(outboxRows[0].n, 1, "C16 merge must enqueue recheck job");
+    WHERE run_id = ${runId} AND payload->>'candidateRevisionId' = ${merged[0].candidate_revision_id}`;
+  assert.equal(outboxRows[0].n, 1, "C16 merge must enqueue exactly one re-gating job for the merged revision");
 
   // worker 对合并产物重跑门禁
   await runPipelineOnce();
@@ -2070,6 +2107,7 @@ test("长正文：源文本被截断时在 run 事件流里留痕（不是只在
  * 其余是**各不相同**的长材料（若通篇重复同一句，planner 会按去重/可学性滤成 0 卡）。
  */
 test("长正文 + 重生成：截断留痕在重跑路径上也会多记一条", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 逐候选那一发的规模留痕已补进简化链段 5（补之前红在 before=1 after=1）
   const TOPICS = ["缓存淘汰", "索引选择", "事务隔离", "锁粒度", "副本同步", "分片路由", "连接池", "查询重写"];
   const LONG = [
     "OSI 模型把网络通信分为七层：物理层负责比特流传输；数据链路层负责帧与纠错；"
@@ -2086,7 +2124,6 @@ test("长正文 + 重生成：截断留痕在重跑路径上也会多记一条",
   const runId = (await createRun(versionId, `capregen-${randomUUID()}`, `capregen-key-${randomUUID()}`)).runId;
   await runPipelineOnce();
   await forceReviewReady(runId);
-  delete process.env.CARD_GENERATION_CHAIN; // 逐候选那一发的规模留痕已补进简化链段 5（补之前红在 before=1 after=1）
   await forceCandidatesPassed(runId, "undecided");
 
   const capEventCount = async (): Promise<number> => {
@@ -2349,6 +2386,7 @@ test("C46：保存之前先翻开候选的答案 → 激活那一发自己写出
 });
 
 test("C47：没翻过答案就保存 → 提醒当场 ready，一天都不延后", async () => {
+  delete process.env.CARD_GENERATION_CHAIN; // 提醒冷却这一格量的东西在激活之后，两条链同一份判据
   const RESPIRATION_CONTENT =
     "细胞呼吸是细胞把有机物氧化分解、释放能量并生成 ATP 的过程；有氧呼吸的主要场所是线粒体。";
   const { versionId } = await seedNote("没翻答案就保存", RESPIRATION_CONTENT);
@@ -2365,7 +2403,6 @@ test("C47：没翻过答案就保存 → 提醒当场 ready，一天都不延后
   assert.equal(rows.length, 1, `保存那一发该建出恰好一条提醒（得到 ${rows.length} 条）`);
   const row = rows[0];
   assert.equal(row.status, "ready", "没看过答案就不该被拖进冷却");
-  delete process.env.CARD_GENERATION_CHAIN; // 提醒冷却这一格量的东西在激活之后，两条链同一份判据
   assert.equal(row.policy_version, policyVersion, "同一份策略版本，ready 也要写明凭哪条政策");
   assert.equal(row.last_exposure_id, null, "这一行同样是激活那一支写的");
   const delayMs = reminderDelayMs(row);
@@ -2376,6 +2413,7 @@ test("C47：没翻过答案就保存 → 提醒当场 ready，一天都不延后
 });
 
 test("C48：另一个人也翻过这张候选的答案 → 保存那一发替他映射曝光并写下同一份延后", async (t) => {
+  delete process.env.CARD_GENERATION_CHAIN; // 同 C47：判的是别人那次曝光的映射，与出题的链无关
   const ESTER_CONTENT =
     "酯化反应是酸与醇作用生成酯和水的反应；一般由羧酸提供羟基、醇提供氢，反应可逆。";
   const { versionId } = await seedNote("他人翻过答案", ESTER_CONTENT);
@@ -2392,7 +2430,6 @@ test("C48：另一个人也翻过这张候选的答案 → 保存那一发替他
   // 所以它在"生产口径的连接"（CI 与真部署都是 `ailearn_api`）下今天整条走不到——那一跳的
   // SELECT 返回空，替别人建提醒的循环连一次都不进入。看不见就**如实跳过**，不假装绿：
   // 空转本身登记在 39d §19（W7-3／W7-7 要裁的就是它——改走 worker 那条豁免通道，还是按
-  delete process.env.CARD_GENERATION_CHAIN; // 同 C47：判的是别人那次曝光的映射，与出题的链无关
   // AGENTS.md 把这条没有可达方的支路删掉）。阳性对照走同一把尺：他自己的身份必须看得见
   // 自己那一行，否则就是曝光没种进去，那种红不该被跳过藏掉。
   assert.ok(
