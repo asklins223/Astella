@@ -2544,6 +2544,33 @@
 
 .hud-surface .notebook .notebook-objective .notebook-note { margin-bottom: 0; }
 
+/* W7-3 刀三：目标级「暂不安排」／「恢复并开启」（39 §9.1 行 2、行 3）。
+   它长成一枚**贴在主要动作下面的纸签**，不是又一颗主按钮：这一格是"对回访安排的处置"，
+   §9.1 规则表里它有自己的位置——把它做成同级按钮会让「先学习」与「别再提醒我」
+   看上去一样重。虚线边是册页上撕下来那一小条的语汇，与纸面同族而不是另起一套控件。 */
+.hud-surface .notebook .notebook-objective .notebook-objective__hold {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 9px 12px;
+  border: 1px dashed var(--hud-line);
+  border-radius: 13px;
+  background: var(--hud-paper-light);
+}
+.hud-surface .notebook .notebook-objective .notebook-objective__hold [data-review-hold-label] {
+  color: var(--hud-ink);
+  font-weight: 650;
+}
+.hud-surface .notebook .notebook-objective .notebook-objective__hold [data-review-hold-notice] {
+  color: var(--hud-green);
+}
+.hud-surface .notebook .notebook-objective .notebook-objective__hold [data-review-hold-error] {
+  color: var(--hud-red);
+}
+
 /* 有未提交编辑时那两条路（39d W4-4）：并排，窄屏换行——它们是"选一条"，不是主/次两颗按钮的
    层级关系，所以第二颗保持普通 `button` 而不降级成文字动作。 */
 .hud-surface .notebook .notebook-objective .notebook-objective__choices {

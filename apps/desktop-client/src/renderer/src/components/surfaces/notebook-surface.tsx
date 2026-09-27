@@ -19,6 +19,7 @@ import type {
   LearningObjectivePrimaryActionV3,
   LearningObjectiveSurfaceV3,
   ObjectiveNoteChangeImpactV1,
+  ObjectiveReviewHoldV1,
   ObjectiveSurfaceFreshnessV3,
 } from "@ailearn/shared/learning-objective-surface-contracts";
 import type { NoteBlockProjectionV1, NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
@@ -61,7 +62,19 @@ import {
   isCardGenerationInFlight,
   isLiveGenerationForNote,
 } from "./card-generation-status";
-import { freshnessLabel, objectiveNoteChangeImpactCopy, primaryActionDescription, primaryActionLabel } from "./objective-state-copy";
+import {
+  freshnessLabel,
+  objectiveHoldActionDescription,
+  objectiveHoldNotice,
+  objectiveNoteChangeImpactCopy,
+  objectiveResumeNotice,
+  objectiveReviewHoldHint,
+  objectiveReviewHoldLabel,
+  primaryActionDescription,
+  primaryActionLabel,
+  OBJECTIVE_HOLD_ACTION_LABEL,
+  OBJECTIVE_RESUME_ACTION_LABEL,
+} from "./objective-state-copy";
 import { startObjectiveJourney } from "./objective-primary-action";
 import { ArtifactFrameHost } from "./artifact-frame-host";
 import { parseMarkdownTable } from "./note-blocks";
@@ -109,6 +122,12 @@ type NotebookProjection = {
      * `legacy_unreviewed` 那一档）。徽标直接用它这个值。
      */
     readonly freshness: ObjectiveSurfaceFreshnessV3;
+    /**
+     * W7-3 刀三：这一颗目标是不是被本人设成了「暂不安排」（39 §9.1 行 2）。
+     * 与列表那一格**同一个值**（服务端逐字搬过来的），所以笔记页与卡库页
+     * 不会一个说"暂不安排"、另一个说没有。
+     */
+    readonly reviewHold: ObjectiveReviewHoldV1 | null;
   } | null;
   /**
    * 这一篇此刻**未完成**的那一轮（39d W4-3 第三刀；表与服务是 W4-5）。
@@ -759,6 +778,16 @@ export function NotebookSurface() {
   /** 「先保存再开始」正在交字的那一段（按钮上要如实说"正在保存…"）。 */
   const [saveBeforeStart, setSaveBeforeStart] = useState(false);
   const [noteObjectiveFailure, setNoteObjectiveFailure] = useState<string | null>(null);
+  /**
+   * W7-3 刀三：目标级「暂不安排」／「恢复并开启」那两条命令的状态。
+   *
+   * **notice 与 error 分开两个 state**（不是同一个字符串）：回执是成功的话也要念出来
+   * ——「顺手撤下了 N 条」是这一发**唯一**告诉用户"它有后果"的地方（§9.1 要求
+   * "操作时说明"），把它塞进 error 那条通道就等于成功时什么都不说。
+   */
+  const [reviewHoldBusy, setReviewHoldBusy] = useState<"hold" | "resume" | null>(null);
+  const [reviewHoldNotice, setReviewHoldNotice] = useState<string | null>(null);
+  const [reviewHoldError, setReviewHoldError] = useState<string | null>(null);
   // 39d W4-3 第三刀：那张表单自己的三份状态。`roundStarter` 记住"这句是哪一颗预设放的"，
   // 来源那一档（suggested / rewritten / authored）就靠它判，不靠猜用户改没改。
   const [roundDraft, setRoundDraft] = useState("");
@@ -904,6 +933,7 @@ export function NotebookSurface() {
           primaryAction: item.primaryAction,
           noteChangeImpact: item.noteChangeImpact ?? null,
           freshness: item.freshness,
+          reviewHold: item.reviewHold ?? null,
         };
       }
     } catch {
@@ -1512,6 +1542,46 @@ export function NotebookSurface() {
     }
     if (!saved) return;
     await startNoteObjective();
+  };
+
+  /**
+   * W7-3 刀三：这一颗目标的「暂不安排」／「恢复并开启」（39 §9.1 行 2、行 3）。
+   *
+   * 三件在这一发里定下来的事：
+   *  1. **成功后必须回读**（`reload({silent:true})`），屏上那枚纸签与那颗按钮
+   *     换不换，由**服务端存下来的那一条**说了算——不是本地把 state 改一下。
+   *     本地改的后果是这一页说"暂不安排"而库里没有，下一次回读又变回去。
+   *  2. **回执要念出来**（`objectiveHoldNotice` / `objectiveResumeNotice`），
+   *     尤其是「顺手撤下了 N 条」与「沿用已经排好的安排」两句：它们是这一发
+   *     唯一能让用户看见后果的地方（§9.1"操作时说明"）。
+   *  3. **失败不吞**：409（`still_held`）与网络失败都走 `reviewHoldError`，
+   *     且**清掉**上一次的成功回执——两句话同时挂着会读成"没生效但有结果"。
+   */
+  const runObjectiveReviewHoldAction = async (kind: "hold" | "resume") => {
+    const api = desktopApi();
+    const currentNote = data?.note ?? null;
+    const target = noteObjective;
+    if (!api || !currentNote || !target || reviewHoldBusy) return;
+    setReviewHoldBusy(kind);
+    setReviewHoldError(null);
+    setReviewHoldNotice(null);
+    try {
+      const request = { noteId: currentNote.noteId, objectiveId: target.objectiveId };
+      if (kind === "hold") {
+        const response = await api.review.holdObjective({ meta: createRequestMeta(epochRef.current), request });
+        if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+        setReviewHoldNotice(objectiveHoldNotice(unwrapGatewayResult(response)));
+      } else {
+        const response = await api.review.resumeObjective({ meta: createRequestMeta(epochRef.current), request });
+        if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+        setReviewHoldNotice(objectiveResumeNotice(unwrapGatewayResult(response)));
+      }
+      await reload({ silent: true });
+    } catch (error) {
+      setReviewHoldError(gatewayErrorMessage(error));
+    } finally {
+      setReviewHoldBusy(null);
+    }
   };
 
   /**
@@ -2489,6 +2559,44 @@ export function NotebookSurface() {
           ) : null}
           <NoteChangeImpactNotice impact={noteObjective.noteChangeImpact} />
           <p className="small notebook-note">{primaryActionDescription(noteObjective.primaryAction)}</p>
+          {/* W7-3 刀三：目标级「暂不安排」／「恢复并开启」（39 §9.1 行 2、行 3）。
+              位置在主要动作**下面**而不是并列成一排：它不是"另一条主要动作"，
+              是对**安排**的处置，§9.1 那张规则表里它有自己的位置。排除生效时
+              换上去的是恢复那颗——承诺写"恢复**并开启**"（§9.1 行 3：只解除
+              会让目标永远回不到队列）。文案全部取 `objective-state-copy`，
+              这一页不另写词。 */}
+          <div className="notebook-objective__hold">
+            {noteObjective.reviewHold ? (
+              <>
+                <p className="small notebook-note" data-review-hold-label="true">
+                  {objectiveReviewHoldLabel(noteObjective.reviewHold)}
+                </p>
+                <button
+                  type="button"
+                  className="button"
+                  disabled={reviewHoldBusy !== null}
+                  onClick={() => void runObjectiveReviewHoldAction("resume")}
+                >
+                  {reviewHoldBusy === "resume" ? "正在恢复…" : OBJECTIVE_RESUME_ACTION_LABEL}
+                </button>
+                <p className="small notebook-note">{objectiveReviewHoldHint(noteObjective.reviewHold)}</p>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="button"
+                  disabled={reviewHoldBusy !== null}
+                  onClick={() => void runObjectiveReviewHoldAction("hold")}
+                >
+                  {reviewHoldBusy === "hold" ? "正在处理…" : OBJECTIVE_HOLD_ACTION_LABEL}
+                </button>
+                <p className="small notebook-note">{objectiveHoldActionDescription()}</p>
+              </>
+            )}
+            {reviewHoldNotice ? <p className="small notebook-note" data-review-hold-notice="true">{reviewHoldNotice}</p> : null}
+            {reviewHoldError ? <p className="small notebook-note" role="alert" data-review-hold-error="true">{reviewHoldError}</p> : null}
+          </div>
           {noteObjectiveFailure ? <p className="small notebook-note" role="alert">{noteObjectiveFailure}</p> : null}
         </div>
       ) : null}

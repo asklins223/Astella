@@ -65,6 +65,7 @@ function listItem(overrides: Record<string, unknown> = {}): ObjectiveListItemV3 
       initialValidation: null,
       validationNotBefore: null,
     },
+    reviewHold: null,
     primaryAction: { kind: "create_run", objectiveId: OBJECTIVE_ID, label: "开始学习", start: START },
     ...overrides,
   });
@@ -73,6 +74,11 @@ function listItem(overrides: Record<string, unknown> = {}): ObjectiveListItemV3 
 type Api = {
   artifact: { ensure: ReturnType<typeof vi.fn> };
   objective: { list: ReturnType<typeof vi.fn> };
+  /** W7-3 刀三：目标级「暂不安排」／「恢复并开启」那两条命令。 */
+  review: {
+    holdObjective: ReturnType<typeof vi.fn>;
+    resumeObjective: ReturnType<typeof vi.fn>;
+  };
   learningRun: { start: ReturnType<typeof vi.fn> };
   note: { save: ReturnType<typeof vi.fn> };
   noteLearningRound: {
@@ -178,6 +184,14 @@ function installApi(
     artifact?: Record<string, unknown> | null;
     /** 落盘那一发失败。 */
     artifactEnsureFails?: boolean;
+    /** 「暂不安排」那一发失败（走网关那一条形状）。 */
+    holdFails?: boolean;
+    /** 「恢复并开启」那一发失败（409 still_held 的形状）。 */
+    resumeObjectiveFails?: boolean;
+    /** 立排除那一发撤下了几条待办；缺省 2。 */
+    dismissedPendingSchedules?: number;
+    /** 恢复那一发是新建还是沿用；缺省 created。 */
+    resumeScheduled?: "created" | "reused_existing";
   } = {},
 ): Api {
   const syncController = options.syncController ?? { fail: false };
@@ -195,6 +209,29 @@ function installApi(
     objective: { list: vi.fn(list) },
     learningRun: {
       start: vi.fn(async () => ok({ runId: RUN_ID, snapshotId: "55555555-4555-4555-8555-555555555555" })),
+    },
+    // W7-3 刀三。两条各自一个替身而不是共用一个 toggle 替身：§9.1 规则表把
+    // "设排除"与"恢复并开启"列成两件不同的事，用一个替身会让人以为它们是同一发。
+    // 回执形状照线上合同写（`dismissedPendingSchedules`、`scheduled` 三档分两档回执）。
+    review: {
+      holdObjective: vi.fn(async () => (options.holdFails
+        ? { ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } }
+        : ok({
+          objectiveId: OBJECTIVE_ID,
+          noteId: NOTE_ID,
+          alreadyHeld: false,
+          dismissedPendingSchedules: options.dismissedPendingSchedules ?? 2,
+        }))),
+      resumeObjective: vi.fn(async () => (options.resumeObjectiveFails
+        ? { ok: false as const, error: { code: "objective_held", safeMessageKey: "error.objective_held", retry: "user_action" } }
+        : ok({
+          version: 2 as const,
+          objectiveId: OBJECTIVE_ID,
+          released: true,
+          scheduled: options.resumeScheduled ?? ("created" as const),
+          scheduleId: "99999999-4999-4999-8999-999999999999",
+          nextReviewAt: new Date(Date.now() + 10 * 86_400_000).toISOString(),
+        }))),
     },
     noteLearningRound: {
       // 读失败走网关那一条（`{ok:false}`），不是抛异常：与真桥同一形状。
@@ -374,6 +411,14 @@ async function show(
     gapHelp?: Record<string, unknown>;
     artifact?: Record<string, unknown> | null;
     artifactEnsureFails?: boolean;
+    /** 「暂不安排」那一发失败（走网关那一条形状）。 */
+    holdFails?: boolean;
+    /** 「恢复并开启」那一发失败（409 still_held 的形状）。 */
+    resumeObjectiveFails?: boolean;
+    /** 立排除那一发撤下了几条待办；缺省 2。 */
+    dismissedPendingSchedules?: number;
+    /** 恢复那一发是新建还是沿用；缺省 created。 */
+    resumeScheduled?: "created" | "reused_existing";
   } = {},
 ) {
   const syncController = options.syncController ?? { fail: false };
@@ -1819,5 +1864,96 @@ describe("停住的那一轮：「继续这一轮」（W4-5 ④ 的前置）", (
     // 换回服务端那一版之后仍然是停着的：那颗按钮必须还在，否则这一发失败被她读成成功了。
     expect(resumeButton(roundBlock())).toBeTruthy();
     expect(resumeButton(roundBlock())!.textContent).toBe(ROUND_COPY.resume);
+  });
+});
+
+/**
+ * W7-3 刀三：目标级「暂不安排」／「恢复并开启」（39 §9.1 行 2、行 3）。
+ *
+ * 这一组钉的是**屏上那一句承诺有没有兑现**，四件：
+ *  1. 排除生效时换上去的是恢复那颗，而且那颗承诺的是「恢复**并开启**」——
+ *     §9.1 行 3：只解除会让用户点完之后那个目标再也回不到队列（撤下去的是
+ *     `dismissed` 终态），所以文案退化成"取消排除"就会重新造出那个洞。
+ *  2. 立排除那一发**有后果要说**：回执里「撤下了 N 条」是这一发唯一让用户看见
+ *     后果的地方（§9.1「操作时说明」），不说就等于只有未来被挡住。
+ *  3. 失败**不吞**，且失败时**不同时挂着一句成功回执**——两句话同时挂着会被读成
+ *     "没生效但有结果"。
+ *  4. 发出去的那一发要带**这一篇的 noteId**：服务端按笔记判可见性，漏了就是 400。
+ *
+ * 每格都带正控制：①的反向是"被排除时不该再有那颗"；②的反向是"撤了 0 条说另一句"；
+ * ③的反向是成功那格不挂 alert。
+ */
+describe("笔记页：目标级「暂不安排」/「恢复并开启」", () => {
+  const HELD_AT = new Date(Date.now() - 2 * 86_400_000).toISOString();
+  const heldItem = () => listItem({
+    reviewHold: { objectiveId: OBJECTIVE_ID, noteId: NOTE_ID, reasonCode: "user_deferred_objective", createdAt: HELD_AT },
+  });
+
+  it("正对照：没被排除时，那颗按钮与它的范围说明都在屏上", async () => {
+    const { objectiveBlock } = await show([listItem()]);
+    const block = objectiveBlock()!;
+    expect(block).not.toBeNull();
+    fireEvent.click(within(block).getByRole("button", { name: "暂不安排这个目标" }));
+    // 范围说明必须出现："只停这一个目标的回访安排"——不说的话用户会以为整篇停了。
+    expect(within(block).getByText(/只停这一个目标/)).toBeTruthy();
+  });
+
+  it("按下去带的是这一篇的 noteId 与这一颗目标，并念出撤下了几条", async () => {
+    const { objectiveBlock, api } = await show([listItem()]);
+    const block = objectiveBlock()!;
+    await act(async () => {
+      fireEvent.click(within(block).getByRole("button", { name: "暂不安排这个目标" }));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(api.review.holdObjective).toHaveBeenCalledTimes(1);
+    const sent = api.review.holdObjective.mock.calls[0][0];
+    expect(sent.request).toEqual({ noteId: NOTE_ID, objectiveId: OBJECTIVE_ID });
+    // §9.1「操作时说明」：撤下几条是这一发唯一的后果说明。
+    expect(within(block).getByText(/撤下了 2 条/).textContent).toContain("暂不安排");
+  });
+
+  it("正对照：撤了 0 条时说成另一句，不让「0 条」读成没生效", async () => {
+    const { objectiveBlock } = await show([listItem()], { dismissedPendingSchedules: 0 });
+    const block = objectiveBlock()!;
+    await act(async () => {
+      fireEvent.click(within(block).getByRole("button", { name: "暂不安排这个目标" }));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const notice = within(block).getByText(/没有排着的回访/);
+    expect(notice.textContent).not.toContain("0 条");
+  });
+
+  it("排除生效时：换上去的是「恢复并开启」，且那颗「暂不安排」不在屏上", async () => {
+    const { objectiveBlock } = await show([heldItem()]);
+    const block = objectiveBlock()!;
+    expect(within(block).getByRole("button", { name: "恢复并开启" })).toBeTruthy();
+    // 反向：两个动作**不同时**在屏上——一颗开关会把 §9.1 规则表中间那半句折叠掉。
+    expect(within(block).queryByRole("button", { name: "暂不安排这个目标" })).toBeNull();
+    // 排除期间要说清为什么它不回到队列，以及怎么回来。
+    expect(within(block).getByText(/别的目标和已经记下的练习都不动|笔记和卡片的其他安排照旧/)).toBeTruthy();
+  });
+
+  it("恢复那一发念出回访日期；沿用已有的那一格说「沿用」", async () => {
+    const view = await show([heldItem()], { resumeScheduled: "reused_existing" });
+    const block = view.objectiveBlock()!;
+    await act(async () => {
+      fireEvent.click(within(block).getByRole("button", { name: "恢复并开启" }));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(view.api.review.resumeObjective).toHaveBeenCalledTimes(1);
+    const said = within(block).getByText(/沿用已经排好的安排/).textContent;
+    expect(said).not.toContain("已经排上");
+  });
+
+  it("恢复失败（409 still_held）：屏上有 alert，且**没有**成功回执同时挂着", async () => {
+    const view = await show([heldItem()], { resumeObjectiveFails: true });
+    const block = view.objectiveBlock()!;
+    await act(async () => {
+      fireEvent.click(within(block).getByRole("button", { name: "恢复并开启" }));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(within(block).getByRole("alert")).toBeTruthy();
+    // 这一格是第 3 件事的正控制：失败时那句「已经排上…」不许还在。
+    expect(within(block).queryByText(/沿用已经排好的安排/)).toBeNull();
   });
 });
