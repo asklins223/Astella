@@ -29,6 +29,7 @@
 import {
   cardCandidateRewriteV3OutputSchema,
   cardContentCheckV3OutputSchema,
+  cardGenerateV3CandidateDraftSchema,
   cardGenerateV3OutputSchema,
   type CardCandidateRewriteV3Output,
   type CardContentCheckV3Output,
@@ -111,6 +112,21 @@ export interface CardGenerateV3TaskInput {
   readonly activationHardMax: number;
 }
 
+/**
+ * 合同某一层**必须给出的键**，现取不抄：`safeParse(undefined)` 过得了的就是可选项。
+ * 用这个判据而不是读 zod 的内部标记——升级 zod 版本时内部标记会变，而"不给行不行"这件事不会。
+ */
+function requiredContractKeysV3(layer: unknown): string {
+  const shape = (layer as { shape?: Record<string, unknown> }).shape ?? {};
+  return Object.entries(shape)
+    .filter(([, field]) => (field as { safeParse: (v: unknown) => { success: boolean } })
+      .safeParse(undefined).success === false)
+    .map(([key]) => key)
+    .join("、");
+}
+
+const draftShape = cardGenerateV3CandidateDraftSchema.shape;
+
 export function buildCardGenerateV3Prompt(input: CardGenerateV3TaskInput): string {
   const blocks = input.noteBlocks
     .map((block) => `[块 ${block.blockId}]\n${block.text}`)
@@ -137,8 +153,15 @@ export function buildCardGenerateV3Prompt(input: CardGenerateV3TaskInput): strin
     // 词模型一个都没见过，于是第一发真模型交了 "procedural"（合同要 "procedure"）——
     // 同一件事的近义词，整批 0 候选。列表从合同那份数组现取，不抄第二份。
     ' "knowledgeForm":"' + KnowledgeFormValuesV2.join("|") + '","rationale":"为什么值得记"}],',
-    ' "candidates":[{"objectiveLocalId":"id","objectiveDraft":{…完整的 objective 草稿…},',
-    ' "presentationDraft":{…}, "hints":{"level1":"…","level2":"…"}}]}',
+    ' "candidates":[{"objectiveLocalId":"id",',
+    // 第二发真模型的现场：`"objectiveDraft":{…完整的 objective 草稿…}` 是一个省略号占位，
+    // 于是模型整个对象交空 ⇒ `objectiveStatement`/`publicSummary` 缺失 ⇒ 同一格近因复发。
+    // 必填清单从合同那份 shape 现取（`.optional()`/可空的 `safeParse(undefined)` 会过，
+    // 真必填的不过），不抄第二份；服务端自己会重算的那几格明说"不用凑"。
+    '  "objectiveDraft":{"这一层必须给出的键":"' + requiredContractKeysV3(draftShape.objectiveDraft) + '"}（'
+    + "其中 rubricHash／身份／哈希类由服务端重算，不用自己凑）,",
+    '  "presentationDraft":{"这一层必须给出的键":"' + requiredContractKeysV3(draftShape.presentationDraft)
+    + '"}（strategy 由服务端在整批上分配）, "hints":{"level1":"…","level2":"…"}}]}',
     "（objectiveDraft 里的 rubricHash 服务端会重算，不用自己凑。）",
     "",
     `# 笔记标题\n${input.noteTitle}`,
