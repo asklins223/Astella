@@ -181,11 +181,12 @@ export function createDeterministicCardContentCheckV3Provider(): CardGenerationV
       const perCandidate = [];
       for (const entry of input.candidates) {
         const report = await runDeterministicGroundingContract(entry.candidate, input.evidenceManifest);
+        // 只交裁决与原因：grounding 报告那一层由**任务侧**按同一份确定性合同现算
+        // （模型与离线两条路都不手写它的脚手架）。
         perCandidate.push({
           objectiveLocalId: entry.objectiveLocalId,
           verdict: report.verdict === "pass" ? "keep" : "insufficient",
           issues: [],
-          grounding: report,
         });
       }
       return { text: JSON.stringify({ perCandidate, setIssues: [] }) };

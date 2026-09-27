@@ -807,10 +807,7 @@ test("增量改写：只重做被判 rewrite 的那一张，重检只看它，�
       checkCallsWith.push(typed.candidates.length);
       const perCandidate = [];
       for (const [index, entry] of typed.candidates.entries()) {
-        const grounding = await runDeterministicGroundingContract(
-          entry.candidate as never, typed.evidenceManifest,
-        );
-        // 第一遍的第 1 张判"需要改写"，其余（含重检那一遍的所有张）判可保留。
+        // 检查腿现在只交裁决与原因；grounding 报告由任务侧按确定性合同现算（脚本桩不手写它）。
         const wantsRewrite = checkCallsWith.length === 1 && index === 0;
         perCandidate.push({
           objectiveLocalId: entry.objectiveLocalId,
@@ -818,7 +815,6 @@ test("增量改写：只重做被判 rewrite 的那一张，重检只看它，�
           issues: wantsRewrite
             ? [{ code: "front_leaks_answer", severity: "soft", detail: "题面太直，改写成需要回想" }]
             : [],
-          grounding,
         });
       }
       return { text: JSON.stringify({ perCandidate, setIssues: [] }) };

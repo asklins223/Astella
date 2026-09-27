@@ -28,7 +28,7 @@
  */
 import {
   cardCandidateRewriteV3OutputSchema,
-  cardContentCheckV3EntrySchema,
+  cardContentCheckV3EntryContentSchema,
   cardContentCheckV3EnvelopeSchema,
   cardGenerateV3CandidateContentSchema,
   cardGenerateV3ObjectiveProposalSchema,
@@ -564,11 +564,21 @@ export function createCardContentCheckV3Task(
       let parsed: CardContentCheckV3Output;
       try {
         // 逐条宽进：不过的那条**不交上来**（stamp 会按"没检查过"记账），其余照常。
+        // grounding 报告由服务端按**确定性合同**现算（模型只裁决内容，不手写报告脚手架）。
         const envelope = cardContentCheckV3EnvelopeSchema.parse(JSON.parse(completion.text));
+        const byLocalId = new Map(input.candidates.map((entry) => [entry.objectiveLocalId, entry.candidate]));
         const entries = [];
         for (const rawEntry of envelope.perCandidate) {
-          const one = cardContentCheckV3EntrySchema.safeParse(rawEntry);
-          if (one.success) entries.push(one.data);
+          const one = cardContentCheckV3EntryContentSchema.safeParse(rawEntry);
+          if (!one.success) continue;
+          const candidate = byLocalId.get(one.data.objectiveLocalId);
+          if (!candidate) continue;
+          entries.push({
+            objectiveLocalId: one.data.objectiveLocalId,
+            verdict: one.data.verdict,
+            issues: one.data.issues,
+            grounding: await runDeterministicGroundingContract(candidate, input.evidenceManifest),
+          });
         }
         parsed = { perCandidate: entries, setIssues: envelope.setIssues };
       } catch (error) {

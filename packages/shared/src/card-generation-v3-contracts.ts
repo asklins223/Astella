@@ -245,6 +245,28 @@ export type CardContentCheckV3Verdict = z.infer<typeof cardContentCheckV3Verdict
  * 消费的是 grounding 合同——简化链把它合并进这一次批量检查的输出里，
  * 不再单独跑一遍 Grounding Critic。
  */
+/**
+ * 检查腿里**模型真正要交的那一份**：裁决＋原因，**不交 grounding 报告**。
+ *
+ * `groundingCriticReportV2Schema` 要 `version`／`reportId`／两个哈希与逐答案单元的证据向量——
+ * 那些要么是服务端盖章的（`stampCardContentCheckV3Output` 会覆盖），要么本来就有**确定性实现**
+ * （`runDeterministicGroundingContract`，离线那一版就是它在跑）。第十发真模型在这里写错一个字面量
+ * （`grounding.version` ≠ 2）就让整批红，说明这一层也不该由模型手写。
+ */
+export const cardContentCheckV3EntryContentSchema = z.strictObject({
+  objectiveLocalId: z.string().min(1).max(160),
+  verdict: cardContentCheckV3VerdictSchema,
+  issues: z
+    .array(
+      z.strictObject({
+        code: z.string().min(1).max(120),
+        severity: z.enum(["hard", "soft"]),
+        detail: z.string().min(1).max(2000),
+      }),
+    )
+    .max(40),
+});
+
 export const cardContentCheckV3EntrySchema = z.strictObject({
   objectiveLocalId: z.string().min(1).max(160),
   verdict: cardContentCheckV3VerdictSchema,
