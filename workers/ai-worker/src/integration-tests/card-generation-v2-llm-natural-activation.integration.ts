@@ -91,7 +91,8 @@ const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 // api service 层（keep/activate/PREPARE）以 ailearn 角色执行。
 process.env.DATABASE_URL_API ??= ADMIN_URL;
-// 这份网测的是旧四阶段链：总控的默认档已翻到简化链（39d W7-7 刀一），这里显式站在 v2 那一档。
+// 钉在 v2 那一档：这份测的就是"真实四阶段全旅程"（文件名即范围），摘掉钉档它没有对象。
+// 2026-09-27 十份一起摘档实测 41 条红 ⇒ 逐份量过才敢摘，分诊见 39d-w71 §7。
 process.env.CARD_GENERATION_CHAIN = "v2";
 
 const admin = postgres(ADMIN_URL, { max: 2 });

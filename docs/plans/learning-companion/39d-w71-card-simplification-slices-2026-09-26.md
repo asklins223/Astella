@@ -130,19 +130,28 @@
 | `card-generation-v2-llm-natural-activation`（真实四阶段全旅程） | 同上；它的"全旅程"那一半在 V3 那份集测里已有对应格 |
 | e2e 里的 C04（Atom 重复决策）、C05/C06/C08/C09（planner 怎么切目标）、C13（pedagogy hard fail 词表）、C14（deck gate 合并/drop）、C20b（旧 replan_set） | 判据对象是 planner/Critic 的中间产物，新链不产出这些结构 |
 
-### 7.2 必须先改接到新链才能删链（与链无关的产品判据）
+### 7.2 摘档实测（2026-09-27）：十份一起摘掉是 41 条红，所以按份量、按份量
 
-C22 幂等重放、C33 SSE payload 白名单、C32 跨 workspace 伪造 runId、C17 reject-all 成功终态、
-C23+C25 激活幂等与 canonical mapping、C45 开启复习那一档、C30 archive 与 epoch 前移、
-C5 PREPARE 冻结目标快照、§17.5 post-activation 投影消费者、§10.5 无 key 时 fail-closed、
-C18 reveal 先持久化、C46/C47/C48 翻过答案才算 ready、长正文截断留痕（两条）、
-`c-cases` 的 C27/C28/C38（presentation-only 与语义变更的对象谱系）、
-`redaction-quota` 两条（tombstone 与 §22.6 配额）。
+把十份集测头上那行 `CARD_GENERATION_CHAIN = "v2"` 全部拿掉，在一次性库上逐份跑默认档（简化链），
+逐份的通过数就是这份与旧链的耦合度：
 
-这些今天全走 `createGenerationRunV2` + `pollV2Outbox`，所以入口一翻就读到另一条链的产出。
-改接的做法只有两种可接受：① 让它们走新链并**逐条复核断言仍成立**（不许为了让它绿而放宽）；
-② 把"与链无关"的那部分改成直接摆库里的行、只测自己那件事（例如配额、租约 fence、幂等）。
-选哪一条按用例定，写在刀二的提交说明里。
+| 文件 | 默认档实测 | 处理 |
+| --- | --- | --- |
+| `card-generation-v2-redaction-quota` | **2/2** | ✅ 今天已摘档：它测的是依据遮蔽（tombstone＋eligibility 前移）与 §22.6 配额，与哪条链出几张卡无关 |
+| `card-generation-v2-live-progress` | 6/8 | 部分摘：红的那两条是"作者循环里的 tick 落盘"与"重投同一 run 不新增 authored 事件"——都是旧链的逐候选写盘形状；租约 fence、终态退役、外层回滚不影响读数那几条是机制，改接到新链的写入点后整份可摘 |
+| `card-generation-v2-c-cases` | 2/3 | 红的是 C38（PREPARE 后 target-equivalent 修订），它读的是旧计划的修订谱系 |
+| `card-generation-v2-e2e-subset` | 13/36 | 主战场。13 条已经在默认档上过（含 C33 SSE 白名单、C32 跨空间伪造 runId、C03 零候选、C45 开启复习那一档等）；红的那 23 条按 §7.1/§7.2 分：判 planner 中间产物的随链删，判激活/幂等/reveal 的逐条改接 |
+| `card-generation-v2-plan-commit` | 0/4 | 全删（对象是旧 plan 提交形状） |
+| `card-generation-v2-pedagogy-stage-postgres` | 0/3 | 全删（投机 pedagogy＋双 Critic 结算等式） |
+| `card-generation-v2-bounded-repair-postgres` | 0/3 | 全删（有界修复链本身） |
+| `card-generation-v2-per-candidate-commit-postgres` | 0/3 | 全删（逐候选各一次提交；新链一批一次提交） |
+| `card-generation-v2-postgres`（V2 纵切） | 0/1 | 全删 |
+| `card-generation-v2-llm-natural-activation` | 0/1（且单独跑会挂到超时） | 这份要真 provider 配置，不在今天这张网里跑；随链删 |
+
+**规则**：一份文件只有在默认档上**逐条量过全绿**才摘档；摘档的提交说明里写清它是量过的（不是"应该无关"）。
+合计 23/64 通过——这也说明 §7.1 那张"随链删"的清单是主体，先把该删的删掉比先改接更省事，
+但**顺序不能反**：先删链会让那 41 条一起变成"没人测了"，所以先摘得动一份是一份，
+剩下判中间产物的那批随链删，判机制的那批改接。
 
 ### 7.3 分诊时报过的一条"洞"——复核后收回（2026-09-27）
 

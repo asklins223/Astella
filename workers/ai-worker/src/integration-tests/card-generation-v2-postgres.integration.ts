@@ -30,7 +30,8 @@ const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 
 process.env.DATABASE_URL_API ??= ADMIN_URL;
-// 这份网测的是旧四阶段链：总控的默认档已翻到简化链（39d W7-7 刀一），这里显式站在 v2 那一档。
+// 2026-09-27 实测：这一份在默认档（简化链）上 2/2 通过 ⇒ **不再钉档**，它就是新链的网。
+// 其余九份仍钉 v2：同一天把十份一起摘掉是 41 条红，逐份的量过才敢摘（分诊见 39d-w71 §7）。
 process.env.CARD_GENERATION_CHAIN = "v2";
 
 const admin = postgres(ADMIN_URL, { max: 2 });

@@ -31,8 +31,8 @@ import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
 process.env.DATABASE_URL_API ??= ADMIN_URL;
-// 这份网测的是旧四阶段链：总控的默认档已翻到简化链（39d W7-7 刀一），这里显式站在 v2 那一档。
-process.env.CARD_GENERATION_CHAIN = "v2";
+// 这一份今天**不钉档**（2026-09-27 在默认档上逐条量过：tombstone 与 §22.6 配额各一条，2/2）。
+// 它测的是依据遮蔽与配额，不是哪条链出几张卡——所以旧链删掉之后这一份该活着。
 
 const admin = postgres(ADMIN_URL, { max: 2 });
 
