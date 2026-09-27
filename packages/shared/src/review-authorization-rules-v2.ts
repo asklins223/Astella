@@ -157,3 +157,50 @@ export function learningDoesNotReleaseHoldV2(): {
 } {
   return { updatesEvidence: true, releasesHold: false };
 }
+
+/**
+ * §9.1 规则表行 1 的**判定**：「暂停/移除笔记订阅或卡片订阅 ⇒ **仅停用该授权来源**；
+ * 其他来源仍有效时**显示原因**」。
+ *
+ * ## 为什么单独抽出来，而不是让边界自己去查
+ *
+ * 统一写入安排的**边界**（`review-schedule-boundary.ts`）今天只问目标级排除
+ * （`liveHoldForObjectiveV2`），**完全不问来源级停用**。后果很具体：用户在笔记上
+ * 停掉了「卡片复习」这个来源，结算那一发照样排期——**那颗按钮拨了等于没拨**。
+ * 而边界要回答"这份安排还由谁撑着"就需要跨两张表（目标自己的来源 ＋ 它那些来源笔记
+ * 的来源），所以判定抽成纯函数、读侧交给调用方，两边各做自己那份。
+ *
+ * ## 三种结果，别合成一个布尔
+ *
+ *  - `covered`：**还有活的来源**撑着 ⇒ 该排。停掉一个来源不误删另一个（行 1）。
+ *  - `paused_all`：**所有相关来源都停着** ⇒ 这一发不该排。库里什么都不写。
+ *  - `never_authorized`：**从来没有过授权**（既没开着也没停过）⇒ 这一发是谁替她
+ *    开的授权？照 §9.1「创建卡、读过笔记或结束一轮都不默认授权未来提醒」，
+ *    这一格要**问**，不能默默替她开。
+ *
+ * 第三档最容易被漏：前两档是"她拨过开关"，第三档是"没人拨过"。合成一档之后，
+ * 「她从没开过」与「她开了又停了」会走同一条路，而 §9.1 把它们说成两件不同的事。
+ */
+export type ReviewSourceAuthorizationV2 =
+  | "covered"
+  | "paused_all"
+  | "never_authorized";
+
+export function decideSourceAuthorizationV2(input: {
+  /** 这颗目标**自己**的卡片订阅档位；null = 从没开过（那一列在 0303 里可为 null）。 */
+  readonly cardReview: "active" | "paused" | null;
+  /** 这颗目标那些来源笔记的订阅档位；去重前给全，去重后由读侧做。 */
+  readonly noteSubscriptions: ReadonlyArray<"active" | "paused">;
+}): { readonly authorization: ReviewSourceAuthorizationV2; readonly activeSources: number; readonly pausedSources: number } {
+  const noteActive = input.noteSubscriptions.filter((s) => s === "active").length;
+  const notePaused = input.noteSubscriptions.filter((s) => s === "paused").length;
+  const cardActive = input.cardReview === "active" ? 1 : 0;
+  const cardPaused = input.cardReview === "paused" ? 1 : 0;
+  const activeSources = cardActive + noteActive;
+  const pausedSources = cardPaused + notePaused;
+  if (activeSources > 0) return { authorization: "covered", activeSources, pausedSources };
+  if (pausedSources > 0) return { authorization: "paused_all", activeSources, pausedSources };
+  // 一份授权都没有：不是"她停掉了"，是"没人开过"。§9.1「创建卡、读过笔记或结束一轮
+  // 都不默认授权未来提醒」——这一格要问，不许默默替她开。
+  return { authorization: "never_authorized", activeSources, pausedSources };
+}

@@ -20,12 +20,17 @@
  *     恢复一个来源也**不会**暗中复活一个被排除的目标（那是 `ensurePendingReviewScheduleV2`
  *     与 §9.1 行 2 的职责，见 `review-authorization-rules-v2`）。
  */
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 import { reviewSubscriptionsV2 } from "@ailearn/shared/db-schema/evidence";
 import { notes } from "@ailearn/shared/db-schema/note";
 import { learningObjectiveOriginsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { applySourcePauseV2, type ReviewAuthorizationSourceV2 } from "@ailearn/shared/review-authorization-rules-v2";
+import {
+  applySourcePauseV2,
+  decideSourceAuthorizationV2,
+  type ReviewAuthorizationSourceV2,
+  type ReviewSourceAuthorizationV2,
+} from "@ailearn/shared/review-authorization-rules-v2";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import type { ApiTransaction } from "../../db/client.ts";
 
@@ -383,4 +388,70 @@ export async function pauseReviewSubscriptionV2(
     changed: true,
     stillCoveredBy: await stillCoveredAfterV2(tx, { ...input, subjectId: input.subjectId }),
   };
+}
+
+/**
+ * W7-8 刀三：这颗目标此刻**由谁撑着**（39 §9.1 规则表行 1）。
+ *
+ * ## 为什么要跨两张表
+ *
+ * 判据（`decideSourceAuthorizationV2`）要知道两件事：
+ *  1. 这颗目标**自己**的卡片订阅档位（`subject_type='objective'`）；
+ *  2. 这颗目标**那些来源笔记**的订阅档位（`subject_type='note'`）——因为 §9.1 行 1
+ *     说的是"停一个来源不误删另一个"，而"另一个"常常是笔记订阅。
+ *
+ * ## `never_authorized` 这一档为什么也在这一发里
+ *
+ * §9.1「创建卡、读过笔记或结束一轮都**不默认授权**未来提醒」。一颗目标可以完全没被
+ * 授权过——那一档与"她开了又停了"后果不同（前者要**问**，后者是照办），所以判据分
+ * 三档而这一份把三档的输入都收齐。
+ */
+export async function sourceAuthorizationForObjectiveV2(
+  tx: SubTx,
+  input: ReviewScope & { objectiveId: string },
+): Promise<{
+  authorization: ReviewSourceAuthorizationV2;
+  activeSources: number;
+  pausedSources: number;
+}> {
+  // 这颗目标自己落在哪些来源笔记上（note 档血缘）。
+  const originRows = await tx
+    .selectDistinct({ noteId: learningObjectiveOriginsV2.noteId })
+    .from(learningObjectiveOriginsV2)
+    .where(and(
+      eq(learningObjectiveOriginsV2.workspaceId, input.workspaceId),
+      eq(learningObjectiveOriginsV2.objectiveId, input.objectiveId),
+      eq(learningObjectiveOriginsV2.originKind, "note"),
+    ));
+  const noteIds = originRows.map((row) => row.noteId).filter((id): id is string => Boolean(id));
+
+  const rows = await tx
+    .select({ source: reviewSubscriptionsV2.source, subjectType: reviewSubscriptionsV2.subjectType, subjectId: reviewSubscriptionsV2.subjectId, status: reviewSubscriptionsV2.status })
+    .from(reviewSubscriptionsV2)
+    .where(and(
+      eq(reviewSubscriptionsV2.workspaceId, input.workspaceId),
+      eq(reviewSubscriptionsV2.userId, input.userId),
+      or(
+        and(
+          eq(reviewSubscriptionsV2.subjectType, "objective"),
+          eq(reviewSubscriptionsV2.subjectId, input.objectiveId),
+        ),
+        noteIds.length > 0
+          ? and(
+            eq(reviewSubscriptionsV2.subjectType, "note"),
+            inArray(reviewSubscriptionsV2.subjectId, noteIds),
+          )
+          : undefined,
+      ),
+    ));
+
+  const cardRow = rows.find((row) => row.subjectType === "objective" && row.source === "card_review");
+  const noteSubscriptions = rows
+    .filter((row) => row.subjectType === "note")
+    .map((row) => row.status as "active" | "paused");
+
+  return decideSourceAuthorizationV2({
+    cardReview: cardRow ? (cardRow.status as "active" | "paused") : null,
+    noteSubscriptions,
+  });
 }

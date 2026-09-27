@@ -17,6 +17,7 @@ import { and, eq } from "drizzle-orm";
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import { liveHoldForObjectiveV2 } from "./objective-review-holds.ts";
+import { sourceAuthorizationForObjectiveV2 } from "./review-subscriptions.ts";
 
 // 与 run-processing-tick 同一份"事务句柄"写法：从 withWorkspaceTransaction 的回调签名里取，
 // 不在第二处手写它的形状。
@@ -61,6 +62,16 @@ export interface EnsurePendingReviewScheduleV2Result {
    */
   readonly held: boolean;
   /**
+   * W7-8 刀三 · §9.1 行 1：所有相关来源都被停用了 ⇒ 这一发**库里什么都没写**。
+   *
+   * 与 `held` 分列而不是并进去：目标级排除（"暂不安排"）与来源级停用（"停用笔记订阅／
+   * 卡片订阅"）是 §9.1 规则表里**不同的行**，界面上要说不同的话，而排期闸的两道
+   * 处置也不同——一道是"这一格被本人按住"，一道是"这一格没人授权"。
+   */
+  readonly sourcePaused?: boolean;
+  /** 一样都没开过（§9.1「不默认授权未来提醒」）⇒ 要**问**，不许默默替她开。 */
+  readonly neverAuthorized?: boolean;
+  /**
    * 库里那一行**实际的**档位（0297）。新建时等于传进来的那个；复用时以那一行为准——
    * 调用方要能如实回答"她点的『仅提醒这一次』是不是真的变成一次性的"，而不是回自己
    * 算的那个（与 `nextReviewAt` 同一纪律）。
@@ -93,6 +104,34 @@ export async function ensurePendingReviewScheduleV2(
   });
   if (hold) {
     return { scheduleId: null, nextReviewAt: null, created: false, held: true, reminderKind };
+  }
+  // 39d W7-8 刀三 · §9.1 规则表行 1：来源级停用也要执法。
+  //
+  // 此前这一格**完全不存在**——边界只问目标级排除，于是用户在笔记上停掉
+  // 「卡片复习」这个来源之后，结算那一发照样排期：**那颗按钮拨了等于没拨**。
+  // 而「停一个来源不误删另一个」要跨两张表判（目标自己的卡片订阅 ＋ 它那些来源笔记
+  // 的订阅），所以判定在 `decideSourceAuthorizationV2`（纯函数）、读侧在
+  // `sourceAuthorizationForObjectiveV2`，边界只问结论。
+  //
+  // **两档都挡，但要说不同的话**：`paused_all` 是"她停掉了，照办"；
+  // `never_authorized` 是"**没人替她开过授权**"（§9.1「创建卡、读过笔记或结束一轮都
+  // 不默认授权未来提醒」），那要**问**，不能与"她停掉了"走同一条路。
+  const authorization = await sourceAuthorizationForObjectiveV2(tx, {
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    objectiveId: input.subjectId,
+  });
+  if (authorization.authorization === "paused_all") {
+    return {
+      scheduleId: null, nextReviewAt: null, created: false, held: false, reminderKind,
+      sourcePaused: true, neverAuthorized: false,
+    };
+  }
+  if (authorization.authorization === "never_authorized") {
+    return {
+      scheduleId: null, nextReviewAt: null, created: false, held: false, reminderKind,
+      sourcePaused: false, neverAuthorized: true,
+    };
   }
   const inserted = await tx
     .insert(reviewSchedules)
