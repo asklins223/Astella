@@ -351,6 +351,11 @@
       "import": "./src/home-suggestion-v2.ts",
       "default": "./src/home-suggestion-v2.ts"
     },
+    "./today-batch-options-v2": {
+      "types": "./src/today-batch-options-v2.ts",
+      "import": "./src/today-batch-options-v2.ts",
+      "default": "./src/today-batch-options-v2.ts"
+    },
     "./assessment-dispute-rules-v2": {
       "types": "./src/assessment-dispute-rules-v2.ts",
       "import": "./src/assessment-dispute-rules-v2.ts",
