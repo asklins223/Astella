@@ -1187,6 +1187,7 @@ export function toObjectiveListItemV3(
     lifecycle: surface.content.lifecycle,
     freshness: surface.content.freshness,
     noteChangeImpact,
+    primaryNoteId: surface.sources.primaryNote?.noteId ?? null,
     primaryNoteTitle: surface.sources.primaryNote?.title ?? null,
     createdAt: surface.createdAt,
     personalState: surface.personalState,

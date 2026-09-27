@@ -371,6 +371,12 @@ export const objectiveListItemV3Schema = z.strictObject({
   freshness: objectiveSurfaceFreshnessV3Schema,
   /** D3 §3：仅当列表按 noteId 筛选时提供该篇笔记的目标级影响结果。 */
   noteChangeImpact: objectiveNoteChangeImpactV1Schema.nullable().default(null),
+  /**
+   * 主来源笔记。**id 与标题都要**：§8.5「顶层按笔记显示卡组，一篇笔记至多一个组」
+   * 靠标题分组等于按可改的名字分组——同一篇改了标题就分成两组，两篇同名并成
+   * 一组。标题给人看，id 才是键。
+   */
+  primaryNoteId: z.string().uuid().nullable(),
   primaryNoteTitle: z.string().min(1).max(500).nullable(),
   /** 创建时间（ISO 8601）；用于前端 newest/oldest 排序，与服务端 cursor 排序一致。 */
   createdAt: z.string().datetime({ offset: true }),

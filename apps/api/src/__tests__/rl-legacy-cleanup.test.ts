@@ -75,6 +75,7 @@ function makeListItem(overrides: Partial<ObjectiveListItemV3> = {}): ObjectiveLi
     lifecycle: surface.content.lifecycle,
     freshness: surface.content.freshness,
     noteChangeImpact: null,
+    primaryNoteId: null,
     primaryNoteTitle: surface.sources.primaryNote?.title ?? null,
     createdAt: surface.createdAt,
     personalState: { state: "unvalidated" as const, activeRunId: null },
