@@ -364,6 +364,14 @@ test("端到端：两发语义调用走到 review_ready，候选带着 binding p
     WHERE run_id = ${simplifiedRunId} AND event_type = 'card_generation.source_content_capped'
   ` as unknown as Array<{ n: number }>;
   assert.equal(capEvents[0]?.n, 0, "没截断就不许留痕（短正文这一批发出 0 条）");
+  // 同一条事件现在带着"抽出了几个原子"。这一篇**六句只抽出五个原子**——第一次跑这条
+  // 判据就是它把这件事报出来的（以前库里只看得见"3 张卡"，看不见中间少了一次）。
+  // 钉成 5 而不是"等于块数"：谁改了阈值、句子或抽取规则，这一格会红并逼他重读一次。
+  const planCommitted = await eventPayload(simplifiedRunId, "card_generation.simplified_plan_committed");
+  assert.equal(Number(planCommitted.atomCount), 5,
+    `原子数必须是量出来的那一个 5（拿到 ${String(planCommitted.atomCount)}）——这篇六句里有一句抽不出原子`);
+  assert.ok(Number(planCommitted.atomCount) >= Number(planCommitted.candidateCount),
+    "候选数不可能多于原子数：多于就是这两个数有一头不是从同一份算法来的");
 
   const planRows = await admin`
     SELECT plan_revision_id, plan_version, plan_hash, result ->> 'kind' AS kind

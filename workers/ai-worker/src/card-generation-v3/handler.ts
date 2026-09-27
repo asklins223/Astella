@@ -269,6 +269,16 @@ export async function processCardGenerationSimplifiedJob(
   ): Promise<AiTaskReceipt<TOutput>> => runV3TaskOnKernel(definition, input, job,
     String(loaded.run.note_version_id), loaded.inputSnapshot.inputSnapshotHash, signal);
 
+  /**
+   * 确定性抽出来的原子数：先算一份，装配与留痕共用同一个数。
+   *
+   * 为什么要把它写进事件：从"抽出的原子"到"落库的候选"中间有四道**静默**去位——句子太短、
+   * 被判成操作记录、对不上封存证据、超出 `activationHardMax`。现有三个计数器只记后两类之外
+   * 的丢法，所以"这篇笔记到底在哪一步变短的"从库里读不出来（C16 那发 `candidateCount:1`
+   * 而三个计数器全空，就是这么读不出来的）。
+   */
+  const atomsForRun = extractAtomsDeterministic(loaded.scopedBlocks);
+
   // ── 段 2/3：生成＋落库；已经有这一版候选了就从段 4 接上（重投不重付）────
   let candidates: LearningCardCandidateRevisionV2[];
   let hintsByCandidateRevisionId: Map<string, CardHintPairV2>;
@@ -338,7 +348,7 @@ export async function processCardGenerationSimplifiedJob(
       cardContentEpoch: Number(loaded.run.card_content_epoch),
       activationHardMax,
       evidenceSetHash: loaded.sealed.evidenceSetHash,
-      atoms: extractAtomsDeterministic(loaded.scopedBlocks),
+      atoms: atomsForRun,
       sealedEvidence: loaded.sealed.evidenceManifest.evidence,
       preferredStrategies: semanticRequest.preferredStrategies,
     });
@@ -386,6 +396,9 @@ export async function processCardGenerationSimplifiedJob(
         droppedDrafts: generateOutput!.droppedCandidates,
         assemblyDropped: assembled!.dropped,
         gateRejected: gateRejections,
+        // 原子数与候选数放在同一条事件里：两者之差就是那四道静默去位吃掉的，
+        // 不用再靠"哪一步变短的"去猜（见 `atomsForRun` 那段注释）。
+        atomCount: atomsForRun.length,
       });
       // 源文本被规模上限截断过就要留痕（39d W4-4 那条判据，简化链此前没人记）：
       // `loadV2RunInputs` 交回来的已经是截断过的文本，只读加载器不发事件，
