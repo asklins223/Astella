@@ -155,6 +155,12 @@ import {
   submitTaskArtifactReceiptV2Schema,
 } from "@ailearn/shared/learning-run-v2-contracts";
 import { reviewDeferRequestV2Schema, reviewDeferResultV2Schema, reviewQueueV2Schema } from "@ailearn/shared/review-queue-v2-contracts";
+import {
+  objectiveHoldCommandV2Schema,
+  objectiveHoldResultV2Schema,
+  objectiveResumeCommandV2Schema,
+  objectiveResumeResultV2Schema,
+} from "@ailearn/shared/review-queue-v2-contracts";
 import { roomProjectionV1Schema } from "@ailearn/shared/room-projection-contracts";
 import {
   companionAccountPatchSchema,
@@ -529,6 +535,9 @@ const activityGetTodayInputSchema = z.strictObject({
 // 「全部空间」统计：无参数读数，唯一的输入就是请求元数据（含空间边界 epoch）。
 const statsGetOverviewAllInputSchema = z.strictObject(m1InputBase);
 const reviewDeferInputSchema = z.strictObject({ ...m1InputBase, request: reviewDeferRequestV2Schema });
+// W7-3 刀三：两条目标级排除动作。输入形状取共享合同那两份，渲染层少写一份 zod。
+const reviewHoldObjectiveInputSchema = z.strictObject({ ...m1InputBase, request: objectiveHoldCommandV2Schema });
+const reviewResumeObjectiveInputSchema = z.strictObject({ ...m1InputBase, request: objectiveResumeCommandV2Schema });
 const sourceListInputSchema = z.strictObject({ ...m1InputBase, cursor: z.string().min(1).max(128).optional(), limit: z.number().int().min(1).max(100).optional(), status: z.string().min(1).max(32).optional() });
 const sourceCreateInputSchema = z.strictObject({ ...m1InputBase, request: desktopSourceCreateRequestSchema });
 const sourceGetInputSchema = z.strictObject({ ...m1InputBase, sourceId: uuidSchema });
@@ -1092,6 +1101,17 @@ function requireAnyM2Route(contract: DesktopContractSnapshotV1, routes: readonly
     throw new DesktopGatewayFailure("route_not_available", "user_action");
   }
 }
+
+/**
+ * 目标级排除那两条命令出现在哪些面上。**一份**清单：两处 handler 各写一遍
+ * 就会有一天只改了一处，于是同一个动作在笔记页能按、在卡库页报 `route_not_available`。
+ * 增删这一行等于声明「这颗动作长在哪几面」——加新面时它是唯一要动的地方。
+ */
+const OBJECTIVE_REVIEW_ACTION_ROUTES = [
+  "note.detail",
+  "objective.detail",
+  "objective.library",
+] as const satisfies readonly DesktopRouteKindM2[];
 
 export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AILearnDesktopApiM2["contract"] {
   if (registrationComplete) throw new Error("M1 desktop IPC has already been registered");
@@ -3342,6 +3362,27 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     assertEpoch(input.meta, activeWorkspaceEpoch);
     return gateway.deferReview(input.request, input.meta.requestId);
   }, undefined, reviewDeferResultV2Schema);
+
+  // W7-3 刀三：目标级「暂不安排」／「恢复并开启」（39 §9.1 行 2、行 3）。
+  //
+  // 路由门用 `requireAnyM2Route` 而不是 `requireM2Route(contract, "review.queue")`：
+  // 这颗动作不在复习队列那一屏上，它长在**目标**那一屏（笔记页的学习区、卡库列表行），
+  // 而那两面各自的路由是 note.detail / objective.library / objective.detail。按单一路由
+  // 收口会把另一个面上的合法操作挡在门外——这正是那个 helper 存在的理由。
+  //
+  // 两条都是**写**，所以走 `assertEpoch`（fail closed）：切空间之后带着旧 epoch 回来
+  // 的排除/恢复必须被拒，否则会在新空间里把一个目标按掉。
+  installHandler(DESKTOP_IPC_CHANNELS.reviewHoldObjective, reviewHoldObjectiveInputSchema, options, async (_event, _window, input) => {
+    requireAnyM2Route(contract, OBJECTIVE_REVIEW_ACTION_ROUTES);
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.holdObjectiveForReview(input.request, input.meta.requestId);
+  }, undefined, objectiveHoldResultV2Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.reviewResumeObjective, reviewResumeObjectiveInputSchema, options, async (_event, _window, input) => {
+    requireAnyM2Route(contract, OBJECTIVE_REVIEW_ACTION_ROUTES);
+    assertEpoch(input.meta, activeWorkspaceEpoch);
+    return gateway.resumeObjectiveForReview(input.request, input.meta.requestId);
+  }, undefined, objectiveResumeResultV2Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.activityGetToday, activityGetTodayInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");

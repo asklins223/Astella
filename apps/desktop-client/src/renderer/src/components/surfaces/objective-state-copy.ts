@@ -11,9 +11,14 @@
 import type {
   LearningObjectivePrimaryActionV3,
   ObjectiveNoteChangeImpactV1,
+  ObjectiveReviewHoldV1,
   ObjectiveSurfaceFreshnessV3,
   ObjectivePersonalStateV3,
 } from "@ailearn/shared/learning-objective-surface-contracts";
+import type {
+  ObjectiveHoldResultV2,
+  ObjectiveResumeResultV2,
+} from "@ailearn/shared/review-queue-v2-contracts";
 
 const STATE_COPY: Record<ObjectivePersonalStateV3, { label: string; hint: string }> = {
   unvalidated: {
@@ -230,8 +235,7 @@ export function primaryActionLabel(action: LearningObjectivePrimaryActionV3): st
  * 按钮下面那一句话。`wait_for_initial_validation` 与 `practice_only` 必须
  * 把「为什么」和「什么时候能正式算」写在明面上——只给一个灰色按钮，
  * 用户只会以为产品坏了（复盘 #9）。
- */
-export function primaryActionDescription(action: LearningObjectivePrimaryActionV3): string {
+ */export function primaryActionDescription(action: LearningObjectivePrimaryActionV3): string {
   switch (action.kind) {
     case "create_run":
     case "create_review_run": return `${action.label}，完成后会写回这一题的真实状态。`;
@@ -244,4 +248,73 @@ export function primaryActionDescription(action: LearningObjectivePrimaryActionV
     case "refresh": return "目标或来源内容变了，需要重新读取最新内容。";
     case "none": return "这一轮暂时没有要做的。";
   }
+}
+
+// ─── W7-3 刀三：目标级「暂不安排」／「恢复并开启」（39 §9.1 行 2、行 3）──
+//
+// 这几句话与 `objective-state-copy` 其余部分同一理由放在这里：**同一个服务端值
+// 只许有一份人话**。笔记页的学习区、卡库的列表行、伴星读页面那一句都要说
+// 「暂不安排」，三处各写一遍就是三颗目标在三个面上各说一句话的预备状态。
+//
+// 两条规则决定了这几句话必须长这样，不是文风偏好：
+//  1. §9.1 行 2：「对本人在当前笔记内该目标的**所有**持续回访维度生效，不停止其他
+//     目标、不删除历史」——所以按钮与回执都要把"只停这一个"说出来，否则用户
+//     会以为整篇笔记的学习安排都停了。
+//  2. §9.1 行 3：恢复是**组合动作**（解除 + 排上），不是解除——所以那一档要念出
+//     下一次回访是哪一天，否则用户点完不知道有没有真的开始。
+
+/** 那颗按钮。动词是「暂不安排」而不是「暂停」：§9.1 的词是前者。 */
+export const OBJECTIVE_HOLD_ACTION_LABEL = "暂不安排这个目标";
+/** 排除生效时换上去的那颗。承诺的是「恢复**并开启**」，不是「取消排除」。 */
+export const OBJECTIVE_RESUME_ACTION_LABEL = "恢复并开启";
+
+/** 按钮下面那句：说清范围与代价，不让用户猜。 */
+export function objectiveHoldActionDescription(): string {
+  return "只停这一个目标的回访安排，别的目标和已经记下的练习都不动。";
+}
+
+export function objectiveResumeActionDescription(): string {
+  return "解除「暂不安排」，并重新排上第一次回访。";
+}
+
+/** 屏上那枚纸签：排除生效中。 */
+export function objectiveReviewHoldLabel(hold: ObjectiveReviewHoldV1): string {
+  return `暂不安排 · ${formatObjectiveDay(hold.createdAt)}`;
+}
+
+/** 排除生效时那行说明：为什么它现在不回到队列里，以及怎么回来。 */
+export function objectiveReviewHoldHint(hold: ObjectiveReviewHoldV1): string {
+  return `你在 ${formatObjectiveDateTime(hold.createdAt)} 把它设成暂不安排，所以它不会再自动回到复习队列；笔记和卡片的其他安排照旧。点「${OBJECTIVE_RESUME_ACTION_LABEL}」就会重新排上。`;
+}
+
+/**
+ * 立排除那一发的回执。三种说法分开：
+ *  - 本来就在排除中 ⇒ 说"本来就在"，不说"刚刚设好了"（`alreadyHeld`）。
+ *  - 撤下了待办 ⇒ **把数念出来**。§9.1 那一格要"操作时说明"，
+ *    而"顺手撤了 2 条"正是用户能看见的后果；不说就等于只有未来被挡住。
+ *  - 一条也没撤 ⇒ 明说"此刻没有排着的待办"，别让"撤了 0 条"读成"没生效"。
+ */
+export function objectiveHoldNotice(receipt: ObjectiveHoldResultV2): string {
+  if (receipt.alreadyHeld) {
+    return "这个目标本来就在暂不安排中，这次没有改动。";
+  }
+  return receipt.dismissedPendingSchedules > 0
+    ? `已设为暂不安排，顺手撤下了 ${receipt.dismissedPendingSchedules} 条排着的回访。`
+    : "已设为暂不安排；它此刻没有排着的回访，所以没有需要撤下的。";
+}
+
+/**
+ * 「恢复并开启」那一发的回执。三档分开（§9.1 行 3）：
+ *  - 新排上的 ⇒ 念出日期，用户要能对上"我什么时候会被叫回来"。
+ *  - 沿用已有的那一格 ⇒ 说"沿用已经排好的"，不说"重新排了"（那会把别人排的那条
+ *    记成这次排的）。
+ *  - `released: false`（本来就没在排除中）仍要说排上了——这两件事在回执里是两个
+ *    字段，合成一句"已恢复"会把其中一件吞掉。
+ */
+export function objectiveResumeNotice(receipt: ObjectiveResumeResultV2): string {
+  const when = formatObjectiveDay(receipt.nextReviewAt);
+  const scheduled = receipt.scheduled === "created"
+    ? `已经排上，第一次回访在 ${when}。`
+    : `沿用已经排好的安排，回访在 ${when}。`;
+  return receipt.released ? scheduled : `本来就没有在暂不安排中；${scheduled}`;
 }

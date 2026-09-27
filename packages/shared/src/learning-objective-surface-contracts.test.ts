@@ -63,6 +63,9 @@ function surfaceFixture(): Record<string, unknown> {
       review: null,
       practiceTrailCount: 2,
       lastCanonicalAt: "2026-08-16T10:00:00.000Z",
+      // W7-3：目标级「暂不安排」。null = 没被排除。必填不取默认值，理由写在那份
+      // 合同的字段注释里，也记在 39d-parallel-claims §6.3。
+      reviewHold: null,
     },
     lifecycle: { status: "active", successorObjectiveId: null },
     personalState: { state: "learning", activeRunId: RUN },

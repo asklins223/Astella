@@ -12,7 +12,7 @@
  * 历史不删：一次解除盖一个 `released_at`，同一个人对同一个目标可以再来一次；
  * 唯一性只作用在"还活着的那一份"上（迁移 0295 的部分唯一索引）。
  */
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { objectiveReviewHoldsV2, reviewSchedules } from "@ailearn/shared/db-schema/evidence";
 import { notes } from "@ailearn/shared/db-schema/note";
@@ -84,6 +84,40 @@ export async function liveHoldForObjectiveV2(
     LIVE,
   )).limit(1);
   return rows[0] ? toView(rows[0]) : null;
+}
+
+/**
+ * 批量那一发：一次查好 N 个目标的活排除，交给 `surface-service` 装进详情与列表
+ * **同一个字段**（`personal.reviewHold` / `reviewHold`）。
+ *
+ * 为什么值得单独写而不是在调用方 `inArray` 一次：`LIVE`（`released_at IS NULL`）这个
+ * 判据只要在两个地方各写一遍，将来加一档"部分解除"就会有一处漏掉——而漏掉的后果是
+ * 屏上对已经恢复的目标仍然说"暂不安排"，且**不会**有测试红。
+ *
+ * 同一个目标理论上只有一条活行（0295 的部分唯一索引），但这里仍按"第一条"收敛
+ * 而不是直接建 Map 覆盖：万一那条索引哪天被摘掉，覆盖会让读数随行序抖动，
+ * 而"取一条"是能被用例钉住的形状。
+ */
+export async function liveHoldsForObjectivesV2(
+  tx: HoldTx,
+  input: { workspaceId: string; userId: string; objectiveIds: readonly string[] },
+): Promise<Map<string, ObjectiveHoldV2View>> {
+  const byObjective = new Map<string, ObjectiveHoldV2View>();
+  if (input.objectiveIds.length === 0) return byObjective;
+  const rows = await tx
+    .select()
+    .from(objectiveReviewHoldsV2)
+    .where(and(
+      eq(objectiveReviewHoldsV2.workspaceId, input.workspaceId),
+      eq(objectiveReviewHoldsV2.userId, input.userId),
+      inArray(objectiveReviewHoldsV2.objectiveId, [...input.objectiveIds]),
+      LIVE,
+    ))
+    .orderBy(asc(objectiveReviewHoldsV2.createdAt));
+  for (const row of rows) {
+    if (!byObjective.has(row.objectiveId)) byObjective.set(row.objectiveId, toView(row));
+  }
+  return byObjective;
 }
 
 /**

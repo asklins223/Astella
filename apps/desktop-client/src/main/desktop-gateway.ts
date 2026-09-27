@@ -110,6 +110,12 @@ import {
   submitTaskArtifactReceiptV2Schema,
 } from "@ailearn/shared/learning-run-v2-contracts";
 import { reviewDeferRequestV2Schema, reviewDeferResultV2Schema, reviewQueueV2Schema } from "@ailearn/shared/review-queue-v2-contracts";
+import {
+  objectiveHoldCommandV2Schema,
+  objectiveHoldResultV2Schema,
+  objectiveResumeCommandV2Schema,
+  objectiveResumeResultV2Schema,
+} from "@ailearn/shared/review-queue-v2-contracts";
 import { todayActivityV1Schema } from "@ailearn/shared/activity-surface-contracts";
 import { roomProjectionV1Schema, type RoomProjectionV1 } from "@ailearn/shared/room-projection-contracts";
 import {
@@ -1722,6 +1728,48 @@ export class DesktopGateway {
       body: JSON.stringify(reviewDeferRequestV2Schema.parse(request)),
     }, true, true, requestId);
     const parsed = reviewDeferResultV2Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+  /**
+   * W7-3 刀三：把一个目标设成「暂不安排」（39 §9.1 行 2）。
+   *
+   * 请求体在**这一层**先 `parse` 一次再发出去：缺 `noteId` 的那一种在渲染层就红，
+   * 不会变成一次从主进程发出去的 400。回执同样 `safeParse`——服务端哪天给
+   * `dismissedPendingSchedules` 改名，桌面这一层会先发现，而不是把 `undefined`
+   * 念成「撤下了 0 条」。
+   */
+  async holdObjectiveForReview(
+    request: z.infer<typeof objectiveHoldCommandV2Schema>,
+    requestId?: string,
+  ): Promise<z.infer<typeof objectiveHoldResultV2Schema>> {
+    await this.ensureConnected(requestId);
+    const result = await this.request("/reviews/v2/objectives/hold", {
+      method: "POST",
+      body: JSON.stringify(objectiveHoldCommandV2Schema.parse(request)),
+    }, true, true, requestId);
+    const parsed = objectiveHoldResultV2Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+  /**
+   * W7-3 刀三：「恢复此目标并开启」（39 §9.1 行 3）。
+   *
+   * 409（`still_held`）**不**在这里翻成成功：那一格意味着同一目标上还有另一条
+   * 活着的排除，屏上要念的是「这个目标仍在暂不安排中」，不是「已开启」。
+   */
+  async resumeObjectiveForReview(
+    request: z.infer<typeof objectiveResumeCommandV2Schema>,
+    requestId?: string,
+  ): Promise<z.infer<typeof objectiveResumeResultV2Schema>> {
+    await this.ensureConnected(requestId);
+    const result = await this.request("/reviews/v2/objectives/resume", {
+      method: "POST",
+      body: JSON.stringify(objectiveResumeCommandV2Schema.parse(request)),
+    }, true, true, requestId);
+    const parsed = objectiveResumeResultV2Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }

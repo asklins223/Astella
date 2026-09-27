@@ -57,6 +57,7 @@ function makeSurface(overrides: Partial<LearningObjectiveSurfaceV3> = {}): Learn
       review: null,
       practiceTrailCount: 0,
       lastCanonicalAt: null,
+      reviewHold: null,
     },
     lifecycle: { status: "active", successorObjectiveId: null },
     personalState: { state: "unvalidated", activeRunId: null },
@@ -83,6 +84,7 @@ function makeListItem(overrides: Partial<ObjectiveListItemV3> = {}): ObjectiveLi
     createdAt: surface.createdAt,
     personalState: { state: "unvalidated" as const, activeRunId: null },
     progress: { practiceTrailCount: 0, lastCanonicalAt: null, reviewDueAt: null, initialValidation: null, validationNotBefore: null },
+    reviewHold: null,
     primaryAction: surface.primaryAction,
     ...overrides,
   };

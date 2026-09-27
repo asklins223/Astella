@@ -37,6 +37,7 @@ function surface(
       review: null,
       practiceTrailCount: 0,
       lastCanonicalAt: null,
+      reviewHold: null,
     },
     lifecycle: { status: "active", successorObjectiveId: null },
     personalState: { state: "unvalidated", activeRunId: null },
@@ -89,4 +90,36 @@ test("冷却中的正式验证把开放时间点带到列表上", () => {
   }));
   assert.equal(item.progress.initialValidation, "deferred");
   assert.equal(item.progress.validationNotBefore, "2026-09-21T06:00:00.000Z");
+});
+
+// ─── W7-3 刀三：目标级「暂不安排」跟着列表行走 ──────────────────────────
+//
+// 这一格的作用不是"多一个字段"，是钉住**同一个值**：详情那一格
+// （`personal.reviewHold`）与列表这一格（`reviewHold`）必须是同一份。
+// 各自查一次排除表的那天，两边就会有一边说"暂不安排"、另一边说没有——
+// 而屏上那两颗按钮长在不同的面上，用户点得到却说不清。
+//
+// 变异自证（改前改后对拍，不另造探针）：把 `toObjectiveListItemV3` 里的
+// `reviewHold: surface.personal.reviewHold` 换成 `reviewHold: null` ⇒
+// 下面那一格红，正控制那一格仍绿（它本来就该是 null）。
+
+test("排除中的目标：列表行与详情读**同一份**排除（逐字相同，不是重建）", () => {
+  const hold = {
+    objectiveId: "11111111-1111-4111-8111-111111111111",
+    noteId: "44444444-4444-4444-8444-444444444444",
+    reasonCode: "user_deferred_objective",
+    createdAt: "2026-09-26T02:00:00.000Z",
+  };
+  const detail = surface({ reviewHold: hold });
+  const item = toObjectiveListItemV3(detail);
+  // 逐字相同：`deepEqual` 之外的这条是"不许重建"，重建会让 `noteId` 之类
+  // 的字段在某一天被挑掉而这里仍然绿。
+  assert.equal(item.reviewHold, detail.personal.reviewHold);
+  assert.deepEqual(item.reviewHold, hold);
+});
+
+test("正对照：没被排除的目标，列表行那个字段是 null 而不是被省略", () => {
+  const item = toObjectiveListItemV3(surface());
+  assert.ok("reviewHold" in item, "字段不许靠 undefined 表示'没有'——那与'忘了投影'同形");
+  assert.equal(item.reviewHold, null);
 });

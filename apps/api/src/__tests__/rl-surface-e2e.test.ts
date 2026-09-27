@@ -61,6 +61,7 @@ function makeSurface(overrides: Partial<LearningObjectiveSurfaceV3> = {}): Learn
       review: null,
       practiceTrailCount: 0,
       lastCanonicalAt: null,
+      reviewHold: null,
     },
     lifecycle: { status: "active", successorObjectiveId: null },
     personalState: { state: "unvalidated", activeRunId: null },
@@ -123,6 +124,7 @@ describe("RL-06: 纯 V2 workspace 全链路", () => {
       createdAt: "2026-08-18T00:00:00.000Z",
       personalState: { state: "unvalidated", activeRunId: null },
       progress: { practiceTrailCount: 0, lastCanonicalAt: null, reviewDueAt: null, initialValidation: null, validationNotBefore: null },
+    reviewHold: null,
       primaryAction: startAction(),
     };
     const parsed = objectiveListItemV3Schema.safeParse(item);

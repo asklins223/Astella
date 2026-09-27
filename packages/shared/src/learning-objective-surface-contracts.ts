@@ -196,6 +196,24 @@ export type ObjectiveNoteChangeImpactV1 = z.infer<
 >;
 
 /**
+ * 39 §9.1 行 2：用户把某一个目标设成「暂不安排」的那一条**活**行。
+ *
+ * 三个字段是屏上要说的全部：什么时候标的（她要能对上"我上周按掉的那个"）、
+ * 界面上那颗「恢复并开启」按钮认的是哪一条、以及 `noteId`——因为「恢复」这一发
+ * 会写 `review_schedules`，服务端要按笔记判可见性（0295 那张表带 `note_id` 就是这个用处）。
+ *
+ * 排除本身不投影 `released_at` 的历史：解除后这里回到 `null`，§9.1 明写"只有用户选择
+ * 『恢复此目标并开启』才解除排除"，屏上要认的是"现在还挡着没有"，不是"挡过几次"。
+ */
+export const objectiveReviewHoldV1Schema = z.strictObject({
+  objectiveId: z.string().uuid(),
+  noteId: z.string().uuid(),
+  reasonCode: z.string().min(1).max(120),
+  createdAt: z.string().datetime({ offset: true }),
+});
+export type ObjectiveReviewHoldV1 = z.infer<typeof objectiveReviewHoldV1Schema>;
+
+/**
  * 「这条目标的来源更新了吗」那一份比较，**全仓只准这一处**（39d D3 §5.1 末段：判定不许各写一份）。
  * 今天它被抄在三地上（`learning-objectives/surface-service.ts` 的详情与列表两格、
  * `understanding-v3/topology-repository.ts` 的星图那一格），三地的输入形状不同而规则相同——
@@ -307,6 +325,18 @@ export const learningObjectiveSurfaceV3Schema = z.strictObject({
       completedAt: z.string().datetime({ offset: true }),
       outcome: z.enum(["demonstrated", "partial", "needs_repair", "not_assessable", "practice_completed", "skipped", "declared_unable"]),
     }).nullable().optional(),
+    /**
+     * 39 §9.1 行 2／行 3：用户把这个目标设成「暂不安排」的那一条活行。
+     *
+     * **为什么不并进 `personalState.state`**：那条 11 档状态轴讲的是「这张卡学到哪了」，
+     * 而排除讲的是「还允不允许排回访」——§9.1 自己就把这两件事分开放（"目标『暂不安排』
+     * 优先于一切授权来源"，说的是授权而不是掌握程度）。塞进状态轴会让星空图的星等、
+     * 「要处理」计数与语气档一起跟着改，而那些读数与排除无关。
+     *
+     * 只投影**活着**的那一条（`released_at IS NULL`）；解除之后这里回到 null，
+     * 历史留在 0295 那张表里不投影上来（§9.1："只有主动恢复才重新进入"）。
+     */
+    reviewHold: objectiveReviewHoldV1Schema.nullable(),
   }),
   lifecycle: z.strictObject({
     status: objectiveSurfaceLifecycleV3Schema,
@@ -362,6 +392,12 @@ export const objectiveListItemV3Schema = z.strictObject({
     /** deferred 时的开放时间点；服务端算好，客户端只展示。 */
     validationNotBefore: z.string().datetime({ offset: true }).nullable(),
   }),
+  /**
+   * 与 `personal.reviewHold` **同一份值**（列表与详情不许各查一次、更不许各判一次）。
+   * 它独立于 `progress` 而不是折进 `reviewDueAt`：被排除的目标此刻**没有**到期日，
+   * 把「暂不安排」写成 `reviewDueAt: null` 会让它和"还没排"读起来一模一样。
+   */
+  reviewHold: objectiveReviewHoldV1Schema.nullable(),
   primaryAction: learningObjectivePrimaryActionV3Schema,
 });
 export type ObjectiveListItemV3 = z.infer<typeof objectiveListItemV3Schema>;

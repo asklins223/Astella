@@ -57,6 +57,7 @@ import {
   objectiveSurfaceFreshnessV1,
 } from "@ailearn/shared";
 import { listOriginsByObjective, rowToWire } from "./origin-service.ts";
+import { liveHoldForObjectiveV2, liveHoldsForObjectivesV2 } from "../review/objective-review-holds.ts";
 import { pickLatestCompletedRunV3, resolvePrimaryActionV3, type ActionResolverInputV3 } from "./action-resolver.ts";
 import { readAnswerModePreference } from "../companion-shell/answer-mode-preference.ts";
 import { readObjectiveNoteChangeImpactV1 } from "./change-impact-service.ts";
@@ -381,10 +382,14 @@ async function assembleObjectiveSurfaceV3Inner(
     ? { runId: lastCompletedRun.runId, completedAt: new Date(lastCompletedRun.updatedAt).toISOString(), outcome: lastOutcome.data }
     : null;
 
-  const [initialValidation, review, exposureInfo] = await Promise.all([
+  const [initialValidation, review, exposureInfo, reviewHold] = await Promise.all([
     loadInitialValidation(tx, ctx, objectiveId),
     loadReview(tx, ctx, objectiveId),
     loadExposureInfo(tx, ctx, objectiveId),
+    // 39 §9.1 行 2：屏上那颗「暂不安排／恢复并开启」要认得**当前**还挡着没有。
+    // 与批量那一发读的是同一个模块里的同一个判据（`liveHoldForObjectiveV2`），
+    // 不在这里重写一次 `released_at IS NULL`。
+    liveHoldForObjectiveV2(tx, { workspaceId: ctx.workspaceId, userId: ctx.userId, objectiveId }),
   ]);
 
   // Bug 8 修复：从 lineage 表读取 successor 信息（superseded → view_successor）
@@ -552,6 +557,7 @@ async function assembleObjectiveSurfaceV3Inner(
       practiceTrailCount,
       lastCanonicalAt,
       latestResult,
+      reviewHold,
     },
     lifecycle: {
       status: objective.lifecycle as ObjectiveSurfaceLifecycleV3,
@@ -814,6 +820,15 @@ async function batchAssembleObjectiveSurfacesV3(
       ivByObjective.set(row.objectiveId, row);
     }
   }
+
+  // 6b. 批量查目标级「暂不安排」（39 §9.1 行 2）。**一次查好 N 个**——列表一页 50 行，
+  // 逐行去问排除表就是 50 次往返，而这一格只决定一枚纸签显不显示。与详情那一发
+  // （`assembleObjectiveSurfaceV3Inner`）读的是同一份判据，不在这里重写一次。
+  const holdByObjective = await liveHoldsForObjectivesV2(tx, {
+    workspaceId: ctx.workspaceId,
+    userId: ctx.userId,
+    objectiveIds,
+  });
 
   // 7. 批量查 all runs（按 origin.objectiveId 查询）
   // 性能修复：原先查该用户全量 runs 再在内存中过滤，当用户有大量历史
@@ -1141,6 +1156,7 @@ async function batchAssembleObjectiveSurfacesV3(
         review,
         practiceTrailCount,
         lastCanonicalAt,
+        reviewHold: holdByObjective.get(objectiveId) ?? null,
       },
       lifecycle: {
         status: lifecycle as ObjectiveSurfaceLifecycleV3,
@@ -1183,6 +1199,9 @@ export function toObjectiveListItemV3(
         : surface.personal.initialValidation?.status ?? null,
       validationNotBefore: surface.personal.initialValidation?.qualificationNotBefore ?? null,
     },
+    // 列表行与详情读**同一份值**（合同注释里写了不许各查一次）：屏上两个面上的
+    // 「暂不安排」纸签因此不会一边有一边没有。
+    reviewHold: surface.personal.reviewHold,
     primaryAction: surface.primaryAction,
   };
 }

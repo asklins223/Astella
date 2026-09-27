@@ -33,6 +33,12 @@ import {
   recordLearningRunActivityLeaseRequestV2Schema,
 } from "./learning-run-v2-contracts.ts";
 import { reviewDeferRequestV2Schema, reviewDeferResultV2Schema, reviewQueueV2Schema } from "./review-queue-v2-contracts.ts";
+import type {
+  ObjectiveHoldCommandV2,
+  ObjectiveHoldResultV2,
+  ObjectiveResumeCommandV2,
+  ObjectiveResumeResultV2,
+} from "./review-queue-v2-contracts.ts";
 import { roomProjectionV1Schema } from "./room-projection-contracts.ts";
 import {
   companionHomeProjectionV1Schema,
@@ -402,6 +408,11 @@ export const DESKTOP_IPC_CHANNELS = {
   // 但读的是"我"而不是"当前空间"。
   statsGetOverviewAll: "ailearn.v1.stats.getOverviewAll",
   reviewDefer: "ailearn.v1.review.defer",
+  // W7-3 刀三：目标级「暂不安排」与「恢复并开启」（39 §9.1 行 2、行 3）。
+  // 两条**分开的**通道而不是一个 toggle —— §9.1 规则表把"设排除"与
+  // "恢复并开启"列成两件不同的事，合成一颗开关会把中间那半句折叠掉。
+  reviewHoldObjective: "ailearn.v1.review.holdObjective",
+  reviewResumeObjective: "ailearn.v1.review.resumeObjective",
   learningRunGet: "ailearn.v1.learningRun.get",
   learningRunStart: "ailearn.v1.learningRun.start",
   learningRunGetDraft: "ailearn.v1.learningRun.getDraft",
@@ -2543,6 +2554,23 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
     }): Promise<GatewayResultV1<z.infer<typeof reviewQueueV2Schema>>>;
     defer(input: { meta: RequestMetaV1; request: z.infer<typeof reviewDeferRequestV2Schema> }): Promise<
       GatewayResultV1<z.infer<typeof reviewDeferResultV2Schema>>
+    >;
+    /**
+     * 把一个目标设成「暂不安排」（39 §9.1 行 2）。只停这一个目标：别的目标、别的
+     * 授权来源、以及已经记下的历史观察都不动。回执里的 `dismissedPendingSchedules`
+     * 要在屏上念出来——立排除必须有看得见的后果，否则那句话只挡未来不挡现在。
+     */
+    holdObjective(input: { meta: RequestMetaV1; request: ObjectiveHoldCommandV2 }): Promise<
+      GatewayResultV1<ObjectiveHoldResultV2>
+    >;
+    /**
+     * 「恢复此目标并开启」——组合命令：同一事务里先解除排除、再走唯一调度边界排上
+     * 安排。**不提供"只解除"**：§9.1 行 3 明写只有这一条能解除，而只解除会让用户
+     * 点完之后那个目标再也回不到队列（撤下去的那些排期是 `dismissed`，终态）。
+     * 排不动时服务端回 409（`still_held`），这一层把它当失败交回，不当成成功。
+     */
+    resumeObjective(input: { meta: RequestMetaV1; request: ObjectiveResumeCommandV2 }): Promise<
+      GatewayResultV1<ObjectiveResumeResultV2>
     >;
   };
   readonly understanding: {

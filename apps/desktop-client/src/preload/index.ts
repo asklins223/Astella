@@ -358,7 +358,11 @@ const desktopApi: AILearnDesktopApiM2 = {
   },
   review: {
     getQueue: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewGetQueue, input),
-    defer: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewDefer, input)
+    defer: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewDefer, input),
+    // W7-3 刀三：目标级「暂不安排」与「恢复并开启」。两条分开的通道——
+    // §9.1 规则表把它们列成两件事，合成一颗开关会把中间那半句折叠掉。
+    holdObjective: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewHoldObjective, input),
+    resumeObjective: (input) => invoke(DESKTOP_IPC_CHANNELS.reviewResumeObjective, input)
   },
   learningRun: {
     get: (input) => invoke(DESKTOP_IPC_CHANNELS.learningRunGet, input),

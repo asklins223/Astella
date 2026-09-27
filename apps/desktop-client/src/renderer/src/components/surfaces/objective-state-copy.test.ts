@@ -12,6 +12,12 @@ import {
   objectiveStateTone,
   primaryActionDescription,
   primaryActionLabel,
+  objectiveHoldNotice,
+  objectiveResumeNotice,
+  objectiveReviewHoldHint,
+  objectiveReviewHoldLabel,
+  OBJECTIVE_HOLD_ACTION_LABEL,
+  OBJECTIVE_RESUME_ACTION_LABEL,
 } from "./objective-state-copy";
 
 const CARD_START = {
@@ -106,5 +112,92 @@ describe("理解目标状态文案", () => {
     // 分别是「9/21」和「9月21日」——等待终点不能随环境变。
     const local = new Date(2026, 8, 21, 9, 5);
     expect(formatObjectiveDateTime(local.toISOString())).toBe("9月21日 09:05");
+  });
+});
+
+// ─── W7-3 刀三：目标级「暂不安排」的人话（39 §9.1 行 2、行 3）────────────
+//
+// 钉的不是文风，是 §9.1 规则表里那三件**不许被折叠掉**的事：
+//  1. 立排除要说清"只停这一个"，还要把"顺手撤了 N 条"念出来；
+//  2. 本来就在排除中，说的是"本来就在"而不是"刚刚设好了"；
+//  3. 恢复是**组合动作**——沿用已有的那一格与新建那一格是两句不同的话，
+//     而"本来就没在排除中"仍要说排上了（两件事在回执里是两个字段）。
+// 三件事各自都带一条**正控制**：把分支反过来，对面那一条会立刻红。
+
+describe("目标级「暂不安排」：39 §9.1 行 2、行 3 的人话", () => {
+  const HOLD = {
+    objectiveId: "00000000-0000-4000-8000-000000000001",
+    noteId: "00000000-0000-4000-8000-000000000009",
+    reasonCode: "user_deferred_objective",
+    createdAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+  };
+  const receipt = (over: Partial<Parameters<typeof objectiveHoldNotice>[0]>) => ({
+    objectiveId: HOLD.objectiveId,
+    noteId: HOLD.noteId,
+    alreadyHeld: false,
+    dismissedPendingSchedules: 2,
+    ...over,
+  });
+  const resume = (over: Partial<Parameters<typeof objectiveResumeNotice>[0]>) => ({
+    version: 2 as const,
+    objectiveId: HOLD.objectiveId,
+    released: true,
+    scheduled: "created" as const,
+    scheduleId: "00000000-0000-4000-8000-0000000000aa",
+    // 相对"今天"推后若干天而不是写死一个日期：
+    // `formatObjectiveDay` 对 1 天内说"明天/今天"、1–30 天说"N 天后"，
+    // 写死日期会让这条断言在别的日子变成一条假红。
+    nextReviewAt: new Date(Date.now() + 10 * 86_400_000).toISOString(),
+    ...over,
+  });
+
+  it("立排除：把撤下了几条念出来（§9.1「操作时说明」）", () => {
+    const said = objectiveHoldNotice(receipt({ dismissedPendingSchedules: 2 }));
+    expect(said).toContain("暂不安排");
+    expect(said).toContain("2 条");
+  });
+
+  it("一条也没撤时说成另一句，不让「撤了 0 条」读成没生效", () => {
+    const said = objectiveHoldNotice(receipt({ dismissedPendingSchedules: 0 }));
+    expect(said).toContain("没有排着的回访");
+    expect(said).not.toContain("0 条");
+  });
+
+  it("本来就在排除中：说「本来就在」，不说「刚刚设好了」", () => {
+    const said = objectiveHoldNotice(receipt({ alreadyHeld: true, dismissedPendingSchedules: 2 }));
+    expect(said).toContain("本来就在");
+    expect(said).not.toContain("撤下");
+  });
+
+  it("恢复：新建那一档念出日期", () => {
+    const said = objectiveResumeNotice(resume({ scheduled: "created" }));
+    expect(said).toContain("10 天后");
+    expect(said).toContain("已经排上");
+  });
+
+  it("恢复：沿用已有的那一格说「沿用」，不冒充这次排的", () => {
+    const said = objectiveResumeNotice(resume({ scheduled: "reused_existing" }));
+    expect(said).toContain("沿用已经排好的安排");
+    expect(said).not.toContain("已经排上");
+  });
+
+  it("本来就没在排除中：仍要说排上了（released 与 scheduled 是两件事）", () => {
+    const said = objectiveResumeNotice(resume({ released: false }));
+    expect(said).toContain("本来就没有在暂不安排中");
+    expect(said).toContain("已经排上");
+  });
+
+  it("屏上那枚纸签与那行说明：说清怎么回来，且不承诺别的安排也停了", () => {
+    expect(objectiveReviewHoldLabel(HOLD)).toContain("暂不安排");
+    const hint = objectiveReviewHoldHint(HOLD);
+    expect(hint).toContain(OBJECTIVE_RESUME_ACTION_LABEL);
+    expect(hint).toContain("照旧");
+  });
+
+  it("恢复那颗按钮承诺的是「恢复并开启」，不是「取消排除」", () => {
+    // §9.1 行 3：只有「恢复此目标并开启」才解除排除。文案退化成"取消"就会
+    // 重新造出那个"点完之后再也不回队列"的洞。
+    expect(OBJECTIVE_RESUME_ACTION_LABEL).toBe("恢复并开启");
+    expect(OBJECTIVE_HOLD_ACTION_LABEL).toContain("暂不安排");
   });
 });
