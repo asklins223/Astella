@@ -213,9 +213,12 @@ const REGISTERED_STATUS_UPDATES: Record<string, Array<string | null>> = {
   "apps/api/src/modules/card-generation-v2/card-service.ts": ["cancelled"],
   // 「这一条先延后」：只改 `user_deferred_until`，不碰 status。
   "apps/api/src/modules/review/review-defer-service.ts": [null],
+  // 「这个目标暂不安排」：把该目标此刻待处理的那几条撤下（39 §9.1 行 2；迁移 0295）。
+  // 撤的是 `dismissed`（本人不要这条了），不是 `cancelled`（系统撤），更不是 pending。
+  "apps/api/src/modules/review/objective-review-holds.ts": ["dismissed"],
 };
 
-test("分母自证（改）：真的读到那四处 update，且没有第五处", () => {
+test("分母自证（改）：真的读到那五处 update，且没有第六处", () => {
   const byFile: Record<string, Array<string | null>> = {};
   for (const site of runtimeSources().flatMap((f) => statusUpdatesIn(f.rel, f.text))) {
     (byFile[site.file] ??= []).push(site.dynamic ? null : site.value);

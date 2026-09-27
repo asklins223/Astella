@@ -2055,6 +2055,20 @@
       "when": 1789800015033,
       "tag": "0293_note_learning_reflections",
       "breakpoints": true
+    },
+    {
+      "idx": 293,
+      "version": "7",
+      "when": 1790467200000,
+      "tag": "0294_round_teaching_personal_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 294,
+      "version": "7",
+      "when": 1790553600000,
+      "tag": "0295_objective_review_holds_v2",
+      "breakpoints": true
     }
   ]
 }

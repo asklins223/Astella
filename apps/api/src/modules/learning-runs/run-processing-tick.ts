@@ -1912,7 +1912,8 @@ async function applyDemonstratedSchedule(
     });
     // dueAt 取**库里那一条**的到期时间：这一格已被占（并发/重放）时，屏幕上
     // 不能出现一个没人持有的日期。
-    return { kind: "created", dueAt: scheduled.nextReviewAt.toISOString(), policyReason: "demonstrated" };
+    if (scheduled.held) return { kind: "none", reasonCode: "objective_held" };
+    return { kind: "created", dueAt: scheduled.nextReviewAt!.toISOString(), policyReason: "demonstrated" };
   }
   if (authorization.kind === "consume_pending") {
     const currentRows = await tx
@@ -1959,9 +1960,10 @@ async function applyDemonstratedSchedule(
       reasonCode: decision.reasonCode,
       at,
     });
+    if (successor.held) return { kind: "none", reasonCode: "objective_held" };
     return {
       kind: "rescheduled",
-      dueAt: successor.nextReviewAt.toISOString(),
+      dueAt: successor.nextReviewAt!.toISOString(),
       consumedScheduleId: authorization.scheduleId,
       policyReason: "demonstrated",
     };
@@ -1998,7 +2000,8 @@ async function applyUnableSchedule(
       reasonCode: decision.reasonCode,
       at,
     });
-    return { kind: "created", dueAt: scheduled.nextReviewAt.toISOString(), policyReason: "declared_unable" };
+    if (scheduled.held) return { kind: "none", reasonCode: "objective_held" };
+    return { kind: "created", dueAt: scheduled.nextReviewAt!.toISOString(), policyReason: "declared_unable" };
   }
   if (authorization.kind === "consume_pending") {
     const currentRows = await tx
@@ -2038,9 +2041,10 @@ async function applyUnableSchedule(
       reasonCode: decision.reasonCode,
       at,
     });
+    if (successor.held) return { kind: "none", reasonCode: "objective_held" };
     return {
       kind: "rescheduled",
-      dueAt: successor.nextReviewAt.toISOString(),
+      dueAt: successor.nextReviewAt!.toISOString(),
       consumedScheduleId: authorization.scheduleId,
       policyReason: "declared_unable",
     };

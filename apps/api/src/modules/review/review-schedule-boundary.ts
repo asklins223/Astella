@@ -16,6 +16,7 @@
 import { and, eq } from "drizzle-orm";
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
 import { withWorkspaceTransaction } from "../../db/client.ts";
+import { liveHoldForObjectiveV2 } from "./objective-review-holds.ts";
 
 // 与 run-processing-tick 同一份"事务句柄"写法：从 withWorkspaceTransaction 的回调签名里取，
 // 不在第二处手写它的形状。
@@ -38,10 +39,17 @@ export interface EnsurePendingReviewScheduleV2Input {
 }
 
 export interface EnsurePendingReviewScheduleV2Result {
-  readonly scheduleId: string;
+  readonly scheduleId: string | null;
   /** **库里那一条的实际到期时间**——复用别人的安排时不报自己算的那个。 */
-  readonly nextReviewAt: Date;
+  readonly nextReviewAt: Date | null;
   readonly created: boolean;
+  /**
+   * §9.1 行 2：这一发被本人那句"暂不安排"挡住了 ⇒ 库里**什么都没写**。
+   *
+   * 单列一个读数而不是塞进 `created: false`：`false` 今天的意思是"那一格已经排着了，
+   * 把那条交回你"，与"根本不许排"是两件要对用户说不同的话的事。
+   */
+  readonly held: boolean;
 }
 
 /**
@@ -51,12 +59,24 @@ export interface EnsurePendingReviewScheduleV2Result {
  * 而是"那一件事已经排着了"。也不带 target——部分唯一索引的推断写法在 drizzle 里
  * 要重复谓词，写错一次就退化成"什么冲突都不拦"；不写 target 的 `DO NOTHING`
  * 对任何唯一violations都成立，代价是多一次回读。
+ *
+ * **排除判在这里，不判在调用方**：这一发是 `review_schedules` 唯一的写入口，而 §9.1 那句
+ * "在笔记订阅继续有效时也不自动加回来"管的就是所有自动排期——写在这里，将来再加入口
+ * 也不会漏；写在调用方就是每个入口抄一遍，少抄一个就出现"这里排了那里没排"。
  */
 export async function ensurePendingReviewScheduleV2(
   tx: ReviewScheduleTx,
   input: EnsurePendingReviewScheduleV2Input,
 ): Promise<EnsurePendingReviewScheduleV2Result> {
   const dimension = input.reviewDimension ?? "";
+  const hold = await liveHoldForObjectiveV2(tx, {
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    objectiveId: input.subjectId,
+  });
+  if (hold) {
+    return { scheduleId: null, nextReviewAt: null, created: false, held: true };
+  }
   const inserted = await tx
     .insert(reviewSchedules)
     .values({
@@ -82,6 +102,7 @@ export async function ensurePendingReviewScheduleV2(
       scheduleId: inserted[0].id,
       nextReviewAt: inserted[0].nextReviewAt,
       created: true,
+      held: false,
     };
   }
   const [existing] = await tx
@@ -106,5 +127,6 @@ export async function ensurePendingReviewScheduleV2(
     scheduleId: existing.id,
     nextReviewAt: existing.nextReviewAt,
     created: false,
+    held: false,
   };
 }

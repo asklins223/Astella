@@ -459,8 +459,11 @@ export type CardGenerationCloseResultV1 = z.infer<typeof cardGenerationCloseResu
  */
 export const cardActivationSchedulingEntryV1Schema = z.strictObject({
   objectiveId: uuidSchema,
-  nextReviewAt: isoTimestampSchema,
+  /** `held` 为真那一档没有日期可报（库里什么都没写），所以是 optional 而不是空串。 */
+  nextReviewAt: isoTimestampSchema.optional(),
   created: z.boolean(),
+  /** 39 §9.1 行 2：这个目标被本人"暂不安排"挡住，这一发没排上。 */
+  held: z.boolean().optional(),
 });
 export type CardActivationSchedulingV1 = z.infer<typeof cardActivationSchedulingEntryV1Schema>;
 
@@ -537,8 +540,9 @@ export function projectCardActivationReceiptV1(value: z.infer<typeof cardActivat
       ? {
         scheduling: value.scheduling.map((entry) => ({
           objectiveId: entry.objectiveId,
-          nextReviewAt: entry.nextReviewAt,
+          ...(entry.nextReviewAt === undefined ? {} : { nextReviewAt: entry.nextReviewAt }),
           created: entry.created,
+          ...(entry.held === undefined ? {} : { held: entry.held }),
         })),
       }
       : {}),

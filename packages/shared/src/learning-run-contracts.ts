@@ -555,6 +555,8 @@ export type LearningRunResultV1 = {
           | "diagnostic_only"
           | "sandbox"
           | "not_assessable"
+          // 39 §9.1 行 2（与上面那份 zod 枚举同批改；这里是手写镜像那一半）
+          | "objective_held"
           | "skipped"
           | "ended"
           | "stale";
@@ -1398,6 +1400,9 @@ export const learningRunScheduleImpactSchema = z.discriminatedUnion("kind", [
       "diagnostic_only",
       "sandbox",
       "not_assessable",
+      // 39 §9.1 行 2：本人给这个目标立了"暂不安排"⇒ 本轮结算没有排下一次。
+      // 与 "not_authorized"（从没开过）分开，因为是两种要对用户说不同的话的事。
+      "objective_held",
       "skipped",
       "ended",
       "stale",

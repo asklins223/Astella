@@ -6,10 +6,12 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { reviewStatusEnum } from "./enums.ts";
-import { users } from "./identity.ts";
+import { users, workspaces } from "./identity.ts";
+import { notes } from "./note.ts";
 
 /**
  * 复习计划（对齐产品文档 §9.5）。
@@ -57,5 +59,50 @@ export const reviewSchedules = pgTable(
     pendingSubjectDimUnique: uniqueIndex("review_schedules_pending_subject_dim_unique")
       .on(t.workspaceId, t.userId, t.subjectId, t.reviewDimension)
       .where(sql`${t.status} = 'pending'`),
+  }),
+);
+
+/**
+ * 目标级「暂不安排」（迁移 0295；39 §9.1 规则表第三行）。
+ *
+ * 一条**未解除**的行 = 本人在该笔记内对该目标的持续回访被排除，优先于笔记与卡片授权，
+ * 不停止其他目标。解除写 `released_at` 而不是删行——§9.1 明写"不删除历史"，而重新
+ * 暂不安排一次要能再 INSERT，所以唯一性只能是**部分**唯一（同 0287 那一支的形状）。
+ *
+ * 放在 reviewSchedules 旁边：两张表由同一个调度边界读写
+ * （`apps/api/src/modules/review/review-schedule-boundary.ts`），调用方已经在从这个
+ * 子路径深导入，不需要新出口。
+ */
+export const objectiveReviewHoldsV2 = pgTable(
+  "objective_review_holds_v2",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    noteId: uuid("note_id").notNull().references(() => notes.id, { onDelete: "cascade" }),
+    // **不设外键**：存的是"可确认的目标 id"，与 reviewSchedules.subjectId 同形。钉在
+    // learning_objectives_v2 上会让目标被合并／退役时顺手删掉她那条没解除的排除。
+    objectiveId: uuid("objective_id").notNull(),
+    reasonCode: text("reason_code").notNull().default("user_deferred_objective"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // **是不是 NULL 就是活/历史的分界**：两条部分索引与那条部分唯一索引都以它为准。
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    releaseReason: text("release_reason"),
+  },
+  (t) => ({
+    // 一个（空间, 人, 笔记, 目标）只能有一份活着的 hold；解除后的行留作历史。
+    liveUnique: uniqueIndex("orh_v2_ws_user_note_obj_live_idx")
+      .on(t.workspaceId, t.userId, t.noteId, t.objectiveId)
+      .where(sql`${t.releasedAt} IS NULL`),
+    // 调度边界每次授权前问的那一发（不带 note_id），同样只查未解除的。
+    liveLookupIdx: index("orh_v2_ws_user_obj_live_idx")
+      .on(t.workspaceId, t.userId, t.objectiveId)
+      .where(sql`${t.releasedAt} IS NULL`),
+    releaseCheck: check(
+      "orh_v2_release_chk",
+      sql`${t.releasedAt} IS NULL OR ${t.releasedAt} >= ${t.createdAt}`,
+    ),
+    // 空串会把"用户没给理由"与"系统没记理由"混成同一种读数。
+    reasonCheck: check("orh_v2_reason_chk", sql`${t.reasonCode} <> ''`),
   }),
 );

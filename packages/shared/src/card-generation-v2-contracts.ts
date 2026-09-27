@@ -1261,14 +1261,20 @@ export const cardActivationReceiptV2Schema = z
      * 改列之前的历史回执照原样交回，加必填会让重放当场解析失败。
      * `created` 说的是"这条是这次建的还是沿用已有那一条"——`nextReviewAt` 两种情况
      * 都是**库里那一条的实际到期时间**，界面不许报一个没人持有的日期。
+     *
+     * `held: true` 那一档（39 §9.1 行 2）：**这一发什么都没写**。目标被本人标了
+     * "暂不安排"，所以既不建也不沿用 ⇒ `scheduleId` 与 `nextReviewAt` 都不存在
+     * （写成必填就只能给这一档谎报一个日期）。三格都是 optional：改列之前的
+     * 历史回执照原样交回。
      */
     scheduling: z
       .array(
         z.strictObject({
           objectiveId: z.string().uuid(),
-          scheduleId: z.string().uuid(),
-          nextReviewAt: z.string().datetime({ offset: true }),
+          scheduleId: z.string().uuid().optional(),
+          nextReviewAt: z.string().datetime({ offset: true }).optional(),
           created: z.boolean(),
+          held: z.boolean().optional(),
         }),
       )
       .min(1)
