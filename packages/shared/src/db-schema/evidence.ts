@@ -218,6 +218,14 @@ export const dailyReviewBatchesV2 = pgTable(
     bumpCount: integer("bump_count").notNull().default(0),
     /** 一共加了多少题。 */
     bumpedBy: integer("bumped_by").notNull().default(0),
+    /**
+     * 非空 = 今天这一批现在**停着**（§12 表「今日复习」行的「暂停」）；置空 = 接着做。
+     *
+     * 刻意**不加** `locked_length` 的联动：刀十的判据说"暂停不改长度"，而这一列若
+     * 允许两件事一起变，那一格就成了摆设——停一次再恢复，那一批会短一截，
+     * **而她什么也没少做**。
+     */
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

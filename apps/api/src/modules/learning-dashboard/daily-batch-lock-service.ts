@@ -83,6 +83,7 @@ export async function readOrStartDailyBatchV2(
       lockedLength: firstLength,
       bumpCount: 0,
       bumpedBy: 0,
+      pausedAt: null,
     })
     .onConflictDoNothing()
     .returning({ lockedLength: dailyReviewBatchesV2.lockedLength });
@@ -192,4 +193,109 @@ export async function todayLimitedBatchV2(
     now: input.now,
     userAskedForMore: input.userAskedForMore,
   });
+}
+
+
+/**
+ * **减量**（39d W7-4 刀十一；§12 表「今日复习」行的「减量」）。
+ *
+ * ## 与 `growBatchV2` 是**同一把闸**的两端
+ *
+ * §9.4「批次一旦开始，**不因后台新任务到期不断增加长度**；**用户主动加量**才加入新的
+ * 任务」。减量同样**只能由她发起**——后台把批次缩短会让「今天先到这里」这句话随一批
+ * 任务的到期而反复变，说出口就作废。所以两个方向共用**这张表**，只是符号相反：
+ * 一个改 `lockedLength` 的加法，一个改它的减法。
+ *
+ * ## 减量**不碰**已锁定那一行的存在
+ *
+ * 已有的行改短就行，**不删行、不改 `day_key`**：删行的话，"她今天把批次缩到 3"这件事
+ * 在这一天的账上就消失了，而"这批本来有多长、后来被缩到几"正是屏上要念的那句话。
+ *
+ * **`by <= 0` 什么都不做**——不是"加回去"，也不是"重算今天该有多少道"（那是 §9.4
+ * 明确禁止的那条路）。
+ */
+export async function shrinkBatchV2(
+  tx: ApiTx,
+  input: {
+    workspaceId: string;
+    userId: string;
+    timeZone: string;
+    now: Date;
+    by: number;
+  },
+): Promise<{ lockedLength: number }> {
+  if (input.by <= 0) {
+    const lockedLength = await readOrStartDailyBatchV2(tx, { ...input });
+    return { lockedLength };
+  }
+  const dayKey = dayKeyForV2(input.now, input.timeZone);
+  const lockedLength = await readOrStartDailyBatchV2(tx, { ...input });
+  const target = Math.max(0, lockedLength - input.by);
+  await tx
+    .update(dailyReviewBatchesV2)
+    .set({ lockedLength: target, updatedAt: input.now })
+    .where(and(
+      eq(dailyReviewBatchesV2.workspaceId, input.workspaceId),
+      eq(dailyReviewBatchesV2.userId, input.userId),
+      eq(dailyReviewBatchesV2.dayKey, dayKey),
+    ));
+  return { lockedLength: target };
+}
+
+/**
+ * **暂停 / 恢复**（§12 表「今日复习」行的「暂停」）。
+ *
+ * 落在 0305 那一行上（0307 加的 `paused_at`），**不新开一张表**——暂停的是**今天这一
+ * 批**，而"今天这一批"就是那一行。分成两张表就要在两处各存一次"今天"，而两处的键
+ * 一旦算得不一致（一处按她的日历日、一处按 UTC），**暂停就会对不上批次**。
+ *
+ * **不动 `lockedLength`**：刀十的判据说"暂停不改长度"。暂停改长度的话，她停一次再
+ * 恢复，那一批会短一截——**而她什么也没少做**。
+ */
+export async function setBatchPausedV2(
+  tx: ApiTx,
+  input: {
+    workspaceId: string;
+    userId: string;
+    timeZone: string;
+    now: Date;
+    paused: boolean;
+  },
+): Promise<{ lockedLength: number; paused: boolean; pausedAt: string | null }> {
+  // 先确保今天有一行：对着不存在的行 UPDATE 会**静默匹配 0 行**，返回"改好了"而其实
+  // 什么都没发生——而屏上会显示"已暂停"。
+  const lockedLength = await readOrStartDailyBatchV2(tx, { ...input });
+  const dayKey = dayKeyForV2(input.now, input.timeZone);
+  const pausedAt = input.paused ? input.now : null;
+  const updated = await tx
+    .update(dailyReviewBatchesV2)
+    .set({ pausedAt, updatedAt: input.now })
+    .where(and(
+      eq(dailyReviewBatchesV2.workspaceId, input.workspaceId),
+      eq(dailyReviewBatchesV2.userId, input.userId),
+      eq(dailyReviewBatchesV2.dayKey, dayKey),
+    ))
+    .returning({ id: dailyReviewBatchesV2.id });
+  if (updated.length === 0) {
+    throw new Error(`daily batch pause matched nothing (ws=${input.workspaceId}, day=${dayKey})`);
+  }
+  return { lockedLength, paused: input.paused, pausedAt: pausedAt ? pausedAt.toISOString() : null };
+}
+
+/** 今天这一批现在**停着**吗（读侧：屏上据此决定那一批还显不显示「接着做」）。 */
+export async function isBatchPausedV2(
+  tx: ApiTx,
+  input: { workspaceId: string; userId: string; timeZone: string; now: Date },
+): Promise<{ paused: boolean; lockedLength: number }> {
+  const dayKey = dayKeyForV2(input.now, input.timeZone);
+  const rows = await tx
+    .select({ pausedAt: dailyReviewBatchesV2.pausedAt, lockedLength: dailyReviewBatchesV2.lockedLength })
+    .from(dailyReviewBatchesV2)
+    .where(and(
+      eq(dailyReviewBatchesV2.workspaceId, input.workspaceId),
+      eq(dailyReviewBatchesV2.userId, input.userId),
+      eq(dailyReviewBatchesV2.dayKey, dayKey),
+    ))
+    .limit(1);
+  return { paused: Boolean(rows[0]?.pausedAt), lockedLength: rows[0]?.lockedLength ?? DEFAULT_BATCH_LENGTH_V2 };
 }

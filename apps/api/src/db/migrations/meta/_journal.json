@@ -2143,6 +2143,13 @@
       "when": 1790906400002,
       "tag": "0306_home_suggestion_dismissals_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 306,
+      "version": "7",
+      "when": 1790906400003,
+      "tag": "0307_daily_batch_pause_v2",
+      "breakpoints": true
     }
   ]
 }
