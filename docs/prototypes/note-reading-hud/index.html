@@ -1,0 +1,1071 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>理解书房 · 笔记阅读与学习（静态提案）</title>
+<style>
+/* ── V3.1 HUD token（取自 DESIGN.md / hud-pages.css，只读不改） ───────────── */
+:root{
+  --hud-ink:#30231a; --hud-soft:#705d4d;
+  --hud-paper:#f5ead5; --hud-paper-light:#fff9eb; --hud-paper-deep:#e8d4b1;
+  --hud-cream:#fff2cf; --hud-butter:#f3d678; --hud-mint:#b9d3ad; --hud-green:#66816a;
+  --hud-peach:#e89568; --hud-clay:#bd5a31;
+  --hud-star:#79cedc; --hud-sky:#99cad4; --hud-blue:#203d57; --hud-gold:#e9c66f;
+  --hud-red:#a9533e; --hud-berry:#b86b69;
+  --hud-line:rgba(73,47,29,.22); --hud-line-strong:rgba(66,41,25,.46);
+  --hud-shadow:0 24px 60px rgba(46,27,16,.28), 0 4px 14px rgba(46,27,16,.18);
+  --hud-shadow-small:0 12px 28px rgba(43,27,17,.22), 0 3px 8px rgba(43,27,17,.14);
+  --hud-ease-out:cubic-bezier(.23,1,.32,1);
+  --focus:#9a351d;
+  --serif:"Noto Serif SC Variable","Songti SC",serif;
+  --sans:"Noto Sans SC Variable","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;font-family:var(--sans);color:var(--hud-ink);
+  background:
+    radial-gradient(1100px 620px at 16% -12%, rgba(255,228,170,.26), transparent 62%),
+    radial-gradient(900px 540px at 96% 108%, rgba(52,28,16,.42), transparent 62%),
+    repeating-linear-gradient(94deg, rgba(255,255,255,.035) 0 2px, rgba(0,0,0,.028) 2px 7px),
+    linear-gradient(158deg,#6a4830 0%,#8b6544 42%,#5d3f2b 100%);
+  background-attachment:fixed;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+:focus-visible{outline:3px solid var(--focus);outline-offset:3px;border-radius:12px}
+.serif{font-family:var(--serif)}
+
+/* ── 房间与工作台 ─────────────────────────────────────────────────────── */
+.room{position:relative;min-height:100%;padding:20px 24px 20px 22px}
+.room::before{ /* 窗光 */
+  content:"";position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(720px 460px at 72% -6%, rgba(255,238,196,.30), transparent 70%);
+}
+.stage{
+  position:relative;display:grid;gap:14px;
+  grid-template-columns:minmax(0,1fr) 214px;
+  grid-template-rows:auto auto minmax(0,1fr) auto auto;
+  grid-template-areas:"plate plate" "tabs tabs" "desk seat" "grown grown" "foot foot";
+  max-width:1520px;margin:0 auto;height:calc(100vh - 40px);min-height:680px;
+}
+
+/* ── 薄荷标题牌 ───────────────────────────────────────────────────────── */
+.title-plate{
+  grid-area:plate;display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;
+  padding:11px 20px 10px 22px;border:4px solid rgba(255,252,235,.82);
+  border-radius:26px 34px 23px 31px/31px 24px 35px 27px;
+  background:linear-gradient(170deg,var(--hud-mint),#a9c69c);
+  box-shadow:0 12px 26px rgba(45,28,17,.26), 0 3px 9px rgba(45,28,17,.14);
+}
+.title-plate__spine{display:flex;flex-direction:column;gap:3px;min-width:0}
+.title-plate h1{margin:0;font:680 25px/1.24 var(--serif);letter-spacing:-.01em;color:#3d2f22}
+.title-plate__meta{display:flex;gap:8px;flex-wrap:wrap;color:#5a4a3a;font-size:11px;letter-spacing:.03em}
+.plate-note{
+  margin-left:auto;max-width:520px;padding:7px 13px;border-radius:13px 17px 12px 16px;
+  background:rgba(255,250,235,.62);color:#4a3a2c;font:650 12px/1.5 var(--sans);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5);
+}
+.plate-note b{color:var(--hud-clay)}
+
+/* ── 意图纸签（四个来意） ──────────────────────────────────────────────── */
+.intent-tabs{grid-area:tabs;display:flex;gap:9px;flex-wrap:wrap;align-items:stretch}
+.intent{
+  position:relative;display:flex;flex-direction:column;gap:1px;min-width:134px;
+  padding:6px 15px 7px;border:3px solid rgba(255,252,235,.85);
+  border-radius:15px 20px 14px 19px/19px 15px 20px 16px;
+  background:var(--hud-paper);box-shadow:var(--hud-shadow-small);
+  transition:transform 180ms var(--hud-ease-out),background 180ms var(--hud-ease-out);
+}
+.intent:hover{transform:translateY(-2px) rotate(-.4deg)}
+.intent b{font:750 14px/1.3 var(--sans);color:var(--hud-ink)}
+.intent span{font-size:10.5px;color:var(--hud-soft);letter-spacing:.02em}
+.intent[aria-selected="true"]{background:var(--hud-butter);transform:translateY(-3px) rotate(-.6deg)}
+.intent[aria-selected="true"] b{color:#4a3a1c}
+.intent__dot{
+  position:absolute;top:-7px;right:-5px;width:20px;height:20px;border-radius:50%;
+  background:var(--hud-clay);color:#fff3dd;font:750 10px/20px var(--sans);text-align:center;
+  box-shadow:0 3px 7px rgba(45,28,17,.3);
+}
+
+/* ── 桌面两栏：正文册页 + 讲解台 ─────────────────────────────────────── */
+.desk{grid-area:desk;display:grid;grid-template-columns:minmax(0,1.06fr) minmax(340px,.94fr);gap:14px;min-height:0;align-items:stretch}
+
+.leaf{
+  position:relative;min-height:0;overflow:auto;padding:26px 30px 30px 34px;
+  border:4px solid rgba(255,252,235,.8);
+  border-radius:31px 42px 29px 38px/35px 30px 43px 31px;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 33px, rgba(112,86,60,.055) 33px 34px),
+    linear-gradient(168deg,var(--hud-paper-light),var(--hud-paper) 55%,#f0e2c8);
+  box-shadow:var(--hud-shadow);scrollbar-width:thin;scrollbar-color:var(--hud-paper-deep) transparent;
+}
+.leaf__label{
+  position:sticky;top:-4px;z-index:4;display:inline-flex;align-items:center;gap:7px;
+  margin:0 0 6px;padding:5px 12px;border:2px solid rgba(255,252,235,.9);
+  border-radius:11px 14px 10px 13px;background:var(--hud-cream);
+  font:700 11px/1 var(--sans);color:#5b4630;box-shadow:var(--hud-shadow-small);transform:rotate(-.7deg);
+}
+.block{position:relative;padding:16px 4px 4px;border-top:1px dashed rgba(112,86,60,.2)}
+.block:first-of-type{border-top:0}
+.block__no{
+  display:inline-block;margin-bottom:5px;padding:2px 9px;border-radius:999px;
+  background:rgba(102,129,106,.16);color:var(--hud-green);
+  font:750 10px/1.7 var(--sans);letter-spacing:.06em;
+}
+.block h2{margin:0 0 8px;font:680 19px/1.45 var(--serif)}
+.block p{margin:0 0 10px;font:400 16.5px/2 var(--serif);max-width:60ch}
+.block ul{margin:0 0 8px;padding-left:20px;font:400 16px/1.95 var(--serif);max-width:62ch}
+.block li::marker{color:var(--hud-clay)}
+.block b.hl{background:linear-gradient(180deg,transparent 58%,rgba(243,214,120,.75) 58%);padding:0 2px}
+.block.has-note{background:rgba(243,214,120,.13);border-radius:13px 15px 12px 14px}
+
+/* 段落批注签（长在正文上的小物件） */
+.block.has-note{background:rgba(243,214,120,.13);border-radius:13px 15px 12px 14px}
+.block__tail{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end;margin-top:6px}
+.pin{
+  display:flex;align-items:center;gap:6px;
+  padding:4px 10px 4px 8px;border:3px solid rgba(255,252,235,.9);
+  border-radius:999px;background:var(--hud-butter);box-shadow:var(--hud-shadow-small);
+  font:750 10.5px/1.3 var(--sans);color:#4d3a16;transform:rotate(2.4deg);
+  transition:transform 160ms var(--hud-ease-out);
+}
+.pin:hover{transform:rotate(2.4deg) scale(1.06)}
+.pin__dot{width:13px;height:13px;border-radius:50%;background:var(--hud-clay);box-shadow:inset 0 1px 2px rgba(0,0,0,.25)}
+.pin--mine{background:var(--hud-mint)}
+.pin--mine .pin__dot{background:var(--hud-green)}
+
+/* 挂在正文那一段下面的批注条 */
+.inline-note{
+  position:relative;margin:10px 2px 6px;padding:12px 15px 11px 17px;
+  border:3px solid rgba(255,252,235,.92);border-left:5px solid var(--hud-clay);
+  border-radius:0 15px 15px 4px/4px 15px 15px 15px;
+  background:linear-gradient(150deg,#fff4d8,#fce9bd);box-shadow:var(--hud-shadow-small);
+  transform:rotate(-.25deg);
+}
+.inline-note[hidden]{display:none}
+.inline-note__top{display:flex;align-items:center;gap:7px;margin-bottom:6px;flex-wrap:wrap}
+.inline-note__tag{padding:2px 9px;border-radius:999px;background:var(--hud-clay);color:#fff3e0;font:750 9.5px/1.7 var(--sans)}
+.inline-note__src{font-size:10px;color:#8a6a4c;letter-spacing:.03em}
+.inline-note p{margin:0;font:400 14.5px/1.85 var(--serif);color:#43331f}
+.inline-note__acts{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap;align-items:center}
+
+/* 选中任意文字后浮出的印章 */
+.stamp{
+  position:absolute;z-index:9;display:flex;align-items:center;gap:6px;
+  padding:6px 12px;border:3px solid rgba(255,252,235,.92);
+  border-radius:13px 16px 12px 15px;background:var(--hud-peach);color:#3f2418;
+  font:750 11.5px/1 var(--sans);box-shadow:0 10px 20px rgba(45,28,17,.3);
+  transform:scale(.6);opacity:0;pointer-events:none;
+  transition:transform 170ms var(--hud-ease-out),opacity 170ms var(--hud-ease-out);
+}
+.stamp.on{transform:scale(1) rotate(-1.5deg);opacity:1;pointer-events:auto}
+.stamp:hover{background:#f0a075}
+
+/* 溯源高亮 */
+@keyframes flash{0%{box-shadow:0 0 0 0 rgba(232,149,104,.75)}100%{box-shadow:0 0 0 16px rgba(232,149,104,0)}}
+.block.is-flash{border-radius:14px;animation:flash 1.15s var(--hud-ease-out) 1;background:rgba(243,214,120,.2)}
+
+/* ── 讲解台（右栏） ───────────────────────────────────────────────────── */
+.bench{display:flex;flex-direction:column;gap:12px;min-height:0}
+.bench__slot{
+  position:relative;flex:1;min-height:0;overflow:auto;padding:18px 20px 20px;
+  border:4px solid rgba(255,252,235,.8);
+  border-radius:29px 38px 26px 35px/33px 27px 39px 30px;
+  background:linear-gradient(168deg,var(--hud-cream),#fbeec9 60%,var(--hud-paper));
+  box-shadow:var(--hud-shadow);scrollbar-width:thin;scrollbar-color:var(--hud-paper-deep) transparent;
+}
+.bench__slot[data-kind="margin"]{background:linear-gradient(168deg,#fff6de,#fdeecd 55%,#f6e7c4)}
+.bench__slot[data-kind="expand"]{background:linear-gradient(168deg,#eef3e6,#e3ecda 55%,#dfe8d6)}
+.bench__slot[data-kind="recall"]{background:linear-gradient(168deg,#eef2f5,#e5ebef 58%,#dfe6ea)}
+.bench__slot[data-kind="skim"]{background:linear-gradient(168deg,#fdf3d6,#f9ecc4 55%,#f3e6c2)}
+.bench__head{display:flex;align-items:flex-start;gap:10px;margin-bottom:4px}
+.bench__head h3{margin:0;font:680 19px/1.35 var(--serif)}
+.bench__kind{
+  margin-left:auto;flex:none;padding:4px 10px;border-radius:999px;
+  background:rgba(102,129,106,.18);color:var(--hud-green);font:750 10px/1.6 var(--sans);letter-spacing:.05em;
+}
+.bench__sub{margin:0 0 12px;color:var(--hud-soft);font-size:12px;line-height:1.7}
+.src{
+  display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border:1px solid var(--hud-line);
+  border-radius:999px;background:rgba(255,252,235,.7);color:var(--hud-clay);
+  font:700 10px/1.8 var(--sans);text-decoration:none;white-space:nowrap;
+}
+.src:hover{background:#fff6e0}
+.sticky{position:relative;padding:13px 15px;border:3px solid rgba(255,252,235,.9);border-radius:14px 19px 13px 18px/18px 14px 19px 15px;box-shadow:var(--hud-shadow-small)}
+.sticky--butter{background:var(--hud-butter);transform:rotate(-.6deg)}
+.sticky--mint{background:var(--hud-mint);transform:rotate(.7deg)}
+.sticky--peach{background:#f6c3a6;transform:rotate(-.4deg)}
+.sticky--paper{background:var(--hud-paper-light);transform:rotate(.3deg)}
+.sticky + .sticky{margin-top:11px}
+.sticky p{margin:0;font:400 14.5px/1.85 var(--serif)}
+.sticky__foot{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.sticky__foot small{font-size:10px;color:#6b563f;letter-spacing:.03em}
+
+.btn{
+  display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border:3px solid rgba(255,252,235,.88);
+  border-radius:15px 20px 14px 19px/19px 15px 20px 16px;background:var(--hud-paper-light);
+  font:750 13px/1.2 var(--sans);box-shadow:0 5px 12px rgba(45,28,17,.2);
+  transition:transform 150ms var(--hud-ease-out),box-shadow 150ms var(--hud-ease-out);
+}
+.btn:hover{transform:translateY(-2px) rotate(-.5deg);box-shadow:0 9px 18px rgba(45,28,17,.24)}
+.btn:active{transform:translateY(0) scale(.97)}
+.btn--main{background:var(--hud-peach);color:#3d2317}
+.btn--mint{background:var(--hud-mint);color:#33452f}
+.btn--ghost{background:rgba(255,252,235,.42);box-shadow:none;font-weight:650}
+.btn--sm{padding:5px 11px;font-size:11.5px;border-width:2px;border-radius:12px 16px 11px 15px}
+.chip{
+  padding:4px 11px;border:2px solid rgba(255,252,235,.85);border-radius:999px;background:rgba(255,252,235,.6);
+  font:650 11px/1.6 var(--sans);color:#59452f;box-shadow:0 3px 7px rgba(45,28,17,.14);
+  transition:transform 140ms var(--hud-ease-out);
+}
+.chip:hover{transform:translateY(-1px)}
+.chip[aria-pressed="true"]{background:var(--hud-butter);color:#4a3814}
+.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px;align-items:center}
+.sep{height:1px;margin:14px 0;background:repeating-linear-gradient(90deg,var(--hud-line) 0 7px,transparent 7px 13px)}
+
+/* 骨架图 */
+.skeleton{width:100%;height:auto;display:block;margin:2px 0 4px}
+
+/* 唤回遮罩 */
+.recall-row{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:10px;align-items:center;
+  padding:9px 11px;border:2px dashed rgba(112,86,60,.3);border-radius:12px 16px 11px 15px;background:rgba(255,252,235,.5)}
+.recall-row + .recall-row{margin-top:8px}
+.recall-row__no{width:24px;height:24px;border-radius:50%;background:var(--hud-sky);color:#20333c;
+  font:750 11px/24px var(--sans);text-align:center}
+.recall-row__txt{font:650 13.5px/1.6 var(--serif)}
+.recall-row.is-open{border-style:solid;background:rgba(255,252,235,.86)}
+.recall-row.is-open .recall-row__txt{color:var(--hud-ink)}
+.recall-row.is-shut .recall-row__txt{color:#9a8871}
+.recall-row__peek{font-size:10.5px;color:var(--hud-soft)}
+
+/* 我的理解（便签输入） */
+.voice-note{
+  width:100%;min-height:78px;padding:12px 14px;resize:vertical;
+  border:3px solid rgba(255,252,235,.9);border-radius:14px 19px 13px 18px/18px 14px 19px 15px;
+  background:var(--hud-butter);color:#41331a;font:400 14px/1.8 var(--serif);
+  box-shadow:inset 0 2px 6px rgba(97,71,32,.14), var(--hud-shadow-small);
+}
+.voice-note::placeholder{color:#8a7346}
+
+/* 批注：原文引用 */
+.quote{
+  margin:0 0 12px;padding:11px 14px;border-left:5px solid var(--hud-clay);
+  border-radius:0 14px 14px 0;background:rgba(255,252,235,.72);
+  font:400 14px/1.85 var(--serif);color:#4a3a2b;
+}
+.quote cite{display:block;margin-top:6px;font:650 10.5px/1.6 var(--sans);color:var(--hud-clay);font-style:normal}
+
+/* AI 产物框 */
+.artifact{margin-top:12px;border:3px solid rgba(255,252,235,.9);border-radius:19px 25px 17px 23px/23px 18px 25px 20px;
+  background:var(--hud-paper-light);box-shadow:var(--hud-shadow-small);overflow:hidden}
+.artifact__bar{display:flex;align-items:center;gap:8px;padding:7px 12px;background:rgba(232,149,104,.18);
+  border-bottom:2px solid rgba(255,252,235,.9)}
+.artifact__bar b{font:750 11px/1.4 var(--sans);color:#5c3a24}
+.artifact__bar small{margin-left:auto;font-size:9.5px;color:#7c5a42;letter-spacing:.04em}
+.artifact__frame{width:100%;height:322px;border:0;display:block;background:#fdf7e7}
+
+/* 提案卡（往外走） */
+.proposal{position:relative;padding:14px 16px;border:3px solid rgba(255,252,235,.9);
+  border-radius:16px 21px 15px 20px/20px 16px 21px 17px;background:var(--hud-paper-light);box-shadow:var(--hud-shadow-small)}
+.proposal + .proposal{margin-top:11px}
+.proposal.is-adopted{background:rgba(185,211,173,.4)}
+.proposal h4{margin:0 0 5px;font:680 15.5px/1.45 var(--serif)}
+.proposal p{margin:0 0 9px;font:400 13px/1.8 var(--sans);color:#5b4a39}
+.proposal__row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tag{padding:2px 8px;border-radius:999px;background:rgba(102,129,106,.16);color:var(--hud-green);font:700 10px/1.8 var(--sans)}
+
+/* ── 伴星座位（始终在场） ─────────────────────────────────────────────── */
+.seat{grid-area:seat;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:10px;min-height:0}
+.bubble{
+  position:relative;width:100%;padding:12px 14px;border:4px solid rgba(255,252,235,.86);
+  border-radius:22px 28px 20px 26px/26px 21px 28px 23px;background:var(--hud-cream);
+  box-shadow:var(--hud-shadow-small);font:650 12.5px/1.75 var(--sans);color:#4c3b2a;
+  transform-origin:bottom center;transition:transform 220ms var(--hud-ease-out),opacity 220ms var(--hud-ease-out);
+}
+.bubble[hidden]{display:block;opacity:0;transform:translateY(8px) scale(.94);pointer-events:none}
+.bubble::after{content:"";position:absolute;left:50%;bottom:-13px;width:16px;height:16px;transform:translateX(-50%) rotate(45deg);
+  border-right:4px solid rgba(255,252,235,.86);border-bottom:4px solid rgba(255,252,235,.86);background:var(--hud-cream)}
+.bubble__acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.chao{position:relative;width:186px;filter:drop-shadow(0 16px 22px rgba(40,22,12,.34))}
+.chao svg{width:100%;height:auto;display:block;overflow:visible}
+.chao .breathe{animation:breathe 3.6s ease-in-out infinite;transform-origin:50% 92%}
+@keyframes breathe{0%,100%{transform:scale(1) translateY(0)}50%{transform:scale(1.022) translateY(-2.5px)}}
+.chao .lid{animation:blink 5.4s infinite;transform-origin:center}
+.chao .lid--2{animation-delay:.12s}
+@keyframes blink{0%,94%,100%{transform:scaleY(0)}95.5%,97.5%{transform:scaleY(1)}}
+.seat__meter{display:flex;align-items:center;gap:7px;padding:5px 12px;border-radius:999px;
+  background:rgba(255,252,235,.5);font:650 10.5px/1.4 var(--sans);color:#5b4630;box-shadow:0 4px 9px rgba(45,28,17,.16)}
+.seat__meter i{width:7px;height:7px;border-radius:50%;background:var(--hud-green);box-shadow:0 0 0 3px rgba(102,129,106,.22)}
+
+/* ── 学习足迹抽屉 ─────────────────────────────────────────────────────── */
+.footprint{grid-area:foot;position:relative;padding:10px 18px 12px;border:4px solid rgba(255,252,235,.78);
+  border-radius:23px 31px 21px 28px/28px 22px 31px 24px;background:rgba(245,234,213,.9);
+  box-shadow:0 10px 24px rgba(45,28,17,.22)}
+.footprint__head{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.footprint__head h3{margin:0;font:680 14.5px/1.3 var(--serif)}
+.footprint__head small{color:var(--hud-soft);font-size:10.5px;letter-spacing:.03em}
+.footprint__head .count{margin-left:auto;padding:3px 10px;border-radius:999px;background:var(--hud-mint);
+  color:#33452f;font:750 10.5px/1.5 var(--sans)}
+.footprint__rail{display:flex;gap:9px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin;
+  scrollbar-color:var(--hud-paper-deep) transparent}
+.footprint__rail:empty::after{content:"还没有留过东西。看过、想过、问过的，都会留在这里，不会消失。";
+  color:var(--hud-soft);font:400 12.5px/1.8 var(--serif);padding:6px 2px}
+.trace{
+  flex:none;width:212px;padding:9px 11px;border:3px solid rgba(255,252,235,.92);
+  border-radius:13px 18px 12px 16px/16px 13px 18px 14px;background:var(--hud-paper-light);
+  box-shadow:0 5px 11px rgba(45,28,17,.15);text-align:left;transition:transform 150ms var(--hud-ease-out);
+}
+.trace:hover{transform:translateY(-2px) rotate(-.4deg)}
+.trace__top{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.trace__stamp{padding:2px 7px;border-radius:999px;background:var(--hud-clay);color:#fff2df;font:750 9.5px/1.7 var(--sans)}
+.trace time{margin-left:auto;font-size:9.5px;color:var(--hud-soft);letter-spacing:.03em}
+.trace b{display:block;font:680 12.5px/1.5 var(--serif)}
+.trace small{display:block;margin-top:3px;font-size:10px;color:var(--hud-soft)}
+.trace__from{margin-top:5px}
+
+/* ── 长出来的新笔记 ───────────────────────────────────────────────────── */
+.grown{grid-area:grown;display:none;gap:10px;flex-wrap:wrap;padding:12px 18px;border:4px solid rgba(255,252,235,.78);
+  border-radius:23px 31px 21px 28px/28px 22px 31px 24px;background:rgba(233,240,226,.9);box-shadow:0 10px 24px rgba(45,28,17,.2)}
+.grown.on{display:flex}
+.grown h3{margin:0 0 2px;font:680 14.5px/1.3 var(--serif);width:100%}
+.seed{flex:1 1 232px;padding:12px 14px;border:3px solid rgba(255,252,235,.92);
+  border-radius:15px 20px 14px 19px/19px 15px 20px 16px;background:var(--hud-paper-light);
+  box-shadow:0 6px 13px rgba(45,28,17,.16)}
+.seed h4{margin:0 0 5px;font:680 14.5px/1.4 var(--serif)}
+.seed p{margin:0 0 8px;font-size:11.5px;line-height:1.75;color:var(--hud-soft)}
+.seed__links{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+
+@media (max-width:1180px){
+  .desk{grid-template-columns:1fr}
+  .stage{grid-template-columns:minmax(0,1fr) 188px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms !important;transition-duration:.001ms !important}
+}
+</style>
+</head>
+<body>
+<div class="room">
+  <div class="stage">
+
+    <header class="title-plate">
+      <div class="title-plate__spine">
+        <h1>Agent 里的 Tool：让模型能动手的那一层</h1>
+        <div class="title-plate__meta">
+          <span>学习笔记 · 2026-06-12 编辑</span>
+          <span>来源：《Agent 工程手册》第 4 章</span>
+          <span>已读 3 次</span>
+        </div>
+      </div>
+      <div class="plate-note" id="plateNote"><b>先做一件事：</b>这篇你上次读到第 4 节就合上了。</div>
+    </header>
+
+    <nav class="intent-tabs" role="tablist" aria-label="这篇笔记可以怎么用">
+      <button class="intent" role="tab" data-mode="skim"    aria-selected="false"><b>速览</b><span>第一次看，30 秒抓主干</span></button>
+      <button class="intent" role="tab" data-mode="recall"  aria-selected="false"><b>唤回</b><span>学过忘了，先自己想起来</span></button>
+      <button class="intent" role="tab" data-mode="margin"  aria-selected="false"><b>这一段</b><span>选中任意一段，批注挂在那儿</span></button>
+      <button class="intent" role="tab" data-mode="expand"  aria-selected="false"><b>往外走</b><span>顺着它长出新的笔记</span></button>
+    </nav>
+
+    <div class="desk">
+      <article class="leaf" id="leaf" aria-label="笔记正文">
+        <span class="leaf__label">📖 册页 · 正文</span>
+
+        <section class="block" data-block="b1" id="b1">
+          <span class="block__no">第 1 节</span>
+          <h2>Tool 到底是什么</h2>
+          <p>Tool 是<b class="hl">模型可以调用的一段外部能力</b>。模型自己只会生成文字：它能写出会读天气的那几行代码，但不会真的去读。Tool 就是把那几行代码接到一个真的会去执行的地方，模型才有办法动手。</p>
+          <div class="block__tail"><button class="pin" data-pin="b1"><i class="pin__dot"></i>讲讲这段</button></div>
+          <div class="inline-note" data-inline="b1" hidden></div>
+        </section>
+
+        <section class="block" data-block="b2" id="b2">
+          <span class="block__no">第 2 节</span>
+          <h2>为什么非得有它</h2>
+          <ul>
+            <li>模型的知识停在训练数据里，昨天的新闻它不知道；</li>
+            <li>它看不见此刻的界面、公司内部系统、你硬盘里的文件；</li>
+            <li>它说什么都像在猜，因为<b class="hl">它没有做过</b>。</li>
+          </ul>
+          <div class="block__tail"><button class="pin" data-pin="b2"><i class="pin__dot"></i>讲讲这段</button></div>
+          <div class="inline-note" data-inline="b2" hidden></div>
+        </section>
+
+        <section class="block" data-block="b3" id="b3">
+          <span class="block__no">第 3 节</span>
+          <h2>一件 Tool 有三件事</h2>
+          <ul>
+            <li><b class="hl">描述</b>：名字、说明、参数长什么样。模型只靠这段描述决定要不要用、怎么填参数。</li>
+            <li><b class="hl">执行</b>：一个真的会被调用的函数。它在模型外面，不在模型里面。</li>
+            <li><b class="hl">回填</b>：执行结果回到对话里，模型才接着往下说。</li>
+          </ul>
+          <p>三件事缺一不可。描述写错了，模型挑错工具；结果不回填，模型只能装作做完了。</p>
+          <div class="block__tail"><button class="pin" data-pin="b3"><i class="pin__dot"></i>讲讲这段</button></div>
+          <div class="inline-note" data-inline="b3" hidden></div>
+        </section>
+
+        <section class="block" data-block="b4" id="b4">
+          <span class="block__no">第 4 节</span>
+          <h2>一次调用的完整链路</h2>
+          <p>这是最容易忘的一段，所以单独拿出来。四步，顺序不能乱：</p>
+          <ul>
+            <li>① 用户说出想要什么；</li>
+            <li>② 模型决定调用哪个工具、传什么参数；</li>
+            <li>③ 运行时真的去执行那个函数；</li>
+            <li>④ 结果回到对话里，模型据此写出回答。</li>
+          </ul>
+          <p>下面这张会动的小图就是这四步，看着走一遍比背文字快。</p>
+          <div class="block__tail"><button class="pin" data-pin="b4"><i class="pin__dot"></i>用动画讲这段</button></div>
+          <div class="inline-note" data-inline="b4" hidden></div>
+        </section>
+
+        <section class="block" data-block="b5" id="b5">
+          <span class="block__no">第 5 节</span>
+          <h2>三个常见误解</h2>
+          <ul>
+            <li>「给模型接了 Tool，模型就学会新知识了」——不会。Tool 给的是<b class="hl">做事的能力</b>，不是知识。</li>
+            <li>「Tool 就是插件市场」——插件是装东西，Tool 是让模型能调一个东西。</li>
+            <li>「接得越多越强」——工具太多反而更容易挑错，描述质量比数量重要。</li>
+          </ul>
+          <div class="block__tail"><button class="pin" data-pin="b5"><i class="pin__dot"></i>讲讲这段</button></div>
+          <div class="inline-note" data-inline="b5" hidden></div>
+        </section>
+
+        <section class="block" data-block="b6" id="b6">
+          <span class="block__no">第 6 节</span>
+          <h2>边界：谁说了算</h2>
+          <p>模型只负责<b class="hl">提议</b>，运行时负责<b class="hl">裁决</b>。删文件、付款、发外部消息这类动作，运行时可以拒绝，也可以要求人确认。模型永远不是最后一道闸。</p>
+          <div class="block__tail"><button class="pin" data-pin="b6"><i class="pin__dot"></i>讲讲这段</button></div>
+          <div class="inline-note" data-inline="b6" hidden></div>
+        </section>
+      </article>
+
+      <section class="bench">
+        <div class="bench__slot" id="bench" data-kind="read" aria-live="polite"></div>
+      </section>
+    </div>
+
+    <section class="grown" id="grown" aria-label="从这篇长出来的新笔记"></section>
+
+    <section class="footprint">
+      <div class="footprint__head">
+        <h3>书房里留下的东西</h3>
+        <small>看过、想过、问过的都在这里，不会自己消失</small>
+        <span class="count" id="traceCount">0 条</span>
+      </div>
+      <div class="footprint__rail" id="rail"></div>
+    </section>
+
+    <aside class="seat">
+      <div class="bubble" id="bubble" hidden></div>
+      <div class="chao" id="chao" role="button" tabindex="0" aria-label="伴星">
+        <svg viewBox="0 0 200 210" aria-hidden="true">
+          <defs>
+            <radialGradient id="fur" cx="42%" cy="32%" r="72%">
+              <stop offset="0" stop-color="#f6b477"/><stop offset="1" stop-color="#e08a4a"/>
+            </radialGradient>
+            <radialGradient id="face" cx="50%" cy="34%" r="70%">
+              <stop offset="0" stop-color="#fffaf0"/><stop offset="1" stop-color="#f7e7d0"/>
+            </radialGradient>
+          </defs>
+          <ellipse cx="100" cy="196" rx="52" ry="9" fill="rgba(46,27,16,.26)"/>
+          <g class="breathe">
+            <path d="M100 24c6 0 10 5 9 11-1 5-5 8-9 8s-8-3-9-8c-1-6 3-11 9-11z" fill="#79cedc"/>
+            <ellipse cx="100" cy="120" rx="58" ry="72" fill="url(#fur)"/>
+            <ellipse cx="100" cy="106" rx="41" ry="44" fill="url(#face)"/>
+            <ellipse cx="59" cy="128" rx="13" ry="18" fill="#d97b3d" transform="rotate(-16 59 128)"/>
+            <ellipse cx="141" cy="128" rx="13" ry="18" fill="#d97b3d" transform="rotate(16 141 128)"/>
+            <ellipse cx="74" cy="192" rx="16" ry="9" fill="#d97b3d"/>
+            <ellipse cx="126" cy="192" rx="16" ry="9" fill="#d97b3d"/>
+            <ellipse cx="84" cy="104" rx="7.5" ry="9" fill="#2b1c12"/>
+            <ellipse cx="116" cy="104" rx="7.5" ry="9" fill="#2b1c12"/>
+            <g class="lid"><ellipse cx="84" cy="101" rx="8.4" ry="9" fill="#e08a4a"/></g>
+            <g class="lid lid--2"><ellipse cx="116" cy="101" rx="8.4" ry="9" fill="#e08a4a"/></g>
+            <circle cx="86.5" cy="101" r="2.2" fill="#fff"/>
+            <circle cx="118.5" cy="101" r="2.2" fill="#fff"/>
+            <path d="M94 121q6 6 12 0" stroke="#a9533e" stroke-width="3" fill="none" stroke-linecap="round"/>
+            <ellipse cx="70" cy="122" rx="8" ry="5" fill="#e89568" opacity=".55"/>
+            <ellipse cx="130" cy="122" rx="8" ry="5" fill="#e89568" opacity=".55"/>
+          </g>
+        </svg>
+      </div>
+      <div class="seat__meter"><i></i><span>伴星在旁边 · 安静模式</span></div>
+    </aside>
+
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════
+   静态提案：所有内容都是写死的样本，用来验证「看得懂、点得动、留得下」。
+   ══════════════════════════════════════════════════════════════════════ */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+const BLOCK_NO = { b1: '第 1 节', b2: '第 2 节', b3: '第 3 节', b4: '第 4 节', b5: '第 5 节', b6: '第 6 节' };
+const REASONS = {
+  read:   '<b>正文是主角。</b>想弄懂哪一段，就选中哪一段。',
+  skim:   '<b>第一次看这篇：</b>先抓主干，30 秒知道它在讲什么。',
+  recall: '<b>学过但忘了：</b>先遮住自己回想，再决定要不要看。',
+  margin: '<b>就这一段：</b>选中哪一段，解释就挂在哪一段旁边。',
+  expand: '<b>往外走：</b>顺着这篇长出新的笔记，你点头才算数。'
+};
+
+const MARGIN = {
+  b1: {
+    title: 'Tool 到底是什么',
+    say: '把它想成模型的<b>一只手</b>。模型只有嘴（生成文字），Tool 是伸出去的那只手——真正碰到外面的东西。',
+    more: '所以「模型很聪明但查不了你的数据库」不奇怪：它聪明的是嘴，不是手。',
+    artifact: null
+  },
+  b2: {
+    title: '为什么非得有它',
+    say: '三句话合成一句：<b>它没去过、它没见过、它没做过</b>。你不会凭一句话相信一个人「好像知道」，工具就是让他真的去看一眼。',
+    more: '这也是为什么「让模型自己搜一下」必须落到一个真的能联网的 Tool 上——模型自己没有网。',
+    artifact: null
+  },
+  b3: {
+    title: '一件 Tool 有三件事',
+    say: '把它想成<b>点外卖</b>：<b>描述</b>是菜单（模型靠它决定点什么、怎么填地址），<b>执行</b>是厨房真的开始做，<b>回填</b>是把做好的东西端回来。少了菜单，模型乱点；东西不端回来，模型只能装作吃到了。',
+    more: '菜单写得好不好，直接决定模型会不会点对——这就是为什么描述比代码更影响效果。',
+    artifact: null
+  },
+  b4: {
+    title: '一次调用的完整链路',
+    say: '这四步是<b>轮流发生</b>的，中间没有魔法：模型提议 → 机器执行 → 结果回来 → 模型才敢回答。任何一步被跳过，都会看到「模型在编」。',
+    more: '注意第 ② 步和第 ③ 步<b>不在同一个地方</b>：模型里没有你的函数，它只是写下了调用意图。',
+    artifact: 'tool'
+  },
+  b5: {
+    title: '三个常见误解',
+    say: '一句话串起来：<b>Tool 给的是「能做什么」，不是「知道什么」。</b>接了十个工具不会让模型变聪明，只让它更容易挑错。',
+    more: '如果发现模型老挑错工具，先去改描述，别急着加工具。',
+    artifact: null
+  },
+  b6: {
+    title: '边界：谁说了算',
+    say: '模型是<b>提议人</b>，运行时是<b>审批人</b>。危险动作之所以危险，正是因为它不能只靠模型自己自觉。',
+    more: '所以你会看到两种设计：一种是直接拒绝，一种是弹窗问人。两种都比「模型自己想做就做」安全。',
+    artifact: null
+  }
+};
+
+const RECALL = [
+  '用户说出想要什么',
+  '模型决定调哪个工具、传什么参数',
+  '运行时真的去执行那个函数',
+  '结果回到对话里，模型据此回答'
+];
+
+const PROPOSALS = [
+  { id: 'p1', title: 'Function Calling：模型怎么把调用意图写成结构', from: ['b3', 'b4'], level: '入门', mins: '约 3 分钟',
+    why: '本篇第 3、4 节只说了「模型决定调用」，没说这个决定是怎么变成一段结构化请求的。',
+    body: '名字、参数长什么样、模型凭什么知道自己写对了 —— 这一篇把这层补上。' },
+  { id: 'p2', title: 'MCP：让「接工具」从每次现写变成一次装上', from: ['b3'], level: '进阶', mins: '约 4 分钟',
+    why: '本篇第 3 节把「描述 / 执行 / 回填」分开讲了，但没说接十个工具时这套怎么不写成灾难。',
+    body: '标准化的接入方式，以及它和你已经会的那三件事怎么对上。' },
+  { id: 'p3', title: '工具的权限与沙箱：模型能调，但谁说了算', from: ['b6'], level: '进阶', mins: '约 5 分钟',
+    why: '本篇第 6 节只有一句结论，展开就是权限、沙箱、人工确认这三件事。',
+    body: '拒绝、追问、放行：三种门分别在什么位置开。' }
+];
+
+const SEEDS = {
+  p1: { back: 'b4', related: ['p2'], note: '从第 4 节的第 ② 步接出去' },
+  p2: { back: 'b3', related: ['p1', 'p3'], note: '从第 3 节的「描述」接出去' },
+  p3: { back: 'b6', related: ['p2'], note: '从第 6 节的边界接出去' }
+};
+
+const state = {
+  mode: 'read',
+  block: null,
+  traces: [],
+  recall: { open: [false, false, false, false], rated: null },
+  adopted: []
+};
+
+const now = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+/* ── 学习足迹：每条都带来源，点了就回原文 ───────────────────────────── */
+function trace(kind, label, detail, src) {
+  state.traces.unshift({ kind, label, detail, src, time: now() });
+  renderRail();
+}
+function renderRail() {
+  const rail = $('#rail');
+  rail.innerHTML = state.traces.map(t => `
+    <button class="trace" data-src="${t.src || ''}">
+      <span class="trace__top">
+        <span class="trace__stamp">${t.kind}</span>
+        <time>${t.time}</time>
+      </span>
+      <b>${t.label}</b>
+      ${t.detail ? `<small>${t.detail}</small>` : ''}
+      ${t.src ? `<span class="trace__from"><span class="src">↩ 回到 ${BLOCK_NO[t.src]}</span></span>` : ''}
+    </button>`).join('');
+  $('#traceCount').textContent = `${state.traces.length} 条`;
+}
+$('#rail').addEventListener('click', e => {
+  const card = e.target.closest('.trace');
+  if (!card) return;
+  const src = card.dataset.src;
+  if (src) { gotoBlock(src); say(`我把你带回${BLOCK_NO[src]}了。`, []); }
+  else say('这条留在这里了，不会消失。', []);
+});
+
+/* ── 溯源：滚到原段并高亮 ───────────────────────────────────────────── */
+function gotoBlock(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.remove('is-flash');
+  void el.offsetWidth;
+  el.classList.add('is-flash');
+}
+
+/* ── 伴星：只在需要时说一句 ─────────────────────────────────────────── */
+function say(text, acts = []) {
+  const b = $('#bubble');
+  b.hidden = false;
+  b.innerHTML = `<div>${text}</div>` + (acts.length
+    ? `<div class="bubble__acts">${acts.map(a => `<button class="chip" data-say="${a.act}">${a.label}</button>`).join('')}</div>` : '');
+}
+function refreshBubble() {
+  const m = state.mode;
+  if (m === 'read')   say('随便翻。想弄懂哪一段，就<b>选中</b>它。', [{ label: '速览全篇', act: 'skim' }, { label: '唤回记忆', act: 'recall' }]);
+  if (m === 'skim')   say('看完这四条就够用了，细节还在正文里。', []);
+  if (m === 'recall') say(state.recall.rated ? '记下了。<b>忘了的那一步</b>我可以换个说法再来一次。' : '先自己回想，别急着看。', []);
+  if (m === 'margin') say('这条解释的依据在<b>被选中那段</b>，随时能回去核对。', [{ label: '换个例子', act: 'example' }]);
+  if (m === 'expand') say('这三篇是我从正文里接出来的，<b>你点头</b>我才生成。', []);
+}
+$('#bubble').addEventListener('click', e => {
+  const c = e.target.closest('[data-say]');
+  if (!c) return;
+  const a = c.dataset.say;
+  if (a === 'example') { renderMargin(state.block, true); say('换个说法再看一遍：', []); }
+  else if (a === 'skim' || a === 'recall') setMode(a);
+});
+$('#chao').addEventListener('click', refreshBubble);
+$('#chao').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); refreshBubble(); } });
+
+/* ── 讲解台渲染 ─────────────────────────────────────────────────────── */
+const bench = $('#bench');
+
+function head(kind, title, sub, src) {
+  return `<div class="bench__head">
+      <h3>${title}</h3><span class="bench__kind">${kind}</span>
+    </div>
+    <p class="bench__sub">${sub}</p>
+    ${src ? `<a class="src" href="#${src}" data-jump="${src}">↩ 依据：${BLOCK_NO[src]}</a>` : ''}`;
+}
+
+function renderRead() {
+  bench.dataset.kind = 'read';
+  bench.innerHTML = `
+    ${head('导读', '这一篇在讲什么', '六个小节，主干是一条：模型怎么借外面的东西动手。')}
+    <div class="sep"></div>
+    <div class="sticky sticky--butter">
+      <p><b>一句话：</b>Tool 是模型能调用的一段外部能力，让它从「会说」变成「能做」。</p>
+      <div class="sticky__foot"><small>读完这篇，你至少能回答：一次调用到底发生了什么。</small></div>
+    </div>
+    <div class="sticky sticky--paper">
+      <p><b>正文里的位置</b></p>
+      <div class="sticky__foot">
+        ${['b2', 'b3', 'b4', 'b6'].map(id => `<button class="chip" data-jump="${id}">${BLOCK_NO[id]}</button>`).join('')}
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn btn--main" data-mode="skim">30 秒速览</button>
+      <button class="btn btn--mint" data-mode="recall">唤回记忆</button>
+    </div>
+    <p class="bench__sub" style="margin-top:12px">选中正文里任意一段，右边会浮出一枚小印章——点它，解释就挂在那一段旁边。</p>`;
+}
+
+function renderSkim() {
+  bench.dataset.kind = 'skim';
+  bench.innerHTML = `
+    ${head('速览', '30 秒抓主干', '第一次看这篇，先知道它讲了什么。看完仍然可以随时回正文。')}
+    <svg class="skeleton" viewBox="0 0 320 86" aria-label="这一篇的骨架">
+      <path d="M28 62 C 90 20, 230 20, 292 62" fill="none" stroke="rgba(112,86,60,.32)" stroke-width="2.5" stroke-dasharray="5 6"/>
+      ${[['b1', 28, '是什么'], ['b2', 100, '为什么'], ['b3', 172, '三件事'], ['b4', 244, '链路'], ['b6', 292, '边界']]
+        .map(([id, x, t], i) => `
+        <g data-jump="${id}" style="cursor:pointer">
+          <circle cx="${x}" cy="${62 - Math.sin(i * .7) * 14}" r="11" fill="${i === 3 ? 'var(--hud-peach)' : 'var(--hud-mint)'}" stroke="rgba(255,252,235,.9)" stroke-width="3"/>
+          <text x="${x}" y="${80 - Math.sin(i * .7) * 14}" text-anchor="middle" font-size="9.5" fill="#6b563f" font-family="var(--sans)">${t}</text>
+        </g>`).join('')}
+    </svg>
+    <div class="sticky sticky--butter"><p>Tool 是模型能调用的<b>一段外部能力</b>，让它从会说变成能做。</p></div>
+    <div class="sticky sticky--mint"><p>它之所以必要：<b>没去过、没见过、没做过</b>。<span class="src" data-jump="b2">第 2 节</span></p></div>
+    <div class="sticky sticky--peach"><p>一件 Tool 三件事：<b>描述、执行、回填</b>。缺一不可。<span class="src" data-jump="b3">第 3 节</span></p></div>
+    <div class="sticky sticky--paper">
+      <p>一次调用四步：<b>用户 → 模型提议 → 机器执行 → 结果回填</b>。这是最容易忘的一段。<span class="src" data-jump="b4">第 4 节</span></p>
+      <div class="sticky__foot"><small>本篇里你最该看的就是这一节。</small></div>
+    </div>
+    <div class="actions">
+      <button class="btn btn--main" id="skimDone">就看这些</button>
+      <button class="btn" data-mode="margin">挑一段细看</button>
+    </div>`;
+}
+
+function renderRecall() {
+  const { open, rated } = state.recall;
+  bench.dataset.kind = 'recall';
+  bench.innerHTML = `
+    ${head('唤回', '把这条链路背一遍', '先遮住自己想。想起来了再看——顺序反了，这次回忆就不算数了。', 'b4')}
+    <div style="margin-top:12px">
+      ${RECALL.map((t, i) => `
+        <div class="recall-row ${open[i] ? 'is-open' : 'is-shut'}">
+          <span class="recall-row__no">${i + 1}</span>
+          <span class="recall-row__txt">${open[i] ? t : '第 ' + (i + 1) + ' 步 · 想不起来'}</span>
+          <button class="chip" data-recall="${i}" aria-pressed="${open[i]}">${open[i] ? '遮住' : '看看'}</button>
+        </div>`).join('')}
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn btn--ghost btn--sm" id="recallAll">全部遮住</button>
+    </div>
+    <div class="sep"></div>
+    <p class="bench__sub" style="margin:0 0 8px">刚才回想得怎么样？如实说就行，不影响任何安排。</p>
+    <div class="actions" style="margin-top:0">
+      ${[['clear', '基本都想起来了'], ['fuzzy', '有点模糊'], ['lost', '忘了']]
+        .map(([v, l]) => `<button class="chip" data-rate="${v}" aria-pressed="${rated === v}">${l}</button>`).join('')}
+    </div>
+    ${rated ? `<div class="sticky sticky--mint" style="margin-top:12px"><p>${
+      rated === 'lost' ? '那我建议这一节回去看那张会动的小图，<b>光看文字确实容易忘</b>。' :
+      rated === 'fuzzy' ? '链路顺序还在，细节糊了。<b>点第 4 节的印章</b>，看一遍四步动画。' :
+      '不错。<b>这条记录已经留下来了</b>，下次不用再背一遍。'}</p></div>` : ''}`;
+}
+
+function renderMargin(id, alt = false) {
+  if (!id) return renderMarginList();
+  state.block = id;
+  const m = MARGIN[id];
+  bench.dataset.kind = 'margin';
+  bench.innerHTML = `
+    ${head('批注', `这一段：${m.title}`, alt ? '换个说法再讲一遍。' : '解释挂在被你选中的那一段旁边，随时能对回原文。', id)}
+    <blockquote class="quote">${alt ? m.more : m.say}<cite>↑ 依据：${BLOCK_NO[id]} · 选中这一段时生成</cite></blockquote>
+    ${m.artifact ? artifactFrame(m.artifact) : ''}
+    ${mineNote(id)}
+    <div class="actions">
+      <button class="btn btn--sm" data-again="${id}">${alt ? '换回原来的说法' : '换个说法'}</button>
+      <button class="btn btn--sm btn--ghost" data-jump="${id}">看原文</button>
+    </div>`;
+  restoreMine(id);
+  mountArtifact();
+  renderInline(id);
+}
+
+/* 「这一段」纸签本身：列出已经批注过的段，剩下的交给选中动作 */
+function renderMarginList() {
+  const noted = Object.keys(MARGIN).filter(id => !document.querySelector(`[data-inline="${id}"]`).hidden);
+  bench.dataset.kind = 'margin';
+  bench.innerHTML = `
+    ${head('批注', '这段笔记上已经挂的批注', '选中正文里任意一句，这边就会讲那一段；讲过的会留在那一段旁边。')}
+    <div style="margin-top:12px">
+      ${noted.length ? noted.map(id => `
+        <div class="proposal">
+          <h4>${BLOCK_NO[id]} · ${MARGIN[id].title}</h4>
+          <p>${MARGIN[id].say}</p>
+          <div class="proposal__row">
+            <span class="src" data-jump="${id}">↩ 回到正文这一段</span>
+            ${MARGIN[id].artifact ? '<span class="tag">有会动的小图</span>' : ''}
+          </div>
+        </div>`).join('') : ''}
+    </div>
+    <div class="sticky sticky--paper" style="margin-top:12px">
+      <p>正文里<b>选中任意一句</b>，就会浮出一枚小印章；点它，解释就长在那一段下面。</p>
+    </div>`;
+}
+
+/* 正文里那一段下面的批注条：解释真的长在那一段旁边 */
+function renderInline(id) {
+  const m = MARGIN[id];
+  const el = document.querySelector(`[data-inline="${id}"]`);
+  const block = document.getElementById(id);
+  if (!el || !m) return;
+  el.hidden = false;
+  block.classList.add('has-note');
+  const mine = state.traces.find(x => x.kind === '我的理解' && x.src === id);
+  el.innerHTML = `
+    <div class="inline-note__top">
+      <span class="inline-note__tag">批注</span>
+      <span class="inline-note__src">AI 讲这一段 · 依据 ${BLOCK_NO[id]} · ${'刚刚'}</span>
+    </div>
+    <p>${m.say}</p>
+    ${mine ? `<p style="margin-top:7px;color:#3c5a41"><b>我自己写的：</b>${mine.detail}</p>` : ''}
+    <div class="inline-note__acts">
+      ${m.artifact ? '<button class="chip" data-deep="' + id + '">看会动的小图 →</button>' : ''}
+      <button class="chip" data-deep="${id}">展开讲细一点</button>
+      <button class="chip" data-close="${id}">收起</button>
+    </div>`;
+}
+
+function artifactFrame(kind) {
+  return `<div class="artifact">
+    <div class="artifact__bar">
+      <b>${kind === 'tool' ? '一次工具调用怎么走完四步' : '动态演示'}</b>
+      <small>AI 自由编写 · 不是固定模板</small>
+    </div>
+    <iframe class="artifact__frame" id="artifactFrame" sandbox="allow-scripts" title="AI 生成的动态演示"></iframe>
+  </div>`;
+}
+
+function mineNote(id) {
+  return `<div style="margin-top:14px">
+    <p class="bench__sub" style="margin:0 0 6px">用你自己的话说一句（会作为批注留在这段上）：</p>
+    <textarea class="voice-note" id="voiceNote" placeholder="例如：模型只是写下了调用意图，真正干活的是外面那个函数…"></textarea>
+    <div class="actions" style="margin-top:9px">
+      <button class="btn btn--mint btn--sm" id="saveMine">留在这一段</button>
+    </div>
+  </div>`;
+}
+
+function restoreMine(id) {
+  const t = state.traces.find(x => x.kind === '我的理解' && x.src === id);
+  if (t) { const el = $('#voiceNote'); if (el) el.value = t.detail; }
+}
+
+function renderExpand() {
+  bench.dataset.kind = 'expand';
+  bench.innerHTML = `
+    ${head('往外走', '顺着这篇，长出三篇新的', '这三篇是我从正文里接出来的，<b>你点头</b>我才生成。跳过也不会丢。')}
+    <div style="margin-top:12px">
+      ${PROPOSALS.map(p => {
+        const on = state.adopted.includes(p.id);
+        return `<div class="proposal ${on ? 'is-adopted' : ''}">
+          <h4>${p.title}</h4>
+          <p>${p.body}</p>
+          <div class="proposal__row">
+            <span class="tag">${p.level} · ${p.mins}</span>
+            ${p.from.map(f => `<span class="src" data-jump="${f}">从${BLOCK_NO[f]}接出</span>`).join('')}
+          </div>
+          <p style="margin:8px 0 0;font-size:11.5px;color:#7a6550">为什么是它：${p.why}</p>
+          <div class="actions" style="margin-top:10px">
+            ${on ? `<button class="btn btn--sm" data-open="${p.id}">打开这篇</button>`
+                 : `<button class="btn btn--main btn--sm" data-adopt="${p.id}">生成这篇</button>
+                   <button class="btn btn--ghost btn--sm" data-skip="${p.id}">暂时不要</button>`}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="actions"><button class="btn btn--ghost btn--sm" id="allAdopt">三篇都要</button></div>
+    <p class="bench__sub" style="margin-top:12px">生成后它们会互相引用，也会在这篇的第 ${[...new Set(state.adopted.map(a => BLOCK_NO[SEEDS[a].back]))].join('、') || '—'} 节留下一个「往这看」的小签。</p>`;
+}
+
+/* ── AI 产物：一次工具调用的四步（自己写的 HTML/SVG，不是套模板） ───── */
+const ARTIFACT = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>
+*{box-sizing:border-box}body{margin:0;font:13px/1.7 "Noto Sans SC Variable","PingFang SC",system-ui,sans-serif;
+ color:#3b2d21;background:linear-gradient(170deg,#fffaf0,#f8eed9)}
+.wrap{padding:11px 13px;height:100%;display:grid;grid-template-rows:auto 1fr auto;gap:7px}
+.steps{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.step{padding:3px 10px;border-radius:999px;background:rgba(102,129,106,.15);color:#4d6350;font:700 11px/1.7 inherit;cursor:pointer;border:0}
+.step[aria-pressed="true"]{background:#e89568;color:#40251a}
+.chat{display:grid;gap:6px;align-content:start;overflow:auto;max-height:206px;padding-right:4px}
+.msg{max-width:86%;padding:6px 10px;border-radius:12px 14px 11px 13px;font-size:12px;line-height:1.6;opacity:0;transform:translateY(6px);transition:.28s cubic-bezier(.23,1,.32,1)}
+.msg.in{opacity:1;transform:none}
+.msg.u{align-self:start;background:#f3d678;border-radius:13px 15px 14px 4px}
+.msg.a{align-self:start;background:#b9d3ad;border-radius:13px 15px 4px 14px}
+.msg.f{align-self:start;background:#fff6e3;border:1.5px dashed rgba(112,86,60,.4);font-family:"Noto Serif SC Variable","Songti SC",serif}
+.msg code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;background:rgba(59,45,33,.08);padding:1px 4px;border-radius:4px}
+.bar{display:flex;align-items:center;gap:6px}
+.bar button{padding:4px 11px;border-radius:12px 15px 11px 14px;background:#fff6e0;border:1.5px solid rgba(73,47,29,.2);
+ font:700 11.5px/1.6 inherit;cursor:pointer}
+.bar button.p{background:#b9d3ad}
+.bar small{margin-left:auto;font-size:10.5px;color:#7c6550}
+.hint{font-size:10.5px;color:#8a7358}
+</style></head><body>
+<div class="wrap">
+  <div class="steps">
+    <button class="step" data-i="0" aria-pressed="true">① 用户说</button>
+    <button class="step" data-i="1" aria-pressed="false">② 模型提议</button>
+    <button class="step" data-i="2" aria-pressed="false">③ 机器执行</button>
+    <button class="step" data-i="3" aria-pressed="false">④ 结果回来</button>
+  </div>
+  <div class="chat" id="chat">
+    <div class="msg u" data-k="0">北京今天适合出门吗？</div>
+    <div class="msg a" data-k="1">我要查一下天气。<br><code>get_weather(city: "北京")</code></div>
+    <div class="msg f" data-k="2">→ 运行时真的去调了这个函数<br>返回 <code>{ temp: 7, sky: "晴", wind: "3 级" }</code></div>
+    <div class="msg a" data-k="3">北京现在 7 度，晴，风不大——出门挺合适，但要穿件外套。</div>
+  </div>
+  <div class="bar">
+    <button class="p" id="play">▶ 走一遍</button>
+    <button id="reset">↺ 重来</button>
+    <small id="note">第 ② 步和第 ③ 步不在同一个地方</small>
+  </div>
+</div>
+<script>
+(function(){
+ var msgs=[].slice.call(document.querySelectorAll('.msg'));
+ var steps=[].slice.call(document.querySelectorAll('.step'));
+ var i=0,timer=null;
+ var notes=['模型此刻只有一句话，和普通人一样。','模型写下的是调用意图，不是在执行。','真正干活的是外面那个函数，它不认识模型。','结果回来，模型才敢开口回答。'];
+ function show(n){i=n;msgs.forEach(function(m,k){m.classList.toggle('in',k<=n)});
+  steps.forEach(function(s,k){s.setAttribute('aria-pressed',String(k===n))});
+  document.getElementById('note').textContent=notes[n];}
+ steps.forEach(function(s){s.addEventListener('click',function(){stop();show(+s.dataset.i)})});
+ document.getElementById('reset').addEventListener('click',function(){stop();msgs.forEach(function(m){m.classList.remove('in')});show(0)});
+ function stop(){if(timer){clearInterval(timer);timer=null}}
+ document.getElementById('play').addEventListener('click',function(){
+  if(timer){stop();this.textContent='▶ 走一遍';return}
+  this.textContent='⏸ 暂停';show(0);
+  timer=setInterval(function(){if(i>=3){stop();document.getElementById('play').textContent='▶ 走一遍';return}show(i+1)},1500);
+ });
+ show(0);
+})();
+<\/script></body></html>`;
+
+function mountArtifact() {
+  const f = document.getElementById('artifactFrame');
+  if (f) f.srcdoc = ARTIFACT;
+}
+
+/* ── 长出来的新笔记 ─────────────────────────────────────────────────── */
+function renderGrown() {
+  const box = $('#grown');
+  if (!state.adopted.length) { box.classList.remove('on'); box.innerHTML = ''; return; }
+  box.classList.add('on');
+  box.innerHTML = `<h3>从这篇长出来的新笔记（${state.adopted.length}）</h3>` + state.adopted.map(id => {
+    const p = PROPOSALS.find(x => x.id === id), s = SEEDS[id];
+    return `<div class="seed">
+      <h4>${p.title}</h4>
+      <p>${p.body}</p>
+      <span class="src" data-jump="${s.back}">← 来自${BLOCK_NO[s.back]}</span>
+      <div class="seed__links">
+        ${s.related.filter(r => state.adopted.includes(r))
+          .map(r => `<span class="tag">↔ ${PROPOSALS.find(x => x.id === r).title.slice(0, 12)}…</span>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+function adopt(id) {
+  if (state.adopted.includes(id)) return;
+  state.adopted.push(id);
+  const p = PROPOSALS.find(x => x.id === id);
+  const s = SEEDS[id];
+  const back = document.getElementById(s.back);
+  if (back && !back.querySelector('[data-grew]')) {
+    const tag = document.createElement('button');
+    tag.className = 'pin pin--mine'; tag.dataset.grew = '1'; tag.dataset.jump = id;
+    tag.innerHTML = '<i class="pin__dot"></i>往这看';
+    back.querySelector('.block__tail').appendChild(tag);
+  }
+  trace('新笔记', p.title, `${p.level} · ${p.mins} · 来自${BLOCK_NO[s.back]}`, s.back);
+  renderGrown(); renderExpand(); refreshBubble();
+}
+
+/* ── 模式切换 ───────────────────────────────────────────────────────── */
+const RENDER = { read: renderRead, skim: renderSkim, recall: renderRecall, expand: renderExpand };
+function setMode(m) {
+  state.mode = m;
+  $$('.intent').forEach(t => t.setAttribute('aria-selected', String(t.dataset.mode === m)));
+  $('#plateNote').innerHTML = REASONS[m];
+  (RENDER[m] || renderRead)();
+  if (m === 'margin') { state.block = null; renderMargin(null); }
+  mountArtifact();
+  refreshBubble();
+}
+document.addEventListener('click', e => {
+  const jump = e.target.closest('[data-jump]');
+  if (jump) { gotoBlock(jump.dataset.jump); return; }
+
+  const modeBtn = e.target.closest('[data-mode]');
+  if (modeBtn) { setMode(modeBtn.dataset.mode); return; }
+
+  const pin = e.target.closest('.pin[data-pin]');
+  if (pin) { setMode('margin'); renderMargin(pin.dataset.pin); gotoBlock(pin.dataset.pin); trace('批注', `${BLOCK_NO[pin.dataset.pin]} · 挂了一条解释`, MARGIN[pin.dataset.pin].title, pin.dataset.pin); return; }
+
+  const deep = e.target.closest('[data-deep]');
+  if (deep) { setMode('margin'); renderMargin(deep.dataset.deep); return; }
+  const close = e.target.closest('[data-close]');
+  if (close) {
+    const id = close.dataset.close;
+    document.querySelector(`[data-inline="${id}"]`).hidden = true;
+    document.getElementById(id).classList.remove('has-note');
+    return;
+  }
+
+  const openSeed = e.target.closest('[data-open]');
+  if (openSeed) { say('这篇已经是你的了，进去就能接着改。', []); return; }
+
+  const ad = e.target.closest('[data-adopt]');
+  if (ad) { adopt(ad.dataset.adopt); return; }
+  if (e.target.closest('[data-skip]')) { say('好，先放着。', []); return; }
+  if (e.target.closest('#allAdopt')) { PROPOSALS.forEach(p => adopt(p.id)); return; }
+
+  const rc = e.target.closest('[data-recall]');
+  if (rc) { const i = +rc.dataset.recall; state.recall.open[i] = !state.recall.open[i]; renderRecall(); return; }
+  if (e.target.closest('#recallAll')) { state.recall.open = [false, false, false, false]; renderRecall(); return; }
+  const rate = e.target.closest('[data-rate]');
+  if (rate) {
+    state.recall.rated = rate.dataset.rate;
+    const t = { clear: ['想起来了', '四步顺序完整'], fuzzy: ['有点模糊', '顺序在，细节糊'], lost: ['忘了', '要从第 4 节重来'] };
+    trace('唤回', t[state.recall.rated][0], t[state.recall.rated][1], 'b4');
+    renderRecall(); refreshBubble(); return;
+  }
+  if (e.target.closest('#skimDone')) {
+    trace('速览', '30 秒速览 · 读过主干', '4 个要点 + 一张骨架图', 'b1');
+    say('主干记住了。<b>第 4 节</b>是那 4 步，别丢了。', []); return;
+  }
+  const again = e.target.closest('[data-again]');
+  if (again) { renderMargin(again.dataset.again, $('#bench').innerHTML.includes('换个说法再讲一遍')); return; }
+  if (e.target.closest('#saveMine')) {
+    const id = state.block, v = $('#voiceNote').value.trim();
+    if (!v) { say('先写一句吧。', []); return; }
+    const i = state.traces.findIndex(t => t.kind === '我的理解' && t.src === id);
+    if (i >= 0) state.traces[i].detail = v; else trace('我的理解', `${BLOCK_NO[id]} · 我自己写的理解`, v, id);
+    renderRail(); savePin(id); renderInline(id);
+    say('留好了，就挂在这一段上。', []); return;
+  }
+});
+function savePin(id) {
+  const el = document.getElementById(id);
+  let p = el.querySelector('.pin--mine');
+  if (!p) {
+    p = document.createElement('button');
+    p.className = 'pin pin--mine';
+    p.innerHTML = '<i class="pin__dot"></i>我的批注';
+    el.querySelector('.block__tail').appendChild(p);
+  }
+  p.onclick = () => { setMode('margin'); renderMargin(id); gotoBlock(id); };
+}
+
+/* ── 选中任意一段 → 浮出小印章（零教学成本） ───────────────────────── */
+const stamp = document.createElement('button');
+stamp.className = 'stamp';
+stamp.innerHTML = '✎ 讲讲这段';
+document.body.appendChild(stamp);
+document.addEventListener('mouseup', () => {
+  setTimeout(() => {
+    const sel = getSelection();
+    if (!sel || sel.isCollapsed || !sel.anchorNode) { stamp.classList.remove('on'); return; }
+    const node = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
+    const block = node && node.closest('.block');
+    if (!block) { stamp.classList.remove('on'); return; }
+    const r = sel.getRangeAt(0).getBoundingClientRect();
+    const bb = block.getBoundingClientRect();
+    const host = $('#leaf').getBoundingClientRect();
+    const sc = $('#leaf').scrollTop;
+    stamp.style.top = `${r.bottom - host.top + sc + 6}px`;
+    stamp.style.left = `${Math.min(Math.max(r.left - host.left, 12), host.width - 150)}px`;
+    stamp.classList.add('on');
+    stamp.onclick = () => {
+      const id = block.dataset.block;
+      stamp.classList.remove('on');
+      getSelection().removeAllRanges();
+      setMode('margin'); renderMargin(id); gotoBlock(id);
+      trace('批注', `${BLOCK_NO[id]} · 挂了一条解释`, MARGIN[id].title, id);
+    };
+  }, 10);
+});
+document.addEventListener('mousedown', e => { if (!e.target.closest('.stamp')) stamp.classList.remove('on'); });
+
+/* ── 起始状态：读者已经留下过东西，所以足迹不空 ─────────────────────── */
+trace('我的理解', '第 4 节 · 我自己写的理解', '第②步是提议，第③步才是执行', 'b4');
+trace('批注', '第 3 节 · 挂了一条解释', '一件 Tool 有三件事', 'b3');
+$('#b3 .block__tail').insertAdjacentHTML('beforeend', '<span class="pin pin--mine"><i class="pin__dot"></i>已批注</span>');
+$('#plateNote').innerHTML = '<b>先做一件事：</b>这篇你上次读到第 4 节就合上了。';
+setMode('read');
+renderInline('b3');           /* 上次留下的那条批注，正文里还挂着 */
+say('我在这儿。<b>选中哪一段</b>我就讲哪一段。', [{ label: '速览全篇', act: 'skim' }, { label: '唤回记忆', act: 'recall' }]);
+</script>
+</body>
+</html>

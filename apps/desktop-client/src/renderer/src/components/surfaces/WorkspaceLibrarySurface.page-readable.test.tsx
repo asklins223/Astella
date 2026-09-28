@@ -140,13 +140,13 @@ describe("学习卡列表：登记的是当前露出来的那一份", () => {
     expect(publishedView()!.items).toHaveLength(2);
   });
 
-  it("打开远征册：清单换成册子里那一列，逐字相同，并说出「已读到全部目标」", async () => {
+  it("打开远征册：清单换成册子里那一列，逐字相同，并说出「已读到全部学习卡」", async () => {
     // 三张卡：收着时远征图只露两颗，打开后册子里是三行——数量差是这一页的关键事实。
     await renderLibrary([listItem(1), listItem(2), listItem(3)]);
     expect(publishedView()!.items).toHaveLength(2);
     await openIndex();
     await waitFor(() => expect(publishedView()!.items).toHaveLength(3));
-    await waitFor(() => expect(publishedView()!.notice).toBe("已读到全部目标"));
+    await waitFor(() => expect(publishedView()!.notice).toBe("已读到全部学习卡"));
     const view = publishedView()!;
     expect(view.items?.map((entry) => entry.label)).toEqual(
       [...document.querySelectorAll(".v3-goal-row__title")].map((node) => node.textContent),
@@ -158,12 +158,12 @@ describe("学习卡列表：登记的是当前露出来的那一份", () => {
     expect(view.filters).toBeUndefined();
   });
 
-  it("搜一个搜不到的词：登记关键词，并说屏上那句「没有匹配目标」", async () => {
+  it("搜一个搜不到的词：登记关键词，并说屏上那句「没有匹配卡片」", async () => {
     await renderLibrary([listItem(1)]);
     await openIndex();
     const input = document.querySelector<HTMLInputElement>(".v3-goal-search input")!;
     fireEvent.change(input, { target: { value: "不存在的词" } });
-    await waitFor(() => expect(publishedView()!.notice).toMatch(/已载入范围内没有匹配目标/));
+    await waitFor(() => expect(publishedView()!.notice).toMatch(/已载入范围内没有匹配卡片/));
     const view = publishedView()!;
     expect(filterValue("关键词")).toBe(input.value);
     expect(view.items).toBeUndefined();
@@ -177,7 +177,7 @@ describe("学习卡列表：登记的是当前露出来的那一份", () => {
     const view = publishedView()!;
     expect(view.items).toBeUndefined();
     expect(view.statusLine).toBe(document.querySelector(".approved-surface .surface-state strong")?.textContent ?? view.statusLine);
-    expect(view.notice).toContain("还没有活跃目标");
+    expect(view.notice).toContain("这里还没有学习卡");
   });
 
   /**

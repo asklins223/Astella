@@ -33,14 +33,26 @@ import type { ApiTransaction } from "../../db/client.ts";
 
 export type RoundScopeV1 = { workspaceId: string; userId: string };
 
-/** `build` 是内容本身的问题（换一次输入照样失败）；`persist` 是基础设施问题，值得单独计数。 */
-export type ArtifactFailureStageV1 = "build" | "persist";
-/** 与迁移 0298 的 `nlraf_stage_reason_chk` 同一组取值，一档也不许多也不许少。 */
-export type ArtifactFailureReasonV1 = "empty" | "over_quota" | "persist_failed";
+/** `build` 是内容本身的问题（换一次输入照样失败）；`generate` 是**真的发了一次模型调用**那一档。 */
+export type ArtifactFailureStageV1 = "build" | "generate" | "persist";
+/**
+ * 与迁移 0298 建立、0304 拓宽之后的 `nlraf_stage_reason_chk` 同一组取值，一档也不许多
+ * 也不许少。`generate` 那两档是 39d W4-1 尾加的：产物改由模型生成之后，失败多了一种形状
+ * ——外部调用没成（`model_failed`）或回执说没达成完成判据（`contract_rejected`）。它们
+ * **不能**塞回 `build` 的两档里：那是谎报（它不空、也没超配额），而"这一版为什么没生成"
+ * 正是这张表存在的理由。
+ */
+export type ArtifactFailureReasonV1 =
+  | "empty"
+  | "over_quota"
+  | "model_failed"
+  | "contract_rejected"
+  | "persist_failed";
 
 /** 合法组合穷举表——写出来是为了让"新增一档"时编译器喊，而不是让库 CHECK 半夜拒一次。 */
 export const ARTIFACT_FAILURE_COMBINATIONS_V1: Readonly<Record<ArtifactFailureStageV1, readonly ArtifactFailureReasonV1[]>> = {
   build: ["empty", "over_quota"],
+  generate: ["model_failed", "contract_rejected"],
   persist: ["persist_failed"],
 };
 

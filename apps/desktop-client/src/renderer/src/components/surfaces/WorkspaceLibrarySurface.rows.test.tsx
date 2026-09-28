@@ -55,9 +55,15 @@ function listItem(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function installApi(items: Array<Record<string, unknown>>) {
+function installApi(items: Array<Record<string, unknown>>, nextPageItems: Array<Record<string, unknown>> | null = null) {
   const objective = {
-    list: vi.fn(async () => ok({ version: 3, items, total: items.length, nextCursor: null, snapshotAt: new Date().toISOString() })),
+    list: vi.fn(async (request?: { cursor?: string }) => ok({
+      version: 3,
+      items: request?.cursor ? nextPageItems ?? [] : items,
+      total: items.length + (nextPageItems?.length ?? 0),
+      nextCursor: !request?.cursor && nextPageItems ? "later" : null,
+      snapshotAt: new Date().toISOString(),
+    })),
     get: vi.fn(async () => ok({})),
   };
   const api = {
@@ -196,8 +202,8 @@ describe("卡库按笔记成组（39 §8.5）", () => {
     expect(heads[0]!.textContent).toContain("可用");
     expect(heads[0]!.textContent).toContain("待核对");
     // 光学那篇有一张排着期的 ⇒ 它的「待复习」是 1，力学那篇是 0。
-    expect(heads[1]!.textContent).toContain("待复习 1");
-    expect(heads[0]!.textContent).toContain("待复习 0");
+    expect(heads.find((head) => head.textContent?.includes("光学笔记"))?.textContent).toContain("待复习 1");
+    expect(heads.find((head) => head.textContent?.includes("力学笔记"))?.textContent).toContain("待复习 0");
   });
 
   it("正对照：没有笔记的那些进「未关联笔记」组，且不混进真实笔记的组", async () => {
@@ -221,5 +227,42 @@ describe("卡库按笔记成组（39 §8.5）", () => {
     ]);
     expect(document.querySelectorAll(".v3-goal-row").length).toBe(1);
     expect(document.querySelector(".v3-goal-row__title")?.textContent).toBe("惯性与质量");
+  });
+
+  it("没有制作卡片的笔记目标不占焦点卡、卡组或卡片计数", async () => {
+    await renderIndex([
+      row({ objectiveId: "00000000-0000-4000-8000-0000000000a1", cardStrategy: null, conceptLabel: "无卡笔记目标", primaryNoteTitle: "无卡笔记" }),
+      row({ objectiveId: "00000000-0000-4000-8000-0000000000b1", primaryNoteId: NOTE_B, primaryNoteTitle: "已制卡笔记", conceptLabel: "已保存卡片" }),
+    ]);
+
+    expect(document.querySelector("#goal-focus-title")?.textContent).toBe("已保存卡片");
+    expect(groupHeads()).toHaveLength(1);
+    expect(groupHeads()[0]?.textContent).toContain("已制卡笔记");
+    expect(document.querySelectorAll(".v3-goal-row")).toHaveLength(1);
+    expect(document.querySelector(".objective-expedition__index-toggle")?.textContent).toContain("共 1 张卡");
+    expect(document.body.textContent).not.toContain("无卡笔记目标");
+  });
+
+  it("当前页只有无卡目标时仍可继续查找后续页的已保存卡", async () => {
+    const api = installApi(
+      [row({ objectiveId: "00000000-0000-4000-8000-0000000000a1", cardStrategy: null, conceptLabel: "无卡笔记目标" })],
+      [row({ objectiveId: "00000000-0000-4000-8000-0000000000b1", conceptLabel: "后续页卡片" })],
+    );
+    render(<ObjectiveLibrarySurface />);
+
+    const continueButton = await waitFor(() => {
+      const button = [...document.querySelectorAll<HTMLButtonElement>(".approved-state--empty button")]
+        .find((candidate) => candidate.textContent?.includes("继续查找学习卡"));
+      expect(button).toBeTruthy();
+      return button!;
+    });
+    expect(document.body.textContent).toContain("笔记本身可以直接学习");
+    expect(document.querySelector(".objective-quest-node")).toBeNull();
+
+    fireEvent.click(continueButton);
+    await waitFor(() => expect(document.querySelector("#goal-focus-title")?.textContent).toBe("后续页卡片"));
+    expect(api.objective.list).toHaveBeenCalledTimes(2);
+    expect(api.objective.list.mock.calls[1]?.[0]?.cursor).toBe("later");
+    expect(document.querySelector(".objective-expedition__index-toggle")?.textContent).toContain("共 1 张卡");
   });
 });

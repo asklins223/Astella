@@ -337,6 +337,7 @@ test("教学面读：practices／gapHelp／artifact 都是必填格，gapHelp �
       },
     ],
     practiceStart: null,
+    nextStep: { kind: "choose", basisRunId: "44444444-4444-4444-8444-444444444444", gapFacets: [], evidence: "incomplete" },
     gapHelp: { stopped: true, consecutiveHelpCount: 2, threshold: 2 },
     prerequisite: { kind: "none", reason: "no_usable_material", gap: null, largeBranchThreshold: 3 },
     artifactFailure: null,
@@ -345,7 +346,7 @@ test("教学面读：practices／gapHelp／artifact 都是必填格，gapHelp �
   };
   assert.equal(roundTeachingViewV1Schema.safeParse(base).success, true);
   // 少任何一格都是不合法的回信（客户端不许自己补默认值）。
-  for (const key of ["plans", "practices", "gapHelp", "prerequisite", "artifactFailure", "practiceStart", "artifact"] as const) {
+  for (const key of ["plans", "practices", "nextStep", "gapHelp", "prerequisite", "artifactFailure", "practiceStart", "artifact"] as const) {
     const clone: Record<string, unknown> = { ...base };
     delete clone[key];
     assert.equal(roundTeachingViewV1Schema.safeParse(clone).success, false, `少了 ${key} 竟然过了`);

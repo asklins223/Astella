@@ -167,4 +167,21 @@ describe("review hydration and reason derivation (V2 objectives)", () => {
     assert.equal(result.items[0]!.blockContent, null);
     assert.equal(result.items[0]!.reviewReason, "evidence_gap");
   });
+
+  it("keeps a subscribed note objective in the queue without inventing a card", async () => {
+    installReviewDb({
+      total: 1,
+      reviews: [{ id: "review-note", subjectType: "card", subjectId: "obj-note", intervalDays: 1 }],
+      v2Cards: [],
+      v2Objectives: [{ objectiveId: "obj-note", currentObjectiveRevisionId: "rev-note", currentRevisionId: "rev-note" }],
+      v2Revisions: [{ objectiveRevisionId: "rev-note", publicSummary: "从笔记里回忆条件" }],
+    });
+
+    const result = await listReviews(WORKSPACE_ID, { includeAll: true }, USER_ID, FAKE_TX);
+    assert.equal(result.total, 1);
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0]?.card.id, null);
+    assert.equal(result.items[0]?.objective?.id, "obj-note");
+    assert.equal(result.items[0]?.reviewReason, "due_review");
+  });
 });

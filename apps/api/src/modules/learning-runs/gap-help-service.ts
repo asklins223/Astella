@@ -66,6 +66,7 @@ export async function readRoundGapHelpV1(
   tx: ApiTransaction,
   scope: { workspaceId: string; userId: string },
   roundId: string,
+  objectiveId?: string | null,
 ): Promise<{
   stopped: boolean;
   consecutiveHelpCount: number;
@@ -74,6 +75,9 @@ export async function readRoundGapHelpV1(
   gap: { objectiveId: string; intent: string | null } | null;
 }> {
   const threshold = gapHelpStopThresholdV1();
+  if (objectiveId === null) {
+    return { stopped: false, consecutiveHelpCount: 0, threshold, gap: null };
+  }
   const runRows = await tx
     .select({
       runId: learningRuns.id,
@@ -86,6 +90,7 @@ export async function readRoundGapHelpV1(
       eq(learningRuns.userId, scope.userId),
       // 与 `listNoteRoundPractices` 同一读法：练习的锚点在这一轮上。
       sql`${learningRuns.origin} ->> 'roundId' = ${roundId}`,
+      objectiveId ? sql`${learningRuns.origin} ->> 'objectiveId' = ${objectiveId}` : undefined,
     ))
     .orderBy(asc(learningRuns.createdAt), asc(learningRuns.id));
   if (runRows.length === 0) {

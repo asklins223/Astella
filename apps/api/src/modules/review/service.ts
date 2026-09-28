@@ -45,7 +45,8 @@ export function deriveReviewAvailability(
 
 export interface ReviewWithCard {
   review: typeof reviewSchedules.$inferSelect;
-  card: { id: string; title: string };
+  /** id=null 是笔记订阅下的无卡目标；目标身份仍由 objective.id 承载。 */
+  card: { id: string | null; title: string };
   /**
    * Plan 23 CS-02：Review 展示通过 Objective Surface 读取 conceptLabel/publicSummary。
    * 不再回查 live claim/quoteText/cue（§10.3）。
@@ -58,7 +59,7 @@ export interface ReviewWithCard {
 
 export interface SanitizedReviewItem {
   reviewId: string;
-  cardId: string;
+  cardId: string | null;
   objectiveId: string | null;
   status: string;
   nextReviewAt: string;
@@ -203,6 +204,12 @@ export async function listReviews(
   // 会在集合左移时静默漏掉一张卡，所以这里和 note / source 一样改用
   // (nextReviewAt, id) 复合 cursor —— 键本身不随集合变化而漂移。
   const cursor = decodeCursor(filter.cursor);
+  // `where` 是**带游标**的条件，投影用它；`countWhere` 是**不带游标**的，
+  // 统计总数用它。两者混成一份时，队列翻到第二页就会少报总数——137 张到期时
+  // 第二页回 total=117，屏上于是印「第 40 项 / 共 117 项」，而进度条已经 100%、
+  // 右边还挂着一个"还有下一页"。合同写的是 total 与页无关
+  // （`review-queue-v2-contracts.ts` 的 "total is independent of the page"）。
+  const countWhere = where;
   if (cursor) {
     where = and(
       where,
@@ -213,7 +220,7 @@ export async function listReviews(
   const [totalRow] = await queryDb
     .select({ count: sql<number>`count(*)::int` })
     .from(reviewSchedules)
-    .where(where);
+    .where(countWhere);
   const total = Number(totalRow?.count ?? 0);
 
   // 多取一行只为回答「还有没有下一页」，不参与投影。
@@ -254,13 +261,11 @@ export async function listReviews(
   }
 
   const v2CardByCardId = new Map<string, { id: string; title: string }>();
-  const v2ObjByCardId = new Map<string, string>();
   for (const v2card of v2Cards) {
     v2CardByCardId.set(v2card.cardId, {
       id: v2card.cardId,
       title: v2card.publicSummary,
     });
-    v2ObjByCardId.set(v2card.cardId, v2card.objectiveId);
   }
 
   const objectiveIdArray = objIds;
@@ -274,22 +279,20 @@ export async function listReviews(
   for (const r of reviews) {
     let cardId: string | null = null;
     let objectiveId: string | null = null;
-    let isV2Card = false;
+    let isV2 = false;
 
     if (r.subjectType === "card") {
       objectiveId = r.subjectId;
       cardId = objectiveToCardId.get(r.subjectId) ?? null;
-      if (!cardId) continue;
-      isV2Card = true;
+      isV2 = true;
     }
 
-    if (!cardId) continue;
-    const v2Card = v2CardByCardId.get(cardId);
-    if (!v2Card) continue;
+    if (!objectiveId) continue;
+    const v2Card = cardId ? v2CardByCardId.get(cardId) : null;
 
     let reviewReason: ReviewReason = "due_review";
     if (reviewReason === "due_review") {
-      const objId = objectiveId ?? v2ObjByCardId.get(cardId);
+      const objId = objectiveId;
       if (!objId || !objectiveHasHardEvidence.has(objId)) {
         reviewReason = "evidence_gap";
       }
@@ -298,12 +301,12 @@ export async function listReviews(
       reviewReason = "manual_pin";
     }
 
-    const displayObjectiveId = objectiveId ?? v2ObjByCardId.get(cardId) ?? null;
+    const displayObjectiveId = objectiveId;
     const display = displayObjectiveId ? v2Display.get(displayObjectiveId) : undefined;
 
     out.push({
       review: r,
-      card: { id: v2Card.id, title: v2Card.title },
+      card: { id: v2Card?.id ?? null, title: v2Card?.title ?? display?.publicSummary ?? "" },
       // Plan 23 CS-02：使用 conceptLabel/publicSummary（Objective Surface 口径）
       objective: displayObjectiveId
         ? {
@@ -314,7 +317,7 @@ export async function listReviews(
         : null,
       blockContent: null,
       reviewReason,
-      isV2: isV2Card,
+      isV2,
     });
   }
 

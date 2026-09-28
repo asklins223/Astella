@@ -37,6 +37,7 @@
  * 会把笔记那份也停掉——那句话他没说过。所以这一刀只做「开启」；「停」归 W7-3 规则表行 1
  * 的完整实现（按 `reason_code` 精确撤下这一条来源，不碰排除表）。
  */
+import { REVIEW_DIMENSION_VALUES_V2 } from "@ailearn/shared/review-dimension-v2";
 import { and, eq, isNotNull } from "drizzle-orm";
 import {
   DISCRETE_V2_FIRST_INTERVAL_DAYS,
@@ -116,6 +117,8 @@ export async function startSharedCardPersonalReviewV2(
     // 命中 card 4 —— 主体那一列的语义是「可确认的目标 id」。写成 cardId 会让读者这一条与
     // 作者那一条撞不上唯一索引，于是同一份记忆需求被排成两条。
     subjectId: card.objectiveId,
+      // §9.1 事实提取与综合应用分别观察。只读成员对已有共享卡开启个人复习，维护的同样是那个提取目标。
+      reviewDimension: REVIEW_DIMENSION_VALUES_V2[0],
     // 刻意**没有** reviewDimension：0287 那把唯一键带着维度，而读侧有 21 处还不认识它
     //（`review-schedule-single-writer.test.ts` 的读侧台账逐条登记）。那枚触发器要求第一个
     // 传维度的人先处理读侧——本刀的第一版正是踩了它才改成这样（2026-09-27）。维度是 W7-5 的杠杆。

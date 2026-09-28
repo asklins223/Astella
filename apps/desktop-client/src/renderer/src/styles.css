@@ -1243,9 +1243,6 @@ button:disabled {
     perspective: none;
   }
 
-  .desktop-app[data-surface-open="true"] .companion-presence[data-surface="notebook"] {
-    display: none;
-  }
 }
 
 /* Search owns a separate archive-room backplate. The poster is the scene
@@ -1706,3 +1703,51 @@ button:disabled {
 .note-editor img.note-image-zoomable {
   cursor: zoom-in;
 }
+
+/* ── 回忆等待态（39d W5-4；PRD §7.1、§16.24）───────────────────────────────
+   等待生成时摆在卡面上的那一块：一张**只夹着线索的纸签**，不是一张空卡。
+   刻意不画进度环、不画骨架屏——那两样都在暗示"内容马上就到"，而 §7.1 要的是
+   「先从记忆里找一找」：这一段等待本身就是提取的一部分，给它一根进度条等于
+   催她跳过提取。 */
+.hud-surface .queue-desk .deck-card__waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 12px;
+  padding: 15px 17px 14px 20px;
+  border: 3px solid var(--hud-cream);
+  border-left: 6px solid var(--hud-peach);
+  border-radius: 19px 14px 22px 16px;
+  background: color-mix(in srgb, var(--hud-butter) 24%, var(--hud-paper-light));
+  box-shadow: var(--hud-shadow-small);
+}
+.hud-surface .queue-desk .deck-card__waiting h2 { margin: 0; color: var(--hud-ink); font-size: 16px; line-height: 1.6; }
+.hud-surface .queue-desk .deck-card__progress {
+  margin: 0;
+  color: var(--hud-soft);
+  font-size: 13px;
+  line-height: 1.7;
+}
+/* 提取线索：每条一枚小小的纸签，斜着贴，和册页那族同一套物件语言。 */
+.hud-surface .queue-desk .deck-card__clues { margin: 4px 0 0; padding: 0; list-style: none; }
+.hud-surface .queue-desk .deck-card__clues li {
+  display: inline-block;
+  margin: 5px 8px 0 0;
+  padding: 5px 12px;
+  border: 2px solid var(--hud-cream);
+  border-radius: 13px 10px 15px 11px;
+  background: var(--hud-paper-light);
+  color: var(--hud-ink);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.hud-surface .queue-desk .deck-card__clues-empty { margin: 2px 0 0; color: var(--hud-soft) !important; font-size: 13px !important; }
+.hud-surface .queue-desk .deck-card__reveal-notice {
+  margin: 6px 0 0 !important;
+  padding-top: 9px;
+  border-top: 1px dashed var(--hud-line);
+  color: var(--hud-ink) !important;
+  font-size: 13px !important;
+  line-height: 1.7 !important;
+}
+.hud-surface .queue-desk .deck-card__may-read { margin: 4px 0 0 !important; color: var(--hud-soft) !important; font-size: 12px !important; line-height: 1.7 !important; }

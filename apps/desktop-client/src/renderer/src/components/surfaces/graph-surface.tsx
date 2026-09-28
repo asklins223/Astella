@@ -15,7 +15,9 @@ import {
   Eye,
   EyeOff,
   Focus,
+  ListTree,
   Network,
+  Play,
   Quote,
   Search,
   Target,
@@ -25,6 +27,12 @@ import type {
   UnderstandingEdgeProjectionV3,
   UnderstandingNodeProjectionV3,
 } from "@ailearn/shared/understanding-topology-v3-contracts";
+import type {
+  NoteApplicabilityAxisV3,
+  NoteDeepeningV3,
+  NoteNextStepAxisV3,
+  NotePerformanceAxisV3,
+} from "@ailearn/shared/note-deepening-v3-contracts";
 import { createRequestMeta, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import { HudPage } from "../hud/HudPage";
@@ -45,7 +53,6 @@ import {
   isObjectiveNode,
   isSourceNode,
 } from "./graph-sky";
-import { primaryActionLabel } from "./objective-state-copy";
 import {
   EMPTY_IDS,
   UnderstandingUniverse,
@@ -101,6 +108,66 @@ const RELATION_STAMP_LABEL: Readonly<Record<"confirmed" | "dismissed" | "suggest
  *  `validEdges` and invalidate the canvas scene cache on every parent render. */
 const NO_EDGES: GraphEdge[] = [];
 
+/* ── 39d W8-1 · 星图三层展开 ────────────────────────────────────────────────
+ *
+ * §11.2 那张表的三层是**同一条学习路径的三个尺度**，不是三个页面。屏上的形状就是
+ * 那条纪律：只有**一个**选中的笔记，层一／层二／层三是往下走的一格页签，换层不换
+ * 笔记，换笔记回到层一。任何"另起一套导航"的实现都会在这里长出第二份选中态。
+ */
+type DeepeningLayer = "overview" | "local" | "records";
+
+const LAYER_ORDER: readonly DeepeningLayer[] = ["overview", "local", "records"] as const;
+
+/** §11.2 那一列的层名，屏上念的是人话。 */
+const LAYER_LABEL: Readonly<Record<DeepeningLayer, string>> = {
+  overview: "笔记总览",
+  local: "笔记局部",
+  records: "证据详情",
+};
+
+/**
+ * §11.4 三轴的屏上说法。
+ *
+ * **三份都是句子，没有一份是分数**——"折叠成一个亮度"这件事在这里没有落点，
+ * 因为三个 `<dt>` 各自带自己的名字。
+ */
+const PERFORMANCE_AXIS_LABEL: Readonly<Record<NotePerformanceAxisV3, string>> = {
+  no_record_yet: "还没有学习记录",
+  met_once: "见过一次，还没有留下可复述的记录",
+  assisted_once: "借助提示完成的",
+  used_independently: "有一次是独立说出来的",
+  repeated_over_time: "隔了不同日子，重复用上过",
+};
+
+const NEXT_STEP_AXIS_LABEL: Readonly<Record<NoteNextStepAxisV3, string>> = {
+  nothing_to_do: "现在没有下一步",
+  can_continue: "可以接着往下走",
+  suggest_relearn: "建议补学",
+  due_for_review: "适合回访",
+  paused_by_user: "你把这一段停下了",
+};
+
+const APPLICABILITY_AXIS_LABEL: Readonly<Record<NoteApplicabilityAxisV3, string>> = {
+  basis_holds: "依据还适用",
+  basis_updated: "材料有更新，要对一眼",
+  needs_check: "待核对",
+  no_permission: "现在读不到材料",
+};
+
+/** §11.2 笔记局部那一行的三个动作，各叫什么。 */
+const RELATION_REASON_LABEL: Readonly<Record<string, string>> = {
+  prerequisite: "理解这条之前需要",
+  explains: "用这一条来解释",
+  contrasts: "可以和这一条对比",
+  relates_to: "系统认为有关",
+};
+
+const RELATION_STATUS_LABEL: Readonly<Record<"confirmed" | "dismissed" | "suggested", string>> = {
+  confirmed: "你确认过",
+  suggested: "待确认建议",
+  dismissed: "你收起了",
+};
+
 /**
  * The star map is boundless: the canvas fills the whole window while the rail,
  * heading chip, room-control island and the floating HUD plates stay on top.
@@ -148,14 +215,10 @@ function nodeStateLabel(node: GraphNode): string {
   return node.state ? UNIVERSE_STATE_LABEL[node.state] ?? node.state : "知识锚点";
 }
 
-/**
- * 抽屉里这颗恒星的下一步。文案与服务端签发的主行动共用一份
- * （`objective-state-copy`），只在「服务端没给动作」时落回本抽屉的真实行为：
- * 这个按钮点开的是目标详情，不是作答。
- */
-function objectiveActionLabel(node: ObjectiveNode): string {
-  const action = node.personal.primaryAction;
-  return action.kind === "none" ? "查看目标详情" : primaryActionLabel(action);
+/** 抽屉按钮只写点击后真正打开的地方；正式作答由下一页自行开始。 */
+function objectiveActionLabel(node: ObjectiveNode, linkedNoteId: string | null): string {
+  if (node.activeCardId) return "查看对应卡片";
+  return linkedNoteId ? "回笔记继续学习" : "查看目标详情";
 }
 
 function searchableText(node: GraphNode): string {
@@ -291,6 +354,18 @@ export function GraphSurface() {
   const [indexActiveIndex, setIndexActiveIndex] = useState(0);
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null);
   const [fitRequest, setFitRequest] = useState(0);
+  /**
+   * 39d W8-1 · W8-3：**一个**选中笔记 + **一个**层。三个尺度同一条路径，
+   * 换层不换笔记，换笔记回到层一（见上面那段注释）。
+   */
+  const [pathNoteId, setPathNoteId] = useState<string | null>(null);
+  const [layer, setLayer] = useState<DeepeningLayer>("overview");
+  /**
+   * §11.5「星图不可用时提供相同笔记和下一步的列表」：**随时**可切的等价册页，
+   * 不是只在画布挂掉时才出现的降级件。降级件只有坏掉那天才在，就没法当"等价"
+   * 来验收——用户得能在画布好好的时候也走一遍，才知道它做的事一样多。
+   */
+  const [listMode, setListMode] = useState(false);
   const compactLayout = useCompactUniverseLayout();
   const compactLayoutRef = useRef(compactLayout);
   const listboxId = `universe-search-listbox-${useId().replace(/:/g, "")}`;
@@ -350,6 +425,10 @@ export function GraphSurface() {
       setRelationStampError("这一下没有生效，再试一次。");
     } finally {
       setStampingEdgeId(null);
+      // 写完之后在后台重取一次。乐观映射（relationStamps）会**永久**压过服务端读回���
+      // relationStatus，所以不重取的话：写失败过一次之后，那条边在本页生命周期内
+      // 永远停在乐观值上——用户看到的"改过去了"与服务端已经不一致了。
+      void reload();
     }
   };
 
@@ -399,6 +478,136 @@ export function GraphSurface() {
     () => selectedId ? getSelectedGraphPath(visibleGraph, selectedId) : null,
     [selectedId, visibleGraph],
   );
+
+  /* ── 39d W8-1：这条路径锚在哪一篇笔记上 ──────────────────────────────
+   *
+   * 选中**笔记本身**就锚在它身上；选中一颗目标／一颗证据，就顺着 `sourced_from`
+   * 那条血缘边回它是从哪一篇长出来的。**锚不到就是锚不到**（证据可能跨篇共用），
+   * 那时三层页签整条不画——画一组"这一篇的局部"而这一篇她根本没在读，就是让屏上
+   * 多一份上下文幻觉。
+   */
+  const anchorNoteId = useMemo(() => {
+    if (!selectedProjection) return null;
+    if (isNoteNode(selectedProjection)) return selectedProjection.nodeRef.noteId;
+    const key = graphNodeKey(selectedProjection);
+    for (const edge of topologyEdges) {
+      if (edge.kind !== "sourced_from") continue;
+      const from = edgeEndpointKey(edge.from);
+      const to = edgeEndpointKey(edge.to);
+      if (from !== key && to !== key) continue;
+      for (const endpoint of [edge.from, edge.to]) {
+        if (endpoint.kind === "note") return endpoint.id;
+      }
+    }
+    return null;
+  }, [selectedProjection, topologyEdges]);
+
+  // 换一篇笔记 ⇒ 回到层一。换层 ⇒ 不换笔记（就是上面那条纪律）。
+  useEffect(() => {
+    if (anchorNoteId !== pathNoteId) {
+      setPathNoteId(anchorNoteId);
+      setLayer("overview");
+    }
+  }, [anchorNoteId, pathNoteId]);
+
+  /**
+   * 层二／层三（§11.2 第二、三行）。**只在这一篇上有 `pathNoteId` 时才读**——
+   * §11.5「局部按需加载」：没点开任何一篇时，这一发一次都不该发。
+   */
+  const {
+    data: deepening,
+    loading: deepeningLoading,
+    failure: deepeningFailure,
+    reload: reloadDeepening,
+  } = useSurfaceProjection(
+    async ({ workspaceEpoch }) => {
+      // 没有选中笔记时**不发这一发**。`pathNoteId!` 那个非空断言只是骗过类型：
+      // 首次挂载时它就是 null，于是每次进星图都先打一发必然失败的请求，
+      // 失败落在 deepeningFailure 里，而那一格的错误分支又只在 pathNoteId 时才画
+      // ——于是没人看得见，只是白白多一次往返。
+      if (!pathNoteId) return null;
+      const response = await window.ailearn.understanding.getNoteDeepening({
+        meta: createRequestMeta(workspaceEpoch),
+        noteId: pathNoteId,
+      });
+      return unwrapGatewayResult(response);
+    },
+    [pathNoteId],
+    {},
+  );
+
+  /**
+   * §11.5 等价册页：与画布**同一份读**（`projections` / `topologyEdges`），所以
+   * 它列的笔记、下一步与关系和图上看到的逐字一致——不是另一份"列表专用"的数据源。
+   * §11.2「有正文的笔记无需制卡即可出现」在这一份上最直白：册页按**笔记**分组，
+   * 零卡的那一篇照样有一行。
+   */
+  const noteRows = useMemo(() => {
+    const objectivesByNote = new Map<string, Array<Extract<UnderstandingNodeProjectionV3, { nodeRef: { kind: "objective" } }>>>();
+    for (const edge of topologyEdges) {
+      if (edge.kind !== "sourced_from") continue;
+      if (edge.from.kind !== "note" || edge.to.kind !== "objective") continue;
+      const objective = projectionByKey.get(edgeEndpointKey(edge.to));
+      if (!objective || !isObjectiveNode(objective)) continue;
+      const list = objectivesByNote.get(edge.from.id) ?? [];
+      list.push(objective);
+      objectivesByNote.set(edge.from.id, list);
+    }
+    return projections
+      .filter(isNoteNode)
+      .map((note) => {
+        const objectives = objectivesByNote.get(note.nodeRef.noteId) ?? [];
+        const openRun = objectives.find((objective) => objective.personal.activeRunId !== null) ?? null;
+        const due = objectives
+          .filter((objective) => objective.personal.state === "due_review")
+          .sort((a, b) => String(a.personal.nextReviewAt ?? "").localeCompare(String(b.personal.nextReviewAt ?? "")))[0] ?? null;
+        return {
+          noteId: note.nodeRef.noteId,
+          title: graphNodeLabel(note),
+          hasSource: note.hasSource,
+          objectiveCount: objectives.length,
+          openRun,
+          due,
+        };
+      })
+      .sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
+  }, [projectionByKey, projections, topologyEdges]);
+
+  /** 打开一条笔记的向下路径：层一，并把它选成当前那颗星。 */
+  const openNotePath = useCallback((noteId: string) => {
+    setPathNoteId(noteId);
+    setLayer("overview");
+    setListMode(false);
+    const key = `note:${noteId}`;
+    const node = rawNodeById.get(key);
+    if (node) {
+      setQuery("");
+      setStateFilter("all");
+      setSelectedId(key);
+      setPendingFocusId(key);
+    }
+  }, [rawNodeById]);
+
+  /** 星图里的继续动作回到同一篇笔记，沿用它的学习轮次与记录。 */
+  const openNoteJourney = useCallback((noteId: string) => {
+    setActiveNoteRef({ noteId, noteVersionId: null, mode: "read" });
+    setNoteReturnTo("graph");
+    invoke("open-notebook");
+  }, [invoke, setActiveNoteRef, setNoteReturnTo]);
+
+  /** 卡片是对应目标的记忆工具；详情使用目标 id，不能把 cardId 当来源 id。 */
+  const openCardObjective = useCallback((objectiveId: string) => {
+    setActiveObjectiveId(objectiveId);
+    invoke("open-objective", { returnTo: { label: "返回星图", run: () => invoke("graph") } });
+  }, [invoke, setActiveObjectiveId]);
+
+  const linkedNoteIdForObjective = useCallback((objectiveId: string): string | null => {
+    const relation = topologyEdges.find((edge) => edge.kind === "sourced_from"
+      && edge.from.kind === "note"
+      && edge.to.kind === "objective"
+      && edge.to.id === objectiveId);
+    return relation?.from.id ?? null;
+  }, [topologyEdges]);
 
   useEffect(() => {
     if (!pendingFocusId || !visibleGraph.nodes.some((node) => node.id === pendingFocusId)) return;
@@ -552,6 +761,11 @@ export function GraphSurface() {
     const ref = node.nodeRef;
     const returnTo = { label: "返回星图", run: () => invoke("graph") };
     if (ref.kind === "objective") {
+      const linkedNoteId = linkedNoteIdForObjective(ref.objectiveId);
+      if (isObjectiveNode(node) && !node.activeCardId && linkedNoteId) {
+        openNoteJourney(linkedNoteId);
+        return;
+      }
       setActiveObjectiveId(ref.objectiveId);
       invoke("open-objective", { returnTo });
     } else if (ref.kind === "note") {
@@ -693,7 +907,7 @@ export function GraphSurface() {
             ) : null}
           </div>
 
-          <nav className="universe-filter-dock" aria-label="按学习卡状态筛选星图" title="计数仅表示各状态的学习卡数量；相关来源、笔记与证据会一并保留">
+          <nav className="universe-filter-dock" aria-label="按学习目标状态筛选星图" title="计数表示各状态的学习目标数量，包含没有制卡的目标；相关来源、笔记与证据会一并保留">
             {FILTERS.map((item) => (
               <button key={item.value} type="button" className={`universe-filter${stateFilter === item.value ? " is-active" : ""}`} onClick={() => setStateFilter(item.value)} disabled={item.value !== "all" && filterCounts[item.value] === 0} aria-pressed={stateFilter === item.value}>
                 <span>{item.label}</span><small>{filterCounts[item.value]}</small>
@@ -713,10 +927,68 @@ export function GraphSurface() {
           <label className="universe-layer-toggle" title={counts.evidence === 0 ? "当前星图没有证据节点" : undefined}><input type="checkbox" checked={showEvidence} disabled={counts.evidence === 0} onChange={(event) => setShowEvidence(event.target.checked)} /><Quote size={14} /><span>证据卫星</span></label>
           <label className="universe-layer-toggle" title={counts.sources === 0 ? "当前星图没有来源节点" : undefined}><input type="checkbox" checked={showSources} disabled={counts.sources === 0} onChange={(event) => setShowSources(event.target.checked)} /><BookOpenText size={14} /><span>来源行星</span></label>
           <label className="universe-layer-toggle" title={counts.edges === 0 ? "当前星图没有关系光路" : undefined}><input type="checkbox" checked={showLinks} disabled={counts.edges === 0} onChange={(event) => setShowLinks(event.target.checked)} />{showLinks ? <Eye size={14} /> : <EyeOff size={14} />}<span>关系光路</span></label>
+          {/* §11.5 等价列表的入口。**不是只在画布坏掉时才出现的降级件**——那
+              就没法验收"它做的事一样多"（W8-3 完成判据：完成定位任务不比列表更费力）。 */}
+          <button
+            type="button"
+            className={`universe-layer-toggle is-list${listMode ? " is-on" : ""}`}
+            aria-pressed={listMode}
+            onClick={() => setListMode((value) => !value)}
+          ><ListTree size={14} /><span>按笔记读</span></button>
           <span className="universe-layer-readout" aria-live="polite">{telemetry}</span>
         </div>
 
         {data?.integrity.truncated ? <div className="universe-data-note" role="status">这张星图已经装到本次的上限，其余节点还在服务器上，继续读取就能看到</div> : null}
+
+        {/* 39d W8-3 · §11.5「星图不可用时提供相同笔记和下一步的列表」。**随时可切**：
+            降级件只有坏掉那天才在，就没法拿来验收"它做的事一样多"。这一份与画布
+            读的是**同一份拓扑**（noteRows 由 projections/topologyEdges 派生），
+            所以两份列的笔记与下一步逐字一致，不是第二个数据源。 */}
+        {listMode ? (
+          <section className="universe-booklist" aria-label="按笔记读星图（与星图等价）">
+            <header className="universe-booklist__head">
+              <h2>按笔记读</h2>
+              <p>与星图同一份读数，笔记、下一步、关系都在；画布看不了的，这里都能做。</p>
+            </header>
+            {noteRows.length === 0 ? (
+              <p className="universe-layer-empty">还没有可读的笔记。</p>
+            ) : (
+              <ol className="universe-booklist__pages">
+                {noteRows.map((row) => (
+                  <li key={row.noteId} className="universe-booklist__page">
+                    <button
+                      type="button"
+                      className="universe-booklist__spine"
+                      aria-current={pathNoteId === row.noteId ? "true" : undefined}
+                      onClick={() => openNotePath(row.noteId)}
+                    >
+                      <strong>{row.title}</strong>
+                      <small>
+                        {row.hasSource ? "有来源" : "手写笔记"} · {row.objectiveCount} 个目标
+                        {row.openRun ? " · 有一轮没走完" : ""}
+                        {row.due ? " · 有该回访的" : ""}
+                      </small>
+                    </button>
+                    {/* 下一件值得做的事：与图上那一格同一份（`primaryAction`），不另算。 */}
+                    {row.openRun ? (
+                      <button type="button" className="universe-booklist__act" onClick={() => openNoteJourney(row.noteId)}>
+                        回笔记继续学习<ArrowRight size={13} />
+                      </button>
+                    ) : row.due ? (
+                      <button type="button" className="universe-booklist__act" onClick={() => openNoteJourney(row.noteId)}>
+                        回笔记查看回访<ArrowRight size={13} />
+                      </button>
+                    ) : (
+                      <button type="button" className="universe-booklist__act" onClick={() => openNotePath(row.noteId)}>
+                        看这一篇<ArrowRight size={13} />
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        ) : null}
 
         <button type="button" className="universe-detail-scrim" onClick={() => setSelectedId(null)} aria-label="关闭星体详情" aria-hidden={!selectedNode} tabIndex={selectedNode ? 0 : -1} />
         <aside ref={detailPanelRef} className={`universe-detail-panel${selectedNode ? " is-open" : ""}`} role="complementary" aria-label="星体详情" aria-hidden={!selectedNode}>
@@ -726,7 +998,59 @@ export function GraphSurface() {
                 <div><span className={`universe-detail-type is-${selectedNode.type}`}><i aria-hidden="true" /> {NODE_TYPE_LABEL[selectedNode.type]}</span><small>{nodeStateLabel(selectedNode)}</small></div>
                 <button type="button" onClick={() => setSelectedId(null)} aria-label="关闭星体详情"><X size={16} /></button>
               </header>
+              {/* 39d W8-1 · §11.2：三层是同一条路径的三个尺度，所以它是抽屉里的
+                  **一排页签**，不是另一个导航——底下换的是内容，锚着的还是这一篇。 */}
+              {pathNoteId ? (
+                <nav className="universe-layers" aria-label="这一篇笔记的三个尺度">
+                  {LAYER_ORDER.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`universe-layers__tab${layer === value ? " is-active" : ""}`}
+                      aria-current={layer === value ? "true" : undefined}
+                      onClick={() => setLayer(value)}
+                    >{LAYER_LABEL[value]}</button>
+                  ))}
+                </nav>
+              ) : null}
               <div className="universe-detail-body">
+                {pathNoteId && layer === "overview" ? (
+                  <NoteOverviewLayer
+                    noteId={pathNoteId}
+                    projections={projections}
+                    edges={topologyEdges}
+                    // 与册页上那颗「继续学习」**同一个函数**（§11.5 等价）：
+                    // 两处各写一遍，两处就会慢慢长出不同的下一步。
+                    onContinue={() => openNoteJourney(pathNoteId)}
+                    onOpenNote={() => openNoteJourney(pathNoteId)}
+                  />
+                ) : null}
+                {pathNoteId && layer !== "overview" ? (
+                  deepeningLoading && !deepening ? (
+                    <p className="universe-detail-description" role="status">正在把这一篇的学习记录取下来…</p>
+                  ) : deepeningFailure ? (
+                    <div className="universe-layer-empty" role="alert">
+                      <p>这一层现在读不到：{deepeningFailure}</p>
+                      <button type="button" onClick={() => void reloadDeepening()}>再读一次</button>
+                    </div>
+                  ) : deepening ? (
+                    layer === "local" ? (
+                      <NoteLocalLayer
+                        deepening={deepening}
+                        onOpenLearningPosition={() => openNoteJourney(pathNoteId)}
+                        onOpenCard={openCardObjective}
+                      />
+                    ) : (
+                      <NoteRecordLayer
+                        deepening={deepening}
+                        onOpenNote={() => openNoteJourney(pathNoteId)}
+                        onOpenCard={openCardObjective}
+                      />
+                    )
+                  ) : null
+                ) : null}
+                {!(pathNoteId && isNoteNode(selectedProjection)) && (
+                  <>
                 <section><h2 className="universe-detail-title">{graphNodeLabel(selectedProjection)}</h2><p className="universe-detail-description">{graphNodeSummary(selectedProjection)}</p></section>
                 <dl className="universe-detail-timing">
                   <div><dt>节点类型</dt><dd>{graphNodeKindLabel(selectedProjection.nodeRef.kind)}</dd></div>
@@ -764,17 +1088,27 @@ export function GraphSurface() {
                               disabled={stampingEdgeId === edge.edgeId}
                               onClick={() => stampRelationDecision(edge, "dismissed")}
                             >{edge.relationStatus === "dismissed" ? "已收起" : "收起这条"}</button>
+                            {/* 失败必须说出来。这一格此前只写进 state、从不被画出来，
+                                而乐观映射会立刻把边改回原样——于是用户按了一次，
+                                什么都没发生，也没有一句话告诉他为什么。 */}
+                            {stampingEdgeId === null && relationStampError ? (
+                              <p className="universe-relation-stamp__error" role="alert" data-relation-stamp-error="true">
+                                {relationStampError}
+                              </p>
+                            ) : null}
                           </div>
                         </div>
                       ) : null}
                     </div>
                   ))}</div> : <p className="universe-detail-description">这是一颗暂时独立的星体，还没有可追溯的直接关系。</p>}
                 </section>
+                  </>
+                )}
               </div>
               <footer className="universe-detail-actions">
                 <button className={isEvidenceNode(selectedProjection) ? "is-primary" : "is-secondary"} type="button" onClick={() => universeRef.current?.focusNode(selectedNode.id)}><Focus size={14} /> 聚焦星体</button>
                 {!isEvidenceNode(selectedProjection) ? <button className="is-primary" type="button" onClick={() => openNodeRecord(selectedProjection)}>
-                  {isObjectiveNode(selectedProjection) ? objectiveActionLabel(selectedProjection) : isNoteNode(selectedProjection) ? "打开笔记" : "打开来源"}<ArrowRight size={14} />
+                  {isObjectiveNode(selectedProjection) ? objectiveActionLabel(selectedProjection, linkedNoteIdForObjective(selectedProjection.nodeRef.objectiveId)) : isNoteNode(selectedProjection) ? "打开笔记" : "打开来源"}<ArrowRight size={14} />
                 </button> : null}
               </footer>
             </>
@@ -831,4 +1165,318 @@ export function GraphSurface() {
       </div>
     </HudPage>
   );
+}
+
+/* ══ 三层的正文 ══════════════════════════════════════════════════════════
+ *
+ * 三个组件**共享一个** `noteId`（层二／层三从服务端那份读里拿，层一从拓扑投影
+ * 拿）。它们是同一条路径的三个尺度，所以视觉上共用同一套物件语言：
+ * 便签／册页／纸签，而不是三个页面的三套版式。
+ */
+
+/**
+ * §11.4 三轴 —— **三张纸签，各自带自己的名字**。
+ *
+ * 这条是 W8-3 的核心。写成一个 `<div>` 里三个值的话，屏上就会出现一句
+ * "整体：还不错"；分成三张带标题的纸签之后，**"合成一个亮度"在版式层就没有
+ * 落点了**。`role="group"` + `aria-label` 把"这是三件独立的事"也说给读屏。
+ */
+function NoteStateAxes({ deepening }: { readonly deepening: NoteDeepeningV3 }) {
+  return (
+    <div className="universe-axes" role="group" aria-label="三种状态（分开看，不合成一个）">
+      <dl className="universe-axes__row">
+        <div className="universe-axes__slip">
+          <dt>学习表现</dt>
+          <dd>{PERFORMANCE_AXIS_LABEL[deepening.axes.performance]}</dd>
+        </div>
+        <div className="universe-axes__slip">
+          <dt>下一步</dt>
+          <dd>{NEXT_STEP_AXIS_LABEL[deepening.axes.nextStep]}</dd>
+        </div>
+        <div className="universe-axes__slip">
+          <dt>内容适用性</dt>
+          <dd>{APPLICABILITY_AXIS_LABEL[deepening.axes.applicability]}</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
+/**
+ * 层一：笔记总览（§11.2 第一行「笔记、最近学习位置、未完旅程和当前回访建议」）。
+ *
+ * **由拓扑投影出来，不额外发一次读**——这一层要的东西（未完的一轮、回访日期、
+ * 继续学习）拓扑里逐字都有，另起一份读就是第二个出处。
+ */
+function NoteOverviewLayer({
+  noteId,
+  projections,
+  edges,
+  onContinue,
+  onOpenNote,
+}: {
+  readonly noteId: string;
+  readonly projections: readonly UnderstandingNodeProjectionV3[];
+  readonly edges: readonly UnderstandingEdgeProjectionV3[];
+  readonly onContinue: () => void;
+  readonly onOpenNote: () => void;
+}) {
+  const note = projections.find((node) => isNoteNode(node) && node.nodeRef.noteId === noteId);
+  const objectives = useMemo(() => {
+    const keys = new Set(
+      edges
+        .filter((edge) => edge.kind === "sourced_from" && edge.from.kind === "note" && edge.from.id === noteId)
+        .map((edge) => `${edge.to.kind}:${edge.to.id}`),
+    );
+    return projections.filter(
+      (node): node is ObjectiveNode =>
+        isObjectiveNode(node) && keys.has(`objective:${node.nodeRef.objectiveId}`),
+    );
+  }, [edges, noteId, projections]);
+  const openRun = objectives.find((objective) => objective.personal.activeRunId !== null) ?? null;
+  const due = objectives.find((objective) => objective.personal.state === "due_review") ?? null;
+
+  return (
+    <>
+      <section>
+        <h2 className="universe-detail-title">{note ? graphNodeLabel(note) : "这一篇笔记"}</h2>
+        <p className="universe-detail-description">
+          {note ? graphNodeSummary(note) : ""}
+        </p>
+      </section>
+      <dl className="universe-detail-timing">
+        <div><dt>已形成的目标</dt><dd>{objectives.length} 个</dd></div>
+        <div><dt>未完的一轮</dt><dd>{openRun ? "有一轮" : "没有"}</dd></div>
+        <div><dt>该回访的</dt><dd>{due ? graphObjectiveStateLabel(due.personal.state) : "暂时没有"}</dd></div>
+      </dl>
+      <section className="universe-locals">
+        <div className="universe-detail-section-title">
+          <span>从这一篇继续</span>
+          <small>正文和这一轮学习在同一篇里</small>
+        </div>
+        <button type="button" className="universe-locals__act" onClick={openRun ? onContinue : onOpenNote}>
+          {openRun ? <Play size={14} /> : <BookOpenText size={14} />}
+          <span><strong>{openRun ? "回笔记继续学习" : "打开这一篇笔记"}</strong><small>正文、材料与本轮学习都在那儿</small></span>
+          <ArrowRight size={14} />
+        </button>
+        {objectives.length === 0 ? (
+          // §11.2「有正文的笔记无需制卡即可出现」：没有目标时**说清楚**是"还没有
+          // 形成目标"，而不是画一句"知识宇宙正在生成"。
+          <p className="universe-layer-empty">这一篇还没有形成任何目标——正文在就行，不需要先制卡。</p>
+        ) : null}
+      </section>
+    </>
+  );
+}
+
+/**
+ * 层二：笔记局部（§11.2 第二行「核心问题／已形成的目标／必要前置和明确关系／
+ * 当前缺口」；动作：查看关系理由、打开某个学习位置、查看相关记录）。
+ */
+function NoteLocalLayer({
+  deepening,
+  onOpenLearningPosition,
+  onOpenCard,
+}: {
+  readonly deepening: NoteDeepeningV3;
+  readonly onOpenLearningPosition: () => void;
+  readonly onOpenCard: (objectiveId: string) => void;
+}) {
+  const { local } = deepening;
+  return (
+    <>
+      <NoteStateAxes deepening={deepening} />
+      {local.openDrivingQuestion ? (
+        <section className="universe-locals">
+          <div className="universe-detail-section-title"><span>这一轮的问题</span><small>未完的那一轮</small></div>
+          <p className="universe-question">{local.openDrivingQuestion}</p>
+        </section>
+      ) : null}
+      <section className="universe-locals">
+        <div className="universe-detail-section-title">
+          <span>核心问题与已形成的目标</span>
+          <small>{local.coreQuestions.length} 个</small>
+        </div>
+        {local.objectives.length === 0 ? (
+          <p className="universe-layer-empty">还没有形成任何目标，这里不替你编一条。</p>
+        ) : (
+          <ul className="universe-locals__list">
+            {local.objectives.map((objective) => (
+              <li key={objective.objectiveId} className="universe-locals__item">
+                <button type="button" onClick={onOpenLearningPosition}>
+                  <strong>{objective.label}</strong>
+                  <small>{objective.summary}</small>
+                </button>
+                <span className="universe-locals__tags">
+                  <em>{graphObjectiveStateLabel(objective.state)}</em>
+                  {objective.runId ? <em className="is-run">有一轮没走完</em> : null}
+                  {objective.cardId ? (
+                    <button type="button" className="universe-locals__card" onClick={() => onOpenCard(objective.objectiveId)}>
+                      打开对应卡片
+                    </button>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section className="universe-locals">
+        {/* §11.3 + §11.2「查看关系理由」：理由与关系在同一行。拆成两张表，
+            屏上就得自己拼，而拼不上的那一行会变成一条没有理由的实线。 */}
+        <div className="universe-detail-section-title">
+          <span>必要前置与明确关系</span>
+          <small>{local.relations.length ? "每条都写清为什么被推出来" : "这一篇还没有可核对的关系"}</small>
+        </div>
+        {local.relations.length === 0 ? (
+          <p className="universe-layer-empty">没有可核对的关系。这里不替你推断——没有学习记录时不伪造关系。</p>
+        ) : (
+          <ul className="universe-locals__list">
+            {local.relations.map((relation) => (
+              <li key={relation.edgeId} className="universe-locals__item is-relation">
+                <div>
+                  <strong>{relation.otherLabel}</strong>
+                  <small>{RELATION_REASON_LABEL[relation.relation] ?? relation.relation}</small>
+                </div>
+                <span className="universe-locals__tags">
+                  <em className={`is-${relation.status}`}>{RELATION_STATUS_LABEL[relation.status]}</em>
+                  {relation.reasonCodes.length ? (
+                    <small className="universe-relation-reason">
+                      理由：{relation.reasonCodes.map((code) => RELATION_REASON_LABEL[code] ?? code).join("、")}
+                    </small>
+                  ) : (
+                    <small className="universe-relation-reason">系统没有给出理由。</small>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section className="universe-locals">
+        <div className="universe-detail-section-title">
+          <span>当前缺口</span>
+          <small>{local.gaps.length ? "哪一个目标卡在哪一档" : "暂时没有缺口"}</small>
+        </div>
+        {local.gaps.length === 0 ? (
+          <p className="universe-layer-empty">没有列出来的缺口。</p>
+        ) : (
+          // §11.4「没有单一'整篇掌握亮度'」在层二的具体形状：列出来的是
+          // **哪一个**目标卡在哪一档，不是一句整体百分比。
+          <ul className="universe-locals__list">
+            {local.gaps.map((gap) => (
+              <li key={gap.objectiveId} className="universe-locals__item is-gap">
+                <button type="button" onClick={onOpenLearningPosition}>
+                  <strong>{gap.label}</strong>
+                  <small>建议补学</small>
+                </button>
+                <span className="universe-locals__tags"><em className="is-gap">{graphObjectiveStateLabel(gap.state)}</em></span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
+  );
+}
+
+/**
+ * 层三：证据详情（§11.2 第三行「真实回答／反馈／日期／材料依据／可选卡片」；
+ * 动作：回看、进入笔记旅程、打开相应卡片）。
+ */
+function NoteRecordLayer({
+  deepening,
+  onOpenNote,
+  onOpenCard,
+}: {
+  readonly deepening: NoteDeepeningV3;
+  readonly onOpenNote: () => void;
+  readonly onOpenCard: (objectiveId: string) => void;
+}) {
+  return (
+    <>
+      <NoteStateAxes deepening={deepening} />
+      <section className="universe-locals">
+        <div className="universe-detail-section-title">
+          <span>真实学习记录</span>
+          <small>
+            {deepening.recordsComplete
+              ? `${deepening.records.length} 条，全部在这里`
+              : `只列到这里 ${deepening.records.length} 条，更早的还在服务器上`}
+          </small>
+        </div>
+        {deepening.records.length === 0 ? (
+          <p className="universe-layer-empty">这一篇还没有学习记录。这里不替你造一条示例。</p>
+        ) : (
+          <ol className="universe-records">
+            {deepening.records.map((record) => (
+              <li key={record.recordId} className="universe-record">
+                <header>
+                  <time dateTime={record.occurredAt}>{formatDeepeningDate(record.occurredAt)}</time>
+                  <span>{record.objectiveLabel ?? "这一步没有挂到具体目标上"}</span>
+                </header>
+                {/* 「原回答」。结构化作答那一格是空的——屏上就写清楚"这一步不是一句
+                    可复述的回答"，不替她造一句。 */}
+                {record.answerText ? (
+                  <blockquote className="universe-record__answer">{record.answerText}</blockquote>
+                ) : (
+                  <p className="universe-record__answer is-empty">
+                    {record.answerForm === "structured" ? "这一步是结构化作答，没有一句可念的回答。" : "这一次没有留下可念的回答。"}
+                  </p>
+                )}
+                {record.feedback.length ? (
+                  <ul className="universe-record__feedback">
+                    {record.feedback.map((item, index) => (
+                      <li key={`${record.recordId}-fb-${index}`}>
+                        <em>{FEEDBACK_VERDICT_LABEL[item.verdict]}</em>
+                        <span>{item.reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="universe-record__answer is-empty">这一次没有留下可展示的反馈。</p>
+                )}
+                {record.materialBasis.length ? (
+                  <div className="universe-record__material">
+                    <span>材料依据</span>
+                    {record.materialBasis.map((material) => (
+                      <small key={material.evidenceSnapshotId}>{material.supportSummary}</small>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="universe-record__material">
+                    <span>材料依据</span>
+                    <small>这一条没有挂材料。</small>
+                  </div>
+                )}
+                <footer>
+                  {/* 「可选卡片」——§11.2 末段：卡片是目标详情里的一条记忆工具
+                      链接，不为同一目标再画一颗星。 */}
+                  {record.cardId && record.objectiveId ? (
+                    <button type="button" onClick={() => onOpenCard(record.objectiveId!)}>打开对应卡片</button>
+                  ) : null}
+                  <button type="button" onClick={onOpenNote}>进入笔记旅程</button>
+                </footer>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+    </>
+  );
+}
+
+const FEEDBACK_VERDICT_LABEL: Readonly<Record<NoteDeepeningV3["records"][number]["feedback"][number]["verdict"], string>> = {
+  covered: "讲到了",
+  partial: "讲了一半",
+  missing: "没讲到",
+  contradicted: "与材料相反",
+  not_assessable: "判不了",
+};
+
+/** 「日期」按本地日历念；解析不了就**原样交出**那一串 ISO，不显示 Invalid Date。 */
+function formatDeepeningDate(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  return at.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
 }

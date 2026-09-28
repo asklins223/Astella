@@ -186,8 +186,38 @@ describe("ReviewSurface · 后续顺序", () => {
     fireEvent.click(stop);
 
     await waitFor(() => {
-      expect(screen.getByRole("group", { name: "复习队列卡叠" }).getAttribute("data-review-id"))
+      expect(screen.getByRole("group", { name: "复习队列" }).getAttribute("data-review-id"))
         .toBe("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    });
+  });
+});
+
+describe("ReviewSurface · 无卡学习目标的到期复习", () => {
+  it("显示笔记复习，保留独立排程，并用原有身份启动", async () => {
+    const first = item("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "objective-a", { cardId: null });
+    const second = item("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "objective-a", { cardId: null });
+    const gateway = stubGateway([first, second], { "objective-a": "间隔效应" });
+    render(<ReviewSurface />);
+
+    const deck = await screen.findByRole("group", { name: "复习队列" });
+    await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(first.reviewId));
+    expect(deck.querySelector(".deck-card.front")?.textContent).toContain("笔记复习");
+    expect(deck.querySelector(".deck-card.front")?.textContent).not.toContain("学习卡复习");
+
+    fireEvent.click(screen.getByRole("button", { name: "下一张到期项" }));
+    await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(second.reviewId));
+    expect(screen.getByText(/这条与前面那条属于同一学习目标的排程，需要各自结算一次/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /开始到期复习/ }));
+    await waitFor(() => expect(gateway.learningRun.start).toHaveBeenCalledTimes(1));
+    const [call] = gateway.learningRun.start.mock.calls as unknown as Array<[{
+      request: { originV2: Record<string, unknown> };
+    }]>;
+    expect(call[0].request.originV2).toEqual({
+      kind: "review",
+      scheduleId: second.scheduleId,
+      objectiveId: second.objectiveId,
+      scheduleGeneration: second.scheduleGeneration,
     });
   });
 });
@@ -197,7 +227,7 @@ describe("ReviewSurface · deck stepping", () => {
     stubGateway(THREE, THREE_LABELS);
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
 
     expect((screen.getByRole("button", { name: "上一张到期项" }) as HTMLButtonElement).disabled).toBe(true);
@@ -219,7 +249,7 @@ describe("ReviewSurface · deck stepping", () => {
     stubGateway(THREE, THREE_LABELS);
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     // 队首往回按：什么也不该发生，也不该把焦点丢给别的控件。
@@ -238,7 +268,7 @@ describe("ReviewSurface · deck stepping", () => {
     stubGateway(THREE, THREE_LABELS);
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     // 系统按住不放会以约 30 次/秒重复派发 keydown；只有第一次算一次移动。
@@ -257,7 +287,7 @@ describe("ReviewSurface · deck stepping", () => {
     const gateway = stubGateway([], {}, false, { pagedItems: items, pageSize: 20 });
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(items[0].reviewId));
 
     for (let step = 0; step < 19; step += 1) {
@@ -275,7 +305,7 @@ describe("ReviewSurface · deck stepping", () => {
     stubGateway([THREE[0]], {});
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
 
     expect(screen.queryByRole("button", { name: "上一张到期项" })).toBeNull();
@@ -302,7 +332,7 @@ describe("ReviewSurface · 牌堆", () => {
     stubGateway(manyItems(6), Object.fromEntries(manyItems(6).map((entry, index) => [entry.objectiveId, `目标 ${index + 1}`])));
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe("00000001-1111-4111-8111-111111111111"));
 
     const cards = deck.querySelectorAll(".deck-card");
@@ -322,7 +352,7 @@ describe("ReviewSurface · 牌堆", () => {
     stubGateway(manyItems(20), {});
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe("00000001-1111-4111-8111-111111111111"));
 
     fireEvent.keyDown(deck, { key: "ArrowRight" });
@@ -339,7 +369,7 @@ describe("ReviewSurface · 牌堆", () => {
     stubGateway(THREE, THREE_LABELS);
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     drag(deck, -220);
@@ -352,7 +382,7 @@ describe("ReviewSurface · 牌堆", () => {
     stubGateway(THREE, THREE_LABELS);
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     fireEvent(deck, new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, clientX: 400, clientY: 200 }));
@@ -369,7 +399,7 @@ describe("ReviewSurface · 牌堆", () => {
     stubGateway(THREE, THREE_LABELS);
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     // 40% 牌宽（jsdom 里用兜底牌宽 520 → 208px）之外才算抽出去，这里只拖 80px，
@@ -391,7 +421,7 @@ describe("ReviewSurface · 牌堆", () => {
     stubGateway(THREE, THREE_LABELS);
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     fireEvent.click(deck.querySelector('.deck-card[data-depth="1"]') as HTMLElement);
@@ -403,7 +433,7 @@ describe("ReviewSurface · 牌堆", () => {
     stubGateway(THREE, THREE_LABELS);
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     const underneath = deck.querySelector('.deck-card[data-depth="1"]') as HTMLElement;
@@ -421,7 +451,7 @@ describe("ReviewSurface · 牌堆", () => {
     stubGateway([], {}, false, { pagedItems: items, pageSize: 20 });
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(items[0].reviewId));
 
     for (let step = 0; step < 19; step += 1) {
@@ -445,7 +475,7 @@ describe("ReviewSurface · 牌堆", () => {
     stubGateway([], {}, false, { pagedItems: items, pageSize: 20 });
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(items[0].reviewId));
 
     for (let step = 0; step < 19; step += 1) {
@@ -465,7 +495,7 @@ describe("ReviewSurface · 牌堆", () => {
     stubGateway([], {}, false, { pagedItems: manyItems(6), pageSize: 20 });
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe("00000001-1111-4111-8111-111111111111"));
 
     // 队首往回拖：牌堆上面没有牌了，牌自己滑回堆上。
@@ -479,7 +509,7 @@ describe("ReviewSurface · 牌堆", () => {
     stubGateway(THREE, THREE_LABELS);
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     drag(deck, -220);
@@ -498,7 +528,7 @@ describe("ReviewSurface · 牌堆", () => {
     stubGateway(THREE, THREE_LABELS);
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     movePointer(deck, "pointerdown", 400);
@@ -514,7 +544,7 @@ describe("ReviewSurface · 牌堆", () => {
     stubGateway(THREE, THREE_LABELS);
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     movePointer(deck, "pointerdown", 400);
@@ -533,7 +563,7 @@ describe("ReviewSurface · 牌堆", () => {
     stubGateway(THREE, THREE_LABELS);
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     movePointer(deck, "pointerdown", 400);
@@ -559,18 +589,18 @@ describe("ReviewSurface · card state", () => {
     // 先等卡面本身：紧凑索引里也会写「冷却中」，所以状态文案不能再用来判断
     // 卡叠已经渲染完成。
     expect(await screen.findByRole("button", { name: /刷新开始条件/ })).toBeTruthy();
-    expect(within(screen.getByRole("group", { name: "复习队列卡叠" })).getByText("冷却中")).toBeTruthy();
+    expect(within(screen.getByRole("group", { name: "复习队列" })).getByText("冷却中")).toBeTruthy();
   });
 
   it("says the label is unreadable instead of claiming the read is still running", async () => {
     stubGateway(THREE, {});
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     // 邻居卡也写着同一句话（它们同样读不到标签），所以只断言正面那张。
     await waitFor(() => expect(deck.querySelector(".deck-card.front h2")?.textContent)
-      .toBe("这张卡暂时读不到标题"));
-    expect(within(deck as HTMLElement).queryByText("正在读取这张卡的问题…")).toBeNull();
+      .toBe("这一项暂时读不到标题"));
+    expect(within(deck as HTMLElement).queryByText("正在读取这一项的问题…")).toBeNull();
   });
 
   it("pauses a changed-evidence card and opens the exact source note for checking", async () => {
@@ -594,7 +624,7 @@ describe("ReviewSurface · card state", () => {
     render(<ReviewSurface />);
 
     const checkButton = await screen.findByRole("button", { name: /先核对原文/ });
-    expect(screen.getByText(/这张卡借用的原文有新变化/)).toBeTruthy();
+    expect(screen.getByText(/这项复习引用的原文有新变化/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /开始到期复习/ })).toBeNull();
 
     fireEvent.click(checkButton);
@@ -633,7 +663,7 @@ describe("ReviewSurface · 稍后提醒", () => {
     });
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     fireEvent.click(screen.getByRole("button", { name: "稍后提醒" }));
@@ -652,7 +682,7 @@ describe("ReviewSurface · 稍后提醒", () => {
     });
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     fireEvent.click(screen.getByRole("button", { name: "稍后提醒" }));
@@ -666,7 +696,7 @@ describe("ReviewSurface · 稍后提醒", () => {
 
     await waitFor(() => expect(gateway.review.getQueue.mock.calls.length).toBe(2));
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[1].reviewId));
-    expect(await screen.findByText("已把这张卡推迟到明天再提醒；它的到期时间没有变。")).toBeTruthy();
+    expect(await screen.findByText("已把这一项推迟到明天再提醒；它的到期时间没有变。")).toBeTruthy();
   });
 
   it("treats a stale defer as a queue refresh instead of a dead end", async () => {
@@ -682,12 +712,12 @@ describe("ReviewSurface · 稍后提醒", () => {
     });
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     fireEvent.click(screen.getByRole("button", { name: "稍后提醒" }));
 
-    expect(await screen.findByText("这张卡的状态刚变过，队列已经按最新情况刷新。")).toBeTruthy();
+    expect(await screen.findByText("这一项的状态刚变过，队列已经按最新情况刷新。")).toBeTruthy();
     await waitFor(() => expect(gateway.review.getQueue.mock.calls.length).toBe(2));
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[1].reviewId));
   });
@@ -701,12 +731,12 @@ describe("ReviewSurface · 稍后提醒", () => {
     });
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
     fireEvent.click(screen.getByRole("button", { name: "稍后提醒" }));
 
-    expect(await screen.findByText("延后没送出去，这张卡还在队列里。")).toBeTruthy();
+    expect(await screen.findByText("延后没送出去，这一项还在队列里。")).toBeTruthy();
     expect(screen.getByRole("button", { name: "重试延后" })).toBeTruthy();
     // No refetch: the queue the user sees is still the one that holds this card.
     expect(gateway.review.getQueue.mock.calls.length).toBe(1);
@@ -717,7 +747,7 @@ describe("ReviewSurface · 稍后提醒", () => {
     const gateway = stubGateway(THREE, THREE_LABELS);
     render(<ReviewSurface />);
 
-    await screen.findByRole("group", { name: "复习队列卡叠" });
+    await screen.findByRole("group", { name: "复习队列" });
     expect(gateway.review.getQueue).toHaveBeenCalledTimes(1);
 
     window.dispatchEvent(new Event("focus"));
@@ -743,7 +773,7 @@ describe("ReviewSurface · 多数据场景", () => {
     const gateway = stubGateway([], {}, false, { pagedItems: items, pageSize: 20 });
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(items[0].reviewId));
 
     fireEvent.click(screen.getByRole("button", { name: "继续读取更多到期项" }));
@@ -768,7 +798,7 @@ describe("ReviewSurface · 多数据场景", () => {
     const gateway = stubGateway([], {}, false, { pagedItems: items, pageSize: 20 });
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(items[0].reviewId));
 
     // 第一页的最后一张：这里旧实现会把「下一张」变成死按钮。
@@ -787,10 +817,10 @@ describe("ReviewSurface · 多数据场景", () => {
     stubGateway([], {}, false, { pagedItems: manyItems(137), pageSize: 20 });
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     // 位置行读正面那张的 meta；sr-only 的 live region 会重复同一句话给读屏用户。
     await waitFor(() => expect(deck.querySelector(".deck-card.front .meta")?.textContent)
-      .toContain("第 1 张 / 共 137 张"));
+      .toContain("第 1 项 / 共 137 项"));
     expect(screen.getByText(/已载入 20 \/ 137 项/)).toBeTruthy();
   });
 
@@ -798,7 +828,7 @@ describe("ReviewSurface · 多数据场景", () => {
     stubGateway([], {}, false, { pagedItems: manyItems(137), pageSize: 20 });
     render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe("00000001-1111-4111-8111-111111111111"));
 
     // 进度条按"整条队列"给比例，不是按已载入的那 20 张：第 1 张就该是一点点。
@@ -812,7 +842,7 @@ describe("ReviewSurface · 多数据场景", () => {
     stubGateway([], {}, false, { pagedItems: manyItems(25), pageSize: 20 });
     const first = render(<ReviewSurface />);
 
-    const deck = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe("00000001-1111-4111-8111-111111111111"));
     fireEvent.click(screen.getByRole("button", { name: "继续读取更多到期项" }));
     await waitFor(() => expect(screen.getByText(/已载入 25 \/ 25 项/)).toBeTruthy());
@@ -823,7 +853,7 @@ describe("ReviewSurface · 多数据场景", () => {
     first.unmount();
     render(<ReviewSurface />);
 
-    const restored = await screen.findByRole("group", { name: "复习队列卡叠" });
+    const restored = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(restored.getAttribute("data-review-id")).toBe("00000003-1111-4111-8111-111111111111"));
   });
 });

@@ -1476,7 +1476,7 @@
    second because a legend is the one thing a first-time visitor can still do
    without. */
 
-@media (max-width: 1439px) {
+@media (max-width: 1599px) {
   .universe-layer-readout {
     display: none;
   }
@@ -2328,6 +2328,562 @@
 
 @media (prefers-reduced-motion: reduce) {
   .universe-relation-stamp__actions button {
+    transition: none;
+  }
+}
+
+/* ══ 39d W8-1 · 星图三层展开 ═══════════════════════════════════════════════
+ *
+ * 物件语言与这一族一致：便签／册页／纸签／薄荷页签，奶油纸面、不规则柔圆角、
+ * 软阴影。**不是**一个三行的设置面板——所以三层的分隔靠**贴上去的小页签**和
+ * **压在纸面上的便签**，不靠网格线与表头。
+ */
+
+/* 三层页签：贴在上沿的一排薄荷纸签。同一篇笔记的三个尺度，不是三个页面。 */
+.universe-layers {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.3rem;
+  padding: 0.45rem 0.9rem 0;
+  border-bottom: 1px solid var(--universe-line);
+  background: color-mix(in srgb, var(--universe-ink) 2%, transparent);
+}
+
+.universe-layers__tab {
+  font: inherit;
+  font-size: 0.76rem;
+  line-height: 1.2;
+  padding: 0.3rem 0.62rem 0.34rem;
+  border: 1px solid var(--universe-line);
+  border-bottom: 0;
+  border-radius: 0.65rem 0.6rem 0 0;
+  background: color-mix(in srgb, var(--universe-ink) 5%, transparent);
+  color: var(--universe-faint);
+  cursor: pointer;
+  transform: translateY(1px);
+  transition:
+    background var(--universe-motion-feedback) var(--ease-standard),
+    color var(--universe-motion-feedback) var(--ease-standard);
+}
+
+.universe-layers__tab:hover {
+  color: var(--universe-ink);
+  background: color-mix(in srgb, var(--universe-ink) 9%, transparent);
+}
+
+.universe-layers__tab.is-active {
+  background: var(--universe-surface-raised);
+  color: var(--universe-ink);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--universe-ink) 8%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .universe-layers__tab {
+    transition: none;
+  }
+}
+
+/* 三轴：三张**分开**的便签，各自带名字。合成一个亮度在这里没有落点。 */
+.universe-axes {
+  margin: 0 0 0.9rem;
+}
+
+.universe-axes__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.universe-axes__slip {
+  flex: 1 1 8.2rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.42rem 0.55rem 0.46rem;
+  /* 不规则柔圆角：书房那一族的便签手感 */
+  border-radius: 0.7rem 0.5rem 0.75rem 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--hud-ink, #6b5a45) 22%, transparent);
+  background: color-mix(in srgb, var(--hud-paper, #fdf6e6) 8%, transparent);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--universe-ink) 6%, transparent);
+}
+
+.universe-axes__slip dt {
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  color: var(--color-highlight);
+  opacity: 0.85;
+}
+
+.universe-axes__slip dd {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: var(--universe-ink);
+}
+
+/* 层内的小节与清单 */
+.universe-locals {
+  margin: 0 0 1.1rem;
+}
+
+.universe-question {
+  margin: 0.3rem 0 0;
+  padding: 0.5rem 0.6rem;
+  border-left: 3px solid var(--color-warning);
+  border-radius: 0 0.6rem 0.55rem 0;
+  background: color-mix(in srgb, var(--universe-ink) 5%, transparent);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.universe-locals__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.universe-locals__item {
+  padding: 0.45rem 0.55rem 0.5rem;
+  border-radius: 0.6rem 0.5rem 0.65rem 0.45rem;
+  border: 1px solid var(--universe-hairline);
+  background: color-mix(in srgb, var(--universe-ink) 3.5%, transparent);
+}
+
+.universe-locals__item > button {
+  display: block;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.universe-locals__item strong {
+  display: block;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  color: var(--universe-ink);
+}
+
+.universe-locals__item small {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--universe-faint);
+}
+
+.universe-locals__item > button:hover strong {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.universe-locals__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+
+.universe-locals__tags em {
+  font-style: normal;
+  font-size: 0.68rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--universe-line);
+  color: var(--universe-faint);
+}
+
+.universe-locals__tags em.is-confirmed {
+  border-color: rgba(94, 168, 140, 0.6);
+  color: #a8e0c4;
+}
+
+/* 待确认建议：虚线 = 还没定（§11.3）。 */
+.universe-locals__tags em.is-suggested {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--color-warning) 55%, transparent);
+  color: var(--color-highlight);
+}
+
+.universe-locals__tags em.is-gap {
+  border-color: var(--color-action);
+  color: var(--color-action);
+}
+
+.universe-locals__card {
+  font: inherit;
+  font-size: 0.7rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 0.5rem 0.45rem 0.55rem 0.42rem;
+  border: 1px solid color-mix(in srgb, var(--hud-ink, #6b5a45) 32%, transparent);
+  background: color-mix(in srgb, var(--hud-paper, #fdf6e6) 14%, transparent);
+  color: var(--universe-ink);
+  cursor: pointer;
+}
+
+/* 关系理由：与关系同行，不另起一张表。 */
+.universe-relation-reason {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 0.7rem;
+  color: var(--universe-faint);
+}
+
+.universe-locals__act {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  padding: 0.45rem 0.55rem;
+  font: inherit;
+  text-align: left;
+  border-radius: 0.6rem 0.45rem 0.65rem 0.4rem;
+  border: 1px solid var(--universe-hairline);
+  background: color-mix(in srgb, var(--universe-ink) 4%, transparent);
+  color: var(--universe-ink);
+  cursor: pointer;
+}
+
+.universe-locals__act span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.universe-locals__act strong {
+  display: block;
+  font-size: 0.8rem;
+}
+
+.universe-locals__act small {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.7rem;
+  color: var(--universe-faint);
+}
+
+.universe-locals__act:hover {
+  background: color-mix(in srgb, var(--universe-ink) 8%, transparent);
+}
+
+.universe-layer-empty {
+  margin: 0.4rem 0 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px dashed var(--universe-line);
+  border-radius: 0.6rem 0.5rem 0.65rem 0.45rem;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--universe-faint);
+}
+
+.universe-layer-empty button {
+  margin-top: 0.45rem;
+  font: inherit;
+  font-size: 0.74rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 0.5rem 0.45rem 0.55rem 0.42rem;
+  border: 1px solid var(--universe-line-strong);
+  background: transparent;
+  color: var(--universe-ink);
+  cursor: pointer;
+}
+
+/* 层三：一张一张**记录卡**，像摊在桌上的回看纸条。 */
+.universe-records {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: universe-record;
+}
+
+.universe-record {
+  padding: 0.55rem 0.65rem 0.6rem;
+  border-radius: 0.7rem 0.5rem 0.8rem 0.45rem;
+  border: 1px solid var(--universe-hairline);
+  background: color-mix(in srgb, var(--universe-ink) 3.5%, transparent);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--universe-ink) 5%, transparent);
+}
+
+.universe-record header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: 0.7rem;
+  color: var(--universe-faint);
+}
+
+.universe-record header time {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-highlight);
+}
+
+.universe-record__answer {
+  margin: 0.4rem 0 0;
+  padding-left: 0.55rem;
+  border-left: 3px solid var(--universe-line-strong);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--universe-ink);
+}
+
+.universe-record__answer.is-empty {
+  border-left-style: dashed;
+  color: var(--universe-faint);
+  font-size: 0.74rem;
+}
+
+.universe-record__feedback {
+  margin: 0.45rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.universe-record__feedback li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.universe-record__feedback em {
+  flex: 0 0 auto;
+  font-style: normal;
+  font-size: 0.66rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--universe-line);
+  color: var(--color-highlight);
+}
+
+.universe-record__material {
+  margin-top: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.universe-record__material > span {
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  color: var(--universe-faint);
+}
+
+.universe-record__material small {
+  font-size: 0.73rem;
+  line-height: 1.4;
+  color: var(--universe-muted);
+}
+
+.universe-record footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.universe-record footer button {
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.16rem 0.5rem;
+  border-radius: 0.5rem 0.45rem 0.55rem 0.42rem;
+  border: 1px solid var(--universe-line-strong);
+  background: color-mix(in srgb, var(--universe-ink) 5%, transparent);
+  color: var(--universe-ink);
+  cursor: pointer;
+}
+
+.universe-record footer button:hover {
+  background: color-mix(in srgb, var(--universe-ink) 10%, transparent);
+}
+
+/* §11.5 等价册页：画在天空上的一张**册子**，不是一块后台表格。
+   左缘的书脊签 + 一行事实 + 一颗动作，与画布读的是同一份数据。 */
+.universe-booklist {
+  position: absolute;
+  z-index: 28;
+  top: 172px;
+  right: auto;
+  bottom: 156px;
+  left: calc(var(--universe-shell-left) + var(--universe-seat-gutter));
+  width: 780px;
+  max-width: calc(100% - var(--universe-bar-left) - var(--universe-shell-right));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 1rem 1.1rem 1.2rem;
+  border: 4px solid rgba(255, 252, 235, 0.84);
+  border-radius: 31px 42px 29px 38px / 35px 30px 43px 31px;
+  background:
+    radial-gradient(circle at 12% 0, rgba(255, 255, 255, 0.58), transparent 32%),
+    var(--hud-cream, #fff2cf);
+  box-shadow: var(--hud-shadow);
+  color: var(--universe-ink);
+  --universe-ink: var(--hud-ink, #30231a);
+  --universe-faint: var(--hud-soft, #705d4d);
+  --universe-line-strong: var(--hud-line-strong, rgba(66, 41, 25, 0.46));
+  --universe-hairline: var(--hud-line, rgba(73, 47, 29, 0.22));
+}
+
+.universe-booklist__head h2 {
+  margin: 0;
+  display: inline-block;
+  padding: 0.35rem 0.8rem;
+  border-radius: 17px 22px 15px 19px;
+  background: var(--hud-mint, #b9d3ad);
+  font: 680 1rem var(--font-display, "Noto Serif SC Variable", serif);
+}
+
+.universe-booklist__head p {
+  margin: 0.25rem 0 0.85rem;
+  font-size: 0.76rem;
+  color: var(--universe-faint);
+}
+
+.universe-booklist__pages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0 0.2rem 0 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--universe-line-strong) transparent;
+}
+
+.universe-booklist__page {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.5rem 0.45rem 0.75rem;
+  border-radius: 13px 19px 12px 16px;
+  border: 1px solid var(--universe-hairline);
+  /* 书脊：左侧一道实边，像册子里夹着的一张签 */
+  border-left: 5px solid var(--hud-butter, #f3d678);
+  background: var(--hud-paper-light, #fff9eb);
+  box-shadow: 0 3px 8px rgba(67, 43, 27, 0.1);
+}
+
+.universe-booklist__spine {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  text-align: left;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.universe-booklist__spine strong {
+  display: block;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.universe-booklist__spine small {
+  display: block;
+  margin-top: 0.18rem;
+  font-size: 0.72rem;
+  color: var(--universe-faint);
+}
+
+.universe-booklist__spine[aria-current="true"] strong {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.universe-booklist__act {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font: inherit;
+  font-size: 0.76rem;
+  padding: 0.22rem 0.6rem;
+  border-radius: 0.55rem 0.5rem 0.6rem 0.45rem;
+  border: 2px solid color-mix(in srgb, var(--hud-green, #66816a) 70%, transparent);
+  background: var(--hud-mint, #b9d3ad);
+  color: var(--universe-ink);
+  box-shadow: 0 4px 9px rgba(67, 43, 27, 0.13);
+  cursor: pointer;
+}
+
+.universe-booklist__act:hover {
+  background: color-mix(in srgb, var(--hud-mint, #b9d3ad) 70%, white);
+}
+
+@media (min-width: 640px) and (max-width: 959px) {
+  .universe-booklist {
+    top: 222px;
+    right: var(--universe-shell-right);
+    bottom: 144px;
+    width: auto;
+    max-width: none;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 760px) {
+  .universe-booklist {
+    top: 72px;
+    right: 10px;
+    bottom: 120px;
+    left: 250px;
+  }
+}
+
+@media (max-width: 639px) {
+  .universe-booklist {
+    top: 180px;
+    right: 10px;
+    bottom: calc(var(--mobile-nav-inset) + 76px);
+    left: 10px;
+    width: auto;
+    max-width: none;
+  }
+}
+
+/* 等价列表那一颗：与图层开关并排，按下时是薄荷标题牌那一档。 */
+.universe-layer-toggle.is-list {
+  border: 1px solid var(--universe-line-strong);
+  border-radius: 0.6rem 0.5rem 0.65rem 0.45rem;
+  background: color-mix(in srgb, var(--universe-ink) 5%, transparent);
+  color: var(--universe-faint);
+  cursor: pointer;
+  font-size: 0.74rem;
+}
+
+.universe-layer-toggle.is-list.is-on {
+  border-color: rgba(94, 168, 140, 0.6);
+  background: rgba(94, 168, 140, 0.18);
+  color: var(--universe-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .universe-booklist__act,
+  .universe-record footer button,
+  .universe-locals__act,
+  .universe-locals__card,
+  .universe-layer-toggle.is-list {
     transition: none;
   }
 }

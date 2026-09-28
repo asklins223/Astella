@@ -23,7 +23,19 @@ export async function reserveRoundModelAttempt(tx: ApiTransaction, scope: RoundS
   if (remaining < 1 || Number(used.seconds) >= round.budgets.maxWallClockSeconds) {
     throw new RoundServiceError("round_budget_exhausted", "这一轮的生成预算已用完；已经拿到的内容不受影响，可以继续读或先结束");
   }
-  const durationMs = Math.max(1, Math.floor(Math.min(200, round.budgets.maxWallClockSeconds - Number(used.seconds)) * 1000));
+  // 这一次预留的墙钟。**200s 那个值是在"产物是一小段 JSON"的时候定的**，2026-09-28 连着
+  // 抬了两次，数字都来自真窗口实测而不是估的：
+  //
+  //   200s → 讲解 + 核对就吃掉 163s，产物分到 36.6s 超时 → 抬到 420s
+  //   420s → 富笔记（IndexTTS，71 块）上讲解 ≈ 270s、核对 ≈ 150s，产物又只剩 ≈ 90s，
+  //          生成一整页（可到两万 token）依然超时（`step exceeded 89999ms`）→ 抬到 780s
+  //
+  // 780s 装得下实测的 ≈ 620s 三段，也仍在**这一轮 1800s 的总预算之内**——留出一次
+  // 重来的余量。装不下时**如实**按（剩余墙钟）截断，不假装还有时间。
+  //
+  // 注意它和 `maxModelCalls` 必须一起看：调用数够、墙钟不够的话，先撞的永远是墙钟，
+  // 于是"还有调用余量"这件事会变成一句没有意义的话（这正是 900s 与 16 次那一版的教训）。
+  const durationMs = Math.max(1, Math.floor(Math.min(780, round.budgets.maxWallClockSeconds - Number(used.seconds)) * 1000));
   const attempt = { id: randomUUID(), maxCalls: Math.min(4, remaining), deadlineAt: Date.now() + durationMs };
   await tx.execute(sql`INSERT INTO note_learning_round_model_attempts
     (id, workspace_id, user_id, round_id, model_id, reserved_calls, expires_at)

@@ -1,0 +1,342 @@
+/* The demo shares the real room and its Live2D seat. Only the two paper leaves
+   and their static sample interactions live here. */
+#main-content[data-note-demo-open="true"] > .task-surface:not(.note-learning-demo-host) {
+  visibility: hidden;
+  pointer-events: none;
+}
+.hud-surface .note-learning-demo-launch {
+  position: absolute;
+  z-index: 39;
+  top: 166px;
+  left: 115px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 3px solid rgba(255, 252, 235, .88);
+  border-radius: 12px 17px 10px 15px;
+  background: var(--hud-butter);
+  color: var(--hud-ink);
+  box-shadow: var(--hud-shadow-small);
+  font: 750 12px/1.2 "Noto Sans SC Variable", sans-serif;
+  cursor: pointer;
+  transform: rotate(-1.2deg);
+  transition: transform 150ms var(--hud-ease-out);
+}
+.hud-surface .note-learning-demo-launch span { font-size: 10px; font-weight: 650; color: var(--hud-soft); }
+.hud-surface .note-learning-demo-launch:hover { transform: rotate(-1.2deg) translateY(-2px); }
+.hud-surface .note-learning-demo-launch:active { transform: rotate(-1.2deg) scale(.96); transition-duration: 110ms; }
+.hud-surface .note-learning-demo-launch:focus-visible,
+.hud-surface .note-learning-demo-host button:focus-visible,
+.hud-surface .note-learning-demo-host input:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+
+.desktop-app.hud-surface .note-learning-demo-host { z-index: 21; }
+.desktop-app.hud-surface .note-learning-demo-host .content { overflow: visible; pointer-events: auto; }
+.hud-surface .note-learning-demo__book {
+  display: grid;
+  grid-template-columns: minmax(0, 1.01fr) minmax(0, .99fr);
+  align-items: stretch;
+  gap: 14px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.hud-surface .note-learning-demo__source,
+.hud-surface .note-learning-demo__guide {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hud-paper-deep) transparent;
+  color: var(--hud-ink);
+}
+.hud-surface .note-learning-demo__source {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(22px, 2.2vw, 34px) clamp(20px, 2.5vw, 35px) 24px clamp(27px, 3vw, 43px);
+  border: 4px solid rgba(255, 252, 235, .84);
+  border-radius: 27px 39px 25px 34px / 34px 27px 37px 29px;
+  background:
+    linear-gradient(90deg, transparent 0 24px, rgba(174, 92, 62, .20) 25px 26px, transparent 27px),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(85, 107, 96, .08) 31px 32px),
+    radial-gradient(circle at 12% 0, rgba(255, 255, 255, .72), transparent 48%),
+    var(--hud-paper-light);
+  box-shadow: var(--hud-shadow), inset -13px 0 19px rgba(69, 44, 28, .07);
+  transform: rotate(-.2deg);
+}
+.hud-surface .note-learning-demo__source::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 38px;
+  height: 37px;
+  content: "";
+  background: linear-gradient(225deg, var(--hud-paper-deep) 0 49%, transparent 50%);
+  filter: drop-shadow(-2px 3px 2px rgba(67, 39, 20, .17));
+  pointer-events: none;
+}
+.hud-surface .note-learning-demo__source-top { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 22px; }
+.hud-surface .note-learning-demo__folio { display: inline-flex; align-items: center; gap: 7px; color: var(--hud-green); font-size: 12px; font-weight: 800; }
+.hud-surface .note-learning-demo__page-number { color: var(--hud-soft); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.hud-surface .note-learning-demo__source h2 { max-width: 16em; margin: 0 0 9px; font: 750 clamp(21px, 1.9vw, 28px)/1.38 "Noto Serif SC Variable", "Songti SC", serif; letter-spacing: -.025em; }
+.hud-surface .note-learning-demo__source-intro { margin: 0 0 19px; color: var(--hud-soft); font-size: 12px; line-height: 1.7; }
+.hud-surface .note-learning-demo__source-intro a { display: inline-block; margin-left: 6px; color: #3c6044; font-weight: 750; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.hud-surface .note-learning-demo__source-intro a:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.hud-surface .note-learning-demo__source-lines { display: flex; flex-direction: column; gap: 11px; }
+.hud-surface .note-learning-demo__paragraph { padding: 11px 12px 10px; border-radius: 10px 17px 11px 15px; transition: background 170ms var(--hud-ease-out), box-shadow 170ms var(--hud-ease-out); }
+.hud-surface .note-learning-demo__paragraph + .note-learning-demo__paragraph { border-top: 1px dashed var(--hud-line); }
+.hud-surface .note-learning-demo__paragraph.is-selected { background: #f6e4a6; box-shadow: 0 7px 17px rgba(73, 47, 29, .13); }
+.hud-surface .note-learning-demo__paragraph p { margin: 0; font: 570 clamp(14px, 1.06vw, 16px)/1.72 "Noto Serif SC Variable", "Songti SC", serif; }
+.hud-surface .note-learning-demo__source ::selection { background: var(--hud-butter); color: var(--hud-ink); }
+.hud-surface .note-learning-demo__paragraph-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+.hud-surface .note-learning-demo__paragraph-actions button,
+.hud-surface .note-learning-demo__source-foot button,
+.hud-surface .note-learning-demo__linked-notes button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: none;
+  color: var(--hud-green);
+  font: 790 11px/1.4 "Noto Sans SC Variable", sans-serif;
+  cursor: pointer;
+  text-align: left;
+}
+.hud-surface .note-learning-demo__paragraph-actions .note-learning-demo__ask { padding: 5px 8px; border-radius: 9px 13px 8px 11px; background: var(--hud-mint); color: #34553b; }
+.hud-surface .note-learning-demo__paragraph-actions .note-learning-demo__selection-action { max-width: 100%; padding: 5px 8px; border-radius: 9px 13px 8px 11px; background: var(--hud-peach); color: #3e2d22; }
+.hud-surface .note-learning-demo__paragraph-actions .note-learning-demo__mark { max-width: 100%; padding: 5px 7px; border-radius: 8px 11px 7px 10px; background: var(--hud-butter); color: #694b24; }
+.hud-surface .note-learning-demo__paragraph-actions button:hover,
+.hud-surface .note-learning-demo__linked-notes button:hover { transform: translateY(-2px) scale(1.02); }
+.hud-surface .note-learning-demo__paragraph-actions button:active,
+.hud-surface .note-learning-demo__linked-notes button:active { transform: scale(.96); transition-duration: 110ms; }
+.hud-surface .note-learning-demo__linked-notes { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; padding: 11px 13px; border: 3px solid rgba(255, 252, 235, .84); border-radius: 13px 18px 10px 16px; background: var(--hud-mint); box-shadow: var(--hud-shadow-small); }
+.hud-surface .note-learning-demo__linked-notes strong { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.hud-surface .note-learning-demo__linked-notes button { justify-content: space-between; padding: 2px 0; color: #34553b; }
+.hud-surface .note-learning-demo__closed-book { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 250px; margin: 22px 0; padding: 25px; border: 3px solid rgba(255, 252, 235, .9); border-radius: 20px 26px 17px 25px; background: var(--hud-paper-deep); box-shadow: var(--hud-shadow-small); color: #6f563b; text-align: center; }
+.hud-surface .note-learning-demo__closed-book strong { font: 740 20px/1.3 "Noto Serif SC Variable", "Songti SC", serif; }
+.hud-surface .note-learning-demo__closed-book span { max-width: 19em; font-size: 12px; line-height: 1.6; }
+.hud-surface .note-learning-demo__source-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px; margin-top: auto; padding-top: 20px; color: var(--hud-soft); font-size: 10px; line-height: 1.4; }
+.hud-surface .note-learning-demo__source-foot button { padding: 4px 0; font-size: 11px; }
+
+.hud-surface .note-learning-demo__guide {
+  display: flex;
+  flex-direction: column;
+  margin: 15px 0 10px -8px;
+  padding: clamp(19px, 2vw, 29px);
+  border: 4px solid rgba(255, 252, 235, .9);
+  border-radius: 30px 42px 29px 39px / 36px 30px 42px 32px;
+  background: radial-gradient(circle at 96% 1%, rgba(255, 255, 255, .72), transparent 42%), var(--hud-cream);
+  box-shadow: var(--hud-shadow);
+  transform: rotate(.25deg);
+}
+.hud-surface .note-learning-demo__tape { position: absolute; top: -13px; left: 40%; width: 90px; height: 24px; background: rgba(185, 211, 173, .77); box-shadow: 0 3px 5px rgba(50, 36, 21, .1); transform: rotate(-3deg); pointer-events: none; }
+.hud-surface .note-learning-demo__guide-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+.hud-surface .note-learning-demo__small-tag { display: inline-flex; padding: 5px 9px; border-radius: 9px 13px 8px 12px; background: var(--hud-mint); color: #3d5b43; font-size: 11px; font-weight: 800; }
+.hud-surface .note-learning-demo__close { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 2px solid var(--hud-line); border-radius: 50%; background: var(--hud-paper-light); color: var(--hud-soft); cursor: pointer; }
+.hud-surface .note-learning-demo__close:hover { color: var(--hud-ink); background: var(--hud-butter); transform: translateY(-2px) scale(1.02); }
+.hud-surface .note-learning-demo__close:active { transform: scale(.96); transition-duration: 110ms; }
+.hud-surface .note-learning-demo__tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 20px; padding-bottom: 9px; border-bottom: 1px dashed var(--hud-line); }
+.hud-surface .note-learning-demo__tabs button {
+  min-height: 33px;
+  padding: 5px 11px;
+  border: 2px solid rgba(255, 252, 235, .9);
+  border-radius: 10px 14px 9px 12px;
+  background: var(--hud-paper-deep);
+  color: var(--hud-soft);
+  box-shadow: var(--hud-shadow-small);
+  font: 780 12px/1.3 "Noto Sans SC Variable", sans-serif;
+  cursor: pointer;
+  transition: transform 150ms var(--hud-ease-out);
+}
+.hud-surface .note-learning-demo__tabs button.is-active { background: var(--hud-butter); color: var(--hud-ink); transform: translateY(-2px) rotate(-1deg); }
+.hud-surface .note-learning-demo__tabs button:hover { transform: translateY(-2px) scale(1.02); }
+.hud-surface .note-learning-demo__tabs button:active { transform: scale(.96); transition-duration: 110ms; }
+.hud-surface .note-learning-demo__guide-body { display: flex; flex-direction: column; align-items: flex-start; min-height: 0; }
+.hud-surface .note-learning-demo__guide h2 { margin: 0 0 12px; font: 770 clamp(21px, 2vw, 29px)/1.35 "Noto Serif SC Variable", "Songti SC", serif; letter-spacing: -.025em; }
+.hud-surface .note-learning-demo__guide h2:focus { outline: none; }
+.hud-surface .note-learning-demo__lead { margin: 0 0 16px; font-size: clamp(14px, 1.08vw, 16px); line-height: 1.7; }
+.hud-surface .note-learning-demo__takeaway { display: flex; align-items: flex-start; gap: 8px; margin: 15px 0 0; padding: 10px 12px; border-radius: 9px 14px 8px 12px; background: var(--hud-butter); color: #4a3827; font-size: 12px; font-weight: 750; line-height: 1.55; }
+.hud-surface .note-learning-demo__takeaway svg { flex: none; margin-top: 1px; }
+
+.hud-surface .note-learning-demo__companion-cue {
+  position: absolute;
+  z-index: 24;
+  left: clamp(166px, 14vw, 210px);
+  bottom: clamp(270px, 35vh, 330px);
+  width: 204px;
+  padding: 12px 14px 11px;
+  border: 3px solid rgba(255, 252, 235, .92);
+  border-radius: 18px 21px 8px 19px;
+  background: var(--hud-paper-light);
+  color: var(--hud-ink);
+  box-shadow: var(--hud-shadow);
+}
+.hud-surface .note-learning-demo__companion-cue::after { position: absolute; bottom: -12px; left: 53px; width: 18px; height: 18px; content: ""; border-right: 3px solid rgba(255, 252, 235, .92); border-bottom: 3px solid rgba(255, 252, 235, .92); background: var(--hud-paper-light); transform: rotate(45deg); }
+.hud-surface .note-learning-demo__companion-cue > span { display: block; color: #3c6044; font-size: 11px; font-weight: 850; }
+.hud-surface .note-learning-demo__companion-cue p { margin: 5px 0 9px; font-size: 12px; line-height: 1.55; }
+.hud-surface .note-learning-demo__companion-cue button { display: inline-flex; align-items: center; gap: 2px; min-height: 31px; padding: 5px 7px; border: 0; border-radius: 9px 12px 8px 11px; background: var(--hud-mint); color: #34553b; font-size: 11px; font-weight: 820; cursor: pointer; }
+.hud-surface .note-learning-demo__companion-cue button:hover { transform: translateY(-2px) scale(1.02); }
+.hud-surface .note-learning-demo__companion-cue button:active { transform: scale(.96); transition-duration: 110ms; }
+.desktop-app.companion-absent .note-learning-demo__companion-cue { display: none; }
+
+.hud-surface .note-learning-demo__explain-switch button {
+  min-height: 30px;
+  padding: 5px 11px;
+  border: 2px solid var(--hud-paper-deep);
+  border-radius: 9px 13px 8px 11px;
+  background: var(--hud-paper-light);
+  color: var(--hud-soft);
+  font: 760 12px/1.2 "Noto Sans SC Variable", sans-serif;
+  cursor: pointer;
+  transition: transform 150ms var(--hud-ease-out);
+}
+.hud-surface .note-learning-demo__explain-switch button.is-picked { background: var(--hud-mint); border-color: #9ebc95; color: #34553b; }
+.hud-surface .note-learning-demo__explain-switch button:hover { transform: translateY(-2px) scale(1.02); }
+.hud-surface .note-learning-demo__explain-switch button:active { transform: scale(.96); transition-duration: 110ms; }
+
+.hud-surface .note-learning-demo__artifact-ticket,
+.hud-surface .note-learning-demo__artifact-fork,
+.hud-surface .note-learning-demo__artifact-door { width: 100%; }
+.hud-surface .note-learning-demo__artifact-slot { width: 100%; }
+.hud-surface .note-learning-demo__artifact-ticket small,
+.hud-surface .note-learning-demo__artifact-fork small,
+.hud-surface .note-learning-demo__artifact-door small { display: block; margin-top: 7px; color: var(--hud-soft); font-size: 10px; }
+.hud-surface .note-learning-demo__ticket-scene { padding: 13px 14px 12px; border: 3px solid rgba(255, 252, 235, .88); border-radius: 17px 24px 15px 21px; background: #e7ead6; box-shadow: var(--hud-shadow-small); }
+.hud-surface .note-learning-demo__ticket-stations { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.hud-surface .note-learning-demo__ticket-stations > div { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 5px; border: 2px solid rgba(255, 252, 235, .9); border-radius: 10px 15px 9px 13px; background: var(--hud-paper-light); text-align: center; }
+.hud-surface .note-learning-demo__ticket-stations > div.is-current { background: var(--hud-butter); box-shadow: 0 4px 12px rgba(73, 47, 29, .12); }
+.hud-surface .note-learning-demo__ticket-stations span { display: grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; background: var(--hud-mint); color: #34553b; font-size: 10px; font-weight: 850; }
+.hud-surface .note-learning-demo__ticket-stations strong { font-size: 11px; line-height: 1.35; }
+.hud-surface .note-learning-demo__ticket-scene svg { display: block; width: 100%; height: 60px; margin: 3px auto -3px; overflow: visible; }
+.hud-surface .note-learning-demo__ticket-scene svg > path { fill: none; stroke: #829c81; stroke-width: 4; stroke-dasharray: 8 8; stroke-linecap: round; }
+.hud-surface .note-learning-demo__ticket-scene .ticket-envelope { transform: translate(39px, 28px); transition: transform 380ms var(--hud-ease-out); }
+.hud-surface .note-learning-demo__ticket-scene .ticket-envelope--1 { transform: translate(199px, 28px); }
+.hud-surface .note-learning-demo__ticket-scene .ticket-envelope--2 { transform: translate(358px, 28px); }
+.hud-surface .note-learning-demo__ticket-scene .ticket-envelope rect { fill: var(--hud-butter); stroke: var(--hud-clay); stroke-width: 3; }
+.hud-surface .note-learning-demo__ticket-scene .ticket-envelope path { fill: none; stroke: var(--hud-clay); stroke-width: 2; }
+.hud-surface .note-learning-demo__ticket-detail { display: flex; flex-direction: column; gap: 3px; padding: 3px 5px 0; }
+.hud-surface .note-learning-demo__ticket-detail strong { font-size: 13px; }
+.hud-surface .note-learning-demo__ticket-detail span { color: var(--hud-soft); font-size: 12px; line-height: 1.55; }
+.hud-surface .note-learning-demo__artifact-action { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; margin-top: 9px; padding: 6px 13px; border: 2px solid #ad6d4e; border-radius: 11px 15px 9px 13px; background: var(--hud-peach); color: #3e2d22; box-shadow: var(--hud-shadow-small); font-size: 12px; font-weight: 800; cursor: pointer; }
+.hud-surface .note-learning-demo__artifact-action:hover { transform: translateY(-2px) scale(1.02); }
+.hud-surface .note-learning-demo__artifact-action:active { transform: scale(.96); transition-duration: 110ms; }
+
+.hud-surface .note-learning-demo__artifact-fork { padding: 13px 15px; border: 3px solid rgba(255, 252, 235, .89); border-radius: 19px 25px 14px 22px; background: #e8e9d4; box-shadow: var(--hud-shadow-small); }
+.hud-surface .note-learning-demo__fork-question { width: fit-content; margin: 0 auto 13px; padding: 10px 13px; border-radius: 11px 15px 8px 13px; background: var(--hud-butter); font: 740 15px/1.45 "Noto Serif SC Variable", "Songti SC", serif; text-align: center; }
+.hud-surface .note-learning-demo__fork-branches { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.hud-surface .note-learning-demo__fork-branches button { display: flex; align-items: center; justify-content: space-between; gap: 5px; min-height: 67px; padding: 9px 11px; border: 3px solid rgba(255, 252, 235, .9); border-radius: 11px 17px 9px 15px; background: var(--hud-paper-light); color: var(--hud-ink); box-shadow: var(--hud-shadow-small); font-size: 12px; font-weight: 750; text-align: left; cursor: pointer; }
+.hud-surface .note-learning-demo__fork-branches button.is-picked { background: var(--hud-mint); }
+.hud-surface .note-learning-demo__fork-branches button:hover { transform: translateY(-2px) scale(1.02); }
+.hud-surface .note-learning-demo__fork-branches button:active { transform: scale(.985); transition-duration: 110ms; }
+.hud-surface .note-learning-demo__fork-outcome { min-height: 69px; margin-top: 12px; padding: 11px 13px; border-radius: 12px 18px 10px 16px; background: var(--hud-paper-light); font-size: 12px; line-height: 1.55; }
+
+.hud-surface .note-learning-demo__artifact-door { padding: 14px; border: 3px solid rgba(255, 252, 235, .88); border-radius: 13px 23px 10px 20px; background: #e9d9bd; box-shadow: var(--hud-shadow-small); }
+.hud-surface .note-learning-demo__door-premise { display: block; margin-bottom: 9px; color: #6e4c2b; font-size: 12px; }
+.hud-surface .note-learning-demo__door-requests { display: flex; flex-wrap: wrap; gap: 8px; }
+.hud-surface .note-learning-demo__door-requests button { min-height: 34px; padding: 6px 10px; border: 2px solid rgba(255, 252, 235, .88); border-radius: 8px 13px 9px 11px; background: var(--hud-paper-light); color: var(--hud-ink); font-size: 12px; font-weight: 800; cursor: pointer; }
+.hud-surface .note-learning-demo__door-requests button.is-picked { background: var(--hud-butter); }
+.hud-surface .note-learning-demo__door-requests button:hover { transform: translateY(-2px) scale(1.02); }
+.hud-surface .note-learning-demo__door-requests button:active { transform: scale(.96); transition-duration: 110ms; }
+.hud-surface .note-learning-demo__door-scene { display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: center; gap: 8px; min-height: 130px; margin: 11px 0; padding: 11px; border-radius: 13px 18px 11px 15px; background: var(--hud-paper-light); text-align: center; }
+.hud-surface .note-learning-demo__door-agent { padding: 10px 5px; border-radius: 9px 13px 8px 11px; background: var(--hud-mint); font-size: 11px; font-weight: 800; }
+.hud-surface .note-learning-demo__door-gate { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 91px; border: 4px solid var(--hud-green); border-radius: 7px 17px 8px 12px; background: var(--hud-butter); color: #6e4c2b; box-shadow: inset 0 0 0 5px rgba(255, 252, 235, .75); transition: transform 330ms var(--hud-ease-out), background 330ms var(--hud-ease-out); }
+.hud-surface .note-learning-demo__door-gate.is-open { transform: perspective(200px) rotateY(-15deg); background: var(--hud-mint); }
+.hud-surface .note-learning-demo__door-gate span { font-size: 10px; font-weight: 800; }
+.hud-surface .note-learning-demo__door-result { display: flex; align-items: center; justify-content: center; gap: 3px; min-height: 58px; padding: 7px; border-radius: 9px 12px 8px 11px; background: var(--hud-paper-deep); font-size: 11px; font-weight: 800; line-height: 1.35; }
+.hud-surface .note-learning-demo__artifact-door p { margin: 3px 0 0; font-size: 12px; line-height: 1.55; }
+
+.hud-surface .note-learning-demo__primary { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 44px; margin-top: 14px; padding: 8px 16px; border: 3px solid rgba(255, 252, 235, .9); border-radius: 16px 21px 14px 19px; background: var(--hud-peach); color: #3e2d22; box-shadow: var(--hud-shadow-small); font: 830 14px/1.3 "Noto Sans SC Variable", sans-serif; cursor: pointer; transition: transform 150ms var(--hud-ease-out); }
+.hud-surface .note-learning-demo__primary:hover:not(:disabled) { transform: translateY(-2px) scale(1.02); }
+.hud-surface .note-learning-demo__primary:active:not(:disabled) { transform: scale(.96); transition-duration: 110ms; }
+.hud-surface .note-learning-demo__primary:disabled { opacity: .53; cursor: not-allowed; }
+.hud-surface .note-learning-demo__recall-card { width: 100%; padding: 17px 19px; border: 3px solid rgba(255, 252, 235, .9); border-radius: 16px 24px 13px 21px; background: var(--hud-mint); box-shadow: var(--hud-shadow-small); }
+.hud-surface .note-learning-demo__recall-card span { color: #405f43; font-size: 11px; font-weight: 800; }
+.hud-surface .note-learning-demo__recall-card p { margin: 7px 0 0; font: 740 18px/1.55 "Noto Serif SC Variable", "Songti SC", serif; }
+.hud-surface .note-learning-demo__recall-result { width: 100%; margin-top: 15px; }
+.hud-surface .note-learning-demo__recall-result p { margin: 0 0 13px; font-size: 14px; line-height: 1.7; }
+.hud-surface .note-learning-demo__recall-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.hud-surface .note-learning-demo__recall-choices button { min-height: 39px; padding: 8px 13px; border: 2px solid rgba(255, 252, 235, .86); border-radius: 11px 15px 9px 13px; background: var(--hud-paper-light); color: var(--hud-ink); box-shadow: var(--hud-shadow-small); font-weight: 750; cursor: pointer; }
+.hud-surface .note-learning-demo__recall-choices button.is-picked { background: var(--hud-butter); }
+.hud-surface .note-learning-demo__recall-choices button:hover { transform: translateY(-2px) scale(1.02); }
+.hud-surface .note-learning-demo__recall-choices button:active { transform: scale(.96); transition-duration: 110ms; }
+.hud-surface .note-learning-demo__honesty { display: block; margin-top: 12px; color: var(--hud-soft); font-size: 11px; line-height: 1.55; }
+
+.hud-surface .note-learning-demo__annotation-body { width: 100%; }
+.hud-surface .note-learning-demo__annotation-body blockquote { width: 100%; margin: 0 0 13px; padding: 10px 14px; border: 3px solid rgba(255, 252, 235, .9); border-radius: 8px 15px 9px 12px; background: var(--hud-butter); box-shadow: var(--hud-shadow-small); font: 690 13px/1.65 "Noto Serif SC Variable", "Songti SC", serif; }
+.hud-surface .note-learning-demo__annotation-index { display: flex; align-items: center; gap: 7px; margin: -3px 0 12px; }
+.hud-surface .note-learning-demo__annotation-index span { margin-right: auto; color: var(--hud-soft); font-size: 11px; font-weight: 760; }
+.hud-surface .note-learning-demo__annotation-index button { padding: 5px 8px; border: 2px solid rgba(255, 252, 235, .88); border-radius: 9px 12px 8px 11px; background: var(--hud-paper-deep); color: var(--hud-ink); font-size: 10px; font-weight: 760; cursor: pointer; }
+.hud-surface .note-learning-demo__annotation-index button:hover:not(:disabled) { transform: translateY(-2px) scale(1.02); }
+.hud-surface .note-learning-demo__annotation-index button:active:not(:disabled) { transform: scale(.96); transition-duration: 110ms; }
+.hud-surface .note-learning-demo__annotation-index button:disabled { opacity: .45; cursor: not-allowed; }
+.hud-surface .note-learning-demo__explain-switch { display: flex; gap: 7px; margin-bottom: 12px; }
+.hud-surface .note-learning-demo__annotation-note { width: 100%; padding: 17px; border: 3px solid rgba(255, 252, 235, .85); border-radius: 12px 21px 11px 18px; background: var(--hud-paper-light); box-shadow: var(--hud-shadow-small); }
+.hud-surface .note-learning-demo__annotation-note strong { color: var(--hud-clay); font-size: 12px; }
+.hud-surface .note-learning-demo__annotation-note p { margin: 5px 0 14px; font-size: 14px; line-height: 1.7; }
+.hud-surface .note-learning-demo__annotation-end { display: flex; gap: 7px; align-items: center; padding-top: 11px; border-top: 1px dashed var(--hud-line); color: #3c6044; font-size: 12px; font-weight: 800; }
+.hud-surface .note-learning-demo__source-link { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; margin-top: 11px; padding: 4px 2px; border: 0; background: none; color: var(--hud-green); font-size: 12px; font-weight: 790; cursor: pointer; }
+.hud-surface .note-learning-demo__source-link:hover { transform: translateY(-2px) scale(1.02); }
+.hud-surface .note-learning-demo__source-link:active { transform: scale(.96); transition-duration: 110ms; }
+
+.hud-surface .note-learning-demo__expand-body,
+.hud-surface .note-learning-demo__trail-body { width: 100%; }
+.hud-surface .note-learning-demo__concept-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 9px; color: var(--hud-soft); font-size: 11px; font-weight: 760; }
+.hud-surface .note-learning-demo__concept-line strong { padding: 5px 8px; border-radius: 9px 13px 8px 11px; background: var(--hud-mint); color: #3c6044; }
+.hud-surface .note-learning-demo__expand-intro,
+.hud-surface .note-learning-demo__trail-intro { margin: 0 0 11px; color: var(--hud-soft); font-size: 12px; line-height: 1.55; }
+.hud-surface .note-learning-demo__draft-list { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.hud-surface .note-learning-demo__draft { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border: 2px solid rgba(255, 252, 235, .86); border-radius: 10px 15px 9px 13px; background: var(--hud-paper-light); }
+.hud-surface .note-learning-demo__draft.is-previewed { background: #f8e9b7; }
+.hud-surface .note-learning-demo__draft input { flex: none; width: 17px; height: 17px; margin: 0; accent-color: var(--hud-green); cursor: pointer; }
+.hud-surface .note-learning-demo__draft button { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: 2px; padding: 3px; border: 0; background: none; color: var(--hud-ink); cursor: pointer; text-align: left; }
+.hud-surface .note-learning-demo__draft button strong { font-size: 12px; line-height: 1.35; }
+.hud-surface .note-learning-demo__draft button span { color: var(--hud-soft); font-size: 10px; line-height: 1.35; }
+.hud-surface .note-learning-demo__draft:hover { transform: translateY(-2px) scale(1.01); }
+.hud-surface .note-learning-demo__draft:active { transform: scale(.985); transition-duration: 110ms; }
+.hud-surface .note-learning-demo__draft-preview { width: 100%; margin-top: 11px; padding: 12px 15px; border: 3px solid rgba(255, 252, 235, .86); border-radius: 13px 19px 10px 16px; background: var(--hud-mint); box-shadow: var(--hud-shadow-small); }
+.hud-surface .note-learning-demo__draft-preview > span { display: block; margin-bottom: 4px; color: #3c6044; font-size: 10px; font-weight: 850; }
+.hud-surface .note-learning-demo__draft-preview strong { font: 740 14px/1.4 "Noto Serif SC Variable", "Songti SC", serif; }
+.hud-surface .note-learning-demo__draft-preview p { margin: 6px 0; font-size: 12px; line-height: 1.55; }
+.hud-surface .note-learning-demo__draft-links { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.hud-surface .note-learning-demo__draft-links button { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 0; border: 0; background: none; color: #345b3a; font-size: 10px; font-weight: 740; line-height: 1.4; cursor: pointer; text-align: left; }
+.hud-surface .note-learning-demo__draft-links button:hover { transform: translateY(-2px) scale(1.02); }
+.hud-surface .note-learning-demo__draft-links button:active { transform: scale(.96); transition-duration: 110ms; }
+.hud-surface .note-learning-demo__trail-list { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.hud-surface .note-learning-demo__trail-list button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 67px; padding: 9px 12px; border: 2px solid rgba(255, 252, 235, .89); border-radius: 11px 18px 9px 15px; background: var(--hud-paper-light); color: var(--hud-ink); box-shadow: var(--hud-shadow-small); cursor: pointer; text-align: left; }
+.hud-surface .note-learning-demo__trail-list button:hover { transform: translateY(-2px) scale(1.01); background: var(--hud-butter); }
+.hud-surface .note-learning-demo__trail-list button:active { transform: scale(.985); transition-duration: 110ms; }
+.hud-surface .note-learning-demo__trail-icon { display: grid; place-items: center; flex: none; width: 31px; height: 31px; border-radius: 9px 12px 8px 11px; background: var(--hud-mint); color: #3c6044; }
+.hud-surface .note-learning-demo__trail-list button > span:nth-child(2) { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
+.hud-surface .note-learning-demo__trail-list strong { font-size: 12px; line-height: 1.4; }
+.hud-surface .note-learning-demo__trail-list small { overflow: hidden; color: var(--hud-soft); font-size: 10px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.hud-surface .note-learning-demo__trail-list time { color: var(--hud-green); font-size: 10px; font-weight: 750; }
+
+@media (max-width: 950px), (max-height: 590px) {
+  .hud-surface .note-learning-demo__companion-cue { display: none; }
+  .desktop-app.hud-surface .note-learning-demo-host .content { overflow-y: auto; overscroll-behavior: contain; }
+  .hud-surface .note-learning-demo__book { display: flex; flex-direction: column; height: auto; gap: 15px; padding: 2px 2px 20px; }
+  .hud-surface .note-learning-demo__source { flex: none; padding: 21px 23px 20px 31px; overflow: visible; }
+  .hud-surface .note-learning-demo__source-top { margin-bottom: 11px; }
+  .hud-surface .note-learning-demo__source-lines { gap: 5px; }
+  .hud-surface .note-learning-demo__paragraph { padding: 7px 9px; }
+  .hud-surface .note-learning-demo__guide { flex: none; margin: 0; padding: 19px 21px 23px; overflow: visible; }
+}
+@media (max-width: 760px), (max-height: 530px) {
+  .hud-surface .note-learning-demo-launch { top: 57px; left: 58px; min-height: 26px; padding: 3px 7px; border-width: 2px; font-size: 9px; }
+  .hud-surface .note-learning-demo-launch span { font-size: 8px; }
+  .hud-surface .note-learning-demo__source { padding: 15px 17px 16px 25px; }
+  .hud-surface .note-learning-demo__source h2 { font-size: 18px; }
+  .hud-surface .note-learning-demo__paragraph p { font-size: 13px; }
+  .hud-surface .note-learning-demo__guide { padding: 17px; }
+  .hud-surface .note-learning-demo__guide h2 { font-size: 20px; }
+  .hud-surface .note-learning-demo__lead { font-size: 13px; }
+  .hud-surface .note-learning-demo__ticket-detail span { font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hud-surface .note-learning-demo-host button,
+  .hud-surface .note-learning-demo__paragraph,
+  .hud-surface .note-learning-demo__ticket-scene .ticket-envelope,
+  .hud-surface .note-learning-demo__door-gate { transition: none !important; }
+}

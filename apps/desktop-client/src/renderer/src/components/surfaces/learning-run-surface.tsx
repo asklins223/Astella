@@ -1373,14 +1373,55 @@ type LearningRunBodyProps = {
 };
 
 /**
+ * 走主进程解析并提交这一次作答的返回路由（`navigation.resolve` → `navigation.go`）。
+ *
+ * **必须经主进程**，不是"顺便"这么走：正式作答期间 `FormalAssessmentGuard` 由主进程
+ * 持有，只有这条带 `learningRunId` 的提交才会放行。绕过它，界面看着回到了笔记，闸却还
+ * 在"按住"状态，下一次导航会被挡住——而那个症状出现在**别处**，极难往回找。
+ *
+ * 解析不出来（被删、被禁、被关的目标）不重放：返回 `null`，由调用方落到它自己的兜底。
+ * 调用方必须**先**把 run 树摘掉并让出一帧，再调这里——顺序反了，主进程会在 Player
+ * 还挂着的时候就放行。
+ */
+export async function releaseRunThroughMainV1(input: {
+  readonly runId: string;
+  readonly route: DesktopRouteV1;
+}): Promise<DesktopRouteV1 | null> {
+  if (!window.ailearn) return null;
+  try {
+    const resolveResponse = await window.ailearn.navigation.resolve({
+      meta: createRequestMeta(),
+      route: input.route,
+      learningRunId: input.runId,
+    });
+    const resolved = unwrapGatewayResult(resolveResponse);
+    if (resolved.current.scope !== "workspace") return null;
+    const goResponse = await window.ailearn.navigation.go({
+      meta: createRequestMeta(resolved.current.workspaceEpoch),
+      route: resolved.current.route,
+      entryKind: "user",
+      learningRunId: input.runId,
+    });
+    const navigated = unwrapGatewayResult(goResponse);
+    if (navigated.current.scope !== "workspace") return null;
+    return navigated.current.route;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The real LearningRun state machine behind the practice workbench.
  *
  * Behaviour (fences, snapshot resync, draft autosave, activity lease, submit,
  * result polling and the return contract) stays independent from presentation.
  * The workbench deliberately gives every interaction kind enough room to use
  * its own editor instead of forcing every task into a text-answer mockup.
+ *
+ * 也被**笔记学习页就地作答**挂载（2026-09-28 用户裁决：不跳页）。挂载方给同一个
+ * `onExit`，于是离开这一轮的收尾与闸门释放在两条路里是同一段代码，不会有两套。
  */
-function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) {
+export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) {
   const setActiveReviewTarget = useRoomStore((state) => state.setActiveReviewTarget);
   const setCompanionMoment = useRoomStore((state) => state.setCompanionMoment);
   const masterMuted = useRoomStore((state) => state.masterMuted);
@@ -2060,13 +2101,14 @@ function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) 
       const resultKey = `${value.runId}:${value.result.snapshotId}:${value.result.outcome}`;
       const isFreshResult = resultAcknowledgementEligibleRef.current
         && acknowledgedResultKeyRef.current !== resultKey;
-      const playsCeremony = isFreshResult && shouldPlayResultCeremony(value.result.outcome);
+      const notePractice = snapshot?.originV2.kind === "note_round";
+      const playsCeremony = !notePractice && isFreshResult && shouldPlayResultCeremony(value.result.outcome);
       const confirmsCompanion = shouldConfirmCompanionForOutcome(value.result.outcome);
       const hasPositiveCompanionFeedback = ["demonstrated", "practice_completed", "partial"].includes(value.result.outcome);
       if (isFreshResult) {
         acknowledgedResultKeyRef.current = resultKey;
         setResultAcknowledgementActive(playsCeremony);
-        if (companionFeedbackAllowed && hasPositiveCompanionFeedback) {
+        if (!notePractice && companionFeedbackAllowed && hasPositiveCompanionFeedback) {
           pendingResultFeedbackRef.current = {
             moment: confirmsCompanion ? "confirm" : "encourage",
             line: companionResultLine(value.result, snapshot?.target.publicSummary ?? "这张学习卡", resultKey),
@@ -2102,7 +2144,7 @@ function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) 
       if (requestIsCurrent()) applyReturnContract(null);
     }
     return true;
-  }, [applyReturnContract, companionFeedbackAllowed, requestSnapshotRefresh, runId, setCompanionMoment, snapshot?.target.publicSummary]);
+  }, [applyReturnContract, companionFeedbackAllowed, requestSnapshotRefresh, runId, setCompanionMoment, snapshot?.originV2.kind, snapshot?.target.publicSummary]);
 
   useEffect(() => {
     if (!snapshot || snapshot.runId !== runId || !shouldPollLearningRunResult(snapshot.phase)) return;
@@ -2674,13 +2716,27 @@ function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) 
     ? "正式挑战"
     : snapshot.publishedTargetEligibility === "blocked"
       ? "暂不计入掌握"
-      : "练习关";
+      : snapshot.originV2.kind === "note_round" ? "本轮练习" : "练习关";
 
   return (
     <>
       <div ref={primaryContentRef} className="learning-run-primary-content" aria-hidden={pendingAction || pendingHintAction ? true : undefined}>
       {result || terminal ? (
         <>
+        {returnTarget.kind === "note_round" ? <section className="note-run-receipt" data-outcome={result?.outcome ?? "no_result"}>
+          <header>
+            <span>本轮学习 · 一次尝试</span>
+            <h2 ref={primaryHeadingRef} tabIndex={-1} data-surface-initial-focus="true">{result?.outcome === "declared_unable" ? "这次先标记为需要帮助" : result ? "这次尝试已记录" : "这次尝试暂未形成结果"}</h2>
+            <p>{snapshot.target.publicSummary}</p>
+          </header>
+          <div className="note-run-receipt__body">
+            <strong>这次留下了什么</strong>
+            <p>{result?.outcome === "declared_unable" ? "你标记了暂时不会；这一道还没有形成独立使用的证据。" : feedback?.achievement ?? "作答状态已保存，结果仍需核对。"}</p>
+            {result?.gapFacets.length && feedback?.gap ? <p><b>还需帮助：</b>{feedback.gap}</p> : null}
+            <p className="small">回到本轮后可以对照讲解、再试一次，或结束这一轮。</p>
+          </div>
+          <div className="actions note-run-receipt__actions"><button type="button" className="button primary" onClick={() => onExit({ route: { kind: "note.detail", noteId: returnTarget.noteId }, reflectionRoundId: returnTarget.roundId })}><ArrowLeft size={15} aria-hidden="true" />回到本轮学习</button></div>
+        </section> : <>
         {result && feedback && ceremony ? <LearningRunCeremony active={resultAcknowledgementActive} stamp={ceremony.stamp} eyebrow={ceremony.eyebrow} headline={feedback.headline} achievement={feedback.achievement} companionLine={companionFeedbackAllowed ? companionFeedbackLine : null} onStart={playPendingResultFeedback} onFinish={finishResultCeremony} /> : null}
         <section className="learning-run-result-board" inert={resultAcknowledgementActive || undefined} data-outcome={result ? result.outcome : "no_result"} data-tone={feedback?.tone ?? "neutral"} data-acknowledgement={resultAcknowledgementActive ? "active" : "idle"}>
           <header className="learning-run-arrival">
@@ -2868,18 +2924,15 @@ function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) 
             <button type="button" className="button primary" onClick={() => onExit({ route: exitRoute })}>
               <ArrowLeft size={15} aria-hidden="true" />{resultReturnLabel}
             </button>
-            {returnTarget.kind === "note_round" ? <button type="button" className="button" onClick={() => onExit({
-              route: { kind: "note.detail", noteId: returnTarget.noteId }, reflectionRoundId: returnTarget.roundId,
-            })}>留下这次的理解</button> : null}
             {snapshot.target.cardId ? <button type="button" className="button" onClick={openObjective}>查看学习卡</button> : null}
           </div>
-        </section>
+        </section></>}
         </>
       ) : (
-        <section className="learning-run-focus" data-phase={snapshot.phase} data-interaction={activeTask?.activeVariant.interaction.kind ?? "none"}>
+        <section className="learning-run-focus" data-origin={snapshot.originV2.kind} data-phase={snapshot.phase} data-interaction={activeTask?.activeVariant.interaction.kind ?? "none"}>
           <header className="learning-run-focus__rail">
             <strong className="learning-run-focus__mode">{runModeLabel}</strong>
-            <div className="learning-run-focus__target"><span>{activeTask ? `问题 ${activeTask.sequence} · ${interactionLabel(activeTask)}` : phaseLabels[processingPhase]}</span><strong title={snapshot.target.publicSummary}>{snapshot.target.publicSummary}</strong></div>
+            <div className="learning-run-focus__target"><span>{activeTask ? snapshot.originV2.kind === "note_round" ? "这轮的一次尝试" : `问题 ${activeTask.sequence} · ${interactionLabel(activeTask)}` : phaseLabels[processingPhase]}</span>{snapshot.originV2.kind === "note_round" ? null : <strong title={snapshot.target.publicSummary}>{snapshot.target.publicSummary}</strong>}</div>
             <span className="learning-run-focus__eligibility">{eligibilityLabel(snapshot.publishedTargetEligibility)}</span>
             <div className="learning-run-focus__clock"><b>{formatClock(clock.seconds)}</b><small>{clock.paused ? "已暂停计时" : "专注时间"}</small></div>
           </header>
@@ -2896,7 +2949,7 @@ function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) 
               {/* 主位是主题不是指令：recall 题的 prompt 为 §7.3 泄题防护故意不含内容
                   （run-planner.ts:210），全仓一字不变，把它放大等于把最大的字给零信息。 */}
               <h2 ref={primaryHeadingRef} tabIndex={-1} data-surface-initial-focus="true">
-                {activeTask && snapshot.phase === "active" ? snapshot.target.publicSummary : processingHeadline}
+                {activeTask && snapshot.phase === "active" ? snapshot.originV2.kind === "note_round" ? "用自己的话试一试" : snapshot.target.publicSummary : processingHeadline}
               </h2>
               {activeTask && snapshot.phase === "active" ? <p>{activeTask.prompt}</p> : null}
             </header>
@@ -2919,7 +2972,7 @@ function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBodyProps) 
                     <li key={entry.level}><span>{entry.text}</span></li>
                   ))}
                 </ol>
-                {hints.some((entry) => entry.downgraded) ? <small>看过提示之后，这张卡本轮只计练习分，不再计正式理解分。</small> : null}
+                  {hints.some((entry) => entry.downgraded) ? <small>{snapshot.originV2.kind === "note_round" ? "看过提示后，这次仍只记作练习，不作为独立掌握证据。" : "看过提示之后，这张卡本轮只计练习分，不再计正式理解分。"}</small> : null}
               </div>
             </div> : null}
             <div className="learning-run-response">
@@ -3153,29 +3206,12 @@ export function LearningRunSurface({ onExit }: LearningRunSurfaceProps = {}) {
     // yielded a frame with the run context unmounted.
     setActiveRunId(null);
     await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-    let route: DesktopRouteV1 = request?.route ?? { kind: "review.queue" };
-    try {
-      const resolveResponse = await window.ailearn.navigation.resolve({
-        meta: createRequestMeta(),
-        route,
-        learningRunId: activeRunId,
-      });
-      const resolved = unwrapGatewayResult(resolveResponse);
-      if (resolved.current.scope !== "workspace") throw new Error("navigation did not resolve to the current workspace");
-      const goResponse = await window.ailearn.navigation.go({
-        meta: createRequestMeta(resolved.current.workspaceEpoch),
-        route: resolved.current.route,
-        entryKind: "user",
-        learningRunId: activeRunId,
-      });
-      const navigated = unwrapGatewayResult(goResponse);
-      if (navigated.current.scope !== "workspace") throw new Error("navigation did not commit to the current workspace");
-      route = navigated.current.route;
-    } catch {
+    const requested: DesktopRouteV1 = request?.route ?? { kind: "review.queue" };
+    // 解析与提交都在 `releaseRunThroughMainV1` 里，与"就地作答"那条路共用同一段。
+    const route: DesktopRouteV1 = await releaseRunThroughMainV1({ runId: activeRunId, route: requested })
       // A deleted, forbidden or unresolvable server target must not be
       // replayed by the renderer. Fall back to the review queue intent.
-      route = { kind: "room.home" };
-    }
+      ?? { kind: "room.home" };
     if (route.kind === "note.detail") {
       setActiveNoteRef({ noteId: route.noteId, noteVersionId: null, mode: "read",
         learningRoundId: request?.route.kind === "note.detail" && request.route.noteId === route.noteId ? request.reflectionRoundId : undefined });

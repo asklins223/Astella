@@ -225,7 +225,7 @@ describe("NotebookSurface · 学习卡生成状态同步", () => {
     const { getByText, queryByRole } = render(<NotebookSurface />);
 
     // 入口本身不再直接建任务：先开方案页（生成用哪套目标/策略由人确认）。
-    const entry = await waitFor(() => getByText("规划学习卡"));
+    const entry = await waitFor(() => getByText("制作学习卡"));
     expect(gateway.subscriptions.subscribe).not.toHaveBeenCalled();
     expect(queryByRole("dialog")).toBeNull();
 
@@ -244,7 +244,7 @@ describe("NotebookSurface · 学习卡生成状态同步", () => {
     useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
     const { getByText, getAllByRole, getByTitle } = render(<NotebookSurface />);
 
-    fireEvent.click(await waitFor(() => getByText("规划学习卡")));
+    fireEvent.click(await waitFor(() => getByText("制作学习卡")));
     fireEvent.click(await waitFor(() => getByText("开始生成")));
 
     // 拒绝留在方案页里说，同时投影重读：入口翻到这篇笔记真实的阶段。

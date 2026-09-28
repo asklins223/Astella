@@ -18,6 +18,7 @@ import {
   reviewWindowStart,
   sameCardAsEarlierLabel,
   sameCardEarlierCount,
+  sameReviewSubjectAsEarlierLabel,
   type ReviewItem,
   uniqueReviewItems,
 } from "./review-deck";
@@ -66,6 +67,27 @@ describe("同一张卡的多条排程（审计 F04）", () => {
     const deck = deckOf([CARD_A, CARD_A, CARD_A]);
     expect(sameCardAsEarlierLabel(deck, 2)).toContain("前面还有 2 条");
     expect(sameCardAsEarlierLabel(deck, 1)).toContain("与前面那条");
+  });
+});
+
+describe("无卡目标与卡片各自识别同一复习内容", () => {
+  it("不同无卡目标不因 cardId 都是 null 而合并；同目标的多条排程各自保留", () => {
+    const deck = [
+      item({ reviewId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", cardId: null, objectiveId: "objective-a" }),
+      item({ reviewId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", cardId: null, objectiveId: "objective-b" }),
+      item({ reviewId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", cardId: null, objectiveId: "objective-a" }),
+      item({ reviewId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", objectiveId: "objective-a" }),
+      item({ reviewId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", objectiveId: "objective-a" }),
+    ];
+
+    expect(uniqueReviewItems(deck)).toHaveLength(5);
+    expect(sameCardEarlierCount(deck, 2)).toBe(0);
+    expect(sameReviewSubjectAsEarlierLabel(deck, 0)).toBeNull();
+    expect(sameReviewSubjectAsEarlierLabel(deck, 1)).toBeNull();
+    expect(sameReviewSubjectAsEarlierLabel(deck, 2)).toContain("同一学习目标");
+    expect(sameReviewSubjectAsEarlierLabel(deck, 2)).toContain("各自结算一次");
+    expect(sameReviewSubjectAsEarlierLabel(deck, 3)).toBeNull();
+    expect(sameReviewSubjectAsEarlierLabel(deck, 4)).toContain("同一张卡");
   });
 });
 
@@ -173,7 +195,7 @@ describe("reviewReasonFacts", () => {
       scheduleGeneration: 3,
       queuePosition: 0,
     });
-    expect(reviewReasonSentence(facts)).toBe("已超过 3 天 · 同一张学习卡还有 1 项到期 · 已经排到第 3 轮，所以它排在队首。");
+    expect(reviewReasonSentence(facts)).toBe("已超过 3 天 · 同一学习目标还有 1 项到期 · 已经排到第 3 轮，所以它排在队首。");
     expect(reviewReasonTag(facts)).toEqual({ label: "排在最前", tone: "red" });
   });
 
@@ -349,13 +371,13 @@ describe("reviewSequenceAfter", () => {
 
 describe("deck lines", () => {
   it("numbers the card from its real position", () => {
-    expect(reviewDeckPosition(0, 6)).toBe("第 1 张 / 共 6 张");
-    expect(reviewDeckPosition(5, 12)).toBe("第 6 张 / 共 12 张");
+    expect(reviewDeckPosition(0, 6)).toBe("第 1 项 / 共 6 项");
+    expect(reviewDeckPosition(5, 12)).toBe("第 6 项 / 共 12 项");
   });
 
   it("counts against the server total, not the loaded page", () => {
-    expect(reviewDeckPosition(0, 137)).toBe("第 1 张 / 共 137 张");
-    expect(reviewDeckPosition(19, 137)).toBe("第 20 张 / 共 137 张");
+    expect(reviewDeckPosition(0, 137)).toBe("第 1 项 / 共 137 项");
+    expect(reviewDeckPosition(19, 137)).toBe("第 20 项 / 共 137 项");
   });
 
   it("names the schedule round instead of an invented estimate", () => {

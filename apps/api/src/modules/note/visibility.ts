@@ -2,7 +2,7 @@ import { eq, exists, isNull, or, sql, type SQL, type SQLWrapper } from "drizzle-
 import { notes, noteVersions } from "@ailearn/shared/db-schema/note";
 // 目标那一层的判据要经卡才能回到笔记（见 `visibleObjectivesCondition` 的说明），
 // 所以这一句确实需要知道 `learning_cards_v2` 存在。仍然只有这一个文件说这句话。
-import { learningCardsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+import { learningCardsV2, learningObjectiveOriginsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
 // 判据文本的唯一来源。API 与 Worker 两个包共用同一段 SQL——伴星读正文那条路
 // 在 worker 里，此前它按 workspace 直接查 notes，把同空间别人的私有笔记一起读了
 // 出来（`companion_read_note` / here-and-now 快照）。
@@ -142,7 +142,8 @@ export function visibleCardsCondition(
  * 反过来，同一份数据里 214/214 条 active 目标都有卡、且卡都带 `note_version_id`
  * （目标是随卡一起激活出来的，那条链是这批对象的生成路径本身写的）。
  *
- * 没有卡的目标（手动建立、还没生成过卡）不受这条约束：它没有可追溯的笔记正文。
+ * 无卡笔记轮次现在会直接建立带 note origin 的目标；这一档必须跟着来源笔记
+ * 判权限。只有卡和 origin 都没有笔记来源的老目标才允许沿用无来源规则。
  * 判据仍然只有一句——里面复用的还是 `visibleNotesCondition`。
  */
 export function visibleObjectivesCondition(
@@ -151,17 +152,28 @@ export function visibleObjectivesCondition(
 ): SQL {
 
   return or(
-    // 第一支：这个目标**没有任何一张带笔记来源的卡** —— 和卡片那条 `IS NULL` 同一句话。
-    // 写成"没有卡"是错的（我自己那条对照用例抓到的）：一张没来源笔记的卡会把目标
-    // 永久留在两支之外，谁都不该看见它，可它并没有可追溯的私有来源。
+    // 第一支：卡和目标 origin 都没有笔记来源。无卡目标有 note origin 时
+    // 不能落进这条旧捷径，否则协作空间成员可读取别人的私有笔记目标。
     sql`NOT EXISTS (SELECT 1 FROM ${learningCardsV2}
                     WHERE ${learningCardsV2.objectiveId} = ${objectiveId}
-                      AND ${learningCardsV2.noteVersionId} IS NOT NULL)`,
+                      AND ${learningCardsV2.noteVersionId} IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM ${learningObjectiveOriginsV2}
+                        WHERE ${learningObjectiveOriginsV2.objectiveId} = ${objectiveId}
+                          AND ${learningObjectiveOriginsV2.originKind} = 'note'
+                          AND ${learningObjectiveOriginsV2.noteId} IS NOT NULL)`,
     exists(
       sql`(SELECT 1 FROM ${learningCardsV2}
            JOIN ${noteVersions} ON ${noteVersions.id} = ${learningCardsV2.noteVersionId}
            JOIN ${notes} ON ${notes.id} = ${noteVersions.noteId}
            WHERE ${learningCardsV2.objectiveId} = ${objectiveId}
+             AND ${notes.deletedAt} IS NULL
+             AND ${visibleNotesCondition(userId)})`,
+    ),
+    exists(
+      sql`(SELECT 1 FROM ${learningObjectiveOriginsV2}
+           JOIN ${notes} ON ${notes.id} = ${learningObjectiveOriginsV2.noteId}
+           WHERE ${learningObjectiveOriginsV2.objectiveId} = ${objectiveId}
+             AND ${learningObjectiveOriginsV2.originKind} = 'note'
              AND ${notes.deletedAt} IS NULL
              AND ${visibleNotesCondition(userId)})`,
     ),

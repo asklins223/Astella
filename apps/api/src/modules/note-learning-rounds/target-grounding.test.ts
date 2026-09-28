@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createRoundTargetGrounder, selectGroundedRoundTarget } from "./target-grounding.ts";
+import { createRoundTargetGrounder, selectGroundedApplicationScenario, selectGroundedRoundTarget } from "./target-grounding.ts";
 import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
 
 const config = { url: "https://example.test/chat/completions", key: "test", model: "grounder" };
@@ -15,7 +15,8 @@ const options = {
 };
 const unit = { unitId: "unit-1", factSupported: true, criterionSupported: true, reason: "原文有两个条件" };
 const reply = (output: object) => ({ status: 200, statusText: "OK", body: { choices: [{ message: { content: JSON.stringify({
-  teachingSupported: true, teachingReason: "讲解只解释原文条件", teachingSegments: [{ ordinal: 1, supported: true, reason: "解释原文条件" }], suspectClaims: [], ...output,
+  teachingSupported: true, teachingReason: "讲解只解释原文条件", teachingSegments: [{ ordinal: 1, supported: true, reason: "解释原文条件" }],
+  publicQuestionSafe: true, suspectClaims: [], ...output,
 }) } }] } });
 
 test("grounding requires objective, fact and criterion support, with the complete exact unit set", async () => {
@@ -33,6 +34,34 @@ test("grounding requires objective, fact and criterion support, with the complet
     return reply({ objectiveSupported: true, units: [unit] });
   })(options);
   assert.equal(result.approved, true);
+});
+
+test("new application setting requires an independent approval and cannot disclose the canonical fact", async () => {
+  const applyTarget = { ...options.target, units: [{ ...options.target.units[0], facet: "apply" as const }] };
+  const scenario = "另一杯水处在不同气压环境，你会先核对什么条件再判断沸腾温度？";
+  const checked = await createRoundTargetGrounder(config, async (_url, _headers, body) => {
+    assert.match(JSON.stringify(body), /applicationScenario/);
+    return reply({ objectiveSupported: true, applicationScenarioSupported: true, units: [unit] });
+  })({ ...options, target: applyTarget, applicationScenario: scenario });
+  assert.equal(selectGroundedApplicationScenario(scenario, applyTarget, checked.report!, options.input), scenario);
+  assert.equal(selectGroundedApplicationScenario(scenario, applyTarget,
+    { ...checked.report!, applicationScenarioSupported: false }, options.input), null);
+  assert.equal(selectGroundedApplicationScenario(`${scenario}标准大气压下水在100℃沸腾`, applyTarget,
+    checked.report!, options.input), null);
+  assert.equal(selectGroundedApplicationScenario("标准大气压下水在100℃沸腾", applyTarget,
+    checked.report!, options.input), null, "copied note wording is not a new setting");
+});
+
+test("a supported target is withheld when its public first-try question gives away the answer", async () => {
+  const report = await createRoundTargetGrounder(config, async () => reply({
+    objectiveSupported: true, publicQuestionSafe: false, units: [unit],
+  }))(options);
+  assert.equal(selectGroundedRoundTarget(options.target, report.report), null);
+  const leakedTarget = { ...options.target, objectiveStatement: "说明标准大气压下水在100℃沸腾" };
+  const superficiallyApproved = await createRoundTargetGrounder(config, async () => reply({
+    objectiveSupported: true, units: [unit],
+  }))({ ...options, target: leakedTarget });
+  assert.equal(selectGroundedRoundTarget(leakedTarget, superficiallyApproved.report), null);
 });
 
 test("unavailable configuration or exhausted calls/time cannot approve unverified teaching", async () => {

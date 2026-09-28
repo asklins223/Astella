@@ -13,8 +13,11 @@ import {
   decideDisputedObservationV2,
   decideDisputeCloseV2,
   decideDisputeRecheckV2,
+  decideRecheckOutcomeV2,
+  decideRecheckVerdictDiffV2,
   decideSupplementArtifactRequiredV2,
   disputeIsPersonalOnlyV2,
+  disputeRecheckReportV2Schema,
   assessmentDisputeSurfaceCopyV2,
   type AssessmentDisputeViewV2,
   type AssessmentCorrectionKindV2,
@@ -242,4 +245,168 @@ test("只有前两档挡结论；维持与修正不再把这次挡在复习之�
   assert.equal(assessmentDisputeSurfaceCopyV2(viewOf({ status: "recheck_undetermined" })).withholdsConclusion, true);
   assert.equal(assessmentDisputeSurfaceCopyV2(viewOf({ status: "recheck_upheld" })).withholdsConclusion, false);
   assert.equal(assessmentDisputeSurfaceCopyV2(viewOf({ status: "recheck_corrected" })).withholdsConclusion, false);
+});
+
+// ─── 规则六：复核结论由「逐条判定之差」定档（§14.2、§8.6）────────────────
+
+test("逐条判定一条都没变 ⇒ 推导为「维持」", () => {
+  const diff = decideRecheckVerdictDiffV2({
+    originalVerdicts: [
+      { rubricItemId: "u1", verdict: "covered" },
+      { rubricItemId: "u2", verdict: "missing" },
+    ],
+    recheckedVerdicts: [
+      { rubricItemId: "u1", verdict: "covered" },
+      { rubricItemId: "u2", verdict: "missing" },
+    ],
+  });
+  assert.equal(diff.derivation, "upheld");
+  assert.deepEqual(diff.changedUnitIds, []);
+});
+
+test("全部变化都变成达成 ⇒ 推导为「修正」（原回答其实已满足原评分条件）", () => {
+  const diff = decideRecheckVerdictDiffV2({
+    originalVerdicts: [
+      { rubricItemId: "u1", verdict: "missing" },
+      { rubricItemId: "u2", verdict: "partial" },
+    ],
+    recheckedVerdicts: [
+      { rubricItemId: "u1", verdict: "covered" },
+      { rubricItemId: "u2", verdict: "covered" },
+    ],
+  });
+  assert.equal(diff.derivation, "corrected");
+  assert.deepEqual(diff.upgradedUnitIds, ["u1", "u2"]);
+});
+
+test("有变差的（原来达成、复核说不达成）⇒ 仍无法判断，不许当成修正", () => {
+  // 这一格是「修正」定义里那条"只增不减"在钉的东西：把 notCovered 那一档删掉，
+  // 混合的那一档就会被记成 corrected，而屏上会说"已修正你的判定"——其实同时
+  // 也添了一条原判没有的新指控（§14.2 末段要的是**纠正误判**）。
+  const diff = decideRecheckVerdictDiffV2({
+    originalVerdicts: [
+      { rubricItemId: "u1", verdict: "missing" },
+      { rubricItemId: "u2", verdict: "covered" },
+    ],
+    recheckedVerdicts: [
+      { rubricItemId: "u1", verdict: "covered" },
+      { rubricItemId: "u2", verdict: "partial" },
+    ],
+  });
+  assert.equal(diff.derivation, "undetermined");
+  assert.deepEqual(diff.upgradedUnitIds, ["u1"]);
+  assert.deepEqual(diff.notCoveredUnitIds, ["u2"]);
+});
+
+test("逐条 id 集合不齐（多一条／少一条／重复）⇒ 仍无法判断", () => {
+  for (const recheckedVerdicts of [
+    // 少一条：原判有 u1/u2，复核只交了 u1。
+    [{ rubricItemId: "u1", verdict: "covered" }],
+    // 多一条：复核凭空多交一条 u3。
+    [
+      { rubricItemId: "u1", verdict: "covered" },
+      { rubricItemId: "u2", verdict: "covered" },
+      { rubricItemId: "u3", verdict: "covered" },
+    ],
+    // 重复：u1 交了两遍（Map 吃掉一条，于是条数对不上）。
+    [
+      { rubricItemId: "u1", verdict: "covered" },
+      { rubricItemId: "u1", verdict: "covered" },
+    ],
+  ]) {
+    const diff = decideRecheckVerdictDiffV2({
+      originalVerdicts: [
+        { rubricItemId: "u1", verdict: "missing" },
+        { rubricItemId: "u2", verdict: "covered" },
+      ],
+      recheckedVerdicts,
+    });
+    assert.equal(diff.derivation, "undetermined");
+    assert.equal(diff.shapeMismatch, true);
+  }
+});
+
+test("同样两条、id 齐、全部变成达成：那不是形状不齐，就是修正（别把两种混为一谈）", () => {
+  // 与上一条同一组数字的**合法**形状：集合齐、每条都变好 ⇒ 修正。
+  // 把形状不齐那一档的判据写成"条数不同"就会把这一个也误伤——所以单列出来钉住。
+  const diff = decideRecheckVerdictDiffV2({
+    originalVerdicts: [
+      { rubricItemId: "u1", verdict: "missing" },
+      { rubricItemId: "u2", verdict: "covered" },
+    ],
+    recheckedVerdicts: [
+      { rubricItemId: "u1", verdict: "covered" },
+      { rubricItemId: "u2", verdict: "covered" },
+    ],
+  });
+  assert.equal(diff.shapeMismatch, false);
+  assert.equal(diff.derivation, "corrected");
+});
+
+test("模型说的那一档与逐条之差对不上时，记「仍无法判断」而不是照抄它的话", () => {
+  // 反例形状：模型说"已修正"，但它自己的逐条判定一条都没变。
+  // 照抄的后果是假回执：界面按 `recheck_corrected` 念"已修正你的判定"，
+  // 而库里没有任何一条判定与原判不同。
+  const decided = decideRecheckOutcomeV2({
+    claimed: "corrected",
+    originalVerdicts: [
+      { rubricItemId: "u1", verdict: "missing" },
+      { rubricItemId: "u2", verdict: "covered" },
+    ],
+    recheckedVerdicts: [
+      { rubricItemId: "u1", verdict: "missing" },
+      { rubricItemId: "u2", verdict: "covered" },
+    ],
+  });
+  assert.equal(decided.outcome, "undetermined");
+  assert.equal(decided.derivation, "upheld");
+  assert.equal(decided.disagrees, true);
+  assert.match(decided.disagreementNote, /0 条逐条判定发生变化/);
+});
+
+test("一致时不加任何附注，理由就是复核者自己那一句", () => {
+  const decided = decideRecheckOutcomeV2({
+    claimed: "upheld",
+    originalVerdicts: [{ rubricItemId: "u1", verdict: "partial" }],
+    recheckedVerdicts: [{ rubricItemId: "u1", verdict: "partial" }],
+  });
+  assert.equal(decided.outcome, "upheld");
+  assert.equal(decided.disagrees, false);
+  assert.equal(decided.disagreementNote, "");
+});
+
+test("模型自认「仍无法判断」时照记那一档：§14.2 要的那扇出口必须一直开着", () => {
+  // 逐条判定其实有变化，但复核者诚实地说判不准。这不是自相矛盾——§14.2 明写
+  // 「判断仍不可靠时维持争议状态，不强行选一方作为事实」，逼它二选一才是违约。
+  const decided = decideRecheckOutcomeV2({
+    claimed: "undetermined",
+    originalVerdicts: [
+      { rubricItemId: "u1", verdict: "missing" },
+      { rubricItemId: "u2", verdict: "covered" },
+    ],
+    recheckedVerdicts: [
+      { rubricItemId: "u1", verdict: "covered" },
+      { rubricItemId: "u2", verdict: "partial" },
+    ],
+  });
+  assert.equal(decided.outcome, "undetermined");
+  assert.equal(decided.derivation, "undetermined");
+  assert.equal(decided.disagrees, false);
+});
+
+test("复核报告的 wire 合同：逐条判定必填，缺了就 fail closed", () => {
+  const ok = disputeRecheckReportV2Schema.safeParse({
+    outcome: "upheld",
+    reason: "对照原题与原回答，评分条件没有变。",
+    verdicts: [{ rubricItemId: "u1", verdict: "covered", unitReason: "答案写到了回表那一步。" }],
+  });
+  assert.equal(ok.success, true);
+  // 没有逐条判定就等于没有依据：定档判据完全建立在它上面（§14.2 要展示"理由"）。
+  assert.equal(disputeRecheckReportV2Schema.safeParse({ outcome: "upheld", reason: "就是不对。" }).success, false);
+  // 未知取值 / 缺 unitReason 一律拒（不补造）。
+  assert.equal(disputeRecheckReportV2Schema.safeParse({
+    outcome: "upheld",
+    reason: "x",
+    verdicts: [{ rubricItemId: "u1", verdict: "probably" }],
+  }).success, false);
 });

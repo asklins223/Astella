@@ -921,11 +921,18 @@ async function finishNoCards(
 ): Promise<void> {
   const { workspaceId, runId } = job;
   await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
-    await tx.execute(sql`
+    // 用户在模型调用在途时按了「取消生成」：屏上已经说了已取消，模型 ~30 秒后回来
+    // 却把这一轮改写成 no_cards_recommended，outbox job 随后被当成正常完成 ack 掉——
+    // 那次取消**不可恢复**，而且屏上正在显示的那个结果与服务端已经对不上了。
+    // 所以终局写一律带 CAS：只在它仍停在我们预期的工作态上才落。
+    const written = await tx.execute(sql`
       UPDATE public.card_generation_runs_v2
       SET status = 'no_cards_recommended', error_code = NULL, error_message = NULL, updated_at = now()
       WHERE id = ${runId} AND workspace_id = ${workspaceId}
+        AND status IN ('queued', 'source_sealing', 'planning', 'authoring', 'checking')
+      RETURNING id
     `);
+    if (!written.count) return;
     await insertEvent(tx, workspaceId, runId, "card_generation.no_cards_recommended", {
       reasonCodes,
       chain: "simplified_v3",
@@ -1006,14 +1013,18 @@ async function writeSimplifiedCheckResults(
   }
 
   const status = passedRevisionIds.size > 0 ? "review_ready" : "needs_attention";
-  await tx.execute(sql`
+  // 同上：被取消的 run 不许被迟到的模型结果改写。
+  const settled = await tx.execute(sql`
     UPDATE public.card_generation_runs_v2
     SET status = ${status},
         error_code = ${status === "needs_attention" ? "quality_gate_failed" : null},
         error_message = ${status === "needs_attention" ? "批量内容检查没有放行任何一张" : null},
         updated_at = now()
     WHERE id = ${runId} AND workspace_id = ${workspaceId}
+      AND status IN ('queued', 'source_sealing', 'planning', 'authoring', 'checking')
+    RETURNING id
   `);
+  if (!settled.count) return;
   await insertEvent(tx, workspaceId, runId, "card_generation.simplified_completed", {
     modelCalls: args.modelCalls,
     passed: [...passedRevisionIds],

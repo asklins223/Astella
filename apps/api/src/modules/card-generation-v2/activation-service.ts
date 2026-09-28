@@ -25,10 +25,12 @@
  * - Equivalence report：target_equivalent_update 要求 equivalenceReportHash 非空
  */
 
+import { REVIEW_DIMENSION_VALUES_V2 } from "@ailearn/shared/review-dimension-v2";
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import { ensurePendingReviewScheduleV2 } from "../review/review-schedule-boundary.ts";
+import { visibleCardsCondition, visibleObjectivesCondition } from "../note/visibility.ts";
 import type { ApiTransaction } from "../../db/client.ts";
 import {
   cardGenerationRunsV2,
@@ -491,14 +493,29 @@ export async function activateCardCandidatesV2(
     }
 
     // 5. Run 状态 → activating（CAS）
+    //
+    // 这里必须和上面那道准入守卫**用同一个谓词**。此前这一格写死 `review_ready`，
+    // 守卫却放行 `review_ready || needs_attention`：于是一个 needs_attention 的 run
+    // （2 张过门、1 张不足，真实且常见）走到这里时 update 匹配 0 行，**而且没有
+    // .returning() 校验，所以不抛错**——卡、目标、回执全都写完了，run.status 却永远
+    // 停在 needs_attention。后果不是"状态难看"：它会一直被当成"在制"，
+    // `createGenerationRunV2` 的同篇在制闸因此**永久拒绝**这一篇的下一次生成。
     if (run.status !== "activating") {
-      await tx.update(cardGenerationRunsV2)
+      const claimed = await tx.update(cardGenerationRunsV2)
         .set({ status: "activating", updatedAt: new Date() })
         .where(and(
           eq(cardGenerationRunsV2.id, body.runId),
           eq(cardGenerationRunsV2.workspaceId, ctx.workspaceId),
-          eq(cardGenerationRunsV2.status, "review_ready"),
-        ));
+          or(
+            eq(cardGenerationRunsV2.status, "review_ready"),
+            eq(cardGenerationRunsV2.status, "needs_attention"),
+          ),
+        ))
+        .returning({ id: cardGenerationRunsV2.id });
+      if (claimed.length === 0) {
+        // 拿不到就不是"已经activating"——并发下有人先动了它。回滚，不留下半套写入。
+        throw new CardGenerationV2ServiceError("stale_epoch", 409, "这一轮的状态刚刚变了，请重新读取后再试");
+      }
     }
 
     // 6. P6 FIX: 先标记未选候选为 reject:not_selected_at_activation
@@ -557,6 +574,8 @@ export async function activateCardCandidatesV2(
           workspaceId: ctx.workspaceId,
           userId: ctx.userId,
           subjectId: mapping.objectiveId,
+      // §9.1 事实提取与综合应用分别观察。卡激活维护的是**具体提取目标**（§9.1「卡片的『开启复习』表示维护具体提取目标」），所以是 recall。
+      reviewDimension: REVIEW_DIMENSION_VALUES_V2[0],
           nextReviewAt: discreteV2FirstDueAt(authorizedAt),
           intervalDays: DISCRETE_V2_FIRST_INTERVAL_DAYS,
           generation: 1,
@@ -616,13 +635,19 @@ export async function activateCardCandidatesV2(
     });
 
     // 11. Run 状态 → activated（CAS：确保从 activating 转为 activated）
-    await tx.update(cardGenerationRunsV2)
+    // 同样要 .returning()：这一格匹配 0 行意味着"这一轮已经不在 activating"，
+    // 而屏上仍然会显示"已保存"——那是一句回执与库里状态对不上的假成功。
+    const activated = await tx.update(cardGenerationRunsV2)
       .set({ status: "activated", updatedAt: new Date() })
       .where(and(
         eq(cardGenerationRunsV2.id, body.runId),
         eq(cardGenerationRunsV2.workspaceId, ctx.workspaceId),
         eq(cardGenerationRunsV2.status, "activating"),
-      ));
+      ))
+      .returning({ id: cardGenerationRunsV2.id });
+    if (activated.length === 0) {
+      throw new CardGenerationV2ServiceError("stale_epoch", 409, "这一轮的状态刚刚变了，请重新读取后再试");
+    }
 
     // 12. 为每个新 Objective 创建 Initial Validation Reminder（方案 20 §17.3/§17.5 step 11）
     for (const mapping of mappings) {
@@ -1253,6 +1278,7 @@ async function createOrUpdateObjectiveAndCard(
         // 归档／被替代的目标**不接新卡**：§8.5「停用卡从复习中移除但保留历史」，
         // 而把新卡挂到一条已退役的目标上，等于用一次"复用"把它复活。
         eq(learningObjectivesV2.lifecycle, "active"),
+        visibleObjectivesCondition(ctx.userId, learningObjectivesV2.objectiveId),
       )).limit(1);
       const existing = existingRows[0];
       if (!existing) {
@@ -1290,6 +1316,7 @@ async function createOrUpdateObjectiveAndCard(
       const existingRevisionRows = await tx.select().from(learningObjectiveRevisionsV2).where(and(
         eq(learningObjectiveRevisionsV2.objectiveRevisionId, existing.currentObjectiveRevisionId),
         eq(learningObjectiveRevisionsV2.workspaceId, ctx.workspaceId),
+        visibleObjectivesCondition(ctx.userId, intent.objectiveId),
       )).limit(1);
       const existingRevision = existingRevisionRows[0];
       if (!existingRevision) {
@@ -1319,6 +1346,7 @@ async function createOrUpdateObjectiveAndCard(
           eq(learningCardsV2.workspaceId, ctx.workspaceId),
           eq(learningCardsV2.objectiveId, intent.objectiveId),
           eq(learningCardsV2.lifecycle, "active"),
+          visibleCardsCondition(ctx.userId, learningCardsV2.noteVersionId),
         ))
         .limit(1);
       const existingCard = existingCardRows[0];

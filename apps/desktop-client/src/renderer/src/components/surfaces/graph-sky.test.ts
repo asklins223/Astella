@@ -6,6 +6,7 @@ import type {
 import {
   graphEdgeKindLabel,
   graphNodeLabel,
+  graphNodeKindLabel,
   graphNodeSummary,
 } from "./graph-sky";
 
@@ -111,6 +112,10 @@ function personalState(state: ObjectivePersonalState): { state: ObjectivePersona
 }
 
 describe("labels", () => {
+  it("无卡目标在星图的可及名称里仍叫学习目标", () => {
+    expect(graphNodeKindLabel("objective")).toBe("学习目标");
+  });
+
   it("证据星标用来源名，缺失时退回摘要", () => {
     const withLabel = evidenceNode();
     const withoutLabel = { ...evidenceNode(), sourceLabel: null };

@@ -12,7 +12,6 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useHomeProjection } from "../../app/home-projection";
-import { HomeSuggestionCard } from "../surfaces/HomeSuggestionCard";
 import { homePresentation } from "../../app/home-presentation";
 import { useRoomStore } from "../../app/room-store";
 import { resolveSceneMotionMode } from "../../scene/scene-motion";
@@ -36,7 +35,7 @@ const REGION_COPY: Readonly<Record<ObjectZone, Readonly<{
 }>>> = Object.freeze({
   desk: { id: "desk-book", label: "书桌", detail: "今日下一步与今日复习", icon: BookOpenText },
   shelf: { id: "magic-catalog", label: "书架", detail: "研究册、笔记、资料与搜索", icon: Search },
-  window: { id: "window-stars", label: "星窗", detail: "学习卡与理解星图", icon: Orbit },
+  window: { id: "window-stars", label: "星窗", detail: "学习目标与理解星图", icon: Orbit },
   rest: { id: "rest-cushion", label: "休息角", detail: "伴星、日记、人格与记忆", icon: MessageCircle },
 });
 
@@ -137,10 +136,6 @@ function HomeV2Hud({ introVisible, loading, state, title, primaryLabel, theme, m
 }) {
   const [expanded, setExpanded] = useState(false);
   const rootRef = useRef<HTMLElement>(null);
-  // `HomeSuggestionCard` 要一个 `epochRef` 用来判「上一次读的结果还在不在」。
-  // 这个抽屉不持有投影，所以给它一个本地的：读回来的结果换代会推进它，
-  // 于是那颗「换一个」按下去之后不会拿回**同一份**建议。
-  const suggestionEpochRef = useRef<number | undefined>(undefined);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const hudTitle = introVisible ? "先从桌上的书开始" : primaryLabel;
   const hudDetail = introVisible ? "它会带你回到今天真正停下的位置。" : title;
@@ -176,40 +171,10 @@ function HomeV2Hud({ introVisible, loading, state, title, primaryLabel, theme, m
       </button>
       <div className="home-v2-hud__panel" aria-hidden={!expanded} inert={!expanded}>
         <p id="home-v2-hud-detail" aria-live="polite">{hudDetail}</p>
-        {/* 39d W7-4：书桌上那「一件」（§12.1「首页只推荐一件现在值得做的事」）**并进这个
-            抽屉，而不是并排另起一张纸**。
-
-            ⚠️ **它原先挂在 `App.tsx:140` 的 `{!surface ? … : null}` 里，而那里的子树根本不在
-            这个房间的渲染树上**——首页这一屏是 `RoomStage.tsx:317` 的 `HomeV2ObjectLayer`
-            画的。**真窗口读数：`.hud-desk-next` 在 DOM 里是 `null`**（单测能过、静态判据能过、
-            `innerText` 里能读到它的文案——**因为它渲染在另一棵树上**，而我一直在这一棵里量）。
-            **「类型过了不等于挂上了」第二次**：刀八那次是「我编了一个 intent」，这次是
-            **「挂载点根本不是这一屏」**。
-
-            放在触发器**里面**还有一层理由：这一屏本来就有「今日下一步 → 继续作答」这一个
-            动作，§12.1 要的也是**一件**。**两张并排的纸签会把它读成两件。** */}
         <div className="home-v2-hud__actions">
           <button type="button" className="home-v2-hud__primary" disabled={loading} onClick={() => { setExpanded(false); onPrimary(); }}><BookOpenText size={17} strokeWidth={1.8} aria-hidden="true" /><span>{introVisible ? "去书桌" : primaryLabel}</span></button>
           <button type="button" aria-label="打开魔法目录" title="魔法目录" onClick={() => { setExpanded(false); onCatalog(); }}><Search size={17} strokeWidth={1.8} aria-hidden="true" /></button>
         </div>
-      </div>
-      {/* §12.1 那张便签：**不在** `__panel` 里，作为**它自己的一块**挂在触发器下方。
-        *
-        * ⚠️ 上一版把它放进 `__panel`，而那个容器是
-        * `position: absolute; inset: 4px 1px auto 242px; height: 48px; overflow: hidden`
-        * ——**一行 HUD 条**：高度写死 48px、裁掉溢出、横向只剩 10px。
-        * 把一张 260px 宽、多行、带两张纸签的便签塞进去，量到 `[429, 666, 71, 204]`
-        * ——**横向被挤成 71px、纵向被裁**。
-        *
-        * **那是「容器与内容不配」，不是几个 CSS 数值的问题**：`__panel` 是**触发器旁边
-        * 那一行摘要**（一句 detail ＋ 两颗动作钮），而 §12.1 要的是**一张便签**。
-        * **一行摘要不该被一张便签撑开**——所以便签自己占一块，摘要那一行继续做它的事。 */}
-      <div className="home-v2-hud__desk" aria-hidden={!expanded} inert={!expanded}>
-        <HomeSuggestionCard
-          timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
-          epochRef={suggestionEpochRef}
-          onNewNote={() => onCatalog()}
-        />
       </div>
     </aside>
   );

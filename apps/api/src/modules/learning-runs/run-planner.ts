@@ -125,6 +125,8 @@ export interface PlannerOptions {
   responsePreference: "adaptive" | "voice" | "text" | "structured";
   timeBudgetSeconds: number;
   now?: () => Date;
+  /** Independently checked public setting frozen to a note round's current target. */
+  applicationScenario?: string;
   /** §7.8 题面轮换：同一 (user,kp,intent) 最近 30 天已呈现的 publicPayloadHash 集合。 */
   recentPublicPayloadHashes?: ReadonlySet<string>;
   /** §7.7 interaction qualification：family → 已审批 ceiling（无记录 → practice）。 */
@@ -428,11 +430,16 @@ function planV2Run(target: RunPlannerTargetInput, options: PlannerOptions): Plan
     : requiredRubricUnits[0].facet;
   // public 题面只消费 objectiveStatement 与 facet 动作；canonicalAnswer/rubric
   // criterion 仍是 server-private 判分参照。
-  const prompt = buildV2TaskPrompt(
+  const basePrompt = buildV2TaskPrompt(
     intent,
     v2.objectiveStatement,
     requiredRubricUnits.map((unit) => unit.facet),
   );
+  const prompt = options.goal === "transfer" && intent === "apply"
+    ? options.applicationScenario
+      ? `${basePrompt}。新情境：${options.applicationScenario}。请根据这个情境说明你的判断和理由。`
+      : `${basePrompt}。请换一个与刚才笔记示例不同的具体情境，说明你会怎样使用这条知识。`
+    : basePrompt;
   const targetSummary = v2.publicSummary.slice(0, 160);
   const estSeconds = 60;
 

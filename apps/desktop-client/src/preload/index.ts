@@ -325,6 +325,7 @@ const desktopApi: AILearnDesktopApiM2 = {
     // 核心路线（39d W4-5 ③；§4.4）：跨全部轮次、按核心问题归并，只带 noteId。
     route: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundRoute, input),
     teaching: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundTeaching, input),
+    preparePractice: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundPreparePractice, input),
     explain: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundExplain, input)
   },
   // 动态产物落盘（39d W4-6 刀五）：渲染层只报一个 id，整份 HTML 由 main 取回落盘，
@@ -334,7 +335,8 @@ const desktopApi: AILearnDesktopApiM2 = {
   },
   understanding: {
     getTopology: (input) => invoke(DESKTOP_IPC_CHANNELS.understandingGetTopology, input),
-    setRelationDecision: (input) => invoke(DESKTOP_IPC_CHANNELS.understandingSetRelationDecision, input)
+    setRelationDecision: (input) => invoke(DESKTOP_IPC_CHANNELS.understandingSetRelationDecision, input),
+    getNoteDeepening: (input) => invoke(DESKTOP_IPC_CHANNELS.understandingGetNoteDeepening, input)
   },
   search: {
     global: (input) => invoke(DESKTOP_IPC_CHANNELS.searchGlobal, input),

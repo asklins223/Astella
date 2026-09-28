@@ -1455,13 +1455,16 @@ export function CompanionPresence() {
     // The right-hand companion's three action buttons extend towards the paper.
     // Reserve their 44px diameter plus a 12px gap, as well as the character.
     const rightActionGutter = companionPolicy.interaction === "none" ? 0 : 56;
+    // In compact left seats the action rail reaches farther into the paper's
+    // side than the character itself. Keep the whole rail outside the sheet.
+    const compactLeftActionGutter = 88;
     app.classList.toggle("companion-absent", presenceHidden || companionUnavailable);
     app.style.setProperty("--companion-seat-right", `${245 + reserveExtra + rightActionGutter}px`);
     app.style.setProperty("--companion-seat-left", `${365 + reserveExtra}px`);
     app.style.setProperty("--companion-seat-left-collapsed", `${335 + reserveExtra}px`);
     app.style.setProperty("--companion-seat-right-compact", `${124 + compactReserveExtra + rightActionGutter / 2}px`);
-    app.style.setProperty("--companion-seat-left-compact", `${194 + compactReserveExtra}px`);
-    app.style.setProperty("--companion-seat-left-collapsed-compact", `${178 + compactReserveExtra}px`);
+    app.style.setProperty("--companion-seat-left-compact", `${194 + compactReserveExtra + compactLeftActionGutter}px`);
+    app.style.setProperty("--companion-seat-left-collapsed-compact", `${178 + compactReserveExtra + compactLeftActionGutter}px`);
     app.style.setProperty("--companion-universe-seat-gutter", `${340 + reserveExtra}px`);
     app.style.setProperty("--companion-universe-seat-gutter-compact", `${250 + compactReserveExtra}px`);
     return () => {

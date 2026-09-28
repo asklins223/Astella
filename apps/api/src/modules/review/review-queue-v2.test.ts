@@ -55,6 +55,15 @@ test("ReviewQueueV2 carries the server-confirmed total independently of the page
   assert.equal(queue.items.length, 1);
 });
 
+test("ReviewQueueV2 carries a cardless note objective with its real schedule identity", () => {
+  const queue = projectReviewQueueV2({
+    items: [item({ cardId: null })], total: 1, nextCursor: null,
+  }, new Date("2026-08-23T00:00:00.000Z"));
+  assert.equal(queue.items[0]?.cardId, null);
+  assert.equal(queue.items[0]?.objectiveId, OBJECTIVE_ID);
+  assert.equal(queue.items[0]?.scheduleId, UUID);
+});
+
 test("ReviewQueueV2 fails closed when an undated schedule reaches the due queue", () => {
   // 队列谓词保证 nextReviewAt <= now()，所以“被挡在开始之前”只可能是冷却期。
   // 别的 blockedReason 说明两边假设脱节了，投影必须报错而不是编一个状态。
@@ -107,4 +116,3 @@ test("ReviewQueueV2 carries the frozen-evidence gap instead of hiding or faking 
   // 证据缺口不是"开始不了"：排程照样到期，startability 不变。
   assert.deepEqual(queue.items[0]?.startability, { kind: "ready" });
 });
-

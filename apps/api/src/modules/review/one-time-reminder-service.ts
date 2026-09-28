@@ -15,6 +15,7 @@
  *    提醒"，所以关闭只有一个显式入口；完成那一轮活动后由谁来关，归 W5-4 刀二
  *    （它要接结算那条链，而那条链此刻有并行会话在途）。
  */
+import { REVIEW_DIMENSION_VALUES_V2 } from "@ailearn/shared/review-dimension-v2";
 import { and, eq } from "drizzle-orm";
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
 import type { ApiTransaction } from "../../db/client.ts";
@@ -214,6 +215,8 @@ export async function requestOneTimeReminderV2(
     workspaceId: scope.workspaceId,
     userId: scope.userId,
     subjectId: input.objectiveId,
+      // §9.1 事实提取与综合应用分别观察。一次性提醒服务的是**提取**这一件事。
+      reviewDimension: REVIEW_DIMENSION_VALUES_V2[0],
     reminderKind: "one_time",
     nextReviewAt: input.dueAt,
     intervalDays: input.intervalDays ?? 1,

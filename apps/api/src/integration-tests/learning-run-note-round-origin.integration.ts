@@ -219,6 +219,44 @@ test("note_round: 同一目标已有 pending 安排 → consume_pending（§9.5 
   }
 });
 
+test("note_round: 尚未到期的笔记回访不被当场练习提前消费", async () => {
+  const scenario = await seedOpenRound();
+  try {
+    const { seeded } = scenario;
+    const scheduleId = randomUUID();
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${seeded.workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${seeded.userId}, true)`;
+      await tx`INSERT INTO review_schedules
+        (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at,
+         interval_days, generation, policy_version)
+        VALUES (${scheduleId}, ${seeded.workspaceId}, ${seeded.userId}, 'card', ${seeded.objectiveId},
+          'pending', now() + interval '1 day', 1, 1, 'discrete-v2')`;
+    });
+    const created = await withWorkspaceTransaction(
+      { workspaceId: seeded.workspaceId, userId: seeded.userId },
+      (tx) => createRunV2(tx, {
+        workspaceId: seeded.workspaceId,
+        userId: seeded.userId,
+        request: {
+          originV2: noteRoundOrigin(scenario), goal: "clarify",
+          idempotencyKey: `note-round-future-${scheduleId}`,
+        },
+      }),
+    );
+    const rows = await readAsWorkspace(scenario, (tx) => tx`
+      SELECT scheduling_authorization FROM learning_run_private_contracts WHERE run_id = ${created.runId}
+    `);
+    assert.deepEqual(rows[0].scheduling_authorization, { kind: "no_effect", reasonCode: "pending_not_due" });
+    const schedules = await readAsWorkspace(scenario, (tx) => tx`
+      SELECT status FROM review_schedules WHERE id = ${scheduleId}
+    `);
+    assert.equal(schedules[0].status, "pending");
+  } finally {
+    await cleanup(scenario);
+  }
+});
+
 test("note_round: 已封存的轮次 → 409 note_round_not_open", async () => {
   const scenario = await seedOpenRound();
   try {

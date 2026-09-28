@@ -16,6 +16,9 @@ import { readObjectiveNoteChangeImpactV1 } from "../modules/learning-objectives/
 import { issueSession } from "../modules/identity/service.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 import { createRunV2, getLearningRunPublicSnapshotV2, getRunPublicView, submitArtifact } from "../modules/learning-runs/run-service.ts";
+import { activateReviewSubscriptionV2 } from "../modules/review/review-subscriptions.ts";
+import { scheduleStudiedNoteTargetsV2 } from "../modules/review/note-subscription-schedule.ts";
+import { listSanitizedReviews, projectReviewQueueV2 } from "../modules/review/service.ts";
 import { runLearningRunProcessingTick } from "../modules/learning-runs/run-processing-tick.ts";
 import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
 
@@ -26,6 +29,7 @@ process.env.LEARNING_DRAFT_ENC_KEY ??= "a".repeat(64);
 const config = { url: "https://example.test/chat/completions", key: "test", model: "recorded-model" };
 const quote = "间隔重复是在快要忘记时再次主动提取，而不是不断重读。";
 const safeQuote = "先遮住答案，再从记忆中回想。";
+const applicationScenario = "你读完一份新资料后，第二天要检验自己是否还记得重点。你会怎样安排这一次回顾？";
 const editedQuote = "间隔重复通常在接近遗忘时主动提取，具体时机还要结合材料难度。";
 const supplementedEvidenceQuote = "复习间隔应结合材料类型、预期保持时长与学习者基础确定。";
 const indexSuspectQuote = "复合索引缺少最左列条件就无法使用索引";
@@ -51,6 +55,7 @@ let calls = 0;
 let rejectGrounding = false;
 let rejectTeaching = false;
 let omitTarget = false;
+let applicationCase = false;
 let suspectClaim = false;
 let suspectOnly = false;
 let proposeExistingSafeUnit = false;
@@ -73,6 +78,8 @@ const requester: PublicJsonRequester = async (_url, _headers, body, signal) => {
   if (!checking && hold) { entered?.(); await hold; }
   const activeSuspect = suspectClaim && !recheckingEditedSuspect && !supplementingSuspect;
   const activeTarget = indexClaimJourney ? indexClaimTarget
+    : applicationCase ? { ...target, units: [{ ...target.units[0], facet: "apply",
+      criterion: "针对给出的新资料回顾情境，说明何时主动提取，并指出为何不是持续重读" }] }
     : supplementingSuspect ? sourceRecheckedTarget : recheckingEditedSuspect ? recheckedTarget
     : proposeExistingSafeUnit ? { ...target, units: [safeUnit] } : target;
   const proposedUnits = indexClaimJourney
@@ -83,12 +90,15 @@ const requester: PublicJsonRequester = async (_url, _headers, body, signal) => {
   return { status: 200, statusText: "OK", body: { choices: [{ message: { content: JSON.stringify(checking
     ? { teachingSupported: !rejectTeaching, teachingReason: rejectTeaching ? "讲解补造神经机制" : "讲解与原文一致",
       teachingSegments: [{ ordinal: 1, supported: !rejectTeaching, reason: rejectTeaching ? "没有机制依据" : "与原文一致" }], objectiveSupported: !omitTarget,
+      publicQuestionSafe: true,
+      applicationScenarioSupported: applicationCase,
       units: omitTarget ? [] : proposedUnits.map((unit) => ({
         unitId: unit.unitId, factSupported: !rejectGrounding, criterionSupported: true, reason: "本轮原文支持这个知识点",
       })),
       suspectClaims: activeSuspect ? [{ unitIds: [suspectUnitId], sourceBlockOrdinal: 2, sourceQuote: suspectQuote,
         reason: "这条主张看起来省略了可能改变结论的条件，值得再核对。" }] : [] }
       : { explanation: "把重见材料隔开，并先尝试从记忆中提取，才能检验自己能否想起来。", sourceBlockOrdinals: [2, ...(activeSuspect && !suspectOnly ? [3] : [])],
+      ...(applicationCase ? { applicationScenario } : {}),
       target: omitTarget ? null : activeSuspect
         ? { ...activeTarget, units: proposedUnits }
         : activeTarget }) } }] } };
@@ -114,6 +124,13 @@ before(async () => {
   await admin`UPDATE note_versions SET content_json = ${admin.json({ blocks: [
     { type: 'heading', content: '## 间隔重复' }, { type: 'paragraph', content: quote }, { type: 'paragraph', content: safeQuote },
   ] })} WHERE id = ${fixture.versionIds[0]}`;
+  await admin`INSERT INTO note_blocks (id,workspace_id,version_id,ordinal,type,content) VALUES
+    (${randomUUID()},${fixture.workspaceId},${fixture.versionIds[1]},1,'heading','## 间隔重复'),
+    (${randomUUID()},${fixture.workspaceId},${fixture.versionIds[1]},2,'paragraph',${quote}),
+    (${randomUUID()},${fixture.workspaceId},${fixture.versionIds[1]},3,'paragraph',${safeQuote})`;
+  await admin`UPDATE note_versions SET content_json = ${admin.json({ blocks: [
+    { type: 'heading', content: '## 间隔重复' }, { type: 'paragraph', content: quote }, { type: 'paragraph', content: safeQuote },
+  ] })} WHERE id = ${fixture.versionIds[1]}`;
   await app.register(sensible); await app.register(authRoutes);
   await app.register(noteLearningRoundRoutes, { teaching: { provider: llmTeachingExplainProvider({ config, requester }), modelId: config.model, external: false },
     targetGrounder: createRoundTargetGrounder(config, requester) });
@@ -167,10 +184,23 @@ test("fresh saved note → default question and plan → grounded explanation �
   // 轮次读回应把同一轮目标的引用变化一并带回。单独移动正文版本只够触发
   // contentMoved；这里让同 ordinal 引文内容也变动，核实恢复读回复用 D3 的依据判定。
   const impactedObjectiveId = view.practiceStart!.objectiveId;
-  const impactedScheduleId = randomUUID();
-  await admin`INSERT INTO review_schedules
-    (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at, interval_days, generation, policy_version, reason_code, created_at, updated_at)
-    VALUES (${impactedScheduleId}, ${fixture.workspaceId}, ${fixture.userId}, 'card', ${impactedObjectiveId}, 'pending', now() - interval '1 minute', 1, 1, 'discrete-v2', 'initial_validation', now(), now())`;
+  await withWorkspaceTransaction(scope(), async (tx) => {
+    await activateReviewSubscriptionV2(tx, { ...scope(), source: "note_subscription", subjectId: fixture.noteIds[0] });
+    await scheduleStudiedNoteTargetsV2(tx, { ...scope(), noteId: fixture.noteIds[0], at: new Date() });
+    // Repeated activation must reuse the target-level pending requirement.
+    await scheduleStudiedNoteTargetsV2(tx, { ...scope(), noteId: fixture.noteIds[0], at: new Date() });
+  });
+  const scheduled = await admin`SELECT id FROM review_schedules
+    WHERE workspace_id=${fixture.workspaceId} AND user_id=${fixture.userId}
+      AND subject_id=${impactedObjectiveId} AND status='pending'`;
+  assert.equal(scheduled.length, 1, "笔记订阅为已学的无卡目标建立唯一回访");
+  const impactedScheduleId = String(scheduled[0].id);
+  await admin`UPDATE review_schedules SET next_review_at=now() - interval '1 minute'
+    WHERE id=${impactedScheduleId}`;
+  const reviewQueue = await withWorkspaceTransaction(scope(), async (tx) =>
+    projectReviewQueueV2(await listSanitizedReviews(fixture.workspaceId, { status: "pending" }, fixture.userId, tx)));
+  assert.equal(reviewQueue.items.find((item) => item.objectiveId === impactedObjectiveId)?.cardId, null,
+    "今日回访以 objective/schedule 身份进入队列，不凭空制造学习卡");
   const inFlightReview = await withWorkspaceTransaction(scope(), (tx) => createRunV2(tx, { ...scope(), request: {
     originV2: { kind: "review", scheduleId: impactedScheduleId, objectiveId: impactedObjectiveId, scheduleGeneration: 1 },
     goal: "stabilize",
@@ -242,6 +272,95 @@ test("fresh saved note → default question and plan → grounded explanation �
     await admin`UPDATE notes SET current_version_id=${fixture.versionIds[0]} WHERE id=${fixture.noteIds[0]}`;
     await close(round);
   }
+});
+
+test("先试 prepares a private target without teaching or answer exposure, then marks a later explanation", async () => {
+  // A separate note identity avoids borrowing the first test's genuine prior reveal.
+  const round = await open(fixture.noteIds[1]);
+  try {
+    const initial = roundTeachingViewV1Schema.parse((await call("GET", `/v2/note-learning-rounds/${round.roundId}/teaching`)).json());
+    assert.equal(initial.teaching, null);
+    assert.equal(initial.practiceStart, null);
+    assert.equal(initial.nextStep.kind, "explain");
+
+    const beforeCalls = calls;
+    const preparedResponse = await call("POST", `/v2/note-learning-rounds/${round.roundId}/practice-preparation`,
+      { expectedRevision: round.revision });
+    assert.equal(preparedResponse.statusCode, 201, preparedResponse.body);
+    const prepared = roundTeachingViewV1Schema.parse(preparedResponse.json());
+    assert.equal(prepared.teaching, null);
+    assert.ok(prepared.practiceStart);
+    assert.equal(prepared.nextStep.kind, "attempt");
+    assert.equal(calls - beforeCalls, 2, "one generation and one independent grounding call");
+    assert.ok(!preparedResponse.body.includes("private-unit-1"));
+    assert.ok(!preparedResponse.body.includes("canonicalAnswer"));
+
+    const [privateState] = await admin`SELECT
+      (SELECT count(*)::int FROM note_learning_round_teachings WHERE round_id=${round.roundId}) AS teachings,
+      (SELECT count(*)::int FROM learning_exposures_v2
+        WHERE idempotency_key=${`round-teaching:${round.roundId}:1`}) AS reveals`;
+    assert.equal(privateState.teachings, 0);
+    assert.equal(privateState.reveals, 0);
+    const replay = await call("POST", `/v2/note-learning-rounds/${round.roundId}/practice-preparation`,
+      { expectedRevision: round.revision });
+    assert.equal(replay.statusCode, 200, replay.body);
+    assert.equal(calls - beforeCalls, 2, "replay reuses the frozen private target");
+
+    const firstTry = await withWorkspaceTransaction(scope(), (tx) => createRunV2(tx, { ...scope(),
+      request: { ...prepared.practiceStart!.start, idempotencyKey: `first-try-${round.roundId}` } }));
+    assert.equal(firstTry.frozen.snapshot.target.cardId, null);
+    assert.equal(firstTry.frozen.snapshot.planningExposure.sameCueRecentlyRevealed, false);
+
+    const explanation = await call("POST", `/v2/note-learning-rounds/${round.roundId}/teaching`,
+      { expectedRevision: round.revision });
+    assert.equal(explanation.statusCode, 201, explanation.body);
+    assert.ok(roundTeachingViewV1Schema.parse(explanation.json()).teaching);
+    const [revealed] = await admin`SELECT count(*)::int AS count FROM learning_exposures_v2
+      WHERE idempotency_key=${`round-teaching:${round.roundId}:1`}`;
+    assert.equal(revealed.count, 1);
+  } finally { await close(round); }
+});
+
+test("checked application setting is frozen on the round target and appears in the Run task", async () => {
+  applicationCase = true;
+  const round = await open();
+  try {
+    const preparedResponse = await call("POST", `/v2/note-learning-rounds/${round.roundId}/practice-preparation`,
+      { expectedRevision: round.revision });
+    assert.equal(preparedResponse.statusCode, 201, preparedResponse.body);
+    const prepared = roundTeachingViewV1Schema.parse(preparedResponse.json());
+    assert.ok(prepared.practiceStart);
+    assert.ok(!preparedResponse.body.includes(applicationScenario), "the future setting stays private during the first try");
+    const [bound] = await admin`SELECT application_scenario FROM note_learning_round_targets WHERE round_id=${round.roundId}`;
+    assert.equal(bound.application_scenario, applicationScenario);
+    const applicationRun = await withWorkspaceTransaction(scope(), (tx) => createRunV2(tx, { ...scope(),
+      request: { ...prepared.practiceStart!.start, goal: "transfer",
+        idempotencyKey: `application-${round.roundId}` } }));
+    const view = await withWorkspaceTransaction(scope(), (tx) => getRunPublicView(tx, { ...scope(), runId: applicationRun.runId }));
+    assert.equal(view.activeTask?.intent, "apply");
+    assert.ok(view.activeTask?.prompt.includes(applicationScenario));
+    assert.ok(!view.activeTask?.prompt.includes("请换一个与刚才笔记示例不同"));
+  } finally { applicationCase = false; await close(round); }
+});
+
+test("先试 without a grounded target does not publish a fake question or teaching", async () => {
+  rejectGrounding = true;
+  const round = await open();
+  try {
+    const response = await call("POST", `/v2/note-learning-rounds/${round.roundId}/practice-preparation`,
+      { expectedRevision: round.revision });
+    assert.equal(response.statusCode, 422, response.body);
+    assert.equal(response.json().error, "practice_target_unavailable");
+    const view = roundTeachingViewV1Schema.parse((await call("GET", `/v2/note-learning-rounds/${round.roundId}/teaching`)).json());
+    assert.equal(view.teaching, null);
+    assert.equal(view.practiceStart, null);
+    assert.equal(view.nextStep.kind, "explain");
+    const [state] = await admin`SELECT
+      (SELECT count(*)::int FROM note_learning_round_targets WHERE round_id=${round.roundId}) AS targets,
+      (SELECT count(*)::int FROM note_learning_round_teachings WHERE round_id=${round.roundId}) AS teachings`;
+    assert.equal(state.targets, 0);
+    assert.equal(state.teachings, 0);
+  } finally { rejectGrounding = false; await close(round); }
 });
 
 test("failed grounding retains teaching and creates no new objective or round target", async () => {

@@ -2,7 +2,7 @@ import { sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import { reviewSchedules } from "./db-schema/evidence.ts";
 
 /**
- * 「这条复习排程指向的卡**现在还可不可以消费**」——唯一一句话。
+ * 「这条复习排程指向的目标现在还可不可以消费」——唯一一句话。
  *
  * 四处读者（一处一个来源）：复习队列（`modules/review/service.ts`）、首页"待复习"读数
  * （`modules/stats/service.ts`）、学习看板（`modules/learning-dashboard/service.ts`），
@@ -13,10 +13,9 @@ import { reviewSchedules } from "./db-schema/evidence.ts";
  * 3 项"——两个数都自称"到期复习"，而这正是"同一口径两处各写一份"的经典形状
  * （本仓库已经用同样的办法收过 `noteVisibleSqlText`）。
  *
- * 判据本身只回答"能不能消费"：目标 active + 活卡 + 来源笔记没进回收站。
- * **它按设计不判笔记归属**——归属是另一条边界（`visibleCardsCondition`），队列与首页
- * 今天都不收，所以伴星也不收；要改的是那条边界本身（见 39d 实施日志里记的那条发现），
- * 不是在这里给某一侧偷偷加一层。
+ * 判据本身只回答"能不能消费"：目标 active，且有可用卡片来源、有效的笔记
+ * 订阅，或本人明确要求的一次提醒。无卡笔记目标不能被活卡检查挡掉。
+ * 有来源笔记时同样检查当前排程本人可见性；权限撤回后四处读数一起隐藏。
  *
  * `ref` 收的是**排程表的三列引用**而不是表名/别名：调用方的 FROM 各不相同（drizzle 会
  * 把 `reviewSchedules` 渲染成别名 `"reviewSchedules"`，worker 那边是 `FROM review_schedules s`），
@@ -55,11 +54,13 @@ export function reviewScheduleTargetsConsumableCardPredicate(
     workspaceId: SQLWrapper;
     /** 排程行自己的 `user_id` 列。争议是个人数据（§14.4），匹配必须按它。 */
     userId: SQLWrapper;
+    reminderKind: SQLWrapper;
   } = {
     subjectType: reviewSchedules.subjectType,
     subjectId: reviewSchedules.subjectId,
     workspaceId: reviewSchedules.workspaceId,
     userId: reviewSchedules.userId,
+    reminderKind: reviewSchedules.reminderKind,
   },
 ): SQL<boolean> {
   return sql<boolean>`(
@@ -74,20 +75,69 @@ export function reviewScheduleTargetsConsumableCardPredicate(
     )
     AND ${ref.subjectType} = 'card'
     AND EXISTS (
-      SELECT 1
-      FROM learning_objectives_v2 AS v2_consumer_obj
-      JOIN learning_cards_v2 AS v2_consumer_card
-        ON v2_consumer_card.objective_id = v2_consumer_obj.objective_id
-       AND v2_consumer_card.workspace_id = v2_consumer_obj.workspace_id
-       AND v2_consumer_card.lifecycle = 'active'
-      LEFT JOIN note_versions AS v2_consumer_version
-        ON v2_consumer_version.id = v2_consumer_card.note_version_id
-      LEFT JOIN notes AS v2_consumer_note
-        ON v2_consumer_note.id = v2_consumer_version.note_id
+      SELECT 1 FROM learning_objectives_v2 AS v2_consumer_obj
       WHERE v2_consumer_obj.objective_id = ${ref.subjectId}
         AND v2_consumer_obj.workspace_id = ${ref.workspaceId}
         AND v2_consumer_obj.lifecycle = 'active'
-        AND (v2_consumer_card.note_version_id IS NULL OR v2_consumer_note.deleted_at IS NULL)
+    )
+    AND (
+      EXISTS (
+        SELECT 1 FROM learning_cards_v2 AS v2_consumer_card
+        LEFT JOIN note_versions AS v2_consumer_version
+          ON v2_consumer_version.id = v2_consumer_card.note_version_id
+        LEFT JOIN notes AS v2_consumer_note
+          ON v2_consumer_note.id = v2_consumer_version.note_id
+        WHERE v2_consumer_card.objective_id = ${ref.subjectId}
+          AND v2_consumer_card.workspace_id = ${ref.workspaceId}
+          AND v2_consumer_card.lifecycle = 'active'
+          AND (v2_consumer_card.note_version_id IS NULL OR (
+            v2_consumer_note.deleted_at IS NULL
+            AND (v2_consumer_note.share_scope = 'shared' OR v2_consumer_note.created_by = ${ref.userId})
+          ))
+          AND (
+            NOT EXISTS (
+              SELECT 1 FROM review_subscriptions_v2 AS v2_consumer_paused_card
+              WHERE v2_consumer_paused_card.workspace_id = ${ref.workspaceId}
+                AND v2_consumer_paused_card.user_id = ${ref.userId}
+                AND v2_consumer_paused_card.source = 'card_review'
+                AND v2_consumer_paused_card.subject_type = 'objective'
+                AND v2_consumer_paused_card.subject_id = ${ref.subjectId}
+                AND v2_consumer_paused_card.status = 'paused'
+            )
+            OR EXISTS (
+              SELECT 1 FROM review_subscriptions_v2 AS v2_consumer_active_card
+              WHERE v2_consumer_active_card.workspace_id = ${ref.workspaceId}
+                AND v2_consumer_active_card.user_id = ${ref.userId}
+                AND v2_consumer_active_card.source = 'card_review'
+                AND v2_consumer_active_card.subject_type = 'objective'
+                AND v2_consumer_active_card.subject_id = ${ref.subjectId}
+                AND v2_consumer_active_card.status = 'active'
+            )
+          )
+      )
+      OR EXISTS (
+        SELECT 1 FROM learning_objective_origins_v2 AS v2_consumer_origin
+        JOIN notes AS v2_consumer_origin_note
+          ON v2_consumer_origin_note.id = v2_consumer_origin.note_id
+         AND v2_consumer_origin_note.workspace_id = ${ref.workspaceId}
+         AND v2_consumer_origin_note.deleted_at IS NULL
+         AND (v2_consumer_origin_note.share_scope = 'shared' OR v2_consumer_origin_note.created_by = ${ref.userId})
+        WHERE v2_consumer_origin.objective_id = ${ref.subjectId}
+          AND v2_consumer_origin.workspace_id = ${ref.workspaceId}
+          AND v2_consumer_origin.origin_kind = 'note'
+          AND (
+            ${ref.reminderKind} = 'one_time'
+            OR EXISTS (
+              SELECT 1 FROM review_subscriptions_v2 AS v2_consumer_note_sub
+              WHERE v2_consumer_note_sub.workspace_id = ${ref.workspaceId}
+                AND v2_consumer_note_sub.user_id = ${ref.userId}
+                AND v2_consumer_note_sub.source = 'note_subscription'
+                AND v2_consumer_note_sub.subject_type = 'note'
+                AND v2_consumer_note_sub.subject_id = v2_consumer_origin_note.id
+                AND v2_consumer_note_sub.status = 'active'
+            )
+          )
+      )
     )
   )`;
 }

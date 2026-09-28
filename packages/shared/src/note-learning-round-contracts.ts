@@ -19,7 +19,7 @@
  */
 import { z } from "zod";
 import { noteReflectionTeachingSnapshotV1Schema } from "./note-learning-reflection-contracts.ts";
-import { learningRunOutcomeSchema, learningRunPhaseSchema } from "./learning-run-contracts.ts";
+import { learningRunOutcomeSchema, learningRunPhaseSchema, taskIntentSchema } from "./learning-run-contracts.ts";
 import {
   objectiveNoteChangeImpactV1Schema,
   objectiveRunStartV3Schema,
@@ -537,6 +537,12 @@ export const createRoundTeachingRequestV1Schema = z.strictObject({
 });
 export type CreateRoundTeachingRequestV1 = z.infer<typeof createRoundTeachingRequestV1Schema>;
 
+/** Prepare a source-grounded practice target without showing or storing a teaching. */
+export const prepareRoundPracticeRequestV1Schema = z.strictObject({
+  expectedRevision: z.number().int().min(1),
+});
+export type PrepareRoundPracticeRequestV1 = z.infer<typeof prepareRoundPracticeRequestV1Schema>;
+
 /**
  * 这一轮里练过的那一道（W4-6 刀三）。四格都来自 run 行本身：
  * `phase` 是它走到哪一步，`outcome` 是结算之后的结论（没结算是 `null`），
@@ -685,6 +691,18 @@ export const roundPracticeStartV1Schema = z.strictObject({
 export type RoundPracticeStartV1 = z.infer<typeof roundPracticeStartV1Schema>;
 
 /**
+ * 服务端根据这一轮的已结算练习签发的下一步。缺口只来自 Run 的评分结果；
+ * `not_assessable` 是系统未能判定，绝不作为学习者的缺口。
+ */
+export const roundNextStepV1Schema = z.strictObject({
+  kind: z.enum(["explain", "attempt", "resume", "help", "retry", "apply", "finish", "uncertain", "choose", "review_material"]),
+  basisRunId: z.string().uuid().nullable(),
+  gapFacets: z.array(taskIntentSchema).max(9),
+  evidence: z.enum(["none", "practice_covered", "independent_demonstrated", "incomplete", "unassessable"]),
+});
+export type RoundNextStepV1 = z.infer<typeof roundNextStepV1Schema>;
+
+/**
  * 教学产物的回信（生成与读取同一份形状）：**轮次与产物一起回**。
  * "解释是按哪一版问题、哪一版正文生成的"只能由服务端说，客户端拿两发去拼
  * 迟早会拼出一次错配；顺带，生成那一发也会让屏幕上那一行轮次刷新到最新 revision。
@@ -711,6 +729,8 @@ export const roundTeachingViewV1Schema = z.strictObject({
    * 因为再开一场会撞上"同一目标同时两场进行中"这件不该发生的事。
    */
   practiceStart: roundPracticeStartV1Schema.nullable(),
+  /** 练习观察之后的下一步由服务端判定，界面不按 outcome 自己猜。 */
+  nextStep: roundNextStepV1Schema,
   /** 缺口帮助停止那一格（W4-6 刀四）：停没停、帮了几次、按几次算停。 */
   gapHelp: roundGapHelpV1Schema,
   /** 前置候选与其缺口依据（W4-6 刀四·正面要求；为空也必须明确给出判定原因）。 */

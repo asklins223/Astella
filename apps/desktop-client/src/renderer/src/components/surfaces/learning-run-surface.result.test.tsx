@@ -388,10 +388,10 @@ describe("LearningRunSurface · 结算页结构", () => {
       outcome: "practice_completed", demonstratedFacets: [], scheduleImpact: { kind: "none", reasonCode: "practice_only" } });
     const onExit = vi.fn((_request?: unknown) => {});
     renderResult(0, result, onExit, snapshot);
-    await screen.findByRole("button", { name: "留下这次的理解" });
+    await screen.findByRole("button", { name: "回到本轮学习" });
     expect(screen.queryByRole("button", { name: "查看学习卡" })).toBeNull();
-    expect(screen.getByRole("button", { name: "回到这篇笔记" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "留下这次的理解" }));
+    expect(screen.getByRole("button", { name: "回到本轮学习" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "回到本轮学习" }));
     expect(onExit.mock.calls[0]?.[0]).toEqual({ route: { kind: "note.detail", noteId }, reflectionRoundId: roundId });
   });
 
@@ -413,7 +413,7 @@ describe("LearningRunSurface · 结算页结构", () => {
       data: { current: { scope: "workspace", workspaceEpoch: 1, route } } } as never);
     useRoomStore.setState({ activeRunId: RUN_ID, activeObjectiveId: OBJECTIVE_ID });
     render(<LearningRunSurface />);
-    fireEvent.click(await screen.findByRole("button", { name: "留下这次的理解" }));
+    fireEvent.click(await screen.findByRole("button", { name: "回到本轮学习" }));
     await waitFor(() => expect(useRoomStore.getState().activeNoteRef).toEqual({
       noteId, noteVersionId: null, mode: "read", learningRoundId: roundId,
     }));

@@ -177,7 +177,7 @@ export async function buildTopologySnapshotV3(
     nodes.push({
       nodeRef: { kind: "note", noteId: note.id },
       label: note.title,
-      currentVersionId: note.currentVersionId ?? note.id,
+      currentVersionId: note.currentVersionId,
       // 这里曾是硬编码的 `freshness: "current"`（见 shared 合同注释）。
       // 服务端只有「这篇笔记背后有没有来源」是真实的，就只报这一项。
       hasSource: note.sourceId !== null,
@@ -307,7 +307,14 @@ export async function buildTopologySnapshotV3(
   const scheduleByObjective = new Map<string, { scheduleId: string; nextReviewAt: Date; generation: number }>();
   for (const s of scheduleRows) {
     if (s.subjectId) {
-      scheduleByObjective.set(s.subjectId, { scheduleId: s.id, nextReviewAt: s.nextReviewAt, generation: s.generation });
+      // Several review dimensions can each have a pending schedule. The star
+      // shows the nearest one, matching objective detail/list and preventing a
+      // later row from hiding an already due dimension.
+      const prior = scheduleByObjective.get(s.subjectId);
+      if (!prior || s.nextReviewAt.getTime() < prior.nextReviewAt.getTime()
+        || (s.nextReviewAt.getTime() === prior.nextReviewAt.getTime() && s.id < prior.scheduleId)) {
+        scheduleByObjective.set(s.subjectId, { scheduleId: s.id, nextReviewAt: s.nextReviewAt, generation: s.generation });
+      }
     }
   }
 

@@ -58,6 +58,8 @@ function sliceFunction(name: string): string {
 }
 
 const GATE = "disputeAllowsScheduleChange";
+const MARK_APPLIED = "markCorrectionAppliedV2";
+const RESOLUTION = "disputeScheduleResolutionV2";
 
 test("demonstrated 与 unable 两个排期入口都先问这道闸", () => {
   for (const name of ["applyDemonstratedSchedule", "applyUnableSchedule"]) {
@@ -85,8 +87,48 @@ test("闸挡在消费 pending 之前：先消费后挡会留下一个没有对�
   }
 });
 
-test("判据自己的灵敏度：把闸挪到消费之后，这一份必须跟着翻", () => {
-  // 合成一段"先消费后挡"的函数体，按同一条判据判一次。
+/**
+ * 「修正」那一档的更正**要被消费一次**（§9.6「不能重复消费同一日程」）。
+ *
+ * 系统侧的复核（`dispute-recheck.ts`）写完更正记录就结束；消费方是结算这一发。
+ * 少了 `markCorrectionAppliedV2` 这一句，那条更正就是一条"有人写、没人读"的记录：
+ * 类型检查过、其它单测过、复核照跑，而 `markCorrectionAppliedV2` 至今**零生产调用方**
+ * ——这正是 §16.25 要防的"两种更正混算"里最容易发生的那一种。
+ *
+ * 同样按函数切片：闸的**函数体**里必须出现那一句消费动作，且它必须排在放行之前
+ * （消费之后才谈得上放行）。而"消费的是交回来的那一条"也要钉——随手挑一个
+ * assessmentId 也能让这句话通过，那不是消费，是随手写一行。
+ */
+test("复核判成「修正」时，更正要在这道闸里被消费一次，而且消费的是交回来的那一条（§9.6）", () => {
+  const body = sliceFunction(GATE);
+  assert.ok(
+    body.includes(RESOLUTION),
+    `${GATE} 不再读 ${RESOLUTION}：它交回的「该消费哪一条」没人接（判据可能过期了）`,
+  );
+  const consumeAt = body.indexOf(MARK_APPLIED);
+  assert.notEqual(consumeAt, -1, `${GATE} 里没有 ${MARK_APPLIED}：更正写了没人消费，`
+    + `${MARK_APPLIED} 仍是零生产调用方（§9.6／§16.25）`);
+  // 用**最后一个**放行点：函数开头那个「不是 create/consume 就放行」的早退在消费
+  // 之前是正常的（那一档压根没有更正要消费），拿第一个比会恒红。
+  const returnAt = body.lastIndexOf("return { allowed: true }");
+  assert.notEqual(returnAt, -1, `${GATE} 里找不到放行那一行（判据可能过期了）`);
+  assert.ok(consumeAt < returnAt, `${GATE} 在消费更正之前就放行了：这一发就没有消费者了`);
+  assert.ok(
+    body.includes("correctionToApply.assessmentId"),
+    `${GATE} 消费的不是 ${RESOLUTION} 交回的那一条更正`,
+  );
+  // 消费那一支必须**真的**被 `correctionToApply` 守着。少了这一条，把条件改成
+  // `if (false)`／`if (someOtherFlag)` 就能让上面三句全部照过，而运行时一次更正
+  // 都不消费——这是"静态扫源码"这一族判据最容易有的一个洞，变异实测过。
+  // 匹配时不写死接收者变量名（`resolution` 改个名不该让判据红），只钉住**属性**。
+  assert.ok(
+    /if\s*\(\s*[A-Za-z_$][\w$]*\.correctionToApply\s*\)\s*\{/.test(body),
+    `${GATE} 里消费更正的那一支没有守在 correctionToApply 上：`
+    + "把它关掉之后上面几句会照过，而运行时一次更正都不消费（§9.6）",
+  );
+});
+
+test("判据自己的灵敏度：把闸挪到消费之后，这一份必须跟着翻", () => {  // 合成一段"先消费后挡"的函数体，按同一条判据判一次。
   const swapped = stripComments(`async function fake() {
   // 这句注释提到 consume_pending，不该影响判据。
   if (authorization.kind === "consume_pending") {

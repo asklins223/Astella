@@ -131,6 +131,11 @@ test("note 节点只声明服务端真正持有的事实，不再有写死的 fr
     understandingNodeProjectionV3Schema.safeParse({ ...base, hasSource: false }).success,
     true,
   );
+  assert.equal(
+    understandingNodeProjectionV3Schema.safeParse({ ...base, currentVersionId: null, hasSource: false }).success,
+    true,
+    "尚未保存正文的笔记没有版本 id，不能用笔记 id 填空",
+  );
   // 合同是 strictObject：仓库不再产出 freshness，也不许它悄悄回来。
   assert.equal(
     understandingNodeProjectionV3Schema.safeParse({ ...base, freshness: "current" }).success,

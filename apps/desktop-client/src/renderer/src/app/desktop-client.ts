@@ -119,7 +119,8 @@ export function gatewayErrorMessage(error: unknown): string {
     case "reflection_stale_revision":
       return "另一处已修改这条批注。你的文字还在；重新读取后，核对新的批注再保存。";
     case "teaching_grounding_failed":
-      return "这次讲解的依据还没核对通过，暂时没有展示。可以重试，或先继续读笔记。";
+      // 与服务端 422 那一句同源：说清"没展示"与"换问法比空转一次有用"。
+      return "这次讲解里有几处说法，这篇笔记里没有依据，所以没有展示。换个问法多半就能过，或先继续读笔记。";
     case "teaching_model_unconfigured":
       return "讲解模型还没有配置，已有内容保留；配置好 AI 服务后再来。";
     case "teaching_in_progress":
@@ -167,4 +168,62 @@ export function gatewayErrorMessage(error: unknown): string {
     default:
       return "学习服务没有完成这次请求，请稍后重试。";
   }
+}
+
+/**
+ * 一次失败**是哪一种**——界面据此决定它长什么样。
+ *
+ * 为什么必须分开：此前所有失败都被塞进同一个 `role="alert"` 灰字里，于是
+ * 「这一轮正在准备讲解」这种**正常的等待态**和「真的没做成」在屏上长得一模一样，
+ * 都是一条红字，摆在纸片最底下。
+ *
+ * 四档与各自的界面义务：
+ *  - `pending`  还在做。它**不是**错误：不进 `role="alert"`，不配"重试"，
+ *    配的是"稍后会自动接上"（§13.3「不伪造预计成功率」——所以不给进度条）。
+ *  - `retryable` 没做成，但同样输入大概率能成。**必须**给一颗就地重试。
+ *  - `blocked`  用户自己要先解决（登录、同意、权限）。重试没有意义，
+ *    要指出去哪解决。
+ *  - `failed`   其他。给回读与"先到这里"的出路，不许把人困在这一格。
+ */
+export type GatewayFailureKind = "pending" | "retryable" | "blocked" | "failed";
+
+const RETRYABLE_GATEWAY_CODES = new Set([
+  "api_unavailable",
+  "network_timeout",
+  "rate_limited",
+  "safe_internal_error",
+  "conflict",
+  "stale_workspace",
+  "result_unknown",
+]);
+
+const BLOCKED_GATEWAY_CODES = new Set([
+  "auth_required",
+  "reauth_required",
+  "ai_consent_required",
+  "forbidden",
+  "feature_disabled",
+  "api_untrusted",
+  "configuration_error",
+]);
+
+export function classifyGatewayError(error: unknown): {
+  readonly kind: GatewayFailureKind;
+  readonly message: string;
+} {
+  if (!(error instanceof RendererGatewayError)) {
+    return { kind: "retryable", message: "服务暂时没有返回可确认的结果。" };
+  }
+  // 「正在准备」是一次**成功受理**的回执，不是失败：服务端已经收下这一发，
+  // 只是结果还没到。把它归到 failed，用户会以为按坏了。
+  if (error.code === "teaching_in_progress") {
+    return { kind: "pending", message: gatewayErrorMessage(error) };
+  }
+  if (RETRYABLE_GATEWAY_CODES.has(error.code)) {
+    return { kind: "retryable", message: gatewayErrorMessage(error) };
+  }
+  if (BLOCKED_GATEWAY_CODES.has(error.code)) {
+    return { kind: "blocked", message: gatewayErrorMessage(error) };
+  }
+  return { kind: "failed", message: gatewayErrorMessage(error) };
 }

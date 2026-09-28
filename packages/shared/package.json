@@ -311,6 +311,11 @@
       "import": "./src/understanding-topology-v3-contracts.ts",
       "default": "./src/understanding-topology-v3-contracts.ts"
     },
+    "./note-deepening-v3-contracts": {
+      "types": "./src/note-deepening-v3-contracts.ts",
+      "import": "./src/note-deepening-v3-contracts.ts",
+      "default": "./src/note-deepening-v3-contracts.ts"
+    },
     "./learning-run-v2-contracts": {
       "types": "./src/learning-run-v2-contracts.ts",
       "import": "./src/learning-run-v2-contracts.ts",
@@ -335,6 +340,11 @@
       "types": "./src/objective-reuse-rules-v2.ts",
       "import": "./src/objective-reuse-rules-v2.ts",
       "default": "./src/objective-reuse-rules-v2.ts"
+    },
+    "./review-dimension-v2": {
+      "types": "./src/review-dimension-v2.ts",
+      "import": "./src/review-dimension-v2.ts",
+      "default": "./src/review-dimension-v2.ts"
     },
     "./review-manual-date-constraint-v2": {
       "types": "./src/review-manual-date-constraint-v2.ts",
@@ -390,6 +400,11 @@
       "types": "./src/note-learning-round-contracts.ts",
       "import": "./src/note-learning-round-contracts.ts",
       "default": "./src/note-learning-round-contracts.ts"
+    },
+    "./recall-waiting-v2-contracts": {
+      "types": "./src/recall-waiting-v2-contracts.ts",
+      "import": "./src/recall-waiting-v2-contracts.ts",
+      "default": "./src/recall-waiting-v2-contracts.ts"
     },
     "./note-route-coverage-v2": {
       "types": "./src/note-route-coverage-v2.ts",

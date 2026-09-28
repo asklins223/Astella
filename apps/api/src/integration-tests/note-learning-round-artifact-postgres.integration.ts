@@ -397,7 +397,10 @@ test("动态失败不冒充教学失败：产物那一半失败 ⇒ 教学行照
         snapshotHash: "fixture-hash",
         drivingQuestionRevision: 1,
         kernelTaskRef: null,
-        artifact: { explanation: "   ", planSteps: [" ", ""] },
+        // 39d W4-1 尾：产物来源分成两种（`rendered` ＝ 事务外渲染好的整份 HTML，
+        // `material` ＝ 原始材料走确定性构建）。这一条要"生成不出东西"的 build 失败，
+        // 所以走 `material` 那一支、给一份全空的内容。
+        artifact: { kind: "material", input: { explanation: "   ", planSteps: [" ", ""] } },
       },
       { reportArtifactFailure: (message) => failures.push(message) },
     ));

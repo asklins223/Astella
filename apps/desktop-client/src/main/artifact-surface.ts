@@ -14,7 +14,12 @@ import {
   ARTIFACT_FRAME_ORIGIN,
   isArtifactFrameUrl
 } from '../shared/artifact-frame'
-import { ARTIFACT_TEMPLATE_PLACEHOLDER, artifactDocumentTemplate } from './artifact-template'
+import {
+  ARTIFACT_TEMPLATE_PLACEHOLDER,
+  ARTIFACT_TEMPLATE_SCRIPT_PLACEHOLDER,
+  ARTIFACT_TEMPLATE_STYLE_PLACEHOLDER,
+  artifactDocumentTemplate
+} from './artifact-template'
 
 /**
  * 产物文档的 CSP（D4 §3.3 逐条）。
@@ -138,12 +143,40 @@ export function assembleArtifactDocument(input: {
     // 模板是我们的代码，找不到标记是编程错误：当场喊，不静默交出一份没有产物的文档。
     throw new Error('artifact template is missing its placeholder')
   }
+  // 样式与脚本各归其位。服务端把模型那份文档拆成三段之后，用 `data-lesson` 标出
+  // 哪一段是样式、哪一段是脚本（`round-artifact-doc.ts` 的 `splitArtifactDocumentV1`）。
+  //
+  // 为什么要在这里再搬一次，而不是让服务端直接写成最终位置：落库的是**一份字符串**，
+  // 位置是宿主文档的结构，两者不该耦在一起。模型在标记中间插一个 `<script>` 时，
+  // 那段脚本会在它前面的标记还没排完时就跑；搬完之后顺序是确定的。
+  const styles: string[] = []
+  const scripts: string[] = []
+  const body = input.content
+    .replace(/<style\b[^>]*data-lesson\b[^>]*>[\s\S]*?<\/style\s*>/gi, (whole) => {
+      styles.push(whole)
+      return ''
+    })
+    .replace(/<script\b[^>]*data-lesson\b[^>]*>[\s\S]*?<\/script\s*>/gi, (whole) => {
+      scripts.push(whole)
+      return ''
+    })
+
+  const withContent =
+    template.slice(0, marker)
+    + body
+    + template.slice(marker + ARTIFACT_TEMPLATE_PLACEHOLDER.length)
+  if (styles.length === 0 && scripts.length === 0) return { ok: true, document: withContent }
+  // 落点缺失说明模板与内容不同版本：内容原样留在 root 里仍然读得到（文字等价与依据
+  // 回执不依赖样式与脚本的落点），但明确说出来好过悄悄丢一段样式。
+  if (!withContent.includes(ARTIFACT_TEMPLATE_STYLE_PLACEHOLDER)
+    || !withContent.includes(ARTIFACT_TEMPLATE_SCRIPT_PLACEHOLDER)) {
+    return { ok: true, document: withContent }
+  }
   return {
     ok: true,
-    document:
-      template.slice(0, marker)
-      + input.content
-      + template.slice(marker + ARTIFACT_TEMPLATE_PLACEHOLDER.length)
+    document: withContent
+      .replace(ARTIFACT_TEMPLATE_STYLE_PLACEHOLDER, styles.join(''))
+      .replace(ARTIFACT_TEMPLATE_SCRIPT_PLACEHOLDER, scripts.join(''))
   }
 }
 

@@ -222,6 +222,40 @@ test("planRun v2：用户目标不在 required rubric 中时改用可计分的�
   );
 });
 
+test("笔记迁移练习有 required apply 时，题面要求换一个具体情境", () => {
+  const rubric = makeRubric();
+  rubric.units.push({
+    rubricUnitId: "r3", facet: "apply", criterion: "说明一个适用场景",
+    required: true, answerUnitIds: ["a1"],
+    evidenceRefIds: ["11111111-1111-4111-8111-111111111111"],
+  });
+  const plan = planRun(makeBaseTarget(makeV2Target({ scoringRubric: rubric })), {
+    runId: "44444444-4444-4444-8444-444444444444",
+    goal: "transfer", responsePreference: "text", timeBudgetSeconds: 180,
+  });
+  assert.equal(plan.tasks[0].intent, "apply");
+  assert.match(plan.tasks[0].prompt, /不同的具体情境/);
+  assert.match(plan.tasks[0].prompt, /怎样使用这条知识/);
+});
+
+test("笔记应用题使用服务端核查过的新情境，不让学习者自拟题目", () => {
+  const rubric = makeRubric();
+  rubric.units.push({
+    rubricUnitId: "r3", facet: "apply", criterion: "说明一个适用场景",
+    required: true, answerUnitIds: ["a1"],
+    evidenceRefIds: ["11111111-1111-4111-8111-111111111111"],
+  });
+  const scenario = "有两份资料需要复习，其中一份刚读过，另一份已有一段时间没接触。";
+  const plan = planRun(makeBaseTarget(makeV2Target({ scoringRubric: rubric })), {
+    runId: "44444444-4444-4444-8444-444444444444", goal: "transfer",
+    responsePreference: "text", timeBudgetSeconds: 180, applicationScenario: scenario,
+  });
+  assert.equal(plan.tasks[0].intent, "apply");
+  assert.match(plan.tasks[0].prompt, /新情境/);
+  assert.ok(plan.tasks[0].prompt.includes(scenario));
+  assert.doesNotMatch(plan.tasks[0].prompt, /请换一个与刚才笔记示例不同/);
+});
+
 test("planRun v2：没有 required rubric 时拒绝生成可计分任务", () => {
   const rubric = makeRubric();
   rubric.units = rubric.units.map((unit) => ({ ...unit, required: false }));

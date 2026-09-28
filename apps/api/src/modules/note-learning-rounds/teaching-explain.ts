@@ -19,9 +19,9 @@ import type { RoundSuspectClaimV1 } from "@ailearn/shared/note-learning-round-co
 import type { SuspectClaimRecheckTargetV1 } from "./suspect-claim-recheck.ts";
 
 export const NOTE_TEACHING_EXPLAIN_TASK_ID = "note_teaching_explain_v1";
-export const NOTE_TEACHING_EXPLAIN_TASK_VERSION = 2;
+export const NOTE_TEACHING_EXPLAIN_TASK_VERSION = 3;
 /** 提示词与输出合同的版本（回执与审计用）。 */
-export const NOTE_TEACHING_EXPLAIN_PROMPT_VERSION = "note-teaching-explain-v2";
+export const NOTE_TEACHING_EXPLAIN_PROMPT_VERSION = "note-teaching-explain-v3";
 
 /**
  * 快照正文块（**引用，不带别的**）：`ordinal` 是它在快照里的位置，也是产物行
@@ -41,12 +41,22 @@ export type TeachingExplainInputV1 = {
   suspectRechecks?: SuspectClaimRecheckTargetV1[];
   /** Warnings stay visible until a matching rechecked unit is independently accepted. */
   pendingSuspectClaims?: RoundSuspectClaimV1[];
+  /** Server-read observation for a requested follow-up explanation; never grading evidence. */
+  practiceObservation?: {
+    outcome: "partial" | "needs_repair" | "declared_unable" | "practice_completed";
+    gapFacets: Array<"recall" | "paraphrase" | "explain" | "example" | "apply" | "boundary" | "procedure" | "relate" | "repair">;
+  };
 };
 
 /** Material-only input allowed at the formal grounding and target-freeze boundary. */
 export type TeachingEvidenceInputV1 = Pick<TeachingExplainInputV1, "drivingQuestion" | "planSteps" | "blocks">;
 
-export type TeachingExplainOutputV1 = RoundTeachingContentV1 & { sourceBlockOrdinals: number[]; target?: RoundTargetDraft | null };
+export type TeachingExplainOutputV1 = RoundTeachingContentV1 & {
+  sourceBlockOrdinals: number[];
+  target?: RoundTargetDraft | null;
+  /** A proposed public task setting, held privately until an independent check approves it. */
+  applicationScenario?: string | null;
+};
 
 /**
  * provider 端口：把"怎么生成"与"什么时候允许再花一次钱"分开（内核只管后者）。

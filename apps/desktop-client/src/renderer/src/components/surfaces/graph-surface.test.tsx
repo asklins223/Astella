@@ -180,7 +180,7 @@ describe("GraphSurface · Web 成熟版 Understanding Universe 移植", () => {
     // 适配只重置相机；恢复默认布局（清除手动拖拽）是独立的破坏性动作。
     expect(screen.getByRole("button", { name: "适配全部星图" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "清除手动拖拽并恢复默认布局" })).toBeTruthy();
-    expect(screen.getByLabelText("按学习卡状态筛选星图")).toBeTruthy();
+    expect(screen.getByLabelText("按学习目标状态筛选星图")).toBeTruthy();
     expect(screen.getByLabelText("控制知识宇宙图层")).toBeTruthy();
   });
 
@@ -205,7 +205,7 @@ describe("GraphSurface · Web 成熟版 Understanding Universe 移植", () => {
     });
   });
 
-  it("详情抽屉的目标行动进入同一目标并保留返回星图", async () => {
+  it("无卡目标星体回到相连笔记继续学习", async () => {
     stubGateway(snapshot());
     const invoke = vi.fn();
     useRoomStore.setState({ invoke } as never);
@@ -215,7 +215,28 @@ describe("GraphSurface · Web 成熟版 Understanding Universe 移植", () => {
     fireEvent.change(search, { target: { value: "提取练习" } });
     const listbox = await screen.findByRole("listbox", { name: "搜索结果" });
     fireEvent.click(await within(listbox).findByRole("option", { name: /提取练习/ }));
-    fireEvent.click(screen.getByRole("button", { name: /查看目标详情/ }));
+    const action = document.querySelector<HTMLButtonElement>(".universe-detail-actions button.is-primary");
+    expect(action?.textContent).toContain("回笔记继续学习");
+    fireEvent.click(action!);
+
+    expect(useRoomStore.getState().activeNoteRef?.noteId).toBe(NOTE_ID);
+    expect(invoke).toHaveBeenCalledWith("open-notebook");
+    expect(invoke).not.toHaveBeenCalledWith("open-objective", expect.anything());
+  });
+
+  it("有卡目标星体只说查看卡片，点击后打开对应目标详情", async () => {
+    const initial = snapshot();
+    const carded = { ...initial.nodes[0], activeCardId: nextId() } as UnderstandingNodeProjectionV3;
+    stubGateway(snapshot({ nodes: [carded, ...initial.nodes.slice(1)] }));
+    const invoke = vi.fn();
+    useRoomStore.setState({ invoke } as never);
+    render(<GraphSurface />);
+
+    const search = await screen.findByRole("combobox", { name: "搜索理解星图" });
+    fireEvent.change(search, { target: { value: "提取练习" } });
+    const listbox = await screen.findByRole("listbox", { name: "搜索结果" });
+    fireEvent.click(await within(listbox).findByRole("option", { name: /提取练习/ }));
+    fireEvent.click(screen.getByRole("button", { name: /查看对应卡片/ }));
 
     expect(useRoomStore.getState().activeObjectiveId).toBe(OBJECTIVE_ID);
     expect(invoke).toHaveBeenCalledWith("open-objective", {

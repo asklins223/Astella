@@ -16,6 +16,7 @@ export function resolveTeachingModelConfig(): TeachingModelConfig | null {
 const outputSchema = roundTeachingContentV1Schema.extend({
   sourceBlockOrdinals: z.array(z.number().int().positive()).min(1).max(200),
   target: roundTargetDraftSchema.nullable().optional(),
+  applicationScenario: z.string().trim().min(10).max(600).nullable().optional(),
 }).strict();
 
 export function buildTeachingPrompt(input: TeachingExplainInputV1): string {
@@ -35,11 +36,17 @@ export function buildTeachingPrompt(input: TeachingExplainInputV1): string {
     "units 为1到6个回答本轮问题所需的事实；criterion 是理解、因果、运用或边界的判据，避免只要求复述。",
     "facet 选 explain/apply/boundary/procedure/relate/recall；quote 必须逐字引用对应正文块，不能改写引文。",
     "材料不足以建立可评估目标时 target=null，仍保留有依据的讲解；不造假目标，不生成学习卡。",
+    "若 target 含必须运用的 apply 单元，可另给 applicationScenario：一个与笔记原例子不同、让学习者判断和解释的新具体情境（10到600字）。只给题面，不给答案、推理步骤或暗示正确结论；情境所需规则和条件必须能由本次材料支持，不得加入需要外部事实才能判断的前提。没有可靠新情境时写 null。",
   ];
   if (input.suspectRechecks?.length) {
     lines.push(
       "本轮有上次标记后、原文确实改动过的疑点目标。target 只重检 suspectRechecks 列出的单元：逐项原样保留 unitId 与 sourceBlockOrdinal，不得加入任何无关单元，也不要重检其他学习目标。",
       "每个受影响单元都要基于当前 blocks 的新原文重新写 fact、criterion 和 quote；quote 必须逐字摘自当前块。若当前材料仍不足以形成同一目标的可评估版本，target=null。旧引文与原因只用于定位，不是新依据。",
+    );
+  }
+  if (input.practiceObservation) {
+    lines.push(
+      "practiceObservation 是服务端读出的本轮练习结构化观察，只用于决定本次讲解重点。围绕 gapFacets 所指的动作给出一个更清楚的解释或对照，再邀请学习者自己尝试；不要据此断言学习者能力，也不要把观察写成笔记事实或 target 依据。",
     );
   }
   return [...lines, JSON.stringify(input)].join("\n");

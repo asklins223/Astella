@@ -145,3 +145,5 @@ apps/desktop-client/scripts/b4-landing-live/
 apps/desktop-client/outputs/
 apps/desktop-client/prototypes/
 .env.bak*
+# 本地 electron/vite 构建日志（`> .devlog` 重定向的产物，不是产品代码）
+apps/desktop-client/.devlog

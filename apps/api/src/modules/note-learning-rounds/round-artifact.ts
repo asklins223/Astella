@@ -36,6 +36,23 @@ export type RoundArtifactInputV1 = Pick<RoundTeachingContentV1, "explanation" | 
   planSteps: string[];
 };
 
+/**
+ * 产物来源的两种形状（39d W4-1 尾：产物改由模型生成之后才有的这一种）。
+ *
+ *   - `rendered`：**服务端已经渲染好的整份 HTML**。模型写讲解、可信播放器执行，读数
+ *     由服务端算（§6.1）——渲染在**事务外**做完了，落库这一步只负责把它写进去。
+ *   - `material`：原始材料，走本文件的确定性构建（没有配模型、或降级时的那一条路）。
+ *
+ * 分成两种而不是加一个可选字段：可选字段会让"传了半份 html"成为一条能通过类型检查的
+ * 路径，而那种产物在 frame 里只会画成怪东西（与桌面 `assembleArtifactDocument` 同一判据）。
+ */
+export type RoundArtifactSourceV1 =
+  | { readonly kind: "rendered"; readonly html: string; readonly generatorRef: string }
+  | { readonly kind: "material"; readonly input: RoundArtifactInputV1 };
+
+/** `generator_ref` 的长度上界（0304）：`note_round_dynamic_artifact_v1@v1 (qwen-plus)` 这一类。 */
+export const ROUND_ARTIFACT_GENERATOR_REF_MAX_V1 = 200;
+
 export type RoundArtifactBuildFailureV1 = "empty" | "over_quota";
 
 export type RoundArtifactBuildResultV1 =
@@ -67,7 +84,7 @@ function paneV1(stepIndex: number, title: string, body: string): string {
 }
 
 /** 码点计数（与 PG 的 `char_length` 同一口径：一个 emoji 是 1，不是 2）。 */
-function artifactCharLengthV1(html: string): number {
+export function artifactCharLengthV1(html: string): number {
   let length = 0;
   for (const _codePoint of html) length += 1;
   return length;

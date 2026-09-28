@@ -23,6 +23,7 @@
  * 挂载之后才跑得了——挂载点随 W4-6，本组件先以 jsdom 用例钉住状态机与判据。
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { LoaderCircle } from "lucide-react";
 import {
   ARTIFACT_FRAME_ORIGIN,
   ARTIFACT_FRAME_SANDBOX,
@@ -41,6 +42,20 @@ import {
 const HEARTBEAT_WATCHDOG_MS = 4_000;
 /** 重建次数上限：第 2 次心跳消失即降级（D4 §6「连续两次即降级为静态分镜」）。 */
 const MAX_FRAME_ATTEMPTS = 2;
+
+/**
+ * 产物高度的**下限与上限**。
+ *
+ * 下限：一份讲解再短也有一屏标题加一行读数，低于这个数说明量到的是还没排完的半张，
+ * 照着它定高会得到一个空框。
+ * 上限：静态分镜（减少动效）铺开 N 步后可能到几千像素；父侧不无限长成一个长条，
+ * 超过上限就由**外层**滚动——滚动条落在宿主这一层，产物内部永远不滚。
+ */
+const ARTIFACT_MIN_HEIGHT_PX = 180;
+const ARTIFACT_MAX_HEIGHT_PX = 1_600;
+
+/** 高度抖动吸收：小于这个差值不重排，避免心跳每拍都改一次 style。 */
+const ARTIFACT_HEIGHT_EPSILON_PX = 8;
 
 type HostPhase =
   | { kind: "waiting" }
@@ -78,6 +93,13 @@ export function ArtifactFrameHost({
   const [phase, setPhase] = useState<HostPhase>({ kind: "waiting" });
   /** 第几次加载（iframe 用它当 key：重建 = 换一个全新的 frame）。 */
   const [attempt, setAttempt] = useState(1);
+  /**
+   * 产物报上来的内容高度（已夹在 [MIN, MAX] 内）。
+   * `null` = 还没量到 ⇒ 宿主给一个**保守的起始高度**，而不是塌成 iframe 的默认 150px。
+   * 父侧量不到 frame 内容（同源策略），这是唯一的信息来源——不给它，内容就会被
+   * 压进一小格、frame 内部自己出滚动条。
+   */
+  const [contentHeight, setContentHeight] = useState<number | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const lastBeatRef = useRef<number>(Date.now());
   /** 最新相位与动作，让 message 监听器只绑一次（D5 的判据：监听器不是状态）。 */
@@ -86,8 +108,8 @@ export function ArtifactFrameHost({
 
   if (!isArtifactId(artifactId)) {
     return (
-      <div className="artifact-frame-host__notice" role="note">
-        这份动态内容的引用不合法，没有加载。请回到学习页重新打开。
+      <div className="artifact-frame-host artifact-frame-host--degraded" role="note">
+        <p className="artifact-frame-host__notice">这份动态内容的引用不合法，没有加载。请回到学习页重新打开。</p>
       </div>
     );
   }
@@ -98,6 +120,19 @@ export function ArtifactFrameHost({
 
   const handleFrameEvent = (event: ArtifactFrameEvent) => {
     lastBeatRef.current = Date.now();
+    // 高度先于阶段处理：任何一条消息（ready／heartbeat）都可能带新的高度，
+    // 而静态分镜切换会在 ready **之后**重排 root——只认 ready 会停在旧高度上。
+    if (typeof event.contentHeight === "number") {
+      const clamped = Math.min(
+        ARTIFACT_MAX_HEIGHT_PX,
+        Math.max(ARTIFACT_MIN_HEIGHT_PX, event.contentHeight),
+      );
+      setContentHeight((previous) =>
+        previous !== null && Math.abs(previous - clamped) < ARTIFACT_HEIGHT_EPSILON_PX
+          ? previous
+          : clamped,
+      );
+    }
     if (event.phase === "ready") {
       setPhase({ kind: "live", stepCount: event.stepCount ?? null });
       if (motion) {
@@ -142,7 +177,9 @@ export function ArtifactFrameHost({
         return;
       }
       // 重建：key 换掉 ⇒ 旧 frame 连同卡死其中的脚本一起销毁，新 frame 重走 ready。
+      // 高度一并清掉：新产物的高度与旧产物无关，留在旧值上就是拿旧画面撑新画面。
       setAttempt((n) => n + 1);
+      setContentHeight(null);
       setPhase({ kind: "waiting" });
     }, 500);
     return () => window.clearInterval(timer);
@@ -151,35 +188,57 @@ export function ArtifactFrameHost({
   if (phase.kind === "degraded") {
     return (
       <div className="artifact-frame-host artifact-frame-host--degraded" role="note">
-        <p>这份动态内容没能跑起来，已停止等待。文字等价与分镜如下（若有）。</p>
+        <p className="artifact-frame-host__notice">这份动态内容没能跑起来，已停止等待。文字等价与分镜如下（若有）。</p>
         {fallback}
       </div>
     );
   }
 
+  // 还没量到高度时给一个中位起始值：太矮会闪一下空框，太高会留一截空白，
+  // 而这份产物最常见的高度本来就在这个量级。
+  const frameHeight = contentHeight ?? 420;
+  const scrolls = contentHeight !== null && contentHeight >= ARTIFACT_MAX_HEIGHT_PX;
+
   return (
     <figure
       className="artifact-frame-host"
+      data-phase={phase.kind}
+      data-overflow={scrolls ? "true" : "false"}
       aria-busy={phase.kind === "waiting"}
       aria-label="动态教学演示"
     >
-      <iframe
-        key={attempt}
-        ref={iframeRef}
-        src={artifactFrameUrl(artifactId)}
-        sandbox={ARTIFACT_FRAME_SANDBOX}
-        title="动态教学演示"
-        className="artifact-frame-host__frame"
-      />
-      {phase.kind === "waiting" && <figcaption>正在准备动态内容…</figcaption>}
-      {phase.kind === "error" && (
-        <figcaption role="note">
+      <div className="artifact-frame-host__stage">
+        <iframe
+          key={attempt}
+          ref={iframeRef}
+          src={artifactFrameUrl(artifactId)}
+          sandbox={ARTIFACT_FRAME_SANDBOX}
+          title="动态教学演示"
+          className="artifact-frame-host__frame"
+          style={{ height: `${frameHeight}px` }}
+        />
+        {phase.kind === "waiting" ? (
+          <p className="artifact-frame-host__overlay">
+            <LoaderCircle className="artifact-frame-host__spinner" size={16} aria-hidden="true" />
+            正在准备动态内容…
+          </p>
+        ) : null}
+      </div>
+      {phase.kind === "error" ? (
+        <figcaption className="artifact-frame-host__caption artifact-frame-host__caption--error" role="note">
           这份动态内容报告了错误，仍可尝试阅读：{phase.detail}
         </figcaption>
-      )}
-      {phase.kind === "live" && phase.stepCount !== null && (
-        <figcaption>{`共 ${phase.stepCount} 步`}</figcaption>
-      )}
+      ) : null}
+      {phase.kind === "live" && phase.stepCount !== null && phase.stepCount > 0 ? (
+        // 「共 N 步」是上一版的说法——那一版的产物是自己的一排格，按顺序推一遍。
+        // 现在画面是模型为这一个知识点写的页面，N 是它讲的**要点**条数
+        // （服务端渲染出来的文字等价，frame 之外、永远在屏上），所以这一行说的是
+        // "这一页讲了几件事"，而不是"你要点几下才走得完"。
+        <figcaption className="artifact-frame-host__caption">这一页讲了 {phase.stepCount} 个要点</figcaption>
+      ) : null}
+      {scrolls ? (
+        <p className="artifact-frame-host__hint">这一份比较长，可以往下翻。</p>
+      ) : null}
     </figure>
   );
 }

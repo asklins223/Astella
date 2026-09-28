@@ -12,7 +12,7 @@
  * 历史不删：一次解除盖一个 `released_at`，同一个人对同一个目标可以再来一次；
  * 唯一性只作用在"还活着的那一份"上（迁移 0295 的部分唯一索引）。
  */
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { objectiveReviewHoldsV2, reviewSchedules } from "@ailearn/shared/db-schema/evidence";
 import { notes } from "@ailearn/shared/db-schema/note";
@@ -23,6 +23,7 @@ import {
 } from "@ailearn/shared";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { ensurePendingReviewScheduleV2 } from "./review-schedule-boundary.ts";
+import { isReviewDimensionV2, REVIEW_DIMENSION_VALUES_V2, type ReviewDimensionV2 } from "@ailearn/shared/review-dimension-v2";
 
 /** 排除只能立在自己书房里的笔记上；这一档要能被路由翻成 404，而不是 500。 */
 export class ObjectiveHoldNoteNotFoundV2 extends Error {
@@ -278,6 +279,15 @@ export async function resumeObjectiveAndScheduleV2(
     workspaceId: input.workspaceId,
     userId: input.userId,
     subjectId: input.objectiveId,
+    // §9.1 事实提取与综合应用分别观察。「恢复并开启」是**把一条被排除的安排放回来**，
+    // 不是新开一项需求：被排除前那一格是哪一维，就还回哪一维。读出来优先于写死——
+    // 写死会在她恢复的是「应用」那一格时新建出一条「提取」，0287 的唯一索引挡不住
+    // （那是两个不同的 key），于是同一个目标上平白多出一道她没要的回忆。
+    reviewDimension: (await readHeldScheduleDimensionV2(tx, {
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      objectiveId: input.objectiveId,
+    })) ?? REVIEW_DIMENSION_VALUES_V2[0],
     // 「开启」是持续安排；与「仅提醒这一次」共用这一格唯一键（0297 头注第 1 条），
     // 撞上已排着的那一条时边界回读库里实际档位，不由这一发覆盖。
     reminderKind: "sustained",
@@ -303,4 +313,29 @@ export async function resumeObjectiveAndScheduleV2(
     nextReviewAt: ensured.nextReviewAt.toISOString(),
     released: released.released,
   };
+}
+
+/**
+ * 被排除的那一条安排原本服务的是哪一个维度（§9.1）。
+ *
+ * 排除表（0295）只记"这个目标暂不安排"，不记维度；而排期行里那一列还在。所以恢复时
+ * 读**排在它后面的**最近一条（不管状态）——被排掉时那一行没被删，维度就在那里。
+ * 读不到就交给调用方落默认档，而不是在这里猜。
+ */
+async function readHeldScheduleDimensionV2(
+  tx: ApiTransaction,
+  input: { workspaceId: string; userId: string; objectiveId: string },
+): Promise<ReviewDimensionV2 | null> {
+  const rows = await tx
+    .select({ dimension: reviewSchedules.reviewDimension })
+    .from(reviewSchedules)
+    .where(and(
+      eq(reviewSchedules.workspaceId, input.workspaceId),
+      eq(reviewSchedules.userId, input.userId),
+      eq(reviewSchedules.subjectId, input.objectiveId),
+    ))
+    .orderBy(desc(reviewSchedules.updatedAt))
+    .limit(1);
+  const value = rows[0]?.dimension;
+  return isReviewDimensionV2(value) ? value : null;
 }

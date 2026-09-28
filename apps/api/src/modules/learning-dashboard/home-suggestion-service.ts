@@ -216,8 +216,12 @@ export async function actOnTodayBatchV2(
 
   const lockedLengthBefore = await readOrStartDailyBatchV2(tx, { ...lockInput });
   // 库里数「已做」：今天这一批的项里，被消费掉的那几道。
-  const doneCount = await countBatchItemsDoneV2(tx, { ...ctx, now });
-  const remainingBefore = Math.max(0, lockedLengthBefore - doneCount);
+  // 已做的数**不能超过本批锁的长度**。此前这一发数的是"批次开始之后被消费掉的全部
+  // 安排"，没有按主体收窄：用户在本批之外做掉 5 道，本批锁的 5 项原封不动还挂在
+  // 屏上，"剩下"却被算成 0，于是屏上一边列着 5 道、一边说"今天已经做完了"。
+  // 真正的按主体收窄需要把本批的成员 id 落库（daily_review_batches_v2 现在只存长度），
+  // 那是 schema 变更，这里不做；先兜住"说得比做得满"这一侧。
+  const doneCount = Math.min(await countBatchItemsDoneV2(tx, { ...ctx, now }), lockedLengthBefore);
 
   let lockedLength = lockedLengthBefore;
   let paused = (await isBatchPausedV2(tx, lockInput)).paused;
@@ -240,7 +244,11 @@ export async function actOnTodayBatchV2(
     action: decided.action,
     lockedLength: decided.lockedLength,
     paused: decided.paused,
-    remaining: remainingBefore,
+    // 必须是**动作之后**的那个 remaining，与 screenLine 同源。此前回的是
+    // `remainingBefore`：锁 5、已做 0、减量 2 ⇒ 回执是
+    // `{ lockedLength: 3, remaining: 5, screenLine: "…剩下 3 道还在。" }` ——
+    // 一份回执里两个数自相矛盾，而父层把两个都拿去做界面。
+    remaining,
     screenLine: decided.screenLine,
   };
 }

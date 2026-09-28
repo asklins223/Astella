@@ -1,8 +1,10 @@
 import { NoteReflectionShelf } from "./note-reflection-shelf";
+import { noteLearningScene, notePracticeResultCopy, roundTrackNextV1, roundTrackV1 } from "./note-learning-flow";
 import { stageReflectionAppend } from "./note-reflection-document";
+import { LearningRunBody, releaseRunThroughMainV1 } from "./learning-run-surface";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BookOpen, History, LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
+import { History, LoaderCircle, RefreshCw, Sparkles } from "lucide-react";
 import "./note-hud.css";
 import type { CapabilityProjectionV1 } from "@ailearn/shared/desktop-ipc-contracts";
 import type {
@@ -18,17 +20,14 @@ import { reviewSubscriptionV2Schema } from "@ailearn/shared/review-queue-v2-cont
 import type { z } from "zod";
 import type { DesktopNoteVersionItem, DesktopSourceDetail } from "@ailearn/shared/desktop-surface-contracts";
 import type {
-  LearningObjectivePrimaryActionV3,
   LearningObjectiveSurfaceV3,
   ObjectiveNoteChangeImpactV1,
   ObjectiveReviewHoldV1,
-  ObjectiveSurfaceFreshnessV3,
 } from "@ailearn/shared/learning-objective-surface-contracts";
 /** W7-3 刀六：笔记订阅那一行。取共享合同那份，渲染层不再自己拼形状。 */
 type NoteReviewSubscriptionV1 = z.infer<typeof reviewSubscriptionV2Schema>;
 import type { NoteBlockProjectionV1, NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
 import type {
-  NoteLearningRoundHistoryItemV1,
   NoteLearningRoundHistoryV1,
   NoteLearningRoundV1Wire,
   RoundPracticeV1,
@@ -38,15 +37,20 @@ import type {
 import { useRoomStore } from "../../app/room-store";
 import { SpaceShareButton, noteShareScopeLabel } from "../space-share-control";
 import type { NoteShareScopeV1 } from "@ailearn/shared/note-share-contracts";
+import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
 import {
   createCommandId,
   createRequestMeta,
+  classifyGatewayError,
   gatewayErrorMessage,
+  type GatewayFailureKind,
   RendererGatewayError,
   unwrapGatewayResult,
 } from "../../app/desktop-client";
 import { imageOnlyFiles } from "../../app/source-intake";
 import { ROUND_RECORD_COPY_V1, roundHistoryStateLabelV1, roundRecordDayV1, roundRecordModesLabelV1 } from "./round-record-copy";
+import { NoteRouteCoverage } from "./note-route-coverage";
+import type { NoteRouteCoverageV1 } from "@ailearn/shared/note-route-coverage-v2";
 import { HudPage } from "../hud/HudPage";
 import { useHudPage } from "../hud/use-hud-page";
 import { usePageReadableView } from "../hud/use-page-readable-view";
@@ -67,7 +71,6 @@ import {
   isLiveGenerationForNote,
 } from "./card-generation-status";
 import {
-  freshnessLabel,
   reviewSourceScopeHint,
   reviewSourceSwitchLabel,
   reviewSubscriptionNotice,
@@ -77,13 +80,12 @@ import {
   objectiveResumeNotice,
   objectiveReviewHoldHint,
   objectiveReviewHoldLabel,
-  primaryActionDescription,
-  primaryActionLabel,
   OBJECTIVE_HOLD_ACTION_LABEL,
   OBJECTIVE_RESUME_ACTION_LABEL,
 } from "./objective-state-copy";
 import { startObjectiveJourney } from "./objective-primary-action";
 import { ArtifactFrameHost } from "./artifact-frame-host";
+import { RoundNotice } from "./round-notice";
 import { parseMarkdownTable } from "./note-blocks";
 import { isHorizontalRule, noteInlineDisplayText, noteInlineImages, renderNoteInline } from "./note-reading-inline";
 import { sourceImageObjectKeyFromUrl } from "@ailearn/shared/source-image-contracts";
@@ -111,29 +113,10 @@ type NotebookProjection = {
   readonly source: DesktopSourceDetail | null;
   readonly sourceFailure: string | null;
   readonly objective: LearningObjectiveSurfaceV3 | null;
-  /**
-   * 这篇笔记自己的学习目标，以及它的主行动（39d W4-2 第三刀）。
-   *
-   * 上面那个 `objective` 只在"目标是房间焦点、且它的主笔记就是这一篇"时才留下，
-   * 笔记页因此从来没有过自己的主要动作。这一读按 `noteId` 收窄到"起源于这一篇"
-   * 的 active 目标（`limit: 1`，顺序由服务端定）；读不到就是 null，那一行不画。
-   */
+  /** 最近的目标只用于学习记录页中的单项复习安排，不决定笔记的学习入口。 */
   readonly noteObjective: {
     readonly objectiveId: string;
-    readonly primaryAction: LearningObjectivePrimaryActionV3;
-    readonly noteChangeImpact: ObjectiveNoteChangeImpactV1 | null;
-    /**
-     * §3.2 第六种情况（正文有实质修改）不看这一页自己的版本号——服务端已经按
-     * origin 的 `noteVersionId` 与笔记当前版本比过（`surface-service.ts` 的
-     * `computeFreshness`），客户端再比一次就是第二个裁决处（而且它比不出
-     * `legacy_unreviewed` 那一档）。徽标直接用它这个值。
-     */
-    readonly freshness: ObjectiveSurfaceFreshnessV3;
-    /**
-     * W7-3 刀三：这一颗目标是不是被本人设成了「暂不安排」（39 §9.1 行 2）。
-     * 与列表那一格**同一个值**（服务端逐字搬过来的），所以笔记页与卡库页
-     * 不会一个说"暂不安排"、另一个说没有。
-     */
+    readonly publicSummary: string;
     readonly reviewHold: ObjectiveReviewHoldV1 | null;
   } | null;
   /**
@@ -162,12 +145,23 @@ type NotebookProjection = {
    */
   readonly roundHistory: NoteLearningRoundHistoryV1 | null;
   /**
+   * 这一篇的**核心路线**（39d W4-5 ③；§4.4）。与 `roundHistory` 分开两格：
+   * 那一格是**按轮次**的时间线，这一格是**按核心问题**的跨轮汇总。合成一格
+   * 就会出现「记录读到了但路线读失败」被读成「没有路线」。
+   *
+   * 读失败**不吞**：另给一句真因，因为空册页会被读成"这一篇没有核心问题"（§13.4）。
+   */
+  readonly routeCoverage: NoteRouteCoverageV1 | null;
+  readonly routeCoverageFailure: string | null;
+  /**
    * 教学面那一整发（39d W4-6 刀二／刀三）：这一轮当前问题下的解释、这一轮练过哪几道、
    * 以及「练一道」那一发的起点。**收回一份**而不是散成三个字段：它们本来就在同一发
    * 回信里（服务端一次说清"这一轮现在是什么样"），分开存会让三者有时间差。
    * 与上面两读同一条纪律：读不到 ⇒ null 且整块退成"还没讲过"，不把笔记顶掉。
    */
   readonly roundTeachingView: RoundTeachingViewV1 | null;
+  /** A failed teaching read must never look like an untouched round. */
+  readonly roundTeachingFailure: string | null;
   readonly capabilities: CapabilityProjectionV1;
   /**
    * The workspace's one live Card Generation run (owner only; Member sees an
@@ -301,12 +295,10 @@ const EDITOR_TOOLS: readonly EditorToolSpec[] = [
  * 轻量定向那张表单的全部字面（39d W4-3 第三刀；PRD §3.3）。一处一份：屏上这句话、
  * 测试里的期望都从这里取。
  *
- * 两个预设不是"两个问题"，是**两种姿态**（§3.3 原话「我完全不熟」「先让我试一下」）：
- * 点它们只往输入框里放一句起步的话，那句话必须还能改——判据在 §16.16，
- * 换问题不需要重编这篇笔记。
+ * 直接讲解与先试分别走服务端的 explain / preparePractice，屏上不借制卡入口。
  */
 export const ROUND_COPY = {
-  ask: "这一轮想弄懂什么？",
+  ask: "你想弄懂的是哪一件事？",
   start: "开始这一轮",
   starting: "正在开始…",
   /** 已经有一轮在进行中时，那颗提交按钮是"改写这一句"，不是"再开一轮"。 */
@@ -316,10 +308,13 @@ export const ROUND_COPY = {
   end: "先到这里",
   ending: "正在收尾…",
   /**
-   * 「继续这一轮」（39d W4-5 ④ 的前置）：只有**停住**的那一轮摆这一颗。
+   * 「接着学下去」（39d W4-5 ④ 的前置）：只有**停住**的那一轮摆这一颗。
    * 恢复不需要「暂停」那颗欠的那道活跃度判据——它是用户明确的动作。
+   *
+   * 措辞从「继续这一轮」改成这句，是因为这一页上"这一轮"已经是主语（标题牌上写着），
+   * 按钮再说一遍就成了系统词；一个动词短语比一个内部名词更像"接着做下去"（39f UI-4）。
    */
-  resume: "继续这一轮",
+  resume: "接着学下去",
   reopenWithCurrent: "按当前内容新开一轮",
   /**
    * 这一轮冻的正文后来又保存过一版。与教学面那句 `teaching.staleVersion`（依据不再在这里定位）
@@ -370,9 +365,6 @@ export const ROUND_COPY = {
      */
     stopLead: (count: number) => `帮了 ${count} 次，还没有看到改善的证据——先不自动加题了。你想怎么走？`,
     switchExplanation: "换一种解释",
-    addPrerequisite: "补一节前置",
-    /** 四档里唯一还没接上的一档：如实说，不摆一颗按不动的按钮装作能用。 */
-    addPrerequisiteUnavailable: "补一节前置还没接上：它要先生成前置内容，那是后面的事。",
     backToMaterial: "回材料核对",
     endRound: "先结束这一轮",
     /**
@@ -446,14 +438,33 @@ export function roundSubmitLabelV1(
   return hasOpenRound ? ROUND_COPY.save : ROUND_COPY.start;
 }
 
-/** 预设 → 起步句。带上标题是为了让这句话在这篇笔记上是具体的，不是通用口号。 */
+/**
+ * 起步的三个问法（39f §3「本轮问题」那一格）。
+ *
+ * 上一版只有一颗「我完全不熟」，它把整篇题名塞进「从头到尾有个站得住的解释」——一篇
+ * 长笔记于是被包装成**一个大问题**，用户读完仍然不知道该先弄懂哪一个机制、条件或边界。
+ * 真正能收窄方向的是那三类**问法**，不是题名，所以三颗都不带题名。
+ *
+ * 题名那一路由 `structureQuestionCandidatesV1` 从这篇自己的小节里取（见下）：那才是
+ * 唯一有依据的收窄。这三颗只是把"该往哪个方向问"摆出来，让人**挑一个方向**再改。
+ */
 export const ROUND_PRESETS_V1: ReadonlyArray<{
-  readonly key: "unfamiliar" | "try";
+  readonly key: "condition" | "why" | "boundary";
   readonly label: string;
-  readonly starter: (title: string) => string;
+  readonly starter: string;
 }> = [
-  { key: "unfamiliar", label: "我完全不熟", starter: (title) => `先弄懂「${title}」在说什么，从头到尾有个站得住的解释` },
-  { key: "try", label: "先让我试一下", starter: (title) => `先不看笔记，试试我能说出「${title}」里的哪几点` },
+  { key: "condition", label: "先弄懂那个条件", starter: "这篇里有一句话，它要成立需要什么条件？" },
+  // 「为什么非做不可，不做会错在哪」这一版**撤掉了**（2026-09-28 真窗口实测）：
+  // 它是一个**反事实**问法，而多数笔记（尤其是产品发布、技术介绍这类）根本不写"不做会
+  // 怎样"。于是讲解模型照着问法编——"不做就会导致语音错误（'東京'读成 dōng jīng）"、
+  // "无法支撑视频配音"——独立核查逐条指出材料没有这句话，**整份讲解被拒**。真窗口实测
+  // 连撞两次：换一篇短笔记、换一篇 70 段的富笔记，都是同一条 422。
+  //
+  // 判据不是"提问不好听"，是**这道题能不能被材料回答**：问法必须落在笔记真的说过的
+  // 那句话上。核查者那一档是明确允许"材料不足"如实说的（`hasMeasurementClaimV1` 旁边
+  // 的免责处理就是为它准备的），所以"材料没说"本身不该让整轮失败。
+  { key: "why", label: "先弄懂为什么", starter: "这一步为什么这么做？这篇给了什么理由？" },
+  { key: "boundary", label: "先弄懂边界", starter: "这个做法在什么情况下就不管用了？材料说过它的限制吗？" },
 ];
 
 /**
@@ -731,6 +742,8 @@ export function NotebookSurface() {
   const setActiveCardGenerationRunId = useRoomStore((state) => state.setActiveCardGenerationRunId);
   const setActiveObjectiveId = useRoomStore((state) => state.setActiveObjectiveId);
   const setActiveRunId = useRoomStore((state) => state.setActiveRunId);
+  // 就地作答要靠它判断"这一轮正在答的那一次"是不是眼下这一次（见 `inlineRoundRunId`）。
+  const activeRunId = useRoomStore((state) => state.activeRunId);
   const activeNoteRef = useRoomStore((state) => state.activeNoteRef);
   // 协同流只在协作空间里存在（personal 按门控不建长连接），所以订阅与否看它。
   const spaceIdentity = useRoomStore((state) => state.spaceIdentity);
@@ -745,6 +758,11 @@ export function NotebookSurface() {
   });
   const setReturnTarget = useRoomStore((state) => state.setReturnTarget);
   const [reflectionRoundId, setReflectionRoundId] = useState<string | undefined>(undefined);
+  const [inspectedRound, setInspectedRound] = useState<{ roundId: string; view: RoundTeachingViewV1 } | null>(null);
+  const [inspectedRoundBusy, setInspectedRoundBusy] = useState(false);
+  const [inspectedRoundFailure, setInspectedRoundFailure] = useState<string | null>(null);
+  const [historyInspectRevision, setHistoryInspectRevision] = useState(0);
+  const historyDetailRef = useRef<HTMLElement>(null);
   const appendedReflections = useRef(new Map<string, string>());
   const reflectionShelfRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<NoteMarkdownEditorHandle | null>(null);
@@ -754,20 +772,41 @@ export function NotebookSurface() {
   const saveRef = useRef<() => void>(() => {});
   const [mode, setMode] = useState<"read" | "edit">("read");
   const [leaf, setLeaf] = useState<"reading" | "learning" | "history">("reading");
+  const [reviewingTeaching, setReviewingTeaching] = useState(false);
+  /** 就地作答的工位停在哪一屏：`assessment` 作答／`result` 那一次的结算。 */
+  const [inlineRunPage, setInlineRunPage] = useState<"assessment" | "result">("assessment");
+  const handledRoundReturnRef = useRef<string | null>(null);
   const autoFocusedSuspectNoteRef = useRef<string | null>(null);
   const [showAllBlocks, setShowAllBlocks] = useState(false);
   const [showAllReadingSections, setShowAllReadingSections] = useState(false);
   const [focusedBlockOrdinal, setFocusedBlockOrdinal] = useState<number | null>(null);
   const leafScrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    setLeaf(activeNoteRef?.learningRoundId ? "history" : "reading");
+    setLeaf(activeNoteRef?.learningRoundId ? "learning" : "reading");
+    setReviewingTeaching(false);
     setShowAllBlocks(false);
     setShowAllReadingSections(false);
     setFocusedBlockOrdinal(null);
     setReflectionRoundId(activeNoteRef?.learningRoundId);
     appendedReflections.current.clear();
   }, [activeNoteRef?.noteId, activeNoteRef?.learningRoundId]);
-  useEffect(() => { if (leafScrollRef.current) leafScrollRef.current.scrollTop = 0; }, [leaf]);
+  /**
+   * 换书签时回到页首，**除非**这一趟是"回到刚才读的那一段"（39f §3「从笔记进入」）。
+   *
+   * 位置放在 ref 里而不是 state：这个效果只随 `leaf` 跑一次，落回原位之后必须**不再**
+   * 触发第二轮（state 会因为 set(null) 再跑一次，于是刚落回去就被自己抹成 0）。
+   *
+   * 真正在滚的是 `.notebook-scroll`（`leafScrollRef`），不是里面的 `.reading-body`——
+   * 后者的 `scrollTop` 恒为 0，早先那版记位置记在它上面，等于永远记到 0。
+   */
+  const pendingReadingTopRef = useRef<number | null>(null);
+  useEffect(() => {
+    const scroller = leafScrollRef.current;
+    if (!scroller) return;
+    const restore = pendingReadingTopRef.current;
+    pendingReadingTopRef.current = null;
+    scroller.scrollTop = restore ?? 0;
+  }, [leaf]);
   /**
    * `title` 是**本机改过、还没写进文档**的那一份，`null` = 这一屏没改过标题，
    * 于是标题框画文档 `meta` 里的那一份（别人改名会跟着动）。正文不在这里存副本，
@@ -789,11 +828,6 @@ export function NotebookSurface() {
   const [sharing, setSharing] = useState(false);
   const [startingGeneration, setStartingGeneration] = useState(false);
   const [generationFailure, setGenerationFailure] = useState<string | null>(null);
-  /** 这一次「开始学习/继续作答」在飞，按钮就地禁用，不再开第二条。 */
-  const [startingNoteObjective, setStartingNoteObjective] = useState(false);
-  /** 「先保存再开始」正在交字的那一段（按钮上要如实说"正在保存…"）。 */
-  const [saveBeforeStart, setSaveBeforeStart] = useState(false);
-  const [noteObjectiveFailure, setNoteObjectiveFailure] = useState<string | null>(null);
   /**
    * W7-3 刀三：目标级「暂不安排」／「恢复并开启」那两条命令的状态。
    *
@@ -824,7 +858,7 @@ export function NotebookSurface() {
   const [olderRounds, setOlderRounds] = useState<NoteLearningRoundHistoryV1 | null>(null);
   const [olderBusy, setOlderBusy] = useState(false);
   const [olderFailure, setOlderFailure] = useState<string | null>(null);
-  const [roundFailure, setRoundFailure] = useState<string | null>(null);
+  const [roundFailure, setRoundFailure] = useState<{ kind: GatewayFailureKind; message: string } | null>(null);
   /**
    * 迟到的那一句（§16.39 的"另一份草稿明确保留为冲突"，39d W4-5 第四刀）。
    *
@@ -837,11 +871,11 @@ export function NotebookSurface() {
   const [roundLostDraft, setRoundLostDraft] = useState<{ question: string; starter: string | null } | null>(null);
   /** 教学面（W4-6 刀二）：生成那一发在途、以及它自己的失败那一句。 */
   const [teachingBusy, setTeachingBusy] = useState(false);
-  const [teachingFailure, setTeachingFailure] = useState<string | null>(null);
+  const [teachingFailure, setTeachingFailure] = useState<{ kind: GatewayFailureKind; message: string } | null>(null);
   const [teachingReflectionIds, setTeachingReflectionIds] = useState<string[]>([]);
   /** 「练一道」（W4-6 刀三）：开那场 run 的在途与它自己的失败那一句。 */
   const [practiceBusy, setPracticeBusy] = useState(false);
-  const [practiceFailure, setPracticeFailure] = useState<string | null>(null);
+  const [practiceFailure, setPracticeFailure] = useState<{ kind: GatewayFailureKind; message: string } | null>(null);
   /**
    * 动态产物落盘那一发（W4-6 刀五）：`idle` 还没试 / `ready` 已在盘上可以挂宿主 /
    * `failed` 如实说明。**只有这三档**：失败不是"落盘失败"，它连带把宿主也关掉——
@@ -934,9 +968,7 @@ export function NotebookSurface() {
       }
     }
 
-    // 39d W4-2 第三刀：这一篇的学习目标主行动。读不到（老网关没有这条路由、
-    // 这一篇还没有目标、或读取失败）就是 null——整行不画。这一读**必须**在这里
-    // 自己吞掉异常：它是增补，不能让一次失败的附加读取把整篇笔记换成错误页。
+    // 目标只供记录页的单项安排使用。笔记学习始终由 noteLearningRound.open 决定。
     let noteObjective: NotebookProjection["noteObjective"] = null;
     try {
       const objectiveResponse = await api.objective.list({
@@ -950,9 +982,7 @@ export function NotebookSurface() {
       if (item) {
         noteObjective = {
           objectiveId: item.objectiveId,
-          primaryAction: item.primaryAction,
-          noteChangeImpact: item.noteChangeImpact ?? null,
-          freshness: item.freshness,
+          publicSummary: item.publicSummary,
           reviewHold: item.reviewHold ?? null,
         };
       }
@@ -1000,6 +1030,7 @@ export function NotebookSurface() {
     // 教学产物那一读（W4-6 刀二）：只有真有一轮在进行中才有得读——没轮次就没有
     // "这一轮讲了什么"。同样自己吞异常：读失败退成"还没讲过"，不是错误页。
     let roundTeachingView: NotebookProjection["roundTeachingView"] = null;
+    let roundTeachingFailure: string | null = null;
     if (openRound) {
       try {
         const teachingResponse = await api.noteLearningRound.teaching({
@@ -1008,8 +1039,9 @@ export function NotebookSurface() {
         });
         if (teachingResponse.workspaceEpoch) epochRef.current = teachingResponse.workspaceEpoch;
         roundTeachingView = unwrapGatewayResult(teachingResponse);
-      } catch {
+      } catch (error) {
         roundTeachingView = null;
+        roundTeachingFailure = gatewayErrorMessage(error);
       }
     }
 
@@ -1027,6 +1059,22 @@ export function NotebookSurface() {
       roundHistory = null;
     }
 
+    // 核心路线（§4.4）。**失败要说得出来**——与上面那两读"自己吞异常"刻意不同：
+    // 记录那两块是增补，读不到最多那一块不出现；而册页一旦画成空的，读的人会以为
+    // 「这一篇没有核心问题」，那是内容状态而不是读取失败（§13.4）。
+    let routeCoverage: NotebookProjection["routeCoverage"] = null;
+    let routeCoverageFailure: NotebookProjection["routeCoverageFailure"] = null;
+    try {
+      const routeResponse = await api.noteLearningRound.route({
+        meta: createRequestMeta(epochRef.current),
+        noteId: note.noteId,
+      });
+      if (routeResponse.workspaceEpoch) epochRef.current = routeResponse.workspaceEpoch;
+      routeCoverage = unwrapGatewayResult(routeResponse);
+    } catch (error) {
+      routeCoverageFailure = gatewayErrorMessage(error);
+    }
+
     return {
       note,
       source,
@@ -1035,7 +1083,10 @@ export function NotebookSurface() {
       openRoundContentMoved,
       openRoundNoteChangeImpact,
       roundHistory,
+      routeCoverage,
+      routeCoverageFailure,
       roundTeachingView,
+      roundTeachingFailure,
       objective: focus && focus.objective.sources.primaryNote?.noteId === note.noteId
         ? focus.objective
         : null,
@@ -1090,19 +1141,82 @@ export function NotebookSurface() {
   const source = data?.source ?? null;
   const sourceFailure = data?.sourceFailure ?? null;
   const objective = data?.objective ?? null;
-  /** 这一篇的学习目标主行动；读不到就是 null，那一行整个不画（W4-2 第三刀）。 */
+  /** 单项目标只在记录页的复习安排中出现。 */
   const noteObjective = data?.noteObjective ?? null;
   /** W7-3 刀六：这一篇的笔记订阅；读不到＝没有那一档开关（与上面同一纪律）。 */
   const noteSubscription = data?.noteSubscription ?? null;
   const openRound = data?.openRound ?? null;
+  useEffect(() => {
+    if (!data || !activeNoteRef?.learningRoundId) return;
+    const key = `${data.note.noteId}:${activeNoteRef.learningRoundId}`;
+    if (handledRoundReturnRef.current === key) return;
+    handledRoundReturnRef.current = key;
+    // 「回到本轮学习」这颗按钮承诺的是**这一轮**，不是这篇文章。
+    // 此前只在"轮次已经结束"时切到 history；轮次还开着的那一支什么都不做，
+    // 于是落点停在 leaf 的默认值 reading——按的是"回到本轮学习"，看到的是正文。
+    if (openRound) setLeaf("learning");
+    else setLeaf("history");
+  }, [data, activeNoteRef?.learningRoundId, openRound]);
   useEffect(() => { setTeachingReflectionIds([]); }, [activeNoteRef?.noteId, openRound?.roundId]);
   const openRoundContentMoved = data?.openRoundContentMoved ?? false;
   const openRoundNoteChangeImpact = data?.openRoundNoteChangeImpact ?? null;
   const roundHistory = data?.roundHistory ?? null;
+  const routeCoverage = data?.routeCoverage ?? null;
+  const routeCoverageFailure = data?.routeCoverageFailure ?? null;
   /** 这一轮当前问题下的那条解释；`null` = 还没讲过（W4-6 刀二）。 */
   const roundTeaching = data?.roundTeachingView?.teaching ?? null;
+  const roundNextStep = data?.roundTeachingView?.nextStep ?? null;
+  const roundTeachingFailure = data?.roundTeachingFailure ?? null;
   /** 这一轮练过的那几道（W4-6 刀三；空数组 = 还没练过）。 */
   const roundPractices = data?.roundTeachingView?.practices ?? [];
+  const practiceReceiptKey = roundPractices.map((practice) => `${practice.runId}:${practice.phase}:${practice.outcome ?? ""}`).join("|");
+  useEffect(() => { setReviewingTeaching(false); }, [openRound?.roundId, practiceReceiptKey]);
+  const learningScene = noteLearningScene({
+    roundPhase: openRound?.phase === "paused" ? "paused" : openRound ? "active" : null,
+    editingQuestion: roundEditing,
+    hasTeaching: Boolean(roundTeaching),
+    nextStep: roundNextStep,
+  });
+  const latestRoundPractice = roundPractices.at(-1) ?? null;
+  /**
+   * 此刻真正在跑的那一步，一句话；没有在跑就是 `null`。
+   *
+   * 三个动作各有各的 `busy` 布尔，于是屏上会出现"这一颗按钮说自己忙、那一颗按钮
+   * 说自己不忙、纸片底下还有一条红字"的三方不一致——用户看不出点了什么、在等什么。
+   * 这里按**优先级取唯一一个**在途动作（讲解 > 练一道 > 开轮次），只说那一句。
+   *
+   * 刻意不给百分比、不给预计秒数（§13.3「不伪造预计成功率」）：说得出来的只有
+   * "在做哪一步"，以及"做好了会自动接上"。
+   */
+  //
+  // **不要**在正文里再写一个"正在"：`RoundNotice` 的 pending 档已经印了"还在准备"
+  // 这一格标签（它是给屏幕阅读器的那句前缀，真窗口里两句拼起来读成"还在准备正在准备
+  // 这一道小问题"——同一件事说了两遍，且第二遍把第一遍吞掉了）。
+  const inFlightStep: string | null = teachingBusy
+    ? "为这个问题准备讲解。做好了会自动接上，可以先去读笔记。"
+    : practiceBusy
+      ? "准备这一道小问题。做好了会自动接上。"
+      : roundBusy !== null
+        ? "处理这一轮。处理完会接上，不用重复点。"
+        : null;
+  const roundResultCopy = notePracticeResultCopy({
+    question: openRound?.drivingQuestion ?? null,
+    practices: roundPractices,
+    nextStep: roundNextStep,
+  });
+  /**
+   * 纸上那三枚纸签（39f UI-2：暂停回来第一眼看不见"做过什么、接着做什么"）。
+   *
+   * 每一枚的判定都来自真实状态：讲没讲过看讲解在不在，练没练过看**已结算**的那几次，
+   * 结果看服务端有没有说这一轮可以收。所以这一排不会在用户什么也没做的时候先亮一格。
+   */
+  const roundTrack = roundTrackV1({
+    scene: learningScene,
+    hasTeaching: Boolean(roundTeaching),
+    practiceCount: roundPractices.length,
+    settledCount: roundPractices.filter((practice) => practice.outcome !== null).length,
+    canFinish: roundNextStep?.kind === "finish",
+  });
   /** 「练一道」那一发的起点；`null` = 没有可开的目标（无目标轮次不摆这颗按钮）。 */
   const roundPracticeStart = data?.roundTeachingView?.practiceStart ?? null;
   /** 缺口帮助停止那一格（W4-6 刀四）：停了就摆四选一。 */
@@ -1262,6 +1376,26 @@ export function NotebookSurface() {
     const timer = setTimeout(() => setFocusedBlockOrdinal(null), 2_400);
     return () => clearTimeout(timer);
   }, [focusedBlockOrdinal]);
+
+  /**
+   * 从正文切到学习页时，把**读到的位置**记下来（39f §3「从笔记进入」那一格）。
+   *
+   * 正文与学习是同一本册子的两张书签（`leaf` 互斥），所以切过去之后原来读到哪儿在屏上
+   * **没有任何痕迹**——用户想核一句就得自己往上翻。这里的做法是记下滚动位置，并在
+   * 学习页摆一枚「回到刚才读的那一段」的书签：它是一个**明确说清去哪儿**的动作，与页首
+   * 那颗「回到正文」不是同一件事（后者只是换书签，不挪位置）。
+   *
+   * 位置**不落库、不跟人走**：它只活在这一次打开的这一篇笔记里，关掉就没了。
+   */
+  const [lastReadingTop, setLastReadingTop] = useState<number | null>(null);
+  const enterLearning = (): void => {
+    setLastReadingTop(leafScrollRef.current?.scrollTop ?? 0);
+    setLeaf("learning");
+  };
+  const backToReading = (options: { restorePlace?: boolean } = {}): void => {
+    if (options.restorePlace) pendingReadingTopRef.current = lastReadingTop;
+    setLeaf("reading");
+  };
 
   // 这篇笔记的全部图片，按正文顺序排好；顺带记下**每一块**第一张图在画廊里的序号，
   // 让正文里的缩略图点击时知道自己该开在哪一张。一块可以有好几张：编辑器里的图是
@@ -1548,58 +1682,6 @@ export function NotebookSurface() {
   };
 
   /**
-   * 笔记页那一颗主要动作（39d W4-2 第三刀）。
-   *
-   * 执行处只有 `startObjectiveJourney` 一个——列表焦点卡、详情页与这一页共用它，
-   * 按钮上的动词与按下去的去处因此必然一致（31 号文档 P9）。不许在这一页再开
-   * 一条开跑路径；`refresh` / `view_successor` / 等待类由它自己判，不在这里重写。
-   * 先把这个目标认成活动目标再交给它：`validate` 面读的就是 store 里那一个。
-   * `reload` 走 silent：非 silent 的回读会把纸面整个换成加载态，而这条路
-   * （`refresh` 型 action）可能就停在阅读页上。
-   */
-  const startNoteObjective = async () => {
-    const target = noteObjective;
-    if (!target || startingNoteObjective) return;
-    setNoteObjectiveFailure(null);
-    setStartingNoteObjective(true);
-    try {
-      setActiveObjectiveId(target.objectiveId);
-      await startObjectiveJourney(target.primaryAction, {
-        epochRef,
-        setActiveObjectiveId,
-        setActiveRunId,
-        openRunSurface: () => invoke("validate"),
-        reload: () => reload({ silent: true }),
-      });
-    } catch (error) {
-      setNoteObjectiveFailure(gatewayErrorMessage(error));
-    } finally {
-      setStartingNoteObjective(false);
-    }
-  };
-
-  /**
-   * PRD §3.4（39d W4-4）：**先保存再开始**。
-   *
-   * 未提交编辑或上次保存失败时，主要动作旁边必须同时给出这一条与「按上次已保存内容开始」，
-   * 不能默默忽略眼前那几处字。这一条要把字**真的交出去**才开轮次：保存失败就不开始
-   * （"不创建看似已开始的空轮次"），失败原因由这一页那条保存提示说明。
-   */
-  const startNoteObjectiveFromSavedEdits = async () => {
-    const target = noteObjective;
-    if (!target || startingNoteObjective || saveBeforeStart) return;
-    setSaveBeforeStart(true);
-    let saved = false;
-    try {
-      saved = await save("manual");
-    } finally {
-      setSaveBeforeStart(false);
-    }
-    if (!saved) return;
-    await startNoteObjective();
-  };
-
-  /**
    * W7-3 刀三：这一颗目标的「暂不安排」／「恢复并开启」（39 §9.1 行 2、行 3）。
    *
    * 三件在这一发里定下来的事：
@@ -1689,7 +1771,7 @@ export function NotebookSurface() {
     try {
       if (target === "start" && snapshot === "current" && currentNote.permissions.canSave) {
         if (!await save("manual")) {
-          setRoundFailure("这次保存没有完成，还没有开始新的一轮。当前内容保留，可以重试保存。");
+          setRoundFailure({ kind: "failed", message: "这次保存没有完成，还没有开始新的一轮。当前内容保留，可以重试保存。" });
           return;
         }
       }
@@ -1713,7 +1795,7 @@ export function NotebookSurface() {
       setRoundLostDraft(null);
       await reload({ silent: true });
     } catch (error) {
-      setRoundFailure(gatewayErrorMessage(error));
+      setRoundFailure(classifyGatewayError(error));
       // 只有服务端**明确拒掉**（conflict：这一轮在别处被推进过／已经收尾／已经有开着的一轮）
       // 才敢说那一句没进去。网络与超时不能这样报——那一发的结果本机不知道，
       // 把"可能已经写成功"说成"替你留着"，是拿一次假回执盖掉真回执。
@@ -1735,8 +1817,8 @@ export function NotebookSurface() {
     }
   };
 
-  /** 「先到这里」= 收尾成 partial。终态之后这一轮只读，服务端会拒掉后续每一次写。 */
-  const endNoteRound = async () => {
+  /** 活动的完成与能力结论分开：练习已结算才开放「完成本轮」。 */
+  const endNoteRound = async (outcome: "completed" | "partial" = "partial") => {
     const api = desktopApi();
     if (!api || !openRound || roundBusy) return;
     setRoundBusy("end");
@@ -1746,13 +1828,15 @@ export function NotebookSurface() {
         meta: createRequestMeta(epochRef.current),
         roundId: openRound.roundId,
         expectedRevision: openRound.revision,
-        outcome: "partial",
+        outcome,
       });
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       unwrapGatewayResult(response);
       await reload({ silent: true });
+      setReflectionRoundId(openRound.roundId);
+      setLeaf("reading");
     } catch (error) {
-      setRoundFailure(gatewayErrorMessage(error));
+      setRoundFailure(classifyGatewayError(error));
       // 收尾迟到（这一轮在别处被推进过）同一条规矩：换回服务端读回来的那一版，
       // 那一行不撤——撤掉会被读成"已经收尾了"，而它其实什么都没发生。
       await reload({ silent: true });
@@ -1784,7 +1868,7 @@ export function NotebookSurface() {
       unwrapGatewayResult(response);
       await reload({ silent: true });
     } catch (error) {
-      setRoundFailure(gatewayErrorMessage(error));
+      setRoundFailure(classifyGatewayError(error));
       await reload({ silent: true });
     } finally {
       setRoundBusy(null);
@@ -1814,7 +1898,7 @@ export function NotebookSurface() {
       unwrapGatewayResult(response);
       await reload({ silent: true });
     } catch (error) {
-      setRoundFailure(gatewayErrorMessage(error));
+      setRoundFailure(classifyGatewayError(error));
       await reload({ silent: true });
     } finally {
       setRoundBusy(null);
@@ -1848,10 +1932,33 @@ export function NotebookSurface() {
       setTeachingReflectionIds([]);
       await reload({ silent: true });
     } catch (error) {
-      setTeachingFailure(gatewayErrorMessage(error));
+      setTeachingFailure(classifyGatewayError(error));
       await reload({ silent: true });
     } finally {
       setTeachingBusy(false);
+    }
+  };
+
+  /** Prepare a bounded first attempt from this saved snapshot without revealing the explanation. */
+  const prepareRoundPractice = async () => {
+    const api = desktopApi();
+    if (!api || !openRound || practiceBusy) return;
+    setPracticeBusy(true);
+    setPracticeFailure(null);
+    try {
+      const response = await api.noteLearningRound.preparePractice({
+        meta: createRequestMeta(epochRef.current),
+        roundId: openRound.roundId,
+        expectedRevision: openRound.revision,
+      });
+      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+      unwrapGatewayResult(response);
+      await reload({ silent: true });
+    } catch (error) {
+      setPracticeFailure(classifyGatewayError(error));
+      await reload({ silent: true });
+    } finally {
+      setPracticeBusy(false);
     }
   };
 
@@ -1860,8 +1967,11 @@ export function NotebookSurface() {
    *
    * 刻意不自己拼请求：`start` 里那几格（goal／时长／怎么答／锚点）都来自服务端
    * ——拼一份就等于在这一页埋下第二个来源（W4-2 第五刀收的就是这一族）。
-   * 开出去之后与主要动作走同一条路：接上旅程界面，这一页 silent 回读一次
-   * （新一轮的练习随即出现在"这一轮练过"里）。
+   *
+   * 开出去之后**留在这一页**（`openRunSurface` 不再 `invoke("validate")` 跳去作答页）：
+   * `activeRunId` 一落位，`inlineRoundRunId` 就成立，工位挂在 `practice` 那一屏里。
+   * 跳页的那一版把"这道题属于哪一轮"留给了用户自己记——现在问题、依据、上一轮做到
+   * 哪一步与正在作答的格子在同一张纸上，中间不留断点。
    */
   const startRoundPractice = async () => {
     const practiceStartValue = roundPracticeStart;
@@ -1881,22 +1991,102 @@ export function NotebookSurface() {
           epochRef,
           setActiveObjectiveId,
           setActiveRunId,
-          openRunSurface: () => invoke("validate"),
+          // 就地：这一页自己会把工位挂出来。
+          openRunSurface: () => { setInlineRunPage("assessment"); },
           reload: () => reload({ silent: true }),
         },
       );
     } catch (error) {
-      setPracticeFailure(gatewayErrorMessage(error));
+      setPracticeFailure(classifyGatewayError(error));
     } finally {
       setPracticeBusy(false);
     }
   };
 
+  /**
+   * 就地作答的工位：**这一轮**正在答的那一次 run。
+   *
+   * 判据是「服务端说的正在答的那一次」而不是「全局的 `activeRunId`」：从复习队列或
+   * 学习卡开来的另一次作答也占着 `activeRunId`，拿它当这一轮的会答错题。所以两份都要
+   * 吻合——场景是 `practice`，且 `nextStep.kind === "resume"` 且 `basisRunId` 就是它。
+   * `uncertain` 的 `basisRunId` 指向的是**已经结算**的那一次（要看的是它的反馈，不是
+   * 重新答一遍），所以那一格走 `openRoundPractice` 的结果页，不接工位。
+   */
+  const inlineRoundRunId: string | null =
+    learningScene === "practice"
+      && !reviewingTeaching
+      && roundNextStep?.kind === "resume"
+      && roundNextStep.basisRunId === activeRunId
+      ? roundNextStep.basisRunId
+      : null;
+
+  /**
+   * 回看这一轮里某一次作答：同样**就地**，不换页面语言。
+   *
+   * 挂的是同一个工位（它自己会显示这一次的结果页），所以题目与反馈用的是同一套控件与
+   * 同一份读数；离开时仍然经主进程释放 `FormalAssessmentGuard`（见
+   * `releaseRunThroughMainV1` 那段注释：绕过它的症状出现在**别处**，极难往回找）。
+   */
+  const openRoundPractice = async (runId: string) => {
+    setActiveObjectiveId(null);
+    setActiveRunId(runId);
+    setInlineRunPage("result");
+    await reload({ silent: true });
+  };
+
+  /**
+   * 离开就地作答的工位。
+   *
+   * 三步，顺序不能换：①摘掉 run 树；②让出一帧；③经主进程解析并提交返回路由。②③之间
+   * 必须是"主进程已经看不到 Player 了"才放行，所以这一段与 `LearningRunSurface` 里的
+   * 收尾共用 `releaseRunThroughMainV1`。落地后回读一次这一轮，于是纸上从 `practice`
+   * 变成 `result`——用户看见的是结算，而不是"被踢回上一个页面"。
+   */
+  const exitInlineRoundRun = async (request?: { route: DesktopRouteV1; objectiveId?: string; reflectionRoundId?: string }) => {
+    const runId = inlineRoundRunId;
+    if (!runId || !note) return;
+    setActiveRunId(null);
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    await releaseRunThroughMainV1({
+      runId,
+      route: request?.route ?? { kind: "note.detail", noteId: note.noteId },
+    });
+    setInlineRunPage("assessment");
+    await reload({ silent: true });
+  };
+
   const historyTail = olderRounds && olderRounds.noteId === note?.noteId ? olderRounds : null;
-  const historyItems: readonly NoteLearningRoundHistoryItemV1[] = [
+  const historyItems: readonly NoteLearningRoundHistoryV1["items"][number][] = [
     ...(roundHistory?.items ?? []),
     ...(historyTail?.items ?? []),
   ];
+  const selectedHistoryItem = historyItems.find((item) => item.roundId === reflectionRoundId);
+  const selectedHistoryMasked = Boolean(selectedHistoryItem && "contentMasked" in selectedHistoryItem && selectedHistoryItem.contentMasked);
+  useEffect(() => {
+    if (leaf !== "history" || !reflectionRoundId || !note || selectedHistoryMasked) return;
+    let cancelled = false;
+    setInspectedRoundBusy(true);
+    setInspectedRoundFailure(null);
+    const api = desktopApi();
+    if (!api) {
+      setInspectedRoundBusy(false);
+      setInspectedRoundFailure("这一轮暂时读不到，请稍后重试。");
+      return;
+    }
+    void api.noteLearningRound.teaching({
+      meta: createRequestMeta(epochRef.current),
+      roundId: reflectionRoundId,
+    }).then((response) => {
+      if (cancelled) return;
+      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+      setInspectedRound({ roundId: reflectionRoundId, view: unwrapGatewayResult(response) });
+    }).catch((error) => {
+      if (!cancelled) setInspectedRoundFailure(gatewayErrorMessage(error));
+    }).finally(() => {
+      if (!cancelled) setInspectedRoundBusy(false);
+    });
+    return () => { cancelled = true; };
+  }, [leaf, reflectionRoundId, note?.noteId, selectedHistoryMasked, historyInspectRevision]);
   /**
    * 那句总数只读**服务端报的那一格**：`historyItems.length` 回答的是"这一屏列了几轮"，
    * 不是"这一篇开过几轮"——翻过一页之后两者会分叉（§16.16 后半要的是后者）。
@@ -1923,12 +2113,13 @@ export function NotebookSurface() {
       // 往前找同名声明"来认屏名的，同名的那一发会让它抓到错的初始化式、把两屏整个丢掉。
       const olderPage = unwrapGatewayResult(response);
       setOlderRounds((previous) => {
-        const base = previous && previous.noteId === current.noteId
+        const base = previous && previous.noteId === current.noteId && previous.contentMasked === olderPage.contentMasked
           ? previous
           : { noteId: current.noteId, items: [], nextCursor: null, hasMore: false };
         return {
           version: 1,
           noteId: current.noteId,
+          contentMasked: olderPage.contentMasked,
           items: [...base.items, ...olderPage.items],
           nextCursor: olderPage.nextCursor,
           hasMore: olderPage.hasMore,
@@ -2014,7 +2205,7 @@ export function NotebookSurface() {
     if (editor) tool.run(editor);
   };
 
-  const page: HudPageId = mode === "edit" ? "note-edit" : "note-read";
+  const page: HudPageId = mode === "edit" ? "note-edit" : leaf === "learning" ? "note-learning" : leaf === "history" ? "note-history" : "note-read";
   useHudPage(page);
 
   const sourceTitle = source?.source.title ?? (note?.sourceId ? "来源暂时不可读" : "没有关联来源");
@@ -2204,7 +2395,7 @@ export function NotebookSurface() {
   const generationAction = noteGeneration ? (
     <button
       type="button"
-      className={mode === "read" ? "button" : "button primary"}
+      className="button"
       title="这次生成在后台进行，来回翻看不会打断它"
       onClick={openGeneration}
     >
@@ -2217,13 +2408,13 @@ export function NotebookSurface() {
     <button
       type="button"
       ref={generationTriggerRef}
-      className={mode === "read" ? "button" : "button primary"}
+      className="button"
       disabled={!generationEnabled || startingGeneration}
       title={generationReason ?? "查看本次学习卡生成方案"}
       onClick={() => setOptionsOpen(true)}
     >
       <Sparkles size={15} aria-hidden="true" />
-      {startingGeneration ? "正在创建生成任务…" : "规划学习卡"}
+      {startingGeneration ? "正在创建生成任务…" : "制作学习卡"}
     </button>
   );
 
@@ -2491,6 +2682,7 @@ export function NotebookSurface() {
 
   const readPageBody = note ? (
     <>
+      {leaf === "reading" ? <>
       <div className="version-ribbon">
         <span>
           {readingUnversionedContent
@@ -2506,12 +2698,7 @@ export function NotebookSurface() {
         <span>{formatRelative(note.currentVersion.updatedAt)}</span>
         <span>{note.sourceId ? `关联来源 ${source?.source.title ?? "暂时读不到"}` : "未关联来源"}</span>
       </div>
-      <nav className="notebook-leaves" aria-label="笔记册页">
-        <button type="button" className="notebook-leaf notebook-leaf--reading" aria-pressed={leaf === "reading"} aria-controls="notebook-reading-leaf" onClick={() => setLeaf("reading")}><BookOpen size={16} aria-hidden="true" />笔记正文</button>
-        <button type="button" className="notebook-leaf notebook-leaf--learning" aria-pressed={leaf === "learning"} aria-controls="notebook-learning-leaf" onClick={() => setLeaf("learning")}><Sparkles size={16} aria-hidden="true" />本轮学习</button>
-        <button type="button" className="notebook-leaf notebook-leaf--history" aria-pressed={leaf === "history"} aria-controls="notebook-history-leaf" onClick={() => setLeaf("history")}><History size={16} aria-hidden="true" />学习记录{historyTotal > 0 ? ` · ${historyTotal}` : ""}</button>
-      </nav>
-      <section id="notebook-reading-leaf" className="notebook-leaf-page" aria-label="笔记正文" hidden={leaf !== "reading"}>
+      <section id="notebook-reading-leaf" className="notebook-leaf-page" aria-label="笔记正文">
       {allBlocks.length > READING_WINDOW && readingSections.length > 0 ? (
         <nav className="notebook-reading-outline" aria-label="正文小节目录">
           <div className="notebook-reading-outline__heading">
@@ -2594,483 +2781,371 @@ export function NotebookSurface() {
           covered body text and table columns. */}
       {clips}
       </section>
-      <section id="notebook-learning-leaf" className="notebook-leaf-page notebook-leaf-page--learning" aria-label="本轮学习" hidden={leaf !== "learning"}>
-        <div className="notebook-leaf-intro"><h3>{openRound ? "沿着这一句，继续往前" : "今天想弄懂哪一点？"}</h3><p>从这篇笔记里挑一个问题，我们一起来看看。</p></div>
-      {/* 这一篇的学习区（39d W4-2 第三刀）：只放一个主要动作和一句理由。
-          字面全部来自 `objective-state-copy` 那两份唯一口径（服务端 label 优先），
-          这一页不另写词；执行走 `startObjectiveJourney` 那一条唯一的路。
-          读不到目标、或读取失败时整行不画——它是一块增补，不成空态、不成占位，
-          更不能把笔记本身顶掉。
-          容器叫 `notebook-objective` 而不是复用 `actions`：这一页的 `actions` 那一条规则
-          （`.notebook-actions`）是钉在纸面右下角的绝对定位，流内这一条要的是另一件事。 */}
-      {noteObjective ? (
-        <div className="notebook-objective">
-          {dirty || saveState === "error" ? (
-            /* PRD §3.4（39d W4-4）：眼前有没交出去的字（或上次保存失败）时，两条路都在明处。
-               单颗按钮那一条会**默默**按上次已保存的版本开轮次——用户以为自己写的字算数。 */
-            <>
-              <div className="notebook-objective__choices">
-                <button
-                  type="button"
-                  className="button primary"
-                  disabled={startingNoteObjective || saveBeforeStart || saving || !canSave}
-                  onClick={() => void startNoteObjectiveFromSavedEdits()}
-                >
-                  {saveBeforeStart ? "正在保存…" : "先保存再开始"}
-                </button>
-                <button
-                  type="button"
-                  className="button"
-                  disabled={startingNoteObjective || saveBeforeStart}
-                  onClick={() => void startNoteObjective()}
-                >
-                  {startingNoteObjective ? "正在准备…" : "按上次已保存内容开始"}
-                </button>
-              </div>
-              <p className="small notebook-note">
-                这几处改动还没交出去：先保存再开始，或按上次已保存的那一版开始。
-              </p>
-            </>
-          ) : (
-            <button
-              type="button"
-              className="button primary"
-              disabled={startingNoteObjective}
-              onClick={() => void startNoteObjective()}
-            >
-              {primaryActionLabel(noteObjective.primaryAction)}
-            </button>
-          )}
-          {noteObjective.freshness === "source_outdated" ? (
-            <p className="small notebook-note">{freshnessLabel(noteObjective.freshness)}</p>
-          ) : null}
-          <NoteChangeImpactNotice impact={noteObjective.noteChangeImpact} />
-          <p className="small notebook-note">{primaryActionDescription(noteObjective.primaryAction)}</p>
-          {/* W7-3 刀三：目标级「暂不安排」／「恢复并开启」（39 §9.1 行 2、行 3）。
-              位置在主要动作**下面**而不是并列成一排：它不是"另一条主要动作"，
-              是对**安排**的处置，§9.1 那张规则表里它有自己的位置。排除生效时
-              换上去的是恢复那颗——承诺写"恢复**并开启**"（§9.1 行 3：只解除
-              会让目标永远回不到队列）。文案全部取 `objective-state-copy`，
-              这一页不另写词。 */}
-          <div className="notebook-objective__hold">
-            {noteObjective.reviewHold ? (
-              <>
-                <p className="small notebook-note" data-review-hold-label="true">
-                  {objectiveReviewHoldLabel(noteObjective.reviewHold)}
-                </p>
-                <button
-                  type="button"
-                  className="button"
-                  disabled={reviewHoldBusy !== null}
-                  onClick={() => void runObjectiveReviewHoldAction("resume")}
-                >
-                  {reviewHoldBusy === "resume" ? "正在恢复…" : OBJECTIVE_RESUME_ACTION_LABEL}
-                </button>
-                <p className="small notebook-note">{objectiveReviewHoldHint(noteObjective.reviewHold)}</p>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="button"
-                  disabled={reviewHoldBusy !== null}
-                  onClick={() => void runObjectiveReviewHoldAction("hold")}
-                >
-                  {reviewHoldBusy === "hold" ? "正在处理…" : OBJECTIVE_HOLD_ACTION_LABEL}
-                </button>
-                <p className="small notebook-note">{objectiveHoldActionDescription()}</p>
-              </>
-            )}
-            {reviewHoldNotice ? <p className="small notebook-note" data-review-hold-notice="true">{reviewHoldNotice}</p> : null}
-            {reviewHoldError ? <p className="small notebook-note" role="alert" data-review-hold-error="true">{reviewHoldError}</p> : null}
-            {/* W7-3 刀六：笔记订阅那一档。它与上面那颗是**两件不同的事**（§9.1
-                「两种意图可以分别存在」）——所以分开一行、各自一颗开关，而不是
-                一颗 toggle：合成一颗会把"停哪一个"变成系统的默认。范围说明
-                （`scopeNote`）要念出来，§9.1 要求"开启时用一句话说明这个持续范围"。 */}
-            <div className="notebook-objective__source" data-note-subscription="true">
-              {noteSubscription ? (
-                <>
-                  <button
-                    type="button"
-                    className="button"
-                    disabled={subscriptionBusy !== null}
-                    onClick={() => void runNoteSubscriptionAction("pause")}
-                  >
-                    {subscriptionBusy === "pause" ? "正在处理…" : reviewSourceSwitchLabel("note_subscription", true)}
-                  </button>
-                  <p className="small notebook-note">{reviewSourceScopeHint(noteSubscription)}</p>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="button"
-                    disabled={subscriptionBusy !== null}
-                    onClick={() => void runNoteSubscriptionAction("activate")}
-                  >
-                    {subscriptionBusy === "activate" ? "正在处理…" : reviewSourceSwitchLabel("note_subscription", false)}
-                  </button>
-                  <p className="small notebook-note">开启后，这篇里学过或已确认要维护的目标会持续回访。</p>
-                </>
-              )}
-              {subscriptionNotice ? <p className="small notebook-note" data-subscription-notice="true">{subscriptionNotice}</p> : null}
-              {subscriptionError ? <p className="small notebook-note" role="alert" data-subscription-error="true">{subscriptionError}</p> : null}
-            </div>
+      </> : null}
+      {leaf === "learning" ? (
+        /*
+         * 书桌上的这一页（2026-09-28 整体重构）。
+         *
+         * 上一版是「页眉 h2 + 薄荷标题牌 + 三枚药丸 + 描边框段落 + 底部悬浮坞」——
+         * 四个带框的东西从上到下排成一列，屏上读起来就是一张后台表单：标题被滚动容器
+         * 裁掉一半，薄荷左边框变成一截孤零零的竖条，说服用户的句子和一颗按钮占掉一个
+         * 整块描边框，失败提示被裁在纸脚看不见，而真正该被看见的「在弄什么」排在中间。
+         *
+         * 那一版的骨架整个不要了。现在这一页按**书桌**组织：
+         *
+         *   - 左栏是一条**顺着读下去**的线：问题 → 讲解 → 例子 → 作答 → 收获。
+         *     全部是纸上的字，**没有一块描边框**。
+         *   - 右栏是**摆在桌上的物件**：走到哪一步（进度绳）、笔记原句（依据便签）、
+         *     那页能动手的演示。这些是"手上拿着的东西"，不是"系统状态"。
+         *   - 主动作回到**纸脚**（`round-desk__foot`），不再挂在纸外的悬浮条上。
+         *   - 那一行「正在学 / 停住了 / 这一轮的收获」删掉：它是界面自己的状态，
+         *     用户看得见按钮在做什么，不需要另一句话复述一遍（39f UI-4）。
+         *
+         * 问题不再是"牌"，它是**这一页的标题**——所以它就是那个 h2，视觉上是一张
+         * 用和纸胶带贴在书页上的纸片，微微歪着，有自己的影子。
+         */
+        <section id="notebook-learning-leaf" className="round-desk" aria-label="这一轮学习" data-learning-scene={reviewingTeaching ? "teaching" : learningScene}>
+          <div className="round-desk__head">
+            <button type="button" className="round-bookmark" onClick={() => backToReading()}>回到正文</button>
+            {lastReadingTop !== null && lastReadingTop > 0
+              ? <button type="button" className="round-bookmark" onClick={() => backToReading({ restorePlace: true })}>回到刚才读的那一段</button>
+              : null}
+            <p className="round-desk__note">{readTitle || "未命名笔记"}</p>
           </div>
-          {noteObjectiveFailure ? <p className="small notebook-note" role="alert">{noteObjectiveFailure}</p> : null}
-        </div>
-      ) : null}
-      {/* 39d W4-3 第三刀：轻量定向。这一篇**还没有目标**时才摆这张表单（§3.3 的"无目标表单"），
-          但已经有一轮在进行中时**一直显示它**——不然那一句被藏在别处，第二轮就再也换不掉。
-          它同样是增补：读不到就整块不画，不顶掉笔记本身。 */}
-      {openRound || !noteObjective ? (
-        <div className="notebook-objective notebook-round">
-          {openRound && !roundEditing ? (
-            <>
-              <p className="small notebook-note" data-round-open-line="true">{ROUND_COPY.openLine(openRound.drivingQuestion)}</p>
-              {openRoundContentMoved ? (
-                <p className="small notebook-note" data-round-content-moved="true">
-                  {ROUND_COPY.contentMoved}
-                </p>
-              ) : null}
-              <NoteChangeImpactNotice impact={openRoundNoteChangeImpact} context="round" />
-              <p className="small notebook-note">{ROUND_COPY.revisedLine(openRound.drivingQuestionRevision)}</p>
-              {data?.roundTeachingView?.plans.length ? (
-                <div className="notebook-round__plan" aria-label="这一轮的学习路线">
-                  <p className="small notebook-note">这次一起走的小路线</p>
-                  <ol>{data.roundTeachingView.plans.at(-1)!.plan.steps.map((step, index) => (
-                    <li key={index}>{step.text}</li>
-                  ))}</ol>
-                  <p className="small notebook-note">{data.roundTeachingView.plans.at(-1)!.plan.expectedScale}</p>
+
+          <div className="round-desk__body">
+            {/* ── 左栏：顺着读的那条线 ─────────────────────────────────── */}
+            <div className="round-desk__line">
+              {openRound ? (
+                <figure className="round-slip round-slip--question" data-round-question>
+                  <span className="round-tape" aria-hidden="true" />
+                  <figcaption>这一轮要弄懂</figcaption>
+                  <h2 className="round-slip__question">{openRound.drivingQuestion}</h2>
+                </figure>
+              ) : (
+                <h2 className="round-desk__ask">想弄懂这篇里的哪一件事？</h2>
+              )}
+
+              {inFlightStep ? <RoundNotice kind="pending" message={inFlightStep} testId="round-inflight" /> : null}
+
+              {learningScene === "unavailable" ? (
+                <div className="round-slip round-slip--muted" aria-label="读取本轮状态失败">
+                  <p>{roundTeachingFailure || "这一轮的当前步骤没有读到，暂时无法确定该从哪里继续。"}</p>
+                  <p className="round-slip__aside">已经存下的讲解与作答都还在，不会被当成未开始。</p>
                 </div>
               ) : null}
-              <div className="notebook-objective__choices">
-                {/* 只有**停住**的那一轮摆这一颗（phase 读的是服务端那一行，不是本机猜的）。
-                    放在同一行里而不是另起一块：这一行本来就是"选一条"（`flex-wrap: wrap`），
-                    窄屏换行，它不与「先到这里」抢位置——那两颗都是这一轮的出口。 */}
-                {/* 上一行报了「后来又保存过一版」才摆这一颗（§4.3 那两个选择里的后一个）；
-                    没报过就不出现——没有问题的时候报这句话，等于无端要人再确认一次。 */}
-                {openRoundContentMoved ? (
-                  <button
-                    type="button"
-                    className="button"
-                    data-round-reopen-current="true"
-                    disabled={roundBusy !== null}
-                    onClick={() => { void reopenNoteRound(); }}
-                  >
-                    {roundBusy === "reopen" ? ROUND_COPY.reopening : ROUND_COPY.reopenWithCurrent}
-                  </button>
-                ) : null}
-                {openRound.phase === "paused" ? (
-                  <button
-                    type="button"
-                    className="button primary"
-                    disabled={roundBusy !== null}
-                    onClick={() => void resumeNoteRound()}
-                  >
-                    {roundBusy === "resume" ? ROUND_COPY.resuming : ROUND_COPY.resume}
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="button"
-                  disabled={roundBusy !== null}
-                  onClick={() => { setRoundDraft(openRound.drivingQuestion); setRoundStarter(openRound.drivingQuestion); setRoundEditing(true); }}
-                >
-                  {ROUND_COPY.revise}
-                </button>
-                <button
-                  type="button"
-                  className="button"
-                  disabled={roundBusy !== null}
-                  onClick={() => void endNoteRound()}
-                >
-                  {roundBusy === "end" ? ROUND_COPY.ending : ROUND_COPY.end}
-                </button>
-              </div>
-              {/* 教学面（39d W4-6 刀二）：这一轮的问题下面是"讲没讲过"。
-                  还没讲过就只有那颗按钮；讲过了就把解释、例子与依据摆出来。 */}
-              <div className="notebook-round-teaching">
-                {roundTeaching ? (
+
+              {learningScene === "paused" ? (
+                <div className="round-slip round-slip--paused" aria-label="这一轮暂停了">
+                  <p className="round-slip__lead">这一轮停在这儿，留下的都还在。</p>
+                  <dl className="round-ledger">
+                    <div><dt>讲解</dt><dd>{roundTeaching ? `讲过 · ${roundRecordDayV1(roundTeaching.createdAt)}` : "还没讲过"}</dd></div>
+                    <div><dt>练习</dt><dd>{roundPractices.length > 0
+                      ? `做过 ${roundPractices.length} 次 · 最近一次 ${roundRecordDayV1(latestRoundPractice?.startedAt ?? roundPractices[0]!.startedAt)}`
+                      : "还没试过"}</dd></div>
+                    <div><dt>接下来</dt><dd>{roundNextStep ? roundTrackNextV1(roundNextStep.kind) : "这一轮的下一步暂时读不到"}</dd></div>
+                  </dl>
+                  <p className="round-slip__aside">接着学会接着原来的记录，不会重讲一遍，也不会让你从头再答。</p>
+                  {roundFailure ? <RoundNotice kind={roundFailure.kind} message={roundFailure.message} onRetry={() => void reload({ silent: true })} retryLabel="重新读取这一轮" /> : null}
+                </div>
+              ) : null}
+
+              {learningScene === "question" ? (
+                openRound && !roundEditing ? (
                   <>
-                    <p className="notebook-round-teaching__text">{roundTeaching.content.explanation}</p>
-                    {roundTeaching.content.suspectClaims?.length ? (
-                      <section className="notebook-round-teaching__suspect-claims" aria-label="需要核对的事实主张">
-                        <h4>有一处事实主张想请你核对</h4>
-                        {roundTeaching.content.suspectClaims.map((claim, index) => (
-                          <article key={`${claim.unitIds.join("-")}-${index}`}>
-                            {claim.sourceQuote ? (
-                              <>
-                                <p className="notebook-round-teaching__suspect-label">
-                                  {claim.sourceChanged ? "修改前的原句（待核对）" : "笔记里的原句"}
-                                </p>
-                                <blockquote>{claim.sourceQuote}</blockquote>
-                              </>
-                            ) : (
-                              <p className="notebook-round-teaching__suspect-unlocated">原文位置还没能可靠定位</p>
-                            )}
-                            <p>{claim.reason}</p>
-                          </article>
-                        ))}
-                        <p className="notebook-round-teaching__suspect-footnote">
-                          这是待核对提示，不表示原文已经判错。核对前，本轮不会把相关主张记作正式学习目标或安排复习。修改原句或在这段补入已核对的来源后，新开一轮会只重查这条主张。
-                        </p>
-                      </section>
-                    ) : null}
-                    {roundTeaching.content.example ? (
-                      <p className="small notebook-note">
-                        {ROUND_COPY.teaching.exampleLead}{roundTeaching.content.example}
-                      </p>
-                    ) : null}
-                    {teachingReferences.length > 0 ? (
-                      <div className="notebook-round-teaching__references">
-                        <span className="small notebook-note">{ROUND_COPY.teaching.referencesLead}</span>
-                        {teachingReferences.map((item) => (
-                          <button
-                            key={item.ordinal}
-                            type="button"
-                            className="button"
-                            onClick={() => locateTeachingReference(item.ordinal)}
-                          >
-                            {item.label}
+                    {openRoundContentMoved ? <p className="round-slip__aside" data-round-content-moved="true">{ROUND_COPY.contentMoved}</p> : null}
+                    <NoteChangeImpactNotice impact={openRoundNoteChangeImpact} context="round" />
+                    {/* 这一轮的两个岔口**只给按钮**。上一版在这里还写了一句"围绕这个问题，
+                        可以直接看讲解，也可以先试一个小问题"——按钮自己已经把话说完了，
+                        再复述一遍只是把纸面撑长（39f UI-4）。 */}
+                    <div className="round-forks">
+                      {roundNextStep?.kind === "explain"
+                        ? <button type="button" className="round-stamp" disabled={practiceBusy || teachingBusy} onClick={() => void prepareRoundPractice()}>
+                            {practiceBusy ? "正在准备…" : "先试一小问"}
                           </button>
-                        ))}
-                      </div>
-                    ) : !teachingSnapshotIsReadVersion ? (
-                      <p className="small notebook-note">{ROUND_COPY.teaching.staleVersion}</p>
-                    ) : null}
-                    {roundTeaching.personalSources?.length ? (
-                      <div className="notebook-round-teaching__personal-sources">
-                        <p className="small notebook-note">这次讲解参考了你主动选的 {roundTeaching.personalSources.length} 条私有理解，内容按当时版本留在本轮记录里。</p>
-                        <ul>{roundTeaching.personalSources.map((item) => <li key={item.reflectionId}>
-                          <details>
-                            <summary className="small notebook-note">{item.source.ref.kind === "teaching" ? "AI 整理建议" : "本人原话"} · {item.source.question} · 私有备注第 {item.revision} 版</summary>
-                            <p className="note-reflection-source-text">{item.source.text}</p>
-                            {item.annotation ? <p className="note-reflection-annotation">当时的本人批注：{item.annotation}</p> : null}
-                          </details>
-                        </li>)}</ul>
-                        <p className="small notebook-note">它们只作本人理解背景，不作为笔记依据或正式判定，也没有写入共享正文。</p>
-                      </div>
+                        : null}
+                      {roundNextStep?.kind === "attempt" && !roundTeaching
+                        ? <button type="button" className="round-stamp" disabled={teachingBusy} onClick={() => void startRoundTeaching(false)}>看讲解</button>
+                        : null}
+                      {roundNextStep?.kind === "explain" || (roundNextStep?.kind === "attempt" && !roundTeaching)
+                        ? <button type="button" className="round-tab" disabled={practiceBusy || teachingBusy} onClick={() => {
+                            const other = roundNextStep?.kind === "explain"
+                              ? () => void startRoundTeaching(false)
+                              : () => void prepareRoundPractice();
+                            other();
+                          }}>{roundNextStep?.kind === "explain" ? "改成先看讲解" : "改成先试一小问"}</button>
+                        : null}
+                    </div>
+                    {data?.roundTeachingView?.plans.length ? (
+                      <details className="round-flap">
+                        <summary>这次会讲到哪</summary>
+                        <div className="round-flap__sheet">
+                          <ol>{data.roundTeachingView.plans.at(-1)!.plan.steps.map((step, index) => <li key={index}>{step.text}</li>)}</ol>
+                          <p className="round-slip__aside">{data.roundTeachingView.plans.at(-1)!.plan.expectedScale}</p>
+                        </div>
+                      </details>
                     ) : null}
                   </>
                 ) : (
-                  <button
-                    type="button"
-                    className="button"
-                    disabled={teachingBusy || roundBusy !== null}
-                    onClick={() => void startRoundTeaching(false)}
-                  >
-                    {teachingBusy ? ROUND_COPY.teaching.starting : teachingReflectionIds.length
-                      ? `参考 ${teachingReflectionIds.length} 条个人理解开始讲解`
-                      : ROUND_COPY.teaching.start}
-                  </button>
-                )}
-                {roundTeaching && teachingReflectionIds.length > 0 ? (
-                  <button type="button" className="button" disabled={teachingBusy || roundBusy !== null}
-                    onClick={() => void startRoundTeaching(true, teachingReflectionIds)}>
-                    {teachingBusy ? ROUND_COPY.teaching.starting : `带着这 ${teachingReflectionIds.length} 条私有理解再讲一次`}
-                  </button>
-                ) : null}
-                {/* 这一轮练过哪几道（W4-6 刀三）：与"讲没讲过"无关，所以不放在上面那一支里
-                    ——先练后讲、或者只看不练的那一轮，这一格照样要有。 */}
-                {roundPractices.length > 0 ? (
-                  <div className="notebook-round-teaching__practices">
-                    <span className="small notebook-note">{ROUND_COPY.teaching.practicesLead}</span>
-                    <ol className="notebook-round-teaching__practice-list">
-                      {roundPractices.map((practice) => (
-                        <li key={practice.runId} className="small notebook-note">
-                          {roundRecordDayV1(practice.startedAt)}
-                          {" · "}
-                          {roundPracticeStateLabelV1(practice)}
-                        </li>
+                  <div className="round-ask">
+                    <label htmlFor="notebook-round-question">写一句就行</label>
+                    <input id="notebook-round-question" aria-label={ROUND_COPY.ask} className="round-ask__line" value={roundDraft} maxLength={500} placeholder={ROUND_COPY.ask} disabled={roundBusy !== null} onChange={(event) => setRoundDraft(event.target.value)} />
+                    <p className="round-slip__aside">下面几颗给的是问的方向，不是答案——挑一个，再改成你自己的话。</p>
+                    {structureQuestions.length > 0 ? (
+                      <div className="round-ask__from">
+                        <span>从这篇的小节里挑</span>
+                        {structureQuestions.map((candidate) => (
+                          <button key={candidate.ordinal} type="button" className="round-tab round-tab--section" disabled={roundBusy !== null} onClick={() => { setRoundStarter(candidate.question); setRoundDraft(candidate.question); setRoundFailure(null); }}>
+                            {candidate.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="round-ask__presets">
+                      {ROUND_PRESETS_V1.map((preset) => (
+                        <button key={preset.key} type="button" className="round-tab" disabled={roundBusy !== null} onClick={() => { setRoundStarter(preset.starter); setRoundDraft(preset.starter); setRoundFailure(null); }}>
+                          {preset.label}
+                        </button>
                       ))}
-                    </ol>
-                  </div>
-                ) : null}
-                {/* 「练一道」：起点是服务端签发的（没有 active 目标就没有这一格）。 */}
-                {roundPracticeStart ? (
-                  <button
-                    type="button"
-                    className="button"
-                    disabled={practiceBusy}
-                    onClick={() => void startRoundPractice()}
-                  >
-                    {practiceBusy ? ROUND_COPY.teaching.practicing : ROUND_COPY.teaching.practice}
-                  </button>
-                ) : null}
-                {/* 缺口帮助停止之后摆的四选一（W4-6 刀四；PRD §5.3）。
-                    四档里三档今天真有去处（换解释＝同一问题落第二条；回材料核对＝把依据那段
-                    带到眼前；先结束＝收尾这一轮），「补一节前置」还没有接上——如实写出来，
-                    不摆一颗按不动的按钮装作能用。 */}
-                {roundGapHelp?.stopped ? (
-                  <div className="notebook-round-teaching__stop">
-                    <p className="small notebook-note">
-                      {ROUND_COPY.teaching.stopLead(roundGapHelp.consecutiveHelpCount)}
-                    </p>
-                    <div className="notebook-round-teaching__stop-options">
-                      <button
-                        type="button"
-                        className="button"
-                        disabled={teachingBusy || roundBusy !== null}
-                        onClick={() => void startRoundTeaching(true, teachingReflectionIds)}
-                      >
-                        {teachingReflectionIds.length
-                          ? `参考 ${teachingReflectionIds.length} 条私有理解再讲一次`
-                          : ROUND_COPY.teaching.switchExplanation}
-                      </button>
-                      <button
-                        type="button"
-                        className="button"
-                        disabled={teachingReferences.length === 0}
-                        onClick={() => {
-                          const first = teachingReferences[0];
-                          if (first) locateTeachingReference(first.ordinal);
-                        }}
-                      >
-                        {ROUND_COPY.teaching.backToMaterial}
-                      </button>
-                      <button
-                        type="button"
-                        className="button"
-                        disabled={roundBusy !== null}
-                        onClick={() => void endNoteRound()}
-                      >
-                        {ROUND_COPY.teaching.endRound}
-                      </button>
                     </div>
-                    <p className="small notebook-note">
-                      {`${ROUND_COPY.teaching.addPrerequisite}：${ROUND_COPY.teaching.addPrerequisiteUnavailable}`}
-                    </p>
+                    <div className="round-forks">
+                      <button type="button" className="round-stamp" disabled={roundBusy !== null || saving || (openRound !== null && roundDraft.trim().length === 0)} onClick={() => void submitRoundQuestion(openRound ? "revise" : "start")}>
+                        {roundSubmitLabelV1(roundBusy, openRound !== null)}
+                      </button>
+                      {!openRound && (dirty || saveState === "error")
+                        ? <button type="button" className="round-tab" disabled={roundBusy !== null || saving} onClick={() => void submitRoundQuestion("start", "last_saved")}>按上次已保存内容开始</button>
+                        : null}
+                      {openRound ? <button type="button" className="round-tab" onClick={() => setRoundEditing(false)}>不改了</button> : null}
+                    </div>
                   </div>
-                ) : null}
-                {/* 隔离展示面的挂载点（W4-6 刀五）：**落盘成功才挂**——让宿主去读一个
-                    不存在的文件，画出来的是浏览器自己的错误页。落盘失败时如实说一句，
-                    文字解释与练习照旧（"动态失败不冒充教学失败"）。
-                    `motion` 接产品那一档设置：`full` 之外（lite／off）都按"减少动效"走，
-                    模板会给静态分镜。 */}
-                <div className="notebook-round-teaching__artifact" data-artifact-slot="note-round-teaching">
-                  {roundArtifact && artifactState === "ready" ? (
-                    <ArtifactFrameHost
-                      artifactId={roundArtifact.artifactId}
-                      motion={motionMode === "full" ? "full" : "reduced"}
-                      fallback={<p className="small notebook-note">{ROUND_COPY.teaching.artifactFallback}</p>}
-                    />
+                )
+              ) : null}
+
+              {roundTeaching && (learningScene === "teaching" || reviewingTeaching || learningScene === "result") ? (
+                <article className="round-prose" data-round-section="teaching" aria-label="本轮讲解">
+                  <p className="round-prose__body">{roundTeaching.content.explanation}</p>
+                  {roundTeaching.content.example ? (
+                    <aside className="round-slip round-slip--example">
+                      <p className="round-slip__label">看一个例子</p>
+                      <p>{roundTeaching.content.example}</p>
+                    </aside>
                   ) : null}
-                  {roundArtifact && artifactState === "failed" ? (
-                    <p className="small notebook-note" role="alert">{ROUND_COPY.teaching.artifactFailed}</p>
+                  {roundTeaching.content.suspectClaims?.length ? (
+                    <div className="round-slip round-slip--flag" aria-label="需要核对的事实主张">
+                      <p className="round-slip__label">有几处说法要核对</p>
+                      {roundTeaching.content.suspectClaims.map((claim, index) => (
+                        <div key={`${claim.unitIds.join("-")}-${index}`} className="round-slip__item">
+                          {claim.sourceQuote ? <blockquote>{claim.sourceQuote}</blockquote> : <p className="round-slip__aside">原文位置还没能可靠定位</p>}
+                          <p>{claim.reason}</p>
+                        </div>
+                      ))}
+                      <p className="round-slip__aside">核对前，这些说法不会成为正式的学习目标。</p>
+                    </div>
+                  ) : null}
+                  {teachingReferences.length ? (
+                    <details className="round-flap">
+                      <summary>回到笔记里那句话</summary>
+                      <div className="round-flap__sheet">{teachingReferences.map((item) => (
+                        <button key={item.ordinal} type="button" className="round-tab" onClick={() => locateTeachingReference(item.ordinal)}>{item.label}</button>
+                      ))}</div>
+                    </details>
+                  ) : !teachingSnapshotIsReadVersion ? <p className="round-slip__aside">{ROUND_COPY.teaching.staleVersion}</p> : null}
+                  {roundTeaching.personalSources?.length ? (
+                    <details className="round-flap">
+                      <summary>这次参考的个人理解</summary>
+                      <div className="round-flap__sheet">
+                        <ul>{roundTeaching.personalSources.map((item) => <li key={item.reflectionId}>{item.source.question} · 私有备注第 {item.revision} 版</li>)}</ul>
+                        <p className="round-slip__aside">这些内容只作本人理解背景，不作笔记依据或正式判定。</p>
+                      </div>
+                    </details>
+                  ) : null}
+                </article>
+              ) : null}
+
+              {learningScene === "practice" && !reviewingTeaching ? (
+                <div className="round-bench" aria-label="继续练习">
+                  {/* 就地作答，不跳页（2026-09-28 用户裁决）。挂的是同一个
+                      `LearningRunBody`——状态机、草稿自动保存、闸门与结算一条没改，
+                      改的只是它在树上挂在哪里；离开这一轮走的也是同一个 `onExit`
+                      （含主进程那道 `FormalAssessmentGuard` 释放），两条路不会长出两套收尾。 */}
+                  {inlineRoundRunId ? (
+                    <>
+                      <p className="round-slip__aside">写下的内容会自己存着，中途离开也能接着做。</p>
+                      <LearningRunBody
+                        runId={inlineRoundRunId}
+                        onExit={(request) => { void exitInlineRoundRun(request); }}
+                        onPageChange={setInlineRunPage}
+                      />
+                    </>
+                  ) : <p>这一道已经在答了。回到那道题作答，结果会自动接回这一轮。</p>}
+                  {roundPractices.length > 1 ? (
+                    <details className="round-flap">
+                      <summary>这一轮之前做过的 {roundPractices.length - 1} 道</summary>
+                      <div className="round-flap__sheet">
+                        <ol className="round-runlist">{roundPractices.slice(0, -1).map((practice) => (
+                          <li key={practice.runId}>
+                            <span>{roundRecordDayV1(practice.startedAt)} · {roundPracticeStateLabelV1(practice)}</span>
+                            <button type="button" className="round-tab" onClick={() => { void openRoundPractice(practice.runId); }}>看这一次</button>
+                          </li>
+                        ))}</ol>
+                      </div>
+                    </details>
+                  ) : null}
+                  {roundFailure ? <RoundNotice kind={roundFailure.kind} message={roundFailure.message} onRetry={() => void reload({ silent: true })} retryLabel="重试这一步" /> : null}
+                </div>
+              ) : null}
+
+              {learningScene === "result" && !reviewingTeaching ? (
+                <div className="round-receipt" aria-label="本轮结果">
+                  <p className="round-slip__label">这一轮的收获</p>
+                  <p className="round-receipt__today">{roundResultCopy.today}</p>
+                  <p className="round-receipt__gap">{roundResultCopy.gap}</p>
+                  <p className="round-receipt__next">{roundResultCopy.next}</p>
+                  <p className="round-slip__aside">这里说的是这一道题的证据；它不代替整篇笔记的掌握判断。</p>
+                  {roundPractices.length ? (
+                    <details className="round-flap">
+                      <summary>这一轮的 {roundPractices.length} 次作答</summary>
+                      <div className="round-flap__sheet">
+                        <ol className="round-runlist">{roundPractices.map((practice) => (
+                          <li key={practice.runId}>
+                            <span>{roundRecordDayV1(practice.startedAt)} · {roundPracticeStateLabelV1(practice)}</span>
+                            <button type="button" className="round-tab" onClick={() => { void openRoundPractice(practice.runId); }}>看这一次</button>
+                          </li>
+                        ))}</ol>
+                      </div>
+                    </details>
+                  ) : null}
+                  {roundGapHelp?.stopped ? (
+                    <details className="round-flap">
+                      <summary>这次需要换一种帮助</summary>
+                      <div className="round-flap__sheet">
+                        <p className="round-slip__aside">{ROUND_COPY.teaching.stopLead(roundGapHelp.consecutiveHelpCount)}</p>
+                        <button type="button" className="round-stamp" disabled={teachingBusy || roundBusy !== null} onClick={() => { setReviewingTeaching(true); void startRoundTeaching(true, teachingReflectionIds); }}>
+                          {teachingBusy ? ROUND_COPY.teaching.starting : ROUND_COPY.teaching.switchExplanation}
+                        </button>
+                        {teachingReferences[0] ? <button type="button" className="round-tab" onClick={() => locateTeachingReference(teachingReferences[0]!.ordinal)}>{ROUND_COPY.teaching.backToMaterial}</button> : null}
+                        {data?.roundTeachingView?.prerequisite.kind === "candidate" ? (
+                          <p className="round-slip__aside">可能需要先补：{data.roundTeachingView.prerequisite.label}（约 {data.roundTeachingView.prerequisite.estimatedSteps} 步）。
+                            <button type="button" className="round-tab" onClick={() => { setRoundDraft(data.roundTeachingView!.prerequisite.kind === "candidate" ? data.roundTeachingView!.prerequisite.label : openRound?.drivingQuestion ?? ""); setRoundStarter(null); setRoundEditing(true); }}>改为先学这个</button>
+                          </p>
+                        ) : null}
+                      </div>
+                    </details>
                   ) : null}
                 </div>
-              </div>
-              {teachingFailure ? <p className="small notebook-note" role="alert">{teachingFailure}</p> : null}
-              {practiceFailure ? <p className="small notebook-note" role="alert">{practiceFailure}</p> : null}
-            </>
-          ) : (
-            <>
-              {!openRound ? <p className="small notebook-note">可以直接开始，伴星会从这篇笔记提一个问题。也可以写下你想弄懂的事。</p> : null}
-              <label className="sr-only" htmlFor="notebook-round-question">{ROUND_COPY.ask}</label>
-              <input
-                id="notebook-round-question"
-                className="notebook-round__question"
-                value={roundDraft}
-                maxLength={500}
-                placeholder={ROUND_COPY.ask}
-                disabled={roundBusy !== null}
-                onChange={(event) => setRoundDraft(event.target.value)}
-              />
-              <div className="notebook-objective__choices">
-                {ROUND_PRESETS_V1.map((preset) => (
-                  <button
-                    key={preset.key}
-                    type="button"
-                    className="button"
-                    disabled={roundBusy !== null}
-                    onClick={() => {
-                      const starter = preset.starter(docTitle);
-                      setRoundStarter(starter);
-                      setRoundDraft(starter);
-                      if (roundFailure) setRoundFailure(null);
-                    }}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className="button primary"
-                  disabled={roundBusy !== null || saving || (openRound !== null && roundDraft.trim().length === 0)}
-                  onClick={() => void submitRoundQuestion(openRound ? "revise" : "start")}
-                >
-                  {roundSubmitLabelV1(roundBusy, openRound !== null)}
-                </button>
-                {!openRound && (dirty || saveState === "error") ? (
-                  <button type="button" className="button" disabled={roundBusy !== null || saving}
-                    onClick={() => void submitRoundQuestion("start", "last_saved")}>
-                    按上次已保存内容开始
-                  </button>
-                ) : null}
-              </div>
-              {structureQuestions.length > 0 ? (
+              ) : null}
+
+              {learningScene === "question" ? (
                 <>
-                  <p className="small notebook-note notebook-round__hint">{ROUND_COPY.fromStructure}</p>
-                  <div className="notebook-objective__choices">
-                    {structureQuestions.map((candidate) => (
-                      <button
-                        key={candidate.ordinal}
-                        type="button"
-                        className="button"
-                        disabled={roundBusy !== null}
-                        onClick={() => {
-                          setRoundStarter(candidate.question);
-                          setRoundDraft(candidate.question);
-                          if (roundFailure) setRoundFailure(null);
-                        }}
-                      >
-                        {candidate.label}
-                      </button>
-                    ))}
-                  </div>
+                  {roundFailure ? <RoundNotice kind={roundFailure.kind} message={roundFailure.message} onRetry={() => void reload({ silent: true })} retryLabel="重试这一步" secondary={<button type="button" className="round-tab" disabled={roundBusy !== null} onClick={() => void endNoteRound()}>先到这里</button>} /> : null}
+                  {teachingFailure ? <RoundNotice kind={teachingFailure.kind} message={teachingFailure.message} onRetry={() => { void startRoundTeaching(true, teachingReflectionIds); }} retryLabel="换一种讲解" /> : null}
+                  {practiceFailure ? <RoundNotice kind={practiceFailure.kind} message={practiceFailure.message} onRetry={() => void startRoundPractice()} retryLabel="再试一次" secondary={<button type="button" className="round-tab" disabled={roundBusy !== null} onClick={() => void endNoteRound()}>先到这里</button>} /> : null}
+                  {roundLostDraft ? (
+                    <div className="round-slip round-slip--muted" data-round-lost>
+                      <p>{ROUND_COPY.lostDraft(roundLostDraft.question)}</p>
+                      <div className="round-forks">
+                        <button type="button" className="round-stamp" onClick={() => { setRoundDraft(roundLostDraft.question); setRoundStarter(roundLostDraft.starter); setRoundLostDraft(null); setRoundEditing(true); }}>{ROUND_COPY.applyLost}</button>
+                        <button type="button" className="round-tab" onClick={() => setRoundLostDraft(null)}>{ROUND_COPY.dropLost}</button>
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               ) : null}
-              <p className="small notebook-note">{ROUND_COPY.hint}</p>
-            </>
-          )}
-          {roundFailure ? <p className="small notebook-note" role="alert">{roundFailure}</p> : null}
-          {/* 迟到那一句那一行（§16.39）。放在编辑态之外：这一条讲的是"上一发没进去"，
-              与她此刻是不是正在打下一句无关。两颗按钮都不改写服务端那一行——
-              "改到新版本上"只是把句子交回输入框，合不合得上由下一次提交去判。 */}
-          {roundLostDraft ? (
-            <div className="notebook-round__lost">
-              <p className="small notebook-note" data-round-lost="true">{ROUND_COPY.lostDraft(roundLostDraft.question)}</p>
-              <div className="notebook-objective__choices">
-                <button
-                  type="button"
-                  className="button"
-                  disabled={roundBusy !== null}
-                  onClick={() => {
-                    setRoundDraft(roundLostDraft.question);
-                    setRoundStarter(roundLostDraft.starter);
-                    setRoundLostDraft(null);
-                    setRoundEditing(true);
-                  }}
-                >
-                  {ROUND_COPY.applyLost}
-                </button>
-                <button
-                  type="button"
-                  className="button"
-                  disabled={roundBusy !== null}
-                  onClick={() => setRoundLostDraft(null)}
-                >
-                  {ROUND_COPY.dropLost}
-                </button>
+            </div>
+
+            {/* ── 右栏：摆在桌上的物件 ─────────────────────────────────── */}
+            <aside className="round-desk__objects">
+              {/* 进度绳：三个刻痕串在一根线上，线上串着一颗木珠。上一版是三枚带框的药丸，
+                  读起来像三个系统状态；这里是一根线上的位置——"走到哪儿了"比"哪几格是
+                  什么状态"更接近人对自己进度的感觉。判定仍然全在 `roundTrackV1` 里。 */}
+              {openRound ? (
+                <ol className="round-thread" aria-label="这一轮走到哪一步">
+                  {roundTrack.map((step) => (
+                    <li key={step.key} data-mark={step.mark}>
+                      <span className="round-thread__bead" aria-hidden="true" />
+                      <span className="round-thread__label">{step.label}</span>
+                      <span className="round-thread__note">{step.note}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+
+              {/* 演示：一张**摊在桌上、比笔记纸略小并稍稍错开**的大纸。这是这一页最该被
+                  看见的东西，所以它不折进任何折叠区，也不再挂一个"跟着演示看一遍"的
+                  标题——它就是那一页演示本身。 */}
+              {roundArtifact && artifactState === "ready" ? (
+                <figure className="round-sheet" aria-label="动态演示">
+                  <span className="round-sheet__clip" aria-hidden="true" />
+                  <span className="round-sheet__fold" aria-hidden="true" />
+                  <ArtifactFrameHost
+                    artifactId={roundArtifact.artifactId}
+                    motion={motionMode === "full" ? "full" : "reduced"}
+                    fallback={<p className="round-slip__aside">{ROUND_COPY.teaching.artifactFallback}</p>}
+                  />
+                </figure>
+              ) : null}
+              {roundArtifact && artifactState === "failed" ? <p role="alert" className="round-slip__aside">{ROUND_COPY.teaching.artifactFailed}</p> : null}
+            </aside>
+          </div>
+
+          {/* ── 纸脚：主动作回到纸上（不是挂在纸外的悬浮条）──────────────── */}
+          {openRound && !roundEditing ? (
+            <div className="round-desk__foot">
+              {reviewingTeaching
+                ? <button type="button" className="round-stamp" onClick={() => setReviewingTeaching(false)}>{learningScene === "practice" ? "回到正在做的那道题" : "回到下一步"}</button>
+                : learningScene === "paused"
+                  ? <button type="button" className="round-stamp" disabled={roundBusy !== null} onClick={() => void resumeNoteRound()}>{roundBusy === "resume" ? ROUND_COPY.resuming : ROUND_COPY.resume}</button>
+                  : learningScene === "unavailable"
+                    ? <button type="button" className="round-stamp" onClick={() => void reload({ silent: true })}>重新读取这一轮</button>
+                    : learningScene === "question" && roundNextStep?.kind === "attempt" && roundPracticeStart
+                      ? <button type="button" className="round-stamp" disabled={practiceBusy} onClick={() => void startRoundPractice()}>{practiceBusy ? ROUND_COPY.teaching.practicing : "先试这一道"}</button>
+                      : learningScene === "question"
+                        ? <button type="button" className="round-stamp" disabled={teachingBusy || roundBusy !== null} onClick={() => void startRoundTeaching(false)}>{teachingBusy ? ROUND_COPY.teaching.starting : "看讲解"}</button>
+                        : learningScene === "teaching"
+                          ? roundNextStep?.kind === "attempt" && roundPracticeStart
+                            ? <button type="button" className="round-stamp" disabled={practiceBusy} onClick={() => void startRoundPractice()}>{practiceBusy ? ROUND_COPY.teaching.practicing : "拿这道题试一次"}</button>
+                            : <button type="button" className="round-stamp" onClick={() => setLeaf("reading")}>回到笔记里核对</button>
+                          : learningScene === "practice"
+                            ? <button type="button" className="round-stamp" onClick={() => { if (!roundNextStep?.basisRunId) return; void openRoundPractice(roundNextStep.basisRunId); }}>回到那道题</button>
+                            : roundNextStep?.kind === "help"
+                              ? <button type="button" className="round-stamp" disabled={teachingBusy} onClick={() => { setReviewingTeaching(true); void startRoundTeaching(true, teachingReflectionIds); }}>{teachingBusy ? ROUND_COPY.teaching.starting : "换一种讲解"}</button>
+                              : (roundNextStep?.kind === "retry" || roundNextStep?.kind === "apply") && roundPracticeStart
+                                ? <button type="button" className="round-stamp" disabled={practiceBusy} onClick={() => void startRoundPractice()}>{practiceBusy ? ROUND_COPY.teaching.practicing : roundNextStep.kind === "apply" ? "用新情境试一次" : "再试一次"}</button>
+                                : roundNextStep?.kind === "finish"
+                                  ? <button type="button" className="round-stamp" disabled={roundBusy !== null} onClick={() => void endNoteRound("completed")}>{roundBusy === "end" ? ROUND_COPY.ending : "这一轮学完了，回笔记"}</button>
+                                  : roundNextStep?.kind === "uncertain" || roundNextStep?.kind === "choose"
+                                    ? <button type="button" className="round-stamp" disabled={roundBusy !== null} onClick={() => void endNoteRound()}>{roundBusy === "end" ? ROUND_COPY.ending : "先到这里"}</button>
+                                    : <button type="button" className="round-stamp" onClick={() => void reload({ silent: true })}>重新读取下一步</button>}
+              {/* 次级动作是**纸签**，不是第二排描边按钮。它们挨着主动作，不抢主位。 */}
+              <div className="round-desk__others">
+                {learningScene === "result" && !reviewingTeaching && roundTeaching
+                  ? <button type="button" className="round-tab" onClick={() => setReviewingTeaching(true)}>回看讲解</button>
+                  : null}
+                {learningScene === "practice" && !reviewingTeaching && roundTeaching && !inlineRoundRunId
+                  ? <button type="button" className="round-tab" onClick={() => setReviewingTeaching(true)}>先回看讲解</button>
+                  : null}
+                {learningScene === "result" && !reviewingTeaching && roundNextStep?.kind === "uncertain" && roundNextStep.basisRunId
+                  ? <button type="button" className="round-tab" onClick={() => { void openRoundPractice(String(roundNextStep.basisRunId)); }}>看原回答和反馈</button>
+                  : null}
+                {openRound ? (
+                  <button type="button" className="round-tab" disabled={roundBusy !== null} onClick={() => { setRoundDraft(openRound.drivingQuestion); setRoundStarter(openRound.drivingQuestion); setRoundEditing(true); }}>{ROUND_COPY.revise}</button>
+                ) : null}
+                {openRoundContentMoved ? (
+                  <button type="button" className="round-tab" data-round-reopen-current="true" disabled={roundBusy !== null} onClick={() => void reopenNoteRound()}>{roundBusy === "reopen" ? ROUND_COPY.reopening : ROUND_COPY.reopenWithCurrent}</button>
+                ) : null}
+                {openRound && !reviewingTeaching && learningScene !== "result" ? (
+                  <button type="button" className="round-tab" disabled={roundBusy !== null} onClick={() => void endNoteRound()}>今天先到这里</button>
+                ) : null}
+                {openRound && !reviewingTeaching && learningScene === "result" ? (
+                  <button type="button" className="round-tab" disabled={roundBusy !== null} onClick={() => void endNoteRound()}>先到这里</button>
+                ) : null}
               </div>
             </div>
           ) : null}
-        </div>
+        </section>
       ) : null}
-      </section>
-      <section id="notebook-history-leaf" className="notebook-leaf-page" aria-label="学习记录" hidden={leaf !== "history"}>
-        <div className="notebook-leaf-intro"><h3>这篇笔记的学习足迹</h3></div>
+      {leaf === "history" ? <section id="notebook-history-leaf" className="notebook-leaf-page notebook-journey" aria-label="学习记录">
+        <div className="notebook-journey__header"><button type="button" className="text-action" onClick={() => setLeaf("reading")}>← 回笔记正文</button><span className="notebook-journey__note">{readTitle || "未命名笔记"}</span><h2>这篇笔记的学习足迹</h2><p>从这里回看做过的事；以后是否安排复习由你决定。</p></div>
       {/* 这一篇的轮次记录（PRD §10.3 读侧第一刀）。没有历史时一行都不多——空数组
           与"这篇还没开过轮"是同一件事，不必对用户播报；读失败也不报（这块是增补）。 */}
       {historyItems.length > 0 ? (
@@ -3082,13 +3157,12 @@ export function NotebookSurface() {
                 <span className="small notebook-round-history__day">{roundRecordDayV1(item.startedAt)}</span>
                 <span className="small notebook-round-history__state">{roundHistoryStateLabelV1(item)}</span>
                 <span className="notebook-round-history__question">{item.drivingQuestion}</span>
-                {item.actualModes.length ? <button type="button" className="text-action" onClick={() => {
+                {!("contentMasked" in item && item.contentMasked) ? <button type="button" className="text-action" onClick={() => {
                   setReflectionRoundId(item.roundId);
                   requestAnimationFrame(() => {
-                    reflectionShelfRef.current?.scrollIntoView({ block: "start" });
-                    reflectionShelfRef.current?.querySelector("summary")?.focus();
+                    historyDetailRef.current?.scrollIntoView?.({ block: "start" });
                   });
-                }}>留下这一轮的理解</button> : null}
+                }}>查看这一轮</button> : null}
                 {item.actualModes.length > 0 ? (
                   <span className="small notebook-round-history__modes" data-round-history-modes="true">
                     {roundRecordModesLabelV1(item.actualModes)}
@@ -3115,6 +3189,52 @@ export function NotebookSurface() {
           {olderFailure ? <p className="small notebook-note" role="alert">{olderFailure}</p> : null}
         </section>
       ) : null}
+        {/* 这一篇的核心路线册页（PRD §4.4；39d W4-5 ③）。摆在记录**上面**：
+            「这一篇走到哪」是那一页要答的第一句，而记录是它的证据。两者都空时
+            下面那个空态才出现——空态那一格说的是"还没留下学习记录"，而册页说的
+            是"还没有核心路线"，两句不能互相顶替。 */}
+        <NoteRouteCoverage
+          coverage={routeCoverage}
+          failure={routeCoverageFailure}
+          onInspectRound={(roundId) => {
+            setReflectionRoundId(roundId);
+            setLeaf("history");
+            requestAnimationFrame(() => {
+              historyDetailRef.current?.scrollIntoView?.({ block: "start" });
+            });
+          }}
+        />
+        {reflectionRoundId ? (
+          <section ref={historyDetailRef} className="notebook-round-recap" aria-label="这一轮回看" data-round-recap="true">
+            <h4>这一轮回看</h4>
+            {selectedHistoryMasked ? <p>这轮的内容已按当前权限遮蔽。</p> : inspectedRoundBusy ? (
+              <p role="status">正在翻开这一轮的记录…</p>
+            ) : inspectedRoundFailure ? (
+              <p role="alert">记录没读到：{inspectedRoundFailure}<button type="button" className="text-action" onClick={() => setHistoryInspectRevision((value) => value + 1)}>重试</button></p>
+            ) : inspectedRound?.roundId === reflectionRoundId ? (
+              <>
+                <p className="notebook-round-recap__question">{inspectedRound.view.round.drivingQuestion}</p>
+                <p className="small notebook-note">这一轮{selectedHistoryItem ? roundHistoryStateLabelV1(selectedHistoryItem) : "的记录"}。{inspectedRound.view.teaching ? "读过讲解" : "还没有讲解记录"}；{inspectedRound.view.practices.length ? `做过 ${inspectedRound.view.practices.length} 次练习` : "还没有练习记录"}。</p>
+                {inspectedRound.view.practices.length ? (
+                  <ul className="notebook-round-recap__practices">{inspectedRound.view.practices.map((practice) => (
+                    <li key={practice.runId}>{roundRecordDayV1(practice.startedAt)} · {roundPracticeStateLabelV1(practice)} <button type="button" className="text-action" onClick={() => { void openRoundPractice(practice.runId); }}>查看这次作答</button></li>
+                  ))}</ul>
+                ) : null}
+                {inspectedRound.view.teaching ? (
+                  <details><summary>查看当时的讲解与例子</summary>
+                    <p>{inspectedRound.view.teaching.content.explanation}</p>
+                    {inspectedRound.view.teaching.content.example ? <p>例子：{inspectedRound.view.teaching.content.example}</p> : null}
+                  </details>
+                ) : null}
+                <p className="small notebook-note">这轮没有涉及的内容和仍待核对的地方，见上方核心路线；练过一次不代表整篇已掌握。</p>
+                <button type="button" className="text-action" onClick={() => {
+                  reflectionShelfRef.current?.scrollIntoView?.({ block: "start" });
+                  reflectionShelfRef.current?.querySelector("summary")?.focus();
+                }}>查看或留下这一轮的理解</button>
+              </>
+            ) : null}
+          </section>
+        ) : null}
         {historyItems.length === 0 ? (
           <div className="notebook-history-empty">
             <History size={28} aria-hidden="true" />
@@ -3131,9 +3251,60 @@ export function NotebookSurface() {
               </>
             )}
           </div>
-        ) : null}
-      </section>
-      <div className="note-reflection-anchor" ref={reflectionShelfRef}><NoteReflectionShelf key={note.noteId} noteId={note.noteId} roundId={leaf === "history" ? reflectionRoundId : openRound?.roundId}
+      ) : null}
+        <details className="notebook-review-options" data-note-review-options="true">
+          <summary>以后怎么复习（可选）</summary>
+          <p className="small notebook-note">这篇笔记的持续回访由你决定，卡片若单独开启复习会另行安排。</p>
+          <div className="notebook-objective__source" data-note-subscription="true">
+            {noteSubscription?.status === "active" ? (
+              <>
+                <button type="button" className="button" disabled={subscriptionBusy !== null}
+                  onClick={() => void runNoteSubscriptionAction("pause")}>
+                  {subscriptionBusy === "pause" ? "正在处理…" : reviewSourceSwitchLabel("note_subscription", true)}
+                </button>
+                <p className="small notebook-note">{reviewSourceScopeHint(noteSubscription)}</p>
+              </>
+            ) : (
+              <>
+                <button type="button" className="button" disabled={subscriptionBusy !== null}
+                  onClick={() => void runNoteSubscriptionAction("activate")}>
+                  {subscriptionBusy === "activate" ? "正在处理…" : reviewSourceSwitchLabel("note_subscription", false)}
+                </button>
+                <p className="small notebook-note">{noteSubscription ? reviewSourceScopeHint(noteSubscription) : "开启后，这篇里学过或已确认要维护的目标会持续回访。"}</p>
+              </>
+            )}
+            {subscriptionNotice ? <p className="small notebook-note" data-subscription-notice="true">{subscriptionNotice}</p> : null}
+            {subscriptionError ? <p className="small notebook-note" role="alert" data-subscription-error="true">{subscriptionError}</p> : null}
+          </div>
+          {noteObjective ? (
+            <div className="notebook-objective__hold" data-note-objective-hold="true">
+              <p className="small notebook-note">最近形成的一个学习目标：{noteObjective.publicSummary}</p>
+              {noteObjective.reviewHold ? (
+                <>
+                  <p className="small notebook-note" data-review-hold-label="true">{objectiveReviewHoldLabel(noteObjective.reviewHold)}</p>
+                  <button type="button" className="button" disabled={reviewHoldBusy !== null}
+                    onClick={() => void runObjectiveReviewHoldAction("resume")}>
+                    {reviewHoldBusy === "resume" ? "正在恢复…" : OBJECTIVE_RESUME_ACTION_LABEL}
+                  </button>
+                  <p className="small notebook-note">{objectiveReviewHoldHint(noteObjective.reviewHold)}</p>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="button" disabled={reviewHoldBusy !== null}
+                    onClick={() => void runObjectiveReviewHoldAction("hold")}>
+                    {reviewHoldBusy === "hold" ? "正在处理…" : OBJECTIVE_HOLD_ACTION_LABEL}
+                  </button>
+                  <p className="small notebook-note">{objectiveHoldActionDescription()}</p>
+                </>
+              )}
+              {reviewHoldNotice ? <p className="small notebook-note" data-review-hold-notice="true">{reviewHoldNotice}</p> : null}
+              {reviewHoldError ? <p className="small notebook-note" role="alert" data-review-hold-error="true">{reviewHoldError}</p> : null}
+            </div>
+          ) : null}
+        </details>
+      </section> : null}
+      {(leaf === "learning" && learningScene === "result" && !reviewingTeaching && Boolean(openRound && (roundTeaching || roundPractices.length > 0))
+        || leaf === "history" && Boolean(reflectionRoundId && inspectedRound?.roundId === reflectionRoundId && (inspectedRound.view.teaching || inspectedRound.view.practices.length > 0))) ? <div className="note-reflection-anchor" ref={reflectionShelfRef}><NoteReflectionShelf key={note.noteId} noteId={note.noteId} roundId={leaf === "history" ? reflectionRoundId : openRound?.roundId}
         refreshKey={`${roundTeaching?.teachingId ?? ""}:${roundPractices.map(p => `${p.runId}:${p.phase}`).join(",")}`}
         workspaceEpoch={epochRef.current} canAppend={canSave && Boolean(noteDocLive.fragment) && !saving} shared={note.shareScope === "shared"}
         openSources={leaf === "history" && Boolean(reflectionRoundId)}
@@ -3146,7 +3317,7 @@ export function NotebookSurface() {
           stageReflectionAppend(noteDocLive.fragment, note.noteId, source, annotation, appendedReflections.current);
           const saved = await save("manual");
           return saved;
-        }} /></div>
+        }} /></div> : null}
       {/* Leaving the editor now commits the pending draft first, so a reader who
           lands here must be told what happened to it instead of seeing the older
           server text with no explanation. */}
@@ -3169,10 +3340,10 @@ export function NotebookSurface() {
           </button>
         </p>
       ) : null}
-      {generationReason ? <p className="small notebook-note">{generationReason}</p> : null}
-      {generationFailure ? <p className="small notebook-note" role="alert">{generationFailure}</p> : null}
-      {generationLiveNote}
-      {historyPaper}
+      {leaf === "reading" && generationReason ? <p className="small notebook-note">{generationReason}</p> : null}
+      {leaf === "reading" && generationFailure ? <p className="small notebook-note" role="alert">{generationFailure}</p> : null}
+      {leaf === "reading" ? generationLiveNote : null}
+      {leaf === "reading" ? historyPaper : null}
     </>
   ) : null;
 
@@ -3198,20 +3369,26 @@ export function NotebookSurface() {
     </>
   ) : null;
 
-  const readPageActions = note ? (
-    <div className="actions notebook-actions">
+  const readPageActions = note && leaf === "reading" ? (
+    <div className="actions notebook-actions notebook-actions--reading">
       {!note.permissions.canEdit ? <span className="tag">只读</span> : null}
-      {leaf === "reading" ? <button type="button" className="button primary" onClick={() => setLeaf("learning")}>{openRound ? "继续这一轮" : "学这一篇"}</button> : null}
+      <div className="notebook-actions__next">
+        <span className="notebook-actions__why" title={openRound?.drivingQuestion ?? undefined}>{openRound ? `接着上次的问题：${openRound.drivingQuestion}` : "从这篇笔记选一个问题，直接开始学"}</span>
+        <button type="button" className="button primary" onClick={enterLearning}>{openRound ? "继续学习" : "开始学习"}</button>
+      </div>
       {note.permissions.canEdit ? (
         <button type="button" className="button" onClick={() => switchMode("edit")}>
-          编辑这篇笔记
+          编辑笔记
         </button>
       ) : null}
-      {note.sourceId ? <button type="button" className="button" onClick={openSource}>
-        查看关联来源
-      </button> : null}
-      {versionAndOptionsToggles}
-      {generationAction}
+      <details className="notebook-actions__extras"><summary>更多笔记操作</summary>
+        <div className="notebook-actions__drawer">
+          <button type="button" className="button" onClick={() => setLeaf("history")}>学习记录{historyTotal > 0 ? ` · ${historyTotal}` : ""}</button>
+          {note.sourceId ? <button type="button" className="button" onClick={openSource}>查看关联来源</button> : null}
+          {versionAndOptionsToggles}
+          {generationAction}
+        </div>
+      </details>
     </div>
   ) : null;
 

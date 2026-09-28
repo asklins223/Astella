@@ -1,44 +1,4 @@
 
-/* 书桌上那「一件」（39d W7-4 刀八；39 §12.1）。
- *
- * 物件与纸面语言：一张**便签**，不是一块面板。理由那一行用更轻的墨，屏上读成"附带的一
- * 句"而不是"第二行标题"——§12.1 那句话的用途就是解释，不是抢主句。
- *
- * 宽度按 260px 而不是 100%：书桌还要坐着伴星（AGENTS.md 的座位预算），纸签不许把桌
- * 面占满。 */
-.hud-desk-next {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  inline-size: 260px;
-  padding: 12px 14px;
-  background: var(--hud-paper, #fdf6e3);
-  border: 2px solid var(--hud-ink, #6b5a41);
-  border-radius: 14px 12px 16px 10px;
-  box-shadow: 2px 3px 0 rgb(107 90 65 / 18%);
-}
-
-.hud-desk-next__headline {
-  margin: 0;
-  font-weight: 700;
-  color: var(--hud-ink, #6b5a41);
-  line-height: 1.35;
-}
-
-/* 理由：**必须**念得出来（§12.1「推荐附一句理由」），但不能与主句同重。 */
-.hud-desk-next__reason {
-  margin: 0;
-  font-size: 0.86em;
-  color: color-mix(in srgb, var(--hud-ink, #6b5a41) 72%, transparent);
-  line-height: 1.4;
-}
-
-.hud-desk-next__actions {
-  display: flex;
-  gap: 8px;
-  margin-block-start: 4px;
-}
-
 .hud-desk-next__act {
   padding: 5px 10px;
   font: inherit;
@@ -58,38 +18,7 @@
   cursor: default;
 }
 
-/* 空态那一档是**入口**，不是建议：所以它是一排小字按钮，没有纸签的边框——屏上读成
- * "你现在可以开始的地方"，而不是"系统给你的一个任务"。 */
-.hud-desk-elsewhere {
-  inline-size: 260px;
-}
-
-.hud-desk-elsewhere__list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.hud-desk-elsewhere__entry {
-  padding: 4px 10px;
-  font: inherit;
-  color: var(--hud-ink, #6b5a41);
-  background: var(--hud-paper, #fdf6e3);
-  border: 1px dashed color-mix(in srgb, var(--hud-ink, #6b5a41) 60%, transparent);
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-/* 今日复习那三颗动作（39d W7-4 刀十三）。
- *
- * **并排、不嵌套**在"那一张纸签"外面：那一件是「现在最值得做什么」，这三颗是「这一批
- * 怎么调」；混在一张纸签上会让「减量」读成「换一件事」。
- *
- * 那一行 `screenLine` 是**服务端**生成的（§12 表「剩余需求不伪称完成」），字号比主句
- * 小一档、墨色更轻——它是"做完之后的账"，不是"接下来做什么"。 */
+/* 今日复习批量操作的回执沿用服务端原文，字号低于主动作。 */
 .hud-today-batch {
   display: flex;
   flex-direction: column;
@@ -163,37 +92,4 @@
   margin: 0;
   font-size: 0.9em;
   color: color-mix(in srgb, var(--hud-ink, #6b5a41) 72%, transparent);
-}
-
-/* 39d W7-4：§12.1 那张便签**自己的那一块**。
- *
- * 上一版它被塞进 `.home-v2-hud__panel`，而那个容器是
- * `position:absolute; inset:4px 1px auto 242px; height:48px; overflow:hidden`——
- * **一行摘要条**。一张 260px 宽、多行、两张纸签的便签进去以后，横向被挤到 10px、
- * 纵向被裁。真窗口量到的就是 `[429, 666, 71, 204]`。
- *
- * **所以给它自己一块**：绝对定位在触发器**下方**、自己定宽高、**不参与那一行的排版**。
- * 摘要那一行继续做它的事——**一行摘要不该被一张便签撑开**（AGENTS.md 的纸面层次）。 */
-.hud-surface .home-v2-hud__desk {
-  position: absolute;
-  /* **在触发器上方**，不是下方。`.home-v2-hud` 自己贴着窗口底边（这一屏的 HUD 在左下角），
-     所以 `top: 56px` 会把便签推到**视口之外**——真窗口量到 `[265, 789, 260, 162]`
-     而窗口内容高 810 ⇒ **下半截在折线以下**。`bottom: 56px` 才是「浮在触发器上面」。 */
-  inset: auto auto 56px 242px;
-  display: block;
-  width: max-content;
-  max-inline-size: 260px;
-  /* ⚠️ **长内容必须在这张纸签里面滚，不能把纸签顶出视口。**
-   *
-   * 真窗口读数：把理由那一行灌成 9 倍长文本之后，纸签量到
-   * **`[265, -439, 260, 1170]`** —— 因为它锚在**下方**（`inset: … auto 56px …`），
-   * 于是**越长越往上长**，y 变成 **-439**，**整张纸的上半截在视口之外**。
-   *
-   * 那一版我本来写的是 `overflow: visible`（想着「便签不该有滚动条」）——
-   * 那个决定在**短内容**下看不出来（`[264, 580, 256, 160]` 挺好），
-   * **只有灌长文本才现形**。⇒ 给它 `max-block-size` ＋ `overflow-y: auto`：
-   * 纸签**自己封顶**，超出的在**纸内**滚，**桌面与伴星的座位预算都不动**。 */
-  max-block-size: min(46vh, 320px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }

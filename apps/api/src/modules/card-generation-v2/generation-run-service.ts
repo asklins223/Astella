@@ -702,7 +702,10 @@ export async function cancelGenerationRunV2(ctx: RunContext, runId: string) {
     if (runRows.length === 0) return null;
 
     const run = runRows[0];
-    const cancellable = ["queued", "source_sealing", "planning", "authoring", "review_ready"];
+    // `checking` 必须可取消：那是内容检查那次模型调用在途的 15–30 秒，屏上的
+    // 「取消生成」在整个过程中都是亮的。服务端此前不收这一档，于是用户按下它必然
+    // 撞 409「当前状态不可取消」——一颗按下去只会失败��按钮。
+    const cancellable = ["queued", "source_sealing", "planning", "authoring", "checking", "review_ready"];
     if (!cancellable.includes(run.status)) {
       throw new CardGenerationV2ServiceError("invalid_state", 409, "当前状态不可取消");
     }

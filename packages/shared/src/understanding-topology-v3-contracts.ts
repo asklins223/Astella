@@ -66,7 +66,8 @@ export const noteNodeProjectionV3Schema = z.strictObject({
     noteId: z.string().uuid(),
   }),
   label: z.string().min(1).max(500),
-  currentVersionId: z.string().uuid(),
+  /** 尚未保存过正文的笔记没有版本；不能用 noteId 伪装成版本 id。 */
+  currentVersionId: z.string().uuid().nullable(),
   /**
    * 该笔记是否由某个来源收录而来（即 `notes.source_id` 非空）。
    *

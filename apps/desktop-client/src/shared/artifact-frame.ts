@@ -83,6 +83,16 @@ export interface ArtifactFrameEvent {
   stepCount?: number
   /** `error` 的说明。只用于**如实说明**"这份动态内容没能跑起来"，不许当控制指令解析。 */
   detail?: string
+  /**
+   * 产物当前内容高度（CSS px）。
+   *
+   * 为什么需要这一格：frame 是**不透明 origin** 里的一份独立文档，父侧量不到它的内容
+   * （同源策略下读不到 iframe 的 DOM）。不给高度，宿主只能给一个写死的行高，于是内容
+   * 被压进一小格、frame 内部自己出滚动条——那正是"共 4 步"旁边一小块字加一根内滚动条
+   * 的来源。高度由**产物自己**报（它量得到自己的 `documentElement.scrollHeight`），
+   * 宿主只负责夹一个上限再写进 style，**不拿它当任何执行输入**。
+   */
+  contentHeight?: number
 }
 
 export interface ArtifactFrameCommandMessage {
@@ -108,6 +118,10 @@ export function parseArtifactFrameEvent(data: unknown): ArtifactFrameEvent | nul
   const event: ArtifactFrameEvent = { channel: ARTIFACT_FRAME_CHANNEL, direction: 'frame->host', phase }
   if (typeof candidate.stepCount === 'number' && Number.isInteger(candidate.stepCount)) {
     event.stepCount = candidate.stepCount
+  }
+  // 高度只收**有限正数**：NaN／Infinity／负数一律丢掉，宿主那边就不必各自再判一次。
+  if (typeof candidate.contentHeight === 'number' && Number.isFinite(candidate.contentHeight) && candidate.contentHeight > 0) {
+    event.contentHeight = Math.ceil(candidate.contentHeight)
   }
   if (typeof candidate.detail === 'string') event.detail = candidate.detail.slice(0, 500)
   return event

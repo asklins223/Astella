@@ -254,7 +254,7 @@ interface Palette {
 const TYPE_LABEL: Record<GraphNode["type"], string> = {
   source: "来源资料",
   note: "笔记",
-  card: "学习卡",
+  card: "学习目标",
   key_point: "证据",
 };
 

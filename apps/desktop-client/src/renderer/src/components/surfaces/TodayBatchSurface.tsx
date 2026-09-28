@@ -97,6 +97,10 @@ export function TodayBatchSurface({
       <TodayBatchOptions
         timeZone={timeZone}
         epochRef={epochRef}
+        // 这一批此刻停没停，父层已经从服务端读到了（`batch.paused`）。不递给它，
+        // 那颗开关就只能等用户点一次才知道自己该是"停一下"还是"接着做"——
+        // 刷新之后必然读反。
+        initialPaused={batch.paused}
         onResult={() => { void load(); }}
       />
     </section>

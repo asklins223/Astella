@@ -52,7 +52,7 @@ describe("ArtifactFrameHost", () => {
     act(() => {
       window.dispatchEvent(frameMessage("ready", { stepCount: 3 }));
     });
-    expect(screen.getByText("共 3 步")).toBeTruthy();
+    expect(screen.getByText("这一页讲了 3 个要点")).toBeTruthy();
 
     // 心跳每秒一拍：喂满二十秒，看门没有理由动手（不喂它才会降级——那是
     // 降级用例的事，这里只证"喂着心跳就一直活着"）。
@@ -62,7 +62,7 @@ describe("ArtifactFrameHost", () => {
         window.dispatchEvent(frameMessage("heartbeat"));
       });
     }
-    expect(screen.getByText("共 3 步")).toBeTruthy();
+    expect(screen.getByText("这一页讲了 3 个要点")).toBeTruthy();
     expect(screen.queryByText(/没能跑起来/)).toBeNull();
   });
 
@@ -85,7 +85,7 @@ describe("ArtifactFrameHost", () => {
     act(() => {
       window.dispatchEvent(frameMessage("ready", { stepCount: 2 }));
     });
-    expect(screen.getByText("共 2 步")).toBeTruthy();
+    expect(screen.getByText("这一页讲了 2 个要点")).toBeTruthy();
   });
 
   it("没有 ready：看门到点重建一次，第二次仍无心跳 ⇒ 降级并摘掉 iframe", async () => {
@@ -121,7 +121,9 @@ describe("ArtifactFrameHost", () => {
     act(() => {
       window.dispatchEvent(frameMessage("ready", { stepCount: 4 }));
     });
-    expect(screen.getByText("共 4 步")).toBeTruthy();
+    // 「共 N 步」是上一版的说法（那一版的产物是自己的一排格，按顺序推一遍）。现在 N 是
+    // 这一页讲的**要点**条数，说法跟着改——留着旧文案就是在教用户一个已经不存在的操作。
+    expect(screen.getByText("这一页讲了 4 个要点")).toBeTruthy();
     expect(rebuilt).toBeTruthy();
   });
 
@@ -169,4 +171,53 @@ describe("ArtifactFrameHost", () => {
     expect(screen.getByText(/引用不合法/)).toBeTruthy();
     expect(container.querySelector("iframe")).toBeNull();
   });
+});
+
+// ── 高度握手（真窗口里那一格缩成一小块、内容自己出滚动条的根因）──────────────
+//
+// 父侧量不到 frame 的内容（不透明 origin），所以高度只能由产物自己报。不报的话
+// 宿主只能给一个写死的行高：画面被压扁、iframe 内部自己长出滚动条，而"共 N 步"
+// 孤零零飘在旁边——那是两边对不上尺寸，不是设计。
+it("产物报上来的高度直接变成 iframe 的高度，产物内部因此不滚", () => {
+  render(<ArtifactFrameHost artifactId={ARTIFACT_ID} isTrustedFrameSource={trusted} />);
+  const frame = () => document.querySelector("iframe") as HTMLIFrameElement;
+  // 还没量到时给一个中位起始高度，不塌成 iframe 默认的 150px
+  expect(parseInt(frame().style.height, 10)).toBeGreaterThanOrEqual(180);
+
+  act(() => { window.dispatchEvent(frameMessage("ready", { stepCount: 4, contentHeight: 640 })); });
+  expect(parseInt(frame().style.height, 10)).toBe(640);
+});
+
+it("高度被夹在上下限之间：过短不塌成空框，过长不由产物内部滚", () => {
+  render(<ArtifactFrameHost artifactId={ARTIFACT_ID} isTrustedFrameSource={trusted} />);
+  const frame = () => document.querySelector("iframe") as HTMLIFrameElement;
+
+  act(() => { window.dispatchEvent(frameMessage("heartbeat", { contentHeight: 12 })); });
+  expect(parseInt(frame().style.height, 10)).toBe(180);
+
+  act(() => { window.dispatchEvent(frameMessage("heartbeat", { contentHeight: 99999 })); });
+  expect(parseInt(frame().style.height, 10)).toBe(1600);
+  // 超上限时由**外层**滚，并如实告诉用户这一份比较长
+  expect(document.querySelector(".artifact-frame-host")?.getAttribute("data-overflow")).toBe("true");
+  expect(screen.getByText(/这一份比较长/)).toBeTruthy();
+});
+
+it("静态分镜在 ready 之后才重排：只认 ready 会停在旧高度上", () => {
+  render(<ArtifactFrameHost artifactId={ARTIFACT_ID} isTrustedFrameSource={trusted} />);
+  const frame = () => document.querySelector("iframe") as HTMLIFrameElement;
+  act(() => { window.dispatchEvent(frameMessage("ready", { stepCount: 2, contentHeight: 300 })); });
+  expect(parseInt(frame().style.height, 10)).toBe(300);
+  // 切静态分镜之后产物又报了一次更高的内容
+  act(() => { window.dispatchEvent(frameMessage("heartbeat", { contentHeight: 900 })); });
+  expect(parseInt(frame().style.height, 10)).toBe(900);
+});
+
+it("坏掉的高度不参与：NaN / 负数 / 缺省都当没报", () => {
+  render(<ArtifactFrameHost artifactId={ARTIFACT_ID} isTrustedFrameSource={trusted} />);
+  const frame = () => document.querySelector("iframe") as HTMLIFrameElement;
+  const before = frame().style.height;
+  for (const bad of [Number.NaN, -1, Number.POSITIVE_INFINITY, "tall"]) {
+    act(() => { window.dispatchEvent(frameMessage("heartbeat", { contentHeight: bad })); });
+  }
+  expect(frame().style.height).toBe(before);
 });

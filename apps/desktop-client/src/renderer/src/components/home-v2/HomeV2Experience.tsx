@@ -23,6 +23,8 @@ import type { CompanionOnboardingStateV1 } from "@ailearn/shared/companion-shell
 import { createRequestMeta, unwrapGatewayResult } from "../../app/desktop-client";
 import { useCompanionHomeProjection } from "../../app/companion-home-projection";
 import { useHomeProjection } from "../../app/home-projection";
+import { HomeNextStep } from "../surfaces/HomeNextStep";
+import { useHomeNextStepProjection } from "../surfaces/home-next-step-projection";
 import { homePresentation } from "../../app/home-presentation";
 import { useRoomStore } from "../../app/room-store";
 import { resolveSceneMotionMode } from "../../scene/scene-motion";
@@ -312,6 +314,16 @@ export function HomeV2Provider({ children }: { readonly children: ReactNode }) {
     };
   }, [introReplayPending, markIntroSeen, surface]);
 
+  /**
+   * 首页「只推一件」的**真实读数**（§12.1）。
+   *
+   * 这条链服务端/IPC/preload 早就齐了，但渲染层一个调用都没有，于是这张卡一直显示
+   * 另一份投影（`homePresentation` 的 `title`/`primaryLabel`）——两份来源各说各的，
+   * 而 §12.1 要的「附一句理由、可换一个或暂不处理」一句也没兑现。
+   * 读不��时**不用那份旧投影顶替**：那会把"读不到"说成"今天没有事"。
+   */
+  const homeNextStep = useHomeNextStepProjection();
+
   const featurePresentation = useCallback((featureId: HomeFeatureId): HomeFeatureRuntimeV1 => {
     const definition = getHomeFeature(featureId);
     let detail = definition.purpose;
@@ -320,12 +332,19 @@ export function HomeV2Provider({ children }: { readonly children: ReactNode }) {
 
     switch (featureId) {
       case "continue":
-        detail = home.title;
-        meta = home.activeRunCount === null
-          ? "状态 —"
-          : home.activeRunCount > 0
-            ? `${home.activeRunCount} 项可恢复`
-            : home.primaryLabel;
+        // 有真实读数就用它（它带理由，且理由是必填非空的那一份）。
+        const wire = homeNextStep.kind === "wire" ? homeNextStep.suggestion : null;
+        if (wire?.kind === "suggested") {
+          detail = wire.headline;
+          // 理由整句放得下；截断要保留出处，不另写一句短的。
+          meta = wire.reasonLine;
+        } else if (wire?.kind === "nothing_due") {
+          detail = "今天没有到期的事";
+          meta = "可以新建笔记、从资料写一篇，或接着读最近那篇";
+        } else {
+          detail = home.title;
+          meta = homeNextStep.kind === "loading" ? "正在看今天的位置…" : "今天的位置暂时读不到";
+        }
         break;
       case "today-review":
         detail = home.reviewLabel;
@@ -591,6 +610,7 @@ function HomeFeatureNoticeDialog({ featureId, onClose, onShowAll }: { readonly f
 }
 
 function HomeV2Catalog({ open, notice, onNotice, onClose }: { readonly open: boolean; readonly notice: string | null; readonly onNotice: (notice: string | null) => void; readonly onClose: (restoreFocus?: boolean) => void }) {
+  const catalogEpochRef = useRef<number | undefined>(undefined);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const { projection, loading, failure } = useHomeProjection();
@@ -696,6 +716,18 @@ function HomeV2Catalog({ open, notice, onNotice, onClose }: { readonly open: boo
           {HOME_FEATURE_GROUPS.map((group) => (
             <section key={group.id} className="home-v2-catalog__group" data-feature-group={group.id}>
               <h3>{group.title}</h3>
+              {/* §12.1「推荐附一句理由，可换一个或暂不处理」。
+                  这两颗按钮此前**在整个渲染层不存在**——服务端、路由、IPC、preload
+                  都有，连「swappableCount 为 0 时不画」都写进合同了，只是没人调。
+                  「今天」这一组是它有意义的唯一一处：书桌上那颗是导航物，点下去就走，
+                  理由与两颗动作要有个能读字的地方。 */}
+              {group.id === "today" ? (
+                <HomeNextStep
+                  timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+                  epochRef={catalogEpochRef}
+                  onOpen={(suggestion) => runCatalogFeature("continue")}
+                />
+              ) : null}
               {homeFeaturesForGroup(group.id).map((definition) => <FeatureRow key={definition.id} feature={featurePresentation(definition.id)} onRun={runCatalogFeature} />)}
             </section>
           ))}

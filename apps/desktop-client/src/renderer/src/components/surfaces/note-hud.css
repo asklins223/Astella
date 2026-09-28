@@ -44,50 +44,6 @@
 }
 .hud-surface .note-library-desk .book-cover h3 { font-size: 16px; }
 
-/* The reading, learning and history bookmarks turn one paper, rather than
-   splitting the room into a workbench and a management sidebar. */
-.hud-surface .notebook-hud .notebook-leaves {
-  position: sticky;
-  z-index: 2;
-  top: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px;
-  margin: 20px 0 18px;
-  padding: 8px 0 14px;
-  background: var(--hud-cream);
-}
-
-.hud-surface .notebook-hud .notebook-leaf {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 39px;
-  padding: 8px 15px;
-  color: var(--hud-ink);
-  border: 3px solid rgba(255, 252, 235, 0.78);
-  border-radius: 12px 17px 10px 14px;
-  background: var(--hud-paper-deep);
-  box-shadow: 0 4px 9px rgba(48, 35, 26, 0.14);
-  font: 650 14px/1.4 "Noto Sans SC Variable", "PingFang SC", sans-serif;
-  cursor: pointer;
-  transform: rotate(-1deg);
-  transition: transform 180ms var(--hud-ease-out), background-color 180ms var(--hud-ease-out), box-shadow 180ms var(--hud-ease-out);
-}
-.hud-surface .notebook-hud .notebook-leaf--learning { background: var(--hud-mint); transform: rotate(1deg); }
-.hud-surface .notebook-hud .notebook-leaf--history { background: var(--hud-butter); }
-.hud-surface .notebook-hud .notebook-leaf[aria-pressed="true"] {
-  color: #3e2d22;
-  border-color: #af522c;
-  background: var(--hud-peach);
-  transform: translateY(-3px) rotate(0);
-  box-shadow: 0 6px 12px rgba(67, 43, 27, 0.18);
-}
-.hud-surface .notebook-hud .notebook-leaf:hover { transform: translateY(-2px) scale(1.02); }
-.hud-surface .notebook-hud .notebook-leaf:active { transform: scale(0.96); transition-duration: 110ms; }
-.hud-surface .notebook-hud .notebook-leaf:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
-.hud-surface .notebook-hud .notebook-leaf-page[hidden] { display: none; }
-.hud-surface .notebook-hud .notebook-leaf-page { padding: 2px 0 14px; }
 .hud-surface .notebook-hud .notebook-reading-outline {
   margin: 5px 0 22px;
   padding: 12px 15px 8px 19px;
@@ -196,6 +152,17 @@
   outline: 3px solid var(--hud-green);
   outline-offset: 2px;
 }
+/* 滚动容器的上下留白。
+ *
+ * 底部那一条早就有（给正文页钉在纸脚的动作行让位），**顶部一直没有**——而
+ * `overflow: hidden auto` 意味着一滚动就把第一行切掉：真窗口实测题名
+ * 「IndexTTS 2.5 让声音跨越语言 - 哔哩哔哩222」被切掉上半截，纸脚那条失败说明
+ * 也压在折痕下面看不见。阅读页的正文第一行有段前距所以看不出来，学习页的抬头
+ * 是一行小字，紧贴容器上缘，一滚就中招。
+ *
+ * 四类选择器是为了压过 `hud-surface.css` 里那条同为三类的基线（同样 specificity
+ * 时后加载的文件赢，那是个不该靠加载顺序活着的事实）。 */
+.hud-surface .notebook-hud[data-mode] .notebook-scroll { padding-top: 14px; }
 .hud-surface .notebook-hud[data-mode="read"] .notebook-scroll { padding-bottom: 12px; }
 .hud-surface .notebook-hud[data-mode="read"] .notebook-actions {
   position: static;
@@ -227,7 +194,6 @@
 .hud-surface .notebook-hud .notebook-objective__impact-evidence > summary { color: var(--hud-green); cursor: pointer; font-weight: 650; }
 .hud-surface .notebook-hud .notebook-objective__impact-excerpt { margin-top: 8px; padding-top: 5px; border-top: 1px dashed var(--hud-line); }
 .hud-surface .notebook-hud .notebook-objective__impact-excerpt strong { color: var(--hud-ink); font-weight: 650; }
-.hud-surface .notebook-hud .notebook-round-teaching__text { font-size: 16px; line-height: 1.9; }
 .hud-surface .notebook-hud .notebook-round-teaching__suspect-claims {
   margin: 16px 0;
   padding: 14px 17px;
@@ -262,9 +228,501 @@
 .hud-surface .notebook-hud .notebook-round__plan ol { margin: 6px 0; padding-left: 22px; }
 .hud-surface .notebook-hud .notebook-round__plan li { margin: 5px 0; line-height: 1.65; }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   书桌上的这一页（2026-09-28 整体重构）
+
+   上一版是「薄荷标题牌 + 三枚带框药丸 + 描边框场景块 + 纸外悬浮坞」。四个带框的
+   东西从上到下排成一列，屏上读起来就是一张后台表单——真窗口实测：题名被滚动容器裁掉
+   一半，薄荷左边框变成一截孤零零的竖条，说服用户的句子和一颗按钮占掉一整个描边框，
+   失败提示被裁在纸脚看不见。那一版的骨架整个不要了。
+
+   现在这一页按**书桌**组织，三条规矩贯穿下面每一条规则：
+
+     1. **左栏是顺着读下去的一条线**（问题 → 讲解 → 例子 → 作答 → 收获）。线上的东西
+        全是纸上的字，**一个描边框都没有**。分隔靠留白与行距，不靠线。
+     2. **右栏是摆在桌上的物件**（进度绳、演示大纸）。它们有厚度、有影子、可以压住纸
+        的边角——因为它们是"手上拿着的东西"，不是"系统状态"。
+     3. **物件感来自物理**（胶带、纸夹、折角、投影、微微的歪斜），不来自给矩形描一圈边。
+        投影**一律带偏移**；零偏移的色晕是装饰，不是深度。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.hud-surface .notebook-hud .round-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  max-width: 100%;
+  /* 纸脚在纸上，所以底下留出一块自己的呼吸位，不再靠纸外那条悬浮条。 */
+  padding-bottom: 26px;
+}
+
+/* ── 抬头：题名与两枚书签 ──────────────────────────────────────────────────
+   上一版是「h2 + 一枚内联返回动作」挤在同一行，返回动作贴在标题左侧像误触。
+   现在抬头只有一件事实（这是哪一篇）与两枚书签，返回**在书签上**而不是混进标题。 */
+.hud-surface .notebook-hud .round-desk__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 18px;
+  margin: 2px 0 4px;
+}
+.hud-surface .notebook-hud .round-desk__note {
+  order: -1;
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--hud-soft);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+/* 书签：一条压在页边上的小纸舌，不是文字按钮。 */
+.hud-surface .notebook-hud .round-bookmark {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 13px 5px;
+  border: 0;
+  border-radius: 10px 4px 4px 10px;
+  background: var(--hud-paper-deep);
+  color: var(--hud-ink);
+  box-shadow: 0 2px 5px rgba(43, 27, 17, 0.16);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transform: rotate(-0.7deg);
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1), background-color 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.hud-surface .notebook-hud .round-bookmark::before {
+  /* 书舌上那一道折痕：它说明这是一张**折过来**的纸，不是一颗按钮。 */
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--hud-clay);
+  border-radius: 10px 0 0 10px;
+  opacity: 0.75;
+}
+.hud-surface .notebook-hud .round-bookmark:hover { background: var(--hud-butter); transform: rotate(-0.7deg) translateY(-2px); }
+.hud-surface .notebook-hud .round-bookmark:active { transform: rotate(-0.7deg) scale(0.97); transition-duration: 110ms; }
+.hud-surface .notebook-hud .round-bookmark:focus-visible { outline: 3px solid var(--hud-green); outline-offset: 2px; }
+
+/* ── 桌面构图：一条线 + 一堆物件 ─────────────────────────────────────────── */
+.hud-surface .notebook-hud .round-desk__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: 34px;
+  align-items: start;
+}
+.hud-surface .notebook-hud .round-desk__line { min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.hud-surface .notebook-hud .round-desk__objects { min-width: 0; display: flex; flex-direction: column; gap: 22px; position: sticky; top: 8px; }
+
+/* ── 问题：一张用和纸胶带贴上来的纸片，它就是这一页的标题 ──────────────────
+   上一版是一块薄荷色的"牌"，左边那 6px 竖线在真窗口里断开了贴纸本身，读起来像一根
+   孤零零的竖条。现在它是一张**纸**：胶带压住上缘，微微歪着，自己带影子；标题就是
+   那个 h2——这一页的标题本该是问题，不是「想弄懂什么？」这种界面自述。 */
+.hud-surface .notebook-hud .round-slip--question {
+  position: relative;
+  margin: 6px 0 4px;
+  padding: 20px 24px 22px;
+  border-radius: 5px 19px 6px 18px;
+  background: var(--hud-cream);
+  box-shadow: 0 9px 20px rgba(43, 27, 17, 0.19), 0 2px 5px rgba(43, 27, 17, 0.12);
+  transform: rotate(-0.35deg);
+}
+.hud-surface .notebook-hud .round-tape {
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  width: 116px;
+  height: 24px;
+  transform: translateX(-50%) rotate(-2.4deg);
+  background: linear-gradient(180deg, rgba(255, 252, 235, 0.82), rgba(247, 236, 212, 0.66));
+  box-shadow: 0 2px 4px rgba(43, 27, 17, 0.14);
+  /* 胶带的锯齿边：两条细密的斜纹，不是渐变糊出来的边。 */
+  clip-path: polygon(0 12%, 6% 0, 22% 10%, 38% 0, 54% 10%, 70% 0, 86% 10%, 100% 0, 100% 90%, 86% 100%, 70% 90%, 54% 100%, 38% 90%, 22% 100%, 6% 90%, 0 100%);
+  pointer-events: none;
+}
+.hud-surface .notebook-hud .round-slip--question figcaption {
+  margin: 0 0 7px;
+  color: var(--hud-clay);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.hud-surface .notebook-hud .round-slip__question {
+  margin: 0;
+  color: var(--hud-ink);
+  font: 680 clamp(19px, 1.6vw, 24px) / 1.62 "Noto Serif SC Variable", "Songti SC", serif;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+.hud-surface .notebook-hud .round-desk__ask {
+  margin: 6px 0 0;
+  color: var(--hud-ink);
+  font: 680 24px / 1.5 "Noto Serif SC Variable", "Songti SC", serif;
+}
+
+/* ── 纸片：讲解旁边的便签、要核对的旗、回执 ───────────────────────────────
+   便签的歪斜是这个世界的手感（0.6deg 以内，不影响读字）。它们的边是**奶油色**而不是
+   灰线：奶油边与木质背景之间的对比靠明度，不靠一根描边。 */
+.hud-surface .notebook-hud .round-slip {
+  padding: 14px 18px 15px;
+  border-radius: 4px 15px 5px 14px;
+  background: var(--hud-paper-deep);
+  color: var(--hud-ink);
+}
+.hud-surface .notebook-hud .round-slip__label {
+  margin: 0 0 6px;
+  color: var(--hud-green);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+.hud-surface .notebook-hud .round-slip__lead { margin: 0 0 12px; font-size: 16px; line-height: 1.8; }
+.hud-surface .notebook-hud .round-slip__aside { margin: 10px 0 0; color: var(--hud-soft); font-size: 13px; line-height: 1.75; }
+.hud-surface .notebook-hud .round-slip__item + .round-slip__item { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--hud-line); }
+.hud-surface .notebook-hud .round-slip__item blockquote {
+  margin: 0 0 7px;
+  padding: 8px 12px;
+  border-radius: 3px 11px 4px 10px;
+  background: var(--hud-cream);
+  font-size: 14px;
+  line-height: 1.8;
+}
+.hud-surface .notebook-hud .round-slip__item p { margin: 0; font-size: 14px; line-height: 1.75; }
+/* 要核对的那几张：桃色左标，与正文里"待核对"同一族记号。 */
+.hud-surface .notebook-hud .round-slip--flag { background: var(--hud-paper); box-shadow: inset 4px 0 0 var(--hud-peach); }
+.hud-surface .notebook-hud .round-slip--muted { color: var(--hud-soft); }
+.hud-surface .notebook-hud .round-slip--paused { background: var(--hud-paper); box-shadow: 0 6px 16px rgba(43, 27, 17, 0.14); }
+
+/* 暂停回执的三行：一行一件事，**不用描边框**——行与行之间靠行距与淡色差分。 */
+.hud-surface .notebook-hud .round-ledger { margin: 0; display: grid; gap: 2px; }
+.hud-surface .notebook-hud .round-ledger > div {
+  display: grid;
+  grid-template-columns: 4.5em 1fr;
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 7px 0;
+}
+.hud-surface .notebook-hud .round-ledger dt { color: var(--hud-green); font-size: 13px; font-weight: 800; }
+.hud-surface .notebook-hud .round-ledger dd { margin: 0; font-size: 14px; line-height: 1.7; }
+
+/* ── 讲解正文：一页书，不是段落堆 ──────────────────────────────────────────
+   母本的研究册正文是 17px/2；这里取 17px/1.95，并把**行长收在 58ch**——中文一行超过
+   60 字眼睛就要回扫，而这一页左边还坐着人，右边压着演示纸。 */
+.hud-surface .notebook-hud .round-prose { max-width: 58ch; }
+.hud-surface .notebook-hud .round-prose__body {
+  margin: 0;
+  color: var(--hud-ink);
+  font: 17px / 1.95 "Noto Serif SC Variable", "Songti SC", serif;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* 例子是**贴在讲解旁边的一张便签**，往右错开一点、歪一点点——它是这一页的旁注，
+   不是讲解下面缩进的一段。 */
+.hud-surface .notebook-hud .round-slip--example {
+  margin: 18px 0 0 22px;
+  background: var(--hud-butter);
+  box-shadow: 0 6px 14px rgba(43, 27, 17, 0.15);
+  transform: rotate(0.5deg);
+}
+.hud-surface .notebook-hud .round-slip--example p { margin: 0; font-size: 15px; line-height: 1.85; }
+
+/* ── 收获回执：一张撕口的小票 ────────────────────────────────────────────
+   撕口用 `mask` 画：那是这张纸被撕下来时该有的边，不是虚线描边。 */
+.hud-surface .notebook-hud .round-receipt {
+  padding: 18px 22px 20px;
+  background: var(--hud-paper);
+  box-shadow: 0 7px 18px rgba(43, 27, 17, 0.15);
+  --tear: linear-gradient(135deg, transparent 0 5px, var(--hud-ink) 5px 5.6px, transparent 5.6px 10px, var(--hud-ink) 10px 10.6px, transparent 10.6px);
+  -webkit-mask-image: var(--tear), linear-gradient(#000 0 0);
+  -webkit-mask-composite: source-in;
+  mask-image: var(--tear), linear-gradient(#000 0 0);
+  mask-composite: intersect;
+  -webkit-mask-size: 14px 6px, 100% calc(100% - 6px);
+  -webkit-mask-position: 0 0, 0 6px;
+  -webkit-mask-repeat: repeat-x, no-repeat;
+  mask-size: 14px 6px, 100% calc(100% - 6px);
+  mask-position: 0 0, 0 6px;
+  mask-repeat: repeat-x, no-repeat;
+}
+.hud-surface .notebook-hud .round-receipt__today {
+  margin: 0 0 12px;
+  padding: 11px 15px 12px;
+  border-radius: 4px 14px 5px 13px;
+  background: color-mix(in srgb, var(--hud-butter) 44%, var(--hud-paper-light));
+  font: 650 17px / 1.85 "Noto Serif SC Variable", "Songti SC", serif;
+}
+.hud-surface .notebook-hud .round-receipt__gap,
+.hud-surface .notebook-hud .round-receipt__next { margin: 0 0 8px; font-size: 15px; line-height: 1.85; }
+
+/* ── 定问题：一张写字的纸，输入框是**横线**不是描边框 ─────────────────────
+   上一版那个输入框是一个带灰边的矩形，配上下面三行说明，整个定问题区就是一张表单。
+   现在输入落在一条手写横线上（repeated-linear-gradient 画横格），说明压到一行。 */
+.hud-surface .notebook-hud .round-ask { display: flex; flex-direction: column; gap: 12px; }
+.hud-surface .notebook-hud .round-ask label { color: var(--hud-ink); font-size: 15px; font-weight: 800; }
+.hud-surface .notebook-hud .round-ask__line {
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 12px 10px;
+  border: 0;
+  border-radius: 3px;
+  background:
+    repeating-linear-gradient(180deg, transparent 0 27px, var(--hud-line) 27px 28px);
+  background-position: 0 6px;
+  color: var(--hud-ink);
+  font: 17px / 28px "Noto Serif SC Variable", "Songti SC", serif;
+}
+.hud-surface .notebook-hud .round-ask__line::placeholder { color: var(--hud-soft); opacity: 0.72; }
+.hud-surface .notebook-hud .round-ask__line:focus-visible { outline: 3px solid var(--hud-green); outline-offset: 3px; border-radius: 5px; }
+.hud-surface .notebook-hud .round-ask__presets,
+.hud-surface .notebook-hud .round-ask__from { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.hud-surface .notebook-hud .round-ask__from > span { flex-basis: 100%; color: var(--hud-green); font-size: 12px; font-weight: 800; }
+.hud-surface .notebook-hud .round-ask__from { margin-top: 4px; }
+
+/* ── 主动作：一枚压在纸上的**木戳** ────────────────────────────────────────
+   上一版是 `.button.primary`（陶土色圆角矩形）浮在纸外一条横条上。按钮形状本身没错，
+   错的是它**不在纸上**，而且旁边还挂着一句"正在学"复述同一个事实。现在它回到纸脚，
+   做成一枚有厚度的戳：底边沉、上缘受光，按下去整枚压低。 */
+.hud-surface .notebook-hud .round-stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 9px 24px 10px;
+  border: 0;
+  border-radius: 12px 17px 11px 16px;
+  background: linear-gradient(180deg, #ef9a6d, var(--hud-clay));
+  color: #fff8ec;
+  font: 750 15px/1.5 "Noto Serif SC Variable", "Songti SC", serif;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  /* 厚度：底边那条深色的边 ＋ 一层柔影。零偏移的色晕不是厚度。 */
+  box-shadow: inset 0 -3px 0 rgba(112, 45, 20, 0.45), 0 6px 12px rgba(78, 38, 22, 0.28);
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.hud-surface .notebook-hud .round-stamp:hover { transform: translateY(-2px); box-shadow: inset 0 -3px 0 rgba(112, 45, 20, 0.45), 0 10px 18px rgba(78, 38, 22, 0.3); }
+.hud-surface .notebook-hud .round-stamp:active { transform: translateY(2px); box-shadow: inset 0 1px 0 rgba(112, 45, 20, 0.5), 0 2px 4px rgba(78, 38, 22, 0.24); transition-duration: 110ms; }
+.hud-surface .notebook-hud .round-stamp:focus-visible { outline: 3px solid var(--hud-green); outline-offset: 3px; }
+.hud-surface .notebook-hud .round-stamp:disabled { opacity: 0.55; cursor: default; transform: none; box-shadow: inset 0 -2px 0 rgba(112, 45, 20, 0.3); }
+
+/* 次级动作是**一枚小纸签**：不描边、不填色，只有纸本身与一点影子。 */
+.hud-surface .notebook-hud .round-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 5px 14px 6px;
+  border: 0;
+  border-radius: 11px 15px 10px 14px;
+  background: var(--hud-paper-light);
+  color: var(--hud-ink);
+  box-shadow: 0 2px 5px rgba(43, 27, 17, 0.14);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1), background-color 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.hud-surface .notebook-hud .round-tab:hover { background: var(--hud-butter); transform: translateY(-2px) rotate(-0.4deg); }
+.hud-surface .notebook-hud .round-tab:active { transform: translateY(1px) scale(0.98); transition-duration: 110ms; }
+.hud-surface .notebook-hud .round-tab:focus-visible { outline: 3px solid var(--hud-green); outline-offset: 2px; }
+.hud-surface .notebook-hud .round-tab:disabled { opacity: 0.5; cursor: default; transform: none; }
+.hud-surface .notebook-hud .round-tab--section { background: var(--hud-mint); }
+/* 纸签上写的是**这一篇自己的小节名**，所以它要读得出来：允许换行，不截断。 */
+.hud-surface .notebook-hud .round-tab--section { white-space: normal; text-align: left; }
+
+.hud-surface .notebook-hud .round-forks { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; }
+.hud-surface .notebook-hud .round-desk__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin-top: 6px;
+  padding-top: 20px;
+  border-top: 2px solid var(--hud-paper-deep);
+}
+.hud-surface .notebook-hud .round-desk__others { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 11px; }
+
+/* ── 折叠：一枚纸签揭开一张小纸，不再是后台的 disclosure 行 ─────────────── */
+.hud-surface .notebook-hud .round-flap { margin: 2px 0 0; }
+.hud-surface .notebook-hud .round-flap > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 13px 5px;
+  border-radius: 10px 4px 10px 4px;
+  background: var(--hud-paper-deep);
+  color: var(--hud-ink);
+  box-shadow: 0 2px 4px rgba(43, 27, 17, 0.13);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+  transform: rotate(-0.4deg);
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1), background-color 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.hud-surface .notebook-hud .round-flap > summary::-webkit-details-marker { display: none; }
+.hud-surface .notebook-hud .round-flap > summary::before {
+  /* 一个"揭起纸角"的小三角。用几何形画，位置跟着旋转的字走。 */
+  content: "";
+  width: 0;
+  height: 0;
+  margin-right: 7px;
+  border-left: 6px solid var(--hud-clay);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.hud-surface .notebook-hud .round-flap[open] > summary::before { transform: rotate(90deg); }
+.hud-surface .notebook-hud .round-flap > summary:hover { background: var(--hud-butter); transform: rotate(-0.4deg) translateY(-2px); }
+.hud-surface .notebook-hud .round-flap > summary:focus-visible { outline: 3px solid var(--hud-green); outline-offset: 2px; }
+/* 揭开来是一张**摊平的小纸**，压在被揭的那枚签下面。 */
+.hud-surface .notebook-hud .round-flap__sheet {
+  margin: 8px 0 0 14px;
+  padding: 13px 17px 14px;
+  border-radius: 3px 14px 4px 13px;
+  background: var(--hud-paper-light);
+  box-shadow: 0 5px 12px rgba(43, 27, 17, 0.13);
+}
+.hud-surface .notebook-hud .round-flap__sheet > ol,
+.hud-surface .notebook-hud .round-flap__sheet > ul { margin: 0 0 8px; padding-left: 20px; }
+.hud-surface .notebook-hud .round-flap__sheet li { margin: 0 0 5px; font-size: 14px; line-height: 1.75; }
+.hud-surface .notebook-hud .round-runlist { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.hud-surface .notebook-hud .round-runlist li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 14px; }
+
+/* ── 进度绳：一根线，三个刻痕，一颗木珠 ───────────────────────────────────
+   上一版是三枚带框的药丸（讲一遍/试一次/看收获），屏上读起来是三个系统状态。
+   这里是一根线上的三个位置：走过的地方线是实心的，脚下那一格挂着一颗木珠，还没到的
+   只是一道浅刻。判定仍然全部来自 `roundTrackV1`，这里只负责把它长成一根线。 */
+.hud-surface .notebook-hud .round-thread {
+  position: relative;
+  margin: 4px 0 0;
+  padding: 0 0 0 22px;
+  list-style: none;
+  display: grid;
+  gap: 16px;
+}
+.hud-surface .notebook-hud .round-thread::before {
+  /* 那根线。它是"这一轮的进程"，不是分隔线，所以是竖着的、实心的。 */
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--hud-paper-deep);
+  box-shadow: 1px 0 2px rgba(43, 27, 17, 0.16);
+}
+.hud-surface .notebook-hud .round-thread > li { position: relative; display: grid; grid-template-columns: 1fr; gap: 1px; }
+.hud-surface .notebook-hud .round-thread__bead {
+  position: absolute;
+  left: -22px;
+  top: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50% 46% 52% 48%;
+  background: var(--hud-paper-light);
+  box-shadow: inset 0 -2px 0 rgba(43, 27, 17, 0.18), 0 1px 3px rgba(43, 27, 17, 0.2);
+}
+.hud-surface .notebook-hud .round-thread > li[data-mark="done"] .round-thread__bead {
+  background: var(--hud-mint);
+  box-shadow: inset 0 -2px 0 rgba(43, 27, 17, 0.16), 0 1px 3px rgba(43, 27, 17, 0.18);
+}
+.hud-surface .notebook-hud .round-thread > li[data-mark="current"] .round-thread__bead {
+  /* 木珠：脚下那一格。它比别的珠子大一圈、颜色更深，是这一页唯一的"现在"。 */
+  width: 18px;
+  height: 18px;
+  left: -24px;
+  top: 2px;
+  background: radial-gradient(circle at 34% 28%, #f3a878, var(--hud-clay));
+  box-shadow: 0 3px 6px rgba(78, 38, 22, 0.3);
+}
+.hud-surface .notebook-hud .round-thread__label { color: var(--hud-ink); font-size: 15px; font-weight: 750; line-height: 1.5; }
+.hud-surface .notebook-hud .round-thread > li[data-mark="todo"] .round-thread__label { color: var(--hud-soft); font-weight: 650; }
+.hud-surface .notebook-hud .round-thread__note { color: var(--hud-soft); font-size: 12px; line-height: 1.6; }
+
+/* ── 演示：一张摊在桌上、比笔记纸略小并稍稍错开的大纸 ────────────────────
+   上一版把演示折进一个 `<details open>` 里，标题写"跟着演示看一遍"——于是这一页最该
+   被看见的东西排在一堆折叠区中间，还要先点一下才展开。现在它就是**那一页演示本身**：
+   纸夹、回角、真实的投影，摆在右栏，不折、不藏、不加标题。 */
+.hud-surface .notebook-hud .round-sheet {
+  position: relative;
+  margin: 6px 0 0 -8px;
+  padding: 15px 15px 17px;
+  border-radius: 7px 22px 6px 20px;
+  background: var(--hud-paper-light);
+  box-shadow: 0 14px 30px rgba(43, 27, 17, 0.22), 0 3px 8px rgba(43, 27, 17, 0.14);
+  transform: rotate(-0.25deg);
+}
+.hud-surface .notebook-hud .round-sheet__clip {
+  /* 回形针：它把那张纸"夹在"这一页上，所以演示是这一页的一部分而不是外挂的一屏。 */
+  position: absolute;
+  top: -12px;
+  right: 22px;
+  width: 13px;
+  height: 42px;
+  border: 3px solid #9aa6a0;
+  border-bottom-color: transparent;
+  border-radius: 8px 8px 0 0;
+  transform: rotate(14deg);
+  box-shadow: 0 2px 4px rgba(43, 27, 17, 0.2);
+}
+.hud-surface .notebook-hud .round-sheet__fold {
+  /* 折角：右下角翻起来的那一小块。它说明这是一张**放得下的纸**，不是一块面板。 */
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 34px;
+  height: 34px;
+  background: linear-gradient(135deg, transparent 48%, var(--hud-paper-deep) 49% 100%);
+  border-bottom-right-radius: 6px 20px;
+  pointer-events: none;
+}
+.hud-surface .notebook-hud .round-sheet .artifact-frame-host { margin: 0; }
+.hud-surface .notebook-hud .round-sheet .artifact-frame-host__caption { margin-top: 8px; }
+
+/* ── 就地作答的工位 ────────────────────────────────────────────────────── */
+.hud-surface .notebook-hud .round-bench { display: flex; flex-direction: column; gap: 14px; }
+.hud-surface .notebook-hud .round-bench .actions { margin-top: 18px; }
+.hud-surface .notebook-hud .round-bench .button { min-height: 40px; }
+
+.hud-surface .notebook-hud .notebook-actions__extras { align-self: center; }
+.hud-surface .notebook-hud .notebook-actions__extras[open] { position: relative; }
+.hud-surface .notebook-hud .notebook-actions--reading { align-items: center; gap: 8px 12px; }
+.hud-surface .notebook-hud .notebook-actions__next { display: flex; flex: 1 1 320px; min-width: 0; align-items: center; gap: 12px; }
+.hud-surface .notebook-hud .notebook-actions__why { flex: 1; min-width: 0; overflow: hidden; color: var(--hud-soft); font-size: 12px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+.hud-surface .notebook-hud .notebook-actions__next .button { flex: none; }
+.hud-surface .notebook-hud .notebook-actions--reading .notebook-actions__extras[open] { flex: 1 1 100%; }
+.hud-surface .notebook-hud .notebook-actions__drawer { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 9px; }
+@media (max-width: 760px) {
+  .hud-surface .notebook-hud .notebook-actions__next { flex-basis: 100%; }
+  .hud-surface .notebook-hud .notebook-actions__why { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+}
+@media (max-width: 760px) {
+  /* 紧凑视口只收紧纵向留白。书桌构图在窄视口**竖过来**：先是那条读的线，
+     物件（进度绳、演示大纸）落到线下面——不是把两栏压扁，那会让演示那张纸
+     窄到放不下它自己的图形。 */
+  .hud-surface .notebook-hud .round-desk__body { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+  .hud-surface .notebook-hud .round-desk__objects { position: static; }
+  .hud-surface .notebook-hud .round-slip--question { padding: 17px 19px 19px; }
+  .hud-surface .notebook-hud .round-slip__question { font-size: 19px; }
+  .hud-surface .notebook-hud .round-prose__body { font-size: 16px; line-height: 1.9; }
+  .hud-surface .notebook-hud .round-slip--example { margin-left: 0; }
+  .hud-surface .notebook-hud .round-desk__foot { margin-top: 0; padding-top: 16px; }
+  .hud-surface .artifact-frame-host__stage { border-radius: 13px 16px 12px 15px; }
+}
+
+/* 宽视口下演示纸不必与讲解抢主位，但**它仍然是这一页最该被看见的东西**，
+   所以右栏在 ≥1400px 再放宽一档，让模型写的那页有地方铺开。 */
+@media (min-width: 1400px) {
+  .hud-surface .notebook-hud .round-desk__body { grid-template-columns: minmax(0, 1fr) minmax(360px, 440px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .hud-surface .notebook-hud .notebook-leaf { transition: none; transform: none; }
-  .hud-surface .notebook-hud .notebook-leaf:is(:hover, :active, [aria-pressed="true"]) { transform: none; }
   .hud-surface .notebook-hud .notebook-reading-outline__bookmark { transition: none; transform: none; }
   .hud-surface .notebook-hud .notebook-reading-outline__bookmark:is(:hover, :active) { transform: none; }
   .hud-surface .notebook-hud .notebook-reading-outline__toggle { transition: none; transform: none; }
@@ -282,15 +740,107 @@
   .hud-surface .note-library-desk .note-shelf-search input { font-size: 12px; }
   .hud-surface .note-library-desk .current-note h2 { font-size: 17px; }
   .hud-surface .note-library-desk .book-cover h3 { font-size: 12px; }
-  .hud-surface .notebook-hud .notebook-leaves { gap: 5px; margin: 10px 0; padding: 5px 0 9px; }
-  .hud-surface .notebook-hud .notebook-leaf { gap: 4px; min-height: 33px; padding: 6px 9px; font-size: 12px; }
-  .hud-surface .notebook-hud .notebook-leaf > svg { width: 13px; height: 13px; }
   .hud-surface .notebook-hud .notebook-leaf-intro h3 { font-size: 18px; }
   .hud-surface .notebook-hud .notebook-note { font-size: 12px; }
 }
 
-/* A folded paper tuck within the notebook; the room and companion keep their seat. */
-.hud-surface .note-reflection-tuck { margin: 24px 0 12px; padding: 14px 18px; background: var(--hud-paper-deep); border: 3px solid var(--hud-cream); border-radius: 17px 23px 16px 20px; box-shadow: var(--hud-shadow-small); color: var(--hud-ink); overflow-wrap: anywhere; }
+/* ── 首页「只推一件」（39 §12.1）──────────────────────────────────────────
+   这一条此前**渲染层一个调用都没有**：服务端、路由、IPC、preload、合同都齐了，
+   连「理由必填非空」「swappableCount 为 0 时那颗按钮不画」都写死了，但没有人调。
+   于是 §12.1 那两句最要紧的承诺一句也没兑现——「可换一个或暂不处理」的两颗按钮
+   在产品里**不存在**。
+
+   排版纪律：理由由服务端按真读数生成，渲染层一个字不改写（与今日复习那一批同一条
+   纪律，见 `TodayBatchSurface`）。空理由就是一句没有出处的断言。 */
+.hud-surface .home-next-step {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0 0 12px;
+  padding: 13px 16px;
+  border-left: 4px solid var(--hud-mint-deep, var(--hud-green));
+  border-radius: 0 15px 14px 0;
+  background: var(--hud-paper-light);
+  color: var(--hud-ink);
+}
+.hud-surface .home-next-step--quiet {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  border-left: 0;
+  border-radius: 13px 18px 12px 16px;
+  color: var(--hud-soft);
+  font-size: 13px;
+}
+.hud-surface .home-next-step__head { margin: 0; font-size: 15px; font-weight: 650; line-height: 1.7; }
+.hud-surface .home-next-step__reason { margin: 0; color: var(--hud-soft); font-size: 13px; line-height: 1.75; }
+.hud-surface .home-next-step__failure {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--hud-peach);
+  color: var(--hud-ink);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.hud-surface .home-next-step__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hud-surface .home-next-step ul { margin: 4px 0 0; padding-left: 20px; color: var(--hud-ink); font-size: 14px; line-height: 1.8; }
+.hud-surface .home-next-step p { margin: 0; }
+
+/* ── 一次失败的四种样子（39 §13.3／§13.4）────────────────────────────────
+   此前所有失败都是同一条 `.small.notebook-note` 灰字 + `role="alert"`，摆在
+   纸片最底下——于是「还在准备讲解」这种**成功受理的回执**和「真的没做成」
+   长得一模一样。分四档不是为了好看，是为了每一档都能配上它该有的出路：
+   pending 不播报、不给重试；retryable 给就地重试；blocked 指去哪解决、不给
+   重试（给了就是骗人）。 */
+.hud-surface .round-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 12px 15px;
+  border-radius: 13px 18px 12px 16px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--hud-ink);
+  overflow-wrap: anywhere;
+}
+.hud-surface .round-notice__line { display: flex; align-items: flex-start; gap: 9px; margin: 0; }
+.hud-surface .round-notice__icon { flex: none; margin-top: 3px; }
+.hud-surface .round-notice__kind { display: block; margin-bottom: 2px; font-size: 12px; font-weight: 800; letter-spacing: .04em; }
+.hud-surface .round-notice__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 12px; padding-left: 24px; }
+.hud-surface .round-notice__actions .button { min-height: 36px; }
+
+/* 等待：安静。它不是错误，不该有一张红脸。 */
+.hud-surface .round-notice--pending {
+  align-items: center;
+  flex-direction: row;
+  border: 1px dashed var(--hud-line-strong);
+  background: transparent;
+  color: var(--hud-soft);
+}
+.hud-surface .round-notice--pending .round-notice__icon { animation: round-notice-spin 1.1s linear infinite; }
+.hud-surface .round-notice--pending .round-notice__kind { color: var(--hud-green); }
+@keyframes round-notice-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .hud-surface .round-notice--pending .round-notice__icon { animation: none; }
+}
+
+/* 失败：一块真的需要被看见的东西。桃色左边线与正文里的"待核对"同一族。 */
+.hud-surface .round-notice--failed,
+.hud-surface .round-notice--blocked {
+  border-left: 4px solid var(--hud-peach);
+  background: color-mix(in srgb, var(--hud-butter) 26%, var(--hud-paper-light));
+}
+.hud-surface .round-notice--failed .round-notice__kind,
+.hud-surface .round-notice--blocked .round-notice__kind { color: var(--hud-peach); }
+.hud-surface .round-notice--blocked { border-left-color: var(--hud-soft); }
+.hud-surface .round-notice--blocked .round-notice__kind { color: var(--hud-soft); }
+
+/* A folded paper tuck within the notebook; the room and companion keep their seat.
+   它原本是四张纸里的最后一张：3px 奶油边 + 不规则圆角 + 投影。压平后它是一张
+   **便签**——靠一条桃色装订线和一点点留白表明"这是另一样东西"，不再自己糊
+   一张纸：它本来就在纸上。 */
+.hud-surface .note-reflection-tuck { margin: 24px 0 12px; padding: 14px 0 14px 16px; background: transparent; border: 0; border-left: 4px solid var(--hud-peach); border-radius: 0; box-shadow: none; color: var(--hud-ink); overflow-wrap: anywhere; }
 .hud-surface .note-reflection-anchor { scroll-margin-top: 88px; }
 .hud-surface .note-reflection-tuck > summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-weight: 700; cursor: pointer; min-height: 30px; }
 .hud-surface .note-reflection-tuck > summary span { color: var(--hud-soft); font-size: 13px; }
@@ -322,3 +872,277 @@
 .hud-surface .note-reflection-bookmarks article { padding: 16px 0; border-bottom: 1px dashed var(--hud-paper); }
 .hud-surface .note-reflection-actions .text-action { display: inline-flex; gap: 5px; align-items: center; min-height: 32px; }
 .hud-surface .note-reflection-actions { margin-top: 14px; }
+
+/* ── 核心路线册页（39d W4-5 ③；PRD §4.4）─────────────────────────────────
+   一张翻开的册页：左边一列纸签（每个核心问题一枚），右上是那句结论。
+   刻意**不用**表格、进度条或百分比环——§4.1 明写目录不可靠时不承诺完整覆盖，
+   而一个环会让人把"我们还没敢承诺"读成"已经走了八成"。 */
+.hud-surface .notebook-hud .notebook-route { margin: 22px 0 4px; }
+.hud-surface .notebook-hud .notebook-route__head {
+  padding: 14px 17px 13px 20px;
+  border: 3px solid var(--hud-cream);
+  border-left: 6px solid var(--hud-mint);
+  border-radius: 19px 15px 22px 16px;
+  background: var(--hud-paper-light);
+  box-shadow: var(--hud-shadow-small);
+}
+.hud-surface .notebook-hud .notebook-route__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  color: var(--hud-ink);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.hud-surface .notebook-hud .notebook-route__title svg { color: var(--hud-mint-deep, var(--hud-green)); }
+.hud-surface .notebook-hud .notebook-route__verdict { margin: 0; color: var(--hud-ink); font-size: 15px; line-height: 1.85; }
+.hud-surface .notebook-hud .notebook-route__scope,
+.hud-surface .notebook-hud .notebook-route__failure {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 10px 0 0 !important;
+  padding-top: 9px;
+  border-top: 1px dashed var(--hud-line);
+  color: var(--hud-soft) !important;
+  font-size: 12px !important;
+  line-height: 1.7 !important;
+}
+.hud-surface .notebook-hud .notebook-route__failure svg { flex: 0 0 auto; margin-top: 2px; color: var(--hud-peach); }
+
+/* 纸签列：每一条是斜着贴上来的一枚签，不是表格行。 */
+.hud-surface .notebook-hud .notebook-route__list { margin: 14px 0 0; }
+.hud-surface .notebook-hud .notebook-route__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 7px 12px;
+  margin-bottom: 10px;
+  padding: 12px 16px 12px 18px;
+  border: 2px solid var(--hud-cream);
+  border-radius: 15px 21px 14px 19px;
+  background: color-mix(in srgb, var(--hud-butter) 22%, var(--hud-paper-light));
+  box-shadow: var(--hud-shadow-small);
+}
+.hud-surface .notebook-hud .notebook-route__item:nth-child(2n) { border-radius: 21px 14px 19px 16px; }
+.hud-surface .notebook-hud .notebook-route__stamp { flex: 0 0 auto; }
+.hud-surface .notebook-hud .notebook-route__label { flex: 1 1 240px; color: var(--hud-ink); font-size: 14px; line-height: 1.8; }
+.hud-surface .notebook-hud .notebook-route__reason { flex: 1 1 100%; color: var(--hud-soft) !important; font-size: 12px !important; line-height: 1.7 !important; }
+
+/* 历史页的一张回看纸和一枚可选安排纸签，沿用同一本册页的厚边与柔影。 */
+.hud-surface .notebook-hud .notebook-round-recap {
+  margin: 18px 0;
+  padding: 18px 20px;
+  border: 3px solid var(--hud-cream);
+  border-radius: 22px 15px 21px 17px;
+  background: var(--hud-paper-light);
+  box-shadow: var(--hud-shadow-small);
+  color: var(--hud-ink);
+}
+.hud-surface .notebook-hud .notebook-round-recap h4 { margin: 0 0 8px; font: 650 18px/1.5 "Noto Serif SC Variable", "Songti SC", serif; }
+.hud-surface .notebook-hud .notebook-round-recap__question { margin: 0 0 10px; font-size: 16px; line-height: 1.75; font-weight: 650; overflow-wrap: anywhere; }
+.hud-surface .notebook-hud .notebook-round-recap__practices { margin: 10px 0; padding-left: 22px; line-height: 1.8; }
+.hud-surface .notebook-hud .notebook-round-recap details { margin: 12px 0; padding: 10px 12px; border-radius: 13px 17px 12px 15px; background: var(--hud-cream); }
+.hud-surface .notebook-hud .notebook-round-recap details p { line-height: 1.8; overflow-wrap: anywhere; }
+.hud-surface .notebook-hud .notebook-round-recap summary,
+.hud-surface .notebook-hud .notebook-review-options summary { cursor: pointer; font-weight: 700; }
+.hud-surface .notebook-hud .notebook-review-options {
+  margin: 18px 0 6px;
+  padding: 12px 16px;
+  border: 2px solid var(--hud-cream);
+  border-radius: 17px 20px 14px 19px;
+  background: color-mix(in srgb, var(--hud-butter) 20%, var(--hud-paper-light));
+  box-shadow: var(--hud-shadow-small);
+}
+.hud-surface .notebook-hud .notebook-review-options[open] { padding-bottom: 16px; }
+.hud-surface .notebook-hud .notebook-review-options > .notebook-note { margin-top: 10px; }
+.hud-surface .notebook-hud .notebook-review-options [data-note-subscription] { border-top: 0; padding-top: 0; }
+.hud-surface .notebook-hud .notebook-review-options .notebook-objective__hold { margin-top: 14px; }
+
+/* A note practice is a short receipt inside the journey, not the card result ceremony. */
+.hud-surface .note-run-receipt {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: clamp(18px, 3vw, 32px);
+  border: 4px solid var(--hud-cream);
+  border-radius: 31px 42px 29px 38px/35px 30px 43px 31px;
+  background: var(--hud-paper-light);
+  box-shadow: var(--hud-shadow);
+  color: var(--hud-ink);
+}
+.hud-surface .note-run-receipt header { padding: 16px 19px; border: 3px solid var(--hud-cream); border-radius: 22px 16px 21px 17px; background: var(--hud-mint); }
+.hud-surface .note-run-receipt header span { color: var(--hud-green); font-size: 12px; font-weight: 800; }
+.hud-surface .note-run-receipt header h2 { margin: 6px 0; font: 680 clamp(22px, 2vw, 29px)/1.45 "Noto Serif SC Variable", "Songti SC", serif; }
+.hud-surface .note-run-receipt header p { margin: 0; font-size: 15px; line-height: 1.7; }
+.hud-surface .note-run-receipt__body { padding: 20px 4px; }
+.hud-surface .note-run-receipt__body > strong { color: var(--hud-green); font-size: 13px; }
+.hud-surface .note-run-receipt__body p { max-width: 65ch; margin: 8px 0 0; font-size: 15px; line-height: 1.8; }
+.hud-surface .note-run-receipt__actions { margin-top: auto; padding: 14px 0 0; border-top: 1px dashed var(--hud-line); }
+.hud-surface .learning-run-focus[data-origin="note_round"] .learning-run-paper__question h2 { font-size: clamp(23px, 2.1vw, 29px); }
+.hud-surface .learning-run-focus[data-origin="note_round"] .learning-run-paper__question p { max-width: 58ch; font-size: clamp(16px, 1.45vw, 19px); line-height: 1.75; }
+
+/* ── 去壳：笔记轮次不住在卡片机的视觉世界里（39 §2 表 / §13.1）──────────────
+   `objective-flow.css` 给**所有**作答屏铺了一整套卡片时代的画布：深绿桌布
+   （`.learning-run-focus` #274c3e）、更深绿的题头栏、一张带 5px 厚边和重投影的
+   奶油纸卡。卡片自己用这套没毛病——但笔记学习的一次尝试落进来时，用户看到的是
+   "学习卡的界面整个套进来，然后界面底部又露出一层背景"。
+
+   笔记轮次不需要新的一套画布，它需要的是**笔记本来就有的那张纸**。所以这里把
+   那一层画布整个撤掉，而不是再叠一层皮：屏上不再有第二种底色。 */
+.hud-surface .learning-run-focus[data-origin="note_round"] {
+  grid-template-rows: auto minmax(0, 1fr);
+  background: transparent;
+}
+/* 题头栏跟着撤：它是那张深绿桌布的一部分。轮次的身份上面已经写过一遍了。 */
+.hud-surface .learning-run-focus[data-origin="note_round"] .learning-run-focus__rail {
+  padding: 0;
+  color: var(--hud-ink);
+  border-bottom: 0;
+  background: transparent;
+}
+.hud-surface .learning-run-focus[data-origin="note_round"] .learning-run-focus__mode {
+  padding: 4px 11px;
+  color: var(--hud-green);
+  background: var(--hud-mint);
+}
+.hud-surface .learning-run-focus[data-origin="note_round"] .learning-run-focus__target span,
+.hud-surface .learning-run-focus[data-origin="note_round"] .learning-run-focus__target strong,
+.hud-surface .learning-run-focus[data-origin="note_round"] .learning-run-focus__eligibility,
+.hud-surface .learning-run-focus[data-origin="note_round"] .learning-run-focus__clock small {
+  color: var(--hud-soft);
+}
+/* 「专注时间」是卡片单题机的计时器。笔记轮次没有 180 秒预算，这个钟在这里
+   只会让人以为答不完就要被赶走——收进次要信息，字号与正文分开。 */
+.hud-surface .learning-run-focus[data-origin="note_round"] .learning-run-focus__clock b {
+  color: var(--hud-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+/* 身体：撤掉木纹桌布与绿色渐变，改回纸面。
+   `focus-study-desk-v1.png` 是卡片那张桌子的贴图，不该出现在笔记纸上。 */
+.hud-surface .learning-run-focus[data-origin="note_round"] .learning-run-focus__body {
+  padding: 0;
+  background: none;
+}
+/* 纸卡：撤掉 5px 厚边和那张重投影。它现在就是笔记纸本身，再套一张卡
+   就是"背景套背景"。 */
+.hud-surface .learning-run-focus[data-origin="note_round"] .learning-run-paper {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.hud-surface .learning-run-focus[data-origin="note_round"] .learning-run-paper__scroll {
+  padding: 20px clamp(16px, 3vw, 34px) 22px;
+}
+/* 结算回执同理：`.note-run-receipt` 自带 4px 奶油边 + 31/42/29/38 不规则圆角 +
+   投影，是**又一层纸**。它上面那个薄荷 header 也是一个独立小卡。两层一起撤掉，
+   回执直接坐在笔记纸上。 */
+.hud-surface .note-run-receipt {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.hud-surface .note-run-receipt header {
+  padding: 15px 0 17px;
+  border: 0;
+  border-bottom: 1px solid var(--hud-line);
+  border-radius: 0;
+  background: transparent;
+}
+.hud-surface .note-run-receipt__body { padding: 20px 0; }
+.hud-surface .note-run-receipt__actions { padding: 15px 0 0; }
+
+/* ── 动态讲解的落地面（39 §6.1／§6.3）────────────────────────────────────
+   这一组之前**一条规则都没有**：`.artifact-frame-host` 与它的 iframe 在全项目
+   四个样式表里都搜不到，于是那个 iframe 是完全裸的——没有尺寸、没有边框、
+   父侧又量不到它的内容（不透明 origin），结果是画面缩成一小块、frame 内部
+   自己长出滚动条、"共 N 步"孤零零飘在旁边。
+
+   两条硬约束写在这里，不是审美偏好：
+     1. **产物内部永远不滚**。高度由产物自己报（`shared/artifact-frame.ts` 的
+        `contentHeight`），父侧夹上下限后写进行内 style；超上限时滚的是**外层**
+        `.artifact-frame-host__stage`，不是 iframe 内部。
+     2. **它是纸面上的一个凹槽，不是又一张纸**。讲解面已经有纸了，这里再叠一张
+        带投影的卡就是"背景套背景"——所以只用一条内描边表示"嵌进去"，不投影。 */
+.hud-surface .artifact-frame-host {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+.hud-surface .artifact-frame-host__stage {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-height: 1600px;
+  overflow: hidden auto;
+  border: 2px solid var(--hud-line);
+  border-radius: 15px 19px 14px 18px;
+  background: var(--hud-paper);
+  scrollbar-color: rgba(79, 57, 39, 0.42) transparent;
+  scrollbar-width: thin;
+}
+.hud-surface .artifact-frame-host__frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  /* 高度走行内 style（产物自己报的内容高度）；这里只兜住"还没量到"的那一瞬，
+     避免 iframe 塌成默认的 150px 闪一下。 */
+  min-height: 180px;
+  color-scheme: light;
+}
+/* 等待态：压一层薄雾，不遮内容高度，所以纸面不会在 ready 时跳一下。 */
+.hud-surface .artifact-frame-host__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin: 0;
+  color: var(--hud-soft);
+  background: color-mix(in srgb, var(--hud-paper) 82%, transparent);
+  font-size: 13px;
+  line-height: 1.7;
+  pointer-events: none;
+}
+.hud-surface .artifact-frame-host__spinner { animation: artifact-frame-spin 1.1s linear infinite; }
+@keyframes artifact-frame-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .hud-surface .artifact-frame-host__spinner { animation: none; }
+}
+.hud-surface .artifact-frame-host__caption,
+.hud-surface .artifact-frame-host__hint,
+.hud-surface .artifact-frame-host__notice {
+  margin: 0;
+  color: var(--hud-soft);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.hud-surface .artifact-frame-host__caption { display: flex; align-items: center; gap: 6px; }
+/* 失败态是**事实**不是装饰：给一条桃色左边线，和正文里的"待核对"同一族记号。 */
+.hud-surface .artifact-frame-host__caption--error {
+  padding-left: 10px;
+  border-left: 3px solid var(--hud-peach);
+  color: var(--hud-ink);
+}
+.hud-surface .artifact-frame-host--degraded {
+  padding: 14px 16px;
+  border: 2px dashed var(--hud-line-strong);
+  border-radius: 15px 19px 14px 18px;
+  background: var(--hud-paper-light);
+  color: var(--hud-ink);
+}
+.hud-surface .artifact-frame-host--degraded .artifact-frame-host__notice { margin-bottom: 10px; }

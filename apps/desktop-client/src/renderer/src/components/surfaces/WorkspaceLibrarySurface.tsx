@@ -132,11 +132,17 @@ function SurfaceDataState({
   message,
   detail,
   onRetry,
+  onContinue,
+  continueLabel,
+  busy = false,
 }: {
   readonly kind: "loading" | "error" | "empty";
   readonly message: string;
   readonly detail: string;
   readonly onRetry?: () => void;
+  readonly onContinue?: () => void;
+  readonly continueLabel?: string;
+  readonly busy?: boolean;
 }) {
   return (
     <div className={`approved-state approved-state--${kind}`} role={kind === "error" ? "alert" : "status"}>
@@ -146,6 +152,7 @@ function SurfaceDataState({
       <strong>{message}</strong>
       <p>{detail}</p>
       {kind === "error" && onRetry ? <button type="button" className="surface-primary" onClick={onRetry}><RefreshCw size={15} aria-hidden="true" />重新读取</button> : null}
+      {kind === "empty" && onContinue ? <button type="button" className="surface-primary" onClick={onContinue} disabled={busy}>{busy ? "正在读取…" : continueLabel ?? "继续读取"}</button> : null}
     </div>
   );
 }
@@ -246,7 +253,7 @@ const PERSONAL_BUCKETS = [
 ] as const satisfies ReadonlyArray<{ key: Exclude<ObjectiveLibraryFilter, "all">; label: string; hint: string }>;
 
 const FILTER_BUCKETS = [
-  { key: "all", label: "全部", hint: "这个工作区里全部的学习卡" },
+  { key: "all", label: "全部", hint: "已载入的全部学习卡" },
   ...PERSONAL_BUCKETS,
 ] as const satisfies ReadonlyArray<{ key: ObjectiveLibraryFilter; label: string; hint: string }>;
 
@@ -375,21 +382,23 @@ export function ObjectiveLibrarySurface() {
     writeObjectiveLibraryView({ query, filter });
   }, [filter, query]);
 
-  const serverFocus = page?.items.find((item) => item.objectiveId === primaryFocusId) ?? null;
-  const activeGoal = serverFocus ?? page?.items.find((item) => isActionable(item.primaryAction)) ?? page?.items[0] ?? null;
+  // 目标可以直接从笔记学习。只有真正保存了卡片的目标才属于学习卡册；
+  // 服务端仅在有关联卡片时下发 cardStrategy，空值不能被画成一张卡。
+  const cardItems = useMemo(() => (page?.items ?? []).filter((item) => item.cardStrategy !== null), [page]);
+  const serverFocus = cardItems.find((item) => item.objectiveId === primaryFocusId) ?? null;
+  const activeGoal = serverFocus ?? cardItems.find((item) => isActionable(item.primaryAction)) ?? cardItems[0] ?? null;
   const counts = useMemo(() => {
-    const items = page?.items ?? [];
-    return items.reduce((summary, item) => {
+    return cardItems.reduce((summary, item) => {
       const tone = objectiveStateTone(item.personalState.state);
       if (objectiveStateNeedsAttention(item.personalState.state)) summary.attention += 1;
       if (tone === "progress") summary.progress += 1;
       if (tone === "calm") summary.stable += 1;
       return summary;
     }, { attention: 0, progress: 0, stable: 0 });
-  }, [page]);
+  }, [cardItems]);
   const visibleGoals = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
-    return (page?.items ?? []).filter((item) => {
+    return cardItems.filter((item) => {
       const tone = objectiveStateTone(item.personalState.state);
       const matchesFilter = filter === "all"
         || (filter === "attention" && objectiveStateNeedsAttention(item.personalState.state))
@@ -401,7 +410,7 @@ export function ObjectiveLibrarySurface() {
         .filter(Boolean)
         .some((value) => value!.toLocaleLowerCase("zh-CN").includes(normalizedQuery));
     });
-  }, [filter, page, query]);
+  }, [cardItems, filter, query]);
   const orderedVisibleGoals = useMemo(
     () => orderObjectivesForQuest(visibleGoals, primaryFocusId, queuePriorityIds),
     [primaryFocusId, queuePriorityIds, visibleGoals],
@@ -424,7 +433,7 @@ export function ObjectiveLibrarySurface() {
     return groups;
   }, [orderedVisibleGoals]);
   const activeMode = activeGoal ? runModePresentation(activeGoal.primaryAction) : null;
-  const recentGoal = page?.items.find((item) => item.objectiveId === lastObjectiveId) ?? null;
+  const recentGoal = cardItems.find((item) => item.objectiveId === lastObjectiveId) ?? null;
 
   const openObjective = (objectiveId: string) => {
     writeObjectiveLibraryView({ lastObjectiveId: objectiveId });
@@ -473,8 +482,9 @@ export function ObjectiveLibrarySurface() {
    * 打开才取册子里的行；关键词与筛选也**只在打开时登记**。把看不见的行登记进去，
    * 她就可能报出一屏根本没显示的东西（屏上那句"另有 N 个目标在远征册"就是为这件事写的）。
    */
-  const indexCountLine
-    = page?.nextCursor ? `已载入 ${page.items.length} / ${page.total ?? 0} 条` : `共 ${page?.total ?? 0} 条`;
+  const indexCountLine = page?.nextCursor
+    ? `已载入 ${cardItems.length} 张卡`
+    : `共 ${cardItems.length} 张卡`;
   const regionMoreLine = (nodeCount: number) => `另有 ${nodeCount - 2} 个目标在远征册`;
   const truncatedRegion = QUEST_REGIONS
     .map((region) => ({ region, count: questGroups[region.key].length }))
@@ -483,10 +493,9 @@ export function ObjectiveLibrarySurface() {
   const questNodes = QUEST_REGIONS.flatMap((region) => questGroups[region.key]
     .slice(0, 2)
     .map((item) => ({ item, stateLine: formatObjectiveState(item.personalState.state) })));
-  const NO_ACTIVE_GOAL_EMPTY = {
-    message: "还没有活跃目标",
-    detail: "从笔记生成或确认目标后，会在这里形成理解路线。",
-  } as const;
+  const NO_ACTIVE_GOAL_EMPTY = page?.nextCursor
+    ? { message: "这批目标还没有学习卡", detail: "可以继续查找后面的目标；笔记本身可以直接学习。" }
+    : { message: "这里还没有学习卡", detail: "笔记本身可以直接学习。选择制作并保存学习卡后，卡片才会出现在这里。" };
   const goalsNotice
     = focusFailure
       ? focusFailure.slice(0, 200)
@@ -494,11 +503,11 @@ export function ObjectiveLibrarySurface() {
         ? `${NO_ACTIVE_GOAL_EMPTY.message}：${NO_ACTIVE_GOAL_EMPTY.detail}`
         : indexOpen
           ? visibleGoals.length === 0
-            ? `已载入范围内没有匹配目标：${page?.nextCursor ? "可以继续读取后面的目标，或更换条件。" : "换一个关键词或筛选条件。"}`
+            ? `已载入范围内没有匹配卡片：${page?.nextCursor ? "可以继续读取后面的目标，或更换条件。" : "换一个关键词或筛选条件。"}`
             : pageFailure
               ? pageFailure.slice(0, 200)
-              : !page?.nextCursor && page && page.items.length > 0
-                ? "已读到全部目标"
+              : !page?.nextCursor && cardItems.length > 0
+                ? "已读到全部学习卡"
                 : null
           : truncatedRegion
             ? regionMoreLine(truncatedRegion.count)
@@ -553,7 +562,12 @@ export function ObjectiveLibrarySurface() {
     <ApprovedSurfaceFrame family="workshop" eyebrow="学习证据" headingId="objective-library-title" title={HUD_PAGES.goals.title} detail="沿着真实学习证据，一关一关走到真正掌握">
       {loading ? <SurfaceDataState kind="loading" message="正在读取学习卡" detail="状态和进度都来自服务器，不是本机推算的。" /> : null}
       {!loading && failure ? <SurfaceDataState kind="error" message="学习卡暂时不可用" detail={failure} onRetry={() => void load()} /> : null}
-      {!loading && !failure && !activeGoal ? <SurfaceDataState kind="empty" message={NO_ACTIVE_GOAL_EMPTY.message} detail={NO_ACTIVE_GOAL_EMPTY.detail} /> : null}
+      {!loading && !failure && !activeGoal ? (
+        <>
+          <SurfaceDataState kind="empty" message={NO_ACTIVE_GOAL_EMPTY.message} detail={NO_ACTIVE_GOAL_EMPTY.detail} onContinue={page?.nextCursor ? () => void loadMore() : undefined} continueLabel="继续查找学习卡" busy={loadingMore} />
+          {pageFailure ? <p role="alert">{pageFailure}</p> : null}
+        </>
+      ) : null}
       {!loading && !failure && activeGoal ? (
         <div className="objective-expedition">
           <div className="objective-expedition__landscape">
@@ -664,7 +678,7 @@ export function ObjectiveLibrarySurface() {
               <div className="v3-goal-filters" role="group" aria-label="筛选学习卡">
                 {FILTER_BUCKETS.map((bucket) => (
                   <button key={bucket.key} type="button" className={filter === bucket.key ? "is-active" : ""} aria-pressed={filter === bucket.key} title={bucket.hint} onClick={() => setFilter(bucket.key)}>
-                    {bucket.label}<span>{bucket.key === "all" ? page?.items.length ?? 0 : counts[bucket.key]}</span>
+                    {bucket.label}<span>{bucket.key === "all" ? cardItems.length : counts[bucket.key]}</span>
                   </button>
                 ))}
               </div>
@@ -709,10 +723,10 @@ export function ObjectiveLibrarySurface() {
                     </ul>
                   </li>
                 ))}
-                {!visibleGoals.length ? <li className="v3-goal-list__empty" role="status"><Search size={19} aria-hidden="true" /><strong>已载入范围内没有匹配目标</strong><span>{page?.nextCursor ? "可以继续读取后面的目标，或更换条件。" : "换一个关键词或筛选条件。"}</span></li> : null}
+                {!visibleGoals.length ? <li className="v3-goal-list__empty" role="status"><Search size={19} aria-hidden="true" /><strong>已载入范围内没有匹配卡片</strong><span>{page?.nextCursor ? "可以继续读取后面的目标，或更换条件。" : "换一个关键词或筛选条件。"}</span></li> : null}
                 {pageFailure ? <li className="v3-goal-list__paging" role="alert"><span>{pageFailure}</span>{page?.nextCursor ? <button type="button" onClick={() => void loadMore()}>重试读取</button> : null}</li> : null}
                 {page?.nextCursor && !pageFailure ? <li className="v3-goal-list__paging"><button type="button" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "正在读取…" : `继续读取（还有 ${Math.max(0, page.total - page.items.length)} 条）`}</button></li> : null}
-                {!page?.nextCursor && page && page.items.length > 0 ? <li className="v3-goal-list__end" role="status">已读到全部目标</li> : null}
+                {!page?.nextCursor && cardItems.length > 0 ? <li className="v3-goal-list__end" role="status">已读到全部学习卡</li> : null}
               </ul>
             </div> : null}
           </div>

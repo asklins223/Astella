@@ -29,6 +29,11 @@ const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..", "..");
 const SERVICE_FILE = join(REPO_ROOT, "apps/api/src/modules/note-learning-rounds/artifact-failure.ts");
 const ROUND_SERVICE = join(REPO_ROOT, "apps/api/src/modules/note-learning-rounds/round-service.ts");
 const MIGRATION_FILE = join(REPO_ROOT, "apps/api/src/db/migrations/0298_note_learning_round_artifact_failures.sql");
+/**
+ * 0304 把那条 CHECK 拓宽了一档（`generate`）。"四处同宽"要读的是**当前生效**的那一条，
+ * 所以判据读 0304；0298 仍然被读，为的是"原始两档没有被偷偷改过"。
+ */
+const MIGRATION_0304_FILE = join(REPO_ROOT, "apps/api/src/db/migrations/0304_note_round_dynamic_artifact_generation.sql");
 const SCHEMA_FILE = join(REPO_ROOT, "packages/shared/src/db-schema/note-learning-rounds.ts");
 const CONTRACTS_FILE = join(REPO_ROOT, "packages/shared/src/note-learning-round-contracts.ts");
 
@@ -40,30 +45,44 @@ function codeOnly(text: string): string {
 test("四处组合表同宽：判据 / 迁移 CHECK / schema CHECK / 线上合同", () => {
   // 判据这一份
   assert.deepEqual(ARTIFACT_FAILURE_COMBINATIONS_V1.build, ["empty", "over_quota"]);
+  assert.deepEqual(ARTIFACT_FAILURE_COMBINATIONS_V1.generate, ["model_failed", "contract_rejected"]);
   assert.deepEqual(ARTIFACT_FAILURE_COMBINATIONS_V1.persist, ["persist_failed"]);
 
   // 迁移：那条 CHECK 必须逐档列出，而不是只 CHECK stage
-  const migration = readFileSync(MIGRATION_FILE, "utf8");
+  const migration = readFileSync(MIGRATION_0304_FILE, "utf8");
   assert.match(migration, /stage = 'build'\s+AND reason IN \('empty', 'over_quota'\)/,
     "迁移的 CHECK 里 build 档的两档没逐个列出来");
+  assert.match(migration, /stage = 'generate'\s+AND reason IN \('model_failed', 'contract_rejected'\)/,
+    "迁移的 CHECK 里 generate 档没逐个列出来（39d W4-1 尾加的那一档）");
   assert.match(migration, /stage = 'persist' AND reason = 'persist_failed'/,
     "迁移的 CHECK 里 persist 档那一条不见了");
+  // 0298 的原始两档不许被 0304 顺手改过：那是存量行的判据。
+  const original = readFileSync(MIGRATION_FILE, "utf8");
+  assert.match(original, /stage = 'build'\s+AND reason IN \('empty', 'over_quota'\)/,
+    "0298 的原始 CHECK 不见了 ⇒ 存量行当初是靠它挡住的，现在无从对照");
+  assert.match(original, /stage = 'persist' AND reason = 'persist_failed'/);
 
   // schema：同名 CHECK 同一份规则
   const schema = readFileSync(SCHEMA_FILE, "utf8");
   assert.ok(schema.includes("nlraf_stage_reason_chk"),
     "schema 里那条 CHECK 不叫 nlraf_stage_reason_chk ⇒ 它与迁移脱钩了（守卫读不到）");
+  assert.match(schema, /stageReasonCheck: check\("nlraf_stage_reason_chk"/,
+    "schema 里的 CHECK 名与迁移不同名 ⇒ 迁移改的那条不是 drizzle 会生成的那条");
+  assert.match(schema, /\$\{t\.stage\} = 'generate' AND \$\{t\.reason\} IN \('model_failed', 'contract_rejected'\)/,
+    "schema 的 CHECK 里少了一档 generate ⇒ 新增那一档会静默落到某个默认类");
 
   // 线上合同：两档的 reason 枚举
   const contracts = readFileSync(CONTRACTS_FILE, "utf8");
   assert.match(contracts, /z\.literal\("build"\),\s*\n\s*reason: z\.enum\(\["empty", "over_quota"\]\)/,
     "线上合同的 build 档 reason 与判据不同宽");
+  assert.match(contracts, /z\.literal\("generate"\),\s*\n\s*reason: z\.enum\(\["model_failed", "contract_rejected"\]\)/,
+    "线上合同的 generate 档 reason 与判据不同宽");
   assert.match(contracts, /z\.literal\("persist"\),\s*\n\s*reason: z\.literal\("persist_failed"\)/,
     "线上合同的 persist 档 reason 与判据不同宽");
 });
 
 test("判据对「四处同宽」灵敏：迁移里改掉一档，判据必须跟着红", () => {
-  const migration = readFileSync(MIGRATION_FILE, "utf8");
+  const migration = readFileSync(MIGRATION_0304_FILE, "utf8");
   const mutated = migration.replace(
     /stage = 'build'\s+AND reason IN \('empty', 'over_quota'\)/,
     "stage = 'build' AND reason IN ('empty')",
@@ -72,17 +91,34 @@ test("判据对「四处同宽」灵敏：迁移里改掉一档，判据必须�
     !/stage = 'build'\s+AND reason IN \('empty', 'over_quota'\)/.test(mutated),
     "把迁移的 build 档改窄之后判据仍判一致 ⇒ 这条判据读不到那一档（恒真）",
   );
+  // 同样对新增的那一档灵敏：把 generate 档从 CHECK 里拿掉，判据必须读不到。
+  const withoutGenerate = migration.replace(
+    /stage = 'generate'\s+AND reason IN \('model_failed', 'contract_rejected'\)/,
+    "stage = 'generate' AND reason = 'model_failed'",
+  );
+  assert.ok(
+    !/reason IN \('model_failed', 'contract_rejected'\)/.test(withoutGenerate),
+    "把 generate 档改窄之后判据仍判一致 ⇒ 读不到 contract_rejected 那一档（恒真）",
+  );
 });
 
 test("组合非法时抛，不静默丢（那正是「事后查不到成因」这个症状本身）", () => {
   // 这是纯函数那一半，判它"会拒绝"；写库那一半由上面两条 + 迁移的 CHECK 兜。
   assert.equal(isArtifactFailureReasonV1("build", "empty"), true);
   assert.equal(isArtifactFailureReasonV1("build", "over_quota"), true);
+  assert.equal(isArtifactFailureReasonV1("generate", "model_failed"), true);
+  assert.equal(isArtifactFailureReasonV1("generate", "contract_rejected"), true);
   assert.equal(isArtifactFailureReasonV1("persist", "persist_failed"), true);
   assert.equal(isArtifactFailureReasonV1("persist", "over_quota"), false,
     "persist 档接受了 over_quota ⇒ 两列各自合法而组合不存在的那条路开着");
   assert.equal(isArtifactFailureReasonV1("build", "persist_failed"), false);
   assert.equal(isArtifactFailureReasonV1("build", "随便一个字符串"), false);
+  // 新增的 generate 档与旧两档的交叉组合一条也不许开
+  assert.equal(isArtifactFailureReasonV1("generate", "empty"), false);
+  assert.equal(isArtifactFailureReasonV1("generate", "over_quota"), false);
+  assert.equal(isArtifactFailureReasonV1("generate", "persist_failed"), false);
+  assert.equal(isArtifactFailureReasonV1("persist", "model_failed"), false);
+  assert.equal(isArtifactFailureReasonV1("persist", "contract_rejected"), false);
 });
 
 test("不变量②：失败不碰能力证据（一个 learning_* 表都不许出现）", () => {
@@ -111,6 +147,36 @@ test("不变量③：只追加、且同一讲解可有多次失败（重试不�
   assert.ok(
     !/GRANT[^;]*note_learning_round_artifact_failures[^;]*TO ailearn_api[^;]*;[^;]*UPDATE/.test(migration),
     "GRANT 里出现了 UPDATE/DELETE",
+  );
+});
+
+test("只追加触发器带 `app.allow_history_mutation` 绕行口子（0298 头注声明过、函数体漏写）", () => {
+  // 0298 头注第 5 条：「只追加（触发器照 0283/0284/0285 的形状，带
+  // `app.allow_history_mutation` 绕行口子）」。而 0298 的函数体里**没有**那个判断，于是
+  // `teaching_id` 的 ON DELETE CASCADE 被无条件拒绝——只要某条教学行有过失败留痕，那一行
+  // （以及它所属的轮次、笔记）就永远删不掉，而报错来自一条级联出来的 DELETE，隔了三层
+  // 才看得到真正的原因。笔记删除是产品动作，所以这一条要钉住"绕行口子在"，而不只是
+  // 钉住"触发器在"。
+  const current = readFileSync(MIGRATION_0304_FILE, "utf8");
+  assert.match(
+    current,
+    /CREATE OR REPLACE FUNCTION public\.guard_note_learning_round_artifact_failure\(\)[\s\S]*?current_setting\('app\.allow_history_mutation', true\) = 'on'[\s\S]*?COALESCE\(NEW, OLD\)/,
+    "0304 没有把那个绕行口子补上：级联删除仍然会被无条件拒绝（笔记删不掉）",
+  );
+  // 放行时返回 COALESCE(NEW, OLD) 而不是 NULL：BEFORE DELETE 里 NEW 是 NULL，返回 NULL
+  // 的语义是"跳过这一行"（0283 真踩过：删了 0 行却不报错——静默丢数据）。
+  assert.ok(
+    !/allow_history_mutation[\s\S]{0,200}?RETURN NULL;/.test(current),
+    "绕行分支返回 NULL：BEFORE DELETE 里那是「跳过这一行」，于是删除静默不生效",
+  );
+  // 判据对「绕行口子被拿掉」灵敏：把它去掉，下面这条断言必须跟着红（自证）。
+  const mutated = current.replace(
+    /IF current_setting\('app\.allow_history_mutation', true\) = 'on' THEN/,
+    "IF false THEN",
+  );
+  assert.ok(
+    !/current_setting\('app\.allow_history_mutation', true\) = 'on'/.test(mutated),
+    "去掉绕行判断之后判据仍判一致 ⇒ 这条判据读不到它（恒真）",
   );
 });
 
@@ -166,4 +232,12 @@ test("线上合同：stage 判别而不是三个可空字段（§6.2 要对「�
   // teachingId 可空是**设计**，不是漏填
   assert.equal(roundArtifactFailureV1Schema.safeParse({ ...base, teachingId: null }).success, true);
   assert.equal(roundArtifactFailureV1Schema.safeParse(base).success, true);
+  // generate 档（39d W4-1 尾）：模型没成与"没达成完成判据"是两句不同的话，都收得下
+  for (const reason of ["model_failed", "contract_rejected"] as const) {
+    assert.equal(roundArtifactFailureV1Schema.safeParse({ ...base, stage: "generate", reason }).success, true,
+      `generate + ${reason} 被拒了`);
+  }
+  // 但 generate 档不收旧两档：把「外部调用没成」记成「内容是空的」就是谎报
+  assert.equal(roundArtifactFailureV1Schema.safeParse({ ...base, stage: "generate", reason: "empty" }).success, false);
+  assert.equal(roundArtifactFailureV1Schema.safeParse({ ...base, stage: "generate", reason: "over_quota" }).success, false);
 });

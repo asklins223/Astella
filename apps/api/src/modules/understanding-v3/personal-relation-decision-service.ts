@@ -15,6 +15,7 @@
  * 关系需要材料编辑权 + 明确作用范围，那是公共材料的写路径，与 0300/0296 同一支思路，
  * 但它的调用点是编辑动作那一侧，不在这里凭空开一个口。
  */
+import { semanticRelationOfV2 } from "./relation-kind.ts";
 import { and, eq, sql } from "drizzle-orm";
 import {
   personalRelationDecisionsV2,
@@ -302,8 +303,17 @@ export function applyPersonalDecisionsToSnapshotV2<S extends { edges: ReadonlyAr
       return { ...edge, decidable: false };
     }
 
+    // 键里的第三段必须是**具体那一档语义关系**，和写侧同一份推导。
+    // 此���传的是 `kind`——语义边在拓扑里恒为 `relates_to`，于是
+    // 「确认／隐藏」写进去的行永远查不回来：接口回 200、库里那一行在，
+    // 重新读回来这条边却仍是「系统猜的一条」。用户白按了一次。
+    const relation = semanticRelationOfV2(
+      Array.isArray((edge as { reasonCodes?: unknown[] }).reasonCodes)
+        ? (edge as { reasonCodes?: unknown[] }).reasonCodes
+        : [],
+    );
     const decision: RelationEdgeStatusV2 =
-      (from?.id && to?.id ? mine.get(`${from.id} | ${to.id} | ${kind}`) : undefined) ?? "suggested";
+      (from?.id && to?.id ? mine.get(`${from.id} | ${to.id} | ${relation}`) : undefined) ?? "suggested";
     // 只有**真的表过态**的那两档进这张表；`suggested` 是"没有表态"，
     // 写进去会让 ETag 摘要把"没表态"也当成一个需要协商的版本。
     if (edgeId && decision !== "suggested") decisionByEdgeId[edgeId] = decision;

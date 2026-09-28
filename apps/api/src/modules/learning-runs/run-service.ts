@@ -18,6 +18,7 @@
  * - 答案正文不进事件 payload / outbox payload。
  */
 
+import { reviewDimensionForObservationV2, type ReviewDimensionV2 } from "@ailearn/shared/review-dimension-v2";
 import { and, asc, desc, eq, gt, gte, inArray, sql } from "drizzle-orm";
 import { interactionQualifications } from "@ailearn/shared/db-schema/learning-runs";
 import type { ApiTransaction } from "../../db/client.ts";
@@ -49,6 +50,7 @@ import {
 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { cardHintPairV2Schema, type CardHintPairV2 } from "@ailearn/shared/card-generation-v2-contracts";
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
+import { sourceAuthorizationForObjectiveV2 } from "../review/review-subscriptions.ts";
 import { noteLearningRounds } from "@ailearn/shared/db-schema/note-learning-rounds";
 import { validationAssistanceExposures } from "@ailearn/shared/db-schema/validation-v2";
 import { companionSandboxNamespaces } from "@ailearn/shared/db-schema/companion-sandbox";
@@ -86,8 +88,8 @@ import {
   learningRunTargetPublicV2Schema,
   learningRunTargetRevealV2Schema,
 } from "@ailearn/shared";
-import { learningRunOutcomeSchema } from "@ailearn/shared/learning-run-contracts";
-import type { RoundPracticeV1 } from "@ailearn/shared/note-learning-round-contracts";
+import { learningRunOutcomeSchema, taskIntentSchema } from "@ailearn/shared/learning-run-contracts";
+import type { RoundNextStepV1, RoundPracticeV1 } from "@ailearn/shared/note-learning-round-contracts";
 import { computeExposureScopeIdV2 } from "@ailearn/shared/card-generation-v2-hashing";
 import { extractAnswerText } from "@ailearn/shared/card-generation-v2-pipeline";
 import {
@@ -523,6 +525,16 @@ async function resolveV2Scheduling(
   origin: LearningRunOriginV2,
   objectiveId: string,
   semanticTargetFingerprint: string,
+  /**
+   * 这一次要消费的是哪一维的安排（§9.1 / §9.5）。
+   *
+   * 同一个目标现在可能有**两条**待处理安排：一条「记住它」、一条「在新情境里用」。
+   * `findPending` 此前按 subject 取一条、generation 倒序、limit 1——两行 generation
+   * 都是 1，于是它**随便挑一条**：可能这一次答的是提取，却把「应用」那条消费掉了，
+   * 而把「提取」留在原地等下次。§9.5 那句「同一作答只保存一个原始身份，每个目标的
+   * 同一次日程影响最多提交一次」靠的就是这一格挑对。
+   */
+  reviewDimension: ReviewDimensionV2,
 ): Promise<SchedulingAuthorizationV1> {
   if (origin.kind === "review" || origin.kind === "card" || origin.kind === "star_map" || origin.kind === "note_round") {
     const noteImpact = await readObjectiveNoteChangeImpactV1(tx, scope, objectiveId, {
@@ -547,7 +559,8 @@ async function resolveV2Scheduling(
 
   const findPending = async () => {
     const rows = await tx
-      .select({ id: reviewSchedules.id, generation: reviewSchedules.generation })
+      .select({ id: reviewSchedules.id, generation: reviewSchedules.generation,
+        nextReviewAt: reviewSchedules.nextReviewAt, reminderKind: reviewSchedules.reminderKind })
       .from(reviewSchedules)
       .where(and(
         eq(reviewSchedules.workspaceId, scope.workspaceId),
@@ -555,6 +568,9 @@ async function resolveV2Scheduling(
         eq(reviewSchedules.subjectType, "card"),
         eq(reviewSchedules.subjectId, objectiveId),
         eq(reviewSchedules.status, "pending"),
+        // §9.1 事实提取与综合应用分别观察：只取**这一次真正服务**的那一维，
+        // 不在两行之间挑。
+        eq(reviewSchedules.reviewDimension, reviewDimension),
       ))
       .orderBy(desc(reviewSchedules.generation))
       .limit(1)
@@ -570,6 +586,7 @@ async function resolveV2Scheduling(
         generation: reviewSchedules.generation,
         status: reviewSchedules.status,
         nextReviewAt: reviewSchedules.nextReviewAt,
+        reminderKind: reviewSchedules.reminderKind,
       })
       .from(reviewSchedules)
       .where(and(
@@ -588,6 +605,16 @@ async function resolveV2Scheduling(
       throw scheduleGenerationChanged();
     }
     if (sched.status !== "pending") throw scheduleGenerationChanged();
+    if (sched.reminderKind !== "one_time") {
+      const source = await sourceAuthorizationForObjectiveV2(tx, { ...scope, objectiveId });
+      if (source.authorization !== "covered") {
+        throw new LearningRunServiceError(
+          "review_source_inactive",
+          "这项复习的持续授权已暂停，请刷新今日复习",
+          409,
+        );
+      }
+    }
     const now = new Date();
     if (sched.nextReviewAt.getTime() > now.getTime()) {
       throw new LearningRunServiceError(
@@ -650,9 +677,9 @@ async function resolveV2Scheduling(
   // 笔记轮次内的练习（D1 §4.3 / 39d W4-5 ②）：
   // - 轮次本身必须是**开着**的（active/paused）——closed 之后不可恢复，新学习
   //   产生新轮次（D1 §5.1），把练习记到一个已封存的轮次上是静默改历史；
-  // - §9.1「结束一轮都不默认授权未来提醒」⇒ **从不 create_initial**；
+  // - §9.1「结束一轮都不默认授权未来提醒」⇒ 无来源时不 create_initial；
   // - §9.5/§9.6：同一目标已有 pending 安排时复用（这一次练习消费那一次日程），
-  //   没有就只保存学习事实（no_effect），不恢复订阅。
+  //   已有明确有效来源而尚无排程时，结算可建立首次回访。
   if (origin.kind === "note_round") {
     const roundRows = await tx
       .select({ id: noteLearningRounds.id, phase: noteLearningRounds.phase })
@@ -673,7 +700,16 @@ async function resolveV2Scheduling(
       );
     }
     const pending = await findPending();
+    const source = await sourceAuthorizationForObjectiveV2(tx, { ...scope, objectiveId });
     if (pending) {
+      if (pending.nextReviewAt.getTime() > Date.now()) {
+        // Immediate practice in a note round must not consume the delayed
+        // recall that the learner explicitly scheduled for a later day.
+        return { kind: "no_effect", reasonCode: "pending_not_due" };
+      }
+      if (pending.reminderKind !== "one_time" && source.authorization !== "covered") {
+        return { kind: "no_effect", reasonCode: "not_authorized" };
+      }
       return {
         kind: "consume_pending",
         scheduleId: pending.id,
@@ -681,6 +717,14 @@ async function resolveV2Scheduling(
         keyPointId: objectiveId,
         targetFingerprint: semanticTargetFingerprint,
         dueAt: new Date().toISOString(),
+        schedulerPolicyId: "discrete-v2",
+      };
+    }
+    if (source.authorization === "covered") {
+      return {
+        kind: "create_initial",
+        keyPointId: objectiveId,
+        targetFingerprint: semanticTargetFingerprint,
         schedulerPolicyId: "discrete-v2",
       };
     }
@@ -800,6 +844,8 @@ export async function createRunV2(
     originV2,
     objectiveId,
     frozen.snapshot.target.semanticTargetFingerprint,
+    // 判据是这一轮**冻结**下来的 goal：§8.4 里只有「新情境能力检查」服务应用。
+    reviewDimensionForObservationV2({ transferSuitable: request.goal === "transfer" }),
   );
 
   const timeBudgetSeconds = clampTimeBudget(request.requestedTimeBudgetSeconds);
@@ -823,6 +869,22 @@ export async function createRunV2(
     }),
     loadInteractionQualifications(tx),
   ]);
+  let applicationScenario: string | undefined;
+  if (originV2.kind === "note_round" && request.goal === "transfer") {
+    const rows = await tx.execute(sql`SELECT t.application_scenario
+      FROM note_learning_round_targets AS t
+      JOIN note_learning_rounds AS r ON r.id = t.round_id
+        AND r.workspace_id = t.workspace_id AND r.user_id = t.user_id
+        AND r.driving_question_revision = t.driving_question_revision
+      WHERE t.workspace_id = ${workspaceId} AND t.user_id = ${userId}
+        AND t.round_id = ${originV2.roundId} AND r.note_id = ${originV2.noteId}
+        AND t.objective_id = ${objectiveId} AND r.phase IN ('active','paused')`);
+    const value = rows[0]?.application_scenario;
+    if (typeof value !== "string" || !value.trim()) {
+      throw contextStale("这一轮还没有核对通过的新情境，请返回笔记继续学习");
+    }
+    applicationScenario = value;
+  }
   const plannerOptions: PlannerOptions = {
     runId,
     goal: request.goal,
@@ -830,6 +892,7 @@ export async function createRunV2(
     timeBudgetSeconds,
     recentPublicPayloadHashes,
     interactionQualifications,
+    applicationScenario,
   };
   const plan = planRun(
     {
@@ -1076,17 +1139,28 @@ function originObjectiveId(origin: unknown): string {
  * 四格都取自 run 行本身：`phase` 是它走到哪一步，`outcome` 只在**结算之后**才有
  * （`result` 里的那一档），`startedAt` 是它什么时候开的。空数组是真的"还没练过"。
  */
+export type NoteRoundPracticeObservation = RoundPracticeV1 & {
+  objectiveId: string | null;
+  goal: LearningRunPublicV1["goal"];
+  gapFacets: RoundNextStepV1["gapFacets"];
+  gapFacetsKnown: boolean;
+  updatedAt: string;
+};
+
 export async function listNoteRoundPractices(
   tx: ApiTransaction,
   scope: { workspaceId: string; userId: string },
   roundId: string,
-): Promise<RoundPracticeV1[]> {
+): Promise<NoteRoundPracticeObservation[]> {
   const rows = await tx
     .select({
       runId: learningRuns.id,
       phase: learningRuns.phase,
       result: learningRuns.result,
+      origin: learningRuns.origin,
+      goal: learningRuns.goal,
       createdAt: learningRuns.createdAt,
+      updatedAt: learningRuns.updatedAt,
     })
     .from(learningRuns)
     .where(and(
@@ -1094,17 +1168,26 @@ export async function listNoteRoundPractices(
       eq(learningRuns.userId, scope.userId),
       sql`${learningRuns.origin} ->> 'roundId' = ${roundId}`,
     ))
-    .orderBy(asc(learningRuns.createdAt));
+    .orderBy(asc(learningRuns.createdAt), asc(learningRuns.id));
   return rows.map((row) => {
     const outcome = (row.result as { outcome?: unknown } | null)?.outcome;
+    const gapFacets = (row.result as { gapFacets?: unknown } | null)?.gapFacets;
     // 只认得出名字的那几档：`result` 是一个历史形状自由的 jsonb，读侧**不许**
     // 把里面不认识的东西端出去（合同收不下就会在客户端变成"整份拒收"）。
     const parsed = typeof outcome === "string" ? learningRunOutcomeSchema.safeParse(outcome) : null;
+    const parsedGaps = taskIntentSchema.array().safeParse(gapFacets);
+    const objectiveId = row.origin && typeof row.origin === "object"
+      ? (row.origin as { objectiveId?: unknown }).objectiveId : null;
     return {
       runId: row.runId,
       phase: row.phase,
       outcome: parsed?.success ? parsed.data : null,
       startedAt: row.createdAt.toISOString(),
+      objectiveId: typeof objectiveId === "string" ? objectiveId : null,
+      goal: row.goal as LearningRunPublicV1["goal"],
+      gapFacets: parsedGaps.success ? [...new Set(parsedGaps.data)] : [],
+      gapFacetsKnown: parsedGaps.success,
+      updatedAt: row.updatedAt.toISOString(),
     };
   });
 }

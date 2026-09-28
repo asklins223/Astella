@@ -7,8 +7,7 @@
  *
  *  1. **起点由服务端签发**（`practiceStart`）：锚点在这一轮（`originV2.kind = note_round`），
  *     而 `goal` / 时长 / 怎么答三个值与目标的主行动同一份来源；
- *  2. **没有目标就没有起点**：`practiceStart = null`（练习只在目标存在时开 run），
- *     而且目标必须是**这一篇**的——同一工作区里别的笔记的 active 目标不算数；
+ *  2. **当前问题没有已核查目标就没有起点**：旧卡片目标不能顶替本轮问题；
  *  3. **练过的在轮次读侧看得见**：`practices` 里按开出顺序列出，结算之后带上结论；
  *  4. **结算不重开轮次、不重播奖励**：run 走完终态之后，轮次那一行的 phase/revision
  *     一个字没动，也没有第二条轮次冒出来，更不会凭空生成一条教学产物。
@@ -81,6 +80,20 @@ async function openRound(token: string, noteId: string, question: string): Promi
   });
   assert.equal(res.statusCode, 201, `开一轮应当成功：${res.statusCode} ${res.body}`);
   return body(res).round as Record<string, unknown>;
+}
+
+/** This suite tests the practice read side; the generator/grounder is covered by the grounded-learning suite. */
+async function openBoundRound(scenario: Scenario, question: string): Promise<Record<string, unknown>> {
+  const round = await openRound(scenario.token, scenario.noteWithObjective, question);
+  await fixtureSql.begin(async (tx) => {
+    await tx`SELECT set_config('app.workspace_id', ${scenario.seeded.workspaceId}, true)`;
+    await tx`SELECT set_config('app.user_id', ${scenario.seeded.userId}, true)`;
+    await tx`INSERT INTO note_learning_round_targets
+      (workspace_id,user_id,round_id,driving_question_revision,objective_id,objective_revision_id)
+      VALUES (${scenario.seeded.workspaceId},${scenario.seeded.userId},${round.roundId as string},
+        ${round.drivingQuestionRevision as number},${scenario.seeded.objectiveId},${scenario.seeded.objectiveRevisionId})`;
+  });
+  return round;
 }
 
 async function readTeaching(token: string, roundId: string) {
@@ -172,10 +185,13 @@ after(async () => {
 test("有目标的轮次：教学面带回「练一道」的起点，锚点在这一轮上、参数与主行动同一份", async () => {
   const scenario = await setup();
   try {
-    const round = await openRound(scenario.token, scenario.noteWithObjective, "这一轮的练习挂在哪里？");
+    const round = await openBoundRound(scenario, "这一轮的练习挂在哪里？");
     const view = await readTeaching(scenario.token, round.roundId as string);
 
     assert.equal(view.practices.length, 0, "还没练过就是空数组（不是读失败）");
+    assert.deepEqual(view.nextStep, {
+      kind: "attempt", basisRunId: null, gapFacets: [], evidence: "none",
+    });
     const practice = view.practiceStart;
     assert.ok(practice, "有 active 目标时应当给出起点");
     assert.equal(practice.objectiveId, scenario.seeded.objectiveId);
@@ -200,7 +216,7 @@ test("有目标的轮次：教学面带回「练一道」的起点，锚点在�
 test("拿那一发起点开一场 run：练习在轮次读侧看得见，而「练一道」那一格跟着让位", async () => {
   const scenario = await setup();
   try {
-    const round = await openRound(scenario.token, scenario.noteWithObjective, "练一道会不会出现在这一轮里？");
+    const round = await openBoundRound(scenario, "练一道会不会出现在这一轮里？");
     const before = await readTeaching(scenario.token, round.roundId as string);
     const created = await startPractice(scenario, before.practiceStart!);
 
@@ -208,6 +224,7 @@ test("拿那一发起点开一场 run：练习在轮次读侧看得见，而「�
     assert.equal(after.practices.length, 1, "刚开出来的那一场必须出现在这一轮的练习里");
     assert.equal(after.practices[0].runId, created.runId);
     assert.equal(after.practices[0].outcome, null, "还没结算就没有结论");
+    assert.deepEqual([after.nextStep.kind, after.nextStep.basisRunId], ["resume", created.runId]);
     assert.ok(
       ["preparing", "active", "assessing", "checkpoint", "committing", "paused"].includes(after.practices[0].phase),
       `刚开出来的那一场不该是终态：${after.practices[0].phase}`,
@@ -241,7 +258,7 @@ test("拿那一发起点开一场 run：练习在轮次读侧看得见，而「�
 test("结算回轮次：结论读得出来，且轮次一个字没动（不重开、不重播、不生成解释）", async () => {
   const scenario = await setup();
   try {
-    const round = await openRound(scenario.token, scenario.noteWithObjective, "练完之后这一轮会怎样？");
+    const round = await openBoundRound(scenario, "练完之后这一轮会怎样？");
     const before = await readTeaching(scenario.token, round.roundId as string);
     const created = await startPractice(scenario, before.practiceStart!);
     const scope = { workspaceId: scenario.seeded.workspaceId, userId: scenario.seeded.userId };
@@ -281,6 +298,9 @@ test("结算回轮次：结论读得出来，且轮次一个字没动（不重�
     const after = await readTeaching(scenario.token, round.roundId as string);
     assert.equal(after.practices.length, 1);
     assert.equal(after.practices[0].outcome, "declared_unable", "结算的结论要能读得出来");
+    assert.equal(after.nextStep.basisRunId, created.runId, "下一步必须能追溯到这次作答");
+    assert.equal(after.nextStep.evidence, "incomplete", "明确说不会不能冒充已掌握");
+    assert.notEqual(after.nextStep.kind, "apply", "没有覆盖目标时不能跳到迁移");
 
     // 轮次一个字没动：phase 还是 active、revision 还是开出来的那一版、问题没有被改写。
     const rows = await fixtureSql`
@@ -327,7 +347,7 @@ test("结算回轮次：结论读得出来，且轮次一个字没动（不重�
 test("收尾之后才判出来的那一笔：作为带时间的补充回执挂回原轮，不改当时那一格", async () => {
   const scenario = await setup();
   try {
-    const round = await openRound(scenario.token, scenario.noteWithObjective, "先收尾、后判出来的那一轮？");
+    const round = await openBoundRound(scenario, "先收尾、后判出来的那一轮？");
     const before = await readTeaching(scenario.token, round.roundId as string);
     const created = await startPractice(scenario, before.practiceStart!);
     const scope = { workspaceId: scenario.seeded.workspaceId, userId: scenario.seeded.userId };
@@ -415,6 +435,7 @@ test("没有目标的轮次：不给「练一道」的起点（练习只在目�
     const round = await openRound(scenario.token, scenario.noteWithoutObjective, "这一篇没有目标还能练吗？");
     const view = await readTeaching(scenario.token, round.roundId as string);
     assert.equal(view.practiceStart, null, "这一篇没有 active 目标 ⇒ 不该给起点");
+    assert.equal(view.nextStep.kind, "explain", "无卡且无练习目标时，先从已保存笔记生成讲解");
     assert.equal(view.practices.length, 0);
     // 对照：同一个工作区里**有** active 目标（在另一篇名下）——那条收窄是按 noteId 判的，
     // 不是"这个工作区有没有目标"。这条对照让上面那个 null 不是"因为库里没有目标"。
@@ -425,4 +446,14 @@ test("没有目标的轮次：不给「练一道」的起点（练习只在目�
   } finally {
     await teardown(scenario);
   }
+});
+
+test("笔记虽有旧卡片目标，本轮问题未核查前仍不能借它先试", async () => {
+  const scenario = await setup();
+  try {
+    const round = await openRound(scenario.token, scenario.noteWithObjective, "现在的问题需要先准备吗？");
+    const view = await readTeaching(scenario.token, round.roundId as string);
+    assert.equal(view.practiceStart, null);
+    assert.equal(view.nextStep.kind, "explain");
+  } finally { await teardown(scenario); }
 });

@@ -24,14 +24,14 @@ import { and, eq, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 import { reviewSubscriptionsV2 } from "@ailearn/shared/db-schema/evidence";
 import { notes } from "@ailearn/shared/db-schema/note";
-import { learningObjectiveOriginsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+import { learningCardsV2, learningObjectiveOriginsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
 import {
   applySourcePauseV2,
   decideSourceAuthorizationV2,
   type ReviewAuthorizationSourceV2,
   type ReviewSourceAuthorizationV2,
 } from "@ailearn/shared/review-authorization-rules-v2";
-import { visibleNotesCondition } from "../note/visibility.ts";
+import { visibleCardsCondition, visibleNotesCondition } from "../note/visibility.ts";
 import type { ApiTransaction } from "../../db/client.ts";
 
 type SubTx = ApiTransaction;
@@ -446,16 +446,23 @@ export async function sourceAuthorizationForObjectiveV2(
     ));
 
   const cardRow = rows.find((row) => row.subjectType === "objective" && row.source === "card_review");
+  const activeCard = (await tx.select({ id: learningCardsV2.cardId })
+    .from(learningCardsV2)
+    .where(and(
+      eq(learningCardsV2.workspaceId, input.workspaceId),
+      eq(learningCardsV2.objectiveId, input.objectiveId),
+      eq(learningCardsV2.lifecycle, "active"),
+      visibleCardsCondition(input.userId, learningCardsV2.noteVersionId),
+    )).limit(1))[0];
   const noteSubscriptions = rows
     .filter((row) => row.subjectType === "note")
     .map((row) => row.status as "active" | "paused");
 
   return decideSourceAuthorizationV2({
-    cardReview: cardRow ? (cardRow.status as "active" | "paused") : null,
+    cardReview: activeCard && cardRow ? (cardRow.status as "active" | "paused") : null,
     noteSubscriptions,
-    // **2026-09-28 用户裁定**：她按下「保存并开启复习」**本身就是**显式意图 ⇒ 卡这一支
-    // 没有订阅行时**默认 covered**。**笔记那一支一个字都没改**（§9.1「读过笔记不默认
-    // 授权未来提醒」照旧要问），显式 `paused` 也照旧照办。
-    cardActivationIsIntent: true,
+    // 仅实际存在活卡时，历史上的「保存并开启」才可视为卡片授权。无卡目标不能
+    // 凭同一个 objectiveId 被误判成已获卡片授权；它必须由笔记订阅明确覆盖。
+    cardActivationIsIntent: Boolean(activeCard),
   });
 }

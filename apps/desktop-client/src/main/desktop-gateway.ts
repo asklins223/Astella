@@ -343,6 +343,7 @@ import {
   type RecordRecallSourceRevealResultV1,
 } from "@ailearn/shared/recall-waiting-v2-contracts";
 import { understandingTopologySnapshotV3Schema, type UnderstandingTopologySnapshotV3 } from "@ailearn/shared/understanding-topology-v3-contracts";
+import { noteDeepeningV3Schema, type NoteDeepeningV3 } from "@ailearn/shared/note-deepening-v3-contracts";
 import {
   activateCardCandidatesRequestV2Schema,
   candidateActionCommandV2Schema,
@@ -2597,6 +2598,22 @@ export class DesktopGateway {
     return parsed.data;
   }
 
+  async prepareNoteLearningRoundPractice(
+    input: { roundId: string; expectedRevision: number }, requestId?: string,
+  ): Promise<RoundTeachingViewV1> {
+    await this.ensureConnected(requestId);
+    const result = await this.request(
+      `/v2/note-learning-rounds/${this.safeUuid(input.roundId)}/practice-preparation`,
+      { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expectedRevision: input.expectedRevision }) },
+      true, true, requestId,
+    );
+    if (result.status >= 300) throw this.mapResponseError(result.status, result.headers);
+    const parsed = roundTeachingViewV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
   /**
    * 生成一条解释（W4-6 刀二）。回执带着**轮次与产物一起**（服务端定的形状），
    * 所以这一发之后屏幕上那一行轮次与解释都来自同一次读回的版本，不会拼出一次错配。
@@ -2660,6 +2677,36 @@ export class DesktopGateway {
     }, true, true, requestId, undefined, true);
     if (result.status === 304) return { unchanged: true };
     const parsed = setPersonalRelationDecisionV2ResultSchema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+  /**
+   * 星图三层展开的层二与层三（39d W8-1、W8-3；§11.2）。
+   *
+   * **按一篇笔记读，不复用 `getUnderstandingTopology`**：拓扑那一份回答"图上有哪些
+   * 节点"，这一份回答"沿着一篇笔记往下读会依次看到什么"；§11.5「总览只显示当前层，
+   * 局部按需加载」。合在一起就是每一次读星图都把每一篇笔记的作答与反馈搬一遍。
+   *
+   * `limit` 不给就**不给**——本进程不替她决定这一屏看几条（补一个默认值会让服务端
+   * 那句"截断了"变成一个客户端挑的数）。
+   */
+  async getUnderstandingNoteDeepening(input: {
+    noteId: string;
+    limit?: number;
+  }, requestId?: string): Promise<NoteDeepeningV3> {
+    await this.ensureConnected(requestId);
+    const query = new URLSearchParams();
+    if (input.limit !== undefined) query.set("limit", String(input.limit));
+    const suffix = query.toString();
+    const result = await this.request(
+      `/v3/understanding/notes/${encodeURIComponent(input.noteId)}/deepening${suffix ? `?${suffix}` : ""}`,
+      { method: "GET" },
+      true,
+      true,
+      requestId,
+    );
+    const parsed = noteDeepeningV3Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }

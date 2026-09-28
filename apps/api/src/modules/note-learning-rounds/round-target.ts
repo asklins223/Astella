@@ -31,14 +31,21 @@ export async function readRoundTargetId(tx: ApiTransaction, scope: RoundScopeV1,
 
 /** Only independently checked, exactly quoted units can enter the ordinary target freeze chain. */
 export async function persistRoundTarget(tx: ApiTransaction, scope: RoundScopeV1, round: NoteLearningRoundV1,
-  input: TeachingEvidenceInputV1, proposal: RoundTargetDraft, report: RoundTargetGroundingReport): Promise<string> {
+  input: TeachingEvidenceInputV1, proposal: RoundTargetDraft, report: RoundTargetGroundingReport,
+  applicationScenario: string | null = null): Promise<string> {
   const draft = roundTargetDraftSchema.parse(proposal);
-  if (!report.teachingSupported || !report.objectiveSupported || report.units.length !== draft.units.length
+  if (!report.teachingSupported || !report.objectiveSupported || report.publicQuestionSafe !== true
+    || report.units.length !== draft.units.length
     || new Set(report.units.map((unit) => unit.unitId)).size !== draft.units.length
     || report.suspectClaims.some((claim) => claim.unitIds.some((unitId) => draft.units.some((unit) => unit.unitId === unitId)))
     || draft.units.some((unit) => !report.units.some((check) => check.unitId === unit.unitId && check.factSupported && check.criterionSupported))) {
     throw new RoundServiceError("invalid_teaching_content", "练习目标还没有通过依据核查");
   }
+  // Generation happens outside a transaction. Two preparations (or a teaching
+  // and a preparation) can therefore race to bind this same question. Serialize
+  // the binding before reading it, even if their proposed target identities differ.
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(
+    ${`${scope.workspaceId}:${round.roundId}:${round.drivingQuestionRevision}:target`}, 0))`);
   const existingBinding = await readRoundTargetId(tx, scope, round);
   if (existingBinding) return existingBinding;
   const sources = draft.units.map((unit) => {
@@ -135,12 +142,25 @@ export async function persistRoundTarget(tx: ApiTransaction, scope: RoundScopeV1
       provenance: { kind: "note_round", roundId: round.roundId, drivingQuestionRevision: round.drivingQuestionRevision } });
   }
   await tx.execute(sql`INSERT INTO note_learning_round_targets
-    (workspace_id,user_id,round_id,driving_question_revision,objective_id,objective_revision_id)
-    VALUES (${scope.workspaceId},${scope.userId},${round.roundId},${round.drivingQuestionRevision},${objectiveId},${objectiveRevisionId})`);
-  // The explanation has already exposed answer-bearing content: the immediate run is practice only.
-  await tx.insert(learningExposuresV2).values({ workspaceId: scope.workspaceId, userId: scope.userId, exposureId: randomUUID(),
-    objectiveId, objectiveRevision: existing?.currentRevision ?? 1, cardId: null, cardRevision: null, exposureKind: "answer_reveal",
-    contextHash: computeExposureScopeIdV2({ workspaceId: scope.workspaceId, objectiveId }), idempotencyKey: `round-teaching:${round.roundId}:${round.drivingQuestionRevision}`,
-  }).onConflictDoNothing();
+    (workspace_id,user_id,round_id,driving_question_revision,objective_id,objective_revision_id,application_scenario)
+    VALUES (${scope.workspaceId},${scope.userId},${round.roundId},${round.drivingQuestionRevision},${objectiveId},${objectiveRevisionId},${applicationScenario})`);
   return objectiveId;
+}
+
+/** A prepared private target is not an answer reveal. Only a committed teaching does this. */
+export async function recordRoundTeachingExposure(tx: ApiTransaction, scope: RoundScopeV1,
+  round: NoteLearningRoundV1, objectiveId: string): Promise<void> {
+  const objective = (await tx.select({ currentRevision: learningObjectivesV2.currentRevision })
+    .from(learningObjectivesV2).where(and(
+      eq(learningObjectivesV2.workspaceId, scope.workspaceId),
+      eq(learningObjectivesV2.objectiveId, objectiveId),
+      visibleObjectivesCondition(scope.userId, learningObjectivesV2.objectiveId),
+    )).limit(1))[0];
+  if (!objective) throw new RoundServiceError("invalid_teaching_content", "这一轮的练习目标现在不可见");
+  await tx.insert(learningExposuresV2).values({ workspaceId: scope.workspaceId, userId: scope.userId,
+    exposureId: randomUUID(), objectiveId, objectiveRevision: objective.currentRevision,
+    cardId: null, cardRevision: null, exposureKind: "answer_reveal",
+    contextHash: computeExposureScopeIdV2({ workspaceId: scope.workspaceId, objectiveId }),
+    idempotencyKey: `round-teaching:${round.roundId}:${round.drivingQuestionRevision}`,
+  }).onConflictDoNothing();
 }

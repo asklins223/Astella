@@ -334,11 +334,22 @@ function readSitesIn(file: string, source: string): Array<{ file: string; dimens
 }
 
 /**
- * 今天还不认识这一维的读点，按文件数（合计 22 处）。逐处修好就把对应那条删掉。
+ * 还不认识这一维的读点，按文件数。逐处修好就把对应那条删掉。
  *
  * 值的第二种形状是 `{ count, reason }`：**读点照旧登记在案**，同时写明为什么它这一处
  * 不用改成按维度筛。台账不许因为"这一处没关系"就少登一条——那正是它当初漏登的那一类；
  * 写明理由，理由本身也在这份文件里对着代码，过期了会有人看见。
+ *
+ * ── 2026-09-28：维度开始真的有值了 ──────────────────────────────────────
+ * 六个生产方都传了维度（结算按冻结 goal 分提取／应用；卡激活、共享卡个人复习、
+ * 笔记订阅首次回访、一次性提醒都是提取；「恢复并开启」读回被排除那一格原本的维度）。
+ * 于是**两条会挑错行的读点必须先修**，它们已经修好并在下面从台账里删掉：
+ *   - `run-service.ts` 的 `findPending`（原来按 subject 取一条、generation 倒序 limit 1；
+ *     两行 generation 都是 1 ⇒ 这一次答的是提取却可能消费掉"应用"那条）。
+ *   - `run-processing-tick.ts` 的 `clampToManualDateV2`（原来按 subject limit 1 且无排序 ⇒
+ *     另一格的手动日期会来压住这一格的日期）。
+ *
+ * 剩下的按文件登记在下面，每条都写明为什么它这一处**不用**改成按维度筛。
  */
 type BlindReaderEntry = number | { readonly count: number; readonly reason: string };
 const READERS_BLIND_TO_DIMENSION: Record<string, BlindReaderEntry> = {
@@ -346,8 +357,8 @@ const READERS_BLIND_TO_DIMENSION: Record<string, BlindReaderEntry> = {
   "apps/api/src/modules/export/service.ts": 2,
   "apps/api/src/modules/learning-dashboard/service.ts": 1,
   "apps/api/src/modules/learning-objectives/surface-service.ts": 2,
-  "apps/api/src/modules/learning-runs/run-processing-tick.ts": 2,
-  "apps/api/src/modules/learning-runs/run-service.ts": 3,
+  "apps/api/src/modules/learning-runs/run-processing-tick.ts": 1,
+  "apps/api/src/modules/learning-runs/run-service.ts": 2,
   "apps/api/src/modules/review/review-defer-service.ts": 1,
   "apps/api/src/modules/review/service.ts": 3,
   // W5-4 刀一（0297）：这一处**按主键**读一行——用户处理的是界面上那颗具体提醒，

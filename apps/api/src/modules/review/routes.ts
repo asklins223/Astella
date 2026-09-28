@@ -31,6 +31,11 @@ import {
   reviewSubscriptionCommandV2Schema,
   type SubscriptionChangeV2,
 } from "./review-subscriptions.ts";
+import { scheduleStudiedNoteTargetsV2 } from "./note-subscription-schedule.ts";
+import {
+  recordRecallSourceRevealV2,
+  RecallRevealError,
+} from "./recall-reveal-service.ts";
 import {
   acknowledgeOneTimeReminderResultV2Schema,
   acknowledgeOneTimeReminderV2Schema,
@@ -200,6 +205,37 @@ export async function reviewRoutes(app: FastifyInstance) {
   // 提醒（持续安排要走订阅的停订/暂停那一行）。合成一颗开关的界面会把这两句规则表
   // 折叠成一次点击，而折叠掉的那部分正是 §9.1 逐行写死的东西。
 
+  /**
+   * 「先看笔记」（39d W5-4；PRD §7.1、§16.24）。
+   *
+   * **它是一次暴露记账，不是导航**：界面点完那颗按钮仍然可以自己跳去笔记页，
+   * 而这一发保证"读过正文"这件事落进了 `learning_exposures_v2`——§7.1
+   * 「系统随后如实按本次暴露条件处理」里的"随后"就是这一发。
+   *
+   * 路径挂在 `/reviews/v2/` 下（而不是 learning-runs）：**等待态这一段还没有 run**
+   * （题目还在生成），而这一发必须在那时候就成立。
+   */
+  app.post("/reviews/v2/recall-source-reveal", async (req, reply) => {
+    const session = (req as { session?: { workspaceId: string; userId: string } }).session;
+    if (!session) return reply.code(401).send({ error: "unauthorized", message: "请先登录" });
+    try {
+      const result = await withWorkspaceTransaction(
+        { workspaceId: session.workspaceId, userId: session.userId },
+        (tx) => recordRecallSourceRevealV2(
+          tx,
+          { workspaceId: session.workspaceId, userId: session.userId },
+          req.body,
+        ),
+      );
+      return reply.code(200).header("Cache-Control", "no-store").send(result);
+    } catch (error) {
+      if (error instanceof RecallRevealError) {
+        return reply.code(error.statusCode).send({ error: error.code, message: error.message });
+      }
+      throw error;
+    }
+  });
+
   app.post("/reviews/v2/reminders/one-time", async (req, reply) => {
     const parsed = requestOneTimeReminderV2Schema.safeParse(req.body);
     if (!parsed.success) {
@@ -297,7 +333,7 @@ export async function reviewRoutes(app: FastifyInstance) {
         // 409：这一发没有排上，而「没有排上」要用另一句话对用户说（§9.1 行 2）。
         return reply.code(409).send({
           error: "objective_held",
-          message: "你把���个目标设为暂不安排了，所以没有新排提醒。",
+          message: "你把这个目标设为暂不安排了，所以没有新排提醒。",
         });
       }
       return reply.code(outcome.status === "started" ? 201 : 200)
@@ -352,11 +388,22 @@ export async function reviewRoutes(app: FastifyInstance) {
     try {
       const change = await withWorkspaceTransaction(
         { workspaceId: req.session.workspaceId, userId: req.session.userId },
-        (tx) => activateReviewSubscriptionV2(tx, {
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
-          ...parsed.data,
-        }),
+        async (tx) => {
+          const change = await activateReviewSubscriptionV2(tx, {
+            workspaceId: req.session.workspaceId,
+            userId: req.session.userId,
+            ...parsed.data,
+          });
+          if (parsed.data.source === "note_subscription") {
+            await scheduleStudiedNoteTargetsV2(tx, {
+              workspaceId: req.session.workspaceId,
+              userId: req.session.userId,
+              noteId: parsed.data.subjectId,
+              at: new Date(),
+            });
+          }
+          return change;
+        },
       );
       return reply.code(200).header("Cache-Control", "private, no-store").send(subscriptionBody(change));
     } catch (error) {

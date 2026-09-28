@@ -14,6 +14,8 @@ export type HudPageId =
   | "notes"
   | "note-read"
   | "note-edit"
+  | "note-learning"
+  | "note-history"
   | "goals"
   | "goal-detail"
   | "generating"
@@ -75,6 +77,8 @@ export const HUD_PAGE_DESTINATIONS: Readonly<Record<HudPageId, string | null>> =
   notes: "note_library",
   "note-read": null,
   "note-edit": null,
+  "note-learning": null,
+  "note-history": null,
   goals: "objective_library",
   "goal-detail": null,
   generating: null,
@@ -191,6 +195,26 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
       starter: "我先保持安静，你专心写。",
     },
   },
+  "note-learning": {
+    id: "note-learning",
+    number: "08",
+    title: "学这篇笔记",
+    subtitle: "围绕一个问题，读懂、试用、留下这轮结果",
+    plate: "writing",
+    companion: {
+      mode: "ambient", seat: "left", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
+    },
+  },
+  "note-history": {
+    id: "note-history",
+    number: "08",
+    title: "学习足迹",
+    subtitle: "回看这篇笔记的学习记录与以后安排",
+    plate: "writing",
+    companion: {
+      mode: "ambient", seat: "left", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
+    },
+  },
   goals: {
     id: "goals",
     number: "10",
@@ -251,13 +275,13 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     id: "queue",
     number: "15",
     title: "复习队列",
-    subtitle: "到期顺序像一叠待复习卡，下一张始终清楚",
+    subtitle: "到期项像一叠纸签排好顺序，下一项始终清楚",
     plate: "review",
     companion: {
       mode: "ambient", seat: "left", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
     // 队列按 nextReviewAt 升序，也就是最逾期的在最前；「遗忘风险最高」是一个
     // 系统里不存在的模型，「影响更多目标」也不是排序依据。
-      starter: "最逾期的一张排在最前，卡面上的理由条写着它为什么在这里。",
+      starter: "最逾期的一项排在最前，纸签旁的理由条写着它为什么在这里。",
     },
   },
   assessment: {
@@ -298,7 +322,7 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     id: "graph",
     number: "19",
     title: "理解星图",
-    subtitle: "把来源、笔记、学习卡与证据画成一片可漫游的知识宇宙",
+    subtitle: "把来源、笔记、学习目标与证据画成一片可漫游的知识宇宙",
     plate: "observatory",
     companion: {
       mode: "ambient", seat: "left", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,

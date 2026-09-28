@@ -229,6 +229,13 @@ export const noteLearningRoundArtifacts = pgTable(
     html: text("html").notNull(),
     /** 生成时那一版正文的哈希（D3 §5 冻结语义）。 */
     snapshotHash: text("snapshot_hash").notNull(),
+    /**
+     * 实际使用的生成器版本（迁移 0304；§6.3「保存实际使用版本」）。
+     *
+     * 画面上那行 `data-generator-ref` 写的是同一个值，但 HTML 事后没法按生成器分组统计，
+     * 所以库里留一份。默认空串：存量行的生成器版本**无从得知**，不编。
+     */
+    generatorRef: text("generator_ref").notNull().default(""),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -268,8 +275,8 @@ export const noteLearningRoundArtifactFailures = pgTable(
     userId: uuid("user_id").notNull(),
     roundId: uuid("round_id").notNull(),
     teachingId: uuid("teaching_id").references(() => noteLearningRoundTeachings.id, { onDelete: "cascade" }),
-    stage: text("stage").notNull(), // build | persist
-    reason: text("reason").notNull(), // empty | over_quota | persist_failed
+    stage: text("stage").notNull(), // build | generate | persist
+    reason: text("reason").notNull(), // empty | over_quota | model_failed | contract_rejected | persist_failed
     detail: text("detail").notNull().default(""),
     snapshotHash: text("snapshot_hash").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -279,9 +286,10 @@ export const noteLearningRoundArtifactFailures = pgTable(
     teachingIdx: index("nlraf_teaching_idx").on(t.teachingId),
     detailLenCheck: check("nlraf_detail_chk", sql`char_length(${t.detail}) <= 500`),
     snapshotHashCheck: check("nlraf_snapshot_hash_chk", sql`char_length(${t.snapshotHash}) BETWEEN 8 AND 128`),
-    // 与迁移 0298 的同名 CHECK 同一份规则。
+    // 与迁移 0298 建立、0304 拓宽之后的同名 CHECK 同一份规则。
     stageReasonCheck: check("nlraf_stage_reason_chk", sql`(
       (${t.stage} = 'build' AND ${t.reason} IN ('empty', 'over_quota'))
+      OR (${t.stage} = 'generate' AND ${t.reason} IN ('model_failed', 'contract_rejected'))
       OR (${t.stage} = 'persist' AND ${t.reason} = 'persist_failed')
     )`),
   }),

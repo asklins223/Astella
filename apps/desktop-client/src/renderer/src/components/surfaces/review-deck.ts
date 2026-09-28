@@ -61,9 +61,9 @@ export function reviewFormalValidationBlockedLabel(item: ReviewItem): string | n
     : "这次判不出结论：这条目标的评分点读不出可比对的原文证据";
 }
 
-/** "第 3 张 / 共 128 张" — the deck's own position line, against the server total. */
+/** "第 3 项 / 共 128 项" — the queue position against the server total. */
 export function reviewDeckPosition(index: number, total: number): string {
-  return `第 ${index + 1} 张 / 共 ${total} 张`;
+  return `第 ${index + 1} 项 / 共 ${total} 项`;
 }
 
 /**
@@ -78,7 +78,7 @@ export function reviewDeckPosition(index: number, total: number): string {
  */
 export function sameCardEarlierCount(items: readonly ReviewItem[], index: number): number {
   const current = items[index];
-  if (!current) return 0;
+  if (!current || current.cardId === null) return 0;
   return items.slice(0, index).filter((item) => item.cardId === current.cardId).length;
 }
 
@@ -86,6 +86,17 @@ export function sameCardAsEarlierLabel(items: readonly ReviewItem[], index: numb
   const earlier = sameCardEarlierCount(items, index);
   if (earlier === 0) return null;
   return `这${earlier === 1 ? "条与前面那条是同一张卡" : `条前面还有 ${earlier} 条同一张卡`}的排程，需要各自结算一次`;
+}
+
+/** 无卡目标用目标身份识别同一学习内容；不同目标的 null cardId 不能混为一组。 */
+export function sameReviewSubjectAsEarlierLabel(items: readonly ReviewItem[], index: number): string | null {
+  const current = items[index];
+  if (!current) return null;
+  if (current.cardId !== null) return sameCardAsEarlierLabel(items, index);
+  const earlier = items.slice(0, index).filter((item) =>
+    item.cardId === null && item.objectiveId === current.objectiveId).length;
+  if (earlier === 0) return null;
+  return `这${earlier === 1 ? "条与前面那条属于同一学习目标" : `条前面还有 ${earlier} 条同一学习目标`}的排程，需要各自结算一次`;
 }
 
 /** The mockup invented "预计 2 分钟"; the schedule's own round is real. */
@@ -121,11 +132,11 @@ export type ReviewReasonFacts = {
   readonly formalValidationBlocked: string | null;
   readonly overdue: string;
   /**
-   * 已载入队列里属于同一个学习卡的到期卡数（含当前这张）。它回答的是
-   * 「同一个目标还有几张卡」——不是「牵动了几个目标」。
+   * 已载入队列里属于同一个学习目标的到期项数（含当前项）。它回答的是
+   * 「同一个目标还有几项到期」——不是「牵动了几个目标」。
    */
   readonly relatedCards: number;
-  /** 已载入队列覆盖到的不同学习卡数。跨目标的说法只能由它承担。 */
+  /** 已载入队列覆盖到的不同学习目标数。跨目标的说法只能由它承担。 */
   readonly affectedObjectives: number;
   readonly scheduleGeneration: number;
   /** Zero-based seat of the selected card in the loaded queue (head = 0). */
@@ -164,10 +175,10 @@ export function reviewReasonSentence(facts: ReviewReasonFacts): string {
   // 审计 F28：到期、可以开始，但正式验证判不出结论。这句话必须排在"排在第几位"
   // 前面——否则用户读完理由条只知道该做哪张，不知道做完也不会推进排程。
   if (facts.formalValidationBlocked) {
-    return `${facts.overdue}，${facts.formalValidationBlocked}。做这张只能当练习，不会改变复习安排。`;
+    return `${facts.overdue}，${facts.formalValidationBlocked}。做这一项只能当练习，不会改变复习安排。`;
   }
   const parts = [facts.overdue];
-  if (facts.relatedCards > 1) parts.push(`同一张学习卡还有 ${facts.relatedCards - 1} 项到期`);
+  if (facts.relatedCards > 1) parts.push(`同一学习目标还有 ${facts.relatedCards - 1} 项到期`);
   if (facts.scheduleGeneration > 1) parts.push(`已经排到第 ${facts.scheduleGeneration} 轮`);
   // Only the actual head card may claim 队首; a card the reader stepped to
   // names its own seat instead of borrowing the head's claim.

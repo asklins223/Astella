@@ -59,6 +59,7 @@ function stubGateway() {
     practices: [],
     // This revisit has no objective, so it deliberately has no formal practice target.
     practiceStart: null,
+    nextStep: { kind: "review_material", basisRunId: null, gapFacets: [], evidence: "none" },
     gapHelp: { stopped: false, consecutiveHelpCount: 0, threshold: 2 },
     prerequisite: { kind: "none", reason: "no_usable_material", gap: null, largeBranchThreshold: 3 },
     artifactFailure: null,
@@ -160,11 +161,13 @@ describe("隔天复访可疑主张 -> 制卡审核", () => {
 
     // Revisit yesterday's round: an unresolved warning automatically opens the learning leaf.
     await waitFor(() => expect(screen.getAllByText(SOURCE_QUOTE).length).toBeGreaterThan(0));
-    await waitFor(() => expect(screen.getByRole("button", { name: "本轮学习" }).getAttribute("aria-pressed")).toBe("true"));
+    await waitFor(() => expect(screen.getByRole("region", { name: "本轮学习" }).getAttribute("data-learning-scene")).toBe("teaching"));
     await waitFor(() => expect(screen.getByText(CLAIM_REASON)).toBeTruthy());
-    expect(screen.getByText(/核对前，本轮不会把相关主张记作正式学习目标或安排复习/)).toBeTruthy();
+    expect(screen.getByText(/核对前，相关主张不会成为正式学习目标/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "规划学习卡" }));
+    fireEvent.click(screen.getByRole("button", { name: "← 回笔记正文" }));
+    fireEvent.click(screen.getByText("更多笔记操作"));
+    fireEvent.click(screen.getByRole("button", { name: "制作学习卡" }));
     await waitFor(() => expect(screen.getByRole("dialog", { name: "安排这次出题" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "开始生成" }));
 

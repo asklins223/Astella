@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { objectiveListItemV3Schema, type ObjectiveListItemV3 } from "@ailearn/shared/learning-objective-surface-contracts";
 import type { NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
+import type { RoundNextStepV1 } from "@ailearn/shared/note-learning-round-contracts";
 import { NotebookSurface } from "./notebook-surface";
 import { ROUND_COPY, ROUND_PRESETS_V1, STRUCTURE_QUESTION_LABEL_MAX_V1, STRUCTURE_QUESTION_LIMIT_V1, notebookReadingSectionsV1, roundPracticeStateLabelV1, structureQuestionCandidatesV1 } from "./notebook-surface";
 import { useRoomStore } from "../../app/room-store";
@@ -96,6 +97,7 @@ type Api = {
     close: ReturnType<typeof vi.fn>;
     teaching: ReturnType<typeof vi.fn>;
     explain: ReturnType<typeof vi.fn>;
+    preparePractice: ReturnType<typeof vi.fn>;
   };
 };
 
@@ -159,7 +161,7 @@ function installApi(
     /** 这一篇的正文块。默认只有一段（即"没有小节"那一档，见结构另选那组用例）。 */
     blocks?: NoteBlockProjectionV1[];
     /** 轮次回读的第 N 次给什么（缺省 = 每次都给 `openRound` 那一份）。 */
-    openSequence?: Record<string, unknown>[];
+    openSequence?: (Record<string, unknown> | null)[];
     /** 网关那一发回的信封里那个派生格（默认「没动」）。 */
     contentMoved?: boolean;
     /** 这一轮目标引用的依据变化；默认没有已生成的目标。 */
@@ -183,6 +185,7 @@ function installApi(
     practices?: Record<string, unknown>[];
     /** 「练一道」那一发的起点；缺省 = 没有（无目标轮次）。 */
     practiceStart?: Record<string, unknown> | null;
+    nextStep?: RoundNextStepV1;
     /** 缺口帮助停止那一格（W4-6 刀四）；缺省 = 没停。 */
     gapHelp?: Record<string, unknown>;
     /** 这一条解释的动态产物引用（W4-6 刀五）；缺省 = 没有动态版本。 */
@@ -209,6 +212,20 @@ function installApi(
   let openReads = 0;
   let olderPageReads = 0;
   let teachingReads = 0;
+  let prepared = false;
+  const signedNextStep = (teaching: Record<string, unknown> | null): RoundNextStepV1 => {
+    if (options.nextStep) return options.nextStep;
+    const practice = options.practices?.at(-1);
+    const basisRunId = typeof practice?.runId === "string" ? practice.runId : null;
+    if (practice?.outcome === null) return { kind: "resume", basisRunId, gapFacets: [], evidence: "none" };
+    if (practice?.outcome === "demonstrated" || practice?.outcome === "practice_completed") {
+      return { kind: "finish", basisRunId, gapFacets: [], evidence: "independent_demonstrated" };
+    }
+    if (practice?.outcome === "not_assessable") return { kind: "uncertain", basisRunId, gapFacets: [], evidence: "unassessable" };
+    if (practice) return { kind: options.gapHelp?.stopped ? "choose" : "help", basisRunId, gapFacets: [], evidence: "incomplete" };
+    if (!teaching) return { kind: prepared ? "attempt" : "explain", basisRunId: null, gapFacets: [], evidence: "none" };
+    return { kind: options.practiceStart ? "attempt" : "review_material", basisRunId: null, gapFacets: [], evidence: "none" };
+  };
   const api: Api = {
     // 动态产物落盘那一发（W4-6 刀五）：跨桥只回"在不在盘上了"，渲染层读的是这一发的**成败**，
     // 不是那一格（`stored:false`——本来就在——同样是成功）。
@@ -220,6 +237,22 @@ function installApi(
     objective: { list: vi.fn(list) },
     learningRun: {
       start: vi.fn(async () => ok({ runId: RUN_ID, snapshotId: "55555555-4555-4555-8555-555555555555" })),
+      // 就地作答把 `LearningRunBody` 挂进了这一页（2026-09-28 用户裁决），所以这一份
+      // 替身要多几格，否则挂上去的那一刻就抛 `get is not a function`，而用例还在绿——
+      // 那正是"自制替身给了错误信心"（39f §6）那一条。
+      //
+      // 这里**不**伪造一份可作答的快照：run 状态机自己的用例在 `learning-run-surface`
+      // 那一侧。这一组只钉"工位挂没挂上来、页面有没有跳走"。读快照回一份失败回执，
+      // 工位于是显示它自己的"读不到"——真实失败时也是这个样子。
+      get: vi.fn(async () => ({ ok: false as const, workspaceEpoch: 1, error: { code: "run_not_found", message: "这一场已经不在了" } })),
+      getDraft: vi.fn(async () => ({ ok: false as const, workspaceEpoch: 1, error: { code: "run_not_found", message: "这一场已经不在了" } })),
+      getResult: vi.fn(async () => ({ ok: false as const, workspaceEpoch: 1, error: { code: "run_not_found", message: "这一场已经不在了" } })),
+      getReturnContract: vi.fn(async () => ({ ok: false as const, workspaceEpoch: 1, error: { code: "run_not_found", message: "这一场已经不在了" } })),
+      recordActivityLease: vi.fn(async () => ok({})),
+      revealTarget: vi.fn(async () => ok({})),
+      saveDraft: vi.fn(async () => ok({})),
+      submit: vi.fn(async () => ok({})),
+      action: vi.fn(async () => ok({})),
     },
     // W7-3 刀三。两条各自一个替身而不是共用一个 toggle 替身：§9.1 规则表把
     // "设排除"与"恢复并开启"列成两件不同的事，用一个替身会让人以为它们是同一发。
@@ -304,13 +337,20 @@ function installApi(
           teaching: rows[read] ?? null,
           practices: options.practices ?? [],
           practiceStart: options.practiceStart ?? null,
+          nextStep: signedNextStep(rows[read] ?? null),
           gapHelp: options.gapHelp ?? { stopped: false, consecutiveHelpCount: 0, threshold: 2 },
+          prerequisite: { kind: "none", reason: "no_usable_material", gap: null, largeBranchThreshold: 2 },
+          artifactFailure: null,
           artifact: options.artifact ?? null,
         });
       }),
       explain: vi.fn(async () => (options.explainFails
         ? { ok: false as const, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } }
         : ok({ version: 1, round: options.openRound ?? roundRow(), teaching: teachingRow() }))),
+      preparePractice: vi.fn(async () => {
+        prepared = true;
+        return ok({ version: 1, round: options.openRound ?? roundRow(), teaching: null });
+      }),
       create: vi.fn(async () => ok(roundRow())),
       revise: vi.fn(async () => ok(roundRow({ drivingQuestion: "先分清两种情况，再判断慢在哪一步", drivingQuestionRevision: 2, revision: 2 }))),
       // 恢复那一发的回信是**教学面那一份**（不是光一行轮次）：桥那一侧推进之后接着把
@@ -324,7 +364,10 @@ function installApi(
           teaching: null,
           practices: options.practices ?? [],
           practiceStart: options.practiceStart ?? null,
+          nextStep: signedNextStep(null),
           gapHelp: options.gapHelp ?? { stopped: false, consecutiveHelpCount: 0, threshold: 2 },
+          prerequisite: { kind: "none", reason: "no_usable_material", gap: null, largeBranchThreshold: 2 },
+          artifactFailure: null,
           artifact: null,
         }))),
       // 另起一轮那一发的回信是**新那一轮的信封**（与 `open` 同形，`contentMoved` 回到 false）：
@@ -424,7 +467,7 @@ async function show(
     /** undefined = 这一篇没有未完成的那一轮；给了就是屏上该显示它。 */
     openRound?: Record<string, unknown> | null;
     blocks?: NoteBlockProjectionV1[];
-    openSequence?: Record<string, unknown>[];
+    openSequence?: (Record<string, unknown> | null)[];
     /** 网关那一发回的信封里那个派生格（默认「没动」）。 */
     contentMoved?: boolean;
     /** 这一轮目标引用的依据变化；默认没有已生成的目标。 */
@@ -494,18 +537,33 @@ async function show(
       await vi.advanceTimersByTimeAsync(50);
     });
   }
-  // The HUD opens on the note leaf; these behavior tests enter the learning leaf.
-  const leafName = options.leaf === "reading" ? "笔记正文" : options.leaf === "history" || options.roundHistory ? /^学习记录/ : "本轮学习";
-  if (!options.learningRoundId) await act(async () => { fireEvent.click(within(view.container).getByRole("button", { name: leafName })); });
+  // The note body has one entrance into the dedicated learning page.
+  if (!options.learningRoundId && options.leaf !== "reading") {
+    const targetHistory = options.leaf === "history" || !options.leaf && Boolean(options.roundHistory);
+    if (!view.container.querySelector(targetHistory ? "#notebook-history-leaf" : "#notebook-learning-leaf")) {
+      await act(async () => {
+        fireEvent.click(within(view.container).getByRole("button", { name: targetHistory ? /^学习记录/ : /^(开始学习|继续学习)$/ }));
+      });
+    }
+  }
   return {
     ...view,
     api,
     syncController,
     invoke,
-    objectiveBlock: () => view.container.querySelector<HTMLElement>(
-      ".notebook-objective:not(.notebook-round)",
-    ),
-    roundBlock: () => view.container.querySelector<HTMLElement>(".notebook-round"),
+    objectiveBlock: () => {
+      if (!view.container.querySelector("#notebook-history-leaf")) {
+        if (!view.container.querySelector("#notebook-reading-leaf")) {
+          fireEvent.click(within(view.container).getByRole("button", { name: "← 回到正文" }));
+        }
+        fireEvent.click(within(view.container).getByRole("button", { name: /^学习记录/ }));
+      }
+      const details = view.container.querySelector<HTMLDetailsElement>(".notebook-review-options");
+      if (details && !details.open) fireEvent.click(within(details).getByText("以后怎么复习（可选）"));
+      return details;
+    },
+    // The pinned main action lives beside the scrolling learning sheet.
+    roundBlock: () => view.container.querySelector<HTMLElement>("#notebook-learning-leaf")?.closest<HTMLElement>("article") ?? null,
   };
 }
 
@@ -516,307 +574,84 @@ afterEach(() => {
   useRoomStore.setState({ activeNoteRef: null, invoke: undefined, surface: null, activeRunId: null, activeObjectiveId: null });
 });
 
-describe("笔记页的主要动作", () => {
-  it("结果页带轮次回来时直接定位并聚焦学习足迹里的理解纸签", async () => {
-    const originalScrollIntoView = Element.prototype.scrollIntoView;
-    const scrollIntoView = vi.fn();
-    Element.prototype.scrollIntoView = scrollIntoView;
-    try {
-      const view = await show([], { learningRoundId: ROUND_ID });
-      expect(within(view.container).getByRole("button", { name: /^学习记录/ }).getAttribute("aria-pressed")).toBe("true");
-      const shelf = view.container.querySelector<HTMLElement>(".note-reflection-anchor");
-      expect(shelf?.querySelector(".note-reflection-tuck[open]")).not.toBeNull();
-      expect(scrollIntoView.mock.contexts).toContain(shelf);
-      expect(document.activeElement).toBe(shelf?.querySelector("summary"));
-    } finally {
-      if (originalScrollIntoView) Element.prototype.scrollIntoView = originalScrollIntoView;
-      else Reflect.deleteProperty(Element.prototype, "scrollIntoView");
-    }
-  });
-  it("正文册页先显示笔记，翻到学习页才露出本轮表单，记录空页能回到学习", async () => {
-    const reading = await show([], { leaf: "reading" });
-    expect(screen.getByRole("region", { name: "笔记正文" })).toBeTruthy();
-    expect(reading.container.querySelector(".notebook-reading-outline")).toBeNull();
-    expect(screen.queryByRole("textbox", { name: ROUND_COPY.ask })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "本轮学习" }));
+describe("笔记学习入口", () => {
+  it("正文只给一个学习主动作，制卡是次级选择", async () => {
+    const { container } = await show([listItem()], { leaf: "reading" });
+    const actions = container.querySelector(".notebook-actions")!;
+    const primary = [...actions.querySelectorAll("button.primary")];
+    expect(primary.map((button) => button.textContent)).toEqual(["开始学习"]);
+    expect(within(actions as HTMLElement).getByRole("button", { name: "制作学习卡" })).toBeTruthy();
+    fireEvent.click(primary[0]!);
     expect(screen.getByRole("textbox", { name: ROUND_COPY.ask })).toBeTruthy();
-    expect(screen.queryByRole("region", { name: "笔记正文" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "学习记录" }));
-    expect(screen.getByText("还没留下学习记录。")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "去开始这一轮" }));
-    expect(screen.getByRole("textbox", { name: ROUND_COPY.ask })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "制作学习卡" })).toBeNull();
   });
 
-  it("按钮上就是服务端那个动词，下面跟着它那一句理由", async () => {
-    const { objectiveBlock } = await show([listItem()]);
-    const block = objectiveBlock()!;
-    expect(block.querySelector("button")!.textContent).toBe("开始学习");
-    expect(block.querySelector("p")!.textContent).toBe("开始学习，完成后会写回这一题的真实状态。");
-  });
-
-  it("按下去发的是 action 自带的那份 start，开出来的那一轮随即接上旅程界面", async () => {
-    const { api, invoke, objectiveBlock } = await show([listItem()]);
-    fireEvent.click(objectiveBlock()!.querySelector("button")!);
+  it("已有目标也始终从笔记新开一轮，不直接跳旧的目标 Run", async () => {
+    const { api, roundBlock } = await show([listItem()]);
+    expect(roundBlock()).not.toBeNull();
+    fireEvent.click(within(roundBlock()!).getByRole("button", { name: ROUND_COPY.start }));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    expect(api.learningRun.start).toHaveBeenCalledTimes(1);
-    const input = api.learningRun.start.mock.calls[0][0] as { request: unknown };
-    // 逐字节比：这一页若自己拼一份 start，最可能拼错的就是 origin 那一格
-    // （无卡目标要 `today`，拼成 `card` 会在服务端 `target_evidence_missing` 上撞墙）。
-    expect(input.request).toEqual(START);
-    expect(invoke).toHaveBeenCalledWith("validate");
-    expect(useRoomStore.getState().activeRunId).toBe(RUN_ID);
-  });
-
-  it("上一轮没答完：动词换成「继续作答」，按下去不许再开一轮", async () => {
-    const { api, invoke, objectiveBlock } = await show([listItem({
-      personalState: { state: "learning", activeRunId: RUN_ID },
-      primaryAction: { kind: "resume_run", runId: RUN_ID, objectiveId: OBJECTIVE_ID },
-    })]);
-    const button = objectiveBlock()!.querySelector("button")!;
-    expect(button.textContent).toBe("继续作答");
-    expect(objectiveBlock()!.querySelector("p")!.textContent).toBe("上次保存的进度还在，不会从头再来。");
-    fireEvent.click(button);
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    expect(invoke).toHaveBeenCalledWith("validate");
-    expect(useRoomStore.getState().activeRunId).toBe(RUN_ID);
+    expect(api.noteLearningRound.create).toHaveBeenCalledTimes(1);
     expect(api.learningRun.start).not.toHaveBeenCalled();
   });
 
-  it("这一篇还没有目标：主行动那一行不画，但轻量定向表单在（39d W4-3），笔记照旧在纸上", async () => {
-    const { container, objectiveBlock, roundBlock } = await show([]);
-    expect(objectiveBlock()).toBeNull();
-    // 改判之后的新合同：没有目标这一档正是 §3.3 那张表单要出现的唯一时机。
-    // 少这一句断言，"表单没画出来"也会让上面那条红看起来像一切正常。
-    expect(roundBlock()).not.toBeNull();
-    expect(roundBlock()!.querySelector("input#notebook-round-question")).not.toBeNull();
-    expect(container.querySelector(".reading-body")?.textContent).toContain("质量是惯性大小的唯一量度。");
+  it("已有进行中轮次和目标时，仍只显示这轮的问题与讲解", async () => {
+    const { roundBlock, container } = await show([listItem()], { openRound: roundRow() });
+    expect(roundBlock()?.textContent).toContain(roundRow().drivingQuestion);
+    expect(container.querySelector(".notebook-objective:not(.notebook-round)")).toBeNull();
   });
 
-  it("那一次读取失败不许把整篇笔记换成错误页", async () => {
-    const { container, objectiveBlock, roundBlock } = await show("fail");
-    expect(objectiveBlock()).toBeNull();
-    // 目标读失败时表单仍在——它读的是另一条路由，两块互不顶替（也不互相连坐）。
-    expect(roundBlock()).not.toBeNull();
-    expect(container.querySelector(".reading-body")?.textContent).toContain("质量是惯性大小的唯一量度。");
-  });
-
-  it("读的是「这一篇」的目标，不是最近更新的那一个", async () => {
-    const { api } = await show([listItem()]);
-    const input = api.objective.list.mock.calls[0][0] as Record<string, unknown>;
-    expect(input.noteId).toBe(NOTE_ID);
-    expect(input.lifecycle).toBe("active");
-    expect(input.limit).toBe(1);
-  });
-
-  it("只画服务端排在前面的那一个主动作，同一篇上的第二个目标不混进来", async () => {
-    const second = listItem({
-      objectiveId: "66666666-4666-4666-8666-666666666666",
-      primaryAction: { kind: "resume_run", runId: RUN_ID, objectiveId: "66666666-4666-4666-8666-666666666666" },
+  it("练习有结算后可完成本轮，关闭命令写 completed；回正文后能进入该轮回看", async () => {
+    const { api, container } = await show([], {
+      openRound: roundRow(),
+      practices: [{ runId: RUN_ID, phase: "completed", outcome: "demonstrated", startedAt: "2026-09-26T04:20:00.000Z" }],
+      roundHistory: historyOf([historyItem({ roundId: ROUND_ID, outcome: "completed", actualModes: ["practice"] })]),
+      leaf: "learning",
     });
-    // 夹具故意回两条：`limit: 1` 只是请求，服务端真回几条不由客户端保证——
-    // 这一页必须只取第一条，否则"一个主要动作"这句话就是空的。
-    const { objectiveBlock } = await show([listItem(), second]);
-    const buttons = [...objectiveBlock()!.querySelectorAll("button.primary")];
-    expect(buttons.map((button) => button.textContent)).toEqual(["开始学习"]);
-  });
-
-  it("正文已有新版本 ⇒ 主动作附一枚「来源已有更新」，最新时不画", async () => {
-    const stale = await show([listItem({ freshness: "source_outdated" })]);
-    const primaryCopy = (block: HTMLElement) => [...block.children]
-      .filter((child): child is HTMLParagraphElement => child instanceof HTMLParagraphElement)
-      .map((paragraph) => paragraph.textContent);
-    const lines = primaryCopy(stale.objectiveBlock()!);
-    expect(lines).toEqual(["来源已有更新", "开始学习，完成后会写回这一题的真实状态。"]);
-
-    const fresh = await show([listItem({ freshness: "fresh" })]);
-    expect(primaryCopy(fresh.objectiveBlock()!))
-      .toEqual(["开始学习，完成后会写回这一题的真实状态。"]);
-  });
-
-  it("这篇笔记的引用段落受影响时，在原有学习动作旁说明核对理由", async () => {
-    const { objectiveBlock } = await show([listItem({
-      freshness: "source_outdated",
-      noteChangeImpact: {
-        noteId: NOTE_ID,
-        status: "affected",
-        layer: 3,
-        reasonCode: "quoted_text_changed",
-        evidenceCount: 1,
-        unchangedEvidenceCount: 0,
-        changedEvidenceCount: 1,
-        uncertainEvidenceCount: 0,
-        evidenceDetails: [{
-          evidenceIndex: 1,
-          previousOrdinal: 1,
-          previousQuote: "甲句子不变。",
-          currentQuote: "甲句子改了。",
-          previousQuoteTruncated: false,
-          currentQuoteTruncated: false,
-        }],
-        evidenceDetailsOmittedCount: 0,
-      },
-    })]);
-    const block = objectiveBlock()!;
-    expect(block.querySelector('[data-note-change-impact="true"]')?.textContent)
-      .toBe("引用的段落有改动，先核对原文再继续。");
-    expect(block.querySelector('[data-note-change-evidence] summary')?.textContent)
-      .toBe("展开核对当时与现在的依据");
-    const evidence = block.querySelector('[data-note-change-evidence]')!;
-    expect(evidence.textContent).toContain("当时 · 第 1 段");
-    expect(evidence.textContent).toContain("甲句子不变。");
-    expect(evidence.textContent).toContain("当前 · 同段同位置");
-    expect(evidence.textContent).toContain("甲句子改了。");
-    expect([...block.children].filter((element) => element.tagName === "P").map((p) => p.textContent)).toEqual([
-      "来源已有更新",
-      "引用的段落有改动，先核对原文再继续。",
-      "开始学习，完成后会写回这一题的真实状态。",
-    ]);
-  });
-
-  it("开轮次在飞的时候按钮禁用，一次点击不开出两条", async () => {
-    let release: (value: unknown) => void = () => undefined;
-    const api = installApi(async () => ok({
-      version: 3, items: [listItem()], total: 1, nextCursor: null, snapshotAt: new Date().toISOString(),
-    }));
-    api.learningRun.start.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
-    useRoomStore.setState({ invoke: vi.fn(), activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "read" } });
-    vi.useFakeTimers();
-    const view = render(<NotebookSurface />);
-    for (let i = 0; i < 14; i += 1) {
-      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-    }
-    const button = view.container.querySelector<HTMLButtonElement>(".notebook-objective button")!;
-    fireEvent.click(button);
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    expect(api.learningRun.start).toHaveBeenCalledTimes(1);
-    expect(button.disabled).toBe(true);
-    fireEvent.click(button);
-    expect(api.learningRun.start).toHaveBeenCalledTimes(1);
-    release(ok({ runId: RUN_ID, snapshotId: "55555555-4555-4555-8555-555555555555" }));
+    fireEvent.click(within(container).getByRole("button", { name: "这一轮学完了，回笔记" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
-    expect(button.disabled).toBe(false);
-  });
-
-  it("开轮次失败：那一行不消失，但把为什么写在按钮下面", async () => {
-    const api = installApi(async () => ok({
-      version: 3, items: [listItem()], total: 1, nextCursor: null, snapshotAt: new Date().toISOString(),
+    expect(api.noteLearningRound.close).toHaveBeenCalledWith(expect.objectContaining({
+      roundId: ROUND_ID,
+      outcome: "completed",
     }));
-    api.learningRun.start.mockRejectedValue(new Error("offline"));
-    useRoomStore.setState({ invoke: vi.fn(), activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "read" } });
-    vi.useFakeTimers();
-    const view = render(<NotebookSurface />);
-    for (let i = 0; i < 14; i += 1) {
-      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-    }
-    const block = view.container.querySelector(".notebook-objective")!;
-    fireEvent.click(block.querySelector("button")!);
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    const alert = block.querySelector('[role="alert"]');
-    // 取的是 `gatewayErrorMessage` 那一份唯一口径，不是这一页自己写的句子。
-    expect(alert?.textContent).toBe("服务暂时没有返回可确认的结果。");
-    // 也不能因为一次失败就把整行撤掉：她刚点过，行没了会被读成"没点上"。
-    expect(block.querySelector("button")?.textContent).toBe("开始学习");
-    expect(view.container.querySelector(".reading-body")?.textContent).toContain("质量是惯性大小的唯一量度。");
-  });
-});
-
-/**
- * PRD §3.4（39d W4-4 第一半）：**有未提交编辑时，两条路都要在明处**。
- *
- * 以前这一页只有那一颗按服务端动词画的按钮：点了就按**上次已保存**的版本开轮次，
- * 眼前那几处字被默默忽略——用户以为自己刚写的东西算数。这一组钉四件事：
- *  1. 脏了就把两条路摆出来（服务端动词那颗让位，不再是"只有开始/退出"）；
- *  2. 「按上次已保存内容开始」原样开轮次，不替用户保存；
- *  3. 「先保存再开始」**先真的交出去**再开轮次；
- *  4. 保存失败就不开始——不建"看起来已开始"的空轮次。
- */
-describe("笔记页的主要动作 · 有未提交编辑", () => {
-  /**
-   * 真实形状：编辑态改过字 → 切回阅读态时那次自动保存**没成功** → 字还在本机。
-   * 每次调用都给**新的** `syncController`：这个开关用例会翻（失败→成功），
-   * 共用一份就等于让上一条用例决定下一条的起点。
-   */
-  function dirtyFixture() {
-    return { mode: "edit" as const, makeDirty: true, syncController: { fail: true } };
-  }
-
-  it("没交出去的字还在时：两条路都摆出来，那颗按服务端动词画的按钮让位", async () => {
-    const { objectiveBlock } = await show([listItem()], dirtyFixture());
-    const block = objectiveBlock()!;
-    expect(block.querySelector(".notebook-objective__choices")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "先保存再开始" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "按上次已保存内容开始" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "开始学习" })).toBeNull();
-    expect(block.textContent).toContain("这几处改动还没交出去");
+    expect(container.querySelector("#notebook-reading-leaf")).toBeTruthy();
+    fireEvent.click(within(container).getByRole("button", { name: /^学习记录/ }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(container.querySelector("#notebook-history-leaf")).toBeTruthy();
+    expect(container.querySelector('[data-round-recap="true"]')).toBeTruthy();
   });
 
-  it("「按上次已保存内容开始」：原样开轮次，不替用户再存一次", async () => {
-    const { api } = await show([listItem()], dirtyFixture());
-    const savesBeforeClick = api.note.save.mock.calls.length;
-    fireEvent.click(screen.getByRole("button", { name: "按上次已保存内容开始" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    expect(api.learningRun.start).toHaveBeenCalledTimes(1);
-    expect(api.note.save.mock.calls.length).toBe(savesBeforeClick);
-  });
-
-  /**
-   * 这两条过去挂着（`it.skip`），当时记的原因是"夹具里那条文档传输的失败/成功时序复现不出来"。
-   * **那个归因是错的**：真因在夹具自己——`installApi` 里第二个 `note:` 键把 `...api` 摊进去的
-   * 那份盖掉了，`window.ailearn.note.save` 于是是 undefined；点「先保存再开始」抛
-   * `TypeError: api.note.save is not a function`，被 `save()` 的 catch 咽成一次"保存失败"，
-   * 屏上留下的读数与"字没交出去"完全同形（`saveCalls=0`、`startCalls=0`、按钮既没禁用也没有
-   * 保存在飞）。断言一直没改过：修的是夹具那一处覆盖（见 `installApi` 里的 `...api.note`）。
-   */
-  it("「先保存再开始」：先把字交出去，再开轮次", async () => {
-    // 第一次（切回阅读态那次）失败，第二次（手动那一发）成功。
-    const { api, syncController } = await show([listItem()], dirtyFixture());
-    const savesBeforeClick = api.note.save.mock.calls.length;
-    // 手动那一发要能交出去：把开关翻回来（这正是"再试一次"）。
-    syncController.fail = false;
-    fireEvent.click(screen.getByRole("button", { name: "先保存再开始" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-    expect(api.note.save.mock.calls.length).toBe(savesBeforeClick + 1);
-    expect(api.learningRun.start).toHaveBeenCalledTimes(1);
-  });
-
-  it("保存失败就不开始：不建看起来已开始的空轮次", async () => {
-    const { api, objectiveBlock, syncController } = await show([listItem()], {
-      ...dirtyFixture(),
-      manualSaveFails: true,
+  it("未结算的练习可返回原 Run，轮次不被改写或重开", async () => {
+    const { api, invoke, container } = await show([], {
+      openRound: roundRow(),
+      practices: [{ runId: RUN_ID, phase: "active", outcome: null, startedAt: "2026-09-26T04:20:00.000Z" }],
     });
-    syncController.fail = false;
-    const savesBeforeClick = api.note.save.mock.calls.length;
-    fireEvent.click(screen.getByRole("button", { name: "先保存再开始" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-    expect(api.note.save.mock.calls.length).toBe(savesBeforeClick + 1);
+    fireEvent.click(within(container).getByRole("button", { name: "回到那道题" }));
+    expect(useRoomStore.getState().activeRunId).toBe(RUN_ID);
+    // **就地**（2026-09-28 用户裁决）：回到原 Run 不再 `invoke("validate")` 换页。
+    // 判据是"没有发生页面跳转"，而不是"发生了"——后者正是要删掉的那件事。
+    expect(invoke).not.toHaveBeenCalledWith("validate");
+    // 工位**就在这一页上**（2026-09-28 用户裁决）：这是"不跳页"的正面判据。
+    // 只钉 `invoke` 没被调用是不够的——那也可能是"什么都没发生"。
+    expect(container.querySelector('[data-round-bench="inline"]')).toBeTruthy();
     expect(api.learningRun.start).not.toHaveBeenCalled();
-    // 失败要说得出口：这一页那条保存提示得亮（不是静默什么都不发生），
-    // 而两条路仍在屏上——她可以再试一次，也可以按上次已保存的那一版开始。
-    // 钉的是**这一发失败真该出现的那句话**：`note.save` 回来的是一条带
-    // `code: "api_unavailable"` 的网关错误，所以屏上走 `gatewayErrorMessage` 那一条分支
-    // （「学习服务暂时不可用；可以安全重试…」），不是非网关异常兜底的那句
-    // 「服务暂时没有返回可确认的结果。」——这一行原先写的正是后者，是当时根本走不到
-    // 失败分支时盲写的期望（见上面那段真因）。
-    const alert = [...document.querySelectorAll('[role="alert"]')].find((node) =>
-      (node.textContent ?? "").startsWith("保存没成功"));
-    expect(alert?.textContent).toBe("保存没成功：学习服务暂时不可用；可以安全重试，不会重复创建学习旅程。重试保存");
-    // 「可以安全重试」不是这句里的形容词：那颗按钮在这一刻必须真能点。
-    expect(alert?.querySelector("button")?.disabled).toBe(false);
-    expect(objectiveBlock()!.querySelector(".notebook-objective__choices")).toBeTruthy();
+    expect(api.noteLearningRound.close).not.toHaveBeenCalled();
+  });
+
+  it("另有练习仍在作答时不把本轮标成完成", async () => {
+    const { roundBlock, container } = await show([], {
+      openRound: roundRow(),
+      practices: [
+        { runId: RUN_ID, phase: "completed", outcome: "demonstrated", startedAt: "2026-09-26T04:20:00.000Z" },
+        { runId: "99999999-9999-4999-8999-999999999999", phase: "active", outcome: null, startedAt: "2026-09-26T05:20:00.000Z" },
+      ],
+    });
+    expect(within(container).queryByRole("button", { name: "这一轮学完了，回笔记" })).toBeNull();
+    expect(within(roundBlock()!).getByRole("button", { name: "先到这里" })).toBeTruthy();
   });
 });
 
-/**
- * 笔记页的轻量定向表单（39d W4-3 第三刀；PRD §3.3、判据 §16.16）。
- *
- * 钉的是这四件别人替不了的：
- *  1. 不填句子也能开始，由服务端建议本轮问题；
- *  2. 两个预设放的是**带这篇标题**的起步句，不是通用口号；
- *  3. 来源那一档说得出"这句话是谁定的"：原样用 = suggested，改过 = user_rewritten，
- *     没点预设自己写 = user_authored（§3.3 把"可改写"写成产品要求，这一档就是它的落点）；
- *  4. 已经有未完成那一轮时，屏上显示的是**服务端那一条**的问题，改写与收尾都带着
- *     它的 `revision`（不是本机猜的版本号）。
- */
+/** 轻量定向只处理笔记轮次，目标的存在不再切换产品路径。 */
 describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
   it("当前内容定版失败不创建空轮次，明确选择上次保存内容才允许开始", async () => {
     const { api, roundBlock } = await show([], { manualSaveFails: true });
@@ -844,14 +679,21 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
     expect(api.noteLearningRound.create.mock.calls[0][0]).not.toHaveProperty("drivingQuestion");
   });
 
-  it("预设放的是带这篇标题的起步句，点预设不改它就记成 suggested", async () => {
+  it("预设是三句**问的方向**，不带这篇标题；点一颗不改它就记成 suggested", async () => {
     const { api, roundBlock } = await show([]);
     const chips = [...roundBlock()!.querySelectorAll("button")];
-    const unfamiliar = chips.find((b) => b.textContent === ROUND_PRESETS_V1[0].label)!;
-    fireEvent.click(unfamiliar);
+    // 39f §3：上一版那颗「我完全不熟」把整篇题名塞进起步句，一篇长笔记于是被包装成
+    // **一个大问题**。现在三颗都不带题名，收窄方向靠它们、指向具体小节靠「从笔记小节选」。
+    expect(ROUND_PRESETS_V1).toHaveLength(3);
+    for (const preset of ROUND_PRESETS_V1) {
+      expect(preset.starter).not.toContain("物理笔记");
+      expect(preset.starter.length).toBeLessThanOrEqual(30);
+      expect(chips.some((b) => b.textContent === preset.label)).toBe(true);
+    }
+    const first = chips.find((b) => b.textContent === ROUND_PRESETS_V1[0].label)!;
+    fireEvent.click(first);
     const input = roundBlock()!.querySelector("input#notebook-round-question") as HTMLInputElement;
-    expect(input.value).toBe(ROUND_PRESETS_V1[0].starter("物理笔记"));
-    expect(input.value).toContain("物理笔记");
+    expect(input.value).toBe(ROUND_PRESETS_V1[0].starter);
 
     const start = chips.find((b) => b.textContent === ROUND_COPY.start)!;
     expect(start.disabled).toBe(false);
@@ -860,7 +702,7 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
     expect(api.noteLearningRound.create).toHaveBeenCalledTimes(1);
     expect(api.noteLearningRound.create.mock.calls[0][0]).toMatchObject({
       noteId: NOTE_ID,
-      drivingQuestion: ROUND_PRESETS_V1[0].starter("物理笔记"),
+      drivingQuestion: ROUND_PRESETS_V1[0].starter,
       drivingQuestionSource: "suggested",
     });
   });
@@ -868,7 +710,7 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
   it("在起步句上改一个字就换档成 user_rewritten；没点过预设则是 user_authored", async () => {
     const { api, roundBlock } = await show([]);
     const chips = [...roundBlock()!.querySelectorAll("button")];
-    fireEvent.click(chips.find((b) => b.textContent === ROUND_PRESETS_V1[1].label)!);
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_PRESETS_V1[0].label)!);
     const input = roundBlock()!.querySelector("input#notebook-round-question") as HTMLInputElement;
     await act(async () => { fireEvent.change(input, { target: { value: input.value + "，以及它为什么值得记" } }); });
     fireEvent.click(chips.find((b) => b.textContent === ROUND_COPY.start)!);
@@ -887,10 +729,11 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
   it("有一轮在进行中：显示服务端那一条的问题，改写与收尾都带着它的 revision", async () => {
     const open = roundRow({ drivingQuestion: "判断为什么有索引，查询仍然可能慢", revision: 4 });
     const { api, roundBlock } = await show([], { openRound: open });
-    expect(roundBlock()!.textContent).toContain(ROUND_COPY.openLine(open.drivingQuestion as string));
-    expect(roundBlock()!.textContent).toContain(ROUND_COPY.revisedLine(1));
+    expect(roundBlock()!.querySelector(".notebook-journey__plate-question")?.textContent).toBe(open.drivingQuestion);
+    expect(roundBlock()!.textContent).toContain("围绕这个问题，可以直接看讲解，也可以先试一个小问题");
 
-    const close = [...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.end)!;
+    fireEvent.click(within(roundBlock()!).getByText("换个问题，或者收尾"));
+    const close = [...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === "先到这里")!;
     fireEvent.click(close);
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     expect(api.noteLearningRound.close.mock.calls[0][0]).toMatchObject({
@@ -909,7 +752,8 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
   it("那一行报了「后来又保存过一版」：旁边摆得出「按当前内容新开一轮」，带的是手上这一条的 revision", async () => {
     const open = roundRow({ drivingQuestion: "索引为什么还是慢", revision: 3 });
     const { api, roundBlock } = await show([], { openRound: open, contentMoved: true });
-    const button = roundBlock()!.querySelector("[data-round-reopen-current]") as HTMLButtonElement | null;
+    fireEvent.click(within(roundBlock()!).getByText("换个问题，或者收尾"));
+    const button = [...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.reopenWithCurrent) ?? null;
     expect(button).not.toBeNull();
     fireEvent.click(button!);
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
@@ -922,7 +766,7 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
 
     // 没报那一行时这颗不出现：没有问题就报这句话，等于无端要人再确认一次。
     const quiet = await show([], { openRound: open });
-    expect(quiet.roundBlock()!.querySelector("[data-round-reopen-current]")).toBeNull();
+    expect([...quiet.roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.reopenWithCurrent)).toBeUndefined();
   });
 
   it("这一轮冻的正文后来又保存过一版：那一行要说出来，没动时一个字不多", async () => {
@@ -992,6 +836,7 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
     const { container, roundBlock } = await show([], { openRound: undefined });
     // 上面那条已经证明"没有轮次时表单在"；这一条要的是"读失败时表单也在、纸上还是笔记"。
     expect(roundBlock()).not.toBeNull();
+    fireEvent.click(within(container).getByRole("button", { name: "← 回到正文" }));
     expect(container.querySelector(".reading-body")?.textContent).toContain("质量是惯性大小的唯一量度。");
   });
 
@@ -1094,7 +939,7 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
     const { api, roundBlock } = await show([], {
       blocks: [paragraph(0, "开头一段。"), heading(1, "两种理解"), heading(2, "质量与惯性")],
     });
-    expect(roundBlock()!.textContent).toContain(ROUND_COPY.fromStructure);
+    expect(roundBlock()!.textContent).toContain("从笔记小节选");
     const firstChip = [...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === "两种理解");
     expect(firstChip).toBeTruthy();
     fireEvent.click(firstChip!);
@@ -1139,12 +984,15 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
 
     // 那一行只说现在的事实：作废的那一句不许挂在它上面（这一条是原判据，收窄到那一格，不删）。
-    expect(roundBlock()!.querySelector("[data-round-open-line]")?.textContent)
-      .toBe(ROUND_COPY.openLine("另一端改过的那一版"));
+    expect(roundBlock()!.querySelector(".notebook-journey__plate-question")?.textContent)
+      .toBe("另一端改过的那一版");
     // 但这一句必须还在屏上：PRD 要"明确保留为冲突"，顶掉与拼进新版本是同一处缺陷的两种画法。
     expect(roundBlock()!.querySelector("[data-round-lost]")?.textContent)
       .toBe(ROUND_COPY.lostDraft("本机这一发是迟到的"));
-    expect(roundBlock()!.querySelector('[role="alert"]')?.textContent).toBe(CONFLICT_TEXT);
+    const conflictNotice = roundBlock()!.querySelector('[data-round-notice="failed"]');
+    expect(conflictNotice?.textContent).toContain(CONFLICT_TEXT);
+    // §13.4：可恢复的一步要给就地重试 + 一条离开的出路，不许把人困在这一格。
+    expect(conflictNotice?.querySelectorAll("button").length ?? 0).toBeGreaterThanOrEqual(2);
     expect(api.noteLearningRound.revise).toHaveBeenCalledTimes(1);
   });
 
@@ -1209,7 +1057,7 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
 
     const shown = roundBlock()!.textContent ?? "";
-    expect(shown).toContain(ROUND_COPY.openLine("本机这一发赶上了"));
+    expect(roundBlock()!.querySelector(".notebook-journey__plate-question")?.textContent).toBe("本机这一发赶上了");
     expect(roundBlock()!.querySelector('[role="alert"]')).toBeNull();
   });
 
@@ -1218,19 +1066,23 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
     const now = roundRow({ drivingQuestion: "另一端推进过的那一版", revision: 5 });
     const { api, roundBlock } = await show([], { openRound: before, openSequence: [before, now] });
     api.noteLearningRound.close.mockResolvedValue(CONFLICT);
-    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.end)!);
+    fireEvent.click(within(roundBlock()!).getByText("换个问题，或者收尾"));
+    fireEvent.click([...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === "先到这里")!);
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
 
     const shown = roundBlock()!.textContent ?? "";
-    expect(shown).toContain(ROUND_COPY.openLine("另一端推进过的那一版"));
-    expect(shown).not.toContain(ROUND_COPY.openLine("本机读到的那一版"));
-    expect(roundBlock()!.querySelector('[role="alert"]')?.textContent).toBe(CONFLICT_TEXT);
+    expect(roundBlock()!.querySelector(".notebook-journey__plate-question")?.textContent).toBe("另一端推进过的那一版");
+    expect(shown).not.toContain("本机读到的那一版");
+    const conflictNotice = roundBlock()!.querySelector('[data-round-notice="failed"]');
+    expect(conflictNotice?.textContent).toContain(CONFLICT_TEXT);
+    // §13.4：可恢复的一步要给就地重试 + 一条离开的出路，不许把人困在这一格。
+    expect(conflictNotice?.querySelectorAll("button").length ?? 0).toBeGreaterThanOrEqual(2);
   });
 
   it("没有小节的笔记不许多出那一行（结构是这篇的事实，不是界面的装饰）", async () => {
     const { roundBlock } = await show([]);
     // 对照在上一条：有小节时这一行一定出现，所以这里的"没有"测的是判据不是拼写。
-    expect(roundBlock()!.textContent).not.toContain(ROUND_COPY.fromStructure);
+    expect(roundBlock()!.querySelector(".notebook-journey__suggestions")).toBeNull();
   });
 });
 
@@ -1388,7 +1240,8 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
     });
     const lead = () => container.querySelector(".notebook-round-history p")?.textContent ?? "";
     const rows = () => container.querySelectorAll(".notebook-round-history__list li").length;
-    const button = () => container.querySelector(".notebook-round-history button");
+    const button = () => [...container.querySelectorAll(".notebook-round-history button")]
+      .find((candidate) => candidate.textContent === ROUND_COPY.loadOlder) ?? null;
     // 总数从第一页就是服务端的既成事实（不是"翻到底才知道"），但仍要说清"这里只列了 1 条"，
     // 两件事各归各的来源：总数那格翻多少页都不动，"列了最近几条"随屏上涨。
     expect(lead()).toContain("这一篇开过 3 轮，这里列了最近 1 轮，更早的还能看。");
@@ -1413,7 +1266,8 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
       olderPages: [{ version: 1, noteId: NOTE_ID, items: [], hasMore: true, shownCount: 0, totalCount: 1, nextCursor: null }],
     });
     const before = container.querySelectorAll(".notebook-round-history__list li").length;
-    fireEvent.click(container.querySelector(".notebook-round-history button")!);
+    fireEvent.click([...container.querySelectorAll(".notebook-round-history button")]
+      .find((candidate) => candidate.textContent === ROUND_COPY.loadOlder)!);
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     expect(container.querySelectorAll(".notebook-round-history__list li").length).toBe(before);
   });
@@ -1426,7 +1280,8 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
       ], true),
       olderPages: [historyOf([historyItem({ roundId: "aaaa3333-3333-4333-8333-333333333333" })], false),],
     });
-    fireEvent.click(container.querySelector(".notebook-round-history button")!);
+    fireEvent.click([...container.querySelectorAll(".notebook-round-history button")]
+      .find((candidate) => candidate.textContent === ROUND_COPY.loadOlder)!);
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     expect(container.querySelectorAll(".notebook-round-history__list li")).toHaveLength(3);
 
@@ -1436,6 +1291,7 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
     for (let i = 0; i < 6; i += 1) {
       await act(async () => { await vi.advanceTimersByTimeAsync(120); });
     }
+    fireEvent.click(within(container).getByRole("button", { name: /^学习记录/ }));
     // 另一篇的第一页还是那两条（同一份回读），但**不该**再带着上一篇翻出来的那一条。
     expect(container.querySelectorAll(".notebook-round-history__list li")).toHaveLength(2);
   });
@@ -1450,8 +1306,10 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
     const { api, container } = await show([], { roundHistoryFails: true });
     expect(api.noteLearningRound.history).toHaveBeenCalled();
     expect(container.querySelector(".notebook-round-history")).toBeNull();
+    fireEvent.click(within(container).getByRole("button", { name: "← 回到正文" }));
     expect(container.querySelector(".reading-body")?.textContent).toContain("质量是惯性大小的唯一量度。");
-    // 对照：同一页上"未完成那一轮"照常画（失败只撤掉它自己那一块，不牵连别人）。
+    // 记录失败不影响独立学习入口。
+    fireEvent.click(within(container).getByRole("button", { name: "开始学习" }));
     expect(container.querySelector(".notebook-round")).toBeTruthy();
   });
 });
@@ -1468,6 +1326,23 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
  *  4. 生成失败不装作已经讲过：错的句子照实说，那颗按钮还在。
  */
 describe("笔记页的教学面（39d W4-6 刀二）", () => {
+  it("可以先试且不提前展示讲解；准备后使用服务端签发的练习起点", async () => {
+    const practiceStart = {
+      objectiveId: OBJECTIVE_ID,
+      start: { version: 2, originV2: { kind: "note_round", roundId: ROUND_ID, noteId: NOTE_ID, objectiveId: OBJECTIVE_ID }, goal: "stabilize", requestedTimeBudgetSeconds: 180, responsePreference: "adaptive" },
+    };
+    const { api, roundBlock } = await show([], { openRound: roundRow({ revision: 4 }), practiceStart });
+    const block = roundBlock()!;
+    expect(block.querySelector(".notebook-round-teaching__text")).toBeNull();
+    fireEvent.click(within(block).getByRole("button", { name: "想先试一个小问题" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(api.noteLearningRound.preparePractice.mock.calls[0][0]).toMatchObject({ roundId: ROUND_ID, expectedRevision: 4 });
+    expect(roundBlock()!.querySelector(".notebook-round-teaching__text")).toBeNull();
+    fireEvent.click(within(roundBlock()!).getByRole("button", { name: "先试这一道" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(api.learningRun.start.mock.calls[0][0].request).toEqual(practiceStart.start);
+  });
+
   it("恢复学习页展示服务端最新路线，不把旧计划摆成当前计划", async () => {
     const plan = (ordinal: number, text: string) => ({ version: 1, planOrdinal: ordinal, roundRevision: ordinal + 1,
       plan: { version: 1, steps: [{ text }], expectedScale: "一个要点", endCondition: "解释适用条件" },
@@ -1488,7 +1363,7 @@ describe("笔记页的教学面（39d W4-6 刀二）", () => {
     });
     const block = roundBlock()!;
     expect(block.querySelector(".notebook-round-teaching__text")).toBeNull();
-    const start = [...block.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.teaching.start)!;
+    const start = [...block.querySelectorAll("button")].find((b) => b.textContent === "先看讲解")!;
     expect(start).toBeTruthy();
     fireEvent.click(start);
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
@@ -1517,10 +1392,11 @@ describe("笔记页的教学面（39d W4-6 刀二）", () => {
     });
     const block = roundBlock()!;
     expect(block.querySelector(".notebook-round-teaching__text")?.textContent).toBe(teaching.content.explanation);
-    expect(block.textContent).toContain(`${ROUND_COPY.teaching.exampleLead}${teaching.content.example}`);
-    expect(block.textContent).toContain(ROUND_COPY.teaching.referencesLead);
+    expect(block.querySelector(".notebook-journey__example p")?.textContent).toBe(teaching.content.example);
+    expect(block.textContent).toContain("回到笔记里那句话");
+    fireEvent.click(within(block).getByText("回到笔记里那句话"));
     // 那一颗的字**从材料里取**（小节取标题），不是"第 N 段"这种编号冒充。
-    const chip = [...block.querySelectorAll(".notebook-round-teaching__references button")]
+    const chip = [...block.querySelectorAll(".notebook-journey__more button")]
       .find((b) => b.textContent === "小节「间隔重复」")!;
     expect(chip).toBeTruthy();
     scrollIntoView.mockClear();
@@ -1544,11 +1420,10 @@ describe("笔记页的教学面（39d W4-6 刀二）", () => {
     const block = roundBlock()!;
     const warning = block.querySelector<HTMLElement>(".notebook-round-teaching__suspect-claims")!;
     expect(warning).toBeTruthy();
-    expect(warning.textContent).toContain("修改前的原句（待核对）");
+    expect(warning.textContent).toContain("有事实主张需要核对");
     expect(warning.textContent).toContain("复合索引缺少最左列条件就无法使用索引");
     expect(warning.textContent).toContain("这个说法可能省略查询条件，值得再核对。");
-    expect(warning.textContent).toContain("不表示原文已经判错");
-    expect(warning.textContent).toContain("不会把相关主张记作正式学习目标或安排复习");
+    expect(warning.textContent).toContain("核对前，相关主张不会成为正式学习目标");
   });
 
   it("快照不是屏幕上这一版：依据不摆，换一句如实的话", async () => {
@@ -1558,7 +1433,7 @@ describe("笔记页的教学面（39d W4-6 刀二）", () => {
     });
     const block = roundBlock()!;
     expect(block.querySelector(".notebook-round-teaching__text")).toBeTruthy();
-    expect(block.querySelectorAll(".notebook-round-teaching__references").length).toBe(0);
+    expect(block.querySelectorAll(".notebook-journey__more button").length).toBe(0);
     expect(block.textContent).toContain(ROUND_COPY.teaching.staleVersion);
   });
 
@@ -1569,18 +1444,19 @@ describe("笔记页的教学面（39d W4-6 刀二）", () => {
       roundTeaching: teachingRow({ sourceBlockOrdinals: [42] }),
     });
     const block = roundBlock()!;
-    expect(block.querySelectorAll(".notebook-round-teaching__references").length).toBe(0);
+    expect(block.querySelectorAll(".notebook-journey__more button").length).toBe(0);
     expect(block.textContent).not.toContain(ROUND_COPY.teaching.staleVersion);
   });
 
   it("生成失败：那句错上屏，且屏上不装作已经讲过（按钮还在）", async () => {
     const { api, roundBlock, container } = await show([], { openRound: roundRow(), explainFails: true });
     const block = roundBlock()!;
-    fireEvent.click([...block.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.teaching.start)!);
+    fireEvent.click([...block.querySelectorAll("button")].find((b) => b.textContent === "先看讲解")!);
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     expect(api.noteLearningRound.explain).toHaveBeenCalledTimes(1);
     expect(container.querySelector(".notebook-round-teaching__text")).toBeNull();
-    expect([...block.querySelectorAll("button")].some((b) => b.textContent === ROUND_COPY.teaching.start)).toBe(true);
+    expect(block.querySelector('[role="alert"]')?.textContent).toBeTruthy();
+    expect([...block.querySelectorAll("button")].some((b) => b.textContent === "先看讲解")).toBe(true);
     expect(container.querySelector('[role="alert"]')?.textContent?.trim().length ?? 0).toBeGreaterThan(0);
   });
 });
@@ -1617,7 +1493,7 @@ describe("轮次里的练习（39d W4-6 刀三）", () => {
       roundTeaching: teachingRow(),
       practiceStart,
     });
-    const button = [...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === ROUND_COPY.teaching.practice);
+    const button = [...roundBlock()!.querySelectorAll("button")].find((b) => b.textContent === "拿这道题试一次");
     expect(button).toBeTruthy();
     fireEvent.click(button!);
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
@@ -1627,20 +1503,22 @@ describe("轮次里的练习（39d W4-6 刀三）", () => {
     // （note_round 的 objectiveId 是必填，缺了服务端会拒）。
     expect(input.request).toEqual(practiceStart.start);
     expect((input.request as { originV2: { kind: string } }).originV2.kind).toBe("note_round");
-    expect(invoke).toHaveBeenCalledWith("validate");
+    // 开出去之后**留在这一页**（2026-09-28 用户裁决）：`activeRunId` 落位、工位挂在
+    // 学习页的 `practice` 那一屏里，不换页、不换操作语言。钉的是"没有跳走"。
+    expect(invoke).not.toHaveBeenCalledWith("validate");
     expect(useRoomStore.getState().activeRunId).toBe(RUN_ID);
   });
 
   it("没有起点（无目标的轮次）：不摆「练一道」，其余教学面照旧", async () => {
     const { roundBlock } = await show([], { openRound: roundRow(), roundTeaching: teachingRow() });
     const block = roundBlock()!;
-    expect([...block.querySelectorAll("button")].some((b) => b.textContent === ROUND_COPY.teaching.practice)).toBe(false);
+    expect([...block.querySelectorAll("button")].some((b) => b.textContent === "拿这道题试一次")).toBe(false);
     // 对照：解释还在（"没有练一道"不是"整块没画"）。
     expect(block.querySelector(".notebook-round-teaching__text")).toBeTruthy();
   });
 
-  it("练过的几道带日期与结论；没结算的那一场说「正在进行」", async () => {
-    const { roundBlock } = await show([], {
+  it("练过的几道可回看日期与结论；没结算的那一场可继续原 Run", async () => {
+    const { roundBlock, container, invoke } = await show([], {
       openRound: roundRow(),
       roundTeaching: teachingRow(),
       practices: [
@@ -1654,14 +1532,18 @@ describe("轮次里的练习（39d W4-6 刀三）", () => {
       ],
     });
     const block = roundBlock()!;
-    expect(block.textContent).toContain(ROUND_COPY.teaching.practicesLead);
-    const items = [...block.querySelectorAll(".notebook-round-teaching__practice-list li")].map((li) => li.textContent?.trim() ?? "");
-    expect(items.length).toBe(2);
-    // 结算过的那一场说的是结论那一档的字（不是"完成了"这种笼统话）。
-    expect(items[0]).toContain(roundPracticeStateLabelV1({ phase: "completed", outcome: "declared_unable" }));
-    expect(items[0]).toContain("2026");
-    // 还没结算的那一场说"正在进行"，不说结论。
-    expect(items[1]).toContain("正在进行");
+    expect(block.textContent).toContain("接着做完这道");
+    expect(within(block).getByRole("button", { name: "回到那道题" })).toBeTruthy();
+    fireEvent.click(within(block).getByText("这一轮之前做过的 1 道"));
+    const earlier = block.querySelector(".notebook-round-teaching__practice-list li")!;
+    expect(earlier.textContent).toContain("2026");
+    expect(earlier.textContent).toContain(roundPracticeStateLabelV1({ phase: "completed", outcome: "declared_unable" }));
+    fireEvent.click(within(earlier as HTMLElement).getByRole("button", { name: "查看这次作答" }));
+    expect(useRoomStore.getState().activeRunId).toBe(RUN_ID);
+    // 同样就地：回看一次作答不换页（2026-09-28 用户裁决）。
+    expect(invoke).not.toHaveBeenCalledWith("validate");
+    fireEvent.click(within(block).getByText("先回看讲解"));
+    expect(container.querySelector(".notebook-round-teaching__text")?.textContent).toBe(teachingRow().content.explanation);
   });
 
   it("那一格的措辞由一处签发：七种结论各有自己的话，没结论时按 phase 说状态", () => {
@@ -1679,37 +1561,38 @@ describe("轮次里的练习（39d W4-6 刀三）", () => {
  *
  * 这一组钉三件事：**停了才摆**（没停不许多一行）；四档里那三档真有去处——换解释走同一发
  * 生成的 `regenerate`（同一问题落第二条）、回材料核对把依据那段带到眼前、先结束收尾这一轮；
- * 唯一没接上的那档（补一节前置）**如实写出来**，不摆一颗按不动的按钮装作能用。
+ * 前置建议只有服务端给出候选时才展示，不凭空写一条没有行动的占位说明。
  */
 describe("缺口帮助停止后的四选一（39d W4-6 刀四）", () => {
   const stopped = { stopped: true, consecutiveHelpCount: 2, threshold: 2 };
+  const settledPractice = { runId: RUN_ID, phase: "completed", outcome: "needs_repair", startedAt: "2026-09-26T04:20:00.000Z" };
 
-  it("停了才摆：那一句只说读数，四档都在（补前置如实说没接上）", async () => {
-    const { roundBlock } = await show([], { openRound: roundRow(), roundTeaching: teachingRow(), gapHelp: stopped });
+  it("停了才摆：那一句只说读数，没有前置候选时不虚构建议", async () => {
+    const { roundBlock } = await show([], { openRound: roundRow(), roundTeaching: teachingRow(), practices: [settledPractice], gapHelp: stopped });
     const block = roundBlock()!;
-    expect(block.querySelector(".notebook-round-teaching__stop")).toBeTruthy();
+    fireEvent.click(within(block).getByText("这次需要换一种帮助"));
     expect(block.textContent).toContain(ROUND_COPY.teaching.stopLead(2));
     // 那句话是对**读数**说的，不许变成对用户的判断。
     expect(block.textContent).not.toContain("你没有改善");
-    const labels = [...block.querySelectorAll(".notebook-round-teaching__stop-options button")].map((b) => b.textContent);
+    const labels = [...block.querySelectorAll(".notebook-journey__result button")].map((b) => b.textContent);
     expect(labels).toEqual([
+      "查看这次作答",
+      "回看讲解",
       ROUND_COPY.teaching.switchExplanation,
       ROUND_COPY.teaching.backToMaterial,
-      ROUND_COPY.teaching.endRound,
     ]);
-    expect(block.textContent).toContain(ROUND_COPY.teaching.addPrerequisiteUnavailable);
-    // 没接上的那一档**不是一颗按钮**（按不动的东西不该长得像能用）。
-    expect(labels).not.toContain(ROUND_COPY.teaching.addPrerequisite);
+    expect(block.textContent).not.toContain("补一节前置还没接上");
   });
 
   it("没停就不摆那一块", async () => {
-    const { roundBlock } = await show([], { openRound: roundRow(), roundTeaching: teachingRow() });
-    expect(roundBlock()!.querySelector(".notebook-round-teaching__stop")).toBeNull();
+    const { roundBlock } = await show([], { openRound: roundRow(), roundTeaching: teachingRow(), practices: [settledPractice] });
+    expect(roundBlock()!.textContent).not.toContain("这次需要换一种帮助");
   });
 
   it("「换一种解释」发的是 regenerate：同一问题落第二条，不是复用", async () => {
-    const { api, roundBlock } = await show([], { openRound: roundRow(), roundTeaching: teachingRow(), gapHelp: stopped });
-    const button = [...roundBlock()!.querySelectorAll(".notebook-round-teaching__stop-options button")]
+    const { api, roundBlock } = await show([], { openRound: roundRow(), roundTeaching: teachingRow(), practices: [settledPractice], gapHelp: stopped });
+    fireEvent.click(within(roundBlock()!).getByText("这次需要换一种帮助"));
+    const button = [...roundBlock()!.querySelectorAll(".notebook-journey__result button")]
       .find((b) => b.textContent === ROUND_COPY.teaching.switchExplanation)!;
     fireEvent.click(button);
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
@@ -1728,9 +1611,11 @@ describe("缺口帮助停止后的四选一（39d W4-6 刀四）", () => {
       openRound: roundRow({ revision: 5 }),
       blocks,
       roundTeaching: teachingRow({ sourceBlockOrdinals: [1, 2] }),
+      practices: [settledPractice],
       gapHelp: stopped,
     });
-    const options = (label: string) => [...roundBlock()!.querySelectorAll(".notebook-round-teaching__stop-options button")]
+    fireEvent.click(within(roundBlock()!).getByText("这次需要换一种帮助"));
+    const options = (label: string) => [...roundBlock()!.querySelectorAll(".notebook-journey__result button")]
       .find((b) => b.textContent === label)!;
 
     scrollIntoView.mockClear();
@@ -1739,7 +1624,8 @@ describe("缺口帮助停止后的四选一（39d W4-6 刀四）", () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-block-ordinal="1"]')!.getAttribute("data-block-focused")).toBe("true");
 
-    fireEvent.click(options(ROUND_COPY.teaching.endRound));
+    fireEvent.click(within(container).getByRole("button", { name: "继续学习" }));
+    fireEvent.click(within(container).getByRole("button", { name: "先到这里" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     expect(api.noteLearningRound.close.mock.calls[0][0]).toMatchObject({ expectedRevision: 5, outcome: "partial" });
   });
@@ -1772,7 +1658,8 @@ describe("动态产物的挂载（39d W4-6 刀五）", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     expect(api.artifact.ensure).toHaveBeenCalledTimes(1);
     expect(api.artifact.ensure.mock.calls[0][0]).toMatchObject({ artifactId: artifact.artifactId });
-    const slot = container.querySelector(".notebook-round-teaching__artifact")!;
+    const slot = container.querySelector(".notebook-flow-artifact")!;
+    expect(slot).not.toBeNull();
     expect(slot.querySelector("iframe")).toBeTruthy();
   });
 
@@ -1784,9 +1671,8 @@ describe("动态产物的挂载（39d W4-6 刀五）", () => {
       artifactEnsureFails: true,
     });
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
-    const slot = container.querySelector(".notebook-round-teaching__artifact")!;
-    expect(slot.querySelector("iframe")).toBeNull();
-    expect(slot.textContent).toContain(ROUND_COPY.teaching.artifactFailed);
+    expect(container.querySelector(".notebook-flow-artifact iframe")).toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(ROUND_COPY.teaching.artifactFailed);
     // "动态失败不冒充教学失败"：解释与依据都还在。
     expect(container.querySelector(".notebook-round-teaching__text")?.textContent?.length ?? 0).toBeGreaterThan(0);
   });
@@ -1795,9 +1681,8 @@ describe("动态产物的挂载（39d W4-6 刀五）", () => {
     const { api, container } = await show([], { openRound: roundRow(), roundTeaching: teachingRow() });
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     expect(api.artifact.ensure).not.toHaveBeenCalled();
-    const slot = container.querySelector(".notebook-round-teaching__artifact")!;
-    expect(slot.textContent?.trim()).toBe("");
-    expect(slot.querySelector("iframe")).toBeNull();
+    expect(container.querySelector(".notebook-flow-artifact")).toBeNull();
+    expect(container.querySelector(".notebook-flow-artifact iframe")).toBeNull();
   });
 });
 
@@ -1837,7 +1722,7 @@ describe("停住的那一轮：「继续这一轮」（W4-5 ④ 的前置）", (
     cleanup();
     // 这一篇没有未完成轮次：那块摆的是那张表单（不是"停住的那一轮"），这颗按钮也不该在那儿。
     const none = await show([]);
-    expect(none.roundBlock()!.textContent).toContain(ROUND_COPY.ask);
+    expect(none.roundBlock()!.textContent).toContain("你想弄懂的是哪一件事");
     expect(resumeButton(none.roundBlock())).toBeNull();
   });
 
@@ -1878,8 +1763,8 @@ describe("停住的那一轮：「继续这一轮」（W4-5 ④ 的前置）", (
     await act(async () => { await vi.advanceTimersByTimeAsync(20); });
 
     const shown = roundBlock()!.textContent ?? "";
-    expect(shown).toContain(ROUND_COPY.openLine("接上之后服务端那一句"));
-    expect(shown).not.toContain(ROUND_COPY.openLine("停住时那一句"));
+    expect(roundBlock()!.querySelector(".notebook-journey__plate-question")?.textContent).toBe("接上之后服务端那一句");
+    expect(shown).not.toContain("停住时那一句");
     // 那颗按钮随状态一起撤：它读的是服务端那一行，不是"我刚才按过了"。
     expect(resumeButton(roundBlock())).toBeNull();
     // silent 的那次回读：这一屏还是那张纸（非 silent 会把它整屏换成加载态）。
@@ -1900,7 +1785,7 @@ describe("停住的那一轮：「继续这一轮」（W4-5 ④ 的前置）", (
 
     expect(roundBlock()!.querySelector('[role="alert"]')?.textContent).toBeTruthy();
     const shown = roundBlock()!.textContent ?? "";
-    expect(shown).toContain(ROUND_COPY.openLine("还是停着的那一句"));
+    expect(roundBlock()!.querySelector(".notebook-journey__plate-question")?.textContent).toBe("还是停着的那一句");
     // 换回服务端那一版之后仍然是停着的：那颗按钮必须还在，否则这一发失败被她读成成功了。
     expect(resumeButton(roundBlock())).toBeTruthy();
     expect(resumeButton(roundBlock())!.textContent).toBe(ROUND_COPY.resume);
@@ -2085,5 +1970,143 @@ describe("笔记页：笔记订阅（39 §9.1 规则表行 1）", () => {
     });
     expect(within(block).getByRole("alert")).toBeTruthy();
     expect(within(block).queryByText(/已停用笔记订阅/)).toBeNull();
+  });
+});
+
+// 「回到本轮学习」必须真的回到这一轮。
+// 此前练习结算那张回执上的按钮写着"回到本轮学习"，但恢复逻辑只在**轮次已经结束**
+// 时切到 history；轮次还开着的那一支什么都不做，落点停在 leaf 的默认值 reading
+// ——按的是"回到本轮学习"，看到的是正文。
+it("从一次尝试回到本轮：轮次还开着时落在「本轮学习」，不是正文页", async () => {
+  const { container } = await show([], {
+    learningRoundId: "77777777-7777-4777-8777-777777777777",
+    openRound: roundRow(),
+  });
+  // 轮次还开着 ⇒ 落在本轮学习，不该是正文页
+  expect(container.querySelector("#notebook-learning-leaf")).not.toBeNull();
+  expect(container.querySelector("#notebook-reading-leaf")).toBeNull();
+});
+
+it("从一次尝试回到本轮：轮次已经结束时落在「学习记录」", async () => {
+  const { container } = await show([], {
+    learningRoundId: "77777777-7777-4777-8777-777777777777",
+    openSequence: [null],
+  });
+  // 轮次收掉了 ⇒ 落在学习记录
+  expect(container.querySelector("#notebook-history-leaf")).not.toBeNull();
+});
+
+/**
+ * 39f 的那几刀，在**真实渲染**上钉住。
+ *
+ * 这一组只钉屏上看得见的那几件事：问题在薄荷牌上、三枚纸签按真实状态亮、暂停回来有一张
+ * 真回执（不是空纸）、回到正文有两枚说得清的书签、结果三行指名道姓。
+ * 纯逻辑那一半（纸签怎么判、结果那三行怎么写）在 `note-learning-flow.test.ts` 里。
+ */
+describe("39f：学习纸面上的物件与上下文", () => {
+  const plate = (block: HTMLElement | null) => block?.querySelector<HTMLElement>(".notebook-journey__plate-question") ?? null;
+  const track = (block: HTMLElement | null) =>
+    [...(block?.querySelectorAll<HTMLElement>(".notebook-journey__track-step") ?? [])];
+
+  it("这一轮的问题在薄荷标题牌上，不是页眉里一行没框的字", async () => {
+    const { roundBlock } = await show([], { openRound: roundRow() });
+    const board = roundBlock()!.querySelector<HTMLElement>(".notebook-journey__plate");
+    expect(board).toBeTruthy();
+    expect(plate(roundBlock())!.textContent).toBe("判断为什么有索引，查询仍然可能慢");
+    // 没有开轮次时这一块不出：那时尚没有问题，主视觉让给下面那张问法纸签。
+    cleanup();
+    const fresh = await show([]);
+    expect(fresh.roundBlock()!.querySelector(".notebook-journey__plate")).toBeNull();
+  });
+
+  it("三枚纸签：什么也没做时只有第一枚亮，其余不装", async () => {
+    const { roundBlock } = await show([], { openRound: roundRow() });
+    expect(track(roundBlock()).map((node) => node.dataset.mark)).toEqual(["current", "todo", "todo"]);
+    expect(track(roundBlock()).map((node) => node.textContent)).toEqual([
+      "讲一遍正在讲", "试一次还没试过", "看收获等试过之后",
+    ]);
+  });
+
+  it("讲过、练过之后纸签跟着亮，且只数已结算的那几次", async () => {
+    const { roundBlock } = await show([], {
+      openRound: roundRow(),
+      roundTeaching: { createdAt: "2026-09-26T04:10:00.000Z", sourceBlockOrdinals: [], content: { explanation: "先合上书讲一遍。", example: null } },
+      practices: [
+        { runId: RUN_ID, phase: "settled", outcome: "demonstrated", startedAt: "2026-09-26T04:20:00.000Z" },
+      ],
+      nextStep: { kind: "finish", basisRunId: null, gapFacets: [], evidence: "independent_demonstrated" },
+    });
+    expect(track(roundBlock()).map((node) => node.dataset.mark)).toEqual(["done", "done", "done"]);
+    expect(track(roundBlock())[1]!.textContent).toContain("已经试过 1 次");
+  });
+
+  it("暂停回来有一张真回执：讲过没有、做过几次、接下来是哪一步", async () => {
+    const stopped = await show([], {
+      openRound: roundRow({ phase: "paused", pausedAt: "2026-09-26T04:30:00.000Z", revision: 3 }),
+      roundTeaching: { createdAt: "2026-09-26T04:10:00.000Z", sourceBlockOrdinals: [], content: { explanation: "先合上书讲一遍。", example: null } },
+      practices: [
+        { runId: RUN_ID, phase: "settled", outcome: "partial", startedAt: "2026-09-26T04:20:00.000Z" },
+      ],
+      nextStep: { kind: "retry", basisRunId: null, gapFacets: [], evidence: "incomplete" },
+    });
+    const receipt = stopped.roundBlock()!.querySelector<HTMLElement>(".notebook-journey__receipt")!;
+    expect(receipt).toBeTruthy();
+    const rows = [...receipt.querySelectorAll<HTMLElement>(".notebook-journey__receipt-list li")];
+    expect(rows).toHaveLength(3);
+    expect(rows[0]!.dataset.has).toBe("yes");
+    expect(rows[0]!.textContent).toContain("讲过");
+    expect(rows[1]!.textContent).toContain("做过 1 次");
+    // 「接下来」那一格与结果页第三行读的是同一句（`roundTrackNextV1`）。
+    expect(rows[2]!.textContent).toContain("可以再试一次");
+    // 暂停时那颗"接着学下去"仍在纸脚，不因为换了版面就消失。
+    expect(stopped.roundBlock()!.textContent).toContain(ROUND_COPY.resume);
+  });
+
+  it("暂停且什么都没做时，回执如实写「还没讲过」「还没试过」，不装成做过", async () => {
+    const stopped = await show([], {
+      openRound: roundRow({ phase: "paused", pausedAt: "2026-09-26T04:30:00.000Z" }),
+    });
+    const receipt = stopped.roundBlock()!.querySelector<HTMLElement>(".notebook-journey__receipt")!;
+    expect(receipt.textContent).toContain("还没讲过");
+    expect(receipt.textContent).toContain("还没试过");
+  });
+
+  it("回到正文与回到刚才读的那一段是两枚说得清的书签，不是同一个动作", async () => {
+    const view = await show([], { leaf: "reading" });
+    // 还没读过一段时，第二枚不摆：没有位置可回。
+    expect(view.container.querySelector(".notebook-journey__back")).toBeNull();
+    const scroller = view.container.querySelector<HTMLElement>(".notebook-scroll")!;
+    scroller.scrollTop = 640;
+    await act(async () => {
+      fireEvent.click(within(view.container).getByRole("button", { name: /^(开始学习|继续学习)$/ }));
+    });
+    const back = [...view.container.querySelectorAll<HTMLElement>(".notebook-journey__back")].map((node) => node.textContent);
+    expect(back).toContain("← 回到正文");
+    expect(back).toContain("回到刚才读的那一段");
+    // 点第二枚：回正文，且**回到原位**。
+    await act(async () => {
+      fireEvent.click(within(view.container).getByRole("button", { name: "回到刚才读的那一段" }));
+    });
+    expect(view.container.querySelector("#notebook-reading-leaf")).toBeTruthy();
+    expect(view.container.querySelector<HTMLElement>(".notebook-scroll")!.scrollTop).toBe(640);
+  });
+
+  it("结果那三行指名道姓：问题、最近一次的结算、还差的一个动作", async () => {
+    const settled = await show([], {
+      openRound: roundRow(),
+      practices: [
+        { runId: RUN_ID, phase: "settled", outcome: "demonstrated", startedAt: "2026-09-26T04:20:00.000Z" },
+      ],
+      nextStep: { kind: "finish", basisRunId: null, gapFacets: [], evidence: "independent_demonstrated" },
+    });
+    const answers = settled.roundBlock()!.querySelector<HTMLElement>(".notebook-journey__answers")!;
+    const lines = [...answers.querySelectorAll<HTMLElement>(".notebook-journey__answers > div")].map((node) => node.textContent ?? "");
+    expect(lines[0]).toContain("判断为什么有索引，查询仍然可能慢");
+    expect(lines[0]).toContain("走出来了");
+    expect(lines[0]).toContain("做出来了");
+    expect(lines[1]).toContain("整篇笔记");
+    expect(lines[2]).toContain("这一轮可以收了");
+    // 旧版那三句通用话不许再出现。
+    expect(settled.roundBlock()!.textContent).not.toContain("留下作答记录");
   });
 });

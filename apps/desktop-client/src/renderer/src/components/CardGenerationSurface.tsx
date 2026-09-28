@@ -90,7 +90,12 @@ function useStalenessClock(active: boolean): void {
 function candidateDecisionLabel(candidate: CardGenerationCandidateV1): string {
   if (candidate.qualityState === "dropped") return "没进这批牌堆";
   if (candidate.qualityState === "failed") return "质量检查未通过";
-  if (candidate.qualityState === "checking" || candidate.qualityState === "authored") return "还在检查";
+  // `authored` **不是**"还在检查"：批量链里它是"改写之后那一次复查仍然要重写"时
+  // 停住的**终态**（handler 那份 v3 链的合同就是这么写的），此后不会再被复查，
+  // 于是这张卡既没有 keep/reject 按钮、也没有任何按钮——一颗永远转着的词，
+  // 读起来像"马上就好"，实际上要人来判断。
+  if (candidate.qualityState === "checking") return "还在检查";
+  if (candidate.qualityState === "authored") return "要人来定这一张";
   if (candidate.publishState === "activated") return "已保存进卡组";
   if (candidate.publishState === "activation_failed") return "保存没成功";
   if (candidate.publishState === "superseded" || candidate.publishState === "expired") return "已失效";

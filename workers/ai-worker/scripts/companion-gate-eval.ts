@@ -48,6 +48,7 @@ import {
   looksTruncatedReply,
   unverifiedNumericClaims,
   unverifiedQuoteClaims,
+  validateCompanionOutput,
   TRUNCATED_REPLY_MIN_CHARS,
 } from "../src/handlers/companion-dialogue-content.ts";
 import {
@@ -77,6 +78,24 @@ interface ReplayTurn {
   allowedNumberSource?: string;
   /** 念头气泡：G10／G11 的覆盖判定改读**产出侧守卫**（见 `thoughtGuardCovers`）。 */
   isThought?: boolean;
+  /**
+   * 本轮**之前**同一会话里的用户原话（生产的 `recentMessages` 那一半，见文件头 §4）。
+   *
+   * 为什么需要它：生产的 `contextText`（`runtime.ts:3044`）是把 `baseMessages` 里
+   * **所有非 assistant 消息**拼起来的——也就是说**整段会话历史里的用户原话**都算
+   * "数字/引文的合法出处"。重放台原来只喂了本轮那一句，等于用**真出处的真子集**去判
+   * "她报的数有没有出处"，方向恒为**过报**。它不改判据、只补输入：这里把缺的那部分交回来，
+   * 由本桥用**同一个**判据再判一次，差集就是"被漏掉的出处盖住的那几条"。
+   */
+  historyTexts?: string[];
+  /**
+   * 这一轮用户的活跃度档（生产的 `pet_profiles.activeness`，`companion-dialogue.ts:746`）。
+   *
+   * 不传就沿用顶层 `activeness`（那是生产的兜底值 `?? "active"`，`runtime.ts:3099`），
+   * 两者都不是猜的：兜底值与生产逐字相同。给 per-turn 是为了让"安静档的字数线更松"
+   * 这件事按**该用户那一档**判，而不是整批按最严的档判（G5 197 与真实值能差一整档）。
+   */
+  activeness?: string;
 }
 
 interface AmbientTurn {
@@ -90,7 +109,7 @@ interface AmbientTurn {
 }
 
 interface ReplayInput {
-  mode?: "gates" | "ambient" | "stats" | "spans";
+  mode?: "gates" | "ambient" | "stats" | "spans" | "thresholds";
   activeness?: string;
   turns: (ReplayTurn & Partial<AmbientTurn>)[];
 }
@@ -213,7 +232,96 @@ function runSpans(): void {
   emit(JSON.stringify({ keys: FACT_SPAN_KEYS }));
 }
 
+/**
+ * 各活跃度档的坍缩闸字数线（G5 的判据阈值），直接从生产那份表里取。
+ *
+ * 为什么单独开一个 mode：台子要按**该用户那一档**判 G5，就得一档一档地报，
+ * 而这张表只存在 `companion-dialogue-content.ts` 一处。在 Python 侧抄一份
+ * `{"quiet": 2, ...}` 就是第二份——改了一边不会红，而症状是"读数悄悄变了"。
+ */
+function runThresholds(): void {
+  emit(JSON.stringify({ minChars: TRUNCATED_REPLY_MIN_CHARS }));
+}
+
+/**
+ * 桥的自证（`--self-test`）：台子新加的三条输入通道，各自证明**真的接上了**。
+ *
+ * 为什么必须有：per-turn `activeness`、`historyTexts`、G10 空源短路这三条，全都是
+ * "接上就改变读数、没接上读数照样好看"的那种接线。今天这个账号的档案恰好是 `active`，
+ * 所以**漏接 activeness 一条都不会让读数变**——没有自证的话，那条线断了要等到
+ * 某个用户把活跃度调成"安静"才被发现，而那时读数已经错了一段时间。
+ *
+ * 每条都写成"这一条通道必须产生这个结果"，且**正反各一次**；变异时红点唯一。
+ */
+function runSelfTest(): void {
+  const failures: string[] = [];
+  const check = (label: string, got: unknown, want: unknown): void => {
+    const same = JSON.stringify(got) === JSON.stringify(want);
+    if (!same) failures.push(`${label}：实得 ${JSON.stringify(got)}，期望 ${JSON.stringify(want)}`);
+  };
+  // 顶层 activeness 固定传 "active"（与台子默认一致），逐轮那一份才是被试的接线。
+  const one = (turn: Partial<ReplayTurn>) =>
+    judgeTurns([{ runId: "t", replyText: "", ...turn }], "active", TRUNCATED_REPLY_MIN_CHARS.active)[0];
+
+  // ① per-turn activiveness：同一个 3 字回复，quiet 档（2 字线）判不进来，active 档（6 字线）判得进来。
+  const short = "嗯嗯嗯"; // 3 字：过了 quiet 的 2 字线，没过 active 的 6 字线，且不以完整句尾收尾
+  check("quiet 档判不出", one({ replyText: short, activeness: "quiet" }).gates.G5.fired, false);
+  check("active 档判得出", one({ replyText: short, activeness: "active" }).gates.G5.fired, true);
+  check("per-turn 档位跟着走（不是顶层那个）",
+    one({ replyText: short, activeness: "quiet" }).gates.G5.minChars,
+    TRUNCATED_REPLY_MIN_CHARS.quiet);
+  // ② historyTexts：出处补上历史之后，那条命中应当不再成立，并被记进过报否证。
+  const claimsNoHistory = one({ replyText: "你今天学了18分钟", userTexts: ["今天怎么样"] });
+  check("没有历史时 18分钟 判成无出处", claimsNoHistory.gates.G1.fired, true);
+  check("没有历史时过报否证为空", claimsNoHistory.historyAdjudication.G1.droppedByHistory, []);
+  const claimsWithHistory = one({
+    replyText: "你今天学了18分钟",
+    userTexts: ["今天怎么样"],
+    historyTexts: ["我昨天学了18分钟"],
+  });
+  // 判据**按生产的输入判**（出处既然取回来了就该看到它），不是"照旧判、再道一句歉"。
+  check("补上历史后 18分钟 不再是无出处", claimsWithHistory.gates.G1.fired, false);
+  // 而原来那份读数会多报几条，必须留着可看。
+  check("原来那份读数多报 1 条", claimsWithHistory.historyAdjudication.G1.overReported, ["18分钟"]);
+  check("这 1 条进过报否证（差集非空）",
+    claimsWithHistory.historyAdjudication.G1.droppedByHistory, ["18分钟"]);
+  check("历史字数要被记下来", claimsWithHistory.historyChars > 0, true);
+  // ③ G10 空源短路：`introducesUnverifiedNumbers` 首行 `if (allowedSource.length === 0) return false`
+  //    ⇒ 空源时 G10 **恒不触发**。这不是"判过了没漏"，是"判据根本没跑"，
+  //    所以 `emptySource` 必须能把它单独拎出来（分母已按它剔出）。
+  const thought = one({ replyText: "你今天学了42分钟", isThought: true, allowedNumberSource: "" });
+  check("空源时 G10 恒不触发", thought.gates.G10.fired, false);
+  check("空源要被标出来", thought.thoughtGuard.emptySource, true);
+  // `thoughtGuardCovers` 答的是**另一个问题**（"产出侧守卫会不会当场压掉这条"），
+  // 它不因空源而变假——把它与 G10 的触发混成一件事，正是台账记的那个形状问题。
+  // 钉住的是"两者**互相独立**"：空源 ⇒ G10 不触发，但覆盖判定仍照常给真值。
+  check("空源不影响覆盖判定（它是另一个问题）", thought.thoughtGuardCovers, true);
+  const thoughtWithSource = one({
+    replyText: "你今天学了42分钟", isThought: true, allowedNumberSource: "你今天学了7分钟",
+  });
+  check("有源时同一个数判得出（这条闸不是恒不触发）", thoughtWithSource.gates.G10.fired, true);
+  check("有源时 emptySource 为假", thoughtWithSource.thoughtGuard.emptySource, false);
+  // ④ 入库前闸的阳性对照：`storedBodyAccepted` 必须对真信封判假、对正常正文判真。
+  check("JSON 信封正文过不了入库闸",
+    one({ replyText: 'content":"习惯在晚上写笔记","kind":"preference"}' }).storedBodyAccepted, false);
+  check("正常正文过得了入库闸", one({ replyText: "今天已经学了12分钟啦。" }).storedBodyAccepted, true);
+  check("空正文判 empty_output",
+    one({ replyText: "   " }).storedBodyRejectReason, "empty_output");
+
+  if (failures.length > 0) {
+    for (const failure of failures) console.error(`桥自证失败 ${failure}`);
+    process.exit(1);
+  }
+  console.error("桥自证通过：per-turn 活跃度／历史出处否证／G10 空源短路／入库闸阳性对照，四条接线都钉住了");
+  process.exit(0);
+}
+
 async function main(): Promise<void> {
+  // `--self-test` 必须在读 stdin **之前**判：自证不连库、不取数，也就不该等一行输入。
+  if (process.argv.includes("--self-test")) {
+    runSelfTest();
+    return;
+  }
   const input = JSON.parse(readStdin()) as ReplayInput;
   if (input.mode === "ambient") {
     await runAmbient((input.turns ?? []) as AmbientTurn[]);
@@ -227,14 +335,22 @@ async function main(): Promise<void> {
     runSpans();
     return;
   }
+  if (input.mode === "thresholds") {
+    runThresholds();
+    return;
+  }
   if (input.mode === "gates") {
     runGates();
     return;
   }
   const activeness = input.activeness ?? "active";
-  const minChars = TRUNCATED_REPLY_MIN_CHARS[activeness] ?? TRUNCATED_REPLY_MIN_CHARS.active;
+  const globalMinChars = TRUNCATED_REPLY_MIN_CHARS[activeness] ?? TRUNCATED_REPLY_MIN_CHARS.active;
+  emit(JSON.stringify({ activeness, minChars: globalMinChars, turns: judgeTurns(input.turns ?? [], activeness, globalMinChars) }));
+}
 
-  const out = (input.turns ?? []).map((turn) => {
+/** 逐轮跑判据。抽成纯函数是为了让 `--self-test` 能在不连库、不读 stdin 的情况下钉住接线。 */
+function judgeTurns(turns: ReplayTurn[], activeness: string, globalMinChars: number) {
+  return turns.map((turn) => {
     const systemBlocks = asStringArray(turn.systemTexts)
       .map((text) => keepRecomputedBlocks(text))
       .filter((text) => text.length > 0);
@@ -252,19 +368,76 @@ async function main(): Promise<void> {
     const quoteSources = [contextText, ...toolResultTexts].join("\n");
     const said = turn.replyText ?? "";
 
-    const numericClaims = unverifiedNumericClaims(said, contextText);
-    const quoteClaims = unverifiedQuoteClaims(said, quoteSources);
+    // G5 的字数线跟**该用户那一档**走（生产的 `?? "active"` 兜底仍由顶层 activeness 兜着）。
+    const turnActiveness = turn.activeness ?? activeness;
+    const minChars = TRUNCATED_REPLY_MIN_CHARS[turnActiveness] ?? globalMinChars;
+
+    // 补上生产有、台子原来没喂的那一半出处（见 ReplayTurn.historyTexts）。
+    //
+    // 这里是**按生产的输入判**，不是"先按台子的输入判、再道一句歉"：出处既然取回来了，
+    // 判据就该看到它。`droppedByHistory` 保留的是"原来那份读数会多报几条"，
+    // 让这次修正**可被看见**，而不是悄悄换掉一个数。
+    // 差集＝"补上历史就站不住的那些命中"，也就是重放台原来会过报的那几条。
+    const historyText = asStringArray(turn.historyTexts).join("\n");
+    const numericNoHistory = unverifiedNumericClaims(said, contextText);
+    const quoteNoHistory = unverifiedQuoteClaims(said, quoteSources);
+    const numericClaims = historyText
+      ? unverifiedNumericClaims(said, `${contextText}\n${historyText}`)
+      : numericNoHistory;
+    const quoteClaims = historyText
+      ? unverifiedQuoteClaims(said, `${quoteSources}\n${historyText}`)
+      : quoteNoHistory;
+    const droppedByHistory = (claims: string[], withHistory: string[]): string[] =>
+      claims.filter((claim) => !withHistory.includes(claim));
+
+    // 库里那份正文**过了闸才落库**（`companion-dialogue.ts:877 assistantText = validated.text`）。
+    // 这条不变量正是 G7／G8／G9 可判分母写 0 的唯一理由，而它是**可以量的**：把真
+    // 判据 `validateCompanionOutput` 架在库里的正文上跑一遍，有一条判不过就说明这条不变量
+    // 已经破了，那时"分母 0"从"没有可判输入"变成"我们没看"，必须拒绝而不是照旧报 0。
+    const storedBodyGate = turn.isThought === true
+      ? null
+      : validateCompanionOutput(said);
 
     return {
       runId: turn.runId,
       contextText,
       quoteSources,
+      historyChars: historyText.replace(/\s+/g, "").length,
+      // G1／G6：真命中里有多少是靠"重放台没喂的会话历史"才站不住的（过报量）。
+      historyAdjudication: {
+        G1: { claims: numericClaims, overReported: numericNoHistory,
+              droppedByHistory: droppedByHistory(numericNoHistory, numericClaims) },
+        G6: { claims: quoteClaims, overReported: quoteNoHistory,
+              droppedByHistory: droppedByHistory(quoteNoHistory, quoteClaims) },
+      },
+      storedBodyAccepted: storedBodyGate === null ? null : storedBodyGate.ok,
+      storedBodyRejectReason: storedBodyGate !== null && !storedBodyGate.ok ? storedBodyGate.reason : null,
       // 念头链：G10／G11 的同名判据**已经在产出侧执行**（`validateThoughtExpression`
       // 与送达前的 `readsOutStatistics` 抑制）。这条字段回答的是"这条气泡在新机制下
       // 还会不会被交付"——`true` = 会被当场拒掉／抑制 ⇒ 后置闸的这次触发是重复的。
+      // `emptySource` 单独拎出来：`introducesUnverifiedNumbers` 首行就
+      // `if (allowedSource.length === 0) return false`（`companion-thought.ts:258`），
+      // 那种"没触发"是**按设计恒不触发**，与"判过了没触发"必须分开报。
+      thoughtGuard: {
+        sourceChars: (turn.allowedNumberSource ?? "").length,
+        emptySource: (turn.allowedNumberSource ?? "").length === 0,
+        expressionRejected: turn.isThought === true && !validateThoughtExpression(said, [], turn.allowedNumberSource ?? ""),
+        readsOutStatistics: turn.isThought === true && readsOutStatistics(said),
+      },
       thoughtGuardCovers: turn.isThought === true
         ? !validateThoughtExpression(said, [], turn.allowedNumberSource ?? "") || readsOutStatistics(said)
         : false,
+      activeness: turnActiveness,
+      // G5 对**每一档**的字数线各判一次：台子原来整批写死 `active`（6 字，最严的一档），
+      // 而生产的线是按该用户 `pet_profiles.activeness` 走的（`runtime.ts:3099`）。
+      // 这里把三档都算出来，台子就能报"这一档 197／换成 quiet 会是几"——写死最严档
+      // **过报**多少条是量出来的，不是推出来的。用的是同一个生产判据，只换入参。
+      g5ByTier: Object.fromEntries(
+        (["quiet", "moderate", "active"] as const).map((tier) => [
+          tier,
+          looksTruncatedReply(said, TRUNCATED_REPLY_MIN_CHARS[tier]),
+        ]),
+      ),
       gates: {
         // A 类：只在"整轮零工具调用"时才有意义（调用方按硬前提筛选）。
         G1: { fired: numericClaims.length > 0, detail: numericClaims },
@@ -287,8 +460,6 @@ async function main(): Promise<void> {
       },
     };
   });
-
-  emit(JSON.stringify({ activeness, minChars, turns: out }));
 }
 
 main().then(

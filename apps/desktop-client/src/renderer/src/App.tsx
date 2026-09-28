@@ -1,8 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { HudRoomControl } from "./components/hud/HudRoomControl";
 import { RoomStage } from "./components/RoomStage";
 import { TaskSurface } from "./components/TaskSurface";
-import { HomeSuggestionCard, TodayBatchOptions } from "./components/surfaces/HomeSuggestionCard";
 import { SourceIntakeHost } from "./components/SourceIntake";
 import { RunRecoveryNotice } from "./components/RunRecoveryNotice";
 import { CompanionPresence } from "./components/companion/CompanionPresence";
@@ -12,14 +11,14 @@ import { CompanionChatProvider } from "./app/companion-chat-session";
 import { RenderErrorBoundary } from "./components/RenderErrorBoundary";
 import { useRoomStore } from "./app/room-store";
 import { resolveSceneMotionMode } from "./scene/scene-motion";
-import { HomeProjectionProvider, useHomeProjection } from "./app/home-projection";
-import { homePresentation } from "./app/home-presentation";
+import { HomeProjectionProvider } from "./app/home-projection";
 import { HomeV2Provider } from "./components/home-v2/HomeV2Experience";
 import type { HomeFeatureId } from "./components/home-v2/home-feature-registry";
 import { CompanionHomeProjectionProvider } from "./app/companion-home-projection";
 import { HomeCapabilityProjectionProvider } from "./app/home-capability-projection";
 import { DirectoryRail } from "./components/DirectoryRail";
 import { HudReturn } from "./components/hud/HudPage";
+import { NoteLearningConceptDemo } from "./components/demos/NoteLearningConceptDemo";
 
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -64,18 +63,17 @@ function hasOpenModal(): boolean {
 }
 
 export function RoomExperience() {
-  const { projection, loading, failure, reload } = useHomeProjection();
-  const home = homePresentation(projection, loading, failure);
   const theme = useRoomStore((state) => state.theme);
   const surface = useRoomStore((state) => state.surface);
-  /** 首页那一件那一发的 workspaceEpoch：它自己回写，别人不共享（省得两处抢）。 */
-  const homeEpochRef = useRef<number | undefined>(undefined);
   const invoke = useRoomStore((state) => state.invoke);
-  const setActiveNoteRef = useRoomStore((state) => state.setActiveNoteRef);
-  const setActiveObjectiveId = useRoomStore((state) => state.setActiveObjectiveId);
   const setInputFocused = useRoomStore((state) => state.setInputFocused);
   const onboardingOpen = useRoomStore((state) => state.onboardingOpen);
   const returnTarget = useRoomStore((state) => state.returnTarget);
+  const [noteDemoOpen, setNoteDemoOpen] = useState(false);
+
+  useEffect(() => {
+    if (surface !== "notebook") setNoteDemoOpen(false);
+  }, [surface]);
 
   useEffect(() => {
     const onFocusIn = (event: FocusEvent) => setInputFocused(isTypingTarget(event.target));
@@ -90,6 +88,13 @@ export function RoomExperience() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (noteDemoOpen) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setNoteDemoOpen(false);
+        }
+        return;
+      }
       if (shouldIgnoreGlobalShortcut({
         defaultPrevented: event.defaultPrevented,
         isComposing: event.isComposing,
@@ -114,7 +119,7 @@ export function RoomExperience() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [invoke, onboardingOpen]);
+  }, [invoke, onboardingOpen, noteDemoOpen]);
 
   const room = (
     <>
@@ -133,21 +138,17 @@ export function RoomExperience() {
           自己会在有 surface 或首启引导开着时返回 null。以前它跟着 v1 走，
           意味着一改成 v2 首页，"上一次生成没跑完"就再也没人说了。 */}
       <RunRecoveryNotice />
-      {/* 书桌那「一件」与今日复习那三颗动作（39d W7-4 刀九；§12.1）**已经不在这里挂了**。
-          真窗口读数：这一块虽然**在**渲染树里（不是「不在那一屏」——上一轮那么说也错了），
-          但它挂在**页面最上面**（量到 `[0, 23, 1440, 107]`，**整个窗口宽**），而 §12.1 要的
-          是**书桌上那一张便签**。⇒ 现在它们并进了 `HomeV2ObjectLayer` 的
-          `.home-v2-hud__panel`——**屏上真正可见的那一个抽屉**，「今日下一步」展开即是它。
-          留着这一份的代价是**同一个面出现两次**：CDP 量到两个 `.hud-desk-next`
-          （`[0,23,1440]` 不在抽屉里 / `[371,704,48]` 在抽屉里），
-          而 `querySelector` 只回**第一个** ⇒ **量到的永远是错的那一个**。 */}
       <HudRoomControl />
-      {surface
+      {surface && !noteDemoOpen
         ? <HudReturn label={returnTarget?.label ?? "返回学习空间"} onReturn={returnTarget?.run ?? (() => invoke("home"))} />
         : null}
-      <main id="main-content" inert={onboardingOpen || undefined}>
+      {import.meta.env.DEV && surface === "notebook" && !noteDemoOpen
+        ? <button type="button" className="note-learning-demo-launch" onClick={() => setNoteDemoOpen(true)}>伴读 Demo <span>示例数据</span></button>
+        : null}
+      <main id="main-content" inert={onboardingOpen || undefined} data-note-demo-open={noteDemoOpen || undefined}>
         <h1 className="sr-only">理解书房</h1>
         <TaskSurface />
+        {noteDemoOpen ? <NoteLearningConceptDemo onClose={() => setNoteDemoOpen(false)} /> : null}
         <SourceIntakeHost />
       </main>
     </>

@@ -2526,11 +2526,7 @@
    9px voice, not to a page-level banner. */
 .hud-surface .notebook .notebook-note { margin: 0 0 8px; }
 
-/* The note's own learning action (39d W4-2) sits in the reading flow right
-   under the meta line: the button, then its reason in the paper's 9px voice.
-   It is deliberately not the `actions` box — that one is pinned absolute to the
-   paper's bottom-right corner, and a bare `actions` div with no rule of its own
-   would stack these lines with no gap at all. */
+/* The note round lives in the learning leaf; the reading leaf has one entry action. */
 .hud-surface .notebook .notebook-objective {
   display: flex;
   flex-direction: column;
@@ -2544,11 +2540,8 @@
 
 .hud-surface .notebook .notebook-objective .notebook-note { margin-bottom: 0; }
 
-/* W7-3 刀三：目标级「暂不安排」／「恢复并开启」（39 §9.1 行 2、行 3）。
-   它长成一枚**贴在主要动作下面的纸签**，不是又一颗主按钮：这一格是"对回访安排的处置"，
-   §9.1 规则表里它有自己的位置——把它做成同级按钮会让「先学习」与「别再提醒我」
-   看上去一样重。虚线边是册页上撕下来那一小条的语汇，与纸面同族而不是另起一套控件。 */
-.hud-surface .notebook .notebook-objective .notebook-objective__hold {
+/* Future review controls sit in a folded paper below the note's history. */
+.hud-surface .notebook .notebook-review-options .notebook-objective__hold {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -2560,22 +2553,19 @@
   border-radius: 13px;
   background: var(--hud-paper-light);
 }
-.hud-surface .notebook .notebook-objective .notebook-objective__hold [data-review-hold-label] {
+.hud-surface .notebook .notebook-review-options .notebook-objective__hold [data-review-hold-label] {
   color: var(--hud-ink);
   font-weight: 650;
 }
-.hud-surface .notebook .notebook-objective .notebook-objective__hold [data-review-hold-notice] {
+.hud-surface .notebook .notebook-review-options .notebook-objective__hold [data-review-hold-notice] {
   color: var(--hud-green);
 }
-.hud-surface .notebook .notebook-objective .notebook-objective__hold [data-review-hold-error] {
+.hud-surface .notebook .notebook-review-options .notebook-objective__hold [data-review-hold-error] {
   color: var(--hud-red);
 }
 
-/* W7-3 刀六：笔记订阅那一档。它是「暂不安排」纸签里的**第二行**——§9.1 说那是两件
-   不同的事（"两种意图可以分别存在"），所以视觉上也分开：一道虚线把两行隔开，而不是
-   再给一颗同级的按钮。停用时那颗按钮要读得出"停的是哪一个来源"，那是规则表行 1
-   「其他来源仍有效时显示原因」的落点。 */
-.hud-surface .notebook .notebook-objective .notebook-objective__hold [data-note-subscription] {
+/* Note subscription and individual target hold remain separate choices. */
+.hud-surface .notebook .notebook-review-options [data-note-subscription] {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -2585,10 +2575,10 @@
   padding-top: 9px;
   border-top: 1px dashed var(--hud-line);
 }
-.hud-surface .notebook .notebook-objective .notebook-objective__hold [data-subscription-notice] {
+.hud-surface .notebook .notebook-review-options [data-subscription-notice] {
   color: var(--hud-green);
 }
-.hud-surface .notebook .notebook-objective .notebook-objective__hold [data-subscription-error] {
+.hud-surface .notebook .notebook-review-options [data-subscription-error] {
   color: var(--hud-red);
 }
 

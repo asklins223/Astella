@@ -27,8 +27,15 @@ import { usePageReadableView } from "../hud/use-page-readable-view";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
 import { DUE_REVIEW_START_LABEL } from "@ailearn/shared/review-action-copy";
 import { matchesReviewTarget } from "../review-focus";
+import {
+  RECALL_READ_NOTE_LABEL_V1,
+  recallRevealReceiptLineV1,
+  recallWaitingCueV1,
+  recallWaitingLineV1,
+} from "./recall-waiting-presenter";
+import { RECALL_REVEAL_COPY_V1, type RecallWaitingKindV1 } from "@ailearn/shared/recall-waiting-v2-contracts";
 import { SurfaceDataState, useDayAnchor } from "./surface-data";
-import {DECK_DRAG_SLOP, REVIEW_WINDOW_SIZE, deckDragOutcome, deckDragShift, reviewDeckPosition, reviewDeckRound, reviewOverdueLabel, reviewReasonFacts, reviewReasonSentence, reviewReasonTag, reviewSequenceAfter, reviewStartabilityLabel, reviewFormalValidationBlockedLabel, reviewWindowStart, uniqueReviewItems, type ReviewItem} from "./review-deck";
+import {DECK_DRAG_SLOP, REVIEW_WINDOW_SIZE, deckDragOutcome, deckDragShift, reviewDeckPosition, reviewDeckRound, reviewOverdueLabel, reviewReasonFacts, reviewReasonSentence, reviewReasonTag, reviewSequenceAfter, reviewStartabilityLabel, reviewFormalValidationBlockedLabel, reviewWindowStart, sameReviewSubjectAsEarlierLabel, uniqueReviewItems, type ReviewItem} from "./review-deck";
 
 type LoadedReviewQueue = {
   readonly version: 2;
@@ -86,6 +93,18 @@ export function ReviewSurface() {
   const [startingReviewId, setStartingReviewId] = useState<string | null>(null);
   const [deferringReviewId, setDeferringReviewId] = useState<string | null>(null);
   const [deferredNotice, setDeferredNotice] = useState<string | null>(null);
+  /**
+   * 回忆等待态（PRD §7.1；39d W5-4）。开着时**只**展示标题、提取线索与进度状态。
+   *
+   * 三条边界在这一处集中，理由与实现写在 `recall-waiting-presenter.ts` 的文件头：
+   *  1. 标题**不许**回退到 `publicSummary`（那是从笔记正文生成的摘要＝半个答案）；
+   *  2. 两种等待**不共用**会提前揭示答案的内容（`mayReadSource` 由服务端那一档决定）；
+   *  3. 「先看笔记」是**一次真实暴露**，落进 `learning_exposures_v2`。
+   */
+  const [recallWaiting, setRecallWaiting] = useState<{ reviewId: string; kind: RecallWaitingKindV1 } | null>(null);
+  /** 点过「先看笔记」之后的那一句回执（屏上必须说，§7.1「如实按本次暴露条件处理」）。 */
+  const [recallRevealNotice, setRecallRevealNotice] = useState<string | null>(null);
+  const [recallRevealing, setRecallRevealing] = useState(false);
   const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null);
   /** 牌堆的拖拽状态：只影响呈现，不影响选中项。 */
   const [deckDragging, setDeckDragging] = useState(false);
@@ -173,7 +192,7 @@ export function ReviewSurface() {
    * 服务端重复返回同一个游标说明翻页没有前进：立刻停下，别把「继续读取」
    * 变成死循环（对象库那边的 loadMore 也是同一条规则）。
    */
-  const loadQueue = useCallback(async (options: { targetIndex?: number } = {}) => {
+  const loadQueue = useCallback(async (options: { targetIndex?: number; keepFailure?: boolean } = {}) => {
     await readSession();
     const target = Math.max(0, options.targetIndex ?? 0);
     let items: ReviewItem[] = [];
@@ -191,7 +210,7 @@ export function ReviewSurface() {
       cursor = nextCursor;
     }
     setQueue({ version: 2, items, total, nextCursor });
-    setFailure(null);
+    if (!options.keepFailure) setFailure(null);
     return items;
   }, [fetchPage, readSession]);
 
@@ -684,6 +703,50 @@ export function ReviewSurface() {
     }
   }, []);
 
+  /**
+   * 「先看笔记」（PRD §7.1；§16.24）。
+   *
+   * **先记账，再导航**——次序是有意的：先跳走、后记账的话，用户在笔记页还没
+   * 读完就关掉窗口，那一笔就没记上，而下一次回忆会被算成独立提取。
+   * 记账这一发是幂等的（同一把 `commandId`），重复点只记一笔。
+   *
+   * §16.24「揭示、提醒处理和能力证据**分开记录**」：这一发**只**写暴露账，
+   * 不碰提醒（`review_schedules`）、不写学习观察——所以用户点它**不会**
+   * 把这次提醒关掉，也不会改这一轮的能力证据。
+   */
+  const readNoteBeforeRecall = async (item: ReviewItem, kind: RecallWaitingKindV1) => {
+    if (!window.ailearn || recallRevealing) return;
+    const commandId = `recall-source-reveal-${item.reviewId}`;
+    setRecallRevealing(true);
+    setRecallRevealNotice(null);
+    try {
+      const response = await window.ailearn.review.recordRecallSourceReveal({
+        meta: createRequestMeta(epochRef.current),
+        objectiveId: item.objectiveId,
+        waitingKind: kind,
+        idempotencyKey: commandId,
+      });
+      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+      unwrapGatewayResult(response);
+      setRecallRevealNotice(recallRevealReceiptLineV1(kind));
+      // 记账成功之后才开笔记：屏上那句回执与"材料就在这儿"必须同时到。
+      const surface = objectives[item.objectiveId] ?? null;
+      const note = surface?.sources.primaryNote;
+      if (note) {
+        setActiveNoteRef({ noteId: note.noteId, noteVersionId: note.noteVersionId, mode: "read" });
+        invoke("open-notebook");
+      } else {
+        setActiveObjectiveId(item.objectiveId);
+        invoke("open-objective");
+      }
+    } catch (error) {
+      // 记不上就**说记不上**，而且**不跳**（跳过去等于假装已经记过）。
+      setRecallRevealNotice(`没能记下"先看笔记"这一步：${gatewayErrorMessage(error)}你可以直接去看，但这一次的条件我们没能如实记下。`);
+    } finally {
+      setRecallRevealing(false);
+    }
+  };
+
   const startReview = async (item: ReviewItem) => {
     if (item.startability.kind !== "ready" || startingReviewId || !window.ailearn) return;
     const commandId = startCommandIdsRef.current.get(item.reviewId) ?? createCommandId("start-review");
@@ -692,6 +755,11 @@ export function ReviewSurface() {
     setActiveReviewTarget(null);
     focusedReturnTargetRef.current = null;
     setFailure(null);
+    // 等待态从这一发**开始**（§7.1「进入回忆模式后、准备题目或等待生成时」）。
+    // 起点是用户按下那颗按钮的那一刻，不是 run 建好之后——题目生成的那一段
+    // 正是泄露最容易发生的地方。
+    setRecallWaiting({ reviewId: item.reviewId, kind: "independent_recall" });
+    setRecallRevealNotice(null);
     const answerMode = await readAnswerMode();
     try {
       const response = await window.ailearn.learningRun.start({
@@ -720,10 +788,17 @@ export function ReviewSurface() {
     } catch (error) {
       const refreshRequired = error instanceof RendererGatewayError
         && ["conflict", "not_found", "feature_disabled", "validation"].includes(error.code);
+      // 等待态在这一发上**结束**。此前全文件只有 setRecallWaiting(...) 的写入端，
+      // 没有任何一处把它撤掉：于是起跑一失败，这张卡永远停在"正在准备这一道题…题面好了
+      // 会叫你"，题面被藏着、没有取消、上一张的「先看笔记」回执也黏着——一张死了的卡。
+      setRecallWaiting(null);
+      setRecallRevealNotice(null);
       if (refreshRequired) {
         startCommandIdsRef.current.delete(item.reviewId);
         setFailure({ message: gatewayErrorMessage(error), source: "start" });
-        void loadQueue({ targetIndex: seatRef.current }).catch((refreshError) => {
+        // loadQueue 结尾那句 setFailure(null) 会把刚设好的"为什么没开始"抹掉。
+        // 刷新与保留失败是两件事，所以这里显式说"别抹"。
+        void loadQueue({ targetIndex: seatRef.current, keepFailure: true }).catch((refreshError) => {
           setFailure({ message: gatewayErrorMessage(refreshError), source: "queue" });
         });
       } else {
@@ -755,12 +830,12 @@ export function ReviewSurface() {
       });
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       unwrapGatewayResult(response);
-      setDeferredNotice("已把这张卡推迟到明天再提醒；它的到期时间没有变。");
+      setDeferredNotice("已把这一项推迟到明天再提醒；它的到期时间没有变。");
       // 保留阅读深度：被延后的那张消失后，读者应该停在同一个位置上。
       await loadQueue({ targetIndex: seatRef.current });
     } catch (error) {
       if (error instanceof RendererGatewayError && (error.code === "conflict" || error.code === "not_found")) {
-        setDeferredNotice("这张卡的状态刚变过，队列已经按最新情况刷新。");
+        setDeferredNotice("这一项的状态刚变过，队列已经按最新情况刷新。");
         await loadQueue({ targetIndex: seatRef.current }).catch((refreshError) => {
           setFailure({ message: gatewayErrorMessage(refreshError), source: "queue" });
         });
@@ -790,19 +865,19 @@ export function ReviewSurface() {
     const surface = objectives[item.objectiveId];
     if (surface) return surface.content.conceptLabel ?? surface.content.publicSummary;
     return unreadableObjectiveIds.has(item.objectiveId)
-      ? "这张卡暂时读不到标题"
-      : "正在读取这张卡的问题…";
+      ? "这一项暂时读不到标题"
+      : "正在读取这一项的问题…";
   };
   const originOf = (item: ReviewItem): string => {
     const surface = objectives[item.objectiveId];
     if (!surface) {
       return unreadableObjectiveIds.has(item.objectiveId)
-        ? "已排到的到期复习 · 这张卡暂时读不到标题"
-        : "这张卡是排到时间的到期复习";
+        ? "已排到的到期复习 · 这一项暂时读不到标题"
+        : "这一项是排到时间的到期复习";
     }
     if (surface.sources.primaryNote) return `来自笔记《${surface.sources.primaryNote.title}》`;
     if (surface.content.sourceLabel) return `来自来源「${surface.content.sourceLabel}」`;
-    return "来自复习队列里的这张卡";
+    return item.cardId === null ? "来自这条学习目标" : "来自这张学习卡";
   };
 
   const openNoteEvidence = (surface: LearningObjectiveSurfaceV3 | null, noteId: string) => {
@@ -816,16 +891,36 @@ export function ReviewSurface() {
     invoke("open-notebook");
   };
 
-  /** 同一学习卡在这批到期项里还有几张卡 —— 不是「牵动了几个目标」。 */
+  /** 同一学习目标在这批队列里有几项到期。 */
+  /**
+   * 这一次等待态（第 7.1）。**只在真的发起了「开始到期复习」之后**才成立：
+   * 题目还在生成的那一段里，屏上能摆的就是这几样。
+   *
+   * `kind` 是**服务端那一档**决定的（`originV2.kind = "review"` ⇒ 独立回忆），
+   * 界面不自己猜——猜错的后果是 `mayReadSource` 取反，于是独立回忆那一档
+   * 提示"材料就在旁边"，那正是 §7.1 要防的那一句。
+   */
+  const recallWaitingForFront = Boolean(front && recallWaiting?.reviewId === front.reviewId);
+  const recallCue = useMemo(() => (recallWaitingForFront && front
+    ? recallWaitingCueV1({
+      kind: recallWaiting?.kind ?? "independent_recall",
+      surface: objectives[front.objectiveId] ?? null,
+      unreadableReason: objectives[front.objectiveId] ? null : "这一张的题面暂时读不到，下面只有线索。",
+    })
+    : null), [front, objectives, recallWaiting, recallWaitingForFront]);
+
   const relatedCards = front && queue
     ? queue.items.filter((item) => item.objectiveId === front.objectiveId).length
     : 0;
-  /** 已载入队列覆盖到多少个不同的学习卡。跨目标的说法只由它承担。 */
+  /** 已载入队列覆盖到多少个不同的学习目标。 */
   const affectedObjectives = queue ? new Set(queue.items.map((item) => item.objectiveId)).size : 0;
   const reason = front
     ? reviewReasonFacts(front, relatedCards, nowMs, Math.max(0, selectedIndex), affectedObjectives)
     : null;
   const reasonTag = reason ? reviewReasonTag(reason) : null;
+  const repeatedSubjectLabel = queue && selectedIndex >= 0
+    ? sameReviewSubjectAsEarlierLabel(queue.items, selectedIndex)
+    : null;
   const sequence = front && queue
     ? reviewSequenceAfter(queue.items, selectedIndex, labelOf)
     : [];
@@ -911,7 +1006,7 @@ export function ReviewSurface() {
           ref={deckRef}
           className="card-deck"
           role="group"
-          aria-label="复习队列卡叠"
+          aria-label="复习队列"
           tabIndex={0}
           data-review-id={front?.reviewId}
           data-review-return-focus={isReturnTarget ? "true" : undefined}
@@ -983,11 +1078,55 @@ export function ReviewSurface() {
                   <div className="deck-card__body">
                     <div className="meta">
                       <span>{reviewDeckPosition(seat, deckTotal)}</span>
+                      <span>{item.cardId === null ? "笔记复习" : "学习卡复习"}</span>
                       <span>{reviewDeckRound(item.scheduleGeneration)}</span>
                       {cardStateLabel ? <span className="tag deck-card__state">{cardStateLabel}</span> : null}
                     </div>
-                    <h2 id={isFront ? "review-deck-question" : undefined}>{questionOf(item)}</h2>
-                    <p className="sub">{originOf(item)}</p>
+                    {/* 等待态（§7.1）：**只**给标题、提取线索与进度状态。
+                        题面那一句（`questionOf`，它会回退到 `publicSummary`）在
+                        等待期间不画——`publicSummary` 是从笔记正文生成的摘要，
+                        摆出来就是半个答案。这一条由
+                        `recall-waiting-presenter.test.ts` 钉住。 */}
+                    {isFront && recallCue ? (
+                      <div className="deck-card__waiting" data-recall-waiting={recallCue.kind} role="status">
+                        <h2 id="review-deck-question">{recallCue.title ?? "这一道暂时没给标题"}</h2>
+                        <p className="sub">{recallWaitingLineV1(recallCue.kind)}</p>
+                        <p className="small deck-card__progress" aria-live="polite">{recallCue.progressLabel}</p>
+                        {recallCue.clues.length > 0 ? (
+                          <ul className="deck-card__clues" aria-label="提取线索">
+                            {recallCue.clues.map((clue, index) => <li key={`${index}-${clue}`}>{clue}</li>)}
+                          </ul>
+                        ) : (
+                          <p className="small deck-card__clues-empty">{RECALL_REVEAL_COPY_V1.noClue}</p>
+                        )}
+                        {/* 「先看笔记」在**两档里都在**（§7.1「用户仍可主动选择」）。
+                            独立回忆那一档不给 `mayReadSource` 的自动提示，但出口
+                            本身必须留着——藏起来就等于没有这个出口。 */}
+                        <div className="actions">
+                          <button
+                            type="button"
+                            className="button"
+                            disabled={busy || recallRevealing}
+                            onClick={() => void readNoteBeforeRecall(item, recallCue.kind)}
+                          >
+                            {recallRevealing ? "正在记下…" : RECALL_READ_NOTE_LABEL_V1}
+                          </button>
+                        </div>
+                        {recallRevealNotice ? (
+                          <p className="small deck-card__reveal-notice" role="status" data-recall-reveal-notice="true">
+                            {recallRevealNotice}
+                          </p>
+                        ) : null}
+                        {recallCue.mayReadSource ? (
+                          <p className="small deck-card__may-read">材料就在旁边，可以边读边等。</p>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <>
+                        <h2 id={isFront ? "review-deck-question" : undefined}>{questionOf(item)}</h2>
+                        <p className="sub">{originOf(item)}</p>
+                      </>
+                    )}
                     {/* 审计 F28：这张到期卡的正式验证现在判不出结论（评分点缺冻结
                         证据）。它必须印在卡面上、紧挨着主按钮——理由条在旁边的纸上，
                         而用户是看着这颗按钮决定要不要投入时间的。 */}
@@ -999,8 +1138,13 @@ export function ReviewSurface() {
                           className="text-action text-action--strong"
                           disabled={busy}
                           onClick={() => {
-                            setActiveObjectiveId(item.objectiveId);
-                            invoke("open-objective");
+                            const note = surface?.sources.primaryNote;
+                            if (item.cardId === null && note) {
+                              openNoteEvidence(surface, note.noteId);
+                            } else {
+                              setActiveObjectiveId(item.objectiveId);
+                              invoke("open-objective");
+                            }
                           }}
                         >
                           去看这条目标还缺什么
@@ -1013,8 +1157,8 @@ export function ReviewSurface() {
                         <span>
                           <strong>伴星提醒：</strong>
                           {noteImpact.status === "affected"
-                            ? "这张卡借用的原文有新变化，先回去看一眼。"
-                            : "暂时对不上这张卡的原文依据，先回笔记核对。"}
+                            ? "这项复习引用的原文有新变化，先回去看一眼。"
+                            : "暂时对不上这项复习的原文依据，先回笔记核对。"}
                         </span>
                       </p>
                     ) : null}
@@ -1115,12 +1259,12 @@ export function ReviewSurface() {
                 <span className="deck-progress__loaded" style={{ transform: `scaleX(${loadedRatio})` }} />
                 <span className="deck-progress__bar" style={{ transform: `scaleX(${seatRatio})` }} />
               </span>
-              <span className="deck-foot__hint">把最上面那张拖走，或按 ← → 抽下一张</span>
+              <span className="deck-foot__hint">把最上面的纸签拖走，或按 ← → 看下一项</span>
             </div>
           ) : null}
         </section>
 
-        <aside className="queue-reason" aria-label="这张卡为什么排在最前">
+        <aside className="queue-reason" aria-label="当前复习项为什么排在最前">
           {/* 徽标只在有话可说时出现：没有卡也没有失败时，「队列」两个字不构成
               状态，只是纸上的一粒噪音。 */}
           {reasonTag ? (
@@ -1138,6 +1282,7 @@ export function ReviewSurface() {
           {reason && reasonTag ? (
             <>
               <p>{reviewReasonSentence(reason)}</p>
+              {repeatedSubjectLabel ? <p className="small">{repeatedSubjectLabel}</p> : null}
               {/* 中段只补句子没说过的**卡级**事实：可以开始的卡，句子里已经写了
                   到期时间和同目标卡数，再列一遍只会让读者对着一组数字猜"2 张和
                   3 张是不是两回事"；冷却卡的句子只说冷却，这两行才有信息量。 */}
@@ -1147,7 +1292,7 @@ export function ReviewSurface() {
                   <p>
                     到期：{dueLine}
                     <br />
-                    同一张学习卡：{reason.relatedCards} 项到期
+                    同一学习目标：{reason.relatedCards} 项到期
                   </p>
                 </>
               )}
@@ -1180,7 +1325,7 @@ export function ReviewSurface() {
               <p className="small">
                 已载入 {queue?.items.length ?? 0} / {deckTotal} 项
                 <br />
-                覆盖 {reason.affectedObjectives} 张学习卡
+                涉及 {reason.affectedObjectives} 个学习目标
               </p>
               {queue?.nextCursor ? (
                 <p className="small">
@@ -1211,12 +1356,12 @@ export function ReviewSurface() {
           {failure && queue?.items.length ? (
             <p className="small queue-reason__failure" role="alert">
               {failure.source === "pagination"
-                ? "继续读取失败，已载入的卡片仍然保留。"
+                ? "继续读取失败，已载入的到期项仍然保留。"
                 : failure.source === "start"
                   ? "还没收到「已经开始」的回音；再点一次不会重复开始。"
                   : failure.source === "defer"
-                    ? "延后没送出去，这张卡还在队列里。"
-                    : "队列刷新失败，当前卡片仍然保留。"}
+                    ? "延后没送出去，这一项还在队列里。"
+                    : "队列刷新失败，当前到期项仍然保留。"}
               {failure.source === "pagination" ? (
                 <button type="button" onClick={() => void loadMore()} disabled={loadingMore}>重试读取</button>
               ) : failure.source === "queue" ? (

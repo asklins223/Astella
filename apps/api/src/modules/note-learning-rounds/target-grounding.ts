@@ -12,6 +12,10 @@ const reportSchema = z.strictObject({
   teachingSegments: z.array(z.strictObject({ ordinal: z.number().int().positive(), supported: z.boolean(),
     reason: z.string().min(1).max(1000) })).min(1).max(200),
   objectiveSupported: z.boolean(),
+  /** Public objective wording can be shown before any answer reveal. */
+  publicQuestionSafe: z.boolean().optional(),
+  /** Independent check of the optional system-authored public application task. */
+  applicationScenarioSupported: z.boolean().optional(),
   units: z.array(z.strictObject({ unitId: z.string(), factSupported: z.boolean(), criterionSupported: z.boolean(),
     reason: z.string().min(1).max(1000) })).max(6),
   suspectClaims: z.array(z.strictObject({
@@ -22,9 +26,21 @@ const reportSchema = z.strictObject({
   })).max(6),
 });
 export type RoundTargetGroundingReport = z.infer<typeof reportSchema>;
+/** A new case is published only when it is grounded, distinct, and contains no canonical answer. */
+export function selectGroundedApplicationScenario(scenario: string | null | undefined,
+  target: RoundTargetDraft, report: RoundTargetGroundingReport, input: TeachingEvidenceInputV1): string | null {
+  const text = scenario?.trim();
+  if (!text || text.length < 10 || text.length > 600 || report.applicationScenarioSupported !== true
+    || report.suspectClaims.length > 0 || !target.units.some((unit) => unit.facet === "apply")
+    || target.units.some((unit) => text.includes(unit.fact.trim()))
+    || input.blocks.some((block) => block.text.includes(text))) return null;
+  return text;
+}
 export function selectGroundedRoundTarget(target: RoundTargetDraft | null, report: RoundTargetGroundingReport | null):
   { target: RoundTargetDraft; report: RoundTargetGroundingReport } | null {
-  if (!target || !report?.teachingSupported || !report.objectiveSupported) return null;
+  if (!target || !report?.teachingSupported || !report.objectiveSupported || report.publicQuestionSafe !== true) return null;
+  if (target.units.some((unit) => unit.fact.length >= 10
+    && (target.objectiveStatement.includes(unit.fact) || target.publicSummary.includes(unit.fact)))) return null;
   const expected = new Set(target.units.map((unit) => unit.unitId));
   if (report.units.length !== expected.size || new Set(report.units.map((unit) => unit.unitId)).size !== expected.size
     || report.units.some((unit) => !expected.has(unit.unitId))) return null;
@@ -47,6 +63,7 @@ export function selectGroundedRoundTarget(target: RoundTargetDraft | null, repor
 }
 export type RoundTargetGrounder = (options: {
   target: RoundTargetDraft | null; teaching: { explanation: string; example?: string };
+  applicationScenario?: string | null;
   input: TeachingEvidenceInputV1; maxCalls: number; maxDurationMs?: number;
   scope: { workspaceId: string; userId: string }; round: { roundId: string; noteVersionId: string; sourceContentHash: string };
   attemptId: string; currentActiveTransaction: () => unknown;
@@ -60,15 +77,22 @@ export function createRoundTargetGrounder(config: TeachingModelConfig | null,
     const teachingSegments = [options.teaching.explanation, options.teaching.example ?? ""].join("\n")
       .split(/(?<=[。！？!?])\s*|\n+/u).map((text) => text.trim()).filter(Boolean)
       .map((text, index) => ({ ordinal: index + 1, text }));
-    type Input = { target: RoundTargetDraft | null; teachingSegments: Array<{ ordinal: number; text: string }>; material: TeachingEvidenceInputV1 };
+    type Input = { target: RoundTargetDraft | null; teachingSegments: Array<{ ordinal: number; text: string }>;
+      applicationScenario: string | null; material: TeachingEvidenceInputV1 };
     const task: AiTaskDefinition<Input, RoundTargetGroundingReport> = {
-      id: "note_round_target_grounding", version: 2, mode: "structured", resourceClass: "interactive_ai",
-      budget: { maxModelCalls: Math.min(2, options.maxCalls), stepTimeoutMs: Math.min(45_000, deadlineMs), taskDeadlineMs: deadlineMs, maxAutoRetries: 1 },
+      id: "note_round_target_grounding", version: 3, mode: "structured", resourceClass: "interactive_ai",
+      // 45s 那个单步上界是在"核查对象只有一小段讲解"的时候定的。核查要**独立**读一遍
+      // 冻结快照的**全部**正文块（富笔记 70+ 段），提示词的体量与讲解那几段不在一个量级：
+      // 真窗口实测（2026-09-28）IndexTTS 那篇（71 块）两次都撞在 45s 上，两发都没回话，
+      // 核查报告为 null，界面上就成了一句无从追查的"没有依据"。给 120s：仍在这一轮
+      // 1800s 的总预算之内，而 70 段正文一次性读进去本来就该给这个量级的时间。
+      budget: { maxModelCalls: Math.min(2, options.maxCalls), stepTimeoutMs: Math.min(120_000, deadlineMs), taskDeadlineMs: deadlineMs, maxAutoRetries: 1 },
       completion: { kind: "structured_parsed" },
-      usageContext: { modelId: config.model, promptVersion: "note-round-grounding-v2", resourceClass: "interactive_ai" },
+      usageContext: { modelId: config.model, promptVersion: "note-round-grounding-v3", resourceClass: "interactive_ai" },
       // Private context may shape wording, but it is never sent to the independent
       // checker and can never support an objective or teaching claim.
-      prepare: async () => ({ target: options.target, teachingSegments, material: {
+      prepare: async () => ({ target: options.target, teachingSegments,
+        applicationScenario: options.applicationScenario ?? null, material: {
         drivingQuestion: options.input.drivingQuestion,
         planSteps: options.input.planSteps,
         blocks: options.input.blocks,
@@ -86,8 +110,10 @@ export function createRoundTargetGrounder(config: TeachingModelConfig | null,
             "suspectClaims 只列出与目标 unitId 直接相关、具体且可能影响学习判断的主张；不确定时宁可不列。sourceQuote 必须逐字复制笔记某个 blocks.ordinal 的连续原文，sourceBlockOrdinal 必须是该块 ordinal；无法逐字定位时两者都写 null，不要补写或改写引文。unitIds 必须来自本次 target.units。",
             "逐条核查目标事实是否被对应引文支持、评分判据是否只要求材料可以支持的理解或运用。缺条件、过度推断、矛盾、不确定一律 false。",
             "objectiveSupported 核查目标标题、说明和问题范围是否被材料支持。每个 unitId 恰好一条，不得增删。",
+            "另查 publicQuestionSafe：conceptLabel、objectiveStatement 和 publicSummary 会在用户先试时先于答案展示。只有它们不透露 target.units 的事实答案、判断结论或解题步骤，并且能清楚提出一个可回答的问题，才为 true；不确定就 false。",
             "target=null 时 objectiveSupported=false、units=[]，仍必须检查讲解；目标被拒绝不影响有依据的讲解。",
-            '只输出 JSON：{"teachingSupported":true,"teachingReason":"讲解判断理由","teachingSegments":[{"ordinal":1,"supported":true,"reason":"本段全部断言的材料依据或无依据原句"}],"objectiveSupported":true,"units":[{"unitId":"原id","factSupported":true,"criterionSupported":true,"reason":"目标判断理由"}],"suspectClaims":[{"unitIds":["原id"],"sourceBlockOrdinal":2,"sourceQuote":"笔记里的逐字原句","reason":"值得核对的具体原因"}]}；没有可疑主张时 suspectClaims=[]，目标为 null 时也必须为空。',
+            "独立核查 applicationScenario：它必须是和原例子不同的具体新情境，所需条件与规则只依赖本次材料，不能含标准答案、暗示结论或需要外部知识才能判断的事实。无法确定时 applicationScenarioSupported=false；applicationScenario=null 时也为 false。这项不影响已通过的讲解和目标。",
+            '只输出 JSON：{"teachingSupported":true,"teachingReason":"讲解判断理由","teachingSegments":[{"ordinal":1,"supported":true,"reason":"本段全部断言的材料依据或无依据原句"}],"objectiveSupported":true,"publicQuestionSafe":true,"applicationScenarioSupported":false,"units":[{"unitId":"原id","factSupported":true,"criterionSupported":true,"reason":"目标判断理由"}],"suspectClaims":[{"unitIds":["原id"],"sourceBlockOrdinal":2,"sourceQuote":"笔记里的逐字原句","reason":"值得核对的具体原因"}]}；没有可疑主张时 suspectClaims=[]，目标为 null 时也必须为空。',
             JSON.stringify(input),
           ].join("\n") }],
         }, env.signal);
@@ -138,6 +164,7 @@ export function createRoundTargetGrounder(config: TeachingModelConfig | null,
     });
     const report = receipt.output;
     return { approved: Boolean(options.target && report?.teachingSupported && report.objectiveSupported
+      && report.publicQuestionSafe === true
       && report.suspectClaims.length === 0
       && report.units.every((unit) => unit.factSupported && unit.criterionSupported)),
       report, modelCalls: receipt.modelCalls };

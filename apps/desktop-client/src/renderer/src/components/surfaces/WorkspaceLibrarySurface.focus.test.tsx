@@ -285,18 +285,18 @@ describe("读取计数的说法", () => {
     render(<ObjectiveLibrarySurface />);
 
     const text = await counter();
-    expect(text).toContain("共 2 条");
+    expect(text).toContain("共 2 张卡");
     expect(text).not.toContain("已载入");
     expect(document.querySelector(".v3-goal-search input")?.getAttribute("placeholder")).toBe("搜索全部学习卡");
   });
 
-  it("确实还有下一页时才报「已载入 X / Y」，placeholder 也收回已载入范围", async () => {
+  it("确实还有下一页时只报已载入卡片数，不把目标总数冒充卡片总数", async () => {
     installApi([listItem()], { total: 40, nextCursor: "cursor-2" });
     render(<ObjectiveLibrarySurface />);
 
     const text = await counter();
-    expect(text).toContain("已载入 1 / 40 条");
-    expect(text).not.toContain("共 40 条");
+    expect(text).toContain("已载入 1 张卡");
+    expect(text).not.toContain("40");
     expect(document.querySelector(".v3-goal-search input")?.getAttribute("placeholder")).toBe("搜索已载入的卡");
   });
 });

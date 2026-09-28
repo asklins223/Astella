@@ -150,6 +150,7 @@ import {
   recordRecallSourceRevealResultV1Schema,
 } from "@ailearn/shared/recall-waiting-v2-contracts";
 import { understandingTopologySnapshotV3Schema } from "@ailearn/shared/understanding-topology-v3-contracts";
+import { noteDeepeningV3Schema } from "@ailearn/shared/note-deepening-v3-contracts";
 import { todayActivityV1Schema } from "@ailearn/shared/activity-surface-contracts";
 // 跨空间统计合同：输出校验器与网关共用同一份形状，渲染层不另抄一遍。
 import { allWorkspacesStatsOverviewSchema } from "@ailearn/shared/stats-overview-contracts";
@@ -657,6 +658,9 @@ const noteLearningRoundRouteInputSchema = z.strictObject({
 // `expectedRevision`（两发之间问题被改写或轮次被收尾时，后到的那一发必须失败）——
 // 生成**不带**任何正文或预算：解释怎么生成是服务端内核任务的事（W4-6 刀一）。
 const noteLearningRoundTeachingInputSchema = z.strictObject({ ...m1InputBase, roundId: uuidSchema });
+const noteLearningRoundPreparePracticeInputSchema = z.strictObject({
+  ...m1InputBase, roundId: uuidSchema, expectedRevision: z.number().int().min(1),
+});
 const noteLearningRoundExplainInputSchema = z.strictObject({
   ...m1InputBase,
   roundId: uuidSchema,
@@ -708,6 +712,13 @@ const setPersonalRelationDecisionInputSchema = z.strictObject({
   relation: setPersonalRelationDecisionV2Schema.shape.relation,
   decision: setPersonalRelationDecisionV2Schema.shape.decision,
   noteId: setPersonalRelationDecisionV2Schema.shape.noteId,
+});
+// 39d W8-1。`limit` 缺省就**缺省转发**（不补默认值，见 gateway 那一段的同一句理由）；
+// 坏值在本机挡下，不去敲网关——越界那一次会让服务端要么回 400，要么静默换一个档。
+const noteDeepeningInputSchema = z.strictObject({
+  ...m1InputBase,
+  noteId: uuidSchema,
+  limit: z.number().int().min(1).max(500).optional(),
 });
 const searchGlobalInputSchema = z.strictObject({ ...m1InputBase, query: z.string().trim().min(1).max(500), type: z.enum(["note", "source", "objective"]).optional(), limit: z.number().int().min(1).max(50).optional(), cursor: z.string().min(1).max(512).optional() });
 const noteGetInputSchema = z.strictObject({ ...m1InputBase, noteId: uuidSchema });
@@ -3043,6 +3054,14 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     return gateway.getNoteLearningRoundTeaching(input.roundId, input.meta.requestId);
   }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, roundTeachingViewV1Schema);
 
+  installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundPreparePractice,
+    noteLearningRoundPreparePracticeInputSchema, options, async (_event, _window, input) => {
+      requireM2Route(contract, "note.detail");
+      assertEpoch(input.meta, activeWorkspaceEpoch);
+      return gateway.prepareNoteLearningRoundPractice({ roundId: input.roundId,
+        expectedRevision: input.expectedRevision }, input.meta.requestId);
+    }, () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined, roundTeachingViewV1Schema);
+
   installHandler(DESKTOP_IPC_CHANNELS.noteLearningRoundExplain, noteLearningRoundExplainInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "note.detail");
     assertEpoch(input.meta, activeWorkspaceEpoch);
@@ -3128,6 +3147,24 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     },
     () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined,
     setPersonalRelationDecisionV2ResultSchema,
+  );
+
+  // 39d W8-1：星图三层展开的层二／层三。**同一个 `understanding.graph` 路由门**——
+  // 三层是同一条学习路径的三个尺度，分成三个门只会让人以为"能看总览的人看不了局部"。
+  installHandler(
+    DESKTOP_IPC_CHANNELS.understandingGetNoteDeepening,
+    noteDeepeningInputSchema,
+    options,
+    async (_event, _window, input) => {
+      requireM2Route(contract, "understanding.graph");
+      assertEpoch(input.meta, activeWorkspaceEpoch);
+      return gateway.getUnderstandingNoteDeepening({
+        noteId: input.noteId,
+        ...(input.limit !== undefined ? { limit: input.limit } : {}),
+      }, input.meta.requestId);
+    },
+    () => activeWorkspaceEpoch > 0 ? activeWorkspaceEpoch : undefined,
+    noteDeepeningV3Schema,
   );
 
   installHandler(DESKTOP_IPC_CHANNELS.searchGlobal, searchGlobalInputSchema, options, async (_event, _window, input) => {

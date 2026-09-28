@@ -103,7 +103,7 @@ afterEach(() => {
 });
 
 async function openSettings() {
-  const toggle = await waitFor(() => screen.getByRole("button", { name: "规划学习卡" }));
+  const toggle = await waitFor(() => screen.getByRole("button", { name: "制作学习卡" }));
   fireEvent.click(toggle);
   await waitFor(() => expect(screen.getByRole("dialog", { name: "安排这次出题" })).toBeTruthy());
 }
@@ -166,7 +166,7 @@ describe("NotebookSurface · 生成参数与反馈重生成", () => {
     render(<NotebookSurface />);
     await waitFor(() => expect(document.querySelector('.notebook[data-mode="edit"]')).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: "规划学习卡" }));
+    fireEvent.click(screen.getByRole("button", { name: "制作学习卡" }));
     await waitFor(() => expect(screen.getByRole("dialog", { name: "安排这次出题" })).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: "版本历史" }));

@@ -330,6 +330,8 @@ BEGIN
     -- 报出的到期数**比队列多**，还把一条正被质疑的目标照常念出来：worker 侧那三条
     -- 查询各自 catch 过错误，permission denied 到不了用户眼前。
     'assessment_disputes_v2',
+    -- 无卡笔记目标的到期判据需要核对本人仍有效的笔记订阅。
+    'review_subscriptions_v2',
     'understanding_change_sets',
     'understanding_projection_checkpoints',
     'understanding_route_plans',
@@ -1156,7 +1158,8 @@ BEGIN
       -- `NOT EXISTS (... assessment_disputes_v2 ...)`（§16.22 读侧）。
       -- 不给 INSERT/UPDATE/DELETE：开争议与复核都只由 API 的 run-disputes 做，
       -- worker 写它就是绕开"一个判定至多一份争议"与"复核至多一次"那两条库级闸。
-      ('assessment_disputes_v2', true, false, false, false)
+      ('assessment_disputes_v2', true, false, false, false),
+      ('review_subscriptions_v2', true, false, false, false)
   ), actual AS (
     SELECT
       c.relname AS table_name,

@@ -2,6 +2,7 @@
  * Plan 23 TP-08：Understanding Topology V3 routes。
  *
  * GET /v3/understanding/topology —— V3 snapshot（ETag / If-None-Match → 304）
+ * GET /v3/understanding/notes/:noteId/deepening —— 星图三层展开的层二／层三（39d W8-1、W8-3）
  * GET /v3/understanding/relation-decisions —— 本人对建议关系的表态（§11.3、§16.20）
  * POST /v3/understanding/relation-decisions —— 记一次表态／撤销一次
  */
@@ -9,6 +10,11 @@ import type { FastifyInstance } from "fastify";
 import { requireSession } from "../identity/middleware.ts";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import { buildTopologySnapshotV3Cached, readTopologySnapshotCache } from "./topology-repository.ts";
+import {
+  NoteNotReadableV3,
+  readNoteDeepeningV3,
+  resolveNoteDeepeningLimit,
+} from "./note-deepening-service.ts";
 import {
   RelationEndpointNotReadableV2,
   RelationSelfLoopV2,
@@ -21,6 +27,7 @@ import {
   setPersonalRelationDecisionV2Schema,
   type PersonalRelationDecisionV2,
 } from "@ailearn/shared/personal-relation-decision-rules-v2";
+import type { UnderstandingEdgeProjectionV3 } from "@ailearn/shared/understanding-topology-v3-contracts";
 
 export async function understandingTopologyV3Routes(app: FastifyInstance) {
   app.addHook("preHandler", requireSession);
@@ -77,6 +84,63 @@ export async function understandingTopologyV3Routes(app: FastifyInstance) {
     // 客户端启发式刷新，304 不可靠。
     reply.header("cache-control", "private, no-cache");
     return projected;
+  });
+
+  /**
+   * 星图三层展开的层二与层三（39d W8-1、W8-3；§11.2、§11.4、§11.5）。
+   *
+   * **按一篇笔记读，不是把整张快照加宽**：§11.5「总览只显示当前层，局部按需
+   * 加载」——用户点开一篇笔记时只该为他这一篇搬作答与反馈。
+   *
+   * **关系那一层复用拓扑快照的边**，而不是这一发自己再查一遍 relations：
+   * 本人的表态（W8-2）已经折在那份投影里，两处各查一次就会有两处可能不同的
+   * "这条边被收起没有"。代价是这一发要多读一次快照（可命中进程内 TTL 缓存），
+   * 换来的是**关系只有一个出处**。
+   */
+  app.get("/v3/understanding/notes/:noteId/deepening", async (req, reply) => {
+    const ctx = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+    const params = req.params as { noteId?: string };
+    if (!params.noteId || !/^[0-9a-f-]{36}$/i.test(params.noteId)) {
+      return reply.code(400).send({ error: "noteId 不是 uuid" });
+    }
+    const query = req.query as { limit?: string };
+    if (query.limit !== undefined && resolveNoteDeepeningLimit(query.limit) !== Number(query.limit)) {
+      return reply.code(400).send({ error: `limit 越界（1..${500}）` });
+    }
+    try {
+      return await withWorkspaceTransaction(ctx, async (tx) => {
+        const cached = readTopologySnapshotCache(ctx);
+        const snapshot = cached ?? await buildTopologySnapshotV3Cached(tx, ctx);
+        const decisions = await listPersonalRelationDecisionsV2(tx, {
+          workspaceId: ctx.workspaceId,
+          userId: ctx.userId,
+          noteId: params.noteId!,
+        });
+        const { edges } = applyPersonalDecisionsToSnapshotV2({
+          snapshot,
+          decisions: decisions.map((decision) => ({
+            fromObjectiveId: decision.fromObjectiveId,
+            toObjectiveId: decision.toObjectiveId,
+            relation: decision.relation as string,
+            decision: decision.decision as PersonalRelationDecisionV2,
+          })),
+        });
+        // `applyPersonalDecisionsToSnapshotV2` 的出参类型是 `Record<string, unknown>[]`
+        // （它只加键、不改已有键，所以这里的窄化是安全的）——但把一个宽类型递给
+        // 下游那份 `UnderstandingEdgeProjectionV3[]` 入参时不 cast，tsc 会挡下。
+        return readNoteDeepeningV3(tx, ctx, params.noteId!, {
+          ...(query.limit ? { limit: Number(query.limit) } : {}),
+          snapshotEdges: edges as UnderstandingEdgeProjectionV3[],
+        });
+      });
+    } catch (error) {
+      // 读不到就是读不到。**不回一份空的**：空的那一份与"这一篇真的什么都
+      // 没有"在屏上长得一模一样，而 §11.2 要的正是"没有就不编"。
+      if (error instanceof NoteNotReadableV3) {
+        return reply.code(404).send({ error: "note_not_readable" });
+      }
+      throw error;
+    }
   });
 
   /** 本人在某一篇（或整个空间）上做过的全部表态。 */

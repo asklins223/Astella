@@ -126,8 +126,25 @@ function stubGateway() {
 let snapshots: Array<ReturnType<typeof snapshotFor>> = [];
 let last: ReturnType<typeof snapshotFor>;
 
-const renderWith = async (interaction: Record<string, unknown>) => {
-  last = snapshotFor(interaction);
+const renderWith = async (interaction: Record<string, unknown>, origin: "card" | "note_round" = "card") => {
+  const snapshot = snapshotFor(interaction);
+  last = origin === "note_round"
+    ? learningRunPublicSnapshotV2Schema.parse({
+      ...snapshot,
+      originV2: {
+        kind: "note_round",
+        noteId: "00000000-0000-4000-8000-000000000007",
+        roundId: "00000000-0000-4000-8000-000000000008",
+        objectiveId: OBJECTIVE_ID,
+      },
+      returnTargetV2: {
+        kind: "note_round",
+        noteId: "00000000-0000-4000-8000-000000000007",
+        roundId: "00000000-0000-4000-8000-000000000008",
+      },
+      target: { ...snapshot.target, cardId: null },
+    })
+    : snapshot;
   snapshots = [last];
   const gateway = stubGateway();
   useRoomStore.setState({ activeRunId: RUN_ID, activeObjectiveId: OBJECTIVE_ID });
@@ -142,6 +159,15 @@ afterEach(() => {
 });
 
 describe("客观题作答控件", () => {
+  it("笔记轮次显示本轮练习，独立卡练习仍显示练习关", async () => {
+    await renderWith(CHOICE, "note_round");
+    expect(document.querySelector(".learning-run-focus__mode")?.textContent).toBe("本轮练习");
+
+    cleanup();
+    await renderWith(CHOICE);
+    expect(document.querySelector(".learning-run-focus__mode")?.textContent).toBe("练习关");
+  });
+
   it("选择题：进来一个选项都没被选中，提交按钮不可用", async () => {
     await renderWith(CHOICE);
     const radios = screen.getAllByRole("radio");

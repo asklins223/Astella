@@ -193,6 +193,7 @@ import {
   recordRecallSourceRevealResultV1Schema,
 } from "./recall-waiting-v2-contracts.ts";
 import { understandingTopologySnapshotV3Schema } from "./understanding-topology-v3-contracts.ts";
+import { noteDeepeningV3Schema } from "./note-deepening-v3-contracts.ts";
 import { todayActivityV1Schema } from "./activity-surface-contracts.ts";
 // 跨空间统计合同（每空间一行 + 合计）：服务端路由、网关、渲染层共用同一份形状。
 import { allWorkspacesStatsOverviewSchema } from "./stats-overview-contracts.ts";
@@ -398,6 +399,7 @@ export const DESKTOP_IPC_CHANNELS = {
   // **轮次行**（有没有这一轮），解释是另一张表上的产物（这一轮讲没讲过）——两件事的
   // 读数本来就不在一处，合成一发会让"没有解释"和"没有轮次"分不开。
   noteLearningRoundTeaching: "ailearn.v1.noteLearningRound.teaching",
+  noteLearningRoundPreparePractice: "ailearn.v1.noteLearningRound.preparePractice",
   // 动态产物的"确保落盘"（39d W4-6 刀五）。**不是**"把 HTML 塞过 IPC"：渲染层只报
   // 一个 id，main 带会话令牌去 API 取整份 HTML、按 D4 的配额检查后写进
   // `<userData>/artifacts/<id>.html`，frame 再按同一 id 从既定协议读它。
@@ -408,6 +410,11 @@ export const DESKTOP_IPC_CHANNELS = {
   // 39d W8-2：本人对一条建议关系的表态。**与读那条拓扑分开的通道**——
   // 写与读混在一个通道里，界面就会在读回执的同时把整张星图重取一遍。
   understandingSetRelationDecision: "ailearn.v1.understanding.setRelationDecision",
+  // 39d W8-1：星图三层展开的层二／层三，按**一篇**笔记读。
+  // **与读整张拓扑分开的通道**：§11.5「总览只显示当前层，局部按需加载」——
+  // 挂在 getTopology 上就等于让每一次读星图都把每一篇笔记的作答与反馈搬一遍，
+  // 而用户当下只点开了那一篇。
+  understandingGetNoteDeepening: "ailearn.v1.understanding.getNoteDeepening",
   searchGlobal: "ailearn.v1.search.global",
   noteSave: "ailearn.v1.note.save",
   // 批次 4.3：笔记协同。渲染进程不能直连 WS（sandbox + CSP + onBeforeRequest 三层
@@ -2595,6 +2602,12 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
       meta: RequestMetaV1;
       roundId: Uuid;
     }): Promise<GatewayResultV1<z.infer<typeof roundTeachingViewV1Schema>>>;
+    /** Privately prepare a source-grounded question before showing any explanation. */
+    preparePractice(input: {
+      meta: RequestMetaV1;
+      roundId: Uuid;
+      expectedRevision: number;
+    }): Promise<GatewayResultV1<z.infer<typeof roundTeachingViewV1Schema>>>;
     /**
      * 生成一条解释（W4-6 刀二；刀一那两条 HTTP 入口的第二条）。
      *
@@ -2777,6 +2790,16 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
       decision: z.infer<typeof setPersonalRelationDecisionV2Schema>["decision"];
       noteId?: string | null;
     }): Promise<GatewayResultV1<z.infer<typeof setPersonalRelationDecisionV2ResultSchema>>>;
+    /**
+     * 39d W8-1：星图三层展开的层二（笔记局部）与层三（证据详情），按一篇笔记读。
+     * `limit` **原样透传**，主进程不补默认值——补了就变成"客户端决定屏幕上
+     * 看几条"，而截断那一格是服务端报的事实（§11.5）。
+     */
+    getNoteDeepening(input: {
+      meta: RequestMetaV1;
+      noteId: string;
+      limit?: number;
+    }): Promise<GatewayResultV1<z.infer<typeof noteDeepeningV3Schema>>>;
   };
   readonly search: {
     global(input: { meta: RequestMetaV1; query: string; type?: "note" | "source" | "objective"; limit?: number; offset?: number }): Promise<GatewayResultV1<z.infer<typeof desktopSearchPageSchema>>>;

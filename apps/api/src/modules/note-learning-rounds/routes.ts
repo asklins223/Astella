@@ -30,7 +30,7 @@ import type {
   NoteLearningRoundHistoryMaskedItemV1,
 } from "@ailearn/shared/note-learning-round-contracts";
 import { z } from "zod";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   currentApiWorkspaceTransaction,
   withWorkspaceTransaction,
@@ -50,6 +50,7 @@ import {
   noteLearningRoundV1Schema,
   noteLearningRoundViewV1Schema,
   noteRoundContentMovedV1,
+  prepareRoundPracticeRequestV1Schema,
   reopenNoteLearningRoundRequestV1Schema,
   reviseDrivingQuestionRequestV1Schema,
   roundGapHelpV1Schema,
@@ -61,6 +62,7 @@ import {
   roundTeachingArtifactRefV1Schema,
   roundTeachingViewV1Schema,
   type NoteLearningRoundV1Wire,
+  type RoundTeachingV1,
   type RoundPracticeStartV1,
   type RoundPracticeV1,
   type RoundSuspectClaimV1,
@@ -100,7 +102,8 @@ import {
   runDynamicArtifactV1,
   type DynamicArtifactProviderV1,
 } from "./round-artifact-model.ts";
-import { computeArtifactNodesV1 } from "./round-artifact-measure.ts";
+import { ARTIFACT_MIN_STEPS_V1, groundArtifactStepsV1, plainTextForGroundingV1 } from "./round-artifact-measure.ts";
+import { checkArtifactDocumentV1 } from "./round-artifact-doc.ts";
 import type { RoundArtifactSourceV1 } from "./round-artifact.ts";
 import {
   buildDynamicArtifactHtmlV1,
@@ -110,15 +113,20 @@ import { buildRoundReadingPlan, suggestRoundQuestion } from "./learning-plan.ts"
 import { requireAiConsent } from "../identity/ai-consent-gate.ts";
 import { finishRoundModelAttempt, reserveRoundModelAttempt, type RoundModelAttempt } from "./model-attempt.ts";
 import { listNoteRoundPractices } from "../learning-runs/run-service.ts";
+import { learningObjectivesV2, learningObjectiveRevisionsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
+import { objectiveRubricV2Schema } from "@ailearn/shared/card-generation-v2-contracts";
+import { decideRoundNextStep } from "./round-progression.ts";
 import { readRoundGapHelpV1 } from "../learning-runs/gap-help-service.ts";
 import { readRoundPrerequisiteProposalV1 } from "./prerequisite-proposal.ts";
 import { readLatestArtifactFailureV1 } from "./artifact-failure.ts";
 import { readNoteRouteCoverageV1 } from "./route-coverage.ts";
 import { noteRouteCoverageV1Schema } from "@ailearn/shared/note-route-coverage-v2";
-import { assembleObjectiveSurfaceV3, listObjectiveSurfacesV3 } from "../learning-objectives/surface-service.ts";
+import { assembleObjectiveSurfaceV3 } from "../learning-objectives/surface-service.ts";
 import { readNoteChangeImpactsV1 } from "../learning-objectives/change-impact-service.ts";
-import { createRoundTargetGrounder, selectGroundedRoundTarget, type RoundTargetGrounder } from "./target-grounding.ts";
-import { persistRoundTarget, readRoundTargetId } from "./round-target.ts";
+import { createRoundTargetGrounder, selectGroundedApplicationScenario, selectGroundedRoundTarget, type RoundTargetGrounder } from "./target-grounding.ts";
+import { persistRoundTarget, readRoundTargetId, recordRoundTeachingExposure } from "./round-target.ts";
+import { scheduleStudiedNoteTargetsV2 } from "../review/note-subscription-schedule.ts";
+import { visibleObjectivesCondition } from "../note/visibility.ts";
 import { roundBudgetsV1 } from "./round-budgets.ts";
 import { noteReflectionRoutes } from "./reflection-routes.ts";
 import { readPersonalTeachingSources } from "./reflection-service.ts";
@@ -486,8 +494,17 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
     }
     const scope = scopeOf(req);
     try {
-      return await withWorkspaceTransaction(scope, async (tx) => roundViewWire(tx, scope, await
-        advanceRound(tx, scope, { roundId, expectedRevision: parsed.data.expectedRevision, action: parsed.data.action })));
+      return await withWorkspaceTransaction(scope, async (tx) => {
+        const advanced = await advanceRound(tx, scope, {
+          roundId, expectedRevision: parsed.data.expectedRevision, action: parsed.data.action,
+        });
+        if (parsed.data.action.kind === "close") {
+          await scheduleStudiedNoteTargetsV2(tx, {
+            ...scope, noteId: advanced.noteId, at: new Date(),
+          });
+        }
+        return roundViewWire(tx, scope, advanced);
+      });
     } catch (err) {
       return replyRoundError(reply, err, "推进这一轮没成功", (tx, s) => readRound(tx, s, roundId));
     }
@@ -594,13 +611,146 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
     } catch (err) { return replyRoundError(reply, err, "调整这一轮计划没成功", (tx, s) => readRound(tx, s, roundId)); }
   });
 
+  /** Prepare the current question's private target before showing any answer. */
+  app.post("/v2/note-learning-rounds/:roundId/practice-preparation", async (req, reply) => {
+    const roundId = (req.params as { roundId?: string }).roundId ?? "";
+    const parsed = prepareRoundPracticeRequestV1Schema.safeParse(req.body ?? {});
+    if (!z.string().uuid().safeParse(roundId).success || !parsed.success) {
+      return reply.code(400).send({ error: "invalid_request", message: "准备先试需要本轮的最新修订号" });
+    }
+    const scope = scopeOf(req);
+    if (teaching.external) {
+      await requireAiConsent(req, reply);
+      if (reply.sent) return;
+    }
+    type Preparation = { round: NoteLearningRoundV1 } & (
+      | { kind: "reused"; teaching: RoundTeachingV1 | null;
+          extras: Awaited<ReturnType<typeof buildRoundTeachingExtras>> }
+      | { kind: "generate"; input: Awaited<ReturnType<typeof buildFrozenTeachingInput>>;
+          attempt: RoundModelAttempt; ordinal: number }
+    );
+    let frozen: Preparation;
+    try {
+      frozen = await withWorkspaceTransaction(scope, async (tx): Promise<Preparation> => {
+        await tx.execute(sql`SELECT id FROM note_learning_rounds WHERE id = ${roundId}
+          AND workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId} FOR UPDATE`);
+        const round = await readRound(tx, scope, roundId);
+        if (!round) throw new RoundServiceError("round_not_found", "这一轮不存在（或对当前这个人不可见）");
+        if (round.phase !== "active") throw new RoundServiceError("invalid_transition", "先恢复这一轮，再准备尝试");
+        if (round.revision !== parsed.data.expectedRevision) {
+          throw new RoundServiceError("stale_revision", "这一轮的问题已经变化，请刷新后重试");
+        }
+        if (!await getNoteWithVersion(tx, round.noteId, scope.workspaceId, scope.userId)) {
+          throw new RoundServiceError("note_not_found", "这篇笔记现在不可见，不能准备尝试");
+        }
+        const existingTarget = await readRoundTargetId(tx, scope, round);
+        const existingTeaching = await findReusableTeaching(tx, scope, {
+          roundId, kind: "explanation", drivingQuestionRevision: round.drivingQuestionRevision,
+          snapshotHash: round.sourceContentHash,
+        });
+        if (existingTarget) return { round, kind: "reused", teaching: existingTeaching,
+          extras: await buildRoundTeachingExtras(tx, scope, round, existingTeaching) };
+        if (existingTeaching) {
+          throw new RoundServiceError("invalid_teaching_content", "这次讲解尚无可靠练习目标，可继续阅读或调整本轮问题");
+        }
+        if (teaching.modelId === "unconfigured") {
+          throw new RoundServiceError("teaching_model_unconfigured", "讲解模型尚未配置，先试目标暂时无法准备");
+        }
+        const attempt = await reserveRoundModelAttempt(tx, scope, round, teaching.modelId);
+        if (attempt.maxCalls < 2) throw new RoundServiceError("round_budget_exhausted", "剩余预算不足以生成并核对先试目标");
+        return { round, kind: "generate", input: await buildFrozenTeachingInput(tx, scope, round),
+          attempt, ordinal: await countTeachings(tx, scope, roundId) + 1 };
+      });
+    } catch (err) {
+      return replyRoundError(reply, err, "准备先试没成功", (tx, s) => readRound(tx, s, roundId));
+    }
+    if (frozen.kind === "reused") return reply.code(200).send(roundTeachingViewV1Schema.parse({
+      version: 1 as const, round: toWire(frozen.round), teaching: frozen.teaching, ...frozen.extras,
+    }));
+
+    const generated = await runTeachingExplainV1({
+      provider: teaching.provider, modelId: teaching.modelId,
+      maxModelCalls: Math.min(2, frozen.attempt.maxCalls),
+      maxDurationMs: Math.max(1, frozen.attempt.deadlineAt - Date.now()),
+      attemptId: frozen.attempt.id, input: frozen.input, scope,
+      round: { roundId, noteVersionId: frozen.round.noteVersionId,
+        sourceContentHash: frozen.round.sourceContentHash },
+      ordinal: frozen.ordinal, currentActiveTransaction: currentApiWorkspaceTransaction,
+      reportDevelopmentError: (message) => req.log.error({ scope: "note-round-practice-preparation" }, message),
+    });
+    if (!generated.ok) {
+      await withWorkspaceTransaction(scope, (tx) => finishRoundModelAttempt(tx, scope, frozen.attempt, generated.modelCalls, false));
+      const mapped = teachingFailureResponseV1(generated);
+      return reply.code(mapped.status).send({ error: mapped.error, message: mapped.message });
+    }
+    const evidenceInput = { drivingQuestion: frozen.input.drivingQuestion,
+      planSteps: frozen.input.planSteps, blocks: frozen.input.blocks };
+    const proposal = constrainTargetToSuspectRechecksV1(
+      generated.output.target ?? null, frozen.input.suspectRechecks ?? [],
+    );
+    let modelCalls = generated.modelCalls;
+    if (!proposal) {
+      await withWorkspaceTransaction(scope, (tx) => finishRoundModelAttempt(tx, scope, frozen.attempt, modelCalls, false));
+      return reply.code(422).send({ error: "practice_target_unavailable",
+        message: "这篇材料暂时提不出可靠的先试问题，可以直接看讲解或核对笔记" });
+    }
+    const grounded = await targetGrounder({
+      target: proposal, applicationScenario: generated.output.applicationScenario,
+      teaching: { explanation: generated.output.explanation,
+        example: generated.output.example }, input: evidenceInput,
+      maxCalls: frozen.attempt.maxCalls - modelCalls,
+      maxDurationMs: frozen.attempt.deadlineAt - Date.now(), scope,
+      round: { roundId, noteVersionId: frozen.round.noteVersionId,
+        sourceContentHash: frozen.round.sourceContentHash },
+      attemptId: frozen.attempt.id, currentActiveTransaction: currentApiWorkspaceTransaction,
+    });
+    modelCalls += grounded.modelCalls;
+    const accepted = selectGroundedRoundTarget(proposal, grounded.report);
+    if (!accepted) {
+      await withWorkspaceTransaction(scope, (tx) => finishRoundModelAttempt(tx, scope, frozen.attempt, modelCalls, false));
+      return reply.code(422).send({ error: "practice_target_unavailable",
+        message: "先试问题的依据尚未核对通过，可以直接看讲解或核对笔记" });
+    }
+    try {
+      const prepared = await withWorkspaceTransaction(scope, async (tx) => {
+        if (!await getNoteWithVersion(tx, frozen.round.noteId, scope.workspaceId, scope.userId)) {
+          throw new RoundServiceError("note_not_found", "这篇笔记的访问权限已经变化，请重新打开");
+        }
+        const current = await readRound(tx, scope, roundId);
+        if (!current || current.phase !== "active" || current.revision !== parsed.data.expectedRevision
+          || current.drivingQuestionRevision !== frozen.round.drivingQuestionRevision
+          || current.sourceContentHash !== frozen.round.sourceContentHash) {
+          throw new RoundServiceError("stale_revision", "本轮问题已经变化，请刷新后重试");
+        }
+        const teachingRow = await findReusableTeaching(tx, scope, {
+          roundId, kind: "explanation", drivingQuestionRevision: current.drivingQuestionRevision,
+          snapshotHash: current.sourceContentHash,
+        });
+        await finishRoundModelAttempt(tx, scope, frozen.attempt, modelCalls, true);
+        const applicationScenario = selectGroundedApplicationScenario(
+          generated.output.applicationScenario, accepted.target, accepted.report, evidenceInput);
+        const objectiveId = await persistRoundTarget(tx, scope, current, evidenceInput,
+          accepted.target, accepted.report, applicationScenario);
+        // A teaching request may have committed while the private preparation was
+        // running. In that case the answer was already shown before this target
+        // existed, so its exposure must be recorded against the new binding.
+        if (teachingRow) await recordRoundTeachingExposure(tx, scope, current, objectiveId);
+        return { round: current, teaching: teachingRow,
+          extras: await buildRoundTeachingExtras(tx, scope, current, teachingRow) };
+      });
+      return reply.code(201).send(roundTeachingViewV1Schema.parse({
+        version: 1 as const, round: toWire(prepared.round),
+        teaching: prepared.teaching, ...prepared.extras,
+      }));
+    } catch (err) {
+      await withWorkspaceTransaction(scope, (tx) => finishRoundModelAttempt(tx, scope, frozen.attempt, modelCalls, false));
+      return replyRoundError(reply, err, "先试问题生成了但没能安全保存", (tx, s) => readRound(tx, s, roundId));
+    }
+  });
+
   /**
-   * 生成一条教学产物（W4-6）。
-   *
-   * 三相与制卡漏斗同形（W3-2 第三刀那条纪律）：短事务只读冻结输入 → **事务外**跑内核任务
-   * → 短事务只写。中间那一段拿不到 tx，"持锁等模型"在这条链上写不出来。
-   *
-   * 幂等：同快照、同问题版本的已有解释直接回（200），不重跑也不重付；真的生成了才是 201。
+   * 生成一条教学产物：短事务冻结输入，事务外运行模型，短事务提交。
+   * 同快照、同问题版本已有解释时直接复用。
    */
   app.post("/v2/note-learning-rounds/:roundId/teaching", async (req, reply) => {
     const roundId = (req.params as { roundId?: string }).roundId ?? "";
@@ -650,14 +800,14 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
             personalSources,
           });
         if (reused) return { round, kind: "reused", teaching: reused,
-          extras: await buildRoundTeachingExtras(tx, scope, round, reused.teachingId) };
+          extras: await buildRoundTeachingExtras(tx, scope, round, reused) };
         if (teaching.modelId === "unconfigured") {
           throw new RoundServiceError("teaching_model_unconfigured", "讲解模型尚未配置，已有内容保留；请先配置 AI 服务");
         }
         const used = await countTeachings(tx, scope, roundId);
         const attempt = await reserveRoundModelAttempt(tx, scope, round, teaching.modelId);
         return { round, kind: "generate", ordinal: used + 1,
-          input: await buildFrozenTeachingInput(tx, scope, round, personalSources), attempt };
+          input: await buildFrozenTeachingInput(tx, scope, round, personalSources, parsed.data.regenerate), attempt };
       });
     } catch (err) {
       return replyRoundError(reply, err, "生成这一条解释没成功", (tx, s) => readRound(tx, s, roundId));
@@ -707,7 +857,8 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
     // Independently check the explanation as well as the optional private target.
     // Explicit offline fixtures without a grounder use their recorded teaching; production never skips this gate.
     const grounded = teaching.external || options.targetGrounder || targetProposal ? await targetGrounder({
-      target: targetProposal, teaching: { explanation: generated.output.explanation, example: generated.output.example },
+      target: targetProposal, applicationScenario: generated.output.applicationScenario,
+      teaching: { explanation: generated.output.explanation, example: generated.output.example },
       input: evidenceInput,
       maxCalls: frozen.attempt.maxCalls - generated.modelCalls,
       maxDurationMs: frozen.attempt.deadlineAt - Date.now(), scope,
@@ -720,8 +871,22 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
     let modelCalls = generated.modelCalls + grounded.modelCalls;
     if (!grounded.report?.teachingSupported) {
       await withWorkspaceTransaction(scope, (tx) => finishRoundModelAttempt(tx, scope, frozen.attempt, modelCalls, false));
+      // 核查者**自己写的理由**要进留痕（§16.4）。这一条 422 在界面上只有一句「依据还
+      // 没核对通过」；若日志里也只有那一句，事后既不知道是讲解的哪一句没有依据，也不知道
+      // 该动提示词、该动材料，还是该换模型——三样对应的处置完全不同。
+      req.log.error({ scope: "note-round-teaching", reason: grounded.report?.teachingReason ?? "no report" },
+        `这次讲解的依据核对没过：${grounded.report?.teachingReason ?? "核查者没有给出理由"}`
+        + (grounded.report
+          ? `｜核不上的段：${grounded.report.teachingSegments.filter((seg) => !seg.supported)
+            .map((seg) => `#${seg.ordinal} ${seg.reason}`).join(" ") || "（核查者说整体不成立，但没点名具体段）"}`
+          : ""));
+      // 界面上这一句要说清**下一步该做什么**。原来的"可以重试"是在教用户烧预算：
+      // 真窗口实测（2026-09-28）连撞两堵墙都只给这一句，用户既不知道是内容没核对过，
+      // 也不知道真正管用的是**换一个材料答得上来的问法**。核查者不能替界面断言"是问题
+      // 问歪了"（它只知道自己核了哪几段），所以这里只说两件确定的事：没展示、以及换
+      // 问法比空转一次有用。
       return reply.code(422).send({ error: "teaching_grounding_failed",
-        message: "这次讲解的依据还没核对通过，暂时没有展示；可以重试或先继续读笔记" });
+        message: "这次讲解里有几处说法，这篇笔记里没有依据，所以没有展示。换个问法（问笔记真的说过的理由或条件）多半就能过；也可以先继续读笔记。" });
     }
     const acceptedTarget = selectGroundedRoundTarget(targetProposal, grounded.report);
     const recheckIds = new Set((frozen.input.suspectRechecks ?? []).map((claim) => claim.unitId));
@@ -735,18 +900,29 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
 
     // ── 相位 2.5：动态演示的生成与渲染，**仍在事务外**（39d W4-1 尾）──
     //
-    // 为什么排在这一段而不是相位 1 或相位 3：它需要**这一条刚生成出来的解释**当素材，
+    // 为什么排在这一段而不是相位 1 或相位 3：它要**这一条刚生成出来的解释**对齐语气，
     // 而它自己是一次外部调用，落进相位 3 的短事务就是持行锁等模型（D5 §5.2）。
+    //
+    // 演示画的是**理解过程**，输入因此是**冻结正文的块**而不是切好的教学栏目：模型给
+    // 每一步的「叫什么／发生了什么／依据哪一块的哪一句」，服务端逐条逐字核对，核得上
+    // 的才是节点（39f DEMO-1）。所以这一步在发调用之前就算不出节点数——能不能上屏
+    // 要等模型回话，而**要发这次调用**又得先知道有没有值得发的材料。
     //
     // 预算不够就**不发**这一次：那是"没请求过"，不是"请求了但失败"——§6.2 要求界面对
     // 这两句说不同话，所以这里不写失败留痕（`artifactGenerationFailure` 留空），教学行照
     // 常落、`artifact_id` 留空。
+    // 确定性构建那一档（`kind: "material"`）要的形状与**动态**那一档不同：它是"把这一条
+    // 已生成的讲解按静态分镜铺开"，所以还是解释 ＋ 例子 ＋ 计划步骤。两条路各自要什么，
+    // 别混成一份输入。
     const artifactMaterial = {
       explanation: generated.output.explanation,
       ...(generated.output.example ? { example: generated.output.example } : {}),
       planSteps: frozen.input.planSteps,
     };
-    const artifactNodes = computeArtifactNodesV1(artifactMaterial);
+    const artifactBlocks = frozen.input.blocks;
+    const artifactMaterialUsable = artifactBlocks.filter(
+      (block) => block.type !== "heading" && plainTextForGroundingV1(block.text).length > 0,
+    ).length;
     const artifactCallBudget = Math.max(0, frozen.attempt.maxCalls - modelCalls);
     const artifactRemainingMs = frozen.attempt.deadlineAt - Date.now();
     const generatorRef = `${DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1} (${artifactGenerator.modelId})`;
@@ -756,7 +932,10 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
     // 没配模型就直接走确定性构建，**不**发那一次调用：发一次注定失败的调用只会留下一条
     // `model_failed` 留痕，把"这个部署压根没配模型"说成"生成过一次且失败了"。
     const artifactModelReady = artifactGenerator.modelId !== "unconfigured";
-    if (artifactModelReady && artifactNodes.length > 0 && artifactCallBudget >= 1 && artifactRemainingMs > 0) {
+    if (artifactModelReady
+      && artifactMaterialUsable >= ARTIFACT_MIN_STEPS_V1
+      && artifactCallBudget >= 1
+      && artifactRemainingMs > 0) {
       const demo = await runDynamicArtifactV1({
         provider: artifactGenerator.provider,
         modelId: artifactGenerator.modelId,
@@ -764,7 +943,11 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
         maxModelCalls: Math.min(2, artifactCallBudget),
         maxDurationMs: artifactRemainingMs,
         attemptId: frozen.attempt.id,
-        input: { drivingQuestion: frozen.round.drivingQuestion, nodes: artifactNodes },
+        input: {
+          drivingQuestion: frozen.round.drivingQuestion,
+          blocks: artifactBlocks,
+          explanation: generated.output.explanation,
+        },
         scope,
         round: {
           roundId: frozen.round.roundId,
@@ -777,18 +960,48 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
       });
       modelCalls += demo.modelCalls;
       if (demo.ok) {
-        const rendered = buildDynamicArtifactHtmlV1({
-          spec: demo.spec,
-          nodes: artifactNodes,
-          snapshotHash: frozen.round.sourceContentHash,
-          generatorRef,
-        });
-        if (rendered.ok) {
-          artifactSource = { kind: "rendered", html: rendered.html, generatorRef };
-        } else {
-          // 渲染器拒了（空／超配额）：走 build 档，由 createTeaching 那一侧补记。
+        // 核对在渲染之前、事务之外：核出来的是**服务端裁定**的引文集，模型的那份
+        // 不再被改写（核不上的整条丢掉，不补齐）。剩下的不足两条就整份不上屏。
+        const grounded = groundArtifactStepsV1({ steps: demo.doc.outline, blocks: artifactBlocks });
+        if (!grounded.ok) {
+          artifactGenerationFailure = { reason: "contract_rejected", detail: grounded.detail };
           req.log.error({ scope: "note-round-artifact" },
-            `动态演示没有渲染出来（${rendered.reason}）：${rendered.detail}`);
+            `动态演示的依据核对没过：${grounded.detail}`);
+        } else if (grounded.rejected.length > 0) {
+          // 留痕但不拦路：核不上的那几条被丢了，剩下够走一遍就照常上屏。
+          req.log.info({ scope: "note-round-artifact" },
+            `动态演示有 ${grounded.rejected.length} 条依据核对不上，已丢弃：`
+            + grounded.rejected.map((step) => `${step.ordinal}:${step.reason}`).join(" "));
+        }
+        if (grounded.ok) {
+          // 第二道闸：安全 ＋「引文要真的画在页面上」。外链、联网、逃逸口在这一步红。
+          const documentCheck = checkArtifactDocumentV1({
+            document: demo.doc.document,
+            verifiedQuotes: grounded.nodes.map((node) => node.quote),
+          });
+          if (!documentCheck.ok) {
+            const reason = documentCheck.verdict.violation?.reason ?? "unknown";
+            artifactGenerationFailure = {
+              reason: "contract_rejected",
+              detail: `动态演示的页面没过安全闸（${reason}）：${documentCheck.verdict.violation?.evidence ?? ""}`,
+            };
+            req.log.error({ scope: "note-round-artifact" },
+              `动态演示的页面没过安全闸（${reason}）：${documentCheck.verdict.violation?.evidence ?? ""}`);
+          } else {
+            const rendered = buildDynamicArtifactHtmlV1({
+              doc: demo.doc,
+              nodes: grounded.nodes,
+              snapshotHash: frozen.round.sourceContentHash,
+              generatorRef,
+            });
+            if (rendered.ok) {
+              artifactSource = { kind: "rendered", html: rendered.html, generatorRef };
+            } else {
+              // 渲染器拒了（空／超配额）：走 build 档，由 createTeaching 那一侧补记。
+              req.log.error({ scope: "note-round-artifact" },
+                `动态演示没有渲染出来（${rendered.reason}）：${rendered.detail}`);
+            }
+          }
         }
       } else {
         // 生成失败**留痕**：回传给 createTeaching，在教学行落库之后补一行
@@ -842,10 +1055,15 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
             reportArtifactFailure: (message) => req.log.error({ scope: "note-round-artifact" }, message),
           },
         );
-        if (acceptedTarget) await persistRoundTarget(tx, scope, frozen.round, evidenceInput, acceptedTarget.target, acceptedTarget.report);
+        const targetId = acceptedTarget
+          ? await persistRoundTarget(tx, scope, frozen.round, evidenceInput, acceptedTarget.target,
+              acceptedTarget.report, selectGroundedApplicationScenario(generated.output.applicationScenario,
+                acceptedTarget.target, acceptedTarget.report, evidenceInput))
+          : await readRoundTargetId(tx, scope, frozen.round);
+        if (targetId) await recordRoundTeachingExposure(tx, scope, frozen.round, targetId);
         const round = await readRound(tx, scope, roundId);
         if (!round) throw new RoundServiceError("round_not_found", "这一轮不存在（或对当前这个人不可见）");
-        return { round, teaching, extras: await buildRoundTeachingExtras(tx, scope, round, teaching.teachingId) };
+        return { round, teaching, extras: await buildRoundTeachingExtras(tx, scope, round, teaching) };
       });
       return reply.code(201).send(roundTeachingViewV1Schema.parse({
         version: 1 as const,
@@ -886,7 +1104,7 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
           drivingQuestionRevision: round.drivingQuestionRevision,
           snapshotHash: round.sourceContentHash,
         });
-        return { round, teaching, extras: await buildRoundTeachingExtras(tx, scope, round, teaching?.teachingId ?? null) };
+        return { round, teaching, extras: await buildRoundTeachingExtras(tx, scope, round, teaching) };
       });
     } catch (err) {
       return replyRoundError(reply, err, "读这一条解释没成功");
@@ -932,9 +1150,8 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
  * `artifact` 也是 `null`。**不做 phase 限制**：轮次关闭后历史回放要能取到同一份产物。
  *
  * 起点由服务端签发，规则三条：
- *  1. 目标必须是这一篇的 active 目标（与笔记页那颗主要动作同一条查询：
- *     `listObjectiveSurfacesV3` 的 `noteId` 收窄），没有 ⇒ `practiceStart = null`
- *     ——无目标的轮次不出现「练一道」（练习只在目标存在时开 run）。
+ *  1. 目标必须是这一轮当前问题已核查的 target binding。笔记上旧的卡片目标
+ *     即使仍 active，也不能在尚未准备先试时顶替这道问题。
  *  2. 目标此刻的主行动必须是"开一场新的"（`create_run` / `practice_only`）：
  *     `resume_run` 意味着这个目标已有一场开着（再开一场会同时两场进行中），
  *     `create_review_run` 是**日程锚定**的复习（把它改锚到这一轮等于把一次到期复习
@@ -947,11 +1164,12 @@ async function buildRoundTeachingExtras(
   tx: ApiTransaction,
   scope: RoundScopeV1,
   round: NoteLearningRoundV1,
-  teachingId: string | null,
+  teaching: RoundTeachingV1 | null,
 ): Promise<{
   practices: RoundPracticeV1[];
   plans: Awaited<ReturnType<typeof listPlanRevisions>>;
   practiceStart: RoundPracticeStartV1 | null;
+  nextStep: ReturnType<typeof decideRoundNextStep>;
   gapHelp: ReturnType<typeof roundGapHelpV1Schema.parse>;
   /** 「补一节前置」提案（W4-6 刀四·正面要求；§16.3）。停下来的四档里那一档靠它。 */
   prerequisite: ReturnType<typeof roundPrerequisiteViewV1Schema.parse>;
@@ -959,15 +1177,20 @@ async function buildRoundTeachingExtras(
   artifactFailure: ReturnType<typeof roundArtifactFailureV1Schema.parse> | null;
   artifact: ReturnType<typeof roundTeachingArtifactRefV1Schema.parse> | null;
 }> {
-  const practices = await listNoteRoundPractices(tx, scope, round.roundId);
+  const observations = await listNoteRoundPractices(tx, scope, round.roundId);
+  const practices: RoundPracticeV1[] = observations.map(({ runId, phase, outcome, startedAt }) => ({
+    runId, phase, outcome, startedAt,
+  }));
   const plans = await listPlanRevisions(tx, scope, round.roundId);
   // 动态版本那一格（刀五）：读的是这一条教学行的 artifact_id 指向的产物行；
   // 没有动态版本（还没生成 / 生成失败）就是 null——那不是失败（D4 §6.2）。
-  const artifact = teachingId ? await readTeachingArtifactRef(tx, scope, teachingId) : null;
+  const artifact = teaching ? await readTeachingArtifactRef(tx, scope, teaching.teachingId) : null;
+  const targetId = await readRoundTargetId(tx, scope, round);
+  const objective = targetId ? await assembleObjectiveSurfaceV3(tx, scope, targetId) : null;
   // 缺口帮助停止那一格（W4-6 刀四）：判据在 learning-runs 那一侧算（它才看得见
   // 帮助事件与结论），这里只把它读出来、过一遍合同。缺口身份不进线上合同（它由服务端
   // 自己用），所以这里显式挑三格。
-  const gapHelp = await readRoundGapHelpV1(tx, scope, round.roundId);
+  const gapHelp = await readRoundGapHelpV1(tx, scope, round.roundId, objective?.objectiveId ?? null);
   const gapHelpWire = roundGapHelpV1Schema.parse({
     stopped: gapHelp.stopped,
     consecutiveHelpCount: gapHelp.consecutiveHelpCount,
@@ -986,23 +1209,54 @@ async function buildRoundTeachingExtras(
   const artifactFailureWire = artifactFailureRaw
     ? roundArtifactFailureV1Schema.parse(artifactFailureRaw)
     : null;
-  const targetId = await readRoundTargetId(tx, scope, round);
-  const targetSurface = targetId ? await assembleObjectiveSurfaceV3(tx, scope, targetId) : null;
-  // Once teaching has proposed the current question's target, an unrelated old
-  // note objective cannot replace a rejected or missing proposal.
-  const objective = targetSurface ?? (teachingId ? null : (await listObjectiveSurfacesV3(tx, scope, {
-    lifecycle: "active", noteId: round.noteId, limit: 1,
-  })).items[0]);
-  if (!objective) return { practices, plans, artifact, practiceStart: null, gapHelp: gapHelpWire, prerequisite: prerequisiteWire, artifactFailure: artifactFailureWire };
-  const action = objective.primaryAction;
-  if (action.kind !== "create_run" && action.kind !== "practice_only") {
-    return { practices, plans, artifact, practiceStart: null, gapHelp: gapHelpWire, prerequisite: prerequisiteWire, artifactFailure: artifactFailureWire };
+  const action = objective?.primaryAction;
+  const canStartPractice = round.phase === "active" && (action?.kind === "create_run" || action?.kind === "practice_only");
+  // An older question can have a Run on the same objective. The current binding's
+  // creation time fences observations to the current question before progression.
+  const targetRows = targetId ? await tx.execute(sql`SELECT created_at, application_scenario FROM note_learning_round_targets
+    WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
+      AND round_id = ${round.roundId} AND driving_question_revision = ${round.drivingQuestionRevision}`) : [];
+  const targetBoundAt = targetRows[0]?.created_at
+    ? new Date(String(targetRows[0].created_at)).getTime() : null;
+  const currentObservations = observations.filter((practice) =>
+    practice.objectiveId === objective?.objectiveId
+    && (targetId ? targetBoundAt !== null && Number.isFinite(targetBoundAt)
+      && Date.parse(practice.startedAt) >= targetBoundAt
+      : round.drivingQuestionRevision === 1));
+  const latestPractice = currentObservations.at(-1) ?? null;
+  const revisionRows = objective ? await tx.select({ scoringRubric: learningObjectiveRevisionsV2.scoringRubric })
+    .from(learningObjectivesV2)
+    .innerJoin(learningObjectiveRevisionsV2, and(
+      eq(learningObjectivesV2.workspaceId, learningObjectiveRevisionsV2.workspaceId),
+      eq(learningObjectivesV2.currentObjectiveRevisionId, learningObjectiveRevisionsV2.objectiveRevisionId),
+    ))
+    .where(and(eq(learningObjectivesV2.workspaceId, scope.workspaceId),
+      eq(learningObjectivesV2.objectiveId, objective.objectiveId),
+      visibleObjectivesCondition(scope.userId, learningObjectivesV2.objectiveId)))
+    .limit(1) : [];
+  const rubric = objectiveRubricV2Schema.safeParse(revisionRows[0]?.scoringRubric);
+  const nextStep = decideRoundNextStep({
+    roundPhase: round.phase,
+    hasTeaching: teaching !== null,
+    hasTarget: objective !== undefined && objective !== null,
+    canStartPractice,
+    // Only an independently grounded, required apply criterion can support
+    // an application task; the planner otherwise silently falls back to explain.
+    transferSuitable: Boolean(targetRows[0]?.application_scenario) && rubric.success
+      && rubric.data.units.some((unit) => unit.required && unit.facet === "apply"),
+    gapHelpStopped: gapHelp.stopped && gapHelp.gap?.objectiveId === objective?.objectiveId,
+    teachingCreatedAt: teaching?.createdAt ?? null,
+    latestPractice,
+  });
+  if (!objective || !canStartPractice || !action || (action.kind !== "create_run" && action.kind !== "practice_only")) {
+    return { practices, plans, artifact, practiceStart: null, nextStep, gapHelp: gapHelpWire, prerequisite: prerequisiteWire, artifactFailure: artifactFailureWire };
   }
   const objectiveId = objective.objectiveId;
   return {
     practices,
     plans,
     artifact,
+    nextStep,
     gapHelp: gapHelpWire,
     prerequisite: prerequisiteWire,
     artifactFailure: artifactFailureWire,
@@ -1010,6 +1264,7 @@ async function buildRoundTeachingExtras(
       objectiveId,
       start: {
         ...action.start,
+        ...(nextStep.kind === "apply" ? { goal: "transfer" as const } : {}),
         originV2: { kind: "note_round", roundId: round.roundId, noteId: round.noteId, objectiveId },
       },
     }),
@@ -1026,6 +1281,7 @@ async function buildFrozenTeachingInput(
   scope: RoundScopeV1,
   round: NoteLearningRoundV1,
   personalSources: Awaited<ReturnType<typeof readPersonalTeachingSources>> = [],
+  includePracticeObservation = false,
 ) {
   const [blocks, plans] = await Promise.all([
     loadTeachingSnapshotBlocks(tx, scope.workspaceId, round.noteVersionId),
@@ -1033,6 +1289,27 @@ async function buildFrozenTeachingInput(
   ]);
   const latestPlan = plans.length > 0 ? plans[plans.length - 1] : null;
   const suspectFollowUp = await readSuspectClaimFollowUpV1(tx, scope, round, blocks);
+  let practiceObservation: {
+    outcome: "partial" | "needs_repair" | "declared_unable" | "practice_completed";
+    gapFacets: Array<"recall" | "paraphrase" | "explain" | "example" | "apply" | "boundary" | "procedure" | "relate" | "repair">;
+  } | null = null;
+  if (includePracticeObservation) {
+    const targetId = await readRoundTargetId(tx, scope, round);
+    if (targetId) {
+      const binding = await tx.execute(sql`SELECT created_at FROM note_learning_round_targets
+        WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
+          AND round_id = ${round.roundId} AND driving_question_revision = ${round.drivingQuestionRevision}`);
+      const boundAt = binding[0]?.created_at ? new Date(String(binding[0].created_at)).getTime() : NaN;
+      const observations = await listNoteRoundPractices(tx, scope, round.roundId);
+      const latest = observations.filter((practice) => practice.objectiveId === targetId
+        && Date.parse(practice.startedAt) >= boundAt).at(-1);
+      if (latest?.outcome && ["partial", "needs_repair", "declared_unable", "practice_completed"].includes(latest.outcome)
+        && (latest.outcome !== "practice_completed" || latest.gapFacets.length > 0)) {
+        practiceObservation = { outcome: latest.outcome as NonNullable<typeof practiceObservation>["outcome"],
+          gapFacets: latest.gapFacets };
+      }
+    }
+  }
   return {
     drivingQuestion: round.drivingQuestion,
     planSteps: latestPlan ? latestPlan.plan.steps.map((step) => step.text) : [],
@@ -1040,5 +1317,6 @@ async function buildFrozenTeachingInput(
     personalSources,
     suspectRechecks: suspectFollowUp.recheckTargets,
     pendingSuspectClaims: suspectFollowUp.pendingClaims,
+    ...(practiceObservation ? { practiceObservation } : {}),
   };
 }

@@ -41,8 +41,6 @@ P2 键表的取用、触发分类与退出码。
 from __future__ import annotations
 
 import argparse
-import csv
-import io
 import json
 import os
 import re
@@ -57,6 +55,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SCRIPTED_RUNS_FILE = ROOT / ".impeccable/companion/scripted-runs.txt"
 BRIDGE = ROOT / "workers/ai-worker/scripts/companion-gate-eval.ts"
 BRIDGE_RUNNER = ROOT / "workers/ai-worker/node_modules/.bin/tsx"
+PSQL_LITE = ROOT / "scripts/psql-lite.mjs"
 
 # 开发栈的"真人账号"约定，与 companion-quality-report.py 同源。
 DEV_REAL_ACCOUNT_EMAILS = ("owner@ailearn.local",)
@@ -106,16 +105,75 @@ CN_DIGITS = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 
 
 # ─── 取数（只读） ──────────────────────────────────────────────────────────
 
+def db_settings() -> dict[str, str]:
+    """本台要连的那个库（只读）。
+
+    **为什么不再走 `docker exec psql`**：那台机器上 docker CLI 不在 PATH（daemon 在跑、
+    127.0.0.1:5432 可达），于是整个重放台**一条读数都出不来**——而"读不出来"会被
+    下一个人读成"这台仪器今天没量到东西"，与"闸没问题"长得一模一样。改走仓库里
+    `scripts/psql-lite.mjs`（`dev-disposable-db.sh` 用的同一个替身，`pg` 驱动，
+    只在 apps/api 的依赖树里，不新增依赖），它把结果按 JSON 行吐出来。
+
+    连接参数取 `.env` 的 `DATABASE_URL`（超户/迁移角色）：本台要数的是**全库**的
+    形状（`n_all` 那一格就是全量），受限角色会被 RLS 挡掉，那一格会静默变小。
+    `.env` 里的主机名 `postgres` 是 compose 网络里的名字，本机要换 `127.0.0.1`。
+
+    只读：本文件只发 SELECT；psql-lite 也不做任何 DDL。
+    """
+    raw = os.environ.get("DATABASE_URL", "")
+    if not raw:
+        env_file = ROOT / ".env"
+        if env_file.exists():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                if line.startswith("DATABASE_URL="):
+                    raw = line[len("DATABASE_URL="):].strip().strip('"').strip("'")
+                    break
+    match = re.fullmatch(
+        r"postgres(?:ql)?://(?P<user>[^:]+):(?P<password>[^@]*)@(?P<host>[^:/]+)(?::(?P<port>\d+))?/(?P<db>\S+)",
+        raw)
+    if not match:
+        raise SystemExit(
+            "读不到 DATABASE_URL（环境变量与 .env 都没有，或格式不是 "
+            "postgres://user:pass@host:port/db）——本台要连库才能取数")
+    parts = match.groupdict()
+    return {
+        "host": "127.0.0.1" if parts["host"] in ("postgres", "localhost") else parts["host"],
+        "port": parts["port"] or "5432",
+        "user": parts["user"],
+        "password": parts["password"],
+        "db": parts["db"],
+    }
+
+
 def rows(query: str) -> list[dict]:
-    """跑一条 SELECT，返回 dict 列表。走 COPY … CSV，理由与 companion-quality-report.py 同源
-    （psql -A 会按输出宽度折行长值，行式解析把一条记录读成好几条）。"""
+    """跑一条 SELECT，返回 dict 列表。
+
+    走 `psql-lite.mjs` 的 JSON 行出口而不是 `COPY … TO STDOUT WITH (FORMAT csv)`：
+    后者是 psql 自己的命令，`pg` 驱动发不了（extended protocol 不认 COPY TO STDOUT），
+    而 JSON 行**本来就是这批查询更想要的形状**——它把 NULL 交成 `None` 而不是空串，
+    归因格那几个 `coalesce(..., '')` 之外的列（`latest`、`error_codes`）不用再猜。
+    """
+    settings = db_settings()
     out = subprocess.run(
-        ["docker", "exec", CONTAINER, "psql", "-U", "ailearn", "-d", "ailearn", "-t", "-c",
-         f"COPY ({query.strip().rstrip(';')}) TO STDOUT WITH (FORMAT csv, HEADER true)"],
-        capture_output=True, text=True)
+        ["/opt/homebrew/bin/node" if Path("/opt/homebrew/bin/node").exists() else "node",
+         str(PSQL_LITE), "-h", settings["host"], "-p", settings["port"],
+         "-U", settings["user"], "-d", settings["db"], "-t", "-c", query.strip().rstrip(";")],
+        capture_output=True, text=True,
+        env={**os.environ, "PGPASSWORD": settings["password"]})
     if out.returncode != 0:
         raise RuntimeError(out.stderr.strip()[:400])
-    return [dict(record) for record in csv.DictReader(io.StringIO(out.stdout))]
+    parsed: list[dict] = []
+    for line in out.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError as error:
+            raise RuntimeError(f"psql-lite 吐出的不是 JSON 行（{error}）：{line[:200]}") from error
+        if isinstance(record, dict):
+            parsed.append(record)
+    return parsed
 
 
 def sql_array(values: list[str]) -> str:
@@ -132,14 +190,24 @@ def scripted_run_ids() -> set[str]:
         return set()
 
 
-def text_of_blocks(blocks_json: str | None) -> str:
-    """blocks->0->>'text' 的 Python 侧等价：只取 text 型块的正文（与 textOfCompanionBlocks 同义）。"""
-    if not blocks_json:
+def text_of_blocks(blocks_json) -> str:
+    """blocks->0->>'text' 的 Python 侧等价：只取 text 型块的正文（与 textOfCompanionBlocks 同义）。
+
+    入参可以是 JSON 字符串，**也可以已经是解析好的 list/dict**。后者不是宽容，是必需：
+    `rows()` 走 psql-lite 的 JSON 行出口时 `pg` 会把 jsonb 列解成原生结构（查询里写了
+    `::text` 的那些列拿到的仍是字符串，两种都会走到这里）。第一版只认字符串，于是
+    拿到 list 时 `json.loads` 抛 ValueError、被 `except` 吞掉、返回 `""`——
+    **正文整段静默变空**，而症状只是"这一轮没触发任何闸"。今天所有取数都写了 `::text`，
+    所以主读数没踩到；新加的取历史那几条没有 `::text`，当场就踩到了。
+    """
+    if blocks_json is None:
         return ""
-    try:
-        blocks = json.loads(blocks_json)
-    except (TypeError, ValueError):
-        return ""
+    blocks = blocks_json
+    if isinstance(blocks_json, (str, bytes)):
+        try:
+            blocks = json.loads(blocks_json)
+        except (TypeError, ValueError):
+            return ""
     if not isinstance(blocks, list):
         return ""
     return "".join(str(b.get("text", "")) for b in blocks
@@ -188,6 +256,7 @@ def fetch_turns(days: int) -> dict:
                coalesce(r.tool_call_count, 0) AS tool_call_count,
                r.created_at, coalesce(r.model_id, '') AS model_id,
                coalesce(r.leak_gate_version, '') AS leak_gate_version,
+               coalesce(r.prompt_version, '') AS prompt_version,
                coalesce(r.conversation_id::text, '') AS conversation_id,
                coalesce(r.page_context::text, '') AS page_context,
                coalesce(ua.blocks::text, '') AS user_blocks,
@@ -224,6 +293,273 @@ def fetch_tool_calls(days: int) -> dict[str, list[dict]]:
     for call in calls:
         grouped.setdefault(call["run_id"], []).append(call)
     return grouped
+
+
+def fetch_activeness(user_ids: list[str]) -> dict[str, str]:
+    """每个用户**真实**的活跃度档（G5 的字数线跟它走）。
+
+    生产把活跃度从 `pet_profiles` 读进 `read.petProfile?.activeness`（`companion-dialogue.ts:746`），
+    再传给 runtime（`replyIsTruncated` 用 `TRUNCATED_REPLY_MIN_CHARS[args.activeness ?? "active"]`，
+    `runtime.ts:3097-3099`）。台子原来**整批写死 `active`**——那恰好是生产的兜底值，
+    所以"今天读数没错"是巧合而不是构造：一个把活跃度设成"安静"的用户，字数线 6→2，
+    同一批样本会少判很多条。台账把它记成"下限按用户而台子写死 active"，方向对、
+    成因要改成"写死的是生产兜底值"。
+
+    读得到的是**当前**那一档，不是历史那一档：活跃度能被 `companion_set_activeness` 改
+    （`runtime.ts:1667`），而历史值没有落库。所以这一格是**重算口径**，与 §1 的环境块同一类。
+    """
+    if not user_ids:
+        return {}
+    out: dict[str, str] = {}
+    for record in rows(f"""
+        SELECT user_id::text AS user_id, coalesce(activeness, '') AS activeness
+        FROM pet_profiles WHERE user_id::text = ANY({sql_array(user_ids)})
+    """):
+        # 生产按白名单收窄（`ACTIVENESS_VALUES`），不认识的一律 null ⇒ runtime 落回 "active"。
+        out[record["user_id"]] = record["activeness"] if record["activeness"] in (
+            "quiet", "moderate", "active") else "active"
+    return out
+
+
+def fetch_history(turns: list[dict]) -> dict[str, str]:
+    """每一轮**之前**同一会话里的用户原话——生产 `contextText` 里有、台子原来没喂的那一半。
+
+    生产的出处集合是 `baseMessages` 里所有非 assistant 消息（`runtime.ts:3044-3054`），
+    而 `baseMessages = buildCompanionPersonaMessages({... recentMessages ...})`
+    （`companion-dialogue.ts:558,750`）——历史以**原生多轮**的形式在里面，用户说的每一句
+    都算数字与引文的合法出处。台子原来只喂本轮那一句 ⇒ 用真出处的**真子集**判"有没有出处"，
+    方向恒为过报。
+
+    这里照抄生产那条 SQL 的形状（`companion-dialogue.ts:302-306`：`kind NOT IN
+    ('cancelled','error')`、`ORDER BY seq DESC LIMIT 20`、去掉 system 行），但**不抄
+    `buildCompanionPersonaMessages` 里那套截断**（12k/条、24k/整段、丢短 assistant 与它
+    回答的那句 user）。不抄是故意的：本台要用它做**否证**（"补上它，这几条还站得住吗"），
+    取**超集**时"不在超集里"必然也不在生产那份里，结论方向可靠；抄一遍截断规则则会
+    多一份会静默漂移的规则，而它只为了让否证更紧一点。
+    """
+    if not turns:
+        return {}
+    by_run = {turn["run_id"]: turn for turn in turns}
+    conv_ids = sorted({str(turn.get("conversation_id") or "") for turn in turns} - {""})
+    if not conv_ids:
+        return {}
+    # 一次取回整批会话的历史，再按 run 的 user_message_id 切「这一轮之前」那一段。
+    messages = rows(f"""
+        WITH t AS (
+          SELECT id::text AS run_id, coalesce(conversation_id::text, '') AS cid,
+                 coalesce(user_message_id::text, '') AS umid
+          FROM companion_turn_runs WHERE id::text = ANY({sql_array(sorted(by_run))})
+        )
+        SELECT t.run_id, m.role, m.blocks, m.seq
+        FROM t JOIN companion_messages m ON m.conversation_id::text = t.cid
+        WHERE m.id::text <> t.umid AND m.kind NOT IN ('cancelled', 'error')
+        ORDER BY t.run_id, m.seq DESC
+    """)
+    # 每条 run 只要最近 20 条（与生产同一把尺），再只留用户那半。
+    seen: dict[str, int] = {}
+    out: dict[str, str] = {}
+    for record in messages:
+        run_id = record["run_id"]
+        count = seen.get(run_id, 0)
+        if count >= 20:
+            continue
+        seen[run_id] = count + 1
+        if record["role"] == "system":
+            continue
+        out[run_id] = out.get(run_id, "") + text_of_blocks(record["blocks"])
+    return out
+
+
+# ─── 读数口径（每道闸这一格的数**能**用来判什么） ───────────────────────────
+#
+# 「触发 N 次」这句话在没有口径的时候是没意义的：N 可以是上界、下界、精确值，
+# 或者"压根判不出来"。台子原来把这件事写在散落的 print 里（G4 一句「下界」），
+# 其余七道**一个字都没有**——而"没说"读起来像"精确"。下面把它变成逐闸一格，
+# 纯函数，参数全是这一轮**量出来的数**，所以能在 --self-test 里正反构造。
+
+BASIS_EXACT = "精确"
+BASIS_UPPER = "上界"
+BASIS_LOWER = "下界"
+BASIS_UNFIXABLE = "不可修"
+
+
+def sum_dropped_by_history(gate: str, fired_items: list[dict], gate_results: dict) -> int:
+    """逐闸的过报量＝"补上会话历史就站不住"的命中条数（判据桥算好的差集，这里只加总）。
+
+    抽成纯函数是为了让 `--self-test` 能用合成输入钉住它：**读数里这一格要是恒 0，
+    改前／改后对照就分不出"过报 0"和"没接上"**——而这两种在真实数据上今天长得一模一样
+    （这一窗实测就是 0 条）。接线断了要靠合成输入才看得见。
+    """
+    return sum(len((gate_results.get(item.get("run_id")) or {})
+                     .get("historyAdjudication", {}).get(gate, {}).get("droppedByHistory") or [])
+               for item in fired_items)
+
+
+def b_class_crosscheck_problems(station_fired_ids: set, validator_rejected: dict) -> list[str]:
+    """B 类三道：「台子判据命中的那批」与「真判据会拒的那批」必须逐条相同。
+
+    两个方向都要查。**只查一个方向是这一族最典型的假绿灯**：只查"判据命中的都在被拒的里面"
+    时，"交付闸拒了一批而台子一条都没命中"（判据整体失灵）会全绿通过；反方向失灵
+    （台子报了一批而交付闸放行）同样全绿。今天两侧都是 5 条且完全重合，所以这条判据
+    今天证明的是"两侧一致"，不是"某一侧对"。
+
+    返回的是**问题清单**（空 = 一致），不是布尔：两边的差集都要能印出来。
+    """
+    problems: list[str] = []
+    only_station = sorted(station_fired_ids - set(validator_rejected))
+    only_validator = sorted(set(validator_rejected) - station_fired_ids)
+    if only_station:
+        problems.append(f"只有台子判据命中（交付闸放行）{only_station}")
+    if only_validator:
+        problems.append(f"只有交付闸会拒（台子判据没命中）{only_validator}")
+    return problems
+
+
+def self_test_wiring() -> int:
+    """台子侧新接线的自证：过报加总与 B 类交叉对账，各用合成输入正反构造。
+
+    这一族全都不该靠真实数据证明：真实数据上"过报 0 条"和"根本没接上"是同一个数
+    （实测就是 0），所以**只有合成输入能把接线钉住**。
+    """
+    checks: list[tuple[str, bool, object]] = []
+
+    # ① 过报加总：两条命中，一条被历史否掉 ⇒ 过报 1；被否掉的那条**不许**进桶。
+    gate_results = {
+        "run-a": {"historyAdjudication": {"G1": {"droppedByHistory": ["18分钟"]}}},
+        "run-b": {"historyAdjudication": {"G1": {"droppedByHistory": []}}},
+    }
+    fired_two = [{"run_id": "run-a"}, {"run_id": "run-b"}]
+    checks.append(("过报 2 条里 1 条被否 ⇒ 1",
+                   sum_dropped_by_history("G1", fired_two, gate_results) == 1,
+                   sum_dropped_by_history("G1", fired_two, gate_results)))
+    checks.append(("闸取错（G6）时不得串到 G1 的数",
+                   sum_dropped_by_history("G6", fired_two, gate_results) == 0,
+                   sum_dropped_by_history("G6", fired_two, gate_results)))
+    checks.append(("查不到 run 时按 0，不许抛",
+                   sum_dropped_by_history("G1", [{"run_id": "run-zzz"}], gate_results) == 0,
+                   sum_dropped_by_history("G1", [{"run_id": "run-zzz"}], gate_results)))
+
+    # ③ `text_of_blocks` 的两种入参都要认。**这一条是被真事故逼出来的**：改走 psql-lite 的
+    #    JSON 行出口后 `pg` 把 jsonb 解成原生 list，第一版只认字符串，于是正文整段变 "",
+    #    症状只是"这一轮没触发任何闸"。钉住原生形态，免得下一次换取数方式再踩一遍。
+    parsed = [{"type": "text", "text": "你好"}, {"type": "image", "src": "x"}]
+    checks.append(("text_of_blocks 认已解析的 list",
+                   text_of_blocks(parsed) == "你好", text_of_blocks(parsed)))
+    checks.append(("text_of_blocks 认 JSON 字符串",
+                   text_of_blocks(json.dumps(parsed, ensure_ascii=False)) == "你好",
+                   text_of_blocks(json.dumps(parsed, ensure_ascii=False))))
+    checks.append(("text_of_blocks 对坏 JSON 返回空串而不是抛",
+                   text_of_blocks("{not json") == "", text_of_blocks("{not json")))
+    checks.append(("text_of_blocks 对 None 返回空串", text_of_blocks(None) == "",
+                   text_of_blocks(None)))
+
+    # ② B 类交叉对账：两个方向各造一次"只错一边"的形状。
+    same = {"a": "json_envelope_leak", "b": "internal_token_leak"}
+    checks.append(("两侧一致 ⇒ 无问题", b_class_crosscheck_problems(set(same), same) == [],
+                   b_class_crosscheck_problems(set(same), same)))
+    only_station = b_class_crosscheck_problems({"a", "b", "c"}, same)
+    checks.append(("只有台子命中 ⇒ 报出来", len(only_station) == 1 and "'c'" in only_station[0],
+                   only_station))
+    only_validator = b_class_crosscheck_problems({"a"}, same)
+    checks.append(("只有交付闸拒 ⇒ 也要报出来（假绿灯防线）",
+                   len(only_validator) == 1 and "'b'" in only_validator[0], only_validator))
+    both = b_class_crosscheck_problems({"a", "x"}, {"a", "y"})
+    checks.append(("两边同时对不上 ⇒ 报两条", len(both) == 2, both))
+
+    ok = all(flag for _, flag, _ in checks)
+    for label, flag, got in checks:
+        print(f"  {'ok  ' if flag else 'FAIL'} 接线自证：{label}" + ("" if flag else f"  实得 {got!r}"))
+    return 0 if ok else 1
+
+
+def bridge_self_test() -> int:
+    """判据桥自己的自证（per-turn 活跃度／历史出处否证／G10 空源／入库闸阳性对照）。
+
+    台子的读数正确与否，取决于那四条接线通不通，而它们在真实数据上**有一半是惰性的**
+    （这个账号的档案恰好是 `active`，这一窗过报恰好 0 条）——所以必须有一层不依赖数据的证明。
+    """
+    env = dict(os.environ)
+    env["PATH"] = "/opt/homebrew/bin:" + env.get("PATH", "")
+    proc = subprocess.run(
+        [str(BRIDGE_RUNNER), "--tsconfig", str(ROOT / "workers/ai-worker/tsconfig.json"),
+         str(BRIDGE), "--self-test"],
+        capture_output=True, text=True, env=env, input="")
+    ok = proc.returncode == 0
+    print(f"  {'ok  ' if ok else 'FAIL'} 桥自证：per-turn 活跃度／历史出处否证／G10 空源／入库闸阳性对照"
+          + ("" if ok else f"  实得退出码 {proc.returncode}"))
+    # 把桥里**逐条**的失败原样端出来：只报一个聚合的 FAIL，变异自证就只能说"红在桥上"，
+    # 说不清红在哪一条接线——而"红在正确的那条断言上"正是这一族要证明的东西。
+    for line in (proc.stderr or "").splitlines():
+        if "桥自证失败" in line:
+            print("      ↳ " + line.strip())
+    return 0 if ok else 1
+
+
+def reading_basis(gate: str, facts: dict) -> dict:
+    """一道闸这一格的读数口径。返回 `{basis, legs, why}`。
+
+    `legs` 是**判不出**的那几条支／前置——它们不是"没触发"，是"本台按设计量不到"
+    （要发模型请求的分类器、只在内存的前置、从未落库的原始列）。
+    """
+    if gate == "G1":
+        over = int(facts.get("history_disqualified", {}).get("G1", 0))
+        if over > 0:
+            return {"basis": BASIS_UPPER, "legs": [],
+                    "why": f"漏掉的会话历史能盖住 {over} 条 ⇒ 台子过报，真值 ≤ 报出的数"}
+        return {"basis": BASIS_EXACT, "legs": [],
+                "why": "把生产有的会话历史补进出处后过报 0 条 ⇒ 报出的数与生产一致"}
+    if gate == "G2":
+        # 判据从 contextText 里取**第一个**到期数（`claimsNothingDueAgainstFacts`），
+        # 而生产的 contextText 与台子的一样以 system 块开头，历史排在它之后 ⇒ 补历史
+        # 移不动那一个数。方向可证，所以这里是"精确"而不是"上界"。
+        return {"basis": BASIS_EXACT, "legs": [],
+                "why": "判据只读环境块里那一个到期数，补历史移不动它"}
+    if gate == "G3":
+        return {"basis": BASIS_EXACT, "legs": [],
+                "why": "判据只看正文（`claimsLookupThatNeverRan`），不看出处集合"}
+    if gate == "G4":
+        return {"basis": BASIS_LOWER,
+                "legs": ["分类器那一支 `userAskedForAction`（`runtime.ts:3034`，要发模型请求）"],
+                "why": "只测了短语表那一支；分类器支本台按设计不发模型请求 ⇒ 当成 0 会把"
+                       "「没量到」说成「没触发」"}
+    if gate == "G5":
+        return {"basis": BASIS_UPPER,
+                "legs": ["A′ 前置 `!stepEmitted`（`runtime.ts:3208`，只在内存、从不落库）"],
+                "why": "正文过了线是必要条件、前置不知道：吐过字的那一步这道闸根本不会判，"
+                       "而库里有无痕迹 ⇒ 报出的数是上限"}
+    if gate == "G6":
+        exposed = int(facts.get("g6_fired_with_tool_calls", 0))
+        legs = ["原始 tool 内容（库里只有 `result_safe_summary`，`0213:105`）"]
+        if exposed == 0:
+            return {"basis": BASIS_EXACT, "legs": legs,
+                    "why": f"这一窗触发它的 {int(facts.get('g6_fired', 0))} 轮**整轮零工具调用**"
+                           "（A 类硬前提）⇒ quoteSources 与生产逐字相同，摘要列没参与；"
+                           "但一旦某条触发轮调过工具，这个口径立刻失效"}
+        return {"basis": BASIS_UNFIXABLE, "legs": legs,
+                "why": f"有 {exposed} 条触发轮调过工具 ⇒ 本台拿到的 `result_safe_summary` "
+                       "与生产的原始 tool 内容**不同源**，两个方向都可能错；"
+                       "原始内容从未落库，改台子修不掉"}
+    if gate in ("G7", "G8", "G9"):
+        grandfathered = int(facts.get("b_class_grandfathered", 0))
+        return {"basis": BASIS_UNFIXABLE, "legs": [],
+                "why": "入库前拒绝闸：库里绝大多数正文过了今天的闸（幸存样本），"
+                       "对「删掉它今天会不会漏」没有可判输入 ⇒ 可判分母只能是 0。"
+                       + (f"这一窗量到 {grandfathered} 条过不了今天的闸——它们是闸的**历史战绩**"
+                          "（阳性对照），不是今天会漏" if grandfathered else
+                          "这一窗没有任何一条过不了 ⇒ 触发 0 是「量不到」，不是「没用」")}
+    if gate == "G10":
+        empty = int(facts.get("g10_empty_source", 0))
+        total = int(facts.get("g10_measurable", 0))
+        legs = ([f"空 allowedSource 的 {empty} 条按设计恒不触发"
+                 f"（`companion-thought.ts:258` 首行 return false）"] if empty else [])
+        return {"basis": BASIS_EXACT, "legs": legs,
+                "why": f"分母＝拿到非空数字来源的 {total} 条；空源那几条不是 0 触发，"
+                       "是判据根本没跑（分母已把它们剔出）"}
+    if gate == "G11":
+        return {"basis": BASIS_EXACT, "legs": [],
+                "why": "判据不带 allowedSource（`readsOutStatistics` 只有一个入参）"
+                       "⇒ 空源不影响它，分母就是全部念头"}
+    return {"basis": BASIS_EXACT, "legs": [], "why": ""}
 
 
 def fetch_thoughts(days: int, emails_sql: str) -> list[dict]:
@@ -595,6 +931,72 @@ def self_test() -> int:
     return 0 if ok else 1
 
 
+def self_test_basis() -> int:
+    """`reading_basis` 的自证：正反各一次，且**每一道闸各钉一条**。
+
+    为什么单独一个函数而不是塞进 `self_test()`：这一族判据的失败模式是"标签悄悄变好看"
+    （把上界报成精确），而那不会让任何别的用例变红。混在一起时"全绿"就分不清是哪条标签在动。
+    下面的断言都写成"这一条闸的这一格必须等于这个值"，变异时红点唯一。
+    """
+    # 一份"今天量到的形状"：G1 过报 0、G6 触发轮零工具、G10 有空源条数。
+    today = {
+        "history_disqualified": {"G1": 0, "G6": 0},
+        "g6_fired": 1, "g6_fired_with_tool_calls": 0,
+        "g10_empty_source": 0, "g10_measurable": 63,
+    }
+    checks: list[tuple[str, bool, object]] = [
+        ("G1 过报 0 ⇒ 精确", reading_basis("G1", today)["basis"] == BASIS_EXACT,
+         reading_basis("G1", today)["basis"]),
+        # 变异点①：把"过报 > 0 才是上界"这条判掉（保持合法布尔表达式，不用注释）——
+        # 应当让 G1 在"过报 2 条"时从「上界」掉回「精确」。
+        ("G1 过报 2 ⇒ 上界",
+         reading_basis("G1", {**today, "history_disqualified": {"G1": 2, "G6": 0}})["basis"] == BASIS_UPPER,
+         reading_basis("G1", {**today, "history_disqualified": {"G1": 2, "G6": 0}})["basis"]),
+        # G4：分类器那一支必须**列出**为判不出，且口径是下界而不是精确。
+        ("G4 口径＝下界", reading_basis("G4", today)["basis"] == BASIS_LOWER,
+         reading_basis("G4", today)["basis"]),
+        ("G4 列出分类器支", any("userAskedForAction" in leg for leg in reading_basis("G4", today)["legs"]),
+         reading_basis("G4", today)["legs"]),
+        # G5：上限 + `!stepEmitted` 那一支必须列出来（它是"读数根本不成立"的根）。
+        ("G5 口径＝上界", reading_basis("G5", today)["basis"] == BASIS_UPPER,
+         reading_basis("G5", today)["basis"]),
+        ("G5 列出 stepEmitted 前置",
+         any("stepEmitted" in leg for leg in reading_basis("G5", today)["legs"]),
+         reading_basis("G5", today)["legs"]),
+        # G6 两种形状：触发轮零工具 ⇒ 今天精确（但仍要挂着"原始列从未落库"这一支）；
+        # 一旦有触发轮调过工具 ⇒ 不可修，且**不是**上界（两个方向都可能错）。
+        ("G6 零工具触发 ⇒ 精确", reading_basis("G6", today)["basis"] == BASIS_EXACT,
+         reading_basis("G6", today)["basis"]),
+        ("G6 有工具调用 ⇒ 不可修",
+         reading_basis("G6", {**today, "g6_fired_with_tool_calls": 1})["basis"] == BASIS_UNFIXABLE,
+         reading_basis("G6", {**today, "g6_fired_with_tool_calls": 1})["basis"]),
+        ("G6 永远挂着原始列那一支",
+         any("result_safe_summary" in leg for leg in reading_basis("G6", today)["legs"]),
+         reading_basis("G6", today)["legs"]),
+        # G10：空源条数出现在 legs 里，且口径仍��精确（分母已把它们剔出）。
+        ("G10 空源 3 条要列出来",
+         any("3 条" in leg for leg in reading_basis(
+             "G10", {**today, "g10_empty_source": 3})["legs"]),
+         reading_basis("G10", {**today, "g10_empty_source": 3})["legs"]),
+        ("G10 空源 0 条时那一支不出现", reading_basis("G10", today)["legs"] == [],
+         reading_basis("G10", today)["legs"]),
+        # B 类三道：口径必须是「不可修」，且分母 0 的**理由**要指向"库里那份正文过了闸"。
+        ("G7 口径＝不可修", reading_basis("G7", today)["basis"] == BASIS_UNFIXABLE,
+         reading_basis("G7", today)["basis"]),
+        ("G8 口径＝不可修", reading_basis("G8", today)["basis"] == BASIS_UNFIXABLE,
+         reading_basis("G8", today)["basis"]),
+        ("G9 口径＝不可修", reading_basis("G9", today)["basis"] == BASIS_UNFIXABLE,
+         reading_basis("G9", today)["basis"]),
+        # 11 道闸都要有口径，且没有一道是"空理由"（漏写标签会读成精确）。
+        ("11 道闸都有口径", len({reading_basis(g, today)["basis"] for g in GATE_DISPOSITION}) >= 3,
+         {g: reading_basis(g, today)["basis"] for g in sorted(GATE_DISPOSITION)}),
+    ]
+    ok = all(flag for _, flag, _ in checks)
+    for label, flag, got in checks:
+        print(f"  {'ok  ' if flag else 'FAIL'} 口径自证：{label}" + ("" if flag else f"  实得 {got!r}"))
+    return 0 if ok else 1
+
+
 # ─── 主流程 ───────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -607,7 +1009,10 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.self_test:
-        return self_test()
+        # 三族自证分开跑、**任一红即整体红**：
+        #   ① 退出码规则（既有）② 读数口径标签 ③ 新接线（过报加总／B 类对账／桥内四条）
+        # 混在一起报一个布尔时，"全绿"就分不清是哪一族在动——而它们的失败模式互不重叠。
+        return self_test() or self_test_basis() or self_test_wiring() or bridge_self_test()
     if not 1 <= args.days <= 365:
         # 这三条 SQL 都把天数拼成 `(N * interval '1 day')`：0 或负数不会报错，
         # 只会静默量出"空窗口"，而空窗口长得像"这一窗没问题"。
@@ -622,6 +1027,7 @@ def main() -> int:
     if health:
         raise SystemExit(f"拒绝下结论：{health}")
     turns = data["turns"]
+    turns_by_id = {turn["run_id"]: turn for turn in turns}
     if args.bridge_limit:
         turns = turns[:args.bridge_limit]
     tool_calls = fetch_tool_calls(args.days)
@@ -675,6 +1081,24 @@ def main() -> int:
     ambient: dict[str, dict] = {}
     ran: list[int] = []
     dropped = 0
+    # 1b) 两个"重放台原来没喂的输入"，先取回来（它们改的是判据的**输入**，不是判据）：
+    #     ① 每轮之前同一会话里的用户原话（生产算合法出处，台子原来只喂本轮那一句）；
+    #     ② 该用户真实的活跃度档（G5 的字数线跟它走，台子原来整批写死 `active`）。
+    history = fetch_history(turns)
+    activeness_by_user = fetch_activeness(sorted({turn["user_id"] for turn in turns}))
+    # 字数线表从判据桥现取（`companion-dialogue-content.ts` 是唯一一份），台子不抄。
+    min_chars_by_tier = call_bridge({"mode": "thresholds", "turns": []})["minChars"]
+    tier_counts: dict[str, int] = {}
+    for turn in turns:
+        tier = activeness_by_user.get(turn["user_id"], "active")
+        tier_counts[tier] = tier_counts.get(tier, 0) + 1
+    print(f"活跃度档（`pet_profiles.activeness`，G5 字数线）："
+          + "、".join(f"{k} {v} 轮" for k, v in sorted(tier_counts.items()))
+          + f"（{'；'.join(f'{k}→{min_chars_by_tier.get(k)} 字' for k in sorted(tier_counts))}；"
+          "读的是**当前**那一档，历史值没落库 ⇒ 与环境块同一类的重算口径）")
+    print(f"会话历史（生产算合法出处的那一半）：{sum(1 for t in turns if history.get(t['run_id']))}"
+          f"/{len(turns)} 轮取到，共 {sum(len(v) for v in history.values())} 字"
+          "（按生产的 20 条上限与 kind 过滤取**超集**，用来给过报做否证，见 `fetch_history`）")
     if not args.no_ambient:
         ambient_turns = []
         for turn in turns:
@@ -710,6 +1134,9 @@ def main() -> int:
             "replyText": text_of_blocks(turn["assistant_blocks"]),
             "systemTexts": [entry.get("systemText", "")] if entry.get("systemText") else [],
             "userTexts": [text_of_blocks(turn["user_blocks"])],
+            # 补上生产有、台子原来没喂的那一半出处（只补输入，不改判据）。
+            "historyTexts": [history[turn["run_id"]]] if history.get(turn["run_id"]) else [],
+            "activeness": activeness_by_user.get(turn["user_id"], "active"),
             "toolResultTexts": [call["summary"] for call in tool_calls.get(turn["run_id"], [])],
             "allowedNumberSource": entry.get("allowedNumberSource", ""),
         })
@@ -747,6 +1174,11 @@ def main() -> int:
             if GATE_CLASS[gate] == "C":
                 continue
             # A 类闸的硬前提：整轮零工具调用。不满足时当时不会走到这条判据。
+            # **G5（A′）故意不走这一行**：它那条零工具前置是**本步**的 `calls.length === 0`
+            # （`runtime.ts:3395`），而整轮 `tool_call_count === 0` 只是它的**必要**条件——
+            # 一轮里第 1 步调了工具、第 2 步 `calls.length === 0` 且没吐过字，那道闸照样判。
+            # 用整轮那个数去筛会把这些轮次剔掉、**少报**，方向正好和"上限"相反。
+            # 台账记的"Python 漏了对 A′ 的前置过滤"是这么修的：不筛，如实标上限。
             if GATE_CLASS[gate] == "A" and not is_a_class:
                 continue
             classification = classify(gate, turn, result, p1, reply_text)
@@ -755,6 +1187,68 @@ def main() -> int:
                                 "created_at": turn["created_at"],
                                 "leak_gate_version": turn["leak_gate_version"],
                                 **classification, "detail": result.get("detail")})
+
+    # 2b) B 类三道（入库前拒绝闸）那条"库里没有可判输入"的前提，今天**能量出来**，
+    #     而且量出来的东西比"分母写 0"多一层：
+    #
+    #     · 库里的正文绝大多数过了今天的 `validateCompanionOutput`（`companion-dialogue.ts:877`
+    #       落库的就是 `validated.text`）⇒ 对"删掉它今天会不会漏"这个问题，库里**幸存样本
+    #       当不了输入**，分母 0 是对的。
+    #     · 但有几条**过不了**今天的闸。它们不是"今天会漏"，而是**闸自己的历史战绩**：
+    #       今天的闸会判不过它们 ⇒ 它们不是今天这条代码路径的产物。实测这几条全是 09-19、
+    #       `prompt_version=companion-persona-v4`、`leak_gate_version` 为空，而
+    #       `companion-dialogue-content.ts:129-149` 逐字记着这三种坏正文（`213, 609]`、
+    #       `content":"…"…`、`activeMemories":[`）——那正是 G7／G9 判据被写出来的原因。
+    #       它们是这三道闸的**阳性对照**，混进"触发 N 次"那一列会被读成"闸今天在漏"。
+    #
+    #     于是这里做两件事：①把过不了闸的那些行**点名**并说明它们是什么；
+    #     ②交叉对账——「台子逐闸判据命中的那批」必须与「真判据会拒的那批」**逐条相同**。
+    #     两边不一样就说明判据与交付闸漂了（或者输入形状真的分叉，见 `envelopeProbe`），
+    #     那时拒绝下结论，而不是端出一份看着齐整的表。
+    #
+    #     **空正文不参与**：判据头一个分支就是 `empty_output`，而库里确实有
+    #     `assistant_message` 指向的行压根没有 text 块（`textOfCompanionBlocks` 对它们返回空串）。
+    #     那是"这一行没有正文"，不是不变量被推翻——它本来也带不出任何 B 类证据。
+    #     第一版没排除它们，143 条 `empty_output` 把整台拒了，而那 143 条与闸无关。
+    blank_bodies = [rid for rid, entry in sorted(gate_results.items())
+                    if entry.get("storedBodyAccepted") is not None
+                    and not text_of_blocks(turns_by_id[rid]["assistant_blocks"]).strip()]
+    rejected_by_validator = {rid: entry.get("storedBodyRejectReason")
+                             for rid, entry in sorted(gate_results.items())
+                             if entry.get("storedBodyAccepted") is False
+                             and rid not in blank_bodies}
+    b_class_fired_ids = {item["run_id"] for gate in ("G7", "G8", "G9") for item in fired[gate]}
+    crosscheck_problems = b_class_crosscheck_problems(b_class_fired_ids, rejected_by_validator)
+    if crosscheck_problems:
+        raise SystemExit(
+            "拒绝下结论：B 类三道逐闸判据命中的那批与「真判据 `validateCompanionOutput` 会拒的那批」"
+            "不是同一批 ⇒ " + "；".join(crosscheck_problems)
+            + "（判据与交付闸已经漂了，或输入形状真的分叉）B 类读数不可用")
+    reasons: dict[str, int] = {}
+    for reason in rejected_by_validator.values():
+        reasons[str(reason)] = reasons.get(str(reason), 0) + 1
+    print(f"入库前闸的交叉对账：{len(gate_results) - len(blank_bodies)} 条**非空**库内正文，"
+          f"过了今天的 `validateCompanionOutput` {len(gate_results) - len(blank_bodies) - len(rejected_by_validator)}"
+          f"／过不了 {len(rejected_by_validator)}"
+          + ("（" + "、".join(f"{k} {v} 条" for k, v in sorted(reasons.items())) + "）" if reasons else "")
+          + f"；过不了的正是 G7／G8／G9 逐闸命中的那 {len(b_class_fired_ids)} 条 ⇒ 两侧逐条一致"
+          + (f"（另有 {len(blank_bodies)} 条正文为空——`assistant_message` 指向的行没有 text 块，"
+             "带不出 B 类证据，不参与这一条）" if blank_bodies else ""))
+    if rejected_by_validator:
+        gate_versions = {str(turns_by_id[rid]["leak_gate_version"] or "（空）") for rid in rejected_by_validator}
+        prompt_versions = {str(turns_by_id[rid].get("prompt_version") or "（空）")
+                           for rid in rejected_by_validator} if all(
+            "prompt_version" in turns_by_id[rid] for rid in rejected_by_validator) else {"（本台没取这一列）"}
+        days = sorted({str(turns_by_id[rid]["created_at"])[:10] for rid in rejected_by_validator})
+        print(f"        ↑ 这 {len(rejected_by_validator)} 条是**闸的历史战绩**，不是今天会漏："
+              f"今天的闸判不过它们 ⇒ 它们不是今天这条代码路径的产物。"
+              f"落在 {'、'.join(days)}，`prompt_version` {'、'.join(sorted(prompt_versions))}，"
+              f"`leak_gate_version` {'、'.join(sorted(gate_versions))}"
+              "（`companion-dialogue-content.ts:129-149` 逐字记着这几种坏正文，"
+              "那正是 G7／G9 判据被写出来的原因）")
+    else:
+        print("        ↑ 没有任何一条非空正文过不了今天的闸 ⇒ 三道闸的触发数为 0，"
+              "而这**不等于**它们没用（库里没有它们该抓的输入），只等于这一窗量不到")
 
     # 4) 念头链（G10／G11）：输入是念头气泡正文，数据源与对话轮不同。
     thoughts = fetch_thoughts(args.days, ",".join("'" + e + "'" for e in DEV_REAL_ACCOUNT_EMAILS))
@@ -829,16 +1323,58 @@ def main() -> int:
     unit_claims = unit_of(("G1", "G6"))
     unit_lookup = unit_of(("G2", "G3"))
 
+    # 读数口径要用的**量出来的**事实（不是常量）：
+    #   · G1／G6 的过报量＝"把生产有的会话历史补进出处后就站不住"的命中条数；
+    #   · G6 的暴露面＝触发它的那几轮里调过工具的条数（决定摘要列有没有参与）；
+    #   · G10 的空源条数＝判据首行就 return false 的那几条（"没触发"与"没判"必须分开）。
+    history_disqualified = {gate: sum_dropped_by_history(gate, fired[gate], gate_results)
+                            for gate in ("G1", "G6")}
+    g6_with_tools = sum(1 for item in fired["G6"]
+                        if int(turns_by_id[item["run_id"]]["tool_call_count"]) > 0)
+    # G5 的**档位敏感度**：同一批正文按三档字数线各判一次（判据同一个，只换入参）。
+    # 这一格把"整批写死 `active` 会过报多少"变成量出来的数，而不是一句推断。
+    g5_by_tier = {tier: sum(1 for entry in gate_results.values()
+                            if (entry.get("g5ByTier") or {}).get(tier))
+                  for tier in ("quiet", "moderate", "active")}
+    g10_empty_source = sum(1 for e in thought_eval_turns if (e.get("thoughtGuard") or {}).get("emptySource"))
+    basis_facts = {
+        "history_disqualified": history_disqualified,
+        "g6_fired": sum(buckets["G6"].values()),
+        "g6_fired_with_tool_calls": g6_with_tools,
+        "g10_empty_source": g10_empty_source,
+        "g10_measurable": measurable["G10"],
+        "b_class_grandfathered": len(rejected_by_validator),
+        "g5_by_tier": g5_by_tier,
+    }
+    basis = {gate: reading_basis(gate, basis_facts)
+             for gate in sorted(GATE_DISPOSITION, key=lambda g: int(g[1:]))}
+    g5_counted = sum(buckets["G5"].values())
+    print(f"G5 档位敏感度（同一个判据，只换字数线入参）："
+          + "、".join(f"{k}({min_chars_by_tier.get(k)} 字) {v}" for k, v in g5_by_tier.items())
+          + f"；按各轮**真实所在档**判是 {g5_counted}，整批按最严的 active 判会报 {g5_by_tier['active']}"
+          f"（本窗{'相同' if g5_by_tier['active'] == g5_counted else '不同'}"
+          "——这个账号的档案今天恰好是 active，**巧合不是构造**："
+          "换成 quiet 档的用户，同一批样本会少判 "
+          f"{g5_by_tier['active'] - g5_by_tier['quiet']} 条）")
+
     print()
     print(f"{'闸':<4}{'类':<8}{'去向':<12}{'触发':>5}{'covered':>9}{'rescued':>9}"
-          f"{'still-leaks':>12}{'conditional':>13}{'可判分母':>10}")
+          f"{'still-leaks':>12}{'conditional':>13}{'可判分母':>10}{'读数口径':>10}")
     for gate in sorted(GATE_DISPOSITION, key=lambda g: int(g[1:])):
         stat = buckets[gate]
         # 保留闸不参与分桶，它的触发数就记在 `keep` 那一格里（这里不再减一次）。
         total = sum(stat.values())
         print(f"{gate:<4}{GATE_CLASS[gate]:<8}{GATE_DISPOSITION[gate]:<12}{total:>5}"
               f"{stat['covered']:>9}{stat['rescued-by-tool']:>9}{stat['still-leaks']:>12}"
-              f"{stat['conditional']:>13}{measurable[gate]:>10}")
+              f"{stat['conditional']:>13}{measurable[gate]:>10}{basis[gate]['basis']:>10}")
+    print()
+    for gate in sorted(GATE_DISPOSITION, key=lambda g: int(g[1:])):
+        entry = basis[gate]
+        if not entry["why"] and not entry["legs"]:
+            continue
+        print(f"  {gate}（{entry['basis']}）{entry['why']}")
+        for leg in entry["legs"]:
+            print(f"      ↳ 判不出的那一支：{leg}")
     # 归因（39d #28 第三步）：每条触发按它所在样本行的 `leak_gate_version` 分组——
     # 与当前闸表同名的才算证据，NULL／旧名都只算"有一条历史样本，不知道是谁服务的"。
     # 天数仍然要判：归因只解决了"哪套代码"，没解决"单日抖动"。
@@ -865,12 +1401,15 @@ def main() -> int:
           f"／念头 {sum(1 for th in thoughts if th['leak_gate_version'] == current_version)}）")
     print(f"\nG10 的可判分母用的是**重放时刻**重建出来的环境块（历史那一屏没落库），"
           f"所以它的空集说的是「以今天的读数去判这 {len(thoughts)} 条气泡」，不是「当时判不出问题」。")
-    print(f"G4 只测了短语表那一支；分类器那一支（`runtime.ts:2772`）要发模型请求，"
-          f"本台按设计不发 ⇒ G4 的触发数是**下界**。")
+    print(f"会话历史过报否证：G1 的 {history_disqualified['G1']} 条、G6 的 {history_disqualified['G6']} 条"
+          "会**因为补上生产有、台子原来没喂的会话历史而站不住**"
+          f"（这一窗补进去的历史共 {sum(len(v) for v in history.values())} 字）；"
+          "补上之后仍站得住的那些才算真触发。")
     print(f"计数单位（生产是合并的，分条报会把一次拦截数成两次触发）："
-          f"G1｜G6 合成 `hasUnverifiedClaims` ⇒ {unit_claims} 次；"
-          f"G2｜G3 合成 `lookupClaim` ⇒ {unit_lookup} 次。"
-          f" G5 的 196 类触发没有可判分母（A′ 前置从不落库），只能当上限看。")
+          f"G1｜G6 合成 `hasUnverifiedClaims`（`runtime.ts:3530`）⇒ {unit_claims} 次；"
+          f"G2｜G3 合成 `lookupClaim`（`runtime.ts:3519`）⇒ {unit_lookup} 次。"
+          f" G5 这一格报的是**上限**：A′ 前置 `!stepEmitted` 只在内存、从不落库，"
+          f"可判分母恒 0（本次量到 {sum(buckets['G5'].values())} 次触发，不是写死的数）。")
     code, problems = exit_code_for(buckets, GATE_DISPOSITION, measurable, attribution,
                                    n_real=int(counts["n_real"]))
 
@@ -913,6 +1452,30 @@ def main() -> int:
             # 再抄一份 delete/keep/conditional——上一版就抄了一份中文标签表，改一处会静默不一致。
             "dispositions": GATE_DISPOSITION,
             "measurable": measurable, "units": {"G1|G6": unit_claims, "G2|G3": unit_lookup},
+            # 逐闸的**读数口径**（精确／上界／下界／不可修）与判不出的那一支。
+            # 下游报告不许自己推断"触发 N 次意味着什么"——这一份是唯一出处。
+            "reading_basis": basis,
+            "basis_facts": basis_facts,
+            # G5 的字数线按**该用户真实活跃度档**取（表从判据桥现取，台子不抄）。
+            "activeness": {
+                "by_user": activeness_by_user,
+                "tier_counts": tier_counts,
+                "min_chars_by_tier": min_chars_by_tier,
+            },
+            "history": {
+                "turns_with_history": sum(1 for t in turns if history.get(t["run_id"])),
+                "turns_total": len(turns),
+                "chars_total": sum(len(v) for v in history.values()),
+            },
+            # B 类三道的交叉对账结果（下游不许自己再连库数一遍）：
+            "b_class_crosscheck": {
+                "non_empty_bodies": len(gate_results) - len(blank_bodies),
+                "blank_bodies": len(blank_bodies),
+                "rejected_by_validator": len(rejected_by_validator),
+                "fired_by_station": len(b_class_fired_ids),
+                "reasons": reasons,
+                "grandfathered_run_ids": sorted(rejected_by_validator),
+            },
             # 归因与闸版本也进这一份：下游报告不许自己再数一遍日期来判"能不能删"。
             "gate_version": current_version, "attribution": attribution,
             "p1_preflight": {

@@ -21,6 +21,7 @@
  * 进程内存构造）。
  */
 
+import { reviewDimensionForObservationV2, type ReviewDimensionV2 } from "@ailearn/shared/review-dimension-v2";
 import { and, asc, eq, gte, inArray, sql, desc } from "drizzle-orm";
 import {
   decideHelpConditionV2,
@@ -1681,11 +1682,21 @@ async function processCommitCommand(
   const at = new Date();
   const authorization = contract.schedulingAuthorization as SchedulingAuthorizationV1;
   const objectiveId = originObjectiveId(run.origin);
+  /**
+   * 这一次观察服务的是**提取**还是**应用**（§9.1「记住定义与在综合情境中使用」）。
+   *
+   * 判据就是这一轮冻结下来的 `goal`：§8.4 那三行里只有「新情境能力检查」服务应用，
+   * 其余（轻量回忆、可核对的短答）都是提取。分成两格之后，"她记住了"与"她会用了"
+   * 才不会挤进同一行——而 §9.2「三种事实分开记录」要的就是这个分开。
+   *
+   * 此前这一格恒为空串：列在、索引在、边界也收，唯独没有人传过。
+   */
+  const reviewDimension = reviewDimensionForObservationV2({ transferSuitable: run.goal === "transfer" });
   // facet_evidence（partial 结算）按同一授权路径消费/创建 schedule——
   // §6.4：partial 允许写 facet，调度授权不因部分覆盖而作废。
   const scheduleImpact = isCanonicalEvidence
-    ? await applyDemonstratedSchedule(tx, command, authorization, at, disposition)
-    : await applyUnableSchedule(tx, command, authorization, at);
+    ? await applyDemonstratedSchedule(tx, command, authorization, at, reviewDimension, disposition)
+    : await applyUnableSchedule(tx, command, authorization, at, reviewDimension);
 
   // 发布恰好一个 canonical envelope（§16.2 unique commitId/canonicalEventId）。
   const commitId = crypto.randomUUID();
@@ -2089,6 +2100,13 @@ async function clampToManualDateV2(
     workspaceId: string;
     userId: string;
     subjectId: string;
+    /**
+     * 手动日期约束挂在**某一格需求**上（§9.1「手动日期约束属于本次需求版本」）。
+     * 同一个目标现在可能有提取、应用两格，limit(1) 又没有排序——不按维度筛的话，
+     * 它读到的是"随便哪一格"的手动日期，于是**另一格的约束会来压住这一格的日期**，
+     * 或者反过来：她设的手动日期根本没被这条路径认到。
+     */
+    reviewDimension: ReviewDimensionV2;
     policyNextReviewAt: Date;
     /** 本次需求是否已换版（那一格被消费／被继任取代）。 */
     requirementChanged: boolean;
@@ -2101,7 +2119,9 @@ async function clampToManualDateV2(
       eq(reviewSchedules.workspaceId, input.workspaceId),
       eq(reviewSchedules.userId, input.userId),
       eq(reviewSchedules.subjectId, input.subjectId),
+      eq(reviewSchedules.reviewDimension, input.reviewDimension),
     ))
+    .orderBy(desc(reviewSchedules.updatedAt))
     .limit(1);
   const decided = decideNextReviewAtWithManualDateV2({
     policyNextReviewAt: input.policyNextReviewAt,
@@ -2120,6 +2140,7 @@ async function applyDemonstratedSchedule(
   command: CommandRow,
   authorization: SchedulingAuthorizationV1,
   at: Date,
+  reviewDimension: ReviewDimensionV2,
   disposition?: string,
 ): Promise<LearningRunResultV1["scheduleImpact"]> {
   // 39d W5-1 主体刀二：**借助完成冷却**的真正起算点。此前这三处把
@@ -2161,6 +2182,7 @@ async function applyDemonstratedSchedule(
       workspaceId: command.workspaceId,
       userId: command.userId,
       subjectId: authorization.keyPointId,
+      reviewDimension,
       policyNextReviewAt: decision.nextReviewAt,
       // 继任那一支：那一格刚被消费 ⇒ 需求已换版；新建那一支没有换版。
       requirementChanged: false,
@@ -2179,6 +2201,9 @@ async function applyDemonstratedSchedule(
       // V2 objective 维度：subjectType="card" + subjectId=objectiveId（§29.4
       // 惯例；与 surface-service/card-service 读取端一致）。
       subjectId: authorization.keyPointId,
+      // §9.1 事实提取与综合应用分别观察。此前这一格恒为空串（列在、索引在、
+      // 边界也收，唯独没有人传过），于是两种需求塌成一格。
+      reviewDimension,
       // §9.1「在手动日期约束仍有效时，自动策略不能悄悄把提醒提前」——这一格此前
       // 直接落策略日期，于是她选的日期会被悄悄提前。
       nextReviewAt: clamped.nextReviewAt,
@@ -2244,6 +2269,7 @@ async function applyDemonstratedSchedule(
       workspaceId: command.workspaceId,
       userId: command.userId,
       subjectId: authorization.keyPointId,
+      reviewDimension,
       policyNextReviewAt: decision.nextReviewAt,
       // 继任那一支：那一格刚被消费 ⇒ 需求已换版；新建那一支没有换版。
       requirementChanged: true,
@@ -2260,6 +2286,9 @@ async function applyDemonstratedSchedule(
       workspaceId: command.workspaceId,
       userId: command.userId,
       subjectId: authorization.keyPointId,
+      // §9.1 事实提取与综合应用分别观察。此前这一格恒为空串（列在、索引在、
+      // 边界也收，唯独没有人传过），于是两种需求塌成一格。
+      reviewDimension,
       // 继任那一支：那一格刚被消费掉 ⇒ **本次需求已换版**，所以约束到此结束
       // （§9.1「手动日期约束属于本次需求版本，不能变成永久禁止以后安排的规则」）。
       nextReviewAt: successorClamped.nextReviewAt,
@@ -2307,6 +2336,7 @@ async function applyUnableSchedule(
   command: CommandRow,
   authorization: SchedulingAuthorizationV1,
   at: Date,
+  reviewDimension: ReviewDimensionV2,
 ): Promise<LearningRunResultV1["scheduleImpact"]> {
   // 39d W5-1 主体刀二：**借助完成冷却**的真正起算点。此前这三处把
   // `unassistedEligibleAfter` 写死成 `null`，而 `null` 在策略里的含义是
@@ -2339,6 +2369,7 @@ async function applyUnableSchedule(
       workspaceId: command.workspaceId,
       userId: command.userId,
       subjectId: authorization.keyPointId,
+      reviewDimension,
       policyNextReviewAt: decision.nextReviewAt,
       // 继任那一支：那一格刚被消费 ⇒ 需求已换版；新建那一支没有换版。
       requirementChanged: false,
@@ -2355,6 +2386,9 @@ async function applyUnableSchedule(
       workspaceId: command.workspaceId,
       userId: command.userId,
       subjectId: authorization.keyPointId,
+      // §9.1 事实提取与综合应用分别观察。此前这一格恒为空串（列在、索引在、
+      // 边界也收，唯独没有人传过），于是两种需求塌成一格。
+      reviewDimension,
       // §9.1「在手动日期约束仍有效时，自动策略不能悄悄把提醒提前」——这一格此前
       // 直接落策略日期，于是她选的日期会被悄悄提前。
       nextReviewAt: clamped.nextReviewAt,
@@ -2407,6 +2441,7 @@ async function applyUnableSchedule(
       workspaceId: command.workspaceId,
       userId: command.userId,
       subjectId: authorization.keyPointId,
+      reviewDimension,
       policyNextReviewAt: decision.nextReviewAt,
       // 继任那一支：那一格刚被消费 ⇒ 需求已换版；新建那一支没有换版。
       requirementChanged: true,
@@ -2423,6 +2458,9 @@ async function applyUnableSchedule(
       workspaceId: command.workspaceId,
       userId: command.userId,
       subjectId: authorization.keyPointId,
+      // §9.1 事实提取与综合应用分别观察。此前这一格恒为空串（列在、索引在、
+      // 边界也收，唯独没有人传过），于是两种需求塌成一格。
+      reviewDimension,
       // 继任那一支：那一格刚被消费掉 ⇒ **本次需求已换版**，所以约束到此结束
       // （§9.1「手动日期约束属于本次需求版本，不能变成永久禁止以后安排的规则」）。
       nextReviewAt: successorClamped.nextReviewAt,
