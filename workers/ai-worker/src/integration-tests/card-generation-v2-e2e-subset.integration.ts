@@ -2552,13 +2552,19 @@ test("C49：复用的目标被暂不安排 ⇒ 新卡落上去也不排期（§1
     // 走服务端自己的解除（`releaseObjectiveHoldV2`），不用裸 UPDATE：裸 UPDATE 改的是
     // `released_at` 与 `release_reason` 两列，而那一列的判据（部分唯一索引、
     // `released_at >= created_at` 约束）是按服务写的样子建的。
-    await releaseObjectiveHoldV2(tx, {
+    // **正控制的前提本身要被验**：解除这一发可能**一条都没解掉**（`released: false`），
+    // 而那样的话「解除后不该再交 held」红的是**前提没成立**，不是闸坏了。第一版没断言
+    // 这一句，于是把一个前提问题读成了闸的问题——**两回事**。
+    const released = await releaseObjectiveHoldV2(tx, {
       workspaceId: WORKSPACE_ID,
       userId: USER_ID,
       objectiveId: heldObjectiveId,
       releaseReason: "c49_positive_control",
       at: new Date(),
     });
+    assert.equal(released.released, true,
+      "解除这一发没有真的解掉那条活排除：那么后面「解除后不该再交 held」红的是"
+      + "**前提没成立**，不是排期闸坏了。");
   });
   const thirdRun = await saveOneCandidate("c49-third");
   assert.equal(thirdRun.receipt.mappings[0]!.objectiveId, heldObjectiveId, "第三发仍应是同一颗目标");
