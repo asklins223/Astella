@@ -32,6 +32,7 @@ import {
   type HomeSuggestionActionV2,
 } from "./home-suggestion-actions-service.ts";
 import { loadLimitedBatchV2 } from "./learning-batch-service.ts";
+import { readUnfinishedRunCandidatesV2 } from "./home-suggestion-runs-source.ts";
 import {
   isBatchPausedV2,
   readOrStartDailyBatchV2,
@@ -132,7 +133,17 @@ export async function readHomeSuggestionV2(
   ctx: HomeScope & { timeZone: string; now?: Date; runCandidates?: readonly HomeRunCandidateInputV2[] },
 ): Promise<HomeSuggestionWireV2> {
   const now = ctx.now ?? new Date();
-  const candidates = await collectCandidatesV2(tx, { ...ctx, now });
+  // 未完轮次那一档的读侧（刀十六／刀七）。**调用方不喂时这一档就缺席**——而
+  // `readHomeSuggestionV2` 是路由用的那一个入口，所以**在这里补上**，否则
+  // 「未完轮次」今天从不出现在首页上（那一档的 `ctx.runCandidates` 缺省空，
+  // 而头注写着「缺省空 ⇒ 那一档今天不出现在首页上」）。
+  //
+  // **仍然保留 `ctx.runCandidates` 这个入参**：测试与别的调用方可以自己喂
+  // （`runCandidates` 给了就不读库），**但生产入口自己读**——两处不并列，
+  // 所以「谁来读」只有一个答案。
+  const runCandidates = ctx.runCandidates
+    ?? await readUnfinishedRunCandidatesV2(tx, { workspaceId: ctx.workspaceId, userId: ctx.userId });
+  const candidates = await collectCandidatesV2(tx, { ...ctx, now, runCandidates });
   const dismissed = await dismissedHomeItemsForTodayV2(tx, {
     workspaceId: ctx.workspaceId, userId: ctx.userId, timeZone: ctx.timeZone, now,
   });
