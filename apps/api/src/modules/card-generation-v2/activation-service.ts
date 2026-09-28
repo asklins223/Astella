@@ -567,7 +567,11 @@ export async function activateCardCandidatesV2(
         if (authorized.held) {
           // §9.1 行 2：这个目标被本人标了"暂不安排"⇒ 这一发**没有**建安排。
           // 写成 `created: false` 会被读成"已经有一条排着了"，那是另一句假话。
-          scheduling.push({ objectiveId: mapping.objectiveId, created: false, held: true });
+          // **不带 `created`**（合同那一格在这一档是 `undefined`）：写成 `false` 会被读成
+          // 「已经有一条排着了」——而这一档恰恰是**什么都没排**。C49 的真库读数抓出来的。
+          scheduling.push({ objectiveId: mapping.objectiveId, held: true } as {
+            objectiveId: string; held: true; created?: boolean;
+          });
           continue;
         }
         scheduling.push({
@@ -1294,6 +1298,46 @@ async function createOrUpdateObjectiveAndCard(
           409,
           "这颗目标的当前修订读不到，这一发没有生效；请刷新后重新保存。",
         );
+      }
+
+      // **一颗目标只能有一张活着的卡**：`lc_v2_ws_obj_active_idx` 是
+      // (workspace_id, objective_id) WHERE lifecycle='active' 的**部分唯一索引**。
+      // 所以「复用这颗目标」在数据模型上的含义**不是**「在它底下再挂一张新卡」——
+      // 刀四写的就是那个，而它与这条索引正面冲突：C49 的真库读数第一次真跑到这里就撞上
+      // `duplicate key value violates unique constraint "lc_v2_ws_obj_active_idx"`。
+      //
+      // 正确的形状是：**这一发落回那颗目标已有的那张卡**，不再插第二行。理由是 §4.2 要
+      // 防的本来就是「重复建立**相同目标、相同回访目的**的待办」（§9.1 那一族的同一条
+      // 纪律）——目标已经有一张卡了，这一发**再挂一张就是那个重复**。
+      //
+      // ⚠️ **它不会红在单测里**：单测验的是"重定向**会**发生"，没验"重定向之后那一发
+      // **能不能落地**"。**判据绿 ≠ 路径通**——这一条是刀四留给自己的坑，C49 踩出来了。
+      const existingCardRows = await tx
+        .select({ cardId: learningCardsV2.cardId, publicSummary: learningCardsV2.publicSummary })
+        .from(learningCardsV2)
+        .where(and(
+          eq(learningCardsV2.workspaceId, ctx.workspaceId),
+          eq(learningCardsV2.objectiveId, intent.objectiveId),
+          eq(learningCardsV2.lifecycle, "active"),
+        ))
+        .limit(1);
+      const existingCard = existingCardRows[0];
+      if (existingCard) {
+        // 落回已有那张卡：**不写新行**，只把这一发映射到它。
+        // `resultingEvidenceBindingSetHash` 交**那颗目标既有**绑定算出来的那一份（与下面
+        // 那一支同一条纪律：交新候选算的那份会让审核台显示一个库里并不存在的绑定数）。
+        return {
+          cardId: existingCard.cardId,
+          objectiveId: intent.objectiveId,
+          objectiveRevisionId: existingRevision.objectiveRevisionId,
+          publicationRevision: 1,
+          resultingEvidenceBindingSetHash: computeEvidenceBindingSetHashV2(
+            ((existingRevision.evidenceBindings ?? []) as Array<{ bindingId: string; bindingHash: string }>)
+              .map((b) => ({ bindingId: b.bindingId, evidenceBindingHash: b.bindingHash })),
+          ),
+          bindingPlanId: null,
+          bindingPlanHash: null,
+        };
       }
 
       const reuseCardId = randomUUID();

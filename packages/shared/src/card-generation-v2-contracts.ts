@@ -1326,7 +1326,15 @@ export const cardActivationReceiptV2Schema = z
           objectiveId: z.string().uuid(),
           scheduleId: z.string().uuid().optional(),
           nextReviewAt: z.string().datetime({ offset: true }).optional(),
-          created: z.boolean(),
+          /**
+           * `held` 那一条**不带**这一格（所以它在该档是 `undefined`）。
+           *
+           * 写成 `created: false` 会被读成「**已经有一条排着了**」——那是另一句假话。
+           * C49（§16.38 的真库读数）第一次真跑到这一格时把它抓了出来：闸确实交回了
+           * `held: true`，而回执上同时挂着 `created: false`，屏上两句话并排，谁也说不清
+           * 到底排没排。
+           */
+          created: z.boolean().optional(),
           held: z.boolean().optional(),
         }),
       )
