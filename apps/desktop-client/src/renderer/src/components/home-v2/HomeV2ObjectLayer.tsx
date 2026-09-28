@@ -12,6 +12,7 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useHomeProjection } from "../../app/home-projection";
+import { HomeSuggestionCard } from "../surfaces/HomeSuggestionCard";
 import { homePresentation } from "../../app/home-presentation";
 import { useRoomStore } from "../../app/room-store";
 import { resolveSceneMotionMode } from "../../scene/scene-motion";
@@ -136,6 +137,10 @@ function HomeV2Hud({ introVisible, loading, state, title, primaryLabel, theme, m
 }) {
   const [expanded, setExpanded] = useState(false);
   const rootRef = useRef<HTMLElement>(null);
+  // `HomeSuggestionCard` 要一个 `epochRef` 用来判「上一次读的结果还在不在」。
+  // 这个抽屉不持有投影，所以给它一个本地的：读回来的结果换代会推进它，
+  // 于是那颗「换一个」按下去之后不会拿回**同一份**建议。
+  const suggestionEpochRef = useRef<number | undefined>(undefined);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const hudTitle = introVisible ? "先从桌上的书开始" : primaryLabel;
   const hudDetail = introVisible ? "它会带你回到今天真正停下的位置。" : title;
@@ -171,6 +176,23 @@ function HomeV2Hud({ introVisible, loading, state, title, primaryLabel, theme, m
       </button>
       <div className="home-v2-hud__panel" aria-hidden={!expanded} inert={!expanded}>
         <p id="home-v2-hud-detail" aria-live="polite">{hudDetail}</p>
+        {/* 39d W7-4：书桌上那「一件」（§12.1「首页只推荐一件现在值得做的事」）**并进这个
+            抽屉，而不是并排另起一张纸**。
+
+            ⚠️ **它原先挂在 `App.tsx:140` 的 `{!surface ? … : null}` 里，而那里的子树根本不在
+            这个房间的渲染树上**——首页这一屏是 `RoomStage.tsx:317` 的 `HomeV2ObjectLayer`
+            画的。**真窗口读数：`.hud-desk-next` 在 DOM 里是 `null`**（单测能过、静态判据能过、
+            `innerText` 里能读到它的文案——**因为它渲染在另一棵树上**，而我一直在这一棵里量）。
+            **「类型过了不等于挂上了」第二次**：刀八那次是「我编了一个 intent」，这次是
+            **「挂载点根本不是这一屏」**。
+
+            放在触发器**里面**还有一层理由：这一屏本来就有「今日下一步 → 继续作答」这一个
+            动作，§12.1 要的也是**一件**。**两张并排的纸签会把它读成两件。** */}
+        <HomeSuggestionCard
+          timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+          epochRef={suggestionEpochRef}
+          onNewNote={() => onCatalog()}
+        />
         <div className="home-v2-hud__actions">
           <button type="button" className="home-v2-hud__primary" disabled={loading} onClick={() => { setExpanded(false); onPrimary(); }}><BookOpenText size={17} strokeWidth={1.8} aria-hidden="true" /><span>{introVisible ? "去书桌" : primaryLabel}</span></button>
           <button type="button" aria-label="打开魔法目录" title="魔法目录" onClick={() => { setExpanded(false); onCatalog(); }}><Search size={17} strokeWidth={1.8} aria-hidden="true" /></button>
