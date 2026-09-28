@@ -50,16 +50,16 @@ CREATE INDEX IF NOT EXISTS hsd_v2_ws_user_day_idx
   ON home_suggestion_dismissals_v2 (workspace_id, user_id, day_key);
 
 CREATE POLICY home_suggestion_dismissals_v2_select ON home_suggestion_dismissals_v2
-  FOR SELECT USING (workspace_id = current_setting('ailearn.workspace_id')::uuid
-                AND user_id      = current_setting('ailearn.user_id')::uuid);
+  FOR SELECT USING (workspace_id = current_setting('app.workspace_id')::uuid
+                AND user_id      = current_setting('app.user_id')::uuid);
 CREATE POLICY home_suggestion_dismissals_v2_insert ON home_suggestion_dismissals_v2
-  FOR INSERT WITH CHECK (workspace_id = current_setting('ailearn.workspace_id')::uuid
-                     AND user_id      = current_setting('ailearn.user_id')::uuid);
+  FOR INSERT WITH CHECK (workspace_id = current_setting('app.workspace_id')::uuid
+                     AND user_id      = current_setting('app.user_id')::uuid);
 CREATE POLICY home_suggestion_dismissals_v2_update ON home_suggestion_dismissals_v2
-  FOR UPDATE USING (workspace_id = current_setting('ailearn.workspace_id')::uuid
-                AND user_id      = current_setting('ailearn.user_id')::uuid)
-            WITH CHECK (workspace_id = current_setting('ailearn.workspace_id')::uuid
-                     AND user_id      = current_setting('ailearn.user_id')::uuid);
+  FOR UPDATE USING (workspace_id = current_setting('app.workspace_id')::uuid
+                AND user_id      = current_setting('app.user_id')::uuid)
+            WITH CHECK (workspace_id = current_setting('app.workspace_id')::uuid
+                     AND user_id      = current_setting('app.user_id')::uuid);
 
 COMMENT ON TABLE home_suggestion_dismissals_v2 IS
   '39 §12.1「可换一个或暂不处理…用户略过后**本次**不反复推荐同一项」。按日历日有界：落成永久黑名单正是 §12.1 不要的（明天的到期又会被静默漏掉），只放前端内存则刷新一次就把她的决定撤销了。';
