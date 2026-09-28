@@ -31,8 +31,28 @@ cd apps/desktop-client && npm run dev
 
 **环境事实**（量过，不要重新调查）：`docker` CLI 不在 PATH 但 daemon 在跑，
 `127.0.0.1:5432` 可达；`.env` 里 `DATABASE_URL*` 的主机名是 `postgres`，
-连库时要换成 `127.0.0.1`；`scripts/dev-disposable-db.sh` 依赖 docker CLI，本机用不了，
-所以验收数据落在**共享 dev 库**上——每一条用完要清理，清理方式见各条。
+连库时要换成 `127.0.0.1`；`scripts/dev-disposable-db.sh` **这一轮起不再依赖 docker CLI**
+（走仓库自己的 `scripts/psql-lite.mjs`），一次性库可用，**每次换一个库名**
+（整份共享会被并行会话互相污染）。
+
+### 1b. 起真窗口：四个必须（2026-09-28 实测，本机跑通）
+
+```bash
+cd apps/desktop-client
+set -a; . ../../.env; set +a          # ① 不加载它 ⇒ 登录页报「本机服务校验」，而真因是配对凭据没进环境
+env -u ELECTRON_RUN_AS_NODE \        # ② 不摘掉它 ⇒ 进程即退、日志一个字都没有
+  ./node_modules/electron/dist/Electron.app/Contents/MacOS/Electron \
+  ./out/main/index.js --remote-debugging-port=9336   # ③ 连字符；等号形式静默失效
+# ④ API 侧：`127.0.0.1:4000` 上通常已经有并行会话起的那份，`/health` 返回 ok 就够了，**不必再起**
+```
+
+驱动与填表单的细节、伴星/导航的实测读数、以及**「导航默认收着不是没有」**这一条，
+见 [39d-real-window-recipe-2026-09-28.md](./39d-real-window-recipe-2026-09-28.md)。
+
+**每条用例开跑前先过这三样**（否则读到的是假象）：
+① 伴星画布的 `getBoundingClientRect()` + `display/visibility/opacity`；
+② `out/renderer/index.html` 的 **mtime**——**陈旧产物 ⇒ 所有视觉结论作废**；
+③ 左下角那颗 `aria-label=学习空间目录` 的圆钮——**导航默认收着**，找不到先展开它。
 
 ## 2. 验收条目
 
