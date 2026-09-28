@@ -439,3 +439,50 @@ AGENTS.md 明写「**所有已进入学习空间的页面默认保留可见的 L
 
 **未验证**：≤1213px 下正文与伴星**是否互相遮挡**（本轮只量了边界，没量遮挡）；
 `prefers-reduced-motion` 下的座位预算；`devicePixelRatio` 变化时的边界。
+
+---
+
+## 14. 第十轮：把根因**查到底**，并给出一次**部分生效**的修法（已撤回）
+
+第 13 节说「根因是座位锚在固定 x、要动布局模型」——**那句话不准确**，这一轮查清了。
+
+### 14.1 定位链的真实形状
+
+| 元素 | position | 定位 |
+| --- | --- | --- |
+| `.companion-presence` | absolute | `left:0 right:0`，**宽 = 视口**（会随窗口收窄） |
+| `.companion-visual-shell` | absolute | 外层 `scale(1.08)` |
+| `.companion-scene-anchor` | absolute | 位置是 **gsap 写的内联 transform**（`translate(957.5, 243.2)`） |
+| `.window-live2d` / canvas | relative / absolute | 宽 264 / 265 |
+
+**不是 CSS 锚右边的问题**——是有人**已经写好了修正函数** `companionViewportCorrection(rootRect, visualRect)`，
+而 `clampVisibleCompanion()` **只在挂载与换座位时调它一次**（`useCallback` 依赖
+`[homeMode, setCompanionPosition]`，**不含视口尺寸**）⇒ 窗口收窄时它不重跑。
+
+### 14.2 我试的修法：**部分生效**
+
+给那个 effect 接上 `resize` 监听（rAF 合帧，因为 `getBoundingClientRect` 强制回流）：
+
+| 视口 | 修正前右边界 | 修正后右边界 | 结果 |
+| --- | --- | --- | --- |
+| 1180 | 1214 | **1180** | ✅ 进来了（修正 34px） |
+| 1024 | — | **1180** | ❌ **停在 1180 不再进** |
+
+⇒ 修正**跑了一次、但没有反复累加**。而 `companionViewportCorrection` 在
+"角色比可用空间还宽" 时走的是 `axisCorrection` 的**居中**分支，不是位移分支——
+**这两个分支的差别我没查完**。
+
+**已 `git checkout` 还原并重建（0 错误）**，不在树里留一个只对 1180 有效的版本。
+
+### 14.3 顺带记一个**测量的坑**（我自己踩了两次）
+
+`Emulation.setDeviceMetricsOverride` 的覆盖**在每次新的 CDP 连接上复位**。
+所以「A 脚本设成 1024 → B 脚本量」量到的是 **1440**——我据此得出过一次
+「resize 监听器没触发」的**错误结论**。**设视口与量取必须在同一个 CDP 会话里。**
+
+### 14.4 这一格现在的状态
+
+**症状**：视口 ≤1213px 时伴星右边界钉在 1214，被挤出窗口（AGENTS.md 明令禁止）。
+**根因**：`clampVisibleCompanion` 不在 resize 时重跑视口修正（**已查实**）。
+**未解**：接上 resize 后只对「位移」那一档生效；「居中」那一档没生效。
+**下一步该查**：`axisCorrection` 的居中分支与 gsap 内联 transform 的合成顺序。
