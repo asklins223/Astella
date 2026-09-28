@@ -782,3 +782,54 @@ out/renderer/assets/*.js` 有命中）。
 
 **先做这一步再谈修法。** 前面五次失败里，至少有两次的证据现在已知不可靠，
 继续在效果层试是在赌。
+
+---
+
+## 21. 第十七轮：排除完了，**结论是"我这套手段查不下去"**
+
+第 20 节让我先查「组件挂没挂 / 有没有第二个 bundle 副本」。查完了，**两条都排除**：
+
+| 查证 | 结果 |
+| --- | --- |
+| 运行页加载的脚本 | `./assets/index-Dx8EAoYD.js`——**与磁盘上的入口引用一致** |
+| 别的入口脚本 | 只有三个 vendor（pixi / live2d / cubism），无第二份 app 包 |
+| iframe 数 | **0** |
+| `.companion-presence` 的 React fiber | **有**（`__reactFiber$…`） |
+| 祖先链 | `companion-presence → desktop-access-gate__r → desktop-app → div → body`，**无 portal 边界** |
+| 组件数量 | 只有一个 `CompanionPresence` |
+| effect 之前有无组件级提前返回 | **无** |
+| **派发机制本身**（另注册一个 window 监听器再派发） | ✅ **收到 1 次** |
+
+⇒ **组件挂载了、跑的是我构建的那一份、我的派发手段是好的——而我插入的 effect 就是没被调到。**
+
+### 21.1 顺带发现：**渲染器 console 根本不进 stdout 了**
+
+用 `console.log` 在 effect 里打点：日志里 **0 条**。
+而同一份日志**只有 2 行**；第 6 轮那次能拿到 41081 行渲染器输出。
+
+⇒ **现在 `console.log` 这条探针不可信**，它证明不了 effect 跑没跑——
+也**可能**说明这一轮的启动方式和那时不一样（`ELECTRON_ENABLE_LOGGING` 之类）。
+**下一位别再用 console 探针判断"有没有跑"。**
+
+### 21.2 我自己这一轮第三次犯同一个错
+
+`return { 有 fiber: … }`——**带空格的未加引号对象键名**，页面报
+`SyntaxError: Unexpected identifier 'fiber'`。第 19、20 节各犯过一次。
+**这类"看着像运行时行为、其实是语法错"的现象，已经让我误判了至少两轮结论。**
+⇒ 判据脚本**先在本机 `new Function(src)` 过一遍语法**再送进页面。
+
+### 21.3 交接（比第 20 节更窄）
+
+已经排除的：组件挂载、bundle 陈旧、iframe/portal、第二份副本、提前返回、派发手段、构建失败。
+
+**唯一剩下的可能**：我插入的 `useEffect` 所在位置与我以为的不一样——
+它可能落在某个 `useCallback` / `useMemo` 的**回调体**里（那样它不是组件的 effect，
+而是一次在渲染期被调用的函数，React 会警告但不一定报错），
+**而我在第 20 节只核了缩进层级、没核花括号配对**。
+
+**查它的方法**（不要再用运行时探针）：
+```bash
+# 把 effect 前后 200 行括号配平跑一遍，或用 AST 看它是不是挂在 Component 的 body 上
+node -e "const ts=require('typescript');const s=require('fs').readFileSync('apps/desktop-client/src/renderer/src/components/companion/CompanionPresence.tsx','utf8');const sf=ts.createSourceFile('x.tsx',s,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);/* 找 Component 函数体里的 hook 调用列表 */"
+```
+**在那之前不要再改修法**——前面五次里至少两次的证据已知不可靠。
