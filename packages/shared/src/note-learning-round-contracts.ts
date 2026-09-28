@@ -230,11 +230,66 @@ export type NoteLearningRoundHistoryItemV1 = z.infer<
   typeof noteLearningRoundHistoryItemV1Schema
 >;
 
+/**
+ * **失权之后**那一份历史（39d W5-6；§10.3 末段、§14.4）。
+ *
+ * §10.3 的原话：「历史可追溯**不绕过当前权限**。失去笔记权限后，**仅保留允许展示的
+ * 非内容元数据**；题面、快照、反馈和可能复述受保护内容的本人回答按权限遮蔽。」
+ *
+ * ## 为什么不是「读不到就返回空数组」
+ *
+ * 返回空数组在屏上与「这一篇从来没有过轮次」**完全一样**——而后者是一个关于用户
+ * 自己的事实。把两者混成一种，用户会以为自己的学习记录凭空消失了。空数组这一格
+ * 自己的注释也写着「空数组是真的『这一篇还没有过轮次』，不是『读失败』」。
+ * 所以失权是**另一种形状**，而且必须**说得出是哪一种**。
+ *
+ * ## 哪些留下、哪些遮蔽
+ *
+ * 留下（不含受保护内容）：`roundId`／`phase`／`outcome`／`startedAt`／`closedAt`／
+ * `followUpSettledAt`／`systemUncertain` —— 这些回答的是「我什么时候练过、练到哪了」。
+ * 遮蔽（可能复述受保护内容）：`drivingQuestion`（本轮问题是从笔记正文生成的摘要，
+ * §6.1 说的「半个答案」就在这里）、`actualModes`（反映看过哪几道题）。
+ *
+ * **`drivingQuestion` 用固定遮蔽句而不是空串**：空串会被读成「当时没写问题」，
+ * 那是一条**假的**历史记录。
+ */
+export const ROUND_HISTORY_MASKED_QUESTION_V1 = "这一轮的问法涉及已无权查看的笔记。";
+
+export const noteLearningRoundHistoryMaskedItemV1Schema = z.strictObject({
+  roundId: z.string().uuid(),
+  phase: roundPhaseV1Schema,
+  outcome: roundOutcomeV1Schema.nullable(),
+  /** §10.3：题面按权限遮蔽。**固定句**，不是空串——空串会被读成"当时没写问题"。 */
+  drivingQuestion: z.literal(ROUND_HISTORY_MASKED_QUESTION_V1),
+  /** 遮蔽那一层：`false` 就是"题面按权限遮蔽"，不能靠比对上面那一句去反推。 */
+  contentMasked: z.literal(true),
+  /** 也遮蔽：它反映看过哪几道题，说出来等于复述结构。 */
+  actualModes: z.tuple([]),
+  systemUncertain: z.boolean(),
+  followUpSettledAt: z.string().datetime({ offset: true }).nullable(),
+  startedAt: z.string().datetime({ offset: true }),
+  closedAt: z.string().datetime({ offset: true }).nullable(),
+});
+export type NoteLearningRoundHistoryMaskedItemV1 = z.infer<
+  typeof noteLearningRoundHistoryMaskedItemV1Schema
+>;
+
 export const noteLearningRoundHistoryV1Schema = z.strictObject({
   version: z.literal(1),
   noteId: z.string().uuid(),
-  /** 新的在前；空数组是真的"这一篇还没有过轮次"，不是"读失败"。 */
-  items: z.array(noteLearningRoundHistoryItemV1Schema).max(ROUND_HISTORY_MAX_LIMIT_V1),
+  /**
+   * 新的在前；空数组是真的"这一篇还没有过轮次"，不是"读失败"。
+   *
+   * **两种形状**（§10.3 失权后按权限遮蔽）：完整项与遮蔽项。后者带
+   * `contentMasked: true`、题面是那句固定遮蔽句、`actualModes` 恒空。
+   *
+   * 用**并集**而不是给完整项加两个可选格：可选格的读法会编译过而在失权那一支上
+   * 读到 `undefined` 的题面——屏上就画出半个答案。
+   */
+  items: z.array(z.union([
+    noteLearningRoundHistoryMaskedItemV1Schema,
+    noteLearningRoundHistoryItemV1Schema,
+  ])).max(ROUND_HISTORY_MAX_LIMIT_V1),
   /** 还有没有更早的。它与 `nextCursor` 必须同向——见那一格的注释。 */
   hasMore: z.boolean(),
   /**
@@ -243,6 +298,13 @@ export const noteLearningRoundHistoryV1Schema = z.strictObject({
    * 永远停在第一页而嘴上还说"更早的还能看"。
    */
   nextCursor: z.string().uuid().nullable(),
+  /**
+   * `true` ＝ 这一次读的**不是**内容，而是失权后仍允许展示的元数据（§10.3）。
+   *
+   * **必填、不给 `.optional()`**：缺这一格会被读成"历史读全了"，而屏上那一片遮蔽
+   * 的内容会被当成「当时就是这样」。这与 `totalCount` 同一理由。
+   */
+  contentMasked: z.boolean(),
 });
 /**
  * `hasMore` 与 `nextCursor` 必须同向，写在合同里而不是靠渲染层防：
@@ -562,13 +624,21 @@ export type RoundPrerequisiteViewV1 = z.infer<typeof roundPrerequisiteViewV1Sche
  * 合成一个可空字段（`artifact: { ref?, failure? }`）看着更整齐，但会让"没请求过"与
  * "请求了但失败了"共用一条分支，而 §6.2 恰恰要求界面对这两句说不同的话。
  *
- * `stage × reason` 穷举（与迁移 0298 的 CHECK 同一组），`detail` 是人读的那一句、
- * 上界 500；`teachingId` 可空 = 产物构建时教学行还没落库。
+ * `stage × reason` 穷举（与迁移 0298 建立、0304 拓宽之后的 CHECK 同一组），`detail` 是
+ * 人读的那一句、上界 500；`teachingId` 可空 = 产物构建时教学行还没落库。
  */
 export const roundArtifactFailureV1Schema = z.discriminatedUnion("stage", [
   z.strictObject({
     stage: z.literal("build"),
     reason: z.enum(["empty", "over_quota"]),
+    detail: z.string().max(500),
+    teachingId: z.string().uuid().nullable(),
+    snapshotHash: z.string().min(8).max(128),
+    at: z.string().datetime({ offset: true }),
+  }),
+  z.strictObject({
+    stage: z.literal("generate"),
+    reason: z.enum(["model_failed", "contract_rejected"]),
     detail: z.string().max(500),
     teachingId: z.string().uuid().nullable(),
     snapshotHash: z.string().min(8).max(128),

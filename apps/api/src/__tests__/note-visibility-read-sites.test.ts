@@ -70,7 +70,7 @@ const ROUND_INDIRECT_READ_PATTERNS = [
  * 这一族里逐条豁免的读点（同样只许随修好而变小）。
  * 数字是"这一族里抵不上判据的条数"，理由逐条写明。
  *
- * `round-service.ts` 的十处，按所在函数逐个看过（函数边界 479/576/650/721/795/997/1030/1223）：
+ * `round-service.ts` 的十二处，按所在函数逐个看过（函数边界 479/576/650/721/795/997/1030/1223）：
  *  - `readRoundHistoryFactsV1` 里的 `selectDistinct({ roundId })`（讲过没有）与
  *    `from(noteLearningRounds)` 那发（练过没有／系统不确定）：返回的形状是几个 **id**
  *    的集合，**没有正文**。这一整个函数**连 `scope` 都不收**——入参就是调用方已经验过
@@ -96,6 +96,15 @@ const ROUND_INDIRECT_READ_PATTERNS = [
  * `round-activity-sweep.ts` 是后台清扫器：定时跨用户跑，只取 `{ id, noteId }` 去过期，
  * 不返回任何内容给查看者。
  *
+ * `round-service.ts` 的**第十二、十三处**（`readMaskedRoundHistoryV2` 里的两发，
+ * 2026-09-27 随 §10.3「失权后仍展示非内容元数据」新增）：那一发**刻意不带**判据——
+ * 它存在的全部意义就是在可见性判不过去之后仍然读得到"我什么时候练过、练到哪了"。
+ * 它只取 `id/phase/outcome/createdAt/closedAt` 这五列（**没有** `drivingQuestion`，
+ * 那一格是固定遮蔽句；**没有** `noteVersionId` 与任何指向内容的列），
+ * 且按 `(workspace, user, noteId)` 三格收窄——那三格是本人自己的记录，不是别人的。
+ * 给它加判据会让 §10.3 那一整格失效：判不过去 ⇒ 返回空数组 ⇒ 屏上与"这一篇从来没有
+ * 过轮次"完全一样，而那是**关于用户自己的**一条假事实。
+ *
  * `run-service.ts` 的两处分别是"这一轮现在什么相位"（`{ id, phase }`，`note_round`
  * 起手时挑未完轮次，而那条起手路先过 `resolveV2OriginExtras`）与
  * "返回目标还在不在"（`{ id }`，跳转可用性，与卡片那一族同一条口径）。
@@ -103,7 +112,7 @@ const ROUND_INDIRECT_READ_PATTERNS = [
  * 带 stale 检查：豁免数比实际多会红，所以有人把闸补上，这里必须跟着减。
  */
 const ROUND_INDIRECT_SYSTEM_LEVEL_READS: Record<string, number> = {
-  "modules/note-learning-rounds/round-service.ts": 10,
+  "modules/note-learning-rounds/round-service.ts": 12,
   "modules/note-learning-rounds/reflection-service.ts": 2,
   "modules/note-learning-rounds/prerequisite-proposal.ts": 1,
   "modules/note-learning-rounds/round-activity-sweep.ts": 1,

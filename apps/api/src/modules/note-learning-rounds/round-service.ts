@@ -14,6 +14,10 @@
  * 比 `expectedRevision` → 写的时候 `WHERE revision = 读过的那一版` 再比一次 rowCount。
  * 两道都要，少一道就是 lost update：N#7-9 那条注释在 journey 侧写的就是这个。
  */
+import {
+  ROUND_HISTORY_MASKED_QUESTION_V1,
+  type NoteLearningRoundHistoryMaskedItemV1,
+} from "@ailearn/shared/note-learning-round-contracts";
 import { and, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ApiTransaction } from "../../db/client.ts";
@@ -49,9 +53,11 @@ import {
   type RoundPhaseV1,
 } from "./round-reducer.ts";
 import {
+  artifactCharLengthV1,
   buildDeterministicArtifactHtmlV1,
   ROUND_ARTIFACT_KIND_V1,
-  type RoundArtifactInputV1,
+  ROUND_ARTIFACT_MAX_CHARS_V1,
+  type RoundArtifactSourceV1,
 } from "./round-artifact.ts";
 import { recordArtifactFailureV1, type ArtifactFailureReasonV1, type ArtifactFailureStageV1 } from "./artifact-failure.ts";
 
@@ -368,12 +374,25 @@ export async function readRound(
  * 而一次多余的聚合在分页真做出来之后还会变成"总数与翻页游标两套口径"那种分叉。
  */
 export type RoundHistoryPageV1 = {
-  rows: NoteLearningRoundRow[];
+  /**
+   * 两种形状，由 `contentMasked` 区分（§10.3）：
+   *  - `false` ＝ 完整行（`rows` 是 `NoteLearningRoundRow[]`）；
+   *  - `true`  ＝ 失权后仍允许展示的元数据（`rows` 是遮蔽项，**没有内容**）。
+   *
+   * 不用一个可选字段把两种行混在一张数组里：那样调用方会写出一个"能编过的"读取，
+   * 而它在失权那一支上读到的是 `undefined` 的题面——**屏上会画出半个答案**。
+   */
+  rows: NoteLearningRoundRow[] | NoteLearningRoundHistoryMaskedItemV1[];
   hasMore: boolean;
   /** 这一屏列了几轮——与 `hasMore`（本页之外还有没有）是两件事，分开报。 */
   shownCount: number;
   /** 与游标无关：这一篇一共开过几轮（用加游标前的条件算）。 */
   totalCount: number;
+  /**
+   * `true` ＝ 这一次读的是**失权后仍允许展示的元数据**（§10.3 末段），不是内容。
+   * 必填、不给 `.optional()`：缺这一格会被读成「历史读全了」。
+   */
+  contentMasked: boolean;
 };
 
 export type RoundHistoryQueryV1 = { limit: number; beforeRoundId?: string };
@@ -442,11 +461,95 @@ export async function listRoundHistory(
     .from(noteLearningRounds)
     .innerJoin(notes, eq(notes.id, noteLearningRounds.noteId))
     .where(and(...baseScoped, visibleNotesCondition(scope.userId)));
+  const visibleTotal = Number(totalRows[0]?.total ?? 0);
+  // 可见范围内确实没有 ⇒ 走下面那条遮蔽分支（先判权限，别拿 0 当"没有轮次"）。
+  if (visibleTotal === 0) {
+    const masked = await readMaskedRoundHistoryV2(tx, scope, noteId, query);
+    if (masked) return masked;
+  }
   return {
     rows: page,
     hasMore: rows.length > query.limit,
     shownCount: page.length,
-    totalCount: Number(totalRows[0]?.total ?? 0),
+    totalCount: visibleTotal,
+    contentMasked: false,
+  };
+}
+
+/**
+ * 失权之后仍允许展示的那一份（§10.3 末段）。
+ *
+ * **读的时候就把可见性判据摘掉**，而不是"读出来再遮蔽"——后者要求先把受保护内容
+ * 读进进程再丢掉，而那一读本身就越过了权限边界（读侧先收窄，不是读出来再遮蔽，
+ * 与 W5-6 刀四同一条纪律）。
+ *
+ * 返回 `null` ＝ 那一篇**本来就没有**轮次，那不是失权：屏上要说的是「这一篇还没有
+ * 过轮次」，而说成「这些记录涉及你已无权查看的内容」是在**凭空指控**用户发生过什么。
+ * 判据用 `totalCount`：不带可见性判据的总数为 0 ⇒ 真的没有。
+ */
+async function readMaskedRoundHistoryV2(
+  tx: ApiTransaction,
+  scope: RoundScopeV1,
+  noteId: string,
+  query: RoundHistoryQueryV1,
+): Promise<{
+  rows: NoteLearningRoundHistoryMaskedItemV1[];
+  hasMore: boolean;
+  shownCount: number;
+  totalCount: number;
+  contentMasked: true;
+} | null> {
+  const total = await tx
+    .select({ total: sql`count(*)::int` })
+    .from(noteLearningRounds)
+    .where(and(
+      eq(noteLearningRounds.workspaceId, scope.workspaceId),
+      eq(noteLearningRounds.userId, scope.userId),
+      eq(noteLearningRounds.noteId, noteId),
+    ));
+  const totalCount = Number(total[0]?.total ?? 0);
+  if (totalCount === 0) return null;
+
+  const rows = await tx
+    .select({
+      roundId: noteLearningRounds.id,
+      phase: noteLearningRounds.phase,
+      outcome: noteLearningRounds.outcome,
+      startedAt: noteLearningRounds.createdAt,
+      closedAt: noteLearningRounds.closedAt,
+    })
+    .from(noteLearningRounds)
+    .where(and(
+      eq(noteLearningRounds.workspaceId, scope.workspaceId),
+      eq(noteLearningRounds.userId, scope.userId),
+      eq(noteLearningRounds.noteId, noteId),
+      ...(query.beforeRoundId
+        ? [sql`(${noteLearningRounds.createdAt}, ${noteLearningRounds.id}) < (${query.beforeRoundId}::uuid, ${query.beforeRoundId}::uuid)`]
+        : []),
+    ))
+    .orderBy(desc(noteLearningRounds.createdAt), desc(noteLearningRounds.id))
+    .limit(query.limit + 1);
+
+  return {
+    rows: rows.slice(0, query.limit).map((row) => ({
+      ...row,
+      drivingQuestion: ROUND_HISTORY_MASKED_QUESTION_V1,
+      contentMasked: true as const,
+      // 遮蔽：它反映看过哪几道题，说出来等于复述结构。
+      actualModes: [] as unknown as [],
+      // 这两格**不读库**：它们要么要 join 教学/run 两张表（要读受保护内容才能算），
+      // 要么在遮蔽状态下没有可诚实报的值。§10.3 允许留下的那一组里没有它们。
+      systemUncertain: false,
+      followUpSettledAt: null,
+      startedAt: row.startedAt.toISOString(),
+      phase: row.phase as NoteLearningRoundHistoryMaskedItemV1["phase"],
+      outcome: row.outcome as NoteLearningRoundHistoryMaskedItemV1["outcome"],
+      closedAt: row.closedAt ? row.closedAt.toISOString() : null,
+    })),
+    hasMore: rows.length > query.limit,
+    shownCount: Math.min(rows.length, query.limit),
+    totalCount,
+    contentMasked: true,
   };
 }
 
@@ -1041,10 +1144,26 @@ export async function createTeaching(
     drivingQuestionRevision: number;
     kernelTaskRef: string | null;
     /**
-     * 动态产物的输入（刀五）。**省略 = 这一条只有文字形态**：`artifact_id` 留空，
-     * 与"产物生成失败"落在同一格（合同不区分这两件事——两者都是"没有动态版本"）。
+     * 动态产物的来源（刀五；39d W4-1 尾把 `material` 那一支换成 `rendered` 也能走）。
+     * **省略 = 这一条只有文字形态**：`artifact_id` 留空，与"产物生成失败"落在同一格
+     * （合同不区分这两件事——两者都是"没有动态版本"）。
+     *
+     * `rendered` 那一支是**事务外**渲染好的整份 HTML：模型写讲解、可信播放器执行，
+     * 读数由服务端算（§6.1）。这一层只落库。
      */
-    artifact?: RoundArtifactInputV1;
+    artifact?: RoundArtifactSourceV1;
+    /**
+     * 生成阶段（`generate` 档）已经发生的那次失败，**在教学行落库之后**补记。
+     *
+     * 为什么由调用方回传而不是这里自己发那次调用：生成必须在事务外（D5 §5.2），而
+     * 失败留痕必须挂在 `teaching_id` 上——教学行那一刻还不存在。两件事隔开做，中间
+     * 这一段就是回传。省略 = 没有发过那次调用（**没请求过** 与 **请求了但失败** 是
+     * §6.2 要求说不同话的两件事，界面上也就靠这一格区分）。
+     */
+    artifactGenerationFailure?: {
+      reason: Extract<ArtifactFailureReasonV1, "model_failed" | "contract_rejected">;
+      detail: string;
+    } | null;
   },
   options: {
     now?: Date;
@@ -1101,13 +1220,13 @@ export async function createTeaching(
   const nextOrdinal = Number(ordinalRows[0]?.maxOrdinal ?? 0) + 1;
 
   // 刀五的顺序：内容 → 产物行 → 教学行（教学表只追加，id 只能在插入那一刻带上）。
-  // `artifactWrite` 带回来的 `failure` **不在这里落库**：产物构建发生在教学行之前，那时
-  // 还没有 teaching_id 可挂（0298 头注「为什么 teaching_id 可空」）。留到教学行落库之后
-  // 那一段再写，那时能挂到具体的一条讲解上。
+  // 产物构建/渲染失败**不在这里落库**：产物行落在教学行之前，那时还没有 teaching_id
+  // 可挂（0298 头注「为什么 teaching_id 可空」）。留到教学行落库之后那一段再写，那时能
+  // 挂到具体的一条讲解上。**生成阶段**（事务外那一次模型调用）的失败同理。
   const artifactWrite = request.artifact
     ? await insertTeachingArtifactV1(tx, scope, {
       roundId: row.id,
-      input: request.artifact,
+      source: request.artifact,
       snapshotHash: request.snapshotHash,
       createdAt: now,
     }, reportArtifactFailure)
@@ -1134,16 +1253,28 @@ export async function createTeaching(
   const teachingRow = inserted[0];
   if (!teachingRow) throw new RoundServiceError("create_failed", "这条教学产物没落下来");
   // §16.4「动态交付失败记录保留」：教学行已经落下来了，此刻才有 teaching_id 可挂，
-  // 所以失败留痕写在这里而不是构建那一侧。**写失败不许影响这一行**——它记的是一件独立
-  // 的事（D4 §6.2：动态失败不冒充教学失败），所以刻意不包 SAVEPOINT：真写不进去时
-  // 整发失败，比"教学行落了但失败原因丢了"更容易被发现。
-  if (artifactWrite.failure) {
+  // 所以两条失败留痕都写在这里而不是各自产生的那一侧。**写失败不许影响这一行**——它记的
+  // 是两件独立的事（D4 §6.2：动态失败不冒充教学失败），所以刻意不包 SAVEPOINT：真写不
+  // 进去时整发失败，比"教学行落了但失败原因丢了"更容易被发现。
+  // 两条**都**写（而不是 `??` 取一条）：生成失败之后有可能照样渲染出了产物（模型那一发
+  // 重试成了），也可能渲染整份被拒（超配额）——那是两件独立的事，各占一行才对得上
+  // §18.3 把「动画成功」与「内容可教学」分开数的那句话。
+  for (const failure of [
+    ...(request.artifactGenerationFailure
+      ? [{
+        stage: "generate" as const,
+        reason: request.artifactGenerationFailure.reason,
+        detail: request.artifactGenerationFailure.detail,
+      }]
+      : []),
+    ...(artifactWrite.failure ? [artifactWrite.failure] : []),
+  ]) {
     await recordArtifactFailureV1(tx, scope, {
       roundId: row.id,
       teachingId: teachingRow.id,
-      stage: artifactWrite.failure.stage,
-      reason: artifactWrite.failure.reason,
-      detail: artifactWrite.failure.detail,
+      stage: failure.stage,
+      reason: failure.reason,
+      detail: failure.detail,
       snapshotHash: request.snapshotHash,
       createdAt: now,
     });
@@ -1164,14 +1295,14 @@ export async function createTeaching(
 async function insertTeachingArtifactV1(
   tx: ApiTransaction,
   scope: RoundScopeV1,
-  params: { roundId: string; input: RoundArtifactInputV1; snapshotHash: string; createdAt: Date },
+  params: { roundId: string; source: RoundArtifactSourceV1; snapshotHash: string; createdAt: Date },
   reportFailure: (message: string) => void,
 ): Promise<{
   artifactId: string | null;
   /**
    * 失败详情，**回传给调用方去落库**（0298 `note_learning_round_artifact_failures`），
    * 而不再只是进一次日志。§16.4 验收第一句要的就是"失败原因事后读得到"，而日志做不到。
-   * 形状与迁移 0298 的 `nlraf_stage_reason_chk` 同一组取值。
+   * 形状与迁移 0298 建立、0304 拓宽之后的 `nlraf_stage_reason_chk` 同一组取值。
    */
   failure: {
     stage: ArtifactFailureStageV1;
@@ -1179,13 +1310,28 @@ async function insertTeachingArtifactV1(
     detail: string;
   } | null;
 }> {
-  const built = buildDeterministicArtifactHtmlV1(params.input);
+  // 这一层**只落库**，不再生成：模型调用与渲染都在事务外做完了（D5 §5.2 三段式的
+  // 第二段），落到这里时只剩一次 INSERT。这里若再敢调一次模型，就是把持行锁等外部
+  // 响应这件事又请回来——而 `ai-task-kernel` 那道闸门只查作用域，查不到这里。
+  //
+  // 认不出来的 `kind` **当场喊**，而不是掉进 `buildDeterministicArtifactHtmlV1` 里报
+  // "Cannot read properties of undefined (reading 'explanation')"：那一句读起来像是
+  // 材料空，实际是**调用方给错了形状**，而把它说成前者会让排查从材料查起。
+  if (params.source.kind !== "rendered" && params.source.kind !== "material") {
+    throw new Error(
+      `产物来源的 kind 不认识：${String((params.source as { kind?: unknown }).kind)}`
+      + "（只有 rendered（事务外渲染好的整份 HTML）与 material（原始材料）两种）",
+    );
+  }
+  const built = params.source.kind === "rendered"
+    ? verifyRenderedArtifactHtmlV1(params.source.html)
+    : buildDeterministicArtifactHtmlV1(params.source.input);
   if (!built.ok) {
     reportFailure(`这一条教学产物的动态版本没有生成（${built.reason}）：${built.detail}`);
-    // `buildDeterministicArtifactHtmlV1` 的 reason 与 0298 的 build 档两档同宽；
-    // 对不上就在这里炸，不让它落到库 CHECK 上半夜拒一次。
+    // 构建失败的 reason 与 0304 的 build 档两档同宽；对不上就在这里炸，
+    // 不让它落到库 CHECK 上半夜拒一次。
     if (built.reason !== "empty" && built.reason !== "over_quota") {
-      throw new Error(`产物构建失败的 reason 不在 0298 的 build 档里：${built.reason}`);
+      throw new Error(`产物构建失败的 reason 不在 0304 的 build 档里：${built.reason}`);
     }
     return { artifactId: null, failure: { stage: "build", reason: built.reason, detail: built.detail } };
   }
@@ -1198,6 +1344,9 @@ async function insertTeachingArtifactV1(
         kind: ROUND_ARTIFACT_KIND_V1,
         html: built.html,
         snapshotHash: params.snapshotHash,
+        // §6.3「保存实际使用版本」：同一份 HTML 里已经写了这一行，画面上当场可查；
+        // 库里这一列是给事后按生成器分组用的。确定性那条路没有模型版本，留空。
+        generatorRef: params.source.kind === "rendered" ? params.source.generatorRef : "",
         createdAt: params.createdAt,
       }).returning({ id: noteLearningRoundArtifacts.id });
       const artifactRow = inserted[0];
@@ -1210,6 +1359,30 @@ async function insertTeachingArtifactV1(
     reportFailure(`这一条教学产物的动态版本没有落库（教学那一半照常写）：${message}`);
     return { artifactId: null, failure: { stage: "persist", reason: "persist_failed", detail: message } };
   }
+}
+
+/**
+ * 落库前**第二道**配额闸（第一道在渲染器 `buildDynamicArtifactHtmlV1` 里，第三道在桌面
+ * `assembleArtifactDocument` 里）。
+ *
+ * 为什么渲染器已经查过还要再查一次：渲染器与落库之间隔着一次 HTTP 回程与一次
+ * `createTeaching` 调用，而整份拒绝（而不是截断）这条判据的**代价**落在库 CHECK 上——
+真到库那里才发现超长，得到的是一次 23514，于是"超配额"这件事被误报成"约束冲突"，
+ * 而 0298 的 `over_quota` 那一档正是为它准备的。
+ */
+function verifyRenderedArtifactHtmlV1(html: string): { ok: true; html: string } | { ok: false; reason: "empty" | "over_quota"; detail: string } {
+  if (html.trim().length === 0) {
+    return { ok: false, reason: "empty", detail: "渲染器交回来的产物是空的" };
+  }
+  const length = artifactCharLengthV1(html);
+  if (length > ROUND_ARTIFACT_MAX_CHARS_V1) {
+    return {
+      ok: false,
+      reason: "over_quota",
+      detail: `产物 ${length} 字符，超过上限 ${ROUND_ARTIFACT_MAX_CHARS_V1}（整份拒绝，不截断）`,
+    };
+  }
+  return { ok: true, html };
 }
 
 /**

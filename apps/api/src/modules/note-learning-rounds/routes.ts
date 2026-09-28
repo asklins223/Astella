@@ -26,6 +26,9 @@
  *     迟早会有第二处对同一个码给不同的数。
  */
 import type { FastifyInstance, FastifyReply } from "fastify";
+import type {
+  NoteLearningRoundHistoryMaskedItemV1,
+} from "@ailearn/shared/note-learning-round-contracts";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 import {
@@ -92,6 +95,17 @@ import {
 } from "./teaching-explain.ts";
 import type { TeachingExplainProviderV1 } from "./teaching-explain.ts";
 import { llmTeachingExplainProvider, resolveTeachingModelConfig } from "./teaching-llm.ts";
+import {
+  llmDynamicArtifactProvider,
+  runDynamicArtifactV1,
+  type DynamicArtifactProviderV1,
+} from "./round-artifact-model.ts";
+import { computeArtifactNodesV1 } from "./round-artifact-measure.ts";
+import type { RoundArtifactSourceV1 } from "./round-artifact.ts";
+import {
+  buildDynamicArtifactHtmlV1,
+  DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1,
+} from "./round-artifact-render.ts";
 import { buildRoundReadingPlan, suggestRoundQuestion } from "./learning-plan.ts";
 import { requireAiConsent } from "../identity/ai-consent-gate.ts";
 import { finishRoundModelAttempt, reserveRoundModelAttempt, type RoundModelAttempt } from "./model-attempt.ts";
@@ -99,6 +113,8 @@ import { listNoteRoundPractices } from "../learning-runs/run-service.ts";
 import { readRoundGapHelpV1 } from "../learning-runs/gap-help-service.ts";
 import { readRoundPrerequisiteProposalV1 } from "./prerequisite-proposal.ts";
 import { readLatestArtifactFailureV1 } from "./artifact-failure.ts";
+import { readNoteRouteCoverageV1 } from "./route-coverage.ts";
+import { noteRouteCoverageV1Schema } from "@ailearn/shared/note-route-coverage-v2";
 import { assembleObjectiveSurfaceV3, listObjectiveSurfacesV3 } from "../learning-objectives/surface-service.ts";
 import { readNoteChangeImpactsV1 } from "../learning-objectives/change-impact-service.ts";
 import { createRoundTargetGrounder, selectGroundedRoundTarget, type RoundTargetGrounder } from "./target-grounding.ts";
@@ -256,12 +272,19 @@ async function readCurrentInNewTransaction(
 export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
   /** Explicit offline transport for tests; production always resolves a real model. */
   teaching?: { provider: TeachingExplainProviderV1; modelId: string; external: boolean };
+  /** 动态演示的生成那一发（39d W4-1 尾）。与讲解共用同一个模型配置，但**独立**注入，
+   *  这样离线用例可以把"讲解成、演示不成"这一种形状造出来（§6.2 要求说不同的话）。 */
+  artifact?: { provider: DynamicArtifactProviderV1; modelId: string };
   targetGrounder?: RoundTargetGrounder;
 } = {}) {
   const modelConfig = resolveTeachingModelConfig();
   const teaching = options.teaching ?? {
     provider: llmTeachingExplainProvider({ config: modelConfig }),
     modelId: modelConfig?.model ?? "unconfigured", external: true,
+  };
+  const artifactGenerator = options.artifact ?? {
+    provider: llmDynamicArtifactProvider({ config: modelConfig }),
+    modelId: modelConfig?.model ?? "unconfigured",
   };
   const targetGrounder = options.targetGrounder ?? createRoundTargetGrounder(modelConfig);
   app.addHook("preHandler", requireSession);
@@ -338,9 +361,16 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
           limit: parsedQuery.data.limit,
           beforeRoundId: parsedQuery.data.before,
         });
+        // **失权那一支不读那两格事实**（§10.3）：「实际方式」要 join 教学表、
+        // 「系统不确定项」要读判定行，两者都要读受保护内容才算得出来。读侧先收窄，
+        // 不是读出来再遮蔽——所以这里**根本不去取**。
+        if (history.contentMasked) return { page: history, facts: null };
         // 两格事实按**本页那几条**去数（同一份 RLS 上下文、同一发事务）：
         // 先分页再数，而不是先数再分页——后者会把"这一篇前 20 轮"变成"全篇扫一遍"。
-        const historyFacts = await readRoundHistoryFactsV1(tx, history.rows.map((row) => row.id));
+        const historyFacts = await readRoundHistoryFactsV1(
+          tx,
+          (history.rows as NoteLearningRoundRow[]).map((row) => row.id),
+        );
         return { page: history, facts: historyFacts };
       }));
     } catch (err) {
@@ -349,17 +379,60 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
       return replyRoundError(reply, err, "读这一篇的轮次记录没成功");
     }
     // 回信整份过一遍合同：漂移要红在这里，而不是红成客户端"某一格 undefined"。
+    // 遮蔽那一支**直接交出遮蔽项**，不经过 `roundHistoryItemV1` ——那个映射要读
+    // `drivingQuestion` 与 `actualModes`，在遮蔽状态下它们**不存在**，硬过一遍只会
+    // 编出两格内容来（屏上就画出半个答案）。
+    const lastRoundId = (): string | null => {
+      if (!page.hasMore || page.rows.length === 0) return null;
+      const last = page.rows[page.rows.length - 1]!;
+      return "id" in last ? last.id : last.roundId;
+    };
     return noteLearningRoundHistoryPageV1Schema.parse({
       version: 1 as const,
       noteId,
-      items: page.rows.map((row) => roundHistoryItemV1(row, facts)),
+      items: page.contentMasked
+        ? (page.rows as NoteLearningRoundHistoryMaskedItemV1[])
+        : (page.rows as NoteLearningRoundRow[]).map((row) => roundHistoryItemV1(row, facts!)),
       hasMore: page.hasMore,
       // 游标就是本页最后那一条的 id（有"更早的"才给指针，两者不许分叉）。
-      nextCursor: page.hasMore && page.rows.length > 0 ? page.rows[page.rows.length - 1].id : null,
+      nextCursor: lastRoundId(),
       shownCount: page.shownCount,
       // 与游标无关的那个数：这一篇一共开过几轮（服务层用加游标前的条件算）。
       totalCount: page.totalCount,
+      // §10.3：屏上据此说「这些记录只显示你有权看的那部分」而不是「记录不见了」。
+      contentMasked: page.contentMasked,
     });
+  });
+
+  /**
+   * 这一篇的**核心路线**：跨全部轮次、按核心问题归并（39d W4-5 ③；PRD §4.4）。
+   *
+   * 与上面那两条记录读法的分工，别混：
+   *  - `GET /v2/notes/:id/learning-rounds` 是**按轮次**列时间线（§10.3 那一行一行）。
+   *  - 这一条是**按核心问题**说"这一篇走到哪"（§4.4）：跨轮汇总，借助完成与仍需
+   *    帮助另列，只有纳入的每个问题都实际学过才说"已走完这份核心路线"。
+   *
+   * **它不是一个"永远进行中的大轮次"**（§4.4 明写不要求），所以路径挂在 **noteId**
+   * 下面而不是 `roundId`——挂到轮次上会让人以为"跨轮"是某一轮的属性。
+   *
+   * 回信整份过一遍合同，漂移红在这里而不是红成客户端某一格 undefined；
+   * `truncated` 那一格必填：取数撞了上界就说截断，不给一个看起来完整的假分母。
+   */
+  app.get("/v2/notes/:noteId/learning-route", async (req, reply) => {
+    const noteId = (req.params as { noteId?: string }).noteId ?? "";
+    if (!z.string().uuid().safeParse(noteId).success) {
+      return reply.code(400).send({ error: "invalid_request", message: "noteId 不是一个合法 id" });
+    }
+    const scope = scopeOf(req);
+    let facts;
+    try {
+      facts = await withWorkspaceTransaction(scope, (tx) => readNoteRouteCoverageV1(tx, scope, noteId));
+    } catch (err) {
+      // 读不到这一篇是 404（`round_not_found`），与轮次那一族同一句真因：
+      // 「这一篇还没有路线」与「这一篇你看不见」在屏上是两句不同的话（§13.4）。
+      return replyRoundError(reply, err, "读这一篇的核心路线没成功");
+    }
+    return noteRouteCoverageV1Schema.parse(facts.coverage);
   });
 
   /**
@@ -641,7 +714,10 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
       round: { roundId, noteVersionId: frozen.round.noteVersionId, sourceContentHash: frozen.round.sourceContentHash },
       attemptId: frozen.attempt.id, currentActiveTransaction: currentApiWorkspaceTransaction,
     }) : { approved: false, report: { teachingSupported: true, teachingReason: "explicit offline fixture", teachingSegments: [], objectiveSupported: false, units: [], suspectClaims: [] }, modelCalls: 0 };
-    const modelCalls = generated.modelCalls + grounded.modelCalls;
+    // 这一次发出去的模型调用总数（讲解 + 依据核对 + 动态演示）。**动态演示那一发也算**：
+    // 轮内预算是这一轮共享的，把账记在别人的额度上会让 `reserveRoundModelAttempt`
+    // 之后那一格永远显示"没花过"，而 §18.3 的试用统计正是按真调用数算的。
+    let modelCalls = generated.modelCalls + grounded.modelCalls;
     if (!grounded.report?.teachingSupported) {
       await withWorkspaceTransaction(scope, (tx) => finishRoundModelAttempt(tx, scope, frozen.attempt, modelCalls, false));
       return reply.code(422).send({ error: "teaching_grounding_failed",
@@ -656,6 +732,72 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
       newlyReported: grounded.report?.suspectClaims ?? [],
       resolvedUnitIds,
     });
+
+    // ── 相位 2.5：动态演示的生成与渲染，**仍在事务外**（39d W4-1 尾）──
+    //
+    // 为什么排在这一段而不是相位 1 或相位 3：它需要**这一条刚生成出来的解释**当素材，
+    // 而它自己是一次外部调用，落进相位 3 的短事务就是持行锁等模型（D5 §5.2）。
+    //
+    // 预算不够就**不发**这一次：那是"没请求过"，不是"请求了但失败"——§6.2 要求界面对
+    // 这两句说不同话，所以这里不写失败留痕（`artifactGenerationFailure` 留空），教学行照
+    // 常落、`artifact_id` 留空。
+    const artifactMaterial = {
+      explanation: generated.output.explanation,
+      ...(generated.output.example ? { example: generated.output.example } : {}),
+      planSteps: frozen.input.planSteps,
+    };
+    const artifactNodes = computeArtifactNodesV1(artifactMaterial);
+    const artifactCallBudget = Math.max(0, frozen.attempt.maxCalls - modelCalls);
+    const artifactRemainingMs = frozen.attempt.deadlineAt - Date.now();
+    const generatorRef = `${DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1} (${artifactGenerator.modelId})`;
+    let artifactSource: RoundArtifactSourceV1 | undefined;
+    let artifactGenerationFailure: { reason: "model_failed" | "contract_rejected"; detail: string } | null = null;
+
+    // 没配模型就直接走确定性构建，**不**发那一次调用：发一次注定失败的调用只会留下一条
+    // `model_failed` 留痕，把"这个部署压根没配模型"说成"生成过一次且失败了"。
+    const artifactModelReady = artifactGenerator.modelId !== "unconfigured";
+    if (artifactModelReady && artifactNodes.length > 0 && artifactCallBudget >= 1 && artifactRemainingMs > 0) {
+      const demo = await runDynamicArtifactV1({
+        provider: artifactGenerator.provider,
+        modelId: artifactGenerator.modelId,
+        // 至少 1 次、不超过剩下额度：内核按失败类别决定要不要用掉那一次重试。
+        maxModelCalls: Math.min(2, artifactCallBudget),
+        maxDurationMs: artifactRemainingMs,
+        attemptId: frozen.attempt.id,
+        input: { drivingQuestion: frozen.round.drivingQuestion, nodes: artifactNodes },
+        scope,
+        round: {
+          roundId: frozen.round.roundId,
+          noteVersionId: frozen.round.noteVersionId,
+          sourceContentHash: frozen.round.sourceContentHash,
+        },
+        ordinal: frozen.ordinal,
+        currentActiveTransaction: currentApiWorkspaceTransaction,
+        reportDevelopmentError: (message) => req.log.error({ scope: "note-round-artifact" }, message),
+      });
+      modelCalls += demo.modelCalls;
+      if (demo.ok) {
+        const rendered = buildDynamicArtifactHtmlV1({
+          spec: demo.spec,
+          nodes: artifactNodes,
+          snapshotHash: frozen.round.sourceContentHash,
+          generatorRef,
+        });
+        if (rendered.ok) {
+          artifactSource = { kind: "rendered", html: rendered.html, generatorRef };
+        } else {
+          // 渲染器拒了（空／超配额）：走 build 档，由 createTeaching 那一侧补记。
+          req.log.error({ scope: "note-round-artifact" },
+            `动态演示没有渲染出来（${rendered.reason}）：${rendered.detail}`);
+        }
+      } else {
+        // 生成失败**留痕**：回传给 createTeaching，在教学行落库之后补一行
+        // `generate` 档。只进 req.log 的话进程一重启就没了，事后读不到（§16.4）。
+        artifactGenerationFailure = { reason: demo.failure, detail: demo.detail };
+        req.log.error({ scope: "note-round-artifact" },
+          `动态演示没有生成（${demo.failure}）：${demo.detail}`);
+      }
+    }
 
     // ── 相位 3：短事务写（只追加；轮内序号在服务层算）──
     try {
@@ -682,12 +824,18 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
             snapshotHash: frozen.round.sourceContentHash,
             drivingQuestionRevision: frozen.round.drivingQuestionRevision,
             kernelTaskRef: generated.attemptRef,
-            // 刀五：动态版本的输入就是这一条解释本身（＋相位 1 冻结的那版计划步骤）。
-            artifact: {
-              explanation: generated.output.explanation,
-              ...(generated.output.example ? { example: generated.output.example } : {}),
-              planSteps: frozen.input.planSteps,
-            },
+            // 刀五：动态版本的来源。三种形状，**三种说法**（§6.2／§18.3）：
+            //   1. `rendered` —— 模型写讲解 ＋ 可信播放器执行 ＋ 服务端给的读数（§6.1）；
+            //   2. `material` —— 这一次**没配模型**（压根没发过调用），退回确定性构建；
+            //   3. 整格省略 —— 模型配了但这一发**没成**：产物不给，留 `generate` 档失败。
+            //      这里**不**拿第 2 种去顶替第 3 种：那样"动画成功"这一项统计会把确定性
+            //      产物算进去，而"哪一版生成器出的"正是 §6.3 要保存的东西。
+            ...(artifactSource
+              ? { artifact: artifactSource }
+              : !artifactModelReady
+                ? { artifact: { kind: "material" as const, input: artifactMaterial } }
+                : {}),
+            artifactGenerationFailure,
           },
           {
             // 产物失败不许让教学生成失败（D4 §6.2）：原因只留在服务端日志里。

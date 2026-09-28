@@ -159,6 +159,9 @@ test("记录那一页的合同：游标坏形状拒，`hasMore` 与 `nextCursor`
     shownCount: 0,
     totalCount: 0,
     nextCursor: null,
+    // §10.3：必填、不给默认值——「没写这一格」与「这一格是 false」在类型上
+    // 长得一样，而前者只发生在某一处忘了写的时候。
+    contentMasked: false,
     ...overrides,
   });
   assert.equal(noteLearningRoundHistoryPageV1Schema.safeParse(page()).success, true, "正常回读该过");
