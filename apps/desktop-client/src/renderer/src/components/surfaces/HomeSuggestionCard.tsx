@@ -115,7 +115,7 @@ export function HomeSuggestionCard({ timeZone, epochRef, onNewNote }: HomeSugges
   }
 
   return (
-    <section className="hud-desk-next" aria-label="现在值得做的一件事">
+    <section className="hud-desk-next" aria-label="现在值得做的一件事" data-slot="desk">
       <p className="hud-desk-next__headline">{suggestion.headline}</p>
       {/* §12.1「推荐附一句理由」——**必填**那一格就画在这里；空的那一条服务端不会送来。 */}
       <p className="hud-desk-next__reason">{suggestion.reasonLine}</p>

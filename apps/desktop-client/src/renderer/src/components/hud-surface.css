@@ -164,3 +164,24 @@
   font-size: 0.9em;
   color: color-mix(in srgb, var(--hud-ink, #6b5a41) 72%, transparent);
 }
+
+/* 39d W7-4：§12.1 那张便签**自己的那一块**。
+ *
+ * 上一版它被塞进 `.home-v2-hud__panel`，而那个容器是
+ * `position:absolute; inset:4px 1px auto 242px; height:48px; overflow:hidden`——
+ * **一行摘要条**。一张 260px 宽、多行、两张纸签的便签进去以后，横向被挤到 10px、
+ * 纵向被裁。真窗口量到的就是 `[429, 666, 71, 204]`。
+ *
+ * **所以给它自己一块**：绝对定位在触发器**下方**、自己定宽高、**不参与那一行的排版**。
+ * 摘要那一行继续做它的事——**一行摘要不该被一张便签撑开**（AGENTS.md 的纸面层次）。 */
+.hud-surface .home-v2-hud__desk {
+  position: absolute;
+  /* **在触发器上方**，不是下方。`.home-v2-hud` 自己贴着窗口底边（这一屏的 HUD 在左下角），
+     所以 `top: 56px` 会把便签推到**视口之外**——真窗口量到 `[265, 789, 260, 162]`
+     而窗口内容高 810 ⇒ **下半截在折线以下**。`bottom: 56px` 才是「浮在触发器上面」。 */
+  inset: auto auto 56px 242px;
+  display: block;
+  width: max-content;
+  max-inline-size: 260px;
+  overflow: visible;
+}

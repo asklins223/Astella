@@ -188,15 +188,28 @@ function HomeV2Hud({ introVisible, loading, state, title, primaryLabel, theme, m
 
             放在触发器**里面**还有一层理由：这一屏本来就有「今日下一步 → 继续作答」这一个
             动作，§12.1 要的也是**一件**。**两张并排的纸签会把它读成两件。** */}
+        <div className="home-v2-hud__actions">
+          <button type="button" className="home-v2-hud__primary" disabled={loading} onClick={() => { setExpanded(false); onPrimary(); }}><BookOpenText size={17} strokeWidth={1.8} aria-hidden="true" /><span>{introVisible ? "去书桌" : primaryLabel}</span></button>
+          <button type="button" aria-label="打开魔法目录" title="魔法目录" onClick={() => { setExpanded(false); onCatalog(); }}><Search size={17} strokeWidth={1.8} aria-hidden="true" /></button>
+        </div>
+      </div>
+      {/* §12.1 那张便签：**不在** `__panel` 里，作为**它自己的一块**挂在触发器下方。
+        *
+        * ⚠️ 上一版把它放进 `__panel`，而那个容器是
+        * `position: absolute; inset: 4px 1px auto 242px; height: 48px; overflow: hidden`
+        * ——**一行 HUD 条**：高度写死 48px、裁掉溢出、横向只剩 10px。
+        * 把一张 260px 宽、多行、带两张纸签的便签塞进去，量到 `[429, 666, 71, 204]`
+        * ——**横向被挤成 71px、纵向被裁**。
+        *
+        * **那是「容器与内容不配」，不是几个 CSS 数值的问题**：`__panel` 是**触发器旁边
+        * 那一行摘要**（一句 detail ＋ 两颗动作钮），而 §12.1 要的是**一张便签**。
+        * **一行摘要不该被一张便签撑开**——所以便签自己占一块，摘要那一行继续做它的事。 */}
+      <div className="home-v2-hud__desk" aria-hidden={!expanded} inert={!expanded}>
         <HomeSuggestionCard
           timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
           epochRef={suggestionEpochRef}
           onNewNote={() => onCatalog()}
         />
-        <div className="home-v2-hud__actions">
-          <button type="button" className="home-v2-hud__primary" disabled={loading} onClick={() => { setExpanded(false); onPrimary(); }}><BookOpenText size={17} strokeWidth={1.8} aria-hidden="true" /><span>{introVisible ? "去书桌" : primaryLabel}</span></button>
-          <button type="button" aria-label="打开魔法目录" title="魔法目录" onClick={() => { setExpanded(false); onCatalog(); }}><Search size={17} strokeWidth={1.8} aria-hidden="true" /></button>
-        </div>
       </div>
     </aside>
   );
