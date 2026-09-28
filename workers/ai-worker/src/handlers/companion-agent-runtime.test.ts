@@ -993,13 +993,21 @@ test("mock 守 provider 合同：required 必回工具调用，工具面为空�
       // `content: ""` 而不是 null：内部 `AgentMessage` 的形状是 string|parts，
       // 这里要表达的"这一步没有正文"用空串就够，mock 也只看有没有 tool 消息。
       { role: "assistant", content: "", toolCalls: [{ id: "c1", name: "companion_read_context", arguments: {} }] },
-      { role: "tool", content: "已读取：{notes:[]}", toolCallId: "c1" },
+      // 带 `safeSummary`：mock 现在只取那一格回话（原样回显工具结果会把工具面里
+      // 流通的裸 uuid 搬进正文，`internal_token_leak` 拦下、整轮终止）。
+      { role: "tool", content: JSON.stringify({ value: { notes: [] }, safeSummary: "已读取：没有待读笔记" }), toolCallId: "c1" },
     ],
     tools: [{ name: "companion_read_context", description: "读上下文", parameters: {} }],
     toolChoice: "auto",
   });
   assert.equal(autoInstead.toolCalls.length, 0, "auto 那一档不该被 mock 偷偷升级成必调工具");
-  assert.match(String(autoInstead.content), /已读取伴星工具结果/);
+  // **判的是"她跟着工具结果换了话"，不是那一句的字面**——原来钉的是
+  // `已读取伴星工具结果` 这个串，而它正是被移除的**原样回显**。钉字面等于
+  // 把"回显工具结果"当成了 mock 的合同。
+  assert.match(String(autoInstead.content), /已读取：没有待读笔记/,
+    "她拿到工具结果之后说的话没跟着变：这一档是固定文案，答不出她真的读了工具");
+  assert.ok(!/已读取伴星工具结果/.test(String(autoInstead.content)),
+    "她把工具结果原样搬进了正文：工具面里流通的东西会从她嘴里出去");
 
   // 那一对的真实形状就是 400：mock 必须**跟着炸**，否则将来谁把这对拼出来，
   // 测试只会显示成"模型没听话"，归因直接归错。

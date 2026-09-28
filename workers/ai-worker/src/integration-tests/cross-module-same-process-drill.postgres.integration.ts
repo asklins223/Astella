@@ -119,7 +119,7 @@ test("§1 · 学习事件投递：走**投递面**入队，并念得出它是什
   const { db } = await import("../db.ts");
   const systemEventId = `drill-${randomUUID()}`;
 
-  const deliveryId = await db.transaction(async (tx: never) =>
+  const deliveryId = await db.transaction(async (tx) =>
     enqueueSystemEventDelivery(tx, {
       workspaceId,
       userId,
@@ -156,8 +156,8 @@ test("§1b · 投递是**幂等**的：同一 systemEventId 重复投递不产�
   const systemEventId = `drill-dedupe-${randomUUID()}`;
   const payload = { workspaceId, userId, systemEventId, text: "同一条", ttlHours: 24 };
 
-  const first = await db.transaction(async (tx: never) => enqueueSystemEventDelivery(tx, payload));
-  const second = await db.transaction(async (tx: never) => enqueueSystemEventDelivery(tx, payload));
+  const first = await db.transaction(async (tx) => enqueueSystemEventDelivery(tx, payload));
+  const second = await db.transaction(async (tx) => enqueueSystemEventDelivery(tx, payload));
   assert.ok(first, "第一次投递没有给出 id");
   assert.equal(second, null, "重复投递给出了第二个 id：同一条提醒会被念两遍");
 
@@ -216,7 +216,7 @@ test("§3 · 失败可见：投递面**不校验正文**，所以空正文会落
   // 今天**没有**任何一层拒空正文（第一版这里断言"会抛"，实测不抛）。
   // 如实记下这件事比补一条"期望它抛"的断言有用：它把「空条目会进收件箱」
   // 变成一条**已量**的事实，而不是一个愿望。
-  const id = await db.transaction(async (tx: never) => enqueueSystemEventDelivery(tx, {
+  const id = await db.transaction(async (tx) => enqueueSystemEventDelivery(tx, {
     workspaceId, userId, systemEventId, text: "", ttlHours: 24,
   }));
   assert.ok(id, "实测：空正文没有被拒，它照常落了库");
@@ -306,8 +306,18 @@ test("§4 · 伴星对话在**这个进程**里跑出声，并落到曝光账（
      * 正文。所以本条断言的是**这两件事同时成立**，而不是"对话能跑完"——
      * 断言"能跑完"会让这一条在守卫修好之后**变成恒绿**，而今天它量到的是一个真实缺口。
      */
+    /**
+     * 这一发**必须跑完**。
+     *
+     * 第一版这里写成「抛不抛都行」——而"抛不抛都行"是一条**永远不会失败**的判据：
+     * 它在链路完全坏掉时也绿。上一轮它绿着，是因为 mock 把工具结果原样回显、
+     * `internal_token_leak` 拦下了整轮（那时那条回显是**真实缺陷**，已修）。
+     *
+     * 现在锁的是**修好之后应当成立**的那一句：她说完话、链路终止、且失败不是靠
+     * "抛异常"这种方式说出来的（§3 的「失败可见」是反过来的要求——**成功**就不该抛）。
+     * 哪天这条又红，先看是不是 mock 的回显被改回去了（`mock-tool-echo.test.ts` 钉着它）。
+     */
     let thrown: { message: string } | null = null;
-    let spoke = false;
     try {
       await runCompanionDialogue({
         id: randomUUID(),
@@ -320,28 +330,19 @@ test("§4 · 伴星对话在**这个进程**里跑出声，并落到曝光账（
     } catch (error) {
       thrown = { message: String((error as { message?: string })?.message ?? error) };
     }
+    assert.equal(thrown, null,
+      `对话这一环没能跑完：${thrown?.message ?? ""}——`
+      + "先看 `mock-tool-echo.test.ts`（mock 是不是又把工具结果原样搬进正文了）");
 
+    // ① 她**说了话**（不是静默跑完）——第一版只断言 import 可用，那证明的是"能编译"。
     const messages = await readInScope({ workspaceId: ws, userId: uid }, (tx) => tx`
       SELECT role FROM companion_messages
       WHERE workspace_id = ${ws} AND conversation_id = ${cid} ORDER BY seq`);
-    spoke = (messages as unknown as Array<{ role: string }>).some((m) => m.role === "assistant");
-
-    if (thrown) {
-      // **失败要说得出是哪一种**（§3 的「失败可见」）：一句带 reasonCode 的错，
-      // 而不是一句 `failed`。
-      assert.match(
-        thrown.message,
-        /internal_token_leak|output_too_long|empty_output/,
-        `对话这一环失败了，但失败说明里没有可读的判据：实到「${thrown.message}」——`
-        + "屏上无从知道该改什么（退出条件 ③）",
-      );
-      assert.ok(
-        !spoke || true,
-        "被拦下之前她说的话是否已经落库，要在回执里说得清——这一格今天为空，记在案",
-      );
-    } else {
-      assert.ok(spoke, "对话跑完但她没有出声：这一环静默失效了");
-    }
+    assert.ok(messages.length > 0, "对话跑完但一条消息都没留下：这一环静默失效了");
+    assert.ok(
+      (messages as unknown as Array<{ role: string }>).some((m) => m.role === "assistant"),
+      "只有用户消息、没有她的话：这一环没有真的出声",
+    );
 
     // ② 关键的那一列：不在作答屏 ⇒ **不得**记成答案暴露。
     const exposures = await readInScope({ workspaceId: ws, userId: uid }, (tx) => tx`

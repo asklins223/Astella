@@ -18,6 +18,33 @@ import { registerFactory } from "../provider-factory.ts";
 
 // ARCH-05: contextWindowTokens 可通过 MOCK_CONTEXT_WINDOW_TOKENS 环境变量覆盖。
 
+/**
+ * mock 拿到工具结果之后该回什么。
+ *
+ * **不要原样回显工具结果**——第一版就是这么写的（`已读取伴星工具结果：{…}`），
+ * 而那条链路立刻被 `internal_token_leak` 拦下，**整轮对话终止**。
+ *
+ * 根因不在泄露守卫：它拦的是对的。工具结果里带着 `currentLearningRun.runId`
+ * 这类**本该只在工具面上流通**的东西（`companion-agent-runtime.ts:2559` 把
+ * `JSON.stringify(toolResult)` 交给模型，模型拿到它是应该的），而**把工具结果原样
+ * 搬进正文**不是任何真实模型会做的事——真实模型拿到上下文是为了**回答**，
+ * 不是为了复述它。
+ *
+ * 所以这里只取 `safeSummary`（那一档的注释写着「它会进她的可见轨迹」，是专门
+ * 为"可以让她说出来"准备的那一份）。取不到就退回一句中性的话，**不是**回显原文。
+ */
+function mockToolResultLine(rawContent: unknown): string {
+  try {
+    const parsed = JSON.parse(String(rawContent)) as { safeSummary?: unknown };
+    if (typeof parsed?.safeSummary === "string" && parsed.safeSummary.length > 0) {
+      return parsed.safeSummary;
+    }
+  } catch {
+    // 工具结果不是 JSON（桩 provider 常见）——落到下面那句中性话。
+  }
+  return "我读取了一下当前上下文。";
+}
+
 export class MockProvider implements AIProvider {
   id = "mock";
   modelId = "mock-v1";
@@ -120,7 +147,7 @@ export class MockProvider implements AIProvider {
         : scriptedLeak
           ? "复利效应是本金产生利息后加入本金继续生息的现象，这样说清楚了吗？"
           : toolResult
-          ? `已读取伴星工具结果：${String(toolResult.content).slice(0, 400)}`
+          ? mockToolResultLine(toolResult.content)
           : request.tools.length > 0
             ? "我先读取一下当前上下文。"
             : "我在这里，准备好陪你学习了。";
