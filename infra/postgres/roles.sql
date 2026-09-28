@@ -529,7 +529,13 @@ BEGIN
   FOREACH table_name IN ARRAY ARRAY[
     'card_domain_events_v2',
     'learning_card_revisions_v2',
-    'learning_objective_origins_v2'
+    'learning_objective_origins_v2',
+    -- 0305/0306/0307（39d W7-4）：「今天这一批」的锁、首页「换一个／暂不处理」的略过行。
+    -- **它们此前一直不在任何清单里**——表建了、迁移走了、RLS 策略也写了，但受限角色
+    -- **没有授权**，于是被测路径一读就 `Failed query`。**新增表必须同时进这两个清单**，
+    -- 而「加迁移时顺手加授权」不是自动的：漏了不会红在部署上，只红在被测路径的第一次读。
+    'daily_review_batches_v2',
+    'home_suggestion_dismissals_v2'
   ]
   LOOP
     IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
@@ -1102,6 +1108,10 @@ BEGIN
       ('card_domain_events_v2', true, true, true, true),
       ('learning_card_revisions_v2', true, true, true, true),
       ('learning_objective_origins_v2', true, true, true, true),
+      -- 0305/0306/0307（39d W7-4）：与上面同一组。这两张表**只有本人那一侧读写**
+      -- （worker 那一支不进），所以四列都给。
+      ('daily_review_batches_v2', true, true, true, true),
+      ('home_suggestion_dismissals_v2', true, true, true, true),
       -- 0170/0173 只给 SELECT；0178 补 INSERT/UPDATE（关系状态写入 + 每日衰减）。
       ('pet_profiles', true, true, true, false),
       ('assistant_memory_items', true, true, true, true),
