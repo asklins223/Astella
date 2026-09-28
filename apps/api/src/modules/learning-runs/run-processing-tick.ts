@@ -2191,7 +2191,20 @@ async function applyDemonstratedSchedule(
     // dueAt 取**库里那一条**的到期时间：这一格已被占（并发/重放）时，屏幕上
     // 不能出现一个没人持有的日期。
     if (scheduled.held) return { kind: "none", reasonCode: "objective_held" };
-    return { kind: "created", dueAt: scheduled.nextReviewAt!.toISOString(), policyReason: "demonstrated" };
+    // ⚠️ 与上面两处 `successor` 分支**同形**：刀三给闸接进去来源级授权之后，`held` **不是**
+    // 「没有到期时间」的那一档——`source_paused` / `never_authorized` 两档是
+    // **`held: false` 而 `nextReviewAt: null`**。而上一行那句注释恰好与 `!` 自相矛盾：
+    // 「dueAt 取**库里那一条**的到期时间：这一格已被占（并发/重放）时，屏幕上不能出现一个
+    // 没人持有的日期」——**并发/重放时那一条可能根本没有**，而 `!` 恰恰说它一定有。
+    if (scheduled.nextReviewAt === null) {
+      return {
+        kind: "none",
+        reasonCode: scheduled.sourcePaused === true
+          ? "source_paused"
+          : (scheduled.neverAuthorized === true ? "never_authorized" : "no_next_review_at"),
+      };
+    }
+    return { kind: "created", dueAt: scheduled.nextReviewAt.toISOString(), policyReason: "demonstrated" };
   }
   if (authorization.kind === "consume_pending") {
     const currentRows = await tx
@@ -2352,7 +2365,16 @@ async function applyUnableSchedule(
       at,
     });
     if (scheduled.held) return { kind: "none", reasonCode: "objective_held" };
-    return { kind: "created", dueAt: scheduled.nextReviewAt!.toISOString(), policyReason: "declared_unable" };
+    // 同上（`declared_unable` 那一支）：`held` 不是「没有日期」的那一档。
+    if (scheduled.nextReviewAt === null) {
+      return {
+        kind: "none",
+        reasonCode: scheduled.sourcePaused === true
+          ? "source_paused"
+          : (scheduled.neverAuthorized === true ? "never_authorized" : "no_next_review_at"),
+      };
+    }
+    return { kind: "created", dueAt: scheduled.nextReviewAt.toISOString(), policyReason: "declared_unable" };
   }
   if (authorization.kind === "consume_pending") {
     const currentRows = await tx
