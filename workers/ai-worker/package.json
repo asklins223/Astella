@@ -16,7 +16,8 @@
     "test:card-generation-v3:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/card-generation-v3-simplified-postgres.integration.ts",
     "test:objective-reuse:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/objective-reuse-lookup-postgres.integration.ts",
     "test:parse-source-rls:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/parse-source-rls-context-postgres.integration.ts",
-    "test:ai-audit-rls:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/ai-audit-rls-context-postgres.integration.ts"
+    "test:ai-audit-rls:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/ai-audit-rls-context-postgres.integration.ts",
+    "test:cross-module-drill:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/cross-module-same-process-drill.postgres.integration.ts"
   },
   "dependencies": {
     "@ailearn/shared": "file:../../packages/shared",
