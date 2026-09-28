@@ -453,5 +453,9 @@ export async function sourceAuthorizationForObjectiveV2(
   return decideSourceAuthorizationV2({
     cardReview: cardRow ? (cardRow.status as "active" | "paused") : null,
     noteSubscriptions,
+    // **2026-09-28 用户裁定**：她按下「保存并开启复习」**本身就是**显式意图 ⇒ 卡这一支
+    // 没有订阅行时**默认 covered**。**笔记那一支一个字都没改**（§9.1「读过笔记不默认
+    // 授权未来提醒」照旧要问），显式 `paused` 也照旧照办。
+    cardActivationIsIntent: true,
   });
 }

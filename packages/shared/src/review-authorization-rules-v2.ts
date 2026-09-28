@@ -191,16 +191,32 @@ export function decideSourceAuthorizationV2(input: {
   readonly cardReview: "active" | "paused" | null;
   /** 这颗目标那些来源笔记的订阅档位；去重前给全，去重后由读侧做。 */
   readonly noteSubscriptions: ReadonlyArray<"active" | "paused">;
+  /**
+   * **这一发是不是「她刚激活了这颗目标」**（结算那一支恒为 true；别的调用方给 false）。
+   *
+   * ⚠️ **2026-09-28 用户裁定**：「**卡激活本身就算显式意图**」——她按下「保存并开启复习」
+   * 那个动作**就是**授权。所以：
+   *
+   * - `true` ＋ 没有卡片订阅行 ⇒ **算 covered**（没有反对意见）；
+   * - 显式 `paused` **仍然照办**（她开了又停了，那是另一句话，§9.1 把它们说成两件不同的事）；
+   * - **笔记那一支一个字都不改**——§9.1「**读过笔记**不默认授权未来提醒」照旧要问。
+   *
+   * 改这一格之前，结算排期**默认整条是死的**：一条订阅都没有时一律 `never_authorized`，
+   * 于是 E04 / P2 纵切 / RUN-V2-WIRE-01 三条老用例全红——**它们断言的是「激活即排期」
+   * 这个默认，而刀三照 §9.1 行 1 的字面把它关掉了**。那不是那三条用例错了，是**默认**要定。
+   */
+  readonly cardActivationIsIntent?: boolean;
 }): { readonly authorization: ReviewSourceAuthorizationV2; readonly activeSources: number; readonly pausedSources: number } {
   const noteActive = input.noteSubscriptions.filter((s) => s === "active").length;
   const notePaused = input.noteSubscriptions.filter((s) => s === "paused").length;
-  const cardActive = input.cardReview === "active" ? 1 : 0;
+  // 卡那一支：`null`（从没开过）在**激活这一发**里算**一次主动授权**；显式 `paused` 照旧是停用。
+  const cardActive = input.cardReview === "active" || (input.cardReview === null && input.cardActivationIsIntent === true) ? 1 : 0;
   const cardPaused = input.cardReview === "paused" ? 1 : 0;
   const activeSources = cardActive + noteActive;
   const pausedSources = cardPaused + notePaused;
   if (activeSources > 0) return { authorization: "covered", activeSources, pausedSources };
   if (pausedSources > 0) return { authorization: "paused_all", activeSources, pausedSources };
-  // 一份授权都没有：不是"她停掉了"，是"没人开过"。§9.1「创建卡、读过笔记或结束一轮
-  // 都不默认授权未来提醒」——这一格要问，不许默默替她开。
+  // 一份授权都没有：不是"她停掉了"，是"没人开过"。§9.1「**读过笔记**不默认授权未来提醒」
+  // ——这一格要问，不许默默替她开。（「创建卡」那一半已由上面的 `cardActivationIsIntent` 兑现。）
   return { authorization: "never_authorized", activeSources, pausedSources };
 }
