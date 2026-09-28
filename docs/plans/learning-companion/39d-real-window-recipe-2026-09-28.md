@@ -833,3 +833,48 @@ out/renderer/assets/*.js` 有命中）。
 node -e "const ts=require('typescript');const s=require('fs').readFileSync('apps/desktop-client/src/renderer/src/components/companion/CompanionPresence.tsx','utf8');const sf=ts.createSourceFile('x.tsx',s,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);/* 找 Component 函数体里的 hook 调用列表 */"
 ```
 **在那之前不要再改修法**——前面五次里至少两次的证据已知不可靠。
+
+---
+
+## 22. 第十八轮：AST 查完——**结构假设被推翻**，剩下的怀疑收窄到"探针本身"
+
+第 21 节给的唯一线索是「插入的 effect 可能落在某个回调体里」。用 TypeScript 的 AST 查了
+（不靠运行时探针）：
+
+```
+组件体里共有 146 条顶层语句
+  [113] 第548–566  let/const  const commitCurrentUserPlacement = useCallback(...)
+  [114] 第568–593  let/const  const clampVisibleCompanion      = useCallback(...)
+  [115] 第595–608  表达式     useEffect(() => { if (!presencePaused) return; ...
+  [116] 第610–614  表达式     useEffect(...)
+```
+
+我插的位置是「`clampVisibleCompanion` 那条之后」= **第 114 与 115 条之间**，
+**正是组件体顶层**。⇒ **「effect 落在回调体里」这条假设被推翻。**
+
+### 22.1 于是我开始怀疑**探针本身**，而不是应用
+
+同一轮里两个事实摆在一起很刺眼：
+
+1. `window.__cDbg` 一直是 `[]`——**函数一次没被调到**；
+2. `console.log` 在渲染器里**一条都进不了 stdout**（日志只有 2 行，第 6 轮那次是 41081 行）。
+
+如果 `Runtime.evaluate` 与应用脚本**不在同一个执行上下文**，那么
+**我写的每一个 `window.__x` 探针都在读另一个 `window`**——
+记录恒为空、console 恒不进 stdout，**两条现象一次说通**。
+
+**这一条必须先证伪或坐实**，因为它决定后面所有读数可不可信：
+
+```bash
+# 同一个 CDP 连接内：写入 → 断开 → 重连 → 读回
+node /tmp/cdp-eval.mjs <port> "window.__MARK__ = 42; 'ok'"
+# 重新起一个连接（新的 WebSocket）再读
+node /tmp/cdp-eval.mjs <port> "window.__MARK__ ?? '(不在了)'"
+```
+
+- 读回 **42** ⇒ 上下文是同一个，**探针可信** ⇒ 那些"没跑"是真的没跑，回去查
+  `useGSAP`（第 123 条，920–1051 行）——`gsap.context().revert()` 有可能把我的收边**回滚掉**。
+- 读回 **不在了** ⇒ **上下文会重置**（很可能就是 `setDeviceMetricsOverride` 引发过重载），
+  **我这一片所有基于 `window.__x` 的探针全部作废**，要从头用别的手段量。
+
+**先做这一步。在它出结果之前，上面那条「函数没被调到」的结论不要当事实用。**
