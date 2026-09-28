@@ -735,3 +735,50 @@ if grep -q "Build failed\|error during build\|✗" <log>; then echo 失败; else
   以及"插桩会让同一份代码跑出两个结果"的时序原因
 - **仍未做**：按 19.3 改掉检查习惯之后，**重跑一次 #4**——它有可能是**被自己的检查方式
   骗了**的：那次构建其实成功，但如果窗口拿到的是更早的产物，结论就要重看。
+
+---
+
+## 20. 第十六轮：把"effect 没跑"查到底 —— **它确实没跑，但原因不在这份文件里**
+
+第 19 节作废了那条结论。这一轮**按正确方式**重查：构建用 `grep -q "Build failed\|error
+during build\|✗"` 判、确认产物 mtime、确认诊断字符串**真的在产物里**（`grep -rl __cDbg
+out/renderer/assets/*.js` 有命中）。
+
+### 20.1 查证清单（全部通过）
+
+| 查什么 | 结果 |
+| --- | --- |
+| 构建是否成功 | ✅ 成功 |
+| 产物 mtime 是否更新 | ✅ 11:09:37 |
+| 诊断代码是否在产物里 | ✅ `index-BdQH-1yN.js` 命中 |
+| 组件里有没有第二个组件 | ✅ 只有 `CompanionPresence`（第 108 行） |
+| 我的 effect 之前有没有组件级提前返回 | ✅ 没有 |
+| effect 的语法与缩进层级 | ✅ 在组件体顶层（597-605 行） |
+| `clampVisibleCompanion` 出现次数 | 8（1 处定义） |
+
+**然后 `clampVisibleCompanion` 一次都没被调用**——
+把 `__d.push` 放到该函数**第一行**（在 `if (!root || !anchor || !visual) return;` **之前**），
+记录仍然是 `[]`；派发 `window.dispatchEvent(new Event('resize'))` 之后仍然是 `[]`。
+
+### 20.2 所以第 18 节那次"唯一成功"（884）**很可能也不可信**
+
+那次我没有按正确方式验构建（正是第 19 节自己发现的那个坏习惯），
+**而它恰好是唯一一次报出好结果的那次**。两条证据并排看，
+我倾向认为**它测的是陈旧产物或另一个状态**，而不是"插桩改变了时序"。
+**本节把它降级为"不可复现"**，不再当作"插桩会让同一份代码跑出两个结果"的证据。
+
+### 20.3 交给下一个人（这是唯一还没被排除的一条）
+
+**`CompanionPresence` 在这一屏到底挂没挂？** 这是我现在最怀疑的一格：
+
+- `App.tsx:129` 有 `<CompanionPresence />`，但**渲染时**那一屏的
+  `.companion-visual-shell` 是在的——**它有没有可能是另一处渲染出来的**？
+- 要查的：`document.querySelector('.companion-presence')` 的**祖先链**上有没有
+  另一个 React 根（iframe / portal / 另一个 bundle 副本），
+  以及 `document.querySelectorAll('iframe').length`。
+- **还要查有没有第二个 bundle 副本**：`out/renderer/assets/` 里同名 chunk 是否出现两次
+  （`index-*.js` 有多个哈希就是信号）。我这份产物是从**旧**构建里来的可能性没被排除——
+  第 19 节已经证明过一次"我以为构建成功了其实没有"。
+
+**先做这一步再谈修法。** 前面五次失败里，至少有两次的证据现在已知不可靠，
+继续在效果层试是在赌。
