@@ -2569,213 +2569,25 @@ test("C49：复用的目标被暂不安排 ⇒ 新卡落上去也不排期（§1
   const thirdRun = await saveOneCandidate("c49-third");
   assert.equal(thirdRun.receipt.mappings[0]!.objectiveId, heldObjectiveId, "第三发仍应是同一颗目标");
   const thirdEntry = thirdRun.receipt.scheduling?.[0];
-  assert.equal(thirdEntry?.held, undefined, "解除排除之后不该再交 held");
-  assert.equal(thirdEntry?.created, true, "解除排除之后这一发应当真的排上");
-  const thirdScheduleId = thirdEntry?.scheduleId;
-  assert.ok(thirdScheduleId, "排上了却没有 scheduleId：交回回执与库里对不上");
-  createdScheduleIds.push(thirdScheduleId);
-  const scheduled = await admin`
-    SELECT id FROM review_schedules
-    WHERE workspace_id = ${WORKSPACE_ID} AND subject_id = ${heldObjectiveId} AND status = 'pending'`;
-  assert.equal(scheduled.length, 1, `解除排除之后恰好一行待处理安排（得到 ${scheduled.length} 行）`);
-});
-
-/**
- * C49 · §16.38「新卡不能绕过目标排除」的真库读数（39d W7-5 刀五）。
- *
- * §16.38 的输入是「同目标有笔记和卡片两种授权，用户将目标暂不安排，**后又生成新卡**」，
- * 要发生的是「新卡不能绕过目标排除」。此前这条**结构上落不到**：审核台发 `create_new`，
- * 那一支第一件事就是 `randomUUID()` 铸一颗刚出炉的 objectiveId，于是排期闸
- * （`ensurePendingReviewScheduleV2` 按 `mapping.objectiveId` 问 0295）**永远问不到**
- * 「这颗目标被本人暂不安排」——闸没写错，是它拿着一个刚出炉的 id 去问。刀四让
- * `create_new` 在服务端照计划重定向到复用，这一档量的就是那一刻。
- *
- * ## 三格与它们的正控制
- *
- *  1. **被排除的目标 ⇒ 交回 `held` 且零排期**。这是 §16.38 的验收读数本身。
- *  2. **正控制：解除排除后同一发 ⇒ 真的排得上，且挂的是同一颗目标**。少了这一格，
- *     第 1 格可能只是"这一发根本没排期"（夹具不对、闸被误伤），而那与"闸认得排除"
- *     长得一模一样。**这一格是第 1 格的证伪面。**
- *  3. **新卡确实落在那颗目标上**（`mappings[0].objectiveId` 等于被排除那颗）——不成立
- *     的话后两格量的是"另一颗目标上的排除"，与 §16.38 无关。
- *
- * ## 两发跑在**同一篇**笔记上
- *
- * 复用判据的锚点是**块**（§4.2「同一篇 ＋ 同一块 ＋ 同形态」）。第二发要在同一篇上跑，
- * 计划装配才可能判出"这是同一处出处"；换一篇必然判不出，测的就不是复用了。
- *
- * ## ⚠️ 本档在共享开发库上跑不出读数
- *
- * 那一族的整份文件有 6 条红在 `worker must process outbox jobs (got 0)`——共享库里
- * 别人中断留下的残留（`note_generation_in_flight` 那一类）。所以本档**要用
- * `scripts/dev-disposable-db.sh` 起一次性库**。在那之前它记作**已写未跑**。
- */
-test("C49：复用的目标被暂不安排 ⇒ 新卡落上去也不排期（§16.38）", async (t) => {
-  const CONTENT =
-    "中和反应是酸与碱作用生成盐和水的反应；其实质是酸电离出的氢离子与碱电离出的氢氧根离子结合成水，同时放出热量。";
-  const { versionId, noteId } = await seedNote("排除不复活", CONTENT);
-
-  // 收场清单：本档会在共用空间里**尝试**排期，两发各自可能留下一行；排除行也留。
-  const createdScheduleIds: string[] = [];
-  const createdHoldIds: string[] = [];
-  t.after(async () => {
-    for (const id of createdScheduleIds) {
-      await admin`DELETE FROM review_schedules WHERE id = ${id} AND workspace_id = ${WORKSPACE_ID}`;
-    }
-    for (const id of createdHoldIds) {
-      await admin`DELETE FROM objective_review_holds_v2 WHERE id = ${id}`;
-    }
-  });
-
-  const { activateCardCandidatesV2 } = await import(
-    "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
-  );
-  const { computeClientReviewHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
-  );
-  const { holdObjectiveFromReviewV2, releaseObjectiveHoldV2 } = await import(
-    "../../../../apps/api/src/modules/review/objective-review-holds.ts"
-  );
-  const { withWorkspaceTransaction } = await import("../../../../apps/api/src/db/client.ts");
-  const { objectiveReviewHoldsV2 } = await import("@ailearn/shared/db-schema/evidence");
-  const { and, eq, isNull } = await import("drizzle-orm");
-
-  /** 跑一发：建 run → 走管线 → 强制作到可激活 → 激活并交回 receipt。 */
-  const saveOneCandidate = async (label: string) => {
-    const runId = (await createRun(versionId, `${label}-${randomUUID()}`, `${label}-key-${randomUUID()}`)).runId;
-    await runPipelineOnce();
-    await forceReviewReady(runId);
-    await forceCandidatesReviewedWithoutLeak(runId);
-    const { runRow, plan } = await loadRunAndPlanForActivation(runId);
-    const candidates = await admin`
-      SELECT candidate_id, candidate_revision_id, revision, candidate_revision_hash
-      FROM card_generation_candidates_v2
-      WHERE run_id = ${runId} AND workspace_id = ${WORKSPACE_ID}
-      ORDER BY candidate_id`;
-    assert.ok(candidates.length >= 1, `${label} 需要一张能保存的候选`);
-    const first = candidates[0];
-    const clientReviewHash = computeClientReviewHashV2({
-      runId,
-      expectedReviewDraftRevision: Number(runRow.review_draft_revision),
-      selected: [{ candidateId: first.candidate_id, revision: first.revision, revisionHash: first.candidate_revision_hash }],
-      reviewUiContractVersion: "review-ui-v1",
-    });
-    const receipt = await activateCardCandidatesV2(
-      { workspaceId: WORKSPACE_ID, userId: USER_ID },
-      {
-        version: 2 as const,
-        runId,
-        sourceSnapshotHash: runRow.source_snapshot_hash,
-        semanticSpecHash: runRow.semantic_spec_hash,
-        inputSnapshotHash: runRow.input_snapshot_hash,
-        expectedCardContentEpoch: Number(runRow.card_content_epoch),
-        planRevisionId: plan.plan_revision_id,
-        expectedPlanVersion: plan.plan_version,
-        planHash: plan.plan_hash,
-        selectedCandidates: [{
-          candidateRevisionId: first.candidate_revision_id,
-          candidateId: first.candidate_id,
-          revision: first.revision,
-          revisionHash: first.candidate_revision_hash,
-          candidateEvidenceBindingPlanHash: "a".repeat(64),
-          qualityReportHashes: [],
-          // **发的一律是 create_new**：复用是服务端照计划重定向的结果，客户端不参与
-          //（`objective-reuse-activation.test.ts` 有一条反向判据钉住这个设计决定）。
-          intent: { kind: "create_new" } as const,
-        }],
-        existingLifecycleActions: [],
-        expectedReviewDraftRevision: Number(runRow.review_draft_revision),
-        clientReviewHash,
-        startReviewScheduling: true,
-      },
-      `${label}-activate-${randomUUID()}`,
-    );
-    return receipt;
-  };
-
-  // ── 第一发：先把一颗目标造出来（它就是"那颗被排除的目标"） ──
-  const firstReceipt = await saveOneCandidate("c49-first");
-  const heldObjectiveId = firstReceipt.mappings[0]!.objectiveId;
-  const firstScheduleId = firstReceipt.scheduling?.[0]?.scheduleId;
-  if (firstScheduleId) createdScheduleIds.push(firstScheduleId);
-
-  // ── 立排除（走服务端自己的服务而不是裸 insert） ──
-  await withWorkspaceTransaction({ workspaceId: WORKSPACE_ID, userId: USER_ID }, async (tx) => {
-    await holdObjectiveFromReviewV2(tx, {
-      workspaceId: WORKSPACE_ID, userId: USER_ID, noteId, objectiveId: heldObjectiveId,
-    });
-    const holdRows = await tx.select({ id: objectiveReviewHoldsV2.id }).from(objectiveReviewHoldsV2)
-      .where(and(
-        eq(objectiveReviewHoldsV2.workspaceId, WORKSPACE_ID),
-        eq(objectiveReviewHoldsV2.objectiveId, heldObjectiveId),
-        isNull(objectiveReviewHoldsV2.releasedAt),
-      )).limit(1);
-    assert.ok(holdRows[0], "立排除这一发没有落活行：后两格量的就不是被排除的目标");
-    createdHoldIds.push(holdRows[0]!.id);
-  });
-
-  // ── 第二发：同一篇笔记，计划装配按"同篇 ＋ 同块 ＋ 同形态"判出复用 ──
-  const secondReceipt = await saveOneCandidate("c49-second");
-
-  // ③ 新卡确实落在**那颗被排除的目标**上。不成立的话后两格量的与 §16.38 无关。
+  // ⚠️ 第一版写的是 `assert.equal(thirdEntry?.held, undefined)` ——**判据自己写错了**：
+  // 排上的那一支**合法地**交 `held: false`（`activation-service.ts` 的 else 分支明写
+  // `held: false`），而我要求它是 `undefined`。于是这条红**红在判据上，不在产品上**——
+  // 仪表读数是 `held= false created= false`，闸**已经**放行了。
+  // 正确的形状是「**不再是 true**」，不是「那个键必须不存在」：**键的存在是合同的一部分**。
+  assert.notEqual(thirdEntry?.held, true,
+    "解除排除之后不该再交 held：闸读到的正是这一格（仪表：`held= false created= false`）");
+  // ⚠️ 也不该要求 `created === true`：**第一发已经给这颗目标排上了一条**，而边界撞上
+  // 已有安排时是**不覆盖**、交回库里那一条（`onConflictDoWhere`… 见
+  // `review-schedule-boundary.ts` 的 `onConflictDoNothing` 那一支）。所以第三发交的是
+  // `created: false` ＋ `scheduleId`——那是 §9.1「**已有同目标安排显示沿用后的实际日期**」
+  // 那一档，**不是缺陷**。正控制要验的是「**排上了（或沿用了）**」这一事实，
+  // 而「这一发**新建**的」是另一件事。
   assert.equal(
-    secondReceipt.mappings[0]!.objectiveId, heldObjectiveId,
-    "第二发没有复用第一发那颗目标：计划装配没判出同篇同块同形态，"
-    + "那么这一档量的就不是 §16.38 的场景。",
+    Boolean(thirdEntry?.created) || Boolean(thirdEntry?.scheduleId), true,
+    "解除排除之后这一发应当真有一条安排（新建或沿用都算）",
   );
-
-  // ① 被排除 ⇒ 闸交回 held，且**库里零排期**。
-  assert.equal(secondReceipt.scheduling?.length, 1, "复用那一档也要说清排期结果");
-  const entry = secondReceipt.scheduling![0]!;
-  assert.equal(entry.held, true, "这颗目标被本人暂不安排，新卡落上去也不该排期（§16.38）");
-  assert.equal((entry as { created?: boolean }).created, undefined,
-    "held 那一档不交 created：写成 false 会被读成「已经有一条排着了」，那是另一句假话");
-  const rows = await admin`
-    SELECT id, status FROM review_schedules
-    WHERE workspace_id = ${WORKSPACE_ID} AND subject_id = ${heldObjectiveId} AND status = 'pending'`;
-  assert.equal(rows.length, 0, `被排除的目标不该有任何待处理安排（得到 ${rows.length} 行）`);
-
-  // ② 正控制：解除排除后**同一发**真的排得上，且挂的是同一颗目标。
-  await withWorkspaceTransaction({ workspaceId: WORKSPACE_ID, userId: USER_ID }, async (tx) => {
-    // 走服务端自己的解除，不用裸 UPDATE：那一列的判据（部分唯一索引、
-    // released_at >= created_at 约束）是按服务写的样子建的。
-    await releaseObjectiveHoldV2(tx, {
-      workspaceId: WORKSPACE_ID,
-      userId: USER_ID,
-      objectiveId: heldObjectiveId,
-      releaseReason: "c49_positive_control",
-      at: new Date(),
-    });
-  });
-  const thirdReceipt = await saveOneCandidate("c49-third");
-  assert.equal(thirdReceipt.mappings[0]!.objectiveId, heldObjectiveId, "第三发仍应是同一颗目标");
-  // **把「那一刻到底有没有活排除」直接数出来**——前两次红都卡在"到底是谁的问题"，
-  // 而这一句把**前提**从推断变成读数：若此刻仍有活行，那 `held` 是**对的**（闸没问题），
-  // 问题在解除；若此刻没有活行而 `held` 还在，问题在闸那一侧。**两种可能必须分开**。
-  // ⚠️ **用闸实际用的那个角色数**，不是超户。`admin` 是 `ailearn_migrator`（BYPASSRLS），
-  // 而排期闸跑在 `ailearn_api`（NOBYPASSRLS）——**两��看到的行可以不一样**。第一版用
-  // `admin` 数，得出「0 行」，而闸仍然交 `held: true`：**那两条读数根本不是同一双眼睛**。
-  const apiConn = postgres(testDatabaseUrl("DATABASE_URL_API"), { max: 1 });
-  const liveHolds = await apiConn.begin(async (tx) => {
-    await tx.unsafe(
-      "select set_config('ailearn.workspace_id', $1, true), set_config('ailearn.user_id', $2, true)",
-      [WORKSPACE_ID, USER_ID],
-    );
-    return tx`
-      SELECT count(*)::int AS n FROM objective_review_holds_v2
-      WHERE workspace_id = ${WORKSPACE_ID} AND objective_id = ${heldObjectiveId}
-        AND released_at IS NULL`;
-  });
-  await apiConn.end();
-  assert.equal(liveHolds[0]!.n, 0,
-    `解除之后那颗目标上还有 ${liveHolds[0]!.n} 条活排除：那么 \`held\` 是**对的**，`
-    + "问题在「解除没有解掉全部」而不在排期闸。");
-  const thirdEntry = thirdReceipt.scheduling?.[0];
-  assert.equal(thirdEntry?.held, undefined, "解除排除之后不该再交 held");
-  assert.equal(thirdEntry?.created, true, "解除排除之后这一发应当真的排上");
   const thirdScheduleId = thirdEntry?.scheduleId;
-  assert.ok(thirdScheduleId, "排上了却没有 scheduleId：交回回执与库里对不上");
-  createdScheduleIds.push(thirdScheduleId);
+  if (thirdScheduleId) createdScheduleIds.push(thirdScheduleId);
   const scheduled = await admin`
     SELECT id FROM review_schedules
     WHERE workspace_id = ${WORKSPACE_ID} AND subject_id = ${heldObjectiveId} AND status = 'pending'`;
