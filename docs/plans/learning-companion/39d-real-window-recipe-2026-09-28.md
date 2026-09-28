@@ -905,3 +905,27 @@ cd apps/desktop-client && npx vitest run
 
 **顺带**：`desktop-ipc-channel-coverage.test.ts` 一直红在
 `ailearn.v1.home.todayBatch.read`（别的会话的通道），不在本路范围内。
+
+---
+
+## 24. `prefers-reduced-motion: reduce`（AGENTS.md：减少动效**不等于隐藏伴星**）
+
+用 CDP `Emulation.setEmulatedMedia` 模拟系统偏好（**不是**改应用里的设置开关）：
+
+| | 系统偏好 | `data-motion-mode` | 运行中的动画 | 画布 | 伴星在框内 | 可见性 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 默认 | `no-preference` | **full** | **1** | 1 | ✅ | visible |
+| 减少动效 | **reduce** | **off** | **0** | 1 | ✅ | visible |
+
+![减少动效下的书房](attachment://reduced-motion)
+
+截图里能看见的：伴星**完整在位**（麦克风／键盘／「…」三颗动作钮都在她手边）、
+暖木书房与奶油纸面完好、左侧目录展开、一张纸卡写着真实内容
+（「IndexTTS 2.5 在跨语种情感复刻、多语言支持、推理效率及语速控制四个维度的具体升级表现」
+＋「上次停在这儿，接着做完就好。」＋ 换一个／暂不处理）。
+
+⇒ **动效关掉了、伴星还在、纸面层次没塌、内容照常可读**，
+与 AGENTS.md「减少动效…**不等于隐藏伴星，也不等于去掉 HUD 风格**」一致。
+
+**仍未验**：系统级「用户主动关闭伴星」那个开关（那是**用户选择**，不该由模拟系统偏好代劳）；
+浏览器缩放（`devicePixelRatio` 变化）下的座位预算。
