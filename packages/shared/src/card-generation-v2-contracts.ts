@@ -1202,7 +1202,18 @@ export const activationIntentV2Schema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("reuse_existing_objective"),
     objectiveId: z.string().uuid(),
-    expectedObjectiveLifecycleEpoch: z.number().int().min(1),
+    /**
+     * **可选**：这一档是**服务端**照权威计划重定向的（`resolveReuseFromPlanV2` 读带
+     * `planHash` 的那一份），不是客户端声明的。
+     *
+     * ⚠️ **第一版把它写成必填，于是调用方只能编一个值**——而复用那一支拿它与库里那一行的
+     * 真值 CAS（真值从 1 起），于是**每一次复用都抛 `stale_objective_lifecycle`**，这条
+     * 路径**结构上永远走不通**。C49 的真库读数把它抓了出来。
+     *
+     * 给了它（将来若有**客户端**声明的入口），CAS 照旧生效；不给，就以事务内重读那一行
+     * 为准——`lifecycle='active'` 那一道闸还在。
+     */
+    expectedObjectiveLifecycleEpoch: z.number().int().min(1).optional(),
   }),
 ]);
 export type ActivationIntentV2 = z.infer<typeof activationIntentV2Schema>;

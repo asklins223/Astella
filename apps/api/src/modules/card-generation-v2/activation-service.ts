@@ -851,7 +851,7 @@ async function activateSingleCandidate(
 function resolveReuseFromPlanV2(
   planResult: unknown,
   planObjectiveLocalId: string | null,
-): { objectiveId: string; expectedObjectiveLifecycleEpoch: number } | null {
+): { objectiveId: string } | null {
   if (!planResult || typeof planResult !== "object") return null;
   if (!planObjectiveLocalId) return null;
   const result = (planResult as { kind?: string; objectives?: unknown[] });
@@ -863,9 +863,15 @@ function resolveReuseFromPlanV2(
   const changeContext = objective?.changeContext;
   if (!changeContext || changeContext.kind !== "reuse_existing_objective") return null;
   if (typeof changeContext.objectiveId !== "string") return null;
-  // `lifecycleEpoch` 由复用那一支自己去读那一行并 CAS（`expectedObjectiveLifecycleEpoch`
-  // 在那里被比对）；这里只负责把**哪一颗**带出来。
-  return { objectiveId: changeContext.objectiveId, expectedObjectiveLifecycleEpoch: 0 };
+  // **不带 epoch 令牌**。第一版这里交了一个 `0` 占位，而复用那一支拿它与那一行的真值
+  // 比——真值从 1 起，于是**每一次复用都抛 `stale_objective_lifecycle`**。那不是"并发保护
+  // 太严"，是**这条路径结构上永远走不通**（C49 的真库读数把它抓了出来：第一次跑到复用
+  // 分支就撞上这一句）。
+  //
+  // 为什么**不需要**那个令牌：复用是**服务端**照权威计划做的判断（这里读的是带
+  // `planHash` 的那一份），而 epoch CAS 防的是「**客户端**拿着一份过期的读数来改」——这里
+  // 没有客户端参与，事务内又重新读了那一行（`lifecycle='active'` 那一道闸还在）。
+  return { objectiveId: changeContext.objectiveId };
 }
 
 async function createOrUpdateObjectiveAndCard(
@@ -956,7 +962,9 @@ async function createOrUpdateObjectiveAndCard(
         objectiveId: reuse.objectiveId,
         // 乐观令牌由**服务端当前读到的那一行**给出：客户端无从判断一颗目标的
         // lifecycleEpoch（它只在计划里见过一个 id），而服务端读的就是权威值。
-        expectedObjectiveLifecycleEpoch: reuse.expectedObjectiveLifecycleEpoch,
+        // **不交 epoch**：这一发是服务端照计划重定向的，不是客户端声明的（见
+        // `resolveReuseFromPlanV2` 头注）。合同里那一格因此改成**可选**——
+        // 必填就会逼着调用方编一个值出来，而编出来的值必然与库里对不上。
       });
     }
   }
@@ -1251,7 +1259,15 @@ async function createOrUpdateObjectiveAndCard(
         );
       }
       // 乐观并发：她在审核期间把这颗目标归档或换版了，这一发必须失败而不是继续挂。
-      if (existing.lifecycleEpoch !== intent.expectedObjectiveLifecycleEpoch) {
+      //
+      // **只在调用方真的给了令牌时才比。** 令牌**可选**（见合同那一格的头注）：服务端照
+      // 权威计划重定向的那一发**不给**它，而第一版这里无条件比，于是拿 `undefined` 去比
+      // 一个数字 —— 恒不相等 ⇒ **每一次复用都抛这一句**（C49 的真库读数抓出来的）。
+      // 不给令牌时，上面那道 `lifecycle='active'` 已经是在**事务内重读**过的判据。
+      if (
+        intent.expectedObjectiveLifecycleEpoch !== undefined
+        && existing.lifecycleEpoch !== intent.expectedObjectiveLifecycleEpoch
+      ) {
         throw new CardGenerationV2ServiceError(
           "stale_objective_lifecycle",
           409,
