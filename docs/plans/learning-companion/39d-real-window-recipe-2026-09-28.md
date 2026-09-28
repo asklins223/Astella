@@ -998,3 +998,28 @@ cd apps/desktop-client && npx vitest run
 **诚实一句**：我插入前只看了 `LIMIT 5` 那一屏，**没记总行数**，
 所以"总行数回到插入前"这一句我**核不了**；能核的是**owner 那一行已删**，
 而那正是影响这次读数的状态。
+
+---
+
+## 27. 收口核验（2026-09-28 上午）
+
+| 范围 | 读数 | 归属 |
+| --- | --- | --- |
+| 四包 `tsc` | **全 0** | — |
+| `packages/shared` | 664 / 659 过 / **5 红** | 别的会话，无新增 |
+| `apps/api` | 2005 / 2002 过 / **2 红** | W7 那条会话的 `activation-service` |
+| `workers/ai-worker` | 860 / 859 过 / **1 红** | 别的会话 |
+| `apps/desktop-client` | 235 文件 / 1989 条，**17 文件 81 红** | 见下 |
+
+桌面比上一轮（14 文件 51 红）**多 3 个文件、30 条**：
+`TaskSurface.suspect-claim-revisit`（**W5-2 的重检**）、
+`notebook-surface.generation-options` 与 `generation-sync`（**artifact-gen 的生成面**）。
+**都不是本路的**，本路碰过的两份（`companion-viewport-clamp`、`companion-home-placement`）**全绿**。
+⇒ **0 新红**；工作树里本路文件 0 处未提交改动。
+
+## 仍未验（边界，不是未做的活）
+
+- 浏览器缩放（`devicePixelRatio` 变化）下的座位预算
+- 真模型动态演示在窗口里的样子
+- 闸对「复述 claim」那一类会不会算成暴露（需要一条真实重叠的作答）
+- W3-1 剩余那类调用方（**生成/检查**）—— 随 W7-7，**在本目标范围之外**
