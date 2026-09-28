@@ -133,31 +133,14 @@ export function RoomExperience() {
           自己会在有 surface 或首启引导开着时返回 null。以前它跟着 v1 走，
           意味着一改成 v2 首页，"上一次生成没跑完"就再也没人说了。 */}
       <RunRecoveryNotice />
-      {/* 书桌那「一件」（39d W7-4 刀九；39 §12.1「首页只推荐一件现在值得做的事」）。
-          挂在恢复横幅旁边而不是 `<main>` 里：它**只在没有 surface 开着**时出现——
-          一旦她进了任何一页，"现在最值得做什么"就不是那一页的问题了。而它不碰
-          房间构图，所以伴星与座位的预算不变（AGENTS.md）。 */}
-      {!surface ? (
-        <>
-        <HomeSuggestionCard
-          // 设备时区（CompanionHud 那一处也是这么读的，保持一致）。§12.1 那个「本次」
-          // 的边界由**服务端**按收到的这一格算，本层只负责原样传上去。
-          timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
-          epochRef={homeEpochRef}
-          // 「新建笔记」落到房间现有的**资料入口**：那里是写新笔记的地方。
-          // 一开始我写的是 invoke("new-note" as never)——那是我编的一个 intent，
-          // cast 能过类型但屏上什么都不会发生。**类型过了不等于功能在了**。
-          onNewNote={() => invoke("open-sources")}
-        />
-        {/* 今日复习那三颗动作（§12 表「今日复习」行：减量／暂停／恢复）。它**不是**首页
-            那"一件"的一部分——那一件是"现在最值得做什么"，这三颗是"这一批怎么调"；
-            两件事混在一张纸签上会让"减量"读成"换一件事"。所以并排、不嵌套。 */}
-        <TodayBatchOptions
-          timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
-          epochRef={homeEpochRef}
-        />
-        </>
-      ) : null}
+      {/* 书桌那「一件」与今日复习那三颗动作（39d W7-4 刀九；§12.1）**已经不在这里挂了**。
+          真窗口读数：这一块虽然**在**渲染树里（不是「不在那一屏」——上一轮那么说也错了），
+          但它挂在**页面最上面**（量到 `[0, 23, 1440, 107]`，**整个窗口宽**），而 §12.1 要的
+          是**书桌上那一张便签**。⇒ 现在它们并进了 `HomeV2ObjectLayer` 的
+          `.home-v2-hud__panel`——**屏上真正可见的那一个抽屉**，「今日下一步」展开即是它。
+          留着这一份的代价是**同一个面出现两次**：CDP 量到两个 `.hud-desk-next`
+          （`[0,23,1440]` 不在抽屉里 / `[371,704,48]` 在抽屉里），
+          而 `querySelector` 只回**第一个** ⇒ **量到的永远是错的那一个**。 */}
       <HudRoomControl />
       {surface
         ? <HudReturn label={returnTarget?.label ?? "返回学习空间"} onReturn={returnTarget?.run ?? (() => invoke("home"))} />
