@@ -2749,6 +2749,16 @@ test("C49：复用的目标被暂不安排 ⇒ 新卡落上去也不排期（§1
   });
   const thirdReceipt = await saveOneCandidate("c49-third");
   assert.equal(thirdReceipt.mappings[0]!.objectiveId, heldObjectiveId, "第三发仍应是同一颗目标");
+  // **把「那一刻到底有没有活排除」直接数出来**——前两次红都卡在"到底是谁的问题"，
+  // 而这一句把**前提**从推断变成读数：若此刻仍有活行，那 `held` 是**对的**（闸没问题），
+  // 问题在解除；若此刻没有活行而 `held` 还在，问题在闸那一侧。**两种可能必须分开**。
+  const liveHolds = await admin`
+    SELECT count(*)::int AS n FROM objective_review_holds_v2
+    WHERE workspace_id = ${WORKSPACE_ID} AND objective_id = ${heldObjectiveId}
+      AND released_at IS NULL`;
+  assert.equal(liveHolds[0]!.n, 0,
+    `解除之后那颗目标上还有 ${liveHolds[0]!.n} 条活排除：那么 \`held\` 是**对的**，`
+    + "问题在「解除没有解掉全部」而不在排期闸。");
   const thirdEntry = thirdReceipt.scheduling?.[0];
   assert.equal(thirdEntry?.held, undefined, "解除排除之后不该再交 held");
   assert.equal(thirdEntry?.created, true, "解除排除之后这一发应当真的排上");
