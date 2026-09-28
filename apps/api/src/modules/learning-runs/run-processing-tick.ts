@@ -2258,9 +2258,28 @@ async function applyDemonstratedSchedule(
       at,
     });
     if (successor.held) return { kind: "none", reasonCode: "objective_held" };
+    // ⚠️ `held` **不是**「没有到期时间」的那一档。W7-8 刀三给这道闸接进去的**来源级授权**
+    // 里有**两档 `held: false` 而 `nextReviewAt: null`**：`paused_all`（她把来源停掉了）与
+    // `never_authorized`（§9.1「**没人替她开过授权**」）。第一版写的是
+    // `successor.nextReviewAt!.toISOString()`——那个 `!` 背后的假设是「**没有日期 ⇒ 被排除**」，
+    // 而**刀三自己把那个假设打破了**，于是这两档在真库上直接
+    // `Cannot read properties of null (reading 'toISOString')`，整条 tick 挂掉。
+    //
+    // **结算族那三条红（P2 纵切 / E04 消费 schedule / RUN-V2-WIRE-01）全是它的下游。**
+    //
+    // 形状：**两档都说不同的话**——`source_paused` 是「她停掉了，照办」；`never_authorized`
+    // 是「**没人替她开过授权**」，那要**问**，不能与「她停掉了」走同一条路（§9.1 规则表）。
+    if (successor.nextReviewAt === null) {
+      return {
+        kind: "none",
+        reasonCode: successor.sourcePaused === true
+          ? "source_paused"
+          : (successor.neverAuthorized === true ? "never_authorized" : "no_next_review_at"),
+      };
+    }
     return {
       kind: "rescheduled",
-      dueAt: successor.nextReviewAt!.toISOString(),
+      dueAt: successor.nextReviewAt.toISOString(),
       consumedScheduleId: authorization.scheduleId,
       policyReason: "demonstrated",
     };
@@ -2393,9 +2412,17 @@ async function applyUnableSchedule(
       at,
     });
     if (successor.held) return { kind: "none", reasonCode: "objective_held" };
+    if (successor.nextReviewAt === null) {
+      return {
+        kind: "none",
+        reasonCode: successor.sourcePaused === true
+          ? "source_paused"
+          : (successor.neverAuthorized === true ? "never_authorized" : "no_next_review_at"),
+      };
+    }
     return {
       kind: "rescheduled",
-      dueAt: successor.nextReviewAt!.toISOString(),
+      dueAt: successor.nextReviewAt.toISOString(),
       consumedScheduleId: authorization.scheduleId,
       policyReason: "declared_unable",
     };

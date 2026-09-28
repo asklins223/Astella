@@ -563,6 +563,14 @@ export type LearningRunResultV1 = {
           | "not_assessable"
           // 39 §9.1 行 2（与上面那份 zod 枚举同批改；这里是手写镜像那一半）
           | "objective_held"
+          // 39 §9.1 行 1（W7-8 刀三接进来的来源级授权）：这两档是**「held 为假、却没有到期
+          // 时间」**——`source_paused` 是「她把这个来源停掉了，照办」；`never_authorized` 是
+          // 「**没人替她开过授权**」，那要**问**，不能与「她停掉了」走同一条路。**必须与
+          // `objective_held` 分开**：那一条是「本人说了以后别给我排」，这两条是「没轮到我
+          // 问」——屏上要说不同的话。
+          | "source_paused"
+          | "never_authorized"
+          | "no_next_review_at"
           | "note_evidence_changed"
           // 39 §14.2「待复核时不持续放大结论」：这个目标上有一份**还没结论**的争议，
           // 所以这一次结算不推进复习间隔。与 `objective_held` 分开是两句话——
