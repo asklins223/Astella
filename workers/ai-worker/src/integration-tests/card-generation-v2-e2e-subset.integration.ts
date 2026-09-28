@@ -2504,6 +2504,29 @@ test("C49：复用的目标被暂不安排 ⇒ 新卡落上去也不排期（§1
     "../../../../apps/api/src/modules/review/objective-review-holds.ts"
   );
   const { withWorkspaceTransaction } = await import("../../../../apps/api/src/db/client.ts");
+
+  // ── **先立授权**（0303 的那一行；W7-8 刀三接进排期闸的那一道） ──
+  //
+  // ⚠️ **这一段是最后一格正控制的前提**，而第一版**根本没有它**——于是
+  // `sourceAuthorizationForObjectiveV2` 交回 `never_authorized`，闸照 §9.1「创建卡、读过笔记
+  // 或结束一轮都**不默认授权**未来提醒」把后面那一发挡住。而第一版读第一发的安排用的是
+  // `?.scheduleId`（**可选链**），于是「第一发也没排上」被**静默吞掉**，直到第三发正面撞上
+  // 才暴露。**闸从头到尾都是对的。**
+  //
+  // 正控制要验的是「**有授权时**，解除排除之后这一发真的排得上」——所以授权必须**先**立，
+  // 而且要走**服务端自己的服务**（裸 insert 不带 §9.1 的可见性判定与范围说明）。
+  const { activateReviewSubscriptionV2 } = await import(
+    "../../../../apps/api/src/modules/review/review-subscriptions.ts"
+  );
+  await withWorkspaceTransaction({ workspaceId: WORKSPACE_ID, userId: USER_ID }, async (tx) => {
+    await activateReviewSubscriptionV2(tx, {
+      workspaceId: WORKSPACE_ID,
+      userId: USER_ID,
+      source: "card_review",
+      subjectId: heldObjectiveId,
+      scopeNote: "这颗我后面还要回访",
+    } as never);
+  });
   await withWorkspaceTransaction({ workspaceId: WORKSPACE_ID, userId: USER_ID }, async (tx) => {
     const held = await holdObjectiveFromReviewV2(tx, {
       workspaceId: WORKSPACE_ID, userId: USER_ID, noteId, objectiveId: heldObjectiveId,
