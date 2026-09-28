@@ -183,5 +183,17 @@
   display: block;
   width: max-content;
   max-inline-size: 260px;
-  overflow: visible;
+  /* ⚠️ **长内容必须在这张纸签里面滚，不能把纸签顶出视口。**
+   *
+   * 真窗口读数：把理由那一行灌成 9 倍长文本之后，纸签量到
+   * **`[265, -439, 260, 1170]`** —— 因为它锚在**下方**（`inset: … auto 56px …`），
+   * 于是**越长越往上长**，y 变成 **-439**，**整张纸的上半截在视口之外**。
+   *
+   * 那一版我本来写的是 `overflow: visible`（想着「便签不该有滚动条」）——
+   * 那个决定在**短内容**下看不出来（`[264, 580, 256, 160]` 挺好），
+   * **只有灌长文本才现形**。⇒ 给它 `max-block-size` ＋ `overflow-y: auto`：
+   * 纸签**自己封顶**，超出的在**纸内**滚，**桌面与伴星的座位预算都不动**。 */
+  max-block-size: min(46vh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
