@@ -148,3 +148,45 @@ el.dispatchEvent(new Event('input', {bubbles: true}));
 - 真模型动态演示在窗口里的样子。
 - 她在作答页开口时会不会说答案（要真发一次提问 + 真模型回复，**不许拿脚本冒充**）。
 - 紧凑视口、减少动效、缩放。
+
+---
+
+## 7. 第三轮：**自带一份 API**（并行会话会重启共享的那份）
+
+### 7.1 为什么必须自带
+
+共享 dev 库上的 API 是 **Docker 起的**（监听进程 `com.docke`），而**并行会话会反复重启它**。
+本轮在作答页点「提交回答」的**中途**它掉了，屏上写「学习服务暂时不可用」——
+**那个症状长得和"产品坏了"一模一样**，而真因是别的会话重启了容器。
+
+⇒ **真窗口验收必须自带 API**，否则中途掉线会被读成产品缺陷。
+
+### 7.2 端口：Docker 已经占了这几个
+
+```
+127.0.0.1:4000  4001  5432  9000  9001  9100
+```
+
+**别挑 4001**——它也在 Docker 的映射里（我第一次就挑了它，`EADDRINUSE`）。
+挑 `47831` 这种明显在范围外的，监听者才是 `node` 而不是 `com.docke`。
+
+### 7.3 `DESKTOP_API_ORIGIN` 确实管用（更正队友那一轮的结论）
+
+队友那一条写的是「带 `ELECTRON_RENDERER_URL` 起 Electron 起不来——日志空、9222 无监听」，
+并推测"还差一步"。**本轮量到的不是那件事**：
+
+```bash
+PORT=47831 npm run dev          # apps/api，自己那份
+cd apps/desktop-client
+DESKTOP_API_ORIGIN=http://127.0.0.1:47831 env -u ELECTRON_RUN_AS_NODE \
+  ./node_modules/electron/dist/Electron.app/Contents/MacOS/Electron \
+  ./out/main/index.js --remote-debugging-port=9343
+```
+
+桌面端**确实**把请求打到了这一份——`/auth/me` 的 `host: 127.0.0.1:47831`、
+`remoteAddress: 127.0.0.1`，在 API 日志里看得到。
+所以「带环境变量就起不来」**不成立**；那一轮的空日志另有原因（`ELECTRON_RUN_AS_NODE`）。
+
+**本轮仍没跑通的那一步**：桌面端停在「状态同步超时」。请求到达了，但没在超时内拿到回应——
+大概率是刚起的那份 API 还没把 worker / 连接池捂热。**没猜**，下一轮要先分清
+「它慢」与「它不通」，**一次只改一个变量**。
