@@ -929,3 +929,33 @@ cd apps/desktop-client && npx vitest run
 
 **仍未验**：系统级「用户主动关闭伴星」那个开关（那是**用户选择**，不该由模拟系统偏好代劳）；
 浏览器缩放（`devicePixelRatio` 变化）下的座位预算。
+
+---
+
+## 25. 键盘走完三层：**通的**（我前两次量错了，差点报成缺陷）
+
+星图抽屉里的三层层签是**原生 `<button type="button" onClick>`** ＋ `aria-current`
+（`graph-surface.tsx:983`），`tabIndex` 都是 0。
+
+真键盘（`Input.dispatchKeyEvent`，**不是** DOM 合成事件）实测：
+
+| 动作 | 结果 |
+| --- | --- |
+| Tab | 焦点在三层层签间移动 ✅ |
+| 聚焦「笔记局部」＋ **Enter** | **切层了**：三轴出现（3），当前层 = 笔记局部 ✅ |
+| 聚焦「证据详情」＋ **Space** | **切层了**：当前层 = 证据详情 ✅ |
+
+### 25.1 我前两次的读数**是错的**，记下来免得下一个人重走
+
+- 第一次只发 `rawKeyDown`（**不带 `text`）⇒ 浏览器不合成按钮激活 ⇒ 读成"键盘不能切层"。
+- 第二次 Enter 加了 `text: "\r"`（**通了**），但 Space 用了同一套 `rawKeyDown + char` 序列
+  ⇒ 读成"Space 不能切层"。
+- 第三次用**标准 Space 序列**（`keyDown` 带 `text: " "` → `keyUp`，激活发生在 keyUp）
+  ⇒ **通了**。
+
+**两处都不是应用的缺陷，是 CDP 按键序列没发对。** 我是先看了源码确认它是原生 `<button>`
+才没有急着报缺陷——**原生 button 本来就该响应 Enter/Space**，这与第 17 节那条教训同源。
+
+**可复用**：
+- Enter：`rawKeyDown(key,text:"\r")` → `char` → `keyUp`
+- Space：`keyDown(key:" ",text:" ")` → `keyUp`（**不要**走 rawKeyDown+char）
