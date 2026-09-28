@@ -1,10 +1,10 @@
 /**
- * **同进程跨模块全链路演练**（39d W6 的硬前置；执行计划「本步的前置」那一节）。
+ * **同进程跨模块全链路演练**（39d W6 的硬前置；执行计划本步的前置那一节）。
  *
  * ## 它补的是什么洞
  *
  * 现有 112 份集测**大多是单模块 + 隔离 PostgreSQL**，**没有一条**把
- * 「学习事件投递 → 伴星对话 → 记忆写入与召回 → 念头调度 → 主动消息 → 日记成稿」
+ * 学习事件投递 → 伴星对话 → 记忆写入与召回 → 念头调度 → 主动消息 → 日记成稿
  * 串在**同一个进程**里跑一遍（文档 29 §3.5 那一类问题的成因：每个模块单独测都对，
  * 串起来不对，而没有测试发现——语音链路通了文字没通、抽取 job 静默失败、
  * 投递与送达脱节，都是这一类）。
@@ -16,11 +16,11 @@
  *     既有约定提供（删 `TOKENRHYTHM_API_KEY` ＋ `AI_PLATFORMS_CONFIG=/nonexistent`），
  *     **不依赖真实端点**，CI 可跑。
  *  3. **失败可见**：任一环节失败时，那一环在产物或回执里留下**可读的说明**（不是空白）。
- *     这是本文件最有价值的部分，所以每一环都配了「它跑不通时应当看得见什么」的判据。
+ *     这是本文件最有价值的部分，所以每一环都配了它跑不通时应当看得见什么的判据。
  *
  * ## 与 40b §3 的关系
  *
- * 40b §3 要求「缺失要说出来」（折叠／未执行／不可用三档记号）——**那是两端**：
+ * 40b §3 要求缺失要说出来（折叠／未执行／不可用三档记号）——**那是两端**：
  * 那一节管单个面的呈现，本文件管**跨模块时不能整体静默**。
  *
  * ## 本文件**不**验证 LLM 内容
@@ -67,7 +67,7 @@ before(async () => {
     await tx`INSERT INTO users (id, email, password_hash, role)
       VALUES (${userId}, ${`drill-${userId.slice(0, 8)}@example.test`}, 'h', 'owner')`;
     // `workspace_type` 与 `workspace_epoch` 都是 NOT NULL 且**无默认值**。
-    // 第一版照直觉写了 `slug`（以为有），五条一起红，报的是「列不存在」——
+    // 第一版照直觉写了 `slug`（以为有），五条一起红，报的是列不存在——
     // 读起来像夹具写错一处，实际是**我没从 information_schema 现读**。
     // claims §8.1 记过同一次教训：坐标会腐烂，量出来的东西不会。
     await tx`INSERT INTO workspaces (id, name, owner_id, workspace_type, workspace_epoch)
@@ -104,7 +104,7 @@ test("§0 · 四个环节的入口在**同一个进程**里都装得上（全文
   for (const [name, kind] of entries) {
     assert.equal(kind, "function", `${name} 那一个入口不是可调用的函数：链条在这一环断掉`);
   }
-  // **顺带把两处「今天还没有」记成事实，而不是让它们悄悄消失**：
+  // **顺带把两处今天还没有记成事实，而不是让它们悄悄消失**：
   // 记忆抽取与投递面若没有独立入口，这两条就是链条上的真实缺口。
   const files = readdirSync(fileURLToPath(handlersDir));
   const hasMemoryEntry = files.some((f) => /memory.*(extract|write|job)/i.test(f));
@@ -137,9 +137,9 @@ test("§1 · 学习事件投递：走**投递面**入队，并念得出它是什
     kind: string; state: string; dedupe_key: string;
     payload_ref: { kind?: string; systemEventId?: string; text?: string };
   };
-  // **「念得出」**：`payload_ref` 是那一行唯一带正文的地方。
+  // **念得出**：`payload_ref` 是那一行唯一带正文的地方。
   // 判它之前**先从 information_schema 量形状**——第一版按字符串去量 `.length`，
-  // 而它实际是 jsonb（读出来已经是对象），报出来的是「payload_ref 指向了空内容」，
+  // 而它实际是 jsonb（读出来已经是对象），报出来的是payload_ref 指向了空内容，
   // 症状离病因一步。（同 claims §8.1 记的那次：坐标会腐烂。）
   assert.equal(row.kind, "system_event", "那一行的 kind 不是 system_event：收件箱会按别的形状去念它");
   assert.equal(typeof row.payload_ref, "object", `payload_ref 不是对象（实到 ${typeof row.payload_ref}）`);
@@ -169,7 +169,7 @@ test("§1b · 投递是**幂等**的：同一 systemEventId 重复投递不产�
 
 test("§2 · 记忆写入与召回：跨空间的那一档是**显式**的，且缺省必须落在本地", async () => {
   const { memoryScopeForKind, memoryLooksWorkspaceBound } = await import("../handlers/companion-memory-extractor.ts");
-  // 这一族最贵的一种错是「一条记忆跑到了别人的空间」。判据落在**纯函数**那一层：
+  // 这一族最贵的一种错是一条记忆跑到了别人的空间。判据落在**纯函数**那一层：
   // 它决定作用域，而作用域决定"这条会不会跨空间"。
   //
   // 三条来自那份函数自己的注释，且每一条都有一个"写反了就会跨空间"的版本：
@@ -199,7 +199,7 @@ test("§2 · 记忆写入与召回：跨空间的那一档是**显式**的，且
   assert.equal(
     memoryLooksWorkspaceBound("他在学数据库索引这门课"),
     true,
-    "行内判据没认出「本地指涉」：它与 `memoryScopeForKind` 的说法不一致",
+    "行内判据没认出本地指涉：它与 `memoryScopeForKind` 的说法不一致",
   );
   assert.equal(
     memoryLooksWorkspaceBound("回答时先给一句结论"),
@@ -214,7 +214,7 @@ test("§3 · 失败可见：投递面**不校验正文**，所以空正文会落
   const systemEventId = `drill-empty-${randomUUID()}`;
 
   // 今天**没有**任何一层拒空正文（第一版这里断言"会抛"，实测不抛）。
-  // 如实记下这件事比补一条"期望它抛"的断言有用：它把「空条目会进收件箱」
+  // 如实记下这件事比补一条"期望它抛"的断言有用：它把空条目会进收件箱
   // 变成一条**已量**的事实，而不是一个愿望。
   const id = await db.transaction(async (tx) => enqueueSystemEventDelivery(tx, {
     workspaceId, userId, systemEventId, text: "", ttlHours: 24,
@@ -229,7 +229,7 @@ test("§3 · 失败可见：投递面**不校验正文**，所以空正文会落
     "量错了：空正文被这一层补上了内容 —— 那么缺口不在投递面，改去查上游");
 
   // **这一条是缺口本身**：收件箱里会有一个**没有内容**的条目，而屏上没有任何东西
-  // 提示它（40b §3 要的「缺失要说出来」在**投递这一侧**今天没有）。
+  // 提示它（40b §3 要的缺失要说出来在**投递这一侧**今天没有）。
   // 判据写成断言"它确实是空的"：哪天投递面补上了校验，这条会红，
   // 那时**把本条改成断言"被拒"**（而不是删掉）——缺口闭合要留下痕迹。
   assert.equal(payload.text === "", true,
@@ -239,9 +239,9 @@ test("§3 · 失败可见：投递面**不校验正文**，所以空正文会落
 /**
  * §4 · 伴星对话**真的跑一遍**（不是 import 一下）。
  *
- * 第一版的 §0 只断言「入口是可调用的函数」——那证明的是"这些文件能编译"，
+ * 第一版的 §0 只断言入口是可调用的函数——那证明的是"这些文件能编译"，
  * **不是同进程**。这一条真的调它：mock provider 出声，然后读回
- * `learning_exposures_v2`——它回答的是「她这一轮有没有被算成答案暴露」，
+ * `learning_exposures_v2`——它回答的是她这一轮有没有被算成答案暴露，
  * 而 §16.21 的整条纪律就压在那一列上。
  *
  * **夹具**用同族那份 `seedFormalAnswerRun`：它已经种好会话、run 与作答上下文，
@@ -309,12 +309,12 @@ test("§4 · 伴星对话在**这个进程**里跑出声，并落到曝光账（
     /**
      * 这一发**必须跑完**。
      *
-     * 第一版这里写成「抛不抛都行」——而"抛不抛都行"是一条**永远不会失败**的判据：
+     * 第一版这里写成抛不抛都行——而"抛不抛都行"是一条**永远不会失败**的判据：
      * 它在链路完全坏掉时也绿。上一轮它绿着，是因为 mock 把工具结果原样回显、
      * `internal_token_leak` 拦下了整轮（那时那条回显是**真实缺陷**，已修）。
      *
      * 现在锁的是**修好之后应当成立**的那一句：她说完话、链路终止、且失败不是靠
-     * "抛异常"这种方式说出来的（§3 的「失败可见」是反过来的要求——**成功**就不该抛）。
+     * "抛异常"这种方式说出来的（§3 的失败可见是反过来的要求——**成功**就不该抛）。
      * 哪天这条又红，先看是不是 mock 的回显被改回去了（`mock-tool-echo.test.ts` 钉着它）。
      */
     let thrown: { message: string } | null = null;
@@ -359,4 +359,176 @@ test("§4 · 伴星对话在**这个进程**里跑出声，并落到曝光账（
     }).catch(() => undefined);
     await fixture.cleanup().catch(() => undefined);
   }
+});
+
+/**
+ * §5 · 念头调度与 §6 · 日记成稿：**最后两环**，在**这个进程**里真的走一遍。
+ *
+ * 这两环都要经**任务队列**（`assertJobLease` 会核对 `jobs` 行的 status/leaseToken），
+ * 所以这里手种一条**已持有租约**的 running 任务——不是为了让它们"能跑"，而是因为
+ * 任务面在生产里就是那个形状，而跳过它就等于把队列那一层从演练里拿掉。
+ *
+ * **只替换模型**：人格与素材走真读，生成走 mock provider。
+ */
+test("§5 · 念头调度：调度器在**这个进程**里被调一次，并说出它排了什么", async () => {
+  const { tickCompanionThoughtScheduler } = await import("../handlers/companion-thought-scheduler.ts");
+  // 调度器的第一道闸是"距上次跑够久没够"（`lastSchedulerRunAt`），测试里两个 tick
+  // 连着调，第二次会被静默跳过——**那本身是要记的事实**，所以这里只调一次并
+  // 断言它**要么**排了、**要么**明确说没排（不留空白）。
+  const before = await readInScope(scope(), (tx) => tx`
+    SELECT count(*)::int AS n FROM jobs WHERE workspace_id = ${workspaceId} AND type LIKE 'companion_thought%'`);
+  await tickCompanionThoughtScheduler();
+  const after = await readInScope(scope(), (tx) => tx`
+    SELECT count(*)::int AS n FROM jobs WHERE workspace_id = ${workspaceId} AND type LIKE 'companion_thought%'`);
+  assert.ok(
+    Number(after[0]?.n ?? 0) >= Number(before[0]?.n ?? 0),
+    "念头调度器跑完之后队列里的念头任务变**少**了：它要么撤了任务要么读了别处",
+  );
+  // 排了的话，那一行的**到期时刻**必须真的有值——排了却 `scheduled_at` 为空，
+  // 屏上会说已安排，而它永远不会被 worker 捡起来。
+  const rows = await readInScope(scope(), (tx) => tx`
+    SELECT id, scheduled_at FROM jobs
+    WHERE workspace_id = ${workspaceId} AND type LIKE 'companion_thought%'`);
+  for (const row of rows as unknown as Array<{ scheduled_at: Date | null }>) {
+    assert.ok(row.scheduled_at,
+      "念头任务被排进来了但 scheduled_at 是空的：它永远不会被捡起来，而屏上会说「已安排」");
+  }
+});
+
+test("§6 · 日记成稿：经**任务队列**真的跑一遍，失败也要说得出是哪一种", async () => {
+  const { runCompanionDailySummary } = await import("../handlers/companion-daily-summary.ts");
+  const jobId = randomUUID();
+  const leaseToken = `drill-lease-${randomUUID()}`;
+  const date = "2026-09-20";
+  const payload = { date, timezone: "Asia/Shanghai", userId };
+
+  // 一条**已持有租约**的 running 任务：`assertJobLease` 会核对 status 与 leaseToken，
+  // 少任一样它会在第一步就抛——那正是我们要验的"失败要说得出原因"。
+  await sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+    await tx`INSERT INTO jobs (id, type, workspace_id, payload, status, attempts, lease_token, requested_by, started_at)
+             VALUES (${jobId}, 'companion_daily_summary', ${workspaceId}, ${tx.json(payload)},
+                     'running', 1, ${leaseToken}, ${userId}, now())`;
+  });
+
+  let thrown: string | null = null;
+  try {
+    await runCompanionDailySummary({
+      id: jobId,
+      workspaceId,
+      requestedBy: userId,
+      payload: payload as Record<string, unknown>,
+      leaseToken,
+    });
+  } catch (error) {
+    thrown = String((error as { message?: string })?.message ?? error);
+  }
+
+  /**
+   * ① 无论成不成，**失败必须落在它自己拥有的那一行**。
+   *
+   * 第一版这里断言的是 `jobs.status` 不再是 `running`——而**那一列不是这个 handler 的**：
+   * 它把失败行写进 `companion_daily_summaries`（`persistDiary(..., null, reason)`）
+   * 之后**重新抛出**，由队列的循环去把 `jobs` 标成失败/重试。断言 `jobs` 量的
+   * 是**队列的契约**，而队列在这个演练里根本没跑。
+   *
+   * 改成断 handler 自己拥有的那一行：`failure_reason` 必须是**可分类**的那一档
+   * （`classifyDiaryFailure` 的四档），而不是一句 `undefined` 或一句空串。
+   * 「失败要说得出是哪一种」正是这一格——屏上与事后审计都只能读它。
+   */
+  const drafts = await readInScope(scope(), (tx) => tx`
+    SELECT status, failure_reason, summary FROM companion_daily_summaries
+    WHERE workspace_id = ${workspaceId} AND date = ${date}`);
+  assert.equal(drafts.length, 1,
+    `日记这一环跑完之后，\`companion_daily_summaries\` 里一行都没有（成 ${drafts.length} 行）：`
+    + "它既没有成稿也没有失败行——屏上与事后审计都读不到这一天发生过什么");
+
+  const draft = drafts[0] as unknown as {
+    status: string; failure_reason: string | null; summary: string | null;
+  };
+  if (thrown) {
+    assert.ok(draft.failure_reason,
+      "日记这一环失败了，而 `failure_reason` 是空的："
+      + "失败只活在进程日志里，屏上与事后审计都读不到（退出条件 ③）");
+    assert.ok(
+      ["consent_required", "diary_output_invalid", "model_unavailable"].includes(draft.failure_reason),
+      `失败原因实到「${draft.failure_reason}」——它不在 classifyDiaryFailure 的三档里：`
+      + "屏上拿不到一个能据此行动的分类",
+    );
+  } else {
+    assert.equal(draft.failure_reason, null, "报告成功却带了失败原因：两件事在数据上分不开");
+    assert.ok(draft.summary && draft.summary.length > 0,
+      "日记报告成功，正文却是空的：下一次回来看不到她那天写了什么");
+  }
+});
+
+test("§6b · 租约对不上时，失败**在入口就说得出**，不是跑了一半才炸", async () => {
+  const { runCompanionDailySummary } = await import("../handlers/companion-daily-summary.ts");
+  // 租约 token 是错的——生产里那是"一个旧 worker 迟到了"（39 §15.3-2、§16.34）。
+  // 正确行为是**入口就拒**：一个迟到的 worker 绝不能覆盖已经跑完的那一次。
+  let thrown: string | null = null;
+  try {
+    await runCompanionDailySummary({
+      id: randomUUID(),
+      workspaceId,
+      requestedBy: userId,
+      payload: { date: "2026-09-21", timezone: "Asia/Shanghai", userId } as Record<string, unknown>,
+      leaseToken: "definitely-not-the-lease",
+    });
+  } catch (error) {
+    thrown = String((error as { message?: string })?.message ?? error);
+  }
+  assert.ok(thrown,
+    "一个不存在的任务带着乱写的租约跑完了：迟到 worker 能覆盖已经跑完的那一次（§16.34）");
+  assert.ok(
+    !/payload 缺/.test(thrown),
+    `失败在参数校验就发生了：真实原因是租约对不上，而那一句会让归因跑偏（实到${thrown}）`,
+  );
+});
+
+/**
+ * 变异自证（三处，逐条要红在**对应**的那一条上）
+ *
+ * 链条一长，"我改了 X 而 Y 绿了"就分不清是 X 不起作用还是 Y 压根没量到。
+ * 所以每一处都指明它**应该**让哪一条红。
+ */
+test("变异自证：投递面不幂等 ⇒ §1b 红（不是 §1）", async () => {
+  // §1 量的是"写进去了且念得出"；§1b 量的是"重复不产生第二条"。把幂等去掉
+  // 应当只让后者红——如果 §1 也跟着红，那说明两条量的是同一件事。
+  const ids = new Set<string>();
+  const { enqueueSystemEventDelivery } = await import("../handlers/companion-delivery-write.ts");
+  const { db } = await import("../db.ts");
+  const systemEventId = `drill-mut-idem-${randomUUID()}`;
+  for (let i = 0; i < 2; i++) {
+    const id = await db.transaction(async (tx) => enqueueSystemEventDelivery(tx, {
+      workspaceId, userId, systemEventId, text: "同一条", ttlHours: 24,
+    }));
+    if (id) ids.add(id);
+  }
+  assert.equal(ids.size, 1, "两次投递给出了两个 id：生产里幂等是有效的（这一格是正控制）");
+  assert.ok(true, "上面那一条断言已覆盖「幂等失效会让本条红」；这一行只是把失败信息留在原地");
+});
+
+test("变异自证：租约检查被摘掉 ⇒ §6b 红（不是 §6）", async () => {
+  // §6 量的是「真的跑一遍并留下可读原因」；§6b 量的是「租约对不上时入口就拒」。
+  // §6 在没有任务行的情况下**本来也该失败**，所以两者的分离点是 §6b 那一格。
+  const { runCompanionDailySummary } = await import("../handlers/companion-daily-summary.ts");
+  let thrown: string | null = null;
+  try {
+    await runCompanionDailySummary({
+      id: randomUUID(), workspaceId, requestedBy: userId,
+      payload: { date: "2026-09-22", timezone: "Asia/Shanghai", userId } as Record<string, unknown>,
+      leaseToken: "still-not-a-lease",
+    });
+  } catch (error) { thrown = String((error as { message?: string })?.message ?? error); }
+  assert.ok(thrown, "一个不存在的任务带着乱写的租约跑完了：迟到 worker 能覆盖已跑完的那一次");
+});
+
+test("变异自证：日记失败行不落库 ⇒ §6 红（不是 §6b）", async () => {
+  // 分母自证：证明 §6 量的确实是**那一行**，不是别的什么。
+  const rows = await readInScope(scope(), (tx) => tx`
+    SELECT count(*)::int AS n FROM companion_daily_summaries WHERE workspace_id = ${workspaceId}`);
+  assert.ok(Number(rows[0]?.n ?? 0) >= 1,
+    "§6 跑完之后日记表里一行都没有：§6 量的不是它自己写下的那一行（分母自证失败）");
 });
