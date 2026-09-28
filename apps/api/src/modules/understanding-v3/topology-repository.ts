@@ -39,6 +39,7 @@ import { EXPOSURE_KINDS_V2 } from "@ailearn/shared/learning-card-v2-contracts";
 import { pickLatestCompletedRunV3, resolvePrimaryActionV3, type ActionResolverInputV3 } from "../learning-objectives/action-resolver.ts";
 import { readAnswerModePreference } from "../companion-shell/answer-mode-preference.ts";
 import { objectiveSurfaceFreshnessV1 } from "@ailearn/shared";
+import { relationEdgeIsDecidableV2 } from "./personal-relation-decision-service.ts";
 import type {
   UnderstandingNodeProjectionV3,
   UnderstandingEdgeProjectionV3,
@@ -656,6 +657,7 @@ export async function buildTopologySnapshotV3(
         edges.push({
           edgeId: "src-" + origin.originId,
           kind: "sourced_from",
+          decidable: relationEdgeIsDecidableV2("sourced_from"),
           from: { kind: "note", id: origin.noteId },
           to: { kind: "objective", id: objective.objectiveId },
           reasonCodes: ["origin_note"],
@@ -671,6 +673,7 @@ export async function buildTopologySnapshotV3(
           edges.push({
             edgeId: "sup-" + origin.originId + "-" + evidenceId.slice(0, 8),
             kind: "supported_by",
+            decidable: relationEdgeIsDecidableV2("supported_by"),
             from: { kind: "objective", id: objective.objectiveId },
             to: { kind: "evidence", id: evidenceId },
             reasonCodes: [],
@@ -688,6 +691,7 @@ export async function buildTopologySnapshotV3(
       edges.push({
         edgeId: "contains_note-" + note.sourceId + "-" + note.id.slice(0, 8),
         kind: "contains_note",
+        decidable: relationEdgeIsDecidableV2("contains_note"),
         from: { kind: "source", id: note.sourceId },
         to: { kind: "note", id: note.id },
         reasonCodes: ["source_note"],
@@ -709,6 +713,7 @@ export async function buildTopologySnapshotV3(
       edges.push({
         edgeId: "supersede-" + lineage.id,
         kind: "supersedes",
+        decidable: relationEdgeIsDecidableV2("supersedes"),
         from: { kind: "objective", id: fromObjective },
         to: { kind: "objective", id: toObjective },
         reasonCodes: ["semantic_change"],
@@ -723,6 +728,7 @@ export async function buildTopologySnapshotV3(
         edges.push({
           edgeId: "rel-" + revision.objectiveRevisionId + "-" + rel.objectiveId.slice(0, 8),
           kind: "relates_to",
+        decidable: relationEdgeIsDecidableV2("relates_to"),
           from: { kind: "objective", id: revision.objectiveId },
           to: { kind: "objective", id: rel.objectiveId },
           reasonCodes: [String(rel.relation ?? "semantic")],
