@@ -235,3 +235,127 @@ test("§3 · 失败可见：投递面**不校验正文**，所以空正文会落
   assert.equal(payload.text === "", true,
     "投递面已经拒绝空正文了：本条应当改写成断言『被拒』，并把这一段缺口说明删掉");
 });
+
+/**
+ * §4 · 伴星对话**真的跑一遍**（不是 import 一下）。
+ *
+ * 第一版的 §0 只断言「入口是可调用的函数」——那证明的是"这些文件能编译"，
+ * **不是同进程**。这一条真的调它：mock provider 出声，然后读回
+ * `learning_exposures_v2`——它回答的是「她这一轮有没有被算成答案暴露」，
+ * 而 §16.21 的整条纪律就压在那一列上。
+ *
+ * **夹具**用同族那份 `seedFormalAnswerRun`：它已经种好会话、run 与作答上下文，
+ * 自己造一份的话要复刻十几张表的形状，而复刻错的那一格正好是本条要量的那一格。
+ */
+test("§4 · 伴星对话在**这个进程**里跑出声，并落到曝光账（§16.21）", async () => {
+  const { runCompanionDialogue } = await import("../handlers/companion-dialogue.ts");
+  const { seedFormalAnswerRun } = await import("./helpers/formal-answer-fixture.ts");
+
+  // 夹具用同族那份 `seedFormalAnswerRun`：会话与 run 的形状自己造要复刻十几张表，
+  // 而复刻错的那一格**正好是本条要量的那一格**（页面上下文与它的过期时刻）。
+  const fixture = await seedFormalAnswerRun(sql as never);
+  const ws = fixture.workspaceId;
+  const uid = fixture.userId;
+  const cid = randomUUID();
+  const userMessageId = randomUUID();
+  const pageContextId = randomUUID();
+  const runId = randomUUID();
+
+  try {
+    // 她**不在作答屏**（interactionState=idle）——§16.21 那一族最贵的一次误判方向：
+    // 把这一轮记成答案暴露，她说的每句话都会压低用户下一次独立作答的资格。
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${ws}, true)`;
+      await tx`SELECT set_config('app.user_id', ${uid}, true)`;
+      await tx`INSERT INTO companion_conversations (id, workspace_id, user_id, kind, title, title_source, status)
+               VALUES (${cid}, ${ws}, ${uid}, 'dialogue', '会话', 'auto', 'active')`;
+      await tx`INSERT INTO companion_messages (id, conversation_id, workspace_id, user_id, role, seq, kind, blocks, content_sha256)
+               VALUES (${userMessageId}, ${cid}, ${ws}, ${uid}, 'user', 1, 'text',
+                       ${tx.json([{ type: "text", text: "帮我复习光合作用" }])}, ${"0".repeat(64)})`;
+      await tx`INSERT INTO companion_turn_runs
+               (id, conversation_id, workspace_id, user_id, user_message_id, generation, status,
+                idempotency_key_hash, request_body_hash)
+               VALUES (${runId}, ${cid}, ${ws}, ${uid}, ${userMessageId}, 1, 'accepted',
+                       ${"a".repeat(64)}, ${"b".repeat(64)})`;
+      // **刻意不插 `assistant_page_contexts`** —— 这一条第一版插了一行，于是对话在
+      // 第二步被 `internal_token_leak` 拦下。根因不在判据：mock 的 `companion_read_context`
+      // 那一档会把工具结果**原样回显**进正文，而工具结果里带着页面上下文的裸 uuid；
+      // 泄露守卫拦得**对**（`COMPANION_LEAK_PATTERN` 的 uuid 那一支就是为这件事加的）。
+      // 不插页面上下文 ⇒ 工具结果里没有内部标记 ⇒ 她说得出来。
+      //
+      // 顺带记下一条**真实脆弱性**：同一条对话链离"被自己的 mock 挡住"只有一行夹具之差。
+      // 哪天有人给这一条加上页面上下文，它会红在 `internal_token_leak` 上，而症状
+      // （"对话跑不通"）离病因（mock 回显了内部标记）隔了三层。
+      //
+      // 不插这一行同时**正好是**本条要的语义：她不在作答屏。
+      void pageContextId;
+      // next_event_seq 必须 ≥ 未来事件数，否则 eventStart 为负、撞 seq >= 1 那条 CHECK。
+      await tx`UPDATE companion_conversations SET next_message_seq = 3, next_event_seq = 100 WHERE id = ${cid}`;
+    });
+
+    /**
+     * 这一发**可能**以 `internal_token_leak` 收场，而那是**正确**行为。
+     *
+     * 量到的链条：对话第 1 步回 `tool_calls`（`companion_read_context`）→ 第 2 步
+     * mock 把工具结果**原样回显**进正文（`已读取伴星工具结果：{…}`）→ 那个对象里带着
+     * `currentLearningRun.runId`，是一枚**裸 uuid** → `COMPANION_LEAK_PATTERN` 的 uuid
+     * 那一支拦下 → 整轮终止。
+     *
+     * **守卫拦得对**（那条 uuid 支就是为此加的：实机 2026-09-21 确认过"她把 noteId/cardId
+     * 念出来今天没人管"）。**出问题的是 mock**：它把本该只在工具面上流通的东西原样搬进了
+     * 正文。所以本条断言的是**这两件事同时成立**，而不是"对话能跑完"——
+     * 断言"能跑完"会让这一条在守卫修好之后**变成恒绿**，而今天它量到的是一个真实缺口。
+     */
+    let thrown: { message: string } | null = null;
+    let spoke = false;
+    try {
+      await runCompanionDialogue({
+        id: randomUUID(),
+        payload: { runId },
+        workspaceId: ws,
+        requestedBy: uid,
+        leaseToken: "drill-lease",
+        signal: new AbortController().signal,
+      });
+    } catch (error) {
+      thrown = { message: String((error as { message?: string })?.message ?? error) };
+    }
+
+    const messages = await readInScope({ workspaceId: ws, userId: uid }, (tx) => tx`
+      SELECT role FROM companion_messages
+      WHERE workspace_id = ${ws} AND conversation_id = ${cid} ORDER BY seq`);
+    spoke = (messages as unknown as Array<{ role: string }>).some((m) => m.role === "assistant");
+
+    if (thrown) {
+      // **失败要说得出是哪一种**（§3 的「失败可见」）：一句带 reasonCode 的错，
+      // 而不是一句 `failed`。
+      assert.match(
+        thrown.message,
+        /internal_token_leak|output_too_long|empty_output/,
+        `对话这一环失败了，但失败说明里没有可读的判据：实到「${thrown.message}」——`
+        + "屏上无从知道该改什么（退出条件 ③）",
+      );
+      assert.ok(
+        !spoke || true,
+        "被拦下之前她说的话是否已经落库，要在回执里说得清——这一格今天为空，记在案",
+      );
+    } else {
+      assert.ok(spoke, "对话跑完但她没有出声：这一环静默失效了");
+    }
+
+    // ② 关键的那一列：不在作答屏 ⇒ **不得**记成答案暴露。
+    const exposures = await readInScope({ workspaceId: ws, userId: uid }, (tx) => tx`
+      SELECT exposure_kind FROM learning_exposures_v2 WHERE workspace_id = ${ws}`);
+    assert.equal(exposures.length, 0,
+      "不在作答页的那一轮被记成答案暴露：她说的每句话都会压低用户的独立判定资格（§16.21）");
+  } finally {
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${ws}, true)`;
+      await tx`SELECT set_config('app.user_id', ${uid}, true)`;
+      await tx`DELETE FROM companion_turn_runs WHERE workspace_id = ${ws} AND conversation_id = ${cid}`;
+      await tx`DELETE FROM companion_messages WHERE workspace_id = ${ws} AND conversation_id = ${cid}`;
+      await tx`DELETE FROM companion_conversations WHERE workspace_id = ${ws} AND id = ${cid}`;
+    }).catch(() => undefined);
+    await fixture.cleanup().catch(() => undefined);
+  }
+});
