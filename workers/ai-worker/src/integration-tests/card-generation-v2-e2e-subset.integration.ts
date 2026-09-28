@@ -2752,10 +2752,21 @@ test("C49：复用的目标被暂不安排 ⇒ 新卡落上去也不排期（§1
   // **把「那一刻到底有没有活排除」直接数出来**——前两次红都卡在"到底是谁的问题"，
   // 而这一句把**前提**从推断变成读数：若此刻仍有活行，那 `held` 是**对的**（闸没问题），
   // 问题在解除；若此刻没有活行而 `held` 还在，问题在闸那一侧。**两种可能必须分开**。
-  const liveHolds = await admin`
-    SELECT count(*)::int AS n FROM objective_review_holds_v2
-    WHERE workspace_id = ${WORKSPACE_ID} AND objective_id = ${heldObjectiveId}
-      AND released_at IS NULL`;
+  // ⚠️ **用闸实际用的那个角色数**，不是超户。`admin` 是 `ailearn_migrator`（BYPASSRLS），
+  // 而排期闸跑在 `ailearn_api`（NOBYPASSRLS）——**两��看到的行可以不一样**。第一版用
+  // `admin` 数，得出「0 行」，而闸仍然交 `held: true`：**那两条读数根本不是同一双眼睛**。
+  const apiConn = postgres(testDatabaseUrl("DATABASE_URL_API"), { max: 1 });
+  const liveHolds = await apiConn.begin(async (tx) => {
+    await tx.unsafe(
+      "select set_config('ailearn.workspace_id', $1, true), set_config('ailearn.user_id', $2, true)",
+      [WORKSPACE_ID, USER_ID],
+    );
+    return tx`
+      SELECT count(*)::int AS n FROM objective_review_holds_v2
+      WHERE workspace_id = ${WORKSPACE_ID} AND objective_id = ${heldObjectiveId}
+        AND released_at IS NULL`;
+  });
+  await apiConn.end();
   assert.equal(liveHolds[0]!.n, 0,
     `解除之后那颗目标上还有 ${liveHolds[0]!.n} 条活排除：那么 \`held\` 是**对的**，`
     + "问题在「解除没有解掉全部」而不在排期闸。");
