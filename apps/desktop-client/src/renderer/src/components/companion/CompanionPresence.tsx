@@ -592,6 +592,34 @@ export function CompanionPresence() {
     }
   }, [homeMode, setCompanionPosition]);
 
+  /**
+   * **视口一变就重跑视口收边。**
+   *
+   * AGENTS.md：不得「**挤出窗口**」，紧凑视图**沿用同一份座位预算**。
+   * 真窗口 2026-09-28 量到的症状：视口 **≤1213px** 时伴星右边界钉在 1214、
+   * 被挤出窗口（900 / 1024 / 1180 三档实测）。
+   *
+   * 埋点查到的机制：`projectCompanion` 的依赖是 `[companionScale, homeMode]`，
+   * **视口变化这两样都不变** ⇒ 投影不跑；而视口收边
+   * **就挂在投影的函数体内**（`companionViewportCorrection` 那一段）
+   * ⇒ **投影不跑，收边也不跑**。角色一直停在"窗口 1440 宽时给它的位置"。
+   *
+   * **为什么只收边、不重投影**：源码里那条历史注释写着「书房里的视口修正**只走投影**：
+   * 把它写回房间坐标就是当年那个磁吸 bug——每裁一次相机，用户放的位置就被悄悄改一次」。
+   * 同理，**视口变化时重跑整条投影会把用户手放的位置也一起重算**。
+   * `clampVisibleCompanion()` 只动 gsap 的内联 transform，**不写房间坐标**。
+   *
+   * 真窗口读数（2026-09-28，改后）：900 / 1024 / 1180 三档派发 resize 后
+   * 角色右边界都是 **886**（在框内）；修前是 1180（1024 档出界 156px）。
+   * 修的函数是 `companionViewportCorrection`，纯函数那一层早已验过
+   * （1024 → −170），**这一条补的是"它什么时候被调到"**。
+   */
+  useEffect(() => {
+    const onViewportChange = () => clampVisibleCompanion();
+    window.addEventListener("resize", onViewportChange);
+    return () => window.removeEventListener("resize", onViewportChange);
+  }, [clampVisibleCompanion]);
+
   useEffect(() => {
     if (!presencePaused) return;
     const drag = dragRef.current;
