@@ -6,6 +6,7 @@ import {
   memoryExtractOutputSchema,
   memoryScopeForKind,
   parseMemoryExtractJson,
+  resolveMemoryExtractSource,
 } from "../companion-memory-extractor.ts";
 
 test("isVolatileStatisticMemory：拦『现在这一份』统计，不拦用户说过的带数字偏好", () => {
@@ -28,11 +29,17 @@ test("memory extract messages: 包含 system 提示与拼接对话", () => {
   const messages = buildExtractMessages({
     userText: "我喜欢语音讲解",
     assistantText: "好呀，以后多用语音。",
-    recent: [{ role: "user", text: "今天学光合作用" }],
+    userMessageId: "00000000-0000-4000-8000-000000000001",
+    assistantMessageId: "00000000-0000-4000-8000-000000000002",
+    recent: [{ messageId: "00000000-0000-4000-8000-000000000003", role: "user", text: "今天学光合作用" }],
   });
   assert.equal(messages.length, 2);
   assert.match(messages[0].content, /记忆整理器/);
+  assert.match(messages[0].content, /sourceMessageId/);
+  assert.match(messages[0].content, /sourceQuote/);
+  assert.match(messages[0].content, /sourceSpeaker 必须与该消息的真实说话者一致/);
   assert.match(messages[1].content, /我喜欢语音讲解/);
+  assert.match(messages[1].content, /00000000-0000-4000-8000-000000000001/);
 });
 
 test("memory extract schema: 合法候选通过，低置信仍可解析", () => {
@@ -44,6 +51,53 @@ test("memory extract schema: 合法候选通过，低置信仍可解析", () => 
   });
   assert.equal(parsed.success, true);
   if (parsed.success) assert.equal(parsed.data.candidates[0].kind, "preference");
+});
+
+test("记忆来源核验：只接受输入中用户消息的真实短引文", () => {
+  const userMessageId = "00000000-0000-4000-8000-000000000011";
+  const assistantMessageId = "00000000-0000-4000-8000-000000000012";
+  const sourceText = "以后讲机制先举例，别一上来就下定义。";
+  const source = { messageId: userMessageId, speaker: "user" as const, text: sourceText };
+  const assistantSource = {
+    messageId: assistantMessageId,
+    speaker: "assistant" as const,
+    text: "好，我以后讲机制先举例。",
+  };
+  const parseCandidate = (overrides: Record<string, unknown> = {}) =>
+    memoryExtractOutputSchema.parse({
+      candidates: [{
+        kind: "preference",
+        content: "解释机制时先举例",
+        confidence: 0.9,
+        sourceMessageId: userMessageId,
+        sourceSpeaker: "user",
+        sourceQuote: "以后讲机制先举例",
+        sourceBasis: "direct_statement",
+        ...overrides,
+      }],
+    }).candidates[0];
+
+  const candidate = parseCandidate();
+  assert.deepEqual(resolveMemoryExtractSource(candidate, [source]), { ok: true, source });
+  assert.deepEqual(
+    resolveMemoryExtractSource(parseCandidate({ sourceMessageId: "00000000-0000-4000-8000-000000000099" }), [source]),
+    { ok: false, reason: "message_not_in_input" },
+  );
+  assert.deepEqual(
+    resolveMemoryExtractSource(parseCandidate({ sourceSpeaker: "assistant" }), [source]),
+    { ok: false, reason: "speaker_mismatch" },
+  );
+  assert.deepEqual(
+    resolveMemoryExtractSource(parseCandidate({ sourceQuote: "别把建议当用户事实" }), [source]),
+    { ok: false, reason: "quote_not_found" },
+  );
+  assert.deepEqual(
+    resolveMemoryExtractSource(
+      parseCandidate({ sourceMessageId: assistantMessageId, sourceSpeaker: "assistant", sourceQuote: "我以后讲机制先举例" }),
+      [source, assistantSource],
+    ),
+    { ok: false, reason: "not_user_message" },
+  );
 });
 
 test("parseMemoryExtractJson: 纯 JSON 原样解析", () => {

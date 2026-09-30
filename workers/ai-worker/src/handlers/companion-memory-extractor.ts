@@ -161,6 +161,12 @@ const memoryExtractCandidateSchema = z.object({
    * 也不要把"这个班的作业"带过去。服务端的确定性规则还能再否决一次 portable。
    */
   binding: z.enum(["portable", "local"]).default("local"),
+  // 来源字段先保持解析可选，方便安全处理仍未按新合同输出的模型结果；
+  // 写入前由 resolveMemoryExtractSource 要求三项齐全并逐项核验。
+  sourceMessageId: z.string().uuid().optional(),
+  sourceSpeaker: z.enum(["user", "assistant"]).optional(),
+  sourceQuote: z.string().trim().min(3).max(80).optional(),
+  sourceBasis: z.enum(["direct_statement", "inferred_from_statement"]).optional(),
   linkedEntityIds: z.array(z.string()).max(10).default([]),
 });
 
@@ -186,7 +192,9 @@ const EXTRACT_PROMPT = [
   // 契约必须写进 prompt：schema 单方面要求而模型不知道，等于必然失败。
   "只输出一个 JSON 对象，形状如下（不要输出 JSON 以外的任何文字、不要 markdown 代码块）：",
   '{"candidates":[{"kind":"goal|preference|learning_context|interaction_note|episodic",'
-  + '"content":"…","importance":0.0到1.0,"confidence":0.0到1.0,"binding":"portable|local"}]}',
+  + '"content":"…","importance":0.0到1.0,"confidence":0.0到1.0,"binding":"portable|local",'
+  + '"sourceMessageId":"原消息ID","sourceSpeaker":"user","sourceQuote":"原消息中的连续短引文",'
+  + '"sourceBasis":"direct_statement|inferred_from_statement"}]}',
   "kind 可以省略（会有默认值），但必须从上面五个枚举里选。",
   // scope 不再由模型选（产品规则按 kind 定），但 binding 必须问它：只有它在对话现场，
   // 能分辨"这句话是在说我这门课，还是在说我一贯怎么学"。
@@ -196,28 +204,73 @@ const EXTRACT_PROMPT = [
   "  local —— 与**当前空间的内容**绑定的：正在学的科目或技术、要考的试与时间、这个班/这门课/这个项目的事、以及「用户最近在做什么」。",
   "拿不准就填 local。宁可留在这个空间，也不要让它跑到别的空间去。",
   "confidence 表示你有多确信这是用户真实长期信息：0.7 以上才会被采纳。",
+  "每条候选必须引用输入里确实提供的消息 ID；sourceSpeaker 必须与该消息的真实说话者一致。",
+  "sourceQuote 必须是该条用户消息中的连续原文（3–80 字），不能改写、拼接或引用桌宠自己的话。",
+  "sourceBasis=direct_statement 表示用户在引文中明确说出了这项内容；inferred_from_statement 表示你根据用户原话作了有限归纳。",
+  "只从用户消息提取关于用户的记忆；桌宠自己的承诺、建议或复述不能作为用户事实的来源。",
+  "候选找不到可靠的用户原话来源时不要输出该候选。",
   "没有值得记的信息时输出 {\"candidates\":[]}。",
   "候选最多 3 条。",
 ].join("\n");
 
 interface ExtractMessage {
+  messageId?: string;
   role: "user" | "assistant";
   text: string;
+}
+
+export interface MemoryExtractSource {
+  messageId: string;
+  speaker: "user" | "assistant";
+  text: string;
+}
+
+type MemoryExtractCandidate = z.infer<typeof memoryExtractCandidateSchema>;
+
+export type MemoryExtractSourceRejection =
+  | "missing_reference"
+  | "message_not_in_input"
+  | "speaker_mismatch"
+  | "not_user_message"
+  | "quote_not_found"
+  | "missing_basis";
+
+export type MemoryExtractSourceResolution =
+  | { ok: true; source: MemoryExtractSource }
+  | { ok: false; reason: MemoryExtractSourceRejection };
+
+/** 验证模型声称的来源确实存在于本轮输入，且短引文来自用户本人原文。 */
+export function resolveMemoryExtractSource(
+  candidate: MemoryExtractCandidate,
+  sources: readonly MemoryExtractSource[],
+): MemoryExtractSourceResolution {
+  if (!candidate.sourceMessageId || !candidate.sourceSpeaker || !candidate.sourceQuote) {
+    return { ok: false, reason: "missing_reference" };
+  }
+  if (!candidate.sourceBasis) return { ok: false, reason: "missing_basis" };
+  const source = sources.find((item) => item.messageId === candidate.sourceMessageId);
+  if (!source) return { ok: false, reason: "message_not_in_input" };
+  if (source.speaker !== candidate.sourceSpeaker) return { ok: false, reason: "speaker_mismatch" };
+  if (source.speaker !== "user") return { ok: false, reason: "not_user_message" };
+  if (!source.text.includes(candidate.sourceQuote)) return { ok: false, reason: "quote_not_found" };
+  return { ok: true, source };
 }
 
 export function buildExtractMessages(input: {
   userText: string;
   assistantText: string;
+  userMessageId?: string | null;
+  assistantMessageId?: string | null;
   recent: ExtractMessage[];
 }): Array<{ role: "system" | "user"; content: string }> {
   const recentText = input.recent
     .slice(-5)
-    .map((m) => `${m.role}: ${m.text.slice(0, 500)}`)
+    .map((m) => `消息ID=${m.messageId ?? "不可用"}；发言者=${m.role}：${m.text.slice(0, 500)}`)
     .join("\n");
   const conversation = [
     ...(recentText ? [`最近上下文：\n${recentText}`] : []),
-    `用户：${input.userText.slice(0, 1000)}`,
-    `桌宠：${input.assistantText.slice(0, 1000)}`,
+    `消息ID=${input.userMessageId ?? "不可用"}；发言者=user：${input.userText.slice(0, 1000)}`,
+    `消息ID=${input.assistantMessageId ?? "不可用"}；发言者=assistant：${input.assistantText.slice(0, 1000)}`,
   ].join("\n\n");
   return [
     { role: "system" as const, content: EXTRACT_PROMPT },
@@ -287,15 +340,26 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       WHERE id = ${runId}
     `);
     const run = runRows[0];
+    if (!run) {
+      return {
+        userText: "",
+        assistantText: "",
+        userMessageId: null,
+        assistantMessageId: null,
+        recent: [],
+        sourceMessages: [],
+        taskEntity: null,
+      };
+    }
     // 任务身份只认**服务端落库**的 page_context（39b C8）：learning_run→runId、
     // card/review→cardId；推不出就是 null，task 记忆会因此降级 workspace。
     const taskEntity = taskEntityFromPersistedPageContext(run.page_context);
-    if (!run) return { userText: "", assistantText: "", recent: [], taskEntity: null };
 
-    const userRows = await tx.execute<{ blocks: unknown }>(sql`
-      SELECT blocks FROM companion_messages
+    const userRows = await tx.execute<{ id: string; blocks: unknown }>(sql`
+      SELECT id, blocks FROM companion_messages
       WHERE id = ${run.user_message_id}
     `);
+    const userMessageId = userRows[0]?.id ?? null;
     const userBlocks = userRows[0]?.blocks;
     const userText = Array.isArray(userBlocks)
       ? (userBlocks as Array<{ type?: string; text?: unknown }>)
@@ -304,11 +368,12 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
           .join("")
       : "";
 
-    const assistantRows = await tx.execute<{ blocks: unknown }>(sql`
-      SELECT blocks FROM companion_messages
+    const assistantRows = await tx.execute<{ id: string; blocks: unknown }>(sql`
+      SELECT id, blocks FROM companion_messages
       WHERE run_id = ${runId} AND role = 'assistant'
       ORDER BY seq DESC LIMIT 1
     `);
+    const assistantMessageId = assistantRows[0]?.id ?? null;
     const assistantBlocks = assistantRows[0]?.blocks;
     const assistantText = Array.isArray(assistantBlocks)
       ? (assistantBlocks as Array<{ type?: string; text?: unknown }>)
@@ -317,16 +382,19 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
           .join("")
       : "";
 
-    const historyRows = await tx.execute<{ role: string; blocks: unknown }>(sql`
-      SELECT role, blocks FROM companion_messages
+    const historyRows = await tx.execute<{ id: string; role: string; blocks: unknown }>(sql`
+      SELECT id, role, blocks FROM companion_messages
       WHERE conversation_id = ${run.conversation_id}
         AND id <> ${run.user_message_id}
+        AND run_id IS DISTINCT FROM ${runId}
+        AND role IN ('user', 'assistant')
       ORDER BY seq DESC LIMIT 8
     `);
     const recent = historyRows
       .slice()
       .reverse()
       .map((row) => ({
+        messageId: row.id,
         role: (row.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
         text: Array.isArray(row.blocks)
           ? (row.blocks as Array<{ type?: string; text?: unknown }>)
@@ -336,7 +404,17 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
           : "",
       }));
 
-    return { userText, assistantText, recent, taskEntity };
+    const sourceMessages: MemoryExtractSource[] = [
+      ...recent.slice(-5).map((message) => ({
+        messageId: message.messageId ?? "",
+        speaker: message.role,
+        text: message.text,
+      })),
+      ...(userMessageId ? [{ messageId: userMessageId, speaker: "user" as const, text: userText }] : []),
+      ...(assistantMessageId ? [{ messageId: assistantMessageId, speaker: "assistant" as const, text: assistantText }] : []),
+    ];
+
+    return { userText, assistantText, userMessageId, assistantMessageId, recent, sourceMessages, taskEntity };
   });
 
   if (!context.userText.trim() && !context.assistantText.trim()) {
@@ -406,17 +484,33 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
   }
   // §9.1：只有置信度 > 0.6 才生成候选（严格大于，不含等于）。
   const confidenceAccepted = parsed.data.candidates.filter((c) => c.confidence > 0.6);
-  const candidates = confidenceAccepted.filter((c) => !isVolatileStatisticMemory(c.content));
-  if (candidates.length < confidenceAccepted.length) {
+  let sourceRejected = 0;
+  const sourcedCandidates: (MemoryExtractCandidate & { source: MemoryExtractSource })[] = [];
+  for (const candidate of confidenceAccepted) {
+    const resolution = resolveMemoryExtractSource(candidate, context.sourceMessages);
+    if (!resolution.ok) {
+      sourceRejected += 1;
+      continue;
+    }
+    sourcedCandidates.push({ ...candidate, source: resolution.source });
+  }
+  const candidates = sourcedCandidates.filter((candidate) => !isVolatileStatisticMemory(candidate.content));
+  if (candidates.length < sourcedCandidates.length) {
     logger.warn(
       {
         jobId: job.id,
         runId,
-        dropped: confidenceAccepted
+        dropped: sourcedCandidates
           .filter((c) => isVolatileStatisticMemory(c.content))
-          .map((c) => c.content.slice(0, 60)),
+          .length,
       },
       "memory extract dropped volatile-statistic candidates (系统查得到，不该记)",
+    );
+  }
+  if (sourceRejected > 0) {
+    logger.warn(
+      { jobId: job.id, runId, dropped: sourceRejected },
+      "memory extract dropped candidates without a verifiable user-message source",
     );
   }
   if (candidates.length === 0) {
@@ -433,6 +527,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
         jobId: job.id,
         runId,
         rawCandidates: parsed.data.candidates.length,
+        sourceRejected,
         rawLen: parsedRaw.length,
         rawFingerprint: createHash("sha256").update(parsedRaw, "utf8").digest("hex").slice(0, 16),
       },
@@ -456,8 +551,11 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
     await tx.execute(sql`
       SELECT pg_advisory_xact_lock(hashtextextended(${`companion-inbox:${job.workspaceId}:${userId}`}, 0))
     `);
-    for (const [index, candidate] of candidates.entries()) {
-      const sourceEventId = `memory-extract:${runId}:${index}`;
+    for (const candidate of candidates) {
+      // 用不可变用户消息 ID 作为来源身份：同一条原话在后续 run 的上下文中
+      // 再次被抽取时会命中现有唯一键，而不是生成一条新的“来源”。
+      const sourceEventId = candidate.source.messageId;
+      const userStated = candidate.sourceBasis === "direct_statement";
       // scope 由种类 + 绑定判据决定，不采信模型给的 scope（见 memoryScopeForKind）。
       // 两道判据任一判本地就本地，服务端规则可以否决模型的 portable。
       const derivedScope = memoryScopeForKind(candidate.kind, candidate.scope, candidate.binding, candidate.content);
@@ -491,9 +589,9 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
            candidate, importance, confidence, scope, source_type, embedding_status, created_at, updated_at)
         VALUES
           (${job.workspaceId}, ${userId}, ${candidate.kind}, ${candidate.content}, ${sourceEventId},
-           false, false, ${!LIVE_ON_WRITE_KINDS.has(candidate.kind)},
+           ${userStated}, false, ${!LIVE_ON_WRITE_KINDS.has(candidate.kind)},
            ${candidate.importance}, ${candidate.confidence}, ${scope},
-           'model_inferred', 'pending', now(), now())
+           ${userStated ? "user_stated" : "model_inferred"}, 'pending', now(), now())
         ON CONFLICT (workspace_id, user_id, kind, source_event_id)
           WHERE deleted_at IS NULL AND source_event_id IS NOT NULL
         DO NOTHING
@@ -501,6 +599,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       const memoryRows = await tx.execute<{ id: string }>(sql`
         SELECT id FROM assistant_memory_items
         WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId}
+          AND kind = ${candidate.kind}
           AND source_event_id = ${sourceEventId}
         LIMIT 1
       `);
@@ -544,7 +643,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
             );
           }
         }
-        const dedupeKey = `memory-candidate:${sourceEventId}`;
+        const dedupeKey = `memory-candidate:${memoryId}`;
         // §16.2：delivery 携带候选内容摘要（≤80 字），气泡确认卡可直接展示；
         // 摘要缺失时由前端展示通用文案。
         const payloadRef = JSON.stringify({
@@ -572,6 +671,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
           SELECT id, workspace_id, user_id, ${entityType}, ${entityId}::uuid, true
           FROM assistant_memory_items
           WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId}
+            AND kind = ${candidate.kind}
             AND source_event_id = ${sourceEventId}
           ON CONFLICT (memory_id, entity_type, entity_id) DO NOTHING
         `);
