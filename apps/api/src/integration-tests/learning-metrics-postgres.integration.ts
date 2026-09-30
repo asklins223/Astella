@@ -151,7 +151,7 @@ test("§20：submissions → artifact_locked + GET /metrics/learning-events 只�
 
     const submit = await app.inject({
       method: "POST",
-      url: `/learning-runs/${run.runId}/tasks/${taskId}/submissions/v2`,
+      url: `/v2/learning-runs/${run.runId}/tasks/${taskId}/submissions`,
       headers: auth,
       payload: {
         version: 2,

@@ -306,7 +306,7 @@ async function runRuntimeFallbackSmoke(
   }
 
   const { executeCompanionAgentTurnWithToolChoiceFallback } = await import(
-    "../src/handlers/companion-agent-runtime.ts"
+    "../src/handlers/companion-tool-call-ledger.ts"
   );
   const request: AgentTurnRequest = {
     role: AgentRole.COMPANION_AGENT,

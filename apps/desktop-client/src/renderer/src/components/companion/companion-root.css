@@ -9,6 +9,13 @@
   pointer-events: none;
 }
 
+/* Reading and other quiet task pages keep the Live2D seat. Its accessible
+   character button opens the conversation on demand; an old reply must not
+   cover the paper after that conversation has been closed. */
+.desktop-app.hud-surface .companion-presence[data-task-surface-quiet="true"] .companion-hud {
+  display: none;
+}
+
 .desktop-app.hud-surface .companion-presence[data-policy-mode="ambient"] .companion-scene-anchor,
 .desktop-app.hud-surface .companion-presence[data-policy-mode="assessment"] .companion-scene-anchor {
   width: clamp(184px, 17vw, 252px);

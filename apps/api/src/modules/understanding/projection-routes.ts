@@ -21,7 +21,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { parseBody } from "../../lib/validate.ts";
 import { requireSession } from "../identity/middleware.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { understandingChangeSets } from "@ailearn/shared/db-schema/understanding-projection";
 import { createUnderstandingRoutePlan } from "./route-plan-service.ts";
 import { understandingRoutePlanRequestV1Schema } from "@ailearn/shared";
@@ -65,10 +65,7 @@ function sendProjectionOutcome(reply: FastifyReply, outcome: ProjectionReadOutco
 }
 
 export async function understandingProjectionRoutes(app: FastifyInstance) {
-  const scopeOf = (req: { session: { workspaceId: string; userId: string } }) => ({
-    workspaceId: req.session.workspaceId,
-    userId: req.session.userId,
-  });
+  const scopeOf = (req: { session: { workspaceId: string; userId: string } }) => (scopeOfSession(req.session));
 
   // GET /understanding/projection — checkpoint-aware personal projection。
   // 只保留 HTTP 关注点：query 校验 → minimumCheckpoint 202 → 投影事务内调用读取

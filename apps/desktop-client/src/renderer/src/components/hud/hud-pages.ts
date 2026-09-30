@@ -160,7 +160,7 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     id: "notes",
     number: "07",
     title: "笔记库",
-    subtitle: "继续写作优先，其余笔记以真实册本呈现",
+    subtitle: "写下来的，都在这里",
     plate: "writing",
     companion: {
       mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
@@ -173,8 +173,8 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
   "note-read": {
     id: "note-read",
     number: "08",
-    title: "笔记详情",
-    subtitle: "正文是主角，来源与版本收在页边",
+    title: "这篇笔记",
+    subtitle: "原文还在，接着往下读",
     plate: "writing",
     companion: {
       mode: "ambient", seat: "left", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
@@ -199,7 +199,7 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     id: "note-learning",
     number: "08",
     title: "学这篇笔记",
-    subtitle: "围绕一个问题，读懂、试用、留下这轮结果",
+    subtitle: "从这篇笔记出发，把想弄懂的内容留下来",
     plate: "writing",
     companion: {
       mode: "ambient", seat: "left", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
@@ -208,8 +208,8 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
   "note-history": {
     id: "note-history",
     number: "08",
-    title: "学习足迹",
-    subtitle: "回看这篇笔记的学习记录与以后安排",
+    title: "学习记录",
+    subtitle: "留下的线索都在这页",
     plate: "writing",
     companion: {
       mode: "ambient", seat: "left", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,

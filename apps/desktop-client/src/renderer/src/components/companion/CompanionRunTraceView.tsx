@@ -1,3 +1,4 @@
+// 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import type { CSSProperties } from "react";
 import {
   companionRunTraceExpired,
@@ -6,7 +7,6 @@ import {
 } from "../../app/companion-agent-nodes";
 import type { CompanionProposalUiState } from "../../app/companion-chat-session";
 import { CompanionProposalChoice } from "./CompanionProposalChoice";
-import "./companion-run-trace.css";
 
 const NODE_STATE_LABEL = {
   running: "进行中",

@@ -347,7 +347,7 @@ function makeBaseCandidateRow() {
 
 describe("insertEvent", () => {
   it("computes next seq and inserts event", async () => {
-    let capturedValues: Record<string, unknown>[] = [];
+    const capturedValues: Record<string, unknown>[][] = [];
     const tx = mockTx({
       select: () => ({
         from: () => ({
@@ -355,7 +355,7 @@ describe("insertEvent", () => {
         }),
       }),
       insert: () => ({
-        values: (vals: Record<string, unknown>) => {
+        values: (vals: Record<string, unknown>[]) => {
           capturedValues.push(vals);
         },
       }),
@@ -363,15 +363,20 @@ describe("insertEvent", () => {
 
     await insertEvent(tx, WORKSPACE_ID, RUN_ID, "card_generation.created", { runId: RUN_ID });
 
+    // P1-1：insertEvent 现在走 insertEventBatch，所以交给驱动的 values() 是**数组**
+    // （单条也是长度 1 的数组）。这里解包后再断言——断言的仍是写出去的那一行本身，
+    // 强度不变；变的只是"从一个数组的第 0 项读"而不是"从整个对象读"。
     assert.equal(capturedValues.length, 1);
-    assert.equal(capturedValues[0].eventSeq, 6);
-    assert.equal(capturedValues[0].eventType, "card_generation.created");
-    assert.equal(capturedValues[0].workspaceId, WORKSPACE_ID);
-    assert.equal(capturedValues[0].runId, RUN_ID);
+    assert.equal(capturedValues[0].length, 1);
+    const only = capturedValues[0][0]!;
+    assert.equal(only.eventSeq, 6);
+    assert.equal(only.eventType, "card_generation.created");
+    assert.equal(only.workspaceId, WORKSPACE_ID);
+    assert.equal(only.runId, RUN_ID);
   });
 
   it("handles empty events table (maxSeq null → COALESCE 0 → 0+1=1)", async () => {
-    let captured: Record<string, unknown>[] = [];
+    const captured: Record<string, unknown>[][] = [];
     const tx = mockTx({
       select: () => ({
         from: () => ({
@@ -379,7 +384,7 @@ describe("insertEvent", () => {
         }),
       }),
       insert: () => ({
-        values: (vals: Record<string, unknown>) => {
+        values: (vals: Record<string, unknown>[]) => {
           captured.push(vals);
         },
       }),
@@ -387,7 +392,9 @@ describe("insertEvent", () => {
 
     await insertEvent(tx, WORKSPACE_ID, RUN_ID, "card_candidate.authored");
 
-    assert.equal(captured[0].eventSeq, 1);
+    // 同上：单条走批量路径后是长度 1 的数组。
+    assert.equal(captured[0].length, 1);
+    assert.equal(captured[0][0].eventSeq, 1);
   });
 });
 

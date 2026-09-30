@@ -26,7 +26,7 @@ const SYSTEM_USER = pureV2.userId;
 const [{ withWorkspaceTransaction }, { buildTopologySnapshotV3 }, { executeObjectiveOriginBackfill }] =
   await Promise.all([
     import("../db/client.ts"),
-    import("../modules/understanding-v3/topology-repository.ts"),
+    import("../modules/note-deepening/topology-repository.ts"),
     import("../modules/learning-objectives/origin-migration.ts"),
   ]);
 

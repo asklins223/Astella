@@ -161,6 +161,16 @@ export interface PublicJsonResponse {
   body: unknown;
 }
 
+/**
+ * P0-14：熔断器装在**全部** provider 的唯一出口上。
+ *
+ * openai-compatible.ts / opencode-go.ts / siliconflow.ts 三处都是
+ * options.request ?? postJsonToPublicEndpoint，API 进程的 Critic 与 teaching
+ * 调用也走这里。装在这一层，一处覆盖两个进程的全部模型 HTTP 调用；
+ * 按 host 分键，所以一个上游挂掉不会连坐同进程里其它上游。
+ */
+import { sharedAiCircuitBreaker } from "./circuit-breaker.ts";
+
 export type PublicJsonRequester = (
   url: string,
   headers: Record<string, string>,
@@ -218,10 +228,15 @@ export const postJsonToPublicEndpoint: PublicJsonRequester = async (
     (options as RequestOptions & { servername: string }).servername = parsed.hostname;
   }
 
+  // P0-14 熔断门卫：open 状态下直接抛，**一个字节都不发**。
+  // 放在 DNS 解析之前是有意的：解析本身也是一次往返，而熔断要省的正是这段。
+  sharedAiCircuitBreaker.assertCanAttempt(parsed.host);
+
   return new Promise((resolve, reject) => {
     const request = httpsRequest(parsed, options, (response) => {
       response.once("error", (error) => {
         clearTimeout(totalTimer);
+        sharedAiCircuitBreaker.recordFailure(parsed.host);
         reject(error);
       });
       const chunks: Buffer[] = [];
@@ -244,6 +259,13 @@ export const postJsonToPublicEndpoint: PublicJsonRequester = async (
         } catch (error) {
           reject(new Error(`AI endpoint returned invalid JSON (${response.statusCode ?? 0})`, { cause: error }));
           return;
+        }
+        // P0-14：5xx/429 计入连续失败并可能打开熔断；其余（2xx/3xx/普通 4xx）记成功。
+        // 判据的默认值在 CircuitBreaker 里，这里不重写第二份。
+        if ((response.statusCode ?? 0) >= 500 || response.statusCode === 429) {
+          sharedAiCircuitBreaker.recordFailure(parsed.host);
+        } else {
+          sharedAiCircuitBreaker.recordSuccess(parsed.host);
         }
         resolve({
           status: response.statusCode ?? 0,

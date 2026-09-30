@@ -9,7 +9,7 @@
  * - `create()` 工厂绑定在 worker 侧 `provider-factory.ts`，仅 worker 进程可用。
  * - 这样 API 的 GET /auth/ai-providers 能返回完整 provider 列表，不会拿到空注册表。
  *
- * @see docs/plans/provider-registry-refactor.md §3.2
+ * @see 原据 provider-registry-refactor.md（2026-09-29 已归档） §3.2
  */
 
 import type { Capability } from "./provider-capabilities.ts";

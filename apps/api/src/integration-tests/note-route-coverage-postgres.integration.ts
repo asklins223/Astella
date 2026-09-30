@@ -34,10 +34,10 @@ process.env.DATABASE_URL_API ??= fixtureUrl;
 const fixtureSql = postgres(fixtureUrl, { max: 4 });
 
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
-const { readNoteRouteCoverageV1 } = await import("../modules/note-learning-rounds/route-coverage.ts");
+const { readNoteRouteCoverageV1 } = await import("../modules/note-learning-rounds/round/route-coverage.ts");
 const { seedV2Fixture, seedObjectiveNoteEvidence } = await import("./helpers/v2-card-fixture.ts");
-const { advanceRound, appendPlanRevision, createRound, readRound } = await import("../modules/note-learning-rounds/round-service.ts");
-const { roundBudgetsV1 } = await import("../modules/note-learning-rounds/round-budgets.ts");
+const { advanceRound, appendPlanRevision, createRound, readRound } = await import("../modules/note-learning-rounds/round/round-service.ts");
+const { roundBudgetsV1 } = await import("../modules/note-learning-rounds/round/round-budgets.ts");
 
 interface Scenario {
   seeded: Awaited<ReturnType<typeof seedV2Fixture>>;

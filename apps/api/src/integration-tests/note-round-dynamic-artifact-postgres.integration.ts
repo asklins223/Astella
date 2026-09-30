@@ -27,9 +27,11 @@ import {
   appendPlanRevision,
   createRound,
   readRoundArtifactHtml,
-} from "../modules/note-learning-rounds/round-service.ts";
+} from "../modules/note-learning-rounds/round/round-service.ts";
 import { buildRoundReadingPlan } from "../modules/note-learning-rounds/learning-plan.ts";
-import { roundBudgetsV1 } from "../modules/note-learning-rounds/round-budgets.ts";
+import { roundBudgetsV1 } from "../modules/note-learning-rounds/round/round-budgets.ts";
+import { plainTextForGroundingV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-measure";
+import type { DynamicArtifactDocV1, DynamicArtifactInputV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-model";
 import { seedNotesOnlyWorkspace, type NotesOnlyWorkspaceFixture } from "./helpers/pure-v2-workspace-fixture.ts";
 
 const fixtureUrl = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL;
@@ -41,15 +43,15 @@ const fixtureSql = postgres(fixtureUrl, { max: 4 });
 const { default: Fastify } = await import("fastify");
 const { default: sensible } = await import("@fastify/sensible");
 const { authRoutes } = await import("../modules/identity/routes.ts");
-const { deterministicTeachingExplainProviderV1 } = await import("../modules/note-learning-rounds/teaching-explain.ts");
+const { deterministicTeachingExplainProviderV1 } = await import("../modules/note-learning-rounds/teaching/teaching-explain.ts");
 const { noteLearningRoundRoutes } = await import("../modules/note-learning-rounds/routes.ts");
 const { issueSession } = await import("../modules/identity/service.ts");
 const { currentApiWorkspaceTransaction } = await import("../db/client.ts");
 const { DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1 } = await import(
-  "../modules/note-learning-rounds/round-artifact-render.ts"
+  "@ailearn/shared/note-dynamic-artifact/round-artifact-render"
 );
 const { ARTIFACT_ILLUSTRATION_NOTICE_V1 } = await import(
-  "../modules/note-learning-rounds/round-artifact-measure.ts"
+  "@ailearn/shared/note-dynamic-artifact/round-artifact-measure"
 );
 
 let seeded: NotesOnlyWorkspaceFixture | null = null;
@@ -62,13 +64,31 @@ let token = "";
 let peerToken = "";
 let app: Awaited<ReturnType<typeof Fastify>>;
 
-/** 注进去的 artifact provider 那一发：每次调用都记一笔，供断言用。 */
-const calls: Array<{ activeTransaction: unknown; nodeCount: number }> = [];
-let nextOutcome: (input: { nodes: readonly { title: string; text: string }[] }) => unknown = () => ({});
+/** 注进去的 Artifact provider 那一发：每次调用都记一笔，供断言用。 */
+const calls: Array<{ activeTransaction: unknown; blockCount: number }> = [];
+let nextOutcome: (input: DynamicArtifactInputV1) => DynamicArtifactDocV1 = testDocument;
+
+function testDocument(input: DynamicArtifactInputV1): DynamicArtifactDocV1 {
+  const paragraphs = input.blocks.filter((block) => block.type !== "heading" && block.text.trim()).slice(0, 2);
+  const outline = paragraphs.map((block, index) => ({
+    title: index === 0 ? "先自己想" : "再回原文核对",
+    narration: index === 0 ? "先试着说出这一点，再看看原文怎样补充。" : "把刚才想到的内容和原句放在一起核对。",
+    evidenceOrdinal: block.ordinal,
+    evidenceQuote: plainTextForGroundingV1(block.text).slice(0, 80),
+  }));
+  const quotes = outline.map((beat) => `<blockquote>${beat.evidenceQuote}</blockquote>`).join("");
+  return {
+    title: "提取练习：先想，再核对",
+    subject: "主动回想与原文对照",
+    caution: "只按这篇笔记里的内容示意。",
+    document: `<style>.stage{display:grid;gap:12px;padding:18px;color:#30231a}.step{padding:12px;border-radius:14px;background:#fff2cf;cursor:pointer}.step[aria-current=true]{background:#e89568}.steps{display:grid;grid-template-columns:1fr 1fr;gap:8px}.source{line-height:1.7;padding:10px;background:#fff9eb;border-radius:10px}.scene{width:100%;min-height:180px} @media(max-width:520px){.steps{grid-template-columns:1fr}}</style><div class="stage"><h2>先想，再核对</h2><svg class="scene" viewBox="0 0 520 180" role="img" aria-label="先回想，再核对原文"><path d="M80 90 H440" stroke="#66816a" stroke-width="8"/><circle cx="120" cy="90" r="34" fill="#f3d678"/><circle cx="400" cy="90" r="34" fill="#b9d3ad"/><text x="120" y="96" text-anchor="middle">先想</text><text x="400" y="96" text-anchor="middle">核对</text></svg><div class="steps"><button class="step" data-step="0">先合上材料，试着回想</button><button class="step" data-step="1">再打开原文，看看漏了什么</button></div><p class="source">${quotes}</p><p>先从自己的记忆里找答案，再回到笔记确认依据。点两步比较顺序，读完仍可以直接核对原句。</p></div><script>document.querySelectorAll('[data-step]').forEach(function(step){step.addEventListener('click',function(){document.querySelectorAll('[data-step]').forEach(function(item){item.setAttribute('aria-current',String(item===step))})})})</script>`,
+    outline,
+  };
+}
 
 function recordingArtifactProvider() {
-  return async (input: { nodes: readonly { title: string; text: string }[] }) => {
-    calls.push({ activeTransaction: currentApiWorkspaceTransaction(), nodeCount: input.nodes.length });
+  return async (input: DynamicArtifactInputV1) => {
+    calls.push({ activeTransaction: currentApiWorkspaceTransaction(), blockCount: input.blocks.length });
     return { ok: true, output: nextOutcome(input) } as never;
   };
 }
@@ -185,13 +205,7 @@ async function generateTeaching(roundId: string, revision: number, regenerate = 
 test("成功路径：模型分镜渲染出的整份 HTML 落进产物行，生成器版本与快照哈希都在", async () => {
   await wipeRounds(workspaceId);
   const { roundId, revision } = await openRound();
-  nextOutcome = (input) => ({
-    form: "flow",
-    title: "提取练习三步",
-    subject: "先想再查的做法",
-    caution: "只按这一轮材料示意。",
-    steps: input.nodes.map((node) => ({ narration: `这一步讲「${node.title}」。` })),
-  });
+  nextOutcome = (input) => ({ ...testDocument(input), title: "提取练习三步" });
 
   const res = await generateTeaching(roundId, revision);
   assert.equal(res.statusCode, 201, res.body);
@@ -217,7 +231,8 @@ test("成功路径：模型分镜渲染出的整份 HTML 落进产物行，生�
   // 存的是**渲染器**那份（有自己的舞台与播放器），不是确定性构建器那一份
   const html = await readRoundArtifactHtmlFor(artifact.artifactId);
   assert.match(html, /data-artifact-root/);
-  assert.match(html, /window\.__artifact/);
+  assert.match(html, /data-step/);
+  assert.match(html, /document\.querySelectorAll/);
   assert.match(html, new RegExp(ARTIFACT_ILLUSTRATION_NOTICE_V1.slice(0, 12)));
   assert.equal(/ailearn-artifact-pane/.test(html), false,
     "存进去的是确定性构建器那一份：模型生成的那一刀根本没生效");
@@ -226,10 +241,7 @@ test("成功路径：模型分镜渲染出的整份 HTML 落进产物行，生�
 test("模型调用真的在事务外：注进去的 provider 读到的活动事务是空的", async () => {
   await wipeRounds(workspaceId);
   const { roundId, revision } = await openRound();
-  nextOutcome = (input) => ({
-    form: "sequence", title: "t", subject: "s", caution: "c",
-    steps: input.nodes.map((node) => ({ narration: `讲「${node.title}」。` })),
-  });
+  nextOutcome = testDocument;
   const res = await generateTeaching(roundId, revision);
   assert.equal(res.statusCode, 201, res.body);
   assert.ok(calls.length >= 1, "artifact provider 一次都没被调用");
@@ -237,7 +249,7 @@ test("模型调用真的在事务外：注进去的 provider 读到的活动事�
     assert.equal(call.activeTransaction, undefined,
       "artifact provider 被调用时有一个活动事务：那正是持业务行锁等模型（D5 §5.2）");
   }
-  assert.ok(calls[0]!.nodeCount > 0, "provider 拿到的节点数是 0");
+  assert.ok(calls[0]!.blockCount > 0, "provider 拿到的正文块数是 0");
 });
 
 test("§16.4 生成失败真的落库：教学行照常成功、产物不给、失败原因事后读得到", async () => {
@@ -249,7 +261,7 @@ test("§16.4 生成失败真的落库：教学行照常成功、产物不给、�
   // （`createTeaching` 的回传那一格）。
   const result = await withWorkspaceTransaction({ workspaceId, userId }, async (tx) => {
     const scope = { workspaceId, userId };
-    const round = await import("../modules/note-learning-rounds/round-service.ts");
+    const round = await import("../modules/note-learning-rounds/round/round-service.ts");
     const view = await round.readRound(tx, scope, roundId);
     assert.ok(view);
     const teaching = await round.createTeaching(tx, scope, {
@@ -290,7 +302,7 @@ test("0304 真的拓宽了 CHECK：`contract_rejected` 这一档过得了 23514"
   const { roundId, revision } = await openRound();
   await generateTeaching(roundId, revision);
   const result = await withWorkspaceTransaction({ workspaceId, userId }, async (tx) => {
-    const round = await import("../modules/note-learning-rounds/round-service.ts");
+    const round = await import("../modules/note-learning-rounds/round/round-service.ts");
     const scope = { workspaceId, userId };
     const view = await round.readRound(tx, scope, roundId);
     assert.ok(view);
@@ -324,16 +336,15 @@ test("对照：库里的 CHECK 仍然**拒绝**两列各自合法而组合不存
 test("读侧：整份 HTML 按 id 字节原样取回，别人（同一空间的另一个成员）取不到", async () => {
   await wipeRounds(workspaceId);
   const { roundId, revision } = await openRound();
-  nextOutcome = (input) => ({
-    form: "bars", title: "对比", subject: "s", caution: "c",
-    steps: input.nodes.map((node) => ({ narration: `讲「${node.title}」。` })),
-  });
+  nextOutcome = (input) => ({ ...testDocument(input), title: "两步回想" });
   const view = body(await generateTeaching(roundId, revision));
   const artifactId = (view.artifact as { artifactId: string }).artifactId;
 
   const mine = await call("GET", `/v2/note-learning-round-artifacts/${artifactId}`);
   assert.equal(mine.statusCode, 200);
-  assert.match(mine.body, /data-form="bars"/);
+  assert.match(mine.body, /data-artifact-root/);
+  assert.match(mine.body, /先合上材料，试着回想/);
+  assert.match(mine.body, /<svg[\s>]/);
   assert.equal(typeof mine.body, "string", "取整份必须字节原样（桌面主进程要直接落盘）");
 
   // 另一个成员：路由 404

@@ -45,6 +45,11 @@ const DEFAULT_TIMEOUTS: Record<string, number> = {
   companion_memory_embedding_rebuild: 110_000,
   // 念头生成（0227）：素材收集 + 可选 LLM 批量/表达 + embedding 去重，多次外部往返。
   companion_thought: 110_000,
+  // 独立笔记速看最多 6 个文本分段；3 组模型调用和一次带租约的持久化。
+  note_overview_generate: 100_000,
+  note_annotation_explain: 60_000,
+  note_dynamic_artifact_generate: 110_000,
+  note_expansion_generate: 100_000,
 };
 
 const GLOBAL_DEFAULT_MS = 90_000;

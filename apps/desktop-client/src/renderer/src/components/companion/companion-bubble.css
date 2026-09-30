@@ -1,82 +1,15 @@
-/* 伴星气泡（2026-09-18 重做）：与 CompanionBubble.tsx 配套。
-   纸面语言沿用项目体系（#fff8e9 纸色、--accent-deep 标签、soft 双层阴影、
-   旋转方块尾巴），但圆角、字重、入场动效重新设计，不再复用旧 .speech /
-   .companion-home-cue 的样式。 */
 
-.companion-bubble {
-  position: absolute;
-  z-index: 6;
-  /* 站在头顶上方的气泡通道上：控件贴头顶，
-     气泡一律叠在控件之上，全都从下往上长，下边缘因此永远裁不到。 */
-  bottom: var(--companion-lane-bubble, calc(100% + 60px));
-  left: 50%;
-  width: max-content;
-  max-width: min(240px, 30vw);
-  padding: 9px 12px 10px;
-  color: var(--hud-ink, var(--ink));
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.6;
-  text-align: left;
-  white-space: normal;
-  border: 1px solid var(--hud-line, var(--line));
-  border-radius: 24px 27px 8px 24px;
-  background: var(--hud-cream, var(--paper-strong));
-  box-shadow:
-    0 0 0 3px rgba(255, 252, 235, 0.88),
-    var(--hud-shadow-small, var(--soft-shadow));
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-
-/* 尾巴：底边中点指向角色头顶，与纸面同色、两侧描边（项目统一画法）。 */
-.companion-bubble::after {
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  width: 10px;
-  height: 10px;
-  content: "";
-  border-right: 1px solid var(--hud-line, var(--line));
-  border-bottom: 1px solid var(--hud-line, var(--line));
-  background: var(--hud-cream, var(--paper-strong));
-  transform: translate(-50%, -6px) rotate(45deg);
-}
 
 .companion-bubble__text {
   display: block;
 }
 
-/* 触碰/完成庆祝：纸色略暖，拉近"回应"与"播报"的距离。 */
-.companion-bubble--touch {
-  background: var(--hud-butter, #f3d678);
-}
-
-.companion-bubble--touch::after {
-  background: var(--hud-butter, #f3d678);
-}
-
 /* 窄窗口下的折行保护（沿用旧 home-cue 的断点）。 */
 @media (max-width: 1247px) {
-  .companion-bubble {
-    max-width: min(210px, 54vw);
-  }
 }
 
 /* 入场：一句轻快的上浮 + 收缩弹出，与 home-v2 HUD 同一缓动曲线。 */
 @media (prefers-reduced-motion: no-preference) {
-  .companion-bubble:not(.companion-bubble--static) {
-    animation: companion-bubble-in 240ms var(--hud-ease-out, var(--hud-island-ease)) both;
-  }
-
-  .companion-bubble--static {
-    animation: none;
-  }
-
-  /* Lite 只缩短，不取消入场：气泡出现仍需要一点方向感。 */
-  .companion-bubble[data-motion="lite"] {
-    animation-duration: 120ms;
-  }
 }
 
 @keyframes companion-bubble-in {
@@ -116,13 +49,6 @@ button.companion-cue-open {
   transform: translateX(-50%);
   pointer-events: auto;
   cursor: pointer;
-}
-
-button.companion-cue-open .companion-bubble {
-  position: static;
-  width: 100%;
-  max-width: none;
-  transform: none;
 }
 
 button.companion-cue-open:focus-visible {
@@ -170,9 +96,6 @@ button.companion-cue-open:focus-visible {
 
 /* 通道已经由按钮负责居中，气泡在这条链里只做竖直入场，不再重复 translateX。 */
 @media (prefers-reduced-motion: no-preference) {
-  button.companion-cue-open .companion-bubble:not(.companion-bubble--static) {
-    animation-name: companion-bubble-in-in-place;
-  }
 }
 
 @keyframes companion-bubble-in-in-place {

@@ -9,7 +9,7 @@ import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 import { seedV2Fixture, seedObjectiveNoteEvidence, type V2FixtureSeeded } from "./helpers/v2-card-fixture.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 import { noteLearningRoundRoutes } from "../modules/note-learning-rounds/routes.ts";
-import { createTeaching } from "../modules/note-learning-rounds/round-service.ts";
+import { createTeaching } from "../modules/note-learning-rounds/round/round-service.ts";
 import { authRoutes } from "../modules/identity/routes.ts";
 import { noteRoutes } from "../modules/note/routes.ts";
 import { issueSession } from "../modules/identity/service.ts";

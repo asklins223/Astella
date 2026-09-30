@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, test } from "node:test";
 import type { WorkspaceInfo } from "../modules/identity/service.ts";
 import {
   getAllWorkspacesStatsOverview,
@@ -172,4 +172,52 @@ describe("getAllWorkspacesStatsOverview", () => {
     assert.equal(result.capped, false);
     assert.equal(result.skippedWorkspaceCount, 0);
   });
+});
+
+/**
+ * P1-13：跨空间的读取必须是**并行**的，且结果顺序不变。
+ *
+ * ## 为什么这两件事要一起测
+ *
+ * 收口前是 `for … await loadOverview(...)`：各空间逐个算，N 个空间就是 N 轮串行往返。
+ * 改成 `Promise.all(selected.map(...))` 之后：
+ *   - 往返次数下降（并行）；
+ *   - 但**顺序**必须逐项不变——响应里 `isCurrent` 与 `skippedWorkspaceCount`
+ *     都依赖 `workspaces` 与 `selected` 逐项对齐，`Promise.all` 恰好保持入参顺序，
+ *     但这是要钉住的性质，不能靠"应该不会乱"。
+ *
+ * 并行性怎么量：让 `loadOverview` 在被调用的那一刻记下"当时已开始的调用数"，
+ * 串行实现里第 2 次调用时第 1 次早已 resolve，所以重叠数恒为 1；
+ * 并行实现里多次调用会在同一次微任务轮里先后进入，重叠数 > 1。
+ */
+test("多个空间的统计是并行取的，且返回顺序与入参逐项对齐", async () => {
+  const WS = ["ws-a", "ws-b", "ws-c"];
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const callOrder: string[] = [];
+
+  const result = await getAllWorkspacesStatsOverview(USER_ID, "ws-b", {
+    listWorkspaces: async () => WS.map((id) => ({
+      ...workspace(WS.indexOf(id) + 1),
+      workspaceId: id,
+      workspaceName: `name-${id}`,
+    })),
+    loadOverview: async (workspaceId) => {
+      callOrder.push(workspaceId);
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      // 挂起一拍再返回：串行实现下 inFlight 永远回到 0，并行下会叠上去
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight -= 1;
+      return overview({ noteCount: workspaceId.length });
+    },
+  });
+
+  assert.ok(maxInFlight > 1,
+    `各空间没有并行重叠（maxInFlight=${maxInFlight}）——这正是 P1-13 要消掉的那 N 轮串行往返`);
+  assert.deepEqual(callOrder, WS, "调用顺序必须与入参一致（Promise.all 保持入参顺序）");
+  assert.deepEqual(result.workspaces.map((w) => w.workspaceId), WS,
+    "返回顺序必须与入参逐项对齐——isCurrent / skippedWorkspaceCount 依赖它");
+  assert.equal(result.workspaces.filter((w) => w.isCurrent).length, 1, "有且只有一个 isCurrent");
+  assert.equal(result.workspaces.find((w) => w.isCurrent)?.workspaceId, "ws-b");
 });

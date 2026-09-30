@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { updateCompanionAccountState } from "../modules/companion-shell/service.ts";
-import { getCompanionAccountEpoch } from "../modules/companion-conversation/companion-account-epoch.ts";
+import { getCompanionAccountEpoch } from "../modules/companion-conversation/turn/companion-account-epoch.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 
 const CONN = process.env.DATABASE_URL_API ?? process.env.DATABASE_URL;

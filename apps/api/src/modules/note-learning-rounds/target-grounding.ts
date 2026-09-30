@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { runAiTask, type AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
 import { postJsonToPublicEndpoint, type PublicJsonRequester } from "@ailearn/shared/public-json-http";
-import type { RoundTargetDraft } from "./round-target-contract.ts";
-import type { TeachingEvidenceInputV1 } from "./teaching-explain.ts";
-import type { TeachingModelConfig } from "./teaching-llm.ts";
+import type { RoundTargetDraft } from "./teaching/round-target-contract.ts";
+import type { TeachingEvidenceInputV1 } from "./teaching/teaching-explain.ts";
+import type { TeachingModelConfig } from "./teaching/teaching-llm.ts";
 
 const reportSchema = z.strictObject({
   teachingSupported: z.boolean(),

@@ -1,10 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { createNoteReflectionV1Schema, deleteNoteReflectionV1Schema, noteReflectionPageV1Schema, noteReflectionQueryV1Schema,
   noteReflectionV1Schema, updateNoteReflectionV1Schema } from "@ailearn/shared/note-learning-reflection-contracts";
 import { changeNoteReflection, createNoteReflection, listNoteReflections } from "./reflection-service.ts";
-import { RoundServiceError } from "./round-service.ts";
+import { RoundServiceError } from "./round/round-service.ts";
 
 /** Called inside the session-authenticated note-learning-round plugin. */
 export function noteReflectionRoutes(app: FastifyInstance) {
@@ -21,7 +21,7 @@ export function noteReflectionRoutes(app: FastifyInstance) {
         ? createNoteReflectionV1Schema.safeParse(req.body) : method === "PATCH"
           ? updateNoteReflectionV1Schema.safeParse(req.body) : deleteNoteReflectionV1Schema.safeParse(req.body);
       if (!params.success || !parsed.success) return reply.code(400).send({ error: "invalid_request", message: "收藏字段不完整，请重新读取。" });
-      const scope = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+      const scope = scopeOfSession(req.session);
       try {
         const result = await withWorkspaceTransaction(scope, async tx => {
           if (method === "GET") return listNoteReflections(tx, scope, params.data.noteId, noteReflectionQueryV1Schema.parse(parsed.data));

@@ -27,7 +27,7 @@ import {
   withWorkspaceTransaction,
   type ApiTransaction,
 } from "../../db/client.ts";
-import { COMPANION_ACCOUNT_NOTIFY_CHANNEL } from "../companion-conversation/companion-notify.ts";
+import { COMPANION_ACCOUNT_NOTIFY_CHANNEL } from "../../companion-contracts/notify-contracts.ts";
 import { type StoredVoicePreference } from "../learning-sessions/voice-providers/tts-preference.ts";
 import { type TtsEngineV1 } from "@ailearn/shared/tts-voice-catalog";
 import {

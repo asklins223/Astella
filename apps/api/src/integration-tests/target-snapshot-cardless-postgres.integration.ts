@@ -1,7 +1,7 @@
 /**
  * 无卡目标的冻结链集成测试（39d W3-4 / D1 §4.3 的三分支）。
  *
- * 判据原文（`docs/plans/learning-companion/39d-w01-d1-round-and-run-contract-2026-09-24.md` §4.3）：
+ * 判据原文（原据 learning-companion/39d-w01-d1-round-and-run-contract-2026-09-24.md，2026-09-29 已归档）§4.3）：
  * active Objective 仍是硬前置；**Card 从必备降为可选**——
  * 有卡 ⇒ 照旧；无卡且有该修订的笔记依据 ⇒ 冻结，卡身份五列全 NULL；
  * 无卡也无依据 ⇒ fail closed `target_evidence_missing`（不许"既没卡也没依据"的空快照）。
@@ -39,7 +39,7 @@ const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.t
 const { createRunV2, submitArtifact, getRunPublicView, revealRunTargetV2, applyAction } = await import(
   "../modules/learning-runs/run-service.ts"
 );
-const { runLearningRunProcessingTick } = await import("../modules/learning-runs/run-processing-tick.ts");
+const { runLearningRunProcessingTick } = await import("../modules/learning-runs/processing/run-processing-tick.ts");
 const { freezeTargetSnapshotV2, TargetSnapshotError } = await import(
   "../modules/card-generation-v2/target-snapshot-adapter.ts"
 );

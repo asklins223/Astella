@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  prosemirror-model: 1.25.11
+
 importers:
 
   .:
@@ -38,6 +41,9 @@ importers:
       pixi.js:
         specifier: ^8.20.1
         version: 8.20.1
+      prosemirror-model:
+        specifier: 1.25.11
+        version: 1.25.11
       react:
         specifier: ^19.2.0
         version: 19.3.0
@@ -2462,7 +2468,7 @@ packages:
   prosemirror-virtual-cursor@0.4.2:
     resolution: {integrity: sha512-pUMKnIuOhhnMcgIJUjhIQTVJruBEGxfMBVQSrK0g2qhGPDm1i12KdsVaFw15dYk+29tZcxjMeR7P5VDKwmbwJg==}
     peerDependencies:
-      prosemirror-model: ^1.0.0
+      prosemirror-model: 1.25.11
       prosemirror-state: ^1.0.0
       prosemirror-view: ^1.0.0
     peerDependenciesMeta:
@@ -2987,7 +2993,7 @@ packages:
     resolution: {integrity: sha512-NpM99WSdD4Fx4if5xOMDpPtU3oAmTSjlzh5U4353ABbRHl1HtAFUx6HlebLZfyFxXN9jzKMDkVbcRjqOZVkYQg==}
     engines: {node: '>=16.0.0', npm: '>=8.0.0'}
     peerDependencies:
-      prosemirror-model: ^1.7.1
+      prosemirror-model: 1.25.11
       prosemirror-state: ^1.2.3
       prosemirror-view: ^1.9.10
       y-protocols: ^1.0.1

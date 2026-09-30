@@ -7,7 +7,7 @@
  */
 
 import { sha256Hex } from "./content-hash.ts";
-import type { MainPageContextInput } from "./companion-bridge-contracts.ts";
+import type { MainPageContextInput } from "./contracts/companion-bridge-contracts.ts";
 
 export function computeContextRevisionV2(input: MainPageContextInput): string {
   const canonical = JSON.stringify({

@@ -23,3 +23,38 @@
 # worker/api 镜像的根 context 引用，**不可**排除。
 **/reference-projects
 **/outputs
+
+# 2026-09-29（P1-21 构建面审计）：测试源码不进任何镜像。
+# 问题：api/worker 镜像的 build context 是**仓库根**（compose 里 context: .），
+# Dockerfile 里的 `COPY apps/api/src`、`COPY workers/ai-worker/src`、
+# `COPY packages/shared` 会把整套测试源码拷进镜像。实测：apps/api 3.7MB +
+# packages/shared 740KB + workers/ai-worker 1.4MB。
+#
+# 排除这四条之前必须同时成立的前提（已逐条核对，改动时重新核对）：
+#   1) 运行时代码不 import 任何测试文件——apps/api、workers/ai-worker、
+#      packages/shared 全部核对过，生产文件对 `__tests__/`、`integration-tests/`
+#      的 import 数为 0；
+#   2) 测试全部在**宿主机**跑：`make verify`（Makefile:131-135）与 CI 都是
+#      `cd <pkg> && npm run typecheck && npm test`，没有任何一步在容器内跑测试；
+#   3) 本地热重载不受影响：docker-compose.dev.yml 的 api/worker 用 bind mount
+#      挂宿主 src 覆盖镜像里的副本，容器运行时看到的仍是含测试的完整源码。
+#
+# 命名约定只有四种（仓库内 `.spec.ts` 数量为 0）：单测 `*.test.ts`、
+# 集测 `*.integration.ts`、目录 `__tests__`、目录 `integration-tests`。
+# **新增测试必须沿用这四种形状**，否则会静默重新进镜像。
+# 另注：镜像构建门禁的 typecheck 已改用 apps/api/tsconfig.prod.json
+# （只 include 生产源码），与这份排除互相独立、各管一半。
+**/*.test.ts
+**/*.integration.ts
+**/__tests__
+**/integration-tests
+
+# ⚠️ 与 apps/api/tsconfig.prod.json 里那一条**必须成对出现**。
+# `src/scripts/note-round-learning-live.ts` 是真模型冒烟脚本，不是生产代码
+# （要 NOTE_ROUND_LIVE=1 + 一次性可弃库 ailearn_note39_*，无 npm script / Makefile
+# 入口，server.ts 也 import 不到它），但它 import 了 integration-tests 下的夹具。
+# 上面 `**/integration-tests` 排掉夹具之后，它会被打进镜像并留下一个指向已排除
+# 目录的悬空 import；生产 typecheck 侧同样需要显式排除它（tsc 的 exclude 挡不住
+# 被 import 拉进来的文件）。两处一起排除，两边才对齐。
+apps/api/src/scripts/note-round-learning-live.ts
+

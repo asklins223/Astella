@@ -563,7 +563,7 @@ test("保存那一发：新链的候选过得了真实激活，并按那一档�
     WHERE run_id = ${simplifiedRunId} ORDER BY plan_version DESC LIMIT 1
   ` as unknown as Array<Record<string, unknown>>)[0];
   const { computeClientReviewHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+    "@ailearn/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId: simplifiedRunId,

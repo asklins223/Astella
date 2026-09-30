@@ -62,6 +62,8 @@ import { pickLatestCompletedRunV3, resolvePrimaryActionV3, type ActionResolverIn
 import { readAnswerModePreference } from "../companion-shell/answer-mode-preference.ts";
 import { readObjectiveNoteChangeImpactV1 } from "./change-impact-service.ts";
 import { surfaceQueryDurationSeconds, surfaceSlowQueryTotal } from "../../lib/metrics.ts";
+import { isActiveLearningRunPhase } from "@ailearn/shared/learning-run-contracts";
+import { clampLimit } from "../../lib/pagination-utils.ts";
 
 export class ObjectiveNotFoundError extends DomainError {
   constructor(objectiveId: string, workspaceId: string) {
@@ -93,14 +95,10 @@ function resolveObjectivePersonalState(input: ObjectivePersonalStateInput): Obje
   return input.lastCanonicalAt ? "stable" : "unvalidated";
 }
 
-const ACTIVE_RUN_PHASES = [
-  "preparing",
-  "active",
-  "assessing",
-  "checkpoint",
-  "committing",
-  "paused",
-] as const;
+// P0-16：这一份 6 档数组此前在这里逐字重抄，仓库里共有 3 份（另两份在
+// `learning-run-contracts.ts` 与 `learning-run-v2-contracts.ts`）。因为它是裸
+// `as const` 而不是 `z.enum`，新增一个"进行中"档位时漏改这里**不会报编译错**，
+// 只会静默少算一类 run。现在改为从唯一来源派生。
 
 // ─── 个人状态 loader（W2-11..13）──────────────────────────────────────────
 
@@ -165,8 +163,6 @@ async function loadReview(
 // ─── exposure / practiceOnly 判定（§7.4 Reveal 语义）─────────────────────
 
 /** §15.2 受控 Reveal exposure kinds（§16.2 只受控 Reveal 污染）。 */
-// 成员表只有一份（`learning-card-v2-contracts.ts` 的 `EXPOSURE_KINDS_V2`）；这里只是转发命名。
-const REVEAL_EXPOSURE_KINDS = EXPOSURE_KINDS_V2;
 
 interface ExposureInfo {
   practiceOnly: boolean;
@@ -195,7 +191,7 @@ async function loadExposureInfo(
       eq(learningExposuresV2.workspaceId, ctx.workspaceId),
       eq(learningExposuresV2.userId, ctx.userId),
       eq(learningExposuresV2.objectiveId, objectiveId),
-      inArray(learningExposuresV2.exposureKind, [...REVEAL_EXPOSURE_KINDS]),
+      inArray(learningExposuresV2.exposureKind, [...EXPOSURE_KINDS_V2]),
     ))
     .limit(1);
   const hasRevealExposure = rows.length > 0;
@@ -372,7 +368,7 @@ async function assembleObjectiveSurfaceV3Inner(
     ))
     .orderBy(desc(learningRuns.createdAt));
   const activeRunRow = allRunRows.find((r) =>
-    (ACTIVE_RUN_PHASES as readonly string[]).includes(r.phase));
+    isActiveLearningRunPhase(r.phase));
   const activeRun = activeRunRow
     ? { runId: activeRunRow.runId, phase: activeRunRow.phase }
     : null;
@@ -615,7 +611,7 @@ async function listObjectiveSurfacesV3Inner(
   ctx: SurfaceContext,
   options: ObjectiveListOptions,
 ): Promise<{ items: LearningObjectiveSurfaceV3[]; total: number; nextCursor: string | null }> {
-  const limit = Math.min(Math.max(options.limit, 1), 100);
+  const limit = clampLimit(options.limit, 100, 100);
   const lifecycle = options.lifecycle ?? "active";
 
   // Bug 1 修复：cursor 是 objectiveId，先查到对应的 (createdAt, id)，再做稳定分页。
@@ -873,7 +869,7 @@ async function batchAssembleObjectiveSurfacesV3(
       outcomes.push({ runId: run.runId, outcome: run.outcome, updatedAt: run.updatedAt });
       outcomeRowsByObjective.set(originObjectiveId, outcomes);
       // activeRun = 第一个匹配的 active-phase run（allRunRows 已按 createdAt DESC 排序）
-      if ((ACTIVE_RUN_PHASES as readonly string[]).includes(run.phase) && !runByObjective.has(originObjectiveId)) {
+      if (isActiveLearningRunPhase(run.phase) && !runByObjective.has(originObjectiveId)) {
         runByObjective.set(originObjectiveId, { runId: run.runId, phase: run.phase });
       }
     }
@@ -1004,7 +1000,7 @@ async function batchAssembleObjectiveSurfacesV3(
           eq(learningExposuresV2.workspaceId, ctx.workspaceId),
           eq(learningExposuresV2.userId, ctx.userId),
           inArray(learningExposuresV2.objectiveId, objectiveIds),
-          inArray(learningExposuresV2.exposureKind, [...REVEAL_EXPOSURE_KINDS]),
+          inArray(learningExposuresV2.exposureKind, [...EXPOSURE_KINDS_V2]),
         ))
         .groupBy(learningExposuresV2.objectiveId)
     : [];

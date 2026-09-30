@@ -13,7 +13,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { upsertSearchDocument, deleteSearchDocument } from "../lib/search-index.ts";
+import { upsertSearchDocument, deleteSearchDocument } from "../modules/import/search-index.ts";
 
 type SearchDatabase = Parameters<typeof upsertSearchDocument>[1];
 

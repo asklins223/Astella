@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { decodeToken } from "./service.ts";
+import { decodeToken } from "../identity/session-service.ts";
 import { extractAuthCredential, hasValidCookieCsrf, type AuthCredential } from "./session-auth.ts";
 
 declare module "fastify" {
@@ -60,7 +60,7 @@ export function isWorkspaceOwner(ctx: {
  * `decodeToken` 每次请求实时 JOIN 带回（成员失效时它直接吊销 session），所以这里
  * 不再自己查一遍。
  *
- * 此前它自己查、而 `/auth/capabilities/v1` 与笔记投影只看 `membershipRole`，同一个
+ * 此前它自己查、而 `/v1/auth/capabilities` 与笔记投影只看 `membershipRole`，同一个
  * 人于是可能"服务端允许写、UI 判它只读"。收敛成同一个谓词后这类分裂不再可能。
  */
 export async function requireOwner(req: FastifyRequest, reply: FastifyReply) {

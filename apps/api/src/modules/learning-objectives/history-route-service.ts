@@ -10,6 +10,7 @@ import {
   learningObjectiveRevisionsV2,
 } from "@ailearn/shared/db-schema/card-generation-v2";
 import type { ObjectiveRevisionClassV2 } from "@ailearn/shared";
+import { clampLimit } from "../../lib/pagination-utils.ts";
 
 // ─── W2-19: history ──────────────────────────────────────────────────────
 
@@ -36,7 +37,7 @@ export async function readObjectiveHistoryV3(
   objectiveId: string,
   options: { limit?: number; cursor?: number } = {},
 ): Promise<{ items: ObjectiveHistoryItemV3[]; total: number; nextCursor: number | null }> {
-  const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
+  const limit = clampLimit(options.limit, 20, 100);
   const rows = await tx
     .select()
     .from(learningObjectiveRevisionsV2)

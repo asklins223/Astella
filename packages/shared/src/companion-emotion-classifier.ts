@@ -1,4 +1,4 @@
-import type { CharacterCueEmotionV1 } from "./companion-character-contracts.ts";
+import type { CharacterCueEmotionV1 } from "./contracts/companion-character-contracts.ts";
 
 /**
  * 本地确定性情感分类器（soullink MessageReactionClassifier 思路迁移）。

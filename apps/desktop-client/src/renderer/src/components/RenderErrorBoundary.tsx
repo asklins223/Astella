@@ -1,7 +1,7 @@
+// 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { RefreshCw, RotateCw } from "lucide-react";
-import { SurfaceDataState } from "./surfaces/surface-data";
-import "./render-error-boundary.css";
+import { SurfaceDataState } from "./surfaces/notebook/surface-data.tsx";
 
 /**
  * 渲染失败的兜底层（2026-09-20）。

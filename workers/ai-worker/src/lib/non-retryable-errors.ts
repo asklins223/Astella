@@ -145,6 +145,26 @@ export class DailyDiaryOutputError extends Error {
   }
 }
 
+/** A generated note overview cannot be trusted or the frozen note exceeds this task's supported size. */
+export class NoteOverviewOutputError extends Error {
+  readonly code = "NOTE_OVERVIEW_OUTPUT_INVALID" as const;
+}
+
+/** A selected passage explanation cannot be trusted or did not match its immutable source anchor. */
+export class NoteAnnotationOutputError extends Error {
+  readonly code = "NOTE_ANNOTATION_OUTPUT_INVALID" as const;
+}
+
+/** A generated interactive note page did not meet its evidence/safety/output contract. */
+export class NoteDynamicArtifactOutputError extends Error {
+  readonly code = "NOTE_DYNAMIC_ARTIFACT_OUTPUT_INVALID" as const;
+}
+
+/** A note expansion draft failed a deterministic evidence or output check. */
+export class NoteExpansionOutputError extends Error {
+  readonly code = "NOTE_EXPANSION_OUTPUT_INVALID" as const;
+}
+
 /**
  * Returns true if the error message indicates a condition that will not
  * resolve on retry (billing, auth, config errors).
@@ -169,6 +189,10 @@ export function isNonRetryableError(error: unknown): boolean {
 
   // 日记正文不合规同理（报数 / 空到不像日记），重投只是重复计费。
   if (error instanceof DailyDiaryOutputError) return true;
+  if (error instanceof NoteOverviewOutputError) return true;
+  if (error instanceof NoteAnnotationOutputError) return true;
+  if (error instanceof NoteDynamicArtifactOutputError) return true;
+  if (error instanceof NoteExpansionOutputError) return true;
 
   // 2026-08-12+（15a 根因修复）：AI 同意/协议缺失（sendToExternal=false、
   // 未签署协议）——用户不操作设置重试必败，直接 dead 并让前端引导设置。

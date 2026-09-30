@@ -19,11 +19,11 @@ import type {
   GenerationSemanticSpecV2,
   LearningCardCandidateRevisionV2,
   ObjectiveRubricV2,
-} from "./card-generation-v2-contracts.ts";
+} from "./contracts/card-generation-v2-contracts.ts";
 import type {
   ObjectiveEquivalenceReportV2,
   ObjectiveEquivalenceBindingV2,
-} from "./learning-card-v2-contracts.ts";
+} from "./contracts/learning-card-v2-contracts.ts";
 
 /** §15.6 semanticTargetFingerprint */
 export function computeSemanticTargetFingerprintV2(input: {

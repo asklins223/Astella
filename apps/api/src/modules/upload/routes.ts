@@ -16,7 +16,7 @@ import {
   RateLimiter,
   createRateLimitStoreFromEnv,
   type RateLimitStore,
-} from "../identity/rate-limit.ts";
+} from "../../lib/rate-limit-store.ts";
 import {
   MAX_IMAGE_SIZE,
   MAX_AVATAR_SIZE,
@@ -25,6 +25,7 @@ import {
   uploadAvatar,
   downloadUploadObject,
 } from "./upload-service.ts";
+import { scopeOfSession } from "../../db/client.ts";
 
 /**
  * PERF-B4 修复：@fastify/multipart 在正常 4xx 早返回时不会自动消费内存态
@@ -132,7 +133,7 @@ export async function uploadRoutes(
 
     // 业务/存储逻辑：笔记归属校验 → 文件校验 → 对象存储写入 → noteImageAssets 登记
     const outcome = await uploadNoteImage(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       { noteId, file },
     );
     if (outcome.ok) {
@@ -198,7 +199,7 @@ export async function uploadRoutes(
 
     // 业务/存储逻辑：文件校验 → 对象存储写入 → avatarUrl 行锁读改写 → 旧头像回收
     const outcome = await uploadAvatar(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       { file },
     );
     if (outcome.ok) {
@@ -239,7 +240,7 @@ export async function uploadRoutes(
 
     // 业务/存储逻辑：路径遍历防御 → 租户/用户归属校验 → 登记校验 → ETag/304 → 对象读取
     const outcome = await downloadUploadObject(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       path,
       { ifNoneMatch: req.headers["if-none-match"] },
     );

@@ -1,4 +1,5 @@
 import * as Y from "yjs";
+import { projectFragmentBlocks } from "./doc-fragment.ts";
 import { Hocuspocus } from "@hocuspocus/server";
 import type { FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
@@ -6,8 +7,8 @@ import type { WebSocket as WsSocket, RawData } from "ws";
 import { and, eq } from "drizzle-orm";
 import { noteBlocks, noteDocumentStates, notes } from "@ailearn/shared/db-schema/note";
 import { logger } from "../../lib/logger.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
-import { decodeToken } from "../identity/service.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
+import { decodeToken } from "../identity/session-service.ts";
 import { isWorkspaceOwner } from "../identity/middleware.ts";
 import {
   loadNoteDoc,
@@ -71,10 +72,68 @@ function bearerFrom(headers: Headers): string {
   return raw.startsWith("Bearer ") ? raw.slice(7).trim() : "";
 }
 
+
+/**
+ * 按「人 × 空间」计的并发文档额度（P1-14）。
+ *
+ * 记的是**文档**而不是连接：同一篇开两个标签页只占一格，额度因此不会
+ * 被"多开标签"这种正常用法吃掉。
+ *
+ * `close` 由连接关闭时调用（Hocuspocus 的 `onDisconnect` 拿得到 context）。
+ * 引用计数是必需的：同一篇可能有多条连接，最后一条断了才真正释放那一格。
+ */
+export const MAX_OPEN_DOCUMENTS_PER_USER = 8;
+
+const openDocuments = new Map<string, Map<string, number>>();
+
+function scopeKey(userId: string): string {
+  return userId;
+}
+
+export function openUserDocumentSlot(userId: string, documentKey: string): boolean {
+  const key = scopeKey(userId);
+  let byDoc = openDocuments.get(key);
+  if (!byDoc) {
+    byDoc = new Map();
+    openDocuments.set(key, byDoc);
+  }
+  const held = byDoc.get(documentKey) ?? 0;
+  if (held === 0 && byDoc.size >= MAX_OPEN_DOCUMENTS_PER_USER) return false;
+  byDoc.set(documentKey, held + 1);
+  return true;
+}
+
+export function closeUserDocumentSlot(userId: string, documentKey: string): void {
+  const byDoc = openDocuments.get(scopeKey(userId));
+  if (!byDoc) return;
+  const held = byDoc.get(documentKey) ?? 0;
+  if (held <= 1) byDoc.delete(documentKey);
+  else byDoc.set(documentKey, held - 1);
+  if (byDoc.size === 0) openDocuments.delete(scopeKey(userId));
+}
+
+/** 只给测试与观测用：当前某人同时开着几篇。 */
+export function openDocumentCountFor(userId: string): number {
+  return openDocuments.get(scopeKey(userId))?.size ?? 0;
+}
+
 export const noteCollaboration = new Hocuspocus<NoteDocContext>({
   // 决定 6：空闲后落一次整份快照，不写 update log。
   debounce: 2_000,
   quiet: true,
+  // P1-14：把「最后一个连接断开就立刻卸载文档」写成**显式**配置。
+  //
+  // 这一条治的是**常驻文档数**：每个 doc 的正文常驻本进程内存，doc 数不封顶的话
+  // 一个进程就能被吃满。Hocuspocus 4.7 的 `unloadImmediately` 默认就是 true
+  // （`hocuspocus-server.esm.js` 里 `options?.unloadImmediately ?? true`），
+  // 所以现状是安全的——但那是**别人的默认值**，库一改就静默开始漏。
+  // 写出来是为了：这条判据可以被测试盯住，也为了让下一个读代码的人知道
+  // "doc 数由什么封顶"的答案是这里，而不是去猜。
+  //
+  // ⚠️ 审计建议的 `maxDirectConnections` 在 4.7 **不存在**（该版本的
+  // Server 配置项里没有它，全仓 node_modules 也搜不到这个名字），
+  // 所以并发连接数改由下面那道**按人计**的闸来封，见 `openUserDocumentSlot`。
+  unloadImmediately: true,
   // 单副本约束（决定 6）：doc 常驻本进程内存，多副本需要外部 pubsub。
   // 扩到多副本之前必须先在这里换成共享 store，见 docs/ 的扩展前置说明。
 
@@ -94,7 +153,7 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
     // CI 与生产形状）下恒 0 行，每一篇都抛 `note_not_found`，整条实时协同连不上；
     // dev 因为 compose 把 API 指到 BYPASSRLS 的 `ailearn` 角色而完全看不出来（doc 34 L2/L37）。
     const note = await withWorkspaceTransaction(
-      { workspaceId: session.workspaceId, userId: session.userId },
+      scopeOfSession(session),
       (tx) => tx.query.notes.findFirst({
         where: eq(notes.id, noteId),
         columns: { id: true, workspaceId: true, currentVersionId: true, deletedAt: true, shareScope: true },
@@ -110,6 +169,18 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
     // 传输，不是写入。理由与拒绝的措辞都跟"没权限"同一类，不给探测留缝。
     if (note.shareScope !== "shared") throw new Error("not_shareable");
 
+    // P1-14：按人计的**并发文档**闸。unloadImmediately 封的是"没人连了就卸"，
+    // 封不住"同一个人同时连着很多篇"——那 N 篇会同时常驻。桌面端多标签页、
+    // 或者一个脚本拿一个 token 连几百篇，都能把内存吃光。
+    //
+    // 额度按「人 × 空间」，不是按连接：同一篇开两个标签页是正常用法，
+    // 而同一个人同时编辑 5 篇以上就不是了。超了直接拒绝连接（抛错），
+    // 不排队——排队等于把内存上限从"额度"推迟到"连接数"，那道闸就白设了。
+    const slot = openUserDocumentSlot(session.userId, note.id);
+    if (!slot) {
+      throw new Error("too_many_open_documents");
+    }
+
     const readOnly = !isWorkspaceOwner(session);
     // 只读要写进 connectionConfig，不是自己挡消息：服务端会据此回一条
     // `Authenticated("readonly")` 让客户端知道自己只读，之后同步/更新一律回
@@ -124,6 +195,14 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
       versionId: note.currentVersionId,
       readOnly,
     };
+  },
+
+  // P1-14：连接断了就还那一格。**没有这一段额度只会单调增长**——
+  // 开着 8 篇、用一天、关掉，额度就再也回不来了，最后谁都连不上。
+  // Hocuspocus 的 onDisconnect 带 context，所以能拿到当初放进去的 userId/noteId。
+  async onDisconnect({ context }) {
+    if (!context?.userId || !context?.noteId) return;
+    closeUserDocumentSlot(context.userId, context.noteId);
   },
 
   async onLoadDocument({ document, context }) {
@@ -166,16 +245,22 @@ export const noteCollaboration = new Hocuspocus<NoteDocContext>({
         // 落盘与投影全套都交给 `persistNoteDoc`——它是唯一一处"文档写回关系表"的地方：
         // 正文的行、当前版本的快照、标题、更新时间、搜索投影一次过。自动保存以前是
         // 按行写的那条路，那条路一停，这里少投一样就是一个不报错的错位。
+        // 2026-09-29（P2-10）：投影只算一次。
+        // 下面两步都要块（一步算版本快照、一步写 note_blocks），
+        // 此前各 `projectFragmentBlocks(document)` 一次——同一趟落盘里
+        // 把整个 Y.XmlFragment 过了两遍 `yXmlFragmentToProsemirrorJSON`。
+        // 文档越大越贵，而协同保存是每次按键停顿都会走到的路径。
+        const projected = projectFragmentBlocks(document);
         const versionId = await resolveNoteDocFlushTarget(tx, {
           workspaceId: context.workspaceId,
           noteId: context.noteId,
           userId: context.userId,
-        }, document);
+        }, document, projected);
         await persistNoteDoc(tx, {
           workspaceId: context.workspaceId,
           noteId: context.noteId,
           userId: context.userId,
-        }, document, versionId, next);
+        }, document, versionId, next, projected);
       },
     );
   },

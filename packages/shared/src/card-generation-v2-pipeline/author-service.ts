@@ -31,7 +31,7 @@ import type {
   CardStrategyV2,
   CardHintPairV2,
   TeachingTransformationV2,
-} from "../card-generation-v2-contracts.ts";
+} from "../contracts/card-generation-v2-contracts.ts";
 import {
   computeRubricHashV2,
 } from "../card-generation-v2-hashing.ts";

@@ -35,7 +35,7 @@ const fixtureSql = postgres(fixtureUrl, { max: 4 });
 const { default: Fastify } = await import("fastify");
 const { default: sensible } = await import("@fastify/sensible");
 const { authRoutes } = await import("../modules/identity/routes.ts");
-const { deterministicTeachingExplainProviderV1 } = await import("../modules/note-learning-rounds/teaching-explain.ts");
+const { deterministicTeachingExplainProviderV1 } = await import("../modules/note-learning-rounds/teaching/teaching-explain.ts");
 const { noteLearningRoundRoutes } = await import("../modules/note-learning-rounds/routes.ts");
 const { issueSession } = await import("../modules/identity/service.ts");
 

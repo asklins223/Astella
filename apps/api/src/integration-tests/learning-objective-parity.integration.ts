@@ -43,7 +43,7 @@ const [{ withWorkspaceTransaction }, { buildLearningDashboardV2 }, { listObjecti
     import("../db/client.ts"),
     import("../modules/learning-dashboard/service.ts"),
     import("../modules/learning-objectives/surface-service.ts"),
-    import("../modules/understanding-v3/topology-repository.ts"),
+    import("../modules/note-deepening/topology-repository.ts"),
   ]);
 
 after(async () => {

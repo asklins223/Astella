@@ -1210,19 +1210,23 @@ describe("activateCardCandidatesV2 — semantic_replace", () => {
           return chain;
         },
       }),
-      update: () => ({
+      update: (table?: unknown) => ({
         set: () => ({
           where: () => ({
-            // P11: returning calls are ordered:
-            // 1st: P6 reject candidates update (no returning called — doesn't count)
-            // 2nd: objective CAS update → succeeds
-            // 3rd: card CAS update → fails → stale_card_lifecycle
+            // P11：**按表判别，不按调用次序**。
+            //
+            // 原来这里数的是「第几次调 returning」。那是个次序判别器——
+            // 服务端只要在前面多一次 `.returning()`，序号整体错位，
+            // 目标 CAS 就拿到 `[]`，于是抛的是 `stale_lifecycle_epoch`，
+            // 而这条用例要验的是 `stale_card_lifecycle`：症状离真因三层。
+            // 判别器必须钉在「**改的是哪张表**」上，那才是契约。
             returning: async () => {
               returningCallCount++;
-              if (returningCallCount <= 1) {
-                return [{ id: "obj-mock-id" }]; // objective CAS succeeds
-              }
-              return []; // card CAS fails
+              const tName = (table as Record<symbol, unknown> | undefined)?.[
+                Symbol.for("drizzle:Name")
+              ] as string | undefined;
+              if (tName === "learning_cards_v2") return [];        // 卡片 CAS 失败
+              return [{ id: "obj-mock-id" }];                      // 目标 CAS 成功
             },
           }),
         }),

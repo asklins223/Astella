@@ -12,7 +12,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { requireSession } from "../identity/middleware.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { companionDailySummaries } from "@ailearn/shared/db-schema/companion-memory";
 
 function isDailySummaryEnabled(): boolean {
@@ -54,7 +54,7 @@ export async function dailySummaryRoutes(app: FastifyInstance) {
       if (rawDate !== undefined && !parsed?.success) {
         throw app.httpErrors.badRequest("date 非法，应为 YYYY-MM-DD");
       }
-      const scope = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+      const scope = scopeOfSession(req.session);
       const result = await withWorkspaceTransaction(scope, async (tx) => {
         const conditions = [
           eq(companionDailySummaries.workspaceId, scope.workspaceId),
@@ -134,7 +134,7 @@ export async function dailySummaryRoutes(app: FastifyInstance) {
         throw app.httpErrors.badRequest("month 非法，应为 YYYY-MM");
       }
       const { from, to } = monthRange(parsed.data);
-      const scope = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+      const scope = scopeOfSession(req.session);
       const rows = await withWorkspaceTransaction(scope, async (tx) => tx
         .select({
           date: companionDailySummaries.date,

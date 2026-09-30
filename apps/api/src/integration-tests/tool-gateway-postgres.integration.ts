@@ -37,8 +37,8 @@ const { createCompanionToolProposal, decideCompanionProposal } = await import(
 );
 const { closeDatabase } = await import("../db/client.ts");
 const { withWorkspaceTransaction } = await import("../db/client.ts");
-const { upsertMemory } = await import("../modules/companion-conversation/memory-service.ts");
-const { CompanionConversationError } = await import("../modules/companion-conversation/turn-service.ts");
+const { upsertMemory } = await import("../modules/companion-conversation/memory/memory-service.ts");
+const { CompanionConversationError } = await import("../modules/companion-conversation/turn/turn-service.ts");
 
 interface Seeded {
   workspaceId: string;

@@ -25,7 +25,7 @@ export const SceneReferenceFrame = forwardRef<HTMLDivElement, SceneReferenceFram
     <div
       {...props}
       ref={ref}
-      className={["scene-reference-frame", className].filter(Boolean).join(" ")}
+      className={className}
       data-scene-coordinate-space={SCENE_COORDINATE_SPACE_ID}
       data-scene-fit={fitMode}
       style={{ ...referenceFrameStyle, ...style }}

@@ -88,7 +88,7 @@ test("provider budget leaves time for persistence", () => {
 test("伴星预算阶梯：lease > handler > run > 单次工具/单次 provider", async () => {
   const { LEASE_TIMEOUT_MS } = await import("../queue.ts");
   const { COMPANION_AGENT_DEADLINE_MS, COMPANION_AGENT_TOOL_TIMEOUT_MS } = await import("@ailearn/shared");
-  const { READ_IMAGE_TOOL_TIMEOUT_MS } = await import("../handlers/companion-agent-runtime.ts");
+  const { READ_IMAGE_TOOL_TIMEOUT_MS } = await import("../handlers/companion-read-tools.ts");
   const {
     COMPANION_AGENT_PERSISTENCE_MARGIN_MS,
     resolveCompanionAgentBudget,

@@ -1,3 +1,14 @@
 allowBuilds:
   electron-winstaller: set this to true or false
   esbuild: set this to true or false
+# 编辑器栈共用同一份 `prosemirror-model`。
+#
+# `prosemirror-commands` / `prosemirror-drop-indicator` / `zwitch` 各自锁了一个版本，
+# 不统一的话测试与运行时都会拿到两套 Schema，然后报
+# `RangeError: Can not convert <paragraph(…)> to a Fragment
+#  (looks like multiple versions of prosemirror-model were loaded)`。
+#
+# **统一版本是这类报错的正解**——`vitest.config.ts` 里那个 alias 只是掩盖它。
+# （pnpm 10 起 `overrides` 放这里，写在 package.json 的 `pnpm` 字段里会被**静默忽略**。）
+overrides:
+  prosemirror-model: 1.25.11

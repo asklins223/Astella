@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { HudRoomControl } from "./components/hud/HudRoomControl";
 import { RoomStage } from "./components/RoomStage";
 import { TaskSurface } from "./components/TaskSurface";
@@ -18,7 +18,6 @@ import { CompanionHomeProjectionProvider } from "./app/companion-home-projection
 import { HomeCapabilityProjectionProvider } from "./app/home-capability-projection";
 import { DirectoryRail } from "./components/DirectoryRail";
 import { HudReturn } from "./components/hud/HudPage";
-import { NoteLearningConceptDemo } from "./components/demos/NoteLearningConceptDemo";
 
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -69,12 +68,6 @@ export function RoomExperience() {
   const setInputFocused = useRoomStore((state) => state.setInputFocused);
   const onboardingOpen = useRoomStore((state) => state.onboardingOpen);
   const returnTarget = useRoomStore((state) => state.returnTarget);
-  const [noteDemoOpen, setNoteDemoOpen] = useState(false);
-
-  useEffect(() => {
-    if (surface !== "notebook") setNoteDemoOpen(false);
-  }, [surface]);
-
   useEffect(() => {
     const onFocusIn = (event: FocusEvent) => setInputFocused(isTypingTarget(event.target));
     const onFocusOut = () => window.requestAnimationFrame(() => setInputFocused(isTypingTarget(document.activeElement)));
@@ -88,13 +81,6 @@ export function RoomExperience() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (noteDemoOpen) {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          setNoteDemoOpen(false);
-        }
-        return;
-      }
       if (shouldIgnoreGlobalShortcut({
         defaultPrevented: event.defaultPrevented,
         isComposing: event.isComposing,
@@ -119,7 +105,7 @@ export function RoomExperience() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [invoke, onboardingOpen, noteDemoOpen]);
+  }, [invoke, onboardingOpen, surface]);
 
   const room = (
     <>
@@ -139,16 +125,12 @@ export function RoomExperience() {
           意味着一改成 v2 首页，"上一次生成没跑完"就再也没人说了。 */}
       <RunRecoveryNotice />
       <HudRoomControl />
-      {surface && !noteDemoOpen
+      {surface
         ? <HudReturn label={returnTarget?.label ?? "返回学习空间"} onReturn={returnTarget?.run ?? (() => invoke("home"))} />
         : null}
-      {import.meta.env.DEV && surface === "notebook" && !noteDemoOpen
-        ? <button type="button" className="note-learning-demo-launch" onClick={() => setNoteDemoOpen(true)}>伴读 Demo <span>示例数据</span></button>
-        : null}
-      <main id="main-content" inert={onboardingOpen || undefined} data-note-demo-open={noteDemoOpen || undefined}>
+      <main id="main-content" inert={onboardingOpen || undefined}>
         <h1 className="sr-only">理解书房</h1>
         <TaskSurface />
-        {noteDemoOpen ? <NoteLearningConceptDemo onClose={() => setNoteDemoOpen(false)} /> : null}
         <SourceIntakeHost />
       </main>
     </>

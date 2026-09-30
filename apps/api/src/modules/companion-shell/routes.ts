@@ -16,7 +16,12 @@
 
 import type { FastifyInstance } from "fastify";
 import { parseBody } from "../../lib/validate.ts";
-import { safeSseWrite } from "../../lib/safe-sse-write.ts";
+import {
+  beginSseResponse,
+  safeSseWrite,
+  sseConnectionDead,
+  SSE_RECONNECT_INSTRUCTION,
+} from "../../lib/safe-sse-write.ts";
 import { requireSession } from "../identity/middleware.ts";
 import {
   companionAccountPatchSchema,
@@ -36,12 +41,14 @@ import {
   setAnswerModePreference,
 } from "./answer-mode-preference.ts";
 import { openCompanionAccountEventStream } from "./account-events.ts";
-import { getAuthSurfaceManifestInfo } from "./auth-surface.ts";
+import { getAuthSurfaceManifestInfo } from "../../companion-contracts/auth-surface.ts";
 import {
   CompanionAuditError,
   deleteCompanionUserData,
   exportCompanionUserData,
-} from "./audit-service.ts";
+} from "../../companion-contracts/audit-service.ts";
+import { scopeOfSession } from "../../db/client.ts";
+import { buildSimpleErrorBody } from "../../lib/error-envelope.ts";
 
 export async function companionShellRoutes(app: FastifyInstance) {
   // GET /public/auth-surface-manifest — 阶段 02（W1）任务 02-5：随构建签名的
@@ -65,10 +72,7 @@ export async function companionShellRoutes(app: FastifyInstance) {
       return { version: 1, preference: result.preference, updatedAt: result.updatedAt };
     } catch (err) {
       if (err instanceof CompanionStateError) {
-        return reply.code(err.statusCode).send({
-          error: err.code,
-          message: err.statusCode >= 500 ? "服务器内部错误" : err.message,
-        });
+        return reply.code(err.statusCode).send(buildSimpleErrorBody(err, { maskServerErrors: true }));
       }
       throw err;
     }
@@ -82,10 +86,7 @@ export async function companionShellRoutes(app: FastifyInstance) {
       return { version: 1, preference: result.preference, updatedAt: result.updatedAt };
     } catch (err) {
       if (err instanceof CompanionStateError) {
-        return reply.code(err.statusCode).send({
-          error: err.code,
-          message: err.statusCode >= 500 ? "服务器内部错误" : err.message,
-        });
+        return reply.code(err.statusCode).send(buildSimpleErrorBody(err, { maskServerErrors: true }));
       }
       throw err;
     }
@@ -100,9 +101,8 @@ export async function companionShellRoutes(app: FastifyInstance) {
       const afterRaw = typeof req.query?.after === "string" ? req.query.after : null;
       const lastEventId =
         typeof req.headers["last-event-id"] === "string" ? req.headers["last-event-id"] : null;
-      const result = await openCompanionAccountEventStream({
-        workspaceId: req.session.workspaceId,
-        userId: req.session.userId,
+      const result = await openCompanionAccountEventStream({ ...scopeOfSession(req.session),
+userId: req.session.userId,
         afterRaw,
         lastEventId,
         writer: {
@@ -124,26 +124,24 @@ export async function companionShellRoutes(app: FastifyInstance) {
           requestId: req.id,
         });
       }
-      reply.hijack();
-      if (reply.raw.writableEnded || reply.raw.destroyed) {
+      // 2026-09-29（P2-15）：hijack + 存活检查 + 响应头收进
+      // lib/safe-sse-write.ts 的 beginSseResponse。
+      //
+      // **这一处同时修掉一个笔误**：原来这里把 `retry: "1500"` 写进了 HTTP 响应头。
+      // SSE 规范里 retry 是**事件流里的一个 field**，浏览器不读 HTTP 头里的同名头，
+      // 所以那个头从来没有生效过。conversation 侧早就为这件事写下了注释，
+      // 抄写时这边漏了。现在改成在 start 之前发一条真正的 SSE 指令。
+      //
+      // 错误处理**留在本文件**：这一侧要把 raw socket 销毁掉，
+      // 另一侧是记一条 warn——两边处置本来就不一样，不该被统一。
+      if (!beginSseResponse(reply)) {
         result.stream.close();
+        if (!sseConnectionDead(reply.raw)) reply.raw.destroy();
         return reply;
       }
-      try {
-        reply.raw.writeHead(200, {
-          "Content-Type": "text/event-stream; charset=utf-8",
-          "Cache-Control": "no-store, no-transform",
-          "X-Accel-Buffering": "no",
-          retry: "1500",
-          Connection: "keep-alive",
-        });
-      } catch {
+      if (!safeSseWrite(reply.raw, SSE_RECONNECT_INSTRUCTION)) {
         result.stream.close();
-        if (!reply.raw.writableEnded && !reply.raw.destroyed) reply.raw.destroy();
-        return reply;
-      }
-      if (reply.raw.writableEnded || reply.raw.destroyed) {
-        result.stream.close();
+        if (!sseConnectionDead(reply.raw)) reply.raw.destroy();
         return reply;
       }
       result.stream.start();
@@ -163,7 +161,7 @@ export async function companionShellRoutes(app: FastifyInstance) {
       );
     } catch (err) {
       if (err instanceof CompanionStateError) {
-        return reply.code(err.statusCode).send({ error: err.code, message: err.statusCode >= 500 ? "服务器内部错误" : err.message });
+        return reply.code(err.statusCode).send(buildSimpleErrorBody(err, { maskServerErrors: true }));
       }
       throw err;
     }
@@ -189,7 +187,7 @@ export async function companionShellRoutes(app: FastifyInstance) {
         });
       } catch (err) {
         if (err instanceof CompanionStateError) {
-          return reply.code(err.statusCode).send({ error: err.code, message: err.statusCode >= 500 ? "服务器内部错误" : err.message });
+          return reply.code(err.statusCode).send(buildSimpleErrorBody(err, { maskServerErrors: true }));
         }
         throw err;
       }
@@ -205,7 +203,7 @@ export async function companionShellRoutes(app: FastifyInstance) {
 
   // GET /me/companion/audit/export — 用户导出自身 audit + invitation ledger。
   // 01-3 §3.1 冻结 API 清单无此端点；按 02-4「导出/删除」能力补充实现（见
-  // docs/plans/learning-companion/02-4-audit-privacy-lifecycle.md）。导出内容只含
+  // （原据 learning-companion/02-4-audit-privacy-lifecycle.md，2026-09-29 已归档））。导出内容只含
   // opaque IDs/hashes/版本/结果，不含页面内容/DOM/截图/凭据/未提交输入。
   app.get("/me/companion/audit/export", { preHandler: [requireSession] }, async (req) => {
     return exportCompanionUserData(req.session.userId, req.session.workspaceId);
@@ -218,7 +216,7 @@ export async function companionShellRoutes(app: FastifyInstance) {
       return await deleteCompanionUserData(req.session.userId, req.session.workspaceId);
     } catch (err) {
       if (err instanceof CompanionAuditError) {
-        return reply.code(err.statusCode).send({ error: err.code, message: err.statusCode >= 500 ? "服务器内部错误" : err.message });
+        return reply.code(err.statusCode).send(buildSimpleErrorBody(err, { maskServerErrors: true }));
       }
       throw err;
     }

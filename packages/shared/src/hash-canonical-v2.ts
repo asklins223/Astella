@@ -27,8 +27,31 @@ export const HASH_CANONICAL_V2_VERSION = 1;
 /** hash domain 白名单：字母数字与 `-._/`，防止调用方拼接造成域混淆。 */
 const DOMAIN_PATTERN = /^[A-Za-z0-9][A-Za-z0-9\-._/]*$/;
 
-/** UTF-8 字节序比较（object key 排序；对合法 Unicode 与 code point 序一致）。 */
+/**
+ * UTF-8 字节序比较（object key 排序；对合法 Unicode 与 code point 序一致）。
+ *
+ * ## 降级路径（P2-9）
+ *
+ * `codePointAt` 每次要解一次代理对，而 key 里绝大多数是 ASCII（id、枚举、字段名）。
+ * 所以先跑一条 `charCodeAt` 的逐字节扫描：纯 ASCII 时**码位序就是字节序**，
+ * 且 `charCodeAt` 比 `codePointAt` 便宜得多；一旦遇到 > 0x7f 就退回通用路径。
+ *
+ * 两条路径必须给出**同一个序**——所以下面的测试拿随机字符串对拍，而不是只测几个例子。
+ */
+function compareAsciiPrefix(a: string, b: string): number | null {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i += 1) {
+    const ca = a.charCodeAt(i);
+    const cb = b.charCodeAt(i);
+    if (ca > 0x7f || cb > 0x7f) return null; // 交回通用路径
+    if (ca !== cb) return ca < cb ? -1 : 1;
+  }
+  return a.length - b.length;
+}
+
 function compareUtf8(a: string, b: string): number {
+  const fast = compareAsciiPrefix(a, b);
+  if (fast !== null) return fast;
   // 对合法 Unicode，UTF-8 字节序 == code point 序。直接按 code point 比较，
   // 避免排序比较器每次分配两个 Buffer（hash 热路径上的常见开销）。
   const len = Math.min(a.length, b.length);
@@ -40,6 +63,31 @@ function compareUtf8(a: string, b: string): number {
     i += ca! > 0xffff ? 2 : 1;
   }
   return a.length - b.length;
+}
+
+/**
+ * canonical 化的字符串规整：NFC + 换行统一 LF。**不** trim、不折叠空白。
+ *
+ * ## 为什么分两路（P2-9）
+ *
+ * `String.prototype.normalize("NFC")` 在**纯 ASCII** 字符串上也要走一遍
+ * 完整的规范化查表，是这条 hash 热路径上最大的一笔无谓开销——而 hash 输入里
+ * 绝大多数是 id、枚举值、键名这些 ASCII 串。
+ *
+ * 下面这个测试只有在**含非 ASCII** 时才成立：ASCII 串按定义已经是 NFC，
+ * 跳过 normalize 不改变结果。快速路径用 `charCodeAt` 扫描（比正则快，且
+ * 能在发现第一个非 ASCII 时立刻退出）。
+ *
+ * 换行统一不能省：CRLF 必须变 LF，那是**会改变结果**的，不能放在快速路径里跳过。
+ */
+const NON_ASCII = /[^\u0000-\u007F]/;
+
+export function normalizeCanonicalStringV2(value: string): string {
+  // 先处理换行（这一步对 ASCII 与非 ASCII 都要做）
+  const lineNormalized = value.indexOf("\r") === -1 ? value : value.replace(/\r\n?/g, "\n");
+  // 纯 ASCII：按定义已是 NFC，直接返回
+  if (!NON_ASCII.test(lineNormalized)) return lineNormalized;
+  return lineNormalized.normalize("NFC");
 }
 
 /**
@@ -59,8 +107,7 @@ export function canonicalizeV2(value: unknown): unknown {
     return value === 0 ? 0 : value; // -0 规范为 0
   }
   if (typeof value === "string") {
-    // NFC + 换行统一 LF；不 trim、不折叠空白。
-    return value.normalize("NFC").replace(/\r\n?/g, "\n");
+    return normalizeCanonicalStringV2(value);
   }
   if (Array.isArray(value)) {
     return value.map((v) => canonicalizeV2(v));

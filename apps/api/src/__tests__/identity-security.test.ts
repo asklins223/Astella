@@ -7,7 +7,7 @@ import {
   RateLimiter,
   type RateLimitEntry,
   type RateLimitStore,
-} from "../modules/identity/rate-limit.ts";
+} from "../lib/rate-limit-store.ts";
 import {
   CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
@@ -22,20 +22,49 @@ import {
 import { loginSchema } from "../modules/identity/routes.ts";
 
 describe("authentication rate limiter", () => {
-  it("selects memory in development and PostgreSQL in production", () => {
+  /**
+   * 2026-09-29（P0-5）：这条断言的语义变了，理由写在这里以免被当成"把测试改绿"。
+   *
+   * 旧行为是 `configured || (NODE_ENV === "production" ? "postgres" : "memory")`——
+   * 只要 NODE_ENV 不是**字面量** `production` 就退回进程内 Map，且不报错不告警。
+   * 于是 `NODE_ENV=prod`（手滑）、staging、乃至干脆没设，全都拿到了
+   * **按副本数放大**的登录爆破限额，且每次重启计数归零。
+   *
+   * 新行为 fail-secure：除显式写 `memory`，一律 Postgres。
+   * 下面第二条用例专门钉住"NODE_ENV 写错也不会降级"——那正是原 bug 的形状。
+   */
+  it("defaults to PostgreSQL; in-process store requires an explicit opt-in", () => {
     const fakeDatabase = { execute: async () => [] } as never;
-    assert.ok(
-      createRateLimitStoreFromEnv({ NODE_ENV: "development" }, fakeDatabase)
-        instanceof MemoryRateLimitStore,
-    );
+    // 没设 AUTH_RATE_LIMIT_STORE 时不再看 NODE_ENV，一律跨副本正确。
+    assert.ok(createRateLimitStoreFromEnv({}, fakeDatabase) instanceof PostgresRateLimitStore);
     assert.ok(
       createRateLimitStoreFromEnv({ NODE_ENV: "production" }, fakeDatabase)
         instanceof PostgresRateLimitStore,
+    );
+    // 想要进程内实现必须显式声明（含大小写与空白）。
+    assert.ok(
+      createRateLimitStoreFromEnv({ AUTH_RATE_LIMIT_STORE: "memory" }, fakeDatabase)
+        instanceof MemoryRateLimitStore,
+    );
+    assert.ok(
+      createRateLimitStoreFromEnv({ AUTH_RATE_LIMIT_STORE: "  MEMORY  " }, fakeDatabase)
+        instanceof MemoryRateLimitStore,
     );
     assert.throws(
       () => createRateLimitStoreFromEnv({ AUTH_RATE_LIMIT_STORE: "redis" }, fakeDatabase),
       /AUTH_RATE_LIMIT_STORE must be memory or postgres/,
     );
+  });
+
+  it("NODE_ENV 拼错或缺失时不会悄悄降级成进程内限流（原 bug 的形状）", () => {
+    const fakeDatabase = { execute: async () => [] } as never;
+    for (const nodeEnv of ["prod", "PRODUCTION", "Production", "dev", "staging", "test", ""]) {
+      assert.ok(
+        createRateLimitStoreFromEnv({ NODE_ENV: nodeEnv }, fakeDatabase)
+          instanceof PostgresRateLimitStore,
+        `NODE_ENV=${JSON.stringify(nodeEnv)} 不该把登录限流降级成按副本计数的进程内实现`,
+      );
+    }
   });
 
   it("shares counters across limiter instances using the same store", async () => {

@@ -26,6 +26,7 @@ import { noteSearchTerms, parsePageContext } from "./companion-dialogue-content.
 import { askableFactSpanKeys, loadFactSpans } from "./companion-fact-spans.ts";
 import { readLivePageView, type LivePageView } from "./companion-live-view.ts";
 import { findNearestNoteTitle, findNoteRuns } from "./companion-note-reads.ts";
+import { ACTIVE_LEARNING_RUN_PHASES } from "@ailearn/shared/learning-run-contracts";
 
 const FALLBACK_TIMEZONE = "Asia/Shanghai";
 
@@ -299,7 +300,8 @@ export async function readLearningStats(
   };
 }
 
-const ACTIVE_RUN_PHASES = ["preparing", "active", "assessing", "checkpoint", "committing", "paused"];
+// P0-16：与 api 侧（surface-service / topology-repository）逐字相同的 6 档副本。
+// 现从 shared 的唯一来源派生；此前它是裸数组，漏改一档不会报编译错。
 
 /**
  * `phase = ANY(${数组})` 在 drizzle 下是**坏的**：它把 JS 数组摊成 6 个独立标量参数，
@@ -307,7 +309,7 @@ const ACTIVE_RUN_PHASES = ["preparing", "active", "assessing", "checkpoint", "co
  * array on right side"（实机把 read 阶段打挂、job 连败三次）。用 IN + 逐项参数化。
  */
 const ACTIVE_RUN_PHASE_PREDICATE = sql`r.phase IN (${sql.join(
-  ACTIVE_RUN_PHASES.map((phase) => sql`${phase}`),
+  ACTIVE_LEARNING_RUN_PHASES.map((phase) => sql`${phase}`),
   sql`, `,
 )})`;
 

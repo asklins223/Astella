@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { requireSession } from "../identity/middleware.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { deferReviewSchedule } from "./review-defer-service.ts";
 import { listSanitizedReviews, projectReviewQueueV2, ReviewQueueProjectionError } from "./service.ts";
 import { reviewDeferRequestV2Schema } from "@ailearn/shared";
@@ -42,6 +42,7 @@ import {
   requestOneTimeReminderResultV2Schema,
   requestOneTimeReminderV2Schema,
 } from "@ailearn/shared/review-reminder-contracts";
+import { buildSimpleErrorBody } from "../../lib/error-envelope.ts";
 
 export async function reviewRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireSession);
@@ -51,7 +52,7 @@ export async function reviewRoutes(app: FastifyInstance) {
   // 复合 cursor：到期队列会在两次翻页之间被复习完成或延后改变长度，offset
   // 翻页会因此静默漏项。
   app.get<{ Querystring: { cursor?: string; limit?: string } }>(
-    "/reviews/v2/queue",
+    "/v2/reviews/queue",
     async (req, reply) => {
       const parsedQuery = paginationQuerySchema.safeParse(req.query);
       if (!parsedQuery.success) {
@@ -60,7 +61,7 @@ export async function reviewRoutes(app: FastifyInstance) {
       const { cursor, limit } = parsedQuery.data;
       try {
         const sanitized = await withWorkspaceTransaction(
-          { workspaceId: req.session.workspaceId, userId: req.session.userId },
+          scopeOfSession(req.session),
           (tx) => listSanitizedReviews(req.session.workspaceId, {
             status: "pending",
             limit: limit ?? 50,
@@ -71,7 +72,7 @@ export async function reviewRoutes(app: FastifyInstance) {
         return reply.header("Cache-Control", "private, no-store").send(queue);
       } catch (error) {
         if (error instanceof ReviewQueueProjectionError) {
-          return reply.code(error.statusCode).send({ error: error.code, message: error.message });
+          return reply.code(error.statusCode).send(buildSimpleErrorBody(error));
         }
         throw error;
       }
@@ -80,16 +81,16 @@ export async function reviewRoutes(app: FastifyInstance) {
 
   // 方案 16 §18.1：展示层延后——只写 user_deferred_until，到期队列在延后期内
   // 不再返回这张卡；official nextReviewAt 与 schedule 均不变。
-  app.post("/reviews/v2/defer", async (req, reply) => {
+  app.post("/v2/reviews/defer", async (req, reply) => {
     const parsed = reviewDeferRequestV2Schema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "validation", message: "延后请求参数非法" });
     }
     const outcome = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (tx) => deferReviewSchedule(
         tx,
-        { workspaceId: req.session.workspaceId, userId: req.session.userId },
+        scopeOfSession(req.session),
         {
           scheduleId: parsed.data.scheduleId,
           scheduleGeneration: parsed.data.scheduleGeneration,
@@ -118,18 +119,17 @@ export async function reviewRoutes(app: FastifyInstance) {
   // 两条而不是合并成一条"切换"：设与解在规则表里是两件事——设的时候连带撤下已经排着的
   // 那一条待办，解的时候只恢复这一个目标（§9.1 明写"只有用户选择'恢复此目标并开启'
   // 才解除排除；不能暗中复活"）。合并会让"她到底点了什么"在审计里读不出来。
-  app.post("/reviews/v2/objectives/hold", async (req, reply) => {
+  app.post("/v2/reviews/objectives/hold", async (req, reply) => {
     const parsed = holdObjectiveRequestV2Schema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "validation", message: "参数非法" });
     }
     try {
       return await withWorkspaceTransaction(
-        { workspaceId: req.session.workspaceId, userId: req.session.userId },
+        scopeOfSession(req.session),
         async (tx) => {
-          const held = await holdObjectiveFromReviewV2(tx, {
-            workspaceId: req.session.workspaceId,
-            userId: req.session.userId,
+          const held = await holdObjectiveFromReviewV2(tx, { ...scopeOfSession(req.session),
+userId: req.session.userId,
             ...parsed.data,
           });
           return reply.code(200).header("Cache-Control", "private, no-store").send({
@@ -156,12 +156,12 @@ export async function reviewRoutes(app: FastifyInstance) {
   // 撤下去的那些排期是 `dismissed`（终态），所以用户点完"恢复"之后那个目标再也不回到
   // 队列——而界面上那颗按钮承诺的是"恢复**并开启**"。解除与排期现在在同一个事务里，
   // 排期走唯一调度边界，不裸 insert。
-  app.post("/reviews/v2/objectives/resume", async (req, reply) => {
+  app.post("/v2/reviews/objectives/resume", async (req, reply) => {
     const parsed = resumeObjectiveRequestV2Schema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "validation", message: "参数非法" });
     }
-    const scope = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+    const scope = scopeOfSession(req.session);
     try {
       const outcome = await withWorkspaceTransaction(
         scope,
@@ -212,36 +212,36 @@ export async function reviewRoutes(app: FastifyInstance) {
    * 而这一发保证"读过正文"这件事落进了 `learning_exposures_v2`——§7.1
    * 「系统随后如实按本次暴露条件处理」里的"随后"就是这一发。
    *
-   * 路径挂在 `/reviews/v2/` 下（而不是 learning-runs）：**等待态这一段还没有 run**
+   * 路径挂在 `/v2/reviews/` 下（而不是 learning-runs）：**等待态这一段还没有 run**
    * （题目还在生成），而这一发必须在那时候就成立。
    */
-  app.post("/reviews/v2/recall-source-reveal", async (req, reply) => {
+  app.post("/v2/reviews/recall-source-reveal", async (req, reply) => {
     const session = (req as { session?: { workspaceId: string; userId: string } }).session;
     if (!session) return reply.code(401).send({ error: "unauthorized", message: "请先登录" });
     try {
       const result = await withWorkspaceTransaction(
-        { workspaceId: session.workspaceId, userId: session.userId },
+        scopeOfSession(session),
         (tx) => recordRecallSourceRevealV2(
           tx,
-          { workspaceId: session.workspaceId, userId: session.userId },
+          scopeOfSession(session),
           req.body,
         ),
       );
       return reply.code(200).header("Cache-Control", "no-store").send(result);
     } catch (error) {
       if (error instanceof RecallRevealError) {
-        return reply.code(error.statusCode).send({ error: error.code, message: error.message });
+        return reply.code(error.statusCode).send(buildSimpleErrorBody(error));
       }
       throw error;
     }
   });
 
-  app.post("/reviews/v2/reminders/one-time", async (req, reply) => {
+  app.post("/v2/reviews/reminders/one-time", async (req, reply) => {
     const parsed = requestOneTimeReminderV2Schema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "validation", message: "单次提醒参数非法" });
     }
-    const scope = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+    const scope = scopeOfSession(req.session);
     try {
       const outcome = await withWorkspaceTransaction(scope, (tx) => requestOneTimeReminderV2(
         tx,
@@ -273,12 +273,12 @@ export async function reviewRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/reviews/v2/reminders/acknowledge", async (req, reply) => {
+  app.post("/v2/reviews/reminders/acknowledge", async (req, reply) => {
     const parsed = acknowledgeOneTimeReminderV2Schema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "validation", message: "处理提醒的参数非法" });
     }
-    const scope = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+    const scope = scopeOfSession(req.session);
     const outcome = await withWorkspaceTransaction(scope, (tx) => acknowledgeOneTimeReminderV2(
       tx,
       scope,
@@ -317,12 +317,12 @@ export async function reviewRoutes(app: FastifyInstance) {
   // 而排除那一档是**行 2**（优先于笔记与卡片的一切授权）。拿排除来实现"停个人复习"会
   // 过头——读者若同时订了笔记订阅，一句"停掉这张卡的复习"会把笔记那份也停掉。
   // 「停」归 W7-3 规则表行 1 的完整实现。
-  app.post("/reviews/v2/shared-cards/start-personal-review", async (req, reply) => {
+  app.post("/v2/reviews/shared-cards/start-personal-review", async (req, reply) => {
     const parsed = startSharedCardPersonalReviewV2Schema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "validation", message: "参数非法" });
     }
-    const scope = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+    const scope = scopeOfSession(req.session);
     try {
       const outcome = await withWorkspaceTransaction(scope, (tx) => startSharedCardPersonalReviewV2(
         tx,
@@ -380,24 +380,22 @@ export async function reviewRoutes(app: FastifyInstance) {
     stillCoveredBy: change.stillCoveredBy,
   });
 
-  app.post("/reviews/v2/subscriptions/activate", async (req, reply) => {
+  app.post("/v2/reviews/subscriptions/activate", async (req, reply) => {
     const parsed = reviewSubscriptionCommandV2Schema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "validation", message: "参数非法" });
     }
     try {
       const change = await withWorkspaceTransaction(
-        { workspaceId: req.session.workspaceId, userId: req.session.userId },
+        scopeOfSession(req.session),
         async (tx) => {
-          const change = await activateReviewSubscriptionV2(tx, {
-            workspaceId: req.session.workspaceId,
-            userId: req.session.userId,
+          const change = await activateReviewSubscriptionV2(tx, { ...scopeOfSession(req.session),
+userId: req.session.userId,
             ...parsed.data,
           });
           if (parsed.data.source === "note_subscription") {
-            await scheduleStudiedNoteTargetsV2(tx, {
-              workspaceId: req.session.workspaceId,
-              userId: req.session.userId,
+            await scheduleStudiedNoteTargetsV2(tx, { ...scopeOfSession(req.session),
+userId: req.session.userId,
               noteId: parsed.data.subjectId,
               at: new Date(),
             });
@@ -414,17 +412,16 @@ export async function reviewRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/reviews/v2/subscriptions/pause", async (req, reply) => {
+  app.post("/v2/reviews/subscriptions/pause", async (req, reply) => {
     const parsed = reviewSubscriptionCommandV2Schema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "validation", message: "参数非法" });
     }
     try {
       const change = await withWorkspaceTransaction(
-        { workspaceId: req.session.workspaceId, userId: req.session.userId },
-        (tx) => pauseReviewSubscriptionV2(tx, {
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
+        scopeOfSession(req.session),
+        (tx) => pauseReviewSubscriptionV2(tx, { ...scopeOfSession(req.session),
+userId: req.session.userId,
           ...parsed.data,
         }),
       );
@@ -439,13 +436,10 @@ export async function reviewRoutes(app: FastifyInstance) {
 
   // 笔记那一屏的读侧：她订阅了哪几篇，**连暂停的也列出来**——开关要能拨回"开"，
   // 只列活着的那一批就等于"停过的那篇从此找不到"。
-  app.get("/reviews/v2/subscriptions/notes", async (req, reply) => {
+  app.get("/v2/reviews/subscriptions/notes", async (req, reply) => {
     const items = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
-      (tx) => listNoteSubscriptionsV2(tx, {
-        workspaceId: req.session.workspaceId,
-        userId: req.session.userId,
-      }),
+      scopeOfSession(req.session),
+      (tx) => listNoteSubscriptionsV2(tx, scopeOfSession(req.session)),
     );
     return reply.code(200).header("Cache-Control", "private, no-store").send({ version: 2, items });
   });

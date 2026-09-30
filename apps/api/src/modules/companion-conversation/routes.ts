@@ -1,16 +1,21 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireSession } from "../identity/middleware.ts";
 import { parseBody } from "../../lib/validate.ts";
-import { safeSseWrite, safeWriteWithBackpressure } from "../../lib/safe-sse-write.ts";
-import { CompanionConversationError, createCompanionTurn } from "./turn-service.ts";
+import {
+  beginSseResponse,
+  safeSseWrite,
+  safeWriteWithBackpressure,
+  SSE_RECONNECT_INSTRUCTION,
+} from "../../lib/safe-sse-write.ts";
+import { CompanionConversationError, createCompanionTurn } from "./turn/turn-service.ts";
 import { createCompanionLearningRunContextGrantRequestV1Schema, createMenuProposalRequestV1Schema, createToolProposalRequestV1Schema, proposalDecisionRequestV1Schema } from "@ailearn/shared";
-import { cancelCompanionRun } from "./companion-cancel.ts";
-import { openCompanionEventStream, listCompanionAgentRoutes, listCompanionRunNodes } from "./companion-events.ts";
-import { openCompanionThought } from "./thought-service.ts";
+import { cancelCompanionRun } from "./turn/companion-cancel.ts";
+import { openCompanionEventStream, listCompanionAgentRoutes, listCompanionRunNodes } from "./turn/companion-events.ts";
+import { openCompanionThought } from "./turn/thought-service.ts";
 import {
   ensureCompanionInbox,
   listCompanionMessages,
-} from "./companion-conversations-service.ts";
+} from "./turn/companion-conversations-service.ts";
 import {
   createCompanionLearningRunContextGrant,
   createCompanionMenuProposal,
@@ -22,20 +27,23 @@ import {
 } from "./learning-action-bridge.ts";
 import { createCompanionTurnRequestV1Schema } from "@ailearn/shared";
 import { allowedMainRouteV2Schema } from "@ailearn/shared";
-import { exportCompanionDataStream } from "./companion-export.ts";
+import { exportCompanionDataStream } from "./turn/companion-export.ts";
 import {
   COMPANION_RATE_LIMITS,
   companionRateLimit,
   companionRateLimitReply,
-} from "./companion-rate-limit.ts";
+} from "../../lib/companion-rate-limit.ts";
+import { scopeOfSession } from "../../db/client.ts";
+import { isCompanionDialogueEnabled } from "../../config/learning-companion-flags.ts";
+import { buildCompanionErrorBody } from "../../lib/error-envelope.ts";
 
 /**
  * §6.10 限流 helper：达限时写 429 并返回 false，调用方立即 return。
  * key 一律按 (workspace,user) 聚合；menu-proposal 与 create turn 共用
  * "write:turn" 写预算（§6.10），读查询共用 "read" 合并预算。
  */
-function rateLimited(reply: FastifyReply, requestId: string, key: string, limit: number, windowMs: number): boolean {
-  const result = companionRateLimit({ key, limit, windowMs });
+async function rateLimited(reply: FastifyReply, requestId: string, key: string, limit: number, windowMs: number): Promise<boolean> {
+  const result = await companionRateLimit({ key, limit, windowMs });
   if (result.allowed) return true;
   companionRateLimitReply(reply, requestId, result.retryAfterSeconds);
   return false;
@@ -64,7 +72,7 @@ function parsePaginationInt(raw: string | undefined, fallback: number): number {
  * preHandler 注册使用。
  */
 export async function requireCompanionDialogue(_req: FastifyRequest, reply: FastifyReply) {
-  if (process.env.COMPANION_DIALOGUE_V1_ENABLED === "true") return;
+  if (isCompanionDialogueEnabled()) return;
   return reply.code(404).send({
     version: 1,
     error: "NOT_FOUND",
@@ -85,22 +93,23 @@ export async function companionConversationRoutes(app: FastifyInstance) {
         return reply.code(400).send({ version: 1, error: "INVALID_REQUEST", message: "idempotency-key required", recoverable: false, requestId: req.id });
       }
       const body = (req.body ?? {}) as Record<string, unknown>;
-      if (!rateLimited(reply, req.id, `${session.workspaceId}:${session.userId}:write:turn`, COMPANION_RATE_LIMITS.menuProposalPerMinute.limit, COMPANION_RATE_LIMITS.menuProposalPerMinute.windowMs)) return;
+      if (!(await rateLimited(reply, req.id, `${session.workspaceId}:${session.userId}:write:turn`, COMPANION_RATE_LIMITS.menuProposalPerMinute.limit, COMPANION_RATE_LIMITS.menuProposalPerMinute.windowMs))) return;
       const parsed = createMenuProposalRequestV1Schema.safeParse(body);
       if (!parsed.success) {
         return reply.code(400).send({ version: 1, error: "INVALID_REQUEST", message: "menu proposal body invalid", recoverable: false, requestId: req.id });
       }
       try {
-        const result = await createCompanionMenuProposal({
-          workspaceId: session.workspaceId,
-          userId: session.userId,
+        const result = await createCompanionMenuProposal({ ...scopeOfSession(session),
+userId: session.userId,
           body: parsed.data,
           idempotencyKey,
         });
         return reply.code(201).send(result);
       } catch (err) {
         if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send({ version: 1, error: err.code, message: err.statusCode >= 500 ? "服务器内部错误" : err.message, recoverable: false, requestId: req.id });
+          return reply.code(err.statusCode).send(
+          buildCompanionErrorBody(err, { recoverable: false, requestId: req.id }),
+        );
         }
         throw err;
       }
@@ -119,22 +128,23 @@ export async function companionConversationRoutes(app: FastifyInstance) {
         return reply.code(400).send({ version: 1, error: "INVALID_REQUEST", message: "idempotency-key required", recoverable: false, requestId: req.id });
       }
       const body = (req.body ?? {}) as Record<string, unknown>;
-      if (!rateLimited(reply, req.id, `${session.workspaceId}:${session.userId}:write:turn`, COMPANION_RATE_LIMITS.menuProposalPerMinute.limit, COMPANION_RATE_LIMITS.menuProposalPerMinute.windowMs)) return;
+      if (!(await rateLimited(reply, req.id, `${session.workspaceId}:${session.userId}:write:turn`, COMPANION_RATE_LIMITS.menuProposalPerMinute.limit, COMPANION_RATE_LIMITS.menuProposalPerMinute.windowMs))) return;
       const parsed = createToolProposalRequestV1Schema.safeParse(body);
       if (!parsed.success) {
         return reply.code(400).send({ version: 1, error: "INVALID_REQUEST", message: "tool proposal body invalid", recoverable: false, requestId: req.id });
       }
       try {
-        const result = await createCompanionToolProposal({
-          workspaceId: session.workspaceId,
-          userId: session.userId,
+        const result = await createCompanionToolProposal({ ...scopeOfSession(session),
+userId: session.userId,
           body: parsed.data,
           idempotencyKey,
         });
         return reply.code(201).send(result);
       } catch (err) {
         if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send({ version: 1, error: err.code, message: err.statusCode >= 500 ? "服务器内部错误" : err.message, recoverable: false, requestId: req.id });
+          return reply.code(err.statusCode).send(
+          buildCompanionErrorBody(err, { recoverable: false, requestId: req.id }),
+        );
         }
         throw err;
       }
@@ -147,16 +157,17 @@ export async function companionConversationRoutes(app: FastifyInstance) {
     { preHandler: [requireSession, requireCompanionDialogue] },
     async (req, reply) => {
       try {
-        if (!rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`, COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs)) return;
-        const result = await getCompanionProposalSnapshot({
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
+        if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`, COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs))) return;
+        const result = await getCompanionProposalSnapshot({ ...scopeOfSession(req.session),
+userId: req.session.userId,
           proposalId: req.params.id,
         });
         return reply.code(result.statusCode).header("cache-control", "no-store").send(result.body);
       } catch (err) {
         if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send({ version: 1, error: err.code, message: err.statusCode >= 500 ? "服务器内部错误" : err.message, recoverable: true, requestId: req.id });
+          return reply.code(err.statusCode).send(
+          buildCompanionErrorBody(err, { recoverable: true, requestId: req.id }),
+        );
         }
         throw err;
       }
@@ -173,7 +184,7 @@ export async function companionConversationRoutes(app: FastifyInstance) {
       if (typeof idempotencyKey !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
         return reply.code(400).send({ version: 1, error: "INVALID_REQUEST", message: "idempotency-key required", recoverable: false, requestId: req.id });
       }
-      if (!rateLimited(reply, req.id, `${session.workspaceId}:${session.userId}:decision`, COMPANION_RATE_LIMITS.proposalDecisionPerMinute.limit, COMPANION_RATE_LIMITS.proposalDecisionPerMinute.windowMs)) return;
+      if (!(await rateLimited(reply, req.id, `${session.workspaceId}:${session.userId}:decision`, COMPANION_RATE_LIMITS.proposalDecisionPerMinute.limit, COMPANION_RATE_LIMITS.proposalDecisionPerMinute.windowMs))) return;
       const parsed = proposalDecisionRequestV1Schema.safeParse({
         ...((req.body ?? {}) as Record<string, unknown>),
         proposalId: req.params.id,
@@ -182,9 +193,8 @@ export async function companionConversationRoutes(app: FastifyInstance) {
         return reply.code(400).send({ version: 1, error: "INVALID_REQUEST", message: "decision body invalid", recoverable: false, requestId: req.id });
       }
       try {
-        const result = await decideCompanionProposal({
-          workspaceId: session.workspaceId,
-          userId: session.userId,
+        const result = await decideCompanionProposal({ ...scopeOfSession(session),
+userId: session.userId,
           proposalId: parsed.data.proposalId,
           decision: parsed.data.decision,
           idempotencyKey,
@@ -193,7 +203,9 @@ export async function companionConversationRoutes(app: FastifyInstance) {
         return reply.code(parsed.data.decision === "reject" || (result as { status: string }).status === "succeeded" ? 200 : 202).send(result);
       } catch (err) {
         if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send({ version: 1, error: err.code, message: err.statusCode >= 500 ? "服务器内部错误" : err.message, recoverable: false, requestId: req.id });
+          return reply.code(err.statusCode).send(
+          buildCompanionErrorBody(err, { recoverable: false, requestId: req.id }),
+        );
         }
         throw err;
       }
@@ -211,16 +223,17 @@ export async function companionConversationRoutes(app: FastifyInstance) {
         return reply.code(400).send({ version: 1, error: "INVALID_REQUEST", message: "grant body invalid", recoverable: false, requestId: req.id });
       }
       try {
-        const result = await createCompanionLearningRunContextGrant({
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
+        const result = await createCompanionLearningRunContextGrant({ ...scopeOfSession(req.session),
+userId: req.session.userId,
           runId: req.params.runId,
           body: parsed.data,
         });
         return reply.header("cache-control", "no-store").code(200).send(result);
       } catch (err) {
         if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send({ version: 1, error: err.code, message: err.statusCode >= 500 ? "服务器内部错误" : err.message, recoverable: false, requestId: req.id });
+          return reply.code(err.statusCode).send(
+          buildCompanionErrorBody(err, { recoverable: false, requestId: req.id }),
+        );
         }
         throw err;
       }
@@ -232,15 +245,16 @@ export async function companionConversationRoutes(app: FastifyInstance) {
     { preHandler: [requireSession, requireCompanionDialogue] },
     async (req, reply) => {
       try {
-        const result = await getCompanionLearningRunContext({
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
+        const result = await getCompanionLearningRunContext({ ...scopeOfSession(req.session),
+userId: req.session.userId,
           runId: req.params.runId,
         });
         return reply.code(result.statusCode).header("cache-control", "no-store").send(result.body);
       } catch (err) {
         if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send({ version: 1, error: err.code, message: err.statusCode >= 500 ? "服务器内部错误" : err.message, recoverable: true, requestId: req.id });
+          return reply.code(err.statusCode).send(
+          buildCompanionErrorBody(err, { recoverable: true, requestId: req.id }),
+        );
         }
         throw err;
       }
@@ -249,11 +263,8 @@ export async function companionConversationRoutes(app: FastifyInstance) {
   // P5 §6.7 GET /companion/learning-context：只读 menu context（零写入/零模型调用）。
   app.get("/companion/learning-context", { preHandler: [requireSession, requireCompanionDialogue] }, async (req, reply) => {
     const session = req.session!;
-    if (!rateLimited(reply, req.id, `${session.workspaceId}:${session.userId}:learning-context`, COMPANION_RATE_LIMITS.learningContextPerMinute.limit, COMPANION_RATE_LIMITS.learningContextPerMinute.windowMs)) return;
-    const context = await resolveCompanionLearningContext({
-      workspaceId: session.workspaceId,
-      userId: session.userId,
-    });
+    if (!(await rateLimited(reply, req.id, `${session.workspaceId}:${session.userId}:learning-context`, COMPANION_RATE_LIMITS.learningContextPerMinute.limit, COMPANION_RATE_LIMITS.learningContextPerMinute.windowMs))) return;
+    const context = await resolveCompanionLearningContext(scopeOfSession(session));
     return reply.send(context);
   });
 
@@ -274,12 +285,11 @@ export async function companionConversationRoutes(app: FastifyInstance) {
         });
       }
       const body = parseBody(app, createCompanionTurnRequestV1Schema, req.body);
-      if (!rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:write:turn`, COMPANION_RATE_LIMITS.createTurnPerMinute.limit, COMPANION_RATE_LIMITS.createTurnPerMinute.windowMs)) return;
-      if (!rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:write:turn:hour`, COMPANION_RATE_LIMITS.createTurnPerHour.limit, COMPANION_RATE_LIMITS.createTurnPerHour.windowMs)) return;
+      if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:write:turn`, COMPANION_RATE_LIMITS.createTurnPerMinute.limit, COMPANION_RATE_LIMITS.createTurnPerMinute.windowMs))) return;
+      if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:write:turn:hour`, COMPANION_RATE_LIMITS.createTurnPerHour.limit, COMPANION_RATE_LIMITS.createTurnPerHour.windowMs))) return;
       try {
-        const result = await createCompanionTurn({
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
+        const result = await createCompanionTurn({ ...scopeOfSession(req.session),
+userId: req.session.userId,
           conversationId: req.params.id,
           idempotencyKey,
           body,
@@ -287,15 +297,12 @@ export async function companionConversationRoutes(app: FastifyInstance) {
         return reply.code(result.statusCode).send(result.body);
       } catch (err) {
         if (err instanceof CompanionConversationError) {
-          // 5xx 业务错误也脱敏（与 server.ts setErrorHandler 的 5xx 占位一致）
-          const is5xx = err.statusCode >= 500;
-          return reply.code(err.statusCode).send({
-            version: 1,
-            error: err.code,
-            message: is5xx ? "服务器内部错误" : err.message,
-            recoverable: !is5xx,
-            requestId: req.id,
-          });
+          // P1-9：脱敏与 recoverable 的判定收进 buildCompanionErrorBody。
+          // 它内部按 `statusCode >= 500` 判（与这里原来的 is5xx 同口径），
+          // 并且顺手把 recoverable 一起算出来——此前这两件事在同一处重复了 3 次。
+          return reply.code(err.statusCode).send(
+            buildCompanionErrorBody(err, { recoverable: err.statusCode < 500, requestId: req.id }),
+          );
         }
         throw err;
       }
@@ -311,9 +318,8 @@ export async function companionConversationRoutes(app: FastifyInstance) {
       const afterRaw = typeof req.query?.after === "string" ? req.query.after : null;
       const lastEventId =
         typeof req.headers["last-event-id"] === "string" ? req.headers["last-event-id"] : null;
-      const result = await openCompanionEventStream({
-        workspaceId: req.session.workspaceId,
-        userId: req.session.userId,
+      const result = await openCompanionEventStream({ ...scopeOfSession(req.session),
+userId: req.session.userId,
         conversationId: req.params.id,
         afterRaw,
         lastEventId,
@@ -338,25 +344,15 @@ export async function companionConversationRoutes(app: FastifyInstance) {
           requestId: req.id,
         });
       }
-      reply.hijack();
-      if (reply.raw.writableEnded || reply.raw.destroyed) {
+      // 2026-09-29（P2-15）：hijack + 存活检查 + 响应头收进
+      // lib/safe-sse-write.ts 的 beginSseResponse。错误处理**留在本文件**——
+      // 这一侧要记一条 warn，另一侧要销毁 socket，两边处置本来就不一样。
+      if (!beginSseResponse(reply)) {
         result.stream.close();
-        return reply;
-      }
-      try {
-        reply.raw.writeHead(200, {
-          "Content-Type": "text/event-stream; charset=utf-8",
-          "Cache-Control": "no-store, no-transform",
-          "X-Accel-Buffering": "no",
-          "Connection": "keep-alive",
-        });
-      } catch (err) {
-        result.stream.close();
-        req.log.warn({ err, conversationId: req.params.id }, "companion SSE writeHead failed");
         return reply;
       }
       // §5.3：retry 指令属于 SSE 事件流本身，不在 HTTP 头（规范要求）。
-      if (!safeSseWrite(reply.raw, "retry: 1500\n\n")) {
+      if (!safeSseWrite(reply.raw, SSE_RECONNECT_INSTRUCTION)) {
         result.stream.close();
         return reply;
       }
@@ -373,7 +369,7 @@ export async function companionConversationRoutes(app: FastifyInstance) {
     "/companion/conversations/:id/agent-routes",
     { preHandler: [requireSession, requireCompanionDialogue] },
     async (req, reply) => {
-      if (!rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`, COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs)) return;
+      if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`, COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs))) return;
       const afterRaw = typeof req.query?.after === "string" ? req.query.after : "0";
       const after = Number(afterRaw);
       if (!Number.isInteger(after) || after < 0) {
@@ -386,9 +382,8 @@ export async function companionConversationRoutes(app: FastifyInstance) {
         });
       }
       try {
-        const result = await listCompanionAgentRoutes({
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
+        const result = await listCompanionAgentRoutes({ ...scopeOfSession(req.session),
+userId: req.session.userId,
           conversationId: req.params.id,
           after,
         });
@@ -420,7 +415,9 @@ export async function companionConversationRoutes(app: FastifyInstance) {
         });
       } catch (err) {
         if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send({ version: 1, error: err.code, message: err.statusCode >= 500 ? "服务器内部错误" : err.message, recoverable: true, requestId: req.id });
+          return reply.code(err.statusCode).send(
+          buildCompanionErrorBody(err, { recoverable: true, requestId: req.id }),
+        );
         }
         throw err;
       }
@@ -436,7 +433,7 @@ export async function companionConversationRoutes(app: FastifyInstance) {
     "/companion/conversations/:id/run-nodes",
     { preHandler: [requireSession, requireCompanionDialogue] },
     async (req, reply) => {
-      if (!rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`, COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs)) return;
+      if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`, COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs))) return;
       const afterRaw = typeof req.query?.after === "string" ? req.query.after : "0";
       const after = Number(afterRaw);
       if (!Number.isInteger(after) || after < 0) {
@@ -449,9 +446,8 @@ export async function companionConversationRoutes(app: FastifyInstance) {
         });
       }
       try {
-        const result = await listCompanionRunNodes({
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
+        const result = await listCompanionRunNodes({ ...scopeOfSession(req.session),
+userId: req.session.userId,
           conversationId: req.params.id,
           after,
         });
@@ -489,7 +485,9 @@ export async function companionConversationRoutes(app: FastifyInstance) {
         });
       } catch (err) {
         if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send({ version: 1, error: err.code, message: err.statusCode >= 500 ? "服务器内部错误" : err.message, recoverable: true, requestId: req.id });
+          return reply.code(err.statusCode).send(
+          buildCompanionErrorBody(err, { recoverable: true, requestId: req.id }),
+        );
         }
         throw err;
       }
@@ -503,17 +501,18 @@ export async function companionConversationRoutes(app: FastifyInstance) {
     "/companion/thoughts/:id/open",
     { preHandler: [requireSession, requireCompanionDialogue] },
     async (req, reply) => {
-      if (!rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`, COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs)) return;
+      if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`, COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs))) return;
       try {
-        const result = await openCompanionThought({
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
+        const result = await openCompanionThought({ ...scopeOfSession(req.session),
+userId: req.session.userId,
           thoughtId: req.params.id,
         });
         return reply.code(result.statusCode).header("cache-control", "no-store").send(result.body);
       } catch (err) {
         if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send({ version: 1, error: err.code, message: err.statusCode >= 500 ? "服务器内部错误" : err.message, recoverable: true, requestId: req.id });
+          return reply.code(err.statusCode).send(
+          buildCompanionErrorBody(err, { recoverable: true, requestId: req.id }),
+        );
         }
         throw err;
       }
@@ -525,26 +524,22 @@ export async function companionConversationRoutes(app: FastifyInstance) {
     "/companion/runs/:id/cancel",
     { preHandler: [requireSession, requireCompanionDialogue] },
     async (req, reply) => {
-      if (!rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:cancel`, COMPANION_RATE_LIMITS.cancelPerMinute.limit, COMPANION_RATE_LIMITS.cancelPerMinute.windowMs)) return;
+      if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:cancel`, COMPANION_RATE_LIMITS.cancelPerMinute.limit, COMPANION_RATE_LIMITS.cancelPerMinute.windowMs))) return;
       try {
-        const result = await cancelCompanionRun({
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
+        const result = await cancelCompanionRun({ ...scopeOfSession(req.session),
+userId: req.session.userId,
           runId: req.params.id,
           body: req.body,
         });
         return reply.code(result.statusCode).send(result.body);
       } catch (err) {
         if (err instanceof CompanionConversationError) {
-          // 5xx 业务错误也脱敏（与 server.ts setErrorHandler 的 5xx 占位一致）
-          const is5xx = err.statusCode >= 500;
-          return reply.code(err.statusCode).send({
-            version: 1,
-            error: err.code,
-            message: is5xx ? "服务器内部错误" : err.message,
-            recoverable: !is5xx,
-            requestId: req.id,
-          });
+          // P1-9：脱敏与 recoverable 的判定收进 buildCompanionErrorBody。
+          // 它内部按 `statusCode >= 500` 判（与这里原来的 is5xx 同口径），
+          // 并且顺手把 recoverable 一起算出来——此前这两件事在同一处重复了 3 次。
+          return reply.code(err.statusCode).send(
+            buildCompanionErrorBody(err, { recoverable: err.statusCode < 500, requestId: req.id }),
+          );
         }
         throw err;
       }
@@ -560,10 +555,7 @@ export async function companionConversationManagementRoutes(app: FastifyInstance
     "/companion/inbox/ensure",
     { preHandler: [requireSession, requireCompanionDialogue] },
     async (req, reply) => {
-      const result = await ensureCompanionInbox({
-        workspaceId: req.session.workspaceId,
-        userId: req.session.userId,
-      });
+      const result = await ensureCompanionInbox(scopeOfSession(req.session));
       return reply.code(result.statusCode).send(result.body);
     },
   );
@@ -573,13 +565,12 @@ export async function companionConversationManagementRoutes(app: FastifyInstance
     "/companion/conversations/:id/messages",
     { preHandler: [requireSession, requireCompanionDialogue] },
     async (req, reply) => {
-      if (!rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`, COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs)) return;
+      if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`, COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs))) return;
       try {
         const limit = parsePaginationInt(req.query?.limit, 50);
         const beforeSeq = req.query?.beforeSeq != null ? parsePaginationInt(req.query.beforeSeq, 0) : null;
-        const result = await listCompanionMessages({
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
+        const result = await listCompanionMessages({ ...scopeOfSession(req.session),
+userId: req.session.userId,
           conversationId: req.params.id,
           limit,
           beforeSeq,
@@ -587,13 +578,9 @@ export async function companionConversationManagementRoutes(app: FastifyInstance
         return reply.code(result.statusCode).send(result.body);
       } catch (err) {
         if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send({
-            version: 1,
-            error: err.code,
-            message: err.statusCode >= 500 ? "服务器内部错误" : err.message,
-            recoverable: false,
-            requestId: req.id,
-          });
+          return reply.code(err.statusCode).send(
+            buildCompanionErrorBody(err, { recoverable: false, requestId: req.id }),
+          );
         }
         throw err;
       }
@@ -609,7 +596,7 @@ export async function companionExportRoutes(app: FastifyInstance) {
     "/companion/export",
     { preHandler: [requireSession] },
     async (req, reply) => {
-      if (!rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:export`, COMPANION_RATE_LIMITS.exportPerHour.limit, COMPANION_RATE_LIMITS.exportPerHour.windowMs)) return;
+      if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:export`, COMPANION_RATE_LIMITS.exportPerHour.limit, COMPANION_RATE_LIMITS.exportPerHour.windowMs))) return;
       // PERF（round-5）：改为流式导出——每一行 NDJSON 产生后立即写出到 socket，
       // 不再把整份输出（最多 6×50k 行）累积进内存数组。错误（如 active turn 409）
       // 都发生在首行 manifest 写出之前，此时尚未 hijack/发响应头，可按原契约返回
@@ -617,10 +604,7 @@ export async function companionExportRoutes(app: FastifyInstance) {
       let started = false;
       let result;
       try {
-        result = await exportCompanionDataStream({
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
-        }, async (line) => {
+        result = await exportCompanionDataStream(scopeOfSession(req.session), async (line) => {
           if (!started) {
             started = true;
             reply.hijack();

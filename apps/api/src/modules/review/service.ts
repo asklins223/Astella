@@ -1,3 +1,4 @@
+import { DomainError } from "@ailearn/shared";
 import { and, eq, gte, lte, or, isNull, sql, inArray } from "drizzle-orm";
 import { withWorkspaceTransaction, SYSTEM_USER_ID, type ApiTransaction } from "../../db/client.ts";
 import { reviewSchedules } from "@ailearn/shared/db-schema/evidence";
@@ -11,6 +12,7 @@ import { ReviewStatus, reviewQueueV2Schema, type ReviewQueueV2 } from "@ailearn/
 import { decodeCursor, encodeCursor } from "../../lib/pagination.ts";
 import { reviewScheduleTargetsConsumableCardPredicate } from "@ailearn/shared/review-consumable-target";
 import { loadMissingFrozenRubricUnits } from "./frozen-evidence.ts";
+import { clampLimit } from "../../lib/pagination-utils.ts";
 
 export type ReviewReason =
   | "evidence_gap"
@@ -77,13 +79,27 @@ export interface SanitizedReviewItem {
   isV2?: boolean;
 }
 
-export class ReviewQueueProjectionError extends Error {
-  readonly code = "unsupported_contract" as const;
-  readonly statusCode = 409 as const;
-
+/**
+ * 2026-09-29（P2-6）：改为继承 `DomainError`。
+ *
+ * 之前它 `extends Error`，自己挂 `code` / `statusCode`。那两个字段**当时是装饰性的**：
+ * 真正把 409 送出去的是 `routes.ts` 里那一段显式 `catch (error) { if (error instanceof
+ * ReviewQueueProjectionError) ... }`——判据长在调用方，不在错误自己身上。
+ *
+ * 于是"新端点抛了这个错但忘了写那段 catch"就会退化成 500，
+ * 而且**不报错、不留痕**（就是一个普通的未捕获异常）。
+ * 审计把这条记成"44/78 个错误类绕过 DomainError"，实测只有 10 个绕过、
+ * 其中只有这一个带 `statusCode`；其余 9 个要么没有 statusCode（本就该是 500 的内部错）、
+ * 要么继承自己的内部基类。带 statusCode 又不被信封认出来的，就这一个。
+ */
+export class ReviewQueueProjectionError extends DomainError {
   constructor(message: string) {
-    super(message);
-    this.name = "ReviewQueueProjectionError";
+    super({
+      name: "ReviewQueueProjectionError",
+      code: "unsupported_contract",
+      message,
+      statusCode: 409,
+    });
   }
 }
 
@@ -198,7 +214,7 @@ export async function listReviews(
 
   where = and(where, reviewScheduleTargetsConsumableCardPredicate());
 
-  const limit = Math.min(Math.max(filter.limit ?? 50, 1), 100);
+  const limit = clampLimit(filter.limit, 50, 100);
 
   // R-019：到期队列是一个活集合（复习完成、延后都会把它变短）。按 offset 翻页
   // 会在集合左移时静默漏掉一张卡，所以这里和 note / source 一样改用
@@ -435,39 +451,50 @@ export async function listSanitizedReviews(
   const missingFrozenEvidence = await loadMissingFrozenRubricUnits(queryDb, workspaceId, objectiveIds);
   const eligibleByObjective = new Map<string, Date>();
   if (userId && objectiveIds.length > 0) {
-    const exposures = await queryDb.query.validationAssistanceExposures.findMany({
+    // P1-13：把两步的顺序对调，先读 schedules 再读 exposures。
+    //
+    // 收口前是反过来的：先把**该用户在这个空间的全部** validation_assistance_exposures
+    // 读出来（没有 limit、没有过滤），再从里面挑出 inputScheduleId 去查 schedules。
+    // 也就是说：复习队列**每一页**都要把这个用户的历史曝光全量搬一遍。
+    // 那些行数只随使用时长增长，于是"翻页越来越慢"，而且随页码线性变差。
+    //
+    // 对调之后语义完全不变，理由是：exposure 只有在它的 inputScheduleId 命中
+    // `schedByObjective` 时才可能写进 eligibleByObjective，而 schedByObjective 的键
+    // 来自 `subjectId IN (objectiveIds)` 的那批 schedule。所以**只取那批 schedule 的
+    // exposure** 与取全部再筛，得到的是同一个 max。
+    //
+    // 代价从"用户历史曝光总量"降到"当前这一页 objective 关联的 schedule 数"——
+    // 也就是跟着页大小走，不随使用时长走。
+    const schedByObjective = new Map<string, string>();
+    const linkedSchedules = await queryDb.query.reviewSchedules.findMany({
       where: and(
-        eq(validationAssistanceExposures.workspaceId, workspaceId),
-        eq(validationAssistanceExposures.userId, userId),
+        eq(reviewSchedules.workspaceId, workspaceId),
+        eq(reviewSchedules.subjectType, "card"),
+        inArray(reviewSchedules.subjectId, objectiveIds),
       ),
     });
-    // N+1 修复：批量收集所有 inputScheduleId，一次查询所有关联 schedules。
-    const inputScheduleIds = exposures
-      .map((e) => e.inputScheduleId)
-      .filter((id): id is string => Boolean(id));
-    const schedByObjective = new Map<string, string>();
-    if (inputScheduleIds.length > 0) {
-      const linkedSchedules = await queryDb.query.reviewSchedules.findMany({
-        where: and(
-          eq(reviewSchedules.workspaceId, workspaceId),
-          inArray(reviewSchedules.id, inputScheduleIds),
-          eq(reviewSchedules.subjectType, "card"),
-          inArray(reviewSchedules.subjectId, objectiveIds),
-        ),
-      });
-      for (const sched of linkedSchedules) {
-        if (sched.subjectId) {
-          schedByObjective.set(sched.id, sched.subjectId);
-        }
+    for (const sched of linkedSchedules) {
+      if (sched.subjectId) {
+        schedByObjective.set(sched.id, sched.subjectId);
       }
     }
-    for (const exposure of exposures) {
-      if (exposure.inputScheduleId) {
-        const objectiveIdForSched = schedByObjective.get(exposure.inputScheduleId);
-        if (objectiveIdForSched) {
-          const current = eligibleByObjective.get(objectiveIdForSched);
-          if (!current || exposure.unassistedEligibleAfter > current) {
-            eligibleByObjective.set(objectiveIdForSched, exposure.unassistedEligibleAfter);
+    if (schedByObjective.size > 0) {
+      const exposures = await queryDb.query.validationAssistanceExposures.findMany({
+        where: and(
+          eq(validationAssistanceExposures.workspaceId, workspaceId),
+          eq(validationAssistanceExposures.userId, userId),
+          // 无界的那个条件去掉了：现在读的行数由"本页 objective 的 schedule"决定
+          inArray(validationAssistanceExposures.inputScheduleId, [...schedByObjective.keys()]),
+        ),
+      });
+      for (const exposure of exposures) {
+        if (exposure.inputScheduleId) {
+          const objectiveIdForSched = schedByObjective.get(exposure.inputScheduleId);
+          if (objectiveIdForSched) {
+            const current = eligibleByObjective.get(objectiveIdForSched);
+            if (!current || exposure.unassistedEligibleAfter > current) {
+              eligibleByObjective.set(objectiveIdForSched, exposure.unassistedEligibleAfter);
+            }
           }
         }
       }

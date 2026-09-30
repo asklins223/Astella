@@ -3,9 +3,9 @@
  *
  * 背景（2026-09-15 审计 · 设计 P0-2）：此前三处各自读 `ASSESSMENT_CRITIC_*`，
  * 且语义互不一致：
- *   - `learning-runs/run-critic.ts`：用 `.find(非空)` 回退 `DASHSCOPE_API_KEY`
+ *   - `learning-runs/planning/run-critic.ts`：用 `.find(非空)` 回退 `DASHSCOPE_API_KEY`
  *     （空串能回退），model 缺失时默认 **"default"**（非法模型名）；
- *   - `companion-conversation/proactive-generator.ts` 与 `proactive-hook.ts`：
+ *   - `companion-conversation/delivery/proactive-generator.ts` 与 `proactive-hook.ts`：
  *     用 `?? DASHSCOPE_API_KEY`（**空串不回退**），model 缺失时默认 "qwen-plus"。
  *
  * docker-compose 注入的是 `${ASSESSMENT_CRITIC_KEY:-}`——变量缺失时是**空串**

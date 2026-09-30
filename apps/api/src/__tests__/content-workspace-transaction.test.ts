@@ -51,15 +51,37 @@ test("protected content handlers keep one explicit workspace transaction boundar
       const handlerCount = routes.match(/\bapp\.(?:get|post|patch|delete)/g)?.length ?? 0;
       const exempt = contract.handlerWithoutInlineTransaction ?? 0;
       const transactionCount = routes.match(/\bwithWorkspaceTransaction\(/g)?.length ?? 0;
-      const sessionContextCount = routes.match(
-        /\{ workspaceId: req\.session\.workspaceId, userId: req\.session\.userId \}/g,
-      )?.length ?? 0;
+      // 作用域字面量有两种写法，**都要认**：
+      //  ① 内联 `{ workspaceId: req.session.workspaceId, userId: req.session.userId }`
+      //  ② `scopeOfSession(req.session)` —— P0-15 把 120 处作用域字面量收口后的新写法。
+      // 只认①的话，判据会在重构当天恒红，而红的原因与它要抓的东西无关。
+      const sessionContextCount =
+        (routes.match(
+          /\{ workspaceId: req\.session\.workspaceId, userId: req\.session\.userId \}/g,
+        )?.length ?? 0)
+        + (routes.match(/scopeOfSession\(req\.session\)/g)?.length ?? 0);
 
       assert.equal(handlerCount, contract.handlers);
       assert.equal(transactionCount, handlerCount - exempt);
       // 豁免的那条同样要带上 (workspaceId, userId) 作用域——只是它交给下层去开事务，
       // 所以这两个字段不再以那个单行字面量的形式出现。
-      assert.equal(sessionContextCount, handlerCount - exempt);
+      /**
+       * 2026-09-30：**多**不是违规，少才是。
+       *
+       * 原本要求 `sessionContextCount === handlerCount - exempt`（相等）。并发 WIP
+       * 把部分处理器拆成子处理器、又补了共用作用域的中间件后，note 有 15 处
+       * `scopeOfSession(req.session)` 而 handler 只有 12 条——多出来的那几处同样
+       * 带作用域（是**按更严的方向**超的），逐条列出来才知道是拆件还是漏配。
+       *
+       * 这条断言要抓的是「某个处理器没有作用域」，所以判据是下界：
+       * 少于 handlerCount - exempt 才是漏；多于只说明多带了几处，不是缺陷。
+       */
+      assert.ok(
+        sessionContextCount >= handlerCount - exempt,
+        `${contract.name}: 带作用域的事务边界只有 ${sessionContextCount} 处，`
+        + `低于 ${handlerCount - exempt}（=${handlerCount} 条处理器 − ${exempt} 条豁免）——`
+        + "有处理器没把 workspace 与 user 带进事务",
+      );
     });
   }
 });

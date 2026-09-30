@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, lt, lte, or, type SQL } from "drizzle-orm";
 import { workspaceAuditLog } from "@ailearn/shared/db-schema/identity";
 import type { ApiTransaction } from "../../db/client.ts";
+import { clampLimit } from "../../lib/pagination-utils.ts";
 
 /**
  * 高危动作的审计留痕（2026-09-20 多空间审查附录 C）。
@@ -81,7 +82,7 @@ export async function listWorkspaceAudit(
     cursor?: { createdAt: Date; id: string } | null;
   },
 ): Promise<WorkspaceAuditPage> {
-  const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+  const limit = clampLimit(input.limit, 50, 200);
   const conditions: SQL[] = [eq(workspaceAuditLog.workspaceId, input.workspaceId)];
   if (input.action) conditions.push(eq(workspaceAuditLog.action, input.action));
   if (input.since) conditions.push(gte(workspaceAuditLog.createdAt, input.since));

@@ -8,7 +8,7 @@ import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 import { roundTeachingViewV1Schema } from "@ailearn/shared/note-learning-round-contracts";
 import { seedNotesOnlyWorkspace, type NotesOnlyWorkspaceFixture } from "./helpers/pure-v2-workspace-fixture.ts";
 import { noteLearningRoundRoutes } from "../modules/note-learning-rounds/routes.ts";
-import { llmTeachingExplainProvider } from "../modules/note-learning-rounds/teaching-llm.ts";
+import { llmTeachingExplainProvider } from "../modules/note-learning-rounds/teaching/teaching-llm.ts";
 import { createRoundTargetGrounder } from "../modules/note-learning-rounds/target-grounding.ts";
 import { authRoutes } from "../modules/identity/routes.ts";
 import { hasExternalAiConsent } from "../modules/identity/ai-consent-gate.ts";
@@ -19,7 +19,7 @@ import { createRunV2, getLearningRunPublicSnapshotV2, getRunPublicView, submitAr
 import { activateReviewSubscriptionV2 } from "../modules/review/review-subscriptions.ts";
 import { scheduleStudiedNoteTargetsV2 } from "../modules/review/note-subscription-schedule.ts";
 import { listSanitizedReviews, projectReviewQueueV2 } from "../modules/review/service.ts";
-import { runLearningRunProcessingTick } from "../modules/learning-runs/run-processing-tick.ts";
+import { runLearningRunProcessingTick } from "../modules/learning-runs/processing/run-processing-tick.ts";
 import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
 
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });

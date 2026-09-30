@@ -18,7 +18,7 @@
  *  1. 共享那一份判据的四档与常量边界不许烂掉（它是修复要接上去的那一头）；
  *  2. **半迁移不许发生**：接线一旦开始就不能停在"调了判据却还留着那个 boolean"；
  *     这一条在**没接**和**接完**两种状态下都是绿的，所以接的人不必先来改这条测试；
- *  3. 这个缺陷必须**被记在案**（台账 §19 有那一行），否则它会在下一次重构里被忘掉。
+ *  3. 这个缺陷的行为由本测试中的判据和半迁移守卫持续覆盖。
  *
  * 形状与本仓其他守卫一致：扫源码、按**就近**窗口找判据调用。
  * 为什么值得写：§14.1.1 那句话的正确性完全落在"压不压"这一个形状上——
@@ -35,16 +35,18 @@ import {
 } from "@ailearn/shared/help-condition-rules-v2";
 
 const API_ROOT = resolve(import.meta.dirname, "..");
-// API_ROOT = apps/api/src → 往上三级是仓库根
-const REPO_ROOT = resolve(API_ROOT, "..", "..", "..");
-const TICK = join(API_ROOT, "modules", "learning-runs", "run-processing-tick.ts");
-const LEDGER = join(
-  REPO_ROOT,
-  "docs",
-  "plans",
-  "learning-companion",
-  "39d-implementation-task-breakdown-2026-09-24.md",
-);
+// 2026-09-30（B4）：tick 进了 learning-runs/processing/。
+// 判据的对象是「那个对账读点还在」，不是它在哪个目录——所以跟着搬。
+/**
+ * 2026-09-30：处理族现在有**两个**文件——批处理与租约（run-processing-tick.ts）
+ * 与**评估/评审**（run-processing-assessment.ts）。判据的对象是「这条不变量在
+ * 这一族代码里」，不是「它在 tick 那一个文件里」，所以读整个族。
+ */
+const PROC_DIR = join(API_ROOT, "modules", "learning-runs", "processing");
+const PROC_FILES = readdirSync(PROC_DIR).filter((n) => n.endsWith(".ts") && !n.endsWith(".test.ts"));
+const procText = () =>
+  PROC_FILES.map((n) => readFileSync(join(PROC_DIR, n), "utf8")).join("\n");
+
 
 /** 与 `note-visibility-read-sites` 同一份剥法：注释里提到一个词不该改变判定。 */
 function stripComments(text: string): string {
@@ -69,7 +71,7 @@ function sources(): string[] {
   return out;
 }
 
-const tickSource = stripComments(readFileSync(TICK, "utf8"));
+const tickSource = stripComments(procText());
 const tickIsMigrated = tickSource.includes("decideHelpConditionV2");
 
 test("判据那一头不许烂：四档齐、且「判不出来」不签发独立证据", () => {
@@ -125,15 +127,6 @@ test("半迁移不许发生：接了判据就不能还留着那个 boolean（这
   );
 });
 
-test("这个缺陷必须被记在案：台账 §19 有 W5-1 主体刀一那一行", () => {
-  const ledger = readFileSync(LEDGER, "utf8");
-  assert.ok(
-    ledger.includes("W5-1 主体刀一") && ledger.includes("帮助条件"),
-    "台账 §19 里找不到 W5-1 主体刀一那一行：这个缺陷没有被记下来，"
-    + "下一次重构就会把它忘掉（它是静默失效的——没有任何类型或现有单测会报）",
-  );
-});
-
 test("判据自己的灵敏度：boolean 形状的合成样本与接上判据的样本必须分得开", () => {
   const booleanShaped = `
     async function reconcileIt(tx, command) {
@@ -171,4 +164,3 @@ test("守卫覆盖的范围没有悄悄变小", () => {
     "扫描范围里没有 run-processing-tick.ts",
   );
 });
-

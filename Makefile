@@ -120,10 +120,15 @@ version-check:
 	node .github/scripts/version-contract.mjs --check
 
 # Honest local/CI baseline using only gates that exist today. Coverage gate is
-# report-only in verify (does not block PRs); release-check enforces thresholds.
+# 覆盖率门禁：verify 与 release-check 都真卡（2026-09-29 P3-12 统一）。
 # Secret scan (Gitleaks) and container scan (Trivy) are integrated in CI.
 # AIQ RC requires the
 # release provider credentials and is therefore executed by the RC workflow.
+# `verify` 会**真的**卡覆盖率阈值。2026-09-29（P3-12）之前这里挂的是
+# `coverage-gate.mjs --report-only`——那个模式只出报告不失败，于是
+# `make verify` 名义上"验证"覆盖率，实际上一条线低都过得去。
+# 与 CI 里 P0-3 已经改成的形态保持一致：要么两条路都卡，要么都不卡，
+# 不能一条卡一条不卡。
 verify: version-check
 	node --test .github/scripts/version-contract.test.mjs .github/scripts/release-manifest-contract.test.mjs .github/scripts/coverage-gate-lib.test.mjs .github/scripts/ci-workflow-contract.test.mjs .github/scripts/postgres-integration-lifecycle.test.mjs
 	node .github/scripts/verify-schema-mirror.mjs
@@ -134,7 +139,7 @@ verify: version-check
 	cd apps/desktop-client && npm run typecheck && npm test
 	cd workers/ai-worker && npm run typecheck && npm test
 	node .github/scripts/skip-todo-gate.mjs
-	node .github/scripts/coverage-gate.mjs --report-only
+	node .github/scripts/coverage-gate.mjs
 
 # Coverage gate with threshold enforcement (blocks release-check, not PRs).
 coverage-gate:

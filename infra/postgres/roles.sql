@@ -319,6 +319,9 @@ BEGIN
     'companion_account_invitations',
     'companion_journeys',
     'companion_sandbox_namespaces',
+    -- The thought worker reads this space's proactive mute switch before
+    -- speaking; the migration grant must survive the bootstrap REVOKE ALL.
+    'companion_room_profiles',
     'learning_artifacts',
     'learning_run_events',
     'learning_run_idempotency',
@@ -336,9 +339,6 @@ BEGIN
     'understanding_projection_checkpoints',
     'understanding_route_plans',
     -- 0170/0173：桌宠人格与长期记忆上下文。
-    -- 注意：0185 的 `GRANT SELECT ON companion_room_profiles TO ailearn_worker`
-    -- 有意**不**镜像——该表只由 ailearn_api 的 home-projection-service 读写，
-    -- worker 无任何调用点。少授权在这里是刻意的，不是遗漏。
     'pet_profiles',
     'assistant_memory_items',
     'assistant_memory_embeddings',
@@ -601,7 +601,13 @@ BEGIN
     'learning_objective_lineage_v2',
     'learning_exposures_v2',
     'card_candidate_quality_reports_v2',
-    'card_candidate_feedback_v2'
+    'card_candidate_feedback_v2',
+    -- 0321–0324: independent note learning jobs read their saved result by
+    -- generation_job_id before writing, then insert the completed artifact.
+    'note_overviews',
+    'note_annotations',
+    'note_learning_artifacts',
+    'note_expansion_tasks'
   ]
   LOOP
     IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
@@ -892,6 +898,28 @@ BEGIN
     GRANT EXECUTE ON FUNCTION public.ailearn_find_resumable_companion_journey(uuid, uuid)
       TO ailearn_api;
   END IF;
+
+  -- 2026-09-29（P0-4，`users` 表 RLS）：两支 `users` 策略要用的窄口径函数。
+  --
+  -- `ailearn_find_user_by_email` 是登录路径：登录发生在会话建立**之前**，
+  -- app.user_id / app.workspace_id 都还没设，裸查表必然被 RLS 挡成 0 行
+  -- ——那就是"所有人都登不进来"。
+  -- `ailearn_user_in_workspace` 是策略 2.3 的判据：**必须** SECURITY DEFINER，
+  -- 因为 workspace_members 自己有 RLS，策略里写裸 EXISTS 会被它收窄成
+  -- "只看自己那一行"，于是同空间的其他成员读不到（invite-service 批量取 email 会空）。
+  IF to_regprocedure('public.ailearn_find_user_by_email(text)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.ailearn_find_user_by_email(text)
+      FROM PUBLIC, ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_find_user_by_email(text)
+      TO ailearn_api;
+  END IF;
+
+  IF to_regprocedure('public.ailearn_user_in_workspace(uuid, uuid)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.ailearn_user_in_workspace(uuid, uuid)
+      FROM PUBLIC, ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_user_in_workspace(uuid, uuid)
+      TO ailearn_api;
+  END IF;
 END
 $$;
 
@@ -1050,6 +1078,10 @@ BEGIN
       ('notes', true, false, false, false),
       ('note_versions', true, false, false, false),
       ('note_blocks', true, false, false, false),
+      ('note_overviews', true, true, false, false),
+      ('note_annotations', true, true, false, false),
+      ('note_learning_artifacts', true, true, false, false),
+      ('note_expansion_tasks', true, true, false, false),
       ('note_image_assets', true, false, false, false),
       ('sources', true, false, true, false),
       ('source_segments', true, true, false, true),
@@ -1091,6 +1123,7 @@ BEGIN
       ('companion_account_invitations', true, false, false, false),
       ('companion_journeys', true, false, false, false),
       ('companion_sandbox_namespaces', true, false, false, false),
+      ('companion_room_profiles', true, false, false, false),
       ('learning_artifacts', true, false, false, false),
       ('learning_run_events', true, false, false, false),
       ('learning_run_idempotency', true, false, false, false),
@@ -1375,6 +1408,14 @@ BEGIN
       to_regprocedure('public.ailearn_purge_invitation_ledger_ttl(integer,integer)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_purge_tutor_nonces_ttl(integer,integer)')
+    -- 0327（P0-4，`users` 表 RLS）：登录查询与"同空间成员"判据。
+    -- 前者是登录路径（会话建立之前，没有 RLS 上下文），后者被 users 的策略
+    -- 2.3 调用——**必须** SECURITY DEFINER，否则策略里的裸子查询会被
+    -- workspace_members 自己的 RLS 收窄成"只看自己"。
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_find_user_by_email(text)')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_user_in_workspace(uuid,uuid)')
     -- 0174：pgvector 距离函数（api 也需调用记忆向量检索）。
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.cosine_distance(vector,vector)')
@@ -1460,7 +1501,9 @@ BEGIN
       ('ailearn_api', 'ailearn_purge_old_ai_audit_log(integer,integer)'),
       ('ailearn_api', 'ailearn_purge_companion_audit_ttl(integer,integer)'),
       ('ailearn_api', 'ailearn_purge_invitation_ledger_ttl(integer,integer)'),
-      ('ailearn_api', 'ailearn_purge_tutor_nonces_ttl(integer,integer)')
+      ('ailearn_api', 'ailearn_purge_tutor_nonces_ttl(integer,integer)'),
+      ('ailearn_api', 'ailearn_find_user_by_email(text)'),
+      ('ailearn_api', 'ailearn_user_in_workspace(uuid,uuid)')
     ) AS required(role, fn)
     -- 函数还不存在（首次 bootstrap、迁移尚未跑到）时不该报错：与本文件其余检查
     -- 一致的 `to_regprocedure IS NOT NULL` 口径。

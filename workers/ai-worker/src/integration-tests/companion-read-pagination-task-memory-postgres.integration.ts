@@ -26,7 +26,7 @@ const {
   loadNoteReadPage,
   loadSourceReadPage,
   paginateReadBlocks,
-} = await import("../handlers/companion-agent-runtime.ts");
+} = await import("../handlers/companion-read-tools.ts");
 const { retrieveCompanionMemoriesKeyword } = await import("../handlers/companion-memory-vector.ts");
 
 const HASH_A = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";

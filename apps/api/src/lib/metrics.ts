@@ -140,6 +140,151 @@ export const readinessStatus = new Gauge({
 // Job/Provider 维度指标在 API 进程内无生产写点，由 workers/ai-worker 侧
 // 维护同义指标（队列深度/终态/重试/租约丢失/时长、调用量/延迟/错误）。
 // 不在 API registry 注册以避免死指标。
+//
+// 例外是 learning_run_processing_* 那一组：那条 outbox 由 **API 进程自己**轮询
+// （见 run-processing-tick.ts 模块头），worker 侧根本没有同一条消费链，所以
+// 必须留在 API registry——下面那一节的注释把这个差别写清楚了，别再搬走。
+
+// ─── P0-12（2026-09-29 审计）：LearningRun 结算链路 + 维护任务 ─────────────
+//
+// 审计原话：「`/metrics` 端点上没有任何字段能回答"现在有没有 run 卡在 assessing"」。
+// 补这一组之前，唯一与学习链路有关的数字是 §20 落库的 learning_metric_events，
+// 而那要查库才看得到；outbox 深度、tick 耗时、Critic 判分与 fail-closed 率全部为 0。
+//
+// 隐私（ADR-0006 §4）：这一组**没有**任何 run/workspace/user 维度 label —— 定位
+// 单个 run 是日志（logger）的职责（已带 runId/workspaceId），指标只回答"量级与形状"。
+
+/**
+ * learning_run_processing_outbox 的 command_type allowlist。
+ *
+ * 从 db-schema 派生而不是硬编码，与上面 JOB_TYPES 同一个理由：枚举加了命令而
+ * allowlist 没跟上，标签就会静默分裂成两格。
+ */
+import { LearningRunProcessingCommand as _LearningRunProcessingCommand } from "@ailearn/shared/db-schema/learning-runs";
+import {
+  COMPANION_SUMMARY_TOTAL_DEF,
+  COMPANION_MEMORY_USED_COUNT_DEF,
+  COMPANION_MEMORY_RETRIEVAL_MODE_TOTAL_DEF,
+} from "@ailearn/shared/metrics-definitions";
+export const LEARNING_RUN_PROCESSING_COMMAND_TYPES = Object.values(
+  _LearningRunProcessingCommand,
+) as readonly string[];
+
+/** 单条 outbox 命令被 tick 处理后的终态 allowlist。 */
+export const LEARNING_RUN_PROCESSING_OUTCOMES = ["processed", "failed"] as const;
+
+/** Critic（模型判分）一次调用的终态 allowlist。 */
+export const LEARNING_RUN_CRITIC_OUTCOMES = ["completed", "fail_closed", "error"] as const;
+
+/**
+ * Critic fail-closed 的原因码 allowlist。
+ *
+ * 与 `run-processing-tick.ts` 的 `CheckpointReasonCode` 同集合，也与
+ * `LearningRunPublicV1["checkpoint"]["reasonCode"]` 同集合。埋点处直接用该文件的
+ * `classifyFailClosedReason()` 返回值，不要自己重新判一遍。
+ */
+export const LEARNING_RUN_CRITIC_FAIL_CLOSED_REASONS = [
+  "no_frozen_evidence",
+  "critic_unavailable",
+  "input_incomplete",
+] as const;
+
+/**
+ * 维护类任务处理对象 allowlist：Companion TTL 六类 + 笔记软删物理清除 + session 过期。
+ * 每一项都对应 `runLearningTtlMaintenance()` / `purgeSoftDeletedNotes()` /
+ * `cleanupExpiredSessions()` 的一条返回计数。
+ */
+export const MAINTENANCE_TARGETS = [
+  "companion_audit",
+  "invitation_ledger",
+  "stream_events",
+  "voice_artifacts",
+  "ai_audit_log",
+  "proactive_deliveries",
+  "soft_deleted_notes",
+  "expired_sessions",
+] as const;
+
+/**
+ * outbox 未处理行数（processed_at IS NULL）gauge，按 command_type 分格。
+ * `assessment_requested` 堆积 = 大量 run 卡在 assessing；`commit_requested` 堆积
+ * = 评估已出但 canonical 结算没落地——两者的处置完全不同，所以必须分格。
+ */
+export const learningRunProcessingOutboxDepth = new Gauge({
+  name: "ailearn_learning_run_processing_outbox_depth",
+  help: "Unprocessed rows in learning_run_processing_outbox by command type",
+  labelNames: ["command_type"] as const,
+  registers: [registry],
+});
+
+/**
+ * 最老未处理 outbox 行的等待秒数 gauge。
+ *
+ * 与 depth 成对（与 worker 侧 jobQueueDepth / jobOldestPendingAgeSeconds 同形）：
+ * depth=1 既可能是"刚提交"，也可能是"卡了一小时"，只有这一条能把这两种分开——
+ * 告警必须建在它上面而不是 depth 上。
+ */
+export const learningRunProcessingOutboxOldestPendingAgeSeconds = new Gauge({
+  name: "ailearn_learning_run_processing_outbox_oldest_pending_age_seconds",
+  help: "Age of the oldest unprocessed learning_run_processing_outbox row by command type",
+  labelNames: ["command_type"] as const,
+  registers: [registry],
+});
+
+/**
+ * 单次 tick 处理耗时直方图（秒）。
+ * 桶上界到 60s：批内是严格串行的，一条 Critic HTTP（数十秒）就把这一轮拉长。
+ */
+export const learningRunProcessingTickDurationSeconds = new Histogram({
+  name: "ailearn_learning_run_processing_tick_duration_seconds",
+  help: "runLearningRunProcessingTick duration in seconds",
+  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60],
+  registers: [registry],
+});
+
+/** tick 处理命令条数计数器（command_type × 终态）。 */
+export const learningRunProcessingCommandsTotal = new Counter({
+  name: "ailearn_learning_run_processing_commands_total",
+  help: "Learning run processing commands handled by command type and outcome",
+  labelNames: ["command_type", "outcome"] as const,
+  registers: [registry],
+});
+
+/**
+ * Critic 调用次数计数器（终态口径）。
+ * fail-closed 率 = `rate(...{outcome="fail_closed"}[5m]) / rate(...[5m])`。
+ */
+export const learningRunCriticCallsTotal = new Counter({
+  name: "ailearn_learning_run_critic_calls_total",
+  help: "Learning run critic (model scoring) calls by terminal outcome",
+  labelNames: ["outcome"] as const,
+  registers: [registry],
+});
+
+/** Critic 调用耗时直方图（秒）——含 provider 网络时间，是判"模型慢"与"我们慢"的唯一依据。 */
+export const learningRunCriticDurationSeconds = new Histogram({
+  name: "ailearn_learning_run_critic_duration_seconds",
+  help: "Learning run critic call duration in seconds by outcome",
+  labelNames: ["outcome"] as const,
+  buckets: [1, 2.5, 5, 10, 20, 30, 60, 120],
+  registers: [registry],
+});
+
+/** Critic fail-closed 次数（按原因码）——fail-closed 的分子，并回答"是哪一类卡住"。 */
+export const learningRunCriticFailClosedTotal = new Counter({
+  name: "ailearn_learning_run_critic_fail_closed_total",
+  help: "Learning run critic fail-closed settlements by reason code",
+  labelNames: ["reason_code"] as const,
+  registers: [registry],
+});
+
+/** 维护类任务处理行数（TTL 清理/墓碑化、笔记软删物理清除、session 过期删除）。 */
+export const maintenanceRowsPurgedTotal = new Counter({
+  name: "ailearn_maintenance_rows_purged_total",
+  help: "Rows purged or tombstoned by maintenance task (companion TTL, soft-deleted notes, expired sessions)",
+  labelNames: ["kind"] as const,
+  registers: [registry],
+});
 
 // ─── Database 指标 ──────────────────────────────────────────────────────
 
@@ -234,9 +379,9 @@ export const surfaceSlowQueryTotal = new Counter({
  * 每次 Context Orchestrator 检索后由 worker 侧记录。
  */
 export const companionMemoryRetrievalModeTotal = new Counter({
-  name: "ailearn_companion_memory_retrieval_mode_total",
-  help: "Companion memory retrieval mode (vector or keyword_fallback)",
-  labelNames: ["mode"] as const,
+  name: COMPANION_MEMORY_RETRIEVAL_MODE_TOTAL_DEF.name,
+  help: COMPANION_MEMORY_RETRIEVAL_MODE_TOTAL_DEF.help,
+  labelNames: [...COMPANION_MEMORY_RETRIEVAL_MODE_TOTAL_DEF.labelNames],
   registers: [registry],
 });
 
@@ -244,9 +389,11 @@ export const companionMemoryRetrievalModeTotal = new Counter({
  * 每轮对话实际使用的记忆数量直方图。
  */
 export const companionMemoryUsedCount = new Histogram({
-  name: "ailearn_companion_memory_used_count",
-  help: "Number of memories used per companion dialogue turn",
-  buckets: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+  name: COMPANION_MEMORY_USED_COUNT_DEF.name,
+  help: COMPANION_MEMORY_USED_COUNT_DEF.help,
+  // 桶原样搬自共享定义：改它会改直方图的分位数，属于数据契约而不是措辞
+  buckets: [...COMPANION_MEMORY_USED_COUNT_DEF.buckets],
+  labelNames: [...COMPANION_MEMORY_USED_COUNT_DEF.labelNames],
   registers: [registry],
 });
 
@@ -264,9 +411,9 @@ export const companionMemoryCandidateTotal = new Counter({
  * 会话摘要任务结果计数器（success / failed）。
  */
 export const companionSummaryTotal = new Counter({
-  name: "ailearn_companion_summary_total",
-  help: "Companion summarizer task results",
-  labelNames: ["status"] as const,
+  name: COMPANION_SUMMARY_TOTAL_DEF.name,
+  help: COMPANION_SUMMARY_TOTAL_DEF.help,
+  labelNames: [...COMPANION_SUMMARY_TOTAL_DEF.labelNames],
   registers: [registry],
 });
 

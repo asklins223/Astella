@@ -40,8 +40,8 @@ describe(`Migration ${TAG} — 候选 dropped 终态`, () => {
    */
   it("每个会读 qualityState 的地方都认识这个新值", () => {
     const readSites = [
-      ["packages/shared/src/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
-      ["packages/shared/src/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
+      ["packages/shared/src/contracts/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
+      ["packages/shared/src/contracts/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
       ["apps/desktop-client/src/renderer/src/components/CardGenerationSurface.tsx", /qualityState === "dropped"/],
     ] as const;
     for (const [file, pattern] of readSites) {
@@ -69,8 +69,8 @@ describe(`Migration ${TAG} — 候选 dropped 终态`, () => {
    */
   it("每个会读 qualityState 的地方都认识这个新值", () => {
     const readSites = [
-      ["packages/shared/src/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
-      ["packages/shared/src/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
+      ["packages/shared/src/contracts/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
+      ["packages/shared/src/contracts/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
       ["apps/desktop-client/src/renderer/src/components/CardGenerationSurface.tsx", /qualityState === "dropped"/],
     ] as const;
     for (const [file, pattern] of readSites) {
@@ -97,8 +97,8 @@ describe(`Migration ${TAG} — 候选 dropped 终态`, () => {
    */
   it("每个会读 qualityState 的地方都认识这个新值", () => {
     const readSites = [
-      ["packages/shared/src/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
-      ["packages/shared/src/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
+      ["packages/shared/src/contracts/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
+      ["packages/shared/src/contracts/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
       ["apps/desktop-client/src/renderer/src/components/CardGenerationSurface.tsx", /qualityState === "dropped"/],
     ] as const;
     for (const [file, pattern] of readSites) {

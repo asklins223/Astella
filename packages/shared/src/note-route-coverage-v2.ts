@@ -33,8 +33,8 @@
  */
 import { z } from "zod";
 import { decideHelpConditionV2, type HelpConditionV2 } from "./help-condition-rules-v2.ts";
-import { EXPOSURE_KINDS_V2 } from "./learning-card-v2-contracts.ts";
-import { learningRunOutcomeSchema } from "./learning-run-contracts.ts";
+import { EXPOSURE_KINDS_V2 } from "./contracts/learning-card-v2-contracts.ts";
+import { learningRunOutcomeSchema } from "./contracts/learning-run-contracts.ts";
 
 /**
  * 一次作答的结论那一档。**从 `learning_run_contracts` 的 schema 推导**，不另抄一份

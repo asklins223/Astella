@@ -44,6 +44,15 @@ jobs:
         run: node .github/scripts/verify-release-inputs.mjs
 
   typecheck:
+    # ⚠️ 这个 **显示名** 是分支保护里要匹配的状态检查名，改它会让合并保护失效。
+    #
+    # 2026-09-30 实测：**这个 job 里没有任何 linter**——全仓没有 eslint 配置，
+    # 任何 package.json 也不依赖 eslint。它跑的是 npm ci ×5、schema 镜像一致性、
+    # CI 工作流与迁移生命周期契约、coverage gate、以及四个包的 tsc。
+    #
+    # 想把它改成 `TypeCheck & Contract Gates` 之类更贴切的名字，**先确认分支保护**：
+    # 本地看不见 repo settings，改错了 CI 会一直显示「等待必需检查」。
+    # （README 已经不再声称 CI 跑 ESLint，所以只剩这一处名实不符。）
     name: TypeCheck & Lint
     runs-on: ubuntu-latest
     needs: release-inputs
@@ -297,11 +306,45 @@ jobs:
           set -o pipefail
           node .github/scripts/skip-todo-gate.mjs 2>&1 | tee "$RUNNER_TEMP/unit-test-logs/skip-todo-gate.txt"
 
-      # QLT-01/02: coverage collection (report-only in PR, enforced in release-check)
-      - name: Coverage gate (report-only)
+      # P1-15：`packages/shared` 的子路径必须在**运行时解析器**下真的能解析。
+      #
+      # 为什么不能用 typecheck 代替（本仓已实测过那三种形态）：
+      #   1. tsconfig 把 `@ailearn/shared/*` 直接映到 `packages/shared/src/*`，
+      #      **完全绕过 exports 字段** —— 所以"文件在磁盘上存在但没导出"这种 import，
+      #      tsc 一律是绿的；
+      #   2. Node 读的是各包 node_modules 里那份 `@ailearn/shared/package.json`，
+      #      而 pnpm 对 `file:` 依赖是**硬拷贝**进 store 的，不跟着源码走；
+      #   3. 于是真实故障形态是：typecheck 绿、单测绿、启动时 ERR_PACKAGE_PATH_NOT_EXPORTED。
+      #
+      # 这条检查自己被验证过：植入一条未导出的深路径 import，它会红；恢复后绿。
+      # 放在 typecheck 之后而不是之前——它要读 node_modules，得先装好。
+      - name: Verify @ailearn/shared subpaths resolve at runtime
+        working-directory: apps/api
+        run: |
+          set -euo pipefail
+          node ../../.github/scripts/verify-shared-exports.mjs
+
+      # QLT-01/02: coverage collection
+      #
+      # 2026-09-29（P0-3）：摘掉 `--report-only`，让它**真的阻断**。
+      #
+      # 此前这里是 report-only，按脚本自身的语义退出码恒为 0——也就是说"覆盖率门禁"
+      # 从来没有门禁过任何东西。实测当时四组关键门禁里三组不达标（identity 51.66%/60%、
+      # job-lease 33.37%/65%、import-export 0%/35%），一次都没报警。
+      #
+      # 配套做了两件事，缺一件都会让这次开启变成"把 CI 永久变红"：
+      #   1. 把三组阈值重定基到当前实测值（`.github/scripts/coverage-gate-lib.mjs`
+      #      顶部注释记了这次重定的来由与数字）——门禁重新可执行，且只能往上走；
+      #   2. 同一批里修掉了两个真实缺陷：note-expansions 的失权读点（棘轮抓到），
+      #      以及 note-service-db-extra 那个缺 `selectDistinctOn` 的桩。
+      #
+      # 尚未清掉的一笔：`card-generation-v2-activation-service.test.ts` 仍红
+      # （在途重构改了 semantic_replace 的查询顺序，计数式桩错位）。它是**真的红**，
+      # 不是误报——所以门禁现在就应当阻断，直到那条用例被它的改动方修好。
+      - name: Coverage gate (enforced)
         run: |
           set -o pipefail
-          node .github/scripts/coverage-gate.mjs --report-only 2>&1 | tee "$RUNNER_TEMP/unit-test-logs/coverage-gate.txt"
+          node .github/scripts/coverage-gate.mjs 2>&1 | tee "$RUNNER_TEMP/unit-test-logs/coverage-gate.txt"
           # Include coverage summary JSON in the artifact for FDN-01 formal report
           if [ -f outputs/coverage/summary.json ]; then
             cp outputs/coverage/summary.json "$RUNNER_TEMP/unit-test-logs/coverage-summary.json"
@@ -984,6 +1027,55 @@ jobs:
             await sql.end();
           }
           NODE
+
+      # 2026-09-29（P0-2）：把 package.json 里**所有** `test:*:postgres` 脚本跑一遍。
+      #
+      # 为什么是"遍历脚本"而不是再补几个 `- name:` 步骤：
+      # 上面那二十来个手写步骤形状完全一样（working-directory + 三个 DATABASE_URL_*
+      # + `npm run test:xxx:postgres`），而 `apps/api/package.json` 里定义了 26 个这类
+      # 脚本，CI 只点名了 7 个。**没被点名的不会红，只会永远不跑**——
+      # 这正是 2026-09-29 审计里 `note-route-coverage-postgres.integration.ts`
+      # 漏跑的那类问题（那一条更隐蔽：路径写错时 Node 会静默退出 0）。
+      #
+      # 改成遍历之后，新增一个测试脚本**不需要**再记得改 workflow：
+      # 它自动进 CI，漏接的整类问题从根上消失。
+      # 已经跑过的脚本会重复跑一遍——这比漏跑划算，而且这些用例共用同一个
+      # 空库、互不冲突（各自建夹具各自清理）。
+      - name: Run every test:*:postgres script not already named above
+        working-directory: apps/api
+        env:
+          NODE_ENV: test
+        run: |
+          set -uo pipefail
+          mapfile -t scripts < <(node -e '
+            const pkg = require("./package.json");
+            console.log(Object.keys(pkg.scripts)
+              .filter((k) => k.startsWith("test:") && k.endsWith(":postgres"))
+              .sort().join("\n"));
+          ')
+          if [ "${#scripts[@]}" -eq 0 ]; then
+            echo "没有找到任何 test:*:postgres 脚本——package.json 读法坏了" >&2
+            exit 1
+          fi
+          echo "发现 ${#scripts[@]} 个 postgres 测试脚本"
+          failed=()
+          for s in "${scripts[@]}"; do
+            log="$RUNNER_TEMP/postgres-test-logs/script-${s//:/-}.tap"
+            echo "::group::$s"
+            if npm run --silent "$s" > "$log" 2>&1; then
+              echo "$s 通过"
+            else
+              echo "$s 失败（详见 $log）"
+              tail -n 25 "$log"
+              failed+=("$s")
+            fi
+            echo "::endgroup::"
+          done
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo >&2 "以下 postgres 测试脚本失败：${failed[*]}"
+            exit 1
+          fi
+          echo "全部 ${#scripts[@]} 个 postgres 测试脚本通过"
 
       - name: Upload raw PostgreSQL test evidence
         if: always()

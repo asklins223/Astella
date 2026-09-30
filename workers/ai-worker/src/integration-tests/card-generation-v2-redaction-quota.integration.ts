@@ -159,7 +159,7 @@ async function forceCandidatesPassed(runId: string) {
 async function activateFirstCandidate(runId: string, snapshotId: string, snapshotHash: string) {
   const { runRow, plan, first } = await loadRunPlan(runId);
   const { computeCandidateEvidenceBindingPlanHashV2, computeClientReviewHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+    "@ailearn/shared/card-generation-v2-hashing"
   );
   const bindings = [{
     targetUnit: { kind: "rubric", rubricUnitId: "u1" },
@@ -404,7 +404,7 @@ test("§15.7/C31：Evidence Redaction — tombstone + eligibility 前移 + 幂�
   assert.ok(Number(bindingProbe[0]?.unit_rows ?? 0) >= 1,
     "C31 前置：binding plan 里抽不出任何条目 ⇒ `uniqueSnapshotIds` 为空，门同样整段放行");
   const { computeCandidateEvidenceBindingPlanHashV2, computeClientReviewHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+    "@ailearn/shared/card-generation-v2-hashing"
   );
   const bindings = [{
     targetUnit: { kind: "rubric", rubricUnitId: "u1" },

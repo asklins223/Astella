@@ -20,7 +20,7 @@ const sql = postgres(CONN, { max: 2 });
 
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
 const { submitArtifact } = await import("../modules/learning-runs/run-service.ts");
-const { runLearningRunProcessingTick } = await import("../modules/learning-runs/run-processing-tick.ts");
+const { runLearningRunProcessingTick } = await import("../modules/learning-runs/processing/run-processing-tick.ts");
 const { issueCheckpointToken } = await import("../modules/understanding/projection-checkpoint.ts");
 
 // 基线 checkpoint 需服务端密钥；测试进程无密钥时 issue 返回 null → star_map

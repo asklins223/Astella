@@ -4,7 +4,7 @@
  * 不同任务可以路由到不同 provider/模型。
  * 当前用户可见任务统一经明确的能力路由选择 provider/model。
  *
- * @see docs/plans/provider-registry-refactor.md §3.3
+ * @see 原据 provider-registry-refactor.md（2026-09-29 已归档） §3.3
  */
 
 import type { Capability } from "./provider-capabilities.ts";
@@ -26,7 +26,12 @@ export type AITaskType =
   | "speech_recognition"   // 语音识别
   | "image_generation"     // 文生图
   // ── P2 companion（03 合同 §9.5 参数） ──
-  | "companion_agent";       // 日常对话与受控工具 loop
+  | "companion_agent"       // 日常对话与受控工具 loop
+  // ── 笔记学习任务 ──
+  | "note_learning_overview" // 独立后台任务：读取整篇笔记并生成带原文依据的速看
+  | "note_annotation_explain" // 独立后台任务：解释选区并保存到原文锚点
+  | "note_dynamic_artifact" // 独立后台任务：为笔记内容自由创作可交互的演示页面
+  | "note_expansion_draft"; // 笔记拓展方向和草稿由同一持久后台任务生成
 
 /**
  * 模型槽位语义（2026-08-13 按"用户体验"分级，而非任务复杂度）：
@@ -52,6 +57,10 @@ const TASK_CAPABILITY_MAP: Record<AITaskType, Capability> = {
   grounding_critic:    "agent_turn",
   repair:              "agent_turn",
   companion_agent:     "agent_turn",
+  note_learning_overview: "agent_turn",
+  note_annotation_explain: "agent_turn",
+  note_dynamic_artifact: "agent_turn",
+  note_expansion_draft: "agent_turn",
   analyze_image:       "vision",
   embed:               "embedding",
   rerank:              "rerank",
@@ -74,6 +83,10 @@ const TASK_COMPLEXITY: Record<AITaskType, TaskComplexity> = {
   speech_recognition:  "low",
   image_generation:    "medium",
   companion_agent:     "low",
+  note_learning_overview: "high",
+  note_annotation_explain: "medium",
+  note_dynamic_artifact: "high",
+  note_expansion_draft: "high",
 };
 
 /** 任务 → 所需能力 */

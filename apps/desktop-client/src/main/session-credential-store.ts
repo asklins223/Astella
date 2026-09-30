@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { app, safeStorage } from "electron";
-import type { SessionCredentialStore } from "./desktop-gateway";
+import type { SessionCredentialStore } from "./desktop-gateway-credentials";
 
 /**
  * Persists the bearer token between launches, encrypted with Electron's

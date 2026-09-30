@@ -30,7 +30,7 @@ if (!fixtureUrl || !process.env.DATABASE_URL_API) {
 }
 const fixtureSql = postgres(fixtureUrl, { max: 4 });
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
-const rounds = await import("../modules/note-learning-rounds/round-service.ts");
+const rounds = await import("../modules/note-learning-rounds/round/round-service.ts");
 // `import()` 是表达式，解构里**不能**写内联 `type` 修饰（TS1005）；类型另起一条 import type。
 const { seedNotesOnlyWorkspace } = await import("./helpers/pure-v2-workspace-fixture.ts");
 

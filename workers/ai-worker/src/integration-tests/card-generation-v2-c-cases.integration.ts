@@ -182,7 +182,7 @@ async function activate(versionId: string, intent: { kind: "create_new" } | {
       computeCanonicalAnswerHashV2,
       computeLearningSupportHashV2,
       computeRelationsHashV2,
-    } = await import("../../../../packages/shared/src/card-generation-v2-hashing.ts");
+    } = await import("@ailearn/shared/card-generation-v2-hashing");
     const candRow = await admin`
       SELECT objective_draft, evidence_binding_plan_hash FROM card_generation_candidates_v2
       WHERE candidate_revision_id = ${first.candidate_revision_id} AND workspace_id = ${WORKSPACE_ID}`;

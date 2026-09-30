@@ -16,7 +16,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
-import { db, withWorkspaceTransaction, type WorkspaceTransactionContext } from "../../db/client.ts";
+import { withActorTransaction, withWorkspaceTransaction, type WorkspaceTransactionContext } from "../../db/client.ts";
 import { noteImageAssets, notes } from "@ailearn/shared/db-schema/note";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { users } from "@ailearn/shared/db-schema/identity";
@@ -340,7 +340,13 @@ export async function uploadAvatar(
     // 登记表、没有 sweeper），成为永久孤儿。现在在事务内 SELECT ... FOR UPDATE 锁住
     // users 行（与 identity/service.ts 对同一张表的做法一致）：后到者读到的是先到者
     // 刚写入的值，于是各自只回收"自己真正替换掉"的那个对象。
-    oldAvatarUrl = await db.transaction(async (tx) => {
+    //
+    // 2026-09-29（P0-4）：原先这里是裸 `db.transaction`——**没有设任何 RLS 上下文**。
+    // 迁移 0327 给 `users` 加了 `sec02_users_self_update` 之后，这种写法会被
+    // 策略判成"不是自己"而影响 0 行（换头像静默失效）。
+    // 改成 `withActorTransaction({ userId: scope.userId })`：既满足策略，
+    // 也与 `identity/service.ts` 对同一张表的既有做法一致。
+    oldAvatarUrl = await withActorTransaction({ userId: scope.userId }, async (tx) => {
       const [userRow] = await tx
         .select({ avatarUrl: users.avatarUrl })
         .from(users)

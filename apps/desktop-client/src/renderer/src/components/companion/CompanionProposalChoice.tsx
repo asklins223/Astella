@@ -1,6 +1,6 @@
+// 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { Loader2 } from "lucide-react";
 import type { CompanionProposalUiState } from "../../app/companion-chat-session";
-import "./companion-proposal-choice.css";
 
 const PROPOSAL_STATUS_LABEL: Record<
   Extract<CompanionProposalUiState, { phase: "ready" }>["proposal"]["status"],

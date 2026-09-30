@@ -234,7 +234,7 @@ test("契约：目标「暂不安排」与「恢复」两条 route 的形状", a
     // 1) 请求体非法 ⇒ 400，且形状与全仓统一（{error, message}）
     const rejected = await app.inject({
       method: "POST",
-      url: "/reviews/v2/objectives/hold",
+      url: "/v2/reviews/objectives/hold",
       headers: auth,
       payload: { noteId: "not-a-uuid", objectiveId },
     });
@@ -244,7 +244,7 @@ test("契约：目标「暂不安排」与「恢复」两条 route 的形状", a
     // 2) 笔记不存在 ⇒ 404 一句人话，不是外键的 500
     const missingNote = await app.inject({
       method: "POST",
-      url: "/reviews/v2/objectives/hold",
+      url: "/v2/reviews/objectives/hold",
       headers: auth,
       payload: { noteId: randomUUID(), objectiveId },
     });
@@ -254,7 +254,7 @@ test("契约：目标「暂不安排」与「恢复」两条 route 的形状", a
     // 3) 立排除：第一次是"这次立的"，连点第二下如实说"已经在排除中"（幂等，不重复立）
     const first = await app.inject({
       method: "POST",
-      url: "/reviews/v2/objectives/hold",
+      url: "/v2/reviews/objectives/hold",
       headers: auth,
       payload: { noteId, objectiveId },
     });
@@ -264,7 +264,7 @@ test("契约：目标「暂不安排」与「恢复」两条 route 的形状", a
       "这个目标此刻没有待处理的安排可撤——那个数只能是真数出来的，不能是估的");
     const twice = await app.inject({
       method: "POST",
-      url: "/reviews/v2/objectives/hold",
+      url: "/v2/reviews/objectives/hold",
       headers: auth,
       payload: { noteId, objectiveId },
     });
@@ -275,7 +275,7 @@ test("契约：目标「暂不安排」与「恢复」两条 route 的形状", a
     // 排的是"这一篇的这个目标"，所以要由服务端判可见性。少传就是 400。
     const resumed = await app.inject({
       method: "POST",
-      url: "/reviews/v2/objectives/resume",
+      url: "/v2/reviews/objectives/resume",
       headers: auth,
       payload: { noteId, objectiveId },
     });
@@ -283,7 +283,7 @@ test("契约：目标「暂不安排」与「恢复」两条 route 的形状", a
     assert.equal(resumed.json().released, true);
     const again = await app.inject({
       method: "POST",
-      url: "/reviews/v2/objectives/resume",
+      url: "/v2/reviews/objectives/resume",
       headers: auth,
       payload: { noteId, objectiveId },
     });

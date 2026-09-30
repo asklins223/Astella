@@ -35,19 +35,27 @@
  * （`evaluated` → `trustClass` → 结算那一层）。本份钉住它仍然在。
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..");
-const TICK_FILE = join(REPO_ROOT, "apps/api/src/modules/learning-runs/run-processing-tick.ts");
+/**
+ * 2026-09-30：处理族现在有**两个**文件——批处理与租约（run-processing-tick.ts）
+ * 与**评估/评审**（run-processing-assessment.ts）。判据的对象是「这条不变量在
+ * 这一族代码里」，不是「它在 tick 那一个文件里」，所以读整个族。
+ */
+const PROC_DIR = join(REPO_ROOT, "apps/api/src/modules/learning-runs/processing");
+const PROC_FILES = readdirSync(PROC_DIR).filter((n) => n.endsWith(".ts") && !n.endsWith(".test.ts"));
+const procText = () =>
+  PROC_FILES.map((n) => readFileSync(join(PROC_DIR, n), "utf8")).join("\n");
 const ADAPTER_FILE = join(REPO_ROOT, "apps/api/src/modules/card-generation-v2/target-snapshot-adapter.ts");
 
 /** 剥掉注释：源码形状判据要判代码，注释里的话是给人读的。 */
 function codeOnly(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 }
-const tick = codeOnly(readFileSync(TICK_FILE, "utf8"));
+const tick = codeOnly(procText());
 const adapter = codeOnly(readFileSync(ADAPTER_FILE, "utf8"));
 
 /**

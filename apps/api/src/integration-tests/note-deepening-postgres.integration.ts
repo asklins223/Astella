@@ -31,7 +31,7 @@ if (!fixtureUrl || !process.env.DATABASE_URL_API) {
 }
 const fixtureSql = postgres(fixtureUrl, { max: 4 });
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
-const service = await import("../modules/understanding-v3/note-deepening-service.ts");
+const service = await import("../modules/note-deepening/note-deepening-service.ts");
 
 const AUTHOR = randomUUID();
 const WORKSPACE = randomUUID();

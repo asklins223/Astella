@@ -21,7 +21,6 @@
  *     与 §9.1 行 2 的职责，见 `review-authorization-rules-v2`）。
  */
 import { and, eq, inArray, or } from "drizzle-orm";
-import { z } from "zod";
 import { reviewSubscriptionsV2 } from "@ailearn/shared/db-schema/evidence";
 import { notes } from "@ailearn/shared/db-schema/note";
 import { learningCardsV2, learningObjectiveOriginsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
@@ -31,6 +30,14 @@ import {
   type ReviewAuthorizationSourceV2,
   type ReviewSourceAuthorizationV2,
 } from "@ailearn/shared/review-authorization-rules-v2";
+// P1-16：请求体合同与 desktop-client 共用同一份 zod 定义（理由见下方注释）。
+// 本文件自己只用类型，所以按 type-only 引；值 schema 走 `export ... from` 转发，
+// 让既有调用方（`routes.ts`）的 import 不用改。
+import type { ReviewSubscriptionCommandV2Wire as ReviewSubscriptionCommandV2 } from "@ailearn/shared/review-queue-v2-contracts";
+export {
+  reviewSubscriptionCommandV2Schema,
+  type ReviewSubscriptionCommandV2Wire as ReviewSubscriptionCommandV2,
+} from "@ailearn/shared/review-queue-v2-contracts";
 import { visibleCardsCondition, visibleNotesCondition } from "../note/visibility.ts";
 import type { ApiTransaction } from "../../db/client.ts";
 
@@ -57,15 +64,18 @@ export class ReviewSubscriptionNoteNotFoundV2 extends Error {
   }
 }
 
-export const reviewSubscriptionCommandV2Schema = z.strictObject({
-  source: z.enum(["note_subscription", "card_review"]),
-  /** `note_subscription` 传笔记 id；`card_review` 传目标 id。服务端按 source 判它该是什么。 */
-  subjectId: z.string().uuid(),
-  /** 开启时那句话（§9.1「开启时用一句话说明这个持续范围」）。停用时可省。 */
-  scopeNote: z.string().min(1).max(500).optional(),
-  reasonCode: z.string().min(1).max(120).optional(),
-});
-export type ReviewSubscriptionCommandV2 = z.infer<typeof reviewSubscriptionCommandV2Schema>;
+/**
+ * 2026-09-29（P1-16）：这一份曾经在这里**重新定义**了一遍和
+ * `packages/shared/src/contracts/review-queue-v2-contracts.ts:189` 同名同形状的 schema，
+ * 连 `source` 枚举都是把 `reviewAuthorizationSourceV2Schema` 的值内联重抄了一次。
+ *
+ * 后果不是"重复"而是**契约分叉**：api 用这份校验请求体，desktop-client 用 shared
+ * 那份校验同一份请求体（`desktop-gateway.ts:1828`、`desktop-ipc.ts:595`）。
+ * 字段一旦漂移，客户端能过自己的校验、服务端回 400，而编译期什么都不会说。
+ *
+ * 现在只从 shared 引。改动是把服务端与客户端钉在同一份 zod 合同上，
+ * 不是"简化"——本文件其余内容与判断逻辑一律未动。
+ */
 
 type SubRow = typeof reviewSubscriptionsV2.$inferSelect;
 

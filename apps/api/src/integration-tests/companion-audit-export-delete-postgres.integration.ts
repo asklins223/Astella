@@ -18,7 +18,7 @@ import {
   deleteCompanionUserData,
   exportCompanionUserData,
   logCompanionAudit,
-} from "../modules/companion-shell/audit-service.ts";
+} from "../companion-contracts/audit-service.ts";
 import { closeDatabase } from "../db/client.ts";
 
 const CONN = process.env.DATABASE_URL_API ?? process.env.DATABASE_URL;

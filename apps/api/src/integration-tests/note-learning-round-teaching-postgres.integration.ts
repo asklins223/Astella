@@ -25,9 +25,9 @@ import type {
   TeachingEvidenceInputV1,
   TeachingExplainInputV1,
   TeachingExplainProviderV1,
-} from "../modules/note-learning-rounds/teaching-explain.ts";
+} from "../modules/note-learning-rounds/teaching/teaching-explain.ts";
 import type { RoundTargetGrounder } from "../modules/note-learning-rounds/target-grounding.ts";
-import { findReusableTeaching, listTeachings } from "../modules/note-learning-rounds/round-service.ts";
+import { findReusableTeaching, listTeachings } from "../modules/note-learning-rounds/round/round-service.ts";
 import { seedNotesOnlyWorkspace, type NotesOnlyWorkspaceFixture } from "./helpers/pure-v2-workspace-fixture.ts";
 
 const fixtureUrl = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL;
@@ -39,7 +39,7 @@ const fixtureSql = postgres(fixtureUrl, { max: 4 });
 const { default: Fastify } = await import("fastify");
 const { default: sensible } = await import("@fastify/sensible");
 const { authRoutes } = await import("../modules/identity/routes.ts");
-const { deterministicTeachingExplainProviderV1 } = await import("../modules/note-learning-rounds/teaching-explain.ts");
+const { deterministicTeachingExplainProviderV1 } = await import("../modules/note-learning-rounds/teaching/teaching-explain.ts");
 const { noteLearningRoundRoutes } = await import("../modules/note-learning-rounds/routes.ts");
 const { issueSession } = await import("../modules/identity/service.ts");
 const teachingInputs: TeachingExplainInputV1[] = [];

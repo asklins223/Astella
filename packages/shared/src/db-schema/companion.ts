@@ -26,7 +26,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { users } from "./identity.ts";
-import type { CompanionAgentSettingsV1 } from "../companion-agent-contracts.ts";
+import type { CompanionAgentSettingsV1 } from "../contracts/companion-agent-contracts.ts";
 
 // ─── CompanionOnboardingStateV1 形状（02-3 冻结）───────────────────────────
 

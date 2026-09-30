@@ -40,6 +40,7 @@ interface Mutation {
 }
 
 const MODULE = "apps/api/src/modules/note-learning-rounds";
+const SHARED_ARTIFACT = "packages/shared/src/note-dynamic-artifact";
 /** 被测文件 → 跑哪一份单测。 */
 const TEST_FOR: Record<string, string> = {
   [`${MODULE}/artifact-failure.ts`]: `${MODULE}/artifact-failure.test.ts`,
@@ -49,7 +50,7 @@ const DEFAULT_TEST = `${MODULE}/round-artifact-generation.test.ts`;
 const MUTATIONS: readonly Mutation[] = [
   {
     name: "M1 §6.1 模型写数字被拒",
-    file: `${MODULE}/round-artifact-model.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-model.ts`,
     edits: [{
       old: `  steps: z.array(z.strictObject({
     /** 这一步在讲什么（≤ 200 字）。它同时是**文字等价表达**（§6.3）与降级分镜的正文。 */
@@ -63,7 +64,7 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     name: "M2 §6.1 示意声明可被模型顶替",
-    file: `${MODULE}/round-artifact-render.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{
       old: `    + \`<p class="ailearn-art__notice">\${escapeArtifactTextV1(ARTIFACT_ILLUSTRATION_NOTICE_V1)}</p>\``,
       new: "    + ``",
@@ -72,7 +73,7 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     name: "M3 §6.1 实测话拦不住",
-    file: `${MODULE}/round-artifact-measure.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-measure.ts`,
     edits: [{
       old: `  return text.split(CLAUSE_SPLIT_V1).some((clause) => {
     const lower = clause.toLowerCase();`,
@@ -84,7 +85,7 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     name: "M4 §6.1 读数映射不夹取（150% 撑破布局）",
-    file: `${MODULE}/round-artifact-measure.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-measure.ts`,
     edits: [{
       old: "  return Math.min(100, Math.max(value > 0 ? 2 : 0, Number((ratio * 100).toFixed(2))));",
       new: "  return Number((ratio * 100).toFixed(2));",
@@ -93,7 +94,7 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     name: "M5 §6.3 不再听宿主的 reduced 指令",
-    file: `${MODULE}/round-artifact-render.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{
       old: `  window.addEventListener('message', function (event) {
     var data = event.data;
@@ -106,13 +107,13 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     name: "M6 §6.3 单步越界（最后一步之后画面清空）",
-    file: `${MODULE}/round-artifact-render.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{ old: "    if (i < 0) i = 0; if (i >= count) i = count - 1;", new: "    if (i < 0) i = 0;" }],
     expect: ["§6.3 暂停／单步／重播：控制条上有这四件"],
   },
   {
     name: "M7 §6.3 去掉重播按钮",
-    file: `${MODULE}/round-artifact-render.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{
       old: "    bar.appendChild(play); bar.appendChild(prev); bar.appendChild(next); bar.appendChild(replay); bar.appendChild(note);",
       new: "    bar.appendChild(play); bar.appendChild(prev); bar.appendChild(next); bar.appendChild(note);",
@@ -121,13 +122,13 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     name: "M8 §6.3 控制条留在 root 里（静态分镜会复制 N 份）",
-    file: `${MODULE}/round-artifact-render.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{ old: "    document.body.appendChild(bar);", new: "    root.appendChild(bar);" }],
     expect: ["控制条被移出 root"],
   },
   {
     name: "M9 §6.3 文字等价表达被拿掉",
-    file: `${MODULE}/round-artifact-render.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{
       old: '    + `<ol class="ailearn-art__list">${list.join("")}</ol>`',
       new: '    + `<ol class="ailearn-art__list"></ol>`',
@@ -136,7 +137,7 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     name: "M10 §6.3 快照绑定那一行被拿掉",
-    file: `${MODULE}/round-artifact-render.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{
       old: '    + `<p class="ailearn-art__meta">${escapeArtifactTextV1(buildMetaLineV1(input.snapshotHash, input.generatorRef))}</p>`',
       new: '    + `<p class="ailearn-art__meta"></p>`',
@@ -145,7 +146,7 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     name: "M11 §6.3 伪造百分比进度",
-    file: `${MODULE}/round-artifact-render.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{
       old: "  return `第 ${readout.value}${escapeArtifactTextV1(readout.unit)}`;",
       new: "  return `第 ${readout.value}${escapeArtifactTextV1(readout.unit)}（约 ${Math.round(readout.value / nodes.length * 100)}%）`;",
@@ -154,7 +155,7 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     name: "M12 §15.5 自己写执行循环（绕过公共内核那道闸）",
-    file: `${MODULE}/round-artifact-model.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-model.ts`,
     edits: [{
       old: "    currentActiveTransaction: options.currentActiveTransaction,",
       new: "    currentActiveTransaction: () => undefined,",
@@ -163,7 +164,7 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     name: "M13 §15.5 不走 runAiTask",
-    file: `${MODULE}/round-artifact-model.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-model.ts`,
     edits: [{
       old: "  const receipt = await runAiTask(task, {",
       new: "  const receipt = await (async () => task.commit && ({ outcome: \"committed\", output: null, usage: { modelCalls: 0, promptTokens: 0, completionTokens: 0, elapsedMs: 0, autoRetriesUsed: 0 }, failure: null, preservedValidResult: false, resumedFromCheckpoint: false, modelCalls: 0 }))({",
@@ -178,7 +179,7 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     name: "M15 §6.2 生成失败与判据未达成混成一句",
-    file: `${MODULE}/round-artifact-model.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-model.ts`,
     edits: [{
       old: '      failure: rejected ? "contract_rejected" : "model_failed",',
       new: '      failure: "model_failed",',
@@ -187,7 +188,7 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     name: "M16 确定性被破坏（产物里写进时间戳）",
-    file: `${MODULE}/round-artifact-render.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{
       old: '    + `<p class="ailearn-art__meta">',
       new: '    + `<p class="ailearn-art__meta">${Date.now()} ',
@@ -202,13 +203,13 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     name: "M18 §6.3 步进只改计数器不改画面状态",
-    file: `${MODULE}/round-artifact-render.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{ old: "    var kids = stage.querySelectorAll('[data-node]');", new: "    var kids = [];" }],
     expect: ["§6.3 步进真的改画面状态"],
   },
   {
     name: "M19 §6.1 退回整段扫关键字（真模型实测 8 样本误毙 2 个的那一版）",
-    file: `${MODULE}/round-artifact-measure.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-measure.ts`,
     edits: [
       { old: "  return text.split(CLAUSE_SPLIT_V1).some((clause) => {", new: "  return [text].some((clause) => {" },
       {
@@ -220,7 +221,7 @@ const MUTATIONS: readonly Mutation[] = [
   },
   {
     name: "M20 §6.1 免责护住整段（同段后半句的声明漏过去）",
-    file: `${MODULE}/round-artifact-measure.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-measure.ts`,
     edits: [{ old: "  return text.split(CLAUSE_SPLIT_V1).some((clause) => {", new: "  return [text].some((clause) => {" }],
     expect: ["§6.1 真模型跑出来的回归：诚实的免责**不许**被判成违规"],
   },
@@ -230,7 +231,7 @@ const MUTATIONS: readonly Mutation[] = [
     // **同一张**第 1 步的 DOM 存成 N 份——画面上「有 N 步」，步数对得上、内容一条不少，
     // 只是全都一样。这一族里最难被发现的一种假。
     name: "M21 §6.3 reduced 之后连 render 一起关掉（静态分镜 N 张全一样）",
-    file: `${MODULE}/round-artifact-render.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{
       old: "    if (!stage.isConnected()) return;",
       new: "    if (staticMode) return;\n    if (!stage.isConnected()) return;",
@@ -240,7 +241,7 @@ const MUTATIONS: readonly Mutation[] = [
   {
     // `isConnected` 写成属性而不是调用：函数对象恒为真 ⇒ 那道闸一次都不生效。
     name: "M22 §6.3 容器脱离文档之后还在写（isConnected 漏了括号）",
-    file: `${MODULE}/round-artifact-render.ts`,
+    file: `${SHARED_ARTIFACT}/round-artifact-render.ts`,
     edits: [{ old: "    if (!stage.isConnected()) return;", new: "    if (!stage.isConnected) return;" }],
     expect: ["静态分镜铺完之后 render 空转"],
   },

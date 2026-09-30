@@ -1,7 +1,8 @@
 /**
  * OPS-01: Worker Prometheus 指标模块（ADR-0006 §1-3）
  *
- * Worker 侧指标覆盖 Job 队列（depth/terminal/retry/lease lost/duration）
+ * Worker 侧指标覆盖 Job 队列（depth/terminal/retry/lease lost/duration）、
+ * Provider 调用（volume/latency/token，P0-12 新增，此前为零）
  * 和当前 Companion 记忆/摘要任务。
  *
  * 指标命名与 API 侧 lib/metrics.ts 保持一致，使 Prometheus 可以用同一
@@ -20,6 +21,11 @@ import promClient, {
   collectDefaultMetrics,
 } from "prom-client";
 import http from "node:http";
+import {
+  COMPANION_SUMMARY_TOTAL_DEF,
+  COMPANION_MEMORY_USED_COUNT_DEF,
+  COMPANION_MEMORY_RETRIEVAL_MODE_TOTAL_DEF,
+} from "@ailearn/shared/metrics-definitions";
 
 // ─── 指标注册器 ──────────────────────────────────────────────────────────
 
@@ -95,9 +101,9 @@ export const jobDurationSeconds = new Histogram({
  * 每次 Context Orchestrator 检索后记录。
  */
 export const companionMemoryRetrievalModeTotal = new Counter({
-  name: "ailearn_companion_memory_retrieval_mode_total",
-  help: "Companion memory retrieval mode (vector or keyword_fallback)",
-  labelNames: ["mode"] as const,
+  name: COMPANION_MEMORY_RETRIEVAL_MODE_TOTAL_DEF.name,
+  help: COMPANION_MEMORY_RETRIEVAL_MODE_TOTAL_DEF.help,
+  labelNames: [...COMPANION_MEMORY_RETRIEVAL_MODE_TOTAL_DEF.labelNames],
   registers: [registry],
 });
 
@@ -105,9 +111,11 @@ export const companionMemoryRetrievalModeTotal = new Counter({
  * 每轮对话实际使用的记忆数量直方图。
  */
 export const companionMemoryUsedCount = new Histogram({
-  name: "ailearn_companion_memory_used_count",
-  help: "Number of memories used per companion dialogue turn",
-  buckets: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+  name: COMPANION_MEMORY_USED_COUNT_DEF.name,
+  help: COMPANION_MEMORY_USED_COUNT_DEF.help,
+  // 桶原样搬自共享定义：改它会改直方图的分位数，属于数据契约而不是措辞
+  buckets: [...COMPANION_MEMORY_USED_COUNT_DEF.buckets],
+  labelNames: [...COMPANION_MEMORY_USED_COUNT_DEF.labelNames],
   registers: [registry],
 });
 
@@ -115,9 +123,9 @@ export const companionMemoryUsedCount = new Histogram({
  * 会话摘要任务结果计数器（success / failed）。
  */
 export const companionSummaryTotal = new Counter({
-  name: "ailearn_companion_summary_total",
-  help: "Companion summarizer task results",
-  labelNames: ["status"] as const,
+  name: COMPANION_SUMMARY_TOTAL_DEF.name,
+  help: COMPANION_SUMMARY_TOTAL_DEF.help,
+  labelNames: [...COMPANION_SUMMARY_TOTAL_DEF.labelNames],
   registers: [registry],
 });
 
@@ -132,6 +140,96 @@ export const companionDiaryTotal = new Counter({
   name: "ailearn_companion_diary_total",
   help: "Companion daily diary generation results",
   labelNames: ["result"] as const,
+  registers: [registry],
+});
+
+// ─── Provider 指标（ADR-0006 §2 Provider 维度）───────────────────────────
+//
+// 此前 worker 侧只有 Job 维度，Provider 维度（模型调用）一个指标都没有：
+// 调用量、延迟、超时、schema failure、用户配置错误全都只能在日志里数，
+// 而模型调用是这套系统里唯一按次计费、且单次耗时可达数十秒的外部依赖。
+//
+// 隐私（ADR-0006 §4）：label 只有 provider 实现 id、调用方法与终态枚举，
+// **不含** model id、prompt、响应或任何 workspace/user 标识。
+
+/**
+ * 一次 provider 调用的方法口径 allowlist —— 与 `AIProvider` 接口上的方法
+ * 一一对应（lib/ai-provider.ts）。provider 新增实现方法时这里必须同步加，
+ * 否则那个方法的调用不会出现在任何指标里。
+ */
+export const PROVIDER_CALL_KINDS = ["chat", "stream", "agent_turn", "embed"] as const;
+
+/**
+ * provider 调用的终态 allowlist。
+ *
+ * `schema_failure`（模型没按合同回）与 `config_error`（我们自己没配对）单独成格：
+ * 两者的处置完全不同，混进 `error` 就只能靠翻日志分辨——这正是 ADR-0006 §2 把
+ * 它们与 provider_4xx/5xx 并列列出的原因。
+ */
+export const PROVIDER_CALL_OUTCOMES = [
+  "success",
+  "timeout",
+  "schema_failure",
+  "config_error",
+  "error",
+] as const;
+
+/**
+ * provider 调用计数器（按 provider × 方法 × 终态）。
+ * 调用量与四类失败都由这一条派生（`...{outcome="timeout"}` 等），**不再**另立
+ * `provider_timeouts_total` 之类的平行计数器——两份计数器必须同步递增，
+ * 只要有一处漏了，告警就会静默少算。
+ */
+export const providerCallsTotal = new Counter({
+  name: "ailearn_provider_calls_total",
+  help: "AI provider calls by provider, call kind and terminal outcome",
+  labelNames: ["provider", "kind", "outcome"] as const,
+  registers: [registry],
+});
+
+/**
+ * 熔断拒绝次数（按上游 host × 触发原因）。
+ *
+ * P0-14。**这一条不是为了好看加的**——本项目刚吃过一次"指标存在但从不阻断"
+ * 的亏（`coverage-gate.mjs --report-only` 退出码恒为 0，四组关键门禁红了很久
+ * 没人看见）。熔断比覆盖率门禁更危险：它会**主动拒绝请求**，所以"它在拒绝"
+ * 必须能被告警发现，而不是靠翻日志。
+ *
+ * reason 两类：
+ *   - `open`         熔断已打开，连冷却都没满 → 直接拒
+ *   - `half_open`    half-open 里探测已在飞 → 挤掉后来者
+ */
+export const aiCircuitOpenTotal = new Counter({
+  name: "ailearn_ai_circuit_open_total",
+  help: "AI upstream calls rejected by the circuit breaker before any network request",
+  labelNames: ["host", "reason"] as const,
+  registers: [registry],
+});
+
+/**
+ * provider 调用耗时直方图（秒）。桶上界到 300s：与 handler 共享超时的上限，
+ * 超长调用本身就是要看的信号，不该落进 +Inf 桶。
+ */
+export const providerCallDurationSeconds = new Histogram({
+  name: "ailearn_provider_call_duration_seconds",
+  help: "AI provider call duration in seconds by provider and call kind",
+  labelNames: ["provider", "kind"] as const,
+  buckets: [0.5, 1, 2.5, 5, 10, 20, 30, 60, 120, 300],
+  registers: [registry],
+});
+
+/**
+ * provider token 用量计数器（按 provider × 方法 × prompt/completion）。
+ *
+ * token 成本此前只落在 `ai_audit_log` / `ai_artifacts`（要查库、且只在部分调用
+ * 路径上写），`/metrics` 上没有成本视角。**只有返回了 usage 的调用才递增**
+ * （`ProviderUsage` 各字段可空），不要用 0 补齐——那会让"没报 usage"和
+ * "真的没用 token"在图上长得一样。
+ */
+export const providerCallTokensTotal = new Counter({
+  name: "ailearn_provider_call_tokens_total",
+  help: "AI provider tokens by provider, call kind and direction (prompt/completion)",
+  labelNames: ["provider", "kind", "direction"] as const,
   registers: [registry],
 });
 

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
-import { RoundServiceError, type NoteLearningRoundV1, type RoundScopeV1 } from "./round-service.ts";
+import { RoundServiceError, type NoteLearningRoundV1, type RoundScopeV1 } from "./round/round-service.ts";
 
 export type RoundModelAttempt = { id: string; maxCalls: number; deadlineAt: number };
 /** Caller holds the round lock. Reservations cover retries and survive crashes. */

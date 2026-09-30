@@ -24,8 +24,15 @@
  * - Evidence eligibility：evidenceSetHash 存在且 qualityState 为 passed/authored
  * - Equivalence report：target_equivalent_update 要求 equivalenceReportHash 非空
  */
-
 import { REVIEW_DIMENSION_VALUES_V2 } from "@ailearn/shared/review-dimension-v2";
+
+// 复用判定的读侧已搬到 reuse-resolver.ts（P2-2）。三段都是纯函数，
+// 不 import 任何东西——搬之前量过。
+import {
+  bindingEntryEvidenceSnapshotIds,
+  pickCurrentBindingPlanV2,
+  resolveReuseFromPlanV2,
+} from "./reuse-resolver.ts";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { withWorkspaceTransaction } from "../../db/client.ts";
@@ -99,6 +106,7 @@ import {
 import {
   CardGenerationV2ServiceError,
   insertEvent,
+  insertEventBatch,
   insertDomainEvent,
   type RunContext,
 } from "./helpers.ts";
@@ -127,36 +135,6 @@ type LifecycleResult = {
   objectiveRevisionId?: string;
   publicationRevision?: number;
 };
-
-/**
- * §14.3：从 binding plan 行的单条 target_unit_bindings 条目提取被绑定 evidence
- * snapshot id。条目为完整 binding 形状（单数 `evidenceSnapshotId`，与
- * candidateEvidenceBindingPlanV2Schema.bindings 一致）。
- */
-function bindingEntryEvidenceSnapshotIds(entry: Record<string, unknown>): string[] {
-  if (typeof entry?.evidenceSnapshotId === "string" && entry.evidenceSnapshotId) {
-    return [entry.evidenceSnapshotId];
-  }
-  return [];
-}
-
-/**
- * 同一条修订可以有**多份** binding plan 行（首次生成、重检、按反馈改写各插一行；
- * 这张表只有 `binding_plan_id` 是唯一键，`candidate_revision_id` 上是普通索引）。
- * 门要读的是这条修订**当前带着**的那一份——候选行的 `evidence_binding_plan_hash`
- * 指它（worker 插行的同一步就把该列写成这行的 hash）——不是"查询顺手返回的最后一份"。
- * 此前三处读点分别用 `new Map(rows.map(...))` 和不带 ORDER BY 的 `.limit(1)` 把多行
- * 收敛成一行，于是同一份数据两次查询可能一个放行一个拒绝；§13.1 那道 revoked 证据门
- * 就是其中一处。候选没带 hash（历史行、手写夹具）时退到"排序后的最后一份"，
- * 仍然是确定的，不再依赖物理顺序。调用方必须按 (created_at, id) 升序把全量行交进来。
- */
-function pickCurrentBindingPlanV2<T extends { bindingPlanHash: string }>(
-  rows: readonly T[],
-  namedHash: string | null | undefined,
-): T | undefined {
-  const named = namedHash ? rows.find((r) => r.bindingPlanHash === namedHash) : undefined;
-  return named ?? rows[rows.length - 1];
-}
 
 /**
  * §18.2（R36）：写入不可变 learning_card_revisions_v2 行。
@@ -676,17 +654,23 @@ export async function activateCardCandidatesV2(
       candidateCount: body.selectedCandidates.length,
     });
 
-    for (const mapping of mappings) {
-      await insertEvent(tx, ctx.workspaceId, body.runId, "learning_objective.activated", {
-        objectiveId: mapping.objectiveId,
-        cardId: mapping.cardId,
-        candidateRevisionId: mapping.candidateRevisionId,
-      });
-      await insertEvent(tx, ctx.workspaceId, body.runId, "learning_card.activated", {
-        cardId: mapping.cardId,
-        objectiveId: mapping.objectiveId,
-      });
-    }
+    // P1-1：整批一次写入。原来每个 mapping 两条 insertEvent，而每次 insertEvent
+    // 自己还要先 SELECT MAX(event_seq) —— 20 个 mapping 就是 80 次往返。
+    // 顺序不变（objective 在前、card 在后，按 mapping 顺序），event_seq 连续。
+    await insertEventBatch(tx, ctx.workspaceId, body.runId, mappings.flatMap((mapping) => [
+      {
+        eventType: "learning_objective.activated",
+        payload: {
+          objectiveId: mapping.objectiveId,
+          cardId: mapping.cardId,
+          candidateRevisionId: mapping.candidateRevisionId,
+        },
+      },
+      {
+        eventType: "learning_card.activated",
+        payload: { cardId: mapping.cardId, objectiveId: mapping.objectiveId },
+      },
+    ]));
 
     // 12c. §17.5 step 17：outbox 异步投递 post-activation（Card 列表/搜索/shared topology
     // 消费者按 receiptId 幂等消费；personal projection 保持 0 变化）。
@@ -703,15 +687,17 @@ export async function activateCardCandidatesV2(
       status: "pending",
     }).onConflictDoNothing();
 
+    // P1-1：同上一处，只把**领域事件**这一路整批写。
+    // 顺序与原来逐条写完全一致（card 在前、objective 在后，按 lifecycleResults 顺序）。
+    // §17.7 的 domain 事件仍留在循环里：insertDomainEvent 没有可批量替代的现成口径，
+    // 硬改它会把那条通道的语义一起动了，不在本次范围内。
+    const lifecycleEvents: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
     for (const lr of lifecycleResults) {
       if (lr.resultingLifecycle === "archived") {
-        await insertEvent(tx, ctx.workspaceId, body.runId, "learning_card.archived", {
-          cardId: lr.cardId,
-          objectiveId: lr.objectiveId,
-        });
-        await insertEvent(tx, ctx.workspaceId, body.runId, "learning_objective.archived", {
-          objectiveId: lr.objectiveId,
-        });
+        lifecycleEvents.push(
+          { eventType: "learning_card.archived", payload: { cardId: lr.cardId, objectiveId: lr.objectiveId } },
+          { eventType: "learning_objective.archived", payload: { objectiveId: lr.objectiveId } },
+        );
         // §17.7 domain 通道（archive lifecycle 事件）。
         await insertDomainEvent(tx, ctx.workspaceId, {
           eventType: "learning_card.archived",
@@ -727,8 +713,9 @@ export async function activateCardCandidatesV2(
           payload: { lifecycleEpoch: lr.resultingLifecycleEpoch },
         });
       } else if (lr.resultingLifecycle === "superseded") {
-        await insertEvent(tx, ctx.workspaceId, body.runId, "learning_objective.superseded", {
-          objectiveId: lr.objectiveId,
+        lifecycleEvents.push({
+          eventType: "learning_objective.superseded",
+          payload: { objectiveId: lr.objectiveId },
         });
         await insertDomainEvent(tx, ctx.workspaceId, {
           eventType: "learning_objective.superseded",
@@ -739,6 +726,7 @@ export async function activateCardCandidatesV2(
         });
       }
     }
+    await insertEventBatch(tx, ctx.workspaceId, body.runId, lifecycleEvents);
 
     // 13. 构建并返回 receipt
     const receipt: CardActivationReceiptV2 = {
@@ -864,44 +852,6 @@ async function activateSingleCandidate(
 }
 
 // ─── 创建/更新 Objective + Card ──────────────────────────────────────────────
-
-/**
- * W7-5 刀四：从**权威计划**里读出"这条候选要落到哪颗既有目标上"。
- *
- * 候选 → `plan_objective_local_id` → 计划 `result.objectives` 里那一条 → 它的
- * `changeContext`。判据本身在 `@ailearn/shared/objective-reuse-rules-v2`（纯函数），
- * 装配那一步已经跑过；这里**只读结果，不重跑**——重跑一遍就会有两个地方能给出不同的
- * 结论，而其中一份没有 `planHash` 背书。
- *
- * **读不到计划 / 读不到那条目标 / `changeContext` 不是复用那档** ⇒ 返回 null，
- * 也就是照原样建一颗新目标。§4.2「无法确定时保留差异」在读侧是同一句话：
- * 拿不到权威判断时，**新建**是可发现的那一侧。
- */
-function resolveReuseFromPlanV2(
-  planResult: unknown,
-  planObjectiveLocalId: string | null,
-): { objectiveId: string } | null {
-  if (!planResult || typeof planResult !== "object") return null;
-  if (!planObjectiveLocalId) return null;
-  const result = (planResult as { kind?: string; objectives?: unknown[] });
-  if (result.kind !== "author_candidates" || !Array.isArray(result.objectives)) return null;
-  const objective = result.objectives.find((item) => (
-    typeof item === "object" && item !== null
-    && (item as { objectiveLocalId?: string }).objectiveLocalId === planObjectiveLocalId
-  )) as { changeContext?: { kind?: string; objectiveId?: string } } | undefined;
-  const changeContext = objective?.changeContext;
-  if (!changeContext || changeContext.kind !== "reuse_existing_objective") return null;
-  if (typeof changeContext.objectiveId !== "string") return null;
-  // **不带 epoch 令牌**。第一版这里交了一个 `0` 占位，而复用那一支拿它与那一行的真值
-  // 比——真值从 1 起，于是**每一次复用都抛 `stale_objective_lifecycle`**。那不是"并发保护
-  // 太严"，是**这条路径结构上永远走不通**（C49 的真库读数把它抓了出来：第一次跑到复用
-  // 分支就撞上这一句）。
-  //
-  // 为什么**不需要**那个令牌：复用是**服务端**照权威计划做的判断（这里读的是带
-  // `planHash` 的那一份），而 epoch CAS 防的是「**客户端**拿着一份过期的读数来改」——这里
-  // 没有客户端参与，事务内又重新读了那一行（`lifecycle='active'` 那一道闸还在）。
-  return { objectiveId: changeContext.objectiveId };
-}
 
 async function createOrUpdateObjectiveAndCard(
   tx: ApiTransaction,
@@ -1316,7 +1266,7 @@ async function createOrUpdateObjectiveAndCard(
       const existingRevisionRows = await tx.select().from(learningObjectiveRevisionsV2).where(and(
         eq(learningObjectiveRevisionsV2.objectiveRevisionId, existing.currentObjectiveRevisionId),
         eq(learningObjectiveRevisionsV2.workspaceId, ctx.workspaceId),
-        visibleObjectivesCondition(ctx.userId, intent.objectiveId),
+        visibleObjectivesCondition(ctx.userId, learningObjectiveRevisionsV2.objectiveId),
       )).limit(1);
       const existingRevision = existingRevisionRows[0];
       if (!existingRevision) {
@@ -2409,7 +2359,6 @@ async function handleExistingLifecycleAction(
     }
   }
 }
-
 
 // ─── §17.5 step 10：Candidate lineage exposure → Objective scope 映射 ──────
 

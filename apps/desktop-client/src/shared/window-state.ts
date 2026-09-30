@@ -1,6 +1,13 @@
 export const WINDOW_STATE_CHANNEL = 'window:state-changed'
 export const WINDOW_STATE_SNAPSHOT_CHANNEL = 'window:get-state'
 
+/**
+ * 标题栏主题（2026-09-30，B6）。原先 `main/index.ts` 与 `preload/index.ts`
+ **各写一份字面量**——两边拼错一处不会报任何类型错，只在用户点「跟随系统」
+ * 时安静地什么都不发生。窗口那两条通道早就收在这里了，这一条漏了。
+ */
+export const TITLE_BAR_THEME_CHANNEL = 'window:set-titlebar-theme'
+
 export type AILearnWindowState = 'visible' | 'hidden' | 'minimized'
 
 export interface WindowStateSnapshot {

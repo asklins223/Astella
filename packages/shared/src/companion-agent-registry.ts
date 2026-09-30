@@ -3,7 +3,7 @@ import {
   COMPANION_PAGE_DESTINATIONS_V2,
   companionPageKindValuesV2,
   type CompanionPageKindV2,
-} from "./companion-bridge-contracts.ts";
+} from "./contracts/companion-bridge-contracts.ts";
 import {
   COMPANION_AGENT_CONTRACT_VERSION,
   companionAgentToolDefinitionV1Schema,
@@ -11,7 +11,7 @@ import {
   type CompanionAgentPermissionLevel,
   type CompanionAgentToolDefinitionV1,
   type CompanionAgentToolExecutionConstraints,
-} from "./companion-agent-contracts.ts";
+} from "./contracts/companion-agent-contracts.ts";
 
 const emptyParameters = {
   type: "object",
@@ -86,7 +86,7 @@ const REGISTERED_TOOLS: readonly RegisteredTool[] = [
   // 分页续读（39d W6-2 / 39b C5）：正文按块分页，`startOrdinal` 是续读的起点
   // （上一页返回的 nextStartOrdinal）。不再"截前 3000 字假装读过"——返回体带
   // 块序号、总块数与下一页起点，读不到结尾时按它续，不谎称已读全文。
-  tool("companion_read_note", "读出一篇笔记的正文内容（按块分页，一次约三千字）。要引用、总结或核对用户写过什么时必须先读，不要凭标题猜内容。正文没读完时（truncated=true）用返回的 nextStartOrdinal 作为 startOrdinal 续读，不要假装已经读过全文。", "read", false, { type: "object", properties: { noteId: { type: "string", format: "uuid" }, startOrdinal: { type: "integer", minimum: 1, description: "从第几个正文块开始读（续读时传上一页的 nextStartOrdinal）" } }, required: ["noteId"], additionalProperties: false }, z.object({ noteId: uuid, startOrdinal: z.number().int().min(1).optional() }).strict()),
+  tool("companion_read_note", "读出一篇笔记的正文内容（按块分页，一次约三千字）。要引用、总结或核对用户写过什么时必须先读，不要凭标题猜内容。页面上下文若带 noteVersionId，就必须原样传入以读取用户眼前这一版；正文没读完时（truncated=true）用返回的 nextStartOrdinal 续读，不要假装已经读过全文。", "read", false, { type: "object", properties: { noteId: { type: "string", format: "uuid" }, noteVersionId: { type: "string", format: "uuid", description: "页面上下文给出的固定笔记版本；读取用户正在看的旧版本时必须传入" }, startOrdinal: { type: "integer", minimum: 1, description: "从第几个正文块开始读（续读时传上一页的 nextStartOrdinal）" } }, required: ["noteId"], additionalProperties: false }, z.object({ noteId: uuid, noteVersionId: uuid.optional(), startOrdinal: z.number().int().min(1).optional() }).strict()),
   // 来源正文读取（39d W6-2 / 39b C5："当前工具表没有来源正文读取工具"）：
   // 分页形状与 read_note 相同；来源没解析好（draft/processing/failed）时如实说明，
   // 不假装读过。凭据面不受影响——这不是页面读取，是材料读取，走材料可见性。

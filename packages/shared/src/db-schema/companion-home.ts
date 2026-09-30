@@ -14,7 +14,7 @@ import type {
   CompanionDecorIdV1,
   CompanionEffectIdV1,
   CompanionEquippedDecorBySlotV1,
-} from "../companion-home-contracts.ts";
+} from "../contracts/companion-home-contracts.ts";
 import { users } from "./identity.ts";
 
 export const companionRoomProfiles = pgTable(

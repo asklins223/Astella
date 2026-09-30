@@ -6,7 +6,7 @@
  */
 import type { FastifyInstance } from "fastify";
 import { requireSession } from "../identity/middleware.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { buildLearningDashboardV2 } from "./service.ts";
 import { actOnHomeSuggestionV2, actOnTodayBatchV2, readHomeSuggestionV2, readTodayBatchV2 } from "./home-suggestion-service.ts";
 import {
@@ -18,7 +18,7 @@ export async function learningDashboardRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireSession);
 
   app.get("/v2/learning-dashboard", async (req, reply) => {
-    const ctx = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+    const ctx = scopeOfSession(req.session);
     const dashboard = await withWorkspaceTransaction(ctx, (tx) =>
       buildLearningDashboardV2(tx, ctx),
     );
@@ -42,14 +42,13 @@ export async function learningDashboardRoutes(app: FastifyInstance) {
   // `timeZone` **由客户端带上来**而不是服务端猜：§12.1 那句「用户略过后**本次**不
   // 反复推荐同一项」的「本次」按**她的日历日**算（0306），而按 UTC 算会在她的午夜前后
   // 切错一次——那一次恰好是"她刚做完今天"的时候。
-  app.get("/home/v2/suggestion", async (req, reply) => {
+  app.get("/v2/home/suggestion", async (req, reply) => {
     const query = req.query as { timeZone?: string };
     const timeZone = (query.timeZone ?? "UTC").trim();
     const suggestion = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
-      (tx) => readHomeSuggestionV2(tx, {
-        workspaceId: req.session.workspaceId,
-        userId: req.session.userId,
+      scopeOfSession(req.session),
+      (tx) => readHomeSuggestionV2(tx, { ...scopeOfSession(req.session),
+userId: req.session.userId,
         timeZone,
       }),
     );
@@ -58,13 +57,12 @@ export async function learningDashboardRoutes(app: FastifyInstance) {
 
   // 今日复习那一批的读侧（39d W7-4 刀十四）。走的是刀一/二/三那一套，所以**这一批
   // 与首页那一件是同一批**。
-  app.get("/home/v2/today-batch", async (req, reply) => {
+  app.get("/v2/home/today-batch", async (req, reply) => {
     const query = req.query as { timeZone?: string };
     const batch = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
-      (tx) => readTodayBatchV2(tx, {
-        workspaceId: req.session.workspaceId,
-        userId: req.session.userId,
+      scopeOfSession(req.session),
+      (tx) => readTodayBatchV2(tx, { ...scopeOfSession(req.session),
+userId: req.session.userId,
         timeZone: (query.timeZone ?? "UTC").trim(),
       }),
     );
@@ -73,13 +71,12 @@ export async function learningDashboardRoutes(app: FastifyInstance) {
 
   // 今日复习那三个动作（39d W7-4 刀十二；§12 表「今日复习」行）。**三档走同一发**：
   // 分成三个入口就是三处会分叉，而其中一处很可能忘了把 `remaining` 原样带回判据。
-  app.post("/home/v2/today-batch/option", async (req, reply) => {
+  app.post("/v2/home/today-batch/option", async (req, reply) => {
     const body = todayBatchOptionCommandV2Schema.parse(req.body);
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
-      (tx) => actOnTodayBatchV2(tx, {
-        workspaceId: req.session.workspaceId,
-        userId: req.session.userId,
+      scopeOfSession(req.session),
+      (tx) => actOnTodayBatchV2(tx, { ...scopeOfSession(req.session),
+userId: req.session.userId,
         timeZone: body.timeZone,
         action: body.action,
         reduceBy: body.reduceBy,
@@ -88,13 +85,12 @@ export async function learningDashboardRoutes(app: FastifyInstance) {
     return reply.code(200).header("Cache-Control", "private, no-store").send(result);
   });
 
-  app.post("/home/v2/suggestion/action", async (req, reply) => {
+  app.post("/v2/home/suggestion/action", async (req, reply) => {
     const body = homeSuggestionActionCommandV2Schema.parse(req.body);
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
-      (tx) => actOnHomeSuggestionV2(tx, {
-        workspaceId: req.session.workspaceId,
-        userId: req.session.userId,
+      scopeOfSession(req.session),
+      (tx) => actOnHomeSuggestionV2(tx, { ...scopeOfSession(req.session),
+userId: req.session.userId,
         timeZone: body.timeZone,
         itemKey: body.itemKey,
         action: body.action,

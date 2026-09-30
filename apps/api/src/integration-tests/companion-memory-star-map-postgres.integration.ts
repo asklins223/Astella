@@ -11,14 +11,14 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { getMemoryStarMap } from "../modules/companion-conversation/memory-star-map.ts";
+import { getMemoryStarMap } from "../modules/companion-conversation/memory/memory-star-map.ts";
 import {
   archiveMemory,
   confirmMemory,
   deleteMemory,
   pinMemory,
   upsertMemory,
-} from "../modules/companion-conversation/memory-service.ts";
+} from "../modules/companion-conversation/memory/memory-service.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 
 const CONN = process.env.DATABASE_URL_API ?? process.env.DATABASE_URL;

@@ -14,7 +14,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { parseBody } from "../../lib/validate.ts";
 import { requireSession } from "../identity/middleware.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { mainPageContextInputV2Schema } from "@ailearn/shared";
 import {
   publishContext,
@@ -26,7 +26,7 @@ import {
   COMPANION_RATE_LIMITS,
   companionRateLimit,
   companionRateLimitReply,
-} from "../companion-conversation/companion-rate-limit.ts";
+} from "../../lib/companion-rate-limit.ts";
 
 function isCompanionBridgeV2Enabled(): boolean {
   return process.env.COMPANION_BRIDGE_V2 === "true";
@@ -47,12 +47,12 @@ function sendPublishConflict(
 
 /** §6.10 限流 helper：达限写 429 并返回 false，调用方立即 return（与其余
  * companion 路由同模式）。key 按 (workspace,user) 聚合。 */
-function bridgeRateLimited(
+async function bridgeRateLimited(
   reply: { code(statusCode: number): { send(body: unknown): unknown }; send(body: unknown): unknown },
   requestId: string,
   key: string,
-): boolean {
-  const result = companionRateLimit({
+): Promise<boolean> {
+  const result = await companionRateLimit({
     key,
     limit: COMPANION_RATE_LIMITS.bridgeContextPerMinute.limit,
     windowMs: COMPANION_RATE_LIMITS.bridgeContextPerMinute.windowMs,
@@ -88,19 +88,16 @@ export async function companionBridgeRoutes(app: FastifyInstance) {
 
   app.post("/companion/bridge/contexts", { preHandler: [requireSession] }, async (req, reply) => {
     const body = parseBody(app, publishBodySchema, req.body);
-    if (!bridgeRateLimited(
+    if (!(await bridgeRateLimited(
       reply,
       req.id,
       `${req.session.workspaceId}:${req.session.userId}:bridge:publish`,
-    )) return;
+    ))) return;
     const now = new Date();
     try {
       const snapshot = await withWorkspaceTransaction(
-        { workspaceId: req.session.workspaceId, userId: req.session.userId },
-        (tx) => publishContext(tx, {
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
-        }, {
+        scopeOfSession(req.session),
+        (tx) => publishContext(tx, scopeOfSession(req.session), {
           contextId: body.contextId,
           accountSessionId: body.accountSessionId,
           deviceSessionId: body.deviceSessionId,
@@ -131,18 +128,15 @@ export async function companionBridgeRoutes(app: FastifyInstance) {
     { preHandler: [requireSession] },
     async (req, reply) => {
       const body = parseBody(app, renewBodySchema, req.body);
-      if (!bridgeRateLimited(
+      if (!(await bridgeRateLimited(
         reply,
         req.id,
         `${req.session.workspaceId}:${req.session.userId}:bridge:renew`,
-      )) return;
+      ))) return;
       try {
         const renewed = await withWorkspaceTransaction(
-          { workspaceId: req.session.workspaceId, userId: req.session.userId },
-          (tx) => renewContext(tx, {
-            workspaceId: req.session.workspaceId,
-            userId: req.session.userId,
-          }, {
+          scopeOfSession(req.session),
+          (tx) => renewContext(tx, scopeOfSession(req.session), {
             contextId: body.contextId,
             pageInstanceId: body.pageInstanceId,
             expectedRevision: body.expectedRevision,
@@ -167,18 +161,15 @@ export async function companionBridgeRoutes(app: FastifyInstance) {
     { preHandler: [requireSession] },
     async (req, reply) => {
       const body = parseBody(app, renewBodySchema, req.body);
-      if (!bridgeRateLimited(
+      if (!(await bridgeRateLimited(
         reply,
         req.id,
         `${req.session.workspaceId}:${req.session.userId}:bridge:revoke`,
-      )) return;
+      ))) return;
       try {
         await withWorkspaceTransaction(
-          { workspaceId: req.session.workspaceId, userId: req.session.userId },
-          (tx) => revokeContext(tx, {
-            workspaceId: req.session.workspaceId,
-            userId: req.session.userId,
-          }, {
+          scopeOfSession(req.session),
+          (tx) => revokeContext(tx, scopeOfSession(req.session), {
             contextId: body.contextId,
             pageInstanceId: body.pageInstanceId,
             expectedRevision: body.expectedRevision,

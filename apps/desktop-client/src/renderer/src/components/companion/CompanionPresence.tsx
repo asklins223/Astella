@@ -1,3 +1,4 @@
+// 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { X } from "lucide-react";
 import gsap from "gsap";
@@ -57,9 +58,8 @@ import { useCompanionChat } from "../../app/companion-chat-session";
 import type { CompanionAgentNodeState } from "../../app/companion-agent-nodes";
 import { HOME_FEATURE_ICONS } from "../home-v2/home-feature-icons";
 import { getHomeFeature, type HomeFeatureId } from "../home-v2/home-feature-registry";
-import { SurfaceDataState } from "../surfaces/surface-data";
+import { SurfaceDataState } from "../surfaces/notebook/surface-data.tsx";
 import type { Live2DEmotionEvent } from "./live2d-emotion";
-import "./companion-root.css";
 
 gsap.registerPlugin(useGSAP);
 
@@ -1528,6 +1528,7 @@ export function CompanionPresence() {
       data-touch-kind={touchKind ?? undefined}
       data-formal-silent={assessmentMode || undefined}
       data-policy-mode={companionPolicy.mode}
+      data-chat-mode={mode}
       data-companion-model-id={companionModelId}
       data-engaged={engaged || undefined}
       data-task-surface-quiet={taskSurfaceQuiet || undefined}

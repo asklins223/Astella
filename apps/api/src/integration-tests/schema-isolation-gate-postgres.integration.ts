@@ -83,8 +83,23 @@ after(async () => {
   await sql.end({ timeout: 5 }).catch(() => {});
 });
 
-/** 带 workspace_id 列的 public 表，附带两个布尔判定列。 */
-async function queryWorkspaceTables(): Promise<Array<{ name: string; has_fk: boolean; rls_on: boolean }>> {
+/**
+ * **带 workspace_id 或 user_id 列**的 public 表，附带两个布尔判定列。
+ *
+ * 2026-09-29（P0-4）：这里原来只 JOIN `a.attname = 'workspace_id'`。
+ * 而 `users` 用的是 `id`——于是这条"零容忍"的 RLS 棘轮对它**恒真通过**，
+ * 一张存着 `email` 与 `password_hash`、且给 `ailearn_api` 开了无差别全表权限的表，
+ * 在这道检查的视野里根本不存在。它在 `users-rls-postgres.integration.ts`
+ * 落地之前，实测可以被任一空间的成员读走整个工作区之外的 `email` 与
+ * `password_hash`，并能被改写。
+ *
+ * 判据从"有没有 workspace_id"放宽到"有没有 workspace_id **或** user_id"：
+ * 后者覆盖 `users` 这类"按人分区"的表。分母会变大是**预期的**——
+ * 看得见的面变宽，漏网的表变少。
+ */
+async function queryWorkspaceTables(): Promise<
+  Array<{ name: string; has_fk: boolean; has_workspace_id: boolean; rls_on: boolean }>
+> {
   return sql`
     SELECT c.relname AS name,
       EXISTS (
@@ -92,11 +107,24 @@ async function queryWorkspaceTables(): Promise<Array<{ name: string; has_fk: boo
         WHERE k.conrelid = c.oid AND k.contype = 'f'
           AND k.confrelid = 'workspaces'::regclass
       ) AS has_fk,
+      -- 外键那条判据**仍只看 workspace_id**：一张只有 user_id 的表
+      -- （users / user_ai_settings / user_companion_* …）本来就不该指向
+      -- workspaces，混进来会让"缺外键"清单凭空多出 7 条假阳性。
+      -- RLS 那条才看 or 的宽口径（见 queryWorkspaceTables 的注释）。
+      EXISTS (
+        SELECT 1 FROM pg_attribute a
+        WHERE a.attrelid = c.oid AND a.attname = 'workspace_id' AND NOT a.attisdropped
+      ) AS has_workspace_id,
       c.relrowsecurity AS rls_on
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'workspace_id'
     WHERE n.nspname = 'public' AND c.relkind = 'r'
+      AND EXISTS (
+        SELECT 1 FROM pg_attribute a
+        WHERE a.attrelid = c.oid
+          AND a.attname IN ('workspace_id', 'user_id')
+          AND NOT a.attisdropped
+      )
     GROUP BY c.relname, c.oid, c.relrowsecurity
     ORDER BY c.relname
   `;
@@ -113,7 +141,9 @@ function diffSets(baseline: string[], actual: string[]) {
 
 test("带 workspace_id 的表缺外键的集合必须与基线完全相等", async () => {
   const tables = await queryWorkspaceTables();
-  const actual = tables.filter((row) => !row.has_fk).map((row) => row.name);
+  const actual = tables
+    .filter((row) => row.has_workspace_id && !row.has_fk)
+    .map((row) => row.name);
   const { added, removed } = diffSets(BASELINE_WITHOUT_FK, actual);
   assert.deepEqual(
     added,

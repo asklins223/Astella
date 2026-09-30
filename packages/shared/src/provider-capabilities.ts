@@ -5,14 +5,14 @@
  * 新增能力（语音识别、文生图）只需定义新接口 + 注册 + 添加 task 映射，
  * 不需要修改任何现有 provider 代码。
  *
- * @see docs/plans/provider-registry-refactor.md §3.1
+ * @see 原据 provider-registry-refactor.md（2026-09-29 已归档） §3.1
  */
 
 import type {
   ProviderUsage,
   AgentTurnRequest,
   AgentTurnResult,
-} from "./card-agent-contracts.ts";
+} from "./contracts/card-agent-contracts.ts";
 import type { ImageInsightOutput } from "./schemas.ts";
 
 // ─── 能力枚举 ──────────────────────────────────────────────────────────

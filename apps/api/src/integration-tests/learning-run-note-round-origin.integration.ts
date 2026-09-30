@@ -35,7 +35,7 @@ delete process.env.ASSESSMENT_CRITIC_KEY;
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
 const { createRunV2, getRunPublicView } = await import("../modules/learning-runs/run-service.ts");
 const { LearningRunServiceError } = await import("../modules/learning-runs/run-errors.ts");
-const { createRound, advanceRound } = await import("../modules/note-learning-rounds/round-service.ts");
+const { createRound, advanceRound } = await import("../modules/note-learning-rounds/round/round-service.ts");
 const { seedV2Fixture } = await import("./helpers/v2-card-fixture.ts");
 
 after(async () => {

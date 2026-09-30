@@ -4,24 +4,24 @@ import gsap from "gsap";
 import { useRoomStore } from "../app/room-store";
 import { createRequestMeta, unwrapGatewayResult } from "../app/desktop-client";
 import { CardGenerationSurface } from "./CardGenerationSurface";
-import { GraphSurface } from "./surfaces/graph-surface";
-import { ReviewSurface } from "./surfaces/ReviewSurface";
-import { StudySurface } from "./surfaces/StudySurface";
-import { ResumableSurface } from "./surfaces/ResumableSurface";
-import { LearningRunSurface } from "./surfaces/learning-run-surface";
-import { SurfaceReturnControl } from "./surfaces/SurfaceReturnControl";
+import { GraphSurface } from "./surfaces/space/graph-surface.tsx";
+import { ReviewSurface } from "./surfaces/review/ReviewSurface.tsx";
+import { StudySurface } from "./surfaces/study/StudySurface.tsx";
+import { ResumableSurface } from "./surfaces/library/ResumableSurface.tsx";
+import { LearningRunSurface } from "./surfaces/run/learning-run-surface.tsx";
+import { SurfaceReturnControl } from "./surfaces/study/SurfaceReturnControl.tsx";
 import {
   ObjectiveDetailSurface,
   ObjectiveLibrarySurface,
-} from "./surfaces/WorkspaceLibrarySurface";
-import { CompanionCenterSurface } from "./surfaces/companion-center-surface";
+} from "./surfaces/library/WorkspaceLibrarySurface.tsx";
+import { CompanionCenterSurface } from "./surfaces/companion/companion-center-surface.tsx";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
-import { NoteLibrarySurface } from "./surfaces/note-library-surface";
-import { NotebookSurface } from "./surfaces/notebook-surface";
-import { SearchSurface } from "./surfaces/search-surface";
-import { SettingsSurface } from "./surfaces/settings-surface";
-import { SourceDetailSurface } from "./surfaces/source-detail-surface";
-import { SourceLibrarySurface } from "./surfaces/source-library-surface";
+import { NoteLibrarySurface } from "./surfaces/notebook/note-library-surface.tsx";
+import { NotebookSurface } from "./surfaces/notebook/notebook-surface.tsx";
+import { SearchSurface } from "./surfaces/study/search-surface.tsx";
+import { SettingsSurface } from "./surfaces/settings/settings-surface.tsx";
+import { SourceDetailSurface } from "./surfaces/source/source-detail-surface.tsx";
+import { SourceLibrarySurface } from "./surfaces/source/source-library-surface.tsx";
 import { resolveSceneMotionMode, sceneMotionDuration } from "../scene/scene-motion";
 import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
 

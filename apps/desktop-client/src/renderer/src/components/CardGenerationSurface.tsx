@@ -29,7 +29,7 @@ import type {
   DesktopCardRejectReasonV2,
 } from "@ailearn/shared/card-generation-desktop-contracts";
 import { useRoomStore } from "../app/room-store";
-import { resetObjectiveLibraryView } from "./surfaces/objective-library-view-state";
+import { resetObjectiveLibraryView } from "./surfaces/run/objective-library-view-state.ts";
 import { createCommandId, createRequestMeta, gatewayErrorMessage, RendererGatewayError, unwrapGatewayResult } from "../app/desktop-client";
 import {
   cardGenerationProgressView,
@@ -45,13 +45,13 @@ import {
   isCardGenerationReviewStage,
   isCardGenerationStopped,
   isLandedCandidate,
-} from "./surfaces/card-generation-status";
+} from "./surfaces/review/card-generation-status.ts";
 import { HudPage } from "./hud/HudPage";
 import { useHudPage } from "./hud/use-hud-page";
 import { usePageReadableView } from "./hud/use-page-readable-view";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import { formatRelative } from "./surfaces/surface-data";
-import { cardStrategyPresentation } from "./surfaces/card-strategy-presentation";
+import { formatRelative } from "./surfaces/notebook/surface-data.tsx";
+import { cardStrategyPresentation } from "./surfaces/review/card-strategy-presentation.ts";
 
 /**
  * The review page shows one candidate at a time. Its projection carries no

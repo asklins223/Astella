@@ -18,7 +18,7 @@
  *     两个"到期"答的不是同一件事）
  *  4. `buildLearningDashboardV2`（学习看板）
  *  5. 伴星 `readLearningStats().dueReviews`（经判据桥，**受限 worker 角色**）
- *  6.（间接）`GET /reviews/v2/queue` 的 total 与上面第 1 条同源
+ *  6.（间接）`GET /v2/reviews/queue` 的 total 与上面第 1 条同源
  * 少一处就还会出现"她说 2 项、点进队列 1 条"的老岔口。
  *
  * 负对照同样重要：`upheld`（复核维持）**必须放行**。§16.22 要挡的是死循环，
@@ -44,7 +44,7 @@ if (!fixtureUrl || !process.env.DATABASE_URL_API) {
 }
 const fixtureSql = postgres(fixtureUrl, { max: 4 });
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
-const disputes = await import("../modules/learning-runs/run-disputes.ts");
+const disputes = await import("../modules/learning-runs/disputes/run-disputes.ts");
 const { seedV2Fixture, addV2ObjectiveToWorkspace } = await import("./helpers/v2-card-fixture.ts");
 const { listReviews } = await import("../modules/review/service.ts");
 const { getStatsOverview } = await import("../modules/stats/service.ts");

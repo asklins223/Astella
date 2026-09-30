@@ -13,7 +13,7 @@
  * 纯函数、无 React、无 IO：屏上、伴星读页面、以及将来的"今日练习跨组"共用同一份。
  * 同一个分组在两处各算一次，就是两处各有一个"这篇有几张卡"的答案。
  */
-import type { ObjectiveListItemV3, ObjectiveNoteChangeImpactV1 } from "./learning-objective-surface-contracts.ts";
+import type { ObjectiveListItemV3, ObjectiveNoteChangeImpactV1 } from "./contracts/learning-objective-surface-contracts.ts";
 
 /** §8.5「未关联笔记」那一组的键。它是常量：真实笔记 id 永远是 uuid，撞不上。 */
 /** 分组只需要这几格；写成 Pick 是为了让判据能被小夹具直接调。 */

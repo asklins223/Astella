@@ -33,3 +33,8 @@ export * from "./companion-conversations.ts";
 export * from "./learning-metrics.ts";
 export * from "./note-learning-rounds.ts";
 export * from "./note-learning-reflections.ts";
+export * from "./note-annotations.ts";
+export * from "./note-overviews.ts";
+export * from "./note-expansions.ts";
+export * from "./note-recalls.ts";
+export * from "./note-learning-artifacts.ts";

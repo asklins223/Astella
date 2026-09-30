@@ -20,14 +20,34 @@
  * 对称的，不是抄写。
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
+/**
+ * 仓库根：**向上找 `apps/` 与 `packages/` 同时存在的那一层**。
+ * 「上溯 N 级」每被搬一次就要改 N，而忘了改的症状是
+ * `apps/apps/api/src/…`——一个**长得像结论**的路径。
+ */
+function findRepoRoot(start: string): string {
+  let dir = start;
+  for (let i = 0; i < 10; i += 1) {
+    if (existsSync(join(dir, "apps")) && existsSync(join(dir, "packages"))) return dir;
+    const up = join(dir, "..");
+    if (up === dir) break;
+    dir = up;
+  }
+  throw new Error(`从 ${start} 往上找不到仓库根`);
+}
+const REPO_ROOT = findRepoRoot(import.meta.dirname);
 
-const TICK_FILE = resolve(
-  import.meta.dirname,
-  "..",
-  "modules/learning-runs/run-processing-tick.ts",
+const PROC_DIR = join(REPO_ROOT, "apps/api/src/modules/learning-runs/processing");
+// 2026-09-30：处理族现在有**两个**文件（批处理与租约 / 评估与评审），
+// applyUnableSchedule 在评估那一侧。判据的对象是「闸在消费之前」，
+// 所以读整个族而不是某一个文件。
+const PROC_FILES = readdirSync(PROC_DIR)
+  .filter((n) => n.endsWith(".ts") && !n.endsWith(".test.ts"));
+const procText = stripComments(
+  PROC_FILES.map((n) => readFileSync(join(PROC_DIR, n), "utf8")).join("\n"),
 );
 
 /**
@@ -44,17 +64,19 @@ function stripComments(text: string): string {
     .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 }
 
-const source = stripComments(readFileSync(TICK_FILE, "utf8"));
+const source = stripComments(procText);
 
 /** 取 `function <name>(` 到下一个顶层 `}` 之前的那一段。 */
 function sliceFunction(name: string): string {
   const at = source.indexOf(`function ${name}(`);
-  assert.notEqual(at, -1, `run-processing-tick.ts 里找不到 ${name}`);
+  assert.notEqual(at, -1, `处理族（processing/）里找不到 ${name}`);
   // 下一个顶层函数声明就是这一段的末尾：缩进为 0 的 `async function` / `function`。
+  // 2026-09-30：**它是这一族里最后一个**时没有"下一个"——此前读单个文件时
+  // 后面总还有别的函数兜着，搬进 `processing/` 之后没有���
+  // 所以「找不到下一个」应当**取到文末**，不是判失败。
   const rest = source.slice(at + 1);
   const next = rest.search(/\n(?:async )?function \w/);
-  assert.notEqual(next, -1, `找不到 ${name} 的结束位置`);
-  return rest.slice(0, next);
+  return next === -1 ? rest : rest.slice(0, next);
 }
 
 const GATE = "disputeAllowsScheduleChange";

@@ -30,7 +30,7 @@ if (!fixtureUrl || !process.env.DATABASE_URL_API) {
 }
 const fixtureSql = postgres(fixtureUrl, { max: 4 });
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
-const rel = await import("../modules/understanding-v3/personal-relation-decision-service.ts");
+const rel = await import("../modules/note-deepening/personal-relation-decision-service.ts");
 
 const AUTHOR = randomUUID();
 const MEMBER = randomUUID();

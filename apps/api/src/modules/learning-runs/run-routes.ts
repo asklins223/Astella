@@ -14,7 +14,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { parseBody } from "../../lib/validate.ts";
 import { requireSession } from "../identity/middleware.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import {
   learningTaskDraftSchema,
   learningTaskDraftWriteReceiptSchema,
@@ -34,11 +34,11 @@ import {
   revealRunTargetV2,
   submitArtifact,
 } from "./run-service.ts";
-import { wakeLearningRunProcessing } from "./run-processing-tick.ts";
+import { wakeLearningRunProcessing } from "./processing/run-processing-tick.ts";
 import { createLearningRunV2RequestSchema } from "@ailearn/shared";
 import { LearningRunServiceError } from "./run-errors.ts";
 import { safeSseWrite } from "../../lib/safe-sse-write.ts";
-import { companionRateLimit } from "../companion-conversation/companion-rate-limit.ts";
+import { companionRateLimit } from "../../lib/companion-rate-limit.ts";
 // 方案 16 §20：学习漏斗埋点（服务端权威写入，尽力而为）。
 import { recordLearningMetric, insertLearningMetricEvent, type LearningMetricEventV1, type LearningMetricScope } from "../observability/learning-metrics.ts";
 import { isLearningRunEnabled } from "../../config/learning-companion-flags.ts";
@@ -53,42 +53,33 @@ import {
   submitTaskArtifactV2Schema,
   submitTaskArtifactReceiptV2Schema,
 } from "@ailearn/shared";
+import { buildServiceErrorBody, buildSimpleErrorBody } from "../../lib/error-envelope.ts";
+import { BoundedAsyncQueue } from "./bounded-async-queue.ts";
 
 // PERF-A#10：fire-and-forget 学习埋点加背压——有界在途/排队，溢出即丢弃
 // （与 recordLearningMetric 的静默尽力而为语义一致），避免高流量下无界堆积
 // DB 写事务。单实例内存队列；无需持久化（埋点可丢）。
+//
+// 2026-09-29（P2-5）：实现搬到 `lib/bounded-async-queue.ts`。
+// 这段逻辑是**通用**的并发控制，与"学习运行"无关；留在路由里等于每换一处
+// fire-and-forget 就要抄一遍，而抄漏 `finally` 里减计数那一行，
+// 计数器就只增不减、队列从此永久满——而且不报错。
 const METRIC_MAX_INFLIGHT = 8;
 const METRIC_MAX_QUEUE = 100;
-let metricInFlight = 0;
-const metricQueue: Array<() => Promise<void>> = [];
 
-function drainMetricQueue(): void {
-  while (metricInFlight < METRIC_MAX_INFLIGHT && metricQueue.length > 0) {
-    const task = metricQueue.shift()!;
-    metricInFlight += 1;
-    void task().finally(() => {
-      metricInFlight -= 1;
-      drainMetricQueue();
-    });
-  }
-}
+const learningMetricQueue = new BoundedAsyncQueue({
+  maxInFlight: METRIC_MAX_INFLIGHT,
+  maxQueued: METRIC_MAX_QUEUE,
+  onDrop: () => {
+    // 尽力而为：埋点丢失没有学习副作用，静默丢弃即可。
+  },
+});
 
 function enqueueLearningMetric(
   scope: LearningMetricScope,
   event: LearningMetricEventV1,
 ): void {
-  const task = () => recordLearningMetric(scope, event);
-  if (metricInFlight >= METRIC_MAX_INFLIGHT) {
-    // 队列已满：直接丢弃（尽力而为，埋点失败/丢弃均无学习副作用）。
-    if (metricQueue.length >= METRIC_MAX_QUEUE) return;
-    metricQueue.push(task);
-    return;
-  }
-  metricInFlight += 1;
-  void task().finally(() => {
-    metricInFlight -= 1;
-    drainMetricQueue();
-  });
+  learningMetricQueue.submit(() => recordLearningMetric(scope, event));
 }
 
 const runParamsSchema = z.object({ runId: z.string().uuid() });
@@ -163,14 +154,14 @@ const RUN_WRITE_LIMITS = {
   leasePerMinute: 60,
 } as const;
 
-function runRateLimited(
+async function runRateLimited(
   reply: import("fastify").FastifyReply,
   requestId: string,
   key: string,
   limit: number,
   windowMs: number,
-): boolean {
-  const decision = companionRateLimit({ key, limit, windowMs });
+): Promise<boolean> {
+  const decision = await companionRateLimit({ key, limit, windowMs });
   if (decision.allowed) return false;
   reply.code(429).header("Retry-After", String(decision.retryAfterSeconds)).send({
     version: 1,
@@ -193,25 +184,20 @@ export async function learningRunRoutes(app: FastifyInstance) {
       });
     }
   });
-  const scopeOf = (req: { session: { workspaceId: string; userId: string } }) => ({
-    workspaceId: req.session.workspaceId,
-    userId: req.session.userId,
-  });
+  const scopeOf = (req: { session: { workspaceId: string; userId: string } }) => (scopeOfSession(req.session));
 
   // POST /learning-runs — PREPARE：origin 解析 → 调度授权 → 确定性规划 → 原子写入。
   app.post("/learning-runs", { preHandler: [requireSession] }, async (req, reply) => {
-    if (runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:create`, RUN_WRITE_LIMITS.createPerMinute, 60_000)) return;
+    if (!(await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:create`, RUN_WRITE_LIMITS.createPerMinute, 60_000))) return;
     const body = parseBody(app, createLearningRunV2RequestSchema, req.body);
     try {
       const snapshot = await withWorkspaceTransaction(scopeOf(req), async (tx) => {
-        const result = await createRunV2(tx, {
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
+        const result = await createRunV2(tx, { ...scopeOfSession(req.session),
+userId: req.session.userId,
           request: body,
         });
-        const created = await getLearningRunPublicSnapshotV2(tx, {
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
+        const created = await getLearningRunPublicSnapshotV2(tx, { ...scopeOfSession(req.session),
+userId: req.session.userId,
           runId: result.runId,
         });
         // §20 / 16.2 G2：run-routes create 必须写入 funnel 第一层两类事件
@@ -245,7 +231,7 @@ export async function learningRunRoutes(app: FastifyInstance) {
       return reply.code(201).header("Cache-Control", "no-store").send(snapshot);
     } catch (err) {
       if (err instanceof LearningRunServiceError) {
-        return reply.code(err.statusCode).send({ error: err.code, message: err.message, ...err.recoveryData });
+        return reply.code(err.statusCode).send(buildServiceErrorBody(err));
       }
       throw err;
     }
@@ -253,16 +239,15 @@ export async function learningRunRoutes(app: FastifyInstance) {
 
   // ─── Explicit V2 wire endpoints ───────────────────────────────────────
   app.get<{ Params: { runId: string } }>(
-    "/learning-runs/:runId/v2",
+    "/v2/learning-runs/:runId",
     { preHandler: [requireSession] },
     async (req, reply) => {
       const params = runParamsSchema.safeParse(req.params);
       if (!params.success) throw app.httpErrors.badRequest("runId 非法");
       try {
         const snapshot = await withWorkspaceTransaction(scopeOf(req), (tx) =>
-          getLearningRunPublicSnapshotV2(tx, {
-            workspaceId: req.session.workspaceId,
-            userId: req.session.userId,
+          getLearningRunPublicSnapshotV2(tx, { ...scopeOfSession(req.session),
+userId: req.session.userId,
             runId: params.data.runId,
           }),
         );
@@ -279,7 +264,7 @@ export async function learningRunRoutes(app: FastifyInstance) {
           .send(snapshot);
       } catch (err) {
         if (err instanceof LearningRunServiceError) {
-          return reply.code(err.statusCode).send({ error: err.code, message: err.message });
+          return reply.code(err.statusCode).send(buildSimpleErrorBody(err));
         }
         throw err;
       }
@@ -287,48 +272,46 @@ export async function learningRunRoutes(app: FastifyInstance) {
   );
 
   app.get<{ Params: { runId: string } }>(
-    "/learning-runs/:runId/result/v2",
+    "/v2/learning-runs/:runId/result",
     { preHandler: [requireSession] },
     async (req, reply) => {
       const params = runParamsSchema.safeParse(req.params);
       if (!params.success) throw app.httpErrors.badRequest("runId 非法");
       try {
         const result = await withWorkspaceTransaction(scopeOf(req), (tx) =>
-          getResultPayloadV2(tx, {
-            workspaceId: req.session.workspaceId,
-            userId: req.session.userId,
+          getResultPayloadV2(tx, { ...scopeOfSession(req.session),
+userId: req.session.userId,
             runId: params.data.runId,
           }),
         );
         return reply.code(result.httpStatus).header("Cache-Control", "no-store").send(result);
       } catch (err) {
         if (err instanceof LearningRunServiceError) {
-          return reply.code(err.statusCode).send({ error: err.code, message: err.message });
+          return reply.code(err.statusCode).send(buildSimpleErrorBody(err));
         }
         throw err;
       }
     },
   );
 
-  // POST /learning-runs/:runId/reveal/v2 —— 答后揭示（2026-09-18）
+  // POST /v2/learning-runs/:runId/reveal —— 答后揭示（2026-09-18）
   app.post<{ Params: { runId: string } }>(
-    "/learning-runs/:runId/reveal/v2",
+    "/v2/learning-runs/:runId/reveal",
     { preHandler: [requireSession] },
     async (req, reply) => {
       const params = runParamsSchema.safeParse(req.params);
       if (!params.success) throw app.httpErrors.badRequest("runId 非法");
       try {
         const reveal = await withWorkspaceTransaction(scopeOf(req), (tx) =>
-          revealRunTargetV2(tx, {
-            workspaceId: req.session.workspaceId,
-            userId: req.session.userId,
+          revealRunTargetV2(tx, { ...scopeOfSession(req.session),
+userId: req.session.userId,
             runId: params.data.runId,
           }),
         );
         return reply.code(200).header("Cache-Control", "no-store").send(reveal);
       } catch (err) {
         if (err instanceof LearningRunServiceError) {
-          return reply.code(err.statusCode).send({ error: err.code, message: err.message });
+          return reply.code(err.statusCode).send(buildSimpleErrorBody(err));
         }
         throw err;
       }
@@ -336,23 +319,22 @@ export async function learningRunRoutes(app: FastifyInstance) {
   );
 
   app.get<{ Params: { runId: string } }>(
-    "/learning-runs/:runId/return-contract/v2",
+    "/v2/learning-runs/:runId/return-contract",
     { preHandler: [requireSession] },
     async (req, reply) => {
       const params = runParamsSchema.safeParse(req.params);
       if (!params.success) throw app.httpErrors.badRequest("runId 非法");
       try {
         const contract = await withWorkspaceTransaction(scopeOf(req), (tx) =>
-          getReturnContractV2(tx, {
-            workspaceId: req.session.workspaceId,
-            userId: req.session.userId,
+          getReturnContractV2(tx, { ...scopeOfSession(req.session),
+userId: req.session.userId,
             runId: params.data.runId,
           }),
         );
         return reply.header("Cache-Control", "no-store").send(contract);
       } catch (err) {
         if (err instanceof LearningRunServiceError) {
-          return reply.code(err.statusCode).send({ error: err.code, message: err.message });
+          return reply.code(err.statusCode).send(buildSimpleErrorBody(err));
         }
         throw err;
       }
@@ -360,10 +342,10 @@ export async function learningRunRoutes(app: FastifyInstance) {
   );
 
   app.put<{ Params: { runId: string; taskId: string } }>(
-    "/learning-runs/:runId/tasks/:taskId/draft/v2",
+    "/v2/learning-runs/:runId/tasks/:taskId/draft",
     { preHandler: [requireSession] },
     async (req, reply) => {
-      if (runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:draft`, RUN_WRITE_LIMITS.draftPerMinute, 60_000)) return;
+      if (!(await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:draft`, RUN_WRITE_LIMITS.draftPerMinute, 60_000))) return;
       const params = taskDraftParamsSchema.safeParse(req.params);
       if (!params.success) throw app.httpErrors.badRequest("run/task id 非法");
       const body = parseBody(app, putLearningTaskDraftRequestV2Schema, req.body);
@@ -408,14 +390,14 @@ export async function learningRunRoutes(app: FastifyInstance) {
         });
         return reply.header("Cache-Control", "no-store").send(receipt);
       } catch (err) {
-        if (err instanceof LearningRunServiceError) return reply.code(err.statusCode).send({ error: err.code, message: err.message, ...err.recoveryData });
+        if (err instanceof LearningRunServiceError) return reply.code(err.statusCode).send(buildServiceErrorBody(err));
         throw err;
       }
     },
   );
 
   app.get<{ Params: { runId: string; taskId: string } }>(
-    "/learning-runs/:runId/tasks/:taskId/draft/v2",
+    "/v2/learning-runs/:runId/tasks/:taskId/draft",
     { preHandler: [requireSession] },
     async (req, reply) => {
       const params = taskDraftParamsSchema.safeParse(req.params);
@@ -434,17 +416,17 @@ export async function learningRunRoutes(app: FastifyInstance) {
         if (draft === null) return reply.code(404).send({ error: "draft_not_found", message: "没有已保存的草稿" });
         return reply.header("Cache-Control", "no-store").send(draft);
       } catch (err) {
-        if (err instanceof LearningRunServiceError) return reply.code(err.statusCode).send({ error: err.code, message: err.message });
+        if (err instanceof LearningRunServiceError) return reply.code(err.statusCode).send(buildSimpleErrorBody(err));
         throw err;
       }
     },
   );
 
   app.post<{ Params: { runId: string; taskId: string } }>(
-    "/learning-runs/:runId/tasks/:taskId/submissions/v2",
+    "/v2/learning-runs/:runId/tasks/:taskId/submissions",
     { preHandler: [requireSession] },
     async (req, reply) => {
-      if (runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:submit`, RUN_WRITE_LIMITS.submitPerMinute, 60_000)) return;
+      if (!(await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:submit`, RUN_WRITE_LIMITS.submitPerMinute, 60_000))) return;
       const params = taskDraftParamsSchema.safeParse(req.params);
       if (!params.success) throw app.httpErrors.badRequest("run/task id 非法");
       const body = parseBody(app, submitTaskArtifactV2Schema, req.body);
@@ -478,22 +460,22 @@ export async function learningRunRoutes(app: FastifyInstance) {
         // 否则唤醒的那轮看不到刚提交的 outbox 行。
         wakeLearningRunProcessing();
         enqueueLearningMetric(
-          { workspaceId: req.session.workspaceId, userId: req.session.userId },
+          scopeOfSession(req.session),
           { eventType: "artifact_locked", runId: params.data.runId, taskId: params.data.taskId },
         );
         return reply.code(202).header("Cache-Control", "no-store").send(receipt);
       } catch (err) {
-        if (err instanceof LearningRunServiceError) return reply.code(err.statusCode).send({ error: err.code, message: err.message, ...err.recoveryData });
+        if (err instanceof LearningRunServiceError) return reply.code(err.statusCode).send(buildServiceErrorBody(err));
         throw err;
       }
     },
   );
 
   app.post<{ Params: { runId: string } }>(
-    "/learning-runs/:runId/actions/v2",
+    "/v2/learning-runs/:runId/actions",
     { preHandler: [requireSession] },
     async (req, reply) => {
-      if (runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:action`, RUN_WRITE_LIMITS.actionPerMinute, 60_000)) return;
+      if (!(await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:action`, RUN_WRITE_LIMITS.actionPerMinute, 60_000))) return;
       const params = runParamsSchema.safeParse(req.params);
       if (!params.success) throw app.httpErrors.badRequest("runId 非法");
       const body = parseBody(app, learningRunActionRequestV2Schema, req.body);
@@ -543,17 +525,17 @@ export async function learningRunRoutes(app: FastifyInstance) {
         wakeLearningRunProcessing();
         return reply.header("Cache-Control", "no-store").send(response);
       } catch (err) {
-        if (err instanceof LearningRunServiceError) return reply.code(err.statusCode).send({ error: err.code, message: err.message, ...err.recoveryData });
+        if (err instanceof LearningRunServiceError) return reply.code(err.statusCode).send(buildServiceErrorBody(err));
         throw err;
       }
     },
   );
 
   app.post<{ Params: { runId: string } }>(
-    "/learning-runs/:runId/activity-lease/v2",
+    "/v2/learning-runs/:runId/activity-lease",
     { preHandler: [requireSession] },
     async (req, reply) => {
-      if (runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:lease`, RUN_WRITE_LIMITS.leasePerMinute, 60_000)) return;
+      if (!(await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:lease`, RUN_WRITE_LIMITS.leasePerMinute, 60_000))) return;
       const params = runParamsSchema.safeParse(req.params);
       if (!params.success) throw app.httpErrors.badRequest("runId 非法");
       const body = parseBody(app, recordLearningRunActivityLeaseRequestV2Schema, req.body);
@@ -574,7 +556,7 @@ export async function learningRunRoutes(app: FastifyInstance) {
         });
         return reply.code(204).header("Cache-Control", "no-store").send();
       } catch (err) {
-        if (err instanceof LearningRunServiceError) return reply.code(err.statusCode).send({ error: err.code, message: err.message, ...err.recoveryData });
+        if (err instanceof LearningRunServiceError) return reply.code(err.statusCode).send(buildServiceErrorBody(err));
         throw err;
       }
     },
@@ -597,7 +579,7 @@ export async function learningRunRoutes(app: FastifyInstance) {
         });
       } catch (err) {
         if (err instanceof LearningRunServiceError) {
-          return reply.code(err.statusCode).send({ error: err.code, message: err.message });
+          return reply.code(err.statusCode).send(buildSimpleErrorBody(err));
         }
         throw err;
       }

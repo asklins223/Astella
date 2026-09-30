@@ -30,7 +30,7 @@ if (!fixtureUrl || !process.env.DATABASE_URL_API) {
 }
 const fixtureSql = postgres(fixtureUrl, { max: 4 });
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
-const disputes = await import("../modules/learning-runs/run-disputes.ts");
+const disputes = await import("../modules/learning-runs/disputes/run-disputes.ts");
 // 刻意**不** import 那几张表的 drizzle 定义：这份的读侧全部走裸 SQL，
 // 这样"库上真的挡下了"是读出来的，不是被同一份 schema 定义复述一遍。
 // 被测路径（withWorkspaceTransaction + run-disputes）才是走生产代码的那一段。

@@ -27,10 +27,7 @@ import {
 } from "./journey-service.ts";
 import { companionJourneys } from "@ailearn/shared/db-schema/companion-journey";
 import { and, eq } from "drizzle-orm";
-
-function isCompanionJourneyV2Enabled(): boolean {
-  return process.env.COMPANION_JOURNEY_V2 === "true";
-}
+import { isCompanionJourneyV2Enabled } from "../../config/learning-companion-flags.ts";
 
 const journeyParamsSchema = z.object({ journeyId: z.string().uuid() });
 

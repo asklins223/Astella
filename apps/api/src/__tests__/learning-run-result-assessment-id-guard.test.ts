@@ -27,7 +27,7 @@ import {
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..");
 const SERVICE_FILE = join(REPO_ROOT, "apps/api/src/modules/learning-runs/run-service.ts");
-const CONTRACTS_FILE = join(REPO_ROOT, "packages/shared/src/learning-run-v2-contracts.ts");
+const CONTRACTS_FILE = join(REPO_ROOT, "packages/shared/src/contracts/learning-run-v2-contracts.ts");
 
 /** 剥掉注释：源码形状判据要判代码。 */
 function codeOnly(text: string): string {

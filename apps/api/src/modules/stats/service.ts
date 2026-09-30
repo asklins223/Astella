@@ -7,7 +7,8 @@ import type { AllWorkspacesStatsOverviewV1, StatsOverviewV1, WorkspaceStatsOverv
 import { visibleCardsCondition, visibleNotesCondition, visibleObjectivesCondition } from "../note/visibility.ts";
 import { reviewScheduleTargetsConsumableCardPredicate } from "@ailearn/shared/review-consumable-target";
 import { ReviewStatus } from "@ailearn/shared";
-import { listUserWorkspaces, MAX_COLLABORATIVE_WORKSPACES, type WorkspaceInfo } from "../identity/service.ts";
+import { listUserWorkspaces } from "../identity/workspace-membership-service.ts";
+import { MAX_COLLABORATIVE_WORKSPACES, type WorkspaceInfo } from "../identity/service.ts";
 
 export type StatsOverview = StatsOverviewV1;
 
@@ -284,17 +285,31 @@ export async function getAllWorkspacesStatsOverview(
   const selected = active.slice(0, STATS_OVERVIEW_WORKSPACE_MAX);
   const skippedWorkspaceCount = active.length - selected.length;
 
-  const workspaces: WorkspaceStatsOverviewRowV1[] = [];
-  for (const membership of selected) {
-    workspaces.push({
-      workspaceId: membership.workspaceId,
-      workspaceName: membership.workspaceName,
-      role: membership.role,
-      isPersonal: membership.isPersonal,
-      isCurrent: membership.workspaceId === currentWorkspaceId,
-      overview: await loadOverview(membership.workspaceId, userId),
-    });
-  }
+  // P1-13：把跨空间的循环从**串行**改成并行。
+  //
+  // 收口前这里是 `for … await loadOverview(...)`：`getStatsOverview` 内部自己已经是
+  // 两批 `Promise.all`（笔记/卡片 3 条一批、目标/到期 2 条一批），所以单个空间约 2 个
+  // 串行往返；但**空间之间**是逐个 await 的，N 个空间就是 N×2 个串行往返，
+  // 首页这一个端点因此是全站往返最多的那一处。
+  //
+  // 各空间的读取互不依赖（各自一个独立事务、只按 workspace_id 过滤），所以并行安全。
+  // `Promise.all` **保持入参顺序**，所以 `workspaces` 的顺序与 `selected` 逐项一致——
+  // 这一点很重要：响应里 `isCurrent` 与 `skippedWorkspaceCount` 的口径都依赖这个顺序。
+  //
+  // ⚠️ 没有做审计建议的"合并成一条 workspace 统计 SQL"。那要把 getStatsOverview 的
+  // 六条查询改写成"按 workspace_id 分组"的形式，是一个更大的改动；并行化先把
+  // 串行往返消掉，收益已经拿到，合并留给下一轮（有实测再定）。
+  const overviews = await Promise.all(
+    selected.map((membership) => loadOverview(membership.workspaceId, userId)),
+  );
+  const workspaces: WorkspaceStatsOverviewRowV1[] = selected.map((membership, index) => ({
+    workspaceId: membership.workspaceId,
+    workspaceName: membership.workspaceName,
+    role: membership.role,
+    isPersonal: membership.isPersonal,
+    isCurrent: membership.workspaceId === currentWorkspaceId,
+    overview: overviews[index]!,
+  }));
 
   return {
     version: 1,

@@ -19,14 +19,14 @@ if (!databaseUrl) {
 }
 const sql = postgres(databaseUrl, { max: 2 });
 
-import { createCompanionTurn } from "../modules/companion-conversation/turn-service.ts";
-import { cancelCompanionRun } from "../modules/companion-conversation/companion-cancel.ts";
+import { createCompanionTurn } from "../modules/companion-conversation/turn/turn-service.ts";
+import { cancelCompanionRun } from "../modules/companion-conversation/turn/companion-cancel.ts";
 import {
   ensureCompanionInbox,
   listCompanionMessages,
-} from "../modules/companion-conversation/companion-conversations-service.ts";
-import { openCompanionEventStream } from "../modules/companion-conversation/companion-events.ts";
-import { exportCompanionDataStream } from "../modules/companion-conversation/companion-export.ts";
+} from "../modules/companion-conversation/turn/companion-conversations-service.ts";
+import { openCompanionEventStream } from "../modules/companion-conversation/turn/companion-events.ts";
+import { exportCompanionDataStream } from "../modules/companion-conversation/turn/companion-export.ts";
 import { transcribeCompanionDialogueAudio } from "../modules/learning-sessions/companion-voice-service.ts";
 import { execFileSync } from "node:child_process";
 import { closeDatabase } from "../db/client.ts";

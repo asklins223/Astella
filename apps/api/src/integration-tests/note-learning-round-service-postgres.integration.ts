@@ -31,7 +31,7 @@ import {
   reviseDrivingQuestion,
   RoundServiceError,
   type CreateRoundInputV1,
-} from "../modules/note-learning-rounds/round-service.ts";
+} from "../modules/note-learning-rounds/round/round-service.ts";
 import { seedNotesOnlyWorkspace, type NotesOnlyWorkspaceFixture } from "./helpers/pure-v2-workspace-fixture.ts";
 
 const fixtureUrl = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL;

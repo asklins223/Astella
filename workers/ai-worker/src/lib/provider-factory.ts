@@ -8,7 +8,7 @@
  * - packages/shared 持静态 PROVIDER_METADATA const（两端直接 import，无副作用）
  * - 本模块绑 create() 工厂，仅 worker 进程可用
  *
- * @see docs/plans/provider-registry-refactor.md §3.2 第二层
+ * @see 原据 provider-registry-refactor.md（2026-09-29 已归档） §3.2 第二层
  */
 
 import type { Capability, CapabilityImpl } from "@ailearn/shared";

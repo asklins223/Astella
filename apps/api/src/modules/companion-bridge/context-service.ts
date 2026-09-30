@@ -260,4 +260,18 @@ async function verifyEntityRefs(
       throw new ContextHydrationError(`entity not found in workspace: ${missing.join(",")}`);
     }
   }));
+
+  for (const ref of refs) {
+    if (ref.kind !== "note" || !ref.noteVersionId) continue;
+    const versions = await tx.execute(sql`
+      SELECT id FROM note_versions
+      WHERE id = ${ref.noteVersionId}::uuid
+        AND note_id = ${ref.noteId}::uuid
+        AND workspace_id = ${scope.workspaceId}
+      LIMIT 1
+    `);
+    if (versions.length === 0) {
+      throw new ContextHydrationError(`note version not found for note ${ref.noteId}`);
+    }
+  }
 }

@@ -1,17 +1,70 @@
 /**
  * F-024: 统一分页参数 clamp 工具。
  *
- * limit 限定到 1–100，offset/cursor 限定到 ≥0。
+ * limit 限定到 1–`max`（默认 100），offset/cursor 限定到 ≥0。
  * 负值或 NaN 会被纠正为默认值，而非触发 500。
+ *
+ * 2026-09-29（P1-17）：加了 `max` 参数。原因是此前上界硬编码 100，
+ * 于是 audit(200) / observability(500) 这类路由**用不了**它，只能各自手写
+ * `Math.min(Math.max(x, 1), 200)`——全仓因此有十几处手写 clamp，其中 3 处
+ * **漏了下界**（`?limit=0` 或负数原样进查询，其中 `delivery-service.ts` 那一处
+ * 还会 `Math.min(undefined, 100)` 得到 NaN）。
+ *
+ * 有了 `max` 之后，那几处可以直接换成这个函数，NaN 也一并被兜住。
  */
-export function clampLimit(value: number | undefined, defaultValue = 100): number {
-  if (value === undefined || Number.isNaN(value)) return defaultValue;
-  return Math.max(1, Math.min(100, Math.floor(value)));
+export function clampLimit(value: number | string | undefined | null, defaultValue = 100, max = 100): number {
+  // 2026-09-29（P1-4）：形参放宽到 **string**。
+  //
+  // 理由是实打实的：`req.query.limit` 的类型就是 `string | undefined`，
+  // 而手写那 11 处里有 1 处（note/routes.ts）必须先 `Number(...)` 才能传进来——
+  // 也就是说收口之后每个路由都要多写一次本地转型。
+  //
+  // 更要紧的是：**字符串是 NaN 漏洞的主要来源**。
+  // `?limit=abc` 到手是字符串，不转就是 NaN；而 11 处手写 clamp 里有 10 处
+  // 确实会漏（`Math.min(Math.max(NaN, 1), 100)` 仍是 NaN），drizzle 拿到 NaN
+  // **不渲染 LIMIT**，端点直接退化成全表扫描。
+  // 形参收下字符串，就让"忘了转型"这件事不可能发生，而不是指望每个调用点记得。
+  // 空白串当"没给"处理。`?limit=` 到手是 ""，而 `Number("")` 是 **0**——
+  // 0 是有限数，于是直接被下界抬成 1，用户留空反而只拿到一条。
+  // 语义上留空就是没填，回默认值才对。
+  if (typeof value === "string" && value.trim() === "") return defaultValue;
+  const numeric = typeof value === "string" ? Number(value) : value;
+  if (numeric === undefined || numeric === null || !Number.isFinite(numeric)) return defaultValue;
+  const upper = Math.max(1, Math.floor(max));
+  return Math.max(1, Math.min(upper, Math.floor(numeric)));
 }
 
-export function clampOffset(value: number | undefined, defaultValue = 0): number {
-  if (value === undefined || Number.isNaN(value)) return defaultValue;
-  return Math.max(0, Math.floor(value));
+/**
+ * offset 限定到 `0..max`（默认 10000）。
+ *
+ * 2026-09-29（P3-8）：此前**只有下界**。`?offset=10000000` 会原样进查询，
+ * 而 Postgres 的 OFFSET 是"扫过再丢掉"——`OFFSET 10_000_000 LIMIT 50`
+ * 仍然要把前面一千万行读出来再扔掉。三条用到它的端点
+ * （identity 的 AI 审计日志、邀请码列表、卡片列表）都直接把它交给
+ * `.offset()`，所以这是一个"一个 query 参数换来一次全表扫描"的形状。
+ *
+ * **为什么是封顶而不是改 keyset**：keyset 才是正解，但那要改三个端点的
+ * 排序与游标形状（对外契约跟着变）。封顶是同一条治本的**兜底**——
+ * 它保证"单次翻页的代价有界"，而 keyset 解决的是"翻页本身不随深度变贵"。
+ * 两件事都该做，先做不会再变贵的那一件。
+ *
+ * 10_000 的来由：按每页 50 条算是第 200 页，再往后的翻页本来就该换成
+ * keyset；换句话说，这个上限卡的是"不该被接受的用法"，不是正常浏览。
+ *
+ * 形参与 `clampLimit` 一致地收下 **string**：`req.query.offset` 到手就是
+ * `string | undefined`，不转型就传进来是这一类 NaN 漏洞的来源。
+ */
+export function clampOffset(
+  value: number | string | undefined | null,
+  defaultValue = 0,
+  max = 10_000,
+): number {
+  if (typeof value === "string" && value.trim() === "") return defaultValue;
+  const numeric = typeof value === "string" ? Number(value) : value;
+  if (numeric === undefined || numeric === null || !Number.isFinite(numeric)) return defaultValue;
+  const lower = Math.max(0, Math.floor(defaultValue));
+  const upper = Math.max(lower, Math.floor(max));
+  return Math.max(lower, Math.min(upper, Math.floor(numeric)));
 }
 
 export function clampPagination(opts?: { cursor?: number; limit?: number }, defaults?: { limit?: number; cursor?: number }) {

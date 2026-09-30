@@ -20,8 +20,8 @@
 import { and, eq } from "drizzle-orm";
 import { noteLearningRoundTeachings } from "@ailearn/shared/db-schema/note-learning-rounds";
 import type { ApiTransaction } from "../../db/client.ts";
-import { readRound } from "./round-service.ts";
-import { loadTeachingSnapshotBlocks } from "./teaching-explain.ts";
+import { readRound } from "./round/round-service.ts";
+import { loadTeachingSnapshotBlocks } from "./teaching/teaching-explain.ts";
 import {
   prerequisiteLargeBranchThresholdV1,
   proposePrerequisiteV1,

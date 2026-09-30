@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireSession, requireOwner } from "../identity/middleware.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { detectSearchDrift, decodeSearchCursor, reindexWorkspaceSearch, search, autoFixSearchDrift } from "./service.ts";
 import { parseQuery } from "../../lib/pagination.ts";
 
@@ -26,7 +26,7 @@ export async function searchRoutes(app: FastifyInstance) {
     const cursor = q.cursor ? decodeSearchCursor(q.cursor) : null;
     if (q.cursor && !cursor) throw app.httpErrors.badRequest("invalid search cursor");
     return withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       async (transaction) => {
         if (!normalizedQuery) return { items: [], total: 0, nextCursor: null };
         return search(transaction, req.session.workspaceId, normalizedQuery, {
@@ -43,7 +43,7 @@ export async function searchRoutes(app: FastifyInstance) {
   // 返回幽灵文档、缺失文档和过期标题，供前端展示和触发 reindex 补偿
   app.get("/search/drift", { preHandler: [requireOwner] }, async (req) => {
     return withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => detectSearchDrift(transaction, req.session.workspaceId),
     );
   });
@@ -53,7 +53,7 @@ export async function searchRoutes(app: FastifyInstance) {
   // F-025: 作为补偿机制，修复漂移检测发现的不一致
   app.post("/search/reindex", { preHandler: [requireOwner] }, async (req) => {
     return withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => reindexWorkspaceSearch(transaction, req.session.workspaceId),
     );
   });
@@ -62,7 +62,7 @@ export async function searchRoutes(app: FastifyInstance) {
   // 检测漂移量，超过阈值时自动触发 reindex。可由定时任务或手动调用。
   app.post("/search/auto-fix", { preHandler: [requireOwner] }, async (req) => {
     return withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => autoFixSearchDrift(transaction, req.session.workspaceId),
     );
   });

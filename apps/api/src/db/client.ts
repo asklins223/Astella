@@ -106,6 +106,30 @@ export type ApiTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 export type WorkspaceTransactionContext = WorkspaceScopeContext<string>;
 export type NormalizedWorkspaceTransactionContext = WorkspaceScopeContext<string>;
 
+/**
+ * 会话 → 工作区作用域。**2026-09-29（P0-15）新增。**
+ *
+ * 此前这段字面量在生产代码里逐字出现 **120 次 / 30 个文件**：
+ *
+ *   scopeOfSession(req.session)
+ *
+ * 分散本身不是病。真正的病是**有人试过收口、然后被测试挡回去了**：
+ * `src/__tests__/content-workspace-transaction.test.ts` 数这个字面量的出现次数，
+ * 断言它等于 handler 数——谁把它换成函数调用，那条断言当场变红。
+ * 于是"作用域来源唯一"这件事被一条测试**锁死**了。
+ *
+ * 那一侧的另一半（service 必须收 `executor: ApiTransaction`、不得逃逸到全局 `db`）
+ * 方向完全正确，扩到 31 个模块即可，本函数不动它。
+ *
+ * 这里只收"会话形状"，不收 `req`：调用方多数已经做过 `requireSession`，
+ * 少数（review/routes.ts 那两处）自己解出了 session 变量，两种都能传进来。
+ */
+export function scopeOfSession(
+  session: { workspaceId: string; userId: string },
+): WorkspaceTransactionContext {
+  return scopeOfSession(session);
+}
+
 export class WorkspaceTransactionContextError extends DomainError {
   constructor(message: string) {
     super({ name: "WorkspaceTransactionContextError", code: "workspace_transaction_context_error", message, statusCode: 500 });

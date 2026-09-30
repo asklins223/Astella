@@ -66,8 +66,6 @@
   font-weight: 800;
   line-height: 1.2;
 }
-.hud-surface .objective-mode-badge--formal { color: #fff9e9; background: var(--quest-moss); }
-.hud-surface .objective-mode-badge--practice { color: #674d12; background: var(--quest-butter); }
 .hud-surface .objective-mode-badge--unavailable { color: var(--quest-soft); border-color: var(--quest-line-strong); background: transparent; }
 .hud-surface .v3-objective-state { color: var(--quest-ink); border-color: var(--quest-line); background: rgba(255, 255, 255, 0.38); }
 .hud-surface .v3-objective-state > svg { flex: none; }
@@ -252,8 +250,6 @@
 .hud-surface .v3-goal-list { min-height: 0; flex: 1 1 0; margin: 9px 0 0; padding: 0; list-style: none; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .hud-surface .v3-goal-row { display: grid; width: 100%; min-height: 72px; grid-template-columns: 6px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 10px 4px; color: var(--quest-ink); border: 0; border-bottom: 1px solid var(--quest-line); background: none; text-align: left; cursor: pointer; }
 .hud-surface .v3-goal-row__marker { width: 6px; height: 34px; border-radius: 999px; background: var(--quest-water); }
-.hud-surface .v3-goal-row__marker--stable { background: var(--quest-grass); }
-.hud-surface .v3-goal-row__marker--repair { background: var(--quest-clay); }
 .hud-surface .v3-goal-row__body { display: grid; min-width: 0; gap: 3px; }
 .hud-surface .v3-goal-row__title { overflow-wrap: anywhere; font: 700 14px/1.35 "Noto Serif SC Variable", "Songti SC", serif; }
 .hud-surface .v3-goal-row__summary { overflow: hidden; color: var(--quest-soft); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
@@ -290,7 +286,10 @@
 .hud-surface .objective-brief__mission > p { max-width: 66ch; margin: 0; color: #5e5242; font-size: 15px; line-height: 1.6; }
 .hud-surface .objective-brief__mode { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 10px; margin-top: 5px; padding-top: 10px; border-top: 1px dashed #c9b68f; }
 .hud-surface .objective-brief__mode strong { color: #305b46; font-size: 13px; white-space: nowrap; }
-.hud-surface .objective-brief__mode--practice strong { color: #8c601e; }
+/* 「正式验证 / 练习 / 取不到」三档共用一枚模式签，各给一个可辨的墨色：正式是林绿、
+   练习是暖黄、**取不到**是陶红——第三档必须一眼看出「这条没有结论」而不是又一枚
+   正常的模式签。此前只有 --practice 有规则，另两档落回基类墨色，三档看起来一模一样。 */
+.hud-surface .objective-brief__mode--unavailable strong { color: var(--hud-clay); }
 .hud-surface .objective-brief__mode span { color: #665947; font-size: 13px; line-height: 1.5; }
 .hud-surface .objective-brief__departure { display: grid; grid-template-columns: minmax(0, 1fr) minmax(245px, 0.57fr); gap: clamp(18px, 3vw, 40px); align-items: center; padding: 12px clamp(24px, 4vw, 54px) 25px; color: #fff8e8; }
 .hud-surface .objective-brief__progress-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
@@ -375,8 +374,6 @@
 .desktop-app.hud-surface[data-theme="night"] .learning-run-response textarea::placeholder,
 .desktop-app.hud-surface[data-theme="dark"] .learning-run-response textarea::placeholder { color: #827663; }
 .hud-surface .learning-run-response .run-text-editor small { justify-self: end; color: var(--quest-soft); font-size: 12px; }
-.hud-surface .learning-run-response .run-text-editor--compact { min-height: 126px; margin-top: 18px; padding-top: 17px; border-top: 1px solid var(--quest-line); }
-.hud-surface .learning-run-response .run-text-editor--compact > span { margin-bottom: 8px; font-size: 13px; font-weight: 850; }
 .hud-surface .learning-run-hint--shown { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; margin: 13px 0 0; padding: 12px 14px; color: #5a421e; border: 0; border-radius: 15px 19px 14px 18px; background: #f8dda0; transform: none; }
 .hud-surface .learning-run-hint__body { display: grid; gap: 6px; min-width: 0; }
 .hud-surface .learning-run-hint__levels { display: grid; gap: 5px; margin: 0; padding-left: 18px; }
@@ -396,6 +393,10 @@
 .hud-surface .run-matching__item.is-active { border-color: rgba(155, 71, 47, 0.46); background: rgba(242, 207, 107, 0.25); box-shadow: inset 4px 0 0 var(--quest-clay); }
 .hud-surface .run-choice-option__mark { display: inline-grid; width: 24px; height: 24px; flex: none; place-items: center; color: #fffaf0; border: 2px solid var(--quest-clay); border-radius: 50%; background: transparent; }
 .hud-surface .run-choice-option.is-selected .run-choice-option__mark { background: var(--quest-clay); }
+/* 配对作答里「已经连上的那几对」这一段的容器：上面是「已连 N 对」的提示行，下面是配对
+   清单。__trail 与 __pairs 各自有规格，缺的是把两者隔开的那一道呼吸——此前这个类名
+   没人接，两段直接贴在一起。 */
+.hud-surface .run-matching__result { display: grid; gap: 8px; }
 .hud-surface .run-matching__columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
 .hud-surface .run-matching__col { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .hud-surface .run-matching__item { justify-content: space-between; }
@@ -403,6 +404,11 @@
 .hud-surface .run-matching__trail { color: var(--quest-soft); font-size: 12px; }
 .hud-surface .run-matching__pairs { display: grid; gap: 7px; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--quest-line); list-style: none; }
 .hud-surface .run-matching__pairs li { display: grid; min-height: 44px; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 5px 9px; border-radius: 13px; background: rgba(121, 188, 197, 0.12); font-size: 14px; }
+/* 排序作答的容器：一句操作说明 + 一张可拖的路标清单。此前 tsx 发了这个类名、这里
+   一条规则都没有，实际靠内层 .run-order-list 自己撑开——两段之间没有节奏可言。
+   与 .run-matching__result 同规格：只负责把子块摆成有间距的一列，不自带纸面。 */
+.hud-surface .run-ordering { display: grid; gap: 9px; }
+
 .hud-surface :is(.run-order-list, .run-relation-list) { margin: 0; padding: 0; list-style: none; }
 .hud-surface .run-order-list { display: grid; gap: 7px; }
 .hud-surface .run-order-list li { display: grid; min-height: 57px; grid-template-columns: 28px auto minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 8px 10px; border: 1px solid var(--quest-line); border-radius: 14px 18px 13px 17px; background: rgba(255, 255, 255, 0.18); }
@@ -487,12 +493,17 @@
 .hud-surface .learning-run-action-cost { color: var(--quest-clay-deep); font-size: 12px; font-weight: 750; }
 .desktop-app.hud-surface[data-theme="night"] .learning-run-action-cost,
 .desktop-app.hud-surface[data-theme="dark"] .learning-run-action-cost { color: #ffc69f; }
-.hud-surface .learning-run-dock__row--act > .button.primary { min-width: 150px; min-height: 50px; padding-inline: 20px; background: var(--quest-clay); box-shadow: var(--quest-shadow-small); }
+/* 这一条只管**尺寸**——作答动作条上的那颗按钮要比普通按钮大，因为它是这一屏唯一
+   该被按下去的东西。底色与阴影**刻意不写**：主按钮的配色归母本 `.button.primary`
+   一处管（`hud-pages.css:152`，桃底 + 深墨字）。此前这里覆写成 `var(--quest-clay)`
+   （陶土红 #d56d48），于是同一个「主按钮」在书房里有两种红——而 `--quest-clay` 同时
+   被 7 处非按钮元素（进度条、选中记号、拖拽把手…）占用，两种红的语义已经搅在一起。
+   下面那条夜间的 `color: #fff9e9` 也一并去掉：奶白字压在桃底上读不清，母本那套
+   深墨字在日夜两档都成立。 */
+.hud-surface .learning-run-dock__row--act > .button.primary { min-width: 150px; min-height: 50px; padding-inline: 20px; }
 .hud-surface .learning-run-dock__row--exit .button { color: var(--quest-ink); border-color: var(--quest-line-strong); background: rgba(255, 252, 235, 0.7); box-shadow: var(--quest-shadow-small); }
 .desktop-app.hud-surface[data-theme="night"] .learning-run-dock__row--exit .button,
 .desktop-app.hud-surface[data-theme="dark"] .learning-run-dock__row--exit .button { color: #fff9e9; border-color: rgba(255, 249, 231, 0.36); background: #536955; }
-.desktop-app.hud-surface[data-theme="night"] .learning-run-dock__row--act > .button.primary,
-.desktop-app.hud-surface[data-theme="dark"] .learning-run-dock__row--act > .button.primary { color: #fff9e9; }
 .desktop-app.hud-surface[data-theme="night"] .learning-run-dock__row--act > .actions > .button:not(:disabled),
 .desktop-app.hud-surface[data-theme="dark"] .learning-run-dock__row--act > .actions > .button:not(:disabled) { color: #fff9e9; border-color: rgba(255, 249, 231, 0.32); background: #536955; }
 .desktop-app.hud-surface[data-theme="night"] .run-editor-guidance,
@@ -689,7 +700,11 @@
 .hud-surface .learning-run-ceremony { position: fixed; z-index: 31; inset: 0; display: grid; place-items: center; overflow: hidden; color: #44382f; background-color: #183d43; background-image: linear-gradient(rgba(19, 48, 52, .76), rgba(18, 34, 49, .9)), url("/assets/objective-flow/result-arrival-v1.png"); background-position: center; background-size: cover; animation: quest-ceremony-stage 300ms ease-out both; }
 .hud-surface .learning-run-ceremony__aurora { position: absolute; inset: 0; background: radial-gradient(ellipse 46% 54% at 22% 18%, rgba(255, 216, 117, .32), transparent 75%), radial-gradient(ellipse 42% 42% at 78% 82%, rgba(243, 140, 151, .24), transparent 75%), radial-gradient(ellipse 54% 58% at 54% 46%, rgba(114, 206, 202, .2), transparent 75%); animation: quest-ceremony-breathe 2400ms ease-in-out both; pointer-events: none; }
 .hud-surface .learning-run-ceremony__confetti { position: absolute; z-index: 2; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.hud-surface .learning-run-ceremony__orbit { position: absolute; z-index: 1; width: min(65vw, 720px); aspect-ratio: 1; border: 2px solid rgba(255, 233, 167, .36); border-radius: 50%; pointer-events: none; animation: quest-ceremony-orbit 1300ms 160ms var(--quest-ease-out) both; }
+/* 仪式场的两圈光环：一内一外。`--one` 就是内圈，规格由基类承担，这里把它写进选择器
+   是为了让「内圈 / 外圈」这对命名在代码里成对可读——此前 tsx 发了 `--one` 却没有任何
+   规则接手，它和基类完全等值，是个悬空的名字。 */
+.hud-surface .learning-run-ceremony__orbit,
+.hud-surface .learning-run-ceremony__orbit--one { position: absolute; z-index: 1; width: min(65vw, 720px); aspect-ratio: 1; border: 2px solid rgba(255, 233, 167, .36); border-radius: 50%; pointer-events: none; animation: quest-ceremony-orbit 1300ms 160ms var(--quest-ease-out) both; }
 .hud-surface .learning-run-ceremony__orbit--two { width: min(83vw, 930px); border-color: rgba(255, 249, 226, .18); animation-delay: 320ms; }
 .hud-surface .learning-run-ceremony__content { position: relative; z-index: 3; display: grid; width: min(650px, calc(100vw - 350px)); max-height: calc(100vh - 98px); align-content: center; justify-items: center; gap: 10px; margin-right: min(16vw, 205px); overflow-y: auto; padding: clamp(20px, 3vw, 34px) clamp(20px, 4vw, 48px); border: 5px solid #fff7db; border-radius: 34px 40px 31px 37px / 38px 32px 41px 34px; background: #fff8e5; box-shadow: 0 8px 0 rgba(84, 124, 95, .7), 0 30px 80px rgba(8, 30, 31, .38); text-align: center; animation: quest-ceremony-card 580ms 180ms var(--quest-ease-out) both; }
 .hud-surface .learning-run-ceremony__stamp { display: grid; width: 108px; height: 108px; place-content: center; justify-items: center; gap: 2px; color: #683f2d; border: 7px double #a45f43; border-radius: 50%; background: #f9dc8c; box-shadow: 0 7px 0 #d9b36a, 0 14px 28px rgba(62, 43, 29, .2); font: 800 23px/1.1 "Noto Serif SC Variable", "Songti SC", serif; animation: quest-ceremony-stamp 660ms 540ms var(--quest-ease-out) both; }
@@ -725,6 +740,9 @@
 }
 
 /* Dialogs and processing remain legible at every scale. */
+/* 「正在判定」这一屏的容器：标题行（带秒表）、已锁定的回答、还有下面的进度。它不自带
+   纸面——这一屏的纸是外层的 run-paper；这里只把三段摆成有间距的一列。 */
+.hud-surface .learning-run-assessing { display: grid; gap: 8px; }
 .hud-surface .learning-run-assessing__wait { margin-left: auto; font-size: 12px; font-weight: 800; }
 .hud-surface .learning-run-assessing__answer { display: grid; gap: 5px; margin: 12px 0 0; padding: 12px 14px; color: var(--quest-ink); border: 1px solid var(--quest-line); border-radius: 14px 17px 13px 16px; background: rgba(255, 255, 255, 0.17); font-size: 14px; line-height: 1.6; }
 .hud-surface .learning-run-assessing__answer .meta { font-size: 12px; }

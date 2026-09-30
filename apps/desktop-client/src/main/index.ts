@@ -28,7 +28,8 @@ import {
   WINDOW_STATE_SNAPSHOT_CHANNEL,
   resolveWindowState,
   type AILearnWindowState,
-  type WindowStateSnapshot
+  type WindowStateSnapshot,
+  TITLE_BAR_THEME_CHANNEL,
 } from '../shared/window-state'
 import {
   HOME_WINDOW_ASPECT_RATIO,
@@ -489,7 +490,7 @@ function windowFor(contents: WebContents, sourceUrl: string): BrowserWindow | nu
 }
 
 function registerWindowIpc(): void {
-  ipcMain.on('window:set-titlebar-theme', (event, theme: unknown) => {
+  ipcMain.on(TITLE_BAR_THEME_CHANNEL, (event, theme: unknown) => {
     const window = windowFor(event.sender, event.senderFrame?.url ?? '')
 
     if (!window || process.platform === 'darwin' || (theme !== 'day' && theme !== 'night')) return

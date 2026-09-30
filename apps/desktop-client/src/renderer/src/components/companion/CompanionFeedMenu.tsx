@@ -1,3 +1,4 @@
+// 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { useEffect, useRef, useState } from "react";
 import { Copy, Send } from "lucide-react";
 import { hasOpenModal, isEditableTarget, isSourceCaptureTarget } from "../../app/source-intake";
@@ -6,7 +7,6 @@ import {
   feedSelectionToCompanion,
   truncateFeedText,
 } from "./companion-feed";
-import "./companion-feed.css";
 
 function canFeed(): boolean {
   const hud = document.querySelector(".companion-hud");

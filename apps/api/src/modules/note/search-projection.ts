@@ -1,6 +1,5 @@
-import { searchDocuments } from "@ailearn/shared/db-schema/search";
 import type { ApiTransaction } from "../../db/client.ts";
-import { logger } from "../../lib/logger.ts";
+import { upsertSearchProjection } from "../../lib/search-index-upsert.ts";
 
 export type NoteSearchDocument = {
   workspaceId: string;
@@ -28,31 +27,13 @@ export type NoteSearchDocument = {
  * "列表预览是新的、搜索里还是旧正文"，而且不报错。`service.ts` 反过来 import
  * `document-state.ts`，所以这个函数不能留在那边，否则成环。
  */
+/**
+ * 笔记侧只声明自己的形状；真正的写盘在 `lib/search-index-upsert.ts`
+ * （2026-09-29 从来源侧那一份逐字重复里抽出，见那里的文件头）。
+ */
 export async function upsertSearchDocument(
   executor: ApiTransaction,
   document: NoteSearchDocument,
 ): Promise<boolean> {
-  try {
-    await executor.transaction(async (savepoint) => {
-      await savepoint
-        .insert(searchDocuments)
-        .values({ ...document, metadata: {}, indexedAt: new Date() })
-        .onConflictDoUpdate({
-          target: [searchDocuments.workspaceId, searchDocuments.objectType, searchDocuments.objectId],
-          set: {
-            title: document.title,
-            body: document.body,
-            metadata: {},
-            indexedAt: new Date(),
-          },
-        });
-    });
-    return true;
-  } catch (err) {
-    logger.error(
-      { err, ...document },
-      "search index upsert failed — index may be stale, run reindex to compensate",
-    );
-    return false;
-  }
+  return upsertSearchProjection(executor, document);
 }

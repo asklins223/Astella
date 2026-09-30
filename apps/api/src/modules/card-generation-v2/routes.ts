@@ -85,6 +85,8 @@ import {
   projectCardGenerationJobAcceptedV1,
   projectCardGenerationReviewResultV1,
 } from "./desktop-projection.ts";
+import { scopeOfSession } from "../../db/client.ts";
+import { buildSimpleErrorBody } from "../../lib/error-envelope.ts";
 
 const eventsQuerySchema = z.object({
   after: z.coerce.number().int().min(0).optional().default(0),
@@ -101,7 +103,7 @@ const v2CardsQuerySchema = z.object({
 });
 
 function context(req: { session: { workspaceId: string; userId: string } }): RunContext {
-  return { workspaceId: req.session.workspaceId, userId: req.session.userId };
+  return scopeOfSession(req.session);
 }
 
 /**
@@ -120,7 +122,7 @@ function requireIdempotencyKey(req: { headers: Record<string, string | string[] 
 function sendServiceError(reply: FastifyReply, error: unknown) {
   // 检查基类：子类（api IO 壳）与父类（shared 纯逻辑）实例都会命中。
   if (error instanceof CardGenerationPipelineErrorV2) {
-    return reply.code(error.statusCode).send({ error: error.code, message: error.message });
+    return reply.code(error.statusCode).send(buildSimpleErrorBody(error));
   }
   throw error;
 }
@@ -315,7 +317,7 @@ export async function cardGenerationV2Routes(app: FastifyInstance) {
     });
     /**
      * in-flight 守卫（0269 轮 M34）。这条端点以前没有它，而隔壁
-     * `companion-conversation/inbox-routes.ts:106-108` 早就为同一个理由加过：
+     * `companion-conversation/delivery/inbox-routes.ts:106-108` 早就为同一个理由加过：
      * `setInterval` 的回调是 async 的，一次轮询 = 一个完整的工作区事务（BEGIN +
      * `set_config` 回读 + SELECT + COMMIT）。库一慢、单次超过 2 秒，下一个 tick 就在
      * 上一次还没结束的时候又开一个事务，同一条连接上的事务开始叠加——正好把 25 个连接的

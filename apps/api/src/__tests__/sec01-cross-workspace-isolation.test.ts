@@ -55,7 +55,7 @@ function readFileContent(path: string): string {
 // ─── 1. withWorkspaceTransaction 正确使用 ─────────────────────────────────
 
 describe("SEC-01: withWorkspaceTransaction 使用模式", () => {
-  const serviceFiles = collectTsFiles(MODULES_DIR).filter((f) => f.endsWith("service.ts"));
+  const serviceFiles = collectTsFiles(MODULES_DIR).filter((f) => f.endsWith("audit-service.ts"));
 
   it("使用 withWorkspaceTransaction 的服务传递 workspaceId 和 userId", () => {
     for (const file of serviceFiles) {
@@ -77,7 +77,23 @@ describe("SEC-01: withWorkspaceTransaction 使用模式", () => {
 
       // Check if the file has write operations outside of transactions
       const hasWriteOps = /\.(insert|update|delete)\s*\(/.test(content);
-      const hasTransaction = content.includes("withWorkspaceTransaction") || content.includes("db.transaction");
+      // 2026-09-29（P1-7 拆分 identity 时补）：`withActorTransaction` 也算事务。
+      //
+      // 为什么必须加：会话族被搬进 `identity/session-service.ts` 之后，这条守卫
+      // 在新文件上红了——它只认 `withWorkspaceTransaction` 与 `db.transaction`，
+      // 而会话族走的是 `withActorTransaction`。
+      //
+      // 加它之前先核过语义，不是"名字里带 transaction 就放过"：
+      // `withActorTransaction`（db/client.ts:329）内部同样是 `db.transaction(...)`，
+      // 并且在事务内调 `applyActorConfig` 下发 `app.user_id` / `app.session_token`
+      // ——与 `withWorkspaceTransaction` 的 RLS 上下文保证同级。
+      //
+      // ⚠️ 不要因为"别的模式也像事务"就往这个列表里加：这里判的是
+      // **有没有把写操作关进一个带 RLS 上下文的真事务**，
+      // 不是文本里有没有某个标识符。
+      const hasTransaction = content.includes("withWorkspaceTransaction")
+        || content.includes("withActorTransaction")
+        || content.includes("db.transaction");
       // Some services delegate writes to other services (e.g. createJob) that
       // internally use transactions, or accept an executor parameter that is
       // already a transaction from the caller. 惯例命名 `executor:` 或按类型

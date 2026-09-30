@@ -19,7 +19,7 @@ import {
 } from "@ailearn/shared/companion-voice-contracts";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import { logger } from "../../lib/logger.ts";
-import { CompanionConversationError } from "../companion-conversation/turn-service.ts";
+import { CompanionConversationError } from "../companion-conversation/turn/turn-service.ts";
 import { probeAudioDurationMs } from "./ffprobe.ts";
 
 export interface CompanionAsrProvider {

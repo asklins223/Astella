@@ -19,7 +19,7 @@ import { writeFragmentBlocks } from "../note/doc-fragment.ts";
 import { preRegisterImageAssetsForImport } from "../../lib/image-asset.ts";
 import { markdownToBlocks, extractTitleFromBlocks, type ParsedBlock } from "@ailearn/shared/markdown-parser";
 import { extractObjectKeyFromMarkdownImage } from "../../lib/markdown-image.ts";
-import { upsertSearchDocument } from "../../lib/search-index.ts";
+import { upsertSearchDocument } from "./search-index.ts";
 import { logger } from "../../lib/logger.ts";
 
 export interface MarkdownImportScope {

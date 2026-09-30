@@ -10,7 +10,7 @@ import { seedNotesOnlyWorkspace } from "../integration-tests/helpers/pure-v2-wor
 import { authRoutes } from "../modules/identity/routes.ts";
 import { issueSession } from "../modules/identity/service.ts";
 import { noteLearningRoundRoutes } from "../modules/note-learning-rounds/routes.ts";
-import { resolveTeachingModelConfig } from "../modules/note-learning-rounds/teaching-llm.ts";
+import { resolveTeachingModelConfig } from "../modules/note-learning-rounds/teaching/teaching-llm.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 import { createRunV2 } from "../modules/learning-runs/run-service.ts";
 import { roundTeachingViewV1Schema } from "@ailearn/shared/note-learning-round-contracts";

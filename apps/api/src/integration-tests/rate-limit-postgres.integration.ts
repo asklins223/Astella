@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { PostgresRateLimitStore } from "../modules/identity/rate-limit.ts";
+import { PostgresRateLimitStore } from "../lib/rate-limit-store.ts";
 
 test("shares a PostgreSQL rate-limit window atomically", async () => {
   const databaseUrl = process.env.RATE_LIMIT_TEST_DATABASE_URL;

@@ -1,5 +1,5 @@
 /**
- * LearningRun V1 数据模型（docs/plans/learning-companion/16 §16.1 目标表演进）。
+ * LearningRun V1 数据模型（原据 learning-companion/16，2026-09-29 已归档）§16.1 目标表演进）。
  *
  * 对象语言与 wire contract 对齐（@ailearn/shared learning-run-contracts.ts）：
  * - learning_runs              ← run lifecycle（phase/budget/activeTask/revision/checkpoint）

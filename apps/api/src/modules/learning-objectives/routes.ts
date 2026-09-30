@@ -11,7 +11,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireOwner, requireSession } from "../identity/middleware.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import {
   assembleObjectiveSurfaceV3,
   listObjectiveSurfacesV3,
@@ -57,9 +57,9 @@ export async function learningObjectiveRoutes(app: FastifyInstance) {
     const query = parsed.data;
     const lifecycle = query.lifecycle;
     return withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       async (tx) => {
-        const ctx = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+        const ctx = scopeOfSession(req.session);
         const page = await listObjectiveSurfacesV3(tx, ctx, {
           lifecycle,
           cursor: query.cursor,
@@ -102,14 +102,14 @@ export async function learningObjectiveRoutes(app: FastifyInstance) {
     { preHandler: [requireOwner] },
     async (req) =>
       withWorkspaceTransaction(
-        { workspaceId: req.session.workspaceId, userId: req.session.userId },
+        scopeOfSession(req.session),
         (tx) => executeObjectiveOriginBackfill(tx, req.session.workspaceId),
       ),
   );
 
   app.get("/v2/learning-objectives/:objectiveId", async (req, reply) => {
     const { objectiveId } = req.params as Params;
-    const ctx = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+    const ctx = scopeOfSession(req.session);
     try {
       return await withWorkspaceTransaction(ctx, (tx) =>
         assembleObjectiveSurfaceV3(tx, ctx, objectiveId),
@@ -129,7 +129,7 @@ export async function learningObjectiveRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_query", message: "查询参数非法" });
     }
-    const ctx = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+    const ctx = scopeOfSession(req.session);
     return withWorkspaceTransaction(ctx, (tx) =>
       readObjectiveHistoryV3(tx, ctx.workspaceId, objectiveId, {
         limit: parsed.data.limit ?? 20,

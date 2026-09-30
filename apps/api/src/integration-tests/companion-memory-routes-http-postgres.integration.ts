@@ -28,7 +28,7 @@ const userB = randomUUID();
 const workspaceId = randomUUID();
 const prefix = userA.slice(0, 8);
 
-const { memoryRoutes } = await import("../modules/companion-conversation/memory-routes.ts");
+const { memoryRoutes } = await import("../modules/companion-conversation/memory/memory-routes.ts");
 const { issueSession, revokeSession } = await import("../modules/identity/service.ts");
 const { closeDatabase } = await import("../db/client.ts");
 

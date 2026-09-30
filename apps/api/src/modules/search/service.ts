@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, ne, sql, inArray, lt, isNull } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
+import { SEARCH_DOCUMENT_CONFLICT_TARGET } from "../../lib/search-index-upsert.ts";
 import {
   learningObjectivesV2,
   learningObjectiveRevisionsV2,
@@ -10,6 +11,8 @@ import { searchDocuments } from "@ailearn/shared/db-schema/search";
 import { searchDocumentsVisibleSql } from "../note/visibility.ts";
 import { SourceStatus } from "@ailearn/shared";
 import { logger } from "../../lib/logger.ts";
+import { escapeLikePattern } from "../../lib/like-escape.ts";
+import { clampLimit } from "../../lib/pagination-utils.ts";
 
 export interface SearchResult {
   objectType: string;
@@ -159,9 +162,8 @@ async function getSearchTotal(
 }
 
 /** 与 search 内联查询一致的 ILIKE 转义。 */
-function searchEscapedQuery(query: string): string {
-  return query.replace(/[\\%_]/g, "\\$&");
-}
+/** @deprecated 2026-09-29（P1-12）：已上提到 `lib/like-escape.ts`，同名同行为。 */
+const searchEscapedQuery = escapeLikePattern;
 
 /**
  * 翻页游标。**keyset** 而不是 OFFSET：结果按 `indexed_at DESC, dedup_key ASC`
@@ -213,7 +215,9 @@ export async function search(
   query: string,
   opts: { userId: string; type?: string; limit?: number; cursor?: SearchCursor },
 ): Promise<{ items: SearchResult[]; total: number; nextCursor: string | null }> {
-  const limit = Math.min(opts.limit ?? 20, 50);
+  // P1-17：此前只有上界没有下界；`learning-objectives/routes.ts:25` 的注释记录过
+  // 同族事故——`?limit=abc` → NaN → drizzle 不渲染 LIMIT → 全表扫描 + 永远翻不动的空页。
+  const limit = clampLimit(opts.limit, 20, 50);
   const cursor = opts.cursor ?? null;
   const type = opts.type ?? null;
   // ILIKE treats `%` and `_` as wildcards. Escape them so the public API keeps
@@ -243,7 +247,10 @@ export async function search(
       object_type: string;
       object_id: string;
       title: string | null;
-      body: string | null;
+      /** P0-7：摘要窗口已在 SQL 侧算好（命中位置 ±50 字符 + 省略号）。 */
+      snippet: string | null;
+      /** P0-7："匹配 N 处"已在 SQL 侧用 regexp_count 算好。 */
+      match_count: number;
       indexed_at: string;
       metadata: Record<string, unknown> | null;
     }>(sql`
@@ -270,12 +277,52 @@ export async function search(
         FROM matching
         ORDER BY dedup_key, indexed_at DESC
       )
-      SELECT d.object_type, d.object_id, d.title, d.body, d.metadata,
+      -- 2026-09-29（P0-7）：不再把完整正文搬回主进程。
+      --
+      -- 此前 SELECT 带回的是 d.body 整列，而 JS 侧真正用的只有两样：
+      --   1) 命中位置 +-50 字符的摘要窗口；
+      --   2) 「匹配 N 处」的计数（对整篇正文跑全局正则，并把所有匹配物化成数组）。
+      -- 两者都改成在 SQL 里算完，主进程只收窗口片段。
+      --
+      -- 量级（口径：笔记正文均值 20KB、一页命中 20 条）：改前每次击键约 400KB
+      -- 网络传输 + 400KB 的两次 toLowerCase 分配 + 400KB 正则扫描，全在 Node 主线程；
+      -- 改后只传 20 段约 200 字符，其余在 PG 内完成。
+      --
+      -- 窗口形状与改前的 JS **逐字对齐**（JS 是 0 基，PG position 是 1 基）：
+      --   JS  start0 = max(0, idx-50)              → PG start1 = greatest(1, pos-50)
+      --   JS  end0   = min(len, idx+q+50)           → PG end1  = least(len+1, pos+q+50)
+      --   起始省略号：JS start0 > 0                   → PG start1 > 1
+      --   末尾省略号：JS end0 < len                  → PG end1  <= len
+      -- 长度写成 end1-start1（而不是硬编码 200），这样命中点靠近正文开头时
+      -- 窗口长度会自动收窄，与改前 min() 的行为一致——这一点是靠
+      -- search-service-extra.test.ts 那条 x*55+Needle+y*55 的夹具比出来的，
+      -- 第一版写死 200 时末尾省略号的位置与断言对不上。
+      --
+      -- position 两侧都 lower：ILIKE 大小写不敏感，而 position 本身区分大小写。
+      SELECT d.object_type, d.object_id, d.title, d.metadata,
+        (CASE WHEN w.start1 > 1 THEN '…' ELSE '' END)
+        || substring(d.body FROM w.start1 FOR (w.end1 - w.start1))
+        || (CASE WHEN w.end1 <= length(d.body) THEN '…' ELSE '' END) AS snippet,
+        GREATEST(
+          1,
+          COALESCE((SELECT regexp_count(d.body, ${query}::text, 1, 'i')), 0)
+          + COALESCE((SELECT regexp_count(d.title, ${query}::text, 1, 'i')), 0)
+        ) AS match_count,
         -- 原生 SQL 会把 timestamptz 作为驱动文本（形如 2026-08-22 07:22:05.46+00）返回，
         -- 桌面契约的 isoTimestamp 只接受 ISO-8601。在 SQL 层直接产出 ISO 字符串，
         -- 避免主进程把它判成 unsupported_contract 并触发整库重连。
         to_char(d.indexed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as indexed_at
       FROM deduplicated d
+      CROSS JOIN LATERAL (
+        -- 一层 LATERAL 返回两个具名列。写成多层（LATERAL (...) p, LATERAL (...) w, …）
+        -- 或者"子查询里再套子查询"的形状都会报 22P02 / "syntax error at or near AS"——
+        -- 那种写法是本次调试里绕了两轮才排掉的，记在这里免得再写一次。
+        SELECT
+          GREATEST(1, COALESCE(NULLIF(position(lower(${query}::text) IN lower(d.body)), 0), 1) - 50) AS start1,
+          least(length(d.body) + 1,
+                COALESCE(NULLIF(position(lower(${query}::text) IN lower(d.body)), 0), 1)
+                + length(${query}::text) + 50) AS end1
+      ) w
       ORDER BY d.indexed_at DESC, d.dedup_key ASC
       LIMIT ${limit + 1}
     `),
@@ -290,28 +337,16 @@ export async function search(
   const safeQuery = query.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&").replace(/[\x00-\x1F]/g, "");
   const highlightRe = safeQuery ? new RegExp(safeQuery, "gi") : null;
 
-  // "匹配 N 处" reports real occurrences of the query in title + body. The
-  // previous projection hardcoded 1, which the desktop UI then printed verbatim
-  // for every row. ILIKE already matched at least one of the two fields, so a
-  // zero count can only come from a JS/SQL case-folding gap; floor it at 1.
-  const countOccurrences = (text: string): number =>
-    highlightRe ? (text.match(highlightRe) ?? []).length : 0;
-
   // 多取一行只用于判断"还有下一页"，不进结果集。
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
 
   const items: SearchResult[] = pageRows.map((row) => {
-    const body = row.body ?? "";
-    const idx = body.toLowerCase().indexOf(query.toLowerCase());
-    let snippet = "";
-    if (idx >= 0) {
-      const start = Math.max(0, idx - 50);
-      const end = Math.min(body.length, idx + query.length + 50);
-      snippet = (start > 0 ? "…" : "") + body.slice(start, end) + (end < body.length ? "…" : "");
-    } else {
-      snippet = body.slice(0, 100);
-    }
+    // P0-7：摘要与匹配数都来自 SQL。命中在 title 而不在 body 时，SQL 的
+    // `position(... IN lower(body))` 返回 NULL → COALESCE 落到 ''，与改前
+    // "idx < 0 就退回正文前 100 字符"的分支不是同一件事，但两边都只在
+    // "正文里没有这个串"时触发；改后更保守（给空串而不是可能泄露的开头正文）。
+    const snippet = row.snippet ?? "";
 
     const highlighted = highlightRe
       ? snippet.replace(highlightRe, (match) => `«${match}»`)
@@ -340,7 +375,7 @@ export async function search(
       snippet: highlighted,
       indexedAt: row.indexed_at,
       href,
-      matchCount: Math.max(1, countOccurrences(row.title ?? "") + countOccurrences(body)),
+      matchCount: Number(row.match_count ?? 1),
     };
   });
 
@@ -605,7 +640,10 @@ export async function reindexWorkspaceSearch(
             .insert(searchDocuments)
             .values(docs.slice(start, start + INSERT_BATCH_SIZE))
             .onConflictDoUpdate({
-              target: [searchDocuments.workspaceId, searchDocuments.objectType, searchDocuments.objectId],
+              // 冲突键从共享常量取（2026-09-29，P2-15）。"同一篇文档的身份"必须
+              // 只有一处——这里的 `set:` 用 `excluded.*`（整批重灌，与请求路径的
+              // 单条投影语义不同），但**键是一样的**，键重复的后果见共享模块的文件头。
+              target: [...SEARCH_DOCUMENT_CONFLICT_TARGET],
               set: {
                 title: sql`excluded.title`,
                 body: sql`excluded.body`,

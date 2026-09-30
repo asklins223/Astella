@@ -9,13 +9,10 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireSession } from "../identity/middleware.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { ASSISTANT_DELIVERY_KIND_VALUES, type AssistantDeliveryV2 } from "@ailearn/shared";
-import { listDeliveryTimeline } from "./delivery-service.ts";
-
-function isCompanionJourneyV2Enabled(): boolean {
-  return process.env.COMPANION_JOURNEY_V2 === "true";
-}
+import { listDeliveryTimeline } from "./delivery/delivery-service.ts";
+import { isCompanionJourneyV2Enabled } from "../../config/learning-companion-flags.ts";
 
 const timelineQuerySchema = z.object({
   before: z.coerce.number().int().positive().optional(),
@@ -39,7 +36,7 @@ export async function deliveryTimelineRoutes(app: FastifyInstance) {
     async (req) => {
       const query = timelineQuerySchema.safeParse(req.query ?? {});
       if (!query.success) throw app.httpErrors.badRequest("timeline query 非法");
-      const scope = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+      const scope = scopeOfSession(req.session);
       const timeline = await withWorkspaceTransaction(scope, (tx) =>
         listDeliveryTimeline(tx, scope, {
           beforeSequence: query.data.before,

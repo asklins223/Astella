@@ -31,7 +31,12 @@ describe("search service", () => {
               object_type: "note",
               object_id: "note-1",
               title: "A note",
-              body: `${"x".repeat(55)}Needle${"y".repeat(55)}`,
+              // P0-7：摘要窗口与"匹配 N 处"现在由 SQL 侧算完再回传
+              // （regexp_count + position/substring），所以夹具给的是**SQL 的产物**，
+              // 不再是整篇 body。这段 snippet 是按 search-service-extra 用例里
+              // 那段 body 在 PG 上实跑出来的字面量，逐字相同（含首尾两个省略号）。
+              snippet: `…${"x".repeat(51)}Needle${"y".repeat(55)}…`,
+              match_count: 1,
               indexed_at: "2026-07-20T01:02:03.000Z",
               metadata: null,
             },
@@ -39,7 +44,8 @@ describe("search service", () => {
               object_type: "objective",
               object_id: "objective-1",
               title: "An objective",
-              body: "Needle objective body",
+              snippet: "Needle objective body",
+              match_count: 1,
               indexed_at: "2026-07-20T01:02:02.000Z",
               metadata: { objectiveId: "objective-1", lifecycle: "active" },
             },
@@ -47,7 +53,8 @@ describe("search service", () => {
               object_type: "source",
               object_id: "source-1",
               title: "A source",
-              body: null,
+              snippet: null,
+              match_count: 1,
               indexed_at: "2026-07-20T01:02:01.000Z",
               metadata: null,
             },
@@ -55,7 +62,8 @@ describe("search service", () => {
               object_type: "other",
               object_id: "other-1",
               title: null,
-              body: "Needle and Needle",
+              snippet: "Needle and Needle",
+              match_count: 2,
               indexed_at: "2026-07-20T01:01:59.000Z",
               metadata: null,
             },
@@ -107,7 +115,8 @@ describe("search service", () => {
               object_type: "note",
               object_id: "00000000-0000-4000-8000-000000000002",
               title: "A note",
-              body: "Needle",
+              snippet: "Needle",
+              match_count: 1,
               indexed_at: "2026-08-22T07:22:05.460Z",
               metadata: null,
             }]
@@ -151,12 +160,12 @@ describe("search service", () => {
         return pageQueries.length === 1
           ? [
               // limit=2 时服务端多取一行用于判断"还有下一页"。
-              { object_type: "note", object_id: "n-3", title: null, body: "Needle", indexed_at: "2026-07-20T03:00:00.000Z", metadata: null },
-              { object_type: "note", object_id: "n-2", title: null, body: "Needle", indexed_at: "2026-07-20T02:00:00.000Z", metadata: null },
-              { object_type: "note", object_id: "n-1", title: null, body: "Needle", indexed_at: "2026-07-20T01:00:00.000Z", metadata: null },
+              { object_type: "note", object_id: "n-3", title: null, snippet: "Needle", match_count: 1, indexed_at: "2026-07-20T03:00:00.000Z", metadata: null },
+              { object_type: "note", object_id: "n-2", title: null, snippet: "Needle", match_count: 1, indexed_at: "2026-07-20T02:00:00.000Z", metadata: null },
+              { object_type: "note", object_id: "n-1", title: null, snippet: "Needle", match_count: 1, indexed_at: "2026-07-20T01:00:00.000Z", metadata: null },
             ]
           : [
-              { object_type: "note", object_id: "n-1", title: null, body: "Needle", indexed_at: "2026-07-20T01:00:00.000Z", metadata: null },
+              { object_type: "note", object_id: "n-1", title: null, snippet: "Needle", match_count: 1, indexed_at: "2026-07-20T01:00:00.000Z", metadata: null },
             ];
       },
     } as any;
@@ -183,7 +192,22 @@ describe("search service", () => {
     const secondSql = new PgDialect().sqlToQuery(pageQueries[1] as SQL);
     assert.match(secondSql.sql, /search_document\.indexed_at </);
     assert.match(secondSql.sql, /search_document\.indexed_at =/);
-    assert.deepEqual(secondSql.params.slice(-3, -1), ["2026-07-20T02:00:00.000Z", "note:n-2"]);
+    // 2026-09-29（P0-7）：这条原来写死 `params.slice(-3, -1)`，因为它假定
+    // keyset 的两个参数就是**末尾**那两个。搜索摘要在 SQL 侧算完之后，query 参数
+    // （position / length / regexp_count）排到了它们**后面**，末尾不再是这两个。
+    //
+    // 固定下标这种写法每加一个 SQL 参数就会假红一次（而它红的时候并不是坏了），
+    // 所以改成"在参数里找到游标的那对相邻值"——判据仍然是"keyset 谓词带上了
+    // 上一页最后一行的排序键"，只是不再依赖它在第几位。
+    // keyset 谓词里 indexed_at 出现**两次**（`<` 分支一次、`=` 分支一次），
+    // 所以不能取 indexOf——那会落在 `<` 分支上，它后面跟的是同值的第二次出现。
+    // 判据改成"参数里存在这一对相邻值"，与它在第几位无关。
+    const pair: [string, string] = ["2026-07-20T02:00:00.000Z", "note:n-2"];
+    const hasPair = secondSql.params.some(
+      (value, i) => value === pair[0] && secondSql.params[i + 1] === pair[1],
+    );
+    assert.ok(hasPair,
+      `keyset 谓词没有带上 (indexed_at, dedup_key) 这一对：${JSON.stringify(secondSql.params)}`);
     assert.doesNotMatch(secondSql.sql, /OFFSET/);
   });
 

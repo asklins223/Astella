@@ -265,10 +265,13 @@ test("W7-9 刀三 正对照：伴星的投递仍走那个 SECURITY DEFINER 函�
  * 那一屏列着 5 张，两边各自都像对的。
  */
 test("W7-9 刀四：伴星的学习数字出自**一个共用读器**（两处不各写一份）", () => {
-  const runtime = readFileSync(
-    join(REPO, "workers/ai-worker/src/handlers/companion-agent-runtime.ts"),
-    "utf8",
-  );
+  // 2026-09-30（B2）：工具执行族已拆进 `companion-tool-execution.ts`，
+  // 那一支随之搬走了。判据的对象是「伴星的学习数字出自**一个**共用读器」，
+  // 不是「它在 companion-agent-runtime.ts 里」——所以读 handlers/ 整个目录。
+  const runtime = readdirSync(join(REPO, "workers/ai-worker/src/handlers"))
+    .filter((n) => n.endsWith(".ts") && !n.endsWith(".test.ts"))
+    .map((n) => readFileSync(join(REPO, "workers/ai-worker/src/handlers", n), "utf8"))
+    .join("\n");
   // 工具那一支必须调 `readLearningStats`，不许自己再查一遍。
   const branchStart = runtime.indexOf('case "companion_get_learning_stats"');
   assert.ok(branchStart > 0, "那一支不见了：这一格要按新形状重写");

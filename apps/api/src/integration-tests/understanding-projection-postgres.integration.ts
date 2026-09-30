@@ -47,7 +47,7 @@ const { submitArtifact, getReturnContract } = await import(
   "../modules/learning-runs/run-service.ts"
 );
 const { runLearningRunProcessingTick, closeStructuredSolutionSql } = await import(
-  "../modules/learning-runs/run-processing-tick.ts"
+  "../modules/learning-runs/processing/run-processing-tick.ts"
 );
 const { issueCheckpointToken, parseCheckpointToken } = await import(
   "../modules/understanding/projection-checkpoint.ts"

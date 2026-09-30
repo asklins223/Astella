@@ -883,6 +883,16 @@
   .desktop-access-gate__text-action--quiet:hover:not(:disabled) { color: var(--gate-action-text); }
 }
 
+/* 切换动效模式的那枚文字动作。它是「现在处在哪一档」的说明加上一个可点的入口，
+   规格与 --quiet 同档（次级、可点、不抢主注册按钮），但字重更足一点，因为它是
+   读出当前状态的那一行，不只是一个备选入口。 */
+.desktop-access-gate__text-action--mode {
+  min-height: 34px;
+  color: var(--gate-ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .desktop-access-gate__text-action:hover:not(:disabled) { text-decoration: underline; }
 }

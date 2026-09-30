@@ -37,7 +37,7 @@ const sql = postgres(CONN, { max: 4 });
 const { hashCanonicalV2 } = await import("@ailearn/shared/hash-canonical-v2");
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
 const { submitArtifact, getRunPublicView } = await import("../modules/learning-runs/run-service.ts");
-const tickModule = await import("../modules/learning-runs/run-processing-tick.ts");
+const tickModule = await import("../modules/learning-runs/processing/run-processing-tick.ts");
 const { runLearningRunProcessingTick } = tickModule;
 
 /** 桩 Critic：把每一条 rubric 都判 covered，让"降不降级"成为唯一变量。 */

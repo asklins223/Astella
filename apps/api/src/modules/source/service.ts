@@ -1,5 +1,7 @@
 import { and, asc, desc, eq, ne, sql, count, inArray, isNull } from "drizzle-orm";
+import { MAX_PENDING_JOBS_PER_WORKSPACE } from "@ailearn/shared/job-queue-limits";
 import type { ApiTransaction } from "../../db/client.ts";
+import { upsertSearchProjection } from "../../lib/search-index-upsert.ts";
 import { sources, sourceSegments, notes, noteVersions } from "@ailearn/shared/db-schema/note";
 import {
   cardGenerationRunsV2,
@@ -17,7 +19,6 @@ import {
   SourceStatus,
   JobStatus,
   JobType,
-  MAX_PENDING_JOBS_PER_WORKSPACE,
 } from "@ailearn/shared";
 import { segmentsToBlocks, type ParsedSegment } from "@ailearn/shared/markdown-parser";
 // 稳定 P1（2026-09-15 审计）：parse_source 的 payload 走共享精确契约——漏字段/
@@ -27,6 +28,7 @@ import type { SourceCreateInput, SourceUpdateInput } from "./schema.ts";
 import { logger } from "../../lib/logger.ts";
 import { encodeCursor, decodeCursor } from "../../lib/pagination.ts";
 import { hookJourneyEntityCreated } from "../companion-journey/journey-hook.ts";
+import { clampLimit } from "../../lib/pagination-utils.ts";
 
 type SourceSearchDocument = {
   workspaceId: string;
@@ -36,42 +38,20 @@ type SourceSearchDocument = {
   body: string | null;
 };
 
-/** Keep best-effort projection writes on the request connection via a savepoint.
+/**
+ * Keep best-effort projection writes on the request connection via a savepoint.
  *
- * QUAL-61 备注：此函数与 note/service.ts 中的 upsertSearchDocument 逻辑重复。
- * 理想情况下应提取到共享的 search-index.ts 模块中，但当前两个模块的
- * SearchDocument 类型定义不同（source 有自己的 SourceSearchDocument 类型），
- * 提取共享函数需要先统一类型定义，属于架构级改进，暂缓处理。
+ * 2026-09-29（P2-15）：函数体搬到 `lib/search-index-upsert.ts`。
+ * 当年这里写着"两个模块的 SearchDocument 类型定义不同，提取需要先统一类型，暂缓"——
+ * 那个前提不成立：两份形状本来就一样，只差参数的名字。
+ * 所以本地只留一层薄壳，把自己的类型递进去，冲突键与 upsert 语义只有**一处**。
  */
 async function upsertSearchDocument(
   executor: ApiTransaction,
   document: SourceSearchDocument,
 ): Promise<boolean> {
-  try {
-    await executor.transaction(async (savepoint) => {
-      await savepoint
-        .insert(searchDocuments)
-        .values({ ...document, metadata: {}, indexedAt: new Date() })
-        .onConflictDoUpdate({
-          target: [searchDocuments.workspaceId, searchDocuments.objectType, searchDocuments.objectId],
-          set: {
-            title: document.title,
-            body: document.body,
-            metadata: {},
-            indexedAt: new Date(),
-          },
-        });
-    });
-    return true;
-  } catch (err) {
-    logger.error(
-      { err, ...document },
-      "search index upsert failed — index may be stale, run reindex to compensate",
-    );
-    return false;
-  }
+  return upsertSearchProjection(executor, document);
 }
-
 async function deleteSearchDocument(
   executor: ApiTransaction,
   workspaceId: string,
@@ -326,7 +306,7 @@ export async function listSources(
   opts: { userId: string; status?: string; cursor?: string; limit?: number },
 ) {
   // §2.6: 支持 cursor/limit 分页
-  const limit = Math.max(1, Math.min(100, opts.limit ?? 100));
+  const limit = clampLimit(opts.limit, 100, 100);
   let where = and(
     eq(sources.workspaceId, workspaceId),
     ne(sources.status, SourceStatus.ARCHIVED), // 默认排除已归档来源

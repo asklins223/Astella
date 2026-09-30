@@ -865,6 +865,140 @@
   cursor: pointer;
 }
 
+.companion-hud__note-anchor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 7px 8px 7px 11px;
+  color: var(--hud-ink);
+  border: 2px solid var(--hud-cream);
+  border-radius: 13px 17px 12px 15px;
+  background: var(--hud-butter);
+  box-shadow: var(--hud-shadow-small);
+  transform: rotate(-.25deg);
+}
+
+.companion-hud__note-anchor > span {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+}
+
+.companion-hud__note-anchor > button {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 9px;
+  color: var(--hud-ink);
+  border: 1px solid var(--hud-line-strong);
+  border-radius: 13px 15px 12px 14px;
+  background: var(--hud-paper-light);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.companion-hud__note-anchor > button:first-of-type { background: var(--hud-peach); }
+.companion-hud__note-anchor > button:disabled { cursor: default; opacity: .68; }
+.companion-hud__note-anchor > button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.companion-hud__note-anchor > small {
+  grid-column: 1 / -1;
+  color: var(--hud-soft);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.companion-hud__note-anchor > small[data-state="error"] { color: var(--hud-clay); }
+.companion-hud__note-anchor-status {
+  margin: 0 3px 10px;
+  color: var(--hud-green);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.companion-hud__note-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 7px 8px 7px 11px;
+  color: var(--hud-ink);
+  border: 2px solid var(--hud-mint-strong);
+  border-radius: 15px 12px 17px 13px;
+  background: var(--hud-mint);
+  box-shadow: var(--hud-shadow-small);
+  transform: rotate(.2deg);
+}
+.companion-hud__note-overview > span {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+}
+.companion-hud__note-overview > button {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 9px;
+  color: var(--hud-ink);
+  border: 1px solid var(--hud-line-strong);
+  border-radius: 13px 15px 12px 14px;
+  background: var(--hud-paper-light);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.companion-hud__note-overview > button:first-of-type { background: var(--hud-peach); }
+.companion-hud__note-overview > button:disabled { cursor: default; opacity: .68; }
+.companion-hud__note-overview > button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.companion-hud__note-overview > small {
+  grid-column: 1 / -1;
+  color: var(--hud-soft);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.companion-hud__note-overview > small[data-state="error"] { color: var(--hud-clay); }
+
+.companion-hud__note-expansion-action {
+  display: grid;
+  gap: 6px;
+  margin: 0 3px 10px;
+  padding: 9px 11px;
+  border: 2px solid var(--hud-line-strong);
+  border-radius: 15px 19px 14px 17px;
+  background: var(--hud-paper);
+  box-shadow: var(--hud-shadow-small);
+}
+.companion-hud__note-expansion-action > button {
+  justify-self: start;
+  min-height: 44px;
+  padding: 7px 13px;
+  color: var(--hud-ink);
+  border: 2px solid var(--hud-clay);
+  border-radius: 14px 17px 12px 16px;
+  background: var(--hud-peach);
+  box-shadow: var(--hud-shadow-small);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.companion-hud__note-expansion-action > button:disabled { cursor: default; opacity: .68; }
+.companion-hud__note-expansion-action > button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.companion-hud__note-expansion-action > small {
+  color: var(--hud-soft);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.companion-hud__note-expansion-action > small[data-state="error"] { color: var(--hud-clay); }
+.companion-hud__note-expansion-action > small[data-state="started"] { color: var(--hud-green); }
+
 .companion-hud__composer form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 48px;

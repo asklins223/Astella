@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { requireSession } from "../identity/middleware.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { getTodayActivity } from "./service.ts";
 
 const DAY_WINDOW_MAX_MS = 62 * 60 * 60 * 1000;
@@ -30,8 +30,8 @@ export async function activityRoutes(app: FastifyInstance) {
     }
 
     const activity = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
-      async (tx) => getTodayActivity(tx, { workspaceId: req.session.workspaceId, userId: req.session.userId }, window),
+      scopeOfSession(req.session),
+      async (tx) => getTodayActivity(tx, scopeOfSession(req.session), window),
     );
     return activity;
   });

@@ -21,7 +21,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const SOURCE = readFileSync(
-  new URL("../modules/note-learning-rounds/route-coverage.ts", import.meta.url),
+  new URL("../modules/note-learning-rounds/round/route-coverage.ts", import.meta.url),
   "utf8",
 );
 

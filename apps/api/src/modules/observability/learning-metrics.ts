@@ -19,6 +19,7 @@ import { and, desc, eq, gte } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import { learningMetricEvents } from "@ailearn/shared/db-schema/learning-metrics";
+import { clampLimit } from "../../lib/pagination-utils.ts";
 
 export interface LearningMetricScope {
   workspaceId: string;
@@ -122,7 +123,7 @@ export async function listLearningMetrics(
   scope: LearningMetricScope,
   input: LearningMetricListInput = {},
 ): Promise<LearningMetricRowV1[]> {
-  const limit = Math.min(Math.max(input.limit ?? 200, 1), 500);
+  const limit = clampLimit(input.limit, 200, 500);
   return withWorkspaceTransaction(scope, async (tx) => {
     const rows = await tx
       .select()

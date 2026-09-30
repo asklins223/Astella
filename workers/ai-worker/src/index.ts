@@ -10,6 +10,10 @@ import { runCompanionSummarizer } from "./handlers/companion-summarizer.ts";
 import { runCompanionMemoryEmbeddingRebuild } from "./handlers/companion-memory-embedding.ts";
 import { runCompanionDailySummary } from "./handlers/companion-daily-summary.ts";
 import { runCompanionThought } from "./handlers/companion-thought.ts";
+import { runNoteOverviewGenerate } from "./handlers/note-overview-generate.ts";
+import { runNoteAnnotationExplain } from "./handlers/note-annotation-explain.ts";
+import { runNoteDynamicArtifactGenerate } from "./handlers/note-dynamic-artifact-generate.ts";
+import { runNoteExpansionGenerate } from "./handlers/note-expansion-generate.ts";
 import { tickCompanionDailySummaryScheduler } from "./handlers/companion-daily-summary-scheduler.ts";
 import { tickCompanionThoughtScheduler } from "./handlers/companion-thought-scheduler.ts";
 import { tickCompanionMemoryMaintenance } from "./handlers/companion-memory-maintenance.ts";
@@ -55,8 +59,10 @@ import {
   jobQueueDepth,
   JOB_STATUSES,
   resolveMetricsPort,
+  aiCircuitOpenTotal,
   startMetricsServer,
 } from "./lib/metrics.ts";
+import { observeSharedAiCircuitRejects } from "@ailearn/shared/circuit-breaker";
 
 const HANDLERS = {
   parse_source: runParseSource,
@@ -69,6 +75,10 @@ const HANDLERS = {
   companion_daily_summary: runCompanionDailySummary,
   // 念头管线切片②（2026-09-18）：候选念头生成 + 表达 + 送达。
   companion_thought: runCompanionThought,
+  note_overview_generate: runNoteOverviewGenerate,
+  note_annotation_explain: runNoteAnnotationExplain,
+  note_dynamic_artifact_generate: runNoteDynamicArtifactGenerate,
+  note_expansion_generate: runNoteExpansionGenerate,
 } as const;
 
 /**
@@ -596,6 +606,13 @@ export async function main() {
     },
   });
   logger.info({ port: metricsPort }, "worker metrics server started");
+
+  // P0-14：把熔断的"拒绝"接到指标上。熔断会主动拒绝请求（一个网络包都不发），
+  // 所以"它在拒绝"必须被告警看得见，否则表现为"任务莫名其妙不动了"。
+  // 注册放在 metrics server 起来之后：指标注册表此时已就绪。
+  observeSharedAiCircuitRejects((host, reason) => {
+    aiCircuitOpenTotal.inc({ host, reason });
+  });
 
   // P4-6 接线: LISTEN/NOTIFY 快速唤醒(轮询分级兜底保留,计划 §5.4)。
   // Notify 到达会直接打断当前 poll sleep，而不是只影响下一轮的间隔。

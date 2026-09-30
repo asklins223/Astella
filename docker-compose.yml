@@ -186,6 +186,14 @@ services:
     build: *api-build
     user: node
     restart: unless-stopped
+    # 2026-09-29（P0-10 停机预算）：必须**大于**代码里的停机预算，否则编排器
+    # 会在代码跑完之前 SIGKILL，优雅关闭形同虚设。
+    # 代码预算：apps/api/src/lib/graceful-shutdown.ts:35-41 的 closeServer race
+    # 上限 10s + apps/api/src/db/client.ts:462 的 queryClient.end({timeout:5})
+    # 上限 5s = 最坏 15s。Docker 默认只有 10s（SIGTERM 后直接 SIGKILL），
+    # 也就是说 DB 池的关闭**必然**被打断，这里给 20s（15s + 5s 余量）。
+    # 改这两处代码的任一时间预算时，必须同步改这个值。
+    stop_grace_period: 20s
     depends_on:
       postgres:
         condition: service_healthy
@@ -287,6 +295,19 @@ services:
     build: *worker-build
     user: node
     restart: unless-stopped
+    # 2026-09-29（P0-10 停机预算）：worker 的在途 job drain 预算**远大于**
+    # Docker 默认的 10s，不设 stop_grace_period 等于每次滚动更新都在 SIGKILL。
+    # 代码预算（workers/ai-worker/src/index.ts）：
+    #   1) :695 drain 预算 WORKER_DRAIN_TIMEOUT_MS 默认 45_000；
+    #   2) :726-732 的 finally 在 drain **之后**才跑，且还没被计入任何预算：
+    #      notifyConnection.end({timeout:2}) 2s + metricsServer.close() +
+    #      closeDatabase()（src/db.ts:201 queryClient.end({timeout:5})）5s。
+    #   最坏 45 + 2 + 5 = 52s，这里给 60s（52s + 8s 余量）。
+    # 特别提醒：:689-692 注释里"交还 V2 租约、避免孤儿 job 永久卡住"的保护
+    # 只有在这 60s 内跑完才成立——被 SIGKILL 就等于没有。
+    # WORKER_DRAIN_TIMEOUT_MS 在下一行显式声明（值与代码默认一致），让停机预算
+    # 在部署配置里可见；**调大它必须同步调大这里的 stop_grace_period**。
+    stop_grace_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
@@ -342,6 +363,11 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WORKER_METRICS_PORT: ${WORKER_METRICS_PORT:-9100}
+      # 优雅关停 drain 预算（ms）。值与 workers/ai-worker/src/index.ts:695 的
+      # 45_000 默认一致，此处显式声明只是为了让**停机预算在部署配置里可审**：
+      # 上面的 stop_grace_period: 60s = 45s drain + 2s notify + 5s db + 8s 余量。
+      # 调大这个值而不同步调大 stop_grace_period，会重新引入 P0-10。
+      WORKER_DRAIN_TIMEOUT_MS: ${WORKER_DRAIN_TIMEOUT_MS:-45000}
       # Handler timeouts (ms) — per job type, clamped below lease timeout (120s)
       WORKER_MODEL_TIMEOUT_MS: ${WORKER_MODEL_TIMEOUT_MS:-}
       WORKER_PROVIDER_TIMEOUT_MS: ${WORKER_PROVIDER_TIMEOUT_MS:-75000}

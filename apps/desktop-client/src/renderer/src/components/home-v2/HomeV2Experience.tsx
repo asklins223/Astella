@@ -1,3 +1,4 @@
+// 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { CircleAlert, Volume2, VolumeX, X } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -23,8 +24,8 @@ import type { CompanionOnboardingStateV1 } from "@ailearn/shared/companion-shell
 import { createRequestMeta, unwrapGatewayResult } from "../../app/desktop-client";
 import { useCompanionHomeProjection } from "../../app/companion-home-projection";
 import { useHomeProjection } from "../../app/home-projection";
-import { HomeNextStep } from "../surfaces/HomeNextStep";
-import { useHomeNextStepProjection } from "../surfaces/home-next-step-projection";
+import { HomeNextStep } from "../surfaces/library/HomeNextStep.tsx";
+import { useHomeNextStepProjection } from "../surfaces/library/home-next-step-projection.ts";
 import { homePresentation } from "../../app/home-presentation";
 import { useRoomStore } from "../../app/room-store";
 import { resolveSceneMotionMode } from "../../scene/scene-motion";
@@ -38,7 +39,6 @@ import {
   type HomeFeatureId,
 } from "./home-feature-registry";
 import { HOME_FEATURE_ICONS } from "./home-feature-icons";
-import "./home-v2.css";
 import { HomeV2AudioController } from "./HomeV2AudioController";
 import {
   homeSceneTimeForThemeMode,

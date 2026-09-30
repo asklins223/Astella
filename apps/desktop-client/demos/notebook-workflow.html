@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>笔记书房 · 学习册 Demo</title>
+  <link rel="stylesheet" href="notebook-workflow.css">
+  <script src="notebook-icons.js" defer></script>
+  <script src="notebook-workflow.js" defer></script>
+</head>
+<body>
+  <main class="room" id="room" data-motion="full">
+    <header class="room-head">
+      <div class="room-sign"><i data-icon="notebook-pen"></i><strong>笔记书房</strong></div>
+      <div class="demo-controls">
+        <span class="demo-label">交互 Demo · 本机示例</span>
+        <button class="icon-button room-control" data-action="settings" aria-label="演示设置" data-tip="演示设置"><i data-icon="settings-2"></i></button>
+      </div>
+    </header>
+    <section class="desk" aria-label="笔记学习册">
+      <div class="folio" id="folio" data-view="reader" data-toc="true" data-side="false">
+        <div class="folio-caption">
+          <div class="cover-label"><i data-icon="book-open"></i><span>语音合成</span><span class="cover-number">05</span></div>
+          <nav class="learning-ribbons" aria-label="学习这篇">
+            <button class="ribbon ribbon-mint" data-action="overview" aria-pressed="false"><i data-icon="scan-text"></i><span>速看</span><span class="ribbon-count">3</span></button>
+            <button class="ribbon ribbon-butter" data-action="recall" aria-pressed="false"><i data-icon="lightbulb"></i><span>回想</span></button>
+            <button class="ribbon ribbon-sky" data-action="expansion" aria-pressed="false"><i data-icon="sprout"></i><span>往外学</span></button>
+          </nav>
+        </div>
+        <div class="folio-cover">
+          <div class="folio-layout">
+            <aside class="index-leaf" id="index-leaf" aria-label="笔记目录">
+              <div class="index-head"><strong>这一篇</strong><div class="inline-tools">
+                <button class="icon-button" id="pin-button" data-action="pin-toc" aria-label="取消固定目录" aria-pressed="true" data-tip="取消固定"><i data-icon="pin"></i></button>
+                <button class="icon-button" data-action="close-toc" aria-label="收起目录" data-tip="收起目录"><i data-icon="x"></i></button>
+              </div></div>
+              <div class="index-divider"></div>
+              <nav id="toc" class="toc" aria-label="大小标题"></nav>
+              <div class="index-foot"><span class="index-page">笔记 v3</span><span id="reading-position">正在读 · 开篇</span></div>
+            </aside>
+            <div class="leaf" id="leaf">
+              <header class="leaf-head">
+                <div class="inline-tools">
+                  <button class="icon-button" data-action="toc" aria-label="打开或收起目录" aria-expanded="true" aria-controls="index-leaf" data-tip="目录"><i data-icon="list-tree"></i></button>
+                  <button class="text-action back-action" id="back-button" data-action="reader" hidden><i data-icon="arrow-left"></i><span>正文</span></button>
+                  <span class="leaf-context" id="leaf-context">正在阅读</span>
+                </div>
+                <div class="inline-tools">
+                  <button class="icon-button" data-action="history" aria-label="学习记录" aria-expanded="false" data-tip="学习记录"><i data-icon="history"></i></button>
+                  <button class="button primary edit-button" id="edit-button" data-action="edit"><i data-icon="square-pen"></i><span>编辑</span></button>
+                </div>
+              </header>
+              <div class="editor-tools" id="editor-tools" hidden>
+                <button class="icon-button" data-format="bold" aria-label="加粗" data-tip="加粗"><i data-icon="bold"></i></button>
+                <button class="icon-button" data-format="heading" aria-label="二级标题" data-tip="二级标题"><i data-icon="heading-2"></i></button>
+                <button class="icon-button" data-format="list" aria-label="无序列表" data-tip="列表"><i data-icon="list"></i></button>
+                <span id="edit-status">草稿 · 仅保留在本机演示</span>
+              </div>
+              <div class="leaf-scroll" id="leaf-scroll" tabindex="-1">
+                <div class="page-content" id="page-content"></div>
+              </div>
+              <footer class="action-tray" id="action-tray" hidden></footer>
+            </div>
+            <aside class="side-leaf" id="side-leaf" aria-labelledby="side-title" tabindex="-1" hidden>
+              <header class="side-head"><h2 id="side-title"></h2><button class="icon-button" data-action="close-side" aria-label="收起旁页" data-tip="收起旁页"><i data-icon="x"></i></button></header>
+              <div class="side-scroll" id="side-body"></div>
+            </aside>
+          </div>
+        </div>
+      </div>
+      <aside class="companion-seat" aria-label="伴星座位">
+        <div class="companion-bubble" id="companion-bubble" hidden><p>我在这儿。你先读，想聊哪一句再叫我。</p><button class="text-action" data-action="close-companion">收起</button></div>
+        <button class="companion-character" data-action="companion" aria-label="和旁边的伴星打个招呼"><img src="companion-cutout.png" alt="" draggable="false"></button>
+        <span class="companion-label"><span class="presence-dot"></span>伴星 · 演示形象</span>
+      </aside>
+    </section>
+    <div class="receipt" id="receipt" role="status" aria-live="polite" hidden></div>
+    <div class="annotation-preview" id="annotation-preview" role="tooltip" hidden></div>
+    <div class="selection-tools" id="selection-tools" role="group" aria-label="选区操作" hidden>
+      <button class="button" data-action="explain-selection"><i data-icon="sparkles"></i>讲讲这句</button>
+      <button class="button" data-action="annotate-selection"><i data-icon="message-square-text"></i>写批注</button>
+    </div>
+  </main>
+  <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
+    <form method="dialog">
+      <header><h2 id="settings-title">演示设置</h2><button class="icon-button" value="close" aria-label="关闭设置"><i data-icon="x"></i></button></header>
+      <label for="motion-setting">动效<select id="motion-setting"><option value="full">完整</option><option value="lite">轻量</option><option value="off">关闭</option></select></label>
+      <label for="scenario-setting">示例状态<select id="scenario-setting"><option value="normal">正常</option><option value="source-failed">来源读取失败</option><option value="no-source">无来源笔记</option><option value="generation-failed">生成失败</option></select></label>
+      <div class="settings-foot"><button class="text-action" type="button" data-action="reset">重置演示</button><button class="button primary" value="close">完成</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

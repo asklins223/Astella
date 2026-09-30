@@ -19,12 +19,17 @@
     // 对 API 的 typecheck 与 tsx 运行**完全不可见**，新增导出会报"no exported member"，
     // 删除导出则不会报错。rootDir 相应上移到仓库根（noEmit，无产物影响）。
     "rootDir": "../..",
-    "baseUrl": ".",
     "paths": {
       "@ailearn/shared": [
         "../../packages/shared/src/index.ts"
       ],
+      // 2026-09-29（P2-3）：contracts/ 下的合同先试。
+      // TS 的 paths 会**按顺序**试每个候选，用第一个能解析到真实文件的——
+      // 所以把 contracts/ 放在前面，搬过的那批走它，其余仍走下面那条平铺映射。
+      // 少这一条，tsx 运行时会退回 node_modules 的安装期快照（合同改了不生效），
+      // 而 typecheck 还报绿——`shared-source-resolution` 守的就是这个分叉。
       "@ailearn/shared/*": [
+        "../../packages/shared/src/contracts/*.ts",
         "../../packages/shared/src/*.ts",
         "../../packages/shared/src/*/index.ts"
       ],

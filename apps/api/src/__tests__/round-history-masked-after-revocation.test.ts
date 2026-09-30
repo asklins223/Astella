@@ -28,7 +28,7 @@ import {
 
 const REPO_ROOT = resolve(import.meta.dirname, "..", "..", "..", "..");
 const SERVICE = readFileSync(
-  resolve(REPO_ROOT, "apps/api/src/modules/note-learning-rounds/round-service.ts"), "utf8",
+  resolve(REPO_ROOT, "apps/api/src/modules/note-learning-rounds/round/round-service.ts"), "utf8",
 );
 const ROUTES = readFileSync(
   resolve(REPO_ROOT, "apps/api/src/modules/note-learning-rounds/routes.ts"), "utf8",

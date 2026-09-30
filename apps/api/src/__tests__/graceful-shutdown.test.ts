@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createGracefulShutdown } from "../lib/graceful-shutdown.ts";
+import { createGracefulShutdown } from "../server/graceful-shutdown.ts";
 
 describe("graceful shutdown", () => {
   it("clears maintenance and closes server/database once in order", async () => {

@@ -99,7 +99,7 @@ async function buildApp(): Promise<FastifyInstance> {
   // 读起来像"历史搜索被删了"，其实是要先开闸。在这里把它开上，而不是让每个读红的人自己猜。
   process.env.COMPANION_DIALOGUE_V1_ENABLED = "true";
   const app = Fastify({ logger: false });
-  const { continuousHistoryRoutes } = await import("../modules/companion-conversation/continuous-history-routes.ts");
+  const { continuousHistoryRoutes } = await import("../modules/companion-conversation/memory/continuous-history-routes.ts");
   await app.register(continuousHistoryRoutes);
   return app;
 }
@@ -121,7 +121,7 @@ test("§10.4 历史搜索：命中/无命中/删除后不命中/缺 q 400", asyn
     assert.equal(hitBody.version, 1);
     assert.equal(hitBody.items.length, 1);
     // 一条命中回的是**消息本身**，不是"它属于哪条会话"：产品层刻意不暴露 conversation
-    // （`packages/shared/src/companion-memory-desktop-contracts.ts` 那一段的文件头，
+    // （`packages/shared/src/contracts/companion-memory-desktop-contracts.ts` 那一段的文件头，
     // 且 `companionHistoryItemV1Schema` 是 `.strict()`）。这份文件从没跑过，因此一直按
     // 想象中的形状断言 `conversationId`/`conversationTitle`——那两个字段从来就没有过。
     // 现在按**客户端真正用来解析的那份 schema** 解一遍（两侧同一合同，不各写一遍形状），

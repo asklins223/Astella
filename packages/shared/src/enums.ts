@@ -68,6 +68,14 @@ export const JobType = {
   COMPANION_MEMORY_EMBEDDING_REBUILD: "companion_memory_embedding_rebuild",
   // 基础主动念头调度；LLM 只增强措辞，不改变 job 合同与可降级语义。
   COMPANION_THOUGHT: "companion_thought",
+  // 用户从笔记纸签启动的速看生成。结果由 note_overviews 保存，与伴星对话解耦。
+  NOTE_OVERVIEW_GENERATE: "note_overview_generate",
+  // 用户从原文选区发起的独立批注解释任务。
+  NOTE_ANNOTATION_EXPLAIN: "note_annotation_explain",
+  // 笔记页发起的 AI 自由创作互动演示，由后台任务生成并保存。
+  NOTE_DYNAMIC_ARTIFACT_GENERATE: "note_dynamic_artifact_generate",
+  // 笔记页发起的拓展方向与可审核草稿生成任务。
+  NOTE_EXPANSION_GENERATE: "note_expansion_generate",
 } as const;
 export type JobType = (typeof JobType)[keyof typeof JobType];
 

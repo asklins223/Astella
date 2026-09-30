@@ -16,7 +16,7 @@ import {
   NoteNotDeletedError,
 } from "./service.ts";
 import { requireSession, requireOwner, isWorkspaceOwner } from "../identity/middleware.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { recordWorkspaceAudit } from "../audit/service.ts";
 import { parseBody } from "../../lib/validate.ts";
 import { parseQuery, paginationQuerySchema, uuidParamSchema } from "../../lib/pagination.ts";
@@ -27,6 +27,7 @@ import { applyUploadedDocUpdate, publishRestoredNoteDoc } from "./collaboration.
 import { readNoteDocState } from "./document-state.ts";
 import { noteSaveRequestV1Schema } from "@ailearn/shared/note-save-contracts";
 import { noteShareScopeRequestV1Schema } from "@ailearn/shared/note-share-contracts";
+import { clampLimit } from "../../lib/pagination-utils.ts";
 
 export async function noteRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireSession);
@@ -39,7 +40,7 @@ export async function noteRoutes(app: FastifyInstance) {
       trashed: z.enum(["true", "1", "false", "0"]).optional(),
     }), req.query);
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => listNotes(transaction, req.session.workspaceId, {
         userId: req.session.userId,
         cursor: q.cursor,
@@ -56,7 +57,7 @@ export async function noteRoutes(app: FastifyInstance) {
     const params = uuidParamSchema.safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => getNoteWithVersion(
         transaction,
         req.params.id,
@@ -80,11 +81,11 @@ export async function noteRoutes(app: FastifyInstance) {
     const params = uuidParamSchema.safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
     const state = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
-      (transaction) => readNoteDocState(transaction, {
-        workspaceId: req.session.workspaceId,
-        noteId: params.data.id,
-        userId: req.session.userId,
+      scopeOfSession(req.session),
+      (transaction) => readNoteDocState(transaction, { ...scopeOfSession(req.session),
+noteId: params.data.id,
+        
+userId: req.session.userId,
       }),
     );
     if (!state) return reply.code(404).send({ error: "not_found", message: "资源不存在" });
@@ -107,7 +108,7 @@ export async function noteRoutes(app: FastifyInstance) {
       // 这里**不收正文**：正文只从文档来（`POST /v2/notes/:id/doc-update` 或 WS 增量）。
       // 这一次调用只做一件事——把文档此刻定成一个可回去的版本（可选同时改标题）。
       const result = await withWorkspaceTransaction(
-        { workspaceId: req.session.workspaceId, userId: req.session.userId },
+        scopeOfSession(req.session),
         (transaction) => checkpointNote(
           transaction,
           req.params.id,
@@ -151,7 +152,7 @@ export async function noteRoutes(app: FastifyInstance) {
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
     const body = parseBody(app, noteShareScopeRequestV1Schema, req.body);
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => setNoteShareScope(
         transaction,
         params.data.id,
@@ -195,9 +196,8 @@ export async function noteRoutes(app: FastifyInstance) {
       if (decoded.toString("base64") !== body.update) {
         return reply.code(400).send({ error: "invalid_base64", message: "update 不是规范的 base64" });
       }
-      const outcome = await applyUploadedDocUpdate({
-        workspaceId: req.session.workspaceId,
-        userId: req.session.userId,
+      const outcome = await applyUploadedDocUpdate({ ...scopeOfSession(req.session),
+userId: req.session.userId,
         noteId: params.data.id,
         update: new Uint8Array(decoded),
       });
@@ -224,7 +224,7 @@ export async function noteRoutes(app: FastifyInstance) {
   app.post("/notes", { preHandler: [requireOwner] }, async (req) => {
     const body = parseBody(app, noteCreateSchema, req.body);
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => createNote(
         transaction,
         req.session.workspaceId,
@@ -245,7 +245,7 @@ export async function noteRoutes(app: FastifyInstance) {
     const params = uuidParamSchema.safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => deleteNote(transaction, req.params.id, req.session.workspaceId, req.session.userId),
     );
     if (!result) return reply.code(404).send({ error: "not_found", message: "资源不存在" });
@@ -259,7 +259,7 @@ export async function noteRoutes(app: FastifyInstance) {
     const params = uuidParamSchema.safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       async (transaction) => {
         const deleted = await physicalDeleteNote(transaction, req.params.id, req.session.workspaceId, {
           userId: req.session.userId,
@@ -267,9 +267,8 @@ export async function noteRoutes(app: FastifyInstance) {
         // 审查附录 C：物理删除此前没有任何留痕。行没了就再也查不到"谁删的"，
         // 所以审计与删除**同事务**写——删除回滚了不该留下记录，删除成功也不该丢记录。
         if (deleted) {
-          await recordWorkspaceAudit(transaction, {
-            workspaceId: req.session.workspaceId,
-            actorUserId: req.session.userId,
+          await recordWorkspaceAudit(transaction, { ...scopeOfSession(req.session),
+actorUserId: req.session.userId,
             action: "note.permanent_delete",
             targetKind: "note",
             targetId: req.params.id,
@@ -308,7 +307,7 @@ export async function noteRoutes(app: FastifyInstance) {
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
     try {
       const result = await withWorkspaceTransaction(
-        { workspaceId: req.session.workspaceId, userId: req.session.userId },
+        scopeOfSession(req.session),
         (transaction) => restoreDeletedNote(transaction, req.params.id, req.session.workspaceId, req.session.userId),
       );
       if (!result) return reply.code(404).send({ error: "not_found", message: "资源不存在" });
@@ -327,10 +326,10 @@ export async function noteRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string }; Querystring: { limit?: string; offset?: string } }>("/notes/:id/versions", async (req, reply) => {
     const params = uuidParamSchema.safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
-    const limit = Math.min(Math.max(Number(req.query.limit ?? 100) || 100, 1), 200);
+    const limit = clampLimit(req.query.limit, 100, 200);
     const offset = Math.max(Number(req.query.offset ?? 0) || 0, 0);
     const versions = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => listNoteVersions(transaction, req.params.id, req.session.workspaceId, req.session.userId, limit, offset),
     );
     if (!versions) return reply.code(404).send({ error: "not_found", message: "资源不存在" });
@@ -357,7 +356,7 @@ export async function noteRoutes(app: FastifyInstance) {
 
       try {
         const result = await withWorkspaceTransaction(
-          { workspaceId: req.session.workspaceId, userId: req.session.userId },
+          scopeOfSession(req.session),
           (transaction) => restoreNoteVersion(
             transaction,
             req.params.id,
@@ -375,8 +374,7 @@ export async function noteRoutes(app: FastifyInstance) {
         // 否则症状又变回"没人知道文档和内存已经分叉"。
         try {
           await publishRestoredNoteDoc({
-            workspaceId: req.session.workspaceId,
-            userId: req.session.userId,
+            ...scopeOfSession(req.session),
             noteId: req.params.id,
             versionId: req.params.versionId,
             title: result.note.title,

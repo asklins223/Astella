@@ -7,7 +7,7 @@ import {
   adoptWorkspaceContext,
   type ApiTransaction,
 } from "../../db/client.ts";
-import { retireWorkspaceMemoriesOnDeparture } from "../companion-conversation/memory-departure.ts";
+import { retireWorkspaceMemoriesOnDeparture } from "../companion-conversation/memory/memory-departure.ts";
 import { recordWorkspaceAudit } from "../audit/service.ts";
 import {
   inviteCodes,
@@ -29,10 +29,12 @@ import {
   hashInvitationToken,
   isValidInvitationToken,
 } from "./invitation-token.ts";
-import { canonicalizeEmail, hashPassword, issueSession, type SessionContext } from "./service.ts";
+import { issueSession } from "../identity/session-service.ts";
+import { canonicalizeEmail, hashPassword, type SessionContext } from "./service.ts";
 import { resolveSystemProviderForCapability } from "@ailearn/shared/task-router";
 // OPS-01: Funnel 指标（ADR-0006 §2）
 import { recordFunnelEvent } from "../../lib/metrics.ts";
+import { clampLimit } from "../../lib/pagination-utils.ts";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -181,7 +183,9 @@ export async function listInvites(
   userId: string,
   options: { limit?: number; offset?: number } = {},
 ): Promise<{ items: InviteListItem[]; total: number }> {
-  const limit = Math.min(options.limit ?? 50, 100);
+  // P1-17：此前是 `Math.min(options.limit ?? 50, 100)`，只有上界没有下界——
+  // `?limit=0` 或负数会原样进查询。改用 clampLimit（顺带兜住 NaN）。
+  const limit = clampLimit(options.limit, 50);
   const offset = options.offset ?? 0;
 
   const rows = await withWorkspaceTransaction(
@@ -482,7 +486,7 @@ export async function listMembers(
   // Y10（round-3 审计）：原实现无 LIMIT 全量返回活跃成员（超大工作区成员很多时
   // 无界响应）。新增可选 limit（默认 200，上限 500）；total 只在翻页满时（很可能还有
   // 更多成员）才补一次 count 查询得到真实总数——小于 limit 的常见情形不额外查询。
-  const limit = Math.min(Math.max(options?.limit ?? 200, 1), 500);
+  const limit = clampLimit(options?.limit, 200, 500);
   return withWorkspaceTransaction(
     { workspaceId, userId },
     async (tx) => {

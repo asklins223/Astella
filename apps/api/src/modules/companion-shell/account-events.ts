@@ -9,10 +9,10 @@
  */
 
 import { getCompanionOverview } from "./service.ts";
-import {
-  subscribeCompanionAccountEvents,
-  type CompanionAccountNotifyPayload,
-} from "../companion-conversation/companion-notify.ts";
+import { type CompanionAccountNotifyPayload } from "../../companion-contracts/notify-contracts.ts";
+// 载荷形状从中立层取（P1-6），但**订阅实现**仍然住在 conversation 侧——
+// shell 要听 LISTEN 就得用它。这一条单向依赖不成环：conversation 不再回头看 shell。
+import { subscribeCompanionAccountEvents } from "../../lib/companion-notify.ts";
 
 const SLOTS_PER_ACCOUNT_USER = 6;
 const accountSlots = new Map<string, number>();

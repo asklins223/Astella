@@ -6,7 +6,7 @@ import { extractCandidateLinks } from "@ailearn/shared/desktop-ipc-contracts";
 import { useRoomStore } from "../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../app/desktop-client";
 import { resolveSceneMotionMode } from "../scene/scene-motion";
-import { formatRelative } from "./surfaces/surface-data";
+import { formatRelative } from "./surfaces/notebook/surface-data.tsx";
 import {
   MAX_CAPTURE_BYTES,
   MAX_DROP_FILES,

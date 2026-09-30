@@ -8,6 +8,7 @@ import { searchDocuments } from "@ailearn/shared/db-schema/search";
 import { learningCardsV2, learningObjectivesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { computeContentHash } from "./content-hash.ts";
 import { upsertSearchDocument, type NoteSearchDocument } from "./search-projection.ts";
+import { noteShelfStatesByNoteId } from "./shelf-state.ts";
 import { logger } from "../../lib/logger.ts";
 import { DomainError } from "@ailearn/shared";
 
@@ -57,6 +58,7 @@ import { downloadAndValidateImageAsset } from "../../lib/image-asset.ts";
 import { isStorageConfigured } from "../../lib/object-storage.ts";
 import { hookJourneyEntityCreated } from "../companion-journey/journey-hook.ts";
 import type { NoteCreateInput, NoteBlock } from "./schema.ts";
+import { clampLimit } from "../../lib/pagination-utils.ts";
 
 
 function stripUploadingPlaceholders<T extends { type: string; content: string }>(
@@ -326,7 +328,7 @@ async function createNoteTx(
 
   await tx
     .update(notes)
-    .set({ currentVersionId: version.id, updatedAt: new Date() })
+    .set({ currentVersionId: version.id, updatedAt: sql`now()` })
     .where(eq(notes.id, row.id));
 
   return row;
@@ -407,7 +409,7 @@ export async function listNotes(
   workspaceId: string,
   opts: { userId: string; cursor?: string; limit?: number; trashed?: boolean },
 ) {
-  const limit = Math.max(1, Math.min(100, opts.limit ?? 100));
+  const limit = clampLimit(opts.limit, 100, 100);
   // CONC-03: trashed=true 时查询已软删除的笔记，默认查询未删除的
   // 批次 4.5: 「仅自己可见」的笔记不在别人的列表里——包括空间 owner。
   const conditions = [
@@ -483,6 +485,17 @@ export async function listNotes(
     .map((r) => r.currentVersionId)
     .filter((v): v is string => typeof v === "string" && v.length > 0);
   const factsByVersion = await versionFactsByVersion(executor, workspaceId, versionIds);
+  // 架上每一行的「了解状态」纸签：这一页笔记上真的落过几条速看、几次回想、几处
+  // 批注、长出过几篇。一次批量取回，不按行发请求。
+  const shelfStateByNoteId = await noteShelfStatesByNoteId(executor, {
+    workspaceId,
+    userId: opts.userId,
+    notes: pageRows.map((r) => ({
+      id: r.id,
+      currentVersionId: r.currentVersionId,
+      hasBody: r.currentVersionId ? factsByVersion.get(r.currentVersionId)?.hasBody ?? false : false,
+    })),
+  });
 
   return {
     // 列表行自己带归属与"你能不能改归属"：库页的每一行都要显示「仅自己可见 /
@@ -497,6 +510,7 @@ export async function listNotes(
       firstImageBlock: r.currentVersionId ? factsByVersion.get(r.currentVersionId)?.firstImageBlock ?? null : null,
       // 空稿和写过正文的笔记在列表里必须能分开（审计 F37）：没有版本的笔记同样算空稿。
       hasBody: r.currentVersionId ? factsByVersion.get(r.currentVersionId)?.hasBody ?? false : false,
+      shelfState: shelfStateByNoteId.get(r.id) ?? null,
       currentVersionId: r.currentVersionId,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
@@ -702,7 +716,7 @@ export async function setNoteShareScope(
 
   const [updated] = await tx
     .update(notes)
-    .set({ shareScope, updatedAt: new Date() })
+    .set({ shareScope, updatedAt: sql`now()` })
     .where(eq(notes.id, noteId))
     .returning();
 
@@ -794,7 +808,7 @@ export async function restoreDeletedNote(
     // 清除 deleted_at
     await tx
       .update(notes)
-      .set({ deletedAt: null, updatedAt: new Date() })
+      .set({ deletedAt: null, updatedAt: sql`now()` })
       .where(eq(notes.id, noteId));
 
     // 旧版学习卡表已删除，此处不再恢复被
@@ -907,7 +921,7 @@ export async function physicalDeleteNote(
     if (versionIds.length > 0) {
       const retiredCards = await tx
         .update(learningCardsV2)
-        .set({ lifecycle: "archived", updatedAt: new Date() })
+        .set({ lifecycle: "archived", updatedAt: sql`now()` })
         .where(and(
           inArray(learningCardsV2.noteVersionId, versionIds),
           eq(learningCardsV2.lifecycle, "active"),
@@ -920,7 +934,7 @@ export async function physicalDeleteNote(
           .set({
             lifecycle: "archived",
             lifecycleEpoch: sql`${learningObjectivesV2.lifecycleEpoch} + 1`,
-            updatedAt: new Date(),
+            updatedAt: sql`now()`,
           })
           .where(and(
             inArray(learningObjectivesV2.objectiveId, objectiveIds),

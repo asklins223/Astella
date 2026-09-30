@@ -53,7 +53,7 @@ const { submitArtifact, getRunPublicView, revealRunTargetV2 } = await import(
   "../modules/learning-runs/run-service.ts"
 );
 const { runLearningRunProcessingTick, closeStructuredSolutionSql } = await import(
-  "../modules/learning-runs/run-processing-tick.ts"
+  "../modules/learning-runs/processing/run-processing-tick.ts"
 );
 
 after(async () => {

@@ -12,12 +12,13 @@ import {
   WINDOW_STATE_CHANNEL,
   WINDOW_STATE_SNAPSHOT_CHANNEL,
   isWindowStateSnapshot,
-  type WindowStateSnapshot
+  type WindowStateSnapshot,
+  TITLE_BAR_THEME_CHANNEL,
 } from '../shared/window-state'
 
 const api: AILearnDesktopApi = {
   platform: process.platform,
-  setTitleBarTheme: (theme) => ipcRenderer.send('window:set-titlebar-theme', theme),
+  setTitleBarTheme: (theme) => ipcRenderer.send(TITLE_BAR_THEME_CHANNEL, theme),
   onWindowState: (listener) => {
     let active = true
     let latestRevision = -1
@@ -312,6 +313,38 @@ const desktopApi: AILearnDesktopApiM2 = {
   noteReflection: {
     list: (input) => invoke(DESKTOP_IPC_CHANNELS.noteReflectionList, input),
     write: (input) => invoke(DESKTOP_IPC_CHANNELS.noteReflectionWrite, input),
+  },
+  noteAnnotation: {
+    list: (input) => invoke(DESKTOP_IPC_CHANNELS.noteAnnotationList, input),
+    write: (input) => invoke(DESKTOP_IPC_CHANNELS.noteAnnotationWrite, input),
+    startTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteAnnotationStartTask, input),
+    latestTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteAnnotationLatestTask, input),
+    getTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteAnnotationGetTask, input),
+  },
+  noteOverview: {
+    list: (input) => invoke(DESKTOP_IPC_CHANNELS.noteOverviewList, input),
+    startTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteOverviewStartTask, input),
+    latestTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteOverviewLatestTask, input),
+    getTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteOverviewGetTask, input),
+  },
+  noteRecall: {
+    list: (input) => invoke(DESKTOP_IPC_CHANNELS.noteRecallList, input),
+    start: (input) => invoke(DESKTOP_IPC_CHANNELS.noteRecallStart, input),
+    act: (input) => invoke(DESKTOP_IPC_CHANNELS.noteRecallAction, input),
+  },
+  noteExpansion: {
+    list: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionList, input),
+    startTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionStartTask, input),
+    latestTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionLatestTask, input),
+    getTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionGetTask, input),
+    review: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionReview, input),
+    confirm: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionConfirm, input),
+  },
+  noteLearningArtifact: {
+    list: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningArtifactList, input),
+    startTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningArtifactTaskStart, input),
+    listTasks: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningArtifactTaskList, input),
+    getTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningArtifactTaskGet, input),
   },
   noteLearningRound: {
     open: (input) => invoke(DESKTOP_IPC_CHANNELS.noteLearningRoundOpen, input),

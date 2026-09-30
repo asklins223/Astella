@@ -165,7 +165,7 @@ const { verdicts, unjudged } = judge(phases, sources, schemaText);
 test("写入方按**表**收窄：别的表那一列也叫 phase，不算 run 的写入方", () => {
   // 轮次状态机确实写着 `phase: "active"`／`"paused"`（round-service.ts:670 那份 reducer 输出），
   // 这条把"口径收窄"这件事钉住：如果哪天有人把窗口规则改宽，这里会先红。
-  const roundReducer = sources.find((item) => item.rel.endsWith("note-learning-rounds/round-reducer.ts"));
+  const roundReducer = sources.find((item) => item.rel.endsWith("note-learning-rounds/round/round-reducer.ts"));
   assert.ok(roundReducer, "轮次状态机那份文件不在了，这条自证就无从做起");
   const activeVerdict = verdicts.find((item) => item.phase === "active");
   assert.ok(activeVerdict && activeVerdict.writers.length > 0, "run 的 active 该有自己的写入方（run-service）");

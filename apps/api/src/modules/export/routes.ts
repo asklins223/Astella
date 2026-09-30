@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { requireSession, requireOwner } from "../identity/middleware.ts";
 import { exportWorkspace, exportNoteMarkdown } from "./service.ts";
 import { uuidParamSchema } from "../../lib/pagination.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { recordWorkspaceAudit } from "../audit/service.ts";
 
 export async function exportRoutes(app: FastifyInstance) {
@@ -14,7 +14,7 @@ export async function exportRoutes(app: FastifyInstance) {
     // 审查附录 C：「导出目前是一个 owner-only 的 GET，未见审计写入」。留痕必须与
     // 这次导出**同事务**——所以这里先开事务，把 tx 交给导出，再写审计行。
     const data = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       async (tx) => {
         const payload = await exportWorkspace(req.session.workspaceId, req.session.userId, tx);
         await recordWorkspaceAudit(tx, {
@@ -48,7 +48,7 @@ export async function exportRoutes(app: FastifyInstance) {
     // 之前这条只有类型没有写入方（doc 34 L40），于是"谁的哪篇笔记被带走了"在库里查不到。
     // 404（那篇不存在或不可见）不留痕——动作没发生，记了就是假证据。
     const markdown = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       async (tx) => {
         const body = await exportNoteMarkdown(noteId, req.session.workspaceId, req.session.userId);
         if (!body) return null;

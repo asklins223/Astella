@@ -385,6 +385,20 @@
   & .day-anomaly__stuck{
     font-style:italic;
   }
+  /* 处置语：与组头重复的那句不在这里复读（StudySurface.tsx:263 判过），所以这一格
+     一旦出现就是「这一组自己的处置」，要比 __meta 更重一档才能被看见。 */
+  & .day-anomaly__step{
+    color:var(--log-alarm-ink);
+    font-weight:700;
+  }
+
+  /* 「系统异常·不需要你处理」这一档的分诊区：它不是待办，所以比 __list 更安静一档，
+     靠纸面减淡而不是靠缩进——读者要能一眼分出「这不用你动手」。 */
+  & .day-triage__background{
+    display:grid;
+    gap:8px;
+    opacity:.86;
+  }
 
   /* 展开器：显式动作，读者知道自己在要什么 */
   & .day-triage__more{

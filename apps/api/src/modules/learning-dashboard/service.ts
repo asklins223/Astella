@@ -30,15 +30,11 @@ import {
   dashboardBuildDurationSeconds,
   dashboardEmptyWithActiveObjectivesTotal,
 } from "../../lib/metrics.ts";
+import { ACTIVE_LEARNING_RUN_PHASES } from "@ailearn/shared/learning-run-contracts";
 
-const ACTIVE_RUN_PHASES = [
-  "preparing",
-  "active",
-  "assessing",
-  "checkpoint",
-  "committing",
-  "paused",
-] as const;
+// P0-16：第 4 份逐字相同的 6 档副本。改从 shared 唯一来源派生，
+// 这样新增一个"进行中"档位只需改 db-schema 一处，而不是这里 + 另外 3 处。
+const ACTIVE_RUN_PHASES = ACTIVE_LEARNING_RUN_PHASES;
 
 const FOCUS_LIMIT = 50;
 /** 在途清单与 room 投影那一节同一个上限（`roomActiveRunSummaryDataSchema` 也是 20）。 */

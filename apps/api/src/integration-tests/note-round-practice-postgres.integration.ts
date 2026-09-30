@@ -40,12 +40,12 @@ const fixtureSql = postgres(fixtureUrl, { max: 4 });
 
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
 const { createRunV2, submitArtifact, getRunPublicView } = await import("../modules/learning-runs/run-service.ts");
-const { runLearningRunProcessingTick } = await import("../modules/learning-runs/run-processing-tick.ts");
+const { runLearningRunProcessingTick } = await import("../modules/learning-runs/processing/run-processing-tick.ts");
 const { seedV2Fixture, seedObjectiveNoteEvidence } = await import("./helpers/v2-card-fixture.ts");
 const { default: Fastify } = await import("fastify");
 const { default: sensible } = await import("@fastify/sensible");
 const { authRoutes } = await import("../modules/identity/routes.ts");
-const { deterministicTeachingExplainProviderV1 } = await import("../modules/note-learning-rounds/teaching-explain.ts");
+const { deterministicTeachingExplainProviderV1 } = await import("../modules/note-learning-rounds/teaching/teaching-explain.ts");
 const { noteLearningRoundRoutes } = await import("../modules/note-learning-rounds/routes.ts");
 const { issueSession } = await import("../modules/identity/service.ts");
 

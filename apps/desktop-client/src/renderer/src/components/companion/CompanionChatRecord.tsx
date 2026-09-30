@@ -1,3 +1,4 @@
+// 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, CornerDownRight } from "lucide-react";
 import type { CompanionContentBlockV1, CompanionMessageV1 } from "@ailearn/shared/companion-conversation-contracts";
@@ -7,10 +8,9 @@ import { gatewayErrorMessage } from "../../app/desktop-client";
 import type { CompanionRunTrace } from "../../app/companion-agent-nodes";
 import { CompanionProposalChoice } from "./CompanionProposalChoice";
 import { CompanionRunTraceView } from "./CompanionRunTraceView";
-import { ZoomableReadingImage } from "../surfaces/image-viewer";
-import { useSourceImage } from "../surfaces/source-image";
+import { ZoomableReadingImage } from "../surfaces/source/image-viewer.tsx";
+import { useSourceImage } from "../surfaces/source/source-image.ts";
 import { renderCompanionMarkdown } from "./companion-markdown";
-import "./companion-chat-record.css";
 
 /**
  * 「聊天记录」子级页面（2026-09-19，微信式）。

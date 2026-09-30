@@ -33,20 +33,6 @@
   will-change: transform;
 }
 
-.companion-presence[data-surface="room"] .companion-visual-shell .window-live2d {
-  transition: transform 160ms ease-out;
-}
-
-.companion-presence[data-surface="room"] .window-live2d > button {
-  cursor: grab !important;
-  touch-action: none;
-  pointer-events: auto;
-}
-
-.companion-presence[data-surface="room"] .companion-visual-shell--dragging .window-live2d > button {
-  cursor: grabbing !important;
-}
-
 /* 角色脚下的影子：拖动时抬起、变小变淡，与上面那条 transform 同一套时长。 */
 .companion-presence[data-surface="room"] .companion-visual-shell::before {
   position: absolute;
@@ -58,10 +44,6 @@
   transition: opacity 160ms ease-out, transform 160ms ease-out;
 }
 
-.companion-presence[data-surface="room"] .companion-visual-shell--dragging .window-live2d {
-  transform: translateY(-5px) scale(0.985);
-}
-
 /* 下面这条 @media 在今天锁死最小 1280×720 的窗口里匹配不到，属于"紧凑档要不要保留"
    那个未决窗口策略的一部分，先留原样，不在这轮替产品拍板。 */
 @media (max-width: 720px) {
@@ -70,8 +52,6 @@
     height: min(220px, 34vh);
   }
 }
-
-[data-motion-mode="off"] .companion-presence[data-surface="room"] .companion-visual-shell :is(.window-live2d),
-[data-motion-mode="off"] .companion-presence[data-surface="room"] .companion-visual-shell::before {
+[data-motion-mode="off"] .companion-presence[data-surface="room"] .companion-visual-shell::before{
   transition: none;
 }

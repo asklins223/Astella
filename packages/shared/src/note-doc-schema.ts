@@ -176,6 +176,56 @@ export function parseInlineMarkdown(value: string): NoteDocInlineSegment[] {
   return segments;
 }
 
+/**
+ * The text-node stream of one rendered note block.
+ *
+ * Annotation offsets are DOM Range offsets, so this deliberately follows the reader's
+ * actual text nodes: inline images and `<br>` separators contribute no characters, while
+ * code-block newlines remain characters. Keeping this beside the canonical inline parser
+ * lets the API verify anchors against the same visible source the reader selected.
+ */
+export function noteBlockRenderedTextV1(type: string, content: string): string {
+  const value = content
+    .replace(/<br\s*\/?\s*>/gi, "\n")
+    .replace(/<\/?(?:h[1-6]|p|strong|em|ul|ol|li|blockquote|code|pre)\b[^>]*>/gi, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"');
+
+  if (type === "image") return "";
+  if (type === "code") return value;
+
+  const visibleInline = (text: string): string => parseInlineMarkdown(text)
+    .map((segment) => {
+      if (segment.kind === "image") return "";
+      if (segment.kind === "code") return segment.text;
+      return segment.text.replace(/\\([!\"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g, "$1");
+    })
+    .join("");
+
+  if (type === "paragraph") {
+    const lines = value.trim().split("\n").map((line) => line.trim());
+    if (lines.length >= 2 && lines.every((line) => line.startsWith("|") && line.endsWith("|"))) {
+      const cells = (line: string) => line.slice(1, -1).split(/(?<!\\)\|/)
+        .map((cell) => cell.trim().replace(/\\\|/g, "|"));
+      const separator = cells(lines[1] ?? "");
+      if (separator.length > 0 && separator.every((cell) => /^:?-{2,}:?$/.test(cell))) {
+        return [lines[0] ?? "", ...lines.slice(2)].flatMap(cells).map(visibleInline).join("");
+      }
+    }
+    const flattened = value.split("\n").map(visibleInline).join("");
+    if (/^(?:\*{3,}|-{3,}|_{3,})$/.test(flattened.trim())) return "";
+    return flattened;
+  }
+
+  // The reader renders list/quote/heading line breaks as `<br>` or sibling spans;
+  // Range.toString() concatenates their text nodes without adding a newline.
+  return value.split("\n").map(visibleInline).join("");
+}
+
 const MARK_BY_SEGMENT: Partial<Record<NoteDocInlineSegment["kind"], string>> = {
   strong: "strong",
   em: "emphasis",

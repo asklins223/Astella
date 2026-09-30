@@ -11,6 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireSession } from "../identity/middleware.ts";
 import { listLearningMetrics, type LearningMetricEventType } from "./learning-metrics.ts";
+import { scopeOfSession } from "../../db/client.ts";
 
 const METRIC_EVENT_TYPES = [
   "run_created",
@@ -35,7 +36,7 @@ export async function learningMetricRoutes(app: FastifyInstance): Promise<void> 
       if (!query.success) {
         return reply.code(400).send({ error: "bad_request", message: "metric query 非法" });
       }
-      const scope = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+      const scope = scopeOfSession(req.session);
       const items = await listLearningMetrics(scope, {
         eventType: query.data.eventType as LearningMetricEventType | undefined,
         from: query.data.from,

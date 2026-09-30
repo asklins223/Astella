@@ -4,7 +4,7 @@
  * 第一路由：本地 SenseVoice（sherpa-onnx WASM，`/sherpa/asr-worker.js`）——
  * 音频不出设备；worker 拉起失败、模型缺失或识别失败时落第二路由：云通道
  * `POST /voice/transcribe`（SiliconFlow，服务端会签发 voiceArtifactId）。
- * 降级顺序与 docs/plans/learning-companion/13-… §P6 的三路由设计一致。
+ * 降级顺序与 （原据 learning-companion/13-…，2026-09-29 已归档）§P6 的三路由设计一致。
  */
 
 export type VoiceRoute = "local" | "cloud";

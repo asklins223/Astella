@@ -26,13 +26,13 @@ const {
   confirmMemory,
   deleteMemory,
   listMemories,
-} = await import("../modules/companion-conversation/memory-service.ts");
-const { deliver } = await import("../modules/companion-conversation/delivery-service.ts");
+} = await import("../modules/companion-conversation/memory/memory-service.ts");
+const { deliver } = await import("../modules/companion-conversation/delivery/delivery-service.ts");
 const { submitArtifact } = await import(
   "../modules/learning-runs/run-service.ts"
 );
 const { runLearningRunProcessingTick, closeStructuredSolutionSql } = await import(
-  "../modules/learning-runs/run-processing-tick.ts"
+  "../modules/learning-runs/processing/run-processing-tick.ts"
 );
 
 after(async () => {

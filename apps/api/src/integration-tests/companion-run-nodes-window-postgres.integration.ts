@@ -23,7 +23,7 @@ if (!databaseUrl) {
 }
 const sql = postgres(databaseUrl, { max: 2 });
 
-import { listCompanionRunNodes } from "../modules/companion-conversation/companion-events.ts";
+import { listCompanionRunNodes } from "../modules/companion-conversation/turn/companion-events.ts";
 import { closeDatabase } from "../db/client.ts";
 
 test.after(async () => {

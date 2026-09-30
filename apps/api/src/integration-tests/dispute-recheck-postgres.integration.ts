@@ -39,8 +39,8 @@ if (!fixtureUrl || !process.env.DATABASE_URL_API) {
 }
 const fixtureSql = postgres(fixtureUrl, { max: 4 });
 const { currentApiWorkspaceTransaction, withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
-const disputes = await import("../modules/learning-runs/run-disputes.ts");
-const recheck = await import("../modules/learning-runs/dispute-recheck.ts");
+const disputes = await import("../modules/learning-runs/disputes/run-disputes.ts");
+const recheck = await import("../modules/learning-runs/disputes/dispute-recheck.ts");
 
 /** `seedV2Fixture` 那份默认 rubric 只有一个单元，全文都靠它。 */
 const RUBRIC_UNIT_ID = "fixture-rubric-u1";

@@ -25,7 +25,7 @@ if (!fixtureUrl || !process.env.DATABASE_URL_API) {
 }
 const fixtureSql = postgres(fixtureUrl, { max: 4 });
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
-const rounds = await import("../modules/note-learning-rounds/round-service.ts");
+const rounds = await import("../modules/note-learning-rounds/round/round-service.ts");
 const { seedNotesOnlyWorkspace } = await import("./helpers/pure-v2-workspace-fixture.ts");
 const { noteLearningRoundHistoryPageV1Schema, ROUND_HISTORY_MASKED_QUESTION_V1 } =
   await import("@ailearn/shared/note-learning-round-contracts");

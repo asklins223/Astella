@@ -65,7 +65,6 @@ const {
   submitArtifact,
   getRunPublicView,
   getLearningRunPublicSnapshotV2,
-  getResultPayload,
   getResultPayloadV2,
   getReturnContractV2,
   applyAction,
@@ -75,7 +74,7 @@ const {
   "../modules/learning-runs/run-service.ts"
 );
 const { runLearningRunProcessingTick } = await import(
-  "../modules/learning-runs/run-processing-tick.ts"
+  "../modules/learning-runs/processing/run-processing-tick.ts"
 );
 
 /**
@@ -326,8 +325,13 @@ test("P2 纵切：card 创建 → declared_unable 提交 → tick 评估+Commit 
     assert.equal(envelope.fact?.kind, "canonical_unable");
 
     // 7) result 端点语义。
+    //
+    // 2026-09-29（P3-2）：这一段原本调 V1 的 `getResultPayload` 并断言
+    // `status === "learning_result"`。V1 那个函数全仓**只剩这一处**引用，
+    // 而同一个文件里 V2 的 `getResultPayloadV2` 已经被用了三处、断言也更全，
+    // 所以 V1 与这一行一起删掉——不留兼容层。
     const result = await withWorkspaceTransaction(scope, async (tx) =>
-      getResultPayload(tx, { ...scope, runId: run.runId }),
+      getResultPayloadV2(tx, { ...scope, runId: run.runId }),
     );
     assert.equal(result.status, "learning_result");
 
@@ -1056,7 +1060,7 @@ test("REVIEW-QUEUE-PROJECTION-01：真实 V2 queue identity 与 direct startabil
       VALUES (${dueScheduleId}, ${seeded.workspaceId}, ${seeded.userId}, 'card', ${seeded.keyPointId}, 'pending', now() - interval '1 minute', 1, 12, 'discrete-v2', 'initial_validation', now(), now())
     `);
 
-    const queueResponse = await app.inject({ method: "GET", url: "/reviews/v2/queue?limit=10", headers: auth });
+    const queueResponse = await app.inject({ method: "GET", url: "/v2/reviews/queue?limit=10", headers: auth });
     assert.equal(queueResponse.statusCode, 200, queueResponse.body);
     const queue = reviewQueueV2Schema.parse(queueResponse.json());
     const queued = queue.items.find((item) => item.scheduleId === dueScheduleId);
@@ -1386,7 +1390,7 @@ test("RUN-V2-WIRE-01：HTTP V2 draft/submit receipt → response-loss replay →
     // GET resync must be the same strict snapshot identity as the start response.
     const getResponse = await app.inject({
       method: "GET",
-      url: `/learning-runs/${startSnapshot.runId}/v2`,
+      url: `/v2/learning-runs/${startSnapshot.runId}`,
       headers: auth,
     });
     assert.equal(getResponse.statusCode, 200, getResponse.body);
@@ -1416,7 +1420,7 @@ test("RUN-V2-WIRE-01：HTTP V2 draft/submit receipt → response-loss replay →
     };
     const draftResponse = await app.inject({
       method: "PUT",
-      url: `/learning-runs/${startSnapshot.runId}/tasks/${task.taskId}/draft/v2`,
+      url: `/v2/learning-runs/${startSnapshot.runId}/tasks/${task.taskId}/draft`,
       headers: auth,
       payload: draftBody,
     });
@@ -1430,7 +1434,7 @@ test("RUN-V2-WIRE-01：HTTP V2 draft/submit receipt → response-loss replay →
 
     const draftResyncResponse = await app.inject({
       method: "GET",
-      url: `/learning-runs/${startSnapshot.runId}/tasks/${task.taskId}/draft/v2`,
+      url: `/v2/learning-runs/${startSnapshot.runId}/tasks/${task.taskId}/draft`,
       headers: auth,
     });
     assert.equal(draftResyncResponse.statusCode, 200, draftResyncResponse.body);
@@ -1452,7 +1456,7 @@ test("RUN-V2-WIRE-01：HTTP V2 draft/submit receipt → response-loss replay →
     };
     const submitResponse = await app.inject({
       method: "POST",
-      url: `/learning-runs/${startSnapshot.runId}/tasks/${task.taskId}/submissions/v2`,
+      url: `/v2/learning-runs/${startSnapshot.runId}/tasks/${task.taskId}/submissions`,
       headers: auth,
       payload: submitBody,
     });
@@ -1468,7 +1472,7 @@ test("RUN-V2-WIRE-01：HTTP V2 draft/submit receipt → response-loss replay →
     // has advanced to assessing. The receipt must remain byte-for-byte stable.
     const submitReplayResponse = await app.inject({
       method: "POST",
-      url: `/learning-runs/${startSnapshot.runId}/tasks/${task.taskId}/submissions/v2`,
+      url: `/v2/learning-runs/${startSnapshot.runId}/tasks/${task.taskId}/submissions`,
       headers: auth,
       payload: submitBody,
     });
@@ -1479,7 +1483,7 @@ test("RUN-V2-WIRE-01：HTTP V2 draft/submit receipt → response-loss replay →
     // submit transition changed the current run revision.
     const draftReplayAfterSubmit = await app.inject({
       method: "PUT",
-      url: `/learning-runs/${startSnapshot.runId}/tasks/${task.taskId}/draft/v2`,
+      url: `/v2/learning-runs/${startSnapshot.runId}/tasks/${task.taskId}/draft`,
       headers: auth,
       payload: draftBody,
     });
@@ -1488,7 +1492,7 @@ test("RUN-V2-WIRE-01：HTTP V2 draft/submit receipt → response-loss replay →
 
     const draftConflict = await app.inject({
       method: "PUT",
-      url: `/learning-runs/${startSnapshot.runId}/tasks/${task.taskId}/draft/v2`,
+      url: `/v2/learning-runs/${startSnapshot.runId}/tasks/${task.taskId}/draft`,
       headers: auth,
       payload: { ...draftBody, payload: { kind: "text", text: "同 key 的不同草稿必须冲突。" } },
     });
@@ -1497,7 +1501,7 @@ test("RUN-V2-WIRE-01：HTTP V2 draft/submit receipt → response-loss replay →
 
     const submitRevisionConflict = await app.inject({
       method: "POST",
-      url: `/learning-runs/${startSnapshot.runId}/tasks/${task.taskId}/submissions/v2`,
+      url: `/v2/learning-runs/${startSnapshot.runId}/tasks/${task.taskId}/submissions`,
       headers: auth,
       payload: { ...submitBody, runRevision: submitBody.runRevision + 1 },
     });
@@ -1506,7 +1510,7 @@ test("RUN-V2-WIRE-01：HTTP V2 draft/submit receipt → response-loss replay →
 
     const submitTaskConflict = await app.inject({
       method: "POST",
-      url: `/learning-runs/${startSnapshot.runId}/tasks/${randomUUID()}/submissions/v2`,
+      url: `/v2/learning-runs/${startSnapshot.runId}/tasks/${randomUUID()}/submissions`,
       headers: auth,
       payload: submitBody,
     });
@@ -1519,7 +1523,7 @@ test("RUN-V2-WIRE-01：HTTP V2 draft/submit receipt → response-loss replay →
       assert.equal(tickResult.failed, 0, `tick failed=${tickResult.failed}`);
       const resultResponse = await app.inject({
         method: "GET",
-        url: `/learning-runs/${startSnapshot.runId}/result/v2`,
+        url: `/v2/learning-runs/${startSnapshot.runId}/result`,
         headers: auth,
       });
       assert.ok([200, 202].includes(resultResponse.statusCode), resultResponse.body);
@@ -1535,7 +1539,7 @@ test("RUN-V2-WIRE-01：HTTP V2 draft/submit receipt → response-loss replay →
 
     const returnResponse = await app.inject({
       method: "GET",
-      url: `/learning-runs/${startSnapshot.runId}/return-contract/v2`,
+      url: `/v2/learning-runs/${startSnapshot.runId}/return-contract`,
       headers: auth,
     });
     assert.equal(returnResponse.statusCode, 200, returnResponse.body);
@@ -1603,14 +1607,14 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
     };
     const leaseResponse = await app.inject({
       method: "POST",
-      url: `/learning-runs/${before.runId}/activity-lease/v2`,
+      url: `/v2/learning-runs/${before.runId}/activity-lease`,
       headers: auth,
       payload: leaseBody,
     });
     assert.equal(leaseResponse.statusCode, 204, leaseResponse.body);
     const leaseReplay = await app.inject({
       method: "POST",
-      url: `/learning-runs/${before.runId}/activity-lease/v2`,
+      url: `/v2/learning-runs/${before.runId}/activity-lease`,
       headers: auth,
       payload: leaseBody,
     });
@@ -1622,7 +1626,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
     assert.equal(leaseCount[0].n, 1, "duplicate lease replay must not double-write the lease row");
     const afterLeaseResponse = await app.inject({
       method: "GET",
-      url: `/learning-runs/${before.runId}/v2`,
+      url: `/v2/learning-runs/${before.runId}`,
       headers: auth,
     });
     assert.equal(afterLeaseResponse.statusCode, 200, afterLeaseResponse.body);
@@ -1631,7 +1635,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
 
     const malformedAction = await app.inject({
       method: "POST",
-      url: `/learning-runs/${before.runId}/actions/v2`,
+      url: `/v2/learning-runs/${before.runId}/actions`,
       headers: auth,
       payload: {
         version: 2,
@@ -1646,7 +1650,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
 
     const forgedParameters = await app.inject({
       method: "POST",
-      url: `/learning-runs/${before.runId}/actions/v2`,
+      url: `/v2/learning-runs/${before.runId}/actions`,
       headers: auth,
       payload: {
         version: 2,
@@ -1661,7 +1665,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
 
     const staleSnapshot = await app.inject({
       method: "POST",
-      url: `/learning-runs/${before.runId}/actions/v2`,
+      url: `/v2/learning-runs/${before.runId}/actions`,
       headers: auth,
       payload: {
         version: 2,
@@ -1677,7 +1681,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
 
     const staleRevision = await app.inject({
       method: "POST",
-      url: `/learning-runs/${before.runId}/actions/v2`,
+      url: `/v2/learning-runs/${before.runId}/actions`,
       headers: auth,
       payload: {
         version: 2,
@@ -1693,7 +1697,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
 
     const unauthorized = await app.inject({
       method: "POST",
-      url: `/learning-runs/${before.runId}/actions/v2`,
+      url: `/v2/learning-runs/${before.runId}/actions`,
       headers: { authorization: `Bearer ${otherSeeded.token}` },
       payload: {
         version: 2,
@@ -1709,7 +1713,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
 
     const forbidden = await app.inject({
       method: "POST",
-      url: `/learning-runs/${before.runId}/actions/v2`,
+      url: `/v2/learning-runs/${before.runId}/actions`,
       headers: auth,
       payload: {
         version: 2,
@@ -1736,13 +1740,13 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
     const [actionResponse, overlapActionResponse] = await Promise.all([
       app.inject({
         method: "POST",
-        url: `/learning-runs/${before.runId}/actions/v2`,
+        url: `/v2/learning-runs/${before.runId}/actions`,
         headers: auth,
         payload: actionBody,
       }),
       app.inject({
         method: "POST",
-        url: `/learning-runs/${before.runId}/actions/v2`,
+        url: `/v2/learning-runs/${before.runId}/actions`,
         headers: auth,
         payload: actionBody,
       }),
@@ -1767,7 +1771,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
     // resume/end are available, while pause is no longer server-authorized.
     const pausedGetResponse = await app.inject({
       method: "GET",
-      url: `/learning-runs/${before.runId}/v2`,
+      url: `/v2/learning-runs/${before.runId}`,
       headers: auth,
     });
     assert.equal(pausedGetResponse.statusCode, 200, pausedGetResponse.body);
@@ -1780,7 +1784,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
 
     const pausedPauseAttempt = await app.inject({
       method: "POST",
-      url: `/learning-runs/${before.runId}/actions/v2`,
+      url: `/v2/learning-runs/${before.runId}/actions`,
       headers: auth,
       payload: {
         version: 2,
@@ -1799,7 +1803,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
     // original V2 response rather than a new paused/resume projection.
     const replayResponse = await app.inject({
       method: "POST",
-      url: `/learning-runs/${before.runId}/actions/v2`,
+      url: `/v2/learning-runs/${before.runId}/actions`,
       headers: auth,
       payload: actionBody,
     });
@@ -1808,7 +1812,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
 
     const changedEpoch = await app.inject({
       method: "POST",
-      url: `/learning-runs/${before.runId}/actions/v2`,
+      url: `/v2/learning-runs/${before.runId}/actions`,
       headers: auth,
       payload: { ...actionBody, runtimeEpoch: actionBody.runtimeEpoch + 1 },
     });
@@ -1817,7 +1821,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
 
     const changedAction = await app.inject({
       method: "POST",
-      url: `/learning-runs/${before.runId}/actions/v2`,
+      url: `/v2/learning-runs/${before.runId}/actions`,
       headers: auth,
       payload: { ...actionBody, action: { kind: "end", abandonLockedEvidence: false } },
     });
@@ -1826,7 +1830,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
 
     const endResponse = await app.inject({
       method: "POST",
-      url: `/learning-runs/${before.runId}/actions/v2`,
+      url: `/v2/learning-runs/${before.runId}/actions`,
       headers: auth,
       payload: {
         version: 2,
@@ -1853,7 +1857,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
      */
     const terminalLeaseResponse = await app.inject({
       method: "POST",
-      url: `/learning-runs/${before.runId}/activity-lease/v2`,
+      url: `/v2/learning-runs/${before.runId}/activity-lease`,
       headers: auth,
       payload: {
         version: 2,
@@ -1871,7 +1875,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
     );
     const afterTerminalLease = await app.inject({
       method: "GET",
-      url: `/learning-runs/${before.runId}/v2`,
+      url: `/v2/learning-runs/${before.runId}`,
       headers: auth,
     });
     assert.equal(afterTerminalLease.statusCode, 200, afterTerminalLease.body);
@@ -1885,7 +1889,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
 
     const terminalResultResponse = await app.inject({
       method: "GET",
-      url: `/learning-runs/${before.runId}/result/v2`,
+      url: `/v2/learning-runs/${before.runId}/result`,
       headers: auth,
     });
     assert.equal(terminalResultResponse.statusCode, 200, terminalResultResponse.body);
@@ -1895,7 +1899,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
 
     const terminalReturnResponse = await app.inject({
       method: "GET",
-      url: `/learning-runs/${before.runId}/return-contract/v2`,
+      url: `/v2/learning-runs/${before.runId}/return-contract`,
       headers: auth,
     });
     assert.equal(terminalReturnResponse.statusCode, 200, terminalReturnResponse.body);
@@ -1908,7 +1912,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
     await scoped(scope, (tx) => tx`DELETE FROM review_schedules WHERE id = ${scheduleId}`);
     const deletedTargetReturnResponse = await app.inject({
       method: "GET",
-      url: `/learning-runs/${before.runId}/return-contract/v2`,
+      url: `/v2/learning-runs/${before.runId}/return-contract`,
       headers: auth,
     });
     assert.equal(deletedTargetReturnResponse.statusCode, 200, deletedTargetReturnResponse.body);
@@ -1927,7 +1931,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
     await scoped(scope, (tx) => tx`UPDATE learning_cards_v2 SET lifecycle = 'archived' WHERE workspace_id = ${seeded.workspaceId} AND card_id = ${seeded.cardId}`);
     const noFallbackReturnResponse = await app.inject({
       method: "GET",
-      url: `/learning-runs/${before.runId}/return-contract/v2`,
+      url: `/v2/learning-runs/${before.runId}/return-contract`,
       headers: auth,
     });
     assert.equal(noFallbackReturnResponse.statusCode, 200, noFallbackReturnResponse.body);
@@ -1938,7 +1942,7 @@ test("RUN-V2-ACTION-IDEMPOTENCY-01：V2 action availability 与 response-loss ex
 
     const crossWorkspaceReturnResponse = await app.inject({
       method: "GET",
-      url: `/learning-runs/${before.runId}/return-contract/v2`,
+      url: `/v2/learning-runs/${before.runId}/return-contract`,
       headers: { authorization: `Bearer ${otherSeeded.token}` },
     });
     assert.equal(crossWorkspaceReturnResponse.statusCode, 404, crossWorkspaceReturnResponse.body);
@@ -1980,7 +1984,7 @@ test("RUN-V2-ACTION-AVAILABILITY-01：direct API 覆盖 full phase/checkpoint/re
     const readSnapshot = async () => {
       const response = await app.inject({
         method: "GET",
-        url: `/learning-runs/${initial.runId}/v2`,
+        url: `/v2/learning-runs/${initial.runId}`,
         headers: auth,
       });
       assert.equal(response.statusCode, 200, response.body);

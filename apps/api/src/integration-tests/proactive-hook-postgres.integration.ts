@@ -29,7 +29,7 @@ after(async () => {
 
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
 const { hookProactiveOnRunCompleted } = await import(
-  "../modules/companion-conversation/proactive-hook.ts"
+  "../modules/companion-conversation/delivery/proactive-hook.ts"
 );
 
 async function seedBase(): Promise<{ workspaceId: string; userId: string; cleanup: () => Promise<void> }> {

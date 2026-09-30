@@ -36,21 +36,6 @@
   background: linear-gradient(180deg, rgba(25, 16, 11, 0.09), transparent 30%, rgba(25, 16, 11, 0.08));
   pointer-events: none;
 }
-.task-surface--notebook, .task-surface--note-library { background-image: url("/assets/approved-v3/environments/writing-day-v1.png"); }
-.task-surface--study, .task-surface--card-generation { background-image: url("/assets/approved-v3/environments/workshop-day-v1.png"); }
-.task-surface--review, .task-surface--validation { background-image: url("/assets/approved-v3/environments/review-day-v1.png"); }
-.task-surface--search { background-image: url("/assets/approved-v3/environments/library-day-v1.png"); }
-.task-surface--objective-library, .task-surface--objective-detail { background-image: url("/assets/approved-v3/environments/workshop-day-v1.png"); }
-.task-surface--graph, .task-surface--companion-center { background-image: url("/assets/approved-v3/environments/observatory-night-open-v3.png"); }
-.task-surface--settings { background-image: url("/assets/approved-v3/environments/companion-system-day-v1.png"); }
-
-.desktop-app[data-theme="night"] .task-surface--source-library, .desktop-app[data-theme="night"] .task-surface--source-detail { background-image: url("/assets/approved-v3/environments/library-night-v1.png"); }
-.desktop-app[data-theme="night"] .task-surface--notebook, .desktop-app[data-theme="night"] .task-surface--note-library { background-image: url("/assets/approved-v3/environments/writing-night-v1.png"); }
-.desktop-app[data-theme="night"] .task-surface--study, .desktop-app[data-theme="night"] .task-surface--card-generation { background-image: url("/assets/approved-v3/environments/workshop-night-v1.png"); }
-.desktop-app[data-theme="night"] .task-surface--review, .desktop-app[data-theme="night"] .task-surface--validation { background-image: url("/assets/approved-v3/environments/review-night-v1.png"); }
-.desktop-app[data-theme="night"] .task-surface--search { background-image: url("/assets/approved-v3/environments/library-night-v1.png"); }
-.desktop-app[data-theme="night"] .task-surface--objective-library, .desktop-app[data-theme="night"] .task-surface--objective-detail { background-image: url("/assets/approved-v3/environments/workshop-night-v1.png"); }
-.desktop-app[data-theme="night"] .task-surface--settings { background-image: url("/assets/approved-v3/environments/companion-system-night-v1.png"); }
 
 .approved-surface {
   position: absolute;
@@ -161,16 +146,11 @@
 
 .approved-state strong { font: 680 18px "Noto Serif SC Variable", "Songti SC", serif; }
 .approved-state p { max-width: 44em; margin: 0; color: var(--hud-soft); font-size: 11px; line-height: 1.65; }
-.approved-state--loading svg { animation: v3-spin 1.2s linear infinite; }
 @keyframes v3-spin { to { transform: rotate(360deg); } }
 .v3-goal-focus { position: relative; display: flex; min-width: 0; min-height: 0; flex-direction: column; padding: 22px 23px 18px; overflow: hidden; color: #3e3329; border: 4px solid rgba(255, 252, 235, 0.86); border-radius: 31px 24px 35px 27px; background: #8db28f; box-shadow: 0 18px 38px rgba(45, 28, 17, 0.25), 0 3px 10px rgba(45, 28, 17, 0.14); }
 .v3-goal-focus::after { position: absolute; right: -40px; bottom: -55px; width: 155px; height: 128px; content: ""; border: 18px solid rgba(255, 248, 220, 0.12); border-radius: 61% 39% 54% 46%; transform: rotate(-24deg); pointer-events: none; }
 .v3-objective-state { width: fit-content; }
 .v3-goal-focus .v3-objective-state { color: #3f3b2f; }
-.v3-objective-state--calm svg { fill: #7fa783; color: #7fa783; }
-.v3-objective-state--progress svg { fill: #b98226; color: #b98226; }
-.v3-objective-state--attention svg { fill: #d87a57; color: #d87a57; }
-.v3-objective-state--neutral svg { fill: #c8b99f; color: #c8b99f; }
 .v3-goal-focus h3 { max-width: 16ch; margin: 0; font: 700 26px/1.36 "Noto Serif SC Variable", "Songti SC", serif; letter-spacing: -0.025em; text-wrap: balance; }
 .v3-goal-focus blockquote { display: -webkit-box; max-width: 42ch; margin: 15px 0 19px; overflow: hidden; color: #3e3329; font-size: 10px; line-height: 1.72; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
 .v3-goal-focus__action { margin-top: 0; transition: transform 180ms var(--hud-ease-out), box-shadow 180ms ease; }
@@ -191,9 +171,6 @@
 .v3-goal-list > li { min-width: 0; }
 .v3-goal-row { border-radius: 0; box-shadow: none; transition: transform 180ms var(--hud-ease-out), background-color 160ms ease; }
 .v3-goal-row__marker { box-shadow: 0 0 0 4px rgba(128, 106, 81, 0.09); }
-.v3-goal-row__marker--calm { background: #50775a; }
-.v3-goal-row__marker--progress { background: #9c6d18; }
-.v3-goal-row__marker--attention { background: #a9472e; }
 .v3-goal-row__summary { display: -webkit-box; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .v3-goal-row__meta { overflow: hidden; font-variant-numeric: tabular-nums; text-overflow: ellipsis; }
 .v3-goal-row__next { display: inline-flex; align-items: center; gap: 4px; }
@@ -249,39 +226,6 @@
   padding: 0;
   perspective: none;
 }
-
-.task-surface:is(.task-surface--card-generation, .task-surface--validation) .task-surface__header {
-  position: absolute;
-  z-index: 25;
-  top: 24px;
-  right: auto;
-  bottom: auto;
-  left: 88px;
-  width: min(720px, calc(100vw - 440px));
-  padding: 0;
-  border: 0;
-  color: #fff8e8;
-}
-
-.task-surface:is(.task-surface--card-generation, .task-surface--validation) .task-surface__header::after { display: none; }
-.task-surface:is(.task-surface--card-generation, .task-surface--validation) .task-surface__header h2 { font-size: 29px; }
-.task-surface:is(.task-surface--card-generation, .task-surface--validation) .task-surface__header .surface-close {
-  position: fixed;
-  z-index: 38;
-  bottom: 22px;
-  left: 4px;
-  min-width: 132px;
-  height: 46px;
-  margin: 0;
-  border-color: rgba(255, 255, 255, 0.22);
-  border-radius: 24px;
-  background: rgba(43, 31, 24, 0.88);
-  box-shadow: var(--hud-shadow-small);
-  backdrop-filter: blur(12px);
-}
-.task-surface--study :is(canvas) { display: none !important; }
-
-.task-surface--card-generation > .task-surface__spatial-layer > .prototype-note { display: none; }
 
 /* The companion's left/right seat is not decided here. The page registry owns
    it and publishes `comp-left`; the task-surface block in `styles.css` draws the
@@ -383,13 +327,6 @@
 }
 
 @media (max-width: 900px), (max-height: 520px) {
-  .task-surface--notebook :is(textarea) { padding: 5px 1px; font-size: 7px; }
-}
-
-.desktop-app[data-directory-rail="collapsed"] .task-surface:is(.task-surface--card-generation, .task-surface--validation) .task-surface__header .surface-close {
-  left: -66px;
-  width: 176px;
-  padding-left: 70px;
 }
 
 /* Legibility floor for the compact (200% zoom) viewport: the micro sizes set

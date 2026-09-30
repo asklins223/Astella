@@ -112,11 +112,12 @@ const ROUND_INDIRECT_READ_PATTERNS = [
  * 带 stale 检查：豁免数比实际多会红，所以有人把闸补上，这里必须跟着减。
  */
 const ROUND_INDIRECT_SYSTEM_LEVEL_READS: Record<string, number> = {
-  "modules/note-learning-rounds/round-service.ts": 12,
+  "modules/note-learning-rounds/round/round-service.ts": 12,
   "modules/note-learning-rounds/reflection-service.ts": 2,
   "modules/note-learning-rounds/prerequisite-proposal.ts": 1,
-  "modules/note-learning-rounds/round-activity-sweep.ts": 1,
+  "modules/note-learning-rounds/round/round-activity-sweep.ts": 1,
   "modules/learning-runs/run-service.ts": 2,
+  "modules/learning-runs/run-action.ts": 0,
 };
 
 /**
@@ -128,8 +129,8 @@ const ROUND_INDIRECT_SYSTEM_LEVEL_READS: Record<string, number> = {
  * 它们必须被这一条钉住，而且这一条要能独立红。
  */
 const ROUND_CONTENT_READERS: Array<{ file: string; fn: string }> = [
-  { file: "modules/note-learning-rounds/round-service.ts", fn: "readRound" },
-  { file: "modules/note-learning-rounds/round-service.ts", fn: "readOpenRound" },
+  { file: "modules/note-learning-rounds/round/round-service.ts", fn: "readRound" },
+  { file: "modules/note-learning-rounds/round/round-service.ts", fn: "readOpenRound" },
 ];
 
 /**
@@ -163,7 +164,9 @@ const SYSTEM_LEVEL_READS: Record<string, number> = {
   // 解散先睹计数（审计 F39 ③）：刻意取**超集**——回收站里的笔记也会随空间一起消失，
   // 按人筛会少报，而少报一个"会毁掉多少"的数字比多报更糟。这里只回四个整数，
   // 不回任何一篇的标题或正文。（同一处读点在卡片棘轮里另计一次。）
-  "modules/identity/service.ts": 1,
+  // 2026-09-29（P1-7）：代码随空间生命周期族搬到 workspace-lifecycle-service.ts，
+  // 豁免跟着搬。判据与理由都没变——变的是文件，不是这一发读到什么。
+  "modules/identity/workspace-lifecycle-service.ts": 1,
   // 证据预览要把锚点重落到**当前版本**的块行上（39d D3 §3 第 2 层）：从 `notes` 只取
   // `current_version_id` 一列，不回任何正文。从这里出去的文字由调用方各自的对象判据
   // 挡着（卡列表 `visibleCardsCondition`、候选 reveal 的 run/candidate 归属）。
@@ -212,8 +215,9 @@ const OBJECTIVE_SYSTEM_LEVEL_READS: Record<string, number> = {
   "modules/card-generation-v2/card-service.ts": 5,
   // 练习与复习：排程/回合本身就是按人的行（RLS + user_id），这里读的是"自己要做什么"，
   // 不是把目标的正文广播给别人。
-  "modules/learning-runs/run-service.ts": 3,
-  "modules/learning-runs/run-processing-tick.ts": 2,
+  "modules/learning-runs/run-service.ts": 2,
+  "modules/learning-runs/run-action.ts": 1,
+  "modules/learning-runs/processing/run-processing-tick.ts": 2,
   "modules/review/service.ts": 3,
   // 排程"这条目标还有没有能做的卡"的多态判定：只回答是/否，不返回任何文字。
   // 2026-09-24（39d W2-3）：这条判据迁去了 `@ailearn/shared/review-consumable-target`
@@ -293,7 +297,11 @@ const CARD_GUARD_TOKENS = [
 ];
 const CARD_SYSTEM_LEVEL_READS: Record<string, number> = {
   // 解散先睹计数：同上，只数不取内容（判据与理由见笔记棘轮里同一条豁免）。
-  "modules/identity/service.ts": 1,
+  // 2026-09-29（P1-7）：`previewWorkspaceDissolve` 随空间生命周期族搬到了
+  // workspace-lifecycle-service.ts，**豁免跟着代码走**——判据没变，理由也没变。
+  // 棘轮有 stale 检查：豁免多给会红，所以有人把闸补上，这里必须跟着减；
+  // 同理，代码搬走了这里也必须跟着搬。
+  "modules/identity/workspace-lifecycle-service.ts": 1,
   // 跳转目标可用性：只回答"这张卡还在不在"，取的是 `cardId` 一列。
   "modules/learning-runs/run-service.ts": 1,
   // 回填 `learning_objective_origins_v2`：取的是 `noteVersionId`，不回给任何人正文。
@@ -302,7 +310,7 @@ const CARD_SYSTEM_LEVEL_READS: Record<string, number> = {
   // 题面与摘要都不从这里出去。
   "modules/learning-objectives/surface-service.ts": 4,
   // 星图 v3 的 objective→cardId 映射，同上。
-  "modules/understanding-v3/topology-repository.ts": 2,
+  "modules/note-deepening/topology-repository.ts": 2,
   // 生成侧：按 `cardId` 做 CAS（调用方自己刚提交的激活意图），以及截断告警里的总数。
   // 能走到这里的笔记已经过 `generation-run-service` 的按人判。
   "modules/card-generation-v2/activation-service.ts": 2,

@@ -358,7 +358,7 @@ const SESSION_ONLY_ROUTES: ReadonlyArray<{
   url: string;
   payload?: Record<string, unknown>;
 }> = [
-  { method: "GET", url: "/reviews/v2/queue" },
+  { method: "GET", url: "/v2/reviews/queue" },
   { method: "GET", url: "/stats/overview" },
   // 跨空间总览读的是"我属于哪些空间"（成员自己的成员关系），不是空间数据，
   // 所以成员也必须能读——否则被空间切开的个人进度对成员永远不可见。
@@ -371,7 +371,7 @@ const SESSION_ONLY_ROUTES: ReadonlyArray<{
   // 成员可以改自己的档案：给一个过不了校验的 payload，只验守卫层、不真改数据。
   { method: "PUT", url: "/auth/profile", payload: { displayName: 123 } },
   { method: "GET", url: "/auth/workspaces" },
-  { method: "GET", url: "/auth/capabilities/v1" },
+  { method: "GET", url: "/v1/auth/capabilities" },
   // 0237 起 AI 同意是账号级：成员必须能签自己的、改自己的（不再有 requireOwner）。
   // 与 /auth/profile 同一手法：给一个过不了校验的 payload，只验守卫层，
   // 否则这条「成员必须能用」的用例真的会把成员的签署状态改掉。
@@ -447,7 +447,7 @@ test("owner_id 与 membership role 不一致时，三个只读信号仍然同源
   const token = (await issueSession(userMember, wsDivergent)).token;
 
   const me = await appInject("GET", "/auth/me", token);
-  const caps = await appInject("GET", "/auth/capabilities/v1", token);
+  const caps = await appInject("GET", "/v1/auth/capabilities", token);
   assert.equal(me.statusCode, 200, me.body);
   assert.equal(caps.statusCode, 200, caps.body);
 

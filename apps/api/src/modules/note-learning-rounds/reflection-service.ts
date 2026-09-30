@@ -8,7 +8,7 @@ import { artifactPayloadSchema } from "@ailearn/shared/learning-run-contracts";
 import { roundTeachingContentV1Schema } from "@ailearn/shared/note-learning-round-contracts";
 import { noteReflectionTeachingSnapshotV1Schema, noteReflectionV1Schema, type NoteReflectionTeachingSnapshotV1, type ReflectionSourceV1 } from "@ailearn/shared/note-learning-reflection-contracts";
 import { visibleNotesCondition } from "../note/visibility.ts";
-import { RoundServiceError, type RoundScopeV1 } from "./round-service.ts";
+import { RoundServiceError, type RoundScopeV1 } from "./round/round-service.ts";
 
 /** Serialize with note deletion / share withdrawal until the transaction completes. */
 async function requireVisibleNote(tx: ApiTransaction, scope: RoundScopeV1, noteId: string) {

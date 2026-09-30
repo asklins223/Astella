@@ -31,11 +31,7 @@ import type {
 } from "@ailearn/shared/note-learning-round-contracts";
 import { z } from "zod";
 import { and, eq, sql } from "drizzle-orm";
-import {
-  currentApiWorkspaceTransaction,
-  withWorkspaceTransaction,
-  type ApiTransaction,
-} from "../../db/client.ts";
+import { currentApiWorkspaceTransaction, scopeOfSession, type ApiTransaction, withWorkspaceTransaction } from "../../db/client.ts";
 import { requireSession } from "../identity/middleware.ts";
 import { getNoteWithVersion } from "../note/service.ts";
 import type { NoteLearningRoundRow } from "@ailearn/shared/db-schema/note-learning-rounds";
@@ -89,45 +85,44 @@ import {
   RoundServiceError,
   type NoteLearningRoundV1,
   type RoundScopeV1,
-} from "./round-service.ts";
+} from "./round/round-service.ts";
 import {
   loadTeachingSnapshotBlocks,
   runTeachingExplainV1,
   teachingFailureResponseV1,
-} from "./teaching-explain.ts";
-import type { TeachingExplainProviderV1 } from "./teaching-explain.ts";
-import { llmTeachingExplainProvider, resolveTeachingModelConfig } from "./teaching-llm.ts";
+} from "./teaching/teaching-explain.ts";
+import type { TeachingExplainProviderV1 } from "./teaching/teaching-explain.ts";
+import { createRoundRuntimeCollaborators } from "./runtime-collaborators.ts";
 import {
-  llmDynamicArtifactProvider,
   runDynamicArtifactV1,
   type DynamicArtifactProviderV1,
-} from "./round-artifact-model.ts";
-import { ARTIFACT_MIN_STEPS_V1, groundArtifactStepsV1, plainTextForGroundingV1 } from "./round-artifact-measure.ts";
-import { checkArtifactDocumentV1 } from "./round-artifact-doc.ts";
-import type { RoundArtifactSourceV1 } from "./round-artifact.ts";
+} from "@ailearn/shared/note-dynamic-artifact/round-artifact-model";
+import { ARTIFACT_MIN_STEPS_V1, groundArtifactStepsV1, plainTextForGroundingV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-measure";
+import { checkArtifactDocumentV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-doc";
+import type { RoundArtifactSourceV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact";
 import {
   buildDynamicArtifactHtmlV1,
   DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1,
-} from "./round-artifact-render.ts";
+} from "@ailearn/shared/note-dynamic-artifact/round-artifact-render";
 import { buildRoundReadingPlan, suggestRoundQuestion } from "./learning-plan.ts";
 import { requireAiConsent } from "../identity/ai-consent-gate.ts";
 import { finishRoundModelAttempt, reserveRoundModelAttempt, type RoundModelAttempt } from "./model-attempt.ts";
 import { listNoteRoundPractices } from "../learning-runs/run-service.ts";
 import { learningObjectivesV2, learningObjectiveRevisionsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { objectiveRubricV2Schema } from "@ailearn/shared/card-generation-v2-contracts";
-import { decideRoundNextStep } from "./round-progression.ts";
-import { readRoundGapHelpV1 } from "../learning-runs/gap-help-service.ts";
+import { decideRoundNextStep } from "./round/round-progression.ts";
+import { readRoundGapHelpV1 } from "../learning-runs/gap-help/gap-help-service.ts";
 import { readRoundPrerequisiteProposalV1 } from "./prerequisite-proposal.ts";
-import { readLatestArtifactFailureV1 } from "./artifact-failure.ts";
-import { readNoteRouteCoverageV1 } from "./route-coverage.ts";
+import { readLatestArtifactFailureV1 } from "./round/artifact-failure.ts";
+import { readNoteRouteCoverageV1 } from "./round/route-coverage.ts";
 import { noteRouteCoverageV1Schema } from "@ailearn/shared/note-route-coverage-v2";
 import { assembleObjectiveSurfaceV3 } from "../learning-objectives/surface-service.ts";
 import { readNoteChangeImpactsV1 } from "../learning-objectives/change-impact-service.ts";
-import { createRoundTargetGrounder, selectGroundedApplicationScenario, selectGroundedRoundTarget, type RoundTargetGrounder } from "./target-grounding.ts";
-import { persistRoundTarget, readRoundTargetId, recordRoundTeachingExposure } from "./round-target.ts";
+import { selectGroundedApplicationScenario, selectGroundedRoundTarget, type RoundTargetGrounder } from "./target-grounding.ts";
+import { persistRoundTarget, readRoundTargetId, recordRoundTeachingExposure } from "./round/round-target.ts";
 import { scheduleStudiedNoteTargetsV2 } from "../review/note-subscription-schedule.ts";
 import { visibleObjectivesCondition } from "../note/visibility.ts";
-import { roundBudgetsV1 } from "./round-budgets.ts";
+import { roundBudgetsV1 } from "./round/round-budgets.ts";
 import { noteReflectionRoutes } from "./reflection-routes.ts";
 import { readPersonalTeachingSources } from "./reflection-service.ts";
 import { constrainTargetToSuspectRechecksV1, readSuspectClaimFollowUpV1 } from "./suspect-claim-recheck.ts";
@@ -237,7 +232,7 @@ function roundHistoryItemV1(
 }
 
 function scopeOf(req: { session: { workspaceId: string; userId: string } }): RoundScopeV1 {
-  return { workspaceId: req.session.workspaceId, userId: req.session.userId };
+  return scopeOfSession(req.session);
 }
 
 /**
@@ -285,16 +280,13 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
   artifact?: { provider: DynamicArtifactProviderV1; modelId: string };
   targetGrounder?: RoundTargetGrounder;
 } = {}) {
-  const modelConfig = resolveTeachingModelConfig();
-  const teaching = options.teaching ?? {
-    provider: llmTeachingExplainProvider({ config: modelConfig }),
-    modelId: modelConfig?.model ?? "unconfigured", external: true,
-  };
-  const artifactGenerator = options.artifact ?? {
-    provider: llmDynamicArtifactProvider({ config: modelConfig }),
-    modelId: modelConfig?.model ?? "unconfigured",
-  };
-  const targetGrounder = options.targetGrounder ?? createRoundTargetGrounder(modelConfig);
+  // P1-3：三个 LLM 协作者的装配搬到 runtime-collaborators.ts。
+  // 路由层不再知道"模型配置从哪读""未配置怎么编码""三者怎么配对"。
+  // 注入参数形状不变——离线用例靠它造"讲解成、演示不成"这种形状。
+  const collaborators = createRoundRuntimeCollaborators(options);
+  const teaching = collaborators.teaching;
+  const artifactGenerator = collaborators.artifact;
+  const targetGrounder = collaborators.targetGrounder;
   app.addHook("preHandler", requireSession);
   noteReflectionRoutes(app);
 
@@ -653,7 +645,7 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
         if (existingTeaching) {
           throw new RoundServiceError("invalid_teaching_content", "这次讲解尚无可靠练习目标，可继续阅读或调整本轮问题");
         }
-        if (teaching.modelId === "unconfigured") {
+        if (!teaching.ready) {
           throw new RoundServiceError("teaching_model_unconfigured", "讲解模型尚未配置，先试目标暂时无法准备");
         }
         const attempt = await reserveRoundModelAttempt(tx, scope, round, teaching.modelId);
@@ -801,7 +793,7 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
           });
         if (reused) return { round, kind: "reused", teaching: reused,
           extras: await buildRoundTeachingExtras(tx, scope, round, reused) };
-        if (teaching.modelId === "unconfigured") {
+        if (!teaching.ready) {
           throw new RoundServiceError("teaching_model_unconfigured", "讲解模型尚未配置，已有内容保留；请先配置 AI 服务");
         }
         const used = await countTeachings(tx, scope, roundId);
@@ -931,7 +923,7 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
 
     // 没配模型就直接走确定性构建，**不**发那一次调用：发一次注定失败的调用只会留下一条
     // `model_failed` 留痕，把"这个部署压根没配模型"说成"生成过一次且失败了"。
-    const artifactModelReady = artifactGenerator.modelId !== "unconfigured";
+    const artifactModelReady = artifactGenerator.ready;
     if (artifactModelReady
       && artifactMaterialUsable >= ARTIFACT_MIN_STEPS_V1
       && artifactCallBudget >= 1
@@ -949,12 +941,12 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
           explanation: generated.output.explanation,
         },
         scope,
-        round: {
-          roundId: frozen.round.roundId,
+        source: {
+          idempotencyKey: `round:${frozen.round.roundId}:artifact:${frozen.round.sourceContentHash}:${frozen.ordinal}`,
+          leaseToken: `note-round:${frozen.round.roundId}`,
           noteVersionId: frozen.round.noteVersionId,
           sourceContentHash: frozen.round.sourceContentHash,
         },
-        ordinal: frozen.ordinal,
         currentActiveTransaction: currentApiWorkspaceTransaction,
         reportDevelopmentError: (message) => req.log.error({ scope: "note-round-artifact" }, message),
       });
@@ -974,11 +966,9 @@ export async function noteLearningRoundRoutes(app: FastifyInstance, options: {
             + grounded.rejected.map((step) => `${step.ordinal}:${step.reason}`).join(" "));
         }
         if (grounded.ok) {
-          // 第二道闸：安全 ＋「引文要真的画在页面上」。外链、联网、逃逸口在这一步红。
-          const documentCheck = checkArtifactDocumentV1({
-            document: demo.doc.document,
-            verifiedQuotes: grounded.nodes.map((node) => node.quote),
-          });
+          // 第二道闸：AI 页面本身的安全性。准确原句已经由服务端在 frame 外作为出处纸签展示，
+          // 不要求模型把引文重复塞进它自创的画面。
+          const documentCheck = checkArtifactDocumentV1({ document: demo.doc.document });
           if (!documentCheck.ok) {
             const reason = documentCheck.verdict.violation?.reason ?? "unknown";
             artifactGenerationFailure = {

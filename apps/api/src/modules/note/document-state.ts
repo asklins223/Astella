@@ -173,7 +173,7 @@ export async function saveNoteDoc(
     .values({ noteId: scope.noteId, workspaceId: scope.workspaceId, state, revision: 1 })
     .onConflictDoUpdate({
       target: noteDocumentStates.noteId,
-      set: { state, revision: sql`${noteDocumentStates.revision} + 1`, updatedAt: new Date() },
+      set: { state, revision: sql`${noteDocumentStates.revision} + 1`, updatedAt: sql`now()` },
     });
 }
 
@@ -209,13 +209,25 @@ export async function persistNoteDoc(
   // 在 `saveNoteDoc` 的默认参里现编——那是整文档级的 `Y.encodeStateAsUpdate`，同一趟
   // 落盘里编两次纯属白烧主线程（0269 轮 M3）。
   state?: Uint8Array,
+  /**
+   * 已经算好的 `projectFragmentBlocks(doc)`。
+   *
+   * 2026-09-29（P2-10）：协同落盘那一路**本来就要投影一次**——先 `resolveNoteDocFlushTarget`
+   * （要拿块算版本快照），再 `persistNoteDoc`（要拿块写 `note_blocks`）。两次都把
+   * 整个 Y.XmlFragment 过一遍 `yXmlFragmentToProsemirrorJSON` 再映射成块，
+   * 同一趟落盘里白烧一遍主线程。
+   *
+   * 所以把它做成**可选入参**：调用方已经算过就传进来，没算过（其余调用方）照旧自己算。
+   * 与 `state` 那一行同一个约定——那里也是"调用方已经编过就别再编"。
+   */
+  projected?: ProjectedNoteBlock[],
 ): Promise<{ blocks: ProjectedNoteBlock[]; versionId: string }> {
   const { workspaceId, noteId } = scope;
-  const projected = projectFragmentBlocks(doc);
-  const plain = projected.map(({ ordinal: _ordinal, ...block }) => block);
+  const blocks = projected ?? projectFragmentBlocks(doc);
+  const plain = blocks.map(({ ordinal: _ordinal, ...block }) => block);
 
   await saveNoteDoc(tx, { workspaceId, noteId }, doc, state);
-  await projectBlocksIntoVersion(tx, workspaceId, versionId, projected);
+  await projectBlocksIntoVersion(tx, workspaceId, versionId, blocks);
 
   const meta = readNoteTitle(doc);
   const titleSource = meta?.titleSource === "manual" ? "manual" : "auto";
@@ -224,7 +236,7 @@ export async function persistNoteDoc(
     : deriveNoteTitle(plain);
   await tx
     .update(notes)
-    .set({ title, titleSource, updatedAt: new Date() })
+    .set({ title, titleSource, updatedAt: sql`now()` })
     .where(eq(notes.id, noteId));
 
   await upsertSearchDocument(tx, {
@@ -235,7 +247,7 @@ export async function persistNoteDoc(
     body: plain.filter((block) => block.type !== "image").map((block) => block.content).join("\n"),
   });
 
-  return { blocks: projected, versionId };
+  return { blocks, versionId };
 }
 
 /**
@@ -250,6 +262,8 @@ export async function resolveNoteDocFlushTarget(
   tx: ApiTransaction,
   scope: NoteDocReadScope,
   doc: NoteDoc,
+  /** 见 `persistNoteDoc` 的同名入参：调用方已投影过就传进来，别再算一遍。 */
+  projected?: ProjectedNoteBlock[],
 ): Promise<string> {
   const { workspaceId, noteId, userId } = scope;
   const note = await tx.query.notes.findFirst({
@@ -270,7 +284,7 @@ export async function resolveNoteDocFlushTarget(
   if (current && !current.sealedAt) return current.id;
 
   const snapshot = versionSnapshotOf(
-    projectFragmentBlocks(doc).map(({ ordinal: _ordinal, ...block }) => block),
+    (projected ?? projectFragmentBlocks(doc)).map(({ ordinal: _ordinal, ...block }) => block),
   );
   return insertVersionFromSnapshot(tx, workspaceId, noteId, userId, snapshot);
 }

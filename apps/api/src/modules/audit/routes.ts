@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireOwner, requireSession } from "../identity/middleware.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { parseQuery } from "../../lib/pagination.ts";
 import { listWorkspaceAudit } from "./service.ts";
 
@@ -33,7 +33,7 @@ export async function auditRoutes(app: FastifyInstance) {
     async (req) => {
       const q = parseQuery(app, auditQuerySchema, req.query);
       return withWorkspaceTransaction(
-        { workspaceId: req.session.workspaceId, userId: req.session.userId },
+        scopeOfSession(req.session),
         async (tx) => {
           const cursor = q.cursor ? parseCursor(q.cursor) : null;
           return listWorkspaceAudit(tx, {

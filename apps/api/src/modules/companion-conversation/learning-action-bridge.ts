@@ -22,15 +22,15 @@ import {
   listObjectiveSurfacesV3,
   type SurfaceContext,
 } from "../learning-objectives/surface-service.ts";
-import { deliver } from "./delivery-service.ts";
-import { resolveAuthSurfaceManifestSecret } from "../companion-shell/auth-surface.ts";
-import { getCompanionAccountEpoch } from "./companion-account-epoch.ts";
+import { deliver } from "./delivery/delivery-service.ts";
+import { resolveAuthSurfaceManifestSecret } from "../../companion-contracts/auth-surface.ts";
+import { getCompanionAccountEpoch } from "./turn/companion-account-epoch.ts";
 import {
   buildCompanionLearningRunContext,
   contextRevisionForCompanionLearningRun,
   isCompanionLearningRunTutorEligible,
   loadCompanionLearningRunContext,
-} from "./learning-run-context.ts";
+} from "./turn/learning-run-context.ts";
 // LearningRun 工具在 decision 事务内同步执行；confirm 后 proposal 直接
 // succeeded + resultRef=runId。
 import { applyAction, createRunV2, getRunPublicView, type CreateLearningRunV2Request } from "../learning-runs/run-service.ts";
@@ -44,7 +44,7 @@ import {
   getMemory,
   upsertMemory,
   type MemoryKindV2,
-} from "./memory-service.ts";
+} from "./memory/memory-service.ts";
 
 function sanitizeText(value: string, max: number): string {
   return value
@@ -251,8 +251,8 @@ export async function resolveCompanionLearningContext(args: {
 
 import { randomUUID } from "node:crypto";
 import { canonicalJsonV1 as canonicalJson, sha256Utf8V1 as sha256 } from "@ailearn/shared/content-hash";
-import { CompanionConversationError } from "./turn-service.ts";
-import { reclaimExpiredCompanionProposals } from "./companion-proposal-expiry.ts";
+import { CompanionConversationError } from "./turn/turn-service.ts";
+import { reclaimExpiredCompanionProposals } from "./turn/companion-proposal-expiry.ts";
 
 const PROPOSAL_TTL_MINUTES = 5; // §6.7：resume/start 默认 5min（纯导航 10min）
 

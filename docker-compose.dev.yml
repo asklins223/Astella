@@ -155,6 +155,11 @@ services:
       dockerfile: apps/api/Dockerfile
       target: dev
     restart: unless-stopped
+    # 2026-09-29（P0-10 停机预算）：与 docker-compose.yml 同源同值。
+    # 预算来自代码而非环境：graceful-shutdown.ts:35-41 的 closeServer race 10s
+    # + db/client.ts:462 的 end({timeout:5}) 5s = 最坏 15s；Docker 默认 10s 会
+    # 在 DB 池关闭前 SIGKILL。这里 20s（15s + 5s 余量）。
+    stop_grace_period: 20s
     depends_on:
       postgres:
         condition: service_healthy
@@ -265,6 +270,12 @@ services:
       dockerfile: workers/ai-worker/Dockerfile
       target: dev
     restart: unless-stopped
+    # 2026-09-29（P0-10 停机预算）：与 docker-compose.yml 同源同值。dev 跑的是
+    # 同一个 src/index.ts，所以预算完全一样：drain 45s（index.ts:695，
+    # WORKER_DRAIN_TIMEOUT_MS 默认值）+ finally 里的 notify end 2s + db end 5s
+    # （index.ts:726-732 / db.ts:201）= 最坏 52s，这里给 60s（+8s 余量）。
+    # 少了这行，`make down` / 重建容器会在 drain 途中 SIGKILL，V2 租约来不及交还。
+    stop_grace_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
@@ -321,6 +332,9 @@ services:
       V2_E2E_DEBUG_ERRORS: ${V2_E2E_DEBUG_ERRORS:-1}
       WORKER_TIMEOUT_PARSE_SOURCE_MS: ${WORKER_TIMEOUT_PARSE_SOURCE_MS:-}
       WORKER_METRICS_PORT: ${WORKER_METRICS_PORT:-9100}
+      # 优雅关停 drain 预算（ms）。与 index.ts:695 的 45_000 默认一致，显式声明是
+      # 为了让上面的 stop_grace_period: 60s 可被审；改它必须同步改 stop_grace_period。
+      WORKER_DRAIN_TIMEOUT_MS: ${WORKER_DRAIN_TIMEOUT_MS:-45000}
       # macOS Docker: same polling fix as the api service.
       CHOKIDAR_USEPOLLING: "true"
       CHOKIDAR_INTERVAL: "1000"

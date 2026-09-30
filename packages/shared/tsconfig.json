@@ -13,9 +13,8 @@
     "isolatedModules": true,
     "noEmit": true,
     "rootDir": "src",
-    "baseUrl": "src",
     "paths": {
-      "@ailearn/shared": ["."]
+      "@ailearn/shared": ["./src/index.ts"]
     }
   },
   "include": ["src/**/*.ts"]

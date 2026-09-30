@@ -62,7 +62,7 @@ import {
   type AnswerExposure,
 } from "../src/handlers/companion-answer-exposure.ts";
 import { buildCompanionPersonaMessages } from "../src/handlers/companion-dialogue-content.ts";
-import { companionStepToolShape } from "../src/handlers/companion-agent-runtime.ts";
+import { companionStepToolShape } from "../src/handlers/companion-tool-call-ledger.ts";
 import { renderFactSpansBlock, resolveFactSpans } from "../src/handlers/companion-fact-spans.ts";
 import { createProvider } from "../src/lib/ai-provider.ts";
 

@@ -216,10 +216,11 @@ export async function cleanupWorkspaceTables(
     // 构成循环外键：先解除消息侧引用，再删 proposals → messages。
     await tx`UPDATE companion_messages SET action_ref = NULL WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM companion_action_proposals WHERE workspace_id = ${workspaceId}`;
-    await tx`DELETE FROM companion_messages WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM companion_stream_events WHERE workspace_id = ${workspaceId}`;
-    await tx`DELETE FROM companion_messages WHERE workspace_id = ${workspaceId}`;
+    // Turn runs point to both their user and assistant messages. Remove runs first so
+    // fixtures that seed completed Companion replies can clean up without FK errors.
     await tx`DELETE FROM companion_turn_runs WHERE workspace_id = ${workspaceId}`;
+    await tx`DELETE FROM companion_messages WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM companion_conversations WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM jobs WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM onboarding_states WHERE workspace_id = ${workspaceId}`;

@@ -16,13 +16,13 @@
 
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import type { UnderstandingTopologySnapshotV3 } from "@ailearn/shared";
+import type { NoteDeepeningSnapshotV1 } from "@ailearn/shared";
 import {
   readTopologySnapshotCache,
   resetTopologySnapshotCacheForTests,
   resolveTopologySnapshotCacheTtlMs,
   writeTopologySnapshotCache,
-} from "../modules/understanding-v3/topology-repository.ts";
+} from "../modules/note-deepening/topology-repository.ts";
 
 const originalTtl = process.env.TOPOLOGY_SNAPSHOT_CACHE_MS;
 
@@ -32,8 +32,8 @@ function setTtl(value: string | undefined): void {
 }
 
 /** 缓存只用 topologyRevision 做断言，其余字段与缓存逻辑无关。 */
-function snapshotOf(revision: string): UnderstandingTopologySnapshotV3 {
-  return { version: 3, workspaceId: "w", topologyRevision: revision } as unknown as UnderstandingTopologySnapshotV3;
+function snapshotOf(revision: string): NoteDeepeningSnapshotV1 {
+  return { version: 3, workspaceId: "w", topologyRevision: revision } as unknown as NoteDeepeningSnapshotV1;
 }
 
 const WS = "11111111-1111-1111-1111-111111111111";

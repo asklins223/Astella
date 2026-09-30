@@ -1,10 +1,18 @@
 /*
- * Integration layer between the ported V3.1 HUD stylesheet (`hud-pages.css`) and
- * the desktop client's room shell.
+ * 集成层：V3.1 视觉母本（`hud-pages.css`）与本机书房外壳之间的那一层。
  *
- * `hud-pages.css` is generated and must stay untouched; everything the client
- * needs on top of it lives here: the scope root, the room plate per surface, the
- * transparent task-surface host, and the companion seat bridge.
+ * ⚠️ 这里此前写着「`hud-pages.css` is generated and must stay untouched」——**那是错的**，
+ * 而且与 `hud-pages.css:2` 的「手改这个文件」直接矛盾。真相是：生成器与它的输入
+ * （`port-hud-css.mjs` + `mockup.html`）都已删除，**母本是手改的、没有上游**。
+ * 两条相反的指令并排放在两个文件的头注释里，会让下一个读到这里的人不知道该听谁的
+ * （2026-09-29 更正）。
+ *
+ * 正确关系：**母本在前，本集成层在后**，所以本文件可以覆盖母本的规则，反过来不行。
+ * 这个顺序由 `src/renderer/src/styles.ts` 的分层清单钉住，并由
+ * `renderer-style-order-guard.test.ts` 断言「集成层必须排在母本之后」。
+ *
+ * 本层负责：作用域根、每个 surface 的房间底片、透明任务面宿主、伴星座位桥接，
+ * 以及历次会话在母本之上追加的整合规则。
  */
 
 /* The app root is the HUD scope: page identity, navigation state, theme and
@@ -24,64 +32,13 @@
   color: var(--hud-ink);
 }
 
-.task-surface--source-library,
-.task-surface--source-detail,
-.task-surface--search { background-image: url("/assets/approved-v3/environments/library-day-v1.png"); }
-.task-surface--note-library,
-.task-surface--notebook { background-image: url("/assets/approved-v3/environments/writing-day-v1.png"); }
-.task-surface--study,
-.task-surface--card-generation,
-.task-surface--objective-library,
-.task-surface--objective-detail { background-image: url("/assets/approved-v3/environments/workshop-day-v1.png"); }
-.task-surface--review,
-.task-surface--validation { background-image: url("/assets/approved-v3/environments/review-day-v1.png"); }
-.task-surface--graph,
-.task-surface--companion-center { background-image: url("/assets/approved-v3/environments/observatory-night-open-v3.png"); }
-.task-surface--settings { background-image: url("/assets/approved-v3/environments/companion-system-day-v1.png"); }
-
-.task-surface--source-library::after,
-.task-surface--source-detail::after,
-.task-surface--search::after,
-.task-surface--note-library::after,
-.task-surface--notebook::after,
-.task-surface--study::after,
-.task-surface--card-generation::after,
-.task-surface--objective-library::after,
-.task-surface--objective-detail::after,
-.task-surface--review::after,
-.task-surface--validation::after,
-.task-surface--graph::after,
-.task-surface--companion-center::after,
-.task-surface--settings::after {
-  position: absolute;
-  inset: 0;
-  content: "";
-  background: linear-gradient(180deg, rgba(25, 16, 11, 0.09), transparent 30%, rgba(25, 16, 11, 0.08));
-  pointer-events: none;
-}
-
-/* 观测台目前只有一套获批底图；日间以暖色天光层区分时段，避免主题切换
-   只改变外围 chrome 而主场景完全不动。 */
-.desktop-app[data-theme="day"] .task-surface--companion-center::after {
-  background:
-    radial-gradient(circle at 30% 18%, rgba(255, 221, 158, 0.22), transparent 34%),
-    linear-gradient(180deg, rgba(224, 177, 111, 0.14), rgba(25, 16, 11, 0.04) 54%, rgba(25, 16, 11, 0.12));
-}
-
-.desktop-app[data-theme="night"] .task-surface--source-library,
-.desktop-app[data-theme="night"] .task-surface--source-detail,
-.desktop-app[data-theme="night"] .task-surface--search { background-image: url("/assets/approved-v3/environments/library-night-v1.png"); }
-.desktop-app[data-theme="night"] .task-surface--note-library,
-.desktop-app[data-theme="night"] .task-surface--notebook { background-image: url("/assets/approved-v3/environments/writing-night-v1.png"); }
-.desktop-app[data-theme="night"] .task-surface--study,
-.desktop-app[data-theme="night"] .task-surface--card-generation,
-.desktop-app[data-theme="night"] .task-surface--objective-library,
-.desktop-app[data-theme="night"] .task-surface--objective-detail { background-image: url("/assets/approved-v3/environments/workshop-night-v1.png"); }
-.desktop-app[data-theme="night"] .task-surface--review,
-.desktop-app[data-theme="night"] .task-surface--validation { background-image: url("/assets/approved-v3/environments/review-night-v1.png"); }
-.desktop-app[data-theme="night"] .task-surface--graph,
-.desktop-app[data-theme="night"] .task-surface--companion-center { background-image: url("/assets/approved-v3/environments/observatory-night-open-v3.png"); }
-.desktop-app[data-theme="night"] .task-surface--settings { background-image: url("/assets/approved-v3/environments/companion-system-night-v1.png"); }
+/* 空间层宿主：每一页都带着它，房间底图由下面逐页的 `--<surface>` 指定，宿主
+   自己只声明「这张底图画一次、铺满整页」这一半事实。铺法原本写在
+   `.desktop-app.hud-surface .task-surface` 上、和宿主几何混在同一条里，于是「宿主
+   刷底图」这件事散成两处：改几何的人看不到铺法，改铺法的人看不到几何。
+   写在这个修饰符上，是因为「刷底图的就是空间层」正是它的含义（对应子层
+   `.task-surface__spatial-layer`）；逐页底图特异性相同但写在后面，仍然各自优先。 */
+.hud-surface .task-surface--spatial { background-repeat: no-repeat; }
 
 /* The task surface is now only a fixed, transparent host: the mockup owns all
    layout through `.task-title`, `.content` and the HUD chrome.
@@ -161,33 +118,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .hud-surface .surface-data-state__spin { animation: none; }
-}
-
-/* Room plates inside page bodies (writing lines, ring binding) keep their own
-   scrolling instead of pushing the paper past the viewport. */
-.desktop-app.hud-surface .content :is(
-  .source-index,
-  .folio-page,
-  .current-note,
-  .notebook,
-  .active-map,
-  .claim-sheet,
-  .evidence-thread,
-  .card-press,
-  .study-card,
-  .evidence-slip,
-  .day-route,
-  .card-deck,
-  .queue-reason,
-  .assessment-sheet,
-  .marked-paper,
-  .next-slip,
-  .search-index,
-  .preview-page,
-  .settings-menu,
-  .settings-card,
-  .chat-ribbon
-) {
+}.desktop-app.hud-surface .content .source-index, .desktop-app.hud-surface .content .folio-page, .desktop-app.hud-surface .content .current-note, .desktop-app.hud-surface .content .notebook, .desktop-app.hud-surface .content .card-press, .desktop-app.hud-surface .content .study-card, .desktop-app.hud-surface .content .evidence-slip, .desktop-app.hud-surface .content .day-route, .desktop-app.hud-surface .content .card-deck, .desktop-app.hud-surface .content .queue-reason, .desktop-app.hud-surface .content .search-index, .desktop-app.hud-surface .content .preview-page, .desktop-app.hud-surface .content .settings-menu, .desktop-app.hud-surface .content .settings-card{
   scrollbar-color: rgba(79, 57, 39, 0.42) transparent;
   scrollbar-width: thin;
 }
@@ -249,11 +180,6 @@
 .desktop-app.hud-surface[data-directory-rail="collapsed"].comp-left:not(.companion-absent) .approved-surface__content {
   left: var(--companion-seat-left-collapsed, 335px);
 }
-/* 右侧座位页缺席：恢复 88px。:not(.drawer-open) 让聊天抽屉的 405px/205px
-   预留继续优先；:not(.page-19):not(.page-20) 让两张星图的全出血版心不受影响。 */
-.desktop-app.hud-surface.companion-absent:not(.drawer-open):not(.page-19):not(.page-20) .content {
-  right: 88px;
-}
 /* 左侧座位页（11 目标详情 / 15 复习队列）缺席：撤销 365px 左预留，回到 V3.1
    基线 128px（hud-pages.css 的 `.hud-surface .content{left:128px}`）。
    :not(.page-19):not(.page-20)：星图是全出血版心，座位让位走它自己的 seat-gutter。 */
@@ -283,9 +209,6 @@
   .desktop-app.hud-surface[data-directory-rail="collapsed"].comp-left:not(.companion-absent) .approved-surface__content {
     left: var(--companion-seat-left-collapsed-compact, 178px);
   }
-  .desktop-app.hud-surface.companion-absent:not(.drawer-open):not(.page-19):not(.page-20) .content {
-    right: 44px;
-  }
   .desktop-app.hud-surface.comp-left.companion-absent:not(.page-19):not(.page-20) .content {
     left: 64px;
   }
@@ -312,6 +235,12 @@
   .desktop-app.hud-surface.comp-left.companion-absent .approved-surface__content { left: 64px; }
   .desktop-app.hud-surface[data-directory-rail="collapsed"].comp-left.companion-absent .approved-surface__content { left: 11px; }
 }
+
+/* 页面标题是唯一一件浮在房间底图上、而不是落在纸上的 `task-artifact`：基类那条
+   `color: var(--ink)`（styles.css:463）是给纸面正文准备的，今天全靠加载顺序才被
+   `.approved-surface__heading` 压过去。把「标题件读浅色墨」这条事实钉在它自己的
+   修饰符上——基类以后改纸面色，也不会把浮在照片上的标题一起带走。 */
+.hud-surface .task-artifact--header { color: var(--hud-paper-light); }
 
 /* Wide 版心页（16 理解练习 / 17 练习结果）：注册表给它们的座位在右侧，但
    `.content.full` 只有 55px 边距，半身 Mao 会直接压住右下角的作答卡与操作坞。
@@ -1754,30 +1683,7 @@
   .hud-surface .note-links button:active { transform: none; }
 }
 
-.hud-surface .folio-page { overflow: auto; }
-.hud-surface .claim-sheet,
-.hud-surface .evidence-thread,
-.hud-surface .active-map,
-.hud-surface .goal-stack,
-.hud-surface .day-route,
-.hud-surface .queue-reason,
-.hud-surface .card-press,
-.hud-surface .study-card,
-.hud-surface .evidence-slip,
-.hud-surface .marked-paper,
-.hud-surface .next-slip,
-.hud-surface .search-index,
-.hud-surface .preview-page,
-.hud-surface .settings-menu,
-.hud-surface .settings-card,
-.hud-surface .notebook,
-.hud-surface .companion-room,
-.hud-surface .chat-ribbon { min-height: 0; overflow: auto; }
-
-.hud-surface .goal-stack { display: grid; grid-template-rows: repeat(3, minmax(0, 1fr)); }
-
-/* The chat drawer narrows the note so the ribbon owns the right edge. */
-.hud-surface.drawer-open .content { right: 405px; }
+.hud-surface .folio-page { overflow: auto; }.hud-surface .day-route, .hud-surface .queue-reason, .hud-surface .card-press, .hud-surface .study-card, .hud-surface .evidence-slip, .hud-surface .search-index, .hud-surface .preview-page, .hud-surface .settings-menu, .hud-surface .settings-card, .hud-surface .notebook{ min-height: 0; overflow: auto; }
 
 /* The mockup writes the room control as decorative `<span>`s; the client uses
    real buttons, so the same pill geometry is restated for the interactive
@@ -1904,6 +1810,15 @@
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.08em;
+}
+
+/* 分组的壳：标题与它下面那些行必须落在同一条 minmax(0,1fr) 轨上——真实空间名
+   比母本样例长得多，没有这条轨就只能靠按钮各自去断，整张空间卡会被顶宽
+   （`.space-row` 那条 34px 印章轨也会跟着错开）。组距由 `.space-group__title`
+   的 14px 顶距给出，组内不叠 gap：行自身的 12px 内边距就是那一档节奏。 */
+.hud-surface .room-control-menu .space-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* 搜索行只是一格占满整行的输入框：皮肤挂到下面邀请码输入框那条规则上，
@@ -2241,6 +2156,11 @@
   box-shadow: none;
 }
 
+/* 带灯的那个槽位自己让出灯的那一角：灯是绝对定位钉在右下 6px 的 5px 圆点，仪表
+   图标 18px 居中、描边 1.8，两者在右下角会磕掉一小截。把内容格朝左上让 2.5px，
+   灯才有自己那一块。其余不带灯的槽位不跟这条偏——它们没有要避的东西。 */
+.hud-surface .room-control > button.room-control-motion { padding: 0 5px 5px 0; }
+
 /* lucide 的 2.0 默认描边偏重；统一到上一版的手绘 1.8 线宽。 */
 .hud-surface .room-control > button svg { stroke-width: 1.8; }
 
@@ -2364,14 +2284,6 @@
   scrollbar-width: none;
 }
 .hud-surface .hud-rail::-webkit-scrollbar { display: none; }
-
-/* 04A paints the room's home plate behind the paper; the live character stands
-   on it exactly where the mockup's oversized cut-out does. */
-.hud-surface .companion .window-live2d {
-  flex: none;
-  filter: drop-shadow(0 20px 25px rgba(32, 19, 12, 0.3));
-  pointer-events: none;
-}
 
 /* ---------------------------------------------------------------------------
  * Note library (mockup 07): the shelf's "current note" sheet and its covers.
@@ -2526,20 +2438,6 @@
    9px voice, not to a page-level banner. */
 .hud-surface .notebook .notebook-note { margin: 0 0 8px; }
 
-/* The note round lives in the learning leaf; the reading leaf has one entry action. */
-.hud-surface .notebook .notebook-objective {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  /* 真窗口量出来按钮与下面那句理由是 0px（`notebook-note` 只带 bottom margin，
-     第一行因此贴死按钮下沿）。8px 是这一页自己那两行小字之间的既有距离；
-     既然由 gap 负责，就把这几行自己的 bottom 收掉，否则两行小字之间会变成 16px。 */
-  gap: 8px;
-  margin: 0 0 10px;
-}
-
-.hud-surface .notebook .notebook-objective .notebook-note { margin-bottom: 0; }
-
 /* Future review controls sit in a folded paper below the note's history. */
 .hud-surface .notebook .notebook-review-options .notebook-objective__hold {
   display: flex;
@@ -2581,34 +2479,6 @@
 .hud-surface .notebook .notebook-review-options [data-subscription-error] {
   color: var(--hud-red);
 }
-
-/* 有未提交编辑时那两条路（39d W4-4）：并排，窄屏换行——它们是"选一条"，不是主/次两颗按钮的
-   层级关系，所以第二颗保持普通 `button` 而不降级成文字动作。 */
-.hud-surface .notebook .notebook-objective .notebook-objective__choices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-/* 那一句话的输入框。父容器是 `align-items: flex-start`，不给宽度它就缩成浏览器默认
-   那只白框（真窗口看下去：纸是奶油色衬线，框是白底黑边，一眼是外来的）。
-   规格照这一页既有的行内改名框（`.note-rename-input`）：透明底、只留一条下划线。 */
-.hud-surface .notebook .notebook-round__question {
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 2px 0 5px;
-  color: var(--hud-ink);
-  font: inherit;
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid var(--hud-line-strong);
-  border-radius: 0;
-}
-
-.hud-surface .notebook .notebook-round__question::placeholder { color: var(--hud-soft); opacity: 1; }
-.hud-surface .notebook .notebook-round__question:focus { outline: none; border-bottom-color: var(--hud-clay); }
-.hud-surface .notebook .notebook-round__hint { margin: 2px 0 0; }
 
 /* 这一篇的轮次记录（39d §10.3）。上一版三格都挂 `.small` 又挤在同一条 flex 里，
    真窗口看下去是 12 行没有轨的小字墙：日期长短不一让状态那列左右跳，问题里本来就有的
@@ -2656,6 +2526,16 @@
 
 .hud-surface .notebook .notebook-round-history__state { color: var(--hud-soft); }
 
+/* 三枚「这一轮还留下了什么」的元数据格。此前它们在 tsx 里发了类名、这里一条规则
+   都没有，实际靠 .small 兜底——也就是说这三个类名是空壳，改名或删除都不会有任何
+   视觉后果。现在按 __day / __state 的同一规格接管：中性元数据用柔和墨色。 */
+.hud-surface .notebook .notebook-round-history__modes,
+.hud-surface .notebook .notebook-round-history__follow-up { color: var(--hud-soft); }
+
+/* 「系统这次也不确定」是这三枚里唯一需要被看见的一条——它告诉用户这轮的判定不可靠。
+   用已有的 --hud-clay（陶土强调）而不是新色，与 round-notice 的失败提示同一族。 */
+.hud-surface .notebook .notebook-round-history__uncertain { color: var(--hud-clay); }
+
 .hud-surface .notebook .notebook-round-history__question {
   color: var(--hud-ink);
   overflow-wrap: anywhere;
@@ -2666,68 +2546,6 @@
     grid-template-columns: 1fr;
     gap: 1px;
   }
-}
-
-/* 教学面（39d W4-6 刀二）：这一轮的那条解释与它的依据。
-   排版沿用这一页小字之间的 8px；解释用正文的衬线体（它是"讲给你听的一段话"，
-   与工具行的 sans 小字不是一类东西），依据那几颗按行排、窄屏自己折。 */
-.hud-surface .notebook .notebook-round-teaching {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--hud-line);
-}
-
-.hud-surface .notebook .notebook-round-teaching__text {
-  margin: 0;
-  font: 15px/1.75 "Noto Serif SC Variable", "Songti SC", serif;
-  color: var(--hud-ink);
-}
-
-.hud-surface .notebook .notebook-round-teaching__references {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.hud-surface .notebook .notebook-round-teaching__artifact:empty { display: none; }
-
-/* 这一轮练过的那几道（W4-6 刀三）：一行一条，日期与结论各一格，行与行之间不空行
-   （它是"备查的几行"，不是又一块正文）。 */
-.hud-surface .notebook .notebook-round-teaching__practices {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.hud-surface .notebook .notebook-round-teaching__practice-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  padding-left: 1.2em;
-}
-
-.hud-surface .notebook .notebook-round-teaching__practice-list li { margin: 0; }
-
-/* 停止自动加题之后那四选一（W4-6 刀四）：一句读数 + 一行选项；选项会折行，
-   不把它们压成一条（四档都要读得清）。 */
-.hud-surface .notebook .notebook-round-teaching__stop {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  width: 100%;
-}
-
-.hud-surface .notebook .notebook-round-teaching__stop-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
 }
 
 /* 依据点开的那一段短暂亮一下。色与正文里 `.mark` 的暖黄同一族（hud-pages.css），
@@ -3437,6 +3255,25 @@
 
 /* 星图工具条沿用 .companion-filter-group：搜索占满剩余行宽。 */
 
+/* 记忆星图不是 19 页那张宇宙：它挂在一块面板大小的夜空盘里
+   （`.companion-map-view__canvas`），祖先是 `.companion-center` 而不是
+   `.universe-page`。画布调色板由 `readPalette(root)` 从根元素自己身上读
+   （understanding-universe.tsx:2395），`--universe-*` 少一个就静默退回
+   `DEFAULT_PALETTE`；缩放条与浮层那几条 `transition` 更狠——`var()` 解析失败
+   不是「没有过渡」，是整条声明被丢掉。伴星中心那张局部表（companion-center.css:10）
+   已经把画布色给全了，缺的是住在 `.universe-page` 上的动效时长、缓动与仪表面
+   配色。补齐它们，这颗星图上的缩放条与浮层才真的在动。 */
+.hud-surface .companion-memory-universe {
+  --universe-motion-feedback: 90ms;
+  --universe-motion-panel: 150ms;
+  --ease-standard: var(--hud-island-ease);
+  --universe-ac-plate: var(--hud-cream);
+  --universe-ac-plate-deep: var(--hud-paper-deep);
+  --universe-ac-shadow: var(--hud-shadow-small);
+  --universe-ac-border: rgba(255, 252, 235, 0.78);
+  --universe-ac-border-strong: rgba(255, 252, 235, 0.9);
+}
+
 /* 图例：左下小玻璃盘（避开左下返回书房胶囊），圆点保持画布三色。 */
 .hud-surface .companion-map-legend {
   position: absolute;
@@ -3460,6 +3297,11 @@
 
 .hud-surface .companion-map-legend span { display: inline-flex; align-items: center; gap: 5px; color: rgba(214, 235, 235, 0.88); }
 .hud-surface .companion-map-legend i { width: 9px; height: 9px; border-radius: 50%; background: var(--universe-state-active); box-shadow: 0 0 0 1.5px rgba(255, 252, 235, 0.9), 0 0 0 2.5px rgba(48, 35, 26, 0.28); }
+/* 「记忆」是图例里不叠任何状态的那一档，它的记号就是记号本身这一色
+   （索引栏 `data-role="memory"` 走的也是这个默认点，`.is-entity` 那条 mint 是
+   学习实体、不是记忆）。显式写出来，四项就不必再靠「哪个没写就是哪个」这条
+   隐含约定——`.is-pinned` / `.is-entity` / `.is-orphan` 同理。 */
+.hud-surface .companion-map-legend .is-memory i { background: var(--universe-state-active); }
 .hud-surface .companion-map-legend .is-pinned i { background: var(--universe-state-pinned); }
 .hud-surface .companion-map-legend .is-entity i { background: var(--universe-state-linked); }
 .hud-surface .companion-map-legend .is-orphan i { border: 1.5px dashed var(--universe-state-orphaned); background: transparent; }
@@ -3867,6 +3709,30 @@
 
 .hud-surface .deck-card__note-impact > svg { flex: 0 0 auto; margin-top: 1px; color: var(--hud-clay); }
 .hud-surface .deck-card__note-impact strong { color: var(--hud-clay); }
+
+/* 缺冻结证据的到期卡：这条与上面那条**不是同一件事**。`__note-impact` 是伴星的
+   轻声提醒（原文有变化，去看一眼），而这条是「这张卡现在判不出结论」的理由本身，
+   审计要求它印在卡面上、紧挨着主按钮——理由条在旁边的纸上时，用户是看着那颗
+   按钮决定要不要投入时间的。所以它不能只是一行正文色：给它一条奶油黄纸条
+   （`.queue-reason` 同族：butter 底 + 一层小影），让「缺东西」在卡面上一眼可辨。
+   按钮留在同一条里，理由和出口不许被折到两行。 */
+.hud-surface .deck-card.front .deck-card__evidence-gap {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: flex-start;
+  align-items: center;
+  gap: 4px 10px;
+  max-width: 100%;
+  margin: 8px 0 0;
+  padding: 7px 11px;
+  border: 2px solid var(--hud-line-strong);
+  border-radius: 11px 14px 10px 13px;
+  background: var(--hud-butter);
+  box-shadow: var(--hud-shadow-small);
+  color: var(--hud-ink);
+  font-size: 11px;
+  line-height: 1.45;
+}
 /* The mockup writes the action row inline; the integration layer owns it so the
    narrow layout can move it together with the card. left/right 43px 对齐卡片
    自身的 43px 内边距：按钮与正文共用同一条左边缘。 */
@@ -4324,6 +4190,9 @@
   .hud-surface .deck-card.front .sub { -webkit-line-clamp: 1; }
   .hud-surface .deck-card.front .deck-card__note-impact { gap: 2px; margin-top: 3px; font-size: 5px; }
   .hud-surface .deck-card.front .deck-card__note-impact > svg { width: 7px; height: 7px; }
+  /* 纸条跟着一起缩：200% 缩放视口里卡面只有 260×158，11px 的字加 2px 描边会把
+     动作行整个顶出卡面。 */
+  .hud-surface .deck-card.front .deck-card__evidence-gap { gap: 2px 5px; margin-top: 3px; padding: 3px 6px; border-width: 1px; font-size: 5px; }
   .hud-surface .deck-card.front .actions .button { min-height: 18px; padding: 0 6px; font-size: 5px; }
   .hud-surface .deck-card .meta .deck-card__state { padding: 1px 4px; font-size: 5px; }
   .hud-surface .deck-nav { gap: 6px; }
@@ -4846,16 +4715,6 @@
   box-shadow: var(--hud-shadow);
 }
 .hud-surface .learning-run-primary-content { width: 100%; height: 100%; min-width: 0; min-height: 0; }
-
-.hud-surface .learning-run-clock { margin-top: auto; }
-.hud-surface .learning-run-clock > div:first-child {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 9px;
-}
-.hud-surface .learning-run-clock b { font-size: 14px; font-variant-numeric: tabular-nums; }
 .hud-surface .learning-run-hint {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -5014,18 +4873,6 @@
 .hud-surface .learning-run-response .run-text-editor textarea::placeholder { color: rgba(89, 72, 57, 0.52); }
 .hud-surface .learning-run-response .run-text-editor textarea:focus { background-color: rgba(255, 255, 255, 0.18); }
 .hud-surface .learning-run-response .run-text-editor small { justify-self: end; }
-.hud-surface .learning-run-response .run-text-editor--compact {
-  min-height: 118px;
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--hud-line);
-}
-.hud-surface .learning-run-response .run-text-editor--compact > span {
-  margin-bottom: 8px;
-  font-size: 10px;
-  font-weight: 800;
-}
-.hud-surface .learning-run-response .run-text-editor--compact textarea { min-height: 78px; }
 
 .hud-surface :is(.run-order-list, .run-relation-list) { margin: 0; padding: 0; list-style: none; }
 .hud-surface .run-order-list li,
@@ -5097,16 +4944,6 @@
   font: 800 10px "Noto Sans SC Variable", sans-serif;
   letter-spacing: 0.05em;
 }
-.hud-surface .run-blocker {
-  display: grid;
-  min-height: 100%;
-  place-content: center;
-  justify-items: center;
-  gap: 7px;
-  color: var(--hud-soft);
-  text-align: center;
-}
-.hud-surface .run-blocker strong { color: var(--hud-ink); font: 680 18px "Noto Serif SC Variable", "Songti SC", serif; }
 .hud-surface .run-inline-error { color: #8a4936; }
 
 .hud-surface .learning-run-dock {
@@ -5290,8 +5127,6 @@
   .hud-surface .candidate-review-slip dl > div { gap: 5px; padding: 4px 0; }
   .hud-surface .candidate-review-slip__actions { gap: 4px; padding-top: 7px; }
   .hud-surface .learning-run-result-board { border-width: 2px; border-radius: 19px 16px 21px 17px / 17px 22px 16px 20px; }
-  .hud-surface .learning-run-clock > div:first-child { gap: 5px; font-size: 9px; }
-  .hud-surface .learning-run-clock b { font-size: 10px; }
   .hud-surface .learning-run-hint { gap: 4px; margin-top: 9px; padding-top: 7px; font-size: 9px; }
   .hud-surface .learning-run-hint svg { width: 12px; height: 12px; }
   .hud-surface .learning-run-hint--shown { margin-right: -2px; margin-left: -2px; padding: 6px; border-radius: 8px 10px 7px 9px; }
@@ -5578,6 +5413,19 @@
 }
 
 .hud-surface .reveal-evidence b { font-size: 9px; letter-spacing: 0.06em; }
+
+/* 「当初那段」：同一张 butter 纸条上的**旧**引文。它和上面那一行当前引文必须
+   一眼分得开——上面那行是这张卡现在站着的依据，这行只是"当初是这么写的"，
+   两者同色同号排在一起会被当成同一段话重复印了两遍。压成 soft 墨并加一条
+   奶油的引线，是纸面上「引的是旧文」最小的一档说法。 */
+.hud-surface .reveal-evidence__original {
+  margin-top: 2px;
+  padding-left: 7px;
+  border-left: 2px solid rgba(255, 252, 235, 0.72);
+  color: var(--hud-soft);
+  font-size: 9.5px;
+  line-height: 1.6;
+}
 
 .hud-surface .candidate-study-card .reject-reasons {
   position: absolute;
@@ -5866,15 +5714,6 @@
 .hud-surface .note-editor .ProseMirror .ProseMirror-gapcursor { caret-color: var(--hud-clay); }
 .hud-surface .note-editor .ProseMirror[contenteditable="false"] { caret-color: transparent; }
 
-/* 空文档的占位提示（ProseMirror 的 float + 零高度写法）。 */
-.hud-surface .note-editor .ProseMirror p.note-editor-empty:first-child::before {
-  content: attr(data-placeholder);
-  float: left;
-  height: 0;
-  color: #967e6b;
-  pointer-events: none;
-}
-
 /* ── 阅读页：与上面「书写区」同一套字形 ──
  *
  * 阅读页以前只画纯文本，所以上面那批行内元素对它一条都没生效——`**重点**` 露着星号、
@@ -5919,18 +5758,6 @@
 .hud-surface .notebook .reading-body .quote {
   padding-left: 15px;
   border-left: 3px solid rgba(175, 82, 44, 0.42);
-}
-
-/* 列表：一项一行、各带自己的记号。格线由外层那个 p 铺，所以行本身不再垫高度。
-   记号落在悬挂缩进腾出来的那 10px 里（`.p.list-block` 的 padding-left 15 / text-indent -10）。 */
-.hud-surface .notebook .reading-body .list-line { display: block; }
-
-.hud-surface .notebook .reading-body .list-line::before {
-  content: "•";
-  display: inline-block;
-  width: 10px;
-  margin-right: 5px;
-  color: var(--hud-clay);
 }
 
 @media (max-width: 760px) {
@@ -6495,6 +6322,36 @@
 .hud-surface .companion-center .companion-danger-action,
 .hud-surface .companion-center .companion-choice-grid button {
   border-radius: var(--companion-radius-card);
+}
+
+/* ===========================================================================
+ * 伴星 HUD 的两张面（这一族规则住在 companion-hud.css / companion-chat-record.css，
+ * 本轮只能动 hud-surface.css，所以跟过来并说明为什么跟过来）
+ * ======================================================================== */
+
+/* 「更多」面板：`.companion-hud__panel` 的三列头（返回 · 标题 · 关闭）就是为它
+   画的——菜单面没有返回动作时左列放一个占位 `<span />`，标题因此必须仍然居中。
+   `.companion-hud__composer` 把这条改成两列（它的头只有标题与关闭），所以这里
+   把本面自己的三列 + 居中显式钉回来：两块面板的覆写是同级的，哪天面选择器
+   顺序变了，也不会把「更多」的标题挤进返回键那一格。 */
+.hud-surface .companion-hud__more > header { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+.hud-surface .companion-hud__more > header strong { text-align: center; }
+
+/* 抽屉（`.companion-history` + `.companion-chat`）portal 到 body，`.hud-surface`
+   作用域里的一切对它都不成立——`.companion-hud` 那张 `--companion-*` 局部表
+   （companion-hud.css:1）也在作用域外，抽屉只能靠 companion-hud.css:1376 自己
+   补的那一份。运行时认的是 `.companion-chat` 那个类（`companion-modal-ownership.ts:15`
+   的 `closest()` 判定"这个模态是不是伴星自己弹的"就看它），所以局部 token 表挂在
+   它身上，并且把其中**手抄过 HUD 值**的四条改回读母本：纸面、奶油、次级墨与
+   缓动四条本来就和 `--hud-paper-light` / `--hud-cream` / `--hud-soft` /
+   `--hud-ease-out` 逐字节相同（`.companion-muted` 与 `--ease-out` 那边本来就写着
+   `var(--hud-soft, …)` / 同样的三次贝塞尔），抄一份只是第二个真理源：母本改了，
+   抽屉不会跟着改。 */
+.companion-chat {
+  --companion-ivory: var(--hud-paper-light);
+  --companion-cream: var(--hud-cream);
+  --companion-muted: var(--hud-soft);
+  --ease-out: var(--hud-ease-out);
 }
 
 /* ===========================================================================

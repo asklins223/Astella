@@ -2185,6 +2185,125 @@
       "when": 1790906400008,
       "tag": "0312_note_subscription_review_queue_worker_read",
       "breakpoints": true
+    },
+    {
+      "idx": 312,
+      "version": "7",
+      "when": 1790906400009,
+      "tag": "0313_note_annotations",
+      "breakpoints": true
+    },
+    {
+      "idx": 313,
+      "version": "7",
+      "when": 1790906410000,
+      "tag": "0314_note_overviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 314,
+      "version": "7",
+      "when": 1790906420000,
+      "tag": "0315_note_recall_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 315,
+      "version": "7",
+      "when": 1790992800000,
+      "tag": "0316_note_expansions",
+      "breakpoints": true
+    },
+    {
+      "idx": 316,
+      "version": "7",
+      "when": 1790992801000,
+      "tag": "0317_note_companion_artifacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 317,
+      "version": "7",
+      "when": 1790992802000,
+      "tag": "0318_note_recall_companion_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 318,
+      "version": "7",
+      "when": 1790992803000,
+      "tag": "0319_note_overview_source_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 319,
+      "version": "7",
+      "when": 1790992804000,
+      "tag": "0320_note_companion_artifact_selection_anchor",
+      "breakpoints": true
+    },
+    {
+      "idx": 320,
+      "version": "7",
+      "when": 1790992805000,
+      "tag": "0321_note_overview_background_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 321,
+      "version": "7",
+      "when": 1790992806000,
+      "tag": "0322_note_annotation_background_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 322,
+      "version": "7",
+      "when": 1790992807000,
+      "tag": "0323_note_dynamic_artifact_background_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 323,
+      "version": "7",
+      "when": 1790992808000,
+      "tag": "0324_note_expansion_background_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 324,
+      "version": "7",
+      "when": 1790992809000,
+      "tag": "0325_note_overview_points",
+      "breakpoints": true
+    },
+    {
+      "idx": 325,
+      "version": "7",
+      "when": 1790992810000,
+      "tag": "0326_note_learning_artifact_version_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 326,
+      "version": "7",
+      "when": 1790996410000,
+      "tag": "0327_users_rls_and_force",
+      "breakpoints": true
+    },
+    {
+      "idx": 327,
+      "version": "7",
+      "when": 1791000010000,
+      "tag": "0328_search_documents_sort_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 328,
+      "version": "7",
+      "when": 1759190728000,
+      "tag": "0329_daily_summary_catchup",
+      "breakpoints": true
     }
   ]
 }

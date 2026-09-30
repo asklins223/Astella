@@ -274,7 +274,10 @@ button:disabled {
   opacity: 1;
 }
 
-.room-backplate--home-night, .room-backplate--seat-day, .room-backplate--seat-night, .room-backplate--search-day, .room-backplate--search-night {
+/* 首页三张底图：日 / 昏 / 夜。三者的显隐由 RoomStage.tsx:238-245 的 GSAP `autoAlpha`
+   交叉淡入驱动（首页时段是 day / dusk / night 三档），所以 CSS 这一层只负责「默认藏起来」
+   ——昏时图此前连这条默认规则都没有，首帧会与日图同时可见。 */
+.room-backplate--home-night, .room-backplate--home-dusk, .room-backplate--seat-day, .room-backplate--seat-night, .room-backplate--search-day, .room-backplate--search-night {
   opacity: 0;
 }
 
@@ -345,61 +348,6 @@ button:disabled {
   will-change: transform;
 }
 
-.companion-whisper {
-  position: absolute;
-  right: 76%;
-  bottom: 15%;
-  width: min(360px, 38vw);
-  padding: 18px 18px 16px;
-  color: #35261d;
-  border: 1px solid rgba(80, 51, 31, 0.34);
-  border-radius: 15px 15px 4px 15px;
-  background: rgba(249, 238, 216, 0.97);
-  box-shadow: var(--paper-shadow);
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: auto;
-  will-change: transform, opacity;
-}
-
-.companion-whisper::after {
-  position: absolute;
-  right: -10px;
-  bottom: 30px;
-  width: 19px;
-  height: 19px;
-  content: "";
-  border-top: 1px solid rgba(80, 51, 31, 0.24);
-  border-right: 1px solid rgba(80, 51, 31, 0.24);
-  background: #f5e8ce;
-  transform: rotate(45deg);
-}
-
-.companion-whisper h2 {
-  margin: 8px 28px 7px 0;
-  font-family: "Noto Serif SC Variable", "Songti SC", serif;
-  font-size: 19px;
-  line-height: 1.35;
-}
-
-.companion-whisper > p {
-  margin: 0;
-  color: #665040;
-  font-size: 12px;
-  line-height: 1.7;
-}
-
-.companion-action {
-  min-height: 35px;
-  padding: 0 11px;
-  color: #5b4433;
-  font-size: 11px;
-  border: 1px solid rgba(79, 51, 32, 0.24);
-  border-radius: 8px;
-  background: rgba(255, 252, 244, 0.56);
-  cursor: pointer;
-}
-
 /* 唯一形态下的失败态说明（2026-09-16 裁决：不回退替身形象，就地说明）。
    与 whisper 同一纸面语言，但不参与 GSAP 揭示、不遮挡任务内容。
    定位（2026-09-19 视觉审计修正）：原先 `right:76%; bottom:15%` 会落在任务页
@@ -466,24 +414,14 @@ button:disabled {
   will-change: auto;
 }
 
-.surface-close {
-  display: inline-flex;
-  min-height: 36px;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-  padding: 0 11px;
-  color: #5d4635;
-  font-size: 11px;
-  border: 1px solid rgba(74, 47, 29, 0.22);
-  border-radius: 8px;
-  background: rgba(255, 252, 245, 0.52);
-  cursor: pointer;
-}
-
-.surface-close:hover { background: rgba(255, 252, 245, 0.9); }
-
-.surface-primary, .surface-secondary, .text-action {
+/* `.surface-primary` / `.surface-secondary` 已删除（2026-09-29）。它们是母本之前
+   留下来的第二套主/次按钮：深橙渐变 + 白字 + 8px 圆角，与 V3.1 母本的「桃底 + 深墨字 +
+   不等圆角」是两套语言并存——同一个产品里「主按钮」有两个答案，agent 挑哪个全凭碰上
+   哪个文件。`.surface-secondary` 全仓 0 处引用，`.surface-primary` 只有
+   WorkspaceLibrarySurface.tsx 的重试/继续两颗，那两处已改用 `button primary`。
+   主按钮的配色归 `.button.primary`（`components/hud/hud-pages.css:152`）一处管，
+   并由 `renderer-accent-guard.test.ts` 钉住「只有那一处可以给按钮上主强调色」。 */
+.text-action {
   display: inline-flex;
   min-height: 40px;
   align-items: center;
@@ -494,15 +432,6 @@ button:disabled {
   border-radius: 8px;
   cursor: pointer;
 }
-
-.surface-primary {
-  color: #fff8ee;
-  border: 1px solid var(--accent-deep);
-  background: linear-gradient(180deg, #b85328, #933b1f);
-  box-shadow: 0 7px 14px rgba(112, 46, 23, 0.2);
-}
-
-.surface-primary:hover { background: linear-gradient(180deg, #c45e2c, #9e4021); }
 
 .text-action {
   min-height: 34px;
@@ -580,84 +509,6 @@ button:disabled {
   gap: 4px;
 }
 
-.card-editor {
-  position: absolute;
-  z-index: 2;
-  bottom: 7%;
-  left: 16%;
-  width: min(58vw, 860px);
-  min-height: 43vh;
-  max-height: 58vh;
-  padding: clamp(24px, 3vw, 40px);
-  overflow: auto;
-  border: 1px solid rgba(78, 49, 29, 0.38);
-  border-radius: 8px 15px 6px 6px;
-  background: rgba(248, 236, 213, 0.97);
-  box-shadow: var(--paper-shadow);
-}
-
-.card-editor {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 17px;
-}
-
-.objective-detail {
-  align-content: start;
-}
-
-.objective-detail blockquote {
-  display: grid;
-  gap: 5px;
-  margin: 12px 0 0;
-  padding: 14px 16px;
-  color: #4d3c2e;
-  border-left: 1px solid var(--sage);
-  background: rgba(102, 124, 88, 0.08);
-}
-
-.objective-detail blockquote strong { color: var(--sage-deep); font-size: 11px; }
-.objective-detail blockquote span { font-size: 13px; font-weight: 700; }
-.objective-detail blockquote small { color: var(--ink-soft); font-size: 10px; line-height: 1.65; }
-.objective-detail__state .surface-primary { margin-top: 4px; }
-
-.card-editor label {
-  display: grid;
-  gap: 7px;
-}
-
-.card-editor label span { color: var(--ink-soft); font-size: 10px; font-weight: 700; }
-
-.card-editor textarea {
-  width: 100%;
-  min-height: 125px;
-  padding: 12px;
-  color: #3c2d23;
-  line-height: 1.65;
-  resize: vertical;
-  border: 1px solid rgba(78, 49, 29, 0.2);
-  border-radius: 7px;
-  background: rgba(255, 252, 244, 0.58);
-}
-
-.card-editor blockquote {
-  grid-column: 1 / -1;
-  margin: 0;
-  padding: 13px 15px;
-  color: #635040;
-  font-size: 11px;
-  line-height: 1.65;
-  border-inline-start: 1px solid var(--sage);
-  background: rgba(102, 124, 88, 0.08);
-}
-
-.card-editor blockquote strong { display: block; margin-bottom: 4px; color: #40523d; }
-.card-editor .surface-action-pair { grid-column: 1 / -1; }
-
-.task-surface--graph .task-surface__header {
-  width: min(310px, 28vw);
-}
-
 @keyframes status-island-in {
   from { opacity: 0; transform: translateY(8px) scale(0.96); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -665,26 +516,18 @@ button:disabled {
 
 @media (max-width: 1180px) {
   .companion-scene-anchor { left: 54%; }
-  .companion-whisper { width: min(340px, 42vw); }
 }
 
 @media (max-width: 900px), (max-height: 660px) {
-  .surface-close span { display: none; }
-  .card-editor { left: 10%; width: 65vw; }
   .companion-scene-anchor { top: 31%; left: 54%; width: 220px; height: 330px; }
-  .companion-whisper { right: 70%; width: 330px; }
 }
 
 @media (max-width: 720px) {
   .window-drag-region { left: 72px; right: 76px; }
-  .card-editor { left: 4%; width: 79vw; }
   .evidence-slip { display: none; }
   .notebook-actions { grid-column: 1; }
   .companion-scene-anchor { top: 29%; left: 58%; width: 190px; height: 210px; }
-  .companion-whisper { right: 20%; bottom: 8%; width: min(280px, calc(100vw - 30px)); }
-}
-
-.desktop-app[data-motion-mode="off"] .scene-status, .desktop-app[data-motion-mode="off"] .run-recovery-notice, .desktop-app[data-motion-mode="off"] .run-spinner {
+}.desktop-app[data-motion-mode="off"] .run-recovery-notice, .desktop-app[data-motion-mode="off"] .run-spinner{
   animation: none !important;
 }
 
@@ -706,6 +549,50 @@ button:disabled {
    都要连带把迭代次数收成 1（approved-surfaces.css 的 reduce 块原先漏了这一步）。 */
 
 /* First Golden: server-proved LearningRun recovery, never a local resume guess. */
+
+/* 恢复横幅的触发器：一枚浮在书房左上角的岛，下面挂着 .run-recovery-stack 那张纸。
+   此前这个 <details> 连一条规则都没有：<summary> 是浏览器默认的三角标 + 裸文字，
+   而下面的纸靠 `position: absolute; top: 84px` 定位，两者之间没有任何关系——
+   触发器在哪、纸从哪冒出来，屏上读者无从判断。触发器定在 top: 16px、left: 24px，
+   与纸的 84px / 24px 对齐成一组（pill 底 68px → 16px 间隙 → 纸），层序 45 高于纸的 44。
+   岛的配色沿用首页浮层的既有语汇（深底 + 1px 亮边 + 28px 药丸 + 柔影），不是任务页的暖纸——
+   它是浮在房间上的控件，不是纸面上的一块内容。 */
+.home-recovery {
+  position: fixed;
+  z-index: 45;
+  top: 16px;
+  left: 24px;
+}
+
+.home-recovery > summary {
+  display: inline-flex;
+  min-height: 52px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 18px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 28px;
+  background: rgba(42, 31, 24, 0.9);
+  box-shadow: var(--hud-shadow-small);
+  color: #fff3df;
+  font-size: 13px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.home-recovery > summary::-webkit-details-marker { display: none; }
+
+.home-recovery > summary small {
+  color: #d2c3b3;
+  font-size: 9px;
+}
+
+.home-recovery:not([open]) > summary { opacity: 0.82; }
+
+@media (hover: hover) and (pointer: fine) {
+  .home-recovery > summary:hover { opacity: 1; }
+}
+
 .run-recovery-stack {
   position: absolute;
   z-index: 44;
@@ -750,6 +637,12 @@ button:disabled {
 .run-recovery-notice__copy p { margin: 0; color: var(--ink-soft); font-size: 11px; line-height: 1.55; }
 .run-recovery-notice__actions { grid-column: 2; display: grid; gap: 6px; }
 .run-recovery-notice--error { border-color: rgba(189, 91, 45, 0.38); background: rgba(255, 244, 224, 0.98); }
+
+/* 「还有学习卡在等整理」这一条不是失败，是一件没做完的事——所以它借 --error 的暖橙
+   边线表明「回得去」，但把底色留在正常纸上，不报警。图标是火花（Sparkles）而不是
+   错误记号，色相与 --error 的印章同族。 */
+.run-recovery-notice--generation { border-color: rgba(189, 91, 45, 0.26); }
+.run-recovery-notice--generation .run-recovery-notice__mark { color: var(--accent-deep); background: rgba(189, 91, 45, 0.1); }
 .run-recovery-notice--error .run-recovery-notice__mark { color: var(--accent-deep); background: rgba(189, 91, 45, 0.12); }
 .run-recovery-notice__primary, .run-recovery-notice__secondary {
   display: inline-flex;
@@ -853,9 +746,7 @@ button:disabled {
 
 .run-bundle-editor { gap: 12px; }
 .run-bundle-part { display: grid; gap: 9px; padding: 12px; border: 1px solid rgba(77, 50, 31, 0.16); border-radius: 7px; background: rgba(255, 252, 244, 0.34); }
-.run-bundle-part h4 { margin: 0; }
-
-.run-blocker, .run-confirmation {
+.run-bundle-part h4 { margin: 0; }.run-confirmation{
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -889,47 +780,6 @@ button:disabled {
   isolation: isolate;
 }
 
-.surface-close {
-  position: relative;
-  z-index: 2;
-  min-height: 34px;
-  margin-top: 1px;
-  color: #fff1dc;
-  border-color: rgba(255, 239, 215, 0.24);
-  background: rgba(255, 247, 231, 0.08);
-}
-
-.surface-close:hover { background: rgba(255, 247, 231, 0.17); }
-
-.card-editor {
-  isolation: isolate;
-  background-color: rgba(248, 237, 215, 0.96);
-  background-image:
-    linear-gradient(110deg, rgba(255, 252, 240, 0.72), rgba(224, 204, 165, 0.28)),
-    url("/assets/learning-room/v1/textures/scene-paper-fibres-v2.png");
-  background-size: auto, 430px 430px;
-  background-blend-mode: normal, multiply;
-}
-
-.card-editor::before {
-  position: absolute;
-  z-index: 0;
-  top: 13px;
-  right: 17px;
-  width: 124px;
-  height: 83px;
-  content: "";
-  background: url("/assets/learning-room/v1/objects/scene-card-stack-v2.png") center / contain no-repeat;
-  opacity: 0.1;
-  transform: rotate(4deg);
-  pointer-events: none;
-}
-
-.card-editor > * {
-  position: relative;
-  z-index: 1;
-}
-
 .companion-scene-anchor {
   top: 35%;
   left: 44%;
@@ -942,33 +792,6 @@ button:disabled {
   cursor: grab;
   touch-action: none;
 }
-
-.companion-whisper {
-  width: min(330px, 35vw);
-  padding: 15px 15px 12px;
-  color: #fff8ed;
-  border: 1px solid rgba(255, 240, 213, 0.22);
-  border-radius: 16px 16px 6px 16px;
-  background: rgba(27, 25, 23, 0.88);
-  box-shadow: 0 18px 42px rgba(19, 12, 8, 0.3);
-  backdrop-filter: blur(20px) saturate(1.15);
-}
-
-.companion-whisper::after {
-  border-color: rgba(255, 240, 213, 0.19);
-  background: #37302a;
-}
-.companion-whisper h2 { color: #fff8ed; font-size: 18px; }
-.companion-whisper > p { color: rgba(255, 239, 216, 0.7); }
-
-.companion-action {
-  min-height: 32px;
-  color: rgba(255, 242, 224, 0.82);
-  border-color: rgba(255, 240, 215, 0.2);
-  background: rgba(255, 248, 232, 0.08);
-}
-
-.companion-action:hover { background: rgba(255, 248, 232, 0.16); }
 
 .companion-unavailable-notice, .companion-restore-chip {
   color: rgba(255, 239, 216, 0.86);
@@ -984,12 +807,10 @@ button:disabled {
 
 @media (max-width: 900px), (max-height: 660px) {
   .companion-scene-anchor { top: 33%; left: 45%; width: 230px; height: 330px; }
-  .companion-whisper { width: min(320px, 38vw); }
 }
 
 @media (max-width: 720px) {
   .companion-scene-anchor { top: 31%; left: 52%; width: 205px; height: 250px; }
-  .companion-whisper { right: 15%; width: min(290px, calc(100vw - 30px)); }
 }
 
 .companion-scene-anchor {
@@ -997,47 +818,6 @@ button:disabled {
   top: 0;
   left: 0;
   touch-action: none;
-}
-
-.companion-whisper {
-  right: 73%;
-  bottom: 12%;
-  display: grid;
-  width: min(450px, 45vw);
-  grid-template-columns: minmax(0, 1fr) 132px;
-  gap: 4px 14px;
-  padding: 12px 14px;
-  border-radius: 999px 22px 22px 999px;
-}
-
-.companion-whisper::after { bottom: 42px; }
-
-.companion-whisper__kicker, .companion-whisper h2, .companion-whisper > p { grid-column: 1; min-width: 0; }
-
-.companion-whisper h2 {
-  margin: 2px 0 0 4px;
-  overflow: hidden;
-  font-size: 16px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.companion-whisper > p {
-  display: -webkit-box;
-  margin: 0 0 0 4px;
-  overflow: hidden;
-  font-size: 10px;
-  line-height: 1.5;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.companion-action {
-  width: 100%;
-  min-height: 44px;
-  padding-inline: 10px;
-  border-radius: 999px;
 }
 
 .run-recovery-stack {
@@ -1070,13 +850,6 @@ button:disabled {
 
 /* Legacy Study reflow. Review V2 owns one independent authority below. */
 @media (max-width: 720px), (max-height: 660px) {
-  .task-surface--study {
-    overflow-x: hidden;
-    overflow-y: auto;
-    pointer-events: auto;
-    overscroll-behavior: contain;
-    scrollbar-gutter: stable;
-  }
 
   .task-surface--study .task-surface__spatial-layer {
     position: relative;
@@ -1095,22 +868,9 @@ button:disabled {
 }
 
 @media (max-width: 720px) {
-  .companion-whisper {
-    z-index: 3;
-    right: 9%;
-    bottom: -36px;
-    width: min(292px, calc(100vw - 28px));
-    grid-template-columns: 1fr;
-    border-radius: 22px;
-  }
 }
 
 @media (max-width: 900px), (max-height: 660px) {
-  .task-surface--study {
-    overflow-x: hidden;
-    overflow-y: auto;
-    pointer-events: auto;
-  }
 
   .task-surface--study .task-surface__spatial-layer {
     position: relative;
@@ -1120,18 +880,6 @@ button:disabled {
     perspective: none;
   }
 
-}
-
-/* Review owner repair V3: one continuous DOM ledger resting on the desk.
-   The rejected stand is not a layout coordinate system and no decorative
-   bitmap participates in this surface. */
-.task-surface--review {
-  overflow-x: hidden;
-  overflow-y: auto;
-  pointer-events: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  scroll-padding-block: 28px;
 }
 
 .task-surface--review .task-surface__spatial-layer {
@@ -1161,15 +909,6 @@ button:disabled {
   inset: 0;
 }
 
-/* （复习页伴星的无条件 display:none 已删：它是旧 review-ledger 时代的残留，
-   会把 2021 行"只在 ≤900px/≤660px 小窗隐藏"的新规则整个压死。队列页的伴星座位
-   由 hud-pages.ts 注册表声明（seat left + starter 文案），正常尺寸下应当在场。 */
-
-.task-surface--review {
-  overflow: hidden;
-  pointer-events: auto;
-}
-
 .task-surface--review .task-surface__spatial-layer {
   position: absolute;
   inset: 0;
@@ -1184,12 +923,6 @@ button:disabled {
 
 
 @media (max-width: 900px), (max-height: 660px) {
-  .task-surface--review {
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-gutter: stable;
-  }
 
   .task-surface--review .task-surface__spatial-layer {
     position: relative;
@@ -1228,12 +961,6 @@ button:disabled {
 }
 
 @media (max-width: 900px), (max-height: 660px) {
-  .task-surface--notebook {
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    pointer-events: auto;
-  }
 
   .task-surface--notebook .task-surface__spatial-layer {
     position: relative;
@@ -1245,13 +972,6 @@ button:disabled {
 
 }
 
-/* Search owns a separate archive-room backplate. The poster is the scene
-   base; query, result, error and source-boundary truth remain DOM ink. */
-.task-surface--search {
-  overflow: hidden;
-  pointer-events: auto;
-}
-
 .task-surface--search .task-surface__spatial-layer {
   position: absolute;
   inset: 0;
@@ -1261,13 +981,6 @@ button:disabled {
 }
 
 @media (max-width: 900px), (max-height: 660px) {
-  .task-surface--search {
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    pointer-events: auto;
-    scrollbar-gutter: stable;
-  }
 
   .task-surface--search .task-surface__spatial-layer {
     position: relative;
@@ -1280,9 +993,7 @@ button:disabled {
   .desktop-app[data-surface-open="true"] .companion-presence[data-surface="search"] {
     display: none;
   }
-}
-
-.card-generation-recovery, .run-order-list li, .run-relation-list li, .run-bundle-part, .run-blocker, .run-confirmation {
+}.card-generation-recovery, .run-order-list li, .run-relation-list li, .run-bundle-part, .run-confirmation{
   background: transparent;
   box-shadow: none;
 }
@@ -1316,209 +1027,19 @@ button:disabled {
 
 .run-icon-button:hover:not(:disabled) { background: rgba(101, 126, 88, 0.08); }
 
-/* V1 material pass: the remaining task routes use the same authored paper
-   object. Keep the DOM as ink and controls so no pale application panel
-   floats above the scene. */
-.task-surface .card-editor.objective-detail {
-  display: grid;
-  isolation: isolate;
-  overflow: auto;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  background-image: none;
-  box-shadow: none;
-}
-
-.task-surface .card-editor.objective-detail::before {
-  position: absolute;
-  z-index: 0;
-  inset: -3% -4% -5%;
-  width: auto;
-  height: auto;
-  content: "";
-  background: url("/assets/learning-room/v1/objects/scene-card-stack-v2.png") center / 100% 100% no-repeat;
-  opacity: 0.96;
-  pointer-events: none;
-}
-
-.task-surface .card-editor.objective-detail > * {
-  position: relative;
-  z-index: 1;
-}
-
-.task-surface .objective-detail blockquote, .task-surface .objective-detail__facts, .task-surface .objective-detail__state {
-  background: transparent;
-  box-shadow: none;
-}
-
-.task-surface .objective-detail blockquote {
-  border-inline-start-color: rgba(101, 117, 83, 0.58);
-}
-
 @media (max-width: 900px), (max-height: 660px) {
-  .task-surface .card-editor.objective-detail {
-    left: 10%;
-    width: 65vw;
-  }
 }
 
 @media (max-width: 720px) {
-  .task-surface .card-editor.objective-detail {
-    left: 4%;
-    width: 79vw;
-    min-height: 0;
-    padding: 22px;
-  }
-}
-
-/* Align the objective ink with the same rotated top sheet used by the
-   Card Generation surface. The authored asset owns paper;
-   these wrappers own only readable content and controls. */
-.task-surface .card-editor.objective-detail {
-  display: block;
-  height: min(56vh, 520px);
-  min-height: 350px;
-  max-height: none;
-  overflow: visible;
-  padding: 0;
-}
-
-.task-surface .card-editor.objective-detail > .objective-detail__content {
-  position: absolute;
-  z-index: 1;
-  inset: 14% 10% 21%;
-  min-width: 0;
-  min-height: 0;
-  overflow: auto;
-  color: var(--ink);
-  scrollbar-color: rgba(101, 117, 83, 0.45) transparent;
-  scrollbar-width: thin;
-  transform: rotate(-6deg);
-  transform-origin: 50% 50%;
-}
-
-.task-surface .card-editor.objective-detail > .objective-detail__content {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(190px, 0.72fr);
-  align-content: start;
-  gap: 17px;
-}
-
-.task-surface .objective-detail__content::-webkit-scrollbar { width: 6px; }
-
-.task-surface .objective-detail__content::-webkit-scrollbar-thumb {
-  border: 0;
-  border-radius: 999px;
-  background: rgba(101, 117, 83, 0.45);
 }
 
 @media (max-width: 720px) {
-  .task-surface .card-editor.objective-detail {
-    height: 61vh;
-  }
-}
-
-/* UI audit pass: the room is the backdrop and the authored object is the
-   surface. Route DOM contributes ink, controls and state only; it must not
-   rebuild a second translucent application panel over the artwork. */
-.task-surface .task-surface__header {
-  width: min(520px, calc(100vw - 168px));
-  min-height: 0;
-  align-items: flex-start;
-  gap: 24px;
-  padding: 0 0 11px 14px;
-  border: 0;
-  border-inline-start: 2px solid rgba(233, 183, 119, 0.82);
-  border-radius: 0;
-  color: #fff8ec;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-}
-
-.task-surface .task-surface__header::after {
-  right: 0;
-  bottom: 0;
-  left: 14px;
-  background: linear-gradient(90deg, rgba(255, 235, 200, 0.42), transparent 82%);
-}
-
-.task-surface .task-surface__header > div, .task-surface .task-surface__header-copy {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.task-surface .task-surface__header h2 {
-  max-width: 100%;
-  color: #fff8ec;
-  font-size: clamp(19px, 1.55vw, 25px);
-  line-height: 1.22;
-  overflow-wrap: anywhere;
-  text-shadow: 0 2px 9px rgba(24, 13, 7, 0.78);
-}
-
-.task-surface .task-surface__header p {
-  max-width: 100%;
-  margin-top: 3px;
-  color: rgba(255, 242, 222, 0.78);
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-  text-shadow: 0 1px 6px rgba(24, 13, 7, 0.7);
-}
-
-.task-surface .task-surface__header .surface-close {
-  min-height: 44px;
-  margin-top: 0;
-  color: #fff4e4;
-  border-color: rgba(255, 239, 215, 0.28);
-  background: rgba(31, 25, 21, 0.66);
-  box-shadow: 0 8px 18px rgba(25, 15, 10, 0.2);
-  backdrop-filter: blur(8px) saturate(1.05);
-}
-
-.task-surface .task-surface__header .surface-close:hover {
-  background: rgba(52, 36, 27, 0.82);
 }
 
 .task-surface .run-icon-button {
   width: 40px;
   min-width: 40px;
   height: 40px;
-}
-
-/* Card Generation keeps every recovery, review and footer command on the
-   same compact touch contract. The paper can stay dense, but its real DOM
-   controls must remain reachable at the narrowest supported width. */
-.task-surface--card-generation .card-generation-recovery .surface-action-pair > :is(.surface-primary, .surface-secondary, .text-action) {
-  min-height: 44px;
-}
-
-/* Objective and validation share the same physical sheet, but their ink has
-   different density. A smaller facts rail keeps long Chinese titles inside
-   the front card instead of crossing into the stacked sheets. */
-.task-surface .card-editor.objective-detail > .objective-detail__content {
-  inset: 15% 14% 25% 12%;
-  grid-template-columns: minmax(0, 1fr) minmax(145px, 0.6fr);
-  gap: 20px;
-  padding: 0 2px 0 1px;
-}
-
-.task-surface .objective-detail__main h3 {
-  max-width: 100%;
-  font-size: clamp(21px, 2vw, 31px);
-  line-height: 1.36;
-  overflow-wrap: anywhere;
-}
-
-.task-surface .objective-detail__summary {
-  max-width: 100%;
-  font-size: 12px;
-}
-
-.task-surface .objective-detail__facts {
-  padding-left: 14px;
 }
 
 /* The empty review state belongs to the illustrated scroll on the right. It
@@ -1552,18 +1073,6 @@ button:disabled {
 
 
 @media (max-width: 900px), (max-height: 660px) {
-  /* Card Generation uses the same single-scroll fallback as LearningRun.
-     Recovery copy and candidate actions can expand with server data; keeping
-     them in normal flow prevents the paper rotation from turning a narrow
-     window into an overlapping action stack. */
-  .task-surface--card-generation {
-    overflow-x: hidden;
-    overflow-y: auto;
-    pointer-events: auto;
-    overscroll-behavior: contain;
-    scrollbar-gutter: stable;
-    scroll-padding-block: 18px 28px;
-  }
 
   .task-surface--card-generation .task-surface__spatial-layer {
     position: relative;

@@ -7,6 +7,44 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { logger } from "./logger.ts";
+import {
+  resolveStorageBucket,
+  resolveStorageConfig,
+  resolveStorageRequestTimeoutMs,
+  type StorageEnv,
+} from "@ailearn/shared/storage-config";
+
+/**
+ * 配置判定委托给 `@ailearn/shared/storage-config`（2026-09-29，P2-16）。
+ *
+ * 此前这一份与 `apps/api` 那份**各写一次**凭证回退链：独立凭证优先、回退 root，
+ * 且用 `||` 让空串按未配置处理。改一处不改另一处就会出现
+ * "报告已配置、构造客户端却拿到空串凭证"——那只在生产里显形。
+ *
+ * S3 客户端仍由本文件构造：`@aws-sdk/client-s3` 不是 shared 的依赖，
+ * 为了一个配置读取把它拖进 shared，会让所有引用方都背上这份依赖。
+ */
+const env = (): StorageEnv => process.env;
+
+function storageCredentials(): { accessKeyId: string; secretAccessKey: string } {
+  const resolved = resolveStorageConfig(env());
+  if (!resolved) {
+    throw new Error(
+      "STORAGE not configured: MINIO_ACCESS_KEY/MINIO_SECRET_KEY "
+      + "(or MINIO_ROOT_USER/MINIO_ROOT_PASSWORD) missing",
+    );
+  }
+  return { accessKeyId: resolved.accessKeyId, secretAccessKey: resolved.secretAccessKey };
+}
+
+/** 存储是否已配置（与 api 侧同一条规则，见 ）。 */
+export function isStorageConfigured(): boolean {
+  return resolveStorageConfig(env()) !== null;
+}
+
+function getBucket(): string {
+  return resolveStorageBucket(env());
+}
 
 // 2026-08-12（存储面审计，与 API 侧对齐）：
 // - 独立凭证优先（MINIO_ACCESS_KEY/SECRET_KEY，最小权限），回退 root；
@@ -15,24 +53,14 @@ import { logger } from "./logger.ts";
 let client: S3Client | null = null;
 let clientInitError: Error | null = null;
 
-function storageCredentials(): { accessKeyId: string; secretAccessKey: string } {
-  // 2026-08-12 review：`||` 而非 `??`——空串按未配置处理，回退 root 凭证
-  // （与 isStorageConfigured 的 truthy 语义一致）。
-  const accessKeyId = process.env.MINIO_ACCESS_KEY?.trim() || process.env.MINIO_ROOT_USER?.trim();
-  const secretAccessKey = process.env.MINIO_SECRET_KEY?.trim() || process.env.MINIO_ROOT_PASSWORD?.trim();
-  if (!accessKeyId || !secretAccessKey) {
-    throw new Error("STORAGE not configured: MINIO_ACCESS_KEY/MINIO_SECRET_KEY (or MINIO_ROOT_USER/MINIO_ROOT_PASSWORD) missing");
-  }
-  return { accessKeyId, secretAccessKey };
-}
-
 function getClient(): S3Client {
   if (client) return client;
   if (clientInitError) throw clientInitError;
   try {
-    const endpoint = process.env.STORAGE_ENDPOINT ?? "http://minio:9000";
-    const region = process.env.S3_REGION ?? "us-east-1";
-    const { accessKeyId, secretAccessKey } = storageCredentials();
+    const config = resolveStorageConfig(env());
+    if (!config) storageCredentials(); // 复用上面那条失败表达
+    const { endpoint, region, accessKeyId, secretAccessKey } = config!;
+    void storageCredentials;
     client = new S3Client({
       endpoint,
       region,
@@ -40,7 +68,7 @@ function getClient(): S3Client {
       forcePathStyle: true,
       requestHandler: new NodeHttpHandler({
         connectionTimeout: 10_000,
-        requestTimeout: 120_000,
+        requestTimeout: resolveStorageRequestTimeoutMs(env()),
       }),
     });
   } catch (err) {
@@ -50,19 +78,6 @@ function getClient(): S3Client {
   return client;
 }
 
-function getBucket(): string {
-  return process.env.S3_BUCKET ?? "ailearn-workspaces";
-}
-
-/**
- * Check if storage is configured (all required env vars present).
- */
-export function isStorageConfigured(): boolean {
-  return Boolean(
-    (process.env.MINIO_ACCESS_KEY && process.env.MINIO_SECRET_KEY)
-    || (process.env.MINIO_ROOT_USER && process.env.MINIO_ROOT_PASSWORD),
-  );
-}
 
 const EXT_FROM_MIME: Record<string, string> = {
   "image/png": "png",

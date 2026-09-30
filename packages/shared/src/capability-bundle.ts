@@ -7,7 +7,7 @@ import { z } from "zod";
  * 零消费者（bundle 分组、依赖边、原子包含、状态/配置/快照、`createCapabilityConfig`、
  * `CapabilityApiViewV1`）。真正门控路由的是 15 支 `COMPANION_*` / `CARD_*` 环境变量旗标
  * （见 `docs/feature-flag-inventory.md`），两边互不映射，而
- * `docs/plans/learning-companion/01-7-feature-flags-capability-bundles.md` 把这套称作
+ * `（原据 learning-companion/01-7-feature-flags-capability-bundles.md，2026-09-29 已归档）把这套称作
  * 「单一事实来源」——声明与执行分了家。按 `AGENTS.md` 删掉那 32 个。
  *
  * 留下的 id **不是死的**：`desktop-ipc-contracts.ts:1013` 用 `[...CAPABILITY_IDS,

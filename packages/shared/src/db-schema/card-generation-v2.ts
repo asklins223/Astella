@@ -28,7 +28,7 @@ import {
   check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { EXPOSURE_KINDS_V2 } from "../learning-card-v2-contracts.ts";
+import { EXPOSURE_KINDS_V2 } from "../contracts/learning-card-v2-contracts.ts";
 import { users } from "./identity.ts";
 import { notes, noteVersions } from "./note.ts";
 import { learningRuns } from "./learning-runs.ts";
@@ -639,7 +639,7 @@ export const cardGenerationRunOutboxV2 = pgTable(
 );
 
 // ─── 0138 补表（§18 审查修复） ─────────────────────────────────────────────
-// 依据 docs/evidence/learning-companion/20-learning-card-v2-implementation-review.md；
+// 依据 原据 20-learning-card-v2-implementation-review.md（2026-09-29 已归档）；
 // 与迁移 0138_card_generation_v2_review_fixes.sql 保持一致。
 
 /** §18.1 cardContentEpoch 单一权威（server-owned；单调递增由服务层 CAS 保证）。 */

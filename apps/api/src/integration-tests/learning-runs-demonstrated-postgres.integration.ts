@@ -32,7 +32,7 @@ const { submitArtifact, getRunPublicView } = await import(
   "../modules/learning-runs/run-service.ts"
 );
 const { runLearningRunProcessingTick } = await import(
-  "../modules/learning-runs/run-processing-tick.ts"
+  "../modules/learning-runs/processing/run-processing-tick.ts"
 );
 
 /**

@@ -123,6 +123,12 @@ export function gatewayErrorMessage(error: unknown): string {
       return "这次讲解里有几处说法，这篇笔记里没有依据，所以没有展示。换个问法多半就能过，或先继续读笔记。";
     case "teaching_model_unconfigured":
       return "讲解模型还没有配置，已有内容保留；配置好 AI 服务后再来。";
+    case "note_artifact_too_long":
+      return "这篇笔记太长，伴星没有截掉正文来假装讲全篇。选中一小段原文后，可以再做互动讲解。";
+    case "note_artifact_stale":
+      return "笔记版本刚刚变化，这份互动讲解没有贴到新正文上。重新打开当前笔记后再试。";
+    case "note_artifact_generation_failed":
+      return "伴星刚才没能做完互动讲解，原文和已有记录都还在；可以稍后重试。";
     case "teaching_in_progress":
       return "这一轮正在准备讲解，稍后刷新就能接回；不用重复生成。";
     case "round_budget_exhausted":

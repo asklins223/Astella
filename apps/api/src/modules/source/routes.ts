@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { requireSession, requireOwner } from "../identity/middleware.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { parseBody } from "../../lib/validate.ts";
 import {
   sourceCreateSchema,
@@ -28,7 +28,7 @@ export async function sourceRoutes(app: FastifyInstance) {
   app.post("/sources", { preHandler: [requireOwner] }, async (req) => {
     const body = parseBody(app, sourceCreateSchema, req.body);
     return withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => createSource(
         transaction,
         req.session.workspaceId,
@@ -46,7 +46,7 @@ export async function sourceRoutes(app: FastifyInstance) {
     const params = uuidParamSchema.safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => reparseSource(transaction, params.data.id, req.session.workspaceId, req.session.userId),
     );
     if (!result.ok) {
@@ -62,7 +62,7 @@ export async function sourceRoutes(app: FastifyInstance) {
   app.get("/sources", async (req) => {
     const opts = parseQuery(app, sourceListQuerySchema, req.query);
     return withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => listSources(transaction, req.session.workspaceId, { ...opts, userId: req.session.userId }),
     );
   });
@@ -75,7 +75,7 @@ export async function sourceRoutes(app: FastifyInstance) {
     const params = uuidParamSchema.safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => getSource(transaction, req.params.id, req.session.workspaceId),
     );
     if (!result) return reply.code(404).send({ error: "not_found", message: "资源不存在" });
@@ -89,7 +89,7 @@ export async function sourceRoutes(app: FastifyInstance) {
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
     const body = parseBody(app, sourceUpdateSchema, req.body);
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => updateSource(
         transaction,
         req.params.id,
@@ -107,7 +107,7 @@ export async function sourceRoutes(app: FastifyInstance) {
     const params = uuidParamSchema.safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => deleteSource(transaction, req.params.id, req.session.workspaceId),
     );
     if (!result) return reply.code(404).send({ error: "not_found", message: "资源不存在" });
@@ -121,7 +121,7 @@ export async function sourceRoutes(app: FastifyInstance) {
     const params = uuidParamSchema.safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => restoreSource(transaction, req.params.id, req.session.workspaceId),
     );
     if (!result.ok) return reply.code(404).send({ error: "not_found", message: "资源不存在" });
@@ -136,7 +136,7 @@ export async function sourceRoutes(app: FastifyInstance) {
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
     const force = req.query?.force === "true";
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => createNoteFromSource(
         transaction,
         req.params.id,
@@ -172,7 +172,7 @@ export async function sourceRoutes(app: FastifyInstance) {
     const params = uuidParamSchema.safeParse(req.params);
     if (!params.success) return reply.code(400).send({ error: "invalid_id_format", message: "无效的 id 格式" });
     const result = await withWorkspaceTransaction(
-      { workspaceId: req.session.workspaceId, userId: req.session.userId },
+      scopeOfSession(req.session),
       (transaction) => listNotesBySource(transaction, req.params.id, req.session.workspaceId, req.session.userId),
     );
     if (!result) return reply.code(404).send({ error: "not_found", message: "资源不存在" });

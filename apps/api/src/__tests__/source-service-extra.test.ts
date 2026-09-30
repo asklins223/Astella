@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { MAX_PENDING_JOBS_PER_WORKSPACE, SourceStatus } from "@ailearn/shared";
+import { SourceStatus } from "@ailearn/shared";
+import { MAX_PENDING_JOBS_PER_WORKSPACE } from "@ailearn/shared/job-queue-limits";
 import { jobs } from "@ailearn/shared/db-schema/job";
 import { noteBlocks, notes, noteVersions, sources } from "@ailearn/shared/db-schema/note";
 import {

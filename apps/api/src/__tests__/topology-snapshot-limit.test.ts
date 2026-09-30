@@ -4,7 +4,7 @@ import {
   TOPOLOGY_SNAPSHOT_DEFAULT_COLLECTION_LIMIT,
   TOPOLOGY_SNAPSHOT_MAX_COLLECTION_LIMIT,
   resolveTopologySnapshotCollectionLimit,
-} from "../modules/understanding-v3/topology-repository.ts";
+} from "../modules/note-deepening/topology-repository.ts";
 
 // 稳定 P0-2（2026-09-15 审计）：拓扑快照单集合上限护栏的解析点。
 // 这里只覆盖"旋钮怎么解析"；"截断是否真的发生、是否确定"由

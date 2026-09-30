@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createGracefulShutdown } from "../lib/graceful-shutdown.ts";
+import { createGracefulShutdown } from "../server/graceful-shutdown.ts";
 
 test("graceful-shutdown: server 和 database 同时失败抛 AggregateError", async () => {
   const controller = createGracefulShutdown({

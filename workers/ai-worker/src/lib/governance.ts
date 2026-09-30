@@ -175,7 +175,7 @@ export interface AIGovernanceContext {
  *   5. For unknown capabilities, fall back based on task complexity:
  *      high → agent_turn provider, low → text_generation provider.
  *
- * @see docs/plans/provider-registry-refactor.md §3.4
+ * @see 原据 provider-registry-refactor.md §3.4（2026-09-29 已归档）
  */
 export function resolveProviderForTask(
   ctx: AIGovernanceContext,

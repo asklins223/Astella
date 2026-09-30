@@ -23,6 +23,7 @@
 import { sql } from "drizzle-orm";
 import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
 import type { WorkerTransaction } from "../db.ts";
+import { ACTIVE_LEARNING_RUN_PHASES } from "@ailearn/shared/learning-run-contracts";
 
 /** 候选池：最近更新的 N 篇可见笔记。够用且恒定，不为它开窗口函数。 */
 const NEAREST_CANDIDATE_LIMIT = 60;
@@ -70,7 +71,8 @@ export interface NoteRunRow extends Record<string, unknown> {
   note_id: string;
 }
 
-const ACTIVE_RUN_PHASES = ["preparing", "active", "assessing", "checkpoint", "committing", "paused"] as const;
+// P0-16：与 api 侧（surface-service / topology-repository）逐字相同的 6 档副本。
+// 现从 shared 的唯一来源派生；此前它是裸 `as const`，漏改一档不会报编译错。
 
 /**
  * 这篇笔记上有哪些轮次还没结束——按"目标有 origin 指向这篇笔记"关联。
@@ -88,7 +90,7 @@ export async function findNoteRuns(
   const grouped = new Map<string, NoteRunRow[]>();
   if (noteIds.length === 0) return grouped;
   const idList = sql.join(noteIds.map((id) => sql`${id}::uuid`), sql`, `);
-  const phaseList = sql.join(ACTIVE_RUN_PHASES.map((phase) => sql`${phase}`), sql`, `);
+  const phaseList = sql.join(ACTIVE_LEARNING_RUN_PHASES.map((phase) => sql`${phase}`), sql`, `);
   const rows = await tx.execute<NoteRunRow>(sql`
     SELECT r.id, r.phase, o.note_id
     FROM learning_runs r

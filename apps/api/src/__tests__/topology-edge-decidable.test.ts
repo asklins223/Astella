@@ -24,11 +24,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { relationEdgeIsDecidableV2 } from "../modules/understanding-v3/personal-relation-decision-service.ts";
+import { relationEdgeIsDecidableV2 } from "../modules/note-deepening/personal-relation-decision-service.ts";
 
 const REPO = resolve(import.meta.dirname, "..", "..");
 const REPO_SRC = readFileSync(
-  resolve(REPO, "src/modules/understanding-v3/topology-repository.ts"), "utf8",
+  resolve(REPO, "src/modules/note-deepening/topology-repository.ts"), "utf8",
 );
 /** 只判代码，不判注释（台账 §3 纪律：源码形状判据要判代码）。 */
 const CODE = REPO_SRC

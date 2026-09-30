@@ -30,14 +30,14 @@ import {
 import type {
   LearningCardCandidateRevisionV2,
   CanonicalAnswerV2,
-} from "../card-generation-v2-contracts.ts";
+} from "../contracts/card-generation-v2-contracts.ts";
 import type {
   GroundingCriticReportV2,
   CandidateEvidenceBindingPlanV2,
   EvidenceBindingTargetUnitV2,
   EvidenceBindingRelationV2,
   EvidenceSupportStrengthV2,
-} from "../card-quality-v2-contracts.ts";
+} from "../contracts/card-quality-v2-contracts.ts";
 import type { SealedEvidenceEntryV2 } from "./evidence-seal-core.ts";
 import { CardGenerationPipelineErrorV2 } from "./evidence-seal-core.ts";
 

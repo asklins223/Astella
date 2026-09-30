@@ -14,13 +14,54 @@ import {
 } from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { logger } from "./logger.ts";
+import {
+  resolveStorageBucket as resolveStorageBucketShared,
+  resolveStorageCredentials as resolveStorageCredentialsShared,
+  isStorageConfigured as isStorageConfiguredShared,
+  resolveStorageRequestTimeoutMs as resolveStorageRequestTimeoutMsShared,
+  type StorageEnv,
+} from "@ailearn/shared/storage-config";
 
-function getRequiredEnv(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
+/**
+ * 下面四个薄壳把判定委托给 `@ailearn/shared/storage-config`（2026-09-29，P2-16）。
+ *
+ * 此前它们与 `workers/ai-worker` 那份**各写一次**。真正重复的是"配置怎么读"，
+ * 而凭证回退链那条规则尤其只有一处才安全：用 `||`（空串按未配置处理）而不是 `??`。
+ * 改一处不改另一处，就会出现"报告已配置、构造客户端却拿到空串凭证"，
+ * 而那只在生产里显形。
+ *
+ * 薄壳保留本进程特有的失败表达（api 侧给一条合并信息，worker 侧逐变量）；
+ * S3 客户端仍由本文件构造——`@aws-sdk/client-s3` 不是 shared 的依赖，不该被拖进去。
+ */
+const env = (): StorageEnv => process.env;
+
+function storageCredentials(): { accessKeyId: string; secretAccessKey: string } {
+  const resolved = resolveStorageCredentialsShared(env());
+  if (!resolved) {
+    throw new Error(
+      "Missing storage credentials: MINIO_ACCESS_KEY/MINIO_SECRET_KEY "
+      + "(or MINIO_ROOT_USER/MINIO_ROOT_PASSWORD)",
+    );
   }
-  return value;
+  return resolved;
+}
+
+/**
+ * 存储是否已配置（readiness 探针用：据此决定上传端点是否可用）。
+ *
+ * 2026-09-29（P2-16）：判定委托给 ，
+ * 与 worker 侧共用同一条规则。
+ */
+export function isStorageConfigured(): boolean {
+  return isStorageConfiguredShared(env());
+}
+
+function getBucket(): string {
+  return resolveStorageBucketShared(env());
+}
+
+function storageRequestTimeoutMs(): number {
+  return resolveStorageRequestTimeoutMsShared(env());
 }
 
 // Lazy initialization — env vars are read on first actual use, not at module
@@ -40,23 +81,6 @@ function getRequiredEnv(name: string): string {
 //   （STORAGE_REQUEST_TIMEOUT_MS 可配，默认 120s）。
 let client: S3Client | null = null;
 let clientInitError: Error | null = null;
-
-function storageCredentials(): { accessKeyId: string; secretAccessKey: string } {
-  // 2026-08-12 review：`||` 而非 `??`——MINIO_ACCESS_KEY="" 空串时回退 root，
-  // 与 isStorageConfigured 的 truthy 语义一致（空串按未配置处理）。
-  const accessKeyId = process.env.MINIO_ACCESS_KEY?.trim()
-    || getRequiredEnv("MINIO_ROOT_USER");
-  const secretAccessKey = process.env.MINIO_SECRET_KEY?.trim()
-    || getRequiredEnv("MINIO_ROOT_PASSWORD");
-  return { accessKeyId, secretAccessKey };
-}
-
-function storageRequestTimeoutMs(): number {
-  const raw = process.env.STORAGE_REQUEST_TIMEOUT_MS?.trim();
-  if (!raw) return 120_000;
-  const value = Number(raw);
-  return Number.isFinite(value) && value >= 1_000 ? value : 120_000;
-}
 
 function getClient(): S3Client {
   // 如果已有客户端实例，直接返回
@@ -87,21 +111,6 @@ function getClient(): S3Client {
   }
 }
 
-function getBucket(): string {
-  return process.env.S3_BUCKET ?? "ailearn-workspaces";
-}
-
-/**
- * Check if storage is configured (all required env vars present).
- * Used by the readiness check to determine if upload endpoints should be available.
- */
-export function isStorageConfigured(): boolean {
-  // 2026-08-12：独立凭证与 root 凭证任一齐全即视为已配置
-  return Boolean(
-    (process.env.MINIO_ACCESS_KEY && process.env.MINIO_SECRET_KEY)
-    || (process.env.MINIO_ROOT_USER && process.env.MINIO_ROOT_PASSWORD),
-  );
-}
 
 export interface UploadResult {
   etag: string;

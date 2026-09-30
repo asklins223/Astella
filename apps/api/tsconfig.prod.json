@@ -1,0 +1,43 @@
+{
+  // 2026-09-29（P1-21 构建面审计）：**生产镜像构建门禁**专用的 tsconfig。
+  //
+  // 为什么需要这一份：apps/api/Dockerfile 的 prod stage 跑 `npm run typecheck`，
+  // 而 tsconfig.json 的 include 是 `src/**/*.ts`——**包含测试源码**。于是一个
+  // 测试文件的类型错误会直接打挂生产镜像构建。测试代码既不发布、也不进入
+  // dist/server.cjs（esbuild 只从 src/server.ts 打包），它不是发布门禁。
+  //
+  // 为什么不改 tsconfig.json：那份是本地 `npm run typecheck` 与 `make verify`
+  // （Makefile:133）用的。改它的 include 等于**永久放弃**对测试代码的类型检查，
+  // 是倒退。这里只把"生产镜像门禁"这一个用途切出来，其余一切保持原样。
+  //
+  // 与 .dockerignore 的分工（两者互相独立，删掉任何一边另一边仍然成立）：
+  //   .dockerignore      管体积——测试源码不进镜像（api 3.7MB + shared 740KB …）
+  //   本文件             管判据——生产门禁不因**测试**的类型错误而红
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    // 下面四种形状与 .dockerignore 的四条排除一一对应。**新增测试形状时两边同步**，
+    // 否则会出现"测试进了镜像但门禁看不见它"（或反之）的半吊子状态。
+    "src/**/*.test.ts",
+    "src/**/*.integration.ts",
+    "src/__tests__",
+    "src/integration-tests",
+    // ⚠️ 唯一的例外，必须与 .dockerignore 里那一条保持一致。
+    // `note-round-learning-live.ts` 是**真模型冒烟脚本**而不是生产代码：它要求
+    // NOTE_ROUND_LIVE=1、要求库名匹配 ailearn_note39_* 的**一次性可弃库**，没有任何
+    // npm script / Makefile 入口，也没有任何模块 import 它（server.ts 到不了它）。
+    // 但它第 9 行 import 了 `integration-tests/helpers/pure-v2-workspace-fixture.ts`。
+    // tsc 的 `exclude` 只过滤 include 的 glob、**挡不住被 import 拉进来的文件**，所以
+    // 不显式排除它，它会把整条 fixture 依赖链（helpers/pure-v2-workspace-fixture.ts →
+    // helpers/v2-card-fixture.ts）拖进生产门禁——fixture 的类型错误照样能打挂镜像构建；
+    // 同样的问题在 .dockerignore 侧表现为：镜像里留着这个脚本，它的 import 指向一个
+    // 已被排除的目录（悬空 import）。两处一起排除，两边才真正对齐。
+    // 根治办法（**不在本次改动范围内**）：把这个冒烟脚本连同 fixture 依赖搬出 src/，
+    // 或让它不依赖测试夹具。届时删掉这两行即可。
+    "src/scripts/note-round-learning-live.ts"
+  ]
+}

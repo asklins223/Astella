@@ -18,7 +18,7 @@ import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { isArtifactId } from "../shared/artifact-frame";
 import { assembleArtifactDocument } from "./artifact-surface";
-import { DesktopGatewayFailure } from "./desktop-gateway";
+import { DesktopGatewayFailure } from "./desktop-gateway-failure";
 import type { GatewayErrorCode } from "@ailearn/shared/desktop-ipc-contracts";
 
 export interface ArtifactStoreDeps {

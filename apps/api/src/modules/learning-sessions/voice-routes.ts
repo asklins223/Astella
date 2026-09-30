@@ -15,13 +15,12 @@
  */
 
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
 import { parseBody } from "../../lib/validate.ts";
 import { Readable } from "node:stream";
 import { requireAiConsent } from "../identity/ai-consent-gate.ts";
 import { requireSession } from "../identity/middleware.ts";
-import { CompanionConversationError } from "../companion-conversation/turn-service.ts";
-import { setCompanionSegmentWarmHook } from "../companion-conversation/companion-events.ts";
+import { CompanionConversationError } from "../companion-conversation/turn/turn-service.ts";
+import { setCompanionSegmentWarmHook } from "../companion-conversation/turn/companion-events.ts";
 import { assertSafeTtsInput, DEFAULT_VOICE_PROFILE } from "./voice-tts-policy.ts";
 import { edgeTtsSynthesizeStream, EdgeTtsError } from "./voice-providers/edge-tts.ts";
 import { stripVoiceExpressionTags } from "@ailearn/shared/voice-expression-tags";
@@ -43,27 +42,30 @@ import {
   companionVoiceSpeakSegmentRequestV2Schema,
 } from "@ailearn/shared/companion-voice-contracts";
 import { siliconFlowTranscribe, SiliconFlowAsrError } from "./voice-providers/siliconflow-asr.ts";
-import { currentApiWorkspaceTransaction } from "../../db/client.ts";
+import { currentApiWorkspaceTransaction, scopeOfSession } from "../../db/client.ts";
 import {
   COMPANION_RATE_LIMITS,
   companionRateLimit,
   companionRateLimitReply,
-} from "../companion-conversation/companion-rate-limit.ts";
-
-/** §6.10 Companion 语音限流（per (workspace,user)）。达限写 429 并返回 false。 */
-function rateLimitVoice(reply: { code(statusCode: number): { send(body: unknown): unknown }; send(body: unknown): unknown }, requestId: string, key: string, limit: number, windowMs: number): boolean {
-  const result = companionRateLimit({ key, limit, windowMs });
-  if (result.allowed) return true;
-  companionRateLimitReply(reply, requestId, result.retryAfterSeconds);
-  return false;
-}
+} from "../../lib/companion-rate-limit.ts";
 import {
   recordCompanionTtsSynthOutcome,
   synthesizeCompanionTtsSegment,
   recordCompanionTtsPlaybackOutcome,
   transcribeCompanionDialogueAudio,
 } from "./companion-voice-service.ts";
+import { isCompanionDialogueEnabled } from "../../config/learning-companion-flags.ts";
+import { z } from "zod";
+import { buildCompanionErrorBody } from "../../lib/error-envelope.ts";
 
+
+/** §6.10 Companion 语音限流（per (workspace,user)）。达限写 429 并返回 false。 */
+async function rateLimitVoice(reply: { code(statusCode: number): { send(body: unknown): unknown }; send(body: unknown): unknown }, requestId: string, key: string, limit: number, windowMs: number): Promise<boolean> {
+  const result = await companionRateLimit({ key, limit, windowMs });
+  if (result.allowed) return true;
+  companionRateLimitReply(reply, requestId, result.retryAfterSeconds);
+  return false;
+}
 const ttsBodySchema = z.object({
   /** 净化题面纯文本（服务端再校验一次 SSML/URL/脚本） */
   text: z.string().min(1).max(2000),
@@ -151,7 +153,7 @@ export function audioMagicMatchesDeclaration(audio: Buffer, filename: string, mi
 
 function rejectDisabledCompanionVoice(reply: { code(statusCode: number): { send(body: unknown): unknown } }, flag: string): boolean {
   if (
-    process.env.COMPANION_DIALOGUE_V1_ENABLED === "true" &&
+    isCompanionDialogueEnabled() &&
     process.env[flag] === "true"
   ) return false;
   reply.code(404).send({
@@ -211,7 +213,7 @@ export async function voiceRoutes(app: FastifyInstance) {
   // 客户端 abort HTTP（上游连接中断）并递增 audio fence。
   app.post("/voice/tts/stream", { preHandler: [requireSession, requireAiConsent] }, async (req, reply) => {
     if (rejectDisabledCompanionVoice(reply, "COMPANION_STREAMING_VOICE_V1_ENABLED")) return;
-    if (!rateLimitVoice(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:tts`, COMPANION_RATE_LIMITS.ttsPerMinute.limit, COMPANION_RATE_LIMITS.ttsPerMinute.windowMs)) return;
+    if (!(await rateLimitVoice(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:tts`, COMPANION_RATE_LIMITS.ttsPerMinute.limit, COMPANION_RATE_LIMITS.ttsPerMinute.windowMs))) return;
     const parsed = companionTtsStreamRequestV1Schema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return reply.code(400).send({
@@ -420,16 +422,15 @@ export async function voiceRoutes(app: FastifyInstance) {
       const session = req.session!;
       // 这一整轮分段朗读用同一身：逐段重读偏好会让一次回复里的各段音色不一致
       // （中途另一次会话改了设置就会出现），听起来像她忽男忽女。
-      if (!rateLimitVoice(reply, req.id, `${session.workspaceId}:${session.userId}:tts`, COMPANION_RATE_LIMITS.ttsPerMinute.limit, COMPANION_RATE_LIMITS.ttsPerMinute.windowMs)) return;
+      if (!(await rateLimitVoice(reply, req.id, `${session.workspaceId}:${session.userId}:tts`, COMPANION_RATE_LIMITS.ttsPerMinute.limit, COMPANION_RATE_LIMITS.ttsPerMinute.windowMs))) return;
       // 预热命中就直接给字节：这一段已经在服务端合成过（或正在合成），**不再合成第二遍**。
       // 命中只影响"谁来等这一次合成"，不影响鉴权、限流与审计（预热那条路自己记过 outcome）。
       const warmed = await takeWarmCompanionSegment(parsed.data.segmentId);
       if (warmed && warmed.statusCode === 200 && warmed.audio) {
         // 预热那一刻没记账（那时还没人要这段音频）。现在客户端真的来取了，
         // 才补一条 `stage='synth'`：耗时/引擎/字节数从缓存里带回来，读数不失真。
-        await recordCompanionTtsSynthOutcome({
-          workspaceId: session.workspaceId,
-          userId: session.userId,
+        await recordCompanionTtsSynthOutcome({ ...scopeOfSession(session),
+userId: session.userId,
           ref: {
             conversationId: parsed.data.conversationId,
             runId: parsed.data.runId,
@@ -448,9 +449,8 @@ export async function voiceRoutes(app: FastifyInstance) {
           .send(Buffer.from(warmed.audio));
       }
       const selection = await resolveSelectionForSynthesis(session, req.log);
-      const result = await synthesizeCompanionTtsSegment({
-        workspaceId: session.workspaceId,
-        userId: session.userId,
+      const result = await synthesizeCompanionTtsSegment({ ...scopeOfSession(session),
+userId: session.userId,
         ref: {
           conversationId: parsed.data.conversationId,
           runId: parsed.data.runId,
@@ -479,7 +479,7 @@ export async function voiceRoutes(app: FastifyInstance) {
     // 2026-09 后端审查修复：普通朗读此前**完全没有限流**（只有 companion
     // 分支有），任何已认证用户可无界驱动共享 edge-tts 容器的合成调用，挤占
     // 所有用户的语音通道。与 companion 分支/transcribe/tts-stream 保持一致。
-    if (!rateLimitVoice(reply, req.id, `${req.session!.workspaceId}:${req.session!.userId}:tts`, COMPANION_RATE_LIMITS.ttsPerMinute.limit, COMPANION_RATE_LIMITS.ttsPerMinute.windowMs)) return;
+    if (!(await rateLimitVoice(reply, req.id, `${req.session!.workspaceId}:${req.session!.userId}:tts`, COMPANION_RATE_LIMITS.ttsPerMinute.limit, COMPANION_RATE_LIMITS.ttsPerMinute.windowMs))) return;
     // 净化校验（拒绝 SSML/URL/
     // 隐藏提示/非法 voice profile；DEFAULT_VOICE_PROFILE 通过 allowlist）。
     assertSafeTtsInput(body.text, DEFAULT_VOICE_PROFILE);
@@ -528,10 +528,9 @@ export async function voiceRoutes(app: FastifyInstance) {
     }
     const session = req.session!;
     // 与合成同一配额：一段一条，重试多出来的那几条本来也该被同一扇门挡住。
-    if (!rateLimitVoice(reply, req.id, `${session.workspaceId}:${session.userId}:tts`, COMPANION_RATE_LIMITS.ttsPerMinute.limit, COMPANION_RATE_LIMITS.ttsPerMinute.windowMs)) return;
-    await recordCompanionTtsPlaybackOutcome({
-      workspaceId: session.workspaceId,
-      userId: session.userId,
+    if (!(await rateLimitVoice(reply, req.id, `${session.workspaceId}:${session.userId}:tts`, COMPANION_RATE_LIMITS.ttsPerMinute.limit, COMPANION_RATE_LIMITS.ttsPerMinute.windowMs))) return;
+    await recordCompanionTtsPlaybackOutcome({ ...scopeOfSession(session),
+userId: session.userId,
       ref: {
         conversationId: parsed.data.conversationId,
         runId: parsed.data.runId,
@@ -551,8 +550,8 @@ export async function voiceRoutes(app: FastifyInstance) {
   // 请求：multipart/form-data，字段 file=<音频>（mp3/wav/m4a；SenseVoice 支持）。
   // 响应：{ text, asrProvider, asrModel }（逐字 transcript；ASR 失败 → 4xx/5xx fail closed）。
   app.post("/voice/transcribe", { preHandler: [requireSession, requireAiConsent] }, async (req, reply) => {
-    if (!rateLimitVoice(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:asr`, COMPANION_RATE_LIMITS.asrPerMinute.limit, COMPANION_RATE_LIMITS.asrPerMinute.windowMs)) return;
-    if (!rateLimitVoice(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:asr:hour`, COMPANION_RATE_LIMITS.asrPerHour.limit, COMPANION_RATE_LIMITS.asrPerHour.windowMs)) return;
+    if (!(await rateLimitVoice(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:asr`, COMPANION_RATE_LIMITS.asrPerMinute.limit, COMPANION_RATE_LIMITS.asrPerMinute.windowMs))) return;
+    if (!(await rateLimitVoice(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:asr:hour`, COMPANION_RATE_LIMITS.asrPerHour.limit, COMPANION_RATE_LIMITS.asrPerHour.windowMs))) return;
     let part;
     try {
       part = await req.file();
@@ -628,15 +627,14 @@ export async function voiceRoutes(app: FastifyInstance) {
         });
       }
       try {
-        const result = await transcribeCompanionDialogueAudio({
-          workspaceId: req.session.workspaceId,
-          userId: req.session.userId,
+        const result = await transcribeCompanionDialogueAudio({ ...scopeOfSession(req.session),
+userId: req.session.userId,
           audio,
           filename,
           asrProvider: {
             transcribe: (buf, fn) => siliconFlowTranscribe(buf, fn, {
               apiKey: process.env.SILICONFLOW_API_KEY,
-              scope: { workspaceId: req.session.workspaceId, userId: req.session.userId },
+              scope: scopeOfSession(req.session),
               currentActiveTransaction: currentApiWorkspaceTransaction,
             }),
           },
@@ -650,13 +648,11 @@ export async function voiceRoutes(app: FastifyInstance) {
           .send(result.body);
       } catch (err) {
         if (err instanceof CompanionConversationError) {
-          return reply.code(err.statusCode).send({
-            version: 1,
-            error: err.code,
-            message: err.message,
-            recoverable: true,
-            requestId: req.id,
-          });
+          // 注意：这处**原来不脱敏**（5xx 也回 err.message）。收口时保持原样——
+          // 改成脱敏会改变这一条的行为，那是另一个决定，不该顺手带上。
+          return reply.code(err.statusCode).send(
+            buildCompanionErrorBody(err, { recoverable: true, requestId: req.id }, { maskServerErrors: false }),
+          );
         }
         throw err;
       }
@@ -665,7 +661,7 @@ export async function voiceRoutes(app: FastifyInstance) {
     try {
       const result = await siliconFlowTranscribe(new Uint8Array(audio), filename, {
         apiKey: process.env.SILICONFLOW_API_KEY,
-        scope: { workspaceId: req.session.workspaceId, userId: req.session.userId },
+        scope: scopeOfSession(req.session),
         currentActiveTransaction: currentApiWorkspaceTransaction,
       });
       return reply.send({

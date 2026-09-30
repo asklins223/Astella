@@ -13,6 +13,7 @@ import {
   AI_CONSENT_REQUIRED_CODE,
 } from "@ailearn/shared";
 import type { JobPayloadFor } from "@ailearn/shared/job-payload-contracts";
+import { clampLimit } from "../../lib/pagination-utils.ts";
 
 /**
  * 把当前请求 id 并入 job payload（设计 P1-15：跨进程 trace）。
@@ -29,6 +30,8 @@ function withTraceId<T extends Record<string, unknown>>(payload: T): T | (T & { 
 export interface CreateJobBaseInput {
   workspaceId: string;
   requestedBy: string;
+  /** Stable request identity for callers that need a terminal result to survive retries. */
+  idempotencyKey?: string;
   dedupe?: {
     /**
      * Payload field the dedupe probe matches on. Must be unique to the job's
@@ -97,6 +100,14 @@ function jobScheduling(type: JobType): { priority: number; resourceClass: string
       return { priority: 100, resourceClass: JobResourceClass.INTERACTIVE_AI };
     case JobType.PARSE_SOURCE:
       return { priority: 70, resourceClass: JobResourceClass.CARD_FOREGROUND };
+    case JobType.NOTE_OVERVIEW_GENERATE:
+      return { priority: 80, resourceClass: JobResourceClass.CARD_FOREGROUND };
+    case JobType.NOTE_ANNOTATION_EXPLAIN:
+      return { priority: 85, resourceClass: JobResourceClass.CARD_FOREGROUND };
+    case JobType.NOTE_DYNAMIC_ARTIFACT_GENERATE:
+      return { priority: 75, resourceClass: JobResourceClass.CARD_FOREGROUND };
+    case JobType.NOTE_EXPANSION_GENERATE:
+      return { priority: 75, resourceClass: JobResourceClass.CARD_FOREGROUND };
     case JobType.COMPANION_MEMORY_EXTRACT:
     case JobType.COMPANION_SUMMARIZER:
     case JobType.COMPANION_DAILY_SUMMARY:
@@ -139,6 +150,20 @@ export async function createJob(input: CreateJobInput) {
           hashtextextended(${`job-quota:${input.workspaceId}`}, 0)
         )
       `);
+      if (input.idempotencyKey) {
+        const existing = await tx.query.jobs.findFirst({
+          where: and(
+            eq(jobs.workspaceId, input.workspaceId),
+            eq(jobs.idempotencyKey, input.idempotencyKey),
+          ),
+        });
+        if (existing) {
+          if (existing.type !== input.type || existing.requestedBy !== input.requestedBy) {
+            throw new Error("job idempotency key is already bound to another request");
+          }
+          return existing;
+        }
+      }
       if (input.dedupe) {
         const existing = await tx.query.jobs.findFirst({
           where: and(
@@ -176,6 +201,7 @@ export async function createJob(input: CreateJobInput) {
           status: JobStatus.PENDING,
           priority: scheduling.priority,
           resourceClass: scheduling.resourceClass,
+          idempotencyKey: input.idempotencyKey ?? null,
         })
         .returning();
       return job;
@@ -193,7 +219,7 @@ export async function listJobs(workspaceId: string, userId: string, opts?: { lim
       const rows = await tx.query.jobs.findMany({
         where: eq(jobs.workspaceId, workspaceId),
         orderBy: (j, { desc }) => [desc(j.scheduledAt)],
-        limit: Math.max(1, Math.min(100, opts?.limit ?? 50)),
+        limit: clampLimit(opts?.limit, 50, 100),
       });
       // R-006: 脱敏 — 不返回 payload 中的敏感字段（question/userAnswer/userId）和完整 lastError
       return rows.map((j) => ({

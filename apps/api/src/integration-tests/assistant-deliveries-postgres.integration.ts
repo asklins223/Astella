@@ -26,7 +26,7 @@ const {
   ackDelivery,
   listInbox,
   listDeliveryTimeline,
-} = await import("../modules/companion-conversation/delivery-service.ts");
+} = await import("../modules/companion-conversation/delivery/delivery-service.ts");
 
 after(async () => {
   await sql.end({ timeout: 2 });

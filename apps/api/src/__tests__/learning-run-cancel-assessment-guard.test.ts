@@ -16,24 +16,55 @@
  *     一起——而 §5.5 要求它们是三个独立动作里的两个。
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..");
-const SERVICE_FILE = join(REPO_ROOT, "apps/api/src/modules/learning-runs/run-service.ts");
+const RUN_DIR = join(REPO_ROOT, "apps/api/src/modules/learning-runs");
+// 2026-09-30（P2-2）：`applyAction` 与它的私有依赖搬进了 `run-action.ts`。
+// 判据的对象是「取消这条路径只走 cancel-assessment 那个出口」，**不是它写在哪个文件里**。
+// 范围 = 承载这条契约的**那两个**文件；不要读到整个目录——那会把 `RATE_LIMITED`
+// 这类与本契约无关的字面量也吸进来。
+const service = codeOnly(
+  ["run-service.ts", "run-action.ts"]
+    .map((n) => readFileSync(join(RUN_DIR, n), "utf8"))
+    .join("\n"),
+);
 const AVAIL_FILE = join(REPO_ROOT, "apps/api/src/modules/learning-runs/run-action-availability.ts");
 const SCHEMA_FILE = join(REPO_ROOT, "packages/shared/src/db-schema/learning-runs.ts");
 const MIGRATION_FILE = join(REPO_ROOT, "apps/api/src/db/migrations/0301_learning_assessment_cancelled.sql");
-const CONTRACTS_FILE = join(REPO_ROOT, "packages/shared/src/learning-run-contracts.ts");
+const CONTRACTS_FILE = join(REPO_ROOT, "packages/shared/src/contracts/learning-run-contracts.ts");
 const ROUTES_FILE = join(REPO_ROOT, "apps/api/src/modules/learning-runs/run-routes.ts");
-const SURFACE_FILE = join(REPO_ROOT, "apps/desktop-client/src/renderer/src/components/surfaces/learning-run-surface.tsx");
+const SURFACE_DIR = join(REPO_ROOT, "apps/desktop-client/src/renderer/src/components/surfaces/run");
+const SURFACE_FILE = join(SURFACE_DIR, "learning-run-surface.tsx");
+
+/**
+ * run 域（`surfaces/run/`）这一族的源码。
+ *
+ * 2026-09-30：桌面端把 run 界面按关注点分文件之后，`actionRequestFor`
+ * 与 `isExitAction` 搬进了兄弟文件（`learning-run-copy.tsx` 等），
+ * 只读 `learning-run-surface.tsx` 就会在**它已经不在那儿**的时候报红。
+ *
+ * **但不能就此把断言放宽成「整个域里出现过就算」**——同一个域里
+ * `isExitAction` 与 `actionLinks` 都带着 `cancel_assessment` 这句，
+ * 量宽了就会在真缺的时候给假绿（本守卫自己的注释写明了这一点，
+ * 第一版就是这么被变异③④当场戳穿的）。
+ * 所以规矩是：**范围放宽，锚点收紧**——下面那些断言仍然钉在
+ * 具体形状上（`action.kind === "cancel_assessment"` 那一行、
+ * `case "cancel_assessment": return "…"` 那一处），不是钉「出现过」。
+ */
+const RUN_DOMAIN_FILES = readdirSync(SURFACE_DIR)
+  .filter((n) => /\.(tsx|ts)$/.test(n) && !/\.(test|spec)\./.test(n));
+const runDomainFiles = RUN_DOMAIN_FILES;
+const RUN_DOMAIN_SOURCE = RUN_DOMAIN_FILES
+  .map((n) => readFileSync(join(SURFACE_DIR, n), "utf8"))
+  .join("\n");
 
 /** 剥掉注释：源码形状判据要判代码。 */
 function codeOnly(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 }
-const service = codeOnly(readFileSync(SERVICE_FILE, "utf8"));
 
 /** `cancel_assessment` 那个 case 的函数体。 */
 function cancelCase(): string {
@@ -41,6 +72,30 @@ function cancelCase(): string {
   assert.ok(at > 0, "run-service 里读不到 cancel_assessment 那一档（判据空转）");
   const next = service.indexOf('\n    case "', at + 1);
   return service.slice(at, next === -1 ? service.length : next);
+}
+
+/**
+ * run 域里某个函数里 `case "cancel_assessment":` **那一档分支**的原文。
+ *
+ * 两级收紧，各对应一个实测出来的假绿：
+ *  ① 先按**函数**切片——`RUN_DOMAIN_SOURCE` 是兄弟文件首尾接起来的，
+ *     在拼接文本上断言会**跨文件**匹配到下一个文件里的 `assessmentId`。
+ *  ② 再按**case 分支**切片——只按函数切还不够：`actionRequestFor` 里
+ *     `case "cancel_assessment":` 之后 160 字符内**还有第二个** `assessmentId`
+ *     （在别的分支里），所以把这一档真的改坏，断言照样绿。
+ *     只切到「下一个 `case "` 为止」，断言才真正钉在这一档上。
+ */
+function cancelCaseIn(name: string): string {
+  for (const file of runDomainFiles) {
+    const text = readFileSync(join(SURFACE_DIR, file), "utf8");
+    const fn = text.indexOf(`function ${name}(`);
+    if (fn < 0) continue;
+    const at = text.indexOf('case "cancel_assessment":', fn);
+    if (at < 0) continue;
+    const next = text.indexOf('case "', at + 1);
+    return text.slice(at, next === -1 ? text.length : next);
+  }
+  return "";
 }
 
 test("不变量②：「迟到报告不采纳」由数据库执法，不靠每处 UPDATE 记得带条件", () => {
@@ -156,15 +211,20 @@ test("执法点②：isV2ActionAllowed 的 switch 有这一档（不穷尽的 sw
 });
 
 test("执法点③④：屏上真的有这颗按钮（白名单 ＋ 请求映射 ＋ 出口那一排）", () => {
-  const surface = readFileSync(SURFACE_FILE, "utf8");
+  // 范围是 run 域这一族（见 RUN_DOMAIN_SOURCE 的注释：范围放宽、锚点收紧）；
+  // 断言仍然钉在具体形状上，不是钉「cancel_assessment 出现过」。
+  const surface = RUN_DOMAIN_SOURCE;
   // ③ actionLinks 的白名单式 filter：漏一档＝整条链接被丢掉。
   // **判据必须钉那一行本身**，不能只量 `action.kind === "cancel_assessment"` 出现过——
   // `isExitAction` 里也有同一句，量宽了就会在白名单仍然缺着的时候给出假绿
   // （这正是本刀第一版的写法，变异③④当场戳穿）。
   assert.match(surface, /snapshot\.allowedActions\.filter\(\(action\) => action\.kind === "cancel_assessment"\)/,
     "actionLinks 那几行 filter 没有把 cancel_assessment 接进来：屏上根本没有那颗按钮");
-  // actionRequestFor：不接就是发出去一个 undefined 的 action
-  assert.match(surface, /case "cancel_assessment":[\s\S]{0,160}assessmentId/,
+  // actionRequestFor：不接就是发出去一个 undefined 的 action。
+  // **这一条必须按函数切片断言**——它在拼接后的域文本上会跨文件误匹配（见 fnBody 的注释）。
+  const requestFor = cancelCaseIn("actionRequestFor");
+  assert.ok(requestFor.length > 0, "run 域里读不到 actionRequestFor 的 cancel_assessment 那一档（判据空转）");
+  assert.match(requestFor, /case "cancel_assessment":[\s\S]{0,160}assessmentId/,
     "actionRequestFor 没有这一档：按下去发出去的 action 是 undefined");
   // §5.5「三个独立动作」：出口那一排要同时承载，不能是一颗
   assert.ok(!/const exitAction = actionLinks\.find\(/.test(surface),

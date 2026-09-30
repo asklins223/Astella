@@ -3,7 +3,11 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "../../db/client.ts";
 import { users, workspaces } from "@ailearn/shared/db-schema/identity";
-import { loginWithPassword, registerWithoutInvite, switchWorkspace, createCollaborativeWorkspace, listUserWorkspaces, joinWorkspaceByInviteToken, leaveWorkspace, JoinWorkspaceError, getAIPrivacySettings, updateAIConsent, updateAIDataPolicy, listAIAuditLog, revokeSession, resetRecoveredUserPassword, SESSION_TTL_MS, updateUserProfile, renameWorkspace, changePassword, revokeAllSessionsForUser, transferWorkspaceOwnership, dissolveWorkspace, previewWorkspaceDissolve } from "./service.ts";
+import { getAIPrivacySettings, listAIAuditLog, updateAIConsent, updateAIDataPolicy } from "../identity/ai-consent-service.ts";
+import { changePassword, loginWithPassword, revokeAllSessionsForUser, revokeSession } from "../identity/session-service.ts";
+import { createCollaborativeWorkspace, dissolveWorkspace, previewWorkspaceDissolve, registerWithoutInvite, renameWorkspace, resetRecoveredUserPassword } from "../identity/workspace-lifecycle-service.ts";
+import { joinWorkspaceByInviteToken, leaveWorkspace, listUserWorkspaces, switchWorkspace, transferWorkspaceOwnership, updateUserProfile } from "../identity/workspace-membership-service.ts";
+import { JoinWorkspaceError, SESSION_TTL_MS } from "./service.ts";
 import { parseBody } from "../../lib/validate.ts";
 import { requireSession, requireOwner, isWorkspaceOwner, getRequestCredential } from "./middleware.ts";
 import { clampLimit, clampOffset, parseQuery } from "../../lib/pagination.ts";
@@ -26,7 +30,7 @@ import {
   createRateLimitStoreFromEnv,
   RateLimiter,
   type RateLimitStore,
-} from "./rate-limit.ts";
+} from "../../lib/rate-limit-store.ts";
 import { buildDesktopCapabilityProjection } from "./capability-projection.ts";
 
 export const loginSchema = z.object({
@@ -59,9 +63,11 @@ function positiveIntegerEnv(name: string, fallback: number): number {
   return value;
 }
 
-// Development remains dependency-free. Production defaults to the shared
-// PostgreSQL store, while AUTH_RATE_LIMIT_STORE can explicitly select either
-// backend for controlled test/staging environments.
+// 2026-09-29（P0-5）：默认走跨副本正确的 Postgres store——只有显式写
+// `AUTH_RATE_LIMIT_STORE=memory` 才用进程内实现。理由见
+// `createRateLimitStoreFromEnv` 的注释：旧的"NODE_ENV 不是字面量 production
+// 就退回进程内"会让 staging / 拼错的 `prod` 静默拿到按副本放大的爆破限额。
+// 想在无库的本机跑，显式设 `AUTH_RATE_LIMIT_STORE=memory`。
 const defaultRateLimitStore = createRateLimitStoreFromEnv();
 const cleanupTimer = setInterval(() => {
   void defaultRateLimitStore.sweep?.(Date.now());
@@ -227,7 +233,7 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
             personalWorkspaceId: { type: ["string", "null"] },
             // 0261：服务端边界令牌。**必须在响应 schema 里列出来**——Fastify 会按
             // schema 裁剪响应体，漏了这一行就等于 handler 里加了字段但客户端永远
-            // 收不到（实测过：`/auth/me` 少了它，而 `/auth/capabilities/v1` 有）。
+            // 收不到（实测过：`/auth/me` 少了它，而 `/v1/auth/capabilities` 有）。
             workspaceEpoch: { type: "integer", minimum: 1 },
           },
           additionalProperties: false,
@@ -267,7 +273,7 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
     };
   });
 
-  app.get("/auth/capabilities/v1", { preHandler: [requireSession] }, async (req) => {
+  app.get("/v1/auth/capabilities", { preHandler: [requireSession] }, async (req) => {
     const role = isWorkspaceOwner(req.session) ? "owner" : "member";
     // 伴星能否外发由**请求者本人**的 AI 同意与数据策略决定（0237 起为账号级）。
     // 读不到时按 fail-closed 交给投影处理。

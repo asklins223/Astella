@@ -11,7 +11,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireSession } from "../identity/middleware.ts";
-import { withWorkspaceTransaction } from "../../db/client.ts";
+import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { companionPetProfileChangedTotal } from "../../lib/metrics.ts";
 import {
   getPetProfile,
@@ -22,11 +22,7 @@ import {
   PetProfileCasConflictError,
   type PetPersonaPreset,
 } from "./pet-profile-service.ts";
-
-function isPetProfileEnabled(): boolean {
-  return process.env.COMPANION_PET_PROFILE_V1 === "true"
-    || process.env.COMPANION_JOURNEY_V2 === "true";
-}
+import { isPetProfileEnabled } from "../../config/learning-companion-flags.ts";
 
 const petProfileBodySchema = z.object({
   // §12.1.3：revision 用于 CAS 乐观锁，防止并发覆盖。
@@ -59,7 +55,7 @@ export async function petProfileRoutes(app: FastifyInstance) {
     "/companion/pet-profile",
     { preHandler: [requireSession] },
     async (req, reply) => {
-      const scope = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+      const scope = scopeOfSession(req.session);
       const profile = await withWorkspaceTransaction(scope, (tx) => getPetProfile(tx, scope));
       const preset: PetPersonaPreset | null = profile?.presetId
         ? getPresetById(profile.presetId)
@@ -79,7 +75,7 @@ export async function petProfileRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const body = petProfileBodySchema.safeParse(req.body ?? {});
       if (!body.success) throw app.httpErrors.badRequest("pet profile body 非法");
-      const scope = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+      const scope = scopeOfSession(req.session);
       // §12.1.3：CAS 乐观锁——检查与写入必须在同一事务内，防止 TOCTOU 竞态。
       // 之前用两个独立事务（先 getPetProfile 校验，再 upsertPetProfile 写入），
       // 两个事务之间的窗口期允许并发请求绕过 CAS 检查导致覆盖。
@@ -129,7 +125,7 @@ export async function petProfileRoutes(app: FastifyInstance) {
     "/companion/pet-profile/reset",
     { preHandler: [requireSession] },
     async (req, reply) => {
-      const scope = { workspaceId: req.session.workspaceId, userId: req.session.userId };
+      const scope = scopeOfSession(req.session);
       await withWorkspaceTransaction(scope, (tx) => resetPetProfile(tx, scope));
       // §9.9：记录人格变更指标（重置也是一次变更）
       try {

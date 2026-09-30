@@ -29,7 +29,39 @@ interface LocalMigration {
   hash: string;
   folderMillis: number;
   path: string;
+  /** 该迁移是否声明为**不可包在事务里**跑（见 `NO_TRANSACTION_DIRECTIVE`）。 */
+  noTransaction: boolean;
 }
+
+/**
+ * 文件级指令：`-- migrate:no-transaction`。
+ *
+ * ## 为什么需要它
+ *
+ * runner 默认把每条迁移包在 `sql.begin` 里（见下方"每条迁移独立事务"那段说明）。
+ * 而 Postgres 的 `CREATE INDEX CONCURRENTLY` / `DROP INDEX CONCURRENTLY` /
+ * `ALTER TYPE ... ADD VALUE` **不能**在事务块里执行——
+ * 报 `ERROR: CREATE INDEX CONCURRENTLY cannot run inside a transaction block`。
+ *
+ * 也就是说：想给一张大表加索引而不锁写，就**只能**有这条路。
+ *
+ * ## 代价（写这条指令的人必须知道）
+ *
+ * 没有事务 = **半途失败会留下已执行的部分**。所以声明它的迁移必须
+ * **逐条幂等**：`IF NOT EXISTS` / `ON CONFLICT DO NOTHING` / 可重入的回填。
+ * 声明时用 `IF NOT EXISTS` 兜住最危险的那一类。
+ *
+ * ## 怎么写
+ *
+ * ```sql
+ * -- migrate:no-transaction
+ * CREATE INDEX CONCURRENTLY IF NOT EXISTS foo_idx ON bar (baz);
+ * ```
+ *
+ * 指令必须出现在文件**前几行**（这里按前 20 行找，避免注释里随口提到它也生效）。
+ */
+const NO_TRANSACTION_DIRECTIVE = /--\s*migrate:no-transaction\b/;
+const DIRECTIVE_SCAN_LINES = 20;
 
 function readMigrationFilesLocal(migrationsFolder: string): LocalMigration[] {
   const journalPath = resolve(migrationsFolder, "meta", "_journal.json");
@@ -48,6 +80,10 @@ function readMigrationFilesLocal(migrationsFolder: string): LocalMigration[] {
       hash: createHash("sha256").update(content).digest("hex"),
       folderMillis: entry.when,
       path: filePath,
+      // 只看前若干行：正文注释里提到"这条迁移不能进事务"不该被当成指令
+      noTransaction: content
+        .split("\n", DIRECTIVE_SCAN_LINES)
+        .some((line) => NO_TRANSACTION_DIRECTIVE.test(line)),
     };
   });
 }
@@ -135,15 +171,31 @@ async function main() {
       const tag = (migration as { path?: string }).path?.split("/").pop() ?? "?";
       const current = tag.replace(/^\d+_/, "").replace(/\.sql$/, "");
       try {
-        await sql.begin(async (tx) => {
+        if (migration.noTransaction) {
+          // ⚠️ 不包事务。半途失败会留下已执行的部分——所以走这条路��迁移
+          // **必须逐条幂等**。`__drizzle_migrations` 的插入放在**全部语句成功之后**，
+          // 于是重跑时它仍然算"未应用"，补跑靠的是迁移自己的幂等性。
+          console.warn(
+            `[migrate] ${current} 声明为 -- migrate:no-transaction，逐条直发（不进事务）`,
+          );
           for (const stmt of migration.sql) {
-            await tx.unsafe(stmt);
+            await sql.unsafe(stmt);
           }
-          await tx`
+          await sql`
             INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
             VALUES (${migration.hash}, ${migration.folderMillis})
           `;
-        });
+        } else {
+          await sql.begin(async (tx) => {
+            for (const stmt of migration.sql) {
+              await tx.unsafe(stmt);
+            }
+            await tx`
+              INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
+              VALUES (${migration.hash}, ${migration.folderMillis})
+            `;
+          });
+        }
         appliedNames.push(current);
       } catch (error) {
         failedMigration = current;

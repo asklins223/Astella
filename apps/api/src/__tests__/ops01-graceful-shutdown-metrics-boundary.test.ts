@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { createGracefulShutdown } from "../lib/graceful-shutdown.ts";
+import { createGracefulShutdown } from "../server/graceful-shutdown.ts";
 import {
   registry,
   httpRequestsTotal,

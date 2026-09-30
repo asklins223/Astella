@@ -44,16 +44,16 @@ function scoped<T>(
 
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
 const { runLearningRunProcessingTick, closeStructuredSolutionSql } = await import(
-  "../modules/learning-runs/run-processing-tick.ts"
+  "../modules/learning-runs/processing/run-processing-tick.ts"
 );
 const { ensureCompanionInbox } = await import(
-  "../modules/companion-conversation/companion-conversations-service.ts"
+  "../modules/companion-conversation/turn/companion-conversations-service.ts"
 );
 const { clearContinuousHistory } = await import(
-  "../modules/companion-conversation/continuous-history-service.ts"
+  "../modules/companion-conversation/memory/continuous-history-service.ts"
 );
 const { upsertMemory, listMemories, deleteMemory } = await import(
-  "../modules/companion-conversation/memory-service.ts"
+  "../modules/companion-conversation/memory/memory-service.ts"
 );
 const { updateCompanionAccountState } = await import("../modules/companion-shell/service.ts");
 

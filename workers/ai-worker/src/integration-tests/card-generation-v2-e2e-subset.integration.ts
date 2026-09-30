@@ -528,7 +528,7 @@ test("C23+C25：activation 幂等重放同 receipt + 恰一 canonical mapping + 
   const snapshotId = snapshots[0].evidence_snapshot_id;
 
   const { computeCandidateEvidenceBindingPlanHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+    "@ailearn/shared/card-generation-v2-hashing"
   );
   // §14.3 targetUnitBindings 形状：targetUnit{kind,id} + evidenceSnapshotId + hash；
   // kind ∈ {answer, rubric, relation, learning_support}（DB CHECK）；
@@ -560,7 +560,7 @@ test("C23+C25：activation 幂等重放同 receipt + 恰一 canonical mapping + 
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+    "@ailearn/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,
@@ -691,7 +691,7 @@ test("C45：开启复习那一档 → 恰一条待处理安排，回执报库里
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+    "@ailearn/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,
@@ -1165,7 +1165,7 @@ test("C24：非法 schema / hash mismatch → fail closed（0 低质激活）", 
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+    "@ailearn/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,
@@ -1229,7 +1229,7 @@ test("C30：archive Card/Objective → lifecycle archived + epoch 前移，历�
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+    "@ailearn/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,
@@ -1331,7 +1331,7 @@ test("C5：LearningRun PREPARE 冻结 LearningTargetSnapshotV2（真实 DB + 幂
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+    "@ailearn/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,
@@ -1503,7 +1503,7 @@ test("§17.5 step 17：post-activation 投影消费者——幂等对账台账 +
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+    "@ailearn/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,
@@ -1619,7 +1619,7 @@ test("C18：reveal 激活卡 → exposure-first（先持久化再返回答案）
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+    "@ailearn/shared/card-generation-v2-hashing"
   );
   const clientReviewHash = computeClientReviewHashV2({
     runId,
@@ -1690,7 +1690,7 @@ test("C18：reveal 激活卡 → exposure-first（先持久化再返回答案）
   // 写"正好相等"就是一条会随机红的断言。60 秒仍然抓得住真正的错法：有人把这一处退回写死的
   // 12/48 小时，差的是小时级，不是秒级。
   const { PRE_RUN_REVEAL_COOLDOWN_MS, PRE_RUN_REVEAL_POLICY_VERSION } = await import(
-    "../../../../packages/shared/src/card-generation-v2-contracts.ts"
+    "@ailearn/shared/card-generation-v2-contracts"
   );
   const revealed = reminders[0] as {
     status: string;
@@ -2213,7 +2213,7 @@ async function saveFirstCandidate(
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+    "@ailearn/shared/card-generation-v2-hashing"
   );
   const receipt = await activateCardCandidatesV2(
     { workspaceId: WORKSPACE_ID, userId: USER_ID },
@@ -2255,7 +2255,7 @@ async function saveFirstCandidate(
 }
 
 async function cooldownFromSharedContract(): Promise<{ cooldownMs: number; policyVersion: string }> {
-  const contracts = await import("../../../../packages/shared/src/card-generation-v2-contracts.ts");
+  const contracts = await import("@ailearn/shared/card-generation-v2-contracts");
   return {
     cooldownMs: contracts.PRE_RUN_REVEAL_COOLDOWN_MS as number,
     policyVersion: contracts.PRE_RUN_REVEAL_POLICY_VERSION as string,
@@ -2437,7 +2437,7 @@ test("C49：复用的目标被暂不安排 ⇒ 新卡落上去也不排期（§1
     "../../../../apps/api/src/modules/card-generation-v2/activation-service.ts"
   );
   const { computeClientReviewHashV2 } = await import(
-    "../../../../packages/shared/src/card-generation-v2-hashing.ts"
+    "@ailearn/shared/card-generation-v2-hashing"
   );
 
   /** 跑一发：建 run → 走管线 → 强制作到可激活 → 激活并交回 receipt。 */

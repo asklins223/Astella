@@ -27,18 +27,6 @@
   display: none;
 }
 
-/* V2's stable frame is deliberately quiet. The older room effects must not
-   flash for even one frame while the new scene is mounting. */
-.desktop-app[data-home-scene-variant="v2"] :is(
-  .window-atmosphere,
-  .lamp-local-pool,
-  .home-window-light,
-  .home-room-life,
-  .companion-invite-label
-) {
-  display: none !important;
-}
-
 .desktop-app[data-home-scene-variant="v2"] .companion-presence[data-surface="room"] .companion-scene-anchor {
   width: clamp(214px, 17vw, 286px);
   height: clamp(300px, 42vh, 400px);
@@ -48,15 +36,6 @@
   width: 100%;
   height: 100%;
   filter: none;
-}
-
-/* The whole visible companion is the drag surface in V2. The old body-shaped
- * polygon made natural grabs miss and felt indistinguishable from a disabled drag. */
-.desktop-app[data-home-scene-variant="v2"] .companion-presence[data-surface="room"] .window-live2d > button {
-  inset: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
-  clip-path: inset(0 round 18% 18% 8% 8%);
 }
 
 .desktop-app[data-home-scene-variant="v2"] .companion-presence[data-surface="room"] .companion-visual-shell::before {
@@ -354,6 +333,14 @@
   filter: blur(2px);
 }
 
+/* 纪念物（第一篇笔记 / 日历 / 罗盘）那几笔的共同外框。三个 `--*` 变体各自只管第一笔的
+   填充与描边，其余笔画（折角、墨线、圆环、印章）走下面那组公共规格；此前这个 `<g>`
+   自己没有任何规则，圆角笔画的接头用 SVG 默认的 miter，在这种折线物件上会戳出尖角。 */
+.home-v2-keepsake__shape {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .home-v2-keepsake__shape--note > path:first-child,
 .home-v2-keepsake__shape--calendar > path:first-child {
   fill: #eed9a9;
@@ -530,24 +517,12 @@
 .home-v2-object[data-object-state="attention"] .home-v2-object__label { color: #ffd9a4; }
 .home-v2-object[data-object-state="magic"] .home-v2-object__label { color: #a9e4d2; }
 
-/* Registered against the clean 1672 × 941 isometric cutaway. The targets are
-   intentionally larger than their painted objects while their stable frame is
-   completely transparent. */
-.home-v2-object--desk-book { left: 1.8%; top: 18%; width: 22%; height: 34%; }
-.home-v2-object--magic-catalog { left: 73.5%; top: 12%; width: 25%; height: 42%; }
-.home-v2-object--window-stars { left: 33%; top: 2.5%; width: 34%; height: 30%; }
-.home-v2-object--rest-cushion { left: 81%; top: 55%; width: 18%; height: 34%; }
-
 .home-v2-objects[data-active-zone="desk"] .home-v2-object:not([data-zone="desk"]),
 .home-v2-objects[data-active-zone="shelf"] .home-v2-object:not([data-zone="shelf"]),
 .home-v2-objects[data-active-zone="window"] .home-v2-object:not([data-zone="window"]),
 .home-v2-objects[data-active-zone="rest"] .home-v2-object:not([data-zone="rest"]) {
   pointer-events: none;
-}
-
-.home-v2-wide-return:focus-visible,
-.home-v2-compact-nav button:focus-visible,
-.home-v2-catalog :is(button, summary):focus-visible {
+}.home-v2-compact-nav button:focus-visible, .home-v2-catalog :is(button, summary):focus-visible{
   outline: 3px solid var(--focus);
   outline-offset: 3px;
 }
@@ -1188,11 +1163,6 @@
   .desktop-app[data-home-scene-variant="v2"] .companion-presence[data-surface="room"] .companion-scene-anchor {
     width: min(168px, 34vw);
     height: min(220px, 48vh);
-  }
-
-  .desktop-app[data-home-scene-variant="v2"] .companion-presence[data-surface="room"] > .companion-whisper {
-    width: min(280px, calc(100vw - 24px));
-    max-height: calc(100dvh - 24px);
   }
 
   .home-v2-hud { display: none; }

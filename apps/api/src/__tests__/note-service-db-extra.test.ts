@@ -96,6 +96,16 @@ function createMockExecutor(config: MockConfig = {}): any {
     select: (_fields: any) => ({
       from: (_table: any) => chainable(selectResult[selectIdx++] ?? []),
     }),
+    // 2026-09-29：`note/shelf-state.ts:167` 的 `noteShelfStatesByNoteId` 用的是
+    // drizzle 的 `selectDistinctOn`（"每篇笔记只取一行"的去重读法），而这个桩只有
+    // `select`，于是走进 `listNotes` 就抛 "executor.selectDistinctOn is not a function"。
+    //
+    // 形状与 `select` 相同、共用同一条结果队列：两者在 drizzle 里是同级的读法，
+    // 出现在同一条链上时按调用先后取下一项。**不新增队列**——那会让每个既有用例的
+    // 下标全部错位。
+    selectDistinctOn: (_fields: any) => ({
+      from: (_table: any) => chainable(selectResult[selectIdx++] ?? []),
+    }),
     query: {
       notes: {
         findFirst: async () => notesFindFirstQueue[notesFindFirstIdx++],

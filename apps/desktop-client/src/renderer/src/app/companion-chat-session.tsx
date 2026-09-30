@@ -1,3 +1,5 @@
+import { useCompanionPolls } from "./companion-chat-session-polls";
+import { useCompanionPageContext } from "./companion-chat-session-page";
 import {
   createContext,
   useCallback,
@@ -32,6 +34,7 @@ import {
   isCompanionConsentFailure,
 } from "./companion-consent-gate";
 import { subscribeCompanionFeed, truncateFeedText } from "../components/companion/companion-feed";
+import type { CompanionFeedNoteAnchor, CompanionNoteIntent } from "../components/companion/companion-feed";
 import {
   appendCompanionAgentNode,
   buildCompanionRunTraces,
@@ -219,6 +222,14 @@ export interface CompanionChatSession {
   readonly runTraces: readonly CompanionRunTrace[];
   /** 用户刚从业务页面划选或拖入的原文；由会话层持有，面板尚未挂载时也不会丢。 */
   readonly feedSelection: string | null;
+  /** 业务页面给出的起始问题；通过 autoSendRequestId 区分草稿与用户明确触发的动作。 */
+  readonly feedPrompt: string | null;
+  /** 与当前提问一同带入的原文位置；回复可由用户贴回此处。 */
+  readonly feedNoteAnchor: CompanionFeedNoteAnchor | null;
+  /** A note-level companion action started from the notebook page. */
+  readonly feedNoteIntent: CompanionNoteIntent | null;
+  /** A one-shot identity for a direct action; generic chat drafts do not auto-send. */
+  readonly autoSendRequestId: string | null;
   readonly navChips: readonly CompanionNavChip[];
   readonly proposalStates: Readonly<Record<string, CompanionProposalUiState>>;
   readonly mode: CompanionUiMode;
@@ -269,6 +280,8 @@ export interface CompanionChatSession {
   dismissLiveReply(): void;
   dismissRichReply(): void;
   dismissFeedSelection(): void;
+  dismissFeedNoteAnchor(): void;
+  dismissFeedNoteIntent(): void;
   setMode(mode: CompanionUiMode): void;
   dismissNavChip(id: string): void;
   decideProposal(proposalId: string, decision: "confirm" | "reject"): Promise<void>;
@@ -284,47 +297,7 @@ export interface CompanionChatSession {
  * 只有需要实体 id 的路由才在 switch 里各写一条。曾经 `today`/`settings` 在这里没有分支，
  * 于是服务端一句"已定位到今日页面"、她一句"到了"，而客户端那颗按钮根本不会渲染出来。
  */
-export function desktopRouteFromAgentRoute(route: CompanionAgentRouteEventV1["route"]): DesktopRouteV1 | null {
-  switch (route.kind) {
-    case "settings":
-      return route.section
-        ? { kind: "settings.section", section: route.section }
-        : companionPageRouteV2("settings");
-    case "source":
-      return route.sourceId
-        ? { kind: "source.detail", sourceId: route.sourceId }
-        : companionPageRouteV2("source");
-    case "note":
-      return { kind: "note.detail", noteId: route.noteId };
-    case "card":
-      return { kind: "objective.detail", objectiveId: route.objectiveId };
-    case "learning_run":
-      return { kind: "learningRun.detail", runId: route.runId };
-    case "home":
-    case "today":
-    case "note_library":
-    case "objective_library":
-    case "review":
-    case "search":
-    case "star_map":
-    case "conversation":
-      return companionPageRouteV2(route.kind);
-    default:
-      return null;
-  }
-}
 
-export function companionMessageText(message: CompanionMessageV1): string {
-  return message.blocks
-    .map((block) => {
-      if (block.type === "text") return block.text;
-      if (block.type === "code") return block.code;
-      if (block.type === "citation") return `[${block.label}]`;
-      return "";
-    })
-    .filter((value) => value.length > 0)
-    .join("\n");
-}
 
 /**
  * 把已授权的落点真正落到渲染层视图上（2026-09-19 用户实测修复）。
@@ -337,76 +310,8 @@ export function companionMessageText(message: CompanionMessageV1): string {
  * agent 路由能映射出的每种 DesktopRoute 都必须有落点；没有等价视图时返回
  * false，调用方如实报"跳不了"，不假装跳过了。
  */
-export async function applyRouteToRoom(route: DesktopRouteV1): Promise<boolean> {
-  const room = useRoomStore.getState();
-  switch (route.kind) {
-    case "room.home":
-      room.invoke("home");
-      return true;
-    case "room.today":
-      // 目录栏上「今日学习」那颗用的就是 continue（room-machine 把它解析成 study 页）。
-      room.invoke("continue");
-      return true;
-    case "review.queue":
-      room.invoke("review");
-      return true;
-    case "understanding.graph":
-      room.invoke("graph");
-      return true;
-    case "search.global":
-      room.invoke("search");
-      return true;
-    case "note.library":
-      room.invoke("open-notes");
-      return true;
-    case "objective.library":
-      room.invoke("open-objectives");
-      return true;
-    case "settings.section":
-      room.setSettingsSection(route.section);
-      room.invoke("open-settings");
-      return true;
-    case "source.library":
-      room.invoke("open-sources");
-      return true;
-    case "source.detail":
-      room.setActiveSourceId(route.sourceId);
-      room.invoke("open-source");
-      return true;
-    case "note.detail":
-      // 阅读页只按 noteId 读当前版本（NoteTargetRef 的契约），版本号如实留空。
-      room.setActiveNoteRef({ noteId: route.noteId, noteVersionId: null, mode: "read" });
-      room.setNoteReturnTo("library");
-      room.invoke("open-notebook");
-      return true;
-    case "learningRun.detail":
-      // 与 ReviewSurface / WorkspaceLibrarySurface 同一条入口：设 activeRunId **并且**
-      // 真正切页。只设 id 不会换页（Player 挂在任务视图那一页里，页面由 `invoke` 决定），
-      // 于是「前往」成了一次空转：两条 IPC 都成功、无报错、页面纹丝不动。
-      room.setActiveRunId(route.runId);
-      room.invoke("validate");
-      return true;
-    case "objective.detail":
-      room.setActiveObjectiveId(route.objectiveId);
-      room.invoke("open-objective");
-      return true;
-    case "companion.center":
-      room.setCompanionCenterTarget({
-        tab: route.tab ?? "memory",
-        ...(route.focusMemoryId ? { focusMemoryId: route.focusMemoryId } : {}),
-        ...(route.focusMessageId ? { focusMessageId: route.focusMessageId } : {}),
-      });
-      room.invoke("open-companion-center");
-      return true;
-    default:
-      return false;
-  }
-}
 
 /** 同一落点 + 同一文案 = 同一条提示（用于新 chip 让位旧 chip，防止同款堆叠）。 */
-function navChipSharesTarget(a: CompanionNavChip, b: CompanionNavChip): boolean {
-  return a.summary === b.summary && JSON.stringify(a.route) === JSON.stringify(b.route);
-}
 
 /**
  * 已经落进消息里的落点，chip 行就不要再显示一遍（方案 29 §4.8）。
@@ -418,48 +323,8 @@ function navChipSharesTarget(a: CompanionNavChip, b: CompanionNavChip): boolean 
  * 留在 chip 行上的于是只有两类：正在跑的这一轮（消息还没落库）、
  * 以及确认动作直接给出的落点（不经过工具，消息里自然也没有）。
  */
-export function navChipsStillOutsideMessages(
-  chips: readonly CompanionNavChip[],
-  messages: readonly CompanionMessageV1[],
-): CompanionNavChip[] {
-  const landed = new Set<string>();
-  for (const message of messages) {
-    for (const block of message.blocks) {
-      if (block.type === "nav") {
-        // 比映射**之后**的桌面路由：chip 存的就是这个形状，映射不到的两边都是 null。
-        landed.add(JSON.stringify(desktopRouteFromAgentRoute(block.route)));
-      }
-    }
-  }
-  if (landed.size === 0) return [...chips];
-  return chips.filter((chip) => !landed.has(JSON.stringify(chip.route)));
-}
 
 /** 搜索只能使用完整历史；网络失败或游标不前进都不能把部分数据报成“没有找到”。 */
-export async function readCompleteCompanionHistory(
-  baseline: number | null,
-  loadPage: (beforeSeq: number) => Promise<{
-    readonly items: readonly CompanionMessageV1[];
-    readonly hasMore: boolean;
-    readonly oldestSeq: number | null;
-  } | null>,
-): Promise<CompanionMessageV1[] | null> {
-  const older: CompanionMessageV1[] = [];
-  let beforeSeq = baseline;
-  try {
-    while (beforeSeq != null) {
-      const page = await loadPage(beforeSeq);
-      if (!page) return null;
-      older.push(...page.items);
-      if (!page.hasMore) break;
-      if (page.oldestSeq == null || page.oldestSeq >= beforeSeq) return null;
-      beforeSeq = page.oldestSeq;
-    }
-  } catch {
-    return null;
-  }
-  return older.sort((a, b) => a.seq - b.seq);
-}
 
 /**
  * 这条 409 是不是"会话里已经有活动 run"（而不是别的冲突）。
@@ -467,20 +332,11 @@ export async function readCompleteCompanionHistory(
  * 网关把所有 409 都归到 `conflict` 这一档，而 turn 提交在这个形状下只可能是
  * `RUN_ALREADY_ACTIVE` / `STALE_GENERATION`（幂等冲突用的是新键，撞不上）。
  */
-function isCompanionRunConflict(error: unknown): boolean {
-  return error instanceof RendererGatewayError && error.code === "conflict";
-}
 
 /**
  * 聊天语境下的失败文案。网关的通用文案是给学习流程写的——"这条学习状态已经发生变化"
  * 放在对话里读起来像另一个产品出了事，用户根本不知道"再发一次"能不能行。
  */
-function companionTurnErrorMessage(error: unknown): string {
-  if (isCompanionRunConflict(error)) {
-    return "上一条她还没说完，这条没能发出去。等她说完，或者先点停止。";
-  }
-  return gatewayErrorMessage(error);
-}
 
 /** SSE 认领回合的结果（`failed` 带错误码，用于区分"缺同意"这类可引导的失败）。 */
 type CompanionReplyStreamOutcome =
@@ -491,80 +347,16 @@ type CompanionReplyStreamOutcome =
   | { kind: "cancelled" }
   | { kind: "timeout" };
 
+// 纯函数（路由落点 / 文案 / nav chip 可见性 / 两个错误映射）在 `companion-chat-routing.ts`——
+// 它们一个 hook 都没有，留在 Provider 文件里只是当初图省事。
+// 本文件内部也要调其中几个，所以是「导入 + 再导出」。
+import { desktopRouteFromAgentRoute, companionMessageText, applyRouteToRoom, navChipSharesTarget, navChipsStillOutsideMessages, readCompleteCompanionHistory, isCompanionRunConflict, companionTurnErrorMessage } from "./companion-chat-routing";
+export { desktopRouteFromAgentRoute, companionMessageText, applyRouteToRoom, navChipSharesTarget, navChipsStillOutsideMessages, readCompleteCompanionHistory, isCompanionRunConflict, companionTurnErrorMessage } from "./companion-chat-routing";
+
 const CompanionChatContext = createContext<CompanionChatSession | null>(null);
 
-function bridgePageContext(input: {
-  hudPage: HudPageId;
-  activeRunId: string | null;
-  activeNoteId: string | null;
-  activeSourceId: string | null;
-  activeReviewScheduleId: string | null;
-  settingsSection: string;
-  readableView: PageReadableV1 | null;
-}): MainPageContextInputV2 {
-  // `credential_surface` 这一档**今天没有任何 HUD 页会产生**：`login`／`register` 两个
-  // HudPageId 死分支已删除（2026-09-24，39d W2-1——没有任何组件发布它们），而真实的
-  // 登录/注册屏由 `DesktopAccessGate` 在 HUD 之外渲染，不经过这条映射。
-  // 契约值本身与服务端那道裁剪**保留**（`companion-agent-runtime.ts:710`）：将来出现
-  // 应用内凭证面时，它仍是把关的那一层，不该因为今天没人用就一起删掉。
-  const sensitivity: MainPageContextInputV2["sensitivity"] = input.hudPage === "assessment"
-    ? "formal_assessment" as const
-    : "normal" as const;
-  const base: Pick<MainPageContextInputV2, "interactionState" | "capabilityHints" | "sensitivity" | "readableView"> = {
-    interactionState: input.hudPage === "note-edit"
-      ? "editing" as const
-      : input.hudPage === "assessment"
-        ? "formal_answer" as const
-        : input.hudPage === "generating"
-          ? "processing" as const
-          : "idle" as const,
-    capabilityHints: ["open_route"],
-    sensitivity,
-    // 可读内容原样发出：渲染层已不可能产生 `credential_surface`（见上），真正的裁剪
-    // 在服务端按 sensitivity 做（`companion-agent-runtime.ts:710`）——那一层没有动。
-    readableView: input.readableView ?? undefined,
-  };
-  if (input.hudPage === "today") return { ...base, routeRef: { kind: "today" }, pageKind: "today", entityRefs: [] };
-  if (input.hudPage === "sources") return { ...base, routeRef: { kind: "source" }, pageKind: "source", entityRefs: [] };
-  if (input.hudPage === "source-detail" && input.activeSourceId) {
-    return { ...base, routeRef: { kind: "source", sourceId: input.activeSourceId }, pageKind: "source", entityRefs: [{ kind: "source", sourceId: input.activeSourceId }] };
-  }
-  if (["note-read", "note-edit", "generating", "candidate"].includes(input.hudPage) && input.activeNoteId) {
-    return { ...base, routeRef: { kind: "note", noteId: input.activeNoteId }, pageKind: "note", entityRefs: [{ kind: "note", noteId: input.activeNoteId }] };
-  }
-  if (input.hudPage === "queue") {
-    return {
-      ...base,
-      routeRef: { kind: "review", ...(input.activeReviewScheduleId ? { scheduleId: input.activeReviewScheduleId } : {}) },
-      pageKind: "review",
-      entityRefs: input.activeReviewScheduleId ? [{ kind: "review_schedule", scheduleId: input.activeReviewScheduleId }] : [],
-    };
-  }
-  if (input.hudPage === "graph") {
-    return { ...base, routeRef: { kind: "star_map" }, pageKind: "star_map", entityRefs: [], capabilityHints: ["open_route", "graph.focus", "graph.present_route", "graph.restore"] };
-  }
-  if ((input.hudPage === "assessment" || input.hudPage === "result") && input.activeRunId) {
-    return { ...base, routeRef: { kind: "learning_run", runId: input.activeRunId }, pageKind: "learning_run", entityRefs: [{ kind: "learning_run", runId: input.activeRunId }] };
-  }
-  if (input.hudPage === "companion") return { ...base, routeRef: { kind: "conversation" }, pageKind: "conversation", entityRefs: [] };
-  if (input.hudPage === "notes") {
-    return { ...base, routeRef: { kind: "note_library" }, pageKind: "note", entityRefs: [] };
-  }
-  if (input.hudPage === "goals") {
-    return { ...base, routeRef: { kind: "objective_library" }, pageKind: "objective", entityRefs: [] };
-  }
-  if (input.hudPage === "search") {
-    return { ...base, routeRef: { kind: "search" }, pageKind: "other", entityRefs: [] };
-  }
-  if (input.hudPage === "settings") {
-    // 分区 id 直接沿用设置页那一套（词表在共享合同里）：以前这里把六个分区压成
-    // "privacy"/"accessibility" 两个界面上不存在的名字，她据此说不出你在哪一节。
-    const section = SETTINGS_SECTION_IDS_V2.find((id) => id === input.settingsSection);
-    return { ...base, routeRef: { kind: "settings", ...(section ? { section } : {}) }, pageKind: "settings", entityRefs: [] };
-  }
-  return { ...base, routeRef: { kind: "home" }, pageKind: "other", entityRefs: [] };
-}
-
+// 页面上下文由 `companion-chat-session-page.ts` 消费（它才是 `bridgePageContext` 的用武之地）。
+export { bridgePageContext } from "./companion-chat-session-bridge";
 export function useCompanionChat(): CompanionChatSession {
   const value = useContext(CompanionChatContext);
   if (!value) throw new Error("useCompanionChat must be used inside CompanionChatProvider");
@@ -572,27 +364,14 @@ export function useCompanionChat(): CompanionChatSession {
 }
 
 export function CompanionChatProvider({ children }: { readonly children: ReactNode }) {
-  const hudPage = useRoomStore((state) => state.hudPage);
-  const activeRunId = useRoomStore((state) => state.activeRunId);
-  const activeNoteId = useRoomStore((state) => state.activeNoteRef?.noteId ?? null);
-  const activeSourceId = useRoomStore((state) => state.activeSourceId);
-  const activeReviewScheduleId = useRoomStore((state) => state.activeReviewTarget?.scheduleId ?? null);
-  const settingsSection = useRoomStore((state) => state.settingsSection);
-  const pageReadableView = useRoomStore((state) => state.pageReadableView);
-  const workspaceScopeRevision = useRoomStore((state) => state.workspaceScopeRevision);
-  const pageInstanceIdRef = useRef(crypto.randomUUID());
-  useEffect(() => {
-    pageInstanceIdRef.current = crypto.randomUUID();
-  }, [activeRunId, workspaceScopeRevision]);
-  const brokerPageContext = useMemo(() => bridgePageContext({
-    hudPage,
-    activeRunId,
-    activeNoteId,
-    activeSourceId,
-    activeReviewScheduleId,
-    settingsSection,
-    readableView: pageReadableView?.view ?? null,
-  }), [activeNoteId, activeReviewScheduleId, activeRunId, activeSourceId, hudPage, settingsSection, pageReadableView]);
+  // 「他在哪一页、看着哪一条」——九条 store 订阅 + 页面实例 id + bridge 上下文，
+  // 收在 `useCompanionPageContext` 里：那不是聊天的职责，是「谁陪着他站在这一页」。
+  const {
+    hudPage, activeRunId, activeNoteId, activeNoteVersionId, activeSourceId,
+    activeReviewScheduleId, settingsSection, pageReadableView, workspaceScopeRevision,
+    pageInstanceIdRef, brokerPageContext,
+  } = useCompanionPageContext();
+  const [feedNoteIntent, setFeedNoteIntent] = useState<CompanionNoteIntent | null>(null);
   useEffect(() => {
     let cancelled = false;
     const timer = window.setTimeout(() => {
@@ -622,8 +401,19 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     if (hudPage === "today") return { pageKind: "today", sharing: "page_registered" };
     if (hudPage === "queue") return { pageKind: "review", sharing: "page_registered" };
     if (hudPage === "graph") return { pageKind: "star_map", sharing: "page_registered" };
+    if (feedNoteIntent) {
+      return {
+        pageKind: "note",
+        sharing: "page_registered",
+        noteId: feedNoteIntent.noteId,
+        noteVersionId: feedNoteIntent.noteVersionId,
+      };
+    }
+    if (hudPage === "note-read" && activeNoteId) {
+      return { pageKind: "note", sharing: "page_registered", noteId: activeNoteId, ...(activeNoteVersionId ? { noteVersionId: activeNoteVersionId } : {}) };
+    }
     return null;
-  }, [hudPage]);
+  }, [activeNoteId, activeNoteVersionId, feedNoteIntent, hudPage]);
 
   const resolveTurnContext = useCallback(async (epoch: number): Promise<CompanionPageContextV1 | null> => {
     if (hudPage !== "assessment" || !activeRunId) return pageContext;
@@ -646,7 +436,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       requestedCapability: "grounded_tutor",
       groundedTutorGrant: grant,
     };
-  }, [activeRunId, hudPage, pageContext]);
+  }, [activeRunId, feedNoteIntent, hudPage, pageContext]);
   const [phase, setPhase] = useState<CompanionChatPhase>("idle");
   const [failure, setFailure] = useState<string | null>(null);
   const [conversation, setConversation] = useState<CompanionChatConversationV1 | null>(null);
@@ -687,6 +477,9 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   /** 流式累积文本（appendFrom 断点续拼用；state 只负责触发渲染）。 */
   const draftRef = useRef("");
   const [feedSelection, setFeedSelection] = useState<string | null>(null);
+  const [feedPrompt, setFeedPrompt] = useState<string | null>(null);
+  const [feedNoteAnchor, setFeedNoteAnchor] = useState<CompanionFeedNoteAnchor | null>(null);
+  const [autoSendRequestId, setAutoSendRequestId] = useState<string | null>(null);
   const [proposalStates, setProposalStates] = useState<Record<string, CompanionProposalUiState>>({});
   const [navChips, setNavChips] = useState<CompanionNavChip[]>([]);
   const [streamCue, setStreamCue] = useState<(CharacterCuePayloadV1 & { readonly seq: number }) | null>(null);
@@ -771,6 +564,10 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     setDraft(null);
     setInterrupted(null);
     setFeedSelection(null);
+    setFeedPrompt(null);
+    setFeedNoteAnchor(null);
+    setAutoSendRequestId(null);
+    setFeedNoteIntent(null);
     setProposalStates({});
     setNavChips([]);
     setStreamCue(null);
@@ -785,7 +582,30 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   // 会话 Provider，而不能住在按需显示的输入气泡里。
   useEffect(() => {
     const unsubscribeFeed = subscribeCompanionFeed({
-      onFeed: (selection) => setFeedSelection(truncateFeedText(selection.text)),
+      onFeed: (selection) => {
+        setFeedSelection(truncateFeedText(selection.text));
+        setFeedPrompt(selection.initialPrompt ?? null);
+        setFeedNoteAnchor(selection.noteAnchor ?? null);
+        setAutoSendRequestId(selection.noteAnchor && selection.initialPrompt ? selection.requestId ?? null : null);
+        setFeedNoteIntent(null);
+        setLiveReply(null);
+        setRichReply(null);
+      },
+      onNoteIntent: (intent) => {
+        setFeedSelection(null);
+        setFeedNoteAnchor(null);
+        setFeedNoteIntent(intent);
+        setAutoSendRequestId(intent.requestId ?? null);
+        setFeedPrompt(intent.kind === "overview"
+          ? "先读这篇笔记，用白话说清 2–3 个重点；每个重点后引用一小句原文，方便我回去看。"
+          : intent.kind === "recall"
+            ? "陪我回想这篇笔记，先只问我一个问题，不要告诉我答案。"
+            : intent.kind === "recall_hint"
+              ? `针对“${intent.question ?? "刚才的问题"}”给我一点线索，先别揭晓答案。`
+              : "从这篇笔记往外多了解一些，给我几篇可选的新笔记草稿；让我挑过再保存。");
+        setLiveReply(null);
+        setRichReply(null);
+      },
       onOpenChat: () => setMode("conversation"),
     });
     const openConversation = () => setMode("conversation");
@@ -968,83 +788,11 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     return () => { cancelled = true; };
   }, [ensureConversation, mode, refreshMessages]);
 
-  // ── agent 导航 route 轮询 ─────────────────────────────────────────────
-  // 与抽屉同开同关：跳转 chip 只出现在抽屉里，常驻轮询没有必要。
-  useEffect(() => {
-    if (mode !== "history" || !conversation) return;
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const epoch = await requireWorkspaceEpoch();
-        // 补白轮询**不能走 unwrapGatewayResult**（2026-09-19 用户实测）：它对任何
-        // not-ok 都先 publishGateInvalidation 再 throw——`unsupported_contract`
-        // （主进程/合同还没签发这两个新通道时）会把整个工作区视图打回首页默认
-        // 态，catch 兜不住这个副作用。这里只读 result.ok，失败静默跳过。
-        const result = await window.ailearn.companion.chat.listAgentRoutes({
-          meta: createRequestMeta(epoch),
-          request: {
-            version: 1,
-            conversationId: conversation.id,
-            ...(routeCursorRef.current != null ? { afterSeq: routeCursorRef.current } : {}),
-          },
-        });
-        if (cancelled) return;
-        if (!result.ok) return;
-        const data = result.data;
-        if (routeCursorRef.current == null) {
-          routeCursorRef.current = Math.max(data.latestSeq, ...data.items.map((item) => item.seq), 0);
-          return;
-        }
-        routeCursorRef.current = Math.max(routeCursorRef.current, data.latestSeq);
-        if (data.items.length === 0) return;
-        pushNavChips(data.items.map<CompanionNavChip>((item) => ({
-          id: `evt:${item.seq}`,
-          summary: item.safeSummary,
-          route: desktopRouteFromAgentRoute(item.route),
-          ...(item.autoExecute ? { autoExecute: true } : {}),
-        })));
-      } catch {
-        // 轮询失败不打断聊天主链路。
-      }
-    };
-    void poll();
-    const timer = window.setInterval(() => void poll(), AGENT_ROUTE_POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [conversation, mode]);
-
-  // ── 过程留痕轮询（2026-09-19） ────────────────────────────────────────
-  // 跑在两个时刻：抽屉开着（要显示历史过程）与一轮正在跑（轨道要显示真实步数）。
-  // 与 agent-routes 同一节奏的低频轮询，失败不打断聊天主链路——它是补白，不是主链路。
-  const sending = phase === "sending";
-  useEffect(() => {
-    if (!conversation) return;
-    if (mode !== "history" && !sending) return;
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const epoch = await requireWorkspaceEpoch();
-        // 同上：补白轮询不走 unwrapGatewayResult，避免 not-ok 触发门禁全量重置。
-        const result = await window.ailearn.companion.chat.listRunNodes({
-          meta: createRequestMeta(epoch),
-          request: { version: 1, conversationId: conversation.id },
-        });
-        if (cancelled) return;
-        if (!result.ok) return;
-        setRunTraces(buildCompanionRunTraces(result.data.runs, result.data.items));
-      } catch {
-        // 只读补充信息：拿不到就维持上一次的快照，不把错误抛到气泡上。
-      }
-    };
-    void poll();
-    const timer = window.setInterval(() => void poll(), AGENT_ROUTE_POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [conversation, mode, sending, tracesRevision]);
+  // 两段低频补白轮询（agent 导航 route / 过程留痕）——它们**不是聊天主链路**，
+  // 失败静默跳过。收在 `useCompanionPolls` 里：性质写在文件名上，比埋在 Provider 中段好读。
+  useCompanionPolls({
+    conversation, mode, phase, routeCursorRef, pushNavChips, setRunTraces, tracesRevision,
+  });
 
   // ── 提案快照拉取 ──────────────────────────────────────────────────────
   /**
@@ -1847,7 +1595,16 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
 
   const dismissLiveReply = useCallback(() => setLiveReply(null), []);
   const dismissRichReply = useCallback(() => setRichReply(null), []);
-  const dismissFeedSelection = useCallback(() => setFeedSelection(null), []);
+  const dismissFeedSelection = useCallback(() => {
+    setFeedSelection(null);
+    setFeedPrompt(null);
+    setAutoSendRequestId(null);
+  }, []);
+  const dismissFeedNoteAnchor = useCallback(() => setFeedNoteAnchor(null), []);
+  const dismissFeedNoteIntent = useCallback(() => {
+    setFeedNoteIntent(null);
+    setAutoSendRequestId(null);
+  }, []);
   const dismissNavChip = useCallback((id: string) => {
     setNavChips((current) => current.filter((chip) => chip.id !== id));
   }, []);
@@ -1983,6 +1740,10 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     nodes,
     runTraces,
     feedSelection,
+    feedPrompt,
+    feedNoteAnchor,
+    feedNoteIntent,
+    autoSendRequestId,
     navChips,
     proposalStates,
     mode,
@@ -1997,6 +1758,8 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     dismissLiveReply,
     dismissRichReply,
     dismissFeedSelection,
+    dismissFeedNoteAnchor,
+    dismissFeedNoteIntent,
     setMode,
     dismissNavChip,
     decideProposal,
@@ -2013,11 +1776,17 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     dismissLiveReply,
     dismissRichReply,
     dismissFeedSelection,
+    dismissFeedNoteAnchor,
+    dismissFeedNoteIntent,
     dismissNavChip,
     dismissStopNotice,
     draft,
     failure,
     feedSelection,
+    feedPrompt,
+    feedNoteAnchor,
+    feedNoteIntent,
+    autoSendRequestId,
     fetchAllMessages,
     goToRoute,
     historyHasMore,

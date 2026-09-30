@@ -1,5 +1,5 @@
 import type { RoundPlanV1 } from "@ailearn/shared/note-learning-round-contracts";
-import { plainTextOfBlockV1, type TeachingExplainBlockV1 } from "./teaching-explain.ts";
+import { plainTextOfBlockV1, type TeachingExplainBlockV1 } from "./teaching/teaching-explain.ts";
 
 /** A reading route through saved material, never a grading rubric or a mastery claim. */
 export function suggestRoundQuestion(title: string, blocks: TeachingExplainBlockV1[]): string {

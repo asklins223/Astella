@@ -1,3 +1,4 @@
+// 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import {
   Fragment,
   useCallback,
@@ -39,7 +40,8 @@ import {
 import type { CompanionAgentPermissionLevel } from "@ailearn/shared/companion-agent-contracts";
 import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
 import type { CompanionMessageV1 } from "@ailearn/shared/companion-conversation-contracts";
-import { gatewayErrorMessage } from "../../app/desktop-client";
+import type { NoteAnnotationAnchorV1 } from "@ailearn/shared/note-annotation-contracts";
+import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import {
   companionMessageText,
@@ -95,6 +97,7 @@ import {
 } from "./companion-bubble-follow";
 import { COMPANION_BUBBLE_FRAME_INSET, companionBubbleClearance } from "./companion-bubble-clearance";
 import { plainCompanionBubbleText } from "./companion-markdown";
+import { beginNoteReplySaveAttempt, isReadyNoteReplyForSave, resolveNoteReplySaveTarget } from "./note-reply-save";
 import { useCompanionVoiceInput, type CompanionVoiceInput } from "./use-companion-voice-input";
 import { DIRECTORY_RAIL_MODE_EVENT, DIRECTORY_RAIL_STATE_EVENT } from "../DirectoryRail";
 import type { Rect } from "./companion-home-placement";
@@ -111,8 +114,6 @@ import {
 } from "./CompanionChatRecord";
 import { CompanionProposalChoice } from "./CompanionProposalChoice";
 import { CompanionRunTraceView } from "./CompanionRunTraceView";
-import "./companion-chat-record.css";
-import "./companion-hud.css";
 
 export interface CompanionHudAction {
   readonly id: string;
@@ -269,15 +270,317 @@ export function CompanionHud({
    * 它不自动消失：不出声是这一轮的属性，气泡在它就该在。
    */
   const [speechNotice, setSpeechNotice] = useState<string | null>(null);
+  const [annotationSaveState, setAnnotationSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [annotationSaveMessage, setAnnotationSaveMessage] = useState<string | null>(null);
+  const annotationSaveKeyRef = useRef<string | null>(null);
+  const annotationSaveTargetRef = useRef<string | null>(null);
+  const [recallSaveState, setRecallSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [recallSaveMessage, setRecallSaveMessage] = useState<string | null>(null);
+  const recallSaveKeyRef = useRef<string | null>(null);
+  const recallSaveTargetRef = useRef<string | null>(null);
+  const recallQuestionRequestRef = useRef<{ key: string; requestId: string } | null>(null);
+  const [expansionReplyMessageId, setExpansionReplyMessageId] = useState<string | null>(null);
+  const [expansionTaskState, setExpansionTaskState] = useState<"idle" | "starting" | "started" | "error">("idle");
+  const [expansionTaskMessage, setExpansionTaskMessage] = useState<string | null>(null);
+  const expansionTaskRequestRef = useRef<{ key: string; requestId: string } | null>(null);
+  const noteReplySaveAttemptRef = useRef<ReturnType<typeof beginNoteReplySaveAttempt> | null>(null);
   const micRef = useRef<HTMLButtonElement>(null);
   const moreControlRef = useRef<HTMLButtonElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const autoSendRequestRef = useRef<string | null>(null);
   /**
    * 显现驱动器（2026-09-19 字幕式朗读）：文本**到了多少**与**该露多少**是两件事，
    * 后者只由音频进度或阅读钟推进（见 `companion-reveal-driver`）。旧实现把前者当后者用
    * （草稿一到就设成草稿长度、终态一到又补满全文），于是"随朗读逐字出现"形同失效。
    */
   const revealDriverRef = useRef<CompanionRevealDriver | null>(null);
+
+  useEffect(() => {
+    if (chat.feedNoteIntent && chat.feedPrompt) {
+      setInput(chat.feedPrompt);
+      return;
+    }
+    if (chat.feedSelection && chat.feedPrompt) setInput((current) => current.trim() ? current : chat.feedPrompt!);
+  }, [chat.feedPrompt, chat.feedNoteIntent, chat.feedSelection]);
+
+  const saveReplyAsNoteAnnotation = useCallback(async () => {
+    const anchor = chat.feedNoteAnchor;
+    const reply = chat.liveReply;
+    if (!anchor || !reply || annotationSaveState === "saving" || annotationSaveState === "saved") return;
+    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    if (!api?.noteAnnotation) {
+      setAnnotationSaveState("error");
+      setAnnotationSaveMessage("暂时无法把这段解释贴回笔记。回复还在伴星对话里，可以稍后重试。");
+      return;
+    }
+    setAnnotationSaveState("saving");
+    setAnnotationSaveMessage(null);
+    try {
+      const annotation = unwrapGatewayResult(await api.noteAnnotation.write({
+        meta: createRequestMeta(),
+        noteId: anchor.noteId,
+        command: {
+          kind: "create",
+          anchor: anchor.anchor,
+          explanation: reply.text,
+          sourceMessageId: reply.messageId,
+        },
+      }));
+      if (!("annotationId" in annotation)) throw new Error("没有收到批注保存回执。");
+      window.dispatchEvent(new CustomEvent("ailearn:note-annotation-saved", {
+        detail: { noteId: anchor.noteId, annotation },
+      }));
+      setAnnotationSaveState("saved");
+      setAnnotationSaveMessage(annotation.versionState === "current"
+        ? "这段解释已贴回原句，之后还能从这里找回来。"
+        : "这段解释已留在旧版本记录里；笔记刚更新过，需要重新定位后才会贴到当前正文。");
+      chat.dismissFeedNoteAnchor();
+    } catch (error) {
+      setAnnotationSaveState("error");
+      setAnnotationSaveMessage(gatewayErrorMessage(error));
+    }
+  }, [annotationSaveState, chat]);
+
+  useEffect(() => {
+    const anchor = chat.feedNoteAnchor;
+    const reply = chat.liveReply;
+    const attempt = noteReplySaveAttemptRef.current;
+    const activeTarget = resolveNoteReplySaveTarget(anchor, chat.feedNoteIntent);
+    if (!anchor || !reply || attempt?.target.kind !== "annotation"
+      || !isReadyNoteReplyForSave(attempt, activeTarget, chat.phase, reply.messageId)) return;
+    noteReplySaveAttemptRef.current = null;
+    const key = `${anchor.noteId}:${reply.messageId}`;
+    if (annotationSaveKeyRef.current === key) return;
+    annotationSaveKeyRef.current = key;
+    setAnnotationSaveState("idle");
+    setAnnotationSaveMessage(null);
+    void saveReplyAsNoteAnnotation();
+  }, [chat.feedNoteAnchor, chat.liveReply, chat.phase, saveReplyAsNoteAnnotation]);
+
+  useEffect(() => {
+    if (!chat.feedNoteAnchor || chat.liveReply) return;
+    annotationSaveKeyRef.current = null;
+    setAnnotationSaveState("idle");
+    setAnnotationSaveMessage(null);
+  }, [chat.feedNoteAnchor, chat.liveReply]);
+
+  useEffect(() => {
+    const target = resolveNoteReplySaveTarget(chat.feedNoteAnchor, null);
+    if (target?.kind !== "annotation") {
+      annotationSaveTargetRef.current = null;
+      return;
+    }
+    if (annotationSaveTargetRef.current === target.key) return;
+    annotationSaveTargetRef.current = target.key;
+    annotationSaveKeyRef.current = null;
+    setAnnotationSaveState("idle");
+    setAnnotationSaveMessage(null);
+  }, [chat.feedNoteAnchor]);
+
+  const saveReplyAsNoteRecallQuestion = useCallback(async () => {
+    const intent = chat.feedNoteIntent;
+    const reply = chat.liveReply;
+    const conversationId = chat.conversationId;
+    if (!intent || intent.kind !== "recall" || !reply || !conversationId) return;
+    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    if (!api?.noteRecall) {
+      setRecallSaveState("error");
+      setRecallSaveMessage("回想问题还在伴星对话里，但暂时没能留进笔记记录。可以重试保存。");
+      return;
+    }
+    const key = `${intent.noteId}:${intent.noteVersionId}:${reply.messageId}`;
+    const request = recallQuestionRequestRef.current?.key === key
+      ? recallQuestionRequestRef.current
+      : { key, requestId: crypto.randomUUID() };
+    recallQuestionRequestRef.current = request;
+    setRecallSaveState("saving");
+    setRecallSaveMessage(null);
+    try {
+      const record = unwrapGatewayResult(await api.noteRecall.start({
+        meta: createRequestMeta(),
+        noteId: intent.noteId,
+        request: {
+          requestId: request.requestId,
+          noteVersionId: intent.noteVersionId,
+          sourceMessageId: reply.messageId,
+          conversationId,
+        },
+      }));
+      window.dispatchEvent(new CustomEvent("ailearn:note-recall-saved", {
+        detail: { noteId: intent.noteId, record },
+      }));
+      setRecallSaveState("saved");
+      setRecallSaveMessage(record.versionState === "current"
+        ? "这道问题已留在笔记里，之后还能接着回想。"
+        : "问题按当时的旧版保存了；笔记后来改过，记录仍会留着。");
+    } catch (error) {
+      setRecallSaveState("error");
+      setRecallSaveMessage(`问题没有贴回笔记：${gatewayErrorMessage(error)}`);
+    }
+  }, [chat]);
+
+  const saveReplyAsNoteRecallHint = useCallback(async () => {
+    const intent = chat.feedNoteIntent;
+    const reply = chat.liveReply;
+    const conversationId = chat.conversationId;
+    if (!intent || intent.kind !== "recall_hint" || !intent.recallId || !reply || !conversationId) return;
+    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    if (!api?.noteRecall) {
+      setRecallSaveState("error");
+      setRecallSaveMessage("线索还在伴星对话里，但暂时没能留进这次回想记录。可以重试保存。");
+      return;
+    }
+    setRecallSaveState("saving");
+    setRecallSaveMessage(null);
+    try {
+      const record = unwrapGatewayResult(await api.noteRecall.act({
+        meta: createRequestMeta(),
+        noteId: intent.noteId,
+        recallId: intent.recallId,
+        action: { kind: "hint", sourceMessageId: reply.messageId, conversationId },
+      }));
+      window.dispatchEvent(new CustomEvent("ailearn:note-recall-saved", {
+        detail: { noteId: intent.noteId, record },
+      }));
+      setRecallSaveState("saved");
+      setRecallSaveMessage("这条线索已留在这次回想里。");
+    } catch (error) {
+      setRecallSaveState("error");
+      setRecallSaveMessage(`线索没有保存：${gatewayErrorMessage(error)}`);
+    }
+  }, [chat]);
+
+  useEffect(() => {
+    const target = resolveNoteReplySaveTarget(null, chat.feedNoteIntent);
+    if (target?.kind !== "recall" && target?.kind !== "recall_hint") {
+      recallSaveTargetRef.current = null;
+      return;
+    }
+    if (recallSaveTargetRef.current === target.key) return;
+    recallSaveTargetRef.current = target.key;
+    recallSaveKeyRef.current = null;
+    recallQuestionRequestRef.current = null;
+    setRecallSaveState("idle");
+    setRecallSaveMessage(null);
+  }, [chat.feedNoteIntent]);
+
+  useEffect(() => {
+    const intent = chat.feedNoteIntent;
+    const reply = chat.liveReply;
+    const attempt = noteReplySaveAttemptRef.current;
+    const activeTarget = resolveNoteReplySaveTarget(chat.feedNoteAnchor, intent);
+    if (intent?.kind !== "recall" || !reply || attempt?.target.kind !== "recall"
+      || !isReadyNoteReplyForSave(attempt, activeTarget, chat.phase, reply.messageId)) return;
+    noteReplySaveAttemptRef.current = null;
+    const key = `${intent.noteId}:${intent.noteVersionId}:${reply.messageId}`;
+    if (recallSaveKeyRef.current === key) return;
+    recallSaveKeyRef.current = key;
+    setRecallSaveState("idle");
+    setRecallSaveMessage(null);
+    void saveReplyAsNoteRecallQuestion();
+  }, [chat.feedNoteIntent, chat.feedNoteAnchor, chat.liveReply, chat.phase, saveReplyAsNoteRecallQuestion]);
+
+  useEffect(() => {
+    const intent = chat.feedNoteIntent;
+    const reply = chat.liveReply;
+    const attempt = noteReplySaveAttemptRef.current;
+    const activeTarget = resolveNoteReplySaveTarget(chat.feedNoteAnchor, intent);
+    if (intent?.kind !== "recall_hint" || !reply || attempt?.target.kind !== "recall_hint"
+      || !isReadyNoteReplyForSave(attempt, activeTarget, chat.phase, reply.messageId)) return;
+    noteReplySaveAttemptRef.current = null;
+    const key = `${intent.noteId}:${intent.noteVersionId}:${intent.recallId}:${reply.messageId}`;
+    if (recallSaveKeyRef.current === key) return;
+    recallSaveKeyRef.current = key;
+    setRecallSaveState("idle");
+    setRecallSaveMessage(null);
+    void saveReplyAsNoteRecallHint();
+  }, [chat.feedNoteIntent, chat.feedNoteAnchor, chat.liveReply, chat.phase, saveReplyAsNoteRecallHint]);
+
+  useEffect(() => {
+    if ((chat.feedNoteIntent?.kind !== "recall" && chat.feedNoteIntent?.kind !== "recall_hint") || chat.liveReply) return;
+    recallSaveKeyRef.current = null;
+    setRecallSaveState("idle");
+    setRecallSaveMessage(null);
+  }, [chat.feedNoteIntent, chat.liveReply]);
+
+  useEffect(() => {
+    if (chat.feedNoteIntent?.kind !== "expansion") {
+      setExpansionReplyMessageId(null);
+      setExpansionTaskState("idle");
+      setExpansionTaskMessage(null);
+      expansionTaskRequestRef.current = null;
+      return;
+    }
+    setExpansionReplyMessageId(null);
+    setExpansionTaskState("idle");
+    setExpansionTaskMessage(null);
+    expansionTaskRequestRef.current = null;
+  }, [chat.feedNoteIntent?.kind, chat.feedNoteIntent?.noteId, chat.feedNoteIntent?.noteVersionId]);
+
+  useEffect(() => {
+    const intent = chat.feedNoteIntent;
+    const reply = chat.liveReply;
+    const attempt = noteReplySaveAttemptRef.current;
+    const activeTarget = resolveNoteReplySaveTarget(chat.feedNoteAnchor, intent);
+    if (intent?.kind !== "expansion" || !reply || attempt?.target.kind !== "expansion"
+      || !isReadyNoteReplyForSave(attempt, activeTarget, chat.phase, reply.messageId)) return;
+    noteReplySaveAttemptRef.current = null;
+    setExpansionReplyMessageId(reply.messageId);
+  }, [chat.feedNoteIntent, chat.feedNoteAnchor, chat.liveReply, chat.phase]);
+
+  useEffect(() => {
+    const attempt = noteReplySaveAttemptRef.current;
+    if (!attempt) return;
+    const currentTarget = resolveNoteReplySaveTarget(chat.feedNoteAnchor, chat.feedNoteIntent);
+    if (currentTarget?.kind !== attempt.target.kind || currentTarget.key !== attempt.target.key) {
+      noteReplySaveAttemptRef.current = null;
+    }
+  }, [chat.feedNoteAnchor, chat.feedNoteIntent]);
+
+  const startExpansionTask = async () => {
+    const intent = chat.feedNoteIntent;
+    const reply = chat.liveReply;
+    const conversationId = chat.conversationId;
+    if (!intent || intent.kind !== "expansion" || !reply || reply.messageId !== expansionReplyMessageId
+      || !conversationId || expansionTaskState === "starting" || expansionTaskState === "started") return;
+    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    if (!api?.noteExpansion) {
+      setExpansionTaskState("error");
+      setExpansionTaskMessage("后台整理暂时不可用。伴星回复仍保存在对话记录里，你可以回到笔记页重试。");
+      return;
+    }
+    const key = `${intent.noteId}:${intent.noteVersionId}:${reply.messageId}`;
+    const requestId = expansionTaskRequestRef.current?.key === key
+      ? expansionTaskRequestRef.current.requestId
+      : crypto.randomUUID();
+    expansionTaskRequestRef.current = { key, requestId };
+    setExpansionTaskState("starting");
+    setExpansionTaskMessage(null);
+    try {
+      const task = unwrapGatewayResult(await api.noteExpansion.startTask({
+        meta: createRequestMeta(),
+        noteId: intent.noteId,
+        request: {
+          noteVersionId: intent.noteVersionId,
+          requestId,
+          sourceMessageId: reply.messageId,
+          conversationId,
+        },
+      }));
+      window.dispatchEvent(new CustomEvent("ailearn:note-expansion-task-started", {
+        detail: { noteId: intent.noteId, taskId: task.taskId },
+      }));
+      setExpansionTaskState("started");
+      setExpansionTaskMessage(task.status === "ready" || task.status === "confirmed"
+        ? "这批草稿已回到笔记页，可以逐篇检查后再收下。"
+        : task.status === "failed"
+          ? "这次整理没有完成。回到笔记页可以查看原因并重试。"
+          : "已经开始整理。进度和可编辑草稿会留在这篇笔记里；这段对话也会保存在伴星手记中。" );
+    } catch (error) {
+      setExpansionTaskState("error");
+      setExpansionTaskMessage(`没有开始整理：${gatewayErrorMessage(error)}。可以重试，伴星回复仍在手记里。`);
+    }
+  };
   const ensureRevealDriver = useCallback((): CompanionRevealDriver => {
     if (revealDriverRef.current === null) {
       revealDriverRef.current = createCompanionRevealDriver({
@@ -358,6 +661,10 @@ export function CompanionHud({
     onTranscript: async ({ text, voiceArtifactId }) => {
       if (!text.trim()) return;
       const sendId = ++preparingSendIdRef.current;
+      const target = resolveNoteReplySaveTarget(chat.feedNoteAnchor, chat.feedNoteIntent);
+      noteReplySaveAttemptRef.current = target
+        ? beginNoteReplySaveAttempt(target, chat.liveReply?.messageId ?? null)
+        : null;
       setPreparingSend(chat.phase !== "sending");
       setBubbleExpanded(false);
       try {
@@ -367,6 +674,10 @@ export function CompanionHud({
           ...(chat.feedSelection ? { selection: { text: chat.feedSelection } } : {}),
         });
         if (sent) chat.dismissFeedSelection();
+        else noteReplySaveAttemptRef.current = null;
+      } catch (error) {
+        noteReplySaveAttemptRef.current = null;
+        throw error;
       } finally {
         if (sendId === preparingSendIdRef.current) setPreparingSend(false);
       }
@@ -1080,11 +1391,15 @@ export function CompanionHud({
     };
   }, [bubbleEl]);
 
-  const sendText = useCallback(async () => {
-    const text = input.trim();
+  const sendText = useCallback(async (textOverride?: string) => {
+    const text = (textOverride ?? input).trim();
     if (!text) return;
     setInput("");
     const sendId = ++preparingSendIdRef.current;
+    const target = resolveNoteReplySaveTarget(chat.feedNoteAnchor, chat.feedNoteIntent);
+    noteReplySaveAttemptRef.current = target
+      ? beginNoteReplySaveAttempt(target, chat.liveReply?.messageId ?? null)
+      : null;
     // 接替旧回复时已有过程气泡；不要用预检文案把仍在运行的那一轮盖住。
     setPreparingSend(chat.phase !== "sending");
     setBubbleExpanded(false);
@@ -1094,11 +1409,25 @@ export function CompanionHud({
         ...(chat.feedSelection ? { selection: { text: chat.feedSelection } } : {}),
       });
       if (sent) chat.dismissFeedSelection();
-      else setInput((current) => current || text);
+      else {
+        noteReplySaveAttemptRef.current = null;
+        setInput((current) => current || text);
+      }
+    } catch (error) {
+      noteReplySaveAttemptRef.current = null;
+      throw error;
     } finally {
       if (sendId === preparingSendIdRef.current) setPreparingSend(false);
     }
   }, [chat, input]);
+
+  useEffect(() => {
+    const requestId = chat.autoSendRequestId;
+    const text = chat.feedPrompt?.trim();
+    if (!requestId || !text || autoSendRequestRef.current === requestId) return;
+    autoSendRequestRef.current = requestId;
+    void sendText(text).catch(() => undefined);
+  }, [chat.autoSendRequestId, chat.feedPrompt, sendText]);
 
   useEffect(() => {
     if (chat.phase === "sending") setPreparingSend(false);
@@ -1552,7 +1881,7 @@ export function CompanionHud({
       {chat.mode === "conversation" ? (
         <section className="companion-hud__panel companion-hud__composer" aria-label={`给 ${chat.companionName} 的消息气泡`}>
           <header>
-            <strong>{chat.feedSelection ? `带着这段内容问 ${chat.companionName}` : `给 ${chat.companionName} 留句话`}</strong>
+            <strong>{chat.feedNoteIntent ? `请 ${chat.companionName} ${chat.feedNoteIntent.kind === "overview" ? "帮你速看" : chat.feedNoteIntent.kind === "recall" ? "陪你回想" : chat.feedNoteIntent.kind === "recall_hint" ? "给你一点线索" : "陪你往外学"}` : chat.feedSelection ? `带着这段内容问 ${chat.companionName}` : `给 ${chat.companionName} 留句话`}</strong>
             <button type="button" onClick={() => chat.setMode("closed")} aria-label="收起消息气泡"><X size={16} /></button>
           </header>
           {richReplyDock}
@@ -1562,6 +1891,57 @@ export function CompanionHud({
               <span>{chat.feedSelection}</span>
               <button type="button" onClick={chat.dismissFeedSelection} aria-label="移除引用"><X size={14} /></button>
             </blockquote>
+          ) : null}
+          {chat.feedNoteIntent ? (
+            <div className={`companion-hud__note-overview${chat.feedNoteIntent.kind === "expansion" ? " companion-hud__note-overview--expansion" : ""}`} aria-live="polite">
+              <span>《{chat.feedNoteIntent.noteTitle}》· 按打开时的版本整理</span>
+              {(chat.feedNoteIntent.kind === "recall" || chat.feedNoteIntent.kind === "recall_hint") && chat.liveReply && recallSaveState === "error" ? (
+                <button
+                  type="button"
+                  onClick={() => void (chat.feedNoteIntent?.kind === "recall" ? saveReplyAsNoteRecallQuestion() : saveReplyAsNoteRecallHint())}
+                >
+                  重试保存
+                </button>
+              ) : null}
+              <button type="button" disabled={recallSaveState === "saving"} onClick={chat.dismissFeedNoteIntent} aria-label={chat.feedNoteIntent.kind === "overview" ? "收起速看" : chat.feedNoteIntent.kind === "recall" ? "收起回想" : chat.feedNoteIntent.kind === "recall_hint" ? "收起线索" : "收起拓展建议"}>收起</button>
+              {(chat.feedNoteIntent.kind === "recall" || chat.feedNoteIntent.kind === "recall_hint") && (recallSaveState === "saving" || recallSaveMessage)
+                ? <small data-state={recallSaveState}>{recallSaveState === "saving" ? "正在把这次回想留在笔记里…" : recallSaveMessage}</small>
+                : null}
+            </div>
+          ) : null}
+          {chat.feedNoteIntent?.kind === "expansion" && chat.liveReply?.messageId === expansionReplyMessageId ? (
+            <div className="companion-hud__note-expansion-action" aria-live="polite">
+              <button type="button" disabled={expansionTaskState === "starting" || expansionTaskState === "started"} onClick={() => void startExpansionTask()}>
+                {expansionTaskState === "starting" ? "正在开始整理…" : expansionTaskState === "started" ? "已经开始整理" : expansionTaskState === "error" ? "重试整理" : "把这些方向整理成草稿"}
+              </button>
+              <small data-state={expansionTaskState} role={expansionTaskState === "error" ? "alert" : expansionTaskState === "started" ? "status" : undefined}>
+                {expansionTaskMessage ?? "伴星的回复留在对话里；草稿会从笔记原文单独整理，完成后你再逐篇挑选。"}
+              </small>
+            </div>
+          ) : null}
+          {chat.feedNoteAnchor ? (
+            <div className="companion-hud__note-anchor" aria-live="polite">
+              <span>这段解释会贴回「{chat.feedNoteAnchor.anchor.excerpt}」</span>
+              {chat.liveReply && annotationSaveState === "error" ? (
+                <button
+                  type="button"
+                  onClick={() => void saveReplyAsNoteAnnotation()}
+                >
+                  重试保存批注
+                </button>
+              ) : null}
+              <button
+                type="button"
+                disabled={annotationSaveState === "saving"}
+                onClick={chat.dismissFeedNoteAnchor}
+                aria-label={annotationSaveState === "saved" ? "收起已保存批注提示" : "不贴回笔记"}
+              ><X size={13} /></button>
+              {annotationSaveState === "saving" || annotationSaveMessage
+                ? <small data-state={annotationSaveState}>{annotationSaveState === "saving" ? "正在把解释贴回原句…" : annotationSaveMessage}</small>
+                : null}
+            </div>
+          ) : annotationSaveMessage ? (
+            <p className="companion-hud__note-anchor-status" role="status">{annotationSaveMessage}</p>
           ) : null}
           <form
             data-sending={chat.phase === "sending" || undefined}

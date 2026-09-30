@@ -9,6 +9,11 @@ import { logger } from "./lib/logger.ts";
 import { runWithRequestContext } from "./lib/request-context.ts";
 import { authRoutes } from "./modules/identity/routes.ts";
 import { noteRoutes } from "./modules/note/routes.ts";
+import { noteAnnotationRoutes } from "./modules/note-annotations/routes.ts";
+import { noteOverviewRoutes } from "./modules/note-overviews/routes.ts";
+import { noteRecallRoutes } from "./modules/note-recalls/routes.ts";
+import { noteExpansionRoutes } from "./modules/note-expansions/routes.ts";
+import { noteLearningArtifactRoutes } from "./modules/note-learning-artifacts/routes.ts";
 import { noteCollaborationRoutes, closeNoteCollaboration } from "./modules/note/collaboration.ts";
 import { jobRoutes } from "./modules/job/routes.ts";
 import { reviewRoutes } from "./modules/review/routes.ts";
@@ -24,20 +29,20 @@ import { cardGenerationV2Routes } from "./modules/card-generation-v2/routes.ts";
 import { learningObjectiveRoutes } from "./modules/learning-objectives/routes.ts";
 import { noteLearningRoundRoutes } from "./modules/note-learning-rounds/routes.ts";
 import { learningDashboardRoutes } from "./modules/learning-dashboard/routes.ts";
-import { understandingTopologyV3Routes } from "./modules/understanding-v3/routes.ts";
+import { understandingTopologyV3Routes } from "./modules/note-deepening/routes.ts";
 import { isCardGenerationV2Enabled } from "./config/learning-companion-flags.ts";
 import { companionShellRoutes } from "./modules/companion-shell/index.ts";
 import { learningMetricRoutes } from "./modules/observability/routes.ts";
 import { companionConversationRoutes, companionConversationManagementRoutes, companionExportRoutes, continuousHistoryRoutes } from "./modules/companion-conversation/index.ts";
-import { startCompanionNotifyListener, stopCompanionNotifyListener } from "./modules/companion-conversation/companion-notify.ts";
+import { startCompanionNotifyListener, stopCompanionNotifyListener } from "./lib/companion-notify.ts";
 import { learningRunRoutes } from "./modules/learning-runs/run-routes.ts";
-import { learningDisputeRoutes } from "./modules/learning-runs/run-dispute-routes.ts";
+import { learningDisputeRoutes } from "./modules/learning-runs/disputes/run-dispute-routes.ts";
 import { companionBridgeRoutes } from "./modules/companion-bridge/routes.ts";
 import { companionJourneyRoutes } from "./modules/companion-journey/routes.ts";
 import { understandingProjectionRoutes } from "./modules/understanding/projection-routes.ts";
-import { proactiveInboxRoutes } from "./modules/companion-conversation/inbox-routes.ts";
-import { deliveryRoutes } from "./modules/companion-conversation/delivery-routes.ts";
-import { memoryRoutes } from "./modules/companion-conversation/memory-routes.ts";
+import { proactiveInboxRoutes } from "./modules/companion-conversation/delivery/inbox-routes.ts";
+import { deliveryRoutes } from "./modules/companion-conversation/delivery/delivery-routes.ts";
+import { memoryRoutes } from "./modules/companion-conversation/memory/memory-routes.ts";
 import { petProfileRoutes } from "./modules/companion-conversation/pet-profile-routes.ts";
 import { companionHomeProjectionRoutes } from "./modules/companion-conversation/home-projection-routes.ts";
 import { dailySummaryRoutes } from "./modules/companion-conversation/daily-summary-routes.ts";
@@ -46,14 +51,14 @@ import { voiceRoutes } from "./modules/learning-sessions/voice-routes.ts";
 import { desktopTrustRoutes, resolveApiBindHost } from "./modules/desktop-trust/routes.ts";
 import { cleanupExpiredSessions } from "./modules/identity/service.ts";
 import { purgeSoftDeletedNotes } from "./modules/note/maintenance.ts";
-import { sweepIdleNoteRoundsForPauseV1 } from "./modules/note-learning-rounds/round-activity-sweep.ts";
+import { sweepIdleNoteRoundsForPauseV1 } from "./modules/note-learning-rounds/round/round-activity-sweep.ts";
 import {
   ENV_ROUND_ACTIVITY_SWEEP_INTERVAL,
   roundActivitySweepIntervalMsV1,
-} from "./modules/note-learning-rounds/round-idle-pause-policy.ts";
+} from "./modules/note-learning-rounds/round/round-idle-pause-policy.ts";
 import { runLearningTtlMaintenance } from "./modules/learning-sessions/ttl-maintenance.ts";
-import { runLearningRunProcessingTick, setLearningRunProcessingWaker, closeStructuredSolutionSql } from "./modules/learning-runs/run-processing-tick.ts";
-import { createGracefulShutdown } from "./lib/graceful-shutdown.ts";
+import { runLearningRunProcessingTick, setLearningRunProcessingWaker, closeStructuredSolutionSql } from "./modules/learning-runs/processing/run-processing-tick.ts";
+import { createGracefulShutdown } from "./server/graceful-shutdown.ts";
 import {
   getMetricsText,
   getMetricsContentType,
@@ -328,6 +333,11 @@ async function main() {
   await app.register(authRoutes);
   await app.register(desktopTrustRoutes);
   await app.register(noteRoutes);
+  await app.register(noteAnnotationRoutes);
+  await app.register(noteOverviewRoutes);
+  await app.register(noteRecallRoutes);
+  await app.register(noteExpansionRoutes);
+  await app.register(noteLearningArtifactRoutes);
   // 笔记协同的 WS 通道：必须与 `noteRoutes` 平级注册，不能嵌在它下面——那条链顶部有
   // `preHandler: requireSession`，而 v4 的 token 在握手之后的 Auth 消息里，不在请求头上。
   await app.register(noteCollaborationRoutes);
@@ -393,19 +403,17 @@ async function main() {
   const PORT = Number(process.env.PORT ?? 4000);
   const HOST = resolveApiBindHost();
 
-  try {
-    await app.listen({ port: PORT, host: HOST });
-    app.log.info(`API listening on http://${HOST}:${PORT}`);
-  } catch (err) {
-    app.log.error(err);
-    process.exit(1);
-  }
-
   let dbGaugeTimer: NodeJS.Timeout | undefined;
   let sessionCleanupTimer: NodeJS.Timeout | undefined;
   let notePurgeTimer: NodeJS.Timeout | undefined;
   let learningRunProcessingTimer: NodeJS.Timeout | undefined;
   let roundActivitySweepTimer: NodeJS.Timeout | undefined;
+  // P1-10：`clearTimer` 取消不了"已经在跑"的那一轮 tick。记住在途 promise 与
+  // 等它的 waiter，关停时先等它收尾，免得它在连接池关掉之后还去写库。
+  // 声明放在 shutdown 之前——`drainInFlight` 闭包要用，而 shutdown 建得更早。
+  let processingTickInFlight: Promise<void> | null = null;
+  let processingDrainWaiters: Array<() => void> = [];
+
   const shutdown = createGracefulShutdown({
     clearTimer: () => {
       // F5（审计 #13）：dbGaugeTimer 也纳入关停清理，避免优雅停机期间继续每
@@ -427,6 +435,20 @@ async function main() {
       await closeNoteCollaboration();
       await app.close();
     },
+    // P1-10：等在途 tick 收尾。有界超时在 createGracefulShutdown 里。
+    drainInFlight: async () => {
+      if (!processingTickInFlight) return;
+      await new Promise<void>((resolve) => {
+        processingDrainWaiters.push(resolve);
+        // 先注册 waiter 再复查一次，避免"刚好在这两行之间收完"时永久挂死。
+        if (!processingTickInFlight) {
+          const waiters = processingDrainWaiters;
+          processingDrainWaiters = [];
+          for (const r of waiters) r();
+        }
+      });
+    },
+    drainTimeoutMs: 15_000,
     // 2026-08-11：NOTIFY listener 连接必须显式关闭，否则进程退出挂起
     afterClose: () => {
       void closeStructuredSolutionSql();
@@ -443,6 +465,93 @@ async function main() {
   };
   process.on("SIGTERM", handleSignal);
   process.on("SIGINT", handleSignal);
+
+  // 2026-09-29（P0-9）：这一段整块从 main() 末尾**提到 app.listen() 之前**。
+  //
+  // 原来 `setLearningRunProcessingWaker(...)` 装在 listen 之后 200 多行处，于是
+  // 冷启动窗口里 `run-routes.ts` 提交产出物后调的 `wakeLearningRunProcessing()`
+  // 是**静默 no-op**（那是个模块级可变全局，没装就是没装），唤醒请求丢失，
+  // 用户要等最多 10 秒的轮询周期。同一段窗口里 outbox 也完全无人消费。
+  //
+  // 提前到 listen 之前有两个效果：唤醒不再丢；停机期间攒下的命令在开始收流量
+  // 之前就被接住。ticker 是 unref 的，不会因此把进程吊住。
+  // LR-PROC-01: learning_run_processing_outbox 消费（assessment_requested →
+  // 确定性评估/Fail-closed → commit_requested → canonical_unable Commit）。
+  // 轮询 10s，与 commit outbox 同一节奏；失败退避同模式。
+  if (!shutdown.isShuttingDown()) {
+    const processingWorkerId = `run-proc:${crypto.randomUUID()}`;
+    let processingIntervalMs = 10 * 1000;
+    let processingFailedStreak = 0;
+    let processingWakeRequested = false;
+
+    const runProcessingTickOnce = async (): Promise<void> => {
+      try {
+        const result = await runLearningRunProcessingTick(processingWorkerId, 50);
+        if (result.processed > 0 || result.failed > 0) {
+          app.log.info({ ...result }, "learning run processing tick");
+        }
+        processingFailedStreak = 0;
+        processingIntervalMs = 10 * 1000;
+      } catch (err) {
+        processingFailedStreak += 1;
+        processingIntervalMs = Math.min(10 * 1000 * (2 ** processingFailedStreak), 60_000);
+        app.log.error({ err, nextRetryMs: processingIntervalMs }, "learning run processing tick failed");
+      }
+    };
+
+    const scheduleProcessingTick = (delayMs: number): void => {
+      if (learningRunProcessingTimer) clearTimeout(learningRunProcessingTimer);
+      learningRunProcessingTimer = setTimeout(() => {
+        learningRunProcessingTimer = undefined;
+        const inFlight = runProcessingTickOnce().then(() => {
+          processingTickInFlight = null;
+          // 关停已经发起就不再续下一轮：否则会对着已关的连接池再挂一个定时器，
+          // 那个定时器下一次触发时拿到的 pool 已经 end 了。
+          if (shutdown.isShuttingDown()) return;
+          // 正在跑的这一轮里被喊过 → 不等节奏，立刻再来一轮。
+          scheduleProcessingTick(processingWakeRequested ? 0 : processingIntervalMs);
+          processingWakeRequested = false;
+        });
+        processingTickInFlight = inFlight;
+        void inFlight.finally(() => {
+          if (processingTickInFlight === inFlight) processingTickInFlight = null;
+          // 放行所有在等这一轮收尾的 drain waiter。
+          const waiters = processingDrainWaiters;
+          processingDrainWaiters = [];
+          for (const resolve of waiters) resolve();
+        });
+      }, delayMs);
+      learningRunProcessingTimer.unref();
+    };
+
+    setLearningRunProcessingWaker(() => {
+      if (learningRunProcessingTimer) {
+        scheduleProcessingTick(0);
+        return;
+      }
+      // 一轮正在执行中，无法重排定时器；标记下来让这轮结束后立即续跑。
+      processingWakeRequested = true;
+    });
+    // 启动先跑一次，把停机期间攒下的命令接住。
+    scheduleProcessingTick(0);
+  }
+
+  // 2026-09-29（P0-9，启动顺序竞态）：`app.listen()` 原来在**这一段之前**，
+  // 也就是在 SIGTERM 处理与关停协调器装好之前就开始对外服务。后果是这个窗口里
+  // 进来的 SIGTERM 走 Node 默认行为（不优雅关停），而 `shutdown` 还没建起来——
+  // 编排器每次滚动更新都可能撞上。
+  //
+  // 现在把 listen 移到关停协调器与信号处理**之后**。下面那 4 发启动维护
+  // （session 清理 / 软删物理清除 / TTL 维护 / 轮次空闲扫描）刻意**留在 listen 之后**：
+  // 它们各自 try/catch 兜住了，但仍是会打库的 await，让它们挡在 listen 前面等于
+  // 「库慢 → 容器一直 not ready → 被编排器杀掉」，那是用一个竞态换另一个更糟的。
+  try {
+    await app.listen({ port: PORT, host: HOST });
+    app.log.info(`API listening on http://${HOST}:${PORT}`);
+  } catch (err) {
+    app.log.error(err);
+    process.exit(1);
+  }
 
   // §2.4: 清理过期 session — 启动时立即执行一次，之后每小时定时清理
   // 启动时先清理一次（进程崩溃重启后可能积累了大量过期 session）
@@ -586,54 +695,6 @@ async function main() {
     }
   }
 
-  // LR-PROC-01: learning_run_processing_outbox 消费（assessment_requested →
-  // 确定性评估/Fail-closed → commit_requested → canonical_unable Commit）。
-  // 轮询 10s，与 commit outbox 同一节奏；失败退避同模式。
-  if (!shutdown.isShuttingDown()) {
-    const processingWorkerId = `run-proc:${crypto.randomUUID()}`;
-    let processingIntervalMs = 10 * 1000;
-    let processingFailedStreak = 0;
-    let processingWakeRequested = false;
-
-    const runProcessingTickOnce = async (): Promise<void> => {
-      try {
-        const result = await runLearningRunProcessingTick(processingWorkerId, 50);
-        if (result.processed > 0 || result.failed > 0) {
-          app.log.info({ ...result }, "learning run processing tick");
-        }
-        processingFailedStreak = 0;
-        processingIntervalMs = 10 * 1000;
-      } catch (err) {
-        processingFailedStreak += 1;
-        processingIntervalMs = Math.min(10 * 1000 * (2 ** processingFailedStreak), 60_000);
-        app.log.error({ err, nextRetryMs: processingIntervalMs }, "learning run processing tick failed");
-      }
-    };
-
-    const scheduleProcessingTick = (delayMs: number): void => {
-      if (learningRunProcessingTimer) clearTimeout(learningRunProcessingTimer);
-      learningRunProcessingTimer = setTimeout(() => {
-        learningRunProcessingTimer = undefined;
-        void runProcessingTickOnce().then(() => {
-          // 正在跑的这一轮里被喊过 → 不等节奏，立刻再来一轮。
-          scheduleProcessingTick(processingWakeRequested ? 0 : processingIntervalMs);
-          processingWakeRequested = false;
-        });
-      }, delayMs);
-      learningRunProcessingTimer.unref();
-    };
-
-    setLearningRunProcessingWaker(() => {
-      if (learningRunProcessingTimer) {
-        scheduleProcessingTick(0);
-        return;
-      }
-      // 一轮正在执行中，无法重排定时器；标记下来让这轮结束后立即续跑。
-      processingWakeRequested = true;
-    });
-    // 启动先跑一次，把停机期间攒下的命令接住。
-    scheduleProcessingTick(0);
-  }
 }
 
 main().catch((err) => {

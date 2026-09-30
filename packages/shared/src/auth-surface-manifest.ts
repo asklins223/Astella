@@ -14,7 +14,7 @@
  *
  * 签名实现（HMAC）放在 API 侧（apps/api/src/modules/companion-shell/auth-surface.ts），
  * 本文件不依赖 node:crypto，schema/构建/校验可同时用于服务端与浏览器端。
- * zod schema 风格与 packages/shared/src/companion-shell-contracts.ts 保持一致。
+ * zod schema 风格与 packages/shared/src/contracts/companion-shell-contracts.ts 保持一致。
  */
 
 import { z } from "zod";
