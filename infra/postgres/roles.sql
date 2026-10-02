@@ -7,9 +7,9 @@
 --
 --   /bin/sh infra/postgres/apply-roles.sh
 --
--- The script is safe to repeat.  It does not enable row-level security.  RLS
--- requires a trusted transaction-local workspace context and policies, which
--- are not part of the v0.4 connection model yet.
+-- The script is safe to repeat. It reconciles role ownership and privileges,
+-- but migrations define the RLS policies. Scoped requests set trusted,
+-- transaction-local app.user_id and app.workspace_id values before DB access.
 
 \set ON_ERROR_STOP on
 
@@ -229,6 +229,8 @@ BEGIN
   -- ailearn_migrator（BYPASSRLS 语义依赖；search_path 需对齐 pg_catalog, public）。
   IF to_regprocedure('public.ailearn_enqueue_companion_daily_summaries()') IS NOT NULL THEN
     ALTER FUNCTION public.ailearn_enqueue_companion_daily_summaries()
+      SECURITY DEFINER;
+    ALTER FUNCTION public.ailearn_enqueue_companion_daily_summaries()
       OWNER TO ailearn_migrator;
     ALTER FUNCTION public.ailearn_enqueue_companion_daily_summaries()
       SET search_path = pg_catalog, public;
@@ -237,6 +239,14 @@ BEGIN
     ALTER FUNCTION public.ailearn_run_companion_memory_maintenance()
       OWNER TO ailearn_migrator;
     ALTER FUNCTION public.ailearn_run_companion_memory_maintenance()
+      SET search_path = pg_catalog, public;
+  END IF;
+  IF to_regprocedure('public.ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)') IS NOT NULL THEN
+    ALTER FUNCTION public.ailearn_close_companion_memory_delivery(uuid, uuid, uuid, text)
+      SECURITY DEFINER;
+    ALTER FUNCTION public.ailearn_close_companion_memory_delivery(uuid, uuid, uuid, text)
+      OWNER TO ailearn_migrator;
+    ALTER FUNCTION public.ailearn_close_companion_memory_delivery(uuid, uuid, uuid, text)
       SET search_path = pg_catalog, public;
   END IF;
 END
@@ -257,6 +267,72 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ailearn_migrator;
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON ALL TABLES IN SCHEMA public TO ailearn_api;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ailearn_api;
+
+-- Memory history is append-only. Both runtimes may read it; the database trigger
+-- writes snapshots with the same transaction as the current-row revision.
+DO $$
+BEGIN
+  IF to_regclass('public.assistant_memory_item_revisions') IS NOT NULL THEN
+    GRANT SELECT, INSERT ON TABLE public.assistant_memory_item_revisions TO ailearn_api, ailearn_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.assistant_memory_item_revisions FROM ailearn_api, ailearn_worker;
+  END IF;
+END
+$$;
+
+-- Memory tier changes are append-only audit events. Runtime roles can inspect
+-- and append them, but cannot rewrite the history of a promotion/demotion.
+DO $$
+BEGIN
+  IF to_regclass('public.assistant_memory_budget_events') IS NOT NULL THEN
+    REVOKE ALL PRIVILEGES ON TABLE public.assistant_memory_budget_events FROM ailearn_api, ailearn_worker;
+    GRANT SELECT, INSERT ON TABLE public.assistant_memory_budget_events TO ailearn_api, ailearn_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE public.assistant_memory_budget_events FROM ailearn_api, ailearn_worker;
+  END IF;
+END
+$$;
+
+-- Persona history is an immutable account-scoped audit trail. Runtime roles may
+-- append versions, but neither API nor worker may rewrite or remove old versions.
+DO $$
+BEGIN
+  IF to_regclass('public.companion_persona_profile_versions') IS NOT NULL THEN
+    REVOKE ALL PRIVILEGES ON TABLE public.companion_persona_profile_versions FROM ailearn_api, ailearn_worker;
+    GRANT SELECT, INSERT ON TABLE public.companion_persona_profile_versions TO ailearn_api, ailearn_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE public.companion_persona_profile_versions FROM ailearn_api, ailearn_worker;
+  END IF;
+END
+$$;
+
+-- Diary selection output contains private worker state, not an API read model.
+-- The broad API grant above is intentional for application tables, so revoke
+-- this checkpoint explicitly on every post-migration role bootstrap.
+DO $$
+BEGIN
+  IF to_regclass('public.companion_diary_generation_checkpoints') IS NOT NULL THEN
+    REVOKE ALL PRIVILEGES ON TABLE public.companion_diary_generation_checkpoints FROM ailearn_api;
+  END IF;
+END
+$$;
+
+-- Exact model-input handoffs are private worker state, not an API read model.
+DO $$
+BEGIN
+  IF to_regclass('public.companion_context_handoff_snapshots') IS NOT NULL THEN
+    REVOKE ALL PRIVILEGES ON TABLE public.companion_context_handoff_snapshots FROM ailearn_api;
+  END IF;
+END
+$$;
+
+-- Failure spans are a private diagnostic read model: API may inspect them,
+-- while only the worker records or closes a span.
+DO $$
+BEGIN
+  IF to_regclass('public.companion_run_failure_spans') IS NOT NULL THEN
+    REVOKE ALL PRIVILEGES ON TABLE public.companion_run_failure_spans FROM ailearn_api;
+    GRANT SELECT ON TABLE public.companion_run_failure_spans TO ailearn_api;
+  END IF;
+END
+$$;
 
 -- Worker read set. Keep identity/session/benchmark tables out of this list.
 DO $$
@@ -284,11 +360,16 @@ BEGIN
     'companion_conversations',
     'companion_messages',
     'companion_turn_runs',
+    -- Persona and its immutable history are account-scoped and protected by user_id RLS.
+    'companion_persona_profiles',
+    'companion_persona_profile_versions',
+    'companion_context_handoff_snapshots',
     'companion_stream_events',
     'companion_action_proposals',
     -- Agent 方案：worker 读取 run 元数据（epoch/permission/settings）与审计面。
     'companion_agent_steps',
     'companion_agent_tool_calls',
+    'companion_run_failure_spans',
     'user_companion_account_state',
     -- 0238：到点提醒表。`<here_and_now>` 里"下一条提醒"要读它，schedule/cancel
     -- 两个工具要写它。缺 SELECT 的表现不是报错给用户，而是她**看不见自己许的约**。
@@ -342,6 +423,8 @@ BEGIN
     'pet_profiles',
     'assistant_memory_items',
     'assistant_memory_embeddings',
+    'assistant_memory_item_revisions',
+    'assistant_memory_budget_events',
     'memory_links',
     'conversation_summaries',
     'memory_usage_log',
@@ -352,6 +435,14 @@ BEGIN
       EXECUTE format('GRANT SELECT ON TABLE public.%I TO ailearn_worker', table_name);
     END IF;
   END LOOP;
+  IF to_regclass('public.assistant_memory_item_revisions') IS NOT NULL THEN
+    GRANT SELECT, INSERT ON TABLE public.assistant_memory_item_revisions TO ailearn_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.assistant_memory_item_revisions FROM ailearn_worker;
+  END IF;
+  IF to_regclass('public.assistant_memory_budget_events') IS NOT NULL THEN
+    GRANT SELECT, INSERT ON TABLE public.assistant_memory_budget_events TO ailearn_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.assistant_memory_budget_events FROM ailearn_worker;
+  END IF;
 
   -- Exact write privileges exercised by the current worker handlers.  The
   -- SELECT grants above are intentionally retained because RETURNING and
@@ -397,6 +488,14 @@ BEGIN
   IF to_regclass('public.companion_turn_runs') IS NOT NULL THEN
     GRANT UPDATE ON TABLE public.companion_turn_runs TO ailearn_worker;
   END IF;
+  IF to_regclass('public.companion_context_handoff_snapshots') IS NOT NULL THEN
+    GRANT INSERT ON TABLE public.companion_context_handoff_snapshots TO ailearn_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.companion_context_handoff_snapshots FROM ailearn_worker;
+  END IF;
+  IF to_regclass('public.companion_run_failure_spans') IS NOT NULL THEN
+    GRANT INSERT, UPDATE ON TABLE public.companion_run_failure_spans TO ailearn_worker;
+    REVOKE DELETE, TRUNCATE ON TABLE public.companion_run_failure_spans FROM ailearn_worker;
+  END IF;
   IF to_regclass('public.companion_stream_events') IS NOT NULL THEN
     GRANT INSERT, UPDATE ON TABLE public.companion_stream_events TO ailearn_worker;
   END IF;
@@ -438,7 +537,8 @@ BEGIN
     'memory_links',
     'conversation_summaries',
     'memory_usage_log',
-    'companion_daily_summaries'
+    'companion_daily_summaries',
+    'companion_diary_generation_checkpoints'
   ]
   LOOP
     IF to_regclass(format('public.%I', table_name)) IS NOT NULL THEN
@@ -454,6 +554,13 @@ BEGIN
     -- UPDATE 在 bootstrap 的 REVOKE ALL 之后静默跳过（调用点按"弱事实"吞错），
     -- 关系状态因此永远停在初值。
     GRANT SELECT, INSERT, UPDATE ON TABLE public.pet_profiles TO ailearn_worker;
+  END IF;
+  IF to_regclass('public.companion_persona_profiles') IS NOT NULL THEN
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_persona_profiles TO ailearn_worker;
+  END IF;
+  IF to_regclass('public.companion_persona_profile_versions') IS NOT NULL THEN
+    GRANT SELECT, INSERT ON TABLE public.companion_persona_profile_versions TO ailearn_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.companion_persona_profile_versions FROM ailearn_worker;
   END IF;
 
   FOREACH table_name IN ARRAY ARRAY[
@@ -767,6 +874,20 @@ BEGIN
     GRANT EXECUTE ON FUNCTION public.ailearn_fanout_global_companion_memory(uuid)
       TO ailearn_worker;
   END IF;
+  -- 0343：worker 不获得 assistant_deliveries 的 UPDATE 权限，只能在一次记忆
+  -- 遗忘/修订已完成后，调用这个带 owner/workspace/memory 三重约束的收尾函数。
+  IF to_regprocedure('public.ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.ailearn_close_companion_memory_delivery(uuid, uuid, uuid, text)
+      FROM PUBLIC, ailearn_api;
+    GRANT EXECUTE ON FUNCTION public.ailearn_close_companion_memory_delivery(uuid, uuid, uuid, text)
+      TO ailearn_worker;
+  END IF;
+  IF to_regprocedure('public.ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.ailearn_move_companion_memory_budget_tier_v1(uuid, uuid, uuid, text, text, uuid)
+      FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.ailearn_move_companion_memory_budget_tier_v1(uuid, uuid, uuid, text, text, uuid)
+      TO ailearn_api, ailearn_worker;
+  END IF;
 
   -- 0273：成员退出/被移出时收掉该空间的记忆（doc 34 L38）。调用方是 ailearn_api
   -- （leave / removeMember 两条路），函数本身 SECURITY DEFINER 才能越过
@@ -920,6 +1041,15 @@ BEGIN
     GRANT EXECUTE ON FUNCTION public.ailearn_user_in_workspace(uuid, uuid)
       TO ailearn_api;
   END IF;
+
+  -- Exact model input is available only through a run-owner-scoped replay
+  -- function; direct API access to the worker snapshot table remains revoked.
+  IF to_regprocedure('public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)
+      FROM PUBLIC, ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)
+      TO ailearn_api;
+  END IF;
 END
 $$;
 
@@ -1043,6 +1173,14 @@ BEGIN
   JOIN pg_namespace n ON n.oid = c.relnamespace
   WHERE n.nspname = 'public'
     AND c.relkind IN ('r', 'p')
+    AND c.relname NOT IN (
+      'companion_diary_generation_checkpoints',
+      'companion_context_handoff_snapshots',
+      'companion_run_failure_spans',
+      'assistant_memory_item_revisions',
+      'assistant_memory_budget_events',
+      'companion_persona_profile_versions'
+    )
     AND (
       NOT has_table_privilege(
         'ailearn_api', format('%I.%I', n.nspname, c.relname), 'SELECT'
@@ -1068,6 +1206,115 @@ BEGIN
     );
   IF mismatch IS NOT NULL THEN
     RAISE EXCEPTION 'API privilege matrix mismatch: %', mismatch;
+  END IF;
+
+  IF to_regclass('public.companion_run_failure_spans') IS NOT NULL AND (
+    NOT has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'SELECT')
+    OR has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'INSERT')
+    OR has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'UPDATE')
+    OR has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'DELETE')
+    OR has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'TRUNCATE')
+    OR has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'REFERENCES')
+    OR has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'TRIGGER')
+  ) THEN
+    RAISE EXCEPTION 'companion failure spans must be read-only for API';
+  END IF;
+
+  IF to_regclass('public.assistant_memory_item_revisions') IS NOT NULL AND (
+    NOT has_table_privilege('ailearn_api', 'public.assistant_memory_item_revisions', 'SELECT')
+    OR NOT has_table_privilege('ailearn_api', 'public.assistant_memory_item_revisions', 'INSERT')
+    OR has_table_privilege('ailearn_api', 'public.assistant_memory_item_revisions', 'UPDATE')
+    OR has_table_privilege('ailearn_api', 'public.assistant_memory_item_revisions', 'DELETE')
+    OR has_table_privilege('ailearn_api', 'public.assistant_memory_item_revisions', 'TRUNCATE')
+    OR has_table_privilege('ailearn_api', 'public.assistant_memory_item_revisions', 'REFERENCES')
+    OR has_table_privilege('ailearn_api', 'public.assistant_memory_item_revisions', 'TRIGGER')
+  ) THEN
+    RAISE EXCEPTION 'assistant memory revisions must be append-only for API';
+  END IF;
+
+  IF to_regclass('public.assistant_memory_budget_events') IS NOT NULL AND (
+    NOT has_table_privilege('ailearn_api', 'public.assistant_memory_budget_events', 'SELECT')
+    OR NOT has_table_privilege('ailearn_api', 'public.assistant_memory_budget_events', 'INSERT')
+    OR has_table_privilege('ailearn_api', 'public.assistant_memory_budget_events', 'UPDATE')
+    OR has_table_privilege('ailearn_api', 'public.assistant_memory_budget_events', 'DELETE')
+    OR has_table_privilege('ailearn_api', 'public.assistant_memory_budget_events', 'TRUNCATE')
+    OR has_table_privilege('ailearn_api', 'public.assistant_memory_budget_events', 'REFERENCES')
+    OR has_table_privilege('ailearn_api', 'public.assistant_memory_budget_events', 'TRIGGER')
+    OR NOT has_table_privilege('ailearn_worker', 'public.assistant_memory_budget_events', 'SELECT')
+    OR NOT has_table_privilege('ailearn_worker', 'public.assistant_memory_budget_events', 'INSERT')
+    OR has_table_privilege('ailearn_worker', 'public.assistant_memory_budget_events', 'UPDATE')
+    OR has_table_privilege('ailearn_worker', 'public.assistant_memory_budget_events', 'DELETE')
+    OR has_table_privilege('ailearn_worker', 'public.assistant_memory_budget_events', 'TRUNCATE')
+    OR has_table_privilege('ailearn_worker', 'public.assistant_memory_budget_events', 'REFERENCES')
+    OR has_table_privilege('ailearn_worker', 'public.assistant_memory_budget_events', 'TRIGGER')
+  ) THEN
+    RAISE EXCEPTION 'assistant memory budget events must be append-only for API and worker';
+  END IF;
+
+  IF to_regclass('public.companion_persona_profile_versions') IS NOT NULL AND (
+    NOT has_table_privilege('ailearn_api', 'public.companion_persona_profile_versions', 'SELECT')
+    OR NOT has_table_privilege('ailearn_api', 'public.companion_persona_profile_versions', 'INSERT')
+    OR has_table_privilege('ailearn_api', 'public.companion_persona_profile_versions', 'UPDATE')
+    OR has_table_privilege('ailearn_api', 'public.companion_persona_profile_versions', 'DELETE')
+    OR has_table_privilege('ailearn_api', 'public.companion_persona_profile_versions', 'TRUNCATE')
+    OR has_table_privilege('ailearn_api', 'public.companion_persona_profile_versions', 'REFERENCES')
+    OR has_table_privilege('ailearn_api', 'public.companion_persona_profile_versions', 'TRIGGER')
+    OR NOT has_table_privilege('ailearn_worker', 'public.companion_persona_profile_versions', 'SELECT')
+    OR NOT has_table_privilege('ailearn_worker', 'public.companion_persona_profile_versions', 'INSERT')
+    OR has_table_privilege('ailearn_worker', 'public.companion_persona_profile_versions', 'UPDATE')
+    OR has_table_privilege('ailearn_worker', 'public.companion_persona_profile_versions', 'DELETE')
+    OR has_table_privilege('ailearn_worker', 'public.companion_persona_profile_versions', 'TRUNCATE')
+    OR has_table_privilege('ailearn_worker', 'public.companion_persona_profile_versions', 'REFERENCES')
+    OR has_table_privilege('ailearn_worker', 'public.companion_persona_profile_versions', 'TRIGGER')
+  ) THEN
+    RAISE EXCEPTION 'companion persona profile versions must be append-only for API and worker';
+  END IF;
+
+  IF to_regclass('public.companion_diary_generation_checkpoints') IS NOT NULL AND (
+    has_table_privilege(
+      'ailearn_api', 'public.companion_diary_generation_checkpoints', 'SELECT'
+    ) OR has_table_privilege(
+      'ailearn_api', 'public.companion_diary_generation_checkpoints', 'INSERT'
+    ) OR has_table_privilege(
+      'ailearn_api', 'public.companion_diary_generation_checkpoints', 'UPDATE'
+    ) OR has_table_privilege(
+      'ailearn_api', 'public.companion_diary_generation_checkpoints', 'DELETE'
+    ) OR has_table_privilege(
+      'ailearn_api', 'public.companion_diary_generation_checkpoints', 'TRUNCATE'
+    ) OR has_table_privilege(
+      'ailearn_api', 'public.companion_diary_generation_checkpoints', 'REFERENCES'
+    ) OR has_table_privilege(
+      'ailearn_api', 'public.companion_diary_generation_checkpoints', 'TRIGGER'
+    )
+  ) THEN
+    RAISE EXCEPTION 'API unexpectedly has access to worker-only diary checkpoints';
+  END IF;
+
+  IF to_regclass('public.companion_context_handoff_snapshots') IS NOT NULL AND (
+    has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'SELECT')
+    OR has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'INSERT')
+    OR has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'UPDATE')
+    OR has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'DELETE')
+    OR has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'TRUNCATE')
+    OR has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'REFERENCES')
+    OR has_table_privilege('ailearn_api', 'public.companion_context_handoff_snapshots', 'TRIGGER')
+  ) THEN
+    RAISE EXCEPTION 'API unexpectedly has access to worker-only companion handoff snapshots';
+  END IF;
+
+  IF to_regprocedure('public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)') IS NOT NULL AND (
+    NOT has_function_privilege(
+      'ailearn_api',
+      'public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)',
+      'EXECUTE'
+    )
+    OR has_function_privilege(
+      'ailearn_worker',
+      'public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)',
+      'EXECUTE'
+    )
+  ) THEN
+    RAISE EXCEPTION 'private turn replay function privilege matrix mismatch';
   END IF;
 
   WITH expected(
@@ -1098,12 +1345,17 @@ BEGIN
       ('companion_conversations', true, false, true, false),
       ('companion_messages', true, true, false, false),
       ('companion_turn_runs', true, false, true, false),
+      ('companion_persona_profiles', true, true, true, false),
+      ('companion_persona_profile_versions', true, true, false, false),
       ('companion_stream_events', true, true, true, false),
       -- Agent 方案 §5：worker 冻结确认 proposal（INSERT）。
       ('companion_action_proposals', true, true, true, false),
       -- Agent 方案 §6：worker 写步骤/工具调用审计行并更新其终态。
       ('companion_agent_steps', true, true, true, false),
       ('companion_agent_tool_calls', true, true, true, false),
+      ('companion_run_failure_spans', true, true, true, false),
+      -- Exact model inputs are worker-only, append-only snapshots.
+      ('companion_context_handoff_snapshots', true, true, false, false),
       -- Agent run 元数据（epoch / permission / agent_settings）只读。
       ('user_companion_account_state', true, false, false, false),
       -- 0238：到点提醒。读（"下一条提醒"进 `<here_and_now>`）+ 写 + 改状态，不删行。
@@ -1150,11 +1402,14 @@ BEGIN
       -- 0170/0173 只给 SELECT；0178 补 INSERT/UPDATE（关系状态写入 + 每日衰减）。
       ('pet_profiles', true, true, true, false),
       ('assistant_memory_items', true, true, true, true),
+      ('assistant_memory_item_revisions', true, true, false, false),
+      ('assistant_memory_budget_events', true, true, false, false),
       ('assistant_memory_embeddings', true, true, true, true),
       ('memory_links', true, true, true, true),
       ('conversation_summaries', true, true, true, true),
       ('memory_usage_log', true, true, true, true),
       ('companion_daily_summaries', true, true, true, true),
+      ('companion_diary_generation_checkpoints', true, true, true, true),
       ('understanding_events', false, true, false, false),
       ('ai_audit_log', false, true, false, false),
       -- 方案 20 V2（迁移 0135/0138；与 grant 授权镜像一致）
@@ -1311,6 +1566,7 @@ BEGIN
       to_regprocedure('public.ailearn_queue_oldest_pending_age()'),
       to_regprocedure('public.ailearn_enqueue_companion_daily_summaries()'),
       to_regprocedure('public.ailearn_run_companion_memory_maintenance()'),
+      to_regprocedure('public.ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)'),
       to_regprocedure('public.ailearn_purge_companion_audit_ttl(integer,integer)'),
       to_regprocedure('public.ailearn_purge_invitation_ledger_ttl(integer,integer)'),
       to_regprocedure('public.ailearn_purge_tutor_nonces_ttl(integer,integer)')
@@ -1370,6 +1626,10 @@ BEGIN
     -- 0267：跨空间记忆铺开（与上面那条 GRANT 成对，两份清单一起改）。
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_fanout_global_companion_memory(uuid)')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_retire_workspace_memories_on_departure(uuid,uuid)')
     AND p.oid IS DISTINCT FROM
@@ -1440,6 +1700,8 @@ BEGIN
       to_regprocedure('public.ailearn_purge_old_ai_audit_log(integer,integer)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_find_resumable_companion_journey(uuid,uuid)')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)')
     -- 0273／0276：空间离开时的记忆退役与整空间解散，都是 API 路由显式调的
     -- SECURITY DEFINER 函数。下面"该有的授权不能缺"那份反向清单里已经列了它们，
     -- 而这里的白名单漏了——三处要一起改（迁移 GRANT／上面的 GRANT 块／这里），
@@ -1449,6 +1711,9 @@ BEGIN
       to_regprocedure('public.ailearn_retire_workspace_memories_on_departure(uuid,uuid)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_dissolve_workspace(uuid,uuid)')
+    -- 0344：HTTP 用户请求由 API 发起，worker 侧 companion 工具也会执行同一原子函数。
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)')
     AND NOT EXISTS (
       SELECT 1 FROM pg_depend d
       WHERE d.objid = p.oid AND d.deptype = 'e'
@@ -1489,6 +1754,9 @@ BEGIN
       ('ailearn_worker', 'ailearn_run_companion_memory_maintenance()'),
       ('ailearn_worker', 'ailearn_reclaim_stale_companion_proposals()'),
       ('ailearn_worker', 'ailearn_fanout_global_companion_memory(uuid)'),
+      ('ailearn_worker', 'ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)'),
+      ('ailearn_api', 'ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)'),
+      ('ailearn_worker', 'ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)'),
       ('ailearn_api', 'ailearn_retire_workspace_memories_on_departure(uuid,uuid)'),
       ('ailearn_api', 'ailearn_dissolve_workspace(uuid,uuid)'),
       ('ailearn_api', 'ailearn_find_resumable_companion_journey(uuid,uuid)'),
@@ -1503,7 +1771,8 @@ BEGIN
       ('ailearn_api', 'ailearn_purge_invitation_ledger_ttl(integer,integer)'),
       ('ailearn_api', 'ailearn_purge_tutor_nonces_ttl(integer,integer)'),
       ('ailearn_api', 'ailearn_find_user_by_email(text)'),
-      ('ailearn_api', 'ailearn_user_in_workspace(uuid,uuid)')
+      ('ailearn_api', 'ailearn_user_in_workspace(uuid,uuid)'),
+      ('ailearn_api', 'ailearn_read_companion_turn_handoff_snapshot_v1(uuid)')
     ) AS required(role, fn)
     -- 函数还不存在（首次 bootstrap、迁移尚未跑到）时不该报错：与本文件其余检查
     -- 一致的 `to_regprocedure IS NOT NULL` 口径。

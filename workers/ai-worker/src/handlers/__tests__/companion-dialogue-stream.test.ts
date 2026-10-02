@@ -31,6 +31,12 @@ function deliveryWithRecorder(
 ) {
   const written: string[] = [];
   const delivery = createCompanionStreamDelivery({
+    job: {
+      id: "job-stream-test",
+      workspaceId: "44444444-4444-4444-8444-444444444444",
+      requestedBy: READ_FIXTURE.userId,
+      leaseToken: "lease-stream-test",
+    },
     ctx: { workspaceId: "44444444-4444-4444-8444-444444444444" },
     read: READ_FIXTURE,
     expiresAt: new Date(Date.now() + 60_000).toISOString(),

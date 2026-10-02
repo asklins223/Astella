@@ -33,7 +33,7 @@ import { understandingTopologyV3Routes } from "./modules/note-deepening/routes.t
 import { isCardGenerationV2Enabled } from "./config/learning-companion-flags.ts";
 import { companionShellRoutes } from "./modules/companion-shell/index.ts";
 import { learningMetricRoutes } from "./modules/observability/routes.ts";
-import { companionConversationRoutes, companionConversationManagementRoutes, companionExportRoutes, continuousHistoryRoutes } from "./modules/companion-conversation/index.ts";
+import { companionConversationRoutes, companionConversationManagementRoutes, companionDiscoveryRoutes, companionExportRoutes, companionRunDiagnosticsRoutes, continuousHistoryRoutes } from "./modules/companion-conversation/index.ts";
 import { startCompanionNotifyListener, stopCompanionNotifyListener } from "./lib/companion-notify.ts";
 import { learningRunRoutes } from "./modules/learning-runs/run-routes.ts";
 import { learningDisputeRoutes } from "./modules/learning-runs/disputes/run-dispute-routes.ts";
@@ -368,6 +368,9 @@ async function main() {
   await app.register(companionShellRoutes);
   await app.register(learningMetricRoutes);
   await app.register(companionConversationRoutes);
+  // 40 §7 发现簿（本人收藏的视图）。取消收藏不删原始内容，见 discovery-service 的文件头。
+  await app.register(companionDiscoveryRoutes);
+  await app.register(companionRunDiagnosticsRoutes);
   await app.register(continuousHistoryRoutes);
   await app.register(companionConversationManagementRoutes);
   await app.register(companionExportRoutes);

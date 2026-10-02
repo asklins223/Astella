@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { db } from "../../db/client.ts";
+import { withWorkspaceTransaction } from "../../db/client.ts";
 import { users, workspaces } from "@ailearn/shared/db-schema/identity";
 import { getAIPrivacySettings, listAIAuditLog, updateAIConsent, updateAIDataPolicy } from "../identity/ai-consent-service.ts";
 import { changePassword, loginWithPassword, revokeAllSessionsForUser, revokeSession } from "../identity/session-service.ts";
@@ -242,11 +242,14 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
     },
   }, async (req) => {
     const { userId, workspaceId, membershipRole } = req.session;
-    const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+    // Auth restoration must read with the validated session's RLS context too.
+    const { user, workspace } = await withWorkspaceTransaction({ workspaceId, userId }, async (tx) => ({
+      user: await tx.query.users.findFirst({ where: eq(users.id, userId) }),
+      workspace: await tx.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) }),
+    }));
     if (!user) throw req.server.httpErrors.notFound("user not found");
     // 2026-08-11（性能专项）：membership 已由 decodeToken 合并 JOIN 取回，
     // 不再重复查 workspace_members（原 /auth/me 共 5 次 DB 查询 → 3 次）。
-    const workspace = await db.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
     // 角色只由 isWorkspaceOwner 决定，与 requireOwner、能力投影、笔记投影同一谓词。
     const role = isWorkspaceOwner(req.session) ? "owner" : membershipRole ?? "member";
     const workspaceType = workspace?.workspaceType ?? "personal";

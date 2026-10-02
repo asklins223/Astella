@@ -15,6 +15,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import ts from "typescript";
 
 import { sharedAlias } from "../../../shared-alias.ts";
 
@@ -41,6 +42,22 @@ const sharedAliasEntries = (): { find: string; replacement: string }[] =>
 
 
 describe("桌面测试与构建解析同一份 @ailearn/shared", () => {
+  it("main/preload 和 renderer 的类型检查也解析到实时合同，不能退回安装期快照", () => {
+    for (const [configName, entry] of [
+      ["tsconfig.node.json", "src/main/desktop-ipc.ts"],
+      ["tsconfig.web.json", "src/renderer/src/app/clipboard.ts"],
+    ]) {
+      const configPath = resolve(here, configName);
+      const config = ts.readConfigFile(configPath, ts.sys.readFile);
+      expect(config.error).toBeUndefined();
+      const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, here);
+      for (const contract of ["desktop-ipc-contracts", "companion-conversation-contracts", "companion-memory-desktop-contracts"]) {
+        const resolved = ts.resolveModuleName(`@ailearn/shared/${contract}`, resolve(here, entry), parsed.options, ts.sys);
+        expect(resolved.resolvedModule?.resolvedFileName).toBe(resolve(here, `../../packages/shared/src/contracts/${contract}.ts`));
+      }
+    }
+  });
+
   it("两个配置用的是同一份别名定义（不是各自复制一遍）", () => {
     expect(vitestConfig).toContain("from './shared-alias.ts'");
     expect(electronConfig).toContain("from './shared-alias.ts'");

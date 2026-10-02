@@ -61,16 +61,61 @@ export const companionAgentRiskClassSchema = z.enum([
 ]);
 export type CompanionAgentRiskClass = z.infer<typeof companionAgentRiskClassSchema>;
 
+/**
+ * **落库与广播**的工具状态（账本列 + SSE `agent.tool.status`）。
+ *
+ * 这个集合**不是** 40b §3.2 的全部状态，而它的**子集**：
+ * 值域被数据库 CHECK 约束（`0331_companion_agent_tool_outcome_unknown.sql` 写下的八个词）
+ * 与客户端节点投影（`companion-agent-nodes.ts` 的 `TOOL_STATE`）同时钉住，
+ * 两边都认不出的词会落到「工具状态无法识别」。
+ *
+ * 所以**新增状态词不等于往这里加一行**：先确认客户端能渲染、约束能落库，
+ * 否则按 `companionToolReportedStatusSchema` 报告给模型，由 worker 侧映射回来。
+ */
 export const companionAgentToolStatusSchema = z.enum([
   "requested",
   "executing",
   "waiting_confirmation",
   "succeeded",
+  "outcome_unknown",
   "failed",
   "blocked",
   "expired",
+  // 40b §3.2 的另两类调用级状态（0349 起可落库）。
+  // 它们与 failed/blocked 不可互折：not_executed 要模型改参数再来一次，
+  // unavailable 要它换一条能力——都压成 failed 就等于让模型在两种相反的
+  // 处境里做同一件事。
+  "not_executed",
+  "unavailable",
 ]);
 export type CompanionAgentToolStatus = z.infer<typeof companionAgentToolStatusSchema>;
+
+/**
+ * **报告给模型**的失败状态（40b §3.2 中落在"一次工具调用成败"上的那几类）。
+ *
+ * ## 为什么要与 `companionAgentToolStatusSchema` 分成两个集合
+ *
+ * §3.2 的表是按**下一步**分的，不是按"能不能落库"分的：
+ * `not_executed`（从未开始——改对参数再来一次有意义）与
+ * `unavailable`（能力这一轮没有——重调同一个工具没有意义）
+ * 各自要求模型做出**不同**的动作，把它们都压成 `failed` 就等于让模型在两种
+ * 相反的处境里做同一件事。
+ *
+ * 但它们暂时进不了账本列与 SSE：前者要一条迁移放宽 CHECK 约束，后者要客户端
+ * 的 `TOOL_STATE` 给出确定性文案。两件都不是"顺手加一行枚举"的事，
+ * 所以这一层先独立成合同，映射收敛在 worker 的 `companionToolLedgerStatusFor`。
+ *
+ * `folded/omitted` 与 `pending` 不在这里：前者是**注入面**（预算内没注入的来源），
+ * 后者是**在途面**（已开始未完成、给运行身份与查询方式），都不描述这一次调用的结果。
+ */
+export const companionToolReportedStatusSchema = z.enum([
+  "not_executed",
+  "unavailable",
+  "blocked",
+  "failed",
+  "outcome_unknown",
+]);
+export type CompanionToolReportedStatus = z.infer<typeof companionToolReportedStatusSchema>;
 
 export const companionAgentStepKindSchema = z.enum([
   "model",
@@ -147,6 +192,20 @@ export const companionAgentBudgetSnapshotV1Schema = z.object({
 }).strict();
 export type CompanionAgentBudgetSnapshotV1 = z.infer<
   typeof companionAgentBudgetSnapshotV1Schema
+>;
+
+/** Exact tool surface offered to one Companion Agent run, without prompt or argument data. */
+export const companionAgentCapabilitySnapshotV1Schema = z.object({
+  version: z.literal(COMPANION_AGENT_CONTRACT_VERSION),
+  level: companionAgentPermissionLevelSchema,
+  offeredTools: z.array(z.object({
+    name: z.string().regex(/^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/).max(80),
+    toolVersion: z.string().min(1).max(40),
+    riskClass: companionAgentRiskClassSchema,
+  }).strict()).max(64),
+}).strict();
+export type CompanionAgentCapabilitySnapshotV1 = z.infer<
+  typeof companionAgentCapabilitySnapshotV1Schema
 >;
 
 /**

@@ -106,7 +106,7 @@ function stubGatewayWithFailingSave() {
 
 async function renderFailingEditor() {
   const stub = stubGatewayWithFailingSave();
-  useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "edit" } });
+  useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "live-preview" } });
   vi.useFakeTimers();
   render(<NotebookSurface />);
   // 数据加载与 Milkdown 的异步创建都要靠推进假时钟来冲洗微任务。
@@ -118,7 +118,7 @@ async function renderFailingEditor() {
   return stub;
 }
 
-const saveLine = () => document.querySelector(".save-line [role=\"status\"]")?.textContent ?? "";
+const saveLine = () => document.querySelector(".notebook-desk__status [role=\"status\"]")?.textContent ?? "";
 const typeTitle = async (value: string) => {
   const title = document.getElementById("notebook-surface-title") as HTMLInputElement;
   await act(async () => {
@@ -151,7 +151,7 @@ describe("NotebookSurface · 保存失败后的稳定态", () => {
     // 失败那一档，动作行只留一颗可点的按钮：主按钮自己变成「重试保存」。原来这里
     // 并排挂着「提交并确认」与「重试保存」两颗，都调同一个 `save("manual")`，
     // 看不出该点哪个——而"提交"那个名字还额外暗示正文没存住。
-    const actionLabels = [...document.querySelectorAll(".notebook-actions--editor button")]
+    const actionLabels = [...document.querySelectorAll(".notebook-desk__save-tray button")]
       .map((button) => button.textContent ?? "");
     expect(actionLabels).toContain("重试保存");
     expect(actionLabels.filter((label) => label.includes("保存"))).toEqual(["重试保存"]);

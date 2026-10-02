@@ -5,7 +5,7 @@ import { SpaceShareButton, noteShareScopeLabel } from "../../space-share-control
 import type { NoteShareScopeV1 } from "@ailearn/shared/note-share-contracts";
 import type { DesktopNoteListItem, DesktopNoteListPage, DesktopSourceDetail } from "@ailearn/shared/desktop-surface-contracts";
 import type { NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
-import { NOTE_SHELF_STAGE_LABEL_V1 } from "@ailearn/shared/note-shelf-state-contracts";
+import { NOTE_SHELF_STAGE_LABEL_V1, noteShelfStageDetailV1 } from "@ailearn/shared/note-shelf-state-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import {
   createCommandId,
@@ -263,7 +263,7 @@ export function NoteLibrarySurface() {
   }, [setReturnTarget, view]);
 
   /** Every note entry lands on the reading page, exactly like a cover does. */
-  const openNote = (item: DesktopNoteListItem, mode: "read" | "edit" = "read") => {
+  const openNote = (item: DesktopNoteListItem, mode: "preview" | "live-preview" = "preview") => {
     setActiveNoteRef({ noteId: item.id, noteVersionId: item.currentVersionId, mode });
     useRoomStore.getState().setNoteReturnTo("library");
     invoke("open-notebook");
@@ -279,7 +279,7 @@ export function NoteLibrarySurface() {
         meta: createRequestMeta(epochRef.current),
         request: { blocks: [] },
       }));
-      setActiveNoteRef({ noteId: created.noteId, noteVersionId: created.currentVersionId, mode: "edit" });
+      setActiveNoteRef({ noteId: created.noteId, noteVersionId: created.currentVersionId, mode: "live-preview" });
       useRoomStore.getState().setNoteReturnTo("library");
       invoke("open-notebook");
     } catch (error) {
@@ -642,12 +642,12 @@ export function NoteLibrarySurface() {
                   <span className="sr-only">打开笔记：{featured.title}</span>
                 </button>
               ) : null}
-              <span className="tag red">{featured?.id === recentNoteId ? "最近在读" : "最近更新"}</span>
+              <div className="current-note__labels"><span className="tag red">{featured?.id === recentNoteId ? "最近在读" : "最近更新"}</span>
+                <NoteShelfTag state={featured?.shelfState} compact /></div>
               <h2>{featured?.title ?? ""}</h2>
               {/* 最显眼的那一篇同样要带状态。少了这一枚，用户在"继续写作"卡上
                   看不到自己上次学到哪儿，而旁边四本册子却写着——两处的差别
                   会让人以为最大那张卡是另一种东西。 */}
-              <NoteShelfTag state={featured?.shelfState} />
               <p className="sub">
                 {[
                   featured ? `${formatRelative(featured.updatedAt)}更新` : null,
@@ -663,6 +663,7 @@ export function NoteLibrarySurface() {
               </p>
               <div className="rule" />
               <p className="serif">{previewOf(data?.featured ?? null, Boolean(featured))}</p>
+              {featured?.shelfState ? <p className="current-note__records">{noteShelfStageDetailV1(featured.shelfState.facts).join(" · ")}</p> : null}
               <div className="small">
                 {[
                   `共 ${total} 篇笔记`,

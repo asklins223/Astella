@@ -222,7 +222,8 @@ export function readNoteAnnotationExplainJobPayload(
   const endOffset = ordinal("endOffset");
   const excerpt = stringField("excerpt", 2_000, 1);
   if (typeof anchorVersionId !== "string" || anchorVersionId !== noteVersionId
-    || startBlockOrdinal !== endBlockOrdinal || endOffset <= startOffset) {
+    || endBlockOrdinal < startBlockOrdinal
+    || startBlockOrdinal === endBlockOrdinal && endOffset <= startOffset) {
     throw new JobPayloadContractError(JobType.NOTE_ANNOTATION_EXPLAIN, "payload.anchor does not match the frozen note version");
   }
   return {
@@ -287,15 +288,18 @@ export function readNoteDynamicArtifactGenerateJobPayload(
     }
     const startBlockOrdinal = ordinal("startBlockOrdinal");
     const endBlockOrdinal = ordinal("endBlockOrdinal");
-    if (anchorUuid !== uuid("noteVersionId") || endBlockOrdinal !== startBlockOrdinal || ordinal("endOffset") <= ordinal("startOffset")) {
-      throw new JobPayloadContractError(JobType.NOTE_DYNAMIC_ARTIFACT_GENERATE, "payload.anchor must cover one range in one block");
+    const startOffset = ordinal("startOffset");
+    const endOffset = ordinal("endOffset");
+    if (anchorUuid !== uuid("noteVersionId") || endBlockOrdinal < startBlockOrdinal
+      || endBlockOrdinal === startBlockOrdinal && endOffset <= startOffset) {
+      throw new JobPayloadContractError(JobType.NOTE_DYNAMIC_ARTIFACT_GENERATE, "payload.anchor must cover a forward range in the frozen note version");
     }
     anchor = {
       noteVersionId: anchorUuid,
       startBlockOrdinal,
-      startOffset: ordinal("startOffset"),
+      startOffset,
       endBlockOrdinal,
-      endOffset: ordinal("endOffset"),
+      endOffset,
       excerpt: candidate.excerpt,
       prefix: candidate.prefix,
       suffix: candidate.suffix,
@@ -357,7 +361,8 @@ export function readNoteExpansionGenerateJobPayload(
     const endBlockOrdinal = integer("endBlockOrdinal");
     const startOffset = integer("startOffset");
     const endOffset = integer("endOffset");
-    if (anchorNoteVersionId !== noteVersionId || startBlockOrdinal !== endBlockOrdinal || endOffset <= startOffset) {
+    if (anchorNoteVersionId !== noteVersionId || endBlockOrdinal < startBlockOrdinal
+      || startBlockOrdinal === endBlockOrdinal && endOffset <= startOffset) {
       throw new JobPayloadContractError(JobType.NOTE_EXPANSION_GENERATE, "focusAnchor does not match the frozen note version");
     }
     focusAnchor = {

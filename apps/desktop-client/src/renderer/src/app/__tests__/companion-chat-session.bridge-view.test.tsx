@@ -155,7 +155,7 @@ describe("可读视图跟着屏幕一起进 bridge context", () => {
     const noteVersionId = "44444444-4444-4444-8444-444444444444";
     useRoomStore.setState({
       hudPage: "note-read",
-      activeNoteRef: { noteId, noteVersionId, mode: "read" },
+      activeNoteRef: { noteId, noteVersionId, mode: "preview" },
     });
     let chat: ReturnType<typeof useCompanionChat> | null = null;
     function CaptureChat() {

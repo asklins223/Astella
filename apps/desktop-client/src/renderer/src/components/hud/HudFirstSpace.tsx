@@ -212,13 +212,9 @@ export function HudFirstSpaceScene({
   const theme = useRoomStore((state) => state.theme);
   const { manifest } = useLearningRoomManifest();
   // The mockup puts 04A on `bg-home`, so the plate is the home room's own
-  // poster — the same pair `RoomStage` paints behind the live home page.
-  const dayPlate = manifest
-    ? mediaAssetUrl(manifest, manifest.homeV2Posters.day.path)
-    : null;
-  const nightPlate = manifest
-    ? mediaAssetUrl(manifest, manifest.homeV2Posters.night.path)
-    : null;
+  // poster — the same `homeV2Posters` pair `RoomStage` paints behind the live home page.
+  const dayPlate = manifest ? mediaAssetUrl(manifest, manifest.homeV2Posters.day.path) : null;
+  const nightPlate = manifest ? mediaAssetUrl(manifest, manifest.homeV2Posters.night.path) : null;
 
   return (
     <>

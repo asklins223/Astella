@@ -38,7 +38,6 @@ export function VersionHistory(props: {
   } = props;
   return (
     <section className="version-history" aria-label="笔记版本历史">
-      <h3 className="serif">版本历史</h3>
       <p className="small">
         每次提交都会留下一个不可变版本。恢复会把这篇笔记切回那一版，不会删除任何版本。
       </p>

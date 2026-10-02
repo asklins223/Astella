@@ -490,10 +490,32 @@ test("proposedLearningActionPayload：accepts §18 全部工具 kind", () => {
     { kind: "open_conversation_history" },
     { kind: "confirm_or_reject_memory", memoryId, revision: 1720000000000, decision: "confirm" },
     { kind: "delete_assistant_memory", memoryId, revision: 1720000000000 },
+    {
+      kind: "revise_memory",
+      memoryId,
+      expectedRevision: 3,
+      content: "周末更适合上午学习",
+      appliesWhen: "周末",
+      validUntil: null,
+    },
+    {
+      kind: "save_memory",
+      memoryKind: "goal",
+      content: "复习完数据库索引",
+      sourceQuote: "准备期中考试时复习数据库索引，并在 2026-10-15T17:00:00+08:00 前完成",
+      appliesWhen: "准备期中考试时",
+      validUntil: "2026-10-15T17:00:00+08:00",
+    },
   ];
   for (const payload of cases) {
     assert.equal(proposedLearningActionPayloadV1Schema.safeParse(payload).success, true, JSON.stringify(payload));
   }
+  assert.equal(proposedLearningActionPayloadV1Schema.safeParse({
+    kind: "save_memory",
+    memoryKind: "goal",
+    content: "复习完数据库索引",
+    validUntil: "下周",
+  }).success, false);
 });
 
 test("proposedLearningActionPayload：§18 工具非法变体拒绝", () => {
@@ -517,6 +539,20 @@ test("proposedLearningActionPayload：§18 工具非法变体拒绝", () => {
   );
   assert.equal(proposedLearningActionPayloadV1Schema.safeParse({ kind: "focus_graph_node" }).success, false);
   assert.equal(proposedLearningActionPayloadV1Schema.safeParse({ kind: "confirm_or_reject_memory", memoryId: runId, revision: 1 }).success, false);
+  assert.equal(proposedLearningActionPayloadV1Schema.safeParse({
+    kind: "revise_memory",
+    memoryId: runId,
+    expectedRevision: 0,
+    content: "修订内容",
+  }).success, false);
+  assert.equal(proposedLearningActionPayloadV1Schema.safeParse({
+    kind: "revise_memory",
+    memoryId: runId,
+    expectedRevision: 1,
+    content: "修订内容",
+    validFrom: "2026-10-10T00:00:00+08:00",
+    validUntil: "2026-10-09T00:00:00+08:00",
+  }).success, false);
   // 已删除的 kind 必须被拒绝（防止通过历史 payload 复活不可实现的动作）。
   assert.equal(proposedLearningActionPayloadV1Schema.safeParse({ kind: "ask_grounded_tutor", runId, snapshotId: runId, taskId: runId, question: "?" }).success, false);
   assert.equal(

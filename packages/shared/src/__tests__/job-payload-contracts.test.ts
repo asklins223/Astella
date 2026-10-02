@@ -4,6 +4,9 @@ import { JobType } from "../enums.ts";
 import {
   JobPayloadContractError,
   PARSE_SOURCE_JOB_PAYLOAD_FIELDS,
+  readNoteAnnotationExplainJobPayload,
+  readNoteDynamicArtifactGenerateJobPayload,
+  readNoteExpansionGenerateJobPayload,
   readParseSourceJobPayload,
 } from "../contracts/job-payload-contracts.ts";
 
@@ -76,3 +79,47 @@ test("字段名常量与读取器实现同源", () => {
     fetchUrlContent: true,
   });
 });
+
+const notePayload = {
+  noteId: "00000000-0000-4000-8000-000000000001",
+  noteVersionId: "00000000-0000-4000-8000-000000000002",
+  requestId: "00000000-0000-4000-8000-000000000003",
+};
+const noteAnchor = {
+  noteVersionId: notePayload.noteVersionId,
+  startBlockOrdinal: 2,
+  startOffset: 12,
+  endBlockOrdinal: 3,
+  endOffset: 4,
+  excerpt: "第一段的末尾。\n\n下一段。",
+  prefix: "第一段开头",
+  suffix: "接下来的内容",
+};
+const noteAnchorReaders = [
+  ["解释", (anchor: typeof noteAnchor) => readNoteAnnotationExplainJobPayload({ ...notePayload, anchor }).anchor],
+  ["互动演示", (anchor: typeof noteAnchor) => readNoteDynamicArtifactGenerateJobPayload({ ...notePayload, sourceKind: "annotation", anchor }).anchor],
+  ["选段拓展", (anchor: typeof noteAnchor) => readNoteExpansionGenerateJobPayload({ ...notePayload, focusAnchor: anchor }).focusAnchor],
+] as const;
+
+for (const [label, readAnchor] of noteAnchorReaders) {
+  test(`${label}任务入口接受跨段锚点，末段偏移独立于首段偏移`, () => {
+    assert.deepEqual(readAnchor(noteAnchor), noteAnchor);
+    const endAtBoundary = { ...noteAnchor, endOffset: 0 };
+    assert.deepEqual(readAnchor(endAtBoundary), endAtBoundary);
+  });
+
+  test(`${label}任务入口保留单段支持，拒绝倒序、空范围和版本错配`, () => {
+    const singleBlock = { ...noteAnchor, endBlockOrdinal: 2, endOffset: 16 };
+    assert.deepEqual(readAnchor(singleBlock), singleBlock);
+    for (const anchor of [
+      { ...noteAnchor, endBlockOrdinal: 1 },
+      { ...singleBlock, endOffset: 12 },
+      { ...singleBlock, endOffset: 4 },
+      { ...noteAnchor, startOffset: -1 },
+      { ...noteAnchor, endOffset: -1 },
+      { ...noteAnchor, noteVersionId: notePayload.noteId },
+    ]) {
+      assert.throws(() => readAnchor(anchor), JobPayloadContractError);
+    }
+  });
+}

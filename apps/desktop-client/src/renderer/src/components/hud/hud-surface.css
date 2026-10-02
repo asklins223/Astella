@@ -24,20 +24,63 @@
   color: var(--hud-ink);
 }
 
-/* The mockup paints the room directly on the scope; the client keeps the room on
-   the task surface so the shared `.scene-stage` stays untouched underneath. */
+/* 每个任务页在自己的固定宿主上铺场景图，保留原图构图，不继承首页相机的缩放。
+   首页仍由 RoomStage 绘制。场景原图登记在 manifest.taskPosters，并随源码分发。 */
 .desktop-app.hud-surface .task-surface {
   background-position: center;
   background-size: cover;
   color: var(--hud-ink);
 }
 
-/* 空间层宿主：每一页都带着它，房间底图由下面逐页的 `--<surface>` 指定，宿主
-   自己只声明「这张底图画一次、铺满整页」这一半事实。铺法原本写在
-   `.desktop-app.hud-surface .task-surface` 上、和宿主几何混在同一条里，于是「宿主
-   刷底图」这件事散成两处：改几何的人看不到铺法，改铺法的人看不到几何。
-   写在这个修饰符上，是因为「刷底图的就是空间层」正是它的含义（对应子层
-   `.task-surface__spatial-layer`）；逐页底图特异性相同但写在后面，仍然各自优先。 */
+/* Task scene plates — 与 2026-09-19 审查截图、重构前页面族对应关系一致。 */
+.task-surface--source-library,
+.task-surface--source-detail,
+.task-surface--search { background-image: url("/assets/learning-room/v1/posters/task-scenes/library-day-v1.png"); }
+.task-surface--note-library,
+.task-surface--notebook { background-image: url("/assets/learning-room/v1/posters/task-scenes/writing-day-v1.png"); }
+.task-surface--study,
+.task-surface--resumable,
+.task-surface--card-generation,
+.task-surface--objective-library,
+.task-surface--objective-detail { background-image: url("/assets/learning-room/v1/posters/task-scenes/workshop-day-v1.png"); }
+.task-surface--review,
+.task-surface--validation { background-image: url("/assets/learning-room/v1/posters/task-scenes/review-day-v1.png"); }
+.task-surface--graph,
+.task-surface--companion-center { background-image: url("/assets/learning-room/v1/posters/task-scenes/observatory-night-open-v3.png"); }
+.task-surface--settings { background-image: url("/assets/learning-room/v1/posters/task-scenes/companion-system-day-v1.png"); }
+
+.desktop-app[data-theme="night"] .task-surface--source-library,
+.desktop-app[data-theme="night"] .task-surface--source-detail,
+.desktop-app[data-theme="night"] .task-surface--search { background-image: url("/assets/learning-room/v1/posters/task-scenes/library-night-v1.png"); }
+.desktop-app[data-theme="night"] .task-surface--note-library,
+.desktop-app[data-theme="night"] .task-surface--notebook { background-image: url("/assets/learning-room/v1/posters/task-scenes/writing-night-v1.png"); }
+.desktop-app[data-theme="night"] .task-surface--study,
+.desktop-app[data-theme="night"] .task-surface--resumable,
+.desktop-app[data-theme="night"] .task-surface--card-generation,
+.desktop-app[data-theme="night"] .task-surface--objective-library,
+.desktop-app[data-theme="night"] .task-surface--objective-detail { background-image: url("/assets/learning-room/v1/posters/task-scenes/workshop-night-v1.png"); }
+.desktop-app[data-theme="night"] .task-surface--review,
+.desktop-app[data-theme="night"] .task-surface--validation { background-image: url("/assets/learning-room/v1/posters/task-scenes/review-night-v1.png"); }
+.desktop-app[data-theme="night"] .task-surface--settings { background-image: url("/assets/learning-room/v1/posters/task-scenes/companion-system-night-v1.png"); }
+
+.desktop-app.hud-surface .task-surface--spatial::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(180deg, rgba(25, 16, 11, 0.09), transparent 30%, rgba(25, 16, 11, 0.08));
+  pointer-events: none;
+}
+
+/* 观测台原本只有这一张星夜图；日间沿用原先的暖色天光层。 */
+.desktop-app[data-theme="day"] .task-surface--companion-center::after {
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255, 221, 158, 0.22), transparent 34%),
+    linear-gradient(180deg, rgba(224, 177, 111, 0.14), rgba(25, 16, 11, 0.04) 54%, rgba(25, 16, 11, 0.12));
+}
+/* End task scene plates. */
+
+/* 每个空间层宿主只铺一张底图；图片由上面的页面族规则指定，
+   后载入的 objective-flow.css 为地图、挑战、专注和结算状态提供各自的场景。 */
 .hud-surface .task-surface--spatial { background-repeat: no-repeat; }
 
 /* The task surface is now only a fixed, transparent host: the mockup owns all
@@ -71,9 +114,10 @@
   pointer-events: auto;
 }
 
-/* TaskSurface owns entrance choreography. The generated mockup animation must
-   be fully disabled when motion is off, otherwise the two systems stack. */
-.desktop-app.hud-surface .task-surface[data-motion-mode="off"] .content > * { animation: none; }
+/* TaskSurface owns entrance choreography in every motion mode. The old
+   hud-pop animation also ran on each child and restarted as fetched content
+   arrived, stacking two transforms and rasterizations on the same paper. */
+.desktop-app.hud-surface .task-surface .content > * { animation: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .desktop-app.hud-surface .content > * { animation: none; }
@@ -118,7 +162,17 @@
 
 @media (prefers-reduced-motion: reduce) {
   .hud-surface .surface-data-state__spin { animation: none; }
-}.desktop-app.hud-surface .content .source-index, .desktop-app.hud-surface .content .folio-page, .desktop-app.hud-surface .content .current-note, .desktop-app.hud-surface .content .notebook, .desktop-app.hud-surface .content .card-press, .desktop-app.hud-surface .content .study-card, .desktop-app.hud-surface .content .evidence-slip, .desktop-app.hud-surface .content .day-route, .desktop-app.hud-surface .content .card-deck, .desktop-app.hud-surface .content .queue-reason, .desktop-app.hud-surface .content .search-index, .desktop-app.hud-surface .content .preview-page, .desktop-app.hud-surface .content .settings-menu, .desktop-app.hud-surface .content .settings-card{
+}.desktop-app.hud-surface .content .source-index,
+.desktop-app.hud-surface .content .folio-page,
+.desktop-app.hud-surface .content .current-note,
+.desktop-app.hud-surface .content .card-press,
+.desktop-app.hud-surface .content .day-route,
+.desktop-app.hud-surface .content .card-deck,
+.desktop-app.hud-surface .content .queue-reason,
+.desktop-app.hud-surface .content .search-index,
+.desktop-app.hud-surface .content .preview-page,
+.desktop-app.hud-surface .content .settings-menu,
+.desktop-app.hud-surface .content .settings-card{
   scrollbar-color: rgba(79, 57, 39, 0.42) transparent;
   scrollbar-width: thin;
 }
@@ -262,40 +316,74 @@
  * ------------------------------------------------------------------------- */
 
 .hud-surface .home-v2-hud {
-  /* One duration for every leg of the island morph — the island's own width, the
-     trigger inside it and the panel leaving through it — because they only read
-     as a single pill while they stay in step. */
+  /* The skin moves through transforms; text and hit areas take their final
+     layout immediately. Width/grid/padding transitions forced layout and
+     backdrop rasterization on every frame. */
   --hud-island-motion: 320ms;
+  --home-island-max-width: min(548px, calc(100vw - 36px));
+  --home-island-width: 290px;
+  --home-island-chevron-x: 52px;
   position: absolute;
   right: auto;
   bottom: 22px;
   left: 96px;
   display: block;
-  width: 290px;
+  width: var(--home-island-width);
   height: 54px;
   min-height: 54px;
   padding: 0;
   gap: 0;
   overflow: visible;
   color: #fff3df;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid transparent;
   border-radius: 28px;
-  background: rgba(42, 31, 24, 0.9);
-  box-shadow: var(--hud-shadow-small);
+  background: transparent;
+  box-shadow: none;
   pointer-events: auto;
   transition:
-    width var(--hud-island-motion) var(--hud-island-ease),
-    height var(--hud-island-motion) var(--hud-island-ease),
     background-color 180ms ease-out,
     box-shadow 180ms ease-out;
+}
+
+
+.hud-surface .home-v2-hud__skin {
+  position: absolute;
+  inset: -1px auto -1px -1px;
+  width: var(--home-island-max-width);
+  pointer-events: none;
+  filter: drop-shadow(0 12px 28px rgba(43, 27, 17, 0.22)) drop-shadow(0 3px 8px rgba(43, 27, 17, 0.14));
+}
+.hud-surface .home-v2-hud__skin i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 27px;
+  border-block: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(42, 31, 24, 0.92);
+  transition: transform var(--hud-island-motion) var(--hud-island-ease);
+}
+.hud-surface .home-v2-hud__skin i:first-child { left: 0; border-left: 1px solid rgba(255, 255, 255, 0.18); border-radius: 28px 0 0 28px; }
+.hud-surface .home-v2-hud__skin i:nth-child(2) {
+  left: 27px;
+  width: calc(var(--home-island-max-width) - 54px);
+  transform-origin: left center;
+  transform: scaleX(calc((var(--home-island-width) - 54px) / (var(--home-island-max-width) - 54px)));
+}
+.hud-surface .home-v2-hud__skin i:last-child {
+  left: 27px;
+  border-right: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0 28px 28px 0;
+  transform: translateX(calc(var(--home-island-width) - 54px));
 }
 
 .hud-surface .home-v2-hud::before,
 .hud-surface .home-v2-hud::after { display: none; }
 
 .hud-surface.nav-collapsed .home-v2-hud {
+  --home-island-width: 364px;
+  --home-island-chevron-x: 37px;
   left: 22px;
-  width: 364px;
+  width: var(--home-island-width);
   padding-left: 89px;
 }
 
@@ -345,8 +433,10 @@
    Keep the collapsed page-01 composition, but restore the working expanded
    state instead of turning its panel into a clipped popover. */
 .hud-surface .home-v2-hud.home-v2-hud--expanded {
+  --home-island-width: var(--home-island-max-width);
+  --home-island-chevron-x: 0px;
   display: flex;
-  width: min(548px, calc(100vw - 36px));
+  width: var(--home-island-width);
   height: 56px;
   min-height: 56px;
   align-items: center;
@@ -354,33 +444,31 @@
   padding: 2px;
   overflow: visible;
   border-radius: 999px;
-  background: rgba(42, 31, 24, 0.92);
+  background: transparent;
   /* 展开态原先换成 rgba(16,13,11,…) 自写阴影，收起态用的是 --hud-shadow-small；
      同一颗岛的色温与影子必须一致。 */
-  box-shadow: var(--hud-shadow-small);
+  box-shadow: none;
 }
 
 .hud-surface.nav-collapsed .home-v2-hud.home-v2-hud--expanded {
+  --home-island-width: var(--home-island-max-width);
+  --home-island-chevron-x: 0px;
   left: 22px;
-  width: min(548px, calc(100vw - 36px));
+  width: var(--home-island-width);
   padding: 2px 2px 2px 89px;
 }
 
-/* The trigger fills the collapsed island (290px, or 364px beside the collapsed
-   rail) and narrows to the expanded 236px pill. Its width is explicit instead of
-   `100%` so the collapse can animate it: a trigger stretched across an island
-   that is still wide parks the chevron at the far end of a bare black bar.
-   `grid-template-columns`, `gap` and `padding` travel with it and keep the same
-   three tracks in both skins, so the browser can interpolate them. */
+/* Keep the copy still while the skin and its end chevron move together. */
 .hud-surface .home-v2-hud__trigger {
+  position: relative;
   display: grid;
   width: calc(290px - 2px);
   flex: 0 0 auto;
   height: 54px;
-  grid-template-columns: 0 minmax(0, 1fr) 28px;
+  grid-template-columns: 8px minmax(0, 1fr) 16px;
   align-items: center;
-  gap: 8px;
-  padding: 0 15px;
+  gap: 10px;
+  padding: 0 12px 0 14px;
   color: inherit;
   text-align: left;
   border: 0;
@@ -389,11 +477,6 @@
   box-shadow: none;
   backdrop-filter: none;
   transition:
-    width var(--hud-island-motion) var(--hud-island-ease),
-    height var(--hud-island-motion) var(--hud-island-ease),
-    grid-template-columns var(--hud-island-motion) var(--hud-island-ease),
-    gap var(--hud-island-motion) var(--hud-island-ease),
-    padding var(--hud-island-motion) var(--hud-island-ease),
     color 150ms ease-out,
     background-color 150ms ease-out,
     border-color 180ms ease-out,
@@ -404,27 +487,37 @@
 
 .hud-surface.nav-collapsed .home-v2-hud__trigger { width: calc(364px - 2px - 89px); }
 
-/* The collapsed skin keeps the signal track at zero size instead of dropping it,
-   so the trigger's track list stays interpolable while the island morphs. */
+/* Keep the same text tracks while the indicator fades. */
 .hud-surface .home-v2-hud__signal {
-  width: 0;
-  height: 0;
+  width: 7px;
+  height: 7px;
   opacity: 0;
   transition:
-    width var(--hud-island-motion) var(--hud-island-ease),
-    height var(--hud-island-motion) var(--hud-island-ease),
     opacity var(--hud-island-motion) linear;
 }
 .hud-surface .home-v2-hud__trigger-copy small { display: block; color: #d2c3b3; font-size: 9px; }
 .hud-surface .home-v2-hud__trigger-copy strong { display: block; font-size: 13px; font-weight: 700; }
-.hud-surface .home-v2-hud__trigger > svg { color: #fff3df; }
+.hud-surface .home-v2-hud__trigger-copy { width: 166px; min-width: 0; }
+.hud-surface .home-v2-hud__trigger > svg {
+  position: absolute;
+  left: 208px;
+  color: #fff3df;
+  transform: translateX(var(--home-island-chevron-x));
+  transition: transform var(--hud-island-motion) var(--hud-island-ease), color 150ms ease-out;
+}
+.hud-surface .home-v2-hud[data-motion-mode="lite"] { --hud-island-motion: 180ms; }
+.hud-surface .home-v2-hud[data-motion-mode="off"] .home-v2-hud__skin i,
+.hud-surface .home-v2-hud[data-motion-mode="off"] .home-v2-hud__trigger > svg { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .hud-surface .home-v2-hud__skin i,
+  .hud-surface .home-v2-hud__trigger > svg { transition: none; }
+}
 
 .hud-surface .home-v2-hud.home-v2-hud--expanded .home-v2-hud__trigger {
   display: grid;
   width: 236px;
   height: 48px;
-  /* `flex-basis: auto` keeps the flex base size on the animated `width`: a fixed
-     236px basis would snap the trigger out of the collapsed pill in one frame. */
+  /* Hit geometry changes immediately with the requested state. */
   flex: 0 0 auto;
   grid-template-columns: 8px minmax(0, 1fr) 16px;
   gap: 10px;
@@ -434,9 +527,9 @@
   border-radius: 999px;
   /* 收起态是暖黑 rgba(42,31,24,.9)，展开态原先换成 rgba(20,22,24,.74)——B 通道最高，
      是真正的冷灰，同一颗岛两个色温。这里回到母本岛的暖黑与双层柔影。 */
-  background: rgba(42, 31, 24, 0.9);
+  background: transparent;
   box-shadow: var(--hud-shadow-small);
-  backdrop-filter: blur(20px) saturate(1.16);
+  backdrop-filter: none;
 }
 
 .hud-surface .home-v2-hud.home-v2-hud--expanded .home-v2-hud__signal { width: 7px; height: 7px; opacity: 1; }
@@ -444,14 +537,9 @@
 .hud-surface .home-v2-hud.home-v2-hud--expanded .home-v2-hud__trigger-copy strong { font-size: 13px; font-weight: 720; }
 .hud-surface .home-v2-hud.home-v2-hud--expanded .home-v2-hud__trigger > svg { color: rgba(255, 248, 237, 0.5); }
 
-/* Collapsed, the panel is a layer pinned to the island's right inner edge rather
-   than a flex item, so the island's width animation drags it in as the island
-   narrows: the retracting pill stays filled with the content that is leaving it.
-   `left` is where the expanded trigger ends (236px + 3px gap) and the panel keeps
-   the expanded skin so nothing flashes while it fades. Only the copy inside it
-   drifts by the skin's authored 10px: moving the panel box itself would drag its
-   clip region out of the island, and sliding the copy further would push it out
-   of the narrowing window before it has finished fading. */
+/* The panel stays beside the fixed trigger while the three-piece skin changes
+   width using transforms. Its copy fades and drifts without stretching text or
+   animating the page's grid tracks. */
 .hud-surface .home-v2-hud__panel {
   position: absolute;
   inset: 4px 1px auto 242px;
@@ -1683,7 +1771,13 @@
   .hud-surface .note-links button:active { transform: none; }
 }
 
-.hud-surface .folio-page { overflow: auto; }.hud-surface .day-route, .hud-surface .queue-reason, .hud-surface .card-press, .hud-surface .study-card, .hud-surface .evidence-slip, .hud-surface .search-index, .hud-surface .preview-page, .hud-surface .settings-menu, .hud-surface .settings-card, .hud-surface .notebook{ min-height: 0; overflow: auto; }
+.hud-surface .folio-page { overflow: auto; }.hud-surface .day-route,
+.hud-surface .queue-reason,
+.hud-surface .card-press,
+.hud-surface .search-index,
+.hud-surface .preview-page,
+.hud-surface .settings-menu,
+.hud-surface .settings-card{ min-height: 0; overflow: auto; }
 
 /* The mockup writes the room control as decorative `<span>`s; the client uses
    real buttons, so the same pill geometry is restated for the interactive
@@ -2285,6 +2379,46 @@
 }
 .hud-surface .hud-rail::-webkit-scrollbar { display: none; }
 
+/* While the column changes shape, its live destination and focus are already
+   available. A frozen column paints the journey using transforms only. */
+.hud-surface .hud-rail[data-rail-morphing] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  overflow: visible;
+}
+.hud-surface .hud-rail[data-rail-morphing] > .nav-chip { opacity: 0; }
+.hud-surface .directory-rail-skin {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform-origin: center bottom;
+  filter: drop-shadow(0 10px 24px rgba(32, 20, 12, 0.28));
+}
+.hud-surface .directory-rail-skin i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 22px;
+  background: var(--directory-skin-color);
+  border-inline: 1px solid var(--directory-skin-line);
+}
+.hud-surface .directory-rail-skin i:first-child {
+  top: 0;
+  border-top: 1px solid var(--directory-skin-line);
+  border-radius: 22px 22px 0 0;
+}
+.hud-surface .directory-rail-skin i:nth-child(2) {
+  bottom: 22px;
+  transform-origin: center bottom;
+}
+.hud-surface .directory-rail-skin i:last-child {
+  bottom: 0;
+  border-bottom: 1px solid var(--directory-skin-line);
+  border-radius: 0 0 22px 22px;
+}
+
 /* ---------------------------------------------------------------------------
  * Note library (mockup 07): the shelf's "current note" sheet and its covers.
  * ------------------------------------------------------------------------- */
@@ -2356,210 +2490,96 @@
 
 /* The mockup's ribbon is decorative text; the client adds the one control the
    page needs (edit / read / discuss) in the same 9px voice. */
-.hud-surface .ribbon-action {
-  padding: 0;
-  color: var(--hud-soft);
-  border: 0;
-  background: transparent;
-  font: 750 9px "Noto Sans SC Variable", "PingFang SC", sans-serif;
-  cursor: pointer;
-  transition: color 140ms var(--hud-ease-out);
-}
 
-.hud-surface .ribbon-action:hover { color: var(--hud-ink); }
-.hud-surface .ribbon-action:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 
-@media (prefers-reduced-motion: reduce) {
-  .hud-surface .ribbon-action { transition: none; }
-}
+
 
 /* The reading page's actions sit on the paper's bottom-right corner, the same
    place the mockup pins the note library's "继续写" button. Both edges are named
    so the row has a definite width: a shrink-to-fit absolute box is what wrapped
    three buttons into a column. */
-.hud-surface .notebook .notebook-actions {
-  position: absolute;
-  right: 30px;
-  bottom: 22px;
-  left: 62px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
 
 /* The editor keeps its receipt line at the bottom, so its actions ride above it. */
-.hud-surface .notebook .notebook-actions--editor { right: 35px; left: 62px; bottom: 44px; }
 
 /* Real notes carry block types the mockup's sample prose never had to show.
    They keep the page's serif reading voice instead of falling back to the
    sans-serif UI font. */
-.hud-surface .reading-body h3 {
-  margin: 20px 0 9px;
-  font: 650 17px/1.5 "Noto Serif SC Variable", "Songti SC", serif;
-}
 
-.hud-surface .reading-body .code-block {
-  margin: 0 0 15px;
-  padding: 12px 14px;
-  overflow: auto;
-  border-radius: 12px 16px 12px 15px;
-  background: rgba(52, 37, 28, 0.07);
-  font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, "Courier New", monospace;
-  white-space: pre-wrap;
-}
 
-.hud-surface .reading-body .list-block { padding-left: 15px; text-indent: -10px; }
-.hud-surface .reading-body .quote { margin: 0 0 15px; }
+
+
+
+
 
 /* The editor swaps the mockup's sample prose for the real title and body, so
    the title field inherits the paper's writing voice instead of Chromium's.
    正文那一半由 `.note-editor` 自己的排版接管（见文件末尾「笔记正文」一节）。 */
-.hud-surface .editor-copy h2 input {
-  display: block;
-  width: 100%;
-  padding: 0;
-  color: inherit;
-  border: 0;
-  outline: none;
-  background: transparent;
-  font: inherit;
-  letter-spacing: inherit;
-}
 
-.hud-surface .editor-copy h2 input { font-size: 23px; line-height: 1.35; }
+
+
 
 /* The two pasted clips hang over the paper's top-right, so the title field
    stops before them instead of running under the notes. */
-.hud-surface .editor-copy h2 { padding-right: 176px; }
-.hud-surface .editor-copy h2 input:focus-visible { outline: 3px solid var(--focus); }
-.hud-surface .editor-copy h2 input::placeholder { color: #967e6b; }
-.hud-surface .editor-copy h2 input:disabled { cursor: not-allowed; }
+
+
+
+
 
 /* Inline notes (save failures, capability reasons) belong to the paper's own
    9px voice, not to a page-level banner. */
-.hud-surface .notebook .notebook-note { margin: 0 0 8px; }
+
 
 /* Future review controls sit in a folded paper below the note's history. */
-.hud-surface .notebook .notebook-review-options .notebook-objective__hold {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  width: 100%;
-  margin-top: 4px;
-  padding: 9px 12px;
-  border: 1px dashed var(--hud-line);
-  border-radius: 13px;
-  background: var(--hud-paper-light);
-}
-.hud-surface .notebook .notebook-review-options .notebook-objective__hold [data-review-hold-label] {
-  color: var(--hud-ink);
-  font-weight: 650;
-}
-.hud-surface .notebook .notebook-review-options .notebook-objective__hold [data-review-hold-notice] {
-  color: var(--hud-green);
-}
-.hud-surface .notebook .notebook-review-options .notebook-objective__hold [data-review-hold-error] {
-  color: var(--hud-red);
-}
+
+
+
+
 
 /* Note subscription and individual target hold remain separate choices. */
-.hud-surface .notebook .notebook-review-options [data-note-subscription] {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  width: 100%;
-  margin-top: 2px;
-  padding-top: 9px;
-  border-top: 1px dashed var(--hud-line);
-}
-.hud-surface .notebook .notebook-review-options [data-subscription-notice] {
-  color: var(--hud-green);
-}
-.hud-surface .notebook .notebook-review-options [data-subscription-error] {
-  color: var(--hud-red);
-}
+
+
+
 
 /* 这一篇的轮次记录（39d §10.3）。上一版三格都挂 `.small` 又挤在同一条 flex 里，
    真窗口看下去是 12 行没有轨的小字墙：日期长短不一让状态那列左右跳，问题里本来就有的
    「」又被外层再套一层。所以：三格各占一列、按列对齐、行与行之间一条细线，
    问题用正文色不缩号。窄屏改成一格一行，而不是把三格压扁。 */
-.hud-surface .notebook .notebook-round-history {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  margin: 0 0 10px;
-}
 
-.hud-surface .notebook .notebook-round-history .notebook-note { margin-bottom: 0; }
+
+
 
 /* 那颗"看更早的"不许跟着容器拉满宽度：这一块是 `align-items: stretch`（为了列表占满），
    拉满之后它变成一条和页面底部动作条贴在一起的巨型胶囊（真窗口看到的正是这个）。 */
-.hud-surface .notebook .notebook-round-history > .button { align-self: flex-start; }
 
-.hud-surface .notebook .notebook-round-history__list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  width: 100%;
-  margin: 2px 0 0;
-  padding: 0;
-  list-style: none;
-}
 
-.hud-surface .notebook .notebook-round-history__list li {
-  display: grid;
-  grid-template-columns: 8.5em 6.5em minmax(0, 1fr);
-  align-items: baseline;
-  gap: 2px 12px;
-  padding: 6px 0;
-  border-top: 1px solid var(--hud-line);
-}
 
-.hud-surface .notebook .notebook-round-history__list li:first-child { border-top: 0; padding-top: 2px; }
 
-.hud-surface .notebook .notebook-round-history__day {
-  color: var(--hud-soft);
-  font-variant-numeric: tabular-nums;
-}
 
-.hud-surface .notebook .notebook-round-history__state { color: var(--hud-soft); }
+
+
+
+
+
+
 
 /* 三枚「这一轮还留下了什么」的元数据格。此前它们在 tsx 里发了类名、这里一条规则
    都没有，实际靠 .small 兜底——也就是说这三个类名是空壳，改名或删除都不会有任何
    视觉后果。现在按 __day / __state 的同一规格接管：中性元数据用柔和墨色。 */
-.hud-surface .notebook .notebook-round-history__modes,
-.hud-surface .notebook .notebook-round-history__follow-up { color: var(--hud-soft); }
+
 
 /* 「系统这次也不确定」是这三枚里唯一需要被看见的一条——它告诉用户这轮的判定不可靠。
    用已有的 --hud-clay（陶土强调）而不是新色，与 round-notice 的失败提示同一族。 */
-.hud-surface .notebook .notebook-round-history__uncertain { color: var(--hud-clay); }
 
-.hud-surface .notebook .notebook-round-history__question {
-  color: var(--hud-ink);
-  overflow-wrap: anywhere;
-}
 
-@media (max-width: 860px) {
-  .hud-surface .notebook .notebook-round-history__list li {
-    grid-template-columns: 1fr;
-    gap: 1px;
-  }
-}
+
+
+
 
 /* 依据点开的那一段短暂亮一下。色与正文里 `.mark` 的暖黄同一族（hud-pages.css），
    但这里是**块级**的"我在这儿"；不做动画——动效是产品设置里的一档。 */
-.hud-surface .notebook .reading-body .reading-block[data-block-focused="true"] {
-  background: rgba(229, 185, 78, 0.22);
-  box-shadow: inset 3px 0 0 var(--hud-clay);
-}
 
-@media (max-width: 760px) {
-  .hud-surface .notebook .notebook-actions { right: 18px; bottom: 14px; }
-  .hud-surface .notebook .notebook-actions--editor { right: 18px; bottom: 26px; }
-  .hud-surface .editor-copy h2 { padding-right: 88px; }
-}
+
+
 
 /* ---------------------------------------------------------------------------
  * Note detail: the pasted source clips live in the reading flow.
@@ -2576,32 +2596,15 @@
  * much narrower paper. On the client the paper spans the whole content column,
  * so the cap left half of every page empty. Lift it: the reading page fills
  * the paper exactly like the editor does. */
-.hud-surface .notebook .reading-body {
-  max-width: none;
-  /* 论文链接、仓库地址这类长拉丁串不许把纸面撑宽。 */
-  overflow-wrap: break-word;
-}
 
-.hud-surface .notebook .source-clips {
-  position: static;
-  width: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 12px;
-  margin: 18px 0 10px;
-}
 
-.hud-surface .notebook .source-clips .clip {
-  font-size: 11px;
-  line-height: 1.9;
-}
 
-.hud-surface .notebook { overflow-x: hidden; }
 
-@media (max-width: 760px) {
-  .hud-surface .notebook .source-clips { grid-template-columns: 1fr; }
-  .hud-surface .notebook { overflow-x: hidden; }
-}
+
+
+
+
+
 
 /* 伴星中心：此处仅保留各分区共用控件样式；页面外壳见 companion-center.css。 */
 
@@ -4531,32 +4534,6 @@
   line-height: 1.55;
 }
 .hud-surface .card-generation-board__sync-at { margin-left: 5px; color: rgba(255, 248, 232, 0.58); }
-.hud-surface .candidate-review-sync { margin: 0 0 9px; }
-
-.hud-surface .card-generation-board .press-track {
-  min-height: 0;
-  /* 不让阶段纸被压扁：板子自己滚动之后，四张纸保持自己的高度，页脚永远在
-     它们下面 —— 之前这里跟着收缩，页脚就叠到纸面上去了。 */
-  flex: 0 0 auto;
-  margin-top: 18px;
-}
-.hud-surface .card-generation-board .press-stage { min-height: 0; }
-.hud-surface .card-generation-board .press-paper {
-  display: flex;
-  /* 板子自己滚动之后，纸面不必再为表头腾高度，收回 mockup 的 130px 一档的观感。 */
-  min-height: 108px;
-  height: auto;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 12px;
-}
-.hud-surface .card-generation-board .press-paper strong {
-  font: 680 13px/1.45 "Noto Serif SC Variable", "Songti SC", serif;
-}
-.hud-surface .card-generation-board .press-paper span {
-  color: var(--hud-soft);
-  line-height: 1.55;
-}
 
 .hud-surface .card-generation-board__footer {
   margin-top: 18px;
@@ -4592,10 +4569,7 @@
 .hud-surface .card-generation-hud-state .button { font-size: 10px; }
 
 /* 笔记页的生成状态行：后台任务在跑时的常驻提示（role=status 播报变化）。 */
-.hud-surface .notebook .notebook-generation-live {
-  color: var(--sage-deep, #5a6b4a);
-  font-weight: 650;
-}
+
 
 .hud-surface .card-generation-board .card-generation-recovery {
   display: grid;
@@ -4609,97 +4583,7 @@
   box-shadow: var(--hud-shadow-small);
   transform: rotate(-0.35deg);
 }
-
-.hud-surface .candidate-review-table { min-height: 0; }
-.hud-surface .candidate-study-card {
-  min-width: 0;
-  padding-bottom: 104px;
-  overflow: hidden;
-}
-.hud-surface .candidate-card__meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 11px;
-  color: var(--hud-soft);
-  border-bottom: 1px solid var(--hud-line);
-  font-size: 9px;
-}
-.hud-surface .candidate-card__kicker {
-  margin: 25px 0 7px;
-  color: #5b735d;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-.hud-surface .candidate-study-card h2 {
-  margin-bottom: 12px;
-  font-size: clamp(20px, 2vw, 29px);
-}
-.hud-surface .candidate-card__prompt {
-  max-width: 62ch;
-  color: var(--hud-soft);
-  font-size: 11px;
-  line-height: 1.7;
-}
-.hud-surface .candidate-study-card .answer-slip {
-  display: grid;
-  gap: 6px;
-  background: rgba(185, 211, 173, 0.58);
-}
-.hud-surface .candidate-study-card .answer-slip small {
-  color: var(--hud-soft);
-  font-size: 9px;
-  font-weight: 800;
-}
-.hud-surface .candidate-study-card .answer-slip strong {
-  font: 620 13px/1.65 "Noto Serif SC Variable", "Songti SC", serif;
-}
-.hud-surface .candidate-study-card .stamp-actions {
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.hud-surface .candidate-review-slip {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  overflow: auto;
-}
-.hud-surface .candidate-review-slip > .tag { align-self: flex-start; }
-.hud-surface .candidate-review-slip h3 { margin: 13px 0 10px; }
-.hud-surface .candidate-review-slip dl { display: grid; gap: 0; margin: 0; }
-.hud-surface .candidate-review-slip dl > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 9px 0;
-  border-bottom: 1px solid rgba(73, 47, 29, 0.16);
-}
-.hud-surface .candidate-review-slip dt { color: var(--hud-soft); }
-.hud-surface .candidate-review-slip dd { margin: 0; text-align: right; font-weight: 750; }
-.hud-surface .candidate-review-slip__receipt {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: #435e47;
-  font-weight: 750;
-}
 /* 恢复态但仍可审核时的一句话：先说明"还能做什么"，再列出动作。 */
-.hud-surface .candidate-review-slip__recovery {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin: 0 0 9px;
-  color: #7c4a29;
-}
-.hud-surface .candidate-review-slip__recovery > svg { flex: none; margin-top: 2px; }
-.hud-surface .candidate-review-slip__actions {
-  display: grid;
-  gap: 8px;
-  margin-top: auto;
-  padding-top: 16px;
-}
 
 /* Shared run/editor primitives. The focus scene and result composition live
    in objective-flow.css; this file keeps only still-used editor controls. */
@@ -5108,24 +4992,10 @@
   .hud-surface .card-generation-board__header { gap: 10px; }
   .hud-surface .card-generation-board__header h2 { margin: 4px 0 2px; font-size: 11px; }
   .hud-surface .card-generation-board__header p { font-size: 5px; }
-  .hud-surface .card-generation-board .press-track { margin-top: 17px; }
-  .hud-surface .card-generation-board .press-paper { min-height: 58px; gap: 5px; }
-  .hud-surface .card-generation-board .press-paper strong { font-size: 7px; }
   .hud-surface .card-generation-board__footer { gap: 8px; margin-top: 8px; padding-top: 6px; font-size: 5px; }
   .hud-surface .card-generation-hud-state { gap: 4px; padding: 14px; }
   .hud-surface .card-generation-hud-state strong { font-size: 9px; }
   .hud-surface .card-generation-hud-state p { font-size: 5px; }
-  .hud-surface .candidate-study-card { padding-bottom: 52px; }
-  .hud-surface .candidate-card__meta { padding-bottom: 5px; font-size: 5px; }
-  .hud-surface .candidate-card__kicker { margin: 12px 0 3px; font-size: 5px; }
-  .hud-surface .candidate-study-card h2 { margin-bottom: 6px; font-size: 12px; }
-  .hud-surface .candidate-card__prompt { font-size: 6px; }
-  .hud-surface .candidate-study-card .answer-slip { gap: 3px; }
-  .hud-surface .candidate-study-card .answer-slip small { font-size: 5px; }
-  .hud-surface .candidate-study-card .answer-slip strong { font-size: 7px; }
-  .hud-surface .candidate-review-slip h3 { margin: 6px 0 5px; }
-  .hud-surface .candidate-review-slip dl > div { gap: 5px; padding: 4px 0; }
-  .hud-surface .candidate-review-slip__actions { gap: 4px; padding-top: 7px; }
   .hud-surface .learning-run-result-board { border-width: 2px; border-radius: 19px 16px 21px 17px / 17px 22px 16px 20px; }
   .hud-surface .learning-run-hint { gap: 4px; margin-top: 9px; padding-top: 7px; font-size: 9px; }
   .hud-surface .learning-run-hint svg { width: 12px; height: 12px; }
@@ -5180,44 +5050,16 @@
  * scrolling, the action rows and save-line stay pinned to the paper.
  * ------------------------------------------------------------------------- */
 
-.hud-surface article.notebook {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
 
-.hud-surface .notebook .notebook-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  /* 纸面只纵向翻页：横向一律裁掉。全宽正文里子像素级的 1px 溢出
-     （863.5 → scrollWidth 864）也足以拉出一条横向滚动条。 */
-  overflow: hidden auto;
-  scrollbar-color: rgba(79, 57, 39, 0.42) transparent;
-  scrollbar-width: thin;
-  /* Keep the last lines clear of the pinned action rows. */
-  padding-bottom: 68px;
-}
 
-.hud-surface .notebook[data-mode="edit"] .notebook-scroll { padding-bottom: 96px; }
 
-.hud-surface .reading-body .reading-image {
-  display: block;
-  max-width: 100%;
-  margin: 0 0 15px;
-  border-radius: 12px 16px 12px 15px;
-  border: 1px solid var(--hud-line);
-  background: rgba(52, 37, 28, 0.05);
-}
+
+
+
 
 /* Markdown tables live inside a paragraph block; the reading page renders
    them as real tables instead of a wall of pipe characters. */
-.hud-surface .reading-body .md-table {
-  border-collapse: collapse;
-  margin: 0 0 15px;
-  max-width: 100%;
-  font-size: 13px;
-  line-height: 1.6;
-}
+
 
 .hud-surface .md-table th,
 .hud-surface .md-table td {
@@ -5234,11 +5076,7 @@
 
 .hud-surface .md-table tbody tr:nth-child(even) td { background: rgba(52, 37, 28, 0.035); }
 
-@media (max-width: 760px) {
-  .hud-surface .notebook .notebook-scroll { padding-bottom: 48px; }
-  .hud-surface .notebook[data-mode="edit"] .notebook-scroll { padding-bottom: 64px; }
-  .hud-surface .reading-body .md-table { font-size: 9px; }
-}
+
 /* ---------------------------------------------------------------------------
  * Note detail: the immutable version history, and the candidate card's own
  * scrolling body.
@@ -5298,20 +5136,6 @@
    like the notebook: a long statement used to push 保留/不保留 past the fixed
    `.content` box, where `.task-surface`'s `overflow: hidden` cut them off with
    no way to scroll back to them. */
-.hud-surface .candidate-study-card {
-  display: flex;
-  min-height: 0;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.hud-surface .candidate-study-card__body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  scrollbar-color: rgba(79, 57, 39, 0.42) transparent;
-  scrollbar-width: thin;
-}
 
 @media (max-width: 760px) {
   .hud-surface .version-list li { gap: 8px; font-size: 8px; }
@@ -5320,32 +5144,6 @@
 /* The revealed answer, its evidence, and the reject-reason bar. Everything here
    appears only after the reviewer asks for it, so it may be dense: it is the
    material the keep/reject decision is actually about. */
-.hud-surface .candidate-study-card[data-rejecting="true"] { padding-bottom: 152px; }
-
-.hud-surface .candidate-card__cue,
-.hud-surface .candidate-card__context {
-  max-width: 62ch;
-  margin: 0 0 8px;
-  color: var(--hud-soft);
-  font-size: 11px;
-  line-height: 1.7;
-}
-
-.hud-surface .candidate-card__cue b,
-.hud-surface .candidate-card__context b {
-  margin-right: 8px;
-  color: #5b735d;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.hud-surface .candidate-card__refs,
-.hud-surface .candidate-card__reasons {
-  margin: 0 0 8px;
-  color: var(--hud-soft);
-  overflow-wrap: anywhere;
-}
 
 .hud-surface .reveal-slip {
   margin: 18px 0 0;
@@ -5427,36 +5225,9 @@
   line-height: 1.6;
 }
 
-.hud-surface .candidate-study-card .reject-reasons {
-  position: absolute;
-  left: 38px;
-  right: 38px;
-  bottom: 92px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border: 2px solid var(--hud-line-strong);
-  border-radius: 14px 18px 13px 16px;
-  background: var(--hud-cream);
-  box-shadow: 0 6px 14px rgba(67, 43, 27, 0.18);
-  font-size: 10px;
-}
-
-.hud-surface .candidate-study-card .reject-reasons > span {
-  color: var(--hud-soft);
-  font-weight: 750;
-}
-
 .hud-surface .card-generation-board__failure {
   margin: 12px 0 0;
   color: #f6c3b2;
-}
-
-@media (max-width: 760px) {
-  .hud-surface .candidate-study-card .reject-reasons { left: 19px; right: 19px; bottom: 52px; gap: 6px; }
-  .hud-surface .candidate-study-card[data-rejecting="true"] { padding-bottom: 120px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -5465,7 +5236,7 @@
 
 /* A note longer than the reading window says so on the paper instead of
    rendering ten thousand blocks in one paint. */
-.hud-surface .reading-body .reading-more { justify-content: center; padding: 8px 0 4px; }
+
 
 /* ===========================================================================
  * Note paper (pages 08/09): pinned chrome, one scrolling body, and the ruling.
@@ -5491,18 +5262,10 @@
  * =========================================================================== */
 
 /* ── 纸面：去掉自己那份 ruling，只留底色 ── */
-.hud-surface .notebook {
-  --note-line: 32px;
-  --note-writing: 14px;
-  --note-rule: rgba(85, 107, 96, 0.16);
-  background: radial-gradient(circle at 15% 0, rgba(255, 255, 255, 0.64), transparent 36%), var(--hud-cream);
-}
+
 
 /* ── 固定在纸面顶端的 chrome ── */
-.hud-surface .notebook .notebook-chrome {
-  flex: none;
-  padding-bottom: 2px;
-}
+
 
 /* ── 同处这一篇的人：一排印章，人数由后面那句文字说 ── */
 .hud-surface .notebook-presence {
@@ -5527,177 +5290,73 @@
 /* 正文缩进对齐页边红线（`:before` 落在 left:32px），与标题同一条左边缘。 */
 
 /* ── 书写区：32px 一格的横线，行高就是格高 ── */
-.hud-surface .notebook .reading-body > .reading-block > p,
-.hud-surface .notebook .reading-body > .reading-block > h3,
-.hud-surface .notebook .note-editor .ProseMirror :is(p, h1, h2, h3, h4, h5, h6),
-.hud-surface .notebook .note-editor .ProseMirror li {
-  margin: 0;
-  padding: 0 0 var(--note-line);
-  font-size: var(--note-writing);
-  line-height: var(--note-line);
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0 calc(var(--note-line) - 1px),
-    var(--note-rule) calc(var(--note-line) - 1px) var(--note-line)
-  );
-  background-size: 100% var(--note-line);
-  background-repeat: repeat-y;
-}
+
 
 /* 标题在格子上占同样的行高，只是更重、更大。 */
-.hud-surface .notebook .note-editor .ProseMirror :is(h1, h2, h3) { font-size: 17px; }
-.hud-surface .notebook .note-editor .ProseMirror :is(h4, h5, h6) { font-size: 15px; }
-.hud-surface .notebook .reading-body > .reading-block > h3 { font-size: 17px; }
+
+
+
 
 /* 每一块的锚点层（W4-6 刀二）：它不占格子、不带边距，只把"这一块是哪一段"写进 DOM，
    好让教学面的依据能滚过来。 */
 /* 阅读页的列表块保留自己的悬挂缩进：格线照旧铺过左侧内边距。 */
-.hud-surface .notebook .reading-body > .reading-block > p.list-block { padding-left: 15px; text-indent: -10px; }
+
 
 /* 阅读页贴上去的东西（代码块、表格、图片）也只留一格，别用生成样式表里的 15px。 */
-.hud-surface .notebook .reading-body :is(.code-block, .md-table, .reading-image) {
-  margin-bottom: var(--note-line);
-}
+
 
 /* 列表：项目符号落在 li 自己的左内边距里，格线照样铺满整行。 */
-.hud-surface .notebook .note-editor .ProseMirror :is(ul, ol) { margin: 0; padding: 0; }
-.hud-surface .notebook .note-editor .ProseMirror li { padding: 0 0 var(--note-line) 1.6em; }
+
+
 
 /* 松散列表（li 里包着 p）由那个 p 带格线，li 自己不能再垫一格，否则就垫了两遍。 */
-.hud-surface .notebook .note-editor .ProseMirror li:has(> p) {
-  padding-bottom: 0;
-  background-image: none;
-}
+
 
 /* 引用：左侧一道竖线，里面仍是普通的行。 */
-.hud-surface .notebook .note-editor .ProseMirror blockquote {
-  margin: 0;
-  padding: 0 0 0 15px;
-  border-left: 3px solid rgba(175, 82, 44, 0.42);
-}
+
 
 /* ── 贴上去的东西：不铺格线，只在下面留一格 ── */
-.hud-surface .notebook .note-editor .ProseMirror pre,
-.hud-surface .notebook .note-editor .ProseMirror :is(table, hr),
-.hud-surface .notebook .note-editor .ProseMirror p:has(> img) {
-  margin: 0 0 var(--note-line);
-  padding: 0;
-  background-image: none;
-  line-height: 1.7;
-}
 
-.hud-surface .notebook .note-editor .ProseMirror pre {
-  padding: 12px 14px;
-  overflow-x: auto;
-  border-radius: 12px 16px 12px 15px;
-  background-color: rgba(52, 37, 28, 0.07);
-  font: 12.5px/1.7 ui-monospace, SFMono-Regular, Menlo, "Courier New", monospace;
-  white-space: pre-wrap;
-}
 
-.hud-surface .notebook .note-editor .ProseMirror hr {
-  height: 0;
-  border: 0;
-  border-top: 1px solid var(--hud-line-strong);
-}
 
-.hud-surface .notebook .note-editor .ProseMirror .tableWrapper { overflow-x: auto; }
 
-.hud-surface .notebook .note-editor .ProseMirror table {
-  border-collapse: collapse;
-  font-size: 13px;
-  line-height: 1.6;
-}
 
-.hud-surface .notebook .note-editor .ProseMirror :is(th, td) {
-  padding: 6px 11px;
-  border: 1px solid var(--hud-line-strong);
-  text-align: left;
-  vertical-align: top;
-}
 
-.hud-surface .notebook .note-editor .ProseMirror th {
-  background: rgba(52, 37, 28, 0.07);
-  font-weight: 650;
-}
+
+
+
+
+
+
+
 
 /* 单元格里的段落不再是"纸上的行"：格线会与表格自己的框线打架。 */
-.hud-surface .notebook .note-editor .ProseMirror :is(th, td) :is(p, h1, h2, h3, h4, h5, h6) {
-  padding: 0;
-  background-image: none;
-  line-height: 1.6;
-}
+
 
 /* ── 行内元素 ── */
-.hud-surface .notebook .note-editor .ProseMirror strong { font-weight: 700; }
-.hud-surface .notebook .note-editor .ProseMirror em { font-style: italic; }
-.hud-surface .notebook .note-editor .ProseMirror del { color: var(--hud-soft); }
 
-.hud-surface .notebook .note-editor .ProseMirror a {
-  color: var(--hud-clay);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 4px;
-}
 
-.hud-surface .notebook .note-editor .ProseMirror code {
-  padding: 1px 5px;
-  border-radius: 6px;
-  background-color: rgba(52, 37, 28, 0.08);
-  font: 0.88em ui-monospace, SFMono-Regular, Menlo, "Courier New", monospace;
-}
 
-.hud-surface .notebook .note-editor .ProseMirror pre code { padding: 0; background: none; font: inherit; }
+
+
+
+
+
+
 
 /* ── 图片 ──
  * .ProseMirror-separator 是 ProseMirror 给原子节点的内部光标元素（每个图片
  * 节点后面都挂一个空 <img>），不是内容；不加豁免的话它会顶着下面这条 img 规则
  * 渲染成一条带边框的空横条。 */
-.hud-surface .notebook .note-editor .ProseMirror img:not(.ProseMirror-separator) {
-  display: block;
-  max-width: 100%;
-  max-height: 420px;
-  margin: 6px auto;
-  border: 1px solid var(--hud-line);
-  border-radius: 12px 16px 12px 15px;
-  background-color: rgba(52, 37, 28, 0.05);
-}
 
-.hud-surface .notebook .note-editor .ProseMirror img.ProseMirror-separator {
-  display: inline;
-  width: 0;
-  height: 0;
-  margin: 0;
-  border: none;
-  background: none;
-}
+
+
 
 /* 上传中的占位：正文里那块虚线格子。作者在这里看得见"图会落在这"。 */
-.hud-surface .notebook .note-editor .ProseMirror img[src^="uploading:"] {
-  width: 100%;
-  min-height: 132px;
-  object-fit: contain;
-  border-style: dashed;
-  border-color: var(--hud-line-strong);
-  background-color: rgba(52, 37, 28, 0.04);
-  background-image: repeating-linear-gradient(
-    45deg,
-    rgba(52, 37, 28, 0.05) 0 8px,
-    transparent 8px 16px
-  );
-  color: var(--hud-soft);
-  font: 11px "Noto Sans SC Variable", sans-serif;
-  text-align: center;
-}
+
 
 /* 取不回的站内图（重试仍失败）：同一块虚线格子，如实说图暂时缺位。 */
-.hud-surface .notebook .note-editor .ProseMirror img.note-image-unavailable {
-  width: 100%;
-  min-height: 96px;
-  object-fit: contain;
-  border-style: dashed;
-  border-color: var(--hud-line-strong);
-  background-color: rgba(52, 37, 28, 0.04);
-}
+
 
 /* ── 编辑器本体 ── */
 .hud-surface .note-editor { min-height: 320px; }
@@ -5720,53 +5379,27 @@
  * 段落里的图不画、`---` 当字打出来。这一段不是新规格：每一条都是把上面编辑器里
  * 已经定好的值抄给 `.reading-body`，两处共用一份数字，而不是各写一份。
  */
-.hud-surface .notebook .reading-body strong { font-weight: 700; }
-.hud-surface .notebook .reading-body em { font-style: italic; }
-.hud-surface .notebook .reading-body del { color: var(--hud-soft); }
 
-.hud-surface .notebook .reading-body a {
-  color: var(--hud-clay);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 4px;
-}
 
-.hud-surface .notebook .reading-body code {
-  padding: 1px 5px;
-  border-radius: 6px;
-  background-color: rgba(52, 37, 28, 0.08);
-  font: 0.88em ui-monospace, SFMono-Regular, Menlo, "Courier New", monospace;
-}
+
+
+
+
+
 
 /* 代码块整块已经是等宽底色，里面的 code 不再套一层（与编辑器 pre code 同一条豁免）。 */
-.hud-surface .notebook .reading-body .code-block code { padding: 0; background: none; font: inherit; }
+
 
 /* 段落里的图与块级图同一个形状：编辑器那边 img 也是 display block。 */
-.hud-surface .notebook .reading-body .reading-image {
-  max-height: 420px;
-  margin: 6px auto;
-}
+
 
 /* 分隔线：编辑器画 hr，阅读页以前把三个减号当字打出来。 */
-.hud-surface .notebook .reading-body .reading-rule {
-  height: 0;
-  margin: 0 0 var(--note-line);
-  border: 0;
-  border-top: 1px solid var(--hud-line-strong);
-}
+
 
 /* 引用：左侧一道竖线，与编辑器 blockquote 同一条。 */
-.hud-surface .notebook .reading-body .quote {
-  padding-left: 15px;
-  border-left: 3px solid rgba(175, 82, 44, 0.42);
-}
 
-@media (max-width: 760px) {
-  .hud-surface .notebook .notebook-chrome .editor-head { padding-right: 88px; }
-  .hud-surface .notebook {
-    --note-line: 24px;
-    --note-writing: 10px;
-  }
-}
+
+
 
 /* ---------------------------------------------------------------------------
  * Note images: the upload queue that sits under the writing body.
@@ -5775,49 +5408,23 @@
  * 「重试」和「移出正文」两个动作。
  * ------------------------------------------------------------------------- */
 
-.hud-surface .notebook .note-image-uploads {
-  margin: 10px 0 0;
-  padding-top: 8px;
-  border-top: 1px dashed var(--hud-line);
-}
 
-.hud-surface .notebook .note-image-upload-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
 
-.hud-surface .notebook .note-image-upload {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--hud-soft);
-  font-size: 9px;
-}
 
-.hud-surface .notebook .note-image-upload__mark,
-.hud-surface .notebook .note-image-upload__kind { flex: none; }
-.hud-surface .notebook .note-image-upload[data-status="succeeded"] .note-image-upload__mark { color: #4b674f; }
-.hud-surface .notebook .note-image-upload[data-status="failed"] .note-image-upload__mark { color: var(--hud-red); }
 
-.hud-surface .notebook .note-image-upload__name {
-  max-width: 42%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
-.hud-surface .notebook .note-image-upload__size { flex: none; color: #967e6b; }
-.hud-surface .notebook .note-image-upload__state { margin-left: auto; text-align: right; }
-.hud-surface .notebook .note-image-upload .text-action { flex: none; font-size: 9px; }
 
-@media (max-width: 760px) {
-  .hud-surface .notebook .note-image-upload__name { max-width: 32%; }
-  .hud-surface .notebook .note-image-upload__size { display: none; }
-}
+
+
+
+
+
+
+
+
+
+
+
 
 /* ── 常驻空间胶囊 + 共享外发明示（批次 5 / 3）────────────────────────────
    这两组规则原本被写在文件里一个 @media 块的内部，1440 视口下整段不生效：
@@ -6347,13 +5954,6 @@
    `--hud-ease-out` 逐字节相同（`.companion-muted` 与 `--ease-out` 那边本来就写着
    `var(--hud-soft, …)` / 同样的三次贝塞尔），抄一份只是第二个真理源：母本改了，
    抽屉不会跟着改。 */
-.companion-chat {
-  --companion-ivory: var(--hud-paper-light);
-  --companion-cream: var(--hud-cream);
-  --companion-muted: var(--hud-soft);
-  --ease-out: var(--hud-ease-out);
-}
-
 /* ===========================================================================
  * B6 转场与状态反馈（评审 §6 P17 / P18）
  * ======================================================================== */
@@ -6412,8 +6012,7 @@
 
 /* 页签：窄屏改成横向可滑的 chip 条，每颗保底 44×44。滚动条藏掉但保留滚动，
    因为六颗 × 44 在 252px 的工作台里本来就装不下——装不下就该能滑，不该压扁。 */
-@media (max-width: 1100px) {
-      }
+
 
 /* ── 补全 hover↔按压这一对（本文件末尾追加，照 §第六波补控件按压的同一形状）
    `scripts/tmp-hud-press-pair.mjs` 实测这 9 个基只有 hover 抬升、按下去 transform 不动。

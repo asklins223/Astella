@@ -122,8 +122,16 @@ describe("CardGenerationSurface · 生成工作台", () => {
     useRoomStore.setState({ activeCardGenerationRunId: RUN_ID, activeNoteRef: null });
     const { container, getByRole } = render(<CardGenerationSurface />);
 
-    await waitFor(() => expect(container.querySelectorAll(".press-stage").length).toBe(4));
-    expect(container.querySelector(".press-stage.active")?.textContent).toContain("正在做质量检查");
+    // 四阶段只有**一条**轨（`.card-generation-progress__steps`）。此前同一屏上还有
+    // 一排 `.press-stage` 卡片，读的是同一个 `generationStages` 与同一个
+    // `generationStage`——那四个名字于是各出现两遍。这条断言顺带钉住「不再有第二份」。
+    await waitFor(() => expect(container.querySelectorAll(".card-generation-progress__step").length).toBe(4));
+    // `checking` 落在第三步。阶段名说的是「这一步在做什么」，**不是**服务端状态词
+    // （状态词在进度头条 `.card-generation-progress__name` 里，已另有用例钉）。
+    const current = container.querySelector(".card-generation-progress__step.is-current");
+    expect(current?.querySelector(".card-generation-progress__label")?.textContent).toContain("对齐证据");
+    expect(current?.querySelector(".card-generation-progress__state")?.textContent).toBe("进行中");
+    expect(container.querySelectorAll(".press-stage")).toHaveLength(0);
 
     fireEvent.click(getByRole("button", { name: "返回笔记" }));
     await waitFor(() => expect(useRoomStore.getState().surface).toBe("notebook"));
@@ -142,7 +150,8 @@ describe("CardGenerationSurface · 生成工作台", () => {
     state.eventHandlers.get("sub-1")?.();
 
     await waitFor(() => expect(container.querySelector(".task-title h1")?.textContent).toBe("候选卡审核"));
-    await waitFor(() => expect(container.querySelector(".candidate-study-card h2")?.textContent).toContain("为什么提取练习有效"));
+    await waitFor(() => expect(container.querySelector(".candidate-study-card h2")?.textContent).toBe("请解释机制"));
+    expect(container.querySelector("#candidate-card-title")?.textContent).toContain("为什么提取练习有效");
   });
 
   it("store 丢失 runId 时从 projection 自愈，不落空态", async () => {
@@ -152,7 +161,7 @@ describe("CardGenerationSurface · 生成工作台", () => {
 
     await waitFor(() => expect(useRoomStore.getState().activeCardGenerationRunId).toBe(RUN_ID));
     await waitFor(() => expect(gateway.note.cardGeneration.getRun).toHaveBeenCalled());
-    await waitFor(() => expect(container.querySelector(".press-stage")).not.toBeNull());
+    await waitFor(() => expect(container.querySelector(".card-generation-progress__step")).not.toBeNull());
     expect(queryByText("还没有进行中的生成任务")).toBeNull();
   });
 
@@ -379,22 +388,23 @@ describe("CardGenerationSurface · packaged 冒烟选择器契约", () => {
       expect(within(container).getByRole("button", { name: new RegExp(`^${label}`) })).toBeTruthy();
     }
 
-    // 未决候选的后果必须写在脸上：以前点「激活」会静默把它们打成"未选中"丢弃。
+    // 没决定的候选要说清它们**去哪儿**，而不是只报一个数字：这次保存不带它们走，
+    // 它们留在这叠里下次接着看（41 §1.5 对草稿是同一条口径）。
     expect(container.querySelector(".candidate-review-slip__actions")?.textContent)
-      .toContain("还有 1 张可以审核的卡没有决定");
+      .toContain("还有 1 张没决定");
 
     // 保留之后 meta 行给出「已保留 · 等着保存到卡组」，脚本用这句话判断提交成功。
     fireEvent.click(within(container).getByRole("button", { name: /^保留/ }));
     await waitFor(() => expect(container.querySelector(".candidate-card__meta")?.textContent).toContain("已保留"));
     await waitFor(() => expect(container.querySelector(".candidate-review-slip__actions")?.textContent)
-      .not.toContain("没有决定"));
+      .not.toContain("没决定"));
 
     // 保留即排队：不再有「加入待激活」勾选框，直接出现带数量的激活按钮
     // （2026-09-20 实走复盘 #1：既要保留又要勾选，而计数只统计已保留的勾选，
     //  先勾后不保留会静默激活 0 张）。
     expect(container.querySelector(".candidate-activation-choice")).toBeNull();
-    const activateButton = await waitFor(() => within(container).getByRole("button", { name: /^保存到卡组（\d+ 张）/ }));
-    expect(activateButton.textContent).toContain("保存到卡组（1 张）");
+    const activateButton = await waitFor(() => within(container).getByRole("button", { name: /^保存已保留的 \d+ 张/ }));
+    expect(activateButton.textContent).toContain("保存已保留的 1 张");
     fireEvent.click(activateButton);
 
     // 真实回执：.candidate-review-slip__receipt 里的「已确认 N 个目标映射」。

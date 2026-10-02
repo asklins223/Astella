@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   WINDOW_LIVE2D_ASSETS,
@@ -24,6 +25,19 @@ function parameterValue(
 }
 
 describe("window Live2D policy", () => {
+  it.each([
+    ["whale", "../../../../public/assets/companion/live2d-v3/whale/c_0120.cdi3.json"],
+    ["mao-pro", "../../../../public/assets/companion/live2d-v1/mao-pro/runtime/mao_pro.cdi3.json"],
+  ] as const)("uses real head parts from the %s asset and excludes tail/table parts", (modelId, path) => {
+    const parts = JSON.parse(readFileSync(new URL(path, import.meta.url), "utf8")).Parts as { Id: string; Name: string }[];
+    const headParts = WINDOW_LIVE2D_MODEL_REGISTRY[modelId].layoutHeadParts!;
+    expect(headParts.length).toBeGreaterThan(0);
+    for (const id of headParts) expect(parts.some(part => part.Id === id), id).toBe(true);
+    const selected = parts.filter(part => headParts.includes(part.Id));
+    expect(selected.some(part => /头发|发型|Hair/.test(part.Name))).toBe(true);
+    expect(selected.some(part => /尾巴|桌|Tail|Desk/.test(part.Name))).toBe(false);
+  });
+
   it("fails closed when bundled model license approval is absent", () => {
     const approved = {
       schemaVersion: 1,

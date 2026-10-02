@@ -77,340 +77,6 @@
   line-height: 1.6;
 }
 
-.hud-surface .notebook-hud .notebook-reading-outline {
-  margin: 5px 0 22px;
-  padding: 12px 15px 8px 19px;
-  color: var(--hud-ink);
-  border: 2px solid var(--hud-cream);
-  border-left: 5px solid var(--hud-peach);
-  border-radius: 16px 11px 18px 13px;
-  background: var(--hud-paper-deep);
-  box-shadow: var(--hud-shadow-small);
-}
-.hud-surface .notebook-hud .notebook-reading-outline__heading {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 3px 12px;
-  margin: 0 0 6px;
-}
-.hud-surface .notebook-hud .notebook-reading-outline__title {
-  color: var(--hud-ink);
-  font: 650 16px/1.5 "Noto Serif SC Variable", "Songti SC", serif;
-}
-.hud-surface .notebook-hud .notebook-reading-outline__hint {
-  color: var(--hud-soft);
-  font-size: 12px;
-  line-height: 1.6;
-}
-.hud-surface .notebook-hud .notebook-reading-outline ol {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.hud-surface .notebook-hud .notebook-reading-outline li + li { border-top: 1px dashed var(--hud-line); }
-.hud-surface .notebook-hud .notebook-reading-outline__bookmark {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px 14px;
-  width: 100%;
-  min-height: 39px;
-  padding: 7px 4px;
-  color: var(--hud-ink);
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-  transition: color 150ms var(--hud-ease-out), background-color 150ms var(--hud-ease-out), transform 150ms var(--hud-ease-out);
-}
-.hud-surface .notebook-hud .notebook-reading-outline__bookmark:hover {
-  color: #3e2d22;
-  background: rgba(255, 252, 235, 0.72);
-  transform: translateX(2px);
-}
-.hud-surface .notebook-hud .notebook-reading-outline__bookmark:active { transform: translateX(1px) scale(0.995); }
-.hud-surface .notebook-hud .notebook-reading-outline__bookmark:focus-visible {
-  outline: 3px solid var(--hud-green);
-  outline-offset: 2px;
-}
-.hud-surface .notebook-hud .notebook-reading-outline__name {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  min-width: 0;
-  font-size: 14px;
-  line-height: 1.65;
-  overflow-wrap: anywhere;
-}
-.hud-surface .notebook-hud .notebook-reading-outline__number {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  width: 21px;
-  height: 21px;
-  color: #fffdf5;
-  border-radius: 50% 48% 45% 52%;
-  background: var(--hud-green);
-  font: 650 11px/1 "Noto Sans SC Variable", "PingFang SC", sans-serif;
-}
-.hud-surface .notebook-hud .notebook-reading-outline__presence {
-  flex: none;
-  color: var(--hud-green);
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: nowrap;
-}
-.hud-surface .notebook-hud .notebook-reading-outline__presence.is-heading-only { color: #a45c37; }
-.hud-surface .notebook-hud .notebook-reading-outline__toggle {
-  min-height: 31px;
-  margin: 0 0 0 auto;
-  padding: 4px 10px;
-  color: var(--hud-ink);
-  border: 1px dashed var(--hud-line-strong);
-  border-radius: 10px 14px 9px 12px;
-  background: var(--hud-paper-light);
-  font-size: 12px;
-  cursor: pointer;
-  transition: background-color 150ms var(--hud-ease-out), transform 150ms var(--hud-ease-out);
-}
-.hud-surface .notebook-hud .notebook-reading-outline__toggle:hover {
-  background: var(--hud-butter);
-  transform: rotate(-1deg) translateY(-1px);
-}
-.hud-surface .notebook-hud .notebook-reading-outline__toggle:focus-visible {
-  outline: 3px solid var(--hud-green);
-  outline-offset: 2px;
-}
-
-/* The quick-read task is one visible paper tab. Companion actions remain
-   nearby as small paper links, with the saved result attached below it. */
-.hud-surface .notebook-hud .notebook-overview-entry {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px 18px;
-  /* 贴一张纸签在纸上，不是嵌一块面板进纸里。
-     此前这一格是通栏的近白渐变大方框（`paper-light` #fff9eb 在奶油纸 #f5ead5 上
-     读作"更亮的一块"），加上通栏铺满与居中排布，真窗口里它就是一块后台面板——
-     正是 AGENTS.md 禁掉的那种形状。改成：不铺满、只贴左边、带薄荷底与轻微偏转，
-     落回 41 §1.1「页首一张薄荷小纸签」。 */
-  width: fit-content;
-  max-width: 100%;
-  margin: 14px 0 22px;
-  padding: 11px 15px 12px;
-  color: var(--hud-ink);
-  border: 3px solid rgba(255, 252, 235, 0.9);
-  border-radius: 15px 20px 14px 18px;
-  background: color-mix(in srgb, var(--hud-mint) 38%, var(--hud-cream));
-  transform: rotate(-0.35deg);
-  box-shadow: var(--hud-shadow);
-}
-.hud-surface .notebook-hud .notebook-overview-entry__copy {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.hud-surface .notebook-hud .notebook-overview-entry__stamp {
-  display: inline-grid;
-  place-items: center;
-  min-height: 34px;
-  padding: 5px 10px;
-  color: #304b3b;
-  border: 2px solid rgba(255, 252, 235, 0.88);
-  border-radius: 10px 15px 9px 13px;
-  /* 纸签底已经改成薄荷，这枚印章改用奶油——否则薄荷叠薄荷，中间那层直接消失。 */
-  background: var(--hud-cream);
-  box-shadow: var(--hud-shadow-small);
-  font-size: 11px;
-  font-weight: 750;
-  white-space: nowrap;
-}
-.hud-surface .notebook-hud .notebook-overview-entry__copy h3 {
-  margin: 0;
-  color: var(--hud-ink);
-  font: 700 17px/1.35 "Noto Serif SC Variable", "Songti SC", serif;
-}
-.hud-surface .notebook-hud .notebook-overview-entry__copy p {
-  margin: 3px 0 0;
-  color: var(--hud-soft);
-  font-size: 13px;
-  line-height: 1.5;
-}
-.hud-surface .notebook-hud .notebook-overview-entry__actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px 13px;
-}
-.hud-surface .notebook-hud .notebook-overview-entry__primary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  min-height: 45px;
-  padding: 9px 17px;
-  color: #3e2d22;
-  border: 2px solid #af522c;
-  border-radius: 15px 21px 16px 20px;
-  background: var(--hud-peach);
-  box-shadow: 0 5px 11px rgba(67, 43, 27, 0.16);
-  font-size: 14px;
-  font-weight: 750;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: transform 160ms var(--hud-ease-out), box-shadow 160ms var(--hud-ease-out), background-color 160ms var(--hud-ease-out);
-}
-.hud-surface .notebook-hud .notebook-overview-entry__primary:hover:not(:disabled) {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: var(--hud-shadow);
-}
-.hud-surface .notebook-hud .notebook-overview-entry__primary:active:not(:disabled) {
-  transform: scale(0.96);
-  transition-duration: 110ms;
-}
-.hud-surface .notebook-hud .notebook-overview-entry__primary:focus-visible,
-.hud-surface .notebook-hud .notebook-overview-entry__link:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-}
-.hud-surface .notebook-hud .notebook-overview-entry__primary:disabled { opacity: 0.58; cursor: not-allowed; }
-.hud-surface .notebook-hud .notebook-overview-entry__link {
-  min-height: 34px;
-  padding: 5px 3px;
-  color: var(--hud-green);
-  border: 0;
-  border-bottom: 1px dashed var(--hud-line-strong);
-  border-radius: 0;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: color 150ms var(--hud-ease-out), border-color 150ms var(--hud-ease-out);
-}
-.hud-surface .notebook-hud .notebook-overview-entry__link:hover:not(:disabled) {
-  color: #9c472b;
-  border-color: #9c472b;
-}
-.hud-surface .notebook-hud .notebook-overview-entry__link:disabled { opacity: 0.58; cursor: not-allowed; }
-.hud-surface .notebook-hud .notebook-overview-entry > .task-slip {
-  grid-column: 1 / -1;
-  margin: 2px 0 0;
-  transform: rotate(.35deg);
-}
-.hud-surface .notebook-hud .note-overview-paper__coverage {
-  margin: 0 0 12px;
-  padding: 8px 10px;
-  color: #755b31;
-  border-left: 3px solid var(--hud-butter);
-  background: rgba(241, 224, 165, 0.35);
-  font-size: 12px;
-  line-height: 1.55;
-}
-.hud-surface .notebook-hud .note-overview-paper__more-references {
-  display: grid;
-  gap: 8px;
-  grid-column: 1 / -1;
-  padding: 8px 10px;
-  border: 1px dashed var(--hud-line);
-  border-radius: 10px 14px 11px 13px;
-  background: rgba(255, 252, 235, 0.46);
-}
-.hud-surface .notebook-hud .note-overview-paper__more-references summary {
-  color: var(--hud-green);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-/* The desktop HUD keeps the Companion seat beside the paper, so the usable
-   reading column can become narrow before the app window itself looks small.
-   Stack the quick-read copy and actions before they compete for that space. */
-@media (max-width: 1080px) {
-  .hud-surface .notebook-hud .notebook-overview-entry { grid-template-columns: minmax(0, 1fr); }
-  .hud-surface .notebook-hud .notebook-overview-entry__actions { justify-content: flex-start; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .hud-surface .notebook-hud .notebook-overview-entry__primary,
-  .hud-surface .notebook-hud .notebook-overview-entry__link { transition: none; }
-  .hud-surface .notebook-hud .notebook-overview-entry__primary:hover:not(:disabled),
-  .hud-surface .notebook-hud .notebook-overview-entry__primary:active:not(:disabled) { transform: none; }
-}
-/* 滚动容器的上下留白。
- *
- * 底部那一条早就有（给正文页钉在纸脚的动作行让位），**顶部一直没有**——而
- * `overflow: hidden auto` 意味着一滚动就把第一行切掉：真窗口实测题名
- * 「IndexTTS 2.5 让声音跨越语言 - 哔哩哔哩222」被切掉上半截，纸脚那条失败说明
- * 也压在折痕下面看不见。阅读页的正文第一行有段前距所以看不出来，学习页的抬头
- * 是一行小字，紧贴容器上缘，一滚就中招。
- *
- * 四类选择器是为了压过 `hud-surface.css` 里那条同为三类的基线（同样 specificity
- * 时后加载的文件赢，那是个不该靠加载顺序活着的事实）。 */
-.hud-surface .notebook-hud[data-mode] .notebook-scroll { padding-top: 14px; }
-.hud-surface .notebook-hud[data-mode="read"] .notebook-scroll { padding-bottom: 12px; }
-.hud-surface .notebook-hud[data-mode="read"] .notebook-actions {
-  position: static;
-  flex: none;
-  margin: 0;
-  padding-top: 14px;
-  border-top: 1px solid var(--hud-line);
-}
-/* ── 两张页面级纸：正文页与学习记录页 ───────────────────────────────────────
-   `notebook-surface.tsx:4080` 与 `:4731` 这两个 leaf 是**整页的顶层容器**，
-   此前全仓 24 个样式表里 0 条规则，ID 选择器（`#notebook-reading-leaf` /
-   `#notebook-history-leaf`）也没有兜底：两页既没有纸、也没有边，更没有呼吸位——
-   整块正文浮在 `.notebook` 那层横线奶油底上，看不出"这一页从哪儿开始"。
-
-   下面给它们各自的纸：正文页用最浅的纸（读的地方要最亮），学习记录页压深半档
-   并反过来歪一点点。翻到「学习记录」时正文页仍留在上面，两页同屏要一眼分得开。 */
-.hud-surface .notebook-hud .notebook-leaf-page {
-  box-sizing: border-box;
-  margin: 0 8px 24px;
-  padding: clamp(16px, 2vw, 24px) clamp(14px, 1.8vw, 22px) 22px;
-  color: var(--hud-ink);
-  border: 4px solid rgba(255, 252, 235, 0.78);
-  border-radius: 31px 42px 29px 38px/35px 30px 43px 31px;
-  background: var(--hud-paper-light);
-  box-shadow: var(--hud-shadow);
-}
-/* 侧边留 8px 是给柔影的：`.notebook-scroll` 是 `overflow: hidden auto`，不缩进
-   一点，纸的影子会被容器上缘切掉，那层厚度就白给了。学习记录页压深半档、歪一点；
-   它原本那条 `padding: 0 clamp(16px,2vw,26px) 30px` 正是它此前唯一的样式，与正文页
-   并排时读作"这一页没有纸，只有一行横排留白"，所以内距交给基类。 */
-.hud-surface .notebook-hud .notebook-leaf-page.notebook-journey {
-  background: var(--hud-cream);
-  transform: rotate(-.12deg);
-}
-
-/* 学习记录页的抬头：与核心路线册页的抬头（`notebook-route__head`）同一族——
-   粗奶油边、薄荷左标、柔影。不同的是这里第一行是"回笔记正文"那枚去路。 */
-.hud-surface .notebook-hud .notebook-journey__header {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  margin: 0 0 18px;
-  padding: 13px 17px 12px 20px;
-  border: 3px solid var(--hud-cream);
-  border-left: 6px solid var(--hud-mint);
-  border-radius: 19px 15px 22px 16px;
-  background: var(--hud-paper-light);
-  box-shadow: var(--hud-shadow-small);
-}
-.hud-surface .notebook-hud .notebook-journey__header h2 {
-  margin: 4px 0 2px;
-  color: var(--hud-ink);
-  font: 680 20px/1.45 "Noto Serif SC Variable", "Songti SC", serif;
-}
-.hud-surface .notebook-hud .notebook-journey__header p { margin: 0; color: var(--hud-soft); font-size: 13px; line-height: 1.75; }
-/* 顶上那一行小字说的是**哪一篇**的学习记录，它不是又一个抬头，权重得低一档。 */
-.hud-surface .notebook-hud .notebook-journey__note { color: var(--hud-green); font-size: 12px; font-weight: 750; }
 .hud-surface .notebook-hud .notebook-note { font-size: 13px; line-height: 1.8; }
 /* 「某某也在写这一段」：与正文小节目录里那枚在场记号（`__presence`）同一族——
    绿是"有过这件事"的颜色。不靠颜色单独承载：前面那句字已经说了是谁。 */
@@ -418,15 +84,6 @@
 /* 「这一批只读到前半篇」：它是一句**读数的边界**，不是错误也不是进度。跟同族的
    `notebook-generation-live` 一样把字压住，但必须一眼看见——否则用户会把截断
    读成"整篇都读过了"。奶油记号而不是桃色：截断不是失败。 */
-.hud-surface .notebook-hud .notebook-generation-capped {
-  margin: 8px 0;
-  padding: 8px 11px;
-  color: var(--hud-ink);
-  border-left: 3px solid var(--hud-butter);
-  border-radius: 0 12px 11px 0;
-  background: color-mix(in srgb, var(--hud-butter) 26%, var(--hud-paper-light));
-  font-weight: 650;
-}
 .hud-surface .notebook-hud .notebook-objective__impact-evidence { margin: 0; padding-left: 12px; border-left: 2px solid var(--hud-line); color: var(--hud-soft); font-size: 13px; line-height: 1.8; }
 .hud-surface .notebook-hud .notebook-objective__impact-evidence > summary { color: var(--hud-green); cursor: pointer; font-weight: 650; }
 .hud-surface .notebook-hud .notebook-objective__impact-excerpt { margin-top: 8px; padding-top: 5px; border-top: 1px dashed var(--hud-line); }
@@ -900,31 +557,6 @@
 .hud-surface .notebook-hud .round-bench { display: flex; flex-direction: column; gap: 14px; }
 .hud-surface .notebook-hud .round-bench .actions { margin-top: 18px; }
 .hud-surface .notebook-hud .round-bench .button { min-height: 40px; }
-
-.hud-surface .notebook-hud .reading-body { position: relative; }
-.hud-surface .notebook-hud .note-annotation-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-  margin: -3px 0 10px;
-}
-.hud-surface .notebook-hud .note-annotation-tabs button {
-  min-height: 36px;
-  padding: 5px 12px;
-  color: var(--hud-ink);
-  border: 2px solid var(--hud-cream);
-  border-radius: 11px 15px 10px 14px;
-  background: var(--hud-butter);
-  box-shadow: var(--hud-shadow-small);
-  font: 700 12px/1.35 "Noto Sans SC Variable", "PingFang SC", sans-serif;
-  cursor: pointer;
-  transform: rotate(-.6deg);
-  transition: transform 150ms var(--hud-ease-out), background-color 150ms var(--hud-ease-out);
-}
-.hud-surface .notebook-hud .note-annotation-tabs button:hover { background: var(--hud-peach); transform: translateY(-1px) rotate(0); }
-.hud-surface .notebook-hud .note-annotation-tabs button[aria-expanded="true"] { background: var(--hud-peach); }
-.hud-surface .notebook-hud .note-annotation-tabs button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .hud-surface .notebook-hud .note-annotation-paper {
   position: relative;
   margin: 0 0 20px;
@@ -956,6 +588,27 @@
 .hud-surface .notebook-hud .note-annotation-paper__more p { margin: 8px 0 0; }
 .hud-surface .notebook-hud .note-annotation-paper small { color: var(--hud-soft); font-size: 11px; }
 .hud-surface .notebook-hud .note-annotation-paper__actions { display: flex; flex-wrap: wrap; gap: 5px; }
+/* 删除那一行贴在批注末尾，与上面的动作行**不并排**：并排会让「做个演示」和
+   「删掉」在同一层并排，后者是唯一不可逆的，两者同权就等于没有主次。 */
+.hud-surface .notebook-hud .note-annotation-delete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 12px;
+  padding-top: 9px;
+  border-top: 1px dashed rgba(42, 83, 58, .22);
+}
+/* 浮层里那一份：浮层自己已有边界，不再画分隔线，句子更紧。
+   两处的措辞不是各写一遍——同源在 `annotation-delete-control.tsx` 的 `consequence()`，
+   所以「对话不受影响」那句在短版里漏不掉。 */
+.hud-surface .note-annotation-preview .note-annotation-delete { margin-top: 6px; padding-top: 6px; border-top: 0; }
+.hud-surface .notebook-hud .note-annotation-delete p,
+.hud-surface .note-annotation-preview .note-annotation-delete p { margin: 0; font-size: 12px; line-height: 1.55; }
+.hud-surface .note-annotation-preview .note-annotation-delete p { font-size: 11px; }
+.hud-surface .note-annotation-delete__note { color: var(--hud-soft); }
+.hud-surface .note-annotation-delete__buttons { display: flex; gap: 7px; align-items: center; }
+.hud-surface .note-annotation-delete__buttons .button { min-height: 28px; padding: 3px 10px; font-size: 12px; }
 .hud-surface .notebook-hud .note-annotation-paper__ask {
   min-height: 36px;
   margin: 8px 0 0;
@@ -968,203 +621,7 @@
   cursor: pointer;
 }
 .hud-surface .notebook-hud .note-annotation-paper__ask:disabled { opacity: .62; cursor: progress; }
-.hud-surface .notebook-hud .note-annotation-paper--task { border-style: dashed; }
-.hud-surface .notebook-hud .note-annotation-paper--task > div { display: flex; align-items: center; gap: 7px; }
-.hud-surface .notebook-hud .note-annotation-paper--task > div > button:first-child {
-  min-height: 38px; padding: 5px 12px; color: var(--hud-ink); border: 2px solid var(--hud-cream);
-  border-radius: 12px 15px 11px 14px; background: var(--hud-peach); font-weight: 700; cursor: pointer;
-}
-.hud-surface .notebook-hud .note-annotation-paper__close {
-  position: absolute;
-  top: 9px;
-  right: 10px;
-  min-height: 36px;
-  padding: 4px 11px;
-  color: var(--hud-ink);
-  border: 1px solid var(--hud-line);
-  border-radius: 12px 15px 11px 14px;
-  background: var(--hud-paper-light);
-  font-size: 12px;
-  cursor: pointer;
-}
 
-.hud-surface .notebook-hud .note-overview-paper {
-  position: relative;
-  margin: 14px 0 18px;
-  padding: 16px 18px 13px;
-  color: var(--hud-ink);
-  border: 3px solid var(--hud-cream);
-  border-radius: 20px 16px 22px 17px;
-  background: var(--hud-paper-light);
-  box-shadow: var(--hud-shadow-card);
-  transform: rotate(-.18deg);
-}
-.hud-surface .notebook-hud .note-overview-paper::before {
-  position: absolute;
-  top: -7px;
-  left: 20px;
-  width: 52px;
-  height: 13px;
-  border: 2px solid var(--hud-cream);
-  border-bottom: 0;
-  border-radius: 10px 10px 0 0;
-  background: var(--hud-mint);
-  content: "";
-}
-.hud-surface .notebook-hud .note-overview-paper > header,
-.hud-surface .notebook-hud .note-overview-paper > footer {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-.hud-surface .notebook-hud .note-overview-paper > header span {
-  color: var(--hud-green);
-  font-size: 13px;
-  font-weight: 800;
-}
-.hud-surface .notebook-hud .note-overview-paper time,
-.hud-surface .notebook-hud .note-overview-paper footer span {
-  color: var(--hud-soft);
-  font-size: 11px;
-  line-height: 1.5;
-}
-.hud-surface .notebook-hud .note-overview-paper__body {
-  margin: 12px 0;
-  overflow-wrap: anywhere;
-  font-size: 14px;
-  line-height: 1.8;
-  white-space: pre-wrap;
-}
-.hud-surface .notebook-hud .note-overview-paper__gist {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-  margin: 14px 0 8px;
-}
-.hud-surface .notebook-hud .note-overview-paper__gist > span {
-  padding: 3px 7px;
-  color: var(--hud-green);
-  border: 2px solid var(--hud-cream);
-  border-radius: 11px 14px 10px 13px;
-  background: var(--hud-mint);
-  font-size: 11px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-.hud-surface .notebook-hud .note-overview-paper__gist p {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.65;
-}
-.hud-surface .notebook-hud .note-overview-paper__points {
-  display: grid;
-  gap: 0;
-  margin: 8px 0 12px;
-  padding: 0;
-  list-style: none;
-}
-.hud-surface .notebook-hud .note-overview-paper__points li {
-  display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
-  gap: 9px;
-  padding: 10px 0;
-  border-top: 1px dashed var(--hud-line);
-}
-.hud-surface .notebook-hud .note-overview-paper__number {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  color: var(--hud-ink);
-  border: 2px solid var(--hud-cream);
-  border-radius: 9px 12px 8px 11px;
-  background: var(--hud-butter);
-  font-size: 12px;
-  font-weight: 800;
-}
-.hud-surface .notebook-hud .note-overview-paper__points p {
-  margin: 0 0 4px;
-  font-size: 14px;
-  line-height: 1.7;
-}
-.hud-surface .notebook-hud .note-overview-paper__points button {
-  display: block;
-  max-width: 100%;
-  padding: 0;
-  overflow: hidden;
-  color: var(--hud-green);
-  border: 0;
-  background: transparent;
-  text-align: left;
-  text-decoration: underline;
-  text-decoration-style: dashed;
-  text-underline-offset: 3px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-}
-.hud-surface .notebook-hud .note-overview-paper__points button:hover {
-  color: var(--hud-clay);
-}
-.hud-surface .notebook-hud .note-overview-paper__points button:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 3px;
-}
-.hud-surface .notebook-hud .note-overview-paper__references {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 10px 0 13px;
-}
-.hud-surface .notebook-hud .note-overview-paper__references button,
-.hud-surface .notebook-hud .note-overview-paper__references blockquote {
-  display: grid;
-  gap: 4px;
-  max-width: 100%;
-  margin: 0;
-  padding: 8px 11px;
-  color: var(--hud-ink);
-  border: 2px solid var(--hud-cream);
-  border-radius: 13px 17px 12px 15px;
-  background: var(--hud-butter);
-  box-shadow: var(--hud-shadow-small);
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-}
-.hud-surface .notebook-hud .note-overview-paper__references button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  background: var(--hud-mint);
-}
-.hud-surface .notebook-hud .note-overview-paper__references button:disabled { cursor: default; }
-.hud-surface .notebook-hud .note-overview-paper__references span {
-  color: var(--hud-green);
-  font-size: 11px;
-  font-weight: 800;
-}
-.hud-surface .notebook-hud .note-overview-paper__references q {
-  font-size: 12px;
-  line-height: 1.6;
-}
-.hud-surface .notebook-hud .note-overview-paper__references blockquote {
-  color: var(--hud-soft);
-  font-size: 12px;
-  line-height: 1.65;
-  cursor: default;
-}
-.hud-surface .notebook-hud .note-overview-paper__references button:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-}
-.hud-surface .notebook-hud .note-overview-paper > footer {
-  align-items: center;
-  padding-top: 8px;
-  border-top: 1px dashed var(--hud-line);
-}
 .hud-surface .notebook-hud .note-annotation-history {
   margin: 18px 0;
   padding: 10px 14px;
@@ -1180,125 +637,23 @@
 .hud-surface .notebook-hud .note-annotation-history__entry p { margin: 0; font-size: 13px; line-height: 1.7; }
 .hud-surface .notebook-hud .note-annotation-history__more { min-height: 44px; padding: 7px 12px; color: var(--hud-ink); border: 1px solid var(--hud-line); border-radius: 13px 15px; background: var(--hud-paper-light); cursor: pointer; }
 .hud-surface .notebook-hud .note-annotation-history__more:disabled { opacity: .6; cursor: wait; }
-.hud-surface .notebook-hud .notebook-selection-actions {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 7px;
-  width: fit-content;
-  max-width: 100%;
-  margin: 7px 0 12px;
-  padding: 8px 10px;
-  border: 3px solid var(--hud-cream);
-  border-radius: 13px 18px 15px 19px;
-  background: var(--hud-paper-light);
-  box-shadow: var(--hud-shadow-small);
+/* The selected passage keeps its tools inside the visible paper, even in a long paragraph. */
+.notebook-selection-actions {
+  position: fixed; z-index: 110; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 9px; box-sizing: border-box;
+  width: max-content; margin: 0; padding: 7px 10px; border: 3px solid var(--hud-cream);
+  border-radius: 16px 19px 14px 18px; background: var(--hud-mint); box-shadow: 0 5px 12px rgba(54,39,21,.17);
 }
-.hud-surface .notebook-hud .notebook-selection-actions__excerpt {
-  flex: 1 1 100%;
-  color: var(--hud-soft);
-  font-size: 12px;
-  line-height: 1.55;
-  overflow-wrap: anywhere;
+.notebook-selection-actions .text-action {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 31px; padding: 4px 6px;
+  border: 0; border-radius: 8px 11px 7px 10px; background: transparent; color: #344e3b;
+  box-shadow: none; font: 700 12px/1.5 "Noto Sans SC Variable", sans-serif; white-space: nowrap;
 }
-.hud-surface .notebook-hud .notebook-selection-actions__reason {
-  color: var(--hud-clay);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.hud-surface .notebook-hud .notebook-selection-actions button {
-  min-height: 38px;
-  padding: 6px 12px;
-  color: var(--hud-ink);
-  border: 3px solid var(--hud-cream);
-  border-radius: 16px 12px 18px 11px;
-  background: var(--hud-paper-light);
-  box-shadow: 0 3px 7px rgba(43, 27, 17, .12);
-  font: 700 13px/1.4 "Noto Sans SC Variable", "PingFang SC", sans-serif;
-  white-space: nowrap;
-  cursor: pointer;
-  transform: rotate(-1deg);
-  transition: transform 150ms var(--hud-ease-out), box-shadow 150ms var(--hud-ease-out);
-}
-.hud-surface .notebook-hud .notebook-selection-actions button.notebook-selection-actions__main { background: var(--hud-peach); }
-/* 伴星是可选增强（41 §4）。她此前与「讲讲这句」同底同大小同阴影，读者得自己猜
-   该点哪一颗。现在她是一枚奶油小字签：可点、看得见、但不与主动作争"下一步"。 */
-.hud-surface .notebook-hud .notebook-selection-actions button.notebook-selection-actions__companion {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 32px;
-  padding: 4px 10px 5px;
-  border-width: 2px;
-  border-radius: 12px 10px 13px 11px;
-  background: var(--hud-cream);
-  box-shadow: 0 4px 10px rgba(43, 27, 17, .16);
-  font: 650 11px/1.4 "Noto Sans SC Variable", "PingFang SC", sans-serif;
-  transform: rotate(0.5deg);
-}
-.hud-surface .notebook-hud .notebook-selection-actions button.notebook-selection-actions__companion:hover:not(:disabled) {
-  background: var(--hud-butter);
-  transform: translateY(-1px) rotate(0.5deg);
-}
-.hud-surface .notebook-hud .notebook-selection-actions button.notebook-selection-actions__dismiss {
-  display: inline-grid;
-  place-items: center;
-  width: 34px;
-  min-height: 34px;
-  padding: 0;
-  border-radius: 50%;
-  background: var(--hud-cream);
-  transform: none;
-}
-.hud-surface .notebook-hud .notebook-selection-actions button:hover:not(:disabled) {
-  box-shadow: var(--hud-shadow);
-  transform: translateY(-2px) rotate(-1deg);
-}
-.hud-surface .notebook-hud .notebook-selection-actions button:active:not(:disabled) { transform: translateY(1px) rotate(0deg) scale(0.98); }
-.hud-surface .notebook-hud .notebook-selection-actions button:disabled { opacity: .62; cursor: not-allowed; }
-.hud-surface .notebook-hud .notebook-selection-actions button:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
-}
+.notebook-selection-actions .text-action:hover:not(:disabled) { background: var(--hud-paper-light); }
+.notebook-selection-actions .text-action:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.notebook-selection-actions .text-action:disabled { opacity: .55; cursor: default; }
+.notebook-selection-actions__reason { flex-basis: 100%; color: #344e3b; font: 11px/1.7 "Noto Sans SC Variable", sans-serif; }
 .hud-surface .notebook-hud .note-annotation-task-error { max-width: 420px; margin: 9px 0; color: var(--hud-clay); font-size: 12px; }
 
-/* 笔记对话纸片占用书房左侧的空墙；正文保持整张册页，不随聊天框缩窄。 */
-.desktop-app.hud-surface.comp-left:is(.page-08, .page-09):has(.companion-presence[data-chat-mode="conversation"]) .content:has(.notebook-hud) {
-  left: max(420px, calc(var(--companion-seat-left, 365px) + 36px));
-  right: 48px;
-}
-@media (min-width: 761px) {
-  .desktop-app.hud-surface.comp-left:is(.page-08, .page-09):has(.companion-presence[data-chat-mode="conversation"]) .companion-presence .companion-hud__composer {
-    left: -20px;
-    right: auto;
-    top: calc(543px - 100vh);
-    bottom: auto;
-    width: min(310px, calc(100vw - 500px));
-    max-height: min(300px, calc(100vh - 420px));
-    transform: none;
-  }
-}
-@media (max-width: 760px) {
-  .desktop-app.hud-surface.comp-left:is(.page-08, .page-09):has(.companion-presence[data-chat-mode="conversation"]) .content:has(.notebook-hud) {
-    left: 64px;
-    right: 8px;
-    top: 88px;
-    bottom: 8px;
-    height: auto;
-  }
-  .desktop-app.hud-surface.comp-left:is(.page-08, .page-09):has(.companion-presence[data-chat-mode="conversation"]) .companion-hud__composer {
-    left: 0;
-    right: 4px;
-    top: auto;
-    bottom: 2px;
-    width: min(310px, calc(100vw - 100px));
-    max-height: min(300px, 58vh);
-  }
-}
-.hud-surface .notebook-hud .notebook-actions--reading { align-items: center; gap: 8px 12px; }
-@media (max-width: 760px) {
-}
 @media (max-width: 760px) {
   /* 紧凑视口只收紧纵向留白。书桌构图在窄视口**竖过来**：先是那条读的线，
      物件（进度绳、演示大纸）落到线下面——不是把两栏压扁，那会让演示那张纸
@@ -1319,20 +674,8 @@
   .hud-surface .notebook-hud .round-desk__body { grid-template-columns: minmax(0, 1fr) minmax(360px, 440px); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .hud-surface .notebook-hud .notebook-reading-outline__bookmark { transition: none; transform: none; }
-  .hud-surface .notebook-hud .notebook-reading-outline__bookmark:is(:hover, :active) { transform: none; }
-  .hud-surface .notebook-hud .notebook-reading-outline__toggle { transition: none; transform: none; }
-  .hud-surface .notebook-hud .notebook-reading-outline__toggle:hover { transform: none; }
-}
-
 @media (max-width: 760px) {
-  .hud-surface .notebook-hud .notebook-reading-outline { padding: 10px 10px 7px 14px; }
-  .hud-surface .notebook-hud .notebook-reading-outline__bookmark { align-items: flex-start; gap: 3px 8px; }
-  .hud-surface .notebook-hud .notebook-reading-outline__name { gap: 7px; font-size: 13px; }
-  .hud-surface .notebook-hud .notebook-reading-outline__presence { padding-top: 3px; font-size: 11px; }
-  .hud-surface .notebook-hud .notebook-reading-outline__toggle { margin-left: 28px; }
-  .hud-surface .note-library-desk { gap: 8px; }
+            .hud-surface .note-library-desk { gap: 8px; }
   .hud-surface .note-library-desk .note-shelf-search { min-height: 36px; padding: 4px 8px 4px 12px; }
   .hud-surface .note-library-desk .note-shelf-search input { font-size: 12px; }
   .hud-surface .note-library-desk .current-note h2 { font-size: 17px; }
@@ -1719,18 +1062,7 @@
 .hud-surface .note-run-receipt__body { padding: 20px 0; }
 .hud-surface .note-run-receipt__actions { padding: 15px 0 0; }
 
-/* ── 动态讲解的落地面（39 §6.1／§6.3）────────────────────────────────────
-   这一组之前**一条规则都没有**：`.artifact-frame-host` 与它的 iframe 在全项目
-   四个样式表里都搜不到，于是那个 iframe 是完全裸的——没有尺寸、没有边框、
-   父侧又量不到它的内容（不透明 origin），结果是画面缩成一小块、frame 内部
-   自己长出滚动条、"共 N 步"孤零零飘在旁边。
-
-   两条硬约束写在这里，不是审美偏好：
-     1. **产物内部永远不滚**。高度由产物自己报（`shared/artifact-frame.ts` 的
-        `contentHeight`），父侧夹上下限后写进行内 style；超上限时滚的是**外层**
-        `.artifact-frame-host__stage`，不是 iframe 内部。
-     2. **它是纸面上的一个凹槽，不是又一张纸**。讲解面已经有纸了，这里再叠一张
-        带投影的卡就是"背景套背景"——所以只用一条内描边表示"嵌进去"，不投影。 */
+/* 动态内容随真实高度铺在主纸上；滚动由所在页面的正文滚区负责。 */
 .hud-surface .artifact-frame-host {
   display: flex;
   flex-direction: column;
@@ -1744,13 +1076,7 @@
   display: block;
   width: 100%;
   min-width: 0;
-  max-height: 1600px;
-  overflow: hidden auto;
-  border: 2px solid var(--hud-line);
-  border-radius: 15px 19px 14px 18px;
-  background: var(--hud-paper);
-  scrollbar-color: rgba(79, 57, 39, 0.42) transparent;
-  scrollbar-width: thin;
+  background: transparent;
 }
 .hud-surface .artifact-frame-host__frame {
   display: block;
@@ -1783,7 +1109,6 @@
   .hud-surface .artifact-frame-host__spinner { animation: none; }
 }
 .hud-surface .artifact-frame-host__caption,
-.hud-surface .artifact-frame-host__hint,
 .hud-surface .artifact-frame-host__notice {
   margin: 0;
   color: var(--hud-soft);
@@ -1806,253 +1131,12 @@
 }
 .hud-surface .artifact-frame-host--degraded .artifact-frame-host__notice { margin-bottom: 10px; }
 
-.hud-surface .notebook-hud .note-recall-paper {
-  margin: 12px 0 18px;
-  padding: 15px 17px;
-  color: var(--hud-ink);
-  border: 3px solid var(--hud-cream);
-  border-radius: 17px 22px 16px 20px;
-  background: var(--hud-butter);
-  box-shadow: var(--hud-shadow-card);
-  transform: rotate(.16deg);
-}
-.hud-surface .notebook-hud .note-recall-paper > header,
-.hud-surface .notebook-hud .note-recall-paper__answer > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.hud-surface .notebook-hud .note-recall-paper > header > span {
-  color: var(--hud-green);
-  font-size: 13px;
-  font-weight: 800;
-}
-.hud-surface .notebook-hud .note-recall-paper__question {
-  margin: 13px 0 6px;
-  font-size: 17px;
-  font-weight: 750;
-  line-height: 1.7;
-}
-.hud-surface .notebook-hud .note-recall-paper__gentle {
-  margin: 0 0 12px;
-  color: var(--hud-soft);
-  font-size: 12px;
-  line-height: 1.65;
-}
-.hud-surface .notebook-hud .note-recall-paper__hint {
-  margin: 10px 0;
-  padding: 10px 13px;
-  border-left: 4px solid var(--hud-mint-strong);
-  border-radius: 4px 13px 10px 15px;
-  background: var(--hud-paper-light);
-}
-.hud-surface .notebook-hud .note-recall-paper__hint strong { color: var(--hud-green); font-size: 12px; }
-.hud-surface .notebook-hud .note-recall-paper__hint p { margin: 4px 0 0; font-size: 13px; line-height: 1.7; }
-.hud-surface .notebook-hud .note-recall-paper__answer {
-  margin: 12px 0;
-  padding: 12px 14px;
-  border: 2px solid rgba(255, 255, 255, .78);
-  border-radius: 14px 17px 12px 15px;
-  background: var(--hud-paper-light);
-}
-.hud-surface .notebook-hud .note-recall-paper__answer strong { font-size: 12px; }
-.hud-surface .notebook-hud .note-recall-paper__answer p { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.8; }
-.hud-surface .notebook-hud .note-recall-paper__answer small { color: var(--hud-soft); font-size: 11px; }
-.hud-surface .notebook-hud .note-recall-paper__actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.hud-surface .notebook-hud .note-recall-paper__report {
-  display: grid;
-  gap: 8px;
-  margin-top: 12px;
-  padding-top: 11px;
-  border-top: 1px dashed var(--hud-line);
-}
-.hud-surface .notebook-hud .note-recall-paper__report > label { color: var(--hud-soft); font-size: 12px; }
-.hud-surface .notebook-hud .note-recall-paper__report textarea {
-  width: 100%;
-  min-height: 64px;
-  padding: 9px 11px;
-  color: var(--hud-ink);
-  border: 2px solid var(--hud-line);
-  border-radius: 12px 15px 11px 14px;
-  background: var(--hud-paper-light);
-  font: inherit;
-  font-size: 13px;
-  resize: vertical;
-}
-.hud-surface .notebook-hud .note-recall-paper__report > div { display: flex; flex-wrap: wrap; gap: 7px; }.hud-surface .notebook-hud .note-recall-paper__report button{
-  min-height: 44px;
-  padding: 7px 12px;
-  color: var(--hud-ink);
-  border: 2px solid var(--hud-line);
-  border-radius: 13px 16px 12px 15px;
-  background: var(--hud-paper-light);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.hud-surface .notebook-hud .note-recall-paper__report button:first-child { background: var(--hud-mint); }.hud-surface .notebook-hud .note-recall-paper__report button:focus-visible, 
-.hud-surface .notebook-hud .note-recall-paper__report textarea:focus-visible{ outline: 3px solid var(--focus); outline-offset: 2px; }
-.hud-surface .notebook-hud .note-recall-paper__saved { margin: 10px 0 0; color: var(--hud-green); font-size: 12px; line-height: 1.6; }
-.hud-surface .notebook-hud .note-recall-paper__error { margin: 10px 0 0; color: var(--hud-clay); font-size: 12px; line-height: 1.6; }
-
-.hud-surface .notebook-hud .notebook-reading-provenance {
-  margin: 18px 0 12px;
-  padding: 8px 0 0;
-  border-top: 1px dashed var(--hud-line);
-  color: var(--hud-soft);
-}
-.hud-surface .notebook-hud .notebook-reading-provenance > summary {
-  color: var(--hud-green);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.hud-surface .notebook-hud .notebook-reading-provenance .provenance-line {
-  position: static;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px 14px;
-  margin-top: 8px;
-  padding: 9px 10px;
-  border: 0;
-  border-radius: 10px 14px 9px 12px;
-  background: var(--hud-paper-light);
-  font-size: 12px;
-  line-height: 1.6;
-}
-.hud-surface .notebook-hud .note-expansion-bookmark {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 9px 14px;
-  margin: 18px 0 8px;
-  padding: 14px 16px;
-  border: 3px solid var(--hud-cream);
-  border-radius: 13px 22px 17px 19px;
-  background: var(--hud-mint);
-  box-shadow: var(--hud-shadow-small);
-  transform: rotate(-.12deg);
-}
-.hud-surface .notebook-hud .note-expansion-bookmark__stamp {
-  padding: 5px 9px;
-  color: var(--hud-green);
-  border: 2px solid var(--hud-paper-light);
-  border-radius: 8px 13px 9px 11px;
-  background: var(--hud-paper-light);
-  font-size: 11px;
-  font-weight: 800;
-}
-.hud-surface .notebook-hud .note-expansion-bookmark > div { flex: 1 1 190px; min-width: 0; }
-.hud-surface .notebook-hud .note-expansion-bookmark strong { color: var(--hud-ink); font: 700 16px/1.45 "Noto Serif SC Variable", "Songti SC", serif; }
-.hud-surface .notebook-hud .note-expansion-bookmark p { margin: 3px 0 0; color: var(--hud-soft); font-size: 12px; line-height: 1.55; }
-.hud-surface .notebook-hud .note-expansion-bookmark > button {
-  flex: 0 0 auto;
-  min-height: 42px;
-  padding: 7px 13px;
-  color: var(--hud-ink);
-  border: 2px solid var(--hud-green);
-  border-radius: 13px 18px 12px 16px;
-  background: var(--hud-paper-light);
-  box-shadow: var(--hud-shadow-small);
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
-}
-.hud-surface .notebook-hud .note-expansion-bookmark > button:hover { transform: translateY(-1px); }
-.hud-surface .notebook-hud .note-expansion-bookmark > button:focus-visible,
-.hud-surface .notebook-hud .notebook-reading-provenance > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
-
-.hud-surface .notebook-hud .note-expansion-shelf {
-  margin: 12px 0 18px;
-  padding: 18px 20px 22px;
-  border: 3px solid var(--hud-cream);
-  border-radius: 18px 22px 16px 20px;
-  background: var(--hud-paper-light);
-  box-shadow: var(--hud-shadow-card);
-  transform: rotate(-.12deg);
-}
-.hud-surface .notebook-hud .note-expansion-shelf__return { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 15px; color: var(--hud-soft); font-size: 12px; }
-.hud-surface .notebook-hud .note-expansion-shelf > h2 { margin: 0 0 14px; color: var(--hud-ink); font: 700 24px/1.4 "Noto Serif SC Variable", "Songti SC", serif; }
-.hud-surface .notebook-hud .note-expansion-shelf > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 8px; color: var(--hud-green); font-size: 14px; }
-.hud-surface .notebook-hud .note-expansion-shelf__actions { display: flex; align-items: center; gap: 7px; }
-.hud-surface .notebook-hud .note-expansion-shelf__actions > button { flex: 0 0 auto; min-height: 38px; padding: 4px 10px; color: var(--hud-green); border: 1px solid var(--hud-line); border-radius: 12px 15px 11px 14px; background: var(--hud-paper-light); font: 700 12px/1.4 "Noto Sans SC Variable", "PingFang SC", sans-serif; cursor: pointer; }
-.hud-surface .notebook-hud .note-expansion-shelf__actions > button:disabled { opacity: .6; cursor: not-allowed; }
-/* 抬头下面那句"从这篇笔记出发找值得接着学的内容"。它此前只被 `> p` 顺手接住，
-   类名本身没人接——并进同一条，免得同一句话的规格散在两个选择器里。 */
-.hud-surface .notebook-hud .note-expansion-shelf > p,
-.hud-surface .notebook-hud .note-expansion-shelf__intro { margin: 0; color: var(--hud-soft); font-size: 12px; }
-.hud-surface .notebook-hud .note-expansion-task-error{ margin: 8px 0; padding: 9px 12px; color: var(--hud-ink); border: 2px solid rgba(255, 255, 255, .75); border-radius: 13px 17px 12px 15px; background: rgba(255, 253, 245, .75); font-size: 12px; line-height: 1.55; }
-.hud-surface .notebook-hud .note-expansion-task-error { color: var(--hud-danger, #8a3e35); }
-.hud-surface .notebook-hud .note-expansion-drafts { display: grid; gap: 10px; margin: 10px 0; }
-.hud-surface .notebook-hud .note-expansion-drafts__heading { display: grid; gap: 3px; color: var(--hud-ink); }
-.hud-surface .notebook-hud .note-expansion-drafts__heading strong { font-size: 14px; }
-.hud-surface .notebook-hud .note-expansion-drafts__heading span { color: var(--hud-soft); font-size: 11px; line-height: 1.5; }
-.hud-surface .notebook-hud .note-expansion-draft { padding: 11px 12px; border: 2px solid var(--hud-mint-strong); border-radius: 16px 20px 15px 18px; background: var(--hud-cream); box-shadow: var(--hud-shadow-small); }
-.hud-surface .notebook-hud .note-expansion-draft > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 7px 12px; color: var(--hud-ink); cursor: pointer; list-style: none; }
-.hud-surface .notebook-hud .note-expansion-draft > summary::-webkit-details-marker { display: none; }
-.hud-surface .notebook-hud .note-expansion-draft > summary span { color: var(--hud-green); font-size: 11px; font-weight: 800; }
-.hud-surface .notebook-hud .note-expansion-draft > summary strong { min-width: 0; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
-.hud-surface .notebook-hud .note-expansion-draft > summary small { color: var(--hud-green); font-size: 11px; font-weight: 750; white-space: nowrap; }
-.hud-surface .notebook-hud .note-expansion-draft > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
-.hud-surface .notebook-hud .note-expansion-draft__inside { display: grid; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--hud-line-strong); }
-.hud-surface .notebook-hud .note-expansion-draft__select { display: flex; align-items: center; gap: 8px; color: var(--hud-green); font-size: 12px; font-weight: 800; }
-.hud-surface .notebook-hud .note-expansion-draft__select input { width: 18px; height: 18px; accent-color: var(--hud-green); }
-.hud-surface .notebook-hud .note-expansion-draft__field { display: grid; gap: 4px; color: var(--hud-soft); font-size: 11px; font-weight: 750; }
-.hud-surface .notebook-hud .note-expansion-draft__field input,
-.hud-surface .notebook-hud .note-expansion-draft__field textarea { width: 100%; box-sizing: border-box; padding: 9px 10px; color: var(--hud-ink); border: 2px solid var(--hud-line); border-radius: 11px 14px 10px 13px; background: var(--hud-paper); font: 500 13px/1.65 "Noto Sans SC Variable", "PingFang SC", sans-serif; resize: vertical; }
-.hud-surface .notebook-hud .note-expansion-draft__field input:focus-visible,
-.hud-surface .notebook-hud .note-expansion-draft__field textarea:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-.hud-surface .notebook-hud .note-expansion-draft__relationship { margin: 0; color: var(--hud-ink); font-size: 12px; line-height: 1.6; }
-.hud-surface .notebook-hud .note-expansion-draft__sources { display: grid; gap: 5px; }
-.hud-surface .notebook-hud .note-expansion-draft__sources button { padding: 7px 9px; text-align: left; color: var(--hud-soft); border: 1px dashed var(--hud-line); border-radius: 10px 13px 9px 12px; background: rgba(237, 247, 231, .75); font: 500 11px/1.5 "Noto Sans SC Variable", "PingFang SC", sans-serif; cursor: pointer; }
-.hud-surface .notebook-hud .note-expansion-draft__sources button span { margin-left: 5px; color: var(--hud-green); font-weight: 800; white-space: nowrap; }
-.hud-surface .notebook-hud .note-expansion-drafts__confirm { justify-self: start; min-height: 42px; padding: 7px 13px; color: var(--hud-paper-light); border: 2px solid var(--hud-green); border-radius: 13px 16px 12px 15px; background: var(--hud-green); box-shadow: var(--hud-shadow-small); font: 800 12px/1.4 "Noto Sans SC Variable", "PingFang SC", sans-serif; cursor: pointer; }
-.hud-surface .notebook-hud .note-expansion-drafts__confirm:disabled { opacity: .55; cursor: not-allowed; }
-.hud-surface .notebook-hud .note-expansion-drafts__saved { margin: 0; color: var(--hud-green); font-size: 12px; font-weight: 750; }
-.hud-surface .notebook-hud .note-expansion-shelf > ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.hud-surface .notebook-hud .note-expansion-shelf li > button {
-  display: grid;
-  width: 100%;
-  min-height: 62px;
-  gap: 2px;
-  padding: 9px 12px;
-  text-align: left;
-  color: var(--hud-ink);
-  border: 2px solid rgba(255, 255, 255, .82);
-  border-radius: 14px 18px 13px 16px;
-  background: var(--hud-paper-light);
-  box-shadow: var(--hud-shadow-small);
-  cursor: pointer;
-}
-.hud-surface .notebook-hud .note-expansion-shelf li > button > span { color: var(--hud-green); font-size: 10px; font-weight: 800; }
-.hud-surface .notebook-hud .note-expansion-shelf li > button > strong { font-size: 14px; line-height: 1.45; }
-.hud-surface .notebook-hud .note-expansion-shelf li > button > small { color: var(--hud-soft); font-size: 10px; }
-.hud-surface .notebook-hud .note-expansion-shelf li > button:hover { transform: translateY(-1px) rotate(.1deg); }
-.hud-surface .notebook-hud .note-expansion-shelf li > button:focus-visible,
-.hud-surface .notebook-hud .note-expansion-shelf__more:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-.hud-surface .notebook-hud .note-expansion-shelf__more {
-  min-height: 44px;
-  margin-top: 9px;
-  padding: 7px 12px;
-  color: var(--hud-ink);
-  border: 2px solid var(--hud-line);
-  border-radius: 13px 16px 12px 15px;
-  background: var(--hud-paper-light);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
 .hud-surface .notebook-hud .note-learning-artifact-paper {
-  margin-top: 18px;
-  padding-top: 20px;
-  border-width: 4px;
-  border-radius: 25px 18px 29px 21px;
-  background: var(--hud-paper);
-  transform: rotate(.12deg);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  transform: none;
 }
 .hud-surface .notebook-hud .note-learning-artifact-paper h3 {
   margin: 12px 0 2px;
@@ -2066,17 +1150,8 @@
   font-size: 13px;
   line-height: 1.65;
 }
-.hud-surface .notebook-hud .note-learning-artifact-paper > blockquote {
-  margin: 10px 0;
-  padding: 9px 12px;
-  color: var(--hud-ink);
-  border-left: 4px solid var(--hud-peach);
-  border-radius: 9px 15px 11px 14px;
-  background: var(--hud-cream);
-  line-height: 1.65;
-}
 .hud-surface .notebook-hud .note-learning-artifact-paper .artifact-frame-host {
-  margin: 12px -2px;
+  margin: 12px 0 20px;
 }
 .hud-surface .notebook-hud .note-learning-artifact-paper > footer {
   padding-top: 8px;
@@ -2128,102 +1203,15 @@
   cursor: pointer;
 }
 
-.hud-surface .notebook-hud .note-footprint { margin: 18px 0 24px; }
-.hud-surface .notebook-hud .note-footprint__filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 18px;
-  padding: 0 0 10px;
-  border-bottom: 1px dashed var(--hud-line);
-}
-.hud-surface .notebook-hud .note-footprint__filters button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 5px 10px;
-  color: var(--hud-ink);
-  border: 2px solid var(--hud-cream);
-  border-radius: 11px 15px 12px 14px;
-  background: var(--hud-paper-light);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.hud-surface .notebook-hud .note-footprint__filters button[aria-pressed="true"] {
-  border-color: var(--hud-cream);
-  background: var(--hud-mint);
-  box-shadow: var(--hud-shadow-small);
-}
-.hud-surface .notebook-hud .note-footprint__filters button span { color: var(--hud-soft); font-size: 11px; }
-.hud-surface .notebook-hud .note-footprint__filters button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-.hud-surface .notebook-hud .note-footprint__filter-empty { margin: 12px 0; color: var(--hud-soft); font-size: 13px; }
-.hud-surface .notebook-hud .note-footprint__list { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; }
-.hud-surface .notebook-hud .note-footprint__paper {
-  position: relative;
-  padding: 11px 15px 10px;
-  border: 3px solid var(--hud-cream);
-  border-radius: 19px 16px 23px 17px;
-  background: var(--hud-paper-light);
-  box-shadow: var(--hud-shadow-small);
-  color: var(--hud-ink);
-}
-.hud-surface .notebook-hud .note-footprint__paper::before {
-  position: absolute;
-  top: -7px;
-  left: 19px;
-  width: 48px;
-  height: 12px;
-  border: 2px solid var(--hud-cream);
-  border-bottom: 0;
-  border-radius: 9px 9px 0 0;
-  background: var(--hud-mint);
-  content: "";
-}
-.hud-surface .notebook-hud .note-footprint__paper--mint { transform: rotate(-.12deg); }
-.hud-surface .notebook-hud .note-footprint__paper--butter { background: color-mix(in srgb, var(--hud-butter) 24%, var(--hud-paper-light)); transform: rotate(.1deg); }
-.hud-surface .notebook-hud .note-footprint__paper--pink { background: color-mix(in srgb, var(--hud-berry) 10%, var(--hud-paper-light)); transform: rotate(-.08deg); }
-.hud-surface .notebook-hud .note-footprint__paper--lavender { background: color-mix(in srgb, var(--hud-sky) 23%, var(--hud-paper-light)); transform: rotate(.12deg); }
-.hud-surface .notebook-hud .note-footprint__paper--blue { background: color-mix(in srgb, var(--hud-mint) 25%, var(--hud-paper-light)); transform: rotate(-.1deg); }
-.hud-surface .notebook-hud .note-footprint__paper > header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 5px 12px; padding-right: 2px; }
-.hud-surface .notebook-hud .note-footprint__paper > header strong { color: var(--hud-green); font-size: 14px; }
-.hud-surface .notebook-hud .note-footprint__paper > header span { color: var(--hud-soft); font-size: 11px; }
-.hud-surface .notebook-hud .note-footprint__paper > p { margin: 7px 0; color: var(--hud-ink); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
-.hud-surface .notebook-hud .note-footprint__paper h3 { margin: 11px 0 5px; color: var(--hud-ink); font: 700 17px/1.45 "Noto Serif SC Variable", "Songti SC", serif; }
-.hud-surface .notebook-hud .note-footprint__paper .note-footprint__question { font-weight: 700; }
-.hud-surface .notebook-hud .note-footprint__paper blockquote { margin: 9px 0; padding: 9px 12px; border-left: 3px solid var(--hud-green); border-radius: 5px 12px 12px 5px; background: color-mix(in srgb, var(--hud-paper-light) 74%, transparent); color: var(--hud-ink); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
-.hud-surface .notebook-hud .note-footprint__paper details { margin: 10px 0 0; padding-top: 10px; border-top: 1px dashed var(--hud-line); }
-.hud-surface .notebook-hud .note-footprint__paper details summary,
-.hud-surface .notebook-hud .notebook-legacy-footprint > summary,
-.hud-surface .notebook-hud .note-footprint__older > summary { color: var(--hud-green); font-size: 13px; font-weight: 800; cursor: pointer; }
-.hud-surface .notebook-hud .note-footprint__full-text { margin: 10px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.8; }
-.hud-surface .notebook-hud .note-footprint__points { display: grid; gap: 10px; margin: 10px 0 0; padding: 0; list-style: none; }
-.hud-surface .notebook-hud .note-footprint__points li { padding: 10px 12px; border: 2px solid var(--hud-cream); border-radius: 12px 17px 13px 15px; background: var(--hud-paper-light); }
-.hud-surface .notebook-hud .note-footprint__points p { margin: 0 0 5px; font-size: 14px; line-height: 1.7; }
-.hud-surface .notebook-hud .note-footprint__points button { padding: 0; border: 0; background: none; color: var(--hud-green); text-align: left; font: 700 12px/1.6 "Noto Sans SC Variable", "PingFang SC", sans-serif; cursor: pointer; }
-.hud-surface .notebook-hud .note-footprint__sources { display: grid; gap: 8px; margin-top: 9px; }
-.hud-surface .notebook-hud .note-footprint__sources button,
-.hud-surface .notebook-hud .note-footprint__sources blockquote { display: grid; gap: 4px; margin: 0; padding: 9px 11px; border: 2px solid var(--hud-cream); border-radius: 12px 16px 13px 15px; background: var(--hud-butter); color: var(--hud-ink); text-align: left; font: inherit; }
-.hud-surface .notebook-hud .note-footprint__sources button { cursor: pointer; }
-.hud-surface .notebook-hud .note-footprint__sources button:hover { background: var(--hud-mint); }
-.hud-surface .notebook-hud .note-footprint__sources span { color: var(--hud-green); font-size: 11px; font-weight: 800; }
-.hud-surface .notebook-hud .note-footprint__sources q { font-size: 12px; line-height: 1.65; }
-.hud-surface .notebook-hud .note-footprint__older,
-.hud-surface .notebook-hud .notebook-legacy-footprint { margin-top: 16px; padding: 13px 16px; border: 2px solid var(--hud-cream); border-radius: 16px 20px 15px 19px; background: color-mix(in srgb, var(--hud-paper-light) 76%, var(--hud-cream)); box-shadow: var(--hud-shadow-small); }
-.hud-surface .notebook-hud .note-footprint__older > div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
-.hud-surface .notebook-hud .note-footprint__older button { min-height: 38px; padding: 6px 11px; border: 2px solid var(--hud-cream); border-radius: 12px 15px 11px 14px; background: var(--hud-butter); color: var(--hud-ink); cursor: pointer; }
-.hud-surface .notebook-hud .note-footprint__older button:disabled { opacity: .65; cursor: progress; }
+.hud-surface .notebook-hud .notebook-legacy-footprint > summary { color: var(--hud-green); font-size: 13px; font-weight: 800; cursor: pointer; }
+
+.hud-surface .notebook-hud .notebook-legacy-footprint { margin-top: 20px; padding-top: 18px; border-top: 1px dashed var(--hud-line); }
+
 .hud-surface .notebook-hud .notebook-legacy-footprint > p { margin: 10px 0; }
 .hud-surface .notebook-hud .notebook-footprint-status,
 .hud-surface .notebook-hud .notebook-footprint-error { margin: 10px 0; color: var(--hud-soft); font-size: 13px; line-height: 1.7; }
-.hud-surface .notebook-hud .notebook-footprint-empty { margin: 22px 0; border: 3px dashed var(--hud-line); border-radius: 22px 17px 20px 16px; background: color-mix(in srgb, var(--hud-paper-light) 74%, var(--hud-mint)); }
+.hud-surface .notebook-hud .notebook-footprint-empty { margin: 22px 0; padding: 18px 0; color: var(--hud-soft); }
 .hud-surface .notebook-hud .notebook-footprint-empty .small { max-width: 520px; margin-right: auto; margin-left: auto; line-height: 1.75; }
-
-@media (max-width: 700px) {
-  .hud-surface .notebook-hud .note-footprint__paper > header { align-items: start; flex-direction: column; gap: 4px; }
-  .hud-surface .notebook-hud .note-footprint__paper { padding: 15px 14px 13px; }
-}
 
 /* ── 架上那一枚「了解状态」纸签 ──────────────────────────────────────────
    它说的是这篇上**发生过什么**，不是掌握评分。所以：
@@ -2259,9 +1247,29 @@
   letter-spacing: 0.03em;
 }
 .hud-surface .note-state-tag--untouched .note-state-tag__label { color: var(--hud-soft); }
+.hud-surface .current-note__labels { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 10px; }
+.hud-surface .current-note__labels .note-state-tag { margin: 0; padding: 2px 8px 3px; border: 0; border-radius: 6px 9px 5px 8px; box-shadow: none; background: var(--hud-mint); transform: none; }
+.hud-surface .current-note__records { margin: 14px 0 10px; color: var(--hud-green); font: 12px/1.8 "Noto Sans SC Variable", sans-serif; }
 
 /* 书封上是深色底（book-green / book-rust / book-blue / book-tan），
    同一枚纸签要压得住这四种底色，所以这里换成浅纸面，而不是给每种书色配一枚签。 */
+
+/* ⚠️ 这四个色调类**此前全仓没有任何规则**——`note-library-surface.tsx` 一直在发
+   `book-cover book-green|rust|blue|tan`，而 `.book-cover` 的字色是 `#fff4df`（奶油白），
+   底色却无人给。于是书封是「白字 + 透明底」，压在暗色旧书房底板上勉强能看，换到明亮的
+   `focus-study-desk-*.png` 之后就彻底看不见了（2026-10-01 用户报「日间模式完全看不到
+   东西」）。下面这条就是补那个底色，取自 HUD 自己的深色木器语汇。 */
+.hud-surface .book-cover.book-green { background: #4a5b48; }
+.hud-surface .book-cover.book-rust { background: #9c5233; }
+.hud-surface .book-cover.book-blue { background: #2c4657; }
+.hud-surface .book-cover.book-tan { background: #8a6a45; }
+
+/* 纯色书封给一道极轻的内高光，免得四张封看起来像四块平色板（照片封面自带压暗渐变，
+   不需要这一层，所以只作用于非 `.book-empty`）。 */
+.hud-surface .book-cover:not(.book-empty) {
+  box-shadow: var(--hud-shadow-small), inset 0 1px 0 rgba(255, 249, 237, 0.12);
+}
+
 .hud-surface .book-cover .note-state-tag {
   position: absolute;
   left: 24px;
@@ -2287,8 +1295,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .hud-surface .note-state-tag { transform: none; }
-  .hud-surface .notebook-hud .notebook-overview-entry { transform: none; }
-}
+  }
 
 /* ── 任务纸签：AI 正在做什么 ─────────────────────────────────────────────
    它要占的是**触发它的那张纸签**的位置，不是屏幕中央的转圈、也不是一条 toast。
@@ -2378,11 +1385,6 @@
   background: color-mix(in srgb, var(--hud-butter) 55%, transparent);
 }
 .hud-surface .notebook-hud .notebook-meta-action svg { opacity: .8; }
-.hud-surface .notebook-hud .notebook-edit-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
 @media (prefers-reduced-motion: reduce) {
   .hud-surface .notebook-hud .notebook-meta-action { transition: none; }
 }

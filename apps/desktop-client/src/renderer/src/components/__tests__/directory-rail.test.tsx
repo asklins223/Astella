@@ -1,23 +1,17 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../../app/room-store.ts";
 import { DirectoryRail, DIRECTORY_RAIL_MODE_KEY } from "../DirectoryRail.tsx";
 
-/**
- * 目录栏的两条"闪"的证据都来自实窗（2026-09-22，1440×810，CDP 逐帧量）：
- * 一次收起里，幽灵那一列在前 190ms 就被吃掉 60%（clipPath inset 400px / 657px），
- * 而真目录栏要到 213ms 才开始离开 opacity 0——中间那 200ms 左侧整块什么都不画。
- * 另一半是"每次跳页都把这一列展开、1.9 秒后再收一次"，任务页只换到 30px。
- * 这里把两件事各自钉住。
- */
+/** Directory motion: stable icon layout, one spring and immediate controls. */
 
 const RAIL_EXPANDED = { left: 22, top: 84, width: 58, height: 703 };
 const RAIL_COLLAPSED = { left: 22, top: 741, width: 50, height: 46 };
 
 type Frame = Record<string, string | number>;
-const animated: { selector: string; frames: Frame[] }[] = [];
+const animated: { element: Element; selector: string; frames: Frame[]; animation: Animation }[] = [];
 
 function rectOf(element: Element) {
   const base = element.classList.contains("hud-rail") && !element.classList.contains("nav-morph-ghost")
@@ -25,7 +19,13 @@ function rectOf(element: Element) {
     // 幽灵永远画的是"收起之前"那一列。
     : element.classList.contains("nav-morph-ghost")
       ? RAIL_EXPANDED
-      : { left: 400, top: 100, width: 800, height: 600 };
+      : element.classList.contains("nav-collapse")
+        ? (document.querySelector(".desktop-app")?.classList.contains("nav-collapsed")
+          ? { left: 26, top: 745, width: 42, height: 38 } : { left: 34, top: 751, width: 34, height: 26 })
+        : element.classList.contains("content")
+          ? { left: document.querySelector(".nav-collapsed") ? 100 : 130, top: 100, width: 800, height: 600 }
+        : element.classList.contains("nav-chip") ? { left: 29.5, top: 95, width: 43, height: 43 }
+          : { left: 400, top: 100, width: 800, height: 600 };
   return {
     ...base,
     right: base.left + base.width,
@@ -43,39 +43,16 @@ function stubPaintSurface() {
     const selector = this.classList.contains("nav-morph-ghost")
       ? "ghost"
       : this.classList.contains("hud-rail") ? "rail" : "other";
-    animated.push({ selector, frames: keyframes as Frame[] });
-    return {
+    const animation = {
       cancel() {},
       commitStyles() {},
       onfinish: null,
       oncancel: null,
       playState: "running",
     } as unknown as Animation;
+    animated.push({ element: this, selector, frames: keyframes as Frame[], animation });
+    return animation;
   } as unknown as typeof Element.prototype.animate;
-}
-
-/** `inset(400.9px 0 0 0 round 22px)` → 被从顶部吃掉的比例。 */
-function clippedFraction(frame: Frame, totalInset: number): number {
-  const match = /inset\(([\d.]+)px/.exec(String(frame.clipPath ?? ""));
-  return match ? Number(match[1]) / totalInset : 0;
-}
-
-function fractionAt(frames: Frame[], offset: number, totalInset: number): number {
-  const sorted = [...frames].sort((a, b) => Number(a.offset) - Number(b.offset));
-  let lower = sorted[0];
-  let upper = sorted[sorted.length - 1];
-  for (let index = 0; index < sorted.length - 1; index += 1) {
-    if (offset >= Number(sorted[index].offset) && offset <= Number(sorted[index + 1].offset)) {
-      lower = sorted[index];
-      upper = sorted[index + 1];
-      break;
-    }
-  }
-  const span = Number(upper.offset) - Number(lower.offset);
-  const ratio = span === 0 ? 0 : (offset - Number(lower.offset)) / span;
-  const from = clippedFraction(lower, totalInset);
-  const to = clippedFraction(upper, totalInset);
-  return from + ratio * (to - from);
 }
 
 function advance(ms: number) {
@@ -88,6 +65,7 @@ beforeEach(() => {
   animated.length = 0;
   stubPaintSurface();
   vi.useFakeTimers();
+  vi.spyOn(performance, "now").mockReturnValue(0);
   window.localStorage.setItem(DIRECTORY_RAIL_MODE_KEY, "auto");
   useRoomStore.setState({ motionMode: "full", reducedMotion: false });
 });
@@ -121,32 +99,89 @@ describe("自动模式只在书房里收起这一列", () => {
   });
 });
 
-describe("收起这一列的动画不留空帧", () => {
-  it("幽灵被吃掉的比例与小岛长出来的比例同一条曲线", () => {
+describe("连续、可打断的目录形变", () => {
+  it("收起的项目离开焦点路径；展开后可以立即切页并释放旧动画", () => {
+    window.localStorage.setItem(DIRECTORY_RAIL_MODE_KEY, "expanded");
     useRoomStore.setState({ surface: null });
     render(<div className="desktop-app hud-surface"><DirectoryRail /></div>);
-    advance(3_000);
+    fireEvent.click(screen.getByRole("button", { name: "收起目录" }));
+    const source = document.querySelector<HTMLButtonElement>('.nav-chip[aria-label="来源"]')!;
+    expect(source.tabIndex).toBe(-1);
+    expect(source.getAttribute("aria-hidden")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "展开目录" }));
+    expect(source.tabIndex).toBe(0);
+    expect(source.hasAttribute("aria-hidden")).toBe(false);
+    expect(document.querySelector(".nav-morph-ghost")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "来源" }));
+    expect(useRoomStore.getState().surface).toBe("source-library");
+    expect(document.querySelector(".nav-morph-ghost")).toBeNull();
+    expect(document.querySelector("[data-rail-morphing]")).toBeNull();
+  });
 
-    const ghost = animated.find((entry) => entry.selector === "ghost");
-    const rail = animated.find((entry) => entry.selector === "rail");
-    expect(ghost?.frames.length, "收起时应当有幽灵与小岛两段关键帧").toBeGreaterThan(3);
-    expect(rail?.frames.length, "收起时应当有幽灵与小岛两段关键帧").toBeGreaterThan(3);
+  it("正文 FLIP 完成不会写回旧 transform、覆盖正在进行的切页动效", () => {
+    window.localStorage.setItem(DIRECTORY_RAIL_MODE_KEY, "expanded");
+    render(<div className="desktop-app hud-surface"><main className="content" style={{ transform: "scale(.98)" }} /><DirectoryRail /></div>);
+    fireEvent.click(screen.getByRole("button", { name: "收起目录" }));
+    const content = document.querySelector<HTMLElement>(".content")!;
+    const flip = animated.find(entry => entry.element === content)!;
+    content.style.transform = "translateY(5px)";
+    flip.animation.onfinish?.(new Event("finish") as AnimationPlaybackEvent);
+    expect(content.style.transform).toBe("translateY(5px)");
+  });
 
-    const totalInset = RAIL_EXPANDED.height - RAIL_COLLAPSED.height;
-    let worstGap = 0;
-    let worstAt = 0;
-    for (const frame of rail!.frames) {
-      const offset = Number(frame.offset);
-      const revealed = Number(frame.opacity);
-      const eaten = fractionAt(ghost!.frames, offset, totalInset);
-      if (eaten - revealed > worstGap) {
-        worstGap = eaten - revealed;
-        worstAt = offset;
-      }
-    }
-    // 旧实现这里最大差 0.65（幽灵已让出 65% 的列、小岛 opacity 还是 0）。
-    expect(worstGap, `t=${worstAt} 处左侧空出 ${(worstGap * 100).toFixed(0)}%`).toBeLessThanOrEqual(0.02);
-    // 终点必须真的收起：常量曲线若被写成 0 也会满足上一条。
-    expect(Number(rail!.frames[rail!.frames.length - 1].opacity)).toBe(1);
+  it("冻结列仍在 HUD 作用域内，保持图标居中且首帧不先横移", () => {
+    window.localStorage.setItem(DIRECTORY_RAIL_MODE_KEY, "expanded");
+    const style = document.createElement("style");
+    style.textContent = ".hud-surface .nav-chip { display:grid; place-items:center; }";
+    document.head.append(style);
+    render(<div className="desktop-app hud-surface"><DirectoryRail /></div>);
+    fireEvent.click(screen.getByRole("button", { name: "收起目录" }));
+    const ghost = document.querySelector<HTMLElement>(".nav-morph-ghost")!;
+    expect(ghost.closest(".hud-surface")).toBe(document.querySelector(".desktop-app"));
+    const iconButton = ghost.querySelector<HTMLElement>(".nav-chip")!;
+    expect(getComputedStyle(iconButton).placeItems).toBe("center");
+    expect(Number.parseFloat(ghost.style.left) + Number.parseFloat(iconButton.style.left)).toBe(29.5);
+    const iconMotion = animated.find(entry => entry.element === iconButton)!;
+    expect(iconMotion.frames[0].transform).toBe("translate3d(0px, 0px, 0)");
+    expect(iconMotion.frames[0].opacity).toBe(1);
+    expect(screen.getByRole("button", { name: "展开目录" })).toBeTruthy();
+    style.remove();
+  });
+
+  it("换向承接当前弹簧状态；旧完成回调不会清掉最新动画", () => {
+    window.localStorage.setItem(DIRECTORY_RAIL_MODE_KEY, "expanded");
+    render(<div className="desktop-app hud-surface"><DirectoryRail /></div>);
+    fireEvent.click(screen.getByRole("button", { name: "收起目录" }));
+    const original = animated.find(entry => entry.element.classList.contains("directory-rail-skin"))!;
+    const initialIcon = animated.find(entry => entry.element.classList.contains("nav-chip"))!;
+    const ghost = document.querySelector(".nav-morph-ghost");
+    vi.mocked(performance.now).mockReturnValue(72);
+    fireEvent.click(screen.getByRole("button", { name: "展开目录" }));
+    expect(document.querySelectorAll(".nav-morph-ghost")).toHaveLength(1);
+    expect(document.querySelector(".nav-morph-ghost")).toBe(ghost);
+    const reversedIcon = animated.filter(entry => entry.element === initialIcon.element).at(-1)!;
+    expect(Number(reversedIcon.frames[0].opacity)).toBeCloseTo(Number(initialIcon.frames[6].opacity), 6);
+    expect(Number(reversedIcon.frames[0].opacity)).toBeGreaterThan(0);
+    expect(Number(reversedIcon.frames[0].opacity)).toBeLessThan(1);
+    original.animation.onfinish?.(new Event("finish") as AnimationPlaybackEvent);
+    expect(document.querySelector(".nav-morph-ghost")).toBe(ghost);
+    advance(1_200);
+    expect(document.querySelector(".nav-morph-ghost")).toBeNull();
+    expect(document.querySelector("[data-rail-morphing]")).toBeNull();
+    expect(document.querySelector<HTMLElement>(".desktop-app")?.dataset.directoryRail).toBe("expanded");
+  });
+
+  it("中途切到 Off 或系统减少动态，立即释放动画并落到目标", () => {
+    window.localStorage.setItem(DIRECTORY_RAIL_MODE_KEY, "expanded");
+    render(<div className="desktop-app hud-surface"><DirectoryRail /></div>);
+    fireEvent.click(screen.getByRole("button", { name: "收起目录" }));
+    expect(document.querySelector(".nav-morph-ghost")).toBeTruthy();
+    act(() => useRoomStore.setState({ reducedMotion: true }));
+    expect(document.querySelector(".nav-morph-ghost")).toBeNull();
+    expect(document.querySelector("[data-rail-morphing]")).toBeNull();
+    expect(screen.getByRole("button", { name: "展开目录" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "展开目录" }));
+    expect(document.querySelector(".nav-morph-ghost")).toBeNull();
+    expect(screen.getByRole("button", { name: "收起目录" })).toBeTruthy();
   });
 });

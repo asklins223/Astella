@@ -46,7 +46,7 @@ after(async () => {
 });
 
 const { runCompanionDialogue } = await import("../handlers/companion-dialogue.ts");
-const { ensureAgentToolCall, loadContinuation } = await import("../handlers/companion-tool-call-ledger.ts");
+const { ensureAgentToolCall, loadContinuation, safeArgumentsHash, updateToolCall } = await import("../handlers/companion-tool-call-ledger.ts");
 const { companionStreamEventV1Schema, getCompanionAgentTool } = await import("@ailearn/shared");
 
 async function seedBase(): Promise<{ workspaceId: string; userId: string }> {
@@ -494,7 +494,11 @@ function continuationEvent(ws: string, uid: string, f: Fixture) {
       groundedTutorContext: null,
       userText: "",
       recentMessages: [],
-      activeMemories: [],
+      residentMemories: [],
+      memoryDirectory: [],
+      playbookCatalog: [],
+      organizationSurface: null,
+      memoryRefs: [],
       hereAndNow: null,
       thisTurnFacts: null,
       formalAnswerTarget: null,
@@ -502,6 +506,9 @@ function continuationEvent(ws: string, uid: string, f: Fixture) {
       factSpans: null,
       conversationSummary: null,
       petProfile: null,
+      personaProfileRevision: 0,
+      personaExamplesRevision: 0,
+      defaultExpressionVersion: "1",
       nextMessageSeq: 3,
       nextEventSeq: 100,
     },
@@ -608,6 +615,86 @@ test("Agent 工具调用：句柄经真实写入 SQL 落库，形状与读回一
       handles,
       "写入 SQL 必须把句柄原样存成 jsonb 数组（读回形状与产出一致）",
     );
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("Agent 写操作结果不明：provider 换 call id 时不重放；相同只读查询仍可重读", async () => {
+  const { workspaceId, userId } = await seedBase();
+  const f = await seedAgentRun(workspaceId, userId, { userText: "设一个提醒" });
+  try {
+    const stepId = randomUUID();
+    await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      await tx`INSERT INTO companion_agent_steps
+                 (id, workspace_id, user_id, conversation_id, run_id, step_no, kind, status)
+               VALUES (${stepId}, ${workspaceId}, ${userId}, ${f.conversationId}, ${f.runId}, 1,
+                       'model', 'running')`;
+    });
+    const event = continuationEvent(workspaceId, userId, f);
+    const definition = getCompanionAgentTool("companion_schedule_reminder");
+    assert.ok(definition);
+    const arguments_ = { text: "复习", fireAtLocal: "2026-10-01T18:00" };
+    const argsHash = safeArgumentsHash(arguments_);
+    const first = await ensureAgentToolCall(
+      event,
+      stepId,
+      definition,
+      { id: "call_uncertain_1", arguments: arguments_ },
+      argsHash,
+    );
+    assert.equal(first.isNew, true);
+    // Simulate a worker crash after execution began: the catch path never got
+    // to persist an outcome, so recovery must fence the write as uncertain.
+    await updateToolCall(event, first.toolCallId, { status: "executing" });
+
+    const retry = await ensureAgentToolCall(
+      event,
+      stepId,
+      definition,
+      { id: "call_uncertain_2", arguments: arguments_ },
+      argsHash,
+    );
+    assert.deepEqual(retry, {
+      isNew: false,
+      toolCallId: "call_uncertain_1",
+      status: "outcome_unknown",
+      proposalId: null,
+      resultRef: null,
+      safeSummary: "这项操作可能已经发生，但暂时没有确定回执；请先核对状态，不要重复操作。",
+    });
+
+    const rows = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      return tx`SELECT tool_call_id, status FROM companion_agent_tool_calls WHERE run_id = ${f.runId}`;
+    });
+    assert.deepEqual(
+      rows.map((row) => ({ tool_call_id: row.tool_call_id, status: row.status })),
+      [{ tool_call_id: "call_uncertain_1", status: "outcome_unknown" }],
+    );
+
+    const readDefinition = getCompanionAgentTool("companion_read_current_page");
+    assert.ok(readDefinition);
+    const readHash = safeArgumentsHash({});
+    const firstRead = await ensureAgentToolCall(
+      event,
+      stepId,
+      readDefinition,
+      { id: "call_read_1", arguments: {} },
+      readHash,
+    );
+    const secondRead = await ensureAgentToolCall(
+      event,
+      stepId,
+      readDefinition,
+      { id: "call_read_2", arguments: {} },
+      readHash,
+    );
+    assert.equal(firstRead.isNew, true);
+    assert.equal(secondRead.isNew, true, "重复读取应重新查询，不折叠为旧回执");
   } finally {
     await f.cleanup();
   }

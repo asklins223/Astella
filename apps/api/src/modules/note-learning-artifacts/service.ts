@@ -4,7 +4,7 @@ import { withWorkspaceTransaction } from "../../db/client.ts";
 import { jobs } from "@ailearn/shared/db-schema/job";
 import { noteLearningArtifacts } from "@ailearn/shared/db-schema/note-learning-artifacts";
 import { noteBlocks, noteVersions, notes } from "@ailearn/shared/db-schema/note";
-import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
+import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
 import { JobStatus, JobType } from "@ailearn/shared/enums";
 import { readNoteDynamicArtifactGenerateJobPayload } from "@ailearn/shared/job-payload-contracts";
 import {
@@ -103,13 +103,11 @@ export async function startNoteLearningArtifactTask(scope: NoteLearningArtifactS
     if (!version) throw new NoteLearningArtifactError("note_version_not_found", "这篇笔记的当前版本暂时读不到。");
     if (input.sourceKind === "annotation") {
       const anchor = input.selectionAnchor!;
-      const [block] = await tx.select({ type: noteBlocks.type, content: noteBlocks.content }).from(noteBlocks).where(and(
-        eq(noteBlocks.workspaceId, scope.workspaceId), eq(noteBlocks.versionId, input.noteVersionId), eq(noteBlocks.ordinal, anchor.startBlockOrdinal),
+      const blocks = await tx.select({ ordinal: noteBlocks.ordinal, type: noteBlocks.type, content: noteBlocks.content }).from(noteBlocks).where(and(
+        eq(noteBlocks.workspaceId, scope.workspaceId), eq(noteBlocks.versionId, input.noteVersionId),
+        sql`${noteBlocks.ordinal} BETWEEN ${anchor.startBlockOrdinal} AND ${anchor.endBlockOrdinal}`,
       ));
-      const text = block ? noteBlockRenderedTextV1(block.type, block.content) : "";
-      if (!block || anchor.endOffset > text.length || text.slice(anchor.startOffset, anchor.endOffset) !== anchor.excerpt
-        || text.slice(Math.max(0, anchor.startOffset - 120), anchor.startOffset) !== anchor.prefix
-        || text.slice(anchor.endOffset, anchor.endOffset + 120) !== anchor.suffix) {
+      if (!noteAnchorMatchesV1(blocks, anchor)) {
         throw new NoteLearningArtifactError("selection_anchor_mismatch", "选中的原句位置和这版笔记对不上，请重新圈选后再做演示。");
       }
     }

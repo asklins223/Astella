@@ -60,6 +60,21 @@ describe("CompanionRunTraceView", () => {
     expect(screen.queryByText("进行中")).toBeNull();
   });
 
+  it("结果不明的操作默认展开，并明确显示待核对状态", () => {
+    const { container } = render(<CompanionRunTraceView trace={traceWith({
+      key: "tool:uncertain",
+      kind: "tool",
+      label: "记下提醒",
+      state: "outcome_unknown",
+      toolName: "companion_schedule_reminder",
+      summary: "这项操作可能已经发生，但暂时没有确定回执；请先核对状态，不要重复操作。",
+      proposalId: null,
+    })} />);
+    expect(container.querySelector("details")?.open).toBe(true);
+    expect(screen.getByText("结果待核对")).toBeTruthy();
+    expect(screen.getByText(/请先核对状态/)).toBeTruthy();
+  });
+
   /**
    * 工具节点的 `label` 装的是服务端下发的 `definition.description` —— 那是**给模型看的**
    * 工具说明。轨道与头顶那句都过 `nodeLabel()` 换成给人看的那句话，这一份以前是裸渲染

@@ -3,8 +3,8 @@
  *
  * ## 为什么从 `notebook-surface.tsx` 拆出来（2026-09-29）
  *
- * 13 行、4 个外部符号。它**只列 `sourceKind === "overview"` 且还在飞的那几条**——
- * 已完成的不列（那些在「学习记录」里），失败且已被读到的也不列（那张纸自己会说）。
+ * 速看发起的任务在原入口交代进度、重试与结果。做好后由用户主动打开，
+ * 不让后台回执自动切换正在阅读的页面。
  *
  * ## 两条不许动
  *
@@ -13,22 +13,20 @@
  *  2. **「没读到进度」不是「没有任务」**：没有任务时这一格画的是 header 而不是一个 alert。
  */
 import type { ReactElement } from "react";
-import { TaskSlip, type TaskSlipStatus } from "./task-slip.tsx";
+import type { NoteLearningArtifactTaskV1, NoteLearningArtifactV1 } from "@ailearn/shared/note-learning-artifact-contracts";
+import { TaskSlip } from "./task-slip.tsx";
 
 /** 一个还在飞的任务。**只声明这一格真正要读的三项**，多写一项就多一处与源头分叉的地方。 */
-export type ArtifactTaskV1 = {
-  readonly taskId: string;
-  readonly status: TaskSlipStatus;
-  readonly failureReason: string | null;
-};
+export type ArtifactTaskV1 = Pick<NoteLearningArtifactTaskV1, "taskId" | "status" | "failureReason" | "artifact">;
 
 export function NotebookArtifactTaskPaper(props: {
   readonly tasks: readonly ArtifactTaskV1[];
   readonly error: string | null;
   readonly onStart: (task: ArtifactTaskV1) => void;
+  readonly onOpen: (artifact: NoteLearningArtifactV1) => void;
   readonly onOpenSettings: () => void;
 }): ReactElement {
-  const { tasks, error, onStart, onOpenSettings } = props;
+  const { tasks, error, onStart, onOpen, onOpenSettings } = props;
   return (
     <aside className="note-learning-artifact-task-paper" aria-label="互动演示任务">
       <header><strong>互动演示</strong><span>做好后可以从这里打开</span></header>
@@ -39,6 +37,7 @@ export function NotebookArtifactTaskPaper(props: {
             failureReason={task.failureReason ?? error}
             onRetry={() => onStart(task)}
             onOpenSettings={onOpenSettings} />
+          {task.status === "ready" && task.artifact ? <button type="button" className="button" onClick={() => onOpen(task.artifact!)}>打开演示：{task.artifact.title}</button> : null}
         </div>
       ))}
       {error ? <p role="alert">暂时没读到任务进度：{error}</p> : null}

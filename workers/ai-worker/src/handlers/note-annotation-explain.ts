@@ -1,8 +1,10 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import type { ChatMessage } from "@ailearn/shared";
 import { readNoteAnnotationExplainJobPayload } from "@ailearn/shared/job-payload-contracts";
 import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
 import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
+import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
 import * as schema from "@ailearn/shared/db-schema";
 import {
   AIConsentRequiredError,
@@ -12,10 +14,11 @@ import {
 } from "../lib/governance.ts";
 import { createProvider } from "../lib/ai-provider.ts";
 import { extractJsonFromText } from "../lib/providers/json-response.ts";
-import { runWithAbortBudget } from "../lib/handler-timeout.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { assertJobLease, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
 import { NoteAnnotationOutputError } from "../lib/non-retryable-errors.ts";
+import { runWorkerAiTask } from "./worker-ai-task.ts";
+import { noteLearningSnapshotHash } from "./note-learning-snapshot.ts";
 import type { JobPayload } from "./index.ts";
 
 const visibleNoteCondition = sql.raw(noteVisibleSqlText(
@@ -52,15 +55,12 @@ export async function runNoteAnnotationExplain(job: JobPayload): Promise<void> {
       eq(schema.notes.id, input.noteId), eq(schema.notes.workspaceId, job.workspaceId), isNull(schema.notes.deletedAt), visibleNoteCondition,
     )).limit(1);
     if (!note) throw new NoteAnnotationOutputError("批注对应的笔记版本已不可用");
-    const [block] = await tx.select({ type: schema.noteBlocks.type, content: schema.noteBlocks.content }).from(schema.noteBlocks).where(and(
+    const blocks = await tx.select({ ordinal: schema.noteBlocks.ordinal, type: schema.noteBlocks.type, content: schema.noteBlocks.content }).from(schema.noteBlocks).where(and(
       eq(schema.noteBlocks.workspaceId, job.workspaceId), eq(schema.noteBlocks.versionId, input.noteVersionId),
-      eq(schema.noteBlocks.ordinal, input.anchor.startBlockOrdinal),
+      sql`${schema.noteBlocks.ordinal} BETWEEN ${input.anchor.startBlockOrdinal} AND ${input.anchor.endBlockOrdinal}`,
     ));
-    const text = block ? noteBlockRenderedTextV1(block.type, block.content) : "";
     const anchor = input.anchor;
-    if (!block || anchor.endOffset > text.length || text.slice(anchor.startOffset, anchor.endOffset) !== anchor.excerpt
-      || text.slice(Math.max(0, anchor.startOffset - 120), anchor.startOffset) !== anchor.prefix
-      || text.slice(anchor.endOffset, anchor.endOffset + 120) !== anchor.suffix) {
+    if (!noteAnchorMatchesV1(blocks, anchor)) {
       throw new NoteAnnotationOutputError("批注选区和保存的原文位置对不上");
     }
     const [previousHeading] = await tx.select({ type: schema.noteBlocks.type, content: schema.noteBlocks.content }).from(schema.noteBlocks).where(and(
@@ -80,20 +80,54 @@ export async function runNoteAnnotationExplain(job: JobPayload): Promise<void> {
     job.workspaceId,
     { userId: job.requestedBy, operation: "note_annotation_explain", jobId: job.id, dataCategories: ["note_content"] },
   );
-  const response = await runWithAbortBudget(
-    (signal) => provider.chatCompletion([
-      { role: "system", content: "你是笔记旁边的白话解释助手。只根据给出的原句和小节标题解释，不把猜测说成事实。先用一到两句日常中文直接说清楚，尽量不超过 100 字；不要用教学术语，不要复述原句充字数。例子只有在能帮助理解时才写，尽量不超过 90 字。" },
-      { role: "user", content: [
+  const messages: ChatMessage[] = [
+    { role: "system", content: "你是笔记旁边的白话解释助手。只根据给出的原句和小节标题解释，不把猜测说成事实。先用一到两句日常中文直接说清楚，尽量不超过 100 字；不要用教学术语，不要复述原句充字数。例子只有在能帮助理解时才写，尽量不超过 90 字。" },
+    { role: "user", content: [
         "请把框选内容解释给第一次接触它的人。说明它具体是什么意思、在上下文里起什么作用；如果适合，用一个短例子帮助理解。",
         frozen.heading ? `小节：${frozen.heading}` : "",
         `原句：\n${frozen.text}`,
         "返回严格 JSON：{\"explanation\":\"一到两句白话解释，目标 40 到 100 字\",\"example\":\"一句短比方；不适合时填 null\"}。只解释框选内容，不把可能的神经机制写成已证实的事实。不要输出 Markdown 围栏或额外文本。",
       ].filter(Boolean).join("\n\n") },
-    ], { temperature: 0.25, maxTokens: 700, responseFormat: "json_object", disableThinking: true }, signal),
-    job.signal,
-    resolveProviderCallTimeout("note_annotation_explain"),
-  );
-  const generated = parseExplanation(response.content);
+  ];
+  const generationParameters = {
+    temperature: 0.25,
+    maxTokens: 700,
+    responseFormat: "json_object" as const,
+    disableThinking: true,
+  };
+  const inputSnapshotHash = noteLearningSnapshotHash({
+    taskVersion: 1,
+    noteVersionId: input.noteVersionId,
+    heading: frozen.heading,
+    selectedText: frozen.text,
+    modelId: provider.modelId,
+    promptVersion: provider.promptVersion,
+    generationParameters,
+    messages,
+  });
+  const generated = await runWorkerAiTask({
+    job,
+    userId: job.requestedBy,
+    taskId: "note_annotation_explain",
+    taskVersion: 1,
+    idempotencyKey: `note-annotation:${job.id}:${inputSnapshotHash}`,
+    inputSnapshotRef: { kind: "note_version", id: input.noteVersionId, hash: inputSnapshotHash },
+    input: messages,
+    modelId: provider.modelId,
+    promptVersion: `${provider.promptVersion}:note-annotation-explain-v1`,
+    resourceClass: "interactive_ai",
+    timeoutMs: resolveProviderCallTimeout("note_annotation_explain"),
+    isOutputShapeError: (error) => error instanceof NoteAnnotationOutputError,
+    execute: async (request, signal) => {
+      const response = await provider.chatCompletion(request, generationParameters, signal);
+      return {
+        ok: true,
+        output: parseExplanation(response.content),
+        promptTokens: response.usage?.promptTokens ?? undefined,
+        completionTokens: response.usage?.completionTokens ?? undefined,
+      };
+    },
+  });
   const explanation = [generated.explanation, generated.example ? `举个例子：${generated.example}` : ""].filter(Boolean).join("\n\n");
 
   await withJobTransaction(job, async (tx) => {

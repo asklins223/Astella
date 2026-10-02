@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import {
   extractQueryKeywords,
   retrieveCompanionMemoriesKeyword,
+  retrieveResidentCompanionMemories,
+  retrieveActiveCompanionMemoryDirectory,
+  readActiveCompanionMemoryById,
   retrieveCompanionMemoriesVector,
   retrieveCompanionMemories,
   toTextArrayLiteral,
@@ -128,6 +131,146 @@ test("keyword fallback 有关键词时生成 ILIKE ANY 匹配", async () => {
   assert.ok(tx.queries[0].includes("ILIKE ANY"));
 });
 
+test("普通语义召回只查 active；resident 独立常驻读取，归档只按显式请求搜索", async () => {
+  const activeTx = capturingTx([ROW]);
+  const archivedTx = capturingTx([{ ...ROW, budget_tier: "archived" }]);
+  const residentTx = capturingTx([{ ...ROW, budget_tier: "resident", revision: 3 }]);
+  await retrieveCompanionMemoriesKeyword(activeTx as never, { workspaceId: "w", userId: "u" }, "光合", 8);
+  const archived = await retrieveCompanionMemoriesKeyword(
+    archivedTx as never,
+    { workspaceId: "w", userId: "u" },
+    "光合",
+    8,
+    null,
+    { budgetTier: "archived" },
+  );
+  const residents = await retrieveResidentCompanionMemories(residentTx as never, { workspaceId: "w", userId: "u" });
+
+  assert.match(activeTx.queries[0], /budget_tier = 'active'/);
+  assert.match(archivedTx.queries[0], /budget_tier = 'archived'/);
+  assert.doesNotMatch(archivedTx.queries[0], /budget_tier = 'active'/);
+  assert.equal(archived.items[0]?.budgetTier, "archived");
+  assert.match(residentTx.queries[0], /budget_tier = 'resident'/);
+  assert.match(residentTx.queries[0], /LIMIT 6/);
+  assert.equal(residents[0]?.budgetTier, "resident");
+  assert.equal(residents[0]?.revision, 3);
+});
+
+test("active 目录只返回有界语义线索与适用时间，不把正文带进目录", async () => {
+  const body = "喜欢先看反例再读定义。" + "详细正文不能自动进入提示词。".repeat(12);
+  const tx = capturingTx([{
+    id: ROW.id,
+    kind: "preference",
+    content: body,
+    applies_when: "解释新概念时",
+    valid_from: "2026-09-01T00:00:00.000Z",
+    valid_until: null,
+    revision: 4,
+  }]);
+  const directory = await retrieveActiveCompanionMemoryDirectory(
+    tx as never,
+    { workspaceId: "w", userId: "u" },
+    { entityType: "learning_run", entityId: "run-1" },
+  );
+
+  assert.match(tx.queries[0], /budget_tier = 'active'/);
+  assert.match(tx.queries[0], /dismissed_at IS NULL/);
+  assert.match(tx.queries[0], /candidate = false/);
+  assert.match(tx.queries[0], /valid_until > now\(\)/);
+  assert.match(tx.queries[0], /memory_links/);
+  assert.match(tx.queries[0], /LIMIT 64/);
+  assert.deepEqual(directory, [{
+    memoryId: ROW.id,
+    kind: "preference",
+    title: "喜欢先看反例再读定义。",
+    appliesWhen: "解释新概念时",
+    validFrom: "2026-09-01T00:00:00.000Z",
+    validUntil: null,
+    revision: 4,
+    // 认识状态随目录项一起给（40 §4.5.4）：有争议/已替代的条目要能被标出来，
+    // 否则她在目录里看到标题就当定论复述了。正文仍然**不**进目录（下一行）。
+    epistemicStatus: null,
+  }]);
+  assert.equal("content" in directory[0]!, false);
+  assert.ok(!JSON.stringify(directory).includes("详细正文不能自动进入提示词"));
+});
+
+test("按 ID 展开只读取仍有效、同范围且版本匹配的 active 正文", async () => {
+  const tx = capturingTx([{
+    id: ROW.id,
+    kind: "preference",
+    content: "喜欢先看反例再读定义。",
+    applies_when: "解释新概念时",
+    valid_from: null,
+    valid_until: null,
+    revision: 4,
+  }]);
+  const memory = await readActiveCompanionMemoryById(
+    tx as never,
+    { workspaceId: "w", userId: "u" },
+    { entityType: "learning_run", entityId: "run-1" },
+    ROW.id,
+    4,
+  );
+
+  assert.match(tx.queries[0], /revision =/);
+  assert.match(tx.queries[0], /budget_tier = 'active'/);
+  assert.match(tx.queries[0], /deleted_at IS NULL/);
+  assert.match(tx.queries[0], /dismissed_at IS NULL/);
+  assert.match(tx.queries[0], /candidate = false/);
+  assert.match(tx.queries[0], /valid_until > now\(\)/);
+  assert.match(tx.queries[0], /memory_links/);
+  assert.equal(memory?.content, "喜欢先看反例再读定义。");
+  assert.equal(memory?.revision, 4);
+});
+
+test("向量与缺向量补召回都留在归档层", async () => {
+  const tx = capturingTx([]);
+  const provider: EmbeddingProviderLike = {
+    id: "mock", embeddingModelId: "mock-v1", embed: async () => new Array(1024).fill(0.01),
+  };
+  await retrieveCompanionMemoriesVector(
+    tx as never,
+    { workspaceId: "w", userId: "u" },
+    "光合作用",
+    provider,
+    8,
+    null,
+    new Array(1024).fill(0.01),
+    "archived",
+  );
+  const vectorQuery = tx.queries.find((query) => query.includes("<=>"));
+  const supplementQuery = tx.queries.find((query) => query.includes("ILIKE ANY"));
+  assert.match(vectorQuery ?? "", /m\.budget_tier = 'archived'/);
+  assert.match(supplementQuery ?? "", /budget_tier = 'archived'/);
+  assert.doesNotMatch(supplementQuery ?? "", /budget_tier = 'active'/);
+});
+
+test("关键词与向量召回都过滤未开始或已过期的记忆", async () => {
+  const keywordTx = capturingTx([]);
+  await retrieveCompanionMemoriesKeyword(keywordTx as never, { workspaceId: "w", userId: "u" }, "光合", 8);
+  assert.ok(keywordTx.queries[0].includes("valid_from"));
+  assert.ok(keywordTx.queries[0].includes("valid_until"));
+  assert.ok(keywordTx.queries[0].includes("valid_until > now()"));
+
+  const vectorTx = capturingTx([]);
+  const provider: EmbeddingProviderLike = {
+    id: "mock", embeddingModelId: "mock-v1", embed: async () => new Array(1024).fill(0.01),
+  };
+  await retrieveCompanionMemoriesVector(
+    vectorTx as never,
+    { workspaceId: "w", userId: "u" },
+    "光合",
+    provider,
+    8,
+    null,
+    new Array(1024).fill(0.01),
+  );
+  const vectorQuery = vectorTx.queries.find((query) => query.includes("<=>"));
+  assert.ok(vectorQuery?.includes("m.valid_from"));
+  assert.ok(vectorQuery?.includes("m.valid_until > now()"));
+});
+
 test("keyword fallback scope 过滤包含 global（scope 死维度修复）", async () => {
   const tx = capturingTx([ROW]);
   await retrieveCompanionMemoriesKeyword(
@@ -176,7 +319,7 @@ test("keyword fallback 返回 active 记忆并按 importance/pinned 排序", asy
   assert.equal(result.items[0].kind, "goal");
 });
 
-test("vector provider 返回 null 时自动降级 keyword", async () => {
+test("预计算向量为空时自动降级 keyword", async () => {
   const provider: EmbeddingProviderLike = {
     id: "mock",
     embeddingModelId: "mock-v1",
@@ -189,6 +332,8 @@ test("vector provider 返回 null 时自动降级 keyword", async () => {
     "光合",
     provider,
     8,
+    null,
+    null,
   );
   assert.equal(result.mode, "keyword_fallback");
   assert.equal(result.items[0].content, "这周掌握光合作用");
@@ -207,6 +352,8 @@ test("vector 模式返回 pgvector 行并标记 mode=vector", async () => {
     "光合",
     provider,
     8,
+    null,
+    new Array(1024).fill(0.01),
   );
   assert.equal(result.mode, "vector");
   assert.equal(result.items[0].pinned, true);
@@ -268,6 +415,33 @@ test("统一入口：预计算失败（null）直接 keyword，绝不在事务�
   }
 });
 
+test("统一入口：缺少预计算向量时不在事务内调用 embedding provider", async () => {
+  const previous = process.env.COMPANION_MEMORY_VECTOR_V1;
+  process.env.COMPANION_MEMORY_VECTOR_V1 = "true";
+  try {
+    let embedCalls = 0;
+    const provider: EmbeddingProviderLike = {
+      id: "mock",
+      embeddingModelId: "mock-v1",
+      embed: async () => {
+        embedCalls += 1;
+        return new Array(1024).fill(0.01);
+      },
+    };
+    const result = await retrieveCompanionMemories(
+      fakeTx([ROW]) as never,
+      { workspaceId: "w", userId: "u" },
+      "光合",
+      { provider },
+    );
+    assert.equal(result.mode, "keyword_fallback");
+    assert.equal(embedCalls, 0);
+  } finally {
+    if (previous === undefined) delete process.env.COMPANION_MEMORY_VECTOR_V1;
+    else process.env.COMPANION_MEMORY_VECTOR_V1 = previous;
+  }
+});
+
 test("统一入口：未开启 flag 或没有 provider 时走 keyword", async () => {
   const previous = process.env.COMPANION_MEMORY_VECTOR_V1;
   process.env.COMPANION_MEMORY_VECTOR_V1 = "false";
@@ -302,7 +476,9 @@ test("vector 空结果且无 ready embedding 时降级 keyword（修复零召回
       return [];
     },
   };
-  const result = await retrieveCompanionMemoriesVector(tx as never, { workspaceId: "w", userId: "u" }, "光合", provider, 8);
+  const result = await retrieveCompanionMemoriesVector(
+    tx as never, { workspaceId: "w", userId: "u" }, "光合", provider, 8, null, new Array(1024).fill(0.01),
+  );
   assert.equal(result.mode, "keyword_fallback");
   assert.ok(calls.some((c) => c.includes("EXISTS")));
 });
@@ -344,7 +520,7 @@ test("并集：向量命中的与缺向量的合并去重，向量侧优先", as
     ],
   );
   const result = await retrieveCompanionMemoriesVector(
-    tx as never, { workspaceId: "w", userId: "u" }, "在哪儿复习", provider, 8,
+    tx as never, { workspaceId: "w", userId: "u" }, "在哪儿复习", provider, 8, null, new Array(1024).fill(0.01),
   );
   assert.equal(result.mode, "vector", "向量侧有命中时模式仍是 vector");
   assert.deepEqual(result.items.map((i) => i.content), [
@@ -358,7 +534,7 @@ test("全部条目都有 ready 向量且向量无命中 → 仍是空集（并�
   };
   const tx = routingTx([], []);
   const result = await retrieveCompanionMemoriesVector(
-    tx as never, { workspaceId: "w", userId: "u" }, "光合", provider, 8,
+    tx as never, { workspaceId: "w", userId: "u" }, "光合", provider, 8, null, new Array(1024).fill(0.01),
   );
   assert.equal(result.items.length, 0);
   assert.equal(result.mode, "keyword_fallback");
@@ -376,6 +552,7 @@ test("补召回 SQL 必须带与主查询一致的 scope 过滤，且只取缺 r
     provider,
     8,
     { entityType: "learning_run", entityId: "0f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f0" },
+    new Array(1024).fill(0.01),
   );
   const supplement = tx.queries.find((q) => !q.includes("<=>"));
   assert.ok(supplement, "必须发出补召回查询");

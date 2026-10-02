@@ -1,6 +1,6 @@
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, CornerDownRight } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Copy, CornerDownRight, Sparkles, UserRound } from "lucide-react";
 import type { CompanionContentBlockV1, CompanionMessageV1 } from "@ailearn/shared/companion-conversation-contracts";
 import type { CompanionChatSession } from "../../app/companion-chat-session";
 import { companionMessageText, desktopRouteFromAgentRoute } from "../../app/companion-chat-session";
@@ -11,6 +11,9 @@ import { CompanionRunTraceView } from "./CompanionRunTraceView";
 import { ZoomableReadingImage } from "../surfaces/source/image-viewer.tsx";
 import { useSourceImage } from "../surfaces/source/source-image.ts";
 import { renderCompanionMarkdown } from "./companion-markdown";
+import { openExternalLink } from "../../app/external-link";
+import { copyText } from "../../app/clipboard";
+import { companionMessageCopyText } from "./companion-message-copy";
 
 /**
  * 「聊天记录」子级页面（2026-09-19，微信式）。
@@ -209,7 +212,7 @@ export function CompanionMessageRichBlocks({
 }) {
   return <>
     {blocks.filter((block) => block.type === "nav" || block.type === "quote"
-      || block.type === "diagram" || block.type === "card" || block.type === "image")
+      || block.type === "diagram" || block.type === "card" || block.type === "image" || block.type === "citation" || block.type === "code")
       .map((block, index) => (
         block.type === "nav"
           ? <NavBlockLine key={`nav-${index}`} block={block} chat={chat} />
@@ -240,7 +243,15 @@ export function CompanionMessageRichBlocks({
                   )
                 : block.type === "image"
                   ? <CompanionRecordImage key={`image-${index}`} block={block} />
-                  : null
+                  : block.type === "citation"
+                    ? <p className="companion-record__citation" key={`citation-${index}`}>
+                        {block.target.kind === "external_https"
+                          ? <button type="button" className="text-action" onClick={() => { if (block.target.kind === "external_https") void openExternalLink(block.target.href); }}>{block.label}</button>
+                          : <span>{block.label}</span>}
+                      </p>
+                    : block.type === "code"
+                      ? <pre className="companion-record__code" key={`code-${index}`}><code>{block.code}</code></pre>
+                      : null
       ))}
   </>;
 }
@@ -253,25 +264,27 @@ export function CompanionChatRecordArticle({
   readonly message: CompanionMessageV1;
   readonly chat: CompanionChatSession;
 }) {
-  const richBlocks = message.role === "assistant"
-    ? message.blocks.filter((block) => block.type === "nav" || block.type === "quote"
-      || block.type === "diagram" || block.type === "card" || block.type === "image")
-    : [];
+  const [copyNote, setCopyNote] = useState<string | null>(null);
+  const selection = message.role === "user" ? message.selection : undefined;
+  const richBlocks = message.blocks.filter((block) => block.type === "nav" || block.type === "quote"
+      || block.type === "diagram" || block.type === "card" || block.type === "image" || block.type === "citation" || block.type === "code");
   const trace = message.role === "assistant"
     ? chat.runTraces.find((item) => item.summary.assistantMessageId === message.id) ?? null
     : null;
   const traceProposalIds = new Set(trace?.nodes.flatMap((node) => node.proposalId ? [node.proposalId] : []) ?? []);
   return (
     <article className={richBlocks.length > 0 ? "companion-record__rich-turn" : undefined} data-message-id={message.id} data-role={message.role} data-kind={message.kind} data-cancelled={message.kind === "cancelled" || undefined}>
-      <header><span>{message.role === "user" ? "你" : chat.companionName}{message.kind === "voice_transcript" ? " · 语音" : ""}</span><time>{messageTime(message.createdAt)}</time></header>
+      <header><span className="companion-record__author"><i className="companion-record__avatar" aria-hidden="true">{message.role === "user" ? <UserRound size={15} /> : <Sparkles size={15} />}</i><strong>{message.role === "user" ? "你" : chat.companionName}{message.kind === "voice_transcript" ? " · 语音" : ""}</strong></span><time>{messageTime(message.createdAt)}</time></header>
+      {selection ? <CompanionQuoteBlock block={{ type: "quote", label: "引用的原文", text: selection.text }} /> : null}
       {/* 正文从 §4.8 起保留 markdown，由这里排版（抽屉与记录页共用本组件）。 */}
-      <div className="companion-record__body">{renderCompanionMarkdown(companionMessageText(message))}</div>
-      {message.role === "assistant" ? <CompanionMessageRichBlocks blocks={richBlocks} chat={chat} /> : null}
+      <div className="companion-record__body">{renderCompanionMarkdown(companionMessageText({ ...message, blocks: message.blocks.filter(block => block.type === "text") }))}</div>
+      <CompanionMessageRichBlocks blocks={richBlocks} chat={chat} />
       {message.kind === "cancelled" ? <p className="companion-record__stopped">你在这里停下了{stopSummary(trace)}</p> : null}
       {message.kind === "error" ? <p className="companion-record__stopped">这一轮没能说完{stopSummary(trace)}</p> : null}
       {trace && shouldShowRunTrace(trace) ? (
         <CompanionRunTraceView
           trace={trace}
+          defaultOpen={trace.summary.status === "waiting_for_confirmation" || trace.summary.status === "failed" || trace.nodes.some(node => node.state === "waiting_confirmation" || node.state === "outcome_unknown")}
           proposalStates={chat.proposalStates}
           onDecideProposal={(proposalId, decision) => { void chat.decideProposal(proposalId, decision); }}
           onRetryProposal={(proposalId) => { void chat.retryProposal(proposalId); }}
@@ -292,6 +305,9 @@ export function CompanionChatRecordArticle({
             )
           : null)
         : null}
+      <div className="companion-record__actions"><button type="button" className="text-action" onClick={() => {
+        void copyText(companionMessageCopyText(message)).then((copied) => setCopyNote(copied ? "已复制" : "复制失败，请重试"));
+      }}><Copy size={16} />{copyNote ?? "复制文字"}</button></div>
     </article>
   );
 }

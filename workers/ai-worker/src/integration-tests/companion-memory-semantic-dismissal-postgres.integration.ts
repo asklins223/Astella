@@ -21,6 +21,7 @@ const sql = postgres(ADMIN, { max: 2 });
 
 const { withWorkerWorkspaceTransaction } = await import("../db.ts");
 const { dismissSemanticTwin } = await import("../handlers/companion-memory-embedding.ts");
+const { hasDismissedMemoryTwin } = await import("../handlers/companion-memory-extractor.ts");
 
 const workspaceId = randomUUID();
 const userId = randomUUID();
@@ -104,6 +105,26 @@ test("幂等：已经判过的不再重复劳动", async () => {
   const hit = await withWorkerWorkspaceTransaction({ workspaceId, userId }, (tx) =>
     dismissSemanticTwin(tx, { workspaceId, userId, memoryId: freshId, embedding: NEAR }));
   assert.equal(hit, false, "第二次还被算成一次新收口");
+});
+
+test("抽取去重：已忽略记忆只抑制同类近似项", async () => {
+  const sameKind = await withWorkerWorkspaceTransaction({ workspaceId, userId }, (tx) =>
+    hasDismissedMemoryTwin(tx, {
+      workspaceId,
+      userId,
+      kind: "preference",
+      content: "她习惯在夜间写笔记，白天只做采集",
+    }));
+  assert.equal(sameKind, true, "同类同义记忆被忽略后又从抽取器重新出现");
+
+  const differentKind = await withWorkerWorkspaceTransaction({ workspaceId, userId }, (tx) =>
+    hasDismissedMemoryTwin(tx, {
+      workspaceId,
+      userId,
+      kind: "goal",
+      content: "她习惯在夜间写笔记，白天只做采集",
+    }));
+  assert.equal(differentKind, false, "偏好被忽略不应屏蔽内容相似但语义种类不同的目标");
 });
 
 test("别人的已忽略不能替她决定：跨用户不成立", async () => {

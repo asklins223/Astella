@@ -1,5 +1,5 @@
 /**
- * 记忆管理 HTTP 面（`/companion/memory*`，18 条路由）的行为契约。
+ * 记忆管理 HTTP 面（`/companion/memory*`，20 条路由）的行为契约。
  *
  * 服务层已由 assistant-memory / memory-star-map 集成测试覆盖；这里覆盖此前完全
  * 没有断言的一层：真实 session 下的状态码映射、strict body 校验、no-store，
@@ -17,7 +17,9 @@ process.env.COMPANION_MEMORY_VECTOR_V1 = "true";
 // 星图是独立开关（§9.8），只开 VECTOR 时 /memory/star-map 会 404。
 process.env.COMPANION_MEMORY_STAR_MAP_V1 = "true";
 
-const CONN = process.env.DATABASE_URL_API ?? process.env.DATABASE_URL;
+// Test fixture setup creates users/workspaces directly, while the API's own
+// pool can remain on the restricted ailearn_api role for the request path.
+const CONN = process.env.DATABASE_URL_TEST_ADMIN ?? process.env.DATABASE_URL ?? process.env.DATABASE_URL_API;
 if (!CONN) {
   throw new Error("DATABASE_URL_API 未配置——memory routes HTTP 集成测试要求真实 Postgres");
 }
@@ -106,7 +108,7 @@ async function createMemory(token: string, body: Record<string, unknown> = {}): 
     content: "喜欢在安静时段学习",
     ...body,
   }));
-  assert.equal(response.statusCode, 201, `创建记忆必须 201，实际 ${response.statusCode}`);
+  assert.equal(response.statusCode, 201, `创建记忆必须 201，实际 ${response.statusCode}：${response.body}`);
   return response.json().memoryItemId as string;
 }
 
@@ -118,6 +120,47 @@ test("匿名请求被拒（认证先于能力），已认证请求带 no-store",
   assert.equal(authed.statusCode, 200);
   assert.equal(authed.headers["cache-control"], "no-store");
   assert.deepEqual(authed.json(), { version: 2, items: [] });
+});
+
+test("预算状态只返回占用；层级 API 满额时返回候选且不会替用户降层", async () => {
+  const ids: string[] = [];
+  for (let index = 0; index < 7; index += 1) {
+    ids.push(await createMemory(tokenB, {
+      content: `容量预算测试 ${index} ${randomUUID()}`,
+    }));
+  }
+
+  const status = await app.inject(req(tokenB, "GET", "/companion/memory/budget"));
+  assert.equal(status.statusCode, 200);
+  assert.equal(status.headers["cache-control"], "no-store");
+  assert.equal(status.json().resident.used.items, 0);
+  assert.equal(status.json().active.items, 7);
+  assert.equal(status.body.includes("容量预算测试"), false, "预算读数不回传记忆正文");
+
+  for (const id of ids.slice(0, 6)) {
+    const moved = await app.inject(req(tokenB, "POST", `/companion/memory/${id}/budget-tier`, { tier: "resident" }));
+    assert.equal(moved.statusCode, 200, moved.body);
+    assert.equal(moved.json().result.status, "moved");
+  }
+
+  const overflow = await app.inject(req(tokenB, "POST", `/companion/memory/${ids[6]}/budget-tier`, { tier: "resident" }));
+  assert.equal(overflow.statusCode, 409);
+  assert.equal(overflow.headers["cache-control"], "no-store");
+  assert.equal(overflow.json().error, "memory_resident_budget_full");
+  assert.equal(overflow.json().result.status, "capacity");
+  assert.equal(overflow.json().result.suggestedDowngrades.length, 6);
+
+  const afterOverflow = await app.inject(req(tokenB, "GET", "/companion/memory/budget"));
+  assert.equal(afterOverflow.json().resident.used.items, 6, "满额拒绝不能静默挪走已有记忆");
+  assert.equal(afterOverflow.json().active.items, 1);
+  const invalidTier = await app.inject(req(tokenB, "POST", `/companion/memory/${ids[6]}/budget-tier`, { tier: "pinned" }));
+  assert.equal(invalidTier.statusCode, 400);
+  const crossUser = await app.inject(req(tokenA, "POST", `/companion/memory/${ids[0]}/budget-tier`, { tier: "active" }));
+  assert.equal(crossUser.statusCode, 404, "层级调整不得泄露另一用户的记忆是否存在");
+
+  const cleared = await app.inject(req(tokenB, "DELETE", "/companion/memory"));
+  assert.equal(cleared.statusCode, 200);
+  assert.equal(cleared.json().deletedCount, 7, "清除本测试数据，避免污染后续跨用户断言");
 });
 
 test("创建：合法 body → 201；已知字段非法 → 400（未知字段按本层约定被忽略）", async () => {
@@ -250,14 +293,40 @@ test("pin / unpin / archive / restore / dismiss 状态迁移都可往返", async
   await step("dismiss");
 });
 
-test("修正内容：correct 改写正文并保留可审计来源", async () => {
+test("记忆修订：来源不变、历史可读、旧 revision 提交会冲突", async () => {
   const id = await createMemory(tokenA, { kind: "goal", content: "原始内容", candidate: false });
+  const before = (await app.inject(req(tokenA, "GET", "/companion/memory")))
+    .json().items.find((item: { memoryItemId: string }) => item.memoryItemId === id);
   const response = await app.inject(req(tokenA, "POST", `/companion/memory/${id}/correct`, {
     content: "修正后的内容",
+    expectedRevision: before.revision,
     reason: "用户澄清",
   }));
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().content, "修正后的内容");
+  assert.equal(response.json().memoryItemId, id, "修订保持稳定 ID");
+  assert.equal(response.json().revision, before.revision + 1);
+  assert.equal(response.json().candidate, false, "用户已明确修正，不应再次排进候选确认");
+  assert.equal(response.json().authorType, "user");
+  assert.equal(response.json().sourceEventId, before.sourceEventId, "原始来源引用保持不变");
+
+  const history = await app.inject(req(tokenA, "GET", `/companion/memory/${id}/revisions`));
+  assert.equal(history.statusCode, 200);
+  assert.equal(history.json().items.length, 1);
+  assert.equal(history.json().items[0].content, "原始内容");
+  assert.equal(history.json().items[0].revision, before.revision);
+
+  const stale = await app.inject(req(tokenA, "POST", `/companion/memory/${id}/correct`, {
+    content: "旧页面覆盖",
+    expectedRevision: before.revision,
+  }));
+  assert.equal(stale.statusCode, 409);
+  assert.equal(stale.json().currentRevision, before.revision + 1);
+  assert.equal(
+    (await app.inject(req(tokenA, "GET", "/companion/memory"))).json().items
+      .find((item: { memoryItemId: string }) => item.memoryItemId === id).content,
+    "修正后的内容",
+  );
 });
 
 test("列表筛选：kind 与 q 生效，非法查询参数 → 400", async () => {
@@ -296,13 +365,16 @@ test("跨用户隔离：对别人的 memoryId 一律 404（不泄露存在性）
     ["POST", `/companion/memory/${mine}/confirm`],
     ["POST", `/companion/memory/${mine}/pin`],
     ["POST", `/companion/memory/${mine}/correct`],
+    ["GET", `/companion/memory/${mine}/revisions`],
     ["DELETE", `/companion/memory/${mine}`],
   ] as const) {
     const response = await app.inject(req(
       tokenB,
       method,
       url,
-      method === "POST" && url.endsWith("/correct") ? { content: "越权改写" } : undefined,
+      method === "POST" && url.endsWith("/correct")
+        ? { content: "越权改写", expectedRevision: 1 }
+        : undefined,
     ));
     assert.equal(response.statusCode, 404, `${method} ${url} 必须对他人资源返回 404`);
   }

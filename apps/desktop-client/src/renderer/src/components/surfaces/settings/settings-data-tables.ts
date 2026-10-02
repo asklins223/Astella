@@ -13,6 +13,7 @@ import type { DesktopAiAuditItemV1 } from "@ailearn/shared/desktop-surface-contr
 import type { AiDataPolicyV1, WorkspaceSummaryV1 } from "@ailearn/shared/desktop-ipc-contracts";
 import { EDGE_TTS_VOICE_OPTIONS, QWEN_TTS_VOICE_OPTIONS, type TtsEngineV1 } from "@ailearn/shared/tts-voice-catalog";
 import type { CompanionAnswerModePreferenceV1 } from "@ailearn/shared";
+import { LEARNING_ROOM_ASSET_BASE_PATH } from "@ailearn/shared/desktop-ipc-contracts";
 
 export const DATA_POLICY_FIELDS: ReadonlyArray<readonly [keyof AiDataPolicyV1, string, string]> = [
   ["sendToExternal", "允许发送到外部模型服务", "关闭后，内容不会发送给外部模型服务。"],
@@ -45,10 +46,10 @@ export function spaceTypeLabel(type: WorkspaceSummaryV1["workspaceType"] | undef
   return type === "personal" ? "个人空间" : "协作空间";
 }
 
-/* —— 日/夜两张底板的图（取自母本那两块木纹）—— */
+/* 设置页的日/夜预览使用同页的原始场景图，与 taskPosters.system 对应。 */
 export const THEME_PLATES: Readonly<Record<"day" | "night", string>> = {
-  day: "/assets/approved-v3/environments/companion-system-day-v1.png",
-  night: "/assets/approved-v3/environments/companion-system-night-v1.png",
+  day: `${LEARNING_ROOM_ASSET_BASE_PATH}/posters/task-scenes/companion-system-day-v1.png`,
+  night: `${LEARNING_ROOM_ASSET_BASE_PATH}/posters/task-scenes/companion-system-night-v1.png`,
 };
 
 /* —— 几个「还没读到 / 读到了多少」的小句子。它们被作答方式与声音两块共用，

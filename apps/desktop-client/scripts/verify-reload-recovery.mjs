@@ -20,8 +20,7 @@ if (await firstSpace.count()) {
   await page.waitForTimeout(1800)
 }
 
-// 首页恢复条（RunRecoveryNotice）应列出学习卡任务
-report.recovery = await page.locator('.home-recovery').textContent().catch(() => null)
+// 首页恢复条（RunRecoveryNotice）已于 2026-10-01 删除；这条探针不再读它。
 
 // 打开笔记页 → 应显示"查看生成进度"（服务端 run 仍在）
 await page.locator('.nav-chip[aria-label="笔记"]').click()

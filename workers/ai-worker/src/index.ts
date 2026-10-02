@@ -6,6 +6,8 @@ import { NOTIFY_CHANNEL } from "./lib/job-notify.ts";
 import { markSourceParseFailed, runParseSource } from "./handlers/parse-source.ts";
 import { runCompanionDialogue } from "./handlers/companion-dialogue.ts";
 import { runCompanionMemoryExtract } from "./handlers/companion-memory-extractor.ts";
+import { runCompanionMemoryOrganizeJob } from "./handlers/companion-memory-organize.ts";
+import { tickCompanionMemoryOrganizeScheduler } from "./handlers/companion-memory-organize-scheduler.ts";
 import { runCompanionSummarizer } from "./handlers/companion-summarizer.ts";
 import { runCompanionMemoryEmbeddingRebuild } from "./handlers/companion-memory-embedding.ts";
 import { runCompanionDailySummary } from "./handlers/companion-daily-summary.ts";
@@ -73,6 +75,8 @@ const HANDLERS = {
   companion_summarizer: runCompanionSummarizer,
   companion_memory_embedding_rebuild: runCompanionMemoryEmbeddingRebuild,
   companion_daily_summary: runCompanionDailySummary,
+  // 40 §4.6.3/§4.6.9：后台语义整理。判据与租约早就写好了，这一行是那个「接电」。
+  companion_memory_organize: runCompanionMemoryOrganizeJob,
   // 念头管线切片②（2026-09-18）：候选念头生成 + 表达 + 送达。
   companion_thought: runCompanionThought,
   note_overview_generate: runNoteOverviewGenerate,
@@ -508,6 +512,8 @@ export async function tick(): Promise<void> {
   // 22 方案：桌宠日记每日 01:00 调度 + 记忆衰减维护（内部 throttle）。
   await tickCompanionDailySummaryScheduler();
   await tickCompanionMemoryMaintenance();
+  // 40 §4.6.3：后台整理的入队 tick（1h 桶，内部按阈值挑人）。
+  await tickCompanionMemoryOrganizeScheduler();
   // 念头管线切片②（2026-09-18）：念头生成调度（4h 桶幂等，内部 15min 节流）。
   await tickCompanionThoughtScheduler();
   // Agent 方案 §5：过期/世代失效的确认兜底回收（内部 throttle）。
@@ -558,10 +564,19 @@ export async function tick(): Promise<void> {
     currentPollMs = Math.min(POLL_MAX_MS, currentPollMs * 2);
     return;
   }
-  currentPollMs = POLL_MS;
 
   // QUAL-08: Adaptive polling — reset to fast poll when jobs are found,
   // exponentially back off when queue is idle.
+  //
+  // 2026-10-02：这里原先还有一句**无条件**的 `currentPollMs = POLL_MS`（在
+  // claimJobs 成功之后、这段判断之前）。它把退避掐死在 POLL_MS：每次成功 claim
+  // 先被重置成 500，紧接着这里再 ×2 → 封顶 1000ms，`POLL_MAX_MS`（5000）
+  // 永远到不了，注释里说的「max backoff when queue is idle」从来没生效过。
+  // 实测：空闲队列下稳定 1 tick/秒，而 companion-memory-maintenance 的两个
+  // 清理查询当时没有任何节流，DB 授权缺失导致它们每秒各抛一次错——
+  // 整条循环 18 小时不停，worker 日志 43.8 MB、容器 CPU 237%。
+  // 删掉那句重置后语义与注释一致：有活干 500ms，空闲 500→1000→…→5000。
+  // 回到快档仍有两个来源（下面 candidates.length > 0，以及 LISTEN/NOTIFY 唤醒）。
   if (candidates.length > 0) {
     currentPollMs = POLL_MS;
   } else {

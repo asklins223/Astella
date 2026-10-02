@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../../../app/room-store.ts";
 import { HudRoomControl } from "../HudRoomControl.tsx";
 
@@ -74,6 +74,29 @@ function renderIsland() {
   const trigger = root.querySelector(".room-control-trigger") as HTMLElement;
   return { root, chip, trigger };
 }
+
+describe("导航及时响应", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    useRoomStore.setState({ surface: null, motionMode: "full", reducedMotion: false, settingsSection: "account" });
+  });
+
+  it.each([
+    { motionMode: "full" as const, reducedMotion: false },
+    { motionMode: "lite" as const, reducedMotion: false },
+    { motionMode: "off" as const, reducedMotion: false },
+    { motionMode: "full" as const, reducedMotion: true },
+  ])("设置导航在 %j 下不等待折叠动画", preference => {
+    vi.useFakeTimers();
+    useRoomStore.setState({ ...preference, surface: null, navigationGuard: null, onboardingOpen: false, settingsSection: "account" });
+    const { root } = renderIsland();
+    fireEvent.click(screen.getByRole("button", { name: "展开学习空间控制" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开设置中心" }));
+    expect(useRoomStore.getState().surface).toBe("settings");
+    expect(useRoomStore.getState().settingsSection).toBe("appearance");
+    expect(root.hasAttribute("data-expanded")).toBe(false);
+  });
+});
 
 describe("顶栏灵动岛的折叠结构", () => {
   afterEach(cleanup);

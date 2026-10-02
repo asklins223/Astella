@@ -396,7 +396,7 @@ function RoundRecordStream({
   readonly onReload: () => void;
 }) {
   return (
-    <section className="day-stream" aria-labelledby="today-round-record-title" data-round-record="true">
+    <section className="day-stream day-rounds" aria-labelledby="today-round-record-title" data-round-record="true">
       <h2 className="day-section-head" id="today-round-record-title">
         <b>我学过的每一轮</b>
         {items.length > 0 ? <span>{ROUND_RECORD_COPY_V1.personalLead(total, items.length, hasMore)}</span> : null}
@@ -407,14 +407,13 @@ function RoundRecordStream({
         </p>
       ) : null}
       {items.length > 0 ? (
-        <ol className="day-log__stream" aria-label="我的学习轮次记录">
+        <ol className="day-rounds__list" aria-label="我的学习轮次记录">
           {items.map((item) => (
-            <li className="day-log__entry" key={item.roundId} data-round-record-row={item.roundId}>
-              <time className="day-log__time" dateTime={item.startedAt}>{roundRecordDayV1(item.startedAt)}</time>
-              <div className="day-log__body">
-                <span className="sr-only">{item.noteTitle} · </span>
+            <li className="day-rounds__entry" key={item.roundId} data-round-record-row={item.roundId}>
+              <time className="day-rounds__date" dateTime={item.startedAt}>{roundRecordDayV1(item.startedAt)}</time>
+              <div className="day-rounds__body">
                 <b>{item.drivingQuestion}</b>
-                <span className="small">
+                <span className="day-rounds__meta">
                   {item.noteTitle} · {roundHistoryStateLabelV1(item)}
                   {item.actualModes.length > 0 ? ` · ${roundRecordModesLabelV1(item.actualModes)}` : ""}
                   {item.systemUncertain ? ` · ${ROUND_RECORD_COPY_V1.uncertain}` : ""}

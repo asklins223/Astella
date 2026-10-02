@@ -1,0 +1,53 @@
+/* Shared editor and annotation styling; the desk owns the page composition. */
+
+.hud-surface .notebook-hud [hidden] { display: none !important; }
+
+.hud-surface .note-document-editor { min-width: 0; }
+.hud-surface .note-source-editor { min-width: 0; color: var(--hud-ink); }
+.hud-surface .note-source-editor__tools { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+.hud-surface .note-source-editor__input { min-width: 0; background: transparent; }
+.hud-surface .note-source-editor .cm-editor { background: transparent; color: var(--hud-ink); }
+.hud-surface .note-source-editor .cm-scroller { overflow: visible; font: 14px/1.85 ui-monospace, "SFMono-Regular", Consolas, monospace; }
+.hud-surface .note-source-editor .cm-content { padding: 12px 0 24px; }
+.hud-surface .note-source-editor .cm-line { padding: 0 12px; }
+.hud-surface .note-source-editor .cm-gutters { color: var(--hud-soft); background: var(--hud-paper); border-right: 1px dashed var(--hud-line); }
+.hud-surface .note-source-editor .cm-cursor { border-left-color: var(--hud-ink); }
+.hud-surface .note-source-editor .cm-selectionBackground { background: color-mix(in srgb, var(--hud-mint) 65%, transparent); }
+.hud-surface .note-source-editor .cm-panels { color: var(--hud-ink); background: var(--hud-paper-deep); }
+.hud-surface .note-source-editor .cm-search input { max-width: 100%; color: var(--hud-ink); background: var(--hud-paper-light); }
+.hud-surface .note-source-editor .cm-search button { color: var(--hud-ink); }
+.hud-surface .notebook-version-choice { width: min(480px, calc(100vw - 32px)); max-height: calc(100vh - 32px); margin: auto; padding: 24px 28px; overflow: auto; color: var(--hud-ink); border: 4px solid var(--hud-cream); border-radius: 23px 29px 21px 27px; background: var(--hud-paper-light); box-shadow: var(--hud-shadow); }
+.hud-surface .notebook-version-choice::backdrop { background: rgba(46,27,16,.34); }
+.hud-surface .notebook-version-choice h3 { font: 700 24px/1.5 "Noto Serif SC Variable", "Songti SC", serif; margin: 0 0 14px; }
+.hud-surface .notebook-version-choice p { font-size: 14px; line-height: 1.8; }
+.hud-surface .notebook-version-choice .actions { flex-wrap: wrap; gap: 8px 12px; margin-top: 24px; }
+.hud-surface .note-annotation-anchor { position: relative; border-radius: 2px; background: color-mix(in srgb, var(--hud-butter) 68%, transparent); box-shadow: inset 0 -2px #d7b864; cursor: pointer; }
+.hud-surface .note-annotation-anchor::after { content: attr(data-number); margin-inline: 2px; color: #725d32; vertical-align: super; font: 700 10px/1 "Noto Sans SC Variable", sans-serif; }
+/* 两个编辑态的批注记号（41 §1.4）。它们**不包住正文**——可编辑预览那一格的首要
+   职责是让人改字，纯编辑那一格是 Markdown 源码，所以两边都只在**行边**点一枚记号：
+   看得见「这一块／这一行有批注」，点得开同一张旁页，而一个字都不会被包起来。 */
+.hud-surface .note-annotation-block { position: relative; border-inline-start: 2px solid var(--hud-butter); border-radius: 2px 5px 5px 2px; cursor: pointer; }
+.hud-surface .note-annotation-block::before { content: attr(data-annotation-number); position: absolute; inset-inline-start: 2px; inset-block-start: -1px; padding: 0 4px; color: #6b5528; border-radius: 5px 8px 5px 9px; background: var(--hud-butter); font: 700 9px/1.6 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .note-annotation-source { border-radius: 3px; background: color-mix(in srgb, var(--hud-butter) 22%, transparent); box-shadow: inset 2px 0 var(--hud-butter); cursor: pointer; }
+.hud-surface .note-annotation-source:hover { background: color-mix(in srgb, var(--hud-butter) 34%, transparent); }
+.hud-surface .note-annotation-block:focus-visible, .hud-surface .note-annotation-source:focus-visible { outline: 2px solid #b86742; outline-offset: 2px; }
+.hud-surface .note-explanation-anchor { border-bottom: 2px dotted #79a88c; background: color-mix(in srgb, var(--hud-mint) 25%, transparent); }
+.hud-surface .note-explanation-anchor:is([data-phase="interrupted"], [data-phase="save-error"], [data-phase="stopped"]) { border-bottom-color: #b89b75; background: color-mix(in srgb, var(--hud-butter) 24%, transparent); }
+.hud-surface .note-explanation-progress { margin: -12px 0 18px; color: var(--hud-green); font: 12px/1.6 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .note-explanation-progress > button { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 3px 0; text-align: start; }
+.hud-surface .note-explanation-progress__open { margin-inline-start: 5px; color: var(--hud-soft); font-size: 11px; }
+.hud-surface .note-explanation-progress__stop { font-size: 15px; line-height: 1; }
+.hud-surface .note-explanation-progress:is([data-phase="interrupted"], [data-phase="save-error"], [data-phase="stopped"]) { color: #87694c; }
+.hud-surface .note-overlapping-annotations { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: -10px 0 18px; font: 11px/1.6 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .note-companion-explanation__status { color: var(--hud-green); font: 600 13px/1.7 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .note-companion-explanation__status:is([data-phase="interrupted"], [data-phase="save-error"], [data-phase="stopped"]) { color: #87694c; }
+.hud-surface .note-companion-explanation [data-incomplete="true"] { padding-inline-start: 12px; border-inline-start: 2px dashed var(--hud-line); }
+.note-annotation-preview { position: fixed; z-index: 12; width: 270px; padding: 11px 14px; border: 3px solid var(--hud-cream); border-radius: 15px 19px 13px 17px; background: var(--hud-butter); color: var(--hud-ink); box-shadow: var(--hud-shadow-small); font: 12px/1.7 "Noto Sans SC Variable", sans-serif; pointer-events: none; overflow-wrap: anywhere; }
+.note-annotation-preview p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0; }
+.note-annotation-preview small { display: block; margin-top: 6px; color: var(--hud-soft); font-size: 10px; }
+
+.hud-surface .note-annotation-composer label { display: block; margin-top: 20px; color: var(--hud-green); font-size: 13px; font-weight: 700; }
+.hud-surface .note-annotation-composer textarea { width: 100%; min-height: 130px; margin-top: 10px; padding: 12px 14px; resize: vertical; border: 1px solid var(--hud-line); border-radius: 9px 13px 8px 12px; background: color-mix(in srgb, var(--hud-paper-light) 70%, transparent); color: var(--hud-ink); font: 15px/1.85 "Noto Serif SC Variable", serif; }
+.hud-surface .note-annotation-composer textarea::placeholder { color: var(--hud-soft); }
+.hud-surface .note-annotation-composer .small { margin-block: 12px 18px; line-height: 1.8; }
+.hud-surface .note-annotation-composer [role="alert"] { color: var(--hud-clay); }

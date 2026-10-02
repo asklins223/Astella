@@ -4,22 +4,6 @@
   "canonicalMode": "2d",
   "reviewStatus": "changes-required-study-review-samples-v5",
   "basePath": "/assets/learning-room/v1",
-  "posters": {
-    "day": {
-      "id": "STATIC-ROOM-FURNISHED-DAY-01",
-      "path": "posters/room-day.webp",
-      "width": 3344,
-      "height": 1882,
-      "sha256": "8c500ded18bc85f7850fdabfe1e1f29910caa1d30e1e315029a8b3c36827dc45"
-    },
-    "night": {
-      "id": "STATIC-ROOM-FURNISHED-NIGHT-01",
-      "path": "posters/room-night.webp",
-      "width": 3344,
-      "height": 1882,
-      "sha256": "39fcb05cf7844b14260c5df1b72a3de2dafb247b27950b1c069f71dfa45a261c"
-    }
-  },
   "homeV2Posters": {
     "day": {
       "id": "STATIC-HOME-V2-LIGHTHOUSE-DAY-01",
@@ -46,53 +30,131 @@
       "reviewStatus": "approved"
     }
   },
-  "seatPosters": {
-    "day": {
-      "id": "STATIC-STUDY-SEAT-DAY-02",
-      "path": "posters/study-seat-day-v2.png",
-      "width": 1672,
-      "height": 941,
-      "sha256": "69e2642de42b9cf62cca3e6b2318e1abea9017ef5da1af92bf275a8edd3f7fad"
-    },
-    "night": {
-      "id": "STATIC-STUDY-SEAT-NIGHT-02",
-      "path": "posters/study-seat-night-v2.png",
-      "width": 1672,
-      "height": 941,
-      "sha256": "8b5102a81f189ccf45a18bbd39a67eeb57800d2e8fc6336bc0a26feef89679c1"
-    }
-  },
-  "entryPosters": {
-    "closed": {
+  "taskPosters": {
+    "library": {
       "day": {
-        "id": "STATIC-LOGIN-ENTRY-CLOSED-DAY-01",
-        "path": "posters/login-entry/entry-door-closed-day-v1.png",
+        "id": "STATIC-TASK-LIBRARY-DAY-01",
+        "path": "posters/task-scenes/library-day-v1.png",
         "width": 1672,
         "height": 941,
-        "sha256": "4fe60dd1a1310ef4d01e57c2aed9622288fd65783b8efd3443318c064b9badf2"
+        "sha256": "1b21f1aef30b208ae1fc5fcfd6cff53b3614715e14d08225fa4dec9f29fee00c",
+        "reviewStatus": "restored-reference"
       },
       "night": {
-        "id": "STATIC-LOGIN-ENTRY-CLOSED-NIGHT-01",
-        "path": "posters/login-entry/entry-door-closed-night-v1.png",
+        "id": "STATIC-TASK-LIBRARY-NIGHT-01",
+        "path": "posters/task-scenes/library-night-v1.png",
         "width": 1672,
         "height": 941,
-        "sha256": "f56ccfafabef4a9ce3d4c5a0687a513aff684bcaf96ccb7af657fc44d67f5a72"
+        "sha256": "7275d088573031913f719e2eab5925239d61103f40053a25b3b5c42a35c1e4a0",
+        "reviewStatus": "restored-reference"
       }
     },
-    "open": {
+    "writing": {
       "day": {
-        "id": "STATIC-LOGIN-ENTRY-OPEN-DAY-01",
-        "path": "posters/login-entry/entry-door-open-day-v1.png",
+        "id": "STATIC-TASK-WRITING-DAY-01",
+        "path": "posters/task-scenes/writing-day-v1.png",
         "width": 1672,
         "height": 941,
-        "sha256": "499df910110ca097769dd522b847035323ccd4012d9db57fa64bc66480ce94d1"
+        "sha256": "f021bb6956ba48e65b9c40b393e59198743433baa1efc65a8c721568bb647100",
+        "reviewStatus": "restored-reference"
       },
       "night": {
-        "id": "STATIC-LOGIN-ENTRY-OPEN-NIGHT-01",
-        "path": "posters/login-entry/entry-door-open-night-v1.png",
+        "id": "STATIC-TASK-WRITING-NIGHT-01",
+        "path": "posters/task-scenes/writing-night-v1.png",
         "width": 1672,
         "height": 941,
-        "sha256": "3252cd203be1e23f4e91a3802dc45bdbeb18d54a57c247039e4aa633c5741372"
+        "sha256": "82b3d2a6eb6ce69f23b43f50429be1464f412252f515e884d474f1317d8bcf96",
+        "reviewStatus": "restored-reference"
+      }
+    },
+    "workshop": {
+      "day": {
+        "id": "STATIC-TASK-WORKSHOP-DAY-01",
+        "path": "posters/task-scenes/workshop-day-v1.png",
+        "width": 1672,
+        "height": 941,
+        "sha256": "c3786cd276711a0a9cbfcb3fe451836c342e8339bd73d81396ccd538bc9cddce",
+        "reviewStatus": "restored-reference"
+      },
+      "night": {
+        "id": "STATIC-TASK-WORKSHOP-NIGHT-01",
+        "path": "posters/task-scenes/workshop-night-v1.png",
+        "width": 1672,
+        "height": 941,
+        "sha256": "52b2f6e425d3296558ced8c2bee06ae986f3d34ba4b83401b3059622f73b59aa",
+        "reviewStatus": "restored-reference"
+      }
+    },
+    "review": {
+      "day": {
+        "id": "STATIC-TASK-REVIEW-DAY-01",
+        "path": "posters/task-scenes/review-day-v1.png",
+        "width": 1672,
+        "height": 941,
+        "sha256": "7182751bb41229753a8d96db6178d0ab0c1899417bd672c8315fe3894bff08fd",
+        "reviewStatus": "restored-reference"
+      },
+      "night": {
+        "id": "STATIC-TASK-REVIEW-NIGHT-01",
+        "path": "posters/task-scenes/review-night-v1.png",
+        "width": 1671,
+        "height": 941,
+        "sha256": "22b4e743e7c1f34cc7bb22f73c85b750d888b04d3a527f1bf658669da63db0ef",
+        "reviewStatus": "restored-reference"
+      }
+    },
+    "observatory": {
+      "day": {
+        "id": "STATIC-TASK-OBSERVATORY-DAY-01",
+        "path": "posters/task-scenes/observatory-night-open-v3.png",
+        "width": 1672,
+        "height": 941,
+        "sha256": "a28fb52de35107589ed540921e20b57b1cce479a164fb30bf3ab385002f3c1d3",
+        "reviewStatus": "restored-reference"
+      },
+      "night": {
+        "id": "STATIC-TASK-OBSERVATORY-NIGHT-01",
+        "path": "posters/task-scenes/observatory-night-open-v3.png",
+        "width": 1672,
+        "height": 941,
+        "sha256": "a28fb52de35107589ed540921e20b57b1cce479a164fb30bf3ab385002f3c1d3",
+        "reviewStatus": "restored-reference"
+      }
+    },
+    "system": {
+      "day": {
+        "id": "STATIC-TASK-SYSTEM-DAY-01",
+        "path": "posters/task-scenes/companion-system-day-v1.png",
+        "width": 1672,
+        "height": 941,
+        "sha256": "ed290995332f78ce26c6e41a35ee3b32fd248cfffc3fa568aaf3e99bd85212cd",
+        "reviewStatus": "restored-reference"
+      },
+      "night": {
+        "id": "STATIC-TASK-SYSTEM-NIGHT-01",
+        "path": "posters/task-scenes/companion-system-night-v1.png",
+        "width": 1672,
+        "height": 941,
+        "sha256": "6cf153bd826cc77e61b960d9004489259ae925fb99a813558e5d0258da7aa8e1",
+        "reviewStatus": "restored-reference"
+      }
+    },
+    "candidateReview": {
+      "day": {
+        "id": "GENERATED-CANDIDATE-CARD-TABLE-02",
+        "path": "posters/task-scenes/candidate-card-table-day-v2.png",
+        "width": 1672,
+        "height": 941,
+        "sha256": "cdafcbcfb48726b533f1be3451541581c753fef12a61cf605cd4d9b8821848ed",
+        "reviewStatus": "implementation-preview"
+      },
+      "night": {
+        "id": "GENERATED-CANDIDATE-CARD-TABLE-NIGHT-02",
+        "path": "posters/task-scenes/candidate-card-table-day-v2.png",
+        "width": 1672,
+        "height": 941,
+        "sha256": "cdafcbcfb48726b533f1be3451541581c753fef12a61cf605cd4d9b8821848ed",
+        "reviewStatus": "implementation-preview"
       }
     }
   },
@@ -147,174 +209,6 @@
       "sha256": "b5f74b53c4884d06d10a422f03cd77383fb5ebbc14b7be98592e173377a2f338",
       "reviewStatus": "CHANGES_REQUIRED"
     }
-  },
-  "searchPosters": {
-    "day": {
-      "id": "STATIC-SEARCH-REFERENCE-DAY-01",
-      "path": "posters/search-reference-day-v1.png",
-      "width": 1672,
-      "height": 941,
-      "sha256": "02f6964cef3d4efb051f0a4d5e5b30ed808a8921c52d7f1dc26192257041f3d9"
-    },
-    "night": {
-      "id": "STATIC-SEARCH-REFERENCE-NIGHT-01",
-      "path": "posters/search-reference-night-v1.png",
-      "width": 1672,
-      "height": 941,
-      "sha256": "e80ddd93c9f138b20e01b1948e88e0453b67b4712cb817ca435c18fe55c50eb6"
-    }
-  },
-  "searchForeground": {
-    "day": {
-      "id": "STATIC-SEARCH-FOREGROUND-DAY-01",
-      "path": "foreground/search-foreground-day-v1.png",
-      "width": 1672,
-      "height": 941,
-      "sha256": "b7b36f509b118803d3be139a5f33c2b974fd83716a448779f2e779b421436401"
-    },
-    "night": {
-      "id": "STATIC-SEARCH-FOREGROUND-NIGHT-01",
-      "path": "foreground/search-foreground-night-v1.png",
-      "width": 1672,
-      "height": 941,
-      "sha256": "52d52211fdf47fd26cbe1a6713ccee45fbf2334d193a3372e160aa057808079c"
-    }
-  },
-  "reviewPosters": {
-    "day": {
-      "id": "STATIC-REVIEW-SEAT-DAY-01",
-      "path": "posters/review-seat-day-v1.png",
-      "width": 1672,
-      "height": 941,
-      "sha256": "0ce8a05edfcf968838e83c1ba73201b97b0808277e404bdb2354cfcdbd7424f5"
-    },
-    "night": {
-      "id": "STATIC-REVIEW-SEAT-NIGHT-01",
-      "path": "posters/review-seat-night-v1.png",
-      "width": 1672,
-      "height": 941,
-      "sha256": "9534c2dc35fe782e7ae2b200a540720236618e023ef2d807c35a6dc5c2c5257f"
-    }
-  },
-  "window": {
-    "mask": "masks/window-glass-mask-v1.svg",
-    "registration": {
-      "left": 0.693,
-      "top": 0.047,
-      "width": 0.147,
-      "height": 0.408
-    },
-    "day": {
-      "id": "MOTION-WINDOW-DAY-02",
-      "path": "motion/window-day-vertical-fit-v1.mp4",
-      "sourcePath": "motion/window-day-loop-v2.mp4",
-      "mimeType": "video/mp4",
-      "codec": "avc1",
-      "width": 462,
-      "height": 720,
-      "durationMs": 10042,
-      "fps": 24,
-      "loop": true,
-      "hasEmbeddedAudio": true,
-      "runtimeMuted": true,
-      "sha256": "f121dfd3e4901ab1e1671032bf80f8d7fa589e05264ae53bf1dd1d417311466c",
-      "derivation": {
-        "sourceWidth": 1280,
-        "sourceHeight": 720,
-        "crop": {
-          "left": 640,
-          "top": 0,
-          "width": 462,
-          "height": 720
-        },
-        "perspective": {
-          "topLeftY": 32,
-          "topRightY": 0,
-          "bottomLeftY": 716,
-          "bottomRightY": 720
-        }
-      },
-      "reviewStatus": "approved"
-    },
-    "night": {
-      "id": "MOTION-WINDOW-NIGHT-02",
-      "path": "motion/window-night-vertical-fit-v1.mp4",
-      "sourcePath": "motion/window-night-loop-v2.mp4",
-      "mimeType": "video/mp4",
-      "codec": "avc1",
-      "width": 462,
-      "height": 720,
-      "durationMs": 10042,
-      "fps": 24,
-      "loop": true,
-      "hasEmbeddedAudio": true,
-      "runtimeMuted": true,
-      "sha256": "257972a3cca222ca91828b6ff680d08a3a2cebe2bd7a0c251b0394a8f7f09d24",
-      "derivation": {
-        "sourceWidth": 1280,
-        "sourceHeight": 720,
-        "crop": {
-          "left": 640,
-          "top": 0,
-          "width": 462,
-          "height": 720
-        },
-        "perspective": {
-          "topLeftY": 32,
-          "topRightY": 0,
-          "bottomLeftY": 716,
-          "bottomRightY": 720
-        }
-      },
-      "reviewStatus": "approved"
-    }
-  },
-  "onboarding": {
-    "id": "MOTION-ONBOARDING-FIRST-ENTRY-01",
-    "path": "motion/onboarding-first-entry-v1.mp4",
-    "mimeType": "video/mp4",
-    "width": 1920,
-    "height": 1080,
-    "durationMs": 8042,
-    "hasEmbeddedAudio": true,
-    "sha256": "47d4cb81965814ea9bd3e236f030671616ff919390c2dbf619658e659c5d79a8",
-    "caption": "欢迎来到理解书房。点击桌上的研究册，写下第一个想真正弄懂的问题吧。",
-    "reviewStatus": "approved"
-  },
-  "graph": {
-    "poster": "graph/graph-entry-background-v1.avif",
-    "motionImplementation": "code"
-  },
-  "validation": {
-    "motionImplementation": "code"
-  },
-  "sound": {
-    "ambientDay": null,
-    "ambientNight": null,
-    "onboardingVoice": "audio/onboarding-first-entry-zh-CN-v1.m4a",
-    "onboardingCaptions": "captions/onboarding-first-entry-zh-CN-v1.vtt"
-  },
-  "objects": {
-    "loginDoorSlabDay": "objects/login-entry/door-slab-day-v2.png",
-    "loginDoorSlabNight": "objects/login-entry/door-slab-night-v2.png",
-    "desk": "objects/desk.webp",
-    "notebook": "objects/notebook.webp",
-    "cardBox": "objects/card-box.webp",
-    "reviewCalendar": "objects/review-calendar.webp",
-    "answerSheet": "objects/answer-sheet.webp",
-    "shelf": "objects/shelf.webp",
-    "sourceFolder": "objects/source-folder.webp",
-    "sceneCardStack": "objects/scene-card-stack-v2.png",
-    "studyOpenNotebook": "objects/study-open-notebook-v1.png",
-    "homeForegroundLeaves": "foreground/home-foreground-leaves-v1.png"
-  },
-  "textures": {
-    "notebook": "textures/notebook-pages.webp",
-    "card": "textures/learning-card.webp",
-    "answer": "textures/answer-sheet.webp",
-    "stickyNote": "textures/sticky-note.webp",
-    "sourceFolder": "textures/source-folder.webp",
-    "scenePaperFibres": "textures/scene-paper-fibres-v2.png"
   },
   "roomLayers": [
     {

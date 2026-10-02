@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useGSAP } from "@gsap/react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { useRoomStore } from "../app/room-store";
 import { createRequestMeta, unwrapGatewayResult } from "../app/desktop-client";
@@ -24,8 +23,6 @@ import { SourceDetailSurface } from "./surfaces/source/source-detail-surface.tsx
 import { SourceLibrarySurface } from "./surfaces/source/source-library-surface.tsx";
 import { resolveSceneMotionMode, sceneMotionDuration } from "../scene/scene-motion";
 import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
-
-gsap.registerPlugin(useGSAP);
 
 type ResolvedMotionMode = "full" | "lite" | "off";
 
@@ -82,7 +79,7 @@ function ValidationSurface() {
       }
     }
     if (resolvedRoute.kind === "note.detail") {
-      setActiveNoteRef({ noteId: resolvedRoute.noteId, noteVersionId: null, mode: "read",
+      setActiveNoteRef({ noteId: resolvedRoute.noteId, noteVersionId: null, mode: "preview",
         learningRoundId: request?.route.kind === "note.detail" && request.route.noteId === resolvedRoute.noteId ? request.reflectionRoundId : undefined });
       invoke("open-notebook");
     } else invoke(resolvedRoute.kind === "review.queue" ? "review" : "home");
@@ -154,12 +151,15 @@ export function TaskSurface() {
   }, [clearTransitionDeadline]);
   useEffect(() => clearTransitionDeadline, [clearTransitionDeadline]);
 
-  useEffect(() => {
-    if (surface && !renderedSurface) {
+  useLayoutEffect(() => {
+    // Start the destination's reads in this commit. Exit choreography must not
+    // keep its loading, focus and controls waiting behind the previous page.
+    if (surface && surface !== renderedSurface) {
+      clearTransitionDeadline();
       setRenderedSurface(surface);
       setTransition("entering");
     }
-  }, [renderedSurface, surface]);
+  }, [clearTransitionDeadline, renderedSurface, surface]);
 
   useEffect(() => {
     if (surface) {
@@ -177,7 +177,7 @@ export function TaskSurface() {
 
   useEffect(() => {
     if (renderedSurface) {
-      if (renderedSurface !== surface || transition !== "entered" || scenePhase !== "task") return;
+      if (renderedSurface !== surface) return;
       const frame = window.requestAnimationFrame(() => {
         const selector = renderedSurface === "search"
           ? ".search-field input"
@@ -196,12 +196,12 @@ export function TaskSurface() {
     }
 
     const lastSurface = lastSurfaceRef.current;
-    if (!lastSurface || scenePhase !== "idle") return;
+    if (!lastSurface) return;
     const returnFocus = returnFocusRef.current;
     const fallbackSelector = returnFocus?.fallbackSelector ?? `[data-focus-return="${fallbackIntentForSurface(lastSurface)}"]`;
     returnFocusRef.current = null;
     lastSurfaceRef.current = null;
-    window.requestAnimationFrame(() => {
+    const frame = window.requestAnimationFrame(() => {
       const element = returnFocus?.element;
       const canRestoreElement = element
         && element.isConnected
@@ -211,15 +211,17 @@ export function TaskSurface() {
       const target = canRestoreElement ? element : document.querySelector<HTMLElement>(fallbackSelector);
       target?.focus();
     });
-  }, [renderedSurface, surface, transition, scenePhase]);
+    return () => window.cancelAnimationFrame(frame);
+  }, [renderedSurface, surface]);
 
-  useGSAP(
-    (_context, contextSafe) => {
+  useLayoutEffect(
+    () => {
       const root = surfaceRef.current;
       if (!root || !renderedSurface) return;
+      if (surface && surface !== renderedSurface) return;
 
-      const content = root.querySelector<HTMLElement>(".surface-content");
-      const header = root.querySelector<HTMLElement>(".task-artifact--header");
+      const content = root.querySelector<HTMLElement>(".content") ?? root.querySelector<HTMLElement>(".surface-content");
+      const header = root.querySelector<HTMLElement>(".task-artifact--header, .task-title");
       const artifacts = root.querySelectorAll<HTMLElement>(".task-artifact:not(.task-artifact--header)");
       const allAnimated = [content, header, ...artifacts].filter((target): target is HTMLElement => Boolean(target));
       const lite = motionMode === "lite";
@@ -233,13 +235,10 @@ export function TaskSurface() {
           setRenderedSurface(surface);
           setTransition(surface ? "entering" : "entered");
         };
-        const finishExit = contextSafe?.(() => {
+        const finishExit = () => {
           clearTransitionDeadline();
           settleExit();
-        }) ?? (() => {
-          clearTransitionDeadline();
-          settleExit();
-        });
+        };
 
         if (motionMode === "off") {
           gsap.set(allAnimated, { autoAlpha: 0 });
@@ -274,18 +273,18 @@ export function TaskSurface() {
         if (content) {
           exitTimeline.to(content, { autoAlpha: 0, scale: lite ? 1 : 0.992 }, lite ? 0.04 : 0.1);
         }
-        return;
+        return () => { exitTimeline.kill(); clearTransitionDeadline(); };
       }
 
       setTransition("entering");
-      const settleEnter = () => setTransition("entered");
-      const finishEnter = contextSafe?.(() => {
+      const settleEnter = () => {
+        gsap.set(allAnimated, { autoAlpha: 1, clearProps: "transform,opacity,visibility,clipPath" });
+        setTransition("entered");
+      };
+      const finishEnter = () => {
         clearTransitionDeadline();
         settleEnter();
-      }) ?? (() => {
-        clearTransitionDeadline();
-        settleEnter();
-      });
+      };
       if (motionMode === "off") {
         gsap.set(allAnimated, { autoAlpha: 1, clearProps: "transform" });
         finishEnter();
@@ -299,7 +298,10 @@ export function TaskSurface() {
         },
         onComplete: finishEnter,
       });
-      armTransitionDeadline(surfaceEnterDuration * 1000 + 400, settleEnter);
+      armTransitionDeadline(surfaceEnterDuration * 1000 + 400, () => {
+        enterTimeline.kill();
+        finishEnter();
+      });
       enterTimeline.addLabel("artifact-rise", 0);
       if (content) {
         enterTimeline.fromTo(
@@ -328,7 +330,6 @@ export function TaskSurface() {
                 scale: lite ? 1 : 0.955,
                 rotateX: lite ? 0 : -3.2,
                 transformOrigin: "50% 100%",
-                clipPath: lite ? "inset(0% 0% 0% 0% round 0px)" : "inset(7% 2% 0% 2% round 28px)",
               }
             : {
                 autoAlpha: 0,
@@ -337,7 +338,6 @@ export function TaskSurface() {
                 scale: lite ? 1 : 0.97,
                 rotateZ: lite ? 0 : -1.2,
                 transformOrigin: "20% 100%",
-                clipPath: lite ? "inset(0% 0% 0% 0% round 0px)" : "inset(0% 7% 5% 4% round 24px)",
               },
           {
             autoAlpha: 1,
@@ -346,7 +346,6 @@ export function TaskSurface() {
             scale: 1,
             rotateX: 0,
             rotateZ: 0,
-            clipPath: "inset(0% 0% 0% 0% round 0px)",
             duration: surfaceEnterDuration * (lite ? 0.82 : studyEntrance ? 1 : 0.91),
           },
           lite ? "artifact-rise" : "artifact-rise+=0.05",
@@ -360,17 +359,17 @@ export function TaskSurface() {
             y: 0,
             scale: 1,
             duration: surfaceEnterDuration * (lite ? 0.82 : 0.91),
-            stagger: lite ? 0 : 0.055,
+            stagger: lite ? 0 : { amount: 0.12 },
           },
           lite ? "artifact-rise" : "artifact-rise+=0.08",
         );
       }
+      // Kill only the superseded animation, retaining its presentation values
+      // for an interrupted return. Context.revert previously jumped to the
+      // authored start before the next transition could pick it up.
+      return () => { enterTimeline.kill(); clearTransitionDeadline(); };
     },
-    {
-      scope: surfaceRef,
-      dependencies: [motionMode, renderedSurface, surface],
-      revertOnUpdate: true,
-    },
+    [motionMode, renderedSurface, surface, armTransitionDeadline, clearTransitionDeadline],
   );
 
   if (!renderedSurface) return null;

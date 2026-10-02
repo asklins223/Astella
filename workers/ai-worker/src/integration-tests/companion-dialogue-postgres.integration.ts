@@ -17,7 +17,15 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
+import { sql as drizzleSql } from "drizzle-orm";
+import {
+  COMPANION_IDENTITY_BOUNDARY_V2,
+  COMPANION_PERSONA_V7_PROMPT_ID,
+  COMPANION_PERSONA_V7_SHA256,
+} from "@ailearn/shared";
+import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import type { CompanionContextHandoffSnapshotV1 } from "../handlers/companion-dialogue-content.ts";
 
 const CONN = testDatabaseUrl("DATABASE_URL_API");
 // worker db.ts 读 DATABASE_URL，
@@ -25,6 +33,7 @@ const CONN = testDatabaseUrl("DATABASE_URL_API");
 process.env.DATABASE_URL ??= CONN;
 // 强制 mock provider：集成测试验证 DB 编排，不产生外部模型调用或费用。
 delete process.env.TOKENRHYTHM_API_KEY;
+delete process.env.AI_PLATFORMS_CONFIG;
 process.env.COMPANION_DIALOGUE_V1_ENABLED = "true";
 
 const sql = postgres(CONN, { max: 2 });
@@ -36,6 +45,12 @@ after(async () => {
 });
 
 const { runCompanionDialogue } = await import("../handlers/companion-dialogue.ts");
+const {
+  persistCompanionContextHandoffSnapshot,
+  markCompanionRunFailed,
+  readConversationSummary,
+} = await import("../handlers/companion-dialogue-store.ts");
+const { withWorkerWorkspaceTransaction } = await import("../db.ts");
 const { seedFormalAnswerRun } = await import("./helpers/formal-answer-fixture.ts");
 
 /**
@@ -72,6 +87,9 @@ async function seedBase(): Promise<{ workspaceId: string; userId: string }> {
     await tx`INSERT INTO users (id, email, password_hash, role) VALUES (${uid}, ${"t-" + uid.slice(0, 8) + "@x.test"}, 'h', 'owner')`;
     await tx`INSERT INTO workspaces (id, name, owner_id) VALUES (${ws}, ${"w" + ws.slice(0, 8)}, ${uid})`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (${ws}, ${uid}, 'owner')`;
+    await tx`INSERT INTO user_ai_settings (user_id, consent_version, consent_at, data_policy)
+             VALUES (${uid}, 'integration-test-v1', now(),
+                     ${tx.json({ sendToExternal: false, sendImageContent: false, piiDetection: true, auditLogging: true })})`;
   });
   return { workspaceId: ws, userId: uid };
 }
@@ -85,6 +103,8 @@ async function seedDialogueRun(
     userText?: string;
     /** 插入一条更新的 text 用户消息，验证 userText 不按“最近 text”取。 */
     newerTextMessage?: boolean;
+    /** 多个 run 共用同一测试账号时，由最后一个 fixture 统一删除账号和空间。 */
+    cleanupWorkspace?: boolean;
     /**
      * 这一轮开问时用户停在哪一屏：写**实时那一行** `assistant_page_contexts`
      * （伴星暴露记账的入口条件读它）。
@@ -95,8 +115,9 @@ async function seedDialogueRun(
      */
     livePage?: { pageKind: string; interactionState: string; learningRunId: string | null };
   } = {},
-): Promise<{ runId: string; cid: string; userMessageId: string; cleanup: () => Promise<void> }> {
+): Promise<{ runId: string; jobId: string; cid: string; userMessageId: string; cleanup: () => Promise<void> }> {
   const runId = randomUUID();
+  const jobId = randomUUID();
   const cid = randomUUID();
   const userMessageId = randomUUID();
   const olderTextId = randomUUID();
@@ -119,9 +140,14 @@ async function seedDialogueRun(
     }
     await tx`INSERT INTO companion_turn_runs
              (id, conversation_id, workspace_id, user_id, user_message_id, generation, status,
-              idempotency_key_hash, request_body_hash)
+              idempotency_key_hash, request_body_hash, job_id)
              VALUES (${runId}, ${cid}, ${ws}, ${uid}, ${userMessageId}, 1, ${options.runStatus ?? "accepted"},
-                     ${"a".repeat(64)}, ${"b".repeat(64)})`;
+                     ${"a".repeat(64)}, ${"b".repeat(64)}, ${jobId})`;
+    await tx`INSERT INTO jobs
+               (id, type, workspace_id, requested_by, payload, status, attempts,
+                started_at, lease_token, priority, resource_class)
+             VALUES (${jobId}, 'companion_agent', ${ws}, ${uid}, ${tx.json({ runId })}, 'running', 0,
+                     now(), 'fixture-lease', 1, 'interactive_ai')`;
     // next_event_seq 需 ≥ 未来事件数（status+delta×N+final+segments），
     // 否则 handler 的 eventStart = next_event_seq - eventCount 为负，违反
     // companion_stream_events_seq_check (seq >= 1)。
@@ -151,34 +177,69 @@ async function seedDialogueRun(
       await tx`SELECT set_config('app.user_id', ${uid}, true)`;
       await tx`DELETE FROM assistant_page_contexts WHERE id = ${pageContextId}`;
       await tx`DELETE FROM companion_turn_runs WHERE id = ${runId}`;
+      await tx`DELETE FROM jobs WHERE id = ${jobId}`;
+      await tx`DELETE FROM conversation_summaries WHERE conversation_id = ${cid}`;
       await tx`DELETE FROM companion_messages WHERE conversation_id = ${cid}`;
       await tx`DELETE FROM companion_stream_events WHERE conversation_id = ${cid}`;
       await tx`DELETE FROM companion_conversations WHERE id = ${cid}`;
-      await tx`DELETE FROM workspace_members WHERE workspace_id = ${ws}`;
-      await tx`DELETE FROM workspaces WHERE id = ${ws}`;
-      await tx`DELETE FROM users WHERE id = ${uid}`;
+      if (options.cleanupWorkspace !== false) {
+        await tx`DELETE FROM workspace_members WHERE workspace_id = ${ws}`;
+        await tx`DELETE FROM workspaces WHERE id = ${ws}`;
+        await tx`DELETE FROM users WHERE id = ${uid}`;
+      }
     });
   };
-  return { runId, cid, userMessageId, cleanup };
+  return { runId, jobId, cid, userMessageId, cleanup };
+}
+
+function invokeRun(
+  workspaceId: string,
+  userId: string,
+  run: { runId: string; jobId: string },
+) {
+  return runCompanionDialogue({
+    id: run.jobId,
+    payload: { runId: run.runId },
+    workspaceId,
+    requestedBy: userId,
+    leaseToken: "fixture-lease",
+    signal: new AbortController().signal,
+  });
 }
 
 test("P2 §5.2：accepted run → assistant message + status/delta/final 事件 + run succeeded + last_event_seq", async () => {
   const { workspaceId, userId } = await seedBase();
-  const s = await seedDialogueRun(workspaceId, userId);
+  const s = await seedDialogueRun(workspaceId, userId, { cleanupWorkspace: false });
+  const failedFirst = await seedDialogueRun(workspaceId, userId, { cleanupWorkspace: false });
+  const failedLatest = await seedDialogueRun(workspaceId, userId);
+  const previousVoiceFlag = process.env.COMPANION_VOICE_DIALOGUE_V1_ENABLED;
+  process.env.COMPANION_VOICE_DIALOGUE_V1_ENABLED = "true";
   try {
-    await runCompanionDialogue({
-      id: randomUUID(),
-      payload: { runId: s.runId },
-      workspaceId,
-      requestedBy: userId,
-      leaseToken: "fixture-lease",
-      signal: new AbortController().signal,
-    });
+    // Two independent failed run transactions stand in for failures before a
+    // worker restart. The succeeding turn below must recover the same durable span.
+    for (const failed of [failedFirst, failedLatest]) {
+      await markCompanionRunFailed(
+        {
+          runId: failed.runId,
+          conversationId: failed.cid,
+          userId,
+          generation: 1,
+          accountEpoch: 0,
+        },
+        workspaceId,
+        "PROVIDER_UNAVAILABLE",
+        true,
+        "provider unavailable",
+        "transport",
+      );
+    }
+
+    await invokeRun(workspaceId, userId, s);
 
     const rows = await sql.begin(async (tx) => {
       await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
       await tx`SELECT set_config('app.user_id', ${userId}, true)`;
-      const run = await tx`SELECT status, assistant_message_id, last_event_seq, provider_id, prompt_hash
+      const run = await tx`SELECT status, assistant_message_id, last_event_seq, provider_id, prompt_version, prompt_hash
                            FROM companion_turn_runs WHERE id = ${s.runId}`;
       const assistant = await tx`SELECT role, kind, run_id FROM companion_messages
                                   WHERE conversation_id = ${s.cid} AND role = 'assistant'`;
@@ -192,13 +253,15 @@ test("P2 §5.2：accepted run → assistant message + status/delta/final 事件 
     assert.ok(rows.run.assistant_message_id, "assistant_message_id 已写");
     assert.ok(Number(rows.run.last_event_seq) >= 3, "last_event_seq 已推进");
     assert.equal(rows.run.provider_id, "mock", "mock provider 显式记录");
-    assert.ok(rows.run.prompt_hash, "prompt_hash 已写");
+    assert.equal(rows.run.prompt_version, COMPANION_PERSONA_V7_PROMPT_ID, "现役提示词版本已写入回合记录");
+    assert.equal(rows.run.prompt_hash, COMPANION_PERSONA_V7_SHA256, "现役提示词哈希已写入回合记录");
     assert.equal(rows.assistant.length, 1, "恰好一条 assistant message");
     assert.equal(rows.assistant[0].run_id, s.runId, "assistant message 绑定本 run");
     const types = rows.events.map((e) => e.type);
     assert.ok(types.includes("assistant.status"), "assistant.status 事件存在");
     assert.ok(types.includes("assistant.delta"), "assistant.delta 事件存在");
     assert.ok(types.includes("assistant.final"), "assistant.final 事件存在");
+    assert.ok(types.includes("voice.segment.ready"), "TTS 分段真实进入事件流");
     assert.equal(types[0], "assistant.status", "事件顺序：status 最先");
     // §11.3：worker 是 TTS 切句唯一所有者——voice.segment.ready 在 final 之后；
     // 终态回复情绪 cue 也在 final 之后（同一终态事务原子写入）。
@@ -208,8 +271,73 @@ test("P2 §5.2：accepted run → assistant message + status/delta/final 事件 
       "事件顺序：final 之后只有 voice.segment.ready / character.cue",
     );
     assert.ok(Number(rows.conv.next_event_seq) > 1, "conversation 计数器推进");
+
+    const handoffs = await withWorkerWorkspaceTransaction({ workspaceId, userId }, (tx) =>
+      tx.execute<{
+        snapshot: CompanionContextHandoffSnapshotV1;
+        snapshot_sha256: string;
+      }>(drizzleSql`
+        SELECT snapshot, snapshot_sha256
+        FROM companion_context_handoff_snapshots
+        WHERE run_id = ${s.runId}
+      `));
+    const committedHandoff = handoffs[0];
+    assert.ok(committedHandoff, "provider 调用前已持久化不可变交接快照");
+    assert.equal(committedHandoff.snapshot.runId, s.runId);
+    assert.equal(committedHandoff.snapshot.conversationId, s.cid);
+    const systemContent = committedHandoff.snapshot.modelMessages[0]?.content;
+    assert.ok(typeof systemContent === "string", "伴星 system 消息以文本形式保存在交接快照中");
+    assert.match(systemContent, /记录可能出错或过时/, "持久化交接快照保留实际发送的身份边界");
+    assert.ok(
+      systemContent.includes(COMPANION_IDENTITY_BOUNDARY_V2),
+      "交接快照中完整保留身份边界，而不只保存静态 prompt hash",
+    );
+    assert.equal(
+      committedHandoff.snapshot.currentRequest.contentSha256,
+      sha256Utf8V1("帮我复习光合作用"),
+      "快照绑定本 run 的当前请求",
+    );
+    assert.equal(
+      committedHandoff.snapshot.modelMessages.at(-1)?.content,
+      "帮我复习光合作用",
+      "快照保留实际送给模型的末尾 user message",
+    );
+
+    const changedRetryCandidate = structuredClone(committedHandoff.snapshot);
+    const lastMessage = changedRetryCandidate.modelMessages.at(-1);
+    assert.ok(lastMessage);
+    lastMessage.content = "错误的重试输入";
+    const retried = await persistCompanionContextHandoffSnapshot({
+      workspaceId,
+      userId,
+      runId: s.runId,
+      snapshot: changedRetryCandidate,
+      sha256: sha256Utf8V1(canonicalJsonV1(changedRetryCandidate)),
+    });
+    assert.equal(retried.sha256, committedHandoff.snapshot_sha256, "重试沿用首次提交的内容哈希");
+    assert.deepEqual(retried.snapshot, committedHandoff.snapshot, "重试不能覆盖已提交的模型输入");
+
+    const failureSpans = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+      return tx`SELECT failure_class, failure_count, first_run_id, last_run_id,
+                       recovered_at, recovery_run_id
+                FROM companion_run_failure_spans
+                WHERE workspace_id = ${workspaceId} AND user_id = ${userId}
+                ORDER BY failure_class`;
+    });
+    assert.deepEqual(failureSpans.map((span) => span.failure_class), ["transport"]);
+    assert.equal(Number(failureSpans[0]?.failure_count), 2, "连续失败合并成同一段");
+    assert.equal(failureSpans[0]?.first_run_id, failedFirst.runId, "失败段记录首次任务身份");
+    assert.equal(failureSpans[0]?.last_run_id, failedLatest.runId, "失败段记录最近任务身份");
+    assert.ok(failureSpans[0]?.recovered_at, "首次成功后保留恢复时间");
+    assert.equal(failureSpans[0]?.recovery_run_id, s.runId, "恢复身份绑定真实成功 run");
   } finally {
+    if (previousVoiceFlag === undefined) delete process.env.COMPANION_VOICE_DIALOGUE_V1_ENABLED;
+    else process.env.COMPANION_VOICE_DIALOGUE_V1_ENABLED = previousVoiceFlag;
     await s.cleanup();
+    await failedFirst.cleanup();
+    await failedLatest.cleanup();
   }
 });
 
@@ -217,14 +345,7 @@ test("P2 §5.2 fence：run 已被 cancel/supersede 时丢弃迟到输出，零�
   const { workspaceId, userId } = await seedBase();
   const s = await seedDialogueRun(workspaceId, userId, { runStatus: "cancelled" });
   try {
-    await runCompanionDialogue({
-      id: randomUUID(),
-      payload: { runId: s.runId },
-      workspaceId,
-      requestedBy: userId,
-      leaseToken: "fixture-lease",
-      signal: new AbortController().signal,
-    });
+    await invokeRun(workspaceId, userId, s);
 
     const rows = await sql.begin(async (tx) => {
       await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
@@ -253,14 +374,7 @@ test("P2 §5.2 userText 归属：voice_transcript turn 取本 run 用户消息�
     newerTextMessage: true,
   });
   try {
-    await runCompanionDialogue({
-      id: randomUUID(),
-      payload: { runId: s.runId },
-      workspaceId,
-      requestedBy: userId,
-      leaseToken: "fixture-lease",
-      signal: new AbortController().signal,
-    });
+    await invokeRun(workspaceId, userId, s);
 
     const rows = await sql.begin(async (tx) => {
       await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
@@ -373,14 +487,7 @@ test("读数目录端到端：她写 {{f:today_minutes}}，落库的是服务端
   const runOnce = async (expected: string) => {
     const s = await seedDialogueRun(workspaceId, userId, { userText: "我今天学了多久【mock:fact-span】" });
     cleanups.push(s.cleanup);
-    await runCompanionDialogue({
-      id: randomUUID(),
-      payload: { runId: s.runId },
-      workspaceId,
-      requestedBy: userId,
-      leaseToken: "fixture-lease",
-      signal: new AbortController().signal,
-    });
+    await invokeRun(workspaceId, userId, s);
     const rows = await sql.begin(async (tx) => {
       await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
       await tx`SELECT set_config('app.user_id', ${userId}, true)`;
@@ -423,14 +530,7 @@ test("她在作答页把答案念回去：同一轮终态事务里记一笔 answ
     livePage: { pageKind: "learning_run", interactionState: "formal_answer", learningRunId: fixture.runId },
   });
   try {
-    await runCompanionDialogue({
-      id: randomUUID(),
-      payload: { runId: s.runId },
-      workspaceId: fixture.workspaceId,
-      requestedBy: fixture.userId,
-      leaseToken: "fixture-lease",
-      signal: new AbortController().signal,
-    });
+    await invokeRun(fixture.workspaceId, fixture.userId, s);
     const rows = await readInScope(
       { workspaceId: fixture.workspaceId, userId: fixture.userId },
       async (tx) => tx`SELECT exposure_kind, objective_id, objective_revision, idempotency_key
@@ -459,14 +559,7 @@ test("反向：同一句话、同一个正式轮次，但那一轮不在作答�
     livePage: { pageKind: "learning_run", interactionState: "idle", learningRunId: fixture.runId },
   });
   try {
-    await runCompanionDialogue({
-      id: randomUUID(),
-      payload: { runId: s.runId },
-      workspaceId: fixture.workspaceId,
-      requestedBy: fixture.userId,
-      leaseToken: "fixture-lease",
-      signal: new AbortController().signal,
-    });
+    await invokeRun(fixture.workspaceId, fixture.userId, s);
     const rows = await readInScope(
       { workspaceId: fixture.workspaceId, userId: fixture.userId },
       async (tx) => tx`SELECT 1 FROM learning_exposures_v2 WHERE workspace_id = ${fixture.workspaceId}`,
@@ -490,14 +583,7 @@ test("反向：她这一句没碰题面也没碰答案 ⇒ 一笔都不记（普
     livePage: { pageKind: "learning_run", interactionState: "formal_answer", learningRunId: fixture.runId },
   });
   try {
-    await runCompanionDialogue({
-      id: randomUUID(),
-      payload: { runId: s.runId },
-      workspaceId: fixture.workspaceId,
-      requestedBy: fixture.userId,
-      leaseToken: "fixture-lease",
-      signal: new AbortController().signal,
-    });
+    await invokeRun(fixture.workspaceId, fixture.userId, s);
     const rows = await readInScope(
       { workspaceId: fixture.workspaceId, userId: fixture.userId },
       async (tx) => tx`SELECT 1 FROM learning_exposures_v2 WHERE workspace_id = ${fixture.workspaceId}`,
@@ -506,5 +592,41 @@ test("反向：她这一句没碰题面也没碰答案 ⇒ 一笔都不记（普
   } finally {
     await s.cleanup().catch(() => undefined);
     await fixture.cleanup().catch(() => undefined);
+  }
+});
+
+test("摘要读取：只注入水位早于实际回放尾部的摘要，忽略无水位旧摘要", async () => {
+  const { workspaceId, userId } = await seedBase();
+  const s = await seedDialogueRun(workspaceId, userId);
+  try {
+    await readInScope({ workspaceId, userId }, async (tx) => {
+      const makeSummary = (title: string) => tx.json({ title });
+      await tx`
+        INSERT INTO conversation_summaries
+          (workspace_id, user_id, conversation_id, summary, status,
+           coverage_from_seq, coverage_through_seq, coverage_source_hash)
+        VALUES
+          (${workspaceId}, ${userId}, ${s.cid}, ${makeSummary("安全的旧摘要")}, 'confirmed',
+           1, 2, ${"a".repeat(64)}),
+          (${workspaceId}, ${userId}, ${s.cid}, ${makeSummary("与回放重叠")}, 'candidate',
+           1, 3, ${"b".repeat(64)}),
+          (${workspaceId}, ${userId}, ${s.cid}, ${makeSummary("位于回放之后")}, 'candidate',
+           1, 4, ${"c".repeat(64)}),
+          (${workspaceId}, ${userId}, ${s.cid}, ${makeSummary("旧版无水位")}, 'candidate',
+           NULL, NULL, NULL)
+      `;
+    });
+
+    const beforeTail = await withWorkerWorkspaceTransaction({ workspaceId, userId }, (tx) =>
+      readConversationSummary(tx, s.cid, "3"));
+    assert.equal((beforeTail?.summary as { title?: string } | undefined)?.title, "安全的旧摘要");
+    assert.equal(beforeTail?.coverage_through_seq, "2");
+
+    const noSafeSummary = await withWorkerWorkspaceTransaction({ workspaceId, userId }, (tx) =>
+      readConversationSummary(tx, s.cid, "1"));
+    assert.equal(noSafeSummary, null,
+      "水位重叠及无水位旧摘要都不能冒充可靠的更早上下文");
+  } finally {
+    await s.cleanup();
   }
 });

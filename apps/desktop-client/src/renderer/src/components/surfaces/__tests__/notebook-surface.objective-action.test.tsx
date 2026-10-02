@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { noteDocResult, seedUpdate } from "../../../test-support/note-doc-fixtures.ts";
+import { noteDocResult, seedUpdate, seedBlocksUpdate } from "../../../test-support/note-doc-fixtures.ts";
 import { ROUND_COPY, roundPracticeStateLabelV1 } from "../notebook/notebook-round-copy.ts";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -437,7 +437,7 @@ function installApi(
           },
         })),
         doc: {
-          state: vi.fn(async () => noteDocResult({ update: seedUpdate("物理笔记", []) })),
+          state: vi.fn(async () => noteDocResult({ update: seedBlocksUpdate("物理笔记", options.blocks ?? [{ type: "paragraph", content: "质量是惯性大小的唯一量度。" }]) })),
           // 增量真正交出去的地方（自动保存与"先保存再开始"都走它）。给不出网关形状，
         // flush 就永远不收敛、`saving` 会一直挂着——那是夹具假象，不是产品行为。
         // 结果按**调用次**给：第一次是切回阅读态那次自动保存（要它失败，字才留得住），
@@ -472,7 +472,7 @@ async function show(
   options: {
     leaf?: "reading" | "learning" | "history";
     learningRoundId?: string;
-    mode?: "read" | "edit";
+    mode?: "preview" | "live-preview";
     makeDirty?: boolean;
     syncController?: { fail: boolean };
     manualSaveFails?: boolean;
@@ -536,7 +536,7 @@ async function show(
   );
   useRoomStore.setState({
     invoke,
-    activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: options.mode ?? "read", learningRoundId: routedRoundId },
+    activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: options.mode ?? "preview", learningRoundId: routedRoundId },
   });
   vi.useFakeTimers();
   const view = render(<NotebookSurface />);
@@ -552,13 +552,17 @@ async function show(
     // 再走真实的"切回阅读态"：`switchMode("read")` 会顺手发起一次自动保存，
     // 而主要动作那一行只在阅读态才画——"有未提交编辑"因此只可能在这里被用户看到。
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "预览此版本" }));
+      fireEvent.click(screen.getByRole("button", { name: "预览" }));
       await vi.advanceTimersByTimeAsync(50);
     });
   }
   // 新笔记入口留在正文；历史页从“学习记录”进入。旧轮次只通过明确的回链参数打开。
+  const visibleLeaf = (selector: string) => {
+    const node = view.container.querySelector(selector);
+    return node && !node.closest("[hidden]") ? node : null;
+  };
   const targetHistory = options.leaf === "history" || !options.leaf && Boolean(options.roundHistory || options.roundHistoryFails);
-  if (targetHistory && !view.container.querySelector("#notebook-history-leaf")) {
+  if (targetHistory && !visibleLeaf("#notebook-history-leaf")) {
     await act(async () => {
       fireEvent.click(within(view.container).getByRole("button", { name: "学习记录" }));
     });
@@ -569,8 +573,8 @@ async function show(
     syncController,
     invoke,
     objectiveBlock: () => {
-      if (!view.container.querySelector("#notebook-history-leaf")) {
-        if (!view.container.querySelector("#notebook-reading-leaf")) {
+      if (!visibleLeaf("#notebook-history-leaf")) {
+        if (!visibleLeaf("#notebook-reading-leaf")) {
           fireEvent.click(within(view.container).getByRole("button", { name: "回到正文" }));
         }
         fireEvent.click(within(view.container).getByRole("button", { name: "学习记录" }));
@@ -592,14 +596,12 @@ afterEach(() => {
 });
 
 describe("笔记学习入口", () => {
-  it("第一次看笔记时先给速看主动作，其他去向留作轻入口", async () => {
+  it("第一次看笔记时保留正文，三个学习页签位置稳定", async () => {
     const { container } = await show([listItem()], { leaf: "reading" });
-    const start = container.querySelector<HTMLElement>(".notebook-overview-entry")!;
-    expect(within(start).getByRole("button", { name: "先看懂这篇" })).toBeTruthy();
-    expect(within(start).getByRole("button", { name: "快速想起来" })).toBeTruthy();
-    expect(within(start).queryByRole("button", { name: "和伴星聊聊" })).toBeNull();
-    expect(container.querySelector(".note-expansion-shelf")).toBeNull();
-    expect(within(container.querySelector(".note-expansion-bookmark") as HTMLElement).getByRole("button", { name: "找些方向" })).toBeTruthy();
+    const start = within(container).getByRole("navigation", { name: "笔记学习" });
+    expect(within(start).getAllByRole("button").map((item) => item.textContent?.trim())).toEqual(["速看", "回想", "往外学"]);
+    expect(container.querySelector(".note-transcript")?.textContent).toContain("质量是惯性大小的唯一量度。");
+    expect(container.querySelector(".note-expansion-shelf")?.closest("[hidden]")).toBeTruthy();
     expect(container.querySelector("#notebook-learning-leaf")).toBeNull();
   });
 
@@ -766,9 +768,9 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
 
   it("读不到旧轮次时仍保留正文和伴星入口", async () => {
     const { container } = await show([], { openRound: undefined });
-    expect(container.querySelector(".reading-body")?.textContent).toContain("质量是惯性大小的唯一量度。");
+    expect(container.querySelector(".note-transcript")?.textContent).toContain("质量是惯性大小的唯一量度。");
     expect(container.querySelector("#notebook-learning-leaf")).toBeNull();
-    expect(within(container).getByRole("button", { name: "先看懂这篇" })).toBeTruthy();
+    expect(within(container).getByRole("button", { name: "速看" })).toBeTruthy();
   });
 
   /** §16.16 第二半的夹具：这一篇有哪几块正文。 */
@@ -811,24 +813,15 @@ describe("笔记页的轻量定向表单（39d W4-3 第三刀）", () => {
     blocks.push(paragraph(213, "这一节已经有正文。"));
     const { container } = await show([], { leaf: "reading", blocks });
 
-    const outline = container.querySelector<HTMLElement>(".notebook-reading-outline");
-    expect(outline?.textContent).toContain("14 枚纸签");
-    expect(outline?.textContent).toContain("只有标题");
-    const targetBookmark = outline?.querySelector<HTMLButtonElement>('[data-reading-section-ordinal="200"]');
-    expect(targetBookmark?.getAttribute("aria-label")).toContain("第二节：间隔重复");
-    expect(targetBookmark?.getAttribute("aria-label")).toContain("只有标题");
-
-    const revealMore = [...outline!.querySelectorAll("button")].find((button) => button.textContent === "看看另外 2 枚纸签");
-    expect(revealMore).toBeTruthy();
-    expect(revealMore?.parentElement).toBe(outline!.querySelector(".notebook-reading-outline__heading"));
-    fireEvent.click(revealMore!);
-    const finalBookmark = outline!.querySelector<HTMLButtonElement>('[data-reading-section-ordinal="212"]');
-    expect(finalBookmark?.getAttribute("aria-label")).toContain("附加小节 13");
-    expect(finalBookmark?.getAttribute("aria-label")).toContain("有正文");
-
-    fireEvent.click(finalBookmark!);
+    expect(container.querySelector(".notebook-desk__index")).toBeNull();
+    fireEvent.click(within(container).getByRole("button", { name: "目录" }));
+    const outline = within(container).getByRole("complementary", { name: "笔记目录" });
+    expect(outline.querySelectorAll("li > button")).toHaveLength(13);
+    fireEvent.click(within(outline).getByRole("button", { name: "固定目录" }));
+    fireEvent.click(within(outline).getByRole("button", { name: "附加小节 13" }));
     expect(container.querySelector('[data-block-ordinal="212"]')?.getAttribute("data-block-focused")).toBe("true");
-    expect(container.querySelector(".notebook-reading-outline")).not.toBeNull();
+    // The compact directory yields the page to the chosen section.
+    expect(container.querySelector(".notebook-desk__index")).toBeNull();
   });
 
   it("判据：只认小节、取屏上那份字、复述题名与重复都不出、按块序取前三", () => {
@@ -1179,7 +1172,7 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
     expect(container.querySelectorAll(".notebook-round-history__list li")).toHaveLength(3);
 
     useRoomStore.setState({
-      activeNoteRef: { noteId: "bbbb1111-1111-4111-8111-111111111111", noteVersionId: VERSION_ID, mode: "read" },
+      activeNoteRef: { noteId: "bbbb1111-1111-4111-8111-111111111111", noteVersionId: VERSION_ID, mode: "preview" },
     });
     for (let i = 0; i < 6; i += 1) {
       await act(async () => { await vi.advanceTimersByTimeAsync(120); });
@@ -1199,11 +1192,11 @@ describe("这一篇的轮次记录（§10.3 读侧）", () => {
     const { api, container } = await show([], { roundHistoryFails: true });
     expect(api.noteLearningRound.history).toHaveBeenCalled();
     expect(container.querySelector(".notebook-round-history")).toBeNull();
-    fireEvent.click(within(container).getByRole("button", { name: "← 回笔记正文" }));
-    expect(container.querySelector(".reading-body")?.textContent).toContain("质量是惯性大小的唯一量度。");
+    fireEvent.click(within(container).getByRole("button", { name: "正文" }));
+    expect(container.querySelector(".note-transcript")?.textContent).toContain("质量是惯性大小的唯一量度。");
     // 旧轮次记录失败不影响笔记页里的快速理解入口。
-    expect(within(container).getByRole("button", { name: "先看懂这篇" })).toBeTruthy();
-    expect(within(container).getByRole("button", { name: "快速想起来" })).toBeTruthy();
+    expect(within(container).getByRole("button", { name: "速看" })).toBeTruthy();
+    expect(within(container).getByRole("button", { name: "回想" })).toBeTruthy();
     expect(container.querySelector("#notebook-learning-leaf")).toBeNull();
   });
 });
@@ -1275,10 +1268,10 @@ describe("笔记页的教学面（39d W4-6 刀二）", () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
     const blocks: NoteBlockProjectionV1[] = [
-      { ordinal: 1, type: "heading", content: "## 间隔重复" },
-      { ordinal: 2, type: "paragraph", content: "间隔重复说的是在快要忘记的时候再见到它。" },
+      { ordinal: 0, type: "heading", content: "## 间隔重复" },
+      { ordinal: 1, type: "paragraph", content: "间隔重复说的是在快要忘记的时候再见到它。" },
     ];
-    const teaching = teachingRow({ sourceBlockOrdinals: [1, 2] });
+    const teaching = teachingRow({ sourceBlockOrdinals: [0, 1] });
     const { roundBlock, container } = await show([], {
       openRound: roundRow(),
       blocks,
@@ -1296,12 +1289,12 @@ describe("笔记页的教学面（39d W4-6 刀二）", () => {
     scrollIntoView.mockClear();
     fireEvent.click(chip);
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
-    const target = container.querySelector<HTMLElement>('[data-block-ordinal="1"]')!;
+    const target = container.querySelector<HTMLElement>('[data-block-ordinal="0"]')!;
     expect(target.getAttribute("data-block-focused")).toBe("true");
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
     // 高亮只是"我在这儿"，过期就撤——不留"上次点到哪"这种会跟人走的读数。
     await act(async () => { await vi.advanceTimersByTimeAsync(2_500); });
-    expect(container.querySelector('[data-block-ordinal="1"]')!.getAttribute("data-block-focused")).toBeNull();
+    expect(container.querySelector('[data-block-ordinal="0"]')!.getAttribute("data-block-focused")).toBeNull();
   });
 
   it("讲解保留疑似主张的原句和原因，并明确说明这轮没有形成正式目标", async () => {
@@ -1463,7 +1456,7 @@ describe("缺口帮助停止后的四选一（39d W4-6 刀四）", () => {
   const settledPractice = { runId: RUN_ID, phase: "completed", outcome: "needs_repair", startedAt: "2026-09-26T04:20:00.000Z" };
 
   it("停了才摆：那一句只说读数，没有前置候选时不虚构建议", async () => {
-    const { roundBlock } = await show([], { openRound: roundRow(), roundTeaching: teachingRow(), practices: [settledPractice], gapHelp: stopped });
+    const { roundBlock } = await show([], { openRound: roundRow(), roundTeaching: teachingRow({ sourceBlockOrdinals: [0] }), practices: [settledPractice], gapHelp: stopped });
     const block = roundBlock()!;
     fireEvent.click(within(block).getByText("这次需要换一种帮助"));
     expect(block.textContent).toContain(ROUND_COPY.teaching.stopLead(2));
@@ -1560,7 +1553,7 @@ describe("动态产物的挂载（39d W4-6 刀五）", () => {
     });
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     expect(container.querySelector(".round-sheet iframe")).toBeNull();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(ROUND_COPY.teaching.artifactFailed);
+    expect(within(container).getByRole("alert").textContent).toContain(ROUND_COPY.teaching.artifactFailed);
     // "动态失败不冒充教学失败"：解释与依据都还在。
     expect(container.querySelector(".round-prose__body")?.textContent?.length ?? 0).toBeGreaterThan(0);
   });

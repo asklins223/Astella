@@ -11,7 +11,7 @@
  *    `usePageReadableView` 不合合同只是不发布，症状仅仅是"她偶尔读不到这一页"）。
  */
 import { noteDocResult, seedUpdate } from "../../../test-support/note-doc-fixtures.ts";
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NotebookSurface } from "../notebook/notebook-surface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
@@ -54,7 +54,7 @@ function installApi() {
           },
         })),
         doc: {
-          state: vi.fn(async () => noteDocResult({ update: seedUpdate("来源卡片这一格", []) })),
+          state: vi.fn(async () => noteDocResult({ update: seedUpdate("来源卡片这一格", ["正文一段。"]) })),
           syncUpdate: vi.fn(),
           presence: vi.fn(async () => ok({ shared: false })),
         },
@@ -82,11 +82,11 @@ function installApi() {
   });
 }
 
-async function show() {
+async function show(openBag = true) {
   installApi();
   const published = vi.fn();
   useRoomStore.setState({
-    activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "read" },
+    activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "preview" },
     publishPageReadableView: published,
   });
   vi.useFakeTimers();
@@ -94,6 +94,7 @@ async function show() {
   for (let i = 0; i < 14; i += 1) {
     await act(async () => { await vi.advanceTimersByTimeAsync(100); });
   }
+  if (openBag) fireEvent.click(view.getByRole("button", { name: "资料袋" }));
   return { ...view, published };
 }
 
@@ -105,6 +106,16 @@ afterEach(() => {
 });
 
 describe("「来源片段」在一块屏上只许表示一个数", () => {
+  it("默认正文可见、资料收起；收起资料不再向伴星登记隐藏片段", async () => {
+    const view = await show(false);
+    expect(view.container.querySelector(".note-transcript")?.textContent).toContain("正文一段。");
+    expect(view.container.querySelector(".source-clips")).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "资料袋" }));
+    expect(view.container.querySelector(".source-clips .clip")).not.toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "合起资料袋" }));
+    expect(view.container.querySelector(".source-clips")).toBeNull();
+    expect(view.published.mock.calls.at(-1)?.[1].items).toEqual([]);
+  });
   it("资料卡片说「第 1 段来源片段」，不再写补零的序号", async () => {
     const { container } = await show();
     const clip = container.querySelector<HTMLElement>(".source-clips .clip b")!;

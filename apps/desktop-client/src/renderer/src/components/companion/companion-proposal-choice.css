@@ -6,12 +6,12 @@
   margin-top: 10px;
   padding: 12px;
   color: var(--companion-ink);
-  font-size: 11.5px;
-  line-height: 1.45;
-  border: 1.5px solid rgba(201, 164, 126, .66);
-  border-radius: 17px 20px 16px 18px;
-  background: linear-gradient(145deg, rgba(255, 253, 245, .98), rgba(255, 241, 207, .78));
-  box-shadow: 0 7px 18px rgba(91, 62, 39, .1);
+  font-size: 12px;
+  line-height: 1.8;
+  border: 1px solid #ab75594a;
+  border-radius: 17px 23px 16px 21px;
+  background: #f3dfc6;
+  box-shadow: none;
 }
 
 .companion-choice-card[data-context="bubble"] {
@@ -39,18 +39,18 @@
 .companion-choice-card > header > small {
   flex: none;
   padding: 3px 7px;
-  color: #856040;
+  color: var(--companion-muted);
   font-size: 10.5px;
   font-weight: 700;
   border-radius: 999px;
-  background: rgba(245, 181, 116, .25);
+  background: var(--hud-cream);
 }
 
 .companion-choice-card[data-status="accepted"] > header > small,
 .companion-choice-card[data-status="executing"] > header > small,
 .companion-choice-card[data-status="succeeded"] > header > small {
-  color: #356c50;
-  background: rgba(172, 216, 192, .42);
+  color: #425e43;
+  background: var(--hud-mint);
 }
 
 .companion-choice-card[data-status="failed"] > header > small {
@@ -93,10 +93,12 @@
 }
 
 .companion-choice-card__actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px;
-  margin-top: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
 }
 
 .companion-choice-card__actions button {
@@ -105,16 +107,16 @@
   color: var(--companion-ink);
   font: inherit;
   font-weight: 700;
-  border: 1.5px solid rgba(201, 164, 126, .7);
-  border-radius: 12px 14px 11px 13px;
-  background: rgba(255, 255, 255, .76);
+  border: 0;
+  border-radius: 17px 21px 16px 19px;
+  background: transparent;
   cursor: pointer;
   transition: background-color 150ms ease-out, border-color 150ms ease-out, transform 150ms var(--hud-ease-out);
 }
 
 .companion-choice-card__actions .companion-choice-card__confirm {
-  border-color: rgba(143, 193, 166, .82);
-  background: rgba(205, 235, 217, .76);
+  border-width: 2px;
+  border-style: solid;
 }
 
 .companion-choice-card__actions button:disabled {
@@ -132,29 +134,23 @@
   color: var(--companion-ink);
   font: inherit;
   font-weight: 700;
-  border: 1.5px solid rgba(143, 193, 166, .82);
-  border-radius: 12px 14px 11px 13px;
-  background: rgba(205, 235, 217, .76);
+  border: 2px solid rgba(125,89,56,.38);
+  border-radius: 17px 21px 16px 19px;
+  background: var(--hud-cream);
   cursor: pointer;
   transition: background-color 150ms ease-out, border-color 150ms ease-out;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .companion-choice-card__retry:hover {
-    border-color: var(--companion-mint-strong);
-    background: rgba(205, 235, 217, .95);
+    border-color: var(--hud-green);
+    background: var(--hud-paper-light);
   }
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .companion-choice-card__actions button:hover:not(:disabled) {
-    border-color: var(--companion-peach-strong);
-    background: #fff8e7;
-  }
-
-  .companion-choice-card__actions .companion-choice-card__confirm:hover:not(:disabled) {
-    border-color: var(--companion-mint-strong);
-    background: rgba(205, 235, 217, .95);
+  .companion-choice-card__actions .text-action:hover:not(:disabled) {
+    background: #705d4d13;
   }
 }
 

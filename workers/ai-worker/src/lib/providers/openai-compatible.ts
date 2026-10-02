@@ -1,3 +1,4 @@
+import { StreamToolCallAccumulator } from "./stream-tool-call-accumulator.ts";
 import {
   type AgentTurnRequest,
   type AgentTurnResult,
@@ -212,7 +213,12 @@ export class OpenAICompatibleProvider implements AIProvider {
     let finishReason = "stop";
     let responseBytes = 0;
     /** 分片到达的 native tool_calls（按 index 归并，见 consumeData）。 */
-    const streamToolCalls: Array<{ id: string; name: string; argsText: string }> = [];
+    // 累积与「够不够完整」交给已单测的纯类（stream-tool-call-accumulator.ts）。
+    // 原来这段就写在下面的 SSE 循环里——**网络循环内部没有夹具**，
+    // 于是"半截参数会不会被当完整"这种问题只能等真 provider 接入才看得见。
+    const streamToolCallSlots = new StreamToolCallAccumulator();
+    // 见下：放行判据是"后面已经出现过更高的 index"，所以要记住当前见到的最大 index。
+    let maxIndexSeen = -1;
     /**
      * 本轮流式是否有可用载荷（2026-09-19 ④-b）。
      *
@@ -221,7 +227,7 @@ export class OpenAICompatibleProvider implements AIProvider {
      * `stream_empty`，白白退化成整段取回，用户看到的那一步就永远不流式。
      */
     const hasStreamPayload = (): boolean =>
-      content.trim().length > 0 || streamToolCalls.some((call) => call && call.name.length > 0);
+      content.trim().length > 0 || streamToolCallSlots.snapshot().some((call) => call.name.length > 0);
     /**
      * 归并后的 tool_calls：`arguments` 必须**先拼完整串再解析**（分片直接 JSON.parse
      * 必然失败）。解析失败不静默降级成"空参数成功调用"——保留空对象交给上层的
@@ -230,8 +236,8 @@ export class OpenAICompatibleProvider implements AIProvider {
      */
     const collectToolCalls = (): AgentTurnResult["toolCalls"] => {
       const out: AgentTurnResult["toolCalls"] = [];
-      for (const slot of streamToolCalls) {
-        if (!slot || slot.name.length === 0) continue;
+      for (const slot of streamToolCallSlots.snapshot()) {
+        if (slot.name.length === 0) continue;
         let args: Record<string, unknown> = {};
         try {
           const parsed: unknown = JSON.parse(slot.argsText.length > 0 ? slot.argsText : "{}");
@@ -249,11 +255,18 @@ export class OpenAICompatibleProvider implements AIProvider {
       content: string;
       toolCalls: AgentTurnResult["toolCalls"];
       finishReason: string;
-    } => ({
-      content,
-      toolCalls: collectToolCalls(),
-      finishReason,
-    });
+    } => {
+      // 流到这儿才轮到最后一个调用：只有现在，"不会再有分片"才真正成立。
+      // 顺序判据靠的是"后面出现过更高的 index"，所以最后那一个必须在这里补放行，
+      // 否则最常见的"只调一个工具"整轮都排不上提前派发。
+      if (options.onToolCallSettled) {
+        for (const index of streamToolCallSlots.flush()) {
+          const slot = streamToolCallSlots.snapshot().find((entry) => entry.index === index);
+          if (slot) options.onToolCallSettled(slot);
+        }
+      }
+      return { content, toolCalls: collectToolCalls(), finishReason };
+    };
     /**
      * 流式失败带机器码（2026-09-19 ④ 修复补充）。
      *
@@ -296,19 +309,35 @@ export class OpenAICompatibleProvider implements AIProvider {
           onDelta(delta);
         }
         // tool_calls 是**分片**到达的（2026-09-19 ④-b）：`id`/`name` 通常只在第一片
-        // 出现，`arguments` 按 index 逐片拼接（模型边想边吐 JSON）。这里按 index 归并，
-        // 与 parseAgentTurnToolCalls 对整包 body 的处理保持同一份形状。
-        for (const call of choice?.delta?.tool_calls ?? []) {
-          const index = typeof call.index === "number" && call.index >= 0
-            ? call.index
-            : streamToolCalls.length;
-          const slot = streamToolCalls[index] ?? { id: "", name: "", argsText: "" };
-          streamToolCalls[index] = slot;
-          if (typeof call.id === "string" && call.id.length > 0 && slot.id.length === 0) {
-            slot.id = call.id;
+        // 出现，`arguments` 按 index 逐片拼接（模型边想边吐 JSON）。按 index 归并的
+        // 规则住在 `StreamToolCallAccumulator` 里，那一份有单测；这里只负责喂片。
+        if (Array.isArray(choice?.delta?.tool_calls)) {
+          const fragments = choice.delta.tool_calls.map((call) => ({
+            index: call.index,
+            id: call.id,
+            name: call.function?.name,
+            arguments: call.function?.arguments,
+          }));
+          streamToolCallSlots.push(fragments);
+          // ⚠️ 先把 maxIndexSeen 推到最新，**再**问"哪些够完整了"。
+          // 顺序反了的话，这一批刚到的高 index 还没算数，它自己就会被跳过，
+          // 于是"第 N+1 开始 ⇒ 第 N 完成"这条判据永远不成立。
+          for (const call of fragments) {
+            const index = typeof call.index === "number" && call.index >= 0 ? call.index : 0;
+            if (index > maxIndexSeen) maxIndexSeen = index;
           }
-          if (typeof call.function?.name === "string") slot.name += call.function.name;
-          if (typeof call.function?.arguments === "string") slot.argsText += call.function.arguments;
+          // 40b §4.1-1 的「完成事件」在本协议里只能由**顺序**推出：
+          // 第 N+1 个开始吐，第 N 个就再也不会有分片。刚进来这一片自己
+          // 拼完**不算**——后面可能还有它的分片。
+          //
+          // ⚠️ 回调**不 await**：这里在 SSE 读取循环里，await 会把流按停，
+          // 而 R7 要的恰恰是「生成继续、工具并行」。调用方自己排队。
+          if (options.onToolCallSettled) {
+            for (const index of streamToolCallSlots.readyForDispatch(maxIndexSeen)) {
+              const slot = streamToolCallSlots.snapshot().find((entry) => entry.index === index);
+              if (slot) options.onToolCallSettled(slot);
+            }
+          }
         }
       } catch {
         // 忽略无法解析的 SSE 行（部分网关会插入空行/注释）

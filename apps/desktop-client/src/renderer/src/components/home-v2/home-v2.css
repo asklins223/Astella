@@ -73,6 +73,13 @@
   pointer-events: none;
 }
 
+/* 展开态的底板。`home-v2-hud__panel` 自己没有底色，全靠这块撑着。
+   ⚠️ 2026-10-01：这层原先是 `rgba(20, 22, 24, 0.7)`——一片近黑。在旧书房的暗底板上
+   它融得进去，换成明亮的灯塔书房之后就成了压在地板上的一个「大黑底」（用户报「hover
+   上去一个大黑底出现了」）。现在换成 HUD 自己的暖墨、并压到与触发器药丸同一档不透明
+   度，让它读成「同一枚药丸长大」而不是一个洞。
+   注意不能只删这层：那样展开后的文字会直接掉进房间里——要彻底去掉，得先给
+   `.home-v2-hud__panel` 自己补上底色。 */
 .home-v2-hud::before {
   position: absolute;
   z-index: -1;
@@ -80,8 +87,8 @@
   content: "";
   border: 1px solid rgba(255, 249, 237, 0.2);
   border-radius: 999px;
-  background: rgba(20, 22, 24, 0.7);
-  box-shadow: 0 14px 36px rgba(16, 13, 11, 0.28), 0 2px 8px rgba(16, 13, 11, 0.2);
+  background: rgba(48, 32, 22, 0.56);
+  box-shadow: 0 14px 36px rgba(16, 13, 11, 0.24), 0 2px 8px rgba(16, 13, 11, 0.16);
   backdrop-filter: blur(22px) saturate(1.2);
   opacity: 0;
   transform: scaleX(0.438);
@@ -134,9 +141,11 @@
   transition: color 150ms ease-out, background-color 150ms ease-out, transform 150ms var(--hud-ease-out), border-color 180ms ease-out, box-shadow 180ms ease-out;
 }
 
+/* 收起态是触发器药丸（它自带 `rgba(20,22,24,0.74)` 底）。展开态把药丸本身让掉，
+   改由上面那块暖墨底板接管——两段底色必须同一档，否则交接处会看到一次明暗跳变。 */
 .home-v2-hud--expanded .home-v2-hud__trigger {
   border-color: transparent;
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(48, 32, 22, 0.1);
   box-shadow: none;
   backdrop-filter: none;
 }
@@ -271,9 +280,17 @@
 .home-v2-hud :is(button):focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 
 @media (hover: hover) and (pointer: fine) {
+  /* ⚠️ 2026-10-01：hover 态原本只改 `background-color` + `border-color`。这两个都在触发器
+     的 `transition` 列表里，于是每次 hover 都强制重画那块**带 `backdrop-filter` 的大圆角**
+     图层；Chromium 重绘时不重算圆角遮罩，胶囊就塌成一个方块（用户报「hover 上去变成方形
+     且变黑」）。两处修复：hover 态把 `border-radius` 一并重申，让形状不再依赖上一次重绘；
+     并且**不再动 `background-color`**——用 `box-shadow` 的内发光做按压反馈，它不触发背景
+     重绘，方形与变黑两个症状一起消失。 */
   .home-v2-hud__trigger:hover {
+    border-radius: 999px;
     border-color: rgba(255, 249, 237, 0.28);
-    background: rgba(31, 33, 35, 0.84);
+    box-shadow: inset 0 0 0 1px rgba(255, 249, 237, 0.1),
+      0 12px 30px rgba(16, 13, 11, 0.27), 0 2px 7px rgba(16, 13, 11, 0.2);
   }
 
   .home-v2-hud__trigger:hover > svg { color: rgba(255, 248, 237, 0.82); }
@@ -516,6 +533,13 @@
 .home-v2-object[data-object-state="due"] .home-v2-object__label,
 .home-v2-object[data-object-state="attention"] .home-v2-object__label { color: #ffd9a4; }
 .home-v2-object[data-object-state="magic"] .home-v2-object__label { color: #a9e4d2; }
+
+/* 灯塔书房 1672 × 941 画幅上的鼠标热区。用实际输出的 data-zone 匹配，
+   避免动态拼出的物件类名再次被当作无人使用的样式清理。 */
+.home-v2-object[data-zone="desk"] { left: 1.8%; top: 18%; width: 22%; height: 34%; }
+.home-v2-object[data-zone="shelf"] { left: 73.5%; top: 12%; width: 25%; height: 42%; }
+.home-v2-object[data-zone="window"] { left: 33%; top: 2.5%; width: 34%; height: 30%; }
+.home-v2-object[data-zone="rest"] { left: 81%; top: 55%; width: 18%; height: 34%; }
 
 .home-v2-objects[data-active-zone="desk"] .home-v2-object:not([data-zone="desk"]),
 .home-v2-objects[data-active-zone="shelf"] .home-v2-object:not([data-zone="shelf"]),

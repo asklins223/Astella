@@ -1,11 +1,12 @@
 import gsap from "gsap";
-import { homeV2CameraCss, type HomeV2CameraPreset } from "./home-v2";
+import type { HomeV2CameraPreset } from "./home-v2";
 
 export const HOME_V2_CAMERA_FRAME_EVENT = "ailearn:home-v2-camera-frame";
 
 /**
- * The Home V2 scene camera is written to one element (`.desktop-app`) through
- * one set of CSS variables. Two consumers legitimately need to retarget it —
+ * The Home V2 scene camera transforms only `.room-camera-rig`. Animating
+ * inherited variables on `.desktop-app` invalidated the whole page each frame.
+ * Two consumers legitimately need to retarget it —
  * the semantic zone owner (object activation, catalog, Escape) and the scene
  * router (leaving and returning from a task surface) — so the tween itself
  * must have a single owner.
@@ -76,7 +77,8 @@ export function requestHomeV2Camera(request: HomeV2CameraRequest): () => void {
 
   const id = ++commandSequence;
   cameraWriteCount += 1;
-  const values = homeV2CameraCss(preset);
+  const camera = target.querySelector?.<HTMLElement>(".room-camera-rig") ?? target;
+  const values = { scale: preset.scale, xPercent: preset.xPercent, yPercent: preset.yPercent, force3D: true };
   const settle = (reason: HomeV2CameraSettleReason) => {
     if (reason !== "superseded") markCameraState(target, "idle");
     request.onSettle?.(reason);
@@ -85,7 +87,7 @@ export function requestHomeV2Camera(request: HomeV2CameraRequest): () => void {
   if (!(duration > 0)) {
     // Reduced motion and Off mode land immediately. A zero-duration command is
     // complete before it returns, so it never becomes the active command.
-    gsap.set(target, values);
+    gsap.set(camera, values);
     publishCameraFrame(target);
     settle("complete");
     return () => {};
@@ -93,7 +95,7 @@ export function requestHomeV2Camera(request: HomeV2CameraRequest): () => void {
 
   markCameraState(target, "moving");
   const command: ActiveCommand = { id, settle, tween: null };
-  command.tween = gsap.to(target, {
+  command.tween = gsap.to(camera, {
     ...values,
     duration,
     ease,

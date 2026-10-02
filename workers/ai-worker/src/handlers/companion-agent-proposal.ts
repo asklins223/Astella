@@ -32,7 +32,7 @@ import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { insertStreamEvent } from "./companion-dialogue-store.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
-import { CompanionToolError } from "./companion-tool-execution.ts";
+import { CompanionToolError } from "./companion-tool-result.ts";
 
 export async function buildActionPayload(
   event: AgentEventContext,
@@ -99,7 +99,23 @@ export async function buildActionPayload(
     // auto-set / auto-fill：guided 档提案确认后由 API decision 分支执行
     // （learning-action-bridge decideCompanionProposal 的 save_memory /
     // set_pet_activeness 分支）；full 档不经提案、由 executeDirectTool 直执行。
-    companion_save_memory: { kind: "save_memory", memoryKind: args.kind, content: args.content },
+    companion_save_memory: {
+      kind: "save_memory",
+      memoryKind: args.kind,
+      content: args.content,
+      sourceQuote: args.sourceQuote ?? null,
+      appliesWhen: args.appliesWhen ?? null,
+      validUntil: args.validUntil ?? null,
+    },
+    companion_revise_memory: {
+      kind: "revise_memory",
+      memoryId: args.memoryId,
+      expectedRevision: args.expectedRevision,
+      content: args.content,
+      ...(args.appliesWhen !== undefined ? { appliesWhen: args.appliesWhen } : {}),
+      ...(args.validFrom !== undefined ? { validFrom: args.validFrom } : {}),
+      ...(args.validUntil !== undefined ? { validUntil: args.validUntil } : {}),
+    },
     companion_set_activeness: { kind: "set_pet_activeness", activeness: args.activeness },
   };
   return map[toolName] ?? null;

@@ -126,6 +126,10 @@ export const companionTurnRuns = pgTable(
     providerId: text("provider_id"),
     modelId: text("model_id"),
     promptVersion: text("prompt_version"),
+    /** Account persona revision pinned before provider execution for this run. */
+    personaProfileRevision: integer("persona_profile_revision"),
+    personaExamplesRevision: integer("persona_examples_revision"),
+    defaultExpressionVersion: text("default_expression_version"),
     /**
      * 这一发产出于哪一版泄露闸（39d #28；NULL＝那一版还没记，属"未归因"而不是"空版本"）。
      * 值由 `companionLeakGateVersionV1()` 派生，不手写。
@@ -175,6 +179,25 @@ export const companionTurnRuns = pgTable(
   }),
 );
 
+export const companionContextHandoffSnapshots = pgTable(
+  "companion_context_handoff_snapshots",
+  {
+    runId: uuid("run_id").primaryKey().references(() => companionTurnRuns.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    conversationId: uuid("conversation_id").notNull()
+      .references(() => companionConversations.id, { onDelete: "cascade" }),
+    snapshot: jsonb("snapshot").notNull(),
+    snapshotSha256: char("snapshot_sha256", { length: 64 }).notNull(),
+    snapshotVersion: integer("snapshot_version").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    scopeIdx: index("companion_context_handoff_snapshots_scope_idx")
+      .on(t.workspaceId, t.userId, t.conversationId, sql`${t.createdAt} DESC`),
+  }),
+);
+
 // ─── 7.4 companion_stream_events ──────────────────────────────────────────
 
 export const companionStreamEvents = pgTable(
@@ -213,6 +236,8 @@ export const companionAgentSteps = pgTable(
     status: text("status").$type<CompanionAgentStepStatus>().notNull(),
     requestHash: char("request_hash", { length: 64 }),
     resultHash: char("result_hash", { length: 64 }),
+    /** 私有、运行态模型步骤恢复点；步骤结束时清空，不进入诊断投影。 */
+    checkpoint: jsonb("checkpoint"),
     errorCode: text("error_code"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),

@@ -3,7 +3,7 @@ import type { CompanionPersonaV1 } from "@ailearn/shared/companion-memory-deskto
 /**
  * 她对自己的称呼 —— 只有一份来源。
  *
- * 库里 `pet_profiles.name` 存的是用户起的名字（本机实测是「爱吃白饭的大肥鱼」），
+ * 账号人格档案里的 `profile.name` 存的是用户起的名字（本机实测是「爱吃白饭的大肥鱼」），
  * 而伴星身边那十几处文字以前把 **Live2D 模型名** "Mao" 写死在字符串里：
  * 换了形态、改了名字，界面上每一句仍然叫她 Mao，包括消息署名、输入框标题、
  * 三颗按钮的 aria-label 和「正在来到书桌边」那条加载语。

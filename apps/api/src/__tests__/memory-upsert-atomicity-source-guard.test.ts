@@ -29,8 +29,8 @@ import test from "node:test";
  * ## 为什么是结构断言
  *
  * 竞态本身无法在单测里稳定复现（要两个真并发事务）。而 `onConflictDoUpdate`
- * 的 `target` + `setWhere` **必须逐字复述那个 partial 索引的谓词**，
- * 少写 `setWhere` 就命中不到它、语句会在并发时才炸——单元测试照样全绿。
+ * 的 `target` + `targetWhere` **必须逐字复述那个 partial 索引的定义**，
+ * 少写 `targetWhere` 就推断不到冲突目标，insert 当场失败——仅检查 setWhere 会漏掉它。
  * 所以这里钉形状。
  */
 
@@ -55,7 +55,7 @@ test("记忆写入走 onConflictDoUpdate（不是 check-then-act）", () => {
   );
 });
 
-test("upsert 的 target 与 setWhere 逐字复述了那个 partial 索引", () => {
+test("upsert 的 target + targetWhere 推断 partial 索引，setWhere 单独保护用户版本", () => {
   const source = readFileSync(SERVICE, "utf8");
   const at = source.indexOf(".onConflictDoUpdate(");
   assert.ok(at > 0, "自证：应当找得到 onConflictDoUpdate");
@@ -70,11 +70,15 @@ test("upsert 的 target 与 setWhere 逐字复述了那个 partial 索引", () =
   ]) {
     assert.ok(block.includes(col), `upsert 的 target 少了 ${col}——命中不到 partial unique index`);
   }
-  // partial 索引的谓词：少了 setWhere 同样命不中
+  // PostgreSQL 的 ON CONFLICT 推断依赖 targetWhere；setWhere 是 DO UPDATE 的另一层条件。
   assert.ok(
-    /setWhere:\s*sql`[\s\S]{0,200}deletedAt}\s*IS NULL[\s\S]{0,200}sourceEventId}\s*IS NOT NULL/.test(block),
-    "upsert 缺少 setWhere（或没复述 partial 索引的谓词）——"
-    + "Postgres 要求 ON CONFLICT 的 target 与那个 partial 索引完全一致才命中",
+    /targetWhere:\s*sql`[\s\S]{0,200}deletedAt}\s*IS NULL[\s\S]{0,200}sourceEventId}\s*IS NOT NULL/.test(block),
+    "upsert 缺少 targetWhere（或没复述 partial 索引的谓词）——"
+    + "Postgres 因而无法推断 ON CONFLICT 目标",
+  );
+  assert.ok(
+    /setWhere:\s*sql`[\s\S]{0,200}deletedAt}\s*IS NULL[\s\S]{0,500}authorType}\s*<>\s*'user'/.test(block),
+    "upsert 缺少独立的 setWhere，自动抽取可能覆盖用户修订",
   );
 });
 

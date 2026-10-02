@@ -29,6 +29,7 @@ function daily(overrides: Record<string, unknown> = {}) {
     status: "generated",
     generatedAt: "2026-09-24T21:00:00.000Z",
     failureReason: null,
+    selectionReason: null,
     blocks: [{ type: "text", text: "今天把第三章的反例补上了一条。" }],
     memory: null,
     ...overrides,

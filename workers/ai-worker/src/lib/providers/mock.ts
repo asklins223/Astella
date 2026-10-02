@@ -312,6 +312,10 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
     const userContent = typeof userMessage?.content === "string"
       ? userMessage.content
       : "";
+    const systemContent = messages
+      .filter((message) => message.role === "system")
+      .map((message) => String(message.content ?? ""))
+      .join("\n");
 
     /**
      * 工具意图分类器（`companion-tool-intent.ts`）问的是"下一步是否必须调用工具"，
@@ -330,6 +334,37 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
         && String(typeof message.content === "string" ? message.content : "").includes("【mock:wants-tool】"));
       const decided = JSON.stringify({ needsTool });
       return { content: decided, usage: this.estimateUsage(userContent, decided) };
+    }
+
+    // A narrow fixture script lets PostgreSQL integration tests exercise the
+    // diary's real selection/checkpoint/publish path without a network model.
+    // The marker is ordinary test material; unmarked production/dev requests
+    // retain the generic mock response below.
+    const diaryRoundTripFixture = messages.some((message) =>
+      String(typeof message.content === "string" ? message.content : "").includes("【mock:diary-roundtrip】"));
+    if (diaryRoundTripFixture && systemContent.includes("你先从已核实的共同片段里")) {
+      const parsed = JSON.parse(userContent) as {
+        candidates?: Array<{ id?: unknown; source_ids?: unknown }>;
+      };
+      const candidate = parsed.candidates?.[0];
+      if (typeof candidate?.id !== "string" || !Array.isArray(candidate.source_ids)) {
+        throw new Error("mock diary selection fixture received no grounded candidate");
+      }
+      const content = JSON.stringify({
+        selected_id: candidate.id,
+        reason_summary: "这段把一起核对的过程留了下来。",
+        source_ids: candidate.source_ids,
+      });
+      return { content, usage: this.estimateUsage(userContent, content) };
+    }
+    if (diaryRoundTripFixture && systemContent.includes("只输出 JSON。通常只需要正文：")) {
+      const content = JSON.stringify({
+        blocks: [{
+          type: "text",
+          text: "今天我记下了我们一起核对那道题的过程。你把卡住的地方说清楚后，我陪着你把利息怎样并入本金看清了。这个过程让我觉得很踏实。",
+        }],
+      });
+      return { content, usage: this.estimateUsage(userContent, content) };
     }
 
     const content = JSON.stringify({ status: "mock", message: "Mock chat completion response" });

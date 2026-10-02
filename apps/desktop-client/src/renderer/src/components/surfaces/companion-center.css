@@ -182,14 +182,23 @@
 .hud-surface .companion-center button.danger { background: #f7dfd1; color: #832f20 !important; border-color: #b78372; }
 .hud-surface .companion-center button.danger-quiet { color: #863b2d !important; }
 .hud-surface .companion-center :is(.companion-inline-form, .companion-memory-detail, .companion-activity-card, .companion-delivery-card, .companion-diary-entry, .companion-thread article, .companion-data-actions > button, .companion-choice-grid button, .companion-boundaries button) { border: 1px solid var(--hud-line); background: var(--companion-card-glass); box-shadow: none; color: var(--hud-ink); }
-.hud-surface .companion-center :is(.companion-memory-detail > strong, .companion-record-list > button > strong, .companion-activity-card strong, .companion-thread article p, .companion-choice-grid strong, .companion-data-actions strong, .companion-map-selection strong) { color: var(--hud-ink); }
+.hud-surface .companion-center :is(.companion-memory-detail > strong, .companion-record-list button > strong, .companion-activity-card strong, .companion-thread article p, .companion-choice-grid strong, .companion-data-actions strong, .companion-map-selection strong) { color: var(--hud-ink); }
 .hud-surface .companion-center .companion-thread article > span b { color: #8f431f; }
-.hud-surface .companion-center .companion-record-list > button { background: transparent; border: 0; border-bottom: 1px solid var(--hud-line); box-shadow: none; color: var(--hud-ink); }
-.hud-surface .companion-center .companion-record-list > button:is(:hover, .is-selected) { background: rgba(240, 222, 187, .6); }
-.hud-surface .companion-center .companion-record-list > button.is-selected > strong { color: #713d25; }
-.hud-surface .companion-center .companion-record-list > button > span { color: var(--hud-soft); }
-.hud-surface .companion-center .companion-record-list > button > span em { color: var(--hud-soft); }
+.hud-surface .companion-center .companion-record-list button { background: transparent; border: 0; border-bottom: 1px solid var(--hud-line); box-shadow: none; color: var(--hud-ink); }
+.hud-surface .companion-center .companion-record-list button:is(:hover, .is-selected) { background: rgba(240, 222, 187, .6); }
+.hud-surface .companion-center .companion-record-list button.is-selected > strong { color: #713d25; }
+.hud-surface .companion-center .companion-record-list button > span { color: var(--hud-soft); }
+.hud-surface .companion-center .companion-record-list button > span em { color: var(--hud-soft); }
 .hud-surface .companion-center .companion-memory-detail__meta span { color: #735536; background: #eadaba; }
+/*
+ * §4.5.8：「关于你的」与「她的看法」分开。
+ *
+ * 副句说明这一段是什么——判断不是用户原话也不是学习记录，这句话必须常驻，
+ * 不能只在选中某一条时才看得到。
+ */
+.hud-surface .companion-center .companion-record-list > section + section { margin-top: 10px; }
+.hud-surface .companion-center .companion-memory-group { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 10px 4px 4px; color: #735536; font-size: 12px; font-weight: 600; letter-spacing: .04em; }
+.hud-surface .companion-center .companion-memory-group > small { color: var(--hud-soft); font-weight: 400; letter-spacing: 0; }
 .hud-surface .companion-center .companion-section-state { min-height: 90px; color: var(--hud-soft); }
 .hud-surface .companion-center .companion-section-state strong { color: var(--hud-ink); }
 .hud-surface .companion-center .companion-search { background: rgba(255,255,255,.6); border-color: var(--hud-line-strong); }
@@ -436,8 +445,8 @@
 }
 .hud-surface .companion-center .companion-panel-heading { border-bottom: 2px dashed rgba(142,104,66,.23); }
 .hud-surface .companion-memory-view .companion-panel-heading { padding-bottom: 10px; }
-.hud-surface .companion-center .companion-record-list > button { border-radius: 13px 17px 11px 15px; padding: 11px 14px; background: rgba(255,250,237,.68); }
-.hud-surface .companion-center .companion-record-list > button:is(:hover,.is-selected) { background: #e7ead3; }
+.hud-surface .companion-center .companion-record-list button { border-radius: 13px 17px 11px 15px; padding: 11px 14px; background: rgba(255,250,237,.68); }
+.hud-surface .companion-center .companion-record-list button:is(:hover,.is-selected) { background: #e7ead3; }
 .hud-surface .companion-center .companion-memory-detail { max-width: 75ch; margin: 3px 0 11px 18px; border: 2px solid rgba(255,252,235,.95); border-radius: 16px 20px 14px 19px; background: #dbe9db; }
 .hud-surface .companion-center .companion-search { border: 2px solid rgba(171,140,101,.47); border-radius: 17px 19px 14px 18px; background: #fffaf0; }
 .hud-surface .companion-center .companion-select__trigger { border: 2px solid rgba(171,140,101,.47); border-radius: 14px 17px 13px 16px; background: #fffaf0; color: var(--hud-ink); }
@@ -465,12 +474,12 @@
   grid-column: 1 / -1; grid-row: 3; align-items: start;
 }
 .hud-surface .companion-memory-view .companion-record-list { max-width: none; gap: 7px; }
-.hud-surface .companion-memory-view .companion-record-list > button {
+.hud-surface .companion-memory-view .companion-record-list button {
   display: grid; gap: 5px; align-content: start; min-height: 76px;
   border: 2px solid rgba(255,252,235,.94); border-radius: 14px 19px 13px 17px;
   box-shadow: 0 3px 9px rgba(70,47,30,.09);
 }
-.hud-surface .companion-memory-view .companion-record-list > button.is-selected {
+.hud-surface .companion-memory-view .companion-record-list button.is-selected {
   border-color: #7eaa92; box-shadow: inset 4px 0 #7eaa92, 0 5px 13px rgba(70,47,30,.1);
 }
 .hud-surface .companion-memory-view .companion-memory-focus { position: sticky; top: 0; min-width: 0; }
@@ -556,3 +565,69 @@
   .hud-surface .companion-memory-view .companion-memory-workspace { grid-column: 1; grid-row: auto; grid-template-columns: minmax(0,1fr); }
   .hud-surface .companion-memory-view .companion-memory-focus { position: static; }
 }
+
+/* ── 40 §7 发现簿 ───────────────────────────────────────────────────────
+   沿用母本的纸面语言：便签、页签、细边框，不做成后台管理面板。 */
+
+.discovery-panel { display: grid; gap: 12px; }
+.discovery-panel__head h2 { margin: 0 0 4px; }
+.discovery-panel__head p { margin: 0; color: var(--hud-soft); }
+
+.discovery-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+
+.discovery-row {
+  background: var(--hud-paper-light);
+  border: 1px solid var(--hud-line);
+  border-radius: 14px 18px 13px 16px;
+  padding: 12px 14px;
+  display: grid; gap: 8px;
+}
+/* 她整理的建议：纸色略深一点，扫一眼就知道不是用户自己写的。 */
+.discovery-row[data-author="assistant"] { background: var(--hud-paper); }
+.discovery-row header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.discovery-row p { margin: 0; }
+.discovery-row blockquote {
+  margin: 0; padding: 6px 10px;
+  border-left: 3px solid var(--hud-line);
+  color: var(--hud-soft);
+}
+.discovery-row footer { display: flex; gap: 10px; }
+.discovery-row__edit { display: grid; gap: 8px; }
+.discovery-row__edit textarea { width: 100%; min-height: 64px; }
+.discovery-row__actions { display: flex; gap: 8px; }
+
+.discovery-study { margin-top: 6px; }
+.discovery-study h3 { margin: 0 0 4px; font-size: 0.95rem; }
+.discovery-study ul { margin: 6px 0 0; padding-left: 18px; color: var(--hud-soft); }
+
+/* 回答旁那一次「留在发现簿」（40 §7）。
+   版式上刻意**弱**于正文：它是一次询问，不是一个功能区。主按钮仍用纸面上那颗
+   素色按钮，与正文之间只用一条虚线分开——用户扫过去能认出这是"她刚停下来说的
+   一句"，而不是这一屏的第三个工具。 */
+.companion-thread article .discovery-keep {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 10px; padding-top: 8px;
+  border-top: 1px dashed var(--hud-line);
+}
+.companion-thread article .discovery-keep small { color: var(--hud-soft); font-size: 12px; }
+/* 成功角标：不再给第二次机会的地方，就只剩这一句事实。 */
+.companion-thread article .discovery-keep--kept {
+  margin: 10px 0 0; padding-top: 8px;
+  border-top: 1px dashed var(--hud-line);
+  color: var(--hud-soft); font-size: 12px;
+}
+.companion-thread article .discovery-keep__error,
+.companion-thread article .discovery-keep__notice { flex: 1 1 100%; margin: 0; font-size: 12px; }
+.companion-thread article .discovery-keep__error { color: #7b2f1f; }
+.companion-thread article .discovery-keep__notice { color: var(--hud-soft); }
+
+/* 空态：没有收藏、没有对话、没有记忆时都走它。§7「没有收藏时保持清爽」——
+   所以它只有一句话 + 一个动作，不放占位卡片。 */
+.companion-center__empty {
+  display: grid; gap: 10px; justify-items: start;
+  padding: 16px 18px;
+  background: var(--hud-paper-light);
+  border: 1px dashed var(--hud-line);
+  border-radius: 14px 18px 13px 16px;
+}
+.companion-center__empty p { margin: 0; color: var(--hud-soft); }

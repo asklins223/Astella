@@ -1,11 +1,11 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
 import { noteAnnotations } from "@ailearn/shared/db-schema/note-annotations";
+import { noteLearningArtifacts } from "@ailearn/shared/db-schema/note-learning-artifacts";
 import { jobs } from "@ailearn/shared/db-schema/job";
 import { noteBlocks, noteVersions, notes } from "@ailearn/shared/db-schema/note";
 import { JobStatus, JobType } from "@ailearn/shared/enums";
-import { noteAnnotationAnchorV1Schema, noteAnnotationV1Schema, noteAnnotationTaskV1Schema, type NoteAnnotationAnchorV1, type NoteAnnotationTaskV1 } from "@ailearn/shared/note-annotation-contracts";
-import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
+import { noteAnchorMatchesV1, noteAnnotationAnchorV1Schema, noteAnnotationV1Schema, noteAnnotationTaskV1Schema, type NoteAnnotationAnchorV1, type NoteAnnotationTaskV1 } from "@ailearn/shared/note-annotation-contracts";
 import { createJob, classifyJobFailureReason } from "../job/service.ts";
 import { visibleNotesCondition } from "../note/visibility.ts";
 import { isAssistantReplyForNote } from "../note/companion-source.ts";
@@ -104,19 +104,12 @@ export async function createNoteAnnotation(
     eq(noteVersions.workspaceId, scope.workspaceId),
   ));
   if (!version) throw new NoteAnnotationError("note_version_not_found", "原句所属的笔记版本已不可用，请回到当前正文重新选中。");
-  const [block] = await tx.select({ type: noteBlocks.type, content: noteBlocks.content }).from(noteBlocks).where(and(
+  const blocks = await tx.select({ ordinal: noteBlocks.ordinal, type: noteBlocks.type, content: noteBlocks.content }).from(noteBlocks).where(and(
     eq(noteBlocks.workspaceId, scope.workspaceId),
     eq(noteBlocks.versionId, input.anchor.noteVersionId),
-    eq(noteBlocks.ordinal, input.anchor.startBlockOrdinal),
+    sql`${noteBlocks.ordinal} BETWEEN ${input.anchor.startBlockOrdinal} AND ${input.anchor.endBlockOrdinal}`,
   ));
-  const renderedText = block ? noteBlockRenderedTextV1(block.type, block.content) : "";
-  const { startOffset, endOffset, excerpt, prefix, suffix } = input.anchor;
-  const anchorMatches = Boolean(block)
-    && endOffset <= renderedText.length
-    && renderedText.slice(startOffset, endOffset) === excerpt
-    && renderedText.slice(Math.max(0, startOffset - 120), startOffset) === prefix
-    && renderedText.slice(endOffset, endOffset + 120) === suffix;
-  if (!anchorMatches) {
+  if (!noteAnchorMatchesV1(blocks, input.anchor)) {
     throw new NoteAnnotationError("note_anchor_mismatch", "这段原句和笔记里的显示位置对不上，请重新选择后再贴回批注。");
   }
   if (input.sourceMessageId && !(await isAssistantReplyForNote(tx, scope, {
@@ -171,16 +164,11 @@ async function assertAnchorIsCurrent(tx: ApiTransaction, scope: NoteAnnotationSc
     eq(noteVersions.id, anchor.noteVersionId), eq(noteVersions.noteId, noteId), eq(noteVersions.workspaceId, scope.workspaceId),
   ));
   if (!version) throw new NoteAnnotationError("note_version_not_found", "原句所属的笔记版本已不可用，请回到当前正文重新选中。");
-  const [block] = await tx.select({ type: noteBlocks.type, content: noteBlocks.content }).from(noteBlocks).where(and(
-    eq(noteBlocks.workspaceId, scope.workspaceId), eq(noteBlocks.versionId, anchor.noteVersionId), eq(noteBlocks.ordinal, anchor.startBlockOrdinal),
+  const blocks = await tx.select({ ordinal: noteBlocks.ordinal, type: noteBlocks.type, content: noteBlocks.content }).from(noteBlocks).where(and(
+    eq(noteBlocks.workspaceId, scope.workspaceId), eq(noteBlocks.versionId, anchor.noteVersionId),
+    sql`${noteBlocks.ordinal} BETWEEN ${anchor.startBlockOrdinal} AND ${anchor.endBlockOrdinal}`,
   ));
-  const renderedText = block ? noteBlockRenderedTextV1(block.type, block.content) : "";
-  const matches = anchor.endBlockOrdinal === anchor.startBlockOrdinal
-    && anchor.endOffset <= renderedText.length
-    && renderedText.slice(anchor.startOffset, anchor.endOffset) === anchor.excerpt
-    && renderedText.slice(Math.max(0, anchor.startOffset - 120), anchor.startOffset) === anchor.prefix
-    && renderedText.slice(anchor.endOffset, anchor.endOffset + 120) === anchor.suffix;
-  if (!matches) throw new NoteAnnotationError("note_anchor_mismatch", "这段原句和笔记里的显示位置对不上，请重新选择后再贴回批注。");
+  if (!noteAnchorMatchesV1(blocks, anchor)) throw new NoteAnnotationError("note_anchor_mismatch", "这段原句和笔记里的显示位置对不上，请重新选择后再贴回批注。");
 }
 
 export async function startNoteAnnotationTask(
@@ -262,8 +250,33 @@ export async function changeNoteAnnotation(
     throw new NoteAnnotationError("stale_revision", "另一处已修改这条批注。请重新读取后核对。 ");
   }
   if (input.explanation === undefined) {
+    /**
+     * 删批注要连它生成的**动态讲解**一起删，但**不碰伴星的对话**。
+     *
+     * 两件事的依据都在库里：
+     * - 产物**不是**批注的子行：它没有 `annotation_id` 外键，两边靠
+     *   `selection_anchor`（同一段原句）对上。所以这里按锚点的五个定位字段 + 摘录
+     *   逐字匹配——少一个字段就可能匹配到**别的**那一段上，那比留下孤儿更坏。
+     *   客户端的 `note-annotation-side-page.tsx` 找产物用的是同一组判据，两边一致。
+     * - 对话**本来就不在级联里**：迁移 0323 明确 drop 了
+     *   `note_learning_artifacts.source_message_id` 对 `companion_messages` 的外键，
+     *   注释写的是「Chat rows can be cleared without deleting a note's saved
+     *   learning record」。所以这里删产物也**不会**带走聊天记录；即便产物当初是
+     *   从某条聊天消息发起的，那条消息仍在。`generation_job_id` 指向的 job 行
+     *   也留着——它是运行痕迹，不是这条批注的一部分。
+     */
+    const artifacts = await tx.delete(noteLearningArtifacts).where(and(
+      owned(scope, noteId),
+      eq(noteLearningArtifacts.sourceKind, "annotation"),
+      sql`${noteLearningArtifacts.selectionAnchor}->>'noteVersionId' = ${row.noteVersionId}`,
+      sql`${noteLearningArtifacts.selectionAnchor}->>'startBlockOrdinal' = ${row.startBlockOrdinal}`,
+      sql`${noteLearningArtifacts.selectionAnchor}->>'startOffset' = ${row.startOffset}`,
+      sql`${noteLearningArtifacts.selectionAnchor}->>'endBlockOrdinal' = ${row.endBlockOrdinal}`,
+      sql`${noteLearningArtifacts.selectionAnchor}->>'endOffset' = ${row.endOffset}`,
+      sql`${noteLearningArtifacts.selectionAnchor}->>'excerpt' = ${row.excerpt}`,
+    )).returning({ id: noteLearningArtifacts.id });
     await tx.delete(noteAnnotations).where(eq(noteAnnotations.id, annotationId));
-    return { removed: true as const };
+    return { removed: true as const, removedArtifacts: artifacts.length };
   }
   const [updated] = await tx.update(noteAnnotations).set({
     explanation: input.explanation,

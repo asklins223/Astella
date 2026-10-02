@@ -30,7 +30,7 @@
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
@@ -74,6 +74,9 @@ before(async () => {
       VALUES (${workspaceId}, '演练', ${userId}, 'personal', 1)`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
       VALUES (${workspaceId}, ${userId}, 'owner')`;
+    await tx`INSERT INTO user_companion_account_state
+      (user_id, global_enabled, diary_enabled, diary_enabled_since)
+      VALUES (${userId}, true, true, '2026-09-19T00:00:00+08:00')`;
   });
 });
 
@@ -82,6 +85,7 @@ after(async () => {
     await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
     await tx`SELECT set_config('app.user_id', ${userId}, true)`;
     await tx`DELETE FROM assistant_deliveries WHERE workspace_id = ${workspaceId}`;
+    await tx`DELETE FROM companion_conversations WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM workspace_members WHERE workspace_id = ${workspaceId}`;
     await tx`DELETE FROM workspaces WHERE id = ${workspaceId}`;
     await tx`DELETE FROM users WHERE id = ${userId}`;
@@ -399,6 +403,7 @@ test("§6 · 日记成稿：经**任务队列**真的跑一遍，失败也要说
   const { runCompanionDailySummary } = await import("../handlers/companion-daily-summary.ts");
   const jobId = randomUUID();
   const leaseToken = `drill-lease-${randomUUID()}`;
+  const conversationId = randomUUID();
   const date = "2026-09-20";
   const payload = { date, timezone: "Asia/Shanghai", userId };
 
@@ -407,6 +412,20 @@ test("§6 · 日记成稿：经**任务队列**真的跑一遍，失败也要说
   await sql.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
     await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+    await tx`INSERT INTO companion_conversations
+      (id, workspace_id, user_id, kind, title, title_source, status)
+      VALUES (${conversationId}, ${workspaceId}, ${userId}, 'dialogue', '日记失败演练', 'system', 'active')`;
+    const userText = "我在复利题里卡了一下，想确认利息并入本金之后怎么算。";
+    const assistantText = "我陪你把利息并入本金的步骤重新核了一遍，终于能接着往下看。";
+    await tx`INSERT INTO companion_messages
+      (id, workspace_id, user_id, conversation_id, seq, role, kind, blocks, content_sha256, created_at)
+      VALUES
+        (${randomUUID()}, ${workspaceId}, ${userId}, ${conversationId}, 1, 'user', 'text',
+          ${tx.json([{ type: "text", text: userText }])}, ${createHash("sha256").update(userText).digest("hex")},
+          '2026-09-20T10:00:00+08:00'),
+        (${randomUUID()}, ${workspaceId}, ${userId}, ${conversationId}, 2, 'assistant', 'text',
+          ${tx.json([{ type: "text", text: assistantText }])}, ${createHash("sha256").update(assistantText).digest("hex")},
+          '2026-09-20T10:03:00+08:00')`;
     await tx`INSERT INTO jobs (id, type, workspace_id, payload, status, attempts, lease_token, requested_by, started_at)
              VALUES (${jobId}, 'companion_daily_summary', ${workspaceId}, ${tx.json(payload)},
                      'running', 1, ${leaseToken}, ${userId}, now())`;
@@ -461,6 +480,112 @@ test("§6 · 日记成稿：经**任务队列**真的跑一遍，失败也要说
     assert.ok(draft.summary && draft.summary.length > 0,
       "日记报告成功，正文却是空的：下一次回来看不到她那天写了什么");
   }
+});
+
+test("§6c · 选材与成稿检查点：发布写入失败后复用两步产物，不重复调用模型", async () => {
+  const { runCompanionDailySummary } = await import("../handlers/companion-daily-summary.ts");
+  const jobId = randomUUID();
+  const leaseToken = `diary-checkpoint-${randomUUID()}`;
+  const conversationId = randomUUID();
+  const date = "2026-09-21";
+  const payload = { date, timezone: "Asia/Shanghai", userId };
+  const userText = "【mock:diary-roundtrip】我刚才卡在复利题上，没想明白利息为什么要并进本金。";
+  const assistantText = "我把利息并入本金的步骤重新拆开讲了，陪你一起核对了题目里的过程。";
+  const testSequence = "public.companion_diary_publish_once_test_seq";
+  const testFunction = "public.companion_diary_publish_once_test";
+  const testTrigger = "companion_diary_publish_once_test";
+
+  await sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`;
+    await tx`INSERT INTO user_companion_account_state (user_id, global_enabled, diary_enabled, diary_enabled_since)
+      VALUES (${userId}, true, true, '2026-09-20T00:00:00+08:00')
+      ON CONFLICT (user_id) DO UPDATE SET global_enabled = true, diary_enabled = true,
+        diary_enabled_since = EXCLUDED.diary_enabled_since`;
+    await tx`INSERT INTO companion_conversations
+      (id, workspace_id, user_id, kind, title, title_source, status)
+      VALUES (${conversationId}, ${workspaceId}, ${userId}, 'dialogue', '日记检查点演练', 'system', 'active')`;
+    await tx`INSERT INTO companion_messages
+      (id, workspace_id, user_id, conversation_id, seq, role, kind, blocks, content_sha256, created_at)
+      VALUES
+        (${randomUUID()}, ${workspaceId}, ${userId}, ${conversationId}, 1, 'user', 'text',
+          ${tx.json([{ type: "text", text: userText }])}, ${createHash("sha256").update(userText).digest("hex")},
+          '2026-09-21T10:00:00+08:00'),
+        (${randomUUID()}, ${workspaceId}, ${userId}, ${conversationId}, 2, 'assistant', 'text',
+          ${tx.json([{ type: "text", text: assistantText }])}, ${createHash("sha256").update(assistantText).digest("hex")},
+          '2026-09-21T10:03:00+08:00')`;
+    await tx`INSERT INTO jobs (id, type, workspace_id, payload, status, attempts, lease_token, requested_by, started_at)
+      VALUES (${jobId}, 'companion_daily_summary', ${workspaceId}, ${tx.json(payload)},
+        'running', 1, ${leaseToken}, ${userId}, now())`;
+  });
+
+  // Fail only the first final diary-row write. nextval is non-transactional,
+  // so the handler's failure row can still be written and the next attempt succeeds.
+  await sql.unsafe(`DROP TRIGGER IF EXISTS ${testTrigger} ON public.companion_daily_summaries`);
+  await sql.unsafe(`DROP FUNCTION IF EXISTS ${testFunction}()`);
+  await sql.unsafe(`DROP SEQUENCE IF EXISTS ${testSequence}`);
+  await sql.unsafe(`CREATE SEQUENCE ${testSequence} START WITH 1`);
+  await sql.unsafe(`GRANT USAGE, SELECT ON SEQUENCE ${testSequence} TO ailearn_worker`);
+  await sql.unsafe(`CREATE FUNCTION ${testFunction}() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.date = '2026-09-21' AND nextval('${testSequence}') = 1 THEN
+        RAISE EXCEPTION 'test-only: first diary publish fails';
+      END IF;
+      RETURN NEW;
+    END $$`);
+  await sql.unsafe(`CREATE TRIGGER ${testTrigger} BEFORE INSERT OR UPDATE ON public.companion_daily_summaries
+    FOR EACH ROW EXECUTE FUNCTION ${testFunction}()`);
+
+  const job = {
+    id: jobId,
+    workspaceId,
+    requestedBy: userId,
+    payload: payload as Record<string, unknown>,
+    leaseToken,
+  };
+  let firstFailure: string | null = null;
+  try {
+    await runCompanionDailySummary(job);
+  } catch (error) {
+    const messages: string[] = [];
+    let current: unknown = error;
+    for (let depth = 0; depth < 5 && current !== null && current !== undefined; depth += 1) {
+      messages.push(current instanceof Error ? current.message : String(current));
+      current = typeof current === "object" && "cause" in current
+        ? (current as { cause?: unknown }).cause
+        : undefined;
+    }
+    firstFailure = messages.join(" ← ");
+  }
+
+  await sql.unsafe(`DROP TRIGGER IF EXISTS ${testTrigger} ON public.companion_daily_summaries`);
+  await sql.unsafe(`DROP FUNCTION IF EXISTS ${testFunction}()`);
+  await sql.unsafe(`DROP SEQUENCE IF EXISTS ${testSequence}`);
+
+  assert.match(firstFailure ?? "", /test-only: first diary publish fails/);
+  const beforeResume = await readInScope(scope(), (tx) => tx`
+    SELECT task_id, created_at::text AS created_at
+    FROM companion_diary_generation_checkpoints
+    WHERE job_id = ${jobId}
+    ORDER BY task_id`);
+  assert.deepEqual(beforeResume.map((row) => row.task_id), ["companion_diary_draft", "companion_diary_selection"]);
+
+  await runCompanionDailySummary(job);
+  const [diary] = await readInScope(scope(), (tx) => tx`
+    SELECT status, selection_reason, summary
+    FROM companion_daily_summaries
+    WHERE workspace_id = ${workspaceId} AND user_id = ${userId} AND date = ${date}`);
+  assert.equal(diary?.status, "generated");
+  assert.equal(diary?.selection_reason, "这段把一起核对的过程留了下来。");
+  assert.ok(diary?.summary?.length > 0);
+
+  const afterResume = await readInScope(scope(), (tx) => tx`
+    SELECT task_id, created_at::text AS created_at
+    FROM companion_diary_generation_checkpoints
+    WHERE job_id = ${jobId}
+    ORDER BY task_id`);
+  assert.deepEqual(afterResume, beforeResume,
+    "重试改写了检查点时间，说明至少有一阶段重新调用了模型而非复用已保存产物");
 });
 
 test("§6b · 租约对不上时，失败**在入口就说得出**，不是跑了一半才炸", async () => {

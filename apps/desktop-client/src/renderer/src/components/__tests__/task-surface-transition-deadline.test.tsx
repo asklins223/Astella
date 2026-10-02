@@ -16,6 +16,8 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../surfaces/study/search-surface.tsx", () => ({ SearchSurface: () => <div className="content search-field"><input aria-label="搜索" /></div> }));
+
 vi.mock("gsap", async (importOriginal) => {
   const actual = await importOriginal<typeof import("gsap")>();
   // 一条"起得来、走不动"的时间线：链式方法都在，onComplete 永不触发。
@@ -82,6 +84,38 @@ afterEach(() => {
 });
 
 describe("任务区过渡（审计 F26）", () => {
+  it("快速换页和退场中重新打开都跟随最新目标，焦点无需等待动效", async () => {
+    vi.useFakeTimers();
+    render(<TaskSurface />);
+    await act(async () => { useRoomStore.setState({ surface: "search", scenePhase: "focusing" }); });
+    expect(document.querySelector(".task-surface")?.getAttribute("data-surface")).toBe("search");
+    await act(async () => { await vi.advanceTimersByTimeAsync(32); });
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("搜索");
+    expect(transition()).toBe("entering");
+    await act(async () => { useRoomStore.setState({ surface: null }); });
+    expect(transition()).toBe("leaving");
+    await act(async () => { useRoomStore.setState({ surface: "review" }); });
+    await act(async () => { useRoomStore.setState({ surface: "search" }); });
+    expect(document.querySelector(".task-surface")?.getAttribute("data-surface")).toBe("search");
+    expect(document.querySelector(".task-surface")?.hasAttribute("inert")).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+    expect(transition()).toBe("entered");
+    expect(document.querySelector(".task-surface")?.getAttribute("data-surface")).toBe("search");
+  });
+
+  it.each([{ motionMode: "off" as const, reducedMotion: false }, { motionMode: "full" as const, reducedMotion: true }])(
+    "Off 或系统减少动态下当次提交即可操作",
+    async (preference) => {
+      vi.useFakeTimers();
+      useRoomStore.setState(preference);
+      render(<TaskSurface />);
+      await act(async () => { useRoomStore.setState({ surface: "search" }); });
+      expect(transition()).toBe("entered");
+      expect(document.querySelector(".task-surface")?.hasAttribute("inert")).toBe(false);
+      await act(async () => { useRoomStore.setState({ surface: null }); });
+      expect(document.querySelector(".task-surface")).toBeNull();
+    },
+  );
   it("时间线永不回调时，墙钟兜底仍把状态推进到 entered", async () => {
     vi.useFakeTimers();
     render(<TaskSurface />);
@@ -103,7 +137,7 @@ describe("任务区过渡（审计 F26）", () => {
     expect((section as HTMLElement | null)?.hasAttribute("inert")).toBe(false);
   });
 
-  it("切到下一条任务：退场也走同一个兜底，不会停在 leaving", async () => {
+  it("切到下一条任务立即挂载目标；停住的旧动画不阻塞新页面", async () => {
     vi.useFakeTimers();
     render(<TaskSurface />);
 
@@ -114,15 +148,16 @@ describe("任务区过渡（审计 F26）", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
     expect(transition()).toBe("entered");
 
-    // 换成另一个面：旧面开始退场。直接改状态——`invoke` 在作答中会先过导航守卫
+    // 换成另一个面：目标当次提交就可用。直接改状态——`invoke` 在作答中会先过导航守卫
     // （那是 F38b 那条链），这里要测的是过渡本身。
     await act(async () => { useRoomStore.setState({ surface: "review" }); });
-    expect(transition()).toBe("leaving");
+    expect(document.querySelector(".task-surface")?.getAttribute("data-surface")).toBe("review");
+    expect(transition()).toBe("entering");
+    expect(document.querySelector(".task-surface")?.hasAttribute("inert")).toBe(false);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
 
-    // 退场回调没来，但兜底把它推到了下一个面的进场（而不是永远 leaving）。
-    expect(transition()).not.toBe("leaving");
+    expect(transition()).toBe("entered");
     expect(document.querySelector(".task-surface")?.getAttribute("aria-hidden")).toBeNull();
   });
 });

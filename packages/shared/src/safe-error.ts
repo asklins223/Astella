@@ -7,6 +7,26 @@
  *
  * This module deliberately keeps only a coarse category, a bounded error
  * class name, and an optional machine-readable code.
+ *
+ * ## 开发期例外（diag）
+ *
+ * 上述约束在**生产环境**无条件成立。开发期是一个**有意的、窄的例外**：
+ * {@link safeErrorSerializer} 会附带一个 `diag` 字段（message + stack），
+ * 门控是 `NODE_ENV === "development"` —— 必须是**恰好**这个值，而不是
+ * `!== "production"`。
+ *
+ * 为什么用正向门控：漏设 `NODE_ENV` 的预发/临时环境因此**不会**泄漏，
+ * 而 `!== "production"` 在那种环境里恰好会泄漏。宁可漏掉诊断，不可漏掉脱敏。
+ *
+ * 先例：worker 的 ARCH-04（`workers/ai-worker/src/index.ts`）早就是这么做的，
+ * 这里只是把同一个决定推广到 API 与共用序列化器，让两边口径一致。
+ *
+ * 这个例外的代价要说清楚：**开发期日志可能含用户数据**。它换来的东西是
+ * 5xx 不再是一句无法定位的 `RangeError`——2026-09-30 一次栈溢出 5xx 就是
+ * 因为只印 `category/name/code`，排查必须临时插桩才能拿到堆栈。
+ *
+ * 持久化路径（{@link sanitizeOperationalError} / {@link safeErrorMessage}）
+ * **不受**此例外影响，永远不带 `diag`。
  */
 
 export type OperationalErrorCategory =
@@ -26,6 +46,21 @@ export interface SanitizedOperationalError {
   name: string;
   code: string | null;
 }
+
+/** 开发期诊断内容。**只在 `NODE_ENV === "development"` 下产生。** */
+export interface DevErrorDiagnostics {
+  message: string;
+  stack: string;
+}
+
+/** 序列化器返回值 = 脱敏投影 + 可选的开发期诊断。 */
+export type SerializedOperationalError =
+  & SanitizedOperationalError
+  & { diag?: DevErrorDiagnostics };
+
+/** 诊断字段的长度上限：日志不该被一个超长堆栈撑爆，但仍要够读。 */
+const DIAG_MESSAGE_LIMIT = 512;
+const DIAG_STACK_LIMIT = 4_096;
 
 const SAFE_ERROR_PREFIX = "operational_error";
 const SAFE_ERROR_MESSAGE_PATTERN =
@@ -154,8 +189,48 @@ export function safeErrorMessage(value: unknown): string {
 }
 
 /**
- * Pino serializer for every top-level error-shaped field.
+ * 开发期诊断：把原始 message 与堆栈取出来并**限长**。
+ *
+ * 单独成函数是为了让"是否产生诊断"这件事只有一处判定（下面的
+ * {@link DEV_DIAGNOSTICS_ENABLED}），调用点无从绕过。
  */
-export function safeErrorSerializer(value: unknown): SanitizedOperationalError {
-  return sanitizeOperationalError(value);
+function devDiagnostics(value: unknown): DevErrorDiagnostics | undefined {
+  if (process.env.NODE_ENV !== "development") return undefined;
+  if (value instanceof Error) {
+    const cause = "cause" in value && value.cause instanceof Error
+      ? `\nCaused by: ${value.cause.name}: ${value.cause.message}`
+      : "";
+    return {
+      message: value.message.slice(0, DIAG_MESSAGE_LIMIT),
+      stack: `${value.stack ?? `${value.name}: ${value.message}`}${cause}`.slice(0, DIAG_STACK_LIMIT),
+    };
+  }
+  if (typeof value === "string") {
+    return { message: value.slice(0, DIAG_MESSAGE_LIMIT), stack: "" };
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const message = typeof record.message === "string" ? record.message : "";
+    const stack = typeof record.stack === "string" ? record.stack : "";
+    if (message === "" && stack === "") return undefined;
+    return {
+      message: message.slice(0, DIAG_MESSAGE_LIMIT),
+      stack: stack.slice(0, DIAG_STACK_LIMIT),
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Pino serializer for every top-level error-shaped field.
+ *
+ * 唯一的脱敏例外出口：开发期附带 `diag`（见文件头「开发期例外」）。
+ * 生产与非开发环境返回值与 {@link sanitizeOperationalError} **逐字节相同**。
+ */
+export function safeErrorSerializer(value: unknown): SerializedOperationalError {
+  const sanitized = sanitizeOperationalError(value);
+  const diag = devDiagnostics(value);
+  // 注意：诊断为 undefined 时**不写这个键**，而不是写 `diag: undefined`——
+  // 后者会让 `assert.deepEqual` 形状断言在开发环境下平白变红。
+  return diag === undefined ? sanitized : { ...sanitized, diag };
 }

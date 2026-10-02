@@ -173,7 +173,7 @@ describe("NoteLibrarySurface · 边界与多数据", () => {
     const openCard = await screen.findByRole("button", { name: /打开笔记：笔记一/ });
     fireEvent.click(openCard);
     expect(useRoomStore.getState().activeNoteRef).toMatchObject({
-      noteId: "n1", noteVersionId: "n1-v1", mode: "read",
+      noteId: "n1", noteVersionId: "n1-v1", mode: "preview",
     });
 
     cleanup();
@@ -182,7 +182,7 @@ describe("NoteLibrarySurface · 边界与多数据", () => {
     render(<NoteLibrarySurface />);
     await screen.findByRole("button", { name: /打开笔记：笔记一/ });
     fireEvent.click(screen.getByRole("button", { name: "打开笔记" }));
-    expect(useRoomStore.getState().activeNoteRef).toMatchObject({ noteId: "n1", mode: "read" });
+    expect(useRoomStore.getState().activeNoteRef).toMatchObject({ noteId: "n1", mode: "preview" });
   });
 
   it("最近在读的主卡不在书封重复，伴星读到的也是当前书架", async () => {

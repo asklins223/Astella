@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="480" viewBox="0 0 760 480" role="img" aria-labelledby="title desc">
+  <title id="title">Query、Key 与 Value 的示意图</title>
+  <desc id="desc">Query 与三个 Key 比较相关程度，按 0.6、0.3、0.1 的示例权重汇总 Value。数字仅用于图示。</desc>
+  <rect width="760" height="480" rx="26" fill="#fff2cf"/>
+  <g font-family="system-ui, sans-serif" fill="#30231a">
+    <text x="36" y="49" font-size="26" font-weight="700">把有关的内容，放得更近一点</text>
+    <text x="36" y="82" font-size="16" fill="#705d4d">注意力机制 · 本地示例图，非真实模型输出</text>
+    <rect x="35" y="174" width="175" height="104" rx="22" fill="#99cad4" stroke="#fff9eb" stroke-width="6"/>
+    <text x="62" y="214" font-size="23" font-weight="700">Query</text><text x="62" y="246" font-size="17">我想找什么？</text>
+    <g fill="none" stroke="#66816a" stroke-linecap="round"><path d="M213 226 C270 226 256 146 303 146" stroke-width="9"/><path d="M213 226 H303" stroke-width="6"/><path d="M213 226 C270 226 258 314 303 314" stroke-width="3"/></g>
+    <g fill="#e8d4b1" stroke="#fff9eb" stroke-width="5"><rect x="306" y="116" width="188" height="63" rx="15"/><rect x="306" y="201" width="188" height="63" rx="15"/><rect x="306" y="286" width="188" height="63" rx="15"/></g>
+    <g font-size="19" font-weight="700"><text x="326" y="156">Key A · 0.6</text><text x="326" y="241">Key B · 0.3</text><text x="326" y="326">Key C · 0.1</text></g>
+    <g fill="none" stroke="#b59855" stroke-width="4"><path d="M496 146 Q551 146 549 216"/><path d="M496 231 H550"/><path d="M496 316 Q551 316 549 246"/></g>
+    <rect x="554" y="180" width="170" height="104" rx="22" fill="#b9d3ad" stroke="#fff9eb" stroke-width="6"/>
+    <text x="578" y="220" font-size="23" font-weight="700">Value</text><text x="578" y="250" font-size="17">按权重汇总</text>
+    <path d="M42 389 H712" stroke="#705d4d" stroke-opacity=".22"/>
+    <text x="42" y="425" font-size="18">线越粗，贡献越大；内容仍然一起参与结果。</text>
+    <text x="42" y="453" font-size="14" fill="#705d4d">示例权重仅帮助理解，不代表实际计算。</text>
+  </g>
+</svg>

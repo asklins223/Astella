@@ -275,7 +275,42 @@ export async function listInbox(
     // P1-17：此前 `Math.min(input.limit, 100)`——`input.limit` 为 undefined 时
     // 得到 NaN（min(undefined,100) === NaN），没有下界。
     .limit(clampLimit(input.limit));
-  return rows.map(toContract);
+  return dropStaleAmbientOnResume(rows, new Date());
+}
+
+/**
+ * 40 §8.2：从专注或离线状态恢复后，**普通招呼、过时感想和日记更新气泡直接丢弃**，
+ * 不形成消息债务。
+ *
+ * ## 为什么在这里丢，而不是让客户端自己判断
+ *
+ * 因为「离开多久算过时」只有**服务端**算得准：客户端的时钟、时区、休眠都不确定。
+ * 更要紧的是——如果只是不显示，那些消息仍然**占着 inboxSequence**，用户翻历史
+ * 时还会看到它们，而「不形成消息债务」要求的是它们从这一轮里消失。
+ *
+ * ## 为什么约定提醒**不能**丢
+ *
+ * 它有时间语义：一条 09:00 的提醒，用户下午回来仍然该看见。丢掉它等于
+ * 「提醒不准」——那是比多弹一条严重得多的错。
+ */
+function dropStaleAmbientOnResume(
+  rows: (typeof assistantDeliveries.$inferSelect)[],
+  now: Date,
+): AssistantDeliveryV2[] {
+  const { evaluateStaleAfterResume } = require("@ailearn/shared/companion-proactive-quota") as
+    typeof import("@ailearn/shared/companion-proactive-quota");
+  const ageMs = (createdAt: Date): number => now.getTime() - new Date(createdAt).getTime();
+  // delivery 侧不存"这是哪一类主动消息"，所以按**有没有文案**分：
+  // 带 text 的是她"自己想开口"的那一类（普通招呼/过时感想/日记更新），
+  // 不带的是约定提醒与学习完成这类触发式投递。
+  return rows
+    .filter((row) => {
+      const payload = (row.payloadRef ?? {}) as { text?: unknown };
+      const hasText = typeof payload.text === "string" && payload.text.length > 0;
+      if (!hasText) return true;
+      return evaluateStaleAfterResume({ kind: "ambient", ageMs: ageMs(row.createdAt), arrangementStillValid: true }).keep;
+    })
+    .map(toContract);
 }
 
 /**

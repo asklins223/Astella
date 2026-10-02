@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ApiTransaction } from "../../../../db/client.ts";
-import { confirmMemory, deleteMemory, dismissMemory, type MemoryScope } from "../memory-service.ts";
+import { clearMemories, confirmMemory, deleteMemory, dismissMemory, type MemoryScope } from "../memory-service.ts";
 
 const MEMORY_ID = "11111111-1111-4111-8111-111111111111";
 const scope: MemoryScope = {
@@ -29,6 +29,11 @@ function memoryRow() {
     content: "习惯晚上学习",
     sourceEventId: null,
     sourceSessionId: null,
+    sourceSpeaker: null,
+    sourceBasis: null,
+    appliesWhen: null,
+    validFrom: null,
+    validUntil: null,
     userStated: false,
     userConfirmed: false,
     candidate: true,
@@ -56,26 +61,35 @@ function fakeExecutor(
   returnQueue: Array<Array<Record<string, unknown>>> = [],
 ) {
   const updates: Array<Record<string, unknown>> = [];
+  const inserts: Array<Record<string, unknown>> = [];
   /** 随事务发的 NOTIFY 就计在这里：结完账必须唤醒别的设备，没结账就不许发。 */
   const executes: string[] = [];
+  const operations: string[] = [];
   let selectIndex = 0;
   let returnIndex = 0;
-  const chain = (pendingSet?: Record<string, unknown>): any => ({
-    from: () => chain(pendingSet),
-    where: () => chain(pendingSet),
-    limit: () => chain(pendingSet),
-    orderBy: () => chain(pendingSet),
-    for: () => chain(pendingSet),
+  const chain = (pendingSet?: Record<string, unknown>, write = false): any => ({
+    from: () => chain(pendingSet, write),
+    where: () => chain(pendingSet, write),
+    limit: () => chain(pendingSet, write),
+    orderBy: () => chain(pendingSet, write),
+    for: () => chain(pendingSet, write),
     set: (value: Record<string, unknown>) => {
       updates.push(value);
-      return chain(value);
+      operations.push("update");
+      return chain(value, true);
     },
+    values: (value: Record<string, unknown>) => {
+      inserts.push(value);
+      operations.push("insert");
+      return chain(pendingSet, true);
+    },
+    onConflictDoNothing: () => chain(pendingSet, true),
     returning: () => Promise.resolve(returnQueue[returnIndex++] ?? (isDeliveryWrite(pendingSet) ? [] : [memoryRow()])),
     get: () => chain(pendingSet),
     // 写语句被 await 时不占读队列的槽：`update().set().where()` 也是 thenable，
     // 替它消费一次就会把后面的回读错位（第一次跑就是这样，报的是 `updated[0]` undefined）。
     then: (onOk: (v: unknown) => unknown, onErr: (e: unknown) => unknown) =>
-      (pendingSet === undefined
+      (!write
         ? Promise.resolve(selectQueues[selectIndex++] ?? [])
         : Promise.resolve([])
       ).then(onOk, onErr),
@@ -89,10 +103,11 @@ function fakeExecutor(
     delete: () => chain(),
     execute: () => {
       executes.push("execute");
+      operations.push("execute");
       return Promise.resolve([]);
     },
   });
-  return { executor: root as unknown as ApiTransaction, updates, executes };
+  return { executor: root as unknown as ApiTransaction, updates, inserts, executes, operations };
 }
 
 function isDeliveryWrite(set: Record<string, unknown> | undefined): boolean {
@@ -127,11 +142,29 @@ describe("记忆动作要把对应的候选交付结账", () => {
   });
 
   it("删除记忆（纠正路径经由它）→ 交付不能继续排着", async () => {
-    const { executor, updates } = fakeExecutor([], [[{ id: MEMORY_ID }], [{ id: "delivery-1" }]]);
+    const { executor, updates } = fakeExecutor([], [[
+      { id: MEMORY_ID, kind: "preference", sourceEventId: null },
+    ], [{ id: "delivery-1" }]]);
     await deleteMemory(executor, scope, MEMORY_ID);
     const closed = deliveryWrites(updates);
     assert.equal(closed.length, 1);
     assert.equal(closed[0]?.state, "dismissed");
+  });
+
+  it("删除带来源的记忆 → 同事务写入来源抑制墓碑", async () => {
+    const sourceEventId = "00000000-0000-4000-8000-000000000011";
+    const { executor, inserts } = fakeExecutor([], [[
+      { id: MEMORY_ID, kind: "goal", sourceEventId },
+    ], [{ id: "delivery-1" }]]);
+    await deleteMemory(executor, scope, MEMORY_ID);
+    assert.deepEqual(inserts, [{ userId: scope.userId, kind: "goal", sourceEventId }]);
+  });
+
+  it("一键清空在软删除前记录来源抑制，并与自动抽取共用用户锁", async () => {
+    const { executor, executes, operations } = fakeExecutor([], [[{ id: MEMORY_ID }]]);
+    assert.equal(await clearMemories(executor, scope), 1);
+    assert.equal(executes.length, 2, "需要先取记忆写锁，再写入抑制墓碑");
+    assert.deepEqual(operations, ["execute", "execute", "update"], "抑制写入必须先于软删除");
   });
 
   it("记忆不在这个空间/本人时不结账：也不能顺带唤醒别的设备", async () => {

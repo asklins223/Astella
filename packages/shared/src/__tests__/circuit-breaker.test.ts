@@ -194,14 +194,33 @@ test("拒绝观察者只在真的挡住请求时触发，并区分 open / half_o
   }
 });
 
-test("拒绝观察者自己抛异常时不影响熔断本身（埋点失败≠熔断失灵）", () => {
-  const { breaker } = breakerWith();
+test("拒绝观察者异常不影响熔断，并留下可读健康状态", () => {
+  const { breaker, clock } = breakerWith();
   breaker.setRejectObserver(() => {
     throw new Error("metrics registry is on fire");
   });
   for (let i = 0; i < 3; i += 1) breaker.recordFailure("api.example.com");
   // 该抛的仍然是 CircuitOpenError，而不是埋点那个错
   assert.throws(() => breaker.assertCanAttempt("api.example.com"), CircuitOpenError);
+  assert.deepEqual(breaker.rejectObserverHealth(), {
+    installed: true,
+    healthy: false,
+    failuresTotal: 1,
+    consecutiveFailures: 1,
+    lastFailureAt: 1_000,
+  });
+
+  breaker.setRejectObserver(() => undefined);
+  assert.throws(() => breaker.assertCanAttempt("api.example.com"), CircuitOpenError);
+  assert.deepEqual(breaker.rejectObserverHealth(), {
+    installed: true,
+    healthy: true,
+    failuresTotal: 1,
+    consecutiveFailures: 0,
+    lastFailureAt: 1_000,
+  });
+  clock.advance(10);
+  assert.equal(breaker.rejectObserverHealth().lastFailureAt, 1_000);
 });
 
 test("摘掉观察者后不再触发", () => {

@@ -39,9 +39,9 @@ import {
  * 1. **文案只用 `safeLabel`**（收敛层已经保证），这里不合成描述。
  * 2. **不做表演**：状态点只在 `running` 呼吸、`waiting_confirmation` 脉冲；其余是静态
  *    的落定态。方案 §5 明确不做第二层打字机、不做循环旋转光晕。
- * 3. **收不收由回合状态决定，退场由气泡决定**：`assistant.final` 后 400ms 收成一行摘要；
+ * 3. **收不收由回合状态决定，退场由交互生命周期决定**：`assistant.final` 后 400ms 收成一行摘要；
  *    用户按停止保留 2s（让他看见"停在这里"）；出错**不自动收**——错误必须被看见。
- *    收起 ≠ 消失，而**消失这里不决定**：判据只有一份，见 `companionAgentRailVisible`。
+ *    用户能展开全部节点；宿主在完成后有限展示，不与回复气泡的退场耦合。
  */
 
 /** 本 run 的真实消耗。来自 `companion_turn_runs`，不是客户端数事件数出来的。 */
@@ -53,21 +53,6 @@ export interface CompanionAgentRailProgress {
 }
 
 export type CompanionAgentRailTurnState = "running" | "done" | "stopped" | "failed";
-
-/**
- * 轨道在不在，只有一个判据：**这一轮调用过工具**，并且**此刻头顶有消息气泡**。
- *
- * 第二个条件是 2026-09-22 补的：轨道以前自己计时退场（轮结束 + 5.4s），而气泡要等朗读
- * 露完再停留，两条时间线互不知情——气泡还说着话轨道就没了；而 `stopped`/`failed` 两个
- * 分支压根没设退场计时，那行摘要从此永久挂在头顶（停止之后气泡早就收了，轨道还在）。
- * 过程留痕本来就在历史抽屉里，头顶这一条的寿命就该等于气泡的寿命。
- */
-export function companionAgentRailVisible(
-  nodes: CompanionAgentNodes,
-  bubblePresent: boolean,
-): boolean {
-  return bubblePresent && nodes.some((node) => node.kind === "tool");
-}
 
 /**
  * 工具名 → 图标。方案 §1 要求「按工具名映射（打开卡片/复习/星图等）」。
@@ -98,10 +83,10 @@ function nodeIcon(node: CompanionAgentNode): LucideIcon {
   return (node.toolName ? TOOL_ICONS[node.toolName] : undefined) ?? Wrench;
 }
 
-/** 状态点：五档视觉，与方案 §1 的表一一对应。 */
+/** 状态点：结果不明与失败分开提示，其余终态按方案 §1 的表呈现。 */
 function nodeMark(node: CompanionAgentNode) {
   if (node.state === "succeeded") return <Check size={13} aria-hidden="true" />;
-  if (node.state === "failed") return <TriangleAlert size={13} aria-hidden="true" />;
+  if (node.state === "failed" || node.state === "outcome_unknown") return <TriangleAlert size={13} aria-hidden="true" />;
   if (node.state === "cancelled") return <X size={13} aria-hidden="true" />;
   return <CircleDashed size={13} aria-hidden="true" />;
 }
@@ -110,13 +95,14 @@ function progressText(
   progress: CompanionAgentRailProgress | null,
   toolCalls: number,
   turnState: CompanionAgentRailTurnState,
+  hasUnknownOutcome: boolean,
 ): string {
   // 步数只在拿到**本 run** 的摘要时才说。`assistant.status` 一轮只发一次，客户端数不出
   // 步数——与其猜一个数字，不如先只说工具次数，摘要到了再补上步数。
   const steps = progress ? `${progress.stepCount}/${progress.maxSteps} 步` : null;
   const tools = progress ? `${toolCalls}/${progress.maxToolCalls} 次工具` : `${toolCalls} 次工具`;
+  if (hasUnknownOutcome) return steps ? `结果待核对 · ${steps} · ${tools}` : `结果待核对 · ${tools}`;
   // 失败必须被**读**出来，不能只靠边框变红（`companion-hud.css:599`）：矮窗口下
-  // `folded = collapsed || tight` 会把出错那一轮也塌成摘要行，届时连"红"都没有了
   // （方案 35 F4）。用词跟记录里那句「这一轮没能说完」同一口径。
   if (turnState === "failed") return steps ? `没说完 · ${steps} · ${tools}` : `没说完 · ${tools}`;
   if (turnState === "stopped") return steps ? `已停止 · ${steps} · ${tools}` : `已停止 · ${tools}`;
@@ -128,24 +114,17 @@ export function CompanionAgentRail({
   progress,
   turnState,
   companionName,
-  tight = false,
-  leaving = false,
+  onActivity,
 }: {
   readonly nodes: CompanionAgentNodes;
   readonly progress: CompanionAgentRailProgress | null;
   readonly turnState: CompanionAgentRailTurnState;
   /** 她对自己的称呼：轨道的 aria-label 用，不再写死模型名。 */
   readonly companionName: string;
-  /**
-   * 头顶的垂直预算已经不够放「展开态轨道 + 气泡下限」了（判据见 `CompanionHud.tsx` 的
-   * 实测 effect）。此时只剩摘要行：轨道越出窗口比"少了三行过程"更糟，而摘要行本来就带
-   * 步数与工具次数，信息不丢。
-   */
-  readonly tight?: boolean;
-  /** 消息气泡正在退场：轨道同拍淡出，不留在原地等下一帧。 */
-  readonly leaving?: boolean;
+  readonly onActivity?: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   /**
    * 收起时机。`final` 后 400ms 收（让最后一步的落定被看见），停止后 2s 收
@@ -156,6 +135,7 @@ export function CompanionAgentRail({
   useEffect(() => {
     if (turnState === "running" || turnState === "failed") {
       setCollapsed(false);
+      setExpanded(false);
       return;
     }
     if (turnState === "stopped") {
@@ -168,25 +148,37 @@ export function CompanionAgentRail({
 
   if (nodes.length === 0) return null;
 
-  const folded = collapsed || tight;
-  const { hiddenCount, visible } = visibleAgentNodes(nodes);
+  const folded = collapsed && !expanded;
+  const recent = visibleAgentNodes(nodes);
+  const visible = expanded ? nodes : recent.visible;
+  const hiddenCount = expanded ? 0 : recent.hiddenCount;
   // 工具次数取「摘要」与「本轮节点去重计数」的较大者：摘要是权威值但它按轮询节奏到，
   // 节点是即时的。两者同口径（都是去重后的 toolCallId 个数），取大不会虚报。
   const toolCalls = Math.max(progress?.toolCallCount ?? 0, countAgentToolCalls(nodes));
+  const hasUnknownOutcome = nodes.some((node) => node.state === "outcome_unknown");
 
   return (
     <div
       className="companion-hud__rail"
       data-turn={turnState}
       data-collapsed={folded || undefined}
-      data-tight={tight || undefined}
-      data-leaving={leaving || undefined}
+      data-expanded={expanded || undefined}
+      onPointerMove={onActivity}
+      onWheel={onActivity}
+      onKeyDown={onActivity}
+      onFocus={onActivity}
       role="status"
       aria-live="polite"
       aria-label={`${companionName} 正在做的事`}
     >
+      <header className="companion-hud__rail-heading">
+        <strong><Wrench size={13} aria-hidden="true" />工具过程</strong>
+        <button type="button" className="text-action" aria-expanded={expanded} onClick={() => { onActivity?.(); setExpanded(value => !value); }}>
+          {expanded ? "收起过程" : "查看过程"}
+        </button>
+      </header>
       {folded ? (
-        <p className="companion-hud__rail-summary">{progressText(progress, toolCalls, turnState)}</p>
+        <p className="companion-hud__rail-summary">{progressText(progress, toolCalls, turnState, hasUnknownOutcome)}</p>
       ) : (
         <ol
           className="companion-hud__rail-steps"
@@ -198,15 +190,17 @@ export function CompanionAgentRail({
             return (
               <li key={node.key} data-state={node.state} data-kind={node.kind} title={node.summary ?? undefined}>
                 <span className="companion-hud__rail-icon"><Icon size={13} aria-hidden="true" /></span>
-                <span className="companion-hud__rail-label">{nodeLabel(node)}</span>
+                <span className="companion-hud__rail-label">
+                  {nodeLabel(node)}{node.state === "outcome_unknown" ? " · 结果待核对" : ""}
+                </span>
                 <span className="companion-hud__rail-mark">{nodeMark(node)}</span>
               </li>
             );
           })}
         </ol>
       )}
-      {!folded && turnState !== "failed" ? (
-        <p className="companion-hud__rail-summary">{progressText(progress, toolCalls, turnState)}</p>
+      {!folded ? (
+        <p className="companion-hud__rail-summary">{progressText(progress, toolCalls, turnState, hasUnknownOutcome)}</p>
       ) : null}
     </div>
   );

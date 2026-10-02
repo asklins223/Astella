@@ -632,7 +632,7 @@ describe("ReviewSurface · card state", () => {
     expect(useRoomStore.getState().activeNoteRef).toEqual({
       noteId: IMPACTED_NOTE_ID,
       noteVersionId: IMPACTED_NOTE_VERSION_ID,
-      mode: "read",
+      mode: "preview",
     });
     expect(invoke).toHaveBeenCalledWith("open-notebook");
   });

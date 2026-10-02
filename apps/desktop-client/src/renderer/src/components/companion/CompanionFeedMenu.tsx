@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Copy, Send } from "lucide-react";
 import { hasOpenModal, isEditableTarget, isSourceCaptureTarget } from "../../app/source-intake";
+import { copyText } from "../../app/clipboard";
 import {
   COMPANION_FEED_MAX_CHARS,
   feedSelectionToCompanion,
@@ -141,8 +142,7 @@ export function CompanionFeedMenu() {
         onClick={() => {
           void (async () => {
             try {
-              if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(menu.fullText);
-              else if (!document.execCommand("copy")) throw new Error("copy unavailable");
+              if (!await copyText(menu.fullText)) throw new Error("copy unavailable");
               setMenu(null);
               originFocusRef.current?.focus({ preventScroll: true });
             } catch {

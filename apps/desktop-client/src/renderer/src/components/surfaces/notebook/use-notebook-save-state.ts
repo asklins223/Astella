@@ -28,7 +28,6 @@ import { useEffect, useState } from "react";
 export const AUTOSAVE_DELAY_MS = 1_200;
 
 export function useNotebookSaveState(input: {
-  readonly mode: string;
   readonly canSave: boolean;
   readonly dirty: boolean;
   readonly saving: boolean;
@@ -39,19 +38,19 @@ export function useNotebookSaveState(input: {
   readonly saveRef: { current: () => void };
   readonly delayMs?: number;
 }) {
-  const { mode, canSave, dirty, saving, draft, saveRef, delayMs = AUTOSAVE_DELAY_MS } = input;
+  const { canSave, dirty, saving, draft, saveRef, delayMs = AUTOSAVE_DELAY_MS } = input;
 
   const [saveState, setSaveState] = useState<"idle" | "saving" | "committed" | "error">("idle");
   const [saveFailure, setSaveFailure] = useState<string | null>(null);
 
   // Debounced autosave: the save-line reports the server receipt, never a local guess.
   useEffect(() => {
-    if (mode !== "edit" || !canSave || !dirty || saving || saveState === "error") {
+    if (!canSave || !dirty || saving || saveState === "error") {
       return undefined;
     }
     const timer = window.setTimeout(() => { void saveRef.current(); }, delayMs);
     return () => window.clearTimeout(timer);
-  }, [canSave, dirty, mode, saveState, saving, saveRef, delayMs]);
+  }, [canSave, dirty, saveState, saving, saveRef, delayMs]);
 
   // Editing again after a failed save clears the sticky error so autosave can
   // resume. Keyed on the draft object, which only changes on real input — the

@@ -7,12 +7,20 @@
  */
 
 import type { ApiTransaction } from "../../../db/client.ts";
+import { createHash, randomUUID } from "node:crypto";
+import { runAiTask, type AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
+import type { postJsonToPublicEndpoint } from "@ailearn/shared/public-json-http";
 import { resolveAssessmentCriticConfig } from "../../../lib/assessment-critic-config.ts";
 import { sql } from "drizzle-orm";
 import {
   evaluateTriggeredPush,
 } from "@ailearn/shared/companion-proactive-policy";
 import { deliver } from "./delivery-service.ts";
+
+/** §11.5：个性化文案 2s 上界。它同时是内核的 stepTimeout 与 taskDeadline。 */
+const PERSONALIZED_PROACTIVE_TIMEOUT_MS = 2_000;
+const PERSONALIZED_PROACTIVE_TASK_ID = "companion_personalized_proactive_text";
+const PERSONALIZED_PROACTIVE_PROMPT_VERSION = "personalized-proactive-v1";
 
 // PERF-WN: Intl.DateTimeFormat 构造带时区数据，开销可观且每次调用都重建。
 // 按 timezone 记忆化复用；时区来自账号设置（有限 IANA 集合），加容量上限
@@ -39,13 +47,21 @@ export async function flushDeferredProactiveMemoryCandidates(
   try {
     const { generateMemoryCandidates } = await import("./proactive-generator.ts");
     const { upsertMemory } = await import("../memory/memory-service.ts");
-    const { withWorkspaceTransaction } = await import("../../../db/client.ts");
-    const generated = await generateMemoryCandidates({
-      outcome: defer.outcome,
-      trustOutcome: defer.trustOutcome,
-      keyPointClaim: defer.keyPointClaim,
-      scheduleImpact: defer.scheduleImpact,
-    });
+    const { withWorkspaceTransaction, currentApiWorkspaceTransaction } = await import("../../../db/client.ts");
+    const generated = await generateMemoryCandidates(
+      {
+        outcome: defer.outcome,
+        trustOutcome: defer.trustOutcome,
+        keyPointClaim: defer.keyPointClaim,
+        scheduleImpact: defer.scheduleImpact,
+        runId: defer.runId,
+      },
+      // 边界读数用 API 那一份作用域读者：内核会在**发外部请求之前**核一次
+      // 「当前作用域有没有活动事务」，把这发生成钉死在事务外
+      // （本函数整段都在结算事务提交之后跑，正常情况下这道核是恒真的——
+      // 恒真正是它该有的样子：它防的是将来有人把这段搬回事务里）。
+      { ...defer.scope, currentActiveTransaction: currentApiWorkspaceTransaction },
+    );
     if (!generated) return;
     const { scope } = defer;
     // upsert 在独立事务内执行（不再持有结算事务的连接）。
@@ -80,7 +96,7 @@ export async function flushDeferredProactiveMemoryCandidates(
   // 个性化文案覆盖（payload_ref->>'text' 不等于模板文案）来控制频率。
   if (defer.topMemories && defer.topMemories.length > 0) {
     try {
-      const { withWorkspaceTransaction } = await import("../../../db/client.ts");
+      const { withWorkspaceTransaction, currentApiWorkspaceTransaction } = await import("../../../db/client.ts");
       const { sql } = await import("drizzle-orm");
       // §11.5 频率限制：检查最近 24h 是否已有个性化文案（text 被覆盖过）。
       let alreadyPersonalized = false;
@@ -109,12 +125,15 @@ export async function flushDeferredProactiveMemoryCandidates(
           "personalized proactive text skipped: 24h limit reached",
         );
       } else {
-        const personalizedText = await generatePersonalizedProactiveText({
-          runId: defer.runId,
-          topMemories: defer.topMemories,
-          outcome: defer.outcome,
-          keyPointClaim: defer.keyPointClaim,
-        });
+        const personalizedText = await generatePersonalizedProactiveText(
+          {
+            runId: defer.runId,
+            topMemories: defer.topMemories,
+            outcome: defer.outcome,
+            keyPointClaim: defer.keyPointClaim,
+          },
+          { ...defer.scope, currentActiveTransaction: currentApiWorkspaceTransaction },
+        );
         if (personalizedText) {
           // 在独立事务中更新已入队 delivery 的 text 字段。
           await withWorkspaceTransaction(defer.scope, async (tx) => {
@@ -151,13 +170,15 @@ export async function flushDeferredProactiveMemoryCandidates(
  * - 不编造记忆中没有的事实（§10.3.4）；
  * - 生成的文案必须通过安全校验（不泄露内部 ID）；
  * - 失败/超时返回 null，由调用方回退模板文案。
+ *
+ * 2026-10-02：接到 41a 统一内核上（此前是一次自带 2s AbortController 的裸 HTTP）。
+ * 换进来的是任务身份、预算口径与统一失败分类；**2s 这个上界没有变**，
+ * 也不自动重试——文案晚到 4 秒比拿不到更糟，模板文案此刻已经在队列里了。
  */
-async function generatePersonalizedProactiveText(input: {
-  runId: string;
-  topMemories: string[];
-  outcome: string;
-  keyPointClaim: string;
-}): Promise<string | null> {
+async function generatePersonalizedProactiveText(
+  input: { runId: string; topMemories: string[]; outcome: string; keyPointClaim: string },
+  scope: { workspaceId: string; userId: string; currentActiveTransaction: () => unknown },
+): Promise<string | null> {
   // 设计 P0-2（2026-09-15 审计）：收敛到单一解析点（见 lib/assessment-critic-config.ts）。
   // 此前 `?? DASHSCOPE_API_KEY` 在 compose 注入空串时不回退，导致个性化被静默关闭。
   const config = resolveAssessmentCriticConfig();
@@ -184,36 +205,97 @@ async function generatePersonalizedProactiveText(input: {
     memoryBlock,
   ].join("\n");
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2000);
+  const task: AiTaskDefinition<{ url: string; key: string; model: string; prompt: string }, string> = {
+    id: PERSONALIZED_PROACTIVE_TASK_ID,
+    version: 1,
+    mode: "structured",
+    // 模板文案已经入队，这一发只是把更好的那句换上去 ⇒ 维护档，不占交互名额。
+    resourceClass: "maintenance",
+    budget: {
+      maxModelCalls: 1,
+      stepTimeoutMs: PERSONALIZED_PROACTIVE_TIMEOUT_MS,
+      taskDeadlineMs: PERSONALIZED_PROACTIVE_TIMEOUT_MS,
+      maxAutoRetries: 0,
+    },
+    completion: { kind: "structured_parsed" },
+    usageContext: { modelId: model, promptVersion: PERSONALIZED_PROACTIVE_PROMPT_VERSION, resourceClass: "maintenance" },
+    prepare: async () => ({ url, key, model, prompt }),
+    execute: async (prepared, step) => {
+      let response: Awaited<ReturnType<typeof postJsonToPublicEndpoint>>;
+      try {
+        const { postJsonToPublicEndpoint: post } = await import("@ailearn/shared/public-json-http");
+        response = await post(
+          prepared.url,
+          { Authorization: `Bearer ${prepared.key}`, "Content-Type": "application/json" },
+          {
+            model: prepared.model,
+            messages: [
+              { role: "system", content: "你是学习伴星的提醒文案生成器，输出简短自然的中文提醒。" },
+              { role: "user", content: prepared.prompt },
+            ],
+            stream: false,
+          },
+          // 超时由内核的 step.signal 给；这里不再自己挂一个 setTimeout。
+          step.signal,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return step.signal.aborted
+          ? { ok: false as const, class: "timeout" as const, message: `提醒文案生成超时：${message}` }
+          : { ok: false as const, class: "transport" as const, message: `提醒文案生成网络错误：${message}` };
+      }
+      const content = (response.body as { choices?: Array<{ message?: { content?: string } }> })
+        ?.choices?.[0]?.message?.content?.trim();
+      if (!content) return { ok: false as const, class: "output_shape" as const, message: "提醒文案为空" };
+      // 长度与内部 ID 两道校验留在 execute 里：它们是**这一步的完成判据**，
+      // 不是提交后的业务规则。过了这一关的内容才算「模型任务成功」。
+      if (content.length > 200) return { ok: false as const, class: "quality" as const, message: "提醒文案超过长度上限" };
+      if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(content)) {
+        return { ok: false as const, class: "quality" as const, message: "提醒文案疑似泄露内部 ID" };
+      }
+      return { ok: true as const, output: content };
+    },
+    // 恒等提交：那一列 text 的 UPDATE 留在调用方的独立短事务里（它要 dedupe_key）。
+    commit: async (_ctx, _attempt, output) => ({
+      outcome: "committed" as const,
+      output,
+      usage: { modelCalls: 0, promptTokens: 0, completionTokens: 0, elapsedMs: 0, autoRetriesUsed: 0 },
+      failure: null,
+      preservedValidResult: false,
+      resumedFromCheckpoint: false,
+      modelCalls: 0,
+    }),
+  };
+
   try {
-    const { postJsonToPublicEndpoint } = await import("@ailearn/shared/public-json-http");
-    const response = await postJsonToPublicEndpoint(
-      url,
-      {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
+    const receipt = await runAiTask(task, {
+      ctx: {
+        workspaceId: scope.workspaceId,
+        userId: scope.userId,
+        inputSnapshotRef: {
+          kind: "task",
+          id: input.runId,
+          hash: createHash("sha256")
+            .update([input.outcome, input.keyPointClaim.slice(0, 200), ...input.topMemories.slice(0, 3)].join(" "))
+            .digest("hex"),
+        },
+        permissionLevel: "server",
       },
-      {
-        model,
-        messages: [
-          { role: "system", content: "你是学习伴星的提醒文案生成器，输出简短自然的中文提醒。" },
-          { role: "user", content: prompt },
-        ],
-        stream: false,
+      attempt: {
+        taskId: task.id,
+        taskVersion: task.version,
+        attemptId: randomUUID(),
+        leaseToken: `personalized-proactive:${input.runId}`,
+        idempotencyKey: `personalized-proactive:${input.runId}`,
+        workspaceId: scope.workspaceId,
+        userId: scope.userId,
       },
-      controller.signal,
-    );
-    const content = (response.body as { choices?: Array<{ message?: { content?: string } }> })
-      ?.choices?.[0]?.message?.content?.trim();
-    if (!content || content.length > 200) return null;
-    // 安全校验：不泄露内部 ID（uuid 格式）
-    if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(content)) return null;
-    return content;
+      currentActiveTransaction: scope.currentActiveTransaction,
+      reportDevelopmentError: (message) => process.stderr.write(`[dev-error] ${message}\n`),
+    });
+    return receipt.outcome === "committed" ? receipt.output : null;
   } catch {
     return null; // 超时/网络失败回退模板文案
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -240,6 +322,7 @@ export async function hookProactiveOnRunCompleted(
     .select({
       presence: userCompanionAccountState.presence,
       globalEnabled: userCompanionAccountState.globalEnabled,
+      suggestionPause: userCompanionAccountState.suggestionPause,
     })
     .from(userCompanionAccountState)
     .where(eq(userCompanionAccountState.userId, scope.userId))
@@ -250,6 +333,32 @@ export async function hookProactiveOnRunCompleted(
     return null; // 全局关闭：不打扰。
   }
   if (!evaluateTriggeredPush({ availability, expired: false }).allow) return null;
+
+  /**
+   * 40 §8.2：「用户说『今天别催学习』，该本地日不再主动推荐学习；**不会取消
+   * 已授权安排**。」
+   *
+   * 这一条管的是**这里**——「刚跑完，要不要继续」就是主动推荐学习。
+   * 而到点提醒走它自己那条路（`arranged_reminder`），**不受这一条影响**：
+   * 用户约好的事不能被一句「别催」顺手撤掉。
+   *
+   * 放在这里而不是执行器里：这一条是**账号级**的当天决定，与这一轮的内容无关；
+   * 而执行器看不到账号状态，也分不清"她在推学习"与"她在履约"。
+   */
+  const { evaluateLearningNudgePause } = await import("@ailearn/shared/companion-proactive-quota");
+  const pauseVerdict = evaluateLearningNudgePause({
+    pause: accountRows[0]?.suggestionPause as { paused?: boolean; localDate?: string; timezone?: string } | null,
+    now,
+  });
+  if (pauseVerdict.suppressed) {
+    // 记一笔：用户说"别催"之后仍然收到了催学，这就是那条证据。
+    const { logger } = await import("../../../lib/logger.ts");
+    logger.info(
+      { runId: input.runId, suppressedLocalDate: pauseVerdict.suppressedLocalDate, todayLocalDate: pauseVerdict.todayLocalDate },
+      "proactive learning nudge suppressed by local-day pause",
+    );
+    return null;
+  }
 
   // 22 方案 §9.7/§11.5：个性化主动文案。
   // 在事务内只读取记忆快照（不调 LLM，避免钉住连接）；
@@ -264,6 +373,8 @@ export async function hookProactiveOnRunCompleted(
           AND deleted_at IS NULL
           AND candidate = false
           AND archived_at IS NULL
+          AND (valid_from IS NULL OR valid_from <= now())
+          AND (valid_until IS NULL OR valid_until > now())
         ORDER BY pinned DESC, importance DESC, updated_at DESC
         LIMIT 3
       `);

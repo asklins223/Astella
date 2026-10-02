@@ -41,6 +41,7 @@ import {
   type WindowLive2DCharacterMoment,
   type WindowLive2DParameterWrite,
 } from "./window-live2d-contract";
+import { live2DHeadDrawableIndices, projectVisibleLive2DBounds, type Live2DDrawableBox, type Live2DPartHierarchy } from "./companion-visible-bounds";
 
 type DriverStatus = "loading" | "ready" | "failed";
 
@@ -63,6 +64,9 @@ interface PixiPoint {
 interface Live2DCoreModel {
   setParameterValueById?: (parameter: string, value: number, weight?: number) => void;
   getDrawableCount?: () => number;
+  getDrawableOpacity?: (index: number) => number;
+  getDrawableDynamicFlagIsVisible?: (index: number) => boolean;
+  getModel?: () => Live2DPartHierarchy;
   /**
    * 读参数在模型里的真实索引与默认值（道具/整活参数演完要回到"没演"的状态）。
    * pixi-live2d 对模型里不存在的 id 会给一个越界影子索引，默认值读出来是
@@ -83,7 +87,7 @@ interface Live2DInternalModel {
   coreModel?: Live2DCoreModel;
   originalWidth?: number;
   originalHeight?: number;
-  /** Union-able bounds of one drawable, in Cubism canvas units (y-up). */
+  /** Bounds in pixi-live2d canvas pixels (y-down, already converted from Cubism units). */
   getDrawableBounds?: (index: number, out?: Live2DDrawableBounds) => Live2DDrawableBounds;
   /**
    * pixi-live2d-display 的 InternalModel 是 EventEmitter（2026-09-19 口型/表情修复）。
@@ -110,6 +114,7 @@ interface Live2DContentBox {
 }
 
 interface Live2DModel {
+  update?: (deltaMs: number) => void;
   anchor: PixiPoint;
   position: PixiPoint;
   scale: PixiPoint;
@@ -132,8 +137,10 @@ interface PixiApplication {
     resize?: (width: number, height: number) => void;
   };
   ticker?: {
-    add: (callback: () => void) => void;
+    add: (callback: () => void, context?: unknown, priority?: number) => void;
     remove: (callback: () => void) => void;
+    deltaMS?: number;
+    maxFPS?: number;
     start?: () => void;
     stop?: () => void;
   };
@@ -157,7 +164,7 @@ interface PixiGlobal {
     Live2DModel?: {
       from: (
         modelUrl: string,
-        options: { autoInteract: boolean },
+        options: { autoInteract: boolean; autoUpdate: boolean },
       ) => Promise<Live2DModel>;
     };
   };
@@ -334,6 +341,16 @@ export class WindowLive2DDriver {
   /** 随机动作的占用窗口；到点把姿势交还给呈现状态机。 */
   private performanceMotionUntilMs: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
+  private rendererWidth = 0;
+  private rendererHeight = 0;
+
+  // Model time advances on the same private ticker that draws it. A shared
+  // ticker otherwise keeps running while hidden and draws at 144Hz on a
+  // high-refresh display, competing with every page and HUD animation.
+  private readonly advanceModel = (): void => {
+    if (this.disposed || this.paused) return;
+    this.model?.update?.(this.app?.ticker?.deltaMS ?? 1000 / 60);
+  };
   private disposed = false;
   private paused = false;
   private invitePlaying = false;
@@ -344,6 +361,9 @@ export class WindowLive2DDriver {
   private presentation: WindowLive2DPresentation = "idle";
   private framing: WindowLive2DFraming = "full";
   private contentBox: Live2DContentBox | null = null;
+  /** Model-local shape from its first real frame; poses and temporary props never move UI. */
+  private layoutDrawables: readonly Live2DDrawableBox[] | null = null;
+  private layoutHeadDrawables: readonly Live2DDrawableBox[] | null = null;
   private voiceLevel = 0;
   private toolAttentionAtMs: number | null = null;
   /** 穿在身上的道具（眼镜）：换形态/换一副才下来。 */
@@ -433,6 +453,9 @@ export class WindowLive2DDriver {
     if (!this.app || !this.model) return;
     const width = Math.max(1, this.container.clientWidth);
     const height = Math.max(1, this.container.clientHeight);
+    if (width === this.rendererWidth && height === this.rendererHeight) return;
+    this.rendererWidth = width;
+    this.rendererHeight = height;
     // Resize the existing backing surface in place. Recreating the whole
     // Live2D tree on every browser zoom/viewport change produces a transparent
     // loading frame and makes an otherwise continuous move look like a flash.
@@ -490,6 +513,11 @@ export class WindowLive2DDriver {
         return;
       }
       this.app = app;
+      this.rendererWidth = Math.max(1, this.container.clientWidth);
+      this.rendererHeight = Math.max(1, this.container.clientHeight);
+      if (app.ticker) app.ticker.maxFPS = 60;
+      // Pixi's Application render listener has LOW priority (-25).
+      app.ticker?.add(this.advanceModel, this, 50);
 
       const [model, catalog] = await Promise.all([
         this.loadModel(descriptor.model),
@@ -606,6 +634,7 @@ export class WindowLive2DDriver {
 
     const modelPromise = modelFactory.from(resolveBundledAsset(modelUrl), {
       autoInteract: false,
+      autoUpdate: false,
     });
     // A timeout cannot cancel pixi-live2d's internal fetch/decode. If the
     // late promise eventually resolves after disposal, release that model.
@@ -631,6 +660,9 @@ export class WindowLive2DDriver {
     this.model = model;
     this.modelId = modelId;
     this.descriptor = descriptor;
+    this.layoutDrawables = null;
+    this.layoutHeadDrawables = null;
+    for (const edge of ["left", "right", "top", "bottom"]) this.container.style.removeProperty(`--companion-model-head-${edge}`);
     this.catalog = catalog;
     this.performanceRotation = new WindowLive2DPerformanceRotation(catalog.performanceCues);
     this.lastMotionKey = "";
@@ -658,7 +690,7 @@ export class WindowLive2DDriver {
     model.alpha = 1;
     this.app?.stage.addChild(model);
     // 参数写入挂进模型自己的更新周期（见 handleModelUpdate 的说明），
-    // 不再挂 app.ticker——那会和 pixi-live2d 的 motion 更新赛跑。
+    // 私有 ticker 只推进模型时间；参数仍在 motion 更新之后写入。
     model.internalModel?.on?.("beforeModelUpdate", this.handleModelUpdate);
     this.measureContentBox();
     this.fitModel();
@@ -1045,6 +1077,7 @@ export class WindowLive2DDriver {
     window.removeEventListener("resize", this.resizeToContainer);
     window.visualViewport?.removeEventListener("resize", this.resizeToContainer);
     this.model?.internalModel?.off?.("beforeModelUpdate", this.handleModelUpdate);
+    this.app?.ticker?.remove(this.advanceModel);
     this.emotionController.reset();
     this.emotionMotionPlaying = false;
     this.switchToken = null;
@@ -1180,6 +1213,52 @@ export class WindowLive2DDriver {
     this.container.style.setProperty("--companion-model-ink-top", safe.toFixed(4));
   }
 
+  private publishLayoutBounds(): void {
+    const model = this.model;
+    const internal = model?.internalModel;
+    const core = internal?.coreModel;
+    const count = core?.getDrawableCount?.() ?? 0;
+    if (!model || !internal?.getDrawableBounds || !count) return;
+    if (!this.layoutDrawables) {
+      const boxes: Live2DDrawableBox[] = [];
+      const headBoxes: Live2DDrawableBox[] = [];
+      const headIndices = live2DHeadDrawableIndices(core?.getModel?.(), this.descriptor.layoutHeadParts ?? []);
+      for (let index = 0; index < count; index += 1) {
+        if ((core?.getDrawableOpacity?.(index) ?? 1) < .02
+          || core?.getDrawableDynamicFlagIsVisible?.(index) === false) continue;
+        const box = internal.getDrawableBounds(index);
+        if (box.width > 0 && box.height > 0 && [box.x, box.y, box.width, box.height].every(Number.isFinite)) {
+          const fixedBox = { x: box.x, y: box.y, width: box.width, height: box.height };
+          boxes.push(fixedBox);
+          if (headIndices.has(index)) headBoxes.push(fixedBox);
+        }
+      }
+      if (!boxes.length) return;
+      this.layoutDrawables = boxes;
+      this.layoutHeadDrawables = headBoxes;
+    }
+    const width = Math.max(1, this.container.clientWidth);
+    const height = Math.max(1, this.container.clientHeight);
+    // Resize/framing reprojects the original shape, even if the character is
+    // currently nodding, waving or wearing a temporary animated prop.
+    const projection = {
+      width: internal.originalWidth ?? 5_800, height: internal.originalHeight ?? 8_400,
+      scale: model.scale.x, x: model.position.x, y: model.position.y,
+    };
+    for (const [region, boxes] of [["ink", this.layoutDrawables], ["head", this.layoutHeadDrawables]] as const) {
+      const visible = projectVisibleLive2DBounds(boxes ?? [], projection, { width, height });
+      if (!visible) continue;
+      for (const edge of ["left", "right", "top", "bottom"] as const) {
+        const extent = edge === "left" || edge === "right" ? width : height;
+        // Outward rounding preserves a small, fixed clearance around the shape.
+        const round = edge === "left" || edge === "top" ? Math.floor : Math.ceil;
+        const ratio = Math.max(0, Math.min(1, round(visible[edge] / 2) * 2 / extent)).toFixed(4);
+        const key = `--companion-model-${region}-${edge}`;
+        if (this.container.style.getPropertyValue(key) !== ratio) this.container.style.setProperty(key, ratio);
+      }
+    }
+  }
+
   /**
    * Measures the real content box from the model's drawables. Cubism canvases
    * reserve generous transparent margins; without this the framing maths works
@@ -1232,6 +1311,7 @@ export class WindowLive2DDriver {
     if (!this.app) return;
     try {
       this.app.renderer?.render(this.app.stage);
+      this.publishLayoutBounds();
     } catch (error) {
       console.warn("[WindowLive2D] static frame render failed", error);
     }

@@ -14,7 +14,13 @@
 import assert from "node:assert/strict";
 import { describe, it, test } from "node:test";
 import type { ApiTransaction } from "../../../../db/client.ts";
-import { upsertMemory, type MemoryScope } from "../memory-service.ts";
+import {
+  MemoryRevisionConflictError,
+  MemorySourceSuppressedError,
+  correctMemory,
+  upsertMemory,
+  type MemoryScope,
+} from "../memory-service.ts";
 
 type CapturedCall =
   | { op: "insert"; values: Record<string, unknown> }
@@ -31,6 +37,11 @@ function memoryRow(overrides: Record<string, unknown> = {}) {
     content: "习惯晚上学习",
     sourceEventId: null,
     sourceSessionId: null,
+    sourceSpeaker: null,
+    sourceBasis: null,
+    appliesWhen: null,
+    validFrom: null,
+    validUntil: null,
     userStated: true,
     userConfirmed: true,
     candidate: false,
@@ -43,6 +54,10 @@ function memoryRow(overrides: Record<string, unknown> = {}) {
     conflictGroup: null,
     embeddingStatus: "none",
     sourceType: "user_stated",
+    revision: 1,
+    authorType: "user",
+    authorId: "33333333-3333-4333-8333-333333333333",
+    epistemicStatus: "supported",
     globalKey: null,
     createdAt: new Date("2026-09-22T00:00:00.000Z"),
     updatedAt: new Date("2026-09-22T00:00:00.000Z"),
@@ -54,7 +69,10 @@ function memoryRow(overrides: Record<string, unknown> = {}) {
  * 链式查询替身：`select` 按队列给行，`insert`/`update` 把载荷记下来。
  * `execute`（冲突检测那条裸 SQL）一律回"没有相似记忆"，让用例只盯 key 这一件事。
  */
-function fakeExecutor(selectQueues: Array<Array<Record<string, unknown>>>) {
+function fakeExecutor(
+  selectQueues: Array<Array<Record<string, unknown>>>,
+  executeRows: Array<Record<string, unknown>> = [],
+) {
   const calls: CapturedCall[] = [];
   let selectIndex = 0;
   // 插入的载荷要当成"回读到的那一行"还回去：`upsertMemory` 写完立刻用
@@ -70,7 +88,7 @@ function fakeExecutor(selectQueues: Array<Array<Record<string, unknown>>>) {
     // 在这里拿到 undefined——所以必须跟着代码一起长。
     for (const step of [
       "from", "where", "orderBy", "values", "set",
-      "onConflictDoUpdate", "returning", "limit",
+      "onConflictDoUpdate", "onConflictDoNothing", "returning", "limit",
     ]) {
       target[step] = (...args: unknown[]) => {
         if (step === "values") {
@@ -102,9 +120,13 @@ function fakeExecutor(selectQueues: Array<Array<Record<string, unknown>>>) {
     // 更新之后服务会回读那一行：把刚设进去的字段并回最近的行，模拟"库里现在长这样"。
     update: () => chain(() => {
       const base = selectQueues[Math.max(selectIndex - 1, 0)]?.[0] ?? {};
-      return [{ ...base, ...(lastSet ?? {}) }];
+      const updated = { ...base, ...(lastSet ?? {}) };
+      if (lastSet?.content !== undefined && lastSet.content !== base.content) {
+        updated.revision = Number(base.revision ?? 1) + 1;
+      }
+      return [updated];
     }),
-    execute: async () => [],
+    execute: async () => executeRows,
     delete: () => chain(() => []),
   };
   // 交给服务的那一半按 `ApiTransaction` 看，测试这一半还要看得见 `calls`。
@@ -117,7 +139,7 @@ const SCOPE: MemoryScope = {
 };
 
 function insertedValues(calls: CapturedCall[]): Record<string, unknown> {
-  const call = calls.find((c) => c.op === "insert");
+  const call = [...calls].reverse().find((c) => c.op === "insert");
   if (!call || call.op !== "insert") throw new Error("没有走到插入：这一条 global 记忆根本没落笔");
   return call.values;
 }
@@ -149,8 +171,51 @@ describe("global 记忆的 global_key 写入端", () => {
     assert.equal(insertedValues(db.calls).globalKey, null);
   });
 
+  it("自动写入保留已核验来源、适用条件与有效窗口", async () => {
+    const validFrom = new Date("2026-09-30T09:00:00.000Z");
+    const validUntil = new Date("2026-10-15T09:00:00.000Z");
+    const db = fakeExecutor([[]]);
+    await upsertMemory(db, SCOPE, {
+      kind: "goal",
+      content: "在截止前复习完索引",
+      sourceEventId: "message-1",
+      sourceSpeaker: "user",
+      sourceBasis: "direct_statement",
+      appliesWhen: "数据库索引复习",
+      validFrom,
+      validUntil,
+    });
+
+    const values = insertedValues(db.calls);
+    assert.equal(values.sourceSpeaker, "user");
+    assert.equal(values.sourceBasis, "direct_statement");
+    assert.equal(values.appliesWhen, "数据库索引复习");
+    assert.equal(values.validFrom, validFrom);
+    assert.equal(values.validUntil, validUntil);
+  });
+
+  it("用户手动保存省略来源字段时仍标记本人直述", async () => {
+    const db = fakeExecutor([[]]);
+    await upsertMemory(db, SCOPE, {
+      kind: "preference",
+      content: "喜欢在安静环境复习",
+      userStated: true,
+      candidate: false,
+    });
+
+    const values = insertedValues(db.calls);
+    assert.equal(values.sourceSpeaker, "user");
+    assert.equal(values.sourceBasis, "direct_statement");
+  });
+
   it("没有 key 的既有记忆被改成 global：更新时补认领，不能继续留 NULL", async () => {
-    const row = memoryRow({ id: "44444444-4444-4444-8444-444444444444", scope: "workspace" });
+    const row = memoryRow({
+      id: "44444444-4444-4444-8444-444444444444",
+      scope: "workspace",
+      authorType: "extractor",
+      authorId: null,
+      epistemicStatus: "tentative",
+    });
     const db = fakeExecutor([[row], [row]]);
     await upsertMemory(db, SCOPE, {
       kind: "preference",
@@ -164,7 +229,7 @@ describe("global 记忆的 global_key 写入端", () => {
     assert.equal(update.set.globalKey, row.id, "改成 global 却没写 key，这条记忆哪里都去不了");
   });
 
-  it("纠正一条带 key 的记忆：新行必须继承旧 key（换新 key 等于和副本脱钩）", async () => {
+  it("修订保留稳定 ID、来源与跨空间 key，并推进版本和作者", async () => {
     const oldKey = "55555555-5555-4555-8555-555555555555";
     const oldRow = memoryRow({
       id: "66666666-6666-4666-8666-666666666666",
@@ -172,19 +237,83 @@ describe("global 记忆的 global_key 写入端", () => {
       globalKey: oldKey,
       sourceEventId: "event-1",
     });
-    // 队列顺序就是 correctMemory 的读库顺序：
-    // ① getMemory 取旧行 ② 取旧行那一位的 key ③ 删除后回读 ④ upsert 里"同来源事件是否已存在"
-    const db = fakeExecutor([[oldRow], [{ globalKey: oldKey }], [], []]);
-    const { correctMemory } = await import("../memory-service.ts");
+    const db = fakeExecutor([[oldRow]]);
 
-    await correctMemory(db, SCOPE, oldRow.id as string, {
+    const revised = await correctMemory(db, SCOPE, oldRow.id as string, {
       content: "习惯晚上学习，但周末是上午",
+      expectedRevision: 1,
     });
 
-    const inserted = insertedValues(db.calls);
-    assert.equal(inserted.globalKey, oldKey, "纠正后换了 key，其他空间那几份副本就再也对不上了");
-    assert.notEqual(inserted.id, oldKey, "新行用自己的 id（继承的是身份，不是复用主键）");
+    assert.equal(revised?.memoryItemId, oldRow.id, "修订保留同一记忆 ID");
+    assert.equal(revised?.revision, 2, "内容更改推进 CAS 版本");
+    assert.equal(revised?.authorType, "user");
+    assert.equal(revised?.sourceEventId, "event-1", "原始来源不得改写为合成事件");
+    const update = db.calls.find((call) => call.op === "update");
+    assert.ok(update && update.op === "update");
+    assert.equal(update.set.authorId, SCOPE.userId);
+    assert.equal(update.set.sourceEventId, undefined, "修订不重写来源引用");
+    assert.equal(db.calls.some((call) => call.op === "insert"), false, "修订不能复制成第二条活记忆");
   });
+
+  it("修订可改适用条件与有效期，且保留未提交字段", async () => {
+    const oldFrom = new Date("2026-09-20T00:00:00.000Z");
+    const oldUntil = new Date("2026-10-01T00:00:00.000Z");
+    const newUntil = new Date("2026-10-03T00:00:00.000Z");
+    const oldRow = memoryRow({
+      appliesWhen: "平日",
+      validFrom: oldFrom,
+      validUntil: oldUntil,
+    });
+    const db = fakeExecutor([[oldRow]]);
+
+    await correctMemory(db, SCOPE, oldRow.id as string, {
+      content: "工作日复习时先看例子",
+      expectedRevision: 1,
+      appliesWhen: "工作日复习时",
+      validUntil: newUntil,
+    });
+
+    const update = db.calls.find((call) => call.op === "update");
+    assert.ok(update && update.op === "update");
+    assert.equal(update.set.appliesWhen, "工作日复习时");
+    assert.equal((update.set.validFrom as Date).toISOString(), oldFrom.toISOString());
+    assert.equal((update.set.validUntil as Date).toISOString(), newUntil.toISOString());
+  });
+
+  it("expected revision 过期时返回冲突且不写入", async () => {
+    const current = memoryRow({ revision: 3 });
+    const db = fakeExecutor([[current]]);
+    await assert.rejects(
+      correctMemory(db, SCOPE, current.id as string, {
+        content: "旧页面提交的内容",
+        expectedRevision: 2,
+      }),
+      (error: unknown) => error instanceof MemoryRevisionConflictError && error.currentRevision === 3,
+    );
+    assert.equal(db.calls.some((call) => call.op === "update"), false);
+  });
+});
+
+test("自动 upsert 不复活已忘记的来源，用户明确手动保存仍可重新添加", async () => {
+  const sourceEventId = "run.completed:forgotten";
+  const suppressedExecutor = fakeExecutor([[]], [{ suppressed: true }]);
+  await assert.rejects(
+    upsertMemory(suppressedExecutor, SCOPE, {
+      kind: "learning_context",
+      content: "已忘记的自动学习情境",
+      sourceEventId,
+    }),
+    MemorySourceSuppressedError,
+  );
+
+  const explicitExecutor = fakeExecutor([[]], [{ suppressed: true }]);
+  await upsertMemory(explicitExecutor, SCOPE, {
+    kind: "learning_context",
+    content: "用户明确重新添加的学习情境",
+    sourceEventId,
+    userStated: true,
+  });
+  assert.equal(insertedValues(explicitExecutor.calls).content, "用户明确重新添加的学习情境");
 });
 
 test("新建走的是一条原子 upsert，target 逐字复述 partial unique index（P2-11）", async () => {

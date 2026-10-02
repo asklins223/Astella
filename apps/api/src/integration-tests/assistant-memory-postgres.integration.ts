@@ -23,9 +23,11 @@ const sql = postgres(CONN, { max: 2 });
 const { withWorkspaceTransaction, closeDatabase } = await import("../db/client.ts");
 const {
   upsertMemory,
+  correctMemory,
   confirmMemory,
   deleteMemory,
   listMemories,
+  listMemoryRevisions,
 } = await import("../modules/companion-conversation/memory/memory-service.ts");
 const { deliver } = await import("../modules/companion-conversation/delivery/delivery-service.ts");
 const { submitArtifact } = await import(
@@ -132,6 +134,60 @@ test("P8 记忆：upsert 去重 → confirm → softDelete → list 不含候选
       tombstoneDeletedAt = rows[0]?.deleted_at ?? null;
     });
     assert.ok(tombstoneDeletedAt, "soft delete 保留审计");
+  } finally {
+    await seeded.cleanup();
+  }
+});
+
+test("记忆适用条件与有效期写入当前版，并随修订保留在历史版", async () => {
+  const seeded = await seed();
+  try {
+    const scope = { workspaceId: seeded.workspaceId, userId: seeded.userId };
+    const validFrom = new Date("2026-09-30T09:00:00.000Z");
+    const firstValidUntil = new Date("2026-10-15T09:00:00.000Z");
+    const nextValidUntil = new Date("2026-10-18T09:00:00.000Z");
+    const item = await withWorkspaceTransaction(scope, (tx) =>
+      upsertMemory(tx, scope, {
+        kind: "goal",
+        content: "在截止前复习完数据库索引",
+        sourceEventId: `validity:${randomUUID()}`,
+        sourceSpeaker: "user",
+        sourceBasis: "direct_statement",
+        appliesWhen: "数据库索引复习",
+        validFrom,
+        validUntil: firstValidUntil,
+        userStated: true,
+      }),
+    );
+    assert.equal(item.sourceSpeaker, "user");
+    assert.equal(item.sourceBasis, "direct_statement");
+    assert.equal(item.appliesWhen, "数据库索引复习");
+    assert.equal(item.validFrom, validFrom.toISOString());
+    assert.equal(item.validUntil, firstValidUntil.toISOString());
+
+    const revised = await withWorkspaceTransaction(scope, (tx) =>
+      correctMemory(tx, scope, item.memoryItemId, {
+        content: "在新截止日前复习完数据库索引",
+        expectedRevision: item.revision,
+        appliesWhen: "新一轮数据库索引复习",
+        validUntil: nextValidUntil,
+      }),
+    );
+    assert.ok(revised);
+    assert.equal(revised.revision, item.revision + 1);
+    assert.equal(revised.validFrom, validFrom.toISOString(), "未修改的开始时间应保留");
+    assert.equal(revised.validUntil, nextValidUntil.toISOString());
+
+    const revisions = await withWorkspaceTransaction(scope, (tx) =>
+      listMemoryRevisions(tx, scope, item.memoryItemId),
+    );
+    assert.ok(revisions);
+    assert.equal(revisions.length, 1);
+    assert.equal(revisions[0].appliesWhen, "数据库索引复习");
+    assert.equal(revisions[0].validFrom, validFrom.toISOString());
+    assert.equal(revisions[0].validUntil, firstValidUntil.toISOString());
+    assert.equal(revisions[0].sourceSpeaker, "user");
+    assert.equal(revisions[0].sourceBasis, "direct_statement");
   } finally {
     await seeded.cleanup();
   }

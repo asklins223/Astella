@@ -126,6 +126,7 @@ const accountState = companionAccountStateV1Schema.parse({
   revision: 3,
   epoch: 1,
   globalEnabled: true,
+  diaryEnabled: true,
   presence: { presence: "online", updatedAt: "2026-08-23T00:00:00.000Z" },
   interventionLevel: "moderate",
   quietHours: { startLocal: "22:00", endLocal: "07:00", timezone: "Asia/Shanghai" },

@@ -1,0 +1,224 @@
+/* The current page, index and attachment share a binding. The room still owns the Live2D seat. */
+.hud-surface .note-learning-artifact-paper__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; color: var(--hud-soft); font-size: 12px; }
+.hud-surface .note-learning-artifact-paper__meta > .note-learning-artifact-paper__source { flex-basis: 100%; }
+.hud-surface .note-learning-artifact-paper__source { color: var(--hud-soft); font-size: 12px; line-height: 1.8; }
+.hud-surface .note-learning-artifact-paper__source summary { width: fit-content; cursor: pointer; text-underline-offset: 4px; }
+.hud-surface .note-learning-artifact-paper__source summary:hover { color: var(--hud-green); text-decoration: underline; }
+.hud-surface .note-learning-artifact-paper__source blockquote { margin: 10px 0 6px; padding: 4px 0 4px 12px; border-left: 3px solid var(--hud-mint); color: var(--hud-ink); font: 14px/1.85 "Noto Serif SC Variable", serif; overflow-wrap: anywhere; }
+.hud-surface .note-learning-artifact-paper__explanation { padding: 0 0 18px; border-top: 1px solid var(--hud-line); }
+.hud-surface .note-learning-artifact-paper__explanation ol { margin: 14px 0 0; padding-left: 23px; }
+.hud-surface .note-learning-artifact-paper__explanation li { margin: 0 0 18px; padding-left: 3px; color: var(--hud-ink); font-size: 14px; line-height: 1.8; }
+.hud-surface .note-learning-artifact-paper__explanation li::marker { color: var(--hud-green); font-weight: 700; }
+.hud-surface .note-learning-artifact-paper__explanation li p { margin: 4px 0 6px; }
+.hud-surface .notebook-space { top: 83px; bottom: 12px; }
+.hud-surface .notebook-page-title { max-width: 310px; }
+.hud-surface .notebook-page-title h1 { font-size: 23px; }
+.hud-surface .notebook-page-title p { font-size: 11px; }
+.hud-surface .notebook-workspace { position: relative; height: 100%; min-height: 0; min-width: 0; container-type: inline-size; }
+.hud-surface .notebook-workspace [hidden] { display: none !important; }
+.hud-surface .notebook-desk { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; padding: 0 48px 0 5px; }
+.hud-surface .notebook-volume__bookmarks { position: absolute; z-index: 3; top: 47px; right: 0; display: flex; flex-direction: column; align-items: start; gap: 9px; }
+.hud-surface .notebook-volume__bookmark { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; width: 45px; min-height: 86px; padding: 9px 5px 10px; border: 3px solid var(--hud-cream); border-left: 0; border-radius: 0 17px 14px 0; background: var(--hud-mint); color: var(--hud-ink); font-size: 13px; font-weight: 700; text-decoration: none; box-shadow: 2px 4px 6px rgba(46,27,16,.12); }
+.hud-surface .notebook-volume__bookmark span { writing-mode: vertical-rl; letter-spacing: 3px; }
+.hud-surface .notebook-volume__bookmark[data-learning="recall"] { background: var(--hud-butter); }
+.hud-surface .notebook-volume__bookmark[data-learning="expansion"] { background: var(--hud-sky); }
+.hud-surface .notebook-volume__bookmark[aria-pressed="true"] { color: var(--hud-ink); box-shadow: inset -3px 0 0 var(--hud-green), 2px 4px 6px rgba(46,27,16,.12); }
+.hud-surface .notebook-volume { display: flex; position: relative; flex: 1; min-width: 0; min-height: 0; padding: 5px 5px 5px 15px; border: 4px solid var(--hud-cream); border-radius: 29px 38px 27px 34px/32px 28px 38px 30px; background: transparent; box-shadow: 0 10px 24px rgba(46,27,16,.17), 0 2px 5px rgba(46,27,16,.1); }
+.hud-surface .notebook-volume::before { content: ""; position: absolute; inset: 0; border: 5px solid var(--hud-green); border-left-width: 15px; border-radius: 25px 34px 23px 30px/28px 24px 34px 26px; pointer-events: none; }
+.hud-surface .notebook-volume::after { content: ""; position: absolute; top: 32px; bottom: 32px; left: 7px; width: 2px; border-radius: 2px; background: rgba(255,249,235,.4); pointer-events: none; }
+.hud-surface .notebook-desk__spread { display: flex; position: relative; flex: 1; min-height: 0; min-width: 0; border-radius: 18px 28px 19px 24px; background: var(--hud-paper-light); }
+.hud-surface .notebook-volume__leaf { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; border-radius: inherit; }
+.hud-surface .notebook-desk__rack { position: relative; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-height: 51px; padding: 8px 19px 7px; border-bottom: 1px solid var(--hud-line); flex: none; }
+.hud-surface .notebook-desk__modes { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.hud-surface .notebook-desk__mode, .hud-surface .notebook-desk__directory-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; padding: 5px 9px; border: 0; border-radius: 10px 13px 9px 12px; font-size: 12px; text-decoration: none; white-space: nowrap; }
+.hud-surface .notebook-desk__directory-toggle { padding-inline: 6px; margin-right: 6px; }
+.hud-surface .notebook-desk__mode[aria-pressed="true"], .hud-surface .notebook-desk__directory-toggle[aria-expanded="true"] { background: var(--hud-mint); color: var(--hud-ink); }
+.hud-surface .notebook-desk__mode:disabled { opacity: .55; cursor: default; }
+.hud-surface .notebook-desk__utilities { display: flex; align-items: center; gap: 13px; flex: none; }
+.hud-surface .notebook-desk__utilities > .text-action { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; font-size: 12px; }
+.hud-surface .notebook-desk__utilities .notebook-card-entry { display: inline-flex; gap: 5px; align-items: center; min-height: 32px; padding: 4px 10px; font-size: 11px; white-space: nowrap; }
+.hud-surface .notebook-card-entry__state { padding: 1px 5px; border-radius: 5px 7px 4px 6px; background: var(--hud-mint); color: #344e3b; font-size: 9px; }
+.hud-surface .notebook-card-entry__coverage { padding: 1px 5px; border-radius: 5px 7px 4px 6px; background: var(--hud-butter); color: #5c451e; font-size: 9px; }
+.hud-surface .notebook-card-entry[data-status="review_ready"] .notebook-card-entry__state,
+.hud-surface .notebook-card-entry[data-status="needs_attention"] .notebook-card-entry__state { background: var(--hud-butter); color: #5c451e; }
+.hud-surface .notebook-card-entry[data-status="failed"] .notebook-card-entry__state { background: #f5d8c9; color: #853e26; }
+/* 「调整这次」是入口旁边的次要动作：尺寸沿用 `.notebook-desk__utilities > .text-action`
+   （第 38 行），这里只补它自己的两件事——不可用时不要看起来还能按，以及两档挨着时
+   别被工具栏的 13px 间距撑成两个独立入口。 */
+.hud-surface .notebook-card-entry__tweak { margin-left: -8px; }
+.hud-surface .notebook-card-entry__tweak:disabled { opacity: .45; cursor: default; }
+.hud-surface .notebook-desk__drawer { position: relative; }
+.hud-surface .notebook-desk__drawer > summary { display: grid; place-items: center; min-height: 32px; width: 31px; padding: 0; border: 0; border-radius: 9px 12px 8px 11px; list-style: none; cursor: pointer; }
+.hud-surface .notebook-desk__drawer > summary::-webkit-details-marker { display: none; }
+.hud-surface .notebook-desk__drawer-paper { position: absolute; top: calc(100% + 10px); right: -4px; display: grid; gap: 5px; width: 190px; padding: 11px; border: 3px solid var(--hud-cream); border-radius: 14px 18px 12px 16px; background: var(--hud-paper); box-shadow: var(--hud-shadow-small); }
+.hud-surface .notebook-desk__drawer-paper .text-action { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px; font-size: 13px; text-align: left; }
+.hud-surface .notebook-volume__article-head { min-width: 0; max-width: 72ch; margin: 0 auto 26px; padding-bottom: 18px; border-bottom: 1px solid var(--hud-line); font-size: 17px; }
+.hud-surface .notebook-volume__heading h2 { margin: 0; color: var(--hud-ink); font: 730 clamp(22px, 1.9vw, 28px)/1.5 "Noto Serif SC Variable", "Songti SC", serif; letter-spacing: -.02em; overflow-wrap: anywhere; text-wrap: balance; }
+.hud-surface .notebook-volume__heading textarea { display: block; width: 100%; min-height: 1lh; max-height: 3lh; field-sizing: content; margin: 0; padding: 0; resize: none; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; }
+.hud-surface .notebook-volume__heading textarea::placeholder { color: var(--hud-soft); }
+.hud-surface .notebook-volume__heading textarea:focus-visible { outline-offset: 4px; }
+.hud-surface .notebook-volume__trail { display: flex; flex: 1; min-width: 0; align-items: center; gap: 12px; color: var(--hud-soft); font-size: 11px; }
+.hud-surface .notebook-volume__trail > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.hud-surface .notebook-volume__return { display: inline-flex; align-items: center; gap: 4px; flex: none; font-size: 12px; }
+.hud-surface .notebook-volume__meta { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 13px; margin-top: 10px; color: var(--hud-soft); font-size: 11px; line-height: 1.7; }
+.hud-surface .notebook-volume__meta > span:not(.notebook-volume__version) { min-width: 0; max-width: 44ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud-surface .notebook-volume__version { padding: 1px 7px; border-radius: 6px 9px 5px 8px; background: color-mix(in srgb, var(--hud-mint) 45%, transparent); color: var(--hud-green); font-weight: 700; }
+.hud-surface .notebook-volume__version, .hud-surface .notebook-volume__meta .text-action { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; }
+.hud-surface .notebook-volume__meta .text-action { font-size: 11px; color: var(--hud-green); text-decoration: none; border-bottom: 1px solid currentColor; }
+.hud-surface .notebook-desk__status { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 9px; color: var(--hud-soft); font-size: 11px; line-height: 1.6; }
+.hud-surface .notebook-volume__article-head > .notebook-desk__status { margin-top: 7px; }
+.hud-surface .notebook-desk__status .tag { box-shadow: none; padding: 2px 6px; border: 0; background: transparent; font-size: 10px; }
+.hud-surface .notebook-desk__status > span[role="status"] { flex: 1; min-width: 0; }
+.hud-surface .notebook-volume__pending { margin: 6px 20px; color: var(--hud-soft); font-size: 11px; }
+.hud-surface .notebook-volume__tools { flex: none; padding: 0 27px; }
+.hud-surface .notebook-volume__tools .editor-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; margin: 0; padding: 5px 0; border-block: 1px dashed var(--hud-line); }
+.hud-surface .notebook-volume__tools .editor-tools button.tool { display: inline-flex; align-items: center; justify-content: center; width: 29px; height: 29px; padding: 0; border: 0; border-radius: 8px 11px 7px 10px; color: var(--hud-ink); background: transparent; cursor: pointer; }
+.hud-surface .notebook-volume__tools .editor-tools .tool:hover { background: var(--hud-paper-deep); }
+.hud-surface .notebook-volume__tools .editor-tools .tool:disabled { opacity: .5; cursor: default; }
+.hud-surface .notebook-volume__tools .editor-tools-legend { margin-left: auto; color: var(--hud-soft); font-size: 11px; }
+.hud-surface .notebook-desk__scroll { flex: 1; min-height: 0; min-width: 0; overflow: hidden auto; padding: 28px 36px 32px; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #b1a38c transparent; }
+.hud-surface .notebook-desk__page { min-width: 0; }
+.hud-surface .notebook-desk__scroll:focus-visible { outline-offset: -3px; }
+.hud-surface .notebook-desk__save-tray { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex: none; padding: 9px 20px; border-top: 1px solid var(--hud-line); background: color-mix(in srgb, var(--hud-paper-deep) 30%, transparent); border-radius: 0 0 17px 20px; }
+.hud-surface .notebook-desk__save-tray .button { min-height: 35px; font-size: 12px; flex: none; }
+.hud-surface .notebook-desk__save-tray .notebook-desk__status { flex: 1; }
+
+/* Index and attachment are pages in the binding, each with one scroll owner. */
+.hud-surface .notebook-desk__index { display: flex; flex: 0 0 158px; flex-direction: column; min-width: 0; min-height: 0; padding: 19px 12px 13px; background: color-mix(in srgb, var(--hud-mint) 37%, var(--hud-paper-light)); border-right: 1px dashed var(--hud-green); border-radius: 15px 0 0 20px; }
+.hud-surface .notebook-desk__index-head { display: flex; align-items: center; gap: 3px; flex: none; padding-bottom: 14px; }
+.hud-surface .notebook-desk__index-head h2 { flex: 1; margin: 0; font: 700 17px/1.5 "Noto Serif SC Variable", "Songti SC", serif; }
+.hud-surface .notebook-desk__index-head .text-action { display: grid; place-items: center; width: 24px; min-height: 28px; border: 0; }
+.hud-surface .notebook-desk__index-scroll { flex: 1; min-height: 0; overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.hud-surface .notebook-desk__index-scroll ol { margin: 0; padding: 0; list-style: none; }
+.hud-surface .notebook-desk__index-scroll .text-action { width: 100%; min-height: 33px; padding: 7px 7px; border: 0; border-radius: 6px 9px 5px 8px; text-align: left; overflow-wrap: anywhere; font-size: 12px; line-height: 1.7; font-weight: 500; }
+.hud-surface .notebook-desk__index-scroll .text-action[aria-current="location"] { background: color-mix(in srgb, var(--hud-mint) 70%, transparent); color: var(--hud-ink); font-weight: 750; }
+.hud-surface .notebook-desk__index-scroll [data-heading-level="2"] { padding-left: 7px; }
+.hud-surface .notebook-desk__index-scroll [data-heading-level="3"] { padding-left: 14px; }
+.hud-surface .notebook-desk__index-scroll [data-heading-level="4"] { padding-left: 21px; }
+.hud-surface .notebook-desk__index-scroll [data-heading-level="5"] { padding-left: 28px; }
+.hud-surface .notebook-desk__index-scroll [data-heading-level="6"] { padding-left: 35px; }
+.hud-surface .notebook-desk__index-scroll p { margin: 15px 7px; color: var(--hud-soft); font-size: 12px; line-height: 1.8; }
+.hud-surface .notebook-desk__index-foot { display: grid; gap: 6px; flex: none; padding-top: 12px; margin-top: 12px; border-top: 1px dashed var(--hud-line); color: var(--hud-soft); font-size: 10px; overflow-wrap: anywhere; }
+.hud-surface .notebook-desk__side-page { display: flex; flex: 0 0 clamp(250px, 32%, 310px); flex-direction: column; min-height: 0; min-width: 0; padding: 20px 18px 15px; border-left: 1px dashed var(--hud-line); border-radius: 0 25px 17px 0; background: color-mix(in srgb, var(--hud-butter) 22%, var(--hud-paper-light)); font-size: 13px; line-height: 1.85; }
+.hud-surface .notebook-desk__side-page[data-kind="source"] { background: color-mix(in srgb, var(--hud-mint) 28%, var(--hud-paper-light)); }
+.hud-surface .notebook-desk__side-page[data-kind="history"] { background: color-mix(in srgb, var(--hud-sky) 25%, var(--hud-paper-light)); }
+.hud-surface .notebook-desk__side-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; flex: none; margin-bottom: 17px; }
+.hud-surface .notebook-desk__side-head h2 { margin: 0; font: 700 20px/1.5 "Noto Serif SC Variable", "Songti SC", serif; }
+.hud-surface .notebook-desk__side-head .text-action { display: grid; place-items: center; width: 27px; min-height: 29px; padding: 0; border: 0; }
+.hud-surface .notebook-desk__side-scroll { overflow: hidden auto; min-height: 0; flex: 1; padding: 10px 10px 14px; scroll-padding-block: 10px; overscroll-behavior: contain; scrollbar-width: thin; }
+.hud-surface .notebook-desk__side-scroll p { overflow-wrap: anywhere; }
+.hud-surface .notebook-desk__side-scroll .source-clips { position: static; width: auto; gap: 13px; }
+.hud-surface .notebook-desk__side-scroll .source-clips .clip { margin: 0; padding: 9px 0 12px; border: 0; border-bottom: 1px dashed var(--hud-line); border-radius: 0; background: none; box-shadow: none; transform: none; font-size: 12px; line-height: 1.8; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; transform: none; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper blockquote { margin: 0 0 19px; padding: 5px 0 5px 12px; font: 15px/1.85 "Noto Serif SC Variable", "Songti SC", serif; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__actions { align-items: center; gap: 9px; margin-bottom: 14px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__actions .button { min-height: 36px; padding: 6px 12px; font-size: 12px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__source { margin-bottom: 18px; color: var(--hud-soft); font-size: 12px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__source summary { width: fit-content; cursor: pointer; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__source blockquote { margin-top: 10px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation :is(p, ul, ol) { margin: 0 0 14px; font-size: 14px; line-height: 1.85; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation :is(ul, ol) { padding-left: 20px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation li { margin-bottom: 8px; }
+.hud-surface .notebook-desk__side-scroll .note-annotation-paper__explanation strong { color: var(--hud-green); }
+.hud-surface .notebook-desk__side-scroll .version-history { margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
+.hud-surface .notebook-desk__side-scroll .version-list li { display: flex; flex-wrap: wrap; gap: 7px 12px; padding: 13px 0; border-bottom: 1px dashed var(--hud-line); }
+.hud-surface .notebook-desk__side-scroll .version-no { font: 700 20px "Noto Serif SC Variable", serif; }
+.hud-surface .notebook-desk__side-scroll .version-time, .hud-surface .notebook-desk__side-scroll .version-tag { color: var(--hud-soft); font-size: 11px; }
+
+/* Reading and writing use the same paper, measure and text rhythm. */
+.hud-surface .note-transcript, .hud-surface .note-draft { max-width: 72ch; margin: 0 auto; color: var(--hud-ink); font: 17px/1.95 "Noto Serif SC Variable", "Songti SC", serif; overflow-wrap: anywhere; }
+.hud-surface .note-draft:has(.note-document-editor[data-body-mode="source"]) { max-width: none; }
+.hud-surface .note-draft #notebook-surface-body { min-height: 160px; }
+.hud-surface .note-transcript .reading-block > p { margin: 0 0 1.25em; padding: 0; background: none; line-height: inherit; }
+.hud-surface .note-transcript .reading-block > h3 { margin: 1.5em 0 .6em; font-size: 22px; line-height: 1.6; }
+.hud-surface .note-transcript .reading-block[data-block-focused="true"] { background: color-mix(in srgb, var(--hud-butter) 45%, transparent); border-radius: 5px 9px 6px 8px; }
+.hud-surface .note-transcript .code-block, .hud-surface .note-draft .ProseMirror pre { margin: 20px 0; padding: 14px 16px; overflow-x: auto; border-radius: 8px 13px 7px 12px; background: var(--hud-paper-deep); font: 13px/1.8 ui-monospace, "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; }
+.hud-surface .note-transcript .code-block code, .hud-surface .note-draft .ProseMirror pre code { background: none; padding: 0; font: inherit; }
+.hud-surface .note-transcript :is(.list-block, .quote) { padding-left: 16px; }
+.hud-surface .note-transcript .reading-block > p.quote { margin: 22px 0; padding: 4px 0 4px 16px; border-left: 3px solid var(--hud-mint); color: var(--hud-green); }
+.hud-surface .note-transcript::selection, .hud-surface .note-transcript ::selection { color: var(--hud-ink); background: color-mix(in srgb, var(--hud-butter) 65%, transparent); }
+.hud-surface .note-transcript .reading-image, .hud-surface .note-draft .ProseMirror img:not(.ProseMirror-separator) { display: block; max-width: 100%; max-height: 420px; height: auto; margin: 8px auto 24px; border-radius: 8px 13px 7px 12px; object-fit: contain; }
+.hud-surface .note-transcript .md-table, .hud-surface .note-draft .ProseMirror table { width: 100%; max-width: 100%; margin-bottom: 24px; border-collapse: collapse; font-size: 14px; }
+.hud-surface .note-transcript .md-table :is(th, td), .hud-surface .note-draft .ProseMirror :is(th, td) { padding: 8px 10px; border: 1px solid var(--hud-line); vertical-align: top; text-align: left; }
+.hud-surface .note-transcript :is(a, strong, em, del, code) { font-size: inherit; }
+.hud-surface .note-transcript a, .hud-surface .note-draft .ProseMirror a { color: var(--hud-clay); text-underline-offset: 4px; }
+.hud-surface .note-transcript .reading-rule { margin: 24px 0; border: 0; border-top: 1px solid var(--hud-line); }
+.hud-surface .note-transcript .reading-more { justify-content: center; padding: 12px 0; }
+.hud-surface .note-draft .note-editor, .hud-surface .note-draft .ProseMirror { color: inherit; font: inherit; background: none; }
+.hud-surface .note-draft .ProseMirror { padding: 0; min-height: 160px; outline: none; }
+.hud-surface .note-draft .ProseMirror p { margin: 0 0 1.25em; padding: 0; background: none; line-height: inherit; }
+.hud-surface .note-draft .ProseMirror :is(h1, h2, h3, h4, h5, h6) { margin: 1.5em 0 .6em; font-family: inherit; font-weight: 700; line-height: 1.5; }
+.hud-surface .note-draft .ProseMirror h1 { font-size: 27px; }
+.hud-surface .note-draft .ProseMirror h2 { font-size: 24px; }
+.hud-surface .note-draft .ProseMirror h3 { font-size: 21px; }
+.hud-surface .note-draft .ProseMirror :is(h4, h5, h6) { font-size: 18px; }
+.hud-surface .note-draft .ProseMirror :is(ul, ol) { padding-left: 24px; }
+.hud-surface .note-draft .ProseMirror li > p { margin-bottom: .5em; }
+.hud-surface .note-draft .ProseMirror blockquote { margin: 20px 0; padding: 5px 0 5px 16px; border-left: 1px solid var(--hud-green); color: var(--hud-green); }
+.hud-surface .note-draft .ProseMirror :is(th, td) p { margin: 0; }
+.hud-surface .note-draft .ProseMirror th { background: var(--hud-paper-deep); }
+.hud-surface .note-draft .ProseMirror code { padding: 1px 4px; background: var(--hud-paper-deep); border-radius: 4px; font: .9em ui-monospace, "SFMono-Regular", Consolas, monospace; }
+.hud-surface .note-draft .ProseMirror p[data-placeholder]::before { color: var(--hud-soft); opacity: .65; }
+.hud-surface .notebook-workspace__state { height: 100%; padding: 32px; overflow: auto; border: 4px solid var(--hud-cream); border-radius: 25px 34px 23px 29px; background: var(--hud-paper-light); box-shadow: var(--hud-shadow); }
+.hud-surface .notebook-workspace .note-image-uploads { margin: 16px 0; font-family: "Noto Sans SC Variable", sans-serif; }
+.hud-surface .notebook-workspace .note-image-upload-list { padding: 0; margin: 0; list-style: none; }
+.hud-surface .notebook-workspace .note-image-upload { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 9px; padding: 9px 0; border-bottom: 1px solid var(--hud-line); font-size: 12px; line-height: 1.7; }
+.hud-surface .notebook-workspace .note-image-upload__mark { color: var(--hud-green); }
+.hud-surface .notebook-workspace .note-image-upload[data-status="failed"] .note-image-upload__mark { color: var(--hud-clay); }
+.hud-surface .notebook-workspace .note-image-upload__kind, .hud-surface .notebook-workspace .note-image-upload__size { color: var(--hud-soft); }
+.hud-surface .notebook-workspace .note-image-upload__name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.hud-surface .notebook-workspace .note-image-upload__state { color: var(--hud-ink); }
+.hud-surface .notebook-workspace .notebook-round-history { padding-top: 18px; }
+.hud-surface .notebook-workspace .notebook-round-history__day, .hud-surface .notebook-workspace .notebook-round-history__state { color: var(--hud-soft); font-size: 12px; }
+.hud-surface .notebook-workspace .notebook-round-history__modes, .hud-surface .notebook-workspace .notebook-round-history__follow-up { color: var(--hud-green); font-size: 13px; }
+.hud-surface .notebook-workspace .notebook-round-history__uncertain { color: var(--hud-clay); font-size: 13px; }
+
+.hud-surface .notebook-desk[data-compact="true"][data-margin-open] .notebook-volume__leaf { display: none; }
+.hud-surface .notebook-desk[data-compact="true"] :is(.notebook-desk__index, .notebook-desk__side-page) { flex: 1; border: 0; border-radius: inherit; padding: 20px 26px; }
+.hud-surface .notebook-desk[data-compact="true"] .notebook-desk__index-head h2 { font-size: 21px; }
+.hud-surface .notebook-desk[data-compact="true"] .notebook-desk__index-scroll .text-action { font-size: 14px; padding: 10px; }
+.hud-surface .notebook-desk[data-compact="true"] .notebook-desk__index-foot { display: flex; justify-content: space-between; }
+@container (max-width: 580px) {
+  .hud-surface .notebook-desk__rack { flex-wrap: wrap; gap: 3px 10px; padding: 6px 12px; }
+  .hud-surface .notebook-desk__utilities { margin-left: auto; gap: 8px; }
+  .hud-surface .notebook-desk__mode { padding-inline: 6px; gap: 4px; font-size: 11px; }
+  .hud-surface .notebook-volume__article-head { margin-bottom: 24px; }
+  .hud-surface .notebook-volume__heading h2 { font-size: 21px; }
+  .hud-surface .notebook-volume__tools { padding-inline: 15px; }
+  .hud-surface .notebook-volume__tools .editor-tools-legend { display: none; }
+  .hud-surface .notebook-desk__scroll { padding: 18px 18px 22px; }
+  .hud-surface .note-transcript, .hud-surface .note-draft { font-size: 16px; }
+}
+@media (max-width: 760px), (max-height: 480px) {
+  .hud-surface .notebook-space { top: 50px; bottom: 8px; }
+  .hud-surface .notebook-page-title { max-width: 240px; padding: 4px 9px; }
+  .hud-surface .notebook-page-title h1 { font-size: 15px; }
+  .hud-surface .notebook-page-title p { font-size: 10px; }
+  .hud-surface .notebook-desk { padding: 0 34px 0 2px; }
+  .hud-surface .notebook-volume__bookmarks { gap: 6px; top: 38px; }
+  .hud-surface .notebook-volume__bookmark { width: 32px; min-height: 65px; padding: 5px 3px 7px; gap: 5px; border-width: 2px; border-radius: 0 12px 10px 0; font-size: 10px; }
+  .hud-surface .notebook-volume__bookmark svg { width: 14px; height: 14px; }
+  .hud-surface .notebook-volume { padding: 3px 3px 3px 9px; border-width: 3px; border-radius: 18px 25px 17px 22px; }
+  .hud-surface .notebook-volume::before { border-width: 3px; border-left-width: 9px; border-radius: 15px 22px 14px 19px; }
+  .hud-surface .notebook-volume::after { left: 4px; width: 1px; }
+  .hud-surface .notebook-desk__rack { min-height: 35px; padding: 3px 9px; }
+  .hud-surface .notebook-desk__mode { min-height: 25px; padding: 3px 5px; gap: 3px; font-size: 10px; }
+  .hud-surface .notebook-desk__mode svg { width: 12px; height: 12px; }
+  .hud-surface .notebook-desk__directory-toggle { min-height: 25px; margin-right: 2px; padding-inline: 3px; }
+  .hud-surface .notebook-desk__utilities > .text-action { min-height: 25px; font-size: 10px; }
+  .hud-surface .notebook-desk__drawer > summary { min-height: 25px; }
+  .hud-surface .notebook-volume__article-head { margin-bottom: 19px; }
+  .hud-surface .notebook-volume__heading h2 { font-size: 18px; line-height: 1.4; }
+  .hud-surface .notebook-volume__meta { margin-top: 6px; font-size: 9px; gap: 3px 7px; }
+  .hud-surface .notebook-volume__meta > span:not(.notebook-volume__version) { max-width: 28ch; }
+  .hud-surface .notebook-volume__trail { font-size: 10px; gap: 7px; }
+  .hud-surface .notebook-volume__return { font-size: 10px; }
+  .hud-surface .notebook-desk__status { font-size: 9px; gap: 2px 6px; }
+  .hud-surface .notebook-volume__article-head > .notebook-desk__status { margin-top: 4px; }
+  .hud-surface .notebook-volume__tools { padding-inline: 12px; }
+  .hud-surface .notebook-volume__tools .editor-tools button.tool { width: 23px; height: 23px; }
+  .hud-surface .notebook-volume__tools .editor-tools .tool svg { width: 14px; height: 14px; }
+  .hud-surface .notebook-desk__scroll { padding: 14px 14px 16px; }
+  .hud-surface .notebook-desk__save-tray { padding: 6px 10px; gap: 8px; }
+  .hud-surface .notebook-desk__save-tray .button { min-height: 29px; padding: 3px 9px; font-size: 10px; }
+}

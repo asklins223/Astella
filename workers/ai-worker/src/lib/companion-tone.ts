@@ -82,7 +82,7 @@ export interface ToneSegmentInput {
  * 此类段跳过注入（保住音频；该段只是缺语气，不缺内容）。
  *
  * `injectTags=false` 是用户在伴星中心关掉「语气标签」那条边界
- * （`pet_profiles.boundaries.allowVoiceTags`）：仍然净化模型自己写出的幻觉标签，
+ * （`companion_persona_profiles.profile.boundaries.allowVoiceTags`）：仍然净化模型自己写出的幻觉标签，
  * 只是不再由我们注入。不接这条的话，那个开关就只是个显示用的复选框——
  * 她可以说"我关掉语气标签了"，音频却照旧带标签。
  */
@@ -110,4 +110,3 @@ export function applyDeterministicToneToSegments(
     };
   });
 }
-

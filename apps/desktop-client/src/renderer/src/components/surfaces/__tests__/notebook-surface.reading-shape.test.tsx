@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 
-import { noteDocResult, seedUpdate } from "../../../test-support/note-doc-fixtures.ts";
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { noteDocResult, seedBlocksUpdate } from "../../../test-support/note-doc-fixtures.ts";
+import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NotebookSurface } from "../notebook/notebook-surface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
 import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
+import { noteAnnotationV1Schema } from "@ailearn/shared/note-annotation-contracts";
+import { noteRecallRecordV1Schema } from "@ailearn/shared/note-recall-contracts";
+import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, progressNoteExplanation, resetNoteExplanations, useNoteCompanionExplanations } from "../../companion/note-companion-explanation";
+import { textRangeAtOffsets } from "../notebook/notebook-reading-block";
 
 /**
  * 阅读页画出来的是不是编辑器里那一份（2026-09-24 对拍量出来的七类）。
@@ -15,10 +19,8 @@ import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
  * 编辑器里换的行并成一行、`**重点**` 露着星号、段落里的图整张看不见、`---` 变成
  * 三个减号、整块列表压成一行。
  *
- * 这里刻意让实时文档那份是**空的**（`seedUpdate(title, [])`），正文于是走
- * `currentVersion.blocks` 那一支——喂给屏上的块与服务端 `note_blocks` 里存的是
- * 同一个形状（投影由 `note-doc-schema` 出，它的用例在 shared 那边），
- * 所以这一组钉的是"投影出来的形状到了屏上还剩什么"。
+ * 实时文档与不可变版本给同一份结构化正文。空的实时文档代表真的删空，
+ * 不能借回退旧版本来造阅读夹具。
  */
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
@@ -35,6 +37,7 @@ function installApi(
   withSuspectClaim = false,
   recallRecords?: readonly unknown[],
   overviewRecords?: readonly unknown[],
+  annotationRecords?: readonly unknown[],
 ) {
   Object.defineProperty(window, "ailearn", {
     configurable: true,
@@ -71,9 +74,8 @@ function installApi(
             blocks,
           },
         })),
-        // 空文档：正文于是来自已存版本那一支（见文件头）。
         doc: {
-          state: vi.fn(async () => noteDocResult({ update: seedUpdate("阅读形状", []) })),
+          state: vi.fn(async () => noteDocResult({ update: seedBlocksUpdate("阅读形状", blocks) })),
           syncUpdate: vi.fn(),
           presence: vi.fn(async () => ok({ shared: false })),
         },
@@ -95,6 +97,12 @@ function installApi(
       ...(overviewRecords ? {
         noteOverview: {
           list: vi.fn(async () => ok({ version: 1 as const, items: overviewRecords, nextCursor: null })),
+          latestTask: vi.fn(async () => ok({ version: 1 as const, task: null })),
+        },
+      } : {}),
+      ...(annotationRecords ? {
+        noteAnnotation: {
+          list: vi.fn(async () => ok({ version: 1 as const, items: annotationRecords, nextCursor: null })),
           latestTask: vi.fn(async () => ok({ version: 1 as const, task: null })),
         },
       } : {}),
@@ -161,12 +169,13 @@ async function show(
   withSuspectClaim = false,
   recallRecords?: readonly unknown[],
   overviewRecords?: readonly unknown[],
+  annotationRecords?: readonly unknown[],
 ) {
   // `ordinal` 是块在整篇里的序号：页面拿它当 key，也拿它接画廊序号，撞号就会
   // 让后一块顶掉前一块（第一版夹具就是这么把"点第一张图"变成"开在 2/2"的）。
-  installApi(list.map((item, ordinal) => ({ ...item, ordinal })), conceptLabel, companionArtifacts, withSuspectClaim, recallRecords, overviewRecords);
+  installApi(list.map((item, ordinal) => ({ ...item, ordinal })), conceptLabel, companionArtifacts, withSuspectClaim, recallRecords, overviewRecords, annotationRecords);
   vi.useFakeTimers();
-  useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "read" } });
+  useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "preview" } });
   const view = render(<NotebookSurface />);
   for (let i = 0; i < 14; i += 1) {
     await act(async () => { await vi.advanceTimersByTimeAsync(100); });
@@ -174,7 +183,7 @@ async function show(
   return {
     ...view,
     /** 正文那一叠块；页面上只有这一处会画它们。 */
-    body: () => view.container.querySelector<HTMLElement>(".reading-body")!,
+    body: () => view.container.querySelector<HTMLElement>(".note-transcript")!,
   };
 }
 
@@ -182,21 +191,48 @@ const block = (type: string, content: string): Block => ({ ordinal: 0, type, con
 
 afterEach(() => {
   cleanup();
+  resetNoteExplanations();
+  window.getSelection()?.removeAllRanges();
   vi.useRealTimers();
   Reflect.deleteProperty(window, "ailearn");
   useRoomStore.setState({ activeNoteRef: null, surface: null });
 });
 
 describe("阅读页画的是编辑器里那一份", () => {
-  it("先给一个明确的速看动作，回忆留作轻入口", async () => {
+  it.each(["current", "older"] as const)("历史里的 %s 批注在回想往返后仍打开具体原句，并返回原记录页", async versionState => {
+    const date = "2026-10-01T00:00:00.000Z", excerpt = "上一轮的利息计入下一轮本金。";
+    const annotation = noteAnnotationV1Schema.parse({ annotationId: "33333333-4333-4333-8333-333333333333", noteId: NOTE_ID,
+      anchor: { noteVersionId: versionState === "current" ? VERSION_ID : "99999999-4999-4999-8999-999999999999", startBlockOrdinal: 0, endBlockOrdinal: 0, startOffset: 0, endOffset: excerpt.length, excerpt, prefix: "", suffix: "" },
+      explanation: "本金会包含已经获得的利息。", sourceMessageId: null, generationJobId: null, revision: 1, versionState, createdAt: date, updatedAt: date });
+    const recall = noteRecallRecordV1Schema.parse({ recallId: "44444444-4444-4444-8444-444444444444", noteId: NOTE_ID, noteVersionId: VERSION_ID, noteVersionNumber: 1,
+      sectionOrdinal: 1, sectionTitle: null, question: "为什么本金会增加？", answerTruncated: false, selfReport: null, reflection: null, state: "waiting", versionState: "current",
+      sourceMessageId: null, conversationId: null, hintSourceMessageId: null, hintConversationId: null, createdAt: date, hintViewedAt: null, revealedAt: null, reportedAt: null });
+    const view = await show([block("paragraph", excerpt)], undefined, undefined, false, [recall], undefined, [annotation]);
+    fireEvent.click(view.getByRole("button", { name: "学习记录" }));
+    const history = view.getByRole("region", { name: "学习记录" });
+    fireEvent.click(within(history).getByRole("button", { name: "打开这次回想" }));
+    expect(view.getByRole("article", { name: "这篇笔记的回想" })).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "回学习记录" }));
+    fireEvent.click(within(history).getByRole("button", { name: versionState === "older" ? "查看旧版批注" : "回到这句批注" }));
+    expect(view.queryByRole("article", { name: "这篇笔记的回想" })).toBeNull();
+    const side = view.getByRole("region", { name: "原句批注" });
+    expect(within(side).getByText(excerpt)).toBeTruthy(); expect(within(side).getByText(annotation.explanation)).toBeTruthy();
+    if (versionState === "older") {
+      expect(within(side).getByText("旧版的原句与批注，未定位到当前正文")).toBeTruthy();
+      expect(within(side).queryByRole("button", { name: "做个互动演示" })).toBeNull();
+    }
+    fireEvent.click(within(side).getByRole("button", { name: "回学习记录" }));
+    expect(view.getByRole("region", { name: "学习记录" })).toBeTruthy();
+  });
+
+  it("学习入口稳定附在册页边缘，不因历史记录改名或换位", async () => {
     const view = await show([block("paragraph", "Tool 是 Agent 调用外部能力的入口。")]);
-    const primary = view.getByRole("button", { name: "先看懂这篇" });
-    expect(primary.className).toContain("notebook-overview-entry__primary");
-    expect(view.getByRole("button", { name: "快速想起来" })).toBeTruthy();
+    const navigation = view.getByRole("navigation", { name: "笔记学习" });
+    expect(Array.from(navigation.querySelectorAll("button")).map(button => button.textContent?.trim())).toEqual(["速看", "回想", "往外学"]);
+    expect(view.body().textContent).toContain("Tool 是 Agent 调用外部能力的入口。");
     expect(view.queryByRole("button", { name: "和伴星聊聊" })).toBeNull();
     expect(view.queryByRole("button", { name: "也可以问伴星" })).toBeNull();
-    expect(view.container.querySelectorAll(".notebook-overview-entry__primary")).toHaveLength(1);
-    expect(view.container.querySelectorAll(".notebook-overview-entry__link")).toHaveLength(1);
+    expect(navigation.querySelectorAll(".button.primary")).toHaveLength(0);
     expect(view.queryByText("换个方式")).toBeNull();
   });
 
@@ -216,8 +252,10 @@ describe("阅读页画的是编辑器里那一份", () => {
       createdAt: "2026-09-29T10:00:00.000Z",
     };
     const view = await show([block("paragraph", "Tool 是 Agent 调用外部能力的入口。")], undefined, undefined, false, undefined, [overview]);
-    expect(view.getByRole("button", { name: "看这张速看" }).className).toContain("notebook-overview-entry__primary");
-    expect(view.getByRole("button", { name: "快速想起来" }).className).toContain("notebook-overview-entry__link");
+    expect(view.queryByRole("article", { name: "这篇笔记的速看" })).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "速看" }));
+    expect(within(view.getByRole("article", { name: "这篇笔记的速看" })).getByText("Tool 可以调用外部能力。")).toBeTruthy();
+    expect(view.getByRole("button", { name: "回想" })).toBeTruthy();
     expect(view.queryByText("从记得的地方接着读")).toBeNull();
   });
 
@@ -247,9 +285,15 @@ describe("阅读页画的是编辑器里那一份", () => {
     const view = await show([block("paragraph", "Tool 是 Agent 调用外部能力的入口。")], undefined, undefined, false, [unfinishedRecall]);
 
     expect(view.queryByRole("article", { name: "这篇笔记的回想" })).toBeNull();
-    fireEvent.click(view.getByRole("button", { name: "接着回想" }));
+    fireEvent.click(view.getByRole("button", { name: "回想" }));
+    // 点「回想」要先**查**这一篇有没有没做完的回想（那是 `lookup`，一次异步往返），
+    // 查到才把那张纸打开。所以这里必须先把这次往返冲掉，不能紧接着同步断言。
+    // 这条断言守的东西没变：查到了就得打开、打开的就是那一篇、题面干净。
+    await act(async () => {});
     const recall = view.getByRole("article", { name: "这篇笔记的回想" });
     expect(recall.querySelector(".note-recall-paper__question")?.textContent).toBe("IndexTTS 2.5 为什么要做 2.5 这个版本？");
+    expect(view.getByRole("heading", { level: 1, name: "回想一下" })).toBeTruthy();
+    expect(view.container.querySelector(".notebook-volume__article-head")).toBeNull();
   });
 
   it("互动讲解保留原句段落锚点，并能从记录跳回正文", async () => {
@@ -288,9 +332,11 @@ describe("阅读页画的是编辑器里那一份", () => {
     const view = await show([block("heading", "例子"), block("paragraph", "这是选中句子。")], undefined, [artifact]);
     fireEvent.click(view.getByRole("button", { name: "学习记录" }));
     fireEvent.click(view.getByRole("button", { name: "打开这份互动讲解" }));
-    const source = view.getByRole("button", { name: /回到第 2 段原句/ });
+    const source = view.getByText("对照原句").closest("details")!;
+    expect(source.open).toBe(false);
+    fireEvent.click(within(source).getByText("对照原句"));
     expect(source.textContent).toContain(selectionText);
-    fireEvent.click(source);
+    fireEvent.click(within(source).getByRole("button", { name: "回到这句" }));
     expect(view.body().querySelector('[data-block-ordinal="1"]')?.getAttribute("data-block-focused")).toBe("true");
   });
 
@@ -315,7 +361,7 @@ describe("阅读页画的是编辑器里那一份", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(100); });
 
     expect(route).toHaveBeenCalledTimes(1);
-    expect(view.getByRole("heading", { level: 2, name: "学习记录" })).toBeTruthy();
+    expect(view.getByRole("heading", { level: 1, name: "学习记录" })).toBeTruthy();
   });
 
   it("段内换行画成换行，不再并成一行", async () => {
@@ -439,5 +485,94 @@ describe("阅读页画的是编辑器里那一份", () => {
     expect(marked.some((text) => text.includes("*"))).toBe(false);
     // 高亮不许拆掉结构：那四个字仍然是粗体，高亮叠在它里面。
     expect(body().querySelector("strong .mark")?.textContent).toBe("欧姆定律");
+  });
+});
+
+
+describe("伴星解释与原句批注并行", () => {
+  const excerpt = "上一轮的利息计入下一轮本金。";
+  const target = { noteId: NOTE_ID, anchor: { noteVersionId: VERSION_ID, startBlockOrdinal: 0, endBlockOrdinal: 0,
+    startOffset: 0, endOffset: excerpt.length, excerpt, prefix: "", suffix: "" } };
+
+  it("伴星完成不抢占手写批注的输入和焦点，两份批注独立保存并都能打开", async () => {
+    const view = await show([block("paragraph", excerpt)], undefined, undefined, false, undefined, undefined, []);
+    let attempt!: ReturnType<typeof beginNoteExplanation>;
+    act(() => { attempt = beginNoteExplanation(target); progressNoteExplanation(attempt.id, "利息加入本金"); });
+    fireEvent.click(view.getByRole("button", { name: /伴星正在解释.*查看/ }));
+    fireEvent.click(view.getByRole("button", { name: "另写自己的批注" }));
+    const draft = view.getByRole("textbox", { name: "记下你的理解" }) as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "我的理解：下一轮用更大的本金算。" } });
+    expect(document.activeElement).toBe(draft);
+    const write = vi.fn(async (input: { command: { anchor: typeof target.anchor; explanation: string; sourceMessageId?: string } }) => ok(noteAnnotationV1Schema.parse({
+      annotationId: input.command.sourceMessageId ? "33333333-4333-4333-8333-333333333333" : "44444444-4444-4444-8444-444444444444",
+      noteId: NOTE_ID, anchor: input.command.anchor, explanation: input.command.explanation, sourceMessageId: input.command.sourceMessageId ?? null,
+      generationJobId: null, revision: 1, versionState: "current", createdAt: "2026-10-02T00:00:00.000Z", updatedAt: "2026-10-02T00:00:00.000Z",
+    })));
+    Object.assign(window.ailearn!.noteAnnotation, { write });
+    await act(async () => { await completeNoteExplanation(attempt.id, "55555555-5555-4555-8555-555555555555", "利息成为下一轮本金的一部分。"); });
+    expect(draft.value).toBe("我的理解：下一轮用更大的本金算。");
+    expect(document.activeElement).toBe(draft);
+    expect(view.getByRole("region", { name: "写自己的批注" })).toBeTruthy();
+    expect(view.queryByText("伴星正在解释")).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "保存批注" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(write).toHaveBeenCalledTimes(2);
+    expect(write.mock.calls[1]![0].command.sourceMessageId).toBeUndefined();
+    fireEvent.click(view.getByRole("button", { name: "收起批注" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    const own = view.getByRole("button", { name: /批注.*自己的批注/ });
+    const companion = view.getByRole("button", { name: /批注.*伴星解释/ });
+    fireEvent.click(companion);
+    expect(within(view.getByRole("region", { name: "原句批注" })).getByText("利息成为下一轮本金的一部分。")).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "收起批注" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    fireEvent.click(own);
+    expect(within(view.getByRole("region", { name: "原句批注" })).getByText("我的理解：下一轮用更大的本金算。")).toBeTruthy();
+  });
+
+  it("重新选择正在解释的原句，解释入口打开已有进度，状态文字不污染选区锚点", async () => {
+    const view = await show([block("paragraph", excerpt)], undefined, undefined, false, undefined, undefined, []);
+    act(() => { const item = beginNoteExplanation(target); progressNoteExplanation(item.id, "利息也会继续产生利息"); });
+    const content = view.body().querySelector<HTMLElement>("[data-note-block-content]")!;
+    const range = textRangeAtOffsets(content, 0, excerpt.length)!;
+    act(() => { window.getSelection()?.removeAllRanges(); window.getSelection()?.addRange(range); });
+    fireEvent.mouseUp(view.body());
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(view.getByRole("button", { name: "查看解释进度" })).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "查看解释进度" }));
+    const side = view.getByRole("region", { name: "伴星原句解释" });
+    expect(within(side).getByText(excerpt)).toBeTruthy();
+    expect(within(side).getByText("利息也会继续产生利息")).toBeTruthy();
+    expect(useNoteCompanionExplanations.getState().items).toHaveLength(1);
+    expect(content.textContent).toBe(excerpt);
+  });
+
+  it("停止后的状态与未完成内容留在原句附页，关闭附页不自动写成批注", async () => {
+    const view = await show([block("paragraph", excerpt)], undefined, undefined, false, undefined, undefined, []);
+    act(() => { const item = beginNoteExplanation(target); progressNoteExplanation(item.id, "只生成了半句"); interruptNoteExplanation(item.id, "stopped"); });
+    fireEvent.click(view.getByRole("button", { name: /解释已停止.*查看/ }));
+    const side = view.getByRole("region", { name: "伴星原句解释" });
+    expect(within(side).getByText("只生成了半句")).toBeTruthy();
+    expect(within(side).getByText("以下是未完成的内容，没有写成批注。")).toBeTruthy();
+    expect(view.queryByRole("button", { name: `打开批注：${excerpt}` })).toBeNull();
+    fireEvent.click(within(side).getByRole("button", { name: "收起这次状态" }));
+    expect(view.queryByRole("region", { name: "伴星原句解释" })).toBeNull();
+    expect(view.body().textContent).toBe(excerpt);
+  });
+
+  it("在附页重新解释后，附页立即跟随新任务，不残留旧任务的停止状态", async () => {
+    const view = await show([block("paragraph", excerpt)], undefined, undefined, false, undefined, undefined, []);
+    let previousId = "";
+    act(() => { const item = beginNoteExplanation(target); previousId = item.id; progressNoteExplanation(item.id, "旧的半句"); interruptNoteExplanation(item.id, "stopped"); });
+    fireEvent.click(view.getByRole("button", { name: /解释已停止.*查看/ }));
+    fireEvent.click(view.getByRole("button", { name: "重新解释" }));
+    const next = useNoteCompanionExplanations.getState().items[0]!;
+    expect(next.id).not.toBe(previousId);
+    const side = view.getByRole("region", { name: "伴星原句解释" });
+    expect(within(side).getByText("伴星正在准备解释")).toBeTruthy();
+    expect(within(side).queryByText("旧的半句")).toBeNull();
+    act(() => { progressNoteExplanation(next.id, "新的完整解释正在生成"); });
+    expect(within(side).getByText("新的完整解释正在生成")).toBeTruthy();
+    expect(within(side).getByRole("button", { name: "停止解释" })).toBeTruthy();
   });
 });

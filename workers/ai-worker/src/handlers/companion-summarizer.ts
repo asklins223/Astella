@@ -9,7 +9,9 @@
  */
 
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
+import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import { logger } from "../lib/logger.ts";
 import { readJobPayloadString } from "@ailearn/shared";
 import { createProvider, withThinkingDisabled } from "../lib/ai-provider.ts";
@@ -20,12 +22,23 @@ import {
   resolveProviderForTask,
 } from "../lib/governance.ts";
 import { assertJobLease, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
-import { runWithAbortBudget } from "../lib/handler-timeout.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { companionSummaryTotal } from "../lib/metrics.ts";
 import { parseMemoryExtractJson } from "./companion-memory-extractor.ts";
-import { REPLAY_WINDOW_MESSAGES } from "./companion-dialogue-content.ts";
+import {
+  boundCompanionRecentHistory,
+  textOfCompanionBlocks,
+  REPLAY_WINDOW_MESSAGES,
+} from "./companion-dialogue-content.ts";
 import type { JobPayload } from "./index.ts";
+import { runWorkerAiTask } from "./worker-ai-task.ts";
+
+class SummarizerOutputError extends Error {
+  constructor() {
+    super("summarizer output did not match its structured contract");
+    this.name = "SummarizerOutputError";
+  }
+}
 
 export const conversationSummaryOutputSchema = z.object({
   title: z.string().min(1).max(200),
@@ -54,26 +67,76 @@ const SUMMARIZER_PROMPT = [
 
 export const SUMMARIZER_INPUT_CHARS = 12_000;
 
+export interface SummarizerSnapshotMessage {
+  id: string;
+  seq: string | number;
+  role: string;
+  contentSha256: string;
+  blocks: unknown;
+}
+
+export interface SummarizerSnapshot {
+  transcript: string;
+  coverageFromSeq: string | null;
+  coverageThroughSeq: string | null;
+  sourceHash: string;
+}
+
+function transcriptLine(row: Pick<SummarizerSnapshotMessage, "role" | "blocks">): string {
+  const text = Array.isArray(row.blocks)
+    ? (row.blocks as Array<{ type?: string; text?: unknown }>)
+        .filter((block) => block.type === "text")
+        .map((block) => String(block.text ?? ""))
+        .join("")
+    : "";
+  return `${row.role === "assistant" ? "桌宠" : "用户"}：${text}`;
+}
+
 /**
- * `SELECT … ORDER BY seq DESC LIMIT 200` 的行 → 正序可读对话。
- *
- * 调用方给的是"最近 200 条"（倒序），这里翻回时间顺序再拼文本。
+ * Freeze the exact authored-message range that fits the summarizer budget.
+ * Newer rows win; the source hash makes late edits/deletes reject the result.
  */
-export function formatSummarizerTranscript(
-  rows: Array<{ role: string; blocks: unknown }>,
-): string {
-  return [...rows]
-    .reverse()
-    .map((row) => {
-      const text = Array.isArray(row.blocks)
-        ? (row.blocks as Array<{ type?: string; text?: unknown }>)
-            .filter((b) => b.type === "text")
-            .map((b) => String(b.text ?? ""))
-            .join("")
-        : "";
-      return `${row.role === "assistant" ? "桌宠" : "用户"}：${text}`;
-    })
-    .join("\n");
+export function buildSummarizerSnapshot(
+  rows: SummarizerSnapshotMessage[],
+  maxChars = SUMMARIZER_INPUT_CHARS,
+): SummarizerSnapshot {
+  const ordered = rows
+    .filter((row) => row.role === "user" || row.role === "assistant")
+    .slice()
+    .sort((a, b) => {
+      const left = BigInt(a.seq);
+      const right = BigInt(b.seq);
+      return left < right ? -1 : left > right ? 1 : 0;
+    });
+  const selected: Array<{ row: SummarizerSnapshotMessage; line: string }> = [];
+  let used = 0;
+  for (let index = ordered.length - 1; index >= 0; index -= 1) {
+    const row = ordered[index];
+    const line = transcriptLine(row);
+    const additional = line.length + (selected.length > 0 ? 1 : 0);
+    if (used + additional > maxChars) {
+      if (selected.length === 0 && maxChars > 0) {
+        selected.unshift({ row, line: line.slice(-maxChars) });
+      }
+      break;
+    }
+    selected.unshift({ row, line });
+    used += additional;
+  }
+  const transcript = selected.map((item) => item.line).join("\n");
+  const first = selected[0]?.row;
+  const last = selected.at(-1)?.row;
+  const sourceHash = createHash("sha256")
+    .update(JSON.stringify(selected.map(({ row, line }) => [
+      String(row.seq), row.id, row.role, row.contentSha256, line,
+    ])))
+    .digest("hex");
+  return {
+    transcript,
+    coverageFromSeq: first ? String(first.seq) : null,
+    coverageThroughSeq: last ? String(last.seq) : null,
+    sourceHash,
+  };
 }
 
 export function buildSummarizerMessages(conversationText: string): Array<{ role: "system" | "user"; content: string }> {
@@ -87,8 +150,8 @@ export function buildSummarizerMessages(conversationText: string): Array<{ role:
 /**
  * 摘要 → 注入对话上下文的 `<conversation_summary>` 数据块（方案 29 §11 C1）。
  *
- * 为什么要有这一块：历史回放只带最近 20 条（`recentMessages.slice(-20)`），
- * 一条 524 消息的连续会话里，更早的那一段对她本来是完全不可见的——
+ * 为什么要有这一块：历史回放只带实际预算后可见的尾部，
+ * 更早的那一段对她本来是完全不可见的——
  * 摘要修好了却没人读，等于没修。
  *
  * 两条约束（都在测试里钉住）：
@@ -102,6 +165,7 @@ const SUMMARY_BOUNDARY_TAGS = /<\/?conversation_summary>/gi;
 
 export function renderConversationSummary(
   summary: unknown,
+  options: { coverageVerified?: boolean } = {},
 ): string | null {
   if (!summary || typeof summary !== "object" || Array.isArray(summary)) return null;
   const row = summary as Record<string, unknown>;
@@ -117,6 +181,9 @@ export function renderConversationSummary(
   const lines = [
     "<conversation_summary>",
     `更早那段对话：${title}`,
+    options.coverageVerified
+      ? "这段摘要有消息边界校验，只用于接续话题；操作是否完成以对应工具回执为准。"
+      : "这段摘要的消息边界无法核实，可能与近期对话重叠；只作话题线索，操作是否完成以对应工具回执为准。",
     ...(() => {
       const events = list(row.keyEvents, 3);
       return events.length > 0 ? [`办过的事：${events.join("；")}`] : [];
@@ -129,8 +196,7 @@ export function renderConversationSummary(
       const prefs = list(row.userPreferences, 2);
       return prefs.length > 0 ? [`他偏好的：${prefs.join("；")}`] : [];
     })(),
-    "（这段是早些时候留下的摘要，不是这一轮新查的；里面的数字可能已经变了，" +
-      "要报数字得重新查。）",
+    "（这段不是这一轮新查的；里面的数字可能已经变了，要报数字得重新查。）",
     "</conversation_summary>",
   ];
   const block = lines.join("\n");
@@ -166,89 +232,208 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
       : undefined,
   );
 
-  const conversationText = await withJobTransaction(job, async (tx) => {
-    // 取**回放窗口之外**那一段的最近 200 条（原来是 `seq ASC`：524 条的会话每次
-    // 都摘要最开头那 200 条，而且 `buildSummarizerMessages` 又按 12 000 字从头切，
-    // 两次都往回看）。
-    //
-    // 为什么要显式让开最后 20 条：对话链路本来就把最近 20 条当原生多轮喂回去
-    // （`recentMessages.slice(-20)`）。摘要若覆盖同一段，它就不携带任何新信息——
-    // 实测因此完全无法判断"她是看了摘要还是复述上文"（方案 29 §12.1）。
-    // 让开之后，摘要说的一定是回放里不存在的内容，接入才有意义，也才可归因。
-    const rows = await tx.execute<{ role: string; blocks: unknown }>(sql`
-      SELECT role, blocks FROM companion_messages
+  const snapshot = await withJobTransaction(job, async (tx) => {
+    // 先用和对话 prompt 相同的 20 条 + 字符预算规则找到真实裁剪点。
+    // 这样，被 24k 字符预算挤出 prompt、但仍在最近 20 条里的旧消息也能进入摘要，
+    // 而不是留下“摘要没覆盖、原文也没回放”的空档。
+    const tailRows = await tx.execute<{
+      seq: string;
+      role: string;
+      blocks: unknown;
+    }>(sql`
+      SELECT seq::text AS seq, role, blocks
+      FROM companion_messages
       WHERE conversation_id = ${conversationId}
-        AND seq <= (
-          SELECT max(seq) - ${REPLAY_WINDOW_MESSAGES} FROM companion_messages
-          WHERE conversation_id = ${conversationId}
-        )
-      ORDER BY seq DESC LIMIT 200
+        AND role IN ('user', 'assistant')
+        AND kind NOT IN ('cancelled', 'error')
+      ORDER BY seq DESC
+      LIMIT ${REPLAY_WINDOW_MESSAGES}
     `);
-    return formatSummarizerTranscript(rows);
+    const visibleTail = boundCompanionRecentHistory(tailRows.slice().reverse().map((row) => ({
+      seq: row.seq,
+      role: row.role as "user" | "assistant",
+      text: textOfCompanionBlocks(row.blocks),
+    })));
+    const tailStartSeq = visibleTail[0]?.seq;
+
+    // 100 行只是数据库分页大小，不是会话摘要边界。真实边界由上面的回放选择器确定，
+    // 实际输入则由 SUMMARIZER_INPUT_CHARS 限定；长会话不再被固定 200 行截断。
+    const sourceRows: Array<{
+      id: string;
+      seq: string;
+      role: string;
+      content_sha256: string;
+      blocks: unknown;
+    }> = [];
+    let beforeSeq = tailStartSeq;
+    while (true) {
+      const rows = await tx.execute<{
+        id: string;
+        seq: string;
+        role: string;
+        content_sha256: string;
+        blocks: unknown;
+      }>(sql`
+        SELECT id::text AS id, seq::text AS seq, role, content_sha256, blocks
+        FROM companion_messages
+        WHERE conversation_id = ${conversationId}
+          AND role IN ('user', 'assistant')
+          AND kind NOT IN ('cancelled', 'error')
+          ${beforeSeq ? sql`AND seq < ${beforeSeq}::bigint` : sql``}
+        ORDER BY seq DESC
+        LIMIT 100
+      `);
+      if (rows.length === 0) break;
+      sourceRows.push(...rows);
+      const candidate = buildSummarizerSnapshot(sourceRows.map((row) => ({
+        id: row.id,
+        seq: row.seq,
+        role: row.role,
+        contentSha256: row.content_sha256,
+        blocks: row.blocks,
+      })));
+      if (candidate.transcript.length >= SUMMARIZER_INPUT_CHARS) break;
+      beforeSeq = rows.at(-1)!.seq;
+    }
+
+    return buildSummarizerSnapshot(sourceRows.map((row) => ({
+      id: row.id,
+      seq: row.seq,
+      role: row.role,
+      contentSha256: row.content_sha256,
+      blocks: row.blocks,
+    })));
   });
 
-  if (!conversationText.trim()) {
+  if (!snapshot.transcript.trim() || !snapshot.coverageFromSeq || !snapshot.coverageThroughSeq) {
     logger.info({ jobId: job.id, conversationId }, "summarizer skipped: empty conversation");
     return;
   }
 
-  const messages = buildSummarizerMessages(conversationText);
-  let raw: string;
+  const messages = buildSummarizerMessages(snapshot.transcript);
+  const generationParameters = { temperature: 0.2, maxTokens: 1_000, responseFormat: "json_object" as const };
+  const inputSnapshotHash = sha256Utf8V1(canonicalJsonV1({
+    taskVersion: 1,
+    conversationId,
+    sourceHash: snapshot.sourceHash,
+    coverageFromSeq: snapshot.coverageFromSeq,
+    coverageThroughSeq: snapshot.coverageThroughSeq,
+    modelId: provider.modelId,
+    promptVersion: provider.promptVersion,
+    generationParameters,
+    messages,
+  }));
+  let summary: z.infer<typeof conversationSummaryOutputSchema>;
   try {
-    const result = await runWithAbortBudget(
-      // 2026-08-24（AI 设计审查 §4.2）：responseFormat "text" → "json_object"——
-      // 输出本就是结构化 JSON，让 provider 层开启 json 模式降低格式走样率。
-      (signal) => provider.chatCompletion(messages, { temperature: 0.2, maxTokens: 1000, responseFormat: "json_object" }, signal),
-      job.signal,
-      resolveProviderCallTimeout("companion_agent"),
-      (lateError) => logger.warn({ jobId: job.id, err: lateError }, "summarizer provider settled late"),
-    );
-    raw = result.content;
+    summary = await runWorkerAiTask({
+      job,
+      userId,
+      taskId: "companion_summarizer",
+      taskVersion: 1,
+      idempotencyKey: `summary:${conversationId}:${snapshot.sourceHash}`,
+      inputSnapshotRef: { kind: "task", id: `${conversationId}:${snapshot.coverageThroughSeq}`, hash: inputSnapshotHash },
+      input: messages,
+      modelId: provider.modelId,
+      promptVersion: `${provider.promptVersion}:companion-summarizer-v1`,
+      resourceClass: "maintenance",
+      timeoutMs: resolveProviderCallTimeout("companion_agent"),
+      isOutputShapeError: (error) => error instanceof SummarizerOutputError,
+      execute: async (request, signal) => {
+        // 2026-08-24（AI 设计审查 §4.2）：responseFormat "text" → "json_object"，
+        // 输出本就是结构化 JSON，让 provider 层开启 json 模式降低格式走样率。
+        const result = await provider.chatCompletion(request, generationParameters, signal);
+        let output: z.infer<typeof conversationSummaryOutputSchema>;
+        try {
+          output = conversationSummaryOutputSchema.parse(parseMemoryExtractJson(result.content));
+        } catch {
+          throw new SummarizerOutputError();
+        }
+        return {
+          ok: true,
+          output,
+          promptTokens: result.usage?.promptTokens ?? undefined,
+          completionTokens: result.usage?.completionTokens ?? undefined,
+        };
+      },
+    });
   } catch (err) {
-    logger.warn({ jobId: job.id, conversationId, err }, "summarizer provider failed");
-    // §9.9：记录摘要失败指标
+    const invalidOutput = err instanceof SummarizerOutputError;
+    logger.warn({ jobId: job.id, conversationId, err }, invalidOutput ? "summarizer invalid output; skipping" : "summarizer provider failed");
     try {
       companionSummaryTotal.labels("failed").inc();
     } catch {
       // metrics 记录失败不阻断错误传播
     }
+    if (invalidOutput) return;
     throw err;
-  }
-
-  let summary: z.infer<typeof conversationSummaryOutputSchema>;
-  try {
-    // 2026-08-24：裸 JSON.parse → 容错解析（剥 fence/提取平衡片段）——与
-    // memory-extractor 同款兜底，tokenrhythm 类网关偶发的 ```json 包裹不再丢摘要。
-    summary = conversationSummaryOutputSchema.parse(parseMemoryExtractJson(raw));
-  } catch (err) {
-    logger.warn({ jobId: job.id, conversationId, err }, "summarizer invalid output; skipping");
-    // §9.9：记录摘要失败指标（输出校验失败）
-    try {
-      companionSummaryTotal.labels("failed").inc();
-    } catch {
-      // metrics 记录失败不阻断
-    }
-    return;
   }
 
   const sourceRunId = job.payload.sourceRunId as string | null ?? null;
   const idempotencyKey = `summary:${conversationId}:${sourceRunId ?? "conversation"}`;
 
-  await withJobTransaction(job, async (tx) => {
+  const committed = await withJobTransaction(job, async (tx) => {
     // 稳定 P1-1（2026-09-15 审计）：提交前重新校验并续租租约（TOCTOU 围栏）。
     // 入口的 assertJobLease 只挡"开始时已失效"，挡不住"LLM 调用期间被 reap"——
     // 过期后另一个 worker 会重领同一 job 并重复写入/重复计费。与 parse-source
     // 的每次提交前 lockJobLease 对齐。
     await lockJobLease(tx, job);
+    // 清理连续历史时会先锁 conversation 行，再删除摘要与消息。提交也先锁同一行，
+    // 这样并发清理要么先完成、令下面的核对失败，要么等摘要提交后连摘要一起删除。
+    const conversation = await tx.execute<{ id: string }>(sql`
+      SELECT id FROM companion_conversations
+      WHERE id = ${conversationId} AND workspace_id = ${job.workspaceId} AND user_id = ${userId}
+      FOR SHARE
+    `);
+    if (!conversation[0]) return false;
+
+    const currentSourceRows = await tx.execute<{
+      id: string;
+      seq: string;
+      role: string;
+      content_sha256: string;
+      blocks: unknown;
+    }>(sql`
+      SELECT id::text AS id, seq::text AS seq, role, content_sha256, blocks
+      FROM companion_messages
+      WHERE conversation_id = ${conversationId}
+        AND role IN ('user', 'assistant')
+        AND kind NOT IN ('cancelled', 'error')
+        AND seq >= ${snapshot.coverageFromSeq}::bigint
+        AND seq <= ${snapshot.coverageThroughSeq}::bigint
+      ORDER BY seq DESC
+    `);
+    const currentSnapshot = buildSummarizerSnapshot(currentSourceRows.map((row) => ({
+      id: row.id,
+      seq: row.seq,
+      role: row.role,
+      contentSha256: row.content_sha256,
+      blocks: row.blocks,
+    })));
+    if (
+      currentSnapshot.coverageFromSeq !== snapshot.coverageFromSeq
+      || currentSnapshot.coverageThroughSeq !== snapshot.coverageThroughSeq
+      || currentSnapshot.sourceHash !== snapshot.sourceHash
+    ) {
+      logger.info({ jobId: job.id, conversationId }, "summarizer skipped: source range changed before commit");
+      return false;
+    }
+
     // conversation_summaries 幂等写入（唯一约束兜底）。
     await tx.execute(sql`
       INSERT INTO conversation_summaries
-        (workspace_id, user_id, conversation_id, summary, source_run_id, status, created_at, updated_at)
+        (workspace_id, user_id, conversation_id, summary, source_run_id,
+         coverage_from_seq, coverage_through_seq, coverage_source_hash,
+         status, created_at, updated_at)
       VALUES
         (${job.workspaceId}, ${userId}, ${conversationId}, ${JSON.stringify(summary)}, ${sourceRunId},
+         ${snapshot.coverageFromSeq}::bigint, ${snapshot.coverageThroughSeq}::bigint, ${snapshot.sourceHash},
          'candidate', now(), now())
       ON CONFLICT (workspace_id, user_id, conversation_id, source_run_id)
-      DO UPDATE SET summary = EXCLUDED.summary, updated_at = now()
+      DO UPDATE SET summary = EXCLUDED.summary,
+                    coverage_from_seq = EXCLUDED.coverage_from_seq,
+                    coverage_through_seq = EXCLUDED.coverage_through_seq,
+                    coverage_source_hash = EXCLUDED.coverage_source_hash,
+                    updated_at = now()
     `);
 
     // 生成 episodic 候选记忆。§9.4：写入端即限制 ≤200 字，确保读取注入时不需截断。
@@ -266,7 +451,10 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
         WHERE deleted_at IS NULL AND source_event_id IS NOT NULL
       DO NOTHING
     `);
+    return true;
   });
+
+  if (!committed) return;
 
   logger.info({ jobId: job.id, conversationId, idempotencyKey }, "summarizer completed");
   // §9.9：记录摘要成功指标

@@ -1,9 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { WorkerTransaction } from "../../db.ts";
 import {
+  currentDiaryMaterialStart,
+  dayStart,
+  diaryMaterialStartIsCurrent,
+  hasDiaryWorthyMaterial,
+} from "../companion-daily-summary-eligibility.ts";
+import {
+  classifyDiaryFailure,
+} from "../companion-daily-summary.ts";
+import { pickImageToRead } from "../companion-daily-summary-image.ts";
+import {
+  COMPANION_DIARY_DRAFT_PROMPT_VERSION,
   buildDiaryPrompt,
   captionEchoIn,
-  classifyDiaryFailure,
   clipAtBoundary,
   clockPhrase,
   countingToneIn,
@@ -21,7 +33,6 @@ import {
   fitDiaryToParagraphBudget,
   isQuotableQuote,
   pickDiarySubject,
-  pickImageToRead,
   pickImagesPerNote,
   pickQuoteCandidates,
   renderMaterial,
@@ -35,8 +46,15 @@ import {
   type DiaryMaterial,
   type DiaryPersona,
   type DiaryPiece,
-} from "../companion-daily-summary.ts";
-import { COMPANION_VOICE_STYLE_LINES_V1 } from "@ailearn/shared";
+} from "../companion-diary-content.ts";
+import {
+  buildDiaryCandidates,
+  buildDiarySelectionMessages,
+  companionDiarySelectionSchema,
+  validateDiarySelection,
+} from "../companion-diary-candidates.ts";
+import { createDiaryCheckpointPort } from "../companion-diary-checkpoints.ts";
+import { COMPANION_VOICE_STYLE_LINES_V2 } from "@ailearn/shared";
 import { sanitizePersonaField } from "../companion-dialogue-content.ts";
 import { AIConsentRequiredError, AIDataPolicyDeniedError, AIProviderNotConfiguredError } from "../../lib/governance.ts";
 import { DailyDiaryOutputError } from "../../lib/non-retryable-errors.ts";
@@ -57,6 +75,7 @@ function persona(overrides: Partial<DiaryPersona> = {}): DiaryPersona {
     examples: ["慢慢来，我陪你一起看。"],
     activeness: "quiet",
     boundaries: { allowPlayful: false, allowNudgeLearning: false, allowVoiceTags: false },
+    revision: 1,
     ...overrides,
   };
 }
@@ -89,6 +108,143 @@ const aQuote: DiaryEmbed = {
   ref: "引1", kind: "quote", label: "《欧姆定律》里写着", text: "电流与电压成正比。", noteId: "note-ohm",
 };
 const para = (text: string): DiaryBlock => ({ type: "text", text });
+
+test("diary material reads honor the current enabled period and reject paused accounts", async () => {
+  const firstStart = "2026-09-29T12:00:00.000Z";
+  const resumedStart = "2026-09-30T08:00:00.000Z";
+  let rows: unknown = [{ global_enabled: true, diary_enabled: true, diary_enabled_since: firstStart }];
+  const tx = { execute: async () => rows } as unknown as WorkerTransaction;
+
+  assert.equal((await currentDiaryMaterialStart(tx, "user-1"))?.toISOString(), firstStart);
+  assert.equal(await diaryMaterialStartIsCurrent(tx, "user-1", new Date(firstStart)), true);
+
+  rows = [{ global_enabled: true, diary_enabled: false, diary_enabled_since: null }];
+  assert.equal(await currentDiaryMaterialStart(tx, "user-1"), null);
+  assert.equal(await diaryMaterialStartIsCurrent(tx, "user-1", new Date(firstStart)), false);
+
+  rows = [{ global_enabled: true, diary_enabled: true, diary_enabled_since: resumedStart }];
+  assert.equal(await diaryMaterialStartIsCurrent(tx, "user-1", new Date(firstStart)), false,
+    "a task from before the latest resume must not commit");
+});
+
+test("local diary material starts at the later of midnight and diary re-enable", () => {
+  const scope = {
+    workspaceId: "workspace-1",
+    userId: "user-1",
+    date: "2026-09-30",
+    timezone: "Asia/Shanghai",
+    diaryEnabledSince: new Date("2026-09-30T02:00:00.000Z"),
+  };
+  const query = new PgDialect().sqlToQuery(dayStart(scope));
+  assert.match(query.sql, /GREATEST\(/);
+  assert.match(query.sql, /AT TIME ZONE/);
+  assert.ok(query.params.includes(scope.diaryEnabledSince.toISOString()));
+});
+
+test("no grounded diary candidate skips generation while an eligible moment proceeds", () => {
+  assert.equal(hasDiaryWorthyMaterial({ quietDay: false, candidateCount: 0 }), false);
+  assert.equal(hasDiaryWorthyMaterial({ quietDay: true, candidateCount: 1 }), false);
+  assert.equal(hasDiaryWorthyMaterial({ quietDay: false, candidateCount: 1 }), true);
+});
+
+test("diary candidate sieve keeps a shared exchange and its note provenance together", () => {
+  const messageUser: DiaryPiece = {
+    text: "你说：我把这个比例又算了一遍，还是有点犹豫。", group: "his", weight: 1, at: "10:02",
+    noteId: "note-ohm", sourceId: "00000000-0000-4000-8000-000000000001", sourceType: "companion_message",
+    sourceVersion: "a".repeat(64),
+  };
+  const messageAssistant: DiaryPiece = {
+    text: "我说：这一步我也不敢直接下结论，我们一起对照一下原式。", group: "her", weight: 3, at: "10:05",
+    noteId: "note-ohm", sourceId: "00000000-0000-4000-8000-000000000002", sourceType: "companion_message",
+    sourceVersion: "b".repeat(64),
+  };
+  const note: DiaryPiece = {
+    ...hisNote,
+    at: "10:00",
+    sourceId: "00000000-0000-4000-8000-000000000003",
+    sourceType: "note",
+    sourceVersion: "00000000-0000-4000-8000-000000000004",
+  };
+  const candidates = buildDiaryCandidates(material({ pieces: [note, messageUser, messageAssistant] }));
+  assert.equal(candidates.length, 1);
+  assert.deepEqual(candidates[0].sourceIds, [
+    "00000000-0000-4000-8000-000000000001",
+    "00000000-0000-4000-8000-000000000002",
+    "00000000-0000-4000-8000-000000000003",
+  ]);
+  assert.deepEqual(candidates[0].sourceVersions.map((item) => item.sourceId).sort(), candidates[0].sourceIds);
+  assert.equal(candidates[0].material.pieces.length, 3);
+
+  const selection = companionDiarySelectionSchema.parse({
+    selected_id: candidates[0].id,
+    reason_summary: "这段把共同核对的过程留了下来。",
+    source_ids: candidates[0].sourceIds,
+  });
+  assert.equal(validateDiarySelection(selection, candidates), true);
+  assert.equal(validateDiarySelection({ ...selection, source_ids: ["00000000-0000-4000-8000-000000000001"] }, candidates), false);
+  assert.match(buildDiarySelectionMessages("2026-09-30", candidates)[1].content, /source_versions/);
+  assert.equal(validateDiarySelection({ selected_id: null, reason_summary: "没有一段适合留下。", source_ids: [] }, candidates), true);
+});
+
+test("diary candidate sieve caps choices at four without ranking by speaker", () => {
+  const pieces: DiaryPiece[] = Array.from({ length: 7 }, (_unused, index) => ({
+    text: index % 2 === 0 ? `你收进来一份资料「主题${index}」` : `我提醒过你：今晚继续看主题${index}。`,
+    group: index % 2 === 0 ? "his" : "her",
+    weight: index % 2 === 0 ? 1 : 2,
+    at: `0${index + 8}:10`,
+    sourceId: `00000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`,
+    sourceType: index % 2 === 0 ? "source" : "reminder",
+  }));
+  const candidates = buildDiaryCandidates(material({ pieces }));
+  assert.equal(candidates.length, 4);
+  assert.ok(candidates.some((candidate) => candidate.material.pieces[0].group === "her"));
+  assert.ok(candidates.some((candidate) => candidate.material.pieces[0].group === "his"));
+});
+
+test("diary candidate provenance lists only source rows represented in its bounded text", () => {
+  const pieces: DiaryPiece[] = Array.from({ length: 5 }, (_unused, index) => ({
+    text: String(index).repeat(500),
+    group: "his",
+    weight: 1,
+    at: `10:0${index}`,
+    noteId: "same-note",
+    sourceId: `00000000-0000-4000-8000-${String(index + 20).padStart(12, "0")}`,
+    sourceType: "note",
+  }));
+  const [candidate] = buildDiaryCandidates(material({ pieces }));
+  assert.ok(candidate);
+  assert.equal(candidate.material.pieces.reduce((total, piece) => total + piece.text.length, 0), 1_600);
+  assert.equal(candidate.sourceIds.length, 4);
+  assert.deepEqual(candidate.sourceIds.sort(), candidate.material.pieces.map((piece) => piece.sourceId).sort());
+});
+
+test("diary stage checkpoints reject a different user or workspace before touching storage", async () => {
+  let parsed = false;
+  const checkpoint = createDiaryCheckpointPort({
+    job: { id: "job-1", workspaceId: "workspace-1", requestedBy: "user-1", leaseToken: "lease-1" },
+    userId: "user-1",
+    parseOutput(value) {
+      parsed = true;
+      return value as { ok: true };
+    },
+  });
+
+  assert.equal(await checkpoint.load({
+    taskId: "companion_diary_draft",
+    taskVersion: 1,
+    inputSnapshotHash: "snapshot",
+    workspaceId: "workspace-2",
+    userId: "user-1",
+  }), null);
+  assert.equal(parsed, false);
+  await assert.rejects(() => checkpoint.save({
+    taskId: "companion_diary_draft",
+    taskVersion: 1,
+    inputSnapshotHash: "snapshot",
+    workspaceId: "workspace-1",
+    userId: "user-2",
+  }, { output: { ok: true }, promptTokens: 0, completionTokens: 0 }), /scope/);
+});
 
 function systemOf(input: { date?: string; persona?: DiaryPersona; material?: DiaryMaterial; rejection?: string | null } = {}) {
   return buildDiaryPrompt({
@@ -550,13 +706,14 @@ test("日记 prompt：多段格式、她自己的生活、可嵌素材都送到�
  * 音色只有一处真相（用户判词"文风还是怪怪的"的正解）。
  *
  * 用户对她的聊天声音满意、对日记里的文学青年腔不满意——因为日记链路以前不接
- * 那份角色底座。现在接的是其中"怎么说话"那两句（`COMPANION_VOICE_STYLE_LINES_V1`）。
+ * 那份角色底座。现在接的是其中"怎么说话"那两句（`COMPANION_VOICE_STYLE_LINES_V2`）。
  * 不接整段是第一版试过、真跑否掉的：整段里"把球抛回去""不假称自己有身体""黏人但
  * 懂分寸"三处被她抄成了日记题材。这几条 doesNotMatch 就是防那个回潮。
  */
 test("日记 prompt：接音色的两句，不接整段角色底座", () => {
   const system = systemOf();
-  assert.ok(system.includes(COMPANION_VOICE_STYLE_LINES_V1), "音色那两句没进 prompt");
+  assert.equal(COMPANION_DIARY_DRAFT_PROMPT_VERSION, "diary-draft-v2");
+  assert.ok(system.includes(COMPANION_VOICE_STYLE_LINES_V2), "音色那两句没进 prompt");
   assert.ok(system.indexOf("# 你说话的样子") < system.indexOf("<persona_data>"));
   assert.doesNotMatch(system, /把球抛回去/);
   assert.doesNotMatch(system, /不假称自己有身体/);

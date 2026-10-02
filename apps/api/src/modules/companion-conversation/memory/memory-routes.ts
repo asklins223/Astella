@@ -11,7 +11,8 @@
  * POST   /companion/memory/:id/archive        — 归档
  * POST   /companion/memory/:id/restore        — 恢复
  * POST   /companion/memory/:id/dismiss        — 忽略（写 dismissed_at，并把那条候选交付结账成 dismissed）
- * POST   /companion/memory/:id/correct        — 纠正（旧记忆 soft delete + 新候选）
+ * POST   /companion/memory/:id/correct        — 带 expectedRevision 原子修订当前版本
+ * GET    /companion/memory/:id/revisions      — 查看此前版本及其作者/来源
  * DELETE /companion/memory/:id                — 删除记忆
  * DELETE /companion/memory                    — 一键清空（二次确认由前端保证）
  *
@@ -34,14 +35,22 @@ import {
   deleteMemory,
   dismissMemory,
   exportMemories,
+  getMemoryBudgetStatus,
   listMemories,
   listMemoryConflicts,
+  listMemoryRevisions,
+  MemorySourceSuppressedError,
+  MemoryRevisionConflictError,
+  moveMemoryBudgetTier,
   pinMemory,
   resolveMemoryConflict,
   restoreMemory,
+  restoreDeletedMemory,
+  eraseMemory,
   unpinMemory,
   upsertMemory,
   type MemoryKindV2,
+  type MemoryItemV2,
   type MemoryScopeV2,
   type MemorySourceTypeV2,
 } from "./memory-service.ts";
@@ -50,13 +59,26 @@ import { isMemoryContextEnabled, isMemoryVectorRebuildEnabled } from "../../../c
 
 const memoryParamsSchema = z.object({ id: z.string().uuid() });
 
+/** 筛选与读取用的完整 kind：含判断记录（40 §4.5.4）。 */
 const memoryKindSchema = z.enum([
   "preference",
   "goal",
   "learning_context",
   "interaction_note",
   "episodic",
+  "judgment",
 ]);
+
+/**
+ * 写入端**不接受** `judgment`。
+ *
+ * 判断记录必须有来源事件、作者是她、认识状态显式（§4.5.4–4.5.5），
+ * 这三件事手动新增一个文本框填不出来；只有 `remember_judgment` 工具能写。
+ * 它出现在 kind 枚举里只是为了让「筛选她的看法」能用。
+ */
+const creatableMemoryKindSchema = memoryKindSchema.exclude(["judgment"]);
+
+const memoryBudgetTierSchema = z.enum(["resident", "active", "archived"]);
 
 const listQuerySchema = z.object({
   kind: memoryKindSchema.optional(),
@@ -67,7 +89,7 @@ const listQuerySchema = z.object({
 });
 
 const createMemoryBodySchema = z.object({
-  kind: memoryKindSchema,
+  kind: creatableMemoryKindSchema,
   // §9.4/§25：写入端统一限制 ≤200 字。
   content: z.string().min(1).max(200),
   sourceEventId: z.string().min(1).max(240).optional(),
@@ -78,12 +100,27 @@ const createMemoryBodySchema = z.object({
   sourceType: z.enum(["user_stated", "model_inferred", "confirmed", "summary"]).optional(),
   userStated: z.boolean().optional(),
   candidate: z.boolean().optional(),
+  appliesWhen: z.string().max(200).nullable().optional(),
+  validFrom: z.string().datetime({ offset: true }).nullable().optional(),
+  validUntil: z.string().datetime({ offset: true }).nullable().optional(),
+}).superRefine((value, context) => {
+  if (value.validFrom && value.validUntil && Date.parse(value.validUntil) <= Date.parse(value.validFrom)) {
+    context.addIssue({ code: "custom", path: ["validUntil"], message: "validUntil must follow validFrom" });
+  }
 });
 
 const correctMemoryBodySchema = z.object({
   // §9.4/§25：写入端统一限制 ≤200 字。
   content: z.string().min(1).max(200),
+  expectedRevision: z.number().int().min(1),
   reason: z.string().min(1).max(500).optional(),
+  appliesWhen: z.string().max(200).nullable().optional(),
+  validFrom: z.string().datetime({ offset: true }).nullable().optional(),
+  validUntil: z.string().datetime({ offset: true }).nullable().optional(),
+}).superRefine((value, context) => {
+  if (value.validFrom && value.validUntil && Date.parse(value.validUntil) <= Date.parse(value.validFrom)) {
+    context.addIssue({ code: "custom", path: ["validUntil"], message: "validUntil must follow validFrom" });
+  }
 });
 
 export async function memoryRoutes(app: FastifyInstance) {
@@ -187,6 +224,37 @@ export async function memoryRoutes(app: FastifyInstance) {
     },
   );
 
+  app.get<{ Params: { id: string } }>(
+    "/companion/memory/:id/revisions",
+    { preHandler: [requireSession] },
+    async (req, reply) => {
+      const params = memoryParamsSchema.safeParse(req.params);
+      if (!params.success) throw app.httpErrors.badRequest("memoryId 非法");
+      const scope = scopeOfSession(req.session);
+      const items = await withWorkspaceTransaction(scope, (tx) =>
+        listMemoryRevisions(tx, scope, params.data.id),
+      );
+      if (!items) {
+        return reply.code(404).send({ error: "memory_not_found", message: "记忆不存在" });
+      }
+      return reply.header("Cache-Control", "no-store").send({
+        version: 1,
+        memoryItemId: params.data.id,
+        items,
+      });
+    },
+  );
+
+  app.get(
+    "/companion/memory/budget",
+    { preHandler: [requireSession] },
+    async (req, reply) => {
+      const scope = scopeOfSession(req.session);
+      const status = await withWorkspaceTransaction(scope, (tx) => getMemoryBudgetStatus(tx, scope));
+      return reply.header("Cache-Control", "no-store").send(status);
+    },
+  );
+
   app.get<{ Querystring: Record<string, string | undefined> }>(
     "/companion/memory",
     { preHandler: [requireSession] },
@@ -214,20 +282,34 @@ export async function memoryRoutes(app: FastifyInstance) {
       const body = createMemoryBodySchema.safeParse(req.body ?? {});
       if (!body.success) throw app.httpErrors.badRequest("memory body 非法");
       const scope = scopeOfSession(req.session);
-      const item = await withWorkspaceTransaction(scope, (tx) =>
-        upsertMemory(tx, scope, {
-          kind: body.data.kind,
-          content: body.data.content,
-          sourceEventId: body.data.sourceEventId,
-          sourceSessionId: body.data.sourceSessionId,
-          importance: body.data.importance,
-          confidence: body.data.confidence,
-          scope: body.data.scope,
-          sourceType: body.data.sourceType as MemorySourceTypeV2 | undefined,
-          userStated: body.data.userStated ?? true,
-          candidate: body.data.candidate ?? false,
-        }),
-      );
+      let item: MemoryItemV2;
+      try {
+        item = await withWorkspaceTransaction(scope, (tx) =>
+          upsertMemory(tx, scope, {
+            kind: body.data.kind,
+            content: body.data.content,
+            sourceEventId: body.data.sourceEventId,
+            sourceSessionId: body.data.sourceSessionId,
+            importance: body.data.importance,
+            confidence: body.data.confidence,
+            scope: body.data.scope,
+            sourceType: body.data.sourceType as MemorySourceTypeV2 | undefined,
+            userStated: body.data.userStated ?? true,
+            candidate: body.data.candidate ?? false,
+            appliesWhen: body.data.appliesWhen,
+            validFrom: body.data.validFrom == null ? body.data.validFrom : new Date(body.data.validFrom),
+            validUntil: body.data.validUntil == null ? body.data.validUntil : new Date(body.data.validUntil),
+          }),
+        );
+      } catch (error) {
+        if (error instanceof MemorySourceSuppressedError) {
+          return reply.code(409).send({
+            error: "memory_source_forgotten",
+            message: "这条来源已被忘记；如需重新保存，请作为新的手动记忆添加。",
+          });
+        }
+        throw error;
+      }
       // §9.9：记录候选创建指标
       try {
         companionMemoryCandidateTotal.labels("created").inc();
@@ -288,9 +370,10 @@ export async function memoryRoutes(app: FastifyInstance) {
       try {
         await withWorkspaceTransaction(scope, async (tx) => {
           await tx.execute(sql`
-            UPDATE pet_profiles
-            SET familiarity = LEAST(familiarity + 0.03, 1), updated_at = now()
-            WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
+            INSERT INTO pet_profiles (workspace_id, user_id, familiarity)
+            VALUES (${scope.workspaceId}, ${scope.userId}, 0.03)
+            ON CONFLICT (workspace_id, user_id) DO UPDATE
+            SET familiarity = LEAST(pet_profiles.familiarity + 0.03, 1), updated_at = now()
           `);
         });
       } catch {
@@ -392,6 +475,39 @@ export async function memoryRoutes(app: FastifyInstance) {
     },
   );
 
+  app.post<{ Params: { id: string }; Body: unknown }>(
+    "/companion/memory/:id/budget-tier",
+    { preHandler: [requireSession] },
+    async (req, reply) => {
+      const params = memoryParamsSchema.safeParse(req.params);
+      const body = z.object({ tier: memoryBudgetTierSchema }).strict().safeParse(req.body ?? {});
+      if (!params.success || !body.success) throw app.httpErrors.badRequest("memory budget tier 参数非法");
+      const scope = scopeOfSession(req.session);
+      const result = await withWorkspaceTransaction(scope, (tx) =>
+        moveMemoryBudgetTier(tx, scope, {
+          memoryItemId: params.data.id,
+          tier: body.data.tier,
+          actorType: "user",
+          actorId: scope.userId,
+        }),
+      );
+      if (result.status === "missing") {
+        return reply.code(404).send({ error: "memory_not_found", message: "记忆不存在" });
+      }
+      if (result.status === "capacity") {
+        return reply.code(409).header("Cache-Control", "no-store").send({
+          error: "memory_resident_budget_full",
+          message: "常驻记忆预算已满；先选择一条常驻记忆降层后再试。",
+          result,
+        });
+      }
+      if (result.status === "not_eligible") {
+        return reply.code(409).send({ error: "memory_budget_tier_not_eligible", message: "未确认的候选记忆不能设为常驻" });
+      }
+      return reply.header("Cache-Control", "no-store").send({ version: 1, result });
+    },
+  );
+
   app.post<{ Params: { id: string } }>(
     "/companion/memory/:id/dismiss",
     { preHandler: [requireSession] },
@@ -417,9 +533,25 @@ export async function memoryRoutes(app: FastifyInstance) {
       const body = correctMemoryBodySchema.safeParse(req.body ?? {});
       if (!params.success || !body.success) throw app.httpErrors.badRequest("correct body 非法");
       const scope = scopeOfSession(req.session);
-      const item = await withWorkspaceTransaction(scope, (tx) =>
-        correctMemory(tx, scope, params.data.id, body.data),
-      );
+      let item: MemoryItemV2 | null;
+      try {
+        item = await withWorkspaceTransaction(scope, (tx) =>
+          correctMemory(tx, scope, params.data.id, {
+            ...body.data,
+            validFrom: body.data.validFrom == null ? body.data.validFrom : new Date(body.data.validFrom),
+            validUntil: body.data.validUntil == null ? body.data.validUntil : new Date(body.data.validUntil),
+          }),
+        );
+      } catch (error) {
+        if (error instanceof MemoryRevisionConflictError) {
+          return reply.code(409).send({
+            error: "memory_revision_conflict",
+            message: "这条记忆已有新版本；请重新读取后再修订。",
+            currentRevision: error.currentRevision,
+          });
+        }
+        throw error;
+      }
       if (!item) {
         return reply.code(404).send({ error: "memory_not_found", message: "记忆不存在" });
       }
@@ -445,6 +577,52 @@ export async function memoryRoutes(app: FastifyInstance) {
         companionMemoryCandidateTotal.labels("deleted").inc();
       } catch {
         // metrics 记录失败不阻断请求
+      }
+      return reply.code(204).send();
+    },
+  );
+
+  /**
+   * 从回收区恢复（40 §4.6.4 / A47 的「普通回收**可恢复**且留痕」）。
+   *
+   * 与 `POST /:id/restore` 分开是刻意的：那条恢复的是**归档**（记忆一直活着），
+   * 这里恢复的是**删除**。两条语义不同、留痕不同，合成一条会让人以为
+   * 「归档」和「删除」是同一个开关的两端。
+   */
+  app.post<{ Params: { id: string } }>(
+    "/companion/memory/:id/restore-deleted",
+    { preHandler: [requireSession] },
+    async (req, reply) => {
+      const params = memoryParamsSchema.safeParse(req.params);
+      if (!params.success) throw app.httpErrors.badRequest("memoryId 非法");
+      const scope = scopeOfSession(req.session);
+      const restored = await withWorkspaceTransaction(scope, (tx) =>
+        restoreDeletedMemory(tx, scope, params.data.id),
+      );
+      if (!restored) {
+        return reply.code(404).send({ error: "memory_not_in_recycle_bin", message: "这条记忆不在回收区里" });
+      }
+      return reply.code(204).send();
+    },
+  );
+
+  /**
+   * **彻底清除**：用户明确要求删干净时用，不等回收区窗口（§11：「不以
+   * 『正式历史不可变』拒绝适用的删除规则」）。与 `DELETE /:id` 的分工写在
+   * memory-service.eraseMemory 的注释里。
+   */
+  app.delete<{ Params: { id: string } }>(
+    "/companion/memory/:id/erase",
+    { preHandler: [requireSession] },
+    async (req, reply) => {
+      const params = memoryParamsSchema.safeParse(req.params);
+      if (!params.success) throw app.httpErrors.badRequest("memoryId 非法");
+      const scope = scopeOfSession(req.session);
+      const erased = await withWorkspaceTransaction(scope, (tx) =>
+        eraseMemory(tx, scope, params.data.id),
+      );
+      if (!erased) {
+        return reply.code(404).send({ error: "memory_not_found", message: "记忆不存在" });
       }
       return reply.code(204).send();
     },

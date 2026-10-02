@@ -13,7 +13,8 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { updateCompanionAccountState } from "../modules/companion-shell/service.ts";
+import { sql as drizzleSql } from "drizzle-orm";
+import { getCompanionOverview, updateCompanionAccountState } from "../modules/companion-shell/service.ts";
 import { getCompanionAccountEpoch } from "../modules/companion-conversation/turn/companion-account-epoch.ts";
 import { closeDatabase, withWorkspaceTransaction } from "../db/client.ts";
 
@@ -41,6 +42,14 @@ const readEpoch = () => withWorkspaceTransaction(
   { workspaceId, userId },
   (tx) => getCompanionAccountEpoch(tx, userId),
 );
+
+const readDiaryEnabledSince = () => withWorkspaceTransaction({ workspaceId, userId }, async (tx) => {
+  const rows = await tx.execute<{ diary_enabled_since: Date | string | null }>(drizzleSql`
+    SELECT diary_enabled_since FROM user_companion_account_state WHERE user_id = ${userId}
+  `);
+  const value = (Array.isArray(rows) ? rows : [])[0]?.diary_enabled_since;
+  return value ? new Date(value) : null;
+});
 
 test("从未设置过账号状态 → 世代 0", async () => {
   assert.equal(await readEpoch(), 0);
@@ -94,4 +103,48 @@ test("global off 是边沿触发：仅 on→off 跃迁递增，重复 off 不重
     `第二次 on→off 跃迁必须继续递增（${firstOff.epoch} → ${secondOff.epoch}）`,
   );
   assert.equal(await readEpoch(), secondOff.epoch);
+});
+
+test("日记单独暂停/恢复，并在伴星总开关重启后重新建立素材起点", async () => {
+  const current = await getCompanionOverview(userId, workspaceId);
+  const companionOn = await updateCompanionAccountState(userId, workspaceId, {
+    revision: current.account.revision,
+    globalEnabled: true,
+  });
+  const beforePause = await readDiaryEnabledSince();
+  assert.equal(companionOn.diaryEnabled, true);
+  assert.ok(beforePause);
+
+  const paused = await updateCompanionAccountState(userId, workspaceId, {
+    revision: companionOn.revision,
+    diaryEnabled: false,
+  });
+  assert.equal(paused.diaryEnabled, false);
+  assert.equal(await readDiaryEnabledSince(), null, "暂停期间没有活动素材起点");
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const resumed = await updateCompanionAccountState(userId, workspaceId, {
+    revision: paused.revision,
+    diaryEnabled: true,
+  });
+  const afterResume = await readDiaryEnabledSince();
+  assert.equal(resumed.diaryEnabled, true);
+  assert.ok(afterResume && beforePause && afterResume.valueOf() > beforePause.valueOf(),
+    "日记恢复会开始新的素材时间窗");
+
+  const companionOff = await updateCompanionAccountState(userId, workspaceId, {
+    revision: resumed.revision,
+    globalEnabled: false,
+  });
+  assert.equal(await readDiaryEnabledSince(), null, "伴星总开关也暂停日记材料");
+
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  await updateCompanionAccountState(userId, workspaceId, {
+    revision: companionOff.revision,
+    globalEnabled: true,
+  });
+  const afterCompanionReenable = await readDiaryEnabledSince();
+  assert.ok(afterCompanionReenable && afterResume
+    && afterCompanionReenable.valueOf() > afterResume.valueOf(),
+  "重新开启伴星后不得重新使用关闭期间的材料");
 });

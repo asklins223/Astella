@@ -398,9 +398,15 @@ export async function loadHereAndNow(
     name: string; activeness: string; interaction_count: number; last_active_at: Date | null;
     boundaries: Record<string, unknown> | null;
   }>(sql`
-    SELECT name, activeness, interaction_count, last_active_at, boundaries
-    FROM pet_profiles WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
-    LIMIT 1
+    SELECT coalesce(a.profile->>'name', '伴星') AS name,
+           coalesce(a.profile->>'activeness', 'moderate') AS activeness,
+           coalesce(r.interaction_count, 0) AS interaction_count,
+           r.last_active_at,
+           a.profile->'boundaries' AS boundaries
+    FROM (SELECT ${scope.userId}::uuid AS user_id) u
+    LEFT JOIN companion_persona_profiles a ON a.user_id = u.user_id
+    LEFT JOIN pet_profiles r
+      ON r.workspace_id = ${scope.workspaceId} AND r.user_id = u.user_id
   `);
   const petRow = petRows[0];
 

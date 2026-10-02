@@ -27,6 +27,7 @@ import type { ApiTransaction } from "../../db/client.ts";
 import {
   assistantDeliveries,
   assistantMemoryItems,
+  companionPersonaProfiles,
   companionRoomProfiles,
   learningObjectivesV2,
   learningRuns,
@@ -200,6 +201,8 @@ async function readMilestones(
       eq(assistantMemoryItems.userConfirmed, true),
       isNull(assistantMemoryItems.archivedAt),
       isNull(assistantMemoryItems.deletedAt),
+      sql`(${assistantMemoryItems.validFrom} IS NULL OR ${assistantMemoryItems.validFrom} <= now())`,
+      sql`(${assistantMemoryItems.validUntil} IS NULL OR ${assistantMemoryItems.validUntil} > now())`,
     ))
     .limit(1);
 
@@ -359,11 +362,18 @@ async function readMemorySummary(
       confirmedCount: sql<number>`count(*) FILTER (
         WHERE ${assistantMemoryItems.candidate} = false
           AND ${assistantMemoryItems.userConfirmed} = true
+          AND (${assistantMemoryItems.validFrom} IS NULL OR ${assistantMemoryItems.validFrom} <= now())
+          AND (${assistantMemoryItems.validUntil} IS NULL OR ${assistantMemoryItems.validUntil} > now())
       )::int`,
       candidateCount: sql<number>`count(*) FILTER (
         WHERE ${assistantMemoryItems.candidate} = true
+          AND (${assistantMemoryItems.validFrom} IS NULL OR ${assistantMemoryItems.validFrom} <= now())
+          AND (${assistantMemoryItems.validUntil} IS NULL OR ${assistantMemoryItems.validUntil} > now())
       )::int`,
-      updatedAt: sql<Date | string | null>`max(${assistantMemoryItems.updatedAt})`,
+      updatedAt: sql<Date | string | null>`max(${assistantMemoryItems.updatedAt}) FILTER (
+        WHERE (${assistantMemoryItems.validFrom} IS NULL OR ${assistantMemoryItems.validFrom} <= now())
+          AND (${assistantMemoryItems.validUntil} IS NULL OR ${assistantMemoryItems.validUntil} > now())
+      )`,
     })
     .from(assistantMemoryItems)
     .where(and(
@@ -439,7 +449,12 @@ export async function getCompanionHomeProjection(
   now: Date = new Date(),
 ): Promise<CompanionHomeProjectionV1> {
   const roomProfile = await getCompanionRoomProfile(executor, scope, now);
-  const profileRows = await executor
+  const personaRows = await executor
+    .select()
+    .from(companionPersonaProfiles)
+    .where(eq(companionPersonaProfiles.userId, scope.userId))
+    .limit(1);
+  const relationshipRows = await executor
     .select()
     .from(petProfiles)
     .where(and(
@@ -447,26 +462,28 @@ export async function getCompanionHomeProjection(
       eq(petProfiles.userId, scope.userId),
     ))
     .limit(1);
-  const savedProfile = profileRows[0] ?? null;
+  const persona = personaRows[0]?.profile ?? null;
+  const relationship = relationshipRows[0] ?? null;
+  const hasSavedProfile = persona !== null;
   const memorySummary = await readMemorySummary(executor, scope);
   const proactiveCue = await readProactiveCue(executor, scope, now);
 
   return companionHomeProjectionV1Schema.parse({
     version: 1,
     snapshotAt: now.toISOString(),
-    profileSummary: savedProfile
+    profileSummary: hasSavedProfile || relationship
       ? {
-          name: savedProfile.name,
-          activeness: savedProfile.activeness,
+          name: persona?.name ?? "学习伴星",
+          activeness: persona?.activeness ?? "moderate",
           boundaries: {
-            allowPlayful: savedProfile.boundaries.allowPlayful ?? true,
-            allowNudgeLearning: savedProfile.boundaries.allowNudgeLearning ?? true,
-            allowVoiceTags: savedProfile.boundaries.allowVoiceTags ?? false,
-            catchphrase: savedProfile.boundaries.catchphrase ?? null,
+            allowPlayful: persona?.boundaries.allowPlayful ?? true,
+            allowNudgeLearning: persona?.boundaries.allowNudgeLearning ?? true,
+            allowVoiceTags: persona?.boundaries.allowVoiceTags ?? false,
+            catchphrase: persona?.boundaries.catchphrase ?? null,
           },
-          familiarity: clamp01(savedProfile.familiarity),
-          interactionCount: Math.max(0, savedProfile.interactionCount),
-          source: "saved_profile",
+          familiarity: clamp01(relationship?.familiarity ?? 0),
+          interactionCount: Math.max(0, relationship?.interactionCount ?? 0),
+          source: hasSavedProfile ? "saved_profile" : "system_default",
         }
       : {
           name: "学习伴星",

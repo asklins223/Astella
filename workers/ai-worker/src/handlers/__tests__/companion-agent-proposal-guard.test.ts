@@ -83,6 +83,28 @@ test("③ 落库的 payload 必须过 schema", () => {
   }
 });
 
+test("保存记忆的提案保留来源短引句、适用条件和有效期", () => {
+  const start = code.indexOf("companion_save_memory:");
+  const end = code.indexOf("companion_set_activeness:", start);
+  const branch = code.slice(start, end);
+  assert.ok(start >= 0 && end > start, "保存记忆工具的 proposal payload 映射缺失");
+  for (const field of ["sourceQuote", "appliesWhen", "validUntil"]) {
+    assert.ok(branch.includes(field), `提案 payload 丢失 ${field}`);
+  }
+});
+
+test("修订记忆的提案保留 memoryId、expectedRevision 和显式修订字段", () => {
+  const start = code.indexOf("companion_revise_memory:");
+  const end = code.indexOf("companion_set_activeness:", start);
+  const branch = code.slice(start, end);
+  assert.ok(start >= 0 && end > start, "修订记忆工具的 proposal payload 映射缺失");
+  for (const field of ["memoryId", "expectedRevision", "content", "appliesWhen", "validFrom", "validUntil"]) {
+    assert.ok(branch.includes(field), `修订记忆提案 payload 丢失 ${field}`);
+  }
+  assert.ok(/args\.appliesWhen !== undefined/.test(branch), "未提供的适用条件必须保留旧值，而不是被清空");
+  assert.ok(/args\.validUntil !== undefined/.test(branch), "未提供的期限必须保留旧值，而不是被清空");
+});
+
 test("【自证】判据会红：把 pending 那道闸抽掉必须被抓", () => {
   const broken = code.replace(/status = 'pending'/, "status = 'anything'");
   assert.ok(!/status = 'pending'/.test(broken), "自证：抽掉之后不该再匹配到");

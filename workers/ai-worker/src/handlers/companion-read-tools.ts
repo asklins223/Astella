@@ -22,6 +22,7 @@ import { sql } from "drizzle-orm";
 import { pageReadableV1Schema } from "@ailearn/shared/companion-bridge-contracts";
 import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
 import { PAGE_KIND_LABELS } from "./companion-here-and-now.ts";
+import { CompanionToolUnavailableError } from "./companion-tool-result.ts";
 
 
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
@@ -438,6 +439,8 @@ export function currentPageToolResult(row: PageContextRow | null): {
   value: Record<string, unknown>;
   safeSummary: string;
 } {
+  // 注意 `no_live_page` **不**抛：那时根本没有页面，是"现在没有"而不是
+  // "这个能力不可用"。40b §3.2 的 unavailable 说的是后者。
   if (!row) {
     return {
       value: { available: false, reason: "no_live_page" },
@@ -445,20 +448,27 @@ export function currentPageToolResult(row: PageContextRow | null): {
     };
   }
   if (row.sensitivity === "credential_surface") {
-    return {
-      value: { available: false, reason: "blocked_surface", pageKind: row.page_kind },
-      safeSummary: "这一页的内容不能读",
-    };
+    // 40b §3.2：`unavailable` = 「所需资源或能力不可用，指出实际影响及可用替代」。
+    // 凭据页正是这一类——页面在、能力在，就是这一处不给读。
+    //
+    // 为什么改成**抛**而不是在 value 里说 available:false：账本状态与页面文案
+    // 必须和模型看到的是同一个身份（§3.2「二者对应同一运行身份」）。塞在
+    // payload 里的话，账本记的是 succeeded，页面显示"读成功"，只有模型
+    // 知道拿不到——那正是 0349 之前 not_executed 被压成 failed 的同一种病。
+    throw new CompanionToolUnavailableError(
+      "这一页是凭据相关的页面，内容不能读；换一页或直接问我别的。",
+    );
   }
   const parsed = pageReadableV1Schema.safeParse(row.readable_view);
   if (!parsed.success) {
     // 落库的视图对不上合同（旧行、或页面登记错了形状）——按"这页没登记可读内容"
     // 处理，而不是把半份形状递给她去猜。
     const label = PAGE_KIND_LABELS[row.page_kind] ?? row.page_kind;
-    return {
-      value: { available: false, reason: "page_not_readable", pageKind: row.page_kind },
-      safeSummary: `这一页还没有登记可读内容（${label}）`,
-    };
+    // 同上：`page_not_readable` 是「这一页读不了」，属于能力不可用而不是
+    // 「读到了但是空的」。§3.2 要求页面、账本与模型看到同一个类别。
+    throw new CompanionToolUnavailableError(
+      `这一页还没有登记可读内容（${label}）；换一页或直接问我别的。`,
+    );
   }
   const view = parsed.data;
   const isFormalAssessment = row.sensitivity === "formal_assessment";

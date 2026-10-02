@@ -128,6 +128,7 @@ type FakeExecutorOptions = {
   readonly initialProfile?: FakeRoomProfileRow | null;
   readonly profileReads?: FakeRoomProfileRow[];
   readonly petProfile?: Record<string, unknown> | null;
+  readonly personaProfile?: Record<string, unknown> | null;
   readonly memorySummary?: { confirmedCount: number; candidateCount: number; updatedAt: Date | null };
   readonly proactiveDeliveries?: Array<Record<string, unknown>>;
   readonly failProfileUpdate?: boolean;
@@ -165,6 +166,7 @@ function fakeExecutor(options: FakeExecutorOptions = {}) {
             const next = profileReads.length > 0 ? profileReads.shift()! : profile;
             return queryChain(next ? [next] : []);
           }
+          if (name === "companion_persona_profiles") return queryChain(options.personaProfile ? [options.personaProfile] : []);
           if (name === "pet_profiles") return queryChain(options.petProfile ? [options.petProfile] : []);
           if (name === "assistant_deliveries") return queryChain(options.proactiveDeliveries ?? []);
           if (name === "assistant_memory_items" && columns && "confirmedCount" in columns) {
@@ -373,15 +375,19 @@ test("proactive cue origin：念头可点开、到点提醒是承诺、其余算
 test("saved companion profile is projected through an explicit safe field allowlist", async () => {
   const fake = fakeExecutor({
     initialProfile: profileRow(),
-    petProfile: {
-      name: "星澜",
-      activeness: "quiet",
-      boundaries: {
-        allowPlayful: false,
-        allowNudgeLearning: true,
-        allowVoiceTags: false,
-        catchphrase: null,
+    personaProfile: {
+      profile: {
+        name: "星澜",
+        activeness: "quiet",
+        boundaries: {
+          allowPlayful: false,
+          allowNudgeLearning: true,
+          allowVoiceTags: false,
+          catchphrase: null,
+        },
       },
+    },
+    petProfile: {
       familiarity: 0.6,
       interactionCount: 7,
       rawMemoryBody: "must never cross the home projection boundary",

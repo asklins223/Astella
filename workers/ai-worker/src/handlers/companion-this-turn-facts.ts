@@ -321,6 +321,8 @@ async function findMemories(
     FROM assistant_memory_items m
     WHERE m.workspace_id = ${scope.workspaceId} AND m.user_id = ${scope.userId}
       AND m.deleted_at IS NULL AND m.archived_at IS NULL AND coalesce(m.candidate, false) = false
+      AND (m.valid_from IS NULL OR m.valid_from <= now())
+      AND (m.valid_until IS NULL OR m.valid_until > now())
       AND (${match})
     ORDER BY m.updated_at DESC LIMIT 2
   `);

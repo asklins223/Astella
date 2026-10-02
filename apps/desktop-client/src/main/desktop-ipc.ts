@@ -63,6 +63,8 @@ import {
   capabilityProjectionSchema,
   companionBridgeStateV1Schema,
   clipboardReadLinksResultSchema,
+  clipboardWriteTextRequestV1Schema,
+  clipboardWriteTextResultV1Schema,
   isWebLinkUrl,
   shellOpenExternalRequestV1Schema,
   shellOpenExternalResultV1Schema,
@@ -1740,6 +1742,14 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     const text = clipboard.readText().slice(0, 4000);
     return clipboardReadLinksResultSchema.parse({ urls: extractCandidateLinks(text) });
   }, undefined, clipboardReadLinksResultSchema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.clipboardWriteText, z.strictObject({
+    meta: requestMetaSchema,
+    request: clipboardWriteTextRequestV1Schema,
+  }), options, (_event, _window, input) => {
+    clipboard.writeText(input.request.text);
+    return { written: true as const };
+  }, undefined, clipboardWriteTextResultV1Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.shellOpenExternal, shellOpenExternalInputSchema, options, async (_event, _window, input) => {
     // 唯一的信任边界：这条地址来自模型给的回答，渲染层怎么画都不算，只有这里决定要不要

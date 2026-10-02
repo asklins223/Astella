@@ -591,7 +591,7 @@ export function ReviewSurface() {
       const surface = objectives[item.objectiveId] ?? null;
       const note = surface?.sources.primaryNote;
       if (note) {
-        setActiveNoteRef({ noteId: note.noteId, noteVersionId: note.noteVersionId, mode: "read" });
+        setActiveNoteRef({ noteId: note.noteId, noteVersionId: note.noteVersionId, mode: "preview" });
         invoke("open-notebook");
       } else {
         setActiveObjectiveId(item.objectiveId);
@@ -744,7 +744,7 @@ export function ReviewSurface() {
     setActiveNoteRef({
       noteId,
       noteVersionId: origin?.kind === "note" ? origin.noteVersionId : null,
-      mode: "read",
+      mode: "preview",
     });
     invoke("open-notebook");
   };

@@ -264,7 +264,7 @@ export function SourceDetailSurface() {
             ? "这份来源还没有可引用的片段，先去来源库补充正文。"
             : null;
 
-  const openNote = (noteId: string, noteVersionId: string, mode: "read" | "edit") => {
+  const openNote = (noteId: string, noteVersionId: string, mode: "preview" | "live-preview") => {
     setActiveNoteRef({ noteId, noteVersionId, mode });
     invoke("open-notebook");
   };
@@ -342,7 +342,7 @@ export function SourceDetailSurface() {
         return;
       }
       setDuplicate(null);
-      openNote(result.noteId, result.noteVersionId, "edit");
+      openNote(result.noteId, result.noteVersionId, "live-preview");
     } catch (error) {
       setNotice({
         tone: "error",
@@ -361,7 +361,7 @@ export function SourceDetailSurface() {
     const known = notes.find((note) => note.id === duplicate.noteId);
     setDuplicate(null);
     if (known?.currentVersionId) {
-      openNote(known.id, known.currentVersionId, "edit");
+      openNote(known.id, known.currentVersionId, "live-preview");
       return;
     }
     setNotice({ tone: "info", text: `《${duplicate.title}》还没有可编辑版本，已为你打开笔记库。` });
@@ -462,7 +462,7 @@ export function SourceDetailSurface() {
 
   const runPrimary = () => {
     if (continueTarget) {
-      openNote(continueTarget.noteId, continueTarget.versionId, "edit");
+      openNote(continueTarget.noteId, continueTarget.versionId, "live-preview");
       return;
     }
     if (notes.length > 0) {
@@ -666,7 +666,7 @@ export function SourceDetailSurface() {
                         disabled={!note.currentVersionId}
                         title={note.currentVersionId ? "在写作页打开这篇笔记" : "这篇笔记还没有可写版本"}
                         onClick={() => {
-                          if (note.currentVersionId) openNote(note.id, note.currentVersionId, "read");
+                          if (note.currentVersionId) openNote(note.id, note.currentVersionId, "preview");
                         }}
                       >
                         <span>《{note.title}》</span>

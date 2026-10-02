@@ -251,6 +251,8 @@ export interface WindowLive2DModelDescriptor {
   readonly bustHeightRatio?: number;
   readonly bustFitWidth?: boolean;
   readonly bustSinkRatio?: number;
+  /** Real model parts protecting head, hair and headwear from nearby UI. */
+  readonly layoutHeadParts?: readonly string[];
 }
 
 /** mao 的编排映射（2026-09-19 之前就是它），保持原样以不扰动现有行为。 */
@@ -453,6 +455,7 @@ export const WINDOW_LIVE2D_MODEL_REGISTRY: Readonly<
 > = {
   "mao-pro": {
     displayName: "Mao",
+    layoutHeadParts: ["PartHat", "PartHairSide", "PartHairFront", "PartHairBack", "PartFace", "PartEar"],
     manifest: WINDOW_LIVE2D_ASSETS.manifest,
     model: WINDOW_LIVE2D_ASSETS.model,
     manifestExpectation: {
@@ -471,6 +474,9 @@ export const WINDOW_LIVE2D_MODEL_REGISTRY: Readonly<
   },
   whale: {
     displayName: "大肥鱼",
+    // IDs verified against c_0120.cdi3.json; tail and desk parts are deliberately separate.
+    layoutHeadParts: ["Part92", "Part19", "Part14", "Part28", "Part160", "Part161", "hair_d",
+      "Part102", "Part44", "Part47", "Part68", "Part45", "Part46"],
     manifest: "assets/companion/live2d-v3/whale/manifest.json",
     model: "assets/companion/live2d-v3/whale/c_0120.model3.json",
     manifestExpectation: {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryPanel } from "../companion/companion-center-panels.tsx";
 import type { CompanionMemoryItemV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
 import { useRoomStore } from "../../../app/room-store.ts";
@@ -27,18 +27,28 @@ function memory(id: string, content: string, overrides: Partial<CompanionMemoryI
     content,
     sourceEventId: null,
     sourceSessionId: null,
+    sourceSpeaker: null,
+    sourceBasis: null,
+    appliesWhen: null,
+    validFrom: null,
+    validUntil: null,
     userStated: false,
     userConfirmed: true,
     candidate: false,
     importance: 0.6,
     confidence: 0.9,
     scope: "workspace",
+    budgetTier: "active",
     pinned: false,
     archived: false,
     dismissedAt: null,
     conflictGroup: null,
     embeddingStatus: "ready",
     sourceType: "confirmed",
+    revision: 1,
+    authorType: "extractor",
+    authorId: null,
+    epistemicStatus: "supported",
     createdAt: "2026-09-20T00:00:00.000Z",
     updatedAt: "2026-09-22T00:00:00.000Z",
     ...overrides,
@@ -58,6 +68,9 @@ function renderPanel(props: Partial<MemoryPanelProps> = {}) {
     section: { ok: true as const, value: { version: 2 as const, items } },
     items,
     focus: null,
+    revisions: [],
+    revisionsError: null,
+    onRetryRevisions: noop,
     query: "",
     kind: "all",
     pinFilter: "all",
@@ -65,6 +78,7 @@ function renderPanel(props: Partial<MemoryPanelProps> = {}) {
     error: null,
     notice: null,
     confirmDelete: false,
+    confirmErase: false,
     createOpen: false,
     createContent: "",
     createKind: "preference",
@@ -76,6 +90,7 @@ function renderPanel(props: Partial<MemoryPanelProps> = {}) {
     onFocus: noop,
     onAction: noop,
     onConfirmDelete: noop,
+    onConfirmErase: noop,
     onCreateOpen: noop,
     onCreateContent: noop,
     onCreateKind: noop,
@@ -89,6 +104,63 @@ function renderPanel(props: Partial<MemoryPanelProps> = {}) {
   render(<MemoryPanel {...base} {...props} />);
 }
 
+beforeEach(() => {
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
+});
+
+it("记忆详情会展示当前作者/版本，并可展开查看带来源的旧版本", () => {
+  const current = memory("m-1", "用户刚刚纠正过的偏好", {
+    revision: 2,
+    authorType: "user",
+    epistemicStatus: "supported",
+  });
+  renderPanel({
+    focus: current,
+    revisions: [{
+      revision: 1,
+      kind: "preference",
+      content: "旧版内容",
+      sourceEventId: "evt-1",
+      sourceSessionId: null,
+      sourceSpeaker: "user",
+      sourceBasis: "inferred_from_statement",
+      appliesWhen: null,
+      validFrom: null,
+      validUntil: null,
+      userStated: false,
+      userConfirmed: true,
+      importance: 0.6,
+      confidence: 0.9,
+      scope: "workspace",
+      sourceType: "model_inferred",
+      authorType: "extractor",
+      authorId: null,
+      epistemicStatus: "tentative",
+      supersededAt: "2026-09-22T00:00:00.000Z",
+    }],
+  });
+  expect(screen.getByText("用户修订")).toBeTruthy();
+  expect(screen.getByText("第 2 版")).toBeTruthy();
+  expect(screen.getByText("查看旧版本（1）")).toBeTruthy();
+  expect(screen.getByText("旧版内容")).toBeTruthy();
+  expect(screen.getByText("来源：模型推断")).toBeTruthy();
+});
+
+it("记忆详情展示适用条件和有效时间窗", () => {
+  const current = memory("m-1", "精力不足时先暂停提醒", {
+    appliesWhen: "用户明确表示精力不足时",
+    sourceSpeaker: "user",
+    sourceBasis: "direct_statement",
+    validFrom: "2098-12-31T00:00:00.000Z",
+    validUntil: "2099-01-02T00:00:00.000Z",
+  });
+  renderPanel({ focus: current });
+  expect(screen.getByText("适用条件：用户明确表示精力不足时")).toBeTruthy();
+  expect(screen.getByText(/有效期：.*2099/)).toBeTruthy();
+  expect(screen.getByText("来源：用户原话")).toBeTruthy();
+  expect(screen.getByText("尚未生效")).toBeTruthy();
+});
+
 function publishedView(): PageReadableV1 | null {
   return useRoomStore.getState().pageReadableView?.view ?? null;
 }
@@ -100,6 +172,7 @@ function filterValue(label: string): string | undefined {
 afterEach(() => {
   cleanup();
   useRoomStore.setState({ pageReadableView: null });
+  Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
 });
 
 describe("伴星中心 · 记忆：登记的清单就是屏上露出的那份", () => {
@@ -110,7 +183,9 @@ describe("伴星中心 · 记忆：登记的清单就是屏上露出的那份", 
     expect(view.pageId).toBe("companion");
     expect(view.title).toBe("伴星中心");
 
-    const rows = [...document.querySelectorAll(".companion-record-list > button")];
+    // 后代选择器而不是 `> button`：§4.5.8 要求「关于你的」与「她的看法」分成
+    // 两段，条目现在住在 <section> 里面，不是列表的直接子元素。
+    const rows = [...document.querySelectorAll(".companion-record-list button")];
     expect(rows).toHaveLength(2);
     // 候选那条排在最前——这条顺序正是"面板自己筛的"这件事的证据。
     expect(rows[0].querySelector("strong")?.textContent).toBe("这周在啃音色的跨语言迁移");

@@ -415,7 +415,7 @@ describe("LearningRunSurface · 结算页结构", () => {
     render(<LearningRunSurface />);
     fireEvent.click(await screen.findByRole("button", { name: "回到本轮学习" }));
     await waitFor(() => expect(useRoomStore.getState().activeNoteRef).toEqual({
-      noteId, noteVersionId: null, mode: "read", learningRoundId: roundId,
+      noteId, noteVersionId: null, mode: "preview", learningRoundId: roundId,
     }));
     expect(useRoomStore.getState().surface).toBe("notebook");
     expect(api.navigation.resolve).toHaveBeenCalledWith(expect.objectContaining({ route, learningRunId: RUN_ID }));

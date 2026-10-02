@@ -362,6 +362,9 @@ services:
     restart: unless-stopped
     environment:
       EDGE_TTS_AUTH_TOKEN: ${EDGE_TTS_AUTH_TOKEN:?Set EDGE_TTS_AUTH_TOKEN in .env（edge-tts 与 api 必须一致）}
+    # 宿主直接运行的 API 也需要兜底；仅映射到本机，仍使用共享 token 鉴权。
+    ports:
+      - "127.0.0.1:${EDGE_TTS_PORT:-8088}:8080"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
       interval: 30s

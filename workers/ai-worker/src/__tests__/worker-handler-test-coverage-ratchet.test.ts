@@ -53,13 +53,21 @@ const BASELINE_UNTESTED: ReadonlySet<string> = new Set([
   // 在补那条守卫之前，worker 的 873 条测试**一条都不红**。也就是说这一族的 SQL
   // 此前不是"间接覆盖"，是**没覆盖**。现在盯住的是几个耐久字段（最要命的那部分），
   // 其余语句仍然只有源码文本守卫、没有行为断言。
+  // 2026-10-02：从这张表里删掉 `companion-memory-maintenance`。
+  // 起因是一次真实事故：它的两个兜底清理查询（回收区到期 / 归档淘汰）**没有
+  // 任何节流**，DB 授权缺失后每秒各抛一次错、18 小时不停，worker 日志 43.8 MB、
+  // 容器 CPU 237%。补 `companion-memory-maintenance-throttle-guard.test.ts` 守住那道门。
+  //
+  // 按本文件顶部说清的口径，这仍算**源码文本覆盖**：那条守卫读源码里的门与推进点
+  // 顺序，抓得到「节流被删掉」「改成成功才推进」，抓不到「SQL 跑起来对不对」。
+  // 后者由 `integration-tests/companion-memory-handlers-postgres.integration.ts`
+  // 覆盖（它真连 Postgres 调 `tickCompanionMemoryMaintenance`），但那份不是
+  // `.test.ts`，不进本棘轮的 blob——所以这里别把它当成行为覆盖。
   "card-generation-v2-handler",
-  "companion-context-orchestrator",
   "companion-daily-summary-scheduler",
   "companion-delivery-write",
   "companion-dialogue-deltas",
   "companion-memory-embedding",
-  "companion-memory-maintenance",
   "companion-note-reads",
   "companion-proposal-expiry-scheduler",
   "companion-reminder-scheduler",

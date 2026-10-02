@@ -125,7 +125,8 @@ const desktopApi: AILearnDesktopApiM2 = {
     get: (input) => invoke(DESKTOP_IPC_CHANNELS.capabilitiesGet, input)
   },
   clipboard: {
-    readLinks: (input) => invoke(DESKTOP_IPC_CHANNELS.clipboardReadLinks, input)
+    readLinks: (input) => invoke(DESKTOP_IPC_CHANNELS.clipboardReadLinks, input),
+    writeText: (input) => invoke(DESKTOP_IPC_CHANNELS.clipboardWriteText, input)
   },
   shell: {
     openExternal: (input) => invoke(DESKTOP_IPC_CHANNELS.shellOpenExternal, input)
@@ -210,8 +211,21 @@ const desktopApi: AILearnDesktopApiM2 = {
       archive: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryArchive, input),
       restore: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryRestore, input),
       remove: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryDelete, input),
+      // 回收区的两个动作。与 remove 的差别是**时间**：remove 进回收区等 30 天，
+      // restoreDeleted 撤回，erase 是不可逆的「现在就删干净」。
+      restoreDeleted: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryRestoreDeleted, input),
+      erase: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryErase, input),
+      // 40 §7 发现簿。uncollect **不是** delete：它不动原始回答与日记。
+      discovery: {
+        get: (input) => invoke(DESKTOP_IPC_CHANNELS.companionDiscoveryGet, input),
+        collect: (input) => invoke(DESKTOP_IPC_CHANNELS.companionDiscoveryCollect, input),
+        uncollect: (input) => invoke(DESKTOP_IPC_CHANNELS.companionDiscoveryUncollect, input),
+        annotate: (input) => invoke(DESKTOP_IPC_CHANNELS.companionDiscoveryAnnotate, input),
+        state: (input) => invoke(DESKTOP_IPC_CHANNELS.companionDiscoveryState, input),
+      },
       create: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryCreate, input),
       correct: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryCorrect, input),
+      revisions: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryRevisions, input),
       dismiss: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryDismiss, input),
       conflicts: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryConflicts, input),
       resolveConflict: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryResolveConflict, input),
@@ -221,12 +235,23 @@ const desktopApi: AILearnDesktopApiM2 = {
     },
     daily: {
       get: (input) => invoke(DESKTOP_IPC_CHANNELS.companionDailyGet, input),
-      month: (input) => invoke(DESKTOP_IPC_CHANNELS.companionDailyMonth, input)
+      month: (input) => invoke(DESKTOP_IPC_CHANNELS.companionDailyMonth, input),
+      // §10：隐藏与删除是**两件不同的事**，所以是两条通道而不是一个 action 参数。
+      hide: (input) => invoke(DESKTOP_IPC_CHANNELS.companionDailyHide, input),
+      unhide: (input) => invoke(DESKTOP_IPC_CHANNELS.companionDailyUnhide, input),
+      delete: (input) => invoke(DESKTOP_IPC_CHANNELS.companionDailyDelete, input),
     },
     persona: {
       get: (input) => invoke(DESKTOP_IPC_CHANNELS.companionPersonaGet, input),
+      versions: (input) => invoke(DESKTOP_IPC_CHANNELS.companionPersonaVersions, input),
       patch: (input) => invoke(DESKTOP_IPC_CHANNELS.companionPersonaPatch, input),
-      reset: (input) => invoke(DESKTOP_IPC_CHANNELS.companionPersonaReset, input)
+      restore: (input) => invoke(DESKTOP_IPC_CHANNELS.companionPersonaRestore, input),
+      reset: (input) => invoke(DESKTOP_IPC_CHANNELS.companionPersonaReset, input),
+      // 「排队 → 生效」两步。与 patch 的差别：stage 写下内容但**不动当前版本**，
+      // activate 才把它提升为当前（40 §4.8.4「一次调用使用固定版本」）。
+      pending: (input) => invoke(DESKTOP_IPC_CHANNELS.companionPersonaPending, input),
+      stage: (input) => invoke(DESKTOP_IPC_CHANNELS.companionPersonaStage, input),
+      activate: (input) => invoke(DESKTOP_IPC_CHANNELS.companionPersonaActivate, input)
     },
     history: {
       list: (input) => invoke(DESKTOP_IPC_CHANNELS.companionHistoryList, input),

@@ -11,12 +11,14 @@ import { readJobPayloadString } from "@ailearn/shared";
 import { MEMORY_SEMANTIC_SIMILARITY_THRESHOLD } from "@ailearn/shared/db-schema/assistant-memory";
 import { logger } from "../lib/logger.ts";
 import { createEmbeddingProvider } from "../lib/ai-provider.ts";
+import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import {
   AIConsentRequiredError,
   createGovernedEmbeddingProvider,
   resolveAIGovernanceContext,
 } from "../lib/governance.ts";
-import { assertJobLease, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
+import { assertJobLease, JobLeaseLostError, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
+import { runWorkerEmbeddingTask } from "./worker-ai-task.ts";
 import type { JobPayload } from "./index.ts";
 
 const BATCH_LIMIT = 200;
@@ -84,7 +86,20 @@ export async function runCompanionMemoryEmbeddingRebuild(job: JobPayload): Promi
    */
   const embedOne = async (row: (typeof rows)[number]): Promise<void> => {
     try {
-      const vector = await provider.embed(row.content.slice(0, 1000), job.signal);
+      const vector = await runWorkerEmbeddingTask({
+        job,
+        userId,
+        taskId: "companion_memory_embedding_rebuild",
+        taskVersion: 1,
+        idempotencyKey: `memory-embedding:${job.id}:${row.id}`,
+        inputSnapshotId: `${row.id}:embedding`,
+        text: row.content.slice(0, 1000),
+        modelId: provider.embeddingModelId,
+        promptVersion: `${provider.id}:companion-memory-content-embedding-v1`,
+        resourceClass: "maintenance",
+        timeoutMs: resolveProviderCallTimeout("companion_memory_embedding_rebuild"),
+        embed: (text, signal) => provider.embed(text, signal),
+      });
       if (!vector || vector.length === 0) {
         await markMemoryEmbeddingStatus(job, userId, row.id, "failed");
         failCount += 1;
@@ -130,6 +145,9 @@ export async function runCompanionMemoryEmbeddingRebuild(job: JobPayload): Promi
       });
       okCount += 1;
     } catch (err) {
+      if (err instanceof JobLeaseLostError || job.signal?.aborted) {
+        throw err instanceof JobLeaseLostError ? err : new JobLeaseLostError(job.id, "aborted");
+      }
       logger.warn({ jobId: job.id, memoryId: row.id, err }, "memory embedding failed");
       await markMemoryEmbeddingStatus(job, userId, row.id, "failed");
       failCount += 1;
@@ -169,6 +187,7 @@ async function markMemoryEmbeddingStatus(
 ): Promise<void> {
   try {
     await withJobTransaction(job, async (tx) => {
+      await lockJobLease(tx, job);
       await tx.execute(sql`
         UPDATE assistant_memory_items
         SET embedding_status = ${status}, updated_at = now()

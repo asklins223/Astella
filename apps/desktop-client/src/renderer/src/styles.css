@@ -174,40 +174,31 @@ button:disabled {
   z-index: 60;
 }
 
+/* 背景与热区共用固定比例的参考画幅，窗口缩放时一起居中裁切。 */
+.scene-reference-frame {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, calc(100vh * var(--scene-world-aspect, 1.776833)));
+  height: max(100%, calc(100vw / var(--scene-world-aspect, 1.776833)));
+  transform: translate(-50%, -50%);
+}
+
+.scene-reference-frame[data-scene-fit="contain"] {
+  width: min(100%, calc(100vh * var(--scene-world-aspect, 1.776833)));
+  height: min(100%, calc(100vw / var(--scene-world-aspect, 1.776833)));
+}
+
 .room-reference-frame {
   overflow: hidden;
   background: #b68a59;
 }
 
-/* The first real room renderer slice owns only the poster-backed D0 base.
-   DOM remains the canonical interaction and fallback layer above it. */
-.room-pixi-canvas {
-  position: absolute;
-  z-index: 0;
-  inset: 0;
-  display: block;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-  user-select: none;
-  transition: opacity 160ms ease-out;
-}
-
-.room-pixi-canvas > canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  user-select: none;
-}
-
-.room-pixi-canvas[data-scene-renderer-state="ready"][data-scene-renderer-active="true"] {
-  opacity: 1;
-}
-
-.room-reference-frame[data-scene-room-canvas-active="true"] :is(.room-backplate--home-day, .room-backplate--home-night) {
-  opacity: 0 !important;
-}
+/* `.room-pixi-canvas`（Pixi 房间渲染切片）连同 `components/RoomSceneCanvas.tsx`
+   与 `scene/` 下那条 pixi 链已在 2026-10-01 整条删除：那条链没有任何运行时挂载方，
+   房间一直是 DOM 底板 + DOM 物件。要恢复 Pixi 房间渲染，连同组件一起重新引入，
+   不要只把这段样式加回来。与之配套的 `data-scene-room-canvas-active` 属性
+   （RoomStage 上恒为 "false"）和 `data-scene-renderer-state` 也一并退场。 */
 
 .room-camera-rig, .room-depth-layer {
   position: absolute;
@@ -274,10 +265,12 @@ button:disabled {
   opacity: 1;
 }
 
-/* 首页三张底图：日 / 昏 / 夜。三者的显隐由 RoomStage.tsx:238-245 的 GSAP `autoAlpha`
-   交叉淡入驱动（首页时段是 day / dusk / night 三档），所以 CSS 这一层只负责「默认藏起来」
-   ——昏时图此前连这条默认规则都没有，首帧会与日图同时可见。 */
-.room-backplate--home-night, .room-backplate--home-dusk, .room-backplate--seat-day, .room-backplate--seat-night, .room-backplate--search-day, .room-backplate--search-night {
+/* 底层只有灯塔三张（日 / 昏 / 夜），显隐由 RoomStage 的 GSAP `autoAlpha` 按房间时刻
+   交叉淡入。**各任务页自己那张场景底板不在这层**——它由 `hud-surface.css` 的
+   `.task-surface--<页面族>` 规则铺在任务宿主上（对应 `manifest.taskPosters` 的六族）。
+   2026-10-01 我曾在这里加过 `--seat/--search/--review` 六条：那是在删掉分族之后自己
+   补的替代品，等于把两层合成一层，各任务页因此全都没有原图。已撤。 */
+.room-backplate--home-night, .room-backplate--home-dusk {
   opacity: 0;
 }
 
@@ -419,8 +412,7 @@ button:disabled {
    不等圆角」是两套语言并存——同一个产品里「主按钮」有两个答案，agent 挑哪个全凭碰上
    哪个文件。`.surface-secondary` 全仓 0 处引用，`.surface-primary` 只有
    WorkspaceLibrarySurface.tsx 的重试/继续两颗，那两处已改用 `button primary`。
-   主按钮的配色归 `.button.primary`（`components/hud/hud-pages.css:152`）一处管，
-   并由 `renderer-accent-guard.test.ts` 钉住「只有那一处可以给按钮上主强调色」。 */
+   公共主按钮使用 hud-pages.css 的 `.button.primary`；具体功能可以按语义发展变体。 */
 .text-action {
   display: inline-flex;
   min-height: 40px;
@@ -489,26 +481,6 @@ button:disabled {
  * 先在渲染端恢复它的类名，再补回样式。
  * ------------------------------------------------------------------------- */
 
-/* `.evidence-slip` 的基皮肤原先写在上面那段注释闭合之后，被注释吃掉多年。
-   修好注释后没有把它放回来：它的位置属性（grid-column: 2 / grid-row: 1 / 3）服务的是
-   `.card-editor` 那套 V2 网格，而 `.card-editor` 在渲染端已无生产者；纸面外观
-   （`#e7dca9`、`3px 10px 4px 4px`、1px 描边）也整体早于 V3.1，现在由
-   `.hud-surface .evidence-slip`（hud-pages.css）与 `.hud-surface .evidence-slip`
-   同族的奶油粗边规则负责。所以这里是刻意留空的，不要再补一份第二皮肤。
-   下面三条子规则是今天真实生效的排版，保留原样。 */
-
-.evidence-slip strong { font-size: 11px; }
-.evidence-slip p { margin: 10px 0; color: #5b4937; font-size: 12px; line-height: 1.65; }
-.evidence-slip button { padding: 0; color: var(--accent-deep); font-size: 10px; border: 0; background: transparent; cursor: pointer; }
-
-.notebook-actions {
-  display: flex;
-  grid-column: 2;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-}
-
 @keyframes status-island-in {
   from { opacity: 0; transform: translateY(8px) scale(0.96); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -524,10 +496,8 @@ button:disabled {
 
 @media (max-width: 720px) {
   .window-drag-region { left: 72px; right: 76px; }
-  .evidence-slip { display: none; }
-  .notebook-actions { grid-column: 1; }
-  .companion-scene-anchor { top: 29%; left: 58%; width: 190px; height: 210px; }
-}.desktop-app[data-motion-mode="off"] .run-recovery-notice, .desktop-app[data-motion-mode="off"] .run-spinner{
+    .companion-scene-anchor { top: 29%; left: 58%; width: 190px; height: 210px; }
+}.desktop-app[data-motion-mode="off"] .run-spinner{
   animation: none !important;
 }
 
@@ -550,133 +520,13 @@ button:disabled {
 
 /* First Golden: server-proved LearningRun recovery, never a local resume guess. */
 
-/* 恢复横幅的触发器：一枚浮在书房左上角的岛，下面挂着 .run-recovery-stack 那张纸。
-   此前这个 <details> 连一条规则都没有：<summary> 是浏览器默认的三角标 + 裸文字，
-   而下面的纸靠 `position: absolute; top: 84px` 定位，两者之间没有任何关系——
-   触发器在哪、纸从哪冒出来，屏上读者无从判断。触发器定在 top: 16px、left: 24px，
-   与纸的 84px / 24px 对齐成一组（pill 底 68px → 16px 间隙 → 纸），层序 45 高于纸的 44。
-   岛的配色沿用首页浮层的既有语汇（深底 + 1px 亮边 + 28px 药丸 + 柔影），不是任务页的暖纸——
-   它是浮在房间上的控件，不是纸面上的一块内容。 */
-.home-recovery {
-  position: fixed;
-  z-index: 45;
-  top: 16px;
-  left: 24px;
-}
+/* 这里曾有一整段 `.home-recovery` 触发器样式（浮在书房左上角的深色药丸 + 一条
+   横向滚动的学习卡带）。那是 v1 首页时代的控件，2026-10-01 连同
+   `components/RunRecoveryNotice.tsx` 一起删除：它压在灯塔书房上像旧版残留，
+   而它的功能（查看在制学习与待整理的学习卡批次）由 `resumable` 页与
+   `CardGenerationSurface` 承担，首页入口已按 DESIGN.md §首页 收进「今天」组。
+   要恢复那个浮层就连同组件一起重新引入，不要只把这段样式加回来。 */
 
-.home-recovery > summary {
-  display: inline-flex;
-  min-height: 52px;
-  align-items: center;
-  gap: 9px;
-  padding: 0 18px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 28px;
-  background: rgba(42, 31, 24, 0.9);
-  box-shadow: var(--hud-shadow-small);
-  color: #fff3df;
-  font-size: 13px;
-  cursor: pointer;
-  list-style: none;
-}
-
-.home-recovery > summary::-webkit-details-marker { display: none; }
-
-.home-recovery > summary small {
-  color: #d2c3b3;
-  font-size: 9px;
-}
-
-.home-recovery:not([open]) > summary { opacity: 0.82; }
-
-@media (hover: hover) and (pointer: fine) {
-  .home-recovery > summary:hover { opacity: 1; }
-}
-
-.run-recovery-stack {
-  position: absolute;
-  z-index: 44;
-  top: 84px;
-  left: 24px;
-  display: grid;
-  gap: 10px;
-  width: min(390px, calc(100vw - 48px));
-  pointer-events: none;
-}
-
-.run-recovery-notice {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px 12px;
-  padding: 14px 16px;
-  color: var(--ink);
-  border: 1px solid rgba(77, 49, 29, 0.32);
-  border-radius: 8px 17px 8px 8px;
-  background: rgba(248, 237, 215, 0.97);
-  box-shadow: var(--paper-shadow);
-  animation: status-island-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-/* The notice is an overlay, not a modal. Keep the room actions reachable
-   when a persistent server run remains recoverable after returning home. */
-.run-recovery-notice__actions, .run-recovery-notice__actions button { pointer-events: auto; }
-
-.run-recovery-notice__mark {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  color: var(--accent-deep);
-  border-radius: 50%;
-  background: rgba(139, 56, 27, 0.1);
-}
-
-.run-recovery-notice__copy { display: grid; min-width: 0; gap: 3px; }
-.run-recovery-notice__copy strong { font-size: 13px; line-height: 1.35; }
-.run-recovery-notice__copy p { margin: 0; color: var(--ink-soft); font-size: 11px; line-height: 1.55; }
-.run-recovery-notice__actions { grid-column: 2; display: grid; gap: 6px; }
-.run-recovery-notice--error { border-color: rgba(189, 91, 45, 0.38); background: rgba(255, 244, 224, 0.98); }
-
-/* 「还有学习卡在等整理」这一条不是失败，是一件没做完的事——所以它借 --error 的暖橙
-   边线表明「回得去」，但把底色留在正常纸上，不报警。图标是火花（Sparkles）而不是
-   错误记号，色相与 --error 的印章同族。 */
-.run-recovery-notice--generation { border-color: rgba(189, 91, 45, 0.26); }
-.run-recovery-notice--generation .run-recovery-notice__mark { color: var(--accent-deep); background: rgba(189, 91, 45, 0.1); }
-.run-recovery-notice--error .run-recovery-notice__mark { color: var(--accent-deep); background: rgba(189, 91, 45, 0.12); }
-.run-recovery-notice__primary, .run-recovery-notice__secondary {
-  display: inline-flex;
-  min-height: 34px;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 7px 11px;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  border: 1px solid rgba(77, 49, 29, 0.28);
-  border-radius: 999px;
-  cursor: pointer;
-}
-.run-recovery-notice__primary { color: #fff8ee; background: var(--accent); }
-.run-recovery-notice__secondary { justify-content: space-between; color: var(--ink); background: rgba(255, 255, 255, 0.42); }
-.run-recovery-notice__primary:hover { background: var(--accent-deep); }
-.run-recovery-notice__secondary:hover { background: rgba(255, 255, 255, 0.72); }
-.run-recovery-notice__primary:focus-visible, .run-recovery-notice__secondary:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
-.run-recovery-notice__secondary small { margin-left: auto; color: var(--ink-soft); font-size: 10px; font-weight: 600; }
-
-@media (max-width: 720px) {
-  .run-recovery-stack {
-    top: 72px;
-    left: 14px;
-    width: min(360px, calc(100vw - 28px));
-  }
-}
-
-.notebook-actions {
-  grid-column: 1 / -1;
-  justify-content: flex-end;
-}
 .card-generation-recovery {
   display: grid;
   gap: 7px;
@@ -689,9 +539,7 @@ button:disabled {
 .card-generation-recovery p { margin: 0; color: var(--ink-soft); font-size: 11px; line-height: 1.55; }
 
 @media (max-width: 720px) {
-  .notebook-actions { grid-column: 1; }
-  .notebook-actions { grid-row: 5; justify-content: flex-start; }
-}
+    }
 
 .run-spinner { animation: run-spin 900ms linear infinite; }
 
@@ -820,34 +668,6 @@ button:disabled {
   touch-action: none;
 }
 
-.run-recovery-stack {
-  top: 64px;
-  left: 18px;
-  width: min(610px, calc(100vw - 36px));
-  gap: 7px;
-}
-
-.run-recovery-notice {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px 10px;
-  padding: 7px 9px;
-  color: #fff7eb;
-  border-color: rgba(255, 239, 215, 0.22);
-  border-radius: 999px;
-  background: rgba(29, 26, 23, 0.84);
-  box-shadow: 0 12px 30px rgba(24, 15, 10, 0.24);
-  backdrop-filter: blur(22px) saturate(1.15);
-}
-
-.run-recovery-notice__copy strong { color: #fff7eb; }
-.run-recovery-notice__copy p { overflow: hidden; color: rgba(255, 239, 216, 0.62); text-overflow: ellipsis; white-space: nowrap; }
-.run-recovery-notice__actions { grid-column: 3; display: flex; gap: 5px; }
-.run-recovery-notice__primary, .run-recovery-notice__secondary { min-height: 44px; border-color: rgba(255, 239, 215, 0.2); }
-.run-recovery-notice__secondary { color: #fff3e2; background: rgba(255, 255, 255, 0.08); }
-.run-recovery-notice__secondary small { color: rgba(255, 239, 216, 0.58); }
-.run-recovery-notice--error { color: #fff7eb; border-color: rgba(255, 177, 126, 0.42); background: rgba(72, 38, 25, 0.88); }
-
 /* Legacy Study reflow. Review V2 owns one independent authority below. */
 @media (max-width: 720px), (max-height: 660px) {
 
@@ -860,11 +680,6 @@ button:disabled {
   }
 
   .desktop-app[data-surface-open="true"] .companion-presence[data-surface="study"] { display: none; }
-
-  .run-recovery-stack { top: 58px; left: 10px; width: calc(100vw - 20px); }
-  .run-recovery-notice { grid-template-columns: auto minmax(0, 1fr); border-radius: 22px; }
-  .run-recovery-notice__copy p { display: none; }
-  .run-recovery-notice__actions { grid-column: 1 / -1; justify-content: flex-end; }
 }
 
 @media (max-width: 720px) {
@@ -897,10 +712,6 @@ button:disabled {
 /* Review owner repair V4: the generated backplate owns only the blank spatial
    carriers. Real queue content is a six-row DOM window on the paper tape and
    the selected item is a separate DOM spread on the open notebook. */
-.room-backplate--review-day, .room-backplate--review-night {
-  opacity: 0;
-}
-
 .room-reference-frame[data-view-preset="review"] .room-depth-layer {
   inset: 0;
 }
@@ -927,10 +738,6 @@ button:disabled {
   .task-surface--review .task-surface__spatial-layer {
     position: relative;
     min-height: 100%;
-  }
-
-  .room-reference-frame[data-view-preset="review"] :is(.room-backplate--review-day, .room-backplate--review-night) {
-    filter: brightness(0.54) saturate(0.72);
   }
 }
 
@@ -1055,20 +862,6 @@ button:disabled {
 /* Compact mode keeps one authored fallback sheet; section wrappers remain
    transparent so zoomed or narrow windows do not produce nested paper cards. */
 @media (max-width: 900px), (max-height: 660px) {
-}
-
-/* The home recovery notice is persistent context, not a second hero panel. */
-@media (min-width: 901px) {
-  .run-recovery-stack {
-    width: min(540px, calc(100vw - 36px));
-  }
-
-  .run-recovery-notice {
-    padding: 6px 8px;
-  }
-
-  .run-recovery-notice__copy strong { font-size: 12px; }
-  .run-recovery-notice__copy p { font-size: 10px; }
 }
 
 

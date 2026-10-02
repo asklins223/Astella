@@ -10,9 +10,12 @@ import type {
   CompanionHistoryItemV1,
   CompanionMemoryItemV1,
   CompanionMemoryStarMapV2,
+  CompanionPersonaPendingV1,
   CompanionPersonaV1,
   CompanionPersonaProfileV1,
+  CompanionPersonaVersionListV1,
 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { CompanionOverview } from "@ailearn/shared/companion-shell-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CompanionChatProvider,
@@ -34,6 +37,19 @@ import { CompanionCenterSurface } from "../companion/companion-center-surface.ts
  */
 
 const WORKSPACE_ID = "22222222-2222-4222-8222-222222222222";
+const discoveryEntry = () => ({
+  entryId: "44444444-4444-4444-8444-a444444444444",
+  kind: "diary_excerpt" as const,
+  source: "diary" as const,
+  sourceId: "d-2026-10-01",
+  author: "assistant" as const,
+  body: "嘿嘿，今天状态不错嘛。",
+  annotation: null,
+  visibility: "private" as const,
+  createdAt: "2026-10-01T00:00:00.000Z",
+  updatedAt: "2026-10-01T00:00:00.000Z",
+});
+
 const MEMORY_ID = "11111111-1111-4111-8111-111111111111";
 const NOTE_ID = "33333333-3333-4333-8333-333333333333";
 const MESSAGE_ID = "44444444-4444-4444-8444-444444444444";
@@ -78,18 +94,28 @@ function memoryItem(): CompanionMemoryItemV1 {
     content: "我更喜欢从例子开始理解概念",
     sourceEventId: null,
     sourceSessionId: null,
+    sourceSpeaker: null,
+    sourceBasis: null,
+    appliesWhen: null,
+    validFrom: null,
+    validUntil: null,
     userStated: true,
     userConfirmed: true,
     candidate: false,
     importance: 0.9,
     confidence: 1,
     scope: "workspace",
+    budgetTier: "resident",
     pinned: true,
     archived: false,
     dismissedAt: null,
     conflictGroup: null,
     embeddingStatus: "ready",
     sourceType: "confirmed",
+    revision: 1,
+    authorType: "user",
+    authorId: "33333333-3333-4333-8333-333333333333",
+    epistemicStatus: "supported",
     createdAt: UPDATED_AT,
     updatedAt: UPDATED_AT,
   };
@@ -128,31 +154,52 @@ function starMap(): CompanionMemoryStarMapV2 {
 }
 
 function persona(): CompanionPersonaV1 {
-  return { version: 1, profile: null, presets: [], activePreset: null };
+  return {
+    version: 1,
+    profile: null,
+    profileRevision: 0,
+    relationship: { familiarity: 0, interactionCount: 0, lastActiveAt: null },
+    presets: [],
+    activePreset: null,
+  };
 }
 
-function personaProfile(): CompanionPersonaProfileV1 {
+function personaProfile(revision = 1): CompanionPersonaProfileV1 {
   return {
-    id: "99999999-9999-4999-8999-999999999999", workspaceId: WORKSPACE_ID,
+    id: "99999999-9999-4999-8999-999999999999",
     userId: "55555555-5555-4555-8555-555555555555", presetId: null,
     name: "小星", personalityTags: ["温柔"], speakingStyle: "简洁", examples: [],
-    activeness: "moderate", boundaries: { allowPlayful: true }, revision: 1,
-    familiarity: 0, interactionCount: 0, lastActiveAt: null,
+    activeness: "moderate", boundaries: { allowPlayful: true }, revision,
     createdAt: UPDATED_AT, updatedAt: UPDATED_AT,
   };
 }
 
 /** 日记页要能渲染出日期导航，前提是这一天的记录读得回来（默认 mock 是「读不到」）。 */
+/**
+ * 显式逐字段合并，而不是 `{ ...base, ...overrides }`。
+ *
+ * 原因：TS 会把「展开一个 Partial」建模成**所有键都变成可选**，于是返回值不再
+ * 满足 `CompanionDailySummaryV1` 的必填约束（selectedId / revision 这些带
+ * default 的列，输出类型里是必填的）。以前没有这列所以碰巧能过。
+ *
+ * 用 as 断言能"修好"，但那等于把这条夹具的类型检查关掉；逐字段写既过得了 tsc，
+ * 也让"新增必填列"这件事在编译期照样能提醒人补默认值。
+ */
 function dailySummary(overrides: Partial<CompanionDailySummaryV1> = {}): CompanionDailySummaryV1 {
   return {
-    version: 1,
-    date: "2026-09-20",
-    status: "generated",
-    generatedAt: "2026-09-20T16:00:00.000Z",
-    failureReason: null,
-    blocks: [{ type: "text", text: "晚上十点他说想慢慢来，我就把复习那件事咽回去了。" }],
-    memory: null,
-    ...overrides,
+    version: overrides.version ?? 1,
+    date: overrides.date ?? "2026-09-20",
+    revision: overrides.revision ?? 1,
+    status: overrides.status ?? "generated",
+    generatedAt: overrides.generatedAt ?? "2026-09-20T16:00:00.000Z",
+    failureReason: overrides.failureReason ?? null,
+    selectionReason: overrides.selectionReason ?? null,
+    selectedId: overrides.selectedId ?? null,
+    blocks: overrides.blocks ?? [{ type: "text", text: "晚上十点他说想慢慢来，我就把复习那件事咽回去了。" }],
+    memory: overrides.memory ?? null,
+    // §10：隐藏是另一种语义，所以它是独立一列而不是 status 的一种取值。
+    hidden: overrides.hidden ?? false,
+    hiddenAt: overrides.hiddenAt ?? null,
   };
 }
 
@@ -209,9 +256,27 @@ function delivery(index: number): CompanionActivityDeliveryV1 {
 }
 
 function installApi() {
+  let accountOverview: CompanionOverview = {
+    account: { revision: 0, epoch: 0, globalEnabled: true, diaryEnabled: true },
+    onboardingStates: [],
+  };
   const api = {
     auth: { getState: vi.fn(async () => ok(session())) },
     companion: {
+      account: {
+        getState: vi.fn(async () => ok(accountOverview)),
+        patchState: vi.fn(async (input: { readonly request: { readonly diaryEnabled: boolean } }) => {
+          accountOverview = {
+            ...accountOverview,
+            account: {
+              ...accountOverview.account,
+              revision: accountOverview.account.revision + 1,
+              diaryEnabled: input.request.diaryEnabled,
+            },
+          };
+          return ok(accountOverview.account);
+        }),
+      },
       bridge: {
         setContext: vi.fn(async () => ok({ version: 1, ok: true })),
         clearContext: vi.fn(async () => ok({ version: 1, ok: true })),
@@ -219,14 +284,34 @@ function installApi() {
       memory: {
         starMap: vi.fn(async () => ok(starMap())),
         list: vi.fn(async () => ok({ version: 2, items: [memoryItem()] })),
+        revisions: vi.fn(async (input: { readonly memoryId: string }) => ok({
+          version: 1 as const,
+          memoryItemId: input.memoryId,
+          items: [],
+        })),
         create: vi.fn(async (): Promise<GatewayResultV1<CompanionMemoryItemV1>> => ok(memoryItem())),
         confirm: vi.fn(async () => ok(memoryItem())),
         remove: vi.fn(async () => ok({ version: 1, ok: true })),
         clear: vi.fn(async () => ok({ deletedCount: 1 })),
+        // 40 §7 发现簿。取消收藏回 `{ status }` 而不是记忆体（服务端 204）。
+        discovery: {
+          get: vi.fn(async () => ok({ version: 1, entries: [], studyVisible: [] })),
+          collect: vi.fn(async () => ok({ status: "collected", entry: discoveryEntry() })),
+          uncollect: vi.fn(async () => ok({ status: "uncollected" })),
+          annotate: vi.fn(async () => ok({ status: "annotated" })),
+          state: vi.fn(async () => ok({ collected: false, entryId: null, annotation: null })),
+        },
       },
       persona: {
         get: vi.fn(async () => ok(persona())),
+        versions: vi.fn(async (): Promise<GatewayResultV1<CompanionPersonaVersionListV1>> => ok({ version: 1, currentRevision: 0, versions: [] })),
         patch: vi.fn(async () => ok({ version: 1, profile: personaProfile() })),
+        restore: vi.fn(async () => ok({ version: 1 as const, profile: personaProfile(), profileRevision: 2 })),
+        reset: vi.fn(async () => ok({ version: 1 as const, ok: true as const, profileRevision: 2 })),
+        // 「待生效版本」（40 §4.8.4 / A50）。默认没有排队——各用例再改成有。
+        pending: vi.fn(async (): Promise<GatewayResultV1<CompanionPersonaPendingV1>> => ok({ version: 1, currentRevision: 0, pending: null })),
+        stage: vi.fn(async () => ok({ version: 1 as const, pendingRevision: 2, profileRevision: 1 })),
+        activate: vi.fn(async () => ok({ version: 1 as const, ok: true as const, profile: personaProfile(), profileRevision: 2 })),
       },
       history: {
         list: vi.fn(async () => ok({ version: 1, items: [historyItem()], nextCursor: null })),
@@ -452,7 +537,7 @@ describe("the companion center reads the shell's companion session", () => {
 
   it("saves a persona name and scopes data clearing to one confirmed category", async () => {
     const api = installApi();
-    api.companion.persona.get.mockResolvedValue(ok({ version: 1, profile: personaProfile(), presets: [], activePreset: null }));
+    api.companion.persona.get.mockResolvedValue(ok({ ...persona(), profile: personaProfile(), profileRevision: 1 }));
     renderCompanionCenter();
     fireEvent.click(await screen.findByRole("tab", { name: "设置" }));
     fireEvent.change(await screen.findByLabelText("她叫什么"), { target: { value: "新名字" } });
@@ -466,6 +551,65 @@ describe("the companion center reads the shell's companion session", () => {
     await waitFor(() => expect(api.companion.memory.clear).toHaveBeenCalledTimes(1));
     expect(api.companion.history.clear).not.toHaveBeenCalled();
     expect(api.companion.data.deleteAudit).not.toHaveBeenCalled();
+  });
+
+  it("shows account-scoped persona versions and restores a selected version with the current revision", async () => {
+    const api = installApi();
+    api.companion.persona.get.mockResolvedValue(ok({ ...persona(), profile: personaProfile(4), profileRevision: 4 }));
+    api.companion.persona.versions.mockResolvedValue(ok({
+      version: 1,
+      currentRevision: 4,
+      versions: [{
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        revision: 3,
+        examplesRevision: 3,
+        author: "user",
+        action: "update",
+        reason: "手动修改",
+        moduleScope: ["companion"],
+        profile: {
+          presetId: null,
+          name: "旧名字",
+          personalityTags: ["温柔"],
+          speakingStyle: "简洁",
+          examples: [],
+          activeness: "moderate",
+          boundaries: { allowPlayful: true },
+        },
+        createdAt: UPDATED_AT,
+      }],
+    }));
+    renderCompanionCenter();
+    fireEvent.click(await screen.findByRole("tab", { name: "设置" }));
+    fireEvent.click(await screen.findByRole("button", { name: "人格与边界" }));
+    fireEvent.click(await screen.findByRole("button", { name: "恢复第 3 版" }));
+    await waitFor(() => expect(api.companion.persona.restore).toHaveBeenCalledWith(expect.objectContaining({ revision: 3, currentRevision: 4 })));
+  });
+
+  it("keeps persona versions beyond the first twenty reachable", async () => {
+    const api = installApi();
+    api.companion.persona.get.mockResolvedValue(ok({ ...persona(), profile: personaProfile(21), profileRevision: 21 }));
+    api.companion.persona.versions.mockResolvedValue(ok({
+      version: 1,
+      currentRevision: 21,
+      versions: Array.from({ length: 21 }, (_, index) => ({
+        id: `00000000-0000-4000-8000-${String(21 - index).padStart(12, "0")}`,
+        revision: 21 - index,
+        examplesRevision: 21 - index,
+        author: "user" as const,
+        action: "update" as const,
+        reason: null,
+        moduleScope: ["companion"],
+        profile: null,
+        createdAt: UPDATED_AT,
+      })),
+    }));
+    renderCompanionCenter();
+    fireEvent.click(await screen.findByRole("tab", { name: "设置" }));
+    fireEvent.click(await screen.findByRole("button", { name: "人格与边界" }));
+    expect(screen.queryByRole("button", { name: "恢复第 1 版" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "查看更早版本（1）" }));
+    expect(await screen.findByRole("button", { name: "恢复第 1 版" })).toBeTruthy();
   });
 
   it("processes pending activity only in the activity section", async () => {
@@ -488,18 +632,24 @@ describe("the companion center reads the shell's companion session", () => {
     const api = installApi();
     api.companion.daily.get.mockResolvedValue(ok<CompanionDailySummaryV1>({
       version: 1,
+      revision: 1,
+      selectedId: null,
       date: "2026-09-20",
       status: "generated",
       generatedAt: "2026-09-20T16:00:00.000Z",
       failureReason: null,
+      selectionReason: "这段把共同核对的过程留了下来。",
       blocks: [{ type: "text", text: "晚上十点他说想慢慢来，我就把复习那件事咽回去了。" }],
       memory: { memoryItemId: MEMORY_ID, candidate: true },
+      hidden: false,
+      hiddenAt: null,
     }));
     renderCompanionCenter();
     fireEvent.click(await screen.findByRole("tab", { name: "日记" }));
 
     const prose = await screen.findByText(/晚上十点他说想慢慢来/);
     expect(prose.tagName).toBe("P");
+    expect(screen.getByText("她选了这段：这段把共同核对的过程留了下来。")).toBeTruthy();
     // 正文里不许有阿拉伯数字——那正是"这跟系统统计数据有什么区别"的形状。
     expect(prose.textContent).not.toMatch(/\d/);
     const card = prose.closest("article");
@@ -520,11 +670,14 @@ describe("the companion center reads the shell's companion session", () => {
   it("places her embedded image and quote where she put them, not all at the end", async () => {
     const api = installApi();
     api.companion.daily.get.mockResolvedValue(ok<CompanionDailySummaryV1>({
+      revision: 1,
       version: 1,
+      selectedId: null,
       date: "2026-09-20",
       status: "generated",
       generatedAt: "2026-09-20T16:00:00.000Z",
       failureReason: null,
+      selectionReason: null,
       blocks: [
         { type: "text", text: "下午那张图我看了很久。" },
         { type: "image", url: "/api/uploads/notes/alpha.png", label: "《IndexTTS》· 第 1 张", alt: "声码器流程图" },
@@ -532,6 +685,8 @@ describe("the companion center reads the shell's companion session", () => {
         { type: "quote", label: "《IndexTTS》里写着", text: "降低语义 Codec 帧率之后，音质几乎没掉。" },
       ],
       memory: null,
+      hidden: false,
+      hiddenAt: null,
     }));
     renderCompanionCenter();
     fireEvent.click(await screen.findByRole("tab", { name: "日记" }));
@@ -558,12 +713,17 @@ describe("the companion center reads the shell's companion session", () => {
     const api = installApi();
     api.companion.daily.get.mockResolvedValue(ok<CompanionDailySummaryV1>({
       version: 1,
+      revision: 1,
+      selectedId: null,
       date: "2026-09-20",
       status: "failed",
       generatedAt: "2026-09-20T16:00:00.000Z",
       failureReason: reason,
+      selectionReason: null,
       blocks: [],
       memory: null,
+      hidden: false,
+      hiddenAt: null,
     }));
     renderCompanionCenter();
     fireEvent.click(await screen.findByRole("tab", { name: "日记" }));
@@ -797,6 +957,21 @@ describe("the companion center reads the shell's companion session", () => {
     const second = document.querySelector("#companion-panel-activity");
     expect(second).not.toBe(first);
     expect(screen.getByRole("tab", { name: "动态" }).getAttribute("aria-controls")).toBe(second?.id);
+  });
+
+  it("pauses automatic diaries independently and persists the switch", async () => {
+    const api = installApi();
+    renderCompanionCenter();
+    fireEvent.click(await screen.findByRole("tab", { name: "设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "日记生成" }));
+    const toggle = await screen.findByRole("switch", { name: "自动生成日记" });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(api.companion.account.patchState).toHaveBeenCalledWith(expect.objectContaining({
+      request: { revision: 0, diaryEnabled: false },
+    })));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "自动生成日记" }).getAttribute("aria-checked")).toBe("false"));
   });
 });
 

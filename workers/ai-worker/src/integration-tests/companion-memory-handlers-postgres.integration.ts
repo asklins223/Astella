@@ -15,9 +15,13 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
+import { getCompanionAgentTool } from "@ailearn/shared";
 import { runCompanionMemoryEmbeddingRebuild } from "../handlers/companion-memory-embedding.ts";
+import { executeDirectTool, executeReadTool } from "../handlers/companion-tool-execution.ts";
+import { CompanionToolError } from "../handlers/companion-tool-result.ts";
+import { retrieveActiveCompanionMemoryDirectory } from "../handlers/companion-memory-vector.ts";
 import { tickCompanionMemoryMaintenance } from "../handlers/companion-memory-maintenance.ts";
-import { closeDatabase } from "../db.ts";
+import { closeDatabase, withWorkerWorkspaceTransaction } from "../db.ts";
 
 const MIGRATOR_URL = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL;
 const WORKER_URL = process.env.DATABASE_URL_WORKER ?? process.env.DATABASE_URL;
@@ -33,6 +37,9 @@ const workspaceId = randomUUID();
 const jobId = randomUUID();
 const leaseToken = `lease-${randomUUID()}`;
 const memoryId = randomUUID();
+const revisionMemoryId = randomUUID();
+const sourceSessionId = randomUUID();
+const revisionDeliveryId = randomUUID();
 const prefix = userId.slice(0, 8);
 
 after(async () => {
@@ -52,8 +59,28 @@ await admin`
 // embedding 重建的候选集合：非候选、未删除、embedding_status='none'。
 await admin`
   INSERT INTO assistant_memory_items
-    (id, workspace_id, user_id, kind, content, candidate, embedding_status, source_event_id)
-  VALUES (${memoryId}, ${workspaceId}, ${userId}, 'goal', '需要向量化的记忆', false, 'none', ${`worker-embed:${memoryId}`})
+    (id, workspace_id, user_id, kind, content, applies_when, valid_from, valid_until,
+     candidate, embedding_status, source_event_id)
+  VALUES (${memoryId}, ${workspaceId}, ${userId}, 'goal',
+          '需要向量化的记忆。完整正文只在按 ID 读取时返回。', '讨论学习目标时',
+          now() - interval '1 day', now() + interval '30 days', false, 'none', ${`worker-embed:${memoryId}`})
+`;
+await admin`
+  INSERT INTO assistant_memory_items
+    (id, workspace_id, user_id, kind, content, source_event_id, source_session_id,
+     source_speaker, source_basis, applies_when, valid_from, valid_until,
+     user_stated, user_confirmed, candidate, importance, confidence, scope,
+     source_type, author_type, author_id, epistemic_status, embedding_status)
+  VALUES (${revisionMemoryId}, ${workspaceId}, ${userId}, 'preference', '旧的记忆内容',
+          ${`worker-revise:${revisionMemoryId}`}, ${sourceSessionId}, 'user', 'direct_statement',
+          '工作日', now() - interval '1 day', now() + interval '30 days',
+          true, true, false, 0.8, 0.9, 'workspace', 'user_stated', 'user', ${userId}, 'supported', 'ready')
+`;
+await admin`
+  INSERT INTO assistant_deliveries
+    (id, workspace_id, user_id, inbox_sequence, dedupe_key, state, kind, payload_ref, expires_at)
+  VALUES (${revisionDeliveryId}, ${workspaceId}, ${userId}, 1, ${`worker-revise:${revisionMemoryId}`},
+          'displayed', 'memory_candidate', ${admin.json({ memoryItemId: revisionMemoryId })}, now() + interval '1 day')
 `;
 // status='running' + 匹配 lease_token 才能通过 assertJobLease。
 await admin`
@@ -115,6 +142,48 @@ test("已同意但未配置 embedding provider → 优雅跳过，且不得把�
   assert.equal(embeddings[0]?.n, 0, "未生成向量时不得写 embeddings 行");
 });
 
+test("active 目录只给线索；按稳定 ID 展开要求有效范围与当前 revision", async () => {
+  const directory = await withWorkerWorkspaceTransaction(
+    { workspaceId, userId },
+    (tx) => retrieveActiveCompanionMemoryDirectory(tx, { workspaceId, userId }),
+  );
+  const entry = directory.find((candidate) => candidate.memoryId === memoryId);
+  assert.ok(entry);
+  assert.equal(entry?.title, "需要向量化的记忆。");
+  assert.equal(entry?.appliesWhen, "讨论学习目标时");
+  assert.equal("content" in entry, false, "目录只返回标题/适用条件，不带正文列");
+
+  const definition = getCompanionAgentTool("companion_read_memory");
+  assert.ok(definition);
+  const read = {
+    userId,
+    runId: randomUUID(),
+    pageContext: null,
+    residentMemories: [],
+    memoryRefs: [] as Array<{ memoryId: string; kind: string; content: string }>,
+  };
+  const event = {
+    ctx: { workspaceId },
+    read,
+    constraints: {},
+  } as unknown as Parameters<typeof executeReadTool>[0];
+  const expanded = await executeReadTool(event, definition, {
+    memoryId,
+    expectedRevision: 1,
+  });
+  assert.equal(expanded.value.content, "需要向量化的记忆。完整正文只在按 ID 读取时返回。");
+  assert.equal(read.memoryRefs[0]?.memoryId, memoryId);
+
+  await assert.rejects(
+    () => executeReadTool(event, definition, { memoryId, expectedRevision: 2 }),
+    /没找到这条仍有效且版本匹配/,
+  );
+  await assert.rejects(
+    () => executeReadTool(event, definition, { memoryId: randomUUID(), expectedRevision: 1 }),
+    /没找到这条仍有效且版本匹配/,
+  );
+});
+
 test("维护 tick：数据库日期键保证每日一次，重复调用不抛错也不重复维护", async () => {
   await assert.doesNotReject(() => tickCompanionMemoryMaintenance());
   const afterFirst = await admin`
@@ -129,4 +198,74 @@ test("维护 tick：数据库日期键保证每日一次，重复调用不抛错
     WHERE run_date = (now() AT TIME ZONE 'UTC')::date
   `;
   assert.equal(afterSecond[0]?.n, 1, "重复 tick 不得产生第二条当日记录");
+});
+
+test("full 档记忆修订：CAS 追加旧版本，保留来源与未改的时间条件", async () => {
+  const definition = getCompanionAgentTool("companion_revise_memory");
+  assert.ok(definition);
+  const event = {
+    ctx: { workspaceId },
+    read: { userId },
+  } as unknown as Parameters<typeof executeDirectTool>[0];
+
+  const result = await executeDirectTool(event, definition, {
+    memoryId: revisionMemoryId,
+    expectedRevision: 1,
+    content: "新的记忆内容",
+  });
+  assert.equal(result.value.memoryId, revisionMemoryId);
+  assert.equal(result.value.revision, 2);
+  assert.equal(result.value.changed, true);
+
+  const current = await admin`
+    SELECT revision, content, source_event_id, source_session_id, applies_when,
+           valid_from, valid_until, user_stated, user_confirmed, candidate,
+           author_type, author_id, epistemic_status, embedding_status
+      FROM assistant_memory_items WHERE id = ${revisionMemoryId}
+  `;
+  assert.equal(current[0].revision, 2);
+  assert.equal(current[0].content, "新的记忆内容");
+  assert.equal(current[0].source_event_id, `worker-revise:${revisionMemoryId}`);
+  assert.equal(current[0].source_session_id, sourceSessionId);
+  assert.equal(current[0].applies_when, "工作日");
+  assert.equal(current[0].user_stated, true);
+  assert.equal(current[0].user_confirmed, true);
+  assert.equal(current[0].candidate, false);
+  assert.equal(current[0].author_type, "user");
+  assert.equal(current[0].author_id, userId);
+  assert.equal(current[0].epistemic_status, "supported");
+  assert.equal(current[0].embedding_status, "pending");
+  const delivery = await admin`
+    SELECT state, display_lease FROM assistant_deliveries WHERE id = ${revisionDeliveryId}
+  `;
+  assert.equal(delivery[0].state, "acted");
+  assert.equal(delivery[0].display_lease, null);
+  assert.ok(current[0].valid_from instanceof Date);
+  assert.ok(current[0].valid_until instanceof Date);
+
+  const history = await admin`
+    SELECT revision, content, source_event_id, source_session_id, applies_when
+      FROM assistant_memory_item_revisions
+     WHERE memory_id = ${revisionMemoryId}
+     ORDER BY revision
+  `;
+  assert.deepEqual(history.map((row) => row.revision), [1]);
+  assert.equal(history[0].content, "旧的记忆内容");
+  assert.equal(history[0].source_event_id, `worker-revise:${revisionMemoryId}`);
+  assert.equal(history[0].source_session_id, sourceSessionId);
+  assert.equal(history[0].applies_when, "工作日");
+
+  await assert.rejects(
+    () => executeDirectTool(event, definition, {
+      memoryId: revisionMemoryId,
+      expectedRevision: 1,
+      content: "过期输入不得覆盖",
+    }),
+    (error: unknown) => error instanceof CompanionToolError && /刚刚更新/.test(error.message),
+  );
+  const unchanged = await admin`
+    SELECT revision, content FROM assistant_memory_items WHERE id = ${revisionMemoryId}
+  `;
+  assert.equal(unchanged[0].revision, 2);
+  assert.equal(unchanged[0].content, "新的记忆内容");
 });

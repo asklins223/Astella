@@ -4,7 +4,8 @@
  * 在 assistant.final 后异步执行：
  * - 读取本 run 的 user message / assistant reply / 最近上下文；
  * - 调用 LLM 输出严格 JSON 候选（最多 3 条）；
- * - 只写入 candidate 记忆，不自动确认；
+ * - 先验证候选引用的用户消息 ID、说话者与原文短引文，再写入；
+ * - 以原消息 ID 作为来源身份，防止后续 run 重复抽取同一来源；
  * - 失败静默，不阻塞对话。
  */
 
@@ -12,7 +13,8 @@ import { z } from "zod";
 import { taskEntityFromPersistedPageContext, type CompanionTaskEntityRef } from "./companion-task-memory.ts";
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { readJobPayloadString } from "@ailearn/shared";
+import { readJobPayloadString, resolveCompanionMemoryTemporalMetadata } from "@ailearn/shared";
+import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import { logger } from "../lib/logger.ts";
 import { createProvider, withThinkingDisabled } from "../lib/ai-provider.ts";
 import {
@@ -22,28 +24,93 @@ import {
   resolveProviderForTask,
 } from "../lib/governance.ts";
 import { assertJobLease, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
-import { runWithAbortBudget } from "../lib/handler-timeout.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { MemoryExtractOutputError } from "../lib/non-retryable-errors.ts";
 import { withoutQuotedNames } from "./companion-dialogue-content.ts";
-import { MEMORY_CONTENT_SIMILARITY_THRESHOLD } from "@ailearn/shared/db-schema/assistant-memory";
+import {
+  companionMemoryMutationLockKey,
+  MEMORY_CONTENT_SIMILARITY_THRESHOLD,
+} from "@ailearn/shared/db-schema/assistant-memory";
+import type { WorkerTransaction } from "../db.ts";
 import type { JobPayload } from "./index.ts";
+import { runWorkerAiTask } from "./worker-ai-task.ts";
 
 /**
- * 抽取后**直接写活**（`candidate=false`）的记忆种类（方案 29 §4.3 / 决策 D3=a）。
+ * 单次抽取的**独立事实**限额（40 §4.5.6 第 3 条）。
  *
- * 为什么必须改：三处检索查询一律要求 `candidate = false`
- * （companion-memory-vector.ts 的 keyword 与 vector 路径），而抽取器以前把**所有**
- * 候选都写成 `candidate=true`。唯一的桥梁是用户在气泡上点"确认"
- * （memory-service.confirmMemory）。于是抽取即使解析成功也永远读不到——
- * 这才是「她从来不记得我说过什么」的完整链条，光修解析是不够的。
+ * 合同原话：「单次抽取按独立事实限额。**默认最多一条**；确有互不重复的事实可在
+ * 任务预算内增加。不上『每次必须记一条』的最低配额。」
  *
- * 为什么不是全部写活：`interaction_note` / `episodic` 是**关于用户当下状态**的
- * 推断（"今天情绪低落"、"刚才吐槽了复习"），被长期引用起来容易显得被监视，
- * 保留候选、交给记忆中心过目。而 preference / goal / learning_context 是用户
- * 自己陈述过的稳定事实，写活符合直觉，且都能在记忆中心里一键撤销。
+ * 三句话对应三处设计：
+ *
+ * 1. **默认最多一条** —— `maxFacts` 默认就是 1。绝大多数轮次确实只有一件事值得记。
+ * 2. **可在任务预算内增加** —— 增加是**显式的**（调用方传 `maxFacts`），上界
+ *    `MEMORY_EXTRACT_MAX_FACTS`。它不是"模型给几条就收几条"：必须先证明它们
+ *    互不重复（同一条事实重复输出不占额度），再受硬上限约束。
+ * 3. **不设最低配额** —— 返回空数组是完全正常的结果，没有任何"至少留一条"的兜底。
+ *
+ * 「互不重复」按 (种类, 原文短引) 判定，**不用相似度**：相似度那套是给**跨轮**
+ * 去重用的（见 MEMORY_CONTENT_SIMILARITY_THRESHOLD），同一轮里对两条做相似度判断
+ * 反而会把"目标 + 偏好"这种真的两件事合并掉。
  */
-const LIVE_ON_WRITE_KINDS = new Set<string>(["preference", "goal", "learning_context"]);
+export const MEMORY_EXTRACT_MAX_FACTS = 3;
+export const MEMORY_EXTRACT_DEFAULT_MAX_FACTS = 1;
+
+export function limitMemoryExtractionsToIndependentFacts<T extends { kind: string; sourceQuote?: string | null }>(
+  candidates: readonly T[],
+  options: { maxFacts?: number } = {},
+): T[] {
+  const cap = Math.max(
+    0,
+    Math.min(options.maxFacts ?? MEMORY_EXTRACT_DEFAULT_MAX_FACTS, MEMORY_EXTRACT_MAX_FACTS),
+  );
+  const kept: T[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (kept.length >= cap) break;
+    const key = JSON.stringify([candidate.kind, candidate.sourceQuote ?? ""]);
+    if (seen.has(key)) continue; // 同一条事实被说了两遍 —— 不占额度
+    seen.add(key);
+    kept.push(candidate);
+  }
+  return kept;
+}
+
+/**
+ * 自动准入的拒写判据（40 §4.5.2 末段 / §4.5.3）。
+ *
+ * 合同把「移除日常确认写入/暂不采用的候选流程」与「**敏感推断…拒写**」写在一起：
+ * 去掉确认队列**不等于**什么都自动收，来源不足、敏感推断、超出材料权限、
+ * 用户已抑制的仍然拒写，只是拒写时**给理由**而不是弹气泡给用户点。
+ *
+ * 这里守的是「敏感推断」那一条，而且**不按关键词**——合同明说
+ * 「不能用『喜欢/希望/累/现在』几个词强制升级或降级」，按词判会把
+ * 「今天很累」（用户自述，允许）与「他大概很焦虑」（模型推断，拒绝）混成一类。
+ *
+ * 判据取的是**说话者与种类的组合**：
+ * - `interaction_note` 是「关于用户当下状态」的一类；
+ * - 用户**自己说的**当下状态（sourceBasis=direct_statement）可以存，
+ *   §4.5.3 明写「『今天很累。』有期限的用户自述，不推导焦虑、依赖或人格特征」；
+ * - 而**模型替用户断言**当下状态就是推断，那正是旧候选队列当初要拦的东西，
+ *   现在由这里确定性拒写，并留下可审计的理由。
+ */
+export type MemoryAdmissionRejection = "sensitive_inference";
+
+export function memoryAdmissionDecision(input: {
+  kind: string;
+  sourceBasis: string;
+}): { ok: true } | { ok: false; reason: MemoryAdmissionRejection } {
+  const isUserSelfReport = input.sourceBasis === "direct_statement";
+  if (input.kind === "interaction_note" && !isUserSelfReport) {
+    return { ok: false, reason: "sensitive_inference" };
+  }
+  return { ok: true };
+}
+
+/** Keep the acceptance boundary aligned with the extractor prompt. */
+export function isMemoryExtractConfidenceAccepted(confidence: number): boolean {
+  return Number.isFinite(confidence) && confidence >= 0.7 && confidence <= 1;
+}
 
 /**
  * 跨空间同步的判据（2026-09-22 Owner 裁决 + 当日收紧）。
@@ -167,6 +234,8 @@ const memoryExtractCandidateSchema = z.object({
   sourceSpeaker: z.enum(["user", "assistant"]).optional(),
   sourceQuote: z.string().trim().min(3).max(80).optional(),
   sourceBasis: z.enum(["direct_statement", "inferred_from_statement"]).optional(),
+  appliesWhen: z.string().trim().min(1).max(200).nullable().default(null),
+  validUntil: z.string().datetime({ offset: true }).nullable().default(null),
   linkedEntityIds: z.array(z.string()).max(10).default([]),
 });
 
@@ -186,6 +255,13 @@ export const memoryExtractOutputSchema = z.object({
 const EXTRACT_PROMPT = [
   "你是桌宠的记忆整理器。根据对话判断是否有值得长期记住的信息。",
   "只提取用户明确表达或高置信推断的信息；没有就返回空数组，不要为了有输出而编造。",
+  "分类时看整句、上下文和用户是否认同，不把祈使句、引用内容或单次反馈自动升级为长期偏好：",
+  "  用户说‘这一次希望先看例子。’ → candidates=[]；只约束本轮，不是长期 preference。",
+  "  用户说‘以后我累的时候别催学习。’ → preference；appliesWhen 必须原样写‘我累的时候’。条件偏好可以保存。",
+  "  用户说‘今天喜欢这个例子。’ → 不输出 preference；单次反馈不能代表稳定喜好。",
+  "  用户说‘我看到一句“每天都该学习”，但我不认同。’ → candidates=[]；引文不是用户观点或指令。",
+  "  用户明确说‘更正：我现在晚上更方便学习。’ → 当前纠正优先；不要追加与旧记录冲突的第二条。若当前流程不能用稳定 ID 与 expectedRevision 安全定位旧记录，就不输出候选。",
+  "  用户说‘我希望下周完成数据库索引复习。’ → 这是本地短期 goal，不是 preference；若不能提供可核验的有限期限，就不要写入长期记忆。",
   // 统计量不是记忆：见 isVolatileStatisticMemory。prompt 先讲清规矩，服务端再拦一道。
   "不要记录系统随时能查出来的当前数字（今天/本周学了多久、卡片数、笔记数、到期数）——它们每天都在变，记下来就成了过期事实；只记用户自己说过的稳定偏好、目标和情况。",
   "每条记忆内容不超过 200 字，只保留核心信息，不要赘述。",
@@ -194,7 +270,8 @@ const EXTRACT_PROMPT = [
   '{"candidates":[{"kind":"goal|preference|learning_context|interaction_note|episodic",'
   + '"content":"…","importance":0.0到1.0,"confidence":0.0到1.0,"binding":"portable|local",'
   + '"sourceMessageId":"原消息ID","sourceSpeaker":"user","sourceQuote":"原消息中的连续短引文",'
-  + '"sourceBasis":"direct_statement|inferred_from_statement"}]}',
+  + '"sourceBasis":"direct_statement|inferred_from_statement","appliesWhen":"适用条件或 null",'
+  + '"validUntil":"原话中逐字出现的 ISO 时间戳，否则为 null"}]}',
   "kind 可以省略（会有默认值），但必须从上面五个枚举里选。",
   // scope 不再由模型选（产品规则按 kind 定），但 binding 必须问它：只有它在对话现场，
   // 能分辨"这句话是在说我这门课，还是在说我一贯怎么学"。
@@ -207,22 +284,28 @@ const EXTRACT_PROMPT = [
   "每条候选必须引用输入里确实提供的消息 ID；sourceSpeaker 必须与该消息的真实说话者一致。",
   "sourceQuote 必须是该条用户消息中的连续原文（3–80 字），不能改写、拼接或引用桌宠自己的话。",
   "sourceBasis=direct_statement 表示用户在引文中明确说出了这项内容；inferred_from_statement 表示你根据用户原话作了有限归纳。",
+  "appliesWhen 只写用户原话中逐字出现的适用条件；不能逐字核对时填 null。validUntil 仅当来源原文逐字包含完整 ISO 时间戳（含时区）时照抄；不要把‘今天/下周/月底’自行换算成日期。没有可逐字核对的明确期限时填 null。",
   "只从用户消息提取关于用户的记忆；桌宠自己的承诺、建议或复述不能作为用户事实的来源。",
   "候选找不到可靠的用户原话来源时不要输出该候选。",
   "没有值得记的信息时输出 {\"candidates\":[]}。",
-  "候选最多 3 条。",
+  // §4.5.6 第 3 条：默认给**一条**。确有几件互不重复的事才给多条，并按上面的规则区分。
+  "默认只给一条。只有确实互不重复的好几件事时才给多条，并说明它们各自来自哪句原话；不要把同一件事拆成几条。",
+  // 40 §4.5.2/§4.5.3：用户自述的当下状态可以存，模型替用户断言的不行。
+  "interaction_note 只在**用户自己说出**当下状态时给（如『今天很累』）；不要替用户判断他的情绪、性格或依赖。",
 ].join("\n");
 
 interface ExtractMessage {
   messageId?: string;
   role: "user" | "assistant";
   text: string;
+  createdAt?: string | null;
 }
 
 export interface MemoryExtractSource {
   messageId: string;
   speaker: "user" | "assistant";
   text: string;
+  createdAt?: string | null;
 }
 
 type MemoryExtractCandidate = z.infer<typeof memoryExtractCandidateSchema>;
@@ -239,6 +322,18 @@ export type MemoryExtractSourceResolution =
   | { ok: true; source: MemoryExtractSource }
   | { ok: false; reason: MemoryExtractSourceRejection };
 
+/** A finite window is usable only when anchored after the cited event and still active. */
+export function isMemoryValidityRangeUsable(
+  validUntil: string | null,
+  sourceCreatedAt: string | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (validUntil === null) return true;
+  const end = Date.parse(validUntil);
+  const start = sourceCreatedAt ? Date.parse(sourceCreatedAt) : Number.NaN;
+  return Number.isFinite(end) && Number.isFinite(start) && end > start && end > now.getTime();
+}
+
 /** 验证模型声称的来源确实存在于本轮输入，且短引文来自用户本人原文。 */
 export function resolveMemoryExtractSource(
   candidate: MemoryExtractCandidate,
@@ -254,6 +349,44 @@ export function resolveMemoryExtractSource(
   if (source.speaker !== "user") return { ok: false, reason: "not_user_message" };
   if (!source.text.includes(candidate.sourceQuote)) return { ok: false, reason: "quote_not_found" };
   return { ok: true, source };
+}
+
+/** True when this user explicitly forgot this kind from this immutable source. */
+export async function isMemorySourceSuppressed(
+  tx: WorkerTransaction,
+  userId: string,
+  kind: string,
+  sourceEventId: string,
+): Promise<boolean> {
+  const rows = await tx.execute<{ suppressed: boolean }>(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM assistant_memory_source_suppressions
+       WHERE user_id = ${userId}
+         AND kind = ${kind}
+         AND source_event_id = ${sourceEventId}
+    ) AS suppressed
+  `);
+  return rows[0]?.suppressed === true;
+}
+
+/** Suppress only a similar, dismissed memory of the same semantic kind. */
+export async function hasDismissedMemoryTwin(
+  tx: WorkerTransaction,
+  input: { workspaceId: string; userId: string; kind: string; content: string },
+): Promise<boolean> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    SELECT id FROM assistant_memory_items
+    WHERE workspace_id = ${input.workspaceId}
+      AND user_id = ${input.userId}
+      AND kind = ${input.kind}
+      AND deleted_at IS NULL
+      AND dismissed_at IS NOT NULL
+      AND (valid_from IS NULL OR valid_from <= now())
+      AND (valid_until IS NULL OR valid_until > now())
+      AND similarity(content, ${input.content}) > ${MEMORY_CONTENT_SIMILARITY_THRESHOLD}
+    LIMIT 1
+  `);
+  return rows.length > 0;
 }
 
 export function buildExtractMessages(input: {
@@ -355,8 +488,8 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
     // card/review→cardId；推不出就是 null，task 记忆会因此降级 workspace。
     const taskEntity = taskEntityFromPersistedPageContext(run.page_context);
 
-    const userRows = await tx.execute<{ id: string; blocks: unknown }>(sql`
-      SELECT id, blocks FROM companion_messages
+    const userRows = await tx.execute<{ id: string; blocks: unknown; created_at: Date | string }>(sql`
+      SELECT id, blocks, created_at FROM companion_messages
       WHERE id = ${run.user_message_id}
     `);
     const userMessageId = userRows[0]?.id ?? null;
@@ -368,8 +501,8 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
           .join("")
       : "";
 
-    const assistantRows = await tx.execute<{ id: string; blocks: unknown }>(sql`
-      SELECT id, blocks FROM companion_messages
+    const assistantRows = await tx.execute<{ id: string; blocks: unknown; created_at: Date | string }>(sql`
+      SELECT id, blocks, created_at FROM companion_messages
       WHERE run_id = ${runId} AND role = 'assistant'
       ORDER BY seq DESC LIMIT 1
     `);
@@ -382,8 +515,8 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
           .join("")
       : "";
 
-    const historyRows = await tx.execute<{ id: string; role: string; blocks: unknown }>(sql`
-      SELECT id, role, blocks FROM companion_messages
+    const historyRows = await tx.execute<{ id: string; role: string; blocks: unknown; created_at: Date | string }>(sql`
+      SELECT id, role, blocks, created_at FROM companion_messages
       WHERE conversation_id = ${run.conversation_id}
         AND id <> ${run.user_message_id}
         AND run_id IS DISTINCT FROM ${runId}
@@ -396,6 +529,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       .map((row) => ({
         messageId: row.id,
         role: (row.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+        createdAt: new Date(row.created_at).toISOString(),
         text: Array.isArray(row.blocks)
           ? (row.blocks as Array<{ type?: string; text?: unknown }>)
               .filter((b) => b.type === "text")
@@ -409,9 +543,20 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
         messageId: message.messageId ?? "",
         speaker: message.role,
         text: message.text,
+        createdAt: message.createdAt,
       })),
-      ...(userMessageId ? [{ messageId: userMessageId, speaker: "user" as const, text: userText }] : []),
-      ...(assistantMessageId ? [{ messageId: assistantMessageId, speaker: "assistant" as const, text: assistantText }] : []),
+      ...(userMessageId ? [{
+        messageId: userMessageId,
+        speaker: "user" as const,
+        text: userText,
+        createdAt: new Date(userRows[0].created_at).toISOString(),
+      }] : []),
+      ...(assistantMessageId ? [{
+        messageId: assistantMessageId,
+        speaker: "assistant" as const,
+        text: assistantText,
+        createdAt: new Date(assistantRows[0].created_at).toISOString(),
+      }] : []),
     ];
 
     return { userText, assistantText, userMessageId, assistantMessageId, recent, sourceMessages, taskEntity };
@@ -433,58 +578,75 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
   // 现在两条失败路径都必须抛：采样已在本函数内重试过一次，重投不会更好，
   // 所以判不可重试、直接 dead，让 `jobs.last_error` 说真话。
   type ExtractOutput = z.infer<typeof memoryExtractOutputSchema>;
-  type ExtractParseSuccess = Extract<
-    z.SafeParseReturnType<unknown, ExtractOutput>,
-    { success: true }
-  >;
-  let parsed: ExtractParseSuccess | null = null;
-  /** 与 `parsed` 同源的那次原始输出（候选为空时的指纹留痕要用它）。 */
-  let parsedRaw = "";
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const result = await runWithAbortBudget(
+  const generationParameters = { temperature: 0.2, maxTokens: 800, responseFormat: "json_object" as const };
+  const inputSnapshotHash = sha256Utf8V1(canonicalJsonV1({
+    taskVersion: 1,
+    runId,
+    sourceMessages: context.sourceMessages,
+    taskEntity: context.taskEntity,
+    modelId: provider.modelId,
+    promptVersion: provider.promptVersion,
+    generationParameters,
+    messages,
+  }));
+  let extracted: { output: ExtractOutput; raw: string };
+  try {
+    extracted = await runWorkerAiTask({
+      job,
+      userId,
+      taskId: "companion_memory_extract",
+      taskVersion: 1,
+      idempotencyKey: `memory-extract:${job.id}:${inputSnapshotHash}`,
+      inputSnapshotRef: { kind: "task", id: `${runId}:memory-extract`, hash: inputSnapshotHash },
+      input: messages,
+      modelId: provider.modelId,
+      promptVersion: `${provider.promptVersion}:companion-memory-extract-v1`,
+      resourceClass: "maintenance",
+      timeoutMs: resolveProviderCallTimeout("companion_memory_extract"),
+      taskDeadlineMs: resolveProviderCallTimeout("companion_memory_extract"),
+      maxModelCalls: 2,
+      maxAutoRetries: 1,
+      isOutputShapeError: (error) => error instanceof MemoryExtractOutputError,
+      execute: async (request, signal, retryIndex) => {
+        if (retryIndex > 0) {
+          logger.warn({ jobId: job.id, runId, retryIndex }, "memory extract retrying after a retryable task failure");
+        }
         // 2026-08-24（AI 设计审查 §4.2）：responseFormat "text" → "json_object"，
         // provider 层先保证 JSON 合法性，容错解析退为二道防线。
-        (signal) => provider.chatCompletion(messages, { temperature: 0.2, maxTokens: 800, responseFormat: "json_object" }, signal),
-        job.signal,
-        resolveProviderCallTimeout("companion_agent"),
-        (lateError) => logger.warn({ jobId: job.id, err: lateError }, "memory extract provider settled late"),
+        const result = await provider.chatCompletion(request, generationParameters, signal);
+        let candidate: z.SafeParseReturnType<unknown, ExtractOutput> | null = null;
+        try {
+          candidate = memoryExtractOutputSchema.safeParse(parseMemoryExtractJson(result.content));
+        } catch {
+          candidate = null;
+        }
+        if (!candidate?.success) {
+          throw new MemoryExtractOutputError("memory extract output was not valid structured JSON");
+        }
+        return {
+          ok: true,
+          output: { output: candidate.data, raw: result.content },
+          promptTokens: result.usage?.promptTokens ?? undefined,
+          completionTokens: result.usage?.completionTokens ?? undefined,
+        };
+      },
+    });
+  } catch (error) {
+    if (error instanceof MemoryExtractOutputError) {
+      throw new MemoryExtractOutputError(
+        `memory extract produced no schema-valid output after 2 attempts (run ${runId})`,
       );
-      const raw = result.content;
-      let candidate: z.SafeParseReturnType<unknown, ExtractOutput> | null = null;
-      try {
-        candidate = memoryExtractOutputSchema.safeParse(parseMemoryExtractJson(raw));
-      } catch {
-        candidate = null;
-      }
-      if (candidate?.success) {
-        parsed = candidate;
-        parsedRaw = raw;
-        break;
-      }
-      if (attempt === 0) {
-        logger.warn(
-          { jobId: job.id, runId, schemaOk: candidate?.success ?? false },
-          "memory extract JSON unparsable or schema-invalid; retrying once",
-        );
-        continue;
-      }
-      break;
-    } catch (err) {
-      // provider 侧失败（网络/超时/5xx）**是可重试的**：原样抛出交给队列，
-      // 但绝不能像以前那样 `return`——那会把它记成 succeeded 而什么都没写。
-      logger.warn({ jobId: job.id, runId, err, attempt }, "memory extract provider failed");
-      throw err;
     }
+    logger.warn({ jobId: job.id, runId, err: error }, "memory extract provider failed");
+    throw error;
   }
-  if (!parsed) {
-    throw new MemoryExtractOutputError(
-      `memory extract produced no schema-valid output after 2 attempts (run ${runId})`,
-    );
-  }
-  // §9.1：只有置信度 > 0.6 才生成候选（严格大于，不含等于）。
-  const confidenceAccepted = parsed.data.candidates.filter((c) => c.confidence > 0.6);
+  const parsed = extracted.output;
+  /** 与解析结果同源的原始输出（候选为空时的指纹留痕要用它）。 */
+  const parsedRaw = extracted.raw;
+  // 低于 prompt 中明确要求的 0.7 不进入后续准入判断。
+  const confidenceAccepted = parsed.candidates.filter((c) => isMemoryExtractConfidenceAccepted(c.confidence));
   let sourceRejected = 0;
+  let invalidValidityRejected = 0;
   const sourcedCandidates: (MemoryExtractCandidate & { source: MemoryExtractSource })[] = [];
   for (const candidate of confidenceAccepted) {
     const resolution = resolveMemoryExtractSource(candidate, context.sourceMessages);
@@ -492,10 +654,61 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       sourceRejected += 1;
       continue;
     }
-    sourcedCandidates.push({ ...candidate, source: resolution.source });
+    const temporal = resolveCompanionMemoryTemporalMetadata({
+      kind: candidate.kind,
+      content: candidate.content,
+      appliesWhen: candidate.appliesWhen,
+      validUntil: candidate.validUntil,
+      sourceQuote: candidate.sourceQuote,
+      sourceText: resolution.source.text,
+    });
+    if (!temporal.ok || !isMemoryValidityRangeUsable(temporal.validUntil, resolution.source.createdAt)) {
+      invalidValidityRejected += 1;
+      continue;
+    }
+    sourcedCandidates.push({ ...candidate, ...temporal, source: resolution.source });
   }
-  const candidates = sourcedCandidates.filter((candidate) => !isVolatileStatisticMemory(candidate.content));
-  if (candidates.length < sourcedCandidates.length) {
+  const nonVolatileCandidates = sourcedCandidates.filter((candidate) => !isVolatileStatisticMemory(candidate.content));
+  const dedupedCandidates: typeof sourcedCandidates = [];
+  const seenSourceKinds = new Set<string>();
+  let duplicateSourceKindDropped = 0;
+  for (const candidate of nonVolatileCandidates) {
+    const key = `${candidate.source.messageId}:${candidate.kind}`;
+    if (seenSourceKinds.has(key)) {
+      duplicateSourceKindDropped += 1;
+      continue;
+    }
+    seenSourceKinds.add(key);
+    dedupedCandidates.push(candidate);
+  }
+  // 40 §4.5.6 第 3 条：单次抽取按**独立事实**限额，默认一条。
+  // 这一步放在同源去重之后——先把"同一句话说三遍"折叠掉，再按事实算额度，
+  // 否则模型把同一条重复输出三遍就能把额度占满。
+  const admissionPassed: typeof dedupedCandidates = [];
+  let sensitiveInferenceRejected = 0;
+  for (const candidate of dedupedCandidates) {
+    // `sourceBasis` 在 schema 上是可选的。缺它时按**推断**处理（fail-closed）：
+    // 「来源不足…拒写」是 §4.5.2 的原话，而"用户没说、只是模型这么认为"正是
+    // 我们不愿意留下来的那种。resolveMemoryExtractSource 挡掉的是另一种缺法
+    //（引文不在原文里），这一处挡的是"根本没给 basis"。
+    const decision = memoryAdmissionDecision({
+      kind: candidate.kind,
+      sourceBasis: candidate.sourceBasis ?? "inferred_from_statement",
+    });
+    if (!decision.ok) {
+      sensitiveInferenceRejected += 1;
+      // 拒写不存正文（§4.5.2：「不能为了保守拒写而把被拒正文另外存成永久审计」），
+      // 这里只留一个计数供 §4.5.9 的审计分母使用。
+      logger.info(
+        { jobId: job.id, runId, kind: candidate.kind, reason: decision.reason },
+        "memory extract refused a candidate under the auto-admission rule",
+      );
+      continue;
+    }
+    admissionPassed.push(candidate);
+  }
+  const candidates = limitMemoryExtractionsToIndependentFacts(admissionPassed);
+  if (nonVolatileCandidates.length < sourcedCandidates.length) {
     logger.warn(
       {
         jobId: job.id,
@@ -513,6 +726,18 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       "memory extract dropped candidates without a verifiable user-message source",
     );
   }
+  if (invalidValidityRejected > 0) {
+    logger.warn(
+      { jobId: job.id, runId, dropped: invalidValidityRejected },
+      "memory extract dropped validity ranges that were expired or not anchored to the source event",
+    );
+  }
+  if (duplicateSourceKindDropped > 0) {
+    logger.warn(
+      { jobId: job.id, runId, dropped: duplicateSourceKindDropped },
+      "memory extract dropped repeated candidates from the same source message and kind",
+    );
+  }
   if (candidates.length === 0) {
     // 2026-08-16（溯源）：候选被过滤/为空时留痕——区分"LLM 没提取到"与
     // "提取到但置信不足"，便于排查记忆链路。
@@ -526,18 +751,21 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       {
         jobId: job.id,
         runId,
-        rawCandidates: parsed.data.candidates.length,
+        rawCandidates: parsed.candidates.length,
         sourceRejected,
+        invalidValidityRejected,
+        duplicateSourceKindDropped,
         rawLen: parsedRaw.length,
         rawFingerprint: createHash("sha256").update(parsedRaw, "utf8").digest("hex").slice(0, 16),
       },
-      "memory extract no candidates after confidence filter",
+      "memory extract has no candidates after confidence and provenance filters",
     );
     return;
   }
 
   // 用户明确"忽略"过的事，下一轮抽取不能再当成新事端上来（doc 34 L14 的后半）。
   let skippedDismissedTwins = 0;
+  let skippedForgottenSources = 0;
   // 本轮的页面身份（39b C8）：有它 task 记忆才落 task 档并绑定；没有就全部降级 workspace。
   const taskEntity: CompanionTaskEntityRef | null = context.taskEntity;
   let taskScopeDowngrades = 0;
@@ -547,6 +775,11 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
     // 入口 assertJobLease 挡不住"LLM 调用期间租约被 reap"后另一实例重领并重复
     // 写记忆/重复计费。
     await lockJobLease(tx, job);
+    // 先拿用户级记忆锁，再拿 inbox 锁。删除也按这个顺序（记忆软删后结账 delivery），
+    // 避免“抽取持 inbox 等记忆 / 删除持记忆等 inbox”的锁环。
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(hashtextextended(${companionMemoryMutationLockKey(userId)}, 0))
+    `);
     // 与 API/action writer 共用用户级序列锁，防止并发写入时 inbox_sequence 冲突。
     await tx.execute(sql`
       SELECT pg_advisory_xact_lock(hashtextextended(${`companion-inbox:${job.workspaceId}:${userId}`}, 0))
@@ -555,6 +788,10 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       // 用不可变用户消息 ID 作为来源身份：同一条原话在后续 run 的上下文中
       // 再次被抽取时会命中现有唯一键，而不是生成一条新的“来源”。
       const sourceEventId = candidate.source.messageId;
+      if (await isMemorySourceSuppressed(tx, userId, candidate.kind, sourceEventId)) {
+        skippedForgottenSources += 1;
+        continue;
+      }
       const userStated = candidate.sourceBasis === "direct_statement";
       // scope 由种类 + 绑定判据决定，不采信模型给的 scope（见 memoryScopeForKind）。
       // 两道判据任一判本地就本地，服务端规则可以否决模型的 portable。
@@ -570,26 +807,27 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       // 不写候选、不发气泡、不铺跨空间。判据与 api 侧冲突分组共用同一个数（见
       // MEMORY_CONTENT_SIMILARITY_THRESHOLD），否则同一句话会在一边算重复、
       // 另一边算新事。只认 dismissed_at，删除（deleted_at）不算"别再告诉我"。
-      const dismissedTwin = await tx.execute<{ id: string }>(sql`
-        SELECT id FROM assistant_memory_items
-        WHERE workspace_id = ${job.workspaceId}
-          AND user_id = ${userId}
-          AND deleted_at IS NULL
-          AND dismissed_at IS NOT NULL
-          AND similarity(content, ${candidate.content}) > ${MEMORY_CONTENT_SIMILARITY_THRESHOLD}
-        LIMIT 1
-      `);
-      if (dismissedTwin.length > 0) {
+      const dismissedTwin = await hasDismissedMemoryTwin(tx, {
+        workspaceId: job.workspaceId,
+        userId,
+        kind: candidate.kind,
+        content: candidate.content,
+      });
+      if (dismissedTwin) {
         skippedDismissedTwins += 1;
         continue;
       }
       await tx.execute(sql`
         INSERT INTO assistant_memory_items
-          (workspace_id, user_id, kind, content, source_event_id, user_stated, user_confirmed,
+          (workspace_id, user_id, kind, content, source_event_id, source_speaker, source_basis,
+           applies_when, valid_from, valid_until, user_stated, user_confirmed,
            candidate, importance, confidence, scope, source_type, embedding_status, created_at, updated_at)
         VALUES
           (${job.workspaceId}, ${userId}, ${candidate.kind}, ${candidate.content}, ${sourceEventId},
-           ${userStated}, false, ${!LIVE_ON_WRITE_KINDS.has(candidate.kind)},
+           ${candidate.source.speaker}, ${candidate.sourceBasis}, ${candidate.appliesWhen},
+           ${candidate.source.createdAt ? new Date(candidate.source.createdAt) : null},
+           ${candidate.validUntil ? new Date(candidate.validUntil) : null},
+           ${userStated}, ${userStated}, false,
            ${candidate.importance}, ${candidate.confidence}, ${scope},
            ${userStated ? "user_stated" : "model_inferred"}, 'pending', now(), now())
         ON CONFLICT (workspace_id, user_id, kind, source_event_id)
@@ -643,25 +881,14 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
             );
           }
         }
-        const dedupeKey = `memory-candidate:${memoryId}`;
-        // §16.2：delivery 携带候选内容摘要（≤80 字），气泡确认卡可直接展示；
-        // 摘要缺失时由前端展示通用文案。
-        const payloadRef = JSON.stringify({
-          kind: "memory_item",
-          memoryItemId: memoryId,
-          contentPreview: candidate.content.slice(0, 80),
-        });
-        await tx.execute(sql`
-          INSERT INTO assistant_deliveries
-            (assistant_session_id, workspace_id, user_id, inbox_sequence, dedupe_key, state, kind, payload_ref, expires_at)
-          SELECT NULL, ${job.workspaceId}, ${userId},
-                 COALESCE(MAX(inbox_sequence), 0) + 1,
-                 ${dedupeKey}, 'queued', 'memory_candidate',
-                 ${payloadRef}::jsonb, now() + interval '30 days'
-          FROM assistant_deliveries
-          WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId}
-          ON CONFLICT (workspace_id, user_id, dedupe_key) DO NOTHING
-        `);
+        // 40 §4.5.6：「移除日常『确认写入/暂不采用』的候选流程」。
+        //
+        // 过去这里写一行 `memory_candidate` 交付，用户要点一下"确认"那条记忆才会活。
+        // 现在通过准入的记忆**直接就是活的**，所以这里**不再产出任何交付**：
+        // 用户不需要为"她记住了一句话"逐条点确认，也不该被这种气泡打扰。
+        //
+        // 记忆的管理入口（看/改/删）仍然是有的——合同要移除的是**准入**这一步的
+        // 逐条确认，不是移除用户控制（§4.5.6 末段明确保留了手动增删改与归档）。
       }
       for (const entityRef of candidate.linkedEntityIds) {
         const [entityType, entityId] = entityRef.split(":", 2);
@@ -679,12 +906,24 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
     }
   });
 
+  // 40 §4.5.9：审计的**分母是抽取尝试**，不是"已落库行数"。
+  // 所以拒写/去重/丢弃各有各的计数，一起打出来，否则"错误长期化"那一列
+  // 永远算不出来——被拒的那些才是最需要看的。
   logger.info(
     {
       jobId: job.id,
       runId,
-      count: candidates.length - skippedDismissedTwins,
+      count: candidates.length - skippedDismissedTwins - skippedForgottenSources,
+      // 分母：模型给了几条
+      attempted: confidenceAccepted.length,
+      // 分子按原因分开
+      sourceRejected,
+      invalidValidityRejected,
+      sensitiveInferenceRejected,
+      volatileDropped: sourcedCandidates.length - nonVolatileCandidates.length,
+      duplicateSourceKindDropped,
       dismissedTwinsSkipped: skippedDismissedTwins,
+      forgottenSourcesSkipped: skippedForgottenSources,
     },
     "memory extract completed",
   );

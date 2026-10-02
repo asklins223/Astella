@@ -4,7 +4,7 @@ import { stageReflectionAppend } from "./note-reflection-document.ts";
 import { LearningRunBody, releaseRunThroughMainV1 } from "../run/learning-run-surface.tsx";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Clock3, History, Link2, LoaderCircle, MessageCircle, PencilLine, RefreshCw, Sparkles, X } from "lucide-react";
+import { BookOpen, Clock3, FileText, History, Link2, MessageCircle, PencilLine, RefreshCw, Sparkles, X } from "lucide-react";
 import type { CapabilityProjectionV1 } from "@ailearn/shared/desktop-ipc-contracts";
 import type {
   CardGenerationActiveSummaryV1,
@@ -51,7 +51,6 @@ import { imageOnlyFiles } from "../../../app/source-intake";
 import { ROUND_RECORD_COPY_V1, roundHistoryStateLabelV1, roundRecordDayV1, roundRecordModesLabelV1 } from "./round-record-copy.ts";
 import { NoteRouteCoverage } from "./note-route-coverage.tsx";
 import type { NoteRouteCoverageV1 } from "@ailearn/shared/note-route-coverage-v2";
-import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
@@ -64,11 +63,10 @@ import {
   useSurfaceProjection,
 } from "./surface-data.tsx";
 import {
-  cardGenerationEntryLabel,
   cardGenerationStatusLabel,
   sourceCappedNotice,
-  isCardGenerationInFlight,
   isLiveGenerationForNote,
+  isNoteGenerationLive,
 } from "../review/card-generation-status.ts";
 import {
   reviewSourceScopeHint,
@@ -85,6 +83,7 @@ import {
 } from "../run/objective-state-copy.ts";
 import { startObjectiveJourney } from "../run/objective-primary-action.ts";
 import { ArtifactFrameHost } from "../source/artifact-frame-host.tsx";
+import { NotebookLearningArtifactPaper } from "./notebook-learning-artifact-paper";
 import { RoundNotice } from "./round-notice.tsx";
 import { parseMarkdownTable } from "./note-blocks.ts";
 import { isHorizontalRule, noteInlineDisplayText, noteInlineImages, renderNoteInline } from "./note-reading-inline.tsx";
@@ -92,13 +91,31 @@ import { sourceImageObjectKeyFromUrl } from "@ailearn/shared/source-image-contra
 import { markdownToBlocks } from "@ailearn/shared/markdown-parser";
 import { useSourceImage } from "../source/source-image.ts";
 import { ImageGalleryLightbox, useImageLightbox, ZoomableReadingImage, type GalleryImage } from "../source/image-viewer.tsx";
-import { NoteMarkdownEditor, type NoteMarkdownEditorHandle } from "./note-markdown-editor.tsx";
+import type { NoteMarkdownEditorHandle } from "./note-markdown-editor.tsx";
+import { NoteDocumentEditor } from "./note-document-editor";
+import { annotationPlacements } from "./note-annotation-placement";
+import { AnnotationDeleteControl, useAnnotationDeleteConfirm } from "./annotation-delete-control";
+import { isNoteEditingMode, type NoteBodyMode } from "./note-document-mode";
+import { useNotebookBodyMode } from "./use-notebook-body-mode";
+import { NotebookDesk } from "./notebook-desk";
+import { NotebookEditorTools } from "./notebook-editor-tools";
+import { noteOutline } from "./note-outline";
+import { useNotebookLearningView } from "./use-notebook-learning-view";
+import { useNotebookLearningEntry } from "./use-notebook-learning-entry";
+import { NotebookVersionChoice } from "./notebook-version-choice";
+import { NotebookLearningPage } from "./notebook-learning-page";
+import { NotebookCardEntry } from "./notebook-card-entry";
 import { useNoteDocLiveView } from "./use-note-doc-live-view.ts";
+import { NoteAnnotationSidePage } from "./note-annotation-side-page";
+import { useNotebookSidePage } from "./use-notebook-side-page";
 import { VersionHistory } from "./version-history.tsx";
-import { ReadingBlock, ReadingImage, textRangeAtOffsets } from "./notebook-reading-block.tsx";
+import { ReadingBlock, ReadingImage } from "./notebook-reading-block.tsx";
+import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
+import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
 import { useNotebookAnnotationState } from "./use-notebook-annotation-state.ts";
 import { useNotebookLearningArtifactState } from "./use-notebook-learning-artifact-state.ts";
 import { useNotebookExpansionState } from "./use-notebook-expansion-state.ts";
+import { useNotebookExpansionTask } from "./use-notebook-expansion-task.ts";
 import { useNotebookRoundState } from "./use-notebook-round-state.ts";
 import { useNotebookRecallState } from "./use-notebook-recall-state.ts";
 import { useNotebookSaveState } from "./use-notebook-save-state.ts";
@@ -110,10 +127,12 @@ import { NoteOverviewPaper } from "./notebook-overview-paper.tsx";
 import { GenerationSetup } from "./notebook-generation-setup.tsx";
 import { RoundDeskLine } from "./notebook-round-line.tsx";
 import { NotebookSelectionActions } from "./notebook-selection-actions.tsx";
+import { useNotebookSelection } from "./use-notebook-selection";
+import { useNotebookAnnotationDraft } from "./use-notebook-annotation-draft";
+import { NotebookAnnotationComposer } from "./notebook-annotation-composer";
 import { NotebookArtifactTaskPaper } from "./notebook-artifact-task-paper.tsx";
 import { NotebookRoundRecap } from "./notebook-round-recap.tsx";
 import { NotebookRoundHistory } from "./notebook-round-history.tsx";
-import { NotebookReadingOutline } from "./notebook-reading-outline.tsx";
 import { NoteExpansionDrafts } from "./notebook-expansion-drafts.tsx";
 import { NotebookPresence } from "./notebook-presence.tsx";
 import { useNotebookReviewHold } from "./use-notebook-review-hold.ts";
@@ -124,14 +143,15 @@ import { useNotebookGenerationFeedback } from "./use-notebook-generation-feedbac
 import { generationOptionSummary, useNotebookGenerationOptions } from "./notebook-generation-options.ts";
 import { NoteImageUploads, useNoteImageUploads } from "./note-image-uploads.tsx";
 import { feedNoteIntentToCompanion, feedSelectionToCompanion } from "../../companion/companion-feed";
+import { noteAnchorsOverlap, noteExplanationBusy, pendingNoteExplanation, stopNoteExplanation, useNoteCompanionExplanations } from "../../companion/note-companion-explanation";
+import { stopCompanionSpeech } from "../../../app/companion-voice-playback";
+import { NoteCompanionExplanationPaper } from "./note-companion-explanation-paper";
 import { noteAnnotationV1Schema, type NoteAnnotationAnchorV1, type NoteAnnotationTaskV1, type NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
 import type { NoteOverviewTaskV1, NoteOverviewV1 } from "@ailearn/shared/note-overview-contracts";
-import { noteRecallRecordV1Schema, type NoteRecallRecordV1 } from "@ailearn/shared/note-recall-contracts";
+import type { NoteRecallRecordV1 } from "@ailearn/shared/note-recall-contracts";
 import {
   noteExpansionLinkV1Schema,
-  type NoteExpansionDraftV1,
   type NoteExpansionLinkV1,
-  type NoteExpansionTaskV1,
 } from "@ailearn/shared/note-expansion-contracts";
 import {
   noteLearningArtifactV1Schema,
@@ -139,7 +159,6 @@ import {
   type NoteLearningArtifactV1,
 } from "@ailearn/shared/note-learning-artifact-contracts";
 import { NoteLearningFootprint, type FootprintKind } from "./note-learning-footprint.tsx";
-import { TaskSlip } from "./task-slip.tsx";
 
 /**
  * Pages 08 / 09: one committed note as a paper notebook.
@@ -153,8 +172,20 @@ import { TaskSlip } from "./task-slip.tsx";
  * 两边只经 `note-blocks.ts` 那一份换算，所以"打开一篇没改过的笔记就显示未提交"
  * 这种漂移不存在。撤销由编辑器自己的 history 承担，这一页不再维护第二套。
  */
-export type NotebookProjection = {
-  readonly note: NoteDetailV1;
+/**
+ * 来源性质的中文说法（41 §1.5）。
+ *
+ * 用来源库自己的枚举，不用自己编一套近义词——资料袋说的是「这份材料是什么」，
+ * 而来源库里那一份是**全库**通用的说法；两处各说各的，改一处就对不上了。
+ */
+const SOURCE_KIND_LABELS: Readonly<Record<string, string>> = {
+  url: "网页",
+  text: "文本文档",
+  markdown: "Markdown",
+  code: "代码",
+};
+
+export type NotebookProjection = {  readonly note: NoteDetailV1;
   readonly source: DesktopSourceDetail | null;
   readonly sourceFailure: string | null;
   readonly objective: LearningObjectiveSurfaceV3 | null;
@@ -297,34 +328,9 @@ const FEEDBACK_REASONS: readonly { readonly value: DesktopCardGenerationFeedback
   { value: "duplicate_existing_card", label: "与已有卡片重复" },
   { value: "not_worth_reviewing", label: "不值得复习" },
 ];
-/**
- * 工具栏：每个按钮直接调 Milkdown 的命令，光标所在的块自己变形状，不再往纯文本
- * 里拼标记。这是 Web 端工具栏的做法，也是"所见即所得"与"纯文本标记"的分界线——
- * 按钮改的是文档结构，不是字符串。
- *
- * `onMouseDown` 一律 `preventDefault`：命令作用在**当前选区**上，按下去的那一下
- * 若把焦点抢走，加粗就会落到空处。字形沿用纸面原本的写法（`H`、`“`、`⌁`、`fx`），
- * 只是同一批字形现在指挥的是真文档。
- */
-type EditorToolSpec = {
-  readonly glyph: string;
-  readonly label: string;
-  readonly title: string;
-  readonly run: (editor: NoteMarkdownEditorHandle) => void;
-};
 
-const EDITOR_TOOLS: readonly EditorToolSpec[] = [
-  { glyph: "H", label: "标题", title: "把这一段变成标题", run: (editor) => editor.toggleHeading(2) },
-  { glyph: "B", label: "加粗", title: "加粗（⌘/Ctrl+B）", run: (editor) => editor.toggleStrong() },
-  { glyph: "I", label: "斜体", title: "斜体（⌘/Ctrl+I）", run: (editor) => editor.toggleEmphasis() },
-  { glyph: "``", label: "行内代码", title: "行内代码", run: (editor) => editor.toggleInlineCode() },
-  { glyph: "“", label: "引用", title: "把这一段变成引用", run: (editor) => editor.toggleBlockquote() },
-  { glyph: "⌁", label: "无序列表", title: "变成无序列表", run: (editor) => editor.toggleBulletList() },
-  { glyph: "1.", label: "有序列表", title: "变成有序列表", run: (editor) => editor.toggleOrderedList() },
-  { glyph: "fx", label: "代码块", title: "插入代码区块", run: (editor) => editor.insertCodeBlock() },
-  { glyph: "—", label: "分隔线", title: "插入分隔线", run: (editor) => editor.insertHr() },
-  { glyph: "⛓", label: "链接", title: "插入链接（⌘/Ctrl+K）", run: (editor) => editor.toggleLink("https://") },
-];
+
+
 
 /*
  * 轻量定向那张表单的全部字面（39d W4-3 第三刀；PRD §3.3）。一处一份：屏上这句话、
@@ -581,15 +587,6 @@ function desktopApi() {
   return typeof window === "undefined" ? undefined : window.ailearn;
 }
 
-function formatRecallQuestion(value: string): string {
-  return value
-    .replace(/^(?:好[，,]\s*)?(?:那我)?(?:不给答案[，,]\s*)?先问(?:你)?一个[：:]\s*/u, "")
-    .replace(/\*\*([\s\S]+?)\*\*/gu, "$1")
-    .replace(/__([\s\S]+?)__/gu, "$1")
-    .replace(/`([^`]+)`/gu, "$1")
-    .trim();
-}
-
 function formatClock(value: string | null | undefined): string {
   if (!value) return "时间未提供";
   const parsed = new Date(value);
@@ -698,8 +695,8 @@ function conceptMark(
   for (const block of blocks) {
     if (block.type !== "paragraph") continue;
     // 区间要落在**显示出来的字**上：`content` 里还有 `**`、`![]()` 这些不占格子的标记，
-    // 拿它算偏移，高亮就会整体错位几个字符（渲染与这里共用 `noteInlineDisplayText`）。
-    const text = noteInlineDisplayText(block.content);
+    // 与批注一样按实际文本节点计算；换行分隔符与图片不占字符。
+    const text = noteBlockRenderedTextV1(block.type, block.content);
     const at = text.indexOf(label);
     if (at < 0) continue;
     return { ordinal: block.ordinal, range: sentenceRange(text, at, label.length) };
@@ -818,53 +815,41 @@ export function NotebookSurface() {
   const syncedNoteRef = useRef<string | null>(null);
   const saveRef = useRef<() => void>(() => {});
 
-  const [mode, setMode] = useState<"read" | "edit">("read");
   const [leaf, setLeaf] = useState<"reading" | "learning" | "history" | "expansion">("reading");
   const [reviewingTeaching, setReviewingTeaching] = useState(false);
   /** 就地作答的工位停在哪一屏：`assessment` 作答／`result` 那一次的结算。 */
   const [inlineRunPage, setInlineRunPage] = useState<"assessment" | "result">("assessment");
   const handledRoundReturnRef = useRef<string | null>(null);
   const [showAllBlocks, setShowAllBlocks] = useState(false);
-  const [showAllReadingSections, setShowAllReadingSections] = useState(false);
+
   const [focusedBlockOrdinal, setFocusedBlockOrdinal] = useState<number | null>(null);
   const annotationTaskRequestRef = useRef(0);
   const focusedAnnotationTaskRef = useRef<string | null>(null);
+  const requestedAnnotationTaskRef = useRef<string | null>(null);
   const overviewRequestRef = useRef(0);
-  const overviewTaskRequestRef = useRef(0);
+
   const recallPaperRef = useRef<HTMLElement | null>(null);
   const learningArtifactPaperRef = useRef<HTMLElement | null>(null);
   const [activeLearningArtifactId, setActiveLearningArtifactId] = useState<string | null>(null);
   const learningArtifactRequestRef = useRef(0);
   const learningArtifactTaskRequestRef = useRef(0);
-  const [activeRecall, setActiveRecall] = useState<NoteRecallRecordV1 | null>(null);
-  const recallRequestRef = useRef(0);
+
+
   const expansionRequestRef = useRef(0);
-  const expansionTaskRequestRef = useRef(0);
-  const [openAnnotationId, setOpenAnnotationId] = useState<string | null>(null);
+  const annotationOrigin = useRef<"body" | "history">("body");
   const annotationRequestRef = useRef(0);
-  const [selectedPassage, setSelectedPassage] = useState<{
-    text: string;
-    blockOrdinal: number;
-    noteId: string;
-    anchor: NoteAnnotationAnchorV1 | null;
-  } | null>(null);
+
   const leafScrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     setLeaf(activeNoteRef?.learningRoundId ? "learning" : "reading");
     setOverviewOpen(false);
     setReviewingTeaching(false);
     setShowAllBlocks(false);
-    setShowAllReadingSections(false);
+
     setFocusedBlockOrdinal(null);
     setReflectionRoundId(activeNoteRef?.learningRoundId);
     appendedReflections.current.clear();
   }, [activeNoteRef?.noteId, activeNoteRef?.learningRoundId]);
-  /** 阅读、学习记录之间换页时回到页首；回原文位置由具体出处按钮负责。 */
-  useEffect(() => {
-    const scroller = leafScrollRef.current;
-    if (!scroller) return;
-    scroller.scrollTop = 0;
-  }, [leaf]);
   /**
    * `title` 是**本机改过、还没写进文档**的那一份，`null` = 这一屏没改过标题，
    * 于是标题框画文档 `meta` 里的那一份（别人改名会跟着动）。正文不在这里存副本，
@@ -923,7 +908,6 @@ export function NotebookSurface() {
    * 依据里点开的那一段。它只是**屏幕上的注意力**（滚动 + 短暂高亮），不进任何写：
    * 值一过期就撤掉，不留"上次点到哪"这种会跟人走的读数。
    */
-  const [historyOpen, setHistoryOpen] = useState(false);
   const generationTriggerRef = useRef<HTMLButtonElement>(null);
   const closeGenerationSetup = () => {
     generationTriggerRef.current?.focus();
@@ -1143,6 +1127,46 @@ export function NotebookSurface() {
   }, [invoke, setReturnTarget]);
 
   const note = data?.note ?? null;
+  const { historyOpen, setHistoryOpen, sourceBagOpen, setSourceBagOpen,
+    openAnnotationId, setOpenAnnotationId, annotationTaskOpen, setAnnotationTaskOpen, annotationDraftOpen, setAnnotationDraftOpen,
+    companionExplanationId, setCompanionExplanationId, closeSidePage } = useNotebookSidePage(note?.noteId ?? null);
+  const companionExplanations = useNoteCompanionExplanations(state => state.items);
+  const requestedCompanionExplanationId = useNoteCompanionExplanations(state => state.requestedOpenId);
+  const noteCompanionExplanations = companionExplanations.filter(item => item.target.noteId === note?.noteId);
+  const openCompanionExplanation = noteCompanionExplanations.find(item => item.id === companionExplanationId);
+  useEffect(() => {
+    const item = companionExplanations.find(item => item.id === requestedCompanionExplanationId && item.target.noteId === note?.noteId);
+    if (!item) return;
+    setLeaf("reading"); setLearningView("body"); setCompanionExplanationId(item.id);
+    if (item.target.anchor.noteVersionId === note?.currentVersionId) setFocusedBlockOrdinal(item.target.anchor.startBlockOrdinal);
+    useNoteCompanionExplanations.setState({ requestedOpenId: null });
+  }, [requestedCompanionExplanationId, companionExplanations, note?.noteId, note?.currentVersionId, setCompanionExplanationId]);
+  const annotationDraft = useNotebookAnnotationDraft({ noteId: note?.noteId ?? null, epochRef, onSaved: annotation => {
+    setAnnotationRows(current => ({ noteId: annotation.noteId, items: [annotation, ...(current?.noteId === annotation.noteId ? current.items : [])], nextCursor: current?.noteId === annotation.noteId ? current.nextCursor : null }));
+    setOpenAnnotationId(annotation.annotationId);
+  } });
+const noteDocLive = useNoteDocLiveView(
+    note?.noteId ?? null,
+    spaceIdentity !== null && !spaceIdentity.isPersonal,
+    () => {
+      void reload({ silent: true });
+    },
+    presenceName,
+    epochRef,
+  );
+  const editable = Boolean(note?.permissions.canEdit) && noteDocLive.authorizedScope !== "readonly";
+  const canSave = Boolean(note?.permissions.canSave) && noteDocLive.authorizedScope !== "readonly";
+  const { mode, changeMode, pendingMode } = useNotebookBodyMode({
+    noteId: note?.noteId ?? null,
+    initialMode: activeNoteRef?.mode,
+    canEdit: editable,
+    editorRef,
+    scrollRef: leafScrollRef,
+    onChange: (next) => {
+      const store = useRoomStore.getState();
+      if (note && store.activeNoteRef?.noteId === note.noteId) store.setActiveNoteRef({ ...store.activeNoteRef, mode: next });
+    },
+  });
 
   /** 「批注」那一簇的 8 个 state 已于 2026-09-29 收进 `use-notebook-annotation-state.ts`；
       五个 handler 留在页面。「verification 要记版本」「shelfOpen 是旧版搁架」两条在那个文件里。 */
@@ -1171,16 +1195,11 @@ export function NotebookSurface() {
     learningArtifactTaskStarting, setLearningArtifactTaskStarting,
   } = useNotebookLearningArtifactState();
 
-  /** 「拓展」那一簇的 7 个 state 已于 2026-09-29 收进 `use-notebook-expansion-state.ts`；
-      五个 handler 留在页面。「列表 / 任务是两半」与「reviewSaving 单独一格」写在那个文件里。 */
+  /** 关联笔记列表与未确认草稿分别管理，列表回读不覆盖草稿。 */
   const {
     expansionRows, setExpansionRows,
     expansionLoading, setExpansionLoading,
     expansionError, setExpansionError,
-    expansionTask, setExpansionTask,
-    expansionTaskStarting, setExpansionTaskStarting,
-    expansionReviewSaving, setExpansionReviewSaving,
-    expansionTaskError, setExpansionTaskError,
   } = useNotebookExpansionState();
 
   /** 「这一轮」那一簇的 6 个 state 已于 2026-09-29 收进 `use-notebook-round-state.ts`；
@@ -1199,12 +1218,13 @@ export function NotebookSurface() {
       四个 handler 留在页面（它们要读 note / activeNoteRef / epochRef / reload / setLeaf）。
       「四档动作共用一颗闸」这条在那个文件里。 */
   const {
-    rows: recallRows, setRows: setRecallRows,
-    busy: recallBusy, setBusy: setRecallBusy,
-    loading: recallLoading, setLoading: setRecallLoading,
-    error: recallError, setError: setRecallError,
+    rows: recallRows, records: noteRecallRecords, active: activeRecall,
+    visit: recallVisit, presentation: recallPresentation,
+    busy: recallBusy, loading: recallLoading, error: recallError,
     reflection: recallReflection, setReflection: setRecallReflection,
-  } = useNotebookRecallState();
+    load: loadNoteRecallRecords, start: startNoteRecall, act: actOnActiveRecall,
+    open: openRecall, close: closeRecall,
+  } = useNotebookRecallState({ note, epochRef });
 
   /** 「练一道」那一发的在途与失败收进 hook；两个 handler 留在页面（它们要读
       `openRound` / `roundPracticeStart` / `startObjectiveJourney` 这些页面级东西）。
@@ -1222,12 +1242,17 @@ export function NotebookSurface() {
   const {
     overviewRows, setOverviewRows,
     overviewLoading, setOverviewLoading, overviewError, setOverviewError,
-    overviewTask, setOverviewTask, overviewTaskStarting, setOverviewTaskStarting,
+    overviewTask, overviewTaskStarting,
     overviewTaskError, setOverviewTaskError,
     overviewOpen, setOverviewOpen, overviewPaperRef,
-    loadNoteOverviews, startNoteOverviewTask,
+    loadNoteOverviews, loadLatestNoteOverviewTask, startNoteOverviewTask,
     noteOverviews, taskForCurrentVersion, latestNoteOverview,
   } = useNotebookOverview({ note, epochRef });
+  const { learningView, setLearningView, rememberReadingPosition } = useNotebookLearningView({
+    noteId: note?.noteId ?? null,
+    leaf, recallVisit,
+    scrollRef: leafScrollRef, inReading: leaf === "reading",
+  });
   const [olderRounds, setOlderRounds] = useState<NoteLearningRoundHistoryV1 | null>(null);
   const [olderBusy, setOlderBusy] = useState(false);
   const [olderFailure, setOlderFailure] = useState<string | null>(null);
@@ -1312,83 +1337,18 @@ export function NotebookSurface() {
     store.setActiveNoteRef({
       noteId: note.noteId,
       noteVersionId: note.currentVersionId,
-      mode: current?.noteId === note.noteId ? current.mode : "read",
+      mode: current?.noteId === note.noteId ? current.mode : "preview",
       ...(current?.noteId === note.noteId && current.learningRoundId ? { learningRoundId: current.learningRoundId } : {}),
     });
   }, [note?.noteId, note?.currentVersionId]);
 
 
-  const loadLatestNoteOverviewTask = useCallback(async () => {
-    if (!note?.currentVersionId) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
-    if (!api?.noteOverview) return;
-    const request = ++overviewTaskRequestRef.current;
-    setOverviewTaskError(null);
-    try {
-      const result = unwrapGatewayResult(await api.noteOverview.latestTask({
-        meta: createRequestMeta(epochRef.current),
-        noteId: note.noteId,
-        query: { noteVersionId: note.currentVersionId },
-      }));
-      if (request === overviewTaskRequestRef.current) setOverviewTask(result.task);
-    } catch (error) {
-      // An optional background lookup failing must not turn the note's first
-      // screen into a service-error page. An explicit start still reports its
-      // own failure beside the action.
-      if (request === overviewTaskRequestRef.current) setOverviewTask(null);
-    }
-  }, [note?.noteId, note?.currentVersionId]);
 
 
-  useEffect(() => {
-    setOverviewTask(null);
-    setOverviewTaskError(null);
-    setOverviewTaskStarting(false);
-    if (note?.currentVersionId) void loadLatestNoteOverviewTask();
-  }, [note?.noteId, note?.currentVersionId, loadLatestNoteOverviewTask]);
 
-  useEffect(() => {
-    if (!note || !overviewTask || overviewTask.noteId !== note.noteId
-      || overviewTask.noteVersionId !== note.currentVersionId
-      || (overviewTask.status !== "queued" && overviewTask.status !== "running")) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
-    if (!api?.noteOverview) return;
-    let cancelled = false;
-    let timer: number | undefined;
-    const poll = () => {
-      timer = window.setTimeout(async () => {
-        try {
-          const task = unwrapGatewayResult(await api.noteOverview.getTask({
-            meta: createRequestMeta(epochRef.current),
-            noteId: note.noteId,
-            taskId: overviewTask.taskId,
-          }));
-          if (cancelled) return;
-          setOverviewTaskError(null);
-          setOverviewTask(task);
-          if (task.status === "ready" && task.overview) {
-            setOverviewOpen(true);
-            setOverviewRows((current) => {
-              const base = current?.noteId === note.noteId ? current : { noteId: note.noteId, items: [], nextCursor: null };
-              return { ...base, items: [task.overview!, ...base.items.filter((item) => item.overviewId !== task.overview!.overviewId)] };
-            });
-          } else if (task.status === "queued" || task.status === "running") {
-            poll();
-          }
-        } catch (error) {
-          if (!cancelled) {
-            setOverviewTaskError(gatewayErrorMessage(error));
-            poll();
-          }
-        }
-      }, 1_600);
-    };
-    poll();
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [note?.noteId, note?.currentVersionId, overviewTask?.taskId, overviewTask?.status]);
+
+
+
 
   const loadNoteLearningArtifacts = useCallback(async (before?: string) => {
     if (!note) return;
@@ -1462,11 +1422,7 @@ export function NotebookSurface() {
     [note?.noteId, learningArtifactRows],
   );
   const activeLearningArtifact = noteLearningArtifacts.find((item) => item.artifactId === activeLearningArtifactId) ?? null;
-  useEffect(() => {
-    if (!activeLearningArtifact || leaf !== "reading") return;
-    const frame = requestAnimationFrame(() => learningArtifactPaperRef.current?.scrollIntoView?.({ block: "start" }));
-    return () => cancelAnimationFrame(frame);
-  }, [activeLearningArtifact?.artifactId, leaf]);
+
   const runningArtifactTaskIds = learningArtifactTasks
     .filter((task) => task.status === "queued" || task.status === "running")
     .map((task) => task.taskId);
@@ -1494,7 +1450,6 @@ export function NotebookSurface() {
               const items = [...completed, ...base.items.filter((artifact) => !completed.some((saved) => saved.artifactId === artifact.artifactId))];
               return { ...base, items };
             });
-            setActiveLearningArtifactId((current) => completed[0]!.artifactId ?? current);
             setLearningArtifactTaskError(null);
           }
           if (updates.some((task) => task.status === "queued" || task.status === "running")) poll();
@@ -1568,6 +1523,8 @@ export function NotebookSurface() {
     if (note) void loadNoteExpansions();
   }, [note?.noteId, loadNoteExpansions]);
 
+
+
   useEffect(() => {
     const onExpansionSaved = (event: Event) => {
       const detail = (event as CustomEvent<{ noteId?: unknown; expansion?: unknown }>).detail;
@@ -1588,144 +1545,16 @@ export function NotebookSurface() {
     if (note) void loadNoteOverviews();
   }, [note?.noteId, loadNoteOverviews]);
 
-  const loadNoteRecallRecords = useCallback(async (before?: string) => {
-    if (!note) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
-    if (!api?.noteRecall) {
-      setRecallError("回想记录暂不可用");
-      return;
-    }
-    const request = ++recallRequestRef.current;
-    setRecallLoading(true);
-    setRecallError(null);
-    try {
-      const page = unwrapGatewayResult(await api.noteRecall.list({
-        meta: createRequestMeta(epochRef.current),
-        noteId: note.noteId,
-        before,
-      }));
-      if (request !== recallRequestRef.current) return;
-      setRecallRows((current) => before && current?.noteId === note.noteId
-        ? { ...page, noteId: note.noteId, items: [...current.items, ...page.items] }
-        : { ...page, noteId: note.noteId });
-    } catch (error) {
-      if (request === recallRequestRef.current) setRecallError(gatewayErrorMessage(error));
-    } finally {
-      if (request === recallRequestRef.current) setRecallLoading(false);
-    }
-  }, [note?.noteId, note?.currentVersionId]);
-
-  useEffect(() => {
-    setRecallRows(null);
-    setActiveRecall(null);
-    setRecallReflection("");
-    if (note) void loadNoteRecallRecords();
-  }, [note?.noteId, note?.currentVersionId, loadNoteRecallRecords]);
-
-  useEffect(() => {
-    const onRecallSaved = (event: Event) => {
-      const detail = (event as CustomEvent<{ noteId?: unknown; record?: unknown }>).detail;
-      const parsed = noteRecallRecordV1Schema.safeParse(detail?.record);
-      const currentNote = note;
-      if (!parsed.success || !currentNote || detail?.noteId !== currentNote.noteId || parsed.data.noteId !== currentNote.noteId) return;
-      const record = parsed.data;
-      setRecallRows((current) => {
-        const base = current?.noteId === currentNote.noteId ? current : { noteId: currentNote.noteId, items: [], nextCursor: null };
-        return { ...base, items: [record, ...base.items.filter((item) => item.recallId !== record.recallId)] };
-      });
-      setActiveRecall(record);
-      setRecallReflection(record.reflection ?? "");
-      setRecallError(null);
-    };
-    window.addEventListener("ailearn:note-recall-saved", onRecallSaved);
-    return () => window.removeEventListener("ailearn:note-recall-saved", onRecallSaved);
-  }, [note?.noteId]);
-
-  const actOnActiveRecall = async (
-    action: { kind: "hint" } | { kind: "reveal" } | { kind: "self_report"; value: "remembered" | "partly" | "not_yet"; reflection?: string },
-  ) => {
-    const current = activeRecall;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
-    if (!note || !current || !api?.noteRecall || recallBusy) return;
-    const busy = action.kind === "self_report" ? "report" : action.kind;
-    setRecallBusy(busy);
-    setRecallError(null);
-    try {
-      const updated = unwrapGatewayResult(await api.noteRecall.act({
-        meta: createRequestMeta(epochRef.current),
-        noteId: note.noteId,
-        recallId: current.recallId,
-        action,
-      }));
-      setActiveRecall(updated);
-      setRecallRows((rows) => rows?.noteId === note.noteId
-        ? { ...rows, items: rows.items.map((item) => item.recallId === updated.recallId ? updated : item) }
-        : rows);
-    } catch (error) {
-      setRecallError(gatewayErrorMessage(error));
-    } finally {
-      setRecallBusy(null);
-    }
-  };
   // Earlier Companion replies remain in the history, but they never claimed
   // full-note coverage. Only a completed background task can occupy the
   // reading page's "这篇的重点" slot.
   const currentNoteOverviews = noteOverviews.filter((overview) => overview.versionState === "current"
     && overview.generationJobId !== null && overview.coverage !== null);
-  const noteRecallRecords = useMemo(
-    () => note && recallRows?.noteId === note.noteId ? recallRows.items : [],
-    [note?.noteId, recallRows],
-  );
-  const resumableRecall = note && activeRecall
-    && activeRecall.noteId === note.noteId
-    && activeRecall.noteVersionId === note.currentVersionId
-    && activeRecall.state !== "reported"
-    ? activeRecall
-    : noteRecallRecords.find((record) => record.versionState === "current" && record.state !== "reported") ?? null;
-  const openOrStartNoteRecall = async (hasUnsavedChanges: boolean) => {
-    if (!note || !note.currentVersionId || hasUnsavedChanges || recallBusy) return;
-    const resumable = activeRecall?.noteId === note.noteId
-      && activeRecall.noteVersionId === note.currentVersionId
-      && activeRecall.state !== "reported"
-      ? activeRecall
-      : noteRecallRecords.find((record) => record.versionState === "current" && record.state !== "reported");
-    if (resumable) {
-      setActiveRecall(resumable);
-      setRecallReflection(resumable.reflection ?? "");
-      requestAnimationFrame(() => recallPaperRef.current?.scrollIntoView?.({ block: "center", behavior: "smooth" }));
-      return;
-    }
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
-    if (!api?.noteRecall) {
-      setRecallError("回想记录暂不可用");
-      return;
-    }
-    setRecallBusy("start");
-    setRecallError(null);
-    try {
-      const record = unwrapGatewayResult(await api.noteRecall.start({
-        meta: createRequestMeta(epochRef.current),
-        noteId: note.noteId,
-        request: { requestId: crypto.randomUUID(), noteVersionId: note.currentVersionId },
-      }));
-      setActiveRecall(record);
-      setRecallReflection("");
-      setRecallRows((current) => {
-        const base = current?.noteId === note.noteId ? current : { noteId: note.noteId, items: [], nextCursor: null };
-        return { ...base, items: [record, ...base.items.filter((item) => item.recallId !== record.recallId)] };
-      });
-      requestAnimationFrame(() => recallPaperRef.current?.scrollIntoView?.({ block: "center", behavior: "smooth" }));
-    } catch (error) {
-      setRecallError(gatewayErrorMessage(error));
-    } finally {
-      setRecallBusy(null);
-    }
-  };
+
   const noteExpansions = useMemo(
     () => note && expansionRows?.noteId === note.noteId ? expansionRows.items : [],
     [note?.noteId, expansionRows],
   );
-  const selectedExpansionDraftCount = expansionTask?.drafts.filter((draft) => draft.selected).length ?? 0;
   const noteAnnotations = useMemo(
     () => note && annotationRows && annotationRows.noteId === note.noteId ? annotationRows.items : [],
     [annotationRows, note?.noteId],
@@ -1744,6 +1573,16 @@ export function NotebookSurface() {
     ? currentAnnotationCandidates.filter((annotation) => !verificationIds.has(annotation.annotationId))
     : [];
   const olderNoteAnnotations = noteAnnotations.filter((annotation) => annotation.versionState === "older");
+  const [annotationDeleting, setAnnotationDeleting] = useState(false);
+  const [annotationDeleteError, setAnnotationDeleteError] = useState<string | null>(null);
+  const [annotationRemovedNotice, setAnnotationRemovedNotice] = useState<string | null>(null);
+  /**
+   * 两步确认的状态**页面只存一份**：记号浮层那枚「删掉这条」和批注附页那颗
+   * 「删掉这条批注」是同一个动作的两个入口。各自存一份的话，会出现「附页里正问着
+   * 要不要删，正文里那枚记号还是平常的样子」。
+   */
+  const annotationDelete = useAnnotationDeleteConfirm();
+
   const loadNoteAnnotations = useCallback(async (before?: string) => {
     if (!note) return;
     const api = typeof window === "undefined" ? undefined : window.ailearn;
@@ -1791,8 +1630,6 @@ export function NotebookSurface() {
             const base = current?.noteId === note.noteId ? current : { noteId: note.noteId, items: [], nextCursor: null };
             return { ...base, items: [saved, ...base.items.filter((item) => item.annotationId !== saved.annotationId)] };
           });
-          setOpenAnnotationId(saved.annotationId);
-          setFocusedBlockOrdinal(saved.anchor.startBlockOrdinal);
         }
       }
     } catch (error) {
@@ -1818,6 +1655,10 @@ export function NotebookSurface() {
       }));
       if (request === annotationTaskRequestRef.current) {
         setAnnotationTask(task);
+        requestedAnnotationTaskRef.current = task.taskId;
+        setAnnotationTaskOpen(true);
+        setHistoryOpen(false);
+        setOpenAnnotationId(null);
         setSelectedPassage(null);
         setFocusedBlockOrdinal(task.anchor.startBlockOrdinal);
         setLeaf("reading");
@@ -1829,6 +1670,89 @@ export function NotebookSurface() {
     }
   }, [note?.noteId, note?.currentVersionId, annotationTaskStarting]);
 
+  /**
+   * 删掉一条批注。
+   *
+   * 三处要一起收：
+   * 1. **列表**：那条批注从屏上消失（否则纸合上再打开，它还在）。
+   * 2. **复核集合** `annotationVerification.ids`：它是「复核的是哪一版的哪几条」，
+   *    留着这条 id，下一次读列表时 `currentNoteAnnotations` 会拿一个已经不存在的
+   *    id 去比对，结果是**这一篇所有批注的记号一起消失**——所以必须从集合里摘掉。
+   * 3. **产物任务**：它按锚点找得到那批演示，删完批注就没人引它们了，屏上也不该
+   *    再摆着「打开互动演示」。
+   *
+   * `expectedRevision` 走的是批注自己的修订号：别人刚改过这一条时按删除会被服务端
+   * 挡下（`stale_revision`），不会把别人的改动连同批注一起抹掉。
+   *
+   * 伴星的对话**不动**：删除只经 `noteAnnotation.write` 的 `remove` 分支，
+   * 服务端删的是 `note_annotations` 行与按锚点对上的动态讲解页。
+   */
+  const removeNoteAnnotation = useCallback(async (target: NoteAnnotationV1) => {
+    const api = typeof window === "undefined" ? undefined : window.ailearn;
+    const current = note;
+    if (!api?.noteAnnotation || !current) return;
+    setAnnotationDeleting(true);
+    setAnnotationDeleteError(null);
+    setAnnotationRemovedNotice(null);
+    try {
+      const result = unwrapGatewayResult(await api.noteAnnotation.write({
+        meta: createRequestMeta(epochRef.current),
+        noteId: current.noteId,
+        command: { kind: "remove", annotationId: target.annotationId, expectedRevision: target.revision },
+      }));
+      setAnnotationRows((rows) => rows?.noteId === current.noteId
+        ? { ...rows, items: rows.items.filter((item) => item.annotationId !== target.annotationId) }
+        : rows);
+      setAnnotationVerification((current2) => {
+        if (!current2 || current2.noteId !== current.noteId) return current2;
+        const ids = new Set(current2.ids);
+        ids.delete(target.annotationId);
+        return { ...current2, ids };
+      });
+      setLearningArtifactTasks((tasks) => tasks.filter((item) => !(item.sourceKind === "annotation"
+        && item.selectionAnchor
+        && item.selectionAnchor.noteVersionId === target.anchor.noteVersionId
+        && item.selectionAnchor.startBlockOrdinal === target.anchor.startBlockOrdinal
+        && item.selectionAnchor.startOffset === target.anchor.startOffset
+        && item.selectionAnchor.endBlockOrdinal === target.anchor.endBlockOrdinal
+        && item.selectionAnchor.endOffset === target.anchor.endOffset
+        && item.selectionAnchor.excerpt === target.anchor.excerpt)));
+      setOpenAnnotationId((open) => (open === target.annotationId ? null : open));
+      const removedArtifacts = "removedArtifacts" in result ? result.removedArtifacts : 0;
+      setAnnotationRemovedNotice(removedArtifacts > 0
+        ? `已删掉这条批注和它做的 ${removedArtifacts} 个互动演示。伴星的对话记录没有动。`
+        : "已删掉这条批注。伴星的对话记录没有动。");
+    } catch (error) {
+      setAnnotationDeleteError(gatewayErrorMessage(error));
+    } finally {
+      setAnnotationDeleting(false);
+    }
+  }, [note?.noteId]);
+
+  /**
+   * 记号浮层里那一格「删掉这条」（正文里就能删，不必先开附页）。
+   *
+   * 两个入口唯一的差别是**短版**（浮层只有两百来宽）与措辞更短；确认状态与那句
+   * 「对话不受影响」仍是同一份，所以漏不掉。声明在 `removeNoteAnnotation` 之后——
+   * 它要用那一个。
+   */
+  const renderAnnotationDeleteControl = useCallback((annotation: NoteAnnotationV1) =>
+    <AnnotationDeleteControl annotation={annotation} compact
+      hasArtifact={learningArtifactTasks.some((task) => task.sourceKind === "annotation"
+        && task.status === "ready" && task.selectionAnchor
+        && task.selectionAnchor.noteVersionId === annotation.anchor.noteVersionId
+        && task.selectionAnchor.startBlockOrdinal === annotation.anchor.startBlockOrdinal
+        && task.selectionAnchor.startOffset === annotation.anchor.startOffset
+        && task.selectionAnchor.endBlockOrdinal === annotation.anchor.endBlockOrdinal
+        && task.selectionAnchor.endOffset === annotation.anchor.endOffset
+        && task.selectionAnchor.excerpt === annotation.anchor.excerpt)}
+      view={annotationDelete.viewFor(annotation)}
+      deleting={annotationDeleting} error={annotationDeleteError}
+      onRequest={() => annotationDelete.request(annotation)}
+      onCancel={annotationDelete.cancel}
+      onConfirm={() => void removeNoteAnnotation(annotation)} />,
+    [annotationDelete, annotationDeleting, annotationDeleteError, learningArtifactTasks, removeNoteAnnotation]);
+
   useEffect(() => {
     setAnnotationRows(null);
     setAnnotationVerification(null);
@@ -1836,6 +1760,8 @@ export function NotebookSurface() {
     setAnnotationShelfOpen(false);
     setSelectedPassage(null);
     setAnnotationTask(null);
+    setAnnotationTaskOpen(false);
+    requestedAnnotationTaskRef.current = null;
     setAnnotationTaskError(null);
     setAnnotationTaskStarting(false);
     if (note) void loadNoteAnnotations();
@@ -1866,9 +1792,10 @@ export function NotebookSurface() {
               return { ...base, items: [saved, ...base.items.filter((item) => item.annotationId !== saved.annotationId)] };
             });
             setAnnotationVerification(null);
-            setOpenAnnotationId(saved.annotationId);
-            setFocusedBlockOrdinal(saved.anchor.startBlockOrdinal);
-            setLeaf("reading");
+            if (requestedAnnotationTaskRef.current === task.taskId && annotationTaskOpen) {
+              setOpenAnnotationId(saved.annotationId);
+              setAnnotationTaskOpen(false);
+            }
           } else if (task.status === "queued" || task.status === "running") {
             poll();
           }
@@ -1881,7 +1808,7 @@ export function NotebookSurface() {
     };
     poll();
     return () => { cancelled = true; if (timer !== undefined) window.clearTimeout(timer); };
-  }, [note?.noteId, note?.currentVersionId, annotationTask]);
+  }, [note?.noteId, note?.currentVersionId, annotationTask, annotationTaskOpen]);
   useEffect(() => {
     const onAnnotationSaved = (event: Event) => {
       const detail = (event as CustomEvent<{ noteId?: unknown; annotation?: unknown }>).detail;
@@ -1893,15 +1820,15 @@ export function NotebookSurface() {
         return { ...base, items: [parsed.data, ...base.items.filter((item) => item.annotationId !== parsed.data.annotationId)] };
       });
       setAnnotationVerification(null);
-      setOpenAnnotationId(parsed.data.annotationId);
-      setAnnotationShelfOpen(parsed.data.versionState === "older");
+      // Completion updates the original quote without replacing a manual draft or another open paper.
+      if (parsed.data.versionState === "older") setAnnotationShelfOpen(true);
     };
     window.addEventListener("ailearn:note-annotation-saved", onAnnotationSaved);
     return () => window.removeEventListener("ailearn:note-annotation-saved", onAnnotationSaved);
   }, [note?.noteId]);
   useEffect(() => {
     if (!activeNoteRef?.learningRoundId || note?.noteId !== activeNoteRef.noteId ||
-      reflectionRoundId !== activeNoteRef.learningRoundId || leaf !== "history" || mode !== "read") return;
+      reflectionRoundId !== activeNoteRef.learningRoundId || leaf !== "history" || mode !== "preview") return;
     const frame = requestAnimationFrame(() => {
       reflectionShelfRef.current?.scrollIntoView({ block: "start" });
       reflectionShelfRef.current?.querySelector("summary")?.focus();
@@ -2035,8 +1962,8 @@ export function NotebookSurface() {
   const segments = source?.segments ?? [];
   // Every block type — including images, which the editor writes as one
   // markdown line — has a text form now, so editability is a pure permission.
-  const editable = Boolean(note?.permissions.canEdit);
-  const canSave = Boolean(note?.permissions.canSave);
+
+
   // 第一篇笔记刚读回来的那一帧还没有模式、回执这些"跟着这一篇重置"的状态，
   // 编辑页要等它过完再挂（早挂一帧就是白挂一份马上被换掉的编辑器）。
   const draftSeeded = Boolean(note && syncedNoteRef.current === note.noteId);
@@ -2051,25 +1978,30 @@ export function NotebookSurface() {
   // 阅读态与编辑态画的是**同一份**文档，不必再按模式二选一（那是批次 C 之前
   // "编辑态不接远端帧"那条分支存在的唯一理由）。仍然叫醒一次回读，取的是版本号、
   // 权限、来源片段那半边（为什么帧比回读新：见 use-note-doc-live-view 里 3.5 秒的实测）。
-  const noteDocLive = useNoteDocLiveView(
-    note?.noteId ?? null,
-    spaceIdentity !== null && !spaceIdentity.isPersonal,
-    () => {
-      void reload({ silent: true });
-    },
-    presenceName,
-    epochRef,
-  );
+
   // 标题只有一个事实源：文档 `meta` 里那一份（起点还没到时退回这次回读的那一份）。
   // 界面上只留"本机改过、还没写进文档"的那一段，所以别人的改名会跟着上屏，
   // 而我正在改的那一段不会被盖掉——两件事共用同一条判据 `draft.title !== null`。
-  const docTitle = noteDocLive.title.trim() || note?.title || "";
+  const docTitle = noteDocLive.fragment ? noteDocLive.title : note?.title ?? "";
   const titleValue = draft.title ?? docTitle;
   // "有没有待提交"问文档，不问界面上的文本拷贝：拷贝落后于文档时两种判断都会算错，
   // 实测过的最坏结局就是拿落后那份去覆盖。标题这一半得单独判——它在文档里是一份
   // LWW 文本，没有"攒着没发的增量"可看。
   const titleEdited = draft.title !== null && draft.title !== docTitle;
   const dirty = noteDocLive.dirty || titleEdited;
+
+  const {
+    expansionTask, setExpansionTask, expansionTaskLoading, expansionTaskStarting,
+    expansionReviewSaving, expansionTaskError, expansionReviewDirty,
+    loadLatestNoteExpansionTask, startNoteExpansionTask,
+    persistNoteExpansionReview, confirmNoteExpansionDrafts,
+  } = useNotebookExpansionTask({ note, dirty, epochRef, onConfirmed: (links) => {
+    links.forEach(expansion => window.dispatchEvent(new CustomEvent("ailearn:note-expansion-saved", {
+      detail: { noteId: note!.noteId, expansion },
+    })));
+    void loadNoteExpansions();
+  } });
+  const selectedExpansionDraftCount = expansionTask?.drafts.filter((draft) => draft.selected).length ?? 0;
   const startNoteLearningArtifactTask = useCallback(async (
     sourceKind: "overview" | "annotation",
     selectionAnchor?: NoteAnnotationAnchorV1,
@@ -2101,7 +2033,6 @@ export function NotebookSurface() {
             const base = current?.noteId === note.noteId ? current : { noteId: note.noteId, items: [], nextCursor: null };
             return { ...base, items: [task.artifact!, ...base.items.filter((item) => item.artifactId !== task.artifact!.artifactId)] };
           });
-          setActiveLearningArtifactId(task.artifact.artifactId);
         }
       }
     } catch (error) {
@@ -2110,199 +2041,18 @@ export function NotebookSurface() {
       if (request === learningArtifactTaskRequestRef.current) setLearningArtifactTaskStarting(false);
     }
   }, [note?.noteId, note?.currentVersionId, dirty, learningArtifactTaskStarting]);
-  const loadLatestNoteExpansionTask = useCallback(async () => {
-    if (!note?.currentVersionId) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
-    if (!api?.noteExpansion) return;
-    const request = ++expansionTaskRequestRef.current;
-    setExpansionTaskError(null);
-    try {
-      const result = unwrapGatewayResult(await api.noteExpansion.latestTask({
-        meta: createRequestMeta(epochRef.current),
-        noteId: note.noteId,
-        query: { noteVersionId: note.currentVersionId },
-      }));
-      if (request === expansionTaskRequestRef.current) setExpansionTask(result.task);
-    } catch {
-      // The note remains readable when this optional lookup is unavailable.
-      // Starting a task reports a failure beside the user's own action.
-      if (request === expansionTaskRequestRef.current) setExpansionTask(null);
-    }
-  }, [note?.noteId, note?.currentVersionId]);
 
-  const loadNoteExpansionTask = useCallback(async (taskId: string) => {
-    if (!note) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
-    if (!api?.noteExpansion) return;
-    const request = ++expansionTaskRequestRef.current;
-    try {
-      const task = unwrapGatewayResult(await api.noteExpansion.getTask({
-        meta: createRequestMeta(epochRef.current), noteId: note.noteId, taskId,
-      }));
-      if (request === expansionTaskRequestRef.current) {
-        setExpansionTask(task);
-        setExpansionTaskError(null);
-      }
-    } catch (error) {
-      if (request === expansionTaskRequestRef.current) setExpansionTaskError(gatewayErrorMessage(error));
-    }
-  }, [note?.noteId]);
-
-  const startNoteExpansionTask = useCallback(async (focusAnchor?: NoteAnnotationAnchorV1) => {
-    if (!note?.currentVersionId || dirty || expansionTaskStarting
-      || expansionTask?.status === "queued" || expansionTask?.status === "running") return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
-    if (!api?.noteExpansion) {
-      setExpansionTaskError("拓展任务暂时不可用");
-      return;
-    }
-    const request = ++expansionTaskRequestRef.current;
-    setExpansionTaskStarting(true);
-    setExpansionTaskError(null);
-    try {
-      const task = unwrapGatewayResult(await api.noteExpansion.startTask({
-        meta: createRequestMeta(epochRef.current),
-        noteId: note.noteId,
-        request: {
-          noteVersionId: note.currentVersionId,
-          requestId: crypto.randomUUID(),
-          ...(focusAnchor ? { focusAnchor } : {}),
-        },
-      }));
-      if (request === expansionTaskRequestRef.current) setExpansionTask(task);
-    } catch (error) {
-      if (request === expansionTaskRequestRef.current) setExpansionTaskError(gatewayErrorMessage(error));
-    } finally {
-      if (request === expansionTaskRequestRef.current) setExpansionTaskStarting(false);
-    }
-  }, [note?.noteId, note?.currentVersionId, dirty, expansionTaskStarting, expansionTask?.status]);
-
-  const persistNoteExpansionReview = useCallback(async (drafts: NoteExpansionDraftV1[]) => {
-    if (!note || !expansionTask || expansionTask.status !== "ready" || expansionReviewSaving) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
-    if (!api?.noteExpansion) {
-      setExpansionTaskError("草稿暂时没能保存，请稍后重试");
-      return;
-    }
-    if (drafts.some((draft) => !draft.title.trim() || draft.blocks.length === 0
-      || draft.blocks.some((block) => !block.content.trim()))) {
-      setExpansionTaskError("每篇草稿都需要标题和正文。补完整后会自动保存。");
-      return;
-    }
-    setExpansionReviewSaving(true);
-    setExpansionTaskError(null);
-    try {
-      const task = unwrapGatewayResult(await api.noteExpansion.review({
-        meta: createRequestMeta(epochRef.current),
-        noteId: note.noteId,
-        taskId: expansionTask.taskId,
-        review: {
-          drafts: drafts.map(({ candidateId, title, blocks, selected }) => ({ candidateId, title, blocks, selected })),
-        },
-      }));
-      setExpansionTask(task);
-    } catch (error) {
-      setExpansionTaskError(gatewayErrorMessage(error));
-      void loadNoteExpansionTask(expansionTask.taskId);
-    } finally {
-      setExpansionReviewSaving(false);
-    }
-  }, [note?.noteId, expansionTask, expansionReviewSaving, loadNoteExpansionTask]);
-
-  const confirmNoteExpansionDrafts = useCallback(async () => {
-    if (!note || !expansionTask || expansionTask.status !== "ready" || expansionReviewSaving) return;
-    const candidateIds = expansionTask.drafts.filter((draft) => draft.selected).map((draft) => draft.candidateId);
-    if (candidateIds.length === 0) return;
-    const selectedDrafts = expansionTask.drafts.filter((draft) => draft.selected);
-    if (selectedDrafts.some((draft) => !draft.title.trim() || draft.blocks.length === 0
-      || draft.blocks.some((block) => !block.content.trim()))) {
-      setExpansionTaskError("先把已勾选的草稿标题和正文补完整，再收进笔记架。");
-      return;
-    }
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
-    if (!api?.noteExpansion) {
-      setExpansionTaskError("这批草稿暂时不能保存，请稍后重试");
-      return;
-    }
-    setExpansionReviewSaving(true);
-    setExpansionTaskError(null);
-    try {
-      const saved = unwrapGatewayResult(await api.noteExpansion.confirm({
-        meta: createRequestMeta(epochRef.current),
-        noteId: note.noteId,
-        taskId: expansionTask.taskId,
-        request: { candidateIds },
-      }));
-      saved.forEach((expansion) => window.dispatchEvent(new CustomEvent("ailearn:note-expansion-saved", {
-        detail: { noteId: note.noteId, expansion },
-      })));
-      await loadNoteExpansionTask(expansionTask.taskId);
-      void loadNoteExpansions();
-    } catch (error) {
-      setExpansionTaskError(gatewayErrorMessage(error));
-    } finally {
-      setExpansionReviewSaving(false);
-    }
-  }, [note?.noteId, expansionTask, expansionReviewSaving, loadNoteExpansionTask, loadNoteExpansions]);
-
-  useEffect(() => {
-    setExpansionTask(null);
-    setExpansionTaskError(null);
-    setExpansionTaskStarting(false);
-    if (note?.currentVersionId) void loadLatestNoteExpansionTask();
-  }, [note?.noteId, note?.currentVersionId, loadLatestNoteExpansionTask]);
-
-  useEffect(() => {
-    if (!note || !expansionTask || expansionTask.noteId !== note.noteId
-      || expansionTask.noteVersionId !== note.currentVersionId
-      || (expansionTask.status !== "queued" && expansionTask.status !== "running")) return;
-    const api = typeof window === "undefined" ? undefined : window.ailearn;
-    if (!api?.noteExpansion) return;
-    let cancelled = false;
-    let timer: number | undefined;
-    const poll = () => {
-      timer = window.setTimeout(async () => {
-        try {
-          const task = unwrapGatewayResult(await api.noteExpansion.getTask({
-            meta: createRequestMeta(epochRef.current), noteId: note.noteId, taskId: expansionTask.taskId,
-          }));
-          if (cancelled) return;
-          setExpansionTask(task);
-          setExpansionTaskError(null);
-          if (task.status === "queued" || task.status === "running") poll();
-        } catch (error) {
-          if (!cancelled) {
-            setExpansionTaskError(gatewayErrorMessage(error));
-            poll();
-          }
-        }
-      }, 1_600);
-    };
-    poll();
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [note?.noteId, note?.currentVersionId, expansionTask?.taskId, expansionTask?.status]);
-
-  useEffect(() => {
-    const onExpansionTaskStarted = (event: Event) => {
-      const detail = (event as CustomEvent<{ noteId?: unknown; taskId?: unknown }>).detail;
-      if (detail?.noteId !== note?.noteId || typeof detail.taskId !== "string") return;
-      void loadNoteExpansionTask(detail.taskId);
-    };
-    window.addEventListener("ailearn:note-expansion-task-started", onExpansionTaskStarted);
-    return () => window.removeEventListener("ailearn:note-expansion-task-started", onExpansionTaskStarted);
-  }, [note?.noteId, loadNoteExpansionTask]);
   // 正文也只有一个来源了：这一份文档。它既含别人写进来的，也含本机还没交出去的，
   // 所以不必在"帧"和"回读"之间二选一（那两个来源并存正是上一次覆盖的根）。
-  const readSourceBlocks = noteDocLive.blocks.length ? noteDocLive.blocks : (note?.currentVersion.blocks ?? []);
+  const readSourceBlocks = noteDocLive.fragment ? noteDocLive.blocks : (note?.currentVersion.blocks ?? []);
   /**
    * 这一屏的正文来自哪里（审计 F35）。实时文档优先、没有才退回当前版本——这正是
    * 上一行那个判据；标签必须跟着它。以前一边渲染未定版的实时文档、一边写
    * "不可变版本：v1"，而 v1 本身是空的：那句话是假的，用户以为自己在读一个已定版的版本。
    */
-  const readingUnversionedContent = noteDocLive.blocks.length > 0;
+  const readingUnversionedContent = Boolean(noteDocLive.fragment && (titleValue !== note?.title
+    || JSON.stringify(readSourceBlocks.map(({ type, content }) => ({ type, content })))
+      !== JSON.stringify((note?.currentVersion.blocks ?? []).map(({ type, content }) => ({ type, content })))));
   const readTitle = titleValue;
   // 谁在这同一块里：判据只有对端自己报的那一格，`caretBlock` 为空时不成立
   // （光标还没进正文，说不出"这一段"是哪一段）。
@@ -2325,6 +2075,7 @@ export function NotebookSurface() {
     : allBlocks.slice(0, READING_WINDOW);
   useEffect(() => {
     if (!note || !annotationTask || annotationTask.noteId !== note.noteId
+      || requestedAnnotationTaskRef.current !== annotationTask.taskId
       || annotationTask.noteVersionId !== note.currentVersionId || annotationTask.status === "ready"
       || focusedAnnotationTaskRef.current === annotationTask.taskId) return;
     focusedAnnotationTaskRef.current = annotationTask.taskId;
@@ -2333,14 +2084,9 @@ export function NotebookSurface() {
     setLeaf("reading");
   }, [note?.noteId, note?.currentVersionId, annotationTask, readingBlocks]);
   const hiddenBlockCount = allBlocks.length - readingBlocks.length;
-  const readingSections = useMemo(
-    () => notebookReadingSectionsV1(allBlocks),
-    [allBlocks],
-  );
-  const visibleReadingSections = showAllReadingSections
-    ? readingSections
-    : readingSections.slice(0, NOTEBOOK_STRUCTURE_PAGE_SIZE_V1);
-  const hiddenReadingSectionCount = readingSections.length - visibleReadingSections.length;
+
+
+
 
   // ── 教学面的依据（W4-6 刀二）──
   // 只认**屏幕上这一版**能对上的块：这一轮的快照与屏幕上读的那一版不同时，块序号
@@ -2395,11 +2141,10 @@ export function NotebookSurface() {
     const ids = new Set<string>();
     for (const annotation of currentAnnotationCandidates) {
       const { anchor } = annotation;
-      if (anchor.noteVersionId !== note.currentVersionId || anchor.startBlockOrdinal !== anchor.endBlockOrdinal) continue;
-      const block = body.querySelector<HTMLElement>(`[data-block-ordinal="${anchor.startBlockOrdinal}"]`);
-      if (!block) continue;
-      const exactRange = textRangeAtOffsets(block, anchor.startOffset, anchor.endOffset);
-      if (exactRange?.toString() === anchor.excerpt) ids.add(annotation.annotationId);
+      if (anchor.noteVersionId !== note.currentVersionId || !noteAnchorMatchesV1(readSourceBlocks, anchor)) continue;
+      const selected = readSourceBlocks.filter(block => block.ordinal >= anchor.startBlockOrdinal && block.ordinal <= anchor.endBlockOrdinal);
+      if (selected.every(block => body.querySelector(`[data-block-ordinal="${block.ordinal}"] [data-note-block-content]`)?.textContent
+        === noteBlockRenderedTextV1(block.type, block.content))) ids.add(annotation.annotationId);
     }
     setAnnotationVerification((current) => {
       if (current?.noteId === note.noteId && current.versionId === note.currentVersionId
@@ -2410,79 +2155,19 @@ export function NotebookSurface() {
   useEffect(() => {
     if (unresolvedNoteAnnotations.length > 0) setAnnotationShelfOpen(true);
   }, [unresolvedNoteAnnotations.length, note?.noteId, note?.currentVersionId]);
-  const captureSelectedPassage = (): void => {
-    const body = readingBodyRef.current;
-    const selection = window.getSelection();
-    if (!body || !selection || selection.rangeCount === 0 || selection.isCollapsed) {
-      setSelectedPassage(null);
-      return;
-    }
-    const selectionAnchorNode = selection.anchorNode;
-    const selectionFocusNode = selection.focusNode;
-    if (!selectionAnchorNode || !selectionFocusNode || !body.contains(selectionAnchorNode) || !body.contains(selectionFocusNode)) {
-      setSelectedPassage(null);
-      return;
-    }
-    const rawSelectedText = selection.toString();
-    const selectedText = rawSelectedText.trim();
-    const text = selectedText.slice(0, 2_000);
-    if (!text) {
-      setSelectedPassage(null);
-      return;
-    }
-
-    const range = selection.getRangeAt(0);
-    const blockFor = (node: Node): HTMLElement | null => {
-      const element = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
-      return element?.closest<HTMLElement>("[data-block-ordinal]") ?? null;
-    };
-    const startBlock = blockFor(range.startContainer);
-    const endBlock = blockFor(range.endContainer);
-    const startOrdinal = Number(startBlock?.dataset.blockOrdinal);
-    if (!startBlock || !Number.isInteger(startOrdinal) || startOrdinal < 0) {
-      setSelectedPassage(null);
-      return;
-    }
-    let anchor: NoteAnnotationAnchorV1 | null = null;
-    if (selectedText.length <= 2_000 && note && note.currentVersionId && startBlock && endBlock
-      && startBlock === endBlock) {
-      const offsetWithin = (block: HTMLElement, node: Node, offset: number): number => {
-        const before = document.createRange();
-        before.selectNodeContents(block);
-        before.setEnd(node, offset);
-        return before.toString().length;
-      };
-      const startOffset = offsetWithin(startBlock, range.startContainer, range.startOffset)
-        + rawSelectedText.length - rawSelectedText.trimStart().length;
-      const endOffset = offsetWithin(endBlock, range.endContainer, range.endOffset)
-        - (rawSelectedText.length - rawSelectedText.trimEnd().length);
-      const endOrdinal = Number(endBlock.dataset.blockOrdinal);
-      const startText = startBlock.textContent ?? "";
-      const endText = endBlock.textContent ?? "";
-      const renderedRange = textRangeAtOffsets(startBlock, startOffset, endOffset);
-      const currentBlock = readSourceBlocks.find((block) => block.ordinal === startOrdinal);
-      const frozenBlock = note.currentVersion.blocks.find((block) => block.ordinal === startOrdinal);
-      const frozenBlockMatches = Boolean(currentBlock && frozenBlock && currentBlock.type === frozenBlock.type
-        && noteBlockText(currentBlock.content) === noteBlockText(frozenBlock.content));
-      const candidate: NoteAnnotationAnchorV1 = {
-        noteVersionId: note.currentVersionId,
-        startBlockOrdinal: startOrdinal,
-        startOffset,
-        endBlockOrdinal: endOrdinal,
-        endOffset,
-        excerpt: text,
-        prefix: startText.slice(Math.max(0, startOffset - 120), startOffset),
-        suffix: endText.slice(endOffset, endOffset + 120),
-      };
-      if (frozenBlockMatches && renderedRange?.toString() === text && Number.isInteger(startOrdinal) && startOrdinal >= 0
-        && Number.isInteger(endOrdinal) && endOrdinal >= startOrdinal) {
-        anchor = candidate;
-      }
-    }
-    setSelectedPassage({ text, blockOrdinal: startOrdinal, noteId: note?.noteId ?? "", anchor });
-  };
+  const { selectedPassage, setSelectedPassage, captureSelectedPassage } = useNotebookSelection({ note, blocks: readSourceBlocks, bodyRef: readingBodyRef, active: leaf === "reading" && learningView === "body" && mode === "preview" });
 
   const askCompanionAboutPassage = (text: string, anchor: NoteAnnotationAnchorV1 | null, noteId: string): void => {
+    if (anchor) {
+      if (annotationTaskStarting) return;
+      const pending = pendingNoteExplanation({ noteId, anchor });
+      if (pending) { setCompanionExplanationId(pending.id); return; }
+      if (annotationTask && (annotationTask.status === "queued" || annotationTask.status === "running")
+        && noteAnchorsOverlap(annotationTask.anchor, anchor)) { setAnnotationTaskOpen(true); return; }
+    }
+    // A conversational replacement owns the next explanation. Keep the old
+    // task in its history, rather than displaying its failure beside this turn.
+    setAnnotationTaskOpen(false);
     feedSelectionToCompanion({
       text,
       source: "selection",
@@ -2496,12 +2181,19 @@ export function NotebookSurface() {
     if (!selectedPassage) return;
     askCompanionAboutPassage(selectedPassage.text, selectedPassage.anchor, selectedPassage.noteId);
     setSelectedPassage(null);
+    window.getSelection()?.removeAllRanges();
   };
   const explainSelectedPassage = (): void => {
     if (!selectedPassage) return;
     if (!selectedPassage.anchor) {
       setAnnotationTaskError("批注需要从同一段里选一句；这次也可以直接问伴星。");
       return;
+    }
+    const pending = pendingNoteExplanation({ noteId: selectedPassage.noteId, anchor: selectedPassage.anchor });
+    if (pending) { setCompanionExplanationId(pending.id); setSelectedPassage(null); window.getSelection()?.removeAllRanges(); return; }
+    if (annotationTask && (annotationTask.status === "queued" || annotationTask.status === "running")
+      && noteAnchorsOverlap(annotationTask.anchor, selectedPassage.anchor)) {
+      setAnnotationTaskOpen(true); setSelectedPassage(null); window.getSelection()?.removeAllRanges(); return;
     }
     void startNoteAnnotationTask(selectedPassage.anchor, dirty);
   };
@@ -2520,19 +2212,48 @@ export function NotebookSurface() {
    */
   const locateTeachingReference = (ordinal: number): void => {
     setLeaf("reading");
+    setLearningView("body");
+    if (isNoteEditingMode(mode)) requestAnimationFrame(() => editorRef.current?.focusPosition({ block: ordinal, offset: 0 }));
     if (!readingBlocks.some((block) => block.ordinal === ordinal)) setShowAllBlocks(true);
     setFocusedBlockOrdinal(ordinal);
   };
   const openNoteAnnotation = (annotation: NoteAnnotationV1): void => {
-    if (annotation.versionState !== "current") {
-      setAnnotationShelfOpen(true);
-      return;
-    }
-    if (!readingBlocks.some((block) => block.ordinal === annotation.anchor.startBlockOrdinal)) setShowAllBlocks(true);
+    annotationOrigin.current = "body";
+    const located = currentNoteAnnotations.some(item => item.annotationId === annotation.annotationId);
+    if (located && !readingBlocks.some((block) => block.ordinal === annotation.anchor.startBlockOrdinal)) setShowAllBlocks(true);
     setOpenAnnotationId((current) => current === annotation.annotationId ? null : annotation.annotationId);
-    setFocusedBlockOrdinal(annotation.anchor.startBlockOrdinal);
+    setHistoryOpen(false);
+    setSourceBagOpen(false);
+    setAnnotationTaskOpen(false);
+    if (located) setFocusedBlockOrdinal(annotation.anchor.startBlockOrdinal);
     setLeaf("reading");
+    setLearningView("body");
   };
+
+  /**
+   * 编辑态那两个记号（可编辑预览 / 纯编辑）传回来的只有一个 id——它们拿不到
+   * `NoteAnnotationV1` 对象。找不到就什么都不做：宁可点一下没反应，也不要
+   * 打开一张不存在的旁页。
+   */
+  const openNoteAnnotationById = (annotationId: string): void => {
+    const found = currentNoteAnnotations.find((item) => item.annotationId === annotationId);
+    if (found) openNoteAnnotation(found);
+  };
+
+  /**
+   * 两个编辑态的批注落位。
+   *
+   * 收 `currentNoteAnnotations`（**已按当前版本验过锚点**的那一批），不收全量
+   * `noteAnnotations`——后者含 versionState: "older"，那些属于旧版记录，画在
+   * 当前正文上就是 41 §2.3 禁止的「按相似文本猜一个新位置」。
+   *
+   * 落位本身在 `note-annotation-placement.ts`，那里还会**再核一次**：调用方那次
+   * 筛选只代表它筛选那一刻，而正文在编辑中会继续变。
+   */
+  const editAnnotationPlacements = useMemo(
+    () => annotationPlacements(currentNoteAnnotations, readingBlocks),
+    [currentNoteAnnotations, readingBlocks],
+  );
   useEffect(() => {
     if (focusedBlockOrdinal === null) return;
     const target = readingBodyRef.current?.querySelector(`[data-block-ordinal="${focusedBlockOrdinal}"]`);
@@ -2590,7 +2311,6 @@ export function NotebookSurface() {
       syncedNoteRef.current = note.noteId;
       // Reading is the page a note opens on; only an explicit "继续写" — or a
       // home entry that asks for it — lands in the editor.
-      setMode(note.permissions.canEdit && activeNoteRef?.mode === "edit" ? "edit" : "read");
       setReceipt(null);
       setSaveState("idle");
       setHistoryOpen(false);
@@ -2649,6 +2369,12 @@ export function NotebookSurface() {
       const flushed = await flush();
       // flush 给了 null 就是"本机没有攒下任何增量"：那一次什么都没写，报成提交过就是在骗回执。
       const written = { via: flushed ?? "unchanged" as const, savedAt: new Date().toISOString() };
+      if (reason === "manual" && written.via === "queued") {
+        setReceipt({ ...written, isAutosave: true });
+        setSaveState("error");
+        setSaveFailure("改动还在本机队列里，联网后才能保存版本。");
+        return false;
+      }
       if (reason === "manual") {
         // 「保存」多走一步：把文档此刻定成一个可回去的版本。它不再带正文。
         const response = await api.note.save({
@@ -2669,7 +2395,7 @@ export function NotebookSurface() {
       setSaveState("committed");
       // 交出去的就是这一份了：本机的标题覆盖值到此作废，之后屏幕上的标题又跟着文档走
       // （别人改名会上屏）。没交出去（`unchanged`/失败）时留着，否则那一次改名就凭空没了。
-      if (written.via !== "unchanged") applyDraft({ ...draftRef.current, title: null });
+      if (written.via !== "unchanged" && draftRef.current.title === nextTitle) applyDraft({ ...draftRef.current, title: null });
       // 必须是要 silent 的那次回读：非 silent 会把这一屏换成「正在读取真实笔记」，
       // 编辑器整个卸掉——自动保存每按几下就来一次，那等于每次保存都把选区、滚动位置和
       // 还没交出去的字一起带走。版本号、权限那半边照样刷新。
@@ -2718,7 +2444,7 @@ export function NotebookSurface() {
   const {
     saveState, setSaveState, saveFailure, setSaveFailure,
   } = useNotebookSaveState({
-    mode, canSave, dirty, saving, draft, saveRef,
+    canSave, dirty, saving, draft, saveRef,
     delayMs: AUTOSAVE_DELAY_MS,
   });
 
@@ -2743,7 +2469,7 @@ export function NotebookSurface() {
    * 过去那几处会被全局采集器抢走，回一句"暂不解析这张图"。混进非图片文件就不算
    * "往正文里放图"，仍然交回采集器逐份说清去向。
    */
-  const paperAcceptsImages = mode === "edit" && editable;
+  const paperAcceptsImages = leaf === "reading" && isNoteEditingMode(mode) && editable;
   const paperImageFiles = (event: React.DragEvent<HTMLElement>): File[] => {
     if (!paperAcceptsImages) return [];
     // 正文里那一下编辑器已经接过了，这里只补它够不着的那一圈。
@@ -2839,6 +2565,19 @@ export function NotebookSurface() {
   };
 
 
+  /**
+   * 入口按下去的那一下。
+   *
+   * 干净的工作稿直接开跑；有未保存改动时**开那屏方案**，因为拦下它的理由只写在
+   * 那一屏的底栏上（「请先保存当前改动，再从已保存版本开始生成。」）。改成直接
+   * 开跑之后，若还沿用 `startGeneration` 那个 `dirty` 早退，用户按下去就是
+   * **什么也没发生**——一颗不解释自己为什么不动的按钮比那屏选项更糟。
+   * 所以这一档仍然去方案屏，让挡住它的那句话在原地。
+   */
+  const startGenerationFromEntry = () => {
+    if (dirty) { setOptionsOpen(true); return; }
+    void startGeneration();
+  };
 
   /**
    * 提交这一轮的问题：没有进行中轮次时开一轮，已经有了就是改写那一句。
@@ -3164,21 +2903,24 @@ export function NotebookSurface() {
     requestAnimationFrame(() => requestAnimationFrame(() => historyDetailRef.current?.scrollIntoView?.({ block: "start" })));
   };
   const openFootprintRecall = (record: NoteRecallRecordV1) => {
-    setActiveRecall(record);
-    setRecallReflection(record.reflection ?? "");
+    rememberReadingPosition();
+    closeSidePage();
+    openRecall(record, "history");
     setLeaf("reading");
+    setLearningView("recall");
   };
   const openFootprintAnnotation = (annotation: NoteAnnotationV1) => {
-    if (annotation.versionState === "older") {
-      setAnnotationShelfOpen(true);
-      setLeaf("reading");
-      return;
-    }
+    rememberReadingPosition();
     openNoteAnnotation(annotation);
+    annotationOrigin.current = "history";
+    setOpenAnnotationId(annotation.annotationId);
   };
   const openFootprintArtifact = (artifact: NoteLearningArtifactV1) => {
+    rememberReadingPosition();
+    closeSidePage();
     setActiveLearningArtifactId(artifact.artifactId);
     setLeaf("reading");
+    setLearningView("artifact");
   };
   const loadOlderFootprint = (kind: FootprintKind) => {
     if (kind === "overview" && overviewRows?.nextCursor) void loadNoteOverviews(overviewRows.nextCursor);
@@ -3232,8 +2974,9 @@ export function NotebookSurface() {
   }, [noteGenerationRunId, reload]);
 
   const openGeneration = () => {
-    if (!noteGeneration) return;
-    setActiveCardGenerationRunId(noteGeneration.runId);
+    const run = noteGeneration ?? latestRun;
+    if (!run) return;
+    setActiveCardGenerationRunId(run.runId);
     invoke("open-card-generation");
   };
 
@@ -3253,10 +2996,7 @@ export function NotebookSurface() {
     }
   };
 
-  const runTool = (tool: EditorToolSpec) => {
-    const editor = editorRef.current;
-    if (editor) tool.run(editor);
-  };
+
 
   const openSource = () => {
     if (!note?.sourceId) return;
@@ -3266,25 +3006,18 @@ export function NotebookSurface() {
 
   // 模式跟随 activeNoteRef 走：从工作台"返回笔记"时，用户回到的是离开时的
   // 编辑/阅读模式，而不是每次都被重置成阅读页。
-  const switchMode = (next: "read" | "edit") => {
-    // The reading page renders the server version, so a draft still waiting for
-    // the debounce has to be committed first — otherwise switching to 预览此版本
-    // looked exactly like losing the last sentence.
-    if (next === "read" && dirty && note?.permissions.canSave && !saving) void save("auto");
-    setMode(next);
-    const store = useRoomStore.getState();
-    if (note && store.activeNoteRef?.noteId === note.noteId && store.activeNoteRef.mode !== next) {
-      store.setActiveNoteRef({ ...store.activeNoteRef, mode: next });
-    }
+  const switchMode = (next: NoteBodyMode) => {
+    setLeaf("reading");
+    setLearningView("body");
+    setOverviewOpen(false);
+    setShowAllBlocks(true);
+    changeMode(next);
   };
 
-  const page: HudPageId = mode === "edit" ? "note-edit" : leaf === "learning" || leaf === "expansion" ? "note-learning" : leaf === "history" ? "note-history" : "note-read";
+  const page: HudPageId = leaf === "learning" || leaf === "expansion" ? "note-learning" : leaf === "history" ? "note-history" : isNoteEditingMode(mode) ? "note-edit" : "note-read";
   useHudPage(page);
 
   const sourceTitle = source?.source.title ?? (note?.sourceId ? "来源暂时不可读" : "没有关联来源");
-  const validationLabel = objective?.personal.lastCanonicalAt
-    ? formatRelative(objective.personal.lastCanonicalAt)
-    : "尚未开始";
   const firstSegment = segments[0] ?? null;
   /**
    * 那块资料卡片的名字：**屏上与给她的视图共用这一份**（两边各写一句迟早分叉，而分叉不报错）。
@@ -3293,7 +3026,18 @@ export function NotebookSurface() {
    * 「只挂了 1 段（标着「来源片段 00」）」这种自相矛盾的话（2026-09-25 真窗口量到）。
    */
   const firstSegmentClipLabel = firstSegment ? `第 ${firstSegment.ordinal + 1} 段来源片段` : "来源片段";
-  // Dirty outranks the last receipt: after a save the state stays "committed"
+  /**
+   * 来源性质与地址（41 §1.5「每项有标题、来源性质、地址和实际引用片段」）。
+   *
+   * 这两个字段投影里一直有（`source.type` / `source.origin`），而资料袋此前只用了
+   * `title` 与段数——于是「这份材料是网页还是本地 Markdown」「它从哪儿来」这两件
+   * 核对来源时最先要看的事，屏上一个字都没有。
+   *
+   * `type` 是枚举不是自由文本，所以直接用来源库自己的说法（网页 / 文本 / Markdown /
+   * 代码）；`origin` 可能是空串（本地材料没有地址），那时**不画那一行**而不是画一个
+   * 空地址——「没有地址」与「地址读不到」是两件事。
+   */
+  const sourceKindLabel = source ? (SOURCE_KIND_LABELS[source.source.type] ?? source.source.type) : null;  // Dirty outranks the last receipt: after a save the state stays "committed"
   // until the next one starts, so checking the receipt first made the line claim
   // "已自动保存" while keystrokes were still uncommitted — and the page's own
   // 草稿 tag said the opposite.
@@ -3342,10 +3086,16 @@ export function NotebookSurface() {
   const readableView = useMemo<PageReadableV1 | null>(() => {
     if (!note) return null;
     // 这一轮那一屏（`leaf` 是 learning／expansion）：屏上最大的那一句是**那一轮的问题**。
-    if (leaf === "learning" || leaf === "expansion") {
+    if (leaf === "expansion") {
+      return { pageId: "note.learning", title: readTitle || "这一篇", statusLine: "从这篇往外学", items: [] };
+    }
+    if (leaf === "reading" && learningView === "recall") {
+      return { pageId: "note.learning", title: readTitle || "这一篇", statusLine: "正在回想", items: activeRecall ? [{ ordinal: 1, label: "回想问题", state: activeRecall.question }] : [] };
+    }
+    if (leaf === "learning") {
       return {
         pageId: "note.learning",
-        title: note.title || "这一篇",
+        title: readTitle || "这一篇",
         statusLine: openRound
           ? (openRound.phase === "paused" ? "这一轮停着" : "这一轮进行中")
           : "这一轮还没有开始",
@@ -3358,7 +3108,7 @@ export function NotebookSurface() {
     if (leaf === "history") {
       return {
         pageId: "note.history",
-        title: note.title || "这一篇",
+        title: readTitle || "这一篇",
         statusLine: historyTotal > 0 ? `练过 ${historyTotal} 轮` : "还没有练过",
         items: [
           { ordinal: 1, label: "这一轮", state: selectedHistoryItem ? (selectedHistoryMasked ? "这一轮的内容按权限遮蔽" : selectedHistoryItem.drivingQuestion) : "还没有翻开哪一轮" },
@@ -3368,17 +3118,17 @@ export function NotebookSurface() {
     return {
       // 正文页也有两屏：读与编。**屏上那一句状态不一样**（编辑中那一条是「正在改」），
       // 而伴星要念的是**她此刻看见的那一句**——不是这一页通用的一句。
-      pageId: mode === "edit" ? "note.edit" : "note.read",
-      title: note.title || "这一篇",
-      statusLine: mode === "edit" ? "正在改这一篇" : `${segments.length} 段来源片段`,
-      items: [
+      pageId: isNoteEditingMode(mode) ? "note.edit" : "note.read",
+      title: readTitle || "这一篇",
+      statusLine: sourceBagOpen ? "资料袋已打开" : learningView === "overview" ? "正在速看" : learningView === "artifact" ? "正在看互动演示" : mode === "source" ? "正在编辑 Markdown 源码" : mode === "live-preview" ? "正在改这一篇" : "正在读这一篇",
+      items: sourceBagOpen ? [
         // ordinal / label / state 三格都照抄屏上那一行。
         { ordinal: 1, label: "来源片段", state: firstSegmentClipLabel },
         { ordinal: 2, label: "来源关系", state: source ? `${source.source.title} · ${segments.length} 段已解析片段` : "尚未关联来源" },
-      ],
+      ] : [],
     };
   }, [note?.title, note?.noteId, firstSegmentClipLabel, source?.source.title, segments.length,
-    leaf, mode, openRound?.drivingQuestion, openRound?.phase,
+    leaf, mode, readTitle, sourceBagOpen, learningView, activeRecall, openRound?.drivingQuestion, openRound?.phase,
     historyTotal, selectedHistoryItem, selectedHistoryMasked]);
   usePageReadableView(readableView);
 
@@ -3406,6 +3156,8 @@ export function NotebookSurface() {
           : note?.sourceId
             ? "来源暂时读不到"
             : "未关联来源"}
+        {source && sourceKindLabel ? <><br />性质：{sourceKindLabel}</> : null}
+        {source?.source.origin ? <><br />地址：{source.source.origin}</> : null}
       </div>
     </div>
   );
@@ -3414,46 +3166,46 @@ export function NotebookSurface() {
   // live run it navigates to the workbench (never starts a second run, so it
   // ignores `dirty` — viewing progress needs no clean save); without one it
   // starts a generation from the committed whole-note version.
-  const generationAction = noteGeneration ? (
-    <button
-      type="button"
-      className="text-action notebook-meta-action"
-      title="这次生成在后台进行，来回翻看不会打断它"
-      onClick={openGeneration}
-    >
-      {isCardGenerationInFlight(noteGeneration.status)
-        ? <LoaderCircle className="run-spinner" size={15} aria-hidden="true" />
-        : <Sparkles size={15} aria-hidden="true" />}
-      {cardGenerationEntryLabel(noteGeneration.status)}
-    </button>
-  ) : (
-    <button
-      type="button"
-      ref={generationTriggerRef}
-      className="text-action notebook-meta-action"
-      disabled={!generationEnabled || startingGeneration}
-      title={generationReason ?? "查看本次学习卡生成方案"}
-      onClick={() => setOptionsOpen(true)}
-    >
-      <Sparkles size={15} aria-hidden="true" />
-      {startingGeneration ? "正在创建生成任务…" : "制作学习卡"}
-    </button>
-  );
-
-  const generationLiveNote = noteGeneration ? (
+  const generationRun = noteGeneration ?? latestRun;
+  // 在制时的 title：说清"后台在跑、进度不丢"。
+  //
+  // 它**只有这一句**，不拼状态词：这个 title 是用户在制时唯一能读到的一句解释，
+  // 缩成「生成中」等于什么都没说；反过来把状态词也拼进去，那行又会长到读不下去，
+  // 而状态本身已经由 `aria-label` 与按钮旁那行状态字给出了，不必在这里重复一遍。
+  const generationInFlightTitle = "这次生成在后台进行，来回翻看不会打断它";
+  /**
+   * 没有在制的一轮时，入口**按下去就开跑**，不再先开一屏选项。
+   *
+   * 改这一下之前，入口开的是 `generation-setup` 那个对话框——里面 17 颗 chip
+   * （目标 4 + 详略 3 + 上限 3 + 题型 7），而**默认值本来就是全开**
+   * （`DEFAULT_GENERATION_OPTIONS`：理解 / 均衡 / 8 张 / 全部七种题型）。
+   * 也就是说，大多数人按这一下只要的是默认值，却要先看完 17 个选择才能拿到它。
+   * 41 §1 的口径是「用户只需看见当下一个有意义的动作和它的结果」——那一个动作
+   * 是「做一份卡」，不是「配置一台机器」。
+   *
+   * 选项没有删，只是降到次要位置：需要改的人点旁边的「调整这次」才进那屏。
+   * 之所以留这个显式入口而不是藏进齿轮：上一次生成结束时**反馈重生成**（针对上次
+   * 选原因）只长在那一屏里，而那是「为什么这次不理想」唯一的填写处。
+   */
+  const startsNewRun = !generationRun || generationRun.status === "closed_without_activation";
+  const generationAction = (
     <>
-      <p className="small notebook-note notebook-generation-live" role="status">
-        学习卡{cardGenerationStatusLabel(noteGeneration.status)} · 后台进行中，可随时回到本页，进度不会丢失。
-      </p>
-      {/* 39d W4-4：这次生成若被规模上限截断过，就在这儿说明白——"这一批只读到前半篇"
-          不能让用户以为整篇都被读过（读数来自服务端投影，不是这一页算的）。 */}
-      {noteGeneration.sourceCapped ? (
-        <p className="small notebook-note notebook-generation-capped" role="status">
-          {sourceCappedNotice(noteGeneration.sourceCapped)}
-        </p>
-      ) : null}
+      <NotebookCardEntry status={generationRun?.status} busy={startingGeneration} triggerRef={generationTriggerRef}
+        disabled={!generationRun && !generationEnabled}
+        partialSourceNotice={noteGeneration?.sourceCapped ? sourceCappedNotice(noteGeneration.sourceCapped) : null}
+        title={generationRun && generationRun.status !== "closed_without_activation"
+          ? generationRun.status === "activated" ? "查看已保存的学习卡"
+            : generationRun.status === "failed" ? "查看失败原因与重试入口"
+            : isNoteGenerationLive(generationRun.status) ? generationInFlightTitle : "查看这次学习卡生成结果"
+          : generationReason ?? (dirty ? "先保存当前改动，再从已保存版本开始生成" : "直接用默认档开始生成")}
+        onClick={generationRun && generationRun.status !== "closed_without_activation" ? openGeneration : startGenerationFromEntry} />
+      {startsNewRun ? <button type="button" className="text-action notebook-card-entry__tweak" disabled={!generationEnabled || startingGeneration}
+        // 这一颗的 title **只说它自己是什么**，不重复入口那条 `generationReason`。
+        // 两颗挨着时共用同一句提示，等于屏上有两个一模一样的话；而「为什么现在
+        // 不能做」那句话已经在入口上了，入口才是那颗要读的按钮。
+        title="换学习方向、详略、卡片上限或题型；也可以针对上一次生成说明原因" onClick={() => setOptionsOpen(true)}>调整这次</button> : null}
     </>
-  ) : null;
+  );
 
   /**
    * 上次没交出去、这一次开门接回来的那几个字。这一句必须说：屏幕上的正文比服务器上的新，
@@ -3491,6 +3243,42 @@ export function NotebookSurface() {
       ) : null}
     </>
   );
+  const pendingExpansionDrafts = expansionTask?.drafts.filter(draft => draft.selected && !expansionTask.confirmedCandidateIds?.includes(draft.candidateId)) ?? [];
+  const selectedAnnotation = noteAnnotations.find((item) => item.annotationId === openAnnotationId) ?? null;
+  /**
+   * 这一条批注**锚的不是当前正文**（改版后核不上，或它本来就属于旧版记录）。
+   *
+   * 拿它当一个名字用：附页顶部那句「旧版的原句与批注」和「不��它」两处判断的是
+   * 同一件事。此前一处内联算、一处内联算同一个表达式——两处迟早会算岔，而岔了的
+   * 后果是「屏上说它是旧版快照，却递了个能删的按钮」。
+   */
+  const annotationIsStaleSnapshot = Boolean(selectedAnnotation
+    && !currentNoteAnnotations.some((item) => item.annotationId === selectedAnnotation.annotationId));
+  const annotationSidePage = annotationDraftOpen && annotationDraft.draft ? <NotebookAnnotationComposer
+    anchor={annotationDraft.draft.anchor} text={annotationDraft.draft.text} saving={annotationDraft.saving} error={annotationDraft.error}
+    companionExplanation={noteCompanionExplanations.find(item => !item.dismissed && noteAnchorsOverlap(item.target.anchor, annotationDraft.draft!.anchor))}
+    onChange={annotationDraft.setText} onSave={() => void annotationDraft.save()} /> : openCompanionExplanation ? (
+    <NoteCompanionExplanationPaper item={openCompanionExplanation}
+      onStop={() => { stopCompanionSpeech(); stopNoteExplanation(openCompanionExplanation.id); }}
+      onWrite={() => { annotationDraft.start(openCompanionExplanation.target.anchor); setAnnotationDraftOpen(true); }}
+      onDismiss={closeSidePage} />
+  ) : selectedAnnotation || annotationTaskOpen && annotationTask ? (
+    <NoteAnnotationSidePage annotation={selectedAnnotation} task={annotationTaskOpen ? annotationTask : null}
+      readOnlySnapshot={annotationIsStaleSnapshot}
+      onReturnToHistory={annotationOrigin.current === "history" ? () => { rememberReadingPosition(); setOpenAnnotationId(null); setAnnotationTaskOpen(false); setLeaf("history"); } : undefined}
+      artifactTasks={learningArtifactTasks} artifactStarting={learningArtifactTaskStarting} artifactError={learningArtifactTaskError}
+      onAsk={(anchor) => askCompanionAboutPassage(anchor.excerpt, anchor, note!.noteId)}
+      onCreateArtifact={(anchor) => void startNoteLearningArtifactTask("annotation", anchor)}
+      onOpenArtifact={openFootprintArtifact}
+      onRetry={retryNoteAnnotationTask} onSettings={openAiConsentSettings}
+      // 旧版快照不给删除：那一行锚的版本已经不是当前正文，删掉它会让人以为
+      // 「改回去就没了」——而它本来就属于旧版记录那一层。
+      onDelete={selectedAnnotation && !annotationIsStaleSnapshot ? () => annotationDelete.request(selectedAnnotation) : undefined}
+      onCancelDelete={annotationDelete.cancel}
+      onConfirmDelete={selectedAnnotation ? () => void removeNoteAnnotation(selectedAnnotation) : undefined}
+      deleteView={selectedAnnotation ? annotationDelete.viewFor(selectedAnnotation) : "idle"}
+      deleting={annotationDeleting} deleteError={annotationDeleteError} removedNotice={annotationRemovedNotice} />
+  ) : null;
 
   // The run contract's knobs live in a full-screen planning sheet so both
   // reading and editing mode can reach the same deliberate start step.
@@ -3547,151 +3335,113 @@ export function NotebookSurface() {
     });
   };
 
-  const openLatestOverview = () => {
-    if (!latestNoteOverview) return;
-    setOverviewOpen(true);
-    requestAnimationFrame(() => overviewPaperRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" }));
-  };
 
-  const overviewInProgress = overviewTaskStarting || taskForCurrentVersion?.status === "queued"
-    || taskForCurrentVersion?.status === "running";
-  const overviewFailed = taskForCurrentVersion?.status === "failed" || Boolean(overviewTaskError);
-  const preferRecall = Boolean(resumableRecall || noteRecallRecords.length > 0);
-  const overviewActionLabel = latestNoteOverview
-    ? overviewOpen ? "收起重点" : "看这张速看"
-    : overviewFailed ? "再整理一次" : noteOverviews.length > 0 ? "整理新版重点" : "先看懂这篇";
-  const recallActionLabel = recallBusy === "start" ? "正在准备…" : resumableRecall ? "接着回想" : "快速想起来";
-  const runOverviewAction = () => latestNoteOverview
-    ? overviewOpen ? setOverviewOpen(false) : openLatestOverview()
-    : void startNoteOverviewTask(dirty);
+
+
+
+
+
+
+
 
   const openExpansionPage = () => {
+    rememberReadingPosition();
+    closeSidePage();
     setLeaf("expansion");
-    if ((!expansionTask || expansionTask.status === "failed") && noteExpansions.length === 0) {
-      void startNoteExpansionTask();
-    }
+    void loadLatestNoteExpansionTask();
   };
 
   const openExpansionNote = (noteId: string) => {
-    setActiveNoteRef({ noteId, noteVersionId: null, mode: "read" });
+    setActiveNoteRef({ noteId, noteVersionId: null, mode: "preview" });
     invoke("open-notebook");
   };
+
+  const learningEntry = useNotebookLearningEntry({
+    noteId: note?.noteId ?? null,
+    hasUnversionedChanges: readingUnversionedContent || dirty,
+    save: () => save("manual"),
+    open: (kind) => {
+      rememberReadingPosition(); closeSidePage();
+      if (kind === "expansion") setLeaf("expansion");
+      else { setLeaf("reading"); setLearningView(kind); if (kind === "overview") setOverviewOpen(true); }
+    },
+    lookup: async (kind) => {
+      if (kind === "expansion") {
+        const result = await loadLatestNoteExpansionTask();
+        return !result.ok ? "error" : result.task || noteExpansions.length ? "existing" : "missing";
+      }
+      if (kind === "recall") {
+        const records = await loadNoteRecallRecords();
+        if (records === null) return "error";
+        const record = records.find(item => item.noteVersionId === note?.currentVersionId);
+        if (record) { openRecall(record, "practice"); return "existing"; }
+        return "missing";
+      }
+      const [latest, page] = await Promise.all([loadLatestNoteOverviewTask(), loadNoteOverviews()]);
+      if (!latest || !page) return "error";
+      return latest.task || page.items.some(item => item.versionState === "current" && item.generationJobId && item.coverage) ? "existing" : "missing";
+    },
+    start: (kind) => {
+      rememberReadingPosition();
+      closeSidePage();
+      if (kind === "expansion") { openExpansionPage(); void startNoteExpansionTask(undefined, true); }
+      else {
+        setLeaf("reading"); setLearningView(kind);
+        if (kind === "overview") { setOverviewOpen(true); if (!latestNoteOverview) void startNoteOverviewTask(false); }
+        else void startNoteRecall();
+      }
+    },
+  });
 
   const readPageBody = note ? (
     <>
       {leaf === "reading" ? <>
-      <div className="version-ribbon" aria-label="笔记共享状态">
-        <NotebookPresence peers={noteDocLive.presencePeers} selfName={presenceName} />
-        {shareStateControls}
-      </div>
-      <h2 className="title">{readTitle || "未命名笔记"}</h2>
-      <div className="meta">
-        <span>{formatRelative(note.currentVersion.updatedAt)}</span>
-        <span>{note.sourceId ? `关联来源 ${source?.source.title ?? "暂时读不到"}` : "未关联来源"}</span>
-      </div>
-      <section className="notebook-overview-entry" aria-label="快速看懂这篇笔记">
-        <div className="notebook-overview-entry__copy">
-          <span className="notebook-overview-entry__stamp">这篇笔记</span>
-          <div>
-            <h3>{preferRecall ? resumableRecall ? "上次回想到这里" : "这篇留过回想记录" : latestNoteOverview ? "这篇的速看已经备好" : "先看懂这篇在讲什么"}</h3>
-            <p>{preferRecall
-              ? latestNoteOverview ? "重点和原文都在；也可以先自己想一想。" : "这篇有旧记录，先想一想，再对照现在的原文。"
-              : "把重点整理成几句话，每条都能点回原文。"}</p>
-          </div>
-        </div>
-        <div className="notebook-overview-entry__actions">
-          {preferRecall ? (
-            <button type="button" className="notebook-overview-entry__primary"
-              disabled={dirty || !note.currentVersionId || recallBusy !== null || recallLoading}
-              onClick={() => void openOrStartNoteRecall(dirty)}>{recallActionLabel}</button>
-          ) : !overviewInProgress ? (
-            <button type="button" className="notebook-overview-entry__primary"
-              disabled={dirty || !note.currentVersionId || taskForCurrentVersion?.failureReason === "ai_consent_required"}
-              onClick={runOverviewAction}>{overviewActionLabel}</button>
-          ) : null}
-          {preferRecall ? !overviewInProgress ? (
-            <button type="button" className="notebook-overview-entry__link"
-              disabled={dirty || !note.currentVersionId || taskForCurrentVersion?.failureReason === "ai_consent_required"}
-              onClick={runOverviewAction}>{overviewActionLabel}</button>
-          ) : null : (
-            <button type="button" className="notebook-overview-entry__link"
-              disabled={dirty || !note.currentVersionId || recallBusy !== null || recallLoading}
-              onClick={() => void openOrStartNoteRecall(dirty)}>{recallActionLabel}</button>
-          )}
-        </div>
-        {/* 进度与失败都收进同一张纸签（`TaskSlip`）。此前这两块各写一遍文案：
-            在做时一句「正在看这篇笔记」，失败时又一句「上次没整理成」——两处都不知道
-            最要紧的那件事：正文照常能读。 */}
-        <TaskSlip
-          kind="overview"
-          status={latestNoteOverview ? null : overviewTaskStarting ? "queued" : taskForCurrentVersion?.status ?? (overviewTaskError ? "failed" : null)}
-          failureReason={taskForCurrentVersion?.failureReason ?? overviewTaskError}
-          onRetry={() => void startNoteOverviewTask(dirty)}
-          onOpenSettings={() => invoke("open-settings")}
-        />
-      </section>
-      {latestNoteOverview && overviewOpen ? (
+      {learningView === "overview" && !latestNoteOverview ? <NotebookLearningPage kind="overview" title={readTitle || note.title} version={note.currentVersion.versionNo}
+        state={learningEntry.checking === "overview" ? "loading" : overviewTaskStarting ? "queued" : taskForCurrentVersion?.status === "ready" ? "loading" : taskForCurrentVersion?.status ?? (overviewTaskError || learningEntry.error ? "failed" : "empty")}
+        error={taskForCurrentVersion?.failureReason ?? overviewTaskError ?? learningEntry.error}
+        onPrepare={() => void learningEntry.request("overview")} onBody={() => setLearningView("body")}
+        onRetry={() => learningEntry.error ? void learningEntry.request("overview") : void startNoteOverviewTask(dirty)} onSettings={openAiConsentSettings} /> : null}
+
+      {latestNoteOverview && learningView === "overview" ? (
             <NoteOverviewPaper
               overview={latestNoteOverview}
               paperRef={overviewPaperRef}
               dirty={dirty}
-              onCollapse={() => setOverviewOpen(false)}
+              onCollapse={() => { setOverviewOpen(false); setLearningView("body"); }}
               onLocateReference={locateTeachingReference}
               onOpenExpansionPage={openExpansionPage}
               onAskCompanion={askCompanionAboutNote}
+              artifactTask={learningArtifactTasks.find(task => task.sourceKind === "overview" && task.noteVersionId === latestNoteOverview.noteVersionId) ?? null}
+              artifactStarting={learningArtifactTaskStarting}
+              onCreateArtifact={() => void startNoteLearningArtifactTask("overview")}
+              onOpenArtifact={openFootprintArtifact}
             />
       ) : null}
-      {learningArtifactTasks.some((task) => task.sourceKind === "overview" && (task.status === "queued" || task.status === "running" || task.status === "failed")) ? (
+      {(learningView === "body" || learningView === "overview") && (learningView === "overview" && learningArtifactTaskError || learningArtifactTasks.some((task) => task.sourceKind === "overview")) ? (
         <NotebookArtifactTaskPaper
-          tasks={learningArtifactTasks.filter((task) => task.sourceKind === "overview" && (task.status === "queued" || task.status === "running"))}
+          tasks={learningArtifactTasks.filter((task) => task.sourceKind === "overview").slice(0, 1)}
           error={learningArtifactTaskError}
           onStart={(task) => void startNoteLearningArtifactTask("overview", undefined)}
+          onOpen={openFootprintArtifact}
           onOpenSettings={openAiConsentSettings}
         />
       ) : null}
-      {activeLearningArtifact ? (
-        <article className="note-overview-paper note-learning-artifact-paper" aria-label="互动演示" ref={learningArtifactPaperRef}>
-          <header>
-            <span>{activeLearningArtifact.sourceKind === "annotation" ? "这句的互动演示" : "这篇的互动演示"} · 笔记 v{activeLearningArtifact.noteVersionNumber}{activeLearningArtifact.versionState === "older" ? " · 旧版记录" : ""}</span>
-            <time dateTime={activeLearningArtifact.createdAt}>{new Date(activeLearningArtifact.createdAt).toLocaleString()}</time>
-          </header>
-          {learningArtifactStoredId !== activeLearningArtifact.artifactId ? (
-            <>
-              <h3>{activeLearningArtifact.title}</h3>
-              <p className="note-learning-artifact-paper__subject">{activeLearningArtifact.subject}</p>
-            </>
-          ) : null}
-          {activeLearningArtifact.selectionText ? (
-            activeLearningArtifact.selectionAnchor && activeLearningArtifact.versionState === "current" ? (
-              <nav className="note-overview-paper__references" aria-label="互动讲解对应的原文">
-                <button type="button" onClick={() => locateTeachingReference(activeLearningArtifact.selectionAnchor!.startBlockOrdinal)}>
-                  <span>回到第 {activeLearningArtifact.selectionAnchor.startBlockOrdinal + 1} 段原句</span>
-                  <q>{activeLearningArtifact.selectionText}</q>
-                </button>
-              </nav>
-            ) : (
-              <blockquote>{activeLearningArtifact.versionState === "older" ? `笔记 v${activeLearningArtifact.noteVersionNumber} · ` : ""}{activeLearningArtifact.selectionText}</blockquote>
-            )
-          ) : null}
-          {learningArtifactStoredId !== activeLearningArtifact.artifactId ? <p className="note-learning-artifact-paper__caution">{activeLearningArtifact.caution}</p> : null}
-          {learningArtifactStoredId === activeLearningArtifact.artifactId ? (
-            <ArtifactFrameHost
-              artifactId={activeLearningArtifact.artifactId}
-              motion={motionMode === "full" ? "full" : "reduced"}
-              fallback={<ol>{activeLearningArtifact.outline.map((item) => <li key={`${item.index}:${item.title}`}><strong>{item.title}</strong>：{item.narration}<blockquote>{item.quote}</blockquote></li>)}</ol>}
-            />
-          ) : learningArtifactError ? (
-            <p className="small notebook-note" role="alert">互动页面暂时没能打开：{learningArtifactError} <button type="button" className="text-action" onClick={() => { setLearningArtifactStoredId(null); setLearningArtifactError(null); setLearningArtifactEnsureRevision((revision) => revision + 1); }}>重试</button></p>
-          ) : <p className="small notebook-note" role="status">正在把 AI 做好的互动演示放到纸面上…</p>}
-          <footer><span>这份演示对应笔记 v{activeLearningArtifact.noteVersionNumber}，已保存在「学习记录」里。</span></footer>
-        </article>
+      {activeLearningArtifact && learningView === "artifact" ? (
+        <NotebookLearningArtifactPaper artifact={activeLearningArtifact} paperRef={learningArtifactPaperRef}
+          ready={learningArtifactStoredId === activeLearningArtifact.artifactId} error={learningArtifactError}
+          referenceBlocks={readSourceBlocks}
+          motion={motionMode === "full" ? "full" : "reduced"} onLocateReference={locateTeachingReference}
+          onRetry={() => { setLearningArtifactStoredId(null); setLearningArtifactError(null); setLearningArtifactEnsureRevision((revision) => revision + 1); }} />
       ) : null}
-      {activeRecall ? (
+      {activeRecall && learningView === "recall" ? (
         <NoteRecallPaper
+          key={`${activeRecall.recallId}:${recallVisit}`}
           recall={activeRecall}
+          presentation={recallPresentation}
+          workspaceEpoch={epochRef.current}
+          onNew={() => void startNoteRecall(true)}
           paperRef={recallPaperRef}
-          formatQuestion={formatRecallQuestion}
-          onCollapse={() => setActiveRecall(null)}
+          onCollapse={() => { closeRecall(); if (recallPresentation === "history") setLeaf("history"); else setLearningView("body"); }}
           onAct={(action) => actOnActiveRecall(action)}
           onReflectionChange={setRecallReflection}
           onLocateSection={locateTeachingReference}
@@ -3699,21 +3449,14 @@ export function NotebookSurface() {
           failure={recallError}
           reflection={recallReflection}
         />
-      ) : null}
-      <section id="notebook-reading-leaf" className="notebook-leaf-page" aria-label="笔记正文">
-      {allBlocks.length > READING_WINDOW && readingSections.length > 0 ? (
-        <NotebookReadingOutline
-          sections={readingSections}
-          visibleSections={visibleReadingSections}
-          expanded={showAllReadingSections}
-          hiddenCount={hiddenReadingSectionCount}
-          pageSize={NOTEBOOK_STRUCTURE_PAGE_SIZE_V1}
-          onToggleExpanded={() => setShowAllReadingSections((value) => !value)}
-          onJumpTo={locateTeachingReference}
-        />
-      ) : null}
+      ) : learningView === "recall" ? <NotebookLearningPage kind="recall" title={readTitle || note.title} version={note.currentVersion.versionNo}
+        state={recallBusy === "start" ? "running" : recallLoading || learningEntry.checking === "recall" ? "loading" : recallError || learningEntry.error ? "failed" : "empty"}
+        error={recallError ?? learningEntry.error} onPrepare={() => void learningEntry.request("recall")}
+        onBody={() => setLearningView("body")} onRetry={() => void learningEntry.request("recall")} /> : null}
+      {learningView === "body" ? <section id="notebook-reading-leaf" aria-label="笔记正文">
+
       <div
-        className="reading-body"
+        className="note-transcript"
         ref={readingBodyRef}
         onMouseUp={captureSelectedPassage}
         onKeyUp={captureSelectedPassage}
@@ -3723,21 +3466,22 @@ export function NotebookSurface() {
           <ReadingBlock
             key={block.ordinal}
             block={block}
-            annotations={currentNoteAnnotations.filter((annotation) => annotation.anchor.startBlockOrdinal === block.ordinal)}
+            annotations={currentNoteAnnotations}
+            companionExplanations={noteCompanionExplanations.filter(item => !item.dismissed && item.phase !== "saved"
+              && item.target.anchor.noteVersionId === note.currentVersionId && noteAnchorMatchesV1(readSourceBlocks, item.target.anchor))}
+            onOpenCompanionExplanation={item => setCompanionExplanationId(item.id)}
             pendingAnnotationTask={annotationTask?.noteVersionId === note.currentVersionId
               && annotationTask.anchor.startBlockOrdinal === block.ordinal ? annotationTask : null}
-            selection={selectedPassage?.blockOrdinal === block.ordinal ? selectedPassage : null}
-            selectionBusy={annotationTaskStarting}
-            selectionDirty={dirty}
-            onExplainSelection={explainSelectedPassage}
-            onAskSelection={askCompanionAboutSelectedPassage}
-            onDismissSelection={() => setSelectedPassage(null)}
             learningArtifactTasks={learningArtifactTasks.filter((task) => task.sourceKind === "annotation" && task.selectionAnchor?.startBlockOrdinal === block.ordinal)}
             onCreateLearningArtifact={(anchor) => void startNoteLearningArtifactTask("annotation", anchor)}
             learningArtifactTaskStarting={learningArtifactTaskStarting}
             openAnnotationId={openAnnotationId}
             onOpenAnnotation={openNoteAnnotation}
+            // 正文里就能删（用户裁决）：记号浮层上那枚「删掉这条」，不必先开附页。
+            // 确认状态与附页共用同一份 —— `annotationDeleteConfirm`，见那个 hook 的注释。
+            onDeleteAnnotation={renderAnnotationDeleteControl}
             onRetryAnnotationTask={retryNoteAnnotationTask}
+            onOpenPendingAnnotation={() => { setAnnotationTaskOpen(true); setHistoryOpen(false); setOpenAnnotationId(null); }}
             onOpenAiConsentSettings={openAiConsentSettings}
             onAskCompanion={(anchor) => askCompanionAboutPassage(anchor.excerpt, anchor, note.noteId)}
             focused={focusedBlockOrdinal === block.ordinal}
@@ -3790,76 +3534,40 @@ export function NotebookSurface() {
         ) : null}
         {annotationTaskError ? <p className="note-annotation-task-error" role="alert">{annotationTaskError}</p> : null}
       </div>
-        <details className="notebook-reading-provenance">
-          <summary>这篇笔记的来源与版本</summary>
-          <div className="provenance-line">
-        <span>来源：{sourceTitle}</span>
-        {segments.length > 0 ? <span>来源片段 {segments.length}</span> : null}
-        <span>
-          {readingUnversionedContent
-            ? `未定版的当前内容 · 已存版本 v${note.currentVersion.versionNo}`
-            : `不可变版本：v${note.currentVersion.versionNo} · ${note.currentVersion.contentHash.slice(0, 8)}`}
-        </span>
-        <span>最近验证：{validationLabel}</span>
-          </div>
-        </details>
-      {/* The pasted source clips read as part of the provenance cluster, so they
-          sit in the flow right after it. They used to hang absolute off the
-          paper's right edge; real excerpts ran long and the sticky notes
-          covered body text and table columns. */}
-      {clips}
-      <section className="note-expansion-bookmark" aria-label="从这篇往外学">
-        <span className="note-expansion-bookmark__stamp">往外学</span>
-        <div>
-          <strong>这篇还通向哪些问题？</strong>
-          <p>{expansionTask?.status === "ready" ? "相关草稿已经整理好，等你挑选。" : noteExpansions.length > 0 ? `已经收下 ${noteExpansions.length} 篇相关笔记。` : "从这篇出发，找一找值得接着了解的内容。"}</p>
-        </div>
-        <button type="button" onClick={openExpansionPage}>
-          {expansionTask?.status === "ready" ? "挑选草稿" : expansionTask?.status === "queued" || expansionTask?.status === "running" ? "看看进度" : noteExpansions.length > 0 ? "看相关笔记" : expansionTask?.status === "failed" ? "再找一次" : "找些方向"}
-        </button>
-      </section>
-      </section>
+
+      </section> : null}
       </> : null}
-      {leaf === "expansion" ? (
+      {(<div hidden={leaf !== "expansion"}>{(
       <section className="note-expansion-shelf" aria-label="从这篇往外学">
-        <div className="note-expansion-shelf__return">
-          <button type="button" className="text-action" onClick={() => setLeaf("reading")}>← 回笔记正文</button>
-          <span>{readTitle || "未命名笔记"}</span>
-        </div>
-        <h2>从这篇往外学</h2>
         <header>
-          <strong>相关方向</strong>
           <div className="note-expansion-shelf__actions">
-            {!expansionTaskStarting && expansionTask?.status !== "queued" && expansionTask?.status !== "running" ? (
-              <button type="button" disabled={dirty || !note.currentVersionId} onClick={() => void startNoteExpansionTask(selectedPassage?.anchor ?? undefined)}>
+            {!expansionTaskLoading && !expansionTaskStarting && (expansionTask?.status === "ready" || expansionTask?.status === "confirmed" || !expansionTask && noteExpansions.length > 0) ? (
+              <button type="button" disabled={dirty || expansionReviewSaving || expansionReviewDirty || !note.currentVersionId} onClick={() => expansionTask ? void startNoteExpansionTask(selectedPassage?.anchor ?? undefined) : learningEntry.prepare("expansion")}>
                 {expansionTask?.status === "ready" || expansionTask?.status === "confirmed" ? "再整理一批" : expansionTask?.status === "failed" ? "再找一次" : "找些相关内容"}
               </button>
             ) : null}
           </div>
         </header>
-        <p className="note-expansion-shelf__intro">从这篇笔记出发找值得接着学的内容。新笔记先放在这里给你挑，确认后才会保存并互相链接。</p>
+        {expansionTask?.status === "ready" || expansionTask?.status === "confirmed" || noteExpansions.length ? <p className="note-expansion-shelf__intro">从这篇笔记出发找值得接着学的内容。新笔记先放在这里给你挑，确认后才会保存并互相链接。</p> : null}
         {/* 这一句原来已经写对了（「可以继续阅读」），只是它和另外三处各写一遍。
             现在四处读同一张纸签：说清在做什么、明说不用等、没做成时给一条能走的路。 */}
-        <TaskSlip
-          kind="expansion"
-          // `confirmed` 是"用户已经收下草稿"这一终态，和 `ready` 一样没有纸签要说；
-          // 直接透传会在类型上多出一个值，而界面上它与 ready 没有区别。
-          status={expansionTaskStarting ? "queued" : expansionTask?.status === "confirmed" ? "ready" : expansionTask?.status ?? (expansionTaskError ? "failed" : null)}
-          failureReason={expansionTask?.failureReason ?? expansionTaskError}
-          onRetry={() => void startNoteExpansionTask(selectedPassage?.anchor ?? undefined)}
-          onOpenSettings={openAiConsentSettings}
-        />
+        {expansionTaskStarting || expansionTaskLoading && !expansionTask || expansionTask?.status === "queued" || expansionTask?.status === "running" || expansionTask?.status === "failed" || !expansionTask && !noteExpansions.length ? <NotebookLearningPage
+          kind="expansion" title={readTitle || note.title} version={note.currentVersion.versionNo}
+          state={expansionTaskStarting ? "queued" : expansionTaskLoading || learningEntry.checking === "expansion" ? "loading" : expansionTask?.status === "failed" || expansionTaskError || learningEntry.error ? "failed" : expansionTask?.status === "queued" || expansionTask?.status === "running" ? expansionTask.status : "empty"}
+          error={expansionTask?.failureReason ?? expansionTaskError ?? learningEntry.error}
+          onPrepare={() => void learningEntry.request("expansion")} onBody={() => { setLeaf("reading"); setLearningView("body"); }}
+          onRetry={() => expansionTask?.status === "failed" ? void startNoteExpansionTask(undefined, true) : void learningEntry.request("expansion")} onSettings={openAiConsentSettings} /> : null}
         {expansionTask && (expansionTask.status === "ready" || expansionTask.status === "confirmed") ? (
               <NoteExpansionDrafts
+                key={expansionTask.taskId}
                 task={expansionTask}
-                saving={expansionReviewSaving}
+                saving={expansionReviewSaving || expansionTaskStarting}
                 locateTeachingReference={locateTeachingReference}
                 setExpansionTask={setExpansionTask}
                 persistNoteExpansionReview={persistNoteExpansionReview}
-                confirmNoteExpansionDrafts={confirmNoteExpansionDrafts}
               />
         ) : null}
-        {expansionTaskError ? <p className="note-expansion-task-error" role="alert">{expansionTaskError}</p> : null}
+        {expansionTaskError ? <p className="note-expansion-task-error" role="alert">{expansionTaskError} <button type="button" className="text-action" disabled={expansionReviewSaving || expansionTaskLoading} onClick={() => expansionTask?.status === "ready" ? void persistNoteExpansionReview(expansionTask.drafts) : void loadLatestNoteExpansionTask()}>{expansionTask?.status === "ready" ? "重试保存" : "重试读取"}</button></p> : null}
         {noteExpansions.length > 0 ? (
           <ul>
             {noteExpansions.map((expansion) => {
@@ -3878,14 +3586,14 @@ export function NotebookSurface() {
               );
             })}
           </ul>
-        ) : !expansionTask && !expansionTaskStarting ? <p>相关内容会先成为草稿，由你决定收下哪篇。</p> : null}
+        ) : null}
         {expansionRows?.nextCursor ? (
           <button type="button" className="note-expansion-shelf__more" disabled={expansionLoading} onClick={() => void loadNoteExpansions(expansionRows.nextCursor!)}>
             {expansionLoading ? "正在找更早的…" : "再看一些关联笔记"}
           </button>
         ) : null}
       </section>
-      ) : null}
+      )}</div>)}
       {leaf === "learning" ? (
         /*
          * 书桌上的这一页（2026-09-28 整体重构）。
@@ -4054,8 +3762,8 @@ export function NotebookSurface() {
           ) : null}
         </section>
       ) : null}
-      {leaf === "history" ? <section id="notebook-history-leaf" className="notebook-leaf-page notebook-journey" aria-label="学习记录">
-        <div className="notebook-journey__header"><button type="button" className="text-action" onClick={() => setLeaf("reading")}>← 回笔记正文</button><span className="notebook-journey__note">{readTitle || "未命名笔记"}</span><h2>学习记录</h2><p>速看、回想、批注和拓展都保存在这里，打开一条还能回到对应的笔记版本。</p></div>
+      {(<div hidden={leaf !== "history"}>{<section id="notebook-history-leaf" className="notebook-journey" aria-label="学习记录" tabIndex={-1} data-task-focus>
+        <p className="notebook-journey__intro">速看、回想、批注和拓展都留在这里。打开一条记录，接着看当时的内容。</p>
           {/* ── 那一块为什么没被搬走（2026-09-29 量过的，不是猜的）─────────────────
               250 行、79 个外部符号，里面**已经有 10 处是组件调用**（足迹 / 学习记录 /
               轮回看 / 路线覆盖 / 感想区 / 在场…）。再往里逐块扫，**只有一段 18 行的
@@ -4066,6 +3774,7 @@ export function NotebookSurface() {
               里属于 page 的那些收进 hook（review / subscription / teaching / versions /
               overview / recall / practice / save 八簇已收），再重新量。── */}
         <NoteLearningFootprint
+          key={note.noteId}
           overviews={noteOverviews}
           recalls={noteRecallRecords}
           annotations={noteAnnotations}
@@ -4216,7 +3925,7 @@ export function NotebookSurface() {
             </div>
           ) : null}
         </details>
-      </section> : null}
+      </section>}</div>)}
       {(leaf === "learning" && learningScene === "result" && !reviewingTeaching && Boolean(openRound && (roundTeaching || roundPractices.length > 0))
         || leaf === "history" && Boolean(reflectionRoundId && inspectedRound?.roundId === reflectionRoundId && (inspectedRound.view.teaching || inspectedRound.view.practices.length > 0))) ? <div className="note-reflection-anchor" ref={reflectionShelfRef}><NoteReflectionShelf key={note.noteId} noteId={note.noteId} roundId={leaf === "history" ? reflectionRoundId : openRound?.roundId}
         refreshKey={`${roundTeaching?.teachingId ?? ""}:${roundPractices.map(p => `${p.runId}:${p.phase}`).join(",")}`}
@@ -4225,7 +3934,7 @@ export function NotebookSurface() {
         canUseForTeaching={leaf !== "history" && Boolean(openRound)}
         selectedForTeaching={teachingReflectionIds}
         onSelectionChange={setTeachingReflectionIds}
-        onInspectBody={() => { setMode("read"); setLeaf("reading"); }}
+        onInspectBody={() => switchMode("preview")}
         onAppend={async (source, annotation) => {
           if (!note.permissions.canSave || !noteDocLive.fragment || saving) throw new Error("正文此刻不可编辑，请回到笔记核对权限和保存状态。");
           stageReflectionAppend(noteDocLive.fragment, note.noteId, source, annotation, appendedReflections.current);
@@ -4254,10 +3963,8 @@ export function NotebookSurface() {
           </button>
         </p>
       ) : null}
-      {leaf === "reading" && generationReason ? <p className="small notebook-note">{generationReason}</p> : null}
-      {leaf === "reading" && generationFailure ? <p className="small notebook-note" role="alert">{generationFailure}</p> : null}
-      {leaf === "reading" ? generationLiveNote : null}
-      {leaf === "reading" ? historyPaper : null}
+      {leaf === "reading" && learningView === "body" && generationReason ? <p className="small notebook-note">{generationReason}</p> : null}
+      {leaf === "reading" && learningView === "body" && generationFailure ? <p className="small notebook-note" role="alert">{generationFailure}</p> : null}
     </>
   ) : null;
 
@@ -4275,6 +3982,7 @@ export function NotebookSurface() {
         onClick={() => {
           const next = !historyOpen;
           setHistoryOpen(next);
+          if (next) { setOpenAnnotationId(null); setAnnotationTaskOpen(false); }
           if (next) void loadVersions();
         }}
       >
@@ -4284,120 +3992,35 @@ export function NotebookSurface() {
     </>
   ) : null;
 
-  const readPageActions = note && leaf === "reading" ? (
-    <div className="actions notebook-actions notebook-actions--reading">
-      {!note.permissions.canEdit ? <span className="tag">只读</span> : null}
-      {note.permissions.canEdit ? (
-        <button type="button" className="button primary notebook-edit-button" onClick={() => switchMode("edit")}>
-          <PencilLine size={15} aria-hidden="true" />编辑笔记
-        </button>
-      ) : null}
-      <button type="button" className="text-action notebook-meta-action" onClick={() => setLeaf("history")}>
-        <Clock3 size={14} aria-hidden="true" />学习记录
-      </button>
-      {versionAndOptionsToggles}
-      {note.sourceId ? (
-        <button type="button" className="text-action notebook-meta-action" onClick={openSource}>
-          <Link2 size={14} aria-hidden="true" />查看来源
-        </button>
-      ) : null}
-      {generationAction}
-    </div>
-  ) : null;
 
-  const editChrome = note ? (
-    <div className="notebook-chrome">
-      <div className="editor-head">
-        <div>
-          <span className="tag red">{dirty || saveState === "error" ? "草稿" : "已同步"}</span>
-          <NotebookPresence peers={noteDocLive.presencePeers} selfName={presenceName} />
-          {shareStateControls}
-          <span className="small">改动会实时并入这一篇；点「保存」才存成一个可回去的版本</span>
-        </div>
-        <div className="meta">
-          <span>{note.permissions.canSave ? "自动保存开启" : "当前身份不能保存"}</span>
-          <span>版本 v{note.currentVersion.versionNo}</span>
-          <button type="button" className="ribbon-action" onClick={() => switchMode("read")}>预览此版本</button>
-        </div>
-      </div>
-      <div className="editor-tools" role="toolbar" aria-label="Markdown 格式工具">
-        {EDITOR_TOOLS.map((tool) => (
-          <button
-            key={tool.label}
-            type="button"
-            className="tool"
-            disabled={!editable}
-            aria-label={tool.label}
-            title={tool.title}
-            // 命令作用在当前选区上，按下去那一下不能把焦点从正文抢走。
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => runTool(tool)}
-          >
-            {tool.glyph}
-          </button>
-        ))}
-        <button
-          type="button"
-          className="tool"
-          disabled={!editable || !note.permissions.canSave}
-          aria-label="插入图片"
-          title="插入图片 · 也可以直接把图片粘贴或拖进正文"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => imageUploads.fileInputRef.current?.click()}
-        >
-          图
-        </button>
-        <span className="editor-tools-legend">支持 Markdown · 所见即所得 · 停顿 1.2 秒自动保存 · 图片可粘贴或拖入</span>
-        <input
-          ref={imageUploads.fileInputRef}
-          className="note-image-upload-input"
-          type="file"
-          accept="image/png,image/jpeg,image/gif,image/webp"
-          multiple
-          tabIndex={-1}
-          aria-hidden="true"
-          onChange={(event) => {
-            imageUploads.queueFiles(event.currentTarget.files);
-            event.currentTarget.value = "";
-          }}
-        />
-      </div>
-    </div>
-  ) : null;
 
-  // The editor page, like the reading one: scrolling body, pinned actions and
-  // receipt line. The fields stay editable while a save is in flight — the
-  // save snapshots the draft, so typing during the round trip is safe.
+  const documentHeading = isNoteEditingMode(mode) ? (
+    <h2>
+      <label className="sr-only" htmlFor="notebook-surface-title">笔记标题</label>
+      <textarea id="notebook-surface-title" rows={1} value={titleValue} maxLength={200} disabled={!editable}
+        placeholder="未命名笔记"
+        onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) event.preventDefault(); if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") { event.preventDefault(); void save("manual"); } }}
+        onChange={(event) => { const value = event.currentTarget.value.replace(/\r?\n/g, " "); applyDraft({ ...draftRef.current, title: value }); setLocalTitle(value, "manual"); }} />
+    </h2>
+  ) : <h2>{readTitle || "未命名笔记"}</h2>;
+  const pageTitle = leaf === "expansion" ? "往外学" : leaf === "history" ? "学习记录" : leaf === "learning" ? "学这篇笔记"
+    : learningView === "overview" ? "这篇的速看" : learningView === "recall" ? "回想一下" : learningView === "artifact" ? "互动讲解"
+      : isNoteEditingMode(mode) ? "笔记编辑" : "这篇笔记";
+  const pageSubtitle = leaf === "expansion" ? "先翻开，再决定收下哪篇" : leaf === "history" ? "留下的线索都在这页"
+    : learningView === "recall" ? "先自己想想，再翻开原文" : learningView === "overview" ? "抓住要点，回原文核对"
+      : isNoteEditingMode(mode) ? "写下理解，留下可回看的版本" : "原文还在，接着往下读";
+
+  const editChrome = note ? <NotebookEditorTools editorRef={editorRef} editable={editable} canUpload={Boolean(note.permissions.canSave)} fileInputRef={imageUploads.fileInputRef} onImages={imageUploads.queueFiles} /> : null;
+
+  // Both editors stay attached to the shared document throughout this visit.
+  // Saving snapshots the draft, so fields remain editable during the request.
   const editPageBody = note && draftSeeded ? (
     // Milkdown 的 defaultValueCtx 只在创建时读一次，所以编辑器按 noteId 重建：
     // 换一篇笔记就是换一个编辑器，而"恢复历史版本"这类同一篇里的整体替换走 ref 的
     // setMarkdown（见上面那个回读效应）。首帧不等 draftSeeded 就会用空正文建文档。
-    <div className="editor-copy" ref={editorPaneRef} onKeyDown={onEditorKeyDown}>
-      <h2>
-        <label className="sr-only" htmlFor="notebook-surface-title">笔记标题</label>
-        <input
-          id="notebook-surface-title"
-          value={titleValue}
-          maxLength={200}
-          disabled={!note.permissions.canEdit}
-          placeholder="未命名笔记"
-          onKeyDown={(event) => {
-            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-              event.preventDefault();
-              void save("manual");
-            }
-          }}
-          onChange={(event) => {
-            // Read the value during dispatch: `currentTarget` is nulled once
-            // the event finishes, so the snapshot is taken here and handed to
-            // the one draft setter.
-            const { value } = event.currentTarget;
-            applyDraft({ ...draftRef.current, title: value });
-          }}
-        />
-      </h2>
+    <div className="note-draft" ref={editorPaneRef} onKeyDown={onEditorKeyDown}>
       <label className="sr-only" htmlFor="notebook-surface-body">笔记正文</label>
-      <div id="notebook-surface-body" data-surface-initial-focus={mode === "edit" ? "true" : undefined}>
+      <div id="notebook-surface-body" data-surface-initial-focus={isNoteEditingMode(mode) ? "true" : undefined}>
         {coWriters.length ? (
           // 一句文字，不靠颜色：这一格说的是"别人和我在同一段里"，看不见颜色的人
           // 与截图review都得能读出来。名字来自对端自己报的，一个也没本机代填。
@@ -4405,15 +4028,20 @@ export function NotebookSurface() {
             {`${coWriters.map((peer) => peer.name ?? "另一个人").join("、")} 也在写这一段`}
           </p>
         ) : null}
-        {noteDocLive.fragment ? <NoteMarkdownEditor
+        {noteDocLive.fragment ? <NoteDocumentEditor
           key={note.noteId}
           ref={editorRef}
+          mode={mode}
           fragment={noteDocLive.fragment}
           initialMarkdown={draft.content}
           onChange={applyContent}
-          disabled={!editable}
+          disabled={!editable || leaf !== "reading" || learningView !== "body"}
           onImagePaste={imageUploads.queueFile}
           onCaretBlock={onCaretBlock}
+          // 41 §1.4：两个编辑态都要保留批注记号。落位只收**当前版本上仍核得上**的
+          // 那一批（`currentNoteAnnotations`）——核不上的留在旧版记录里，不挪位置。
+          annotationPlacements={editAnnotationPlacements}
+          onOpenAnnotation={openNoteAnnotationById}
         /> : null}
       </div>
       <NoteImageUploads
@@ -4422,39 +4050,23 @@ export function NotebookSurface() {
         onRetry={imageUploads.retry}
         onDismiss={imageUploads.dismiss}
       />
-      {restoredDraftNote}
-      {saveFailure ? <p className="small notebook-note" role="alert">保存没成功：{saveFailure}</p> : null}
-      {generationReason ? <p className="small notebook-note">{generationReason}</p> : null}
-      {generationFailure ? <p className="small notebook-note" role="alert">{generationFailure}</p> : null}
-      {generationLiveNote}
-      {historyPaper}
+      {isNoteEditingMode(mode) && leaf === "reading" ? <>
+        {restoredDraftNote}
+        {saveFailure ? <p className="small notebook-note" role="alert">保存没成功：{saveFailure}</p> : null}
+        {generationReason ? <p className="small notebook-note">{generationReason}</p> : null}
+        {generationFailure ? <p className="small notebook-note" role="alert">{generationFailure}</p> : null}
+      </> : null}
     </div>
   ) : null;
 
-  const editPageActions = note ? (
-    <div className="actions notebook-actions notebook-actions--editor">
-      {note.permissions.canSave ? (
-        <button
-          type="button"
-          className={saveState === "error" ? "button danger" : "button"}
-          disabled={saving}
-          onClick={() => void save("manual")}
-        >
-          {saveState === "error" ? (
-            <><RefreshCw size={15} aria-hidden="true" />重试保存</>
-          ) : saving ? "正在保存…" : "保存"}
-        </button>
-      ) : null}
-      {versionAndOptionsToggles}
-      {generationAction}
-    </div>
-  ) : null;
+
 
   return (
     <>
-      <HudPage page={page}>
+      <div className="task-title notebook-page-title"><h1>{pageTitle}</h1><p>{pageSubtitle}</p></div>
+      <main className="content notebook-space">
         <article
-          className="notebook notebook-hud"
+          className="notebook-workspace notebook-hud"
           aria-busy={loading || undefined}
           data-mode={mode}
           data-note-paper-image-drop={paperAcceptsImages ? "" : undefined}
@@ -4473,20 +4085,81 @@ export function NotebookSurface() {
             for (const file of files) imageUploads.queueFile(file);
           }}
         >
-          {statePaper ? <div className="notebook-scroll">{statePaper}</div> : null}
+          {statePaper ? <div className="notebook-workspace__state">{statePaper}</div> : null}
           {!loading && !failure && note ? (
             <>
-              {mode === "edit" ? editChrome : null}
-              <div className="notebook-scroll" ref={leafScrollRef}>{mode === "edit" ? editPageBody : readPageBody}</div>
-              {mode === "edit" ? (
-                <>
-                  {editPageActions}
-                  <div className="save-line">
-                    <span role="status" aria-live="polite">{saveLabel}</span>
-                    <span>当前版本 v{note.currentVersion.versionNo} · 来源片段 {segments.length}</span>
+              <NotebookDesk
+                noteId={note.noteId} noteTitle={readTitle || "未命名笔记"} version={note.currentVersion.versionNo} mode={mode} canEdit={editable} pendingMode={pendingMode}
+                articleHeader={leaf === "reading" && learningView === "body" ? <header className="notebook-volume__article-head" tabIndex={-1} data-task-focus>
+                  <div className="notebook-volume__heading">{documentHeading}</div>
+                  <div className="notebook-volume__meta">{/*
+                      版本标签要说清**这一屏正文来自哪里**（审计 F35）。
+                      这里此前只写 `v{n}`：正文其实来自未保存的实时文档，而那一版的
+                      编号摆在那里，用户会以为自己在读一个已定版的版本——那一版
+                      甚至可能是空的。未定版时不出现「不可变版本」这几个字。
+                    */}
+                    <span className="notebook-volume__version" title={readingUnversionedContent ? `已存版本 v${note.currentVersion.versionNo}` : undefined}>
+                      <BookOpen size={13} aria-hidden="true" />
+                      {readingUnversionedContent
+                        ? "未定版的当前内容"
+                        : `不可变版本：v${note.currentVersion.versionNo}`}
+                    </span>
+                    {note.sourceId ? <button type="button" className="text-action" title={sourceTitle} onClick={() => setSourceBagOpen(true)}><FileText size={13} aria-hidden="true" />来源资料</button> : <span>独立笔记</span>}
+                    {/*
+                        「来源片段」这四个字在屏上**只表示一个数**（2026-09-25 真窗口量到）：
+                        资料卡片写 `第 N 段来源片段`（那是序号），页眉这里写条数。
+                        两边曾经都是「来源片段 NN」，一个序号一个计数，她照着念就念出
+                        自相矛盾的话。所以这里只放条数，卡片那侧只放序号。
+                      */}
+                    {segments.length > 0 ? <span>来源片段 {segments.length}</span> : null}
+                    {noteExpansions.length ? <button type="button" className="text-action" onClick={() => openExpansionPage()}><Link2 size={13} aria-hidden="true" />关联笔记 · {noteExpansions.length}</button> : null}
+                    <time dateTime={note.currentVersion.updatedAt}>{formatRelative(note.currentVersion.updatedAt)}更新</time>
+                    {!isNoteEditingMode(mode) ? <span title={saveLabel} role="status">{dirty || saveState === "error" ? "有未保存改动" : "已同步"}</span> : null}
+                    {!editable ? <span className="tag">只读</span> : null}<NotebookPresence peers={noteDocLive.presencePeers} selfName={presenceName} />{shareStateControls}
                   </div>
-                </>
-              ) : readPageActions}
+                </header> : null}
+                onMode={switchMode} outline={noteOutline(noteDocLive.fragment, readSourceBlocks)}
+                onLocate={locateTeachingReference}
+                onOpenDirectory={() => { setHistoryOpen(false); setSourceBagOpen(false); setOpenAnnotationId(null); setAnnotationTaskOpen(false); }}
+                learningView={leaf === "reading" ? learningView : leaf}
+                onLearning={learningEntry.request}
+                onBody={() => { rememberReadingPosition(); closeSidePage(); setLeaf("reading"); setLearningView("body"); setOverviewOpen(false); }}
+                primaryAction={isNoteEditingMode(mode) && leaf === "reading" && learningView === "body" && canSave ? <button type="button" className="button primary"
+                    disabled={saving} onClick={() => void save("manual")}>{saveState === "error" ? "重试保存" : saving ? "正在保存…" : "保存版本"}</button> : null}
+                taskActions={leaf === "expansion" && expansionTask?.status === "ready" ? <>
+                  <span className="notebook-expansion-selection" role="status">待收下 {pendingExpansionDrafts.length} 篇 · 未选中的仍是草稿</span>
+                  <button type="button" className="button primary" disabled={expansionReviewSaving || !pendingExpansionDrafts.length} onClick={() => void confirmNoteExpansionDrafts()}>{expansionReviewSaving ? "正在保存…" : `确认收下 ${pendingExpansionDrafts.length} 篇`}</button>
+                </> : null}
+                sourceAction={<button type="button" className="text-action" aria-expanded={sourceBagOpen} onClick={() => setSourceBagOpen(!sourceBagOpen)}><Link2 size={16} aria-hidden="true" />资料袋</button>}
+                generationAction={generationAction}
+                extraActions={<>
+                  <button type="button" className="text-action" onClick={() => { rememberReadingPosition(); closeSidePage(); setLeaf("history"); }}><Clock3 size={14} aria-hidden="true" />学习记录</button>
+                  {annotationDraft.draft ? <button type="button" className="text-action" onClick={() => setAnnotationDraftOpen(true)}><PencilLine size={14} aria-hidden="true" />继续写批注</button> : null}
+                  {versionAndOptionsToggles}
+                </>}
+                tools={isNoteEditingMode(mode) && leaf === "reading" && learningView === "body" ? editChrome : null}
+                status={<><span className={dirty || saveState === "error" ? "tag red" : "tag"}>{dirty || saveState === "error" ? "草稿" : "已同步"}</span>
+                  <span role="status">{saveLabel}</span>
+                  {!editable ? <span className="tag">只读</span> : null}
+                  <NotebookPresence peers={noteDocLive.presencePeers} selfName={presenceName} />{shareStateControls}</>}
+                scrollRef={leafScrollRef}
+                sidePage={historyOpen ? { kind: "history", title: "版本历史", closeLabel: "收起版本历史", onClose: () => setHistoryOpen(false), content: historyPaper } : sourceBagOpen ? { kind: "source", title: "资料袋", closeLabel: "合起资料袋", onClose: () => setSourceBagOpen(false), content: <>
+                  <h3>原始资料</h3><p>{sourceTitle}</p>{clips}
+                  {note.sourceId ? <button type="button" className="button" onClick={openSource}>打开只读原始资料</button> : null}
+                </> } : annotationSidePage ? { kind: "annotation", title: annotationDraftOpen ? "写批注" : openCompanionExplanation ? "伴星解释" : "原句批注", closeLabel: "收起批注", onClose: closeSidePage, content: annotationSidePage } : null}
+              >
+                {learningEntry.choice ? <NotebookVersionChoice kind={learningEntry.choice} version={note.currentVersion.versionNo}
+                  canSave={canSave} saving={learningEntry.saving} error={learningEntry.error} hasChanges={readingUnversionedContent || dirty} existing={learningEntry.existing}
+                  onSaved={learningEntry.startSaved} onSave={() => void learningEntry.saveAndStart()} onDismiss={learningEntry.dismiss} /> : null}
+                <div hidden={leaf !== "reading" || learningView !== "body" || !isNoteEditingMode(mode)}>{editPageBody}</div>
+                <div hidden={leaf === "reading" && learningView === "body" && isNoteEditingMode(mode)}>{readPageBody}</div>
+              </NotebookDesk>
+              {selectedPassage && leaf === "reading" && learningView === "body" && mode === "preview" ? <NotebookSelectionActions
+                range={selectedPassage.range} scrollRef={leafScrollRef} hasAnchor={Boolean(selectedPassage.anchor)} dirty={dirty} busy={annotationTaskStarting}
+                companionPending={Boolean(selectedPassage.anchor && noteCompanionExplanations.some(item => (noteExplanationBusy(item) || item.phase === "save-error") && noteAnchorsOverlap(item.target.anchor, selectedPassage.anchor!)))}
+                onExplain={() => { explainSelectedPassage(); setSelectedPassage(null); window.getSelection()?.removeAllRanges(); }}
+                onWrite={() => { if (selectedPassage.anchor) { annotationDraft.start(selectedPassage.anchor); setAnnotationDraftOpen(true); setSelectedPassage(null); window.getSelection()?.removeAllRanges(); } }}
+                onAskCompanion={askCompanionAboutSelectedPassage} onDismiss={() => { setSelectedPassage(null); window.getSelection()?.removeAllRanges(); }} /> : null}
             </>
           ) : null}
           {/* 阅读页的图片画廊：点击正文任一张图进入，左右切换整篇的图。
@@ -4502,7 +4175,7 @@ export function NotebookSurface() {
             />
           ) : null}
         </article>
-      </HudPage>
+      </main>
       {generationSetup}
     </>
   );

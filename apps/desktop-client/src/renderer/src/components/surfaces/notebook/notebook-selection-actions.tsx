@@ -1,56 +1,54 @@
-/**
- * 选中一段原文之后浮出来的那一排：讲讲这句 / 问伴星 / 收起。
- *
- * ## 为什么从 `notebook-surface.tsx` 拆出来（2026-09-29）
- *
- * 20 行、只有 2 个外部符号（`excerpt` 与本页的 props）。它是**选句之后唯一的那一排**，
- * 三颗动作挤在一个 `role="group"` 里——拆出来就更容易看出「主动作只有一颗」。
- *
- * ## 三条不许动
- *
- *  1. **`onPointerDown` 那个 `preventDefault()`**：不挡它，按钮会在指针按下的瞬间
- *     把选区收掉，于是 `onClick` 永远不触发——这一排**点不动**。
- *  2. **选区跨段时不给「讲讲这句」，改说「请选同一段里的句子」**。跨段的解释贴不回原文，
- *     给一颗点不动的按钮不如说清为什么。
- *  3. **「问伴星」与「收起」都不带主色**。这一屏的主动作是「讲讲这句」；
- *     同一排里出现第二颗同重按钮，分主次就失效了（`renderer-primary-action-guard` 盯着）。
- */
-import type { ReactElement } from "react";
-import { MessageCircle, X } from "lucide-react";
+import { useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
+import { MessageCircle, PencilLine, Sparkles, X } from "lucide-react";
+import { useNotebookPaperMotion } from "./use-notebook-paper-motion";
 
+/** A selection is a temporary paper slip, anchored to the visible end of the selection. */
 export function NotebookSelectionActions(props: {
-  /** 选中的那句，最多印 90 字。 */
-  readonly excerptText: string;
-  /** 有没有落在同一段里的锚点。没有就不给「讲讲这句」。 */
+  readonly range: Range;
+  readonly scrollRef: RefObject<HTMLDivElement | null>;
   readonly hasAnchor: boolean;
-  readonly busy: boolean | undefined;
-  /** 有没保存的改动——有的话先存再讲。 */
-  readonly dirty: boolean | undefined;
-  readonly onExplain: (() => void) | undefined;
-  readonly onAskCompanion: (() => void) | undefined;
-  readonly onDismiss: (() => void) | undefined;
-}): ReactElement {
-  const {
-    excerptText, hasAnchor, busy, dirty, onExplain, onAskCompanion, onDismiss,
-  } = props;
-  return (
-    <div className="notebook-selection-actions" data-note-selection-action="true" role="group" aria-label="已选原文">
-      <q className="notebook-selection-actions__excerpt">{excerptText}</q>
-      {hasAnchor ? (
-        <button type="button" className="notebook-selection-actions__main"
-          disabled={busy || dirty || onExplain === undefined}
-          title={dirty ? "先保存改动，再讲这句" : "把解释贴在原句旁边"}
-          onPointerDown={(event) => event.preventDefault()}
-          onClick={onExplain}>
-          {busy ? "正在准备…" : "讲讲这句"}
-        </button>
-      ) : <span className="notebook-selection-actions__reason">请选同一段里的句子，才能贴回原文。</span>}
-      <button type="button" className="notebook-selection-actions__companion"
-        onPointerDown={(event) => event.preventDefault()} onClick={onAskCompanion} disabled={onAskCompanion === undefined}>
-        <MessageCircle size={14} aria-hidden="true" />问伴星
-      </button>
-      <button type="button" className="notebook-selection-actions__dismiss" aria-label="收起选句操作"
-        onPointerDown={(event) => event.preventDefault()} onClick={onDismiss} disabled={onDismiss === undefined}><X size={14} aria-hidden="true" /></button>
-    </div>
-  );
+  readonly busy: boolean;
+  readonly dirty: boolean;
+  readonly companionPending?: boolean;
+  readonly onExplain: () => void;
+  readonly onWrite: () => void;
+  readonly onAskCompanion: () => void;
+  readonly onDismiss: () => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [position, setPosition] = useState<{ left: number; top: number; maxWidth: number } | null>(null);
+  const play = useNotebookPaperMotion();
+  useLayoutEffect(() => {
+    const update = () => {
+      const paper = props.scrollRef.current, slip = ref.current;
+      if (!paper || !slip) return;
+      const viewport = paper.getBoundingClientRect();
+      const rects = Array.from(props.range.getClientRects());
+      const visible = rects.filter(rect => rect.bottom > viewport.top && rect.top < viewport.bottom);
+      const anchor = visible.at(-1) ?? props.range.getBoundingClientRect();
+      const leftEdge = Math.max(12, viewport.left + 8), rightEdge = Math.min(window.innerWidth - 12, viewport.right - 8);
+      const topEdge = Math.max(12, viewport.top + 8), bottomEdge = Math.min(window.innerHeight - 12, viewport.bottom - 8);
+      const maxWidth = Math.max(0, rightEdge - leftEdge);
+      slip.style.maxWidth = `${maxWidth}px`;
+      const left = Math.max(leftEdge, Math.min(anchor.left, rightEdge - slip.offsetWidth));
+      const below = anchor.bottom + 8;
+      const top = Math.max(topEdge, Math.min(below + slip.offsetHeight > bottomEdge ? anchor.top - slip.offsetHeight - 8 : below, bottomEdge - slip.offsetHeight));
+      setPosition({ left, top, maxWidth });
+    };
+    update();
+    props.scrollRef.current?.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => { props.scrollRef.current?.removeEventListener("scroll", update); window.removeEventListener("resize", update); };
+  }, [props.range, props.scrollRef]);
+  useLayoutEffect(() => { if (position) play(ref.current, "fold"); }, [Boolean(position), play]);
+  return createPortal(<div className="notebook-selection-actions" data-note-selection-action="true" ref={ref} role="group" aria-label="已选原文"
+    style={position ?? { visibility: "hidden" }} onPointerDown={event => event.preventDefault()}
+    onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); props.onDismiss(); } }}>
+    <button type="button" className="text-action" disabled={!props.hasAnchor || props.dirty || props.busy} title={props.dirty ? "先保存版本，再贴回原文" : "解释选中的这段话"} onClick={props.onExplain}><Sparkles size={15} aria-hidden="true" />{props.busy ? "正在准备…" : props.companionPending ? "查看解释进度" : "讲讲这段话"}</button>
+    <button type="button" className="text-action" disabled={!props.hasAnchor || props.dirty} onClick={props.onWrite}><PencilLine size={15} aria-hidden="true" />写批注</button>
+    <button type="button" className="text-action" disabled={props.busy} onClick={props.onAskCompanion}><MessageCircle size={15} aria-hidden="true" />{props.companionPending ? "伴星正在解释" : "发给伴星"}</button>
+    <button type="button" className="text-action" aria-label="收起选句操作" onClick={props.onDismiss}><X size={15} aria-hidden="true" /></button>
+    {!props.hasAnchor ? <span className="notebook-selection-actions__reason">选区位置未能核对，或超过 2000 字。请重新选择。</span> : props.dirty ? <span className="notebook-selection-actions__reason">先保存当前版本，才能将批注贴回原文。</span> : null}
+  </div>, document.body);
 }

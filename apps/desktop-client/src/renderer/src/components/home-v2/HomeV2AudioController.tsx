@@ -381,20 +381,60 @@ export function HomeV2AudioController() {
   }, [stopVoicePlayback]);
 
   useEffect(() => {
-    const unlock = (event: Event) => {
-      if (!event.isTrusted || graphRef.current) return;
+    let disposed = false;
+    let interacted = false;
+    let idle: number | null = null;
+    let timer: number | null = null;
+    const prepare = () => {
+      idle = null;
+      timer = null;
+      if (disposed) return;
       try {
-        const graph = buildAmbientGraph();
+        const graph = graphRef.current ?? buildAmbientGraph();
         graphRef.current = graph;
-        void graph.context.resume().catch(() => undefined);
-        setUnlocked(true);
-      } catch {
+        if (interacted) {
+          void graph.context.resume().catch(() => undefined);
+          setUnlocked(true);
+        } else {
+          // Warm the device and noise buffers before the first click; keep
+          // playback locked until a real user gesture has arrived.
+          void graph.context.suspend().catch(() => undefined);
+        }
+      } catch (err) {
         // Audio is progressive enhancement; the room and controls stay usable.
+        //
+        // 但**不要静默**：这里以前是 `catch {}`，一旦建图失败，`graphRef` 永远是
+        // null，于是 `synthesize` / `synthesizeSegment` 每次都在**本地**抛
+        // 「语音通道还没准备好」——一个请求都到不了服务端，日志里一条 TTS 错误
+        // 都没有，而用户只看到「语音合成失败，已继续显示文字」。这种"哪儿都查不到
+        // 原因"的形态比建图失败本身更贵。
+        console.warn("[companion-voice] audio graph build failed", err);
       }
     };
+    const schedule = () => {
+      if (idle !== null || timer !== null) return;
+      if (typeof window.requestIdleCallback === "function") idle = window.requestIdleCallback(prepare);
+      else timer = window.setTimeout(prepare, 100);
+    };
+    const unlock = (event: Event) => {
+      if (!event.isTrusted) return;
+      interacted = true;
+      const graph = graphRef.current;
+      if (graph) {
+        void graph.context.resume().catch(() => undefined);
+        setUnlocked(true);
+      } else schedule();
+    };
+    // Creating AudioContext synchronously in pointerdown blocked the first
+    // navigation for ~186ms on the test machine. The event only unlocks a
+    // prepared graph now; a very early click still never constructs one.
+    schedule();
     window.addEventListener("pointerdown", unlock, { capture: true, once: true });
     window.addEventListener("keydown", unlock, { capture: true, once: true });
     return () => {
+      disposed = true;
+      if (idle !== null) window.cancelIdleCallback(idle);
+      if (timer !== null) window.clearTimeout(timer);
       window.removeEventListener("pointerdown", unlock, true);
       window.removeEventListener("keydown", unlock, true);
       const graph = graphRef.current;
@@ -436,27 +476,46 @@ export function HomeV2AudioController() {
   const activePlaybackRef = useRef<{ context: AudioContext; startedAt: number; duration: number } | null>(null);
   userInitiatedAudibleRef.current = userInitiatedAudible;
 
+  /**
+   * 取出音频图；没有就**当场建一个**。
+   *
+   * 为什么不能只报「语音通道还没准备好」了事：建图只在第一次 pointerdown/keydown
+   * 时做一次，那一次若因为任何原因失败（AudioContext 不可用、采样资源缺失），
+   * `graphRef` 就永远是 null，此后**每一次**朗读都在本地抛错——一个请求都发不出去，
+   * 而用户只看到「语音合成失败」。这里按需重建，把"一次失败"降级成"一次重试"。
+   */
+  const ensureGraph = useCallback((): HomeV2AudioGraph => {
+    const existing = graphRef.current;
+    if (existing) return existing;
+    const built = buildAmbientGraph();
+    graphRef.current = built;
+    void built.context.resume().catch(() => undefined);
+    setUnlocked(true);
+    return built;
+  }, []);
+
   const synthesizeVoice = useCallback(async (text: string): Promise<AudioBuffer> => {
     const speakApi = window.ailearn?.companion?.voice?.speak;
-    const graph = graphRef.current;
-    if (!speakApi || !graph) throw new Error("语音通道还没准备好");
+    if (!speakApi) throw new Error("语音通道还没准备好");
+    // 图按需建：第一次解锁失败不该让这一整轮会话都没有声音。
+    const graph = ensureGraph();
     const response = await speakApi.call(window.ailearn.companion.voice, {
       meta: createRequestMeta(workspaceEpochRef.current ?? undefined),
       request: { version: 1, text },
     });
     return decodeBase64Audio(graph.context, unwrapGatewayResult(response).audioBase64);
-  }, []);
+  }, [ensureGraph]);
 
   const synthesizeVoiceSegment = useCallback(async (request: CompanionVoiceSpeakSegmentRequestV2): Promise<AudioBuffer> => {
     const speakApi = window.ailearn?.companion?.voice?.speakSegment;
-    const graph = graphRef.current;
-    if (!speakApi || !graph) throw new Error("语音通道还没准备好");
+    if (!speakApi) throw new Error("语音通道还没准备好");
+    const graph = ensureGraph();
     const response = await speakApi.call(window.ailearn.companion.voice, {
       meta: createRequestMeta(workspaceEpochRef.current ?? undefined),
       request,
     });
     return decodeBase64Audio(graph.context, unwrapGatewayResult(response).audioBase64);
-  }, []);
+  }, [ensureGraph]);
 
   /**
    * 一段音频的结局上报（0247）。不 await、不 unwrap、不抛——**上报反噬朗读**是

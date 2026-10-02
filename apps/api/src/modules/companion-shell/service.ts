@@ -148,6 +148,7 @@ function serializeAccount(row: AccountRow): CompanionAccountStateV1 {
     revision: row.revision,
     epoch: row.epoch,
     globalEnabled: row.globalEnabled,
+    diaryEnabled: row.diaryEnabled,
     presence: row.presence ?? undefined,
     suggestionPause: row.suggestionPause ?? undefined,
     suppression: row.suppression ?? undefined,
@@ -170,6 +171,7 @@ function emptyAccountState(): CompanionAccountStateV1 {
     revision: 0,
     epoch: 0,
     globalEnabled: true,
+    diaryEnabled: true,
     interventionLevel: "moderate",
     quietHours: undefined,
     agentSettings: defaultAgentSettings(),
@@ -624,12 +626,14 @@ export async function updateCompanionAccountState(
         );
       }
       const [created] = await tx
-        .insert(userCompanionAccountState)
-        .values({
-          userId,
-          revision: 1,
-          epoch: patch.globalEnabled === false ? 1 : 0,
-          globalEnabled: patch.globalEnabled ?? true,
+      .insert(userCompanionAccountState)
+      .values({
+        userId,
+        revision: 1,
+        epoch: patch.globalEnabled === false ? 1 : 0,
+        globalEnabled: patch.globalEnabled ?? true,
+        diaryEnabled: patch.diaryEnabled ?? true,
+        diaryEnabledSince: (patch.globalEnabled ?? true) && (patch.diaryEnabled ?? true) ? now : null,
           presence: patch.presence ?? null,
           suggestionPause: patch.suggestionPause ?? null,
           suppression: patch.suppression ?? null,
@@ -662,6 +666,13 @@ export async function updateCompanionAccountState(
     }
 
     const globalOffApplied = row.globalEnabled && patch.globalEnabled === false;
+    const nextGlobalEnabled = patch.globalEnabled ?? row.globalEnabled;
+    const nextDiaryEnabled = patch.diaryEnabled ?? row.diaryEnabled;
+    const diaryEnabledSince = nextGlobalEnabled && nextDiaryEnabled
+      ? (!row.globalEnabled || !row.diaryEnabled || row.diaryEnabledSince === null
+        ? now
+        : row.diaryEnabledSince)
+      : null;
     const parsedAgentSettings = companionAgentSettingsV1Schema.safeParse(row.agentSettings);
     const currentAgentSettings = parsedAgentSettings.success
       ? parsedAgentSettings.data
@@ -669,7 +680,9 @@ export async function updateCompanionAccountState(
     const [updated] = await tx
       .update(userCompanionAccountState)
       .set({
-        globalEnabled: patch.globalEnabled ?? row.globalEnabled,
+        globalEnabled: nextGlobalEnabled,
+        diaryEnabled: nextDiaryEnabled,
+        diaryEnabledSince,
         presence: patch.presence !== undefined ? patch.presence : row.presence,
         suggestionPause: patch.suggestionPause !== undefined
           ? patch.suggestionPause

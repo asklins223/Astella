@@ -165,6 +165,15 @@ function bindTaskSlotToStream(
  *
  * `queueKey` 为空直接 fail closed：曾经用"缺省键"兜底会让所有调用方悄悄退回
  * 全局串行，那正是要修掉的语义，不该有静默回退路径。
+ *
+ * 2026-10-02（41a）：**这一条没有接到统一内核，而且是有理由的。**
+ * 它返回的是一条**用户还在听的** `ReadableStream`，而内核的步预算会在
+ * `stepTimeoutMs` 到达时收口——套上去等于在音频播到一半时把这一发判成超时。
+ * 本文件里的流经 `tts-engine.ts` 的 `synthesizeTtsBytes` **收齐字节**之后，
+ * 那条**有界**路径已经接到内核上了；`/voice/tts/stream` 这条流式的没有。
+ * 要接它，先得给内核一个"步骤已完成、但产物还活着"的形状，那是内核合同本身的
+ * 改动，不该藏在一个 provider 的接线里。理由的完整版见 `edge-tts.ts` 的
+ * `edgeTtsSynthesizeStream`。
  */
 export async function qwenTtsSynthesizeStreamForUser(
   queueKey: string,

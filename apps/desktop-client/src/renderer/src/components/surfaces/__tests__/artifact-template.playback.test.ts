@@ -54,6 +54,7 @@ test("条数由我们自己渲染出来的文字等价数出，不向产物要",
   runInNewContext(script, {
     document,
     parent: frameParent,
+    getComputedStyle: window.getComputedStyle.bind(window),
     setInterval: vi.fn(),
     window: {
       matchMedia: () => ({ matches: true }),
@@ -75,6 +76,7 @@ test("产物没声明条数时退回数文字等价的条数，而不是数成 0
   runInNewContext(script, {
     document,
     parent: frameParent,
+    getComputedStyle: window.getComputedStyle.bind(window),
     setInterval: vi.fn(),
     window: { matchMedia: () => ({ matches: true }), parent: frameParent, addEventListener: vi.fn() },
   });
@@ -97,6 +99,7 @@ test("reduced 只转给产物自己声明的钩子，模板不重排 DOM", () =>
   runInNewContext(script, {
     document,
     parent: frameParent,
+    getComputedStyle: window.getComputedStyle.bind(window),
     setInterval: vi.fn(),
     window: {
       matchMedia: () => ({ matches: true }),
@@ -132,6 +135,7 @@ test("产物没声明钩子时模板不报错，也不重排 DOM", () => {
   runInNewContext(script, {
     document,
     parent: frameParent,
+    getComputedStyle: window.getComputedStyle.bind(window),
     setInterval: vi.fn(),
     window: {
       matchMedia: () => ({ matches: true }),

@@ -1,3 +1,4 @@
+
 import { describe, expect, it } from "vitest";
 import {
   applyHomography,
@@ -11,16 +12,12 @@ import {
   unprojectScreenPoint,
   type SceneQuad,
 } from "../scene-geometry.ts";
-import {
-  NOTEBOOK_SURFACE_REGISTRY,
-  NOTEBOOK_SURFACE_STYLES,
-  REVIEW_SURFACE_REGISTRY,
-  SEARCH_SURFACE_REGISTRY,
-  SEARCH_SURFACE_STYLES,
-  STUDY_SURFACE_REGISTRY,
-  STUDY_SURFACE_STYLES,
-  surfaceLocalQuad,
-} from "../scene-surfaces.ts";
+
+/* 2026-10-01：这个文件原先还挂着四段 SurfaceRegistry 断言（Review / Study / Notebook /
+   Search），它们测的是 `scene/scene-surfaces.ts` 与四份 `scene/*-surfaces.json` ——
+   那条链随旧书房底板与 Pixi 渲染切片一起删除，无任何运行时调用方。与其留一具引用
+   空模块的骨架，不如把这四段一并带走。剩下的是 `scene-geometry.ts` 本身的��何判据
+   （舞台矩阵 / 房间层登记 / 单应），那一半仍由 `RoomStage` 与 manifest 消费。 */
 
 describe("computeStageMatrix", () => {
   it("uses one centered cover matrix for the 1672×941 room world", () => {
@@ -114,204 +111,5 @@ describe("homography", () => {
     expect(isConvexSceneQuad(collapsed)).toBe(false);
     expect(isConvexSceneQuad(bowTie)).toBe(false);
     expect(solveHomography(source, bowTie)).toBeNull();
-  });
-});
-
-describe("Review SurfaceRegistry", () => {
-  it("keeps all five Review surfaces in the canonical room coordinate space", () => {
-    expect(REVIEW_SURFACE_REGISTRY.coordinateSpace).toMatchObject({
-      id: "room-1672x941",
-      width: 1672,
-      height: 941,
-      fitMode: "cover",
-    });
-    expect(Object.keys(REVIEW_SURFACE_REGISTRY.surfaces)).toEqual([
-      "tapeHeader",
-      "tapeBody",
-      "tapeFooter",
-      "notebookLeft",
-      "notebookRight",
-    ]);
-    expect(REVIEW_SURFACE_REGISTRY.assetHashes.day).toHaveLength(64);
-    expect(REVIEW_SURFACE_REGISTRY.assetHashes.night).toHaveLength(64);
-
-    for (const surface of Object.values(REVIEW_SURFACE_REGISTRY.surfaces)) {
-      expect(surface.coordinateSpace).toBe("room-1672x941");
-      expect(isConvexSceneQuad(surface.quad)).toBe(true);
-      expect(isConvexSceneQuad(surfaceLocalQuad(surface))).toBe(true);
-    }
-  });
-
-  it("preserves the measured left-page rise toward the gutter", () => {
-    const localQuad = surfaceLocalQuad(REVIEW_SURFACE_REGISTRY.surfaces.notebookLeft);
-
-    expect(localQuad[0]).toEqual([0, 0]);
-    expect(localQuad[1][0]).toBeCloseTo(1, 5);
-    expect(localQuad[1][1]).toBeCloseTo(-0.105, 5);
-    expect(localQuad[3][1]).toBeCloseTo(0.92, 5);
-  });
-
-  it("segments the tape continuously while preserving its progressive fan", () => {
-    const { tapeHeader, tapeBody, tapeFooter } = REVIEW_SURFACE_REGISTRY.surfaces;
-
-    expect(tapeHeader.sourceRect.y + tapeHeader.sourceRect.height).toBeCloseTo(tapeBody.sourceRect.y, 6);
-    expect(tapeBody.sourceRect.y + tapeBody.sourceRect.height).toBeCloseTo(tapeFooter.sourceRect.y, 6);
-    expect(tapeHeader.sourceRect.height + tapeBody.sourceRect.height + tapeFooter.sourceRect.height)
-      .toBeCloseTo(REVIEW_SURFACE_REGISTRY.tapeBounds.height, 6);
-
-    const localBody = surfaceLocalQuad(tapeBody);
-    const topWidth = localBody[1][0] - localBody[0][0];
-    const bottomWidth = localBody[2][0] - localBody[3][0];
-    expect(localBody[3][0]).toBeLessThan(localBody[0][0]);
-    expect(bottomWidth).toBeLessThan(topWidth);
-  });
-
-  it("accepts a valid development-time world-quad override without mutating the registry", () => {
-    const surface = REVIEW_SURFACE_REGISTRY.surfaces.tapeHeader;
-    const override: SceneQuad = [
-      [surface.quad[0][0] + 1, surface.quad[0][1]],
-      surface.quad[1],
-      surface.quad[2],
-      surface.quad[3],
-    ];
-
-    expect(surfaceLocalQuad(surface, override)[0][0]).toBeCloseTo(
-      (override[0][0] - surface.sourceRect.x) / surface.sourceRect.width,
-      8,
-    );
-    expect(surface.quad[0][0]).not.toBe(override[0][0]);
-  });
-});
-
-describe("Study SurfaceRegistry", () => {
-  it("registers both notebook pages and the source slip in the canonical room world", () => {
-    expect(STUDY_SURFACE_REGISTRY.coordinateSpace).toMatchObject({
-      id: "room-1672x941",
-      width: 1672,
-      height: 941,
-      fitMode: "cover",
-    });
-    expect(Object.keys(STUDY_SURFACE_REGISTRY.surfaces)).toEqual([
-      "notebookLeft",
-      "notebookRight",
-      "sourceSlip",
-    ]);
-    expect(Object.keys(STUDY_SURFACE_REGISTRY.assetHashes)).toEqual(["day", "night", "notebook"]);
-
-    for (const surface of Object.values(STUDY_SURFACE_REGISTRY.surfaces)) {
-      expect(surface.coordinateSpace).toBe("room-1672x941");
-      expect(surface.assetRevision).toBe(STUDY_SURFACE_REGISTRY.assetRevision);
-      expect(isConvexSceneQuad(surface.quad)).toBe(true);
-      expect(isConvexSceneQuad(surfaceLocalQuad(surface))).toBe(true);
-    }
-  });
-
-  it("keeps each page independent around the physical gutter", () => {
-    const left = STUDY_SURFACE_REGISTRY.surfaces.notebookLeft.quad;
-    const right = STUDY_SURFACE_REGISTRY.surfaces.notebookRight.quad;
-
-    expect(left[1][1]).toBeGreaterThan(left[0][1]);
-    expect(left[2][1]).toBeGreaterThan(left[3][1]);
-    expect(right[0][1]).toBeGreaterThan(right[1][1]);
-    expect(right[3][1]).toBeGreaterThan(right[2][1]);
-    expect(right[0][0] - left[1][0]).toBeLessThan(40);
-  });
-
-  it("carries calibrated content insets into the generated surface style", () => {
-    expect(STUDY_SURFACE_STYLES.notebookLeft["--scene-content-top"]).toBe("13%");
-    expect(STUDY_SURFACE_STYLES.notebookRight["--scene-content-left"]).toBe("11.5%");
-    expect(STUDY_SURFACE_STYLES.sourceSlip["--scene-content-right"]).toBe("5.5%");
-  });
-});
-
-describe("Notebook editor SurfaceRegistry", () => {
-  it("registers the editable page, action page and provenance slip in the shared room world", () => {
-    expect(NOTEBOOK_SURFACE_REGISTRY.coordinateSpace).toMatchObject({
-      id: "room-1672x941",
-      width: 1672,
-      height: 941,
-      fitMode: "cover",
-    });
-    expect(Object.keys(NOTEBOOK_SURFACE_REGISTRY.surfaces)).toEqual([
-      "editorPage",
-      "actionPage",
-      "sourceSlip",
-    ]);
-    expect(Object.keys(NOTEBOOK_SURFACE_REGISTRY.assetHashes)).toEqual([
-      "day",
-      "night",
-      "notebook",
-      "paperFibres",
-    ]);
-
-    for (const surface of Object.values(NOTEBOOK_SURFACE_REGISTRY.surfaces)) {
-      expect(surface.coordinateSpace).toBe("room-1672x941");
-      expect(surface.assetRevision).toBe(NOTEBOOK_SURFACE_REGISTRY.assetRevision);
-      expect(isConvexSceneQuad(surface.quad)).toBe(true);
-      expect(isConvexSceneQuad(surfaceLocalQuad(surface))).toBe(true);
-    }
-  });
-
-  it("keeps the editable page and action page independent around the gutter", () => {
-    const editor = NOTEBOOK_SURFACE_REGISTRY.surfaces.editorPage.quad;
-    const action = NOTEBOOK_SURFACE_REGISTRY.surfaces.actionPage.quad;
-
-    expect(editor[1][1]).toBeGreaterThan(editor[0][1]);
-    expect(action[0][1]).toBeGreaterThan(action[1][1]);
-    expect(action[0][0] - editor[1][0]).toBeLessThan(40);
-    expect(NOTEBOOK_SURFACE_REGISTRY.surfaces.sourceSlip.sourceRect.x).toBeGreaterThan(action[0][0]);
-  });
-
-  it("keeps editable controls inside calibrated content safe areas", () => {
-    expect(NOTEBOOK_SURFACE_STYLES.editorPage["--scene-content-left"]).toBe("12%");
-    expect(NOTEBOOK_SURFACE_STYLES.actionPage["--scene-content-bottom"]).toBe("11%");
-    expect(NOTEBOOK_SURFACE_STYLES.sourceSlip["--scene-content-top"]).toBe("12%");
-  });
-});
-
-describe("Search catalog SurfaceRegistry", () => {
-  it("registers the query ledger, two result shelves and boundary slip in the shared room world", () => {
-    expect(SEARCH_SURFACE_REGISTRY.coordinateSpace).toMatchObject({
-      id: "room-1672x941",
-      width: 1672,
-      height: 941,
-      fitMode: "cover",
-    });
-    expect(Object.keys(SEARCH_SURFACE_REGISTRY.surfaces)).toEqual([
-      "queryLedger",
-      "upperShelf",
-      "lowerShelf",
-      "boundarySlip",
-    ]);
-    expect(Object.keys(SEARCH_SURFACE_REGISTRY.assetHashes)).toEqual([
-      "day",
-      "foreground.day",
-      "foreground.night",
-      "night",
-    ]);
-
-    for (const surface of Object.values(SEARCH_SURFACE_REGISTRY.surfaces)) {
-      expect(surface.coordinateSpace).toBe("room-1672x941");
-      expect(surface.assetRevision).toBe(SEARCH_SURFACE_REGISTRY.assetRevision);
-      expect(isConvexSceneQuad(surface.quad)).toBe(true);
-      expect(isConvexSceneQuad(surfaceLocalQuad(surface))).toBe(true);
-    }
-  });
-
-  it("keeps catalog surfaces ordered across the reference wall", () => {
-    const { queryLedger, upperShelf, lowerShelf, boundarySlip } = SEARCH_SURFACE_REGISTRY.surfaces;
-
-    expect(boundarySlip.sourceRect.y + boundarySlip.sourceRect.height).toBeLessThanOrEqual(queryLedger.sourceRect.y);
-    expect(queryLedger.sourceRect.y + queryLedger.sourceRect.height).toBeLessThanOrEqual(upperShelf.sourceRect.y);
-    expect(upperShelf.sourceRect.y + upperShelf.sourceRect.height).toBeLessThanOrEqual(lowerShelf.sourceRect.y);
-    expect(queryLedger.quad[0][1]).toBeGreaterThan(queryLedger.quad[1][1]);
-    expect(lowerShelf.quad[3][1]).toBeGreaterThan(lowerShelf.quad[2][1]);
-  });
-
-  it("carries readable safe areas into every projected shelf surface", () => {
-    expect(SEARCH_SURFACE_STYLES.queryLedger["--scene-content-left"]).toBe("5.5%");
-    expect(SEARCH_SURFACE_STYLES.upperShelf["--scene-content-top"]).toBe("8%");
-    expect(SEARCH_SURFACE_STYLES.lowerShelf["--scene-content-bottom"]).toBe("3%");
-    expect(SEARCH_SURFACE_STYLES.boundarySlip["--scene-content-right"]).toBe("8%");
   });
 });

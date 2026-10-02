@@ -64,7 +64,7 @@ const CSS_ON_DISK = walk(root, /\.css$/).map((f) => `./${f.slice(root.length + 1
 const entry = read(ENTRY);
 const listed = [...entry.matchAll(/import\s+"([^"]*\.css)"/g)].map((m) => m[1]);
 
-/** 第三方样式：随包发布，只能跟着用到它的那个模块走。 */
+/** 第三方样式也从唯一入口加载；完整性检查区分包样式与仓库样式。 */
 const THIRD_PARTY = ["@milkdown/kit/prose/view/style/prosemirror.css"];
 
 const componentImports: { file: string; spec: string }[] = [];
@@ -73,9 +73,7 @@ for (const file of TS_FILES) {
   if (abs === resolve(ENTRY) || abs === resolve(MAIN)) continue;
   const source = readFileSync(file, "utf8");
   for (const match of source.matchAll(/import\s+"([^"]*\.css)"/g)) {
-    if (!THIRD_PARTY.includes(match[1])) {
-      componentImports.push({ file: file.slice(root.length + 1), spec: match[1] });
-    }
+    componentImports.push({ file: file.slice(root.length + 1), spec: match[1] });
   }
 }
 
@@ -88,7 +86,7 @@ describe("样式表只从一个地方进来", () => {
     expect(listed.length, "styles.ts 里的清单太短").toBeGreaterThanOrEqual(20);
     // 清单条数与磁盘条数必须对得上——对不上说明有一边扫漏了，
     // 而「清单完整」那条判据恰好是**空集通过**，绿得毫无意义。
-    expect(listed.length, "清单条数与磁盘上的样式表数不一致").toBe(CSS_ON_DISK.length);
+    expect(listed.filter((spec) => !THIRD_PARTY.includes(spec)).length, "清单条数与磁盘上的样式表数不一致").toBe(CSS_ON_DISK.length);
   });
 
   it("清单完整：磁盘上每份样式表都被 styles.ts 引了（漏一份 = 它永远不加载）", () => {
@@ -97,13 +95,17 @@ describe("样式表只从一个地方进来", () => {
   });
 
   it("清单里没有指向不存在文件的条目（清单写了但文件不在 = 构建会红）", () => {
-    const ghost = listed.filter((spec) => !CSS_ON_DISK.includes(spec));
+    const ghost = listed.filter((spec) => !CSS_ON_DISK.includes(spec) && !THIRD_PARTY.includes(spec));
     expect(ghost, `styles.ts 引了这些样式表，但磁盘上没有：\n  ${ghost.join("\n  ")}`).toEqual([]);
   });
 
   it("每份样式表只被引一次（同一份引两次 = 其中一次的意图不明）", () => {
     const dupes = listed.filter((spec, i) => listed.indexOf(spec) !== i);
     expect(dupes, `这些样式表在清单里出现了不止一次：${dupes.join(", ")}`).toEqual([]);
+  });
+
+  it("第三方编辑器样式也进入唯一清单", () => {
+    for (const spec of THIRD_PARTY) expect(listed).toContain(spec);
   });
 
   it("组件模块不再 import CSS（顺序只能来自 styles.ts 一处）", () => {

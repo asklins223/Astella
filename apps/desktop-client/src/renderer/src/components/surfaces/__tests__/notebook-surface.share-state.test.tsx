@@ -72,7 +72,7 @@ function stub(noteOver: Record<string, unknown> = {}) {
   return { setShare };
 }
 
-async function open(mode: "read" | "edit") {
+async function open(mode: "preview" | "live-preview") {
   useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode } });
   vi.useFakeTimers();
   render(<NotebookSurface />);
@@ -95,7 +95,7 @@ describe("笔记页的归属状态", () => {
   it("阅读态也报这一位的归属，并给得出动作", async () => {
     stub();
     useRoomStore.setState({ spaceIdentity: { name: "验收空间", role: "owner", isPersonal: false } });
-    await open("read");
+    await open("preview");
     expect(byText("仅自己可见")).toBe(true);
     expect(byText("共享给空间")).toBe(true);
   });
@@ -103,7 +103,7 @@ describe("笔记页的归属状态", () => {
   it("个人空间里这一位整个不出现（没有人可共享）", async () => {
     stub();
     useRoomStore.setState({ spaceIdentity: { name: "我的空间", role: "owner", isPersonal: true } });
-    await open("read");
+    await open("preview");
     expect(byText("仅自己可见")).toBe(false);
     expect(byText("共享给空间")).toBe(false);
   });
@@ -111,14 +111,14 @@ describe("笔记页的归属状态", () => {
   it("编辑态仍然看得见（这一位不该只活在一侧）", async () => {
     stub();
     useRoomStore.setState({ spaceIdentity: { name: "验收空间", role: "owner", isPersonal: false } });
-    await open("edit");
+    await open("live-preview");
     expect(byText("仅自己可见")).toBe(true);
   });
 
   it("成员（不能写）在阅读态看到的是禁用 + 原因，不是空白", async () => {
     stub({ permissions: { canEdit: false, canSave: false, canShare: false } });
     useRoomStore.setState({ spaceIdentity: { name: "验收空间", role: "member", isPersonal: false } });
-    await open("read");
+    await open("preview");
     expect(byText("仅自己可见")).toBe(true);
     const button = [...document.querySelectorAll("button")].find((n) => (n.textContent ?? "").trim() === "共享给空间");
     expect(button?.disabled).toBe(true);

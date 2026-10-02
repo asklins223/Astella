@@ -46,12 +46,12 @@ import {
 import { WindowLive2D, type WindowLive2DStatus } from "./WindowLive2D";
 import {
   presentationForCharacterCueIntent,
-  windowLive2DModelDescriptor,
   type WindowLive2DCharacterMoment,
 } from "./window-live2d-contract";
 import { CompanionBubble } from "./CompanionBubble";
 import { companionDisplayName, subscribeCompanionDisplayName } from "./companion-display-name";
 import { CompanionHud, type CompanionHudAction } from "./CompanionHud";
+import { useCompanionSeatBudget } from "./use-companion-seat-budget";
 import { createCueDeliveryReporter, findCueDelivery } from "./companion-cue-delivery";
 import { hasForeignModal } from "./companion-modal-ownership";
 import { useCompanionChat } from "../../app/companion-chat-session";
@@ -1440,45 +1440,18 @@ export function CompanionPresence() {
     if (presenceHidden || companionUnavailable) setMode("closed");
   }, [companionUnavailable, mode, presenceHidden, setMode]);
 
-  // 布局联动（2026-09-19，全任务界面）：版心是否为伴星座位让出空间，取决于
-  // 伴星此刻**是否真的在场**。把运行时的缺席状态（临时隐藏 / 账号关闭 /
-  // Live2D 不可用 / 注册表 hidden）发布到 `.desktop-app` 上，hud-surface.css
-  // 的「动态伴星座位」段据此收窄或恢复各页版心（右侧 245px / 左侧 365px /
-  // wide 版心 245px / 星图 seat-gutter 340px）——伴星在场时不压正文，缺席后
-  // 版心恢复无伴星几何，不再固定占位。用户放大伴星时，座位预算也同步增加；
-  // 否则 125% 以上的角色会越过固定 245px/365px 边界压住任务卡片。
+  useCompanionSeatBudget(anchorRef, !presenceHidden && !companionUnavailable, companionScale, companionPolicy.interaction, sceneKey);
+
+  // Absence releases the seat; visible geometry owns the budget, including
+  // shrinking it when a smaller model or a closer control rail occupies less.
   useEffect(() => {
     const app = document.querySelector<HTMLElement>(".desktop-app");
     if (!app) return undefined;
-    const reserveExtra = Math.round(Math.max(0, companionScale - 1) * 240);
-    const compactReserveExtra = Math.round(reserveExtra * 0.45);
-    // The right-hand companion's three action buttons extend towards the paper.
-    // Reserve their 44px diameter plus a 12px gap, as well as the character.
-    const rightActionGutter = companionPolicy.interaction === "none" ? 0 : 56;
-    // In compact left seats the action rail reaches farther into the paper's
-    // side than the character itself. Keep the whole rail outside the sheet.
-    const compactLeftActionGutter = 88;
     app.classList.toggle("companion-absent", presenceHidden || companionUnavailable);
-    app.style.setProperty("--companion-seat-right", `${245 + reserveExtra + rightActionGutter}px`);
-    app.style.setProperty("--companion-seat-left", `${365 + reserveExtra}px`);
-    app.style.setProperty("--companion-seat-left-collapsed", `${335 + reserveExtra}px`);
-    app.style.setProperty("--companion-seat-right-compact", `${124 + compactReserveExtra + rightActionGutter / 2}px`);
-    app.style.setProperty("--companion-seat-left-compact", `${194 + compactReserveExtra + compactLeftActionGutter}px`);
-    app.style.setProperty("--companion-seat-left-collapsed-compact", `${178 + compactReserveExtra + compactLeftActionGutter}px`);
-    app.style.setProperty("--companion-universe-seat-gutter", `${340 + reserveExtra}px`);
-    app.style.setProperty("--companion-universe-seat-gutter-compact", `${250 + compactReserveExtra}px`);
     return () => {
       app.classList.remove("companion-absent");
-      app.style.removeProperty("--companion-seat-right");
-      app.style.removeProperty("--companion-seat-left");
-      app.style.removeProperty("--companion-seat-left-collapsed");
-      app.style.removeProperty("--companion-seat-right-compact");
-      app.style.removeProperty("--companion-seat-left-compact");
-      app.style.removeProperty("--companion-seat-left-collapsed-compact");
-      app.style.removeProperty("--companion-universe-seat-gutter");
-      app.style.removeProperty("--companion-universe-seat-gutter-compact");
     };
-  }, [companionPolicy.interaction, companionScale, companionUnavailable, presenceHidden]);
+  }, [companionUnavailable, presenceHidden]);
 
   // 分层 Escape：历史先返回更多，其余交互返回关闭态。
   useEffect(() => {
@@ -1615,9 +1588,14 @@ export function CompanionPresence() {
           {status === "loading" && !presenceHidden ? (
             <span className="companion-loading-state" role="status">{companionName} 正在来到书桌边…</span>
           ) : null}
-          {companionVisualOnly && status === "ready" ? (
+          {/* 脚边那张名牌（2026-10-02 用户裁决）不再出现：日常页原来把她形态名与
+              「伴星」写成一枚深色药丸贴在角色右下角，页面本来就靠角色本身说明她在，
+              这枚牌只是重复一遍，还会盖住她与桌沿之间的空气感。
+              正式练习页（assessment / result）的那两句状态说明留着——它们解释的是
+              「她为什么不说话」，不是名字。 */}
+          {assessmentMode && status === "ready" ? (
             <span className="companion-surface-label" aria-hidden="true">
-              {companionPolicy.interaction === "none" ? "安静陪你" : assessmentMode ? "需要提示？" : `${windowLive2DModelDescriptor(companionModelId).displayName} · 伴星`}
+              {companionPolicy.interaction === "none" ? "安静陪你" : "需要提示？"}
             </span>
           ) : null}
           {/* 「被叫醒的中介帧」（方案 §5 第 4 项）：她"转过头来"的那一下。纯装饰，
@@ -1628,6 +1606,7 @@ export function CompanionPresence() {
         {!presenceHidden && !companionUnavailable && companionPolicy.interaction !== "none" ? (
           <CompanionHud
             motionMode={motionMode}
+            floatingBlocked={homeV2ModalOpen || externalModalOpen}
             voiceEnabled={!assessmentMode}
             actions={homeMode ? actionItems : []}
             onRunAction={runActionItem}

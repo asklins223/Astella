@@ -1,4 +1,7 @@
 import * as Y from "yjs";
+import { Schema } from "prosemirror-model";
+import { prosemirrorJSONToYXmlFragment } from "y-prosemirror";
+import { noteBlocksToPmNodes, noteDocSchemaSpec } from "@ailearn/shared/note-doc-schema";
 
 /**
  * 协同那一侧的测试夹具：**真的 yjs 增量**，而且是从**同一起点**上改出来的。
@@ -38,6 +41,20 @@ export function seedUpdate(
   paragraphs: readonly string[] = ["第一段正文", "第二段正文"],
 ): string {
   return b64(Y.encodeStateAsUpdate(bodyDoc(paragraphs, title)));
+}
+
+/** Structured fixtures seed the live document with the same blocks as the immutable projection. */
+export function seedBlocksUpdate(title: string, blocks: readonly { type: string; content: string }[]): string {
+  const doc = new Y.Doc();
+  const schema = new Schema(noteDocSchemaSpec as never);
+  prosemirrorJSONToYXmlFragment(schema, {
+    type: "doc", content: noteBlocksToPmNodes(blocks as Parameters<typeof noteBlocksToPmNodes>[0]),
+  }, doc.getXmlFragment(FRAGMENT_KEY));
+  doc.getMap("meta").set("title", title);
+  doc.getMap("meta").set("titleSource", "auto");
+  const update = b64(Y.encodeStateAsUpdate(doc));
+  doc.destroy();
+  return update;
 }
 
 /** 对端在那一起点上改出来的一条增量；只碰写进来的那几处。 */

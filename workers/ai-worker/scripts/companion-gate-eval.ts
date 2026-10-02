@@ -49,7 +49,6 @@ import {
   unverifiedNumericClaims,
   unverifiedQuoteClaims,
   validateCompanionOutput,
-  TRUNCATED_REPLY_MIN_CHARS,
 } from "../src/handlers/companion-dialogue-content.ts";
 import {
   introducesUnverifiedNumbers,
@@ -89,7 +88,7 @@ interface ReplayTurn {
    */
   historyTexts?: string[];
   /**
-   * 这一轮用户的活跃度档（生产的 `pet_profiles.activeness`，`companion-dialogue.ts:746`）。
+   * 这一轮用户的活跃度档（生产的账号人格档案 `profile.activeness`，`companion-dialogue.ts`）。
    *
    * 不传就沿用顶层 `activeness`（那是生产的兜底值 `?? "active"`，`runtime.ts:3099`），
    * 两者都不是猜的：兜底值与生产逐字相同。给 per-turn 是为了让"安静档的字数线更松"
@@ -233,14 +232,19 @@ function runSpans(): void {
 }
 
 /**
- * 各活跃度档的坍缩闸字数线（G5 的判据阈值），直接从生产那份表里取。
+ * 坍缩闸 G5 的**入参表**。
  *
- * 为什么单独开一个 mode：台子要按**该用户那一档**判 G5，就得一档一档地报，
- * 而这张表只存在 `companion-dialogue-content.ts` 一处。在 Python 侧抄一份
- * `{"quiet": 2, ...}` 就是第二份——改了一边不会红，而症状是"读数悄悄变了"。
+ * 40 §4.4.2 把「所有场景共用的长度要求」判掉了，所以这张表现在**是空的**：
+ * G5 只剩结构判据（裸数字结尾 / 未闭合的成对符号 / 没有句末标点）。
+ *
+ * 保留这个 mode 是为了让台子把"入参表为空"这件事**报出来**而不是默默继续：
+ * 重新引入字数线时，这个 mode 会先变红，提醒人合同已经改过。
  */
 function runThresholds(): void {
-  emit(JSON.stringify({ minChars: TRUNCATED_REPLY_MIN_CHARS }));
+  emit(JSON.stringify({
+    minChars: null,
+    removedByContract: "40 §4.4.2 移除所有场景共用的长度要求；G5 现在只看结构",
+  }));
 }
 
 /**
@@ -259,17 +263,22 @@ function runSelfTest(): void {
     const same = JSON.stringify(got) === JSON.stringify(want);
     if (!same) failures.push(`${label}：实得 ${JSON.stringify(got)}，期望 ${JSON.stringify(want)}`);
   };
-  // 顶层 activeness 固定传 "active"（与台子默认一致），逐轮那一份才是被试的接线。
+  // 顶层 activeness 固定传 "active"（与台子默认一致）。
   const one = (turn: Partial<ReplayTurn>) =>
-    judgeTurns([{ runId: "t", replyText: "", ...turn }], "active", TRUNCATED_REPLY_MIN_CHARS.active)[0];
+    judgeTurns([{ runId: "t", replyText: "", ...turn }], "active")[0];
 
-  // ① per-turn activiveness：同一个 3 字回复，quiet 档（2 字线）判不进来，active 档（6 字线）判得进来。
-  const short = "嗯嗯嗯"; // 3 字：过了 quiet 的 2 字线，没过 active 的 6 字线，且不以完整句尾收尾
+  // ① G5 不看字数（40 §4.4.2）：同一个 3 字回复，**三档读数必须一致**。
+  //    这一条是「字数线已被移除」的自证——有人把它引回来，这里立刻分岔。
+  const short = "嗯嗯嗯"; // 3 字，且不以完整句尾收尾
   check("quiet 档判不出", one({ replyText: short, activeness: "quiet" }).gates.G5.fired, false);
-  check("active 档判得出", one({ replyText: short, activeness: "active" }).gates.G5.fired, true);
-  check("per-turn 档位跟着走（不是顶层那个）",
-    one({ replyText: short, activeness: "quiet" }).gates.G5.minChars,
-    TRUNCATED_REPLY_MIN_CHARS.quiet);
+  check("active 档判不出（字数已不是判据）", one({ replyText: short, activeness: "active" }).gates.G5.fired, false);
+  check("三档读数一致",
+    one({ replyText: short, activeness: "quiet" }).g5ByTier,
+    one({ replyText: short, activeness: "active" }).g5ByTier);
+  // 但结构不闭合仍然拦得住，且与档位无关。
+  const broken = "今天已经学了1";
+  check("裸数字结尾仍然拦", one({ replyText: broken, activeness: "quiet" }).gates.G5.fired, true);
+  check("裸数字结尾在 active 档同样拦", one({ replyText: broken, activeness: "active" }).gates.G5.fired, true);
   // ② historyTexts：出处补上历史之后，那条命中应当不再成立，并被记进过报否证。
   const claimsNoHistory = one({ replyText: "你今天学了18分钟", userTexts: ["今天怎么样"] });
   check("没有历史时 18分钟 判成无出处", claimsNoHistory.gates.G1.fired, true);
@@ -344,12 +353,11 @@ async function main(): Promise<void> {
     return;
   }
   const activeness = input.activeness ?? "active";
-  const globalMinChars = TRUNCATED_REPLY_MIN_CHARS[activeness] ?? TRUNCATED_REPLY_MIN_CHARS.active;
-  emit(JSON.stringify({ activeness, minChars: globalMinChars, turns: judgeTurns(input.turns ?? [], activeness, globalMinChars) }));
+  emit(JSON.stringify({ activeness, minChars: null, turns: judgeTurns(input.turns ?? [], activeness) }));
 }
 
 /** 逐轮跑判据。抽成纯函数是为了让 `--self-test` 能在不连库、不读 stdin 的情况下钉住接线。 */
-function judgeTurns(turns: ReplayTurn[], activeness: string, globalMinChars: number) {
+function judgeTurns(turns: ReplayTurn[], activeness: string) {
   return turns.map((turn) => {
     const systemBlocks = asStringArray(turn.systemTexts)
       .map((text) => keepRecomputedBlocks(text))
@@ -368,9 +376,7 @@ function judgeTurns(turns: ReplayTurn[], activeness: string, globalMinChars: num
     const quoteSources = [contextText, ...toolResultTexts].join("\n");
     const said = turn.replyText ?? "";
 
-    // G5 的字数线跟**该用户那一档**走（生产的 `?? "active"` 兜底仍由顶层 activeness 兜着）。
     const turnActiveness = turn.activeness ?? activeness;
-    const minChars = TRUNCATED_REPLY_MIN_CHARS[turnActiveness] ?? globalMinChars;
 
     // 补上生产有、台子原来没喂的那一半出处（见 ReplayTurn.historyTexts）。
     //
@@ -428,15 +434,11 @@ function judgeTurns(turns: ReplayTurn[], activeness: string, globalMinChars: num
         ? !validateThoughtExpression(said, [], turn.allowedNumberSource ?? "") || readsOutStatistics(said)
         : false,
       activeness: turnActiveness,
-      // G5 对**每一档**的字数线各判一次：台子原来整批写死 `active`（6 字，最严的一档），
-      // 而生产的线是按该用户 `pet_profiles.activeness` 走的（`runtime.ts:3099`）。
-      // 这里把三档都算出来，台子就能报"这一档 197／换成 quiet 会是几"——写死最严档
-      // **过报**多少条是量出来的，不是推出来的。用的是同一个生产判据，只换入参。
+      // G5 现在与活跃度无关（40 §4.4.2 移除了字数线）。三档仍然各算一次，
+      // 是为了让台子在有人把字数线重新引回来时**当场看出**读数分岔了——
+      // 而不是靠"反正结果一样"把它放过。
       g5ByTier: Object.fromEntries(
-        (["quiet", "moderate", "active"] as const).map((tier) => [
-          tier,
-          looksTruncatedReply(said, TRUNCATED_REPLY_MIN_CHARS[tier]),
-        ]),
+        (["quiet", "moderate", "active"] as const).map((tier) => [tier, looksTruncatedReply(said)]),
       ),
       gates: {
         // A 类：只在"整轮零工具调用"时才有意义（调用方按硬前提筛选）。
@@ -446,7 +448,7 @@ function judgeTurns(turns: ReplayTurn[], activeness: string, globalMinChars: num
         G4: { fired: looksLikeUnfulfilledActionNarration(said) },
         G6: { fired: quoteClaims.length > 0, detail: quoteClaims },
         // A′：结构闸，前提是"这一步一个字都没下发过"。
-        G5: { fired: looksTruncatedReply(said, minChars), minChars },
+        G5: { fired: looksTruncatedReply(said) },
         // B 类：输出形状，与工具无关。
         G7: { fired: containsCompanionInternalToken(said) },
         G8: { fired: looksLikeJsonEnvelope(said) },

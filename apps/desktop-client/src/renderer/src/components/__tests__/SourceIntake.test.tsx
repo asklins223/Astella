@@ -107,7 +107,8 @@ describe("ClipboardLinkPrompt", () => {
     const calls = stubGateway({ capture: "denied" });
     render(<ClipboardLinkPrompt url={TEST_URL} onClose={() => undefined} />);
     await screen.findByText("只有工作区所有者可以采集来源，这条链接先不收。");
-    expect((screen.getByRole("button", { name: "开始解析" }) as HTMLButtonElement).disabled).toBe(true);
+    const primary = await screen.findByRole("button", { name: "开始解析" });
+    expect((primary as HTMLButtonElement).disabled).toBe(true);
     expect(calls.create).toHaveLength(0);
   });
 });

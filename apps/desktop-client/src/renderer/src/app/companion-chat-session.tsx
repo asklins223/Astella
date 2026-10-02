@@ -33,8 +33,13 @@ import {
   companionConsentGate,
   isCompanionConsentFailure,
 } from "./companion-consent-gate";
-import { subscribeCompanionFeed, truncateFeedText } from "../components/companion/companion-feed";
+import {
+  subscribeCompanionFeed,
+  truncateFeedText,
+  type CompanionFeedDiaryAnchor,
+} from "../components/companion/companion-feed";
 import type { CompanionFeedNoteAnchor, CompanionNoteIntent } from "../components/companion/companion-feed";
+import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, progressNoteExplanation, reportNoteExplanationStopFailure, resetNoteExplanations, useNoteCompanionExplanations } from "../components/companion/note-companion-explanation";
 import {
   appendCompanionAgentNode,
   buildCompanionRunTraces,
@@ -159,6 +164,7 @@ export interface CompanionChatInterrupted {
 export interface CompanionChatSendInput {
   readonly text: string;
   readonly voiceArtifactId?: string | null;
+  readonly noteAnchor?: CompanionFeedNoteAnchor;
   /**
    * 划选/拖拽投喂（2026-09-18）：用户在页面选中/拖入的原文，随 turn 走
    * `selection`（sharing=user_selected），worker 以 <selection_data> 注入 prompt。
@@ -226,6 +232,13 @@ export interface CompanionChatSession {
   readonly feedPrompt: string | null;
   /** 与当前提问一同带入的原文位置；回复可由用户贴回此处。 */
   readonly feedNoteAnchor: CompanionFeedNoteAnchor | null;
+  /**
+   * 与当前提问一同带入的日记引用（40 §6「聊聊这篇」）。
+   *
+   * 面板据此显示「正在聊 2026-10-01 第 2 版那篇」，用户随时能看见自己谈的是哪一篇。
+   * 它**不会**自动发送——用户自己接着打字才算一次提问（§6）。
+   */
+  readonly feedDiaryAnchor: CompanionFeedDiaryAnchor | null;
   /** A note-level companion action started from the notebook page. */
   readonly feedNoteIntent: CompanionNoteIntent | null;
   /** A one-shot identity for a direct action; generic chat drafts do not auto-send. */
@@ -234,7 +247,7 @@ export interface CompanionChatSession {
   readonly proposalStates: Readonly<Record<string, CompanionProposalUiState>>;
   readonly mode: CompanionUiMode;
   /**
-   * 她对自己的称呼：来自账号人格（`pet_profiles.name`），取不到是"伴星"。
+   * 她对自己的称呼：来自账号级人格档案（`companion_persona_profiles.profile.name`），取不到是"伴星"。
    * 由 `CompanionPresence` 读到后推给这里，气泡、抽屉、轨道与记录署名共用这一份。
    */
   readonly companionName: string;
@@ -372,6 +385,14 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     pageInstanceIdRef, brokerPageContext,
   } = useCompanionPageContext();
   const [feedNoteIntent, setFeedNoteIntent] = useState<CompanionNoteIntent | null>(null);
+  /**
+   * 日记引用（40 §6「聊聊这篇」）。
+   *
+   * 它**不会**触发自动发送：自动发送的条件是 `noteAnchor && initialPrompt`，
+   * 而这里两个都没有。§6 明确要求「点击只打开对话并附上该篇的明确引用，
+   * **不自动发送用户消息**」——用户自己接着说，才算一次真正的提问。
+   */
+  const [feedDiaryAnchor, setFeedDiaryAnchor] = useState<CompanionFeedDiaryAnchor | null>(null);
   useEffect(() => {
     let cancelled = false;
     const timer = window.setTimeout(() => {
@@ -479,6 +500,11 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   const [feedSelection, setFeedSelection] = useState<string | null>(null);
   const [feedPrompt, setFeedPrompt] = useState<string | null>(null);
   const [feedNoteAnchor, setFeedNoteAnchor] = useState<CompanionFeedNoteAnchor | null>(null);
+  useEffect(() => useNoteCompanionExplanations.subscribe(state => {
+    // Saving can succeed later through the quote's retry button, after send() has returned.
+    setFeedNoteAnchor(current => current?.explanationId
+      && state.items.some(item => item.id === current.explanationId && item.phase === "saved") ? null : current);
+  }), []);
   const [autoSendRequestId, setAutoSendRequestId] = useState<string | null>(null);
   const [proposalStates, setProposalStates] = useState<Record<string, CompanionProposalUiState>>({});
   const [navChips, setNavChips] = useState<CompanionNavChip[]>([]);
@@ -519,11 +545,13 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   const conversationRef = useRef<CompanionChatConversationV1 | null>(null);
   /** 仅保留最新一次发送的结果；新的一轮会让上一轮的轮询自行退出。 */
   const sendGenerationRef = useRef(0);
+  const pendingSendRef = useRef<{ generation: number; explanationId: string | null } | null>(null);
+  const replyWaitRef = useRef<{ generation: number; cancel: () => void } | null>(null);
   /**
    * 本轮在跑的 run（`runId` + `generation`）——停止请求要带 generation 做 CAS，
    * 而这两个值只在 turn 响应里出现一次，必须留到本轮结束。
    */
-  const activeTurnRef = useRef<{ runId: string; generation: number; conversationId: string } | null>(null);
+  const activeTurnRef = useRef<{ runId: string; generation: number; conversationId: string; explanationId?: string | null } | null>(null);
   /**
    * "提交闸门"：本轮 turn 请求在途时它是个未决的 promise，拿到回执（或失败）后放行。
    *
@@ -539,6 +567,11 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
 
   useEffect(() => {
     sendGenerationRef.current += 1;
+    pendingSendRef.current = null;
+    activeTurnRef.current = null;
+    replyWaitRef.current?.cancel();
+    replyWaitRef.current = null;
+    resetNoteExplanations();
     conversationRef.current = null;
     routeCursorRef.current = null;
     draftRef.current = "";
@@ -586,6 +619,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         setFeedSelection(truncateFeedText(selection.text));
         setFeedPrompt(selection.initialPrompt ?? null);
         setFeedNoteAnchor(selection.noteAnchor ?? null);
+        setFeedDiaryAnchor(selection.diaryAnchor ?? null);
         setAutoSendRequestId(selection.noteAnchor && selection.initialPrompt ? selection.requestId ?? null : null);
         setFeedNoteIntent(null);
         setLiveReply(null);
@@ -1190,6 +1224,8 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
               : current.slice(0, appendFrom) + payload.textDelta;
             draftRef.current = next;
             setDraft({ runId: args.runId, text: next });
+            const pending = pendingSendRef.current;
+            if (pending?.generation === args.generation && pending.explanationId) progressNoteExplanation(pending.explanationId, next);
             return;
           }
           if (streamed.eventType === "assistant.final") {
@@ -1263,10 +1299,16 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       // 那正是"失败被说成超时"的来源。
       onIdle: () => backstop.accelerate(),
     });
+    let stopWait!: () => void;
+    const stopped = new Promise<CompanionReplyWaitOutcome>(resolve => { stopWait = () => {
+      stream.cancel(); backstop.cancel(); resolve({ kind: "cancelled" });
+    }; });
+    replyWaitRef.current = { generation: args.generation, cancel: stopWait };
     try {
       const winner = await Promise.race([
         stream.promise.then((outcome) => ({ source: "stream" as const, outcome })),
         backstop.promise.then((outcome) => ({ source: "backstop" as const, outcome })),
+        stopped.then(outcome => ({ source: "backstop" as const, outcome })),
       ]);
       if (winner.source === "backstop") return winner.outcome;
       if (winner.outcome.kind === "final") {
@@ -1291,6 +1333,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     } finally {
       stream.cancel();
       backstop.cancel();
+      if (replyWaitRef.current?.generation === args.generation) replyWaitRef.current = null;
     }
   }, [refreshMessages, startReplyPoll, startReplyStream]);
 
@@ -1318,7 +1361,24 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
   const send = useCallback(async (input: CompanionChatSendInput): Promise<boolean> => {
     const text = input.text.trim();
     if (text.length === 0) return false;
+    const providedAttempt = input.noteAnchor?.explanationId
+      ? useNoteCompanionExplanations.getState().items.find(item => item.id === input.noteAnchor!.explanationId)
+      : null;
+    // A queued attempt stopped before auto-send must never restart itself.
+    if (providedAttempt?.phase === "stopped") return false;
+    const explanation = input.noteAnchor
+      ? providedAttempt?.phase === "preparing" ? providedAttempt : beginNoteExplanation(input.noteAnchor)
+      : null;
+    if (explanation && explanation.phase !== "preparing") return true;
+    const previousPending = pendingSendRef.current;
+    replyWaitRef.current?.cancel();
+    if (previousPending?.explanationId && previousPending.explanationId !== explanation?.id) {
+      interruptNoteExplanation(previousPending.explanationId, "stopped", "已切换到新的提问。这次未完成的解释没有写成批注。");
+    }
     const generation = (sendGenerationRef.current += 1);
+    pendingSendRef.current = { generation, explanationId: explanation?.id ?? null };
+    if (explanation) setFeedNoteAnchor({ ...explanation.target, explanationId: explanation.id });
+    if (!explanation) useNoteCompanionExplanations.setState({ activeId: null });
     /**
      * 「这一轮开始了」的状态复位**不在这里做**，挪到乐观条目落地那一刻（见下面
      * `setPhase("sending")`）。放在函数开头时，中间每一条"发送前置门禁"的早退都必须
@@ -1330,13 +1390,16 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     let optimisticId: string | null = null;
     try {
       const epoch = await requireWorkspaceEpoch();
+      if (generation !== sendGenerationRef.current) return false;
       // 同意门禁（2026-09-19）：后端要到 worker 调用 provider 前才检查同意，未签署时
       // 用户只会看到"发出去没反应"（静默失败）。这里发送前先问一次工作区 AI 设置，
       // 未签署就直接由伴星引导去签署——不建会话、不消耗一轮 job。
       const consentGate = companionConsentGate(
         unwrapGatewayResult(await window.ailearn.workspace.getAiSettings({ meta: createRequestMeta(epoch) })),
       );
+      if (generation !== sendGenerationRef.current) return false;
       if (consentGate === "consent_required") {
+        if (explanation) interruptNoteExplanation(explanation.id, "interrupted", "需要先在设置中允许 AI 读取内容，解释尚未开始。");
         guideToConsent();
         return false;
       }
@@ -1347,8 +1410,12 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       // 只会撞上 `409 RUN_ALREADY_ACTIVE`，而那条拒绝发生在**写用户消息之前**：
       // 历史里连这句话都不会有（"查无此轮"的成因之一）。
       await submitGateRef.current;
+      if (generation !== sendGenerationRef.current) return false;
       const previousTurn = activeTurnRef.current;
-      const turnContext = await resolveTurnContext(epoch);
+      const turnContext = explanation ? {
+        pageKind: "note" as const, sharing: "page_registered" as const,
+        noteId: explanation.target.noteId, noteVersionId: explanation.target.anchor.noteVersionId,
+      } : await resolveTurnContext(epoch);
       if (generation !== sendGenerationRef.current) return false;
       const voiceArtifactId = input.voiceArtifactId ?? null;
       const clientMessageId = crypto.randomUUID();
@@ -1358,6 +1425,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
        * 从这里往前的任何早退都不动相位，用户看到的还是上一条的真实状态。
        */
       setPhase("sending");
+      if (explanation) progressNoteExplanation(explanation.id, "");
       setStreamCue(null);
       setFailure(null);
       setLiveReply(null);
@@ -1378,6 +1446,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         role: "user",
         kind: voiceArtifactId ? "voice_transcript" : "text",
         blocks: [{ type: "text", text }],
+        ...(input.selection?.text ? { selection: { text: input.selection.text, sharing: "user_selected" as const } } : {}),
         runId: null,
         clientMessageId,
         contentSha256: "0".repeat(64),
@@ -1399,6 +1468,10 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         ...(turnContext ? { context: turnContext } : {}),
         // 划选/拖拽投喂（2026-09-18）：引用原文随 turn 上抛（契约 sharing=user_selected）。
         ...(input.selection?.text ? { selection: { text: input.selection.text, sharing: "user_selected" as const } } : {}),
+        // 日记引用（40 §6「聊聊这篇」）：日期 + 版本随本轮上抛，伴星据此按
+        // **当前权限**现读那一篇。只带定位、不带正文——正文现读才能保证
+        // 「她读到的那一版」就是「用户看到的那一版」。
+        ...(feedDiaryAnchor ? { diaryReference: { date: feedDiaryAnchor.date, version: feedDiaryAnchor.version } } : {}),
         ...(supersedesGeneration !== null ? { supersedesGeneration } : {}),
       });
 
@@ -1418,7 +1491,12 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           // 记住本轮 run：停止请求要 runId + generation（generation 服务端做 CAS），
           // 而这两个值只在 turn 响应里出现这一次。**必须在放开闸门之前写**，
           // 否则紧接着的那条会把它读成 null。
-          activeTurnRef.current = { runId: sent.runId, generation: sent.generation, conversationId: active.id };
+          if (generation === sendGenerationRef.current) {
+            activeTurnRef.current = { runId: sent.runId, generation: sent.generation, conversationId: active.id, explanationId: explanation?.id ?? null };
+          } else {
+            // Stop may arrive before the turn receipt: cancel its eventual run without reviving the UI.
+            cancelRunInBackground(sent.runId, sent.generation, epoch);
+          }
           return sent;
         } finally {
           releaseSubmit();
@@ -1443,6 +1521,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         sent = await postTurn(recovered);
       }
 
+      if (generation !== sendGenerationRef.current) return false;
       const claimed = await claimCompanionReply({
         conversationId: active.id,
         runId: sent.runId,
@@ -1462,6 +1541,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       if (claimed.kind === "reply") {
         reply = claimed.message;
       } else if (claimed.kind === "cancelled") {
+        if (explanation) interruptNoteExplanation(explanation.id, "stopped");
         // 用户按了停止——这不是错误，不写 failure、不提示"再试一次"。
         // 已输出的部分由服务端以 kind='cancelled' 留档，而它是在取消**之后**才写入的，
         // 不经过本次 SSE 订阅，所以必须重取一次消息才看得见。
@@ -1472,6 +1552,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         setPhase("ready");
         return true;
       } else if (claimed.kind === "failed") {
+        if (explanation) interruptNoteExplanation(explanation.id, "interrupted", claimed.message);
         draftRef.current = "";
         setDraft(null);
         if (isCompanionConsentFailure(claimed.code)) {
@@ -1490,6 +1571,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         // 防止僵尸 run 继续挡会话（见 cancelRunInBackground 注释）。
         cancelRunInBackground(sent.runId, sent.generation, epoch);
         const message = "消息已经送达，但这次回复等待超时。可以打开对话记录稍后查看。";
+        if (explanation) interruptNoteExplanation(explanation.id, "interrupted", message);
         draftRef.current = "";
         setDraft(null);
         if (partial.trim().length > 0) setInterrupted({ text: partial, message });
@@ -1499,6 +1581,10 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       }
 
       if (reply) {
+        if (explanation) {
+          if (reply.kind === "text") void completeNoteExplanation(explanation.id, reply.id, companionMessageText(reply));
+          else interruptNoteExplanation(explanation.id, "interrupted", "这轮没有完整的解释，未写成批注。");
+        }
         draftRef.current = "";
         setDraft(null);
         const proposalIds = reply.blocks.flatMap((block) => block.type === "action_ref" ? [block.proposalId] : []);
@@ -1509,11 +1595,12 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           proposalIds,
         });
         const richBlocks = reply.blocks.filter((block) => block.type === "image" || block.type === "quote"
-          || block.type === "diagram" || block.type === "card" || block.type === "nav");
+          || block.type === "diagram" || block.type === "card" || block.type === "nav" || block.type === "citation" || block.type === "code");
         setRichReply(richBlocks.length > 0 ? { messageId: reply.id, blocks: richBlocks } : null);
       } else {
         cancelRunInBackground(sent.runId, sent.generation, epoch);
         const message = "消息已经送达，但这次回复等待超时。可以打开对话记录稍后查看。";
+        if (explanation) interruptNoteExplanation(explanation.id, "interrupted", message);
         draftRef.current = "";
         setDraft(null);
         if (partial.trim().length > 0) setInterrupted({ text: partial, message });
@@ -1532,8 +1619,11 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
         setMessages((current) => current.filter((message) => message.id !== optimisticId));
       }
       setFailure(companionTurnErrorMessage(error));
+      if (explanation) interruptNoteExplanation(explanation.id, "interrupted", companionTurnErrorMessage(error));
       setPhase("error");
       return false;
+    } finally {
+      if (pendingSendRef.current?.generation === generation) pendingSendRef.current = null;
     }
   }, [
     claimCompanionReply,
@@ -1542,6 +1632,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     refreshMessages,
     resolveActiveRunGeneration,
     resolveTurnContext,
+    cancelRunInBackground,
   ]);
 
   /**
@@ -1556,40 +1647,71 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
    */
   const cancel = useCallback(async (): Promise<boolean> => {
     const active = activeTurnRef.current;
-    if (!active || cancellingRef.current) return false;
+    const pending = pendingSendRef.current;
+    if (!active && !pending) return false;
+    const explanationId = pending?.explanationId ?? active?.explanationId;
+    // Invalidate locally before any await, including preflight and the in-flight turn request.
+    const stoppedGeneration = ++sendGenerationRef.current;
+    replyWaitRef.current?.cancel();
+    pendingSendRef.current = null;
+    activeTurnRef.current = null;
+    if (explanationId) interruptNoteExplanation(explanationId, "stopped");
+    setFeedNoteAnchor(null);
+    setFeedSelection(null);
+    setFeedPrompt(null);
+    setAutoSendRequestId(null);
+    const partial = draftRef.current || (explanationId ? useNoteCompanionExplanations.getState().items.find(item => item.id === explanationId)?.text ?? "" : "");
+    draftRef.current = "";
+    setDraft(null);
+    setLiveReply(null);
+    setRichReply(null);
+    setInterrupted(partial.trim() ? { text: partial, message: explanationId
+      ? "已停止，未完成的内容没有写成批注。" : COMPANION_STOPPED_LINE } : null);
+    setNodes(current => current.map(node => node.state === "running" || node.state === "waiting_confirmation"
+      ? { ...node, state: "cancelled" as const } : node));
+    setFailure(null);
+    setStopNotice(explanationId && !partial.trim() ? "已停止，这次还没有生成解释。" : COMPANION_STOPPED_LINE);
+    setPhase("ready");
+    if (!active) return true; // postTurn cancels a late receipt; preflight has nothing to cancel.
     cancellingRef.current = true;
     setCancelling(true);
     try {
       const epoch = await requireWorkspaceEpoch();
       unwrapGatewayResult(await window.ailearn.companion.chat.cancelRun({
-        meta: createRequestMeta(epoch),
-        request: { version: 1, runId: active.runId, generation: active.generation },
+        meta: createRequestMeta(epoch), request: { version: 1, runId: active.runId, generation: active.generation },
       }));
-      activeTurnRef.current = null;
-      // 停止的余韵（方案 §5 第 8 项）：当时还在跑的那一步要落成"已中止"，而不是继续
-      // 呼吸——轨道上留着一个永远转不完的点，比直接清空更让人以为还在干活。
-      setNodes((current) => current.map((node) => (
-        node.state === "running" || node.state === "waiting_confirmation"
-          ? { ...node, state: "cancelled" as const }
-          : node
-      )));
+      if (stoppedGeneration !== sendGenerationRef.current) return true;
+      if (explanationId) reportNoteExplanationStopFailure(explanationId, null);
       await refreshMessages(active.conversationId, epoch).catch(() => null);
-      // run 摘要与那条部分消息都在取消之后才落库：留痕必须重取一次才看得见。
-      setTracesRevision((value) => value + 1);
-      setFailure(null);
-      setStopNotice(COMPANION_STOPPED_LINE);
-      setPhase("ready");
+      setTracesRevision(value => value + 1);
       return true;
     } catch (error) {
-      // 取消失败才走失败路径：此时 run 可能还在跑，保留 activeTurnRef 让用户能再点一次。
-      setFailure(gatewayErrorMessage(error));
-      setPhase("error");
+      if (stoppedGeneration === sendGenerationRef.current) {
+        const message = `停止请求暂未确认：${gatewayErrorMessage(error)}。${explanationId ? "本地已停止接收，不会把未完成内容写成批注。" : "本地已停止接收这轮回复。"}`;
+        activeTurnRef.current = active;
+        setFailure(message);
+        setPhase("error");
+        if (explanationId) reportNoteExplanationStopFailure(explanationId, message);
+      }
       return false;
     } finally {
       cancellingRef.current = false;
       setCancelling(false);
     }
   }, [refreshMessages]);
+
+  useEffect(() => {
+    const onStop = (event: Event) => {
+      const id = (event as CustomEvent<{ id?: string }>).detail?.id;
+      if (id && (pendingSendRef.current?.explanationId === id || activeTurnRef.current?.explanationId === id)) void cancel();
+      else if (id) {
+        setFeedNoteAnchor(current => current?.explanationId === id ? null : current);
+        setAutoSendRequestId(current => current === id ? null : current);
+      }
+    };
+    window.addEventListener("ailearn:note-explanation-stop", onStop);
+    return () => window.removeEventListener("ailearn:note-explanation-stop", onStop);
+  }, [cancel]);
 
   const dismissStopNotice = useCallback(() => setStopNotice(null), []);
 
@@ -1742,6 +1864,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     feedSelection,
     feedPrompt,
     feedNoteAnchor,
+    feedDiaryAnchor,
     feedNoteIntent,
     autoSendRequestId,
     navChips,
@@ -1805,6 +1928,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
     proposalStates,
     runTraces,
     send,
+    stopNotice,
   ]);
 
   return <CompanionChatContext.Provider value={value}>{children}</CompanionChatContext.Provider>;

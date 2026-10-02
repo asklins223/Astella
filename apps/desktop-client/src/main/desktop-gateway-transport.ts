@@ -308,21 +308,30 @@ export class GatewayTransport {
     readonly configurationError: "missing" | "invalid" | null;
 
     credentialRestored = false;
+    private credentialRestorePromise: Promise<void> | null = null;
 
     trust: LocalApiTrustV1;
 
     transportEpoch = 0;
 
     async restoreStoredCredential(): Promise<void> {
+        if (this.credentialRestorePromise) return this.credentialRestorePromise;
         if (this.credentialRestored) return;
-        this.credentialRestored = true;
-        const store = this.credentials;
-        if (!store?.available || this.token) return;
-        const stored = await store.load().catch(() => null);
-        if (!stored) return;
-        this.token = stored;
-        this.tokenIsRestored = true;
-        this.credentialPersistence = "safe_storage";
+        this.credentialRestorePromise = (async () => {
+          const store = this.credentials;
+          if (!store?.available || this.token) return;
+          const stored = await store.load().catch(() => null);
+          if (!stored) return;
+          this.token = stored;
+          this.tokenIsRestored = true;
+          this.credentialPersistence = "safe_storage";
+        })();
+        try {
+          await this.credentialRestorePromise;
+        } finally {
+          this.credentialRestored = true;
+          this.credentialRestorePromise = null;
+        }
       }
 
     async performLocalTrust(configuration: GatewayConfiguration, requestId?: string): Promise<void> {

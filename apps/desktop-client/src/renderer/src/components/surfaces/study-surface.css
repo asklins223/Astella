@@ -526,6 +526,55 @@
     white-space:nowrap;
   }
 
+  /* 轮次记录只有日期与正文；不用操作日志的图标列、动作列和节点竖轨。 */
+  & .day-rounds .day-section-head{
+    flex-wrap:wrap;
+  }
+  & .day-rounds .day-section-head span{
+    flex:0 1 auto;
+    min-width:0;
+  }
+  & .day-rounds__list{
+    display:grid;
+    list-style:none;
+    margin:0;
+    padding:0;
+  }
+  & .day-rounds__entry{
+    display:grid;
+    grid-template-columns:104px minmax(0,1fr);
+    align-items:start;
+    gap:16px;
+    padding:12px 12px 12px 4px;
+  }
+  & .day-rounds__entry + .day-rounds__entry{
+    border-top:1px solid var(--log-rule);
+  }
+  & .day-rounds__date{
+    padding-top:3px;
+    font:600 11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-variant-numeric:tabular-nums;
+    color:var(--log-time);
+    text-align:right;
+    white-space:nowrap;
+  }
+  & .day-rounds__body{
+    min-width:0;
+    overflow-wrap:anywhere;
+  }
+  & .day-rounds__body b{
+    display:block;
+    font:650 13.5px/1.5 "Noto Serif SC Variable","Songti SC",serif;
+    color:var(--log-body);
+  }
+  & .day-rounds__meta{
+    display:block;
+    margin-top:4px;
+    font-size:11px;
+    line-height:1.6;
+    color:var(--log-meta);
+  }
+
   /* 行内"查看"按钮：比页面级动作紧凑一档（28px），不与正文抢视觉 */
   & .day-jump{
     display:inline-flex;
@@ -936,6 +985,18 @@
     & .day-log__node svg{width:10px;height:10px}
     & .day-log__body b{font-size:10px}
     & .day-log__body small{font-size:9px}
+    & .day-rounds__entry{
+      grid-template-columns:minmax(0,1fr);
+      gap:4px;
+      padding:9px 2px;
+    }
+    & .day-rounds__date{
+      padding-top:0;
+      font-size:9px;
+      text-align:left;
+    }
+    & .day-rounds__body b{font-size:11px}
+    & .day-rounds__meta{font-size:9px}
     & .day-jump{
       min-height:24px;
       padding:0 8px;

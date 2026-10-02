@@ -864,7 +864,7 @@ export function ObjectiveDetailSurface() {
     setActiveNoteRef({
       noteId: noteChangeImpact.noteId,
       noteVersionId: origin?.kind === "note" ? origin.noteVersionId : null,
-      mode: "read",
+      mode: "preview",
     });
     invoke("open-notebook");
   };

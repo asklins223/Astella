@@ -66,13 +66,23 @@ function textOfBlocks(blocks: CreateCompanionTurnRequestV1["blocks"]): string {
 
 /** 计算持久化 page context：只保存 grant 的 opaque 元数据，不保存签名。 */
 function sanitizeContext(request: CreateCompanionTurnRequestV1): unknown {
-  if (!request.context && !request.selection) return null;
+  if (!request.context && !request.selection && !request.diaryReference) return null;
   // 划选/拖拽投喂（2026-09-18）：selection 与 context 同 jsonb 持久化，
   // worker parsePageContext 读取后以 <selection_data> 注入 prompt。
   const selection = request.selection
     ? { text: request.selection.text, sharing: request.selection.sharing }
     : null;
-  if (!request.context) return { version: 1, context: null, selection };
+  // 日记引用与 selection 同 jsonb 持久化：worker 的 parsePageContext 读取后
+  // 以 <diary_reference> 注入 prompt，伴星才知道用户正在聊哪一篇、哪一版。
+  const diaryReference = request.diaryReference
+    ? { date: request.diaryReference.date, version: request.diaryReference.version }
+    : null;
+  const withExtra = <T>(body: T): T & Record<string, unknown> => ({
+    ...body,
+    ...(selection ? { selection } : {}),
+    ...(diaryReference ? { diaryReference } : {}),
+  });
+  if (!request.context) return withExtra({ version: 1, context: null });
   const ctx = request.context;
   const base = {
     pageKind: ctx.pageKind,
@@ -82,17 +92,17 @@ function sanitizeContext(request: CreateCompanionTurnRequestV1): unknown {
   };
   switch (ctx.pageKind) {
     case "today":
-      return { version: 1, context: { ...base }, ...(selection ? { selection } : {}) };
+      return { version: 1, context: { ...base }, ...withExtra({}) };
     case "note":
-      return { version: 1, context: { ...base, noteId: ctx.noteId, ...(ctx.noteVersionId ? { noteVersionId: ctx.noteVersionId } : {}) }, ...(selection ? { selection } : {}) };
+      return { version: 1, context: { ...base, noteId: ctx.noteId, ...(ctx.noteVersionId ? { noteVersionId: ctx.noteVersionId } : {}) }, ...withExtra({}) };
     case "review":
-      return { version: 1, context: { ...base, cardId: ctx.cardId ?? null, keyPointId: ctx.keyPointId ?? null }, ...(selection ? { selection } : {}) };
+      return { version: 1, context: { ...base, cardId: ctx.cardId ?? null, keyPointId: ctx.keyPointId ?? null }, ...withExtra({}) };
     case "card":
-      return { version: 1, context: { ...base, cardId: ctx.cardId, keyPointId: ctx.keyPointId ?? null }, ...(selection ? { selection } : {}) };
+      return { version: 1, context: { ...base, cardId: ctx.cardId, keyPointId: ctx.keyPointId ?? null }, ...withExtra({}) };
     case "star_map":
-      return { version: 1, context: { ...base, keyPointId: ctx.keyPointId ?? null }, ...(selection ? { selection } : {}) };
+      return { version: 1, context: { ...base, keyPointId: ctx.keyPointId ?? null }, ...withExtra({}) };
     case "learning_run":
-      return {
+      return withExtra({
         version: 1,
         context: {
           ...base,
@@ -108,8 +118,7 @@ function sanitizeContext(request: CreateCompanionTurnRequestV1): unknown {
               expiresAt: ctx.groundedTutorGrant.expiresAt,
             },
         },
-        ...(selection ? { selection } : {}),
-      };
+      });
   }
 }
 
@@ -286,7 +295,14 @@ export async function createCompanionTurn(args: {
 
     // 幂等：同 key 或同 clientMessageId + 同 body hash → 返回原 run
     const existingByKey = await tx
-      .select()
+      .select({
+        id: companionTurnRuns.id,
+        userMessageId: companionTurnRuns.userMessageId,
+        generation: companionTurnRuns.generation,
+        status: companionTurnRuns.status,
+        lastEventSeq: companionTurnRuns.lastEventSeq,
+        requestBodyHash: companionTurnRuns.requestBodyHash,
+      })
       .from(companionTurnRuns)
       .where(and(
         eq(companionTurnRuns.conversationId, args.conversationId),
@@ -325,7 +341,14 @@ export async function createCompanionTurn(args: {
       .limit(1);
     if (clientMessageRows[0]) {
       const runOfMessage = await tx
-        .select()
+        .select({
+          id: companionTurnRuns.id,
+          userMessageId: companionTurnRuns.userMessageId,
+          generation: companionTurnRuns.generation,
+          status: companionTurnRuns.status,
+          lastEventSeq: companionTurnRuns.lastEventSeq,
+          requestBodyHash: companionTurnRuns.requestBodyHash,
+        })
         .from(companionTurnRuns)
         .where(eq(companionTurnRuns.userMessageId, clientMessageRows[0].id))
         .limit(1);

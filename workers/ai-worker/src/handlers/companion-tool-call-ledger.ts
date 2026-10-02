@@ -35,14 +35,18 @@ import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import type { AIProvider } from "../lib/ai-provider.ts";
 import { appendAgentEvent, readRunMeta } from "./companion-agent-events.ts";
 import { buildActionPayload, createAgentProposal } from "./companion-agent-proposal.ts";
+import { TOOL_OUTCOME_UNKNOWN_SAFE_SUMMARY } from "./companion-tool-outcome.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
 import {
   executeDirectTool,
   executeReadTool,
+} from "./companion-tool-execution.ts";
+import {
   CompanionToolError,
   CompanionToolBlockedError,
+  CompanionToolOutcomeUnknownError,
   type AgentToolExecutionResult,
-} from "./companion-tool-execution.ts";
+} from "./companion-tool-result.ts";
 
 export type AgentMessage = AgentTurnRequest["messages"][number];
 
@@ -116,14 +120,17 @@ export async function executeCompanionAgentTurnWithToolChoiceFallback(args: {
   provider: AIProvider;
   fallbackProvider?: AIProvider;
   signal: AbortSignal;
+  executeTurn?: (provider: AIProvider, request: AgentTurnRequest, signal: AbortSignal) => Promise<AgentTurnResult>;
   onFallback?: (error: ProviderRequestError, fallbackProvider: AIProvider) => void;
 }): Promise<{ result: AgentTurnResult; provider: AIProvider }> {
   if (typeof args.provider.executeAgentTurn !== "function") {
     throw new Error("provider does not support companion agent turns");
   }
+  const executeTurn = args.executeTurn
+    ?? ((provider: AIProvider, request: AgentTurnRequest, signal: AbortSignal) => provider.executeAgentTurn!(request, signal));
   try {
     return {
-      result: await args.provider.executeAgentTurn(args.request, args.signal),
+      result: await executeTurn(args.provider, args.request, args.signal),
       provider: args.provider,
     };
   } catch (error) {
@@ -139,7 +146,7 @@ export async function executeCompanionAgentTurnWithToolChoiceFallback(args: {
 
     args.onFallback?.(error, fallback);
     return {
-      result: await fallback.executeAgentTurn(args.request, args.signal),
+      result: await executeTurn(fallback, args.request, args.signal),
       provider: fallback,
     };
   }
@@ -196,7 +203,10 @@ export async function recordRejectedToolCall(
   identity: { id: string; name: string },
   argsHash: string,
   definition: CompanionAgentToolDefinitionV1 | null,
-  status: "blocked" | "failed",
+  // 40b §3.2 的三类"没拿到结果"：被拒绝、从未开始、能力不可用。
+  // 三者在账本里必须分得开——折叠成 failed 之后 doctor 与回放就查不出
+  // 真实原因，而用户看到的那句话也会失去可行动性。
+  status: "blocked" | "failed" | "not_executed" | "unavailable",
   safeSummary: string,
 ): Promise<void> {
   await withWorkerWorkspaceTransaction(
@@ -234,6 +244,15 @@ export async function executeTool(
   definition: CompanionAgentToolDefinitionV1,
   call: { id: string; arguments: Record<string, unknown> },
   fence: ToolExecutionFence,
+  /**
+   * 子步骤预算的 AbortSignal（40b §4.1-2「向下传播 abort」）。
+   *
+   * 为什么不是"能取消在途 SQL"：worker 用 postgres.js 驱动，它没有逐查询的
+   * AbortSignal，能做到的是**在写之前发现已经超时**。那已经能挡住真正要紧的
+   * 那一类——一个被放弃的写工具继续跑完并落库。已经在途的那条查询只能等它
+   * 自己回来，回来之后由下面那道迟到复查处理。
+   */
+  signal?: AbortSignal,
 ): Promise<AgentToolExecutionResult | { waiting: true; proposalId: string }> {
   const authorization = canUseCompanionAgentTool(
     (await readRunMeta(event)).permissionLevel,
@@ -282,7 +301,28 @@ export async function executeTool(
   // 超时已被判定的调用不再写 succeeded（审计表由 SQL fence 兜底，这里同时
   // 阻止迟到的 succeeded SSE 事件覆盖已下发的 failed）。
   if (fence.abandoned) return result;
-  await updateToolCall(event, call.id, { status: "succeeded", safeSummary: result.safeSummary, resultRef: result.route ? JSON.stringify(result.route) : undefined });
+  const recorded = await updateToolCall(event, call.id, {
+    status: "succeeded",
+    safeSummary: result.safeSummary,
+    resultRef: result.route ? JSON.stringify(result.route) : undefined,
+  });
+  // Recovery may have changed an interrupted write to outcome_unknown while
+  // this process was still finishing. Do not publish a late success over it.
+  //
+  // 2026-10-01：这里原本是 `if (!recorded) return result;`——**账本说
+  // outcome_unknown，模型却被告知 ok:true**。40b §6.4 明令「禁止把 fail-closed
+  // 解释成静默成功」：账本是业务合同，它这一写没落下来，就没人能证明这次调用
+  // 发生过。工具本身的业务结果也许是真的，但**不能拿它当回执**。
+  //
+  // 所以这里抛，让上层走同一条失败路径：模型拿到 `ok:false` + 确定状态，
+  // SSE 与审计行也就说同一句话。抛的是**不继承** CompanionToolError 的那一类，
+  // 否则会被 `classifyCompanionToolFailure` 归成 failed（= 确定没发生）。
+  if (!recorded) throw new CompanionToolOutcomeUnknownError(TOOL_OUTCOME_UNKNOWN_SAFE_SUMMARY);
+  // 迟到复查（40b §4.1-2「迟到结果在提交前复查取消、租约、权限和内容版本」）。
+  //
+  // 上面那道 fence 只覆盖"超时那一刻已经知道"的情形；这一支覆盖"调用方在预算
+  // 到期之后才把 signal 断掉"的路径。两者都不该让一次**结果不确定**的写被说成成功。
+  if (signal?.aborted) throw new CompanionToolOutcomeUnknownError(TOOL_OUTCOME_UNKNOWN_SAFE_SUMMARY);
   // autoExecute（2026-09-19 对齐权限分级原设计）：full = 用户预授权，路由类结果
   // 客户端应直接执行，不再等「前往」。授权判定只在服务端做，客户端只服从标志。
   const permissionLevel = (await readRunMeta(event)).permissionLevel;
@@ -307,11 +347,11 @@ export async function updateToolCall(
   event: AgentEventContext,
   toolCallId: string,
   patch: { status: string; proposalId?: string; resultRef?: string; safeSummary?: string },
-): Promise<void> {
-  await withWorkerWorkspaceTransaction(
+): Promise<boolean> {
+  return withWorkerWorkspaceTransaction(
     { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
     async (tx) => {
-      await tx.execute(sql`
+      const updated = await tx.execute<{ tool_call_id: string }>(sql`
         UPDATE companion_agent_tool_calls
         SET status = ${patch.status},
             proposal_id = COALESCE(${patch.proposalId ?? null}, proposal_id),
@@ -320,16 +360,20 @@ export async function updateToolCall(
             updated_at = now()
         WHERE run_id = ${event.read.runId} AND tool_call_id = ${toolCallId}
           -- 单调状态机：只有未终结的调用可被推进。工具执行超时后，在途事务
-          -- 迟到的 succeeded 不得把已判定 failed/blocked 的审计行改回去
+          -- 迟到的 succeeded 不得把已判定 outcome_unknown/failed/blocked 的审计行改回去
           -- （否则审计表与发给模型/客户端的 tool result 互相矛盾）。
           AND status IN ('requested', 'executing')
+        RETURNING tool_call_id
       `);
+      return updated.length > 0;
     },
   );
 }
 
 export type AgentToolCallRecord = {
   isNew: boolean;
+  /** 已冻结业务操作对应的原始调用 id；重试可换 provider call id。 */
+  toolCallId: string;
   status: string;
   proposalId: string | null;
   resultRef: string | null;
@@ -339,6 +383,8 @@ export type AgentToolCallRecord = {
 /**
  * Create the durable tool-call fence before execution. A retry of the same
  * provider call must consume the recorded result instead of executing again.
+ * A different provider call id with the same run/tool/argument fingerprint also
+ * reuses terminal outcomes, including `outcome_unknown`, rather than submitting again.
  *
  * 导出仅为可测：写入 reasoning 句柄的 SQL 只有这里一处，类型检查覆盖不到
  * 列名/参数绑定，需要实库往返验证（写 → loadContinuation 读回）。
@@ -359,6 +405,95 @@ export async function ensureAgentToolCall(
   return withWorkerWorkspaceTransaction(
     { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
     async (tx) => {
+      type ExistingCallRow = {
+        status: string;
+        name: string;
+        tool_call_id: string;
+        proposal_id: string | null;
+        result_ref: string | null;
+        result_safe_summary: string | null;
+        arguments_sha256: string;
+      };
+      const readByCallId = (toolCallId = call.id) => tx.execute<ExistingCallRow>(sql`
+        SELECT status, name, tool_call_id, proposal_id, result_ref, result_safe_summary, arguments_sha256
+        FROM companion_agent_tool_calls
+        WHERE run_id = ${event.read.runId} AND tool_call_id = ${toolCallId}
+        LIMIT 1
+      `);
+      const recordFromRow = (row: ExistingCallRow): AgentToolCallRecord => ({
+        isNew: false,
+        toolCallId: row.tool_call_id,
+        status: row.status,
+        proposalId: row.proposal_id,
+        resultRef: row.result_ref,
+        safeSummary: row.result_safe_summary,
+      });
+      const blockedRecord = (): AgentToolCallRecord => ({
+        isNew: false,
+        toolCallId: call.id,
+        status: "blocked",
+        proposalId: null,
+        resultRef: null,
+        safeSummary: "重复工具调用的参数与已冻结记录不一致，已阻止重放",
+      });
+      const reuseRow = async (source: ExistingCallRow): Promise<AgentToolCallRecord> => {
+        let row = source;
+        if (row.arguments_sha256 !== argsHash || row.name !== definition.name) {
+          return blockedRecord();
+        }
+        // A process can die after a write entered execution. On recovery the
+        // old transaction may have committed, so preserve uncertainty instead
+        // of replaying the operation. Reads remain safe to retry.
+        if (row.status === "executing" && definition.riskClass !== "read") {
+          const markedUnknown = await tx.execute<{ tool_call_id: string }>(sql`
+            UPDATE companion_agent_tool_calls
+            SET status = 'outcome_unknown',
+                result_safe_summary = ${TOOL_OUTCOME_UNKNOWN_SAFE_SUMMARY},
+                updated_at = now()
+            WHERE run_id = ${event.read.runId}
+              AND tool_call_id = ${row.tool_call_id}
+              AND status = 'executing'
+            RETURNING tool_call_id
+          `);
+          if (markedUnknown[0]) {
+            row = { ...row, status: "outcome_unknown", result_safe_summary: TOOL_OUTCOME_UNKNOWN_SAFE_SUMMARY };
+          } else {
+            const latest = await readByCallId(row.tool_call_id);
+            if (latest[0]) row = latest[0];
+          }
+        }
+        return recordFromRow(row);
+      };
+
+      const existingById = await readByCallId();
+      if (existingById[0]) return reuseRow(existingById[0]);
+
+      if (definition.riskClass !== "read") {
+        // Provider 重试可能给同一写操作换一个 call id。用稳定的 run + 工具名 +
+        // 参数指纹串行化登记过程，再复用已完成、等确认或结果不明的账本行。
+        // 只读调用不做这层折叠：相同查询可在同一轮再次读取最新状态。
+        const operationLockKey = `companion-agent-tool:${event.read.runId}:${definition.name}:${argsHash}`;
+        await tx.execute(sql`
+          SELECT pg_advisory_xact_lock(hashtextextended(${operationLockKey}, 0))
+        `);
+        // 同 call id、不同参数的并发请求使用不同 operation lock；第二次检查避免它们
+        // 在第一次提交后落到下面的业务操作去重分支，掩盖 call-id 冲突。
+        const existingAfterLock = await readByCallId();
+        if (existingAfterLock[0]) return reuseRow(existingAfterLock[0]);
+        const settledOperation = await tx.execute<ExistingCallRow>(sql`
+          SELECT status, name, tool_call_id, proposal_id, result_ref, result_safe_summary, arguments_sha256
+          FROM companion_agent_tool_calls
+          WHERE run_id = ${event.read.runId}
+            AND name = ${definition.name}
+            AND arguments_sha256 = ${argsHash}
+            AND status IN ('requested', 'executing', 'succeeded', 'waiting_confirmation', 'outcome_unknown')
+          ORDER BY created_at ASC
+          LIMIT 1
+        `);
+        const settled = settledOperation[0];
+        if (settled) return reuseRow(settled);
+      }
+
       const inserted = await tx.execute<{ id: string }>(sql`
         INSERT INTO companion_agent_tool_calls
           (id, workspace_id, user_id, conversation_id, run_id, step_id, tool_call_id,
@@ -376,41 +511,16 @@ export async function ensureAgentToolCall(
       if (inserted[0]) {
         return {
           isNew: true,
+          toolCallId: call.id,
           status: "requested",
           proposalId: null,
           resultRef: null,
           safeSummary: null,
         };
       }
-      const existing = await tx.execute<{
-        status: string;
-        proposal_id: string | null;
-        result_ref: string | null;
-        result_safe_summary: string | null;
-        arguments_sha256: string;
-      }>(sql`
-        SELECT status, proposal_id, result_ref, result_safe_summary, arguments_sha256
-        FROM companion_agent_tool_calls
-        WHERE run_id = ${event.read.runId} AND tool_call_id = ${call.id}
-        LIMIT 1
-      `);
+      const existing = await readByCallId();
       const row = existing[0];
-      if (row && row.arguments_sha256 !== argsHash) {
-        return {
-          isNew: false,
-          status: "blocked",
-          proposalId: null,
-          resultRef: null,
-          safeSummary: "重复工具调用的参数与已冻结记录不一致，已阻止重放",
-        };
-      }
-      return {
-        isNew: false,
-        status: row?.status ?? "blocked",
-        proposalId: row?.proposal_id ?? null,
-        resultRef: row?.result_ref ?? null,
-        safeSummary: row?.result_safe_summary ?? null,
-      };
+      return row ? reuseRow(row) : blockedRecord();
     },
   );
 }

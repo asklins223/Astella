@@ -235,33 +235,16 @@ test("给模型的那组 `--lesson-*` 只声明在**落点那一条规则**上�
   assert.ok(HTML.slice(stageAt, stageEnd).includes("<svg"), "模型那一页没落进凹槽里");
 });
 
-test("提示词交给模型的那份取色名单，与落点上真声明的那一份同宽同名同值", () => {
-  // 提示词是这份合同的**另一半**：落点上声明了而提示词里没告诉模型，模型就只能自己发明颜色。
-  // 反过来提示词里给了而落点上没有，那一格是死的——模型 `var(--lesson-x)` 拿到空值。
+test("网页创作不受书房外壳的配色名单约束", () => {
   const prompt = buildDynamicArtifactPrompt({
     drivingQuestion: "先弄懂提取练习为什么要合上书再讲",
     blocks: BLOCKS,
     explanation: "提取练习的关键在「合上」这一步。",
   });
-  const fromPrompt = new Map<string, string>();
-  for (const line of prompt.split("\n")) {
-    const match = /^(--lesson-[a-z-]+):(.*)$/.exec(line.trim());
-    if (!match) continue;
-    // 取值到第一个汉字之前：清单的每一行都是"取值 + 中文用途"，汉字那一头是给人读的。
-    const description = match[2]!.search(/[\u3400-\u9FFF]/);
-    fromPrompt.set(match[1]!, (description < 0 ? match[2]! : match[2]!.slice(0, description)).trim());
-  }
-  const lesson = LESSON_TOKENS();
-  assert.equal(fromPrompt.size, TOKEN_PAIRS.length,
-    `提示词里给了 ${fromPrompt.size} 个取色名，对得上的是 ${TOKEN_PAIRS.length} 个：`
-    + "多出来的那个在落点上不存在（模型用 `var()` 取不到），少掉的那个模型就只能自己发明");
-  for (const [, exposed] of TOKEN_PAIRS) {
-    assert.equal(fromPrompt.get(exposed), lesson.get(exposed),
-      `提示词里 ${exposed} 写的是 ${fromPrompt.get(exposed) ?? "（没写）"}，落点上声明的是 ${lesson.get(exposed) ?? "（没声明）"}：`
-      + "模型按提示词写的样式与纸面实际提供的对不上，那一格颜色会静默失效");
-  }
-  // 提示词还得说清"服务端已经声明好了"，否则模型会以为该自己写死颜色。
-  assert.ok(prompt.includes("服务端已经在落点上声明好了"), "提示词没说明 --lesson-* 由服务端提供：模型多半会自己写一串色值");
+  assert.ok(prompt.includes("配色、图形、交互和动画由你自由设计"));
+  assert.equal(prompt.includes("--lesson-"), false);
+  assert.equal(prompt.includes("奶油纸"), false);
+  assert.equal(LESSON_TOKENS().size, TOKEN_PAIRS.length);
 });
 
 test("产物样式里不许出现 `var(--hud-*)`：frame 跑在不透明 origin 上，那一格会静默取不到值", () => {

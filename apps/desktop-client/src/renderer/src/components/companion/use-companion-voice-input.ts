@@ -16,8 +16,7 @@ import {
 /**
  * 伴星语音输入（2026-09-18）。
  *
- * 录音结束后只把转写结果交给统一 HUD；HUD 立即提交真实会话，不把转写文本回填
- * 到输入框要求用户二次确认。
+ * 录音结束后把真实转写和 artifact 交给 HUD 的独立语音气泡，用户可修改后发送。
  *
  * 交互是「点一下开始说」：录到足够人声后，连续静音由 VAD 判定收尾（见
  * companion-voice-vad），不需要用户再点一次。
@@ -74,6 +73,7 @@ function encodeBase64(bytes: Uint8Array): string {
 }
 
 export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): CompanionVoiceInput {
+  const operationRef = useRef(0);
   const [phase, setPhase] = useState<CompanionVoicePhase>("idle");
   const [note, setNote] = useState<string | null>(null);
   const [noteRevision, setNoteRevision] = useState(0);
@@ -81,6 +81,7 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
   const phaseRef = useRef<CompanionVoicePhase>("idle");
   phaseRef.current = phase;
   const recorderRef = useRef<CompanionVoiceRecorder | null>(null);
+  const startingRef = useRef(false);
   const vadRef = useRef<CompanionVadState>(COMPANION_VAD_INITIAL_STATE);
   const listenersRef = useRef(new Set<(level: number) => void>());
 
@@ -106,16 +107,21 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
     const recorder = recorderRef.current;
     if (!recorder || phaseRef.current !== "listening") return;
     recorderRef.current = null;
+    const operation = operationRef.current;
+    phaseRef.current = "transcribing";
     setPhase("transcribing");
     emitLevel(0);
-    const recording = await recorder.stop();
-    if (!recording) {
-      setPhase("idle");
-      showNote("好像没录到内容，再试一次");
-      return;
-    }
     try {
+      const recording = await recorder.stop();
+      if (operation !== operationRef.current) return;
+      if (!recording) {
+        phaseRef.current = "idle";
+        setPhase("idle");
+        showNote("好像没录到内容，再试一次");
+        return;
+      }
       const epoch = await requireWorkspaceEpoch();
+      if (operation !== operationRef.current) return;
       const transcription = await transcribeRecording({
         sampleRate: recording.sampleRate,
         samples: recording.samples,
@@ -135,10 +141,14 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
           return { text: result.text, voiceArtifactId: result.voiceArtifactId };
         },
       });
+      if (operation !== operationRef.current) return;
+      phaseRef.current = "idle";
       setPhase("idle");
-      showNote(transcription.route === "cloud" ? "云端识别完成，已直接发送" : "本地识别完成，已直接发送；音频没有离开设备");
+      showNote(transcription.route === "cloud" ? "识别好了，可以修改后发送" : "本地识别好了，可以修改后发送；音频没有离开设备");
       await options.onTranscript({ text: transcription.text, voiceArtifactId: transcription.voiceArtifactId });
     } catch (error) {
+      if (operation !== operationRef.current) return;
+      phaseRef.current = "idle";
       setPhase("idle");
       showNote(`识别失败：${gatewayErrorMessage(error)}`);
     }
@@ -148,11 +158,13 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
   finishRef.current = finish;
 
   const begin = useCallback(async () => {
-    if (phaseRef.current !== "idle" || options.disabled) return;
+    if (phaseRef.current !== "idle" || startingRef.current || options.disabled) return;
     if (!CompanionVoiceRecorder.isSupported()) {
       showNote("当前设备没有可用的麦克风");
       return;
     }
+    const operation = ++operationRef.current;
+    startingRef.current = true;
     vadRef.current = COMPANION_VAD_INITIAL_STATE;
     try {
       const recorder = new CompanionVoiceRecorder({
@@ -170,25 +182,33 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
       await recorder.start();
       // 起录期间被取消（用户点了另一处或组件卸载）：把麦克风还回去。
       if (recorderRef.current !== recorder) {
-        void recorder.stop();
+        void recorder.stop().catch(() => undefined);
         return;
       }
+      phaseRef.current = "listening";
       setPhase("listening");
       setNote(null);
     } catch {
+      if (operation !== operationRef.current) return;
       recorderRef.current = null;
+      phaseRef.current = "idle";
       setPhase("idle");
       showNote("麦克风不可用或未授权");
+    } finally {
+      if (operation === operationRef.current) startingRef.current = false;
     }
   }, [emitLevel, options.disabled, showNote]);
 
   const cancel = useCallback(() => {
+    operationRef.current += 1;
     const recorder = recorderRef.current;
     recorderRef.current = null;
+    startingRef.current = false;
     emitLevel(0);
+    phaseRef.current = "idle";
     setPhase("idle");
     if (recorder) {
-      void recorder.stop();
+      void recorder.stop().catch(() => undefined);
       showNote("已取消这次录音");
     }
   }, [emitLevel, showNote]);
@@ -201,9 +221,10 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
   const dismissNote = useCallback(() => setNote(null), []);
 
   useEffect(() => () => {
+    operationRef.current += 1;
     const recorder = recorderRef.current;
     recorderRef.current = null;
-    if (recorder) void recorder.stop();
+    if (recorder) void recorder.stop().catch(() => undefined);
   }, []);
 
   return { phase, note, noteRevision, supported, toggle, cancel, dismissNote, subscribeLevel };

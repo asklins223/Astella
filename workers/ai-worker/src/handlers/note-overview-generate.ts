@@ -1,5 +1,6 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import type { ChatMessage } from "@ailearn/shared";
 import { readNoteOverviewGenerateJobPayload } from "@ailearn/shared/job-payload-contracts";
 import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
 import * as schema from "@ailearn/shared/db-schema";
@@ -11,10 +12,11 @@ import {
 } from "../lib/governance.ts";
 import { createProvider } from "../lib/ai-provider.ts";
 import { extractJsonFromText } from "../lib/providers/json-response.ts";
-import { runWithAbortBudget } from "../lib/handler-timeout.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { assertJobLease, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
 import { NoteOverviewOutputError } from "../lib/non-retryable-errors.ts";
+import { runWorkerAiTask } from "./worker-ai-task.ts";
+import { noteLearningSnapshotHash } from "./note-learning-snapshot.ts";
 import type { JobPayload } from "./index.ts";
 
 const CHUNK_CHARS = 16_000;
@@ -181,7 +183,7 @@ export async function runNoteOverviewGenerate(job: JobPayload): Promise<void> {
   }));
   if (existing) return;
 
-  const { blocks } = await readFrozenNote(job, input);
+  const { frozen, blocks } = await readFrozenNote(job, input);
   if (blocks.length === 0) throw new NoteOverviewOutputError("这篇笔记还没有可读的正文");
   const imageBlocksNotRead = blocks.reduce((count, block) => {
     const inlineImages = (block.content.match(/!\[[^\]]*\]\(/gu) ?? []).length;
@@ -212,15 +214,50 @@ export async function runNoteOverviewGenerate(job: JobPayload): Promise<void> {
   const pointCount = chunks.length === 1 ? 3 : chunks.length === 2 ? 2 : 1;
   const generated: { gist: string; points: OverviewPoint[] }[] = await Promise.all(
     chunks.map(async (chunk, chunkIndex) => {
-      const response = await runWithAbortBudget(
-        (signal) => provider.chatCompletion([
-          { role: "system", content: "你是笔记里的白话讲解助手。忠实依据用户笔记，引用必须原样来自提供的段落。" },
-          { role: "user", content: buildPrompt(chunkIndex, chunks.length, pointCount, chunk.lines) },
-        ], { temperature: 0.2, maxTokens: 1_800, responseFormat: "json_object", disableThinking: true }, signal),
-        job.signal,
-        providerTimeout,
-      );
-      const parsed = parseOverviewChunk(response.content);
+      const messages: ChatMessage[] = [
+        { role: "system", content: "你是笔记里的白话讲解助手。忠实依据用户笔记，引用必须原样来自提供的段落。" },
+        { role: "user", content: buildPrompt(chunkIndex, chunks.length, pointCount, chunk.lines) },
+      ];
+      const generationParameters = {
+        temperature: 0.2,
+        maxTokens: 1_800,
+        responseFormat: "json_object" as const,
+        disableThinking: true,
+      };
+      const inputSnapshotHash = noteLearningSnapshotHash({
+        taskVersion: 1,
+        noteVersionId: frozen.versionId,
+        noteContentHash: frozen.contentHash,
+        chunkIndex,
+        chunkCount: chunks.length,
+        modelId: provider.modelId,
+        promptVersion: provider.promptVersion,
+        generationParameters,
+        messages,
+      });
+      const parsed = await runWorkerAiTask({
+        job,
+        userId: job.requestedBy!,
+        taskId: "note_overview_chunk",
+        taskVersion: 1,
+        idempotencyKey: `note-overview:${job.id}:${chunkIndex}:${inputSnapshotHash}`,
+        inputSnapshotRef: { kind: "note_version", id: frozen.versionId, hash: inputSnapshotHash },
+        input: messages,
+        modelId: provider.modelId,
+        promptVersion: `${provider.promptVersion}:note-overview-chunk-v1`,
+        resourceClass: "interactive_ai",
+        timeoutMs: providerTimeout,
+        isOutputShapeError: (error) => error instanceof NoteOverviewOutputError,
+        execute: async (request, signal) => {
+          const response = await provider.chatCompletion(request, generationParameters, signal);
+          return {
+            ok: true,
+            output: parseOverviewChunk(response.content),
+            promptTokens: response.usage?.promptTokens ?? undefined,
+            completionTokens: response.usage?.completionTokens ?? undefined,
+          };
+        },
+      });
       const points = parsed.points.map((point) => {
         if (!chunk.ordinals.has(point.blockOrdinal)) throw new NoteOverviewOutputError("速看引用指向了另一段笔记");
         const source = blocks.find((block) => block.ordinal === point.blockOrdinal);

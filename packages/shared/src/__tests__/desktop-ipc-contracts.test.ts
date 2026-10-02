@@ -18,6 +18,7 @@ import {
   gatewayEventPayloadM2Schema,
   gatewayResultSchema,
   localApiTrustSchema,
+  learningRoomManifestSchema,
   navigationEntrySchema,
   sessionContextSchema,
   staticAssetPathSchema,
@@ -27,6 +28,19 @@ import {
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const USER_ID = "00000000-0000-4000-8000-000000000002";
+
+test("room scene families can share a plate while every asset path stays confined", () => {
+  const plate = "posters/home-v2/lighthouse/lighthouse-day-poster-v1.png";
+  const manifest = {
+    version: 1, schemaVersion: 1, id: "room", canonicalMode: "2d",
+    basePath: "/assets/learning-room/v1",
+    assets: { "homeV2Posters.day": plate, "seatPosters.day": plate },
+  };
+  assert.deepEqual(learningRoomManifestSchema.parse(manifest).assets, manifest.assets);
+  for (const invalid of ["../outside.png", "/outside.png", "https://example.com/outside.png"]) {
+    assert.throws(() => learningRoomManifestSchema.parse({ ...manifest, assets: { ...manifest.assets, invalid } }));
+  }
+});
 
 test("M1 contract snapshot rejects duplicate and ungated routes", () => {
   const valid = {

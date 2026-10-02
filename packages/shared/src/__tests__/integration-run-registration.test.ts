@@ -138,7 +138,7 @@ test("注册口径是「会执行它的那一行」：依赖声明里出现文�
   assert.ok(registrationText("apps/api/package.json", honest).includes("dark-two.integration.ts"),
     "脚本值里的点名也不算了 ⇒ 收窄把真注册一起切掉了");
   // 本轮修好的那两份：现在只活在脚本值里，声明行已经干净。
-  for (const name of ["history-search-postgres.integration.ts", "proactive-hook-postgres.integration.ts"]) {
+  for (const name of ["history-search-postgres.integration.ts", "proactive-hook-postgres.integration.ts", "companion-memory-budget-postgres.integration.ts"]) {
     assert.ok(registeredNames().has(name), `${name} 没在任何脚本值里被点名（它仍是暗文件）`);
   }
   // 覆盖面不许只盯一份 manifest：同一只手会改错任何一个包。

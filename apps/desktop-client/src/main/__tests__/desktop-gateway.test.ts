@@ -652,6 +652,42 @@ describe("DesktopGateway", () => {
       expect(seen).toEqual(["Bearer stored-token"]);
     });
 
+    it("waits for the same credential load across concurrent session requests", async () => {
+      const { store } = fakeStore("stored-token");
+      let resolveLoad!: (token: string | null) => void;
+      const load = vi.fn(() => new Promise<string | null>((resolve) => { resolveLoad = resolve }));
+      const seen: (string | null)[] = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        if (url.endsWith("/health")) return healthResponse();
+        if (url.endsWith("/auth/me")) {
+          seen.push(new Headers(init?.headers).get("Authorization"));
+          return new Response(JSON.stringify(meEnvelope), { status: 200 });
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      const gateway = new DesktopGateway(environment(), { credentials: { ...store, load } });
+      await gateway.connect();
+      const completed: string[] = [];
+      const readSession = () => ns_auth.getSession(gateway.gatewayTransport).then((session) => {
+        completed.push(session.status);
+        return session;
+      });
+      const first = readSession();
+      const second = readSession();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const completedWhileLoading = [...completed];
+      resolveLoad("stored-token");
+      const sessions = await Promise.all([first, second]);
+
+      expect(completedWhileLoading).toEqual([]);
+      expect(sessions.map((session) => session.status)).toEqual(["authenticated", "authenticated"]);
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(seen).toEqual(["Bearer stored-token", "Bearer stored-token"]);
+    });
+
     it("persists the issued token only when the user keeps the choice", async () => {
       const record: { loginBody?: string } = {};
       vi.spyOn(globalThis, "fetch").mockImplementation(routeAuth(record));

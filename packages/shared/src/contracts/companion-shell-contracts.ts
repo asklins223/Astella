@@ -186,6 +186,19 @@ export type CompanionPresenceState = z.infer<typeof companionPresenceStateSchema
 export const companionSuggestionPauseSchema = z.object({
   paused: z.boolean(),
   until: z.string().datetime().optional(),
+  /**
+   * 40 §8.2：「用户说『今天别催学习』，**该本地日**不再主动推荐学习。」
+   *
+   * 为什么不复用 `until`：`until` 是**时刻**，而"今天"是**本地日**。
+   * 用户在晚上 23:50 说"今天别催学习"，按 `until = now + 24h` 会压到明天下午，
+   * 而他要的是压到今晚 24 点。反过来凌晨 00:10 说，按 `now + 24h` 又会压掉明天
+   * 整整一天——那不是他说的。**这两个差一天**，而差一天的错在界面上看不出来。
+   *
+   * 所以本地日单独一列，形如 YYYY-MM-DD。`until` 留给"暂停两小时"这类按时长的。
+   */
+  localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** 用户当时的**本地时区**。没有它就算不出"今天"到哪儿结束。 */
+  timezone: z.string().min(1).max(64).optional(),
   reasonCodes: z.array(z.string().min(1).max(100)).max(50).optional(),
 }).strict();
 export type CompanionSuggestionPause = z.infer<typeof companionSuggestionPauseSchema>;
@@ -217,6 +230,8 @@ export const companionAccountStateV1Schema = z.object({
   epoch: z.number().int().min(0),
   /** true=开启 Companion；false=global off（广播 fence 到全部 active device session）。 */
   globalEnabled: z.boolean(),
+  /** 日记独立开关；恢复后只从 diaryEnabledSince 对应的启用时刻起收集素材。 */
+  diaryEnabled: z.boolean(),
   presence: companionPresenceStateSchema.optional(),
   suggestionPause: companionSuggestionPauseSchema.optional(),
   suppression: companionSuppressionSchema.optional(),
@@ -252,6 +267,8 @@ export const companionAccountPatchSchema = z.object({
   /** 客户端持有的 base revision（CAS 乐观锁），必填。 */
   revision: z.number().int().min(0),
   globalEnabled: z.boolean().optional(),
+  /** 暂停或恢复自动日记，不影响学习、提醒或其它伴星能力。 */
+  diaryEnabled: z.boolean().optional(),
   presence: companionPresenceStateSchema.optional(),
   suggestionPause: companionSuggestionPauseSchema.optional(),
   suppression: companionSuppressionSchema.optional(),
@@ -272,6 +289,7 @@ export const companionAccountPatchSchema = z.object({
 }).strict().superRefine((patch, ctx) => {
   const hasChange =
     patch.globalEnabled !== undefined ||
+    patch.diaryEnabled !== undefined ||
     patch.presence !== undefined ||
     patch.suggestionPause !== undefined ||
     patch.suppression !== undefined ||

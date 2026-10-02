@@ -88,7 +88,7 @@ describe("阅读屏的版本标签（审计 F35）", () => {
     // 实时文档有正文；已存的 v1 是空的（正是审计现场的形状）。
     installApi(seedUpdate("新标题", ["刚写进去的那一段"]), [{ ordinal: 1, type: "paragraph", content: "" }]);
     vi.useFakeTimers();
-    useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "read" } });
+    useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "preview" } });
     render(<NotebookSurface />);
     await settle();
 
@@ -97,18 +97,29 @@ describe("阅读屏的版本标签（审计 F35）", () => {
     // 反向：这一屏不许出现"不可变版本"（那一版是空的，那句话是假的）。
     expect(screen.queryByText(/不可变版本/)).toBeNull();
     // 正文确实是实时文档里那一段。
-    expect(screen.getByText("刚写进去的那一段")).toBeTruthy();
+    expect(document.querySelector(".note-transcript")?.textContent).toContain("刚写进去的那一段");
   });
 
-  it("没有实时文档时读的是已存版本：照旧写「不可变版本：v1」", async () => {
-    installApi(seedUpdate("起点", []), [{ ordinal: 1, type: "paragraph", content: "已定版的正文" }]);
+  it("实时文档为空代表删空，不回放已存版本的旧正文", async () => {
+    installApi(seedUpdate("版本标签", []), [{ ordinal: 0, type: "paragraph", content: "已定版的正文" }]);
     vi.useFakeTimers();
-    useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "read" } });
+    useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "preview" } });
     render(<NotebookSurface />);
     await settle();
 
+    expect(document.querySelector(".note-transcript")?.textContent).toContain("这一版正文还没有段落");
+    expect(document.querySelector(".note-transcript")?.textContent).not.toContain("已定版的正文");
+    expect(screen.getAllByText(/未定版的当前内容/).length).toBeGreaterThan(0);
+  });
+
+  it("实时正文与已存版本一致时，版本标签确实显示不可变版本", async () => {
+    installApi(seedUpdate("版本标签", ["已定版的正文"]), [{ ordinal: 0, type: "paragraph", content: "已定版的正文" }]);
+    vi.useFakeTimers();
+    useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "preview" } });
+    render(<NotebookSurface />);
+    await settle();
+    expect(document.querySelector(".note-transcript")?.textContent).toContain("已定版的正文");
     expect(screen.getAllByText(/不可变版本：v1/).length).toBeGreaterThan(0);
-    expect(screen.getByText("已定版的正文")).toBeTruthy();
     expect(screen.queryByText(/未定版的当前内容/)).toBeNull();
   });
 });

@@ -248,6 +248,13 @@ import {
   companionVoiceTranscribeResultV1Schema,
 } from "@ailearn/shared/companion-voice-contracts";
 import {
+  COMPANION_DISCOVERY_KINDS,
+  COMPANION_DISCOVERY_SOURCES,
+  COMPANION_DISCOVERY_VISIBILITY,
+  companionDiscoveryBookV1Schema,
+  companionDiscoveryEntryV1Schema,
+} from "@ailearn/shared/desktop-ipc-contracts";
+import {
   companionChatEnsureRequestV1Schema,
   companionChatEnsureResultV1Schema,
   companionChatListMessagesRequestV1Schema,
@@ -286,6 +293,8 @@ import {
   companionDailyMonthValueV1Schema,
   companionDailySummaryV1Schema,
   companionDailyMonthV1Schema,
+  companionDailyVisibilityV1Schema,
+  companionDailyDeleteV1Schema,
   companionActivityAckRequestV1Schema,
   companionActivityDeliveryV1Schema,
   companionActivityTimelineV1Schema,
@@ -305,12 +314,18 @@ import {
   companionMemoryCorrectInputV1Schema,
   companionMemoryListQuerySchema,
   companionMemoryListV1Schema,
+  companionMemoryRevisionListV1Schema,
   companionMemoryQueueResultV1Schema,
   companionMemoryStarMapV2Schema,
   companionPersonaMutationV1Schema,
   companionPersonaPatchV1Schema,
+  companionPersonaRestoreV1Schema,
+  companionPersonaStagedV1Schema,
+  companionPersonaPendingV1Schema,
+  companionPersonaActivatedV1Schema,
   companionPersonaResetV1Schema,
   companionPersonaV1Schema,
+  companionPersonaVersionListV1Schema,
 } from "@ailearn/shared/companion-memory-desktop-contracts";
 import {
   companionInvitationActionRequestSchema,
@@ -540,6 +555,11 @@ const companionDailyMonthInputSchema = z.strictObject({
   ...m1InputBase,
   month: companionDailyMonthValueV1Schema,
 });
+/** 隐藏/取消隐藏/删除都只认一个本地日期（YYYY-MM-DD）。 */
+const companionDailyVisibilityInputSchema = z.strictObject({
+  ...m1InputBase,
+  date: companionDailyDateV1Schema,
+});
 const companionHistoryListInputSchema = z.strictObject({
   ...m1InputBase,
   query: companionHistoryQueryV1Schema.optional(),
@@ -581,6 +601,29 @@ const companionDataExportInputSchema = z.strictObject({
 const companionPersonaPatchInputSchema = z.strictObject({
   ...m1InputBase,
   request: companionPersonaPatchV1Schema,
+});
+const companionPersonaResetInputSchema = z.strictObject({
+  ...m1InputBase,
+  revision: z.number().int().nonnegative(),
+});
+const companionPersonaRestoreInputSchema = z.strictObject({
+  ...m1InputBase,
+  revision: z.number().int().positive(),
+  currentRevision: z.number().int().nonnegative(),
+});
+/**
+ * 「排队」的请求体与 `patch` **同形**：服务端两条路由收的是同一份完整档案 schema，
+ * 省略字段即被默认清空。写两份形状只会在其中一份漂掉，然后界面报出一个
+ * 服务端从来没见过 422 的错。
+ */
+const companionPersonaStageInputSchema = z.strictObject({
+  ...m1InputBase,
+  request: companionPersonaPatchV1Schema,
+});
+const companionPersonaActivateInputSchema = z.strictObject({
+  ...m1InputBase,
+  /** 当前 revision（CAS）。注意不是待生效那一版的号——服务端按当前版本做锁。 */
+  revision: z.number().int().nonnegative(),
 });
 const companionMemoryDeleteOutputSchema = z.strictObject({ memoryItemId: uuidSchema });
 export const sourceListInputSchema = z.strictObject({ ...m1InputBase, cursor: z.string().min(1).max(128).optional(), limit: z.number().int().min(1).max(100).optional(), status: z.string().min(1).max(32).optional() });
@@ -821,7 +864,89 @@ channel(DESKTOP_IPC_CHANNELS.companionMemoryDelete, companionMemoryIdInputSchema
     return ns_companion.deleteCompanionMemory(gateway.gatewayTransport, input.memoryId, input.meta.requestId);
   }, companionMemoryDeleteOutputSchema);
 
-  channel(DESKTOP_IPC_CHANNELS.companionMemoryCreate, companionMemoryCreateInputSchema, async (_event, _window, input) => {
+  // 回收区的两个动作都**不回传记忆体**：服务端在两处都返回 204，因为恢复后
+// 那一行的归档/删除状态已变，回一份旧快照会让面板短暂显示成"没恢复"。
+// 调用方刷新列表即可——那是唯一正确的口径。
+channel(DESKTOP_IPC_CHANNELS.companionMemoryRestoreDeleted, companionMemoryIdInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    await ns_companion.restoreDeletedCompanionMemory(gateway.gatewayTransport, input.memoryId, input.meta.requestId);
+    return null;
+  }, z.null());
+
+channel(DESKTOP_IPC_CHANNELS.companionMemoryErase, companionMemoryIdInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    await ns_companion.eraseCompanionMemory(gateway.gatewayTransport, input.memoryId, input.meta.requestId);
+    return null;
+  }, z.null());
+
+// ── 40 §7 发现簿 ───────────────────────────────────────────────────────
+//
+// 取消收藏**不叫 delete**：它只置不可见，原始回答与日记一个字都不动。
+// 名字叫 delete 的后果，是下一次有人顺手把它接成级联。
+
+const companionDiscoveryCollectInputSchema = z.strictObject({
+  ...m1InputBase,
+  request: z.strictObject({
+    kind: z.enum(COMPANION_DISCOVERY_KINDS),
+    source: z.enum(COMPANION_DISCOVERY_SOURCES),
+    sourceId: z.string().min(1).max(200),
+    author: z.enum(["user", "assistant"]),
+    body: z.string().min(1).max(4000),
+    annotation: z.string().max(2000).nullable().optional(),
+    visibility: z.enum(COMPANION_DISCOVERY_VISIBILITY).optional(),
+  }),
+});
+const companionDiscoveryIdentityInputSchema = z.strictObject({
+  ...m1InputBase,
+  request: z.strictObject({
+    kind: z.enum(COMPANION_DISCOVERY_KINDS),
+    source: z.enum(COMPANION_DISCOVERY_SOURCES),
+    sourceId: z.string().min(1).max(200),
+  }),
+});
+
+channel(DESKTOP_IPC_CHANNELS.companionDiscoveryGet, runtimeInputSchema, async (_event, _window, input) => {
+  requireM2Route(contract, "room.home");
+  assertEpoch(input.meta, getActiveWorkspaceEpoch());
+  return ns_companion.getCompanionDiscoveryBook(gateway.gatewayTransport, input.meta.requestId);
+}, companionDiscoveryBookV1Schema);
+
+channel(DESKTOP_IPC_CHANNELS.companionDiscoveryCollect, companionDiscoveryCollectInputSchema, async (_event, _window, input) => {
+  requireM2Route(contract, "room.home");
+  assertEpoch(input.meta, getActiveWorkspaceEpoch());
+  return ns_companion.collectCompanionDiscovery(gateway.gatewayTransport, input.request, input.meta.requestId);
+}, z.object({ status: z.enum(["collected", "already_collected"]), entry: companionDiscoveryEntryV1Schema }));
+
+channel(DESKTOP_IPC_CHANNELS.companionDiscoveryUncollect, companionDiscoveryIdentityInputSchema, async (_event, _window, input) => {
+  requireM2Route(contract, "room.home");
+  assertEpoch(input.meta, getActiveWorkspaceEpoch());
+  return ns_companion.uncollectCompanionDiscovery(gateway.gatewayTransport, input.request, input.meta.requestId);
+}, z.object({ status: z.enum(["uncollected", "not_collected"]) }));
+
+channel(DESKTOP_IPC_CHANNELS.companionDiscoveryAnnotate, z.strictObject({ ...m1InputBase, request: z.strictObject({ entryId: uuidSchema, annotation: z.string().max(2000).nullable() }) }), async (_event, _window, input) => {
+  requireM2Route(contract, "room.home");
+  assertEpoch(input.meta, getActiveWorkspaceEpoch());
+  return ns_companion.annotateCompanionDiscovery(gateway.gatewayTransport, input.request, input.meta.requestId);
+}, z.object({ status: z.literal("annotated") }));
+
+const companionDiscoveryStateInputSchema = z.strictObject({
+  ...m1InputBase,
+  query: z.strictObject({
+    kind: z.enum(COMPANION_DISCOVERY_KINDS),
+    source: z.enum(COMPANION_DISCOVERY_SOURCES),
+    sourceId: z.string().min(1).max(200),
+  }),
+});
+
+channel(DESKTOP_IPC_CHANNELS.companionDiscoveryState, companionDiscoveryStateInputSchema, async (_event, _window, input) => {
+  requireM2Route(contract, "room.home");
+  assertEpoch(input.meta, getActiveWorkspaceEpoch());
+  return ns_companion.getCompanionDiscoveryState(gateway.gatewayTransport, input.query, input.meta.requestId);
+}, z.object({ collected: z.boolean(), entryId: uuidSchema.nullable(), annotation: z.string().nullable() }));
+
+channel(DESKTOP_IPC_CHANNELS.companionMemoryCreate, companionMemoryCreateInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_companion.createCompanionMemory(gateway.gatewayTransport, input.request, input.meta.requestId);
@@ -832,6 +957,12 @@ channel(DESKTOP_IPC_CHANNELS.companionMemoryDelete, companionMemoryIdInputSchema
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_companion.correctCompanionMemory(gateway.gatewayTransport, input.memoryId, input.request, input.meta.requestId);
   }, companionMemoryItemV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.companionMemoryRevisions, companionMemoryIdInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.readCompanionMemoryRevisions(gateway.gatewayTransport, input.memoryId, input.meta.requestId);
+  }, companionMemoryRevisionListV1Schema);
 
   channel(DESKTOP_IPC_CHANNELS.companionMemoryDismiss, companionMemoryIdInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");
@@ -881,11 +1012,37 @@ channel(DESKTOP_IPC_CHANNELS.companionMemoryDelete, companionMemoryIdInputSchema
     return ns_companion.getCompanionDailyMonth(gateway.gatewayTransport, input.month, input.meta.requestId);
   }, companionDailyMonthV1Schema);
 
+  // §10：「隐藏日记」与「删除日记」是两种语义（隐藏可恢复、删除清派生），
+  // 所以是两条独立通道而不是一个带 action 的通道——调用点读起来更不容易搞混。
+  channel(DESKTOP_IPC_CHANNELS.companionDailyHide, companionDailyVisibilityInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.hideCompanionDiary(gateway.gatewayTransport, input.date, input.meta.requestId);
+  }, companionDailyVisibilityV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.companionDailyUnhide, companionDailyVisibilityInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.unhideCompanionDiary(gateway.gatewayTransport, input.date, input.meta.requestId);
+  }, companionDailyVisibilityV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.companionDailyDelete, companionDailyVisibilityInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.removeCompanionDiary(gateway.gatewayTransport, input.date, input.meta.requestId);
+  }, companionDailyDeleteV1Schema);
+
   channel(DESKTOP_IPC_CHANNELS.companionPersonaGet, runtimeInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_companion.getCompanionPersona(gateway.gatewayTransport, input.meta.requestId);
   }, companionPersonaV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.companionPersonaVersions, runtimeInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.getCompanionPersonaVersions(gateway.gatewayTransport, input.meta.requestId);
+  }, companionPersonaVersionListV1Schema);
 
   channel(DESKTOP_IPC_CHANNELS.companionPersonaPatch, companionPersonaPatchInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");
@@ -893,11 +1050,42 @@ channel(DESKTOP_IPC_CHANNELS.companionMemoryDelete, companionMemoryIdInputSchema
     return ns_companion.patchCompanionPersona(gateway.gatewayTransport, input.request, input.meta.requestId);
   }, companionPersonaMutationV1Schema);
 
-  channel(DESKTOP_IPC_CHANNELS.companionPersonaReset, runtimeInputSchema, async (_event, _window, input) => {
+  channel(DESKTOP_IPC_CHANNELS.companionPersonaRestore, companionPersonaRestoreInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    return ns_companion.resetCompanionPersona(gateway.gatewayTransport, input.meta.requestId);
+    return ns_companion.restoreCompanionPersona(gateway.gatewayTransport, {
+      revision: input.revision,
+      currentRevision: input.currentRevision,
+    }, input.meta.requestId);
+  }, companionPersonaRestoreV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.companionPersonaReset, companionPersonaResetInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.resetCompanionPersona(gateway.gatewayTransport, input.revision, input.meta.requestId);
   }, companionPersonaResetV1Schema);
+
+  // ── 人格「待生效版本」（40 §4.8.4 / A50）────────────────────────────────
+  // 与上面四条人格通道同一套路由门控与 epoch 校验：它们都是"书房内的呈现"，
+  // 不新增导航目标，也不把人格正文写进路由或快照。
+
+  channel(DESKTOP_IPC_CHANNELS.companionPersonaPending, runtimeInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.getCompanionPersonaPending(gateway.gatewayTransport, input.meta.requestId);
+  }, companionPersonaPendingV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.companionPersonaStage, companionPersonaStageInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.stageCompanionPersonaRevision(gateway.gatewayTransport, input.request, input.meta.requestId);
+  }, companionPersonaStagedV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.companionPersonaActivate, companionPersonaActivateInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.activateCompanionPersonaPending(gateway.gatewayTransport, input.revision, input.meta.requestId);
+  }, companionPersonaActivatedV1Schema);
 
   channel(DESKTOP_IPC_CHANNELS.companionHistoryList, companionHistoryListInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");

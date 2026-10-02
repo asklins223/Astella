@@ -31,10 +31,22 @@ const rejectedRuntimeMedia = [
   'validation-ink-bloom-v1.mp4',
   'companion-wake-v1.webm',
   'companion-confirm-v1.webm',
+  // 旧书房底板：2026-10-01 整条删除后，这几个文件名连同所在目录都不得回到运行时。
+  'room-day.webp',
+  'room-night.webp',
+  'study-seat-day-v2.png',
+  'study-seat-night-v2.png',
+  'review-seat-day-v1.png',
+  'review-seat-night-v1.png',
+  'search-reference-day-v1.png',
+  'search-reference-night-v1.png',
+  'search-foreground-day-v1.png',
+  'entry-door-closed-day-v1.png',
+  'companion-orb.webp',
 ]
-const releaseExcludedOutPrefixes = [
-  'assets/3d/',
-]
+// 2026-10-01：旧 3D 学习房归档包（`assets/3d/`）整条删除，public 树不再有任何需要
+// 排除的目录。这份清单**故意留空**；若日后又要排除什么，加回来。
+const releaseExcludedOutPrefixes = []
 
 function listFiles(root) {
   if (!existsSync(root)) return []
@@ -49,6 +61,41 @@ describe('runtime asset containment', () => {
     const boundaryFiles = [...listFiles(runtimeRoot), ...listFiles(rendererOut)]
     for (const rejectedName of rejectedRuntimeMedia) {
       expect(boundaryFiles.some((file) => file.endsWith(`/${rejectedName}`))).toBe(false)
+    }
+  })
+
+  it('keeps the retired study pack out while the lighthouse room plate stays', () => {
+    // 正控制：灯塔底板**确实**在运行时树里。所以下面那条「旧书房不在」不是空转断言——
+    // 夹具读错目录时它会先在正控制这一条上红，而不是让否定断言永远通过。
+    const runtimeFiles = listFiles(runtimeRoot).map((file) => relative(runtimeRoot, file).split(sep).join('/'))
+    expect(runtimeFiles).toContain('posters/home-v2/lighthouse/lighthouse-day-poster-v1.png')
+    expect(runtimeFiles).toContain('posters/home-v2/lighthouse/lighthouse-night-poster-v1.png')
+    expect(runtimeFiles).toContain('layers/home-v2/lighthouse/lighthouse-day-d0-v1.png')
+    expect(runtimeFiles.filter((file) => file.startsWith('layers/home-v2/lighthouse/'))).toHaveLength(39)
+
+    for (const retired of [
+      'posters/room-day.webp',
+      'posters/study-seat-day-v2.png',
+      'posters/review-seat-day-v1.png',
+      'posters/search-reference-day-v1.png',
+    ]) {
+      expect(runtimeFiles).not.toContain(retired)
+    }
+    for (const retiredDir of ['objects', 'textures', 'motion', 'masks', 'audio', 'captions', 'foreground', 'graph', 'login-entry']) {
+      expect(runtimeFiles.some((file) => file.startsWith(`${retiredDir}/`))).toBe(false)
+    }
+  })
+
+  it('ships the restored task scene originals unchanged in renderer out', () => {
+    const manifest = JSON.parse(readFileSync(resolve(runtimeRoot, 'manifest.json'), 'utf8'))
+    const paths = new Set(Object.values(manifest.taskPosters).flatMap((pair) => [pair.day.path, pair.night.path]))
+    expect(paths.size).toBe(12)
+    expect(paths.has('posters/task-scenes/candidate-card-table-day-v2.png')).toBe(true)
+    for (const path of paths) {
+      const source = readFileSync(resolve(runtimeRoot, path))
+      const shipped = readFileSync(resolve(rendererOut, 'assets/learning-room/v1', path))
+      expect(source.length).toBeGreaterThan(0)
+      expect(shipped.equals(source)).toBe(true)
     }
   })
 

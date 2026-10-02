@@ -9,11 +9,22 @@
   pointer-events: none;
 }
 
-/* Reading and other quiet task pages keep the Live2D seat. Its accessible
-   character button opens the conversation on demand; an old reply must not
-   cover the paper after that conversation has been closed. */
-.desktop-app.hud-surface .companion-presence[data-task-surface-quiet="true"] .companion-hud {
-  display: none;
+/* Quiet pages retain the character and their user-invoked conversation HUD.
+   Assessment policy decides whether interaction is mounted in the runtime. */
+
+/* The home visual shell lets empty canvas space pass through. Its actual
+   interaction target must opt back in instead of inheriting pointer-events:none. */
+.window-live2d__interaction {
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+}
+.window-live2d__interaction[data-draggable] {
+  cursor: grab;
+  touch-action: none;
+}
+.companion-visual-shell--dragging .window-live2d__interaction {
+  cursor: grabbing;
 }
 
 .desktop-app.hud-surface .companion-presence[data-policy-mode="ambient"] .companion-scene-anchor,

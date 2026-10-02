@@ -97,19 +97,34 @@ const PROGRESS_INTERVAL_MS = 80;
  * 命中截止的旧行为是 `generation += 1` 把**整轮**音频作废——而文字早就流完了，
  * 于是用户看到的是"她说了话但没声音"，且这一轮之后再也恢复不了。
  *
- * 放宽的代价几乎为零：语音是对已显示文字的**渐进增强**，晚 2 秒开始念远好于不念。
+ * 放宽的代价几乎为零：语音是对已显示文字的**渐进增强**，晚几秒开始念远好于不念。
  * 现在超时只跳过那一段（见 runQueuedSpeech），整轮一段都没播出来才降级。
+ *
+ * ── 2026-10-02 重测：4000ms 落在**并发分布的中间**，所以它一直在误杀 ──
+ *
+ * 上一版那句注释引的是 2026-09-22 的**单发**测量（qwen p95 3071ms）。但客户端
+ * 是流水线：几段一起要，5 路并发才是真实形状。实测（真容器、真引擎、真会话）：
+ *
+ * | 形状 | p50 | p90 | max |
+ * | --- | --- | --- | --- |
+ * | 单发 V2 分段 | — | — | 1676ms |
+ * | 5 路并发（两批） | 1980 / 2845 | 2037 / 2862 | **3690 / 5132** |
+ *
+ * 4000ms 正好切在中间：慢的那一条必然越过截止。更糟的是**越过之后会重试**，
+ * 而重试恰好发生在服务器最忙的时候——等于在慢的时候再加压，把尾部推得更高。
+ * 那一段被跳过之后如果它是**首段**，`playedCount === 0`，整轮就降级成
+ * 「语音合成超时」，用户看到的是她一句话都不说。
+ *
+ * 8000 的依据是观测 max 5132 再留余量。这不是"拍脑袋放宽"：产品自己的判断写在
+ * 上面那段注释里——**跳过一句比晚几秒开口难得多**。截止的作用是挡住**真的**
+ * 挂死的请求，不是挡住慢的请求。
  */
-export const COMPANION_SPEECH_FIRST_AUDIO_DEADLINE_MS = 4_000;
+export const COMPANION_SPEECH_FIRST_AUDIO_DEADLINE_MS = 8_000;
 /**
- * 段间截止 4s 的出处（2026-09-22 量，`stage='synth' outcome='ok'` 的 duration_ms）：
- * qwen n=75 p50 829 / p90 2250 / **p95 3071** / max 5093，>3s 有 4 条、>4s 只剩 2 条；
- * edge n=13 p50 2005 / max 2272（尾很紧，一条都没越过 3s）。
- * 原来的 3000 正好压在 qwen 的 p95 上，实机因此真跳过了句子（`error_code='deadline'`
- * 2 次，等待时长 3002ms——差 2 毫秒）。**跳过一句比晚 4 秒开口难得多**：文字早就在
- * 屏幕上，语音只是渐进增强，而少掉的那半句用户会当成"她不读了"。
+ * 段间截止。同样按 5 路并发的实测尾部定：它比首段宽松一点，因为段与段之间
+ * 上一句已经在播，用户此刻有声音可听，耐心更高。
  */
-export const COMPANION_SPEECH_GAP_DEADLINE_MS = 4_000;
+export const COMPANION_SPEECH_GAP_DEADLINE_MS = 6_000;
 /** 合成失败后的重试间隔与次数（原来是**零退避**盲重试一次，且丢掉原始异常）。 */
 const SYNTH_RETRY_DELAY_MS = 250;
 const SYNTH_MAX_ATTEMPTS = 3;
@@ -424,12 +439,25 @@ async function runQueuedSpeech(args: {
   const synthesize = (segment: CompanionQueuedSpeechSegment): Promise<AudioBuffer> => segment.ref
     ? args.host.synthesizeSegment(segment.ref)
     : args.host.synthesize(segment.text);
+  /**
+   * 被 `withDeadline` 放弃的那些合成，**必须停下来**。
+   *
+   * `withDeadline` 只是不再等它，并不会取消它——所以超时之后重试循环还在跑，
+   * 一次又一次打向正在变慢的合成服务。那不是"多试几次说不定就成了"，
+   * 那是**在服务器最慢的时刻给它加压**，把尾部推得更高，于是下一段更容易超时。
+   *
+   * 实测（2026-10-02，5 路并发）已经能看见这个形态：max 5132ms，而截止当时是
+   * 4000ms —— 越过截止的那些请求并没有消失，它们在后台继续排。
+   */
+  const abandoned = new WeakSet<CompanionQueuedSpeechSegment>();
   const synthesizeWithRetry = async (segment: CompanionQueuedSpeechSegment): Promise<AudioBuffer> => {
     // 原来只重试一次、无退避、且 `catch {}` 把原始异常整个丢掉——上游 500 之后
     // 立刻再打一次只会撞上同一个错误。现在带退避多试一次，并保留**最后一次的异常**
     // 交给调用方（超时/失败的分类要靠它）。
     let lastError: unknown = null;
     for (let attempt = 0; attempt < SYNTH_MAX_ATTEMPTS; attempt += 1) {
+      // 上一轮等待已经超时：这一次不必再发出去。
+      if (abandoned.has(segment)) break;
       try {
         return await synthesize(segment);
       } catch (error) {
@@ -557,6 +585,7 @@ async function runQueuedSpeech(args: {
         // 现在超时与合成失败同路：跳过这段继续后面。整轮一段都没播出来时，
         // 才在收尾处降级为 text_only（见循环结束后那段）。
         const deadlineHit = error instanceof Error && error.message === "VOICE_SEGMENT_DEADLINE";
+        if (deadlineHit) abandoned.add(segment);
         missedSegments += 1;
         lastMissReason = deadlineHit ? "deadline" : "synth_failed";
         report(segment, deadlineHit ? "deadline" : "synth_failed", pending.startedAtMs);

@@ -13,6 +13,7 @@ import {
   type LearningRoomManifest,
 } from "../media/learning-room-manifest";
 import { SceneReferenceFrame } from "../scene/SceneReferenceFrame";
+import { useTaskScenePreload } from "../media/task-scene-preload";
 import { sceneCameraPreset } from "../scene/scene-camera";
 import { SCENE_DEPTH_BANDS } from "../scene/scene-depth";
 import {
@@ -39,8 +40,8 @@ function motionDuration(mode: "full" | "lite" | "off", full: number, lite = full
 
 export function RoomStage() {
   const { zone: homeV2Zone, sceneTime: homeSceneTime } = useHomeV2();
-  const theme = useRoomStore((state) => state.theme);
   const motionPreference = useRoomStore((state) => state.motionMode);
+  const theme = useRoomStore((state) => state.theme);
   const reducedMotion = useRoomStore((state) => state.reducedMotion);
   const motionMode = resolveSceneMotionMode(motionPreference, reducedMotion);
   const surface = useRoomStore((state) => state.surface);
@@ -71,6 +72,7 @@ export function RoomStage() {
   });
   const home = homePresentation(projection, homeLoading, homeFailure);
   const { manifest, error } = useLearningRoomManifest();
+  useTaskScenePreload(manifest, theme);
   const { notebookState, reviewState, shelfState } = home;
   // 首启引导由 v2 首页的入场序列负责（`HomeV2Experience`），房间这边不再自己排队
   // 弹它——原先那是 v1 首页的路径，留着就是两个地方都想开同一个模态。
@@ -80,20 +82,16 @@ export function RoomStage() {
   const homeDayRef = useRef<HTMLImageElement>(null);
   const homeDuskRef = useRef<HTMLImageElement>(null);
   const homeNightRef = useRef<HTMLImageElement>(null);
-  const seatDayRef = useRef<HTMLImageElement>(null);
-  const seatNightRef = useRef<HTMLImageElement>(null);
-  const searchDayRef = useRef<HTMLImageElement>(null);
-  const searchNightRef = useRef<HTMLImageElement>(null);
-  const reviewDayRef = useRef<HTMLImageElement>(null);
-  const reviewNightRef = useRef<HTMLImageElement>(null);
   const previousPresetRef = useRef<typeof viewPreset | null>(null);
   const previousMotionModeRef = useRef<typeof motionMode | null>(null);
   const previousHomeV2ZoneRef = useRef<HomeV2Zone | null>(null);
 
-  const inSearchScene = viewPreset === "search";
-  const inReviewScene = viewPreset === "review";
-  const inSeatScene = viewPreset !== "room" && !inSearchScene;
-  const inGenericSeatScene = inSeatScene && !inReviewScene;
+  // 这一层只画**底层**（灯塔三张，跟房间时刻走）。
+  // 各任务页自己那张场景底板由 `hud-surface.css` 的 `.task-surface--<页面族>` 规则铺在
+  // 上层，对应 `manifest.taskPosters` 的六个族（library / writing / workshop / review /
+  // observatory / system）。**底层共用首页 ≠ 任务页共用首页构图**——2026-10-01 我曾把
+  // 两层合成一层（删掉 taskPosters 分族、自己另编一张映射表），结果每页都没了原图。
+
   const roomIsQuiet = Boolean(surface) || inputFocused || windowState !== "visible" || onboardingOpen || !celebrationAllowed;
   useEffect(() => {
     if (celebrationAllowed) return;
@@ -142,7 +140,7 @@ export function RoomStage() {
   // Keep the camera serializer outside a GSAP context. `useGSAP` correctly
   // reverts every tween in its scope when dependencies change, but that would
   // also kill a zone tween without notifying the serializer, leaving its
-  // `moving` state stuck and the CSS variables at the old camera position.
+  // `moving` state stuck and the rig at the old camera position.
   useLayoutEffect(() => {
     const camera = cameraRef.current;
     const cameraHost = rootRef.current?.closest(".desktop-app");
@@ -164,12 +162,13 @@ export function RoomStage() {
     previousHomeV2ZoneRef.current = homeV2Zone;
 
     const targetValues = {
-      "--scene-camera-scale": target.scale,
-      "--scene-camera-x-percent": `${target.xPercent}%`,
-      "--scene-camera-y-percent": `${target.yPercent}%`,
+      scale: target.scale,
+      xPercent: target.xPercent,
+      yPercent: target.yPercent,
+      force3D: true,
     };
     if (firstRender) {
-      gsap.set(cameraHost, targetValues);
+      gsap.set(camera, targetValues);
       // This also repairs a mount that begins from a pre-hydrated route. V2
       // must record its room baseline before any task navigation can occur.
       setScenePhase(settledScenePhase(surface));
@@ -179,7 +178,7 @@ export function RoomStage() {
     if (!routeChanged && !modeChanged && !zoneChanged) return;
     // Home V2 owns the room camera through a single serializer: zone commands
     // (catalog, object activation, Escape) and route transitions both retarget
-    // the same CSS variables, so only one of them may own the tween.
+    // the same camera rig, so only one of them may own the tween.
     if (viewPreset === "room") {
       return requestHomeV2Camera({
         target: cameraHost,
@@ -193,9 +192,9 @@ export function RoomStage() {
         },
       });
     }
-    gsap.killTweensOf(cameraHost);
+    gsap.killTweensOf(camera);
     if (!routeChanged || motionMode === "off") {
-      gsap.set(cameraHost, targetValues);
+      gsap.set(camera, targetValues);
       if (
         routeChanged
         || shouldSettleAfterMotionPreferenceChange({ routeChanged, modeChanged, scenePhase })
@@ -215,7 +214,7 @@ export function RoomStage() {
       onComplete: finish,
     });
     timeline.addLabel("world_depart", 0);
-    timeline.to(cameraHost, { ...targetValues, duration }, "world_depart");
+    timeline.to(camera, { ...targetValues, duration }, "world_depart");
     timeline.addLabel("anchor_align", ">-0.08");
     timeline.addLabel("surface_reveal", ">-0.06");
     timeline.addLabel("focus_ready", ">-0.04");
@@ -227,35 +226,14 @@ export function RoomStage() {
     const homeDay = homeDayRef.current;
     const homeDusk = homeDuskRef.current;
     const homeNight = homeNightRef.current;
-    const seatDay = seatDayRef.current;
-    const seatNight = seatNightRef.current;
-    const searchDay = searchDayRef.current;
-    const searchNight = searchNightRef.current;
-    const reviewDay = reviewDayRef.current;
-    const reviewNight = reviewNightRef.current;
-    if (!homeDay || !homeNight || !seatDay || !seatNight) return;
+    if (!homeDay || !homeNight) return;
     const duration = motionDuration(motionMode, 0.6, 0.28);
-    const roomTime = homeSceneTime;
-    gsap.to(homeDay, { autoAlpha: viewPreset === "room" && roomTime === "day" ? 1 : 0, duration, ease: "power2.inOut", overwrite: "auto" });
+    gsap.to(homeDay, { autoAlpha: homeSceneTime === "day" ? 1 : 0, duration, ease: "power2.inOut", overwrite: "auto" });
     if (homeDusk) {
-      gsap.to(homeDusk, { autoAlpha: viewPreset === "room" && roomTime === "dusk" ? 1 : 0, duration, ease: "power2.inOut", overwrite: "auto" });
+      gsap.to(homeDusk, { autoAlpha: homeSceneTime === "dusk" ? 1 : 0, duration, ease: "power2.inOut", overwrite: "auto" });
     }
-    gsap.to(homeNight, { autoAlpha: viewPreset === "room" && roomTime === "night" ? 1 : 0, duration, ease: "power2.inOut", overwrite: "auto" });
-    gsap.to(seatDay, { autoAlpha: inGenericSeatScene && theme === "day" ? 1 : 0, duration, ease: "power2.inOut", overwrite: "auto" });
-    gsap.to(seatNight, { autoAlpha: inGenericSeatScene && theme === "night" ? 1 : 0, duration, ease: "power2.inOut", overwrite: "auto" });
-    if (searchDay) {
-      gsap.to(searchDay, { autoAlpha: inSearchScene && theme === "day" ? 1 : 0, duration, ease: "power2.inOut", overwrite: "auto" });
-    }
-    if (searchNight) {
-      gsap.to(searchNight, { autoAlpha: inSearchScene && theme === "night" ? 1 : 0, duration, ease: "power2.inOut", overwrite: "auto" });
-    }
-    if (reviewDay) {
-      gsap.to(reviewDay, { autoAlpha: inReviewScene && theme === "day" ? 1 : 0, duration, ease: "power2.inOut", overwrite: "auto" });
-    }
-    if (reviewNight) {
-      gsap.to(reviewNight, { autoAlpha: inReviewScene && theme === "night" ? 1 : 0, duration, ease: "power2.inOut", overwrite: "auto" });
-    }
-  }, { scope: rootRef, dependencies: [theme, homeSceneTime, motionMode, manifest, viewPreset, inSearchScene, inReviewScene, inSeatScene, inGenericSeatScene, roomIsQuiet] });
+    gsap.to(homeNight, { autoAlpha: homeSceneTime === "night" ? 1 : 0, duration, ease: "power2.inOut", overwrite: "auto" });
+  }, { scope: rootRef, dependencies: [homeSceneTime, motionMode, manifest] });
 
 
   return (
@@ -270,7 +248,6 @@ export function RoomStage() {
       data-home-scene-time={homeSceneTime}
       data-scene-depth-bands={SCENE_DEPTH_BANDS.map((band) => band.id).join(",")}
       data-scene-room-layer-count={0}
-      data-scene-room-canvas-active="false"
       data-home-notebook-state={notebookState}
       data-home-review-state={reviewState}
       data-home-shelf-state={shelfState}
@@ -283,20 +260,6 @@ export function RoomStage() {
                 <img ref={homeDayRef} className="room-backplate room-backplate--home-day" src={mediaAssetUrl(manifest, manifest.homeV2Posters.day.path)} alt="" draggable="false" />
                 <img ref={homeDuskRef} className="room-backplate room-backplate--home-dusk" src={mediaAssetUrl(manifest, manifest.homeV2Posters.dusk.path)} alt="" draggable="false" />
                 <img ref={homeNightRef} className="room-backplate room-backplate--home-night" src={mediaAssetUrl(manifest, manifest.homeV2Posters.night.path)} alt="" draggable="false" />
-                <img ref={seatDayRef} className="room-backplate room-backplate--seat-day" src={mediaAssetUrl(manifest, manifest.seatPosters.day.path)} alt="" draggable="false" />
-                <img ref={seatNightRef} className="room-backplate room-backplate--seat-night" src={mediaAssetUrl(manifest, manifest.seatPosters.night.path)} alt="" draggable="false" />
-                {inSearchScene ? (
-                  <>
-                    <img ref={searchDayRef} className="room-backplate room-backplate--search-day" src={mediaAssetUrl(manifest, manifest.searchPosters.day.path)} alt="" draggable="false" />
-                    <img ref={searchNightRef} className="room-backplate room-backplate--search-night" src={mediaAssetUrl(manifest, manifest.searchPosters.night.path)} alt="" draggable="false" />
-                  </>
-                ) : null}
-                {inReviewScene ? (
-                  <>
-                    <img ref={reviewDayRef} className="room-backplate room-backplate--review-day" src={mediaAssetUrl(manifest, manifest.reviewPosters.day.path)} alt="" draggable="false" />
-                    <img ref={reviewNightRef} className="room-backplate room-backplate--review-night" src={mediaAssetUrl(manifest, manifest.reviewPosters.night.path)} alt="" draggable="false" />
-                  </>
-                ) : null}
               </>
             ) : null}
           </div>

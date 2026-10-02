@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import type { ChatMessage } from "@ailearn/shared";
 import { readNoteExpansionGenerateJobPayload } from "@ailearn/shared/job-payload-contracts";
 import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
 import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
+import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
 import * as schema from "@ailearn/shared/db-schema";
 import { noteExpansionDraftV1Schema, type NoteExpansionDraftV1 } from "@ailearn/shared/note-expansion-contracts";
 import {
@@ -14,10 +16,11 @@ import {
 } from "../lib/governance.ts";
 import { createProvider } from "../lib/ai-provider.ts";
 import { extractJsonFromText } from "../lib/providers/json-response.ts";
-import { runWithAbortBudget } from "../lib/handler-timeout.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { assertJobLease, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
 import { NoteExpansionOutputError } from "../lib/non-retryable-errors.ts";
+import { runWorkerAiTask } from "./worker-ai-task.ts";
+import { noteLearningSnapshotHash } from "./note-learning-snapshot.ts";
 import type { JobPayload } from "./index.ts";
 
 const MAX_SOURCE_CHARS = 24_000;
@@ -114,14 +117,11 @@ async function loadSource(job: JobPayload, input: ReturnType<typeof readNoteExpa
     if (input.focusAnchor) {
       const anchor = input.focusAnchor;
       const block = blocks.find((item) => item.ordinal === anchor.startBlockOrdinal);
-      const rendered = block ? noteBlockRenderedTextV1(block.type, block.content) : "";
-      if (!block || anchor.endOffset > rendered.length || rendered.slice(anchor.startOffset, anchor.endOffset) !== anchor.excerpt
-        || rendered.slice(Math.max(0, anchor.startOffset - 120), anchor.startOffset) !== anchor.prefix
-        || rendered.slice(anchor.endOffset, anchor.endOffset + 120) !== anchor.suffix) {
+      if (!block || !noteAnchorMatchesV1(blocks, anchor)) {
         throw new NoteExpansionOutputError("拓展选区和笔记保存的原文位置对不上");
       }
       const previousHeading = blocks.filter((item) => item.type === "heading" && item.ordinal < block.ordinal).at(-1);
-      const adjacent = blocks.filter((item) => item.ordinal >= block.ordinal - 1 && item.ordinal <= block.ordinal + 1 && item.type !== "image");
+      const adjacent = blocks.filter((item) => item.ordinal >= anchor.startBlockOrdinal - 1 && item.ordinal <= anchor.endBlockOrdinal + 1 && item.type !== "image");
       sourceBlocks = [
         ...(previousHeading && !adjacent.some((item) => item.ordinal === previousHeading.ordinal) ? [previousHeading] : []),
         ...adjacent,
@@ -172,15 +172,49 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
     job.workspaceId,
     { userId: job.requestedBy, operation: "note_expansion_draft", jobId: job.id, dataCategories: ["note_content"] },
   );
-  const response = await runWithAbortBudget(
-    (signal) => provider.chatCompletion([
-      { role: "system", content: "你是笔记旁的知识拓展助手。忠实引用用户给出的笔记来解释为什么拓展方向相关；区分原文与补充理解，不伪造来源。" },
-      { role: "user", content: buildPrompt(source.blocks, Boolean(input.focusAnchor)) },
-    ], { temperature: 0.35, maxTokens: 6_000, responseFormat: "json_object", disableThinking: true }, signal),
-    job.signal,
-    Math.min(resolveProviderCallTimeout("note_expansion_generate"), MAX_PROVIDER_CALL_MS),
-  );
-  const generated = parseResponse(response.content);
+  const messages: ChatMessage[] = [
+    { role: "system", content: "你是笔记旁的知识拓展助手。忠实引用用户给出的笔记来解释为什么拓展方向相关；区分原文与补充理解，不伪造来源。" },
+    { role: "user", content: buildPrompt(source.blocks, Boolean(input.focusAnchor)) },
+  ];
+  const generationParameters = {
+    temperature: 0.35,
+    maxTokens: 6_000,
+    responseFormat: "json_object" as const,
+    disableThinking: true,
+  };
+  const inputSnapshotHash = noteLearningSnapshotHash({
+    taskVersion: 1,
+    noteVersionId: source.noteVersionId,
+    sourceBlocks: source.blocks,
+    focusAnchor: input.focusAnchor ?? null,
+    modelId: provider.modelId,
+    promptVersion: provider.promptVersion,
+    generationParameters,
+    messages,
+  });
+  const generated = await runWorkerAiTask({
+    job,
+    userId: job.requestedBy,
+    taskId: "note_expansion_draft",
+    taskVersion: 1,
+    idempotencyKey: `note-expansion:${job.id}:${inputSnapshotHash}`,
+    inputSnapshotRef: { kind: "note_version", id: source.noteVersionId, hash: inputSnapshotHash },
+    input: messages,
+    modelId: provider.modelId,
+    promptVersion: `${provider.promptVersion}:note-expansion-draft-v1`,
+    resourceClass: "interactive_ai",
+    timeoutMs: Math.min(resolveProviderCallTimeout("note_expansion_generate"), MAX_PROVIDER_CALL_MS),
+    isOutputShapeError: (error) => error instanceof NoteExpansionOutputError,
+    execute: async (request, signal) => {
+      const response = await provider.chatCompletion(request, generationParameters, signal);
+      return {
+        ok: true,
+        output: parseResponse(response.content),
+        promptTokens: response.usage?.promptTokens ?? undefined,
+        completionTokens: response.usage?.completionTokens ?? undefined,
+      };
+    },
+  });
   const sourceByOrdinal = new Map(source.blocks.map((block) => [block.ordinal, block]));
   const drafts: NoteExpansionDraftV1[] = generated.drafts.map((draft) => {
     const references = draft.sourceReferences.map((reference) => {

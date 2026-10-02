@@ -146,7 +146,7 @@ export async function applyRouteToRoom(route: DesktopRouteV1): Promise<boolean> 
       return true;
     case "note.detail":
       // 阅读页只按 noteId 读当前版本（NoteTargetRef 的契约），版本号如实留空。
-      room.setActiveNoteRef({ noteId: route.noteId, noteVersionId: null, mode: "read" });
+      room.setActiveNoteRef({ noteId: route.noteId, noteVersionId: null, mode: "preview" });
       room.setNoteReturnTo("library");
       room.invoke("open-notebook");
       return true;

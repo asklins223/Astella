@@ -11,10 +11,14 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
+import { sql as drizzleSql } from "drizzle-orm";
 import {
   PetProfileCasConflictError,
   getPetProfile,
+  getPetProfileState,
+  listPetProfileVersions,
   resetPetProfile,
+  restorePetProfileVersion,
   upsertPetProfile,
   type PetProfileInput,
 } from "../modules/companion-conversation/pet-profile-service.ts";
@@ -46,6 +50,7 @@ await sql`
 `;
 
 const baseInput = (overrides: Partial<PetProfileInput> = {}): PetProfileInput => ({
+  revision: 0,
   presetId: "energetic-cat",
   name: "小伴",
   personalityTags: ["好奇", "克制"],
@@ -99,13 +104,19 @@ test("revision CAS：过期 revision → PetProfileCasConflictError（route 层 
   assert.equal(afterConflict?.name, "先到的名字", "冲突写入不得落库");
 });
 
-test("省略 revision 表示不做 CAS（最后一次写入生效）", async () => {
-  const updated = await inTx(userA, workspaceId, (tx) =>
-    upsertPetProfile(tx, { workspaceId, userId: userA }, baseInput({ name: "无 CAS 写入" })));
-  assert.equal(updated.name, "无 CAS 写入");
+test("过期 revision 不允许覆盖当前账号人格", async () => {
+  await assert.rejects(
+    () => inTx(userA, workspaceId, (tx) => upsertPetProfile(
+      tx,
+      { workspaceId, userId: userA },
+      { ...baseInput({ name: "无 CAS 写入" }), revision: -1 },
+    )),
+  );
 });
 
 test("改人格不重置关系累积（familiarity / interactionCount）", async () => {
+  const current = await inTx(userA, workspaceId, (tx) => getPetProfile(tx, { workspaceId, userId: userA }));
+  assert.ok(current);
   await sql.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
     await tx`SELECT set_config('app.user_id', ${userA}, true)`;
@@ -116,32 +127,64 @@ test("改人格不重置关系累积（familiarity / interactionCount）", async
   });
 
   const updated = await inTx(userA, workspaceId, (tx) =>
-    upsertPetProfile(tx, { workspaceId, userId: userA }, baseInput({ name: "换了名字", speakingStyle: "更简短" })));
+    upsertPetProfile(tx, { workspaceId, userId: userA }, baseInput({
+      name: "换了名字",
+      speakingStyle: "更简短",
+      revision: current.revision,
+    })));
   assert.equal(updated.name, "换了名字");
-  assert.equal(updated.familiarity, 0.42, "人格更新不得重置熟悉度");
-  assert.equal(updated.interactionCount, 17, "人格更新不得重置互动次数");
+  const state = await inTx(userA, workspaceId, (tx) => getPetProfileState(tx, { workspaceId, userId: userA }));
+  assert.equal(state.relationship.familiarity, 0.42, "人格更新不得重置熟悉度");
+  assert.equal(state.relationship.interactionCount, 17, "人格更新不得重置互动次数");
 });
 
-test("作用域隔离：另一个用户 / 另一个 workspace 的档案不受影响", async () => {
+test("账号人格跨 workspace 共享，关系状态按 workspace 隔离", async () => {
   assert.equal(
     (await inTx(userB, workspaceId, (tx) => getPetProfile(tx, { workspaceId, userId: userB })))?.name ?? null,
     null,
     "另一个用户不应看到 A 的档案",
   );
 
-  await inTx(userA, otherWorkspaceId, (tx) =>
-    upsertPetProfile(tx, { workspaceId: otherWorkspaceId, userId: userA }, baseInput({ name: "另一个 workspace" })));
-
-  const inMainWorkspace = await inTx(userA, workspaceId, (tx) => getPetProfile(tx, { workspaceId, userId: userA }));
-  assert.equal(inMainWorkspace?.name, "换了名字", "其他 workspace 的写入不得串到本 workspace");
+  await inTx(userA, otherWorkspaceId, async (tx) => {
+    await tx.execute(drizzleSql`
+      INSERT INTO pet_profiles (workspace_id, user_id, familiarity, interaction_count)
+      VALUES (${otherWorkspaceId}, ${userA}, 0.12, 3)
+      ON CONFLICT (workspace_id, user_id)
+      DO UPDATE SET familiarity = EXCLUDED.familiarity, interaction_count = EXCLUDED.interaction_count
+    `);
+  });
+  const otherSpace = await inTx(userA, otherWorkspaceId, (tx) => getPetProfileState(tx, { workspaceId: otherWorkspaceId, userId: userA }));
+  const mainSpace = await inTx(userA, workspaceId, (tx) => getPetProfileState(tx, { workspaceId, userId: userA }));
+  assert.equal(otherSpace.profile?.name, "换了名字", "账号人格换空间仍一致");
+  assert.equal(mainSpace.profile?.name, "换了名字", "账号人格保存在同一处");
+  assert.equal(otherSpace.relationship.familiarity, 0.12);
+  assert.equal(otherSpace.relationship.interactionCount, 3);
+  assert.equal(mainSpace.relationship.familiarity, 0.42);
+  assert.equal(mainSpace.relationship.interactionCount, 17);
 });
 
-test("reset 删除档案并回退系统默认；重复 reset 幂等返回 false", async () => {
-  assert.equal(await inTx(userA, workspaceId, (tx) => resetPetProfile(tx, { workspaceId, userId: userA })), true);
-  assert.equal(
-    await inTx(userA, workspaceId, (tx) => getPetProfile(tx, { workspaceId, userId: userA })),
-    null,
-    "reset 后读取必须回退到系统默认（null）",
-  );
-  assert.equal(await inTx(userA, workspaceId, (tx) => resetPetProfile(tx, { workspaceId, userId: userA })), false);
+test("版本可查看与恢复；重置只重置表达，不删空间关系也不抹名字", async () => {
+  const beforeReset = await inTx(userA, workspaceId, (tx) => getPetProfileState(tx, { workspaceId, userId: userA }));
+  // 名字改过：恢复默认之后它必须还在（A51）。
+  await inTx(userA, workspaceId, (tx) => upsertPetProfile(
+    tx, { workspaceId, userId: userA }, baseInput({ name: "我给起的小伴", revision: beforeReset.profileRevision }),
+  ));
+  const edited = await inTx(userA, workspaceId, (tx) => getPetProfileState(tx, { workspaceId, userId: userA }));
+  const resetRevision = await inTx(userA, workspaceId, (tx) => resetPetProfile(
+    tx, { workspaceId, userId: userA }, edited.profileRevision,
+  ));
+  const resetState = await inTx(userA, workspaceId, (tx) => getPetProfileState(tx, { workspaceId, userId: userA }));
+  assert.equal(resetState.profile?.name, "我给起的小伴",
+    "恢复默认把用户改过的名字也抹了——40b §5.2 只让重置表达那两项");
+  assert.equal(resetState.profileRevision, resetRevision);
+  assert.equal(resetState.relationship.familiarity, 0.42, "reset 不删空间关系");
+  assert.equal(resetState.relationship.interactionCount, 17, "reset 不删互动次数");
+  const versions = await inTx(userA, workspaceId, (tx) => listPetProfileVersions(tx, { workspaceId, userId: userA }));
+  assert.ok(versions.some((version) => version.revision === resetRevision && version.action === "reset"));
+  const restored = await inTx(userA, workspaceId, (tx) => restorePetProfileVersion(
+    tx,
+    { workspaceId, userId: userA },
+    { revision: 1, expectedRevision: resetRevision },
+  ));
+  assert.equal(restored?.name, "小伴");
 });

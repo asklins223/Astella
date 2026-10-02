@@ -98,14 +98,14 @@ const stripComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
  * at-rule 前言（`@media (…)`、`@keyframes …`）自身不带类名，扫到时跳过即可；
  * 嵌套在里面的规则因为 buffer 在 `{` / `}` 处清空，会被独立收走。
  */
-export const classesWithRules = (css: string): Set<string> => {
-  const found = new Set<string>();
+const ruleSelectors = (css: string): string[] => {
+  const found: string[] = [];
   let buffer = "";
   for (let i = 0; i < css.length; i += 1) {
     const ch = css[i];
     if (ch === "{") {
       if (!buffer.trimStart().startsWith("@")) {
-        for (const name of buffer.matchAll(/\.(-?[A-Za-z_][A-Za-z0-9_-]*)/g)) found.add(name[1]);
+        found.push(buffer.trim());
       }
       buffer = "";
     } else if (ch === "}") {
@@ -116,6 +116,18 @@ export const classesWithRules = (css: string): Set<string> => {
   }
   return found;
 };
+
+export const classesWithRules = (css: string): Set<string> => {
+  const found = new Set<string>();
+  for (const selector of ruleSelectors(css)) {
+    for (const name of selector.matchAll(/\.(-?[A-Za-z_][A-Za-z0-9_-]*)/g)) found.add(name[1]);
+  }
+  return found;
+};
+
+/** A retained child class cannot rescue a scope whose leading class prefix was cut away. */
+const brokenHudScopes = (css: string): string[] => ruleSelectors(stripComments(css))
+  .filter(selector => /(?:^|[\s,>+~])(?:hud-surface|ud-surface|d-surface)\b/.test(selector));
 
 /**
  * `className={...}` 的取值。
@@ -309,6 +321,18 @@ const DYNAMIC_UNSTYLED = [...new Set(EMITTED.flatMap((e) => [...e.dynamic]))]
   .sort();
 
 describe("renderer 类名闭合：发出去的都要被 CSS 接住", () => {
+  it("HUD 根作用域必须仍是类选择器，不能把邻接规则的前缀切掉", () => {
+    const broken = CSS_FILES.flatMap(file => brokenHudScopes(readFileSync(file, "utf8")).map(selector => `${file}: ${selector}`));
+    expect(broken).toEqual([]);
+  });
+
+  it("作用域自检：子类仍有定义时也能抓到被裁坏的根选择器", () => {
+    const broken = "hud-surface .editor-tools{display:flex}@media (max-width:960px){ud-surface .clip{display:block}}";
+    expect(classesWithRules(broken).has("editor-tools")).toBe(true);
+    expect(brokenHudScopes(broken)).toEqual(["hud-surface .editor-tools", "ud-surface .clip"]);
+    expect(brokenHudScopes(".hud-surface .editor-tools{display:flex}@media (max-width:960px){.hud-surface .clip{display:block}}")).toEqual([]);
+  });
+
   it("两边都真的读到了东西（否则这条守卫是空的）", () => {
     expect(CSS_FILES.length, "没扫到样式表").toBeGreaterThanOrEqual(20);
     expect(TSX_FILES.length, "没扫到组件文件").toBeGreaterThanOrEqual(150);

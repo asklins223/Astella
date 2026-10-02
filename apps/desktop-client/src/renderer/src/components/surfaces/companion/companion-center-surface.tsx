@@ -1,15 +1,27 @@
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ExternalLink, Map as MapIcon, RefreshCw, Search, Settings2, X } from "lucide-react";
 import type { GatewayResultV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import type { CompanionActivityDeliveryV1, CompanionActivityTimelineV1, CompanionExportKindV1, CompanionHistoryItemV1, CompanionMemoryItemV1, CompanionMemoryKindV1, CompanionMemoryStarMapV2, CompanionPersonaV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { CompanionActivityDeliveryV1, CompanionActivityTimelineV1, CompanionExportKindV1, CompanionHistoryItemV1, CompanionMemoryItemV1, CompanionMemoryKindV1, CompanionMemoryRevisionV1, CompanionMemoryStarMapV2, CompanionPersonaPendingV1, CompanionPersonaProfileVersionV1, CompanionPersonaV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
 import type { CompanionJourneyAction, CompanionJourneyBootstrap } from "@ailearn/shared/companion-journey-contracts";
 import type { CompanionLearningContextV1 } from "@ailearn/shared/companion-conversation-contracts";
+import type { CompanionOverview } from "@ailearn/shared/companion-shell-contracts";
 import { companionPersonaPatchFromPreset, companionPersonaPatchFromProfile } from "@ailearn/shared/companion-memory-desktop-contracts";
 import { companionDisplayName, publishCompanionDisplayName } from "../../companion/companion-display-name";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { useCompanionChat } from "../../../app/companion-chat-session";
 import { useRoomStore } from "../../../app/room-store";
+import { DiscoveryPanel, useDiscoverySection } from "./companion-discovery-panel.tsx";
+import {
+  clipDiscoveryBody,
+  discoveryAuthorFor,
+  discoveryIdentityKey,
+  discoveryKindFor,
+  readDiscoveryKeepDeclined,
+  rememberDiscoveryKeepDeclined,
+  resolveDiscoveryKeepState,
+  type DiscoveryKeepRequest,
+} from "./companion-discovery-offer.tsx";
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
@@ -21,11 +33,14 @@ import { UnderstandingUniverse, type UnderstandingUniverseHandle } from "../spac
 import type { GraphNode, UnderstandingGraph } from "../space/understanding-universe-data.ts";
 import { useSurfaceProjection } from "../notebook/surface-data.tsx";
 import { CompanionCenterOverview } from "./companion-center-overview.tsx";
-import { ActivityPanel, DataPanel, DialoguePanel, DiaryPanel, MemoryPanel, PersonaPanel, SectionState, MEMORY_KIND_LABEL, MEMORY_KIND_OPTIONS, MEMORY_STATE_LABEL, type Section } from "./companion-center-panels.tsx";
+import { feedDiaryReferenceToCompanion } from "../../companion/companion-feed";
+import { useCompanionDiaryActions } from "./companion-diary-actions.ts";
+import { ActivityPanel, DataPanel, DialoguePanel, DiaryPanel, DiarySettingsPanel, MemoryPanel, PersonaPanel, SectionState, messageText, MEMORY_KIND_LABEL, MEMORY_KIND_OPTIONS, MEMORY_STATE_LABEL, type Section } from "./companion-center-panels.tsx";
 
-const TABS = [["overview", "概览"], ["dialogue", "对话"], ["memory", "记忆"], ["diary", "日记"], ["activity", "动态"], ["settings", "设置"]] as const;
+// 「发现簿」插在记忆与日记之间：它收的就是这两样东西里用户自己留下的部分（40 §7）。
+const TABS = [["overview", "概览"], ["dialogue", "对话"], ["memory", "记忆"], ["discovery", "发现簿"], ["diary", "日记"], ["activity", "动态"], ["settings", "设置"]] as const;
 type PrimaryTabId = (typeof TABS)[number][0];
-type TabId = Exclude<PrimaryTabId, "settings"> | "persona" | "data";
+type TabId = Exclude<PrimaryTabId, "settings"> | "persona" | "data" | "diary-settings";
 
 async function readSection<T>(pending: Promise<GatewayResultV1<T>>): Promise<Section<T>> {
   try { return { ok: true, value: unwrapGatewayResult(await pending) }; }
@@ -153,13 +168,19 @@ export function CompanionCenterSurface() {
   const [entityFilter, setEntityFilter] = useState<EntityFilter>("all");
   const [memoryListQuery, setMemoryListQuery] = useState("");
   const [memoryListKind, setMemoryListKind] = useState<"all" | CompanionMemoryKindV1>("all");
-  const [memoryListPinFilter, setMemoryListPinFilter] = useState<"all" | "pinned" | "candidate">("all");
+  const [memoryListPinFilter, setMemoryListPinFilter] = useState<"all" | "pinned" | "candidate" | "archived" | "expired">("all");
   const [memoryBusy, setMemoryBusy] = useState<string | null>(null);
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const [memoryNotice, setMemoryNotice] = useState<string | null>(null);
+  const [memoryRevisions, setMemoryRevisions] = useState<CompanionMemoryRevisionV1[] | null>(null);
+  const [memoryRevisionError, setMemoryRevisionError] = useState<string | null>(null);
+  const [memoryRevisionReload, setMemoryRevisionReload] = useState(0);
   const [correctionOpen, setCorrectionOpen] = useState(false);
   const [correctionContent, setCorrectionContent] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // 彻底清除的确认**与删除分开**：一个进回收区、一个什么都不剩，
+  // 共用一个"确认"按钮会让人以为它们是同一件事。
+  const [confirmEraseId, setConfirmEraseId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createContent, setCreateContent] = useState("");
   const [createKind, setCreateKind] = useState<CompanionMemoryKindV1>("interaction_note");
@@ -170,9 +191,23 @@ export function CompanionCenterSurface() {
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [diaryDate, setDiaryDate] = useState<string | null>(null);
+  const [diarySettingsBusy, setDiarySettingsBusy] = useState(false);
+  const [diarySettingsError, setDiarySettingsError] = useState<string | null>(null);
   const [personaBusy, setPersonaBusy] = useState<string | null>(null);
   const [personaError, setPersonaError] = useState<string | null>(null);
   const [personaNotice, setPersonaNotice] = useState<string | null>(null);
+  const [personaVersions, setPersonaVersions] = useState<CompanionPersonaProfileVersionV1[] | null>(null);
+  const [personaVersionsError, setPersonaVersionsError] = useState<string | null>(null);
+  const [personaVersionsReload, setPersonaVersionsReload] = useState(0);
+  /**
+   * 「待生效」那一版（40 §4.8.4 / A50）。
+   *
+   * 缺省 = 还没读过，面板这一格因此先不出声。「读到且没有排队」是
+   * `{ pending: null }` 而不是这里的 `null`——两者混成一个，面板会在第一次请求
+   * 返回之前说「现在没有排队的人格版本」，那是一句它并不知道的事实。
+   */
+  const [personaPending, setPersonaPending] = useState<CompanionPersonaPendingV1 | undefined>(undefined);
+  const [personaPendingError, setPersonaPendingError] = useState<string | null>(null);
   const [dangerConfirm, setDangerConfirm] = useState<"memory" | "history" | "audit" | null>(null);
   const [conflictItems, setConflictItems] = useState<CompanionMemoryItemV1[] | null>(null);
   const [dataNotice, setDataNotice] = useState<string | null>(null);
@@ -188,14 +223,15 @@ export function CompanionCenterSurface() {
     const meta = () => createRequestMeta(workspaceEpoch);
     const session = unwrapGatewayResult(await window.ailearn.auth.getState({ meta: meta() }));
     const workspaceId = session.status === "authenticated" ? session.workspace?.workspaceId ?? null : null;
-    const [memories, persona, history, activity, latestDiary] = await Promise.all([
+    const [account, memories, persona, history, activity, latestDiary] = await Promise.all([
+      readSection<CompanionOverview>(window.ailearn.companion.account.getState({ meta: meta() })),
       readSection(window.ailearn.companion.memory.list({ meta: meta(), query: { includeCandidates: true, includeArchived: true } })),
       readSection(window.ailearn.companion.persona.get({ meta: meta() })),
       readSection(window.ailearn.companion.history.list({ meta: meta(), query: { limit: 50 } })),
       readSection(window.ailearn.companion.activity.timeline({ meta: meta() })),
       readSection(window.ailearn.companion.daily.get({ meta: meta() })),
     ]);
-    return { workspaceId, memories, persona, history, activity, latestDiary };
+    return { workspaceId, account, memories, persona, history, activity, latestDiary };
   }, [], { refreshOnFocus: true });
   const starMapProjection = useSurfaceProjection(async ({ workspaceEpoch }) => (
     tab === "memory" && mapOpen
@@ -254,6 +290,38 @@ export function CompanionCenterSurface() {
     };
   }, [projection.reload]);
   const data = projection.data;
+  useEffect(() => {
+    let active = true;
+    if (tab !== "persona") return () => { active = false; };
+    setPersonaVersionsError(null);
+    void window.ailearn.companion.persona.versions({
+      meta: createRequestMeta(projection.epochRef.current),
+    }).then((result) => {
+      const value = unwrapGatewayResult(result);
+      if (active) setPersonaVersions(value.versions);
+    }).catch((error) => {
+      if (active) setPersonaVersionsError(gatewayErrorMessage(error));
+    });
+    return () => { active = false; };
+  }, [data, personaVersionsReload, projection.epochRef, tab]);
+  /**
+   * 「待生效」与「版本记录」一起读：两者都是"上一次改了什么"的账本，分开读会出现
+   * 一屏说"第 4 版在排队"、另一屏的列表里还没有第 4 版这种自相矛盾的画面。
+   */
+  useEffect(() => {
+    let active = true;
+    if (tab !== "persona") return () => { active = false; };
+    setPersonaPendingError(null);
+    void window.ailearn.companion.persona.pending({
+      meta: createRequestMeta(projection.epochRef.current),
+    }).then((result) => {
+      if (active) setPersonaPending(unwrapGatewayResult(result));
+    }).catch((error) => {
+      // 读不到就**不当作没有排队**：那一格会显示读不到，而不是骗用户说"没有"。
+      if (active) setPersonaPendingError(gatewayErrorMessage(error));
+    });
+    return () => { active = false; };
+  }, [data, personaVersionsReload, projection.epochRef, tab]);
   const memories = data?.memories.ok ? data.memories.value.items : [];
   const starMap: CompanionMemoryStarMapV2 | null = starMapProjection.data?.ok ? starMapProjection.data.value : null;
   const persona = data?.persona.ok ? data.persona.value : null;
@@ -348,6 +416,31 @@ export function CompanionCenterSurface() {
   const focusMemory = focusMemoryId ? memoryById.get(focusMemoryId) ?? null : null;
 
   useEffect(() => {
+    if (tab !== "memory" || !focusMemoryId) {
+      setMemoryRevisions(null);
+      setMemoryRevisionError(null);
+      return;
+    }
+    let disposed = false;
+    setMemoryRevisions(null);
+    setMemoryRevisionError(null);
+    void readSection(window.ailearn.companion.memory.revisions({
+      meta: createRequestMeta(projection.epochRef.current),
+      memoryId: focusMemoryId,
+    })).then((section) => {
+      if (disposed) return;
+      if (section.ok) {
+        setMemoryRevisions(section.value.items);
+        setMemoryRevisionError(null);
+      } else {
+        setMemoryRevisions([]);
+        setMemoryRevisionError(section.message);
+      }
+    });
+    return () => { disposed = true; };
+  }, [focusMemory?.revision, focusMemoryId, memoryRevisionReload, projection.epochRef, tab]);
+
+  useEffect(() => {
     if (selectedNodeId && !visibleGraph.nodes.some((node) => node.id === selectedNodeId)) {
       setSelectedNodeId(null);
     }
@@ -374,7 +467,7 @@ export function CompanionCenterSurface() {
     if (!selectedNodeId) return;
     const target = universe.targetsByNode.get(selectedNodeId); if (!target) return;
     const route = routeForMemoryEntityTarget(target);
-    if (route.kind === "note.detail") { setActiveNoteRef({ noteId: route.noteId, noteVersionId: null, mode: "read" }); invoke("open-notebook"); }
+    if (route.kind === "note.detail") { setActiveNoteRef({ noteId: route.noteId, noteVersionId: null, mode: "preview" }); invoke("open-notebook"); }
     else if (route.kind === "source.detail") { setActiveSourceId(route.sourceId); invoke("open-source"); }
     else if (route.kind === "objective.detail") { setActiveObjectiveId(route.objectiveId); invoke("open-objective"); }
     else if (route.kind === "learningRun.detail") { setActiveRunId(route.runId); invoke("validate"); }
@@ -387,14 +480,45 @@ export function CompanionCenterSurface() {
     setActiveObjectiveId(objectiveId);
     invoke("open-objective");
   };
+  /**
+   * 隐藏 / 取消隐藏 / 删除日记（40 §10）。
+   *
+   * 三个动作的**后置**都是重读日记与月历标记——月历也会变（删除的那天
+   * 不该再显示成「她写过」）。回执照实说服务端报回来的范围（§11.1 要求
+   * 「展示实际范围与结果」），失败时说明发生了什么而不是静默。
+   */
   const refresh = () => {
     void projection.reload();
     if (tab === "memory" && mapOpen) void starMapProjection.reload();
     if (tab === "activity") void activityDetail.reload();
     if (tab === "diary" && diaryDate) void diary.reload();
+  }
+  /** §10：隐藏 / 取消隐藏 / 删除。逻辑住在 companion-diary-actions.ts。 */
+  const diaryActions = useCompanionDiaryActions({
+    date: diaryDate,
+    epochRef: projection.epochRef,
+    reload: refresh,
+  });
+;
+
+  const updateDiaryEnabled = async (enabled: boolean) => {
+    if (!data?.account.ok || diarySettingsBusy) return;
+    setDiarySettingsBusy(true);
+    setDiarySettingsError(null);
+    try {
+      unwrapGatewayResult(await window.ailearn.companion.account.patchState({
+        meta: createRequestMeta(projection.epochRef.current),
+        request: { revision: data.account.value.account.revision, diaryEnabled: enabled },
+      }));
+      await projection.reload();
+    } catch (error) {
+      setDiarySettingsError(gatewayErrorMessage(error));
+    } finally {
+      setDiarySettingsBusy(false);
+    }
   };
 
-  const runMemoryAction = async (action: "confirm" | "pin" | "unpin" | "archive" | "restore" | "dismiss" | "remove") => {
+  const runMemoryAction = async (action: "confirm" | "pin" | "unpin" | "archive" | "restore" | "dismiss" | "remove" | "erase") => {
     if (!focusMemory || memoryBusy) return;
     setMemoryBusy(action); setMemoryError(null);
     try {
@@ -406,9 +530,112 @@ export function CompanionCenterSurface() {
       if (action === "restore") unwrapGatewayResult(await window.ailearn.companion.memory.restore(input));
       if (action === "dismiss") unwrapGatewayResult(await window.ailearn.companion.memory.dismiss(input));
       if (action === "remove") unwrapGatewayResult(await window.ailearn.companion.memory.remove(input));
-      setConfirmDeleteId(null); await projection.reload();
+      if (action === "erase") unwrapGatewayResult(await window.ailearn.companion.memory.erase(input));
+      setConfirmDeleteId(null); setConfirmEraseId(null); await projection.reload();
     } catch (error) { setMemoryError(gatewayErrorMessage(error)); } finally { setMemoryBusy(null); }
   };
+  // ── 40 §7 发现簿 ─────────────────────────────────────────────────────
+  // 读簿子 / 取消收藏 / 改批注。取消收藏**不动**原始回答与日记（§7）。
+  const discoveryMeta = useCallback(() => createRequestMeta(projection.epochRef.current), [projection.epochRef]);
+  const discoveryLoad = useCallback(
+    () => window.ailearn.companion.memory.discovery.get({ meta: discoveryMeta() }),
+    [discoveryMeta],
+  );
+  const { section: discoverySection, reload: reloadDiscovery } = useDiscoverySection(discoveryLoad);
+  const [discoveryBusy, setDiscoveryBusy] = useState<string | null>(null);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [discoveryNotice, setDiscoveryNotice] = useState<string | null>(null);
+  const runDiscovery = async (label: string, action: () => Promise<unknown>, notice: string | null) => {
+    if (discoveryBusy) return;
+    setDiscoveryBusy(label); setDiscoveryError(null); setDiscoveryNotice(null);
+    try { await action(); setDiscoveryNotice(notice); reloadDiscovery(); }
+    catch (error) { setDiscoveryError(gatewayErrorMessage(error)); }
+    finally { setDiscoveryBusy(null); }
+  };
+
+  // ── 40 §7「留在发现簿」那一次机会 ──────────────────────────────────────
+  //
+  // 三份状态缺一不可：`declined` 是用户说过的「先不留」（跨重启），
+  // `spent` 是这一条已经问过并处理完，`collected` 是簿子里已经有这一份。
+  // 少任何一份，那一次机会就会变成一颗挂在每条回答旁的常驻按钮。
+  const [keepDeclined, setKeepDeclined] = useState<boolean>(() => readDiscoveryKeepDeclined());
+  const [keepBusy, setKeepBusy] = useState(false);
+  const [keepSpent, setKeepSpent] = useState(false);
+  const [keepNotice, setKeepNotice] = useState<string | null>(null);
+  const [keepFailure, setKeepFailure] = useState<string | null>(null);
+  const [keepCollected, setKeepCollected] = useState<ReadonlySet<string>>(() => new Set());
+  /**
+   * 「自然停顿」落在哪一条上：**最新那句有正文的对话**。
+   *
+   * 按 `createdAt` 取而不是按数组下标：搜索会把这一批换成别的顺序，拿下标当
+   * 「最新」会让入口在搜索时跳到一条老消息上。被用户停掉的未完成回复没有正文，
+   * 留着它等于收藏一句说了一半的话。
+   */
+  const keepAnchor = useMemo<{ readonly anchorMessageId: string; readonly request: DiscoveryKeepRequest } | null>(() => {
+    const candidate = historyItems
+      .filter((item): item is CompanionHistoryItemV1 & { role: "user" | "assistant" } => item.role !== "system" && item.kind !== "cancelled")
+      .map((item) => ({ item, body: clipDiscoveryBody(messageText(item)) }))
+      .filter((entry) => entry.body.length > 0)
+      .sort((a, b) => Date.parse(b.item.createdAt) - Date.parse(a.item.createdAt))[0];
+    if (!candidate) return null;
+    return {
+      anchorMessageId: candidate.item.messageId,
+      request: {
+        // 作者与类别由角色推出，不让面板自己填：一条作者标错的收藏，读起来就像
+        // 用户自己写的，而 §7 要的正是把这件事标清。
+        kind: discoveryKindFor(candidate.item.role),
+        source: "assistant_reply",
+        sourceId: candidate.item.messageId,
+        author: discoveryAuthorFor(candidate.item.role),
+        body: candidate.body,
+      },
+    };
+  }, [historyItems]);
+  const keepIdentity = keepAnchor ? discoveryIdentityKey(keepAnchor.request) : null;
+  // 簿子里已经有这一份吗？问一次而不是点一次：上一次运行时收下的那一句，
+  // 这一屏要显示角标，而不是再摆一个按钮让人以为会多出一条。
+  useEffect(() => {
+    if (!keepAnchor) return;
+    const { kind, source, sourceId } = keepAnchor.request;
+    let alive = true;
+    void window.ailearn.companion.memory.discovery.state({ meta: discoveryMeta(), kind, source, sourceId })
+      .then((result) => {
+        if (!alive || !unwrapGatewayResult(result).collected) return;
+        setKeepCollected((current) => new Set(current).add(discoveryIdentityKey({ kind, source, sourceId })));
+      })
+      // 读不到就当还没收藏：宁可多问一次，也不要谎称"已经留在发现簿"。
+      .catch(() => undefined);
+    return () => { alive = false; };
+  // 依赖里只有 `keepAnchor`：它在 `historyItems` 变化时才换新对象，而那正是
+  // 「自然停顿换了人」的时刻——正好是要重新问簿子的时刻。
+  }, [discoveryMeta, keepAnchor]);
+  const keepState = resolveDiscoveryKeepState({
+    isLatestPause: keepIdentity !== null,
+    alreadyCollected: keepIdentity !== null && keepCollected.has(keepIdentity),
+    declined: keepDeclined,
+    spent: keepSpent,
+  });
+  const collectKeep = async () => {
+    if (!keepAnchor || keepBusy) return;
+    const identity = discoveryIdentityKey(keepAnchor.request);
+    setKeepBusy(true); setKeepNotice(null); setKeepFailure(null);
+    try {
+      const result = unwrapGatewayResult(await window.ailearn.companion.memory.discovery.collect({
+        meta: discoveryMeta(), request: keepAnchor.request,
+      }));
+      setKeepCollected((current) => new Set(current).add(identity));
+      setKeepSpent(true);
+      // `already_collected` 不是失败：同一份内容在笔记旁与发现簿里共用一行，
+      // 重复收藏按同一份正文更新。说成"新增了一条"反而会让用户去找第二条。
+      setKeepNotice(result.status === "already_collected" ? "这一段本来就在发现簿里，没有多出第二条。" : "已留在发现簿。");
+      reloadDiscovery();
+    } catch (error) {
+      // 失败**不**消耗那一次机会：这不是「用户忽略」，是没能送到，该让人能再试。
+      setKeepFailure(`没能留在发现簿：${gatewayErrorMessage(error)}。可以再点一次，或者点「先不留」。`);
+    } finally { setKeepBusy(false); }
+  };
+  const declineKeep = () => { rememberDiscoveryKeepDeclined(); setKeepDeclined(true); };
+
   const createMemory = async () => {
     const content = createContent.trim(); if (!content || memoryBusy) return;
     setMemoryBusy("create"); setMemoryError(null);
@@ -425,12 +652,12 @@ export function CompanionCenterSurface() {
       const corrected = unwrapGatewayResult(await window.ailearn.companion.memory.correct({
         meta: createRequestMeta(projection.epochRef.current),
         memoryId: focusMemory.memoryItemId,
-        request: { content, reason: "用户在伴星中心主动纠正" },
+        request: { content, expectedRevision: focusMemory.revision, reason: "用户在伴星中心主动纠正" },
       }));
       setCorrectionOpen(false);
       setFocusMemoryId(corrected.memoryItemId);
       await projection.reload();
-      setMemoryNotice("纠正内容已生成新的待确认记忆，原记录已停止使用。");
+      setMemoryNotice(`记忆已修订为第 ${corrected.revision} 版；原来源保留，旧版本可追溯。`);
     } catch (error) { setMemoryError(gatewayErrorMessage(error)); } finally { setMemoryBusy(null); }
   };
   const loadMoreHistory = async () => {
@@ -450,7 +677,7 @@ export function CompanionCenterSurface() {
       setHistoryItems(result.items); setHistoryCursor(null);
     } catch (error) { setHistoryError(gatewayErrorMessage(error)); } finally { setHistorySearching(false); }
   };
-  const runPersona = async (key: string, action: () => Promise<unknown>) => {
+  const runPersona = async (key: string, action: () => Promise<unknown>, notice = "设置已保存；新的人格会用于下一次尚未开始的调用。") => {
     if (personaBusy) return;
     setPersonaBusy(key); setPersonaError(null); setPersonaNotice(null);
     try {
@@ -460,8 +687,27 @@ export function CompanionCenterSurface() {
       }
       await projection.reload();
       if (key === "rebuild") setDataNotice("记忆检索索引已开始重建。");
-      else setPersonaNotice("设置已保存。");
+      else setPersonaNotice(notice);
     } catch (error) { setPersonaError(gatewayErrorMessage(error)); } finally { setPersonaBusy(null); }
+  };
+  /**
+   * 让排队中的那一版现在就生效（40 §4.8.4）。
+   *
+   * 传的是**当前** revision，不是待生效那一版的号——服务端按当前版本做 CAS，
+   * 传错一个号会让每一次点击都变成 409，而面板只能显示一句"请刷新后重试"。
+   * 提升成功后会作废排队，所以还要把待生效那一格重新读一遍。
+   */
+  const activatePendingPersona = async () => {
+    const pending = personaPending;
+    if (!pending?.pending || personaBusy) return;
+    await runPersona("activate-pending", async () => {
+      const activated = unwrapGatewayResult(await window.ailearn.companion.persona.activate({
+        meta: createRequestMeta(projection.epochRef.current),
+        revision: pending.currentRevision,
+      }));
+      setPersonaVersionsReload((value) => value + 1);
+      return `已生效。她现在是第 ${activated.profileRevision} 版，从你下一次开口起按它说话；这次已经说过的话不会被改写。`;
+    });
   };
   const runDanger = async (kind: "memory" | "history" | "audit") => {
     if (personaBusy) return;
@@ -653,7 +899,7 @@ export function CompanionCenterSurface() {
   if (!data && projection.failure) return <HudPage page="companion" wide><div className="companion-center companion-center--state" aria-label="伴星中心"><SectionState message="伴星中心暂时不可用" detail={projection.failure} onRetry={refresh} /></div></HudPage>;
   if (!data) return null;
   const companionName = companionDisplayName(persona ?? null);
-  const settingsOpen = tab === "persona" || tab === "data";
+  const settingsOpen = tab === "persona" || tab === "data" || tab === "diary-settings";
   const diarySection = diaryDate ? diary.data : data.latestDiary;
   const journeySection: Section<CompanionJourneyBootstrap> = activityDetail.data?.journey ?? { ok: false, message: activityDetail.loading ? "正在读取旅程" : "旅程暂时不可用" };
   const learningContextSection: Section<CompanionLearningContextV1> = activityDetail.data?.learningContext ?? { ok: false, message: activityDetail.loading ? "正在读取学习状态" : "学习状态暂时不可用" };
@@ -718,18 +964,89 @@ export function CompanionCenterSurface() {
           <div className="companion-map-legend" aria-label="星图图例"><span className="is-memory"><i />记忆</span><span className="is-pinned"><i />固定记忆</span><span className="is-entity"><i />学习实体</span><span className="is-orphan"><i />失效关联</span></div>
         </div> : <div className="companion-memory-view">
           <div className="companion-memory-view__head"><div><h2>她记住的事</h2><p>候选记忆需要你确认；已写入的内容可以纠正、固定或归档。</p></div><button type="button" className="companion-map-open" onClick={() => setMapOpen(true)}><MapIcon size={17} />查看关联星图</button></div>
-          <MemoryPanel section={data.memories} items={memories} focus={focusMemory} query={memoryListQuery} kind={memoryListKind} pinFilter={memoryListPinFilter} busy={memoryBusy} error={memoryError} notice={memoryNotice} confirmDelete={confirmDeleteId === focusMemory?.memoryItemId} createOpen={createOpen} createContent={createContent} createKind={createKind} correctionOpen={correctionOpen} correctionContent={correctionContent} onQuery={setMemoryListQuery} onKind={setMemoryListKind} onPinFilter={setMemoryListPinFilter} onFocus={(id) => setFocusMemoryId(id)} onAction={(action) => void runMemoryAction(action)} onConfirmDelete={(value) => setConfirmDeleteId(value ? focusMemory?.memoryItemId ?? null : null)} onCreateOpen={setCreateOpen} onCreateContent={setCreateContent} onCreateKind={setCreateKind} onCreate={() => void createMemory()} onSummarize={() => void summarizeRecent()} onCorrectionOpen={setCorrectionOpen} onCorrectionContent={setCorrectionContent} onCorrect={() => void correctMemory()} onRetry={refresh} />
+          <MemoryPanel
+            section={data.memories}
+            items={memories}
+            focus={focusMemory}
+            revisions={memoryRevisions}
+            revisionsError={memoryRevisionError}
+            onRetryRevisions={() => setMemoryRevisionReload((value) => value + 1)}
+            query={memoryListQuery}
+            kind={memoryListKind}
+            pinFilter={memoryListPinFilter}
+            busy={memoryBusy}
+            error={memoryError}
+            notice={memoryNotice}
+            confirmDelete={confirmDeleteId === focusMemory?.memoryItemId}
+            confirmErase={confirmEraseId === focusMemory?.memoryItemId}
+            createOpen={createOpen}
+            createContent={createContent}
+            createKind={createKind}
+            correctionOpen={correctionOpen}
+            correctionContent={correctionContent}
+            onQuery={setMemoryListQuery}
+            onKind={setMemoryListKind}
+            onPinFilter={setMemoryListPinFilter}
+            onFocus={(id) => setFocusMemoryId(id)}
+            onAction={(action) => void runMemoryAction(action)}
+            onConfirmDelete={(value) => setConfirmDeleteId(value ? focusMemory?.memoryItemId ?? null : null)}
+            onConfirmErase={(value) => setConfirmEraseId(value ? focusMemory?.memoryItemId ?? null : null)}
+            onCreateOpen={setCreateOpen}
+            onCreateContent={setCreateContent}
+            onCreateKind={setCreateKind}
+            onCreate={() => void createMemory()}
+            onSummarize={() => void summarizeRecent()}
+            onCorrectionOpen={setCorrectionOpen}
+            onCorrectionContent={setCorrectionContent}
+            onCorrect={() => void correctMemory()}
+            onRetry={refresh}
+          />
         </div>}
       </section> : null}
 
-      {tab !== "overview" && tab !== "memory" ? <section key={tab} className="companion-center__panel companion-stage" id={`companion-panel-${settingsOpen ? "settings" : tab}`} role="tabpanel" aria-labelledby={`companion-tab-${settingsOpen ? "settings" : tab}`}>
-        {settingsOpen ? <div className="companion-settings-view"><div className="companion-settings-view__head"><div><h2>伴星设置</h2><p>调整她与你相处的方式，管理真实记录。</p></div><div role="group" aria-label="伴星设置分区"><button type="button" aria-pressed={tab === "persona"} onClick={() => setTab("persona")}>人格与边界</button><button type="button" aria-pressed={tab === "data"} onClick={() => setTab("data")}>数据与隐私</button></div></div>
-          {tab === "persona" ? <PersonaPanel section={data.persona} persona={persona} busy={personaBusy} error={personaError} notice={personaNotice} onPreset={(preset) => void runPersona("preset", () => window.ailearn.companion.persona.patch({ meta: createRequestMeta(projection.epochRef.current), request: companionPersonaPatchFromPreset(preset, persona?.profile?.revision) }))} onActiveness={(activeness) => { if (!persona?.profile) return; void runPersona("activeness", () => window.ailearn.companion.persona.patch({ meta: createRequestMeta(projection.epochRef.current), request: companionPersonaPatchFromProfile(persona.profile!, { activeness }) })); }} onBoundary={(key) => { if (!persona?.profile) return; const profile = persona.profile; void runPersona("boundary", () => window.ailearn.companion.persona.patch({ meta: createRequestMeta(projection.epochRef.current), request: companionPersonaPatchFromProfile(profile, { boundaries: { ...profile.boundaries, [key]: profile.boundaries[key] !== true } }) })); }} onReset={() => void runPersona("reset", () => window.ailearn.companion.persona.reset({ meta: createRequestMeta(projection.epochRef.current) }))} onRename={(name) => { if (!persona?.profile) return; const profile = persona.profile; void runPersona("name", async () => { const result = await window.ailearn.companion.persona.patch({ meta: createRequestMeta(projection.epochRef.current), request: companionPersonaPatchFromProfile(profile, { name }) }); if (result.ok) publishCompanionDisplayName(name); return result; }); }} onRetry={refresh} /> : null}
+      {tab === "discovery" ? <section key={tab} className="companion-center__panel companion-stage" id="companion-panel-discovery" role="tabpanel" aria-labelledby="companion-tab-discovery">
+        <DiscoveryPanel
+          section={discoverySection}
+          busy={discoveryBusy}
+          error={discoveryError}
+          notice={discoveryNotice}
+          onUncollect={(entry) => void runDiscovery(
+            `uncollect:${entry.entryId}`,
+            () => window.ailearn.companion.memory.discovery.uncollect({
+              meta: discoveryMeta(),
+              request: { kind: entry.kind, source: entry.source, sourceId: entry.sourceId },
+            }),
+            "已取消收藏。原始回答和日记都还在。",
+          )}
+          onAnnotate={(entry, annotation) => void runDiscovery(
+            `annotate:${entry.entryId}`,
+            () => window.ailearn.companion.memory.discovery.annotate({
+              meta: discoveryMeta(),
+              request: { entryId: entry.entryId, annotation },
+            }),
+            "批注已保存。",
+          )}
+          onRetry={reloadDiscovery}
+        />
+      </section> : null}
+
+      {tab !== "overview" && tab !== "memory" && tab !== "discovery" ? <section key={tab} className="companion-center__panel companion-stage" id={`companion-panel-${settingsOpen ? "settings" : tab}`} role="tabpanel" aria-labelledby={`companion-tab-${settingsOpen ? "settings" : tab}`}>
+        {settingsOpen ? <div className="companion-settings-view"><div className="companion-settings-view__head"><div><h2>伴星设置</h2><p>调整她与你相处的方式，管理真实记录。</p></div><div role="group" aria-label="伴星设置分区"><button type="button" aria-pressed={tab === "persona"} onClick={() => setTab("persona")}>人格与边界</button><button type="button" aria-pressed={tab === "diary-settings"} onClick={() => setTab("diary-settings")}>日记生成</button><button type="button" aria-pressed={tab === "data"} onClick={() => setTab("data")}>数据与隐私</button></div></div>
+          {tab === "persona" ? <PersonaPanel section={data.persona} persona={persona} versions={personaVersions} versionsError={personaVersionsError} busy={personaBusy} error={personaError} notice={personaNotice} onPreset={(preset) => void runPersona("preset", () => window.ailearn.companion.persona.patch({ meta: createRequestMeta(projection.epochRef.current), request: companionPersonaPatchFromPreset(preset, persona?.profileRevision ?? 0) }))} onActiveness={(activeness) => { if (!persona?.profile) return; const profile = persona.profile; void runPersona("activeness", () => window.ailearn.companion.persona.patch({ meta: createRequestMeta(projection.epochRef.current), request: companionPersonaPatchFromProfile(profile, { activeness }) })); }} onBoundary={(key) => { if (!persona?.profile) return; const profile = persona.profile; void runPersona("boundary", () => window.ailearn.companion.persona.patch({ meta: createRequestMeta(projection.epochRef.current), request: companionPersonaPatchFromProfile(profile, { boundaries: { ...profile.boundaries, [key]: profile.boundaries[key] !== true } }) })); }} onReset={() => { if (!persona) return; void runPersona("reset", () => window.ailearn.companion.persona.reset({ meta: createRequestMeta(projection.epochRef.current), revision: persona.profileRevision })); }} onRestore={(revision) => { if (!persona) return; void runPersona("restore", () => window.ailearn.companion.persona.restore({ meta: createRequestMeta(projection.epochRef.current), revision, currentRevision: persona.profileRevision })); }} onReloadVersions={() => setPersonaVersionsReload((value) => value + 1)} pending={personaPending} pendingError={personaPendingError} onActivatePending={() => void activatePendingPersona()} onRetryPending={() => setPersonaVersionsReload((value) => value + 1)} onRename={(name) => { if (!persona?.profile) return; const profile = persona.profile; void runPersona("name", async () => { const result = await window.ailearn.companion.persona.patch({ meta: createRequestMeta(projection.epochRef.current), request: companionPersonaPatchFromProfile(profile, { name }) }); if (result.ok) publishCompanionDisplayName(name); return result; }); }} onRetry={refresh} /> : null}
           {tab === "data" ? <DataPanel busy={personaBusy} error={personaError} notice={dataNotice} dangerConfirm={dangerConfirm} conflictItems={conflictItems} onDangerConfirm={setDangerConfirm} onConflicts={() => void loadConflicts()} onResolveConflict={(keepId, removeId) => void resolveConflict(keepId, removeId)} onRebuild={() => void runPersona("rebuild", () => window.ailearn.companion.memory.rebuildEmbeddings({ meta: createRequestMeta(projection.epochRef.current) }))} onExport={(kind) => void exportCompanionData(kind)} onDanger={(kind) => void runDanger(kind)} diagnostics={{ mapVersion: starMap?.version ?? null, memoryCount: memories.length, historyCount: historyItems.length }} /> : null}
+          {tab === "diary-settings" ? <DiarySettingsPanel enabled={data.account.ok ? data.account.value.account.diaryEnabled : null} busy={diarySettingsBusy} error={diarySettingsError ?? (data.account.ok ? null : data.account.message)} onChange={(enabled) => void updateDiaryEnabled(enabled)} onRetry={refresh} /> : null}
         </div> : null}
-        {tab === "dialogue" ? <DialoguePanel section={data.history} items={historyItems} cursor={historyCursor} query={historySearch} searching={historySearching} loadingMore={historyLoadingMore} error={historyError} onQuery={setHistorySearch} onSearch={() => void searchHistory()} onLoadMore={() => void loadMoreHistory()} onContinue={() => chat.setMode("conversation")} onRetry={refresh} /> : null}
+        {tab === "dialogue" ? <DialoguePanel section={data.history} items={historyItems} cursor={historyCursor} query={historySearch} searching={historySearching} loadingMore={historyLoadingMore} error={historyError} onQuery={setHistorySearch} onSearch={() => void searchHistory()} onLoadMore={() => void loadMoreHistory()} onContinue={() => chat.setMode("conversation")} onRetry={refresh} keep={{ anchorMessageId: keepAnchor?.anchorMessageId ?? null, state: keepState, busy: keepBusy, feedback: keepNotice, failure: keepFailure, onKeep: () => void collectKeep(), onDecline: declineKeep }} /> : null}
         {tab === "activity" ? <ActivityPanel section={journeySection} learningContextSection={learningContextSection} deliverySection={data.activity} deliveries={activityItems} busy={activityBusy} error={activityError} onStart={startJourney} onAction={(action) => void runJourneyAction(action)} onResumeLearning={openLearningRun} onOpenObjective={openLearningObjective} onPresent={(item) => void presentDelivery(item)} onDelivery={(item, transition) => void actOnDelivery(item, transition)} onRetry={refresh} /> : null}
-        {tab === "diary" ? <DiaryPanel section={diarySection} loading={diaryDate ? diary.loading : projection.loading} failure={diaryDate ? diary.failure : projection.failure} date={diaryDate} onDate={setDiaryDate} onMemory={(id) => { setTab("memory"); setFocusMemoryId(id); setMapOpen(false); }} onRetry={refresh} marks={diaryMarks.data?.ok ? new Map(diaryMarks.data.value.days.map((day) => [day.date, day.status])) : null} marksFailure={diaryMarks.data && !diaryMarks.data.ok ? diaryMarks.data.message : null} onMarksMonth={setDiaryMonth} /> : null}
+        {tab === "diary" ? <DiaryPanel section={diarySection} loading={diaryDate ? diary.loading : projection.loading} failure={diaryDate ? diary.failure : projection.failure} date={diaryDate} onDate={setDiaryDate} onMemory={(id) => { setTab("memory"); setFocusMemoryId(id); setMapOpen(false); }} onDiscussDiary={(reference) => { feedDiaryReferenceToCompanion(reference); }}
+          onHideDiary={diaryActions.hide}
+          onUnhideDiary={diaryActions.unhide}
+          onDeleteDiary={diaryActions.remove}
+          confirmDeleteDiary={diaryActions.confirmingDelete}
+          onConfirmDeleteDiary={diaryActions.setConfirmingDelete}
+          notice={diaryActions.notice}
+          busy={diaryActions.busy}
+          onRetry={refresh} marks={diaryMarks.data?.ok ? new Map(diaryMarks.data.value.days.map((day) => [day.date, day.status])) : null} marksFailure={diaryMarks.data && !diaryMarks.data.ok ? diaryMarks.data.message : null} onMarksMonth={setDiaryMonth} /> : null}
       </section> : null}
     </div>
   </div></HudPage>;

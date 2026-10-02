@@ -578,7 +578,7 @@ export function GraphSurface() {
 
   /** 星图里的继续动作回到同一篇笔记，沿用它的学习轮次与记录。 */
   const openNoteJourney = useCallback((noteId: string) => {
-    setActiveNoteRef({ noteId, noteVersionId: null, mode: "read" });
+    setActiveNoteRef({ noteId, noteVersionId: null, mode: "preview" });
     setNoteReturnTo("graph");
     invoke("open-notebook");
   }, [invoke, setActiveNoteRef, setNoteReturnTo]);

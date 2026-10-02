@@ -126,7 +126,7 @@ async function settle(loops = 14) {
   }
 }
 
-async function open(mode: "read" | "edit") {
+async function open(mode: "preview" | "live-preview") {
   useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode } });
   vi.useFakeTimers();
   render(<NotebookSurface />);
@@ -142,8 +142,8 @@ const deliverFrame = (stubbed: { seed: string }, changes: { text?: string; title
 
 const titleValue = () => (document.getElementById("notebook-surface-title") as HTMLInputElement | null)?.value ?? null;
 /** 保存状态那一枚标签就是 `dirty` 的脸：脏=「草稿」，干净=「已同步」。 */
-const saveTag = () => document.querySelector(".tag.red")?.textContent?.trim() ?? null;
-const readingParagraphs = () => Array.from(document.querySelectorAll(".reading-body p")).map((node) => node.textContent?.trim() ?? "");
+const saveTag = () => document.querySelector(".notebook-desk__status .tag:first-child")?.textContent?.trim() ?? null;
+const readingParagraphs = () => Array.from(document.querySelectorAll(".note-transcript p")).map((node) => node.textContent?.trim() ?? "");
 
 function memberRoom() {
   useRoomStore.setState({
@@ -169,7 +169,7 @@ describe("阅读态画这一篇自己的文档", () => {
   it("对端改了那一段：回读还停在旧的，读的人看到的也必须是新的", async () => {
     const stubbed = stub();
     memberRoom();
-    await open("read");
+    await open("preview");
     // 起点先上屏：这一句同时也是"帧根本没 apply"时的对照组。
     expect(readingParagraphs()).toEqual([STALE]);
     const readsBefore = stubbed.reads();
@@ -180,7 +180,7 @@ describe("阅读态画这一篇自己的文档", () => {
 
     // 只有一段：对端改的就是那一段，合并不是"再添一句"。块数涨了就是两份历史没同源。
     expect(readingParagraphs()).toEqual([FRESH]);
-    expect(document.querySelector(".title")?.textContent).toBe(RENAMED);
+    expect(document.querySelector(".notebook-volume__heading h2")?.textContent).toBe(RENAMED);
     // 叫醒一次回读仍然要做（版本号、权限只能从那次回读取），但它不是正文的来源。
     expect(stubbed.reads()).toBeGreaterThan(readsBefore);
   });
@@ -188,7 +188,7 @@ describe("阅读态画这一篇自己的文档", () => {
   it("没有帧时画的就是这份文档，不是占位话、也不是上一篇", async () => {
     stub();
     memberRoom();
-    await open("read");
+    await open("preview");
     expect(readingParagraphs()).toEqual([STALE]);
     // 断具体那句话，不数 `p` 的个数：空正文也有一句"这一版正文还没有段落"占位，
     // 只数个数的那条写法对"根本没画出来"是哑的。
@@ -200,7 +200,7 @@ describe("编辑态：标题跟着别人那份走，我改的那一段不被顶�
   it("我没动过标题时，别人的改名直接上屏，且这一屏不算脏", async () => {
     const stubbed = stub();
     ownerRoom();
-    await open("edit");
+    await open("live-preview");
     expect(titleValue()).toBe(SEED_TITLE);
     expect(saveTag()).toBe("已同步");
 
@@ -216,7 +216,7 @@ describe("编辑态：标题跟着别人那份走，我改的那一段不被顶�
   it("我改了标题时，别人的改名不许动我写的字，且仍然标着未提交", async () => {
     const stubbed = stub();
     ownerRoom();
-    await open("edit");
+    await open("live-preview");
     const title = document.getElementById("notebook-surface-title") as HTMLInputElement;
     fireEvent.input(title, { target: { value: MINE } });
     await settle(2);
@@ -243,7 +243,7 @@ describe("编辑态：标题跟着别人那份走，我改的那一段不被顶�
     // 没被复现。真实窗口里那句"永远停在草稿"到底是谁造成的，仍以量测为准。
     const stubbed = stub();
     ownerRoom();
-    await open("edit");
+    await open("live-preview");
     const title = document.getElementById("notebook-surface-title") as HTMLInputElement;
     fireEvent.input(title, { target: { value: MINE } });
 
@@ -276,7 +276,9 @@ describe("编辑态：标题跟着别人那份走，我改的那一段不被顶�
     // 那句断言就是它报的），而页面把两者一比对之后**必须说出一句话**——不能只靠颜色。
     const stubbed = stub();
     ownerRoom();
-    await open("edit");
+    await open("live-preview");
+    const input = document.querySelector<HTMLElement>(".ProseMirror")!;
+    await act(async () => { input.focus(); fireEvent.focusIn(input); await vi.advanceTimersByTimeAsync(100); });
     const reported = () => JSON.parse(
       String((stubbed.presence.mock.calls.at(-1)?.[0] as { state: string }).state),
     ) as { name: string; block: number | null };
@@ -310,7 +312,7 @@ describe("编辑态：标题跟着别人那份走，我改的那一段不被顶�
     // 就跟上了）。也就是说这一条量的是"标题不许被读回旧的"这个结果，而不是那行代码。
     const stubbed = stub();
     ownerRoom();
-    await open("edit");
+    await open("live-preview");
     const title = document.getElementById("notebook-surface-title") as HTMLInputElement;
     fireEvent.input(title, { target: { value: MINE } });
     await settle(30);

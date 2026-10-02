@@ -18,6 +18,7 @@ import {
   companionContentBlockV1Schema,
   companionImageBlockV1Schema,
   companionQuoteBlockV1Schema,
+  companionSelectionV1Schema,
   companionTextBlockV1Schema,
 } from "./companion-conversation-contracts.ts";
 
@@ -29,17 +30,63 @@ export const companionMemoryKindV1Schema = z.enum([
   "learning_context",
   "interaction_note",
   "episodic",
+  /**
+   * 判断记录：她对一件**已发生片段**的解释或表达选择（40 §4.5.4–4.5.5）。
+   *
+   * 它不是「关于用户的事实」，所以界面上必须与前五种分区显示
+   * （§4.5.8「关于你的」与「她的看法」分开）。判断永远不是用户自述，
+   * 由 0347 的 `assistant_memory_judgment_shape_check` 在库侧强制。
+   */
+  "judgment",
 ]);
 export type CompanionMemoryKindV1 = z.infer<typeof companionMemoryKindV1Schema>;
 
 export const companionMemoryScopeV1Schema = z.enum(["global", "workspace", "task"]);
 export type CompanionMemoryScopeV1 = z.infer<typeof companionMemoryScopeV1Schema>;
 
+export const companionMemoryBudgetTierV1Schema = z.enum(["resident", "active", "archived"]);
+export type CompanionMemoryBudgetTierV1 = z.infer<typeof companionMemoryBudgetTierV1Schema>;
+
 export const companionMemorySourceTypeV1Schema = z.enum([
   "user_stated",
   "model_inferred",
   "confirmed",
   "summary",
+]);
+
+/**
+ * §4.6.8：author/updated_by 区分 user、extractor、companion、maintenance。
+ *
+ * `extractor` 是抽取任务从原始事件提出的事实记忆，`maintenance` 是后台整理
+ * 与摘要写下的结论，`companion` 是她自己的判断与表达选择——三者写出来的
+ * 行在库里**必须**能分开，否则「谁写的」就退化成了「不是用户写的」。
+ * 词表与 0360 的 CHECK 一致。
+ */
+export const companionMemoryAuthorTypeV1Schema = z.enum([
+  "user",
+  "extractor",
+  "companion",
+  "maintenance",
+]);
+/** §4.5.4：认识状态另标有据、暂定、争议或已被替代。 */
+export const companionMemoryEpistemicStatusV1Schema = z.enum([
+  "supported",
+  "tentative",
+  "disputed",
+  "superseded",
+]);
+/** 说话者：她引用自己的判断时是 `companion`，不是把用户的话记成她的话。 */
+export const companionMemorySourceSpeakerV1Schema = z.enum(["user", "assistant", "companion"]);
+/**
+ * 依据性质：用户直说 / 从用户那句话推出来 / **她自己的解释**。
+ *
+ * 第三个值是判断记录存在的理由——§4.5.4「来源性质区分用户自述、可观察事件
+ * 和模型推断」。它与 `userStated` 独立：判断永远不是用户自述。
+ */
+export const companionMemorySourceBasisV1Schema = z.enum([
+  "direct_statement",
+  "inferred_from_statement",
+  "companion_interpretation",
 ]);
 export type CompanionMemorySourceTypeV1 = z.infer<typeof companionMemorySourceTypeV1Schema>;
 
@@ -59,6 +106,11 @@ export const companionMemoryItemV1Schema = z.strictObject({
   content: z.string().min(1).max(companionMemoryContentMaxLength),
   sourceEventId: z.string().max(240).nullable(),
   sourceSessionId: z.string().uuid().nullable(),
+  sourceSpeaker: companionMemorySourceSpeakerV1Schema.nullable(),
+  sourceBasis: companionMemorySourceBasisV1Schema.nullable(),
+  appliesWhen: z.string().max(200).nullable(),
+  validFrom: isoTimestampSchema.nullable(),
+  validUntil: isoTimestampSchema.nullable(),
   userStated: z.boolean(),
   userConfirmed: z.boolean(),
   /** true = 候选记忆：尚未写入长期记忆，等用户在伴星中心裁决。 */
@@ -66,16 +118,51 @@ export const companionMemoryItemV1Schema = z.strictObject({
   importance: z.number().min(0).max(1),
   confidence: z.number().min(0).max(1),
   scope: companionMemoryScopeV1Schema,
+  budgetTier: companionMemoryBudgetTierV1Schema,
   pinned: z.boolean(),
   archived: z.boolean(),
   dismissedAt: isoTimestampSchema.nullable(),
   conflictGroup: z.string().uuid().nullable(),
   embeddingStatus: companionMemoryEmbeddingStatusV1Schema,
   sourceType: companionMemorySourceTypeV1Schema,
+  revision: z.number().int().min(1),
+  authorType: companionMemoryAuthorTypeV1Schema,
+  authorId: z.string().uuid().nullable(),
+  epistemicStatus: companionMemoryEpistemicStatusV1Schema,
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
 });
 export type CompanionMemoryItemV1 = z.infer<typeof companionMemoryItemV1Schema>;
+
+export const companionMemoryRevisionV1Schema = z.strictObject({
+  revision: z.number().int().min(1),
+  kind: companionMemoryKindV1Schema,
+  content: z.string().min(1).max(companionMemoryContentMaxLength),
+  sourceEventId: z.string().max(240).nullable(),
+  sourceSessionId: z.string().uuid().nullable(),
+  sourceSpeaker: companionMemorySourceSpeakerV1Schema.nullable(),
+  sourceBasis: companionMemorySourceBasisV1Schema.nullable(),
+  appliesWhen: z.string().max(200).nullable(),
+  validFrom: isoTimestampSchema.nullable(),
+  validUntil: isoTimestampSchema.nullable(),
+  userStated: z.boolean(),
+  userConfirmed: z.boolean(),
+  importance: z.number().min(0).max(1),
+  confidence: z.number().min(0).max(1),
+  scope: companionMemoryScopeV1Schema,
+  sourceType: companionMemorySourceTypeV1Schema,
+  authorType: companionMemoryAuthorTypeV1Schema,
+  authorId: z.string().uuid().nullable(),
+  epistemicStatus: companionMemoryEpistemicStatusV1Schema,
+  supersededAt: isoTimestampSchema,
+});
+export type CompanionMemoryRevisionV1 = z.infer<typeof companionMemoryRevisionV1Schema>;
+export const companionMemoryRevisionListV1Schema = z.strictObject({
+  version: z.literal(1),
+  memoryItemId: z.string().uuid(),
+  items: z.array(companionMemoryRevisionV1Schema).max(200),
+});
+export type CompanionMemoryRevisionListV1 = z.infer<typeof companionMemoryRevisionListV1Schema>;
 
 /** `GET /companion/memory`；服务端一次最多返回 200 条。 */
 export const companionMemoryListV1Schema = z.strictObject({
@@ -179,6 +266,29 @@ export const companionDailySummaryV1Schema = z.strictObject({
   date: companionDailyDateV1Schema.nullable(),
   status: z.enum(["generated", "not_generated", "failed"]),
   generatedAt: isoTimestampSchema.nullable(),
+  /** Short reason for choosing this diary moment; null on blank/legacy days. */
+  selectionReason: z.string().max(240).nullable(),
+  /**
+   * 候选 id：这一篇是从哪一段成稿的（0353）。
+   *
+   * 有了它，「正文与选中 ID 一致」才是一条事后能核对的断言，而不是一句
+   * 要靠再问她一次的话。`null` 有三种含义，**都要保留为 null 而不是补成空串**：
+   * 她明确选了 null（§5.7.5 允许）、这一行早于 0353、以及这一天没有成稿。
+   * 带 default 是因为这一列是后加的：老服务端与老夹具不带这个键，
+   * 缺键按 null 读，而不是让 strictObject 把整个响应判成非法。
+   */
+  selectedId: z.string().max(80).nullable().default(null),
+  /**
+   * 当前这一篇的版本（40 §6「聊聊这篇」需要它）。
+   *
+   * §5.5 保证「同一用户、空间、本地日期只呈现一个当前版本」，且已发布成稿
+   * 不因后台重跑静默替换——所以「用户看到的那一版」是稳定的，伴星读回时必须
+   * 带上它，版本对不上就说清楚，而不是悄悄拿新版顶上。
+   *
+   * 带 default 与 selectedId 同理：这一列对老服务端与老夹具是新增的，
+   * 缺键按 1 读（0001 起算的第一版），而不是让 strictObject 判非法。
+   */
+  revision: z.number().int().min(1).default(1),
   /** status=failed 的成因；generated / not_generated 恒为 null。 */
   failureReason: companionDailyFailureReasonV1Schema.nullable(),
   /**
@@ -192,8 +302,43 @@ export const companionDailySummaryV1Schema = z.strictObject({
     memoryItemId: z.string().uuid(),
     candidate: z.boolean(),
   }).nullable(),
+  /**
+   * 「隐藏日记」（40 §10）：从列表与主动推荐里移除，用户可从管理入口恢复。
+   *
+   * **隐藏 ≠ 删除**：删除的篇目根本不会出现在这个响应里（读路径按
+   * `deleted_at IS NULL` 过滤），界面因此只需要处理"活着但被藏起来"这一种。
+   */
+  hidden: z.boolean().default(false),
+  hiddenAt: isoTimestampSchema.nullable().default(null),
 });
 export type CompanionDailySummaryV1 = z.infer<typeof companionDailySummaryV1Schema>;
+
+/**
+ * 「隐藏/取消隐藏」的回执（40 §10）。
+ *
+ * `changed=false` 表示这次点击没有改变任何东西——**不是失败**。重复点隐藏是
+ * 用户会做的事，把它报成错只会让界面闪一个红条。
+ */
+export const companionDailyVisibilityV1Schema = z.strictObject({
+  version: z.literal(1),
+  hidden: z.boolean(),
+  changed: z.boolean(),
+});
+export type CompanionDailyVisibilityV1 = z.infer<typeof companionDailyVisibilityV1Schema>;
+
+/**
+ * 「删除日记」的实际范围（§11.1 要求「展示实际范围与结果」）。
+ *
+ * 三个数分别是：作品本身、派生预览与摘录、仅由该篇产生的记忆。
+ * 界面照实报出来，用户才知道"删掉"到底带走了什么。
+ */
+export const companionDailyDeleteV1Schema = z.strictObject({
+  version: z.literal(1),
+  diary: z.boolean(),
+  entries: z.number().int().min(0),
+  memories: z.number().int().min(0),
+});
+export type CompanionDailyDeleteV1 = z.infer<typeof companionDailyDeleteV1Schema>;
 
 export const companionDailyMonthValueV1Schema = z.string().regex(/^\d{4}-\d{2}$/);
 
@@ -227,10 +372,9 @@ export const companionPersonaBoundariesV1Schema = z.strictObject({
 });
 export type CompanionPersonaBoundariesV1 = z.infer<typeof companionPersonaBoundariesV1Schema>;
 
-/** `GET /companion/pet-profile` 的 profile：无自定义时服务端返回系统默认。 */
+/** Account-scoped persona override. Workspace relationship metrics travel separately. */
 export const companionPersonaProfileV1Schema = z.strictObject({
   id: z.string().uuid(),
-  workspaceId: z.string().uuid(),
   userId: z.string().uuid(),
   presetId: z.string().max(80).nullable(),
   name: z.string().min(1).max(60),
@@ -240,13 +384,17 @@ export const companionPersonaProfileV1Schema = z.strictObject({
   activeness: companionPersonaActivenessV1Schema,
   boundaries: companionPersonaBoundariesV1Schema,
   revision: z.number().int().positive(),
-  familiarity: z.number().min(0).max(1),
-  interactionCount: z.number().int().min(0),
-  lastActiveAt: isoTimestampSchema.nullable(),
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
 });
 export type CompanionPersonaProfileV1 = z.infer<typeof companionPersonaProfileV1Schema>;
+
+export const companionPersonaRelationshipV1Schema = z.strictObject({
+  familiarity: z.number().min(0).max(1),
+  interactionCount: z.number().int().min(0),
+  lastActiveAt: isoTimestampSchema.nullable(),
+});
+export type CompanionPersonaRelationshipV1 = z.infer<typeof companionPersonaRelationshipV1Schema>;
 
 export const companionPersonaPresetV1Schema = z.strictObject({
   presetId: z.string().min(1).max(80),
@@ -262,6 +410,8 @@ export type CompanionPersonaPresetV1 = z.infer<typeof companionPersonaPresetV1Sc
 export const companionPersonaV1Schema = z.strictObject({
   version: z.literal(1),
   profile: companionPersonaProfileV1Schema.nullable(),
+  profileRevision: z.number().int().nonnegative(),
+  relationship: companionPersonaRelationshipV1Schema,
   presets: z.array(companionPersonaPresetV1Schema).max(20),
   activePreset: companionPersonaPresetV1Schema.nullable(),
 });
@@ -276,8 +426,8 @@ export type CompanionPersonaV1 = z.infer<typeof companionPersonaV1Schema>;
  */
 export const companionPersonaPatchV1Schema = z.strictObject({
   /** 当前 revision，CAS 乐观锁；服务端版本不一致时返回 409。 */
-  revision: z.number().int().positive().optional(),
-  presetId: z.string().min(1).max(80).nullable().optional(),
+  revision: z.number().int().nonnegative(),
+  presetId: z.string().min(1).max(80).nullable(),
   name: z.string().min(1).max(60),
   personalityTags: z.array(z.string().min(1).max(20)).min(1).max(10),
   speakingStyle: z.string().min(1).max(1000),
@@ -291,6 +441,7 @@ export type CompanionPersonaPatchV1 = z.infer<typeof companionPersonaPatchV1Sche
 export const companionPersonaMutationV1Schema = z.strictObject({
   version: z.literal(1),
   profile: companionPersonaProfileV1Schema,
+  profileRevision: z.number().int().positive(),
 });
 export type CompanionPersonaMutationV1 = z.infer<typeof companionPersonaMutationV1Schema>;
 
@@ -298,8 +449,98 @@ export type CompanionPersonaMutationV1 = z.infer<typeof companionPersonaMutation
 export const companionPersonaResetV1Schema = z.strictObject({
   version: z.literal(1),
   ok: z.literal(true),
+  profileRevision: z.number().int().positive(),
 });
 export type CompanionPersonaResetV1 = z.infer<typeof companionPersonaResetV1Schema>;
+
+export const companionPersonaProfileVersionV1Schema = z.strictObject({
+  id: z.string().uuid(),
+  revision: z.number().int().positive(),
+  examplesRevision: z.number().int().positive(),
+  author: z.enum(["user", "assistant_tool", "restore", "migration"]),
+  action: z.enum(["update", "reset", "restore", "migration"]),
+  reason: z.string().nullable(),
+  moduleScope: z.array(z.string()).min(1).max(8),
+  profile: companionPersonaPatchV1Schema.omit({ revision: true }).nullable(),
+  createdAt: isoTimestampSchema,
+});
+export type CompanionPersonaProfileVersionV1 = z.infer<typeof companionPersonaProfileVersionV1Schema>;
+
+export const companionPersonaVersionListV1Schema = z.strictObject({
+  version: z.literal(1),
+  currentRevision: z.number().int().nonnegative(),
+  versions: z.array(companionPersonaProfileVersionV1Schema).max(100),
+});
+export type CompanionPersonaVersionListV1 = z.infer<typeof companionPersonaVersionListV1Schema>;
+
+export const companionPersonaRestoreRequestV1Schema = z.strictObject({
+  revision: z.number().int().positive(),
+  currentRevision: z.number().int().nonnegative(),
+});
+export type CompanionPersonaRestoreRequestV1 = z.infer<typeof companionPersonaRestoreRequestV1Schema>;
+
+export const companionPersonaRestoreV1Schema = z.strictObject({
+  version: z.literal(1),
+  profile: companionPersonaProfileV1Schema.nullable(),
+  profileRevision: z.number().int().positive(),
+});
+export type CompanionPersonaRestoreV1 = z.infer<typeof companionPersonaRestoreV1Schema>;
+
+/**
+ * 「待生效」的那一版（40 §4.8.4「回执与设置页显示当前/待生效版本和生效条件」/ A50）。
+ *
+ * ## 为什么单独一个形状，而不是把 pending 塞进 `companionPersonaV1Schema`
+ *
+ * 一次调用绑定的永远是**当前**那一版（§4.8.4「一次调用使用固定版本」）。把两版
+ * 混进同一个对象，读的人就得自己判断哪个在生效——判断错一次就是长会话中途换人。
+ * 所以「当前」和「排队中的」是两份独立的读回，各自带自己的契约。
+ *
+ * `effectiveWhen` 是**服务端算出来的**产品规则（模型自改下一会话、用户直接纠正
+ * 下一轮未开始的调用），不在界面里复述一遍：复述迟早漂，而这一格是用户判断
+ * 「现在改还来不来得及」的唯一依据。
+ */
+export const companionPersonaPendingRevisionV1Schema = z.strictObject({
+  revision: z.number().int().positive(),
+  /** null = 那一版的内容是「回到当前发布的默认表达」，不是「没有内容」。 */
+  profile: companionPersonaPatchV1Schema.omit({ revision: true }).nullable(),
+  author: z.enum(["user", "assistant_tool", "restore", "migration"]),
+  action: z.enum(["update", "reset", "restore", "migration"]),
+  reason: z.string().nullable(),
+  moduleScope: z.array(z.string()).min(1).max(8),
+  stagedAt: isoTimestampSchema,
+  effectiveWhen: z.string().min(1).max(80),
+});
+export type CompanionPersonaPendingRevisionV1 = z.infer<typeof companionPersonaPendingRevisionV1Schema>;
+
+/** `GET /companion/pet-profile/pending`。 */
+export const companionPersonaPendingV1Schema = z.strictObject({
+  version: z.literal(1),
+  currentRevision: z.number().int().nonnegative(),
+  pending: companionPersonaPendingRevisionV1Schema.nullable(),
+});
+export type CompanionPersonaPendingV1 = z.infer<typeof companionPersonaPendingV1Schema>;
+
+/**
+ * `POST /companion/pet-profile/stage` 的回执。
+ *
+ * 只报两个版本号：**当前那一版没有动**（`profileRevision` 原样回来）才是
+ * 「排队」这件事的全部含义，界面据此说「还没有生效」而不是「已保存」。
+ */
+export const companionPersonaStagedV1Schema = z.strictObject({
+  version: z.literal(1),
+  pendingRevision: z.number().int().positive(),
+  profileRevision: z.number().int().nonnegative(),
+});
+export type CompanionPersonaStagedV1 = z.infer<typeof companionPersonaStagedV1Schema>;
+
+/** `POST /companion/pet-profile/activate` 的回执：排队的那一版已被提升为当前。 */
+export const companionPersonaActivatedV1Schema = z.strictObject({
+  version: z.literal(1),
+  ok: z.literal(true),
+  profile: companionPersonaProfileV1Schema.nullable(),
+  profileRevision: z.number().int().positive(),
+});
+export type CompanionPersonaActivatedV1 = z.infer<typeof companionPersonaActivatedV1Schema>;
 
 /** 页面改动一项设置时，用它把「整套档案 + 这一项」拼成合法请求体。 */
 export function companionPersonaPatchFromProfile(
@@ -328,10 +569,10 @@ export function companionPersonaPatchFromProfile(
 /** 应用一套服务端预设：预设自带完整档案内容，所以不需要已有 profile。 */
 export function companionPersonaPatchFromPreset(
   preset: CompanionPersonaPresetV1,
-  revision?: number,
+  revision: number,
 ): CompanionPersonaPatchV1 {
   return companionPersonaPatchV1Schema.parse({
-    ...(revision !== undefined ? { revision } : {}),
+    revision,
     presetId: preset.presetId,
     name: preset.name,
     personalityTags: preset.personalityTags,
@@ -350,6 +591,7 @@ export const companionHistoryItemV1Schema = z.strictObject({
   role: z.enum(["user", "assistant", "system"]),
   kind: z.enum(["text", "voice_transcript", "proactive", "action", "result", "error", "cancelled"]),
   blocks: z.array(companionContentBlockV1Schema).min(1).max(32),
+  selection: companionSelectionV1Schema.optional(),
   runId: z.string().uuid().nullable(),
   createdAt: isoTimestampSchema,
   editedAt: isoTimestampSchema.nullable(),
@@ -412,12 +654,19 @@ export const companionMemoryCreateInputV1Schema = z.strictObject({
   content: z.string().min(1).max(companionMemoryContentMaxLength),
   importance: z.number().min(0).max(1).optional(),
   scope: companionMemoryScopeV1Schema.optional(),
+  appliesWhen: z.string().max(200).nullable().optional(),
+  validFrom: isoTimestampSchema.nullable().optional(),
+  validUntil: isoTimestampSchema.nullable().optional(),
 });
 export type CompanionMemoryCreateInputV1 = z.infer<typeof companionMemoryCreateInputV1Schema>;
 
 export const companionMemoryCorrectInputV1Schema = z.strictObject({
   content: z.string().min(1).max(companionMemoryContentMaxLength),
+  expectedRevision: z.number().int().min(1),
   reason: z.string().min(1).max(500).optional(),
+  appliesWhen: z.string().max(200).nullable().optional(),
+  validFrom: isoTimestampSchema.nullable().optional(),
+  validUntil: isoTimestampSchema.nullable().optional(),
 });
 export type CompanionMemoryCorrectInputV1 = z.infer<typeof companionMemoryCorrectInputV1Schema>;
 

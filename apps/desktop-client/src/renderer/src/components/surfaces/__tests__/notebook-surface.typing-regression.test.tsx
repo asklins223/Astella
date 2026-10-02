@@ -114,7 +114,7 @@ function stubGatewayForNote(initialBlocks: readonly { ordinal: number; type: str
 
 async function renderEditor(blocks: readonly { ordinal: number; type: string; content: string }[]) {
   const stub = stubGatewayForNote(blocks);
-  useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "edit" } });
+  useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "live-preview" } });
   vi.useFakeTimers();
   render(<NotebookSurface />);
   // 数据加载与 Milkdown 的异步创建都要靠推进假时钟来冲洗微任务。
@@ -132,7 +132,7 @@ describe("NotebookSurface · 编辑器挂载与输入", () => {
   it("编辑模式挂出 Milkdown 编辑器，页面存活", async () => {
     await renderEditor([{ ordinal: 1, type: "paragraph", content: "第一段内容。" }]);
 
-    const paper = document.querySelector('.notebook[data-mode="edit"]');
+    const paper = document.querySelector(".notebook-workspace[data-mode=\"live-preview\"]");
     expect(paper).toBeTruthy();
     const body = document.getElementById("notebook-surface-body");
     expect(body).toBeTruthy();
@@ -159,6 +159,6 @@ describe("NotebookSurface · 编辑器挂载与输入", () => {
     expect(state.saveCount).toBe(1);
     // The page is still mounted: the editor is the crash's own witness.
     expect(document.getElementById("notebook-surface-body")).toBeTruthy();
-    expect(document.querySelector('.notebook[data-mode="edit"]')).toBeTruthy();
+    expect(document.querySelector(".notebook-workspace[data-mode=\"live-preview\"]")).toBeTruthy();
   });
 });

@@ -110,18 +110,19 @@ export function CompanionProposalChoice({
         <div className="companion-choice-card__actions">
           <button
             type="button"
-            className="companion-choice-card__confirm"
-            disabled={Boolean(deciding)}
-            onClick={() => onDecide("confirm")}
-          >
-            {deciding === "confirm" ? "正在确认…" : "确认执行"}
-          </button>
-          <button
-            type="button"
+            className="text-action"
             disabled={Boolean(deciding)}
             onClick={() => onDecide("reject")}
           >
             {deciding === "reject" ? "正在处理…" : "暂不执行"}
+          </button>
+          <button
+            type="button"
+            className="button primary companion-choice-card__confirm"
+            disabled={Boolean(deciding)}
+            onClick={() => onDecide("confirm")}
+          >
+            {deciding === "confirm" ? "正在确认…" : "确认执行"}
           </button>
         </div>
       ) : null}

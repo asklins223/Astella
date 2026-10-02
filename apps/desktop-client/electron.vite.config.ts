@@ -1,11 +1,9 @@
 import { config as loadDotenv } from 'dotenv'
-import { readdir, readFile } from 'node:fs/promises'
-import { relative, resolve, sep } from 'node:path'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'electron-vite'
-import type { Plugin } from 'vite'
 
 import { sharedAlias } from './shared-alias.ts'
 
@@ -16,52 +14,13 @@ loadDotenv({
   path: fileURLToPath(new URL('../../.env', import.meta.url)),
 })
 
-const rendererPublicRoot = resolve('src/renderer/public')
-const packagingExcludedPublicPrefixes = [
-  'assets/3d/',
-]
-
-function isPackagingExcludedPublicPath(relativePath: string): boolean {
-  return packagingExcludedPublicPrefixes.some((prefix) => (
-    relativePath === prefix.slice(0, -1) || relativePath.startsWith(prefix)
-  ))
-}
-
-function releasePublicAssetsPlugin(): Plugin {
-  return {
-    name: 'ailearn-release-public-assets',
-    apply: 'build',
-    // Vite normally copies the entire public directory. The public tree also
-    // holds migration/reference archives that are intentionally available in
-    // local development but are not runtime inputs. Disable that blanket copy
-    // for production and emit only the non-excluded files with stable paths.
-    config: () => ({ publicDir: false }),
-    async buildStart() {
-      const emitDirectory = async (directory: string): Promise<void> => {
-        const entries = await readdir(directory, { withFileTypes: true })
-        for (const entry of entries) {
-          const absolutePath = resolve(directory, entry.name)
-          const relativePath = relative(rendererPublicRoot, absolutePath).split(sep).join('/')
-          if (isPackagingExcludedPublicPath(relativePath)) continue
-          if (entry.isDirectory()) {
-            await emitDirectory(absolutePath)
-            continue
-          }
-          if (!entry.isFile()) {
-            throw new Error(`Unsupported renderer public entry: ${relativePath}`)
-          }
-          this.emitFile({
-            type: 'asset',
-            fileName: relativePath,
-            source: await readFile(absolutePath),
-          })
-        }
-      }
-
-      await emitDirectory(rendererPublicRoot)
-    },
-  }
-}
+/*
+ * 这个文件曾经带一个 `releasePublicAssetsPlugin`：`publicDir: false` 关掉 Vite 的整目录
+ * 拷贝，自己逐个 emitFile，只为了把 `assets/3d/`（旧 3D 学习房归档包）排除在安装包之外。
+ * 那套归档包已随旧书房整条删除，public 树下不再有任何需要排除的目录，
+ * 于是整个插件连同 `packagingExcludedPublicPrefixes` 一起删掉——**public 现在由 Vite
+ * 默认的 publicDir 拷贝**。若日后又要排除什么，加回插件，不要只加一行前缀常量。
+ */
 
 /**
  * `@ailearn/shared` 的实时源码别名定义在 `shared-alias.ts`，与 `vitest.config.ts`
@@ -107,6 +66,6 @@ export default defineConfig({
       // 别名指向仓库根的 packages/shared，dev server 默认只允许 root 内的文件。
       fs: { allow: [resolve('../..')] },
     },
-    plugins: [react(), releasePublicAssetsPlugin()]
+    plugins: [react()]
   }
 })

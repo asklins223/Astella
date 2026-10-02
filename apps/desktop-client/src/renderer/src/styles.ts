@@ -31,6 +31,7 @@
 
 /* ── 1. 基底 ────────────────────────────────────────────────────────────── */
 import "./styles.css";
+import "@milkdown/kit/prose/view/style/prosemirror.css";
 import "./components/home-room.css";
 
 /* ── 2. 视觉母本 ────────────────────────────────────────────────────────── */
@@ -49,10 +50,14 @@ import "./components/source-intake.css";
    `hud-surface.css` 自己更早处的规则。 */
 import "./components/objective-flow.css";
 import "./components/card-generation-flow.css";
+import "./components/surfaces/review/candidate-review.css";
 import "./components/surfaces/companion-center.css";
 
 /* ── 4b. 功能层：各页面自己的版式 ───────────────────────────────────────── */
 import "./components/surfaces/note-hud.css";
+import "./components/surfaces/notebook/note-document.css";
+import "./components/surfaces/notebook/notebook-desk.css";
+import "./components/surfaces/notebook/notebook-learning-pages.css";
 import "./components/surfaces/understanding-universe.css";
 import "./components/surfaces/study-surface.css";
 import "./components/home-v2/home-v2.css";
@@ -67,6 +72,7 @@ import "./components/companion/companion-hud.css";
 import "./components/companion/companion-feed.css";
 import "./components/companion/companion-proposal-choice.css";
 import "./components/companion/companion-run-trace.css";
+import "./components/companion/companion-interaction.css";
 
 /**
  * 本文件刻意不导出任何东西：它唯一的作用是「被 import 时按上面那张单子把 CSS 注入」。

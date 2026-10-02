@@ -101,11 +101,11 @@ function stubGateway() {
   return { gateway, state };
 }
 
-const saveLine = () => document.querySelector('.save-line [role="status"]')?.textContent ?? "";
+const saveLine = () => document.querySelector('.notebook-desk__status [role="status"]')?.textContent ?? "";
 
 async function renderEditor() {
   const stub = stubGateway();
-  useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "edit" } });
+  useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "live-preview" } });
   vi.useFakeTimers();
   render(<NotebookSurface />);
   for (let i = 0; i < 12; i += 1) {
@@ -130,13 +130,23 @@ afterEach(() => {
 });
 
 describe("NotebookSurface · 手动定版（审计 F36）", () => {
+  it("切到预览后仍提交排队的标题增量，不自动创建不可变版本", async () => {
+    const { state } = await renderEditor();
+    await typeTitle("切换前的最后一句");
+    fireEvent.click(screen.getByRole("button", { name: "预览" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_500); });
+    expect(document.querySelector(".notebook-workspace")?.getAttribute("data-mode")).toBe("preview");
+    expect(document.querySelector(".notebook-volume__heading h2")?.textContent).toBe("切换前的最后一句");
+    expect(state.syncUpdateCalls).toBeGreaterThan(0);
+    expect(state.saveCalls).toBe(0);
+  });
   it("按钮常驻：没有未提交改动时也在屏上，名字与纸面提示同一个", async () => {
     await renderEditor();
 
-    const button = screen.getByRole("button", { name: "保存" });
+    const button = screen.getByRole("button", { name: "保存版本" });
     expect(button).toBeTruthy();
     // 提示语里指的那个名字，屏上必须真有。
-    expect(screen.getByText(/点「保存」才存成一个可回去的版本/)).toBeTruthy();
+    expect(saveLine()).toContain("服务器上的版本一致");
     // 干净态不摆第二颗带"保存"字样的按钮：那时「重试保存」必须不在屏上。
     expect(screen.queryByRole("button", { name: /重试保存/ })).toBeNull();
   });
@@ -144,7 +154,7 @@ describe("NotebookSurface · 手动定版（审计 F36）", () => {
   it("自动同步后的干净态仍向服务端请求定版", async () => {
     const { state } = await renderEditor();
 
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存版本" }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
     });
@@ -157,7 +167,7 @@ describe("NotebookSurface · 手动定版（审计 F36）", () => {
     const { state } = await renderEditor();
 
     await typeTitle("改过的标题");
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存版本" }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(200);
     });

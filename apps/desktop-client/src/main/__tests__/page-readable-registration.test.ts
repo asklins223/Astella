@@ -21,7 +21,7 @@
  * 放在 main 侧的理由与 `renderer-html-sink-guard.test.ts` 相同：读文件要 `node:fs`。
  */
 import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const RENDERER_ROOT = "src/renderer/src";
@@ -188,6 +188,8 @@ function filesUnderRegistering(registration: Registration): string[] {
  */
 const PUBLISHED_BY_PANEL: Readonly<Record<string, string>> = {
   companion: "src/renderer/src/components/surfaces/companion/companion-center-panels.tsx",
+  candidate: "src/renderer/src/components/surfaces/review/use-card-generation-readable-view.ts",
+  generating: "src/renderer/src/components/surfaces/review/use-card-generation-readable-view.ts",
 };
 
 function callsPublish(source: string): boolean {
@@ -217,9 +219,10 @@ function codeOnly(source: string): string {
  * 纯函数，喂字符串就自证——不依赖任何一份真实文件现在的状态（那些文件以后会改，
  * 拿它们当自证的一条腿，明天就变成一条说不清的红）。
  */
-function registeredViaPanel(shellSource: string, panelSource: string, panelFile: string): boolean {
+function registeredViaPanel(shellSource: string, panelSource: string, panelFile: string, shellFile = panelFile): boolean {
   if (!callsPublish(panelSource)) return false;
-  const specifier = `./${panelFile.split("/").pop()?.replace(/\.tsx$/, "")}`;
+  const path = relative(dirname(shellFile), panelFile).replace(/\.tsx?$/, "");
+  const specifier = path.startsWith(".") ? path : `./${path}`;
   return shellSource.includes(`from "${specifier}"`) || shellSource.includes(`from '${specifier}'`);
 }
 
@@ -230,7 +233,7 @@ function pageRegistration(): Map<string, { file: string; registered: boolean; ow
     const source = readFileSync(file, "utf8");
     for (const page of hostedPages(source)) {
       const panel = PUBLISHED_BY_PANEL[page];
-      const viaPanel = panel !== undefined && registeredViaPanel(source, readFileSync(panel, "utf8"), panel);
+      const viaPanel = panel !== undefined && registeredViaPanel(source, readFileSync(panel, "utf8"), panel, file);
       const own = callsPublish(source);
       map.set(page, { file, registered: own || viaPanel, own });
     }

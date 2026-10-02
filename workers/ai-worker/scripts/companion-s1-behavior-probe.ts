@@ -541,7 +541,7 @@ async function runRealModelProbe(): Promise<number> {
         pageContext: null,
         hereAndNow: "<here_and_now> 当前处于 S1 合成探针回合。</here_and_now>",
         factSpans: block,
-        activeMemories: [],
+        residentMemories: [],
         petProfile: null,
       });
       const startedAt = performance.now();
@@ -583,7 +583,7 @@ async function runRealModelProbe(): Promise<number> {
         recentMessages: [],
         pageContext: { pageKind: "learning_run", requestedCapability: "grounded_tutor" },
         groundedTutorContext: { claim: testCase.taskPrompt, evidence: [...testCase.evidence] },
-        activeMemories: [],
+        residentMemories: [],
         petProfile: null,
       });
       const startedAt = performance.now();

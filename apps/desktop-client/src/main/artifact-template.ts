@@ -34,9 +34,14 @@ const ARTIFACT_DOCUMENT_TEMPLATE = `<!doctype html>
     font: 14px/1.6 system-ui, -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
     color: #33261c; background: transparent;
   }
-  #ailearn-artifact-root { display: block; padding: 12px; }
+  #ailearn-artifact-root { display: flow-root; }
 </style>
 <!--__AILEARN_ARTIFACT_STYLES__-->
+<style data-artifact-host>
+  /* The host owns the document viewport; the generated page owns its contents. */
+  html, body { height: auto !important; min-height: 0 !important; overflow: hidden !important; }
+  #ailearn-artifact-root { box-sizing: border-box; width: 100%; }
+</style>
 </head>
 <body>
 <div id="ailearn-artifact-root"><!--__AILEARN_ARTIFACT__--></div>
@@ -45,6 +50,18 @@ const ARTIFACT_DOCUMENT_TEMPLATE = `<!doctype html>
 (function () {
   var CHANNEL = 'ailearn:artifact-frame';
   var root = document.getElementById('ailearn-artifact-root');
+  // The surrounding notebook presents the saved metadata and text equivalents.
+  // Keep the immutable snapshot intact; project only its teaching scene here.
+  if (window.location && window.location.hash === '#content') {
+    var scene = root && root.querySelector('.ailearn-art__scene');
+    if (scene) {
+      var saved = root.querySelector('[data-outline-count]');
+      if (saved) root.setAttribute('data-artifact-outline-count', saved.getAttribute('data-outline-count'));
+      // Preserve the model's nodes and listeners, without the paper's inherited
+      // font, ink, dimensions, or container styles changing their presentation.
+      root.replaceChildren.apply(root, Array.from(scene.childNodes));
+    }
+  }
   var prefersReduced = window.matchMedia
     ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
     : false;
@@ -55,6 +72,14 @@ const ARTIFACT_DOCUMENT_TEMPLATE = `<!doctype html>
     if (extra) { for (var key in extra) { message[key] = extra[key]; } }
     try { parent.postMessage(message, '*'); } catch (error) { /* 发不出去就不发：握手不能把自己拖死 */ }
   }
+
+  // A sandboxed document cannot scroll its parent. The host forwards native
+  // wheel input to the single reading scroll owner, with source and delta checks.
+  if (root) root.addEventListener('wheel', function (event) {
+    if (!event.isTrusted || event.ctrlKey || event.defaultPrevented) return;
+    event.preventDefault();
+    post('scroll', { scrollDeltaX: event.deltaX, scrollDeltaY: event.deltaY, scrollDeltaMode: event.deltaMode });
+  }, { passive: false });
 
   // 讲解条数由**我们自己渲染出来的**文字等价数出来，不向产物要。产物是模型的，
   // 让它报自己的步数等于让它决定界面上写"共几步"。
@@ -90,14 +115,12 @@ const ARTIFACT_DOCUMENT_TEMPLATE = `<!doctype html>
   // 不给这一格，宿主只能给一个写死的行高：内容被压进一小格、frame 内部自己出
   // 滚动条，而"共 N 步"飘在旁边——那不是设计，是两边对不上尺寸。
   function contentHeight() {
-    var el = document.documentElement;
-    var body = document.body;
-    return Math.max(
-      el ? el.scrollHeight : 0,
-      el ? el.offsetHeight : 0,
-      body ? body.scrollHeight : 0,
-      body ? body.offsetHeight : 0
-    );
+    if (!root) return 0;
+    // The viewport is at least the iframe's previous height. Reporting it back
+    // would make 100vh plus padding grow forever, and prevent short content shrinking.
+    var bodyBottom = document.body ? document.body.getBoundingClientRect().bottom : 0;
+    var bodyMargin = document.body ? parseFloat(getComputedStyle(document.body).marginBottom) || 0 : 0;
+    return Math.ceil(Math.max(root.scrollHeight, root.offsetHeight, root.getBoundingClientRect().bottom, bodyBottom + bodyMargin));
   }
 
   function reportSize() {

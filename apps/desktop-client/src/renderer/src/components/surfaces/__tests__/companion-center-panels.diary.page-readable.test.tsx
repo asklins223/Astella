@@ -27,6 +27,7 @@ function daily(overrides: Partial<CompanionDailySummaryV1> = {}): CompanionDaily
     status: "generated",
     generatedAt: "2026-09-24T21:00:00.000Z",
     failureReason: null,
+    selectionReason: null,
     blocks: [
       { type: "text", text: "今天把惯性那一章往前推了一段。" },
       { type: "text", text: "课上那句反例还没有原文撑着。" },
@@ -44,6 +45,17 @@ function renderPanel(props: Partial<DiaryPanelProps> = {}) {
     date: null,
     onDate: noop,
     onMemory: noop,
+    // 「聊聊这篇」（§6）。测试里是 noop：这一条只验证它被调用时带出
+    // 日期与版本，不该在这里真去开对话。
+    onDiscussDiary: noop,
+    // §10 的三个写动作：这里只是让面板能渲染，不验证行为（行为由
+    // companion-center-surface 的用例管）。
+    onHideDiary: noop,
+    onUnhideDiary: noop,
+    onDeleteDiary: noop,
+    confirmDeleteDiary: false,
+    onConfirmDeleteDiary: noop,
+    busy: false,
     onRetry: noop,
     marks: null,
     marksFailure: null,
@@ -74,6 +86,15 @@ describe("伴星中心 · 日记：只说那一刻屏幕上写着的", () => {
     expect(view.statusLine).toBe(document.querySelector(".companion-diary-entry small")?.textContent);
     expect(view.filters).toEqual([{ label: "日期", value: document.querySelector(".companion-date-pick__trigger span")?.textContent }]);
     expect(view.notice).toBeUndefined();
+  });
+
+  it("让可见选材理由与伴星读回内容都指向同一句", () => {
+    renderPanel({
+      section: { ok: true, value: daily({ selectionReason: "这段保留了我们一起核对的过程。" }) },
+    });
+    const reason = "她选了这段：这段保留了我们一起核对的过程。";
+    expect(document.querySelector(".companion-diary-entry")?.textContent).toContain(reason);
+    expect(publishedView()?.items?.[0]).toEqual({ ordinal: 1, label: reason });
   });
 
   it("这一天还没有日记：说的是屏上那句，不登正文", () => {

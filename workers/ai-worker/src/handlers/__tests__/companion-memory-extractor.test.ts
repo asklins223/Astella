@@ -3,11 +3,19 @@ import assert from "node:assert/strict";
 import {
   buildExtractMessages,
   isVolatileStatisticMemory,
+  isMemoryExtractConfidenceAccepted,
+  isMemoryValidityRangeUsable,
   memoryExtractOutputSchema,
   memoryScopeForKind,
   parseMemoryExtractJson,
   resolveMemoryExtractSource,
+  isMemorySourceSuppressed,
 } from "../companion-memory-extractor.ts";
+import {
+  resolveCompanionMemoryTemporalMetadata,
+  type CompanionMemoryTemporalMetadataInput,
+} from "@ailearn/shared";
+import type { WorkerTransaction } from "../../db.ts";
 
 test("isVolatileStatisticMemory：拦『现在这一份』统计，不拦用户说过的带数字偏好", () => {
   // 实机被写进 learning_context 的那条（里面的 23 分钟本来就是编的）。
@@ -25,6 +33,73 @@ test("isVolatileStatisticMemory：拦『现在这一份』统计，不拦用户�
   assert.equal(isVolatileStatisticMemory("今天学了「背 3 条法律」那张卡，另外累计 45 分钟。"), true);
 });
 
+test("记忆置信度边界与抽取提示一致：0.7 可继续，低于 0.7 拒绝", () => {
+  assert.equal(isMemoryExtractConfidenceAccepted(0.6999), false);
+  assert.equal(isMemoryExtractConfidenceAccepted(0.7), true);
+  assert.equal(isMemoryExtractConfidenceAccepted(1), true);
+  assert.equal(isMemoryExtractConfidenceAccepted(Number.POSITIVE_INFINITY), false);
+  assert.equal(isMemoryExtractConfidenceAccepted(Number.NaN), false);
+});
+
+test("有效期必须晚于来源事件且仍有效，永久记忆允许没有截止时间", () => {
+  const now = new Date("2026-10-01T00:00:00.000Z");
+  assert.equal(isMemoryValidityRangeUsable(null, null, now), true);
+  assert.equal(isMemoryValidityRangeUsable("2026-10-02T00:00:00.000Z", "2026-09-30T00:00:00.000Z", now), true);
+  assert.equal(isMemoryValidityRangeUsable("2026-09-30T00:00:00.000Z", "2026-09-29T00:00:00.000Z", now), false);
+  assert.equal(isMemoryValidityRangeUsable("2026-09-30T00:00:00.000Z", "2026-10-01T00:00:00.000Z", now), false);
+  assert.equal(isMemoryValidityRangeUsable("2026-10-02T00:00:00.000Z", undefined, now), false);
+});
+
+test("有效期只接受来源里的原样绝对时间；未转换的短期状态不得永久保存", () => {
+  const quote = "我会在 2026-10-15T17:00:00+08:00 前完成复习";
+  const base = {
+    kind: "goal" as const,
+    content: "在截止前完成复习",
+    sourceQuote: quote,
+    appliesWhen: null,
+    validUntil: "2026-10-15T17:00:00+08:00",
+  };
+  const resolve = (
+    overrides: Partial<Omit<CompanionMemoryTemporalMetadataInput, "sourceText">> = {},
+    sourceText = quote,
+  ) => resolveCompanionMemoryTemporalMetadata({ ...base, ...overrides, sourceText });
+  assert.deepEqual(resolve(), {
+    ok: true,
+    appliesWhen: null,
+    validUntil: "2026-10-15T17:00:00+08:00",
+  });
+  assert.deepEqual(
+    resolve({ validUntil: "2026-10-16T00:00:00+08:00" }),
+    { ok: false, reason: "unverifiable_valid_until" },
+  );
+  assert.deepEqual(
+    resolve({
+      sourceQuote: "我下周完成数据库索引复习",
+      content: "下周完成数据库索引复习",
+      validUntil: null,
+    }, "我下周完成数据库索引复习"),
+    { ok: false, reason: "missing_finite_validity" },
+  );
+  assert.deepEqual(
+    resolve({
+      kind: "episodic",
+      sourceQuote: "今天一起复习了索引",
+      content: "今天一起复习了索引",
+      validUntil: null,
+    }, "今天一起复习了索引"),
+    { ok: true, appliesWhen: null, validUntil: null },
+  );
+  assert.deepEqual(
+    resolve({
+      sourceQuote: "我喜欢讲机制时先举例",
+      content: "讲机制时先举例",
+      appliesWhen: "累的时候",
+      validUntil: null,
+    }, "我喜欢讲机制时先举例"),
+    { ok: false, reason: "unverifiable_applies_when" },
+  );
+});
+
 test("memory extract messages: 包含 system 提示与拼接对话", () => {
   const messages = buildExtractMessages({
     userText: "我喜欢语音讲解",
@@ -37,6 +112,9 @@ test("memory extract messages: 包含 system 提示与拼接对话", () => {
   assert.match(messages[0].content, /记忆整理器/);
   assert.match(messages[0].content, /sourceMessageId/);
   assert.match(messages[0].content, /sourceQuote/);
+  assert.match(messages[0].content, /appliesWhen/);
+  assert.match(messages[0].content, /validUntil/);
+  assert.match(messages[0].content, /逐字包含完整 ISO 时间戳/);
   assert.match(messages[0].content, /sourceSpeaker 必须与该消息的真实说话者一致/);
   assert.match(messages[1].content, /我喜欢语音讲解/);
   assert.match(messages[1].content, /00000000-0000-4000-8000-000000000001/);
@@ -92,12 +170,36 @@ test("记忆来源核验：只接受输入中用户消息的真实短引文", ()
     { ok: false, reason: "quote_not_found" },
   );
   assert.deepEqual(
+    resolveMemoryExtractSource(parseCandidate({ sourceBasis: undefined }), [source]),
+    { ok: false, reason: "missing_basis" },
+  );
+  assert.deepEqual(
     resolveMemoryExtractSource(
       parseCandidate({ sourceMessageId: assistantMessageId, sourceSpeaker: "assistant", sourceQuote: "我以后讲机制先举例" }),
       [source, assistantSource],
     ),
     { ok: false, reason: "not_user_message" },
   );
+});
+
+test("来源抑制检查：命中墓碑时阻止同来源自动抽取", async () => {
+  const queries: unknown[] = [];
+  const tx = {
+    execute: async (query: unknown) => {
+      queries.push(query);
+      return [{ suppressed: true }];
+    },
+  } as unknown as WorkerTransaction;
+  assert.equal(
+    await isMemorySourceSuppressed(
+      tx,
+      "33333333-3333-4333-8333-333333333333",
+      "goal",
+      "00000000-0000-4000-8000-000000000011",
+    ),
+    true,
+  );
+  assert.equal(queries.length, 1);
 });
 
 test("parseMemoryExtractJson: 纯 JSON 原样解析", () => {
@@ -131,6 +233,8 @@ test("schema：省略 version 字段可解析（以前 z.literal(1) 必填 → �
     assert.equal(out.data.version, 1, "version 应回填默认 1");
     assert.equal(out.data.candidates[0].importance, 0.5, "importance 有默认");
     assert.equal(out.data.candidates[0].scope, "workspace", "scope 有默认");
+    assert.equal(out.data.candidates[0].appliesWhen, null, "适用条件无默认内容");
+    assert.equal(out.data.candidates[0].validUntil, null, "无明确期限时不推测截止时间");
     assert.deepEqual(out.data.candidates[0].linkedEntityIds, []);
   }
 });
@@ -166,6 +270,21 @@ test("prompt 必须把 JSON 形状与枚举写给模型（契约不能只在代�
     assert.ok(system.includes(kind), `prompt 未列出枚举 ${kind}`);
   }
   assert.ok(system.includes("confidence"), "prompt 未说明 confidence");
+});
+
+test("prompt 用现行准入反例区分临时请求、条件偏好、引用、改口与短期目标", () => {
+  const system = buildExtractMessages({ userText: "u", assistantText: "a", recent: [] })[0].content;
+  for (const example of [
+    "这一次希望先看例子",
+    "以后我累的时候别催学习",
+    "今天喜欢这个例子",
+    "我不认同",
+    "更正：我现在晚上更方便学习",
+    "我希望下周完成数据库索引复习",
+    "稳定 ID 与 expectedRevision 安全定位旧记录",
+  ]) {
+    assert.ok(system.includes(example), `prompt 缺少准入对照样本：${example}`);
+  }
 });
 
 // ─── 候选记忆冷静期（方案 29 §11 C2）：SQL 与 TS 必须是同一个判据 ──────────────

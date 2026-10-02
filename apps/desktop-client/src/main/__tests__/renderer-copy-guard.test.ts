@@ -6,19 +6,28 @@
  * `Cannot find module 'node:fs'` / `Cannot find name 'process'`（同一个仓库里踩过多次的
  * 那条 Node-only 坑）。这里只做静态扫描，测的仍然是渲染层那份文件。
  *
- * 只守 `CardGenerationSurface.tsx` 一个文件：全仓清扫归那次清扫的负责人，
- * 这条守卫不去拦别人正在改的界面。
+ * 守生成与审核这一族界面。页面拆到 review 域后，文案仍在同一扫描范围。
  */
 import { readFileSync, existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const BANNED = ["服务端", "血缘", "投影", "快照", "曝光", "兜底", "收口", "签发", "契约", "未确认"];
-const TARGET = "src/renderer/src/components/CardGenerationSurface.tsx";
+const BASE = "src/renderer/src/components";
+const TARGETS = [
+  `${BASE}/CardGenerationSurface.tsx`,
+  `${BASE}/surfaces/review/card-generation-progress.tsx`,
+  `${BASE}/surfaces/review/card-generation-recovery-actions.tsx`,
+  `${BASE}/surfaces/review/candidate-review-desk.tsx`,
+  `${BASE}/surfaces/review/candidate-review-card.tsx`,
+  `${BASE}/surfaces/review/candidate-review-box.tsx`,
+  `${BASE}/surfaces/review/candidate-answer-paper.tsx`,
+  `${BASE}/surfaces/review/candidate-review-model.ts`,
+];
 
 describe("生成界面的文案", () => {
-  it("用户可见串里没有内部词", () => {
-    const fromCwd = TARGET;
-    const fromRoot = `apps/desktop-client/${TARGET}`;
+  it.each(TARGETS)("%s 的用户可见串里没有内部词", (target) => {
+    const fromCwd = target;
+    const fromRoot = `apps/desktop-client/${target}`;
     const path = existsSync(fromCwd) ? fromCwd : existsSync(fromRoot) ? fromRoot : null;
     // 读不到就必须喊：静默跳过等于一条永远绿的空守卫。
     expect(path, `找不到被测界面源码（cwd=${process.cwd()}）`).not.toBeNull();

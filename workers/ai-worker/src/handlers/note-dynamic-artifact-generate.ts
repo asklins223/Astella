@@ -1,7 +1,9 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { classifyThrownAsStepFailure, type AiAttemptToken } from "@ailearn/shared/ai-task-kernel";
 import { readNoteDynamicArtifactGenerateJobPayload } from "@ailearn/shared/job-payload-contracts";
 import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
 import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
+import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
 import * as schema from "@ailearn/shared/db-schema";
 import {
   buildDynamicArtifactPrompt,
@@ -28,9 +30,7 @@ import {
 } from "../lib/governance.ts";
 import { createProvider } from "../lib/ai-provider.ts";
 import { extractJsonFromText } from "../lib/providers/json-response.ts";
-import { runWithAbortBudget } from "../lib/handler-timeout.ts";
-import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
-import { assertJobLease, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
+import { assertJobLease, isJobLeaseActive, JobLeaseLostError, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
 import { NoteDynamicArtifactOutputError } from "../lib/non-retryable-errors.ts";
 import { currentWorkerWorkspaceTransaction } from "../db.ts";
 import type { JobPayload } from "./index.ts";
@@ -47,24 +47,6 @@ type FrozenArtifactInput = {
   blocks: ArtifactEvidenceBlockV1[];
   currentVersionId: string | null;
 };
-
-/**
- * 冻结锚点是否仍与笔记原文一致。
- *
- * 任务入队时记下了选中原句的 start/end/excerpt/prefix/suffix；等 worker 真正跑到时，
- * 笔记可能已经被改过（协同编辑、autosave）。**这时必须判定锚点失效并拒掉**——
- * 否则模型会拿到一段与用户当时所见不符的上下文，生成的互动演示"引"的是错地方。
- *
- * 导出是为了能被 `note-dynamic-artifact-generate-anchor-drift.test.ts` 直接测：
- * 这是本 handler 里唯一一条纯逻辑，而它是**安全边界**——只在整条 handler 上
- * 端到端地 mock 租约、事务、治理与 provider 来覆盖它，成本高且脆。
- */
-export function anchorMatches(text: string, anchor: NonNullable<ReturnType<typeof readNoteDynamicArtifactGenerateJobPayload>["anchor"]>) {
-  return anchor.endOffset <= text.length
-    && text.slice(anchor.startOffset, anchor.endOffset) === anchor.excerpt
-    && text.slice(Math.max(0, anchor.startOffset - 120), anchor.startOffset) === anchor.prefix
-    && text.slice(anchor.endOffset, anchor.endOffset + 120) === anchor.suffix;
-}
 
 async function readFrozenInput(job: JobPayload, input: ReturnType<typeof readNoteDynamicArtifactGenerateJobPayload>): Promise<FrozenArtifactInput> {
   if (!job.requestedBy) throw new NoteDynamicArtifactOutputError("动态讲解任务缺少发起人");
@@ -95,8 +77,8 @@ async function readFrozenInput(job: JobPayload, input: ReturnType<typeof readNot
     if (input.sourceKind === "annotation") {
       const anchor = input.anchor!;
       const selected = rawBlocks.find((block) => block.ordinal === anchor.startBlockOrdinal);
-      const renderedText = selected ? noteBlockRenderedTextV1(selected.type, selected.text) : "";
-      if (!selected || anchor.noteVersionId !== input.noteVersionId || !anchorMatches(renderedText, anchor)) {
+      if (!selected || anchor.noteVersionId !== input.noteVersionId
+        || !noteAnchorMatchesV1(rawBlocks.map(block => ({ ...block, content: block.text })), anchor)) {
         throw new NoteDynamicArtifactOutputError("互动演示选区和保存的原文位置对不上");
       }
       const heading = [...rawBlocks].reverse().find((block) => block.type === "heading" && block.ordinal < selected.ordinal);
@@ -115,17 +97,17 @@ async function readFrozenInput(job: JobPayload, input: ReturnType<typeof readNot
   });
 }
 
-function jsonArtifactProvider(provider: ReturnType<typeof createGovernedProvider>): DynamicArtifactProviderV1 {
+function jsonArtifactProvider(provider: ReturnType<typeof createGovernedProvider>, job: JobPayload): DynamicArtifactProviderV1 {
   return async (input, step) => {
     try {
-      const result = await runWithAbortBudget(
-        (signal) => provider.chatCompletion(
-          [{ role: "user", content: buildDynamicArtifactPrompt(input) }],
-          { temperature: 0.4, maxTokens: ARTIFACT_COMPLETION_TOKENS_V1, responseFormat: "json_object", disableThinking: true },
-          signal,
-        ),
+      if (job.signal?.aborted) return { ok: false, class: "cancelled", message: "动态演示任务已取消" };
+      if (!(await isJobLeaseActive(job))) {
+        return { ok: false, class: "lease_lost", message: "动态演示 worker 已失去任务租约" };
+      }
+      const result = await provider.chatCompletion(
+        [{ role: "user", content: buildDynamicArtifactPrompt(input) }],
+        { temperature: 0.4, maxTokens: ARTIFACT_COMPLETION_TOKENS_V1, responseFormat: "json_object", disableThinking: true },
         step.signal,
-        resolveProviderCallTimeout("note_dynamic_artifact_generate"),
       );
       let parsed: unknown;
       try { parsed = extractJsonFromText(result.content, ["title", "subject", "caution", "document", "outline"]); } catch {
@@ -146,7 +128,8 @@ function jsonArtifactProvider(provider: ReturnType<typeof createGovernedProvider
         completionTokens: result.usage?.completionTokens ?? undefined,
       };
     } catch (error) {
-      return { ok: false, class: "transport", message: error instanceof Error ? error.message : "动态页面生成请求失败" };
+      const failure = classifyThrownAsStepFailure(error);
+      return { ok: false, class: failure.class, message: failure.message };
     }
   };
 }
@@ -174,15 +157,21 @@ export async function runNoteDynamicArtifactGenerate(job: JobPayload): Promise<v
   const drivingQuestion = input.sourceKind === "annotation"
     ? `请围绕选中的原句，用更直观、有趣或容易理解的方式做一份互动演示：${input.anchor!.excerpt}`
     : "请用一份为这篇笔记专门设计的互动演示，帮助第一次接触的人快速看懂核心内容。";
+  const verifyAttempt = async (attempt: AiAttemptToken) => (
+    attempt.workspaceId === job.workspaceId
+      && attempt.userId === job.requestedBy
+      && attempt.leaseToken === job.leaseToken
+      && isJobLeaseActive(job)
+  );
   const result = await runDynamicArtifactV1({
-    provider: jsonArtifactProvider(provider),
+    provider: jsonArtifactProvider(provider, job),
     modelId: provider.modelId,
     maxModelCalls: 2,
     maxDurationMs: 100_000,
     input: {
       drivingQuestion,
       blocks: frozen.blocks,
-      explanation: "请直接根据笔记内容创作；没有既有解释需要模仿。",
+      explanation: "",
     },
     scope: { workspaceId: job.workspaceId, userId: job.requestedBy },
     source: {
@@ -192,9 +181,13 @@ export async function runNoteDynamicArtifactGenerate(job: JobPayload): Promise<v
       sourceContentHash: frozen.contentHash,
     },
     currentActiveTransaction: currentWorkerWorkspaceTransaction,
+    verifyAttempt,
+    signal: job.signal,
     attemptId: job.id,
   });
   if (!result.ok) {
+    if (result.failureClass === "lease_lost") throw new JobLeaseLostError(job.id, "inactive");
+    if (result.failureClass === "cancelled" || job.signal?.aborted) throw new JobLeaseLostError(job.id, "aborted");
     if (result.failure === "contract_rejected") throw new NoteDynamicArtifactOutputError(result.detail);
     throw new Error(result.detail);
   }

@@ -70,6 +70,14 @@ export interface CircuitBreakerOptions {
 
 export type CircuitState = "closed" | "open" | "half-open";
 
+export interface CircuitRejectObserverHealth {
+  installed: boolean;
+  healthy: boolean;
+  failuresTotal: number;
+  consecutiveFailures: number;
+  lastFailureAt: number | null;
+}
+
 /** 上游熔断打开时抛的错。**不重试**是有意的语义，不是偷懒。 */
 export class CircuitOpenError extends Error {
   readonly circuitHost: string;
@@ -109,6 +117,9 @@ export class CircuitBreaker {
   private readonly now: () => number;
   private readonly isFailureStatus: (status: number) => boolean;
   private onReject: ((host: string, reason: "open" | "half_open", retryAfterMs: number) => void) | undefined;
+  private observerFailuresTotal = 0;
+  private observerConsecutiveFailures = 0;
+  private observerLastFailureAt: number | null = null;
   private readonly hosts = new Map<string, HostState>();
 
   constructor(options: CircuitBreakerOptions = {}) {
@@ -127,6 +138,7 @@ export class CircuitBreaker {
     observer: (host: string, reason: "open" | "half_open", retryAfterMs: number) => void,
   ): () => void {
     this.onReject = observer;
+    this.observerConsecutiveFailures = 0;
     return () => {
       if (this.onReject === observer) this.onReject = undefined;
     };
@@ -137,9 +149,23 @@ export class CircuitBreaker {
     if (!this.onReject) return;
     try {
       this.onReject(host, reason, retryAfterMs);
+      this.observerConsecutiveFailures = 0;
     } catch {
-      // 指标系统的问题不上抛到调用方路径
+      // 观察失败不改变熔断结果，但会暴露健康状态供 metrics 告警。
+      this.observerFailuresTotal += 1;
+      this.observerConsecutiveFailures += 1;
+      this.observerLastFailureAt = this.now();
     }
+  }
+
+  rejectObserverHealth(): CircuitRejectObserverHealth {
+    return {
+      installed: this.onReject !== undefined,
+      healthy: this.onReject !== undefined && this.observerConsecutiveFailures === 0,
+      failuresTotal: this.observerFailuresTotal,
+      consecutiveFailures: this.observerConsecutiveFailures,
+      lastFailureAt: this.observerLastFailureAt,
+    };
   }
 
   private stateOf(host: string): HostState {
@@ -231,8 +257,12 @@ export class CircuitBreaker {
 
   /** 清空某个 host（或全部）的状态。给测试与运维用。 */
   reset(host?: string): void {
-    if (host === undefined) this.hosts.clear();
-    else this.hosts.delete(host);
+    if (host === undefined) {
+      this.hosts.clear();
+      this.observerFailuresTotal = 0;
+      this.observerConsecutiveFailures = 0;
+      this.observerLastFailureAt = null;
+    } else this.hosts.delete(host);
   }
 }
 
@@ -253,4 +283,9 @@ export function observeSharedAiCircuitRejects(
   observer: (host: string, reason: "open" | "half_open", retryAfterMs: number) => void,
 ): () => void {
   return sharedAiCircuitBreaker.setRejectObserver(observer);
+}
+
+/** Health snapshot for the optional rejection observer; payloads are never included. */
+export function sharedAiCircuitRejectObserverHealth(): CircuitRejectObserverHealth {
+  return sharedAiCircuitBreaker.rejectObserverHealth();
 }

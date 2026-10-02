@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>伴星身边 · 交互设计 Demo</title>
+  <link rel="stylesheet" href="companion-interaction.css?v=20261001-lifetime">
+  <script src="notebook-icons.js" defer></script>
+  <script src="companion-interaction-lifecycle.js" defer></script>
+  <script src="companion-interaction-blocks.js?v=20261001-lifetime" defer></script>
+  <script src="companion-interaction.js?v=20261001-lifetime" defer></script>
+  <script src="companion-interaction-live2d.js?v=20261001-ink" defer></script>
+</head>
+<body>
+  <main class="companion-demo hud-surface" id="demo" data-motion="full" data-scene="chat" data-journal="false" data-chat-mode="bubble" data-seat="right" data-extras="false">
+    <header class="companion-demo__header">
+      <div class="companion-demo__sign"><i data-icon="sparkles"></i><h1>伴星身边</h1><span>交互设计 Demo</span></div>
+      <div class="companion-demo__options">
+        <span class="companion-demo__sample">本机模拟 · 不连接 AI / 不写入数据</span>
+        <span class="tag companion-demo__compact-sample">本机模拟</span>
+        <label class="companion-demo__motion"><i data-icon="sparkles"></i><span class="sr-only">动效强度</span><select id="motion"><option value="full">灵动</option><option value="lite">轻量</option><option value="off">关闭动效</option></select></label>
+        <button class="button companion-demo__replay" data-action="replay"><i data-icon="rotate-ccw"></i>重播动效</button>
+      </div>
+    </header>
+    <nav class="companion-demo__scenes" aria-label="演示场景">
+      <span>试试这些时刻</span>
+      <button class="button" data-scene="chat" aria-pressed="true">气泡轻聊</button>
+      <button class="button" data-action="records">会话聊天</button>
+      <button class="button" data-scene="complete" aria-pressed="false">完整交互</button>
+      <button class="button" data-scene="references" aria-pressed="false">引用原文</button>
+      <button class="button" data-scene="tools" aria-pressed="false">工具调用</button>
+      <button class="button" data-scene="image" aria-pressed="false">图片气泡</button>
+      <button class="button" data-scene="more" aria-pressed="false">图解与卡片</button>
+      <button class="button" data-scene="long" aria-pressed="false">长回复</button>
+      <button class="button" data-scene="voice" aria-pressed="false">语音输入</button>
+      <button class="button" data-scene="proposal" aria-pressed="false">待确认动作</button>
+      <button class="button" data-scene="error" aria-pressed="false">连接中断</button>
+      <button class="button" data-scene="image-error" aria-pressed="false">图片失败</button>
+      <button class="button" data-scene="empty" aria-pressed="false">第一次聊</button>
+      <button class="button" data-scene="quiet" aria-pressed="false">安静陪读</button>
+    </nav>
+    <div class="companion-demo__stage">
+      <section class="companion-demo__desk" aria-label="笔记与对话">
+        <article class="companion-demo__notebook" id="notebook" aria-labelledby="note-title" inert>
+          <header class="companion-demo__note-head"><span class="tag"><i data-icon="book-open"></i>我的笔记 · 示例 v3</span><span>正在阅读</span><button class="text-action companion-seat__open-side" id="open-side" data-action="open-extras" hidden><i data-icon="layers"></i>附页 <span id="side-count">0</span></button></header>
+          <div class="companion-demo__note-scroll" id="note-scroll" tabindex="-1">
+            <h2 id="note-title">注意力机制：<br>把目光放在有关的地方</h2>
+            <p class="companion-demo__note-intro">一篇关于 Query、Key 和 Value 的学习笔记</p>
+            <h3>先想一个日常的场景</h3>
+            <p>在书架上找一本讲海洋的书，你不会平均地看待每一本书。你会先看书名和目录，挑出与问题有关的几本，再读它们的内容。</p>
+            <h3 id="source-heading">Query、Key 与 Value 各做什么？</h3>
+            <p id="source-text" class="companion-demo__source">Query 表达当前想找什么，Key 用来判断是否相关，Value 是最终取回的内容。相关程度决定了每份内容在结果里占多少分量。</p>
+            <p>放回句子里，当前词的 Query 与其他词的 Key 比较，得到权重，再用这些权重汇总各个词的 Value。它不是删除“不重要”的词，而是让不同的内容贡献不同的分量。</p>
+            <h3>“看过”与“理解了”之间</h3>
+            <p>如果换成一个新句子，你还能解释某个词为什么会更关注另一个词吗？先用自己的话说一次，比重复定义更能帮你发现哪里还没弄懂。</p>
+          </div>
+          <footer class="companion-demo__note-foot"><span><i data-icon="bookmark"></i>阅读位置保留在这里</span><button class="button" data-action="quote"><i data-icon="message-square-text"></i>和伴星聊这段</button></footer>
+        </article>
+
+        <aside class="companion-seat__side" id="side-dock" aria-label="伴星返回的侧边纸签" hidden>
+          <div class="companion-seat__side-head"><button class="text-action companion-seat__back-note" data-action="back-note"><i data-icon="arrow-left"></i>返回笔记</button><nav class="companion-seat__extra-tabs" id="extras-nav" aria-label="轻聊返回内容定位" hidden></nav></div>
+          <div class="companion-seat__extras" id="light-extras" tabindex="-1" aria-label="引用、卡片、确认与图片"></div>
+        </aside>
+
+        <section class="companion-history" id="journal" aria-labelledby="journal-title" data-open="false" inert>
+          <header class="companion-history__header">
+            <div><h2 id="journal-title">我们的对话手记</h2><p><span class="presence-dot"></span>小鲸在旁边 <span>·</span> 这间书房的对话</p></div>
+            <div class="companion-history__tools"><button class="icon-button" id="search-button" data-action="search" aria-label="查找消息" aria-expanded="false" aria-controls="search-row"><i data-icon="search"></i></button><button class="icon-button" data-action="close-journal" aria-label="合上对话手记"><i data-icon="x"></i></button></div>
+          </header>
+          <div class="companion-history__search" id="search-row" hidden><i data-icon="search"></i><label class="sr-only" for="search-input">查找这份演示手记</label><input id="search-input" type="search" placeholder="找一句说过的话…" autocomplete="off"><button class="icon-button" data-action="search" aria-label="关闭查找"><i data-icon="x"></i></button></div>
+          <div class="companion-history__tabs" role="group" aria-label="消息筛选"><button class="text-action" data-filter="all" aria-pressed="true">全部对话</button><button class="text-action" data-filter="proposal" aria-pressed="false">待确认 <span id="proposal-count" class="companion-history__count">0</span></button><span id="history-note">今天 · 10 月 1 日</span></div>
+          <div class="companion-history__list" id="message-list" tabindex="0" role="log" aria-label="对话消息" aria-live="polite" aria-relevant="additions"></div>
+          <button class="button companion-history__latest" id="latest" data-action="latest" hidden><i data-icon="arrow-down"></i><span id="latest-label">回到最新</span></button>
+          <div class="companion-history__compose-area">
+            <div class="companion-history__quote" id="quote" hidden><i data-icon="file-text"></i><span>正在聊：注意力机制 · Query、Key 与 Value</span><button class="icon-button" data-action="unquote" aria-label="移除引用"><i data-icon="x"></i></button></div>
+            <form class="companion-history__composer" id="composer">
+              <label class="sr-only" for="message-input">给小鲸的话</label><textarea id="message-input" rows="2" maxlength="2000" placeholder="想聊哪一句，或只是想说说话…"></textarea>
+              <div class="companion-history__compose-tools"><button class="icon-button" type="button" data-action="quote" aria-label="引用当前笔记"><i data-icon="plus"></i></button><button class="icon-button" type="button" data-action="voice" aria-label="演示语音输入"><i data-icon="mic"></i></button><span id="compose-note">Enter 发送 · Shift + Enter 换行</span><button class="button primary" id="send-button" type="submit" disabled><span>发送</span><i data-icon="send"></i></button><button class="button" id="stop-button" type="button" data-action="stop" hidden><i data-icon="square"></i>停止</button></div>
+            </form>
+          </div>
+        </section>
+      </section>
+
+      <aside class="companion-seat" aria-label="伴星常驻座位">
+        <div class="companion-seat__air" id="light-slot">
+        <div class="companion-seat__light" id="light-dock" tabindex="-1" aria-label="伴星独立气泡">
+          <div class="companion-seat__tools" id="tool-extras" aria-label="伴星回复上方的工具过程"></div>
+          <div class="companion-seat__status" id="turn-status" role="status" hidden><span class="companion-record__dots" aria-hidden="true"><i></i><i></i><i></i></span><span id="turn-status-text">小鲸正在想…</span><button class="icon-button" data-action="stop" aria-label="停止这次回复"><i data-icon="square"></i></button></div>
+          <section class="companion-bubble companion-bubble--reply" id="reply-bubble" aria-label="伴星回复气泡" hidden>
+            <header class="companion-bubble__header"><span class="companion-bubble__name"><i data-icon="sparkles"></i>小鲸</span><button class="icon-button" id="reply-stop" data-action="stop" aria-label="停止伴星回复"><i data-icon="square"></i></button><button class="icon-button" data-action="close-reply" aria-label="收起伴星回复"><i data-icon="x"></i></button></header>
+            <div class="companion-bubble__body" id="reply-body" tabindex="0" aria-label="伴星当前回复"></div>
+            <footer class="companion-bubble__foot"><span id="reply-note">正在回复…</span><button class="text-action" data-action="records" aria-label="查看对话手记">手记<i data-icon="arrow-right"></i></button></footer>
+          </section>
+          <section class="companion-bubble companion-bubble--input" id="input-bubble" aria-label="用户输入气泡">
+            <header class="companion-bubble__header"><span class="companion-bubble__name"><i data-icon="notebook-pen"></i>说给小鲸</span><button class="icon-button" data-action="close-input" aria-label="收起用户输入"><i data-icon="x"></i></button></header>
+            <div class="companion-bubble__quote" id="bubble-quote" hidden></div>
+            <form class="companion-bubble__composer" id="bubble-composer">
+              <label class="sr-only" for="bubble-input">气泡里给小鲸的话</label><textarea id="bubble-input" rows="2" maxlength="2000" placeholder="想聊哪一句？就在这里说…"></textarea>
+              <div class="companion-bubble__compose-tools"><button class="icon-button" type="button" data-action="quote" aria-label="引用当前笔记"><i data-icon="plus"></i></button><span>Enter 发送</span><button class="button primary" type="submit" id="bubble-send" disabled aria-label="发送气泡消息"><i data-icon="send"></i></button></div>
+            </form>
+          </section>
+          <section class="companion-bubble companion-bubble--voice" id="voice-bubble" aria-label="独立语音气泡" data-phase="closed" hidden>
+            <header class="companion-bubble__header"><span class="companion-bubble__name"><i data-icon="mic"></i>语音</span><button class="icon-button" data-action="cancel-voice" aria-label="取消语音"><i data-icon="x"></i></button></header>
+            <div class="companion-bubble__voice-live" id="voice-live"><span class="companion-history__waves" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><strong id="voice-title">在听你说…</strong></div>
+            <label class="sr-only" for="voice-transcript">编辑语音转写</label><textarea id="voice-transcript" rows="3" maxlength="2000" hidden></textarea>
+            <p class="companion-bubble__voice-note" id="voice-note">录音界面演示 · 未启用麦克风</p>
+            <div class="companion-bubble__voice-actions"><button class="text-action" data-action="cancel-voice">取消</button><button class="button primary" id="voice-finish" data-action="finish-voice"><i data-icon="check"></i>说完了</button><button class="text-action" id="voice-again" data-action="voice" hidden>重新说</button><button class="button primary" id="voice-send" data-action="send-voice" hidden><i data-icon="send"></i>发送</button></div>
+          </section>
+        </div>
+        </div>
+        <div class="companion-seat__character" id="character"><canvas id="live2d" aria-hidden="true"></canvas><button class="companion-seat__touch" id="touch" data-action="touch" aria-label="和小鲸打个招呼"></button><p class="companion-seat__loading" id="model-status" role="status">小鲸正在来到座位上…</p><div class="companion-seat__burst" id="burst" aria-hidden="true"></div></div>
+        <div class="companion-seat__identity"><span class="presence-dot"></span><strong>小鲸</strong><span id="seat-state">陪你读这一篇</span></div>
+        <div class="companion-hud" aria-label="伴星身边的操作">
+          <button class="button companion-hud__action" id="talk-button" data-action="bubble-chat" aria-label="气泡聊天" title="气泡聊天" aria-expanded="true" aria-controls="input-bubble"><i data-icon="message-circle"></i><span class="sr-only">气泡聊天</span></button>
+          <button class="button companion-hud__action" id="voice-button" data-action="voice" aria-label="语音聊天" title="语音聊天" aria-expanded="false" aria-controls="voice-bubble"><i data-icon="mic"></i><span class="sr-only">语音聊天</span></button>
+          <button class="button companion-hud__action" id="records-button" data-action="records" aria-label="会话聊天与交互记录" title="会话聊天与交互记录" aria-expanded="false" aria-controls="journal"><i data-icon="history"></i><span class="sr-only">会话聊天与交互记录</span></button>
+          <button class="button companion-hud__action" id="more-button" data-action="more" aria-label="伴星快捷设置" title="伴星快捷设置" aria-expanded="false" aria-controls="more-panel"><i data-icon="settings-2"></i><span class="sr-only">伴星快捷设置</span></button>
+        </div>
+        <div class="companion-hud__edge-panel" id="more-panel" data-open="false" inert role="region" aria-labelledby="more-title">
+          <header><h3 id="more-title">在你身边的方式</h3><button class="icon-button" data-action="more" aria-label="关闭伴星快捷设置"><i data-icon="x"></i></button></header>
+          <div class="companion-hud__setting-body">
+            <label class="companion-hud__setting"><span><strong>安静陪读</strong><small>收起气泡，保留伴星与操作</small></span><input id="quiet-toggle" type="checkbox" role="switch"></label>
+            <label class="companion-hud__setting"><span><strong>形象大小</strong><small>座位固定，调节形象大小</small></span><input id="character-size" type="range" min="75" max="100" value="100" aria-label="伴星形象大小"></label>
+            <label class="companion-hud__setting"><span><strong>伴星位置</strong><small>附页放在面向正文的一侧</small></span><select id="seat-side" aria-label="伴星座位方向"><option value="right">右侧</option><option value="left">左侧</option></select></label>
+            <p class="companion-hud__setting-note">仅改变本页演示。语音未接入，不会自动发声。</p>
+          </div>
+        </div>
+      </aside>
+    </div>
+    <footer class="companion-demo__footer"><span><i data-icon="sparkles"></i><span id="demo-hint">输入、回复、语音各有自己的气泡；试试「完整交互」。</span></span><span id="motion-note">灵动 · 点击有回应，纸面有来去</span></footer>
+    <div class="companion-demo__receipt" id="receipt" role="status" aria-live="polite" hidden></div>
+    <span class="sr-only" id="reply-announcement" role="status" aria-live="polite"></span>
+    <dialog class="companion-image-viewer" id="image-viewer" aria-labelledby="image-viewer-title"><header><h2 id="image-viewer-title">注意力机制 · 示意图</h2><button class="icon-button" data-action="close-image" aria-label="关闭图片预览"><i data-icon="x"></i></button></header><img id="large-image" src="companion-interaction-image.svg" alt="Query 与三个 Key 比较相关程度，再按权重汇总 Value"><p>本地示例图片 · 可查看放大后的细节</p></dialog>
+  </main>
+</body>
+</html>

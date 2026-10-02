@@ -23,7 +23,11 @@
     "rootDir": "../..",
     "paths": {
       "@ailearn/shared": ["../../packages/shared/src/index.ts"],
-      "@ailearn/shared/*": ["../../packages/shared/src/*.ts"]
+      "@ailearn/shared/*": [
+        "../../packages/shared/src/contracts/*.ts",
+        "../../packages/shared/src/*.ts",
+        "../../packages/shared/src/*/index.ts"
+      ]
     }
   },
   "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx"]

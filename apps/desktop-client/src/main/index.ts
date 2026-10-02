@@ -23,6 +23,7 @@ import {
   rejectAllContentSecurityPolicy
 } from './artifact-surface'
 import { nativeWindowChrome, titleBarOverlayForTheme } from './window-chrome'
+import { installWindowZoomShortcuts } from './window-zoom'
 import {
   WINDOW_STATE_CHANNEL,
   WINDOW_STATE_SNAPSHOT_CHANNEL,
@@ -584,6 +585,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
   // separately because Electron intentionally does not apply this constraint
   // to setSize/setContentSize calls.
   window.setAspectRatio(HOME_WINDOW_ASPECT_RATIO)
+  installWindowZoomShortcuts(window.webContents, process.platform)
 
   registerWindowLifecycle(window)
 

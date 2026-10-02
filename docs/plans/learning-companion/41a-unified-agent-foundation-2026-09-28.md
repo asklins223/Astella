@@ -33,7 +33,19 @@
 
 ## 4. 对当前代码的使用方式
 
-`packages/shared/src/ai-task-kernel.ts` 已有任务定义、预算、失败分类、检查点和事务外执行合同；笔记教学及动态产物、制卡等位置已有调用。`jobs`、租约、模型传输、隔离产物呈现及部分领域事件也已有实现。**这不等于所有调用方已统一。** 开工先列出现役模型调用图，逐个核实伴星对话、笔记讲解/动态教具、制卡生成/检查和开放回答评估是否真正经过公共边界，以及失败、取消、迟到提交的测试覆盖。
+`packages/shared/src/ai-task-kernel.ts` 已有任务定义、预算、失败分类、检查点和事务外执行合同。2026-10-01 按现役调用图核对，实际覆盖如下；API 路径相对 `apps/api/src/modules/`，Worker 路径相对 `workers/ai-worker/src/`。
+
+| 现役调用方 | 当前执行边界 |
+| --- | --- |
+| API 笔记轮次讲解与目标依据：`note-learning-rounds/teaching/teaching-explain.ts`、`note-learning-rounds/target-grounding.ts` | 已调用 `runAiTask`；这不代表 41 的独立笔记后台任务也走了同一链路。 |
+| API 开放回答评估与争议复核：`learning-runs/planning/run-critic.ts`、`learning-runs/disputes/dispute-recheck.ts` | 已调用 `runAiTask`。开放回答评估的内核 `commit` 只返回候选结果，评估业务写入仍由 `learning-runs/processing/run-processing-assessment.ts` 承担。 |
+| Worker 制卡 V3：`card-generation-v3/handler.ts` | 通过 `runV3TaskOnKernel → runAiTask` 执行生成/检查；候选与制卡业务提交仍在领域链中。 |
+| API 语音转写：`learning-sessions/voice-providers/siliconflow-asr.ts` | 已调用 `runAiTask`；待确认语音产物仍由语音领域服务在短事务中写入。 |
+| Worker 笔记速看、批注解释、拓展与动态页面：`handlers/note-overview-generate.ts`、`handlers/note-annotation-explain.ts`、`handlers/note-expansion-generate.ts`、`handlers/note-dynamic-artifact-generate.ts` | 速看、批注解释、拓展各自的单步模型请求已通过 `handlers/worker-ai-task.ts → runAiTask`，按冻结输入哈希独立限预算，在事务外执行并核对租约。动态页面通过 `runDynamicArtifactV1 → runAiTask`，保留两次调用上限与完成判据；Worker 每次实际请求前检查租约，提交候选前再次核对租约，并将 job 取消信号传入内核。四类的领域保存与来源版本核对仍留在各自 handler；动态页面的依据核对和隔离呈现不能替代公共内核边界。 |
+| Worker 伴星工具对话：`handlers/companion-agent-runtime.ts`、`handlers/companion-agent-task.ts`、`handlers/companion-tool-intent.ts`、`handlers/companion-tool-execution.ts` | 工具意图分类、Agent 的流式/缓冲/兜底/修复模型调用，以及读图视觉调用、回忆工具的查询嵌入都通过 `runAiTask` 执行；逐次限预算、在事务外运行并核对租约。读图输入快照记录图片内容哈希，不把图像字节写进任务引用。记忆向量检索缺少预计算向量时退回关键词，不在 RLS 事务里请求模型。流式 delta 与语音分段事件落库也逐批锁定租约。Agent 模型步在现有用户隔离 step 行内保存运行态输出检查点，只按任务版本、输入哈希、workspace/user 精确命中；lease reclaim 后回到该未完成步复用结果，不重复请求模型。步骤收尾清空载荷，run 删除沿用级联清理。多步循环编排、事件与工具 ledger 仍由领域运行时负责。 |
+| Worker 伴星记忆抽取、会话摘要、主动念头与记忆嵌入：`handlers/companion-memory-extractor.ts`、`handlers/companion-summarizer.ts`、`handlers/companion-thought.ts`、`handlers/companion-dialogue.ts`、`handlers/companion-memory-embedding.ts` | 模型及嵌入请求都通过 `handlers/worker-ai-task.ts → runAiTask`，输入快照哈希包含实际文本/消息、模型与提示版本及生成参数，调用前核对租约并继承 job 取消信号。记忆抽取最多两次模型调用，只对结构化输出错误重试一次；摘要仍在无效输出时记失败指标并跳过；主动念头的候选生成及逐条表达单次限额，失败分别保留确定性候选或已验证原句；记忆重建逐行限一次嵌入请求并在提交前锁定租约。领域写入、来源校验和送达仍由各自 handler 负责；这些接入目前没有持久化内核检查点。 |
+
+**41 的第一批生产接线不等于 41a 已统一全部调用方。** `jobs`、租约、模型传输、隔离产物呈现或调用内核本身，都不能证明各调用方已经完成同一预算、恢复和审计边界的验收。迁入前后仍须按 §5 核对成功、失败、取消、权限变化及迟到提交；本次调用图说明不构成完整验收或真实窗口通过声明。
 
 复用现有内核与任务表时以代码实际行为为准；只把确属公共的职责迁入。保留领域内有用的持久化和权限判断；迁完一个调用方就删除其无人使用的专属执行循环、兼容分支和测试，避免新旧双轨。实施新的选区批注、拓展笔记及整份 AI HTML/SVG 时，业务保存和产物隔离仍分别由领域服务与安全宿主负责，不能让统一 Agent 变成万能写库入口。
 

@@ -15,10 +15,31 @@ export interface RetrievedMemory {
   memoryId: string;
   kind: string;
   content: string;
+  budgetTier: "resident" | "active" | "archived";
+  revision: number;
   importance: number;
   pinned: boolean;
   lastUsedAt: string | null;
   userConfirmed: boolean;
+  /** 有据 / 待核对 / 有争议 / 已被替代（40 §4.5.4）。 */
+  epistemicStatus: string | null;
+}
+
+export interface CompanionMemoryDirectoryEntry {
+  memoryId: string;
+  kind: string;
+  /** Short label derived from the first sentence; the full body stays out of the directory. */
+  title: string;
+  appliesWhen: string | null;
+  validFrom: string | null;
+  validUntil: string | null;
+  revision: number;
+  /** 认识状态随目录一起给：争议/已替代的条目不能在正文里被当定论复述。 */
+  epistemicStatus: string | null;
+}
+
+export interface CompanionMemoryReadResult extends CompanionMemoryDirectoryEntry {
+  content: string;
 }
 
 export interface MemoryRetrievalResult {
@@ -34,6 +55,15 @@ export interface EmbeddingProviderLike {
 }
 
 type Executor = { execute(query: unknown): Promise<unknown> };
+type MemoryBudgetSearchTier = "active" | "archived";
+
+/** Only active/archived records are keyword-searchable; resident has its own bounded read. */
+function memoryBudgetTierClause(tier: MemoryBudgetSearchTier, alias: "" | "m.") {
+  const column = sql.raw(`${alias}budget_tier`);
+  return tier === "archived"
+    ? sql`AND ${column} = 'archived'`
+    : sql`AND ${column} = 'active'`;
+}
 
 function rowsOf<T>(result: unknown): T[] {
   if (Array.isArray(result)) return result as T[];
@@ -123,10 +153,117 @@ function mapMemoryRow(row: Record<string, unknown>): RetrievedMemory {
     // §9.4：写入端已统一限制 ≤200 字（extractor/summarizer/daily-summary）。
     // 此处保留 slice 作为防御性上限，防止历史残留数据或手动写入的超长内容进入 prompt。
     content: String(row.content ?? "").slice(0, 200),
+    budgetTier: row.budget_tier === "resident" || row.budget_tier === "archived"
+      ? row.budget_tier
+      : "active",
+    revision: Number(row.revision ?? 1),
     importance: Number(row.importance ?? 0.5),
     pinned: Boolean(row.pinned),
     lastUsedAt: row.last_used_at ? String(row.last_used_at) : null,
     userConfirmed: Boolean(row.user_confirmed),
+    epistemicStatus: typeof row.epistemic_status === "string" ? row.epistemic_status : null,
+  };
+}
+
+/** Resident memories are injected without semantic search, but remain subject to task-scope visibility. */
+export async function retrieveResidentCompanionMemories(
+  tx: Executor,
+  scope: { workspaceId: string; userId: string },
+  taskEntity: CompanionTaskEntityRef | null = null,
+): Promise<RetrievedMemory[]> {
+  const result = await tx.execute(sql`
+    SELECT id, kind, content, budget_tier, revision, importance, pinned, last_used_at, user_confirmed, epistemic_status
+      FROM assistant_memory_items
+     WHERE workspace_id = ${scope.workspaceId}
+       AND user_id = ${scope.userId}
+       AND budget_tier = 'resident'
+       AND deleted_at IS NULL
+       AND dismissed_at IS NULL
+       AND candidate = false
+       AND archived_at IS NULL
+       AND (valid_from IS NULL OR valid_from <= now())
+       AND (valid_until IS NULL OR valid_until > now())
+       ${taskScopeVisibility(taskEntity, scope, "")}
+     ORDER BY pinned DESC, importance DESC, updated_at DESC, id ASC
+     LIMIT 6
+  `);
+  return rowsOf<Record<string, unknown>>(result).map(mapMemoryRow);
+}
+
+function memoryDirectoryTitle(content: unknown): string {
+  const normalized = String(content ?? "").replace(/\s+/g, " ").trim();
+  const firstSentence = normalized.split(/(?<=[。.!?！？])\s*/u, 1)[0] ?? normalized;
+  return firstSentence.slice(0, 72);
+}
+
+function mapMemoryDirectoryRow(row: Record<string, unknown>): CompanionMemoryDirectoryEntry {
+  return {
+    memoryId: String(row.id ?? row.memory_id ?? ""),
+    kind: String(row.kind ?? ""),
+    title: memoryDirectoryTitle(row.content),
+    appliesWhen: typeof row.applies_when === "string" ? row.applies_when : null,
+    validFrom: row.valid_from == null ? null : String(row.valid_from),
+    validUntil: row.valid_until == null ? null : String(row.valid_until),
+    revision: Number(row.revision ?? 1),
+    epistemicStatus: typeof row.epistemic_status === "string" ? row.epistemic_status : null,
+  };
+}
+
+/** Return a bounded candidate set for the active-memory directory, without exposing full bodies. */
+export async function retrieveActiveCompanionMemoryDirectory(
+  tx: Executor,
+  scope: { workspaceId: string; userId: string },
+  taskEntity: CompanionTaskEntityRef | null = null,
+): Promise<CompanionMemoryDirectoryEntry[]> {
+  const result = await tx.execute(sql`
+    SELECT id, kind, content, applies_when, valid_from, valid_until, revision, epistemic_status
+      FROM assistant_memory_items
+     WHERE workspace_id = ${scope.workspaceId}
+       AND user_id = ${scope.userId}
+       AND budget_tier = 'active'
+       AND deleted_at IS NULL
+       AND dismissed_at IS NULL
+       AND candidate = false
+       AND archived_at IS NULL
+       AND (valid_from IS NULL OR valid_from <= now())
+       AND (valid_until IS NULL OR valid_until > now())
+       ${taskScopeVisibility(taskEntity, scope, "")}
+     ORDER BY pinned DESC, importance DESC, updated_at DESC, id ASC
+     LIMIT 64
+  `);
+  return rowsOf<Record<string, unknown>>(result).map(mapMemoryDirectoryRow);
+}
+
+/** Expand one active directory entry only when its exact current revision is requested. */
+export async function readActiveCompanionMemoryById(
+  tx: Executor,
+  scope: { workspaceId: string; userId: string },
+  taskEntity: CompanionTaskEntityRef | null,
+  memoryId: string,
+  expectedRevision: number,
+): Promise<CompanionMemoryReadResult | null> {
+  const result = await tx.execute(sql`
+    SELECT id, kind, content, applies_when, valid_from, valid_until, revision, epistemic_status
+      FROM assistant_memory_items
+     WHERE id = ${memoryId}::uuid
+       AND workspace_id = ${scope.workspaceId}
+       AND user_id = ${scope.userId}
+       AND revision = ${expectedRevision}
+       AND budget_tier = 'active'
+       AND deleted_at IS NULL
+       AND dismissed_at IS NULL
+       AND candidate = false
+       AND archived_at IS NULL
+       AND (valid_from IS NULL OR valid_from <= now())
+       AND (valid_until IS NULL OR valid_until > now())
+       ${taskScopeVisibility(taskEntity, scope, "")}
+     LIMIT 1
+  `);
+  const row = rowsOf<Record<string, unknown>>(result)[0];
+  if (!row) return null;
+  return {
+    ...mapMemoryDirectoryRow(row),
+    content: String(row.content ?? "").slice(0, 200),
   };
 }
 
@@ -136,6 +273,8 @@ export interface KeywordRetrievalOptions {
    * 向量检索路径用它做**并集补召回**（方案 29 §9.9），不再只当降级路径用。
    */
   onlyMissingEmbeddingForModel?: string;
+  /** Archived content is searchable only when the caller explicitly asks for it. */
+  budgetTier?: MemoryBudgetSearchTier;
 }
 
 /**
@@ -220,6 +359,7 @@ export async function retrieveCompanionMemoriesKeyword(
                  AND e.model_revision = ${opts.onlyMissingEmbeddingForModel}
              ))`
     : sql``;
+  const budgetTierFilter = memoryBudgetTierClause(opts.budgetTier ?? "active", "");
   // 修复（2026-08-19 审查）：此前把 ≤1000 字符整段查询塞进 `ILIKE '%<全文>%'`，
   // 模式比 content（≤200 字）还长，几乎永远匹配不到，降级检索形同虚设。
   // 改为提取关键词做 ILIKE ANY。
@@ -242,7 +382,7 @@ export async function retrieveCompanionMemoriesKeyword(
     ? sql` AND (content ILIKE ANY(${contentPatternsLiteral}::text[]) OR kind ILIKE ANY(${kindLiteral}::text[]))`
     : sql``;
   const result = await tx.execute(sql`
-    SELECT id, kind, content, importance, pinned, last_used_at, user_confirmed
+    SELECT id, kind, content, budget_tier, revision, importance, pinned, last_used_at, user_confirmed
     FROM assistant_memory_items
     WHERE workspace_id = ${scope.workspaceId}
       AND user_id = ${scope.userId}
@@ -252,7 +392,10 @@ export async function retrieveCompanionMemoriesKeyword(
       -- 正式记忆并注入提示词。
       AND dismissed_at IS NULL
       AND candidate = false
+      ${budgetTierFilter}
       AND archived_at IS NULL
+      AND (valid_from IS NULL OR valid_from <= now())
+      AND (valid_until IS NULL OR valid_until > now())
       ${taskScopeVisibility(taskEntity, scope, "")}
       ${missingEmbeddingFilter}
       ${keywordFilter}
@@ -272,20 +415,23 @@ export async function retrieveCompanionMemoriesVector(
   topK = 8,
   taskEntity: CompanionTaskEntityRef | null = null,
   /**
-   * 事务外预计算的查询向量。缺省时本函数自行调用 provider.embed——
-   * 那是外部 HTTP 往返，调用方若已持有 RLS 事务必须改用预计算值。
-   */
+   * 事务外通过 worker AI task 预计算的查询向量。
+   * 缺省或 null 时走关键词降级，不在持有 RLS 事务时调用 provider。
+  */
   precomputedEmbedding?: number[] | null,
+  budgetTier: MemoryBudgetSearchTier = "active",
 ): Promise<MemoryRetrievalResult> {
   const startedAt = performance.now();
-  const vector = precomputedEmbedding ?? await provider.embed(query.slice(0, 1000));
+  const budgetTierFilter = memoryBudgetTierClause(budgetTier, "m.");
+  const vector = precomputedEmbedding;
   if (!vector || vector.length === 0) {
-    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity);
+    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity, { budgetTier });
   }
   const queryVec = JSON.stringify(vector);
   try {
     const result = await tx.execute(sql`
-      SELECT m.id, m.kind, m.content, m.importance, m.pinned, m.last_used_at, m.user_confirmed,
+      SELECT m.id, m.kind, m.content, m.budget_tier, m.revision,
+             m.importance, m.pinned, m.last_used_at, m.user_confirmed,
              1 - (e.embedding <=> ${queryVec}::vector) AS similarity,
              CASE
                WHEN m.last_used_at IS NULL THEN 0.5
@@ -303,7 +449,10 @@ export async function retrieveCompanionMemoriesVector(
         -- 与关键词降级路径同一句判据：被忽略过的记忆不参与召回（doc 34 L14）。
         AND m.dismissed_at IS NULL
         AND m.candidate = false
+        ${budgetTierFilter}
         AND m.archived_at IS NULL
+        AND (m.valid_from IS NULL OR m.valid_from <= now())
+        AND (m.valid_until IS NULL OR m.valid_until > now())
         AND m.embedding_status = 'ready'
         ${taskScopeVisibility(taskEntity, scope, "m.")}
         -- AI P1（2026-09-15 审计）：只比较**同一向量空间**的向量。此前不校验
@@ -346,7 +495,7 @@ export async function retrieveCompanionMemoriesVector(
       query,
       topK,
       taskEntity,
-      { onlyMissingEmbeddingForModel: provider.embeddingModelId },
+      { onlyMissingEmbeddingForModel: provider.embeddingModelId, budgetTier },
     );
     const items = mergeUniqueMemories(vectorItems, supplement.items).slice(0, topK);
     return {
@@ -357,7 +506,7 @@ export async function retrieveCompanionMemoriesVector(
   } catch (error) {
     // pgvector 查询失败（扩展/索引/类型问题）不阻塞对话，降级 keyword。
     logger.warn({ err: error }, "companion memory vector retrieval failed, falling back to keyword");
-    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity);
+    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity, { budgetTier });
   }
 }
 
@@ -374,19 +523,25 @@ export async function retrieveCompanionMemories(
     signal?: AbortSignal;
     /**
      * 事务外预计算的查询向量：
-     * - `undefined`：调用方未预计算，本函数内部调用 provider.embed（不占事务）；
-     * - `null`：已尝试且失败——直接降级 keyword，绝不在事务内重试外部调用。
+     * - `undefined`：没有预计算向量，直接降级关键词；
+   * - `null`：已尝试但失败——直接降级 keyword，不在事务内重试外部调用。
      */
     precomputedEmbedding?: number[] | null;
+    /** Search archived records only on an explicit user request. */
+    budgetTier?: MemoryBudgetSearchTier;
   } = {},
 ): Promise<MemoryRetrievalResult> {
   const topK = opts.topK ?? 8;
   const taskEntity = opts.taskEntity ?? null;
+  const budgetTier = opts.budgetTier ?? "active";
   if (!isMemoryVectorEnabled() || !opts.provider) {
-    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity);
+    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity, { budgetTier });
   }
   if (opts.precomputedEmbedding === null) {
-    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity);
+    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity, { budgetTier });
+  }
+  if (opts.precomputedEmbedding === undefined) {
+    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity, { budgetTier });
   }
   try {
     return await retrieveCompanionMemoriesVector(
@@ -397,9 +552,10 @@ export async function retrieveCompanionMemories(
       topK,
       taskEntity,
       opts.precomputedEmbedding,
+      budgetTier,
     );
   } catch (error) {
     logger.warn({ err: error }, "companion memory retrieval failed, using keyword fallback");
-    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity);
+    return retrieveCompanionMemoriesKeyword(tx, scope, query, topK, taskEntity, { budgetTier });
   }
 }

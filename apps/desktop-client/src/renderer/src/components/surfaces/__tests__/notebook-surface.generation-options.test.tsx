@@ -102,9 +102,12 @@ afterEach(() => {
   useRoomStore.setState({ activeNoteRef: null, recentNoteId: null, surface: null, returnTarget: null, activeCardGenerationRunId: null });
 });
 
+/**
+ * 入口现在**直接用默认档开跑**，方案页收在旁边的「调整这次」里。
+ * 所以这一份夹具测的是那条**显式**的调整路径，而不是入口本身。
+ */
 async function openSettings() {
-  const toggle = await waitFor(() => screen.getByRole("button", { name: "制作学习卡" }));
-  fireEvent.click(toggle);
+  fireEvent.click(await waitFor(() => screen.getByRole("button", { name: "调整这次" })));
   await waitFor(() => expect(screen.getByRole("dialog", { name: "安排这次出题" })).toBeTruthy());
 }
 
@@ -117,7 +120,7 @@ describe("NotebookSurface · 生成参数与反馈重生成", () => {
     await openSettings();
     fireEvent.click(screen.getByRole("button", { name: "应用" }));
     fireEvent.click(screen.getByRole("button", { name: "深入" }));
-    fireEvent.click(screen.getByRole("button", { name: "12 张" }));
+    fireEvent.click(screen.getByRole("button", { name: "4 张" }));
     // 默认全选题型（= 交给 planner 按知识形态分配），点一下即取消该题型。
     fireEvent.click(screen.getByRole("button", { name: "对比辨析" }));
 
@@ -127,7 +130,7 @@ describe("NotebookSurface · 生成参数与反馈重生成", () => {
     expect(state.startRequests[0]).toMatchObject({
       learningGoal: "apply",
       detailThreshold: "deep",
-      quantity: { kind: "adaptive", hardMaxCards: 12 },
+      quantity: { kind: "adaptive", hardMaxCards: 4 },
     });
     expect((state.startRequests[0] as { preferredStrategies: string[] }).preferredStrategies)
       .toEqual(["recall", "cloze", "sequence", "why", "boundary", "application"]);
@@ -161,12 +164,12 @@ describe("NotebookSurface · 生成参数与反馈重生成", () => {
     // 于是"边写边看有哪几版""改完设置直接再生成"都只能先退回只读。
     stubGateway(null);
     useRoomStore.setState({
-      activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "edit" },
+      activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "live-preview" },
     });
     render(<NotebookSurface />);
-    await waitFor(() => expect(document.querySelector('.notebook[data-mode="edit"]')).toBeTruthy());
+    await waitFor(() => expect(document.querySelector(".notebook-workspace[data-mode=\"live-preview\"]")).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: "制作学习卡" }));
+    fireEvent.click(screen.getByRole("button", { name: "调整这次" }));
     await waitFor(() => expect(screen.getByRole("dialog", { name: "安排这次出题" })).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: "版本历史" }));

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { useRoomStore } from "../../app/room-store";
 import { HUD_PAGES, type HudPageId } from "./hud-pages";
 
@@ -19,25 +19,23 @@ export function useHudPage(page: HudPageId, options?: { readonly spaceFirstEntry
   const spaceFirstEntry = options?.spaceFirstEntry;
   const setHudPage = useRoomStore((state) => state.setHudPage);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setHudPage(page, spaceFirstEntry ? "first" : "returning");
     return () => setHudPage("home");
   }, [page, setHudPage, spaceFirstEntry]);
-
-  useHudPageClasses();
 }
 
 /**
  * Mirrors the published page identity onto `.desktop-app`. Store-driven and
- * safe to call from several mounted peers: every caller applies the same
- * classes from the same store state, so an override (the space menu) lands
- * everywhere at once without any page surface re-rendering.
+ * applied once by the persistent HudRoomControl. Applying/cleaning the same
+ * classes from every surface made page mounts briefly measure the previous
+ * page (or home) layout and repeatedly invalidate the complete document.
  */
 export function useHudPageClasses() {
   const hudPage = useRoomStore((state) => state.hudPage);
   const hudSpaceEntry = useRoomStore((state) => state.hudSpaceEntry);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const app = document.querySelector<HTMLElement>(".desktop-app");
     if (!app) return undefined;
     const definition = HUD_PAGES[hudPage];

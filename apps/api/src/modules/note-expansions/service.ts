@@ -7,7 +7,7 @@ import { jobs } from "@ailearn/shared/db-schema/job";
 import { noteExpansionTasks, noteExpansions } from "@ailearn/shared/db-schema/note-expansions";
 import { noteBlocks, noteVersions, notes } from "@ailearn/shared/db-schema/note";
 import { JobStatus, JobType } from "@ailearn/shared/enums";
-import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
+import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
 import {
   confirmNoteExpansionTaskV1Schema,
   createNoteExpansionTaskV1Schema,
@@ -126,13 +126,11 @@ export async function listNoteExpansions(
 async function validateFocusAnchor(tx: ApiTransaction, scope: NoteExpansionScopeV1, input: StartInput) {
   if (!input.focusAnchor) return;
   const anchor = input.focusAnchor;
-  const [block] = await tx.select({ type: noteBlocks.type, content: noteBlocks.content }).from(noteBlocks).where(and(
-    eq(noteBlocks.workspaceId, scope.workspaceId), eq(noteBlocks.versionId, input.noteVersionId), eq(noteBlocks.ordinal, anchor.startBlockOrdinal),
+  const blocks = await tx.select({ ordinal: noteBlocks.ordinal, type: noteBlocks.type, content: noteBlocks.content }).from(noteBlocks).where(and(
+    eq(noteBlocks.workspaceId, scope.workspaceId), eq(noteBlocks.versionId, input.noteVersionId),
+    sql`${noteBlocks.ordinal} BETWEEN ${anchor.startBlockOrdinal} AND ${anchor.endBlockOrdinal}`,
   ));
-  const text = block ? noteBlockRenderedTextV1(block.type, block.content) : "";
-  if (!block || anchor.endOffset > text.length || text.slice(anchor.startOffset, anchor.endOffset) !== anchor.excerpt
-    || text.slice(Math.max(0, anchor.startOffset - 120), anchor.startOffset) !== anchor.prefix
-    || text.slice(anchor.endOffset, anchor.endOffset + 120) !== anchor.suffix) {
+  if (!noteAnchorMatchesV1(blocks, anchor)) {
     throw new NoteExpansionError("selection_anchor_mismatch", "选中的原句位置和这版笔记对不上，请重新圈选后再拓展。");
   }
 }
@@ -194,7 +192,8 @@ async function taskForJob(
   let status: NoteExpansionTaskV1["status"];
   if (job.status === JobStatus.PENDING) status = "queued";
   else if (job.status === JobStatus.RUNNING) status = "running";
-  else if (job.status === JobStatus.SUCCEEDED && saved) status = saved.confirmedAt ? "confirmed" : "ready";
+  else if (job.status === JobStatus.SUCCEEDED && saved) status = saved.drafts.length > 0
+    && saved.drafts.every(draft => saved.confirmedCandidateIds?.includes(draft.candidateId)) ? "confirmed" : "ready";
   else status = "failed";
   return noteExpansionTaskV1Schema.parse({
     taskId: job.id,
@@ -253,7 +252,6 @@ export async function updateNoteExpansionTaskDrafts(
     eq(noteExpansionTasks.userId, scope.userId), eq(noteExpansionTasks.noteId, noteId),
   )).for("update").limit(1);
   if (!task) throw new NoteExpansionError("task_not_ready", "拓展草稿还在整理，完成后才能筛选。");
-  if (task.confirmedAt) throw new NoteExpansionError("task_already_confirmed", "这批草稿已经收下，不能再改写原记录。");
   const [job] = await tx.select().from(jobs).where(and(
     eq(jobs.id, taskId), eq(jobs.workspaceId, scope.workspaceId), eq(jobs.requestedBy, scope.userId),
     eq(jobs.type, JobType.NOTE_EXPANSION_GENERATE),
@@ -267,6 +265,12 @@ export async function updateNoteExpansionTaskDrafts(
   }
   const updated = task.drafts.map((draft) => {
     const edit = review.drafts.find((item) => item.candidateId === draft.candidateId)!;
+    if (task.confirmedCandidateIds?.includes(draft.candidateId)) {
+      if (edit.title !== draft.title || JSON.stringify(edit.blocks) !== JSON.stringify(draft.blocks)) {
+        throw new NoteExpansionError("task_already_confirmed", "已经收下的那篇不能再改写草稿；其余草稿仍可编辑和收下。");
+      }
+      return draft;
+    }
     return noteExpansionDraftV1Schema.parse({
       ...draft,
       title: edit.title,
@@ -360,24 +364,13 @@ export async function confirmNoteExpansionTask(
   if (!job) throw new NoteExpansionError("task_not_ready", "拓展草稿还没准备好，请等它整理完成后再收下。");
 
   const requestedIds = [...input.candidateIds].sort();
-  if (task.confirmedCandidateIds) {
-    const confirmedIds = [...task.confirmedCandidateIds].sort();
-    if (JSON.stringify(requestedIds) !== JSON.stringify(confirmedIds)) {
-      throw new NoteExpansionError("task_already_confirmed", "这批草稿已经按另一组选择收下，原记录没有变化。");
-    }
-    const selected = task.drafts.filter((draft) => task.confirmedCandidateIds!.includes(draft.candidateId));
-    const existing = await Promise.all(selected.map((draft) => findExpansionByRequest(tx, scope, draft.requestId)));
-    if (existing.some((item) => !item)) throw new NoteExpansionError("save_unconfirmed", "部分拓展笔记已不在笔记架中，请重新读取这篇笔记的关联记录。");
-    if (existing.some((item, index) => item?.requestBodyHash !== draftBodyHash(taskId, noteId, task, selected[index]!))) {
-      throw new NoteExpansionError("idempotency_conflict", "已确认的拓展内容和这次请求不一致，请重新读取关联记录。");
-    }
-    return noteExpansionBatchWriteResultV1Schema.parse(existing.map((item) => item!.link));
-  }
-
+  const confirmedIds = new Set(task.confirmedCandidateIds ?? []);
   const selected = task.drafts.filter((draft) => input.candidateIds.includes(draft.candidateId));
   const selectedIds = selected.map((draft) => draft.candidateId).sort();
-  const checkedIds = task.drafts.filter((draft) => draft.selected).map((draft) => draft.candidateId).sort();
-  if (JSON.stringify(selectedIds) !== JSON.stringify(requestedIds) || JSON.stringify(checkedIds) !== JSON.stringify(requestedIds)) {
+  const pendingIds = selectedIds.filter(id => !confirmedIds.has(id));
+  const checkedIds = task.drafts.filter(draft => draft.selected && !confirmedIds.has(draft.candidateId)).map(draft => draft.candidateId).sort();
+  if (JSON.stringify(selectedIds) !== JSON.stringify(requestedIds)
+    || pendingIds.length > 0 && JSON.stringify(checkedIds) !== JSON.stringify(pendingIds)) {
     throw new NoteExpansionError("draft_set_changed", "先在草稿册里勾选想收下的内容，再确认这批笔记。");
   }
 
@@ -390,6 +383,9 @@ export async function confirmNoteExpansionTask(
   for (const draft of selected) {
     const hash = draftBodyHash(taskId, noteId, task, draft);
     const existing = await findExpansionByRequest(tx, scope, draft.requestId);
+    if (confirmedIds.has(draft.candidateId) && !existing) {
+      throw new NoteExpansionError("save_unconfirmed", "已收下的笔记现在读不到，请重新读取关联记录；不会重复创建。");
+    }
     if (existing) {
       if (existing.link.sourceNoteId !== noteId || existing.link.sourceTaskId !== taskId) {
         throw new NoteExpansionError("idempotency_conflict", "这篇草稿编号已被用于其他拓展，原笔记没有变化。");
@@ -426,8 +422,8 @@ export async function confirmNoteExpansionTask(
   }
 
   await tx.update(noteExpansionTasks).set({
-    confirmedCandidateIds: requestedIds,
-    confirmedAt: new Date(),
+    confirmedCandidateIds: [...new Set([...confirmedIds, ...requestedIds])].sort(),
+    confirmedAt: task.confirmedAt ?? new Date(),
     updatedAt: sql`now()`,
   }).where(and(eq(noteExpansionTasks.id, taskId), eq(noteExpansionTasks.workspaceId, scope.workspaceId)));
   return noteExpansionBatchWriteResultV1Schema.parse(links);

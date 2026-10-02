@@ -50,20 +50,9 @@ function SpaceSealIcon() {
  *
  * 折叠入口（2026-09-18 交互修复，二次返工）：触发印章常驻药丸最右端的
  * 原位置——折叠时它是唯一圆点，展开后留在原地、图标换成双箭头，再点一下
- * 即从原位置缩回；不额外新增收起槽位。点空白与 Esc 保留。头像 / 设置这类
- * 要打开 surface 的槽位改为「先播完折叠动画再跳转」，避免设置面板瞬间盖住
- * 折叠过程（预算见下面那个常量，由样式表算出来钉住）。
+ * 即从原位置缩回；不额外新增收起槽位。点空白与 Esc 保留。
+ * 导航与收起同时响应，CSS 继续完成折叠，不在输入路径上等待动画。
  */
-
-/**
- * 药丸折叠动画的等待窗口，导航等它走完再发生。
- *
- * 折叠现在是一段有预算的动画：图标 110ms 淡出，槽位宽度再收 320ms、并带 80ms
- * 起步延迟（`hud-surface.css` 末尾的 B0 段），合计 400ms。留 20ms 余量。
- * 这个数与那条 CSS 是同一个事实的两半，由 `src/main/room-control-motion.test.ts`
- * 从样式表里算出来钉住——改 CSS 时序而忘改这里，设置面板会盖在还没关完的岛上。
- */
-const COLLAPSE_BEFORE_NAVIGATE_MS = 420;
 
 export function HudRoomControl({ decorative = false }: { readonly decorative?: boolean }) {
   /**
@@ -103,12 +92,6 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
   const triggerRef = useRef<HTMLButtonElement>(null);
   const spaceRef = useRef<HTMLButtonElement>(null);
   const accountRef = useRef<HTMLButtonElement>(null);
-  /** 「先折叠再跳转」的定时器；用户在窗口期内重新展开时必须撤销。 */
-  const navigateTimerRef = useRef<number | undefined>(undefined);
-
-  useEffect(() => () => {
-    if (navigateTimerRef.current !== undefined) window.clearTimeout(navigateTimerRef.current);
-  }, []);
 
   const isExpanded = decorative || onboardingOpen || expanded;
 
@@ -231,28 +214,19 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
       setExpanded(false);
       return;
     }
-    // 窗口期内反悔（刚点了头像又立刻展开）就取消待执行的跳转。
-    if (navigateTimerRef.current !== undefined) {
-      window.clearTimeout(navigateTimerRef.current);
-      navigateTimerRef.current = undefined;
-    }
     setSpaceNotice(null);
     setExpanded(true);
   };
 
-  /** 先收起药丸，等折叠动画播完再执行 action，让跳转发生在收拢之后。 */
-  const collapseThen = (action: () => void) => {
-    if (navigateTimerRef.current !== undefined) window.clearTimeout(navigateTimerRef.current);
+  const collapseAndRun = (action: () => void) => {
     setSpaceMenuOpen(false);
+    setAccountMenuOpen(false);
     setExpanded(false);
-    navigateTimerRef.current = window.setTimeout(() => {
-      navigateTimerRef.current = undefined;
-      action();
-    }, COLLAPSE_BEFORE_NAVIGATE_MS);
+    action();
   };
 
   const openSettings = (section: "account" | "appearance") => {
-    collapseThen(() => {
+    collapseAndRun(() => {
       setSettingsSection(section);
       invoke("open-settings");
     });
@@ -338,7 +312,7 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
           inert={!isExpanded || undefined}
           aria-label="返回学习空间"
           title="返回学习空间总览"
-          onClick={() => collapseThen(() => invoke("home"))}
+          onClick={() => collapseAndRun(() => invoke("home"))}
         >
           <House aria-hidden="true" />
         </button>

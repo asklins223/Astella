@@ -189,6 +189,13 @@ export const companionContentBlockV1Schema = z.discriminatedUnion("type", [
 
 export type CompanionContentBlockV1 = z.infer<typeof companionContentBlockV1Schema>;
 
+/** 用户随这一轮主动提供的原文快照，保存在 run.page_context.selection。 */
+export const companionSelectionV1Schema = z.strictObject({
+  text: z.string().min(1).max(2_000),
+  sharing: z.literal("user_selected"),
+});
+export type CompanionSelectionV1 = z.infer<typeof companionSelectionV1Schema>;
+
 // ─── Message（§3.3） ──────────────────────────────────────────────────────
 
 export const companionMessageV1Schema = z.object({
@@ -216,6 +223,7 @@ export const companionMessageV1Schema = z.object({
     "cancelled",
   ]),
   blocks: z.array(companionContentBlockV1Schema).min(1).max(32),
+  selection: companionSelectionV1Schema.optional(),
   runId: z.string().uuid().nullable(),
   clientMessageId: z.string().uuid().nullable(),
   // 2026-08-11：API 实际返回 contentSha256（内容校验用），契约补齐声明
@@ -399,9 +407,20 @@ export const createCompanionTurnRequestV1Schema = z.object({
   context: companionPageContextV1Schema.optional(),
   // 划选/拖拽投喂（2026-09-18）：用户在页面上选中的原文，随 turn 上抛。
   // 持久化进 page_context，worker 以 <selection_data> 边界注入 prompt。
-  selection: z.strictObject({
-    text: z.string().min(1).max(2_000),
-    sharing: z.literal("user_selected"),
+  selection: companionSelectionV1Schema.optional(),
+  /**
+   * 日记引用（40 §6「聊聊这篇」）。
+   *
+   * 日记页那个次级动作只**打开对话并附上引用**，不自动发送用户消息；用户自己
+   * 接着打字之后，这条引用随本轮上抛，伴星据此调用 `companion_read_diary`
+   * 按**当前权限**现读那一篇——而不是让用户把全文复制粘贴。
+   *
+   * `version` 必填：§5.5 保证已发布成稿不被后台重跑静默替换，所以「用户看到的
+   * 那一版」是稳定的；版本对不上时伴星应当说清楚，而不是拿新版顶替。
+   */
+  diaryReference: z.strictObject({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    version: z.number().int().min(1),
   }).optional(),
 }).strict().superRefine((value, ctx) => {
   const textOnly = value.blocks[0]?.type === "text";
@@ -553,13 +572,19 @@ export const understandingRoutePlanRequestV1Schema = z.object({
 });
 export type UnderstandingRoutePlanRequestV1 = z.infer<typeof understandingRoutePlanRequestV1Schema>;
 
-/** §18.1 AssistantMemoryItemV1 kind（与 memory-service 一致；22 方案新增 episodic）。 */
+/**
+ * §18.1 AssistantMemoryItemV1 kind（与 memory-service 一致；40 §4.5.4 加了 judgment）。
+ *
+ * `judgment` 只出现在**读取**侧——她的看法要能被她自己重新读到。
+ * 写入侧 `save_memory` 的参数枚举不含它，因为抽取任务只提事实。
+ */
 export const assistantMemoryKindV1Schema = z.enum([
   "preference",
   "goal",
   "learning_context",
   "interaction_note",
   "episodic",
+  "judgment",
 ]);
 
 /** §18.1 defer_review 展示层 reason code（不修改 official dueAt）。 */
@@ -656,12 +681,32 @@ export const proposedLearningActionPayloadV1Schema = z.discriminatedUnion("kind"
     // 枚举与 assistant_memory_items.kind 的 DB CHECK 约束同源。
     memoryKind: z.enum(["preference", "goal", "learning_context", "interaction_note", "episodic"]),
     content: z.string().min(1).max(200),
+    sourceQuote: z.string().min(3).max(80).nullable().optional(),
+    appliesWhen: z.string().max(200).nullable().optional(),
+    validUntil: z.string().datetime({ offset: true }).nullable().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("revise_memory"),
+    memoryId: z.string().uuid(),
+    expectedRevision: z.number().int().min(1),
+    content: z.string().min(1).max(200),
+    appliesWhen: z.string().max(200).nullable().optional(),
+    validFrom: z.string().datetime({ offset: true }).nullable().optional(),
+    validUntil: z.string().datetime({ offset: true }).nullable().optional(),
   }).strict(),
   z.object({
     kind: z.literal("set_pet_activeness"),
     activeness: z.enum(["quiet", "moderate", "active"]),
   }).strict(),
-]);
+]).superRefine((value, context) => {
+  if (
+    value.kind === "revise_memory"
+    && value.validFrom && value.validUntil
+    && Date.parse(value.validUntil) <= Date.parse(value.validFrom)
+  ) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["validUntil"], message: "validUntil must follow validFrom" });
+  }
+});
 
 export const companionActionProposalV1Schema = z.object({
   version: z.literal(1),

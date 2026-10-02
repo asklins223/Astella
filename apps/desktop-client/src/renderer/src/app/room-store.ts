@@ -17,6 +17,7 @@ import { scenePhaseForIntent, type SceneMotionPhase } from "../scene/scene-motio
 import type { HudPageId } from "../components/hud/hud-pages";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
 import type { SourceStatusTab } from "../components/surfaces/source/source-index.ts";
+import type { NoteBodyMode } from "../components/surfaces/notebook/note-document-mode";
 import {
   DEFAULT_WINDOW_LIVE2D_MODEL_ID,
   isWindowLive2DModelId,
@@ -92,7 +93,7 @@ export type NoteTargetRef = {
   readonly noteId: string;
   /** 唯一消费方 notebook-surface 只按 noteId 读当前版本；缺版本就如实为 null。 */
   readonly noteVersionId: string | null;
-  readonly mode?: "read" | "edit";
+  readonly mode?: NoteBodyMode;
   /** Explicit result-page handoff to this round's voluntary reflection tuck. */
   readonly learningRoundId?: string;
 };

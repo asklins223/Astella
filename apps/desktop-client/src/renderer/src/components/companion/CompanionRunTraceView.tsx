@@ -12,8 +12,12 @@ const NODE_STATE_LABEL = {
   running: "进行中",
   succeeded: "已完成",
   waiting_confirmation: "等待选择",
+  outcome_unknown: "结果待核对",
   failed: "失败",
   cancelled: "已停止",
+  // 与「失败」分开：没开始 ≠ 试过了没成；用不了 ≠ 被拒绝。
+  not_executed: "没有开始",
+  unavailable: "这次用不了",
 } as const;
 
 type NodeState = keyof typeof NODE_STATE_LABEL;
@@ -50,7 +54,12 @@ function shouldOpenRunTrace(trace: CompanionRunTrace): boolean {
     || trace.summary.toolCallCount > 0
     || trace.summary.status === "waiting_for_confirmation"
     || trace.summary.status === "failed"
-    || trace.nodes.some((node) => node.state === "waiting_confirmation" || node.state === "failed");
+    || trace.nodes.some((node) => node.state === "waiting_confirmation"
+      || node.state === "outcome_unknown"
+      || node.state === "failed"
+      // 这两类也算"这一轮没有拿到结果"：诊断视图不该把它们显示成一路绿灯。
+      || node.state === "not_executed"
+      || node.state === "unavailable");
 }
 
 /** 实时回复与历史消息共用的真实执行轨迹。 */

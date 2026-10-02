@@ -44,6 +44,7 @@ function stubGateway(
     generationStatus: initialGenerationStatus,
     projectionReads: 0,
     startCalls: 0,
+    startRequests: [] as unknown[],
     eventHandlers: new Map<string, () => void>(),
   };
   const projection = () => ({
@@ -101,8 +102,9 @@ function stubGateway(
         },
       })),
       cardGeneration: {
-        start: vi.fn(async () => {
+        start: vi.fn(async (input: { request: unknown }) => {
           state.startCalls += 1;
+          state.startRequests.push(input.request);
           if (options.startRejects) {
             // 服务端早已在跑这篇的批次，只是页面那一刻没看到。
             state.generationStatus = "review_ready";
@@ -148,9 +150,8 @@ describe("NotebookSurface · 学习卡生成状态同步", () => {
     stubGateway("checking", [], { summaryOverrides: { sourceCapped: { limit: 60_000, originalLength: 123_456 } } });
     useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
     const { findByText } = render(<NotebookSurface />);
-
-    expect(await findByText("这一篇较长：本次只把前 60000 字（全文 123456 字）交给模型，其余部分这次没有参与生成。"))
-      .toBeTruthy();
+    const coverage = await findByText("仅部分正文");
+    expect(coverage.getAttribute("title")).toBe("这一篇较长：本次只把前 60000 字（全文 123456 字）交给模型，其余部分这次没有参与生成。");
   });
 
   it("服务端没有报告截断时不显示覆盖范围提示", async () => {
@@ -159,7 +160,7 @@ describe("NotebookSurface · 学习卡生成状态同步", () => {
     const { container, findByTitle } = render(<NotebookSurface />);
 
     await findByTitle("这次生成在后台进行，来回翻看不会打断它");
-    expect(container.querySelector(".notebook-generation-capped")).toBeNull();
+    expect(container.querySelector(".notebook-card-entry__coverage")).toBeNull();
   });
 
   it("本笔记有进行中的 run 时，入口变成查看进度且不重复 start", async () => {
@@ -219,24 +220,39 @@ describe("NotebookSurface · 学习卡生成状态同步", () => {
     expect(state.startCalls).toBe(0);
   });
 
-  it("没有 run 时入口先开方案页，确认后 start 带 runId 跳转工作台", async () => {
+  /**
+   * 入口那一下现在**直接开跑**。
+   *
+   * 改这一下之前它开的是方案页——17 颗 chip，而默认值本来就是全开
+   * （`DEFAULT_GENERATION_OPTIONS`）。多数人按这一下只要的是默认值，却得先看完
+   * 17 个选择才拿得到。方案页没有删，降级成入口旁边的「调整这次」。
+   * 所以这条量的是：按入口 ⇒ 一次 start、跳工位；按「调整这次」才开方案页。
+   */
+  it("没有 run 时入口直接用默认档开跑；要改参数才进方案页", async () => {
     const { gateway, state } = stubGateway(null);
     useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
-    const { getByText, queryByRole } = render(<NotebookSurface />);
+    const { getByText, getByRole, queryByRole } = render(<NotebookSurface />);
 
-    // 入口本身不再直接建任务：先开方案页（生成用哪套目标/策略由人确认）。
     const entry = await waitFor(() => getByText("制作学习卡"));
     expect(gateway.subscriptions.subscribe).not.toHaveBeenCalled();
     expect(queryByRole("dialog")).toBeNull();
 
     fireEvent.click(entry);
-    const start = await waitFor(() => getByText("开始生成"));
-    expect(state.startCalls).toBe(0);
-
-    fireEvent.click(start);
     await waitFor(() => expect(useRoomStore.getState().surface).toBe("card-generation"));
     expect(useRoomStore.getState().activeCardGenerationRunId).toBe(RUN_ID);
     expect(state.startCalls).toBe(1);
+    // 默认档原样发出：全选题型、8 张上限。
+    expect(state.startRequests[0]).toMatchObject({
+      learningGoal: "understand",
+      detailThreshold: "balanced",
+      quantity: { kind: "adaptive", hardMaxCards: 8 },
+    });
+    // 直接开跑的那一下**不**开方案页——否则就是把那 17 颗 chip 又摆回第一屏。
+    expect(queryByRole("dialog")).toBeNull();
+
+    // 仍然摸得到完整方案：入口旁边那颗次要动作。
+    fireEvent.click(getByRole("button", { name: "调整这次" }));
+    expect(await waitFor(() => getByText("开始生成"))).toBeTruthy();
   });
 
   it("被服务端拒绝后重读状态：入口翻到真实阶段，不再反复撞同一个拒绝", async () => {
@@ -245,10 +261,9 @@ describe("NotebookSurface · 学习卡生成状态同步", () => {
     const { getByText, getAllByRole, getByTitle } = render(<NotebookSurface />);
 
     fireEvent.click(await waitFor(() => getByText("制作学习卡")));
-    fireEvent.click(await waitFor(() => getByText("开始生成")));
 
-    // 拒绝留在方案页里说，同时投影重读：入口翻到这篇笔记真实的阶段。
-    // 同一句会落在两处（方案页页脚 + 纸面），所以按复数查。
+    // 拒绝留在纸面上说，同时投影重读：入口翻到这篇笔记真实的阶段。
+    // 入口直接开跑之后没有方案页可留，所以这句落在纸面上，按复数查。
     await waitFor(() => expect(getAllByRole("alert").length).toBeGreaterThan(0));
     const entry = await waitFor(() => getByTitle("这次生成在后台进行，来回翻看不会打断它"));
     expect(entry.textContent).toContain("审核学习卡");

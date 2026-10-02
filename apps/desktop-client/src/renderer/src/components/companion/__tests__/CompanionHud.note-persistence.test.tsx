@@ -4,9 +4,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanionChatSession } from "../../../app/companion-chat-session.tsx";
 import type { GatewayResultV1 } from "@ailearn/shared/desktop-ipc-contracts";
-import type { NoteAnnotationAnchorV1 } from "@ailearn/shared/note-annotation-contracts";
+import type { NoteAnnotationAnchorV1, NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
 import { CompanionHud, type CompanionHudSettings } from "../CompanionHud.tsx";
 import { DEFAULT_WINDOW_LIVE2D_MODEL_ID } from "../window-live2d-contract.ts";
+import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, progressNoteExplanation, resetNoteExplanations, useNoteCompanionExplanations } from "../note-companion-explanation";
 
 const { chatState } = vi.hoisted(() => ({ chatState: { current: null as unknown } }));
 
@@ -22,21 +23,6 @@ vi.mock("../../../app/companion-voice-playback", () => ({
 }));
 
 vi.mock("../../../app/companion-voice-level", () => ({ subscribeHomeV2VoiceLevel: () => () => undefined }));
-
-vi.mock("../../../app/companion-reveal-driver", () => ({
-  COMPANION_REVEAL_TICK_MS: 60,
-  createCompanionRevealDriver: () => ({
-    arrived: 0,
-    revealed: 0,
-    noteArrived: vi.fn(),
-    tick: vi.fn(),
-    noteSession: vi.fn(),
-    noteTurnFinal: vi.fn(),
-    onComplete: () => () => undefined,
-    reset: vi.fn(),
-    finish: vi.fn(),
-  }),
-}));
 
 vi.mock("../use-companion-voice-input", () => ({
   useCompanionVoiceInput: () => ({
@@ -157,7 +143,8 @@ function renderHud() {
 
 describe("伴星回答保存回笔记", () => {
   let writeOverview: ReturnType<typeof vi.fn>;
-  let writeAnnotation: ReturnType<typeof vi.fn>;
+  let writeAnnotation: ReturnType<typeof vi.fn<(request: unknown) => Promise<GatewayResultV1<NoteAnnotationV1>>>>;
+  let annotationVersionState: "current" | "older";
 
   beforeEach(() => {
     class ResizeObserverStub {
@@ -187,7 +174,8 @@ describe("伴星回答保存回笔记", () => {
       versionState: "current",
       createdAt: "2026-09-29T00:00:00.000Z",
     }));
-    writeAnnotation = vi.fn(async () => ok({
+    annotationVersionState = "current";
+    writeAnnotation = vi.fn<(request: unknown) => Promise<GatewayResultV1<NoteAnnotationV1>>>(async () => ok({
       annotationId: "66666666-6666-4666-8666-666666666666",
       noteId: NOTE_ID,
       anchor: NOTE_ANCHOR,
@@ -195,7 +183,7 @@ describe("伴星回答保存回笔记", () => {
       sourceMessageId: MESSAGE_ID,
       generationJobId: null,
       revision: 1,
-      versionState: "current",
+      versionState: annotationVersionState,
       createdAt: "2026-09-29T00:00:00.000Z",
       updatedAt: "2026-09-29T00:00:00.000Z",
     }));
@@ -206,11 +194,13 @@ describe("伴星回答保存回笔记", () => {
         noteAnnotation: { write: writeAnnotation },
       },
     });
+    resetNoteExplanations();
     chatState.current = session();
   });
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -245,7 +235,51 @@ describe("伴星回答保存回笔记", () => {
     await waitFor(() => expect(send).toHaveBeenCalledWith({
       text: "用白话解释这句",
       selection: { text: NOTE_ANCHOR.excerpt },
+      noteAnchor: { noteId: NOTE_ID, anchor: NOTE_ANCHOR },
     }));
+  });
+
+  it("选文交接和生成期间，选文条随气泡展示并能回到原句进度", () => {
+    const item = beginNoteExplanation({ noteId: NOTE_ID, anchor: NOTE_ANCHOR });
+    progressNoteExplanation(item.id, "");
+    chatState.current = session({ mode: "closed", phase: "sending", feedNoteIntent: null, feedNoteAnchor: { noteId: NOTE_ID, anchor: NOTE_ANCHOR } });
+    renderHud();
+    expect(screen.getByText("正在处理")).toBeTruthy();
+    expect(screen.getByText("伴星正在解释").closest(".companion-hud__output")).toBeTruthy();
+    expect(screen.getByRole("button", { name: `查看原句解释：${NOTE_ANCHOR.excerpt}` })).toBeTruthy();
+    expect(screen.queryByText("这次选文")).toBeNull();
+    expect(screen.queryByText("查看所选原文")).toBeNull();
+    expect(screen.queryByRole("article", { name: "笔记关联" })).toBeNull();
+    expect(writeAnnotation).not.toHaveBeenCalled();
+  });
+
+  it("新解释还没有内容就停止，不把上一轮回复当作这次的残稿", () => {
+    const previous = "这是上一轮对话的内容。";
+    chatState.current = session({ mode: "closed", feedNoteIntent: null,
+      liveReply: { messageId: MESSAGE_ID, text: previous, hasActionBlocks: false, proposalIds: [] } });
+    const view = renderHud();
+    act(() => {
+      const attempt = beginNoteExplanation({ noteId: NOTE_ID, anchor: NOTE_ANCHOR });
+      interruptNoteExplanation(attempt.id, "stopped");
+      chatState.current = session({ mode: "closed", feedNoteIntent: null, stopNotice: "已停止，这次还没有生成解释。" });
+      view.rerender(<CompanionHud motionMode="off" voiceEnabled={false} actions={[]} settings={settings()} onRunAction={vi.fn()} />);
+    });
+    expect(screen.getByText("已停止，这次还没有生成解释。")).toBeTruthy();
+    expect(screen.queryByText(previous)).toBeNull();
+    expect(writeAnnotation).not.toHaveBeenCalled();
+  });
+
+  it("解释失败只留一个简短恢复入口，重试仍携带已收起的选文", async () => {
+    const send = vi.fn(async () => true);
+    chatState.current = session({ phase: "error", mode: "closed", failure: "模型服务暂时不可用", feedNoteIntent: null,
+      feedNoteAnchor: { noteId: NOTE_ID, anchor: NOTE_ANCHOR }, feedPrompt: "解释这句", feedSelection: null, send });
+    renderHud();
+    expect(screen.getByText("这段解释还没生成，原文没有改动。")).toBeTruthy();
+    expect(screen.queryByText("这次选文")).toBeNull();
+    expect(screen.queryByText("留在笔记里的内容")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "重试这段解释" }));
+    await waitFor(() => expect(send).toHaveBeenCalledWith({ text: "解释这句", selection: { text: NOTE_ANCHOR.excerpt }, noteAnchor: { noteId: NOTE_ID, anchor: NOTE_ANCHOR } }));
+    expect(writeAnnotation).not.toHaveBeenCalled();
   });
 
   it("伴星速看对话保留在聊天里，不替代笔记页的正式速看任务", async () => {
@@ -348,9 +382,9 @@ describe("伴星回答保存回笔记", () => {
     window.removeEventListener("ailearn:note-expansion-task-started", startedEvent);
   });
 
-  it("把解释保存为精确锚定所选原文的批注，并关联伴星回复", async () => {
-    const savedEvent = vi.fn();
-    window.addEventListener("ailearn:note-annotation-saved", savedEvent);
+  async function beginAnnotationReply() {
+    const item = beginNoteExplanation({ noteId: NOTE_ID, anchor: NOTE_ANCHOR });
+    progressNoteExplanation(item.id, "");
     chatState.current = session({
       feedPrompt: "用大白话解释这段",
       feedSelection: NOTE_ANCHOR.excerpt,
@@ -358,9 +392,9 @@ describe("伴星回答保存回笔记", () => {
       feedNoteAnchor: { noteId: NOTE_ID, anchor: NOTE_ANCHOR },
     });
     const view = renderHud();
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
-    await waitFor(() => expect((chatState.current as CompanionChatSession).send).toHaveBeenCalled());
-    act(() => {
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "发送" })));
+    expect((chatState.current as CompanionChatSession).send).toHaveBeenCalled();
+    await act(async () => {
       chatState.current = session({
         feedPrompt: "用大白话解释这段",
         feedSelection: NOTE_ANCHOR.excerpt,
@@ -371,8 +405,9 @@ describe("伴星回答保存回笔记", () => {
       view.rerender(<CompanionHud motionMode="off" voiceEnabled={false} actions={[]} settings={settings()} onRunAction={vi.fn()} />);
     });
 
-    await waitFor(() => expect(writeAnnotation).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(savedEvent).toHaveBeenCalledTimes(1));
+    await act(async () => { void completeNoteExplanation(item.id, MESSAGE_ID, "工具是 Agent 调用外部能力的接口。"); });
+
+    expect(writeAnnotation).toHaveBeenCalledTimes(1);
     expect(writeAnnotation.mock.calls[0]?.[0]).toMatchObject({
       noteId: NOTE_ID,
       command: {
@@ -382,8 +417,89 @@ describe("伴星回答保存回笔记", () => {
         sourceMessageId: MESSAGE_ID,
       },
     });
+    return view;
+  }
+
+  function patchChat(view: ReturnType<typeof renderHud>, patch: Partial<CompanionChatSession>) {
+    act(() => {
+      chatState.current = { ...(chatState.current as CompanionChatSession), ...patch };
+      view.rerender(<CompanionHud motionMode="off" voiceEnabled={false} actions={[]} settings={settings()} onRunAction={vi.fn()} />);
+    });
+  }
+
+  it.each(["current", "older"] as const)("保存 %s 版本的选文批注，回执只附在对应回复内", async (versionState) => {
+    annotationVersionState = versionState;
+    const savedEvent = vi.fn();
+    window.addEventListener("ailearn:note-annotation-saved", savedEvent);
+    const view = await beginAnnotationReply();
+    await waitFor(() => expect(savedEvent).toHaveBeenCalledTimes(1));
     expect((savedEvent.mock.calls[0]?.[0] as CustomEvent).detail).toMatchObject({ noteId: NOTE_ID });
     window.removeEventListener("ailearn:note-annotation-saved", savedEvent);
-    expect(await screen.findByText("这段解释已贴回原句，之后还能从这里找回来。" )).toBeTruthy();
+    if (versionState === "current") {
+      expect((await screen.findByText("解释已贴回原句")).closest(".companion-hud__output")).toBeTruthy();
+    } else {
+      expect((await screen.findByText("解释已留在旧版批注")).closest(".companion-hud__output")).toBeTruthy();
+      expect(screen.queryByText("解释已贴回原句")).toBeNull();
+    }
+    expect(screen.queryByRole("article", { name: /笔记关联|这次选文|已贴回原句|已留在旧版/ })).toBeNull();
+    patchChat(view, { liveReply: null, feedNoteAnchor: null, mode: "closed" });
+    expect(document.querySelector(".companion-hud__selection-context")).toBeNull();
+    act(() => useNoteCompanionExplanations.setState({ activeId: null }));
+    patchChat(view, { liveReply: { messageId: "next-reply", text: "开始下一段吧。", hasActionBlocks: false, proposalIds: [] } });
+    expect(document.querySelector(".companion-hud__selection-context")).toBeNull();
+  });
+
+  it("回复自动收起时，保存回执一起消失，批注仍然已保存", async () => {
+    vi.useFakeTimers();
+    const view = await beginAnnotationReply();
+    const dismissLiveReply = vi.fn(() => patchChat(view, { liveReply: null, feedNoteAnchor: null, mode: "closed" }));
+    patchChat(view, { dismissLiveReply });
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(screen.getByText("解释已贴回原句")).toBeTruthy();
+    act(() => vi.advanceTimersByTime(12_000));
+    expect(dismissLiveReply).toHaveBeenCalledTimes(1);
+    expect(document.querySelector(".companion-hud__output")).toBeNull();
+    expect(document.querySelector(".companion-hud__selection-context")).toBeNull();
+    expect(screen.queryByRole("article", { name: /笔记关联|这次选文/ })).toBeNull();
+    expect(writeAnnotation).toHaveBeenCalledTimes(1);
+  });
+
+  it("保存失败在回复内重试，成功后不产生第二张状态纸", async () => {
+    writeAnnotation.mockRejectedValueOnce(new Error("保存暂时不可用"));
+    await beginAnnotationReply();
+    const retry = await screen.findByRole("button", { name: "重试保存批注" });
+    expect(retry.closest(".companion-hud__output")).toBeTruthy();
+    expect(screen.getByText("解释未保存")).toBeTruthy();
+    fireEvent.click(retry);
+    expect(await screen.findByText("解释已贴回原句")).toBeTruthy();
+    expect(writeAnnotation).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("button", { name: "重试保存批注" })).toBeNull();
+    expect(screen.queryByRole("article", { name: /笔记关联|这次选文/ })).toBeNull();
+  });
+
+  it.each(["收起回复", "换一处选文"])("保存迟到时，%s不会被旧回执重新打开或清掉", async (action) => {
+    const receipt = await writeAnnotation({});
+    writeAnnotation.mockClear();
+    let finishSave!: () => void;
+    writeAnnotation.mockImplementationOnce(() => new Promise(resolve => { finishSave = () => resolve(receipt); }));
+    const savedEvent = vi.fn();
+    window.addEventListener("ailearn:note-annotation-saved", savedEvent);
+    const view = await beginAnnotationReply();
+    await screen.findByText("正在保存批注");
+    const dismissFeedNoteAnchor = vi.fn();
+    const nextAnchor = { ...NOTE_ANCHOR, startOffset: 13, endOffset: 20, excerpt: "获取实时信息" };
+    patchChat(view, {
+      mode: "closed", liveReply: null, dismissFeedNoteAnchor,
+      ...(action === "换一处选文" ? { feedNoteAnchor: { noteId: NOTE_ID, anchor: nextAnchor } } : {}),
+    });
+    await act(async () => finishSave());
+    expect(savedEvent).toHaveBeenCalledTimes(1);
+    window.removeEventListener("ailearn:note-annotation-saved", savedEvent);
+    expect(document.querySelector(".companion-hud__output")).toBeNull();
+    expect(screen.queryByRole("article", { name: /笔记关联|这次选文/ })).toBeNull();
+    if (action === "换一处选文") {
+      expect(dismissFeedNoteAnchor).not.toHaveBeenCalled();
+      expect((chatState.current as CompanionChatSession).feedNoteAnchor?.anchor).toEqual(nextAnchor);
+    }
   });
 });

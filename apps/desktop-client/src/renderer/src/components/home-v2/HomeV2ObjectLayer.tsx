@@ -164,6 +164,7 @@ function HomeV2Hud({ introVisible, loading, state, title, primaryLabel, theme, m
 
   return (
     <aside ref={rootRef} className={`home-v2-hud${expanded ? " home-v2-hud--expanded" : ""}`} data-state={loading ? "loading" : state} data-intro={introVisible || undefined} data-theme={theme} data-motion-mode={motionMode} aria-labelledby="home-v2-hud-title" aria-describedby="home-v2-hud-detail" onKeyDown={(event) => { if (event.key === "Escape" && expanded) { event.preventDefault(); event.stopPropagation(); collapse(); } }}>
+      <span className="home-v2-hud__skin" aria-hidden="true"><i /><i /><i /></span>
       <button ref={triggerRef} type="button" className="home-v2-hud__trigger" aria-expanded={expanded} aria-label={expanded ? "收起今日下一步" : `展开今日下一步：${hudTitle}`} onClick={() => setExpanded((current) => !current)}>
         <span className="home-v2-hud__signal" aria-hidden="true" />
         <span className="home-v2-hud__trigger-copy"><small>{loading ? "正在同步" : introVisible ? "从这里开始" : "今日下一步"}</small><strong id="home-v2-hud-title">{hudTitle}</strong></span>

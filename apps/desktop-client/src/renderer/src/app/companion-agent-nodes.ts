@@ -16,7 +16,7 @@
  * 3. **同一步的多次上报只改状态点，不追加第二行。**（曾是 `agent.skill` 的
  *    selected/completed；技能层删除后这条只对工具成立，但幂等键的语义没变。）
  *
- * 状态映射到 UI 只保留五档（轨道只需要这五档的视觉），映射表是 `TOOL_STATE`。
+ * 状态映射到 UI 只保留六档（轨道只需要这六档的视觉），映射表是 `TOOL_STATE`。
  */
 
 import type {
@@ -33,8 +33,21 @@ export type CompanionAgentNodeState =
   | "running"
   | "succeeded"
   | "waiting_confirmation"
+  | "outcome_unknown"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  /**
+   * 40b §3.2 的另两类，与 `failed` 分开显示。
+   *
+   * 合在一起会让用户读到一句他无法行动的话：
+   * - `not_executed`：**根本没开始**（参数没通过），所以"重试"是有意义的；
+   * - `unavailable`：能力**这一轮没有**（比如没开图片外发），重调同一个工具没有意义。
+   *
+   * 两者都显示成"失败"时，用户既不知道该改参数还是该去开开关，
+   * 而 `unavailable` 的合同要求恰恰是「指出实际影响及可用替代」。
+   */
+  | "not_executed"
+  | "unavailable";
 
 /** 节点类型只影响图标：思考气泡 / 扳手 / 星形 / 按工具名映射。 */
 export type CompanionAgentNodeKind = "thinking" | "acting" | "tool";
@@ -81,6 +94,11 @@ export const TOOL_LABELS: Record<string, string> = {
   companion_read_current_page: "正在看你这一页",
   companion_read_history: "正在翻之前的对话",
   companion_recall_memory: "正在想你说过的事",
+  // 与上一条分工：recall 是「不知道是哪条，先搜一批」，read_memory 是「目录里已经指到
+  // 某一条，把正文展开」。两句都念出来用户才分得清她是在找还是在读。
+  companion_read_memory: "正在读那条记忆",
+  companion_read_playbook: "正在翻她整理的协作手册",
+  companion_read_diary: "正在重看那篇日记",
   companion_search_notes: "正在翻你的笔记",
   companion_read_note: "正在读那篇笔记",
   companion_read_source: "正在读来源正文",
@@ -95,8 +113,13 @@ export const TOOL_LABELS: Record<string, string> = {
   companion_list_reminders: "正在看你约过的提醒",
   companion_cancel_reminder: "正在撤掉那个提醒",
   companion_save_memory: "正在记住这件事",
+  companion_remember_judgment: "正在记下她对这一件事的想法",
+  companion_revise_memory: "正在改那条记忆",
   companion_forget_memory: "正在忘掉那一条",
+  companion_move_memory: "正在调整这条记忆的保存位置",
   companion_set_activeness: "正在改活跃度",
+  companion_revise_own_style: "正在换一种说话方式",
+  companion_pause_learning_suggestions: "正在收一收学习建议",
   companion_set_boundary: "正在改行为边界",
   companion_start_learning: "正在开一轮学习",
   companion_show_image: "正在把那张图调出来",
@@ -123,10 +146,16 @@ const TOOL_STATE: Record<string, CompanionAgentNodeState> = {
   executing: "running",
   waiting_confirmation: "waiting_confirmation",
   succeeded: "succeeded",
+  outcome_unknown: "outcome_unknown",
   failed: "failed",
   blocked: "failed",
   expired: "cancelled",
+  not_executed: "not_executed",
+  unavailable: "unavailable",
 };
+
+const UNRECOGNIZED_TOOL_STATUS_SUMMARY =
+  "工具状态无法识别，操作结果待核对；确认结果前不要重复操作。";
 
 /**
  * 把一个 SSE 帧折进节点列表。不是节点帧就原样返回（同一个引用，React 不会白重渲）。
@@ -178,8 +207,17 @@ function appendToolNode(nodes: CompanionAgentNodes, payload: unknown): Companion
   if (typeof tool.toolCallId !== "string" || tool.toolCallId.length === 0) return nodes;
   if (typeof tool.safeLabel !== "string" || tool.safeLabel.length === 0) return nodes;
   const name = typeof tool.name === "string" && tool.name.length > 0 ? tool.name : null;
-  const state = TOOL_STATE[typeof tool.status === "string" ? tool.status : ""] ?? "running";
-  const summary = typeof tool.safeSummary === "string" && tool.safeSummary.length > 0 ? tool.safeSummary : null;
+  const rawStatus = typeof tool.status === "string" ? tool.status : "";
+  // Payload is unknown at the SSE boundary. An unfamiliar or missing state cannot
+  // safely mean "still running": a write may already have happened. Fail closed
+  // onto the existing reconciliation state and never invite a blind replay.
+  const knownState = Object.prototype.hasOwnProperty.call(TOOL_STATE, rawStatus)
+    ? TOOL_STATE[rawStatus]
+    : undefined;
+  const state = knownState ?? "outcome_unknown";
+  const summary = knownState
+    ? (typeof tool.safeSummary === "string" && tool.safeSummary.length > 0 ? tool.safeSummary : null)
+    : UNRECOGNIZED_TOOL_STATUS_SUMMARY;
   const proposalId = typeof tool.proposalId === "string" && tool.proposalId.length > 0 ? tool.proposalId : null;
   const key = `tool:${tool.toolCallId}`;
   const index = nodes.findIndex((node) => node.key === key);

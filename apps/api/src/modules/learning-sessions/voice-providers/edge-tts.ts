@@ -3,7 +3,8 @@
  *
  * 不依赖宿主 CLI：edge-tts 作为独立 Docker 容器运行（docker/edge-tts/），
  * 暴露 OpenAI 协议端点 POST /v1/audio/speech；本 provider 经
- * EDGE_TTS_BASE_URL（默认 http://edge-tts:8080）调用容器。
+ * EDGE_TTS_BASE_URL 调用容器。Compose 显式使用 http://edge-tts:8080；
+ * 宿主 API 默认使用开发容器映射的 http://127.0.0.1:8088。
  *
  * 请求形状遵循 openai-compatible-tts 使用的 OpenAI 协议，
  * 因此 API 侧可无缝在 edge-tts 容器与自定义 OpenAI 协议 TTS 服务间切换。
@@ -15,7 +16,7 @@
 import { DomainError } from "@ailearn/shared";
 
 export interface EdgeTtsProviderOptions {
-  /** 容器地址（缺省 http://edge-tts:8080） */
+  /** 服务地址（优先于环境变量；宿主缺省使用开发容器的回环端口） */
   baseUrl?: string;
   /** 默认 voice（zh-CN） */
   voice?: string;
@@ -37,9 +38,19 @@ export interface EdgeTtsSynthesizeResult {
   contentType: string;
 }
 
-const DEFAULT_BASE_URL = "http://edge-tts:8080";
+const DEFAULT_HOST_PORT = 8088;
 const DEFAULT_VOICE = "zh-CN-XiaoxiaoNeural";
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+function edgeTtsBaseUrl(override?: string): string {
+  const configured = override?.trim() || process.env.EDGE_TTS_BASE_URL?.trim();
+  if (configured) return configured.replace(/\/$/, "");
+  // Docker 的服务名不能从宿主解析。容器 API 由 Compose 注入内部地址；
+  // 直接运行的 API 使用同一开发服务的回环映射，端口与 Compose 保持一致。
+  const port = Number(process.env.EDGE_TTS_PORT ?? DEFAULT_HOST_PORT);
+  const hostPort = Number.isInteger(port) && port > 0 && port <= 65535 ? port : DEFAULT_HOST_PORT;
+  return `http://127.0.0.1:${hostPort}`;
+}
 
 /**
  * edge-tts 并发闸（AI P2，2026-09-15 审计）。
@@ -171,7 +182,7 @@ async function edgeTtsSynthesizeUngated(
   if (typeof text !== "string" || text.trim() === "") {
     throw new EdgeTtsError("INVALID_ARGUMENT", "TTS 文本为空（fail closed）");
   }
-  const baseUrl = (options.baseUrl ?? process.env.EDGE_TTS_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+  const baseUrl = edgeTtsBaseUrl(options.baseUrl);
   const effectiveVoice = voice || (options.voice ?? DEFAULT_VOICE);
   const rate = options.rate ?? "+0%";
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -236,6 +247,17 @@ export interface EdgeTtsStreamResult {
  * 与 edgeTtsSynthesize 的区别：返回 ReadableStream 透传（不 arrayBuffer），
  * 供 /voice/tts/stream 边收边播；timeout 只覆盖「响应头到达前」（首字节），
  * 头到达后不再整体 abort（长句流式）。
+ *
+ * 2026-10-02（41a）：**这一条没有接到统一内核，而且是有理由的。**
+ * 内核的预算模型是"一个有时限的步骤"——`withStepDeadline` 会在 `stepTimeoutMs`
+ * 到达时判超时。流式合成交出去的是一条**用户还在听的** `ReadableStream`：客户端
+ * 拿到响应头之后音频还在陆续到达，把它塞进一个会按时收口的步骤，等于让内核在
+ * 她听到一半时把这一发判成超时。
+ *
+ * `/voice/tts` 那条**有界**路径（收齐字节才返回）已经接上了，见 `tts-engine.ts`
+ * 的 `synthesizeTtsBytes`。要把流式也接上，先得给内核一个"步骤已完成、但产物
+ * 还活着"的形状（例如把 `completion` 扩出流式判据、`commit` 延后到流结束）——
+ * 那是内核合同本身的改动，不该藏在一个 provider 的接线里。
  */
 export async function edgeTtsSynthesizeStream(
   text: string,
@@ -262,7 +284,7 @@ async function edgeTtsSynthesizeStreamUngated(
   if (typeof text !== "string" || text.trim() === "") {
     throw new EdgeTtsError("INVALID_ARGUMENT", "TTS 文本为空（fail closed）");
   }
-  const baseUrl = (options.baseUrl ?? process.env.EDGE_TTS_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/$/, "");
+  const baseUrl = edgeTtsBaseUrl(options.baseUrl);
   const effectiveVoice = voice || (options.voice ?? DEFAULT_VOICE);
   const rate = options.rate ?? "+0%";
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;

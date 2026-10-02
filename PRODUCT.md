@@ -1,13 +1,10 @@
 # Product
 
-<!-- impeccable:product-schema 1 -->
-<!-- q0-doc-metadata: status=CURRENT_PRODUCT_TRUTH; version=V1+HOME_V2_CURRENT+NOTE_LEARNING_41_TARGET; date=2026-09-29; implementation-freeze=active -->
-
 > **笔记学习方向（2026-09-29，实现进行中；真实窗口体验尚未通过）：**来源仍是不可编辑的材料，经「开始写笔记」进入可编辑笔记；一篇笔记是自然入口。用户可以独立地先看懂整篇、快速回想、框选原位批注、发现相关知识并审核新笔记。生成由后台任务承载，进度和结果在笔记纸面可见且可重开；伴星常驻书房，并在用户需要时适当参与，不替代任务状态与保存回执。AI 可按知识点创作完整互动 HTML/SVG，产品提供隔离、安全与来源核对，按需使用而非每段强制播放。所有学习记录按笔记版本和原文保留；拓展新笔记及关系须用户逐篇确认。具体体验见 [方案 41](docs/plans/learning-companion/41-note-companion-learning-experience-2026-09-28.md)，公共 AI 执行基础见 [41a](docs/plans/learning-companion/41a-unified-agent-foundation-2026-09-28.md)。下文标明“历史快照”的旧流程描述只用于理解旧代码，不能继续给新开发派活。
 
 ## Platform
 
-adaptive
+Electron desktop
 
 Electron desktop UI，覆盖 macOS / Windows / Linux；不再提供浏览器端产品。
 
@@ -98,11 +95,11 @@ Electron 43 + electron-vite 5 + Vite 7 + React 19 + TypeScript（独立桌面客
 
 ## Brand Commitments
 
-- **全项目 UI 与陪伴硬约束（2026-09-27 用户裁决）**：统一使用有趣、生动的动森式 HUD 学习书房。所有已进入学习空间的页面都保留旁边可见的 Live2D 伴星；“专注”只减少打断，不隐藏角色。反面长什么样（后台管理系统、SaaS 仪表盘、普通工具面板、米黄色）**只由 `AGENTS.md` §UI 硬约束 一处写死**，本文件不重复。沿用 V3.1 的纸张、册本、便签、粗奶油边、不规则柔圆角与触感交互；页面内部的分区与层级见 `DESIGN.md` §Layout「页面骨架与层级」；详见 `AGENTS.md` 和 `DESIGN.md` 的现行硬约束。
+- **书房与陪伴方向**：有趣、生动、有物件感的学习书房，Live2D 伴星默认在身旁；专注时减少打断。V3.1 HUD 是现有参考，页面构图与交互可以随任务发展。设计方向和当前实现入口见 `DESIGN.md`。
 - **产品名**：理解引擎（英文：ailearn / AI Learning System）
 - **品牌标识**："理解引擎" + 橙色圆点，使用衬线体（Noto Serif SC / Songti SC）
 - **语言**：界面语言为简体中文（`lang="zh-CN"`）
-- **视觉身份**：动森式 HUD 学习书房——有趣、生动的册本、暖纸、便签、印章、薄荷标题牌、粗奶油边、不规则柔圆角与触感按钮，伴星常驻在旁边。字体遵循现行 Noto Serif SC Variable 与 Noto Sans SC Variable 双声部；夜间改变书房光照，任务纸仍保持奶油色。禁止任何配色的后台管理系统或 SaaS 仪表盘审美。
+- **视觉身份**：动森式 HUD 学习书房，暖纸、册本、便签、印章、薄荷与有触感的物件建立识别度。现有字体是 Noto Serif SC Variable 与 Noto Sans SC Variable；夜间延续同一书房的阅读感。
 - **开源**：MIT License
 
 ## Evidence on Hand

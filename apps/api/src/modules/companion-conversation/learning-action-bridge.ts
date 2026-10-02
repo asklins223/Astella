@@ -12,7 +12,7 @@
  */
 
 import { sql } from "drizzle-orm";
-import { companionGroundedTutorGrantV1Schema, companionLearningContextV1Schema, companionLearningRunContextV1Schema, companionProposalSnapshotV1Schema, createLearningRunV2RequestSchema, learningRunAssistanceConsequenceV1, proposedLearningActionPayloadV1Schema } from "@ailearn/shared";
+import { companionGroundedTutorGrantV1Schema, companionLearningContextV1Schema, companionLearningRunContextV1Schema, createLearningRunV2RequestSchema, learningRunAssistanceConsequenceV1, proposedLearningActionPayloadV1Schema } from "@ailearn/shared";
 import { sha256Utf8V1, canonicalJsonV1 } from "@ailearn/shared/content-hash";
 import type { CompanionLearningContextV1, LearningRunOriginV2 } from "@ailearn/shared";
 import { withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
@@ -38,13 +38,10 @@ import { LearningRunServiceError } from "../learning-runs/run-errors.ts";
 // 方案 16 §18.1：工具网关第二批执行单元（确定性、同事务）。
 import { deferReviewSchedule } from "../review/review-defer-service.ts";
 import { createJob } from "../job/service.ts";
-import {
-  confirmMemory,
-  deleteMemory,
-  getMemory,
-  upsertMemory,
-  type MemoryKindV2,
-} from "./memory/memory-service.ts";
+import { getPetProfile, PetProfileCasConflictError, upsertPetProfile } from "./pet-profile-service.ts";
+import { resolveNavigationRouteFor, snapshotFor } from "./companion-proposal-snapshot.ts";
+export { getCompanionProposalSnapshot, snapshotFor } from "./companion-proposal-snapshot.ts";
+import { executeCompanionMemoryProposalAction } from "./companion-memory-proposal-action.ts";
 
 function sanitizeText(value: string, max: number): string {
   return value
@@ -871,7 +868,7 @@ export async function decideCompanionProposal(args: {
     { workspaceId: args.workspaceId, userId: args.userId },
     async (tx) => {
       const rows = await tx.execute<{
-        id: string; conversation_id: string; status: string; decision: string | null;
+        id: string; conversation_id: string; source_message_id: string | null; status: string; decision: string | null;
         decision_key_hash: string | null; expires_at: Date;
         payload: { kind: string; [key: string]: unknown } | string;
         payload_sha256: string;
@@ -882,7 +879,7 @@ export async function decideCompanionProposal(args: {
         agent_run_id: string | null;
         agent_tool_call_id: string | null;
       }>(sql`
-        SELECT id, conversation_id, status, decision, decision_key_hash, expires_at, payload,
+        SELECT id, conversation_id, source_message_id, status, decision, decision_key_hash, expires_at, payload,
                payload_sha256, result_ref, result_route, result_safe_summary,
                origin, agent_run_id, agent_tool_call_id
         FROM companion_action_proposals
@@ -1178,82 +1175,49 @@ export async function decideCompanionProposal(args: {
         }
         return succeedSyncProposal(tx, args.workspaceId, args.userId, proposal, keyHash, outcome.scheduleId, null, "已延后复习提醒（不算完成复习）");
       }
-
-      // ── §18.1：记忆工具（确定性 API 同事务执行；revision = updatedAt epoch ms） ──
-      // propose_memory_candidate 分支已删除：契约要求调用方提供 sourceMessageId，
-      // 而该 id 由本服务在 proposal 创建事务内生成，任何 producer 都无法满足 ⇒ 该
-      // kind 不可实现。候选记忆由 worker memory-extractor + delivery 气泡产生，用户
-      // 经下面的 confirm_or_reject_memory 确认或拒绝。
-      if (kind === "confirm_or_reject_memory" || kind === "delete_assistant_memory") {
-        const payload = proposalPayload as unknown as {
-          memoryId: string;
-          revision: number;
-          decision?: "confirm" | "reject";
-        };
-        const memoryId = payload.memoryId;
-        const memory = await getMemory(tx, { workspaceId: args.workspaceId, userId: args.userId }, memoryId);
-        if (!memory || new Date(memory.updatedAt).getTime() !== payload.revision) {
-          throw new CompanionConversationError("ACTION_STALE", 409, "memory revision changed");
-        }
-        const scope = { workspaceId: args.workspaceId, userId: args.userId };
-        if (kind === "confirm_or_reject_memory") {
-          if (payload.decision === "confirm") {
-            const confirmed = await confirmMemory(tx, scope, memoryId);
-            if (!confirmed) throw new CompanionConversationError("NOT_FOUND", 404, "memory not found");
-            return succeedSyncProposal(tx, args.workspaceId, args.userId, proposal, keyHash, memoryId, null, "记忆已确认");
-          }
-          const rejected = await deleteMemory(tx, scope, memoryId);
-          if (!rejected) throw new CompanionConversationError("NOT_FOUND", 404, "memory not found");
-          return succeedSyncProposal(tx, args.workspaceId, args.userId, proposal, keyHash, memoryId, null, "记忆已拒绝");
-        }
-        const deleted = await deleteMemory(tx, scope, memoryId);
-        if (!deleted) throw new CompanionConversationError("NOT_FOUND", 404, "memory not found");
-        return succeedSyncProposal(tx, args.workspaceId, args.userId, proposal, keyHash, memoryId, null, "记忆已删除");
+      const memoryOutcome = await executeCompanionMemoryProposalAction({
+        tx,
+        workspaceId: args.workspaceId,
+        userId: args.userId,
+        proposal,
+        payload: proposalPayload,
+      });
+      if (memoryOutcome) {
+        return succeedSyncProposal(tx, args.workspaceId, args.userId, proposal, keyHash,
+          memoryOutcome.resultRef, null, memoryOutcome.safeSummary);
       }
 
-      // ── 2026-09-19：auto-set / auto-fill 工具（guided 档提案确认后的执行分支）──
-      // full 档不走这里：worker 侧 requiresConfirmation=false 直接执行
-      // （companion-agent-runtime.executeDirectTool）。两处执行口径保持一致：
-      // 记忆写入统一走 upsertMemory 的"用户明确陈述"路径。
-      if (kind === "save_memory" || kind === "set_pet_activeness") {
+
+      // ── 2026-09-19：伴星活跃度工具（guided 档提案确认后的执行分支）──
+      // full 档由 worker 的直执行器完成；已写入但相同的设置保持幂等。
+      if (kind === "set_pet_activeness") {
         const actionScope = { workspaceId: args.workspaceId, userId: args.userId };
-        if (kind === "save_memory") {
-          const memoryKind = proposalPayload.memoryKind;
-          const content = proposalPayload.content;
-          if (
-            typeof memoryKind !== "string" ||
-            !(["preference", "goal", "learning_context", "interaction_note", "episodic"] as const).includes(memoryKind as MemoryKindV2) ||
-            typeof content !== "string" || content.length === 0
-          ) {
-            throw new CompanionConversationError("ACTION_STALE", 409, "memory payload is stale");
-          }
-          const saved = await upsertMemory(tx, actionScope, {
-            kind: memoryKind as MemoryKindV2,
-            content: content.slice(0, 200),
-            userStated: true,
-            candidate: false,
-            importance: 0.8,
-            confidence: 0.9,
-            scope: "workspace",
-            sourceType: "user_stated",
-          });
-          return succeedSyncProposal(tx, args.workspaceId, args.userId, proposal, keyHash, saved.memoryItemId, null, "已保存记忆");
-        }
         const activeness = proposalPayload.activeness;
         if (activeness !== "quiet" && activeness !== "moderate" && activeness !== "active") {
           throw new CompanionConversationError("ACTION_STALE", 409, "activeness payload is stale");
         }
-        const updated = await tx.execute<{ id: string }>(sql`
-          UPDATE pet_profiles
-          SET activeness = ${activeness}, revision = revision + 1, updated_at = now()
-          WHERE workspace_id = ${args.workspaceId}
-            AND user_id = ${args.userId}
-          RETURNING id
-        `);
-        if (updated.length === 0) {
+        const current = await getPetProfile(tx, actionScope);
+        if (!current) {
           throw new CompanionConversationError("NOT_FOUND", 404, "pet profile not found");
         }
-        return succeedSyncProposal(tx, args.workspaceId, args.userId, proposal, keyHash, null, null, "已更新伴星活跃度");
+        try {
+          await upsertPetProfile(tx, actionScope, {
+            revision: current.revision,
+            presetId: current.presetId,
+            name: current.name,
+            personalityTags: current.personalityTags,
+            speakingStyle: current.speakingStyle,
+            examples: current.examples,
+            activeness,
+            boundaries: current.boundaries,
+          }, new Date(), { author: "assistant_tool", reason: "Updated after an explicitly confirmed learning action." });
+        } catch (error) {
+          if (error instanceof PetProfileCasConflictError) {
+            throw new CompanionConversationError("ACTION_STALE", 409, "pet profile revision changed");
+          }
+          throw error;
+        }
+        return succeedSyncProposal(tx, args.workspaceId, args.userId, proposal, keyHash, null, null, "已更新伴星活跃度；下一次对话开始时生效");
       }
 
       throw new CompanionConversationError(
@@ -1347,124 +1311,7 @@ export async function decideCompanionProposal(args: {
   return result;
 }
 
-export function snapshotFor(
-  proposal: {
-    id: string;
-    status: string;
-    decision: string | null;
-    result_ref: string | null;
-    result_route: unknown;
-    result_safe_summary: string | null;
-    payload: { kind: string; [key: string]: unknown };
-  },
-): unknown {
-  const resultRoute = proposal.result_route == null
-    ? null
-    : typeof proposal.result_route === "string"
-      ? (() => {
-          try {
-            return JSON.parse(proposal.result_route) as Record<string, unknown>;
-          } catch {
-            return null;
-          }
-        })()
-      : proposal.result_route;
-  const route = proposal.status === "succeeded"
-    ? navigationRouteFor(proposal.payload.kind, proposal.payload)
-    : null;
-  return {
-    version: 1,
-    proposalId: proposal.id,
-    status: proposal.status === "accepted" ? "executing" : proposal.status,
-    resultRef: proposal.result_ref,
-    route: resultRoute ?? route?.route ?? null,
-    safeSummary: proposal.result_safe_summary ?? route?.safeSummary ?? null,
-  };
-}
 
-/** §6.6 reload/cursor-expired recovery for a synchronous proposal. */
-export async function getCompanionProposalSnapshot(args: {
-  workspaceId: string;
-  userId: string;
-  proposalId: string;
-}): Promise<{ statusCode: 200; body: unknown }> {
-  return withWorkspaceTransaction(
-    { workspaceId: args.workspaceId, userId: args.userId },
-    async (tx) => {
-      const rows = await tx.execute<{
-        id: string;
-        conversation_id: string;
-        source_message_id: string;
-        source_generation: number;
-        context_grant_id: string | null;
-        payload: unknown;
-        payload_sha256: string;
-        title: string;
-        target_summary: string;
-        impact_summary: string;
-        status: string;
-        decision: "confirm" | "reject" | null;
-        result_ref: string | null;
-        result_route: unknown;
-        result_safe_summary: string | null;
-        expires_at: Date;
-        decided_at: Date | null;
-        created_at: Date;
-        updated_at: Date;
-      }>(sql`
-        SELECT p.id, p.conversation_id, p.source_message_id, p.source_generation,
-               p.context_grant_id, p.payload, p.payload_sha256, p.title,
-               p.target_summary, p.impact_summary, p.status, p.decision,
-               p.result_ref, p.result_route, p.result_safe_summary,
-               p.expires_at, p.decided_at, p.created_at, p.updated_at
-        FROM companion_action_proposals p
-        WHERE p.id = ${args.proposalId}
-        LIMIT 1
-      `);
-      const row = rows[0];
-      if (!row) throw new CompanionConversationError("NOT_FOUND", 404, "proposal not found");
-      const parseObject = (value: unknown, field: string): Record<string, unknown> | null => {
-        const parsed = typeof value === "string"
-          ? (() => { try { return JSON.parse(value) as unknown; } catch { return null; } })()
-          : value;
-        if (parsed == null) return null;
-        if (typeof parsed !== "object" || Array.isArray(parsed)) {
-          throw new CompanionConversationError("INTERNAL_ERROR", 500, `invalid ${field}`);
-        }
-        return parsed as Record<string, unknown>;
-      };
-      try {
-        const body = companionProposalSnapshotV1Schema.parse({
-          version: 1,
-          proposal: {
-            version: 1,
-            proposalId: row.id,
-            conversationId: row.conversation_id,
-            sourceMessageId: row.source_message_id,
-            sourceGeneration: row.source_generation,
-            contextGrantId: row.context_grant_id,
-            payload: parseObject(row.payload, "proposal payload"),
-            payloadSha256: row.payload_sha256,
-            title: row.title,
-            targetSummary: row.target_summary,
-            impactSummary: row.impact_summary,
-            requiresConfirmation: true,
-            status: row.status,
-            decision: row.decision,
-            expiresAt: new Date(row.expires_at).toISOString(),
-            decidedAt: row.decided_at ? new Date(row.decided_at).toISOString() : null,
-            createdAt: new Date(row.created_at).toISOString(),
-            updatedAt: new Date(row.updated_at).toISOString(),
-          },
-        });
-        return { statusCode: 200 as const, body };
-      } catch (error) {
-        if (error instanceof CompanionConversationError) throw error;
-        throw new CompanionConversationError("INTERNAL_ERROR", 500, "invalid proposal snapshot");
-      }
-    },
-  );
-}
 
 /** §18 同步工具成功收尾：proposal → succeeded + decision 事件。 */
 /** 同步工具成功收尾后向 pet inbox 投递 action_result（§14.3）。 */
@@ -1513,66 +1360,9 @@ async function succeedSyncProposal(
   };
 }
 
-function navigationRouteFor(kind: string, payload: Record<string, unknown>): {
-  route: { kind: string; [k: string]: unknown };
-  safeSummary: string;
-} | null {
-  switch (kind) {
-    case "open_review":
-      return { route: { kind: "review" }, safeSummary: "打开复习页" };
-    case "open_card":
-      return typeof payload.cardId === "string" && typeof payload.objectiveId === "string"
-        ? {
-            route: {
-              kind: "card",
-              cardId: payload.cardId,
-              objectiveId: payload.objectiveId,
-            },
-            safeSummary: "打开卡片",
-          }
-        : null;
-    case "open_star_map":
-      return { route: { kind: "star_map", keyPointId: payload.keyPointId ?? undefined }, safeSummary: "打开星图" };
-    case "focus_graph_node":
-      return {
-        route: { kind: "star_map", keyPointId: payload.keyPointId, lens: payload.lens },
-        safeSummary: "聚焦知识节点",
-      };
-    case "restore_graph_viewport":
-      return { route: { kind: "star_map", restoreRun: payload.runId }, safeSummary: "恢复星图视口" };
-    case "open_conversation_history":
-      return {
-        route: { kind: "conversation" },
-        safeSummary: "打开对话历史",
-      };
-    default:
-      return null;
-  }
-}
 
-async function resolveNavigationRouteFor(
-  tx: ApiTransaction,
-  workspaceId: string,
-  kind: string,
-  payload: Record<string, unknown>,
-): Promise<ReturnType<typeof navigationRouteFor>> {
-  if (kind !== "open_card") return navigationRouteFor(kind, payload);
-  if (typeof payload.cardId !== "string") {
-    throw new CompanionConversationError("INVALID_REQUEST", 400, "cardId is required");
-  }
-  const rows = await tx.execute<{ objective_id: string }>(sql`
-    SELECT objective_id
-    FROM learning_cards_v2
-    WHERE workspace_id = ${workspaceId}
-      AND id = ${payload.cardId}
-    LIMIT 1
-  `);
-  const objectiveId = rows[0]?.objective_id;
-  if (!objectiveId) {
-    throw new CompanionConversationError("NOT_FOUND", 404, "card target no longer exists");
-  }
-  return navigationRouteFor(kind, { ...payload, objectiveId });
-}
+
+
 
 async function appendDecisionEvent(
   tx: { execute(q: unknown): Promise<unknown[] | unknown> },

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useRoomStore } from "../app/room-store";
 import type { RoomIntent } from "../app/room-machine";
 import { resolveSceneMotionMode } from "../scene/scene-motion";
+import { createDirectoryRailMotion, directoryBox } from "./directory-rail-motion";
 
 /** Mockup nav icon paths, copied from desktop-pages-v3 `mockup.html`. */
 const NAV_ICONS = {
@@ -143,81 +144,25 @@ function readRailLayout(rail: HTMLElement, collapsed: boolean): RailLayoutSnapsh
   };
 }
 
-function visualGhost(element: HTMLElement, box: LayoutBox): HTMLElement {
-  const clone = element.cloneNode(true) as HTMLElement;
-  const sourceNodes = [element, ...element.querySelectorAll<HTMLElement>("*")];
-  const cloneNodes = [clone, ...clone.querySelectorAll<HTMLElement>("*")];
-
-  sourceNodes.forEach((source, index) => {
-    const target = cloneNodes[index];
-    if (!target) return;
-    const computed = getComputedStyle(source);
-    for (let propertyIndex = 0; propertyIndex < computed.length; propertyIndex += 1) {
-      const property = computed.item(propertyIndex);
-      target.style.setProperty(property, computed.getPropertyValue(property), computed.getPropertyPriority(property));
-    }
-  });
-
-  clone.classList.add("nav-morph-ghost");
-  clone.setAttribute("aria-hidden", "true");
-  clone.setAttribute("inert", "");
-  Object.assign(clone.style, {
-    position: "fixed",
-    left: `${box.left}px`,
-    top: `${box.top}px`,
-    width: `${box.width}px`,
-    height: `${box.height}px`,
-    margin: "0",
-    zIndex: "999",
-    pointerEvents: "none",
-    transform: "none",
-    transformOrigin: "left bottom",
-    animation: "none",
-    transition: "none",
-    overflow: "hidden",
-    contain: "paint",
-  });
-  document.body.appendChild(clone);
-  return clone;
-}
-
 function trackAnimation(
   animation: Animation,
-  element: HTMLElement | SVGElement,
-  previousTransformOrigin: string,
   activeAnimations: Animation[],
-  afterCleanup?: () => void,
 ) {
-  const previousInlineStyles = {
-    transform: element.style.transform,
-    opacity: element.style.opacity,
-    clipPath: element.style.clipPath,
-  };
   activeAnimations.push(animation);
   let cleaned = false;
   const cleanup = () => {
     if (cleaned) return;
     cleaned = true;
-    element.style.transformOrigin = previousTransformOrigin;
-    element.style.transform = previousInlineStyles.transform;
-    element.style.opacity = previousInlineStyles.opacity;
-    element.style.clipPath = previousInlineStyles.clipPath;
     const index = activeAnimations.indexOf(animation);
     if (index >= 0) activeAnimations.splice(index, 1);
-    afterCleanup?.();
   };
   animation.oncancel = cleanup;
   animation.onfinish = () => {
-    // Commit the last frame before cancelling the WAAPI effect. Cancelling
-    // directly can expose one stale CSS frame at the exact moment the rail
-    // reaches its compact endpoint, which reads as a final flicker.
-    try {
-      (animation as Animation & { commitStyles?: () => void }).commitStyles?.();
-    } catch {
-      // Older Chromium builds may not expose commitStyles; the cleanup path
-      // still restores the authored styles below.
-    }
+    // WAAPI never changed inline styles. Release its identity end frame to the
+    // current owner (including an in-flight TaskSurface entrance), instead of
+    // writing back a stale transform captured before the rail toggle.
     animation.cancel();
+    cleanup();
   };
 }
 
@@ -240,7 +185,6 @@ function animateFlip(
     && Math.abs(scaleY - 1) < 0.005
   ) return;
 
-  const previousTransformOrigin = element.style.transformOrigin;
   const animation = element.animate(
     springFrames((progress) => {
       const rest = 1 - progress;
@@ -251,140 +195,7 @@ function animateFlip(
     }),
     { duration, easing: "linear", fill: "both" },
   );
-  trackAnimation(animation, element, previousTransformOrigin, activeAnimations);
-}
-
-function animateRailMorph(
-  ghost: HTMLElement | null,
-  rail: HTMLElement,
-  beforeRail: LayoutBox,
-  afterRail: LayoutBox,
-  before: RailLayoutSnapshot,
-  after: RailLayoutSnapshot,
-  motionMode: "full" | "lite" | "off",
-  activeAnimations: Animation[],
-) {
-  if (motionMode === "off" || before.collapsed === after.collapsed) {
-    ghost?.remove();
-    return;
-  }
-
-  const duration = motionMode === "full" ? 560 : 300;
-  if (ghost) {
-    // 收起时"小岛长出来"的进度与"整列被吃掉"的进度必须是同一条曲线。
-    // 分成两条时实测有 ~200ms 里上半截已经不画、小岛还停在 opacity 0（190ms 处
-    // 幽灵已被吃掉 60%，真目录栏 opacity 0.00），用户看到的不是收起动画而是闪一下。
-    const collapseReveal = (time: number) => springProgress(clamp01((time - 0.38) / 0.62), 5.8);
-    if (after.collapsed) {
-      const inset = Math.max(0, beforeRail.height - afterRail.height);
-      const translateX = afterRail.left - beforeRail.left;
-      const translateY = afterRail.bottom - beforeRail.bottom;
-      const scaleX = afterRail.width / beforeRail.width;
-      const oldAnimation = ghost.animate(
-        springFrames((_progress, time) => {
-          const reveal = collapseReveal(time);
-          return {
-            transformOrigin: "left bottom",
-            transform: `translate(${translateX * reveal}px, ${translateY * reveal}px) scaleX(${1 + (scaleX - 1) * reveal})`,
-            clipPath: `inset(${inset * reveal}px 0 0 0 round ${22 - 7 * reveal}px)`,
-            opacity: String(1 - clamp01((time - 0.7) / 0.3)),
-          };
-        },
-        42,
-      ),
-        { duration, easing: "linear", fill: "both" },
-      );
-      trackAnimation(oldAnimation, ghost, "left bottom", activeAnimations, () => ghost.remove());
-
-      const revealAnimation = rail.animate(
-        springFrames((_, time) => {
-          const reveal = collapseReveal(time);
-          return {
-            transformOrigin: "left bottom",
-            transform: `scale(${0.9 + 0.1 * reveal})`,
-            opacity: String(reveal),
-          };
-        }),
-        { duration, easing: "linear", fill: "both" },
-      );
-      trackAnimation(revealAnimation, rail, "left bottom", activeAnimations);
-    } else {
-      const inset = Math.max(0, afterRail.height - beforeRail.height);
-      const translateX = beforeRail.left - afterRail.left;
-      const translateY = beforeRail.bottom - afterRail.bottom;
-      const scaleX = beforeRail.width / afterRail.width;
-      const revealAnimation = rail.animate(
-        springFrames((progress) => {
-          const rest = 1 - progress;
-          return {
-            transformOrigin: "left bottom",
-            transform: `translate(${translateX * rest}px, ${translateY * rest}px) scaleX(${scaleX + (1 - scaleX) * progress})`,
-            clipPath: `inset(${inset * rest}px 0 0 0 round ${15 + 7 * progress}px)`,
-            opacity: String(0.72 + 0.28 * progress),
-          };
-        }),
-        { duration, easing: "linear", fill: "both" },
-      );
-      trackAnimation(revealAnimation, rail, "left bottom", activeAnimations);
-
-      const oldAnimation = ghost.animate(
-        springFrames((progress, time) => ({
-          opacity: String(1 - clamp01(time / 0.48)),
-          transformOrigin: "left bottom",
-          transform: `scale(${1 - 0.06 * progress})`,
-        }),
-        30,
-      ),
-        { duration: 360, easing: "linear", fill: "both" },
-      );
-      trackAnimation(oldAnimation, ghost, "left bottom", activeAnimations, () => ghost.remove());
-
-      const chips = [...rail.querySelectorAll<HTMLElement>(".nav-chip")];
-      chips.forEach((chip, index) => {
-        const delay = 70 + (chips.length - 1 - index) * 17;
-        const animation = chip.animate(
-          springFrames((progress) => ({
-            opacity: String(progress),
-            transform: `translateY(${8 * (1 - progress)}px)`,
-          }),
-          26,
-          6,
-        ),
-          { duration: 390, delay, easing: "linear", fill: "both" },
-        );
-        trackAnimation(animation, chip, "", activeAnimations);
-      });
-    }
-  }
-
-  for (const current of after.moving) {
-    if (current.element === rail) continue;
-    const previous = before.moving.find((item) => item.element === current.element);
-    if (!previous || typeof current.element.animate !== "function") continue;
-    animateFlip(
-      current.element,
-      previous.box,
-      current.box,
-      motionMode === "full" ? 520 : 280,
-      activeAnimations,
-    );
-  }
-
-  const arrow = rail.querySelector<SVGElement>(".nav-collapse svg");
-  if (arrow && typeof arrow.animate === "function") {
-    const animation = arrow.animate(
-      [
-        { transform: `rotate(${before.collapsed ? 180 : 0}deg)` },
-        { transform: `rotate(${after.collapsed ? 180 : 0}deg)` },
-      ],
-      {
-        duration: motionMode === "full" ? 480 : 240,
-        easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-        fill: "both",
-      },
-    );
-    trackAnimation(animation, arrow, "", activeAnimations);
-  }
+  trackAnimation(animation, activeAnimations);
 }
 
 function NavIcon({ id }: { readonly id: keyof typeof NAV_ICONS }) {
@@ -412,6 +223,8 @@ export function DirectoryRail({ readOnly = false }: { readonly readOnly?: boolea
   const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
   const railRef = useRef<HTMLElement>(null);
   const previousLayoutRef = useRef<RailLayoutSnapshot | null>(null);
+  const railMotionRef = useRef<ReturnType<typeof createDirectoryRailMotion> | null>(null);
+  if (!railMotionRef.current) railMotionRef.current = createDirectoryRailMotion();
   const activeAnimationsRef = useRef<Animation[]>([]);
   const collapsed = mode === "collapsed" || (mode === "auto" && autoCollapsed);
 
@@ -440,35 +253,30 @@ export function DirectoryRail({ readOnly = false }: { readonly readOnly?: boolea
     if (!app || !rail) return;
 
     const previousLayout = previousLayoutRef.current;
+    // Capture live presentation before cancelling: a reverse command must not
+    // restart from the last target's stored geometry.
+    const before = readRailLayout(rail, previousLayout?.collapsed ?? collapsed);
     const beforeRail = layoutBox(rail);
-    for (const animation of activeAnimationsRef.current) animation.cancel();
-    activeAnimationsRef.current = [];
-    document.querySelectorAll<HTMLElement>(".nav-morph-ghost").forEach((ghost) => ghost.remove());
+    const beforeButton = directoryBox(rail.querySelector(".nav-collapse")!);
     const shouldAnimate = Boolean(previousLayout)
       && motionMode !== "off"
       && previousLayout?.collapsed !== collapsed;
-    const ghost = shouldAnimate ? visualGhost(rail, beforeRail) : null;
+    railMotionRef.current?.prepare(rail, before.collapsed, shouldAnimate);
+    for (const animation of [...activeAnimationsRef.current]) animation.cancel();
+    activeAnimationsRef.current = [];
     app.dataset.directoryRail = collapsed ? "collapsed" : "expanded";
     app.dataset.directoryRailMode = mode;
-    // The ported V3.1 stylesheet drives the bottom-island morph from the same
-    // `nav-collapsed` class the mockup puts on `.scene`.
     app.classList.toggle("nav-collapsed", collapsed);
     const nextLayout = readRailLayout(rail, collapsed);
 
-    if (previousLayout) {
-      animateRailMorph(
-        ghost,
-        rail,
-        beforeRail,
-        layoutBox(rail),
-        previousLayout,
-        nextLayout,
-        motionMode,
-        activeAnimationsRef.current,
-      );
-    } else {
-      ghost?.remove();
-    }
+    if (shouldAnimate) {
+      railMotionRef.current?.run(rail, before.collapsed, collapsed, motionMode, beforeRail, beforeButton);
+      for (const current of nextLayout.moving) {
+        if (current.element === rail || typeof current.element.animate !== "function") continue;
+        const previous = before.moving.find(item => item.element === current.element);
+        if (previous) animateFlip(current.element, previous.box, current.box, motionMode === "full" ? 520 : 280, activeAnimationsRef.current);
+      }
+    } else railMotionRef.current?.finish();
     previousLayoutRef.current = nextLayout;
 
     try {
@@ -480,12 +288,13 @@ export function DirectoryRail({ readOnly = false }: { readonly readOnly?: boolea
     window.dispatchEvent(new CustomEvent(DIRECTORY_RAIL_STATE_EVENT, {
       detail: { collapsed, mode },
     }));
-  }, [collapsed, mode, motionMode]);
+  }, [collapsed, mode, motionMode, surface]);
 
   useEffect(() => {
     const app = document.querySelector<HTMLElement>(".desktop-app");
     return () => {
-      for (const animation of activeAnimationsRef.current) animation.cancel();
+      railMotionRef.current?.finish();
+      for (const animation of [...activeAnimationsRef.current]) animation.cancel();
       activeAnimationsRef.current = [];
       if (app) {
         delete app.dataset.directoryRail;
@@ -542,6 +351,8 @@ export function DirectoryRail({ readOnly = false }: { readonly readOnly?: boolea
             data-label={item.label}
             aria-label={item.label}
             aria-current={active ? "page" : undefined}
+            aria-hidden={collapsed || undefined}
+            tabIndex={collapsed ? -1 : undefined}
             title={collapsed ? item.label : undefined}
             disabled={readOnly}
             onClick={() => invoke(item.intent)}

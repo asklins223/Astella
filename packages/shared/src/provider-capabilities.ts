@@ -69,6 +69,25 @@ export interface ChatOptions {
    */
   tools?: AgentTurnRequest["tools"];
   toolChoice?: "auto" | "required";
+  /**
+   * 流中**已完整**的工具调用被观察到时回调（40b §4.1-1 / R7，验收 A58）。
+   *
+   * 触发条件是**可判定的**而非猜测：调用名已拿到，且 `arguments` 已经拼成一个
+   * 合法 JSON 对象。半截 JSON 即使恰好以 `}` 结尾也不算（见
+   * `stream-tool-call-accumulator.ts` 的单测）。
+   *
+   * 缺省不传 ⇒ provider 不做任何额外工作。**这是默认关闭的姿态**：R7 按 §4.3
+   * 是「无收益就撤回」的优化，开关留在调用方，不留在协议里。
+   *
+   * 回调**不得被 await**：它跑在 SSE 读取循环里，await 会把流停住。
+   * 调用方应当把派发排进一个并发队列，等这一轮流结束后再收结果。
+   */
+  onToolCallSettled?: (slot: {
+    index: number;
+    id: string;
+    name: string;
+    argsText: string;
+  }) => void;
 }
 
 /** Chat 调用结果 */

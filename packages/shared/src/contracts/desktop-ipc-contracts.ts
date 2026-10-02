@@ -1,3 +1,39 @@
+import {
+  type CompanionDiscoveryEntryV1,
+  type CompanionDiscoveryKind,
+  type CompanionDiscoverySource,
+  type CompanionDiscoveryVisibility,
+  companionDiscoveryBookV1Schema,
+} from "./companion-discovery-contracts.ts";
+
+export {
+  companionDiscoveryBookV1Schema,
+  companionDiscoveryEntryV1Schema,
+  COMPANION_DISCOVERY_KINDS,
+  COMPANION_DISCOVERY_SOURCES,
+  COMPANION_DISCOVERY_VISIBILITY,
+} from "./companion-discovery-contracts.ts";
+export type {
+  CompanionDiscoveryEntryV1,
+  CompanionDiscoveryKind,
+  CompanionDiscoverySource,
+  CompanionDiscoveryVisibility,
+} from "./companion-discovery-contracts.ts";
+
+/** §7 共用身份：(kind, source, sourceId)。笔记旁与发现簿问的是同一份。 */
+export interface DiscoveryIdentityV1 {
+  kind: CompanionDiscoveryKind;
+  source: CompanionDiscoverySource;
+  sourceId: string;
+}
+export interface DiscoveryCollectRequestV1 extends DiscoveryIdentityV1 {
+  author: "user" | "assistant";
+  body: string;
+  annotation?: string | null;
+  /** 缺省即 private（§7「私人内容默认不跨空间、跨成员展示」）。 */
+  visibility?: CompanionDiscoveryVisibility;
+}
+
 import { noteReflectionPageV1Schema, noteReflectionCommandV1Schema, noteReflectionWriteResultV1Schema } from "./note-learning-reflection-contracts.ts";
 import { noteAnnotationPageV1Schema, noteAnnotationCommandV1Schema, noteAnnotationWriteResultV1Schema, createNoteAnnotationTaskV1Schema, noteAnnotationLatestTaskQueryV1Schema, noteAnnotationLatestTaskV1Schema, noteAnnotationTaskV1Schema } from "./note-annotation-contracts.ts";
 import {
@@ -127,6 +163,8 @@ import {
 import {
   companionDailySummaryV1Schema,
   companionDailyMonthV1Schema,
+  companionDailyVisibilityV1Schema,
+  companionDailyDeleteV1Schema,
   companionActivityDeliveryV1Schema,
   companionActivityTimelineV1Schema,
   companionAuditDeleteResultV1Schema,
@@ -139,9 +177,15 @@ import {
   companionMemoryConflictListV1Schema,
   companionMemoryConflictResolveResultV1Schema,
   companionMemoryListV1Schema,
+  companionMemoryRevisionListV1Schema,
   companionMemoryQueueResultV1Schema,
   companionMemoryStarMapV2Schema,
   companionPersonaMutationV1Schema,
+  companionPersonaRestoreV1Schema,
+  companionPersonaStagedV1Schema,
+  companionPersonaPendingV1Schema,
+  companionPersonaActivatedV1Schema,
+  companionPersonaVersionListV1Schema,
   companionPersonaResetV1Schema,
   companionPersonaV1Schema,
   type CompanionMemoryListQuery,
@@ -247,7 +291,7 @@ export type {
 } from "./card-generation-desktop-contracts.ts";
 
 export const DESKTOP_IPC_CONTRACT_VERSION = "desktop-ipc-v1" as const;
-export const DESKTOP_IPC_SCHEMA_REVISION = "desktop-ipc-m2-2026-09-29" as const;
+export const DESKTOP_IPC_SCHEMA_REVISION = "desktop-ipc-m2-2026-10-02" as const;
 export const DESKTOP_API_SERVICE_ID = "ailearn-api" as const;
 /**
  * 书房静态资源的公共前缀。
@@ -336,8 +380,20 @@ export const DESKTOP_IPC_CHANNELS = {
   companionMemoryArchive: "ailearn.v1.companion.memory.archive",
   companionMemoryRestore: "ailearn.v1.companion.memory.restore",
   companionMemoryDelete: "ailearn.v1.companion.memory.delete",
+  // 40 §7 发现簿：读簿子、收藏、取消收藏、改批注、查某一份的收藏状态。
+  // 「取消收藏」单独一条而不是并进 delete —— 前者不动原始内容，后者进回收区。
+  companionDiscoveryGet: "ailearn.v1.companion.discovery.get",
+  companionDiscoveryCollect: "ailearn.v1.companion.discovery.collect",
+  companionDiscoveryUncollect: "ailearn.v1.companion.discovery.uncollect",
+  companionDiscoveryAnnotate: "ailearn.v1.companion.discovery.annotate",
+  companionDiscoveryState: "ailearn.v1.companion.discovery.state",
+  // 回收区两个：恢复（可逆）与彻底清除（不可逆）。与上面的 delete 是一对——
+  // delete 进回收区等 30 天，restoreDeleted 撤回，erase 是「现在就删干净」。
+  companionMemoryRestoreDeleted: "ailearn.v1.companion.memory.restore-deleted",
+  companionMemoryErase: "ailearn.v1.companion.memory.erase",
   companionMemoryCreate: "ailearn.v1.companion.memory.create",
   companionMemoryCorrect: "ailearn.v1.companion.memory.correct",
+  companionMemoryRevisions: "ailearn.v1.companion.memory.revisions",
   companionMemoryDismiss: "ailearn.v1.companion.memory.dismiss",
   companionMemoryConflicts: "ailearn.v1.companion.memory.conflicts",
   companionMemoryResolveConflict: "ailearn.v1.companion.memory.resolveConflict",
@@ -346,9 +402,20 @@ export const DESKTOP_IPC_CHANNELS = {
   companionMemorySummarizeRecent: "ailearn.v1.companion.memory.summarizeRecent",
   companionDailyGet: "ailearn.v1.companion.daily.get",
   companionDailyMonth: "ailearn.v1.companion.daily.month",
+  companionDailyHide: "ailearn.v1.companion.daily.hide",
+  companionDailyUnhide: "ailearn.v1.companion.daily.unhide",
+  companionDailyDelete: "ailearn.v1.companion.daily.delete",
   companionPersonaGet: "ailearn.v1.companion.persona.get",
   companionPersonaPatch: "ailearn.v1.companion.persona.patch",
   companionPersonaReset: "ailearn.v1.companion.persona.reset",
+  companionPersonaVersions: "ailearn.v1.companion.persona.versions",
+  companionPersonaRestore: "ailearn.v1.companion.persona.restore",
+  // 「排队 → 生效」两步（40 §4.8.4 / A50）。它们**不能**并进 patch：那一条立刻改
+  // 当前版本，而排队只写下内容、不动现在在用的那一版。把两步混成一步，
+  // 长会话里已经说过的话与正在生成的那句就会分属两个版本。
+  companionPersonaPending: "ailearn.v1.companion.persona.pending",
+  companionPersonaStage: "ailearn.v1.companion.persona.stage",
+  companionPersonaActivate: "ailearn.v1.companion.persona.activate",
   companionHistoryList: "ailearn.v1.companion.history.list",
   companionHistorySearch: "ailearn.v1.companion.history.search",
   companionHistoryClear: "ailearn.v1.companion.history.clear",
@@ -565,6 +632,7 @@ export const DESKTOP_IPC_CHANNELS = {
   workspaceAiAuditLog: "ailearn.v1.workspace.aiAuditLog",
   workspaceExport: "ailearn.v1.workspace.export",
   clipboardReadLinks: "ailearn.v1.clipboard.readLinks",
+  clipboardWriteText: "ailearn.v1.clipboard.writeText",
   shellOpenExternal: "ailearn.v1.shell.openExternal",
 } as const;
 
@@ -1221,6 +1289,14 @@ export const clipboardReadLinksResultSchema = z.strictObject({
   urls: z.array(z.string().min(1).max(MAX_CANDIDATE_LINK_LENGTH)).max(MAX_CANDIDATE_LINKS),
 });
 export type ClipboardReadLinksResult = z.infer<typeof clipboardReadLinksResultSchema>;
+
+export const clipboardWriteTextRequestV1Schema = z.strictObject({
+  text: z.string().min(1).max(1_000_000),
+});
+export type ClipboardWriteTextRequestV1 = z.infer<typeof clipboardWriteTextRequestV1Schema>;
+
+export const clipboardWriteTextResultV1Schema = z.strictObject({ written: z.literal(true) });
+export type ClipboardWriteTextResultV1 = z.infer<typeof clipboardWriteTextResultV1Schema>;
 
 /**
  * 「这条地址算不算一条能打开的网页链接」只在这里定义一次。
@@ -1989,16 +2065,12 @@ export const learningRoomManifestSchema = z
     id: nonEmptyStringSchema,
     canonicalMode: z.literal("2d"),
     basePath: z.literal(LEARNING_ROOM_ASSET_BASE_PATH),
+    // Scene families may reuse one registered room plate. Keys identify uses;
+    // each value still passes the same confined static-path validation.
     assets: z.record(nonEmptyStringSchema, staticAssetPathSchema).refine(
       (assets) => Object.keys(assets).length <= 512,
       "too many assets",
     ),
-  })
-  .superRefine((value, context) => {
-    const paths = Object.values(value.assets);
-    if (new Set(paths).size !== paths.length) {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ["assets"], message: "duplicate normalized asset path" });
-    }
   });
 export type LearningRoomManifestV1 = z.infer<typeof learningRoomManifestSchema>;
 
@@ -2125,6 +2197,7 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
    */
   readonly clipboard: {
     readLinks(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<ClipboardReadLinksResult>>;
+    writeText(input: { meta: RequestMetaV1; request: ClipboardWriteTextRequestV1 }): Promise<GatewayResultV1<ClipboardWriteTextResultV1>>;
   };
   /**
    * 把一条网页链接交给系统浏览器。**应用自己永远不导航出去**（`will-navigate` 仍拦外链），
@@ -2332,8 +2405,28 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
       restore(input: { meta: RequestMetaV1; memoryId: Uuid }): Promise<GatewayResultV1<z.infer<typeof companionMemoryItemV1Schema>>>;
       /** 候选记忆的「忽略」与已确认记忆的「删除」是同一个服务端动作。 */
       remove(input: { meta: RequestMetaV1; memoryId: Uuid }): Promise<GatewayResultV1<{ readonly memoryItemId: Uuid }>>;
+      /**
+       * 从 30 天回收区恢复。与 `restore` 的差别是**撤什么**：
+       * restore 撤归档，restoreDeleted 撤删除。
+       *
+       * 回 `null` 而不是记忆体：服务端返回 204，恢复后那一行的删除标记已变，
+       * 回一份旧快照会让面板短暂显示成"没恢复"。刷新列表是唯一正确口径。
+       */
+      restoreDeleted(input: { meta: RequestMetaV1; memoryId: Uuid }): Promise<GatewayResultV1<null>>;
+      // §7 发现簿。取消收藏回 `{ status }` 而不是回记忆体：服务端 204，
+      // 回旧快照会让面板短暂显示成"没取消"。
+      discovery: {
+        get(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionDiscoveryBookV1Schema>>>;
+        collect(input: { meta: RequestMetaV1; request: DiscoveryCollectRequestV1 }): Promise<GatewayResultV1<{ status: "collected" | "already_collected"; entry: CompanionDiscoveryEntryV1 }>>;
+        uncollect(input: { meta: RequestMetaV1; request: DiscoveryIdentityV1 }): Promise<GatewayResultV1<{ status: "uncollected" | "not_collected" }>>;
+        annotate(input: { meta: RequestMetaV1; request: { entryId: Uuid; annotation: string | null } }): Promise<GatewayResultV1<{ status: "annotated" }>>;
+        state(input: { meta: RequestMetaV1 } & DiscoveryIdentityV1): Promise<GatewayResultV1<{ collected: boolean; entryId: Uuid | null; annotation: string | null }>>;
+      };
+      /** 彻底清除，不可逆。给"现在就删干净"，不给撤销留位置。 */
+      erase(input: { meta: RequestMetaV1; memoryId: Uuid }): Promise<GatewayResultV1<null>>;
       create(input: { meta: RequestMetaV1; request: CompanionMemoryCreateInputV1 }): Promise<GatewayResultV1<z.infer<typeof companionMemoryItemV1Schema>>>;
       correct(input: { meta: RequestMetaV1; memoryId: Uuid; request: CompanionMemoryCorrectInputV1 }): Promise<GatewayResultV1<z.infer<typeof companionMemoryItemV1Schema>>>;
+      revisions(input: { meta: RequestMetaV1; memoryId: Uuid }): Promise<GatewayResultV1<z.infer<typeof companionMemoryRevisionListV1Schema>>>;
       dismiss(input: { meta: RequestMetaV1; memoryId: Uuid }): Promise<GatewayResultV1<z.infer<typeof companionMemoryItemV1Schema>>>;
       conflicts(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionMemoryConflictListV1Schema>>>;
       resolveConflict(input: { meta: RequestMetaV1; memoryId: Uuid; removeId: Uuid }): Promise<GatewayResultV1<z.infer<typeof companionMemoryConflictResolveResultV1Schema>>>;
@@ -2345,9 +2438,22 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
       get(input: { meta: RequestMetaV1; date?: string }): Promise<GatewayResultV1<z.infer<typeof companionDailySummaryV1Schema>>>;
       /** 月历标记用：某个月里她写过（或试过）哪几天。 */
       month(input: { meta: RequestMetaV1; month: string }): Promise<GatewayResultV1<z.infer<typeof companionDailyMonthV1Schema>>>;
+      /**
+       * 「隐藏日记」（40 §10）：从列表与主动推荐里移除，可从管理入口恢复。
+       *
+       * 与 delete 分开是合同要求的：隐藏**不删除内容，也不等于遗忘原事件**。
+       */
+      hide(input: { meta: RequestMetaV1; date: string }): Promise<GatewayResultV1<z.infer<typeof companionDailyVisibilityV1Schema>>>;
+      unhide(input: { meta: RequestMetaV1; date: string }): Promise<GatewayResultV1<z.infer<typeof companionDailyVisibilityV1Schema>>>;
+      /**
+       * 「删除日记」（§10/§11.1）：删作品 + 派生预览 + 摘录 + 仅由它产生的记忆。
+       * 原始聊天/学习事件不删除。删掉之后后台不再重写同一篇。
+       */
+      delete(input: { meta: RequestMetaV1; date: string }): Promise<GatewayResultV1<z.infer<typeof companionDailyDeleteV1Schema>>>;
     };
     readonly persona: {
       get(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionPersonaV1Schema>>>;
+      versions(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionPersonaVersionListV1Schema>>>;
       /**
        * 保存人格档案（PATCH /companion/pet-profile，revision CAS）。请求体是
        * **整套档案**：服务端不做字段级合并，`examples` / `boundaries` 省略即被
@@ -2357,8 +2463,22 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
         meta: RequestMetaV1;
         request: CompanionPersonaPatchV1;
       }): Promise<GatewayResultV1<z.infer<typeof companionPersonaMutationV1Schema>>>;
+      restore(input: { meta: RequestMetaV1; revision: number; currentRevision: number }): Promise<GatewayResultV1<z.infer<typeof companionPersonaRestoreV1Schema>>>;
       /** 恢复系统默认人格（POST /companion/pet-profile/reset）。 */
-      reset(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionPersonaResetV1Schema>>>;
+      reset(input: { meta: RequestMetaV1; revision: number }): Promise<GatewayResultV1<z.infer<typeof companionPersonaResetV1Schema>>>;
+      /**
+       * 「排队 → 生效」两步（40 §4.8.4 / A50「待生效版本可见」）。
+       *
+       * 与 `patch` 的差别就是合同那句话：「模型自改在下一次会话建立时生效；
+       * 用户直接纠正可从下一轮未开始的调用生效」。`stage` 写下内容但**不动当前
+       * 版本**，`activate` 才把它提升为当前。
+       */
+      pending(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionPersonaPendingV1Schema>>>;
+      stage(input: {
+        meta: RequestMetaV1;
+        request: CompanionPersonaPatchV1;
+      }): Promise<GatewayResultV1<z.infer<typeof companionPersonaStagedV1Schema>>>;
+      activate(input: { meta: RequestMetaV1; revision: number }): Promise<GatewayResultV1<z.infer<typeof companionPersonaActivatedV1Schema>>>;
     };
     /** 产品层唯一的连续历史；内部 conversation 分段不会跨过 IPC。 */
     readonly history: {

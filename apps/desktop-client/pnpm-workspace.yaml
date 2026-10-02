@@ -12,3 +12,6 @@ allowBuilds:
 # （pnpm 10 起 `overrides` 放这里，写在 package.json 的 `pnpm` 字段里会被**静默忽略**。）
 overrides:
   prosemirror-model: 1.25.11
+  # Milkdown and the source view must share CodeMirror's state/view class identities.
+  '@codemirror/state': 6.7.6
+  '@codemirror/view': 6.43.13

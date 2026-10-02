@@ -1,9 +1,8 @@
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import { HudRoomControl } from "./components/hud/HudRoomControl";
 import { RoomStage } from "./components/RoomStage";
 import { TaskSurface } from "./components/TaskSurface";
 import { SourceIntakeHost } from "./components/SourceIntake";
-import { RunRecoveryNotice } from "./components/RunRecoveryNotice";
 import { CompanionPresence } from "./components/companion/CompanionPresence";
 import { CompanionFeedMenu } from "./components/companion/CompanionFeedMenu";
 import { DesktopAccessGate } from "./components/DesktopAccessGate";
@@ -61,7 +60,9 @@ function hasOpenModal(): boolean {
   ));
 }
 
-export function RoomExperience() {
+// App publishes camera/transition attributes. Those phase-only commits need
+// not render the full room, its providers and the currently mounted paper.
+export const RoomExperience = memo(function RoomExperience() {
   const theme = useRoomStore((state) => state.theme);
   const surface = useRoomStore((state) => state.surface);
   const invoke = useRoomStore((state) => state.invoke);
@@ -120,10 +121,6 @@ export function RoomExperience() {
       <CompanionPresence />
       <CompanionFeedMenu />
       <DirectoryRail />
-      {/* 恢复横幅与首页是哪一版无关：它读的是房间投影里的在制 run / 生成批次，
-          自己会在有 surface 或首启引导开着时返回 null。以前它跟着 v1 走，
-          意味着一改成 v2 首页，"上一次生成没跑完"就再也没人说了。 */}
-      <RunRecoveryNotice />
       <HudRoomControl />
       {surface
         ? <HudReturn label={returnTarget?.label ?? "返回学习空间"} onReturn={returnTarget?.run ?? (() => invoke("home"))} />
@@ -137,7 +134,7 @@ export function RoomExperience() {
   );
 
   return <HomeV2Provider>{room}</HomeV2Provider>;
-}
+});
 
 export function App() {
   const theme = useRoomStore((state) => state.theme);

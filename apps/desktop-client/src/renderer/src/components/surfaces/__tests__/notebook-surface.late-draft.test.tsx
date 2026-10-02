@@ -201,13 +201,13 @@ describe("§16.39 迟到的那一发", () => {
    */
   it("轮次面板在**没有**迟到草稿时不显示那一行；有了才显示，且带两颗按钮", async () => {
     stubGateway("conflict");
-    useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, learningRoundId: ROUND_ID, mode: "read" } });
+    useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, learningRoundId: ROUND_ID, mode: "preview" } });
     render(<NotebookSurface />);
     // ⚠️ **先等这一页加载完**（`aria-busy` 落下），再谈那一行在不在。
     // 原先的写法是在 `waitFor` 的**第一次**回调里就查——那一刻投影还没回信，
     // 于是查的是一个 `aria-busy="true"` 的空壳。面板出不出来与这条断言无关。
     await waitFor(() => {
-      expect(document.querySelector(".notebook[aria-busy='true']")).toBeNull();
+      expect(document.querySelector(".notebook-workspace[aria-busy='true']")).toBeNull();
     });
     // 面板真的出来了，才轮到确认「留着」那一行不在。
     expect(document.querySelector(".round-desk")).not.toBeNull();

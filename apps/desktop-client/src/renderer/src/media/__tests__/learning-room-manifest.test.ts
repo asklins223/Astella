@@ -5,7 +5,6 @@ import sourceManifest from "../../../public/assets/learning-room/v1/manifest.jso
 import {
   mediaAssetUrl,
   parseLearningRoomManifest,
-  resolveDoorEntryAssetUrls,
 } from "../learning-room-manifest.ts";
 
 const rejectedRuntimeMedia = [
@@ -17,6 +16,25 @@ const rejectedRuntimeMedia = [
   "review-card-stand-v2.png",
 ] as const;
 
+/**
+ * 已退出的独立场景渲染包不再回到运行时。它与 taskPosters 登记的任务页原图
+ * 是两组素材；后者必须保留，不能借清理旧渲染包删除当前任务场景。
+ */
+const RETIRED_STUDY_POSTERS = [
+  "posters/room-day.webp",
+  "posters/room-night.webp",
+  "posters/study-seat-day-v2.png",
+  "posters/study-seat-night-v2.png",
+  "posters/review-seat-day-v1.png",
+  "posters/review-seat-night-v1.png",
+  "posters/search-reference-day-v1.png",
+  "posters/search-reference-night-v1.png",
+  "foreground/search-foreground-day-v1.png",
+  "foreground/search-foreground-night-v1.png",
+  "posters/login-entry/entry-door-closed-day-v1.png",
+  "posters/login-entry/entry-door-open-night-v1.png",
+] as const;
+
 describe("learning-room manifest boundary", () => {
   it("parses the richer source format and emits the flat M1 projection", () => {
     const manifest = parseLearningRoomManifest(sourceManifest);
@@ -25,35 +43,36 @@ describe("learning-room manifest boundary", () => {
     // `basePath` 一字不差，而后者跟的是 `public/assets/learning-room/v1/` 这个真实布局。
     expect(manifest.basePath).toBe("/assets/learning-room/v1");
     expect(manifest.normalized.version).toBe(1);
-    expect(manifest.normalized.assets["posters.day"]).toBe("posters/room-day.webp");
-    expect(manifest.reviewPosters.day.id).toBe("STATIC-REVIEW-SEAT-DAY-01");
-    expect(manifest.reviewPosters.night.id).toBe("STATIC-REVIEW-SEAT-NIGHT-01");
-    expect(manifest.entryPosters.closed.day.id).toBe("STATIC-LOGIN-ENTRY-CLOSED-DAY-01");
-    expect(manifest.entryPosters.open.night.id).toBe("STATIC-LOGIN-ENTRY-OPEN-NIGHT-01");
+    // 场景 → 底板是**两层**：RoomStage 的底层只有灯塔三张；各任务页自己那张场景底板
+    // 由 taskPosters 六族登记、由 hud-surface.css 的 `.task-surface--<页面族>` 铺图。
+    // 2026-10-01 我把这两层合成一层（删掉分族、RoomStage 按 viewPreset 换图），各任务页
+    // 因此全都没有原图。下面这两条断言就是防它再退化。
+    expect(manifest.normalized.assets["homeV2Posters.day"]).toBe("posters/home-v2/lighthouse/lighthouse-day-poster-v1.png");
+    expect(manifest.normalized.assets).not.toHaveProperty("seatPosters.day");
+    expect(manifest.normalized.assets).not.toHaveProperty("reviewPosters.day");
+    expect(manifest.normalized.assets).not.toHaveProperty("searchPosters.day");
+    for (const family of ["library", "writing", "workshop", "review", "observatory", "system"] as const) {
+      const pair = manifest.taskPosters[family];
+      expect(pair.day.path, `${family}.day 未登记`).toMatch(/^posters\/task-scenes\//);
+      expect(pair.night.path, `${family}.night 未登记`).toMatch(/^posters\/task-scenes\//);
+      expect(manifest.normalized.assets[`taskPosters.${family}.day`]).toBe(pair.day.path);
+      expect(manifest.normalized.assets[`taskPosters.${family}.night`]).toBe(pair.night.path);
+    }
+    expect(manifest.taskPosters.library.day.path).toBe("posters/task-scenes/library-day-v1.png");
+    expect(manifest.taskPosters.writing.night.path).toBe("posters/task-scenes/writing-night-v1.png");
+    expect(manifest.taskPosters.review.day.path).toBe("posters/task-scenes/review-day-v1.png");
+    expect(manifest.taskPosters.observatory.day.path).toBe("posters/task-scenes/observatory-night-open-v3.png");
+    expect(manifest.taskPosters.system.day.path).toBe("posters/task-scenes/companion-system-day-v1.png");
     expect(manifest.authPosters.day.id).toBe("STATIC-AUTH-ALCOVE-DAY-01");
     expect(manifest.authPosters.dusk.id).toBe("STATIC-AUTH-ALCOVE-DUSK-01");
     expect(manifest.registerPosters.night.id).toBe("STATIC-AUTH-REGISTER-NIGHT-01");
     expect(manifest.registerPosters.dusk.id).toBe("STATIC-AUTH-REGISTER-DUSK-01");
-    expect(manifest.normalized.assets["entryPosters.closed.day"]).toBe("posters/login-entry/entry-door-closed-day-v1.png");
-    expect(manifest.normalized.assets["entryPosters.open.night"]).toBe("posters/login-entry/entry-door-open-night-v1.png");
     expect(manifest.normalized.assets["authPosters.day"]).toBe("posters/auth-alcove/auth-alcove-day-v1.png");
     expect(manifest.normalized.assets["authPosters.dusk"]).toBe("posters/auth-alcove/auth-alcove-dusk-v1.png");
     expect(manifest.normalized.assets["authPosters.night"]).toBe("posters/auth-alcove/auth-alcove-night-v1.png");
     expect(manifest.normalized.assets["registerPosters.day"]).toBe("posters/auth-register/register-worktable-day-v1.png");
     expect(manifest.normalized.assets["registerPosters.dusk"]).toBe("posters/auth-register/register-worktable-dusk-v1.png");
     expect(manifest.normalized.assets["registerPosters.night"]).toBe("posters/auth-register/register-worktable-night-v1.png");
-    expect(manifest.normalized.assets["objects.loginDoorSlabDay"]).toBe("objects/login-entry/door-slab-day-v2.png");
-    expect(manifest.normalized.assets["objects.loginDoorSlabNight"]).toBe("objects/login-entry/door-slab-night-v2.png");
-    expect(manifest.searchPosters.day.id).toBe("STATIC-SEARCH-REFERENCE-DAY-01");
-    expect(manifest.searchPosters.night.id).toBe("STATIC-SEARCH-REFERENCE-NIGHT-01");
-    expect(manifest.normalized.assets["searchPosters.day"]).toBe("posters/search-reference-day-v1.png");
-    expect(manifest.normalized.assets["searchPosters.night"]).toBe("posters/search-reference-night-v1.png");
-    expect(manifest.searchForeground.day.id).toBe("STATIC-SEARCH-FOREGROUND-DAY-01");
-    expect(manifest.searchForeground.night.id).toBe("STATIC-SEARCH-FOREGROUND-NIGHT-01");
-    expect(manifest.normalized.assets["searchForeground.day"]).toBe("foreground/search-foreground-day-v1.png");
-    expect(manifest.normalized.assets["searchForeground.night"]).toBe("foreground/search-foreground-night-v1.png");
-    expect(manifest.normalized.assets["reviewPosters.day"]).toBe("posters/review-seat-day-v1.png");
-    expect(manifest.normalized.assets["reviewPosters.night"]).toBe("posters/review-seat-night-v1.png");
     expect(manifest.roomLayers).toHaveLength(39);
     expect(new Set(manifest.roomLayers.map((layer) => layer.theme))).toEqual(new Set(["day", "dusk", "night"]));
     expect(new Set(manifest.roomLayers.filter((layer) => layer.theme === "day").map((layer) => layer.depth))).toEqual(
@@ -72,13 +91,52 @@ describe("learning-room manifest boundary", () => {
     expect(manifest.normalized.assets["homeV2Posters.dusk"]).toBe(
       "posters/home-v2/lighthouse/lighthouse-dusk-poster-v1.png",
     );
-    expect(manifest.normalized.assets["window.mask"]).toBe("masks/window-glass-mask-v1.svg");
-    expect(manifest.graph.motionImplementation).toBe("code");
-    expect(manifest.validation.motionImplementation).toBe("code");
-    expect(manifest.normalized.assets).not.toHaveProperty("graph.motion");
-    expect(manifest.normalized.assets).not.toHaveProperty("validation.motion");
+    expect(manifest.normalized.assets["homeV2Posters.night"]).toBe(
+      "posters/home-v2/lighthouse/lighthouse-night-poster-v1.png",
+    );
     for (const rejectedName of rejectedRuntimeMedia) {
       expect(Object.values(manifest.normalized.assets).some((assetPath) => assetPath.endsWith(rejectedName))).toBe(false);
+    }
+  });
+
+  it("registers home and task scene originals without the retired renderer pack", () => {
+    const manifest = parseLearningRoomManifest(sourceManifest);
+    const registered = Object.values(manifest.normalized.assets);
+
+    // 正控制：灯塔底板与 39 层分层素材**确实**登记在册，所以下面那条否定断言不是空转。
+    expect(manifest.normalized.assets["homeV2Posters.day"]).toBe(
+      "posters/home-v2/lighthouse/lighthouse-day-poster-v1.png",
+    );
+    expect(manifest.normalized.assets["roomLayers.0"]).toBe(
+      "layers/home-v2/lighthouse/lighthouse-day-d0-v1.png",
+    );
+    expect(manifest.roomLayers.length).toBeGreaterThan(0);
+    for (const [family, posters] of Object.entries(manifest.taskPosters)) {
+      for (const theme of ["day", "night"] as const) {
+        expect(manifest.normalized.assets[`taskPosters.${family}.${theme}`]).toBe(posters[theme].path);
+        expect(posters[theme].path).toMatch(/^posters\/task-scenes\//);
+      }
+    }
+
+    for (const retiredPath of RETIRED_STUDY_POSTERS) {
+      expect(registered).not.toContain(retiredPath);
+    }
+    // 旧书房的其它静态资源入口整条退场，一个键都不许留在 schema 上。
+    for (const retiredKey of [
+      "posters.day",
+      "seatPosters.day",
+      "searchPosters.day",
+      "reviewPosters.day",
+      "searchForeground.day",
+      "entryPosters.closed.day",
+      "window.mask",
+      "onboarding",
+      "graph.poster",
+      "sound.ambientDay",
+      "objects.desk",
+      "textures.notebook",
+    ]) {
+      expect(manifest.normalized.assets).not.toHaveProperty(retiredKey);
     }
   });
 
@@ -87,22 +145,17 @@ describe("learning-room manifest boundary", () => {
     withUnknown.unregistered = true;
     expect(() => parseLearningRoomManifest(withUnknown)).toThrow();
 
-    const withUnknownReviewPoster = JSON.parse(JSON.stringify(sourceManifest)) as {
-      reviewPosters: Record<string, unknown>;
+    const withUnknownAuthPoster = JSON.parse(JSON.stringify(sourceManifest)) as {
+      authPosters: Record<string, unknown>;
     };
-    withUnknownReviewPoster.reviewPosters.extra = true;
-    expect(() => parseLearningRoomManifest(withUnknownReviewPoster)).toThrow();
+    withUnknownAuthPoster.authPosters.extra = true;
+    expect(() => parseLearningRoomManifest(withUnknownAuthPoster)).toThrow();
 
-    const withUnknownSearchPoster = JSON.parse(JSON.stringify(sourceManifest)) as {
-      searchPosters: Record<string, unknown>;
-    };
-    withUnknownSearchPoster.searchPosters.extra = true;
-    expect(() => parseLearningRoomManifest(withUnknownSearchPoster)).toThrow();
-
+    // `window.mask` 这条遍历路径的载体已随旧书房删除，改由分层素材的 `path` 承担同一判据。
     const withTraversal = JSON.parse(JSON.stringify(sourceManifest)) as {
-      window: { mask: string };
+      roomLayers: { path: string }[];
     };
-    withTraversal.window.mask = "../outside.svg";
+    withTraversal.roomLayers[0].path = "../outside.png";
     expect(() => parseLearningRoomManifest(withTraversal)).toThrow();
   });
 
@@ -263,20 +316,20 @@ describe("learning-room manifest boundary", () => {
 
   it("only builds fixed same-origin asset URLs", () => {
     const manifest = parseLearningRoomManifest(sourceManifest);
-    expect(mediaAssetUrl(manifest, manifest.posters.day.path)).toBe(
-      "/assets/learning-room/v1/posters/room-day.webp",
+    expect(mediaAssetUrl(manifest, manifest.homeV2Posters.day.path)).toBe(
+      "/assets/learning-room/v1/posters/home-v2/lighthouse/lighthouse-day-poster-v1.png",
     );
-    expect(mediaAssetUrl(manifest, manifest.reviewPosters.day.path)).toBe(
-      "/assets/learning-room/v1/posters/review-seat-day-v1.png",
+    expect(mediaAssetUrl(manifest, manifest.taskPosters.writing.day.path)).toBe(
+      "/assets/learning-room/v1/posters/task-scenes/writing-day-v1.png",
     );
-    expect(mediaAssetUrl(manifest, manifest.entryPosters.open.day.path)).toBe(
-      "/assets/learning-room/v1/posters/login-entry/entry-door-open-day-v1.png",
+    expect(mediaAssetUrl(manifest, manifest.taskPosters.review.night.path)).toBe(
+      "/assets/learning-room/v1/posters/task-scenes/review-night-v1.png",
     );
-    expect(mediaAssetUrl(manifest, manifest.searchPosters.day.path)).toBe(
-      "/assets/learning-room/v1/posters/search-reference-day-v1.png",
+    expect(mediaAssetUrl(manifest, manifest.authPosters.day.path)).toBe(
+      "/assets/learning-room/v1/posters/auth-alcove/auth-alcove-day-v1.png",
     );
-    expect(mediaAssetUrl(manifest, manifest.searchForeground.day.path)).toBe(
-      "/assets/learning-room/v1/foreground/search-foreground-day-v1.png",
+    expect(mediaAssetUrl(manifest, manifest.roomLayers[0].path)).toBe(
+      "/assets/learning-room/v1/layers/home-v2/lighthouse/lighthouse-day-d0-v1.png",
     );
     expect(() => mediaAssetUrl(manifest, "https://example.com/asset.webp")).toThrow();
     expect(() => mediaAssetUrl(manifest, "unregistered.webp")).toThrow();
@@ -307,18 +360,5 @@ describe("learning-room manifest boundary", () => {
       const rgbaBytes = layers.reduce((sum, layer) => sum + layer.sourceSize.width * layer.sourceSize.height * 4, 0);
       expect(rgbaBytes).toBeLessThanOrEqual(48 * 1024 * 1024);
     }
-  });
-
-  it("resolves the door transition from canonical manifest records", () => {
-    const manifest = parseLearningRoomManifest(sourceManifest);
-
-    expect(resolveDoorEntryAssetUrls(manifest, "day")).toEqual({
-      closed: "/assets/learning-room/v1/posters/login-entry/entry-door-closed-day-v1.png",
-      home: "/assets/learning-room/v1/posters/room-day.webp",
-    });
-    expect(resolveDoorEntryAssetUrls(manifest, "night")).toEqual({
-      closed: "/assets/learning-room/v1/posters/login-entry/entry-door-closed-night-v1.png",
-      home: "/assets/learning-room/v1/posters/room-night.webp",
-    });
   });
 });

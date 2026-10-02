@@ -120,7 +120,7 @@ function noteDocResult(update: string) {
 }
 
 async function renderEditor() {
-  useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "edit" } });
+  useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "live-preview" } });
   vi.useFakeTimers();
   render(<NotebookSurface />);
   // 数据加载与 Milkdown 的异步创建都要靠推进假时钟来冲洗微任务。

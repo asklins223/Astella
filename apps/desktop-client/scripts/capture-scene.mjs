@@ -1243,6 +1243,9 @@ try {
       canvasLayerAudit,
       canvasLayerAuditValid,
       frameCanvasActive: frame?.getAttribute('data-scene-room-canvas-active') === 'true',
+      // 2026-10-01：Pixi 房间渲染切片整条删除后 `data-scene-room-canvas-active`
+      // 这个属性也已从 RoomStage 上撤掉。这里保留读取（读不到就是 null / false），
+      // 好让旧的 room-renderer-contract.json 仍然可比；不要在属性没恢复前改判据。
       domRenderer: frame?.getAttribute('data-scene-renderer') ?? null,
       homePosterOpacity: homeImages.map((image) => Number.parseFloat(getComputedStyle(image).opacity)),
       canvasPointerEvents: canvasHost instanceof HTMLElement ? getComputedStyle(canvasHost).pointerEvents : null,
@@ -1300,9 +1303,8 @@ try {
 
   const seatSceneContract = await window.evaluate(() => {
     const homeDay = document.querySelector('.room-backplate--home-day')
+    const homeDusk = document.querySelector('.room-backplate--home-dusk')
     const homeNight = document.querySelector('.room-backplate--home-night')
-    const seatDay = document.querySelector('.room-backplate--seat-day')
-    const seatNight = document.querySelector('.room-backplate--seat-night')
     const atmosphere = document.querySelector('.window-atmosphere')
     const frame = document.querySelector('.room-reference-frame')
     const depthRoot = document.querySelector('[data-scene-depth-root="room"]')
@@ -1312,9 +1314,8 @@ try {
     const sceneAnchors = [...document.querySelectorAll('[data-scene-anchor]')].map((anchor) => anchor.getAttribute('data-scene-anchor'))
     return {
       homeDayPath: homeDay?.getAttribute('src'),
+      homeDuskPath: homeDusk?.getAttribute('src'),
       homeNightPath: homeNight?.getAttribute('src'),
-      seatDayPath: seatDay?.getAttribute('src'),
-      seatNightPath: seatNight?.getAttribute('src'),
       atmospherePresent: atmosphere instanceof HTMLElement,
       homeWindowMedia: document.querySelectorAll('.window-ambient-video').length,
       legacySurfaceWorld: document.querySelectorAll('.surface-world').length,
@@ -1325,11 +1326,13 @@ try {
       sceneAnchors,
     }
   })
+  // 2026-10-01：旧书房的 seat / search / review 三套底板随资源整条删除，房间背景现在
+  // **只有**灯塔书房的 day / dusk / night 三张，首页与所有任务页共用。所以判据从
+  // 「首页挂旧房 + 任务页挂 seat」改成「三张灯塔都在，且旧底板一个都不在」。
   if (
-    !seatSceneContract.homeDayPath?.includes('room-day.webp')
-    || !seatSceneContract.homeNightPath?.includes('room-night.webp')
-    || !seatSceneContract.seatDayPath?.includes('study-seat-day-v2.png')
-    || !seatSceneContract.seatNightPath?.includes('study-seat-night-v2.png')
+    !seatSceneContract.homeDayPath?.includes('lighthouse-day-poster-v1.png')
+    || !seatSceneContract.homeDuskPath?.includes('lighthouse-dusk-poster-v1.png')
+    || !seatSceneContract.homeNightPath?.includes('lighthouse-night-poster-v1.png')
     || !seatSceneContract.atmospherePresent
     || seatSceneContract.homeWindowMedia !== 0
     || seatSceneContract.legacySurfaceWorld !== 0
@@ -1339,7 +1342,7 @@ try {
     || JSON.stringify(seatSceneContract.depthBands) !== JSON.stringify(['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6'])
     || !['room.notebook', 'room.review', 'room.lamp', 'room.search', 'room.graph'].every((anchor) => seatSceneContract.sceneAnchors.includes(anchor))
   ) {
-    throw new Error(`Overview-to-seat scene contract drifted: ${JSON.stringify(seatSceneContract)}`)
+    throw new Error(`Lighthouse room scene contract drifted: ${JSON.stringify(seatSceneContract)}`)
   }
 
   const homeExperienceContract = await window.evaluate(() => {
@@ -1443,11 +1446,9 @@ try {
   const catalogModalContract = await window.evaluate(() => {
     const catalog = document.querySelector('.home-catalog')
     const header = catalog?.querySelector('.home-catalog__header')
-    const recovery = catalog?.querySelector('details.home-recovery')
-    if (recovery instanceof HTMLDetailsElement) recovery.open = true
-    const recoveryStack = recovery?.querySelector('.run-recovery-stack')
-    const recoveryCopy = recovery?.querySelector('.run-recovery-notice__copy strong')
-    const recoverySecondary = recovery?.querySelector('.run-recovery-notice__secondary')
+    // `.home-recovery` 那张 V1 首页恢复浮层已于 2026-10-01 随 RunRecoveryNotice 删除，
+    // 目录契约里对它的三处 DOM 读数（recoveryStack / recoveryCopy / recoverySecondary）
+    // 一并撤掉——留着它们只会让这条契约永远读到 null 却看不出来。
     const background = [
       document.querySelector('.scene-stage'),
       document.querySelector('.companion-presence'),
@@ -2386,7 +2387,7 @@ try {
   if (reducedMedia !== 0) throw new Error('Reduced motion still mounted ambient video')
   // 唯一形态：reduced motion 只暂停 ticker 并保留最后一帧，不得切换到别的 renderer。
   if (await window.locator('.window-live2d[data-companion-renderer="live2d"]').count() !== 1) throw new Error('Reduced motion did not keep the Live2D renderer (no orb fallback exists)')
-  const reducedAnimatedNodes = await window.locator('.scene-status, .run-recovery-notice, .run-spinner, .run-phase__dot').evaluateAll((elements) => elements
+  const reducedAnimatedNodes = await window.locator('.scene-status, .run-spinner, .run-phase__dot').evaluateAll((elements) => elements
     .map((element) => ({
       className: element.className,
       animationName: getComputedStyle(element).animationName,

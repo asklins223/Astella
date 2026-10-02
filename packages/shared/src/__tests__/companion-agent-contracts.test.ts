@@ -127,6 +127,32 @@ test("Auto-set / auto-fill 工具按权限分级走确认或直执行（2026-09-
     true,
   );
   assert.equal(
+    validateCompanionAgentToolArguments("companion_save_memory", {
+      kind: "goal",
+      content: "复习完数据库索引",
+      sourceQuote: "准备期中考试时复习数据库索引，并在 2026-10-15T17:00:00+08:00 前完成",
+      appliesWhen: "准备期中考试时",
+      validUntil: "2026-10-15T17:00:00+08:00",
+    }).success,
+    true,
+  );
+  assert.equal(
+    validateCompanionAgentToolArguments("companion_save_memory", {
+      kind: "goal",
+      content: "下周完成数据库索引复习",
+      validUntil: "下周",
+    }).success,
+    false,
+  );
+  assert.equal(
+    validateCompanionAgentToolArguments("companion_save_memory", {
+      kind: "goal",
+      content: "复习完数据库索引",
+      validUntil: "2026-10-15T17:00:00+08:00",
+    }).success,
+    false,
+  );
+  assert.equal(
     validateCompanionAgentToolArguments("companion_save_memory", { kind: "not_a_kind", content: "x" }).success,
     false,
   );
@@ -137,11 +163,97 @@ test("Auto-set / auto-fill 工具按权限分级走确认或直执行（2026-09-
   assert.equal(validateCompanionAgentToolArguments("companion_set_activeness", { activeness: "active" }).success, true);
   assert.equal(validateCompanionAgentToolArguments("companion_set_activeness", { activeness: "loud" }).success, false);
 
+  const revise = getCompanionAgentTool("companion_revise_memory");
+  assert.ok(revise, "显式纠正必须有独立的修订工具");
+  assert.equal(revise.riskClass, "reversible_low");
+  assert.equal(revise.requiresConfirmation, true);
+  assert.equal(canUseCompanionAgentTool("read_only", revise).allowed, false);
+  assert.equal(canUseCompanionAgentTool("guided", revise).requiresConfirmation, true);
+  assert.equal(canUseCompanionAgentTool("full", revise).requiresConfirmation, false);
+  assert.equal(validateCompanionAgentToolArguments("companion_revise_memory", {
+    memoryId: "123e4567-e89b-12d3-a456-426614174000",
+    expectedRevision: 2,
+    content: "周末更适合上午学习",
+    appliesWhen: "周末",
+  }).success, true);
+  assert.equal(validateCompanionAgentToolArguments("companion_revise_memory", {
+    memoryId: "123e4567-e89b-12d3-a456-426614174000",
+    expectedRevision: 0,
+    content: "周末更适合上午学习",
+  }).success, false);
+  assert.equal(validateCompanionAgentToolArguments("companion_revise_memory", {
+    memoryId: "123e4567-e89b-12d3-a456-426614174000",
+    expectedRevision: 2,
+    content: "x".repeat(201),
+  }).success, false);
+
   // 记忆类工具在扁平面上每轮都在——它们曾经挂在 companion-memory 技能下，
   // 关键词没命中就根本不出现在她面前（方案 29 §4.1）。
   const guided = resolveAllCompanionAgentTools("guided").map((definition) => definition.name);
   assert.ok(guided.includes("companion_save_memory"));
+  assert.ok(guided.includes("companion_revise_memory"));
   assert.ok(guided.includes("companion_set_activeness"));
+  assert.ok(guided.includes("companion_read_memory"));
+});
+
+test("记忆容量移动是明确请求的可逆写入，并严格校验目标层", () => {
+  const recall = getCompanionAgentTool("companion_recall_memory");
+  const read = getCompanionAgentTool("companion_read_memory");
+  const move = getCompanionAgentTool("companion_move_memory");
+  assert.ok(recall);
+  assert.ok(read);
+  assert.ok(move);
+  assert.equal(read.riskClass, "read");
+  assert.equal(read.requiresConfirmation, false);
+  assert.equal(canUseCompanionAgentTool("read_only", read).allowed, true);
+  assert.equal(move.riskClass, "reversible_low");
+  assert.equal(move.requiresConfirmation, false);
+  assert.equal(canUseCompanionAgentTool("read_only", move).allowed, false);
+  assert.equal(canUseCompanionAgentTool("guided", move).allowed, true);
+  assert.equal(canUseCompanionAgentTool("full", move).requiresConfirmation, false);
+
+  const memoryId = "123e4567-e89b-12d3-a456-426614174000";
+  assert.equal(validateCompanionAgentToolArguments("companion_recall_memory", {
+    query: "学习偏好",
+    includeShown: true,
+  }).success, true);
+  assert.equal(validateCompanionAgentToolArguments("companion_read_memory", {
+    memoryId,
+    expectedRevision: 4,
+  }).success, true);
+  assert.equal(validateCompanionAgentToolArguments("companion_read_memory", {
+    memoryId,
+  }).success, false);
+  assert.equal(validateCompanionAgentToolArguments("companion_read_memory", {
+    memoryId,
+    expectedRevision: 0,
+  }).success, false);
+  assert.equal(validateCompanionAgentToolArguments("companion_read_memory", {
+    memoryId,
+    expectedRevision: 4,
+    extra: true,
+  }).success, false);
+  assert.equal(validateCompanionAgentToolArguments("companion_recall_memory", {
+    query: "上学期说过的事",
+    includeArchived: true,
+  }).success, true);
+  assert.equal(validateCompanionAgentToolArguments("companion_recall_memory", {
+    query: "上学期说过的事",
+    includeArchived: "yes",
+  }).success, false);
+  assert.equal(validateCompanionAgentToolArguments("companion_recall_memory", {
+    query: "学习偏好",
+    includeShown: true,
+    extra: true,
+  }).success, false);
+  for (const tier of ["resident", "active", "archived"]) {
+    assert.equal(validateCompanionAgentToolArguments("companion_move_memory", { memoryId, tier }).success, true);
+  }
+  assert.equal(validateCompanionAgentToolArguments("companion_move_memory", { memoryId, tier: "pinned" }).success, false);
+  assert.equal(validateCompanionAgentToolArguments("companion_move_memory", { memoryId: "not-a-uuid", tier: "active" }).success, false);
+  assert.equal(validateCompanionAgentToolArguments("companion_move_memory", { memoryId, tier: "active", extra: true }).success, false);
+  assert.ok(resolveAllCompanionAgentTools("guided").some((definition) => definition.name === "companion_move_memory"));
+  assert.ok(!resolveAllCompanionAgentTools("read_only").some((definition) => definition.name === "companion_move_memory"));
 });
 
 test("Agent SSE event schemas expose only safe tool metadata", () => {
@@ -155,6 +267,15 @@ test("Agent SSE event schemas expose only safe tool metadata", () => {
     status: "succeeded",
     safeLabel: tool.description,
     route: { kind: "review" },
+  }).success, true);
+  assert.equal(companionAgentToolEventV1Schema.safeParse({
+    toolCallId: "call-unknown-outcome",
+    name: tool.name,
+    toolVersion: tool.toolVersion,
+    riskClass: tool.riskClass,
+    status: "outcome_unknown",
+    safeLabel: tool.description,
+    safeSummary: "操作可能已发生，当前没有确定回执。",
   }).success, true);
   // `agent.skill` 这个 SSE 事件类型已随技能层删除：现在每轮工具面是固定的
   // （只按权限档过滤），"选中了哪个技能"再也不是一个需要广播的事实。

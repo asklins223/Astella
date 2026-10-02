@@ -53,11 +53,41 @@ describe("companion agent node stream", () => {
     expect(nodes[0]).toMatchObject({ kind: "acting", label: "我去翻一下你的笔记" });
   });
 
-  it("maps protocol states onto the five rail visuals", () => {
+  it("maps protocol states onto the rail visuals while preserving unknown outcomes", () => {
     expect(fold([tool("blocked")])[0].state).toBe("failed");
+    expect(fold([tool("outcome_unknown", { safeSummary: "结果还没法确认" })])[0]).toMatchObject({
+      state: "outcome_unknown",
+      summary: "结果还没法确认",
+    });
     expect(fold([tool("expired")])[0].state).toBe("cancelled");
     expect(fold([tool("waiting_confirmation")])[0].state).toBe("waiting_confirmation");
     expect(fold([tool("requested")])[0].state).toBe("running");
+    expect(fold([tool("executing")])[0].state).toBe("running");
+  });
+
+  it("fails closed for missing, future, or inherited status names", () => {
+    const missingStatus = {
+      eventType: "agent.tool",
+      payload: {
+        tool: {
+          toolCallId: "call-missing-status",
+          name: "companion_schedule_reminder",
+          safeLabel: "正在记下这个提醒",
+        },
+      },
+    };
+    for (const event of [
+      tool("future_status"),
+      tool("toString"),
+      missingStatus,
+    ]) {
+      const [node] = fold([event]);
+      expect(node.state).toBe("outcome_unknown");
+      expect(node.summary).toMatch(/结果待核对/);
+      expect(node.summary).toMatch(/不要重复操作/);
+    }
+
+    // Positive control: an explicitly recognized live state still renders as active.
     expect(fold([tool("executing")])[0].state).toBe("running");
   });
 

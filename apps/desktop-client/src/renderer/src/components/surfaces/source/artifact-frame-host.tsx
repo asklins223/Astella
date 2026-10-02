@@ -48,20 +48,29 @@ const MAX_FRAME_ATTEMPTS = 2;
  *
  * 下限：一份讲解再短也有一屏标题加一行读数，低于这个数说明量到的是还没排完的半张，
  * 照着它定高会得到一个空框。
- * 上限：静态分镜（减少动效）铺开 N 步后可能到几千像素；父侧不无限长成一个长条，
- * 超过上限就由**外层**滚动——滚动条落在宿主这一层，产物内部永远不滚。
+ * 长内容按实际高度铺进页面的滚区；超过资源预算时改读文字等价，不再嵌套滚区。
  */
 const ARTIFACT_MIN_HEIGHT_PX = 180;
-const ARTIFACT_MAX_HEIGHT_PX = 1_600;
+const ARTIFACT_MAX_HEIGHT_PX = 100_000;
 
 /** 高度抖动吸收：小于这个差值不重排，避免心跳每拍都改一次 style。 */
-const ARTIFACT_HEIGHT_EPSILON_PX = 8;
+const ARTIFACT_HEIGHT_EPSILON_PX = 1;
 
 type HostPhase =
   | { kind: "waiting" }
   | { kind: "live"; stepCount: number | null }
   | { kind: "error"; detail: string }
   | { kind: "degraded" };
+
+function scrollReadingPage(frame: HTMLIFrameElement | null, event: ArtifactFrameEvent): void {
+  for (let owner = frame?.parentElement; owner; owner = owner.parentElement) {
+    if (!/(auto|scroll)/.test(getComputedStyle(owner).overflowY) || owner.scrollHeight <= owner.clientHeight) continue;
+    const scale = event.scrollDeltaMode === 1 ? 16 : event.scrollDeltaMode === 2 ? owner.clientHeight : 1;
+    const bounded = (delta: number | undefined) => Math.max(-1_000, Math.min(1_000, (delta ?? 0) * scale));
+    owner.scrollBy({ top: bounded(event.scrollDeltaY), left: bounded(event.scrollDeltaX), behavior: "auto" });
+    return;
+  }
+}
 
 export interface ArtifactFrameHostProps {
   /** 产物 id（uuid；协议 handler 只认 uuid，非法 id 在这里就地说明而不是 404）。 */
@@ -73,6 +82,8 @@ export interface ArtifactFrameHostProps {
   readonly motion?: "full" | "reduced";
   /** 降级时的等价内容（文字等价／静态分镜）。由调用方提供；没有就只如实说明。 */
   readonly fallback?: ReactNode;
+  /** 页面已在 frame 外呈现标题、原文和文字说明时，仅展示模型设计的画面。 */
+  readonly contentOnly?: boolean;
   /**
    * 测试接缝：判定一个 message 事件的 source 是不是本 frame。
    * 生产默认 `source === iframe.contentWindow`（jsdom 里 contentWindow 是 null，
@@ -87,6 +98,7 @@ export function ArtifactFrameHost({
   artifactId,
   motion,
   fallback,
+  contentOnly = false,
   isTrustedFrameSource,
   watchdogMs = HEARTBEAT_WATCHDOG_MS,
 }: ArtifactFrameHostProps) {
@@ -119,10 +131,18 @@ export function ArtifactFrameHost({
       source !== null && iframeRef.current !== null && source === iframeRef.current.contentWindow);
 
   const handleFrameEvent = (event: ArtifactFrameEvent) => {
+    if (event.phase === "scroll") {
+      scrollReadingPage(iframeRef.current, event);
+      return;
+    }
     lastBeatRef.current = Date.now();
     // 高度先于阶段处理：任何一条消息（ready／heartbeat）都可能带新的高度，
     // 而静态分镜切换会在 ready **之后**重排 root——只认 ready 会停在旧高度上。
     if (typeof event.contentHeight === "number") {
+      if (event.contentHeight > ARTIFACT_MAX_HEIGHT_PX) {
+        setPhase({ kind: "degraded" });
+        return;
+      }
       const clamped = Math.min(
         ARTIFACT_MAX_HEIGHT_PX,
         Math.max(ARTIFACT_MIN_HEIGHT_PX, event.contentHeight),
@@ -188,7 +208,7 @@ export function ArtifactFrameHost({
   if (phase.kind === "degraded") {
     return (
       <div className="artifact-frame-host artifact-frame-host--degraded" role="note">
-        <p className="artifact-frame-host__notice">这份动态内容没能跑起来，已停止等待。文字等价与分镜如下（若有）。</p>
+        <p className="artifact-frame-host__notice">{contentOnly ? "动态画面暂时无法运行，可继续阅读下方的说明。" : "这份动态内容没能跑起来，已停止等待。文字等价与分镜如下（若有）。"}</p>
         {fallback}
       </div>
     );
@@ -196,14 +216,12 @@ export function ArtifactFrameHost({
 
   // 还没量到高度时给一个中位起始值：太矮会闪一下空框，太高会留一截空白，
   // 而这份产物最常见的高度本来就在这个量级。
-  const frameHeight = contentHeight ?? 420;
-  const scrolls = contentHeight !== null && contentHeight >= ARTIFACT_MAX_HEIGHT_PX;
+  const frameHeight = contentHeight === null ? 420 : contentHeight + 2;
 
   return (
     <figure
       className="artifact-frame-host"
       data-phase={phase.kind}
-      data-overflow={scrolls ? "true" : "false"}
       aria-busy={phase.kind === "waiting"}
       aria-label="动态教学演示"
     >
@@ -211,7 +229,7 @@ export function ArtifactFrameHost({
         <iframe
           key={attempt}
           ref={iframeRef}
-          src={artifactFrameUrl(artifactId)}
+          src={`${artifactFrameUrl(artifactId)}${contentOnly ? "#content" : ""}`}
           sandbox={ARTIFACT_FRAME_SANDBOX}
           title="动态教学演示"
           className="artifact-frame-host__frame"
@@ -229,15 +247,12 @@ export function ArtifactFrameHost({
           这份动态内容报告了错误，仍可尝试阅读：{phase.detail}
         </figcaption>
       ) : null}
-      {phase.kind === "live" && phase.stepCount !== null && phase.stepCount > 0 ? (
+      {!contentOnly && phase.kind === "live" && phase.stepCount !== null && phase.stepCount > 0 ? (
         // 「共 N 步」是上一版的说法——那一版的产物是自己的一排格，按顺序推一遍。
         // 现在画面是模型为这一个知识点写的页面，N 是它讲的**要点**条数
         // （服务端渲染出来的文字等价，frame 之外、永远在屏上），所以这一行说的是
         // "这一页讲了几件事"，而不是"你要点几下才走得完"。
         <figcaption className="artifact-frame-host__caption">这一页讲了 {phase.stepCount} 个要点</figcaption>
-      ) : null}
-      {scrolls ? (
-        <p className="artifact-frame-host__hint">这一份比较长，可以往下翻。</p>
       ) : null}
     </figure>
   );

@@ -106,6 +106,12 @@
   --universe-seat-gutter: 0px;
 }
 
+/* `touch-action` 的特异性兜底：画布要接住拖拽与双指缩放，而 `hud-surface.css`
+   里有更高特异性的通用规则压着 `.universe-page` 的后代。 */
+.hud-surface .universe-page .universe-canvas-root {
+  touch-action: none;
+}
+
 /* When the companion holds the left seat, hud-pages.css moves the shell's
    return pill from the bottom-left corner up under the heading chip, at
    left:96px. The chip's own box starts at 103px (its 3px cream border), so the
@@ -391,6 +397,13 @@
   box-shadow: 0 0 10px color-mix(in srgb, currentColor 42%, transparent);
 }
 
+/* 搜索结果里那枚色点：类型一色，与左下角图例同一套。`.hud-surface` 那一档
+   （第 2150 行附近）只补纸环，不给颜色，所以这四枚是它们唯一的色源。 */
+.universe-search-orb--source { color: var(--color-warning); }
+.universe-search-orb--note { color: var(--color-running); border-radius: 3px; }
+.universe-search-orb--card { color: var(--color-highlight); }
+.universe-search-orb--key_point { color: var(--color-evidence); transform: scale(0.78); }
+
 .universe-search-empty {
   display: flex;
   min-height: 86px;
@@ -628,7 +641,34 @@
 .universe-legend .is-source { color: var(--color-warning); }
 .universe-legend .is-note { color: var(--color-running); border-radius: 2px; }
 .universe-legend .is-card { color: var(--color-highlight); }
-.universe-legend .is-key-point { color: var(--color-evidence); transform: scale(0.75); }.universe-canvas-surface{
+.universe-legend .is-key-point { color: var(--color-evidence); transform: scale(0.75); }
+
+/* ── Canvas surface and its compact controls ───────────────────── */
+
+/* 画布根是一块**只装绝对定位子节点**的板：canvas、悬停卡、视野控件、两条读屏文本
+   全是 `position: absolute`。所以它的尺寸只能由 `inset: 0` 给——一旦这条规则
+   没了，它就退回普通流里的静态块，高度塌成 0。
+   而 `understanding-universe.tsx:2388` 量的是 `root.offsetHeight`（有意绕开外壳
+   那段 `scale(.96)` 入场动画，见那里的注释）：0 被 `Math.max(1, …)` 兜成 1，
+   `canvas.height` 跟着变成 2 个设备像素，于是**整张星图被画进一条 2px 高的
+   画布再拉满全屏**——控件、图例、筛选计数全是好的，只有画布一片空白。
+   2026-10-02 修的就是这个：一次「结构债清完」把这一段连同下面的
+   `:focus-visible` 一起当成死 CSS 删了，组件却还在渲染这个类名。 */
+.universe-canvas-root {
+  position: absolute;
+  z-index: auto;
+  inset: 0;
+  contain: strict;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.universe-canvas-root,
+.universe-canvas-surface {
   image-rendering: auto;
 }
 
@@ -640,7 +680,10 @@
   width: 100%;
   height: 100%;
   outline: 0;
-}.universe-canvas-surface:focus-visible{
+}
+
+.universe-canvas-surface:focus-visible,
+.universe-canvas-root:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: -3px;
 }

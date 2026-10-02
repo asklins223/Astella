@@ -318,8 +318,8 @@ const CARD_SYSTEM_LEVEL_READS: Record<string, number> = {
   // 取 `cardId` 的反查两处 + 截断告警的总数一处（v2 星图那一版）。
   "modules/understanding/projection-read-service.ts": 4,
   // 伴星"打开这张卡"的跳转：只把 cardId 换成 objectiveId，正文不从这条路出来
-  // （到了目标页仍要过上面那些读点）。
-  "modules/companion-conversation/learning-action-bridge.ts": 1,
+  // （到了目标页仍要过上面那些读点）。随导航 helper 拆分到 proposal snapshot 模块。
+  "modules/companion-conversation/companion-proposal-snapshot.ts": 1,
   // `checkExportSize` 是体积保险丝，刻意取超集（与笔记那一处同一个理由）。
   "modules/export/service.ts": 1,
 };

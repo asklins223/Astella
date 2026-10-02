@@ -16,6 +16,7 @@
 
 import { sql } from "drizzle-orm";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
+import { lockJobLease, type JobLeaseContext } from "../lib/job-lease.ts";
 import {
   chunkTextIntoDeltas,
   companionOutputRejectionReason,
@@ -166,6 +167,7 @@ export interface CompanionStreamDelivery {
 }
 
 interface CompanionDeliveryArgs {
+  job: JobLeaseContext;
   ctx: { workspaceId: string };
   read: ReadContext;
   expiresAt: string;
@@ -226,6 +228,9 @@ export function createCompanionStreamDelivery(args: CompanionDeliveryArgs): Comp
       const written = await withWorkerWorkspaceTransaction(
         { workspaceId: args.ctx.workspaceId, userId: args.read.userId },
         async (tx) => {
+          // Stream deltas are durable and user-visible before the model step
+          // finishes, so fence each flush with the same job lease as commits.
+          await lockJobLease(tx, args.job);
           const alive = await tx.execute<{ id: string }>(sql`
             UPDATE companion_turn_runs
             SET status = 'running', updated_at = now()

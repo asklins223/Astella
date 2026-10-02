@@ -70,7 +70,17 @@ export const DETAIL_THRESHOLDS: readonly { readonly value: DesktopCardDetailThre
   { value: "deep", label: "深入" },
 ];
 
-export const CARD_LIMITS = [4, 8, 12] as const;
+/**
+ * 卡片上限**只给真正到得了的档**。
+ *
+ * Worker 那一侧有硬顶：`card-generation-v3/handler.ts` 把客户端的 `hardMaxCards`
+ * 收进 `Math.min(8, …)`，那是激活预算的实数（超出的原子由 planner 记
+ * `omit_over_budget`，不进候选）。这里原来给到 12，于是用户选「12 张」、请求里
+ * 也真的发了 12，**而整条流程没有任何一处说它只可能出 8 张**——一个给不了的选项。
+ * 契约层（`card-generation-v2-contracts`）允许 50，那是服务端给脚本用的，
+ * 与「屏上摆几颗 chip」不是同一件事。
+ */
+export const CARD_LIMITS = [4, 8] as const;
 
 /** Statuses where the run has stopped; only those can be answered with feedback. */
 export const FINISHED_RUN_STATUSES = new Set(["activated", "closed_without_activation", "cancelled", "failed", "stale"]);

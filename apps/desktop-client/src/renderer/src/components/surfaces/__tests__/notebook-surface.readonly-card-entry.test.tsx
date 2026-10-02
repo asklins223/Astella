@@ -164,7 +164,17 @@ describe("§16.20 只读成员与公共制卡入口", () => {
       expect(screen.queryByText(READONLY_COPY)).toBeNull();
       expect(screen.queryByText(OFF_COPY)).toBeNull();
     });
-    const entry = await screen.findByTitle(/学习卡|生成/);
-    expect((entry as HTMLButtonElement).disabled).toBe(false);
+    // 按类名取**入口那颗**，不按 title 猜：入口旁边还有一颗「调整这次」，
+    // 两颗的提示里都有「生成」，`findByTitle` 会撞上两个而报不出是哪一颗。
+    const entry = await waitFor(() => {
+      const found = document.querySelector<HTMLButtonElement>(".notebook-card-entry");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    expect(entry.disabled).toBe(false);
+    // 次要那颗也必须同时可点——权限够的时候两档都通。
+    const tweak = document.querySelector<HTMLButtonElement>(".notebook-card-entry__tweak");
+    expect(tweak).not.toBeNull();
+    expect(tweak!.disabled).toBe(false);
   });
 });

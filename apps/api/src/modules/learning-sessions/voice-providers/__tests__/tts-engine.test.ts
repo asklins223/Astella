@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { synthesizeTtsBytes, type TtsEngineDeps } from "../tts-engine.ts";
+import { EdgeTtsError } from "../edge-tts.ts";
 import type { TtsEngineConfig } from "../tts-config.ts";
 
 function makeConfig(engine: "qwen" | "edge", workspaceId: string): TtsEngineConfig {
@@ -26,6 +27,15 @@ function makeConfig(engine: "qwen" | "edge", workspaceId: string): TtsEngineConf
 }
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(`audio:${text}`);
+/**
+ * 41a：合成接到统一内核后必填「归属 + 事务边界读数」。单测没有真实事务，
+ * 读数传 `() => undefined`——内核会在发外部调用前核一次，这里应当恒真通过。
+ */
+const TEST_SCOPE = {
+  workspaceId: "w-test",
+  userId: "u-test",
+  currentActiveTransaction: () => undefined,
+};
 const streamOf = (text: string): ReadableStream<Uint8Array> =>
   new ReadableStream<Uint8Array>({
     start(controller) {
@@ -62,6 +72,7 @@ test("qwen 成功：返回 qwen 字节，不调用 edge", async () => {
     text: "[excited]哇，背完三十个！",
     edgeVoice: "zh-CN-XiaoxiaoNeural",
     queueKey: "ws:user",
+    scope: TEST_SCOPE,
     deps: baseDeps({
       loadConfig: () => makeConfig("qwen", "ws-123"),
       qwenSynthesize: async (_key, text) => ({ stream: streamOf(`qwen:${text}`), contentType: "audio/mpeg" }),
@@ -83,6 +94,7 @@ test("qwen 失败：降级 edge，且 edge 拿到的是剥离语气标签后的�
     text: "[excited]哇，背完三十个！",
     edgeVoice: "zh-CN-XiaoxiaoNeural",
     queueKey: "ws:user",
+    scope: TEST_SCOPE,
     onQwenFallback: (error) => fallbacks.push(error),
     deps: baseDeps({
       loadConfig: () => makeConfig("qwen", "ws-123"),
@@ -104,6 +116,7 @@ test("qwen 未配置 workspaceId：直接 edge，不调用 qwen", async () => {
     text: "你好",
     edgeVoice: "zh-CN-XiaoxiaoNeural",
     queueKey: "ws:user",
+    scope: TEST_SCOPE,
     deps: baseDeps({
       loadConfig: () => makeConfig("qwen", ""),
       qwenSynthesize: async () => {
@@ -123,6 +136,7 @@ test("engine=edge：qwen 完全不参与", async () => {
     text: "你好",
     edgeVoice: "zh-CN-XiaoxiaoNeural",
     queueKey: "ws:user",
+    scope: TEST_SCOPE,
     deps: baseDeps({
       loadConfig: () => makeConfig("edge", "ws-123"),
       qwenSynthesize: async () => {
@@ -144,6 +158,7 @@ test("selection 指定 qwen 音色：进上游的是这一身，不是 config �
     text: "你好",
     edgeVoice: "zh-CN-XiaoxiaoNeural",
     queueKey: "ws:user",
+    scope: TEST_SCOPE,
     selection: { engine: "qwen", qwenVoice: "longanlingxi_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", explicit: true },
     deps: baseDeps({
       loadConfig: () => makeConfig("qwen", "ws-123"),
@@ -168,6 +183,7 @@ test("selection 说 edge：config 是 qwen 也不碰 qwen，不做'先试千问�
     text: "你好",
     edgeVoice: "zh-CN-XiaoxiaoNeural",
     queueKey: "ws:user",
+    scope: TEST_SCOPE,
     selection: { engine: "edge", qwenVoice: "longhua_v3.1", edgeVoice: "zh-CN-XiaoxiaoNeural", explicit: true },
     deps: baseDeps({
       loadConfig: () => makeConfig("qwen", "ws-123"),
@@ -188,6 +204,7 @@ test("不传 selection：仍旧用 config 那条音色（默认行为没被动�
     text: "你好",
     edgeVoice: "zh-CN-XiaoxiaoNeural",
     queueKey: "ws:user",
+    scope: TEST_SCOPE,
     deps: baseDeps({
       loadConfig: () => makeConfig("qwen", "ws-123"),
       qwenSynthesize: async (_key, _text, options) => {
@@ -200,4 +217,69 @@ test("不传 selection：仍旧用 config 那条音色（默认行为没被动�
     }),
   });
   assert.equal(seenVoice, makeConfig("qwen", "ws-123").qwen.voice);
+});
+
+/**
+ * 41a 的正控制：内核不是"包了一层看不见"。
+ *
+ * 只断言"还能合成"是**空断言**——它恒真，与有没有内核无关。这里量三件事，
+ * 每一件都只有"真的走了内核"才会成立：
+ * 1. 事务边界读数**被读过**（没有活动事务 ⇒ 恒真通过；有活动事务 ⇒ 内核拒绝发请求）；
+ * 2. provider 拿到的那一步**不会**被内核重试（qwen→edge 只发生一次，
+ *    `maxAutoRetries: 0` 与 `maxModelCalls: 2` 同时成立）；
+ * 3. 失败时**原始错误类型**回到调用方（`EdgeTtsError`），路由的 502 映射靠它。
+ */
+test("41a：走统一内核——事务边界读数被核过，失败仍抛原始 EdgeTtsError", async () => {
+  // (1) 有活动事务时，内核在发外部调用前就该拦下；provider 一次都不许被碰到。
+  let providerCalls = 0;
+  await assert.rejects(
+    () => synthesizeTtsBytes({
+      text: "你好",
+      edgeVoice: "zh-CN-XiaoxiaoNeural",
+      queueKey: "ws:user",
+      scope: { ...TEST_SCOPE, currentActiveTransaction: () => ({ active: true }) },
+      deps: baseDeps({
+        loadConfig: () => makeConfig("edge", ""),
+        edgeSynthesize: async (_text, voice) => {
+          providerCalls += 1;
+          return { audio: bytes("edge"), voice, contentType: "audio/mpeg" };
+        },
+      }),
+    }),
+    /事务|transaction/i,
+  );
+  assert.equal(providerCalls, 0, "有活动事务时不得发出任何合成请求");
+
+  // (2)+(3) 无活动事务时正常跑完；qwen 失败只降级一次，edge 再失败时抛原始错误。
+  let qwenCalls = 0;
+  let edgeCalls = 0;
+  await assert.rejects(
+    () => synthesizeTtsBytes({
+      text: "你好",
+      edgeVoice: "zh-CN-XiaoxiaoNeural",
+      queueKey: "ws:user",
+      scope: TEST_SCOPE,
+      deps: baseDeps({
+        loadConfig: () => makeConfig("qwen", "ws-123"),
+        qwenSynthesize: async () => {
+          qwenCalls += 1;
+          throw new Error("qwen 断了");
+        },
+        edgeSynthesize: async () => {
+          edgeCalls += 1;
+          throw new EdgeTtsError("UPSTREAM_ERROR", "edge 也不通", 503);
+        },
+      }),
+    }),
+    (err: unknown) => {
+      // (3) 原始类型与 status 都还在——路由按 instanceof EdgeTtsError 映射 502。
+      assert.ok(err instanceof EdgeTtsError, "失败时必须抛回原始 EdgeTtsError");
+      assert.equal((err as EdgeTtsError).code, "UPSTREAM_ERROR");
+      assert.equal((err as EdgeTtsError).status, 503);
+      return true;
+    },
+  );
+  // (2) qwen 与 edge 各一次：内核没有替这一发再跑一遍。
+  assert.equal(qwenCalls, 1);
+  assert.equal(edgeCalls, 1);
 });

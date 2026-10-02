@@ -21,14 +21,22 @@
  */
 
 import { sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import {
   isVisionGatedCompanionTool,
   companionPageLabelV2,
   type CompanionAgentToolDefinitionV1,
-  type CompanionContentBlockV1,
 } from "@ailearn/shared";
-import { withWorkerWorkspaceTransaction } from "../db.ts";
-import { createEmbeddingProvider, createProvider, type AIProvider } from "../lib/ai-provider.ts";
+import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
+
+/**
+ * 用户原话存进 `suggestion_pause.reasonCodes` 时能带的最大字数。
+ * 上界由 `user_asked:` 前缀（11 字）与 schema 的 100 字上限共同决定：100 - 11 = 89，
+ * 这里取 80 留余量。改这个数之前先看那条 schema。
+ */
+const PAUSE_REASON_MAX_CHARS = 80;
+import { createProvider } from "../lib/ai-provider.ts";
 import {
   AIDataPolicyDeniedError,
   createGovernedProvider,
@@ -36,6 +44,7 @@ import {
   resolveProviderForTask,
 } from "../lib/governance.ts";
 import { getObjectBytes } from "../lib/object-storage.ts";
+import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { noteSearchTerms, parsePageContext, stripProviderControlTokens } from "./companion-dialogue-content.ts";
 import {
   ageLabel,
@@ -45,8 +54,6 @@ import {
   visibleCompanionCardSourceCondition,
   visibleCompanionDueReviewCondition,
 } from "./companion-here-and-now.ts";
-import { retrieveCompanionMemories } from "./companion-memory-vector.ts";
-import { taskEntityFromPersistedPageContext } from "./companion-task-memory.ts";
 import {
   NOTE_READ_MAX_CHARS,
   READ_IMAGE_MAX_RAW_BYTES,
@@ -67,33 +74,15 @@ import {
   type TaskQueueRow,
 } from "./companion-read-tools.ts";
 import { partitionPersonaPatch } from "./companion-step-plan.ts";
-import type { EmbeddingProviderLike } from "../lib/ai-provider.ts";
+import { runWorkerAiTask } from "./worker-ai-task.ts";
 
-/** 工具报错分两级：能被用户看见的，与必须停在工具面的。 */
-export class CompanionToolError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "CompanionToolError";
-  }
-}
-
-export class CompanionToolBlockedError extends CompanionToolError {
-  constructor(message: string) {
-    super(message);
-    this.name = "CompanionToolBlockedError";
-  }
-}
-
-export interface AgentToolExecutionResult {
-  value: Record<string, unknown>;
-  safeSummary: string;
-  resultRef?: string;
-  route?: Record<string, unknown>;
-  /** 跳转块上给人看的那句（"打开《消防疏散》"）。缺省回落到工具描述。 */
-  routeLabel?: string;
-  /** 工具顺手带出的其它富块（读出来的原文 = quote）。与 route 生成的 nav 一起落进消息。 */
-  blocks?: CompanionContentBlockV1[];
-}
+/** 工具报错与结果类型已搬到 `companion-tool-result.ts`（先搬状态、再搬方法，见那里）。 */
+import {
+  CompanionToolError,
+  CompanionToolBlockedError,
+  type AgentToolExecutionResult,
+} from "./companion-tool-result.ts";
+import { executeCompanionMemoryTool } from "./companion-memory-tools.ts";
 
 
 
@@ -153,63 +142,12 @@ export async function executeReadTool(
       }));
       return { value: { messages: history }, safeSummary: `已读取 ${history.length} 条对话历史` };
     }
-    case "companion_recall_memory": {
-      // 与被删掉的 companion_read_memory 的区别就是这条工具存在的理由：
-      // read_memory 返回的是**本轮已经注入 prompt 的那一份**，调一次等于把看过的
-      // 东西再看一遍（她以为在"回忆"，实际什么都没查到）。这里做真检索并排除已注入项。
-      const query = String(args.query).trim().slice(0, 200);
-      const limit = typeof args.limit === "number" ? Math.min(8, Math.max(1, args.limit)) : 5;
-      // 查询向量必须在开事务**之前**算：retrieveCompanionMemories 的约定是
-      // precomputedEmbedding=null 表示"已试过且失败 → 直接降级 keyword"，
-      // 绝不在事务里重试外部调用（事务被网络调用占住是另一类稳定性事故）。
-      let provider: EmbeddingProviderLike | null = null;
-      try {
-        provider = await createEmbeddingProvider();
-      } catch {
-        provider = null;
-      }
-      let queryEmbedding: number[] | null = null;
-      if (provider) {
-        try {
-          queryEmbedding = await provider.embed(query, event.ctx.signal);
-        } catch {
-          queryEmbedding = null;
-        }
-      }
-      const retrieval = await withWorkerWorkspaceTransaction(
-        { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-        async (tx) => retrieveCompanionMemories(tx, {
-          workspaceId: event.ctx.workspaceId,
-          userId: event.read.userId,
-        }, query, {
-          topK: limit * 2,
-          provider,
-          precomputedEmbedding: queryEmbedding,
-          // 任务记忆按身份可见（39b C8）：本轮落在学习页/卡页时，绑定到这个
-          // run/card 的 task 记忆才可见；普通页推不出身份，task 行一概不可见。
-          taskEntity: taskEntityFromPersistedPageContext(event.read.pageContext),
-        }),
-      );
-      const alreadyShown = new Set(event.read.activeMemories.map((memory) => memory.content));
-      const memories = retrieval.items
-        .filter((item) => !alreadyShown.has(item.content))
-        .slice(0, limit)
-        .map((item) => ({
-          // memoryId 必须回传：companion_forget_memory 的参数就是它。漏了这条，
-          // 她只能凭空编一个 uuid（实机 2026-09-21 编出 5e0a2b1c-3d4f-…），
-          // 于是"忘掉"永远失败——而失败原因是"找不到"，看起来像她记错了。
-          memoryId: item.memoryId,
-          kind: item.kind,
-          content: item.content.slice(0, 200),
-          userConfirmed: item.userConfirmed,
-        }));
-      return {
-        value: { memories, retrievalMode: retrieval.mode },
-        safeSummary: memories.length > 0
-          ? `又翻到 ${memories.length} 条相关记忆`
-          : "没有翻到比当前上下文更多的记忆",
-      };
-    }
+        case "companion_read_memory":
+    case "companion_recall_memory":
+    case "companion_read_playbook":
+    case "companion_read_diary":
+      // 函数体已搬到 companion-memory-tools.ts（按域切，见那里）。
+      return executeCompanionMemoryTool(event, definition, args);
     case "companion_list_recent_activity": {
       const days = typeof args.days === "number" ? Math.min(30, Math.max(1, args.days)) : 7;
       const window = sql`now() - (${days} * interval '1 day')`;
@@ -524,31 +462,77 @@ export async function executeReadTool(
         // 记录按 job 聚合时对不上号。
         { userId: event.read.userId, operation: "companion_read_image", jobId: event.ctx.id },
       );
-      let result: Awaited<ReturnType<AIProvider["chatCompletion"]>>;
+      const systemPrompt = "你是看图的那双眼睛，替一个学习助手转述图里的内容。"
+        + "只说图上确实看得见的东西：文字按原文抄（公式、表格、代码用 markdown 保持结构），"
+        + "流程/结构类图先说清是什么再逐项列出。看不清、被截掉、图上没有的一律直说看不清，"
+        + "绝不猜、不用常识补、不编内容。直接说内容，不要开场白。";
+      const generationParameters = {
+        maxTokens: 1_500,
+        temperature: 0.2,
+        responseFormat: "text" as const,
+        model: visionProvider.visionModelId,
+      };
+      const inputSnapshotHash = sha256Utf8V1(canonicalJsonV1({
+        taskVersion: 1,
+        runId: event.read.runId,
+        userMessageId: event.read.userMessageId,
+        objectKey: asset.object_key,
+        mimeType: asset.mime_type,
+        imageSha256: createHash("sha256").update(bytes).digest("hex"),
+        question,
+        systemPrompt,
+        modelId: visionProvider.visionModelId,
+        promptVersion: visionProvider.promptVersion,
+        generationParameters,
+      }));
+      let content: string;
       try {
-        result = await visionProvider.chatCompletion(
-          [
-            {
-              role: "system",
-              content: "你是看图的那双眼睛，替一个学习助手转述图里的内容。"
-                + "只说图上确实看得见的东西：文字按原文抄（公式、表格、代码用 markdown 保持结构），"
-                + "流程/结构类图先说清是什么再逐项列出。看不清、被截掉、图上没有的一律直说看不清，"
-                + "绝不猜、不用常识补、不编内容。直接说内容，不要开场白。",
-            },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: `问题：${question}` },
+        const output = await runWorkerAiTask({
+          job: event.ctx,
+          userId: event.read.userId,
+          taskId: "companion_read_image",
+          taskVersion: 1,
+          idempotencyKey: `companion-read-image:${event.read.runId}:${event.read.userMessageId}:${inputSnapshotHash}`,
+          inputSnapshotRef: {
+            kind: "task",
+            id: `${event.read.runId}:read-image`,
+            hash: inputSnapshotHash,
+          },
+          input: { question, mimeType: asset.mime_type, bytes },
+          modelId: visionProvider.visionModelId,
+          promptVersion: `${visionProvider.promptVersion}:companion-read-image-v1`,
+          resourceClass: "interactive_ai",
+          timeoutMs: resolveProviderCallTimeout("companion_agent"),
+          execute: async (request, signal) => {
+            const result = await visionProvider.chatCompletion(
+              [
+                { role: "system", content: systemPrompt },
                 {
-                  type: "image_url",
-                  image_url: { url: `data:${asset.mime_type};base64,${bytes.toString("base64")}`, detail: "high" },
+                  role: "user",
+                  content: [
+                    { type: "text", text: `问题：${request.question}` },
+                    {
+                      type: "image_url",
+                      image_url: {
+                        url: `data:${request.mimeType};base64,${request.bytes.toString("base64")}`,
+                        detail: "high",
+                      },
+                    },
+                  ],
                 },
               ],
-            },
-          ],
-          { maxTokens: 1_500, temperature: 0.2, responseFormat: "text", model: visionProvider.visionModelId },
-          event.ctx.signal,
-        );
+              generationParameters,
+              signal,
+            );
+            return {
+              ok: true,
+              output: String(result.content ?? ""),
+              promptTokens: result.usage?.promptTokens ?? undefined,
+              completionTokens: result.usage?.completionTokens ?? undefined,
+            };
+          },
+        });
+        content = output;
       } catch (error) {
         // 政策在这一轮进行中才被关闭（她开始时还能看，取字节的这几秒里用户拧了开关）：
         // 治理层会直接拒发，这时给她同一句人话，而不是"工具执行失败，请稍后再试"。
@@ -560,7 +544,7 @@ export async function executeReadTool(
       // 供应商会把自己的分词控制符吐进内容里（实机 2026-09-21 探针：视觉槽位对
       // "几种颜色"回答 `<|begin_of_box|>1<|end_of_box|>`）。这一段是**数据**——
       // 她会把里面的字转述给用户、TTS 也会念，控制符留着就是"1"变成一串标记。
-      const description = stripProviderControlTokens(String(result.content ?? "")).trim();
+      const description = stripProviderControlTokens(content).trim();
       if (!description) throw new CompanionToolError("看过这张图了，但没读出任何内容");
       return {
         value: {
@@ -801,104 +785,173 @@ export async function executeDirectTool(
   args: Record<string, unknown>,
 ): Promise<AgentToolExecutionResult> {
   switch (definition.name) {
+    // 模型自改**表达层**（40 §4.8.4）。
+    //
+    // 与上面 set_activeness 走同一条账号级路径（companion_persona_profiles），
+    // 差别只有两处，都是合同要求的：
+    //  1. 写的是 `speakingStyle`，**不是** name —— 用户指定的名字她改不了；
+    //  2. 版本行的 author 是 `assistant_tool`、reason 是她自己给的理由，
+    //     用户在人格页能看到这一条是谁在什么时候改的（§4.8.4「记录作者、范围和依据」）。
+    case "companion_revise_own_style": {
+      const speakingStyle = String(args.speakingStyle).slice(0, 400);
+      const reason = String(args.reason).slice(0, 120);
+      const outcome = await withWorkerWorkspaceTransaction(
+        { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+        async (tx) => {
+          const current = await tx.execute<{ revision: number; profile: Record<string, unknown> | null }>(sql`
+            SELECT revision, profile FROM companion_persona_profiles
+            WHERE user_id = ${event.read.userId}
+            LIMIT 1
+            FOR UPDATE
+          `);
+          const row = (Array.isArray(current) ? current : [])[0];
+          if (!row?.profile) return "missing" as const;
+          // 写成一样的不算改：否则 revision 被推高、用户看到"改了"却什么都没变。
+          if (row.profile.speakingStyle === speakingStyle) return "unchanged" as const;
+          const rows = await tx.execute<{ revision: number; profile: Record<string, unknown> }>(sql`
+            UPDATE companion_persona_profiles
+            SET profile = jsonb_set(profile, '{speakingStyle}', to_jsonb(${speakingStyle}::text), true),
+                revision = revision + 1, updated_at = now()
+            WHERE user_id = ${event.read.userId} AND revision = ${row.revision}
+            RETURNING revision, profile
+          `);
+          const updated = rows[0];
+          if (!updated) return "missing" as const;
+          await tx.execute(sql`
+            INSERT INTO companion_persona_profile_versions
+              (user_id, revision, examples_revision, author, action, reason, profile)
+            VALUES (${event.read.userId}, ${updated.revision}, ${updated.revision},
+                    'assistant_tool', 'update', ${reason},
+                    ${JSON.stringify(updated.profile)}::jsonb)
+          `);
+          return "changed" as const;
+        },
+      );
+      if (outcome === "missing") throw new CompanionToolError("没找到你的账号伴星档案，这次没有改动");
+      if (outcome === "unchanged") {
+        return {
+          value: { changed: false },
+          safeSummary: "说话方式本来就是这样，没改动",
+        };
+      }
+      return {
+        value: { changed: true },
+        // 明说生效时点：§4.8.4「模型自改在下一次会话建立时生效」。
+        safeSummary: "换了一种说话方式；下一次尚未开始的对话会用上",
+      };
+    }
+    /**
+     * 40 §8.2：用户说「今天别催我学习」⇒ 记下**本地日**；说「可以了」⇒ 清掉。
+     *
+     * 关键在**本地日由服务端算**：模型算时区一定算错（差 8 小时那种），
+     * 所以工具只收 `today` / `resume` 两个词，具体是哪一天按账号时区落库。
+     * 错成「从现在起 24 小时」的话，用户 23:50 说的那句话会压到明天下午——
+     * 而他要的是压到今晚 24 点。
+     *
+     * 只改**主动推荐**这一路。已授权的安排不在这一行的可达范围里：
+     * 它们由各自的到期提醒持有，这里既不读也不写（§8.2「不会取消已授权安排」）。
+     */
+    case "companion_pause_learning_suggestions": {
+      const scope = String(args.scope);
+      /**
+       * ⚠️ 长度是**算出来**的，不是随手取的。
+       *
+       * `companionSuggestionPauseSchema` 是 `.strict()` 的，`reasonCodes` 单项上限
+       * **100**。我们写的是 `user_asked:<原话>`，前缀 11 字，所以原话超过 **89**
+       * 字就会让整份 `suggestion_pause` 过不了校验——而它挂在**账号读写**那条路上，
+       * 于是用户说一句长点的话，整个伴星设置面板都跟着打不开。
+       *
+       * 这里切到 80，留 9 字余量：前缀将来若变长，也不会再悄悄越界。
+       */
+      const reason = String(args.reason).slice(0, PAUSE_REASON_MAX_CHARS);
+      const { userCompanionAccountState } = await import("@ailearn/shared/db-schema/companion");
+      const { eq, sql: rawSql } = await import("drizzle-orm");
+      const { localDateIn } = await import("@ailearn/shared/companion-proactive-quota");
+      const now = new Date();
+      // 时区：账号设置里没单独存这一列，所以按环境给的账号时区算。
+      // 拿不到就退回 UTC（见 localDateIn 的注释：算错一天的代价是"少催一次"）。
+      const timezone = process.env.COMPANION_ACCOUNT_TIMEZONE ?? null;
+      const localDate = localDateIn(timezone, now);
+      // 这张表**只按 user_id** 定位（没有 workspace 列），所以 where 里只有它。
+      const rows = await withWorkerWorkspaceTransaction(
+        { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+        async (tx: WorkerTransaction) => tx
+          .update(userCompanionAccountState)
+          .set({
+            suggestionPause: scope === "today"
+              ? { paused: true, localDate, timezone: timezone ?? undefined, reasonCodes: [`user_asked:${reason}`] }
+              : { paused: false, localDate: undefined, timezone: undefined },
+            revision: rawSql`${userCompanionAccountState.revision} + 1`,
+            updatedAt: now,
+          })
+          .where(eq(userCompanionAccountState.userId, event.read.userId))
+          .returning({ userId: userCompanionAccountState.userId }),
+      );
+      if (!Array.isArray(rows) || rows.length === 0) {
+        throw new CompanionToolError("没找到你的账号伴星设置，这次没有改动");
+      }
+      return {
+        value: { scope, localDate },
+        // 明说到什么时候：用户要能预测她什么时候会再催。
+        safeSummary: scope === "today"
+          ? "今天不再主动推荐学习；你自己约好的提醒不受影响"
+          : "已恢复正常，会按原来的安排来",
+      };
+    }
     case "companion_set_activeness": {
       const activeness = String(args.activeness);
       const label = activeness === "quiet" ? "安静" : activeness === "active" ? "活跃" : "适中";
       const outcome = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         async (tx) => {
-          const current = await tx.execute<{ activeness: string }>(sql`
-            SELECT activeness FROM pet_profiles
-            WHERE workspace_id = ${event.ctx.workspaceId} AND user_id = ${event.read.userId}
+          const current = await tx.execute<{ revision: number; profile: Record<string, unknown> | null }>(sql`
+            SELECT revision, profile FROM companion_persona_profiles
+            WHERE user_id = ${event.read.userId}
             LIMIT 1
+            FOR UPDATE
           `);
           const row = (Array.isArray(current) ? current : [])[0];
-          if (!row) return "missing" as const;
+          if (!row?.profile) return "missing" as const;
           // 已经是这样了就不写 revision，也不给她一个"已设为"的成功摘要。
-          if (row.activeness === activeness) return "unchanged" as const;
-          const rows = await tx.execute<{ id: string }>(sql`
-            UPDATE pet_profiles
-            SET activeness = ${activeness}, revision = revision + 1, updated_at = now()
-            WHERE workspace_id = ${event.ctx.workspaceId}
-              AND user_id = ${event.read.userId}
-            RETURNING id
+          if (row.profile.activeness === activeness) return "unchanged" as const;
+          const rows = await tx.execute<{ revision: number; profile: Record<string, unknown> }>(sql`
+            UPDATE companion_persona_profiles
+            SET profile = jsonb_set(profile, '{activeness}', to_jsonb(${activeness}::text), true),
+                revision = revision + 1, updated_at = now()
+            WHERE user_id = ${event.read.userId} AND revision = ${row.revision}
+            RETURNING revision, profile
           `);
-          return rows.length > 0 ? ("changed" as const) : ("missing" as const);
+          const updated = rows[0];
+          if (!updated) return "missing" as const;
+          await tx.execute(sql`
+            INSERT INTO companion_persona_profile_versions
+              (user_id, revision, examples_revision, author, action, reason, profile)
+            VALUES (${event.read.userId}, ${updated.revision}, ${updated.revision},
+                    'assistant_tool', 'update', 'Changed by an explicitly requested companion setting.',
+                    ${JSON.stringify(updated.profile)}::jsonb)
+          `);
+          return "changed" as const;
         },
       );
-      if (outcome === "missing") throw new CompanionToolError("没找到你这台的伴星档案，这次没有改动");
+      if (outcome === "missing") throw new CompanionToolError("没找到你的账号伴星档案，这次没有改动");
       if (outcome === "unchanged") {
         return {
           value: { activeness, changed: false },
           safeSummary: `活跃度本来就有「${label}」这一档，没改动`,
         };
       }
-      return { value: { activeness, changed: true }, safeSummary: `已把伴星活跃度设为「${label}」` };
+      return { value: { activeness, changed: true }, safeSummary: `已把伴星活跃度设为「${label}」，下一次尚未开始的调用会使用新设置` };
     }
-    case "companion_save_memory": {
-      // 写入口径对齐 API memory-service.upsertMemory 的"用户明确陈述"路径：
-      // user_stated/user_confirmed=true、candidate=false、embedding_status='pending'
-      // （embedding 流水线随后补向量）。≤200 字的截断在参数 schema 已做，这里防御性再截一次。
-      // 与 API 的差异：不做 markMemoryConflictIfSimilar 相似冲突标记（v1 接受，冲突
-      // 由记忆中心的冲突检查兜底）。
-      const kind = String(args.kind);
-      const content = String(args.content).slice(0, 200);
-      const inserted = await withWorkerWorkspaceTransaction(
-        { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-        async (tx) => {
-          const rows = await tx.execute<{ id: string }>(sql`
-            INSERT INTO assistant_memory_items
-              (workspace_id, user_id, kind, content, user_stated, user_confirmed,
-               candidate, importance, confidence, scope, source_type, pinned, embedding_status)
-            VALUES
-              (${event.ctx.workspaceId}, ${event.read.userId}, ${kind}, ${content},
-               true, true, false, 0.8, 0.9, 'workspace', 'user_stated', false, 'pending')
-            RETURNING id
-          `);
-          return rows[0];
-        },
-      );
-      return {
-        value: { memoryId: inserted?.id ?? null, kind },
-        safeSummary: `已记住（${content.slice(0, 60)}${content.length > 60 ? "…" : ""}）`,
-      };
-    }
-    case "companion_forget_memory": {
-      // 软删（deleted_at）：星图/记忆中心的既有语义就是按 deleted_at 过滤，
-      // 硬删会把历史一起抹掉。免二次确认的理由与 cancel_reminder 同：
-      // 用户此刻正明确说"别记着这个"。
-      const memoryId = String(args.memoryId);
-      const forgotten = await withWorkerWorkspaceTransaction(
-        { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-        async (tx) => {
-          const rows = await tx.execute<{ kind: string; content: string }>(sql`
-            UPDATE assistant_memory_items
-               SET deleted_at = now(), updated_at = now()
-             WHERE id = ${memoryId}::uuid
-               AND workspace_id = ${event.ctx.workspaceId}
-               AND user_id = ${event.read.userId}
-               AND deleted_at IS NULL
-            RETURNING kind, left(content, 60) AS content
-          `);
-          return (Array.isArray(rows) ? rows : [])[0] ?? null;
-        },
-      );
-      if (!forgotten) {
-        // 这句会**同时**上屏（safeSummary）并回进模型上下文，所以两个读者都要顾到：
-        // 屏上这句只说"没找到"；"该先 recall 再删、不许凭印象猜 id"那条指引写在工具自己的
-        // 描述里（`companion-agent-registry.ts:144`），每一次请求都带着，比写在错误里更稳。
-        throw new CompanionToolError(
-          "那一条记忆我没找到，可能它已经不在了。想删哪条的话，先提醒我是哪回的事。",
-        );
-      }
-      return {
-        value: { memoryId },
-        safeSummary: `已忘掉（${forgotten.content}）`,
-      };
-    }
+        case "companion_save_memory":
+    case "companion_revise_memory":
+    case "companion_move_memory":
+    case "companion_remember_judgment":
+    case "companion_forget_memory":
+      // 函数体已搬到 companion-memory-tools.ts（按域切，见那里）。
+      return executeCompanionMemoryTool(event, definition, args);
     case "companion_set_boundary": {
-      // 只合并显式给出的键（jsonb `||`），不动其它边界；boundaries 就是念头管线
-      // 与 renderPersonaBehaviour 读的那一列，所以改完立刻对两条链路生效。
+      // 只合并显式给出的键（jsonb `||`），不动其它边界。已开始的调用继续使用
+      // 启动时固定的人格版本；下一次尚未开始的调用才会读到这次修改。
       const patch: Record<string, boolean | string> = {};
       for (const key of ["allowPlayful", "allowNudgeLearning", "allowVoiceTags"] as const) {
         if (typeof args[key] === "boolean") patch[key] = args[key] as boolean;
@@ -916,33 +969,49 @@ export async function executeDirectTool(
       const outcome = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         async (tx) => {
-          const current = await tx.execute<{ boundaries: Record<string, unknown> | null }>(sql`
-            SELECT boundaries FROM pet_profiles
-            WHERE workspace_id = ${event.ctx.workspaceId} AND user_id = ${event.read.userId}
+          const current = await tx.execute<{ revision: number; profile: Record<string, unknown> | null }>(sql`
+            SELECT revision, profile FROM companion_persona_profiles
+            WHERE user_id = ${event.read.userId}
             LIMIT 1
+            FOR UPDATE
           `);
           const row = (Array.isArray(current) ? current : [])[0];
-          if (!row) return null;
-          const before = row.boundaries ?? {};
+          if (!row?.profile) return null;
+          const before = (row.profile.boundaries as Record<string, unknown> | undefined) ?? {};
           const { changed, unchangedKeys } = partitionPersonaPatch(before, patch);
           if (Object.keys(changed).length === 0) {
             return { boundaries: before, changed: {}, unchangedKeys } as const;
           }
-          const rows = await tx.execute<{ boundaries: Record<string, unknown> | null }>(sql`
-            UPDATE pet_profiles
-               SET boundaries = coalesce(boundaries, '{}'::jsonb) || ${JSON.stringify(changed)}::jsonb,
+          const rows = await tx.execute<{ revision: number; profile: Record<string, unknown> }>(sql`
+            UPDATE companion_persona_profiles
+               SET profile = jsonb_set(
+                     profile,
+                     '{boundaries}',
+                     coalesce(profile->'boundaries', '{}'::jsonb) || ${JSON.stringify(changed)}::jsonb,
+                     true
+                   ),
                    revision = revision + 1, updated_at = now()
-             WHERE workspace_id = ${event.ctx.workspaceId} AND user_id = ${event.read.userId}
-             RETURNING boundaries
+             WHERE user_id = ${event.read.userId} AND revision = ${row.revision}
+             RETURNING revision, profile
           `);
           const after = (Array.isArray(rows) ? rows : [])[0];
           if (!after) return null;
-          return { boundaries: after.boundaries ?? {}, changed, unchangedKeys } as const;
+          await tx.execute(sql`
+            INSERT INTO companion_persona_profile_versions
+              (user_id, revision, examples_revision, author, action, reason, profile)
+            VALUES (${event.read.userId}, ${after.revision}, ${after.revision},
+                    'assistant_tool', 'update', 'Changed by an explicitly requested companion setting.',
+                    ${JSON.stringify(after.profile)}::jsonb)
+          `);
+          return { boundaries: (after.profile.boundaries as Record<string, unknown> | undefined) ?? {}, changed, unchangedKeys } as const;
         },
       );
-      if (!outcome) throw new CompanionToolError("没找到你这台的伴星档案，这次没有改动");
+      if (!outcome) throw new CompanionToolError("没找到你的账号伴星档案，这次没有改动");
       const parts: string[] = [];
-      if (Object.keys(outcome.changed).length > 0) parts.push(`已调整边界：${describe(outcome.changed).join("、")}`);
+      if (Object.keys(outcome.changed).length > 0) {
+        parts.push(`已调整边界：${describe(outcome.changed).join("、")}`);
+        parts.push("新边界会用于下一次尚未开始的调用");
+      }
       // 用户没点名要改的项、或改了等于没改的项，都如实说"本来就是这样"，
       // 不给"这一轮发生了什么"留下第二个版本。
       if (outcome.unchangedKeys.length > 0) {

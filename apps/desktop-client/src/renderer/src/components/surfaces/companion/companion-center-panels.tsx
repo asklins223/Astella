@@ -1,11 +1,12 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Archive, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Database, Download, MessageCircle, Pencil, Pin, RefreshCw, Search, Sparkles, Trash2, X } from "lucide-react";
-import type { CompanionActivityDeliveryV1, CompanionActivityTimelineV1, CompanionDailyFailureReasonV1, CompanionDailySummaryV1, CompanionExportKindV1, CompanionHistoryItemV1, CompanionMemoryItemV1, CompanionMemoryKindV1, CompanionPersonaProfileV1, CompanionPersonaPresetV1, CompanionPersonaV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import type { CompanionActivityDeliveryV1, CompanionActivityTimelineV1, CompanionDailyFailureReasonV1, CompanionDailySummaryV1, CompanionExportKindV1, CompanionHistoryItemV1, CompanionMemoryItemV1, CompanionMemoryKindV1, CompanionMemoryRevisionV1, CompanionMemoryScopeV1, CompanionPersonaPendingRevisionV1, CompanionPersonaPendingV1, CompanionPersonaProfileV1, CompanionPersonaProfileVersionV1, CompanionPersonaPresetV1, CompanionPersonaV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
 import type { CompanionJourneyAction, CompanionJourneyBootstrap } from "@ailearn/shared/companion-journey-contracts";
 import type { CompanionLearningContextV1 } from "@ailearn/shared/companion-conversation-contracts";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
 import { CompanionQuoteBlock, CompanionRecordImage, MonthCalendar } from "../../companion/CompanionChatRecord";
 import { CompanionSelect, type CompanionSelectOption } from "./companion-select.tsx";
+import { DiscoveryKeepAction, type DiscoveryKeepProps } from "./companion-discovery-offer.tsx";
 import { diaryDayLabel, shiftIsoDate, todayIsoDate } from "./companion-diary-day.ts";
 import { formatDate, formatRelative } from "../notebook/surface-data.tsx";
 import { RESUME_RUN_ACTION_LABEL } from "../run/objective-state-copy.ts";
@@ -14,11 +15,26 @@ import { HUD_PAGES } from "../../hud/hud-pages";
 
 export type Section<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly message: string };
 
+/**
+ * §4.5.8：「关于你的」和「她的看法」在记忆管理中明确区分。
+ *
+ * 前五种是关于用户的事实，后一种是**她对一件事的解释**。它们放进同一个
+ * 平铺列表，用户分不清哪条能当事实用——所以列表按 `judgment` 分成两段，
+ * 而不是只在标签上多一个词。
+ */
 export const MEMORY_KIND_LABEL: Record<CompanionMemoryKindV1, string> = {
   preference: "偏好", goal: "目标", learning_context: "学习线索", interaction_note: "互动观察", episodic: "共同经历",
+  judgment: "她的看法",
+};
+/** §4.5.2 判断记录是独立用途层，不是「关于用户的事实」。 */
+export const isCompanionJudgment = (item: { readonly kind: CompanionMemoryKindV1 }): boolean => item.kind === "judgment";
+export const MEMORY_SCOPE_LABEL: Record<CompanionMemoryScopeV1, string> = {
+  global: "所有书房",
+  workspace: "这个书房",
+  task: "只在这项任务里",
 };
 export const MEMORY_STATE_LABEL: Record<string, string> = {
-  candidate: "待确认", active: "已写入", pinned: "已固定", archived: "已归档", linked: "真实关联", orphaned: "关联失效",
+  candidate: "待确认", active: "已写入", pinned: "已固定", archived: "已归档", scheduled: "尚未生效", expired: "已过期", linked: "真实关联", orphaned: "关联失效",
 };
 
 /**
@@ -47,18 +63,41 @@ const BOUNDARY_ITEMS = [
   ["allowVoiceTags", "语气标签", "允许回复携带表演语气"],
 ] as const;
 
+/**
+ * 用户能**手动新建**的类型（§4.5.6 保留了手动增删改）。
+ *
+ * 判断记录不在其中：它必须有来源事件、作者是她、认识状态显式，
+ * 这三件事手工填不出来——`POST /companion/memory` 也不接受它。
+ * 筛选与星图用的 `MEMORY_KIND_OPTIONS` 仍然包含它，因为那里是在看已有条目。
+ */
 export const MEMORY_KIND_OPTIONS: ReadonlyArray<CompanionSelectOption<CompanionMemoryKindV1>> = (
   Object.entries(MEMORY_KIND_LABEL) as Array<[CompanionMemoryKindV1, string]>
 ).map(([value, label]) => ({ value, label }));
+const MEMORY_CREATABLE_KIND_OPTIONS = MEMORY_KIND_OPTIONS.filter((option) => option.value !== "judgment");
 
 const MEMORY_LIST_KIND_OPTIONS: ReadonlyArray<CompanionSelectOption<"all" | CompanionMemoryKindV1>> = [
   { value: "all", label: "全部类型" },
   ...MEMORY_KIND_OPTIONS,
 ];
-const MEMORY_PIN_OPTIONS: ReadonlyArray<CompanionSelectOption<"all" | "pinned" | "candidate">> = [
+/**
+ * §4.5.8：「临时记录可按状态筛选，不隐藏成一个只有系统知道的永久数据库」。
+ *
+ * 归档与「已过期」本来就是屏上会显示的状态（`MEMORY_STATE_LABEL` 里有），
+ * 却没有对应的筛选口——用户看得见标签却找不到筛选方式，就等于这两类记录
+ * 只在"碰巧没有被筛选挡住"的时候才存在。
+ */
+type MemoryStateFilter = "all" | "pinned" | "candidate" | "archived" | "expired";
+function matchesMemoryStateFilter(item: CompanionMemoryItemV1, filter: MemoryStateFilter): boolean {
+  if (filter === "all") return true;
+  return memoryState(item) === filter;
+}
+
+const MEMORY_PIN_OPTIONS: ReadonlyArray<CompanionSelectOption<MemoryStateFilter>> = [
   { value: "all", label: "全部状态" },
   { value: "candidate", label: "待确认" },
   { value: "pinned", label: "已固定" },
+  { value: "archived", label: "已归档" },
+  { value: "expired", label: "已过期" },
 ];
 
 const JOURNEY_STEP_LABEL: Record<string, string> = {
@@ -89,13 +128,27 @@ const JOURNEY_BRANCH_LABEL: Record<string, string> = {
   sandbox_sample: "使用示例材料",
 };
 
-function messageText(item: CompanionHistoryItemV1): string {
+/**
+ * 一条历史消息的正文。**导出去**是因为「留在发现簿」要收藏的必须是屏上正在显示的
+ * 这一段话本身（40 §7），而在壳层重写一份抽取规则，迟早与屏上显示的那份分叉——
+ * 那时候收藏下来的东西与用户看到的不是同一段话。
+ */
+export function messageText(item: CompanionHistoryItemV1): string {
   return item.blocks.map((block) => block.type === "text" ? block.text : block.type === "code" ? block.code : block.type === "citation" ? block.label : "").filter(Boolean).join("\n");
 }
 function memoryState(item: CompanionMemoryItemV1) {
   if (item.archived) return "archived";
+  if (item.validUntil && Date.parse(item.validUntil) <= Date.now()) return "expired";
   if (item.candidate) return "candidate";
+  if (item.validFrom && Date.parse(item.validFrom) > Date.now()) return "scheduled";
   return item.pinned ? "pinned" : "active";
+}
+
+function formatMemoryTime(value: string | null): string {
+  if (!value) return "来源时间";
+  const date = new Date(value);
+  if (!Number.isFinite(date.valueOf())) return "时间未提供";
+  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "short", day: "numeric" }).format(date);
 }
 
 /**
@@ -118,17 +171,32 @@ export function SectionState({ message, detail, onRetry }: { readonly message: s
 
 type MemoryPanelProps = {
   section: Section<{ version: 2; items: CompanionMemoryItemV1[] }>; items: CompanionMemoryItemV1[]; focus: CompanionMemoryItemV1 | null;
-  query: string; kind: "all" | CompanionMemoryKindV1; pinFilter: "all" | "pinned" | "candidate"; busy: string | null; error: string | null; notice: string | null;
-  confirmDelete: boolean; createOpen: boolean; createContent: string; createKind: CompanionMemoryKindV1; correctionOpen: boolean; correctionContent: string;
-  onQuery: (value: string) => void; onKind: (value: "all" | CompanionMemoryKindV1) => void; onPinFilter: (value: "all" | "pinned" | "candidate") => void;
-  onFocus: (id: string) => void; onAction: (action: "confirm" | "pin" | "unpin" | "archive" | "restore" | "dismiss" | "remove") => void;
-  onConfirmDelete: (value: boolean) => void; onCreateOpen: (value: boolean) => void; onCreateContent: (value: string) => void; onCreateKind: (value: CompanionMemoryKindV1) => void; onCreate: () => void; onSummarize: () => void; onCorrectionOpen: (value: boolean) => void; onCorrectionContent: (value: string) => void; onCorrect: () => void; onRetry: () => void;
+  revisions: CompanionMemoryRevisionV1[] | null; revisionsError: string | null; onRetryRevisions: () => void;
+  query: string; kind: "all" | CompanionMemoryKindV1; pinFilter: MemoryStateFilter; busy: string | null; error: string | null; notice: string | null;
+  confirmDelete: boolean; confirmErase: boolean;
+  createOpen: boolean; createContent: string; createKind: CompanionMemoryKindV1; correctionOpen: boolean; correctionContent: string;
+  onQuery: (value: string) => void; onKind: (value: "all" | CompanionMemoryKindV1) => void; onPinFilter: (value: MemoryStateFilter) => void;
+  onFocus: (id: string) => void; onAction: (action: "confirm" | "pin" | "unpin" | "archive" | "restore" | "dismiss" | "remove" | "erase") => void;
+  onConfirmDelete: (value: boolean) => void; onConfirmErase: (value: boolean) => void; onCreateOpen: (value: boolean) => void; onCreateContent: (value: string) => void; onCreateKind: (value: CompanionMemoryKindV1) => void; onCreate: () => void; onSummarize: () => void; onCorrectionOpen: (value: boolean) => void; onCorrectionContent: (value: string) => void; onCorrect: () => void; onRetry: () => void;
 };
 const MEMORY_LIST_UNAVAILABLE = "记忆列表当前不可用";
 const MEMORY_LIST_EMPTY = {
   message: "没有符合条件的记忆",
   detail: "清空筛选或手动添加一条记忆。",
 } as const;
+const MEMORY_AUTHOR_LABEL = { user: "用户修订", extractor: "从对话里提取", companion: "她自己的判断", maintenance: "后台整理" } as const;
+const MEMORY_EPISTEMIC_LABEL = { supported: "有据", tentative: "待核对", disputed: "有争议", superseded: "已被替代" } as const;
+const MEMORY_SOURCE_LABEL = { user_stated: "用户自述", model_inferred: "模型推断", confirmed: "用户确认", summary: "对话整理" } as const;
+/**
+ * 来源行：判断记录的话是**她自己说的**，不能折进「用户原话/伴星发言」两句里。
+ * §4.5.4 说来源性质区分用户自述、可观察事件与模型推断——这三者都不是用户原话，
+ * 所以判断要单独落一句「这是她的理解，不是你说的话」。
+ */
+const MEMORY_SPEAKER_LABEL: Record<"user" | "assistant" | "companion", string> = {
+  user: "用户原话",
+  assistant: "伴星发言",
+  companion: "她自己的理解（不是你说的话）",
+};
 
 export function MemoryPanel(props: MemoryPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -152,7 +220,7 @@ export function MemoryPanel(props: MemoryPanelProps) {
    * 那就是"同一个数两个来源"（39d W2-3 那两个统计分岔的成因）。
    */
   const visible = useMemo(() => props.items
-    .filter((item) => (props.kind === "all" || item.kind === props.kind) && (props.pinFilter === "all" || props.pinFilter === "pinned" && item.pinned || props.pinFilter === "candidate" && item.candidate) && (!props.query.trim() || item.content.toLowerCase().includes(props.query.trim().toLowerCase())))
+    .filter((item) => (props.kind === "all" || item.kind === props.kind) && matchesMemoryStateFilter(item, props.pinFilter) && (!props.query.trim() || item.content.toLowerCase().includes(props.query.trim().toLowerCase())))
     .sort((a, b) => Number(b.candidate) - Number(a.candidate) || b.updatedAt.localeCompare(a.updatedAt)),
   [props.items, props.kind, props.pinFilter, props.query]);
   const memoryReadableView = useMemo<PageReadableV1 | null>(() => {
@@ -195,28 +263,92 @@ export function MemoryPanel(props: MemoryPanelProps) {
   usePageReadableView(memoryReadableView);
   if (!props.section.ok) return <SectionState message={MEMORY_LIST_UNAVAILABLE} detail={props.section.message} onRetry={props.onRetry} />;
   return <div ref={panelRef} className="companion-panel-stack"><div className="companion-panel-heading"><div className="companion-heading-actions"><button type="button" disabled={props.busy !== null} data-busy={props.busy === "summarize" || undefined} onClick={props.onSummarize}>{props.busy === "summarize" ? "整理中…" : "整理近期对话"}</button><button type="button" onClick={() => props.onCreateOpen(!props.createOpen)}>{props.createOpen ? "取消" : "手动添加"}</button></div></div>
-    {props.createOpen ? <div className="companion-inline-form"><CompanionSelect paper ariaLabel="新记忆类型" value={props.createKind} options={MEMORY_KIND_OPTIONS} onChange={props.onCreateKind} /><textarea value={props.createContent} maxLength={200} onChange={(event) => props.onCreateContent(event.target.value)} placeholder="写下希望伴星长期记住的事实" aria-label="新记忆内容" /><button type="button" className="button primary" disabled={!props.createContent.trim() || props.busy !== null} data-busy={props.busy === "create" || undefined} onClick={props.onCreate}>{props.busy === "create" ? "正在保存…" : "保存记忆"}</button></div> : null}
+    {props.createOpen ? <div className="companion-inline-form"><CompanionSelect paper ariaLabel="新记忆类型" value={props.createKind} options={MEMORY_CREATABLE_KIND_OPTIONS} onChange={props.onCreateKind} /><textarea value={props.createContent} maxLength={200} onChange={(event) => props.onCreateContent(event.target.value)} placeholder="写下希望伴星长期记住的事实" aria-label="新记忆内容" /><button type="button" className="button primary" disabled={!props.createContent.trim() || props.busy !== null} data-busy={props.busy === "create" || undefined} onClick={props.onCreate}>{props.busy === "create" ? "正在保存…" : "保存记忆"}</button></div> : null}
     <label className="companion-search"><Search size={14} aria-hidden="true" /><input value={props.query} onChange={(event) => props.onQuery(event.target.value)} placeholder="筛选记忆列表" aria-label="筛选记忆列表" />{props.query ? <button type="button" className="companion-search__clear" onClick={() => props.onQuery("")} aria-label="清空记忆列表搜索"><X size={13} /></button> : null}</label>
     <div className="companion-filter-group" role="group" aria-label="记忆列表筛选"><span>列表</span><CompanionSelect paper ariaLabel="筛选记忆列表类型" value={props.kind} options={MEMORY_LIST_KIND_OPTIONS} onChange={props.onKind} /><CompanionSelect paper ariaLabel="筛选记忆列表状态" value={props.pinFilter} options={MEMORY_PIN_OPTIONS} onChange={props.onPinFilter} /></div>
     {props.error ? <p className="companion-error" role="alert">{props.error}</p> : null}
     {props.notice ? <p className="companion-notice" role="status">{props.notice}</p> : null}
   {(() => {
-    const detailCard = props.focus ? (<article className="companion-memory-detail"><div className="companion-memory-detail__meta"><span>{MEMORY_KIND_LABEL[props.focus.kind]}</span><span>{MEMORY_STATE_LABEL[memoryState(props.focus)]}</span><span>重要度 {Math.round(props.focus.importance * 100)}%</span></div>{props.correctionOpen ? <div className="companion-inline-form"><textarea value={props.correctionContent} maxLength={200} onChange={(event) => props.onCorrectionContent(event.target.value)} aria-label="纠正后的记忆内容" /><div className="companion-action-row"><button type="button" className="button primary" disabled={!props.correctionContent.trim() || props.correctionContent.trim() === props.focus.content || props.busy !== null} data-busy={props.busy === "correct" || undefined} onClick={props.onCorrect}>{props.busy === "correct" ? "正在纠正…" : "保存为待确认记忆"}</button><button type="button" onClick={() => props.onCorrectionOpen(false)}>取消</button></div></div> : <strong>{props.focus.content}</strong>}<small>更新于 {formatRelative(props.focus.updatedAt)}</small><div className="companion-action-row">{props.focus.candidate ? <button type="button" className="button primary" disabled={props.busy !== null} onClick={() => props.onAction("confirm")}>确认写入</button> : null}{!props.focus.candidate && !props.focus.archived ? <button type="button" disabled={props.busy !== null} onClick={() => props.onAction(props.focus!.pinned ? "unpin" : "pin")}><Pin size={13} />{props.focus.pinned ? "取消固定" : "固定"}</button> : null}{!props.correctionOpen && !props.focus.archived ? <button type="button" disabled={props.busy !== null} onClick={() => props.onCorrectionOpen(true)}><Pencil size={13} />纠正</button> : null}{!props.focus.candidate ? <button type="button" disabled={props.busy !== null} onClick={() => props.onAction(props.focus!.archived ? "restore" : "archive")}><Archive size={13} />{props.focus.archived ? "恢复" : "归档"}</button> : null}{props.focus.candidate ? <button type="button" disabled={props.busy !== null} onClick={() => props.onAction("dismiss")}>暂不采用</button> : null}<MemoryDeleteAction active={props.confirmDelete} busy={props.busy !== null} onOpen={() => props.onConfirmDelete(true)} onCancel={() => props.onConfirmDelete(false)} onConfirm={() => props.onAction("remove")} /></div></article>) : null;
+    const detailCard = props.focus ? (
+      <article className="companion-memory-detail">
+        <div className="companion-memory-detail__meta">
+          <span>{MEMORY_KIND_LABEL[props.focus.kind]}</span>
+          <span>{MEMORY_STATE_LABEL[memoryState(props.focus)]}</span>
+          <span>第 {props.focus.revision} 版</span>
+          <span>{MEMORY_AUTHOR_LABEL[props.focus.authorType]}</span>
+          <span>{MEMORY_EPISTEMIC_LABEL[props.focus.epistemicStatus]}</span>
+          <span>重要度 {Math.round(props.focus.importance * 100)}%</span>
+        </div>
+        {props.correctionOpen ? (
+          <div className="companion-inline-form">
+            <textarea value={props.correctionContent} maxLength={200} onChange={(event) => props.onCorrectionContent(event.target.value)} aria-label="纠正后的记忆内容" />
+            <div className="companion-action-row">
+              <button type="button" className="button primary" disabled={!props.correctionContent.trim() || props.correctionContent.trim() === props.focus.content || props.busy !== null} data-busy={props.busy === "correct" || undefined} onClick={props.onCorrect}>{props.busy === "correct" ? "正在保存…" : "保存修订"}</button>
+              <button type="button" onClick={() => props.onCorrectionOpen(false)}>取消</button>
+            </div>
+          </div>
+        ) : <strong>{props.focus.content}</strong>}
+        {props.focus.appliesWhen ? <small>适用条件：{props.focus.appliesWhen}</small> : null}
+        <small>来源：{props.focus.sourceSpeaker ? MEMORY_SPEAKER_LABEL[props.focus.sourceSpeaker] : MEMORY_SOURCE_LABEL[props.focus.sourceType]}{props.focus.sourceBasis === "inferred_from_statement" ? "（根据原话整理）" : ""}</small>
+        <small>适用范围：{MEMORY_SCOPE_LABEL[props.focus.scope]}</small>
+        <small>有效期：{formatMemoryTime(props.focus.validFrom ?? props.focus.createdAt)} 至 {props.focus.validUntil ? formatMemoryTime(props.focus.validUntil) : "无截止时间"}</small>
+        <small>更新于 {formatRelative(props.focus.updatedAt)}</small>
+        {props.revisionsError ? <SectionState message="旧版本暂不可用" detail={props.revisionsError} onRetry={props.onRetryRevisions} /> : props.revisions === null ? <small>正在读取旧版本…</small> : props.revisions.length > 0 ? (
+          <details>
+            <summary>查看旧版本（{props.revisions.length}）</summary>
+            {props.revisions.map((revision) => (
+              <div key={revision.revision}>
+                <div className="companion-memory-detail__meta">
+                  <span>第 {revision.revision} 版</span>
+                  <span>{MEMORY_AUTHOR_LABEL[revision.authorType]}</span>
+                  <span>{MEMORY_EPISTEMIC_LABEL[revision.epistemicStatus]}</span>
+                  <span>来源：{MEMORY_SOURCE_LABEL[revision.sourceType]}</span>
+                </div>
+                <p>{revision.content}</p>
+                <small>被替代于 {formatRelative(revision.supersededAt)}</small>
+              </div>
+            ))}
+          </details>
+        ) : null}
+        <div className="companion-action-row">
+          {props.focus.candidate ? <button type="button" className="button primary" disabled={props.busy !== null} onClick={() => props.onAction("confirm")}>确认写入</button> : null}
+          {!props.focus.candidate && !props.focus.archived ? <button type="button" disabled={props.busy !== null} onClick={() => props.onAction(props.focus!.pinned ? "unpin" : "pin")}><Pin size={13} />{props.focus.pinned ? "取消固定" : "固定"}</button> : null}
+          {!props.correctionOpen && !props.focus.archived ? <button type="button" disabled={props.busy !== null} onClick={() => props.onCorrectionOpen(true)}><Pencil size={13} />纠正</button> : null}
+          {!props.focus.candidate ? <button type="button" disabled={props.busy !== null} onClick={() => props.onAction(props.focus!.archived ? "restore" : "archive")}><Archive size={13} />{props.focus.archived ? "恢复" : "归档"}</button> : null}
+          {props.focus.candidate ? <button type="button" disabled={props.busy !== null} onClick={() => props.onAction("dismiss")}>暂不采用</button> : null}
+          <MemoryDeleteAction active={props.confirmDelete} busy={props.busy !== null} onOpen={() => props.onConfirmDelete(true)} onCancel={() => props.onConfirmDelete(false)} onConfirm={() => props.onAction("remove")} />
+          <MemoryEraseAction active={props.confirmErase} busy={props.busy !== null} onOpen={() => props.onConfirmErase(true)} onCancel={() => props.onConfirmErase(false)} onConfirm={() => props.onAction("erase")} />
+        </div>
+      </article>
+    ) : null;
+  const aboutYou = visible.filter((item) => !isCompanionJudgment(item));
+  const herViews = visible.filter(isCompanionJudgment);
+  const renderRow = (item: CompanionMemoryItemV1) => (
+    <button key={item.memoryItemId} type="button" aria-pressed={props.focus?.memoryItemId === item.memoryItemId} className={[props.focus?.memoryItemId === item.memoryItemId ? "is-selected" : null, item.archived ? "is-archived" : null].filter(Boolean).join(" ") || undefined} onClick={() => props.onFocus(item.memoryItemId)}><strong>{item.content}</strong><span><i className={`is-${memoryState(item)}`} aria-hidden="true" /><em>{MEMORY_KIND_LABEL[item.kind]}</em>· {MEMORY_STATE_LABEL[memoryState(item)]} · {formatRelative(item.updatedAt)}</span></button>
+  );
   return <div className="companion-memory-workspace">
-    <div className="companion-record-list" aria-label="记忆列表">{visible.length === 0 ? <div className="companion-empty-with-action"><SectionState message={MEMORY_LIST_EMPTY.message} detail={MEMORY_LIST_EMPTY.detail} /><button type="button" onClick={() => { props.onQuery(""); props.onKind("all"); props.onPinFilter("all"); }}>清除筛选</button></div> : visible.map((item) => <button key={item.memoryItemId} type="button" aria-pressed={props.focus?.memoryItemId === item.memoryItemId} className={[props.focus?.memoryItemId === item.memoryItemId ? "is-selected" : null, item.archived ? "is-archived" : null].filter(Boolean).join(" ") || undefined} onClick={() => props.onFocus(item.memoryItemId)}><strong>{item.content}</strong><span><i className={`is-${memoryState(item)}`} aria-hidden="true" /><em>{MEMORY_KIND_LABEL[item.kind]}</em>· {MEMORY_STATE_LABEL[memoryState(item)]} · {formatRelative(item.updatedAt)}</span></button>)}</div>
+    <div className="companion-record-list" aria-label="记忆列表">{visible.length === 0 ? <div className="companion-empty-with-action"><SectionState message={MEMORY_LIST_EMPTY.message} detail={MEMORY_LIST_EMPTY.detail} /><button type="button" onClick={() => { props.onQuery(""); props.onKind("all"); props.onPinFilter("all"); }}>清除筛选</button></div> : (
+      <>
+        {aboutYou.length > 0 ? <section aria-label="关于你的"><h4 className="companion-memory-group">关于你的</h4>{aboutYou.map(renderRow)}</section> : null}
+        {herViews.length > 0 ? <section aria-label="她的看法"><h4 className="companion-memory-group">她的看法<small>她对一件事的理解，不是你说的话，也不是学习记录</small></h4>{herViews.map(renderRow)}</section> : null}
+      </>
+    )}</div>
     <aside className="companion-memory-focus" aria-label="所选记忆详情">{detailCard ?? <SectionState message="选择一条记忆" detail="查看它的内容与可用操作。" />}</aside>
   </div>;
   })()}
   </div>;
 }
 
-type DialoguePanelProps = { section: Section<{ version: 1; items: CompanionHistoryItemV1[]; nextCursor: string | null }>; items: CompanionHistoryItemV1[]; cursor: string | null; query: string; searching: boolean; loadingMore: boolean; error: string | null; onQuery: (value: string) => void; onSearch: () => void; onLoadMore: () => void; onContinue: () => void; onRetry: () => void };
+type DialogueKeepProps = DiscoveryKeepProps & { readonly anchorMessageId: string | null };
+type DialoguePanelProps = { section: Section<{ version: 1; items: CompanionHistoryItemV1[]; nextCursor: string | null }>; items: CompanionHistoryItemV1[]; cursor: string | null; query: string; searching: boolean; loadingMore: boolean; error: string | null; onQuery: (value: string) => void; onSearch: () => void; onLoadMore: () => void; onContinue: () => void; onRetry: () => void; keep?: DialogueKeepProps | null };
 const DIALOGUE_UNAVAILABLE = "连续对话当前不可用";
 const DIALOGUE_EMPTY = {
   message: "还没有对话记录",
   detail: "开始交流后，消息会连续出现在这里。",
 } as const;
 const DIALOGUE_NO_BODY = "这条记录不含可展示正文。";
+/** 那一次收藏机会与她读到的那一句，写一份给两处用。 */
+const DIALOGUE_KEEP_LINE = "最新一句回答旁可以留下一条到发现簿，只问这一次。";
 /** 行首那个说话人字：屏上 `<b>` 里就是这三个词，她念的也必须是同一份。 */
 function dialogueRoleLabel(role: CompanionHistoryItemV1["role"]): string {
   return role === "user" ? "你" : role === "assistant" ? "伴星" : "系统";
@@ -226,7 +358,23 @@ function dialogueResultLine(props: DialoguePanelProps): string {
   return props.searching ? "正在搜索对话" : props.query.trim() ? `找到 ${props.items.length} 条对话` : "";
 }
 
+/**
+ * 「留在发现簿」那一格与伴星读到的说明，共用同一份文案（39d W2-7 那条纪律）。
+ *
+ * 它出现在屏上就会被问到，所以不能只在界面上多一个按钮：屏上有、她读到没有，
+ * 用户问起来就是"她根本没看见"。
+ */
+function dialogueKeepLine(props: DialoguePanelProps): string | undefined {
+  const keep = props.keep;
+  if (!keep) return undefined;
+  if (keep.failure) return `留在发现簿没有成功：${keep.failure.slice(0, 60)}`;
+  if (keep.feedback) return keep.feedback.slice(0, 120);
+  return keep.state === "offer" ? DIALOGUE_KEEP_LINE : undefined;
+}
+
 export function DialoguePanel(props: DialoguePanelProps) {
+  // 屏上那一格与她读到的那一句同源：单独算一次，别在下面再拼一遍。
+  const keepLine = dialogueKeepLine(props);
   const dialogueReadableView = useMemo<PageReadableV1 | null>(() => {
     // 这一格只有一行清单和几句状态字，**没有本地二次筛选**：`props.items` 就是
     // 服务端按关键词回给这一屏的那一批，屏上露出的也就是它（与记忆那一格不同）。
@@ -251,11 +399,16 @@ export function DialoguePanel(props: DialoguePanelProps) {
       ...(props.query.trim() ? { filters: [{ label: "关键词", value: props.query.trim().slice(0, 40) }] } : {}),
       ...(rows.length > 0 ? { items: rows } : {}),
       ...(props.items.length === 0 ? { notice: `${DIALOGUE_EMPTY.message}：${DIALOGUE_EMPTY.detail}` } : {}),
+      ...(keepLine && props.items.length > 0 ? { notice: keepLine } : {}),
     };
-  }, [props.error, props.items, props.query, props.searching, props.section]);
+  }, [keepLine, props.error, props.items, props.query, props.searching, props.section]);
   usePageReadableView(dialogueReadableView);
   if (!props.section.ok) return <SectionState message={DIALOGUE_UNAVAILABLE} detail={props.section.message} onRetry={props.onRetry} />;
-  return <div className="companion-panel-stack"><div className="companion-panel-heading"><h3>连续对话</h3><p>按全局时间排列；内部数据分段不会显示在这里。</p><button type="button" className="button primary" onClick={props.onContinue}><MessageCircle size={14} />继续交流</button></div><form className="companion-search" onSubmit={(event) => { event.preventDefault(); props.onSearch(); }}><Search size={14} aria-hidden="true" /><input value={props.query} onChange={(event) => props.onQuery(event.target.value)} placeholder="搜索全部对话正文" aria-label="搜索全部对话正文" /><button type="submit" disabled={props.searching}>{props.searching ? "搜索中" : "搜索"}</button></form><p className="companion-result-status" aria-live="polite">{dialogueResultLine(props)}</p>{props.error ? <p className="companion-error" role="alert">{props.error}</p> : null}{props.cursor ? <button type="button" className="companion-load-more" disabled={props.loadingMore} onClick={props.onLoadMore}>{props.loadingMore ? "正在读取更早记录…" : "加载更早记录"}</button> : null}<div className="companion-thread">{props.items.length === 0 ? <SectionState message={DIALOGUE_EMPTY.message} detail={DIALOGUE_EMPTY.detail} /> : props.items.map((item) => <article key={item.messageId} tabIndex={-1} className={`is-${item.role}`} id={`companion-message-${item.messageId}`}><span><b>{dialogueRoleLabel(item.role)}</b><time>{formatRelative(item.createdAt)}</time></span>{paragraphLines(messageText(item) || DIALOGUE_NO_BODY).map((paragraph, index) => <p key={index}>{paragraph}</p>)}{item.kind === "cancelled" ? <small>这是一条被你停止的未完成回复。</small> : null}</article>)}</div></div>;
+  return <div className="companion-panel-stack"><div className="companion-panel-heading"><h3>连续对话</h3><p>按全局时间排列；内部数据分段不会显示在这里。</p><button type="button" className="button primary" onClick={props.onContinue}><MessageCircle size={14} />继续交流</button></div><form className="companion-search" onSubmit={(event) => { event.preventDefault(); props.onSearch(); }}><Search size={14} aria-hidden="true" /><input value={props.query} onChange={(event) => props.onQuery(event.target.value)} placeholder="搜索全部对话正文" aria-label="搜索全部对话正文" /><button type="submit" disabled={props.searching}>{props.searching ? "搜索中" : "搜索"}</button></form><p className="companion-result-status" aria-live="polite">{dialogueResultLine(props)}</p>{props.error ? <p className="companion-error" role="alert">{props.error}</p> : null}{props.cursor ? <button type="button" className="companion-load-more" disabled={props.loadingMore} onClick={props.onLoadMore}>{props.loadingMore ? "正在读取更早记录…" : "加载更早记录"}</button> : null}<div className="companion-thread">{props.items.length === 0 ? <SectionState message={DIALOGUE_EMPTY.message} detail={DIALOGUE_EMPTY.detail} /> : props.items.map((item) => <article key={item.messageId} tabIndex={-1} className={`is-${item.role}`} id={`companion-message-${item.messageId}`}><span><b>{dialogueRoleLabel(item.role)}</b><time>{formatRelative(item.createdAt)}</time></span>{paragraphLines(messageText(item) || DIALOGUE_NO_BODY).map((paragraph, index) => <p key={index}>{paragraph}</p>)}{item.kind === "cancelled" ? <small>这是一条被你停止的未完成回复。</small> : null}{/*
+          那一次「留在发现簿」只挂在 `anchorMessageId` 这一条下面（通常是最新一句）。
+          放在 article 内部而不是列表底部，是为了让它读起来是**这一句**的动作，
+          而不是整页的一个常驻按钮。
+        */}{props.keep?.anchorMessageId === item.messageId ? <DiscoveryKeepAction {...props.keep} /> : null}</article>)}</div></div>;
 }
 
 type ActivityPanelProps = {
@@ -446,6 +599,26 @@ export function DiaryPanel(props: {
   date: string | null;
   onDate: (value: string | null) => void;
   onMemory: (id: string) => void;
+  /**
+   * 「聊聊这篇」（40 §6 / A08）。
+   *
+   * 它**只**打开对话并附上这篇的引用，不替用户发消息——所以这里传出去的是
+   * 日期与版本，不是一句已经写好的提问。
+   */
+  onDiscussDiary: (reference: { readonly date: string; readonly version: number }) => void;
+  /**
+   * §10：隐藏 / 取消隐藏 / 删除。三件事**语义不同**，所以是三个回调而不是
+   * 一个带 action 的——调用点读起来不该需要再想一遍哪个按钮会删掉东西。
+   */
+  onHideDiary: () => void;
+  onUnhideDiary: () => void;
+  onDeleteDiary: () => void;
+  confirmDeleteDiary: boolean;
+  onConfirmDeleteDiary: (value: boolean) => void;
+  /** 三个写动作共用一条 busy 闩：并发点两次会撞唯一索引。 */
+  busy: boolean;
+  /** §11.1「展示实际范围与结果」：服务端报回来的范围/失败原因原样落在这里。 */
+  notice?: string | null;
   onRetry: () => void;
   marks: ReadonlyMap<string, "generated" | "failed"> | null;
   marksFailure: string | null;
@@ -497,17 +670,23 @@ export function DiaryPanel(props: {
     // 只登记她自己写的那几段正文（`<p class="companion-diary-prose">`）；
     // 引文块与图片块由别的组件渲染，这里没有可逐字对上的屏幕文本，就不编。
     const prose = daily.blocks.filter((block) => block.type === "text" && block.text.trim().length > 0);
+    const reasonItem = daily.selectionReason
+      ? [{ ordinal: 1, label: `她选了这段：${daily.selectionReason}` }]
+      : [];
     return {
       pageId: "companion",
       title: HUD_PAGES.companion.title,
       statusLine: daily.generatedAt ? `生成于 ${formatDate(daily.generatedAt)}` : "生成时间未提供",
       filters: [{ label: "日期", value: diaryDayLabel(day).slice(0, 40) }],
-      ...(prose.length > 0
+      ...(prose.length > 0 || reasonItem.length > 0
         ? {
-            items: prose.slice(0, 12).map((block, index) => ({
-              ordinal: index + 1,
-              label: (block as { text: string }).text.slice(0, 120),
-            })),
+            items: [
+              ...reasonItem,
+              ...prose.map((block, index) => ({
+                ordinal: reasonItem.length + index + 1,
+                label: (block as { text: string }).text.slice(0, 120),
+              })),
+            ].slice(0, 12),
           }
         : {}),
     };
@@ -544,14 +723,104 @@ export function DiaryPanel(props: {
               : block.type === "image"
                 ? <CompanionRecordImage block={block} key={`image-${index}`} />
                 : null)}
+          {daily.selectionReason ? <small>她选了这段：{daily.selectionReason}</small> : null}
           <small>{daily.generatedAt ? `生成于 ${formatDate(daily.generatedAt)}` : "生成时间未提供"}</small>
           {daily.memory ? <button type="button" onClick={() => props.onMemory(daily.memory!.memoryItemId)}>查看关联记忆</button> : null}
+          {/* 聊聊这篇：日记页的次级动作。它带出日期与版本，让伴星按**当前权限**
+              现读那一篇，而不是让用户把全文复制粘贴（§6）。 */}
+          {daily.date ? <button
+            type="button"
+            onClick={() => props.onDiscussDiary({ date: daily.date!, version: daily.revision })}
+            aria-label={`聊聊 ${daily.date} 这篇日记`}
+          >聊聊这篇</button> : null}
+          {/* 隐藏 vs 删除：合同把这两件事的后果写得完全不同。
+              隐藏——从列表与推荐里移除，但**不删内容**、能恢复；
+              删除——连派生预览与摘录一起清掉，不能恢复。
+              所以措辞也要不同：这里说「藏起来」，下面说「删掉」。 */}
+          {daily.hidden
+            ? <button type="button" disabled={props.busy !== null} onClick={props.onUnhideDiary}>取消隐藏</button>
+            : <button type="button" disabled={props.busy !== null} onClick={props.onHideDiary}>藏起来</button>}
+          {props.confirmDeleteDiary
+            ? <span className="companion-action-row">
+                <button
+                  type="button"
+                  className="button danger"
+                  disabled={props.busy !== null}
+                  onClick={() => props.onDeleteDiary()}
+                >确认删掉这一篇</button>
+                <button type="button" disabled={props.busy !== null} onClick={() => props.onConfirmDeleteDiary(false)}>不删了</button>
+              </span>
+            : <button type="button" disabled={props.busy !== null} onClick={() => props.onConfirmDeleteDiary(true)}>
+                删掉这一篇
+              </button>}
         </article>
       : <SectionState message={daily.status === "failed" ? DIARY_DAY_FAILED : DIARY_DAY_EMPTY} detail={daily.status === "failed" ? DIARY_FAILURE_DETAIL[daily.failureReason ?? "unknown"] : undefined} />}
+    {props.notice ? <p className="companion-notice" role="status">{props.notice}</p> : null}
   </div>;
 }
 
-type PersonaPanelProps = { section: Section<CompanionPersonaV1>; persona: CompanionPersonaV1 | null; busy: string | null; error: string | null; notice: string | null; onPreset: (preset: CompanionPersonaPresetV1) => void; onActiveness: (value: CompanionPersonaProfileV1["activeness"]) => void; onBoundary: (key: (typeof BOUNDARY_ITEMS)[number][0]) => void; onReset: () => void; onRename: (name: string) => void; onRetry: () => void };
+export function DiarySettingsPanel(props: {
+  readonly enabled: boolean | null;
+  readonly busy: boolean;
+  readonly error: string | null;
+  readonly onChange: (enabled: boolean) => void;
+  readonly onRetry: () => void;
+}) {
+  const readableView = useMemo<PageReadableV1>(() => ({
+    pageId: "companion",
+    title: HUD_PAGES.companion.title,
+    statusLine: props.enabled === null
+      ? "日记设置暂时不可用"
+      : props.enabled ? "自动日记已开启" : "自动日记已暂停",
+    ...(props.error ? { notice: props.error.slice(0, 120) } : {}),
+  }), [props.enabled, props.error]);
+  usePageReadableView(readableView);
+
+  return <div className="companion-panel-stack">
+    <div className="companion-panel-heading">
+      <div><h3>自动日记</h3><p>单独控制日记生成，不影响学习、提醒或伴星对话。</p></div>
+    </div>
+    {props.enabled === null
+      ? <SectionState message="日记设置暂时不可用" detail={props.error ?? "无法读取当前设置。"} onRetry={props.onRetry} />
+      : <div className="companion-boundaries">
+          <button
+            type="button"
+            role="switch"
+            aria-label="自动生成日记"
+            aria-checked={props.enabled}
+            disabled={props.busy}
+            onClick={() => props.onChange(!props.enabled)}
+          >
+            <span><strong>自动准备每日手记</strong><small>暂停期间不收集日记素材；重新开启后只从开启时起积累。</small></span>
+            <span className="companion-switch" data-on={props.enabled || undefined} aria-hidden="true"><i /></span>
+          </button>
+        </div>}
+    {props.error && props.enabled !== null ? <p role="alert">{props.error}</p> : null}
+  </div>;
+}
+
+/**
+ * 「待生效」那一版的正文与那一行的措辞（40 §4.8.4 / A50）。
+ *
+ * `pending.pending.profile` 可能是 `null`：那不是"这一版没有内容"，而是
+ * 「这一版的内容是回到当前发布的默认表达」。把它读成"没有内容"的话，界面就会
+ * 对着一张空卡说"已排好队"，而用户看到的是她其实还是原来那个样子。
+ */
+type PersonaPendingProps = {
+  /**
+   * 读回的那一版与它的指针。**缺省 = 还没读到**，面板因此先不出声。
+   *
+   * 「读到且没有排队」不是 `null`，而是 `{ pending: null }` —— 把它做成缺省，
+   * "还没读过" 与 "读过了，没有排队" 就成了同一个值，而后者是面板可以断言的事实，
+   * 前者不是。
+   */
+  readonly pending?: CompanionPersonaPendingV1;
+  readonly pendingError?: string | null;
+  readonly onActivatePending?: () => void;
+  readonly onRetryPending?: () => void;
+};
+
+type PersonaPanelProps = { section: Section<CompanionPersonaV1>; persona: CompanionPersonaV1 | null; versions: CompanionPersonaProfileVersionV1[] | null; versionsError: string | null; busy: string | null; error: string | null; notice: string | null; onPreset: (preset: CompanionPersonaPresetV1) => void; onActiveness: (value: CompanionPersonaProfileV1["activeness"]) => void; onBoundary: (key: (typeof BOUNDARY_ITEMS)[number][0]) => void; onReset: () => void; onRestore: (revision: number) => void; onReloadVersions: () => void; onRename: (name: string) => void; onRetry: () => void } & PersonaPendingProps;
 /**
  * 改名那一行。草稿住在本地，且**只在真的改过时覆盖**当前值：`null` 表示"跟着档案"，
  * 于是服务端回什么就显示什么，不会出现输入框和档案各存一份名字。
@@ -583,7 +852,7 @@ function CompanionNameRow(props: { readonly current: string; readonly busy: bool
 }
 
 const PERSONA_UNAVAILABLE = "人格档案当前不可用";
-const PERSONA_SECTIONS = { appearance: "人格外观", boundaries: "边界" } as const;
+const PERSONA_SECTIONS = { appearance: "人格外观", boundaries: "边界", pending: "待生效版本" } as const;
 /** 活跃度那三个词的屏上写法：分段按钮与她读到的那一格共用一份。 */
 function activenessLabel(value: CompanionPersonaProfileV1["activeness"] | undefined): string | null {
   if (value === "quiet") return "安静";
@@ -592,7 +861,20 @@ function activenessLabel(value: CompanionPersonaProfileV1["activeness"] | undefi
   return null;
 }
 
+/** 版本是谁排的：屏上版本卡与「待生效」那一行共用一份，不各写一遍。 */
+const PERSONA_VERSION_AUTHOR_LABEL: Record<CompanionPersonaPendingRevisionV1["author"], string> = {
+  user: "你排的",
+  assistant_tool: "她调整的",
+  restore: "恢复旧版时排的",
+  migration: "历史导入",
+};
+const PERSONA_NO_PENDING = "现在没有排队的人格版本。";
+const PERSONA_PENDING_LOADING = "正在读取待生效版本…";
+
 export function PersonaPanel(props: PersonaPanelProps) {
+  const [showOlderVersions, setShowOlderVersions] = useState(false);
+  const olderVersionsId = useId();
+  useEffect(() => setShowOlderVersions(false), [props.versions]);
   const personaReadableView = useMemo<PageReadableV1 | null>(() => {
     const profile = props.persona?.profile ?? null;
     if (!props.section.ok || !props.persona) {
@@ -610,26 +892,47 @@ export function PersonaPanel(props: PersonaPanelProps) {
     props.persona.presets.forEach((preset) => push(preset.name, PERSONA_SECTIONS.appearance));
     BOUNDARY_ITEMS.forEach(([, label]) => push(label, PERSONA_SECTIONS.boundaries));
     const presetName = props.persona.presets.find((preset) => preset.presetId === profile?.presetId)?.name;
+    // 「当前 / 待生效 + 生效条件」是合同点名要在**回执**里给出的一格（A50）。
+    // 它进 filters 而不是 notice：它是屏上那一段的稳定事实，不是刚发生的一次结果。
+    const pendingRevision = props.pending?.pending?.revision ?? null;
     return {
       pageId: "companion",
       title: HUD_PAGES.companion.title,
       statusLine: props.notice ?? props.error ?? undefined,
       filters: [
+        { label: "当前版本", value: `第 ${props.persona.profileRevision} 版`.slice(0, 40) },
         ...(presetName ? [{ label: "当前预设", value: presetName.slice(0, 40) }] : []),
         ...(activenessLabel(profile?.activeness) ? [{ label: "活跃度", value: activenessLabel(profile?.activeness)!.slice(0, 40) }] : []),
+        ...(pendingRevision ? [
+          { label: "待生效版本", value: `第 ${pendingRevision} 版`.slice(0, 40) },
+          { label: "生效条件", value: props.pending!.pending!.effectiveWhen.slice(0, 40) },
+        ] : []),
       ],
       items: rows.map((row, index) => ({ ordinal: index + 1, label: row.label.slice(0, 120), state: row.state.slice(0, 40) })),
     };
-  }, [props.error, props.notice, props.persona, props.section]);
+  }, [props.error, props.notice, props.pending, props.persona, props.section]);
   usePageReadableView(personaReadableView);
   if (!props.section.ok || !props.persona) return <SectionState message={PERSONA_UNAVAILABLE} detail={!props.section.ok ? props.section.message : undefined} onRetry={props.onRetry} />;
   const profile = props.persona.profile;
+  const currentRevision = props.persona.profileRevision;
+  const pendingRevision = props.pending?.pending?.revision ?? null;
+  const versionCard = (version: CompanionPersonaProfileVersionV1) => <article key={version.id} className="companion-inline-form" data-pending={version.revision === pendingRevision || undefined}>
+    <strong>第 {version.revision} 版{version.profile ? ` · ${version.profile.name}` : " · 系统默认"}</strong>
+    {/*
+      排队中的那一版在历史里也要看得出来：它已经落库、可查、也还能恢复，
+      只是**还没被使用**。少了这个标记，用户会以为这一版已经生效了。
+    */}
+    {version.revision === pendingRevision ? <span className="tag">待生效</span> : null}
+    <small>{formatDate(version.createdAt)} · {version.action === "reset" ? "恢复默认" : version.action === "restore" ? "恢复旧版" : version.action === "migration" ? "迁入账号档案" : version.author === "assistant_tool" ? "伴星调整" : "手动修改"}</small>
+    {version.profile ? <p>{version.profile.speakingStyle}</p> : null}
+    <button type="button" className="button" disabled={props.busy !== null || version.revision === currentRevision} onClick={() => props.onRestore(version.revision)}>{version.revision === currentRevision ? "当前版本" : `恢复第 ${version.revision} 版`}</button>
+  </article>;
   return <div className="companion-panel-stack companion-persona-groups">
-    <div className="companion-panel-heading"><div><h3>人格</h3><p>预设、活跃度与边界都会存进你的档案，立刻对伴星生效。</p></div></div>
+    <div className="companion-panel-heading"><div><h3>人格</h3><p>人格在账号的各个空间共享；改动会用于下一次尚未开始的调用。</p></div></div>
     {props.error ? <p className="companion-error" role="alert">{props.error}</p> : null}
     {props.notice ? <p className="companion-notice" role="status">{props.notice}</p> : null}
     <section>
-      <h4>她叫什么</h4><p>署名、对话记录与轨道上的说明都跟着换，改完立刻生效。</p>
+      <h4>她叫什么</h4><p>署名、对话记录与轨道上的说明都跟着换。</p>
       {profile ? <CompanionNameRow current={profile.name} busy={props.busy !== null} onRename={props.onRename} /> : null}
     </section>
     <section>
@@ -644,6 +947,45 @@ export function PersonaPanel(props: PersonaPanelProps) {
     <section>
       <h4>{PERSONA_SECTIONS.boundaries}</h4><p>每项都是独立授权，关闭后伴星不会把它当成默认同意。</p>
       <div className="companion-boundaries">{BOUNDARY_ITEMS.map(([key, label, detail]) => <button key={key} type="button" role="switch" aria-checked={profile?.boundaries[key] === true} disabled={!profile || props.busy !== null} onClick={() => props.onBoundary(key)}><span><strong>{label}</strong><small>{detail}</small></span><span className="companion-switch" data-on={profile?.boundaries[key] === true || undefined} aria-hidden="true"><i /></span></button>)}</div>
+    </section>
+    {/* 这一格是「她改了但还没开始用」的落点。放在人格版本**之前**是有意的：
+        用户改完上面那几项就会顺着读下来，最先撞上的就该是"还有一版在排队"。 */}
+    <section>
+      <h4>{PERSONA_SECTIONS.pending}</h4>
+      <p>她调整自己的表达时会先排在这里，<strong>当前正在用的那一版不会因此改变</strong>；你也可以现在就让它生效。</p>
+      {/*
+        两态要分清：**还没读到**（缺省）不是**读到且没有排队**（`pending: null`）。
+        合并成一个的话，面板会在第一次请求返回之前说「现在没有排队的人格版本」——
+        那是一句它并不知道的事实，而这一格恰恰是用户判断"她是不是已经改了"的依据。
+      */}
+      {props.pendingError ? <>
+        <p className="companion-error" role="alert">待生效版本暂时读不到：{props.pendingError}</p>
+        {props.onRetryPending ? <button type="button" onClick={props.onRetryPending}>重试读取</button> : null}
+      </> : !props.pending ? null : props.pending.pending === null ? <p>{PERSONA_NO_PENDING}</p> : (() => {
+        const staged = props.pending!.pending!;
+        return <article className="companion-inline-form" data-pending>
+          <strong>第 {staged.revision} 版{staged.profile ? ` · ${staged.profile.name}` : " · 回到系统默认表达"}</strong>
+          {/* 生效条件由服务端算好（模型自改下一会话、用户直接纠正下一轮未开始的调用）。
+              界面不复述成另一句：用户判断"现在改还来不来得及"靠的就是这一格。 */}
+          <small>{PERSONA_VERSION_AUTHOR_LABEL[staged.author]} · 排于 {formatDate(staged.stagedAt)} · {staged.effectiveWhen}</small>
+          {staged.profile ? <p>{staged.profile.speakingStyle}</p> : null}
+          <button type="button" className="button primary" disabled={props.busy !== null} data-busy={props.busy === "activate-pending" || undefined} onClick={props.onActivatePending}>{props.busy === "activate-pending" ? "正在生效…" : "现在生效"}</button>
+        </article>;
+      })()}
+    </section>
+    <section>
+      <h4>人格版本</h4><p>每次修改、恢复默认或恢复旧版都会留下新版本。恢复不会改动各空间分别累积的熟悉度。</p>
+      {props.versionsError ? <p className="companion-error" role="alert">版本记录暂时无法读取：{props.versionsError}</p> : null}
+      {props.versions === null && !props.versionsError ? <p role="status">正在读取版本记录…</p> : null}
+      {props.versions?.length === 0 ? <p>还没有人格版本记录。</p> : null}
+      {props.versions?.slice(0, 20).map(versionCard)}
+      {props.versions && props.versions.length > 20 ? <>
+        <button type="button" className="text-action" aria-expanded={showOlderVersions} aria-controls={olderVersionsId} onClick={() => setShowOlderVersions((value) => !value)}>
+          {showOlderVersions ? "收起较早版本" : `查看更早版本（${props.versions.length - 20}）`}
+        </button>
+        <div id={olderVersionsId} hidden={!showOlderVersions}>{props.versions.slice(20).map(versionCard)}</div>
+      </> : null}
+      {props.versionsError ? <button type="button" onClick={props.onReloadVersions}>重试读取版本</button> : null}
     </section>
   </div>;
 }
@@ -735,6 +1077,23 @@ function DangerAction(props: { active: boolean; busy: boolean; title: string; de
     wasActive.current = props.active;
   }, [props.active]);
   return <div className="companion-danger-action"><Trash2 size={14} /><span><strong>{props.title}</strong><small>{props.detail}</small></span><div id={actionsId}><button ref={openRef} type="button" className="danger-quiet" disabled={props.busy} aria-expanded={props.active} aria-controls={actionsId} onClick={props.active ? props.onCancel : props.onOpen}>{props.active ? "取消" : "清除"}</button>{props.active ? <button ref={confirmRef} type="button" className="danger" disabled={props.busy} data-busy={props.busy || undefined} onClick={props.onConfirm}>{props.busy ? "正在清除…" : "确认清除"}</button> : null}</div></div>;
+}
+
+/**
+ * 彻底清除：**不可逆**，所以与"删除"分成两个独立入口，不共用一次确认。
+ *
+ * 为什么不能并到 `MemoryDeleteAction` 里当第三个按钮：那个按钮点完是
+ * "确认删除"——用户已经为"删掉"付过一次确认了。再挂一个同样措辞的按钮，
+ * 就会让人以为它和删除是同一件事的不同结果，而实际上**一个进回收区、
+ * 一个什么都不剩**。所以这里的措辞必须自己说清不可逆。
+ */
+function MemoryEraseAction(props: { active: boolean; busy: boolean; onOpen: () => void; onCancel: () => void; onConfirm: () => void }) {
+  const confirmRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => { if (props.active) confirmRef.current?.focus(); }, [props.active]);
+  return <><button type="button" className="danger-quiet" disabled={props.busy} aria-expanded={props.active} onClick={props.active ? props.onCancel : props.onOpen}>
+    <Trash2 size={13} />{props.active ? "取消彻底清除" : "彻底清除"}
+  </button>{props.active ? <span className="small" role="alert">删掉就找不回来了，也没有回收区。确定？</span>
+    : null}{props.active ? <button ref={confirmRef} type="button" className="danger" disabled={props.busy} data-busy={props.busy || undefined} onClick={props.onConfirm}>确认彻底清除</button> : null}</>;
 }
 
 function MemoryDeleteAction(props: { active: boolean; busy: boolean; onOpen: () => void; onCancel: () => void; onConfirm: () => void }) {

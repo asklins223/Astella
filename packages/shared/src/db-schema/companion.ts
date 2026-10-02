@@ -87,7 +87,19 @@ export type CompanionPresenceState = {
 
 export type CompanionSuggestionPause = {
   paused: boolean;
+  /** 按**时长**的暂停（"暂停两小时"）。ISO 时刻。 */
   until?: string;
+  /**
+   * 40 §8.2 的**本地日**暂停（"今天别催学习"）。形如 YYYY-MM-DD。
+   *
+   * 与 `until` 并存是因为两者口径不同、差一天：用户 23:50 说"今天别催"，
+   * 按 `now+24h` 会压到明天下午，而他要的是压到今晚 24 点。
+   * 这一栏必须与 contracts 里那份 zod schema **同形**——只改一处的话，
+   * 写入侧能编过而校验侧拒收（或者反过来，静默丢掉新字段）。
+   */
+  localDate?: string;
+  /** 用户当时的本地时区；没有它就算不出"今天"到哪儿结束。 */
+  timezone?: string;
   reasonCodes?: string[];
 };
 
@@ -117,6 +129,8 @@ export const userCompanionAccountState = pgTable(
     revision: integer("revision").notNull().default(0),
     epoch: integer("epoch").notNull().default(0),
     globalEnabled: boolean("global_enabled").notNull().default(true),
+    diaryEnabled: boolean("diary_enabled").notNull().default(true),
+    diaryEnabledSince: timestamp("diary_enabled_since", { withTimezone: true }),
     presence: jsonb("presence").$type<CompanionPresenceState>(),
     suggestionPause: jsonb("suggestion_pause").$type<CompanionSuggestionPause>(),
     suppression: jsonb("suppression").$type<CompanionSuppression>(),

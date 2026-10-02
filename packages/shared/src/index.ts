@@ -37,6 +37,7 @@ export * from "./contracts/review-queue-v2-contracts.ts";
 export * from "./contracts/formal-assessment-guard-contracts.ts";
 export * from "./contracts/room-projection-contracts.ts";
 export * from "./companion-proactive-policy.ts";
+export * from "./companion-proactive-quota.ts";
 export * from "./contracts/companion-home-contracts.ts";
 // 伴星中心（桌面页 20）读取合同：记忆 / 记忆星图 / 日记 / 人格档案 / 对话记录。
 export * from "./contracts/companion-memory-desktop-contracts.ts";
@@ -58,9 +59,13 @@ export * from "./contracts/companion-character-contracts.ts";
 export * from "./companion-emotion-classifier.ts";
 export * from "./contracts/companion-conversation-contracts.ts";
 export * from "./contracts/companion-agent-contracts.ts";
+export * from "./contracts/companion-run-diagnostics.ts";
 export * from "./companion-agent-registry.ts";
 export * from "./companion-persona.ts";
 export * from "./pet-persona-presets.ts";
+// 2026-10-02：40b §1.4 第 1 条「登记每条要求」的可检验清单。纯数据 + 惰性
+// node: 导入（无顶层 node: 依赖），所以 index 仍是浏览器安全入口。
+export * from "./companion-model-requirements.ts";
 export * from "./contracts/card-quality-v2-contracts.ts";
 export * from "./voice-expression-tags.ts";
 export * from "./tts-voice-catalog.ts";
@@ -70,6 +75,7 @@ export * from "./contracts/desktop-surface-contracts.ts";
 // 设计 P1-8（2026-09-15 审计）：伴星记忆类 job 的 payload 字段契约唯一来源
 // （写入侧 API 与 4 个 worker handler 共用；纯类型/常量，无 node: 依赖）。
 export * from "./companion-memory-job-payload.ts";
+export * from "./companion-memory-temporal.ts";
 // 稳定 P1（2026-09-15 审计）：作业 payload 契约按作业类型分型。非 companion
 // （parse_source）用精确类型 + fail-closed 读取器；companion_* 仍由各自契约模块
 // 负责。纯类型/常量/纯函数，无 node: 依赖。

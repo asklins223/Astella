@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildSummarizerSnapshot,
   buildSummarizerMessages,
   CONVERSATION_SUMMARY_MAX_CHARS,
   conversationSummaryOutputSchema,
-  formatSummarizerTranscript,
   renderConversationSummary,
   SUMMARIZER_INPUT_CHARS,
 } from "../companion-summarizer.ts";
@@ -75,18 +75,36 @@ test("summarizer 输入窗口: 超预算时保留结尾，不是开头", () => {
   assert.ok(!userTurn.includes("最早的一句"), "超预算时开头可以让位");
 });
 
-// SQL 侧改成 `ORDER BY seq DESC`（取最近 200 条）之后，翻回时间顺序这一步
-// 一旦漏掉，喂给模型的就是一段倒着说的话。
-test("summarizer 对话拼装: 倒序行集翻回时间顺序", () => {
-  const newestFirst = [
-    { role: "assistant", blocks: [{ type: "text", text: "后说的" }] },
-    { role: "user", blocks: [{ type: "text", text: "先问的" }] },
+test("summarizer snapshot: 精确记录实际输入水位、排除系统消息并校验来源版本", () => {
+  const rows = [
+    { id: "message-12", seq: "12", role: "assistant", contentSha256: "c".repeat(64), blocks: [{ type: "text", text: "后答" }] },
+    { id: "system-11", seq: "11", role: "system", contentSha256: "b".repeat(64), blocks: [{ type: "text", text: "内部注记" }] },
+    { id: "message-10", seq: "10", role: "user", contentSha256: "a".repeat(64), blocks: [{ type: "text", text: "先问" }] },
   ];
-  assert.equal(
-    formatSummarizerTranscript(newestFirst),
-    "用户：先问的\n桌宠：后说的",
+  const snapshot = buildSummarizerSnapshot(rows, 100);
+  assert.equal(snapshot.transcript, "用户：先问\n桌宠：后答");
+  assert.equal(snapshot.coverageFromSeq, "10");
+  assert.equal(snapshot.coverageThroughSeq, "12");
+  assert.equal(snapshot.sourceHash.length, 64);
+
+  const truncated = buildSummarizerSnapshot(rows, "桌宠：后答".length);
+  assert.equal(truncated.transcript, "桌宠：后答");
+  assert.equal(truncated.coverageFromSeq, "12", "水位要从真正进入 prompt 的第一条消息开始");
+  assert.equal(truncated.coverageThroughSeq, "12");
+  assert.notEqual(
+    snapshot.sourceHash,
+    buildSummarizerSnapshot(rows.map((row) => row.id === "message-12"
+      ? { ...row, contentSha256: "d".repeat(64) }
+      : row), 100).sourceHash,
+    "编辑消息必须使迟到的旧摘要失效",
   );
-  assert.equal(newestFirst[0].role, "assistant", "不许就地反转调用方的行集");
+  assert.notEqual(
+    snapshot.sourceHash,
+    buildSummarizerSnapshot(rows.map((row) => row.id === "message-12"
+      ? { ...row, role: "user" }
+      : row), 100).sourceHash,
+    "消息角色决定转录前缀，也属于摘要来源版本",
+  );
 });
 
 // ─── §11 C1：排队节流 + 摘要接入 ───────────────────────────────────────────
@@ -113,8 +131,20 @@ test("conversation_summary 块: 带出事件与待跟进，剥掉能提前闭合
   assert.ok(block?.includes("设了口头禅；关掉催复习；第三件"));
   assert.ok(!block?.includes("第四件"), "keyEvents 只取前三");
   assert.ok(block?.includes("还没了结：要不要把复习排到周末"));
+  assert.ok(block?.includes("消息边界无法核实"));
+  assert.ok(block?.includes("以对应工具回执为准"));
   assert.ok(block?.endsWith("</conversation_summary>"));
   assert.ok(block!.length <= CONVERSATION_SUMMARY_MAX_CHARS + 40);
+});
+
+test("watermarked conversation summary is labeled as a topic hint, not an action receipt", () => {
+  const block = renderConversationSummary(
+    { title: "一次解释" },
+    { coverageVerified: true },
+  );
+  assert.ok(block?.includes("有消息边界校验"));
+  assert.ok(block?.includes("操作是否完成以对应工具回执为准"));
+  assert.ok(!block?.includes("边界无法核实"));
 });
 
 test("conversation_summary 块: 摘要正文不能提前闭合边界", () => {
@@ -143,4 +173,3 @@ test("summarizer 解析链: fence 包裹的摘要 JSON 可容错解析", () => {
   const parsed = conversationSummaryOutputSchema.parse(parseMemoryExtractJson(raw));
   assert.equal(parsed.title, "测试");
 });
-

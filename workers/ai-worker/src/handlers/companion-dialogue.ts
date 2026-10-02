@@ -14,7 +14,7 @@
  *
  * 流程：
  * 1. 读 job payload 的 opaque runId（不携带任何 message 正文——runbook 步骤 5）；
- * 2. RLS 事务内读 run/conversation/最近 20 条消息（§9.3 输入顺序）；
+ * 2. RLS 事务内读 run/conversation/最近消息，并按 prompt 的字符预算求可见尾部（§9.3）；
  * 3. 非 active run（cancelled/superseded/failed）直接返回——§6.5「cancel 后
  *    Worker 迟到 delta/final 被拒绝」，不重复 provider 调用；
  * 4. text_generation provider 生成（§9.5 参数）；输出经长度/cue/泄露校验；
@@ -38,7 +38,7 @@ import { loadHereAndNow, renderHereAndNow } from "./companion-here-and-now.ts";
 import { loadThisTurnFacts } from "./companion-this-turn-facts.ts";
 import { resolveFactSpans } from "./companion-fact-spans.ts";
 import { renderConversationSummary } from "./companion-summarizer.ts";
-import { createProvider, createEmbeddingProvider, withThinkingDisabled } from "../lib/ai-provider.ts";
+import { createProvider, withThinkingDisabled } from "../lib/ai-provider.ts";
 import {
   CompanionStreamStoppedError,
   createCompanionStreamDelivery,
@@ -46,17 +46,18 @@ import {
 } from "./companion-dialogue-stream.ts";
 import {
   AIConsentRequiredError,
-  createGovernedEmbeddingProvider,
   createGovernedProvider,
   resolveAIGovernanceContext,
   resolveProviderForTask,
 } from "../lib/governance.ts";
 import {
-  COMPANION_PERSONA_V5_PROMPT_ID,
-  COMPANION_PERSONA_V5_SHA256,
+  COMPANION_PERSONA_V7_PROMPT_ID,
+  COMPANION_PERSONA_V7_SHA256,
+  type ChatMessage,
   type PetPersonaPresetBoundaries,
   type PetProfileActiveness,
 } from "@ailearn/shared";
+import { PET_PERSONA_PRESET_VERSION } from "@ailearn/shared/pet-persona-presets";
 import { runCompanionAgentLoop } from "./companion-agent-runtime.ts";
 import { CompanionAgentBudgetExceededError } from "../lib/non-retryable-errors.ts";
 import {
@@ -67,10 +68,9 @@ import {
 import { applyDeterministicToneToSegments, resolveReplyToneEmotion } from "../lib/companion-tone.ts";
 import {
   assembleCompanionContext,
-  buildCompanionMemoryQuery,
+  recordCompanionMemoryContextExposure,
   type ContextAssemblyResult,
 } from "./companion-context-orchestrator.ts";
-import { isCompanionMemoryVectorEnabled } from "./companion-memory-vector.ts";
 import {
   THINKING_CUE_PAYLOAD_V1,
   buildFinalCuePayload,
@@ -80,12 +80,18 @@ import {
   textOfCompanionBlocks,
   parsePageContext,
   GROUNDED_TUTOR_COMPANION_PROMPT,
+  boundCompanionRecentHistory,
+  buildCompanionContextHandoffSnapshotV1,
+  renderCompanionContextHandoff,
+  REPLAY_WINDOW_MESSAGES,
 } from "./companion-dialogue-content.ts";
 import {
   type CompanionDialogueHandlerContext,
   type ReadContext,
   insertStreamEvent,
   emitCompanionTtsSegments,
+  recordCompanionRunFailureSpanBestEffort,
+  recoverCompanionRunFailureSpanInTransaction,
   markCompanionRunFailed,
   readGroundedTutorContext,
   isActiveRun,
@@ -93,6 +99,8 @@ import {
   isCompanionVoiceDialogueEnabled,
   isCompanionMemoryContextEnabled,
   enqueueCompanionMemoryJobs,
+  readConversationSummary,
+  persistCompanionContextHandoffSnapshot,
   GROUNDED_TUTOR_PROMPT_ID,
   computeGroundedTutorPromptSha256,
 } from "./companion-dialogue-store.ts";
@@ -236,6 +244,73 @@ export function isGroundedTutorRequestedPageContext(
     && pageContext.requestedCapability === "grounded_tutor";
 }
 
+export interface RunPersonaPin {
+  /** 本次调用绑定的人格版本号。 */
+  revision: number;
+  examplesRevision: number;
+  defaultExpressionVersion: string;
+  /** 绑定的那一版的正文（来自不可变版本行，或首次固定时的账号当前档案）。 */
+  content: unknown;
+  /** true = 这一次是首次固定（随后要把三个身份字段写回 run）。 */
+  fresh: boolean;
+}
+
+/**
+ * 一个 run 绑定哪一版人格（40 §4.8.4 / 40b §5.3.2 / A50）。
+ *
+ * ## 两条硬规则，写在这个纯函数里
+ *
+ * 1. **一次调用使用固定版本。** 已经固定过的 run 只认它自己那个号，正文从那条
+ *    **不可变版本行**读；只有首次固定才读账号当前档案，随后把号写回 run，
+ *    之后每一轮都走"已固定"分支。于是同一个 run 的第 1 轮与第 40 轮拿到的是
+ *    同一份人格，不会因为中途改设置而分属两版。
+ *
+ * 2. **排队的（待生效）那一版对当前 run 不生效。** 账号人格现在有「当前 / 待生效」
+ *    两版（`companion_persona_profiles.pending_revision`）。待生效存在的意义是
+ *    "让用户看得见还没生效的那一版"，不是"让某个 run 提前用上它"——合同把它的生效
+ *    时点写成"下一次会话建立时"，而这里的判断发生在 run **已经建立之后**。
+ *    所以这个函数只认 `currentRevision`，并对 `stagedRevision` 做一次硬断言：
+ *    万一将来有人把待生效也当成候选传进来，当场抛错，而不是让用户在一次
+ *    已经进行中的对话里被悄悄换掉人格。
+ */
+export function resolveRunPersonaPin(input: {
+  /** run 上已固定的号；null = 这一次还没固定过。 */
+  pinnedRevision: number | null;
+  pinnedExamplesRevision: number | null;
+  pinnedDefaultExpressionVersion: string | null;
+  /** 账号当前生效的版本号与正文（只有首次固定时才用得上）。 */
+  currentRevision: number | null;
+  currentContent: unknown;
+  /** 账号排队的待生效版本号（明确不参与本次绑定）。 */
+  stagedRevision: number | null;
+  /** 已固定那一版的不可变版本行正文。 */
+  pinnedContent: unknown;
+  currentDefaultExpressionVersion: string;
+}): RunPersonaPin {
+  const fresh = input.pinnedRevision === null;
+  const revision = fresh
+    ? Number(input.currentRevision ?? 0)
+    : Number(input.pinnedRevision);
+  if (input.stagedRevision !== null && revision === input.stagedRevision) {
+    throw new Error(
+      "companion run must not bind the pending persona revision before it is activated",
+    );
+  }
+  const examplesRevision = fresh
+    ? revision
+    : Number(input.pinnedExamplesRevision ?? input.pinnedRevision);
+  return {
+    revision,
+    examplesRevision,
+    defaultExpressionVersion: fresh
+      ? input.currentDefaultExpressionVersion
+      : (input.pinnedDefaultExpressionVersion ?? input.currentDefaultExpressionVersion),
+    // 首次固定读当前档案；已固定读那一版的不可变版本行（revision 0 = 无覆盖）。
+    content: fresh ? (input.currentContent ?? null) : (input.pinnedContent ?? null),
+    fresh,
+  };
+}
+
 // ─── run 编排 ─────────────────────────────────────────────────────────────
 
 export async function runCompanionDialogue(
@@ -260,8 +335,16 @@ export async function runCompanionDialogue(
           id: string; conversation_id: string; user_id: string; generation: number;
           status: string; page_context: unknown; user_message_id: string;
           account_epoch: string | number | null;
+          persona_profile_revision: number | null;
+          persona_examples_revision: number | null;
+          default_expression_version: string | null;
+          context_grant_id: string | null; permission_level: string | null;
+          permission_snapshot: unknown; cancel_requested_at: string | null;
         }>(sql`
-          SELECT id, conversation_id, user_id, generation, status, page_context, user_message_id, account_epoch
+          SELECT id, conversation_id, user_id, generation, status, page_context, user_message_id,
+                 account_epoch, context_grant_id, permission_level, permission_snapshot,
+                 persona_profile_revision, persona_examples_revision, default_expression_version,
+                 cancel_requested_at::text AS cancel_requested_at
           FROM companion_turn_runs WHERE id = ${runId}
         `);
         const run = runRows[0];
@@ -285,57 +368,129 @@ export async function runCompanionDialogue(
           userId: run.user_id,
         });
         const formalAnswerInProgress = formalAnswerTarget !== null;
-        const userRows = await tx.execute<{ blocks: unknown }>(sql`
-          SELECT blocks FROM companion_messages
+        const userRows = await tx.execute<{ blocks: unknown; seq: string }>(sql`
+          SELECT blocks, seq::text AS seq FROM companion_messages
           WHERE conversation_id = ${run.conversation_id}
             AND id = ${run.user_message_id}
           ORDER BY seq DESC LIMIT 1
         `);
         const userText = userRows[0] ? textOfCompanionBlocks(userRows[0].blocks) : "";
-        // kind 必须一起取，历史装配不能只看 role：
-        //   - `role='system'` 的系统注记不是对话轮次，映射成 "user" 会让模型以为
-        //     那是用户说的话；
-        //   - `kind='cancelled'`（用户按了停止）与 `kind='error'`（这一轮失败）都是
-        //     "她说到一半"的半截话，进上下文会让下一轮顺着断句续写。它们的读者是人，不是模型。
-        const historyRows = await tx.execute<{ role: string; kind: string; blocks: unknown }>(sql`
-          SELECT role, kind, blocks FROM companion_messages
+        const currentUserSeq = userRows[0]?.seq ?? "0";
+        // 先在 SQL 排除非对话与失败消息，再按模型真实采用的字符预算裁尾；摘要水位
+        // 必须从这份相同的可见尾部计算，不能让 system 注记占掉最近消息名额。
+        const historyRows = await tx.execute<{ seq: string; role: string; kind: string; blocks: unknown }>(sql`
+          SELECT seq::text AS seq, role, kind, blocks FROM companion_messages
           WHERE conversation_id = ${run.conversation_id}
             AND id <> ${run.user_message_id}
+            AND role IN ('user', 'assistant')
+            AND seq < ${currentUserSeq}::bigint
             AND kind NOT IN ('cancelled', 'error')
-          ORDER BY seq DESC LIMIT 20
+          ORDER BY seq DESC LIMIT ${REPLAY_WINDOW_MESSAGES}
         `);
-        const recentMessages = historyRows
+        const recentWithSeq = historyRows
           .slice()
           .reverse()
-          .filter((m) => m.role !== "system")
           .map((m) => ({
-            role: (m.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+            seq: m.seq,
+            role: m.role as "user" | "assistant",
             text: textOfCompanionBlocks(m.blocks),
           }));
+        const visibleRecent = boundCompanionRecentHistory(recentWithSeq);
+        const recentMessages = visibleRecent.map(({ role, text }) => ({ role, text }));
+        const historyStartSeq = visibleRecent[0]?.seq ?? currentUserSeq;
+        const historyCountRows = await tx.execute<{ message_count: string }>(sql`
+          SELECT count(*)::text AS message_count
+          FROM companion_messages
+          WHERE conversation_id = ${run.conversation_id}
+            AND id <> ${run.user_message_id}
+            AND role IN ('user', 'assistant')
+            AND seq < ${currentUserSeq}::bigint
+            AND kind NOT IN ('cancelled', 'error')
+        `);
+        const totalHistoryMessages = BigInt(historyCountRows[0]?.message_count ?? "0");
+        const clippedMessageCount = Number(
+          totalHistoryMessages > BigInt(visibleRecent.length)
+            ? totalHistoryMessages - BigInt(visibleRecent.length)
+            : 0n,
+        );
         // §3.5：记忆检索由 Context Orchestrator 统一负责（向量/keyword fallback）。
         // read 阶段不再直接"取最近 30 条记忆"——当记忆上下文功能关闭时回退空记忆，
         // 开启时由后续 assembleCompanionContext 阶段检索填充。
-        const activeMemories: { kind: string; content: string }[] = [];
-        const petProfileRows = await tx.execute<{
-          name: string;
-          speaking_style: string;
-          personality_tags: unknown;
-          examples: unknown;
-          activeness: string | null;
-          boundaries: unknown;
+        const residentMemories: { kind: string; content: string }[] = [];
+        // ── 人格固定（40 §4.8.4「一次调用使用固定版本」/ 40b §5.3.2）──
+        //
+        // 账号人格现在有「当前 / 待生效」两版（companion_persona_profiles.pending_revision，
+        // 0355 引入）。两条硬规则：
+        //   1. 同一个 run 的每一轮都用它自己那个号，正文从**不可变版本行**读；
+        //   2. 排队的（待生效）那一版对本次 run 不生效——它存在的意义是让用户看得见
+        //      还没生效的那一版，而这里的判断发生在 run 建立**之后**。
+        // 决策本身在纯函数 resolveRunPersonaPin 里（含"不得绑定待生效"的断言），
+        // 这里只负责把两条 SQL 读出来交给它。
+        // 一次读齐三列：当前号、当前正文、待生效那一号。第三列只交给断言——
+        // 它不参与本次绑定，但必须被读到，否则"已固定的那一版恰好是排队那一版"
+        // 这种状态没有任何地方会发现。
+        const currentPersonaRows = await tx.execute<{
+          revision: number;
+          profile: unknown;
+          pending_revision: number | null;
         }>(sql`
-          SELECT name, speaking_style, personality_tags, examples, activeness, boundaries
-          FROM pet_profiles
-          WHERE workspace_id = ${ctx.workspaceId} AND user_id = ${run.user_id}
+          SELECT revision, profile, pending_revision
+          FROM companion_persona_profiles
+          WHERE user_id = ${run.user_id}
           LIMIT 1
         `);
-        const petProfileRow = petProfileRows[0];
+        const currentPersona = currentPersonaRows[0];
+        let pinnedContent: unknown = null;
+        if (run.persona_profile_revision !== null && run.persona_profile_revision > 0) {
+          const versionRows = await tx.execute<{ profile: unknown }>(sql`
+            SELECT profile
+            FROM companion_persona_profile_versions
+            WHERE user_id = ${run.user_id} AND revision = ${run.persona_profile_revision}
+            LIMIT 1
+          `);
+          if (!versionRows[0]) throw new Error("pinned account persona version is unavailable");
+          pinnedContent = versionRows[0].profile;
+        }
+        const personaPin = resolveRunPersonaPin({
+          pinnedRevision: run.persona_profile_revision,
+          pinnedExamplesRevision: run.persona_examples_revision,
+          pinnedDefaultExpressionVersion: run.default_expression_version,
+          currentRevision: currentPersona?.revision ?? null,
+          currentContent: currentPersona?.profile ?? null,
+          stagedRevision: currentPersona?.pending_revision ?? null,
+          pinnedContent,
+          currentDefaultExpressionVersion: String(PET_PERSONA_PRESET_VERSION),
+        });
+        const personaProfileRevision = personaPin.revision;
+        const personaExamplesRevision = personaPin.examplesRevision;
+        const defaultExpressionVersion = personaPin.defaultExpressionVersion;
+        const personaProfileContent = personaPin.content;
+        if (personaPin.fresh) {
+          const frozen = await tx.execute<{ id: string }>(sql`
+            UPDATE companion_turn_runs
+            SET persona_profile_revision = ${personaProfileRevision},
+                persona_examples_revision = ${personaExamplesRevision},
+                default_expression_version = ${defaultExpressionVersion},
+                updated_at = now()
+            WHERE id = ${run.id}
+              AND workspace_id = ${ctx.workspaceId}
+              AND user_id = ${run.user_id}
+              AND persona_profile_revision IS NULL
+            RETURNING id
+          `);
+          if (!frozen[0]) throw new Error("could not pin account persona revision to companion run");
+        }
+        const petProfileRow = typeof personaProfileContent === "object"
+          && personaProfileContent !== null
+          && !Array.isArray(personaProfileContent)
+          ? personaProfileContent as Record<string, unknown>
+          : null;
         const petProfile = petProfileRow
           ? {
-              name: petProfileRow.name,
-              speakingStyle: petProfileRow.speaking_style,
-              personalityTags: Array.isArray(petProfileRow.personality_tags)
-                ? petProfileRow.personality_tags.map(String)
+              name: String(petProfileRow.name ?? "伴星"),
+              speakingStyle: String(petProfileRow.speakingStyle ?? ""),
+              personalityTags: Array.isArray(petProfileRow.personalityTags)
+                ? petProfileRow.personalityTags.map(String)
                 : [],
               examples: Array.isArray(petProfileRow.examples)
                 ? (petProfileRow.examples as Array<{ text?: unknown }>)
@@ -381,16 +536,40 @@ export async function runCompanionDialogue(
           // 以为这块一直没触发，而它其实是每次都超时。
           logger.warn({ runId: run.id, ms: thisTurnFacts.ms }, "companion turn facts dropped over budget");
         }
-        // 更早那段对话（历史回放只带最近 20 条，之外她本来看不见）。同一道
-        // RLS 读事务里取最新一条摘要，不为它单开一次往返。
-        const summaryRows = await tx.execute<{ summary: unknown }>(sql`
-          SELECT summary FROM conversation_summaries
-          WHERE conversation_id = ${run.conversation_id} AND status <> 'archived'
-          ORDER BY created_at DESC LIMIT 1
+        // 更早那段对话（历史回放只带真正进入 prompt 的尾部）。只取水位完整且
+        // 严格早于可见尾部的摘要；不猜旧摘要边界，也不为它单开一次往返。
+        const summaryRow = await readConversationSummary(tx, run.conversation_id, historyStartSeq);
+        const conversationSummary = renderConversationSummary(summaryRow?.summary, {
+          coverageVerified: Boolean(
+            summaryRow?.coverage_from_seq
+            && summaryRow.coverage_through_seq
+            && summaryRow.coverage_source_hash,
+          ),
+        });
+        const toolCallRows = await tx.execute<{
+          receipt_id: string; tool_call_id: string; name: string; status: string;
+          result_safe_summary: string | null;
+        }>(sql`
+          SELECT id::text AS receipt_id, tool_call_id, name, status, result_safe_summary
+          FROM companion_agent_tool_calls
+          WHERE conversation_id = ${run.conversation_id}
+          ORDER BY CASE WHEN status IN ('requested', 'executing', 'waiting_confirmation', 'outcome_unknown')
+                        THEN 0 ELSE 1 END,
+                   updated_at DESC, id DESC
+          LIMIT 64
         `);
-        const conversationSummary = renderConversationSummary(
-          (Array.isArray(summaryRows) ? summaryRows : [])[0]?.summary,
-        );
+        const proposalRows = await tx.execute<{
+          id: string; status: string; decision: string | null; title: string;
+          target_summary: string; result_safe_summary: string | null; expires_at: string;
+        }>(sql`
+          SELECT id::text AS id, status, decision, title, target_summary,
+                 result_safe_summary, expires_at::text AS expires_at
+          FROM companion_action_proposals
+          WHERE conversation_id = ${run.conversation_id}
+          ORDER BY CASE WHEN status IN ('pending', 'executing') THEN 0 ELSE 1 END,
+                   updated_at DESC, id DESC
+          LIMIT 32
+        `);
         return {
           runId: run.id,
           formalAnswerInProgress,
@@ -403,14 +582,68 @@ export async function runCompanionDialogue(
           runStatus: run.status,
           accountEpoch: Number(run.account_epoch ?? 0),
           pageContext: run.page_context,
+          contextHandoff: {
+            runId: run.id,
+            conversationId: run.conversation_id,
+            throughMessageSeq: currentUserSeq,
+            throughEventSeq: (BigInt(conv.next_event_seq) - 1n).toString(),
+            historyStartSeq,
+            clippedMessageCount,
+            currentRequest: {
+              messageId: run.user_message_id,
+              messageSeq: currentUserSeq,
+              text: userText,
+            },
+            contextGrantId: run.context_grant_id,
+            permissionLevel: run.permission_level,
+            permissionSnapshot: run.permission_snapshot,
+            runStatus: run.status,
+            cancelRequestedAt: run.cancel_requested_at,
+            pageContext: run.page_context,
+            summaryCoverage: summaryRow
+              ? {
+                  fromSeq: summaryRow.coverage_from_seq,
+                  throughSeq: summaryRow.coverage_through_seq,
+                  sourceSha256: summaryRow.coverage_source_hash,
+                }
+              : null,
+            historyTail: visibleRecent.flatMap((message) => message.seq
+              ? [{ seq: message.seq, role: message.role, text: message.text }]
+              : []),
+          },
+          actionLedger: toolCallRows.map((action) => ({
+            receiptId: action.receipt_id,
+            toolCallId: action.tool_call_id,
+            name: action.name,
+            status: action.status,
+            safeSummary: action.result_safe_summary,
+          })),
+          proposals: proposalRows.map((proposal) => ({
+            id: proposal.id,
+            status: proposal.status,
+            decision: proposal.decision,
+            title: proposal.title,
+            targetSummary: proposal.target_summary,
+            resultSafeSummary: proposal.result_safe_summary,
+            expiresAt: proposal.expires_at,
+          })),
           groundedTutorContext,
           userText,
           recentMessages,
-          activeMemories,
+          residentMemories,
+          memoryDirectory: [],
+          // 手册目录与整理结论在 assembleCompanionContext 阶段填；
+          // 在此之前它们是"没有"，不是"有但为空"。
+          playbookCatalog: [],
+          organizationSurface: null,
+          memoryRefs: [],
           hereAndNow,
           thisTurnFacts: thisTurnFacts?.block ?? null,
           factSpans: snapshot.factSpans,
           conversationSummary,
+          personaProfileRevision,
+          personaExamplesRevision,
+          defaultExpressionVersion,
           petProfile,
           nextMessageSeq: Number(conv.next_message_seq),
           nextEventSeq: Number(conv.next_event_seq),
@@ -425,7 +658,7 @@ export async function runCompanionDialogue(
 
   const parsedPageContext = parsePageContext(read.pageContext);
   if (isGroundedTutorRequestedPageContext(parsedPageContext) && !read.groundedTutorContext) {
-    await markCompanionRunFailed(read, ctx.workspaceId, "ACTION_STALE", false, "grounded tutor evidence unavailable");
+    await markCompanionRunFailed(read, ctx.workspaceId, "ACTION_STALE", false, "grounded tutor evidence unavailable", "state");
     throw new Error("grounded tutor evidence unavailable");
   }
 
@@ -435,7 +668,7 @@ export async function runCompanionDialogue(
     return;
   }
   if (!isCompanionDialogueEnabled()) {
-    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", false, "feature disabled");
+    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", false, "feature disabled", "execution");
     throw new Error("COMPANION_DIALOGUE_V1_ENABLED is false — companion dialogue disabled");
   }
 
@@ -447,6 +680,7 @@ export async function runCompanionDialogue(
       "AI_CONSENT_REQUIRED",
       false,
       "workspace AI consent required",
+      "state",
     );
     throw new AIConsentRequiredError();
   }
@@ -491,82 +725,112 @@ export async function runCompanionDialogue(
     )
     : undefined;
 
-  // ── 22 方案：Context Orchestrator 检索长期记忆（非 grounded_tutor）──
-  let memoryContext: ContextAssemblyResult = {
-    activeMemories: read.activeMemories,
-    memoryRefs: [],
-    retrievalMode: "keyword_fallback",
+  // 40 §4.6.6：resident 正文常驻，active 只注入有预算的目录（非 grounded_tutor）。
+  const emptyMemoryContext = (): ContextAssemblyResult => ({
+    residentMemories: read.residentMemories,
+    memoryDirectory: read.memoryDirectory,
+    playbookCatalog: [],
+    organizationSurface: null,
+    memoryRefs: read.memoryRefs,
+    retrievalMode: "disabled",
     usedMemoryIds: [],
-  };
+    residentMemoryIds: [],
+    residentTokenEstimate: 0,
+    residentByteCount: 0,
+    directoryTokenEstimate: 0,
+  });
+  let memoryContext: ContextAssemblyResult = emptyMemoryContext();
   if (isCompanionMemoryContextEnabled() && !read.groundedTutorContext) {
     try {
-      const rawEmbeddingProvider = await createEmbeddingProvider(govCtx);
-      const embeddingProvider = rawEmbeddingProvider
-        ? createGovernedEmbeddingProvider(rawEmbeddingProvider, govCtx, ctx.workspaceId)
-        : null;
-      // embedding 是外部 HTTP 往返（常态数百 ms，超时可达数秒）。放在
-      // withWorkerWorkspaceTransaction 内会让 RLS 事务在整个往返期间独占连接，
-      // 高峰期把连接池反压到所有 job 类型。查询文本与向量先在事务外算好：
-      // null = 已尝试且失败 → 事务内直接降级 keyword（绝不在事务内重试外部调用）。
-      let queryEmbedding: number[] | null = null;
-      if (embeddingProvider && isCompanionMemoryVectorEnabled()) {
-        try {
-          queryEmbedding = await embeddingProvider.embed(
-            buildCompanionMemoryQuery({
-              userText: read.userText,
-              recentMessages: read.recentMessages,
-            }),
-          );
-        } catch (err) {
-          logger.warn(
-            { jobId: ctx.id, runId: read.runId, err },
-            "companion memory query embedding failed; using keyword fallback",
-          );
-          queryEmbedding = null;
-        }
-      }
       memoryContext = await withWorkerWorkspaceTransaction(
         { workspaceId: ctx.workspaceId, userId: read.userId },
         (tx) => assembleCompanionContext(
           tx,
           { workspaceId: ctx.workspaceId, userId: read.userId },
           {
-            userText: read.userText,
-            recentMessages: read.recentMessages,
-            provider: embeddingProvider,
-            queryEmbedding,
             runId: read.runId,
             groundedTutorContext: read.groundedTutorContext,
-            // §9.2.2：按页面类型推导 currentScope（card/learning_run/review → task）。
+            // 按页面类型推导 task 可见范围；无当前任务身份时不暴露 task 记忆。
             pageContext: read.pageContext,
           },
         ),
       );
-      read.activeMemories = memoryContext.activeMemories;
+      await recordCompanionMemoryContextExposure(
+        { workspaceId: ctx.workspaceId, userId: read.userId },
+        read.runId,
+        memoryContext,
+      );
+      read.residentMemories = memoryContext.residentMemories;
+      read.memoryDirectory = memoryContext.memoryDirectory;
+      read.memoryRefs = memoryContext.memoryRefs;
+      read.playbookCatalog = memoryContext.playbookCatalog;
+      read.organizationSurface = memoryContext.organizationSurface;
     } catch (err) {
-      // 检索失败不阻塞对话：保留 read 阶段已读取的旧记忆作为兜底。
+      // 目录读取失败不阻塞对话：本轮暂不注入长期记忆。
       logger.warn({ jobId: ctx.id, runId: read.runId, err }, "companion memory context assembly skipped");
-      memoryContext = {
-        activeMemories: read.activeMemories,
-        memoryRefs: [],
-        retrievalMode: "keyword_fallback",
-        usedMemoryIds: [],
-      };
+      memoryContext = emptyMemoryContext();
     }
   }
 
+  const handoffInput = {
+    ...(read.contextHandoff ?? {
+      runId: read.runId,
+      conversationId: read.conversationId,
+      throughMessageSeq: "0",
+      throughEventSeq: "0",
+      historyStartSeq: "0",
+      clippedMessageCount: 0,
+      currentRequest: { messageId: read.userMessageId, messageSeq: "0", text: read.userText },
+      contextGrantId: null,
+      permissionLevel: null,
+      permissionSnapshot: null,
+      runStatus: read.runStatus,
+      cancelRequestedAt: null,
+      pageContext: read.pageContext,
+      summaryCoverage: null,
+      historyTail: [],
+    }),
+    actionLedger: read.actionLedger ?? [],
+    proposals: read.proposals ?? [],
+    memoryRefs: memoryContext.memoryRefs,
+    memoryDirectory: memoryContext.memoryDirectory,
+  };
+  const handoffDraft = buildCompanionContextHandoffSnapshotV1({
+    ...handoffInput,
+    modelMessages: [],
+  });
   const messages = buildCompanionPersonaMessages({
     userText: read.userText,
     recentMessages: read.recentMessages,
     pageContext: read.pageContext,
     groundedTutorContext: read.groundedTutorContext,
-    activeMemories: read.activeMemories,
+    residentMemories: read.residentMemories,
+    memoryDirectory: read.memoryDirectory,
     hereAndNow: read.hereAndNow,
     thisTurnFacts: read.thisTurnFacts,
     factSpans: read.factSpans?.block ?? null,
     conversationSummary: read.conversationSummary,
+    continuationData: renderCompanionContextHandoff(handoffDraft),
     petProfile: read.petProfile,
   });
+  const proposedHandoffSnapshot = buildCompanionContextHandoffSnapshotV1({
+    ...handoffInput,
+    modelMessages: messages,
+  });
+  const proposedHandoffSha256 = sha256Utf8V1(canonicalJsonV1(proposedHandoffSnapshot));
+  const committedHandoff = await persistCompanionContextHandoffSnapshot({
+    workspaceId: ctx.workspaceId,
+    userId: read.userId,
+    runId: read.runId,
+    snapshot: proposedHandoffSnapshot,
+    sha256: proposedHandoffSha256,
+  });
+  // A retry must replay the exact committed messages and memory receipt set, even if
+  // background memory maintenance changed what a fresh retrieval would return.
+  const committedMessages = committedHandoff.snapshot.modelMessages as ChatMessage[];
+  memoryContext = { ...memoryContext, memoryRefs: committedHandoff.snapshot.memoryRefs };
+  read.memoryRefs = memoryContext.memoryRefs;
+  read.memoryDirectory = committedHandoff.snapshot.memoryDirectory ?? [];
 
   // 量的是**要发出去的那份请求**，不是中间变量：`<conversation_summary>` 这条链
   // 单元级早就绿了，缺的是"真回合里它到底进没进 system 消息"这一环的证据
@@ -574,7 +838,8 @@ export async function runCompanionDialogue(
   logger.info(
     {
       runId: read.runId,
-      summaryInjected: String(messages[0]?.content ?? "").includes("<conversation_summary>"),
+      summaryInjected: String(committedMessages[0]?.content ?? "").includes("<conversation_summary>"),
+      handoffSnapshotSha256: committedHandoff.sha256,
       summaryChars: read.conversationSummary?.length ?? 0,
     },
     "companion turn context assembled",
@@ -661,6 +926,7 @@ export async function runCompanionDialogue(
   // （见 runCompanionAgentLoop 的 visibleSegments）。
   let voiceSegmentState: CompanionDisplaySegmentState = { cursor: 0, sentCount: 0 };
   let voiceSegmentsEnabled = isCompanionVoiceDialogueEnabled();
+  let voiceSegmentsWritten = false;
   const voiceDeliveryDecision = decideCompanionVoiceDelivery({
     voiceDialogueEnabled: voiceSegmentsEnabled,
     formalAnswerInProgress: read.formalAnswerInProgress,
@@ -691,6 +957,7 @@ export async function runCompanionDialogue(
     );
     try {
       const written = await emitCompanionTtsSegments({
+        job: ctx,
         workspaceId: ctx.workspaceId,
         userId: read.userId,
         runId: read.runId,
@@ -717,13 +984,20 @@ export async function runCompanionDialogue(
         }),
       });
       if (!written) voiceSegmentsEnabled = false;
+      else voiceSegmentsWritten = true;
     } catch (error) {
       // 语音是渐进增强；事件写入失败不能把已经安全提交的文字回复一起判失败。
       voiceSegmentsEnabled = false;
+      await recordCompanionRunFailureSpanBestEffort({
+        workspaceId: ctx.workspaceId,
+        userId: read.userId,
+        runId: read.runId,
+      }, "tts");
       logger.warn({ err: error, runId: read.runId }, "companion voice segment emission disabled for turn");
     }
   };
   const streamingDelivery = createCompanionStreamDelivery({
+    job: ctx,
     ctx,
     read,
     expiresAt,
@@ -747,7 +1021,7 @@ export async function runCompanionDialogue(
       // 图片能不能出境是**账号级政策**，不是她这一轮可以自己争取的东西：
       // 关着的时候读图工具既不下发也不会执行，她看不见就不会答应去看。
       toolConstraints: { visionEnabled: govCtx.policy.sendImageContent === true },
-      baseMessages: messages,
+      baseMessages: committedMessages,
       expiresAt,
       continuationProposalId,
       onProviderDelta: (delta) => streamingDelivery.onRawDelta(delta),
@@ -770,6 +1044,7 @@ export async function runCompanionDialogue(
         : streamStopped
           ? `companion stream stopped: ${streamingDelivery.failureReason() ?? "delivery pipeline"}`.slice(0, 240)
           : "companion agent execution failed",
+      streamStopped ? "delivery" : budgetExceeded ? "execution" : "transport",
     );
     // 她已经说出来的那半句不能随失败一起消失（2026-09-19）。
     await persistFailedPartial({
@@ -818,7 +1093,7 @@ export async function runCompanionDialogue(
   // 校验失败在此终结：已投递的稳定前缀仍在（它是最终文本的前缀），run 按失败收尾。
   const streamed = await streamingDelivery.finish();
   if (!streamed.ok) {
-    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", false, streamed.reason);
+    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", false, streamed.reason, "output");
     await persistFailedPartial({
       workspaceId: ctx.workspaceId,
       userId: read.userId,
@@ -862,7 +1137,7 @@ export async function runCompanionDialogue(
         "companion streamed prefix diverged from validated text",
       );
     }
-    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", false, validated.reason);
+    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", false, validated.reason, "output");
     await persistFailedPartial({
       workspaceId: ctx.workspaceId,
       userId: read.userId,
@@ -888,12 +1163,12 @@ export async function runCompanionDialogue(
       });
       if (!batched) return;
     } catch (err) {
-      await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", true, "companion delta write failed");
+      await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", true, "companion delta write failed", "delivery");
       throw err;
     }
   } else if (!(await streamingDelivery.writeTail(assistantText))) {
     // 已下发内容与终态文本必须逐字对齐（appendFrom 的基准就是下发长度）。
-    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", false, "delta_stream_diverged");
+    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", false, "delta_stream_diverged", "delivery");
     await persistFailedPartial({
       workspaceId: ctx.workspaceId,
       userId: read.userId,
@@ -1050,18 +1325,50 @@ export async function runCompanionDialogue(
         // run 终态 + prompt 元数据（§9.1：promptVersion 与 hash 一起写入）
         // waiting_proposal_id 必须一并清空：run 已终结，残留的挂起指针会让"仍在
         // 等待确认"的判据在终态 run 上继续成立（续跑与回收扫描都会被它误导）。
-        await tx.execute(sql`
+        //
+        // `AND status IN ('accepted','running')` 是**状态栅栏**，不是装饰：
+        // 用户在这几步里点了取消/换了一代，整轮随后就终结了；没有这道 WHERE，
+        // 一个迟到的 final 会把 cancelled 覆盖成 succeeded，用户看到的是
+        // 「她答完了」而他明明已经打断了（40b §3.3「取消不得落 completed」）。
+        // 命中 0 行时下面整段都要让位——所以先取回 id 再继续写事件。
+        const finished = await tx.execute<{ id: string }>(sql`
           UPDATE companion_turn_runs
           SET status = 'succeeded',
               assistant_message_id = ${assistantMessageId},
               waiting_proposal_id = NULL,
               provider_id = ${provider.id},
               model_id = ${provider.modelId},
-              prompt_version = ${read.groundedTutorContext ? GROUNDED_TUTOR_PROMPT_ID : COMPANION_PERSONA_V5_PROMPT_ID},
-              prompt_hash = ${read.groundedTutorContext ? groundedTutorPromptSha256 : COMPANION_PERSONA_V5_SHA256},
+              prompt_version = ${read.groundedTutorContext ? GROUNDED_TUTOR_PROMPT_ID : COMPANION_PERSONA_V7_PROMPT_ID},
+              prompt_hash = ${read.groundedTutorContext ? groundedTutorPromptSha256 : COMPANION_PERSONA_V7_SHA256},
               finished_at = now()
           WHERE id = ${read.runId}
+            AND status IN ('accepted', 'running')
+          RETURNING id
         `);
+        if (!finished[0]) {
+          // 已经被取消或换代：本轮的正文**不再交付**。
+          // 不是失败——取消路径已经写过 turn.cancelled，这里再写一遍会让用户
+          // 同时看到"已取消"和一条本该没发出来的回复。
+          logger.info(
+            { runId: read.runId, jobId: ctx.id },
+            "companion final answer dropped: run left the active states",
+          );
+          return;
+        }
+
+        const failureSpanScope = {
+          workspaceId: ctx.workspaceId,
+          userId: read.userId,
+          runId: read.runId,
+        };
+        await recoverCompanionRunFailureSpanInTransaction(tx, failureSpanScope, "transport");
+        await recoverCompanionRunFailureSpanInTransaction(tx, failureSpanScope, "output");
+        await recoverCompanionRunFailureSpanInTransaction(tx, failureSpanScope, "delivery");
+        await recoverCompanionRunFailureSpanInTransaction(tx, failureSpanScope, "execution");
+        await recoverCompanionRunFailureSpanInTransaction(tx, failureSpanScope, "state");
+        if (voiceSegmentsWritten) {
+          await recoverCompanionRunFailureSpanInTransaction(tx, failureSpanScope, "tts");
+        }
 
         // P5（39b §9.7 / 39d W2-6）：**她自己是泄露源时由服务端记账**。写入门不在她嘴里
         // （她没有一个"我泄露了"的工具），判据是她这句话与本题题面/答案的连续重合，
@@ -1129,12 +1436,13 @@ export async function runCompanionDialogue(
         { workspaceId: ctx.workspaceId, userId: read.userId },
         async (tx) => {
           await tx.execute(sql`
-            UPDATE pet_profiles
-            SET familiarity = LEAST(familiarity + 0.01, 1),
-                interaction_count = interaction_count + 1,
+            INSERT INTO pet_profiles (workspace_id, user_id, familiarity, interaction_count, last_active_at)
+            VALUES (${ctx.workspaceId}, ${read.userId}, 0.01, 1, now())
+            ON CONFLICT (workspace_id, user_id) DO UPDATE
+            SET familiarity = LEAST(pet_profiles.familiarity + 0.01, 1),
+                interaction_count = pet_profiles.interaction_count + 1,
                 last_active_at = now(),
                 updated_at = now()
-            WHERE workspace_id = ${ctx.workspaceId} AND user_id = ${read.userId}
           `);
         },
       );
@@ -1145,7 +1453,7 @@ export async function runCompanionDialogue(
     // 写阶段失败：终态事务回滚，但前面已落库的 delta 仍然存在；显式
     // 投影 failed/error，避免 job retry/dead-letter 后 run 永久停在 running。
     logger.warn({ jobId: ctx.id, runId, err }, "companion_agent write phase failed");
-    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", true, "companion response commit failed");
+    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", true, "companion response commit failed", "delivery");
     await persistFailedPartial({
       workspaceId: ctx.workspaceId,
       userId: read.userId,

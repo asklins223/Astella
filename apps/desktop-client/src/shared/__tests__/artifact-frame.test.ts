@@ -99,4 +99,15 @@ describe('产物 frame 的契约（D4 §3.2、§4.3）', () => {
       motion: 'reduced'
     })
   })
+
+  it('滚轮只接受有限增量与合法单位，夹住大值并丢弃无关状态字段', () => {
+    const scroll = { channel: 'ailearn:artifact-frame', direction: 'frame->host', phase: 'scroll',
+      scrollDeltaX: -2000, scrollDeltaY: 5000, scrollDeltaMode: 0 }
+    expect(parseArtifactFrameEvent({ ...scroll, contentHeight: 500, stepCount: 9, detail: 'ignored' }))
+      .toEqual({ ...scroll, scrollDeltaX: -1000, scrollDeltaY: 1000 })
+    for (const invalid of [
+      { scrollDeltaX: NaN }, { scrollDeltaY: Infinity }, { scrollDeltaY: '40' },
+      { scrollDeltaMode: 3 }, { scrollDeltaX: undefined }
+    ]) expect(parseArtifactFrameEvent({ ...scroll, ...invalid })).toBeNull()
+  })
 })

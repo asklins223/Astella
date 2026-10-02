@@ -23,7 +23,7 @@ function withSource(event: MessageEvent, source: MessageEventSource): MessageEve
   return event;
 }
 
-function frameMessage(phase: "ready" | "heartbeat" | "error", extra: Record<string, unknown> = {}): MessageEvent {
+function frameMessage(phase: "ready" | "heartbeat" | "error" | "scroll", extra: Record<string, unknown> = {}): MessageEvent {
   return withSource(new MessageEvent("message", {
     data: { channel: "ailearn:artifact-frame", direction: "frame->host", phase, ...extra },
   }), FAKE_FRAME_SOURCE);
@@ -185,31 +185,38 @@ it("产物报上来的高度直接变成 iframe 的高度，产物内部因此�
   expect(parseInt(frame().style.height, 10)).toBeGreaterThanOrEqual(180);
 
   act(() => { window.dispatchEvent(frameMessage("ready", { stepCount: 4, contentHeight: 640 })); });
-  expect(parseInt(frame().style.height, 10)).toBe(640);
+  expect(parseInt(frame().style.height, 10)).toBe(642);
 });
 
-it("高度被夹在上下限之间：过短不塌成空框，过长不由产物内部滚", () => {
+it("短画面保留最小高度，长画面完整铺进页面而不再嵌套滚区", () => {
   render(<ArtifactFrameHost artifactId={ARTIFACT_ID} isTrustedFrameSource={trusted} />);
   const frame = () => document.querySelector("iframe") as HTMLIFrameElement;
 
   act(() => { window.dispatchEvent(frameMessage("heartbeat", { contentHeight: 12 })); });
-  expect(parseInt(frame().style.height, 10)).toBe(180);
+  expect(parseInt(frame().style.height, 10)).toBe(182);
 
   act(() => { window.dispatchEvent(frameMessage("heartbeat", { contentHeight: 99999 })); });
-  expect(parseInt(frame().style.height, 10)).toBe(1600);
-  // 超上限时由**外层**滚，并如实告诉用户这一份比较长
-  expect(document.querySelector(".artifact-frame-host")?.getAttribute("data-overflow")).toBe("true");
-  expect(screen.getByText(/这一份比较长/)).toBeTruthy();
+  expect(parseInt(frame().style.height, 10)).toBe(100001);
+  expect(document.querySelector(".artifact-frame-host")?.getAttribute("data-overflow")).toBeNull();
+  expect(screen.queryByText(/这一份比较长/)).toBeNull();
+});
+
+it("超出内容资源预算时保留可读说明，不把画面裁成带滚动条的小窗", () => {
+  render(<ArtifactFrameHost artifactId={ARTIFACT_ID} contentOnly isTrustedFrameSource={trusted} />);
+  expect(document.querySelector("iframe")?.getAttribute("src")).toBe(`ailearn-app://artifact/${ARTIFACT_ID}#content`);
+  act(() => { window.dispatchEvent(frameMessage("ready", { contentHeight: 100001 })); });
+  expect(document.querySelector("iframe")).toBeNull();
+  expect(screen.getByText("动态画面暂时无法运行，可继续阅读下方的说明。")).toBeTruthy();
 });
 
 it("静态分镜在 ready 之后才重排：只认 ready 会停在旧高度上", () => {
   render(<ArtifactFrameHost artifactId={ARTIFACT_ID} isTrustedFrameSource={trusted} />);
   const frame = () => document.querySelector("iframe") as HTMLIFrameElement;
   act(() => { window.dispatchEvent(frameMessage("ready", { stepCount: 2, contentHeight: 300 })); });
-  expect(parseInt(frame().style.height, 10)).toBe(300);
+  expect(parseInt(frame().style.height, 10)).toBe(302);
   // 切静态分镜之后产物又报了一次更高的内容
   act(() => { window.dispatchEvent(frameMessage("heartbeat", { contentHeight: 900 })); });
-  expect(parseInt(frame().style.height, 10)).toBe(900);
+  expect(parseInt(frame().style.height, 10)).toBe(902);
 });
 
 it("坏掉的高度不参与：NaN / 负数 / 缺省都当没报", () => {
@@ -220,4 +227,19 @@ it("坏掉的高度不参与：NaN / 负数 / 缺省都当没报", () => {
     act(() => { window.dispatchEvent(frameMessage("heartbeat", { contentHeight: bad })); });
   }
   expect(frame().style.height).toBe(before);
+});
+
+it("来自本 frame 的滚轮只移动所属阅读滚区；未知来源和非法增量无效", () => {
+  const view = render(<div style={{ overflowY: "auto" }} data-testid="reading-page"><ArtifactFrameHost artifactId={ARTIFACT_ID} isTrustedFrameSource={trusted} /></div>);
+  const owner = view.getByTestId("reading-page");
+  Object.defineProperty(owner, "scrollHeight", { value: 2000 });
+  Object.defineProperty(owner, "clientHeight", { value: 400 });
+  owner.scrollBy = vi.fn();
+  act(() => { window.dispatchEvent(frameMessage("scroll", { scrollDeltaY: 5, scrollDeltaX: 0, scrollDeltaMode: 1 })); });
+  expect(owner.scrollBy).toHaveBeenCalledWith({ top: 80, left: 0, behavior: "auto" });
+  act(() => { window.dispatchEvent(frameMessage("scroll", { scrollDeltaY: 99, scrollDeltaX: 0, scrollDeltaMode: 2 })); });
+  expect(owner.scrollBy).toHaveBeenLastCalledWith({ top: 1000, left: 0, behavior: "auto" });
+  act(() => { window.dispatchEvent(frameMessage("scroll", { scrollDeltaY: NaN, scrollDeltaX: 0, scrollDeltaMode: 0 })); });
+  act(() => { window.dispatchEvent(withSource(new MessageEvent("message", { data: { channel: "ailearn:artifact-frame", direction: "frame->host", phase: "scroll", scrollDeltaY: 100, scrollDeltaX: 0, scrollDeltaMode: 0 } }), { postMessage: vi.fn() } as unknown as MessageEventSource)); });
+  expect(owner.scrollBy).toHaveBeenCalledTimes(2);
 });

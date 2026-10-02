@@ -127,7 +127,7 @@ export type NormalizedWorkspaceTransactionContext = WorkspaceScopeContext<string
 export function scopeOfSession(
   session: { workspaceId: string; userId: string },
 ): WorkspaceTransactionContext {
-  return scopeOfSession(session);
+  return { workspaceId: session.workspaceId, userId: session.userId };
 }
 
 export class WorkspaceTransactionContextError extends DomainError {

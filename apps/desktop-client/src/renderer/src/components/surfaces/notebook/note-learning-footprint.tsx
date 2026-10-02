@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
 import type { NoteLearningArtifactV1 } from "@ailearn/shared/note-learning-artifact-contracts";
 import type { NoteExpansionLinkV1 } from "@ailearn/shared/note-expansion-contracts";
 import type { NoteOverviewV1 } from "@ailearn/shared/note-overview-contracts";
 import type { NoteRecallRecordV1 } from "@ailearn/shared/note-recall-contracts";
 import { plainCompanionBubbleText } from "../../companion/companion-markdown";
+import { recallQuestionText } from "./recall-question-text";
+import { useNotebookPageTurn, useNotebookPaperMotion } from "./use-notebook-paper-motion";
 
 export type FootprintKind = "overview" | "recall" | "annotation" | "artifact" | "expansion";
 type FootprintEntry =
@@ -49,9 +51,7 @@ function overviewPreview(text: string): string {
 }
 
 function recallPreview(text: string): string {
-  return preview(text
-    .replace(/^(?:好[，,]\s*)?(?:那我)?(?:不给答案[，,]\s*)?先问(?:你)?一个[：:]\s*/u, "")
-    .replace(/\*\*/gu, ""));
+  return preview(recallQuestionText(text));
 }
 
 function createdLabel(value: string): string {
@@ -85,6 +85,8 @@ export type NoteLearningFootprintProps = {
 
 export function NoteLearningFootprint(props: NoteLearningFootprintProps) {
   const [filter, setFilter] = useState<FootprintKind | "all">("all");
+  const listRef = useRef<HTMLOListElement | null>(null);
+  useNotebookPageTurn(listRef, filter, useNotebookPaperMotion());
   const entries: FootprintEntry[] = [
     ...props.overviews.map((record) => ({ kind: "overview" as const, id: record.overviewId, createdAt: record.createdAt, record })),
     ...props.recalls.map((record) => ({ kind: "recall" as const, id: record.recallId, createdAt: record.createdAt, record })),
@@ -103,18 +105,18 @@ export function NoteLearningFootprint(props: NoteLearningFootprintProps) {
     <section className="note-footprint" aria-label="这篇笔记的学习记录" data-note-footprint="true">
       {entries.length ? <nav className="note-footprint__filters" aria-label="按记录类型查看">
         {FILTERS.map(({ kind, label }) => (
-          <button type="button" key={kind} aria-pressed={filter === kind} onClick={() => setFilter(kind)}>
+          <button type="button" className="text-action" key={kind} aria-pressed={filter === kind} onClick={() => setFilter(kind)}>
             {label}<span>{countFor(kind)}{kind !== "all" && props.hasMore[kind] ? "+" : ""}</span>
           </button>
         ))}
       </nav> : null}
       {visibleEntries.length ? (
-        <ol className="note-footprint__list">
+        <ol className="note-footprint__list" ref={listRef}>
           {visibleEntries.map((entry) => (
             <li key={`${entry.kind}:${entry.id}`} data-footprint-kind={entry.kind}>
               {entry.kind === "overview" ? (
-                <article className="note-footprint__paper note-footprint__paper--mint">
-                  <header><strong>{entry.record.generationJobId ? KIND_LABEL.overview : "当时保存的伴星答复"}</strong><span>{createdLabel(entry.createdAt)} · {versionLabel(entry.record.noteVersionNumber, entry.record.versionState)}</span></header>
+                <article className="note-footprint__entry" data-kind="overview">
+                  <header><strong>{entry.record.generationJobId ? KIND_LABEL.overview : "当时保存的伴星答复"}</strong><time dateTime={entry.createdAt}>{createdLabel(entry.createdAt)} · {versionLabel(entry.record.noteVersionNumber, entry.record.versionState)}</time></header>
                   <p>{overviewPreview(entry.record.body)}</p>
                   <details>
                     <summary>{entry.record.generationJobId ? "翻开当时的重点和原文出处" : "翻开当时的答复和原文出处"}</summary>
@@ -145,16 +147,16 @@ export function NoteLearningFootprint(props: NoteLearningFootprintProps) {
                 </article>
               ) : null}
               {entry.kind === "recall" ? (
-                <article className="note-footprint__paper note-footprint__paper--butter">
-                  <header><strong>{KIND_LABEL.recall}</strong><span>{createdLabel(entry.createdAt)} · {versionLabel(entry.record.noteVersionNumber, entry.record.versionState)}</span></header>
+                <article className="note-footprint__entry" data-kind="recall">
+                  <header><strong>{KIND_LABEL.recall}</strong><time dateTime={entry.createdAt}>{createdLabel(entry.createdAt)} · {versionLabel(entry.record.noteVersionNumber, entry.record.versionState)}</time></header>
                   <p className="note-footprint__question">{recallPreview(entry.record.question)}</p>
                   {entry.record.reflection ? <blockquote>{plainCompanionBubbleText(entry.record.reflection)}</blockquote> : null}
                   <button type="button" className="text-action" onClick={() => props.onOpenRecall(entry.record)}>打开这次回想</button>
                 </article>
               ) : null}
               {entry.kind === "annotation" ? (
-                <article className="note-footprint__paper note-footprint__paper--pink">
-                  <header><strong>{KIND_LABEL.annotation}</strong><span>{createdLabel(entry.createdAt)} · {entry.record.versionState === "older" ? "原句来自旧版本" : "当前笔记版本"}</span></header>
+                <article className="note-footprint__entry" data-kind="annotation">
+                  <header><strong>{KIND_LABEL.annotation}</strong><time dateTime={entry.createdAt}>{createdLabel(entry.createdAt)} · {entry.record.versionState === "older" ? "原句来自旧版本" : "当前笔记版本"}</time></header>
                   <blockquote>{entry.record.anchor.excerpt}</blockquote>
                   <p>{preview(entry.record.explanation.split("\n\n举个例子：")[0] ?? "", 100)}</p>
                   <button type="button" className="text-action" onClick={() => props.onOpenAnnotation(entry.record)}>
@@ -163,8 +165,8 @@ export function NoteLearningFootprint(props: NoteLearningFootprintProps) {
                 </article>
               ) : null}
               {entry.kind === "artifact" ? (
-                <article className="note-footprint__paper note-footprint__paper--lavender">
-                  <header><strong>{KIND_LABEL.artifact}</strong><span>{createdLabel(entry.createdAt)} · {versionLabel(entry.record.noteVersionNumber, entry.record.versionState)}</span></header>
+                <article className="note-footprint__entry" data-kind="artifact">
+                  <header><strong>{KIND_LABEL.artifact}</strong><time dateTime={entry.createdAt}>{createdLabel(entry.createdAt)} · {versionLabel(entry.record.noteVersionNumber, entry.record.versionState)}</time></header>
                   <h3>{entry.record.title}</h3>
                   <p>{entry.record.subject}</p>
                   {entry.record.selectionText ? <blockquote>{entry.record.selectionText}</blockquote> : null}
@@ -172,8 +174,8 @@ export function NoteLearningFootprint(props: NoteLearningFootprintProps) {
                 </article>
               ) : null}
               {entry.kind === "expansion" ? (
-                <article className="note-footprint__paper note-footprint__paper--blue">
-                  <header><strong>{KIND_LABEL.expansion}</strong><span>{createdLabel(entry.createdAt)} · 来自笔记 v{entry.record.sourceNoteVersionNumber}</span></header>
+                <article className="note-footprint__entry" data-kind="expansion">
+                  <header><strong>{KIND_LABEL.expansion}</strong><time dateTime={entry.createdAt}>{createdLabel(entry.createdAt)} · 来自笔记 v{entry.record.sourceNoteVersionNumber}</time></header>
                   <h3>{entry.record.otherNoteTitle}</h3>
                   <p>{entry.record.direction === "expanded_from_here" ? "从这篇笔记继续学到的新内容" : "这篇笔记是从相关内容拓展出来的"}</p>
                   <button type="button" className="text-action" onClick={() => props.onOpenExpansion(entry.record)}>打开这篇拓展笔记</button>

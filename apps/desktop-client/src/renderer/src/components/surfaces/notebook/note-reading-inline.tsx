@@ -1,10 +1,13 @@
 import type { ReactNode } from "react";
+import { noteAnchorBlockRangeV1, type NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
 import { parseInlineMarkdown, type NoteDocInlineSegment } from "@ailearn/shared/note-doc-schema";
 import { isWebLinkUrl } from "@ailearn/shared/desktop-ipc-contracts";
 import { noteBlockText } from "./surface-data.tsx";
 import { ZoomableReadingImage } from "../source/image-viewer.tsx";
 import { useSourceImage } from "../source/source-image.ts";
 import { openExternalLink } from "../../../app/external-link";
+import { NoteAnnotationMark } from "./note-annotation-mark";
+import type { NoteCompanionExplanation } from "../../companion/note-companion-explanation";
 
 /**
  * 阅读页怎么画一块正文。
@@ -49,8 +52,7 @@ export function noteInlineAtoms(content: string): NoteInlineAtom[] {
   let cursor = 0;
   lines.forEach((line, index) => {
     if (index > 0) {
-      atoms.push({ kind: "break", start: cursor, end: cursor + 1 });
-      cursor += 1;
+      atoms.push({ kind: "break", start: cursor, end: cursor });
     }
     for (const segment of parseInlineMarkdown(line)) {
       if (segment.kind === "image") {
@@ -147,19 +149,57 @@ export function isHorizontalRule(text: string): boolean {
  * `galleryStart` 是这一块第一张行内图片在整篇画廊里的序号；不传即这一篇没有画廊。
  * `lineClass` 给每一行套一个 `<span>`（列表项要逐行带记号），此时不再插 `<br>`。
  */
-export function renderNoteInline(
-  content: string,
-  options: {
+type NoteInlineRenderOptions = {
     readonly mark?: readonly [number, number] | null;
     readonly workspaceEpoch?: number;
     readonly galleryStart?: number;
     readonly onOpenGallery?: (index: number) => void;
     readonly lineClass?: string;
-  } = {},
+    readonly annotations?: readonly NoteAnnotationV1[];
+    readonly openAnnotationId?: string | null;
+    readonly block?: { readonly ordinal: number; readonly type: string; readonly content: string };
+    readonly onOpenAnnotation?: (annotation: NoteAnnotationV1) => void;
+    /**
+     * 记号浮层里那一格「删掉这条」（用户裁决：正文里就能删，不必先开附页）。
+     * 是 `ReactNode` 而不是回调——确认状态留在页面那一份，见 `useAnnotationDeleteConfirm`。
+     */
+    readonly onDeleteAnnotation?: (annotation: NoteAnnotationV1) => ReactNode;
+    readonly textOffset?: number;
+    readonly companionExplanations?: readonly NoteCompanionExplanation[];
+};
+
+function explanationRanges(options: NoteInlineRenderOptions) {
+  return (options.companionExplanations ?? []).flatMap(item => {
+    const range = options.block ? noteAnchorBlockRangeV1(options.block, item.target.anchor) : null;
+    return range ? [{ item, range }] : [];
+  });
+}
+
+function annotationRanges(options: NoteInlineRenderOptions) {
+  return (options.annotations ?? []).flatMap((annotation, index) => {
+    const range = options.block ? noteAnchorBlockRangeV1(options.block, annotation.anchor)
+      : [annotation.anchor.startOffset, annotation.anchor.endOffset] as const;
+    return range ? [{ annotation, range, number: index + 1,
+      endsHere: !options.block || options.block.ordinal === annotation.anchor.endBlockOrdinal }] : [];
+  });
+}
+
+/** Code preserves its literal characters, using the same saved annotation ranges. */
+export function renderNotePlainText(content: string, options: NoteInlineRenderOptions = {}): ReactNode {
+  const offset = options.textOffset ?? 0;
+  return renderTextAtom({ kind: "text", text: content, start: offset, end: offset + content.length },
+    "plain", options.mark ?? null, options.mark ?? [0, 0], annotationRanges(options), options.onOpenAnnotation, options.openAnnotationId, explanationRanges(options));
+}
+
+export function renderNoteInline(
+  content: string,
+  options: NoteInlineRenderOptions = {},
 ): ReactNode[] {
-  const atoms = noteInlineAtoms(content);
+  const offset = options.textOffset ?? 0;
+  const atoms = noteInlineAtoms(content).map(atom => ({ ...atom, start: atom.start + offset, end: atom.end + offset }));
   const mark = options.mark ?? null;
   const [from, to] = mark ?? [0, 0];
+  const annotations = annotationRanges(options);
   let imageSeen = 0;
   const lines: ReactNode[][] = [[]];
   atoms.forEach((atom, index) => {
@@ -183,7 +223,7 @@ export function renderNoteInline(
         />
       );
     } else {
-      node = renderTextAtom(atom, key, mark, [from, to]);
+      node = renderTextAtom(atom, key, mark, [from, to], annotations, options.onOpenAnnotation, options.openAnnotationId, explanationRanges(options), options.onDeleteAnnotation);
     }
     lines[lines.length - 1]?.push(node);
   });
@@ -198,6 +238,13 @@ function renderTextAtom(
   key: string,
   mark: readonly [number, number] | null,
   [from, to]: readonly [number, number],
+  annotations: readonly { readonly annotation: NoteAnnotationV1; readonly range: readonly [number, number]; readonly number: number; readonly endsHere: boolean }[] = [],
+  onOpenAnnotation?: (annotation: NoteAnnotationV1) => void,
+  openAnnotationId?: string | null,
+  explanations: readonly { readonly item: NoteCompanionExplanation; readonly range: readonly [number, number] }[] = [],
+  // 第十个位置参数。**不要再加了**：这个函数已经十个位置参数，下一个就该收成
+  // 一个 options 对象（`mark` / `annotations` / `explanations` 三样已经是一组）。
+  onDeleteAnnotation?: (annotation: NoteAnnotationV1) => ReactNode,
 ): ReactNode {
   const cut = (start: number, end: number) => atom.text.slice(start - atom.start, end - atom.start);
   const overlapFrom = Math.max(atom.start, from);
@@ -210,6 +257,27 @@ function renderTextAtom(
     parts.push(<span className="mark" key="mark">{cut(overlapFrom, overlapTo)}</span>);
     if (overlapTo < atom.end) parts.push(cut(overlapTo, atom.end));
     nodes = parts;
+  }
+  if ([...annotations, ...explanations].some(item => item.range[0] < atom.end && item.range[1] > atom.start)) {
+    const cuts = [...new Set([atom.start, atom.end, ...annotations.flatMap(item => item.range), ...explanations.flatMap(item => item.range), ...(mark ? mark : [])])]
+      .filter(offset => offset >= atom.start && offset <= atom.end).sort((a, b) => a - b);
+    nodes = cuts.slice(0, -1).map((start, index) => {
+      const end = cuts[index + 1]!;
+      const anchored = annotations.find(item => item.range[0] <= start && item.range[1] >= end);
+      const annotation = anchored?.annotation;
+      const text = cut(start, end);
+      const explanation = explanations.find(item => item.range[0] <= start && item.range[1] >= end)?.item;
+      const content = !annotation ? <span className={mark && start >= from && end <= to ? "mark" : undefined}>{text}</span>
+        : <NoteAnnotationMark annotation={annotation}
+        open={annotation.annotationId === openAnnotationId}
+        number={anchored!.endsHere && end === anchored!.range[1] ? anchored!.number : undefined}
+        onOpen={onOpenAnnotation}
+        // 只有这段末尾（`endsHere`）挂删除入口：跨块的锚会在每一段都出现一枚 ✕，
+        // 删的是**同一条**批注——按一次删对，另一枚留在原地会让「删干净了吗」没法答。
+        onDelete={onDeleteAnnotation && anchored!.endsHere ? onDeleteAnnotation(annotation) : undefined}
+        >{text}</NoteAnnotationMark>;
+      return <span key={start} className={explanation ? "note-explanation-anchor" : undefined} data-phase={explanation?.phase}>{content}</span>;
+    });
   }
   if (atom.kind === "link") {
     /**

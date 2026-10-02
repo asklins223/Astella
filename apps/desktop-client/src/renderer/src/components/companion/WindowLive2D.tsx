@@ -286,6 +286,9 @@ export function WindowLive2D({
       {effectiveStatus === "ready" && (onInviteRequest || onPointerDown) ? (
         <button
           type="button"
+          className="window-live2d__interaction"
+          data-draggable={Boolean(onPointerDown) || undefined}
+          draggable={false}
           aria-label={onInviteRequest ? `与${ariaLabel}互动` : `拖动${ariaLabel}`}
           onClick={onInviteRequest}
           onPointerDown={onPointerDown}
@@ -303,7 +306,6 @@ export function WindowLive2D({
             padding: 0,
             border: 0,
             background: "transparent",
-            cursor: "pointer",
           }}
         />
       ) : null}

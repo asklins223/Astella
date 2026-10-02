@@ -59,7 +59,7 @@ export function isArtifactFrameUrl(value: string): boolean {
 }
 
 /**
- * 父子之间只走 `postMessage`（同一个通道名下两类消息），并且**父侧必须校验
+ * 父子之间只走 `postMessage`（状态与阅读滚轮消息），并且**父侧必须校验
  * `event.source === frame.contentWindow`**（D4 §4.3）。不实现任何"按消息内容执行动作"的
  * 通用通道——那等于把 preload 的桥从后门开回来。
  *
@@ -69,11 +69,10 @@ export function isArtifactFrameUrl(value: string): boolean {
 export const ARTIFACT_FRAME_CHANNEL = 'ailearn:artifact-frame'
 
 /**
- * 首期只有两件事要走这条通道：产物**说自己起来了**（ready／heartbeat，主进程的
- * 计时器据此判断"没起来就退回静态分镜"）与**说自己坏了**（error）。播放控制
- * （步进／暂停／重播）等宿主那一侧的面落地时再加——本轮不预先发明它们。
+ * 产物报告运行状态（ready／heartbeat／error）与原生滚轮增量（scroll）。
+ * 滚轮只驱动包含本 frame 的阅读滚区，不参与运行状态，也不提供任意 DOM 指令。
  */
-export type ArtifactFramePhase = 'ready' | 'heartbeat' | 'error'
+export type ArtifactFramePhase = 'ready' | 'heartbeat' | 'error' | 'scroll'
 
 export interface ArtifactFrameEvent {
   channel: typeof ARTIFACT_FRAME_CHANNEL
@@ -89,10 +88,14 @@ export interface ArtifactFrameEvent {
    * 为什么需要这一格：frame 是**不透明 origin** 里的一份独立文档，父侧量不到它的内容
    * （同源策略下读不到 iframe 的 DOM）。不给高度，宿主只能给一个写死的行高，于是内容
    * 被压进一小格、frame 内部自己出滚动条——那正是"共 4 步"旁边一小块字加一根内滚动条
-   * 的来源。高度由**产物自己**报（它量得到自己的 `documentElement.scrollHeight`），
+   * 的来源。高度由**产物自己**报（它量得到自己的内容根节点），
    * 宿主只负责夹一个上限再写进 style，**不拿它当任何执行输入**。
    */
   contentHeight?: number
+  /** 原生滚轮只转给 frame 所在的阅读滚区，不开放任意 DOM 操作。 */
+  scrollDeltaX?: number
+  scrollDeltaY?: number
+  scrollDeltaMode?: 0 | 1 | 2
 }
 
 export interface ArtifactFrameCommandMessage {
@@ -114,8 +117,19 @@ export function parseArtifactFrameEvent(data: unknown): ArtifactFrameEvent | nul
   if (candidate.channel !== ARTIFACT_FRAME_CHANNEL) return null
   if (candidate.direction !== 'frame->host') return null
   const phase = candidate.phase
-  if (phase !== 'ready' && phase !== 'heartbeat' && phase !== 'error') return null
+  if (phase !== 'ready' && phase !== 'heartbeat' && phase !== 'error' && phase !== 'scroll') return null
   const event: ArtifactFrameEvent = { channel: ARTIFACT_FRAME_CHANNEL, direction: 'frame->host', phase }
+  if (phase === 'scroll') {
+    if (
+      typeof candidate.scrollDeltaY !== 'number' || !Number.isFinite(candidate.scrollDeltaY)
+      || typeof candidate.scrollDeltaX !== 'number' || !Number.isFinite(candidate.scrollDeltaX)
+      || (candidate.scrollDeltaMode !== 0 && candidate.scrollDeltaMode !== 1 && candidate.scrollDeltaMode !== 2)
+    ) return null
+    event.scrollDeltaX = Math.max(-1_000, Math.min(1_000, candidate.scrollDeltaX))
+    event.scrollDeltaY = Math.max(-1_000, Math.min(1_000, candidate.scrollDeltaY))
+    event.scrollDeltaMode = candidate.scrollDeltaMode
+    return event
+  }
   if (typeof candidate.stepCount === 'number' && Number.isInteger(candidate.stepCount)) {
     event.stepCount = candidate.stepCount
   }

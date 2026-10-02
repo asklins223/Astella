@@ -10,18 +10,23 @@
  * - feature flags 与 grounded-tutor prompt 常量。
  */
 
-import { sha256Hex } from "@ailearn/shared/content-hash";
+import { canonicalJsonV1, sha256Hex, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import type {
+  CompanionRunFailureClassV1,
   PetPersonaPresetBoundaries,
   PetProfileActiveness,
 } from "@ailearn/shared";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger.ts";
-import { withWorkerWorkspaceTransaction } from "../db.ts";
+import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
+import { lockJobLease, type JobLeaseContext } from "../lib/job-lease.ts";
 // 2026-08-25（AI 设计审计修复）：复用 content 模块的同一实现，消除拆分时
 // 复制出的双份 parsePageContext（两份漂移会让编排层与 DB 层对同一
 // page_context 得出不同判定）。content→store 无依赖边，不构成循环。
 import { parsePageContext } from "./companion-dialogue-content.ts";
+import type { CompanionContextHandoffSnapshotV1 } from "./companion-dialogue-content.ts";
+import type { CompanionMemoryDirectoryEntry } from "./companion-memory-vector.ts";
+import type { PlaybookCatalogEntry } from "./companion-playbooks.ts";
 import {
   materializeGroundedTutorEvidence,
   type GroundedTutorEvidenceRow,
@@ -61,10 +66,28 @@ export interface ReadContext {
    */
   livePageView: import("./companion-live-view.ts").LivePageView | null;
   pageContext: unknown;
+  contextHandoff?: Omit<
+    import("./companion-dialogue-content.ts").CompanionContextHandoffInputV1,
+    "memoryRefs" | "memoryDirectory" | "modelMessages" | "actionLedger" | "proposals"
+  >;
+  actionLedger?: Array<{
+    receiptId: string;
+    toolCallId: string;
+    name: string;
+    status: string;
+    safeSummary: string | null;
+  }>;
+  proposals?: CompanionContextHandoffSnapshotV1["proposals"];
   groundedTutorContext: import("./companion-dialogue-content.ts").GroundedTutorContext | null;
   userText: string;
   recentMessages: { role: "user" | "assistant"; text: string }[];
-  activeMemories: { kind: string; content: string }[];
+  residentMemories: { kind: string; content: string; epistemicStatus?: string | null }[];
+  memoryDirectory: CompanionMemoryDirectoryEntry[];
+  /** §4.6.10 手册目录：只有标题与触发条件；正文由 companion_read_playbook 按 id 展开。 */
+  playbookCatalog: PlaybookCatalogEntry[];
+  /** §4.5.10/§4.6.9 上一次后台整理返回的那段结论；没有就是 null。 */
+  organizationSurface: string | null;
+  memoryRefs: Array<{ memoryId: string; kind: string; content: string }>;
   /**
    * 环境快照渲染好的 `<here_and_now>` 数据块（方案 29 §4.1），null = 没有任何有值行。
    * 每轮无条件注入，不经工具、不经模型。
@@ -82,9 +105,13 @@ export interface ReadContext {
   factSpans: { values: Record<string, string>; block: string } | null;
   /**
    * `<conversation_summary>` 数据块（方案 29 §11 C1），null = 这个会话还没有摘要。
-   * 历史回放只带最近 20 条，更早的那段对话靠这一块对她可见。
+ * 历史回放只带经过消息数与字符预算后的可见尾部，更早的那段对话靠这一块对她可见。
    */
   conversationSummary: string | null;
+  /** Account persona revision fixed before the first provider call in this run. */
+  personaProfileRevision: number;
+  personaExamplesRevision: number;
+  defaultExpressionVersion: string;
   petProfile: {
     name: string;
     speakingStyle: string;
@@ -100,6 +127,97 @@ export interface ReadContext {
   } | null;
   nextMessageSeq: number;
   nextEventSeq: number;
+}
+
+export interface ConversationSummaryReadRow extends Record<string, unknown> {
+  summary: unknown;
+  coverage_from_seq: string | null;
+  coverage_through_seq: string | null;
+  coverage_source_hash: string | null;
+}
+
+/** Persist once per run. Retries read and reuse the committed prompt snapshot. */
+export async function persistCompanionContextHandoffSnapshot(args: {
+  workspaceId: string;
+  userId: string;
+  runId: string;
+  snapshot: CompanionContextHandoffSnapshotV1;
+  sha256: string;
+}): Promise<{ snapshot: CompanionContextHandoffSnapshotV1; sha256: string }> {
+  if (
+    args.snapshot.version !== 1
+    || args.snapshot.runId !== args.runId
+    || sha256Utf8V1(canonicalJsonV1(args.snapshot)) !== args.sha256
+  ) {
+    throw new Error("companion context handoff snapshot hash does not match its content");
+  }
+  return withWorkerWorkspaceTransaction(
+    { workspaceId: args.workspaceId, userId: args.userId },
+    async (tx) => {
+      const inserted = await tx.execute<{
+        snapshot: CompanionContextHandoffSnapshotV1;
+        snapshot_sha256: string;
+      }>(sql`
+        INSERT INTO companion_context_handoff_snapshots
+          (run_id, workspace_id, user_id, conversation_id, snapshot, snapshot_sha256, snapshot_version)
+        SELECT r.id, r.workspace_id, r.user_id, r.conversation_id,
+               ${JSON.stringify(args.snapshot)}::jsonb, ${args.sha256}, 1
+        FROM companion_turn_runs r
+        WHERE r.id = ${args.runId}
+          AND r.workspace_id = ${args.workspaceId}
+          AND r.user_id = ${args.userId}
+          AND r.status IN ('accepted', 'running', 'waiting_for_confirmation')
+        ON CONFLICT (run_id) DO NOTHING
+        RETURNING snapshot, snapshot_sha256
+      `);
+      if (inserted[0]) {
+        return {
+          snapshot: inserted[0].snapshot,
+          sha256: inserted[0].snapshot_sha256,
+        };
+      }
+
+      const existing = await tx.execute<{
+        snapshot: CompanionContextHandoffSnapshotV1;
+        snapshot_sha256: string;
+      }>(sql`
+        SELECT snapshot, snapshot_sha256
+        FROM companion_context_handoff_snapshots
+        WHERE run_id = ${args.runId}
+          AND workspace_id = ${args.workspaceId}
+          AND user_id = ${args.userId}
+          AND snapshot_version = 1
+      `);
+      const row = existing[0];
+      if (!row) throw new Error("companion context handoff snapshot was not committed");
+      if (sha256Utf8V1(canonicalJsonV1(row.snapshot)) !== row.snapshot_sha256) {
+        throw new Error("committed companion context handoff snapshot failed content verification");
+      }
+      return { snapshot: row.snapshot, sha256: row.snapshot_sha256 };
+    },
+  );
+}
+
+/** Read only a content-verified summary wholly before the native history tail. */
+export async function readConversationSummary(
+  tx: WorkerTransaction,
+  conversationId: string,
+  historyStartSeq: string,
+): Promise<ConversationSummaryReadRow | null> {
+  const rows = await tx.execute<ConversationSummaryReadRow>(sql`
+    SELECT summary, coverage_from_seq::text AS coverage_from_seq,
+           coverage_through_seq::text AS coverage_through_seq, coverage_source_hash
+    FROM conversation_summaries
+    WHERE conversation_id = ${conversationId}
+      AND status IN ('candidate', 'confirmed')
+      AND coverage_from_seq IS NOT NULL
+      AND coverage_through_seq IS NOT NULL
+      AND coverage_source_hash IS NOT NULL
+      AND coverage_through_seq < ${historyStartSeq}::bigint
+    ORDER BY coverage_through_seq DESC NULLS LAST, updated_at DESC
+    LIMIT 1
+  `);
+  return rows[0] ?? null;
 }
 
 interface InsertStreamEventArgs {
@@ -156,6 +274,7 @@ export interface CompanionTtsSegmentEvent {
  * 返回 false 表示 run 已终态（fence 拒绝），调用方应停止后续段。
  */
 export async function emitCompanionTtsSegments(args: {
+  job: JobLeaseContext;
   workspaceId: string;
   userId: string;
   runId: string;
@@ -172,6 +291,9 @@ export async function emitCompanionTtsSegments(args: {
     const written = await withWorkerWorkspaceTransaction(
       { workspaceId: args.workspaceId, userId: args.userId },
       async (tx) => {
+        // Voice events are durable user-visible output too; a superseded worker
+        // must not publish them after losing the same lease that fenced deltas.
+        await lockJobLease(tx, args.job);
         const alive = await tx.execute<{ id: string }>(sql`
           UPDATE companion_turn_runs
           SET status = 'running', updated_at = now()
@@ -436,6 +558,94 @@ export async function enqueueCompanionMemoryJobs(
   }
 }
 
+export interface CompanionFailureSpanScope {
+  workspaceId: string;
+  userId: string;
+  runId: string;
+}
+
+/** One row per workspace/user/class bounds retained failure state across restarts. */
+export async function recordCompanionRunFailureSpanInTransaction(
+  tx: WorkerTransaction,
+  scope: CompanionFailureSpanScope,
+  failureClass: CompanionRunFailureClassV1,
+): Promise<void> {
+  await tx.execute(sql`
+    INSERT INTO companion_run_failure_spans
+      (workspace_id, user_id, failure_class, span_started_at, last_failure_at,
+       failure_count, first_run_id, last_run_id, recovered_at, recovery_run_id, updated_at)
+    VALUES
+      (${scope.workspaceId}, ${scope.userId}, ${failureClass}, now(), now(),
+       1, ${scope.runId}, ${scope.runId}, NULL, NULL, now())
+    ON CONFLICT (workspace_id, user_id, failure_class)
+    DO UPDATE SET
+      span_started_at = CASE
+        WHEN companion_run_failure_spans.recovered_at IS NULL
+          THEN companion_run_failure_spans.span_started_at
+        ELSE now()
+      END,
+      last_failure_at = now(),
+      failure_count = CASE
+        WHEN companion_run_failure_spans.recovered_at IS NULL
+          THEN LEAST(companion_run_failure_spans.failure_count + 1, 1000000000)
+        ELSE 1
+      END,
+      first_run_id = CASE
+        WHEN companion_run_failure_spans.recovered_at IS NULL
+          THEN companion_run_failure_spans.first_run_id
+        ELSE EXCLUDED.first_run_id
+      END,
+      last_run_id = EXCLUDED.last_run_id,
+      recovered_at = NULL,
+      recovery_run_id = NULL,
+      updated_at = now()
+  `);
+}
+
+export async function recoverCompanionRunFailureSpanInTransaction(
+  tx: WorkerTransaction,
+  scope: CompanionFailureSpanScope,
+  failureClass: CompanionRunFailureClassV1,
+): Promise<void> {
+  await tx.execute(sql`
+    UPDATE companion_run_failure_spans
+    SET recovered_at = now(), recovery_run_id = ${scope.runId}, updated_at = now()
+    WHERE workspace_id = ${scope.workspaceId}
+      AND user_id = ${scope.userId}
+      AND failure_class = ${failureClass}
+      AND recovered_at IS NULL
+  `);
+}
+
+/** Optional TTS/tool observations must not make the text turn fail. */
+export async function recordCompanionRunFailureSpanBestEffort(
+  scope: CompanionFailureSpanScope,
+  failureClass: CompanionRunFailureClassV1,
+): Promise<void> {
+  try {
+    await withWorkerWorkspaceTransaction(
+      { workspaceId: scope.workspaceId, userId: scope.userId },
+      (tx) => recordCompanionRunFailureSpanInTransaction(tx, scope, failureClass),
+    );
+  } catch (err) {
+    logger.error({ runId: scope.runId, failureClass, err }, "companion failure span write failed");
+  }
+}
+
+export async function recoverCompanionRunFailureSpanBestEffort(
+  scope: CompanionFailureSpanScope,
+  failureClass: CompanionRunFailureClassV1,
+): Promise<void> {
+  try {
+    await withWorkerWorkspaceTransaction(
+      { workspaceId: scope.workspaceId, userId: scope.userId },
+      (tx) => recoverCompanionRunFailureSpanInTransaction(tx, scope, failureClass),
+    );
+  } catch (err) {
+    logger.error({ runId: scope.runId, failureClass, err }, "companion failure span recovery write failed");
+  }
+}
+
 /** run failed + error event（fence：仅 active run 可写终态；cancel/supersede 后零写入）。 */
 export async function markCompanionRunFailed(
   read: Pick<ReadContext, "runId" | "conversationId" | "userId" | "generation" | "accountEpoch">,
@@ -443,6 +653,7 @@ export async function markCompanionRunFailed(
   code: string,
   recoverable: boolean,
   reason: string,
+  failureClass: CompanionRunFailureClassV1,
 ): Promise<void> {
   try {
     await withWorkerWorkspaceTransaction(
@@ -459,6 +670,11 @@ export async function markCompanionRunFailed(
           RETURNING id
         `);
         if (!claimed[0]) return;
+        await recordCompanionRunFailureSpanInTransaction(tx, {
+          workspaceId,
+          userId: read.userId,
+          runId: read.runId,
+        }, failureClass);
         const counters = await tx.execute<{ next_event_seq: string }>(sql`
           UPDATE companion_conversations
           SET next_event_seq = next_event_seq + 2
@@ -518,6 +734,7 @@ export async function markCompanionRunFailed(
     );
   } catch (err) {
     logger.warn({ runId: read.runId, err }, "markCompanionRunFailed failed");
+    throw err;
   }
 }
 

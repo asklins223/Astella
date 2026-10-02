@@ -1,45 +1,42 @@
-/**
- * 桌宠人格档案路由（22-real-desktop-pet-memory-context-prd-tdd.md §3.3）。
- *
- * GET   /companion/pet-profile       — 读取当前人格（无自定义时返回系统默认预设）
- * PATCH /companion/pet-profile       — 保存自定义人格（revision CAS 由前端携带）
- * POST  /companion/pet-profile/reset — 重置为系统默认
- *
- * capability 门控：COMPANION_PET_PROFILE_V1=true 或 COMPANION_JOURNEY_V2=true。
- */
+/** Account-shared persona routes (当前 / 待生效); relationship metrics remain workspace-local. */
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
+import { companionPersonaPatchV1Schema } from "@ailearn/shared/companion-memory-desktop-contracts";
 import { requireSession } from "../identity/middleware.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { companionPetProfileChangedTotal } from "../../lib/metrics.ts";
 import {
-  getPetProfile,
+  activatePetProfilePendingRevision,
+  getPetProfileState,
   getPresetById,
+  listPetProfileVersions,
   PET_PERSONA_PRESETS,
   resetPetProfile,
+  restorePetProfileVersion,
+  stagePetProfileRevision,
   upsertPetProfile,
   PetProfileCasConflictError,
   type PetPersonaPreset,
 } from "./pet-profile-service.ts";
 import { isPetProfileEnabled } from "../../config/learning-companion-flags.ts";
 
-const petProfileBodySchema = z.object({
-  // §12.1.3：revision 用于 CAS 乐观锁，防止并发覆盖。
-  revision: z.number().int().positive().optional(),
-  presetId: z.string().min(1).max(80).nullable().optional(),
-  name: z.string().min(1).max(60),
-  personalityTags: z.array(z.string().min(1).max(20)).min(1).max(10),
-  speakingStyle: z.string().min(1).max(1000),
-  examples: z.array(z.object({ text: z.string().min(1).max(200) })).max(5).default([]),
-  activeness: z.enum(["quiet", "moderate", "active"]),
-  boundaries: z.object({
-    allowPlayful: z.boolean().optional(),
-    allowNudgeLearning: z.boolean().optional(),
-    allowVoiceTags: z.boolean().optional(),
-    catchphrase: z.string().max(80).nullable().optional(),
-  }).default({}),
-}).strict();
+// REST and desktop IPC share the same complete-document schema so partial writes
+// cannot silently clear examples or boundary settings.
+const petProfileBodySchema = companionPersonaPatchV1Schema;
+
+/**
+ * 「排队 → 生效」这两步的错误映射（40 §4.8.4 / A50）。
+ *
+ * 两类都是**客户端手上的状态已经不是服务端的状态**：
+ *   * CAS 过期 → 别的写入把当前版本推走了；
+ *   * 没有排队的那一版 → 界面拿的是一个还没排队的旧状态。
+ * 所以都收成 409（与既有 patch/restore/reset 的 CAS 口径一致），而不是 404：
+ * 404 在这个文件里是「那一版历史版本不存在」的专有含义。
+ */
+function casConflict(reply: FastifyReply, currentRevision: number, error: string, message: string) {
+  return reply.code(409).send({ error, message, currentRevision });
+}
 
 export async function petProfileRoutes(app: FastifyInstance) {
   app.addHook("onRequest", async (_req, reply) => {
@@ -56,13 +53,16 @@ export async function petProfileRoutes(app: FastifyInstance) {
     { preHandler: [requireSession] },
     async (req, reply) => {
       const scope = scopeOfSession(req.session);
-      const profile = await withWorkspaceTransaction(scope, (tx) => getPetProfile(tx, scope));
+      const state = await withWorkspaceTransaction(scope, (tx) => getPetProfileState(tx, scope));
+      const profile = state.profile;
       const preset: PetPersonaPreset | null = profile?.presetId
         ? getPresetById(profile.presetId)
         : null;
       return reply.header("Cache-Control", "no-store").send({
         version: 1,
         profile,
+        profileRevision: state.profileRevision,
+        relationship: state.relationship,
         presets: PET_PERSONA_PRESETS,
         activePreset: preset,
       });
@@ -76,25 +76,10 @@ export async function petProfileRoutes(app: FastifyInstance) {
       const body = petProfileBodySchema.safeParse(req.body ?? {});
       if (!body.success) throw app.httpErrors.badRequest("pet profile body 非法");
       const scope = scopeOfSession(req.session);
-      // §12.1.3：CAS 乐观锁——检查与写入必须在同一事务内，防止 TOCTOU 竞态。
-      // 之前用两个独立事务（先 getPetProfile 校验，再 upsertPetProfile 写入），
-      // 两个事务之间的窗口期允许并发请求绕过 CAS 检查导致覆盖。
-      let casConflict = false;
-      let conflictRevision = 0;
-      let profile: Awaited<ReturnType<typeof upsertPetProfile>> | null = null;
+      let profile: Awaited<ReturnType<typeof upsertPetProfile>>;
       try {
-        profile = await withWorkspaceTransaction(scope, async (tx) => {
-          const existing = await getPetProfile(tx, scope, { forUpdate: true });
-          if (existing && body.data.revision !== undefined && body.data.revision !== existing.revision) {
-            casConflict = true;
-            conflictRevision = existing.revision;
-            return null;
-          }
-          return upsertPetProfile(tx, scope, body.data);
-        });
+        profile = await withWorkspaceTransaction(scope, (tx) => upsertPetProfile(tx, scope, body.data));
       } catch (err) {
-        // 行锁 + `AND revision = expected` 兜底：并发 PATCH 的败者在这里拿到 409，
-        // 而不是 500（2026-09 后端审查修复）。
         if (err instanceof PetProfileCasConflictError) {
           return reply.code(409).send({
             error: "PROFILE_CAS_CONFLICT",
@@ -104,36 +89,191 @@ export async function petProfileRoutes(app: FastifyInstance) {
         }
         throw app.httpErrors.internalServerError("pet profile upsert failed");
       }
-      if (casConflict) {
-        return reply.code(409).send({
-          error: "PROFILE_CAS_CONFLICT",
-          message: "人格档案已被修改，请刷新后重试",
-          currentRevision: conflictRevision,
-        });
-      }
       // §9.9：记录人格变更指标
       try {
         companionPetProfileChangedTotal.inc();
       } catch {
         // metrics 记录失败不阻断请求
       }
-      return reply.header("Cache-Control", "no-store").send({ version: 1, profile });
+      return reply.header("Cache-Control", "no-store").send({ version: 1, profile, profileRevision: profile.revision });
     },
   );
 
-  app.post(
-    "/companion/pet-profile/reset",
+  app.get(
+    "/companion/pet-profile/versions",
     { preHandler: [requireSession] },
     async (req, reply) => {
       const scope = scopeOfSession(req.session);
-      await withWorkspaceTransaction(scope, (tx) => resetPetProfile(tx, scope));
+      const result = await withWorkspaceTransaction(scope, async (tx) => ({
+        state: await getPetProfileState(tx, scope),
+        versions: await listPetProfileVersions(tx, scope),
+      }));
+      return reply.header("Cache-Control", "no-store").send({
+        version: 1,
+        currentRevision: result.state.profileRevision,
+        versions: result.versions,
+      });
+    },
+  );
+
+  app.post<{ Body: unknown }>(
+    "/companion/pet-profile/restore",
+    { preHandler: [requireSession] },
+    async (req, reply) => {
+      const body = z.object({
+        revision: z.number().int().positive(),
+        currentRevision: z.number().int().nonnegative(),
+      }).strict().safeParse(req.body ?? {});
+      if (!body.success) throw app.httpErrors.badRequest("pet profile restore body 非法");
+      const scope = scopeOfSession(req.session);
+      try {
+        const profile = await withWorkspaceTransaction(scope, (tx) => restorePetProfileVersion(tx, scope, {
+          revision: body.data.revision,
+          expectedRevision: body.data.currentRevision,
+        }));
+        if (profile === undefined) return reply.code(404).send({ error: "PROFILE_VERSION_NOT_FOUND" });
+        return reply.header("Cache-Control", "no-store").send({
+          version: 1,
+          profile,
+          profileRevision: profile?.revision ?? body.data.currentRevision + 1,
+        });
+      } catch (err) {
+        if (err instanceof PetProfileCasConflictError) {
+          return reply.code(409).send({
+            error: "PROFILE_CAS_CONFLICT",
+            message: "人格档案已被修改，请刷新后重试",
+            currentRevision: err.currentRevision,
+          });
+        }
+        throw app.httpErrors.internalServerError("pet profile restore failed");
+      }
+    },
+  );
+
+  app.post<{ Body: unknown }>(
+    "/companion/pet-profile/reset",
+    { preHandler: [requireSession] },
+    async (req, reply) => {
+      const body = z.object({ revision: z.number().int().nonnegative() }).strict().safeParse(req.body ?? {});
+      if (!body.success) throw app.httpErrors.badRequest("pet profile reset body 非法");
+      const scope = scopeOfSession(req.session);
+      let profileRevision: number;
+      try {
+        profileRevision = await withWorkspaceTransaction(scope, (tx) => resetPetProfile(tx, scope, body.data.revision));
+      } catch (err) {
+        if (err instanceof PetProfileCasConflictError) {
+          return reply.code(409).send({
+            error: "PROFILE_CAS_CONFLICT",
+            message: "人格档案已被修改，请刷新后重试",
+            currentRevision: err.currentRevision,
+          });
+        }
+        throw app.httpErrors.internalServerError("pet profile reset failed");
+      }
       // §9.9：记录人格变更指标（重置也是一次变更）
       try {
         companionPetProfileChangedTotal.inc();
       } catch {
         // metrics 记录失败不阻断请求
       }
-      return reply.header("Cache-Control", "no-store").send({ version: 1, ok: true });
+      return reply.header("Cache-Control", "no-store").send({ version: 1, ok: true, profileRevision });
+    },
+  );
+
+  /**
+   * 「当前 / 待生效」一起给出去（A50：待生效版本可见）。
+   *
+   * 刻意**不**把这些字段塞进 `GET /companion/pet-profile` 的响应：那一份被桌面端
+   * 用 `companionPersonaV1Schema`（strictObject）逐字段校验，多一个键就是
+   * `unsupported_contract`，人格设置页当场打不开。等契约里补上 pending 字段之后，
+   * 这里可以并进主响应；在此之前独立成一条，两边都不欠对方。
+   */
+  app.get(
+    "/companion/pet-profile/pending",
+    { preHandler: [requireSession] },
+    async (req, reply) => {
+      const scope = scopeOfSession(req.session);
+      const state = await withWorkspaceTransaction(scope, (tx) => getPetProfileState(tx, scope));
+      return reply.header("Cache-Control", "no-store").send({
+        version: 1,
+        currentRevision: state.profileRevision,
+        pending: state.pending,
+      });
+    },
+  );
+
+  /**
+   * 排队一版修订：写下内容，**不动当前版本**（40 §4.8.4「模型自改在下一次会话建立时
+   * 生效」）。调用方是本人，所以作者固定写 user——作者字段不在 body 里，
+   * 免得一个客户端自称是模型。
+   */
+  app.post<{ Body: unknown }>(
+    "/companion/pet-profile/stage",
+    { preHandler: [requireSession] },
+    async (req, reply) => {
+      const body = petProfileBodySchema.safeParse(req.body ?? {});
+      if (!body.success) throw app.httpErrors.badRequest("pet profile stage body 非法");
+      const scope = scopeOfSession(req.session);
+      let staged: Awaited<ReturnType<typeof stagePetProfileRevision>>;
+      try {
+        staged = await withWorkspaceTransaction(scope, (tx) => stagePetProfileRevision(
+          tx,
+          scope,
+          body.data,
+          new Date(),
+          { author: "user", reason: "Staged a companion persona revision from account settings." },
+        ));
+      } catch (err) {
+        if (err instanceof PetProfileCasConflictError) {
+          return casConflict(reply, err.currentRevision, "PROFILE_CAS_CONFLICT", "人格档案已被修改，请刷新后重试");
+        }
+        throw app.httpErrors.internalServerError("pet profile stage failed");
+      }
+      // §9.9：排队也是一次人格变更（只是还没生效），指标照记。
+      try {
+        companionPetProfileChangedTotal.inc();
+      } catch {
+        // metrics 记录失败不阻断请求
+      }
+      return reply.header("Cache-Control", "no-store").send({
+        version: 1,
+        pendingRevision: staged.pendingRevision,
+        profileRevision: staged.profileRevision,
+      });
+    },
+  );
+
+  app.post<{ Body: unknown }>(
+    "/companion/pet-profile/activate",
+    { preHandler: [requireSession] },
+    async (req, reply) => {
+      const body = z.object({ revision: z.number().int().nonnegative() }).strict().safeParse(req.body ?? {});
+      if (!body.success) throw app.httpErrors.badRequest("pet profile activate body 非法");
+      const scope = scopeOfSession(req.session);
+      let activation: Awaited<ReturnType<typeof activatePetProfilePendingRevision>>;
+      try {
+        activation = await withWorkspaceTransaction(scope, (tx) =>
+          activatePetProfilePendingRevision(tx, scope, { expectedRevision: body.data.revision }));
+      } catch (err) {
+        if (err instanceof PetProfileCasConflictError) {
+          return casConflict(reply, err.currentRevision, "PROFILE_CAS_CONFLICT", "人格档案已被修改，请刷新后重试");
+        }
+        throw app.httpErrors.internalServerError("pet profile activate failed");
+      }
+      if (!activation) {
+        return casConflict(reply, body.data.revision, "PROFILE_NO_PENDING_REVISION", "没有待生效的人格版本");
+      }
+      try {
+        companionPetProfileChangedTotal.inc();
+      } catch {
+        // metrics 记录失败不阻断请求
+      }
+      return reply.header("Cache-Control", "no-store").send({
+        version: 1,
+        ok: true,
+        profile: activation.profile,
+        profileRevision: activation.revision,
+      });
     },
   );
 }

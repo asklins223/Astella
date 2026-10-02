@@ -16,6 +16,7 @@ import {
   CompanionConversationError,
 } from "./turn-service.ts";
 import { clampLimit } from "../../../lib/pagination-utils.ts";
+import { companionMessageSelection, companionMessageSelectionSql } from "./message-selection.ts";
 
 const MAX_USER_INBOX_TITLE = "伴星消息";
 
@@ -135,6 +136,7 @@ export async function listCompanionMessages(args: {
           role: companionMessages.role,
           kind: companionMessages.kind,
           blocks: companionMessages.blocks,
+          selection: companionMessageSelectionSql("companion_messages"),
           runId: companionMessages.runId,
           clientMessageId: companionMessages.clientMessageId,
           contentSha256: companionMessages.contentSha256,
@@ -163,6 +165,7 @@ export async function listCompanionMessages(args: {
             role: row.role,
             kind: row.kind,
             blocks: row.blocks,
+            ...companionMessageSelection(row.selection),
             runId: row.runId,
             clientMessageId: row.clientMessageId,
             contentSha256: row.contentSha256,

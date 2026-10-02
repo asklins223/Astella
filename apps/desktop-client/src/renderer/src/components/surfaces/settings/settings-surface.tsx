@@ -27,6 +27,7 @@ import {
 } from "./settings-workspace-group.tsx";
 import { AUDIT_CATEGORY_LABELS, AUDIT_STATUS_LABELS, DATA_POLICY_FIELDS, spaceRoleTypeLine, spaceTypeLabel, THEME_PLATES } from "./settings-data-tables.ts";
 import { useSettingsVoice } from "./use-settings-voice.ts";
+import { copyText } from "../../../app/clipboard";
 
 /**
  * 一个分区自己报给伴星读的那份事实（39d W2-7）。字段含义在这一页里**全页统一**，
@@ -1183,8 +1184,7 @@ export function SettingsSurface() {
     setCopiedCode(false);
     setFailureNotice(null);
     try {
-      if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
-      await navigator.clipboard.writeText(token);
+      if (!await copyText(token)) throw new Error("clipboard unavailable");
       setCopiedCode(true);
       window.setTimeout(() => setCopiedCode(false), 2_000);
     } catch {

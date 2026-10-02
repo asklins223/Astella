@@ -124,51 +124,29 @@ const sourceMediaSchema = z
       .optional(),
   });
 
+const taskPosterPairSchema = z.strictObject({ day: sourceMediaSchema, night: sourceMediaSchema });
+
 const sourceManifestSchema = z.strictObject({
   schemaVersion: z.literal(1),
   id: nonEmptyStringSchema,
   canonicalMode: z.literal("2d"),
   reviewStatus: nonEmptyStringSchema,
   basePath: z.literal(LEARNING_ROOM_ASSET_BASE_PATH),
-  posters: z.strictObject({ day: sourceMediaSchema, night: sourceMediaSchema }),
+  /* RoomStage 的首页与任务底层；可见任务场景由 taskPosters 登记，
+     hud-surface.css 按页面族铺图。底层共用首页不等于任务页共用首页构图。 */
   homeV2Posters: z.strictObject({ day: sourceMediaSchema, dusk: sourceMediaSchema, night: sourceMediaSchema }),
-  seatPosters: z.strictObject({ day: sourceMediaSchema, night: sourceMediaSchema }),
-  entryPosters: z.strictObject({
-    closed: z.strictObject({ day: sourceMediaSchema, night: sourceMediaSchema }),
-    open: z.strictObject({ day: sourceMediaSchema, night: sourceMediaSchema }),
+  taskPosters: z.strictObject({
+    library: taskPosterPairSchema,
+    writing: taskPosterPairSchema,
+    workshop: taskPosterPairSchema,
+    candidateReview: taskPosterPairSchema,
+    review: taskPosterPairSchema,
+    observatory: taskPosterPairSchema,
+    system: taskPosterPairSchema,
   }),
   authPosters: z.strictObject({ day: sourceMediaSchema, dusk: sourceMediaSchema, night: sourceMediaSchema }),
   registerPosters: z.strictObject({ day: sourceMediaSchema, dusk: sourceMediaSchema, night: sourceMediaSchema }),
-  searchPosters: z.strictObject({ day: sourceMediaSchema, night: sourceMediaSchema }),
-  searchForeground: z.strictObject({ day: sourceMediaSchema, night: sourceMediaSchema }),
-  reviewPosters: z.strictObject({ day: sourceMediaSchema, night: sourceMediaSchema }),
-  window: z.strictObject({
-    mask: staticAssetPathSchema,
-    registration: z.strictObject({
-      left: z.number().min(0).max(1),
-      top: z.number().min(0).max(1),
-      width: z.number().positive().max(1),
-      height: z.number().positive().max(1),
-    }),
-    day: sourceMediaSchema,
-    night: sourceMediaSchema,
-  }),
-  onboarding: sourceMediaSchema.extend({ caption: nonEmptyStringSchema }),
-  graph: z.strictObject({
-    poster: staticAssetPathSchema,
-    motionImplementation: z.literal("code"),
-  }),
-  validation: z.strictObject({
-    motionImplementation: z.literal("code"),
-  }),
-  sound: z.strictObject({
-    ambientDay: staticAssetPathSchema.nullable(),
-    ambientNight: staticAssetPathSchema.nullable(),
-    onboardingVoice: staticAssetPathSchema.nullable(),
-    onboardingCaptions: staticAssetPathSchema.nullable(),
-  }),
-  objects: z.record(nonEmptyStringSchema, staticAssetPathSchema),
-  textures: z.record(nonEmptyStringSchema, staticAssetPathSchema),
+  /* 灯塔书房的分层素材：d0 底板 + 水面 / 窗台 / 家具 / 可读物 + 近景遮挡 × day/dusk/night。 */
   roomLayers: z.array(roomSceneLayerManifestSchema).max(64).default([]),
 }).superRefine((value, context) => {
   const seenAssetIds = new Set<string>();
@@ -200,11 +178,6 @@ export type LearningRoomManifest = LearningRoomManifestSource & {
   readonly normalized: LearningRoomManifestV1;
 };
 
-export type DoorEntryAssetUrls = Readonly<{
-  closed: string;
-  home: string;
-}>;
-
 const MANIFEST_PATH = `${LEARNING_ROOM_ASSET_BASE_PATH}/manifest.json`;
 let manifestCache: LearningRoomManifest | null = null;
 let manifestPromise: Promise<LearningRoomManifest> | null = null;
@@ -218,40 +191,19 @@ export function normalizeLearningRoomManifest(
   source: LearningRoomManifestSource,
 ): LearningRoomManifestV1 {
   const assets: Record<string, string> = {};
-  addAsset(assets, "posters.day", source.posters.day.path);
-  addAsset(assets, "posters.night", source.posters.night.path);
   addAsset(assets, "homeV2Posters.day", source.homeV2Posters.day.path);
   addAsset(assets, "homeV2Posters.dusk", source.homeV2Posters.dusk.path);
   addAsset(assets, "homeV2Posters.night", source.homeV2Posters.night.path);
-  addAsset(assets, "seatPosters.day", source.seatPosters.day.path);
-  addAsset(assets, "seatPosters.night", source.seatPosters.night.path);
-  addAsset(assets, "entryPosters.closed.day", source.entryPosters.closed.day.path);
-  addAsset(assets, "entryPosters.closed.night", source.entryPosters.closed.night.path);
-  addAsset(assets, "entryPosters.open.day", source.entryPosters.open.day.path);
-  addAsset(assets, "entryPosters.open.night", source.entryPosters.open.night.path);
+  Object.entries(source.taskPosters).forEach(([family, posters]) => {
+    addAsset(assets, `taskPosters.${family}.day`, posters.day.path);
+    addAsset(assets, `taskPosters.${family}.night`, posters.night.path);
+  });
   addAsset(assets, "authPosters.day", source.authPosters.day.path);
   addAsset(assets, "authPosters.dusk", source.authPosters.dusk.path);
   addAsset(assets, "authPosters.night", source.authPosters.night.path);
   addAsset(assets, "registerPosters.day", source.registerPosters.day.path);
   addAsset(assets, "registerPosters.dusk", source.registerPosters.dusk.path);
   addAsset(assets, "registerPosters.night", source.registerPosters.night.path);
-  addAsset(assets, "searchPosters.day", source.searchPosters.day.path);
-  addAsset(assets, "searchPosters.night", source.searchPosters.night.path);
-  addAsset(assets, "searchForeground.day", source.searchForeground.day.path);
-  addAsset(assets, "searchForeground.night", source.searchForeground.night.path);
-  addAsset(assets, "reviewPosters.day", source.reviewPosters.day.path);
-  addAsset(assets, "reviewPosters.night", source.reviewPosters.night.path);
-  addAsset(assets, "window.mask", source.window.mask);
-  addAsset(assets, "window.day", source.window.day.path);
-  addAsset(assets, "window.night", source.window.night.path);
-  addAsset(assets, "onboarding", source.onboarding.path);
-  addAsset(assets, "graph.poster", source.graph.poster);
-  if (source.sound.ambientDay) addAsset(assets, "sound.ambientDay", source.sound.ambientDay);
-  if (source.sound.ambientNight) addAsset(assets, "sound.ambientNight", source.sound.ambientNight);
-  if (source.sound.onboardingVoice) addAsset(assets, "sound.onboardingVoice", source.sound.onboardingVoice);
-  if (source.sound.onboardingCaptions) addAsset(assets, "sound.onboardingCaptions", source.sound.onboardingCaptions);
-  for (const [key, path] of Object.entries(source.objects)) addAsset(assets, `objects.${key}`, path);
-  for (const [key, path] of Object.entries(source.textures)) addAsset(assets, `textures.${key}`, path);
   source.roomLayers.forEach((layer, index) => addAsset(assets, `roomLayers.${index}`, layer.path));
 
   return learningRoomManifestSchema.parse({
@@ -275,16 +227,6 @@ export function mediaAssetUrl(manifest: LearningRoomManifest, path: string): str
     throw new Error("媒体资产未登记在 learning-room manifest 中");
   }
   return `${LEARNING_ROOM_ASSET_BASE_PATH}/${safePath}`;
-}
-
-export function resolveDoorEntryAssetUrls(
-  manifest: LearningRoomManifest,
-  theme: "day" | "night",
-): DoorEntryAssetUrls {
-  return {
-    closed: mediaAssetUrl(manifest, manifest.entryPosters.closed[theme].path),
-    home: mediaAssetUrl(manifest, manifest.posters[theme].path),
-  };
 }
 
 function loadLearningRoomManifest(): Promise<LearningRoomManifest> {

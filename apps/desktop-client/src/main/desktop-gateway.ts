@@ -1367,6 +1367,21 @@ export class DesktopGateway {
     return this.mutateCompanionMemory("restore", memoryId, requestId);
   }
 
+  /**
+   * 从 30 天回收区恢复（40 §11「删除可撤回」）。
+   *
+   * 走 `POST /:id/restore-deleted` 而不是既有的 `restore`：后者恢复的是**归档**，
+   * 前者恢复的是**已删除**。两者都叫 restore，但一个撤归档、一个撤删除——
+   * 混用会让用户以为删掉的东西回来了，实际只是从归档区回来。
+   */
+
+  /**
+   * 彻底清除（不可逆，40 §11「不以『正式历史不可变』拒绝适用的删除规则」）。
+   *
+   * 与 `removeCompanionMemory`（进回收区，等 30 天）的分工是**时间**：
+   * 那条是默认，那条是「现在就删干净」。所以这里不给"撤销"留位置。
+   */
+
   private async mutateCompanionMemory(
     action: "confirm" | "pin" | "unpin" | "archive" | "restore",
     memoryId: string,

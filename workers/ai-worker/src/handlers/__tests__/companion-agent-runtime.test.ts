@@ -33,9 +33,22 @@ import {
   validateCompanionAgentToolArguments,
 } from "@ailearn/shared";
 import {
+  classifyCompanionToolFailure as classifyRuntimeToolFailure,
+  CompanionToolBlockedError as RuntimeCompanionToolBlockedError,
+  CompanionToolError as RuntimeCompanionToolError,
+  CompanionToolNotExecutedError as RuntimeCompanionToolNotExecutedError,
+  CompanionToolUnavailableError as RuntimeCompanionToolUnavailableError,
   joinVisibleSegmentsDeduped,
-  runStreamingAgentStep,
 } from "../companion-agent-runtime.ts";
+import { runStreamingAgentStep } from "../companion-agent-streaming-step.ts";
+import { classifyCompanionToolFailure } from "../companion-tool-outcome.ts";
+import { CompanionToolUnavailableError } from "../companion-tool-result.ts";
+import {
+  CompanionToolBlockedError as ExecutorCompanionToolBlockedError,
+  CompanionToolError as ExecutorCompanionToolError,
+  CompanionToolNotExecutedError as ExecutorCompanionToolNotExecutedError,
+  CompanionToolUnavailableError as ExecutorCompanionToolUnavailableError,
+} from "../companion-tool-result.ts";
 // 读工具族已搬到 companion-read-tools.ts（B2）。测试跟着搬——
 // 继续从 runtime 那个 re-export 取，会让「哪个文件有测试」这件事说不清。
 import { taskQueueToolResult, currentPageToolResult } from "../companion-read-tools.ts";
@@ -46,6 +59,61 @@ import { ProviderRequestError } from "../../lib/provider-request-error.ts";
 import { CompanionStreamStoppedError } from "../companion-dialogue-stream.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import type { AgentTurnRequest, AgentTurnResult } from "@ailearn/shared";
+
+function toolIntentTaskContext(signal = new AbortController().signal) {
+  return {
+    job: {
+      id: "job-agent-runtime-test",
+      workspaceId: "workspace-agent-runtime-test",
+      requestedBy: "user-agent-runtime-test",
+      leaseToken: "lease-agent-runtime-test",
+      signal,
+    },
+    runId: "run-agent-runtime-test",
+    userId: "user-agent-runtime-test",
+    permissionLevel: "guided",
+    currentActiveTransaction: () => undefined,
+    verifyAttempt: async () => true,
+  };
+}
+
+test("工具异常使用执行器的同一类，写操作超时以结果待核对返回", () => {
+  assert.equal(classifyRuntimeToolFailure, classifyCompanionToolFailure);
+  assert.equal(RuntimeCompanionToolError, ExecutorCompanionToolError);
+  assert.equal(RuntimeCompanionToolBlockedError, ExecutorCompanionToolBlockedError);
+  // 40b §3.2 新增的两类同样必须是**同一个构造器**：它们靠 `instanceof` 分流，
+  // 复制一份的话 runtime 这一侧永远读不到新状态（`companion-tool-result.ts` 顶上
+  // 那段讲的就是这件事，这里是它的清单）。
+  assert.equal(RuntimeCompanionToolNotExecutedError, ExecutorCompanionToolNotExecutedError);
+  assert.equal(RuntimeCompanionToolUnavailableError, ExecutorCompanionToolUnavailableError);
+
+  assert.deepEqual(
+    classifyCompanionToolFailure(new Error("database connection closed"), "reversible_low", true),
+    {
+      status: "outcome_unknown",
+      safeSummary: "这项操作可能已经发生，但暂时没有确定回执；请先核对状态，不要重复操作。",
+    },
+  );
+  assert.deepEqual(
+    classifyCompanionToolFailure(new Error("read timed out"), "read", true),
+    { status: "failed", safeSummary: "工具执行失败，请稍后再试" },
+  );
+  assert.deepEqual(
+    classifyCompanionToolFailure(new ExecutorCompanionToolError("目标已不存在，没有改动"), "consequential", true),
+    { status: "failed", safeSummary: "目标已不存在，没有改动" },
+  );
+  assert.deepEqual(
+    classifyCompanionToolFailure(new ExecutorCompanionToolBlockedError("权限不足"), "reversible_low", true),
+    { status: "blocked", safeSummary: "权限不足" },
+  );
+  // 2026-10-01（40b §3.2）：派发前就被拦下的调用（屏障/取消/预算在 executeTool 之前耗尽）
+  // 是 `not_executed`，不是 `failed`。原来这里断言 failed，把"压根没跑"说成"跑了但失败"，
+  // 模型据此重调一次就多出一条假执行；账本与 doctor 那边也是同样的读法。
+  assert.equal(
+    classifyCompanionToolFailure(new Error("deadline"), "irreversible", false).status,
+    "not_executed",
+  );
+});
 
 test("工具解析：只读权限下不存在任何写工具", () => {
   const readOnlyTools = resolveAllCompanionAgentTools("read_only");
@@ -754,21 +822,44 @@ test("read_current_page：正式作答页只报条目数，题目正文由服务
   assert.equal(result.value.itemCount, 3);
 });
 
-test("read_current_page：凭证页整块拒读", () => {
-  const result = currentPageToolResult(pageRow({ sensitivity: "credential_surface" }));
-  assert.equal(result.value.available, false);
-  assert.equal(result.value.reason, "blocked_surface");
-  assert.equal(result.value.title, undefined);
+test("read_current_page：凭证页整块拒读，并落成 40b §3.2 的 unavailable", () => {
+  // 抛错而不是返回 `available:false` 的载荷：账本、页面文案与模型必须看到
+  // **同一个**运行身份。塞在 payload 里的话，账本记 succeeded、页面显示
+  // 「读成功」，只有模型知道拿不到——0349 之前 not_executed 被压成 failed
+  // 就是同一种病。
+  assert.throws(
+    () => currentPageToolResult(pageRow({ sensitivity: "credential_surface" })),
+    (error: unknown) => {
+      assert.ok(error instanceof CompanionToolUnavailableError);
+      assert.equal(classifyCompanionToolFailure(error, "read", true).status, "unavailable");
+      assert.match(error.message, /凭据/);
+      return true;
+    },
+  );
 });
 
-test("read_current_page：落库的视图对不上合同时按「没登记」处理，不递半份形状", () => {
-  const broken = currentPageToolResult(pageRow({
-    readable_view: { pageId: "x", title: "缺 items 上限外的字段", unexpected: "leak" },
-  }));
-  assert.equal(broken.value.available, false);
-  assert.equal(broken.value.reason, "page_not_readable");
-  assert.equal(broken.value.unexpected, undefined);
-  assert.match(broken.safeSummary, /还没有登记可读内容/);
+test("read_current_page：落库的视图对不上合同 → unavailable，不递半份形状", () => {
+  assert.throws(
+    () => currentPageToolResult(pageRow({
+      readable_view: { pageId: "x", title: "缺 items 上限外的字段", unexpected: "leak" },
+    })),
+    (error: unknown) => {
+      assert.ok(error instanceof CompanionToolUnavailableError);
+      assert.equal(classifyCompanionToolFailure(error, "read", true).status, "unavailable");
+      assert.match(error.message, /还没有登记可读内容/);
+      // 半份形状一个字都不许漏出去——这是它当初被拒的原因。
+      assert.doesNotMatch(error.message, /leak/);
+      return true;
+    },
+  );
+});
+
+test("read_current_page：`no_live_page` **不**抛 —— 那不是能力不可用", () => {
+  // 40b §3.2 的 unavailable 是「所需资源或能力不可用」。根本没有页面时
+  // 说"现在没有"，不是"这个能力不可用"；抛出去会让医生与页面显示错类别。
+  const result = currentPageToolResult(null);
+  assert.equal(result.value.available, false);
+  assert.equal(result.value.reason, "no_live_page");
 });
 
 test("read_current_page：工具已注册、是读类、只读权限下也给她", () => {
@@ -837,6 +928,7 @@ test("required tool_choice 不受支持时，同一请求只切一次跨模型�
     provider: primary,
     fallbackProvider: fallback,
     signal,
+    executeTurn: (provider, request, callSignal) => provider.executeAgentTurn!(request, callSignal),
     onFallback: (error) => { fallbackNotice = error; },
   });
 
@@ -920,7 +1012,7 @@ test("P3-alt：分类器读不到（null）按「要工具」走，只有明确�
       throw new Error("provider down");
     },
   } as unknown as AIProvider;
-  const decision = await companionNeedsTool(broken, [{ role: "user", content: "帮我把那篇笔记打开" }], new AbortController().signal);
+  const decision = await companionNeedsTool(broken, [{ role: "user", content: "帮我把那篇笔记打开" }], toolIntentTaskContext());
   assert.equal(decision, null, "分类器的失败形状是 null（这条变了，上面那条判据就不成立了）");
   assert.equal(companionStepRequiresTool(decision), true);
 });
@@ -1037,5 +1129,5 @@ test("mock 守 provider 合同：required 必回工具调用，工具面为空�
   assert.equal(JSON.parse(judgedAction.content).needsTool, true);
   assert.equal(await companionNeedsTool(mock, [
     { role: "user", content: "打开那篇笔记【mock:wants-tool】" },
-  ], new AbortController().signal), true, "整条链（mock 答复 → 分类器解析）要接得上");
+  ], toolIntentTaskContext()), true, "整条链（mock 答复 → 分类器解析）要接得上");
 });

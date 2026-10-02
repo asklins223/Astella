@@ -271,6 +271,13 @@ test("时机判定：勿扰 → 静默时段 → 划走两次 → 间隔", () =>
     // 这一刻没有正式测评在作答。缺省必须显式给：漏传在类型上就该报错，
     // 而不是"忘了传=可以打扰"。
     formalAnswerInProgress: false,
+    // 40 §8.2 的四格，同样**显式给**：这次持续使用里还没说过普通招呼、
+    // 本轮只有一个候选、它是名次 0、上一条也没被忽略。
+    // 默认成"额度没用完"就是把"忘了传"变成"她可以再说一句"。
+    ambientDeliveredThisUsage: 0,
+    ambientCandidatesThisRound: 1,
+    ambientRank: 0,
+    lastAmbientIgnored: false,
   } as const;
   assert.equal(evaluateRoutineCueTiming(base).reason, "allowed");
   // 空间级静音优先于其余三条：它是"别在这个房间说话"这句最具体的指令。

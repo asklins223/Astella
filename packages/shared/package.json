@@ -121,6 +121,14 @@
       "import": "./src/contracts/companion-memory-desktop-contracts.ts",
       "default": "./src/contracts/companion-memory-desktop-contracts.ts"
     },
+    "./companion-discovery-contracts": {
+      "types": "./src/contracts/companion-discovery-contracts.ts",
+      "import": "./src/contracts/companion-discovery-contracts.ts"
+    },
+    "./companion-proactive-quota": {
+      "types": "./src/companion-proactive-quota.ts",
+      "import": "./src/companion-proactive-quota.ts"
+    },
     "./companion-proactive-policy": {
       "types": "./src/companion-proactive-policy.ts",
       "import": "./src/companion-proactive-policy.ts",

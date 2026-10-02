@@ -61,7 +61,13 @@ const PARAM_TARGETS: Readonly<Record<string, Readonly<Record<string, IdTarget>>>
   companion_defer_review: { scheduleId: { table: "review_schedules", column: "id" } },
   companion_schedule_reminder: { noteId: { table: "notes", column: "id" } },
   companion_cancel_reminder: { reminderId: { table: "companion_reminders", column: "id" } },
+  companion_read_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
   companion_forget_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
+  companion_move_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
+  companion_revise_memory: { memoryId: { table: "assistant_memory_items", column: "id" } },
+  // 手册展开（40 §4.6.10）：playbookId 是**手册表**的主键，不是记忆 id——
+  // 名字与目标必须对得上，否则读代码的人会以为它能读任意一条记忆。
+  companion_read_playbook: { playbookId: { table: "companion_procedural_playbooks", column: "id" } },
   companion_read_image: {
     noteId: { table: "notes", column: "id" },
     assetId: { table: "note_image_assets", column: "id" },

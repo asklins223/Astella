@@ -92,15 +92,26 @@ import {  CompanionActivityTimelineV1,
   CompanionMemoryItemV1,
   CompanionMemoryListQuery,
   CompanionMemoryListV1,
+  CompanionMemoryRevisionListV1,
   CompanionMemoryStarMapV2,
   CompanionPersonaMutationV1,
   CompanionPersonaPatchV1,
   CompanionPersonaResetV1,
+  CompanionPersonaRestoreRequestV1,
+  CompanionPersonaRestoreV1,
+  CompanionPersonaActivatedV1,
+  CompanionPersonaPendingV1,
+  CompanionPersonaStagedV1,
   CompanionPersonaV1,
+  CompanionPersonaVersionListV1,
+  type CompanionDailyVisibilityV1,
+  type CompanionDailyDeleteV1,
   companionActivityTimelineV1Schema,
   companionAuditDeleteResultV1Schema,
   companionDailyMonthV1Schema,
   companionDailySummaryV1Schema,
+  companionDailyVisibilityV1Schema,
+  companionDailyDeleteV1Schema,
   companionHistoryClearResultV1Schema,
   companionHistoryPageV1Schema,
   companionHistorySearchV1Schema,
@@ -109,11 +120,17 @@ import {  CompanionActivityTimelineV1,
   companionMemoryConflictResolveResultV1Schema,
   companionMemoryItemV1Schema,
   companionMemoryListV1Schema,
+  companionMemoryRevisionListV1Schema,
   companionMemoryQueueResultV1Schema,
   companionMemoryStarMapV2Schema,
   companionPersonaMutationV1Schema,
+  companionPersonaRestoreV1Schema,
+  companionPersonaStagedV1Schema,
+  companionPersonaPendingV1Schema,
+  companionPersonaActivatedV1Schema,
   companionPersonaResetV1Schema,
   companionPersonaV1Schema,
+  companionPersonaVersionListV1Schema,
 } from "@ailearn/shared/companion-memory-desktop-contracts";
 import {  CompanionAccountPatch,
   CompanionAccountStateV1,
@@ -139,6 +156,12 @@ import {  COMPANION_VOICE_SPEAK_VOICE,
   companionVoiceSpeakResultV1Schema,
   companionVoiceTranscribeResultV1Schema,
 } from "@ailearn/shared/companion-voice-contracts";
+import {
+  companionDiscoveryBookV1Schema,
+  type CompanionDiscoveryEntryV1,
+  type DiscoveryCollectRequestV1,
+  type DiscoveryIdentityV1,
+} from "@ailearn/shared/desktop-ipc-contracts";
 import {  uuidSchema,
 } from "@ailearn/shared/desktop-ipc-contracts";
 import {  TtsEngineV1,
@@ -232,6 +255,24 @@ export async function correctCompanionMemory(t: GatewayTransport, memoryId: stri
       requestId,
     );
     const parsed = companionMemoryItemV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+export async function readCompanionMemoryRevisions(
+  t: GatewayTransport,
+  memoryId: string,
+  requestId?: string,
+): Promise<CompanionMemoryRevisionListV1> {
+    await t.ensureConnected(requestId);
+    const result = await t.request(
+      `/companion/memory/${safeUuid(memoryId)}/revisions`,
+      { method: "GET" },
+      true,
+      true,
+      requestId,
+    );
+    const parsed = companionMemoryRevisionListV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }
@@ -406,6 +447,55 @@ export async function getCompanionDailyMonth(t: GatewayTransport, month: string,
     return parsed.data;
   }
 
+/**
+ * 「隐藏 / 取消隐藏 / 删除日记」（40 §10）。
+ *
+ * 三件事在网关里长得几乎一样，只有 method 与 path 不同——合成一个带
+ * `action` 的函数会让调用点读起来像"可以传任意 action"，所以这里仍是三条。
+ */
+async function postCompanionDailyVisibility(
+  t: GatewayTransport,
+  path: string,
+  date: string,
+  requestId?: string,
+): Promise<CompanionDailyVisibilityV1> {
+  await t.ensureConnected(requestId);
+  const result = await t.request(path, { method: "POST", body: JSON.stringify({}) }, true, true, requestId);
+  const parsed = companionDailyVisibilityV1Schema.safeParse(result.body);
+  if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  return parsed.data;
+}
+
+async function deleteCompanionDiary(
+  t: GatewayTransport,
+  date: string,
+  requestId?: string,
+): Promise<CompanionDailyDeleteV1> {
+  await t.ensureConnected(requestId);
+  const result = await t.request(
+    `/companion/daily/${encodeURIComponent(date)}/delete`,
+    { method: "POST", body: JSON.stringify({}) },
+    true,
+    true,
+    requestId,
+  );
+  const parsed = companionDailyDeleteV1Schema.safeParse(result.body);
+  if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  return parsed.data;
+}
+
+export async function hideCompanionDiary(t: GatewayTransport, date: string, requestId?: string): Promise<CompanionDailyVisibilityV1> {
+  return postCompanionDailyVisibility(t, `/companion/daily/${encodeURIComponent(date)}/hide`, date, requestId);
+}
+
+export async function unhideCompanionDiary(t: GatewayTransport, date: string, requestId?: string): Promise<CompanionDailyVisibilityV1> {
+  return postCompanionDailyVisibility(t, `/companion/daily/${encodeURIComponent(date)}/unhide`, date, requestId);
+}
+
+export async function removeCompanionDiary(t: GatewayTransport, date: string, requestId?: string): Promise<CompanionDailyDeleteV1> {
+  return deleteCompanionDiary(t, date, requestId);
+}
+
 export async function getCompanionDailySummary(t: GatewayTransport, date?: string, requestId?: string): Promise<CompanionDailySummaryV1> {
     await t.ensureConnected(requestId);
     const params = new URLSearchParams();
@@ -517,6 +607,20 @@ export async function getCompanionPersona(t: GatewayTransport, requestId?: strin
       requestId,
     );
     const parsed = companionPersonaV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+export async function getCompanionPersonaVersions(t: GatewayTransport, requestId?: string): Promise<CompanionPersonaVersionListV1> {
+    await t.ensureConnected(requestId);
+    const result = await t.request(
+      "/companion/pet-profile/versions",
+      { method: "GET" },
+      true,
+      true,
+      requestId,
+    );
+    const parsed = companionPersonaVersionListV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }
@@ -762,6 +866,23 @@ export async function patchCompanionPersona(t: GatewayTransport,
     return parsed.data;
   }
 
+export async function restoreCompanionPersona(t: GatewayTransport,
+    request: CompanionPersonaRestoreRequestV1,
+    requestId?: string,
+  ): Promise<CompanionPersonaRestoreV1> {
+    await t.ensureConnected(requestId);
+    const result = await t.request(
+      "/companion/pet-profile/restore",
+      { method: "POST", body: JSON.stringify(request) },
+      true,
+      true,
+      requestId,
+    );
+    const parsed = companionPersonaRestoreV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
 export async function patchCompanionRoomProfile(t: GatewayTransport, 
     request: CompanionRoomProfilePatchV1,
     requestId?: string,
@@ -810,16 +931,78 @@ export async function recordCompanionVoicePlaybackOutcome(t: GatewayTransport,
     return parsed.data;
   }
 
-export async function resetCompanionPersona(t: GatewayTransport, requestId?: string): Promise<CompanionPersonaResetV1> {
+export async function resetCompanionPersona(t: GatewayTransport, revision: number, requestId?: string): Promise<CompanionPersonaResetV1> {
     await t.ensureConnected(requestId);
     const result = await t.request(
       "/companion/pet-profile/reset",
-      { method: "POST", body: JSON.stringify({}) },
+      { method: "POST", body: JSON.stringify({ revision }) },
       true,
       true,
       requestId,
     );
     const parsed = companionPersonaResetV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+// ── 人格「待生效版本」（40 §4.8.4 / 40b §5.3.1 / A50）────────────────────
+//
+// 排队与生效是**两个动作**，不是同一个动作的两种口味：
+// `stage` 写下内容但当前版本一个字不动，`activate` 才把它提升为当前。
+// 合成一条的话，长会话里已经说过的话与正在生成的那句会分属两个版本，
+// 而「一次调用使用固定版本」当场破掉。
+
+/** 读「当前 / 待生效」两版与生效条件（A50「待生效版本可见」）。 */
+export async function getCompanionPersonaPending(t: GatewayTransport, requestId?: string): Promise<CompanionPersonaPendingV1> {
+    await t.ensureConnected(requestId);
+    const result = await t.request(
+      "/companion/pet-profile/pending",
+      { method: "GET" },
+      true,
+      true,
+      requestId,
+    );
+    const parsed = companionPersonaPendingV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+/**
+ * 排队一版修订。请求体与 `patch` 同形（服务端是同一份完整档案 schema），
+ * 所以界面上「改一项」与「排一版改项」拼出来的东西一样，只有落点不同。
+ */
+export async function stageCompanionPersonaRevision(t: GatewayTransport, request: CompanionPersonaPatchV1, requestId?: string): Promise<CompanionPersonaStagedV1> {
+    await t.ensureConnected(requestId);
+    const result = await t.request(
+      "/companion/pet-profile/stage",
+      { method: "POST", body: JSON.stringify(request) },
+      true,
+      true,
+      requestId,
+    );
+    const parsed = companionPersonaStagedV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+/**
+ * 让排队中的那一版现在就生效。
+ *
+ * 409 在这里有两种成因：当前版本被别的写入推走了，或者根本没有排队的那一版。
+ * 两者都是「客户端手上的状态已经不是服务端的状态」，与既有 restore/reset 的 CAS
+ * 口径一致（`mapResponseError` 收成 `conflict`）——界面据此重新读一次待生效
+ * 列表，而**不**假装已经生效。
+ */
+export async function activateCompanionPersonaPending(t: GatewayTransport, revision: number, requestId?: string): Promise<CompanionPersonaActivatedV1> {
+    await t.ensureConnected(requestId);
+    const result = await t.request(
+      "/companion/pet-profile/activate",
+      { method: "POST", body: JSON.stringify({ revision }) },
+      true,
+      true,
+      requestId,
+    );
+    const parsed = companionPersonaActivatedV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }
@@ -947,6 +1130,72 @@ export async function speakCompanionVoiceSegment(t: GatewayTransport,
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }
+
+/**
+ * 从 30 天回收区恢复（40 §11「删除可撤回」）。
+ *
+ * 与既有的 `POST /:id/restore` **不是同一件事**：那条撤的是**归档**，
+ * 这条撤的是**删除**。两个都叫 restore，混用会让用户以为删掉的东西回来了，
+ * 而实际只是从归档区回来。
+ */
+export async function restoreDeletedCompanionMemory(t: GatewayTransport, memoryId: string, requestId?: string): Promise<void> {
+  await t.ensureConnected(requestId);
+  await t.request(`/companion/memory/${safeUuid(memoryId)}/restore-deleted`, { method: "POST", body: JSON.stringify({}) }, true, true, requestId);
+}
+
+/**
+ * 彻底清除，不可逆。
+ *
+ * 与 `DELETE /companion/memory/:id`（进回收区、等 30 天）的分工是**时间**：
+ * 那条是默认，这条是「现在就删干净」。所以这里不给撤销留位置。
+ */
+export async function eraseCompanionMemory(t: GatewayTransport, memoryId: string, requestId?: string): Promise<void> {
+  await t.ensureConnected(requestId);
+  await t.request(`/companion/memory/${safeUuid(memoryId)}/erase`, { method: "DELETE" }, true, true, requestId);
+}
+
+// ── 40 §7 发现簿 ───────────────────────────────────────────────────────
+//
+// 五个动作共用一条 `/companion/discovery` 族。注意 **cancel 不叫 delete**：
+// 取消收藏只置不可见，原始回答与日记一个字都不动（§7）。把它叫 delete
+// 的后果就是下一次有人顺手把它接成级联。
+
+export async function getCompanionDiscoveryBook(t: GatewayTransport, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request("/companion/discovery", { method: "GET" }, true, true, requestId);
+  const parsed = companionDiscoveryBookV1Schema.safeParse(result.body);
+  if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  return parsed.data;
+}
+
+export async function collectCompanionDiscovery(t: GatewayTransport, request: DiscoveryCollectRequestV1, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request("/companion/discovery", { method: "POST", body: JSON.stringify({ request }) }, true, true, requestId);
+  // 422 = 这一条不能放进簿子（作者标错 / 来源不对 / 书房超限）。原样把
+  // body 传回去，让界面能说清是哪一条 —— 笼统的"失败"对用户没有用。
+  if (result.status === 422) throw new DesktopGatewayFailure("invalid_request", "user_action");
+  return result.body as { status: "collected" | "already_collected"; entry: CompanionDiscoveryEntryV1 };
+}
+
+export async function uncollectCompanionDiscovery(t: GatewayTransport, request: DiscoveryIdentityV1, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request("/companion/discovery/uncollect", { method: "POST", body: JSON.stringify({ request }) }, true, true, requestId);
+  return result.body as { status: "uncollected" | "not_collected" };
+}
+
+export async function annotateCompanionDiscovery(t: GatewayTransport, request: { entryId: string; annotation: string | null }, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const result = await t.request("/companion/discovery/annotate", { method: "POST", body: JSON.stringify({ request }) }, true, true, requestId);
+  return result.body as { status: "annotated" };
+}
+
+/** 笔记旁那一侧问「这一份收藏了没有」——同一份身份，两处同步。 */
+export async function getCompanionDiscoveryState(t: GatewayTransport, request: DiscoveryIdentityV1, requestId?: string) {
+  await t.ensureConnected(requestId);
+  const query = new URLSearchParams({ kind: request.kind, source: request.source, sourceId: request.sourceId });
+  const result = await t.request(`/companion/discovery/state?${query.toString()}`, { method: "GET" }, true, true, requestId);
+  return result.body as { collected: boolean; entryId: string | null; annotation: string | null };
+}
 
 export async function summarizeRecentCompanionHistory(t: GatewayTransport, requestId?: string) {
     // Renderer 不接触内部 conversation id；main 只在提交 summarizer job 时解析

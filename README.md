@@ -229,6 +229,13 @@ GitHub Actions 还会执行：
 
 通过 `API_PORT` 修改 API 映射端口。开发环境还会使用宿主机 `5432` 端口。
 
+### 伴星语音没有声音
+
+默认使用 Qwen，合成失败后切到 Edge TTS。设置里显式选择 Edge 时会直接使用 Edge。
+开发环境将 Edge 服务映射到 `127.0.0.1:8088`（可通过 `EDGE_TTS_PORT` 修改），
+供宿主机直接运行的 API 使用；Compose 内的 API 使用 `http://edge-tts:8080`。
+两者的 `EDGE_TTS_AUTH_TOKEN` 必须一致。不要把 Docker 服务名当作宿主 API 的地址。
+
 ### 查看服务状态
 
 ```bash

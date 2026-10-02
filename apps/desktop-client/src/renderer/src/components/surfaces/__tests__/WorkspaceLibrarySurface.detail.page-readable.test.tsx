@@ -234,7 +234,7 @@ describe("挑战简报：她说出的每一句都是屏上写着的", () => {
     expect(useRoomStore.getState().activeNoteRef).toEqual({
       noteId: note.noteId,
       noteVersionId: note.noteVersionId,
-      mode: "read",
+      mode: "preview",
     });
     expect(invoke).toHaveBeenCalledWith("open-notebook");
   });

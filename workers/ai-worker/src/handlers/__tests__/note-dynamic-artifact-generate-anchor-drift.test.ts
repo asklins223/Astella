@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { anchorMatches } from "../note-dynamic-artifact-generate.ts";
+import { noteAnchorMatchesV1, readNoteAnchorTextV1 } from "@ailearn/shared/note-annotation-contracts";
+
+// Verify the shared guard actually used by the worker, against one or several blocks.
+function anchorMatches(text: string, anchor: Parameters<typeof noteAnchorMatchesV1>[1]) {
+  return noteAnchorMatchesV1([{ ordinal: anchor.startBlockOrdinal, type: "paragraph", content: text }], anchor);
+}
 
 /**
  * P1-19：动态讲解的**锚点漂移**判定。
@@ -83,16 +88,27 @@ test("原文变短、endOffset 越界 → 判为不匹配（不是抛错）", ()
   assert.equal(anchorMatches(truncated, anchor), false);
 });
 
-test("空原文 + 空选区：一致才算匹配", () => {
+test("空选区不能作为可生成的锚点", () => {
   const empty = {
     noteVersionId: "00000000-0000-4000-8000-000000000001",
     startBlockOrdinal: 0,
     endBlockOrdinal: 0,
     startOffset: 0, endOffset: 0, excerpt: "", prefix: "", suffix: "",
   };
-  assert.equal(anchorMatches("", empty), true);
+  assert.equal(anchorMatches("", empty), false);
   // 一旦原文有内容而选区声称是空选区，就不匹配
   assert.equal(anchorMatches("x", empty), false);
+});
+
+test("跨段选区也核验中间段，不能只校验两端", () => {
+  const blocks = [{ ordinal: 3, type: "paragraph", content: TEXT },
+    { ordinal: 4, type: "heading", content: "下一轮" },
+    { ordinal: 5, type: "paragraph", content: "**新增利息**也会计算。" }];
+  const bounds = { startBlockOrdinal: 3, endBlockOrdinal: 5, startOffset: 290, endOffset: 4 };
+  const anchor = { noteVersionId: "00000000-0000-4000-8000-000000000001", ...bounds, ...readNoteAnchorTextV1(blocks, bounds)! };
+  assert.equal(noteAnchorMatchesV1(blocks, anchor), true);
+  assert.equal(noteAnchorMatchesV1(blocks.map(block => block.ordinal === 4 ? { ...block, content: "别的标题" } : block), anchor), false);
+  assert.equal(noteAnchorMatchesV1(blocks.filter(block => block.ordinal !== 4), anchor), false);
 });
 
 test("选区贴着开头/结尾时 prefix/suffix 的截断是对的（不该误判）", () => {

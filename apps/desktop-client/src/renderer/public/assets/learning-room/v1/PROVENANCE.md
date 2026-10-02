@@ -1,9 +1,31 @@
 # Learning room V1 asset provenance
 
+> 首页使用 Home V2 灯塔书房；任务页使用下节登记的各自场景原图。
+> 任务场景不能用首页图替换。下面更早的制作记录只解释素材来由，不构成页面映射。
+>
+> 随旧书房整条删除的还有：`posters/room-day|night.webp`、`posters/study-seat-*`、
+> `posters/review-seat-*`、`posters/search-reference-*`、`posters/login-entry/`、
+> `foreground/`、`motion/`、`masks/`、`audio/`、`captions/`、`objects/`、`textures/`、
+> `graph/`、`prompts/`（除灯塔那份），以及 public 根下的 `assets/3d/` 归档包与
+> `assets/approved-v3/`。下面各节留着，是为了说明这些图**当初怎么来的**，
+> **不要**当成「它们还在」或「还要复原」。
+>
+## Task scene originals restored on 2026-10-01
+
+- Git commit `faa0e547` removed the per-task scene rules from `hud-surface.css`. Its parent and `9a900cee` retain the mapping used by the owner's `outputs/companion-seat-audit-2026-09-19` screenshots.
+- The eleven exact PNG originals survived in the local `prototypes/companion-interaction/dist/assets/approved-v3/environments/` build. They were copied byte-for-byte into the version-controlled `posters/task-scenes/` directory; no regeneration, resizing or repainting was performed. The manifest records the original dimensions and SHA-256 for every file.
+- `taskPosters.library`: sources, source details and search. `taskPosters.writing`: the notebook library and notebook. `taskPosters.workshop`: today's study, unfinished learning, card generation and card library/details. `taskPosters.review`: the review queue and practice. `taskPosters.observatory`: the graph and companion center. `taskPosters.system`: settings and its theme previews.
+- Library, writing, workshop, review and system retain their original day/night pairs. Observatory retains its single original starry-night image for both themes; the companion center's daytime light overlay is restored separately.
+- Page selection remains in `hud-surface.css`, outside the homepage camera transform. `RoomStage` supplies the underlying room layer. Practice's existing expedition, challenge, focus and result artwork remains selected by `objective-flow.css` where applicable.
+
 ## Home V2 lighthouse study (2026-09-15)
 
 - Stable fallback posters: `posters/home-v2/lighthouse/lighthouse-{day,dusk,night}-poster-v1.png`. All three use the approved 1672 × 941 lighthouse geometry; dusk and night are lighting references, never independent layouts.
+- These three posters paint the homepage and the layer underneath task hosts. Each task host paints its own registered scene from `taskPosters`.
 - Production layers: `layers/home-v2/lighthouse/`. D0 is the clean room plate, D1 is a cropped water texture, D2 contains three window-structure crops, D3 contains desk/shelf/rest furniture groups, D4 contains the telescope plus two independently masked page pieces, and D6 contains only two cropped bottom-corner occluders. D5 remains the independent Live2D and semantic-feedback layer.
+- ⚠️ 这 13 层 × 3 时段共 39 张**目前只登记在 manifest 里，尚未由 `RoomStage` 按深度带渲染**——
+  房间是单张 poster 打底。`home-scene-profile.ts` 的 `LIGHTHOUSE_HOME_SCENE_PROFILE`
+  （相机区域、家具锚点、环境动效）配套齐全，要接上分层渲染从那份配置开始。
 - Clean plates and the telescope were produced with OpenAI ImageGen from the owner-approved room geometry. The project-local sources live in `.impeccable/review/home-v2-lighthouse-layer-sources-v1`; no third-party reference image was supplied.
 - `scripts/extract-room-scene-assets.mjs` applies the shared time-template specification at `scripts/fixtures/lighthouse-home-scene-assets.input.json`. It performs coordinate-preserving FFmpeg crops, scaling, RGBA conversion, and polygon masks. `scripts/sync-room-scene-manifest.mjs` records registrations and hashes.
 - License: project-generated original visual for this product; internal product use is permitted. Every runtime layer records its exact pixel size, world registration, SHA-256, source poster, prompt record, review status, and release approval.

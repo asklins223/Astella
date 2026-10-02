@@ -61,6 +61,7 @@ export function useNotebookOverview(input: {
       setOverviewRows((current) => before && current?.noteId === note.noteId
         ? { ...page, noteId: note.noteId, items: [...current.items, ...page.items] }
         : { ...page, noteId: note.noteId });
+      return page;
     } catch (error) {
       if (request === overviewRequestRef.current) setOverviewError(gatewayErrorMessage(error));
     } finally {
@@ -81,11 +82,9 @@ export function useNotebookOverview(input: {
         query: { noteVersionId: note.currentVersionId },
       }));
       if (request === overviewTaskRequestRef.current) setOverviewTask(result.task);
+      return result;
     } catch (error) {
-      // An optional background lookup failing must not turn the note's first
-      // screen into a service-error page. An explicit start still reports its
-      // own failure beside the action.
-      if (request === overviewTaskRequestRef.current) setOverviewTask(null);
+      if (request === overviewTaskRequestRef.current) setOverviewTaskError(gatewayErrorMessage(error));
     }
   }, [note?.noteId, note?.currentVersionId]);
 
@@ -140,7 +139,6 @@ export function useNotebookOverview(input: {
           setOverviewTaskError(null);
           setOverviewTask(task);
           if (task.status === "ready" && task.overview) {
-            setOverviewOpen(true);
             setOverviewRows((current) => {
               const base = current?.noteId === note.noteId ? current : { noteId: note.noteId, items: [], nextCursor: null };
               return { ...base, items: [task.overview!, ...base.items.filter((item) => item.overviewId !== task.overview!.overviewId)] };
@@ -194,6 +192,7 @@ export function useNotebookOverview(input: {
     setOverviewOpen,
     overviewPaperRef,
     loadNoteOverviews,
+    loadLatestNoteOverviewTask,
     startNoteOverviewTask,
     noteOverviews,
     taskForCurrentVersion,

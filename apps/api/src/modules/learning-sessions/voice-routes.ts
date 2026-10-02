@@ -186,15 +186,17 @@ async function synthesizeCompanionSegmentBytes(args: {
   voice: string;
   selection: ResolvedTtsSelection;
   queueKey: string;
+  scope: { workspaceId: string; userId: string; currentActiveTransaction: () => unknown };
   log: { warn: (obj: unknown, msg: string) => void };
   ordinal: number;
 }): Promise<{ audio: Uint8Array; engine: "qwen" | "edge" }> {
-  let attempted: "qwen" | "edge" = "qwen";
+  let attempted: "qwen" | "edge" = args.selection.engine;
   try {
     const r = await synthesizeTtsBytes({
       text: args.text,
       edgeVoice: args.voice,
       queueKey: args.queueKey,
+      scope: args.scope,
       selection: args.selection,
       onQwenFallback: (error) => {
         attempted = "edge";
@@ -203,7 +205,9 @@ async function synthesizeCompanionSegmentBytes(args: {
     });
     return { audio: r.audio, engine: r.engine };
   } catch (error) {
-    throw Object.assign(error instanceof Error ? error : new Error(String(error)), { ttsEngine: attempted });
+    throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+      ttsEngine: error instanceof EdgeTtsError ? "edge" : attempted,
+    });
   }
 }
 
@@ -367,6 +371,7 @@ export async function voiceRoutes(app: FastifyInstance) {
               voice,
               selection,
               queueKey: `${scope.workspaceId}:${scope.userId}`,
+              scope: { ...scope, currentActiveTransaction: currentApiWorkspaceTransaction },
               log: app.log,
               ordinal: notice.ordinal,
             }),
@@ -463,6 +468,7 @@ userId: session.userId,
           voice,
           selection,
           queueKey: `${session.workspaceId}:${session.userId}`,
+          scope: { workspaceId: session.workspaceId, userId: session.userId, currentActiveTransaction: currentApiWorkspaceTransaction },
           log: req.log,
           ordinal: parsed.data.ordinal,
         }),
@@ -491,6 +497,10 @@ userId: session.userId,
         text: body.text,
         edgeVoice: body.voice ?? "zh-CN-XiaoxiaoNeural",
         queueKey: `${req.session!.workspaceId}:${req.session!.userId}`,
+        // 41a：合成归属 + 「当前作用域有没有活动事务」那一个读数。路由处理函数不在
+        // 任何 `withWorkspaceTransaction` 里，所以这里应当恒为 undefined——恒真正是
+        // 它该有的样子：它防的是将来有人把合成搬进某个事务。
+        scope: { workspaceId: req.session!.workspaceId, userId: req.session!.userId, currentActiveTransaction: currentApiWorkspaceTransaction },
         selection: await resolveSelectionForSynthesis(req.session!, req.log),
         onQwenFallback: (error) => req.log.warn({ err: error }, "qwen tts failed; falling back to edge-tts"),
       });

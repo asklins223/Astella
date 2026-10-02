@@ -7,34 +7,92 @@
  * `companion-step-plan.ts`）、读工具（`companion-read-tools.ts`）、
  * **本文件这一族**、以及工具执行与提案创建。
  *
- * 这一族只做一件事：把「这一步发生了什么」写进 `companion_agent_events` /
- * `companion_agent_steps` / run 元数据，并把当前进度读回来。
+ * 这一族负责把「这一步发生了什么」写进 `companion_agent_events` /
+ * `companion_agent_steps` / run 元数据，并把当前进度读回来；Agent 模型输出的
+ * 恢复检查点也落在同一条受 RLS 保护的 step 行里，步骤收尾后立即清空。
  * 它不决定跑哪一步（那是 step-plan）、不解析工具参数（那是 read-tools）。
  *
  * 分开的理由是**事务边界**：这一族的每个函数都自带一个
  * `withWorkerWorkspaceTransaction`，所以"它什么时候开事务"是读代码时最先要问的事。
  * 混在一个 3000 行文件里，那个答案要翻很久。
  *
- * ## 这一段是**照搬**的
+ * ## 原有事件/步进链路
  *
- * SQL、事务边界、字段一个字没改。调用点在 `companion-agent-runtime.ts`，
- * 从这里 import。
+ * 原事件与步进 SQL 从 `companion-agent-runtime.ts` 搬入时保持不变；检查点端口是
+ * 后续新增的恢复能力。调用点仍在 `companion-agent-runtime.ts`。
  */
 
 import { sql } from "drizzle-orm";
-import { COMPANION_AGENT_CONTRACT_VERSION, type CompanionAgentPermissionLevel } from "@ailearn/shared";
+import {
+  agentTurnResultSchema,
+  companionAgentSettingsV1Schema,
+  COMPANION_AGENT_CONTRACT_VERSION,
+  type AgentTurnResult,
+  type CompanionAgentBudgetSnapshotV1,
+  type CompanionAgentPermissionLevel,
+} from "@ailearn/shared";
+import type {
+  AiCheckpointEntry,
+  AiCheckpointKey,
+  AiTaskCheckpointPort,
+} from "@ailearn/shared/ai-task-kernel";
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { insertStreamEvent } from "./companion-dialogue-store.ts";
-import {
-  companionAgentSettingsV1Schema,
-  type CompanionAgentBudgetSnapshotV1,
-} from "@ailearn/shared";
+import { lockJobLease } from "../lib/job-lease.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
+
+const persistedAgentStepCheckpointSchema = agentTurnResultSchema;
+
+const storedAgentStepCheckpointEnvelopeSchema = z.object({
+  key: z.object({
+    taskId: z.string().min(1),
+    taskVersion: z.number().int().positive(),
+    inputSnapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
+    workspaceId: z.string().min(1),
+    userId: z.string().nullable(),
+  }).strict(),
+  entry: z.object({
+    output: persistedAgentStepCheckpointSchema,
+    promptTokens: z.number().int().nonnegative(),
+    completionTokens: z.number().int().nonnegative(),
+  }).strict(),
+}).strict();
+
+/** Decode only a structurally valid checkpoint for the exact task/input/scope identity. */
+export function decodeCompanionAgentStepCheckpoint(
+  value: unknown,
+  expectedKey: AiCheckpointKey,
+): AiCheckpointEntry<AgentTurnResult> | null {
+  let decodedValue = value;
+  if (typeof decodedValue === "string") {
+    try {
+      decodedValue = JSON.parse(decodedValue) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  const parsed = storedAgentStepCheckpointEnvelopeSchema.safeParse(decodedValue);
+  if (!parsed.success) return null;
+  const { key, entry } = parsed.data;
+  if (
+    key.taskId !== expectedKey.taskId
+    || key.taskVersion !== expectedKey.taskVersion
+    || key.inputSnapshotHash !== expectedKey.inputSnapshotHash
+    || key.workspaceId !== expectedKey.workspaceId
+    || key.userId !== expectedKey.userId
+  ) {
+    return null;
+  }
+  return entry;
+}
 
 export interface AgentRunMeta {
   permissionLevel: CompanionAgentPermissionLevel;
   stepCount: number;
+  /** 未完成的唯一模型步骤；可在 lease reclaim 后用检查点继续。 */
+  runningStepNo: number | null;
   toolCallCount: number;
   /** 该 run 已消耗的 Agent 执行时间（毫秒，跨确认续跑累计）。 */
   elapsedMs: number;
@@ -54,6 +112,7 @@ export async function readRunMeta(args: AgentEventContext): Promise<AgentRunMeta
       const rows = await tx.execute<{
         permission_level: CompanionAgentPermissionLevel | null;
         step_count: number;
+        running_step_no: number | null;
         tool_call_count: number;
         agent_settings: unknown;
         account_epoch: number;
@@ -64,6 +123,11 @@ export async function readRunMeta(args: AgentEventContext): Promise<AgentRunMeta
                GREATEST(r.step_count, (
                  SELECT COUNT(*)::int FROM companion_agent_steps s WHERE s.run_id = r.id
                )) AS step_count,
+               (
+                 SELECT MIN(s.step_no)::int
+                 FROM companion_agent_steps s
+                 WHERE s.run_id = r.id AND s.status = 'running'
+               ) AS running_step_no,
                GREATEST(r.tool_call_count, (
                  SELECT COUNT(*)::int FROM companion_agent_tool_calls tc WHERE tc.run_id = r.id
                )) AS tool_call_count,
@@ -84,6 +148,7 @@ export async function readRunMeta(args: AgentEventContext): Promise<AgentRunMeta
         permissionLevel: row?.permission_level
           ?? (settings.success ? settings.data.permissionLevel : DEFAULT_SETTINGS.permissionLevel),
         stepCount: Number(row?.step_count ?? 0),
+        runningStepNo: row?.running_step_no == null ? null : Number(row.running_step_no),
         toolCallCount: Number(row?.tool_call_count ?? 0),
         // 已消耗执行时间跨确认续跑累计（不是每次尝试重置）。
         elapsedMs: Number(row?.agent_elapsed_ms ?? 0),
@@ -92,6 +157,12 @@ export async function readRunMeta(args: AgentEventContext): Promise<AgentRunMeta
       };
     },
   );
+}
+
+/** Re-enter the unfinished logical step instead of skipping past its checkpoint after reclaim. */
+export function resolveAgentStepCountForResume(meta: Pick<AgentRunMeta, "stepCount" | "runningStepNo">): number {
+  if (meta.runningStepNo === null) return meta.stepCount;
+  return Math.min(meta.stepCount, Math.max(0, meta.runningStepNo - 1));
 }
 
 export async function appendAgentEvent(
@@ -216,6 +287,69 @@ export async function persistStep(
   );
 }
 
+/**
+ * Store a model result only while its agent step is still running. The step's
+ * RLS scope and run cascade protect private content; finishStep clears the
+ * payload once the tool/result ledger has taken over recovery responsibility.
+ */
+export function createCompanionAgentStepCheckpointPort(
+  event: AgentEventContext,
+  stepId: string,
+): AiTaskCheckpointPort<AgentTurnResult> {
+  return {
+    load: async (key) => withWorkerWorkspaceTransaction(
+      { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+      async (tx) => {
+        await lockJobLease(tx, event.ctx);
+        const rows = await tx.execute<{ status: string; checkpoint: unknown }>(sql`
+          SELECT status, checkpoint
+          FROM companion_agent_steps
+          WHERE id = ${stepId}
+            AND run_id = ${event.read.runId}
+            AND workspace_id = ${event.ctx.workspaceId}
+            AND user_id = ${event.read.userId}
+          LIMIT 1
+          FOR UPDATE
+        `);
+        const row = rows[0];
+        if (!row || row.status !== "running" || row.checkpoint == null) return null;
+        const entry = decodeCompanionAgentStepCheckpoint(row.checkpoint, key);
+        if (entry) return entry;
+        // A stale or malformed checkpoint must not linger or be mistaken for
+        // the current prompt if this step is retried with changed inputs.
+        await tx.execute(sql`
+          UPDATE companion_agent_steps
+          SET checkpoint = NULL
+          WHERE id = ${stepId} AND run_id = ${event.read.runId} AND status = 'running'
+        `);
+        return null;
+      },
+    ),
+    save: async (key, entry) => {
+      const stored = storedAgentStepCheckpointEnvelopeSchema.parse({ key, entry });
+      await withWorkerWorkspaceTransaction(
+        { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+        async (tx) => {
+          await lockJobLease(tx, event.ctx);
+          const rows = await tx.execute<{ id: string }>(sql`
+            UPDATE companion_agent_steps
+            SET checkpoint = ${JSON.stringify(stored)}::jsonb
+            WHERE id = ${stepId}
+              AND run_id = ${event.read.runId}
+              AND workspace_id = ${event.ctx.workspaceId}
+              AND user_id = ${event.read.userId}
+              AND status = 'running'
+            RETURNING id
+          `);
+          if (!rows[0]) {
+            throw new Error("companion agent checkpoint lost its running step");
+          }
+        },
+      );
+    },
+  };
+}
+
 export async function finishStep(
   event: AgentEventContext,
   stepId: string,
@@ -229,7 +363,7 @@ export async function finishStep(
       await tx.execute(sql`
         UPDATE companion_agent_steps
         SET status = ${status}, result_hash = ${resultHash ?? null},
-            error_code = ${errorCode ?? null}, finished_at = now()
+            error_code = ${errorCode ?? null}, finished_at = now(), checkpoint = NULL
         WHERE id = ${stepId} AND run_id = ${event.read.runId}
       `);
     },

@@ -19,7 +19,7 @@ const NOTE_ID = "11111111-1111-4111-8111-111111111111";
 const VERSION_ID = "22222222-4222-4222-8222-222222222222";
 const UPLOADED_URL = "/api/uploads/2f1c9a70-1111-4111-8111-111111111111.png";
 
-function stubGateway(mode: "edit" | "read") {
+function stubGateway(mode: "live-preview" | "preview") {
   const uploads: unknown[] = [];
   const gateway = {
     contract: { enabledRoutes: ["note.detail"] },
@@ -121,7 +121,7 @@ function stubGateway(mode: "edit" | "read") {
   return { uploads };
 }
 
-async function renderNote(mode: "edit" | "read") {
+async function renderNote(mode: "live-preview" | "preview") {
   const stub = stubGateway(mode);
   vi.useFakeTimers();
   render(<NotebookSurface />);
@@ -145,20 +145,20 @@ afterEach(() => {
 
 describe("NotebookSurface · 纸面上的图片拖放", () => {
   it("编辑态的纸面认领图片归属", async () => {
-    await renderNote("edit");
+    await renderNote("live-preview");
     const paper = document.querySelector(`[${NOTE_PAPER_IMAGE_DROP_ATTR}]`);
     expect(paper).toBeTruthy();
-    expect(paper?.classList.contains("notebook")).toBe(true);
+    expect(paper?.classList.contains("notebook-workspace")).toBe(true);
   });
 
   it("阅读态不认领：那一篇不能往里写东西", async () => {
-    await renderNote("read");
+    await renderNote("preview");
     expect(document.querySelector(`[${NOTE_PAPER_IMAGE_DROP_ATTR}]`)).toBeNull();
   });
 
   it("落在正文之外的纸面上，这张图进的是这一篇笔记", async () => {
-    const { uploads } = await renderNote("edit");
-    const page = document.querySelector(".editor-copy");
+    const { uploads } = await renderNote("live-preview");
+    const page = document.querySelector(".note-draft");
     expect(page).toBeTruthy();
     expect(page?.closest(".ProseMirror")).toBeNull();
 
@@ -177,8 +177,8 @@ describe("NotebookSurface · 纸面上的图片拖放", () => {
   });
 
   it("混进一份非图片文件，纸面不认领", async () => {
-    const { uploads } = await renderNote("edit");
-    const page = document.querySelector(".editor-copy");
+    const { uploads } = await renderNote("live-preview");
+    const page = document.querySelector(".note-draft");
     expect(page).toBeTruthy();
 
     // 整份都是图片才叫"往正文里放图"；混进别的文件就交回全局采集器逐份说清去向。
@@ -199,7 +199,7 @@ describe("NotebookSurface · 纸面上的图片拖放", () => {
   });
 
   it("正文里那一下轮不到纸面兜底", async () => {
-    const { uploads } = await renderNote("edit");
+    const { uploads } = await renderNote("live-preview");
     /**
      * jsdom 没实现 `document.elementFromPoint`，而 ProseMirror 的 `posAtCoords` 起手
      * 就调它：不补这一下，往正文里派发 drop 得到的是未捕获异常（用例照样绿，

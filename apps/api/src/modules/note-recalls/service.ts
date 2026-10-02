@@ -11,6 +11,8 @@ import {
   noteRecallStartResultV1Schema,
 } from "@ailearn/shared/note-recall-contracts";
 import { visibleNotesCondition } from "../note/visibility.ts";
+import { groundedRecallExcerpt, nextRecallExcerpt, recallExcerptCandidates } from "./recall-excerpt.ts";
+import { deterministicRecallPrompt } from "./recall-prompt.ts";
 
 export type NoteRecallScopeV1 = { workspaceId: string; userId: string };
 
@@ -136,11 +138,13 @@ export async function createNoteRecallRecord(
     text: noteBlockRenderedTextV1(block.type, block.content).trim(),
   })).filter((block) => block.type !== "image" && block.text.length > 0);
   if (readableBlocks.length === 0) throw new NoteRecallError("note_empty", "这篇笔记目前没有可以对照的文字。");
+  const candidates = recallExcerptCandidates(readableBlocks);
 
   let question: string;
   let sectionOrdinal: number | null = null;
   let sectionTitle: string | null = null;
   let answer: string;
+  let answerTruncated = false;
   if (input.sourceMessageId && input.conversationId) {
     const sourceQuestion = await assistantReplyTextForNote(tx, scope, {
       messageId: input.sourceMessageId,
@@ -158,27 +162,23 @@ export async function createNoteRecallRecord(
     if (question.length < 5 || question.length > 500) {
       throw new NoteRecallError("invalid_recall_question", "伴星刚才的问题太短或太长；可以让她再试一次。");
     }
-    answer = readableBlocks.map((block) => block.text).join("\n\n").trim();
+    const basis = groundedRecallExcerpt(candidates, question);
+    if (!basis) throw new NoteRecallError("invalid_recall_question", "这道问题还没有对应到明确的原文片段。可以换一道，或请伴星围绕一小段再问。");
+    sectionOrdinal = basis.ordinal + 1;
+    sectionTitle = basis.title;
+    answer = basis.text;
+    answerTruncated = basis.truncated;
   } else {
-    const headingIndex = blocks.findIndex((block) => block.type === "heading"
-      && noteBlockRenderedTextV1(block.type, block.content).trim().length > 0);
-    const firstParagraph = readableBlocks.find((block) => block.type !== "heading");
-    const firstHeading = headingIndex >= 0 ? blocks[headingIndex] : null;
-    const firstSectionParagraph = firstHeading
-      ? readableBlocks.find((block) => block.type !== "heading" && block.ordinal > firstHeading.ordinal
-        && !blocks.some((candidate) => candidate.type === "heading" && candidate.ordinal > firstHeading.ordinal && candidate.ordinal < block.ordinal))
-      : undefined;
-    const answerBlock = firstSectionParagraph ?? firstParagraph ?? readableBlocks[0];
-    if (!answerBlock) throw new NoteRecallError("note_empty", "这篇笔记目前没有可以对照的文字。");
-    const heading = firstSectionParagraph
-      ? firstHeading
-      : blocks.filter((block) => block.type === "heading" && block.ordinal < answerBlock.ordinal).at(-1) ?? null;
-    sectionTitle = heading ? noteBlockRenderedTextV1(heading.type, heading.content).trim().slice(0, 200) || null : null;
-    sectionOrdinal = answerBlock.ordinal + 1;
-    question = sectionTitle
-      ? `“${sectionTitle}”这一部分主要在说什么？`
-      : "这篇笔记里最先讲到的重点是什么？";
-    answer = answerBlock.text;
+    const previous = await tx.select({ sectionOrdinal: noteRecallRecords.sectionOrdinal })
+      .from(noteRecallRecords).where(and(owned(scope, noteId), eq(noteRecallRecords.noteVersionId, input.noteVersionId)))
+      .orderBy(desc(noteRecallRecords.createdAt), desc(noteRecallRecords.id)).limit(100);
+    const basis = nextRecallExcerpt(candidates, previous.flatMap(row => row.sectionOrdinal === null ? [] : [row.sectionOrdinal - 1]));
+    if (!basis) throw new NoteRecallError("note_empty", "这篇笔记目前没有足够清楚、可以对照的文字片段。");
+    sectionTitle = basis.title;
+    sectionOrdinal = basis.ordinal + 1;
+    question = deterministicRecallPrompt(basis).question;
+    answer = basis.text;
+    answerTruncated = basis.truncated;
   }
 
   const answerSnapshot = answer.slice(0, 20_000);
@@ -196,7 +196,7 @@ export async function createNoteRecallRecord(
     hintSourceMessageId: null,
     hintConversationId: null,
     answerSnapshot,
-    answerTruncated: answer.length > answerSnapshot.length,
+    answerTruncated,
   }).onConflictDoNothing().returning();
   if (inserted) return noteRecallStartResultV1Schema.parse(project(inserted, note.currentVersionId, version.versionNo));
 
@@ -249,9 +249,7 @@ export async function actOnNoteRecallRecord(
           conversationId: action.conversationId!,
           selectionText: null,
         })
-      : row.sectionOrdinal === null
-        ? "先想想这道问题中的关键词，再试着用自己的话说出它与这篇笔记的关系。"
-        : `先回想原文第 ${row.sectionOrdinal} 段：它讲的是哪件事？这件事有什么作用？`;
+      : row.hintSnapshot ?? deterministicRecallPrompt({ text: row.answerSnapshot, title: row.sectionTitle }).hint;
     if (!hint) throw new NoteRecallError("source_message_not_found", "这条线索没有对应到原笔记里的伴星回复，请重新问一次。");
     const trimmedHint = hint.trim();
     if (trimmedHint.length < 3 || trimmedHint.length > 1_000) {

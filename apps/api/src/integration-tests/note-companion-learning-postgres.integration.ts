@@ -305,6 +305,20 @@ test("局部互动演示在入队前核对精确选区，并把选区写进任�
   assert.equal(wrongOffset.json().error, "selection_anchor_mismatch");
 });
 
+test("跨段批注保存完整范围，解释任务使用同一选区，错误的中间段不能入队", async () => {
+  const first = "利息加入本金后，下一次也会继续产生利息。", last = "每一轮新增的利息都会参与下一轮计算。";
+  const anchor = { noteVersionId: fixture.noteVersionId, startBlockOrdinal: 2, endBlockOrdinal: 4, startOffset: 4, endOffset: 8,
+    excerpt: [first.slice(4), "为什么会增长", last.slice(0, 8)].join("\n\n"), prefix: first.slice(0, 4), suffix: last.slice(8) };
+  const created = await call("POST", `${path()}/annotations`, { anchor, explanation: "前段说明利息并入本金，后段说明下一轮以新的本金计算。" });
+  assert.equal(created.statusCode, 200, created.body); assert.deepEqual(created.json().anchor, anchor);
+  const reopened = await call("GET", `${path()}/annotations`);
+  assert.ok(reopened.json().items.some((item: { annotationId: string }) => item.annotationId === created.json().annotationId));
+  const started = await call("POST", `${path()}/annotation-tasks`, { anchor, requestId: randomUUID() });
+  assert.equal(started.statusCode, 200, started.body); assert.deepEqual(started.json().anchor, anchor);
+  const wrong = await call("POST", `${path()}/annotation-tasks`, { anchor: { ...anchor, excerpt: anchor.excerpt.replace("为什么会增长", "另一个标题") }, requestId: randomUUID() });
+  assert.equal(wrong.statusCode, 409, wrong.body); assert.equal(wrong.json().error, "note_anchor_mismatch");
+});
+
 test("选区批注锚定精确原句、按修订更新，且不能伪造选区来源", async () => {
   const excerpt = "利息加入本金后";
   const reply = await seedAssistantReply({
@@ -375,14 +389,15 @@ test("回想不用伴星也能从原文开始，线索、揭示和自述会留�
     noteVersionId: fixture.noteVersionId,
   });
   assert.equal(started.statusCode, 200, started.body);
-  assert.equal(started.json().question, "“复利是什么”这一部分主要在说什么？");
+  assert.match(started.json().question, /利息加入＿＿＿后/);
   assert.equal(started.json().sectionOrdinal, 3);
   assert.equal(started.json().sourceMessageId, null);
   assert.equal("answer" in started.json(), false);
 
   const hinted = await call("POST", `${path()}/recalls/${started.json().recallId}/actions`, { kind: "hint" });
   assert.equal(hinted.statusCode, 200, hinted.body);
-  assert.match(hinted.json().hint, /第 3 段/);
+  assert.match(hinted.json().hint, /下一次也会继续产生利息/);
+  assert.doesNotMatch(hinted.json().hint, /本金/);
   assert.equal(hinted.json().hintSourceMessageId, null);
   assert.equal("answer" in hinted.json(), false);
 
@@ -427,7 +442,7 @@ test("回想先藏线索和原文；翻开后才允许记自述，重试不会�
   assert.equal(started.json().question, "复利下一轮计算时，为什么要把新增的利息也算进去？");
   assert.equal(started.json().sourceMessageId, questionReply.messageId);
   assert.equal(started.json().conversationId, questionReply.conversationId);
-  assert.equal(started.json().sectionOrdinal, null);
+  assert.equal(started.json().sectionOrdinal, 5);
   assert.equal("hint" in started.json(), false);
   assert.equal("answer" in started.json(), false);
 
@@ -459,7 +474,7 @@ test("回想先藏线索和原文；翻开后才允许记自述，重试不会�
 
   const revealed = await call("POST", `${path()}/recalls/${started.json().recallId}/actions`, { kind: "reveal" });
   assert.equal(revealed.statusCode, 200, revealed.body);
-  assert.match(revealed.json().answer, /利息加入本金/);
+  assert.equal(revealed.json().answer, "每一轮新增的利息都会参与下一轮计算。");
   const reported = await call("POST", `${path()}/recalls/${started.json().recallId}/actions`, {
     kind: "self_report", value: "partly", reflection: "记起了利息会继续生息。",
   });
@@ -641,4 +656,57 @@ test("共享笔记上的学习记录按创建者私有，撤销共享后不可�
   assert.equal(denied.statusCode, 404);
   assert.ok(!denied.body.includes("只留给这位成员自己的批注"));
   await admin`UPDATE notes SET share_scope='shared' WHERE id=${fixture.noteId}`;
+});
+
+test("收下一篇后其余草稿仍可编辑并分次确认；每篇重试只返回原回执", async () => {
+  const source = await seedAssistantReply({ workspaceId: fixture.workspaceId, userId: fixture.userId,
+    noteId: fixture.noteId, noteVersionId: fixture.noteVersionId });
+  const requestId = randomUUID();
+  const started = await call("POST", `${path()}/expansion-tasks`, {
+    noteVersionId: fixture.noteVersionId, requestId, sourceMessageId: source.messageId, conversationId: source.conversationId,
+  });
+  assert.equal(started.statusCode, 200, started.body);
+  const taskId = started.json().taskId as string;
+  const drafts = [1, 2, 3].map(n => ({ candidateId: randomUUID(), requestId: randomUUID(), title: `分次收下 ${n}`,
+    relationship: "从利息加入本金后的计算方式继续学习。",
+    sourceReferences: [{ blockOrdinal: 2, quote: "利息加入本金后，下一次也会继续产生利息。" }],
+    blocks: [{ type: "paragraph" as const, content: `第 ${n} 篇独立保留的草稿。` }], selected: false }));
+  await seedCompletedExpansionTask({ workspaceId: fixture.workspaceId, userId: fixture.userId, noteId: fixture.noteId,
+    noteVersionId: fixture.noteVersionId, taskId, requestId, source, drafts });
+
+  const receipts: Array<{ expansionId: string; expandedNoteId: string }> = [];
+  for (let index = 0; index < drafts.length; index++) {
+    const draft = drafts[index]!;
+    draft.title += "，已认真编辑";
+    draft.blocks = [{ type: "paragraph", content: `改好后再收下的第 ${index + 1} 篇。` }];
+    draft.selected = true;
+    const review = await call("PUT", `${path()}/expansion-tasks/${taskId}/drafts`, {
+      drafts: drafts.map(({ candidateId, title, blocks, selected }) => ({ candidateId, title, blocks, selected })),
+    });
+    assert.equal(review.statusCode, 200, review.body);
+    assert.equal(review.json().status, "ready", "上一篇确认不能锁死剩余草稿");
+    const confirmed = await call("POST", `${path()}/expansion-tasks/${taskId}/confirm`, { candidateIds: [draft.candidateId] });
+    assert.equal(confirmed.statusCode, 200, confirmed.body);
+    assert.equal(confirmed.json().length, 1);
+    receipts.push(confirmed.json()[0]);
+    const reloaded = await call("GET", `${path()}/expansion-tasks/${taskId}`);
+    assert.equal(reloaded.statusCode, 200, reloaded.body);
+    assert.equal(reloaded.json().status, index === 2 ? "confirmed" : "ready");
+    assert.deepEqual(new Set(reloaded.json().confirmedCandidateIds), new Set(drafts.slice(0, index + 1).map(item => item.candidateId)));
+    assert.equal(reloaded.json().drafts[index].title, draft.title);
+
+    const replay = await call("POST", `${path()}/expansion-tasks/${taskId}/confirm`, { candidateIds: [drafts[0]!.candidateId] });
+    assert.equal(replay.statusCode, 200, replay.body);
+    assert.equal(replay.json()[0].expansionId, receipts[0]!.expansionId);
+    assert.equal(replay.json()[0].expandedNoteId, receipts[0]!.expandedNoteId);
+  }
+  assert.equal(new Set(receipts.map(item => item.expandedNoteId)).size, 3);
+  const history = await call("GET", `${path()}/expansions`);
+  const created = history.json().items.filter((item: { sourceTaskId: string }) => item.sourceTaskId === taskId);
+  assert.equal(created.length, 3, "分次确认和重试不能重复创建笔记");
+  const overwritten = await call("PUT", `${path()}/expansion-tasks/${taskId}/drafts`, {
+    drafts: drafts.map(({ candidateId, title, blocks, selected }, index) => ({ candidateId, title: index ? title : "覆盖已收下正文", blocks, selected })),
+  });
+  assert.equal(overwritten.statusCode, 409);
+  assert.equal(overwritten.json().error, "task_already_confirmed");
 });

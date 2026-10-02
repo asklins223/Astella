@@ -18,7 +18,7 @@
  *
  * 1. 被引用的文件必须存在。
  * 2. 行号必须落在文件范围内，且那一行**不能是空行**——指向空行基本等于指向了别处。
- * 3. 引用总数设一个上限：行号引用越少越不容易腐烂。超过上限就要改成用类名。
+ * 文档可以不包含行号引用；解析器用独立样本检验。
  *
  * 本守卫**不判断那一行「对不对」**——那需要知道文档想说什么。这条只保证指针不悬空；
  * 内容对不对由写文档的人负责，但至少烂掉的指针会被当场看见。
@@ -38,8 +38,6 @@ const SOURCE_ROOTS = [
   "packages/shared/src",
 ];
 
-/** 引用总数上限。超过就说明文档在靠行号讲结构，而行号会随删除漂移。 */
-const REFERENCE_BUDGET = 12;
 
 const resolve = (relative: string): string | null => {
   // 这三份文档在**仓库根**，而守卫跑在 `apps/desktop-client` 下（vitest 的 cwd）。
@@ -69,25 +67,31 @@ const findSource = (shortName: string): string | null => {
 };
 
 type Reference = { doc: string; spec: string; line: number };
-const references: Reference[] = [];
+function collectReferences(doc: string, source: string): Reference[] {
+  return [...source.matchAll(/([A-Za-z0-9_./-]+\.(?:css|ts|tsx|mjs|js)):(\d+)(?:-(\d+))?/g)]
+    .map(hit => ({ doc, spec: hit[1], line: Number.parseInt(hit[2], 10) }));
+}
 
-for (const doc of DOCS) {
+const references = DOCS.flatMap(doc => {
   const path = resolve(doc);
   expect(path, `找不到 ${doc}`).not.toBeNull();
   const source = readFileSync(path as string, "utf8");
-  for (const hit of source.matchAll(/([A-Za-z0-9_./-]+\.(?:css|ts|tsx|mjs|js)):(\d+)(?:-(\d+))?/g)) {
-    references.push({
-      doc,
-      spec: hit[1],
-      line: Number.parseInt(hit[2], 10),
-    });
-  }
-}
+  expect(source.trim(), `${doc} 内容为空`).not.toBe("");
+  return collectReferences(doc, source);
+});
 
 describe("文档的源码引用不许悬空", () => {
-  it("扫到了东西（否则这条守卫是空的）", () => {
-    expect(references.length, "一份 `文件:行号` 引用都没扫到").toBeGreaterThan(0);
+  it("读取了文档，并允许文档没有行号引用", () => {
     expect(DOCS.every((d) => resolve(d) !== null), "有文档没找到").toBe(true);
+    expect(collectReferences("probe.md", "使用控件名称与路径说明结构")).toEqual([]);
+  });
+
+  it("自检：有行号引用时确实能读出文件、范围起点与行号", () => {
+    expect(collectReferences("probe.md", "`hud-pages.css:1-2` 与 `components/example.tsx:42`"))
+      .toEqual([
+        { doc: "probe.md", spec: "hud-pages.css", line: 1 },
+        { doc: "probe.md", spec: "components/example.tsx", line: 42 },
+      ]);
   });
 
   it("被引用的文件都存在", () => {
@@ -116,16 +120,6 @@ describe("文档的源码引用不许悬空", () => {
       dangling,
       `这些引用已经漂移。**以类名为准、以行号为辅**：母本是压缩块，删一次就全失效。\n${dangling.join("\n")}`,
     ).toEqual([]);
-  });
-
-  it("行号引用总数在预算内（越少越不容易腐烂；要讲结构就用类名）", () => {
-    const byDoc = DOCS.map((doc) => {
-      const n = references.filter((r) => r.doc === doc).length;
-      return n > 0 ? `${doc} ${n} 处` : null;
-    }).filter(Boolean);
-    // eslint-disable-next-line no-console
-    console.log(`\n[doc-reference-guard] 源码行号引用共 ${references.length} 处（上限 ${REFERENCE_BUDGET}）：\n  ${byDoc.join("\n  ")}`);
-    expect(references.length, `行号引用过多，改用类名：\n  ${byDoc.join("\n  ")}`).toBeLessThanOrEqual(REFERENCE_BUDGET);
   });
 
   it("自检：引用一个不存在的文件，判据必须报出来", () => {

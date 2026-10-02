@@ -4,6 +4,8 @@ import {
   editorViewCtx,
   editorViewOptionsCtx,
   defaultValueCtx,
+  parserCtx,
+  serializerCtx,
   rootCtx,
 } from "@milkdown/kit/core";
 import {
@@ -22,13 +24,15 @@ import {
 import { gfm } from "@milkdown/kit/preset/gfm";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { clipboard } from "@milkdown/kit/plugin/clipboard";
-import { $prose, callCommand, getMarkdown, insert, replaceAll } from "@milkdown/kit/utils";
+import { $prose, callCommand, insert, replaceAll } from "@milkdown/kit/utils";
 import { keymap } from "@milkdown/kit/prose/keymap";
-import { Plugin, PluginKey } from "@milkdown/kit/prose/state";
+import { Plugin, PluginKey, Selection } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet } from "@milkdown/kit/prose/view";
+import { placementsByBlock, type AnnotationPlacement } from "./note-annotation-placement";
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from "@milkdown/react";
 import * as Y from "yjs";
-import { yUndoPlugin, ySyncPlugin } from "y-prosemirror";
+import { yUndoPlugin, ySyncPlugin, ySyncPluginKey, undoCommand, redoCommand } from "y-prosemirror";
+import { applyNoteSource, noteCaretPosition, noteSourceSignature, readNoteSource, NOTE_SOURCE_INPUT_ORIGIN, type NoteDocumentPosition } from "./note-source-bridge";
 import {
   paragraphSchema,
   headingSchema,
@@ -41,7 +45,6 @@ import {
 import { sourceImageObjectKeyFromUrl } from "@ailearn/shared/source-image-contracts";
 import { loadSourceImageBlobUrl } from "../source/source-image.ts";
 import { LightboxViewer } from "../source/image-viewer.tsx";
-import "@milkdown/kit/prose/view/style/prosemirror.css";
 
 /**
  * 笔记正文的所见即所得编辑器（Milkdown）。
@@ -80,6 +83,13 @@ export type NoteMarkdownEditorHandle = {
   readonly toggleLink: (href: string) => void;
   readonly insertCodeBlock: () => void;
   readonly insertHr: () => void;
+  readonly applySource: (markdown: string) => boolean;
+  readonly undo: () => void;
+  readonly redo: () => void;
+  readonly getPosition: () => NoteDocumentPosition;
+  readonly focusPosition: (position: NoteDocumentPosition) => void;
+  readonly isComposing: () => boolean;
+  readonly subscribe: (listener: () => void) => () => void;
 };
 
 /**
@@ -111,7 +121,16 @@ type Props = {
   readonly disabled?: boolean;
   /** 图片粘贴/拖拽回调，上传由父组件负责。 */
   readonly onImagePaste?: (file: File) => void;
+  /**
+   * 可编辑预览态的批注记号（41 §1.1「已有批注记号保留」/ §1.4「保留记号但不阻断输入」）。
+   *
+   * 画的是**块边一枚记号**，不是把整句包成可点区域：这一格的首要职责是让人改字，
+   * 记号只要说清「这里有一条批注」就够了，把整句变成按钮会抢选区与光标。
+   */
+  readonly annotationPlacements?: readonly AnnotationPlacement[];
+  readonly onOpenAnnotation?: (annotationId: string) => void;
   readonly ref?: React.Ref<NoteMarkdownEditorHandle | null>;
+  readonly onReady?: (handle: NoteMarkdownEditorHandle | null) => void;
 };
 
 /**
@@ -280,17 +299,19 @@ function caretBlockPlugin(onCaretBlock: React.RefObject<((block: number | null) 
       let last: number | null | undefined;
       const read = (): void => {
         const $from = view.state.selection.$from;
-        const block = $from.depth > 0 ? $from.index(0) : null;
+        const block = view.hasFocus() && view.dom.contentEditable !== "false" && $from.depth > 0 ? $from.index(0) : null;
         if (block === last) return;
         last = block;
         onCaretBlock.current?.(block);
       };
       read();
+      view.dom.addEventListener("focusin", read);
+      view.dom.addEventListener("focusout", read);
       return {
         update: read,
         // 编辑器关掉就把这一格报成"不在任何块里"：awareness 是本机上传统一替换，
         // 不报的话别人那一屏会一直挂着「也在写这一段」，直到这台机器的连接断掉。
-        destroy: () => { onCaretBlock.current?.(null); },
+        destroy: () => { view.dom.removeEventListener("focusin", read); view.dom.removeEventListener("focusout", read); onCaretBlock.current?.(null); },
       };
     },
   }));
@@ -331,7 +352,114 @@ function placeholderPlugin() {
   }));
 }
 
-function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePaste, onCaretBlock }: Props) {
+/**
+ * 可编辑预览态的批注记号（41 §1.1 / §1.4）。
+ *
+ * 落位放在 **PM StateField** 里而不是模块级变量：装饰是随 state 重算的，
+ * 放进 state 意味着「批注集合变了」本身就是一次事务，装饰自动跟上；
+ * 放模块变量就得自己想办法让 PM 重算一次，那条路实测起来是「记号不消失」。
+ *
+ * **块下标 == 顶层 PM 节点下标**，实测确认（`use-note-doc-live-view.ts` 是
+ * `pmNodesToNoteBlocks(json.content).map((b, ordinal) => …)`，而
+ * `pmNodesToNoteBlocks` 对顶层节点 1:1，不摊平）。所以这里用 `doc.forEach`
+ * 顺次记数——**不读**任何节点属性：节点 attrs 里根本没有 ordinal（只有
+ * `sourceRef` 与 `imageAssetId`），按属性找会永远找不到。
+ *
+ * 装饰用 `Decoration.node` 挂在块上，而不是 `Decoration.inline` 包住那几个字：
+ * 这一格的首要职责是让人改字，把整句变成可点区域会抢选区与光标；41 §1.1 要的
+ * 只是「已有批注记号保留」，说清「这一块有一条批注」就够了。
+ */
+/**
+ * 打开旁页的回调：命令式插件拿不到 React props，经这一个 ref 过去。
+ *
+ * 它是**模块级单例**、跨换笔记也活着，所以每次渲染都要覆盖回去——否则上一篇的
+ * 记号会留在这一篇上，那正是「切到编辑态批注全没了」的另一种形状。
+ */
+const openNoteAnnotationRef: { current: ((annotationId: string) => void) | undefined } = { current: undefined };
+/** 集合进插件 state（见 MilkdownControls 里那次事务），所以这里只是 meta 的名字。 */
+const setNoteAnnotationPlacements = new PluginKey<readonly AnnotationPlacement[]>("NOTE_EDITOR_ANNOTATION_SET");
+/** 集合进插件 state（见 MilkdownControls 里那次事务），`decorations` 经 `this` 读它。 */
+const ANNOTATION_PLUGIN = new PluginKey<readonly AnnotationPlacement[]>("NOTE_EDITOR_ANNOTATIONS");
+/**
+ * 可编辑预览态的批注记号（41 §1.1「已有批注记号保留」/ §1.4「保留记号但不阻断输入」）。
+ *
+ * **块下标 == 顶层 PM 节点下标**，实测确认（`use-note-doc-live-view.ts` 是
+ * `pmNodesToNoteBlocks(json.content).map((b, ordinal) => …)`，而
+ * `pmNodesToNoteBlocks` 对顶层节点 1:1，不摊平）。所以这里用 `doc.forEach`
+ * 顺次记数——**不读**任何节点属性：节点 attrs 里根本没有 ordinal（只有
+ * `sourceRef` 与 `imageAssetId`），按属性找会永远找不到。
+ *
+ * 装饰用 `Decoration.node` 挂在块上，而不是 `Decoration.inline` 包住那几个字：
+ * 这一格的首要职责是让人改字，把整句变成可点区域会抢选区与光标；41 §1.1 要的
+ * 只是「已有批注记号保留」，说清「这一块有一条批注」就够了。
+ */
+function annotationPlugin() {
+  return $prose(() => new Plugin<readonly AnnotationPlacement[]>({
+    key: ANNOTATION_PLUGIN,
+    state: {
+      init: () => [],
+      apply: (tr, value) => tr.getMeta(setNoteAnnotationPlacements) ?? value,
+    },
+    props: {
+      // `this` 在 PluginSpec 的 props 里绑定到插件本身——`state.plugin(key)` 要的
+      // 正是它。写成箭头函数 `this` 就是 undefined，症状是读不到集合、记号不画。
+      decorations(state) {
+        const placements = this.getState(state) ?? [];
+        if (!placements.length) return null;
+        const byBlock = placementsByBlock(placements);
+        const decorations: Decoration[] = [];
+        // 自己记数，别回头查 offset：`doc.forEach` 走的就是块下标的顺序，
+        // 回头再扫一遍是 O(n²)，而正文动辄几百块。
+        let ordinal = 0;
+        state.doc.forEach((node, offset) => {
+          const entries = byBlock.get(ordinal);
+          ordinal += 1;
+          if (!entries) return;
+          decorations.push(Decoration.node(offset, offset + node.nodeSize, {
+            class: "note-annotation-block",
+            "data-annotation-id": entries[0]!.annotationId,
+            "data-annotation-number": String(entries[0]!.number),
+            "aria-label": entries.length > 1 ? `这一段有 ${entries.length} 条批注` : "这一段有批注",
+          }));
+        });
+        return DecorationSet.create(state.doc, decorations);
+      },
+    },
+  }));
+}
+
+/**
+ * 记号上的点击/回车：走 **DOM 事件委托**，不用 PM 的 `handleClick`。
+ *
+ * `handleClick` 要先 `posAtCoords` 拿到位置才轮到插件——而 jsdom 没有布局，
+ * 那一步直接返回 null，插件根本不会被问（实测：事件发了，回调没来）。它还会
+ * 与 PM 自己的选区处理抢一次点击。委托监听在编辑器根上，看有没有落在
+ * `[data-annotation-id]` 里就开旁页，并 `preventDefault` 掉这一次点击，
+ * 于是「点记号 = 读批注」而不是「点记号 = 把光标放这儿再开旁页」。
+ */
+function noteAnnotationClickHandler(event: React.MouseEvent): void {
+  const id = annotationIdFromEvent(event.target);
+  if (!id) return;
+  event.preventDefault();
+  event.stopPropagation();
+  openNoteAnnotationRef.current?.(id);
+}
+
+function noteAnnotationKeyHandler(event: React.KeyboardEvent): void {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const target = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>("[data-annotation-id]") : null;
+  const id = target?.dataset.annotationId;
+  if (!id) return;
+  event.preventDefault();
+  openNoteAnnotationRef.current?.(id);
+}
+
+function annotationIdFromEvent(target: EventTarget | null): string | null {
+  const element = target instanceof HTMLElement ? target.closest<HTMLElement>("[data-annotation-id]") : null;
+  return element?.dataset.annotationId ?? null;
+}
+
+function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePaste, onCaretBlock, annotationPlacements, onOpenAnnotation }: Props) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const disabledRef = useRef(disabled);
@@ -340,6 +468,10 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
   onImagePasteRef.current = onImagePaste;
   const onCaretBlockRef = useRef(onCaretBlock);
   onCaretBlockRef.current = onCaretBlock;
+  // 记号集合与打开回调：插件是命令式对象，拿不到 props，经这个 ref 过去。
+  // 它是**模块级单例**、跨换笔记也活着，所以每次渲染都要覆盖回去，
+  // 否则上一篇的记号会留在这一篇上。
+  openNoteAnnotationRef.current = onOpenAnnotation;
   // 图片节点的点击放大：节点视图是命令式 DOM，经 ref 把点击交给 React 渲染灯箱。
   const onImageZoomRef = useRef<((src: string, alt: string) => void) | undefined>(undefined);
   onImageZoomRef.current = (src, alt) => setZoom({ src, alt });
@@ -380,7 +512,11 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
     .use($prose(() => ySyncPlugin(fragment)))
     // 撤销交给 `yUndoPlugin`：Milkdown 的 `history` 只记这一台机器的事务，
     // 绑上共享文档之后它会撤销到别人刚写的那几个字上。
-    .use($prose(() => yUndoPlugin()))
+    .use($prose(() => yUndoPlugin({ undoManager: new Y.UndoManager([fragment, fragment.doc!.getMap("meta")], {
+      trackedOrigins: new Set([ySyncPluginKey, NOTE_SOURCE_INPUT_ORIGIN]),
+      captureTransaction: (transaction) => transaction.meta.get("addToHistory") !== false,
+    }) })))
+    .use($prose(() => keymap({ "Mod-z": undoCommand, "Mod-Shift-z": redoCommand, "Mod-y": redoCommand })))
     // `listener` 必须在 `clipboard` 之前回到链里：`onChange` 那一路要靠它，
     // 而我重写这条链时把它和 `history` 一起删了（`history` 是故意删的，它不是）。
     .use(listener)
@@ -389,7 +525,8 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
     .use(imageNodeViewPlugin(onImageZoomRef))
     .use(caretBlockPlugin(onCaretBlockRef))
     .use(codeBlockTabPlugin())
-    .use(placeholderPlugin()));
+    .use(placeholderPlugin())
+    .use(annotationPlugin()));
 
   // ProseMirror 的 ensureEditable() 只在 view 创建与 view.update() 时执行。
   // disabled 由 true 变 false 时（例如这一版笔记刚读回来）contenteditable 不会
@@ -400,7 +537,12 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
   }, [disabled]);
 
   return (
-    <div className="note-editor" ref={wrapperRef}>
+    <div
+      className="note-editor"
+      ref={wrapperRef}
+      onClick={noteAnnotationClickHandler}
+      onKeyDown={noteAnnotationKeyHandler}
+    >
       <Milkdown />
       {zoom ? (
         <LightboxViewer alt={zoom.alt} count={1} index={0} onClose={() => setZoom(null)}>
@@ -421,11 +563,37 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
 function MilkdownControls({
   handleRef,
   externalRef,
+  fragment,
+  onReady,
+  annotationPlacements,
 }: {
   readonly handleRef: React.RefObject<NoteMarkdownEditorHandle | null>;
   readonly externalRef?: React.Ref<NoteMarkdownEditorHandle | null>;
+  readonly fragment: Y.XmlFragment;
+  readonly onReady?: (handle: NoteMarkdownEditorHandle | null) => void;
+  readonly annotationPlacements?: readonly AnnotationPlacement[];
 }) {
   const [loading, getInstance] = useInstance();
+
+  /**
+   * 把记号集合写进插件 state。
+   *
+   * 组件挂在这里而不是 `MilkdownBody`，是因为**只有它拿得到 view**（`useInstance`）；
+   * 而 `MilkdownBody` 同一个 provider 里却拿不到。一次带 meta 的空事务就把集合
+   * 送进去了——不动 doc、不进 undo，而插件的 `decorations` 随 state 自动重算。
+   *
+   * 另有「用户改字导致块下标变了」那一条：由 doc 变化自动重算，不需要这里管。
+   */
+  const placementsKey = (annotationPlacements ?? [])
+    .map((placement) => `${placement.annotationId}@${placement.blocks.map((block) => block.ordinal).join(",")}`)
+    .join("|");
+  useEffect(() => {
+    if (loading) return;
+    withReadyEditor(getInstance(), (editor) => editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      view.dispatch(view.state.tr.setMeta(setNoteAnnotationPlacements, annotationPlacements ?? []));
+    }), undefined);
+  }, [loading, placementsKey, annotationPlacements, getInstance]);
 
   useEffect(() => {
     const writeExternal = (value: NoteMarkdownEditorHandle | null) => {
@@ -446,7 +614,10 @@ function MilkdownControls({
     const handle: NoteMarkdownEditorHandle | null = loading ? null : {
       getMarkdown: () => withReadyEditor(
         getInstance(),
-        (editor) => editor.action(getMarkdown()),
+        (editor) => editor.action((ctx) => readNoteSource(
+          ctx.get(editorViewCtx), ctx.get(serializerCtx),
+          fragment.doc?.getMap("meta").get("sourceView") as { text: string; document: string } | undefined,
+        )),
         null,
       ),
       setMarkdown: (markdown, flush) => run((editor) => editor.action(replaceAll(markdown, flush))),
@@ -473,15 +644,53 @@ function MilkdownControls({
       toggleLink: (href) => run(command(toggleLinkCommand.key, { href })),
       insertCodeBlock: () => run(command(createCodeBlockCommand.key)),
       insertHr: () => run(command(insertHrCommand.key)),
+      applySource: (markdown) => withReadyEditor(getInstance(), (editor) => editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const parsed = ctx.get(parserCtx)(markdown);
+        const doc = fragment.doc;
+        if (!parsed || !doc) return false;
+        const meta = doc.getMap("meta");
+        const signature = noteSourceSignature(view.state.doc);
+        const cache = meta.get("sourceView") as { text: string; document: string } | undefined;
+        // Seed the pre-edit source only on real input so syntax-only edits can be undone too.
+        if (cache?.document !== signature) doc.transact(() => meta.set("sourceView", {
+          text: ctx.get(serializerCtx)(view.state.doc), document: signature,
+        }), "note-source-baseline");
+        doc.transact(() => {
+          applyNoteSource(view, parsed);
+          meta.set("sourceView", { text: markdown, document: noteSourceSignature(view.state.doc) });
+        }, NOTE_SOURCE_INPUT_ORIGIN);
+        return true;
+      }), false),
+      undo: () => run((editor) => editor.action((ctx) => { const view = ctx.get(editorViewCtx); undoCommand(view.state, view.dispatch); })),
+      redo: () => run((editor) => editor.action((ctx) => { const view = ctx.get(editorViewCtx); redoCommand(view.state, view.dispatch); })),
+      getPosition: () => withReadyEditor(getInstance(), (editor) => editor.action((ctx) => noteCaretPosition(ctx.get(editorViewCtx))), { block: 0, offset: 0 }),
+      focusPosition: (position) => run((editor) => editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        let at = 0;
+        const block = Math.min(Math.max(0, position.block), view.state.doc.childCount - 1);
+        for (let index = 0; index < block; index += 1) at += view.state.doc.child(index).nodeSize;
+        const offset = Math.min(Math.max(0, position.offset), view.state.doc.child(block).content.size);
+        view.dispatch(view.state.tr.setSelection(Selection.near(view.state.doc.resolve(at + 1 + offset))).scrollIntoView());
+        view.focus();
+      })),
+      isComposing: () => withReadyEditor(getInstance(), (editor) => editor.action((ctx) => ctx.get(editorViewCtx).composing), false),
+      subscribe: (listener) => {
+        const doc = fragment.doc;
+        doc?.on("update", listener);
+        return () => { doc?.off("update", listener); };
+      },
     };
 
     handleRef.current = handle;
     writeExternal(handle);
+    onReady?.(handle);
     return () => {
       if (handleRef.current === handle) handleRef.current = null;
       writeExternal(null);
+      onReady?.(null);
     };
-  }, [loading, getInstance, handleRef, externalRef]);
+  }, [loading, getInstance, handleRef, externalRef, fragment, onReady]);
 
   return null;
 }
@@ -497,7 +706,10 @@ export function NoteMarkdownEditor({
   disabled,
   onImagePaste,
   onCaretBlock,
+  annotationPlacements,
+  onOpenAnnotation,
   ref,
+  onReady,
 }: Props) {
   const handleRef = useRef<NoteMarkdownEditorHandle | null>(null);
 
@@ -510,8 +722,14 @@ export function NoteMarkdownEditor({
         disabled={disabled}
         onImagePaste={onImagePaste}
         onCaretBlock={onCaretBlock}
+        onOpenAnnotation={onOpenAnnotation}
       />
-      <MilkdownControls handleRef={handleRef} externalRef={ref} />
+      {/* 记号集合走 props 进插件 state，而不是模块级 ref：ref 那条路试过，
+          `MilkdownControls` 的渲染早于 `MilkdownBody` 写 ref，effect 读到的永远是
+          上一轮那份（症状是「记号画不出来」）。值进插件 state 之后，
+          「批注变了」本身就是一次事务，装饰自动跟上。 */}
+      <MilkdownControls handleRef={handleRef} externalRef={ref} fragment={fragment} onReady={onReady}
+        annotationPlacements={annotationPlacements} />
     </MilkdownProvider>
   );
 }

@@ -15,6 +15,7 @@ const accountState = (overrides: { globalEnabled?: boolean } = {}) => companionA
   revision: 4,
   epoch: 1,
   globalEnabled: overrides.globalEnabled ?? true,
+  diaryEnabled: true,
 });
 
 describe("账号级 presence 选项（2026-09-16 裁决 3）", () => {

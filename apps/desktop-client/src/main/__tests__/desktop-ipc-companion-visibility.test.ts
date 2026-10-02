@@ -121,6 +121,7 @@ const overview = companionOverviewSchema.parse({
     revision: 3,
     epoch: ACCOUNT_EPOCH,
     globalEnabled: true,
+    diaryEnabled: true,
     presence: { presence: "online", updatedAt: "2026-09-24T00:00:00.000Z" },
     interventionLevel: "moderate",
     quietHours: null,

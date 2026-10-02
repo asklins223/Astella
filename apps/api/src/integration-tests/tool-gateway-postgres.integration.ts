@@ -486,3 +486,105 @@ test("§18.1：记忆候选 confirm/reject——revision CAS；stale revision 40
     await seeded.cleanup();
   }
 });
+
+test("§18.1：修订记忆保留原来源并追加旧版本；stale revision 不覆盖新内容", async () => {
+  const seeded = await seedBase();
+  try {
+    const sourceEventId = `memory-source:${randomUUID()}`;
+    const sourceSessionId = randomUUID();
+    const validFrom = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const validUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const memory = await withWorkspaceTransaction(
+      { workspaceId: seeded.workspaceId, userId: seeded.userId },
+      (tx) => upsertMemory(tx, { workspaceId: seeded.workspaceId, userId: seeded.userId }, {
+        kind: "preference",
+        content: "我通常在晚上学习",
+        sourceEventId,
+        sourceSessionId,
+        sourceSpeaker: "user",
+        sourceBasis: "direct_statement",
+        appliesWhen: "工作日",
+        validFrom,
+        validUntil,
+        userStated: true,
+        candidate: false,
+        sourceType: "user_stated",
+      }),
+    );
+    const memoryId = memory.memoryItemId;
+    const proposal = await createToolProposal(seeded, {
+      kind: "revise_memory",
+      memoryId,
+      expectedRevision: memory.revision,
+      content: "我通常在午休时学习",
+    });
+    const revised = await confirmProposal(seeded, proposal.proposalId, proposal.payloadSha256);
+    assert.equal(revised.status, "succeeded");
+    assert.equal(revised.resultRef, memoryId);
+
+    const currentRows = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${seeded.workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${seeded.userId}, true)`;
+      return tx`
+        SELECT id, revision, content, source_event_id, source_session_id, source_speaker,
+               source_basis, applies_when, valid_from, valid_until,
+               user_stated, user_confirmed, candidate, author_type, author_id,
+               epistemic_status, embedding_status
+          FROM assistant_memory_items WHERE id = ${memoryId}
+      `;
+    });
+    assert.equal(currentRows[0].id, memoryId);
+    assert.equal(currentRows[0].revision, memory.revision + 1);
+    assert.equal(currentRows[0].content, "我通常在午休时学习");
+    assert.equal(currentRows[0].source_event_id, sourceEventId);
+    assert.equal(currentRows[0].source_session_id, sourceSessionId);
+    assert.equal(currentRows[0].source_speaker, "user");
+    assert.equal(currentRows[0].source_basis, "direct_statement");
+    assert.equal(currentRows[0].applies_when, "工作日");
+    assert.equal(new Date(currentRows[0].valid_from).toISOString(), validFrom.toISOString());
+    assert.equal(new Date(currentRows[0].valid_until).toISOString(), validUntil.toISOString());
+    assert.equal(currentRows[0].user_stated, true);
+    assert.equal(currentRows[0].user_confirmed, true);
+    assert.equal(currentRows[0].candidate, false);
+    assert.equal(currentRows[0].author_type, "user");
+    assert.equal(currentRows[0].author_id, seeded.userId);
+    assert.equal(currentRows[0].epistemic_status, "supported");
+    assert.equal(currentRows[0].embedding_status, "pending");
+
+    const historyRows = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${seeded.workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${seeded.userId}, true)`;
+      return tx`
+        SELECT revision, content, source_event_id, source_session_id, applies_when
+          FROM assistant_memory_item_revisions
+         WHERE memory_id = ${memoryId}
+         ORDER BY revision
+      `;
+    });
+    assert.deepEqual(historyRows.map((row) => row.revision), [memory.revision]);
+    assert.equal(historyRows[0].content, "我通常在晚上学习");
+    assert.equal(historyRows[0].source_event_id, sourceEventId);
+    assert.equal(historyRows[0].source_session_id, sourceSessionId);
+    assert.equal(historyRows[0].applies_when, "工作日");
+
+    const stale = await createToolProposal(seeded, {
+      kind: "revise_memory",
+      memoryId,
+      expectedRevision: memory.revision,
+      content: "旧版本不得覆盖当前记忆",
+    });
+    await assert.rejects(
+      () => confirmProposal(seeded, stale.proposalId, stale.payloadSha256),
+      (err: unknown) => err instanceof CompanionConversationError && err.code === "ACTION_STALE",
+    );
+    const unchanged = await sql.begin(async (tx) => {
+      await tx`SELECT set_config('app.workspace_id', ${seeded.workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${seeded.userId}, true)`;
+      return tx`SELECT revision, content FROM assistant_memory_items WHERE id = ${memoryId}`;
+    });
+    assert.equal(unchanged[0].revision, memory.revision + 1);
+    assert.equal(unchanged[0].content, "我通常在午休时学习");
+  } finally {
+    await seeded.cleanup();
+  }
+});

@@ -38,7 +38,49 @@ function session(goToRoute = vi.fn().mockResolvedValue(undefined)): CompanionCha
   } as unknown as CompanionChatSession;
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+describe("手记里的选文和系统复制", () => {
+  it("用户消息在提问前显示当时的原文快照，复制包含原文和问题", async () => {
+    const writeText = vi.fn().mockResolvedValue({ ok: true, data: { written: true } });
+    const browserWrite = vi.fn().mockRejectedValue(new DOMException("Write permission denied", "NotAllowedError"));
+    vi.stubGlobal("ailearn", { clipboard: { writeText } });
+    vi.stubGlobal("navigator", { clipboard: { writeText: browserWrite } });
+    render(<CompanionChatRecordArticle message={message({
+      role: "user",
+      blocks: [{ type: "text", text: "请用通俗易懂的话解释这段。" }],
+      selection: { text: "第二段：间隔重复把复习排在快忘还没忘的时刻。", sharing: "user_selected" },
+    })} chat={session()} />);
+    const quote = screen.getByText("第二段：间隔重复把复习排在快忘还没忘的时刻。");
+    expect(screen.getByText("引用的原文")).toBeTruthy();
+    expect(quote.compareDocumentPosition(screen.getByText("请用通俗易懂的话解释这段。")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "复制文字" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "已复制" })).toBeTruthy());
+    expect(writeText).toHaveBeenCalledWith(expect.objectContaining({ request: {
+      text: "引用的原文\n第二段：间隔重复把复习排在快忘还没忘的时刻。\n\n请用通俗易懂的话解释这段。",
+    } }));
+    expect(browserWrite).not.toHaveBeenCalled();
+  });
+
+  it("伴星回答和富引用也可复制；原生失败时就地显示失败，下一次点击可重试", async () => {
+    const writeText = vi.fn().mockResolvedValueOnce({ ok: false }).mockResolvedValueOnce({ ok: true, data: { written: true } });
+    vi.stubGlobal("ailearn", { clipboard: { writeText } });
+    render(<CompanionChatRecordArticle message={message({ blocks: [
+      { type: "text", text: "复习要花在快忘的时候。" },
+      { type: "quote", label: "笔记原文", text: "间隔重复把复习排在快忘还没忘的时刻。" },
+    ] })} chat={session()} />);
+    fireEvent.click(screen.getByRole("button", { name: "复制文字" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "复制失败，请重试" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "复制失败，请重试" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "已复制" })).toBeTruthy());
+    expect(writeText).toHaveBeenLastCalledWith(expect.objectContaining({ request: {
+      text: "复习要花在快忘的时候。\n\n笔记原文\n间隔重复把复习排在快忘还没忘的时刻。",
+    } }));
+  });
+});
 
 describe("CompanionChatRecordArticle 的跳转块（方案 29 §4.8）", () => {
   it("nav 块渲染成消息里可点的落点，点击走同一条 goToRoute", () => {
@@ -129,9 +171,10 @@ describe("CompanionChatRecordArticle 的跳转块（方案 29 §4.8）", () => {
     expect(labels[0].compareDocumentPosition(labels[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("没有 nav 块的消息一个字都不多渲染（历史消息不受影响）", () => {
+  it("没有 nav 块时没有跳转入口，同时保留手记的复制操作", () => {
     render(<CompanionChatRecordArticle message={message()} chat={session()} />);
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(document.querySelector(".companion-record__nav")).toBeNull();
+    expect(screen.getByRole("button", { name: "复制文字" })).toBeTruthy();
     expect(screen.getByText("带你去看那篇笔记。")).toBeTruthy();
   });
 

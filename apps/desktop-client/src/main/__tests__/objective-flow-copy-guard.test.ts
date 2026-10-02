@@ -75,7 +75,7 @@ describe("目标链路的用户可见文案", () => {
   });
 
   it("所有 returnTarget 的 label 自带「返回」，所以那个前缀不该回来", () => {
-    for (const file of [`${BASE}/surfaces/space/graph-surface.tsx`, `${BASE}/surfaces/notebook/notebook-surface.tsx`, `${BASE}/CardGenerationSurface.tsx`]) {
+    for (const file of [`${BASE}/surfaces/space/graph-surface.tsx`, `${BASE}/surfaces/notebook/notebook-surface.tsx`, `${BASE}/surfaces/review/use-card-generation-session.ts`]) {
       const found = [...read(file).matchAll(/label:\s*"(返回[^"]*)"/g)].map((match) => match[1]);
       expect(found.length, `${file} 里没找到带「返回」的 label，这条守卫的前提变了`).toBeGreaterThan(0);
     }

@@ -281,16 +281,15 @@ test("边界依赖的那两样还在：部分唯一索引（schema＋迁移）�
 /**
  * 下面这半数是另一件事：**唯一键带着 `review_dimension`，而读侧几乎都不认识这一维。**
  *
- * 0287 那把部分唯一索引的键是（空间、人、主体、维度），也就是"同一个目标可以同时挂着
- * 两条待处理安排，只要维度不同"。今天没有一处调用方传过非空维度（下面第三条判据把这句话
- * 钉住），所以这个口子是空的、无害的。但它是**W7-5 的杠杆**（"一次作答可关联多个合格目标、
- * 每目标同一次日程最多提交一次"要靠这一维表达）。那一天到来时，如果读侧还按"一个目标一条
- * 待处理"来读，症状会很 nasty：`count()` 那几处会重复计数（今日积压、首页那几个数），
- * 队列那几处会挑错一条或挑两条，屏幕上就会出现"同一目标两个都到期"。
+ * 0287 那把部分唯一索引的键是（空间、人、主体、维度），所以同一目标可以有多条待处理安排。
+ * 当前已有五处调用方传非空维度；下面的调用方名单守卫防止这批读侧盘点之外再悄悄增加写入方。
+ * 读侧有 28 处，25 处未直接筛维度；这些读点仍需按聚合、队列或单行处理的真实语义分别判断，
+ * 台账只记录覆盖范围，不代表它们已获语义豁免。按目标汇总时重复计数、按单行挑选时选错维度，
+ * 都是仍需避免的实际风险。
  *
- * 所以这里把 19 处"还不认维度"的读点逐文件登记成台账（新增读点、或某处改好了不清单，
- * 两个方向都会红），并把"第一次有人传非空维度"做成一枚**触发器**：那一发会红，
- * 红就是让那个人在同一批里处理读侧，而不是等线上出现两个数对不上。
+ * 所以这里把所有未直接筛维度的读点逐文件登记成台账（新增读点、或某处改好了不清单，
+ * 两个方向都会红）。最初的"第一次有人传非空维度"触发器已过期；当前用精确调用方名单守住
+ * 已知写入范围，同时保留读侧台账供逐处审查。
  */
 
 /**
@@ -340,16 +339,15 @@ function readSitesIn(file: string, source: string): Array<{ file: string; dimens
  * 不用改成按维度筛。台账不许因为"这一处没关系"就少登一条——那正是它当初漏登的那一类；
  * 写明理由，理由本身也在这份文件里对着代码，过期了会有人看见。
  *
- * ── 2026-09-28：维度开始真的有值了 ──────────────────────────────────────
- * 六个生产方都传了维度（结算按冻结 goal 分提取／应用；卡激活、共享卡个人复习、
- * 笔记订阅首次回访、一次性提醒都是提取；「恢复并开启」读回被排除那一格原本的维度）。
- * 于是**两条会挑错行的读点必须先修**，它们已经修好并在下面从台账里删掉：
+ * ── 2026-10-01：维度写入方已经启用 ──────────────────────────────────────
+ * 当前有五处非空维度调用，精确路径由下方用例登记。两条会挑错行的读点已支持维度并从台账删掉：
  *   - `run-service.ts` 的 `findPending`（原来按 subject 取一条、generation 倒序 limit 1；
  *     两行 generation 都是 1 ⇒ 这一次答的是提取却可能消费掉"应用"那条）。
  *   - `run-processing-tick.ts` 的 `clampToManualDateV2`（原来按 subject limit 1 且无排序 ⇒
  *     另一格的手动日期会来压住这一格的日期）。
  *
- * 剩下的按文件登记在下面，每条都写明为什么它这一处**不用**改成按维度筛。
+ * 剩余未筛维度的读点仍逐文件登记。只有 `{ count, reason }` 明确列出理由的条目才算审查过；
+ * 数字条目仍待结合各自业务语义处理，不能据此断言它们无需修改。
  */
 type BlindReaderEntry = number | { readonly count: number; readonly reason: string };
 const READERS_BLIND_TO_DIMENSION: Record<string, BlindReaderEntry> = {
@@ -401,7 +399,7 @@ function blindReaderCounts(): Record<string, number> {
 }
 
 /**
- * 有没有**调用方**给边界传了非空维度（今天应该是零处）。
+ * 找出**调用方**给边界传了非空维度的源码位置。
  *
  * 判据锚的是"这一发调用里带了 `reviewDimension` 那一格"，不是全文出现这个标识符——
  * schema 里那一列的声明（`reviewDimension: text("review_dimension")`）与边界的入参类型
@@ -418,7 +416,7 @@ function dimensionNamingCallersIn(file: string, text: string): string[] {
 
 function dimensionNamingCallers(): string[] {
   // 边界文件自己排除：它体内那一处 `reviewDimension: dimension` 就是"往那一格写"的机制本身，
-  // 不是调用方。触发器要判的是**有没有人开始喂非空维度**。
+  // 不是调用方。名单守卫检查调用方增减是否经过读侧审查。
   return runtimeSources()
     .filter((f) => f.rel !== BOUNDARY_FILE)
     .flatMap((f) => dimensionNamingCallersIn(f.rel, f.text));
@@ -503,15 +501,17 @@ test("写明「不用改」的那几条，理由不许是空话：每一处都�
   }
 });
 
-test("触发器：还没有任何调用方给边界传非空维度——第一次传的时候必须先处理读侧", () => {
-  const callers = dimensionNamingCallers();
-  const stillBlind = Object.values(blindReaderCounts()).reduce((a, b) => a + b, 0);
-  assert.deepEqual(callers, [],
-    `有 ${callers.length} 处开始给唯一调度边界传维度了（${callers.join("；")}）。`
-      + `这不是回退，是**要求**：同一批改完那 ${stillBlind} 处不认维度的读点（或逐条写明为什么不用改）`
-      + "并把上面那份台账改短——否则同一目标的两条安排会被那些读点重复计数或挑错一条。");
-  // 这条触发器自己也要灵敏：schema 里那一列的声明与边界的入参类型都含同名标识符，
-  // 第一版就是按全文匹配把它们误判成"有人开始写维度"而当场红。
+test("维度写入调用方保持登记，新增调用必须先复核读侧台账", () => {
+  const expected = [
+    "apps/api/src/modules/card-generation-v2/activation-service.ts:这一发调用带了维度",
+    "apps/api/src/modules/review/note-subscription-schedule.ts:这一发调用带了维度",
+    "apps/api/src/modules/review/objective-review-holds.ts:这一发调用带了维度",
+    "apps/api/src/modules/review/one-time-reminder-service.ts:这一发调用带了维度",
+    "apps/api/src/modules/review/shared-card-review-service.ts:这一发调用带了维度",
+  ];
+  assert.deepEqual(dimensionNamingCallers().sort(), expected,
+    "维度写入方新增或迁移时，先审查对应读侧并同步这份清单");
+  // 判据自身也要灵敏：schema 列声明含同名字段不能误报，真实调用必须被识别。
   assert.deepEqual(dimensionNamingCallersIn("schema.ts",
     'reviewDimension: text("review_dimension").notNull().default(""),'), [],
     "列声明被判成调用方传了维度");

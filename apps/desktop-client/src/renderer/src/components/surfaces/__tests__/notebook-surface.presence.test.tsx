@@ -82,7 +82,7 @@ function stub() {
   } as unknown as typeof window.ailearn;
 }
 
-async function open(mode: "read" | "edit") {
+async function open(mode: "preview" | "live-preview") {
   useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode } });
   vi.useFakeTimers();
   render(<NotebookSurface />);
@@ -111,7 +111,7 @@ describe("笔记页上的在场名单", () => {
       spaceIdentity: { name: "验收空间", role: "owner", isPersonal: false },
       accountIdentity: { email: "owner@ailearn.local", displayName: "Asklins" },
     });
-    await open("read");
+    await open("preview");
     expect(document.body.textContent ?? "").not.toContain("人在看");
     await deliverPresence([{ clientId: 7, state: { name: "小琳" } }]);
     expect(document.querySelectorAll(".notebook-presence__peer")).toHaveLength(2);
@@ -124,7 +124,7 @@ describe("笔记页上的在场名单", () => {
       spaceIdentity: { name: "验收空间", role: "owner", isPersonal: false },
       accountIdentity: { email: "owner@ailearn.local", displayName: "Asklins" },
     });
-    await open("edit");
+    await open("live-preview");
     await deliverPresence([{ clientId: 7, state: { name: "小琳" } }]);
     expect(document.body.textContent ?? "").toContain("2 人在看");
   });
@@ -136,7 +136,7 @@ describe("笔记页上的在场名单", () => {
       // 演示账号 owner@ailearn.local 就没有显示名——量那次对端整排都是「?」。
       accountIdentity: { email: "owner@ailearn.local", displayName: null },
     });
-    await open("read");
+    await open("preview");
     expect(presence).toHaveBeenLastCalledWith(expect.objectContaining({
       // 报名字与报块是同一条 awareness（本机替换整份）：光标还没进正文就是 null。
       state: JSON.stringify({ name: "owner", block: null }),
@@ -153,7 +153,7 @@ describe("笔记页上的在场名单", () => {
       spaceIdentity: { name: "我的空间", role: "owner", isPersonal: true },
       accountIdentity: { email: "owner@ailearn.local", displayName: "Asklins" },
     });
-    await open("edit");
+    await open("live-preview");
     expect(subscribe).not.toHaveBeenCalled();
     expect(document.body.textContent ?? "").not.toContain("人在看");
   });

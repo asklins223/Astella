@@ -24,9 +24,11 @@ const rejectedRuntimeMedia = [
   'review-card-tray-v1.png',
   'review-card-stand-v2.png',
 ]
-const packageExcludedPrefixes = [
-  'out/renderer/assets/3d/',
-]
+// 2026-10-01：旧 3D 学习房归档包（`assets/3d/`）已整条删除，public 树不再有任何
+// 需要排除的目录，`packageExcludedPrefixes` 与 `electron.vite.config.ts` 里的
+// `releasePublicAssetsPlugin` 一同退场。这份清单现在**故意留空**——若日后又要排除什么，
+// 加回来，别让归档包顺着 public 目录进安装包。
+const packageExcludedPrefixes = []
 const packagedManifestEntry = 'out/renderer/assets/learning-room/v1/manifest.json'
 const runtimeManifestPath = resolve(appRoot, 'src/renderer/public/assets/learning-room/v1/manifest.json')
 const outManifestPath = resolve(appRoot, 'out/renderer/assets/learning-room/v1/manifest.json')
@@ -164,9 +166,34 @@ async function inspectPackagedArtifact(executable) {
   if (excludedArchiveEntries.length) {
     throw new Error(`Reference-only archives entered app.asar: ${excludedArchiveEntries.slice(0, 12).join(', ')}`)
   }
-  // 2026-09-16 裁决移除 orb：打包产物不得再包含它（Live2D 是唯一形态）。
+  // 2026-09-16 裁决移除 orb，打包产物不得再包含它（Live2D 是唯一形态）；
+  // 2026-10-01 旧书房底板整条删除后，`objects/` 整个目录都已不在产物里。
   const removedOrb = 'out/renderer/assets/learning-room/v1/objects/companion-orb.webp'
   if (archiveEntrySet.has(removedOrb)) throw new Error(`Removed orb asset still packaged: ${removedOrb}`)
+  const retiredStudyPack = [
+    'posters/room-day.webp',
+    'posters/room-night.webp',
+    'posters/study-seat-day-v2.png',
+    'posters/study-seat-night-v2.png',
+    'posters/review-seat-day-v1.png',
+    'posters/review-seat-night-v1.png',
+    'posters/search-reference-day-v1.png',
+    'posters/search-reference-night-v1.png',
+    'posters/login-entry/',
+    'foreground/',
+    'motion/',
+    'objects/',
+    'textures/',
+    'masks/',
+    'audio/',
+    'captions/',
+  ].map((entry) => `out/renderer/assets/learning-room/v1/${entry}`)
+  const resurrectedStudyPack = retiredStudyPack.filter((entry) => (
+    [...archiveEntrySet].some((packaged) => packaged === entry || packaged.startsWith(entry))
+  ))
+  if (resurrectedStudyPack.length) {
+    throw new Error(`Retired study pack re-entered app.asar: ${resurrectedStudyPack.join(', ')}`)
+  }
   // 2026-09-19 移除休眠的 seethrough 包：mao-pro 是唯一打进的 Live2D 模型。
   const removedSeethroughModel = 'out/renderer/assets/companion/live2d-v2/seethrough/seethrough_output.model3.json'
   if (archiveEntrySet.has(removedSeethroughModel)) throw new Error(`Removed seethrough asset still packaged: ${removedSeethroughModel}`)
@@ -872,7 +899,8 @@ async function runOwnerJourney(window) {
   })
   ownerJourney.authenticated = true
 
-  // 房间里的恢复入口由 RunRecoveryNotice 提供，文案是「查看恢复状态 / 恢复候选审核」。
+  // 房间里的恢复入口（RunRecoveryNotice）已于 2026-10-01 删除；恢复改由
+  // `resumable` 页与 `CardGenerationSurface` 承担。
   const generationRecoveryButton = window.getByRole('button', { name: /查看恢复状态|恢复候选审核/ })
   if (await generationRecoveryButton.count()) {
     await generationRecoveryButton.first().click()

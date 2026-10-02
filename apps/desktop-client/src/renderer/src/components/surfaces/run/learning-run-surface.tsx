@@ -1787,7 +1787,7 @@ export function LearningRunSurface({ onExit }: LearningRunSurfaceProps = {}) {
       // replayed by the renderer. Fall back to the review queue intent.
       ?? { kind: "room.home" };
     if (route.kind === "note.detail") {
-      setActiveNoteRef({ noteId: route.noteId, noteVersionId: null, mode: "read",
+      setActiveNoteRef({ noteId: route.noteId, noteVersionId: null, mode: "preview",
         learningRoundId: request?.route.kind === "note.detail" && request.route.noteId === route.noteId ? request.reflectionRoundId : undefined });
       invoke("open-notebook");
     } else invoke(route.kind === "review.queue" ? "review" : "home");

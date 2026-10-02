@@ -21,6 +21,7 @@ import promClient, {
   collectDefaultMetrics,
 } from "prom-client";
 import http from "node:http";
+import { sharedAiCircuitRejectObserverHealth } from "@ailearn/shared/circuit-breaker";
 import {
   COMPANION_SUMMARY_TOTAL_DEF,
   COMPANION_MEMORY_USED_COUNT_DEF,
@@ -204,6 +205,35 @@ export const aiCircuitOpenTotal = new Counter({
   help: "AI upstream calls rejected by the circuit breaker before any network request",
   labelNames: ["host", "reason"] as const,
   registers: [registry],
+});
+
+/** Optional circuit metrics observer health; a caught callback error must still alert. */
+export const aiCircuitObserverHealthy = new Gauge({
+  name: "ailearn_ai_circuit_observer_healthy",
+  help: "1 when the optional circuit rejection observer is installed and has no consecutive failures",
+  registers: [registry],
+  collect() {
+    this.set(sharedAiCircuitRejectObserverHealth().healthy ? 1 : 0);
+  },
+});
+
+export const aiCircuitObserverFailureCount = new Gauge({
+  name: "ailearn_ai_circuit_observer_failure_count",
+  help: "Process-local lifetime count of isolated circuit observer callback failures",
+  registers: [registry],
+  collect() {
+    this.set(sharedAiCircuitRejectObserverHealth().failuresTotal);
+  },
+});
+
+export const aiCircuitObserverLastFailureTimestampSeconds = new Gauge({
+  name: "ailearn_ai_circuit_observer_last_failure_timestamp_seconds",
+  help: "Unix timestamp of the last isolated circuit observer callback failure, or zero",
+  registers: [registry],
+  collect() {
+    const failedAt = sharedAiCircuitRejectObserverHealth().lastFailureAt;
+    this.set(failedAt === null ? 0 : failedAt / 1_000);
+  },
 });
 
 /**

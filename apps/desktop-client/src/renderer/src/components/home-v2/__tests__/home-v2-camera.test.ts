@@ -1,4 +1,5 @@
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import gsap from "gsap";
 import { HOME_V2_CAMERA_PRESETS } from "../home-v2.ts";
 import {
   homeV2CameraWriteCount,
@@ -7,12 +8,11 @@ import {
 } from "../home-v2-camera.ts";
 
 /**
- * The serializer only touches `dataset.homeV2CameraState`, so a plain object
- * stands in for the room host element without a DOM environment. GSAP animates
- * plain-object properties, which is exactly what the CSS-variable command is.
+ * A plain object stands in for the rig; predefined transform fields let GSAP
+ * animate it without needing a DOM or CSSPlugin.
  */
 function fakeCameraHost() {
-  return { dataset: {} as Record<string, string> } as unknown as HTMLElement;
+  return { dataset: {} as Record<string, string>, scale: 1, xPercent: 0, yPercent: 0, force3D: true } as unknown as HTMLElement;
 }
 
 const openHandles: Array<() => void> = [];
@@ -50,6 +50,18 @@ function settleRecorder() {
 }
 
 describe("home V2 camera serializer", () => {
+  it("writes transforms to the camera rig without animating inherited app variables", () => {
+    const rig = fakeCameraHost();
+    const host = fakeCameraHost();
+    host.querySelector = vi.fn(() => rig) as typeof host.querySelector;
+    const set = vi.spyOn(gsap, "set");
+    requestHomeV2Camera({ target: host, preset: HOME_V2_CAMERA_PRESETS.desk, duration: 0 });
+    expect(host.querySelector).toHaveBeenCalledWith(".room-camera-rig");
+    expect(set).toHaveBeenCalledWith(rig, expect.objectContaining({ scale: HOME_V2_CAMERA_PRESETS.desk.scale }));
+    expect(set.mock.calls.at(-1)?.[1]).not.toHaveProperty("--scene-camera-scale");
+    expect(host.dataset.homeV2CameraState).toBe("idle");
+    set.mockRestore();
+  });
   it("lands an immediate command synchronously and marks the camera idle", () => {
     const host = fakeCameraHost();
     const { reasons, onSettle } = settleRecorder();

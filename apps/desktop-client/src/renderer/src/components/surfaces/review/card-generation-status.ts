@@ -221,14 +221,19 @@ export function practiceQuotaLabel(quota: CardGenerationPracticeQuotaV1 | null):
 
 
 /**
- * What the note page's one button says for a run of this note. The button no
- * longer starts a second run — an active run means the action is *going to*
- * the workbench, so the copy names the destination, never "生成学习卡".
+ * 笔记页那颗入口按下去**会去哪**。
+ *
+ * 收敛成四句，因为用户在这一格要回答的问题只有两个：现在能不能开始做卡，
+ * 以及上次做完了没有。「走到哪一步」是**阶段**——它已经由按钮旁边那颗状态字
+ * （生成中／待激活／失败）和 `aria-label` 在说了。入口再按状态细分一遍，
+ * 于是同一件事有了七种说法（查看生成进度／审核学习卡／处理生成任务／
+ * 查看保存进度／查看学习卡／查看失败原因／查看生成结果），用户在笔记页
+ * 每回来一次都可能读到另一句，得先认出它才敢按。
  */
 export function cardGenerationEntryLabel(status: string): string {
+  // 唯一值得单独说一句的是「等你逐张决定」——那不是进度，是一件在等你做的事。
   if (status === "review_ready") return "审核学习卡";
-  if (status === "needs_attention") return "处理生成任务";
-  if (status === "activating") return "查看保存进度";
+  if (status === "activated") return "查看学习卡";
   return "查看生成进度";
 }
 

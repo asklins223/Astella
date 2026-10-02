@@ -18,8 +18,10 @@ import { sql } from "drizzle-orm";
 import { isFormalAnswerInProgress } from "../lib/formal-answer-signal.ts";
 import { createHash } from "node:crypto";
 import { companionLeakGateVersionV1 } from "@ailearn/shared/companion-leak-gates";
+import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import type { WorkerTransaction } from "../db.ts";
 import { readCompanionThoughtJobPayload } from "@ailearn/shared";
+import { PET_PERSONA_PRESET_VERSION } from "@ailearn/shared/pet-persona-presets";
 import {
   proactiveCadenceMs,
   type CompanionAvailabilityV1,
@@ -28,8 +30,13 @@ import {
   POLICY_LIMITS,
   evaluateProactivePolicy,
 } from "@ailearn/shared/companion-proactive-policy";
+import {
+  AMBIENT_QUOTA_PER_USAGE,
+  continuesUsageSession,
+  evaluateAmbientQuota,
+} from "@ailearn/shared/companion-proactive-quota";
 import { logger } from "../lib/logger.ts";
-import { assertJobLease, withJobTransaction } from "../lib/job-lease.ts";
+import { assertJobLease, JobLeaseLostError, throwIfJobAborted, withJobTransaction } from "../lib/job-lease.ts";
 import { createEmbeddingProvider } from "../lib/ai-provider.ts";
 import {
   createGovernedProvider,
@@ -37,7 +44,6 @@ import {
   resolveProviderForTask,
 } from "../lib/governance.ts";
 import { createProvider, withThinkingDisabled } from "../lib/ai-provider.ts";
-import { runWithAbortBudget } from "../lib/handler-timeout.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import {
   containsCompanionInternalToken,
@@ -48,6 +54,7 @@ import {
 import { enqueueSystemEventDelivery } from "./companion-delivery-write.ts";
 import { loadHereAndNow, renderHereAndNow, visibleCompanionDueReviewCondition } from "./companion-here-and-now.ts";
 import { readStreakDays, resolveFactSpans } from "./companion-fact-spans.ts";
+import { runWorkerAiTask, runWorkerEmbeddingTask } from "./worker-ai-task.ts";
 import type { JobPayload } from "./index.ts";
 
 // ── 类型 ─────────────────────────────────────────────────────────────────
@@ -430,11 +437,28 @@ export interface RoutineCueTimingInput {
   readonly spaceMuted: boolean;
   /** 这个人在这个空间里有一条正式测评正在作答（doc 34 L12）。 */
   readonly formalAnswerInProgress: boolean;
+
+  // ── 40 §8.2：一次持续使用期间，普通招呼/感想最多一条 ────────────────────
+  //
+  // 下面四格是 §8 独有的，原策略那五道闸（勿扰/安静时段/冷却/去重/忽略反馈）
+  // 一道都答不了它们。口径见 companion-proactive-quota 的文件头：站内切页、
+  // 回首页、切窗口在服务端**不产生任何事件**，所以唯一能区分"还在用"与"离开"
+  // 的就是时间。
+  /** 本次持续使用期间**已经展示**的普通招呼数。 */
+  readonly ambientDeliveredThisUsage: number;
+  /** 本轮候选的普通招呼条数；>1 时只放第一条（不轮流补播）。 */
+  readonly ambientCandidatesThisRound: number;
+  /** 本条在候选里的名次（0 起）。 */
+  readonly ambientRank: number;
+  /** 上一条普通招呼是否被忽略 —— 忽略后不换一种说法再问。 */
+  readonly lastAmbientIgnored: boolean;
 }
 
 export type RoutineCueTimingReason =
   | "allowed" | "space_muted" | "availability" | "quiet_hours" | "formal_answer_in_progress"
-  | "dismissal_feedback" | "dedupe_recent" | "cadence" | "expired";
+  | "dismissal_feedback" | "dedupe_recent" | "cadence" | "expired"
+  // §8.2 的三条：额度用掉、这轮选了别的候选、上一条被忽略。
+  | "ambient_quota_exhausted" | "ambient_picked_another" | "ambient_ignored_no_rewrite";
 
 export function evaluateRoutineCueTiming(input: RoutineCueTimingInput): {
   allow: boolean;
@@ -449,6 +473,35 @@ export function evaluateRoutineCueTiming(input: RoutineCueTimingInput): {
   const recentShownCount = input.recentDeliveryStates.filter(
     (state) => state === "displayed",
   ).length;
+  /**
+   * §8 的额度闸**排在原策略之前**。
+   *
+   * 为什么放前面：额度与节奏是两种不同的稀缺。原策略答的是"间隔够不够久"，
+   * 而 §8 答的是"这次持续使用里她还能不能再说一句"。一次使用可能只有几分钟，
+   * 节奏允许说，但额度已经用掉了 —— 那时候只有额度闸能拦住。
+   */
+  const ambientQuota = evaluateAmbientQuota({
+    kind: "ambient",
+    ambientDeliveredThisUsage: input.ambientDeliveredThisUsage,
+    candidatesThisRound: input.ambientCandidatesThisRound,
+    rank: input.ambientRank,
+    lastAmbientIgnored: input.lastAmbientIgnored,
+  });
+  if (!ambientQuota.allow) {
+    return {
+      allow: false,
+      reason: ambientQuota.reason === "quota_exhausted" ? "ambient_quota_exhausted"
+        : ambientQuota.reason === "picked_another_candidate" ? "ambient_picked_another"
+          : "ambient_ignored_no_rewrite",
+      detail: {
+        ambientDeliveredThisUsage: input.ambientDeliveredThisUsage,
+        ambientCandidatesThisRound: input.ambientCandidatesThisRound,
+        ambientRank: input.ambientRank,
+        lastAmbientIgnored: input.lastAmbientIgnored,
+        quotaPerUsage: AMBIENT_QUOTA_PER_USAGE,
+      },
+    };
+  }
   const decision = evaluateProactivePolicy({
     availability: input.availability,
     interventionLevel: input.interventionLevel,
@@ -605,6 +658,7 @@ interface MaterialRow extends Record<string, unknown> {
   due_titles: string[] | null;
   soon_titles: string[] | null;
   familiarity: number;
+  persona_profile_revision: number;
   speaking_style: string | null;
   personality_tags: string[] | null;
   boundaries: Record<string, unknown> | null;
@@ -623,17 +677,20 @@ export async function insertThoughtCandidateV1(
   tx: WorkerTransaction,
   actor: { workspaceId: string; userId: string },
   candidate: ThoughtCandidate,
+  personaVersion: { profileRevision: number; examplesRevision: number; defaultExpressionVersion: string } | null = null,
 ): Promise<string | null> {
   const rows = await tx.execute<{ id: string }>(sql`
     INSERT INTO assistant_thoughts
       (workspace_id, user_id, source, topic, dedupe_key, text, grounding,
-       status, urgency, familiarity_required, expires_at, leak_gate_version)
+       status, urgency, familiarity_required, expires_at, leak_gate_version,
+       persona_profile_revision, persona_examples_revision, default_expression_version)
     VALUES
       (${actor.workspaceId}, ${actor.userId}, ${candidate.source}, ${candidate.topic}, ${candidate.dedupeKey},
        ${candidate.text}, ${JSON.stringify(candidate.grounding)}::jsonb,
        'candidate', ${candidate.urgency}, ${candidate.familiarityRequired},
        now() + (${THOUGHT_LIMITS.candidateTtlHours} * interval '1 hour'),
-       ${companionLeakGateVersionV1()})
+       ${companionLeakGateVersionV1()}, ${personaVersion?.profileRevision ?? null},
+       ${personaVersion?.examplesRevision ?? null}, ${personaVersion?.defaultExpressionVersion ?? null})
     RETURNING id
   `);
   return (Array.isArray(rows) ? rows : [])[0]?.id ?? null;
@@ -678,16 +735,18 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
           AND ${visibleCompanionDueReviewCondition()}) AS due_soon_reviews,
         (SELECT COALESCE(familiarity, 0) FROM pet_profiles
           WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId} LIMIT 1) AS familiarity,
-        (SELECT speaking_style FROM pet_profiles
-          WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId} LIMIT 1) AS speaking_style,
-        (SELECT personality_tags FROM pet_profiles
-          WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId} LIMIT 1) AS personality_tags,
-        (SELECT boundaries FROM pet_profiles
-          WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId} LIMIT 1) AS boundaries,
-        (SELECT boundaries->>'catchphrase' FROM pet_profiles
-          WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId} LIMIT 1) AS catchphrase,
-        (SELECT name FROM pet_profiles
-          WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId} LIMIT 1) AS pet_name,
+        (SELECT COALESCE(revision, 0) FROM companion_persona_profiles
+          WHERE user_id = ${userId} LIMIT 1) AS persona_profile_revision,
+        (SELECT profile->>'speakingStyle' FROM companion_persona_profiles
+          WHERE user_id = ${userId} LIMIT 1) AS speaking_style,
+        (SELECT profile->'personalityTags' FROM companion_persona_profiles
+          WHERE user_id = ${userId} LIMIT 1) AS personality_tags,
+        (SELECT profile->'boundaries' FROM companion_persona_profiles
+          WHERE user_id = ${userId} LIMIT 1) AS boundaries,
+        (SELECT profile->'boundaries'->>'catchphrase' FROM companion_persona_profiles
+          WHERE user_id = ${userId} LIMIT 1) AS catchphrase,
+        (SELECT profile->>'name' FROM companion_persona_profiles
+          WHERE user_id = ${userId} LIMIT 1) AS pet_name,
         (SELECT extract(day FROM now() - max(created_at))::int FROM learning_runs
           WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId}) AS days_since_last_learning,
         -- 上一次例行主动开口距今多少毫秒。delivered 与 spent 都算（spent = 用户点开过，
@@ -746,6 +805,45 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
         WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId}
           AND status IN ('delivered', 'spent') AND created_at > now() - interval '7 days'
       ) said ORDER BY created_at DESC LIMIT 20
+    `);
+
+    /**
+     * 40 §8.2 的"一次持续使用"：找**最近一次用户还在的痕迹**，再数它之后
+     * 有没有已经展示过的普通招呼。
+     *
+     * 为什么锚点取"最近一次有动作的时刻"而不是客户端心跳：站内切页、反复回首页、
+     * 切换窗口这���件事在服务端**根本不产生任何事件**——它们唯一和"离开"的区别
+     * 就是过去了多久。所以时间就是唯一诚实的分界（§8.2 原文把这一条交给实施
+     * 设计明确，这里就是那个明确）。
+     *
+     * 锚点取 `assistant_deliveries` 与 `companion_turn_runs` 的较新者：前者是
+     * 她自己说过的（含普通招呼），后者是用户跑过的一轮——两边合起来就是"这个
+     * 人还在线上"的全部可观测证据。
+     */
+    const usageRows = await tx.execute<{ last_active_at: string | null }>(sql`
+      SELECT max(at) AS last_active_at FROM (
+        SELECT max(created_at) AS at FROM assistant_deliveries
+        WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId}
+        UNION ALL
+        SELECT max(created_at) AS at FROM companion_turn_runs
+        WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId}
+      ) activity
+    `);
+    const lastActiveRaw = (Array.isArray(usageRows) ? usageRows : [])[0]?.last_active_at ?? null;
+    const lastActiveMs = lastActiveRaw ? new Date(lastActiveRaw).getTime() : null;
+    const nowMs = Date.now();
+    // 超过这个间隔就算离开，回来是**新一次**使用，额度重新计一次。
+    const sessionStartedMs: number = lastActiveMs !== null
+      && continuesUsageSession({ msSincePresence: nowMs - lastActiveMs })
+      ? lastActiveMs
+      : nowMs;
+    // 本次持续使用期间已经展示过的普通招呼。`kind='system_event'` 里带 text 的
+    // 就是她"自己想开口"的那一类；约定提醒不带 text，所以不会被算进额度。
+    const ambientDeliveredRows = await tx.execute<{ n: string }>(sql`
+      SELECT count(*)::int AS n FROM assistant_deliveries
+      WHERE workspace_id = ${job.workspaceId} AND user_id = ${userId}
+        AND created_at >= to_timestamp(${sessionStartedMs / 1000})
+        AND payload_ref->>'text' IS NOT NULL
     `);
 
     const feedbackRows = await tx.execute<{ state: string }>(sql`
@@ -832,6 +930,9 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
       streakDays,
       daysSinceLastLearning: row.days_since_last_learning != null ? Number(row.days_since_last_learning) : null,
       familiarity: Number(row.familiarity ?? 0),
+      personaProfileRevision: Number(row.persona_profile_revision ?? 0),
+      personaExamplesRevision: Number(row.persona_profile_revision ?? 0),
+      defaultExpressionVersion: String(PET_PERSONA_PRESET_VERSION),
       petName: row.pet_name ?? null,
       allowNudgeLearning: boundaries.allowNudgeLearning !== false,
       allowPlayful: boundaries.allowPlayful !== false,
@@ -850,6 +951,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
       availability,
       spaceMuted,
       formalAnswerInProgress,
+      ambientDeliveredThisUsage: Number((Array.isArray(ambientDeliveredRows) ? ambientDeliveredRows : [])[0]?.n ?? 0),
       facts: renderHereAndNow(hereAndNow),
     } satisfies ThoughtMaterial & {
       quietHours: CompanionQuietHours | null;
@@ -857,6 +959,11 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
       availability: CompanionAvailabilityV1;
       spaceMuted: boolean;
       formalAnswerInProgress: boolean;
+      personaProfileRevision: number;
+      personaExamplesRevision: number;
+      defaultExpressionVersion: string;
+      /** 40 §8.2：本次持续使用期间已经展示过的普通招呼数。 */
+      ambientDeliveredThisUsage: number;
     };
   });
 
@@ -866,6 +973,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
     availability,
     spaceMuted,
     formalAnswerInProgress,
+    ambientDeliveredThisUsage,
     ...thoughtMaterial
   } = material;
 
@@ -888,6 +996,13 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
     msSinceLastRoutineCue: thoughtMaterial.msSinceLastRoutineCue,
     spaceMuted,
     formalAnswerInProgress,
+    // 一次持续使用期间那条普通招呼：这一轮只有一个候选，名次 0。
+    // "多候选只选一个"由**候选生成之后**的那一跳管（见下方 pickAmbientCandidate）——
+    // 在这里只能是 1，因为时机判定排在候选生成**之前**（沉默默认，别白烧 LLM）。
+    ambientDeliveredThisUsage,
+    ambientCandidatesThisRound: 1,
+    ambientRank: 0,
+    lastAmbientIgnored: thoughtMaterial.recentDeliveryStates.slice(0, 1)[0] === "dismissed",
   });
   if (!timing.allow) {
     finish("silent", { reason: timing.reason, ...timing.detail });
@@ -913,7 +1028,6 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
   const llmGap = candidates.length < 3 ? 3 - candidates.length : 0;
   if (llmGap > 0) {
     try {
-      const provider = await thoughtProvider();
       const prompt = [
         `你是学习桌宠${thoughtMaterial.petName ? `「${thoughtMaterial.petName}」` : ""}。基于事实生成 ${llmGap} 条"主动开口的念头"候选——就是你没被问、但想主动说一句的话。`,
         thoughtMaterial.facts ? `你知道的当下：\n${thoughtMaterial.facts}` : "",
@@ -923,24 +1037,60 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
         ...(thoughtMaterial.recentlySaid.length > 0 ? [`最近说过（不要重复、不要换着花样说同一句）：\n- ${thoughtMaterial.recentlySaid.slice(0, 5).join("\n- ")}`] : []),
         "要求：每条 ≤80 字、中文、不出现 ID/系统词。返回 JSON：{\"thoughts\":[{\"text\":\"…\",\"urgency\":0-100,\"topic\":\"…\"}]}",
       ].filter(Boolean).join("\n");
-      const raw = await runWithAbortBudget(
-        (signal) => provider.chatCompletion(
-          [{ role: "user", content: prompt }],
-          { temperature: 0.9, maxTokens: 500, responseFormat: "json_object" },
-          signal,
-        ),
-        undefined,
-        resolveProviderCallTimeout("companion_thought"),
-      );
-      const content = typeof (raw as { content?: unknown })?.content === "string" ? (raw as { content: string }).content : "";
-      candidates = [...candidates, ...parseThoughtCandidates(
-        content,
-        thoughtMaterial.today,
-        // 只有**服务端真的交给模型**的那些数可以出现在念头里。
-        `${thoughtMaterial.facts ?? ""}
-到期复习 ${thoughtMaterial.readyReviews}；12 小时内到期 ${thoughtMaterial.dueSoonReviews}；连续学习 ${thoughtMaterial.streakDays}；熟悉度 ${thoughtMaterial.familiarity.toFixed(2)}`,
-      )];
+      // 只有**服务端真的交给模型**的那些数可以出现在念头里。
+      const allowedNumbersSource = `${thoughtMaterial.facts ?? ""}
+到期复习 ${thoughtMaterial.readyReviews}；12 小时内到期 ${thoughtMaterial.dueSoonReviews}；连续学习 ${thoughtMaterial.streakDays}；熟悉度 ${thoughtMaterial.familiarity.toFixed(2)}`;
+      const messages = [{ role: "user" as const, content: prompt }];
+      const generationParameters = { temperature: 0.9, maxTokens: 500, responseFormat: "json_object" as const };
+      const provider = await thoughtProvider();
+      const inputSnapshotHash = sha256Utf8V1(canonicalJsonV1({
+        taskVersion: 2,
+        today: thoughtMaterial.today,
+        personaProfileRevision: thoughtMaterial.personaProfileRevision,
+        personaExamplesRevision: thoughtMaterial.personaExamplesRevision,
+        defaultExpressionVersion: thoughtMaterial.defaultExpressionVersion,
+        allowedNumbersSource,
+        modelId: provider.modelId,
+        promptVersion: provider.promptVersion,
+        generationParameters,
+        messages,
+      }));
+      const result = await runWorkerAiTask({
+        job,
+        userId,
+        taskId: "companion_thought_candidates",
+        taskVersion: 2,
+        idempotencyKey: `thought-candidates:${job.id}:${inputSnapshotHash}`,
+        inputSnapshotRef: { kind: "task", id: `${job.id}:thought-candidates`, hash: inputSnapshotHash },
+        input: {
+          messages,
+          today: thoughtMaterial.today,
+          allowedNumbersSource,
+          personaProfileRevision: thoughtMaterial.personaProfileRevision,
+          personaExamplesRevision: thoughtMaterial.personaExamplesRevision,
+          defaultExpressionVersion: thoughtMaterial.defaultExpressionVersion,
+        },
+        modelId: provider.modelId,
+        promptVersion: `${provider.promptVersion}:companion-thought-candidates-v1`,
+        resourceClass: "maintenance",
+        timeoutMs: resolveProviderCallTimeout("companion_thought"),
+        execute: async (request, signal) => {
+          const raw = await provider.chatCompletion(request.messages, generationParameters, signal);
+          const content = typeof raw.content === "string" ? raw.content : "";
+          return {
+            ok: true,
+            output: {
+              candidates: parseThoughtCandidates(content, request.today, request.allowedNumbersSource),
+            },
+            promptTokens: raw.usage?.promptTokens ?? undefined,
+            completionTokens: raw.usage?.completionTokens ?? undefined,
+          };
+        },
+      });
+      candidates = [...candidates, ...result.candidates];
     } catch (err) {
+      if (err instanceof JobLeaseLostError) throw err;
+      throwIfJobAborted(job);
       logger.warn({ jobId: job.id, err: err instanceof Error ? err.message : String(err) }, "companion thought llm batch failed; deterministic only");
     }
   }
@@ -977,7 +1127,11 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
   if (toInsert.length > 0) {
     await withJobTransaction(job, async (tx) => {
       for (const candidate of toInsert) {
-        const id = await insertThoughtCandidateV1(tx, { workspaceId: job.workspaceId, userId }, candidate);
+        const id = await insertThoughtCandidateV1(tx, { workspaceId: job.workspaceId, userId }, candidate, {
+          profileRevision: thoughtMaterial.personaProfileRevision,
+          examplesRevision: thoughtMaterial.personaExamplesRevision,
+          defaultExpressionVersion: thoughtMaterial.defaultExpressionVersion,
+        });
         if (id) candidateIds.set(candidate.dedupeKey, id);
       }
     });
@@ -1000,34 +1154,73 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
     // 候选原句先过同一道闸；过不了先记"此刻不能开口"，让下面那次改写去救。
     let expression = finalizeThoughtExpression(candidate.text, candidate.grounding);
     try {
+      const prompt = buildExpressionPrompt({
+        petName: thoughtMaterial.petName,
+        familiarity: thoughtMaterial.familiarity,
+        allowPlayful: thoughtMaterial.allowPlayful,
+        allowNudgeLearning: thoughtMaterial.allowNudgeLearning,
+        catchphrase: thoughtMaterial.catchphrase,
+        facts: thoughtMaterial.facts,
+        thoughtText: candidate.text,
+        groundingNames: candidate.grounding.map((entity) => entity.name),
+        recentlySaid: thoughtMaterial.recentlySaid,
+      });
+      const messages = [{ role: "user" as const, content: prompt }];
+      const generationParameters = { temperature: 0.9, maxTokens: 400, responseFormat: "json_object" as const };
       const provider = await thoughtProvider();
-      const raw = await runWithAbortBudget(
-        (signal) => provider.chatCompletion(
-          [{ role: "user", content: buildExpressionPrompt({
-            petName: thoughtMaterial.petName,
-            familiarity: thoughtMaterial.familiarity,
-            allowPlayful: thoughtMaterial.allowPlayful,
-            allowNudgeLearning: thoughtMaterial.allowNudgeLearning,
-            catchphrase: thoughtMaterial.catchphrase,
-            facts: thoughtMaterial.facts,
-            thoughtText: candidate.text,
-            groundingNames: candidate.grounding.map((entity) => entity.name),
-            recentlySaid: thoughtMaterial.recentlySaid,
-          }) }],
-          { temperature: 0.9, maxTokens: 400, responseFormat: "json_object" },
-          signal,
-        ),
-        undefined,
-        resolveProviderCallTimeout("companion_thought"),
-      );
-      const content = typeof (raw as { content?: unknown })?.content === "string" ? (raw as { content: string }).content : "";
-      const parsed = JSON.parse(content) as { variants?: unknown };
-      const variants = Array.isArray(parsed?.variants)
-        ? parsed.variants.filter((value): value is string => typeof value === "string")
-        : [];
-      const picked = selectThoughtExpression(variants, candidate.grounding, candidate.text);
-      if (picked) expression = picked;
+      const inputSnapshotHash = sha256Utf8V1(canonicalJsonV1({
+        taskVersion: 2,
+        candidateDedupeKey: candidate.dedupeKey,
+        candidateText: candidate.text,
+        grounding: candidate.grounding,
+        personaProfileRevision: thoughtMaterial.personaProfileRevision,
+        personaExamplesRevision: thoughtMaterial.personaExamplesRevision,
+        defaultExpressionVersion: thoughtMaterial.defaultExpressionVersion,
+        modelId: provider.modelId,
+        promptVersion: provider.promptVersion,
+        generationParameters,
+        messages,
+      }));
+      const result = await runWorkerAiTask({
+        job,
+        userId,
+        taskId: "companion_thought_expression",
+        taskVersion: 2,
+        idempotencyKey: `thought-expression:${job.id}:${candidate.dedupeKey}:${inputSnapshotHash}`,
+        inputSnapshotRef: { kind: "task", id: `${job.id}:thought-expression:${candidate.dedupeKey}`, hash: inputSnapshotHash },
+        input: {
+          messages,
+          grounding: candidate.grounding,
+          allowedSource: candidate.text,
+          personaProfileRevision: thoughtMaterial.personaProfileRevision,
+          personaExamplesRevision: thoughtMaterial.personaExamplesRevision,
+          defaultExpressionVersion: thoughtMaterial.defaultExpressionVersion,
+        },
+        modelId: provider.modelId,
+        promptVersion: `${provider.promptVersion}:companion-thought-expression-v1`,
+        resourceClass: "maintenance",
+        timeoutMs: resolveProviderCallTimeout("companion_thought"),
+        execute: async (request, signal) => {
+          const raw = await provider.chatCompletion(request.messages, generationParameters, signal);
+          const content = typeof raw.content === "string" ? raw.content : "";
+          const parsed = JSON.parse(content) as { variants?: unknown };
+          const variants = Array.isArray(parsed?.variants)
+            ? parsed.variants.filter((value): value is string => typeof value === "string")
+            : [];
+          return {
+            ok: true,
+            output: {
+              expression: selectThoughtExpression(variants, request.grounding, request.allowedSource),
+            },
+            promptTokens: raw.usage?.promptTokens ?? undefined,
+            completionTokens: raw.usage?.completionTokens ?? undefined,
+          };
+        },
+      });
+      if (result.expression) expression = result.expression;
     } catch (err) {
+      if (err instanceof JobLeaseLostError) throw err;
+      throwIfJobAborted(job);
       logger.warn({ jobId: job.id, err: err instanceof Error ? err.message : String(err) }, "companion thought expression llm failed; keeping the validated base line");
     }
 
@@ -1075,11 +1268,24 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
     let candidateEmbedding: number[] | null = null;
     if (embeddingProvider) {
       try {
-        // `job.signal` 与上面 chatCompletion 同一口径：不给的话一次挂住的 embed
-        // 只能等 transport 的 300 秒总超时，而本 handler 的预算只有 110 秒、租约 120 秒
-        // ——整轮会带着已付过费的前两个候选一起超时重投。
-        candidateEmbedding = await embeddingProvider.embed(expression, job.signal);
-      } catch {
+        const activeEmbeddingProvider = embeddingProvider;
+        candidateEmbedding = await runWorkerEmbeddingTask({
+          job,
+          userId,
+          taskId: "companion_thought_dedupe_embedding",
+          taskVersion: 1,
+          idempotencyKey: `thought-dedupe:${job.id}:${candidate.dedupeKey}`,
+          inputSnapshotId: `${job.id}:thought-dedupe:${candidate.dedupeKey}`,
+          text: expression,
+          modelId: activeEmbeddingProvider.embeddingModelId,
+          promptVersion: `${activeEmbeddingProvider.id}:companion-thought-dedupe-v1`,
+          resourceClass: "maintenance",
+          timeoutMs: resolveProviderCallTimeout("companion_thought"),
+          embed: (text, signal) => activeEmbeddingProvider.embed(text, signal),
+        });
+      } catch (error) {
+        if (error instanceof JobLeaseLostError) throw error;
+        throwIfJobAborted(job);
         candidateEmbedding = null;
       }
     }
@@ -1098,6 +1304,9 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
       const updated = await tx.execute<{ id: string }>(sql`
         UPDATE assistant_thoughts
         SET status = 'delivered', text = ${expression},
+            persona_profile_revision = ${thoughtMaterial.personaProfileRevision},
+            persona_examples_revision = ${thoughtMaterial.personaExamplesRevision},
+            default_expression_version = ${thoughtMaterial.defaultExpressionVersion},
             embedding = ${candidateEmbedding ? `[${candidateEmbedding.map((value) => value.toFixed(6)).join(",")}]` : null}::vector,
             delivered_at = now(),
             expires_at = now() + (${THOUGHT_LIMITS.deliveredTtlHours} * interval '1 hour'),

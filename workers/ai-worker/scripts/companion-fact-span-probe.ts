@@ -98,7 +98,7 @@ async function runRealModelProbe(): Promise<number> {
     pageContext: null,
     hereAndNow: "<here_and_now> 当前处于合成探针回合。</here_and_now>",
     factSpans,
-    activeMemories: [],
+    residentMemories: [],
     petProfile: null,
   });
   const definitions = resolveAllCompanionAgentTools("full", { visionEnabled: false });

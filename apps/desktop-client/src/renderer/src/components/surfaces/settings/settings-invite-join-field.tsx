@@ -5,9 +5,7 @@
  *
  * 20 行、3 个外部符号。成员那半的入群路径只有这一条，边界清楚。
  *
- * ⚠️ 那颗 `className="button primary"` 是**这一栏唯一的主动作**——它由
- * `renderer-primary-action-guard` 盯着（全站主动作写法必须统一成母本那一套）。
- * 别把它改成功能专属的类名，那会让「这一栏的第一件事是什么」在屏上分不出来。
+ * 当前加入按钮复用公共主按钮；版式与视觉权重可随设置任务调整。
  */
 import type { ReactElement } from "react";
 

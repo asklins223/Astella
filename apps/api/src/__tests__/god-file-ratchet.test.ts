@@ -85,17 +85,30 @@ function godFiles(): { rel: string; lines: number }[] {
  * 这样"还欠多少"始终是文件里的一个真数，而不是一次性的印象。
  */
 const BASELINE: Readonly<Record<string, number>> = {
+  // 2026-10-01（伴星日记）：companion-daily-summary 拆出 diary-content（素材/篇章规则）
+  // 与 diary-candidates（有来源的候选筛选），编排文件 2260 → 1473，低于 1500 阈值。
+  // 同日将图像读取与任务检查点拆到独立模块后，编排文件现为 1331 行。
   // 2026-09-30（B2）：companion-agent-runtime 从基线里**去掉**。
   // 3950 → 1496：拆成 read-tools(515) / step-plan(201) / events(237) /
   // tool-execution(1098) / proposal(206) / tool-call-ledger(427) 六个模块。
   // 依赖方向的顺序是「先提案后账本」——账本拒绝一次调用时会去建提案，
   // 所以提案不反向依赖账本；同时搬两个会成环（第一版就是这么栽的，已回退）。
+  // 2026-10-01：模型流式步骤移入 companion-agent-streaming-step.ts（242 行），
+  // runtime 1557 → 1326；回到 1500 行阈值以下。
+  // 同日：proposal snapshot 与记忆提案动作分别移入独立模块，learning-action-bridge
+  // 1765 → 1495；低于阈值，从基线移除。
+  // 同日：记忆工具族（read/recall/save/revise/move/forget 六个）移入
+  // companion-memory-tools.ts（502 行），companion-tool-execution 1508 → 1045；
+  // 共用的报错与结果类型上提到 companion-tool-result.ts（54 行）以免成环。
+  // **它本来就不在基线里**（是新增就超阈值的），所以这里只留记录、不加条目。
+  // 同日：交接快照与历史收边（40 §4.7.2）移入 companion-context-handoff.ts（294 行），
+  // companion-dialogue-content 1515 → 1264；同样只留记录、不加条目。
+  // 判据选的是**域**不是行数：快照回答「裁剪前先固定什么」，装配回答「这一轮怎么写」，
+  // 两者没有耦合；而 1264 行给后续改动留出了余量，不必下一轮又拆一次。
   "apps/api/src/modules/learning-runs/run-service.ts": 3505,
   "apps/api/src/modules/learning-runs/processing/run-processing-tick.ts": 2729,
   "apps/api/src/modules/card-generation-v2/activation-service.ts": 2461,
   "workers/ai-worker/src/handlers/parse-source.ts": 1878,
-  "workers/ai-worker/src/handlers/companion-daily-summary.ts": 1784,
-  "apps/api/src/modules/companion-conversation/learning-action-bridge.ts": 1705,
 };
 
 test("神文件清单不增（新增一个超阈值的文件，或把现有的再堆大，都红）", () => {

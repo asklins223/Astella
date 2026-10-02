@@ -31,7 +31,7 @@ a { color: #43654a; text-underline-offset: 4px; }
 button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,[contenteditable]:focus-visible,[tabindex]:focus-visible { outline: 3px solid #b25831; outline-offset: 3px; }
 ::selection { background: #d7e6b9; color: #243e2d; }
 .icon { display: block; width: 19px; height: 19px; flex: none; stroke-width: 1.8; }
-.room { position: relative; isolation: isolate; display: flex; flex-direction: column; gap: 22px; height: 100dvh; min-height: 320px; padding: 20px 30px 28px; overflow: hidden; background: #947149 url("../src/renderer/public/assets/learning-room/v1/posters/room-day.webp") center/cover no-repeat; }
+.room { position: relative; isolation: isolate; display: flex; flex-direction: column; gap: 22px; height: 100dvh; min-height: 320px; padding: 20px 30px 28px; overflow: hidden; background: #947149 url("../src/renderer/public/assets/learning-room/v1/posters/home-v2/lighthouse/lighthouse-day-poster-v1.png") center/cover no-repeat; }
 .room::before { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(41,30,18,.08); pointer-events: none; }
 .room-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: min(100%,1480px); margin: 0 auto; flex: none; }
 .room-sign { display: flex; align-items: center; gap: 10px; padding: 6px 18px 7px 11px; border: 3px solid var(--hud-paper-light); border-radius: 19px 24px 17px 22px; background: var(--hud-mint); }
@@ -58,7 +58,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .folio-cover::before { position: absolute; top: 32px; bottom: 32px; left: 7px; width: 2px; border-radius: 2px; background: rgba(255,249,235,.4); content: ""; }
 .folio-cover::after { position: absolute; z-index: -1; left: 24px; right: 12px; bottom: -7px; height: 30px; border: 3px solid #f7eddb; border-radius: 0 0 27px 27px; background: #dac7aa; content: ""; }
 .folio-layout { position: relative; display: grid; grid-template-columns: 172px minmax(0,1fr); grid-template-rows: minmax(0,1fr); height: 100%; min-height: 0; border-radius: 18px 28px 19px 24px; background: var(--hud-paper-light); }
-.folio-layout::before { position: absolute; inset: 0; content: ""; border-radius: inherit; background: url("../src/renderer/public/assets/learning-room/v1/textures/scene-paper-fibres-v2.png") repeat; background-size: 256px; opacity: .1; pointer-events: none; }
+.folio-layout::before { position: absolute; inset: 0; content: ""; border-radius: inherit; background: url("../src/renderer/public/assets/learning-room/v1/posters/home-v2/lighthouse/lighthouse-day-poster-v1.png") center / cover no-repeat; opacity: .1; pointer-events: none; }
 .index-leaf,.leaf,.side-leaf { position: relative; }
 .folio[data-toc="false"] .folio-layout { grid-template-columns: minmax(0,1fr); }
 .folio[data-toc="false"] .index-leaf { display: none; }

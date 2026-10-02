@@ -1,17 +1,22 @@
 /**
- * 真桌宠上下文装配（22-real-desktop-pet-memory-context-prd-tdd.md §3.4/§9.4）。
+ * 伴星记忆上下文装配（40 §4.6.6）。
  *
- * Worker 侧在生成前调用：检索相关长期记忆 → 组装 memory_data 数据块 →
- * 记录 memory_usage_log / 更新 last_used_at。
+ * 生成前只注入少量 resident 正文与有界 active 目录；active 正文由显式检索或按 ID
+ * 读取工具展开。目录曝光不刷新 last_used_at，避免把“列出线索”误记为实际使用。
  *
- * grounded_tutor 分支不注入任何长期记忆/人格闲聊内容（§11.1），防止污染正式学习。
+ * grounded_tutor 分支不注入任何长期记忆/人格闲聊内容，防止污染正式学习。
  */
 
 import { sql } from "drizzle-orm";
+import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { taskEntityFromPersistedPageContext } from "./companion-task-memory.ts";
 import { logger } from "../lib/logger.ts";
-import type { EmbeddingProviderLike } from "./companion-memory-vector.ts";
-import { retrieveCompanionMemories } from "./companion-memory-vector.ts";
+import {
+  retrieveActiveCompanionMemoryDirectory,
+  retrieveResidentCompanionMemories,
+  type CompanionMemoryDirectoryEntry,
+} from "./companion-memory-vector.ts";
+import { retrievePlaybookCatalog, type PlaybookCatalogEntry } from "./companion-playbooks.ts";
 import {
   companionMemoryRetrievalModeTotal,
   companionMemoryUsedCount,
@@ -25,41 +30,88 @@ export interface ContextMemoryItem {
   pinned: boolean;
   lastUsedAt: string | null;
   userConfirmed: boolean;
+  /** 有据 / 待核对 / 有争议 / 已被替代（40 §4.5.4）。 */
+  epistemicStatus: string | null;
 }
 
 export interface ContextAssemblyResult {
-  activeMemories: { kind: string; content: string }[];
+  residentMemories: { kind: string; content: string; epistemicStatus?: string | null }[];
+  memoryDirectory: CompanionMemoryDirectoryEntry[];
+  /** §4.6.10 手册目录：只有标题与触发条件，正文按 id 展开。 */
+  playbookCatalog: PlaybookCatalogEntry[];
+  /** §4.5.10/§4.6.9 上一次后台整理返回的那段结论；没有就是 null。 */
+  organizationSurface: string | null;
   memoryRefs: { memoryId: string; kind: string; content: string }[];
-  retrievalMode: "vector" | "keyword_fallback";
+  retrievalMode: "directory" | "disabled";
   usedMemoryIds: string[];
+  residentMemoryIds: string[];
+  residentTokenEstimate: number;
+  residentByteCount: number;
+  directoryTokenEstimate: number;
 }
 
 type Executor = { execute(query: unknown): Promise<unknown> };
 
 const MEMORY_REF_MAX = 3;
 const MEMORY_REF_CONTENT_MAX = 80;
-// §9.4：Semantic Memory 每条 ≤200 字，总预算 ≤1000 字符。
-// 写入端（extractor/summarizer/daily-summary）已统一限制 ≤200 字；
-// 此处保留作为防御性上限，防止历史残留或手动写入的超长内容进入 prompt。
 const MEMORY_CONTENT_MAX = 200;
-const MEMORY_BUDGET_MAX = 1000;
+const RESIDENT_MEMORY_MAX_COUNT = 6;
+const RESIDENT_MEMORY_TOKEN_BUDGET = 320;
+const RESIDENT_MEMORY_BYTE_BUDGET = 1000;
+const RESIDENT_MEMORY_CHAR_BUDGET = 1000;
+const MEMORY_DIRECTORY_MAX_COUNT = 12;
+const MEMORY_DIRECTORY_TOKEN_BUDGET = 1024;
+
+function estimateDirectoryTokens(entry: CompanionMemoryDirectoryEntry): number {
+  // 使用 UTF-8 字节的一半作保守估算：对中文高于常见 tokenizer 的字符成本，
+  // 对 UUID 与拉丁文本也留余量；此值用于硬预算，不伪称模型 tokenizer 的精确计数。
+  return Math.ceil(Buffer.byteLength(JSON.stringify(entry), "utf8") / 2);
+}
 
 /**
- * 检索查询文本（向量检索与 keyword fallback 共用同一份）。
+ * 读上一次后台整理返回的那段结论（§4.5.10 / §4.6.9）。
  *
- * 导出给编排层：查询向量必须在 RLS 事务之外计算，而事务内外的查询文本
- * 必须逐字一致，否则"事务外算向量"会静默改变召回语义。
+ * 只在「这一段还没被消费过」的时候返回：surface_at 记的是它**产生**的时间，
+ * 所以读一次就把它推后一个标记周期——否则同一句话会在之后每一轮里反复出现，
+ * 那正是 §4.5.10 说的「没有值得返回的内容可以为空」的反面。
  */
-export function buildCompanionMemoryQuery(input: {
-  userText: string;
-  recentMessages: { role: "user" | "assistant"; text: string }[];
-}): string {
-  const recentText = input.recentMessages
-    .slice(-4)
-    .map((m) => m.text)
-    .join(" ")
-    .slice(0, 500);
-  return `${input.userText} ${recentText}`.trim().slice(0, 1000);
+async function readOrganizationSurface(
+  tx: Executor,
+  scope: { workspaceId: string; userId: string },
+): Promise<string | null> {
+  const rows = await tx.execute(sql`
+    UPDATE companion_memory_organization_state
+       SET surface_at = now()
+     WHERE workspace_id = ${scope.workspaceId}
+       AND user_id = ${scope.userId}
+       AND surface IS NOT NULL
+       AND (surface_at IS NULL OR surface_at <= now() - interval '7 days')
+    RETURNING surface
+  `);
+  const list = Array.isArray(rows) ? rows : ((rows as { rows?: unknown[] } | null)?.rows ?? []);
+  const first = (list as Array<{ surface?: string }>)[0];
+  return first?.surface ?? null;
+}
+
+export function budgetCompanionMemoryDirectory(
+  entries: CompanionMemoryDirectoryEntry[],
+): { entries: CompanionMemoryDirectoryEntry[]; tokenEstimate: number } {
+  let tokenEstimate = 0;
+  const budgeted: CompanionMemoryDirectoryEntry[] = [];
+  for (const entry of entries) {
+    if (budgeted.length >= MEMORY_DIRECTORY_MAX_COUNT) break;
+    const bounded: CompanionMemoryDirectoryEntry = {
+      ...entry,
+      title: entry.title.trim().slice(0, 56),
+      appliesWhen: entry.appliesWhen?.trim().slice(0, 64) || null,
+    };
+    if (!bounded.title) continue;
+    const estimate = estimateDirectoryTokens(bounded);
+    if (tokenEstimate + estimate > MEMORY_DIRECTORY_TOKEN_BUDGET) continue;
+    budgeted.push(bounded);
+    tokenEstimate += estimate;
+  }
+  return { entries: budgeted, tokenEstimate };
 }
 
 /**
@@ -67,54 +119,47 @@ export function buildCompanionMemoryQuery(input: {
  *
  * @param tx 已处于 workspace/user RLS 上下文的 worker 事务
  * @param scope 当前 workspace/user
- * @param input 本次对话输入（用于生成查询）
- * @param opts.runId 用于 memory_usage_log
+ * @param opts.runId 用于记忆目录曝光日志
  */
 export async function assembleCompanionContext(
   tx: Executor,
   scope: { workspaceId: string; userId: string },
   input: {
-    userText: string;
-    recentMessages: { role: "user" | "assistant"; text: string }[];
-    provider?: EmbeddingProviderLike | null;
     runId: string;
     groundedTutorContext?: unknown;
     /** Bridge page context（对象或 JSON 字符串），用于推导 currentScope。 */
     pageContext?: unknown;
     /**
-     * 事务外预计算的查询向量（见 buildCompanionMemoryQuery）：
-     * `undefined` = 未预计算（由检索层内部计算），`null` = 已失败 → 直接 keyword。
+     * 关掉手册目录与整理结论。
+     *
+     * 正式学习（grounded_tutor）与测试会走这条：**证据不足时宁可没有**
+     * （§16「事实内容与自然度需要语义评阅」，以及 §11.1「正式学习不注入
+     * 记忆/人格」——手册与整理结论属于同一类"陪伴层上下文"）。
      */
-    queryEmbedding?: number[] | null;
+    playbooksDisabled?: boolean;
   },
 ): Promise<ContextAssemblyResult> {
   // 正式学习 grounded_tutor 不注入记忆/人格（§11.1）。
   if (input.groundedTutorContext) {
     return {
-      activeMemories: [],
+      residentMemories: [],
+      memoryDirectory: [],
+      playbookCatalog: [],
+      organizationSurface: null,
       memoryRefs: [],
-      retrievalMode: "keyword_fallback",
+      retrievalMode: "disabled",
       usedMemoryIds: [],
+      residentMemoryIds: [],
+      residentTokenEstimate: 0,
+      residentByteCount: 0,
+      directoryTokenEstimate: 0,
     };
   }
 
-  const query = buildCompanionMemoryQuery(input);
-
-  const result = await retrieveCompanionMemories(
-    tx,
-    scope,
-    query,
-    {
-      topK: 8,
-      provider: input.provider ?? null,
-      taskEntity: taskEntityFromPersistedPageContext(input.pageContext),
-      precomputedEmbedding: input.queryEmbedding,
-    },
-  );
-
-  // §9.4：Semantic Memory 每条 ≤200 字，总预算 ≤1000 字符。
-  // 检索阶段已在 mapMemoryRow 中截断到 200 字；此处按总预算截断条数。
-  const items: ContextMemoryItem[] = result.items.map((item) => ({
+  const taskEntity = taskEntityFromPersistedPageContext(input.pageContext);
+  const residentRows = await retrieveResidentCompanionMemories(tx, scope, taskEntity);
+  const directoryRows = await retrieveActiveCompanionMemoryDirectory(tx, scope, taskEntity);
+  const items: ContextMemoryItem[] = residentRows.map((item) => ({
     memoryId: item.memoryId,
     kind: item.kind,
     content: item.content.slice(0, MEMORY_CONTENT_MAX),
@@ -122,84 +167,125 @@ export async function assembleCompanionContext(
     pinned: item.pinned,
     lastUsedAt: item.lastUsedAt,
     userConfirmed: item.userConfirmed,
+    epistemicStatus: item.epistemicStatus,
   }));
 
-  // §9.4：按总预算 ≤1000 字符截断——超出时按排序（已是相关度排序）截断条数。
+  // Resident 正文独立占预算；active 目录使用自己的 token/条数预算。
   let budgetUsed = 0;
+  let residentTokenEstimate = 0;
+  let residentByteCount = 0;
   const budgetedItems: typeof items = [];
   for (const item of items) {
-    if (budgetUsed + item.content.length > MEMORY_BUDGET_MAX) break;
+    if (budgetedItems.length >= RESIDENT_MEMORY_MAX_COUNT) break;
+    const byteCount = Buffer.byteLength(item.content, "utf8");
+    const tokenEstimate = Math.ceil(byteCount / 3);
+    if (
+      budgetUsed + item.content.length > RESIDENT_MEMORY_CHAR_BUDGET
+      || residentByteCount + byteCount > RESIDENT_MEMORY_BYTE_BUDGET
+      || residentTokenEstimate + tokenEstimate > RESIDENT_MEMORY_TOKEN_BUDGET
+    ) continue;
     budgetedItems.push(item);
     budgetUsed += item.content.length;
+    residentByteCount += byteCount;
+    residentTokenEstimate += tokenEstimate;
   }
 
-  const activeMemories = budgetedItems.map((item) => ({
+  const residentMemories = budgetedItems.map((item) => ({
     kind: item.kind,
     content: item.content,
+    // 认识状态随正文进上下文：有争议/已替代的条目要标出来，
+    // 否则她会把它们当定论复述（§4.5.4 / §4.6.3「停止自动作确定陈述」）。
+    epistemicStatus: item.epistemicStatus,
   }));
-  // memoryRefs 仅用于 UI 展示"我记得你说过"（§14.5：≤3 条，每条 ≤80 字），
-  // 不影响注入 prompt 的完整记忆内容。仅从实际使用的记忆中取前 3 条。
+  const directory = budgetCompanionMemoryDirectory(directoryRows);
+
+  // §4.6.10：手册目录与记忆目录是两条独立通道——手册讲"怎么协作"，
+  // 记忆讲"关于用户的什么"。目录有界（PLAYBOOK_CATALOG_LIMIT），正文不进来。
+  const playbooks = input.playbooksDisabled
+    ? []
+    : await retrievePlaybookCatalog(tx as never, scope);
+  // §4.5.10/§4.6.9：整理结论「至多一段」，不自动成为对外消息，
+  // 只作为带来源的后台产物出现在下一轮上下文里。
+  const organizationSurface = input.playbooksDisabled ? null : await readOrganizationSurface(tx as never, scope);
+  // 引用只对应本轮正文确实进入 prompt 的 resident 记忆；active 目录项没有被展开，
+  // 不能提前显示成“本轮引用了这条记忆”。按 ID 展开时由读工具补入引用。
   const memoryRefs = budgetedItems.slice(0, MEMORY_REF_MAX).map((item) => ({
     memoryId: item.memoryId,
     kind: item.kind,
     content: item.content.slice(0, MEMORY_REF_CONTENT_MAX),
   }));
 
-  // 记录检索日志 + 更新 last_used_at（幂等，失败不阻断对话）。
-  if (budgetedItems.length > 0) {
-    try {
-      const ids = budgetedItems.map((item) => item.memoryId);
-      // R29/R32：drizzle+postgres-js 数组参数序列化不可靠，使用显式 uuid[] 字面量。
-      const idsLiteral = `{${ids.join(",")}}`;
-      // 只更新 last_used_at，绝不 bump updated_at：updated_at 是内容修改时间戳，
-      // keyword fallback 的排序键为 pinned DESC, importance DESC, updated_at DESC
-      // （companion-memory-vector.ts retrieveCompanionMemoriesKeyword）。若在召回时
-      // 刷新 updated_at，每被召回一次该记忆就在降级检索中永久置顶，排序与内容新旧脱钩。
-      await tx.execute(sql`
-        UPDATE assistant_memory_items
-        SET last_used_at = now()
-        WHERE workspace_id = ${scope.workspaceId}
-          AND user_id = ${scope.userId}
-          AND id = ANY(${idsLiteral}::uuid[])
-      `);
-      await tx.execute(sql`
-        INSERT INTO memory_usage_log
-          (workspace_id, user_id, run_id, memory_ids, retrieval_mode, latency_ms)
-        VALUES
-          (${scope.workspaceId}, ${scope.userId}, ${input.runId},
-           ${idsLiteral}::uuid[], ${result.mode}, ${result.latencyMs})
-      `);
-    } catch (error) {
-      // 结构化日志（err 走 safeErrorSerializer 脱敏）：console.warn 直接打印
-      // 原始 error 会把 postgres 驱动的 message/绑定值带进日志。
-      logger.warn({ err: error, runId: input.runId }, "companion memory usage log write failed");
-    }
-  }
+  const residentIds = budgetedItems.map((item) => item.memoryId);
+  const directoryIds = directory.entries.map((item) => item.memoryId);
+  const exposedIds = [...new Set([...residentIds, ...directoryIds])];
 
-  // §9.9：记录检索模式与使用记忆数指标（失败不阻断对话）。
+  // 记录本轮可见的 resident 与目录项数；目录项不被当作已展开正文。
   try {
-    companionMemoryRetrievalModeTotal.labels(result.mode).inc();
-    companionMemoryUsedCount.observe(budgetedItems.length);
+    companionMemoryRetrievalModeTotal.labels("directory").inc();
+    companionMemoryUsedCount.observe(exposedIds.length);
   } catch {
     // metrics 记录失败不影响对话。
   }
 
-  // §9.9：结构化日志字段——memoryIds / retrievalLatencyMs / contextBudgetUsed
   logger.debug(
     {
       runId: input.runId,
-      memoryIds: budgetedItems.map((item) => item.memoryId),
-      retrievalLatencyMs: result.latencyMs,
-      retrievalMode: result.mode,
-      contextBudgetUsed: activeMemories.reduce((sum, m) => sum + m.content.length, 0),
+      residentMemoryIds: residentIds,
+      directoryMemoryIds: directoryIds,
+      retrievalMode: "directory",
+      residentBudgetUsed: budgetUsed,
+      residentTokenEstimate,
+      residentByteCount,
+      directoryTokenEstimate: directory.tokenEstimate,
     },
     "companion context assembled",
   );
 
   return {
-    activeMemories,
+    residentMemories,
+    memoryDirectory: directory.entries,
+    playbookCatalog: playbooks,
+    organizationSurface,
     memoryRefs,
-    retrievalMode: result.mode,
-    usedMemoryIds: budgetedItems.map((item) => item.memoryId),
+    retrievalMode: "directory",
+    usedMemoryIds: exposedIds,
+    residentMemoryIds: residentIds,
+    residentTokenEstimate,
+    residentByteCount,
+    directoryTokenEstimate: directory.tokenEstimate,
   };
+}
+
+/** Best-effort observability runs after prompt context has been read and committed. */
+export async function recordCompanionMemoryContextExposure(
+  scope: { workspaceId: string; userId: string },
+  runId: string,
+  context: Pick<ContextAssemblyResult, "residentMemoryIds" | "usedMemoryIds">,
+): Promise<void> {
+  if (context.usedMemoryIds.length === 0) return;
+  try {
+    await withWorkerWorkspaceTransaction(scope, async (tx) => {
+      if (context.residentMemoryIds.length > 0) {
+        // R29/R32：drizzle+postgres-js 数组参数序列化不可靠，使用显式 uuid[] 字面量。
+        const residentIdsLiteral = `{${context.residentMemoryIds.join(",")}}`;
+        await tx.execute(sql`
+          UPDATE assistant_memory_items
+             SET last_used_at = now()
+           WHERE workspace_id = ${scope.workspaceId}
+             AND user_id = ${scope.userId}
+             AND id = ANY(${residentIdsLiteral}::uuid[])
+        `);
+      }
+      const exposedIdsLiteral = `{${context.usedMemoryIds.join(",")}}`;
+      await tx.execute(sql`
+        INSERT INTO memory_usage_log
+          (workspace_id, user_id, run_id, memory_ids, retrieval_mode, latency_ms)
+        VALUES
+          (${scope.workspaceId}, ${scope.userId}, ${runId},
+           ${exposedIdsLiteral}::uuid[], 'directory', 0)
+      `);
+    });
+  } catch (error) {
+    logger.warn({ err: error, runId }, "companion memory context exposure logging failed");
+  }
 }

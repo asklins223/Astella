@@ -144,6 +144,8 @@ export async function getMemoryStarMap(
       AND m.deleted_at IS NULL
       AND m.candidate = false
       AND m.archived_at IS NULL
+      AND (m.valid_from IS NULL OR m.valid_from <= now())
+      AND (m.valid_until IS NULL OR m.valid_until > now())
     GROUP BY m.id
     ORDER BY m.pinned DESC, m.importance DESC, m.updated_at DESC
     LIMIT ${STAR_MAP_LIMIT}

@@ -126,6 +126,8 @@ test("startMetricsServer 在 /metrics 返回 Prometheus 文本格式", async () 
   const text = await response.text();
   // 至少包含一个 ailearn_ 前缀的指标
   assert.match(text, /ailearn_/);
+  assert.match(text, /ailearn_ai_circuit_observer_healthy 0/);
+  assert.match(text, /ailearn_ai_circuit_observer_failure_count 0/);
 
   await cleanup();
 });

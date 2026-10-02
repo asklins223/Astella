@@ -40,7 +40,7 @@ const MOCK = MOCK_RAW
   .replace(/\/\/[^\n]*/g, "");
 
 /** 与生产同源的那条泄露判据（不是抄一份——抄一份必然分叉）。 */
-const LEAK = /(companion-persona-v\d+|companion_[a-z_]{4,}|character\.cue|"cue"|reason\s*id|tool\s*param|promptVersion|"route"\s*:|activeMemories|recentMessages|currentMessage|workspacePolicy|sendToExternal|piiDetection|pageContext|selectedText|groundedTarget|<memory_data>|<persona_data>|<selection_data>|<page_context>|<grounded_target>|<here_and_now>|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+const LEAK = /(companion-persona-v\d+|companion_[a-z_]{4,}|character\.cue|"cue"|reason\s*id|tool\s*param|promptVersion|"route"\s*:|activeMemories|residentMemories|memoryDirectory|recentMessages|currentMessage|workspacePolicy|sendToExternal|piiDetection|pageContext|selectedText|groundedTarget|<memory_data>|<memory_directory>|<persona_data>|<selection_data>|<page_context>|<grounded_target>|<here_and_now>|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 
 test("mock 不再把工具结果原样回显进正文", () => {
   assert.match(MOCK, /mockToolResultLine\(/,

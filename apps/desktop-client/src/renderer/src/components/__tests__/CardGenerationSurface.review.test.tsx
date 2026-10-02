@@ -262,6 +262,118 @@ afterEach(() => {
 });
 
 describe("CardGenerationSurface · 候选审核", () => {
+  it("卡片正反面有独立焦点边界，档案不触发答案读取", async () => {
+    const { state } = stubGateway([{ candidateId: "cand-1", statement: "第一张", reviewDecision: "undecided", publishState: "unpublished" }]);
+    useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
+    const { container } = render(<CardGenerationSurface />);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "第一张" })).toBeTruthy());
+    expect(container.querySelector(".candidate-flip-face--front")?.hasAttribute("inert")).toBe(false);
+    expect(container.querySelector(".candidate-flip-face--back")?.hasAttribute("inert")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "翻看卡片档案" }));
+    expect(container.querySelector(".candidate-flip-face--front")?.hasAttribute("inert")).toBe(true);
+    expect(container.querySelector(".candidate-flip-face--back")?.hasAttribute("inert")).toBe(false);
+    expect(state.revealCalls).toHaveLength(0);
+    expect(screen.getByText("重建机制")).toBeTruthy();
+  });
+
+  it("题面强调安全呈现，完整卡面没有内部滚区，决定与保存在卡外", async () => {
+    stubGateway([{ candidateId: "cand-1", statement: "利息加入**本金**，保留 <script> 字面文字", reviewDecision: "undecided", publishState: "unpublished" }]);
+    useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
+    const { container } = render(<CardGenerationSurface />);
+    await waitFor(() => expect(screen.getByRole("heading", { name: /利息加入.*本金.*保留 <script> 字面文字/ })).toBeTruthy());
+    expect(container.querySelector("#candidate-card-title strong")?.textContent).toBe("本金");
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelectorAll(".candidate-card__body")).toHaveLength(2);
+    expect(container.querySelector(".candidate-card__scroll")).toBeNull();
+    expect(container.querySelector(".candidate-card__canvas")).not.toBeNull();
+    const keep = screen.getByRole("button", { name: /^保留（等着保存到卡组）/ });
+    expect(keep.closest(".candidate-card__body")).toBeNull();
+    expect(keep.closest(".candidate-desk__footer")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "结束本次审核" }).closest(".candidate-card__body")).toBeNull();
+  });
+
+  it("保留后即使已经抽到下一张，也能撤销上一张决定", async () => {
+    const { state } = stubGateway([
+      { candidateId: "cand-1", statement: "第一张", reviewDecision: "undecided", publishState: "unpublished" },
+      { candidateId: "cand-2", statement: "第二张", reviewDecision: "undecided", publishState: "unpublished" },
+    ]);
+    useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
+    render(<CardGenerationSurface />);
+    await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /^保留（等着保存到卡组）/ }));
+    await waitFor(() => expect(screen.getByText("第二张")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "撤销决定" }));
+    await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
+    expect(state.reviewCalls[1]).toMatchObject({ type: "undo_decision", candidateId: "cand-1" });
+    expect(document.querySelector(".candidate-card__meta")?.textContent).toContain("2 张还没决定");
+  });
+
+  it("决定尚未收到回执时，切卡和查看答案暂时锁定", async () => {
+    const { gateway } = stubGateway([
+      { candidateId: "cand-1", statement: "第一张", reviewDecision: "undecided", publishState: "unpublished" },
+      { candidateId: "cand-2", statement: "第二张", reviewDecision: "undecided", publishState: "unpublished" },
+    ]);
+    const original = gateway.note.cardGeneration.review.getMockImplementation()!;
+    let release: () => void = () => undefined;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    gateway.note.cardGeneration.review.mockImplementationOnce(async (input) => { await pending; return original(input); });
+    useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
+    render(<CardGenerationSurface />);
+    await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /^保留（等着保存到卡组）/ }));
+    expect(screen.getByRole("button", { name: "下一张" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: /查看答案与证据/ }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("第一张")).toBeTruthy();
+    release();
+    await waitFor(() => expect(screen.getByText("第二张")).toBeTruthy());
+  });
+
+  it("答案尚未返回时，结束审核与其它决定等待这一笔读取完成", async () => {
+    const { gateway, state } = stubGateway([
+      { candidateId: "cand-1", statement: "第一张", reviewDecision: "undecided", publishState: "unpublished" },
+      { candidateId: "cand-2", statement: "第二张", reviewDecision: "undecided", publishState: "unpublished" },
+    ]);
+    const original = gateway.note.cardGeneration.reveal.getMockImplementation()!;
+    let release: () => void = () => undefined;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    gateway.note.cardGeneration.reveal.mockImplementationOnce(async (input) => { await pending; return original(input); });
+    useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
+    render(<CardGenerationSurface />);
+    await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /查看答案与证据/ }));
+    const keep = screen.getByRole("button", { name: /^保留（等着保存到卡组）/ });
+    const close = screen.getByRole("button", { name: "结束本次审核" });
+    expect(keep.hasAttribute("disabled")).toBe(true);
+    expect(close.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "下一张" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: /查看这一叠候选/ }).hasAttribute("disabled")).toBe(true);
+    fireEvent.click(keep);
+    fireEvent.click(close);
+    expect(state.reviewCalls).toHaveLength(0);
+    expect(gateway.note.cardGeneration.close).not.toHaveBeenCalled();
+    release();
+    await waitFor(() => expect(screen.getByText("提取练习强迫大脑重建记忆痕迹。")).toBeTruthy());
+    expect(keep.hasAttribute("disabled")).toBe(false);
+    expect(close.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("关闭动效仍可立即翻面、保留和继续审核", async () => {
+    stubGateway([
+      { candidateId: "cand-1", statement: "第一张", reviewDecision: "undecided", publishState: "unpublished" },
+      { candidateId: "cand-2", statement: "第二张", reviewDecision: "undecided", publishState: "unpublished" },
+    ]);
+    useRoomStore.setState({ activeCardGenerationRunId: RUN_ID, motionMode: "off" });
+    const { container } = render(<CardGenerationSurface />);
+    await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
+    expect(container.querySelector(".candidate-review-table")?.getAttribute("data-motion")).toBe("off");
+    fireEvent.click(screen.getByRole("button", { name: "翻看卡片档案" }));
+    expect(container.querySelector(".candidate-flip-card")?.classList.contains("is-flipped")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /^保留（等着保存到卡组）/ }));
+    await waitFor(() => expect(screen.getByText("第二张")).toBeTruthy());
+    expect(container.querySelector(".candidate-desk__flying-card")).toBeNull();
+    useRoomStore.setState({ motionMode: "full" });
+  });
+
   it("翻面只展示公开审核档案，查看答案仍需单独操作", async () => {
     const { state } = stubGateway([
       { candidateId: "cand-1", statement: "第一张", reviewDecision: "undecided", publishState: "unpublished" },
@@ -278,7 +390,18 @@ describe("CardGenerationSurface · 候选审核", () => {
     expect(screen.queryByText("提取练习强迫大脑重建记忆痕迹。")).toBeNull();
   });
 
-  it("仍有可审核候选时，已保留的卡不能提前保存到卡组", async () => {
+  /**
+   * 这条判据**翻过来了**：从「必须逐张判完才能保存」改成「保存已保留的，剩下的留着」。
+   *
+   * 原判据要求把整叠逐张表态才让交出去，于是 8 张卡至少 8 次决定，而多数人只想
+   * 留 2、3 张。41 §1.5 对「往外学」的草稿早定了另一条口径——「不默认勾选」
+   * 「只收选中的，不丢剩余缓冲」——卡片这边要求逐张表态，是同一族设计里的两个答案。
+   *
+   * 现在量的是新的那条：保留一张之后**保存按钮可按**，剩下那张**仍是未决定**，
+   * 屏上把这句说清楚（不决定不是被丢掉，是留在这叠里下次接着看），
+   * 而且请求里只有被勾上的那一张。
+   */
+  it("仍有未决定的候选时，已保留的可以先保存，剩下那张不跟着进请求", async () => {
     const { state } = stubGateway([
       { candidateId: "cand-1", statement: "第一张", reviewDecision: "undecided", publishState: "unpublished" },
       { candidateId: "cand-2", statement: "第二张", reviewDecision: "undecided", publishState: "unpublished" },
@@ -288,8 +411,15 @@ describe("CardGenerationSurface · 候选审核", () => {
     await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: /^保留（等着保存到卡组）/ }));
     await waitFor(() => expect(state.reviewCalls).toHaveLength(1));
-    expect(screen.getByRole("button", { name: /保存到卡组（1 张）/ }).hasAttribute("disabled")).toBe(true);
-    expect(screen.getByText(/还有 1 张可以审核的卡没有决定/)).toBeTruthy();
+
+    const save = screen.getByRole("button", { name: /保存已保留的 1 张/ });
+    expect(save.hasAttribute("disabled")).toBe(false);
+    expect(screen.getByText(/还有 1 张没决定/)).toBeTruthy();
+
+    fireEvent.click(save);
+    await waitFor(() => expect(state.activateCalls).toHaveLength(1));
+    const submitted = (state.activateCalls[0] as { selectedCandidates: { candidateId: string }[] }).selectedCandidates;
+    expect(submitted.map((c) => c.candidateId)).toEqual(["cand-1"]);
   });
 
   /**
@@ -306,7 +436,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     render(<CardGenerationSurface />);
     await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
 
-    const saveOnly = screen.getByRole("button", { name: /保存到卡组（1 张）/ });
+    const saveOnly = screen.getByRole("button", { name: /保存已保留的 1 张/ });
     expect(saveOnly.hasAttribute("disabled")).toBe(false);
     fireEvent.click(saveOnly);
     await waitFor(() => expect(state.activateCalls).toHaveLength(1));

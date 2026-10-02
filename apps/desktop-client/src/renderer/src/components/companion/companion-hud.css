@@ -74,16 +74,43 @@
 }
 
 .companion-hud button,
-.companion-history button,
 .companion-hud textarea,
 .companion-hud input {
   font: inherit;
 }
 
-.companion-hud button,
-.companion-history button {
+.companion-hud button {
   color: inherit;
 }
+
+.companion-hud__selection-context {
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 6px;
+  margin: 0 0 9px;
+  padding: 7px 9px;
+  border-inline-start: 2px solid #78a38c;
+  border-radius: 4px 7px 7px 4px;
+  background: #e5eddb;
+  color: var(--companion-muted);
+  font-size: 12px;
+}
+.companion-hud__selection-context .companion-hud__selection-quote {
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: inherit;
+  cursor: pointer;
+}
+.companion-hud__selection-context > :is(span, .text-action) { grid-column: 2; }
+.companion-hud__selection-context > span { font-size: 11px; }
+.companion-hud__selection-context[data-phase="saved"] { color: #456c54; }
+.companion-hud__selection-context:is([data-phase="interrupted"], [data-phase="save-error"]) { background: #f4e7d2; color: #875f35; }
 
 .companion-hud__controls {
   position: absolute;
@@ -161,69 +188,6 @@
   50% { box-shadow: 0 7px 18px rgba(91, 62, 39, .13), 0 0 0 8px rgba(132, 195, 160, 0); }
 }
 
-.companion-hud__output {
-  position: absolute;
-  z-index: 3;
-  /* 水平居中钉在角色盒中线上，`-dx` 是给左侧目录栏让位用的（见 `.companion-hud` 上的
-     两个间距变量与 `companion-bubble-clearance.ts`）。用 `right` 而不是 `transform`：
-     入场动画 `companion-hud-pop` 自己占着 `transform`，两边都写会互相覆盖。 */
-  right: calc(50% - var(--companion-bubble-dx, 0px));
-  /* `- push-down`：她站得太高时把气泡整体往下让（由 `CompanionHud.tsx` 实测写入），
-     让出的是"不被窗口切掉"的空间，不是另一种定位。 */
-  bottom: calc(
-    100% + var(--companion-bubble-gap-y) - var(--companion-bubble-push-down, 0px)
-      + var(--companion-bubble-dy, 0px)
-  );
-  display: grid;
-  grid-template-columns: auto 1fr;
-  /* 行可被压缩：`max-height` 生效时，文字自己在气泡里滚，而不是把气泡顶出窗口
-     （与 `.companion-hud__panel` 的既有契约一致——越界靠自己滚，不靠窗口裁）。 */
-  grid-template-rows: minmax(0, 1fr);
-  /* 固定宽度（2026-09-20 用户裁决）：自适应宽度版本整体太窄，按钮文字与模型输出
-     文字堆叠换行，观感反而不如固定宽。短标签的两侧留白是可接受的代价。 */
-  width: min(350px, 42vw);
-  /* 上下限都由 `CompanionHud.tsx` 实测写入，且**都对齐到整行**：正文装满后气泡内部滚动、
-     跟随把最新一行钉在底部，容器高度不是行高的整数倍时最上面那行永远被切半截
-     （2026-09-20 用户反馈）。兜底值只在脚本没跑起来时生效；上限的兜底值还负责
-     "320 字的回复不把气泡和头顶轨道一起顶出窗口"（见 `--companion-bubble-top-reserve`）。 */
-  min-height: var(--companion-bubble-min-h, 72px);
-  max-height: var(--companion-bubble-max-h, min(400px, 38vh));
-  align-items: stretch;
-  gap: 10px;
-  padding: 18px 24px 17px;
-  border: 2px solid var(--companion-line);
-  border-radius: 30px 34px 28px 32px;
-  background: var(--companion-cream);
-  box-shadow: var(--companion-shadow);
-  transform: translateX(50%);
-  transform-origin: 58% 100%;
-  animation: companion-hud-pop 260ms var(--ease-bounce) both;
-  pointer-events: auto;
-}
-
-.companion-hud__output[data-stage="leaving"] {
-  /* 出场用强 ease-out：ease-in 会把用户正在看的那一帧拖慢。 */
-  animation: companion-hud-exit 140ms var(--ease-out) both;
-}
-
-.companion-hud__output > .companion-hud__output-body {
-  /* 气泡装不下这条回复时，滚动发生在这里（见上面 `grid-template-rows` 的注释）。 */
-  min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(137, 107, 78, .28) transparent;
-  margin: 0;
-  color: var(--companion-ink);
-  font-size: clamp(14px, 1.1vw, 17px);
-  font-weight: 650;
-  line-height: 1.65;
-}
-
-.companion-hud__output[data-slot="reply"]:not([data-expanded]) > .companion-hud__output-body {
-  max-height: 3.3em;
-  overflow-y: hidden;
-}
-
 /* 被打断的原因（失败/超时）：正文是"她说到哪儿了"，这一行才是"为什么停了"。
    两件事分开写，用户既看得到那半句，也知道发生了什么（2026-09-19 症状①）。 */
 .companion-hud__output-note {
@@ -233,38 +197,6 @@
   font-size: clamp(11px, .82vw, 12.5px);
   font-weight: 500;
   line-height: 1.5;
-}
-
-/* 过程行（2026-09-22）：她正在做什么。与正文分开一行——正文是"她说了什么"，
-   这一行是"她此刻在干什么"，两件事同时在屏上也不打架。 */
-.companion-hud__output-process {
-  grid-column: 2;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 6px 0 0;
-  color: var(--companion-muted);
-  font-size: clamp(11px, .82vw, 12.5px);
-  font-weight: 500;
-  line-height: 1.5;
-}
-
-.companion-hud__output-process-dot {
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: 50%;
-  background: #55aa82;
-  animation: companion-hud-process-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes companion-hud-process-pulse {
-  0%, 100% { opacity: .35; }
-  50% { opacity: 1; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .companion-hud__output-process-dot { animation: none; opacity: .8; }
 }
 
 /* 角标拆成「底点 + 呼吸环」（方案 §4）：底点是"她在不在"，呼吸环才是"她在不在出声"。
@@ -303,113 +235,21 @@
 /* 出声中：不再用固定 keyframes，半径与透明度逐帧跟随真实输出振幅（`--voice-level`
    由订阅写进这个元素，与她嘴型是同一个数）。出声期间不加过渡——加过渡会把每帧的
    振幅变化抹平，看起来像在慢慢飘。 */
-.companion-hud__output[data-breath="speaking"] .companion-hud__presence-dot {
-  opacity: .95;
-}
-
-.companion-hud__output[data-breath="speaking"] .companion-hud__presence-dot::after {
-  opacity: calc(.55 + var(--voice-level) * .4);
-  transform: scale(calc(1 + var(--voice-level) * .45));
-  animation: none;
-  transition: none;
-}
 
 /* 出声结束：从当前振幅 300ms 回落到静息，不瞬间归零。回落期间 keyframes 仍不介入，
    落点与 keyframes 的 0%（scale 1 / opacity .7）一致，所以交回时没有跳变。 */
-.companion-hud__output[data-breath="returning"] .companion-hud__presence-dot::after {
-  opacity: .7;
-  transform: scale(1);
-  animation: none;
-  transition: transform 300ms var(--ease-out), opacity 300ms var(--ease-out);
-}
 
 /* 尾巴换成纸面气球那套画法（旋转方块 + 两条描边），不再用折角 SVG。 */
-.companion-hud__output::after {
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  width: 13px;
-  height: 13px;
-  content: "";
-  border-right: 2px solid var(--companion-line);
-  border-bottom: 2px solid var(--companion-line);
-  border-bottom-right-radius: 3px;
-  background: var(--companion-cream);
-  transform: translate(-50%, 9px) rotate(45deg);
-}
 
 /* 系统状态提示（麦克风不可用之类）不是"她说的话"：纸白底 + 琥珀点分开。 */
-.companion-hud__output[data-tone="note"] {
-  background: var(--companion-ivory);
-  border-color: rgba(214, 150, 74, .62);
-}
-
-.companion-hud__output[data-tone="note"]::after {
-  background: var(--companion-ivory);
-  border-color: rgba(214, 150, 74, .62);
-}
-
-.companion-hud__output[data-tone="note"] .companion-hud__presence-dot {
-  background: #d6964a;
-}
-
-.companion-hud__output[data-tone="note"] .companion-hud__presence-dot::after {
-  box-shadow: 0 0 0 5px rgba(214, 150, 74, .14);
-}
 
 /* 过程槽位（方案 §3.2）：用中性纸色 + 左侧图标，一眼能分清"过程"与"她的话"。
    过程不是她的台词，不该长得像台词。 */
-.companion-hud__output[data-slot="process"] {
-  border-color: rgba(190, 178, 158, .8);
-  background: #fbf7ee;
-}
-
-.companion-hud__output[data-slot="process"]::after {
-  border-color: rgba(190, 178, 158, .8);
-  background: #fbf7ee;
-}
-
-.companion-hud__output[data-slot="process"] .companion-hud__presence-dot {
-  background: #b3a795;
-}
-
-.companion-hud__output[data-slot="process"] .companion-hud__presence-dot::after {
-  box-shadow: 0 0 0 5px rgba(179, 167, 149, .16);
-}
-
-.companion-hud__output[data-slot="process"] p {
-  color: #6b5f50;
-  font-weight: 600;
-}
 
 /* 停止的余韵（方案 §5 第 8 项）：已出的文字定格并灰化，表示"停在这里"。 */
-.companion-hud__output[data-tone="stopped"] {
-  border-style: dashed;
-  background: #faf6ee;
-}
-
-.companion-hud__output[data-tone="stopped"]::after {
-  background: #faf6ee;
-}
-
-.companion-hud__output[data-tone="stopped"] p {
-  color: #7a6c5c;
-}
-
-.companion-hud__output[data-tone="stopped"] .companion-hud__presence-dot {
-  background: #a99c8c;
-}
-
-.companion-hud__output[data-tone="stopped"] .companion-hud__presence-dot::after {
-  box-shadow: 0 0 0 5px rgba(169, 156, 140, .16);
-  animation: none;
-}
 
 /* 「被抛出去」（方案 §5 第 5 项）：按下发送后气泡上抛再回位，给"我把话交出去了"
    一个身体动作。180ms，只移位不改尺寸。 */
-.companion-hud__output[data-launch] {
-  animation: companion-hud-launch 180ms var(--ease-out) both;
-}
 
 @keyframes companion-hud-launch {
   0% { transform: translateX(50%) translateY(-6px) scale(.98); }
@@ -421,24 +261,6 @@
    那条 `font: inherit` 归一化（权重 0,1,1）会盖掉单类名规则里的 `font-size`，两颗胶囊
    会按气泡正文的字号（≈16px）渲染成 32px 高的大钮，既比设计大一倍、又把气泡底部的
    正文压掉（2026-09-20 实测）。多一层类名（0,2,0）才压得住那条归一化。 */
-.companion-hud__output > .companion-hud__output-stop {
-  position: absolute;
-  right: 12px;
-  bottom: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
-  color: #a85243;
-  font-size: 10.5px;
-  /* 行高给死值：胶囊高度要可预算（气泡下边距按它留白），不能跟着正文的 1.65 涨。 */
-  line-height: 1.2;
-  border: 1.5px solid rgba(168, 82, 67, .5);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .78);
-  cursor: pointer;
-  transition: background-color 140ms ease-out, border-color 140ms ease-out;
-}
 
 .companion-hud__output-stop:disabled {
   cursor: progress;
@@ -465,26 +287,6 @@
 
    它和气泡共用同一个水平偏移：轨道比气泡窄（`min(330px,40vw)` < `min(350px,42vw)`），
    让开气泡就必然让开轨道，两条一起挪才不会一上一下错开。 */
-.companion-hud__rail {
-  position: absolute;
-  z-index: 3;
-  right: calc(50% - var(--companion-bubble-dx, 0px));
-  bottom: calc(
-    100% + var(--companion-bubble-gap-y) - var(--companion-bubble-push-down, 0px)
-      + var(--companion-rail-gap-y) + var(--companion-bubble-h, 72px) + var(--companion-bubble-dy, 0px)
-  );
-  display: grid;
-  gap: 5px;
-  width: min(330px, 40vw);
-  padding: 8px 12px 7px;
-  border: 1.5px solid rgba(201, 164, 126, .6);
-  border-radius: 18px 21px 17px 20px;
-  background: rgba(255, 249, 233, .95);
-  box-shadow: 0 8px 22px rgba(91, 62, 39, .11);
-  transform: translateX(50%);
-  animation: companion-hud-pop 200ms var(--ease-out) both;
-  pointer-events: auto;
-}
 
 .companion-hud__rail-steps {
   position: relative;
@@ -554,8 +356,8 @@
   letter-spacing: .02em;
 }
 
-/* 状态点五档（方案 §1 的表）：running 薄荷 + 呼吸，succeeded 实心绿，
-   waiting_confirmation 琥珀脉冲，failed/blocked 陶红，cancelled/expired 灰且不呼吸。 */
+/* 状态点六档（方案 §1 的表）：running 薄荷 + 呼吸，succeeded 实心绿，
+   waiting_confirmation 琥珀脉冲，outcome_unknown 琥珀静止待核对，failed/blocked 陶红，cancelled/expired 灰。 */
 .companion-hud__rail-steps li[data-state="running"] .companion-hud__rail-mark {
   color: #55aa82;
   animation: companion-hud-rail-breathe 1.8s ease-in-out infinite;
@@ -570,6 +372,11 @@
 .companion-hud__rail-steps li[data-state="waiting_confirmation"] .companion-hud__rail-mark {
   color: #d6964a;
   animation: companion-hud-rail-pulse 1.4s ease-in-out infinite;
+}
+
+.companion-hud__rail-steps li[data-state="outcome_unknown"] .companion-hud__rail-mark,
+.companion-hud__rail-steps li[data-state="outcome_unknown"] .companion-hud__rail-label {
+  color: #a97732;
 }
 
 .companion-hud__rail-steps li[data-state="failed"] .companion-hud__rail-mark {
@@ -591,26 +398,8 @@
 }
 
 /* 收成一行（final 后 400ms / 停止后 2s）：整轨塌成摘要，不留在屏幕上演。 */
-.companion-hud__rail[data-collapsed] {
-  padding: 7px 12px;
-}
-
-/* 与消息气泡同一拍退场（140ms，同一个 keyframes；轨道本来就靠 translateX(50%) 居中，
-   所以这套变换的横向位置跟它自己的一致）。 */
-.companion-hud__rail[data-leaving] {
-  animation: companion-hud-exit 140ms var(--ease-out) both;
-}
-
-.companion-hud__rail[data-turn="stopped"] {
-  border-style: dashed;
-  border-color: rgba(169, 156, 140, .7);
-  background: rgba(250, 246, 238, .95);
-}
 
 /* 出错时轨道留在原地不自动收（方案 §1 行为表）；这里只把边描重一点。 */
-.companion-hud__rail[data-turn="failed"] {
-  border-color: rgba(168, 82, 67, .55);
-}
 
 @keyframes companion-hud-rail-in {
   from { opacity: 0; transform: translateY(6px); }
@@ -648,12 +437,6 @@
 
 /* 发送的重量（方案 §5 第 5 项）：按下先下沉 1px、阴影收窄。只发生在真正提交的那一下，
    与高频悬停反馈不是同一档频率。 */
-@media (hover: hover) and (pointer: fine) {
-  .companion-hud__composer form > button:active:not(:disabled) {
-    box-shadow: 0 2px 5px rgba(181, 111, 59, .16);
-    transform: translateY(1px);
-  }
-}
 
 /* 安静是有代价（方案 §5 第 7 项）：切到「在此页保持安静」时这一格整体下压 2px 并
    降饱和——让"她退到背景里"有可见反馈，而不是按钮变个色。 */
@@ -672,253 +455,19 @@
   transform: translateY(2px);
 }
 
-.companion-hud__panel {
-  position: absolute;
-  z-index: 5;
-  right: calc(100% + 72px);
-  top: 48%;
-  width: min(390px, 36vw);
-  max-height: min(520px, calc(100vh - 48px));
-  padding: 16px;
-  overflow: auto;
-  border: 2px solid var(--companion-line);
-  border-radius: 26px 30px 24px 28px;
-  background: var(--companion-ivory);
-  box-shadow: var(--companion-shadow);
-  /* 垂直居中必须是基础定位，不能只写在入场关键帧里：动效 off / 减少动效
-     会换掉 animation-name，关键帧里的 transform 一消失，面板就会整块下坠
-     半个自身高度。 */
-  transform: translateY(-50%);
-  transform-origin: 100% 46%;
-  animation: companion-hud-panel-in 240ms var(--ease-bounce) both;
-  pointer-events: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(137, 107, 78, .28) transparent;
-}
-
 /* 未展开输入面板时，真实选择卡独立停在伴星身边；只借用 panel 的安全定位与入场，
    视觉边界由卡片自己承担，避免出现「卡片套卡片」的双重纸框。 */
-.companion-hud__proposal-dock {
-  width: min(350px, 34vw);
-  padding: 0;
-  overflow: visible;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
 
 /* 图片、原文与功能块是当前回复的结果，直接停在伴星身旁；文字气泡退场后仍可点开。 */
-.companion-hud__rich-dock {
-  position: absolute;
-  z-index: 6;
-  right: calc(100% + 72px);
-  bottom: 2px;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  width: min(440px, 38vw);
-  max-height: min(380px, calc(100vh - 32px), var(--companion-rich-max-h, 380px));
-  padding: 12px;
-  border: 2px solid var(--companion-line);
-  border-radius: 22px;
-  background: var(--companion-ivory);
-  box-shadow: var(--companion-shadow);
-  pointer-events: auto;
-}
-
-.companion-hud__rich-dock > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 0 9px 3px;
-  color: var(--companion-ink);
-  font-size: 13px;
-}
-
-.companion-hud__rich-dock > header button {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  flex: none;
-  place-items: center;
-  border: 1px solid var(--companion-line);
-  border-radius: 50%;
-  background: var(--companion-cream);
-  color: var(--companion-ink);
-  cursor: pointer;
-}
-
-.companion-hud__rich-dock > header button:hover { background: rgba(205, 235, 217, .58); }
-.companion-hud__rich-dock > header button:focus-visible { outline: 2px solid var(--companion-mint-strong); outline-offset: 2px; }
-
-.companion-hud__rich-content {
-  display: grid;
-  gap: 10px;
-  min-height: 0;
-  overflow: auto;
-  scrollbar-width: thin;
-}
-
-.companion-hud__rich-content > * { margin: 0; }
-.companion-hud__rich-content .companion-record__image { width: 100%; }
-.companion-hud__rich-content .companion-record__image img { max-height: 280px; }
 
 /* 输入气泡展开时，结果卡进入同一张侧边面板，避免两张独立卡压在一起。 */
-.companion-hud__rich-dock--inline {
-  position: relative;
-  right: auto;
-  bottom: auto;
-  width: 100%;
-  max-height: min(280px, calc(100vh - 300px));
-  margin-bottom: 12px;
-  padding: 10px;
-  border-radius: 17px;
-  box-shadow: none;
-}
-
-.companion-hud__rich-dock--inline > header { padding-bottom: 5px; }
-.companion-hud__rich-dock--inline > header button { width: 30px; height: 30px; }
-.companion-hud__rich-dock--inline .companion-record__image img { max-height: 180px; }
-
-.desktop-app.comp-left .companion-presence:not([data-policy-mode="home"]) .companion-hud__rich-dock:not(.companion-hud__rich-dock--inline) {
-  right: auto;
-  left: calc(100% + 72px);
-}
 
 /* 「更多」菜单里也在等的这张卡（方案 35 B4）。它走面板自己的排布，
    不另开一层浮在菜单上——所以只需要一条间距，不需要第二套定位。 */
-.companion-hud__pending-choice {
-  margin-bottom: 10px;
-}
-
-.companion-hud__panel > header {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 44px;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
-.companion-hud__panel > header strong {
-  overflow: hidden;
-  color: var(--companion-ink);
-  font-size: 14px;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 /* 消息气泡的头部只有「标题 + 关闭」两个子元素。沿用三列模板会把标题塞进那个
    44px 的返回按钮列，被截成「给 …」、关闭按钮落在中间列。这里改成两列：标题
    占满左侧，关闭贴右。 */
-.companion-hud__composer > header {
-  grid-template-columns: minmax(0, 1fr) 44px;
-}
-
-.companion-hud__composer > header strong {
-  text-align: left;
-}
-
-.companion-hud__panel > header button {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  padding: 0;
-  border: 1.5px solid rgba(201, 164, 126, .7);
-  border-radius: 50%;
-  background: rgba(255, 255, 255, .52);
-  cursor: pointer;
-}
-
-.companion-hud__composer blockquote {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: start;
-  gap: 8px;
-  margin: 0 0 10px;
-  padding: 10px 11px;
-  color: var(--companion-muted);
-  font-size: 12px;
-  line-height: 1.55;
-  border: 1.5px solid rgba(143, 193, 166, .75);
-  border-radius: 15px 18px 15px 17px;
-  background: rgba(205, 235, 217, .52);
-}
-
-.companion-hud__composer blockquote span {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-}
-
-.companion-hud__composer blockquote button {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-}
-
-.companion-hud__note-anchor {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 6px;
-  margin: 0 0 10px;
-  padding: 7px 8px 7px 11px;
-  color: var(--hud-ink);
-  border: 2px solid var(--hud-cream);
-  border-radius: 13px 17px 12px 15px;
-  background: var(--hud-butter);
-  box-shadow: var(--hud-shadow-small);
-  transform: rotate(-.25deg);
-}
-
-.companion-hud__note-anchor > span {
-  overflow: hidden;
-  font-size: 11px;
-  line-height: 1.45;
-  text-overflow: ellipsis;
-}
-
-.companion-hud__note-anchor > button {
-  display: inline-flex;
-  min-width: 44px;
-  min-height: 44px;
-  align-items: center;
-  justify-content: center;
-  padding: 5px 9px;
-  color: var(--hud-ink);
-  border: 1px solid var(--hud-line-strong);
-  border-radius: 13px 15px 12px 14px;
-  background: var(--hud-paper-light);
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.companion-hud__note-anchor > button:first-of-type { background: var(--hud-peach); }
-.companion-hud__note-anchor > button:disabled { cursor: default; opacity: .68; }
-.companion-hud__note-anchor > button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-.companion-hud__note-anchor > small {
-  grid-column: 1 / -1;
-  color: var(--hud-soft);
-  font-size: 11px;
-  line-height: 1.4;
-}
-.companion-hud__note-anchor > small[data-state="error"] { color: var(--hud-clay); }
-.companion-hud__note-anchor-status {
-  margin: 0 3px 10px;
-  color: var(--hud-green);
-  font-size: 11px;
-  line-height: 1.45;
-}
 
 .companion-hud__note-overview {
   display: grid;
@@ -999,65 +548,10 @@
 .companion-hud__note-expansion-action > small[data-state="error"] { color: var(--hud-clay); }
 .companion-hud__note-expansion-action > small[data-state="started"] { color: var(--hud-green); }
 
-.companion-hud__composer form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 48px;
-  gap: 8px;
-  padding: 8px;
-  border: 1.5px solid rgba(201, 164, 126, .78);
-  border-radius: 20px 23px 19px 22px;
-  background: #fffdf5;
-  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
-}
-
 /* 聚焦状态画在这层纸边上（暖橙），而不是给输入框自己上一圈蓝色硬描边。 */
-.companion-hud__composer form:focus-within {
-  border-color: var(--companion-peach-strong);
-  box-shadow: 0 0 0 3px rgba(230, 143, 81, .2);
-}
-
-.companion-hud__composer textarea {
-  min-height: 46px;
-  max-height: 148px;
-  padding: 9px 8px;
-  /* 高度由内容自己长，不给用户拖拽手柄。 */
-  resize: none;
-  color: var(--companion-ink);
-  font-size: 14px;
-  line-height: 1.5;
-  border: 0;
-  outline: 0;
-  background: transparent;
-}
 
 /* 鼠标点进来的那次不画全局硬焦点环（夜间是淡青色，在纸面上很突兀）；
    键盘 Tab 进来的仍然保留，见 styles.css 的 input-modality 说明。 */
-:root[data-input-modality="pointer"] .companion-hud__composer textarea:focus-visible {
-  outline: 0;
-}
-
-.companion-hud__composer textarea::placeholder {
-  color: rgba(92, 70, 56, .55);
-}
-
-.companion-hud__composer form > button {
-  display: grid;
-  width: 48px;
-  height: 48px;
-  place-items: center;
-  align-self: end;
-  padding: 0;
-  border: 0;
-  border-radius: 17px 19px 16px 18px;
-  background: var(--companion-peach);
-  box-shadow: 0 5px 12px rgba(181, 111, 59, .18);
-  cursor: pointer;
-}
-
-.companion-hud__composer form > button:disabled {
-  cursor: not-allowed;
-  opacity: .45;
-}
 
 .companion-hud__note {
   margin: 9px 3px 0;
@@ -1066,8 +560,7 @@
   line-height: 1.45;
 }
 
-.companion-hud__note--error,
-.companion-history__error {
+.companion-hud__note--error {
   color: #a85243;
 }
 
@@ -1154,8 +647,7 @@
   color: var(--companion-muted);
   font-size: 12px;
   line-height: 1.5;
-  border-left: 3px solid var(--companion-mint-strong);
-  border-radius: 4px 11px 11px 4px;
+  border-radius: 11px 15px 10px 13px;
   background: rgba(205, 235, 217, .34);
 }
 
@@ -1343,396 +835,38 @@
   background: rgba(255, 255, 255, .7);
 }
 
-.companion-history__scrim {
-  position: fixed;
-  z-index: 205;
-  inset: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  /* 全站只有两处真遮罩：`<dialog>` 的 `::backdrop` 用 `rgba(25,17,12,.46)`
-     （`home-v2.css:980`），正式挑战那层确认底用 `rgba(39,33,27,.55)`
-     （`objective-flow.css:626`）。这一颗原来是 `.28` —— 三张里最浅的一张，偏偏它
-     是唯一会把整扇 `.desktop-app` 设成 `inert` 的那一个（见 `CompanionHud.tsx` 里
-     `app.inert = true`）。模态感在偏暗的房间底图上不靠 28% 深棕传达（§14 观察 2），
-     这里取全站那一档现成的值，不自调新色。 */
-  background: rgba(25, 17, 12, 0.46);
-  cursor: default;
-  animation: companion-history-scrim-in 180ms ease-out both;
-}
-
-.companion-history__scrim[data-stage="exiting"] {
-  animation: companion-history-scrim-out 180ms ease-in both;
-  pointer-events: none;
-}
-
-.companion-history {
-  --companion-ivory: var(--hud-paper-light);
-  --companion-cream: var(--hud-cream);
-  --companion-mint: #cdebd9;
-  --companion-mint-strong: #acd8c0;
-  --companion-ink: #5c4638;
-  --companion-muted: var(--hud-soft, #705d4d);
-  --companion-line: #c9a47e;
-  /* 抽屉是 portal 到 body 的，拿不到 .companion-hud 那套变量；输入行与留痕要用的
-     必须在这里补齐，否则 var() 会静默退化成"没有这条声明"。 */
-  --companion-peach: #f5b574;
-  --companion-peach-strong: #e68f51;
-  --ease-drawer: cubic-bezier(.22, .75, .2, 1);
-  --ease-out: cubic-bezier(.23, 1, .32, 1);
-  position: fixed;
-  z-index: 210;
-  top: 14px;
-  right: 14px;
-  bottom: 14px;
-  display: grid;
-  /* 对话视图：头部 / 列表（独立滚动）/ 常驻输入行 / 跳转 chip / 错误行。
-     输入行有自己的行，不塞进滚动容器——方案 §2 要求它固定在底部不随列表滚动。 */
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
-  width: min(410px, calc(100vw - 28px));
-  overflow: hidden;
-  color: var(--companion-ink);
-  border: 2px solid var(--companion-line);
-  border-radius: 28px 31px 25px 29px;
-  background: var(--companion-ivory);
-  box-shadow: -12px 16px 42px rgba(91, 62, 39, .14);
-  animation: companion-drawer-in 210ms var(--ease-drawer) both;
-}
-
 /* 聊天记录视图：头部 / 工具行（搜索·日期）/ 列表。纯浏览页，无输入行。 */
-.companion-history[data-view="record"] {
-  grid-template-rows: auto auto minmax(0, 1fr);
-}
-
-.companion-history[data-stage="exiting"] {
-  animation: companion-drawer-out 210ms var(--ease-drawer) both;
-  pointer-events: none;
-}
-
-.companion-history > header {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 15px 16px 13px;
-  border-bottom: 1px solid rgba(201, 164, 126, .45);
-  background: rgba(255, 241, 207, .58);
-}
-
-.companion-history__header-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.companion-history > header div {
-  display: grid;
-  gap: 2px;
-}
-
-.companion-history > header strong {
-  font-size: 15px;
-}
-
-.companion-history > header span {
-  color: var(--companion-muted);
-  font-size: 11px;
-}
-
-.companion-history > header button {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  padding: 0;
-  border: 1.5px solid rgba(201, 164, 126, .7);
-  border-radius: 50%;
-  background: rgba(255, 255, 255, .6);
-  cursor: pointer;
-}
 
 /* 滚动容器只负责 overflow。它自身高度由 .companion-history 的 1fr 行决定、不随内容
    变化，所以 ResizeObserver 观察它看不到「执行过程」气泡撑高那一刀（见 CompanionHud
    的贴底跟随注释）—— 会变化的是里面的内容层。 */
-.companion-history__list {
-  overflow: auto;
-  scroll-behavior: auto;
-}
 
 /* 内容层：原先挂在 .companion-history__list 上的排布样式搬到这里。padding 也必须跟
    过来，让底部那 14px 明确属于「被滚动的内容」，贴底时最后一条才有一眼可辨的余量，
    而不是贴死在容器边缘被输入行压住。 */
-.companion-history__content {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  padding: 14px;
-}
 
 /* ── 微信式历史浏览（2026-09-19）：工具行 / 搜索 / 日期分组 / 跳转最新 ── */
 
-.companion-history__toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 14px 0;
-}
-
 /* 日期分组头（微信：居中灰胶囊） */
-.companion-history__day {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin: 6px 0 1px;
-  color: var(--companion-muted);
-  font-size: 11px;
-}
-
-.companion-history__list mark {
-  padding: 0 1px;
-  border-radius: 3px;
-  background: rgba(245, 181, 116, .55);
-  color: inherit;
-}
 
 /* 「跳转至最新消息」悬浮钮：输入行上方右侧 */
-.companion-history__jump {
-  min-height: 44px;
-  position: absolute;
-  right: 16px;
-  bottom: 76px;
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  color: var(--companion-ink);
-  font-size: 11px;
-  border: 1.5px solid rgba(201, 164, 126, .75);
-  border-radius: 15px;
-  background: rgba(255, 249, 233, .96);
-  box-shadow: 0 6px 16px rgba(91, 62, 39, .16);
-  cursor: pointer;
-}
-
-.companion-history__jump:hover { background: var(--companion-cream); }
 
 /* 搜索命中跳回上下文时的闪烁标记 */
-.companion-history__list article[data-flash="true"] {
-  animation: companion-history-flash 1.6s ease-out;
-}
-
-@keyframes companion-history-flash {
-  0%, 55% { border-color: var(--companion-peach-strong); box-shadow: 0 0 0 3px rgba(245, 181, 116, .35); }
-  100% { border-color: rgba(201, 164, 126, .58); box-shadow: none; }
-}
-
-.companion-history__list article {
-  width: fit-content;
-  max-width: 88%;
-  padding: 10px 12px;
-  border: 1.5px solid rgba(201, 164, 126, .58);
-  border-radius: 17px 20px 17px 6px;
-  background: var(--companion-cream);
-  /* 消息本身的字号/行距。正文 `.companion-record__body` 从不单独声明尺寸（见
-     `companion-chat-record.css:266` 那句"字号/行距跟着消息本身"），所以这条以前**不存在**，
-     它一路继承到 `<body>` 的浏览器默认 **16px** —— 全站没有任何一档是 16，而抽屉里
-     输入行只有 12px，正文反而比自己的输入行大一号。取 `--note-writing`（14px，
-     `hud-surface.css:6024`，笔记正文那一档）。 */
-  font-size: 14px;
-  line-height: 1.7;
-}
-
-.companion-history__list article[data-role="user"] {
-  align-self: flex-end;
-  border-color: rgba(145, 195, 168, .74);
-  border-radius: 20px 17px 6px 17px;
-  background: rgba(205, 235, 217, .72);
-}
 
 /* 富内容各有自己的气泡。正文、图片、引用和操作过程不再挤进同一块底色。 */
-.companion-history__list article.companion-record__rich-turn {
-  display: grid;
-  gap: 7px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.companion-history__list article.companion-record__rich-turn > header {
-  margin: 0 2px;
-}
-
-.companion-history__list article.companion-record__rich-turn > .companion-record__body {
-  padding: 10px 12px;
-  border: 1.5px solid rgba(201, 164, 126, .58);
-  border-radius: 17px 20px 17px 6px;
-  background: var(--companion-cream);
-}
-
-.companion-history__list article > header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 5px;
-  color: var(--companion-muted);
-  font-size: 10.5px;
-}
 
 /* 进行中那一轮的草稿段。**不在这儿定字号**：以前这条写着 12px，而已入库的正文走
    `.companion-record__body`（无声明 → 16px），于是同一句话在她说完那一刻跳一号。
    字号统一挂在 `article` 上，这里只留草稿需要的裸文本换行。
    顺带放行了同层几行自己的声明（`__stopped` 10px、`__image-note` 10.5px）——
    它们以前都被这条 12px 的特异度压住，写着的值从来没生效过。 */
-.companion-history__list article > p {
-  margin: 0;
-  white-space: pre-wrap;
-}
-
-.companion-history__system {
-  display: inline-flex;
-  align-items: center;
-  align-self: center;
-  gap: 6px;
-  margin: 4px 0;
-  color: var(--companion-muted);
-  font-size: 11px;
-}
 
 /* 常驻输入行（方案 §2）：与交互台同一套纸面表单——纸底、暖橙聚焦边、自动增高、
    无拖拽手柄、无焦点硬环。不新造第二套输入控件语言。 */
-.companion-history__composer {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 7px;
-  padding: 9px 12px 11px;
-  border-top: 1px solid rgba(201, 164, 126, .45);
-  background: rgba(255, 241, 207, .42);
-}
-
-.companion-history__composer > button {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  align-self: end;
-  padding: 0;
-  border: 1.5px solid rgba(201, 164, 126, .72);
-  border-radius: 12px;
-  background: #fffdf5;
-  cursor: pointer;
-  transition: background-color 150ms ease-out, border-color 150ms ease-out;
-}
-
-.companion-history__composer > button[type="submit"],
-.companion-history__composer-stop {
-  color: #7a4a2a;
-  border-color: transparent;
-  background: var(--companion-peach);
-  box-shadow: 0 4px 10px rgba(181, 111, 59, .16);
-}
-
-.companion-history__composer-stop {
-  color: #a85243;
-  background: rgba(168, 82, 67, .16);
-  box-shadow: 0 4px 10px rgba(168, 82, 67, .16);
-}
-
-.companion-history__composer > button:disabled {
-  cursor: not-allowed;
-  opacity: .5;
-}
 
 /* 抽屉里的麦克风与头顶按钮共享同一个实例与同一个 phase；电平环的写法照抄那边。 */
-.companion-history__composer > button {
-  --voice-level: 0;
-  position: relative;
-}
-
-.companion-history__composer > button::after {
-  position: absolute;
-  inset: calc(-2px - var(--voice-level) * 7px);
-  border: 2px solid rgba(132, 195, 160, calc(var(--voice-level) * .7));
-  border-radius: 14px;
-  content: "";
-  pointer-events: none;
-}
-
-.companion-history__composer > button[data-active] {
-  border-color: var(--companion-mint-strong);
-  background: var(--companion-mint);
-}
-
-.companion-history__composer textarea {
-  min-height: 44px;
-  max-height: 120px;
-  padding: 8px 10px;
-  resize: none;
-  color: var(--companion-ink);
-  font-size: 12px;
-  line-height: 1.5;
-  border: 1.5px solid rgba(201, 164, 126, .7);
-  border-radius: 12px;
-  outline: 0;
-  background: #fffdf5;
-}
-
-.companion-history__composer textarea:focus-within,
-.companion-history__composer textarea:focus {
-  border-color: var(--companion-peach-strong, #e68f51);
-}
-
-:root[data-input-modality="pointer"] .companion-history__composer textarea:focus-visible {
-  outline: 0;
-}
 
 /* 「你在这里停下了」（方案 §6 展示）：虚线左边框 + 灰字，是留档不是报错。 */
-.companion-history__list article[data-cancelled] {
-  border-style: dashed;
-  border-color: rgba(169, 156, 140, .8);
-  background: #faf6ee;
-}
-
-.companion-history__list article[data-cancelled] > p {
-  color: #7a6c5c;
-}
-
-.companion-history__nav {
-  display: grid;
-  gap: 7px;
-  max-height: 150px;
-  padding: 10px 14px;
-  overflow: auto;
-  border-top: 1px solid rgba(201, 164, 126, .38);
-}
-
-.companion-history__nav > div {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 9px;
-  font-size: 10px;
-  border-radius: 12px;
-  background: rgba(255, 241, 207, .54);
-}
-
-.companion-history__nav button {
-  min-height: 44px;
-  padding: 4px 8px;
-  border: 1px solid rgba(201, 164, 126, .66);
-  border-radius: 9px;
-  background: rgba(255, 255, 255, .66);
-  cursor: pointer;
-}
-
-.companion-history__error {
-  margin: 0;
-  padding: 10px 14px 13px;
-  font-size: 10px;
-}
 
 .companion-hud__spin {
   animation: companion-hud-spin 800ms linear infinite;
@@ -1765,16 +899,6 @@
   to { opacity: 0; transform: translateX(28px); }
 }
 
-@keyframes companion-history-scrim-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes companion-history-scrim-out {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
 @keyframes companion-hud-spin {
   to { transform: rotate(360deg); }
 }
@@ -1788,36 +912,16 @@
   left: auto;
 }
 
-.desktop-app.comp-left .companion-presence:not([data-policy-mode="home"]) .companion-hud__panel {
-  right: auto;
-  left: calc(100% + 72px);
-  transform-origin: 0 46%;
-  animation-name: companion-hud-panel-in-right;
-}
-
 /* 任务页面板改「钉底向上生长」（2026-09-19 用户截图：快捷设置下半截越出窗底）。
    角色盒是底对齐的（座位 y = 窗高 − 盒高 − 16），按盒中线居中时面板中心低、
    `max-height 520px` 的下半截必然出窗（伴星缩放 >100% 时面板随锚点一起被放大，
    更甚）。钉在盒底向上长 + 自身滚动，任何面板/任何缩放都完整可见；transform
    写在基础规则上，动效 off 时不会出现「关键帧撤走后整块下坠」的旧坑。 */
-.desktop-app .companion-presence:not([data-policy-mode="home"]) .companion-hud__panel {
-  top: auto;
-  bottom: 2px;
-  transform: none;
-  transform-origin: 100% 100%;
-  max-height: min(520px, calc(100vh - 32px));
-  animation-name: companion-hud-panel-in-up;
-}
 
 @keyframes companion-hud-panel-in-up {
   0% { opacity: 0; transform: translateX(12px) translateY(10px) scale(.94); }
   72% { opacity: 1; transform: translateX(-2px) translateY(-2px) scale(1.015); }
   100% { opacity: 1; transform: translateX(0) translateY(0) scale(1); }
-}
-
-.desktop-app.comp-left .companion-presence:not([data-policy-mode="home"]) .companion-hud__panel {
-  transform-origin: 0 100%;
-  animation-name: companion-hud-panel-in-up-right;
 }
 
 @keyframes companion-hud-panel-in-up-right {
@@ -1840,13 +944,11 @@
 }
 
 /* 面板内按钮的悬停只体现在背景/描边上，同样需要一条过渡避免硬切。 */
-.companion-hud__panel > header button,
 .companion-hud__menu-index > button,
 .companion-hud__action-list > button,
 .companion-hud__setting-buttons button,
 .companion-hud__choice button,
-.companion-hud__switch,
-.companion-history button {
+.companion-hud__switch {
   transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
 }
 
@@ -1870,9 +972,6 @@
 }
 
 @media (max-width: 820px), (max-height: 520px) {
-  .companion-hud__rich-dock:not(.companion-hud__rich-dock--inline) {
-    max-height: min(280px, var(--companion-rich-max-h, 280px));
-  }
 
   .companion-hud__controls {
     left: -41px;
@@ -1884,22 +983,9 @@
     min-height: 44px;
   }
 
-  .companion-hud__panel {
-    right: calc(100% + 55px);
-    top: 54%;
-    width: min(330px, 44vw);
-    max-height: calc(100vh - 20px);
-    padding: 11px;
-  }
-
   .desktop-app.comp-left .companion-presence:not([data-policy-mode="home"]) .companion-hud__controls {
     right: 10px;
     left: auto;
-  }
-
-  .desktop-app.comp-left .companion-presence:not([data-policy-mode="home"]) .companion-hud__panel {
-    right: auto;
-    left: calc(100% + 55px);
   }
 
   .companion-hud {
@@ -1907,32 +993,8 @@
     --companion-rail-gap-y: 16px;
   }
 
-  .companion-hud__output {
-    width: min(300px, 48vw);
-    /* 下限不给死值：`CompanionHud.tsx` 按实测行高写入，且必须对齐到整行
-       （否则钉底时最上面那行会被切半截，见 `.companion-hud__output` 的说明）。 */
-    padding: 12px 16px;
-  }
-
-  .companion-hud__rail {
-    width: min(280px, 46vw);
-    padding: 7px 10px 6px;
-  }
-
   .companion-hud__rail-label {
     font-size: 11px;
-  }
-
-  .companion-hud__output > .companion-hud__output-body {
-    font-size: 12px;
-    line-height: 1.5;
-  }
-
-  .companion-history {
-    top: 8px;
-    right: 8px;
-    bottom: 8px;
-    width: min(370px, calc(100vw - 16px));
   }
 }
 
@@ -1941,26 +1003,8 @@
     --companion-bubble-gap-y: calc(16px + var(--companion-model-top-shift, 0px));
   }
 
-  .companion-hud__panel {
-    right: calc(100% + 50px);
-    width: min(310px, 43vw);
-    /* 面板按角色盒中线居中：只有不超过角色盒高度时才不会顶出窗口。
-       越界的部分靠自己滚动，而不是被窗口裁掉（设计契约：矮窗口内滚动，
-       不裁掉大小与重置控件）。 */
-    max-height: 100%;
-  }
-
-  .desktop-app.comp-left .companion-presence:not([data-policy-mode="home"]) .companion-hud__panel {
-    right: auto;
-    left: calc(100% + 50px);
-  }
-
   /* 最小视口（桌面壳下限 720×405）里气泡偏左 4%：让位计算算的是"以角色盒中线居中"的框，
      实际框比它更靠右，于是只会多让几个像素——宁可多让，不要压住。 */
-  .companion-hud__output {
-    right: calc(46% - var(--companion-bubble-dx, 0px));
-    width: min(280px, 47vw);
-  }
 
   .companion-hud__menu-index > button,
   .companion-hud__action-list > button {
@@ -1969,30 +1013,13 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .companion-hud__output,
-  .companion-hud__panel {
-    animation-duration: 150ms;
-    animation-name: companion-hud-fade;
-  }
-
-  .companion-history__scrim,
-  .companion-history {
-    animation: companion-history-scrim-in 120ms ease-out both;
-  }
-
-  .companion-history__scrim[data-stage="exiting"],
-  .companion-history[data-stage="exiting"] {
-    animation: companion-history-scrim-out 120ms ease-in both;
-  }
 
   .companion-hud__controls > button,
-  .companion-hud__panel > header button,
   .companion-hud__menu-index > button,
   .companion-hud__action-list > button,
   .companion-hud__setting-buttons button,
   .companion-hud__choice button,
-  .companion-hud__switch,
-  .companion-history button {
+  .companion-hud__switch {
     transition: none;
   }
 
@@ -2003,25 +1030,13 @@
     transform: none;
   }
 
-  .companion-hud__output[data-breath="speaking"] .companion-hud__presence-dot::after {
-    transform: none;
-    opacity: calc(.55 + var(--voice-level) * .4);
-    transition: opacity 300ms ease-out;
-  }
-
   /* 轨道：减少动效下不做位移与缩放演出，只改状态点颜色与文案（方案 §1 / §5）。 */
   .companion-hud__rail-steps::before {
     display: none;
   }
 
-  .companion-hud__rail,
   .companion-hud__rail-steps li,
-  .companion-hud__rail-steps li .companion-hud__rail-mark,
-  .companion-history__trace ol li {
-    animation: none;
-  }
-
-  .companion-hud__output[data-launch] {
+  .companion-hud__rail-steps li .companion-hud__rail-mark {
     animation: none;
   }
 
@@ -2037,23 +1052,8 @@
 /* 应用自己的动效模式（灵动岛 Full / Lite / Off）必须和系统偏好同权：
    Off 不做入场演出但保留定位，Lite 只缩短时长。
    历史抽屉是 portal 到 body 的，拿不到 .desktop-app 祖先，因此按自身属性匹配。 */
-.desktop-app[data-motion-mode="lite"] .companion-hud__output,
-.desktop-app[data-motion-mode="lite"] .companion-hud__panel,
-.companion-history__scrim[data-motion="lite"],
-.companion-history[data-motion="lite"] {
-  animation-duration: 120ms;
-}
 
-.desktop-app[data-motion-mode="off"] .companion-hud__output,
-.desktop-app[data-motion-mode="off"] .companion-hud__panel,
-.companion-history__scrim[data-motion="off"],
-.companion-history[data-motion="off"] {
-  animation: none;
-}
-
-.desktop-app[data-motion-mode="off"] .companion-hud__controls > button,
-.desktop-app[data-motion-mode="off"] .companion-hud__panel button,
-.companion-history[data-motion="off"] button {
+.desktop-app[data-motion-mode="off"] .companion-hud__controls > button {
   transition: none;
 }
 
@@ -2064,18 +1064,13 @@
 }
 
 /* Off / Lite 下的轨道与留痕：不动、不滑、不抖，状态只靠颜色与文案（方案 §1 / §5）。 */
-.desktop-app[data-motion-mode="off"] .companion-hud__rail,
 .desktop-app[data-motion-mode="off"] .companion-hud__rail-steps li,
-.desktop-app[data-motion-mode="off"] .companion-hud__rail-steps li .companion-hud__rail-mark,
-.desktop-app[data-motion-mode="off"] .companion-hud__output[data-launch] {
+.desktop-app[data-motion-mode="off"] .companion-hud__rail-steps li .companion-hud__rail-mark {
   animation: none;
 }
 
 /* 留痕在历史抽屉里，而抽屉 portal 到 body，拿不到 `.desktop-app` 祖先，
    所以只能按抽屉自己发布的 data-motion 匹配（与下面 composer 那条同法）。 */
-.companion-history[data-motion="off"] .companion-history__trace ol li {
-  animation: none;
-}
 
 .desktop-app[data-motion-mode="off"] .companion-hud__rail-steps::before {
   display: none;
@@ -2087,8 +1082,7 @@
 
 .desktop-app[data-motion-mode="off"] .companion-hud__composer-stop,
 .desktop-app[data-motion-mode="off"] .companion-hud__setting-buttons button,
-.desktop-app[data-motion-mode="off"] .companion-hud__output-stop,
-.companion-history[data-motion="off"] .companion-history__composer > button {
+.desktop-app[data-motion-mode="off"] .companion-hud__output-stop {
   transition: none;
 }
 
@@ -2097,13 +1091,11 @@
   transition: none;
 }
 
-.desktop-app[data-motion-mode="lite"] .companion-hud__rail,
 .desktop-app[data-motion-mode="lite"] .companion-hud__rail-steps li {
   animation-duration: 100ms;
 }
 
-.desktop-app[data-motion-mode="lite"] .companion-hud__rail-steps::before,
-.companion-history[data-motion="lite"] .companion-history__trace ol li {
+.desktop-app[data-motion-mode="lite"] .companion-hud__rail-steps::before {
   transition-duration: 100ms;
 }
 
@@ -2129,20 +1121,7 @@
   pointer-events: none;
 }
 
-/*
- * 密集设置的宿主（方案 §3）：窗口右缘的边缘面板。portal 到 body —— 和历史抽屉
- * 同一条约定：场景锚点带 transform/will-change，HUD 树内的 fixed 会被劫持成局部
- * 坐标，所以这里自己补齐 .companion-hud 上的那套颜色变量。z-index 压在历史抽屉
- * （205/210）之下：打开对话记录时面板顺理成章被盖住。
- *
- * 宽度钳在 min(340px, 34vw)、高度钳在视口内并独立滚动：紧凑窗口下它只是右缘一条
- * 窄列，任务主内容不被盖住。
- *
- * 入场动画必须用专属关键帧（companion-hud-edge-in）：贴身面板的
- * companion-hud-panel-in 结尾带 translateY(-50%)——那是它 `top:48%` 垂直居中定位的
- * 一部分；fill-mode: both 会把尾帧 transform 永久留在本面板上，没有那条基础定位的
- * 面板会被整体上抬自身高度的一半，标题栏和第一组设置直接顶出窗外（2026-09-20 实测）。
- */
+/* Settings share the book's body-facing placement; only their own body scrolls. */
 .companion-hud__edge-panel {
   --companion-ivory: var(--hud-paper-light);
   --companion-cream: var(--hud-cream);
@@ -2158,10 +1137,11 @@
   position: fixed;
   z-index: 200;
   top: 44px;
-  right: 12px;
+  left: var(--companion-paper-x, 14px);
+  right: auto;
   display: flex;
   flex-direction: column;
-  width: min(340px, 34vw);
+  width: var(--companion-paper-w, min(340px, calc(100vw - 28px)));
   max-height: calc(100vh - 68px);
   padding: 14px 14px 10px;
   border: 2px solid var(--companion-line);
@@ -2205,7 +1185,6 @@
 }
 
 /* 两个面板通过 portal 挂在 body，不能依赖 .hud-surface 的统一键盘焦点规则。 */
-.companion-history button:focus-visible,
 .companion-hud__edge-panel button:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
@@ -2234,23 +1213,6 @@
 
 /* 流式气泡里的「显示全文」（方案 §3）：与「停止」同族的胶囊小钮，落在左下角
    （停止在右下角），互不重叠。选择器带气泡的理由与「停止」相同（压住 `font: inherit`）。 */
-.companion-hud__output > .companion-hud__output-reveal {
-  position: absolute;
-  left: 12px;
-  bottom: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
-  color: #7c5a34;
-  font-size: 10.5px;
-  line-height: 1.2;
-  border: 1.5px solid rgba(201, 164, 126, .75);
-  border-radius: 999px;
-  background: rgba(255, 253, 245, .9);
-  cursor: pointer;
-  transition: background-color 150ms ease-out, border-color 150ms ease-out;
-}
 
 @media (hover: hover) and (pointer: fine) {
   .companion-hud__output-reveal:hover {
@@ -2264,15 +1226,8 @@
    胶囊（8px 落差 + 22px 胶囊高 ≈ 30px，取 34px 留一点余量），胶囊落进留白带，最后一行
    不再被盖住（2026-09-20 跟随滚动补）。静止的长回复没有胶囊，不留这条空档。
    这段留白会被 `CompanionHud.tsx` 量进 chrome，所以行高对齐（整行）自动把它算进去。 */
-.companion-hud__output:has(> .companion-hud__output-stop),
-.companion-hud__output:has(> .companion-hud__output-reveal) {
-  padding-bottom: 34px;
-}
 
 /* 生成中的表单三列：输入 + 停止 + 发送并接替（方案 §2）。 */
-.companion-hud__composer form[data-sending] {
-  grid-template-columns: minmax(0, 1fr) 48px 48px;
-}
 
 /* 鲸鱼娘（2026-09-20 用户标注「设置上来」→「再往旁边移动」）：她的内容盒是一整幅
    海景背景，角色居中，盒子内侧没有不压到人的落点——悬在 8px 正好压住发饰。
