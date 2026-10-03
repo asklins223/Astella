@@ -25,12 +25,12 @@ function parameterValue(
 }
 
 describe("window Live2D policy", () => {
-  it.each([
-    ["whale", "../../../../public/assets/companion/live2d-v3/whale/c_0120.cdi3.json"],
-    ["mao-pro", "../../../../public/assets/companion/live2d-v1/mao-pro/runtime/mao_pro.cdi3.json"],
-  ] as const)("uses real head parts from the %s asset and excludes tail/table parts", (modelId, path) => {
-    const parts = JSON.parse(readFileSync(new URL(path, import.meta.url), "utf8")).Parts as { Id: string; Name: string }[];
-    const headParts = WINDOW_LIVE2D_MODEL_REGISTRY[modelId].layoutHeadParts!;
+  it("uses real head parts from the whale asset and excludes tail/table parts", () => {
+    const parts = JSON.parse(readFileSync(
+      new URL("../../../../public/assets/companion/live2d-v3/whale/c_0120.cdi3.json", import.meta.url),
+      "utf8",
+    )).Parts as { Id: string; Name: string }[];
+    const headParts = WINDOW_LIVE2D_MODEL_REGISTRY.whale.layoutHeadParts!;
     expect(headParts.length).toBeGreaterThan(0);
     for (const id of headParts) expect(parts.some(part => part.Id === id), id).toBe(true);
     const selected = parts.filter(part => headParts.includes(part.Id));
@@ -39,80 +39,47 @@ describe("window Live2D policy", () => {
   });
 
   it("fails closed when bundled model license approval is absent", () => {
+    const whale = WINDOW_LIVE2D_MODEL_REGISTRY.whale.manifestExpectation;
     const approved = {
       schemaVersion: 1,
-      modelId: "companion-live2d-mao-pro-v1",
-      status: "production",
-      ownerApproved: { by: "Owner", date: "2026-08-11" },
+      modelId: whale.modelId,
+      status: whale.status,
+      ownerApproved: { by: "Owner", date: "2026-09-20" },
       modelLicense: {
-        name: "Live2D Free Material License Agreement and Terms of Use",
+        name: "《使用须知.txt》",
         acceptanceRequired: true,
         commercialReleaseAllowed: true,
       },
     };
-    const MAO = WINDOW_LIVE2D_MODEL_REGISTRY["mao-pro"].manifestExpectation;
-    expect(isApprovedWindowLive2DManifest(approved, MAO)).toBe(true);
-    expect(isApprovedWindowLive2DManifest({ ...approved, ownerApproved: null }, MAO)).toBe(false);
+    expect(isApprovedWindowLive2DManifest(approved, whale)).toBe(true);
+    // 缺省验收要求 = 默认形态，与显式传入同一个。
+    expect(isApprovedWindowLive2DManifest(approved)).toBe(true);
+    expect(isApprovedWindowLive2DManifest({ ...approved, ownerApproved: null }, whale)).toBe(false);
     expect(isApprovedWindowLive2DManifest({
       ...approved,
       modelLicense: { ...approved.modelLicense, commercialReleaseAllowed: false },
-    }, MAO)).toBe(false);
-    // 缺省验收要求 = 当前默认形态（2026-09-20 起是大肥鱼），mao 的 manifest 通不过它。
-    expect(isApprovedWindowLive2DManifest(approved)).toBe(false);
-
-    // 逐模型校验（2026-09-20 多形态）：seethrough 的开发态 manifest 即使带完整
-    // ownerApproved 字段，也通不过 mao / whale 的验收要求（modelId / status 不匹配）。
+    }, whale)).toBe(false);
+    // 已删除的形态即使带着完整 ownerApproved 也通不过：modelId 对不上就 fail closed。
     expect(isApprovedWindowLive2DManifest({
-      schemaVersion: 1,
+      ...approved,
+      modelId: "companion-live2d-mao-pro-v1",
+    }, whale)).toBe(false);
+    expect(isApprovedWindowLive2DManifest({
+      ...approved,
       modelId: "companion-live2d-seethrough-v2",
       status: "development",
-      ownerApproved: { by: "User", date: "2026-09-15" },
-      modelLicense: {
-        name: "User-provided artwork; license confirmation required before redistribution",
-        acceptanceRequired: true,
-        commercialReleaseAllowed: false,
-      },
-    })).toBe(false);
+    }, whale)).toBe(false);
   });
 
-  it("approves each registered model against its own manifest expectation", () => {
-    for (const descriptor of Object.values(WINDOW_LIVE2D_MODEL_REGISTRY)) {
-      const approved = {
-        schemaVersion: 1,
-        modelId: descriptor.manifestExpectation.modelId,
-        status: descriptor.manifestExpectation.status,
-        ownerApproved: { by: "Owner", date: "2026-09-20" },
-        modelLicense: {
-          name: "license",
-          acceptanceRequired: true,
-          commercialReleaseAllowed: descriptor.manifestExpectation.commercialReleaseAllowed,
-        },
-      };
-      expect(isApprovedWindowLive2DManifest(approved, descriptor.manifestExpectation)).toBe(true);
-      // modelId 混用 fail closed：whale 的 manifest 不能通过 mao 的校验，反之亦然。
-      const other = descriptor === WINDOW_LIVE2D_MODEL_REGISTRY["mao-pro"]
-        ? WINDOW_LIVE2D_MODEL_REGISTRY.whale
-        : WINDOW_LIVE2D_MODEL_REGISTRY["mao-pro"];
-      expect(isApprovedWindowLive2DManifest(approved, other.manifestExpectation)).toBe(false);
-    }
-    expect(isWindowLive2DModelId("mao-pro")).toBe(true);
+  it("only accepts the one registered form and silently falls back off it", () => {
     expect(isWindowLive2DModelId("whale")).toBe(true);
-    expect(isWindowLive2DModelId("seethrough")).toBe(true);
+    // 2026-10-04 删除 mao / 小彩 后，旧 localStorage 里的这两个值必须判为非法，
+    // 由 room-store 的 merge 静默打回大肥鱼，不能让伴星进不可用状态。
+    expect(isWindowLive2DModelId("mao-pro")).toBe(false);
+    expect(isWindowLive2DModelId("seethrough")).toBe(false);
     expect(isWindowLive2DModelId("orb")).toBe(false);
-  });
-
-  it("maps seethrough onto its own semantic motion groups", () => {
-    expect(motionForWindowLive2D("idle", "seethrough")).toEqual({ group: "Idle", index: 0 });
-    expect(motionForWindowLive2D("invite", "seethrough")).toEqual({ group: "Nod", index: 0 });
-    expect(motionForWindowLive2D("uncertain", "seethrough")).toEqual({ group: "Shake", index: 0 });
-    expect(motionForWindowLive2D("think", "seethrough")).toEqual({ group: "Think", index: 0 });
-    expect(motionForWindowLive2D("celebrate", "seethrough")).toEqual({ group: "Happy", index: 0 });
-    expect(motionForWindowLive2DEmotion("happy", "seethrough")).toEqual({ group: "Happy", index: 0 });
-    expect(motionForWindowLive2DEmotion("surprised", "seethrough")).toEqual({ group: "Surprised", index: 0 });
-    expect(motionForWindowLive2DEmotion("sad", "seethrough")).toEqual({ group: "Sleepy", index: 0 });
-    // seethrough 没有 exp3 表情文件：情绪表情恒空，走动作 + FACS 路径。
-    expect(expressionForWindowLive2DEmotion("happy", "seethrough")).toBeNull();
-    expect(WINDOW_LIVE2D_MODEL_REGISTRY.seethrough.lipSyncParameter).toBe("ParamMouthOpenY");
+    expect(isWindowLive2DModelId(undefined)).toBe(false);
+    expect(Object.keys(WINDOW_LIVE2D_MODEL_REGISTRY)).toEqual(["whale"]);
   });
 
   it("maps whale to its own motion groups and expressions", () => {
@@ -122,10 +89,7 @@ describe("window Live2D policy", () => {
     expect(expressionForWindowLive2DEmotion("happy", "whale")).toBe("happy");
     expect(expressionForWindowLive2DEmotion("surprised", "whale")).toBe("surprised");
     expect(expressionForWindowLive2DEmotion("neutral", "whale")).toBeNull();
-    // mao 的自带 exp3 也接上了（2026-09-20：exp3 一直在资产里，代码没接）。
-    expect(expressionForWindowLive2DEmotion("happy", "mao-pro")).toBe("exp_02");
-    expect(expressionForWindowLive2DEmotion("angry", "mao-pro")).toBe("exp_08");
-    expect(expressionForWindowLive2DEmotion("neutral", "mao-pro")).toBeNull();
+    expect(WINDOW_LIVE2D_MODEL_REGISTRY.whale.lipSyncParameter).toBe("ParamMouthOpenY");
   });
 
   it("表演池轮播：一袋之内不重复，重洗后不接上一条", () => {
@@ -179,37 +143,29 @@ describe("window Live2D policy", () => {
       lipSyncParameter: WINDOW_LIVE2D_MODEL_REGISTRY.whale.lipSyncParameter,
     });
     expect(values.find((value) => value.parameter === "ParamMouthOpenY")?.value).toBeCloseTo(0.6);
+    // whale 的模型里根本没有 ParamA（mao 才有）；写它等于往 Cubism Core 塞野参数。
     expect(values.some((value) => value.parameter === "ParamA")).toBe(false);
+    // 缺省口型参数跟随注册表，不是写死的字面量。
+    expect(parameterValuesForWindowLive2D({
+      presentation: "speak", nowMs: 1_000, voiceLevel: 0.6,
+    }).some((value) => value.parameter === "ParamMouthOpenY")).toBe(true);
   });
 
-  it("只声明 Live2D 资产：orb / 替身立绘已随 2026-09-16 裁决移除", () => {
-    const assetPaths = [
-      WINDOW_LIVE2D_ASSETS.manifest,
-      WINDOW_LIVE2D_ASSETS.model,
-      ...WINDOW_LIVE2D_ASSETS.vendorScripts,
-    ];
-    expect(Object.keys(WINDOW_LIVE2D_ASSETS)).toEqual([
-      "manifest",
-      "model",
-      "vendorScripts",
-    ]);
-    for (const path of assetPaths) {
+  it("只声明所有形态共用的运行时；模型自身路径归注册表管", () => {
+    expect(Object.keys(WINDOW_LIVE2D_ASSETS)).toEqual(["vendorScripts"]);
+    for (const path of WINDOW_LIVE2D_ASSETS.vendorScripts) {
       expect(path).not.toContain("orb");
       expect(path).not.toContain("half-idle");
     }
-  });
-
-  it("maps the public presentation contract to the exported PSD2Live motion groups", () => {
-    // 这些是 mao 的编排映射；不依赖"哪个形态是默认"（默认已改成大肥鱼）。
-    expect(motionForWindowLive2D("idle", "mao-pro")).toEqual({ group: "Idle", index: 0 });
-    expect(motionForWindowLive2D("invite", "mao-pro")).toEqual({ group: "", index: 0 });
-    expect(motionForWindowLive2D("think", "mao-pro")).toEqual({ group: "", index: 2 });
-    expect(motionForWindowLive2D("celebrate", "mao-pro")).toEqual({ group: "", index: 3 });
-    expect(motionForWindowLive2D("uncertain", "mao-pro")).toEqual({ group: "", index: 1 });
-    expect(motionForWindowLive2D("hidden", "mao-pro")).toBeNull();
-    expect(motionForWindowLive2DEmotion("excited", "mao-pro")).toEqual({ group: "", index: 3 });
-    expect(motionForWindowLive2DEmotion("surprised", "mao-pro")).toEqual({ group: "", index: 1 });
-    expect(motionForWindowLive2DEmotion("neutral", "mao-pro")).toBeNull();
+    // 已删除的形态的资产不许再被任何一处登记。
+    const declared = JSON.stringify([
+      Object.values(WINDOW_LIVE2D_MODEL_REGISTRY).map((descriptor) => [descriptor.manifest, descriptor.model]),
+      WINDOW_LIVE2D_ASSETS.vendorScripts,
+    ]);
+    expect(declared).not.toContain("live2d-v1");
+    expect(declared).not.toContain("live2d-v2");
+    expect(declared).not.toContain("mao");
+    expect(declared).not.toContain("seethrough");
   });
 
   it("clamps external voice amplitude before it reaches Cubism Core", () => {
@@ -219,7 +175,7 @@ describe("window Live2D policy", () => {
       voiceLevel: 12,
     });
 
-    expect(values.find((value) => value.parameter === "ParamA")?.value).toBe(1);
+    expect(values.find((value) => value.parameter === "ParamMouthOpenY")?.value).toBe(1);
     expect(values.every((value) => Number.isFinite(value.value))).toBe(true);
   });
 
@@ -232,10 +188,10 @@ describe("window Live2D policy", () => {
     });
 
     expect(values.find((value) => value.parameter === "ParamMouthUp")?.value).toBeCloseTo(0.15);
-    expect(values.find((value) => value.parameter === "ParamA")?.value).toBeCloseTo(0.75);
+    expect(values.find((value) => value.parameter === "ParamMouthOpenY")?.value).toBeCloseTo(0.75);
   });
 
-  it("does not inject Seethrough-only parameters into Mao", () => {
+  it("idle 时口型参数一个字都不写：没张嘴就不该动嘴", () => {
     const values = parameterValuesForWindowLive2D({
       presentation: "idle",
       nowMs: 1_000,
@@ -245,7 +201,7 @@ describe("window Live2D policy", () => {
 
     expect(values.some((value) => value.parameter === "ParamMouthOpenY")).toBe(false);
     expect(values.some((value) => value.parameter === "ParamMouthForm")).toBe(false);
-    expect(values.some((value) => value.parameter === "ParamA")).toBe(false);
+    expect(values.some((value) => value.parameter === "ParamMouthUp")).toBe(false);
   });
 
   describe("「看向手边」（方案 §5 第 9 项）", () => {
@@ -307,7 +263,7 @@ describe("window Live2D policy", () => {
       const withImpulse = parameterValuesForWindowLive2D({
         presentation: "speak", nowMs: 0, voiceLevel: 0.6, toolAttentionAtMs: 0,
       });
-      expect(parameterValue(withImpulse, "ParamA")).toBeCloseTo(0.6);
+      expect(parameterValue(withImpulse, "ParamMouthOpenY")).toBeCloseTo(0.6);
       expect(parameterValue(withImpulse, "ParamBodyAngleX")).toBeCloseTo(-3);
     });
   });
@@ -341,14 +297,8 @@ describe("window Live2D policy", () => {
     expect(momentCueForWindowLive2D("reminder", "whale")?.overlay).toBe("surprised");
     expect(momentCueForWindowLive2D("task_started", "whale")?.motion)
       .toEqual({ group: "Spray", index: 0 });
-    // 一轮说完必须把眼镜摘下来，否则一副圆脸眼镜挂到下次切换形态。
+    // 一轮说完必须把眼镜摘下来，否则一副圆脸眼镜挂到下一次对话。
     expect(momentCueForWindowLive2D("reply_completed", "whale")).toEqual({ costume: null });
-    // 另外两个形态没有配件，只能演动作；没登记的时刻就是没有反应（不硬凑）。
-    expect(momentCueForWindowLive2D("tool_succeeded", "mao-pro")?.motion)
-      .toEqual({ group: "", index: 3 });
-    expect(momentCueForWindowLive2D("tool_failed", "seethrough")?.motion)
-      .toEqual({ group: "Shake", index: 0 });
-    expect(momentCueForWindowLive2D("reminder", "seethrough")?.overlay).toBeUndefined();
   });
 
   it("道具层：穿着写资产值，脱了写 0，脸部参数与表情自己的参数都不碰", () => {

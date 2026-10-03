@@ -4,26 +4,31 @@ This directory is a renderer-local copy of the existing AI Learn companion
 runtime. It is loaded only inside the desktop client's project window. Nothing
 in `WindowLive2D` creates an always-on-top or out-of-window desktop-pet surface.
 
-## Mao PRO model
+## Mao PRO model (removed 2026-10-04)
+
+> 2026-10-04 Owner 裁决：mao 这条形态连同 `live2d-v1/` 整包删除，`WindowLive2DModelId`
+> 收成单形态。下面这段留下来只为追溯它当初的来由与许可状态。
 
 - Source repository: [EchoBot](https://github.com/KdaiP/EchoBot)
 - Locked source commit: `08e97a4a33b2ab611d24dd997038c1ec95ac6926`
 - Original path: `echobot/app/builtin_live2d/mao_pro_en`
-- Repository license: MIT; retained as `live2d-v1/EchoBot-LICENSE` and beside
-  the model as `live2d-v1/mao-pro/EchoBot-LICENSE`
+- Repository license: MIT; was retained as `live2d-v1/EchoBot-LICENSE` and beside
+  the model as `live2d-v1/mao-pro/EchoBot-LICENSE` — both copies went with the package.
 - Model terms: Live2D Free Material License Agreement and Terms of Use; the
-  original `ReadMe.txt` is retained beside the model.
-- Hashes: retained in `live2d-v1/manifest.json` and
-  `live2d-v1/mao-pro/manifest.json`.
+  original `ReadMe.txt` was retained beside the model and has been deleted with it.
+- Hashes: were retained in `live2d-v1/manifest.json` and
+  `live2d-v1/mao-pro/manifest.json`; both manifests are gone.
 
-The model manifest records `redistributionAllowed=false`. Do not publish or
-redistribute this asset package without a fresh license review.
+Its manifest recorded `redistributionAllowed=false`, and the terms still apply to
+the model itself: do not publish or redistribute it without a fresh license
+review, even though this repository no longer carries it.
 
 ## DS鲸鱼娘 model (live2d-v3/whale)
 
 - Added 2026-09-20 by owner decision: the companion ships as a switchable form
-  (`WindowLive2DModelId`, see `window-live2d-contract.ts`). Three forms are
-  live: Mao PRO (`mao-pro`), Seethrough (`seethrough`) and DS鲸鱼娘 (`whale`).
+  (`WindowLive2DModelId`, see `window-live2d-contract.ts`). 大肥鱼 has been the
+  only live form since 2026-10-04; Mao PRO and Seethrough left with their
+  asset packages.
 - Source: user-provided archive `DS鲸鱼娘/DS鼠控版` (DS 鼠控版 variant).
 - Author: B站 @氵六青（11272072）, shared for free. Author terms
   (《使用须知.txt》): 商用直播 √、自印物料 √、禁止任何形式的盗用以及出售
@@ -39,7 +44,8 @@ redistribute this asset package without a fresh license review.
   hearts, soul) that the earlier emotion-only selection had left out. What is
   still excluded is recorded with a reason in `live2d-v3/whale/README.md`.
 - 2026-09-20: the owner made 大肥鱼 the companion's default form
-  (`DEFAULT_WINDOW_LIVE2D_MODEL_ID`); Mao and Seethrough remain switchable.
+  (`DEFAULT_WINDOW_LIVE2D_MODEL_ID`); Mao and Seethrough stayed switchable
+  until 2026-10-04, when both forms were deleted together with their assets.
 
 ## Browser runtime
 
@@ -53,24 +59,29 @@ runtime files aligned with the SHA-256 hashes in the model manifest.
 
 ## Removed assets
 
+- 2026-10-04 (Owner 裁决): mao 与小彩两条形态连同资产整条删除——`live2d-v1/`
+  整包（mao-pro 模型 + `EchoBot-LICENSE` + 两份 manifest）从版本库和工作区一并
+  移除，`live2d-v2/seethrough/` 同步删除，`WindowLive2DModelId` 收成 `"whale"`
+  单形态。许可状态没有变化：mao 是 Live2D 免费素材协议 + `redistributionAllowed=false`，
+  seethrough 一直是 development-only，所以这两包本来就只能留在本地桌面构建里，
+  从来不适合随发行版分发。
+- `live2d-v3/whale/icon.png` 同日删除：它不在 `live2d-v3/whale/README.md` 记录的
+  运行时保留清单里，全仓库也没有任何代码读取它（连 `fileSha256` 都没有校验方），
+  `manifest.json` 里对应的哈希行一并去掉。
 - The **Seethrough model** (`live2d-v2/seethrough`, user-provided
   `seethrough_output.psd2live` exported with PSD2Live 0.7.1 on 2026-09-15) was
-  removed on 2026-09-19: it never became the runtime model (`WindowLive2D`
-  loads `live2d-v1/mao-pro` only), its license status stayed development-only
-  (`commercialReleaseAllowed=false`, `redistributionAllowed=false`), and the
-  desktop plan of 2026-09-19 requires dormant asset packages to be deleted
-  rather than shipped. Restore it from design archives if ownership and
-  redistribution rights are ever confirmed.
+  first removed on 2026-09-19: it had never become the runtime model, its license
+  status was development-only (`commercialReleaseAllowed=false`,
+  `redistributionAllowed=false`), and the desktop plan of 2026-09-19 requires
+  dormant asset packages to be deleted rather than shipped.
 - 2026-09-20 update (evening): the owner restored the missing texture
   (`seethrough_output.4096/texture_00.png`, SHA-256 identical to the
   2026-09-15 export record) and asked to ship Seethrough as the third form.
-  Re-integrated under `live2d-v2/seethrough/` with the richer motion set
+  It was re-integrated under `live2d-v2/seethrough/` with the richer motion set
   (Idle/Blink/Nod/Shake/Think/Happy/Surprised/Sleepy) recovered from the
-  pre-removal prototype copy. License status is unchanged and still
-  development-only (`commercialReleaseAllowed=false`,
-  `redistributionAllowed=false`); a fresh license review is required before
-  any commercial release. See `live2d-v2/seethrough/README.md` and
-  `manifest.json`.
+  pre-removal prototype copy — and deleted again on 2026-10-04 with the rest of
+  `live2d-v2/`. Its license status was never anything but development-only;
+  a fresh license review would be required before any commercial release.
 - `live2d-v1/mao-pro/mao-half-idle-v1.png` was deleted together with the orb
   fallback (2026-09-16 Owner decision). Per that decision the companion has a
   single form (in-window Live2D); when the model cannot load the companion is

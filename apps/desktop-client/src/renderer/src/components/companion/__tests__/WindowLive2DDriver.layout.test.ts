@@ -38,10 +38,18 @@ function modelFixture() {
 let fixture: ReturnType<typeof modelFixture>;
 let driver: WindowLive2DDriver;
 let container: HTMLDivElement;
+let canvas: HTMLCanvasElement;
+let onStatus: NonNullable<ConstructorParameters<typeof WindowLive2DDriver>[0]["onStatus"]>;
 let size: { width: number; height: number };
 let nextFixture: ReturnType<typeof modelFixture>;
 let ticker: { add: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; deltaMS: number; maxFPS: number };
 let resizeRenderer: ReturnType<typeof vi.fn>;
+
+/** 在当前容器上装一个驱动器并挂载模型。`PIXI` 桩总是返回 `nextFixture.model`。 */
+function mountDriver(): Promise<void> {
+  driver = new WindowLive2DDriver({ canvas, container, onStatus });
+  return driver.init();
+}
 
 beforeEach(async () => {
   vi.useFakeTimers();
@@ -75,11 +83,10 @@ beforeEach(async () => {
   container = document.createElement("div");
   vi.spyOn(container, "clientWidth", "get").mockImplementation(() => size.width);
   vi.spyOn(container, "clientHeight", "get").mockImplementation(() => size.height);
-  const canvas = document.createElement("canvas");
+  canvas = document.createElement("canvas");
   Object.defineProperty(canvas, "getContext", { value: () => ({ MAX_TEXTURE_IMAGE_UNITS: 1, getParameter: () => 8 }) });
-  const onStatus = vi.fn();
-  driver = new WindowLive2DDriver({ canvas, container, onStatus });
-  await driver.init();
+  onStatus = vi.fn();
+  await mountDriver();
   expect(onStatus).toHaveBeenLastCalledWith("ready");
   expect(container.style.getPropertyValue("--companion-model-ink-left")).toBe("0.0900");
 });
@@ -89,6 +96,19 @@ afterEach(() => {
   document.head.replaceChildren();
   vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers();
 });
+
+/**
+ * 换一个模型实例挂上来：拆掉当前驱动器，在**同一个容器**上再装一个。
+ *
+ * 2026-10-04 起仓库里只剩大肥鱼一个形态，`setModel` 对同一个 id 会直接早退，
+ * 所以"模型换了以后重新取景"这条路径改用重挂来走——它经过的是同一个
+ * `attachModel` → 发布 ink / head 边的代码。
+ */
+async function remountNextModel(): Promise<void> {
+  driver.destroy();
+  await mountDriver();
+  expect(onStatus).toHaveBeenLastCalledWith("ready");
+}
 
 function animateDrawables() {
   Object.assign(fixture.boxes[0], { x: 80, y: 100, width: 800, height: 900 });
@@ -149,11 +169,10 @@ it("reprojects the same shape on resize even when a motion is in progress", () =
 it("takes a new layout shape when the actual model changes", async () => {
   const before = container.getAttribute("style");
   nextFixture = modelFixture();
-  nextFixture.parts.ids[0] = "PartHairFront";
+  // Part14 是注册表里登记的大肥鱼头部件，ink / head 两条边都由它推出来。
+  nextFixture.parts.ids[0] = "Part14";
   Object.assign(nextFixture.boxes[0], { x: 300, y: 250, width: 400, height: 500 });
-  const switching = driver.setModel("mao-pro");
-  await vi.advanceTimersByTimeAsync(700);
-  await switching;
+  await remountNextModel();
   expect(fixture.model.destroy).toHaveBeenCalledOnce();
   expect(container.getAttribute("style")).not.toBe(before);
   expect(container.style.getPropertyValue("--companion-model-ink-left")).toBe("0.1000");
@@ -162,16 +181,14 @@ it("takes a new layout shape when the actual model changes", async () => {
 
 it("keeps a separate fixed hair shape when the tail and table extend beyond it", async () => {
   nextFixture = modelFixture();
-  nextFixture.parts.ids.splice(0, 1, "PartHairFront", "Tail", "Desk");
+  nextFixture.parts.ids.splice(0, 1, "Part14", "Tail", "Desk");
   nextFixture.parts.parentIndices.splice(0, 1, -1, -1, -1);
   nextFixture.drawableParts.splice(0, 1, 0, 1, 2);
   nextFixture.boxes.splice(0, 1,
     { x: 300, y: 200, width: 300, height: 350 },
     { x: 550, y: 550, width: 400, height: 200 },
     { x: 100, y: 650, width: 500, height: 200 });
-  const switching = driver.setModel("mao-pro");
-  await vi.advanceTimersByTimeAsync(700);
-  await switching;
+  await remountNextModel();
   const edge = (region: string, side: string) => Number.parseFloat(container.style.getPropertyValue(`--companion-model-${region}-${side}`));
   expect(edge("head", "left")).toBeGreaterThan(edge("ink", "left"));
   expect(edge("head", "right")).toBeLessThan(edge("ink", "right"));

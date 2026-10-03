@@ -65,22 +65,7 @@ function catalogOf(modelId: WindowLive2DModelId) {
 }
 
 describe("Live2D 表演清单来自各形态自己的资产", () => {
-  const mao = catalogOf("mao-pro");
   const whale = catalogOf("whale");
-  const seethrough = catalogOf("seethrough");
-
-  it("mao：默认组 6 条编排动作 + 有内容的 7 个表情在表演池里", () => {
-    const motions = mao.performanceCues.filter((cue) => cue.kind === "motion");
-    const expressions = mao.performanceCues.filter((cue) => cue.kind === "expression");
-    expect(motions.map((cue) => (cue.kind === "motion" ? cue.cue : null))).toEqual(
-      [0, 1, 2, 3, 4, 5].map((index) => ({ group: "", index })),
-    );
-    expect(expressions.map((cue) => (cue.kind === "expression" ? cue.name : null))).toEqual([
-      "exp_02", "exp_03", "exp_04", "exp_05", "exp_06", "exp_07", "exp_08",
-    ]);
-    // 唯一被丢掉的声明是 exp_01：它每个参数写的都是中性值，演出来等于站着不动。
-    expect(mao.expressionParameters.exp_01?.size).toBe(0);
-  });
 
   it("大肥鱼：5 条动作组除 Idle 外全部进池，30 个表情分成 14 张脸 + 16 件道具", () => {
     expect(whale.performanceCues.filter((cue) => cue.kind === "motion")
@@ -137,34 +122,25 @@ describe("Live2D 表演清单来自各形态自己的资产", () => {
 
   it("时刻表引用的动作组与道具名，资产里必须真有", () => {
     for (const [modelId, descriptor] of Object.entries(WINDOW_LIVE2D_MODEL_REGISTRY)) {
-      const catalog = modelId === "mao-pro" ? mao : modelId === "whale" ? whale : seethrough;
       for (const [moment, cue] of Object.entries(descriptor.momentCue)) {
         if (cue?.motion) {
-          expect(catalog.hasMotionGroup(cue.motion.group), `${modelId}.${moment} 的动作组`)
+          expect(whale.hasMotionGroup(cue.motion.group), `${modelId}.${moment} 的动作组`)
             .toBe(true);
         }
         for (const prop of [cue?.costume, cue?.overlay]) {
           if (typeof prop !== "string") continue;
           expect(prop in descriptor.propRoles, `${modelId}.${moment} 的 ${prop} 不是已登记道具`)
             .toBe(true);
-          expect(catalog.expressionWrites[prop]?.length, `${modelId}.${prop} 资产里读不到`)
+          expect(whale.expressionWrites[prop]?.length, `${modelId}.${prop} 资产里读不到`)
             .toBeGreaterThan(0);
         }
       }
     }
   });
 
-  it("小彩：8 组语义动作里除 Idle 外全部进池，且它确实没有 exp3 表情", () => {
-    expect(seethrough.performanceCues.map((cue) => (cue.kind === "motion" ? cue.cue.group : null)))
-      .toEqual(["Blink", "Nod", "Shake", "Think", "Happy", "Surprised", "Sleepy"]);
-    expect(seethrough.performanceCues).toHaveLength(7);
-  });
-
   it("每个形态声明的动作/表情 = 表演池 + 被丢掉的空表情（一条都不静默丢）", () => {
     for (const [name, catalog, model3Path] of [
-      ["mao", mao, "live2d-v1/mao-pro/runtime/mao_pro.model3.json"],
       ["大肥鱼", whale, "live2d-v3/whale/c_0120.model3.json"],
-      ["小彩", seethrough, "live2d-v2/seethrough/seethrough_output.model3.json"],
     ] as const) {
       const model3 = readAsset(model3Path) as Model3File;
       const declaredMotions = Object.entries(model3.FileReferences?.Motions ?? [])
@@ -188,30 +164,19 @@ describe("Live2D 表演清单来自各形态自己的资产", () => {
   });
 
   it("情绪表情表里的名字，资产里必须真有这个表情", () => {
-    const catalogs = {
-      "mao-pro": mao,
-      whale,
-      seethrough,
-    } as const;
     for (const [modelId, descriptor] of Object.entries(WINDOW_LIVE2D_MODEL_REGISTRY)) {
-      const catalog = catalogs[modelId as keyof typeof catalogs];
       const dead = Object.values(descriptor.emotionExpression).filter(
-        (name) => !catalog.hasExpression(name),
+        (name) => !whale.hasExpression(name),
       );
       expect(dead, `${modelId} 引用了资产里不存在的表情`).toEqual([]);
     }
   });
 
   it("表情写过的参数由表情接管；中性写入的不接管", () => {
-    // mao 每个 exp3 都把全部参数列一遍，中性值不能算接管，否则眨眼/口型会被禁掉。
-    expect(mao.expressionParameters.exp_01?.size).toBe(0);
-    expect(mao.expressionParameters.exp_02).toEqual(new Set(["ParamEyeLOpen", "ParamEyeLSmile", "ParamEyeROpen", "ParamEyeRSmile"]));
-    // Multiply 0（mao exp_02 的眯眼笑）算接管；Add 0（大肥鱼 happy 的眼睛）在 Cubism
-    // 的加法混合下本来就是 no-op，不该因此把眨眼禁掉。Add -1（mischievous 的单眼眨）算接管。
+    // Multiply 0 在 Cubism 里算接管；Add 0（大肥鱼 happy 的眼睛）在加法混合下
+    // 本来就是 no-op，不该因此把眨眼禁掉。Add -1（mischievous 的单眼眨）算接管。
     expect(whale.expressionParameters.happy?.has("ParamEyeLOpen")).toBe(false);
     expect(whale.expressionParameters.mischievous?.has("ParamEyeROpen")).toBe(true);
     expect(whale.expressionParameters.surprised?.size).toBe(1);
-    // 小彩没有表情：没有任何参数被接管，眨眼/FACS 照常。
-    expect(Object.keys(seethrough.expressionParameters)).toEqual([]);
   });
 });

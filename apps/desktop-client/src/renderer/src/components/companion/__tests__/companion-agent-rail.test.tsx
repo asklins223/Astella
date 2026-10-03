@@ -26,13 +26,13 @@ describe("CompanionAgentRail", () => {
   it("回合结束后只塌成摘要行，不自计时退场", () => {
     vi.useFakeTimers();
     try {
-      render(<CompanionAgentRail nodes={TOOL_NODES} progress={null} turnState="done" companionName="小彩" />);
-      expect(screen.getByRole("status", { name: "小彩 正在做的事" })).toBeTruthy();
+      render(<CompanionAgentRail nodes={TOOL_NODES} progress={null} turnState="done" companionName="大肥鱼" />);
+      expect(screen.getByRole("status", { name: "大肥鱼 正在做的事" })).toBeTruthy();
       act(() => { vi.advanceTimersByTime(500); });
       expect(screen.getByText("1 次工具")).toBeTruthy();
       // 曾经这里有个 5.4s 的 `expired`：整条轨道自己消失，与气泡何时走无关。
       act(() => { vi.advanceTimersByTime(30_000); });
-      expect(screen.getByRole("status", { name: "小彩 正在做的事" })).toBeTruthy();
+      expect(screen.getByRole("status", { name: "大肥鱼 正在做的事" })).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }
@@ -40,7 +40,7 @@ describe("CompanionAgentRail", () => {
 
   it("可展开查看全部真实节点，并报告最近的阅读操作", () => {
     const onActivity = vi.fn();
-    render(<CompanionAgentRail nodes={[toolNode({ key: "first", kind: "thinking", label: "最早的一步", toolName: null }), ...[1, 2, 3].map(index => toolNode({ key: `next-${index}` }))]} progress={null} turnState="done" companionName="小彩" onActivity={onActivity} />);
+    render(<CompanionAgentRail nodes={[toolNode({ key: "first", kind: "thinking", label: "最早的一步", toolName: null }), ...[1, 2, 3].map(index => toolNode({ key: `next-${index}` }))]} progress={null} turnState="done" companionName="大肥鱼" onActivity={onActivity} />);
     expect(screen.queryByText("最早的一步")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "查看过程" }));
     expect(screen.getByText("最早的一步")).toBeTruthy();
@@ -55,10 +55,10 @@ describe("CompanionAgentRail", () => {
         nodes={TOOL_NODES}
         progress={{ stepCount: 2, maxSteps: 4, toolCallCount: 1, maxToolCalls: 12 }}
         turnState="failed"
-        companionName="小彩"
+        companionName="大肥鱼"
       />,
     );
-    const rail = screen.getByRole("status", { name: "小彩 正在做的事" });
+    const rail = screen.getByRole("status", { name: "大肥鱼 正在做的事" });
     expect(rail.textContent).toContain("没说完");
   });
 
@@ -68,9 +68,9 @@ describe("CompanionAgentRail", () => {
         nodes={[toolNode({ state: "outcome_unknown", summary: "暂时没有确定回执" })]}
         progress={{ stepCount: 1, maxSteps: 4, toolCallCount: 1, maxToolCalls: 12 }}
         turnState="done"
-        companionName="小彩"
+        companionName="大肥鱼"
       />,
     );
-    expect(screen.getByRole("status", { name: "小彩 正在做的事" }).textContent).toContain("结果待核对");
+    expect(screen.getByRole("status", { name: "大肥鱼 正在做的事" }).textContent).toContain("结果待核对");
   });
 });

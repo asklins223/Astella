@@ -66,13 +66,15 @@ function toolAttentionBodyAngleOffset(atMs: number | undefined, nowMs: number): 
 }
 
 /**
- * Renderer-local asset paths. They intentionally stay relative to
- * `document.baseURI`, so the same build works under Vite's dev origin and the
- * packaged `ailearn-app://bundle/` protocol without reaching outside the app.
+ * Renderer-local asset paths shared by every form. They intentionally stay
+ * relative to `document.baseURI`, so the same build works under Vite's dev
+ * origin and the packaged `ailearn-app://bundle/` protocol without reaching
+ * outside the app.
+ *
+ * 只放**所有形态共用**的运行时：模型自身的 manifest / model3 路径由
+ * `WINDOW_LIVE2D_MODEL_REGISTRY` 登记，不在这里重复一份。
  */
 export const WINDOW_LIVE2D_ASSETS = {
-  manifest: "assets/companion/live2d-v1/manifest.json",
-  model: "assets/companion/live2d-v1/mao-pro/runtime/mao_pro.model3.json",
   vendorScripts: [
     "assets/companion/vendor/pixi.min.js",
     "assets/companion/vendor/live2dcubismcore.min.js",
@@ -80,8 +82,13 @@ export const WINDOW_LIVE2D_ASSETS = {
   ],
 } as const;
 
-/** 伴星可选的 Live2D 形态。注册表是唯一真话，切换能力见 `WindowLive2DDriver.setModel`。 */
-export type WindowLive2DModelId = "mao-pro" | "seethrough" | "whale";
+/**
+ * 伴星可选的 Live2D 形态。注册表是唯一真话，切换能力见 `WindowLive2DDriver.setModel`。
+ *
+ * 2026-10-04 Owner 裁决：mao / 小彩 两条形态连同资产整条删除，只留大肥鱼。
+ * 类型保留联合形态，新增角色 = 注册表加一条 + 补资产，不是改这里的结构。
+ */
+export type WindowLive2DModelId = "whale";
 
 /**
  * 每个模型的许可验收要求：manifest 必须逐字段匹配（fail closed）。
@@ -94,8 +101,9 @@ interface WindowLive2DManifestExpectation {
 }
 
 /**
- * 按模型的呈现 → 动作 cue 映射。mao 的编排动作都在默认组（`""`）；
- * whale 只有 Idle 组，其余呈现回落到 FACS 参数层（写不中的参数是安全 no-op）。
+ * 按模型的呈现 → 动作 cue 映射。whale 的动作都在具名组里（`Idle` / `Bubble` /
+ * `Spray` / `Selfie` / `SelfieQuick`），语义上对不上"邀请/指路"的呈现留在 Idle，
+ * 她的表现力由 `momentCue` 与 `emotionExpression` 承担。
  */
 type PresentationMotionMap = Readonly<
   Record<WindowLive2DPresentation, WindowLive2DMotionCue | null>
@@ -224,7 +232,7 @@ export interface WindowLive2DModelDescriptor {
   readonly manifest: string;
   readonly model: string;
   readonly manifestExpectation: WindowLive2DManifestExpectation;
-  /** 语音振幅写入的口型参数（mao 用 ParamA，whale 用 ParamMouthOpenY）。 */
+  /** 语音振幅写入的口型参数（whale 的模型没有 `ParamA`，口型写 `ParamMouthOpenY`）。 */
   readonly lipSyncParameter: string;
   readonly presentationMotion: PresentationMotionMap;
   readonly emotionMotion: Readonly<Record<string, WindowLive2DMotionCue>>;
@@ -255,36 +263,6 @@ export interface WindowLive2DModelDescriptor {
   readonly layoutHeadParts?: readonly string[];
 }
 
-/** mao 的编排映射（2026-09-19 之前就是它），保持原样以不扰动现有行为。 */
-const MAO_PRESENTATION_MOTION: PresentationMotionMap = {
-  hidden: null,
-  idle: { group: "Idle", index: 0 },
-  invite: { group: "", index: 0 },
-  listen: { group: "Idle", index: 0 },
-  speak: { group: "Idle", index: 0 },
-  think: { group: "", index: 2 },
-  analyze: { group: "", index: 2 },
-  navigate: { group: "", index: 0 },
-  encourage: { group: "", index: 3 },
-  celebrate: { group: "", index: 3 },
-  uncertain: { group: "", index: 1 },
-};
-
-const MAO_EMOTION_MOTION: Readonly<Record<string, WindowLive2DMotionCue>> = {
-  happy: { group: "", index: 3 },
-  excited: { group: "", index: 3 },
-  amazed: { group: "", index: 1 },
-  mischievously: { group: "", index: 3 },
-  curious: { group: "", index: 2 },
-  empathetic: { group: "", index: 3 },
-  encouraged: { group: "", index: 3 },
-  celebrate: { group: "", index: 3 },
-  analyze: { group: "", index: 2 },
-  think: { group: "", index: 2 },
-  surprised: { group: "", index: 1 },
-  panicked: { group: "", index: 1 },
-};
-
 /**
  * whale 的动作只有自带那 5 组（Idle / Bubble 吹泡泡糖 / Spray 鲸鱼喷水 / Selfie 自拍 /
  * SelfieQuick 举手机），语义上都不对应"邀请/指路"，所以呈现层大多留在 Idle：
@@ -306,36 +284,6 @@ const WHALE_PRESENTATION_MOTION: PresentationMotionMap = {
   uncertain: { group: "Spray", index: 0 },
 };
 
-/** seethrough 的 8 组动作是语义化的，呈现映射可以直接对号入座。 */
-const SEETHROUGH_PRESENTATION_MOTION: PresentationMotionMap = {
-  hidden: null,
-  idle: { group: "Idle", index: 0 },
-  invite: { group: "Nod", index: 0 },
-  listen: { group: "Idle", index: 0 },
-  speak: { group: "Idle", index: 0 },
-  think: { group: "Think", index: 0 },
-  analyze: { group: "Think", index: 0 },
-  navigate: { group: "Idle", index: 0 },
-  encourage: { group: "Happy", index: 0 },
-  celebrate: { group: "Happy", index: 0 },
-  uncertain: { group: "Shake", index: 0 },
-};
-
-const SEETHROUGH_EMOTION_MOTION: Readonly<Record<string, WindowLive2DMotionCue>> = {
-  happy: { group: "Happy", index: 0 },
-  excited: { group: "Happy", index: 0 },
-  celebrate: { group: "Happy", index: 0 },
-  encouraged: { group: "Happy", index: 0 },
-  surprised: { group: "Surprised", index: 0 },
-  amazed: { group: "Surprised", index: 0 },
-  panicked: { group: "Surprised", index: 0 },
-  think: { group: "Think", index: 0 },
-  analyze: { group: "Think", index: 0 },
-  curious: { group: "Think", index: 0 },
-  uncertain: { group: "Sleepy", index: 0 },
-  sad: { group: "Sleepy", index: 0 },
-};
-
 const WHALE_EMOTION_EXPRESSION: EmotionExpressionMap = {
   happy: "happy",
   excited: "starstruck",
@@ -352,28 +300,6 @@ const WHALE_EMOTION_EXPRESSION: EmotionExpressionMap = {
   uncertain: "dizzy",
   angry: "angry",
   sad: "sad",
-};
-
-/**
- * mao 的语义情绪 → 自带 exp3。FACS 参数层继续写（眉毛/嘴的幅度和表情同向），
- * 表情补上 FACS 够不到的通道：眉角、嘴下、眼球形状、星星眼特效。
- */
-const MAO_EMOTION_EXPRESSION: EmotionExpressionMap = {
-  happy: "exp_02",
-  encouraged: "exp_02",
-  excited: "exp_04",
-  celebrate: "exp_04",
-  amazed: "exp_04",
-  empathetic: "exp_06",
-  surprised: "exp_07",
-  panicked: "exp_07",
-  sad: "exp_05",
-  crying: "exp_05",
-  concerned: "exp_05",
-  uncertain: "exp_05",
-  angry: "exp_08",
-  mischievously: "exp_08",
-  scornful: "exp_08",
 };
 
 /** 大肥鱼唯一能对上"受惊"语义的动作：头顶那条鲸喷一下水（0.47s，短促）。 */
@@ -413,7 +339,7 @@ const WHALE_PROP_ROLES: Readonly<Record<string, WindowLive2DPropKind>> = {
  *
  * 道具名全部来自 `WHALE_PROP_ROLES`，动作名全部来自它自己的 model3.json；
  * `costume: null` 表示这个时刻把眼镜摘下来——干活时戴、干完摘，不然一副圆脸眼镜
- * 挂在身上到下一次切换形态。
+ * 挂到下一轮对话。
  */
 const WHALE_MOMENT_CUE: Readonly<Partial<Record<WindowLive2DCharacterMoment, WindowLive2DMomentCue>>> = {
   task_started: { motion: { group: "Spray", index: 0 } },
@@ -427,51 +353,9 @@ const WHALE_MOMENT_CUE: Readonly<Partial<Record<WindowLive2DCharacterMoment, Win
   run_failed: { overlay: "soul", costume: null, holdMs: 3_200 },
 };
 
-/** mao 没有配件类表情，时刻表演只用它自带的 6 条编排动作。 */
-const MAO_MOMENT_CUE: Readonly<Partial<Record<WindowLive2DCharacterMoment, WindowLive2DMomentCue>>> = {
-  task_started: { motion: { group: "", index: 2 } },
-  working: { motion: { group: "", index: 2 } },
-  tool_succeeded: { motion: { group: "", index: 3 } },
-  tool_failed: { motion: { group: "", index: 1 } },
-  awaiting_confirmation: { motion: { group: "", index: 0 } },
-  reminder: { motion: { group: "", index: 0 } },
-  celebration: { motion: { group: "", index: 3 } },
-  run_failed: { motion: { group: "", index: 1 } },
-};
-
-const SEETHROUGH_MOMENT_CUE: Readonly<Partial<Record<WindowLive2DCharacterMoment, WindowLive2DMomentCue>>> = {
-  task_started: { motion: { group: "Think", index: 0 } },
-  working: { motion: { group: "Think", index: 0 } },
-  tool_succeeded: { motion: { group: "Happy", index: 0 } },
-  tool_failed: { motion: { group: "Shake", index: 0 } },
-  awaiting_confirmation: { motion: { group: "Nod", index: 0 } },
-  reminder: { motion: { group: "Nod", index: 0 } },
-  celebration: { motion: { group: "Happy", index: 0 } },
-  run_failed: { motion: { group: "Shake", index: 0 } },
-};
-
 export const WINDOW_LIVE2D_MODEL_REGISTRY: Readonly<
   Record<WindowLive2DModelId, WindowLive2DModelDescriptor>
 > = {
-  "mao-pro": {
-    displayName: "Mao",
-    layoutHeadParts: ["PartHat", "PartHairSide", "PartHairFront", "PartHairBack", "PartFace", "PartEar"],
-    manifest: WINDOW_LIVE2D_ASSETS.manifest,
-    model: WINDOW_LIVE2D_ASSETS.model,
-    manifestExpectation: {
-      modelId: "companion-live2d-mao-pro-v1",
-      status: "production",
-      commercialReleaseAllowed: true,
-    },
-    lipSyncParameter: "ParamA",
-    presentationMotion: MAO_PRESENTATION_MOTION,
-    emotionMotion: MAO_EMOTION_MOTION,
-    emotionExpression: MAO_EMOTION_EXPRESSION,
-    propRoles: {},
-    momentCue: MAO_MOMENT_CUE,
-    fadeInMs: 240,
-    fadeOutMs: 200,
-  },
   whale: {
     displayName: "大肥鱼",
     // IDs verified against c_0120.cdi3.json; tail and desk parts are deliberately separate.
@@ -500,27 +384,13 @@ export const WINDOW_LIVE2D_MODEL_REGISTRY: Readonly<
     // 再往下沉一档，把头顶让给天空，控制列也就能挪到盒子外侧不压到人。
     bustSinkRatio: 0.14,
   },
-  seethrough: {
-    displayName: "小彩",
-    manifest: "assets/companion/live2d-v2/seethrough/manifest.json",
-    model: "assets/companion/live2d-v2/seethrough/seethrough_output.model3.json",
-    manifestExpectation: {
-      modelId: "companion-live2d-seethrough-v2",
-      status: "development",
-      commercialReleaseAllowed: false,
-    },
-    lipSyncParameter: "ParamMouthOpenY",
-    presentationMotion: SEETHROUGH_PRESENTATION_MOTION,
-    emotionMotion: SEETHROUGH_EMOTION_MOTION,
-    emotionExpression: {},
-    propRoles: {},
-    momentCue: SEETHROUGH_MOMENT_CUE,
-    fadeInMs: 240,
-    fadeOutMs: 200,
-  },
 };
 
-/** 2026-09-20 Owner 指定：伴星默认形态是大肥鱼（mao / 小彩 仍可在设置里切换）。 */
+/**
+ * 伴星默认形态。2026-09-20 Owner 指定大肥鱼；2026-10-04 删除 mao / 小彩 后，它是
+ * 唯一在册的形态。旧版本 localStorage 里的 `mao-pro` / `seethrough` 会在这里被
+ * `isWindowLive2DModelId` 判为非法、静默回到本值，不需要单独的迁移。
+ */
 export const DEFAULT_WINDOW_LIVE2D_MODEL_ID: WindowLive2DModelId = "whale";
 
 export function isWindowLive2DModelId(value: unknown): value is WindowLive2DModelId {
@@ -664,8 +534,7 @@ const FACE_LAYER_PARAMETER_PREFIXES = [
 ] as const;
 
 export function isFaceLayerLive2DParameter(parameter: string): boolean {
-  return FACE_LAYER_PARAMETER_PREFIXES.some((prefix) => parameter.startsWith(prefix))
-    || parameter === "ParamA";
+  return FACE_LAYER_PARAMETER_PREFIXES.some((prefix) => parameter.startsWith(prefix));
 }
 
 /**
@@ -707,7 +576,7 @@ export function propParameterValuesForWindowLive2D(input: {
 type ParameterRange = { readonly min: number; readonly max: number };
 
 /**
- * Mao PRO parameter allowlist. Unknown parameters fail closed and all
+ * Companion parameter allowlist. Unknown parameters fail closed and all
  * values are clamped before reaching Cubism Core.
  */
 const PARAMETER_ALLOWLIST: Readonly<Record<string, ParameterRange>> = {
@@ -722,7 +591,6 @@ const PARAMETER_ALLOWLIST: Readonly<Record<string, ParameterRange>> = {
   ParamEyeRSmile: { min: 0, max: 1 },
   ParamMouthUp: { min: 0, max: 1 },
   ParamMouthOpenY: { min: 0, max: 1 },
-  ParamA: { min: 0, max: 1 },
 };
 
 export interface WindowLive2DParameterValue {
@@ -743,7 +611,7 @@ function clampParameter(parameter: string, value: number): WindowLive2DParameter
 /**
  * Deterministic parameter layer. Cubism motions keep ownership of choreography;
  * this layer supplies breathing, blinking, voice amplitude and the currently
- * active Mao semantic expression while the renderer is active.
+ * active semantic expression while the renderer is active.
  */
 export function parameterValuesForWindowLive2D(input: {
   readonly presentation: WindowLive2DPresentation;
@@ -752,16 +620,16 @@ export function parameterValuesForWindowLive2D(input: {
   readonly emotion?: Live2DEmotionState | null;
   /** Timestamp (same clock as `nowMs`) of the latest tool-executing impulse. */
   readonly toolAttentionAtMs?: number;
-  /** 当前模型的口型参数；缺省 = mao 的 ParamA（保持既有调用方与测试不变）。 */
+  /** 当前模型的口型参数；缺省 = 注册表里的默认形态（whale 的 `ParamMouthOpenY`）。 */
   readonly lipSyncParameter?: string;
   /**
    * 当前生效的表情**自己写了**哪些 Cubism 参数（来自表情的 exp3，见
    * `live2d-performance-catalog.ts`）。
    *
-   * 我们的逐帧参数层写在表情应用**之后**，会把表情作者好的曲线整批抹平：mao 的
-   * exp_02「笑到眯眼」（Multiply 0）、大肥鱼的 mischievous「单眼眨」（Add -1）被抹平
-   * 后就等于表情没生效——这正是用户"表情几乎没看到"的机制。表情有效期间，它写过的
-   * 参数归它；只写中性值的（Add 0 / Multiply 1）不算接管，眨眼照常。
+   * 我们的逐帧参数层写在表情应用**之后**，会把表情作者好的曲线整批抹平：大肥鱼的
+   * mischievous「单眼眨」（Add -1）被抹平后就等于表情没生效——这正是用户
+   * "表情几乎没看到"的机制。表情有效期间，它写过的参数归它；只写中性值的
+   * （Add 0 / Multiply 1）不算接管，眨眼照常。
    * 呼吸、身体摇摆和口型不放手：那是活着的证据，不是表情内容。
    */
   readonly expressionOwnedParameters?: ReadonlySet<string>;
@@ -822,7 +690,7 @@ export function parameterValuesForWindowLive2D(input: {
 
   if (input.presentation === "speak" || input.voiceLevel > 0) {
     const voiceLevel = Math.min(1, Math.max(0, input.voiceLevel));
-    const lipSyncParameter = input.lipSyncParameter ?? "ParamA";
+    const lipSyncParameter = input.lipSyncParameter ?? WINDOW_LIVE2D_MODEL_REGISTRY.whale.lipSyncParameter;
     requests.push(
       { layer: "lipsync", parameter: lipSyncParameter, value: voiceLevel },
       { layer: "lipsync", parameter: "ParamMouthUp", value: voiceLevel * 0.2 },

@@ -102,9 +102,8 @@ reasonix.toml
 apps/desktop-client/scripts/cardgen-verify/
 apps/desktop-client/scripts/graph-verify/
 apps/desktop-client/scripts/rail-graph-entry.png
-# 渲染层大图 / 模型资产（场景大图、Live2D 模型、海报、前景图）
+# 渲染层大图 / 模型资产（场景大图、海报、前景图）
 apps/desktop-client/src/renderer/public/assets/approved-v3/
-apps/desktop-client/src/renderer/public/assets/companion/live2d-v2/
 # 灯塔分层的 13 层 × 3 时段（39 张 / 10MB）：`RoomStage` 目前只用单张 poster 打底，
 # 这些层只在 manifest.json 里登记、还没有运行时消费点，所以留在本地。
 apps/desktop-client/src/renderer/public/assets/learning-room/v1/layers/home-v2/

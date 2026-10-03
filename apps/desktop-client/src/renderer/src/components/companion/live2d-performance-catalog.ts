@@ -13,8 +13,8 @@ import type {
  * 1. 表演池：除待机动作组之外的全部动作 + 表情 + 道具，洗牌袋轮播（见
  *    `WindowLive2DPerformanceRotation`）。
  * 2. 每个表情自己写了哪些参数、写成什么值。逐帧参数层（眨眼 / FACS）写在表情之后，
- *    会把表情作者好的眼睛、眉毛、嘴整批抹平——mao 的 exp_02「笑到眯眼」、大肥鱼
- *    的 happy「闭眼笑」被抹平后就等于表情没生效。表情有效期间，它写过的参数归它；
+ *    会把表情作者好的眼睛、眉毛、嘴整批抹平——大肥鱼的 mischievous「单眼眨」、
+ *    happy「闭眼笑」被抹平后就等于表情没生效。表情有效期间，它写过的参数归它；
  *    道具通道则按这些值逐帧写，所以眼镜、贴纸能穿上也能脱下。
  * 3. 每条动作演多久、动了哪些参数。喷水的 `pengshui`、自拍的 `phone` 这类整活参数
  *    待机动作不碰，演完不回位就会永久挂在身上（2026-09-20 接入时实测到），
@@ -129,8 +129,8 @@ export function parseWindowLive2DCatalog(
     expressionWrites[entry.Name] = writes;
     const owned = new Set(writes.filter((write) => !isNeutral(write)).map((write) => write.parameter));
     expressionParameters[entry.Name] = owned;
-    // 一个"什么都没写"的表情（mao 的 exp_01 全表都是中性值）演出来就是站着不动，
-    // 白占一格轮播；只丢这一类，眼睛闭上的 exp_03 那种是有内容的。
+    // 一个"什么都没写"的表情（全表都是中性值）演出来就是站着不动，
+    // 白占一格轮播；只丢这一类，真正闭着眼睛的那种是有内容的。
     if (owned.size === 0) continue;
     const prop = propNames.get(entry.Name);
     cues.push(prop

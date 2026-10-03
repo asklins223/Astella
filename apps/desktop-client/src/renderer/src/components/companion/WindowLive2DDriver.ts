@@ -832,7 +832,7 @@ export class WindowLive2DDriver {
    * 道具层：把登记表里的装饰按「穿着写资产值 / 没穿写 0」逐帧落参数。
    *
    * 只遍历这个形态**登记过**的道具（`declaredPropWrites`），不遍历全部表情：
-   * 否则大肥鱼哭时的泪痕、mao 眯眼笑的参数会被这一层按 0 抹平，等于把表情系统
+   * 否则大肥鱼哭时的泪痕会被这一层按 0 抹平，等于把表情系统
    * 又拆一遍。状态无关，所以不存在收不回去的贴纸。
    * 脸上那张表情自己写过的参数（感叹号、问号既是脸又是提醒贴纸）整条跳过，不抢。
    */
@@ -953,7 +953,7 @@ export class WindowLive2DDriver {
   }
 
   /**
-   * 情绪 → 模型自带表情（whale 走这条路；mao 映射为空，保持 FACS 参数路径）。
+   * 情绪 → 模型自带表情（映射为空时保持 FACS 参数路径）。
    * 表情是"粘性"的：pixi-live2d 会一直保留最后设置的表情，所以情绪过期时
    * 必须显式 resetExpression，否则一张脸挂到下一次情绪。
    */
@@ -973,7 +973,7 @@ export class WindowLive2DDriver {
       try {
         this.model.internalModel?.motionManager?.expressionManager?.resetExpression?.();
       } catch {
-        // 表情管理器缺失（如 mao 不声明 Expressions 时按需加载失败）是正常情况。
+        // 表情管理器缺失（模型不声明 Expressions 或按需加载失败）是正常情况。
       }
     }
   }

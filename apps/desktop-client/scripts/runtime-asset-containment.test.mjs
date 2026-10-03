@@ -4,27 +4,22 @@ import { relative, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const appRoot = resolve(import.meta.dirname, '..')
-const runtimeRoot = resolve(appRoot, 'src/renderer/public/assets/learning-room/v1')
+const publicRoot = resolve(appRoot, 'src/renderer/public')
+const runtimeRoot = resolve(publicRoot, 'assets/learning-room/v1')
 const rendererOut = resolve(appRoot, 'out/renderer')
-// 2026-09-20 多形态裁决：运行时模型 = live2d-v1/mao-pro + live2d-v2/seethrough
-// （纹理由用户 2026-09-20 恢复，哈希与 2026-09-15 导出一致）+ live2d-v3/whale。
+// 2026-10-04 Owner 裁决删除 mao / 小彩 后，运行时只剩大肥鱼一个形态。
 // `window-live2d-contract.ts` 的 WINDOW_LIVE2D_MODEL_REGISTRY 是唯一真话。
 const activeLive2dModels = [
-  {
-    sourceRoot: resolve(appRoot, 'src/renderer/public/assets/companion/live2d-v1/mao-pro/runtime'),
-    outRoot: resolve(rendererOut, 'assets/companion/live2d-v1/mao-pro/runtime'),
-    modelFile: 'mao_pro.model3.json',
-  },
-  {
-    sourceRoot: resolve(appRoot, 'src/renderer/public/assets/companion/live2d-v2/seethrough'),
-    outRoot: resolve(rendererOut, 'assets/companion/live2d-v2/seethrough'),
-    modelFile: 'seethrough_output.model3.json',
-  },
   {
     sourceRoot: resolve(appRoot, 'src/renderer/public/assets/companion/live2d-v3/whale'),
     outRoot: resolve(rendererOut, 'assets/companion/live2d-v3/whale'),
     modelFile: 'c_0120.model3.json',
   },
+]
+// 已删除的两个形态：源树与打包产物里都不得再出现，连目录带文件。
+const removedLive2dPackages = [
+  'assets/companion/live2d-v1/',
+  'assets/companion/live2d-v2/',
 ]
 const rejectedRuntimeMedia = [
   'graph-entry-fog-v1.mp4',
@@ -89,7 +84,11 @@ describe('runtime asset containment', () => {
   it('ships the restored task scene originals unchanged in renderer out', () => {
     const manifest = JSON.parse(readFileSync(resolve(runtimeRoot, 'manifest.json'), 'utf8'))
     const paths = new Set(Object.values(manifest.taskPosters).flatMap((pair) => [pair.day.path, pair.night.path]))
-    expect(paths.size).toBe(12)
+    // 六族任务场景 12 张 + 2026-10-03 登记的制卡工坊 2 张 = 14。改这张数的时候，
+    // 记得它是"登记了几族"，不是"目录里放了几张"。
+    expect(paths.size).toBe(14)
+    expect(paths.has('posters/task-scenes/card-making-atelier-day-v1.png')).toBe(true)
+    expect(paths.has('posters/task-scenes/card-making-atelier-night-v1.png')).toBe(true)
     expect(paths.has('posters/task-scenes/candidate-card-table-day-v2.png')).toBe(true)
     for (const path of paths) {
       const source = readFileSync(resolve(runtimeRoot, path))
@@ -106,12 +105,25 @@ describe('runtime asset containment', () => {
     }
     // 2026-09-16 裁决移除 orb：它不得再进入 runtime 产物。
     expect(outFiles).not.toContain('assets/learning-room/v1/objects/companion-orb.webp')
-    // 三个在役模型的源资产必须都在（v2/v3 是本会话新增，out 侧等下次构建同步）。
+    // 在役模型的源资产必须都在。
     for (const model of activeLive2dModels) {
       expect(existsSync(resolve(model.sourceRoot, model.modelFile))).toBe(true)
     }
-    expect(outFiles).toContain('assets/companion/live2d-v1/mao-pro/runtime/mao_pro.model3.json')
+    expect(outFiles).toContain('assets/companion/live2d-v3/whale/c_0120.model3.json')
     expect(outFiles).toContain('assets/companion/vendor/pixi.min.js')
+  })
+
+  it('keeps the retired Mao and Seethrough packages out of source and renderer out', () => {
+    // 两边都按 `assets/...` 相对路径比对，前缀才通用。
+    for (const boundary of [publicRoot, rendererOut]) {
+      const present = listFiles(boundary).map((file) => relative(boundary, file).split(sep).join('/'))
+      for (const removed of removedLive2dPackages) {
+        expect(
+          present.filter((file) => file.startsWith(removed)),
+          `${removed} 仍在 ${boundary} 里`,
+        ).toEqual([])
+      }
+    }
   })
 
   it('keeps every active Live2D model reference present in source', () => {
@@ -132,34 +144,27 @@ describe('runtime asset containment', () => {
     }
   })
 
-  it('keeps the bundled mao-pro runtime identical between source and renderer out', () => {
-    const mao = activeLive2dModels[0]
-    const sourceModel = JSON.parse(readFileSync(resolve(mao.sourceRoot, mao.modelFile), 'utf8'))
-    const outputModel = JSON.parse(readFileSync(resolve(mao.outRoot, mao.modelFile), 'utf8'))
+  it('keeps the bundled whale runtime identical between source and renderer out', () => {
+    const whale = activeLive2dModels[0]
+    const sourceModel = JSON.parse(readFileSync(resolve(whale.sourceRoot, whale.modelFile), 'utf8'))
+    const outputModel = JSON.parse(readFileSync(resolve(whale.outRoot, whale.modelFile), 'utf8'))
     expect(outputModel).toEqual(sourceModel)
-    expect(sourceModel.Groups).toEqual(expect.arrayContaining([
-      { Target: 'Parameter', Name: 'EyeBlink', Ids: ['ParamEyeLOpen', 'ParamEyeROpen'] },
-      { Target: 'Parameter', Name: 'LipSync', Ids: ['ParamA'] },
-    ]))
-    expect(Object.keys(sourceModel.FileReferences.Motions)).toEqual(expect.arrayContaining([
-      'Idle',
-    ]))
 
     const references = [
       sourceModel.FileReferences.Moc,
       ...sourceModel.FileReferences.Textures,
-      sourceModel.FileReferences.Physics,
-      sourceModel.FileReferences.Pose,
-      sourceModel.FileReferences.DisplayInfo,
+      ...(sourceModel.FileReferences.Physics ? [sourceModel.FileReferences.Physics] : []),
+      ...(sourceModel.FileReferences.Pose ? [sourceModel.FileReferences.Pose] : []),
+      ...(sourceModel.FileReferences.DisplayInfo ? [sourceModel.FileReferences.DisplayInfo] : []),
       ...(sourceModel.FileReferences.Expressions ?? []).map((expression) => expression.File),
-      ...Object.values(sourceModel.FileReferences.Motions).flat().map((motion) => motion.File),
+      ...Object.values(sourceModel.FileReferences.Motions ?? {}).flat().map((motion) => motion.File),
     ]
-    expect(references.filter((reference) => !existsSync(resolve(mao.sourceRoot, reference)))).toEqual([])
-    expect(references.filter((reference) => !existsSync(resolve(mao.outRoot, reference)))).toEqual([])
+    expect(references.filter((reference) => !existsSync(resolve(whale.sourceRoot, reference)))).toEqual([])
+    expect(references.filter((reference) => !existsSync(resolve(whale.outRoot, reference)))).toEqual([])
   })
 
   it('declares the whale runtime groups the driver relies on', () => {
-    const whaleRoot = activeLive2dModels.find((model) => model.modelFile === 'c_0120.model3.json').sourceRoot
+    const whaleRoot = activeLive2dModels[0].sourceRoot
     const whale = JSON.parse(readFileSync(resolve(whaleRoot, 'c_0120.model3.json'), 'utf8'))
     expect(whale.Groups).toEqual(expect.arrayContaining([
       { Target: 'Parameter', Name: 'EyeBlink', Ids: ['ParamEyeLOpen', 'ParamEyeROpen'] },

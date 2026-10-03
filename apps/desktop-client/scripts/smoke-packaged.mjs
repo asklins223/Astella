@@ -194,11 +194,20 @@ async function inspectPackagedArtifact(executable) {
   if (resurrectedStudyPack.length) {
     throw new Error(`Retired study pack re-entered app.asar: ${resurrectedStudyPack.join(', ')}`)
   }
-  // 2026-09-19 移除休眠的 seethrough 包：mao-pro 是唯一打进的 Live2D 模型。
-  const removedSeethroughModel = 'out/renderer/assets/companion/live2d-v2/seethrough/seethrough_output.model3.json'
-  if (archiveEntrySet.has(removedSeethroughModel)) throw new Error(`Removed seethrough asset still packaged: ${removedSeethroughModel}`)
+  // 2026-10-04 Owner 裁决删除 mao-pro / seethrough：大肥鱼是唯一打进的 Live2D 模型，
+  // 两个被删的包一个文件都不许留在 app.asar 里。
+  const removedLive2dPrefixes = [
+    'out/renderer/assets/companion/live2d-v1/',
+    'out/renderer/assets/companion/live2d-v2/',
+  ]
+  const repackagedRemovedLive2d = [...archiveEntrySet].filter((entry) => (
+    removedLive2dPrefixes.some((prefix) => entry.startsWith(prefix))
+  ))
+  if (repackagedRemovedLive2d.length) {
+    throw new Error(`Removed Live2D packages still packaged: ${repackagedRemovedLive2d.join(', ')}`)
+  }
   const requiredLive2dAssets = [
-    'out/renderer/assets/companion/live2d-v1/mao-pro/runtime/mao_pro.model3.json',
+    'out/renderer/assets/companion/live2d-v3/whale/c_0120.model3.json',
     'out/renderer/assets/companion/vendor/pixi.min.js',
     'out/renderer/assets/companion/vendor/live2dcubismcore.min.js',
     'out/renderer/assets/companion/vendor/cubism4.min.js',
