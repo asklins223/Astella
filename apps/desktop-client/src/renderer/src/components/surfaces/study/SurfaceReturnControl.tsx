@@ -8,6 +8,7 @@ type SurfaceReturnControlProps = {
 };
 
 export function SurfaceReturnControl({ className, label = "返回学习空间", disabled = false }: SurfaceReturnControlProps) {
+  const returnTarget = useRoomStore(state => state.returnTarget);
   const invoke = useRoomStore((state) => state.invoke);
 
   return (
@@ -15,12 +16,12 @@ export function SurfaceReturnControl({ className, label = "返回学习空间", 
       className={`surface-return-control ${className}`}
       type="button"
       disabled={disabled}
-      onClick={() => invoke("home")}
-      aria-label="关闭任务面并返回学习空间"
+      onClick={returnTarget?.run ?? (() => invoke("home"))}
+      aria-label={returnTarget?.label ?? "关闭任务面并返回学习空间"}
       data-surface-initial-focus="true"
     >
       <ArrowLeft size={17} aria-hidden="true" />
-      <span>{label}</span>
+      <span>{returnTarget?.label ?? label}</span>
     </button>
   );
 }

@@ -162,3 +162,49 @@ test("§10.4 历史搜索：命中/无命中/删除后不命中/缺 q 400", asyn
     await app.close();
   }
 });
+
+test('连续历史读取旧正文、签名分页、较早消息定位并保持用户隔离', async () => {
+  const identity = await seedIdentity();
+  const other = await seedIdentity();
+  const app = await buildApp();
+  const oldActionId = randomUUID();
+  const oldTextId = randomUUID();
+  const previousSecret = process.env.AUTH_SURFACE_MANIFEST_SECRET;
+  delete process.env.AUTH_SURFACE_MANIFEST_SECRET;
+  try {
+    await scoped(identity, async tx => {
+      await tx`UPDATE companion_messages SET created_at = CASE WHEN seq = 1 THEN '2026-09-10'::timestamptz ELSE '2026-09-11'::timestamptz END WHERE conversation_id = ${identity.conversationId}`;
+      await tx`INSERT INTO companion_messages (id,workspace_id,user_id,conversation_id,seq,role,kind,blocks,content_sha256,created_at)
+        VALUES (${oldActionId},${identity.workspaceId},${identity.userId},${identity.conversationId},3,'assistant','action',
+          '{"blocks":[{"type":"text","text":"旧记录：一次回执"}]}'::jsonb,'old-action','2026-09-08'),
+          (${oldTextId},${identity.workspaceId},${identity.userId},${identity.conversationId},4,'user','text',
+          '[{"kind":"text","text":"旧记录：一次提问"}]'::jsonb,'old-text','2026-09-09')`;
+    });
+    const headers = { authorization: 'Bearer ' + identity.token };
+    const page = await app.inject({ method: 'GET', url: '/companion/history?limit=2', headers });
+    assert.equal(page.statusCode, 200, page.body);
+    const cursor = page.json().nextCursor;
+    assert.equal(typeof cursor, 'string');
+    const older = await app.inject({ method: 'GET', url: '/companion/history?limit=2&before=' + encodeURIComponent(cursor), headers });
+    assert.equal(older.statusCode, 200, older.body);
+    assert.equal(older.json().nextCursor, null);
+    assert.deepEqual(older.json().items.map((item: { messageId: string }) => item.messageId), [oldActionId, oldTextId]);
+    assert.deepEqual(older.json().items[0].blocks, [{ type: 'text', text: '旧记录：一次回执' }]);
+    assert.deepEqual(older.json().items[1].blocks, [{ type: 'text', text: '旧记录：一次提问' }]);
+    const found = await app.inject({ method: 'GET', url: '/companion/history?throughMessageId=' + oldActionId, headers });
+    assert.equal(found.statusCode, 200, found.body);
+    assert.deepEqual(found.json().items.map((item: { messageId: string }) => item.messageId), [oldActionId]);
+    const noLeak = await app.inject({ method: 'GET', url: '/companion/history?throughMessageId=' + oldActionId, headers: { authorization: 'Bearer ' + other.token } });
+    assert.equal(noLeak.statusCode, 404);
+    const crossCursor = await app.inject({ method: 'GET', url: '/companion/history?before=' + encodeURIComponent(cursor), headers: { authorization: 'Bearer ' + other.token } });
+    assert.equal(crossCursor.statusCode, 400);
+    const forged = await app.inject({ method: 'GET', url: '/companion/history?before=' + encodeURIComponent(cursor + 'x'), headers });
+    assert.equal(forged.statusCode, 400);
+    const search = await app.inject({ method: 'GET', url: '/companion/history/search?q=' + encodeURIComponent('旧记录'), headers });
+    assert.equal(search.statusCode, 200);
+    assert.deepEqual(search.json().items.map((item: { messageId: string }) => item.messageId), [oldActionId, oldTextId]);
+  } finally {
+    if (previousSecret !== undefined) process.env.AUTH_SURFACE_MANIFEST_SECRET = previousSecret;
+    await identity.cleanup(); await other.cleanup(); await app.close();
+  }
+});

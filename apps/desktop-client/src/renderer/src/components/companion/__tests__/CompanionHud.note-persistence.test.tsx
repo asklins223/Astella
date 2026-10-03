@@ -123,17 +123,11 @@ function settings(): CompanionHudSettings {
     pageMuted: false,
     taskActive: false,
     focusUntilTaskEnd: false,
-    accountState: null,
-    accountSaving: false,
-    accountFailure: null,
-    companionModelId: DEFAULT_WINDOW_LIVE2D_MODEL_ID,
-    onCompanionModelChange: vi.fn(),
     onScale: vi.fn(),
     onTogglePageMuted: vi.fn(),
     onToggleFocus: vi.fn(),
     onHide: vi.fn(),
     onResetPosition: vi.fn(),
-    onPatchAccount: vi.fn(),
   };
 }
 

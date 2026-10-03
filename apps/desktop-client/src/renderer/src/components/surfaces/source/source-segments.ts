@@ -37,6 +37,13 @@ export function segmentText(segment: DesktopSourceSegment): string {
       return segment.text.replace(/^#{1,6}\s+/, "");
     case "quote":
       return segment.text.replace(/^>\s?/gm, "");
+    case "code": {
+      const lines = segment.text.split("\n");
+      const fence = /^\s*(`{3,}|~{3,})[^`~]*$/.exec(lines[0] ?? "");
+      if (!fence) return segment.text;
+      const closing = lines.at(-1)?.trim() ?? "";
+      return lines.slice(1, closing[0] === fence[1][0] && closing.length >= fence[1].length && [...closing].every(char => char === closing[0]) ? -1 : undefined).join("\n");
+    }
     case "image":
       return segment.text.replace(
         /^!\[([^\]]*)\]\(([^)]+)\)$/,
@@ -57,34 +64,6 @@ export function listSegment(text: string): { readonly ordered: boolean; readonly
 }
 
 /**
- * The fragment the margin note quotes and the body marks.
- *
- * Only prose can carry that mark: a heading, a list or a code block has no
- * sentence to point at, and highlighting the page's own title as "the evidence"
- * was worse than saying nothing. No prose fragment means no margin note.
- */
-export function pickFocusSegment(segments: readonly DesktopSourceSegment[]): DesktopSourceSegment | null {
-  return segments.find((segment) => segment.segmentType === "quote")
-    ?? segments.find((segment) => segment.segmentType === "paragraph" && segment.text.length > 40)
-    ?? segments.find((segment) => segment.segmentType === "paragraph")
-    ?? null;
-}
-
-/**
- * Splits the highlighted phrase off the front of a fragment. The mark is a whole
- * sentence: cutting at the first comma inside the first 34 characters marked an
- * arbitrary clause as if the source had emphasized it.
- */
-export function splitHighlight(text: string): readonly [string, string] {
-  const sentence = /[。！？!?]/.exec(text);
-  if (sentence && sentence.index >= 5 && sentence.index < 120) {
-    const end = sentence.index + 1;
-    return [text.slice(0, end), text.slice(end)];
-  }
-  return [text, ""];
-}
-
-/**
  * An empty body means four different things, and the reader has to be able to
  * tell them apart: still queued, still parsing, failed, archived, or captured
  * with no text.
@@ -96,7 +75,7 @@ export function parseStateLine(status: DesktopSourceListItem["status"]): string 
     case "processing":
       return "正在解析这份材料；完成后正文与结构会自动出现在这里。";
     case "failed":
-      return "解析没有成功完成，所以这里还没有正文；可以回到来源库重新采集这份材料。";
+      return "解析没有成功完成，所以这里还没有正文；可以重新解析这份材料。";
     case "archived":
       return "这份来源已经归档，不再出现在默认索引里；内容仍可在此阅读。";
     default:
@@ -104,7 +83,7 @@ export function parseStateLine(status: DesktopSourceListItem["status"]): string 
   }
 }
 
-/** Real counts of what parsing produced, in the order the mockup reads them. */
+/** Real counts of the fragments produced by parsing. */
 export function describeStructure(
   segments: readonly DesktopSourceSegment[],
   status: DesktopSourceListItem["status"] | undefined,
@@ -123,7 +102,7 @@ export function describeStructure(
   return breakdown.length ? `${lead}：${breakdown.join("、")}。` : `${lead}。`;
 }
 
-export function excerpt(text: string): string {
+export function excerpt(text: string, limit = 46): string {
   const trimmed = text.trim();
-  return trimmed.length > 46 ? `${trimmed.slice(0, 46)}…` : trimmed;
+  return trimmed.length > limit ? `${trimmed.slice(0, limit)}…` : trimmed;
 }

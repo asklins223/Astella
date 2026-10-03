@@ -22,6 +22,7 @@
 
 - Stable fallback posters: `posters/home-v2/lighthouse/lighthouse-{day,dusk,night}-poster-v1.png`. All three use the approved 1672 × 941 lighthouse geometry; dusk and night are lighting references, never independent layouts.
 - These three posters paint the homepage and the layer underneath task hosts. Each task host paints its own registered scene from `taskPosters`.
+- The three posters are distributed with the repository (no longer blocked by `.gitignore` since 2026-10-03): `RoomStage` paints exactly these files and the manifest carries their SHA-256. The `layers/home-v2/` pack below is what stays local.
 - Production layers: `layers/home-v2/lighthouse/`. D0 is the clean room plate, D1 is a cropped water texture, D2 contains three window-structure crops, D3 contains desk/shelf/rest furniture groups, D4 contains the telescope plus two independently masked page pieces, and D6 contains only two cropped bottom-corner occluders. D5 remains the independent Live2D and semantic-feedback layer.
 - ⚠️ 这 13 层 × 3 时段共 39 张**目前只登记在 manifest 里，尚未由 `RoomStage` 按深度带渲染**——
   房间是单张 poster 打底。`home-scene-profile.ts` 的 `LIGHTHOUSE_HOME_SCENE_PROFILE`

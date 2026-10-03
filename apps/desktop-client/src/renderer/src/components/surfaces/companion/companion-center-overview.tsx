@@ -1,16 +1,17 @@
-import { ArrowRight, MessageCircle, Sparkles } from "lucide-react";
-import type {
-  CompanionActivityTimelineV1,
-  CompanionDailySummaryV1,
-  CompanionHistoryPageV1,
-} from "@ailearn/shared/companion-memory-desktop-contracts";
-import { useMemo } from "react";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import { formatDate, formatRelative } from "../notebook/surface-data.tsx";
-import { usePageReadableView } from "../../hud/use-page-readable-view";
+import type {
+CompanionActivityTimelineV1,
+CompanionDailySummaryV1,
+CompanionHistoryPageV1,
+} from "@ailearn/shared/companion-memory-desktop-contracts";
+import { ArrowRight,BookOpen,MessageCircle,Sparkles } from "lucide-react";
+import { useMemo } from "react";
+import { plainCompanionBubbleText } from "../../companion/companion-markdown";
 import { HUD_PAGES } from "../../hud/hud-pages";
+import { usePageReadableView } from "../../hud/use-page-readable-view";
+import { formatDate,formatRelative } from "../notebook/surface-data.tsx";
 
-type Section<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly message: string };
+import { needsDeliveryResponse,type Section } from "./companion-center-model";
 
 /**
  * 概览页屏上就那几句小标题与状态字，各写一次：JSX 与登记给伴星的可读视图引用同一份
@@ -55,7 +56,7 @@ export function CompanionCenterOverview({
   const excerptText = excerpt?.type === "text" ? excerpt.text : excerpt?.type === "quote" ? excerpt.text : null;
   const pending = activity.ok
     ? activity.value.items
-        .filter((item) => !item.expired && ["queued", "delivered", "displayed"].includes(item.state))
+        .filter(needsDeliveryResponse)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     : [];
   const latestReply = history.ok
@@ -63,6 +64,7 @@ export function CompanionCenterOverview({
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
     : null;
   const latestReplyText = latestReply?.blocks.find((block) => block.type === "text");
+  const latestReplyExcerpt = latestReplyText?.type === "text" ? plainCompanionBubbleText(latestReplyText.text).split(/\n\s*\n/)[0] : null;
 
   /**
    * 这一屏登记给伴星读的是**三块此刻各自露出的那一行**（39d W2-7 最后一块）。
@@ -85,10 +87,10 @@ export function CompanionCenterOverview({
 
     if (!activity.ok) push(OVERVIEW_STATES.pendingUnavailable, OVERVIEW_TITLES.pending);
     else if (pending.length === 0) push(OVERVIEW_STATES.pendingNone, OVERVIEW_TITLES.pending);
-    else pending.slice(0, 2).forEach((item) => push(item.label, OVERVIEW_TITLES.pending));
+    else push(pending[0].label, OVERVIEW_TITLES.pending);
 
     if (!history.ok) push(OVERVIEW_STATES.recentUnavailable, OVERVIEW_TITLES.recent);
-    else if (latestReplyText?.type === "text") push(latestReplyText.text, OVERVIEW_TITLES.recent);
+    else if (latestReplyExcerpt) push(latestReplyExcerpt, OVERVIEW_TITLES.recent);
     else push(OVERVIEW_STATES.recentNone, OVERVIEW_TITLES.recent);
 
     return {
@@ -97,7 +99,7 @@ export function CompanionCenterOverview({
       ...((activity.ok && pending.length > 0) || latest?.date
         ? {
             metrics: [
-              ...(activity.ok && pending.length > 0 ? [{ label: "待回应", value: `${pending.length} 件`.slice(0, 40) }] : []),
+              ...(activity.ok && pending.length > 0 ? [{ label: "待回应", value: `${pending.length} 件提议`.slice(0, 40) }] : []),
               ...(latest?.date ? [{ label: "最近日记", value: formatDate(latest.date).slice(0, 40) }] : []),
             ],
           }
@@ -111,49 +113,20 @@ export function CompanionCenterOverview({
   }, [activity, diary, history, latest?.date, latest?.status, excerptText, pending]);
   usePageReadableView(overviewReadableView);
 
-  return <div className="companion-overview">
-    <div className="companion-overview__intro">
-      <div className="companion-overview__identity">
-        <span className="companion-overview__seal" aria-hidden="true"><Sparkles size={25} /></span>
-        <div><span className="companion-overview__eyebrow">伴星的书桌</span><h2>{companionName} 在这里</h2><p>翻翻她写下的事，或接着上次的话聊。</p></div>
-      </div>
-      <button type="button" className="companion-primary-action" onClick={onContinue}><MessageCircle size={18} aria-hidden="true" />和她聊聊<ArrowRight size={17} aria-hidden="true" /></button>
-    </div>
-
-    <div className="companion-overview__columns">
-      <section className="companion-overview__diary" aria-labelledby="companion-latest-diary-title">
-        <div className="companion-overview__section-head"><div><span className="companion-overview__section-kicker">她的手记</span><h3 id="companion-latest-diary-title">{OVERVIEW_TITLES.diary}</h3></div>{latest?.date ? <time>{formatDate(latest.date)}</time> : null}</div>
-        {!diary.ok ? <p className="companion-overview__state">{OVERVIEW_STATES.diaryUnavailable}</p>
-          : latest?.status === "generated" ? <>
-              <p className="companion-overview__excerpt-label">{OVERVIEW_TITLES.excerpt}</p>
-              {excerptText ? <p className="companion-overview__excerpt">{excerptText}</p> : <p className="companion-overview__state">{OVERVIEW_STATES.diaryImageOnly}</p>}
-              <button type="button" className="companion-text-link" onClick={() => onGo("diary")}>读完整篇<ArrowRight size={15} aria-hidden="true" /></button>
-            </>
-          : latest?.status === "failed" ? <><p className="companion-overview__state">{OVERVIEW_STATES.diaryFailed}</p><button type="button" className="companion-text-link" onClick={() => onGo("diary")}>查看原因<ArrowRight size={15} aria-hidden="true" /></button></>
-          : <><p className="companion-overview__state">{OVERVIEW_STATES.diaryNone}</p><button type="button" className="companion-text-link" onClick={() => onGo("diary")}>打开日记<ArrowRight size={15} aria-hidden="true" /></button></>}
+  return <div className="cc-overview">
+    <div className="cc-overview__greeting"><div><span className="cc-kicker">一起留下的日常</span><h3>和 {companionName} 接着聊</h3></div><button type="button" className="cc-button is-primary" onClick={onContinue}><MessageCircle size={17} aria-hidden="true" />开始交流<ArrowRight size={15} aria-hidden="true" /></button></div>
+    {activity.ok && pending.length > 0 ? <section className="cc-overview__response" aria-labelledby="companion-pending-title"><div><Sparkles size={17} aria-hidden="true" /><h3 id="companion-pending-title">{OVERVIEW_TITLES.pending}</h3><span>{pending.length} 件提议</span></div><p>{pending[0].label}</p><button type="button" className="cc-link" onClick={() => onGo("activity")}>查看提议<ArrowRight size={14} /></button></section> : null}
+    <div className="cc-overview__reading">
+      <section className="cc-overview__diary" aria-labelledby="companion-latest-diary-title"><header><BookOpen size={18} aria-hidden="true" /><h3 id="companion-latest-diary-title">{OVERVIEW_TITLES.diary}</h3>{latest?.date ? <time>{formatDate(latest.date)}</time> : null}</header>
+        {!diary.ok ? <p className="cc-overview__quiet">{OVERVIEW_STATES.diaryUnavailable}</p> : latest?.status === "generated" ? <><span className="cc-kicker">{OVERVIEW_TITLES.excerpt}</span>{excerptText ? <blockquote>{excerptText}</blockquote> : <p className="cc-overview__quiet">{OVERVIEW_STATES.diaryImageOnly}</p>}</> : <p className="cc-overview__quiet">{latest?.status === "failed" ? OVERVIEW_STATES.diaryFailed : OVERVIEW_STATES.diaryNone}</p>}
+        <button type="button" className="cc-link" onClick={() => onGo("diary")}>{latest?.status === "generated" ? "读完整篇" : latest?.status === "failed" ? "查看原因" : "翻开日记"}<ArrowRight size={15} aria-hidden="true" /></button>
       </section>
-
-      <div className="companion-overview__side">
-        <section className="companion-overview__pending" aria-labelledby="companion-pending-title">
-          <div className="companion-overview__section-head"><div><span className="companion-overview__section-kicker">留给你的便签</span><h3 id="companion-pending-title">{OVERVIEW_TITLES.pending}</h3></div>{activity.ok && pending.length > 0 ? <span>{pending.length} 件</span> : null}</div>
-          {!activity.ok ? <p className="companion-overview__state">{OVERVIEW_STATES.pendingUnavailable}</p>
-            : pending.length === 0 ? <p className="companion-overview__state">{OVERVIEW_STATES.pendingNone}</p>
-            : <ul>{pending.slice(0, 2).map((item) => <li key={item.deliveryId}><Sparkles size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul>}
-          <button type="button" className="companion-text-link" onClick={() => onGo("activity")}>{pending.length > 2 ? `查看全部 ${pending.length} 件` : "查看动态"}<ArrowRight size={15} aria-hidden="true" /></button>
-        </section>
-        <section className="companion-overview__recent" aria-labelledby="companion-recent-title">
-          <div className="companion-overview__section-head"><div><span className="companion-overview__section-kicker">接着聊</span><h3 id="companion-recent-title">{OVERVIEW_TITLES.recent}</h3></div></div>
-          {!history.ok ? <p className="companion-overview__state">{OVERVIEW_STATES.recentUnavailable}</p>
-            : latestReplyText?.type === "text" ? <><p className="companion-overview__reply">{latestReplyText.text}</p><small>{latestReply ? formatRelative(latestReply.createdAt) : null}</small></>
-            : <p className="companion-overview__state">{OVERVIEW_STATES.recentNone}</p>}
-          <button type="button" className="companion-text-link" onClick={() => onGo("dialogue")}>查看对话<ArrowRight size={15} aria-hidden="true" /></button>
-        </section>
-      </div>
+      <section className="cc-overview__conversation" aria-labelledby="companion-recent-title"><span className="cc-kicker">上一次的话题</span><h3 id="companion-recent-title">{OVERVIEW_TITLES.recent}</h3>
+        {!history.ok ? <p className="cc-overview__quiet">{OVERVIEW_STATES.recentUnavailable}</p> : latestReplyExcerpt ? <><p>{latestReplyExcerpt}</p><time>{latestReply ? formatRelative(latestReply.createdAt) : null}</time></> : <p className="cc-overview__quiet">{OVERVIEW_STATES.recentNone}</p>}
+        <button type="button" className="cc-link" onClick={() => onGo("dialogue")}>接着这段对话<ArrowRight size={15} aria-hidden="true" /></button>
+      </section>
     </div>
-
-    <div className="companion-overview__footer">
-      <span>想看看她记住了什么？</span>
-      <button type="button" className="companion-text-link" onClick={() => onGo("memory")}>打开伴星记忆<ArrowRight size={15} aria-hidden="true" /></button>
-    </div>
+    {!activity.ok ? <p className="cc-overview__quiet">{OVERVIEW_STATES.pendingUnavailable}</p> : !pending.length ? <p className="cc-overview__footnote">{OVERVIEW_STATES.pendingNone} <button type="button" className="cc-link" onClick={() => onGo("activity")}>看看最近动态<ArrowRight size={14} /></button></p> : null}
+    <button type="button" className="cc-overview__memory-link" onClick={() => onGo("memory")}><span><strong>她记住了什么</strong><small>偏好、共同经历，还有她对一些事的看法。</small></span><ArrowRight size={18} aria-hidden="true" /></button>
   </div>;
 }

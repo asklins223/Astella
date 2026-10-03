@@ -1,0 +1,19 @@
+/* The scene is owned by the room so its portalled result ceremony shares the same desk. */
+.desktop-app.hud-surface:has(.task-surface :is(.card-detail, .card-run)):not(:has(.task-surface [data-run-origin="note_round"])) {
+  --card-study-scene: url("/assets/card-study/desk-day-v1.png");
+}
+.desktop-app.hud-surface:is([data-theme="night"],[data-theme="dark"]):has(.task-surface :is(.card-detail, .card-run)):not(:has(.task-surface [data-run-origin="note_round"])) {
+  --card-study-scene: url("/assets/card-study/desk-night-v1.png");
+}
+.desktop-app.hud-surface .task-surface:has(.card-detail, .card-run):not(:has([data-run-origin="note_round"])) {
+  background-color: #c79767;
+  background-image: var(--card-study-scene);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+.desktop-app.hud-surface:has(.task-surface .card-run):not(:has(.task-surface [data-run-origin="note_round"])) > .learning-run-ceremony { background-image: linear-gradient(#293f36b5,#293f36d4),var(--card-study-scene); }
+.desktop-app.hud-surface:is([data-theme="night"],[data-theme="dark"]) .task-surface:has(.card-detail, .card-run):not(:has([data-run-origin="note_round"])) {
+  background-color: #785943;
+}
+.desktop-app.hud-surface .task-surface:has(.card-run .learning-run-result-board):not(:has([data-run-origin="note_round"])) .content { top: 75px; }

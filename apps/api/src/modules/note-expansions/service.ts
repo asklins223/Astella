@@ -14,6 +14,7 @@ import {
   noteExpansionBatchWriteResultV1Schema,
   noteExpansionDraftV1Schema,
   noteExpansionLatestTaskV1Schema,
+  noteExpansionTaskPageV1Schema,
   noteExpansionLinkV1Schema,
   noteExpansionPageV1Schema,
   noteExpansionTaskV1Schema,
@@ -236,6 +237,22 @@ export async function getLatestNoteExpansionTask(tx: ApiTransaction, scope: Note
     version: 1,
     task: job ? await taskForJob(tx, scope, noteId, job) : null,
   });
+}
+
+/** Earlier batches remain editable and confirmable; starting again only appends. */
+export async function listNoteExpansionTasks(tx: ApiTransaction, scope: NoteExpansionScopeV1, noteId: string, noteVersionId: string, before?: string) {
+  await requireVisibleNote(tx, scope, noteId);
+  const ownedTask = and(eq(jobs.workspaceId, scope.workspaceId), eq(jobs.requestedBy, scope.userId),
+    eq(jobs.type, JobType.NOTE_EXPANSION_GENERATE), sql`${jobs.payload}->>'noteId' = ${noteId}`,
+    sql`${jobs.payload}->>'noteVersionId' = ${noteVersionId}`);
+  const [cursor] = before ? await tx.select().from(jobs).where(and(ownedTask, eq(jobs.id, before))).limit(1) : [];
+  if (before && !cursor) throw new NoteExpansionError("task_not_found", "草稿批次位置已变化，请重新读取。");
+  const rows = await tx.select().from(jobs).where(and(ownedTask, cursor
+    ? sql`(${jobs.scheduledAt}, ${jobs.id}) < (${cursor.scheduledAt.toISOString()}::timestamptz, ${cursor.id}::uuid)` : undefined))
+    .orderBy(desc(jobs.scheduledAt), desc(jobs.id)).limit(21);
+  return noteExpansionTaskPageV1Schema.parse({ version: 1,
+    items: await Promise.all(rows.slice(0, 20).map(job => taskForJob(tx, scope, noteId, job))),
+    nextCursor: rows.length > 20 ? rows[19]!.id : null });
 }
 
 export async function updateNoteExpansionTaskDrafts(

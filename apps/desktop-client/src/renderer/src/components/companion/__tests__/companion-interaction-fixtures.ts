@@ -1,7 +1,6 @@
 import { vi } from "vitest";
 import type { CompanionChatSession, CompanionProposalUiState } from "../../../app/companion-chat-session";
 import type { CompanionHudSettings } from "../CompanionHud";
-import { DEFAULT_WINDOW_LIVE2D_MODEL_ID } from "../window-live2d-contract";
 
 export function interactionSession(overrides: Partial<CompanionChatSession> = {}): CompanionChatSession {
   return {
@@ -22,9 +21,8 @@ export function interactionSession(overrides: Partial<CompanionChatSession> = {}
 export function interactionSettings(): CompanionHudSettings {
   return {
     scale: 1, scaleMin: .7, scaleMax: 1.3, pageMuted: false, taskActive: false, focusUntilTaskEnd: false,
-    accountState: null, accountSaving: false, accountFailure: null, companionModelId: DEFAULT_WINDOW_LIVE2D_MODEL_ID,
-    onCompanionModelChange: vi.fn(), onScale: vi.fn(), onTogglePageMuted: vi.fn(), onToggleFocus: vi.fn(),
-    onHide: vi.fn(), onResetPosition: vi.fn(), onPatchAccount: vi.fn(),
+    onScale: vi.fn(), onTogglePageMuted: vi.fn(), onToggleFocus: vi.fn(),
+    onHide: vi.fn(), onResetPosition: vi.fn(),
   };
 }
 

@@ -13,6 +13,7 @@ import { COMPANION_INBOX_NOTIFY_CHANNEL } from "../../../lib/companion-notify.ts
 import type { AssistantDeliveryKindV2, AssistantDeliveryV2 } from "@ailearn/shared";
 import { DomainError } from "@ailearn/shared";
 import { clampLimit } from "../../../lib/pagination-utils.ts";
+import { evaluateStaleAfterResume } from "@ailearn/shared/companion-proactive-quota";
 
 export interface DeliveryScope {
   workspaceId: string;
@@ -297,8 +298,6 @@ function dropStaleAmbientOnResume(
   rows: (typeof assistantDeliveries.$inferSelect)[],
   now: Date,
 ): AssistantDeliveryV2[] {
-  const { evaluateStaleAfterResume } = require("@ailearn/shared/companion-proactive-quota") as
-    typeof import("@ailearn/shared/companion-proactive-quota");
   const ageMs = (createdAt: Date): number => now.getTime() - new Date(createdAt).getTime();
   // delivery 侧不存"这是哪一类主动消息"，所以按**有没有文案**分：
   // 带 text 的是她"自己想开口"的那一类（普通招呼/过时感想/日记更新），

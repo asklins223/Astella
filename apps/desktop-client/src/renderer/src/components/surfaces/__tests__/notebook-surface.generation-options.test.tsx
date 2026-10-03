@@ -2,7 +2,9 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
 import { NotebookSurface } from "../notebook/notebook-surface.tsx";
+import * as liveDocument from "../notebook/use-note-doc-live-view.ts";
 import { useRoomStore } from "../../../app/room-store.ts";
 
 /**
@@ -17,7 +19,7 @@ const VERSION_ID = "22222222-2222-4222-8222-222222222222";
 const RUN_ID = "aaaaaaa1-1111-4111-8111-111111111111";
 const PREVIOUS_RUN_ID = "bbbbbbb2-2222-4222-8222-222222222222";
 
-function stubGateway(latestRunStatus: string | null) {
+function stubGateway(latestRunStatus: string | null, runVersionId = VERSION_ID) {
   const state = { startRequests: [] as unknown[] };
   const gateway = {
     contract: { enabledRoutes: ["note.detail", "note.cardGeneration"] },
@@ -59,18 +61,19 @@ function stubGateway(latestRunStatus: string | null) {
                 version: 1,
                 runId: PREVIOUS_RUN_ID,
                 noteId: NOTE_ID,
-                noteVersionId: VERSION_ID,
+                noteVersionId: runVersionId,
                 status: latestRunStatus,
                 cardContentEpoch: 1,
                 currentPlanVersion: 1,
                 reviewDraftRevision: 1,
                 sourceOutdated: false,
-                sourceRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID },
+                sourceRef: { noteId: NOTE_ID, noteVersionId: runVersionId },
                 recovery: null,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
               },
             })),
+        close: vi.fn(async () => ({ ok: true as const, workspaceEpoch: 1, data: { runId: PREVIOUS_RUN_ID, status: "closed_without_activation", reviewDraftRevision: 2 } })),
         start: vi.fn(async (input: { request: unknown }) => {
           state.startRequests.push(input.request);
           return { ok: true as const, workspaceEpoch: 1, data: { runId: RUN_ID } };
@@ -99,6 +102,7 @@ function stubGateway(latestRunStatus: string | null) {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   useRoomStore.setState({ activeNoteRef: null, recentNoteId: null, surface: null, returnTarget: null, activeCardGenerationRunId: null });
 });
 
@@ -108,7 +112,7 @@ afterEach(() => {
  */
 async function openSettings() {
   fireEvent.click(await waitFor(() => screen.getByRole("button", { name: "调整这次" })));
-  await waitFor(() => expect(screen.getByRole("dialog", { name: "安排这次出题" })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole("dialog", { name: "这次想怎么练？" })).toBeTruthy());
 }
 
 describe("NotebookSurface · 生成参数与反馈重生成", () => {
@@ -119,12 +123,13 @@ describe("NotebookSurface · 生成参数与反馈重生成", () => {
 
     await openSettings();
     fireEvent.click(screen.getByRole("button", { name: "应用" }));
+    fireEvent.click(screen.getByText("微调这叠卡").closest("summary")!);
     fireEvent.click(screen.getByRole("button", { name: "深入" }));
     fireEvent.click(screen.getByRole("button", { name: "4 张" }));
     // 默认全选题型（= 交给 planner 按知识形态分配），点一下即取消该题型。
     fireEvent.click(screen.getByRole("button", { name: "对比辨析" }));
 
-    expect(screen.getByText(/这些是每张卡的思考策略/)).toBeTruthy();
+    expect(screen.getByText("系统会按笔记内容挑选；关掉某一种，这次就不用它。")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "开始生成" }));
     await waitFor(() => expect(state.startRequests).toHaveLength(1));
     expect(state.startRequests[0]).toMatchObject({
@@ -143,7 +148,8 @@ describe("NotebookSurface · 生成参数与反馈重生成", () => {
     render(<NotebookSurface />);
 
     await openSettings();
-    await waitFor(() => expect(screen.getByText(/上次生成已结束，没有保存到卡组/)).toBeTruthy());
+    fireEvent.click(screen.getByText("让这次更合心意").closest("summary")!);
+    await waitFor(() => expect(screen.getByText(/上次已结束，没有保存到卡组/)).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: "卡片太多" }));
     fireEvent.change(screen.getByLabelText("重新生成的补充说明"), { target: { value: "最多 5 张" } });
@@ -169,12 +175,13 @@ describe("NotebookSurface · 生成参数与反馈重生成", () => {
     render(<NotebookSurface />);
     await waitFor(() => expect(document.querySelector(".notebook-workspace[data-mode=\"live-preview\"]")).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: "调整这次" }));
-    await waitFor(() => expect(screen.getByRole("dialog", { name: "安排这次出题" })).toBeTruthy());
+    await openSettings();
+    fireEvent.click(screen.getByRole("button", { name: "关闭生成方案" }));
 
     fireEvent.click(screen.getByRole("button", { name: "版本历史" }));
     await waitFor(() => expect(screen.getByLabelText("笔记版本历史")).toBeTruthy());
     expect(screen.getByText(/还没有可列出的版本/)).toBeTruthy();
+    expect(document.querySelector(".notebook-workspace[data-mode=\"live-preview\"]")).toBeTruthy();
   });
 
   it("没有生成记录时不显示反馈区，也不带 feedbackContext", async () => {
@@ -183,11 +190,66 @@ describe("NotebookSurface · 生成参数与反馈重生成", () => {
     render(<NotebookSurface />);
 
     await openSettings();
-    expect(screen.queryByText(/针对上次/)).toBeNull();
+    expect(screen.queryByText("让这次更合心意")).toBeNull();
     expect(screen.queryByRole("button", { name: "卡片太多" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "开始生成" }));
     await waitFor(() => expect(state.startRequests).toHaveLength(1));
     expect((state.startRequests[0] as { feedbackContext?: unknown }).feedbackContext).toBeUndefined();
+  });
+});
+
+
+describe("笔记改版后的学习卡入口", () => {
+  it.each(["review_ready", "authoring"])("正文已同步但尚未保存版本时，%s 不覆盖新正文入口", async status => {
+    const { state, gateway } = stubGateway(status);
+    const fragment = new Y.Doc().getXmlFragment("note");
+    const useLiveDocument = liveDocument.useNoteDocLiveView;
+    vi.spyOn(liveDocument, "useNoteDocLiveView").mockImplementation((...args) => ({
+      ...useLiveDocument(...args),
+      fragment,
+      title: "提取练习笔记",
+      blocks: [{ ordinal: 1, type: "paragraph", content: "已经同步的新正文，还没有保存为版本" }],
+      dirty: false,
+    }));
+    useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
+    render(<NotebookSurface />);
+    const start = await screen.findByRole<HTMLButtonElement>("button", { name: "生成学习卡" });
+    expect(screen.getByRole("button", { name: "查看旧版生成" })).toBeTruthy();
+    if (status === "authoring") {
+      expect(start.disabled).toBe(true);
+      expect(start.title).toContain("先查看旧版进度并停止");
+    } else {
+      fireEvent.click(start);
+      expect(await screen.findByRole("dialog", { name: "这次想怎么练？" })).toBeTruthy();
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: "开始生成" }).disabled).toBe(true);
+    }
+    expect(state.startRequests).toHaveLength(0);
+    expect(gateway.note.cardGeneration.close).not.toHaveBeenCalled();
+  });
+
+  it.each(["cancelled", "activated", "review_ready"])("旧版的 %s 任务不覆盖当前正文的生成入口", async status => {
+    const { state, gateway } = stubGateway(status, "old-note-version");
+    useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
+    render(<NotebookSurface />);
+    const start = await screen.findByRole("button", { name: "生成学习卡" });
+    expect(screen.getByRole("button", { name: "查看旧版生成" })).toBeTruthy();
+    fireEvent.click(start);
+    await waitFor(() => expect(state.startRequests).toHaveLength(1));
+    expect(state.startRequests[0]).toMatchObject({ noteVersionId: VERSION_ID });
+    expect(gateway.note.cardGeneration.close).toHaveBeenCalledTimes(status === "review_ready" ? 1 : 0);
+    expect(useRoomStore.getState().activeCardGenerationRunId).toBe(RUN_ID);
+  });
+
+  it("旧版还在运行时说明先停止，查看旧版仍能打开真实任务", async () => {
+    const { state } = stubGateway("authoring", "old-note-version");
+    useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
+    render(<NotebookSurface />);
+    const start = await screen.findByRole<HTMLButtonElement>("button", { name: "生成学习卡" });
+    expect(start.disabled).toBe(true);
+    expect(start.title).toContain("先查看旧版进度并停止");
+    fireEvent.click(screen.getByRole("button", { name: "查看旧版生成" }));
+    expect(state.startRequests).toHaveLength(0);
+    expect(useRoomStore.getState().activeCardGenerationRunId).toBe(PREVIOUS_RUN_ID);
   });
 });

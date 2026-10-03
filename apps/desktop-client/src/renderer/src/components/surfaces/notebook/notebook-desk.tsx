@@ -1,14 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { ArrowLeft, ArrowUpRight, Code2, Eye, ListTree, MoreHorizontal, PencilLine, Pin, PinOff, RotateCcw, ScanText, X } from "lucide-react";
+import { BookOpen, Code2, Eye, History, Lightbulb, ListTree, MoreHorizontal, PencilLine, Pin, PinOff, ScanText, Sprout, X } from "lucide-react";
 import { NOTE_BODY_MODES, type NoteBodyMode } from "./note-document-mode";
 import type { NoteOutlineEntry } from "./note-outline";
 import { useNotebookPageTurn, useNotebookPaperMotion, useNotebookPaperPresence } from "./use-notebook-paper-motion";
+import { useNotebookTouch } from "./use-notebook-touch";
 
 const modeIcons = { preview: Eye, "live-preview": PencilLine, source: Code2 };
 const learningTabs = [
-  { kind: "overview", label: "速看", Icon: ScanText },
-  { kind: "recall", label: "回想", Icon: RotateCcw },
-  { kind: "expansion", label: "往外学", Icon: ArrowUpRight },
+  { kind: "overview", label: "速看", detail: "读懂重点", Icon: ScanText },
+  { kind: "recall", label: "回想", detail: "想起一点", Icon: Lightbulb },
+  { kind: "expansion", label: "往外学", detail: "发现关联", Icon: Sprout },
 ] as const;
 export type NotebookLearningView = "body" | "overview" | "recall" | "artifact";
 export type NotebookSidePage = {
@@ -34,6 +35,7 @@ type Props = {
   readonly learningView: NotebookLearningView | "expansion" | "history" | "learning";
   readonly onLearning: (kind: "overview" | "recall" | "expansion") => void;
   readonly onBody: () => void;
+  readonly onHistory?: () => void;
   readonly tools: ReactNode;
   readonly primaryAction: ReactNode;
   readonly taskActions: ReactNode;
@@ -51,6 +53,8 @@ export function NotebookDesk(props: Props) {
   const [pinned, setPinned] = useState(false);
   const [compact, setCompact] = useState(true);
   const spreadRef = useRef<HTMLDivElement | null>(null);
+  const deskRef = useRef<HTMLDivElement | null>(null);
+  useNotebookTouch(deskRef);
   const [currentBlock, setCurrentBlock] = useState(0);
   const drawerRef = useRef<HTMLDetailsElement>(null);
   const sideTriggerRef = useRef<HTMLElement | null>(null);
@@ -62,7 +66,7 @@ export function NotebookDesk(props: Props) {
   const indexPaper = useNotebookPaperPresence(showDirectory ? true : null, "index", "index", play);
   const sidePaper = useNotebookPaperPresence(props.sidePage, props.sidePage?.kind ?? "", "side", play);
   const pageRef = useRef<HTMLDivElement | null>(null);
-  useNotebookPageTurn(pageRef, `${props.noteId}:${props.learningView}`, play);
+  useNotebookPageTurn(pageRef, `${props.noteId}:${props.learningView}:${props.mode}`, play);
   const editingBody = props.learningView === "body" && props.mode !== "preview";
   const context = props.learningView === "body"
     ? props.mode === "preview" ? "正在阅读" : props.mode === "source" ? "Markdown 源码" : "正在编辑"
@@ -77,7 +81,7 @@ export function NotebookDesk(props: Props) {
   useEffect(() => {
     const spread = spreadRef.current;
     if (!spread || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([entry]) => setCompact(entry.contentRect.width <= 830));
+    const observer = new ResizeObserver(([entry]) => setCompact(entry.contentRect.width <= 1050));
     observer.observe(spread);
     return () => observer.disconnect();
   }, []);
@@ -90,8 +94,8 @@ export function NotebookDesk(props: Props) {
     if (showDirectory && (!directoryWasOpen.current || document.activeElement?.closest("[hidden], [inert]"))) {
       indexPaper.ref.current?.querySelector<HTMLElement>('[aria-current="location"]')?.focus({ preventScroll: true });
       directoryWasOpen.current = true;
-    } else if (!indexPaper.value && directoryWasOpen.current) {
-      if (!sidePaper.value) restoreFocus(directoryTriggerRef.current);
+    } else if (!showDirectory && directoryWasOpen.current) {
+      if (!props.sidePage) restoreFocus(directoryTriggerRef.current);
       directoryWasOpen.current = false;
     }
   }, [showDirectory, Boolean(indexPaper.value), Boolean(sidePaper.value), compact]);
@@ -100,11 +104,11 @@ export function NotebookDesk(props: Props) {
       if (!sideWasOpen.current && document.activeElement instanceof HTMLElement) sideTriggerRef.current = document.activeElement;
       sideWasOpen.current = true;
       sidePaper.ref.current?.focus({ preventScroll: true });
-    } else if (!sidePaper.value && sideWasOpen.current) {
+    } else if (!props.sidePage && sideWasOpen.current) {
       restoreFocus(sideTriggerRef.current);
       sideTriggerRef.current = null; sideWasOpen.current = false;
     }
-  }, [Boolean(sidePaper.value), props.sidePage?.kind, props.sidePage?.title, compact]);
+  }, [Boolean(props.sidePage), Boolean(sidePaper.value), props.sidePage?.kind, props.sidePage?.title, compact]);
 
   useEffect(() => {
     const scroll = props.scrollRef.current;
@@ -129,16 +133,25 @@ export function NotebookDesk(props: Props) {
     if (!pinned || compact) setDirectoryOpen(false);
   };
 
-  return <div className="notebook-desk" data-mode={props.mode} data-view={props.learningView} data-compact={compact} data-margin-open={indexPaper.value ? "directory" : sidePaper.value ? "side" : undefined}>
+  const coveringPage = compact && Boolean(showDirectory || props.sidePage);
+  return <div className="notebook-desk" ref={deskRef} data-mode={props.mode} data-view={props.learningView} data-compact={compact} data-margin-open={indexPaper.value ? "directory" : sidePaper.value ? "side" : undefined}>
       <nav className="notebook-volume__bookmarks" aria-label="笔记学习">
-        {learningTabs.map(({ kind, label, Icon }) => <button key={kind} type="button" className="text-action notebook-volume__bookmark"
-          data-learning={kind} aria-pressed={props.learningView === kind} onClick={() => props.onLearning(kind)}>
-          <Icon size={17} aria-hidden="true" /><span>{label}</span>
+        <button type="button" className="text-action notebook-volume__bookmark" data-learning="body" aria-pressed={props.learningView === "body"} onClick={props.onBody}>
+          <BookOpen size={18} aria-hidden="true" /><span>正文</span>
+        </button>
+        {learningTabs.map(({ kind, label, detail, Icon }) => <button key={kind} type="button" className="text-action notebook-volume__bookmark"
+          data-learning={kind} aria-label={label} title={`${label} · ${detail}`} aria-pressed={props.learningView === kind} onClick={() => props.onLearning(kind)}>
+          <Icon size={18} aria-hidden="true" /><span>{label}<small aria-hidden="true">{detail}</small></span>
         </button>)}
+        {props.onHistory ? <button type="button" className="text-action notebook-volume__bookmark" data-learning="history" aria-label="学习记录" aria-pressed={props.learningView === "history"} onClick={props.onHistory}>
+          <History size={18} aria-hidden="true" /><span>记录</span>
+        </button> : null}
       </nav>
 
     <section className="notebook-volume" aria-label="笔记册页">
       <div className="notebook-desk__spread" ref={spreadRef}>
+        {coveringPage ? <button type="button" className="notebook-desk__veil" aria-label="合起旁页，回到正文" tabIndex={-1}
+          onClick={() => { if (props.sidePage) props.sidePage.onClose(); else setDirectoryOpen(false); }} /> : null}
         {indexPaper.value ? <aside id="notebook-directory" className="notebook-desk__index" aria-label="笔记目录" ref={indexPaper.ref} tabIndex={-1} inert={indexPaper.closing} aria-hidden={indexPaper.closing || undefined}
           onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setDirectoryOpen(false); } }}>
           <header className="notebook-desk__index-head">
@@ -157,19 +170,20 @@ export function NotebookDesk(props: Props) {
           <div className="notebook-desk__index-foot">笔记 v{props.version}<span>{props.outline.find((entry) => entry.block === currentBlock)?.title ?? "正在读 · 开篇"}</span></div>
         </aside> : null}
 
-        <div className="notebook-volume__leaf" hidden={compact && Boolean(indexPaper.value || sidePaper.value)}>
+        <div className="notebook-volume__leaf" inert={coveringPage} aria-hidden={coveringPage || undefined}>
           <nav className="notebook-desk__rack" aria-label="笔记工具">
             {props.learningView === "body" ? <div className="notebook-desk__modes" role="group" aria-label="正文视图">
               <button type="button" className="text-action notebook-desk__directory-toggle" ref={directoryTriggerRef} aria-label="目录" title="目录" aria-expanded={showDirectory} aria-controls="notebook-directory"
                 onClick={() => { if (!showDirectory) props.onOpenDirectory(); setDirectoryOpen(!showDirectory); }}><ListTree size={18} aria-hidden="true" /></button>
+              <div className="notebook-desk__mode-switch" data-mode={props.mode}>
               {NOTE_BODY_MODES.map(({ id, label }) => {
                 const Icon = modeIcons[id];
                 return <button key={id} type="button" className="text-action notebook-desk__mode" aria-pressed={props.mode === id}
                   disabled={id !== "preview" && !props.canEdit} title={id !== "preview" && !props.canEdit ? "当前身份只能阅读这篇笔记" : label}
                   onMouseDown={(event) => event.preventDefault()} onClick={() => props.onMode(id)}><Icon size={15} aria-hidden="true" /><span>{label}</span></button>;
               })}
+              </div>
             </div> : <div className="notebook-volume__trail">
-              <button type="button" className="text-action notebook-volume__return" onClick={props.onBody}><ArrowLeft size={15} aria-hidden="true" />正文</button>
               <span title={props.noteTitle}>{props.noteTitle}</span>
             </div>}
             <div className="notebook-desk__utilities">

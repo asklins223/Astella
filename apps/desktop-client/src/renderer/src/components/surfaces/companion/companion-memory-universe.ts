@@ -1,16 +1,16 @@
 import type {
-  CompanionMemoryItemV1,
-  CompanionMemoryStarMapV2,
-  CompanionMemoryEntityTargetV2,
+CompanionMemoryEntityTargetV2,
+CompanionMemoryItemV1,
+CompanionMemoryStarMapV2,
 } from "@ailearn/shared/companion-memory-desktop-contracts";
 import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
 import {
-  createUniverseLayout,
-  normalizeUnderstandingGraph,
-  type GraphEdge,
-  type GraphNode,
-  type UnderstandingGraph,
-  type UniverseLayout,
+createUniverseLayout,
+normalizeUnderstandingGraph,
+type GraphEdge,
+type GraphNode,
+type UnderstandingGraph,
+type UniverseLayout,
 } from "../space/understanding-universe-data.ts";
 
 export type CompanionUniverseNodeRole = "memory" | "entity";

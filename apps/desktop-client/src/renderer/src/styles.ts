@@ -20,7 +20,7 @@
  * 1. **基底** `styles.css` —— reset、旧 token 的别名、全局 `button/input` 的
  *    `font: inherit` 与那条唯一的焦点环。它含裸元素选择器，**必须最先**。
  * 2. **母本** `hud/hud-pages.css` —— V3.1 视觉母本：`.button`、`.tag`、`.task-title`、
- *    纸面与圆角配方。`DESIGN.md` 指定的「唯一视觉依据」。
+ *    纸面与圆角参考。功能域可以依据当前用户体验重新组织版式。
  * 3. **集成层** `hud/hud-surface.css` 等 —— 逐轮追加的宿主级规则，**排在母本之后**
  *    （它就是靠这个顺序覆盖母本的）。
  * 4. **修正层与功能层** —— 各自覆盖集成层；`objective-flow.css` 与母本的关系由
@@ -32,6 +32,7 @@
 /* ── 1. 基底 ────────────────────────────────────────────────────────────── */
 import "./styles.css";
 import "@milkdown/kit/prose/view/style/prosemirror.css";
+import "katex/dist/katex.min.css";
 import "./components/home-room.css";
 
 /* ── 2. 视觉母本 ────────────────────────────────────────────────────────── */
@@ -42,6 +43,7 @@ import "./components/hud/hud-pages.css";
 import "./components/hud/hud-surface.css";
 import "./components/hud-surface.css";
 import "./components/hud/hud-controls.css";
+import "./components/hud/hud-control-bubbles.css";
 import "./components/source-intake.css";
 
 /* ── 4a. 修正层：覆盖集成层 ─────────────────────────────────────────────
@@ -50,16 +52,32 @@ import "./components/source-intake.css";
    `hud-surface.css` 自己更早处的规则。 */
 import "./components/objective-flow.css";
 import "./components/card-generation-flow.css";
-import "./components/surfaces/review/candidate-review.css";
 import "./components/surfaces/companion-center.css";
+import "./components/surfaces/settings/settings-companion.css";
+import "./components/surfaces/settings/settings-book.css";
 
 /* ── 4b. 功能层：各页面自己的版式 ───────────────────────────────────────── */
 import "./components/surfaces/note-hud.css";
 import "./components/surfaces/notebook/note-document.css";
 import "./components/surfaces/notebook/notebook-desk.css";
+import "./components/surfaces/notebook/note-library.css";
 import "./components/surfaces/notebook/notebook-learning-pages.css";
+import "./components/surfaces/notebook/card-making-note.css";
+import "./components/surfaces/source/source-experience.css";
 import "./components/surfaces/understanding-universe.css";
 import "./components/surfaces/study-surface.css";
+import "./components/surfaces/study/search-desk.css";
+import "./components/surfaces/review/card-experience.css";
+import "./components/surfaces/library/card-packs.css";
+import "./components/surfaces/library/card-detail.css";
+import "./components/surfaces/review/card-making-workshop.css";
+/* The review desk refines collection controls after their shared defaults. */
+import "./components/surfaces/review/candidate-review.css";
+import "./components/surfaces/review/review-queue.css";
+import "./components/surfaces/run/learning-run-experience.css";
+import "./components/surfaces/run/learning-run-room.css";
+import "./components/surfaces/run/card-learning-room.css";
+import "./components/surfaces/library/card-study-scene.css";
 import "./components/home-v2/home-v2.css";
 import "./components/desktop-access-gate.css";
 import "./components/render-error-boundary.css";

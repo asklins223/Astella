@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // 2026-09-30：伴星这一族已变成**自由函数**（`desktop-gateway-ns-companion.ts`），
 // `desktop-ipc.ts` 静态引用那个模块——**在网关实例上挂的桩不再被调用**。
@@ -54,10 +57,14 @@ const electronMock = vi.hoisted(() => {
     handle: vi.fn((channel: string, handler: InvokeHandler) => {
       handlers.set(channel, handler);
     }),
+    downloadsPath: "",
+    showSaveDialog: vi.fn(),
   };
 });
 
 vi.mock("electron", () => ({
+  app: { getPath: () => electronMock.downloadsPath },
+  dialog: { showSaveDialog: electronMock.showSaveDialog },
   BrowserWindow: class BrowserWindow {},
   ipcMain: { handle: electronMock.handle, on: vi.fn() },
 }));
@@ -226,6 +233,44 @@ function sessionStub() {
 }
 
 describe("companion centre desktop IPC", () => {
+  it("导出通道校验实际范围和纪元，直接保存副本，不打开系统保存对话框", async () => {
+    electronMock.downloadsPath = await mkdtemp(join(tmpdir(), "companion-export-ipc-"));
+    try {
+      const openExport = companionStubs.openCompanionExport = vi.fn().mockResolvedValue(new Response('{"记忆":[]}'));
+      const gateway = { getDeploymentConfig: () => undefined, getSession: registerAuthStub("getSession", vi.fn()).mockResolvedValue(sessionStub()) } as unknown as DesktopGateway;
+      await register(gateway);
+      await requiredHandler(DESKTOP_IPC_CHANNELS.authGetState)(event, { meta });
+      const result = await requiredHandler(DESKTOP_IPC_CHANNELS.companionDataExport)(event, { meta: scopedMeta, kind: "memory" });
+      expect(result).toMatchObject({ ok: true, workspaceEpoch: 9, data: { saved: true, canceled: false, bytes: Buffer.byteLength('{"记忆":[]}') } });
+      expect(openExport.mock.calls[0].slice(1)).toEqual(["memory", meta.requestId]);
+      if (!result.ok) throw new Error("export failed");
+      const receipt = result.data as { fileName: string };
+      expect(await readFile(join(electronMock.downloadsPath, "理解书房", "伴星", receipt.fileName), "utf8")).toBe('{"记忆":[]}');
+      expect(electronMock.showSaveDialog).not.toHaveBeenCalled();
+      const invalid = await requiredHandler(DESKTOP_IPC_CHANNELS.companionDataExport)(event, { meta: scopedMeta, kind: "unknown" });
+      expect(invalid).toMatchObject({ ok: false });
+      expect(openExport).toHaveBeenCalledOnce();
+    } finally { await rm(electronMock.downloadsPath, { recursive: true, force: true }); }
+  });
+
+  it("导出中切换书房不会保存旧书房文件，错误要求重新同步", async () => {
+    electronMock.downloadsPath = await mkdtemp(join(tmpdir(), "companion-export-epoch-"));
+    try {
+      let resolveExport!: (response: Response) => void;
+      companionStubs.openCompanionExport = vi.fn().mockReturnValue(new Promise<Response>(resolve => { resolveExport = resolve; }));
+      const getSession = registerAuthStub("getSession", vi.fn()).mockResolvedValue(sessionStub());
+      await register({ getDeploymentConfig: () => undefined, getSession } as unknown as DesktopGateway);
+      await requiredHandler(DESKTOP_IPC_CHANNELS.authGetState)(event, { meta });
+      const operation = requiredHandler(DESKTOP_IPC_CHANNELS.companionDataExport)(event, { meta: scopedMeta, kind: "all" });
+      await vi.waitFor(() => expect(companionStubs.openCompanionExport).toHaveBeenCalledOnce());
+      getSession.mockResolvedValue({ ...sessionStub(), workspaceEpoch: 10, workspace: { ...sessionStub().workspace, workspaceEpoch: 10 } });
+      await requiredHandler(DESKTOP_IPC_CHANNELS.authGetState)(event, { meta });
+      resolveExport(new Response("{}\n"));
+      expect(await operation).toMatchObject({ ok: false, error: { code: "stale_workspace", retry: "resync_first" } });
+      expect(await readdir(join(electronMock.downloadsPath, "理解书房", "伴星"))).toEqual([]);
+    } finally { await rm(electronMock.downloadsPath, { recursive: true, force: true }); }
+  });
+
   it("reads the four record families through typed, validated channels", async () => {
     const gateway = {
       getDeploymentConfig: () => undefined,

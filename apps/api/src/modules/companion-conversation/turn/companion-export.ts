@@ -1,3 +1,4 @@
+import { readStoredCompanionBlocks } from "./message-blocks.ts";
 /**
  * P2 companion export（03 §12 NDJSON）。
  *
@@ -217,7 +218,7 @@ export async function exportCompanionDataStream(
               seq: Number(m.seq),
               role: m.role,
               kind: m.kind,
-              blocks: m.blocks,
+              blocks: readStoredCompanionBlocks(m.blocks),
               runId: m.runId,
               clientMessageId: m.clientMessageId,
               contentSha256: m.contentSha256,

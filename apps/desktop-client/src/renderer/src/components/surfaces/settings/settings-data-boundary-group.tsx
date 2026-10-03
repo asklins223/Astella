@@ -34,6 +34,7 @@ export function SettingsDataBoundaryGroup(props: {
   };
   readonly onSavePolicy: (patch: Partial<AiDataPolicyV1>, field: string) => Promise<void>;
   readonly loadAuditPage: (offset: number) => void;
+  readonly auditPageSize: number;
   readonly formatWhen: (value: string) => string;
 }): ReactElement {
   const {
@@ -98,6 +99,7 @@ export function SettingsDataBoundaryGroup(props: {
           title={auditPagingLine}
           detail="更早的记录按时间往前列。"
         >
+          {auditOffset > 0 ? <button type="button" className="button" disabled={auditBusy} onClick={() => void loadAuditPage(Math.max(0, auditOffset - props.auditPageSize))}>较新的记录</button> : null}
           {auditOffset + auditPage.items.length < auditPage.total ? (
             <button
               type="button"

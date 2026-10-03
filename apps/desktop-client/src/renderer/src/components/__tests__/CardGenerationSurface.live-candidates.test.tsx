@@ -211,6 +211,22 @@ describe("生成中的那一屏：已经写好的卡要一张张出现", () => {
     expect(screen.queryByText("没过证据这一关")).toBeNull();
   });
 
+  it("候选列表先更新、任务读数仍是零时，题面、计数和进度描述保持一致", async () => {
+    stubGateway({
+      status: "planning",
+      rows: LANDED.map((row, index) => ({ ...row, qualityState: index ? "passed" : "authored" })),
+      progress: { plannedCards: 6, authored: 0, gatePassed: 0, gateFailed: 0 },
+    });
+    renderSurface();
+
+    await waitFor(() => expect(screen.getAllByTestId("card-generation-landing-item")).toHaveLength(2));
+    expect(screen.getByText("已写出 2 / 6 张候选")).toBeTruthy();
+    expect(screen.queryByText("已写出 0 / 6 张候选")).toBeNull();
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("2");
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuetext")).toBe("已写出 2 / 6 张候选，通过核对 1 张");
+    expect(screen.getByText("通过核对").closest("div")?.textContent).toContain("1 张");
+  });
+
   it("planning 阶段一张都还没有 → 不亮空壳，也不报\"已写好 0 张\"", async () => {
     stubGateway({ status: "planning", rows: [], progress: { plannedCards: 6, authored: 0, gatePassed: 0, gateFailed: 0 } });
     renderSurface();

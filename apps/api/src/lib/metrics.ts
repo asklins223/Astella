@@ -295,17 +295,79 @@ export const dbMigrationVersion = new Gauge({
   registers: [registry],
 });
 
-/** 数据库连接池活跃连接数 gauge */
+/**
+ * 本进程连接池的活跃连接数 gauge（2026-10-03 修正口径）。
+ *
+ * 此前这个 gauge 叫 `ailearn_db_pool_active_connections`、help 写的是
+ * "Active database connections in the pool"，取数却是一条
+ * `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()`
+ * ——那是**全库所有进程**的连接数，API 和 worker 挤在同一个数字里。
+ * 实测压测全程它显示 13 而真实池占用是 26/25，且 30 秒才刷一次，
+ * 5~6 秒的一轮压测根本读不到变化。
+ *
+ * 现在取数按 `application_name = 'ailearn_api'` 过滤（见 db/client.ts 里给连接池
+ * 配的 application_name），并由 dbGaugeTimer 每 5 秒刷新一次，所以"池打满"
+ * 这件事第一次是可观测的。
+ */
 export const dbPoolActiveConnections = new Gauge({
   name: "ailearn_db_pool_active_connections",
-  help: "Active database connections in the pool",
+  help: "Active (non-idle) database connections in this process's pool",
   registers: [registry],
 });
 
-/** 数据库事务失败计数器 */
-export const dbTransactionFailuresTotal = new Counter({
+/**
+ * 本进程连接池上限（静态值，来自 postgres.js 的 max）。
+ *
+ * 存在的唯一理由：饱和度是个比值，没有分母就没法告警。
+ * 配对使用：`ailearn_db_pool_active_connections / ailearn_db_pool_max_connections`
+ * 持续 ≥ 1 就是池在排队（postgres.js 不公开"等待中的请求数"，这个比值是
+ * 目前唯一可靠的排队信号）。
+ */
+export const dbPoolMaxConnections = new Gauge({
+  name: "ailearn_db_pool_max_connections",
+  help: "Configured maximum database connections for this process's pool",
+  registers: [registry],
+});
+
+/**
+ * 数据库服务端**全库**连接数（2026-10-03 从原 dbPoolActiveConnections 拆分出来）。
+ *
+ * 这是原 gauge 真正在测的东西——它不是没用，只是名字骗了人：副本数 × 池上限
+ * 对 `max_connections` 的预算是否安全，只能看这个全局数字。实测空载 30 个
+ * （API 26 + worker 4）就已经是 `max_connections=100` 的三成，而真实在用的
+ * 只有个位数。
+ */
+export const dbServerConnectionsTotal = new Gauge({
+  name: "ailearn_db_server_connections",
+  help: "Total server-side connections to this database across all processes",
+  registers: [registry],
+});
+
+/** 数据库事务失败计数器 */export const dbTransactionFailuresTotal = new Counter({
   name: "ailearn_db_transaction_failures_total",
   help: "Total database transaction failures",
+  registers: [registry],
+});
+
+/**
+ * 当前进程持有的 SSE 长连接数（2026-10-03）。
+ *
+ * 按流类型分维度（inbox / run / card-v2 …）。存在的理由和池饱和度一样：
+ * SSE 连接被 hijack 后不受请求生命周期约束，"连接在涨"是唯一能提前看见
+ * 连接泄漏的信号，而这个量此前完全不可观测——上限也只是代码里的常量。
+ */
+export const sseActiveStreams = new Gauge({
+  name: "ailearn_sse_active_streams",
+  help: "Currently open server-sent event streams in this process",
+  labelNames: ["namespace"] as const,
+  registers: [registry],
+});
+
+/** 因超过并发上限而被拒绝的 SSE 连接数（2026-10-03）。 */
+export const sseRejectedTotal = new Counter({
+  name: "ailearn_sse_rejected_total",
+  help: "SSE stream connections rejected because a concurrency limit was reached",
+  labelNames: ["namespace", "reason"] as const,
   registers: [registry],
 });
 
@@ -517,6 +579,31 @@ export async function getMetricsText(): Promise<string> {
  * 获取 registry 的 content type。
  * 供 /metrics 端点设置 Content-Type header。
  */
+/**
+ * 解析直方图的桶上界 `le`。
+ *
+ * `+Inf` 那一桶**必须**解析成 `Number.POSITIVE_INFINITY`，不能用 `Number()`：
+ * `Number("+Inf")` 是 `NaN`，于是这桶的 `le` 变成 0 并排在**最前面**，
+ * 接着分位数估算会在它里面命中目标分位，返回 0——
+ * 于是「响应耗时」永远显示 0 秒，看起来比真实值快得多。
+ *
+ * 这类错误不会让任何东西变红：图照画，只是画的是一条贴着底的线。
+ *
+ * ## 为什么住在 lib/
+ *
+ * 它被 `lib/metrics-series.ts`（采样器）与 `modules/admin/metrics-service.ts`
+ * （面板投影）**两处**用到，而 `lib/` 不得反向 import `modules/`——
+ * `lib/` 是更底层，依赖倒着走会让"指标是什么"这件事没法在不知道面板的前提下回答。
+ * 所以这个纯函数放在两者的公共下层，而不是任何一侧。
+ */
+export function parseBucketBound(raw: unknown): number {
+  if (typeof raw === "number") return raw;
+  const text = String(raw ?? "").trim();
+  if (text === "") return Number.NaN;
+  if (text === "+Inf" || text === "Inf" || text === "Infinity") return Number.POSITIVE_INFINITY;
+  return Number(text);
+}
+
 export function getMetricsContentType(): string {
   return registry.contentType;
 }

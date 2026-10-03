@@ -3,7 +3,8 @@ import type { CardActivationReceiptDesktopV1, CardGenerationCandidateV1, CardGen
 import { useRoomStore } from "../../../app/room-store";
 import { createCommandId, createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { resetObjectiveLibraryView } from "../run/objective-library-view-state";
-import { cardGenerationProgressView, isCardGenerationReviewOpen, isCardGenerationReviewStage, practiceQuotaLabel, reviewSchedulingNotice, saveOnlyReceiptNotice } from "./card-generation-status";
+import { cardGenerationObservedProgress, cardGenerationProgressView, isCardGenerationInFlight, isCardGenerationReviewOpen, isCardGenerationReviewStage, practiceQuotaLabel, reviewSchedulingNotice, saveOnlyReceiptNotice } from "./card-generation-status";
+import { persistedGenerationOptions } from "../notebook/notebook-generation-options";
 import { isActionableUndecidedCandidate, isActivatableCandidate } from "./candidate-review-model";
 import { useCardGenerationData } from "./use-card-generation-data";
 
@@ -39,7 +40,9 @@ export function useCardGenerationSession() {
   const activatableCount = candidates.filter(isActivatableCandidate).length;
   const actionableUndecidedCount = candidates.filter(isActionableUndecidedCandidate).length;
   const practiceQuotaView = practiceQuotaLabel(data.practiceQuota);
-  const progressView = run ? cardGenerationProgressView(run.status, run.progress) : null;
+  const progressCounts = cardGenerationObservedProgress(run?.progress, data.landedCandidates);
+  const progressView = run ? cardGenerationProgressView(run.status, progressCounts) : null;
+  const canRegenerate = Boolean(run && !isCardGenerationInFlight(run.status));
   const page: "candidate" | "generating" = run && isCardGenerationReviewStage(run.status) ? "candidate" : "generating";
   const receipt = activation?.receipt ?? null;
   const schedulingNotice = activation ? activation.askedForScheduling
@@ -168,6 +171,42 @@ export function useCardGenerationSession() {
     unwrapGatewayResult(response); if (identity.current === run.runId) await load(false);
   });
 
+  const regenerate = () => perform("regenerate", async () => {
+    if (!run || !window.ailearn || !canRegenerate) return;
+    const api = window.ailearn;
+    // Read the latest saved source before ending the old review. A read failure
+    // leaves that review intact; a start failure still leaves a usable retry.
+    const noteResponse = await api.note.get({ meta: createRequestMeta(epochRef.current), noteId: run.noteId });
+    if (identity.current !== run.runId) return;
+    if (noteResponse.workspaceEpoch) epochRef.current = noteResponse.workspaceEpoch;
+    const note = unwrapGatewayResult(noteResponse);
+    if (!note.currentVersionId) throw new Error("没有读到笔记的已保存版本，请重新检查后再生成。");
+    const currentResponse = await api.note.cardGeneration.getRun({ meta: createRequestMeta(epochRef.current), runId: run.runId });
+    if (identity.current !== run.runId) return;
+    if (currentResponse.workspaceEpoch) epochRef.current = currentResponse.workspaceEpoch;
+    const current = unwrapGatewayResult(currentResponse);
+    if (isCardGenerationInFlight(current.status)) { await load(false); return; }
+    if (isCardGenerationReviewOpen(current.status)) {
+      const ended = await api.note.cardGeneration.close({ meta: createRequestMeta(epochRef.current), commandId: createCommandId("card-generation-regenerate-close"), runId: current.runId, expectedReviewDraftRevision: current.reviewDraftRevision });
+      unwrapGatewayResult(ended);
+      if (ended.workspaceEpoch) epochRef.current = ended.workspaceEpoch;
+      await load(false);
+      if (identity.current !== run.runId) return;
+    }
+    const options = persistedGenerationOptions;
+    const response = await api.note.cardGeneration.start({
+      meta: createRequestMeta(epochRef.current), commandId: createCommandId("card-generation-regenerate"), noteId: note.noteId,
+      request: { version: 2, noteVersionId: note.currentVersionId, sourceScope: { kind: "whole_note" }, learningGoal: options.learningGoal,
+        detailThreshold: options.detailThreshold, quantity: { kind: "adaptive", hardMaxCards: options.hardMaxCards },
+        preferredStrategies: [...options.preferredStrategies], clientRequestId: createCommandId("card-generation-request") },
+    });
+    if (identity.current !== run.runId) return;
+    if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
+    const accepted = unwrapGatewayResult(response);
+    setActiveNoteRef({ noteId: note.noteId, noteVersionId: note.currentVersionId });
+    useRoomStore.getState().setActiveCardGenerationRunId(accepted.runId);
+  });
+
   const moveCandidate = (offset: -1 | 1) => {
     const next = candidates[activeCandidateIndex + offset];
     if (next && !actionLock.current && !revealLock.current) { setActiveCandidateId(next.candidateId); setRevealFailure(null); setActionFailure(null); }
@@ -176,8 +215,8 @@ export function useCardGenerationSession() {
   const openCards = () => { resetObjectiveLibraryView(); invoke("open-objectives"); };
 
   return { ...data, page, activeCandidate, activeCandidateIndex, reviewOpen, activeReveal, activatableCount, actionableUndecidedCount,
-    practiceQuotaView, progressView, receipt, schedulingNotice, actionFailure, busyAction, revealing, revealFailure, exposure, exposureFailure,
-    review, revealCandidate, activate, cancel, close, retry, moveCandidate, returnToNote, openRecoveryNote, openCards };
+    practiceQuotaView, progressCounts, progressView, receipt, schedulingNotice, actionFailure, busyAction, revealing, revealFailure, exposure, exposureFailure,
+    canRegenerate, regenerate, review, revealCandidate, activate, cancel, close, retry, moveCandidate, returnToNote, openRecoveryNote, openCards };
 }
 
 export type CardGenerationSession = ReturnType<typeof useCardGenerationSession>;

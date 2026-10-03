@@ -123,7 +123,7 @@ export type AccountAvatar = {
   readonly src: string;
 };
 export type CompanionCenterTarget = {
-  readonly tab: "memory" | "dialogue" | "activity" | "diary" | "persona" | "data";
+  readonly tab: "overview" | "memory" | "dialogue" | "activity" | "diary" | "discovery" | "persona" | "data";
   readonly focusMemoryId?: string;
   readonly focusMessageId?: string;
 };
@@ -162,6 +162,7 @@ type RoomStore = {
   activeSourceId: string | null;
   activeObjectiveId: string | null;
   companionCenterTarget: CompanionCenterTarget | null;
+  companionComposerDraft: string;
   settingsSection: string;
   /**
    * 一次性注意力目标（2026-09-19）：设置页里需要立刻被看到的那张卡。
@@ -235,7 +236,7 @@ type RoomStore = {
    * the star map all open the same note page, and the pill used to say
    * "返回笔记库" even when the reader had come from the workbench.
    */
-  noteReturnTo: "library" | "generation" | "graph";
+  noteReturnTo: "library" | "generation" | "graph" | "search";
   /** The 来源库 tab the reader left, so returning to the index resumes it. */
   sourceIndexTab: SourceStatusTab;
   /**
@@ -246,6 +247,14 @@ type RoomStore = {
   searchQuery: string;
   searchTypeFilter: SearchTypeFilter;
   searchWeakOnly: boolean;
+  /** Only a reading position, never cached workspace records. Cleared on scope change. */
+  searchResume: {
+    readonly identity: string;
+    readonly selectedKey: string | null;
+    readonly loadedCount: number;
+    readonly indexScrollTop: number;
+    readonly previewScrollTop: number;
+  } | null;
   /**
    * 复习队列的阅读位置，理由和上面的搜索状态完全一样：surface 会被整体重挂载。
    * 这里只存位置（选中卡 id + 序号），页数由页面按位置重新读到，所以恢复出来
@@ -279,6 +288,7 @@ type RoomStore = {
   closeSurface: () => void;
   toggleTheme: () => void;
   setTheme: (theme: RoomTheme) => void;
+  followTimeTheme: () => void;
   applyTimeTheme: (theme: RoomTheme) => void;
   cycleMotionMode: () => void;
   setMotionMode: (mode: MotionMode) => void;
@@ -293,6 +303,7 @@ type RoomStore = {
   setActiveSourceId: (sourceId: string | null) => void;
   setActiveObjectiveId: (objectiveId: string | null) => void;
   setCompanionCenterTarget: (target: CompanionCenterTarget | null) => void;
+  setCompanionComposerDraft: (draft: string | ((current: string) => string)) => void;
   setSettingsSection: (section: string) => void;
   setSettingsAttention: (target: string | null) => void;
   setActiveReviewTarget: (target: ReviewTargetRef | null) => void;
@@ -338,6 +349,7 @@ type RoomStore = {
   setSearchQuery: (query: string) => void;
   setSearchTypeFilter: (filter: SearchTypeFilter) => void;
   setSearchWeakOnly: (weakOnly: boolean) => void;
+  setSearchResume: (resume: RoomStore["searchResume"]) => void;
   setLive2dStatus: (status: Live2dStatus) => void;
 };
 
@@ -362,6 +374,7 @@ export const useRoomStore = create<RoomStore>()(
       activeSourceId: null,
       activeObjectiveId: null,
       companionCenterTarget: null,
+      companionComposerDraft: "",
       settingsSection: "account",
       settingsAttention: null,
       activeReviewTarget: null,
@@ -395,6 +408,7 @@ export const useRoomStore = create<RoomStore>()(
       searchQuery: "",
       searchTypeFilter: "all",
       searchWeakOnly: false,
+      searchResume: null,
       reviewQueueResume: null,
       live2dStatus: "loading",
       workspaceScopeRevision: 0,
@@ -427,6 +441,7 @@ export const useRoomStore = create<RoomStore>()(
         activeSourceId: null,
         activeObjectiveId: null,
         companionCenterTarget: null,
+        companionComposerDraft: "",
         settingsSection: "account",
         settingsAttention: null,
         activeReviewTarget: null,
@@ -451,6 +466,7 @@ export const useRoomStore = create<RoomStore>()(
         searchQuery: "",
         searchTypeFilter: "all",
         searchWeakOnly: false,
+        searchResume: null,
         // 阅读位置属于当前工作区的队列：换空间后不能把上一空间的第 40 张
         // 当成这一空间的第 40 张。
         reviewQueueResume: null,
@@ -510,6 +526,7 @@ export const useRoomStore = create<RoomStore>()(
       // Leaving the mode on "system" here let the home scene's minute timer
       // immediately write the time-derived theme back over the reader's pick.
       setTheme: (theme) => set({ theme, themeMode: "manual" }),
+      followTimeTheme: () => set({ themeMode: "system" }),
       // The clock's own write. It refuses once the reader has chosen a theme, so
       // a racing timer can never undo that choice.
       applyTimeTheme: (theme) => set((state) => (state.themeMode === "system" ? { theme } : {})),
@@ -544,6 +561,7 @@ export const useRoomStore = create<RoomStore>()(
       setActiveSourceId: (activeSourceId) => set({ activeSourceId }),
       setActiveObjectiveId: (activeObjectiveId) => set({ activeObjectiveId }),
       setCompanionCenterTarget: (companionCenterTarget) => set({ companionCenterTarget }),
+      setCompanionComposerDraft: (draft) => set((state) => ({ companionComposerDraft: typeof draft === "function" ? draft(state.companionComposerDraft) : draft })),
       setSettingsSection: (settingsSection) => set({ settingsSection }),
       setSettingsAttention: (settingsAttention) => set({ settingsAttention }),
       setActiveReviewTarget: (activeReviewTarget) => set({ activeReviewTarget }),
@@ -688,9 +706,10 @@ export const useRoomStore = create<RoomStore>()(
       setReturnTarget: (returnTarget) => set({ returnTarget }),
       setNoteReturnTo: (noteReturnTo) => set({ noteReturnTo }),
       setSourceIndexTab: (sourceIndexTab) => set({ sourceIndexTab }),
-      setSearchQuery: (searchQuery) => set({ searchQuery }),
-      setSearchTypeFilter: (searchTypeFilter) => set({ searchTypeFilter }),
-      setSearchWeakOnly: (searchWeakOnly) => set({ searchWeakOnly }),
+      setSearchQuery: (searchQuery) => set((state) => ({ searchQuery, ...(state.searchQuery.trim() !== searchQuery.trim() ? { searchResume: null } : {}) })),
+      setSearchTypeFilter: (searchTypeFilter) => set({ searchTypeFilter, ...(searchTypeFilter !== "objective" ? { searchWeakOnly: false } : {}), searchResume: null }),
+      setSearchWeakOnly: (searchWeakOnly) => set({ searchWeakOnly, ...(searchWeakOnly ? { searchTypeFilter: "objective" } : {}), searchResume: null }),
+      setSearchResume: (searchResume) => set({ searchResume }),
       setLive2dStatus: (live2dStatus) => set({ live2dStatus }),
     }),
     {

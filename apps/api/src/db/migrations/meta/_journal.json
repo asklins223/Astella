@@ -2521,6 +2521,27 @@
       "when": 1791000056006,
       "tag": "0363_companion_diary_visibility",
       "breakpoints": true
+    },
+    {
+      "idx": 360,
+      "version": "7",
+      "when": 1791000056007,
+      "tag": "0364_note_annotation_artifact_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 361,
+      "version": "7",
+      "when": 1791000056008,
+      "tag": "0365_admin_ops_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 362,
+      "version": "7",
+      "when": 1791000056009,
+      "tag": "0366_admin_ops_actions",
+      "breakpoints": true
     }
   ]
 }

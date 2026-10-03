@@ -52,18 +52,18 @@ export function SettingsAccountPanel(props: {
         value={displayName}
         placeholder="最长 32 字"
         maxLength={32}
-        disabled={props.busy !== null}
+        disabled={props.busy !== null || !profile}
         onChange={(event) => setDisplayName(event.currentTarget.value)}
         onKeyDown={(event) => {
           if (event.key !== "Enter") return;
           event.preventDefault();
-          void saveDisplayName();
+          if (busy === null && displayName.trim() !== (profile?.displayName ?? "")) void saveDisplayName();
         }}
       />
       <button
         type="button"
         className="button primary"
-        disabled={props.busy !== null || displayName.trim() === (profile?.displayName ?? "")}
+        disabled={props.busy !== null || !profile || displayName.trim() === (profile.displayName ?? "")}
         onClick={() => void saveDisplayName()}
       >
         {props.busy === "displayName" ? "保存中…" : "保存"}
@@ -72,14 +72,14 @@ export function SettingsAccountPanel(props: {
   </div>
   <div className="settings-rows">
     <SettingRow title="头像" detail="PNG / JPG / WebP / GIF，最大 2MB；上传后立即生效。">
-      <label className="button" data-disabled={props.busy !== null ? "true" : undefined} aria-disabled={props.busy !== null}>
+      <label className="button" data-disabled={props.busy !== null || !profile ? "true" : undefined} aria-disabled={props.busy !== null || !profile}>
         <ImageUp size={13} aria-hidden="true" />
         {props.busy === "avatar" ? "上传中…" : "更换…"}
         <input
           className="settings-file-input"
           type="file"
           accept="image/png,image/jpeg,image/webp,image/gif"
-          disabled={props.busy !== null}
+          disabled={props.busy !== null || !profile}
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
             event.currentTarget.value = "";

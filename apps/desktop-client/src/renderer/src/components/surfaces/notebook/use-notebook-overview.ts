@@ -38,6 +38,7 @@ export function useNotebookOverview(input: {
   const [overviewTaskStarting, setOverviewTaskStarting] = useState(false);
   const [overviewTaskError, setOverviewTaskError] = useState<string | null>(null);
   const overviewTaskRequestRef = useRef(0);
+  const startingRef = useRef(false);
   const overviewPaperRef = useRef<HTMLElement | null>(null);
   const [overviewOpen, setOverviewOpen] = useState(false);
 
@@ -89,13 +90,15 @@ export function useNotebookOverview(input: {
   }, [note?.noteId, note?.currentVersionId]);
 
   const startNoteOverviewTask = useCallback(async (hasUnsavedChanges: boolean) => {
-    if (!note || !note.currentVersionId || hasUnsavedChanges || overviewTaskStarting) return;
+    if (!note || !note.currentVersionId || hasUnsavedChanges || startingRef.current
+      || overviewTask?.status === "queued" || overviewTask?.status === "running") return;
     const api = typeof window === "undefined" ? undefined : window.ailearn;
     if (!api?.noteOverview) {
       setOverviewTaskError("速看任务暂不可用");
       return;
     }
     const request = ++overviewTaskRequestRef.current;
+    startingRef.current = true;
     setOverviewTaskStarting(true);
     setOverviewTaskError(null);
     try {
@@ -108,15 +111,17 @@ export function useNotebookOverview(input: {
     } catch (error) {
       if (request === overviewTaskRequestRef.current) setOverviewTaskError(gatewayErrorMessage(error));
     } finally {
-      if (request === overviewTaskRequestRef.current) setOverviewTaskStarting(false);
+      if (request === overviewTaskRequestRef.current) { startingRef.current = false; setOverviewTaskStarting(false); }
     }
-  }, [note?.noteId, note?.currentVersionId, overviewTaskStarting]);
+  }, [note?.noteId, note?.currentVersionId, overviewTask?.status]);
 
   useEffect(() => {
+    ++overviewTaskRequestRef.current; startingRef.current = false;
     setOverviewTask(null);
     setOverviewTaskError(null);
     setOverviewTaskStarting(false);
     if (note?.currentVersionId) void loadLatestNoteOverviewTask();
+    return () => { ++overviewTaskRequestRef.current; startingRef.current = false; };
   }, [note?.noteId, note?.currentVersionId, loadLatestNoteOverviewTask]);
 
   useEffect(() => {

@@ -19,9 +19,9 @@
  * 所以这里没有 `action: "hide" | "delete"` 那种"调用点自己记得传对"的接口，
  * 而是三个具名回调——读调用点就知道点的是哪个按钮。
  */
-import { useCallback, useState } from "react";
+import { useCallback,useEffect,useRef,useState } from "react";
 
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
+import { createRequestMeta,gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
 
 export type DiaryWriteAction = "hide" | "unhide" | "delete";
 
@@ -44,11 +44,16 @@ export function useCompanionDiaryActions(input: {
   const [busyAction, setBusyAction] = useState<DiaryWriteAction | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const busyRef = useRef(false);
+  const dateRef = useRef(input.date);
+  dateRef.current = input.date;
+  useEffect(() => { setConfirmingDelete(false); setNotice(null); }, [input.date]);
   const meta = useCallback(() => createRequestMeta(input.epochRef.current), [input.epochRef]);
 
   const run = useCallback(async (action: DiaryWriteAction) => {
     const date = input.date;
-    if (!date || busyAction !== null) return;
+    if (!date || busyRef.current) return;
+    busyRef.current = true;
     setBusyAction(action);
     setNotice(null);
     try {
@@ -56,6 +61,7 @@ export function useCompanionDiaryActions(input: {
         const outcome = unwrapGatewayResult(
           await window.ailearn.companion.daily.delete({ meta: meta(), date }),
         );
+        if (dateRef.current !== date) return;
         setConfirmingDelete(false);
         // §11.1 要求「展示实际范围与结果」：三个数分别是什么，别只说"删好了"。
         setNotice(outcome.diary
@@ -65,19 +71,22 @@ export function useCompanionDiaryActions(input: {
         const outcome = unwrapGatewayResult(action === "hide"
           ? await window.ailearn.companion.daily.hide({ meta: meta(), date })
           : await window.ailearn.companion.daily.unhide({ meta: meta(), date }));
+        if (dateRef.current !== date) return;
         setNotice(outcome.changed
           ? (action === "hide" ? "藏起来了。内容还在，随时能取消隐藏。" : "取回来了。")
           : "这一次没有改变任何东西。");
       }
     } catch (error) {
+      if (dateRef.current !== date) return;
       setNotice(action === "delete"
         ? `没能删掉：${gatewayErrorMessage(error)}`
         : `没能${action === "hide" ? "藏起来" : "取回"}：${gatewayErrorMessage(error)}`);
     } finally {
+      busyRef.current = false;
       setBusyAction(null);
       await input.reload();
     }
-  }, [busyAction, input, meta]);
+  }, [input, meta]);
 
   return {
     busy: busyAction !== null,

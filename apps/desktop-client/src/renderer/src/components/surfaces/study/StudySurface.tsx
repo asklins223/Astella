@@ -1,603 +1,38 @@
-// 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
-import { useMemo, useRef, useState } from "react";
-import { ROUND_RECORD_COPY_V1, roundHistoryStateLabelV1, roundRecordDayV1, roundRecordModesLabelV1 } from "../notebook/round-record-copy.ts";
-import type { NoteLearningRoundPersonalHistoryItemV1, NoteLearningRoundPersonalHistoryV1 } from "@ailearn/shared/note-learning-round-contracts";
-
-import type { Ref } from "react";
-import {
-  BookOpen,
-  Compass,
-  FileText,
-  Layers,
-  LoaderCircle,
-  MousePointerClick,
-  RefreshCw,
-  Route,
-  Settings2,
-  Sparkles,
-  TriangleAlert,
-} from "lucide-react";
+import { useMemo, useRef, type KeyboardEvent } from "react";
+import { ArrowRight, BookOpen, CalendarDays, Leaf, NotebookPen, RefreshCw, Route, Sparkles } from "lucide-react";
 import type { ActivityTargetV1, TodayActivityV1 } from "@ailearn/shared/activity-surface-contracts";
 import type { AllWorkspacesStatsOverviewV1 } from "@ailearn/shared/stats-overview-contracts";
+import type { NoteLearningRoundPersonalHistoryItemV1 } from "@ailearn/shared/note-learning-round-contracts";
+import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
 import { SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-gate";
 import { useRoomStore } from "../../../app/room-store";
-import type { RoomIntent } from "../../../app/room-machine";
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
+import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
 import { HudPage } from "../../hud/HudPage";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
-import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import { useTactileSurface } from "../../motion/use-tactile-surface";
 import { SurfaceDataState, useDayAnchor, useSurfaceProjection } from "../notebook/surface-data.tsx";
 import { buildAllSpacesSummary, type AllSpacesSummary } from "../library/all-spaces-summary.ts";
-import {
-  anomalyStep,
-  buildTodayAnomalyGroups,
-  buildTodayLogRows,
-  buildTodayVerdict,
-  sharedAnomalyStep,
-  sortAnomalyGroups,
-  todayAnomalyTruncationNote,
-  todayLogTruncationNote,
-  type TodayAnomalyGroup,
-  type TodayLogRow,
-  type TodayVerdict,
-} from "../library/today-log.ts";
+import { buildTodayAnomalyGroups, buildTodayLogRows, buildTodayVerdict, sharedAnomalyStep, sortAnomalyGroups,
+  todayAnomalyTruncationNote, todayLogTruncationNote, type TodayAnomalyGroup, type TodayLogRow } from "../library/today-log.ts";
+import { ROUND_RECORD_COPY_V1, roundHistoryStateLabelV1 } from "../notebook/round-record-copy.ts";
+import { AllSpacesPanel, AnomalyTriage, CompanionRail, DayVerdict, LogStream, RoundRecordStream } from "./study-log-sections";
+import { useStudyRoundRecords } from "./use-study-round-records";
+import { useStudyJournalPosition, type StudyTab } from "./use-study-journal-position";
 
-/**
- * Page 14 「今日学习」（2026-09-18 设计重构）。
- *
- * 上一版把这一页从"三张票的推荐位"改成了操作日志流 —— 方向是对的，但把日志
- * 流塞进了一个为老布局调过的壳里，于是留下三类问题（本次重构的输入）：
- *
- * 1. **信息层级倒置**：页面第一屏是一堵异常卡，×10（同一份笔记失败了 10 次）
- *    这个最带信息量的数字被压在 9.5px 的徽标里；而"今天到底做了几件事"只能
- *    去右栏找，右栏又和左栏说同一句话。
- * 2. **可读性损耗**：异常标题直接是笔记正文，`nowrap + ellipsis` 把它截成半句
- *    （"核心原理是记忆痕迹衰减与强化，每…"）；三张卡的第二行逐字相同；两条
- *    居中的小灰字道歉堆在页底。
- * 3. **交互断头**：只有异常、没有正向操作时（正是真实数据的常态）空态只给一句
- *    散文描述，没有任何出口 —— 而"整天都空"那一支却给了按钮，两条路径不一致。
- *
- * 重构后的层级（一屏之内先给判断，再给待办，最后才是流水）：
- * - **判断条**：今天记录了几件 / 几件待处理 / 从几点到几点 —— 数字先说话；
- * - **需要处理**：只归并同一目标上的同类记录，可执行项在前，共用的处置语提到
- *   组头只说一次，超出两个预览项就折叠；
- * - **学习记录**：主叙事时间线；派生系统活动默认收起，空了就就地给真实出口；
- * - **伴星栏**：只讲它独有的那件事（伴星日记读的就是这条日志背后的同一批表）。
- */
-function dayWindowFromAnchor(nowMs: number): { from: string; to: string } {
-  const midnight = new Date(nowMs);
-  midnight.setHours(0, 0, 0, 0);
-  // 不用 `+86_400_000`：跨夏令时的那天会偏出一小时。交给 Date 自己算次日午夜。
-  const nextMidnight = new Date(midnight.getFullYear(), midnight.getMonth(), midnight.getDate() + 1);
-  return { from: midnight.toISOString(), to: nextMidnight.toISOString() };
-}
-
-function todayDateLabel(nowMs: number): string {
-  const now = new Date(nowMs);
-  return `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日`;
-}
-
-function todayWeekdayLabel(nowMs: number): string {
-  return new Intl.DateTimeFormat("zh-CN", { weekday: "long" }).format(new Date(nowMs));
-}
-
-/** `day` 是页面自己查询的窗口锚点，用本地日历日 —— 不信服务端那条会差一天的字段。 */
-function dayIso(nowMs: number): string {
-  const now = new Date(nowMs);
-  const month = `${now.getMonth() + 1}`.padStart(2, "0");
-  const date = `${now.getDate()}`.padStart(2, "0");
-  return `${now.getFullYear()}-${month}-${date}`;
-}
-
-/** 每类事件一枚 lucide 图标 + 一味纸面色，整页图标语言保持同一套线性笔画。 */
-const KIND_ICONS: Readonly<Record<TodayLogRow["kind"], typeof FileText>> = {
-  note: FileText,
-  source: BookOpen,
-  objective: Compass,
-  learning_run: Route,
-  card_generation: Layers,
-  job: Settings2,
-  page: MousePointerClick,
-};
-
-/** 首屏只预览两个处理项，给真正的学习记录留出可见空间。 */
-const TRIAGE_PREVIEW = 2;
-
-/** 列表入场：每条错开 35ms，最多错开 8 条（再长就一起进来，不然末尾要等半秒）。 */
-const ENTER_STAGGER_MS = 35;
-const ENTER_STAGGER_CAP = 8;
-
-function enterDelay(index: number): { animationDelay: string } {
-  return { animationDelay: `${Math.min(index, ENTER_STAGGER_CAP) * ENTER_STAGGER_MS}ms` };
-}
-
-/** 空一天的出口：两条路径（整天空 / 只有异常）共用同一组动作，不再一边有按钮一边没有。 */
-const START_ACTIONS: readonly { readonly label: string; readonly intent: RoomIntent }[] = [
-  { label: "写笔记", intent: "open-notebook" },
-  { label: "收录来源", intent: "open-sources" },
-  { label: "学习卡", intent: "open-objectives" },
+const TABS: readonly { id: StudyTab; label: string; Icon: typeof CalendarDays }[] = [
+  { id: "today", label: "今天的足迹", Icon: CalendarDays },
+  { id: "rounds", label: "学过的每一轮", Icon: NotebookPen },
+  { id: "spaces", label: "各个空间", Icon: BookOpen },
 ];
-
-/** 单条日志/异常的跳转按钮：target 为空时不给按钮，不给读者一条死路。 */
-function EntryJump({
-  target,
-  label,
-  action,
-  onOpen,
-}: {
-  readonly target: ActivityTargetV1 | null;
-  readonly label: string;
-  readonly action: string;
-  readonly onOpen: (target: ActivityTargetV1) => void;
-}) {
-  if (!target) return null;
-  return (
-    <button type="button" className="button day-jump" onClick={() => onOpen(target)} aria-label={`${action} ${label}`}>
-      {action}
-    </button>
-  );
+function dayWindowFromAnchor(nowMs: number) {
+  const midnight = new Date(nowMs); midnight.setHours(0, 0, 0, 0);
+  const next = new Date(midnight.getFullYear(), midnight.getMonth(), midnight.getDate() + 1);
+  return { from: midnight.toISOString(), to: next.toISOString() };
 }
-
-/**
- * 今日判断条：这一页第一眼要回答"今天怎么样"。
- *
- * 数字与判断分开放 —— 数字进 `<dl>`（一眼可读），判断句里不再重复同一个数。
- * 有一件待处理才给动作；按钮会把读者送到下面的分诊区并转移键盘焦点。
- */
-function DayVerdict({
-  verdict,
-  triageCount,
-  onTriage,
-}: {
-  readonly verdict: TodayVerdict;
-  readonly triageCount: number;
-  readonly onTriage: () => void;
-}) {
-  return (
-    <div className="day-verdict" data-pending={verdict.pending > 0 || undefined}>
-      {verdict.metrics.length > 0 ? (
-        <dl className="day-verdict__metrics">
-          {verdict.metrics.map((metric) => (
-            <div className="day-verdict__metric" key={metric.key} data-metric={metric.key} data-alarm={metric.alarm || undefined}>
-              <dt>{metric.label}</dt>
-              <dd>{metric.value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-
-      <div className="day-verdict__copy">
-        <b>{verdict.headline}</b>
-        <span>{verdict.detail}</span>
-      </div>
-
-      {verdict.pending > 0 ? (
-        <button type="button" className="button primary day-verdict__act" onClick={onTriage}>
-          <TriangleAlert size={13} strokeWidth={2.2} aria-hidden="true" />
-          查看 {triageCount} 个处理项
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-/**
- * 待处理事务分诊。
- *
- * 与上一版的三点差别，都针对实机数据里真实发生的事：
- * - 可执行项优先，再按**体量**排序，先给读者真正能处理的出口；
- * - 多数组共用的处置语提到组头说一次，卡片里不再逐行复读同一句话；
- * - 超过 2 项折叠，展开是显式动作，避免分诊墙把学习主线推到首屏之外。
- */
-function AnomalyTriage({
-  groups,
-  backgroundGroups,
-  total,
-  sharedStep,
-  note,
-  onOpen,
-  onRecover,
-  anchorRef,
-}: {
-  readonly groups: readonly TodayAnomalyGroup[];
-  /** 后台任务自己的失败（无对象、无动作）：说出来，但不当成用户的待办（审计 F14）。 */
-  readonly backgroundGroups: readonly TodayAnomalyGroup[];
-  readonly total: number;
-  readonly sharedStep: string | null;
-  readonly note: string | null;
-  readonly onOpen: (target: ActivityTargetV1) => void;
-  readonly onRecover: (recovery: TodayAnomalyGroup["recovery"]) => void;
-  readonly anchorRef: Ref<HTMLElement>;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const overflow = groups.length - TRIAGE_PREVIEW;
-  const collapsed = overflow > 0 && !expanded;
-  const visible = collapsed ? groups.slice(0, TRIAGE_PREVIEW) : groups;
-
-  return (
-    <section className="day-triage" aria-labelledby="today-triage-title" ref={anchorRef} tabIndex={-1}>
-      <h2 className="day-section-head" id="today-triage-title">
-        <b>待处理</b>
-        <span>
-          {groups.length > 0
-            ? `${groups.length} 项${groups.length < total ? ` · 共 ${total} 条记录` : ""}`
-            : "0 项 · 没有需要你处理的事"}
-        </span>
-      </h2>
-
-      {sharedStep ? <p className="day-triage__step">{sharedStep}</p> : null}
-      {groups.length === 0 && backgroundGroups.length > 0 ? (
-        <p className="day-triage__step">
-          剩下的都是后台任务自己的失败，没有可以打开的对象，也不需要你处理——它们在本节末尾列出。
-        </p>
-      ) : null}
-
-      <ul className="day-triage__list">
-        {visible.map((group, index) => {
-          const step = anomalyStep(group);
-          return (
-            <li
-              className="day-anomaly day-enter"
-              key={group.id}
-              data-phase={group.phase}
-              style={enterDelay(index)}
-            >
-              <span className="day-anomaly__icon" aria-hidden="true">
-                {group.phase === "inflight" ? (
-                  <LoaderCircle size={13} strokeWidth={2.2} />
-                ) : (
-                  <TriangleAlert size={13} strokeWidth={2.2} />
-                )}
-              </span>
-
-              <div className="day-anomaly__main">
-                <b className="day-anomaly__title">{group.title}</b>
-                <span className="day-anomaly__meta">
-                  {group.count > 1 ? (
-                    <span className="day-anomaly__count" title={`同类系统记录 ${group.count} 条`}>
-                      同类记录 ×{group.count}
-                    </span>
-                  ) : null}
-                  {/* 处置语与组头相同就不再复读；不同才在这里说这一组自己的话。 */}
-                  {step === sharedStep ? null : <span className="day-anomaly__step">{step}</span>}
-                  {group.target || group.recovery ? null : (
-                    <span className="day-anomaly__stuck">这条记录没有可直接打开的位置</span>
-                  )}
-                </span>
-              </div>
-
-              {group.recovery ? (
-                <button
-                  type="button"
-                  className="button day-jump"
-                  onClick={() => onRecover(group.recovery)}
-                  aria-label={`去设置处理 ${group.title}`}
-                >
-                  去设置
-                </button>
-              ) : (
-                <EntryJump target={group.target} label={group.title} action="去处理" onOpen={onOpen} />
-              )}
-            </li>
-          );
-        })}
-      </ul>
-
-      {overflow > 0 ? (
-        <button
-          type="button"
-          className="day-triage__more"
-          onClick={() => setExpanded((value) => !value)}
-          aria-expanded={expanded}
-        >
-          {expanded ? "收起" : `还有 ${overflow} 个处理项`}
-        </button>
-      ) : null}
-
-      {/* 审计 F14：后台任务自己的失败列在这里——它们在页面上有位置、有解释，
-          但没有"处理"按钮、也不进"待处理 N"的数。 */}
-      {backgroundGroups.length > 0 ? (
-        <div className="day-triage__background">
-          <h3 className="day-section-head">
-            <b>系统异常</b>
-            <span>{backgroundGroups.length} 类 · 不需要你处理</span>
-          </h3>
-          <p className="small">
-            这些是后台任务（解析、生成、同步）自己的失败，没有可以打开的对象；系统会在必要时自动重试。
-            如果同一件事一直失败，可以在「设置 → 数据与维护」里反馈。
-          </p>
-          <ul className="day-triage__list">
-            {backgroundGroups.map((group) => (
-              <li className="day-anomaly" key={group.id} data-phase={group.phase}>
-                <span className="day-anomaly__icon" aria-hidden="true">
-                  <TriangleAlert size={13} strokeWidth={2.2} />
-                </span>
-                <div className="day-anomaly__main">
-                  <b className="day-anomaly__title">{group.title}</b>
-                  <span className="day-anomaly__meta">
-                    {group.count > 1 ? (
-                      <span className="day-anomaly__count" title={`同类系统记录 ${group.count} 条`}>
-                        同类记录 ×{group.count}
-                      </span>
-                    ) : null}
-                    <span className="day-anomaly__step">{anomalyStep(group)}</span>
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {note ? <p className="day-log__note">{note}</p> : null}
-    </section>
-  );
-}
-
-function LogRows({
-  rows,
-  ariaLabel,
-  onOpen,
-}: {
-  readonly rows: readonly TodayLogRow[];
-  readonly ariaLabel: string;
-  readonly onOpen: (target: ActivityTargetV1) => void;
-}) {
-  return (
-    <ol className="day-log__stream" aria-label={ariaLabel}>
-      {rows.map((row, index) => {
-        const Icon = KIND_ICONS[row.kind];
-        return (
-          <li className="day-log__entry day-enter" key={row.id} data-kind={row.kind} style={enterDelay(index)}>
-            <time className="day-log__time" dateTime={row.at}>{row.time}</time>
-            <span className="day-log__node" aria-hidden="true">
-              <Icon size={13} strokeWidth={2.2} />
-            </span>
-            <div className="day-log__body">
-              {row.headline.includes(row.kindLabel) ? null : (
-                <span className="sr-only">{row.kindLabel} · </span>
-              )}
-              <b>{row.headline}</b>
-              {row.detail ? <small>{row.detail}</small> : null}
-            </div>
-            <EntryJump target={row.target} label={row.headline} action="查看" onOpen={onOpen} />
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-/**
- * 我的轮次记录（§10.3 第二级）。一行只报服务端算出来的那几格：哪一天、哪一篇、
- * 那一句问题、走到哪一步、实际发生过什么（讲过／练过）、有没有我们判不准的。
- * 空表是真的"我还没开过轮"，不是读失败——读失败走 `failure` 那一条，两者不同字。
- */
-function RoundRecordStream({
-  items,
-  total,
-  hasMore,
-  busy,
-  failure,
-  loadingText,
-  loadMoreText,
-  onLoadOlder,
-  onReload,
-}: {
-  readonly items: readonly NoteLearningRoundPersonalHistoryItemV1[];
-  readonly total: number;
-  readonly hasMore: boolean;
-  readonly busy: boolean;
-  readonly failure: string | null;
-  readonly loadingText: string;
-  readonly loadMoreText: string;
-  readonly onLoadOlder: () => void;
-  readonly onReload: () => void;
-}) {
-  return (
-    <section className="day-stream day-rounds" aria-labelledby="today-round-record-title" data-round-record="true">
-      <h2 className="day-section-head" id="today-round-record-title">
-        <b>我学过的每一轮</b>
-        {items.length > 0 ? <span>{ROUND_RECORD_COPY_V1.personalLead(total, items.length, hasMore)}</span> : null}
-      </h2>
-      {failure ? (
-        <p className="day-log__note" role="alert">
-          {failure} <button type="button" className="button" onClick={onReload}>再读一次</button>
-        </p>
-      ) : null}
-      {items.length > 0 ? (
-        <ol className="day-rounds__list" aria-label="我的学习轮次记录">
-          {items.map((item) => (
-            <li className="day-rounds__entry" key={item.roundId} data-round-record-row={item.roundId}>
-              <time className="day-rounds__date" dateTime={item.startedAt}>{roundRecordDayV1(item.startedAt)}</time>
-              <div className="day-rounds__body">
-                <b>{item.drivingQuestion}</b>
-                <span className="day-rounds__meta">
-                  {item.noteTitle} · {roundHistoryStateLabelV1(item)}
-                  {item.actualModes.length > 0 ? ` · ${roundRecordModesLabelV1(item.actualModes)}` : ""}
-                  {item.systemUncertain ? ` · ${ROUND_RECORD_COPY_V1.uncertain}` : ""}
-                  {item.followUpSettledAt ? ` · ${ROUND_RECORD_COPY_V1.followUp(roundRecordDayV1(item.followUpSettledAt))}` : ""}
-                </span>
-              </div>
-            </li>
-          ))}
-        </ol>
-      ) : (failure ? null : (
-        <p className="day-stream__empty">还没有开过一轮。在任意一篇笔记上问一句"想弄懂什么"，这里就会记上。</p>
-      ))}
-      {hasMore ? (
-        <button type="button" className="button" disabled={busy} onClick={onLoadOlder}>
-          {busy ? loadingText : loadMoreText}
-        </button>
-      ) : null}
-    </section>
-  );
-}
-
-/** 学习记录是主叙事；派生 job 保留可查，但默认收在“系统活动”里。 */
-function LogStream({
-  rows,
-  note,
-  onOpen,
-  onPick,
-}: {
-  readonly rows: readonly TodayLogRow[];
-  readonly note: string | null;
-  readonly onOpen: (target: ActivityTargetV1) => void;
-  readonly onPick: (intent: RoomIntent) => void;
-}) {
-  const [systemExpanded, setSystemExpanded] = useState(false);
-  const learningRows = rows.filter((row) => row.kind !== "job");
-  const systemRows = rows.filter((row) => row.kind === "job");
-
-  return (
-    <section className="day-stream" aria-labelledby="today-learning-log-title">
-      <h2 className="day-section-head" id="today-learning-log-title">
-        <b>学习记录</b>
-        <span>{learningRows.length > 0 ? `${learningRows.length} 条 · 最新的在最上面` : "还没有记录"}</span>
-      </h2>
-
-      {learningRows.length > 0 ? (
-        <LogRows rows={learningRows} ariaLabel="今日学习记录" onOpen={onOpen} />
-      ) : (
-        <div className="day-stream__empty">
-          <b>从这里开始</b>
-          <p>从下面任意一件事开始，真正的学习记录会按时间排在这里。</p>
-          <div className="actions">
-            {START_ACTIONS.map((action) => (
-              <button key={action.intent} type="button" className="button" onClick={() => onPick(action.intent)}>
-                {action.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {systemRows.length > 0 ? (
-        <section className="day-system" aria-labelledby="today-system-log-title">
-          <button
-            type="button"
-            className="day-system__toggle"
-            aria-expanded={systemExpanded}
-            aria-controls="today-system-log"
-            onClick={() => setSystemExpanded((value) => !value)}
-          >
-            <span>
-              <b id="today-system-log-title">系统活动</b>
-              <small>{systemRows.length} 条派生处理，不计入学习记录</small>
-            </span>
-            <span aria-hidden="true">{systemExpanded ? "收起" : "展开"}</span>
-          </button>
-          {systemExpanded ? (
-            <div id="today-system-log">
-              <LogRows rows={systemRows} ariaLabel="今日系统活动" onOpen={onOpen} />
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-
-      {note ? <p className="day-log__note">{note}</p> : null}
-    </section>
-  );
-}
-
-/**
- * 伴星卡。
- *
- * 上一版这里是"今日概要"，内容是左栏底部那句话的复述（"今天还没有留下记录"），
- * 252px 的栏里 60% 是空的。删掉复述之后，这张卡只剩它真正独有的东西：伴星日记
- * 的入口，以及它和这条日志的关系（读的是同一批权威表）。右栏现在有两张卡，
- * 上面那张是「全部空间」——见下。
- */
-/**
- * 「全部空间」栏。
- *
- * 这一页（以及首页、看板、伴星日记）的数字全都是**当前空间**的，读者却把它们
- * 读成"我的"——切走一个空间，那边的进度就再也看不见了。这一栏是唯一一条按
- * 账号扇出的读数：每个活跃空间一行，加一个合计。
- *
- * 三条不撒谎的规矩：
- * - 读不出来就说读不出来（加载/失败各自成句），不拿当前空间的数字顶替"全部"；
- * - 合计里少了几个空间（扇出上限）就写在下面，不让合计冒充全部；
- * - 当前空间由服务端标记，不由渲染层按名字猜。
- */
-function AllSpacesPanel({
-  summary,
-  loading,
-  failure,
-  onRetry,
-}: {
-  readonly summary: AllSpacesSummary | null;
-  readonly loading: boolean;
-  readonly failure: string | null;
-  readonly onRetry: () => void;
-}) {
-  return (
-    <section className="day-spaces" aria-labelledby="today-all-spaces-title">
-      <span className="tag">全部空间</span>
-      <div className="day-rail__card">
-        <h2>
-          <Layers size={13} strokeWidth={2.2} aria-hidden="true" />
-          <span id="today-all-spaces-title">我在每个空间的进度</span>
-        </h2>
-        {loading ? (
-          <p className="day-rail__why" role="status">正在读取全部空间…</p>
-        ) : failure !== null || summary === null ? (
-          <div className="day-spaces__failure">
-            <p role="status">全部空间的统计暂时读不到，本页其余数字仍然只算当前空间。</p>
-            <button type="button" className="button" onClick={onRetry}>重试</button>
-          </div>
-        ) : (
-          <>
-            <ul className="day-spaces__list" aria-label="每个空间各自的进度">
-              {summary.rows.map((row) => (
-                <li className="day-spaces__row" key={row.workspaceId} data-current={row.isCurrent || undefined}>
-                  <span className="day-spaces__head">
-                    <b>{row.name}</b>
-                    <small>{row.kindLabel} · {row.roleLabel}</small>
-                    {row.isCurrent ? <em className="day-spaces__current">当前空间</em> : null}
-                  </span>
-                  <span className="day-spaces__numbers">
-                    {row.metrics.map((metric) => (
-                      <span key={metric.key}>{metric.label} {metric.value}</span>
-                    ))}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p className="day-spaces__total">
-              <b>合计</b>
-              <span className="day-spaces__numbers">
-                {summary.totalMetrics.map((metric) => (
-                  <span key={metric.key}>{metric.label} {metric.value}</span>
-                ))}
-              </span>
-            </p>
-            {summary.totalDegraded ? (
-              <p className="day-rail__why">某个空间的活跃卡片太多，合计里的明细按前 2000 张卡计算。</p>
-            ) : null}
-            {summary.skippedNote ? <p className="day-rail__why">{summary.skippedNote}</p> : null}
-            <p className="day-rail__why">本页其余数字都只算当前空间；只有这里是全部空间。</p>
-          </>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function CompanionRail({ onOpen }: { readonly onOpen: () => void }) {
-  return (
-    <div className="day-rail__card">
-      <h2>
-        <Sparkles size={13} strokeWidth={2.2} aria-hidden="true" />
-        伴星日记
-      </h2>
-      <p>伴星每天凌晨 1 点，把昨天的学习与对话整理成一篇日记。</p>
-      <p className="day-rail__why">它整理的就是这一页上的这些记录。</p>
-      <button type="button" className="button" onClick={onOpen}>打开伴星</button>
-    </div>
-  );
+function dayIso(nowMs: number) {
+  const date = new Date(nowMs);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 export function StudySurface() {
@@ -631,54 +66,12 @@ export function StudySurface() {
     return unwrapGatewayResult(result);
   }, []);
 
-  /**
-   * 我的轮次记录（§10.3 第二级，跨笔记；39d W4-8 刀二）。今日日志是**一天**的窗口，
-   * 这一块是**全部**：同一页上两件事，所以各读各的，不让今日日志冒充完整记录。
-   */
-  const personalRounds = useSurfaceProjection<NoteLearningRoundPersonalHistoryV1>(async ({ workspaceEpoch }) => {
-    const meta = createRequestMeta(workspaceEpoch);
-    const result = await window.ailearn.noteLearningRound.personalHistory({ meta });
-    return unwrapGatewayResult(result);
-  }, []);
-  const [olderRounds, setOlderRounds] = useState<NoteLearningRoundPersonalHistoryV1 | null>(null);
-  const [olderRoundsBusy, setOlderRoundsBusy] = useState(false);
-  const [olderRoundsFailure, setOlderRoundsFailure] = useState<string | null>(null);
-  const roundRecordItems: readonly NoteLearningRoundPersonalHistoryItemV1[] = [
-    ...(personalRounds.data?.items ?? []),
-    ...(olderRounds?.items ?? []),
-  ];
-  // 那句总数只读服务端报的那一格；本页条数是另一件事（两数分叉过就会有一句假总数）。
-  const roundRecordTotal = olderRounds?.totalCount ?? personalRounds.data?.totalCount ?? 0;
-  const roundRecordHasMore = olderRounds ? olderRounds.hasMore : (personalRounds.data?.hasMore ?? false);
-  const roundRecordCursor = olderRounds ? olderRounds.nextCursor : (personalRounds.data?.nextCursor ?? null);
-
-  const loadOlderRoundRecords = async () => {
-    if (!roundRecordHasMore || olderRoundsBusy) return;
-    setOlderRoundsBusy(true);
-    setOlderRoundsFailure(null);
-    try {
-      const meta = createRequestMeta(personalRounds.epochRef.current ?? undefined);
-      const nextPage = unwrapGatewayResult(await window.ailearn.noteLearningRound.personalHistory({
-        meta,
-        before: roundRecordCursor ?? undefined,
-      }));
-      // 这里只存**翻回来的那几页**（第一页由投影自己带着）：把第一页也算进来，
-      // 屏上那份"已列出的行"就会被并两次——用例量到的是 5 行而不是 3 行。
-      setOlderRounds((previous) => ({
-        version: 1,
-        items: [...(previous?.items ?? []), ...nextPage.items],
-        hasMore: nextPage.hasMore,
-        nextCursor: nextPage.nextCursor,
-        // 累加的只有"列了几轮"；总数仍取服务端那一份（它与游标无关，翻不翻页都是那个数）。
-        shownCount: (previous?.items.length ?? 0) + nextPage.items.length,
-        totalCount: nextPage.totalCount,
-      }));
-    } catch (error) {
-      setOlderRoundsFailure(gatewayErrorMessage(error));
-    } finally {
-      setOlderRoundsBusy(false);
-    }
-  };
+  const rounds = useStudyRoundRecords();
+  const { tab, select: setTab, paperRef, rememberScroll } = useStudyJournalPosition({
+    today: loading, rounds: rounds.loading || rounds.restoring, spaces: allSpaces.loading,
+  }, rounds.items.length);
+  const rootRef = useRef<HTMLElement>(null);
+  useTactileSurface(rootRef, tab);
 
   const rows: readonly TodayLogRow[] = useMemo(() => (data ? buildTodayLogRows(data.events) : []), [data]);
   const groups: readonly TodayAnomalyGroup[] = useMemo(
@@ -698,7 +91,7 @@ export function StudySurface() {
     () => (allSpaces.data ? buildAllSpacesSummary(allSpaces.data) : null),
     [allSpaces.data],
   );
-  const sharedStep = useMemo(() => sharedAnomalyStep(groups), [groups]);
+  const sharedStep = useMemo(() => sharedAnomalyStep(actionableGroups), [actionableGroups]);
   const logNote = useMemo(() => (data ? todayLogTruncationNote(data) : null), [data]);
   const anomalyNote = useMemo(() => (data ? todayAnomalyTruncationNote(data) : null), [data]);
 
@@ -708,6 +101,20 @@ export function StudySurface() {
    * 这一层不重新算任何一个数。
    */
   const readableView = useMemo<PageReadableV1 | null>(() => {
+    if (tab === "rounds") return {
+      pageId: "today", title: "今日学习 · 学过的每一轮",
+      statusLine: rounds.loading ? "正在读取学习轮次" : `共 ${rounds.total} 轮，已列出 ${rounds.items.length} 轮`,
+      metrics: [{ label: "学习轮次", value: `${rounds.total} 轮` }],
+      items: rounds.items.slice(0, 8).map((item, index) => ({ ordinal: index + 1,
+        label: item.drivingQuestion.slice(0, 60), state: `${item.noteTitle.slice(0, 25)} · ${roundHistoryStateLabelV1(item)}` })),
+      ...(rounds.failure ? { notice: rounds.failure.slice(0, 80) } : {}),
+    };
+    if (tab === "spaces") return {
+      pageId: "today", title: "今日学习 · 各个空间",
+      statusLine: allSpaces.loading ? "正在读取各个空间" : allSpacesSummary ? "每个空间的进度单独列出" : "各个空间的进度暂时读不到",
+      metrics: allSpacesSummary?.totalMetrics.map(item => ({ label: item.label, value: `${item.value}` })) ?? [],
+      items: allSpacesSummary?.rows.slice(0, 8).map((item, index) => ({ ordinal: index + 1, label: item.name.slice(0, 60), state: item.isCurrent ? "当前空间" : item.kindLabel })) ?? [],
+    };
     if (!data || !verdict) return null;
     return {
       pageId: "today",
@@ -726,17 +133,17 @@ export function StudySurface() {
       })),
       ...(failure ? { notice: `这一页没读到最新内容：${failure.slice(0, 80)}` } : {}),
     };
-  }, [data, failure, groups, verdict]);
+  }, [tab, data, failure, groups, verdict, rounds.items, rounds.total, rounds.loading, rounds.failure, allSpacesSummary, allSpaces.loading]);
   usePageReadableView(readableView);
 
   const triageRef = useRef<HTMLElement>(null);
-  // 滚动交给容器的 `scroll-behavior`（CSS 里在 reduced-motion 下退回 auto），
-  // 这样"要不要平滑"只在一处决定，不在 JS 里再抄一遍动效偏好。
   const scrollToTriage = () => {
-    triageRef.current?.scrollIntoView({ block: "start" });
+    setTab("today");
+    triageRef.current?.scrollIntoView({ block: "start", behavior: "instant" });
     triageRef.current?.focus({ preventScroll: true });
   };
 
+  const returnTo = { label: "返回今日学习", run: () => invoke("continue") };
   const openTarget = (target: ActivityTargetV1) => {
     switch (target.kind) {
       case "learning_run":
@@ -745,133 +152,105 @@ export function StudySurface() {
         return;
       case "objective":
         setActiveObjectiveId(target.id);
-        invoke("open-objective");
+        invoke("open-objective", { returnTo });
         return;
       case "note":
         setActiveNoteRef({ noteId: target.id, noteVersionId: target.noteVersionId });
-        invoke("open-notebook");
+        invoke("open-notebook", { returnTo });
         return;
       case "card_generation":
         setActiveCardGenerationRunId(target.id);
-        invoke("open-card-generation");
+        invoke("open-card-generation", { returnTo });
         return;
       case "source":
         setActiveSourceId(target.id);
-        invoke("open-source");
+        invoke("open-source", { returnTo });
         return;
     }
+  };
+
+  const openRoundRecord = (item: NoteLearningRoundPersonalHistoryItemV1) => {
+    setActiveNoteRef({ noteId: item.noteId, noteVersionId: null, mode: "preview", learningRoundId: item.roundId });
+    invoke("open-notebook", { returnTo });
   };
 
   const recoverAnomaly = (recovery: TodayAnomalyGroup["recovery"]) => {
     if (recovery !== "ai_consent") return;
     setSettingsAttention(SETTINGS_ATTENTION_AI_CONSENT);
     setSettingsSection("data");
-    invoke("open-settings");
+    invoke("open-settings", { returnTo });
   };
 
   const reading = loading || Boolean(failure);
+  const selectTab = (id: StudyTab) => {
+    setTab(id);
+    rootRef.current?.querySelector<HTMLElement>(`#study-tab-${id}`)?.focus({ preventScroll: true });
+  };
+  const tabKeys = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const index = TABS.findIndex(item => item.id === tab);
+    const next = event.key === "ArrowRight" ? (index + 1) % TABS.length
+      : event.key === "ArrowLeft" ? (index + TABS.length - 1) % TABS.length
+      : event.key === "Home" ? 0 : event.key === "End" ? TABS.length - 1 : null;
+    if (next !== null) { event.preventDefault(); selectTab(TABS[next].id); }
+  };
 
   return (
     <HudPage page="today">
-      {/* 外壳 chip 已经是这一页的标题（今日学习 + 副标题），页内再放一个大标题
-          只会把同一句话说两遍；这里换成一枚日期行，它才是这一页独有的东西。 */}
-      <section className="day-route" data-page="today-log" aria-label="今日学习">
-        <div className="day-head">
-          <p className="day-head__date">
-            <time dateTime={dayIso(nowMs)}>{todayDateLabel(nowMs)}</time>
-            <span>{todayWeekdayLabel(nowMs)}</span>
-          </p>
-          {/* 这一页的每一个数字都是"这个空间的今天"，不是"我的今天"。以前这里
-              只有日期，读者只能自己猜口径——现在把限定词写在数字旁边。 */}
-          <p className="day-head__scope">
-            当前空间{spaceIdentity ? ` · ${spaceIdentity.name}` : ""}
-          </p>
-          {reading ? null : (
-            <div className="day-head__actions">
-              {refreshFailure ? (
-                <span className="day-head__refresh-failure" role="status">
-                  刷新失败，仍显示上次结果
-                </span>
-              ) : null}
-              <button
-                type="button"
-                className="button day-head__refresh"
-                onClick={() => void reload({ silent: true })}
-                disabled={refreshing}
-                aria-label="重新读取今日学习记录"
-                aria-busy={refreshing}
-              >
-                <RefreshCw size={13} strokeWidth={2.2} aria-hidden="true" />
-                {refreshing ? "刷新中" : "刷新"}
-              </button>
-            </div>
-          )}
-        </div>
-
-        {reading ? (
-          <div className="day-route__state">
-            {loading ? (
-              <SurfaceDataState
-                kind="loading"
-                message="正在读取今天的操作日志"
-                detail="内容来自你的笔记、来源、目标和学习旅程的真实记录。"
-              />
-            ) : (
-              <SurfaceDataState
-                kind="error"
-                message="今天的操作日志暂时不可用"
-                detail={failure ?? ""}
-                onRetry={() => void reload()}
-              />
-            )}
+      <section ref={rootRef} className="day-route" data-page="today-log" aria-label="今日学习">
+        <header className="day-head">
+          <div className="day-head__calendar" aria-hidden="true">
+            <span>{new Date(nowMs).getMonth() + 1} 月</span><b>{new Date(nowMs).getDate()}</b>
           </div>
-        ) : verdict ? (
-          <>
-            <DayVerdict verdict={verdict} triageCount={groups.length} onTriage={scrollToTriage} />
-
-            <div className="day-log" tabIndex={0} role="group" aria-label="今日操作日志与待处理事务">
-              {groups.length > 0 ? (
-                <AnomalyTriage
-                  groups={actionableGroups}
-                  backgroundGroups={backgroundGroups}
-                  total={data?.anomalies.length ?? groups.length}
-                  sharedStep={sharedStep}
-                  note={anomalyNote}
-                  onOpen={openTarget}
-                  onRecover={recoverAnomaly}
-                  anchorRef={triageRef}
-                />
-              ) : null}
-
-              <LogStream rows={rows} note={logNote} onOpen={openTarget} onPick={invoke} />
-
-              <RoundRecordStream
-                items={roundRecordItems}
-                total={roundRecordTotal}
-                hasMore={roundRecordHasMore}
-                busy={olderRoundsBusy}
-                failure={personalRounds.failure ?? olderRoundsFailure}
-                loadingText={ROUND_RECORD_COPY_V1.loadingOlder}
-                loadMoreText={ROUND_RECORD_COPY_V1.loadOlder}
-                onLoadOlder={() => void loadOlderRoundRecords()}
-                onReload={() => void personalRounds.reload()}
-              />
-            </div>
-
-            {/* 右栏两张卡：上面那张回答"我在别的空间还有多少没做"（这一页唯一
-                不按当前空间切的数字），下面那张才是伴星入口。 */}
-            <aside className="day-rail" aria-label="全部空间与伴星">
-              <AllSpacesPanel
-                summary={allSpacesSummary}
-                loading={allSpaces.loading}
-                failure={allSpaces.failure}
-                onRetry={() => void allSpaces.reload()}
-              />
-              <span className="tag">伴星</span>
-              <CompanionRail onOpen={() => invoke("open-companion-center")} />
-            </aside>
-          </>
-        ) : null}
+          <div className="day-head__intro">
+            <p className="day-head__date"><time dateTime={dayIso(nowMs)}>{new Intl.DateTimeFormat("zh-CN", { weekday: "long" }).format(new Date(nowMs))}</time><span>今天，学一点喜欢的。</span></p>
+            <p className="day-head__scope">当前空间{spaceIdentity ? ` · ${spaceIdentity.name}` : ""}</p>
+          </div>
+          <button type="button" className="button day-head__refresh" disabled={refreshing} onClick={() => void reload({ silent: true })}
+            aria-label="重新读取今日学习记录" aria-busy={refreshing}><RefreshCw size={17} aria-hidden="true" /></button>
+        </header>
+        <div className="day-paths" aria-label="今天从哪里开始">
+          <button className="day-path" type="button" onClick={() => invoke("open-resumable", { returnTo })}>
+            <span className="day-path__icon"><Route size={22} aria-hidden="true" /></span><span><b>接着上次学</b><small>未完成的练习，进度还在</small></span><ArrowRight size={17} aria-hidden="true" />
+          </button>
+          <button className="day-path" type="button" onClick={() => invoke("open-notes", { returnTo })}>
+            <span className="day-path__icon"><BookOpen size={22} aria-hidden="true" /></span><span><b>翻开一篇笔记</b><small>读一读，也回想一下</small></span><ArrowRight size={17} aria-hidden="true" />
+          </button>
+          <button className="day-path" type="button" onClick={() => invoke("review", { returnTo })}>
+            <span className="day-path__icon"><Leaf size={22} aria-hidden="true" /></span><span><b>温习熟悉的知识</b><small>看看今天到期的复习</small></span><ArrowRight size={17} aria-hidden="true" />
+          </button>
+        </div>
+        <div className="day-tabs" role="tablist" aria-label="学习手账" data-tactile-tabs>
+          <span className="day-tabs__cushion" data-tactile-cushion aria-hidden="true" />
+          {TABS.map(({ id, label, Icon }) => <button key={id} type="button" role="tab" id={`study-tab-${id}`} aria-controls={`study-panel-${id}`}
+            aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} onKeyDown={tabKeys} onClick={() => selectTab(id)}><Icon size={17} aria-hidden="true" />{label}</button>)}
+        </div>
+        <div className="day-paper" ref={paperRef} onScroll={rememberScroll}>
+          <section className="day-tab-page" id="study-panel-today" role="tabpanel" aria-labelledby="study-tab-today" hidden={tab !== "today"} data-tactile-page="today">
+            {refreshFailure ? <p className="day-head__refresh-failure" role="status">{refreshFailure} · 仍显示上次读到的记录</p> : null}
+            {reading ? <SurfaceDataState kind={loading ? "loading" : "error"}
+              message={loading ? "正在读取今天的操作日志" : "今天的操作日志暂时不可用"}
+              detail={loading ? "笔记、来源和练习的足迹，正在收进这页手账。" : failure ?? ""}
+              onRetry={loading ? undefined : () => void reload()} /> : verdict ? <>
+              <DayVerdict verdict={verdict} triageCount={actionableGroups.length} onTriage={scrollToTriage} />
+              <div className="day-log" role="group" aria-label="今日操作日志与待处理事务">
+                <LogStream rows={rows} note={logNote} onOpen={openTarget} onPick={intent => invoke(intent, { returnTo })} />
+                {groups.length > 0 ? <AnomalyTriage groups={actionableGroups} backgroundGroups={backgroundGroups}
+                  total={data?.anomalies.length ?? groups.length} sharedStep={sharedStep} note={anomalyNote} onOpen={openTarget} onRecover={recoverAnomaly} anchorRef={triageRef} /> : null}
+              </div>
+            </> : null}
+          </section>
+          <section className="day-tab-page" id="study-panel-rounds" role="tabpanel" aria-labelledby="study-tab-rounds" hidden={tab !== "rounds"} data-tactile-page="rounds">
+            <p className="day-page-lead"><NotebookPen size={20} aria-hidden="true" />一轮一个问题，慢慢留下弄懂它的过程。</p>
+            <RoundRecordStream items={rounds.items} total={rounds.total} hasMore={rounds.hasMore} busy={rounds.busy}
+              failure={rounds.failure} loading={rounds.loading} loadingText={ROUND_RECORD_COPY_V1.loadingOlder} loadMoreText={ROUND_RECORD_COPY_V1.loadOlder}
+              onLoadOlder={() => void rounds.loadOlder()} onReload={rounds.reload} onOpen={openRoundRecord} />
+          </section>
+          <section className="day-tab-page" id="study-panel-spaces" role="tabpanel" aria-labelledby="study-tab-spaces" hidden={tab !== "spaces"} data-tactile-page="spaces">
+            <p className="day-page-lead"><BookOpen size={20} aria-hidden="true" />每个空间都有自己的小小积累。</p>
+            <AllSpacesPanel summary={allSpacesSummary} loading={allSpaces.loading} failure={allSpaces.failure} onRetry={() => void allSpaces.reload()} />
+          </section>
+        </div>
+        <aside className="day-rail" aria-label="伴星日记"><Sparkles size={23} aria-hidden="true" /><CompanionRail onOpen={() => invoke("open-companion-center", { returnTo })} /></aside>
       </section>
     </HudPage>
   );

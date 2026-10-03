@@ -77,12 +77,35 @@ export function resolveWorkerIdleInTransactionTimeoutMs(
   return resolvePositiveDatabaseTimeoutMs(raw, 15_000);
 }
 
+/**
+ * 空闲连接回收（2026-10-03 实测修复）。
+ *
+ * 与 API 侧同一个理由：主池此前没有 `idle_timeout`，空载就把 `poolMax` 攥住不放。
+ * `poolMax` 是按 `QUEUE_CONCURRENCY × 4` 推出来的（默认 4 → 16），而 job 是
+ * 阵发式的——队列一空这 16 个连接就全是 `ClientRead`。把它们还给数据库，
+ * 多副本部署才有连接预算：实测 worker 空载常驻 4 个连接，加上 API 侧每个副本
+ * 28 个，三副本就撞穿 `max_connections=100`。
+ *
+ * 取 30s，与 API 侧（`resolveApiPoolIdleTimeoutSeconds`）和私有解池同值。
+ * 代价是队列从空转忙时首波 job 要等一次重连（实测本机 < 5ms），换来的是
+ * 副本数不再被连接数锁死。
+ */
+export function resolveWorkerPoolIdleTimeoutSeconds(
+  raw: string | undefined = process.env.WORKER_POOL_IDLE_TIMEOUT_SECONDS,
+): number {
+  return resolvePositiveDatabaseTimeoutMs(raw, 30);
+}
+
 const queryClient = postgres(connectionString, {
   max: poolMax,
+  idle_timeout: resolveWorkerPoolIdleTimeoutSeconds(),
   connection: {
     statement_timeout: resolveWorkerStatementTimeoutMs(),
     lock_timeout: resolveWorkerLockTimeoutMs(),
     idle_in_transaction_session_timeout: resolveWorkerIdleInTransactionTimeoutMs(),
+    // 2026-10-03：与 API 侧同一动机——worker 的池此前在观测里和 API 挤在
+    // 同一个"全库连接数"里。专属 application_name 让两个进程的池饱和度可以分开看。
+    application_name: "ailearn_worker",
   },
 });
 export const db = drizzle(queryClient, { schema });

@@ -1,11 +1,11 @@
+import { Check,ChevronDown } from "lucide-react";
 import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
+useEffect,
+useId,
+useRef,
+useState,
+type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { Check, ChevronDown } from "lucide-react";
 
 export type CompanionSelectOption<T extends string = string> = {
   readonly value: T;
@@ -62,7 +62,7 @@ export function CompanionSelect<T extends string>({
     const root = rootRef.current;
     if (root) {
       const trigger = root.getBoundingClientRect();
-      const scroller = root.closest(".companion-center__body, .companion-tab-panel");
+      const scroller = root.closest(".cc-page, .cc-memory-focus");
       const bounds = scroller?.getBoundingClientRect();
       const spaceBelow = (bounds ? bounds.bottom : window.innerHeight) - trigger.bottom;
       const spaceAbove = trigger.top - (bounds ? bounds.top : 0);

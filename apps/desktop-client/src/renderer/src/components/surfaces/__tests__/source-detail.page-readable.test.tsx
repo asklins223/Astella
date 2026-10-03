@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SourceDetailSurface } from "../source/source-detail-surface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
@@ -134,10 +134,12 @@ describe("来源详情：她读到的与屏幕上的是同一份", () => {
     await waitFor(() => expect(screen.getByRole("heading", { level: 2 })).not.toBeNull());
     await waitFor(() => expect(publishedView()).not.toBeNull());
 
+    expect(publishedView()!.items).toBeUndefined();
+    fireEvent.click(screen.getByRole("button", { name: "笔记 2" }));
     const view = publishedView()!;
     expect(view.pageId).toBe("source_detail");
     expect(view.title).toBe(screen.getByRole("heading", { level: 2 }).textContent);
-    expect(view.statusLine).toBe(document.querySelector(".folio-page.right > p.sub")?.textContent);
+    expect(view.statusLine).toBe(document.querySelector(".source-structure-line")?.textContent);
     const meta = [...document.querySelectorAll(".article-copy .meta span")].map((node) => node.textContent);
     expect(view.metrics).toEqual([
       { label: "状态", value: meta[1] },
@@ -150,7 +152,7 @@ describe("来源详情：她读到的与屏幕上的是同一份", () => {
     expect(chapterTab("笔记")).toContain(view.metrics![3].value);
     expect(view.items?.map((entry) => entry.ordinal)).toEqual([1, 2]);
     expect(view.items?.map((entry) => entry.label)).toEqual(
-      [...document.querySelectorAll(".note-links span")].map((node) => node.textContent),
+      [...document.querySelectorAll(".note-links b")].map((node) => node.textContent),
     );
     expect(view.items?.map((entry) => entry.state)).toEqual(
       [...document.querySelectorAll(".note-links small")].map((node) => node.textContent?.split(" · ")[0]),
@@ -174,6 +176,8 @@ describe("来源详情：她读到的与屏幕上的是同一份", () => {
     installApi({ notes: [], noteTotal: 0 });
     renderSurface();
     await waitFor(() => expect(publishedView()).not.toBeNull());
+    expect(publishedView()!.notice).toBeUndefined();
+    fireEvent.click(screen.getByRole("button", { name: "笔记 0" }));
     const view = publishedView()!;
     expect(view.items).toBeUndefined();
     expect(view.notice).toBe(screen.getByText(/还没有基于这份材料建立的笔记/).textContent);
@@ -183,6 +187,7 @@ describe("来源详情：她读到的与屏幕上的是同一份", () => {
     installApi({ noteTotal: 7 });
     renderSurface();
     await waitFor(() => expect(publishedView()).not.toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "笔记 7" }));
     expect(publishedView()!.notice).toBe(screen.getByText(/^共 \d+ 篇，这里列出最近/).textContent);
   });
 
@@ -232,14 +237,13 @@ describe("来源详情：她读到的与屏幕上的是同一份", () => {
  * 自相矛盾的话。这一屏当初是同一族写法（批注 `片段 02` 是序号、页签 `片段 2` 是条数），
  * 旧用例甚至专门写了"按容器取"来绕开这份歧义——绕开就是没判。现在把它钉住。
  */
-describe("页边批注：段号与段数不再共用「片段」这两个字", () => {
-  it("批注说「第 N 段，共 2 段」，整屏不再有补零的「片段 0X」", async () => {
+describe("片段目录：段号与段数可分别辨认", () => {
+  it("真实目录按段号列出两段，整屏不再有补零的「片段 0X」", async () => {
     installApi();
     renderSurface();
     await waitFor(() => expect(publishedView()).not.toBeNull());
-    const clip = document.querySelector<HTMLElement>(".margin-note b");
-    expect(clip).not.toBeNull();
-    expect(clip!.textContent).toMatch(/^第 \d+ 段，共 2 段$/);
+    fireEvent.click(screen.getByRole("button", { name: "片段 2" }));
+    expect([...document.querySelectorAll(".source-fragments b")].map(node => node.textContent)).toEqual(["1", "2"]);
     expect(document.body.textContent).not.toMatch(/片段 0\d/);
   });
 

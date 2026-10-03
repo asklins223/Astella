@@ -195,7 +195,10 @@ export function HomeV2ObjectLayer() {
   const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
 
   useLayoutEffect(() => {
-    setPortalHost(document.querySelector<HTMLElement>(".desktop-app"));
+    // Share the room's stacking context with the top controls. Portalling to
+    // the app above the access gate let compact home navigation cover HUD dialogs.
+    setPortalHost(document.querySelector<HTMLElement>(".desktop-access-gate__room-content")
+      ?? document.querySelector<HTMLElement>(".desktop-app"));
   }, []);
 
   /**

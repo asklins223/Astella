@@ -174,6 +174,8 @@ export function useNoteDocLiveView(
   presenceName: string | null = null,
   /** 主进程按 epoch 拒收过期请求，所以这里必须带着它、并跟着回执更新。 */
   epochRef?: { current: number | undefined },
+  /** Checkpoints and restorations change the current version; personal notes have no stream to carry that update. */
+  currentVersionId: string | null = null,
 ): NoteDocLiveView {
   const docRef = useRef<Y.Doc | null>(null);
 
@@ -365,7 +367,7 @@ export function useNoteDocLiveView(
       })
       .catch(() => undefined);
     return () => { disposed = true; };
-  }, [clearDraft, doc, noteId, readDraft]);
+  }, [clearDraft, currentVersionId, doc, noteId, readDraft]);
 
   /**
    * 卸载（换页、切空间、刷新）时把还压着的那几个增量写下去。刷新是这条路上唯一没有

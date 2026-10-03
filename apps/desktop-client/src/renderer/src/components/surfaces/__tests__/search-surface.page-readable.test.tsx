@@ -111,11 +111,13 @@ function filterValue(label: string): string | undefined {
 }
 
 beforeEach(() => {
+  useRoomStore.setState({ searchResume: null, searchQuery: "", searchTypeFilter: "all", searchWeakOnly: false });
   Object.defineProperty(Element.prototype, "scrollTo", { configurable: true, value: () => undefined });
   Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: () => undefined });
 });
 
 afterEach(() => {
+  useRoomStore.setState({ searchResume: null });
   cleanup();
   Reflect.deleteProperty(window, "ailearn");
   Reflect.deleteProperty(Element.prototype, "scrollTo");
@@ -155,9 +157,9 @@ describe("全局查找：她读到的与屏幕上的是同一份", () => {
     expect(view.statusLine).toBe(document.querySelector(".index-progress span")?.textContent);
     expect(view.metrics).toEqual([
       { label: "结果", value: document.querySelector(".index-progress span")?.textContent ?? "" },
-      { label: "读取深度", value: document.querySelector(".index-depth")?.textContent ?? "" },
+      { label: "查找范围", value: document.querySelector(".index-depth")?.textContent ?? "" },
     ]);
-    expect(filterValue("类型")).toBe(document.querySelector(".hud-picker__value")?.textContent);
+    expect(document.querySelector('.search-types [aria-pressed="true"]')?.getAttribute("aria-label")).toBe(`结果类型：${filterValue("类型")}`);
     expect(filterValue("关键词")).toBe(screen.getByRole("searchbox").getAttribute("value") ?? (screen.getByRole("searchbox") as HTMLInputElement).value);
     expect(view.items?.map((entry) => entry.ordinal)).toEqual([1, 2]);
     expect(view.items?.map((entry) => entry.label)).toEqual(
@@ -167,14 +169,14 @@ describe("全局查找：她读到的与屏幕上的是同一份", () => {
       [...document.querySelectorAll(".index-card .kind")].map((node) => node.textContent),
     );
     // 第一条结果是自动选中的，所以这一屏最后那句话是"读到哪儿了"（页签下面那一格）。
-    // 第一条结果是自动选中的，所以这一屏最后那句话是"读到哪儿了"（页签下面那一格）。
     expect(view.notice).toBe(screen.getByText(/已到读取上限/).textContent);
   });
 
-  it("开着「证据不足」时，那颗标签的文案（含 + 号）逐字进 filters", async () => {
+  it("开着「证据不足」时，那颗标签的文案逐字进 filters", async () => {
     installApi();
     await renderWithQuery("间隔", 2);
-    const chip = screen.getByRole("button", { name: /^证据不足/ });
+    fireEvent.click(screen.getByRole("button", { name: "结果类型：只看学习卡" }));
+    const chip = await screen.findByRole("button", { name: /^证据不足/ });
     fireEvent.click(chip);
     // 标签上那个数要等目标状态读回来才有，视图与屏上必须一起到位才算同源。
     await waitFor(() => expect(filterValue("证据不足筛选")).toBe(
@@ -190,7 +192,7 @@ describe("全局查找：她读到的与屏幕上的是同一份", () => {
     const view = publishedView()!;
     expect(view.items).toBeUndefined();
     expect(view.notice).toBe(
-      `${screen.getByText("输入关键词开始查找").textContent}：${screen.getByText(/^来源、笔记与学习卡共用/).textContent}`,
+      `${screen.getByText("输入关键词开始查找").textContent}：${document.querySelector(".search-welcome > p:last-of-type")?.textContent}`,
     );
     expect(filterValue("关键词")).toBeUndefined();
   });
@@ -198,9 +200,11 @@ describe("全局查找：她读到的与屏幕上的是同一份", () => {
   it("一条都没搜到：说的是屏上那句「没有找到」，含关键词本身", async () => {
     installApi({ items: [], total: 0 });
     await renderWithQuery("不存在的词", 0);
+    await screen.findByText(/没有找到/);
+    await waitFor(() => expect(publishedView()?.statusLine).toBe(screen.getByText(/没有找到/).textContent));
     const view = publishedView()!;
     expect(view.items).toBeUndefined();
-    expect(view.notice).toBe(screen.getByText(/没有找到/).textContent + "：" + "可以换一个关键词，或把类型切回全部。");
+    expect(view.notice).toBe(screen.getByText(/没有找到/).textContent + "：" + "试试更短的关键词，或看看全部类型。");
     expect(view.statusLine).toBe(screen.getByText(/没有找到/).textContent);
   });
 

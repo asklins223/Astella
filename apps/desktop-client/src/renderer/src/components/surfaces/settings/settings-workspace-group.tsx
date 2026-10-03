@@ -236,13 +236,13 @@ export function SettingsWorkspaceGroup(props: {
             onKeyDown={(event) => {
               if (event.key !== "Enter") return;
               event.preventDefault();
-              void renamePersonalWorkspace();
+              if (profileBusy === null && renameValue.trim() && renameValue.trim() !== renamableWorkspace.name) void renamePersonalWorkspace();
             }}
           />
           <button
             type="button"
             className="button primary"
-            disabled={profileBusy !== null || !renameValue.trim()}
+            disabled={profileBusy !== null || !renameValue.trim() || renameValue.trim() === renamableWorkspace.name}
             onClick={() => void renamePersonalWorkspace()}
           >
             {profileBusy === "rename" ? "改名中…" : "改名"}

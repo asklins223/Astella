@@ -20,7 +20,8 @@ import {
   JobStatus,
   JobType,
 } from "@ailearn/shared";
-import { segmentsToBlocks, type ParsedSegment } from "@ailearn/shared/markdown-parser";
+import type { ParsedSegment } from "@ailearn/shared/markdown-parser";
+import { sourceNoteBlocks } from "./source-note-blocks.ts";
 // 稳定 P1（2026-09-15 审计）：parse_source 的 payload 走共享精确契约——漏字段/
 // 拼错字段在编译期报错，而不是运行期变成一条可重试的 "missing sourceId" 失败。
 import type { ParseSourceJobPayload } from "@ailearn/shared/job-payload-contracts";
@@ -216,6 +217,7 @@ export async function createSource(
   if (input.url) metadata.url = input.url;
   // 标记 type 来源，供 Worker 判断是否可修正
   metadata.typeSource = input.type ? "manual" : "auto";
+  metadata.titleSource = input.title?.trim() ? "manual" : "auto";
 
   // 审计 F33：同一个网址的第二次采集默认**不建新条目**——先问用户要不要用原来那份。
   // 演示库里的两条 bilibili 链接（带与不带 `spm_id_from`）各自长成一篇笔记和一叠卡，
@@ -459,8 +461,12 @@ export async function updateSource(
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (input.title !== undefined) updates.title = input.title;
   // F-021: status 不再由客户端直接设置，只能通过服务端状态机改变
-  if (input.metadata !== undefined) {
-    updates.metadata = { ...source.metadata, ...input.metadata };
+  if (input.metadata !== undefined || input.title !== undefined) {
+    updates.metadata = {
+      ...source.metadata,
+      ...input.metadata,
+      titleSource: input.title !== undefined ? "manual" : (source.metadata as Record<string, unknown> | null)?.titleSource ?? "auto",
+    };
   }
 
   await executor
@@ -768,7 +774,7 @@ export async function createNoteFromSource(
     charEnd: s.charEnd,
   }));
 
-  const blocks = segmentsToBlocks(parsedSegments, source.type as "text" | "markdown" | "code" | "url");
+  const blocks = sourceNoteBlocks(parsedSegments, source.type as "text" | "markdown" | "code" | "url");
   const newContentHash = computeContentHash({ blocks: blocks.map((b) => ({ type: b.type, content: b.content })) });
 
   // 内容去重：如果该来源已有笔记的当前版本内容哈希与新内容一致，

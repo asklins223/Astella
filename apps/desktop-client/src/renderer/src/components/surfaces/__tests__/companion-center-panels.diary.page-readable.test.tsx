@@ -79,12 +79,12 @@ describe("伴星中心 · 日记：只说那一刻屏幕上写着的", () => {
     const view = publishedView()!;
     expect(view.pageId).toBe("companion");
     expect(view.title).toBe("伴星中心");
-    const prose = [...document.querySelectorAll(".companion-diary-prose")].map((node) => node.textContent);
+    const prose = [...document.querySelectorAll(".cc-diary-prose > p")].map((node) => node.textContent);
     expect(prose).toHaveLength(2);
     expect(view.items?.map((entry) => entry.label)).toEqual(prose);
     expect(view.items?.map((entry) => entry.ordinal)).toEqual([1, 2]);
-    expect(view.statusLine).toBe(document.querySelector(".companion-diary-entry small")?.textContent);
-    expect(view.filters).toEqual([{ label: "日期", value: document.querySelector(".companion-date-pick__trigger span")?.textContent }]);
+    expect(view.statusLine).toBe(document.querySelector(".cc-diary-sheet > header small")?.textContent);
+    expect(view.filters).toEqual([{ label: "日期", value: document.querySelector(".cc-diary-nav__date span")?.textContent }]);
     expect(view.notice).toBeUndefined();
   });
 
@@ -93,7 +93,7 @@ describe("伴星中心 · 日记：只说那一刻屏幕上写着的", () => {
       section: { ok: true, value: daily({ selectionReason: "这段保留了我们一起核对的过程。" }) },
     });
     const reason = "她选了这段：这段保留了我们一起核对的过程。";
-    expect(document.querySelector(".companion-diary-entry")?.textContent).toContain(reason);
+    expect(document.querySelector(".cc-diary-sheet")?.textContent).toContain(reason);
     expect(publishedView()?.items?.[0]).toEqual({ ordinal: 1, label: reason });
   });
 
@@ -102,10 +102,10 @@ describe("伴星中心 · 日记：只说那一刻屏幕上写着的", () => {
     const view = publishedView()!;
     expect(view.items).toBeUndefined();
     // 逐字，不是"包含"：拼上日期或别的东西就该红。
-    expect(view.statusLine).toBe(document.querySelector(".companion-section-state strong")?.textContent);
+    expect(view.statusLine).toBe(document.querySelector(".cc-state strong")?.textContent);
     expect(view.statusLine).toBe("这一天还没有日记");
     // 这一天没写，但上面那颗日期胶囊还写着 ⇒ 日期仍然进 filters。
-    expect(view.filters).toEqual([{ label: "日期", value: document.querySelector(".companion-date-pick__trigger span")?.textContent }]);
+    expect(view.filters).toEqual([{ label: "日期", value: document.querySelector(".cc-diary-nav__date span")?.textContent }]);
     expect(view.notice).toBeUndefined();
   });
 
@@ -116,14 +116,14 @@ describe("伴星中心 · 日记：只说那一刻屏幕上写着的", () => {
         value: daily({ status: "failed", failureReason: "model_unavailable", blocks: [{ type: "text", text: "占位，屏幕上不会显示这一段" }] }),
       },
     });
-    const state = document.querySelector(".companion-section-state")!;
+    const state = document.querySelector(".cc-state")!;
     const view = publishedView()!;
     // failed 那一格屏上只有一句标题＋原因：blocks 一条都不许登记（屏幕上是空的）。
     expect(view.items).toBeUndefined();
     expect(view.statusLine).toBe(state.querySelector("strong")?.textContent);
-    expect(view.filters).toEqual([{ label: "日期", value: document.querySelector(".companion-date-pick__trigger span")?.textContent }]);
+    expect(view.filters).toEqual([{ label: "日期", value: document.querySelector(".cc-diary-nav__date span")?.textContent }]);
     expect(view.notice).toBe(
-      `${state.querySelector("strong")?.textContent}：${state.querySelector("span")?.textContent}`,
+      `${state.querySelector("strong")?.textContent}：${state.querySelector("p")?.textContent}`,
     );
     expect(view.notice).toContain("她试了几次没写出来");
   });
@@ -131,7 +131,7 @@ describe("伴星中心 · 日记：只说那一刻屏幕上写着的", () => {
   it("整格读不到：只发状态与原因", () => {
     renderPanel({ section: null, failure: "伴星数据暂时不可用" });
     const view = publishedView()!;
-    expect(view.statusLine).toBe(document.querySelector(".companion-section-state strong")?.textContent);
+    expect(view.statusLine).toBe(document.querySelector(".cc-state strong")?.textContent);
     expect(view.items).toBeUndefined();
     expect(view.filters).toBeUndefined();
     expect(view.notice).toBe("日记当前不可用：伴星数据暂时不可用");
@@ -140,7 +140,7 @@ describe("伴星中心 · 日记：只说那一刻屏幕上写着的", () => {
   it("第一次读取没回来：说的是「正在读取日记」，不发任何一天的内容", () => {
     renderPanel({ section: null, loading: true, failure: null });
     const view = publishedView()!;
-    expect(view.statusLine).toBe(document.querySelector(".companion-section-state strong")?.textContent);
+    expect(view.statusLine).toBe(document.querySelector(".cc-state strong")?.textContent);
     expect(view.items).toBeUndefined();
   });
 });

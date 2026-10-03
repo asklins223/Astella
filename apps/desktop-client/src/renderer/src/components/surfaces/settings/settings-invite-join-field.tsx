@@ -29,7 +29,7 @@ export function SettingsInviteJoinField(props: {
       onKeyDown={(event) => {
         if (event.key !== "Enter") return;
         event.preventDefault();
-        void joinWithInvite();
+        if (!joining && inviteCode.trim()) void joinWithInvite();
       }}
     />
     <button type="button" className="button primary" disabled={joining || !inviteCode.trim()} onClick={() => void joinWithInvite()}>

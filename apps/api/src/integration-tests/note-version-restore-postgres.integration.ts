@@ -32,6 +32,8 @@ import {
 } from "../modules/note/service.ts";
 import {
   editFragmentBlockText,
+  projectFragmentBlocks,
+  snapshotOf,
 } from "../modules/note/doc-fragment.ts";
 import {
   loadNoteDoc,
@@ -190,6 +192,42 @@ async function cleanupWorkspace(
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────
+
+test("restore: an open editor merges the restored content and can submit its next edit", async () => {
+  const fixture = await seedWorkspaceNoteWithTwoVersions(sql);
+  const { workspaceId, userId, noteId, v1Id } = fixture;
+  const client = new Y.Doc();
+  try {
+    await withServiceTransaction(async (tx) => {
+      const { doc } = await loadNoteDoc(tx, { workspaceId, noteId, userId });
+      Y.applyUpdate(client, snapshotOf(doc));
+      doc.destroy();
+    });
+    assert.equal(projectFragmentBlocks(client)[0].content, "v2 content");
+
+    await withServiceTransaction((tx) => restoreNoteVersion(tx, noteId, v1Id, workspaceId, userId));
+    await withServiceTransaction(async (tx) => {
+      const { doc } = await loadNoteDoc(tx, { workspaceId, noteId, userId });
+      Y.applyUpdate(client, snapshotOf(doc));
+      doc.destroy();
+    });
+    assert.deepEqual(projectFragmentBlocks(client).map((block) => block.content), ["v1 content"]);
+
+    const before = Y.encodeStateVector(client);
+    editFragmentBlockText(client, 0, "v1 content · continue editing");
+    const update = Y.encodeStateAsUpdate(client, before);
+    await flushLikeCollaboration(workspaceId, userId, noteId, (doc) => {
+      Y.applyUpdate(doc, update);
+      assert.equal(doc.store.pendingStructs, null);
+      assert.equal(doc.store.pendingDs, null);
+    });
+    const rows = await sql`SELECT content FROM note_blocks WHERE version_id = ${v1Id} ORDER BY ordinal`;
+    assert.deepEqual(rows.map((row) => row.content), ["v1 content · continue editing"]);
+  } finally {
+    client.destroy();
+    await cleanupWorkspace(sql, workspaceId, userId, noteId);
+  }
+});
 
 test("restore: switches currentVersionId to target version without creating a new version", async () => {
   await withTestSql(async (tx) => {

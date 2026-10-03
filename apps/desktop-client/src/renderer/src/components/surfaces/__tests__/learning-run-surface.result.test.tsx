@@ -179,6 +179,12 @@ function renderResult(rubricLength = 12, resultPayload?: unknown, onExit = vi.fn
   return onExit;
 }
 
+async function openResultDetails() {
+  const details = document.querySelector<HTMLDetailsElement>(".learning-run-result-report");
+  fireEvent.click(details!.querySelector("summary")!);
+  await waitFor(() => expect(details?.open).toBe(true));
+}
+
 beforeEach(() => {
   // jsdom intentionally has no rendering context; the DOM/flow tests still
   // verify the global overlay without requiring a native canvas package.
@@ -198,7 +204,7 @@ describe("LearningRunSurface · 新结果过关演出", () => {
     expect(document.querySelector(".learning-run-ceremony")?.parentElement).toBe(document.body);
     expect(document.querySelector(".learning-run-ceremony__confetti")).not.toBeNull();
     expect(screen.getByRole("button", { name: "跳过庆祝，查看完整反馈" })).toBeTruthy();
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "跳过庆祝，查看完整反馈" }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "跳过庆祝，查看完整反馈" })));
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() => expect(document.querySelector(".learning-run-ceremony")).toBeNull());
     expect(document.querySelector(".learning-run-result-board")).not.toBeNull();
@@ -343,6 +349,9 @@ describe("LearningRunSurface · 结算页结构", () => {
     // 病根就是这个包含关系：报告列是 overflow:auto，出口一旦落在它内部就会被顶出折叠线。
     expect(report?.contains(actions as Node)).toBe(false);
     expect(actions?.parentElement).toBe(board);
+    expect(document.querySelector<HTMLDetailsElement>(".learning-run-result-report")?.open).toBe(false);
+    expect(screen.getByRole("button", { name: "看参考答案与解释" }).closest("details")).toBe(report);
+    expect(screen.getByRole("button", { name: "返回学习空间" })).toBeTruthy();
   });
 
   it("判定再多也把出口留在板上：12 条 rubric 时报告列与出口是兄弟", async () => {
@@ -359,13 +368,16 @@ describe("LearningRunSurface · 结算页结构", () => {
     ]);
   });
 
-  it("两个出口都还在，且主出口是第一个", async () => {
-    renderResult();
+  it("学习卡结果把回到同一张卡作为主操作，学习空间仍可返回", async () => {
+    const onExit = renderResult();
     await waitFor(() => expect(document.querySelector(".learning-run-result-actions")).not.toBeNull());
 
     const buttons = [...document.querySelectorAll<HTMLButtonElement>(".learning-run-result-actions button")];
-    expect(buttons.map((b) => b.textContent)).toEqual(["返回学习空间", "查看学习卡"]);
+    expect(buttons.map((b) => b.textContent)).toEqual(["回到学习卡", "返回学习空间"]);
     expect(buttons[0]?.className).toContain("primary");
+    expect(buttons[1]?.className).not.toContain("primary");
+    fireEvent.click(buttons[0]!);
+    expect(onExit).toHaveBeenCalledWith({ route: { kind: "room.home" }, objectiveId: OBJECTIVE_ID });
   });
 
   it("结果到达后会留在报告页，只有用户点击出口才离开", async () => {
@@ -433,7 +445,7 @@ describe("LearningRunSurface · 结算页结构", () => {
     // 「还需补上」里不许出现这次已经说清的 facet——旧行为是同屏四行「说清了」
     // 加一句「还需补上：回忆」。
     const gapRow = rows.find((text) => text.startsWith("还差什么"));
-    expect(gapRow).toBe("还差什么可以按原路线继续正式挑战。");
+    expect(gapRow).toBeUndefined();
     expect(document.querySelector(".learning-run-arrival-evidence")?.textContent)
       .toContain("提 那一步说清了。");
   });
@@ -448,7 +460,7 @@ describe("LearningRunSurface · 结算页结构", () => {
     expect(ledger?.textContent).not.toContain("还没有形成");
   });
 
-  it("练习结果首屏不再只剩「练习完成」，会直接给出收获、缺口与下一步", async () => {
+  it("练习结果首屏给出真实收获与下一步，没有缺口时不编造一项", async () => {
     renderResult(12, allCoveredPractice());
     await waitFor(() => expect(document.querySelector(".learning-run-arrival-evidence")).not.toBeNull());
 
@@ -456,7 +468,8 @@ describe("LearningRunSurface · 结算页结构", () => {
     expect(screen.getByRole("heading", { name: "这次练习，已经看见你会了什么" })).toBeTruthy();
     const compact = document.querySelector(".learning-run-arrival-evidence")?.textContent ?? "";
     expect(compact).toContain("做对了什么提 那一步说清了。");
-    expect(compact).toContain("还差什么可以按原路线继续正式挑战。");
+    expect(compact).not.toContain("还差什么");
+    expect(compact).not.toContain("继续正式挑战");
     expect(compact).toContain("下一步");
   });
 
@@ -468,6 +481,7 @@ describe("LearningRunSurface · 结算页结构", () => {
     expect(document.querySelector(".learning-run-result-companion")).toBeNull();
     expect(document.querySelector(".learning-run-arrival-evidence")?.textContent).toContain("提 那一步说清了。");
 
+    await openResultDetails();
     fireEvent.click(screen.getByRole("button", { name: /翻开本次发现/ }));
     expect(document.querySelector(".learning-run-discovery__front")?.textContent).not.toContain("伴星发现");
     expect(document.querySelector(".learning-run-discovery__front")?.textContent).toContain("来自本次真实评分证据");
@@ -674,6 +688,7 @@ describe("LearningRunSurface · 结算页结构", () => {
     renderResult();
     await waitFor(() => expect(document.querySelector(".learning-run-result-board")).not.toBeNull());
 
+    await openResultDetails();
     const button = screen.getByRole("button", { name: "看参考答案与解释" });
     expect(button.textContent).not.toContain("这次的答案");
 
@@ -697,6 +712,7 @@ describe("LearningRunSurface · 结算页结构", () => {
     }));
     await waitFor(() => expect(document.querySelector(".learning-run-result-board")).not.toBeNull());
 
+    await openResultDetails();
     const button = screen.getByRole("button", { name: "看这次的答案与解释" });
     fireEvent.click(button);
     await waitFor(() => expect(document.querySelector(".learning-run-result-reveal__body")).not.toBeNull());
@@ -715,6 +731,7 @@ describe("LearningRunSurface · 结算页结构", () => {
       ],
     }));
     await waitFor(() => expect(document.querySelector(".learning-run-result-board")).not.toBeNull());
+    await openResultDetails();
     fireEvent.click(screen.getByRole("button", { name: "看这次的答案与解释" }));
     await waitFor(() => expect(document.querySelector(".learning-run-result-reveal__body")).not.toBeNull());
 

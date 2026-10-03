@@ -1,19 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  DesktopSourceCreateRequest,
-  DesktopSourceDuplicateV1,
-  DesktopSourceListItem,
-} from "@ailearn/shared/desktop-surface-contracts";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight, BookOpen, Code2, FileText, Globe2, LoaderCircle, Search, X } from "lucide-react";
+import type { DesktopSourceListItem } from "@ailearn/shared/desktop-surface-contracts";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
 import { useRoomStore } from "../../../app/room-store";
-import { SpaceSharingNotice } from "../../space-sharing-notice";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import {
-  MAX_CAPTURE_BYTES,
   SOURCE_CAPTURED_EVENT,
-  TEXT_FILE_PATTERN,
-  captureBytes,
-  formatCaptureSize,
   type SourceCapturedDetail,
 } from "../../../app/source-intake";
 import { HudPage } from "../../hud/HudPage";
@@ -45,9 +37,11 @@ import {
   sourcePoolFor,
   tabCount,
 } from "./source-index.ts";
+import { CaptureStrip } from "./source-capture";
+import { useSourceMotion } from "./use-source-motion";
 
-/** 收录上限与文本后缀见 app/source-intake：弹窗与拖放共用同一份真相。 */
-type CaptureMode = "text" | "url";
+type LibraryMemory = { draft: string; query: string; fullTextIds: readonly string[]; scroll: number };
+const libraryMemory = new Map<number, LibraryMemory>();
 
 type SourceLibraryProjection = {
   readonly items: readonly DesktopSourceListItem[];
@@ -61,6 +55,11 @@ type SourceLibraryProjection = {
 
 /** Page 05 — the whole source library on one working index. */
 export function SourceLibrarySurface() {
+  const scope = useRoomStore(state => state.workspaceScopeRevision);
+  return <SourceLibraryContent key={scope} scope={scope} />;
+}
+
+function SourceLibraryContent({ scope }: { readonly scope: number }) {
   const invoke = useRoomStore((state) => state.invoke);
   const setActiveSourceId = useRoomStore((state) => state.setActiveSourceId);
   const setReturnTarget = useRoomStore((state) => state.setReturnTarget);
@@ -68,9 +67,20 @@ export function SourceLibrarySurface() {
   // reader left, instead of dropping them back on 全部.
   const status = useRoomStore((state) => state.sourceIndexTab);
   const setStatus = useRoomStore((state) => state.setSourceIndexTab);
-  const [draft, setDraft] = useState("");
-  const [query, setQuery] = useState("");
-  const [fullTextIds, setFullTextIds] = useState<readonly string[]>([]);
+  const remembered = useRef(libraryMemory.get(scope) ?? { draft: "", query: "", fullTextIds: [], scroll: 0 });
+  const [draft, setDraft] = useState(remembered.current.draft);
+  const [query, setQuery] = useState(remembered.current.query);
+  const [fullTextIds, setFullTextIds] = useState<readonly string[]>(remembered.current.fullTextIds);
+  const deskRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const searchRequest = useRef(0);
+  const restoredScroll = useRef(false);
+  useSourceMotion(deskRef, "library");
+  useEffect(() => {
+    remembered.current = { ...remembered.current, draft, query, fullTextIds };
+    libraryMemory.set(scope, remembered.current);
+  }, [scope, draft, query, fullTextIds]);
+  useEffect(() => () => { searchRequest.current++; }, []);
   const [searching, setSearching] = useState(false);
   const [searchNotice, setSearchNotice] = useState<{ readonly tone: "info" | "error"; readonly text: string } | null>(null);
   const [captured, setCaptured] = useState<{ readonly sourceId: string; readonly title: string } | null>(null);
@@ -81,7 +91,7 @@ export function SourceLibrarySurface() {
   const pageBudgetRef = useRef(SOURCE_PAGE_MAX);
   useHudPage("sources");
 
-  const { data, loading, failure, reload, epochRef } = useSurfaceProjection(async ({ workspaceEpoch }) => {
+  const { data, loading, failure, reload, epochRef, refreshFailure } = useSurfaceProjection(async ({ workspaceEpoch }) => {
     const meta = () => createRequestMeta(workspaceEpoch);
     // The index is the whole library, not its first page: status tab counts and
     // the search filter are only truthful once every source has been read.
@@ -107,7 +117,14 @@ export function SourceLibrarySurface() {
       archivedTruncated: library.archivedTruncated,
       captureAllowed: unwrapGatewayResult(capabilitiesResponse).actionCapabilities["source.create"] === "allowed",
     } satisfies SourceLibraryProjection;
-  });
+  }, [], { refreshOnFocus: true });
+
+  useLayoutEffect(() => {
+    if (!loading && data && !restoredScroll.current && listRef.current) {
+      listRef.current.scrollTop = remembered.current.scroll;
+      restoredScroll.current = true;
+    }
+  }, [data, loading]);
 
   const items = data?.items ?? [];
   const archived = data?.archived ?? [];
@@ -150,7 +167,7 @@ export function SourceLibrarySurface() {
     }
     const timer = window.setTimeout(() => {
       pollAttemptsRef.current += 1;
-      void reload();
+      void reload({ silent: true });
     }, SOURCE_STATUS_POLL_MS);
     return () => window.clearTimeout(timer);
   }, [items, reload]);
@@ -158,12 +175,12 @@ export function SourceLibrarySurface() {
   const retryRead = () => {
     pollAttemptsRef.current = 0;
     setStalled(false);
-    void reload();
+    void reload({ silent: true });
   };
 
   const loadMore = () => {
     pageBudgetRef.current += SOURCE_PAGE_MAX;
-    void reload();
+    void reload({ silent: true });
   };
 
   const openSource = (sourceId: string) => {
@@ -175,7 +192,7 @@ export function SourceLibrarySurface() {
   };
 
   /**
-   * The strip promises "标题、作者或正文内容", and body text is not part of the
+   * Body text is not part of the
    * list projection — it lives in the server's search index. So a submit asks
    * the server for the phrase and unions the ids with what the rows can match
    * locally: nothing that used to be found stops being found.
@@ -185,6 +202,7 @@ export function SourceLibrarySurface() {
    */
   const submitSearch = async (event: React.FormEvent) => {
     event.preventDefault();
+    const request = ++searchRequest.current;
     const needle = draft.trim();
     setSearchNotice(null);
     if (!needle) {
@@ -200,6 +218,7 @@ export function SourceLibrarySurface() {
         type: "source",
         limit: SOURCE_SEARCH_LIMIT,
       }));
+      if (request !== searchRequest.current) return;
       setFullTextIds(hits.items.map((item) => item.objectId));
       setQuery(needle);
       if (hits.total > hits.items.length) {
@@ -209,6 +228,7 @@ export function SourceLibrarySurface() {
         });
       }
     } catch (error) {
+      if (request !== searchRequest.current) return;
       // A search index that cannot be reached must not take the index away.
       setFullTextIds([]);
       setQuery(needle);
@@ -217,11 +237,13 @@ export function SourceLibrarySurface() {
         text: `正文检索未确认：${gatewayErrorMessage(error)}；下面只按标题、作者与类型筛选。`,
       });
     } finally {
-      setSearching(false);
+      if (request === searchRequest.current) setSearching(false);
     }
   };
 
   const clearQuery = () => {
+    searchRequest.current++;
+    setSearching(false);
     setDraft("");
     setQuery("");
     setFullTextIds([]);
@@ -229,6 +251,8 @@ export function SourceLibrarySurface() {
   };
 
   const handleCaptured = useCallback(async (sourceId: string, title: string) => {
+    searchRequest.current++;
+    setSearching(false);
     setCaptured({ sourceId, title });
     setStatus("all");
     setDraft("");
@@ -237,7 +261,7 @@ export function SourceLibrarySurface() {
     setSearchNotice(null);
     pollAttemptsRef.current = 0;
     setStalled(false);
-    await reload();
+    await reload({ silent: true });
   }, [reload, setStatus]);
 
   // 弹窗与全局拖放在页面之外收进来的来源：同样回到全部、清掉搜索并重读，
@@ -260,7 +284,7 @@ export function SourceLibrarySurface() {
   const emptyIndex = query.trim()
     ? { message: `没有找到“${query.trim()}”`, detail: "换一个关键词，或把搜索框清空。" }
     : items.length === 0 && archived.length === 0
-      ? { message: "来源库还是空的", detail: "用左边的采集栏粘贴内容、拖入文件，或填一个网页地址，第一份材料就会出现在这张索引上。" }
+      ? { message: "来源库还是空的", detail: "收下第一份想读的材料吧。" }
       : { message: "这个状态还没有来源", detail: "把状态切回「全部」，可以看到这个工作区的其它材料。" };
 
   /**
@@ -347,7 +371,7 @@ export function SourceLibrarySurface() {
 
   return (
     <HudPage page="sources">
-      <div className="source-desk">
+      <div ref={deskRef} className="source-desk source-experience">
         <CaptureStrip
           disabled={loading || Boolean(failure) || !captureAllowed}
           lockedReason={
@@ -375,26 +399,30 @@ export function SourceLibrarySurface() {
             </p>
           }
           onCaptured={handleCaptured}
+          onOpenExisting={openSource}
         />
 
         <section className="source-index" aria-label="来源资料索引">
           <form className="search-line" onSubmit={(event) => void submitSearch(event)} role="search">
-            <span aria-hidden="true">⌕</span>
-            <label className="sr-only" htmlFor="source-library-query">搜索标题、作者或正文内容</label>
+            <Search size={18} aria-hidden="true" />
+            <label className="sr-only" htmlFor="source-library-query">搜索标题或正文</label>
             <input
               id="source-library-query"
               value={draft}
-              placeholder="搜索标题、作者或正文内容"
+              placeholder="搜索标题或正文"
               onChange={(event) => {
                 const next = event.currentTarget.value;
+                searchRequest.current++;
+                setSearching(false);
                 setDraft(next);
                 // Clearing the box returns the whole index immediately; only a
                 // submit narrows it, so the mockup's 搜索 button carries weight.
                 if (!next.trim()) clearQuery();
               }}
             />
-            <button type="submit" className="button primary" disabled={searching}>
-              {searching ? "检索中…" : "搜索"}
+            {draft ? <button type="button" className="source-icon" aria-label="清空搜索" title="清空搜索" onClick={clearQuery}><X size={16} /></button> : null}
+            <button type="submit" className="source-icon" aria-label={searching ? "检索中" : "搜索"} title="搜索" disabled={searching}>
+              {searching ? <LoaderCircle size={18} className="source-spin" /> : <ArrowRight size={18} />}
             </button>
           </form>
 
@@ -405,7 +433,7 @@ export function SourceLibrarySurface() {
                 type="button"
                 className={status === value ? "active" : undefined}
                 aria-pressed={status === value}
-                onClick={() => setStatus(value)}
+                onClick={() => { setStatus(value); if (listRef.current) listRef.current.scrollTop = 0; }}
                 // 「全部」不含已归档（归档就是"不再出现在默认索引"那条合同），
                 // 但"全部"这个词本身会被读成包含——所以把这件事写在悬停里，
                 // 而不是让用户自己拿 全部 8 + 已归档 1 去对总数（审计 F32）。
@@ -420,7 +448,11 @@ export function SourceLibrarySurface() {
             ))}
           </div>
 
-          <div className="source-list">
+          <div ref={listRef} className="source-list" onScroll={event => {
+            if (!restoredScroll.current) return;
+            remembered.current = { ...remembered.current, scroll: event.currentTarget.scrollTop };
+            libraryMemory.set(scope, remembered.current);
+          }}>
             {loading ? <SurfaceDataState kind="loading" message="正在读取来源库" detail="正在确认当前身份与工作区。" /> : null}
             {!loading && failure ? <SurfaceDataState kind="error" message="来源库暂时不可用" detail={failure} onRetry={retryRead} /> : null}
             {!loading && !failure && searchNotice ? (
@@ -437,8 +469,10 @@ export function SourceLibrarySurface() {
                 <button type="button" className="text-action" onClick={retryRead}>重新读取</button>
               </p>
             ) : null}
+            {refreshFailure ? <p className="surface-notice surface-notice--error" role="alert">更新暂时没取回：{refreshFailure}<button type="button" className="text-action" onClick={retryRead}>重新读取</button></p> : null}
             {!loading && !failure && visible.length === 0 ? (
-              <SurfaceDataState kind="empty" message={emptyIndex.message} detail={emptyIndex.detail} />
+              <SurfaceDataState kind="empty" message={emptyIndex.message} detail={emptyIndex.detail}
+                action={query ? <button type="button" className="button" onClick={clearQuery}>清空搜索</button> : status !== "all" ? <button type="button" className="button" onClick={() => setStatus("all")}>查看全部</button> : null} />
             ) : null}
             {!loading && !failure ? visible.map((source) => (
               <button
@@ -446,8 +480,14 @@ export function SourceLibrarySurface() {
                 type="button"
                 className="source-sheet"
                 data-kind={formatSourceKind(source)}
+                data-status={source.status}
+                title={`打开《${source.title}》`}
                 onClick={() => openSource(source.id)}
               >
+                <span className="source-material" aria-hidden="true">
+                  {source.type === "url" ? <Globe2 size={24} /> : source.type === "code" ? <Code2 size={24} /> : <FileText size={24} />}
+                  <i>{formatSourceKind(source)}</i>
+                </span>
                 <span className="source-copy">
                   <strong>{source.title}</strong>
                   <small>
@@ -460,13 +500,11 @@ export function SourceLibrarySurface() {
                 </span>
                 <span className="source-state">
                   <span className={`tag ${sourceStatusTone(source.status)}`.trim()}>{formatSourceStatus(source.status)}</span>
-                  <br />
                   {/* 「已生成笔记」是这份材料的进展，不是脚注（复盘 #18）：一眼要能
                       区分"解析完了但还没动手"和"已经出笔记了"。 */}
                   <span className={source.noteCount > 0 ? "tag green" : "tag"}>
-                    {source.noteCount > 0 ? `已生成 ${source.noteCount} 篇笔记` : "还没生成笔记"}
+                    <BookOpen size={13} aria-hidden="true" />{source.noteCount > 0 ? `已生成 ${source.noteCount} 篇笔记` : "还没生成笔记"}
                   </span>
-                  <br />
                   {/* 「笔记已出卡」（复盘 #18 后半）：服务端按 sourceId 聚合出批次与
                       正式目标数，界面不猜。三档互斥，一眼能分清"还没出笔记""笔记出了但
                       还没出卡""已经有卡可以答"。 */}
@@ -479,11 +517,11 @@ export function SourceLibrarySurface() {
                             ? `${source.cardProgress.pendingReviewRuns} 批学习卡待审核`
                             : "还没出学习卡"}
                       </span>
-                      <br />
                     </>
                   ) : null}
-                  <time dateTime={source.updatedAt}>{formatSourceStamp(source.updatedAt)}</time>
+                  <time dateTime={source.updatedAt} title={formatSourceStamp(source.updatedAt)}>{formatRelative(source.updatedAt)}</time>
                 </span>
+                <ArrowRight className="source-open-arrow" size={17} aria-hidden="true" />
               </button>
             )) : null}
             {!loading && !failure && truncatedForTab ? (
@@ -504,291 +542,8 @@ function captureReceipt(title: string, status: DesktopSourceListItem["status"] |
   if (!status) return `已采集《${title}》，正在确认它的解析状态。`;
   switch (status) {
     case "ready": return `已采集《${title}》，解析已完成。`;
-    case "failed": return `已采集《${title}》，解析没有成功；可以重新采集这份材料。`;
+    case "failed": return `已采集《${title}》，解析没有成功；打开材料可以重新解析。`;
     case "archived": return `《${title}》已归档，可在「已归档」页签找到。`;
     default: return `已采集《${title}》，正在解析，完成后这张索引会自动更新。`;
   }
-}
-
-/**
- * The strip owns the whole capture column: its copy, the real paste/drop target
- * and the running tally. Keeping it in one component means a paste anywhere on
- * the strip opens the form, not only a paste that lands inside the dashed slot.
- */
-function CaptureStrip({
-  disabled,
-  lockedReason,
-  epochRef,
-  receipt,
-  summary,
-  onCaptured,
-}: {
-  readonly disabled: boolean;
-  readonly lockedReason: string | null;
-  readonly epochRef: React.MutableRefObject<number | undefined>;
-  readonly receipt: string | null;
-  readonly summary: React.ReactNode;
-  readonly onCaptured: (sourceId: string, title: string) => void | Promise<void>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<CaptureMode>("text");
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-  const [url, setUrl] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [dragging, setDragging] = useState(false);
-  /**
-   * 命中"同一篇"时的提示（审计 F33）：带着那一次想采的请求，用户点"仍然再采一次"
-   * 就带 `force` 重发；点"打开已有来源"就跳到既有那份（不重复建、也不重复花钱解析）。
-   */
-  const [duplicate, setDuplicate] = useState<{
-    readonly existing: DesktopSourceDuplicateV1;
-    readonly request: DesktopSourceCreateRequest;
-    readonly description: string;
-  } | null>(null);
-
-  const bytes = captureBytes(content);
-  const overLimit = bytes > MAX_CAPTURE_BYTES;
-
-  const reset = () => {
-    setOpen(false);
-    setTitle("");
-    setContent("");
-    setUrl("");
-    setError(null);
-  };
-
-  const acceptText = (text: string, name?: string) => {
-    const incoming = captureBytes(text);
-    if (incoming > MAX_CAPTURE_BYTES) {
-      setError(`这份材料约 ${formatCaptureSize(incoming)}，超过单次采集的 900 KB 上限。请分段采集。`);
-      setOpen(true);
-      return;
-    }
-    setMode("text");
-    setContent(text);
-    if (name && !title.trim()) setTitle(name.replace(/\.[^.]+$/, ""));
-    setOpen(true);
-    setError(null);
-  };
-
-  const onPaste = (event: React.ClipboardEvent) => {
-    // The open form owns its own paste, or the textarea would receive the text
-    // twice: once from the browser and once from this handler.
-    if (disabled || open) return;
-    const text = event.clipboardData.getData("text/plain");
-    if (!text.trim()) return;
-    event.preventDefault();
-    acceptText(text);
-  };
-
-  const onDrop = async (event: React.DragEvent) => {
-    event.preventDefault();
-    setDragging(false);
-    if (disabled) return;
-    const file = event.dataTransfer.files?.[0];
-    if (!file) {
-      const text = event.dataTransfer.getData("text/plain");
-      if (text.trim()) acceptText(text);
-      return;
-    }
-    if (!TEXT_FILE_PATTERN.test(file.name)) {
-      setError(`采集通道目前接收文本、Markdown 与代码文件，暂不解析 ${file.name}。`);
-      setOpen(true);
-      return;
-    }
-    acceptText(await file.text(), file.name);
-  };
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (busy || disabled) return;
-    const trimmedContent = content.trim();
-    const trimmedUrl = url.trim();
-    if (mode === "text" && !trimmedContent) { setError("先粘贴或拖入要采集的内容。"); return; }
-    if (mode === "url" && !/^https?:\/\/\S+$/i.test(trimmedUrl)) { setError("请输入以 http:// 或 https:// 开头的完整地址。"); return; }
-    if (mode === "text" && overLimit) { setError("材料超过单次采集的 900 KB 上限，请分段采集。"); return; }
-
-    setBusy(true);
-    setError(null);
-    try {
-      const request = mode === "url"
-        ? { url: trimmedUrl, ...(title.trim() ? { title: title.trim() } : {}) }
-        : { content: trimmedContent, ...(title.trim() ? { title: title.trim() } : {}) };
-      const response = await window.ailearn.source.create({
-        meta: createRequestMeta(epochRef.current),
-        request,
-      });
-      const created = unwrapGatewayResult(response);
-      // 审计 F33：同一个网址第二次采集默认不建新条目。提示摆在采集栏里（就近），
-      // 两条路都是显式动作：打开原来那份，或者明确说"再采一次"。
-      if (created.duplicateOf) {
-        setDuplicate({
-          existing: created.duplicateOf,
-          request: { ...request, force: true },
-          description: mode === "url" ? trimmedUrl : `这段文本（${formatCaptureSize(captureBytes(trimmedContent))}）`,
-        });
-        return;
-      }
-      setDuplicate(null);
-      reset();
-      await onCaptured(created.source.id, created.source.title);
-    } catch (submitError) {
-      setError(gatewayErrorMessage(submitError));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /** 用户明确说"再采一次"：带 `force` 重发那一次请求（其余字段原样）。 */
-  const submitDuplicate = async () => {
-    if (!duplicate || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const response = await window.ailearn.source.create({
-        meta: createRequestMeta(epochRef.current),
-        request: duplicate.request,
-      });
-      const created = unwrapGatewayResult(response);
-      setDuplicate(null);
-      reset();
-      await onCaptured(created.source.id, created.source.title);
-    } catch (submitError) {
-      setError(gatewayErrorMessage(submitError));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <aside className="capture-strip" onPaste={onPaste}>
-      <h2>带一份材料进来</h2>
-      <p>支持网页、文本、Markdown、代码与文本文件。</p>
-
-      {disabled && !open ? (
-        <>
-          <div className="drop-slot" aria-disabled="true">粘贴内容<br />或拖入文件</div>
-          <button type="button" className="button" disabled title={lockedReason ?? "正在读取工作区"}>采集新来源</button>
-          {lockedReason ? <p className="capture-locked">{lockedReason}</p> : null}
-        </>
-      ) : open ? (
-        <form className="capture-form" onSubmit={submit}>
-          <div className="capture-modes" role="radiogroup" aria-label="采集方式">
-            <button type="button" role="radio" aria-checked={mode === "text"} className={mode === "text" ? "active" : undefined} onClick={() => setMode("text")}>文本</button>
-            <button type="button" role="radio" aria-checked={mode === "url"} className={mode === "url" ? "active" : undefined} onClick={() => setMode("url")}>链接</button>
-          </div>
-
-          {mode === "text" ? (
-            <>
-              <label className="sr-only" htmlFor="capture-content">要采集的正文</label>
-              <textarea
-                id="capture-content"
-                value={content}
-                autoFocus
-                placeholder="把正文粘贴到这里"
-                onChange={(event) => setContent(event.currentTarget.value)}
-              />
-              <span className={`capture-count${overLimit ? " over" : ""}`}>
-                {bytes > 0 ? `${formatCaptureSize(bytes)} / 900 KB` : "支持文本、Markdown 与代码"}
-              </span>
-            </>
-          ) : (
-            <>
-              <label className="sr-only" htmlFor="capture-url">要采集的网页地址</label>
-              <input
-                id="capture-url"
-                type="url"
-                value={url}
-                autoFocus
-                placeholder="https://"
-                onChange={(event) => setUrl(event.currentTarget.value)}
-              />
-              <span className="capture-count">由后台抓取正文并解析</span>
-            </>
-          )}
-
-          <label className="sr-only" htmlFor="capture-title">标题，可留空</label>
-          <input
-            id="capture-title"
-            value={title}
-            placeholder="标题（可留空）"
-            onChange={(event) => setTitle(event.currentTarget.value)}
-          />
-
-          {error ? <p className="capture-error" role="alert">{error}</p> : null}
-
-          {/* 审计 F33：同一个网址第二次采集——默认不建新条目，先把这件事说出来。
-              两条路都是显式动作，"打开已有"是默认那一条。 */}
-          {duplicate ? (
-            <div className="capture-duplicate" role="status">
-              <p>
-                这份材料在 {formatRelative(new Date(duplicate.existing.createdAt).toISOString())} 就采过了
-                ——《{duplicate.existing.title}》。
-              </p>
-              <p className="small">{duplicate.description}</p>
-              <div className="capture-form__actions">
-                <button
-                  type="button"
-                  className="button primary"
-                  disabled={busy}
-                  onClick={() => {
-                    const target = duplicate.existing;
-                    setDuplicate(null);
-                    reset();
-                    void onCaptured(target.sourceId, target.title);
-                  }}
-                >
-                  打开已有来源
-                </button>
-                <button
-                  type="button"
-                  className="button"
-                  disabled={busy}
-                  onClick={() => { void submitDuplicate(); }}
-                >
-                  仍然再采一次
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="capture-form__actions">
-            <button type="submit" className="button primary" disabled={busy}>{busy ? "正在采集…" : "开始解析"}</button>
-            <button type="button" className="button" onClick={reset} disabled={busy}>取消</button>
-          </div>
-        </form>
-      ) : (
-        <>
-          <div
-            className="drop-slot"
-            data-armed={dragging ? "true" : undefined}
-            role="button"
-            tabIndex={0}
-            onClick={() => setOpen(true)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                setOpen(true);
-              }
-            }}
-            onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(event) => void onDrop(event)}
-          >
-            粘贴内容<br />或拖入文件
-          </div>
-          <button type="button" className="button" onClick={() => setOpen(true)}>采集新来源</button>
-          {/* 放入这一步才说"共享"，而不是留在设置页里等人自己去找。 */}
-          <SpaceSharingNotice />
-          {error ? <p className="capture-error" role="alert">{error}</p> : null}
-        </>
-      )}
-
-      <div className="rule" style={{ background: "rgba(255,255,255,.18)" }} />
-      {receipt ? <p className="capture-ok" role="status">{receipt}</p> : null}
-      {summary}
-    </aside>
-  );
 }

@@ -89,7 +89,7 @@ describe("设置中心的每一个 className 都必须有 CSS 接手", () => {
 });
 
 describe("解散确认面板必须落在行下面，而不是挤进行右侧那一列", () => {
-  const css = stripComments(read("src/renderer/src/components/hud/hud-surface.css"));
+  const css = stripComments(read("src/renderer/src/components/surfaces/settings/settings-book.css"));
 
   const ruleBody = (selector: string) => {
     const match = new RegExp(`\\.hud-surface\\s+\\${selector}\\s*\\{([^}]*)\\}`).exec(css);
@@ -101,11 +101,7 @@ describe("解散确认面板必须落在行下面，而不是挤进行右侧那�
     expect(ruleBody(".settings-ledger__dissolve-panel")).toMatch(/grid-column:\s*1\s*\/\s*-1/);
   });
 
-  it("入口按钮与「退出」同档：不写这条它会按 .button 本体的 38px 把行撑开", () => {
-    const trigger = ruleBody(".settings-ledger__dissolve-trigger");
-    const leave = ruleBody(".settings-ledger__leave");
-    expect(trigger).toMatch(/min-height:\s*0/);
-    expect(trigger.match(/padding:[^;]+/)?.[0]).toBe(leave.match(/padding:[^;]+/)?.[0]);
-    expect(trigger.match(/font-size:[^;]+/)?.[0]).toBe(leave.match(/font-size:[^;]+/)?.[0]);
+  it("退出与解散使用同一档可点击尺寸；确认动作仍跨满整行", () => {
+    expect(css).toMatch(/\.settings-ledger__leave\s*,\s*\.hud-surface\s+\.settings-ledger__dissolve-trigger\s*\{[^}]*min-height:\s*34px/);
   });
 });

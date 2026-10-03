@@ -8,7 +8,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { ArrowLeft, ArrowRight, Leaf, RotateCcw } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, ChevronDown, Clock3, Leaf, RotateCcw } from "lucide-react";
 import type { LearningObjectiveSurfaceV3 } from "@ailearn/shared/learning-objective-surface-contracts";
 import type { ReviewQueueV2 } from "@ailearn/shared/review-queue-v2-contracts";
 import type { AnswerModePreferenceV1 } from "@ailearn/shared/companion-shell-contracts";
@@ -38,6 +38,8 @@ import { SurfaceDataState, useDayAnchor } from "../notebook/surface-data.tsx";
 import {DECK_DRAG_SLOP, REVIEW_WINDOW_SIZE, deckDragOutcome, deckDragShift, reviewDeckPosition, reviewDeckRound, reviewOverdueLabel, reviewReasonFacts, reviewReasonSentence, reviewReasonTag, reviewSequenceAfter, reviewStartabilityLabel, reviewFormalValidationBlockedLabel, reviewWindowStart, sameReviewSubjectAsEarlierLabel, uniqueReviewItems, type ReviewItem} from "./review-deck.ts";
 import type { LoadedReviewQueue, ReviewFailure } from "./review-types";
 import { useReviewQueueSelection } from "./use-review-queue-selection";
+import { useReviewDeckMotion } from "./use-review-deck-motion";
+import { useTactileSurface } from "../../motion/use-tactile-surface";
 
 
 /** 每次向服务端要多少张到期项。服务端 limit 上限 100，20 让「继续读取」足够轻。 */
@@ -110,6 +112,10 @@ export function ReviewSurface() {
    */
   const [deckRing, setDeckRing] = useState(false);
   const deckRef = useRef<HTMLElement>(null);
+  const deskRef = useRef<HTMLDivElement>(null);
+  useTactileSurface(deskRef, "queue");
+  const commandBusyRef = useRef(false);
+  const selectionIntentRef = useRef(0);
   const epochRef = useRef<number | undefined>(undefined);
   const startCommandIdsRef = useRef(new Map<string, string>());
   const focusedReturnTargetRef = useRef<string | null>(null);
@@ -133,6 +139,7 @@ export function ReviewSurface() {
     lastT: number;
     velocity: number;
     moved: boolean;
+    base: { x: number; y: number; rotate: number };
   } | null>(null);
   /** 手势里最后一次真正落到牌面上的横向位移；松手判定读它，而不是原始 dx。 */
   const dragShiftRef = useRef(0);
@@ -234,6 +241,8 @@ export function ReviewSurface() {
     setLoadingMore, setFailure, setQueue, loadQueue, fetchPage,
   });
 
+
+  const deckMotion = useReviewDeckMotion(deckRef, `${front?.reviewId ?? boundary?.kind}:${visibleItems.map(item => item.reviewId).join(",")}`);
 
   // The deck only needs the labels of the cards it can show, so the objective
   // read follows the visible window instead of the whole queue.
@@ -338,7 +347,7 @@ export function ReviewSurface() {
     const deck = deckRef.current;
     if (!deck) return;
     setDeckRing(true);
-    window.requestAnimationFrame(() => deck.focus({ preventScroll: true }));
+    deck.focus({ preventScroll: true });
   }, []);
 
   /**
@@ -347,7 +356,8 @@ export function ReviewSurface() {
    * disabled 的分组里）。
    */
   const moveSelection = (offset: number) => {
-    if (!queue?.items.length || selectedIndex < 0 || offset === 0) return;
+    if (commandBusyRef.current || !queue?.items.length || selectedIndex < 0 || offset === 0) return;
+    const intent = ++selectionIntentRef.current;
     const lastLoadedIndex = queue.items.length - 1;
     if (offset > 0 && selectedIndex >= lastLoadedIndex) {
       if (!queue.nextCursor) { focusDeck(); return; }
@@ -355,6 +365,7 @@ export function ReviewSurface() {
       void (async () => {
         const appended = await loadMore();
         const next = appended?.[0];
+        if (intent !== selectionIntentRef.current) return;
         if (next) setSelectedReviewId(next.reviewId);
         else focusDeck();
       })();
@@ -369,21 +380,20 @@ export function ReviewSurface() {
   /**
    * 牌堆：最上面那张跟着指针走，松手后要么滑回堆上，要么被抽走。
    *
-   * 这里没有"先把动画播完再改状态"那一套：牌面朝哪摆完全由它在堆里的位置
-   * （data-depth）和拖拽位移（--deck-drag-*）算出来，换牌只是改一次选中项，
-   * 于是每张牌从旧位姿过渡到新位姿 —— 抽卡、洗牌、往回放都是同一条 CSS 过渡。
+   * 换牌立即改选中项，弹簧从当前呈现位置和速度追随新的 data-depth。
+   * 指针接手时同样从当前位姿开始，松手后把速度交回弹簧。
    * 位移写元素而不是 state：拖拽每秒要改几十次，走 React 会把整张理由条也重渲染。
    */
   const applyDragPose = (x: number, y: number, rotate: number) => {
     const deck = deckRef.current;
     if (!deck) return;
-    deck.style.setProperty("--deck-drag-x", `${x}px`);
-    deck.style.setProperty("--deck-drag-y", `${y}px`);
-    deck.style.setProperty("--deck-drag-rot", `${rotate}deg`);
+    deckMotion.drag(x, y, rotate);
   };
 
-  /** 把最上面那张放回堆上：位移归零，位姿过渡回 data-depth 给的位置。 */
-  const releaseDragPose = () => applyDragPose(0, 0, 0);
+  /** 把拖拽控制权交回弹簧，继续追随当前的牌堆位置。 */
+  const releaseDragPose = (velocity = 0) => {
+    deckMotion.release(velocity);
+  };
 
   /**
    * 抽 `steps` 张（±1 来自拖拽、方向键与箭头按钮，>1 来自理由条的「后续顺序」）。
@@ -418,16 +428,17 @@ export function ReviewSurface() {
     // click 紧跟 pointerup：等这一轮事件走完再撤掉"刚拖过"的标记。
     window.setTimeout(() => { draggedRecentlyRef.current = false; }, 0);
     if (outcome === "cancel" || !drag.moved) { releaseDragPose(); return; }
+    const velocity = performance.now() - drag.lastT > 120 ? 0 : drag.velocity;
+    releaseDragPose(velocity);
     const decision = deckDragOutcome({
       dx: shift,
       reach: deckReachRef.current,
-      velocity: drag.velocity,
+      velocity,
       ...deckBoundsRef.current,
     });
-    if (decision === "next" || decision === "load-next") { drawCard(1); return; }
-    if (decision === "previous") { drawCard(-1); return; }
+    if (decision === "next" || decision === "load-next") { moveSelectionRef.current(1); return; }
+    if (decision === "previous") { moveSelectionRef.current(-1); return; }
     // 没抽出去：牌自己滑回堆上（位移归零，位姿交回 data-depth）。
-    releaseDragPose();
   };
   endDeckGestureRef.current = endDeckGesture;
 
@@ -463,7 +474,7 @@ export function ReviewSurface() {
   const onDeckPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
     // 指针一碰，上一刻"交还焦点"的环就该让位：读者已经改成用鼠标了。
     setDeckRing(false);
-    if (event.button !== 0 || boundary) return;
+    if (event.button !== 0 || boundary || commandBusyRef.current) return;
     // 控件上的手势属于控件："开始复习 / 查看来源" 的点按语义必须完整保留。
     if ((event.target as HTMLElement).closest("button, a, input, label, summary")) return;
     // 一次只允许一只手势：上一只还没收口（抬手落在了别的窗口）就先按撤销收掉，
@@ -477,6 +488,7 @@ export function ReviewSurface() {
       lastT: performance.now(),
       velocity: 0,
       moved: false,
+      base: deckMotion.grab(),
     };
     // 拿不到捕获也不影响：卡叠外面的抬手由 window 上的收口兜住。
     try {
@@ -499,6 +511,11 @@ export function ReviewSurface() {
     if (!drag.moved) {
       // 小于判定阈值的手势算点击：按在牌上抖一下不该把牌抽走。
       if (Math.hypot(dx, dy) < DECK_DRAG_SLOP) return;
+      if (Math.abs(dy) > Math.abs(dx) * 1.2) {
+        endDeckGesture("cancel");
+        try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch { /* already released */ }
+        return;
+      }
       drag.moved = true;
       draggedRecentlyRef.current = true;
       setDeckDragging(true);
@@ -509,7 +526,7 @@ export function ReviewSurface() {
     // 1:1 跟手；否则读者在最后一页上会先感到一段莫名的阻尼。
     const shift = deckDragShift(dx, dx < 0 ? deckBoundsRef.current.canNext || deckBoundsRef.current.hasMore : deckBoundsRef.current.canPrevious);
     dragShiftRef.current = shift;
-    applyDragPose(shift, dy * 0.3, Math.max(-14, Math.min(14, shift * 0.04)));
+    applyDragPose(drag.base.x + shift, drag.base.y + dy * 0.3, drag.base.rotate + Math.max(-14, Math.min(14, shift * 0.04)));
   };
 
   const onDeckPointerUp = (event: ReactPointerEvent<HTMLElement>) => {
@@ -606,7 +623,9 @@ export function ReviewSurface() {
   };
 
   const startReview = async (item: ReviewItem) => {
-    if (item.startability.kind !== "ready" || startingReviewId || !window.ailearn) return;
+    if (item.startability.kind !== "ready" || commandBusyRef.current || !window.ailearn) return;
+    commandBusyRef.current = true;
+    selectionIntentRef.current += 1;
     const commandId = startCommandIdsRef.current.get(item.reviewId) ?? createCommandId("start-review");
     startCommandIdsRef.current.set(item.reviewId, commandId);
     setStartingReviewId(item.reviewId);
@@ -653,16 +672,17 @@ export function ReviewSurface() {
       setRecallRevealNotice(null);
       if (refreshRequired) {
         startCommandIdsRef.current.delete(item.reviewId);
-        setFailure({ message: gatewayErrorMessage(error), source: "start" });
+        setFailure({ message: gatewayErrorMessage(error), source: "start", reviewId: item.reviewId });
         // loadQueue 结尾那句 setFailure(null) 会把刚设好的"为什么没开始"抹掉。
         // 刷新与保留失败是两件事，所以这里显式说"别抹"。
         void loadQueue({ targetIndex: seatRef.current, keepFailure: true }).catch((refreshError) => {
           setFailure({ message: gatewayErrorMessage(refreshError), source: "queue" });
         });
       } else {
-        setFailure({ message: gatewayErrorMessage(error), source: "start" });
+        setFailure({ message: gatewayErrorMessage(error), source: "start", reviewId: item.reviewId });
       }
     } finally {
+      commandBusyRef.current = false;
       setStartingReviewId(null);
     }
   };
@@ -672,7 +692,9 @@ export function ReviewSurface() {
    * 但 official 到期时间不变——这不是完成复习，只是「明天再提醒我」。
    */
   const deferFront = async (item: ReviewItem) => {
-    if (deferringReviewId || !window.ailearn) return;
+    if (commandBusyRef.current || !window.ailearn) return;
+    commandBusyRef.current = true;
+    selectionIntentRef.current += 1;
     setDeferringReviewId(item.reviewId);
     setDeferredNotice(null);
     setFailure(null);
@@ -691,16 +713,20 @@ export function ReviewSurface() {
       setDeferredNotice("已把这一项推迟到明天再提醒；它的到期时间没有变。");
       // 保留阅读深度：被延后的那张消失后，读者应该停在同一个位置上。
       await loadQueue({ targetIndex: seatRef.current });
+      focusDeck();
     } catch (error) {
       if (error instanceof RendererGatewayError && (error.code === "conflict" || error.code === "not_found")) {
         setDeferredNotice("这一项的状态刚变过，队列已经按最新情况刷新。");
-        await loadQueue({ targetIndex: seatRef.current }).catch((refreshError) => {
-          setFailure({ message: gatewayErrorMessage(refreshError), source: "queue" });
-        });
+        await loadQueue({ targetIndex: seatRef.current })
+          .then(() => focusDeck())
+          .catch((refreshError) => {
+            setFailure({ message: gatewayErrorMessage(refreshError), source: "queue" });
+          });
       } else {
-        setFailure({ message: gatewayErrorMessage(error), source: "defer" });
+        setFailure({ message: gatewayErrorMessage(error), source: "defer", reviewId: item.reviewId });
       }
     } finally {
+      commandBusyRef.current = false;
       setDeferringReviewId(null);
     }
   };
@@ -812,10 +838,10 @@ export function ReviewSurface() {
   const slipState = loading
     ? "正在读取排好的到期顺序。"
     : failure?.source === "queue"
-      ? "这一页没有读到真实的到期队列，因此不给理由。"
+      ? "暂时没读到队列。连接恢复后，再来看看需要温习的卡片。"
       : queue && queue.items.length > 0
         ? `已载入 ${queue.items.length} 项，服务端确认共 ${deckTotal} 项。`
-        : "今天没有到期项，理由条也随之留空。";
+        : "按自己的节奏来。回书桌看看，或写下一点新的想法。";
   /**
    * Stepping the deck rewrites the card in place, so the card that just arrived
    * is announced here; the repaint alone reaches only sighted pointer users.
@@ -857,7 +883,13 @@ export function ReviewSurface() {
 
   return (
     <HudPage page="queue">
-      <div className="queue-desk">
+      <div ref={deskRef} className="queue-desk review-queue card-experience">
+        <header className="review-queue__welcome">
+          <span className="review-queue__emblem" aria-hidden="true"><BookOpen size={26} strokeWidth={1.8} /></span>
+          <div><span className="review-queue__eyebrow">书房里的温习时间</span><h2>和学过的知识，再见一面</h2></div>
+          {queue && !boundary ? <span className="review-queue__count"><b>{deckTotal}</b> 项到期</span> : null}
+          {deferredNotice ? <p className="review-queue__receipt" role="status"><Leaf size={17} aria-hidden="true" />{deferredNotice}</p> : null}
+        </header>
         {/* 卡叠只挂 down/move/up 三条指针来路；pointercancel、抬手落在卡叠外面、
             窗口失焦都归 window 上的收束口（见 endDeckGesture）—— 出口只有一个。 */}
         <section
@@ -881,7 +913,7 @@ export function ReviewSurface() {
           onKeyDown={(event) => {
             // 长按会以约 30 次/秒重复触发；每次都会换掉带 key 的正文并重放
             // 淡入，正文会在接近全透明处抖动。按住不放只算一次移动。
-            if (event.repeat) return;
+            if (event.repeat || event.target !== event.currentTarget) return;
             if (event.key === "ArrowLeft") { event.preventDefault(); drawCard(-1); }
             if (event.key === "ArrowRight") { event.preventDefault(); drawCard(1); }
           }}
@@ -934,10 +966,11 @@ export function ReviewSurface() {
                   onClick={isFront ? undefined : () => drawCard(seat - selectedIndex)}
                 >
                   <div className="deck-card__body">
+                    <div className="review-card__bookmark" aria-hidden="true"><Leaf size={18} /></div>
                     <div className="meta">
                       <span>{reviewDeckPosition(seat, deckTotal)}</span>
                       <span>{item.cardId === null ? "笔记复习" : "学习卡复习"}</span>
-                      <span>{reviewDeckRound(item.scheduleGeneration)}</span>
+                      <span className="review-card__round">{reviewDeckRound(item.scheduleGeneration)}</span>
                       {cardStateLabel ? <span className="tag deck-card__state">{cardStateLabel}</span> : null}
                     </div>
                     {/* 等待态（§7.1）：**只**给标题、提取线索与进度状态。
@@ -1023,7 +1056,7 @@ export function ReviewSurface() {
                   </div>
                   {isFront ? (
                     <>
-                      <div className="actions">
+                      <div className="actions review-card__actions">
                         {needsNoteCheck ? (
                           <button
                             type="button"
@@ -1032,6 +1065,10 @@ export function ReviewSurface() {
                             onClick={() => noteImpact && openNoteEvidence(surface, noteImpact.noteId)}
                           >
                             先核对原文<ArrowRight size={15} aria-hidden="true" />
+                          </button>
+                        ) : evidenceGapLabel ? (
+                          <button type="button" className="button primary" disabled={busy} onClick={() => { setActiveObjectiveId(item.objectiveId); invoke("open-objective"); }}>
+                            去补齐依据<ArrowRight size={15} aria-hidden="true" />
                           </button>
                         ) : item.startability.kind === "ready" ? (
                           <button
@@ -1053,10 +1090,10 @@ export function ReviewSurface() {
                         )}
                         {/* 有主笔记就开笔记，否则落到学习卡页——同一个「查看来源」
                             的两条去路，不是两颗按钮。 */}
-                        <button
+                        {!needsNoteCheck ? <button
                           type="button"
-                          className="button"
-                          disabled={busy}
+                          className="button review-card__source"
+                          disabled={busy || !surface}
                           onClick={() => {
                             const note = surface?.sources.primaryNote;
                             if (note) {
@@ -1069,42 +1106,16 @@ export function ReviewSurface() {
                           }}
                         >
                           查看来源
-                        </button>
+                        </button> : null}
                         <button
                           type="button"
-                          className="button"
+                          className="button review-card__defer"
                           disabled={busy}
                           onClick={() => void deferFront(item)}
                         >
-                          {deferringReviewId === item.reviewId ? "正在延后…" : "稍后提醒"}
+                          <Clock3 size={15} aria-hidden="true" />{deferringReviewId === item.reviewId ? "正在延后…" : "明天再提醒"}
                         </button>
                       </div>
-                      {/* 箭头按钮是与拖拽等价的一条路：键盘和不愿意拖的读者都靠它。 */}
-                      {queue && (queue.items.length > 1 || queue.nextCursor) ? (
-                        <div className="deck-nav" role="group" aria-label="在到期项之间移动">
-                          <button
-                            type="button"
-                            className="deck-nav__step"
-                            onClick={() => drawCard(-1)}
-                            disabled={!hasPrevious}
-                            aria-label="上一张到期项"
-                          >
-                            <ArrowLeft size={15} aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            className="deck-nav__step"
-                            onClick={() => drawCard(1)}
-                            disabled={!hasNext}
-                            aria-busy={loadingMore || undefined}
-                            aria-label={queue.nextCursor && selectedIndex >= queue.items.length - 1
-                              ? "读取下一张到期项"
-                              : "下一张到期项"}
-                          >
-                            <ArrowRight size={15} aria-hidden="true" />
-                          </button>
-                        </div>
-                      ) : null}
                     </>
                   ) : null}
                 </article>
@@ -1117,121 +1128,64 @@ export function ReviewSurface() {
                 <span className="deck-progress__loaded" style={{ transform: `scaleX(${loadedRatio})` }} />
                 <span className="deck-progress__bar" style={{ transform: `scaleX(${seatRatio})` }} />
               </span>
-              <span className="deck-foot__hint">把最上面的纸签拖走，或按 ← → 看下一项</span>
+              <span className="deck-foot__hint">拖动卡片，或用 ← → 翻看</span>
+              {/* 箭头按钮是与拖拽等价的一条路：键盘和不愿意拖的读者都靠它。 */}
+              {queue && (queue.items.length > 1 || queue.nextCursor) ? (
+                <div className="deck-nav" role="group" aria-label="在到期项之间移动">
+                  <button
+                    type="button"
+                    className="deck-nav__step"
+                    onClick={() => drawCard(-1)}
+                    disabled={!hasPrevious || busy}
+                    aria-label="上一张到期项"
+                  >
+                    <ArrowLeft size={15} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="deck-nav__step"
+                    onClick={() => drawCard(1)}
+                    disabled={!hasNext || busy || loadingMore}
+                    aria-busy={loadingMore || undefined}
+                    aria-label={queue.nextCursor && selectedIndex >= queue.items.length - 1
+                      ? "读取下一张到期项"
+                      : "下一张到期项"}
+                  >
+                    <ArrowRight size={15} aria-hidden="true" />
+                  </button>
+                </div>
+              ) : null}
+
             </div>
           ) : null}
         </section>
 
-        <aside className="queue-reason" aria-label="当前复习项为什么排在最前">
-          {/* 徽标只在有话可说时出现：没有卡也没有失败时，「队列」两个字不构成
-              状态，只是纸上的一粒噪音。 */}
-          {reasonTag ? (
-            <span className={reasonTag.tone ? `tag ${reasonTag.tone}` : "tag"}>{reasonTag.label}</span>
-          ) : failure ? (
-            <span className="tag red">读取失败</span>
-          ) : null}
-          <h3>为什么现在复习它</h3>
-
-          {/* 回执放在理由条顶部：底部的旧位置在 240px 窄栏里要滚动才看得到。 */}
-          {deferredNotice ? (
-            <p className="small queue-reason__notice" role="status">{deferredNotice}</p>
-          ) : null}
-
-          {reason && reasonTag ? (
-            <>
-              <p>{reviewReasonSentence(reason)}</p>
+        <aside className="queue-reason review-queue__pocket" aria-label="当前复习项与后续顺序">
+          {front ? <>
+            <div className="review-queue__pocket-heading"><Leaf size={18} aria-hidden="true" /><h3>接下来翻哪张</h3></div>
+            {sequence.length > 0 ? <ol className="review-queue__sequence">
+              {sequence.map(stop => <li key={stop.reviewId}><button type="button" disabled={busy} aria-label={`滑到「${stop.label}」`} onClick={() => drawCard(stop.offset)}>
+                <span className="review-queue__ordinal" aria-hidden="true">{selectedIndex + stop.offset + 1}</span><span>{stop.label}</span><ArrowRight size={14} aria-hidden="true" />
+              </button></li>)}
+            </ol> : <p className="review-queue__tail">{queue?.nextCursor ? "后面还有小卡片，翻到这里时会接着读。" : "这就是最后一张啦。按自己的节奏来。"}</p>}
+            <details className="review-queue__why" open>
+              <summary>为什么轮到它<ChevronDown size={15} aria-hidden="true" /></summary>
+              {reasonTag ? <span className={reasonTag.tone ? `tag ${reasonTag.tone}` : "tag"}>{reasonTag.label}</span> : null}
+              {reason ? <p>{reviewReasonSentence(reason)}</p> : null}
               {repeatedSubjectLabel ? <p className="small">{repeatedSubjectLabel}</p> : null}
-              {/* 中段只补句子没说过的**卡级**事实：可以开始的卡，句子里已经写了
-                  到期时间和同目标卡数，再列一遍只会让读者对着一组数字猜"2 张和
-                  3 张是不是两回事"；冷却卡的句子只说冷却，这两行才有信息量。 */}
-              {reason.ready ? null : (
-                <>
-                  <div className="rule" />
-                  <p>
-                    到期：{dueLine}
-                    <br />
-                    同一学习目标：{reason.relatedCards} 项到期
-                  </p>
-                </>
-              )}
-              <div className="rule" />
-              {sequence.length > 0 ? (
-                <p className="small queue-reason__order">
-                  后续顺序：
-                  {sequence.map((stop, stopIndex) => (
-                    <span key={stop.reviewId}>
-                      {stopIndex > 0 ? " → " : ""}
-                      <button
-                        type="button"
-                        aria-label={`滑到「${stop.label}」`}
-                        onClick={() => drawCard(stop.offset)}
-                      >
-                        {stop.label}
-                      </button>
-                    </span>
-                  ))}
-                </p>
-              ) : (
-                <p className="small">
-                  {/* 审计 F12：没有 nextCursor 就等于没有更多页，此时还说"后面还有没读到的
-                      会继续取"，与屏上那颗"继续读取"按钮的缺席自相矛盾。 */}
-                  {queue?.nextCursor ? "后续到期项还没有读取。" : "这一批就读到这里，已经显示全部到期项。"}
-                </p>
-              )}
-              {/* 已载入多少、覆盖多少目标是**队列**级的事实：和后续顺序归在
-                  同一组，不再夹在两条分隔线中间孤零零地站着。 */}
-              <p className="small">
-                已载入 {queue?.items.length ?? 0} / {deckTotal} 项
-                <br />
-                涉及 {reason.affectedObjectives} 个学习目标
-              </p>
-              {queue?.nextCursor ? (
-                <p className="small">
-                  <button type="button" className="queue-reason__more" onClick={() => void loadMore()} disabled={loadingMore}>
-                    {loadingMore ? "正在读取…" : "继续读取更多到期项"}
-                  </button>
-                </p>
-              ) : null}
-            </>
-          ) : (
-            <>
-              <p>{slipState}</p>
-              {queue && queue.items.length > 0 ? (
-                <>
-                  <div className="rule" />
-                  <p>
-                    已载入：{queue.items.length} / {deckTotal} 项
-                    <br />
-                    可以开始：{readyCount} 项
-                    <br />
-                    当前选中：{selectedIndex >= 0 ? `第 ${selectedIndex + 1} 项` : "未选中"}
-                  </p>
-                </>
-              ) : null}
-            </>
-          )}
-
-          {failure && queue?.items.length ? (
-            <p className="small queue-reason__failure" role="alert">
-              {failure.source === "pagination"
-                ? "继续读取失败，已载入的到期项仍然保留。"
-                : failure.source === "start"
-                  ? "还没收到「已经开始」的回音；再点一次不会重复开始。"
-                  : failure.source === "defer"
-                    ? "延后没送出去，这一项还在队列里。"
-                    : "队列刷新失败，当前到期项仍然保留。"}
-              {failure.source === "pagination" ? (
-                <button type="button" onClick={() => void loadMore()} disabled={loadingMore}>重试读取</button>
-              ) : failure.source === "queue" ? (
-                <button type="button" onClick={reload}>重新读取</button>
-              ) : failure.source === "start" ? (
-                <button type="button" onClick={() => front ? void startReview(front) : undefined} disabled={busy}>重试开始</button>
-              ) : failure.source === "defer" ? (
-                <button type="button" onClick={() => front ? void deferFront(front) : undefined} disabled={deferringReviewId !== null}>重试延后</button>
-              ) : null}
-            </p>
-          ) : null}
-
+              {reason && !reason.ready ? <p className="small">到期：{dueLine}<br />同一学习目标：{reason.relatedCards} 项到期</p> : null}
+            </details>
+            <p className="small review-queue__loaded">已载入 {queue?.items.length ?? 0} / {deckTotal} 项<span>涉及 {affectedObjectives} 个学习目标</span></p>
+            {queue?.nextCursor ? <button type="button" className="queue-reason__more" onClick={() => void loadMore()} disabled={loadingMore || busy}>{loadingMore ? "正在读取…" : "继续读取更多到期项"}<ArrowRight size={14} aria-hidden="true" /></button> : null}
+          </> : <div className="review-queue__rest"><Leaf size={32} aria-hidden="true" /><h3>{boundary?.kind === "empty" ? "留一点时间给自己" : "小卡片正在路上"}</h3><p>{slipState}</p></div>}
+          {failure && queue?.items.length ? <div className="queue-reason__failure" role="alert">
+            <p>{failure.source === "pagination" ? "继续读取失败，已载入的到期项仍然保留。" : failure.source === "start" ? "还没收到「已经开始」的回音；再点一次不会重复开始。" : failure.source === "defer" ? "延后没送出去，这一项还在队列里。" : "队列刷新失败，当前到期项仍然保留。"}</p>
+            <p className="small">{failure.message}</p>
+            {failure.source === "pagination" ? <button type="button" onClick={() => void loadMore()} disabled={loadingMore}>重试读取</button> : failure.source === "queue" ? <button type="button" onClick={reload}>重新读取</button> : (() => {
+              const failedItem = queue.items.find(item => item.reviewId === failure.reviewId);
+              return failedItem ? <button type="button" disabled={busy} onClick={() => failure.source === "start" ? void startReview(failedItem) : void deferFront(failedItem)}>{failure.source === "start" ? "重试开始" : "重试延后"}</button> : null;
+            })()}
+          </div> : null}
         </aside>
       </div>
     </HudPage>

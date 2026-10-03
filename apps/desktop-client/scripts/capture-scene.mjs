@@ -1495,21 +1495,21 @@ try {
     // 页 12「学习卡生成中」/ 页 13「候选卡审核」的真实 DOM。旧的 .card-generation-surface*
     // 工作台（action edge / footer 双带 / recovery pair）已经没有任何渲染端生产者，
     // 原来那套 320px 布局探针测的是不存在的页面，已随该代工作台删除。
-    const generationPaper = window.locator('.task-surface--card-generation .card-generation-board, .task-surface--card-generation .candidate-review-table').first()
+    const generationPaper = window.locator('.task-surface--card-generation .card-making-workshop, .task-surface--card-generation .candidate-review-table').first()
     await generationPaper.waitFor({ state: 'visible', timeout: 20_000 })
     await settleSurface(window)
     const generationContract = await window.evaluate(() => {
       const surface = document.querySelector('.task-surface--card-generation')
-      const paper = surface?.querySelector('.card-generation-board, .candidate-review-table')
-      const board = surface?.querySelector('.card-generation-board')
+      const paper = surface?.querySelector('.card-making-workshop, .candidate-review-table')
+      const board = surface?.querySelector('.card-making-workshop')
       const candidate = surface?.querySelector('.candidate-study-card')
       const slip = surface?.querySelector('.candidate-review-slip')
-      const buttons = [...(surface?.querySelectorAll('.card-generation-board__header button, .candidate-review-slip__actions button, .stamp-actions button') ?? [])]
+      const buttons = [...(surface?.querySelectorAll('.card-making__sync-row button, .candidate-review-slip__actions button, .stamp-actions button') ?? [])]
       const surfaceBounds = surface?.getBoundingClientRect()
       return {
         heading: document.querySelector('.task-title h1')?.textContent?.trim() ?? null,
         paperVisible: Boolean(paper),
-        boardFooterVisible: Boolean(board?.querySelector('.card-generation-board__footer')),
+        boardFooterVisible: Boolean(board?.querySelector('.card-making__footer')),
         candidateVisible: Boolean(candidate),
         candidateSlipVisible: Boolean(slip),
         hudStateVisible: Boolean(surface?.querySelector('.card-generation-hud-state')),

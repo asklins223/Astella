@@ -62,8 +62,14 @@ const allTs = TS_FILES.map((f) => readFileSync(f, "utf8")).join("\n");
 
 /** 被声明过的自定义属性。 */
 const declared = new Set([...allCss.matchAll(/(--[a-zA-Z0-9_-]+)\s*:/g)].map((m) => m[1]));
-/** 由 JS 以 style={{"--x": …}} 注入的——合法的运行时通道。 */
-const jsInjected = new Set([...allTs.matchAll(/["'`](--[a-zA-Z0-9_-]+)["'`]\s*:/g)].map((m) => m[1]));
+/** 对象样式与 CSSStyleDeclaration.setProperty 都是实际运行期注入口。 */
+function injectedCustomProperties(source: string): Set<string> {
+  return new Set([
+    ...[...source.matchAll(/["'`](--[a-zA-Z0-9_-]+)["'`]\s*:/g)].map(m => m[1]),
+    ...[...source.matchAll(/\.setProperty\(\s*["'`](--[a-zA-Z0-9_-]+)["'`]\s*,/g)].map(m => m[1]),
+  ]);
+}
+const jsInjected = injectedCustomProperties(allTs);
 
 type Dead = { token: string; file: string; line: number };
 type Ref = { token: string; fallback: boolean };
@@ -88,6 +94,10 @@ for (const file of CSS_FILES) {
 const uniq = [...new Set(dead.map((d) => d.token))].sort();
 
 describe("var() 要么有声明，要么有 fallback，要么由 JS 注入", () => {
+  it("识别实际写入属性，读取与普通字符串不冒充注入", () => {
+    const source = 'skin.style.setProperty("--skin", color); const style = {"--size": width}; style.getPropertyValue("--read"); const text = "--unused";';
+    expect([...injectedCustomProperties(source)].sort()).toEqual(["--size", "--skin"]);
+  });
   it("读到了东西（否则这条守卫是空的）", () => {
     expect(CSS_FILES.length, "没扫到样式表").toBeGreaterThanOrEqual(20);
     expect(declared.size, "没扫到自定义属性声明").toBeGreaterThan(20);

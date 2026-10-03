@@ -133,7 +133,7 @@ describe("NotebookSurface · 手动定版（审计 F36）", () => {
   it("切到预览后仍提交排队的标题增量，不自动创建不可变版本", async () => {
     const { state } = await renderEditor();
     await typeTitle("切换前的最后一句");
-    fireEvent.click(screen.getByRole("button", { name: "预览" }));
+    fireEvent.click(screen.getByRole("button", { name: "阅读" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(1_500); });
     expect(document.querySelector(".notebook-workspace")?.getAttribute("data-mode")).toBe("preview");
     expect(document.querySelector(".notebook-volume__heading h2")?.textContent).toBe("切换前的最后一句");

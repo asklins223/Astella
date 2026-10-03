@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Archive, ArrowRight, BookOpen, Check, FileText, List, LoaderCircle, Pencil, RotateCcw, X } from "lucide-react";
 import type {
   DesktopSourceDetail,
   DesktopSourceNotesPage,
@@ -31,13 +32,14 @@ import {
   excerpt,
   listSegment,
   parseStateLine,
-  pickFocusSegment,
   segmentLabel,
   segmentText,
-  splitHighlight,
 } from "./source-segments.ts";
 import { useSourceImage } from "./source-image.ts";
 import { ZoomableReadingImage } from "./image-viewer.tsx";
+import { useSourceMotion, useSourceSheetMotion } from "./use-source-motion";
+
+const readingPositions = new Map<string, number>();
 
 type SourceDetailProjection = {
   readonly detail: DesktopSourceDetail;
@@ -67,14 +69,20 @@ const SOURCE_GONE_SCREEN = {
 const STALLED_SCREEN_LINE = "解析还在进行，页面已停止自动刷新。";
 const NO_NOTE_SCREEN_LINE = "还没有基于这份材料建立的笔记；开始写笔记会从它的片段直接起稿。";
 
-/** Page 06 — one source read as a spread: the text on the left, its shape on the right. */
+/** Original text stays central; structure and notes open as loose sheets. */
 export function SourceDetailSurface() {
+  const scope = useRoomStore(state => state.workspaceScopeRevision);
   const activeSourceId = useRoomStore((state) => state.activeSourceId);
+  return <SourceDetailContent key={`${scope}:${activeSourceId}`} scope={scope} activeSourceId={activeSourceId} />;
+}
+
+function SourceDetailContent({ scope, activeSourceId }: { readonly scope: number; readonly activeSourceId: string | null }) {
   const setActiveNoteRef = useRoomStore((state) => state.setActiveNoteRef);
+  const setActiveSourceId = useRoomStore(state => state.setActiveSourceId);
   const invoke = useRoomStore((state) => state.invoke);
   useHudPage("source-detail");
 
-  /** The title draft while the folio's headline is a field; null means it reads. */
+  /** The title draft while the headline is a field; null means it reads. */
   const [renaming, setRenaming] = useState<string | null>(null);
   const [busy, setBusy] = useState<"rename" | "note" | "archive" | "reparse" | "restore" | null>(null);
   const [notice, setNotice] = useState<{ readonly tone: "info" | "error"; readonly text: string } | null>(null);
@@ -85,8 +93,29 @@ export function SourceDetailSurface() {
   const pollAttemptsRef = useRef(0);
   /** Set while the field is being closed on purpose, so its blur cannot commit. */
   const renameAbortRef = useRef(false);
+  const alive = useRef(true);
+  const busyRef = useRef(false);
+  const readerRef = useRef<HTMLDivElement>(null);
+  const articleRef = useRef<HTMLElement>(null);
+  const sideRef = useRef<HTMLElement>(null);
+  const fragmentsTrigger = useRef<HTMLButtonElement>(null);
+  const notesTrigger = useRef<HTMLButtonElement>(null);
+  const restoredPosition = useRef(false);
+  const [panel, setPanel] = useState<"structure" | "notes" | null>(null);
+  const lastPanel = useRef<"structure" | "notes">("structure");
+  if (panel) lastPanel.current = panel;
+  const panelContent = panel ?? lastPanel.current;
+  const [selectedSegment, setSelectedSegment] = useState<string | null>(null);
+  const positionKey = `${scope}:${activeSourceId}`;
+  useSourceMotion(readerRef, `${activeSourceId}`);
+  useSourceSheetMotion(sideRef, panel !== null);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useLayoutEffect(() => {
+    if (panel) sideRef.current?.querySelector<HTMLButtonElement>(".source-side-close")?.focus({ preventScroll: true });
+  }, [panel]);
+  const closePanel = () => { const previous = panel; setPanel(null); (previous === "structure" ? fragmentsTrigger : notesTrigger).current?.focus({ preventScroll: true }); };
 
-  const { data, loading, failure, reload, epochRef } = useSurfaceProjection(async ({ workspaceEpoch }) => {
+  const { data, loading, failure, reload, epochRef, refreshFailure } = useSurfaceProjection(async ({ workspaceEpoch }) => {
     if (!activeSourceId) return null;
     const meta = () => createRequestMeta(workspaceEpoch);
     const [detailResponse, notesResponse, capabilitiesResponse] = await Promise.all([
@@ -102,11 +131,17 @@ export function SourceDetailSurface() {
       canStartNote: capabilities["source.createNote"] === "allowed",
       canArchive: capabilities["source.archive"] === "allowed",
     } satisfies SourceDetailProjection;
-  }, [activeSourceId]);
+  }, [activeSourceId], { refreshOnFocus: true });
 
   const source = data?.detail.source ?? null;
   const segments = data?.detail.segments ?? [];
   const notes = data?.notes.items ?? [];
+  useLayoutEffect(() => {
+    if (!loading && data && articleRef.current && !restoredPosition.current) {
+      articleRef.current.scrollTop = readingPositions.get(positionKey) ?? 0;
+      restoredPosition.current = true;
+    }
+  }, [data, loading, positionKey]);
 
   /**
    * The chapter tab counts what the workspace holds, not what one page of the
@@ -126,15 +161,6 @@ export function SourceDetailSurface() {
     return null;
   }, [notes]);
 
-  const focusSegment = useMemo(() => pickFocusSegment(segments), [segments]);
-  /**
-   * 页边那条批注的标题。以前只写 `片段 02`（那是**序号**补零），而同一屏的页签写着
-   * `片段 2`（那是**条数**）——同样的四个字两个含义（笔记页同一族写法在 39d §19 修过，
-   * 伴星照着念会念出"只挂了 1 段（标着 00）"这种自相矛盾的话）。
-   */
-  const focusSegmentClipLabel = focusSegment
-    ? `第 ${focusSegment.ordinal + 1} 段，共 ${segments.length} 段`
-    : "没有可看的片段";
   const structureLine = useMemo(
     () => describeStructure(segments, source?.status),
     [segments, source?.status],
@@ -169,9 +195,9 @@ export function SourceDetailSurface() {
               ? STALLED_SCREEN_LINE
               : segments.length === 0
                 ? parseStateLine(source.status)
-                : notes.length === 0
+                : panel === "notes" && notes.length === 0
                   ? NO_NOTE_SCREEN_LINE
-                  : notesTruncatedLine;
+                  : panel === "notes" ? notesTruncatedLine : null;
   const readableView = useMemo<PageReadableV1 | null>(() => {
     // 选了某一份材料、却还没读到它：什么都不登记，别把上一份的残留留给这一页。
     if (activeSourceId && !source && !failure) return null;
@@ -187,18 +213,18 @@ export function SourceDetailSurface() {
             { label: "关联笔记", value: `${noteTotal}` },
           ]
         : [],
-      ...(notes.length > 0
+      ...(panel === "notes" && notes.length > 0
         ? {
             items: notes.slice(0, 12).map((note, index) => ({
               ordinal: index + 1,
               label: `《${note.title}》`.slice(0, 120),
-              state: (note.currentVersionId ? "正在编辑" : "还没有版本").slice(0, 40),
+              state: (note.currentVersionId ? "已存好" : "还没有版本").slice(0, 40),
             })),
           }
         : {}),
       ...(detailNotice ? { notice: detailNotice } : {}),
     };
-  }, [activeSourceId, detailNotice, failure, noteTotal, notes, segments.length, source, structureLine]);
+  }, [activeSourceId, detailNotice, failure, noteTotal, notes, panel, segments.length, source, structureLine]);
   usePageReadableView(readableView);
 
   // Another source is another page: a half-typed title or an unconfirmed note
@@ -231,7 +257,7 @@ export function SourceDetailSurface() {
     }
     const timer = window.setTimeout(() => {
       pollAttemptsRef.current += 1;
-      void reload();
+      void reload({ silent: true });
     }, SOURCE_STATUS_POLL_MS);
     return () => window.clearTimeout(timer);
   }, [source, reload]);
@@ -239,13 +265,14 @@ export function SourceDetailSurface() {
   const retryRead = () => {
     pollAttemptsRef.current = 0;
     setStalled(false);
-    void reload();
+    void reload({ silent: true });
   };
 
   const sourceId = source?.id ?? null;
   const canRename = data?.canRename ?? false;
   const canStartNote = data?.canStartNote ?? false;
   const canArchive = data?.canArchive ?? false;
+  const titleSegment = segments[0]?.segmentType === "heading" && segmentText(segments[0]) === source?.title ? segments[0] : null;
 
   /**
    * Why "开始写笔记" cannot run yet, in the order the API would refuse it: only a
@@ -266,7 +293,10 @@ export function SourceDetailSurface() {
 
   const openNote = (noteId: string, noteVersionId: string, mode: "preview" | "live-preview") => {
     setActiveNoteRef({ noteId, noteVersionId, mode });
-    invoke("open-notebook");
+    invoke("open-notebook", { returnTo: { label: "返回来源资料", run: () => {
+      setActiveSourceId(sourceId);
+      invoke("open-source", { returnTo: { label: "返回来源库", run: () => invoke("open-sources") } });
+    } } });
   };
 
   /** Leaving the field without saving: Escape and 取消 both come through here. */
@@ -284,12 +314,12 @@ export function SourceDetailSurface() {
   /** Renaming a source is a title-only save: the server owns the parse state. */
   const renameSource = async () => {
     const title = renaming?.trim() ?? "";
-    if (!sourceId || busy) return;
+    if (!sourceId || busyRef.current) return;
     if (!title || title === source?.title) {
       setRenaming(null);
       return;
     }
-    setBusy("rename");
+    busyRef.current = true; setBusy("rename");
     setNotice(null);
     try {
       unwrapGatewayResult(await window.ailearn.source.update({
@@ -297,12 +327,13 @@ export function SourceDetailSurface() {
         sourceId,
         request: { title },
       }));
+      if (!alive.current) return;
       setRenaming(null);
-      await reload();
+      await reload({ silent: true });
     } catch (error) {
-      setNotice({ tone: "error", text: `改标题没成功：${gatewayErrorMessage(error)}` });
+      if (alive.current) setNotice({ tone: "error", text: `改标题没成功：${gatewayErrorMessage(error)}` });
     } finally {
-      setBusy(null);
+      busyRef.current = false; if (alive.current) setBusy(null);
     }
   };
 
@@ -321,14 +352,14 @@ export function SourceDetailSurface() {
   };
 
   /**
-   * The mockup's primary action: build a note out of the source's fragments and
+   * Build a note out of the source's fragments and
    * land in the writer. A note that already carries the same content is not an
    * error to decode but a choice to make, so the duplicate answer is offered
    * back as "open it" or "make another".
    */
   const startNote = async (force = false) => {
-    if (!sourceId || busy) return;
-    setBusy("note");
+    if (!sourceId || busyRef.current) return;
+    busyRef.current = true; setBusy("note");
     setNotice(null);
     try {
       const result = unwrapGatewayResult(await window.ailearn.source.createNote({
@@ -336,6 +367,7 @@ export function SourceDetailSurface() {
         sourceId,
         ...(force ? { force: true } : {}),
       }));
+      if (!alive.current) return;
       if (result.kind === "duplicate") {
         setDuplicate({ noteId: result.noteId, title: result.title });
         setNotice({ tone: "info", text: `服务器上已经有一篇内容相同的笔记《${result.title}》。打开它，或者再建一份副本。` });
@@ -344,6 +376,7 @@ export function SourceDetailSurface() {
       setDuplicate(null);
       openNote(result.noteId, result.noteVersionId, "live-preview");
     } catch (error) {
+      if (!alive.current) return;
       setNotice({
         tone: "error",
         text: source?.status === "ready"
@@ -351,42 +384,47 @@ export function SourceDetailSurface() {
           : "这份材料还没有解析完成；等状态变成「已就绪」再来开始写笔记。",
       });
     } finally {
-      setBusy(null);
+      busyRef.current = false; if (alive.current) setBusy(null);
     }
   };
 
   /** Opening the duplicate needs the version id, which the notes page carries. */
-  const openDuplicate = () => {
-    if (!duplicate) return;
+  const openDuplicate = async () => {
+    if (!duplicate || busyRef.current) return;
     const known = notes.find((note) => note.id === duplicate.noteId);
-    setDuplicate(null);
     if (known?.currentVersionId) {
+      setDuplicate(null);
       openNote(known.id, known.currentVersionId, "live-preview");
       return;
     }
-    setNotice({ tone: "info", text: `《${duplicate.title}》还没有可编辑版本，已为你打开笔记库。` });
-    invoke("open-notebook");
+    busyRef.current = true; setBusy("note");
+    try {
+      const note = unwrapGatewayResult(await window.ailearn.note.get({ meta: createRequestMeta(epochRef.current), noteId: duplicate.noteId }));
+      if (!alive.current) return;
+      setDuplicate(null); openNote(note.noteId, note.currentVersionId, "live-preview");
+    } catch (error) { if (alive.current) setNotice({ tone: "error", text: `这篇笔记暂时没打开：${gatewayErrorMessage(error)}` }); }
+    finally { busyRef.current = false; if (alive.current) setBusy(null); }
   };
 
   /**
-   * Archiving is the source's soft delete: it leaves the ready index but stays
-   * readable under 全部, and there is no inverse, so the row asks first.
+   * Archive is reversible and the source remains readable under 已归档.
    */
   const archiveSource = async () => {
-    if (!sourceId || busy) return;
-    setBusy("archive");
+    if (!sourceId || busyRef.current) return;
+    busyRef.current = true; setBusy("archive");
     setNotice(null);
     try {
       unwrapGatewayResult(await window.ailearn.source.archive({
         meta: createRequestMeta(epochRef.current),
         sourceId,
       }));
+      if (!alive.current) return;
       setArchiveConfirm(false);
       invoke("open-sources");
     } catch (error) {
-      setNotice({ tone: "error", text: `归档没成功：${gatewayErrorMessage(error)}` });
+      if (alive.current) setNotice({ tone: "error", text: `归档没成功：${gatewayErrorMessage(error)}` });
     } finally {
-      setBusy(null);
+      busyRef.current = false; if (alive.current) setBusy(null);
     }
   };
 
@@ -399,14 +437,15 @@ export function SourceDetailSurface() {
    * 不假装"恢复完成"就完事：这一档决定了用户接下来能做什么。
    */
   const restoreSource = async () => {
-    if (!sourceId || busy) return;
-    setBusy("restore");
+    if (!sourceId || busyRef.current) return;
+    busyRef.current = true; setBusy("restore");
     setNotice(null);
     try {
       const restored = unwrapGatewayResult(await window.ailearn.source.restore({
         meta: createRequestMeta(epochRef.current),
         sourceId,
       }));
+      if (!alive.current) return;
       setNotice({
         tone: "info",
         text: restored.alreadyActive
@@ -417,11 +456,11 @@ export function SourceDetailSurface() {
                 : "；它还没有正文片段，可以重新解析"
             }。`,
       });
-      await reload();
+      await reload({ silent: true });
     } catch (error) {
-      setNotice({ tone: "error", text: `恢复没成功：${gatewayErrorMessage(error)}` });
+      if (alive.current) setNotice({ tone: "error", text: `恢复没成功：${gatewayErrorMessage(error)}` });
     } finally {
-      setBusy(null);
+      busyRef.current = false; if (alive.current) setBusy(null);
     }
   };
 
@@ -434,17 +473,20 @@ export function SourceDetailSurface() {
    * 重复入队是同一份外部调用付两遍钱。
    */
   const reparseSource = async () => {
-    if (!sourceId || busy) return;
-    setBusy("reparse");
+    if (!sourceId || busyRef.current) return;
+    busyRef.current = true; setBusy("reparse");
     setNotice(null);
     try {
       unwrapGatewayResult(await window.ailearn.source.reparse({
         meta: createRequestMeta(epochRef.current),
         sourceId,
       }));
+      if (!alive.current) return;
       setNotice({ tone: "info", text: "已经排上重新解析了，稍后回到这一页看结果。" });
-      void reload();
+      pollAttemptsRef.current = 0; setStalled(false);
+      void reload({ silent: true });
     } catch (error) {
+      if (!alive.current) return;
       // 判"是不是已经有任务在跑"要认**错误码**，不是认文案：文案是
       // `gatewayErrorMessage` 按码翻出来的中文句子，拿它做子串匹配等于把
       // "改了措辞就静默走错分支"埋进这里。
@@ -456,7 +498,7 @@ export function SourceDetailSurface() {
           : `重新解析没排上：${gatewayErrorMessage(error)}`,
       });
     } finally {
-      setBusy(null);
+      busyRef.current = false; if (alive.current) setBusy(null);
     }
   };
 
@@ -481,26 +523,39 @@ export function SourceDetailSurface() {
   const restoreAvailable = canArchive && source?.status === "archived";
   // 与归档同一个门：能力投影里 owner 那批写能力是一起置位的（`source.update` 与
   // `source.archive` 不会一个开一个关），真判据仍在服务端 `requireOwner` 那一处。
+  /**
+   * 「重新解析」收的是"这一篇的解析没跑完、用户要自己再排一次"这三档。
+   *
+   * 过去这里少了 `draft`——而它恰恰是最容易卡死的那一档：采集落库就是 `draft`，
+   * worker 停着、容器正在重启、或 job 判 dead 没收尾时，它会永远停在这里，
+   * 界面上却没有一颗按钮能把它再排一次（`restoreSource` 的注释里写着"回到
+   * draft，走既有的重新解析那条路"，可见这条路本来就该通）。
+   *
+   * 真判据仍在服务端：真有一条 pending/running 的 parse job 时它回 409，
+   * 界面如实说"已经有任务在跑"，而不是替用户猜该不该点。
+   */
   const reparseAvailable = canArchive
-    && (source?.status === "failed" || source?.status === "processing");
+    && (source?.status === "failed"
+      || source?.status === "processing"
+      || source?.status === "draft");
 
   const actions = duplicate ? (
     <>
-      <button type="button" className="button primary" onClick={openDuplicate}>打开已有笔记</button>
+      <button type="button" className="button primary" disabled={!!busy} onClick={() => void openDuplicate()}><BookOpen size={16} aria-hidden="true" />打开已有笔记</button>
       <button type="button" className="text-action" disabled={busy === "note"} onClick={() => void startNote(true)}>仍然新建一份</button>
       <button type="button" className="text-action" onClick={() => { setDuplicate(null); setNotice(null); }}>取消</button>
     </>
   ) : archiveConfirm ? (
     <>
       <button type="button" className="button danger" disabled={busy === "archive"} onClick={() => void archiveSource()}>
-        {busy === "archive" ? "正在归档…" : "确认归档"}
+        <Archive size={16} aria-hidden="true" />{busy === "archive" ? "正在归档…" : "确认归档"}
       </button>
       <button type="button" className="text-action" disabled={busy === "archive"} onClick={() => setArchiveConfirm(false)}>取消</button>
     </>
   ) : renaming !== null ? (
     <>
       <button type="button" className="button primary" disabled={busy === "rename"} onClick={() => void renameSource()}>
-        {busy === "rename" ? "正在保存…" : "保存标题"}
+        <Check size={16} aria-hidden="true" />{busy === "rename" ? "正在保存…" : "保存标题"}
       </button>
       <button type="button" className="text-action" disabled={busy === "rename"} onClick={closeRename}>取消</button>
     </>
@@ -509,189 +564,148 @@ export function SourceDetailSurface() {
       <button
         type="button"
         className="button primary"
-        disabled={notes.length === 0 && Boolean(startBlockedReason)}
+        disabled={!!busy || (notes.length === 0 && Boolean(startBlockedReason))}
         title={notes.length === 0 ? startBlockedReason ?? "从这份来源的片段建立一篇笔记" : "在写作页继续这篇笔记"}
         onClick={runPrimary}
       >
-        {primaryLabel}
+        {busy === "note" ? <LoaderCircle className="source-spin" size={16} aria-hidden="true" /> : <BookOpen size={16} aria-hidden="true" />}{primaryLabel}
       </button>
       {canRename ? (
-        <button type="button" className="text-action" onClick={openRename}>重命名</button>
+        <button type="button" className="source-icon" aria-label="重命名" title="重命名" disabled={!!busy} onClick={openRename}><Pencil size={17} /></button>
       ) : null}
       {reparseAvailable ? (
         <button
           type="button"
-          className="text-action"
-          title="这一篇的解析任务已经结束或没跑完，重新排一次"
-          disabled={busy === "reparse"}
+          className="button"
+          title="这一篇的解析还没跑完，或者已经停了——重新排一次"
+          disabled={!!busy}
           onClick={() => void reparseSource()}
         >
-          {busy === "reparse" ? "正在重新排…" : "重新解析"}
+          <RotateCcw size={16} aria-hidden="true" />{busy === "reparse" ? "正在重新排…" : "重新解析"}
         </button>
       ) : null}
       {restoreAvailable ? (
         <button
           type="button"
-          className="text-action"
+          className="button"
           title="把它放回默认的来源列表；之前解析好的片段都还在"
-          disabled={busy === "restore"}
+          disabled={!!busy}
           onClick={() => void restoreSource()}
         >
-          {busy === "restore" ? "正在恢复…" : "恢复来源"}
+          <RotateCcw size={16} aria-hidden="true" />{busy === "restore" ? "正在恢复…" : "恢复来源"}
         </button>
       ) : null}
       {archiveAvailable ? (
         <button
           type="button"
-          className="text-action text-action--danger"
+          className="source-icon source-icon--muted"
+          aria-label="归档"
+          disabled={!!busy}
           title="归档后不再出现在默认索引，可在来源库的「已归档」页签找到，也能从这里恢复"
           onClick={() => { setNotice(null); setArchiveConfirm(true); }}
         >
-          归档
+          <Archive size={17} />
         </button>
       ) : null}
     </>
   );
 
+  const jumpToSegment = (segment: DesktopSourceSegment) => {
+    const target = articleRef.current?.querySelector<HTMLElement>(`[data-source-segment="${segment.id}"]`);
+    closePanel();
+    setSelectedSegment(segment.id);
+    target?.scrollIntoView({ block: "start", behavior: "instant" });
+    target?.focus({ preventScroll: true });
+  };
+
   return (
     <HudPage page="source-detail">
-      {!activeSourceId ? (
-        <SurfaceDataState kind="empty" message={NO_SOURCE_SCREEN.message} detail={NO_SOURCE_SCREEN.detail} />
-      ) : null}
-      {activeSourceId && loading ? (
-        <SurfaceDataState kind="loading" message="正在读取来源详情" detail="正文片段和关联笔记都来自服务器。" />
-      ) : null}
-      {activeSourceId && !loading && failure ? (
-        <SurfaceDataState kind="error" message="来源详情暂时不可用" detail={failure} onRetry={() => void reload()} />
-      ) : null}
-      {activeSourceId && !loading && !failure && !source ? (
-        <SurfaceDataState kind="empty" message={SOURCE_GONE_SCREEN.message} detail={SOURCE_GONE_SCREEN.detail} />
-      ) : null}
-
-      {!loading && !failure && source ? (
-        <div className="folio">
-          <div className="chapter-tabs" role="group" aria-label="来源详情分区">
-            <span>正文</span>
-            <span>片段 {segments.length}</span>
-            <span>笔记 {noteTotal}</span>
+      <div ref={readerRef} className="source-reader source-experience">
+        {!activeSourceId ? <SurfaceDataState kind="empty" message={NO_SOURCE_SCREEN.message} detail={NO_SOURCE_SCREEN.detail} /> : null}
+        {activeSourceId && loading ? <SurfaceDataState kind="loading" message="正在读取来源详情" detail="正在取回原文与笔记。" /> : null}
+        {activeSourceId && !loading && failure ? <SurfaceDataState kind="error" message="来源详情暂时不可用" detail={failure} onRetry={retryRead} /> : null}
+        {activeSourceId && !loading && !failure && !source ? <SurfaceDataState kind="empty" message={SOURCE_GONE_SCREEN.message} detail={SOURCE_GONE_SCREEN.detail} /> : null}
+        {!loading && !failure && source ? <>
+          <header className="source-reader-tools">
+            <div className="chapter-tabs" role="group" aria-label="来源详情分区">
+              <span className="source-reading-label"><FileText size={17} aria-hidden="true" />正文</span>
+              <button ref={fragmentsTrigger} type="button" aria-expanded={panel === "structure"} aria-controls="source-side-sheet" onClick={() => panel === "structure" ? closePanel() : setPanel("structure")}>
+                <List size={16} aria-hidden="true" /><span>片段 {segments.length}</span>
+              </button>
+              <button ref={notesTrigger} type="button" aria-expanded={panel === "notes"} aria-controls="source-side-sheet" onClick={() => panel === "notes" ? closePanel() : setPanel("notes")}>
+                <BookOpen size={16} aria-hidden="true" /><span>笔记 {noteTotal}</span>
+              </button>
+            </div>
+            <div className="source-command-bar actions">{actions}</div>
+          </header>
+          <div className="source-reader-notices">
+            {archiveConfirm ? <p className="source-archive-question">把这份材料暂时收起来？之后可以在「已归档」里找回，笔记会保留。</p> : null}
+            {notice ? <p className={`surface-notice${notice.tone === "error" ? " surface-notice--error" : ""}`} role={notice.tone === "error" ? "alert" : "status"}>{notice.text}</p> : null}
+            {refreshFailure ? <p className="surface-notice surface-notice--error" role="alert">更新暂时没取回：{refreshFailure}<button type="button" className="text-action" onClick={retryRead}>重新读取</button></p> : null}
+            {stalled ? <p className="surface-notice" role="status">{STALLED_SCREEN_LINE}<button type="button" className="text-action" onClick={retryRead}>重新读取</button></p> : null}
+            {notes.length === 0 && startBlockedReason ? <p className="source-blocked-reason">{startBlockedReason}</p> : null}
           </div>
-          <div className="folio-inner">
-            <article className="folio-page article-copy" aria-label="来源正文">
+          <article ref={articleRef} className="source-reading-paper article-copy" aria-label="来源正文"
+            onScroll={event => { if (restoredPosition.current) readingPositions.set(positionKey, event.currentTarget.scrollTop); }}>
+            <div className="source-reading-inner">
               <div className="meta">
                 <span>{formatSourceKindLabel(source)}来源</span>
-                <span>{formatSourceStatus(source.status)}</span>
+                <span data-status={source.status}>{formatSourceStatus(source.status)}</span>
                 <time dateTime={source.updatedAt}>{formatRelative(source.updatedAt)}更新</time>
               </div>
-              {renaming === null ? (
-                <h2>{source.title}</h2>
-              ) : (
-                <>
-                  <label className="sr-only" htmlFor="source-title-input">新的来源标题</label>
-                  <input
-                    id="source-title-input"
-                    className="note-rename-input"
-                    value={renaming}
-                    autoFocus
-                    maxLength={500}
-                    onChange={(event) => setRenaming(event.currentTarget.value)}
-                    onBlur={commitRenameOnBlur}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") { event.preventDefault(); void renameSource(); }
-                      if (event.key === "Escape") { event.preventDefault(); closeRename(); }
-                    }}
-                  />
-                </>
-              )}
-              {segments.length === 0 ? (
-                <p className="sub">{parseStateLine(source.status)}</p>
-              ) : segments.map((segment) => (
-                <SegmentBody
-                  key={segment.id}
-                  segment={segment}
-                  highlighted={segment.id === focusSegment?.id}
-                  workspaceEpoch={epochRef.current}
-                />
+              <div className={titleSegment ? "source-segment" : undefined} data-source-segment={titleSegment?.id} data-selected={titleSegment && selectedSegment === titleSegment.id || undefined} tabIndex={titleSegment ? -1 : undefined}>
+              {renaming === null ? <h2>{source.title}</h2> : <>
+                <label className="sr-only" htmlFor="source-title-input">新的来源标题</label>
+                <input id="source-title-input" className="note-rename-input" value={renaming} autoFocus maxLength={500} disabled={busy === "rename"}
+                  onChange={event => setRenaming(event.currentTarget.value)} onBlur={commitRenameOnBlur}
+                  onKeyDown={event => {
+                    if (event.key === "Enter") { event.preventDefault(); void renameSource(); }
+                    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeRename(); }
+                  }} />
+              </>}
+              </div>
+              <p className="source-structure-line">{structureLine}</p>
+              {segments.length === 0 ? <p className="source-parse-state sub" role="status">{parseStateLine(source.status)}</p> : segments.filter(segment => segment !== titleSegment).map(segment => (
+                <div key={segment.id} className="source-segment" data-source-segment={segment.id} data-selected={selectedSegment === segment.id || undefined} tabIndex={-1}>
+                  <SegmentBody segment={segment} workspaceEpoch={epochRef.current} />
+                </div>
               ))}
-            </article>
-
-            <aside className="folio-page right" aria-label="来源解析与关联笔记">
-              <h3 className="title">解析与结构</h3>
-              <p className="sub">{structureLine}</p>
-              {stalled ? (
-                <p className="surface-notice" role="status">
-                  {STALLED_SCREEN_LINE}
-                  <button type="button" className="text-action" onClick={retryRead}>重新读取</button>
-                </p>
-              ) : null}
-              {focusSegment ? (
-                <div className="margin-note">
-                  <b>{focusSegmentClipLabel}</b>
-                  <br />
-                  “{excerpt(segmentText(focusSegment))}”
-                  <div className="small">{segmentLabel(focusSegment)}</div>
-                </div>
-              ) : null}
-              <div className="rule" />
-              <dl className="source-facts">
-                <div>
-                  <dt>来源地址</dt>
-                  <dd>
-                    {source.origin
-                      ?? (needsOriginAddress(source) ? "这份网页来源没有记录地址" : "粘贴的正文，没有地址")}
-                  </dd>
-                </div>
-                <div>
-                  <dt>创建时间</dt>
-                  <dd><time dateTime={source.createdAt}>{formatDate(source.createdAt)}</time></dd>
-                </div>
-              </dl>
-              <div className="rule" />
-              <h3 className="serif">关联笔记</h3>
-              {notes.length === 0 ? (
-                <p className="sub">{NO_NOTE_SCREEN_LINE}</p>
-              ) : notes.length === 1 ? (
-                // The mockup's single line, for the single-note case: naming the
-                // note twice (here and in a list) would only add noise.
-                <p className="sub note-line">
-                  《{notes[0].title}》{notes[0].currentVersionId ? "正在编辑" : "还没有版本"} · {formatRelative(notes[0].updatedAt)}更新
-                </p>
-              ) : (
-                <>
-                  <p className="sub">这份材料关联了 {noteTotal} 篇笔记，最新一篇更新于 {formatRelative(notes[0].updatedAt)}。</p>
-                  <div className="note-links">
-                    {notes.map((note) => (
-                      <button
-                        key={note.id}
-                        type="button"
-                        disabled={!note.currentVersionId}
-                        title={note.currentVersionId ? "在写作页打开这篇笔记" : "这篇笔记还没有可写版本"}
-                        onClick={() => {
-                          if (note.currentVersionId) openNote(note.id, note.currentVersionId, "preview");
-                        }}
-                      >
-                        <span>《{note.title}》</span>
-                        <small>{note.currentVersionId ? "正在编辑" : "还没有版本"} · {formatRelative(note.updatedAt)}</small>
-                      </button>
-                    ))}
-                  </div>
-                  {noteTotal > notes.length ? (
-                    <p className="small">共 {noteTotal} 篇，这里列出最近 {notes.length} 篇。</p>
-                  ) : null}
-                </>
-              )}
-              {notice ? (
-                <p
-                  className={`surface-notice${notice.tone === "error" ? " surface-notice--error" : ""}`}
-                  role={notice.tone === "error" ? "alert" : "status"}
-                >
-                  {notice.text}
-                </p>
-              ) : null}
-              <div className="actions">{actions}</div>
-            </aside>
-          </div>
-        </div>
-      ) : null}
+              <footer className="source-provenance">
+                <dl className="source-facts">
+                  <div><dt>来源地址</dt><dd>{source.origin ?? (needsOriginAddress(source) ? "这份网页来源没有记录地址" : "粘贴的正文，没有地址")}</dd></div>
+                  <div><dt>收录于</dt><dd><time dateTime={source.createdAt}>{formatDate(source.createdAt)}</time></dd></div>
+                </dl>
+              </footer>
+            </div>
+          </article>
+        </> : null}
+        <aside ref={sideRef} id="source-side-sheet" className="source-side-sheet" role="dialog" aria-label={panelContent === "notes" ? "关联笔记" : "解析与片段"} aria-modal="false" inert={panel === null}
+          onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closePanel(); } }}>
+          <header className="source-sheet-heading">
+            <h3>{panelContent === "notes" ? "从这里写下的笔记" : "解析与片段"}</h3>
+            <button type="button" className="source-icon source-side-close" aria-label="收起附页" title="收起附页" onClick={closePanel}><X size={18} /></button>
+          </header>
+          {panelContent === "notes" ? <>
+            {notes.length === 0 ? <p className="sub">{NO_NOTE_SCREEN_LINE}</p> : <div className="note-links">
+              {notes.map(note => <button key={note.id} type="button" disabled={!note.currentVersionId} title={note.currentVersionId ? "打开这篇笔记" : "这篇笔记还没有版本"}
+                onClick={() => { if (note.currentVersionId) openNote(note.id, note.currentVersionId, "preview"); }}>
+                <BookOpen size={19} aria-hidden="true" />
+                <span><b>《{note.title}》</b><small>{note.currentVersionId ? "已存好" : "还没有版本"} · {formatRelative(note.updatedAt)}</small></span>
+                <ArrowRight size={15} aria-hidden="true" />
+              </button>)}
+            </div>}
+            {notesTruncatedLine ? <p className="small">{notesTruncatedLine}</p> : null}
+          </> : <><p className="sub">{structureLine}</p>
+            <ol className="source-fragments">{segments.map(segment => <li key={segment.id}>
+              <button type="button" onClick={() => jumpToSegment(segment)}>
+                <b>{segment.ordinal + 1}</b>
+                <span><small>{segmentLabel(segment)}</small>{excerpt(segmentText(segment), 90)}</span>
+                <ArrowRight size={14} aria-hidden="true" />
+              </button>
+            </li>)}</ol>
+          </>}
+        </aside>
+      </div>
     </HudPage>
   );
 }
@@ -699,15 +713,13 @@ export function SourceDetailSurface() {
 /** One parsed fragment, rendered with the weight its own segment type carries. */
 function SegmentBody({
   segment,
-  highlighted,
   workspaceEpoch,
 }: {
   readonly segment: DesktopSourceSegment;
-  readonly highlighted: boolean;
   /** 站内图片的字节请求要带上它，工作区换了就不该再回旧图。 */
   readonly workspaceEpoch?: number;
 }) {
-  if (segment.segmentType === "code") return <pre className="code-block"><code>{segment.text}</code></pre>;
+  if (segment.segmentType === "code") return <pre className="code-block"><code>{segmentText(segment)}</code></pre>;
   if (segment.segmentType === "heading") return <h3 className="serif">{segmentText(segment)}</h3>;
   if (segment.segmentType === "list") {
     const { ordered, items } = listSegment(segment.text);
@@ -724,9 +736,7 @@ function SegmentBody({
   }
   const text = segmentText(segment);
   if (segment.segmentType === "quote") return <p className="quote">{text}</p>;
-  if (!highlighted) return <p>{text}</p>;
-  const [lead, rest] = splitHighlight(text);
-  return <p><span className="mark">{lead}</span>{rest}</p>;
+  return <p>{text}</p>;
 }
 
 /**

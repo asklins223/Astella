@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type {
   UnderstandingEdgeProjectionV3,
@@ -8,6 +8,10 @@ import type {
 } from "@ailearn/shared/note-deepening-contracts";
 import { useRoomStore } from "../../../app/room-store.ts";
 import { GraphSurface } from "../space/graph-surface.tsx";
+import { clearGraphJourneys } from "../space/graph-journey";
+import { HudReturn } from "../../hud/HudPage";
+
+const roomInvoke = useRoomStore.getState().invoke;
 
 beforeAll(() => {
   class ResizeObserverStub {
@@ -32,6 +36,8 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+  clearGraphJourneys();
+  useRoomStore.setState({ invoke: roomInvoke, returnTarget: null });
   vi.restoreAllMocks();
 });
 
@@ -143,7 +149,73 @@ function stubGateway(result: ReturnType<typeof snapshot> | { failure: true }) {
   return gateway;
 }
 
-describe("GraphSurface · Web 成熟版 Understanding Universe 移植", () => {
+describe("GraphSurface · 全窗口的星空与笔记旁页", () => {
+  it.each([
+    { kind: "source", label: "认知科学讲义", action: "打开来源", destination: "source-detail" },
+    { kind: "objective", label: "提取练习", action: "查看对应卡片", destination: "objective-detail" },
+  ])("从 $kind 返回星图恢复选中星体、图层与纸页阅读位置", async ({ kind, label, action, destination }) => {
+    const initial = snapshot();
+    const carded = { ...initial.nodes[0], activeCardId: nextId() } as UnderstandingNodeProjectionV3;
+    stubGateway(snapshot({ nodes: [carded, ...initial.nodes.slice(1)] }));
+    act(() => {
+      useRoomStore.setState({ invoke: roomInvoke, navigationGuard: null, returnTarget: null });
+      roomInvoke("graph");
+    });
+    const view = render(<GraphSurface />);
+    const search = await screen.findByRole("combobox", { name: "搜索理解星图" });
+    fireEvent.click(screen.getByText("图层与图例"));
+    fireEvent.click(screen.getByRole("checkbox", { name: "关系光路" }));
+    fireEvent.change(search, { target: { value: label } });
+    const result = within(screen.getByRole("listbox", { name: "搜索结果" })).getByRole("option", {
+      name: new RegExp(`${label}\\s*${kind === "source" ? "来源行星" : "理解恒星"}`),
+    });
+    fireEvent.click(result);
+    const body = view.container.querySelector<HTMLElement>(".universe-detail-body")!;
+    body.scrollTop = 47;
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(action) }));
+    expect(useRoomStore.getState().destination).toBe(destination);
+    const target = useRoomStore.getState().returnTarget!;
+    expect(target.label).toBe("返回星图");
+    view.unmount();
+
+    const parentControl = render(<HudReturn label={target.label} onReturn={target.run} />);
+    fireEvent.click(screen.getByRole("button", { name: "返回星图" }));
+    expect(useRoomStore.getState().surface).toBe("graph");
+    parentControl.unmount();
+    const returned = render(<GraphSurface />);
+    expect(await screen.findByRole("heading", { name: label })).toBeTruthy();
+    await waitFor(() => expect(returned.container.querySelector<HTMLElement>(".universe-detail-body")!.scrollTop).toBe(47));
+    fireEvent.click(screen.getByText("图层与图例"));
+    expect((screen.getByRole("checkbox", { name: "关系光路" }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole("combobox", { name: "搜索理解星图" }) as HTMLInputElement).value).toBe("");
+  });
+
+  it("输入搜索词不会让背景星体消失，笔记与来源不套用学习表现", async () => {
+    stubGateway(snapshot()); render(<GraphSurface />);
+    const search = await screen.findByRole("combobox", { name: "搜索理解星图" });
+    fireEvent.change(search, { target: { value: "记忆笔记" } });
+    expect(await screen.findByText("4 / 4 星体 · 1 理解恒星 · 1 证据卫星 · 3 真实光路")).toBeTruthy();
+    fireEvent.click(await within(screen.getByRole("listbox", { name: "搜索结果" })).findByRole("option", { name: /记忆笔记/ }));
+    const detail = screen.getByRole("complementary", { name: "星体详情" });
+    expect(detail.querySelector(".universe-detail-head")?.textContent).toContain("带来源的笔记");
+    expect(detail.querySelector(".universe-detail-head")?.textContent).not.toMatch(/没见过|见过一次|已理解/);
+    fireEvent.change(search, { target: { value: "认知科学讲义" } });
+    fireEvent.click(await within(screen.getByRole("listbox", { name: "搜索结果" })).findByRole("option", { name: /认知科学讲义\s*来源行星/ }));
+    expect(detail.querySelector(".universe-detail-head")?.textContent).toContain("可回到原材料");
+  });
+
+  it("目标详情保持自己的上下文，以明确入口回到所属笔记", async () => {
+    stubGateway(snapshot()); render(<GraphSurface />);
+    const search = await screen.findByRole("combobox", { name: "搜索理解星图" });
+    fireEvent.change(search, { target: { value: "提取练习" } });
+    fireEvent.click(await within(screen.getByRole("listbox", { name: "搜索结果" })).findByRole("option", { name: /提取练习/ }));
+    const detail = screen.getByRole("complementary", { name: "星体详情" });
+    expect(within(detail).queryByRole("navigation", { name: "这一篇笔记的三个尺度" })).toBeNull();
+    fireEvent.click(within(detail).getByRole("button", { name: /查看所属笔记/ }));
+    expect(within(detail).getByRole("heading", { name: "记忆笔记" })).toBeTruthy();
+    expect(within(detail).getByRole("navigation", { name: "这一篇笔记的三个尺度" })).toBeTruthy();
+  });
+
   it("以可缩放 Canvas 呈现真实节点、关系和完整图例", async () => {
     stubGateway(snapshot());
     render(<GraphSurface />);
@@ -181,6 +253,7 @@ describe("GraphSurface · Web 成熟版 Understanding Universe 移植", () => {
     expect(screen.getByRole("button", { name: "适配全部星图" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "清除手动拖拽并恢复默认布局" })).toBeTruthy();
     expect(screen.getByLabelText("按学习目标状态筛选星图")).toBeTruthy();
+    fireEvent.click(screen.getByText("图层与图例"));
     expect(screen.getByLabelText("控制知识宇宙图层")).toBeTruthy();
   });
 
@@ -266,6 +339,7 @@ describe("GraphSurface · Web 成熟版 Understanding Universe 移植", () => {
     render(<GraphSurface />);
 
     await screen.findByRole("region", { name: "理解星图：你的真实知识宇宙" });
+    fireEvent.click(screen.getByText("图层与图例"));
     expect((screen.getByRole("checkbox", { name: "证据卫星" }) as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByRole("checkbox", { name: "来源行星" }) as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByRole("checkbox", { name: "关系光路" }) as HTMLInputElement).disabled).toBe(true);
@@ -309,7 +383,7 @@ describe("GraphSurface · Web 成熟版 Understanding Universe 移植", () => {
     expect(index.getAttribute("tabindex")).toBe("-1");
   });
 
-  it("打开详情面板时焦点进入面板，Esc 关闭后交还", async () => {
+  it("打开详情面板时焦点进入面板，Esc 先关闭详情并交还焦点，不触发全局返回", async () => {
     stubGateway(snapshot());
     render(<GraphSurface />);
 
@@ -323,7 +397,12 @@ describe("GraphSurface · Web 成熟版 Understanding Universe 移植", () => {
       expect(panel.contains(document.activeElement)).toBe(true);
     });
 
-    fireEvent.keyDown(window, { key: "Escape" });
+    const returnHome = vi.fn();
+    const globalShortcut = (event: KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented) returnHome(); };
+    window.addEventListener("keydown", globalShortcut);
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    window.removeEventListener("keydown", globalShortcut);
+    expect(returnHome).not.toHaveBeenCalled();
     await waitFor(() => {
       expect(panel.getAttribute("aria-hidden")).toBe("true");
       expect(panel.contains(document.activeElement)).toBe(false);

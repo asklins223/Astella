@@ -1,1061 +1,221 @@
-/*
- * Page 14 「今日学习」专属样式（2026-09-18 设计重构；2026-09-19 一致性梳理）。
- *
- * 页面结构：日期行 → 判断条 → 待处理分诊 / 今天的操作 / 伴星栏。
- * 全部规则嵌套在 `.hud-surface .day-route[data-page="today-log"]` 之下（原生
- * CSS 嵌套，Chromium 120+ 原生支持，Electron 构建目标完全覆盖）：`:is()`
- * 展开后特异度与手写长前缀相同，仍高于 hud-pages.css 里为旧"三张票"布局
- * 写的同名单类规则（本文件在 main.tsx 的 import 链里早于 hud-pages.css
- * 求值，靠特异度取胜，不靠加载顺序）。
- *
- * 视觉语言沿用 V3.1 HUD 纸面系统：奶油纸、不规则圆角、暖棕墨色、衬线标题。
- * 本页在纸面系统内再收一层自己的 token（--log-*），改配色只动这一处。
- */
+/* 今日学习是一册浅薄荷手账。纸内一个滚动所有者，动作与足迹各有位置。
+   按压、页签垫和页内到达由 useTactileSurface 接管，CSS 只表达静态几何。 */
+.desktop-app.hud-surface .task-surface--study .task-title,
+.desktop-app.hud-surface .task-surface--resumable .task-title {
+  border-radius: 26px;
+  background: #e0efce;
+  color: #3d6554;
+}
+.desktop-app.hud-surface :is(.task-surface--study, .task-surface--resumable) .task-title h1 {
+  font-family: "Noto Sans SC Variable", "PingFang SC", sans-serif;
+  font-weight: 850;
+  letter-spacing: -.03em;
+}
+.desktop-app.hud-surface :is(.task-surface--study, .task-surface--resumable) .task-title p { color: #587061; }
+.desktop-app.hud-surface .day-route[data-page="today-log"] {
+  --log-ink: #3e5149;
+  --log-body: #4f6258;
+  --log-meta: #647568;
+  --log-rule: #dbe3cc;
+  --log-alarm-ink: #965443;
+  --focus: #427f6b;
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+  gap: 15px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 22px;
+  overflow: hidden;
+  color: var(--log-ink);
+  border: 3px solid #fffbeb;
+  border-radius: 36px;
+  background: #e9f0d9;
+  box-shadow: 0 6px 0 rgba(82, 105, 77, .22), 0 16px 34px rgba(38, 49, 34, .13);
+  font: 500 13px/1.65 "Noto Sans SC Variable", "PingFang SC", sans-serif;
 
-.hud-surface .day-route[data-page="today-log"]{
-  /* 文字：按纸面底色（#f1e3c8 日间 / #fff2cf 夜间）验过对比度。
-     最浅的一档 --log-meta(#6b5646) 在 #f1e3c8 上是 5.4:1，--log-alarm-meta
-     在异常卡的 #f6e0cd 上是 6.2:1，两家都过 WCAG AA（需要 4.5:1）。
-     本页的焦点/强调色见下面对 `--focus` 的页内覆盖。 */
-  --log-ink:#33251a;
-  --log-body:#4a3728;
-  --log-meta:#6b5646;
-  --log-time:#63503f;
-  --log-rule:rgba(155,121,84,.26);
-  --log-rule-solid:#c9ad86;
-  --log-hover:rgba(255,252,238,.72);
-  /* 焦点色只在**这一页**改掉 `--focus`，不再另起一个 `--log-focus` 名字：
-     本页夜间任务纸仍是奶油色，全站夜间的冷青焦点环压在上面对比度不够。
-     名字统一、取值按页面语境局部覆盖，读代码的人只会看到一处「页内焦点色」。 */
-  /* 页内唯一的暖锈红强调色（焦点环与左侧内嵌色带共用） */
-  --focus:#b85a31;
-  --log-card:#fffaea;
-  /* 全站既有的强缓出曲线（styles.css 的 status-island / 侧栏展开同款） */
-  --log-ease:var(--hud-island-ease);
+  & :is(h2, h3) { font-family: "Noto Sans SC Variable", "PingFang SC", sans-serif; letter-spacing: -.015em; }
 
-  /* 异常：陶土纸 + 奶油厚描边，与页面的暖纸同族但更"烫"一档 */
-  --log-alarm-bg:#f6e0cd;
-  --log-alarm-ink:#7a3b2c;
-  --log-alarm-meta:#6b4a3a;
-  --log-alarm-icon-bg:#f0d3c4;
-  --log-alarm-icon-ink:#8a4433;
-
-  /* 不规则圆角（Cut-Corner Rule）：整页只用这一组，避免每个卡片随手取值；
-     药丸形按设计系统保留给右上沉浸控制岛，本页芯片一律用这组切角。 */
-  --log-r-sm:10px 14px 10px 13px;
-  --log-r-md:12px 17px 11px 15px;
-
-  display:grid;
-  /* 判断条横跨整幅（它是页面的定调带），正文才分主栏与伴星栏 */
-  grid-template-columns:minmax(0,1fr) 252px;
-  grid-template-rows:auto auto minmax(0,1fr);
-  column-gap:30px;
-  row-gap:15px;
-  padding:22px 30px 20px;
-
-  /* ---------- 日期行 ----------
-     外壳 chip 已经是这一页的标题，页内不再放第二个大标题；这一行只交代"哪一天"。 */
-
-  & > .day-head{
-    grid-column:1/-1;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:16px;
-  }
-  & .day-head__date{
-    display:flex;
-    align-items:baseline;
-    gap:10px;
-    min-width:0;
-    margin:0;
-    font:600 12px/1.4 "Noto Serif SC Variable","Songti SC",serif;
-    color:var(--log-ink);
-  }
-  & .day-head__date time{
-    font-variant-numeric:tabular-nums;
-  }
-  & .day-head__date span{
-    font:600 10.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
-    letter-spacing:.08em;
-    color:var(--log-meta);
-  }
-  /* 口径标签：这一页的数字是"这个空间的今天"。用纸面系统里最轻的一档，
-     它要一直看得见（不能靠 hover），但不能和日期抢第一眼。 */
-  & .day-head__scope{
-    flex:none;
-    margin:0;
-    padding:3px 9px;
-    border:1px dashed var(--log-rule-solid);
-    border-radius:var(--log-r-sm);
-    font:600 10.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
-    letter-spacing:.06em;
-    color:var(--log-meta);
-  }
-  & .day-head__actions{
-    display:flex;
-    align-items:center;
-    justify-content:flex-end;
-    gap:10px;
-    min-width:0;
-  }
-  & .day-head__refresh-failure{
-    font-size:10.5px;
-    line-height:1.45;
-    color:#934632;
-  }
-  & .day-head__refresh[aria-busy="true"] svg{
-    animation:day-spin .85s linear infinite;
-  }
-
-  /* ---------- 页面级动作：一档尺寸 ----------
-     页面级按钮统一为 38px（刷新 / 处理项 / 空态出口 / 打开伴星），
-     行级动作为 32px（查看 / 去处理），让命中区层级和视觉层级一致。 */
-
-  & .day-head__refresh,
-  & .day-verdict__act,
-  & .day-stream__empty .button,
-  & .day-rail__card .button{
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    gap:6px;
-    flex:none;
-    min-height:38px;
-    padding:0 15px;
-    font-size:11px;
-  }
-
-  /* ---------- 判断条：今天记录了几件 / 几件待处理 / 从几点到几点 ----------
-     数字先说话（> 判断句 > 分解句），动作只在真有事务待处理时出现。
-     数字与判断句分开放，是为了避免同一屏把同一个数说两遍。 */
-
-  & > .day-verdict{
-    grid-column:1/-1;
-    display:flex;
-    flex-wrap:wrap;
-    align-items:center;
-    gap:12px 22px;
-    padding:13px 18px;
-    border:2px solid rgba(255,252,235,.8);
-    border-radius:var(--log-r-md);
-    background:linear-gradient(180deg,rgba(255,250,232,.94),rgba(255,246,220,.76));
-    box-shadow:0 7px 18px rgba(45,28,17,.09);
-  }
-
-  & .day-verdict__metrics{
-    display:flex;
-    align-items:flex-start;
-    margin:0;
-    flex:none;
-  }
-  & .day-verdict__metric{
-    min-width:78px;
-    padding:0 18px;
-    border-right:1px dashed var(--log-rule);
-  }
-  & .day-verdict__metric:first-child{
-    padding-left:2px;
-  }
-  & .day-verdict__metric:last-child{
-    border-right:0;
-  }
-  & .day-verdict__metric dt{
-    font-size:10px;
-    line-height:1.4;
-    letter-spacing:.1em;
-    color:var(--log-meta);
-  }
-  & .day-verdict__metric dd{
-    margin:3px 0 0;
-    font:700 25px/1.05 "Noto Serif SC Variable","Songti SC",serif;
-    font-variant-numeric:tabular-nums;
-    color:var(--log-ink);
-  }
-  /* 待处理是唯一要读者动手的那一枚，给它这一页唯一的警示色 */
-  & .day-verdict__metric[data-alarm] dd{
-    color:#a4402b;
-  }
-  & .day-verdict__metric[data-metric="span"]{
-    min-width:0;
-  }
-  & .day-verdict__metric[data-metric="span"] dd{
-    font:600 15px/1.75 ui-monospace,SFMono-Regular,Menlo,monospace;
-    letter-spacing:-.01em;
-    color:var(--log-body);
-    white-space:nowrap;
-  }
-
-  & .day-verdict__copy{
-    flex:1 1 200px;
-    min-width:0;
-  }
-  & .day-verdict__copy b{
-    display:block;
-    font:650 14px/1.45 "Noto Serif SC Variable","Songti SC",serif;
-    color:var(--log-ink);
-  }
-  /* 分类计数最多两行：窄窗里截成"卡片生成1 · 后台…"会把还能救的信息裁掉，
-     裁到两行为止 —— 再长就不是摘要了。 */
-  & .day-verdict__copy span{
-    display:-webkit-box;
-    margin-top:3px;
-    overflow:hidden;
-    font-size:11px;
-    line-height:1.5;
-    color:var(--log-meta);
-    -webkit-box-orient:vertical;
-    -webkit-line-clamp:2;
-  }
-
-  /* ---------- 小节标题：一条标题 + 一行计数 + 一条通到右缘的细线 ---------- */
-
-  & .day-section-head{
-    display:flex;
-    align-items:baseline;
-    gap:10px;
-    margin:0 0 9px;
-  }
-  & .day-section-head b{
-    flex:none;
-    font:650 13.5px/1.4 "Noto Serif SC Variable","Songti SC",serif;
-    letter-spacing:.01em;
-    color:var(--log-ink);
-  }
-  & .day-section-head span{
-    flex:none;
-    font-size:10.5px;
-    line-height:1.5;
-    color:var(--log-meta);
-  }
-  & .day-section-head:after{
-    content:"";
-    flex:1;
-    align-self:center;
-    height:1px;
-    background:var(--log-rule);
-  }
-
-  /* ---------- 主滚动区：分诊 + 操作日志 ---------- */
-
-  & > .day-route__state{
-    grid-column:1/-1;
-    grid-row:2/-1;
-    /* 本文档流网格里状态纸占满两行并水平留白；hud-surface.css 里旧"三票"布局
-       的绝对定位规则已随该布局一并删除，这里就是它唯一的家。 */
-    position:static;
-    display:grid;
-    place-items:center;
-    min-height:0;
-    padding:0 24px;
-  }
-  & > .day-route__state .pinboard{
-    height:100%;
-  }
-
-  & > .day-log{
-    grid-column:1;
-    grid-row:3;
-    display:flex;
-    flex-direction:column;
-    gap:20px;
-    min-height:0;
-    overflow-y:auto;
-    overscroll-behavior:contain;
-    /* 滚动条常驻占位：否则"查看"按钮会在出现/消失滚动条的状态间横跳 9px */
-    scrollbar-gutter:stable;
-    padding-right:6px;
-    /* 「处理这 N 件」靠它平滑滚到分诊区；reduced-motion 下在文末退回 auto */
-    scroll-behavior:smooth;
-  }
-  /* 可聚焦的滚动容器：键盘读者要能滚它，聚焦时给出明确反馈 */
-  & > .day-log:focus-visible{
-    outline: 3px solid var(--focus);
-    outline-offset: 3px;
-    border-radius:var(--log-r-sm);
-  }
-  & .day-triage:focus-visible{
-    outline: 3px solid var(--focus);
-    outline-offset: 3px;
-    border-radius:var(--log-r-sm);
-  }
-
-  /* ---------- 待处理分诊 ---------- */
-
-  & .day-triage{
-    display:flex;
-    flex-direction:column;
-    flex:none;
-  }
-
-  /* 多数组共用的处置语：说一次，取代卡片里逐行复读同一句话 */
-  & .day-triage__step{
-    margin:0 0 9px;
-    padding:7px 12px;
-    border-radius:var(--log-r-sm);
-    background:rgba(138,68,51,.07);
-    font-size:11px;
-    line-height:1.55;
-    color:var(--log-alarm-ink);
-  }
-
-  & .day-triage__list{
-    list-style:none;
-    margin:0;
-    padding:0;
-    display:grid;
-    gap:8px;
-  }
-
-  & .day-anomaly{
-    display:grid;
-    grid-template-columns:auto minmax(0,1fr) auto;
-    gap:12px;
-    align-items:center;
-    padding:11px;
-    border:2px solid rgba(255,252,235,.78);
-    border-radius:var(--log-r-md);
-    background:var(--log-alarm-bg);
-    box-shadow:0 5px 13px rgba(45,28,17,.10);
-  }
-
-  & .day-anomaly__icon{
-    display:grid;
-    place-items:center;
-    width:26px;
-    height:26px;
-    border-radius:9px;
-    background:var(--log-alarm-icon-bg);
-    color:var(--log-alarm-icon-ink);
-    box-shadow:inset 0 0 0 1px rgba(138,68,51,.20);
-    flex:none;
-  }
-  /* 只有"还在等"的事务转轮；"已经坏了"的静置警标。
-     判定由渲染层算好写在 data-phase 上，CSS 不重复状态知识。 */
-  & .day-anomaly[data-phase="inflight"] .day-anomaly__icon svg{
-    animation:day-log-spin 1.6s linear infinite;
-  }
-
-  & .day-anomaly__main{
-    min-width:0;
-  }
-  /*
-   * 标题允许两行。
-   *
-   * 异常标题常常就是笔记正文（"《间隔重复是一种学习策略，通过在不同时间间隔复习
-   * 材料来增强长期记忆。核心原理是记忆痕迹衰减与强化…"），单行 nowrap + ellipsis
-   * 会把它截成半句 —— 一行读不出所以然的字比两行读得懂的更占地方。
-   * 字号与日志行标题、小节标题同为 13.5px：分诊卡和日志行是同层信息，
-   * 此前待处理卡 13px、日志行 13.5px 的双轨没有层级依据。
-   */
-  & .day-anomaly__title{
-    display:-webkit-box;
-    overflow:hidden;
-    -webkit-box-orient:vertical;
-    -webkit-line-clamp:2;
-    font:650 13.5px/1.5 "Noto Serif SC Variable","Songti SC",serif;
-    color:var(--log-alarm-ink);
-  }
-  & .day-anomaly__meta{
-    display:flex;
-    align-items:baseline;
-    flex-wrap:wrap;
-    gap:8px;
-    margin-top:5px;
-    font-size:10.5px;
-    line-height:1.5;
-    color:var(--log-alarm-meta);
-  }
-  /* 处置语被提到组头之后，多数卡片这一行是空的：不留一段空白撑高卡片 */
-  & .day-anomaly__meta:empty{
-    display:none;
-  }
-  /* 同一件事重复了多少次 —— 藏在 ×N 里就等于假装只发生了一次。
-     归并后的组按体量排序，最厚的一摞排最前，所以这一枚会出现在第一行。 */
-  & .day-anomaly__count{
-    display:inline-flex;
-    padding:2px 8px;
-    border:1px solid rgba(138,68,51,.24);
-    border-radius:var(--log-r-sm);
-    background:rgba(138,68,51,.16);
-    font:700 11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
-    color:var(--log-alarm-ink);
-    flex:none;
-  }
-  & .day-anomaly__stuck{
-    font-style:italic;
-  }
-  /* 处置语：与组头重复的那句不在这里复读（StudySurface.tsx:263 判过），所以这一格
-     一旦出现就是「这一组自己的处置」，要比 __meta 更重一档才能被看见。 */
-  & .day-anomaly__step{
-    color:var(--log-alarm-ink);
-    font-weight:700;
-  }
-
-  /* 「系统异常·不需要你处理」这一档的分诊区：它不是待办，所以比 __list 更安静一档，
-     靠纸面减淡而不是靠缩进——读者要能一眼分出「这不用你动手」。 */
-  & .day-triage__background{
-    display:grid;
-    gap:8px;
-    opacity:.86;
-  }
-
-  /* 展开器：显式动作，读者知道自己在要什么 */
-  & .day-triage__more{
-    align-self:flex-start;
-    margin-top:10px;
-    padding:6px 14px;
-    border:1px dashed var(--log-rule-solid);
-    border-radius:var(--log-r-sm);
-    background:transparent;
-    font-size:10.5px;
-    line-height:1.5;
-    color:var(--log-body);
-    cursor:pointer;
-    transition:background-color 140ms ease;
-    min-height:32px;
-  }
-  & .day-triage__more:hover{
-    background:var(--log-hover);
-  }
-
-  /* ---------- 今天的操作（主叙事） ---------- */
-
-  & .day-stream{
-    display:flex;
-    flex-direction:column;
-    flex:none;
-  }
-
-  & .day-log__stream{
-    list-style:none;
-    margin:0;
-    padding:0;
-    display:grid;
-    gap:2px;
-  }
-
-  & .day-log__entry{
-    position:relative;
-    display:grid;
-    grid-template-columns:48px 26px minmax(0,1fr) auto;
-    gap:11px;
-    align-items:center;
-    padding:8px 12px 8px 4px;
-    border-radius:var(--log-r-sm);
-    transition:background-color 140ms ease;
-  }
-  & .day-log__entry:active{
-    background:rgba(255,250,232,.92);
-  }
-
-  /*
-   * 时间线：一条贯穿整列的竖轨，节点用不透明底色把它"压"在下面。
-   *
-   * 旧实现把线挂在节点的 :after 上（top:26px;bottom:-5px），算出来的高度只有
-   * 5px，而相邻节点的间距约 40px —— 实测覆盖率 13%，视觉上是一截截断开的短线头。
-   * 改成"整行铺轨 + 节点遮罩"后，行高怎么变都不会再断。
-   */
-  & .day-log__entry:before{
-    content:"";
-    position:absolute;
-    /* 48px 时间列 + 11px 间距 + 26px 节点的一半 - 线宽的一半 */
-    left:71px;
-    top:0;
-    /* 跨过 grid 的 2px 行间距，保证上下两根轨首尾相接 */
-    bottom:-2px;
-    width:2px;
-    border-radius:2px;
-    background:var(--log-rule);
-  }
-  & .day-log__entry:first-child:before{
-    top:50%;
-  }
-  & .day-log__entry:last-child:before{
-    bottom:50%;
-  }
-
-  & .day-log__time{
-    font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-variant-numeric:tabular-nums;
-    letter-spacing:.02em;
-    color:var(--log-time);
-    text-align:right;
-  }
-
-  & .day-log__node{
-    position:relative;
-    /* 盖在竖轨上面，用不透明底把轨"切断"成节点之间的连线 */
-    z-index:1;
-    display:grid;
-    place-items:center;
-    width:26px;
-    height:26px;
-    border-radius:9px;
-    background:var(--log-card);
-    box-shadow:inset 0 0 0 1px rgba(73,47,29,.16),0 2px 5px rgba(45,28,17,.10);
-    flex:none;
-  }
-  & .day-log__entry[data-kind="note"] .day-log__node{color:#3b6a8f}
-  & .day-log__entry[data-kind="source"] .day-log__node{color:#55704f}
-  & .day-log__entry[data-kind="objective"] .day-log__node{color:#b05c33}
-  & .day-log__entry[data-kind="learning_run"] .day-log__node{color:#3f7d8a}
-  & .day-log__entry[data-kind="card_generation"] .day-log__node{color:#9a7a2e}
-  & .day-log__entry[data-kind="job"] .day-log__node{color:#6f5b4b}
-  & .day-log__entry[data-kind="page"] .day-log__node{color:#8a7969}
-
-  & .day-log__body{
-    min-width:0;
-  }
-  & .day-log__body b{
-    display:block;
-    overflow:hidden;
-    font:650 13.5px/1.5 "Noto Serif SC Variable","Songti SC",serif;
-    color:var(--log-body);
-    text-overflow:ellipsis;
-    white-space:nowrap;
-  }
-  & .day-log__body small{
-    display:block;
-    margin-top:2px;
-    overflow:hidden;
-    font-size:11px;
-    line-height:1.55;
-    color:var(--log-meta);
-    text-overflow:ellipsis;
-    white-space:nowrap;
-  }
-
-  /* 轮次记录只有日期与正文；不用操作日志的图标列、动作列和节点竖轨。 */
-  & .day-rounds .day-section-head{
-    flex-wrap:wrap;
-  }
-  & .day-rounds .day-section-head span{
-    flex:0 1 auto;
-    min-width:0;
-  }
-  & .day-rounds__list{
-    display:grid;
-    list-style:none;
-    margin:0;
-    padding:0;
-  }
-  & .day-rounds__entry{
-    display:grid;
-    grid-template-columns:104px minmax(0,1fr);
-    align-items:start;
-    gap:16px;
-    padding:12px 12px 12px 4px;
-  }
-  & .day-rounds__entry + .day-rounds__entry{
-    border-top:1px solid var(--log-rule);
-  }
-  & .day-rounds__date{
-    padding-top:3px;
-    font:600 11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-variant-numeric:tabular-nums;
-    color:var(--log-time);
-    text-align:right;
-    white-space:nowrap;
-  }
-  & .day-rounds__body{
-    min-width:0;
-    overflow-wrap:anywhere;
-  }
-  & .day-rounds__body b{
-    display:block;
-    font:650 13.5px/1.5 "Noto Serif SC Variable","Songti SC",serif;
-    color:var(--log-body);
-  }
-  & .day-rounds__meta{
-    display:block;
-    margin-top:4px;
-    font-size:11px;
-    line-height:1.6;
-    color:var(--log-meta);
-  }
-
-  /* 行内"查看"按钮：比页面级动作紧凑一档（28px），不与正文抢视觉 */
-  & .day-jump{
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    min-height:32px;
-    padding:0 12px;
-    font-size:10px;
-    flex:none;
-  }
-
-  /* ---------- 空的一天的出口 ----------
-     真实数据里更常见的是"只有异常、没有正向操作"，旧版这一支只给一句散文描述、
-     一个按钮都没有（而整天空那一支却有按钮）。两处共用这一块。 */
-
-  & .day-stream__empty{
-    display:flex;
-    flex-direction:column;
-    align-items:flex-start;
-    padding:20px 22px;
-    border:2px dashed var(--log-rule-solid);
-    border-radius:var(--log-r-md);
-    background:rgba(255,250,235,.5);
-  }
-  & .day-stream__empty b{
-    font:650 13.5px/1.5 "Noto Serif SC Variable","Songti SC",serif;
-    color:var(--log-body);
-  }
-  & .day-stream__empty p{
-    margin:5px 0 0;
-    font-size:11px;
-    line-height:1.6;
-    color:var(--log-meta);
-  }
-  & .day-stream__empty .actions{
-    margin-top:13px;
-  }
-
-  /* 派生 job 是诊断线索，不是“今天学了什么”的主线。默认只显示一条
-     可展开的摘要，避免真实数据中上百条伴星 job 把学习记录推出首屏。 */
-  & .day-system{
-    margin-top:14px;
-    padding-top:12px;
-    border-top:1px dashed var(--log-rule-solid);
-  }
-  & .day-system__toggle{
-    display:flex;
-    width:100%;
-    min-height:44px;
-    align-items:center;
-    justify-content:space-between;
-    gap:18px;
-    padding:8px 12px;
-    border:1px solid var(--log-rule-solid);
-    border-radius:var(--log-r-sm);
-    background:rgba(255,250,235,.42);
-    color:var(--log-body);
-    text-align:left;
-    cursor:pointer;
-  }
-  & .day-system__toggle > span:first-child{
-    min-width:0;
-  }
-  & .day-system__toggle b,
-  & .day-system__toggle small{
-    display:block;
-  }
-  & .day-system__toggle b{
-    font:650 12px/1.45 "Noto Serif SC Variable","Songti SC",serif;
-  }
-  & .day-system__toggle small{
-    margin-top:2px;
-    font-size:10px;
-    line-height:1.5;
-    color:var(--log-meta);
-  }
-  & .day-system__toggle > span:last-child{
-    flex:none;
-    font-size:10.5px;
-    font-weight:700;
-    color:var(--log-meta);
-  }
-  & #today-system-log{
-    margin-top:8px;
-  }
-
-  /* ---------- 截断 / 说明 ---------- */
-
-  & .day-log__note{
-    flex:none;
-    margin:10px 0 0;
-    padding:10px 2px 2px;
-    border-top:1px dashed var(--log-rule-solid);
-    font-size:11px;
-    line-height:1.6;
-    color:var(--log-meta);
-    text-align:center;
-  }
-
-  /* ---------- 伴星栏 ---------- */
-
-  & > .day-rail{
-    position:relative;
-    grid-column:2;
-    grid-row:3;
-    display:flex;
-    flex-direction:column;
-    align-items:flex-start;
-    min-height:0;
-    overflow-y:auto;
-    padding:2px 0 2px 24px;
-  }
-  /* 分隔线用会淡出的细线，不用整条实边：右栏的卡是"能读完就收尾"的短文，
-     实边会把下方空出来的纸面读成一个空盒子。淡出到 76% 处收尾，读起来是
-     "这一列到此为止"。 */
-  & > .day-rail:before{
-    content:"";
-    position:absolute;
-    left:0;
-    top:2px;
-    bottom:0;
-    width:1px;
-    background:linear-gradient(180deg,var(--log-rule-solid) 0,var(--log-rule-solid) 30%,transparent 76%);
-  }
-  /* .tag 是 butter 底色，纸面也是暖色：给标签补一圈纸边，边界才读得出来 */
-  & .day-rail > .tag,
-  & .day-spaces > .tag{
-    flex:none;
-    margin-bottom:10px;
-    box-shadow:inset 0 0 0 1px rgba(73,47,29,.24);
-  }
-  /* 「全部空间」栏：本页唯一按账号扇出的读数，排在伴星卡上面。 */
-  & .day-spaces{
-    display:flex;
-    flex-direction:column;
-    align-items:flex-start;
-    width:100%;
-    margin-bottom:18px;
-  }
-  & .day-spaces__list{
-    display:flex;
-    flex-direction:column;
-    gap:8px;
-    margin:0;
-    padding:0;
-    list-style:none;
-  }
-  & .day-spaces__row{
-    display:flex;
-    flex-direction:column;
-    gap:3px;
-    padding:7px 8px;
-    border-radius:var(--log-r-sm);
-    background:rgba(255,252,238,.5);
-  }
-  /* 当前空间那一行给一道左沿：颜色不是唯一载体，同时有"当前空间"四个字。 */
-  & .day-spaces__row[data-current]{
-    box-shadow:inset 3px 0 0 var(--focus);
-  }
-  & .day-spaces__head{
-    display:flex;
-    align-items:baseline;
-    flex-wrap:wrap;
-    gap:6px;
-    min-width:0;
-  }
-  & .day-spaces__head b{
-    overflow:hidden;
-    font:650 11.5px/1.5 "Noto Serif SC Variable","Songti SC",serif;
-    color:var(--log-ink);
-    text-overflow:ellipsis;
-    white-space:nowrap;
-  }
-  & .day-spaces__head small{
-    font-size:9.5px;
-    line-height:1.5;
-    color:var(--log-meta);
-  }
-  & .day-spaces__current{
-    padding:1px 6px;
-    border-radius:999px;
-    background:rgba(184,90,49,.14);
-    font:600 9.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-style:normal;
-    letter-spacing:.04em;
-    color:var(--focus);
-  }
-  & .day-spaces__numbers{
-    display:flex;
-    flex-wrap:wrap;
-    gap:4px 10px;
-    font:500 10.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-variant-numeric:tabular-nums;
-    color:var(--log-body);
-  }
-  & .day-spaces__total{
-    display:flex;
-    flex-direction:column;
-    gap:3px;
-    margin:10px 0 0;
-    padding-top:9px;
-    border-top:1px dashed var(--log-rule-solid);
-  }
-  & .day-spaces__total b{
-    font:650 11.5px/1.5 "Noto Serif SC Variable","Songti SC",serif;
-    color:var(--log-ink);
-  }
-  & .day-spaces__failure{
-    display:flex;
-    flex-direction:column;
-    align-items:flex-start;
-  }
-  & .day-spaces__failure p{
-    margin:0;
-    font-size:11px;
-    line-height:1.6;
-    color:var(--log-body);
-  }
-  & .day-rail__card{
-    width:100%;
-    padding:14px 15px 15px;
-    border:2px solid rgba(255,252,235,.78);
-    border-radius:var(--log-r-md);
-    background:linear-gradient(180deg,rgba(255,250,232,.9),rgba(255,246,220,.66));
-    box-shadow:0 5px 14px rgba(45,28,17,.08);
-  }
-  & .day-rail__card h2{
-    display:flex;
-    align-items:center;
-    gap:6px;
-    margin:0;
-    font:650 13px/1.5 "Noto Serif SC Variable","Songti SC",serif;
-    color:var(--log-ink);
-  }
-  & .day-rail__card p{
-    margin:7px 0 0;
-    font-size:11px;
-    line-height:1.6;
-    color:var(--log-body);
-  }
-  & .day-rail__why{
-    color:var(--log-meta);
-  }
-  & .day-rail__card .button{
-    margin-top:12px;
-  }
-
-  /* ---------- 滚动条与焦点 ---------- */
-
-  & .day-log::-webkit-scrollbar,
-  & .day-rail::-webkit-scrollbar{
-    width:9px;
-  }
-  & .day-log::-webkit-scrollbar-thumb,
-  & .day-rail::-webkit-scrollbar-thumb{
-    background:rgba(155,121,84,.34);
-    background-clip:content-box;
-    border:2px solid transparent;
-    border-radius:8px;
-  }
-  & .day-log::-webkit-scrollbar-thumb:hover,
-  & .day-rail::-webkit-scrollbar-thumb:hover{
-    background:rgba(155,121,84,.5);
-    background-clip:content-box;
-  }
-  & .day-log::-webkit-scrollbar-track,
-  & .day-rail::-webkit-scrollbar-track{
-    background:transparent;
-  }
-  & button:focus-visible{
-    outline: 3px solid var(--focus);
-    outline-offset: 3px;
-  }
-
-  /* 只给读屏的文本 */
-  & .sr-only{
-    position:absolute;
-    width:1px;
-    height:1px;
-    margin:-1px;
-    padding:0;
-    overflow:hidden;
-    clip:rect(0 0 0 0);
-    clip-path:inset(50%);
-    white-space:nowrap;
-    border:0;
-  }
-
-  /* ---------- 动效 ----------
-     数据到位后列表"落回原位"：每条错开 35ms（上限 8 条），位移只有 5px。
-     这类入场只发生一次（React 用稳定 key，静默刷新不会重挂已存在的行），属于
-     "别让加载态到内容态的切换显得跳" —— 不是为了好看而让读者在读的东西乱动。 */
-
-  & .day-enter{
-    /* 用 backwards 而不是 both：填满的动画会盖住 .day-anomaly 的 hover 位移，
-       而这两处恰好都要 transform。 */
-    animation:day-enter 220ms var(--log-ease) backwards;
-  }
-
-  /* 指针设备才给 hover 反馈：触屏点一下会留下假 hover。
-     日志行是可读行，hover 只铺底色帮读者对齐一行；异常卡整体不可点，
-     不给位移/按压这类"我能点"的假反馈 —— 动作只属于卡内的「去处理」按钮。 */
-  @media (hover:hover) and (pointer:fine){
-    & .day-log__entry:hover{
-      background:var(--log-hover);
-    }
-  }
-
-  /* ---------- 中档窗：先收伴星栏，判断条自己换行 ---------- */
-
-  @media(max-width:1180px){
-    &{
-      grid-template-columns:minmax(0,1fr) 210px;
-      column-gap:22px;
-      padding:18px 22px 16px;
-    }
-    & .day-verdict__metric{
-      min-width:66px;
-      padding:0 14px;
-    }
-  }
-
-  /* ---------- 窄窗：HUD 缩微断点 ----------
-     字号下限刻意比全站缩微档高一档：6px 在任何缩放下都读不了，
-     这一页宁可比别的页面稍大，也不要一屏认不出的小字。
-     两档按钮同步缩微：页面级 22px、行级 20px，与桌面端的两档制对应。 */
-
-  @media(max-width:760px){
-    &{
-      grid-template-columns:minmax(0,1fr);
-      /* 单列时不再玩"内层滚动"：判断条多吃一行后，1fr 那格只剩不到 190px，
-         分诊第三张卡被裁在滚动区里。改成整页一排到底，读者用页面自己的滚动条。 */
-      grid-template-rows:none;
-      /* 光靠 none 不够：定高网格里的 auto 行会被压缩（实测 log 只剩 189px），
-         要 max-content 才会真正溢出，交给 .day-route 自己的 overflow:auto 去滚。 */
-      grid-auto-rows:max-content;
-      align-content:start;
-      height:100%;
-      column-gap:0;
-      row-gap:10px;
-      padding:12px 15px;
-    }
-    & > .day-log{
-      grid-column:1;
-      grid-row:auto;
-      gap:14px;
-      overflow:visible;
-      scrollbar-gutter:auto;
-      padding-right:0;
-    }
-    & > .day-route__state{
-      grid-column:1;
-      grid-row:auto;
-    }
-    & > .day-rail{
-      grid-column:1;
-      grid-row:auto;
-      margin-top:4px;
-      padding:10px 0 0;
-      border-top:1px solid var(--log-rule-solid);
-    }
-    /* 页面自己滚了，分隔线挂在 rail 的 border-top 上，伪线不再需要 */
-    & > .day-rail:before{
-      display:none;
-    }
-
-    & .day-verdict{
-      gap:8px 14px;
-      padding:9px 11px;
-    }
-    & .day-verdict__metric{
-      min-width:0;
-      padding:0 11px;
-    }
-    & .day-verdict__metric dt{font-size:9px}
-    & .day-verdict__metric dd{font-size:18px}
-    & .day-verdict__metric[data-metric="span"] dd{font-size:11px}
-    & .day-verdict__copy b{font-size:11px}
-    & .day-verdict__copy span{font-size:9px}
-
-    & .day-head__refresh,
-    & .day-verdict__act,
-    & .day-stream__empty .button,
-    & .day-rail__card .button{
-      min-height:26px;
-      padding:0 9px;
-      font-size:9px;
-    }
-
-    & .day-section-head b{font-size:11px}
-    & .day-section-head span{font-size:9px}
-    & .day-triage__step{font-size:9px;padding:5px 9px}
-    & .day-triage__more{min-height:24px;font-size:9px;padding:4px 10px}
-    & .day-head__date{font-size:10.5px}
-    & .day-head__date span{font-size:9px}
-
-    & .day-log__entry{
-      grid-template-columns:36px 20px minmax(0,1fr) auto;
-      gap:7px;
-      padding:5px 6px 5px 2px;
-    }
-    & .day-log__entry:before{
-      left:53px;
-      width:1.5px;
-    }
-    & .day-log__time{font-size:9px}
-    & .day-log__node{width:20px;height:20px;border-radius:7px}
-    & .day-log__node svg{width:10px;height:10px}
-    & .day-log__body b{font-size:10px}
-    & .day-log__body small{font-size:9px}
-    & .day-rounds__entry{
-      grid-template-columns:minmax(0,1fr);
-      gap:4px;
-      padding:9px 2px;
-    }
-    & .day-rounds__date{
-      padding-top:0;
-      font-size:9px;
-      text-align:left;
-    }
-    & .day-rounds__body b{font-size:11px}
-    & .day-rounds__meta{font-size:9px}
-    & .day-jump{
-      min-height:24px;
-      padding:0 8px;
-      border-radius:10px 12px 9px 11px;
-      font-size:9px;
-    }
-
-    & .day-anomaly{
-      gap:7px;
-      padding:6px 9px;
-      border-radius:8px 11px 8px 10px;
-    }
-    & .day-anomaly__icon{width:18px;height:18px;border-radius:6px}
-    & .day-anomaly__icon svg{width:10px;height:10px}
-    & .day-anomaly__title{font-size:10px}
-    & .day-anomaly__meta{font-size:9px;gap:6px}
-    & .day-anomaly__count{padding:1px 6px;font-size:9px}
-    & .day-log__note{font-size:9px}
-
-    & .day-stream__empty{padding:12px 13px}
-    & .day-stream__empty b{font-size:10px}
-    & .day-stream__empty p{font-size:9px}
-    & .day-rail__card{padding:9px 10px 10px}
-    & .day-rail__card h2{font-size:10.5px}
-    & .day-rail__card p{font-size:9px}
-    & .day-system__toggle{min-height:32px;padding:5px 8px}
-    & .day-system__toggle b{font-size:10px}
-    & .day-system__toggle small,
-    & .day-system__toggle > span:last-child{font-size:9px}
-  }
-
-  /* ---------- 动效偏好 ---------- */
-
-  @media(prefers-reduced-motion:reduce){
-    & > .day-log{
-      scroll-behavior:auto;
-    }
-    & .day-log__entry,
-    & .day-triage__more{
-      transition:none;
-    }
-    /* 保留"内容出现了"这件事，去掉位移 */
-    & .day-enter{
-      animation:day-enter-flat 160ms ease backwards;
-    }
-    & .day-anomaly[data-phase="inflight"] .day-anomaly__icon svg{
-      animation:none;
-    }
+  & .day-head { display: flex; align-items: center; gap: 15px; flex: none; }
+  & .day-head__calendar { display: grid; flex: none; width: 59px; padding: 4px 6px 8px; text-align: center; border: 3px solid #fffcef; border-radius: 19px; background: #fff8dc; box-shadow: 0 3px 0 #ccd6b5; transform: rotate(-4deg); }
+  & .day-head__calendar span { font-size: 10px; font-weight: 800; color: #657961; }
+  & .day-head__calendar b { font-size: 27px; line-height: 1.15; font-weight: 850; }
+  & .day-head__intro { flex: 1; min-width: 0; }
+  & .day-head__date { display: flex; align-items: baseline; gap: 13px; flex-wrap: wrap; margin: 0; }
+  & .day-head__date time { font-size: 12px; color: var(--log-meta); }
+  & .day-head__date span { font-size: clamp(17px, 2.2cqw, 24px); font-weight: 850; letter-spacing: -.025em; color: #3d6554; }
+  & .day-head__scope { margin: 3px 0 0; font-size: 11px; color: var(--log-meta); overflow-wrap: anywhere; }
+  & :where(button, summary) { -webkit-tap-highlight-color: transparent; scale: var(--tactile-press, 1); translate: 0 var(--tactile-drop, 0px); transition: background-color .16s, color .16s, box-shadow .16s; }
+  & .button { min-height: 38px; padding: 8px 16px; border: 1px solid rgba(99, 132, 101, .16); border-radius: 999px; color: #476752; background: #f6f8e8; box-shadow: 0 3px 0 #d0dbbf; font-size: 12px; font-weight: 750; transform: none; }
+  & .button:hover { background: #fffdef; transform: none; }
+  & .button.primary { border-color: #73ac95; color: #fffdf1; background: #65a68e; box-shadow: 0 3px 0 #49846b; }
+  & .button.primary:hover { background: #55967d; }
+  & .button:disabled { opacity: .5; box-shadow: none; }
+  & .day-head__refresh { flex: none; width: 41px; padding: 0; background: #f3f7e4; }
+  & .day-head__refresh[aria-busy="true"] svg { animation: day-spin .8s linear infinite; }
+  & .day-head__refresh-failure { margin: 0 0 10px; color: var(--log-alarm-ink); font-size: 12px; }
+  & .day-paths { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; flex: none; }
+  & .day-path { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 76px; padding: 11px 13px; border: 2px solid #fffbee; border-radius: 24px; background: #faf3dd; color: var(--log-ink); box-shadow: 0 4px 0 #d2dabd; text-align: left; cursor: pointer; }
+  & .day-path:nth-child(2) { background: #fce8da; }
+  & .day-path:nth-child(3) { background: #dcefe6; }
+  & .day-path:hover { background: #fff8e7; box-shadow: 0 5px 0 #c9d4b5; }
+  & .day-path__icon { display: grid; place-items: center; width: 39px; height: 42px; flex: none; border-radius: 17px; color: #9a7c40; background: #fff9e9; }
+  & .day-path:nth-child(2) .day-path__icon { color: #b68167; }
+  & .day-path:nth-child(3) .day-path__icon { color: #588d78; }
+  & .day-path > span:nth-child(2) { flex: 1; min-width: 0; }
+  & .day-path b { display: block; font-size: 13px; font-weight: 800; line-height: 1.45; }
+  & .day-path small { display: block; margin-top: 4px; color: var(--log-meta); font-size: 10px; line-height: 1.5; }
+  & .day-path > svg { flex: none; width: 14px; opacity: .65; }
+  & .day-tabs { position: relative; display: flex; flex: none; align-self: flex-start; gap: 3px; padding: 4px; border-radius: 999px; background: #d8e5c9; }
+  & .day-tabs__cushion { position: absolute; top: 4px; bottom: 4px; left: 0; width: var(--tactile-tab-width, 0px); transform: translate3d(var(--tactile-tab-x, 0px), 0, 0); border-radius: 999px; background: #fff9e8; box-shadow: 0 3px 0 #bdcfa8; pointer-events: none; }
+  & .day-tabs button { position: relative; display: flex; align-items: center; gap: 7px; min-height: 38px; padding: 7px 17px; border: 0; border-radius: 999px; color: #647b58; background: transparent; font-size: 12px; font-weight: 750; cursor: pointer; }
+  & .day-tabs [aria-selected="true"] { color: #3d7b63; }
+  & .day-paper { flex: 1; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 21px 24px; border: 2px solid #fffcef; border-radius: 27px; background: #fff9ea; }
+  & .day-tab-page { min-width: 0; transform: translate3d(0, calc((1 - var(--tactile-page, 1)) * 12px), 0) scale(calc(.988 + var(--tactile-page, 1) * .012)); opacity: clamp(0, var(--tactile-page, 1), 1); transform-origin: center top; }
+  & .day-tab-page[hidden] { display: none; }
+  & .day-page-lead { display: flex; align-items: center; gap: 10px; margin: 0 0 22px; color: #577963; font-size: 14px; }
+  & .day-page-lead svg { flex: none; }
+  & .day-verdict { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 18px; margin-bottom: 24px; }
+  & .day-verdict__copy { flex: 1 1 200px; order: -1; }
+  & .day-verdict__copy b { display: block; font-size: 16px; font-weight: 800; line-height: 1.5; }
+  & .day-verdict__copy span { display: block; margin-top: 5px; font-size: 11px; color: var(--log-meta); }
+  & .day-verdict__metrics { display: flex; flex-wrap: wrap; gap: 9px 15px; margin: 0; }
+  & .day-verdict__metric { display: flex; align-items: baseline; gap: 6px; }
+  & .day-verdict__metric dt { font-size: 11px; color: var(--log-meta); }
+  & .day-verdict__metric dd { margin: 0; color: #54765c; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  & .day-verdict__metric[data-alarm] dd { color: var(--log-alarm-ink); }
+  & .day-verdict__metric[data-metric="span"] dd { font-size: 12px; }
+  & .day-verdict__act { font-size: 11px; }
+  & .day-log { display: grid; gap: 25px; }
+  & .day-stream, & .day-rounds { min-width: 0; }
+  & .day-section-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px 12px; margin: 0 0 13px; font-family: "Noto Sans SC Variable", "PingFang SC", sans-serif; font-weight: 500; }
+  & .day-section-head b { font-family: inherit; font-size: 15px; font-weight: 800; }
+  & .day-section-head span { font-size: 11px; color: var(--log-meta); }
+  & .day-log__stream { display: grid; margin: 0; padding: 0; list-style: none; }
+  & .day-log__entry { position: relative; display: grid; grid-template-columns: 44px 34px minmax(0, 1fr) auto; align-items: start; gap: 11px; padding: 10px 5px; border-radius: 17px; }
+  & .day-log__entry:hover { background: #f3f5e8; }
+  & .day-log__entry:not(:last-child)::before { position: absolute; left: 66px; top: 42px; bottom: -7px; content: ""; width: 2px; background: #dde6cd; }
+  & .day-log__time { padding-top: 8px; color: var(--log-meta); font-size: 11px; font-variant-numeric: tabular-nums; }
+  & .day-log__node { display: grid; place-items: center; width: 34px; height: 34px; background: #e2edda; color: #699270; border-radius: 13px; }
+  & .day-log__entry[data-kind="note"] .day-log__node { background: #f5e1d5; color: #ac7b62; }
+  & .day-log__entry[data-kind="learning_run"] .day-log__node { background: #dcecea; color: #598981; }
+  & .day-log__body { min-width: 0; padding-top: 3px; }
+  & .day-log__body b { display: block; font-size: 13px; line-height: 1.6; font-weight: 750; overflow-wrap: anywhere; }
+  & .day-log__body small { display: block; margin-top: 3px; font-size: 11px; color: var(--log-meta); overflow-wrap: anywhere; }
+  & .day-jump { min-height: 34px; padding: 6px 12px; font-size: 11px; }
+  & .day-stream__empty { padding: 17px 20px; background: #eef2e3; border-radius: 22px; }
+  & .day-stream__empty b { display: block; font-size: 16px; font-weight: 800; }
+  & .day-stream__empty p { margin: 5px 0 13px; font-size: 12px; color: var(--log-meta); }
+  & .surface-data-state .title { font-family: inherit; font-size: 17px; font-weight: 800; color: var(--log-ink); }
+  & .actions { display: flex; gap: 9px; flex-wrap: wrap; }
+  & .day-triage { padding: 19px; background: #fcf0df; border-radius: 24px; }
+  & .day-triage__step { margin: 0 0 12px; color: var(--log-meta); font-size: 12px; }
+  & .day-triage__list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+  & .day-anomaly { display: flex; align-items: center; gap: 12px; padding: 12px 13px; border-radius: 20px; background: #fff9ec; }
+  & .day-anomaly__icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 12px; background: #f9e0c9; color: #a8784e; }
+  & .day-anomaly__main { flex: 1; min-width: 0; }
+  & .day-anomaly__title { display: block; font-size: 12px; font-weight: 750; overflow-wrap: anywhere; }
+  & .day-anomaly__meta { display: flex; gap: 5px 9px; flex-wrap: wrap; margin-top: 3px; font-size: 11px; color: var(--log-meta); }
+  & .day-anomaly__step { display: block; margin-top: 4px; color: #857257; font-size: 11px; }
+  & .day-anomaly__count { color: #9d654d; font-weight: 750; }
+  & .day-anomaly__stuck { display: block; color: var(--log-meta); }
+  & .day-triage__more { margin: 10px 0 0; min-height: 34px; padding: 5px 14px; background: #f6e6cf; border: 0; border-radius: 999px; color: #846a4b; font-size: 11px; cursor: pointer; }
+  & .day-triage__background { margin-top: 16px; }
+  & .day-triage__background summary { padding: 8px 0; cursor: pointer; font-size: 12px; color: var(--log-meta); }
+  & .day-triage__background .small { color: var(--log-meta); font-size: 11px; }
+  & .day-triage__background .day-section-head { margin-top: 13px; }
+  & .day-system { margin-top: 21px; }
+  & .day-system__toggle { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; border: 0; border-radius: 19px; background: #eff1e4; color: var(--log-body); text-align: left; cursor: pointer; }
+  & .day-system__toggle b, & .day-system__toggle small { display: block; }
+  & .day-system__toggle b { font-size: 12px; }
+  & .day-system__toggle small, & .day-system__toggle > span:last-child { font-size: 11px; color: var(--log-meta); }
+  & #today-system-log { margin-top: 9px; }
+  & .day-log__note { margin: 13px 0 0; font-size: 11px; color: var(--log-meta); overflow-wrap: anywhere; }
+  & .day-rounds__list { display: grid; gap: 13px; margin: 0 0 18px; padding: 0; list-style: none; }
+  & .day-rounds__entry { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 13px; align-items: start; padding: 15px; border-radius: 21px; background: #f2f4e5; }
+  & .day-rounds__date { color: #6d7b65; font-size: 11px; padding-top: 5px; }
+  & .day-rounds__body { min-width: 0; }
+  & .day-rounds__body b { display: block; font-size: 14px; font-weight: 750; overflow-wrap: anywhere; }
+  & .day-rounds__meta { display: block; margin-top: 6px; color: var(--log-meta); font-size: 11px; overflow-wrap: anywhere; }
+  & .day-spaces > .tag { display: none; }
+  & .day-spaces__list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 14px; margin: 16px 0; padding: 0; list-style: none; }
+  & .day-spaces__row { display: flex; flex-direction: column; gap: 12px; padding: 18px; border: 2px solid #e6edda; border-radius: 24px; background: #f3f5e8; }
+  & .day-spaces__row[data-current] { border-color: #a7c9af; }
+  & .day-spaces__head { display: flex; flex-wrap: wrap; gap: 5px 10px; }
+  & .day-spaces__head b { width: 100%; font-size: 15px; overflow-wrap: anywhere; }
+  & .day-spaces__head small { color: var(--log-meta); font-size: 11px; }
+  & .day-spaces__current { padding: 1px 8px; border-radius: 999px; background: #d5e8d2; color: #4f795b; font-size: 10px; font-style: normal; }
+  & .day-spaces__numbers { display: flex; flex-wrap: wrap; gap: 7px 13px; color: var(--log-body); font-size: 12px; }
+  & .day-spaces__total { display: flex; flex-wrap: wrap; gap: 9px 18px; margin: 15px 0 8px; }
+  & .day-spaces__total b { font-size: 12px; }
+  & .day-spaces__failure p { color: var(--log-meta); }
+  & .day-rail { display: flex; align-items: center; gap: 12px; padding: 0 5px; flex: none; }
+  & .day-rail > svg { color: #a69056; flex: none; }
+  & .day-rail__card { flex: 1; min-width: 0; }
+  & .day-rail .day-rail__card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px 13px; }
+  & .day-rail__card h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 800; }
+  & .day-rail__card p { margin: 0; font-size: 11px; color: var(--log-meta); }
+  & .day-rail__why { font-size: 11px; color: var(--log-meta); }
+  & .day-rail .day-rail__why { display: none; }
+  & .day-rail .button { min-height: 33px; padding: 6px 12px; font-size: 11px; }
+  & .day-paper::-webkit-scrollbar { width: 9px; }
+  & .day-paper::-webkit-scrollbar-thumb { border: 2px solid #fff9ea; border-radius: 999px; background: #c4d5b8; }
+  & :where(button, summary):focus-visible { outline: 3px solid #5b9a80; outline-offset: 3px; }
+}
+@container (max-width: 680px) {
+  .desktop-app.hud-surface .day-route[data-page="today-log"] {
+    & .day-path { padding: 10px; gap: 8px; }
+    & .day-path__icon { width: 31px; height: 35px; }
+    & .day-path b { font-size: 12px; }
+    & .day-path small { font-size: 10px; }
+    & .day-path > svg { display: none; }
+    & .day-rail .day-rail__card { grid-template-columns: minmax(0, 1fr) auto; }
+    & .day-rail .day-rail__card h2 { display: none; }
+    & .day-rounds__entry { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 11px; }
+    & .day-rounds__date { grid-column: 1 / -1; }
   }
 }
-
-@keyframes day-log-spin{
-  to{transform:rotate(360deg)}
+@media (max-width: 900px) {
+  .desktop-app.hud-surface .day-route[data-page="today-log"] {
+    padding: 13px; gap: 10px; border-radius: 26px;
+    & .day-head__calendar { width: 45px; border-radius: 15px; }
+    & .day-head__calendar b { font-size: 21px; }
+    & .day-head__date { gap: 7px; }
+    & .day-paths { gap: 7px; }
+    & .day-path { min-height: 56px; border-radius: 18px; padding: 8px; }
+    & .day-path__icon, & .day-path small { display: none; }
+    & .day-tabs { align-self: stretch; }
+    & .day-tabs button { flex: 1; justify-content: center; padding: 5px 9px; min-height: 34px; font-size: 11px; }
+    & .day-tabs svg { width: 14px; }
+    & .day-paper { padding: 15px; border-radius: 21px; }
+    & .day-rail { display: none; }
+  }
 }
-@keyframes day-enter{
-  from{opacity:0;transform:translateY(5px)}
-  to{opacity:1;transform:none}
+@media (max-height: 580px) {
+  .desktop-app.hud-surface .day-route[data-page="today-log"] {
+    & .day-head__calendar { display: none; }
+    & .day-head__intro { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 14px; }
+    & .day-head__date time { display: none; }
+    & .day-path { min-height: 40px; padding-block: 7px; }
+    & .day-path__icon, & .day-path small { display: none; }
+  }
 }
-@keyframes day-enter-flat{
-  from{opacity:0}
-  to{opacity:1}
+.desktop-app.hud-surface[data-motion-mode="lite"] .day-route[data-page="today-log"] {
+  & :where(button, summary):active { scale: .97; }
+  & .day-tab-page { transform: none; }
 }
+.desktop-app.hud-surface[data-motion-mode="off"] .day-route[data-page="today-log"] {
+  & :where(button, summary) { transition: none; }
+  & .day-head__refresh svg { animation: none; }
+  & .day-tab-page { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .desktop-app.hud-surface .day-route[data-page="today-log"] {
+    & :where(button, summary) { transition: none; scale: 1; translate: none; }
+    & .day-head__refresh svg { animation: none; }
+    & .day-tab-page { transform: none; opacity: 1; }
+  }
+}
+@keyframes day-spin { to { transform: rotate(360deg); } }

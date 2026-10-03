@@ -100,12 +100,14 @@ function installApi(objectiveDetail?: unknown) {
 }
 
 beforeEach(() => {
+  useRoomStore.setState({ searchResume: null, searchQuery: "", searchTypeFilter: "all", searchWeakOnly: false });
   useRoomStore.setState({ searchQuery: "", searchTypeFilter: "all", searchWeakOnly: false });
   Object.defineProperty(Element.prototype, "scrollTo", { configurable: true, value: () => undefined });
   Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: () => undefined });
 });
 
 afterEach(() => {
+  useRoomStore.setState({ searchResume: null });
   cleanup();
   Reflect.deleteProperty(window, "ailearn");
   Reflect.deleteProperty(Element.prototype, "scrollTo");
@@ -131,7 +133,7 @@ describe("全局搜索 · 界面必须与服务端同一页同量", () => {
       return found;
     });
     // 每一行都在，而不是"有几行算几行"。
-    for (const title of TITLES) expect(screen.getAllByText(title).length).toBeGreaterThan(0);
+    expect([...rows].map(row => row.querySelector("b")?.textContent)).toEqual(TITLES);
     // 进度读数与那 5 条同源（`items.length / total`）。同一句还出现在 aria-live
     // 状态行里，所以这里量的是列表里那一处可见读数。
     expect(rows.length).toBe(serverPage().total);
@@ -201,24 +203,26 @@ describe("全局搜索 · 缺口那一句的状态名与笔记页同源", () => 
     render(<StrictMode><SearchSurface /></StrictMode>);
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "TTS" } });
     const list = await screen.findByRole("listbox", { name: "搜索结果" });
-    const row = [...list.querySelectorAll("[role='option']")]
-      .find((element) => element.textContent?.includes("理解 TTS"));
-    if (!row) throw new Error("搜索结果里没有那条目标这一行（列表形状变了）");
+    const row = await waitFor(() => {
+      const result = [...list.querySelectorAll("[role='option']")].find(element => element.textContent?.includes("理解 TTS"));
+      expect(result).toBeTruthy();
+      return result!;
+    });
     fireEvent.click(row);
-    await waitFor(() => expect(window.ailearn.objective.get).toHaveBeenCalled());
+    await waitFor(() => expect(document.querySelector(".search-preview__origin")).not.toBeNull());
     return document.querySelectorAll(".margin-note");
   }
 
   it("来源已有更新那一档：状态名取共享那一份，后半句才是搜索自己的话", async () => {
     const notes = await openObjectivePreview("source_outdated");
     expect(notes).toHaveLength(1);
-    expect(notes[0].textContent).toBe("缺口来源已有更新——这一条要重新核对。");
+    expect(notes[0].textContent).toBe("阅读提示来源已有更新——这一条要重新核对。");
   });
 
   it("旧来源待复核那一档：同样不另起一个词", async () => {
     const notes = await openObjectivePreview("legacy_unreviewed");
     expect(notes).toHaveLength(1);
-    expect(notes[0].textContent).toBe("缺口旧来源待复核——这条目标的结论可能已经漂移。");
+    expect(notes[0].textContent).toBe("阅读提示旧来源待复核——这张学习卡的结论需要重新核对。");
   });
 
   it("对照：来源最新时，这一行一个字都不说", async () => {

@@ -156,6 +156,24 @@
         "sha256": "cdafcbcfb48726b533f1be3451541581c753fef12a61cf605cd4d9b8821848ed",
         "reviewStatus": "implementation-preview"
       }
+    },
+    "cardMaking": {
+      "day": {
+        "id": "GENERATED-CARD-MAKING-ATELIER-DAY-01",
+        "path": "posters/task-scenes/card-making-atelier-day-v1.png",
+        "width": 1672,
+        "height": 941,
+        "sha256": "d0fb6953f7161e6e02ed561817c7fbd1fe05f8198471b6d253bb0f5b4e0392e9",
+        "reviewStatus": "implementation-preview"
+      },
+      "night": {
+        "id": "GENERATED-CARD-MAKING-ATELIER-NIGHT-01",
+        "path": "posters/task-scenes/card-making-atelier-night-v1.png",
+        "width": 1672,
+        "height": 941,
+        "sha256": "52c42186e8253a925f03530f01777fa4119d469d5290227d52f3b59237548782",
+        "reviewStatus": "implementation-preview"
+      }
     }
   },
   "authPosters": {

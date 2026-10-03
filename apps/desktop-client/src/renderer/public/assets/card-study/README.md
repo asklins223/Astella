@@ -1,0 +1,15 @@
+# 学习卡书桌场景
+
+2026-10-03 使用内置 imagegen 绘制。日间和夜间共用物件位置与桌面构图，学习卡详情、答题和结果延续同一张书桌。中央留给真实交互卡片，右侧留给独立渲染的伴星；图中不含界面、文字或学习内容。
+
+成品：`desk-day-v1.png`、`desk-night-v1.png`，均为 1672 × 941 PNG，直接随 renderer 的 public assets 分发。图片不依赖生成工具的临时路径。
+
+## 日间生成提示词
+
+Use case: stylized-concept. Asset type: a production 16:9 background illustration for a cozy Electron desktop learning-card application, 2880x1620 landscape. Primary request: draw an original warm, tactile, softly rounded 3D study-table scene, the look of a charming life-simulation game with small handmade objects, refined rather than childish. Scene: a close view of the wooden card-making desk inside a seaside reading room, subtly visible pale blue sea and window light in the upper edge. Composition: the foreground desk surface fills 85 percent of the image; the large central-left region x=10%-78%, y=12%-93% is a completely clear continuous honey-oak tabletop with quiet fine wood grain where real interactive paper cards will be placed by code. No paper panels or UI baked into the background. A few tiny objects only at the outer edges: rounded wooden pencil cup and a little stack of closed blank notebooks at far upper-left, a softly sculpted ceramic lamp and a small leafy plant at far upper-right. The lower-right area x=83%-100%, y=55%-100% is an empty matching side-desk corner reserved for a live animated companion rendered separately. Camera: near-overhead elevated front view with subtle depth and a horizontal table edge at the bottom, no steep perspective or extreme lens. Materials: warm polished light oak, cream ceramic, soft moss and pale mint details, bevelled tactile edges, delicate ambient contact shadows. Lighting: diffuse warm daytime window light, soft small dappled light near the outer edges; balanced contrast, never bright white or muddy. Color palette harmonious with cream paper, pastel green and lavender 3D card packets. Highest polish game environment art, actual illustrated wood and cozy scenery, not a flat gradient, no dashboard, no giant blank white card, no text, no logos, no characters, no watermarks. Fill the canvas edge to edge.
+
+## 夜间编辑提示词
+
+编辑目标为日间成品，保留构图和几何。
+
+Use case: lighting-weather. Edit target: the attached original study desk background. Create its matching nighttime version for the same learning-card desktop application. Keep exactly the same 16:9 framing, camera, tabletop geometry and empty central-left workspace, position and shape of every object, the empty lower-right companion side-desk, materials and fine wood grain. Change only lighting and view outside the window: calm deep blue sea at night, faint warm lights in the distant tiny seaside buildings; soft warm amber light cast by the ceramic lamp at upper right, subtle cool moonlit fill from the window at upper left, comfortable readable wood midtones and gentle contact shadows. Do not turn the scene dark brown or orange, preserve a quiet pale honey-oak writing surface with softly rounded tactile objects. No cards, paper sheets, interface elements, text, people, new objects, logos or watermarks. Production background for a cozy 3D learning-card room.

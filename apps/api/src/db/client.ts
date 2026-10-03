@@ -76,20 +76,64 @@ export function resolveApiIdleInTransactionTimeoutMs(
   return resolvePositiveDatabaseTimeoutMs(raw, 15_000);
 }
 
+/**
+ * 空闲连接回收（2026-10-03 实测修复）。
+ *
+ * 此前主池**没有** `idle_timeout`，postgres.js 于是把连接扩到 `max` 之后就一直
+ * 攥着不放。实测空载状态下 API 进程就常驻 26 个 `ClientRead` 连接（25 主池 +
+ * 1 私有解池），worker 同样常驻 4 个——**开机即占用，与负载无关**。
+ *
+ * 为什么这是并发问题而不是省资源问题：`max_connections=100`，每对副本占
+ * 25+2+1（API）与 16+1（worker）≈ 45。两副本 90/100 已贴顶，**三副本 117 直接
+ * 连不上库**。也就是说副本数不是被 CPU 挡住的，是被"每个进程一开机就把池撑满"
+ * 挡住的——而且这个数字与它实际只用 5 个连接的事实完全脱节。
+ *
+ * 取 30s：与本文件之外的 `structuredSolutionSql` 私有池同值（那里早就配了，
+ * 见 run-processing-assessment.ts），两处不再漂移；也远小于任何 orchestrator 的
+ * 连接重试探活窗口，冷启动后首波请求会自行重建，不影响正确性。
+ */
+export function resolveApiPoolIdleTimeoutSeconds(
+  raw: string | undefined = process.env.API_POOL_IDLE_TIMEOUT_SECONDS,
+): number {
+  return resolvePositiveDatabaseTimeoutMs(raw, 30);
+}
+
 // PERF-WN: 单 postgres 池承载常规请求 + SSE 轮询 + 后台任务；max=10 在大量
 // 长连接轮询/并发请求时成为瓶颈（配合 inbox/companion SSE 连接上限使用）。
 // 提到 25 摊薄峰值排队，仍受 DB 端 max_connections 约束。
+//
+// 2026-10-03 实测：25 这个上限其实**远高于实际需求**——100 并发下采样
+// pg_stat_activity，26 个连接里 25 个停在 ClientRead（干等客户端），真正
+// active 的平均只有 4.9 个。所以 max 不动，改为加 idle_timeout 让峰值过后能收回；
+// 见 resolveApiPoolIdleTimeoutSeconds 上方关于副本数预算的说明。
 const queryClient = postgres(connectionString, {
   max: 25,
+  idle_timeout: resolveApiPoolIdleTimeoutSeconds(),
   connection: {
     statement_timeout: resolveApiStatementTimeoutMs(),
     lock_timeout: resolveApiLockTimeoutMs(),
     idle_in_transaction_session_timeout: resolveApiIdleInTransactionTimeoutMs(),
+    // 2026-10-03：连接池指标此前数的是"全库所有进程的连接"（见 server.ts 的
+    // dbGaugeTimer），API 与 worker 挤在同一个数字里，谁也看不出自己池子的
+    // 饱和度。给本进程一个专属 application_name，指标就能按进程切开。
+    // postgres.js 默认发 'postgres.js'，改这一项不影响连接语义。
+    application_name: "ailearn_api",
   },
 });
 let closePromise: Promise<void> | null = null;
 
 export const db = drizzle(queryClient, { schema });
+
+/**
+ * 本进程连接池上限（2026-10-03）。
+ *
+ * 暴露出来只有一个用途：给 `ailearn_db_pool_max_connections` 这个静态 gauge
+ * 当分母。饱和度是个比值，没有分母就没法告警，而"池打满"正是池排队唯一
+ * 可观测的表现（postgres.js 不公开等待中的请求数）。
+ */
+export function dbPoolOptionsMax(): number {
+  return queryClient.options.max;
+}
 
 // 2026-08-11（可观测性）：包装 transaction——失败时累加 dbTransactionFailuresTotal
 //（此前指标定义后从未 set，空转）。

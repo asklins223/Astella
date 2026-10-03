@@ -76,6 +76,7 @@ describe("source creation and reads", () => {
       language: "en",
       url: "https://example.test/docs",
       typeSource: "manual",
+      titleSource: "manual",
     });
     assert.equal(inserted[1]!.table, jobs);
     // 稳定 P1（2026-09-15 审计）：payload 收敛到 ParseSourceJobPayload——历史字段
@@ -111,7 +112,8 @@ describe("source creation and reads", () => {
       metadata: {},
     });
 
-    const stored = inserted[0]!.value as { title: string };
+    const stored = inserted[0]!.value as { title: string; metadata: { titleSource: string } };
+    assert.equal(stored.metadata.titleSource, "auto");
     assert.ok(stored.title.length <= 61, `实际「${stored.title}」`);
     assert.match(stored.title, /[。！？；，,、：:…]$/u, `标题必须以句读或省略号收尾，实际「${stored.title}」`);
     assert.ok(!stored.title.endsWith("而"), "不许以连接词收尾");
@@ -172,6 +174,7 @@ describe("source creation and reads", () => {
     });
 
     assert.equal(inserted[0]!.metadata.rawContent, "inline body");
+    assert.equal(inserted[0]!.metadata.titleSource, "manual");
     // 内联正文（非 URL）不带 fetchUrlContent；userId 已按契约删除（见上）。
     assert.deepEqual(inserted[1]!.payload, { sourceId: "source-inline" });
   });
@@ -291,8 +294,22 @@ describe("source updates and deletion", () => {
     });
 
     assert.equal(updates.title, "New");
-    assert.deepEqual(updates.metadata, { retained: true, added: 1 });
+    assert.deepEqual(updates.metadata, { retained: true, added: 1, titleSource: "manual" });
     assert.deepEqual(result, { source: refreshed, segments: [{ id: "segment-1" }] });
+  });
+
+  it("a title-only rename marks the title manual, and later metadata patches cannot reset it", async () => {
+    const source = { id: "source-1", title: "Old", metadata: { rawContent: "# Article heading", titleSource: "auto" } };
+    const executor = {
+      select: () => ({ from: () => ({ where: () => ({ limit: () => ({ for: async () => [source] }) }) }) }),
+      update: () => updateChain((value: any) => { Object.assign(source, value); }),
+      query: { sources: { findFirst: async () => source }, sourceSegments: { findMany: async () => [] } },
+    } as any;
+    await updateSource(executor, source.id, WORKSPACE_ID, { title: "My own title" });
+    assert.equal(source.metadata.titleSource, "manual");
+    assert.equal(source.metadata.rawContent, "# Article heading");
+    await updateSource(executor, source.id, WORKSPACE_ID, { metadata: { titleSource: "auto", language: "en" } });
+    assert.equal(source.metadata.titleSource, "manual");
   });
 
   it("returns null when updating or deleting a missing source", async () => {
@@ -427,8 +444,8 @@ it("creates note/version/blocks and updates the search projection", async () => 
         sources: { findFirst: async () => source },
         sourceSegments: {
           findMany: async () => [
-            { id: "segment-1", text: "Heading", segmentType: "heading", charStart: 0, charEnd: 7 },
-            { id: "segment-2", text: "Paragraph", segmentType: "paragraph", charStart: 8, charEnd: 17 },
+            { id: "segment-1", text: "# Heading", segmentType: "heading", charStart: 0, charEnd: 9 },
+            { id: "segment-2", text: "Paragraph", segmentType: "paragraph", charStart: 11, charEnd: 20 },
           ],
         },
         // 正文写入口已改成"文档→投影"（批次 4.1）。这里的桩只负责**不炸**：
@@ -481,6 +498,14 @@ it("creates note/version/blocks and updates the search projection", async () => 
       version: { id: "version-1" },
     });
     assert.equal(inserted.some((entry) => entry.table === noteBlocks), true);
+    const versionInput = inserted.find((entry) => entry.table === noteVersions)!.value;
+    assert.deepEqual(versionInput.contentJson.blocks, [
+      { type: "heading", content: "Heading" },
+      { type: "paragraph", content: "Paragraph" },
+    ]);
+    const projectedBlocks = inserted.find((entry) => entry.table === noteBlocks)!.value;
+    assert.equal(projectedBlocks[0].content, "Heading");
+    assert.deepEqual(projectedBlocks[0].sourceRef, { sourceId: "source-1", segmentId: "segment-1" });
     // 按"写了什么"找，不按调用顺序下标：落盘口现在一次投全套（版本快照、标题、指针、
     // 搜索），下标断言会把每一次正当的顺序调整都变成一次假红。
     // 落盘**不**改写已有版本的快照：那一版记的是它被提交当时的样子（刷了它，

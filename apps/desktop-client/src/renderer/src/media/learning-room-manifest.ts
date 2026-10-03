@@ -140,6 +140,7 @@ const sourceManifestSchema = z.strictObject({
     writing: taskPosterPairSchema,
     workshop: taskPosterPairSchema,
     candidateReview: taskPosterPairSchema,
+    cardMaking: taskPosterPairSchema,
     review: taskPosterPairSchema,
     observatory: taskPosterPairSchema,
     system: taskPosterPairSchema,

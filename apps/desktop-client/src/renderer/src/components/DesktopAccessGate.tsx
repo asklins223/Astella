@@ -897,7 +897,9 @@ export function DesktopAccessGate({
     // 账号+空间+epoch 复核通过时视图、房间视图状态与焦点都不动，真的换了边界才在
     // apply 里收口。以前这里无条件清空工作区并重建，于是任何一条运行时事件都能把
     // 用户正在看的页面推倒重来（F01）。
-    if (code === undefined) {
+    // 一个业务 DTO 未通过校验，不能据此认定账号或工作区变化。
+    // 静默复核整体合同与会话；失败仍进入门禁，成功保留页面的局部报错。
+    if (code === undefined || code === "unsupported_contract") {
       requestBootstrap(false, true);
       return;
     }

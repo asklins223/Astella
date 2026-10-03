@@ -107,8 +107,38 @@ describe("来源详情的「重新解析」", () => {
     await waitFor(() => expect(api.source.reparse).toHaveBeenCalledTimes(1));
   });
 
+  it("停在「待解析」的来源也给出口——采集落库就是这一档，最容易卡死", async () => {
+    // worker 停着、容器重启、job 判 dead 没收尾，来源都会永远停在 draft。
+    // 少了这一档，用户点开这份材料只看到一句"还没有正文"，没有任何出口。
+    const { api } = mountAt("draft");
+    const button = await screen.findByRole("button", { name: /重新解析/ });
+    fireEvent.click(button);
+    await waitFor(() => expect(api.source.reparse).toHaveBeenCalledTimes(1));
+    await screen.findByText(/已经排上重新解析了/);
+  });
+
+  it("draft 上真的还有一条在跑的 job：服务端说在跑，界面照实说", async () => {
+    const conflict = vi.fn(async () => ({
+      ok: false as const,
+      workspaceEpoch: 7,
+      error: { code: "conflict" as const, safeMessageKey: "error.conflict", retry: "user_action" as const },
+    }));
+    installApi({ status: "draft", reparse: conflict });
+    useRoomStore.setState({ activeSourceId: SOURCE_ID });
+    render(<SourceDetailSurface />);
+    fireEvent.click(await screen.findByRole("button", { name: /重新解析/ }));
+
+    await screen.findByText(/已经有任务在跑/);
+  });
+
   it("已经解析好的来源不摆这颗按钮：那不是它缺的东西", async () => {
     mountAt("ready");
+    await screen.findByText("惯性那一章");
+    expect(screen.queryByRole("button", { name: /重新解析/ })).toBeNull();
+  });
+
+  it("已归档的来源不摆这颗按钮：那是「恢复来源」那一档的事", async () => {
+    mountAt("archived");
     await screen.findByText("惯性那一章");
     expect(screen.queryByRole("button", { name: /重新解析/ })).toBeNull();
   });

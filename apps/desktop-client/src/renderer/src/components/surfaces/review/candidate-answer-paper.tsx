@@ -61,7 +61,7 @@ export function CandidateAnswerPaper({ reveal }: { readonly reveal: DesktopCandi
   return <section className="reveal-slip" aria-label="答案与来源证据">
     <h3>答案</h3>
     <AnswerBlock answer={reveal.canonicalAnswer} />
-    <p>{reveal.explanation}</p>
+    {reveal.explanation && !(reveal.canonicalAnswer.kind === "text" && reveal.canonicalAnswer.unit.text.trim() === reveal.explanation.trim()) ? <p>{reveal.explanation}</p> : null}
     {reveal.boundary ? <p><b>边界</b>　{reveal.boundary}</p> : null}
     {reveal.misconception ? <p><b>常见误解</b>　{reveal.misconception}</p> : null}
     {reveal.workedExample ? <p><b>示例</b>　{reveal.workedExample}</p> : null}

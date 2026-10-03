@@ -321,7 +321,10 @@ async function createNoteTx(
       tx,
       { workspaceId, noteId: row.id, userId },
       version.id,
-      (noteDoc) => writeFragmentBlocks(noteDoc, initialBlocks),
+      (noteDoc) => {
+        setNoteTitle(noteDoc, title, titleWasProvided ? "manual" : "auto");
+        writeFragmentBlocks(noteDoc, initialBlocks);
+      },
       initialBlocks,
     );
   }
@@ -1205,8 +1208,12 @@ export async function restoreNoteVersion(
       tx,
       { workspaceId, noteId, userId },
       versionId,
-      (noteDoc) => writeFragmentBlocks(noteDoc, restoredDocBlocks),
-      restoredDocBlocks,
+      (noteDoc) => {
+        // Keep the live document's history: an open editor must be able to
+        // merge the restoration and submit its next character from that history.
+        writeFragmentBlocks(noteDoc, restoredDocBlocks);
+        setNoteTitle(noteDoc, effectiveTitle, note.titleSource);
+      },
     );
 
     const result = {

@@ -55,6 +55,9 @@ importers:
       gsap:
         specifier: ^3.15.0
         version: 3.15.0
+      katex:
+        specifier: 0.18.7
+        version: 0.18.7
       lucide-react:
         specifier: ^1.33.0
         version: 1.45.0(react@19.3.0)

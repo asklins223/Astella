@@ -9,8 +9,9 @@
  *    是「打开」，实际已经删了。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { NoteAnnotationMark } from "../note-annotation-mark";
+import { AnnotationDeleteControl } from "../annotation-delete-control";
 import type { NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
 
 const ANNOTATION: NoteAnnotationV1 = {
@@ -50,6 +51,8 @@ const tooltip = () => document.querySelector(".note-annotation-preview");
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
+  window.getSelection()?.removeAllRanges();
   vi.unstubAllGlobals();
 });
 
@@ -62,10 +65,14 @@ describe("记号浮层里的删除", () => {
     expect(tooltip()?.querySelector(".note-annotation-delete")).toBeNull();
   });
 
+  const control = <AnnotationDeleteControl annotation={ANNOTATION} hasArtifact={false} view="idle"
+    onRequest={() => undefined} onCancel={() => undefined} onConfirm={() => undefined} />;
+
   it("传了就出现，而且落在浮层里（不在正文里插按钮）", () => {
-    const view = mount(<button type="button">删掉这条</button>);
+    const view = mount(control);
     fireEvent.mouseEnter(marker(view));
     expect(tooltip()?.querySelector(".note-annotation-delete")).not.toBeNull();
+    expect(tooltip()?.querySelector("button")?.textContent).toContain("删掉这条");
     // 浮层在 portal 里（document.body），正文那个 span 里不能多出按钮。
     expect(marker(view).querySelector("button")).toBeNull();
   });
@@ -75,16 +82,33 @@ describe("记号浮层里的删除", () => {
    *
    * 收起的那一刻，「删掉这条」就永远按不到——而这个 bug 看起来完全正常：
    * hover 会出现预览（那是对的），只是你够不到那颗按钮。
+   *
+   * 所以这里按**真实顺序**走一遍：进记号 → 进浮层 → 离记号（该留住）→ 离浮层（该收）。
    */
   it("指针移进浮层时浮层不收起（否则那个按钮永远按不到）", () => {
-    const view = mount(<button type="button">删掉这条</button>);
+    const view = mount(control);
     fireEvent.mouseEnter(marker(view));
     expect(tooltip()).not.toBeNull();
-    // 指针从记号移到浮层上——这一步之间不该收起。
+    fireEvent.mouseEnter(tooltip()!);
+    // 指针从记号挪到浮层上——记号的 mouseleave 先到，浮层必须接住。
     fireEvent.mouseLeave(marker(view));
     expect(tooltip(), "浮层在指针移过去时收起了，那颗按钮就永远按不到").not.toBeNull();
-    // 再从浮层离开才收。
+    // 指针离开浮层才收。
+    vi.useFakeTimers();
     fireEvent.mouseLeave(tooltip()!);
+    act(() => vi.advanceTimersByTime(200));
+    expect(tooltip()).toBeNull();
+  });
+
+  /** 指针只是掠过记号就走（没进浮层）时，浮层照常收——不然它会一直挂在屏上。 */
+  it("指针没进浮层就离开记号：浮层照常收起", () => {
+    const view = mount(control);
+    fireEvent.mouseEnter(marker(view));
+    expect(tooltip()).not.toBeNull();
+    vi.useFakeTimers();
+    fireEvent.mouseLeave(marker(view));
+    expect(tooltip()).not.toBeNull();
+    act(() => vi.advanceTimersByTime(200));
     expect(tooltip()).toBeNull();
   });
 
@@ -99,4 +123,27 @@ describe("记号浮层里的删除", () => {
     button!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onOpen).not.toHaveBeenCalled();
   });
+});
+// Dragging an annotated sentence is a selection, not an instruction to open it.
+it("重新拖选有批注的原句不会打开旧批注，键盘仍能打开", () => {
+  const onOpen = vi.fn();
+  const view = render(<NoteAnnotationMark annotation={ANNOTATION} onOpen={onOpen}>提取练习让大脑</NoteAnnotationMark>);
+  const node = marker(view), range = document.createRange();
+  range.setStart(node.firstChild!, 0); range.setEnd(node.firstChild!, 4);
+  window.getSelection()!.addRange(range);
+  fireEvent.click(node);
+  expect(onOpen).not.toHaveBeenCalled();
+  fireEvent.keyDown(node, { key: "Enter" });
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith(ANNOTATION);
+});
+
+it("浮层跨过记号与便笺的空隙后仍可操作", () => {
+  vi.useFakeTimers();
+  const view = mount(<button>删掉这条</button>);
+  fireEvent.mouseEnter(marker(view));
+  fireEvent.mouseLeave(marker(view));
+  act(() => vi.advanceTimersByTime(80));
+  fireEvent.mouseEnter(tooltip()!);
+  act(() => vi.advanceTimersByTime(200));
+  expect(tooltip()?.querySelector("button")).toBeTruthy();
 });

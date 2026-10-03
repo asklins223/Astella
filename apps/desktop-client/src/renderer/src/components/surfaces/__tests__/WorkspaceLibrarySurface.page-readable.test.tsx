@@ -1,19 +1,13 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ObjectiveLibrarySurface } from "../library/WorkspaceLibrarySurface.tsx";
 import { resetObjectiveLibraryView, retargetObjectiveLibraryView, writeObjectiveLibraryView } from "../run/objective-library-view-state.ts";
 import { useRoomStore } from "../../../app/room-store.ts";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
 
-/**
- * 「学习卡」这一屏登记给伴星读的是什么（39d W2-7）。
- *
- * 这一页的特殊之处是**远征册默认收着**：收着时屏幕上只有焦点卡与纸上远征图，
- * 每个区域最多露两颗节点。所以本文件钉的第一件事是"登记的是当前露出来的那一份清单"，
- * 第二件事才是逐字相同——把册子里没露面的行登记进去，她会报出一屏根本没显示的东西。
- */
+/** 当前展开的纸卡与查找抽屉分开登记，隐藏卡片不冒充可见内容。 */
 
 const OBJECTIVE_ID = "00000000-0000-4000-8000-000000000001";
 const CARD_START = {
@@ -92,13 +86,6 @@ async function renderLibrary(items: Array<Record<string, unknown>>, options?: { 
   await waitFor(() => expect(publishedView()).not.toBeNull());
 }
 
-async function openIndex(): Promise<void> {
-  const toggle = document.querySelector<HTMLButtonElement>(".objective-expedition__index-toggle");
-  expect(toggle).not.toBeNull();
-  fireEvent.click(toggle!);
-  await waitFor(() => expect(document.querySelector(".v3-goal-list")).not.toBeNull());
-}
-
 afterEach(() => {
   cleanup();
   Reflect.deleteProperty(window, "ailearn");
@@ -107,91 +94,68 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("学习卡列表：登记的是当前露出来的那一份", () => {
-  it("册子收着：焦点卡的卡型/状态、区域计数、远征图节点全部与 DOM 逐字相同", async () => {
-    await renderLibrary([listItem(1)]);
-    const view = publishedView()!;
-    expect(view.pageId).toBe("goals");
-    expect(view.title).toBe(document.querySelector(".approved-surface h2")?.textContent);
-    expect(view.statusLine).toBe(document.querySelector(".objective-expedition__mode-copy")?.textContent);
-    const focusFlags = [...document.querySelectorAll(".objective-expedition__focus-flags strong")]
-      .map((node) => node.textContent);
-    expect(metric("卡型")).toBe(focusFlags[0]);
-    expect(metric("状态")).toBe(document.querySelector(".objective-expedition__focus-flags .v3-objective-state")?.textContent);
-    expect(metric("远征册")).toBe(document.querySelector(".objective-expedition__index-toggle small")?.textContent);
-    // 区域那一格里屏上写的是「需要验证、复习或修补 · 1 个」，登记的是后面那段计数。
-    const readyRegionSmall = document.querySelector(
-      '.objective-quest-region[data-region="ready"] header small',
-    )?.textContent;
-    expect(metric("待挑战")).toBe(readyRegionSmall?.split(" · ")[1]);
-    expect(view.items?.map((entry) => entry.label)).toEqual(
-      [...document.querySelectorAll(".objective-quest-node strong")].map((node) => node.textContent),
-    );
-    // 一个目标都露得下：不该编出一句"另有 N 个"。
-    expect(view.notice).toBeUndefined();
-  });
-
-  it("某个区域露不下时，登记的就是屏上那句「另有 N 个目标在远征册」", async () => {
+describe("学习卡收藏的可读视图与真实页面一致", () => {
+  it("登记实际呈现的要点和收藏计数，不登记隐藏配置", async () => {
     await renderLibrary([listItem(1), listItem(2), listItem(3)]);
-    const line = [...document.querySelectorAll(".objective-quest-region__more")].map((node) => node.textContent);
-    expect(line.length).toBeGreaterThan(0);
-    expect(publishedView()!.notice).toBe(line[0]);
-    // 条目仍然只有露出来的那两颗（区域各两颗、总共 3 个目标 → 待挑战这一区露 2）。
-    expect(publishedView()!.items).toHaveLength(2);
+    expect(publishedView()!.pageId).toBe("goals");
+    expect(metric("卡片册")).toBe("共 3 张卡");
+    expect(publishedView()!.items?.map(item => item.label)).toEqual(["物理笔记"]);
+    expect(publishedView()!.items?.[0].state).toBe("3 张学习卡");
+    fireEvent.click(screen.getByRole("button", { name: "打开卡包：物理笔记" }));
+    expect(publishedView()!.items?.map(item => item.label)).toEqual([...document.querySelectorAll(".card-collection__card-body > strong")].map(node => node.textContent));
+    expect(publishedView()!.items).toHaveLength(3);
+    expect(screen.queryByRole("group", { name: "筛选学习卡" })).toBeNull();
   });
 
-  it("打开远征册：清单换成册子里那一列，逐字相同，并说出「已读到全部学习卡」", async () => {
-    // 三张卡：收着时远征图只露两颗，打开后册子里是三行——数量差是这一页的关键事实。
+  it("不同笔记的卡按真实分组顺序登记，搜索不需要先开抽屉", async () => {
+    await renderLibrary([listItem(1), listItem(2, { primaryNoteId: "second-note", primaryNoteTitle: "另一篇笔记" }), listItem(3)]);
+    expect(publishedView()!.items?.map(item => item.label)).toEqual([...document.querySelectorAll(".card-pack-object__caption > strong")].map(node => node.textContent));
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索学习卡" }), { target: { value: "另一篇" } });
+    expect(publishedView()!.items?.map(item => item.label)).toEqual(["另一篇笔记"]);
+    fireEvent.click(screen.getByRole("button", { name: "打开卡包：另一篇笔记" }));
+    expect(publishedView()!.items?.map(item => item.label)).toEqual(["卡 2"]);
+  });
+
+  it("过滤立即同步真实结果，清空后恢复全部学习卡", async () => {
     await renderLibrary([listItem(1), listItem(2), listItem(3)]);
-    expect(publishedView()!.items).toHaveLength(2);
-    await openIndex();
-    await waitFor(() => expect(publishedView()!.items).toHaveLength(3));
-    await waitFor(() => expect(publishedView()!.notice).toBe("已读到全部学习卡"));
-    const view = publishedView()!;
-    expect(view.items?.map((entry) => entry.label)).toEqual(
-      [...document.querySelectorAll(".v3-goal-row__title")].map((node) => node.textContent),
-    );
-    expect(view.items?.map((entry) => entry.state)).toEqual(
-      [...document.querySelectorAll(".v3-goal-row .v3-objective-state")].map((node) => node.textContent),
-    );
-    // 没输入关键词、没筛选项时，不登记 filters。
-    expect(view.filters).toBeUndefined();
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索学习卡" }), { target: { value: "卡 2" } });
+    fireEvent.click(screen.getByRole("button", { name: "打开卡包：物理笔记" }));
+    expect(publishedView()!.items?.map(item => item.label)).toEqual(["卡 2"]);
+    fireEvent.click(screen.getByRole("button", { name: "清空学习卡搜索" }));
+    expect(publishedView()!.items).toHaveLength(3);
   });
 
-  it("搜一个搜不到的词：登记关键词，并说屏上那句「没有匹配卡片」", async () => {
+  it("没有结果时登记实际搜索词与空态，清空后恢复真实清单", async () => {
     await renderLibrary([listItem(1)]);
-    await openIndex();
-    const input = document.querySelector<HTMLInputElement>(".v3-goal-search input")!;
+    const input = screen.getByRole("textbox", { name: "搜索学习卡" });
     fireEvent.change(input, { target: { value: "不存在的词" } });
-    await waitFor(() => expect(publishedView()!.notice).toMatch(/已载入范围内没有匹配卡片/));
-    const view = publishedView()!;
-    expect(filterValue("关键词")).toBe(input.value);
-    expect(view.items).toBeUndefined();
-    expect(view.notice).toBe(
-      `${document.querySelector(".v3-goal-list__empty strong")?.textContent}：${document.querySelector(".v3-goal-list__empty span")?.textContent}`,
-    );
-  });
-
-  it("一张卡都没有：登记的是空态那一句，不带任何清单", async () => {
-    await renderLibrary([]);
-    const view = publishedView()!;
-    expect(view.items).toBeUndefined();
-    expect(view.statusLine).toBe(document.querySelector(".approved-surface .surface-state strong")?.textContent ?? view.statusLine);
-    expect(view.notice).toContain("这里还没有学习卡");
-  });
-
-  /**
-   * 关键词与筛选项是**持久化**的（翻回来还在），所以"册子收着、条件还留着"是一个真能
-   * 到达的状态，不是假想：收着的时候屏上没有那两样，就不许登记。
-   */
-  it("册子收着时即使留有筛选条件也不登记 filters，打开才登记", async () => {
-    retargetObjectiveLibraryView("ws-1");
-    writeObjectiveLibraryView({ query: "卡", filter: "all" });
-    await renderLibrary([listItem(1)]);
+    expect(publishedView()!.notice).toMatch(/已载入范围内没有匹配卡片/);
+    expect(filterValue("关键词")).toBe("不存在的词");
+    expect(publishedView()!.items).toBeUndefined();
+    fireEvent.click(screen.getByRole("button", { name: "清空学习卡搜索" }));
     expect(publishedView()!.filters).toBeUndefined();
-    await openIndex();
-    await waitFor(() => expect(filterValue("关键词")).toBe("卡"));
-    expect(document.querySelector<HTMLInputElement>(".v3-goal-search input")!.value).toBe("卡");
+    expect(publishedView()!.items).toHaveLength(1);
+  });
+
+  it("空卡库不伪造清单，入口回到笔记制作", async () => {
+    await renderLibrary([]);
+    expect(publishedView()!.items).toBeUndefined();
+    expect(publishedView()!.notice).toContain("这里还没有学习卡");
+    expect(document.body.textContent).toContain("去笔记挑一篇");
+  });
+
+  it("回到卡库保留搜索条件", async () => {
+    retargetObjectiveLibraryView("ws-1"); writeObjectiveLibraryView({ query: "卡", filter: "all" });
+    await renderLibrary([listItem(1)]);
+    expect(filterValue("关键词")).toBe("卡");
+    expect((screen.getByRole("textbox", { name: "搜索学习卡" }) as HTMLInputElement).value).toBe("卡");
+  });
+
+  it("尚未读到下一页时只报已载入卡片数", async () => {
+    await renderLibrary([listItem(1)], { nextCursor: "later" });
+    expect(metric("卡片册")).toBe("已载入 1 张卡");
+    expect(publishedView()!.notice).toBeUndefined();
+    expect(document.body.textContent).not.toContain("收藏都在这里了");
   });
 
   it("第一次读取没回来之前不登记，卸载时槽位让开", async () => {

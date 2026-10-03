@@ -138,6 +138,8 @@ import { LearningRunNextStep, LearningRunResultRubric } from "./learning-run-res
 import { NoteRunReceipt } from "../notebook/note-run-receipt.tsx";
 import { LearningRunArrival, LearningRunArrivalEvidence } from "./learning-run-arrival.tsx";
 import { LearningRunEvidenceBand } from "./learning-run-evidence-band.tsx";
+import { useTactileSurface } from "../../motion/use-tactile-surface";
+import { useCardPaperArrival } from "../../motion/card-object-spring";
 import { LearningRunDock } from "./learning-run-dock.tsx";
 import { LearningRunFocusRail, LearningRunQuestionHeading } from "./learning-run-focus-header.tsx";
 import {
@@ -309,6 +311,10 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
   const recoveryHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const unavailableHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const primaryContentRef = useRef<HTMLDivElement | null>(null);
+  const tactileRootRef = useRef<HTMLDivElement>(null);
+  useTactileSurface(tactileRootRef, `${snapshot?.phase ?? "loading"}:${snapshot?.activeTask?.taskId ?? "none"}:${snapshot?.activeTask?.activeVariant.variantId ?? "none"}:${resultState.kind}`);
+  useCardPaperArrival(tactileRootRef, snapshot && snapshot.originV2.kind !== "note_round"
+    ? `${snapshot.phase}:${snapshot.activeTask?.taskId ?? "none"}:${snapshot.activeTask?.activeVariant.variantId ?? "none"}:${resultState.kind}` : null);
   const discoveryResultKey = resultState.kind === "result"
     ? `${resultState.value.runId}:${resultState.value.result.snapshotId}:${resultState.value.result.outcome}`
     : null;
@@ -460,8 +466,11 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
     if (resultState.kind === "result" && resultAcknowledgementActive) return;
     if (focusKeyRef.current === focusKey || !primaryHeadingRef.current) return;
     const frame = window.requestAnimationFrame(() => {
+      const heading = primaryHeadingRef.current;
+      // A confirmation or result ceremony may have opened since this frame was queued.
+      if (!heading || heading.closest('[inert], [aria-hidden="true"]')) return;
       focusKeyRef.current = focusKey;
-      primaryHeadingRef.current?.focus({ preventScroll: true });
+      heading.focus({ preventScroll: true });
     });
     return () => window.cancelAnimationFrame(frame);
   }, [resultAcknowledgementActive, resultQueryFailure, resultState, snapshot]);
@@ -1336,8 +1345,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
   const exitRoute = routeForReturnTarget(returnTarget);
   const exitDestinationLabel = exitRoute.kind === "review.queue" ? "回到复习队列"
     : exitRoute.kind === "note.detail" ? "回到这篇笔记" : "返回学习空间";
-  // 「同步中」是内部词：用户要知道的不是数据在同步，而是回去之后落点还没定。
-  const resultReturnLabel = returnContract?.status === "projection_pending" ? `确认中 · ${exitDestinationLabel}` : exitDestinationLabel;
+  const returnsToCard = returnTarget.kind === "card" && Boolean(snapshot.target.cardId);
   const nextChallengeLabel = result?.outcome === "declared_unable"
     ? "先回研究册把这条看懂，再回来验证"
     : result && result.gapFacets.length
@@ -1480,8 +1488,8 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
       : snapshot.originV2.kind === "note_round" ? "本轮练习" : "练习关";
 
   return (
-    <>
-      <div ref={primaryContentRef} className="learning-run-primary-content" aria-hidden={pendingAction || pendingHintAction ? true : undefined}>
+    <div className="learning-run-experience" ref={tactileRootRef}>
+      <div ref={primaryContentRef} data-tactile-page={snapshot.originV2.kind === "note_round" ? true : undefined} data-run-origin={snapshot.originV2.kind} className="learning-run-primary-content" aria-hidden={pendingAction || pendingHintAction ? true : undefined}>
       {result || terminal ? (
         <>
         {returnTarget.kind === "note_round" ? <NoteRunReceipt
@@ -1514,8 +1522,9 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
                 nextChallengeLabel={nextChallengeLabel}
               />
           ) : null}
-          <article className="learning-run-result-report">
-            <div className="learning-run-result-report__intro"><span>学习证据</span><h3>把这次收获带走</h3></div>
+          <details className="learning-run-result-report">
+            <summary>查看这次作答与详细判定<span aria-hidden="true">＋</span></summary>
+            <div className="learning-run-result-report__body">
             {feedback && companionFeedbackAllowed ? (
               <div className="learning-run-result-companion" role="status">
                 <Sparkles size={17} aria-hidden="true" />
@@ -1605,12 +1614,16 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
               declaredUnable={result?.outcome === "declared_unable"}
               returnContract={returnContract}
             />
-          </article>
+            </div>
+          </details>
           <div className="actions learning-run-result-actions">
-            <button type="button" className="button primary" onClick={() => onExit({ route: exitRoute })}>
-              <ArrowLeft size={15} aria-hidden="true" />{resultReturnLabel}
-            </button>
-            {snapshot.target.cardId ? <button type="button" className="button" onClick={openObjective}>查看学习卡</button> : null}
+            {returnsToCard ? <>
+              <button type="button" className="button primary" onClick={openObjective}><ArrowLeft size={15} aria-hidden="true" />回到学习卡</button>
+              <button type="button" className="button" onClick={() => onExit({ route: exitRoute })}>{exitDestinationLabel}</button>
+            </> : <>
+              <button type="button" className="button primary" onClick={() => onExit({ route: exitRoute })}><ArrowLeft size={15} aria-hidden="true" />{exitDestinationLabel}</button>
+              {snapshot.target.cardId ? <button type="button" className="button" onClick={openObjective}>查看学习卡</button> : null}
+            </>}
           </div>
         </section></>}
         </>
@@ -1650,6 +1663,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
                 ——全链路最小、却是最该看清的一句；求助信息和它要帮的题还隔着 250px。 */}
             {hints.length > 0 ? <LearningRunHint entries={hints} isNoteRound={snapshot.originV2.kind === "note_round"} /> : null}
             <div className="learning-run-response">
+              {canAnswerNow ? <div className="learning-run-response__heading"><span aria-hidden="true">✎</span><strong>{activeTask?.activeVariant.interaction.kind === "text_response" ? "把你想起的写在这里" : "动手试一试"}</strong></div> : null}
               {canAnswerNow && activeTask ? (
                 <InteractionEditor
                   task={activeTask}
@@ -1689,7 +1703,9 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
               ? recoveryHeading
               : activeTask && snapshot.phase === "active"
                 ? `回答不会自动提交 · ${draftStatus}`
-                : draftStatus}
+                : resultState.kind === "pending" || ["assessing", "committing"].includes(snapshot.phase)
+                  ? "回答已提交 · 等待结果"
+                  : draftStatus}
             exitActions={exitActions.map((action) => quickButton(action))}
             canSubmitUnable={canSubmitUnable}
             submitting={submitting}
@@ -1725,7 +1741,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
             onSubmit={() => editor && void submit(editor)}
             checkpointPrimary={checkpointPrimaryAction ? { node: quickButton(checkpointPrimaryAction, true) } : null}
             onExit={() => onExit({ route: exitRoute })}
-            resultReturnLabel={resultReturnLabel}
+            resultReturnLabel={exitDestinationLabel}
             switchNote={blockedSwitchIds.size > 0 ? `现在还不能改用语音讲解：${microphoneReason}` : ""}
           />
           </section>
@@ -1746,7 +1762,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
         resyncing={resyncing}
         handleConfirmationKeyDown={handleConfirmationKeyDown}
       />
-    </>
+    </div>
   );
 }
 
@@ -1799,7 +1815,8 @@ export function LearningRunSurface({ onExit }: LearningRunSurfaceProps = {}) {
   }, [activeRunId, invoke, onExit, setActiveNoteRef, setActiveObjectiveId, setActiveRunId]);
 
   return (
-    <HudPage page={page}>
+    <HudPage page={page} showTitle={page !== "result"}>
+      <div className="card-run card-experience">
       {activeRunId ? (
         <LearningRunBody runId={activeRunId} onExit={(request) => { void exitRun(request); }} onPageChange={setPage} />
       ) : (
@@ -1814,6 +1831,7 @@ export function LearningRunSurface({ onExit }: LearningRunSurfaceProps = {}) {
           )}
         />
       )}
+      </div>
     </HudPage>
   );
 }

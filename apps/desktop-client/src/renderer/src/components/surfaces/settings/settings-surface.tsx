@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { SettingRow, SettingsInlineState } from "./settings-primitives.tsx";
+import { Activity, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SettingRow, SettingsInlineState, type SettingsReadable } from "./settings-primitives.tsx";
+import { SettingsCompanionPanel } from "./settings-companion-panel";
 import { SettingsAccountPanel } from "./settings-account-panel.tsx";
 import { SettingsExportGroup } from "./settings-export-group.tsx";
 import { SettingsThemePicker, themeLabel } from "./settings-theme-picker.tsx";
-import { SettingsVoicePanel } from "./settings-voice-panel.tsx";
-import { SettingsAnswerModeRow } from "./settings-answer-mode-row.tsx";
 import { SettingsInviteJoinField } from "./settings-invite-join-field.tsx";
-import { ANSWER_MODE_OPTIONS, TTS_ENGINE_OPTIONS, formatVoiceTime, pendingReadLine, percentLine, VOICE_IN_USE_TAG, ttsDefaultVoiceFor, voicesForEngine, voicePlayerLine } from "./settings-data-tables.ts";
+import { SettingsMotionPreview } from "./settings-motion-preview";
 import {
   SettingsCompanionStatus,
   CapabilityChip,
@@ -26,7 +25,6 @@ import {
   type DissolvePreviewState,
 } from "./settings-workspace-group.tsx";
 import { AUDIT_CATEGORY_LABELS, AUDIT_STATUS_LABELS, DATA_POLICY_FIELDS, spaceRoleTypeLine, spaceTypeLabel, THEME_PLATES } from "./settings-data-tables.ts";
-import { useSettingsVoice } from "./use-settings-voice.ts";
 import { copyText } from "../../../app/clipboard";
 
 /**
@@ -39,14 +37,6 @@ import { copyText } from "../../../app/clipboard";
  *  - `filters`＝这一屏的选中项（分段控件选中的那档、开关此刻的通断）；
  *  - `notice`＝内联状态那句解释（为什么读不到、为什么是空的）。
  */
-type SettingsReadable = {
-  readonly statusLine?: string;
-  readonly notice?: string;
-  readonly metrics?: readonly { readonly label: string; readonly value: string }[];
-  readonly filters?: readonly { readonly label: string; readonly value: string }[];
-  readonly items?: readonly { readonly label: string; readonly state?: string }[];
-};
-
 type SettingsPanel = {
   readonly title: string;
   readonly body: React.ReactNode;
@@ -54,12 +44,10 @@ type SettingsPanel = {
   readonly readable: SettingsReadable;
 };
 import {
-  ArrowRight,
   AudioLines,
   Bell,
   BookOpen,
   Check,
-  CircleHelp,
   Clipboard,
   ClipboardCheck,
   Compass,
@@ -97,21 +85,10 @@ import {
   type WorkspaceAiSettingsV1,
   type WorkspaceSummaryV1,
 } from "@ailearn/shared/desktop-ipc-contracts";
-import type { CompanionAnswerModePreferenceV1, CompanionVoicePreferenceV1 } from "@ailearn/shared/companion-shell-contracts";
 import type { DesktopAiAuditItemV1, DesktopAiAuditPageV1 } from "@ailearn/shared/desktop-surface-contracts";
 import { formatObjectiveDateTime } from "../run/objective-state-copy.ts";
-import {
-  EDGE_TTS_VOICE_OPTIONS,
-  QWEN_TTS_VOICE_OPTIONS,
-  TTS_PREVIEW_TEXT,
-  findTtsVoiceOption,
-  type TtsEngineV1,
-  type TtsVoiceOptionV1,
-} from "@ailearn/shared/tts-voice-catalog";
 import type { MotionMode } from "../../../app/room-machine";
 import {
-  MAX_COMPANION_SCALE,
-  MIN_COMPANION_SCALE,
   useRoomStore,
   type Live2dStatus,
 } from "../../../app/room-store";
@@ -126,36 +103,18 @@ import {
   type DirectoryRailMode,
 } from "../../DirectoryRail";
 import { useHomeV2 } from "../../home-v2/HomeV2Experience";
-import { HudPage } from "../../hud/HudPage";
+import { SettingsBook, SETTINGS_SECTIONS, type SettingsSectionId } from "./settings-book";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import { HudPicker, HudSegmented, HudSlider, HudSwitch } from "../../hud/HudControls";
+import { HudPicker, HudSegmented } from "../../hud/HudControls";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { SurfaceDataState, readAuthenticatedSession } from "../notebook/surface-data.tsx";
 
-/**
- * The six entries the mockup puts in the settings directory, in its order. Each
- * one is a different kind of decision, so each gets its own composition inside
- * the card rather than sharing one row list.
- */
-const SECTIONS = [
-  ["account", "账户与空间"],
-  ["members", "成员与邀请"],
-  ["appearance", "主题与动效"],
-  ["companion", "语音与伴星"],
-  ["data", "AI 数据同意"],
-  ["management", "数据与维护"],
-] as const;
-
-type SettingsSectionId = (typeof SECTIONS)[number][0];
-
+const SECTIONS = SETTINGS_SECTIONS.map(({ id, label }) => [id, label] as const);
 const SECTION_IDS: readonly string[] = SECTIONS.map(([id]) => id);
 
-/**
- * 注意力高亮的持续时长（与 hud-surface.css 的 `settings-attention-pulse`
- * 动画时长成对：改一处要改两处）。到期后清掉一次性请求，避免下次进页面还闪。
- */
+/** Clear the one-off consent outline after the reader has had time to locate it. */
 export const SETTINGS_ATTENTION_MS = 4_200;
 
 const MOTION_OPTIONS: ReadonlyArray<readonly [MotionMode, string]> = [
@@ -348,13 +307,11 @@ export function summaryOfDissolveCounts(counts: Record<string, number>): string 
 export function SettingsSurface() {
   const theme = useRoomStore((state) => state.theme);
   const setTheme = useRoomStore((state) => state.setTheme);
+  const themeMode = useRoomStore((state) => state.themeMode);
+  const followTimeTheme = useRoomStore((state) => state.followTimeTheme);
   const motionMode = useRoomStore((state) => state.motionMode);
   const setMotionMode = useRoomStore((state) => state.setMotionMode);
   const reducedMotion = useRoomStore((state) => state.reducedMotion);
-  const masterMuted = useRoomStore((state) => state.masterMuted);
-  const setMasterMuted = useRoomStore((state) => state.setMasterMuted);
-  const companionScale = useRoomStore((state) => state.companionScale);
-  const setCompanionScale = useRoomStore((state) => state.setCompanionScale);
   const live2dStatus = useRoomStore((state) => state.live2dStatus);
   const settingsSection = useRoomStore((state) => state.settingsSection);
   const setSettingsSection = useRoomStore((state) => state.setSettingsSection);
@@ -371,6 +328,8 @@ export function SettingsSurface() {
   const [aiSettings, setAiSettings] = useState<WorkspaceAiSettingsV1 | null>(null);
   const [loading, setLoading] = useState(true);
   const [failure, setFailure] = useState<string | null>(null);
+  const [aiDetailsOpen, setAiDetailsOpen] = useState(false);
+  const [deviceDetailsOpen, setDeviceDetailsOpen] = useState(false);
   const [workspaceListFailure, setWorkspaceListFailure] = useState<string | null>(null);
   const [capabilityFailure, setCapabilityFailure] = useState<string | null>(null);
   const [aiSettingsFailure, setAiSettingsFailure] = useState<string | null>(null);
@@ -429,10 +388,6 @@ export function SettingsSurface() {
   const [importBusy, setImportBusy] = useState(false);
   const [drift, setDrift] = useState<SearchDriftResultV1 | null>(null);
   const [reindexResult, setReindexResult] = useState<SearchReindexResultV1 | null>(null);
-  const [answerMode, setAnswerMode] = useState<CompanionAnswerModePreferenceV1 | null>(null);
-  /** 作答方式是账号级偏好，读取失败时不能把「跟随安排」当成服务端答案展示。 */
-  const [answerModeRead, setAnswerModeRead] = useState(false);
-  const [answerModeSaving, setAnswerModeSaving] = useState(false);
   /**
    * AI 外发记录（doc 34 L3 的另一半：写侧一直在记，桌面以前没有任何地方读）。
    * 没点开就不读，读到之前这一行只有说明、没有清单。
@@ -445,25 +400,7 @@ export function SettingsSurface() {
   const [auxiliaryEpoch, setAuxiliaryEpoch] = useState(0);
   const epochRef = useRef<number | undefined>(undefined);
 
-  /**
-   * 声音那一簇已于 2026-09-29 收进 `use-settings-voice.ts`——原名返回，所以这里只是解构。
-   * 读取那个 effect 刻意留着：它和 invites / members / inventory 的读取写在同一处。
-   */
-  const {
-    voicePreference,
-    setVoicePreference,
-    voicePreferenceRead,
-    setVoicePreferenceRead,
-    voiceSaving,
-    voicePreviewError,
-    voicePlayer,
-    voiceAudioRef,
-    changeVoice,
-    previewVoice,
-    toggleVoicePlayer,
-  } = useSettingsVoice({ epochRef, setFailureNotice });
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const [bodyHasMore, setBodyHasMore] = useState(false);
+  const [companionReadable, setCompanionReadable] = useState<SettingsReadable>({});
   const consentGroupRef = useRef<HTMLElement | null>(null);
   const consentAttentionTimerRef = useRef<number | null>(null);
   const [consentAttention, setConsentAttention] = useState(false);
@@ -472,6 +409,10 @@ export function SettingsSurface() {
   const section: SettingsSectionId = SECTION_IDS.includes(settingsSection)
     ? settingsSection as SettingsSectionId
     : "account";
+  const [visitedSections, setVisitedSections] = useState<readonly SettingsSectionId[]>([section]);
+  useEffect(() => {
+    setVisitedSections(previous => previous.includes(section) ? previous : [...previous, section]);
+  }, [section]);
 
   /**
    * 伴星因缺少 AI 同意停摆时会把读者送到这里（2026-09-19）：滚到「签署状态」卡、
@@ -483,13 +424,13 @@ export function SettingsSurface() {
     if (settingsAttention !== SETTINGS_ATTENTION_AI_CONSENT || section !== "data") return;
     setSettingsAttention(null);
     setConsentAttention(true);
-    consentGroupRef.current?.scrollIntoView({ block: "center", behavior: reducedMotion ? "auto" : "smooth" });
+    consentGroupRef.current?.scrollIntoView({ block: "center", behavior: reducedMotion || motionMode !== "full" ? "auto" : "smooth" });
     if (consentAttentionTimerRef.current !== null) window.clearTimeout(consentAttentionTimerRef.current);
     consentAttentionTimerRef.current = window.setTimeout(() => {
       consentAttentionTimerRef.current = null;
       setConsentAttention(false);
     }, SETTINGS_ATTENTION_MS);
-  }, [reducedMotion, section, setSettingsAttention, settingsAttention]);
+  }, [motionMode, reducedMotion, section, setSettingsAttention, settingsAttention]);
 
   useEffect(() => () => {
     if (consentAttentionTimerRef.current !== null) window.clearTimeout(consentAttentionTimerRef.current);
@@ -679,7 +620,7 @@ export function SettingsSurface() {
       invoke("open-settings");
       setSettingsSection(section);
       setHudPage("settings", "returning");
-      setNotice("已加入协作空间，它现在出现在下面的空间列表里。");
+      setNotice("已加入协作空间，可在「账户与空间」查看和切换。");
       await load();
     } catch (error) {
       setFailureNotice(gatewayErrorMessage(error));
@@ -1162,24 +1103,6 @@ export function SettingsSurface() {
     }
   };
 
-  const changeAnswerMode = async (preference: CompanionAnswerModePreferenceV1["preference"]) => {
-    if (answerModeSaving) return;
-    setAnswerModeSaving(true);
-    setNotice(null);
-    setFailureNotice(null);
-    try {
-      const response = await window.ailearn.companion.answerMode.patch({
-        meta: createRequestMeta(epochRef.current),
-        preference,
-      });
-      setAnswerMode(unwrapGatewayResult(response));
-    } catch (error) {
-      setFailureNotice(gatewayErrorMessage(error));
-    } finally {
-      setAnswerModeSaving(false);
-    }
-  };
-
   const copyInviteToken = async (token: string) => {
     setCopiedCode(false);
     setFailureNotice(null);
@@ -1227,7 +1150,6 @@ export function SettingsSurface() {
     let active = true;
     const meta = () => createRequestMeta(epochRef.current);
     setProfileFailure(null);
-    setAnswerModeRead(false);
     setInvitesRead(!isOwner);
     setMembersRead(!isOwner);
     setInvitesFailure(null);
@@ -1247,32 +1169,6 @@ export function SettingsSurface() {
         setDisplayName(profileResult.displayName ?? "");
       } catch (error) {
         if (active) setProfileFailure(gatewayErrorMessage(error));
-      }
-    })();
-
-    void (async () => {
-      try {
-        const result = unwrapGatewayResult(
-          await window.ailearn.companion.answerMode.get({ meta: meta() }),
-        );
-        if (active) setAnswerMode(result);
-      } catch {
-        if (active) setAnswerMode(null);
-      } finally {
-        if (active) setAnswerModeRead(true);
-      }
-    })();
-
-    void (async () => {
-      try {
-        const result = unwrapGatewayResult(
-          await window.ailearn.companion.voicePreference.get({ meta: meta() }),
-        );
-        if (active) setVoicePreference(result);
-      } catch {
-        if (active) setVoicePreference(null);
-      } finally {
-        if (active) setVoicePreferenceRead(true);
       }
     })();
 
@@ -1326,64 +1222,11 @@ export function SettingsSurface() {
     })();
     return () => { active = false; };
   }, [avatarObjectKey]);
-  /** 账户与空间共用一张稳定的主纸面：左边回答「我在哪里」，右边回答「我是谁」。 */
+  /** 先调整个人资料，再查看空间名册；两者各自占满行宽。 */
   const accountPanel = (): SettingsPanel => ({
     title: "账户与空间",
     body: (
       <div className="settings-account-grid">
-        <section className="settings-account-column" aria-label="当前空间">
-          <div className="space-identity">
-            <span className="space-seal">{currentWorkspace?.name?.slice(0, 1) ?? "学"}</span>
-            <div>
-              <h3>{currentWorkspace?.name ?? "未选择学习空间"}</h3>
-              <div className="meta">
-                <span>{roleLabel(currentRole)}</span>
-                <span>{spaceTypeLabel(currentWorkspace?.workspaceType)}</span>
-              </div>
-            </div>
-          </div>
-          {workspaceListFailure ? (
-            <SettingsInlineState
-              title="空间列表暂时不可用"
-              detail={workspaceListFailure}
-              tone="error"
-              onRetry={() => void load()}
-            />
-          ) : null}
-          <section className="settings-group">
-            <h3 className="settings-group__title">这个空间的边界</h3>
-            <div className="ledger-field">
-              <b>数据边界</b>
-              <span className="write-line">
-                <Compass className="write-line__icon" size={12} aria-hidden="true" />
-                {dataBoundaryLine(capabilityFailure, companion?.["companion.read"])}
-              </span>
-            </div>
-          </section>
-          <SettingsWorkspaceGroup
-            workspaces={workspaces}
-            workspaceListFailure={workspaceListFailure}
-            currentWorkspace={currentWorkspace}
-            renamableWorkspace={renamableWorkspace}
-            renameValue={renameValue}
-            setRenameValue={setRenameValue}
-            switchTo={switchTo}
-            renamePersonalWorkspace={renamePersonalWorkspace}
-            leaveWorkspace={leaveWorkspace}
-            dissolveWorkspace={dissolveWorkspace}
-            leavePending={leavePending}
-            setLeavePending={setLeavePending}
-            dissolvePending={dissolvePending}
-            setDissolvePending={setDissolvePending}
-            dissolveConfirmText={dissolveConfirmText}
-            setDissolveConfirmText={setDissolveConfirmText}
-            dissolvePreview={dissolvePreview}
-            loadDissolvePreview={loadDissolvePreview}
-            switching={switching}
-            profileBusy={profileBusy}
-          />
-        </section>
-
         <section className="settings-account-column" aria-label="个人账户">
           <div className="settings-identity">
             {avatarSrc
@@ -1415,11 +1258,7 @@ export function SettingsSurface() {
             onUploadAvatar={uploadAvatar}
             onClearAvatar={clearAvatar}
           />
-          {/* 「空间 / 退出 / 解散」这块 174 行、17 个外部符号，曾试过抽成组件。
-              撤回原因：那些外部符号的**签名各不相同**——`spaceRoleTypeLine(workspace)` 与
-              `switchTo(workspaceId)`、`leaveWorkspace` 与 `dissolveWorkspace`、
-              `loadDissolvePreview` 的入参，逐个对一遍比留在原地更容易出错。
-              它自成一域，**下一个动这里的人应当先把这几个签名统一**，再来切。 */}
+
 
           <details className="settings-disclosure">
             <summary>
@@ -1487,17 +1326,61 @@ export function SettingsSurface() {
                   {signingOut ? "正在退出…" : "退出登录"}
                 </button>
               </SettingRow>
-              {/* 审计 F42：整个账户区此前**没有注销账号的入口**，最接近的只有"退出登录"，
-                  而那是两件事。产品当前不提供自助注销，那就在页面上说明白怎么才能删，
-                  而不是让人在设置里翻三圈找不到、或者以为退出登录就等于注销。 */}
-              <SettingRow
-                title="删除账号"
-                detail="当前版本不提供自助删除。要彻底删掉账号与其中的学习数据，请用注册邮箱写信给支持邮箱说明；删除后无法恢复，我们会在核实身份后处理。"
-              >
-                <span className="tag">当前不提供</span>
-              </SettingRow>
             </div>
           </details>
+        </section>
+
+        <section className="settings-account-column" aria-label="当前空间">
+          <div className="space-identity">
+            <span className="space-seal">{currentWorkspace?.name?.slice(0, 1) ?? "学"}</span>
+            <div>
+              <h3>{currentWorkspace?.name ?? "未选择学习空间"}</h3>
+              <div className="meta">
+                <span>{roleLabel(currentRole)}</span>
+                <span>{spaceTypeLabel(currentWorkspace?.workspaceType)}</span>
+              </div>
+            </div>
+          </div>
+          {workspaceListFailure ? (
+            <SettingsInlineState
+              title="空间列表暂时不可用"
+              detail={workspaceListFailure}
+              tone="error"
+              onRetry={() => void load()}
+            />
+          ) : null}
+          <section className="settings-group">
+            <h3 className="settings-group__title">这个空间的边界</h3>
+            <div className="ledger-field">
+              <b>数据边界</b>
+              <span className="write-line">
+                <Compass className="write-line__icon" size={12} aria-hidden="true" />
+                {dataBoundaryLine(capabilityFailure, companion?.["companion.read"])}
+              </span>
+            </div>
+          </section>
+          <SettingsWorkspaceGroup
+            workspaces={workspaces}
+            workspaceListFailure={workspaceListFailure}
+            currentWorkspace={currentWorkspace}
+            renamableWorkspace={renamableWorkspace}
+            renameValue={renameValue}
+            setRenameValue={setRenameValue}
+            switchTo={switchTo}
+            renamePersonalWorkspace={renamePersonalWorkspace}
+            leaveWorkspace={leaveWorkspace}
+            dissolveWorkspace={dissolveWorkspace}
+            leavePending={leavePending}
+            setLeavePending={setLeavePending}
+            dissolvePending={dissolvePending}
+            setDissolvePending={setDissolvePending}
+            dissolveConfirmText={dissolveConfirmText}
+            setDissolveConfirmText={setDissolveConfirmText}
+            dissolvePreview={dissolvePreview}
+            loadDissolvePreview={loadDissolvePreview}
+            switching={switching}
+            profileBusy={profileBusy}
+          />
         </section>
       </div>
     ),
@@ -1575,6 +1458,7 @@ export function SettingsSurface() {
                     value={inviteRole}
                     options={INVITE_ROLE_OPTIONS}
                     compact
+                    disabled={ownerBusy !== null}
                     onChange={(next) => setInviteRole(next)}
                   />
                 </SettingRow>
@@ -1583,6 +1467,7 @@ export function SettingsSurface() {
                     label="邀请有效期"
                     value={inviteExpiry}
                     options={INVITE_EXPIRY_OPTIONS}
+                    disabled={ownerBusy !== null}
                     onChange={setInviteExpiry}
                   />
                 </SettingRow>
@@ -1707,10 +1592,10 @@ export function SettingsSurface() {
       </>
     ),
     footerNote: isOwner && spaceIsPersonal
-      ? "个人空间没有名册可管；要一起学就新建协作空间。AI 同意与数据政策在你的账号上，在「AI 数据同意」里改。"
+      ? "个人空间仅供你使用；一起学习可创建或加入协作空间。"
       : isOwner
-        ? "邀请与成员管理只对当前空间生效；AI 同意与数据政策在你的账号上，在「AI 数据同意」里改。"
-        : "加入协作空间需要空间所有者发出的邀请码；AI 同意与数据政策始终由你本人签署，不看这里的角色。",
+        ? "邀请与成员只影响当前空间；AI 同意始终由每个人自己决定。"
+        : "邀请码由空间所有者发出；AI 数据同意仍由你本人决定。",
     /**
      * 这一屏的清单有两种"没露出"：Owner／Member 看到的是完全不同的两组行（成员侧只有
      * 一句边界说明），而两份列表各自还在自己的读取分支里（读不到／还没读完／空的）。
@@ -1759,17 +1644,15 @@ export function SettingsSurface() {
       <>
         <section className="settings-group">
           <h3 className="settings-group__title">环境主题</h3>
-              <SettingsThemePicker theme={theme} setTheme={setTheme} />
+          <SettingsThemePicker theme={theme} setTheme={setTheme} themeMode={themeMode} onFollowTime={followTimeTheme} />
         </section>
 
-        {/* 两列是两个平行的「本机开关」：动效与目录各占一格，谁也不比谁矮一层。
-            引导是一次性的动作，不是可以和它们并排比较的偏好，所以它单独成组
-            落在下面，而不是挤在右列里再包一层容器。 */}
         <div className="settings-columns">
           <section className="settings-group">
             <h3 className="settings-group__title">动效与无障碍</h3>
+            <SettingsMotionPreview />
             <div className="settings-rows">
-              <SettingRow title="动效等级" detail="场景移动、页面进入与卡片的运动量。">
+              <SettingRow title="动效等级" detail="完整保留轻快回弹，轻量减少运动，关闭则直接就位。">
                 <HudSegmented label="动效等级" value={motionMode} options={MOTION_OPTIONS} onChange={setMotionMode} compact />
               </SettingRow>
               <SettingRow title="系统减少动效" detail="由操作系统决定，优先级高于上面的等级。">
@@ -1788,26 +1671,6 @@ export function SettingsSurface() {
           </section>
         </div>
 
-        <section className="settings-group">
-          <h3 className="settings-group__title">首页引导</h3>
-          <div className="settings-rows">
-            <SettingRow title="重播首次进入引导" detail="回到学习空间并重播入场说明，不改动任何学习记录。">
-              <button
-                className="button"
-                type="button"
-                onClick={() => {
-                  closeSurface();
-                  // 重播引导只有一条路：v2 首页的入场序列。以前这里分叉过，v1 走
-                  // openOnboarding()——那个模态随 v1 首页一起删了。
-                  replayIntro();
-                }}
-              >
-                <CircleHelp size={13} aria-hidden="true" />
-                重播
-              </button>
-            </SettingRow>
-          </div>
-        </section>
       </>
     ),
     footerNote: "主题、动效、目录行为与入场引导都只影响这台设备，不写入工作区。",
@@ -1816,7 +1679,7 @@ export function SettingsSurface() {
      * 而不是"这里可以选什么"。「重播」那行只有一个按钮、没有取值，不登记（她答不出任何事实）。
      */
     readable: {
-      filters: [{ label: "环境主题", value: themeLabel(theme) }],
+      filters: [{ label: "环境主题", value: themeMode === "system" ? "随时间变化" : themeLabel(theme) }],
       items: [
         { label: "动效等级", state: segmentedValue(MOTION_OPTIONS, motionMode) ?? undefined },
         { label: "系统减少动效", state: switchStateLine(reducedMotion) },
@@ -1832,140 +1695,13 @@ export function SettingsSurface() {
 
   /** A control block, then what the companion is currently allowed to do. */
   const companionPanel = (): SettingsPanel => ({
-    title: "语音与伴星",
-    body: (
-      <>
-        {/* 两个并排的控制块：块头一律「标题 + 说明（+ 自己的开关）」，和账户
-            卡里的个人档案/修改密码块同一副骨架，不再各挂一枚装饰图标。 */}
-        <div className="settings-columns">
-          <div className="settings-block">
-            <div className="settings-block__head">
-              <div>
-                <b>伴星大小</b>
-                <p>只影响伴星在场景与页面里的显示比例，位置由你自己拖动决定。</p>
-              </div>
-            </div>
-            <HudSlider
-              label="伴星大小"
-              value={companionScale}
-              min={MIN_COMPANION_SCALE}
-              max={MAX_COMPANION_SCALE}
-              step={0.05}
-              onChange={setCompanionScale}
-              format={percentLine}
-              hint={`${Math.round(MIN_COMPANION_SCALE * 100)}% – ${Math.round(MAX_COMPANION_SCALE * 100)}%`}
-            />
-          </div>
-
-          <div className="settings-block">
-            <div className="settings-block__head">
-              <div>
-                <b>声音</b>
-                <p>总静音会同时关闭环境音与伴星语音，只影响这台设备。</p>
-              </div>
-              <HudSwitch checked={!masterMuted} onChange={(next) => setMasterMuted(!next)} label="伴星与环境音" />
-            </div>
-          </div>
-        </div>
-
-        {capabilityFailure ? (
-          <SettingsInlineState
-            title="伴星能力状态暂时不可用"
-            detail={capabilityFailure}
-            tone="error"
-            onRetry={() => void load()}
-          />
-        ) : null}
-
-        <section className="settings-group">
-          <h3 className="settings-group__title">作答方式</h3>
-          <SettingsAnswerModeRow
-            answerMode={answerMode}
-            answerModeRead={answerModeRead}
-            answerModeSaving={answerModeSaving}
-            changeAnswerMode={changeAnswerMode}
-          />
-        </section>
-
-        <section className="settings-group">
-          <h3 className="settings-group__title">声音</h3>
-          <SettingsVoicePanel
-            voicePreference={voicePreference}
-            voicePreferenceRead={voicePreferenceRead}
-            voiceSaving={voiceSaving}
-            voicePlayer={voicePlayer}
-            changeVoice={changeVoice}
-            previewVoice={previewVoice}
-            onTogglePlayer={toggleVoicePlayer}
-          />
-
-          {/* 一个播放器反复换源，而不是每条一个 audio：试听多了会留下一排进度各异的控件。
-              控件全部自己画：原生 controls 是浏览器的灰色条，和这套纸面没有关系，
-              而且没试听过的时候它显示 0:00 / 0:00，看起来像坏了。 */}
-          <audio ref={voiceAudioRef} className="settings-voice__source" preload="none" />
-          {voicePreviewError ? (
-            <SettingsInlineState title="这一段没试听成" detail={voicePreviewError} tone="error" />
-          ) : null}
-        </section>
-
-        <section className="settings-group">
-          <h3 className="settings-group__title">伴星能力</h3>
-          <SettingsCompanionStatus
-            live2dStatus={live2dStatus}
-            capabilities={capabilities}
-            companion={companion}
-            features={features ?? null}
-            actionReason={actionReason}
-            featureReason={featureReason}
-            nativeReason={nativeReason}
-          />
-        </section>
-      </>
-    ),
-    footerNote: "伴星的能力全部来自服务器返回的开关状态；形态选择只保存在这台设备上。",
-    /**
-     * 这一屏的状态字有优先级：**挡住整块的错误 > 正在发生的试听 > 页脚那句说明**。
-     * 清单里那一行「默认作答方式」在没读回来之前屏上写的就是「读取中…」，登记照它写，
-     * 不写成一个看起来像读到了的值。音色那几行只登记**当前引擎**那份名单（换引擎时
-     * 屏上整批换掉，两批名字混报是她最容易跟着说错的东西）。
-     */
-    readable: {
-      ...(capabilityFailure || voicePreviewError || voicePlayer
-        ? {
-            statusLine: capabilityFailure
-              ? "伴星能力状态暂时不可用"
-              : voicePreviewError
-                ? "这一段没试听成"
-                : voicePlayerLine(voicePlayer),
-            notice: capabilityFailure ?? voicePreviewError ?? undefined,
-          }
-        : {}),
-      metrics: [{ label: "伴星大小", value: percentLine(companionScale) }],
-      filters: [{ label: "伴星与环境音", value: switchStateLine(!masterMuted) }],
-      items: [
-        {
-          label: "默认作答方式",
-          state: answerMode
-            ? segmentedValue(ANSWER_MODE_OPTIONS, answerMode.preference) ?? undefined
-            : pendingReadLine(answerModeRead),
-        },
-        {
-          label: "用哪套声音合成",
-          state: voicePreference
-            ? segmentedValue(TTS_ENGINE_OPTIONS, voicePreference.engine) ?? undefined
-            : pendingReadLine(voicePreferenceRead),
-        },
-        ...voicesForEngine(voicePreference?.engine).map((option) => ({
-          label: option.name,
-          ...(voicePreference?.voice === option.voice ? { state: VOICE_IN_USE_TAG } : {}),
-        })),
-        { label: "模型状态", state: live2dStatusLabel(live2dStatus) },
-        { label: "实时对话", state: capabilityChipLabel("action", companion?.["companion.sendMessage"]) ?? undefined },
-        { label: "对话能力", state: capabilityChipLabel("feature", features?.companion_dialogue_v1.state) ?? undefined },
-        { label: "本机语音识别", state: capabilityChipLabel("native", capabilities?.nativeCapabilities.asr) ?? undefined },
-        { label: "语音对话", state: capabilityChipLabel("feature", features?.companion_voice_dialogue_v1.state) ?? undefined },
-      ].slice(0, 12),
-    },
+    title: "伴星设置",
+    body: <SettingsCompanionPanel onReadable={setCompanionReadable} capabilities={<>
+      {capabilityFailure ? <SettingsInlineState title="伴星能力状态暂时不可用" detail={capabilityFailure} tone="error" onRetry={() => void load()} /> : null}
+      <SettingsCompanionStatus live2dStatus={live2dStatus} capabilities={capabilities} companion={companion} features={features ?? null} actionReason={actionReason} featureReason={featureReason} nativeReason={nativeReason} />
+    </>} />,
+    footerNote: "人格与陪伴记录在伴星中心管理；这里调整运行规则与设备偏好。",
+    readable: companionReadable,
   });
 
   /** Consent drawn as the path the data takes, then the policy your own account signs. */
@@ -2007,28 +1743,7 @@ export function SettingsSurface() {
               onRetry={() => void load()}
             />
           ) : null}
-          <section className="settings-group">
-            <h3 className="settings-group__title">数据路径</h3>
-            <div className="settings-boundary" role="img" aria-label="工作区内容经伴星读取后到达外发边界">
-              <div className="settings-boundary__node">
-                <span>工作区内容</span>
-                <b>来源 · 笔记 · 目标</b>
-                <small>留在当前空间</small>
-              </div>
-              <span className="settings-boundary__arrow" aria-hidden="true"><ArrowRight size={15} /></span>
-              <div className="settings-boundary__node">
-                <span>伴星读取</span>
-                <CapabilityChip value={companion?.["companion.read"]} reason={actionReason(companion?.["companion.read"])} />
-                <small>你确认后才写入</small>
-              </div>
-              <span className="settings-boundary__arrow" aria-hidden="true"><ArrowRight size={15} /></span>
-              <div className={`settings-boundary__node${companion?.["companion.read"] === "allowed" ? "" : " settings-boundary__node--stop"}`}>
-                <span>外发边界</span>
-                <b>{companion?.["companion.read"] === "allowed" ? "可能发送至模型服务" : "当前不会外发"}</b>
-                <small>由你本人签署</small>
-              </div>
-            </div>
-          </section>
+          <p className="settings-notice-paper">使用外部 AI 时，完成任务所需的笔记、回答或图片可能发送到模型服务。下面的同意和外发策略跟着你的账号走；切换学习空间时沿用。</p>
 
           <section
             ref={consentGroupRef}
@@ -2054,7 +1769,7 @@ export function SettingsSurface() {
               {!signed ? (
                 <SettingRow
                   title="签署同意"
-                  detail={`用你的账号签署当前版本（${AI_CONSENT_VERSION}），签署后内容才允许离开本机。签署只对你自己生效，换到别人的空间也要重新签署。`}
+                  detail={`用你的账号签署当前版本（${AI_CONSENT_VERSION}），签署后内容才允许离开本机。签署只对你自己生效，在同一部署切换空间时沿用这份同意。`}
                 >
                   <button type="button" className="button primary" disabled={busy} onClick={() => void signConsent()}>
                     {aiSaving === "consent" ? "签署中…" : "签署"}
@@ -2072,11 +1787,12 @@ export function SettingsSurface() {
             audit={{ auditPage, auditOffset, auditBusy, auditFailure, auditPagingLine }}
             onSavePolicy={saveDataPolicy}
             loadAuditPage={loadAuditPage}
+            auditPageSize={AUDIT_PAGE_SIZE}
             formatWhen={formatObjectiveDateTime}
           />
 
-          <section className="settings-group">
-            <h3 className="settings-group__title">伴星授权</h3>
+          <details className="settings-disclosure" open={aiDetailsOpen} onToggle={event => setAiDetailsOpen(event.currentTarget.open)}>
+            <summary><span><b>查看当前 AI 可用范围</b><small>这些状态由同意、策略与服务能力决定。</small></span></summary>
             <p className="settings-group__note">由上面的同意与数据策略推导，这一组不能单独修改。</p>
             <div className="settings-rows settings-rows--split">
               {COMPANION_GRANTS.map((grant) => (
@@ -2085,20 +1801,12 @@ export function SettingsSurface() {
                 </SettingRow>
               ))}
             </div>
-          </section>
-
-          <p className="settings-notice-paper">
-            本产品没有用户级模型或供应商选择，也没有 BYOK 配置；AI 同意与数据策略是
-            账号级设置，由你在上面这几行签署和调整，不随空间转移。
-          </p>
+          </details>
         </>
       ),
       footerNote: "改动会立刻存到服务器，这一页的能力状态同时刷新。",
-      /**
-       * 「数据路径」那幅示意图**不登记**：三个格子的字面是图形语言（节点名＋一枚芯片），
-       * 拼成一句话就是造句子；同一批事实由「伴星授权」那四行逐行说，四行都在屏上。
-       * 外发清单也不逐条登记——一屏列得下二十条，载荷只有十二格，登记的是屏上那行翻页读数。
-       */
+      // Folded capability rows stay out of the page facts until the reader opens them.
+      // Audit entries use their paging line because the page-facts contract is capped at twelve rows.
       readable: {
         ...(capabilityFailure ? { statusLine: "授权能力状态暂时不可用", notice: capabilityFailure } : {}),
         items: [
@@ -2116,10 +1824,10 @@ export function SettingsSurface() {
               : isOwner && auditPage && auditPage.items.length === 0
                 ? [{ label: "还没有外发记录" }]
                 : []),
-          ...COMPANION_GRANTS.map((grant) => ({
+          ...(aiDetailsOpen ? COMPANION_GRANTS.map((grant) => ({
             label: grant.title,
             state: capabilityChipLabel("action", companion?.[grant.key]) ?? undefined,
-          })),
+          })) : []),
         ].slice(0, 12),
       },
     };
@@ -2132,6 +1840,7 @@ export function SettingsSurface() {
       <>
         <section className="settings-group">
           <h3 className="settings-group__title">空间内容</h3>
+          <p className="settings-group__note">导出的存档只包含「{currentWorkspace?.name ?? "当前空间"}」；其他空间各自保存。</p>
           <div className="settings-stats">
             <div className="settings-stat" data-loading={inventoryLoading ? "true" : undefined}>
               <b>{countOrDash(inventory?.sources)}</b>
@@ -2157,21 +1866,6 @@ export function SettingsSurface() {
         </section>
 
         <div className="settings-columns">
-          <section className="settings-group">
-            <h3 className="settings-group__title">归属</h3>
-            <div className="settings-rows">
-              <SettingRow
-                title="当前工作区"
-                detail={`${spaceTypeLabel(currentWorkspace?.workspaceType)} · 你的身份是 ${currentRole === "owner" ? "Owner" : "Member"}`}
-              >
-                <span className="write-line">{currentWorkspace?.name ?? "未选择"}</span>
-              </SettingRow>
-              <SettingRow title="可见空间" detail="这些空间的数据彼此隔离，不会互相索引。">
-                <span className="write-line">{`${workspaces.length} 个`}</span>
-              </SettingRow>
-            </div>
-          </section>
-
           <SettingsExportGroup
             currentRole={currentRole}
             exporting={exporting}
@@ -2183,9 +1877,9 @@ export function SettingsSurface() {
           />
         </div>
 
-        <section className="settings-group">
-          <h3 className="settings-group__title">本机接入状态</h3>
-          <p className="settings-group__note">只报告这台设备上真实存在的客户端通道，不把“平台理论上支持”写成已实现。</p>
+        <details className="settings-disclosure" open={deviceDetailsOpen} onToggle={event => setDeviceDetailsOpen(event.currentTarget.open)}>
+          <summary><span><b>设备功能状态</b><small>遇到剪贴板、通知或更新问题时，在这里查看接入情况。</small></span></summary>
+          <p className="settings-group__note">这里显示这台设备实际可用的功能。</p>
           {capabilityFailure ? (
             <SettingsInlineState title="本机能力状态暂时不可用" detail={capabilityFailure} tone="error" onRetry={() => void load()} />
           ) : (
@@ -2202,15 +1896,15 @@ export function SettingsSurface() {
             </div>
           )}
           <p className="settings-group__note settings-group__note--after">“未接入”表示客户端没有这条链路，不是系统权限被拒绝。</p>
-        </section>
+        </details>
 
         {/* 搜索索引维护（F-025 / F-011，Owner）。 */}
         {currentRole === "owner" ? (
           <details className="settings-disclosure">
             <summary>
               <span>
-                <b>高级维护</b>
-                <small>检测或重建当前空间的搜索索引。</small>
+                <b>搜索异常排查</b>
+                <small>明明有内容却搜不到时，检查或重建这个空间的搜索目录。</small>
               </span>
             </summary>
             <div className="settings-rows">
@@ -2246,16 +1940,16 @@ export function SettingsSurface() {
         ) : null}
       </>
     ),
-    footerNote: "内容数量来自各库列表接口；本机状态来自主进程注册的真实通道。",
+    footerNote: "导出会生成一份只读存档；学习内容仍保留在当前空间。",
     /**
      * 状态字取**屏上从上到下第一张报错纸**（内容数量那一块在上方，先挡住它说的事）。
-     * 「高级维护」整块收在 `<details>` 里，默认没露出 ⇒ 漂移与重建的读数一条都不登记；
+     * 「搜索异常排查」整块收在 `<details>` 里，默认没露出 ⇒ 漂移与重建的读数一条都不登记；
      * 三颗导出／导入按钮那几行没有取值，也不登记。
      */
     readable: {
       ...(inventoryFailure
         ? { statusLine: "空间内容数量暂时不可用", notice: inventoryFailure }
-        : capabilityFailure
+        : capabilityFailure && deviceDetailsOpen
           ? { statusLine: "本机能力状态暂时不可用", notice: capabilityFailure }
           : {}),
       metrics: [
@@ -2263,13 +1957,11 @@ export function SettingsSurface() {
         { label: "笔记", value: countOrDash(inventory?.notes) },
         { label: "学习卡", value: countOrDash(inventory?.objectives) },
       ],
-      items: [
-        { label: "当前工作区", state: currentWorkspace?.name ?? "未选择" },
-        { label: "可见空间", state: `${workspaces.length} 个` },
+      items: deviceDetailsOpen ? [
         { label: "剪贴板链接识别", state: capabilityChipLabel("native", capabilities?.nativeCapabilities.clipboard) ?? undefined },
         { label: "系统通知", state: capabilityChipLabel("native", capabilities?.nativeCapabilities.notifications) ?? undefined },
         { label: "自动更新", state: capabilityChipLabel("native", capabilities?.nativeCapabilities.updates) ?? undefined },
-      ],
+      ] : [],
     },
   });
 
@@ -2281,13 +1973,6 @@ export function SettingsSurface() {
     data: dataPanel,
     management: managementPanel,
   };
-
-  // 切换分区时回到卡片顶部：body 是同一个滚动容器，上一分区留下的滚动
-  // 位置会让新分区从中间开始，标题直接被滚过去。scrollTo 在测试环境
-  // （jsdom）不存在，用可选调用兜底。
-  useEffect(() => {
-    bodyRef.current?.scrollTo?.({ top: 0 });
-  }, [section]);
 
   const panel = PANELS[section]();
 
@@ -2332,68 +2017,20 @@ export function SettingsSurface() {
       };
   usePageReadableView(settingsReadableView);
 
-  // The fade says “there is more below”, not merely “this body can scroll”. It
-  // therefore follows scroll position and disappears at the end of the paper.
-  useLayoutEffect(() => {
-    const element = bodyRef.current;
-    if (!element) return undefined;
-    const sync = () => setBodyHasMore(element.scrollHeight - element.scrollTop - element.clientHeight > 4);
-    sync();
-    const resizeObserver = new ResizeObserver(sync);
-    const mutationObserver = new MutationObserver(sync);
-    resizeObserver.observe(element);
-    mutationObserver.observe(element, { childList: true, subtree: true, characterData: true });
-    element.addEventListener("scroll", sync, { passive: true });
-    return () => {
-      resizeObserver.disconnect();
-      mutationObserver.disconnect();
-      element.removeEventListener("scroll", sync);
-    };
-  }, [section, loading, failure]);
-
-  return (
-    <HudPage page="settings">
-      <section className="settings-hud" data-layout="single">
-        <nav className="settings-menu" aria-label="设置分类">
-          <h2>设置目录</h2>
-          {SECTIONS.map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              className={section === id ? "active" : undefined}
-              aria-current={section === id ? "page" : undefined}
-              onClick={() => { setSettingsSection(id); setNotice(null); setFailureNotice(null); }}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-
-        {loading ? (
-          <article className="settings-card settings-card--state">
-            <SurfaceDataState kind="loading" message={SETTINGS_LOADING.message} detail={SETTINGS_LOADING.detail} />
-          </article>
-        ) : failure ? (
-          <article className="settings-card settings-card--state">
-            <SurfaceDataState kind="error" message={SETTINGS_UNAVAILABLE} detail={failure} onRetry={() => void load()} />
-          </article>
-        ) : (
-          <article className="settings-card preference" aria-labelledby="settings-panel-title">
-            <h2 id="settings-panel-title" className="title">{panel.title}</h2>
-            <div className="settings-body" ref={bodyRef} data-has-more={bodyHasMore ? "true" : undefined}>
-              {panel.body}
-            </div>
-            {failureNotice
-              ? <p id="settings-action-message" className="settings-notice settings-notice--error" role="alert">{failureNotice}</p>
-              : notice ? <p id="settings-action-message" className="settings-notice" role="status">{notice}</p> : null}
-            {panel.footerNote ? (
-              <div className="settings-actions">
-                <span className="small">{panel.footerNote}</span>
-              </div>
-            ) : null}
-          </article>
-        )}
-      </section>
-    </HudPage>
-  );
+  return <SettingsBook
+    section={section}
+    onSectionChange={next => { setSettingsSection(next); setNotice(null); setFailureNotice(null); }}
+    workspaceName={currentWorkspace?.name}
+    loading={loading}
+    failure={failure}
+    onRetry={() => void load()}
+    title={panel.title}
+    footerNote={panel.footerNote}
+    notice={notice}
+    failureNotice={failureNotice}
+    onDismissNotice={() => { setNotice(null); setFailureNotice(null); }}
+    onReplayIntro={() => { closeSurface(); replayIntro(); }}
+  >{(visitedSections.includes(section) ? visitedSections : [...visitedSections, section]).map(id => <Activity key={id} mode={id === section ? "visible" : "hidden"}>
+    <div className="settings-section-content" data-settings-active={id === section ? "true" : "false"}>{id === section ? panel.body : PANELS[id]().body}</div>
+  </Activity>)}</SettingsBook>;
 }

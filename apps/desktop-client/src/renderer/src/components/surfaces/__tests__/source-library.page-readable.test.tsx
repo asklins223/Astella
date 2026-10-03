@@ -66,7 +66,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   Reflect.deleteProperty(window, "ailearn");
-  useRoomStore.setState({ pageReadableView: null });
+  useRoomStore.setState(state => ({ pageReadableView: null, sourceIndexTab: "all", workspaceScopeRevision: state.workspaceScopeRevision + 1 }));
 });
 
 describe("来源库：她读到的与屏幕上的是同一份", () => {
@@ -127,7 +127,7 @@ describe("来源库：她读到的与屏幕上的是同一份", () => {
     expect(view.items).toBeUndefined();
     expect(view.notice).toContain("来源库还是空的");
     expect(view.notice).toBe(
-      `${screen.getByText("来源库还是空的").textContent}：${screen.getByText(/^用左边的采集栏/).textContent}`,
+      `${screen.getByText("来源库还是空的").textContent}：${screen.getByText("收下第一份想读的材料吧。").textContent}`,
     );
   });
 

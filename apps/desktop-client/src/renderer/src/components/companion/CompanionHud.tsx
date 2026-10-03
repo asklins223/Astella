@@ -42,18 +42,11 @@ export interface CompanionHudSettings {
   readonly pageMuted: boolean;
   readonly taskActive: boolean;
   readonly focusUntilTaskEnd: boolean;
-  readonly accountState: CompanionAccountStateV1 | null;
-  readonly accountSaving: boolean;
-  readonly accountFailure: string | null;
-  /** 伴星形态（模型注册表 id）与切换回调：快捷设置里的「形态」行。 */
-  readonly companionModelId: WindowLive2DModelId;
-  readonly onCompanionModelChange: (modelId: WindowLive2DModelId) => void;
   readonly onScale: (value: number) => void;
   readonly onTogglePageMuted: () => void;
   readonly onToggleFocus: () => void;
   readonly onHide: () => void;
   readonly onResetPosition: () => void;
-  readonly onPatchAccount: (patch: Omit<CompanionAccountPatch, "revision">) => void;
 }
 
 export interface CompanionHudProps {
@@ -1224,7 +1217,7 @@ export function CompanionHud({
                   <blockquote>
                     <Quote size={15} aria-hidden="true" />
                     <span>{chat.feedSelection}</span>
-                    <button type="button" onClick={chat.dismissFeedSelection} aria-label="移除引用"><X size={14} /></button>
+                    <button type="button" className="companion-hud__quote-remove" onClick={chat.dismissFeedSelection} aria-label="移除引用"><X size={14} /></button>
                   </blockquote>
                 ) : null}
 
@@ -1335,7 +1328,7 @@ export function CompanionHud({
                         setSettingsOpen(true);
                       }}
                     >
-                      <Settings2 size={18} /><span><strong>伴星设置</strong><small>大小、声音、行为与账号偏好</small></span>
+                      <Settings2 size={18} /><span><strong>此页陪伴</strong><small>此页陪伴与全部伴星设置</small></span>
                     </button>
                   </div>
                 ) : (
@@ -1463,12 +1456,13 @@ function CompanionEdgeSettings({ settings, motionMode, anchorRef, onClose }: {
   return (
     <aside ref={panelRef} className="companion-hud__edge-panel" data-companion-owned="true" data-side={side} data-motion={motionMode} role="dialog" aria-label="伴星设置">
       <header>
-        <strong>伴星设置</strong>
+        <strong>此页陪伴</strong>
         <button ref={closeRef} type="button" onClick={onClose} aria-label="关闭伴星设置"><X size={16} /></button>
       </header>
       <div className="companion-hud__edge-body">
         <CompanionQuickSettings
           settings={settings}
+          onOpenCenter={() => { const room = useRoomStore.getState(); room.setCompanionCenterTarget({ tab: "overview" }); room.invoke("open-companion-center"); onClose(); }}
           onOpenVoiceSettings={() => {
             // 与伴星引导去签署 AI 同意走同一条通道（`companion-chat-session.tsx` 的
             // guideToConsent）：设分区 → 开设置页。面板自己关掉，不留在设置页上面。
@@ -1483,211 +1477,26 @@ function CompanionEdgeSettings({ settings, motionMode, anchorRef, onClose }: {
   );
 }
 
-function CompanionQuickSettings({ settings, onOpenVoiceSettings }: {
+function CompanionQuickSettings({ settings, onOpenVoiceSettings, onOpenCenter }: {
   readonly settings: CompanionHudSettings;
   readonly onOpenVoiceSettings: () => void;
+  readonly onOpenCenter: () => void;
 }) {
-  const account = settings.accountState;
-  /**
-   * 静默时段边界不成立时的那句原因。它只是这一屏的即时反馈，不是账号状态的一部分，
-   * 所以住在本地：下一次成功的改动就把它冲掉。
-   */
-  const [quietNotice, setQuietNotice] = useState("");
-  const applyQuietBoundary = (
-    current: NonNullable<CompanionAccountPatch["quietHours"]>,
-    boundary: QuietHoursBoundary,
-    value: string,
-  ) => {
-    const result = quietHoursWithBoundary(current, boundary, value);
-    if (!result.ok) {
-      setQuietNotice(result.reason);
-      return;
-    }
-    setQuietNotice("");
-    settings.onPatchAccount({ quietHours: result.value });
-  };
   const scaleSpan = Math.max(0.0001, settings.scaleMax - settings.scaleMin);
   const fillPercent = Math.min(100, Math.max(0, Math.round(((settings.scale - settings.scaleMin) / scaleSpan) * 100)));
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const quiet = account?.quietHours ?? null;
-  const permissionLevel = account?.agentSettings?.permissionLevel ?? "guided";
-  const permissionDescription = permissionLevel === "read_only"
-    ? "只会读取和查询，不执行任何改动。"
-    : permissionLevel === "guided"
-      ? "每次产生改动前都会先向你确认。"
-      : "跳转、设置与填充可自动执行；不可恢复的操作仍会确认。";
-  /**
-   * 这一行只说用户在这块面板上真能懂的一件事：读到没有、存进去没有。
-   *
-   * 以前它写的是 `Live2D · 版本 3`（渲染器名 + 服务端那条 revision）。两个词都不属于
-   * 用户能决定的事，而且"版本 N"读起来像软件版本（方案 35 B2）。读取失败已经由下面
-   * 那条 `companion-hud__note--error` 说清楚，这里不再重复一遍。
-   */
-  const accountMeta = !account
-    ? "正在读取伴星的设置…"
-    : settings.accountSaving
-      ? "正在保存…"
-      : null;
-  return (
-    <div className="companion-hud__settings">
-      <section className="companion-hud__setting-group">
-        <h4 className="companion-hud__setting-title">伴星</h4>
-        <label className="companion-hud__scale">
-          <span>大小 <output>{Math.round(settings.scale * 100)}%</output></span>
-          <input
-            type="range"
-            min={settings.scaleMin}
-            max={settings.scaleMax}
-            step="0.01"
-            value={settings.scale}
-            style={{ "--fill": `${fillPercent}%` } as CSSProperties}
-            onChange={(event) => settings.onScale(Number(event.currentTarget.value))}
-          />
-        </label>
-        <div className="companion-hud__setting-buttons">
-          <button type="button" aria-pressed={settings.pageMuted} data-quiet={settings.pageMuted || undefined} onClick={settings.onTogglePageMuted}>{settings.pageMuted ? "恢复本页提示" : "在此页保持安静"}</button>
-          {settings.taskActive ? <button type="button" aria-pressed={settings.focusUntilTaskEnd} onClick={settings.onToggleFocus}>{settings.focusUntilTaskEnd ? "结束专注静音" : "专注到任务结束"}</button> : null}
-          <button type="button" onClick={settings.onResetPosition}><RotateCcw size={13} />重置位置</button>
-          <button type="button" onClick={settings.onHide}>暂时隐藏伴星</button>
-        </div>
-        <div className="companion-hud__setting-row">
-          <span className="companion-hud__setting-label">形态</span>
-          <div className="companion-hud__choice" aria-label="伴星形态">
-            {(Object.keys(WINDOW_LIVE2D_MODEL_REGISTRY) as ReadonlyArray<WindowLive2DModelId>).map((id) => (
-              <button
-                key={id}
-                type="button"
-                aria-pressed={settings.companionModelId === id}
-                onClick={() => settings.onCompanionModelChange(id)}
-              >
-                {WINDOW_LIVE2D_MODEL_REGISTRY[id].displayName}
-              </button>
-            ))}
-          </div>
-        </div>
-        {/* 声音不在这块面板里造第二份：引擎、音色与试听住在设置的「语音与伴星」那一节，
-            这里只把人带过去。以前入口写着"大小、声音、行为与账号偏好"却没有这一行，
-            用户找不到"声音"会以为功能没做（方案 35 B1）。 */}
-        <div className="companion-hud__setting-row">
-          <span className="companion-hud__setting-label">声音</span>
-          <div className="companion-hud__choice" aria-label="声音">
-            <button type="button" onClick={onOpenVoiceSettings}>朗读与音色</button>
-          </div>
-        </div>
-      </section>
-
-      <section className="companion-hud__setting-group">
-        <h4 className="companion-hud__setting-title">陪伴与账号</h4>
-        {accountMeta ? <p className="companion-hud__setting-meta">{accountMeta}</p> : null}
-        {account ? (
-          <>
-            <div className="companion-hud__setting-row">
-              <span className="companion-hud__setting-label">在线状态</span>
-              <div className="companion-hud__choice" aria-label="在线状态">
-                {COMPANION_PRESENCE_OPTIONS.map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={account.presence?.presence === value}
-                    disabled={settings.accountSaving}
-                    onClick={() => settings.onPatchAccount({ presence: { presence: value } })}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="companion-hud__setting-row">
-              <span className="companion-hud__setting-label">主动介入</span>
-              <div className="companion-hud__choice" aria-label="主动介入强度" aria-describedby="companion-intervention-description">
-                {COMPANION_INTERVENTION_OPTIONS.map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={account.interventionLevel === value}
-                    disabled={settings.accountSaving}
-                    title={companionInterventionHint(value)}
-                    onClick={() => settings.onPatchAccount({ interventionLevel: value })}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {/* 人格页有个同名的三档「活跃度」（管说话长短）。两件事必须在这儿分开说，
-                否则用户只会以为同一个设置出现在两个地方、还各写了一个中间档的名字。 */}
-            <p id="companion-intervention-description" className="companion-hud__permission-note">
-              {companionInterventionHint(account.interventionLevel ?? "moderate")}
-            </p>
-            <div className="companion-hud__setting-row">
-              <span className="companion-hud__setting-label">助理权限</span>
-              <div className="companion-hud__choice" aria-label="助理权限档位" aria-describedby="companion-permission-description">
-                {COMPANION_AGENT_PERMISSION_OPTIONS.map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={permissionLevel === value}
-                    disabled={settings.accountSaving}
-                    title={value === "read_only"
-                      ? "只允许查询，不做任何改动"
-                      : value === "guided"
-                        ? "每次改动前先征求确认"
-                        : "预授权：跳转/设置/填充直接执行（不可恢复操作除外）"}
-                    onClick={() => settings.onPatchAccount({ agentPermissionLevel: value as CompanionAgentPermissionLevel })}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <p id="companion-permission-description" className="companion-hud__permission-note">{permissionDescription}</p>
-            <div className="companion-hud__setting-row">
-              <span className="companion-hud__setting-label">静默时段</span>
-              <button
-                type="button"
-                role="switch"
-                className="companion-hud__switch"
-                aria-checked={Boolean(quiet)}
-                aria-label="静默时段"
-                disabled={settings.accountSaving}
-                onClick={() => settings.onPatchAccount({ quietHours: quiet ? quietHoursPatch(false, timezone) : quietHoursPatch(true, timezone) })}
-              >
-                <span aria-hidden="true" />
-              </button>
-            </div>
-            {quiet ? (
-              <div className="companion-hud__time-range">
-                <input
-                  type="time"
-                  value={quiet.startLocal}
-                  disabled={settings.accountSaving}
-                  aria-label="静默开始时间"
-                  onChange={(event) => { applyQuietBoundary(quiet, "startLocal", event.currentTarget.value); }}
-                />
-                <span aria-hidden="true">→</span>
-                <input
-                  type="time"
-                  value={quiet.endLocal}
-                  disabled={settings.accountSaving}
-                  aria-label="静默结束时间"
-                  onChange={(event) => { applyQuietBoundary(quiet, "endLocal", event.currentTarget.value); }}
-                />
-              </div>
-            ) : null}
-            {/* 静默时段的边界不自己发明解释：管谁、不管谁写在同一行下面。
-                到点的提醒走的是 `evaluateProactivePolicy` 里 triggered 那条早退
-                （`companion-proactive-policy.ts:152`，在时段判定 `:160` 之前），
-                所以它不受这段管 —— 不写出来，用户只会以为开关坏了（方案 35 F5）。 */}
-            <p className="companion-hud__permission-note">
-              这段时间里她不会主动开口；你约过的提醒到点照样会来。
-            </p>
-            {quietNotice ? (
-              <p className="companion-hud__note companion-hud__note--error" role="status">{quietNotice}</p>
-            ) : null}
-          </>
-        ) : null}
-        {settings.accountFailure ? <p className="companion-hud__note companion-hud__note--error" role="status">{settings.accountFailure}</p> : null}
-      </section>
-    </div>
-  );
+  return <div className="companion-hud__settings">
+    <section className="companion-hud__setting-group"><h4 className="companion-hud__setting-title">此刻怎么陪着你</h4>
+      <label className="companion-hud__scale"><span>大小 <output>{Math.round(settings.scale * 100)}%</output></span><input type="range" min={settings.scaleMin} max={settings.scaleMax} step="0.01" value={settings.scale} style={{ "--fill": `${fillPercent}%` } as CSSProperties} aria-label="快捷调整伴星大小" onChange={event => settings.onScale(Number(event.currentTarget.value))} /></label>
+      <div className="companion-hud__setting-buttons">
+        <button type="button" aria-pressed={settings.pageMuted} data-quiet={settings.pageMuted || undefined} onClick={settings.onTogglePageMuted}>{settings.pageMuted ? "恢复本页提示" : "在此页保持安静"}</button>
+        {settings.taskActive ? <button type="button" aria-pressed={settings.focusUntilTaskEnd} onClick={settings.onToggleFocus}>{settings.focusUntilTaskEnd ? "结束专注静音" : "专注到任务结束"}</button> : null}
+        <button type="button" onClick={settings.onResetPosition}><RotateCcw size={13} />重置位置</button>
+        <button type="button" onClick={settings.onHide}>暂时隐藏伴星</button>
+      </div>
+    </section>
+    <section className="companion-hud__setting-group"><h4 className="companion-hud__setting-title">继续了解</h4>
+      <div className="companion-hud__setting-buttons"><button type="button" onClick={onOpenCenter}>伴星中心</button><button type="button" onClick={onOpenVoiceSettings}>全部伴星设置</button></div>
+      <p className="companion-hud__permission-note">对话与人格在伴星中心，打扰规则、声音与数据在设置。</p>
+    </section>
+  </div>;
 }

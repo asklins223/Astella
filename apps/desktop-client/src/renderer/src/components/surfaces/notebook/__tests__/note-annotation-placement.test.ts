@@ -5,7 +5,7 @@
  * 这里量的是它**画在哪、画不画**。两条都不该省。
  */
 import { describe, expect, it } from "vitest";
-import { annotationPlacements, placementsByBlock, type PlacementBlock } from "../note-annotation-placement.ts";
+import { annotationPlacements, chronologicalAnnotations, placementsByBlock, type PlacementBlock } from "../note-annotation-placement.ts";
 import type { NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
 
 const BLOCK0 = "提取练习让大脑重新构建记忆痕迹。";
@@ -69,6 +69,15 @@ const annotation = (a: Parameters<typeof anchor>[0]): NoteAnnotationV1 => ({
 });
 
 describe("批注落位（可编辑预览 / 纯编辑共用）", () => {
+  it("最新回执插在列表开头时，新批注仍接在已有编号之后", () => {
+    const first = annotation({ id: "a1", from: { block: 0, offset: 0 }, to: { block: 0, offset: 7 } });
+    const second = { ...first, annotationId: "a2", createdAt: "2026-10-02T00:01:00.000Z" };
+    const third = { ...first, annotationId: "a3", createdAt: "2026-10-02T00:02:00.000Z" };
+    const before = annotationPlacements(chronologicalAnnotations([second, first]), BLOCKS);
+    const after = annotationPlacements(chronologicalAnnotations([third, second, first]), BLOCKS);
+    expect(after.slice(0, 2)).toEqual(before);
+    expect(after.at(-1)).toMatchObject({ annotationId: "a3", number: 3 });
+  });
   it("正控制：锚点核得上就画，且范围落在块内", () => {
     const placed = annotationPlacements(
       [annotation({ id: "a1", from: { block: 0, offset: 0 }, to: { block: 0, offset: 7 } })],

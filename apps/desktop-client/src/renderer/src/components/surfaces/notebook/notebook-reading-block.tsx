@@ -28,7 +28,8 @@ import { parseMarkdownTable } from "./note-blocks.ts";
 import { parseImageBlock } from "./surface-data.tsx";
 import { useSourceImage } from "../source/source-image.ts";
 import { ZoomableReadingImage } from "../source/image-viewer.tsx";
-import { noteAnchorsOverlap, noteExplanationBusy, noteExplanationLabel, type NoteCompanionExplanation } from "../../companion/note-companion-explanation";
+import { noteReadingTextNodes } from "./note-reading-text";
+import { noteExplanationBusy, noteExplanationLabel, type NoteCompanionExplanation } from "../../companion/note-companion-explanation";
 
 /**
  * 阅读正文里**每一块的锚点**（39d W4-6 刀二）：教学面的依据要能"点开定位到那一块"，
@@ -71,8 +72,6 @@ export function ReadingBlock(props: {
   const openAnnotation = props.annotations?.find((annotation) => annotation.annotationId === props.openAnnotationId);
   const annotationMark = openAnnotation ? noteAnchorBlockRangeV1(props.block, openAnnotation.anchor) : null;
   const explanations = (props.companionExplanations ?? []).filter(item => noteAnchorBlockRangeV1(props.block, item.target.anchor));
-  const blockAnnotations = (props.annotations ?? []).filter(item => noteAnchorBlockRangeV1(props.block, item.anchor));
-  const overlappingAnnotations = blockAnnotations.filter(item => blockAnnotations.some(other => other.annotationId !== item.annotationId && noteAnchorsOverlap(item.anchor, other.anchor)));
   return (
     <div
       className="reading-block"
@@ -98,8 +97,6 @@ export function ReadingBlock(props: {
           <span className="note-explanation-progress__open">查看</span>
         </button>
       </div>)}
-      {overlappingAnnotations.length > 1 ? <div className="note-overlapping-annotations" aria-label="这段原文的批注">{overlappingAnnotations.map(item => <button type="button" className="text-action" key={item.annotationId}
-        onClick={() => props.onOpenAnnotation?.(item)}>批注 {(props.annotations ?? []).findIndex(annotation => annotation.annotationId === item.annotationId) + 1} · {item.sourceMessageId ? "伴星解释" : item.generationJobId ? "白话解释" : "自己的批注"}</button>)}</div> : null}
       {props.pendingAnnotationTask && props.pendingAnnotationTask.status !== "ready" ? <button type="button" className="text-action" onClick={props.onOpenPendingAnnotation}>查看这句解释的进度</button> : null}
     </div>
   );
@@ -108,15 +105,13 @@ export function ReadingBlock(props: {
 function SquareStopMark() { return <span className="note-explanation-progress__stop" aria-hidden="true">▪</span>; }
 
 export function textRangeAtOffsets(root: HTMLElement, start: number, end: number): Range | null {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let current = 0;
   let startNode: Text | null = null;
   let startNodeOffset = 0;
   let endNode: Text | null = null;
   let endNodeOffset = 0;
   let lastNode: Text | null = null;
-  while (walker.nextNode()) {
-    const text = walker.currentNode as Text;
+  for (const text of noteReadingTextNodes(root)) {
     const next = current + text.data.length;
     if (!startNode && start >= current && start <= next) {
       startNode = text;

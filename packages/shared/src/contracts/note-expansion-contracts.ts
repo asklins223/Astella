@@ -58,6 +58,8 @@ export const noteExpansionTaskV1Schema = z.strictObject({
 export type NoteExpansionTaskV1 = z.infer<typeof noteExpansionTaskV1Schema>;
 export const noteExpansionLatestTaskV1Schema = z.strictObject({ version: z.literal(1), task: noteExpansionTaskV1Schema.nullable() });
 export const noteExpansionLatestTaskQueryV1Schema = z.strictObject({ noteVersionId: z.string().uuid() });
+export const noteExpansionTaskListQueryV1Schema = z.strictObject({ noteVersionId: z.string().uuid(), before: z.string().uuid().optional() });
+export const noteExpansionTaskPageV1Schema = z.strictObject({ version: z.literal(1), items: z.array(noteExpansionTaskV1Schema).max(20), nextCursor: z.string().uuid().nullable() });
 
 export const noteExpansionReviewV1Schema = z.strictObject({
   drafts: z.array(z.strictObject({

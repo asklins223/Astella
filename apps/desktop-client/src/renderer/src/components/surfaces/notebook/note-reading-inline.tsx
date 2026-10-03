@@ -8,6 +8,7 @@ import { useSourceImage } from "../source/source-image.ts";
 import { openExternalLink } from "../../../app/external-link";
 import { NoteAnnotationMark } from "./note-annotation-mark";
 import type { NoteCompanionExplanation } from "../../companion/note-companion-explanation";
+import { NoteMath } from "./note-math";
 
 /**
  * 阅读页怎么画一块正文。
@@ -27,6 +28,7 @@ export type NoteInlineAtom =
   | { readonly kind: "text" | "strong" | "em" | "strike" | "code"; readonly text: string; readonly start: number; readonly end: number }
   | { readonly kind: "link"; readonly text: string; readonly href: string; readonly start: number; readonly end: number }
   | { readonly kind: "image"; readonly alt: string; readonly src: string; readonly start: number; readonly end: number }
+  | { readonly kind: "math"; readonly text: string; readonly value: string; readonly display: boolean; readonly start: number; readonly end: number }
   | { readonly kind: "break"; readonly start: number; readonly end: number };
 
 /** CommonMark 的"反斜杠转义只挡 ASCII 标点"，还原的就是这一批。 */
@@ -47,27 +49,30 @@ const ESCAPABLE: Record<string, true> = { text: true, strong: true, em: true, st
 
 /** 一段块的正文 → 原子序列（含行与行之间那个 `\n` 对应的 `break`）。 */
 export function noteInlineAtoms(content: string): NoteInlineAtom[] {
-  const lines = noteBlockText(content).split("\n");
   const atoms: NoteInlineAtom[] = [];
   let cursor = 0;
-  lines.forEach((line, index) => {
-    if (index > 0) {
-      atoms.push({ kind: "break", start: cursor, end: cursor });
-    }
-    for (const segment of parseInlineMarkdown(line)) {
+  for (const segment of parseInlineMarkdown(noteBlockText(content))) {
       if (segment.kind === "image") {
         // 图片不占显示字符：高亮的偏移量算的是"看得见的字"。
         atoms.push({ kind: "image", alt: segment.alt, src: segment.src, start: cursor, end: cursor });
         continue;
       }
-      const text = ESCAPABLE[segment.kind] === true ? unescapeMarkdown(segment.text) : segment.text;
+      if (segment.kind === "math") {
+        const text = segment.text.replace(/\n/g, "");
+        atoms.push({ ...segment, text, start: cursor, end: cursor + text.length });
+        cursor += text.length;
+        continue;
+      }
+      segment.text.split("\n").forEach((line, index) => {
+      if (index > 0) atoms.push({ kind: "break", start: cursor, end: cursor });
+      const text = ESCAPABLE[segment.kind] === true ? unescapeMarkdown(line) : line;
       const at = { start: cursor, end: cursor + text.length };
       atoms.push(segment.kind === "link"
         ? { kind: "link", text, href: segment.href, ...at }
         : { kind: segment.kind, text, ...at });
       cursor += text.length;
-    }
-  });
+      });
+  }
   return atoms;
 }
 
@@ -222,19 +227,30 @@ export function renderNoteInline(
           onOpenGallery={options.onOpenGallery}
         />
       );
+    } else if (atom.kind === "math") {
+      const anchored = annotations.find(item => item.range[0] < atom.end && item.range[1] > atom.start);
+      const formula = <NoteMath source={atom.text} value={atom.value} display={atom.display} />;
+      const badges = annotations.filter(item => item.endsHere && item.range[1] > atom.start && item.range[1] <= atom.end);
+      node = <span key={key}>{anchored ? <NoteAnnotationMark annotation={anchored.annotation}
+        open={anchored.annotation.annotationId === options.openAnnotationId} onOpen={options.onOpenAnnotation}>{formula}</NoteAnnotationMark> : formula}
+        {badges.length ? <span className="note-annotation-badges" aria-label="原句的批注角标">{badges.map(item => <NoteAnnotationMark key={item.annotation.annotationId}
+          annotation={item.annotation} number={item.number} badge open={item.annotation.annotationId === options.openAnnotationId}
+          onOpen={options.onOpenAnnotation} onDelete={options.onDeleteAnnotation?.(item.annotation)}>{null}</NoteAnnotationMark>)}</span> : null}
+      </span>;
     } else {
       node = renderTextAtom(atom, key, mark, [from, to], annotations, options.onOpenAnnotation, options.openAnnotationId, explanationRanges(options), options.onDeleteAnnotation);
     }
     lines[lines.length - 1]?.push(node);
   });
   if (options.lineClass) {
-    return lines.map((nodes, index) => <span className={options.lineClass} key={`line-${index}`}>{nodes}</span>);
+    const sourceLines = noteInlineDisplayText(content).split("\n");
+    return lines.map((nodes, index) => <span className={options.lineClass} data-list-prefixed={/^\s*(?:[-*+]|\d+[.)])\s/.test(sourceLines[index] ?? "") || undefined} key={`line-${index}`}>{nodes}</span>);
   }
   return lines.flatMap((nodes, index) => (index === 0 ? nodes : [<br key={`break-${index}`} />, ...nodes]));
 }
 
 function renderTextAtom(
-  atom: Extract<NoteInlineAtom, { text: string }>,
+  atom: Exclude<Extract<NoteInlineAtom, { text: string }>, { kind: "math" }>,
   key: string,
   mark: readonly [number, number] | null,
   [from, to]: readonly [number, number],
@@ -270,13 +286,17 @@ function renderTextAtom(
       const content = !annotation ? <span className={mark && start >= from && end <= to ? "mark" : undefined}>{text}</span>
         : <NoteAnnotationMark annotation={annotation}
         open={annotation.annotationId === openAnnotationId}
-        number={anchored!.endsHere && end === anchored!.range[1] ? anchored!.number : undefined}
         onOpen={onOpenAnnotation}
         // 只有这段末尾（`endsHere`）挂删除入口：跨块的锚会在每一段都出现一枚 ✕，
         // 删的是**同一条**批注——按一次删对，另一枚留在原地会让「删干净了吗」没法答。
         onDelete={onDeleteAnnotation && anchored!.endsHere ? onDeleteAnnotation(annotation) : undefined}
         >{text}</NoteAnnotationMark>;
-      return <span key={start} className={explanation ? "note-explanation-anchor" : undefined} data-phase={explanation?.phase}>{content}</span>;
+      const badges = annotations.filter(item => item.endsHere && item.range[1] === end);
+      return <span key={start}><span className={explanation ? "note-explanation-anchor" : undefined} data-phase={explanation?.phase}>{content}</span>
+        {badges.length ? <span className="note-annotation-badges" aria-label="原句的批注角标">{badges.map(item => <NoteAnnotationMark key={item.annotation.annotationId}
+          annotation={item.annotation} number={item.number} badge open={item.annotation.annotationId === openAnnotationId}
+          onOpen={onOpenAnnotation} onDelete={onDeleteAnnotation?.(item.annotation)}>{null}</NoteAnnotationMark>)}</span> : null}
+      </span>;
     });
   }
   if (atom.kind === "link") {

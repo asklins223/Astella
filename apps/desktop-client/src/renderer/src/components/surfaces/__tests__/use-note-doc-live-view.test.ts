@@ -74,6 +74,38 @@ beforeEach(() => { vi.useFakeTimers(); installApi(); });
 afterEach(() => { vi.useRealTimers(); });
 
 describe("渲染进程那份文档", () => {
+  it("个人笔记切换版本后读回恢复的正文，继续编辑仍是可提交的增量", async () => {
+    const server = new Y.Doc();
+    Y.applyUpdate(server, Uint8Array.from(atob(seedUpdate()), (char) => char.charCodeAt(0)));
+    installApi(b64(Y.encodeStateAsUpdate(server)));
+    const { result, rerender } = renderHook(({ version }) =>
+      useNoteDocLiveView(NOTE_ID, false, () => undefined, null, undefined, version),
+      { initialProps: { version: "v2" } },
+    );
+    await settle();
+    expect(result.current.blocks.map((block) => block.content)).toEqual(["第一段"]);
+
+    const text = (server.getXmlFragment("content").get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    server.transact(() => { text.delete(0, text.length); text.insert(0, "恢复的旧版"); });
+    state.mockResolvedValue({ ok: true, data: { update: b64(Y.encodeStateAsUpdate(server)), revision: 4, backfilled: false, shareScope: "private" } });
+    rerender({ version: "v1" });
+    await settle();
+    expect(result.current.blocks.map((block) => block.content)).toEqual(["恢复的旧版"]);
+    expect(result.current.dirty).toBe(false);
+    expect(subscribe).not.toHaveBeenCalled();
+
+    act(() => {
+      const restored = (result.current.fragment!.get(0) as Y.XmlElement).get(0) as Y.XmlText;
+      restored.insert(restored.length, "，继续写");
+    });
+    await act(async () => { await result.current.flush(); });
+    const sent = syncUpdate.mock.calls[0]![0] as { update: string };
+    Y.applyUpdate(server, Uint8Array.from(atob(sent.update), (char) => char.charCodeAt(0)));
+    expect(text.toString()).toBe("恢复的旧版，继续写");
+    expect(server.store.pendingStructs).toBeNull();
+    server.destroy();
+  });
+
   it("起点到了才交出 fragment，并画着文档里的正文", async () => {
     const { result } = renderHook(() => useNoteDocLiveView(NOTE_ID, true, () => undefined));
     await settle();

@@ -116,6 +116,7 @@ it("记忆详情会展示当前作者/版本，并可展开查看带来源的旧
   });
   renderPanel({
     focus: current,
+    items: [current],
     revisions: [{
       revision: 1,
       kind: "preference",
@@ -139,11 +140,11 @@ it("记忆详情会展示当前作者/版本，并可展开查看带来源的旧
       supersededAt: "2026-09-22T00:00:00.000Z",
     }],
   });
-  expect(screen.getByText("用户修订")).toBeTruthy();
-  expect(screen.getByText("第 2 版")).toBeTruthy();
+  expect(screen.getByText("用户修订 · 有据")).toBeTruthy();
+  expect(screen.getByText(/第 2 版/)).toBeTruthy();
   expect(screen.getByText("查看旧版本（1）")).toBeTruthy();
   expect(screen.getByText("旧版内容")).toBeTruthy();
-  expect(screen.getByText("来源：模型推断")).toBeTruthy();
+  expect(screen.getByText(/来源：模型推断/)).toBeTruthy();
 });
 
 it("记忆详情展示适用条件和有效时间窗", () => {
@@ -154,11 +155,11 @@ it("记忆详情展示适用条件和有效时间窗", () => {
     validFrom: "2098-12-31T00:00:00.000Z",
     validUntil: "2099-01-02T00:00:00.000Z",
   });
-  renderPanel({ focus: current });
-  expect(screen.getByText("适用条件：用户明确表示精力不足时")).toBeTruthy();
-  expect(screen.getByText(/有效期：.*2099/)).toBeTruthy();
-  expect(screen.getByText("来源：用户原话")).toBeTruthy();
-  expect(screen.getByText("尚未生效")).toBeTruthy();
+  renderPanel({ focus: current, items: [current] });
+  expect(screen.getByText("用户明确表示精力不足时")).toBeTruthy();
+  expect(screen.getByText(/2098.*至.*2099/)).toBeTruthy();
+  expect(screen.getByText("用户原话")).toBeTruthy();
+  expect(screen.getAllByText("尚未生效")[0]).toBeTruthy();
 });
 
 function publishedView(): PageReadableV1 | null {
@@ -185,7 +186,7 @@ describe("伴星中心 · 记忆：登记的清单就是屏上露出的那份", 
 
     // 后代选择器而不是 `> button`：§4.5.8 要求「关于你的」与「她的看法」分成
     // 两段，条目现在住在 <section> 里面，不是列表的直接子元素。
-    const rows = [...document.querySelectorAll(".companion-record-list button")];
+    const rows = [...document.querySelectorAll(".cc-memory-list button")];
     expect(rows).toHaveLength(2);
     // 候选那条排在最前——这条顺序正是"面板自己筛的"这件事的证据。
     expect(rows[0].querySelector("strong")?.textContent).toBe("这周在啃音色的跨语言迁移");
@@ -193,10 +194,10 @@ describe("伴星中心 · 记忆：登记的清单就是屏上露出的那份", 
       rows.map((row) => row.querySelector("strong")?.textContent),
     );
     expect(view.items?.map((entry) => entry.ordinal)).toEqual([1, 2]);
-    // `<span>` 上屏的是「类型· 状态 · 相对时间」（第一段与第二段之间只有一个空格）；
-    // **最后那段相对时间随钟漂移，不进载荷**（合同：多久之前一律服务端从 issuedAt 算）。
-    expect(rows[0].querySelector("span")?.textContent).toContain(" · ");
-    expect(view.items?.[0].state).toBe(rows[0].querySelector("span")?.textContent?.split(" · ")[0]);
+    const kind = rows[0].querySelector(".cc-memory-list__kind")!;
+    const state = kind.querySelector("small")?.textContent;
+    const type = kind.childNodes[0]?.textContent;
+    expect(view.items?.[0].state).toBe(`${type}· ${state}`);
     expect(view.items?.[0].state).not.toMatch(/前|刚刚|今天/);
     expect(view.statusLine).toBeUndefined();
   });
@@ -208,7 +209,7 @@ describe("伴星中心 · 记忆：登记的清单就是屏上露出的那份", 
     expect(view.items).toBeUndefined();
     expect(filterValue("关键词")).toBe("对不上的词");
     expect(view.notice).toBe(
-      `${document.querySelector(".companion-section-state strong")?.textContent}：${document.querySelector(".companion-section-state span")?.textContent}`,
+      `${document.querySelector(".cc-state strong")?.textContent}：${document.querySelector(".cc-state p")?.textContent}`,
     );
   });
 
@@ -216,7 +217,7 @@ describe("伴星中心 · 记忆：登记的清单就是屏上露出的那份", 
     renderPanel({ section: { ok: false, message: "伴星数据暂时不可用" } });
     await waitFor(() => expect(publishedView()).not.toBeNull());
     const view = publishedView()!;
-    expect(view.statusLine).toBe(document.querySelector(".companion-section-state strong")?.textContent);
+    expect(view.statusLine).toBe(document.querySelector(".cc-state strong")?.textContent);
     expect(view.items).toBeUndefined();
     expect(view.notice).toBe(`${view.statusLine}：伴星数据暂时不可用`);
   });

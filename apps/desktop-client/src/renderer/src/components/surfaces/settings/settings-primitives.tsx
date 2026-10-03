@@ -1,25 +1,13 @@
-/**
- * 设置页的两个小骨架：设置行与壳内状态句。
- *
- * ## 为什么从 `settings-surface.tsx` 拆出来（2026-09-29）
- *
- * 那个文件 3139 行，其中 `SettingsSurface` 单个函数 2603 行。这两个是里面**耦合最干净**的
- * 两块：一行文字加一个右格、一句话加一颗重试——纯 props，纯 JSX，不读任何页面级状态。
- *
- * 它们先搬出来有两个作用：
- *  1. 给 `settings-surface.tsx` 的拆分立一个可复制的样板（「一块壳 = 一个组件 + 显式 props」），
- *     后面按设置域（外观 / 账户 / 边界 / 复习）切时照着做；
- *  2. 它们是本项目**仅有的**两个 React 骨架级原语（`HudPage` 之外），所以「原语只做这几个」
- *     这件事在代码上开始有了形状——新页面要新增原语时，先在这里加，而不是各页面各造一个。
- *
- * ⚠️ 搬过来时**逐字保留了 JSX**：类名是 `settings-row--selected` / `settings-row__body`，
- * `SettingsInlineState` 用的是 `data-tone` 加 `role="alert" / "status"`（读屏要靠它，
- * 删了就是一处无障碍回退）。第一次拆的时候凭印象重写过一版，把这三样都改了——
- * 类名闭合守卫不会抓（那些类仍然有规则），但屏上会长出另一套行样式。
- *
- * 判据见 `AGENTS.md` §工程结构与分层：单函数超过 400 行或 hook 超过 25 个就是信号。
- */
+/** 设置行与局部状态，保留真实状态和可访问文案，由设置册样式统一摆位。 */
 import type { ReactNode } from "react";
+
+export type SettingsReadable = {
+  readonly statusLine?: string;
+  readonly notice?: string;
+  readonly metrics?: readonly { readonly label: string; readonly value: string }[];
+  readonly filters?: readonly { readonly label: string; readonly value: string }[];
+  readonly items?: readonly { readonly label: string; readonly state?: string }[];
+};
 
 export function SettingRow({
   mark,

@@ -7,6 +7,8 @@ import {
   noteExpansionListQueryV1Schema,
   noteExpansionPageV1Schema,
   noteExpansionTaskV1Schema,
+  noteExpansionTaskListQueryV1Schema,
+  noteExpansionTaskPageV1Schema,
 } from "@ailearn/shared/note-expansion-contracts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { requireSession } from "../identity/middleware.ts";
@@ -15,6 +17,7 @@ import {
   getLatestNoteExpansionTask,
   getNoteExpansionTask,
   listNoteExpansions,
+  listNoteExpansionTasks,
   NoteExpansionError,
   startNoteExpansionTask,
   updateNoteExpansionTaskDrafts,
@@ -70,6 +73,17 @@ export async function noteExpansionRoutes(app: FastifyInstance) {
     try {
       const result = await withWorkspaceTransaction(scope, (tx) => getLatestNoteExpansionTask(tx, scope, params.data.noteId, query.data.noteVersionId));
       return noteExpansionLatestTaskV1Schema.parse(result);
+    } catch (error) { return sendError(reply, error); }
+  });
+
+  app.get("/v2/notes/:noteId/expansion-tasks", async (req, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const params = noteParams.safeParse(req.params), query = noteExpansionTaskListQueryV1Schema.safeParse(req.query);
+    if (!params.success || !query.success) return reply.code(400).send({ error: "invalid_request", message: "草稿批次位置无效，请重新读取。" });
+    const scope = scopeOfSession(req.session);
+    try {
+      return noteExpansionTaskPageV1Schema.parse(await withWorkspaceTransaction(scope,
+        tx => listNoteExpansionTasks(tx, scope, params.data.noteId, query.data.noteVersionId, query.data.before)));
     } catch (error) { return sendError(reply, error); }
   });
 

@@ -2,7 +2,7 @@ import { Check, CircleAlert, Layers3, X } from "lucide-react";
 import { CandidateAnswerPaper } from "./candidate-answer-paper";
 import { CandidateText } from "./candidate-text";
 import { cardStrategyPresentation } from "./card-strategy-presentation";
-import { candidateDecisionLabel, exposureLabel, knowledgeFormLabel, practiceItemLabel, REJECT_REASONS, transformationLabel } from "./candidate-review-model";
+import { candidateDecisionLabel, exposureLabel, practiceItemLabel, REJECT_REASONS } from "./candidate-review-model";
 import type { CardGenerationSession } from "./use-card-generation-session";
 import type { CandidateReviewMotion } from "./use-candidate-review-motion";
 import { CandidateCardSpace } from "./candidate-card-space";
@@ -61,12 +61,8 @@ export function CandidateReviewCard({ session, motion, onReview }: {
                 <h3 className="candidate-dossier__title">{strategy.cue}</h3>
                 <p className="candidate-dossier__summary"><CandidateText text={card.objective.publicSummary} /></p>
                 <dl className="candidate-dossier__facts">
-                  <div><dt>这张卡练什么</dt><dd>{transformationLabel(card.transformationKind)}</dd></div>
-                  <div><dt>理解形态</dt><dd>{knowledgeFormLabel(card.objective.knowledgeForm)}</dd></div>
                   <div><dt>预计用时</dt><dd>约 {card.estimatedReviewSeconds} 秒</dd></div>
-                  <div><dt>质量状态</dt><dd>{candidateDecisionLabel(card)}</dd></div>
                   <div><dt>看过答案</dt><dd>{exposureLabel(exposure, exposureFailure)}</dd></div>
-                  <div><dt>候选版本</dt><dd>v{card.revision} · 计划 {card.planVersion}</dd></div>
                 </dl>
                 <p className="candidate-dossier__notice">翻面只看公开档案，不会展示答案或记录你看过答案。</p>
               </> : null}

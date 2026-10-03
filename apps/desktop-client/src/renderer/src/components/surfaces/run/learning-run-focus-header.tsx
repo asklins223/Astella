@@ -44,7 +44,6 @@ export function LearningRunFocusRail(props: {
       <strong className="learning-run-focus__mode">{header.modeLabel}</strong>
       <div className="learning-run-focus__target">
         <span>{activeTask ? header.isNoteRound ? "这轮的一次尝试" : `问题 ${activeTask.sequence ?? "?"} · ${interaction ?? ""}` : phaseLabels[header.phase]}</span>
-        {header.isNoteRound ? null : <strong title={header.targetSummary}>{header.targetSummary}</strong>}
       </div>
       <span className="learning-run-focus__eligibility">{eligibilityLabel(header.eligibility)}</span>
       <div className="learning-run-focus__clock"><b>{formatClock(elapsedSeconds)}</b><small>{clockPaused ? "已暂停计时" : "专注时间"}</small></div>

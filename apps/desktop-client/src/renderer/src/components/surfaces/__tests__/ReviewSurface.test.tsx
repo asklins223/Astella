@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../../../app/room-store.ts";
 import { ReviewSurface } from "../review/ReviewSurface.tsx";
@@ -483,11 +483,14 @@ describe("ReviewSurface · 牌堆", () => {
     }
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(items[19].reviewId));
 
+    const card = deck.querySelector('.deck-card[data-depth="0"]') as HTMLElement;
+    const xOf = () => Number(/translate3d\(([-\d.]+)px/.exec(card.style.transform)?.[1]);
+    const before = xOf();
     movePointer(deck, "pointerdown", 400);
     movePointer(deck, "pointermove", 360);
 
-    // 40px 就是 40px：末尾这一张是"还能往前走"的，不该被压成 40 × 0.35。
-    expect(deck.style.getPropertyValue("--deck-drag-x")).toBe("-40px");
+    // 从当前呈现位置接手，40px 的手势就是 40px 的位移。
+    expect(xOf() - before).toBeCloseTo(-40);
     movePointer(deck, "pointerup", 360);
   });
 
@@ -643,19 +646,19 @@ describe("ReviewSurface · slip with no card", () => {
     stubGateway([], {}, true);
     render(<ReviewSurface />);
 
-    expect(await screen.findByText("这一页没有读到真实的到期队列，因此不给理由。")).toBeTruthy();
-    expect(screen.queryByText("今天没有到期项，理由条也随之留空。")).toBeNull();
+    expect(await screen.findByText("暂时没读到队列。连接恢复后，再来看看需要温习的卡片。")).toBeTruthy();
+    expect(screen.queryByText("按自己的节奏来。回书桌看看，或写下一点新的想法。")).toBeNull();
   });
 
   it("still reports a genuinely empty queue as an empty day", async () => {
     stubGateway([], {});
     render(<ReviewSurface />);
 
-    expect(await screen.findByText("今天没有到期项，理由条也随之留空。")).toBeTruthy();
+    expect(await screen.findByText("按自己的节奏来。回书桌看看，或写下一点新的想法。")).toBeTruthy();
   });
 });
 
-describe("ReviewSurface · 稍后提醒", () => {
+describe("ReviewSurface · 明天再提醒", () => {
   it("disables the whole action row while a request is in flight", async () => {
     stubGateway(THREE, THREE_LABELS, false, {
       // A defer that never settles holds the busy flag for observation.
@@ -666,11 +669,14 @@ describe("ReviewSurface · 稍后提醒", () => {
     const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
-    fireEvent.click(screen.getByRole("button", { name: "稍后提醒" }));
+    fireEvent.click(screen.getByRole("button", { name: "明天再提醒" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "正在延后…" })).toBeTruthy());
 
     expect((screen.getByRole("button", { name: /开始到期复习/ }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "查看来源" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "下一张到期项" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(deck, { key: "ArrowRight" });
+    expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId);
   });
 
   it("defers the front card, refetches the queue, and says the due date did not move", async () => {
@@ -685,7 +691,9 @@ describe("ReviewSurface · 稍后提醒", () => {
     const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
-    fireEvent.click(screen.getByRole("button", { name: "稍后提醒" }));
+    const deferButton = screen.getByRole("button", { name: "明天再提醒" });
+    deferButton.focus();
+    fireEvent.click(deferButton);
 
     await waitFor(() => expect(gateway.review.defer).toHaveBeenCalledTimes(1));
     const deferRequest = gateway.review.defer.mock.calls[0][0].request;
@@ -697,6 +705,7 @@ describe("ReviewSurface · 稍后提醒", () => {
     await waitFor(() => expect(gateway.review.getQueue.mock.calls.length).toBe(2));
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[1].reviewId));
     expect(await screen.findByText("已把这一项推迟到明天再提醒；它的到期时间没有变。")).toBeTruthy();
+    expect(document.activeElement).toBe(deck);
   });
 
   it("treats a stale defer as a queue refresh instead of a dead end", async () => {
@@ -715,7 +724,7 @@ describe("ReviewSurface · 稍后提醒", () => {
     const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
-    fireEvent.click(screen.getByRole("button", { name: "稍后提醒" }));
+    fireEvent.click(screen.getByRole("button", { name: "明天再提醒" }));
 
     expect(await screen.findByText("这一项的状态刚变过，队列已经按最新情况刷新。")).toBeTruthy();
     await waitFor(() => expect(gateway.review.getQueue.mock.calls.length).toBe(2));
@@ -734,7 +743,7 @@ describe("ReviewSurface · 稍后提醒", () => {
     const deck = await screen.findByRole("group", { name: "复习队列" });
     await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
 
-    fireEvent.click(screen.getByRole("button", { name: "稍后提醒" }));
+    fireEvent.click(screen.getByRole("button", { name: "明天再提醒" }));
 
     expect(await screen.findByText("延后没送出去，这一项还在队列里。")).toBeTruthy();
     expect(screen.getByRole("button", { name: "重试延后" })).toBeTruthy();
@@ -752,6 +761,53 @@ describe("ReviewSurface · 稍后提醒", () => {
 
     window.dispatchEvent(new Event("focus"));
     await waitFor(() => expect(gateway.review.getQueue).toHaveBeenCalledTimes(2));
+  });
+
+  it("retries the failed item after the reader has flipped to another card", async () => {
+    const gateway = stubGateway(THREE, THREE_LABELS, false, {
+      defer: async () => ({ ok: false, error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "user_action" } }),
+    });
+    render(<ReviewSurface />);
+    const deck = await screen.findByRole("group", { name: "复习队列" });
+    await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
+    fireEvent.click(screen.getByRole("button", { name: "明天再提醒" }));
+    await screen.findByRole("button", { name: "重试延后" });
+    fireEvent.click(screen.getByRole("button", { name: "下一张到期项" }));
+    expect(deck.getAttribute("data-review-id")).toBe(THREE[1].reviewId);
+    fireEvent.click(screen.getByRole("button", { name: "重试延后" }));
+    await waitFor(() => expect(gateway.review.defer).toHaveBeenCalledTimes(2));
+    expect(gateway.review.defer.mock.calls[1][0].request.scheduleId).toBe(THREE[0].scheduleId);
+  });
+
+  it("does not steal arrow keys from the card's own controls", async () => {
+    stubGateway(THREE, THREE_LABELS);
+    render(<ReviewSurface />);
+    const deck = await screen.findByRole("group", { name: "复习队列" });
+    await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
+    fireEvent.keyDown(screen.getByRole("button", { name: "明天再提醒" }), { key: "ArrowRight" });
+    expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId);
+  });
+
+  it("keeps a reverse selection when an earlier next-page request finally arrives", async () => {
+    const gateway = stubGateway([THREE[0], THREE[1]], THREE_LABELS);
+    gateway.review.getQueue.mockResolvedValueOnce({
+      ok: true, workspaceEpoch: 1,
+      data: { version: 2, items: [THREE[0], THREE[1]], total: 3, nextCursor: "2" },
+    });
+    let finishPage!: (value: Awaited<ReturnType<typeof gateway.review.getQueue>>) => void;
+    gateway.review.getQueue.mockImplementationOnce(() => new Promise(resolve => { finishPage = resolve; }));
+    render(<ReviewSurface />);
+    const deck = await screen.findByRole("group", { name: "复习队列" });
+    await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId));
+    fireEvent.click(await screen.findByRole("button", { name: "下一张到期项" }));
+    await waitFor(() => expect(deck.getAttribute("data-review-id")).toBe(THREE[1].reviewId));
+    fireEvent.click(await screen.findByRole("button", { name: "读取下一张到期项" }));
+    await waitFor(() => expect(gateway.review.getQueue).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("button", { name: "上一张到期项" }));
+    expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId);
+    await act(async () => finishPage({ ok: true, workspaceEpoch: 1, data: { version: 2, items: [THREE[2]], total: 3, nextCursor: null } }));
+    expect(deck.getAttribute("data-review-id")).toBe(THREE[0].reviewId);
+    expect(screen.getByText(/已载入 3 \/ 3 项/)).toBeTruthy();
   });
 });
 

@@ -31,6 +31,26 @@ function install() {
 const input = () => ({ note, dirty: false, epochRef: { current: undefined }, onConfirmed: vi.fn() });
 afterEach(() => { cleanup(); Reflect.deleteProperty(window, "ailearn"); vi.restoreAllMocks(); });
 
+it("重新生成使用新请求编号，旧草稿可从批次记录重新打开；未保存修改阻止切批次和生成", async () => {
+  const api = install();
+  const listTasks = vi.fn(async () => ok({ version: 1, items: [task()], nextCursor: null }));
+  Object.assign(api, { listTasks });
+  const view = renderHook(() => useNotebookExpansionTask(input())); await act(async () => {});
+  act(() => view.result.current.setExpansionTask(current => ({ ...current!, drafts: current!.drafts.map((draft, index) => index ? draft : { ...draft, title: "保留下来的修改" }) })));
+  await act(async () => { await view.result.current.startNoteExpansionTask(); await view.result.current.openNoteExpansionTask(id(12)); });
+  expect(api.startTask).not.toHaveBeenCalled(); expect(api.getTask).not.toHaveBeenCalled();
+  await act(async () => view.result.current.persistNoteExpansionReview(view.result.current.expansionTask!.drafts));
+  const saved = view.result.current.expansionTask!;
+  await act(async () => view.result.current.startNoteExpansionTask());
+  expect(api.startTask).toHaveBeenCalledTimes(1);
+  expect(view.result.current.expansionTask?.taskId).toBe(id(12));
+  expect(view.result.current.expansionTaskHistory.find(item => item.taskId === id(3))?.drafts[0]?.title).toBe("保留下来的修改");
+  api.getTask.mockResolvedValueOnce(ok(saved));
+  await act(async () => view.result.current.openNoteExpansionTask(id(3)));
+  expect(view.result.current.expansionTask?.drafts[0]?.title).toBe("保留下来的修改");
+  expect(view.result.current.expansionTaskHistory.some(item => item.taskId === id(12))).toBe(true);
+});
+
 it("入口等待已有草稿查询并恢复上一批，连点不会新建任务", async () => {
   const api = install(), pending = deferred<Awaited<ReturnType<typeof api.latestTask>>>();
   api.latestTask.mockImplementation(() => pending.promise);

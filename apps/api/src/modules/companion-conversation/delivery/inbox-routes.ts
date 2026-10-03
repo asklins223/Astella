@@ -12,28 +12,20 @@ import { z } from "zod";
 import { requireSession } from "../../identity/middleware.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../../db/client.ts";
 import { safeSseWrite } from "../../../lib/safe-sse-write.ts";
+import { acquireSseSlot } from "../../../lib/sse-connection-limiter.ts";
 import { listInbox } from "./delivery-service.ts";
 import { subscribeCompanionInboxEvents } from "../../../lib/companion-notify.ts";
 import { isCompanionJourneyV2Enabled } from "../../../config/learning-companion-flags.ts";
 
-// ─── 连接限制（对齐 companion-events.ts 的每用户槽位模式）────────────────
-// 部署标注同 companion-events：连接计数为单进程内存态；多实例部署时每实例可
-// 各自打满上限，上线多实例前需换共享存储（Redis/Postgres）。
-const SLOTS_PER_INBOX_USER = 5;
-const inboxUserSlots = new Map<string, number>();
-
-function acquireInboxSlot(key: string): boolean {
-  const count = inboxUserSlots.get(key) ?? 0;
-  if (count >= SLOTS_PER_INBOX_USER) return false;
-  inboxUserSlots.set(key, count + 1);
-  return true;
-}
-
-function releaseInboxSlot(key: string): void {
-  const count = inboxUserSlots.get(key) ?? 0;
-  if (count <= 1) inboxUserSlots.delete(key);
-  else inboxUserSlots.set(key, count - 1);
-}
+// ─── 连接限制 ────────────────────────────────────────────────────────────
+// 2026-10-03：这里原本内联着"每用户 5 槽"的 Map 计数，而 run / card-v2 两条
+// 长连事件流一个上限都没有。现已收进 lib/sse-connection-limiter.ts 公共层，
+// 三条路由共用同一套上限，并且多了一个进程级总上限（内联版本只有每用户桶，
+// 加总不受约束）。
+//
+// 部署标注沿用原注释并补一句：计数是单进程内存态，多实例部署时每实例各自
+// 持有上限，真实总上限 = 副本数 × 本上限。横向扩展前需换共享存储。
+const SSE_NAMESPACE = "inbox";
 
 const inboxStreamQuerySchema = z.object({
   after: z.coerce.number().int().min(0).optional(),
@@ -64,18 +56,16 @@ export async function proactiveInboxRoutes(app: FastifyInstance) {
         ?? (Number.isSafeInteger(headerLastEventId) && headerLastEventId >= 0 ? headerLastEventId : 0);
       const scope = scopeOfSession(req.session);
       const slotKey = `${scope.userId}:${scope.workspaceId}`;
-      if (!acquireInboxSlot(slotKey)) {
+      const slot = acquireSseSlot(SSE_NAMESPACE, slotKey);
+      if (!slot.ok) {
         return reply.code(429).send({
           error: "too_many_connections",
-          message: "inbox stream connection limit reached",
+          message: slot.reason === "total"
+            ? "服务端 SSE 连接已达上限，请稍后重试"
+            : "inbox stream connection limit reached",
         });
       }
-      let slotReleased = false;
-      const releaseSlot = (): void => {
-        if (slotReleased) return;
-        slotReleased = true;
-        releaseInboxSlot(slotKey);
-      };
+      const releaseSlot = slot.release;
 
       // fastify 5：先 hijack 再 writeHead——writeHead 抛 ERR_STREAM_WRITE_AFTER_END
       // 只会发生在客户端已断开、socket 已终结时；hijack 前调用会让框架在

@@ -8,14 +8,27 @@ import type { NoteMarkdownEditorHandle } from "../note-markdown-editor";
 
 afterEach(cleanup);
 describe("正文视图与学习任务的边界", () => {
-  it.each(["overview", "recall", "expansion"] as const)("首次打开 %s 先确认；取消不生成，再次确认只生成一次", async kind => {
+  it.each(["overview", "recall", "expansion", "artifact"] as const)("已有 %s 仍可明确重新生成；保存失败不会启动，使用已存版保留重生成意图", async kind => {
+    const start = vi.fn(), save = vi.fn(async () => false);
+    const { result } = renderHook(() => useNotebookLearningEntry({ noteId: "n", hasUnversionedChanges: true,
+      save, start, open: vi.fn(), lookup: async () => "existing" }));
+    await act(async () => result.current.request(kind));
+    expect(start).not.toHaveBeenCalled();
+    act(() => result.current.prepare(kind, true));
+    expect(result.current.choice).toBe(kind); expect(result.current.regenerating).toBe(true);
+    await act(async () => result.current.saveAndStart());
+    expect(start).not.toHaveBeenCalled();
+    act(() => result.current.startSaved());
+    expect(start).toHaveBeenCalledExactlyOnceWith(kind, true);
+  });
+  it.each(["overview", "recall", "expansion"] as const)("打开 %s 只浏览，点页面准备动作才生成一次", async kind => {
     const start = vi.fn(), open = vi.fn();
     const { result } = renderHook(() => useNotebookLearningEntry({ noteId: "n", hasUnversionedChanges: false,
       save: async () => true, start, open, lookup: async () => "missing" }));
     await act(async () => result.current.request(kind));
-    expect(open).toHaveBeenCalledWith(kind); expect(result.current.choice).toBe(kind); expect(start).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledWith(kind); expect(result.current.choice).toBeNull(); expect(start).not.toHaveBeenCalled();
     act(() => result.current.dismiss()); expect(result.current.choice).toBeNull(); expect(start).not.toHaveBeenCalled();
-    await act(async () => result.current.request(kind)); act(() => result.current.startSaved());
+    await act(async () => result.current.request(kind)); act(() => result.current.prepare(kind));
     expect(start).toHaveBeenCalledExactlyOnceWith(kind);
   });
   it("已有结果或读取失败都不会创建生成任务", async () => {
@@ -59,7 +72,8 @@ describe("正文视图与学习任务的边界", () => {
   it("有新正文时先选版本；保存失败不调用模型，明确使用已存版才调用", async () => {
     const start = vi.fn(); const save = vi.fn(async () => false);
     const { result } = renderHook(() => useNotebookLearningEntry({ noteId: "n", hasUnversionedChanges: true, save, start, open: vi.fn(), lookup: async () => "missing" }));
-    await act(async () => result.current.request("overview")); expect(result.current.choice).toBe("overview"); expect(start).not.toHaveBeenCalled();
+    await act(async () => result.current.request("overview")); expect(result.current.choice).toBeNull();
+    act(() => result.current.prepare("overview")); expect(result.current.choice).toBe("overview"); expect(start).not.toHaveBeenCalled();
     await act(async () => result.current.saveAndStart()); expect(start).not.toHaveBeenCalled(); expect(result.current.error).toContain("版本还没存好");
     act(() => result.current.startSaved()); expect(start).toHaveBeenCalledWith("overview");
   });
@@ -70,12 +84,12 @@ describe("正文视图与学习任务的边界", () => {
     const save = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve; }));
     const input = { noteId: "n", hasUnversionedChanges: true, save, start: startOld, open: vi.fn(), lookup: async () => "missing" as const };
     const { result, rerender } = renderHook((props) => useNotebookLearningEntry(props), { initialProps: input });
-    await act(async () => result.current.request("recall"));
+    await act(async () => result.current.request("recall")); act(() => result.current.prepare("recall"));
     let pending!: Promise<void>; act(() => { pending = result.current.saveAndStart(); });
     rerender({ ...input, start: startNew });
     await act(async () => { finish(true); await pending; });
     expect(startOld).not.toHaveBeenCalled(); expect(startNew).toHaveBeenCalledWith("recall");
-    await act(async () => result.current.request("expansion")); act(() => { pending = result.current.saveAndStart(); });
+    await act(async () => result.current.request("expansion")); act(() => result.current.prepare("expansion")); act(() => { pending = result.current.saveAndStart(); });
     rerender({ ...input, noteId: "other", start: startNew });
     await act(async () => { finish(true); await pending; });
     expect(result.current.saving).toBe(false); expect(startNew).toHaveBeenCalledTimes(1);

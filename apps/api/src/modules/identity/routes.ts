@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { withWorkspaceTransaction } from "../../db/client.ts";
-import { users, workspaces } from "@ailearn/shared/db-schema/identity";
+import { users } from "@ailearn/shared/db-schema/identity";
 import { getAIPrivacySettings, listAIAuditLog, updateAIConsent, updateAIDataPolicy } from "../identity/ai-consent-service.ts";
 import { changePassword, loginWithPassword, revokeAllSessionsForUser, revokeSession } from "../identity/session-service.ts";
 import { createCollaborativeWorkspace, dissolveWorkspace, previewWorkspaceDissolve, registerWithoutInvite, renameWorkspace, resetRecoveredUserPassword } from "../identity/workspace-lifecycle-service.ts";
@@ -243,17 +243,25 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
   }, async (req) => {
     const { userId, workspaceId, membershipRole } = req.session;
     // Auth restoration must read with the validated session's RLS context too.
-    const { user, workspace } = await withWorkspaceTransaction({ workspaceId, userId }, async (tx) => ({
-      user: await tx.query.users.findFirst({ where: eq(users.id, userId) }),
-      workspace: await tx.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) }),
-    }));
+    // 2026-10-03：这里原本**并行**查 users 与 workspaces，而 workspaces 那一半
+    // 是纯重复——decodeToken 在同一个请求里已经把这一行读过了（为了 owner_id 与
+    // workspace_epoch），只是当时没把 name / workspace_type 选出来。现在那两列
+    // 挂在 req.session 上，这条路径只剩 users 一条查询，每个已认证请求少一次
+    // 往返（约 117µs，实测单进程吞吐 +15% 量级）。
+    //
+    // 复用不放宽隔离：decodeToken 那次读与这里的 workspace 事务不是同一个事务、
+    // 上下文也不同（actor vs workspace），但两者的租户谓词都是同一个
+    // workspace_id，读到的仍是"我自己这个空间"的那一行。
+    const user = await withWorkspaceTransaction({ workspaceId, userId }, async (tx) =>
+      tx.query.users.findFirst({ where: eq(users.id, userId) }),
+    );
     if (!user) throw req.server.httpErrors.notFound("user not found");
     // 2026-08-11（性能专项）：membership 已由 decodeToken 合并 JOIN 取回，
     // 不再重复查 workspace_members（原 /auth/me 共 5 次 DB 查询 → 3 次）。
     // 角色只由 isWorkspaceOwner 决定，与 requireOwner、能力投影、笔记投影同一谓词。
     const role = isWorkspaceOwner(req.session) ? "owner" : membershipRole ?? "member";
-    const workspaceType = workspace?.workspaceType ?? "personal";
-    const isPersonal = workspaceType === "personal" && workspace?.ownerId === userId;
+    const workspaceType = req.session.workspaceType ?? "personal";
+    const isPersonal = workspaceType === "personal" && req.session.workspaceOwnerId === userId;
     return {
       userId,
       workspaceId,
@@ -261,7 +269,7 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
       role,
       displayName: user.displayName ?? null,
       avatarUrl: user.avatarUrl ?? null,
-      workspaceName: workspace?.name ?? "个人工作区",
+      workspaceName: req.session.workspaceName ?? "个人工作区",
       // 类型取自 workspaces.workspace_type 这一列本身。原先它由"查看者是不是
       // owner"派生，注释还明说"别人的个人空间对我投影成 collaborative"——那是
       // 因为没有创建协作空间的入口而将就地补的洞：它让个人空间一旦被人加入就

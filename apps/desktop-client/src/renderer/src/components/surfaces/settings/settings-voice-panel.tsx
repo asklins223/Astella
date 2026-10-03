@@ -62,7 +62,7 @@ import type { useSettingsVoice } from "./use-settings-voice.ts";
             disabled={voiceSaving}
             onClick={() => void changeVoice(option.engine, option.voice)}
           >
-            用这一身
+            用这个声音
           </button>
         )}
         <button

@@ -35,6 +35,8 @@ import {
   noteExpansionPageV1Schema,
   noteExpansionReviewV1Schema,
   noteExpansionTaskV1Schema,
+  noteExpansionTaskListQueryV1Schema,
+  noteExpansionTaskPageV1Schema,
 } from "@ailearn/shared/note-expansion-contracts";
 import {
   createNoteDynamicArtifactTaskV1Schema,
@@ -707,6 +709,12 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     return ns_note.latestNoteExpansionTask(gateway.gatewayTransport, input.noteId, input.query, input.meta.requestId);
   }, noteExpansionLatestTaskV1Schema);
+
+  channel(DESKTOP_IPC_CHANNELS.noteExpansionListTasks, z.strictObject({ ...m1InputBase, noteId: uuidSchema, query: noteExpansionTaskListQueryV1Schema }), async (_event, _window, input) => {
+    requireM2Route(contract, "note.detail");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_note.listNoteExpansionTasks(gateway.gatewayTransport, input.noteId, input.query, input.meta.requestId);
+  }, noteExpansionTaskPageV1Schema);
 
   channel(DESKTOP_IPC_CHANNELS.noteExpansionGetTask, z.strictObject({ ...m1InputBase, noteId: uuidSchema, taskId: uuidSchema }), async (_event, _window, input) => {
     requireM2Route(contract, "note.detail");

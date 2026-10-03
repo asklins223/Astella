@@ -96,13 +96,19 @@ export function AnnotationDeleteControl(props: {
  */
 export function useAnnotationDeleteConfirm() {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ noteId: string; annotationId: string; message: string } | null>(null);
   return {
     confirmingId,
     /** 第一步只改本地状态——所以「先不删」永远是零副作用。 */
-    request: (annotation: NoteAnnotationV1) => setConfirmingId(annotation.annotationId),
-    cancel: () => setConfirmingId(null),
+    request: (annotation: NoteAnnotationV1) => { setFailure(null); setConfirmingId(annotation.annotationId); },
+    cancel: () => { setFailure(null); setConfirmingId(null); },
     /** 换一篇笔记时清掉：那时的确认对应的是另一篇纸上的东西。 */
-    reset: () => setConfirmingId(null),
+    reset: () => { setFailure(null); setConfirmingId(null); },
+    fail: (annotation: NoteAnnotationV1, message: string) => setFailure({
+      noteId: annotation.noteId, annotationId: annotation.annotationId, message,
+    }),
+    errorFor: (annotation: NoteAnnotationV1 | null): string | null => annotation
+      && failure?.noteId === annotation.noteId && failure.annotationId === annotation.annotationId ? failure.message : null,
     viewFor: (annotation: NoteAnnotationV1): AnnotationDeleteView => (confirmingId === annotation.annotationId ? "confirming" : "idle"),
   };
 }

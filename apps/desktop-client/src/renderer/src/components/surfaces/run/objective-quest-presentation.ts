@@ -209,7 +209,7 @@ export function learningRunFeedback(result: LearningRunResultV2): LearningRunFee
         : improvementReasons.length
           ? "这次还没有得到“已说清”的判定，具体缺口见下方。"
           : "本轮没有返回可判定的评分项，暂时不能判断对错；练习记录已保存。"),
-      gap: reasonSummary(improvementReasons, facets(result.gapFacets.length ? result.gapFacets : missing, "可以按原路线继续正式挑战。")),
+      gap: reasonSummary(improvementReasons, facets(result.gapFacets.length ? result.gapFacets : missing, "")),
       strengths: coveredReasons,
       improvements: improvementReasons,
     };

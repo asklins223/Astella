@@ -761,6 +761,8 @@ END
 $$;
 
 DO $$
+DECLARE
+  fn record;
 BEGIN
   IF to_regprocedure('public.ailearn_claim_jobs(integer,integer,integer)') IS NOT NULL THEN
     REVOKE ALL ON FUNCTION public.ailearn_claim_jobs(integer, integer, integer)
@@ -888,6 +890,23 @@ BEGIN
     GRANT EXECUTE ON FUNCTION public.ailearn_move_companion_memory_budget_tier_v1(uuid, uuid, uuid, text, text, uuid)
       TO ailearn_api, ailearn_worker;
   END IF;
+
+  -- 0345–0362：回收区恢复、期限维护与记忆整理。上方的全量 REVOKE 会
+  -- 清掉迁移授权；在这里按原有调用角色恢复，并与下面的允许/必需清单对账。
+  FOR fn IN SELECT * FROM (VALUES
+    ('public.ailearn_restore_companion_memory(uuid,uuid,uuid)', 'ailearn_api'),
+    ('public.ailearn_purge_expired_companion_memory()', 'ailearn_api, ailearn_worker'),
+    ('public.ailearn_companion_memory_retention_limits()', 'ailearn_api, ailearn_worker'),
+    ('public.ailearn_enforce_companion_memory_retention()', 'ailearn_api, ailearn_worker'),
+    ('public.ailearn_reclaim_stale_memory_organization_leases()', 'ailearn_worker'),
+    ('public.ailearn_commit_memory_organization(uuid,uuid,text,text,integer)', 'ailearn_worker'),
+    ('public.ailearn_enqueue_companion_memory_organize()', 'ailearn_worker'),
+    ('public.ailearn_companion_memory_organization_thresholds()', 'ailearn_worker')
+  ) AS required(signature, roles) LOOP
+    IF to_regprocedure(fn.signature) IS NOT NULL THEN
+      EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO %s', fn.signature, fn.roles);
+    END IF;
+  END LOOP;
 
   -- 0273：成员退出/被移出时收掉该空间的记忆（doc 34 L38）。调用方是 ailearn_api
   -- （leave / removeMember 两条路），函数本身 SECURITY DEFINER 才能越过
@@ -1017,6 +1036,54 @@ BEGIN
     REVOKE ALL ON FUNCTION public.ailearn_find_resumable_companion_journey(uuid, uuid)
       FROM PUBLIC, ailearn_worker;
     GRANT EXECUTE ON FUNCTION public.ailearn_find_resumable_companion_journey(uuid, uuid)
+      TO ailearn_api;
+  END IF;
+
+  -- 0365：运维管理面板（/admin/*）的跨租户只读视图。
+  --
+  -- 与上面同族（SECURITY DEFINER／migrator owner BYPASSRLS／只给 api），但**不给
+  -- worker** 的理由不同：worker 的队列健康度走它自己的 /metrics，那里有
+  -- `ailearn_job_queue_depth{status}`。这四支回答的是另一个问题——
+  -- 「哪一类**作业类型**在堆积」（0098 的既有函数只按 status 聚合，答不出）、
+  -- 「最近哪条作业失败了」、「谁刚做了高危动作」，都是运维视角的全局事实。
+  -- 让 worker 读审计没有对应调用方，因此按 job/queue 那一族的先例不给。
+  IF to_regprocedure('public.ailearn_admin_job_backlog()') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.ailearn_admin_job_backlog()
+      FROM PUBLIC, ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_admin_job_backlog()
+      TO ailearn_api;
+  END IF;
+  IF to_regprocedure('public.ailearn_admin_recent_job_failures(integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.ailearn_admin_recent_job_failures(integer)
+      FROM PUBLIC, ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_admin_recent_job_failures(integer)
+      TO ailearn_api;
+  END IF;
+  IF to_regprocedure('public.ailearn_admin_recent_audit(integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.ailearn_admin_recent_audit(integer)
+      FROM PUBLIC, ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_admin_recent_audit(integer)
+      TO ailearn_api;
+  END IF;
+  IF to_regprocedure('public.ailearn_admin_platform_counts()') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.ailearn_admin_platform_counts()
+      FROM PUBLIC, ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_admin_platform_counts()
+      TO ailearn_api;
+  END IF;
+
+  -- 0366：运维面板的**写**操作（重试失败作业 / 清理死信）。
+  -- 同样只给 api 不给 worker：人工重试与删除是运维的决定，不是队列消费者的事。
+  IF to_regprocedure('public.ailearn_admin_retry_failed_jobs(text,integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.ailearn_admin_retry_failed_jobs(text, integer)
+      FROM PUBLIC, ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_admin_retry_failed_jobs(text, integer)
+      TO ailearn_api;
+  END IF;
+  IF to_regprocedure('public.ailearn_admin_purge_dead_jobs(text,integer)') IS NOT NULL THEN
+    REVOKE ALL ON FUNCTION public.ailearn_admin_purge_dead_jobs(text, integer)
+      FROM PUBLIC, ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_admin_purge_dead_jobs(text, integer)
       TO ailearn_api;
   END IF;
 
@@ -1629,6 +1696,20 @@ BEGIN
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)')
     AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_purge_expired_companion_memory()')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_companion_memory_retention_limits()')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_enforce_companion_memory_retention()')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_reclaim_stale_memory_organization_leases()')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_commit_memory_organization(uuid,uuid,text,text,integer)')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_enqueue_companion_memory_organize()')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_companion_memory_organization_thresholds()')
+    AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_retire_workspace_memories_on_departure(uuid,uuid)')
@@ -1702,6 +1783,20 @@ BEGIN
       to_regprocedure('public.ailearn_find_resumable_companion_journey(uuid,uuid)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_read_companion_turn_handoff_snapshot_v1(uuid)')
+    -- 0365：运维管理面板的跨租户只读视图（队列按类型积压 / 最近失败作业 /
+    -- 最近审计 / 平台计数）。只读且只回标识与计数，不含任何正文。
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_admin_job_backlog()')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_admin_recent_job_failures(integer)')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_admin_recent_audit(integer)')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_admin_platform_counts()')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_admin_retry_failed_jobs(text,integer)')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_admin_purge_dead_jobs(text,integer)')
     -- 0273／0276：空间离开时的记忆退役与整空间解散，都是 API 路由显式调的
     -- SECURITY DEFINER 函数。下面"该有的授权不能缺"那份反向清单里已经列了它们，
     -- 而这里的白名单漏了——三处要一起改（迁移 GRANT／上面的 GRANT 块／这里），
@@ -1714,6 +1809,14 @@ BEGIN
     -- 0344：HTTP 用户请求由 API 发起，worker 侧 companion 工具也会执行同一原子函数。
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_restore_companion_memory(uuid,uuid,uuid)')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_purge_expired_companion_memory()')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_companion_memory_retention_limits()')
+    AND p.oid IS DISTINCT FROM
+      to_regprocedure('public.ailearn_enforce_companion_memory_retention()')
     AND NOT EXISTS (
       SELECT 1 FROM pg_depend d
       WHERE d.objid = p.oid AND d.deptype = 'e'
@@ -1755,6 +1858,17 @@ BEGIN
       ('ailearn_worker', 'ailearn_reclaim_stale_companion_proposals()'),
       ('ailearn_worker', 'ailearn_fanout_global_companion_memory(uuid)'),
       ('ailearn_worker', 'ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)'),
+      ('ailearn_api', 'ailearn_restore_companion_memory(uuid,uuid,uuid)'),
+      ('ailearn_api', 'ailearn_purge_expired_companion_memory()'),
+      ('ailearn_worker', 'ailearn_purge_expired_companion_memory()'),
+      ('ailearn_api', 'ailearn_companion_memory_retention_limits()'),
+      ('ailearn_worker', 'ailearn_companion_memory_retention_limits()'),
+      ('ailearn_api', 'ailearn_enforce_companion_memory_retention()'),
+      ('ailearn_worker', 'ailearn_enforce_companion_memory_retention()'),
+      ('ailearn_worker', 'ailearn_reclaim_stale_memory_organization_leases()'),
+      ('ailearn_worker', 'ailearn_commit_memory_organization(uuid,uuid,text,text,integer)'),
+      ('ailearn_worker', 'ailearn_enqueue_companion_memory_organize()'),
+      ('ailearn_worker', 'ailearn_companion_memory_organization_thresholds()'),
       ('ailearn_api', 'ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)'),
       ('ailearn_worker', 'ailearn_move_companion_memory_budget_tier_v1(uuid,uuid,uuid,text,text,uuid)'),
       ('ailearn_api', 'ailearn_retire_workspace_memories_on_departure(uuid,uuid)'),
@@ -1772,7 +1886,13 @@ BEGIN
       ('ailearn_api', 'ailearn_purge_tutor_nonces_ttl(integer,integer)'),
       ('ailearn_api', 'ailearn_find_user_by_email(text)'),
       ('ailearn_api', 'ailearn_user_in_workspace(uuid,uuid)'),
-      ('ailearn_api', 'ailearn_read_companion_turn_handoff_snapshot_v1(uuid)')
+      ('ailearn_api', 'ailearn_read_companion_turn_handoff_snapshot_v1(uuid)'),
+      ('ailearn_api', 'ailearn_admin_job_backlog()'),
+      ('ailearn_api', 'ailearn_admin_recent_job_failures(integer)'),
+      ('ailearn_api', 'ailearn_admin_recent_audit(integer)'),
+      ('ailearn_api', 'ailearn_admin_platform_counts()'),
+      ('ailearn_api', 'ailearn_admin_retry_failed_jobs(text,integer)'),
+      ('ailearn_api', 'ailearn_admin_purge_dead_jobs(text,integer)')
     ) AS required(role, fn)
     -- 函数还不存在（首次 bootstrap、迁移尚未跑到）时不该报错：与本文件其余检查
     -- 一致的 `to_regprocedure IS NOT NULL` 口径。

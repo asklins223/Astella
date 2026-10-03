@@ -28,7 +28,7 @@ const shot = async (name) => {
   await page.screenshot({ path: resolve(outDir, `${name}.png`) })
 }
 const hudPage = () => page.locator('.desktop-app').getAttribute('data-hud-page')
-const title = () => page.locator('.task-title h1').textContent().catch(() => null)
+const title = () => page.locator('.task-title h1, .candidate-desk__title h1, .card-making__header h1').textContent().catch(() => null)
 
 // 1. 登录（凭据已保存则直接进入书房）
 const gate = page.locator('.desktop-access-gate')
@@ -66,7 +66,7 @@ report.workbenchPage = await hudPage()
 report.workbenchTitle = await title()
 report.returnPill = await page.locator('.return-home span').textContent().catch(() => null)
 report.pressStages = await page.locator('.press-stage').allTextContents()
-report.workbenchFooter = await page.locator('.card-generation-board__footer').textContent().catch(() => null)
+report.workbenchFooter = await page.locator('.card-making__footer').textContent().catch(() => null)
 await shot('2-workbench-generating')
 
 // 4. 从工作台返回笔记（胶囊）

@@ -3,8 +3,6 @@ import {
   cardGenerationEntryLabel,
   cardGenerationProgressView,
   cardGenerationRecoveryReasonLabel,
-  cardGenerationStage,
-  cardGenerationStageCount,
   cardGenerationStatusLabel,
   cardGenerationSyncReportText,
   isCardGenerationInFlight,
@@ -35,30 +33,6 @@ describe("card-generation-status", () => {
   it("未知状态不臆造含义", () => {
     expect(cardGenerationStatusLabel("mystery_token")).toBe("还在处理");
     expect(cardGenerationRecoveryReasonLabel("mystery_token")).toBe("需要后台再看一次才能继续");
-  });
-
-  /**
-   * 2026-09-20 实走复盘 #2：这里曾经是 `["failed", 3]` ——兜底把没列出的状态一律
-   * 算成"审核阶段"，于是进度条恒定 75%、前三行一起亮「已完成」，用户看到的
-   * "从第 2 步直接跳完成"就是这么来的。说不出走到哪一步的状态现在返回 null。
-   */
-  it("阶段映射逐项枚举，说不出就返回 null 而不是兜底成最后一步", () => {
-    expect({
-      queued: cardGenerationStage("queued"),
-      source_sealing: cardGenerationStage("source_sealing"),
-      planning: cardGenerationStage("planning"),
-      authoring: cardGenerationStage("authoring"),
-      checking: cardGenerationStage("checking"),
-      review_ready: cardGenerationStage("review_ready"),
-      activating: cardGenerationStage("activating"),
-      activated: cardGenerationStage("activated"),
-    }).toEqual({
-      queued: 0, source_sealing: 0, planning: 1, authoring: 1,
-      checking: 2, review_ready: 3, activating: 4, activated: 4,
-    });
-    for (const status of ["failed", "stale", "cancelled", "needs_attention", "no_cards_recommended", "closed_without_activation", "mystery"]) {
-      expect(cardGenerationStage(status), status).toBeNull();
-    }
   });
 
   it("服务端活跃名单里的状态都可作为笔记页的入口", () => {
@@ -126,87 +100,40 @@ describe("card-generation-status", () => {
     }
   });
 
-  it("进度只在服务端确认的阶段上说话", () => {
-    expect(cardGenerationProgressView("queued", null)).toEqual({
-      stage: 0, percent: 0, detail: null, inFlight: false, eyebrow: "第 1 步 / 共 4 步",
-    });
-    expect(cardGenerationProgressView("review_ready", null)?.percent).toBe(75);
-    expect(cardGenerationProgressView("activated", null)?.percent).toBe(100);
-    // needs_attention / failed / stale 等走不到"第几步"的结论，进度块整体不渲染。
-    for (const status of ["needs_attention", "failed", "stale", "cancelled", "no_cards_recommended", "closed_without_activation"]) {
+  it("仅描述真实的在途工作，停止后不推测进度", () => {
+    expect(cardGenerationProgressView("queued", null)).toEqual({ detail: "这次已排队，轮到后会从这篇笔记开始。" });
+    expect(cardGenerationProgressView("source_sealing", null)?.detail).toContain("已保存的笔记");
+    for (const status of ["review_ready", "activated", "activating", "needs_attention", "failed", "stale", "cancelled", "no_cards_recommended", "closed_without_activation", "mystery"]) {
       expect(cardGenerationProgressView(status, null), status).toBeNull();
     }
-    expect(cardGenerationStageCount).toBe(4);
   });
 
-  it("阶段内部按服务端候选计数推进，且计数文案与百分比同源", () => {
-    const authoring = cardGenerationProgressView("authoring", {
-      plannedCards: 8, authored: 4, gatePassed: 0, gateFailed: 0,
-    });
-    expect(authoring?.stage).toBe(1);
-    expect(authoring?.detail).toBe("已写出 4 / 8 张候选");
-    // 半程的第 2 阶段 = (1 + 0.5) / 4
-    expect(authoring?.percent).toBe(38);
-
-    const checking = cardGenerationProgressView("checking", {
-      plannedCards: 8, authored: 8, gatePassed: 2, gateFailed: 1,
-    });
-    expect(checking?.detail).toBe("已过质量门 2 / 8");
-    expect(checking?.percent).toBeGreaterThan(cardGenerationProgressView("checking", null)!.percent);
-
-    // 阶段内绝不因为计数而越到下一阶段，也不谎报 100%。
-    const almost = cardGenerationProgressView("authoring", {
-      plannedCards: 8, authored: 8, gatePassed: 8, gateFailed: 0,
-    });
-    expect(almost?.percent).toBeLessThan(50);
-    expect(almost?.stage).toBe(1);
+  it("用已写出的候选与通过核对的候选描述当前工作", () => {
+    expect(cardGenerationProgressView("authoring", { plannedCards: 8, authored: 4, gatePassed: 0, gateFailed: 0 }))
+      .toEqual({ detail: "已写出 4 / 8 张候选" });
+    expect(cardGenerationProgressView("authoring", { plannedCards: 0, authored: 4, gatePassed: 0, gateFailed: 0 }))
+      .toEqual({ detail: "已写出 4 张候选" });
+    expect(cardGenerationProgressView("checking", { plannedCards: 8, authored: 8, gatePassed: 2, gateFailed: 1 }))
+      .toEqual({ detail: "已通过核对 2 / 8 张候选" });
+    expect(cardGenerationProgressView("checking", null)?.detail).toContain("核对问题和依据");
   });
 
   it("同步回执说清楚这次重读读到了什么", () => {
     expect(cardGenerationSyncReportText(null, false)).toContain("没读到最新进度");
-    expect(cardGenerationSyncReportText("planning", false)).toContain("仍是「正在规划候选」");
-    expect(cardGenerationSyncReportText("checking", true)).toContain("这次生成到了「正在做质量检查」");
+    expect(cardGenerationSyncReportText("planning", false)).toContain("仍是「正在挑选值得记住的内容」");
+    expect(cardGenerationSyncReportText("checking", true)).toContain("这次生成到了「正在核对问题与笔记」");
     // 状态没变时不能说成"已更新"——那正是用户抱怨"点了没用"的来源。
     expect(cardGenerationSyncReportText("planning", false)).not.toContain("这次生成到了");
   });
 
-  it("在途时不报第几步（run.status 仍在大事务里，到提交才可见）", () => {
-    // 2026-09-21 两次真跑实测：planning → 终态一步跨完。0249 把**候选计数**挪出了那个
-    // 事务（下一条用例），但状态本身没挪——挪它要先解决重放语义，见计划 §21 的 A1。
-    for (const status of ["planning", "authoring", "checking"]) {
-      const view = cardGenerationProgressView(status, {
-        plannedCards: 4, authored: 0, gatePassed: 0, gateFailed: 0,
-      });
-      expect(view?.inFlight, status).toBe(true);
-      expect(view?.eyebrow, status).toBe("正在生成 · 写完一批一次给齐");
-      expect(view?.eyebrow, status).not.toContain("步");
-    }
-  });
-
-  it("planning 阶段里候选计数是真的在一格格走", () => {
-    expect(cardGenerationProgressView("planning", {
-      plannedCards: 0, authored: 0, gatePassed: 0, gateFailed: 0,
-    })?.detail).toBe("正在规划这一批要出哪些目标");
-
-    const steps = [1, 4, 8].map((authored) => cardGenerationProgressView("planning", {
+  it("规划时也使用已经提交的候选计数", () => {
+    expect(cardGenerationProgressView("planning", null)?.detail).toBe("正在挑出适合做成问题的内容。");
+    const views = [1, 4, 8].map(authored => cardGenerationProgressView("planning", {
       plannedCards: 8, authored, gatePassed: 0, gateFailed: 0,
     }));
-    expect(steps.map((view) => view?.detail)).toEqual([
-      "已写出 1 / 8 张候选", "已写出 4 / 8 张候选", "已写出 8 / 8 张候选",
+    expect(views).toEqual([
+      { detail: "已写出 1 / 8 张候选" }, { detail: "已写出 4 / 8 张候选" }, { detail: "已写出 8 / 8 张候选" },
     ]);
-    const percents = steps.map((view) => view?.percent ?? 0);
-    expect(percents[0]).toBeLessThan(percents[1] as number);
-    expect(percents[1]).toBeLessThan(percents[2] as number);
-    // 计数走，步数不走：两个读数同时"前进"会互相打脸。
-    for (const view of steps) expect(view?.eyebrow).not.toContain("步");
-  });
-
-  it("到终态才报第几步，让轨道停在能说清的位置", () => {
-    const done = cardGenerationProgressView("review_ready", {
-      plannedCards: 4, authored: 4, gatePassed: 4, gateFailed: 0,
-    });
-    expect(done?.inFlight).toBe(false);
-    expect(done?.eyebrow).toContain("共 4 步");
   });
 });
 

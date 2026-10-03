@@ -1,172 +1,166 @@
-/* The physical card and its semantic faces share one WebGL camera. */
-.desktop-app.hud-surface .task-surface--card-generation:has(.candidate-review-table) {
-  background-image: url("/assets/learning-room/v1/posters/task-scenes/candidate-card-table-day-v2.png");
-}
-.desktop-app.hud-surface.page-13 .content { container-type: size; container-name: candidate-page; overflow: visible; }
+/* This close desk belongs to candidate review; WebGL and DOM use the same pose. */
+.desktop-app.hud-surface .task-surface--card-generation:has(.candidate-review-table) { background-image: url("/assets/learning-room/v1/posters/task-scenes/candidate-card-table-day-v2.png"); }
+.desktop-app.hud-surface .task-surface:has(.candidate-review-table) .content { top: 82px; bottom: 80px; overflow: visible; }
 .hud-surface .candidate-review-table {
-  --card-accent: var(--hud-clay);
-  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 160px;
-  grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px 14px;
-  width: 100%; height: 100%; min-width: 0; min-height: 0; color: var(--hud-ink); isolation: isolate;
+  --card-accent: #51866d;
+  position: relative; display: grid; grid-template-columns: minmax(0,1fr) 215px;
+  grid-template-rows: auto minmax(200px,1fr) auto auto; gap: 12px 24px;
+  width: 100%; height: 100%; min-width: 0; min-height: 0; padding: 0 6px;
+  border: 0; background: none; color: var(--card-ink); isolation: isolate;
 }
-.hud-surface .candidate-review-table[data-card-strategy="cloze"] { --card-accent: #896399; }
-.hud-surface .candidate-review-table[data-card-strategy="compare"] { --card-accent: #397e81; }
-.hud-surface .candidate-review-table[data-card-strategy="sequence"] { --card-accent: #93632e; }
-.hud-surface .candidate-review-table[data-card-strategy="boundary"] { --card-accent: #6776a0; }
-.hud-surface .candidate-review-table[data-card-strategy="application"] { --card-accent: var(--hud-green); }
-.hud-surface .candidate-desk__header { grid-column: 1; grid-row: 1; min-width: 0; z-index: 4; }
-.hud-surface .candidate-card__meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 12px; border: 3px solid var(--hud-cream); border-radius: 14px 19px 15px 18px; background: var(--hud-mint); box-shadow: var(--hud-shadow-control); font-size: 11px; line-height: 1.6; }
-.hud-surface .candidate-card__meta > span:first-child { min-width: 0; overflow-wrap: anywhere; }
-.hud-surface .candidate-card__meta b { font-weight: 650; }
-.hud-surface .candidate-card__meta small { font-size: 10px; }
-.hud-surface .candidate-card__meta .tag { flex: none; font-size: 10px; }
-.hud-surface .candidate-desk__tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 7px 2px 0; }
-.hud-surface .candidate-desk__tools .button { min-height: 44px; gap: 6px; padding: 6px 10px; font-size: 11px; }
-.hud-surface .candidate-desk__short-label { display: none; }
-.hud-surface .candidate-desk__navigation { display: flex; align-items: center; gap: 4px; }
+.hud-surface .candidate-review-table[data-card-strategy="cloze"] { --card-accent: #8c719a; }
+.hud-surface .candidate-review-table[data-card-strategy="compare"] { --card-accent: #548a90; }
+.hud-surface .candidate-review-table[data-card-strategy="sequence"] { --card-accent: #aa8550; }
+.hud-surface .candidate-review-table[data-card-strategy="boundary"] { --card-accent: #7185a4; }
+.hud-surface .candidate-review-table[data-card-strategy="application"] { --card-accent: #5a9274; }
+.hud-surface .candidate-desk__header { position: relative; grid-column: 1 / -1; grid-row: 1; min-width: 0; padding: 15px 20px 12px; border: 3px solid #fffef2; border-radius: 25px 29px 26px 23px; background: #eff4e4; box-shadow: 0 4px 0 #b5c7a780,0 10px 20px #354a3020; }
+.candidate-desk__title { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+.candidate-desk__title > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 17px; min-width: 0; }
+.desktop-app.hud-surface .candidate-desk__title h1 { flex: none; margin: 0; color: #41644b; font: 740 22px/1.5 "Noto Sans SC Variable",sans-serif; }
+.desktop-app.hud-surface .candidate-review-table .candidate-desk__regenerate { display: flex; align-items: center; justify-content: center; flex: none; gap: 7px; padding: 9px 14px; background: #fffdf0; border: 2px solid #fffef8; border-radius: 21px; box-shadow: 0 3px 0 #b5c7a780; font-size: 12px; }
+.hud-surface .candidate-card__meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 11px; line-height: 1.7; color: #536f4f; }
+.hud-surface .candidate-card__meta b { font-weight: 550; }
+.hud-surface .candidate-card__meta .tag { flex: none; border: 0; background: #dceacb; color: #476b4a; font-size: 10px; }
+.hud-surface .candidate-desk__tools { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: 8px; }
+.desktop-app.hud-surface .candidate-desk__tools .button { display: flex; align-items: center; min-height: 36px; padding: 7px 12px; border-radius: 17px; background: #fffdf2; border: 2px solid #fffefa; box-shadow: 0 2px 0 #b9c8a880; font-size: 11px; gap: 6px; }
 .hud-surface .candidate-flip-toggle { justify-content: center; }
-.hud-surface .candidate-desk__navigation .button { width: 44px; padding: 0; justify-content: center; }
-.hud-surface .candidate-desk__navigation > span { min-width: 32px; text-align: center; font-size: 12px; font-weight: 800; color: var(--hud-ink); }
-.hud-surface .candidate-desk__return { margin-left: auto; font-size: 11px; }
-.hud-surface .candidate-desk__validation { display: flex; align-items: start; gap: 5px; width: fit-content; max-width: 100%; margin: 5px 2px 0; padding: 3px 8px; border-radius: 9px 12px 8px 11px; background: var(--hud-paper-light); color: var(--hud-soft); font-size: 10px; line-height: 1.5; }
-.hud-surface .candidate-desk__validation svg { flex: none; margin-top: 1px; }
-
-.hud-surface .candidate-study-card { grid-column: 1; grid-row: 2; position: relative; min-width: 0; min-height: 0; z-index: 2; }
-.hud-surface .candidate-flip-stage { position: absolute; inset: -4px -6px; min-width: 0; min-height: 0; touch-action: none; cursor: grab; }
-.hud-surface .candidate-flip-stage:active { cursor: grabbing; }
+.hud-surface .candidate-desk__short-label { display: none; }
+.hud-surface .candidate-desk__navigation { display: flex; align-items: center; gap: 5px; }
+.desktop-app.hud-surface .candidate-review-table .candidate-desk__navigation .button { width: 36px; min-height: 36px; padding: 0; justify-content: center; }
+.hud-surface .candidate-desk__navigation > span { min-width: 35px; text-align: center; font-size: 12px; font-weight: 650; }
+.hud-surface .candidate-desk__return { margin-left: auto; padding: 7px 0; }
+.hud-surface .candidate-desk__validation { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; max-width: calc(100% - 175px); margin: 9px 0 0; padding: 0; color: #56734f; font-size: 11px; line-height: 1.7; }
+.hud-surface .candidate-desk__validation svg { flex: none; }
+.hud-surface .candidate-desk__validation small { font-size: inherit; }
+.candidate-desk__source-notice { margin: 9px 0 0; padding: 7px 11px; border-radius: 12px; background: #ffedce; color: #805c3e; font-size: 11px; line-height: 1.7; }
+.hud-surface .candidate-study-card { grid-column: 1; grid-row: 2; min-width: 0; min-height: 0; position: relative; }
+.hud-surface .candidate-flip-stage { width: 100%; height: 100%; min-height: 0; perspective: 1600px; position: relative; }
+.hud-surface .candidate-flip-stage::before,.hud-surface .candidate-flip-stage::after { position: absolute; inset: 4px 12px 12px; border: 2px solid #fefbec; border-radius: 23px; background: #f1e9c9; rotate: 3deg; pointer-events: none; content: ""; }
+.hud-surface .candidate-flip-stage::after { rotate: -2deg; inset: 10px 7px 7px; background: #d9e9cc; }
+.hud-surface .candidate-flip-card { position: relative; z-index: 1; width: 100%; height: 100%; min-height: 0; transform-style: preserve-3d; opacity: var(--candidate-paper-opacity,1); transform: translateY(var(--candidate-lift,0px)) rotateX(var(--candidate-tilt-x,0deg)) rotateY(calc(var(--candidate-flip-turn,0deg) + var(--candidate-tilt-y,0deg))); }
+.hud-surface .candidate-flip-face { position: absolute; inset: 0; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border: 3px solid #fff9e9; border-radius: 23px; backface-visibility: hidden; background: var(--card-paper); color: var(--card-ink); box-shadow: 0 4px 0 #adc3ac50,0 7px 18px #354c2820; }
+.hud-surface .candidate-flip-face--front { transform: rotateY(0deg); }
+.hud-surface .candidate-flip-face--back { transform: rotateY(180deg); background: #f2f1e1; }
+.hud-surface .candidate-flip-face[inert] { pointer-events: none; }
+.hud-surface .candidate-flip-stage[data-motion="off"] .candidate-flip-face,
+.hud-surface .candidate-flip-stage[data-motion="lite"] .candidate-flip-face { transform: none; }
+.hud-surface .candidate-flip-stage[data-motion="off"] .candidate-flip-face[inert],
+.hud-surface .candidate-flip-stage[data-motion="lite"] .candidate-flip-face[inert] { visibility: hidden; }
 .hud-surface .candidate-card__canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.hud-surface .candidate-flip-card { position: absolute; inset: 0; pointer-events: none; }
-.hud-surface .candidate-flip-face { position: absolute; top: 0; left: 0; display: flex; flex-direction: column; width: 760px; height: 460px; min-width: 0; min-height: 0; border: 6px solid var(--hud-cream); border-radius: 26px 30px 25px 29px; transform-origin: 0 0; pointer-events: auto; overflow: visible; }
-.hud-surface .candidate-flip-face--front { color: var(--hud-ink); background: color-mix(in srgb, var(--hud-paper-light) 91%, transparent); }
-.hud-surface .candidate-flip-face--back { color: var(--hud-cream); background: var(--hud-green); }
-.hud-surface .candidate-flip-face--back:has(.reveal-slip) { color: var(--hud-ink); background: var(--hud-paper-light); }
-.hud-surface .candidate-card__header { display: flex; flex: none; justify-content: space-between; align-items: center; gap: 10px; height: 52px; padding: 7px 26px; border-bottom: 2px dashed var(--hud-line); }
-.hud-surface .candidate-card__strategy { display: inline-flex; align-items: center; gap: 10px; color: var(--card-accent); font-size: 17px; font-weight: 800; }
-.hud-surface .candidate-card__strategy i { display: grid; place-items: center; width: 33px; height: 33px; border-radius: 10px 13px 11px 14px; background: color-mix(in srgb, var(--card-accent) 12%, var(--hud-paper-light)); font-size: 25px; font-style: normal; }
-.hud-surface .candidate-card__number { color: var(--card-accent); font-size: 25px; font-weight: 900; }
-.hud-surface .candidate-card__number small { color: var(--hud-soft); font-size: 13px; }
-.hud-surface .candidate-flip-face--back .candidate-card__strategy,
-.hud-surface .candidate-flip-face--back .candidate-card__number { color: var(--hud-cream); }
-.hud-surface .candidate-flip-face--back:has(.reveal-slip) .candidate-card__strategy,
-.hud-surface .candidate-flip-face--back:has(.reveal-slip) .candidate-card__number { color: var(--card-accent); }
-/* No card scrollbox, line clamp, or ellipsis. Font fitting includes every word. */
-.hud-surface .candidate-card__body { flex: 1 1 auto; display: flex; align-items: center; min-width: 0; min-height: 0; margin: 16px 28px; font-size: var(--card-copy-size, 20px); overflow: visible; }
-.hud-surface .candidate-card__copy { width: 100%; min-width: 0; overflow-wrap: anywhere; }
-.hud-surface .candidate-card__copy h2 { margin: 0; color: var(--hud-ink); font: 780 2em/1.4 "Noto Serif SC Variable", "Songti SC", serif; letter-spacing: -.025em; text-wrap: balance; }
-.hud-surface .candidate-card__copy h2 strong { font-weight: 900; color: var(--card-accent); }
-.hud-surface .candidate-card__kicker { margin: 0 0 .4em; color: var(--card-accent); font-size: .65em; font-weight: 800; letter-spacing: .08em; }
-.hud-surface .candidate-card__prompt { padding-bottom: .25em; }
-.hud-surface .candidate-card__objective { margin: .9em 0 0; padding-top: .6em; border-top: 2px dashed color-mix(in srgb, var(--card-accent) 30%, transparent); color: var(--hud-soft); font-size: .9em; line-height: 1.5; }
-.hud-surface .candidate-card__objective > span { display: block; margin-bottom: .2em; color: var(--card-accent); font-size: .72em; font-weight: 800; }
-.hud-surface .candidate-card__objective h3 { margin: 0; font: inherit; }
-.hud-surface .candidate-card__cue, .hud-surface .candidate-card__context { margin: .35em 0 0; color: var(--hud-soft); font-size: .8em; line-height: 1.6; }
-.hud-surface .candidate-card__cue b, .hud-surface .candidate-card__context b { margin-right: .6em; color: var(--card-accent); }
-.hud-surface .candidate-card__refs { margin: .3em 0 0; font-size: .65em; }
-.hud-surface .candidate-card__copy code { padding: 1px 3px; border-radius: 4px; background: var(--hud-paper-deep); font: .9em/1.6 ui-monospace, monospace; }
-.hud-surface .candidate-review-slip__formats { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 8px 26px; border-top: 2px dashed var(--hud-line); background: var(--hud-cream); border-radius: 0 0 18px 22px; color: var(--hud-soft); font-size: 13px; line-height: 1.5; }
-.hud-surface .candidate-review-slip__formats b { color: var(--card-accent); }
+.hud-surface .candidate-flip-stage[data-card-3d="ready"]::before,
+.hud-surface .candidate-flip-stage[data-card-3d="ready"]::after { display: none; }
+.hud-surface .candidate-flip-stage[data-card-3d="ready"] .candidate-flip-card { transform: none; opacity: 1; transform-style: flat; pointer-events: none; }
+.hud-surface .candidate-flip-stage[data-card-3d="ready"] .candidate-flip-face { inset: auto; top: 0; left: 0; transform-origin: 0 0; backface-visibility: visible; pointer-events: auto; box-shadow: none; }
+.hud-surface .candidate-flip-stage[data-card-3d="ready"] .candidate-flip-face[inert] { pointer-events: none; }
+.candidate-card__render-notice { position: absolute; bottom: 0; left: 8px; z-index: 3; padding: 4px 8px; border-radius: 7px; background: #fff4dd; color: #897657; font-size: 10px; }
+.hud-surface .candidate-card__header { display: flex; flex: none; justify-content: space-between; align-items: center; gap: 10px; padding: 15px 24px; border-bottom: 2px dashed #e1e6d6; }
+.hud-surface .candidate-card__strategy { display: inline-flex; align-items: center; gap: 9px; color: var(--card-accent); font-size: 14px; font-weight: 800; }
+.hud-surface .candidate-card__strategy i { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 11px; background: color-mix(in srgb,var(--card-accent) 10%,var(--card-paper)); font-size: 22px; font-style: normal; }
+.hud-surface .candidate-card__number { font-size: 21px; font-weight: 850; color: var(--card-accent); }
+.hud-surface .candidate-card__number small { color: var(--card-soft); font-size: 12px; }
+.hud-surface .candidate-card__body { flex: 1 1 0; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 26px 28px; font-size: 15px; }
+.hud-surface .candidate-card__copy { width: 100%; min-width: 0; overflow-wrap: anywhere; line-height: 1.75; }
+.hud-surface .candidate-card__copy h2 { margin: 0; color: var(--card-ink); font: 740 clamp(22px,2vw,27px)/1.65 "Noto Sans SC Variable","PingFang SC",sans-serif; letter-spacing: -.015em; }
+.hud-surface .candidate-card__copy h2 strong { color: var(--card-accent); }
+.hud-surface .candidate-card__kicker { margin: 0 0 9px; color: var(--card-accent); font-size: 12px; font-weight: 800; }
+.hud-surface .candidate-card__prompt { padding-bottom: 7px; }
+.hud-surface .candidate-card__cue,.hud-surface .candidate-card__context { margin: 10px 0 0; color: var(--card-soft); font-size: 14px; line-height: 1.75; }
+.hud-surface .candidate-card__cue b,.hud-surface .candidate-card__context b { margin-right: 8px; color: var(--card-accent); }
+.hud-surface .candidate-card__objective { margin-top: 21px; padding: 16px 0 0; border-top: 1px solid var(--card-line); color: var(--card-soft); font-size: 14px; }
+.hud-surface .candidate-card__objective > span { display: block; margin-bottom: 7px; color: var(--card-accent); font-size: 12px; font-weight: 750; }
+.hud-surface .candidate-card__objective h3 { font: inherit; margin: 0; }
+.hud-surface .candidate-card__refs { margin: 8px 0; font-size: 12px; color: var(--card-soft); }
+.hud-surface .candidate-card__copy code { padding: 2px 5px; border-radius: 5px; background: #ecebdc; font: .92em/1.6 ui-monospace,monospace; }
+.hud-surface .candidate-review-slip__formats { display: flex; flex: none; flex-wrap: wrap; gap: 4px 12px; padding: 10px 21px; color: var(--card-soft); border-top: 1px solid var(--card-line); background: #f4f4e7; font-size: 12px; line-height: 1.5; }
 .hud-surface .candidate-review-slip__formats small { font-size: 11px; }
-.hud-surface .candidate-card__stamp { display: inline-flex; align-items: center; gap: .3em; margin-top: .5em; padding: .2em .7em; border: 3px double var(--hud-green); border-radius: 9px 12px 8px 13px; color: var(--hud-green); transform: rotate(-5deg); font-size: 1em; font-weight: 900; }
-.hud-surface .candidate-card__stamp--rejected { border-color: var(--hud-red); color: var(--hud-red); }
-.hud-surface .candidate-card__back-footer { flex: none; padding: 8px 25px; border-top: 2px dashed var(--hud-line); border-radius: 0 0 18px 22px; background: var(--hud-cream); color: var(--hud-soft); font-size: 13px; line-height: 1.5; }
-.hud-surface .candidate-flip-face--back .candidate-card__kicker { color: var(--hud-butter); }
-.hud-surface .candidate-dossier__title { margin: 0 0 .3em; font: 740 1.6em/1.4 "Noto Serif SC Variable", "Songti SC", serif; color: var(--hud-cream); }
-.hud-surface .candidate-dossier__summary { margin: 0 0 .6em; font-size: .9em; line-height: 1.6; }
-.hud-surface .candidate-dossier__facts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; margin: 0; }
-.hud-surface .candidate-dossier__facts > div { display: flex; gap: 12px; justify-content: space-between; padding: .45em 0; border-bottom: 1px dashed color-mix(in srgb, var(--hud-cream) 35%, transparent); font-size: .8em; }
-.hud-surface .candidate-dossier__facts dt { flex: none; opacity: .85; }
-.hud-surface .candidate-dossier__facts dd { margin: 0; text-align: right; font-weight: 700; }
-.hud-surface .candidate-dossier__notice { margin: .8em 0 0; font-size: .7em; line-height: 1.5; }
-.hud-surface .candidate-suspect-note { margin-top: .7em; padding: .5em; border: 2px dashed var(--hud-clay); border-radius: 13px 18px 12px 16px; background: var(--hud-cream); font-size: .7em; line-height: 1.5; }
-.hud-surface .candidate-suspect-note h3 { display: flex; gap: 6px; align-items: center; margin: 0 0 .4em; color: var(--hud-clay); font-size: 1.1em; }
-.hud-surface .candidate-suspect-note p { margin: .4em 0; }
-.hud-surface .candidate-suspect-note ul { padding-left: 1.2em; margin-block: .5em; }
-.hud-surface .candidate-suspect-note blockquote { margin: 0; font-weight: 700; }
-.hud-surface .candidate-card__copy .reveal-slip { width: auto; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }
-.hud-surface .candidate-card__copy .reveal-slip h3 { margin: .4em 0; color: var(--card-accent); font: 750 1.2em/1.4 "Noto Serif SC Variable", "Songti SC", serif; }
-.hud-surface .candidate-card__copy .reveal-slip p, .hud-surface .candidate-card__copy .reveal-slip li { margin-block: .4em; font-size: .85em; line-height: 1.55; }
-.hud-surface .candidate-card__copy .reveal-slip ul, .hud-surface .candidate-card__copy .reveal-slip ol { margin-block: .4em; padding-left: 1.2em; }
-.hud-surface .candidate-card__copy .reveal-answer__table { width: 100%; table-layout: fixed; font-size: .8em; }
-.hud-surface .candidate-card__copy .code-block { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; max-width: 100%; font-size: .8em; }
-.hud-surface .candidate-answer-paper__notice { color: var(--hud-clay); font-size: .65em; }
-.hud-surface .reject-reasons h3 { margin: 0 0 .3em; font: 750 1.7em/1.4 "Noto Serif SC Variable", "Songti SC", serif; }
-.hud-surface .reject-reasons p { margin: 0 0 .7em; font-size: .9em; line-height: 1.5; }
-.hud-surface .reject-reasons__choices { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-.hud-surface .reject-reasons__choices .button { min-height: 44px; font-size: .8em; }
-.hud-surface .reject-reasons > .text-action { color: var(--hud-cream); font-size: .8em; }
-.hud-surface .candidate-stack-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.hud-surface .candidate-stack-list button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 9px; border: 2px solid var(--hud-cream); border-radius: 12px 17px 13px 18px; background: var(--hud-paper-light); text-align: left; color: var(--hud-ink); cursor: pointer; }
-.hud-surface .candidate-stack-list button[aria-current="true"] { border-color: var(--hud-butter); background: var(--hud-cream); }
-.hud-surface .candidate-stack-list button > span:first-child { flex: none; color: var(--card-accent); font-size: 1.2em; font-weight: 900; }
-.hud-surface .candidate-stack-list button > span:last-child { display: grid; gap: 2px; min-width: 0; }
-.hud-surface .candidate-stack-list strong { font-size: .8em; line-height: 1.5; }
-.hud-surface .candidate-stack-list small { font-size: .65em; color: var(--hud-soft); }
-.hud-surface .candidate-card__render-notice { position: absolute; bottom: 0; left: 0; padding: 3px 8px; background: var(--hud-cream); border-radius: 9px; color: var(--hud-soft); font-size: 10px; }
-.hud-surface .candidate-flip-stage:not([data-card-3d="ready"]) .candidate-flip-face { width: 94%; height: 94%; left: 3%; top: 3%; background: var(--hud-paper-light); border-radius: 23px 31px 22px 29px; box-shadow: var(--hud-shadow-paper); }
-.hud-surface .candidate-flip-stage:not([data-card-3d="ready"]) .candidate-flip-face--back { background: var(--hud-green); }
-.hud-surface .candidate-flip-stage:not([data-card-3d="ready"]) .candidate-flip-face[inert] { visibility: hidden; }
-
-.hud-surface .candidate-review-slip { grid-column: 2; grid-row: 1 / span 2; align-self: center; min-width: 0; z-index: 3; }
-.hud-surface .candidate-box { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; padding: 6px; border: 0; background: transparent; color: var(--hud-ink); cursor: pointer; transform: rotate(-5deg); transition: transform 220ms var(--hud-ease-out); }
-.hud-surface .candidate-box:hover { transform: rotate(-3deg) translateY(-5px); }
-.hud-surface .candidate-box:active { transform: rotate(-3deg) translateY(2px) scale(.97); }
-.hud-surface .candidate-box__art { position: relative; width: 145px; height: 145px; perspective: 650px; }
-.hud-surface .candidate-box__art > i { position: absolute; top: 9px; left: 15px; width: 112px; height: 124px; border: 4px solid var(--hud-cream); border-radius: 12px 16px 11px 14px; background: var(--hud-paper-light); transform: rotate(-13deg); box-shadow: 0 5px 9px rgba(46, 27, 16, .15); }
-.hud-surface .candidate-box__art > i:nth-child(2) { left: 18px; top: 12px; background: var(--hud-butter); transform: rotate(9deg); }
-.hud-surface .candidate-box__art > i:nth-child(3) { top: 18px; background: var(--hud-mint); transform: rotate(-2deg); }
-.hud-surface .candidate-box__art > span { position: absolute; inset: 68px 0 0; display: grid; place-items: center; color: var(--hud-cream); border: 4px solid var(--hud-cream); border-radius: 11px 15px 17px 20px; background: var(--hud-green); box-shadow: 0 7px 0 color-mix(in srgb, var(--hud-green) 75%, var(--hud-ink)), 0 15px 20px rgba(46, 27, 16, .25); }
-.hud-surface .candidate-box__art > span::before { position: absolute; top: -14px; left: -6px; right: -6px; height: 18px; border: 3px solid var(--hud-cream); border-radius: 6px 9px 5px 8px; background: var(--hud-mint); transform: rotateX(40deg); content: ""; }
-.hud-surface .candidate-box__label { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 44px; padding: 7px 10px; border: 3px solid var(--hud-cream); border-radius: 12px 17px 13px 19px; background: var(--hud-paper-light); box-shadow: var(--hud-shadow-control); font-size: 11px; }
-.hud-surface .candidate-box__label strong { font-size: 23px; color: var(--hud-green); }
-.hud-surface .candidate-box > small { padding: 3px 8px; background: var(--hud-cream); border-radius: 7px 10px 8px 11px; font-size: 10px; }
-.hud-surface .candidate-box__caption { margin: 12px 0 0; padding: 8px; border: 3px solid var(--hud-cream); border-radius: 13px 18px 12px 16px; background: var(--hud-butter); text-align: center; font: 640 12px/1.7 "Noto Serif SC Variable", serif; transform: rotate(3deg); box-shadow: var(--hud-shadow-paper); }
-.hud-surface .candidate-desk__footer { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 14px; z-index: 4; padding: 9px 12px; border: 4px solid var(--hud-cream); border-radius: 19px 25px 20px 27px; background: var(--hud-paper-light); box-shadow: var(--hud-shadow-paper); }
-.hud-surface .candidate-desk__decisions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
-.hud-surface .candidate-desk__decisions:empty { display: none; }
-.hud-surface .candidate-desk__decisions .button { min-height: 44px; gap: 6px; padding: 7px 12px; font-size: 13px; }
-.hud-surface .candidate-review-slip__actions { min-width: 0; }
-.hud-surface .candidate-commit__remaining { max-width: 390px; margin: 0 0 5px auto; color: var(--hud-soft); font-size: 11px; line-height: 1.5; }
-.hud-surface .candidate-commit__buttons { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
-.hud-surface .candidate-commit__buttons .button { min-height: 44px; gap: 5px; padding: 6px 9px; font-size: 11px; }
-.hud-surface .candidate-commit__buttons .text-action { padding: 7px 3px; font-size: 11px; }
-.hud-surface .candidate-review-slip__receipt { display: flex; align-items: start; flex-wrap: wrap; gap: 4px; margin: 0 0 7px; color: var(--hud-green); font-size: 11px; line-height: 1.5; font-weight: 700; }
-.hud-surface .candidate-desk__feedback { grid-column: 1 / -1; color: var(--hud-red); font-size: 11px; line-height: 1.5; }
+.hud-surface .candidate-review-slip__formats b { color: var(--card-accent); }
+.hud-surface .candidate-card__stamp { display: inline-flex; align-items: center; gap: 5px; margin-top: 15px; padding: 5px 11px; border-radius: 11px; background: var(--card-mint); color: #4b8663; font-size: 13px; font-weight: 800; rotate: -3deg; }
+.hud-surface .candidate-card__stamp--rejected { background: var(--card-peach); color: #97694d; }
+.hud-surface .candidate-card__back-footer { flex: none; padding: 10px 22px; border-top: 1px solid var(--card-line); color: var(--card-soft); font-size: 12px; line-height: 1.6; }
+.hud-surface .candidate-dossier__title,.hud-surface .reject-reasons h3 { margin: 0 0 12px; color: var(--card-ink); font: 790 23px/1.55 "Noto Sans SC Variable","PingFang SC",sans-serif; }
+.hud-surface .candidate-dossier__summary { margin: 0 0 16px; font-size: 15px; line-height: 1.75; }
+.hud-surface .candidate-dossier__facts { display: flex; flex-wrap: wrap; gap: 12px; margin: 22px 0; }
+.hud-surface .candidate-dossier__facts > div { display: grid; min-width: 150px; gap: 7px; padding: 14px 18px; border-radius: 18px; background: var(--card-mint); font-size: 13px; }
+.hud-surface .candidate-dossier__facts dt { color: var(--card-soft); }
+.hud-surface .candidate-dossier__facts dd { margin: 0; font-weight: 700; }
+.hud-surface .candidate-dossier__notice { margin-top: 15px; color: var(--card-soft); font-size: 12px; }
+.hud-surface .candidate-suspect-note { margin-top: 16px; padding: 13px; border-radius: 16px; background: var(--card-yellow); font-size: 13px; line-height: 1.7; }
+.hud-surface .candidate-suspect-note h3 { display: flex; gap: 7px; align-items: center; margin: 0 0 9px; color: #8b7143; font-size: 14px; }
+.hud-surface .candidate-suspect-note blockquote { margin: 7px 0; font-weight: 700; }
+.hud-surface .candidate-card__copy .reveal-slip { padding: 0; margin: 0; width: auto; border: 0; box-shadow: none; background: none; }
+.hud-surface .candidate-card__copy .reveal-slip h3 { margin: 17px 0 11px; color: var(--card-accent); font: 780 18px/1.5 "Noto Sans SC Variable","PingFang SC",sans-serif; }
+.hud-surface .candidate-card__copy .reveal-slip :is(p,li) { font-size: 14px; line-height: 1.85; }
+.hud-surface .candidate-card__copy .code-block { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.hud-surface .candidate-card__copy .reveal-answer__table { font-size: 13px; table-layout: fixed; width: 100%; }
+.hud-surface .candidate-answer-paper__notice { padding: 11px; border-radius: 13px; background: var(--card-yellow); color: #806c40; font-size: 12px; }
+.hud-surface .reject-reasons p { color: var(--card-soft); font-size: 13px; }
+.hud-surface .reject-reasons__choices { display: flex; flex-wrap: wrap; gap: 7px; margin-block: 12px; }
+.hud-surface .candidate-stack-list { display: grid; gap: 10px; }
+.hud-surface .candidate-stack-list button { display: flex; align-items: center; gap: 11px; width: 100%; padding: 13px; border: 2px solid #e2e6d7; border-radius: 17px; background: var(--card-paper); text-align: left; color: var(--card-ink); }
+.hud-surface .candidate-stack-list button[aria-current="true"] { border-color: #8db397; background: #eaf0e1; }
+.hud-surface .candidate-stack-list button > span:first-child { flex: none; font-size: 20px; font-weight: 850; color: var(--card-accent); }
+.hud-surface .candidate-stack-list button > span:last-child { display: grid; gap: 4px; min-width: 0; }
+.hud-surface .candidate-stack-list strong { font-size: 14px; line-height: 1.65; }
+.hud-surface .candidate-stack-list small { font-size: 12px; color: var(--card-soft); }
+.hud-surface .candidate-review-slip { grid-column: 2; grid-row: 2 / span 2; display: flex; flex-direction: column; align-self: start; max-height: 100%; min-width: 0; min-height: 0; overflow-y: auto; padding: 16px 12px 13px; border: 3px solid #fffef2; border-radius: 25px 29px 27px 23px; background: #f5f7e8; box-shadow: 0 4px 0 #b5c7a780,0 9px 18px #354a3020; overscroll-behavior: contain; }
+.hud-surface .candidate-box { display: flex; flex-direction: column; align-items: center; gap: 7px; width: 100%; padding: 6px; border: 0; background: none; color: var(--card-ink); cursor: pointer; }
+.hud-surface .candidate-box__art { width: 110px; height: 115px; position: relative; }
+.hud-surface .candidate-box__art > i { position: absolute; inset: 6px 10px 0; border: 3px solid #fff9e9; border-radius: 15px; background: var(--card-paper); rotate: -11deg; box-shadow: 0 3px 4px #455f3120; }
+.hud-surface .candidate-box__art > i:nth-child(2) { rotate: 8deg; background: var(--card-yellow); }
+.hud-surface .candidate-box__art > i:nth-child(3) { rotate: -2deg; background: #ecf4e5; }
+.hud-surface .candidate-box__art > span { position: absolute; inset: 50px 0 0; display: grid; place-items: center; border: 3px solid #fff9e9; border-radius: 13px 13px 22px 22px; background: #97b9a0; color: #fff9e9; box-shadow: 0 5px 0 #75968080; }
+.hud-surface .candidate-box__label { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 10px; border-radius: 13px; background: #f9f7e8; font-size: 12px; }
+.hud-surface .candidate-box__label strong { font-size: 24px; color: #598165; }
+.hud-surface .candidate-box small { color: #536f4f; font-size: 11px; line-height: 1.7; text-align: center; }
+.hud-surface .candidate-desk__footer { display: contents; }
+.hud-surface .candidate-desk__feedback { grid-column: 1 / -1; grid-row: 4; padding: 10px 15px; border: 2px solid #fffef2; border-radius: 16px; background: #fff5dc; color: #685539; font-size: 12px; line-height: 1.7; }
 .hud-surface .candidate-desk__feedback:empty { display: none; }
 .hud-surface .candidate-desk__feedback p { margin: 0; }
-.hud-surface .candidate-desk__empty { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-width: 0; min-height: 0; padding: 18px; border: 5px solid var(--hud-cream); border-radius: 23px 31px 22px 29px; background: var(--hud-paper-light); box-shadow: var(--hud-shadow-paper); text-align: center; }
-.hud-surface .candidate-desk__empty h2 { margin: 0; font: 700 23px/1.4 "Noto Serif SC Variable", serif; }
-.hud-surface .candidate-desk__empty p { margin: 0; font-size: 13px; line-height: 1.6; }
-.hud-surface .candidate-desk__empty .actions { flex-wrap: wrap; justify-content: center; }
-
-@container candidate-page (max-width: 750px) {
-  .hud-surface .candidate-review-table { grid-template-columns: minmax(0, 1fr); }
-  .hud-surface .candidate-desk__header { padding-right: 110px; }
-  .hud-surface .candidate-card__meta .tag, .hud-surface .candidate-card__meta small { display: none; }
-  .hud-surface .candidate-review-slip { grid-column: 1; grid-row: 1; align-self: start; justify-self: end; width: 105px; z-index: 5; }
-  .hud-surface .candidate-box { padding: 0; transform: none; gap: 0; }
-  .hud-surface .candidate-box__art, .hud-surface .candidate-box > small, .hud-surface .candidate-box__caption { display: none; }
-  .hud-surface .candidate-box__label { width: 100%; padding: 4px; white-space: nowrap; }
-  .hud-surface .candidate-box__label strong { font-size: 20px; }
-  .hud-surface .candidate-desk__return { display: none; }
-  .hud-surface .candidate-commit__remaining { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.hud-surface .candidate-desk__decisions { display: flex; grid-column: 1; grid-row: 3; justify-content: center; flex-wrap: wrap; gap: 12px; align-items: center; padding: 3px 0 7px; }
+.desktop-app.hud-surface .candidate-desk__decisions .candidate-keep { background: #bddbc0; }
+.hud-surface .candidate-review-slip__actions { flex: none; min-width: 0; padding: 14px 0 0; margin-top: 10px; border-top: 1px dashed #cfdbc1; }
+.hud-surface .candidate-commit__remaining { margin: 0 0 8px; font-size: 12px; line-height: 1.6; color: var(--card-soft); }
+.hud-surface .candidate-commit__buttons { display: grid; gap: 10px; justify-items: stretch; }
+.desktop-app.hud-surface .candidate-commit__buttons .button { padding: 10px 8px; font-size: 12px; white-space: normal; justify-content: center; }
+.candidate-desk__practice-note { position: absolute; right: 20px; bottom: 12px; color: #4c6e49; font-size: 11px; }
+.candidate-desk__practice-note summary { width: fit-content; cursor: pointer; }
+.candidate-desk__practice-note p { position: absolute; z-index: 5; right: 0; top: 100%; width: min(360px,70vw); margin: 9px 0 0; padding: 14px 17px; border: 2px solid #fffef8; border-radius: 17px; background: #fff9e7; color: #4f694d; box-shadow: 0 5px 0 #b7c4a680,0 13px 24px #30433230; line-height: 1.8; }
+.hud-surface .candidate-review-slip__receipt { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; color: #527c60; font-size: 13px; }
+.hud-surface .candidate-desk__empty { grid-column: 1; grid-row: 2; display: grid; place-content: center; justify-items: center; min-width: 0; gap: 13px; padding: 24px; border-radius: 24px; background: var(--card-paper); }
+.hud-surface .candidate-desk__empty h2 { font: 800 23px/1.5 "Noto Sans SC Variable","PingFang SC",sans-serif; margin: 0; }
+.hud-surface .candidate-desk__empty p { font-size: 14px; line-height: 1.8; margin: 0; }
+@media (max-width:1000px) {
+  .hud-surface .candidate-review-table { grid-template-columns: minmax(0,1fr) 190px; gap: 10px 14px; }
+  .desktop-app.hud-surface .candidate-desk__tools .button { font-size: 11px; padding: 6px 9px; }
+  .hud-surface .candidate-card__meta { gap: 5px; flex-wrap: wrap; }
 }
-@container candidate-page (max-height: 340px) {
-  .hud-surface .candidate-review-table { gap: 4px; }
-  .hud-surface .candidate-card__meta { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .hud-surface .candidate-desk__tools { padding-top: 0; gap: 4px; }
-  .hud-surface .candidate-desk__tools .button { font-size: 10px; padding-inline: 7px; }
-  .hud-surface .candidate-desk__navigation .button { padding: 0; }
+@media (max-width:760px),(max-height:590px) {
+  .desktop-app.hud-surface .task-surface:has(.candidate-review-table) .content { top: 62px; bottom: 66px; }
+  .hud-surface .candidate-review-table { display: flex; flex-direction: column; overflow-y: auto; padding: 8px 12px 18px; }
+  .candidate-desk__title { flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .desktop-app.hud-surface .candidate-desk__title h1 { font-size: 23px; }
+  .hud-surface .candidate-study-card { flex: 1 0 330px; min-height: 330px; }
+  .hud-surface .candidate-desk__tools { gap: 6px; margin-top: 8px; }
+  .hud-surface .candidate-desk__decisions { padding: 8px 0; }
+  .hud-surface .candidate-review-slip { width: 100%; max-height: none; overflow: visible; flex: none; flex-direction: row; align-items: center; gap: 12px; }
+  .hud-surface .candidate-review-slip__actions { flex: 1; margin: 0; padding: 0 0 0 12px; border-top: 0; border-left: 1px dashed #cfdbc1; }
+  .hud-surface .candidate-box { width: auto; }
+  .hud-surface .candidate-box__art { display: none; }
   .hud-surface .candidate-desk__label { display: none; }
-  .hud-surface .candidate-desk__tools .candidate-desk__short-label { display: none; }
-  .hud-surface .candidate-desk__decisions .candidate-desk__short-label { display: inline; }
-  .hud-surface .candidate-desk__tools > .button { width: 44px; padding: 0; justify-content: center; }
-  .hud-surface .candidate-desk__validation { font-size: 8px; margin-top: 2px; }
-  .hud-surface .candidate-desk__footer { padding: 5px 7px; gap: 4px; }
-  .hud-surface .candidate-desk__decisions { gap: 4px; }
-  .hud-surface .candidate-desk__decisions .button { font-size: 10px; padding-inline: 6px; }
-  .hud-surface .candidate-commit__buttons .text-action { font-size: 9px; }
-  .hud-surface .candidate-commit__buttons .button { font-size: 9px; padding-inline: 5px; }
+  .hud-surface .candidate-desk__short-label { display: inline; }
+  .hud-surface .candidate-card__copy h2 { font-size: 23px; }
+  .hud-surface .candidate-desk__validation { max-width: none; }
+  .candidate-desk__practice-note { position: relative; right: auto; bottom: auto; margin-top: 9px; }
+  .candidate-desk__practice-note p { position: relative; width: auto; top: auto; }
+  .hud-surface .candidate-card__body { padding: 18px 22px; }
+  .hud-surface .candidate-card__header { padding: 11px 18px; }
+  .hud-surface .candidate-dossier__facts > div { min-width: 0; flex: 1 1 130px; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .hud-surface .candidate-box { transition: none; }
+/* Only a server-confirmed choice sends a public paper into its pocket. */
+.candidate-paper-flight { position: fixed; z-index: 150; pointer-events: none; overflow: hidden; padding: 35px; border: 4px solid #fff9e9; border-radius: 28px; background: #fffdf4; color: #354f45; box-shadow: 0 10px 28px #3a564333; font: 800 26px/1.6 "Noto Sans SC Variable",sans-serif; transform: translate3d(var(--card-object-x,0px),var(--card-object-y,0px),0) rotate(var(--card-object-rotate,0deg)) scale(var(--card-object-scale,1)); opacity: clamp(0,calc(var(--card-object-scale,1) * 8 - 1),1); }
+.candidate-paper-flight[data-object-motion="lite"] { transform: none; opacity: clamp(0,var(--card-object-open,1),1); }
+@media (prefers-reduced-motion:reduce) {
+  .hud-surface .candidate-flip-card { transform: none; opacity: 1; }
+  .hud-surface .candidate-flip-face { transform: none; }
+  .hud-surface .candidate-flip-face[inert] { visibility: hidden; }
 }

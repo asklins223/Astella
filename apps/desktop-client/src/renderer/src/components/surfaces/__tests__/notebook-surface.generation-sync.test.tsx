@@ -233,7 +233,7 @@ describe("NotebookSurface · 学习卡生成状态同步", () => {
     useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
     const { getByText, getByRole, queryByRole } = render(<NotebookSurface />);
 
-    const entry = await waitFor(() => getByText("制作学习卡"));
+    const entry = await waitFor(() => getByText("生成学习卡"));
     expect(gateway.subscriptions.subscribe).not.toHaveBeenCalled();
     expect(queryByRole("dialog")).toBeNull();
 
@@ -260,7 +260,7 @@ describe("NotebookSurface · 学习卡生成状态同步", () => {
     useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
     const { getByText, getAllByRole, getByTitle } = render(<NotebookSurface />);
 
-    fireEvent.click(await waitFor(() => getByText("制作学习卡")));
+    fireEvent.click(await waitFor(() => getByText("生成学习卡")));
 
     // 拒绝留在纸面上说，同时投影重读：入口翻到这篇笔记真实的阶段。
     // 入口直接开跑之后没有方案页可留，所以这句落在纸面上，按复数查。

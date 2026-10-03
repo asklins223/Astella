@@ -1069,7 +1069,9 @@
 
   .home-v2-compact-nav {
     position: fixed;
-    z-index: 2147482000;
+    /* Keep the compact home navigation in the same tier as its region menu,
+       below the room controls and their popovers. */
+    z-index: 34;
     right: max(12px, env(safe-area-inset-right));
     bottom: max(12px, env(safe-area-inset-bottom));
     left: max(12px, env(safe-area-inset-left));

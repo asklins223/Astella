@@ -1,59 +1,25 @@
-/* Card generation and review: warm paper, mint felt, and an honest card reveal. */
-.hud-surface .card-generation-board {
-  padding: clamp(18px, 2.8vw, 42px);
-  color: #284739;
-  background: radial-gradient(circle at 87% 10%, #e7d698 0 8%, transparent 8.2%), linear-gradient(150deg, #b8d1ab, #8fb59b 57%, #6d9d85);
-  border-color: #fff9e8;
-}
-.hud-surface .card-generation-board__header { align-items: flex-start; }
-.hud-surface .card-generation-board__header h2 { max-width: 25ch; margin: 11px 0 8px; color: #234837; font: 760 clamp(26px, 2.7vw, 42px)/1.26 "Noto Serif SC Variable", "Songti SC", serif; }
-.hud-surface .card-generation-board__header p { max-width: 70ch; color: #315a45; font-size: 14px; line-height: 1.6; }
-.hud-surface .card-generation-board__sync { flex: none; min-height: 42px; }
-.hud-surface .card-generation-progress { margin-top: 24px; padding: clamp(18px, 2.5vw, 30px); border: 3px solid #fff9e7; border-radius: 22px 29px 24px 31px; background: #fff8e8; box-shadow: 0 12px 0 rgba(48, 84, 64, .12), 0 21px 33px rgba(24, 54, 41, .15); }
-.hud-surface .card-generation-progress__eyebrow { color: #9b5d34; font-size: 12px; font-weight: 800; }
-.hud-surface .card-generation-progress__name { color: #234837; font: 760 clamp(20px, 2vw, 30px)/1.35 "Noto Serif SC Variable", "Songti SC", serif; }
-.hud-surface .card-generation-progress__meta { color: #5d6955; font-size: 13px; line-height: 1.55; }
-.hud-surface .card-generation-progress__gauge { display: grid; min-width: 105px; place-items: center; padding: 14px; border: 2px dashed #b4845a; border-radius: 50%; background: #f7e8af; }
-.hud-surface .card-generation-progress__percent { color: #365f47; font-size: clamp(30px, 3vw, 44px); }
-.hud-surface .card-generation-progress__percent-caption { color: #6b6146; font-size: 11px; }
-.hud-surface .card-generation-progress__steps { margin-top: 19px; gap: 8px; }
-.hud-surface .card-generation-progress__step { min-width: 0; }
-.hud-surface .card-generation-progress__label { color: #425844; font-size: 13px; font-weight: 750; }
-.hud-surface .card-generation-progress__state { color: #665f4f; font-size: 11px; }
-.hud-surface .card-generation-progress__step.is-current .card-generation-progress__label { color: #b45f3c; }
-.hud-surface .card-generation-progress__step.is-current .card-generation-progress__state { color: #865532; }
-.hud-surface .card-generation-progress__detail { color: #6d7560; font-size: 11px; line-height: 1.5; }
-.hud-surface .card-generation-progress__step.is-current .card-generation-progress__detail { color: #8a5a38; }
-.hud-surface .card-generation-landing { margin-top: 22px; padding: 18px; border-radius: 17px 22px 18px 21px; background: rgba(255, 248, 227, .81); }
-.hud-surface .card-generation-landing__title { color: #28503b; font-size: 17px; }
-.hud-surface .card-generation-landing__item { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 12px; padding: 9px 12px; border-radius: 10px 14px 11px 15px; background: #fff9eb; }
-.hud-surface .card-generation-landing__type { display: inline-flex; align-self: flex-start; padding: 4px 10px; color: #fff8e8; border-radius: 8px 12px 9px 11px; background: #547d59; font-size: 13px; font-weight: 800; }
-.hud-surface .card-generation-landing__concept { min-width: 0; color: #31543e; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hud-surface .card-generation-landing__prompt { grid-column: 2; color: #5f6554; font-size: 13px; }
-.hud-surface .card-generation-board__footer { color: #315742; border-color: rgba(42, 83, 58, .25); font-size: 12px; }
-.hud-surface .card-generation-board__sync-report { color: #284f3b; }
-.hud-surface .card-generation-board__sync-at { color: #526653; }
+/* Shared answer paper and the notebook generation options dialog. */
 .hud-surface .reveal-slip { margin: 13px auto; width: min(710px, 100%); background: #fff8e5; }
 .hud-surface .reveal-slip :is(p, li, dt, dd) { font-size: 13px; }
 
-.generation-setup-backdrop { position: fixed; z-index: 150; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(24, 42, 32, .72); backdrop-filter: blur(5px); }
+.generation-setup-backdrop { position: fixed; z-index: 150; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(46, 62, 36, .48); backdrop-filter: blur(5px); }
 .generation-setup-backdrop, .generation-setup-backdrop * { box-sizing: border-box; }
-.generation-setup { display: flex; width: min(860px, 100%); max-height: min(780px, calc(100vh - 40px)); min-height: 0; flex-direction: column; overflow: hidden; color: #3e382f; border: 5px solid #fff8e4; border-radius: 27px 35px 28px 34px; background: #fdf5dc; box-shadow: 0 22px 70px rgba(18, 31, 24, .45); }
-.generation-setup__header { position: relative; padding: 25px 32px 21px; color: #fff9e8; background: radial-gradient(circle at 88% 22%, rgba(246, 222, 151, .2) 0 8%, transparent 8.2%), #3d7656; }
-.generation-setup__eyebrow { color: #f5dda3; font-size: 12px; font-weight: 850; letter-spacing: .1em; }
-.generation-setup__header h2 { margin: 5px 0; font: 760 clamp(27px, 3vw, 38px)/1.25 "Noto Serif SC Variable", "Songti SC", serif; }
-.generation-setup__header p { margin: 0; color: #e6eed6; font-size: 14px; line-height: 1.5; }
-.generation-setup__close { position: absolute; top: 14px; right: 17px; display: grid; width: 39px; height: 39px; place-items: center; color: #fff9e8; border: 1px solid rgba(255, 249, 232, .6); border-radius: 50%; background: rgba(255, 249, 232, .12); font: 26px/1 sans-serif; cursor: pointer; }
+.generation-setup { display: flex; width: min(860px, 100%); max-height: min(780px, calc(100vh - 40px)); min-height: 0; flex-direction: column; overflow: hidden; color: #405447; border: 3px solid #fff9e8; border-radius: 30px; background: #fffbef; box-shadow: 0 22px 70px rgba(18, 31, 24, .45); }
+.generation-setup__header { position: relative; padding: 25px 32px 21px; color: #4c6847; background: #e0edcc; }
+.generation-setup__eyebrow { color: #839a69; font-size: 12px; font-weight: 850; letter-spacing: .1em; }
+.generation-setup__header h2 { margin: 5px 0; font: 800 clamp(25px, 2.8vw, 34px)/1.4 "Noto Sans SC Variable", sans-serif; letter-spacing: -.04em; }
+.generation-setup__header p { margin: 0; color: #778c65; font-size: 14px; line-height: 1.5; }
+.generation-setup__close { position: absolute; top: 14px; right: 17px; display: grid; width: 39px; height: 39px; place-items: center; color: #6d8c61; border: 1px solid #c8d9b8; border-radius: 50%; background: #f5f7e8; font: 26px/1 sans-serif; cursor: pointer; }
 .generation-setup .generation-options { display: grid; gap: 18px; min-height: 0; margin: 0; padding: 20px 32px; overflow: auto; border: 0; background: transparent; }
 .generation-setup .generation-options legend { padding: 0 6px; color: #936039; font-size: 13px; font-weight: 850; }
 .generation-setup .generation-options__row { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
 .generation-setup .generation-options__label { width: 100%; color: #345d43; font-size: 15px; font-weight: 850; }
-.generation-setup .chip { min-height: 37px; padding: 7px 13px; color: #4d5445; border: 2px solid #c7ceb5; border-radius: 12px 16px 13px 16px; background: #fffaf0; font: 750 13px "Noto Sans SC Variable", sans-serif; cursor: pointer; }
-.generation-setup .chip.on { color: #205039; border-color: #5c9a6b; background: #dceecb; box-shadow: inset 0 0 0 1px #fffaf0; }
+.generation-setup .chip { min-height: 37px; padding: 7px 13px; color: #4d5445; border: 1px solid #d4dcc4; border-radius: 14px; background: #fffaf0; font: 750 13px "Noto Sans SC Variable", sans-serif; cursor: pointer; }
+.generation-setup .chip.on { color: #4e7444; border-color: #9ebb8e; background: #e2eece; box-shadow: 0 2px 0 #c4d7ad; }
 .generation-setup .chip:disabled { opacity: .6; cursor: not-allowed; }
 .generation-setup .generation-options > .small { margin: 0; color: #5c6755; font-size: 12px; line-height: 1.6; }
 .generation-setup .generation-options__note { flex: 1; min-width: 180px; min-height: 38px; padding: 8px 11px; color: #383a31; border: 2px solid #bfcaac; border-radius: 11px 15px 12px 14px; background: #fffaf0; font: 13px "Noto Sans SC Variable", sans-serif; }
-.generation-setup__footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 32px; border-top: 1px dashed #c8b991; background: #f8ecc9; }
+.generation-setup__footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 32px; border-top: 1px solid #e3e5cf; background: #f5f2df; }
 .generation-setup__footer p { margin: 0; color: #5d5b48; font-size: 13px; }
 .generation-setup__footer > div { display: flex; flex: none; gap: 9px; }
 .generation-setup__footer button { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; gap: 7px; padding: 9px 17px; border-radius: 12px 16px 13px 17px; font: 800 14px "Noto Sans SC Variable", sans-serif; cursor: pointer; }
@@ -75,3 +41,5 @@
 @media (prefers-reduced-motion: reduce) {
   .generation-setup * { transition: none !important; animation: none !important; }
 }
+
+.generation-setup :is(button, summary) { scale: var(--note-touch-scale, 1); }

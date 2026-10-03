@@ -59,6 +59,8 @@ import {
   noteExpansionBatchWriteResultV1Schema,
   noteExpansionLatestTaskQueryV1Schema,
   noteExpansionLatestTaskV1Schema,
+  noteExpansionTaskListQueryV1Schema,
+  noteExpansionTaskPageV1Schema,
   noteExpansionTaskV1Schema,
   noteExpansionReviewV1Schema,
 } from "./note-expansion-contracts.ts";
@@ -177,6 +179,7 @@ import {
   companionMemoryConflictListV1Schema,
   companionMemoryConflictResolveResultV1Schema,
   companionMemoryListV1Schema,
+  companionMemoryRecycleListV1Schema,
   companionMemoryRevisionListV1Schema,
   companionMemoryQueueResultV1Schema,
   companionMemoryStarMapV2Schema,
@@ -390,6 +393,7 @@ export const DESKTOP_IPC_CHANNELS = {
   // 回收区两个：恢复（可逆）与彻底清除（不可逆）。与上面的 delete 是一对——
   // delete 进回收区等 30 天，restoreDeleted 撤回，erase 是「现在就删干净」。
   companionMemoryRestoreDeleted: "ailearn.v1.companion.memory.restore-deleted",
+  companionMemoryRecycleList: "ailearn.v1.companion.memory.recycle-list",
   companionMemoryErase: "ailearn.v1.companion.memory.erase",
   companionMemoryCreate: "ailearn.v1.companion.memory.create",
   companionMemoryCorrect: "ailearn.v1.companion.memory.correct",
@@ -495,6 +499,7 @@ export const DESKTOP_IPC_CHANNELS = {
   noteExpansionList: "ailearn.v1.noteExpansion.list",
   noteExpansionStartTask: "ailearn.v1.noteExpansion.startTask",
   noteExpansionLatestTask: "ailearn.v1.noteExpansion.latestTask",
+  noteExpansionListTasks: "ailearn.v1.noteExpansion.listTasks",
   noteExpansionGetTask: "ailearn.v1.noteExpansion.getTask",
   noteExpansionReview: "ailearn.v1.noteExpansion.review",
   noteExpansionConfirm: "ailearn.v1.noteExpansion.confirm",
@@ -2397,6 +2402,7 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
      */
     readonly memory: {
       list(input: { meta: RequestMetaV1; query?: CompanionMemoryListQuery }): Promise<GatewayResultV1<z.infer<typeof companionMemoryListV1Schema>>>;
+      recycleList(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionMemoryRecycleListV1Schema>>>;
       starMap(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof companionMemoryStarMapV2Schema>>>;
       confirm(input: { meta: RequestMetaV1; memoryId: Uuid }): Promise<GatewayResultV1<z.infer<typeof companionMemoryItemV1Schema>>>;
       pin(input: { meta: RequestMetaV1; memoryId: Uuid }): Promise<GatewayResultV1<z.infer<typeof companionMemoryItemV1Schema>>>;
@@ -2710,6 +2716,7 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
     list(input: { meta: RequestMetaV1; noteId: Uuid; query?: z.infer<typeof noteExpansionListQueryV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteExpansionPageV1Schema>>>;
     startTask(input: { meta: RequestMetaV1; noteId: Uuid; request: z.infer<typeof createNoteExpansionTaskV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteExpansionTaskV1Schema>>>;
     latestTask(input: { meta: RequestMetaV1; noteId: Uuid; query: z.infer<typeof noteExpansionLatestTaskQueryV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteExpansionLatestTaskV1Schema>>>;
+    listTasks(input: { meta: RequestMetaV1; noteId: Uuid; query: z.infer<typeof noteExpansionTaskListQueryV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteExpansionTaskPageV1Schema>>>;
     getTask(input: { meta: RequestMetaV1; noteId: Uuid; taskId: Uuid }): Promise<GatewayResultV1<z.infer<typeof noteExpansionTaskV1Schema>>>;
     review(input: { meta: RequestMetaV1; noteId: Uuid; taskId: Uuid; review: z.infer<typeof noteExpansionReviewV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteExpansionTaskV1Schema>>>;
     confirm(input: { meta: RequestMetaV1; noteId: Uuid; taskId: Uuid; request: z.infer<typeof confirmNoteExpansionTaskV1Schema> }): Promise<GatewayResultV1<z.infer<typeof noteExpansionBatchWriteResultV1Schema>>>;
@@ -3019,7 +3026,7 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
     }): Promise<GatewayResultV1<z.infer<typeof noteDeepeningV3Schema>>>;
   };
   readonly search: {
-    global(input: { meta: RequestMetaV1; query: string; type?: "note" | "source" | "objective"; limit?: number; offset?: number }): Promise<GatewayResultV1<z.infer<typeof desktopSearchPageSchema>>>;
+    global(input: { meta: RequestMetaV1; query: string; type?: "note" | "source" | "objective"; limit?: number; cursor?: string }): Promise<GatewayResultV1<z.infer<typeof desktopSearchPageSchema>>>;
     /** F-025：搜索索引漂移检测（Owner）。 */
     drift(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<SearchDriftResultV1>>;
     /** F-011：重建当前工作区搜索索引（Owner）。 */

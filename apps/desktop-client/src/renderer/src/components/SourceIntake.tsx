@@ -7,6 +7,7 @@ import { useRoomStore } from "../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../app/desktop-client";
 import { resolveSceneMotionMode } from "../scene/scene-motion";
 import { formatRelative } from "./surfaces/notebook/surface-data.tsx";
+import { useSourceMotion } from "./surfaces/source/use-source-motion";
 import {
   MAX_CAPTURE_BYTES,
   MAX_DROP_FILES,
@@ -44,6 +45,9 @@ async function canCaptureSource(): Promise<"allowed" | "denied" | "unknown"> {
 /** 剪贴板弹窗挂载在已登录的房间里：盖子（DesktopAccessGate）外面不问。 */
 export function SourceIntakeHost() {
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
+  const workspaceScopeRevision = useRoomStore(state => state.workspaceScopeRevision);
+
+  useEffect(() => { setPendingUrl(null); }, [workspaceScopeRevision]);
 
   useClipboardLinkWatcher(setPendingUrl);
 
@@ -51,7 +55,7 @@ export function SourceIntakeHost() {
     <>
       {pendingUrl ? (
         <ClipboardLinkPrompt
-          key={pendingUrl}
+          key={`${workspaceScopeRevision}:${pendingUrl}`}
           url={pendingUrl}
           onClose={(seen) => {
             if (seen) markLinkSeen(pendingUrl);
@@ -79,11 +83,12 @@ function useClipboardLinkWatcher(onFreshUrl: (url: string) => void) {
     if (busyRef.current || pendingRef.current) return;
     if (document.hidden || onboardingRef.current || hasOpenModal()) return;
     if (!window.ailearn?.clipboard) return;
+    const scope = useRoomStore.getState().workspaceScopeRevision;
     busyRef.current = true;
     try {
       const response = await window.ailearn.clipboard.readLinks({ meta: createRequestMeta() });
       // 后台轮询不进网关错误广播：不通就等下一次回到书房，不打扰。
-      if (!response.ok) return;
+      if (!response.ok || useRoomStore.getState().workspaceScopeRevision !== scope) return;
       const fresh = response.data.urls.find((url) => !readSeenLinks().has(url));
       if (!fresh) return;
       // IPC 回来这一下里可能弹出了别的窗，让新窗先说。
@@ -121,7 +126,7 @@ type PromptPhase =
   | { kind: "checking" }
   | { kind: "ready"; capture: "allowed" | "denied" }
   | { kind: "importing" }
-  | { kind: "done"; title: string; /** 审计 F33：命中同网址的既有条目，这次没有新建。 */ duplicate: boolean }
+  | { kind: "done"; sourceId: string; title: string; duplicate: boolean }
   | { kind: "failed"; message: string };
 
 export function ClipboardLinkPrompt({ url, onClose }: { readonly url: string; readonly onClose: (seen: boolean) => void }) {
@@ -129,24 +134,32 @@ export function ClipboardLinkPrompt({ url, onClose }: { readonly url: string; re
   const primaryRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const closedRef = useRef(false);
+  const importingRef = useRef(false);
   const invoke = useRoomStore((state) => state.invoke);
+  const setActiveSourceId = useRoomStore(state => state.setActiveSourceId);
+  const setReturnTarget = useRoomStore(state => state.setReturnTarget);
   const motionPreference = useRoomStore((state) => state.motionMode);
   const reducedMotion = useRoomStore((state) => state.reducedMotion);
   const motionMode = resolveSceneMotionMode(motionPreference, reducedMotion);
   const [phase, setPhase] = useState<PromptPhase>({ kind: "checking" });
+  useSourceMotion(dialogRef, "clipboard");
 
   useEffect(() => {
     const dialog = dialogRef.current;
-    if (!dialog || dialog.open) return;
-    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialog.showModal();
+    if (!dialog) return;
+    closedRef.current = false;
+    if (!dialog.open) {
+      returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      dialog.showModal();
+    }
     window.requestAnimationFrame(() => primaryRef.current?.focus({ preventScroll: true }));
+    return () => { closedRef.current = true; };
   }, []);
 
   useEffect(() => {
     let active = true;
     void canCaptureSource().then((capture) => {
-      if (!active) return;
+      if (!active || closedRef.current) return;
       // 服务端问不到就收声等下一轮：不断言、也不把链接记成问过。
       if (capture === "unknown") onClose(false);
       else setPhase({ kind: "ready", capture });
@@ -154,8 +167,7 @@ export function ClipboardLinkPrompt({ url, onClose }: { readonly url: string; re
     return () => { active = false; };
   }, []);
 
-  // 目录弹窗同款进入再加一点动森弹跳：纸面从下方浮起、冒点头再坐稳；
-  // lite 只留 hud-pop 式浮起，off 即时。
+  // Full lets the paper settle with a small overshoot; Lite changes opacity only.
   useGSAP(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -166,8 +178,8 @@ export function ClipboardLinkPrompt({ url, onClose }: { readonly url: string; re
     if (motionMode === "lite") {
       gsap.fromTo(
         dialog,
-        { autoAlpha: 0, y: 12, scale: 0.97 },
-        { autoAlpha: 1, y: 0, scale: 1, duration: 0.2, ease: "power3.out", clearProps: "transform,opacity,visibility" },
+        { autoAlpha: 0 },
+        { autoAlpha: 1, duration: 0.16, ease: "power3.out", clearProps: "opacity,visibility" },
       );
       return;
     }
@@ -180,31 +192,39 @@ export function ClipboardLinkPrompt({ url, onClose }: { readonly url: string; re
     );
   }, { scope: dialogRef, dependencies: [motionMode], revertOnUpdate: true });
 
-  const dismiss = useCallback((seen: boolean) => {
+  const dismiss = useCallback((seen: boolean, restoreFocus = true) => {
     if (closedRef.current) return;
     closedRef.current = true;
     dialogRef.current?.close();
     const target = returnFocusRef.current;
     onClose(seen);
     window.requestAnimationFrame(() => {
-      if (target?.isConnected) target.focus({ preventScroll: true });
+      if (restoreFocus && target?.isConnected) target.focus({ preventScroll: true });
     });
   }, [onClose]);
 
   const doImport = useCallback(async () => {
+    if (closedRef.current || importingRef.current) return;
+    if (phase.kind !== "failed" && !(phase.kind === "ready" && phase.capture === "allowed")) return;
+    importingRef.current = true;
+    const scope = useRoomStore.getState().workspaceScopeRevision;
+    const isCurrent = () => !closedRef.current && useRoomStore.getState().workspaceScopeRevision === scope;
     setPhase({ kind: "importing" });
     try {
       const response = await window.ailearn.source.create({
         meta: createRequestMeta(),
         request: { url },
       });
+      if (!isCurrent()) return;
       const created = unwrapGatewayResult(response);
       dispatchSourceCaptured(created.source.id, created.source.title);
-      setPhase({ kind: "done", title: created.source.title, duplicate: Boolean(created.duplicateOf) });
+      setPhase({ kind: "done", sourceId: created.source.id, title: created.source.title, duplicate: Boolean(created.duplicateOf) });
     } catch (error) {
-      setPhase({ kind: "failed", message: gatewayErrorMessage(error) });
+      if (isCurrent()) setPhase({ kind: "failed", message: gatewayErrorMessage(error) });
+    } finally {
+      importingRef.current = false;
     }
-  }, [url]);
+  }, [url, phase]);
 
   const denied = phase.kind === "ready" && phase.capture === "denied";
   const busy = phase.kind === "checking" || phase.kind === "importing";
@@ -212,7 +232,7 @@ export function ClipboardLinkPrompt({ url, onClose }: { readonly url: string; re
   return (
     <dialog
       ref={dialogRef}
-      className="source-intake-dialog"
+      className="source-intake-dialog source-experience"
       aria-labelledby="source-intake-title"
       onCancel={(event) => { event.preventDefault(); dismiss(true); }}
       onClick={(event) => {
@@ -230,7 +250,8 @@ export function ClipboardLinkPrompt({ url, onClose }: { readonly url: string; re
         >
           <X size={17} aria-hidden="true" />
         </button>
-        <h2 id="source-intake-title">{phase.kind === "done" ? (phase.duplicate ? "这份已经有啦" : "已经收下啦") : "收进来源库吗？"}</h2>
+        <span className="source-intake-dialog__item" aria-hidden="true"><Link2 size={27} /></span>
+        <h2 id="source-intake-title">{phase.kind === "done" ? (phase.duplicate ? "这份已经有啦" : "已经收下啦") : "收下这条链接？"}</h2>
         <p className="source-intake-dialog__url" aria-label={`链接地址：${url}`}>
           <strong>{hostOf(url)}</strong>
           <small>{url}</small>
@@ -242,7 +263,7 @@ export function ClipboardLinkPrompt({ url, onClose }: { readonly url: string; re
               : `《${phase.title}》正在解析，解析完会出现在来源库里。`}
           </p>
         ) : (
-          <p className="source-intake-dialog__hint">由后台抓取正文并解析，和采集栏里填链接走的是同一条路。</p>
+          <p className="source-intake-dialog__hint">{phase.kind === "importing" ? "正在收下这份材料…" : "正文解析好以后，就能接着读了。"}</p>
         )}
         {denied ? <p className="source-intake-dialog__locked">只有工作区所有者可以采集来源，这条链接先不收。</p> : null}
         {phase.kind === "failed" ? <p className="source-intake-dialog__error" role="alert">{phase.message}</p> : null}
@@ -253,9 +274,14 @@ export function ClipboardLinkPrompt({ url, onClose }: { readonly url: string; re
                 ref={primaryRef}
                 type="button"
                 className="button primary"
-                onClick={() => { invoke("open-sources"); dismiss(true); }}
+                onClick={() => {
+                  setActiveSourceId(phase.sourceId);
+                  dismiss(true, false);
+                  invoke("open-source");
+                  setReturnTarget({ label: "返回来源库", run: () => invoke("open-sources") });
+                }}
               >
-                去来源库看看
+                打开这份材料<ArrowRight size={15} aria-hidden="true" />
               </button>
               <button type="button" className="button" onClick={() => dismiss(true)}>好</button>
             </>
@@ -294,6 +320,7 @@ type DropPhase =
   | { kind: "report"; outcomes: readonly DropOutcome[]; overflow: boolean; created: { readonly sourceId: string; readonly title: string } | null };
 
 export function GlobalDropOverlay() {
+  const overlayRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<DropPhase | null>(null);
   const dragDepthRef = useRef(0);
   const phaseRef = useRef<DropPhase | null>(null);
@@ -304,16 +331,36 @@ export function GlobalDropOverlay() {
   onboardingRef.current = onboardingOpen;
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const reportPrimaryRef = useRef<HTMLButtonElement>(null);
+  const batchRef = useRef(0);
+  const workspaceScopeRevision = useRoomStore(state => state.workspaceScopeRevision);
+  useSourceMotion(overlayRef, phase?.kind ?? "closed");
+  const motionPreference = useRoomStore(state => state.motionMode);
+  const reducedMotion = useRoomStore(state => state.reducedMotion);
+  const motionMode = resolveSceneMotionMode(motionPreference, reducedMotion);
 
   const reset = useCallback(() => {
+    batchRef.current++;
     dragDepthRef.current = 0;
+    phaseRef.current = null;
     setPhase(null);
   }, []);
+  useEffect(() => { reset(); return () => { batchRef.current++; }; }, [workspaceScopeRevision, reset]);
+
+  const dismissReport = useCallback(() => {
+    reset();
+    const target = returnFocusRef.current;
+    if (target?.isConnected) target.focus({ preventScroll: true });
+  }, [reset]);
 
   const processDrop = useCallback(async (transfer: DataTransfer) => {
+    const batch = ++batchRef.current;
+    const scope = useRoomStore.getState().workspaceScopeRevision;
+    const isCurrent = () => batch === batchRef.current && scope === useRoomStore.getState().workspaceScopeRevision;
     const files = [...transfer.files];
     const overflow = files.length > MAX_DROP_FILES;
     const kept = files.slice(0, MAX_DROP_FILES);
+    phaseRef.current = { kind: "working", done: 0, total: Math.max(1, kept.length) };
+    setPhase(phaseRef.current);
 
     type Task = { name: string; request: { content: string; title?: string } | { url: string } };
     const tasks: Task[] = [];
@@ -323,7 +370,7 @@ export function GlobalDropOverlay() {
       // 浏览器里拖出来的链接：没有文件，只有地址文本。
       const text = `${transfer.getData("text/uri-list")}\n${transfer.getData("text/plain")}`;
       const urls = extractCandidateLinks(text);
-      if (urls.length === 0) return;
+      if (urls.length === 0) { reset(); return; }
       for (const url of urls) tasks.push({ name: hostOf(url), request: { url } });
     } else {
       for (const file of kept) {
@@ -338,7 +385,9 @@ export function GlobalDropOverlay() {
         let text: string;
         try {
           text = await file.text();
+          if (!isCurrent()) return;
         } catch {
+          if (!isCurrent()) return;
           outcomes.push({ name: file.name, ok: false, message: "这份文件读不出来，换一种方式粘贴试试。" });
           continue;
         }
@@ -362,6 +411,7 @@ export function GlobalDropOverlay() {
 
     if (tasks.length > 0) {
       const capture = await canCaptureSource();
+      if (!isCurrent()) return;
       if (capture !== "allowed") {
         outcomes.push({
           name: tasks.length === 1 ? tasks[0].name : `这 ${tasks.length} 份材料`,
@@ -372,11 +422,13 @@ export function GlobalDropOverlay() {
         let created: { readonly sourceId: string; readonly title: string } | null = null;
         let done = 0;
         for (const task of tasks) {
+          if (!isCurrent()) return;
           try {
             const response = await window.ailearn.source.create({
               meta: createRequestMeta(),
               request: task.request,
             });
+            if (!isCurrent()) return;
             const detail = unwrapGatewayResult(response);
             created = { sourceId: detail.source.id, title: detail.source.title };
             outcomes.push({
@@ -388,6 +440,7 @@ export function GlobalDropOverlay() {
                 : "已收下，正在解析。",
             });
           } catch (error) {
+            if (!isCurrent()) return;
             outcomes.push({ name: task.name, ok: false, message: gatewayErrorMessage(error) });
           }
           done += 1;
@@ -399,7 +452,7 @@ export function GlobalDropOverlay() {
       }
     }
     setPhase({ kind: "report", outcomes, overflow, created: null });
-  }, []);
+  }, [reset]);
 
   useEffect(() => {
     const hasFiles = (transfer: DataTransfer | null) =>
@@ -441,7 +494,7 @@ export function GlobalDropOverlay() {
         if (phaseRef.current?.kind === "armed") setPhase(null);
         return;
       }
-      if (!phaseRef.current || !event.dataTransfer || !hasFiles(event.dataTransfer)) return;
+      if (phaseRef.current?.kind !== "armed" || !event.dataTransfer || !hasFiles(event.dataTransfer)) return;
       event.preventDefault();
       dragDepthRef.current = 0;
       void processDrop(event.dataTransfer);
@@ -473,6 +526,13 @@ export function GlobalDropOverlay() {
   useEffect(() => {
     if (!phase) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Tab" && phaseRef.current?.kind === "report") {
+        const buttons = [...(overlayRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+        const first = buttons[0], last = buttons.at(-1);
+        if (event.shiftKey && (document.activeElement === first || !overlayRef.current?.contains(document.activeElement))) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+        return;
+      }
       if (event.key !== "Escape" || phaseRef.current?.kind === "working") return;
       event.preventDefault();
       reset();
@@ -492,7 +552,7 @@ export function GlobalDropOverlay() {
   const succeeded = report?.outcomes.some((outcome) => outcome.ok) ?? false;
 
   return (
-    <div className="source-intake-drop" data-phase={phase.kind} aria-hidden={report ? undefined : true}>
+    <div ref={overlayRef} className="source-intake-drop source-experience" data-source-motion={motionMode} data-phase={phase.kind} aria-hidden={report ? undefined : true}>
       <div
         className="source-intake-drop__card"
         role={report ? "alertdialog" : undefined}
@@ -545,7 +605,7 @@ export function GlobalDropOverlay() {
                 ref={succeeded ? undefined : reportPrimaryRef}
                 type="button"
                 className={succeeded ? "button" : "button primary"}
-                onClick={reset}
+                onClick={dismissReport}
               >
                 知道了
               </button>

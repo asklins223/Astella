@@ -15,10 +15,12 @@ export type ObjectiveLibraryView = {
   filter: ObjectiveLibraryFilter;
   scrollTop: number;
   lastObjectiveId: string | null;
+  openPackKey: string | null;
+  galleryScrollTop: number;
 };
 
 function emptyView(workspaceId: string | null = null): ObjectiveLibraryView {
-  return { workspaceId, query: "", filter: "all", scrollTop: 0, lastObjectiveId: null };
+  return { workspaceId, query: "", filter: "all", scrollTop: 0, lastObjectiveId: null, openPackKey: null, galleryScrollTop: 0 };
 }
 
 let view = emptyView();

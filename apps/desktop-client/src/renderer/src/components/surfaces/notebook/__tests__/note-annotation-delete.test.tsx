@@ -146,6 +146,23 @@ describe("确认状态由页面只存一份", () => {
     act(() => result.current.request(ANNOTATION));
     expect(result.current.viewFor(other)).toBe("idle");
   });
+
+  it("失败提示只属于出错的批注，取消或再次请求时清掉旧提示", () => {
+    const { result } = renderHook(() => useAnnotationDeleteConfirm());
+    const other = { ...ANNOTATION, annotationId: "a-2" };
+    act(() => { result.current.request(ANNOTATION); result.current.fail(ANNOTATION, "服务暂不可用"); });
+    expect(result.current.errorFor(ANNOTATION)).toBe("服务暂不可用");
+    expect(result.current.errorFor(other)).toBeNull();
+    expect(result.current.errorFor({ ...ANNOTATION, noteId: "n-2" })).toBeNull();
+    act(() => result.current.cancel());
+    expect(result.current.errorFor(ANNOTATION)).toBeNull();
+    act(() => result.current.fail(ANNOTATION, "旧失败"));
+    act(() => result.current.request(other));
+    expect(result.current.errorFor(ANNOTATION)).toBeNull();
+    expect(result.current.viewFor(other)).toBe("confirming");
+    act(() => result.current.reset());
+    expect(result.current.viewFor(other)).toBe("idle");
+  });
 });
 
 describe("删批注的附页", () => {

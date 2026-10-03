@@ -59,8 +59,14 @@ describe("删批注：连带删什么", () => {
     }
     // 只认 sourceKind = 'annotation'：速看那类产物与批注无关。
     assert.ok(removeBranch.includes('eq(noteLearningArtifacts.sourceKind, "annotation")'), "没有限定只删批注来源的演示");
-    // 作用域收在本人这篇笔记上（RLS 之外的第二道）。
-    assert.ok(removeBranch.includes("owned(scope, noteId)"), "删除没有收在本人这篇笔记的范围内");
+    // 产物 DELETE 必须使用产物表的列；复用批注表条件会生成缺失 FROM 的 SQL。
+    const artifactDelete = removeBranch.slice(removeBranch.indexOf("tx.delete(noteLearningArtifacts)"),
+      removeBranch.indexOf("await tx.delete(noteAnnotations)"));
+    for (const [column, value] of [["workspaceId", "scope.workspaceId"], ["userId", "scope.userId"], ["noteId", "noteId"]]) {
+      assert.ok(artifactDelete.includes(`eq(noteLearningArtifacts.${column}, ${value})`),
+        `演示删除没有按自身的 ${column} 限定作用域`);
+    }
+    assert.ok(!artifactDelete.includes("owned(scope, noteId)"), "产物删除不能引用批注表的列");
   });
 
   /**

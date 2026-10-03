@@ -1,14 +1,13 @@
 import { useMemo, useState, useEffect } from "react";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
-import { cardGenerationStatusLabel } from "./card-generation-status";
+import { cardGenerationStatusLabel, isCardGenerationInFlight } from "./card-generation-status";
 import { candidateDecisionLabel } from "./candidate-review-model";
 import { cardStrategyPresentation } from "./card-strategy-presentation";
 import type { CardGenerationSession } from "./use-card-generation-session";
 
 export function useCardGenerationReadableView(session: CardGenerationSession) {
  const { run, loading, activeCandidate, activeCandidateIndex, candidates, actionableUndecidedCount, noteTitle, practiceQuotaView, schedulingNotice, failure, page, progressView, landedCandidates, receipt } = session;
- const progressPercent = progressView?.percent ?? 0;
  const [, setTick] = useState(0);
  useEffect(() => { if (!run) return; const timer = window.setInterval(() => setTick(value => value + 1), 30_000); return () => window.clearInterval(timer); }, [run?.runId]);
 const readableView = useMemo<PageReadableV1 | null>(() => {
@@ -37,11 +36,12 @@ const readableView = useMemo<PageReadableV1 | null>(() => {
     }
     return {
       pageId: "card_generation_progress",
-      title: noteTitle ? `把《${shortLabel(noteTitle)}》整理成学习卡` : "把一篇笔记整理成可练习的问题",
-      statusLine: `${cardGenerationStatusLabel(run.status)} · ${progressView?.eyebrow ?? "这一步还说不出来"}`,
+      title: isCardGenerationInFlight(run.status) ? "正在做一套学习卡" : "这一套学习卡",
+      statusLine: cardGenerationStatusLabel(run.status),
       metrics: [
+        ...(noteTitle ? [{ label: "笔记", value: `来自《${noteTitle}》` }] : []),
         ...(progressView?.detail ? [{ label: "进度", value: shortLabel(progressView.detail) }] : []),
-        ...(progressView ? [{ label: "整体进度", value: `${progressPercent}%` }] : []),
+        ...(run.progress ? [{ label: "已写出", value: `${run.progress.authored} 张` }, { label: "已核对", value: `${run.progress.gatePassed} 张` }] : []),
         { label: "已落地的候选", value: `${landedCandidates.length} 张` },
       ],
       items: landedCandidates.slice(0, 8).map((candidate, index) => ({
@@ -53,11 +53,11 @@ const readableView = useMemo<PageReadableV1 | null>(() => {
         ? { notice: `无法确认这次生成：${shortLabel(failure)}` }
         : progressView
           ? {}
-          : { notice: "这次生成停下来了，后台没有给出可以恢复的下一步。" }),
+          : { notice: "这次生成已经停下，可以按最新已保存的笔记重新生成。" }),
     };
   }, [
     activeCandidate, activeCandidateIndex, actionableUndecidedCount, candidates, failure,
-    landedCandidates, loading, noteTitle, page, practiceQuotaView, progressPercent, progressView, receipt, run,
+    landedCandidates, loading, noteTitle, page, practiceQuotaView, progressView, receipt, run,
     schedulingNotice,
   ]);
 usePageReadableView(readableView);

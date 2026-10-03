@@ -65,7 +65,7 @@ const entry = read(ENTRY);
 const listed = [...entry.matchAll(/import\s+"([^"]*\.css)"/g)].map((m) => m[1]);
 
 /** 第三方样式也从唯一入口加载；完整性检查区分包样式与仓库样式。 */
-const THIRD_PARTY = ["@milkdown/kit/prose/view/style/prosemirror.css"];
+const THIRD_PARTY = ["@milkdown/kit/prose/view/style/prosemirror.css", "katex/dist/katex.min.css"];
 
 const componentImports: { file: string; spec: string }[] = [];
 for (const file of TS_FILES) {

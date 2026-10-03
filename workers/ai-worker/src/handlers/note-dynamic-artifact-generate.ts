@@ -32,6 +32,7 @@ import { createProvider } from "../lib/ai-provider.ts";
 import { extractJsonFromText } from "../lib/providers/json-response.ts";
 import { assertJobLease, isJobLeaseActive, JobLeaseLostError, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
 import { NoteDynamicArtifactOutputError } from "../lib/non-retryable-errors.ts";
+import { logger } from "../lib/logger.ts";
 import { currentWorkerWorkspaceTransaction } from "../db.ts";
 import type { JobPayload } from "./index.ts";
 
@@ -193,9 +194,17 @@ export async function runNoteDynamicArtifactGenerate(job: JobPayload): Promise<v
   }
 
   const grounded = groundArtifactStepsV1({ steps: result.doc.outline, blocks: frozen.blocks });
-  if (!grounded.ok) throw new NoteDynamicArtifactOutputError("动态演示没有足够的笔记原文依据");
+  if (!grounded.ok) {
+    logger.warn({ jobId: job.id, stage: "evidence", reason: "insufficient_grounding" }, "note dynamic artifact rejected");
+    throw new NoteDynamicArtifactOutputError("动态演示没有足够的笔记原文依据");
+  }
   const documentCheck = checkArtifactDocumentV1({ document: result.doc.document });
-  if (!documentCheck.ok) throw new NoteDynamicArtifactOutputError("动态演示页面没有通过安全检查");
+  if (!documentCheck.ok) {
+    // Only the bounded rule category is logged; the rejected page may contain
+    // note text, URLs or script literals and must stay out of operational logs.
+    logger.warn({ jobId: job.id, stage: "document", reason: documentCheck.verdict.violation?.reason }, "note dynamic artifact rejected");
+    throw new NoteDynamicArtifactOutputError("动态演示页面没有通过安全检查");
+  }
   const generatorRef = `${DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1} (${provider.modelId})`;
   const rendered = buildDynamicArtifactHtmlV1({
     doc: result.doc,
@@ -203,7 +212,10 @@ export async function runNoteDynamicArtifactGenerate(job: JobPayload): Promise<v
     snapshotHash: frozen.contentHash,
     generatorRef,
   });
-  if (!rendered.ok) throw new NoteDynamicArtifactOutputError("动态演示页面整理失败");
+  if (!rendered.ok) {
+    logger.warn({ jobId: job.id, stage: "render", reason: rendered.reason }, "note dynamic artifact rejected");
+    throw new NoteDynamicArtifactOutputError("动态演示页面整理失败");
+  }
 
   await withJobTransaction(job, async (tx) => {
     await lockJobLease(tx, job);

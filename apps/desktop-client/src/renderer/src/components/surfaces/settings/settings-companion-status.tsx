@@ -1,22 +1,12 @@
 /**
- * 伴星能力那两行：模型在本机的加载状态、以及伴星读取/外发那一条。
- *
- * ## 为什么从 `settings-surface.tsx` 拆出来（2026-09-29）
- *
- * 36 行、8 个外部符号。`actionReason` / `featureReason` / `nativeReason` 三个
- * 「为什么这一档是这一档」的说明函数，以及 `live2dStatusLabel` 都随它进来或直接引用——
- * 理由**只有这一处消费**，放在页面里就等于让下一个人猜「这几个函数还有别处用吗」。
- *
- * ⚠️ 那条注释是这一块的一部分：伴星形态的切换入口**在别处**（伴星快捷设置 → 伴星设置，
- * 2026-09-20 用户裁决），这里只留本机加载状态。别因为"这里也能改"就把入口搬回来。
- *
- * 硬约束（`AGENTS.md`）：模型不可用时伴星会隐藏，但**那要在伴星那一侧处理并就地说明**——
- * 这里只报事实，不改成"重新加载"那颗按钮。
+ * 当前模型与对话能力的状态说明。形象选择随 2026-10-02 的信息架构重构
+ * 归入「声音与显示」；快捷设置保留当页的临时操作。
+ * 模型不可用时，角色所在处负责解释隐藏原因，这里展示实际能力读数。
  */
-import type { ReactElement } from "react";
-import { AudioLines, MessageCircle, MessagesSquare, Mic, Sparkles } from "lucide-react";
-import { SettingRow } from "./settings-primitives.tsx";
 import type { CapabilityProjectionV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import { AudioLines,MessageCircle,MessagesSquare,Mic,Sparkles } from "lucide-react";
+import type { ReactElement } from "react";
+import { SettingRow } from "./settings-primitives.tsx";
 
 type Live2dStatus = "ready" | "loading" | "unavailable";
 
@@ -95,8 +85,6 @@ export function SettingsCompanionStatus(props: {
   } = props;
   return (
 <div className="settings-rows settings-rows--split">
-  {/* 伴星形态的切换入口在伴星快捷设置（「更多功能」→ 伴星设置），2026-09-20 用户裁决；
-      这里只保留本机加载状态。 */}
   <SettingRow mark={<Sparkles size={15} />} title="模型状态" detail="当前形态的模型在本机的加载状态。">
     <span
       className={live2dStatus === "ready" ? "tag green" : "tag"}

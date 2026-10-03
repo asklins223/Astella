@@ -1,13 +1,19 @@
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../../db/client.ts";
 import { withWorkspaceTransaction } from "../../../db/client.ts";
 import { resolveAuthSurfaceManifestSecret } from "../../../companion-contracts/auth-surface.ts";
 import { escapeLikePattern } from "../../../lib/like-escape.ts";
 import { companionMessageSelection, companionMessageSelectionSql } from "../turn/message-selection.ts";
+import { readStoredCompanionBlocks } from "../turn/message-blocks.ts";
 
 const CURSOR_CONTEXT = "companion-continuous-history-v1:";
 const CURSOR_TTL_MS = 24 * 3_600_000;
+// A history cursor only bookmarks authenticated, scoped reads. It is not an
+// assistant authorization grant, so an unconfigured grant signer must not
+// prevent reading history. Restarting without a configured key expires cursors.
+const instanceCursorSecret = randomBytes(32).toString("base64url");
+const historyCursorSecret = () => resolveAuthSurfaceManifestSecret() ?? instanceCursorSecret;
 
 type HistoryCursor = {
   version: 1;
@@ -30,8 +36,7 @@ function canonicalCursor(payload: HistoryCursor): string {
 }
 
 function signCursor(payload: HistoryCursor): string {
-  const secret = resolveAuthSurfaceManifestSecret();
-  if (!secret) throw new Error("continuous history cursor signing secret missing");
+  const secret = historyCursorSecret();
   const body = canonicalCursor(payload);
   const signature = createHmac("sha256", secret).update(CURSOR_CONTEXT + body).digest("base64url");
   return `${Buffer.from(body).toString("base64url")}.${signature}`;
@@ -43,8 +48,7 @@ function verifyCursor(
 ): HistoryCursor | null {
   const [bodyPart, signaturePart, extra] = encoded.split(".");
   if (!bodyPart || !signaturePart || extra) return null;
-  const secret = resolveAuthSurfaceManifestSecret();
-  if (!secret) return null;
+  const secret = historyCursorSecret();
   let body: string;
   let supplied: Buffer;
   try {
@@ -75,7 +79,7 @@ type HistoryRow = {
   id: string;
   role: "user" | "assistant" | "system";
   kind: "text" | "voice_transcript" | "proactive" | "action" | "result" | "error" | "cancelled";
-  blocks: unknown[];
+  blocks: unknown;
   selection: unknown;
   run_id: string | null;
   // postgres-js 对 raw execute 不把 timestamptz 解析成 Date（返回
@@ -92,7 +96,7 @@ function item(row: HistoryRow) {
     messageId: row.id,
     role: row.role,
     kind: row.kind,
-    blocks: row.blocks,
+    blocks: readStoredCompanionBlocks(row.blocks),
     ...companionMessageSelection(row.selection),
     runId: row.run_id,
     createdAt: row.created_at_iso,
@@ -104,11 +108,24 @@ export async function listContinuousHistory(args: {
   workspaceId: string;
   userId: string;
   before?: string;
+  throughMessageId?: string;
   limit: number;
 }) {
   const cursor = args.before ? verifyCursor(args.before, args) : null;
   if (args.before && !cursor) return { invalidCursor: true as const };
   const page = await withWorkspaceTransaction(args, async (tx) => {
+    let boundary = cursor;
+    if (!boundary && args.throughMessageId) {
+      const anchor = await tx.execute<{ id: string; created_at: string }>(sql`
+        SELECT m.id, to_char(m.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_at
+        FROM companion_messages m JOIN companion_conversations c ON c.id = m.conversation_id
+        WHERE m.id = ${args.throughMessageId}::uuid AND m.workspace_id = ${args.workspaceId}
+          AND m.user_id = ${args.userId} AND c.kind IN ('dialogue', 'inbox')
+      `);
+      if (!anchor[0]) return null;
+      boundary = { version: 1, workspaceId: args.workspaceId, userId: args.userId,
+        createdAt: anchor[0].created_at, id: anchor[0].id, expiresAt: "" };
+    }
     const rows = await tx.execute<HistoryRow>(sql`
       SELECT m.id, m.role, m.kind, m.blocks, m.run_id,
              ${companionMessageSelectionSql("m")} AS selection,
@@ -120,17 +137,20 @@ export async function listContinuousHistory(args: {
       WHERE m.workspace_id = ${args.workspaceId}
         AND m.user_id = ${args.userId}
         AND c.kind IN ('dialogue', 'inbox')
-        ${cursor ? sql`AND (m.created_at, m.id) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)` : sql``}
+        ${cursor ? sql`AND (m.created_at, m.id) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)`
+          : boundary ? sql`AND (m.created_at, m.id) <= (${boundary.createdAt}::timestamptz, ${boundary.id}::uuid)` : sql``}
       ORDER BY m.created_at DESC, m.id DESC
       LIMIT ${args.limit + 1}
     `);
     return Array.isArray(rows) ? rows : [];
   });
+  if (!page) return { invalidCursor: false as const, missingMessage: true as const };
   const hasMore = page.length > args.limit;
   const selected = page.slice(0, args.limit);
   const last = selected[selected.length - 1];
   return {
     invalidCursor: false as const,
+    missingMessage: false as const,
     value: {
       version: 1 as const,
       // API 分页按倒序取，交给界面前恢复为自然时间顺序。
@@ -188,7 +208,7 @@ export async function searchContinuousHistory(args: {
     return {
       version: 1 as const,
       query: args.query,
-      items: (Array.isArray(rows) ? rows : []).map(item),
+      items: (Array.isArray(rows) ? rows : []).map(item).reverse(),
     };
   });
 }

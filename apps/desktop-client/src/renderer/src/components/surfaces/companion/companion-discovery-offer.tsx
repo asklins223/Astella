@@ -24,7 +24,7 @@
  * 会回到 `already_collected` 而不是新插一行。所以这里**不**自己造去重逻辑，
  * 只把同一个身份三元组原样传下去（见 `companion-discovery-identity.test.ts`）。
  */
-import type { CompanionDiscoveryKind, CompanionDiscoverySource } from "@ailearn/shared/desktop-ipc-contracts";
+import type { CompanionDiscoveryKind,CompanionDiscoverySource } from "@ailearn/shared/desktop-ipc-contracts";
 
 /** §7 共用身份三元组。发现簿页与这里的按钮传的是同一份。 */
 export interface DiscoveryKeepIdentity {

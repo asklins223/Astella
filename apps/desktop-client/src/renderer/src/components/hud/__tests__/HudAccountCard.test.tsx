@@ -9,8 +9,7 @@ import { useRoomStore } from "../../../app/room-store.ts";
 /**
  * 顶栏那个小框要回答两件事：这台设备登录的是谁，以及要换人时怎么退出。
  *
- * 退出必须按两次——一次点击就把整间房间换成登录页，点错的人连「我刚才是不是
- * 把自己登出去了」都来不及问。头像则是另一个坑：它按邮箱记账，不然换过账号之后
+ * 退出先展开明确确认，取消必须可达；确认前不能结束本机会话。头像则是另一个坑：它按邮箱记账，不然换过账号之后
  * 上一个账号的脸会留在屏幕上。
  */
 
@@ -54,20 +53,20 @@ describe("顶栏账户小框", () => {
     render(<HudAccountCard onOpenAccount={() => {}} />);
 
     expect(screen.getByText("Asklins")).toBeTruthy();
-    expect(screen.getByText("账号 asklins@example.com")).toBeTruthy();
+    expect(screen.getByText("asklins@example.com")).toBeTruthy();
   });
 
-  it("没有显示名时邮箱顶上，第二行不再抄一遍同一个邮箱", () => {
+  it("没有显示名时账户标题与邮箱分别排布，不拿长邮箱作大标题", () => {
     signIn({ email: "only@email.com", displayName: null });
     stubProfile({ displayName: null, avatarUrl: null });
     render(<HudAccountCard onOpenAccount={() => {}} />);
 
     expect(screen.getByText("only@email.com")).toBeTruthy();
-    expect(screen.getByText("这个账号没有设置显示名")).toBeTruthy();
+    expect(screen.getByText("给自己取个名字吧")).toBeTruthy();
     expect(screen.queryByText(/^账号 only@email\.com$/)).toBeNull();
   });
 
-  it("第一次点退出只武装自己，不发请求", () => {
+  it("点退出展开确认并聚焦取消，不发请求", () => {
     signIn({ email: "asklins@example.com", displayName: null });
     const { logout } = stubProfile({ displayName: null, avatarUrl: null });
     render(<HudAccountCard onOpenAccount={() => {}} />);
@@ -75,18 +74,31 @@ describe("顶栏账户小框", () => {
     fireEvent.click(screen.getByRole("button", { name: /^退出登录/ }));
 
     expect(logout).not.toHaveBeenCalled();
-    expect(screen.getByText("再点确认")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "确认退出" })).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "取消" }));
   });
 
-  it("第二次点才真的退出这台设备", async () => {
+  it("明确确认才退出这台设备", async () => {
     signIn({ email: "asklins@example.com", displayName: null });
     const { logout } = stubProfile({ displayName: null, avatarUrl: null });
     render(<HudAccountCard onOpenAccount={() => {}} />);
 
     const row = screen.getByRole("button", { name: /^退出登录/ });
     fireEvent.click(row);
-    fireEvent.click(row);
+    fireEvent.click(screen.getByRole("button", { name: "确认退出" }));
     await waitFor(() => expect(logout).toHaveBeenCalledOnce());
+  });
+
+  it("取消退出恢复按钮焦点，连点原入口也不会登出", () => {
+    signIn({ email: "asklins@example.com", displayName: null });
+    const { logout } = stubProfile({ displayName: null, avatarUrl: null });
+    render(<HudAccountCard onOpenAccount={() => {}} />);
+    const row = screen.getByRole("button", { name: /^退出登录/ });
+    fireEvent.click(row); fireEvent.click(row);
+    expect(logout).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("button", { name: "确认退出" })).toBeNull();
+    expect(document.activeElement).toBe(row);
   });
 
   it("档案里没有头像时只问一次，之后每次点开都不再重复请求", async () => {
@@ -138,13 +150,13 @@ describe("顶栏账户小框", () => {
     expect(screen.getByText("新人")).toBeTruthy();
   });
 
-  it("「账户与空间」这一行仍然指向设置页——头像槽位以前就是干这个的", () => {
+  it("账户设置打开个人资料与安全设置", () => {
     signIn({ email: "asklins@example.com", displayName: null });
     stubProfile({ displayName: null, avatarUrl: null });
     const onOpenAccount = vi.fn();
     render(<HudAccountCard onOpenAccount={onOpenAccount} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /^账户与空间/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^账户设置/ }));
 
     expect(onOpenAccount).toHaveBeenCalledOnce();
   });
@@ -154,6 +166,7 @@ describe("顶栏账户小框", () => {
     stubProfile({ displayName: null, avatarUrl: null });
     render(<HudAccountCard onOpenAccount={() => {}} />);
 
+    fireEvent.click(screen.getByRole("button", { name: /^退出登录/ }));
     expect(screen.getByText(/退出不会删除任何学习记录/).textContent).toContain("其他设备");
   });
 });

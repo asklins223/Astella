@@ -1,0 +1,82 @@
+/* Drawn, rounded objects for the companion corner of settings. */
+.hud-surface .settings-companion { --hud-ink: #4a594a; --hud-soft: #66776b; --hud-line: #dce7c5; --hud-cream: #fffbea; --hud-butter: #d4ecc5; --focus: #6cab8d; container: companion-preferences / inline-size; font: 13px/1.7 "Noto Sans SC Variable", sans-serif; color: var(--hud-ink); }
+.hud-surface .settings-companion-home { display: flex; gap: 13px; align-items: center; padding: 16px 18px; border-radius: 25px 28px 23px 27px; background: #e1efcf; }
+.hud-surface .settings-companion-home > svg { flex: none; color: #768367; }
+.hud-surface .settings-companion-home > div { flex: 1; min-width: 0; }
+.hud-surface .settings-companion-home strong { font: 750 15px/1.5 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .settings-companion-home p { margin: 5px 0 0; color: var(--hud-soft); font-size: 12px; line-height: 1.8; }
+.hud-surface .settings-companion-home .button { flex: none; min-height: 32px; font-size: 12px; }
+.hud-surface .settings-companion-tabs { position: relative; display: flex; gap: 7px; margin: 19px 0 25px; padding: 5px; border-radius: 24px; background: #edf2d7; isolation: isolate; }
+.hud-surface .settings-companion-tabs > button { position: relative; z-index: 1; flex: 1; padding: 10px 12px; border: 2px solid transparent; border-radius: 20px; background: transparent; color: #8d9b79; font-size: 12px; cursor: pointer; font-weight: 650; }
+.hud-surface .settings-companion-tabs > button[aria-selected="true"] { color: #45866d; }
+
+.hud-surface .settings-companion-chapter { padding-bottom: 21px; margin-bottom: 24px; border-bottom: 1px solid var(--hud-line); }
+.hud-surface .settings-companion-chapter > header { margin-bottom: 15px; }
+.hud-surface .settings-companion-chapter h3 { margin: 0; font: 750 17px/1.6 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .settings-companion-chapter header p { margin: 6px 0 0; color: var(--hud-soft); font-size: 12px; }
+
+.hud-surface .settings-companion-quiet { display: flex; gap: 11px; align-items: end; flex-wrap: wrap; padding: 14px 16px; border-radius: 22px 25px 21px 24px; background: #eef3d8; font-size: 12px; }
+.hud-surface .settings-companion-quiet > div { display: grid; gap: 6px; }
+.hud-surface .settings-companion-quiet > span { padding-bottom: 8px; color: var(--hud-soft); }
+.hud-surface .settings-companion-quiet small { width: 100%; color: var(--hud-soft); }
+.hud-surface .settings-companion-quiet p { width: 100%; margin: 0; color: #9b4b33; }
+.hud-surface .settings-companion-note { margin: 14px 0 0; color: var(--hud-soft); font-size: 12px; }
+.hud-surface .settings-companion-notice { margin: 0 0 18px; padding: 12px 16px; border: 1px solid #d5e6ba; border-radius: 19px; background: #e0efd0; color: #5b7150; font-size: 12px; overflow-wrap: anywhere; }
+.hud-surface .settings-companion-capabilities { font-size: 12px; }
+.hud-surface .settings-companion-capabilities > summary { padding: 6px 0; color: #627b53; cursor: pointer; }
+.hud-surface .settings-companion-capabilities > :not(summary) { margin-top: 16px; }
+.hud-surface .settings-companion-size { margin: 16px 0; }
+.hud-surface .settings-companion-size > b { font: 700 13px/1.5 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .settings-companion-voice .hud-slider { margin: 10px 0 16px; }
+.hud-surface .settings-companion-voice .hud-slider__readout b { font: 750 16px/1.5 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .settings-companion .settings-voice__reading b,
+.hud-surface .settings-companion .settings-inline-state b { font: 700 13px/1.5 "Noto Sans SC Variable", sans-serif; }
+
+.hud-surface .settings-companion-privacy { display: flex; align-items: center; gap: 14px; margin-bottom: 25px; padding: 15px 17px; border: 2px solid #d7e7b9; border-radius: 23px; background: #e8f2d5; }
+.hud-surface .settings-companion-privacy > div { flex: 1; }
+.hud-surface .settings-companion-privacy p { margin: 6px 0 0; color: var(--hud-soft); font-size: 12px; line-height: 1.8; }
+.hud-surface .settings-companion-exports { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; }
+.hud-surface .settings-companion-exports button { display: flex; gap: 11px; padding: 15px; border: 1px solid var(--hud-line); border-radius: 22px 25px 21px 24px; background: #fffcee; color: var(--hud-ink); text-align: left; cursor: pointer; }
+.hud-surface .settings-companion-exports svg { flex: none; color: #879677; }
+.hud-surface .settings-companion-exports strong { display: block; font-size: 12px; line-height: 1.8; }
+.hud-surface .settings-companion-exports small { display: block; margin-top: 6px; color: var(--hud-soft); font-size: 12px; line-height: 1.8; }
+.hud-surface .settings-companion-clear { padding: 16px 0; border-bottom: 1px solid var(--hud-line); }
+.hud-surface .settings-companion-clear > div:first-child { display: flex; align-items: center; gap: 12px; }
+.hud-surface .settings-companion-clear svg { flex: none; color: #ac8b75; }
+.hud-surface .settings-companion-clear span { flex: 1; }
+.hud-surface .settings-companion-clear strong { display: block; font-size: 12px; }
+.hud-surface .settings-companion-clear small { display: block; margin-top: 6px; color: var(--hud-soft); font-size: 12px; line-height: 1.8; }
+.hud-surface .settings-companion .danger-quiet { border: 0; padding: 5px 8px; background: transparent; color: #9f5c3f; font-size: 12px; cursor: pointer; }
+.hud-surface .settings-companion-confirm { margin: 14px 0 0 28px; padding: 14px; border: 1px solid #d0ad98; border-radius: 22px 25px 21px 24px; background: #fbe9d4; }
+.hud-surface .settings-companion-confirm p { margin: 0 0 12px; color: #8b503b; font-size: 12px; }
+.hud-surface .settings-companion button:disabled { opacity: .5; cursor: default; }
+.hud-surface .settings-companion :where(button, input, summary):focus-visible { outline: 2px solid #82986f; outline-offset: 3px; }
+@container companion-preferences (max-width: 650px) {
+  .hud-surface .settings-companion-home { flex-wrap: wrap; }
+  .hud-surface .settings-companion-home .button { margin-left: 36px; }
+  .hud-surface .settings-companion-exports { grid-template-columns: minmax(0, 1fr); }
+}
+@container companion-preferences (max-width: 560px) {
+
+  .hud-surface .settings-companion-privacy { flex-wrap: wrap; }
+  .hud-surface .settings-companion-clear > div:first-child { flex-wrap: wrap; }
+  .hud-surface .settings-companion-clear span { min-width: 180px; }
+}
+
+
+.hud-surface .settings-companion :where(button, input, textarea) { appearance: none; }
+
+.hud-surface .settings-companion-time { display: flex; align-items: center; gap: 4px; padding: 5px 8px; border-radius: 18px; background: #fffbea; color: #6d936c; }
+.hud-surface .settings-companion-time > svg { margin-right: 5px; }
+.hud-surface .settings-companion-time .hud-picker__trigger { min-width: 44px; padding: 5px 6px; border: 0; border-radius: 13px; background: #e7efd3; color: #5d7c54; font-size: 12px; }
+.hud-surface .settings-companion-time .hud-picker__menu { min-width: 82px; max-height: 205px; border-color: #fffdeb; background: #edf4d9; scrollbar-color: #b3d29a transparent; }
+.hud-surface .settings-companion-time .hud-picker__option { color: #5f825a; }
+.hud-surface .settings-companion summary { display: flex; align-items: center; gap: 8px; list-style: none; }
+.hud-surface .settings-companion summary::-webkit-details-marker { display: none; }
+.hud-surface .settings-companion summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid #7da66a; border-bottom: 2px solid #7da66a; transform: rotate(-45deg); transition: transform 200ms ease; }
+.hud-surface .settings-companion details[open] > summary::before { transform: rotate(45deg); }
+.hud-surface .settings-companion-data { min-width: 0; }
+.hud-surface .settings-companion-danger { padding: 20px; border: 2px solid #f1dac0; border-radius: 25px 28px 24px 29px; background: #fff5e1; }
+.hud-surface .settings-companion-danger .settings-companion-clear:last-child { border-bottom: 0; padding-bottom: 0; }
+.hud-surface .settings-companion[data-motion="off"] :where(button, i, .hud-segmented__plate, summary::before) { transition: none; animation: none; }
+@media (prefers-reduced-motion: reduce) { .hud-surface .settings-companion :where(button, i, .hud-segmented__plate, summary::before) { transition: none; animation: none; } }

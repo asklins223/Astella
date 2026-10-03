@@ -103,8 +103,8 @@ describe("详情页的主行动块", () => {
     installApi(detail());
     stubRoom();
     render(<ObjectiveDetailSurface />);
-    await waitFor(() => expect(document.querySelector(".objective-brief__flags .objective-card-type")?.textContent).toContain("学习卡型机制解释"));
-    expect(document.querySelector(".objective-brief__type-help")?.textContent).toContain("可选择文字或口述；随卡客观题用于练习");
+    await waitFor(() => expect(document.querySelector(".objective-brief__flags .objective-card-type")?.textContent).toContain("机制解释"));
+    expect(document.querySelector(".objective-brief__type-help")?.textContent).toContain("可以打字或口述");
   });
 
   it("那个动词只出现一次——标题不再和按钮抢同一个词", async () => {
@@ -139,14 +139,14 @@ describe("详情页的主行动块", () => {
     expect(api.learningRun.start).not.toHaveBeenCalled();
   });
 
-  it("最近完成的结果可以重开，且再次挑战不会覆盖旧记录", async () => {
+  it("最近结果不被旧计数的 0 覆盖，可以重开且再次挑战不会覆盖旧记录", async () => {
     const api = installApi(detail({
       personal: {
         reviewHold: null,
         initialValidation: null,
         activeRun: null,
         review: null,
-        practiceTrailCount: 1,
+        practiceTrailCount: 0,
         lastCanonicalAt: null,
         latestResult: { runId: RUN_ID, completedAt: "2026-09-20T17:12:00.000Z", outcome: "practice_completed" },
       },
@@ -161,6 +161,8 @@ describe("详情页的主行动块", () => {
       return button!;
     });
     expect(document.body.textContent).toContain("练习已完成");
+    expect(document.querySelector(".objective-brief__progress > summary")?.textContent).toContain("已有学习记录");
+    expect(document.querySelector(".objective-brief__progress > summary")?.textContent).not.toContain("0 次练习");
     expect(document.querySelector(".objective-brief__launch")?.textContent).toContain("再挑战一次");
     fireEvent.click(previous);
     expect(useRoomStore.getState().activeRunId).toBe(RUN_ID);

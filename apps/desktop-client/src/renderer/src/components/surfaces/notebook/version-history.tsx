@@ -16,7 +16,7 @@
  *     `use-notebook-versions.ts` 的文件头）。所以这里不能加一个「查看」按钮——
  *     那是不存在的操作。
  */
-import type { ReactElement } from "react";
+import { useLayoutEffect, useRef, type ReactElement } from "react";
 import type { DesktopNoteVersionItem } from "@ailearn/shared/desktop-surface-contracts";
 
 export function VersionHistory(props: {
@@ -36,10 +36,27 @@ export function VersionHistory(props: {
     versions, loading, failure, restoringVersionId,
     editable, dirty, formatRelative, onReload, onRestore,
   } = props;
+  const rootRef = useRef<HTMLElement>(null);
+  const pendingFocusRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const pending = pendingFocusRef.current;
+    const root = rootRef.current;
+    if (!pending || !root || loading || restoringVersionId) return;
+    pendingFocusRef.current = null;
+    if (failure) return;
+    const current = [...root.querySelectorAll<HTMLElement>("[data-version-id]")]
+      .find((row) => row.dataset.versionId === pending && row.dataset.currentVersion === "true");
+    const active = document.activeElement;
+    if (current && (root.contains(active) || active === document.body || active === document.documentElement)) {
+      // The restore button disappears on success. Keep the keyboard at its receipt,
+      // unless the user has already moved to another part of the notebook.
+      current.focus({ preventScroll: true });
+    }
+  }, [failure, loading, restoringVersionId, versions]);
   return (
-    <section className="version-history" aria-label="笔记版本历史">
+    <section ref={rootRef} className="version-history" aria-label="笔记版本历史">
       <p className="small">
-        每次提交都会留下一个不可变版本。恢复会把这篇笔记切回那一版，不会删除任何版本。
+        点击「保存版本」留下这次内容。平时的改动会自动同步到当前草稿；恢复会切回选中的版本，不会删除其他版本。
       </p>
       {loading ? <p className="small" role="status">正在读取版本历史…</p> : null}
       {!loading && failure ? (
@@ -56,7 +73,14 @@ export function VersionHistory(props: {
       {!loading && !failure && versions?.length ? (
         <ul className="version-list">
           {versions.map((version) => (
-            <li key={version.versionId} className={version.current ? "current" : undefined}>
+            <li
+              key={version.versionId}
+              className={version.current ? "current" : undefined}
+              data-version-id={version.versionId}
+              data-current-version={version.current ? "true" : undefined}
+              tabIndex={version.current ? -1 : undefined}
+              aria-label={version.current ? `v${version.versionNo}，当前版本` : undefined}
+            >
               <span className="version-no">v{version.versionNo}</span>
               <span className="version-time">{formatRelative(version.createdAt)}</span>
               {version.current ? (
@@ -71,7 +95,10 @@ export function VersionHistory(props: {
                     : dirty
                       ? "先提交或撤销当前编辑，再恢复历史版本"
                       : "把这篇笔记切回这一版，不删除任何版本"}
-                  onClick={() => onRestore(version)}
+                  onClick={() => {
+                    pendingFocusRef.current = version.versionId;
+                    onRestore(version);
+                  }}
                 >
                   {restoringVersionId === version.versionId ? "正在恢复…" : "恢复这一版"}
                 </button>

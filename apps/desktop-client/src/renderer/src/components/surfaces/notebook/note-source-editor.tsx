@@ -68,6 +68,12 @@ export function NoteSourceEditor(props: {
       doc: props.editor.getMarkdown() ?? "",
       extensions: [markdown(), syntaxHighlighting(defaultHighlightStyle), bracketMatching(), drawSelection(),
         search({ top: true }), EditorView.lineWrapping,
+        EditorState.phrases.of({
+          Find: "查找", Replace: "替换", next: "下一处", previous: "上一处", all: "选择全部",
+          "match case": "区分大小写", regexp: "正则表达式", "by word": "完整词语",
+          replace: "替换", "replace all": "全部替换", close: "关闭查找",
+          "Go to line": "跳到行", go: "跳转", "No matches": "没有找到匹配内容",
+        }),
         EditorView.contentAttributes.of({ "aria-label": "笔记 Markdown 源码", "aria-multiline": "true" }),
         readOnly.current.of(EditorState.readOnly.of(props.disabled)), gutter.current.of(lineNumbers()),
         annotationPlacementsField,

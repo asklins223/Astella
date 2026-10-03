@@ -43,6 +43,8 @@
 ALTER TABLE public.assistant_memory_items
   DROP CONSTRAINT IF EXISTS assistant_memory_items_author_type_check;
 ALTER TABLE public.assistant_memory_item_revisions
+  DROP CONSTRAINT IF EXISTS assistant_memory_item_revisions_author_type_check;
+ALTER TABLE public.assistant_memory_item_revisions
   DROP CONSTRAINT IF EXISTS assistant_memory_revisions_author_type_check;
 
 --> statement-breakpoint
@@ -97,6 +99,11 @@ ALTER TABLE public.assistant_memory_items
   DROP CONSTRAINT IF EXISTS assistant_memory_items_epistemic_status_check;
 ALTER TABLE public.assistant_memory_items
   ADD CONSTRAINT assistant_memory_items_epistemic_status_check
+    CHECK (epistemic_status IN ('supported', 'tentative', 'disputed', 'superseded'));
+ALTER TABLE public.assistant_memory_item_revisions
+  DROP CONSTRAINT IF EXISTS assistant_memory_item_revisions_epistemic_status_check;
+ALTER TABLE public.assistant_memory_item_revisions
+  ADD CONSTRAINT assistant_memory_item_revisions_epistemic_status_check
     CHECK (epistemic_status IN ('supported', 'tentative', 'disputed', 'superseded'));
 
 --> statement-breakpoint

@@ -34,6 +34,7 @@ import type {
 import type { NoteDeepeningV3 } from "@ailearn/shared/note-deepening-v3-contracts";
 import { useRoomStore } from "../../../app/room-store.ts";
 import { GraphSurface } from "../space/graph-surface.tsx";
+import { clearGraphJourneys } from "../space/graph-journey";
 
 beforeAll(() => {
   class ResizeObserverStub {
@@ -54,6 +55,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+  clearGraphJourneys();
   vi.restoreAllMocks();
 });
 
@@ -217,6 +219,65 @@ async function openNode(label: string) {
 }
 
 describe("星图三层展开 · 39d W8-1 §11.2", () => {
+  it("按笔记读时连续换篇，册页保持展开，隐藏画布索引不抢键盘焦点", async () => {
+    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
+    render(<GraphSurface />);
+    await screen.findByRole("combobox", { name: "搜索理解星图" });
+    fireEvent.click(screen.getByRole("button", { name: "按笔记读" }));
+    const shelf = document.querySelector<HTMLElement>(".universe-booklist")!;
+    fireEvent.click(within(shelf).getByRole("button", { name: /索引与代价/ }));
+    expect(screen.getByRole("button", { name: "按笔记读" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(within(shelf).getByRole("button", { name: /事务隔离级别/ }));
+    expect(within(screen.getByRole("complementary", { name: "星体详情" })).getByRole("heading", { name: "事务隔离级别" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "按笔记读" }).getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelector('[aria-label^="星图节点索引"]')?.getAttribute("tabindex")).toBe("-1");
+    fireEvent.click(screen.getByRole("button", { name: "在星图里看" }));
+    expect(screen.getByRole("button", { name: "漫游星图" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(screen.getByRole("complementary", { name: "星体详情" })).getByRole("heading", { name: "事务隔离级别" })).toBeTruthy();
+  });
+
+  it("从学习足迹打开笔记再回来，保留册页、当前篇与阅读尺度", async () => {
+    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
+    const invoke = vi.fn(); useRoomStore.setState({ invoke } as never);
+    const view = render(<GraphSurface />);
+    await screen.findByRole("combobox", { name: "搜索理解星图" });
+    fireEvent.click(screen.getByRole("button", { name: "按笔记读" }));
+    fireEvent.click(within(document.querySelector<HTMLElement>(".universe-booklist")!).getByRole("button", { name: /索引与代价/ }));
+    const panel = screen.getByRole("complementary", { name: "星体详情" });
+    fireEvent.click(within(panel).getByRole("button", { name: "学习足迹" }));
+    await within(panel).findByText(/索引把要扫的行数降下来了/);
+    document.querySelector(".universe-booklist__pages")!.scrollTop = 120;
+    panel.querySelector(".universe-detail-body")!.scrollTop = 65;
+    fireEvent.click(within(panel).getByRole("button", { name: "打开笔记" }));
+    expect(invoke).toHaveBeenCalledWith("open-notebook");
+    expect(useRoomStore.getState().noteReturnTo).toBe("graph");
+    view.unmount(); render(<GraphSurface />);
+    const returned = await screen.findByRole("complementary", { name: "星体详情" });
+    await within(returned).findByText(/索引把要扫的行数降下来了/);
+    expect(within(returned).getByRole("button", { name: "学习足迹" }).getAttribute("aria-current")).toBe("true");
+    expect(screen.getByRole("button", { name: "按笔记读" }).getAttribute("aria-pressed")).toBe("true");
+    await waitFor(() => {
+      expect(document.querySelector(".universe-booklist__pages")!.scrollTop).toBe(120);
+      expect(returned.querySelector(".universe-detail-body")!.scrollTop).toBe(65);
+    });
+  });
+
+  it("紧凑视口里在星图看这一篇会合上遮住星空的旁页", async () => {
+    vi.spyOn(window, "matchMedia").mockImplementation(query => ({
+      matches: query.includes("max-width"), addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    } as unknown as MediaQueryList));
+    stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
+    render(<GraphSurface />);
+    await screen.findByRole("combobox", { name: "搜索理解星图" });
+    fireEvent.click(screen.getByRole("button", { name: "按笔记读" }));
+    fireEvent.click(within(document.querySelector<HTMLElement>(".universe-booklist")!).getByRole("button", { name: /索引与代价/ }));
+    const panel = screen.getByRole("complementary", { name: "星体详情" });
+    fireEvent.click(within(panel).getByRole("button", { name: "在星图里看" }));
+    expect(screen.getByRole("button", { name: "漫游星图" }).getAttribute("aria-pressed")).toBe("true");
+    expect(panel.getAttribute("aria-hidden")).toBe("true");
+    expect(panel.hasAttribute("inert")).toBe(true);
+  });
+
   it("选中一篇笔记之后出现三个尺度；换层不换笔记，也只有这一排导航", async () => {
     stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
     render(<GraphSurface />);
@@ -224,12 +285,12 @@ describe("星图三层展开 · 39d W8-1 §11.2", () => {
     const drawer = await openNode("索引与代价");
     const tabs = within(drawer).getByRole("navigation", { name: "这一篇笔记的三个尺度" });
     const names = within(tabs).getAllByRole("button").map((button) => button.textContent);
-    expect(names).toEqual(["笔记总览", "笔记局部", "证据详情"]);
+    expect(names).toEqual(["笔记总览", "问题与关联", "学习足迹"]);
     expect(within(drawer).getAllByRole("heading", { name: "索引与代价" })).toHaveLength(1);
     expect(within(drawer).queryByText("节点类型")).toBeNull();
 
     // 换层：锚着的那一篇不变，而且**导航没有多出第二排**。
-    fireEvent.click(within(tabs).getByRole("button", { name: "笔记局部" }));
+    fireEvent.click(within(tabs).getByRole("button", { name: "问题与关联" }));
     await waitFor(() => {
       expect(within(drawer).getAllByText("为什么有索引查询仍然可能慢").length).toBeGreaterThan(0);
     });
@@ -237,7 +298,7 @@ describe("星图三层展开 · 39d W8-1 §11.2", () => {
     expect(within(drawer).queryByText("索引与代价")).toBeNull();
     expect(within(drawer).getAllByRole("navigation", { name: "这一篇笔记的三个尺度" })).toHaveLength(1);
 
-    fireEvent.click(within(tabs).getByRole("button", { name: "证据详情" }));
+    fireEvent.click(within(tabs).getByRole("button", { name: "学习足迹" }));
     await waitFor(() => {
       expect(within(drawer).getByText(/索引把要扫的行数降下来了/)).toBeTruthy();
     });
@@ -249,7 +310,7 @@ describe("星图三层展开 · 39d W8-1 §11.2", () => {
     render(<GraphSurface />);
 
     const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "证据详情" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "学习足迹" }));
     await waitFor(() => expect(within(drawer).getByText(/索引把要扫的行数降下来了/)).toBeTruthy());
 
     fireEvent.click(within(drawer).getByRole("button", { name: "关闭星体详情" }));
@@ -279,7 +340,7 @@ describe("星图三层展开 · 39d W8-1 §11.2", () => {
     render(<GraphSurface />);
 
     const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "笔记局部" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "问题与关联" }));
 
     // 「查看关系理由」：理由与关系在同一行，且标着它是待确认建议（§11.3）。
     await waitFor(() => {
@@ -306,7 +367,7 @@ describe("星图三层展开 · 39d W8-1 §11.2", () => {
     render(<GraphSurface />);
 
     const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "证据详情" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "学习足迹" }));
     await waitFor(() => expect(within(drawer).getByText(/索引把要扫的行数降下来了/)).toBeTruthy());
 
     // 原回答
@@ -327,7 +388,7 @@ describe("星图三层展开 · 39d W8-1 §11.2", () => {
     render(<GraphSurface />);
 
     const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "证据详情" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "学习足迹" }));
     await waitFor(() => {
       expect(within(drawer).getByText(/这一步是结构化作答，没有一句可念的回答/)).toBeTruthy();
     });
@@ -341,7 +402,7 @@ describe("状态三轴 · 39d W8-3 §11.4", () => {
     render(<GraphSurface />);
 
     const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "笔记局部" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "问题与关联" }));
 
     const axes = await within(drawer).findByRole("group", { name: "三种状态（分开看，不合成一个）" });
     expect(within(axes).getByText("学习表现")).toBeTruthy();
@@ -360,7 +421,7 @@ describe("状态三轴 · 39d W8-3 §11.4", () => {
     render(<GraphSurface />);
 
     const drawer = await openNode("索引与代价");
-    for (const tab of ["笔记总览", "笔记局部", "证据详情"]) {
+    for (const tab of ["笔记总览", "问题与关联", "学习足迹"]) {
       fireEvent.click(within(drawer).getByRole("button", { name: tab }));
       // eslint-disable-next-line no-await-in-loop
       await waitFor(() => expect(within(drawer).queryAllByText(/%/).length).toBe(0));
@@ -373,7 +434,7 @@ describe("状态三轴 · 39d W8-3 §11.4", () => {
     render(<GraphSurface />);
 
     const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "证据详情" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "学习足迹" }));
     const axes = await within(drawer).findByRole("group", { name: "三种状态（分开看，不合成一个）" });
     expect(within(axes).getByText("还没有学习记录")).toBeTruthy();
     expect(within(drawer).queryByText(/已掌握|已学完|掌握/)).toBeNull();
@@ -386,13 +447,13 @@ describe("没有记录时不伪造 · §11.2 逐字", () => {
     render(<GraphSurface />);
 
     const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "笔记局部" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "问题与关联" }));
     await waitFor(() => {
       expect(within(drawer).getByText("还没有形成任何目标，这里不替你编一条。")).toBeTruthy();
       expect(within(drawer).getByText(/没有可核对的关系。这里不替你推断/)).toBeTruthy();
     });
 
-    fireEvent.click(within(drawer).getByRole("button", { name: "证据详情" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "学习足迹" }));
     await waitFor(() => {
       expect(within(drawer).getByText("这一篇还没有学习记录。这里不替你造一条示例。")).toBeTruthy();
     });
@@ -462,7 +523,7 @@ describe("光痕与截断 · §11.4 逐字、§11.5", () => {
     render(<GraphSurface />);
 
     const drawer = await openNode("索引与代价");
-    fireEvent.click(within(drawer).getByRole("button", { name: "证据详情" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "学习足迹" }));
     await waitFor(() => {
       expect(within(drawer).getByText(/只列到这里 2 条，更早的还在服务器上/)).toBeTruthy();
     });

@@ -141,6 +141,8 @@ import {
   noteExpansionPageV1Schema,
   noteExpansionReviewV1Schema,
   noteExpansionTaskV1Schema,
+  noteExpansionTaskListQueryV1Schema,
+  noteExpansionTaskPageV1Schema,
 } from "@ailearn/shared/note-expansion-contracts";
 import {
   NOTE_IMAGE_UPLOAD_MAX_BYTES,
@@ -817,6 +819,18 @@ export async function latestNoteExpansionTask(t: GatewayTransport, noteId: strin
     const result = await t.request(`/v2/notes/${safeUuid(noteId)}/expansion-tasks/latest?${params}`, { method: "GET" }, true, true, requestId);
     if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
     const parsed = noteExpansionLatestTaskV1Schema.safeParse(result.body);
+    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    return parsed.data;
+  }
+
+export async function listNoteExpansionTasks(t: GatewayTransport, noteId: string, query: unknown, requestId?: string) {
+    await t.ensureConnected(requestId);
+    const input = noteExpansionTaskListQueryV1Schema.parse(query);
+    const params = new URLSearchParams({ noteVersionId: safeUuid(input.noteVersionId) });
+    if (input.before) params.set("before", safeUuid(input.before));
+    const result = await t.request(`/v2/notes/${safeUuid(noteId)}/expansion-tasks?${params}`, { method: "GET" }, true, true, requestId);
+    if (result.status >= 300) throw t.mapResponseError(result.status, result.headers);
+    const parsed = noteExpansionTaskPageV1Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }

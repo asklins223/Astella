@@ -532,16 +532,57 @@ export function claimsNothingDueAgainstFacts(replyText: string, contextText: str
  *
  * 只认"数字 + 量词"这一种形状（`23 分钟`/`10 张`/`9 篇`），并且**上下文里出现过的
  * 数字一律放过**：环境块里的 `今日已学 12 分钟`、用户自己说的"三十个单词"都是合法来源。
- * 剩下的就是她凭空报出来的学习统计。
+ * 明确标作假设或举例的本段数字也不属于学习统计。2026-10-03 原句解释实测中，
+ * 例子的 3% / 10% 被误判，纠正轮次反而把回答带到了另一窗口的页面。
+ * 例子只覆盖当前段落（独立举例标题可覆盖下一段），不能放行后续实际读数，
+ * 也不能覆盖「页面显示 / 我查到」这样的真实来源声明。
+ * 利率等概念中的百分比不需要查用户的实时数据；其余百分比仍按原来的来源规则核对。
  */
 const NUMERIC_CLAIM_TEST = /(\d+(?:\.\d+)?)\s*(分钟|小时|天|周|张|篇|项|个|题|次|条|%)/g;
+const NUMERIC_EXAMPLE_MARKER = /假设|假如|设想|比如|例如|举(?:个|一个)?(?:具体)?例子|举例/g;
+const NUMERIC_EXAMPLE_HEADING = /^[#*\s]*(?:比如|例如|举(?:个|一个)?(?:具体)?例子|举例)[：:*\s]*$/;
+const ACTUAL_NUMERIC_SOURCE = /我(?:刚|已经)?(?:查到|查过|看到)|根据(?:记录|统计|数据)|(?:页面|屏幕|系统|统计|记录)(?:上|里)?(?:显示|写着|记着)|实际(?:上)?|(?:当前|目前|现在)(?:你|用户|已)|(?:你|用户)(?:本周|这周|今天|今日|已经|已学|已做)/;
+const LEARNING_RATE_READOUT = /(?:正确|准确|命中|完成|通过|错误)率|进度|掌握(?:率|度)|答对|答错|学完|做完/;
+const CONCEPT_RATE = /利率|复利|单利|年化|收益率|增长率/;
+const NUMERIC_CLAUSE_BOUNDARIES = ["。", "！", "？", ";", "；", "\n"];
+
+function numericRateIsConcept(text: string, offset: number): boolean {
+  const prefix = text.slice(0, offset);
+  const start = Math.max(...NUMERIC_CLAUSE_BOUNDARIES.map(char => prefix.lastIndexOf(char))) + 1;
+  const rest = text.slice(offset);
+  const end = rest.search(/[。！？;；\n]/);
+  const clause = text.slice(start, end < 0 ? text.length : offset + end);
+  return CONCEPT_RATE.test(clause) && !LEARNING_RATE_READOUT.test(clause)
+    && !ACTUAL_NUMERIC_SOURCE.test(clause);
+}
+
+function numericClaimIsExample(text: string, offset: number): boolean {
+  const boundary = text.lastIndexOf("\n\n", offset);
+  const start = boundary < 0 ? 0 : boundary + 2;
+  const prefix = text.slice(start, offset);
+  const marker = [...prefix.matchAll(NUMERIC_EXAMPLE_MARKER)].at(-1);
+  if (marker && /(?:不是|并非|没有|不再|不要)(?:在)?$/.test(prefix.slice(0, marker.index).trimEnd())) return false;
+  if (!marker) {
+    if (boundary < 0) return false;
+    const previousBoundary = text.lastIndexOf("\n\n", boundary - 1);
+    const previous = text.slice(previousBoundary < 0 ? 0 : previousBoundary + 2, boundary);
+    if (!NUMERIC_EXAMPLE_HEADING.test(previous)) return false;
+  }
+  // 检查数字前的来源声明，既保留「例子 → 实际读数」的边界，也不让一个
+  // 段落前面查过的事实误伤后面另起的假设。
+  const clauseStart = Math.max(...NUMERIC_CLAUSE_BOUNDARIES.map(char => prefix.lastIndexOf(char))) + 1;
+  return !ACTUAL_NUMERIC_SOURCE.test(prefix.slice(clauseStart))
+    && !ACTUAL_NUMERIC_SOURCE.test(prefix.slice(marker?.index ?? 0));
+}
 
 export function unverifiedNumericClaims(replyText: string, contextText: string): string[] {
   const haystack = contextText.replace(/\s+/g, "");
+  const text = replyText.replace(/\r\n?/g, "\n");
   const claims = new Set<string>();
-  for (const match of replyText.matchAll(NUMERIC_CLAIM_TEST)) {
+  for (const match of text.matchAll(NUMERIC_CLAIM_TEST)) {
+    if (match[2] === "%" && numericRateIsConcept(text, match.index)) continue;
     const token = `${match[1]}${match[2]}`;
-    if (!haystack.includes(token.replace(/\s+/g, ""))) claims.add(token);
+    if (!haystack.includes(token) && !numericClaimIsExample(text, match.index)) claims.add(token);
   }
   return [...claims];
 }

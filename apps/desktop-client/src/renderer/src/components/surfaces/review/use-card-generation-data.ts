@@ -49,7 +49,7 @@ export function useCardGenerationData() {
       if (active) setNoteTitle(unwrapGatewayResult(response).title || null);
     }).catch(() => { if (active) setNoteTitle(null); });
     return () => { active = false; };
-  }, [noteId]);
+  }, [noteId, runId]);
 
   const load = useCallback(async (showLoading = false): Promise<string | null> => {
     const request = ++requestRef.current;

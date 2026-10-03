@@ -197,6 +197,9 @@ services:
       COMPANION_STREAMING_VOICE_V1_ENABLED: ${COMPANION_STREAMING_VOICE_V1_ENABLED:-false}
       # AI platform config — all provider/capability config in one JSON file.
       AI_PLATFORMS_CONFIG: /app/config/ai-platforms.json
+      # 运维面板（/admin）。dev 给一个固定的弱口令便于本机调试；弱于 16 字符即
+      # 视为未启用（面板不注册任何路由）。生产 compose 用 `:-`，即留空 = 关闭。
+      ADMIN_PANEL_TOKEN: ${ADMIN_PANEL_TOKEN:-ailearn-dev-admin-panel-token}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       OPENAI_COMPAT_API_KEY: ${OPENAI_COMPAT_API_KEY:-}
       SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}

@@ -310,6 +310,55 @@ test("单步超时：不合作的实现也拖不过 deadline（超时是 race，
   assert.equal(receipt.failure?.class, "timeout");
 });
 
+test("provider 将截止信号返回为 cancelled 时仍按超时重试", async () => {
+  const h = harness([], {
+    budget: { ...BASE_BUDGET, stepTimeoutMs: 25, taskDeadlineMs: 500 },
+    execute: async (_input, { signal }) => {
+      h.executeCalls += 1;
+      if (h.executeCalls === 2) return ok("第二次及时完成");
+      return new Promise<AiStepResult<string>>((resolve) => {
+        signal.addEventListener("abort", () => resolve(fail("cancelled")), { once: true });
+      });
+    },
+  });
+  const receipt = await runAiTask(h.definition, { ctx: ctx(), attempt: attempt(), currentActiveTransaction: NO_TX });
+  assert.equal(receipt.outcome, "committed");
+  assert.equal(h.executeCalls, 2);
+  assert.equal(receipt.usage.autoRetriesUsed, 1);
+  assert.deepEqual(h.committedOutputs, ["第二次及时完成"]);
+});
+
+test("provider 在截止信号回调里返回成功也不能提交过期结果", async () => {
+  const h = harness([], {
+    budget: { ...BASE_BUDGET, stepTimeoutMs: 25, taskDeadlineMs: 500, maxAutoRetries: 0 },
+    execute: async (_input, { signal }) => {
+      h.executeCalls += 1;
+      return new Promise<AiStepResult<string>>((resolve) => {
+        signal.addEventListener("abort", () => resolve(ok("截止后的结果")), { once: true });
+      });
+    },
+  });
+  const receipt = await runAiTask(h.definition, { ctx: ctx(), attempt: attempt(), currentActiveTransaction: NO_TX });
+  assert.equal(receipt.outcome, "failed");
+  assert.equal(receipt.failure?.class, "timeout");
+  assert.equal(h.commitCalls, 0);
+});
+
+test("调用中的主动取消保持 cancelled，且不自动重试", async () => {
+  const controller = new AbortController();
+  const h = harness([], {
+    execute: async () => {
+      h.executeCalls += 1;
+      controller.abort();
+      return fail("cancelled");
+    },
+  });
+  const receipt = await runAiTask(h.definition, { ctx: ctx({ signal: controller.signal }), attempt: attempt(), currentActiveTransaction: NO_TX });
+  assert.equal(receipt.outcome, "cancelled");
+  assert.equal(h.executeCalls, 1);
+  assert.equal(h.commitCalls, 0);
+});
+
 test("整任务 deadline 到点不起新步：第二次尝试不会开始", async () => {
   let clock = 0;
   const h = harness([fail("transport"), ok("会成功，但不该再花一次钱")], {

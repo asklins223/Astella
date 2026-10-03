@@ -148,7 +148,7 @@ function publishedView(): PageReadableV1 | null {
 }
 
 function activateButton(): HTMLButtonElement | null {
-  return [...document.querySelectorAll<HTMLButtonElement>(".companion-persona-groups button")]
+  return [...document.querySelectorAll<HTMLButtonElement>(".cc-persona button")]
     .find((button) => button.textContent === "现在生效" || button.textContent === "正在生效…") ?? null;
 }
 
@@ -157,11 +157,11 @@ afterEach(() => {
   useRoomStore.setState({ pageReadableView: null });
 });
 
-describe("40 §4.8.4 · 人格「待生效版本」在设置页看得见", () => {
+describe("40 §4.8.4 · 人格「待生效版本」在伴星中心看得见", () => {
   it("显示那一版的号、谁排的、以及**生效条件**", () => {
     renderPanel({ pending: pending() });
-    const section = [...document.querySelectorAll(".companion-persona-groups > section")]
-      .find((node) => node.querySelector("h4")?.textContent === "待生效版本")!;
+    const section = [...document.querySelectorAll(".cc-persona > .cc-section")]
+      .find((node) => node.querySelector("h3")?.textContent === "待生效版本")!;
     expect(section).toBeTruthy();
     // 生效条件是服务端算出来的产品规则；界面复述一遍就一定会漂。
     expect(section.textContent).toContain("下一次会话建立时生效");
@@ -188,9 +188,9 @@ describe("40 §4.8.4 · 人格「待生效版本」在设置页看得见", () =>
 
   it("版本历史里那一版标着「待生效」，且当前版本那一版不能被误标", () => {
     renderPanel({ pending: pending() });
-    const cards = [...document.querySelectorAll(".companion-persona-groups .companion-inline-form[data-pending]")];
+    const cards = [...document.querySelectorAll(".cc-persona-history .cc-version[data-pending]")];
     const pendingTags = cards
-      .filter((card) => card.querySelector(".tag")?.textContent === "待生效")
+      .filter((card) => card.querySelector(".cc-tag")?.textContent === "待生效")
       .map((card) => card.querySelector("strong")?.textContent);
     expect(pendingTags).toEqual([expect.stringContaining("第 4 版")]);
   });
@@ -207,15 +207,15 @@ describe("40 §4.8.4 · 人格「待生效版本」在设置页看得见", () =>
     // 「读到且没有排队」是 `{ pending: null }`，**不是**把 prop 整个置 null——
     // 后者与「还没读过」混成同一个值，面板会在第一次请求返回前就下结论。
     renderPanel({ pending: { version: 1, currentRevision: 3, pending: null } });
-    expect(document.querySelector(".companion-persona-groups")?.textContent).toContain("现在没有排队的人格版本");
+    expect(document.querySelector(".cc-persona")?.textContent).toContain("现在没有排队的人格版本");
     expect(activateButton()).toBeNull();
   });
 
   it("那一版的内容是 null ≠ 没有内容：说清是回到默认表达", () => {
     renderPanel({ pending: { ...pending(), pending: { ...pending().pending!, profile: null } } });
-    const section = [...document.querySelectorAll(".companion-persona-groups > section")]
-      .find((node) => node.querySelector("h4")?.textContent === "待生效版本")!;
-    expect(section.textContent).toContain("回到系统默认表达");
+    const section = [...document.querySelectorAll(".cc-persona > .cc-section")]
+      .find((node) => node.querySelector("h3")?.textContent === "待生效版本")!;
+    expect(section.textContent).toContain("回到默认表达");
     // 关键：按钮仍在 —— "内容是回到默认" 也是一个真实排队的版本。
     expect(activateButton()).toBeTruthy();
   });
@@ -223,11 +223,11 @@ describe("40 §4.8.4 · 人格「待生效版本」在设置页看得见", () =>
   it("读不到就说读不到，不谎称「没有排队」", () => {
     const onRetryPending = vi.fn();
     renderPanel({ pendingError: "人格服务不可用", onRetryPending });
-    const section = [...document.querySelectorAll(".companion-persona-groups > section")]
-      .find((node) => node.querySelector("h4")?.textContent === "待生效版本")!;
+    const section = [...document.querySelectorAll(".cc-persona > .cc-section")]
+      .find((node) => node.querySelector("h3")?.textContent === "待生效版本")!;
     expect(section.textContent).toContain("待生效版本暂时读不到");
     expect(section.textContent).not.toContain("现在没有排队的人格版本");
-    fireEvent.click([...section.querySelectorAll("button")].find((button) => button.textContent === "重试读取")!);
+    fireEvent.click([...section.querySelectorAll("button")].find((button) => button.textContent === "重新读取")!);
     expect(onRetryPending).toHaveBeenCalledTimes(1);
   });
 });
@@ -251,7 +251,7 @@ describe("桌面端这三条通道接齐了", () => {
   it("「现在生效」传的是**当前** revision，不是待生效那一版的号", () => {
     // 服务端 `activatePetProfilePendingRevision` 按 `expectedRevision` 与当前版本做 CAS。
     // 传待生效那一版的号会让每一次点击都变成 409，面板只能显示「请刷新后重试」。
-    const surface = read("src", "renderer", "src", "components", "surfaces", "companion", "companion-center-surface.tsx");
-    expect(surface).toMatch(/persona\.activate\(\{[\s\S]*revision: pending\.currentRevision/);
+    const surface = read("src", "renderer", "src", "components", "surfaces", "companion", "companion-persona-page.tsx");
+    expect(surface).toMatch(/persona\.activate\(\{[\s\S]*revision: pendingValue\.currentRevision/);
   });
 });

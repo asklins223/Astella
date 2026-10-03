@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClipboardLinkPrompt, GlobalDropOverlay } from "../SourceIntake.tsx";
 import {
@@ -44,7 +44,7 @@ function stubDialog() {
   }
 }
 
-function stubGateway(options: { capture?: "allowed" | "denied"; createTitle?: string } = {}) {
+function stubGateway(options: { capture?: "allowed" | "denied"; createTitle?: string; createWait?: Promise<void> } = {}) {
   const calls = { create: [] as unknown[] };
   const gateway = {
     capabilities: {
@@ -56,6 +56,7 @@ function stubGateway(options: { capture?: "allowed" | "denied"; createTitle?: st
     source: {
       create: async (input: unknown) => {
         calls.create.push(input);
+        await options.createWait;
         return {
           ok: true,
           data: { source: { id: "source-1", title: options.createTitle ?? "深潜" } },
@@ -69,6 +70,7 @@ function stubGateway(options: { capture?: "allowed" | "denied"; createTitle?: st
 
 beforeEach(() => {
   stubDialog();
+  useRoomStore.setState({ surface: null, motionMode: "off", reducedMotion: false, returnTarget: null });
 });
 
 afterEach(() => {
@@ -87,6 +89,7 @@ describe("ClipboardLinkPrompt", () => {
     try {
       render(<ClipboardLinkPrompt url={TEST_URL} onClose={(value) => seen.push(value)} />);
       const primary = await screen.findByRole("button", { name: "开始解析" });
+      await waitFor(() => expect((primary as HTMLButtonElement).disabled).toBe(false));
       expect(primary).toBeTruthy();
       fireEvent.click(primary);
       await screen.findByText("已经收下啦");
@@ -111,9 +114,65 @@ describe("ClipboardLinkPrompt", () => {
     expect((primary as HTMLButtonElement).disabled).toBe(true);
     expect(calls.create).toHaveLength(0);
   });
+
+  it("成功后的打开按钮进入这份材料而不是整个来源库", async () => {
+    stubGateway();
+    render(<ClipboardLinkPrompt url={TEST_URL} onClose={() => undefined} />);
+    const primary = await screen.findByRole("button", { name: "开始解析" });
+    await waitFor(() => expect((primary as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(primary);
+    fireEvent.click(await screen.findByRole("button", { name: "打开这份材料" }));
+    expect(useRoomStore.getState().activeSourceId).toBe("source-1");
+    expect(useRoomStore.getState().surface).toBe("source-detail");
+    act(() => useRoomStore.getState().returnTarget?.run());
+    expect(useRoomStore.getState().surface).toBe("source-library");
+  });
+
+  it.each(["cancel", "unmount", "workspace"])("%s 后忽略迟到的采集结果，也不重复提交", async reason => {
+    let release!: () => void;
+    const createWait = new Promise<void>(resolve => { release = resolve; });
+    const calls = stubGateway({ createWait });
+    const captured = vi.fn();
+    window.addEventListener(SOURCE_CAPTURED_EVENT, captured);
+    try {
+      const view = render(<ClipboardLinkPrompt url={TEST_URL} onClose={() => undefined} />);
+      const primary = await screen.findByRole("button", { name: "开始解析" });
+      await waitFor(() => expect((primary as HTMLButtonElement).disabled).toBe(false));
+      fireEvent.click(primary);
+      fireEvent.click(primary);
+      expect(calls.create).toHaveLength(1);
+      if (reason === "cancel") fireEvent(screen.getByRole("dialog"), new Event("cancel"));
+      else if (reason === "unmount") view.unmount();
+      else act(() => useRoomStore.setState(state => ({ workspaceScopeRevision: state.workspaceScopeRevision + 1 })));
+      await act(async () => { release(); await createWait; });
+      expect(captured).not.toHaveBeenCalled();
+      expect(screen.queryByText("已经收下啦")).toBeNull();
+    } finally {
+      window.removeEventListener(SOURCE_CAPTURED_EVENT, captured);
+    }
+  });
 });
 
 describe("GlobalDropOverlay", () => {
+  it.each(["file", "create"])("切换空间后忽略迟到的 %s，不把剩余材料收进新空间", async reason => {
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const calls = stubGateway(reason === "create" ? { createWait: pending } : {});
+    render(<GlobalDropOverlay />);
+    const first = new File(["body"], "first.md"), second = new File(["body"], "second.md");
+    Object.defineProperty(first, "text", { value: async () => { if (reason === "file") await pending; return "first body"; } });
+    Object.defineProperty(second, "text", { value: async () => "second body" });
+    const transfer = { files: [first, second], types: ["Files"], getData: () => "", dropEffect: "none" };
+    fireEvent.dragEnter(document.body, { dataTransfer: transfer });
+    fireEvent.drop(document.body, { dataTransfer: transfer });
+    if (reason === "create") await waitFor(() => expect(calls.create).toHaveLength(1));
+    act(() => useRoomStore.setState(state => ({ workspaceScopeRevision: state.workspaceScopeRevision + 1 })));
+    await act(async () => { release(); await pending; });
+    expect(calls.create).toHaveLength(reason === "create" ? 1 : 0);
+    expect(screen.queryByText("收好了")).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
   it("拖入文本文件自动收进来源库并点名报告", async () => {
     const calls = stubGateway({ createTitle: "拖入的笔记" });
     render(<GlobalDropOverlay />);

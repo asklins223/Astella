@@ -266,7 +266,9 @@ export async function changeNoteAnnotation(
      *   也留着——它是运行痕迹，不是这条批注的一部分。
      */
     const artifacts = await tx.delete(noteLearningArtifacts).where(and(
-      owned(scope, noteId),
+      eq(noteLearningArtifacts.workspaceId, scope.workspaceId),
+      eq(noteLearningArtifacts.userId, scope.userId),
+      eq(noteLearningArtifacts.noteId, noteId),
       eq(noteLearningArtifacts.sourceKind, "annotation"),
       sql`${noteLearningArtifacts.selectionAnchor}->>'noteVersionId' = ${row.noteVersionId}`,
       sql`${noteLearningArtifacts.selectionAnchor}->>'startBlockOrdinal' = ${row.startBlockOrdinal}`,
@@ -275,7 +277,7 @@ export async function changeNoteAnnotation(
       sql`${noteLearningArtifacts.selectionAnchor}->>'endOffset' = ${row.endOffset}`,
       sql`${noteLearningArtifacts.selectionAnchor}->>'excerpt' = ${row.excerpt}`,
     )).returning({ id: noteLearningArtifacts.id });
-    await tx.delete(noteAnnotations).where(eq(noteAnnotations.id, annotationId));
+    await tx.delete(noteAnnotations).where(and(owned(scope, noteId), eq(noteAnnotations.id, annotationId)));
     return { removed: true as const, removedArtifacts: artifacts.length };
   }
   const [updated] = await tx.update(noteAnnotations).set({

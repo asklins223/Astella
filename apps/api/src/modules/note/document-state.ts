@@ -347,8 +347,8 @@ export async function applyNoteDocUpdate(
   versionId: string,
   mutate: (doc: NoteDoc) => void,
   /**
-   * 调用方已经握着目标内容时传进来（恢复历史版本就是这种）：省掉一次读，也避免
-   * 在已经持锁的事务里再绕回去读 `notes`。
+   * 仅用于新建文档的首次写入，省掉空文档的补齐。
+   * 已存在笔记的整篇替换必须加载原文档，保留已打开编辑器的共同历史。
    */
   preload?: NoteDocBlock[],
 ): Promise<{ blocks: NoteDocBlock[]; doc: NoteDoc }> {

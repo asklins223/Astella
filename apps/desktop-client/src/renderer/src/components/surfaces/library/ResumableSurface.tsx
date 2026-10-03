@@ -1,4 +1,5 @@
 import { useMemo, useRef } from "react";
+import { ArrowRight, Bookmark, Leaf } from "lucide-react";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
 import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
@@ -8,6 +9,7 @@ import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { learningPhaseLabel } from "../run/learning-run-surface.tsx";
 import { TodayBatchSurface } from "./TodayBatchSurface.tsx";
 import { SurfaceDataState, formatRelative, useSurfaceProjection } from "../notebook/surface-data.tsx";
+import { useTactileSurface } from "../../motion/use-tactile-surface";
 
 /**
  * 未完成的学习——首页那句「N 项可恢复」真正的落点（审计 F24）。
@@ -25,6 +27,7 @@ export function ResumableSurface() {
   useHudPage("resumable");
   const invoke = useRoomStore((state) => state.invoke);
   const setActiveRunId = useRoomStore((state) => state.setActiveRunId);
+  const rootRef = useRef<HTMLElement>(null);
 
   const { data, loading, failure, reload, epochRef } = useSurfaceProjection(async ({ workspaceEpoch }) => {
     const response = await window.ailearn.room.getProjection({ meta: createRequestMeta(workspaceEpoch) });
@@ -32,6 +35,7 @@ export function ResumableSurface() {
   });
 
   const summary = data?.activeRunSummary ?? null;
+  useTactileSurface(rootRef, summary?.state ?? "loading");
 
   // W7-4 刀十五：今日复习那一批（§12 表「今日复习」行）。挂在这一页**之内**而不是新开
   // 一个 surface id —— `room-machine.ts` 的 `RoomSurface` 是全房间共享的枚举，而它此刻
@@ -54,7 +58,7 @@ export function ResumableSurface() {
   /** 投影一节最多带 20 条（契约上限）：数得出更多时如实说，不让"列出来的"冒充"全部"。 */
   const truncatedLine
     = items.length > 0 && total > items.length
-      ? `这里先列出 ${items.length} 项，共 ${total} 项；其余会在这一屏刷新后补上。`
+      ? `这里列出最近的 ${items.length} 项，当前共 ${total} 项。`
       : null;
 
   /**
@@ -98,12 +102,17 @@ export function ResumableSurface() {
 
   return (
     <HudPage page="resumable">
-      <section className="resumable-index" aria-labelledby="resumable-title">
+      <section ref={rootRef} className="resumable-index" aria-labelledby="resumable-title">
         <header className="resumable-index__head">
-          <p className="eyebrow">书桌上摊着的那几件事</p>
-          <h2 id="resumable-title">未完成的学习</h2>
+          <span className="resumable-index__bookmark" aria-hidden="true"><Bookmark size={26} /></span>
+          <div><p className="eyebrow">书签还夹在这里</p>
+          <h2 id="resumable-title">接着上次学</h2>
           <p className="small">{headLine}</p>
+          </div>
+          <button type="button" className="button" onClick={() => invoke("continue")}><Leaf size={16} aria-hidden="true" />今日学习</button>
         </header>
+
+        <div className="resumable-index__paper" data-tactile-page>
 
         {loading && !data ? <SurfaceDataState kind="loading" message="正在读取未完成的学习" detail="只列出这个空间里属于你的在途任务。" /> : null}
         {!loading && failure ? (
@@ -145,7 +154,7 @@ export function ResumableSurface() {
                   aria-label={`继续「${item.conceptLabel ?? "未命名目标"}」`}
                   onClick={() => resume(item.runId)}
                 >
-                  继续
+                  继续<ArrowRight size={15} aria-hidden="true" />
                 </button>
               </li>
             ))}
@@ -165,6 +174,7 @@ export function ResumableSurface() {
             现在挂在 `ResumableSurface.test.tsx` 的
             「那一批真的挂在未完成的学习这一页上」里，缺了会红。 */}
         <TodayBatchSurface timeZone={batchTimeZone} epochRef={batchEpochRef} />
+        </div>
       </section>
     </HudPage>
   );

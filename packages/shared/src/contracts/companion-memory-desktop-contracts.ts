@@ -171,6 +171,19 @@ export const companionMemoryListV1Schema = z.strictObject({
 });
 export type CompanionMemoryListV1 = z.infer<typeof companionMemoryListV1Schema>;
 
+export const companionMemoryRecycleListV1Schema = z.strictObject({
+  version: z.literal(1),
+  items: z.array(z.strictObject({
+    id: z.string().uuid(),
+    kind: companionMemoryKindV1Schema,
+    content: z.string().max(200),
+    deletedAt: isoTimestampSchema,
+    purgeAfter: isoTimestampSchema,
+    sourceEventId: z.string().nullable(),
+  })).max(200),
+});
+export type CompanionMemoryRecycleListV1 = z.infer<typeof companionMemoryRecycleListV1Schema>;
+
 // ─── 记忆星图（§2.6 memory-star-map.ts）──────────────────────────────────
 
 export const companionMemoryEntityTypeV2Schema = z.enum([
@@ -622,6 +635,7 @@ export type CompanionHistoryClearResultV1 = z.infer<typeof companionHistoryClear
 
 export const companionHistoryQueryV1Schema = z.strictObject({
   before: z.string().max(2000).optional(),
+  throughMessageId: z.string().uuid().optional(),
   limit: z.number().int().min(1).max(100).optional(),
 });
 export type CompanionHistoryQueryV1 = z.infer<typeof companionHistoryQueryV1Schema>;
@@ -641,6 +655,7 @@ export type CompanionMemoryIdInput = z.infer<typeof companionMemoryIdInputSchema
 
 /** 星图与列表共用的读取筛选；candidate / archived 默认都不进主视图。 */
 export const companionMemoryListQuerySchema = z.strictObject({
+  focusMemoryId: z.string().uuid().optional(),
   kind: companionMemoryKindV1Schema.optional(),
   q: z.string().min(1).max(200).optional(),
   scope: companionMemoryScopeV1Schema.optional(),

@@ -1,3 +1,4 @@
+import { readStoredCompanionBlocks } from "./message-blocks.ts";
 /**
  * Internal continuous-dialogue storage helpers.
  *
@@ -164,7 +165,7 @@ export async function listCompanionMessages(args: {
             seq: Number(row.seq),
             role: row.role,
             kind: row.kind,
-            blocks: row.blocks,
+            blocks: readStoredCompanionBlocks(row.blocks),
             ...companionMessageSelection(row.selection),
             runId: row.runId,
             clientMessageId: row.clientMessageId,

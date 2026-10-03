@@ -77,8 +77,11 @@ describe("建议关系的表态纸签", () => {
     expect(css).toMatch(/is-suggested/);
     expect(css).toMatch(/is-confirmed/);
     expect(css).toMatch(/is-dismissed/);
-    // 不规则柔圆角（书页手感），不是等半径胶囊
-    expect(css).toMatch(/border-radius:\s*0\.7rem 0\.55rem 0\.8rem 0\.5rem/);
+    // 2026-10-03：用户要求整条星图更圆润，纸签沿用新旁页的柔软圆角。
+    // 钉住纸签的圆角与材质，不再把历史四个半径当成产品契约。
+    const stamp = css.match(/\.universe-relation-stamp\s*\{([^}]+)\}/)?.[1] ?? "";
+    expect(stamp).toMatch(/border-radius:\s*16px/);
+    expect(stamp).toMatch(/background:/);
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
   });
 

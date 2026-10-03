@@ -24,8 +24,7 @@ import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts"
  *
  * 这一屏是**三段各说一句**（继续学习／伴星旅程／最近动态），所以 `state` 一律是
  * "这一行来自哪一段"（同一个字段只准有一个含义），投递自己那层"待处理／已失效"
- * 不混进来。**收在 `<details>` 里的历史动态不是屏幕此刻露出的行**：那条分组标题
- * 写着条数，所以条数进 `notice`，行本身一条都不登记。
+ * 不混进来。收起的历史动态只登记条数；展开后按实际可见顺序登记历史行。
  */
 
 type ActivityPanelProps = Parameters<typeof ActivityPanel>[0];
@@ -132,7 +131,7 @@ function learningContextWithResume(
 /** 「学习衔接」那一格里那张卡上的唯一一颗按钮。 */
 function resumeButton(): HTMLButtonElement | null {
   const buttons = [...document.querySelectorAll(
-    'section[aria-label="学习衔接"] .companion-activity-card button',
+    '.cc-learning-continuation button',
   )];
   expect(buttons).toHaveLength(1);
   return (buttons[0] as HTMLButtonElement) ?? null;
@@ -172,12 +171,12 @@ describe("伴星中心 · 动态：三段各说各的，折叠里的不算露出
     const view = publishedView()!;
     expect(view.pageId).toBe("companion");
     expect(view.title).toBe("伴星中心");
-    const cards = [...document.querySelectorAll(".companion-section-state strong")].map((node) => node.textContent);
+    const cards = [...[document.querySelector(".cc-learning-continuation .cc-state strong"), document.querySelector(".cc-timeline .cc-state strong"), document.querySelector(".cc-journey > p:last-child")].filter((node): node is Element => node !== null)].map((node) => node.textContent);
     expect(cards).toHaveLength(3);
     expect(view.items?.map((entry) => entry.label)).toEqual(cards);
     expect(view.items?.map((entry) => entry.ordinal)).toEqual([1, 2, 3]);
     expect(view.items?.map((entry) => entry.state)).toEqual(
-      [...document.querySelectorAll(".companion-activity-feed > h4")].map((node) => node.textContent),
+      [...[document.querySelector(".cc-learning-continuation > .cc-kicker"), document.querySelector(".cc-timeline > h3"), document.querySelector(".cc-journey > h3")].filter((node): node is Element => node !== null)].map((node) => node.textContent),
     );
     expect(view.notice).toBeUndefined();
   });
@@ -185,7 +184,7 @@ describe("伴星中心 · 动态：三段各说各的，折叠里的不算露出
   it("旅程进行中：登记的是那张卡自己写着的标题", () => {
     renderPanel({ section: { ok: true, value: bootstrap({ journey: journey() }) } });
     const view = publishedView()!;
-    const journeyTitle = document.querySelector(".companion-activity-card.is-journey strong")?.textContent;
+    const journeyTitle = document.querySelector(".cc-journey > div strong")?.textContent;
     expect(journeyTitle).toBe("旅程状态");
     expect(view.items?.map((entry) => entry.label)).toContain(journeyTitle);
   });
@@ -203,13 +202,44 @@ describe("伴星中心 · 动态：三段各说各的，折叠里的不算露出
     expect(view.items?.map((entry) => entry.label)).toContain("第三章那段还缺一个反例");
     expect(view.items?.map((entry) => entry.label)).not.toContain("上一轮已经答过");
     expect(view.items?.map((entry) => entry.label)).not.toContain("更早的一条");
-    expect(view.notice).toBe(document.querySelector(".companion-delivery-group summary")?.textContent);
+    expect(view.notice).toBe(document.querySelector(".cc-timeline-history summary")?.textContent);
     expect(view.notice).toBe("历史动态 · 2 条");
   });
 
   it("报错那一行写什么，statusLine 就是什么", () => {
     renderPanel({ error: "主动投递这次没读出来" });
-    expect(publishedView()!.statusLine).toBe(document.querySelector(".companion-error")?.textContent);
+    expect(publishedView()!.statusLine).toBe(document.querySelector(".cc-feedback.is-error")?.textContent);
+  });
+
+  it("三段独立读取中不把旧候选、旧旅程或旧投递登记成当前内容", () => {
+    renderPanel({ learningLoading: true, journeyLoading: true, deliveryLoading: true,
+      learningContextSection: { ok: true, value: learningContextWithResume() },
+      section: { ok: true, value: bootstrap({ journey: journey() }) },
+      deliveries: [delivery(1, "旧投递", "delivered"), delivery(2, "旧历史", "acted")],
+    });
+    expect(publishedView()!.items?.map(item => item.label)).toEqual(["正在读取学习状态", "正在读取动态", "正在读取旅程"]);
+    expect(publishedView()!.notice).toBeUndefined();
+  });
+
+  it("先提议后消息的显示顺序，与可读投递一致", () => {
+    const proposal = { ...delivery(2, "待选择的提议", "delivered"), kind: "proposal" as const,
+      target: { kind: "proposal" as const, proposalId: "55555555-5555-4555-8555-555555555555" } };
+    renderPanel({ deliveries: [delivery(1, "普通消息", "delivered"), proposal] });
+    const visible = [...document.querySelectorAll(".cc-delivery strong")].map(node => node.textContent);
+    expect(visible).toEqual(["待选择的提议", "普通消息"]);
+    expect(publishedView()!.items?.filter(item => item.state === "最近动态").map(item => item.label)).toEqual(visible);
+  });
+
+  it("展开和收起历史动态立即更新可读内容", () => {
+    renderPanel({ deliveries: [delivery(1, "已处理历史", "acted")] });
+    const details = document.querySelector<HTMLDetailsElement>(".cc-timeline-history")!;
+    expect(publishedView()!.items?.some(item => item.label === "已处理历史")).toBe(false);
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
+    expect(publishedView()!.items?.some(item => item.label === "已处理历史")).toBe(true);
+    details.open = false;
+    fireEvent(details, new Event("toggle"));
+    expect(publishedView()!.items?.some(item => item.label === "已处理历史")).toBe(false);
   });
 });
 

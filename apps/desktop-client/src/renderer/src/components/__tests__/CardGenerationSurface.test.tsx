@@ -117,23 +117,12 @@ afterEach(() => {
 });
 
 describe("CardGenerationSurface · 生成工作台", () => {
-  it("生成中页渲染四阶段，返回笔记以 run.sourceRef 为准落回原笔记", async () => {
-    const { state } = stubGateway("checking");
+  it("生成状态可读，返回笔记以 run.sourceRef 为准落回原笔记", async () => {
+    stubGateway("checking");
     useRoomStore.setState({ activeCardGenerationRunId: RUN_ID, activeNoteRef: null });
-    const { container, getByRole } = render(<CardGenerationSurface />);
-
-    // 四阶段只有**一条**轨（`.card-generation-progress__steps`）。此前同一屏上还有
-    // 一排 `.press-stage` 卡片，读的是同一个 `generationStages` 与同一个
-    // `generationStage`——那四个名字于是各出现两遍。这条断言顺带钉住「不再有第二份」。
-    await waitFor(() => expect(container.querySelectorAll(".card-generation-progress__step").length).toBe(4));
-    // `checking` 落在第三步。阶段名说的是「这一步在做什么」，**不是**服务端状态词
-    // （状态词在进度头条 `.card-generation-progress__name` 里，已另有用例钉）。
-    const current = container.querySelector(".card-generation-progress__step.is-current");
-    expect(current?.querySelector(".card-generation-progress__label")?.textContent).toContain("对齐证据");
-    expect(current?.querySelector(".card-generation-progress__state")?.textContent).toBe("进行中");
-    expect(container.querySelectorAll(".press-stage")).toHaveLength(0);
-
-    fireEvent.click(getByRole("button", { name: "返回笔记" }));
+    render(<CardGenerationSurface />);
+    await screen.findByRole("heading", { name: "正在核对问题与笔记" });
+    fireEvent.click(screen.getByRole("button", { name: "返回笔记" }));
     await waitFor(() => expect(useRoomStore.getState().surface).toBe("notebook"));
     expect(useRoomStore.getState().activeNoteRef).toMatchObject({ noteId: NOTE_ID, noteVersionId: VERSION_ID });
   });
@@ -144,12 +133,12 @@ describe("CardGenerationSurface · 生成工作台", () => {
     const { container } = render(<CardGenerationSurface />);
 
     await waitFor(() => expect(state.eventHandlers.has("sub-1")).toBe(true));
-    expect(container.querySelector(".task-title h1")?.textContent).toBe("学习卡生成中");
+    expect(container.querySelector(".card-making__header h1")?.textContent).toBe("正在做一套学习卡");
 
     state.runStatus = "review_ready";
     state.eventHandlers.get("sub-1")?.();
 
-    await waitFor(() => expect(container.querySelector(".task-title h1")?.textContent).toBe("候选卡审核"));
+    await waitFor(() => expect(container.querySelector(".candidate-desk__title h1")?.textContent).toBe("候选卡审核"));
     await waitFor(() => expect(container.querySelector(".candidate-study-card h2")?.textContent).toBe("请解释机制"));
     expect(container.querySelector("#candidate-card-title")?.textContent).toContain("为什么提取练习有效");
   });
@@ -161,7 +150,7 @@ describe("CardGenerationSurface · 生成工作台", () => {
 
     await waitFor(() => expect(useRoomStore.getState().activeCardGenerationRunId).toBe(RUN_ID));
     await waitFor(() => expect(gateway.note.cardGeneration.getRun).toHaveBeenCalled());
-    await waitFor(() => expect(container.querySelector(".card-generation-progress__step")).not.toBeNull());
+    await waitFor(() => expect(container.querySelector(".card-generation-progress")).not.toBeNull());
     expect(queryByText("还没有进行中的生成任务")).toBeNull();
   });
 
@@ -175,43 +164,13 @@ describe("CardGenerationSurface · 生成工作台", () => {
     await waitFor(() => expect(useRoomStore.getState().surface).toBe("notebook"));
   });
 
-  /**
-   * 进度反馈：页面必须自己说出"第几步 / 当前在做什么 / 完成了几步 / 还剩几步 /
-   * 整体百分之多少"，而不是只把裸状态码摆出来让用户自己换算。四段轨道是同一
-   * 件事的另一半张脸 —— 所以"填满几段"和百分比必须是同一个数。
-   */
-  it("生成中页不亮读不到的步数，但候选计数照旧写出来", async () => {
+  it("计数未知时展示当前状态，不把阶段推算成整体百分比", async () => {
     stubGateway("checking");
     useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
     const { container } = render(<CardGenerationSurface />);
-
-    await waitFor(() => expect(container.querySelector(".card-generation-progress")).not.toBeNull());
-    const progress = container.querySelector(".card-generation-progress");
-    expect(progress?.textContent).toContain("写完一批一次给齐");
-    expect(progress?.textContent).toContain("正在做质量检查");
-    // 0249 之后计数是实时读数，所以那句"中间计数要等这一批写完"已经不成立；
-    // 步数依旧不报（`run.status` 还在管道的大事务里）。
-    expect(progress?.textContent).not.toContain("中间计数");
-    // 步数只在 meta 这一行，不与四段轨道的"已完成/待进行"圆点混淆。
-    const meta = container.querySelector(".card-generation-progress__meta");
-    expect(meta?.textContent).not.toContain("待进行");
-    expect(meta?.textContent).not.toContain("已完成");
-    expect(progress?.textContent).toContain("正在核对质量门与证据绑定");
-    expect(progress?.textContent).toContain("最后更新");
-    // checking 落在第三段：前两段已完成、第三段进行中、第四段待进行。
-    const steps = [...container.querySelectorAll(".card-generation-progress__step")];
-    expect(steps.map((step) => step.className.replace(/^.*is-/, ""))).toEqual(["done", "done", "current", "todo"]);
-    expect(steps[0]?.textContent).toContain("读取笔记");
-    expect(steps[0]?.textContent).toContain("已完成");
-    expect(steps[2]?.textContent).toContain("对齐证据");
-    expect(steps[2]?.textContent).toContain("进行中");
-    expect(steps[3]?.textContent).toContain("待进行");
-    const bar = container.querySelector('[role="progressbar"]');
-    // 百分比 = 已完成阶段 ÷ 4 = 2 / 4，和上面两段实心金一一对应。
-    expect(bar?.getAttribute("aria-valuenow")).toBe("50");
-    expect(bar?.getAttribute("aria-valuemax")).toBe("100");
-    expect(bar?.textContent).toContain("50");
-    expect(bar?.textContent).toContain("整体进度");
+    await screen.findByRole("heading", { name: "正在核对问题与笔记" });
+    expect(container.querySelector('[role="progressbar"]')).toBeNull();
+    expect(screen.getByText(/最后更新/)).toBeTruthy();
   });
 
   /**
@@ -227,12 +186,12 @@ describe("CardGenerationSurface · 生成工作台", () => {
 
     await waitFor(() => expect(container.querySelector(".card-generation-progress")).not.toBeNull());
     const progress = container.querySelector(".card-generation-progress");
-    expect(progress?.textContent).toContain("已过质量门 2 / 8");
+    expect(progress?.textContent).toContain("已通过核对 2 / 8 张候选");
     expect(progress?.textContent).not.toContain("中间计数");
     const bar = container.querySelector('[role="progressbar"]');
-    // 无计数时 checking 恒为 50；有过 2/8 道质量门才往上走一格。
-    expect(Number(bar?.getAttribute("aria-valuenow"))).toBeGreaterThan(50);
-    expect(bar?.getAttribute("aria-valuetext")).toContain("已过质量门 2 / 8");
+    expect(bar?.getAttribute("aria-valuenow")).toBe("8");
+    expect(bar?.getAttribute("aria-valuemax")).toBe("8");
+    expect(bar?.getAttribute("aria-valuetext")).toBe("已写出 8 / 8 张候选，通过核对 2 张");
   });
 
   /**
@@ -274,16 +233,15 @@ describe("CardGenerationSurface · 生成工作台", () => {
       expect(receipt?.textContent).toContain("已刷新");
       return receipt;
     });
-    expect(unchanged?.textContent).toContain("仍是「正在规划候选」");
+    expect(unchanged?.textContent).toContain("仍是「正在挑选值得记住的内容」");
     expect(unchanged?.textContent).not.toContain("这次生成到了");
 
     // 服务端推进到下一步之后，同一颗按钮必须说出来，而不是保持沉默。
     state.runStatus = "checking";
     fireEvent.click(within(container).getByRole("button", { name: /刷新状态/ }));
-    await waitFor(() => expect(container.querySelector(".card-generation-board__sync-report")?.textContent).toContain("这次生成到了「正在做质量检查」"));
-    // 进度头条跟着一起走：第 3 步、第三段进行中、百分比 50%。
-    expect(container.querySelector(".card-generation-progress")?.textContent).toContain("写完一批一次给齐");
-    expect(container.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("50");
+    await waitFor(() => expect(container.querySelector(".card-generation-board__sync-report")?.textContent).toContain("这次生成到了「正在核对问题与笔记」"));
+    expect(screen.getByRole("heading", { name: "正在核对问题与笔记" })).toBeTruthy();
+    expect(container.querySelector('[role="progressbar"]')).toBeNull();
   });
 });
 
@@ -293,15 +251,15 @@ describe("CardGenerationSurface · 生成工作台", () => {
  * 到打包后的机器上才发现脚本又在等一个已经不存在的元素。
  */
 describe("CardGenerationSurface · packaged 冒烟选择器契约", () => {
-  it("页 12 暴露 .card-generation-board 与页脚", async () => {
+  it("页 12 暴露 .card-making-workshop 与页脚", async () => {
     stubGateway("checking");
     useRoomStore.setState({ activeCardGenerationRunId: RUN_ID, activeNoteRef: null });
     const { container } = render(<CardGenerationSurface />);
 
-    await waitFor(() => expect(container.querySelector(".card-generation-board")).not.toBeNull());
-    expect(container.querySelector(".card-generation-board__footer")).not.toBeNull();
-    expect(container.querySelector(".card-generation-board__header button")).not.toBeNull();
-    expect(container.querySelector(".task-title h1")?.textContent).toBe("学习卡生成中");
+    await waitFor(() => expect(container.querySelector(".card-making-workshop")).not.toBeNull());
+    expect(container.querySelector(".card-making__footer")).not.toBeNull();
+    expect(container.querySelector(".card-making__sync-row button")).not.toBeNull();
+    expect(container.querySelector(".card-making__header h1")?.textContent).toBe("正在做一套学习卡");
   });
 
   it("页 13 暴露候选纸面、回执与脚本依赖的全部动作", async () => {
@@ -388,10 +346,11 @@ describe("CardGenerationSurface · packaged 冒烟选择器契约", () => {
       expect(within(container).getByRole("button", { name: new RegExp(`^${label}`) })).toBeTruthy();
     }
 
-    // 没决定的候选要说清它们**去哪儿**，而不是只报一个数字：这次保存不带它们走，
-    // 它们留在这叠里下次接着看（41 §1.5 对草稿是同一条口径）。
+    // 还没有保留任何卡时，收纳袋说明先挑选；未决定数量仍在页首显示。
+    expect(container.querySelector(".candidate-card__meta")?.textContent)
+      .toContain("1 张还没决定");
     expect(container.querySelector(".candidate-review-slip__actions")?.textContent)
-      .toContain("还有 1 张没决定");
+      .toContain("先保留想学的卡，再保存到卡组");
 
     // 保留之后 meta 行给出「已保留 · 等着保存到卡组」，脚本用这句话判断提交成功。
     fireEvent.click(within(container).getByRole("button", { name: /^保留/ }));
@@ -408,6 +367,6 @@ describe("CardGenerationSurface · packaged 冒烟选择器契约", () => {
     fireEvent.click(activateButton);
 
     // 真实回执：.candidate-review-slip__receipt 里的「已确认 N 个目标映射」。
-    await waitFor(() => expect(container.querySelector(".candidate-review-slip__receipt")?.textContent).toContain("已确认 1 个目标映射"));
+    await waitFor(() => expect(container.querySelector(".candidate-review-slip__receipt")?.textContent).toContain("已收好 1 张学习卡"));
   });
 });

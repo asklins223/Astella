@@ -1699,13 +1699,14 @@ export async function runParseSource(job: JobPayload) {
         lockedSource.origin,
         lockedFetchedTitle,
       );
-      const finalTitle = extractedTitle || lockedSource.title;
+      const manualTitle = (lockedSource.metadata ?? {}).titleSource === "manual";
+      const finalTitle = manualTitle ? lockedSource.title : extractedTitle || lockedSource.title;
 
       // 可观测性：记录标题来源和是否提取成功
       logger.info(
         {
           sourceId,
-          titleSource: lockedFetchedTitle ? "html_title" : extractedTitle ? "blocks" : "fallback",
+          titleSource: manualTitle ? "manual" : lockedFetchedTitle ? "html_title" : extractedTitle ? "blocks" : "fallback",
           titleLength: finalTitle.length,
         },
         "source title extracted",

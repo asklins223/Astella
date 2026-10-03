@@ -218,8 +218,22 @@ export function HudPicker<T extends string>({
     if (restoreFocus) triggerRef.current?.focus();
   }, []);
 
+  const openMenu = () => {
+    if (closeTimerRef.current !== undefined) window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = undefined;
+    setClosing(false);
+    setOpen(true);
+  };
+
   useEffect(() => () => {
     if (closeTimerRef.current !== undefined) window.clearTimeout(closeTimerRef.current);
+    setOpen(false);
+    setClosing(false);
+  }, []);
+
+  useLayoutEffect(() => () => {
+    const menu = menuRef.current;
+    if (menu && typeof menu.hidePopover === "function" && menu.matches(":popover-open")) menu.hidePopover();
   }, []);
 
   useEffect(() => {
@@ -228,17 +242,50 @@ export function HudPicker<T extends string>({
     const onPointerDown = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) close(false);
     };
+    const onResize = () => close(true);
+    const onScroll = (event: Event) => {
+      if (!(event.target instanceof Node) || !menuRef.current?.contains(event.target)) close(false);
+    };
     window.addEventListener("pointerdown", onPointerDown, true);
-    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll, true);
+    };
     // Re-seeding the highlight on open is the only reason `value` is read here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [close, open]);
 
   useLayoutEffect(() => {
     if (!open) return;
+    const element = menuRef.current;
+    if (!element) return;
+    // The browser top layer escapes scroll clipping while retaining the settings' DOM,
+    // tokens and event path. The application draws all of the menu's chrome.
+    if (typeof element.showPopover === "function" && !element.matches(":popover-open")) element.showPopover();
     const trigger = triggerRef.current?.getBoundingClientRect();
-    const menu = menuRef.current?.getBoundingClientRect();
+    const menu = element.getBoundingClientRect();
     if (!trigger || !menu) return;
+    if (typeof element.showPopover === "function") {
+      const below = window.innerHeight - trigger.bottom - 10;
+      const above = trigger.top - 10;
+      const up = below < menu.height + 6 && above > below;
+      const height = Math.max(40, Math.min(232, up ? above : below));
+      element.style.position = "fixed";
+      element.style.margin = "0";
+      element.style.maxHeight = `${height}px`;
+      element.style.maxWidth = `${Math.min(320, window.innerWidth - 20)}px`;
+      const width = Math.min(menu.width, window.innerWidth - 20);
+      element.style.left = `${Math.max(10, Math.min(window.innerWidth - width - 10, align === "end" ? trigger.right - width : trigger.left))}px`;
+      element.style.right = "auto";
+      element.style.bottom = "auto";
+      element.style.top = `${up ? Math.max(10, trigger.top - Math.min(menu.height, height) - 6) : trigger.bottom + 6}px`;
+      setFlipUp(up);
+      element.focus({ preventScroll: true });
+      return;
+    }
     // Flip against the box that would clip the menu, not against the window.
     const container = nearestScrollContainer(rootRef.current)?.getBoundingClientRect();
     const bounds = container ?? { top: 0, bottom: window.innerHeight };
@@ -248,9 +295,15 @@ export function HudPicker<T extends string>({
     // The list owns the keyboard while it is open, so focus moves into it and
     // returns to the trigger on every close path.
     menuRef.current?.focus({ preventScroll: true });
-  }, [open]);
+  }, [align, open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    menuRef.current?.querySelector<HTMLElement>(`[id="${listId}-${active}"]`)?.scrollIntoView?.({ block: "nearest" });
+  }, [active, listId, open]);
 
   const commit = (next: T) => {
+    if (!open) return;
     onChange(next);
     close(true);
   };
@@ -270,12 +323,12 @@ export function HudPicker<T extends string>({
         disabled={disabled}
         onClick={() => {
           if (open) close(true);
-          else setOpen(true);
+          else openMenu();
         }}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
-            if (!open) { setOpen(true); return; }
+            if (!open) { openMenu(); return; }
             setActive((index) => (index + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length);
           }
         }}
@@ -288,12 +341,18 @@ export function HudPicker<T extends string>({
         <ul
           ref={menuRef}
           id={listId}
+          popover="manual"
           role="listbox"
           aria-label={label}
+          aria-activedescendant={`${listId}-${active}`}
+          aria-hidden={!open || undefined}
+          inert={!open}
           tabIndex={-1}
           data-closing={open ? undefined : "true"}
           className={`hud-picker__menu${flipUp ? " hud-picker__menu--up" : ""}`}
           onKeyDown={(event) => {
+            if (!open) return;
+            if (event.key === "Tab") { close(true); return; }
             if (event.key === "Escape") {
               event.preventDefault();
               event.stopPropagation();
@@ -321,6 +380,7 @@ export function HudPicker<T extends string>({
             return (
               <li
                 key={optionValue}
+                id={`${listId}-${optionIndex}`}
                 role="option"
                 aria-selected={selected}
                 className={`hud-picker__option${selected ? " is-selected" : ""}${optionIndex === active ? " is-active" : ""}`}

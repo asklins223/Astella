@@ -1,0 +1,55 @@
+/* A little card collection on the study desk. The content sets the layout. */
+.desktop-app.hud-surface:is(.page-10,.page-11,.page-12,.page-13,.page-15,.page-16,.page-17),
+.card-experience {
+  --card-ink: #354f45;
+  --card-soft: #687a6e;
+  --card-paper: #fffdf4;
+  --card-mint: #dfefe5;
+  --card-peach: #ffe0cb;
+  --card-yellow: #ffebaa;
+  --card-line: #d8e0d1;
+  --card-shadow: 0 4px 0 #b9cbb790, 0 12px 28px #263f2920;
+  color: var(--card-ink);
+  font-family: "Noto Sans SC Variable", "PingFang SC", sans-serif;
+}
+.desktop-app.hud-surface:is([data-theme="night"],[data-theme="dark"]):is(.page-10,.page-11,.page-12,.page-13,.page-15,.page-16,.page-17),
+.desktop-app.hud-surface:is([data-theme="night"],[data-theme="dark"]) .card-experience {
+  --card-paper: #f6f0df;
+  --card-mint: #d5e5d8;
+  --card-peach: #f5d5c0;
+  --card-yellow: #f5dfa0;
+}
+.desktop-app.hud-surface .task-surface:not(.task-surface--card-generation):has(.card-experience) { background-image: none; }
+.desktop-app.hud-surface .card-experience { --quest-ink: var(--card-ink); --quest-soft: var(--card-soft); --quest-paper: var(--card-paper); --quest-cream: var(--card-paper); --quest-line: var(--card-line); --quest-line-strong: var(--card-line); --quest-grass-text: #4b8068; }
+.desktop-app.hud-surface .task-surface:has(.card-experience) :is(.task-title,.approved-surface__heading) { border: 3px solid #fff9eb; border-radius: 22px; background: var(--card-mint); box-shadow: 0 3px 0 #b6c8b870, 0 5px 14px #243b2820; padding: 10px 17px; }
+.desktop-app.hud-surface .task-surface:has(.card-experience) :is(.task-title h1,.approved-surface__heading h2) { font: 820 22px/1.25 "Noto Sans SC Variable", "PingFang SC", sans-serif; color: var(--card-ink); letter-spacing: -.015em; }
+.desktop-app.hud-surface .task-surface:has(.card-experience) :is(.task-title p,.approved-surface__heading p) { color: var(--card-soft); font-size: 12px; line-height: 1.5; }
+.desktop-app.hud-surface .card-experience :is(button,summary) { scale: var(--card-touch-scale,var(--paper-touch,1)); transform-origin: center; }
+.desktop-app.hud-surface .card-experience .button { min-height: 42px; border: 2px solid #fef9ed; border-radius: 17px; padding: 8px 15px; background: var(--card-paper); color: var(--card-ink); box-shadow: 0 3px 0 #bdcabc90; font: 720 13px/1.4 "Noto Sans SC Variable", "PingFang SC", sans-serif; }
+.desktop-app.hud-surface .card-experience .button.primary { background: var(--card-peach); border-color: #fff8e9; box-shadow: 0 4px 0 #d3ad9570; color: #614a35; }
+.desktop-app.hud-surface .card-experience .button.green { background: var(--card-mint); }
+.desktop-app.hud-surface .card-experience :is(button,summary) { transition: background-color 140ms ease, box-shadow 140ms ease; }
+.desktop-app.hud-surface .card-experience :is(button,summary):active { transform: none; }
+.desktop-app.hud-surface .card-experience :is(button,summary):disabled { opacity: .52; box-shadow: none; cursor: default; }
+.desktop-app.hud-surface .card-experience :is(button,summary,input,textarea):focus-visible { outline: 3px solid #53937a; outline-offset: 3px; }
+.desktop-app.hud-surface .card-experience .text-action { color: #416b58; font-size: 13px; font-weight: 700; }
+.desktop-app.hud-surface .card-experience .objective-card-type > strong { font: 730 12px/1.4 "Noto Sans SC Variable", "PingFang SC", sans-serif; }
+.desktop-app.hud-surface .card-experience .objective-card-type { background: var(--card-yellow); }
+.desktop-app.hud-surface .card-experience .v3-objective-state--attention { background: var(--card-peach); color: #885d41; }
+.desktop-app.hud-surface .card-experience .v3-objective-state--calm { background: var(--card-mint); }
+
+/* Opening a card unfolds a postcard, with a small invitation beside it. */
+.run-text-editor { display: block; min-width: 0; }
+.run-text-editor textarea { display: block; }
+.run-text-editor__count { display: block; margin-top: 6px; text-align: right; }
+.card-run { width: 100%; height: 100%; min-height: 0; }
+
+@media (hover:hover) and (pointer:fine) {
+  .desktop-app.hud-surface .card-experience .button:hover:not(:disabled) { background: #edf4e7; }
+  .desktop-app.hud-surface .card-experience .button.primary:hover:not(:disabled) { background: #ffd5b8; }
+}
+@media (max-width:720px),(max-height:590px) {
+  .desktop-app.hud-surface .task-surface:has(.card-experience) :is(.task-title,.approved-surface__heading) { top: 10px; left: 64px; padding: 6px 13px; border-width: 2px; border-radius: 17px; }
+  .desktop-app.hud-surface .task-surface:has(.card-experience) :is(.task-title h1,.approved-surface__heading h2) { font-size: 17px; }
+  .desktop-app.hud-surface .task-surface:has(.card-experience) :is(.task-title p,.approved-surface__heading p) { display: none; }
+}

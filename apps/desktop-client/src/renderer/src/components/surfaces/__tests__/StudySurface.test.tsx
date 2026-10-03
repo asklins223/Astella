@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { GatewayResultV1, SessionContextV1 } from "@ailearn/shared/desktop-ipc-contracts";
 import type {
   ActivityAnomalyV1,
@@ -194,7 +194,7 @@ function installApi(
     if (spacesResult instanceof Error) throw spacesResult;
     return spacesResult;
   });
-  const rounds = vi.fn(async () => (typeof roundsResult === "object" ? roundsResult : ok(roundPage())));
+  const rounds = vi.fn(async (_input?: unknown) => (typeof roundsResult === "object" ? roundsResult : ok(roundPage())));
   Object.defineProperty(window, "ailearn", {
     configurable: true,
     value: {
@@ -215,6 +215,7 @@ function mockScroll(): { readonly scrollIntoView: ReturnType<typeof vi.fn> } {
 }
 
 beforeEach(() => {
+  useRoomStore.setState({ workspaceScopeRevision: useRoomStore.getState().workspaceScopeRevision + 1 });
   Object.defineProperty(Element.prototype, "scrollTo", { configurable: true, value: () => undefined });
   Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: () => undefined });
 });
@@ -236,6 +237,71 @@ afterEach(() => {
 });
 
 describe("today log surface", () => {
+  it("opens three useful learning paths with a return to the journal", async () => {
+    installApi(ok(activity()));
+    render(<StudySurface />);
+    await screen.findByText("今天还没有留下记录");
+    fireEvent.click(screen.getByRole("button", { name: /接着上次学/ }));
+    expect(useRoomStore.getState().destination).toBe("resumable");
+    expect(useRoomStore.getState().returnTarget?.label).toBe("返回今日学习");
+    act(() => useRoomStore.getState().returnTarget?.run());
+    expect(useRoomStore.getState().destination).toBe("study");
+    fireEvent.click(screen.getByRole("button", { name: /翻开一篇笔记/ }));
+    expect(useRoomStore.getState().destination).toBe("note-library");
+    fireEvent.click(screen.getByRole("button", { name: /温习熟悉的知识/ }));
+    expect(useRoomStore.getState().destination).toBe("review");
+  });
+
+  it("changes the visible paper and focus immediately with keyboard tabs", async () => {
+    installApi(ok(activity()));
+    render(<StudySurface />);
+    await screen.findByText("今天还没有留下记录");
+    const today = screen.getByRole("tab", { name: "今天的足迹" });
+    fireEvent.keyDown(today, { key: "ArrowRight" });
+    const rounds = screen.getByRole("tab", { name: "学过的每一轮" });
+    expect(document.activeElement).toBe(rounds);
+    expect(rounds.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tabpanel").id).toBe("study-panel-rounds");
+    fireEvent.keyDown(rounds, { key: "End" });
+    expect(screen.getByRole("tabpanel").id).toBe("study-panel-spaces");
+    fireEvent.keyDown(document.activeElement!, { key: "Home" });
+    expect(screen.getByRole("tabpanel").id).toBe("study-panel-today");
+  });
+
+  it("counts only actionable groups in the jump and keeps system failures folded", async () => {
+    installApi(ok(activity({ anomalies: [anomaly(), anomaly({ id: "background", kind: "job", target: null, status: "failed", title: "后台整理失败" })] })));
+    render(<StudySurface />);
+    expect(await screen.findByRole("button", { name: "查看 1 个处理项" })).toBeTruthy();
+    const background = document.querySelector<HTMLDetailsElement>(".day-triage__background");
+    expect(background?.open).toBe(false);
+    expect(background?.textContent).toContain("不需要你处理");
+  });
+
+  it("returns from a particular round to the same journal tab and reading position", async () => {
+    const item = roundRecordItem();
+    installApi(ok(activity()), ok(allSpaces()), ok(roundPage({ items: [item], totalCount: 1 })));
+    const first = render(<StudySurface />);
+    fireEvent.click(screen.getByRole("tab", { name: "学过的每一轮" }));
+    const open = await screen.findByRole("button", { name: `回看这一轮 ${item.drivingQuestion}` });
+    const paper = first.container.querySelector<HTMLDivElement>(".day-paper")!;
+    paper.scrollTop = 246;
+    fireEvent.scroll(paper);
+    fireEvent.click(open);
+    expect(useRoomStore.getState().activeNoteRef).toMatchObject({ noteId: item.noteId, learningRoundId: item.roundId });
+    const back = useRoomStore.getState().returnTarget!;
+    expect(back.label).toBe("返回今日学习");
+    first.unmount();
+    act(() => back.run());
+    const second = render(<StudySurface />);
+    await screen.findByRole("button", { name: `回看这一轮 ${item.drivingQuestion}` });
+    expect(screen.getByRole("tabpanel").id).toBe("study-panel-rounds");
+    expect(second.container.querySelector(".day-paper")?.scrollTop).toBe(246);
+    second.unmount();
+    act(() => useRoomStore.getState().resetWorkspaceScope());
+    render(<StudySurface />);
+    expect(screen.getByRole("tabpanel").id).toBe("study-panel-today");
+  });
+
   it("answers 'how was today' before showing any list", async () => {
     installApi(ok(activity()));
     render(<StudySurface />);
@@ -445,6 +511,7 @@ describe("all-spaces scope", () => {
   it("shows every space's numbers plus a total, and marks which one is current", async () => {
     installApi(ok(activity()));
     render(<StudySurface />);
+    fireEvent.click(screen.getByRole("tab", { name: "各个空间" }));
 
     const list = await screen.findByRole("list", { name: "每个空间各自的进度" });
     const rows = within(list).getAllByRole("listitem");
@@ -468,6 +535,7 @@ describe("all-spaces scope", () => {
   it("says how many spaces are missing from the total instead of faking completeness", async () => {
     installApi(ok(activity()), ok(allSpaces({ capped: true, skippedWorkspaceCount: 2 })));
     render(<StudySurface />);
+    fireEvent.click(screen.getByRole("tab", { name: "各个空间" }));
 
     expect(await screen.findByText("还有 2 个空间没有计入合计。")).toBeTruthy();
   });
@@ -475,6 +543,7 @@ describe("all-spaces scope", () => {
   it("never substitutes the current space's numbers when the all-spaces read fails", async () => {
     installApi(ok(activity()), new Error("gateway down"));
     render(<StudySurface />);
+    fireEvent.click(screen.getByRole("tab", { name: "各个空间" }));
 
     expect(await screen.findByText("全部空间的统计暂时读不到，本页其余数字仍然只算当前空间。")).toBeTruthy();
     // 读不到就不给数字，也不留一行"合计"装作读到了。
@@ -503,6 +572,7 @@ describe("all-spaces scope", () => {
       nextCursor: c2,
     })));
     render(<StudySurface />);
+    fireEvent.click(screen.getByRole("tab", { name: "学过的每一轮" }));
     const list = await screen.findByRole("list", { name: "我的学习轮次记录" });
     const rows = within(list).queryAllByRole("listitem");
     expect(rows).toHaveLength(2);
@@ -531,6 +601,7 @@ describe("all-spaces scope", () => {
     (window.ailearn as unknown as { noteLearningRound: { personalHistory: unknown } })
       .noteLearningRound.personalHistory = rounds;
     render(<StudySurface />);
+    fireEvent.click(screen.getByRole("tab", { name: "学过的每一轮" }));
     const list = await screen.findByRole("list", { name: "我的学习轮次记录" });
     expect(within(list).queryAllByRole("listitem")).toHaveLength(2);
     // 第二跳：翻回来的那一页接在后面，不覆盖已经看到的那两行。
@@ -548,8 +619,72 @@ describe("all-spaces scope", () => {
   it("keeps an empty record and a failed read as two different sentences", async () => {
     installApi(ok(activity()), ok(allSpaces()), ok(roundPage()));
     render(<StudySurface />);
+    fireEvent.click(screen.getByRole("tab", { name: "学过的每一轮" }));
     expect(await screen.findByText(/还没有开过一轮/)).toBeTruthy();
     expect(document.querySelector("[data-round-record] [role=alert]")).toBeNull();
+  });
+
+  it("restores expanded older pages before restoring the reading position", async () => {
+    const newer = roundRecordItem();
+    const older = roundRecordItem({ roundId: "c7777777-7777-4777-8777-777777777777", drivingQuestion: "更早的问题" });
+    const firstPage = roundPage({ items: [newer], totalCount: 2, shownCount: 1, hasMore: true, nextCursor: newer.roundId });
+    const olderPage = roundPage({ items: [older], totalCount: 2, shownCount: 1 });
+    const { rounds } = installApi(ok(activity()), ok(allSpaces()), ok(firstPage));
+    rounds.mockImplementation(async (...args: unknown[]) => {
+      const input = args[0] as { before?: string };
+      return ok(input?.before ? olderPage : firstPage);
+    });
+    const first = render(<StudySurface />);
+    fireEvent.click(screen.getByRole("tab", { name: "学过的每一轮" }));
+    await screen.findByRole("button", { name: `回看这一轮 ${newer.drivingQuestion}` });
+    fireEvent.click(screen.getByRole("button", { name: "看更早的几轮" }));
+    const open = await screen.findByRole("button", { name: `回看这一轮 ${older.drivingQuestion}` });
+    const paper = first.container.querySelector<HTMLDivElement>(".day-paper")!;
+    paper.scrollTop = 820; fireEvent.scroll(paper); fireEvent.click(open);
+    first.unmount();
+    const second = render(<StudySurface />);
+    await screen.findByRole("button", { name: `回看这一轮 ${older.drivingQuestion}` });
+    await waitFor(() => expect(second.container.querySelector(".day-paper")?.scrollTop).toBe(820));
+    expect(rounds).toHaveBeenCalledTimes(4);
+    second.unmount();
+    act(() => useRoomStore.getState().resetWorkspaceScope());
+    render(<StudySurface />);
+    expect(screen.getByRole("tabpanel").id).toBe("study-panel-today");
+    fireEvent.click(screen.getByRole("tab", { name: "学过的每一轮" }));
+    await screen.findByRole("button", { name: `回看这一轮 ${newer.drivingQuestion}` });
+    expect(rounds).toHaveBeenCalledTimes(5);
+    expect(screen.queryByRole("button", { name: `回看这一轮 ${older.drivingQuestion}` })).toBeNull();
+  });
+
+  it("ignores an older response after unmount and deduplicates the next page", async () => {
+    const newer = roundRecordItem();
+    const older = roundRecordItem({ roundId: "c8888888-8888-4888-8888-888888888888", drivingQuestion: "应当留下的问题" });
+    const stale = roundRecordItem({ roundId: "c9999999-9999-4999-8999-999999999999", drivingQuestion: "已经过期的回复" });
+    const firstPage = roundPage({ items: [newer], totalCount: 2, shownCount: 1, hasMore: true, nextCursor: newer.roundId });
+    const { rounds } = installApi(ok(activity()), ok(allSpaces()), ok(firstPage));
+    let release!: (value: GatewayResultV1<unknown>) => void;
+    let paging = 0;
+    rounds.mockImplementation(async (...args: unknown[]) => {
+      const input = args[0] as { before?: string };
+      if (!input?.before) return ok(firstPage);
+      if (++paging === 1) return new Promise<GatewayResultV1<unknown>>(resolve => { release = resolve; });
+      return ok(roundPage({ items: [newer, older], totalCount: 2, shownCount: 2 }));
+    });
+    const view = render(<StudySurface />);
+    fireEvent.click(screen.getByRole("tab", { name: "学过的每一轮" }));
+    await screen.findByRole("button", { name: "看更早的几轮" });
+    fireEvent.click(screen.getByRole("button", { name: "看更早的几轮" }));
+    await screen.findByRole("button", { name: "正在取更早的…" });
+    view.unmount();
+    render(<StudySurface />);
+    await screen.findByRole("button", { name: "看更早的几轮" });
+    await act(async () => release(ok(roundPage({ items: [stale], totalCount: 2, shownCount: 1 }))));
+    expect(screen.queryByText(stale.drivingQuestion)).toBeNull();
+    const load = screen.getByRole("button", { name: "看更早的几轮" });
+    fireEvent.click(load); fireEvent.click(load);
+    await screen.findByRole("button", { name: `回看这一轮 ${older.drivingQuestion}` });
+    expect(screen.getAllByRole("button", { name: `回看这一轮 ${newer.drivingQuestion}` })).toHaveLength(1);
+    expect(paging).toBe(2);
   });
 
   it("shows the read failure in place with a retry instead of claiming there is no record", async () => {
@@ -558,6 +693,7 @@ describe("all-spaces scope", () => {
       error: { code: "api_unavailable", safeMessageKey: "error.api_unavailable", retry: "later" },
     } as unknown as GatewayResultV1<unknown>);
     render(<StudySurface />);
+    fireEvent.click(screen.getByRole("tab", { name: "学过的每一轮" }));
     const alert = await waitFor(() => {
       const node = document.querySelector("[data-round-record] [role=alert]");
       expect(node).not.toBeNull();

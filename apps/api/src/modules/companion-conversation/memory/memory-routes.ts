@@ -39,6 +39,7 @@ import {
   listMemories,
   listMemoryConflicts,
   listMemoryRevisions,
+  listRecycledMemories,
   MemorySourceSuppressedError,
   MemoryRevisionConflictError,
   moveMemoryBudgetTier,
@@ -81,6 +82,7 @@ const creatableMemoryKindSchema = memoryKindSchema.exclude(["judgment"]);
 const memoryBudgetTierSchema = z.enum(["resident", "active", "archived"]);
 
 const listQuerySchema = z.object({
+  focusMemoryId: z.string().uuid().optional(),
   kind: memoryKindSchema.optional(),
   q: z.string().min(1).max(200).optional(),
   scope: z.enum(["global", "workspace", "task"]).optional(),
@@ -131,6 +133,12 @@ export async function memoryRoutes(app: FastifyInstance) {
         message: "桌宠记忆与上下文当前未开放",
       });
     }
+  });
+
+  app.get("/companion/memory/recycle", { preHandler: [requireSession] }, async (req, reply) => {
+    const scope = scopeOfSession(req.session);
+    const items = await withWorkspaceTransaction(scope, tx => listRecycledMemories(tx, scope));
+    return reply.header("Cache-Control", "no-store").send({ version: 1, items });
   });
 
   app.get(
@@ -264,6 +272,7 @@ export async function memoryRoutes(app: FastifyInstance) {
       const scope = scopeOfSession(req.session);
       const items = await withWorkspaceTransaction(scope, (tx) =>
         listMemories(tx, scope, {
+          focusMemoryId: query.data.focusMemoryId,
           kind: query.data.kind as MemoryKindV2 | undefined,
           q: query.data.q,
           scope: query.data.scope as MemoryScopeV2 | undefined,

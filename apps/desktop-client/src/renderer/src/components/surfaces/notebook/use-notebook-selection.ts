@@ -3,6 +3,7 @@ import { readNoteAnchorTextV1, type NoteAnnotationAnchorV1 } from "@ailearn/shar
 import type { NoteDetailV1, NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
 import { noteBlockText } from "./surface-data";
 import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
+import { noteReadingOffset, noteReadingText } from "./note-reading-text";
 
 export function useNotebookSelection(input: {
   note: NoteDetailV1 | null; blocks: readonly NoteBlockProjectionV1[]; bodyRef: RefObject<HTMLDivElement | null>; active: boolean;
@@ -20,26 +21,22 @@ export function useNotebookSelection(input: {
     const roots = Array.from(body.querySelectorAll<HTMLElement>("[data-block-ordinal]"))
       .map(block => ({ block, content: block.querySelector<HTMLElement>("[data-note-block-content]") ?? block }))
       .filter(({ content }) => range.intersectsNode(content) && content.textContent?.length);
-    const offset = (root: HTMLElement, node: Node, at: number, fallback: number) => {
-      if (!root.contains(node)) return fallback;
-      const before = document.createRange(); before.selectNodeContents(root); before.setEnd(node, at); return before.toString().length;
-    };
     // Whole-paragraph selections can end at the next paragraph's zero offset.
     // Keep only the text-bearing outer endpoints before producing the exact anchor.
     const selectedRoots = roots.map(({ block, content }) => ({ block, content,
-      startOffset: offset(content, range.startContainer, range.startOffset, 0),
-      endOffset: offset(content, range.endContainer, range.endOffset, content.textContent?.length ?? 0),
+      startOffset: noteReadingOffset(content, range.startContainer, range.startOffset, 0, "start"),
+      endOffset: noteReadingOffset(content, range.endContainer, range.endOffset, noteReadingText(content).length, "end"),
     })).filter(selected => selected.endOffset > selected.startOffset);
     while (selectedRoots.length) {
       const first = selectedRoots[0]!;
-      const text = (first.content.textContent ?? "").slice(first.startOffset, first.endOffset);
+      const text = noteReadingText(first.content).slice(first.startOffset, first.endOffset);
       first.startOffset += text.length - text.trimStart().length;
       if (first.startOffset < first.endOffset) break;
       selectedRoots.shift();
     }
     while (selectedRoots.length) {
       const last = selectedRoots.at(-1)!;
-      const text = (last.content.textContent ?? "").slice(last.startOffset, last.endOffset);
+      const text = noteReadingText(last.content).slice(last.startOffset, last.endOffset);
       last.endOffset -= text.length - text.trimEnd().length;
       if (last.endOffset > last.startOffset) break;
       selectedRoots.pop();
@@ -57,7 +54,7 @@ export function useNotebookSelection(input: {
       const at = Number(block.dataset.blockOrdinal), current = blocks.find(item => item.ordinal === at);
       const frozen = note?.currentVersion.blocks.find(item => item.ordinal === at);
       return current && frozen && current.type === frozen.type && noteBlockText(current.content) === noteBlockText(frozen.content)
-        && content.textContent === noteBlockRenderedTextV1(current.type, current.content);
+        && noteReadingText(content) === noteBlockRenderedTextV1(current.type, current.content);
     });
     if (note?.currentVersionId && canonical && text.length <= 2_000 && matching) {
       anchor = { noteVersionId: note.currentVersionId, ...bounds, ...canonical };

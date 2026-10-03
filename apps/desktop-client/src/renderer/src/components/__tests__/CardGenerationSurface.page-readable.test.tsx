@@ -166,13 +166,14 @@ describe("生成中那一屏：登记给伴星读的就是屏幕上那一份", (
     expect(screen.getAllByTestId("card-generation-landing-item")).toHaveLength(3);
 
     // 标题是另一条异步读数（note.get），所以要等到它落进视图为止。
-    await waitFor(() => expect(publishedView()?.title).toContain("IndexTTS 2.5"));
+    await waitFor(() => expect(publishedView()?.metrics?.find(metric => metric.label === "笔记")?.value).toContain("IndexTTS 2.5"));
     const view = publishedView()!;
     expect(view.pageId).toBe("card_generation_progress");
     // 同一个数、同一个字符串：她念出来的那句进度就是屏幕上那一句的子串
     // （屏幕上那一行还把"最后更新"拼在后面，所以是包含而不是相等）。
     expect(view.metrics?.some((metric) => headline.textContent?.includes(metric.value))).toBe(true);
-    expect(view.title).toBe(screen.getByRole("heading", { level: 2 }).textContent);
+    expect(view.title).toBe(screen.getByRole("heading", { level: 1 }).textContent);
+    expect(view.metrics?.find(metric => metric.label === "笔记")?.value).toBe(screen.getByText("来自《IndexTTS 2.5 让声音跨越语言》").textContent);
     expect(view.items?.map((item) => item.ordinal)).toEqual([1, 2, 3]);
     const onScreenConcepts = screen.getAllByText(/^候选概念\d$/).map((node) => node.textContent);
     expect(view.items?.map((item) => item.label)).toEqual(onScreenConcepts);

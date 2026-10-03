@@ -78,6 +78,11 @@ after(async () => {
   // 是 RESTRICT，所以不先删空间就删不掉用户。原先这里整条都挂着 `.catch(() => {})`，
   // 删除失败被静默吞掉——dev 库里那批 `mem-http-*` 残留就是这么攒出来的。
   await sql`UPDATE users SET personal_workspace_id = NULL WHERE id IN (${userA}, ${userB})`;
+  await sql`DELETE FROM assistant_memory_items WHERE user_id IN (${userA}, ${userB})`;
+  await sql`DELETE FROM assistant_memory_item_revisions WHERE user_id IN (${userA}, ${userB})`;
+  await sql`DELETE FROM companion_discovery_entries WHERE user_id IN (${userA}, ${userB})`;
+  await sql`DELETE FROM companion_daily_summaries WHERE user_id IN (${userA}, ${userB})`;
+  await sql`DELETE FROM sources WHERE workspace_id = ${workspaceId}`;
   await sql`DELETE FROM workspace_members WHERE workspace_id = ${workspaceId}`;
   await sql`DELETE FROM workspaces WHERE id = ${workspaceId}`;
   await sql`DELETE FROM users WHERE id IN (${userA}, ${userB})`;
@@ -402,4 +407,99 @@ test("导出与星图只包含自己的数据，且星图排除候选", async ()
 
   const bStarMap = await app.inject(req(tokenB, "GET", "/companion/memory/star-map"));
   assert.deepEqual(bStarMap.json().nodes, [], "星图不得跨用户泄漏");
+});
+
+test('回收区带真实期限、跨用户隔离，恢复后从回收区移除', async () => {
+  const id = await createMemory(tokenA, { content: '回收区测试记忆' });
+  const removed = await app.inject(req(tokenA, 'DELETE', '/companion/memory/' + id));
+  assert.equal(removed.statusCode, 204, removed.body);
+  const recycled = await app.inject(req(tokenA, 'GET', '/companion/memory/recycle'));
+  assert.equal(recycled.statusCode, 200, recycled.body);
+  assert.equal(recycled.headers['cache-control'], 'no-store');
+  const item = recycled.json().items.find((item: { id: string }) => item.id === id);
+  assert.equal(item.content, '回收区测试记忆');
+  assert.equal(Date.parse(item.purgeAfter) - Date.parse(item.deletedAt), 30 * 24 * 60 * 60 * 1000);
+  const other = await app.inject(req(tokenB, 'GET', '/companion/memory/recycle'));
+  assert.equal(other.json().items.some((item: { id: string }) => item.id === id), false);
+  const restored = await app.inject(req(tokenA, 'POST', '/companion/memory/' + id + '/restore-deleted'));
+  assert.equal(restored.statusCode, 204, restored.body);
+  const after = await app.inject(req(tokenA, 'GET', '/companion/memory/recycle'));
+  assert.equal(after.json().items.some((item: { id: string }) => item.id === id), false);
+});
+
+test('清空记忆同样进入 30 天回收区', async () => {
+  const id = await createMemory(tokenA, { content: '清空后仍可恢复' });
+  const cleared = await app.inject(req(tokenA, 'DELETE', '/companion/memory'));
+  assert.equal(cleared.statusCode, 200, cleared.body);
+  const recycled = await app.inject(req(tokenA, 'GET', '/companion/memory/recycle'));
+  const item = recycled.json().items.find((item: { id: string }) => item.id === id);
+  assert.ok(item);
+  assert.equal(Date.parse(item.purgeAfter) - Date.parse(item.deletedAt), 30 * 24 * 60 * 60 * 1000);
+});
+
+test('关联目标可以超出最近 200 条，且不能读取另一用户的目标', async () => {
+  const id = await createMemory(tokenA, { content: '很早的关联记忆' });
+  await sql`UPDATE assistant_memory_items SET updated_at='2020-01-01' WHERE id=${id}`;
+  await sql`INSERT INTO assistant_memory_items (workspace_id,user_id,kind,content,scope,importance,confidence,user_stated,user_confirmed,candidate,author_type)
+    SELECT ${workspaceId},${userA},'preference','近期记忆 ' || number,'workspace',0.5,1,true,true,false,'user' FROM generate_series(1,201) AS number`;
+  const recent = await app.inject(req(tokenA, 'GET', '/companion/memory'));
+  assert.equal(recent.json().items.some((item: { memoryItemId: string }) => item.memoryItemId === id), false);
+  const focused = await app.inject(req(tokenA, 'GET', '/companion/memory?focusMemoryId=' + id));
+  assert.equal(focused.statusCode, 200, focused.body);
+  assert.equal(focused.json().items.length, 200);
+  assert.equal(focused.json().items.some((item: { memoryItemId: string }) => item.memoryItemId === id), true);
+  const other = await app.inject(req(tokenB, 'GET', '/companion/memory?focusMemoryId=' + id));
+  assert.equal(other.json().items.some((item: { memoryItemId: string }) => item.memoryItemId === id), false);
+});
+
+test('三条冲突逐项解决后只有保留项存活，且解除冲突组', async () => {
+  const ids = await Promise.all([1,2,3].map(index => createMemory(tokenA, { content: '冲突项 ' + index })));
+  const group = randomUUID();
+  await sql`UPDATE assistant_memory_items SET conflict_group=${group} WHERE id IN (${ids[0]},${ids[1]},${ids[2]})`;
+  for (const removeId of ids.slice(1)) {
+    const result = await app.inject(req(tokenA, 'POST', `/companion/memory/${ids[0]}/resolve-conflict`, { removeId }));
+    assert.equal(result.statusCode, 200, result.body);
+  }
+  const rows = await sql`SELECT id,deleted_at,conflict_group FROM assistant_memory_items WHERE id IN (${ids[0]},${ids[1]},${ids[2]})`;
+  assert.equal(rows.filter(row => row.deleted_at === null).length, 1);
+  assert.equal(rows.find(row => row.id === ids[0])?.conflict_group, null);
+});
+
+test('来源归档遮蔽真实引用日记与摘录，同一天另一用户的内容保持可读，迟到发布不能复活', async () => {
+  const sourceId = randomUUID(), diaryA = randomUUID(), diaryB = randomUUID(), excerptA = randomUUID(), excerptB = randomUUID();
+  const date = '2026-07-11';
+  await sql`INSERT INTO sources (id,workspace_id,type,title,status,created_by)
+    VALUES (${sourceId},${workspaceId},'url','引用资料','ready',${userA})`;
+  await sql`INSERT INTO companion_daily_summaries (id,workspace_id,user_id,date,timezone,facts,summary,source_event_ids)
+    VALUES (${diaryA},${workspaceId},${userA},${date},'Asia/Shanghai','[]','A 的引用日记',ARRAY[${sourceId}]),
+           (${diaryB},${workspaceId},${userB},${date},'Asia/Shanghai','[]','B 的独立日记',ARRAY[]::text[])`;
+  await sql`INSERT INTO companion_discovery_entries (id,workspace_id,user_id,kind,source,source_id,author,body)
+    VALUES (${excerptA},${workspaceId},${userA},'diary_excerpt','diary',${date},'assistant','A 的摘录'),
+           (${excerptB},${workspaceId},${userB},'diary_excerpt','diary',${date},'assistant','B 的摘录')`;
+  await sql`UPDATE sources SET status='archived' WHERE id=${sourceId}`;
+  const diaries = await sql`SELECT id,deleted_at,hidden_at,delete_reason FROM companion_daily_summaries WHERE id IN (${diaryA},${diaryB})`;
+  assert.ok(diaries.find(row => row.id === diaryA)?.deleted_at);
+  assert.ok(diaries.find(row => row.id === diaryA)?.hidden_at);
+  assert.equal(diaries.find(row => row.id === diaryA)?.delete_reason, 'revoked_source');
+  assert.equal(diaries.find(row => row.id === diaryB)?.deleted_at, null);
+  const excerpts = await sql`SELECT id,masked FROM companion_discovery_entries WHERE id IN (${excerptA},${excerptB})`;
+  assert.equal(excerpts.find(row => row.id === excerptA)?.masked, true);
+  assert.equal(excerpts.find(row => row.id === excerptB)?.masked, false);
+  await assert.rejects(sql`UPDATE companion_daily_summaries SET deleted_at=NULL,status='generated',summary='迟到任务' WHERE id=${diaryA}`, /must not be republished/);
+});
+
+test('已被替代的伴星判断可以修订，旧认识状态与四种作者词表真实进入版本表', async () => {
+  const id = randomUUID();
+  await sql`INSERT INTO assistant_memory_items (id,workspace_id,user_id,kind,content,scope,user_stated,source_type,author_type,source_speaker,source_basis,epistemic_status)
+    VALUES (${id},${workspaceId},${userA},'preference','已经被替代的判断','workspace',false,'model_inferred','companion','companion','companion_interpretation','superseded')`;
+  await sql`UPDATE assistant_memory_items SET content='新判断',epistemic_status='tentative' WHERE id=${id}`;
+  const revisions = await sql`SELECT revision,author_type,source_speaker,source_basis,epistemic_status,content FROM assistant_memory_item_revisions WHERE memory_id=${id}`;
+  assert.equal(revisions.length, 1);
+  assert.equal(revisions[0].author_type, 'companion');
+  assert.equal(revisions[0].source_speaker, 'companion');
+  assert.equal(revisions[0].source_basis, 'companion_interpretation');
+  assert.equal(revisions[0].epistemic_status, 'superseded');
+  assert.equal(revisions[0].content, '已经被替代的判断');
+  const current = await sql`SELECT revision,content FROM assistant_memory_items WHERE id=${id}`;
+  assert.equal(current[0].revision, revisions[0].revision + 1);
 });

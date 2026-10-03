@@ -26,10 +26,15 @@ import type { NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts
 /** 本模块只需要块的这三样：与 `AnchorBlock` 同形。 */
 export type PlacementBlock = { readonly ordinal: number; readonly type: string; readonly content: string };
 
+/** API records arrive newest first; paper numbers grow in creation order. */
+export function chronologicalAnnotations(annotations: readonly NoteAnnotationV1[]): NoteAnnotationV1[] {
+  return [...annotations].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.annotationId.localeCompare(b.annotationId));
+}
+
 /** 一条批注落在哪些块上，以及每块里那一段的**渲染文本**范围。 */
 export type AnnotationPlacement = {
   readonly annotationId: string;
-  /** 1 起��的显示序号，与预览态那张纸上的记号一致。 */
+  /** 1 起的显示序号，与阅读态那张纸上的记号一致。 */
   readonly number: number;
   readonly blocks: readonly {
     readonly ordinal: number;
@@ -46,7 +51,7 @@ export type AnnotationPlacement = {
 /**
  * 只画**当前正文上仍能验证**的批注。
  *
- * 顺序按传入顺序，编号因此稳定——同一篇的记号不会因为多读了一条就整体重排。
+ * 调用方按创建时间排列；新批注接在最后，已有记号不会因新增而重排。
  */
 export function annotationPlacements(
   annotations: readonly NoteAnnotationV1[],

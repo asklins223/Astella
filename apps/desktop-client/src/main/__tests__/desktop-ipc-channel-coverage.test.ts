@@ -216,6 +216,24 @@ describe("IPC 通道覆盖对账", () => {
     electronMock.on.mockClear();
   });
 
+  it("历史拓展批次经过实际注册入口，原样传递分页并阻止过期工作区", async () => {
+    const list = vi.fn(async () => ({ version: 1, items: [], nextCursor: null }));
+    noteStub("listNoteExpansionTasks", list);
+    const { event } = await register();
+    const handler = electronMock.handlers.get(DESKTOP_IPC_CHANNELS.noteExpansionListTasks);
+    expect(handler).toBeTruthy();
+    const query = { noteVersionId: "44444444-4444-4444-8444-444444444444",
+      before: "55555555-5555-4555-8555-555555555555" };
+    const response = await handler!(event, { meta, noteId: NOTE_ID, query });
+    expect(requireData(response)).toEqual({ version: 1, items: [], nextCursor: null });
+    expect(list.mock.calls[0]?.slice(1)).toEqual([NOTE_ID, query, meta.requestId]);
+    const stale = await handler!(event, { meta: { ...meta, workspaceEpoch: 8 }, noteId: NOTE_ID, query });
+    expect(stale.ok).toBe(false);
+    const invalid = await handler!(event, { meta, noteId: NOTE_ID, query: { ...query, userId: "someone-else" } });
+    expect(invalid.ok).toBe(false);
+    expect(list).toHaveBeenCalledOnce();
+  });
+
   it("契约里每一条通道都有归属：注册成 handler，或在写明理由的出站名单里", async () => {
     await register();
     const declared = Object.values(DESKTOP_IPC_CHANNELS);

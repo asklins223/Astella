@@ -1,0 +1,59 @@
+/* The card's content and its next action share the front face. Supporting facts unfold below. */
+.desktop-app.hud-surface .card-detail {
+  & .approved-surface__heading { display: none; }
+  & .approved-surface__content { top: 75px; overflow: hidden; }
+  & .objective-brief { width: 100%; height: 100%; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px 24px 28px; border: 0; background: none; box-shadow: none; scrollbar-width: thin; scrollbar-color: #c5d2b9 transparent; }
+  & .objective-brief__board { --card-spot: #e2eccb; --card-spot-ink: #819967; position: relative; isolation: isolate; display: block; width: 100%; max-width: 760px; height: auto; min-height: 0; margin-inline: auto; padding: 0; border: 3px solid #fffff8; border-radius: 29px 33px 30px 28px; background: linear-gradient(130deg,#fffff8,#faf7e9); color: #47604d; box-shadow: 2px 5px 0 #eeecdb,3px 9px 0 #d2dcc2,0 20px 35px #344f3226; transform: translateY(var(--card-object-y,0px)); opacity: clamp(0,var(--card-object-open,1),1); }
+  & .objective-brief__board[data-strategy="cloze"] { --card-spot: #e9e1f1; --card-spot-ink: #947baa; }
+  & .objective-brief__board[data-strategy="compare"] { --card-spot: #dceeee; --card-spot-ink: #6d9b9a; }
+  & .objective-brief__board[data-strategy="sequence"] { --card-spot: #f5e7c7; --card-spot-ink: #aa8c51; }
+  & .objective-brief__board[data-strategy="why"] { --card-spot: #e3efcd; --card-spot-ink: #7d9b61; }
+  & .objective-brief__board[data-strategy="boundary"] { --card-spot: #dae5f1; --card-spot-ink: #7a94af; }
+  & .objective-brief__board[data-strategy="application"] { --card-spot: #f9e2d5; --card-spot-ink: #b69074; }
+  & .objective-brief__masthead { display: block; padding: 28px 32px 23px; }
+  & .objective-brief__flags { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+  & .objective-brief__card-mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 13px; flex: none; background: var(--card-spot); color: var(--card-spot-ink); font-size: 23px; box-shadow: inset 0 2px 0 #fff8; }
+  & .objective-card-type--brief { display: inline; min-width: 0; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; color: var(--card-spot-ink); }
+  & .objective-card-type--brief strong { color: inherit; font: 650 12px/1.5 "Noto Sans SC Variable",sans-serif; }
+  & .v3-objective-state { margin-left: auto; padding: 5px 10px; border: 1px solid #e0e7d4; border-radius: 15px; background: #f0f4e5; color: #718666; font-size: 11px; }
+  & .objective-brief__masthead h3 { max-width: 100%; margin: 20px 0 0; color: #47604d; font: 720 24px/1.65 "Noto Sans SC Variable",sans-serif; letter-spacing: -.02em; overflow-wrap: anywhere; text-wrap: pretty; }
+  & .v3-objective-summary { margin: 13px 0 0; color: #718269; font: 450 14px/1.85 "Noto Sans SC Variable",sans-serif; }
+  & .objective-brief__departure { display: block; padding: 0 32px 25px; }
+  & .objective-brief__launchpad { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 7px 24px; padding-top: 20px; border-top: 1px dashed #d6dfc9; }
+  & .objective-brief__mode-label { grid-column: 1; color: #7d986b; font-size: 11px; font-weight: 650; }
+  & .objective-brief__launchpad > p { grid-column: 1; margin: 0; color: #7d9070; font-size: 12px; line-height: 1.85; }
+  & .objective-brief__launchpad small { grid-column: 1; margin: 0; color: #93a183; font-size: 12px; line-height: 1.8; }
+  & .objective-brief__launch { grid-column: 2; grid-row: 1 / span 3; display: flex; align-items: center; justify-content: space-between; gap: 22px; min-width: 184px; min-height: 55px; padding: 14px 18px; border: 2px solid #fbfff0; border-radius: 21px; background: #dfeccb; color: #557246; box-shadow: 0 4px 0 #afc394; cursor: pointer; }
+  & .objective-brief__launch strong { color: inherit; font: 720 16px/1.5 "Noto Sans SC Variable",sans-serif; }
+  & .objective-brief__launch > span { display: inline-flex; flex: none; }
+  & .objective-brief__launch:hover:not(:disabled) { background: #e8f2d9; }
+  & .objective-brief__launch:disabled { cursor: default; }
+  & :is(.objective-brief__mission,.objective-brief__progress,.objective-brief__dossier) { margin: 0 32px; padding: 14px 0; border: 0; border-top: 1px solid #e3e8d7; background: none; color: #7b8f6e; }
+  & :is(.objective-brief__mission,.objective-brief__progress,.objective-brief__dossier) > summary { display: flex; align-items: center; gap: 9px; padding: 0; cursor: pointer; list-style: none; font-size: 12px; }
+  & :is(.objective-brief__mission,.objective-brief__progress,.objective-brief__dossier) > summary::-webkit-details-marker { display: none; }
+  & :is(.objective-brief__mission,.objective-brief__progress,.objective-brief__dossier) > summary::after { content: "+"; margin-left: 8px; color: #a0ae90; font-size: 16px; }
+  & .objective-brief__mission > summary::after { margin-left: auto; }
+  & :is(.objective-brief__mission,.objective-brief__progress,.objective-brief__dossier)[open] > summary::after { content: "−"; }
+  & :is(.objective-brief__mission,.objective-brief__progress,.objective-brief__dossier) > summary strong { font-weight: 550; }
+  & :is(.objective-brief__mission-body,.objective-brief__trail-body,.objective-brief__dossier-body) { padding-top: 15px; }
+  & .objective-brief__mission-body p { margin: 0 0 9px; color: #839477; font-size: 12px; line-height: 1.9; }
+  & .objective-brief__progress summary > span { margin-left: auto; color: #98a68c; font-size: 11px; }
+  & .objective-brief__progress ul { display: grid; gap: 10px; margin: 18px 0 0; padding: 0; list-style: none; }
+  & .objective-brief__progress li { display: flex; align-items: baseline; gap: 8px; color: #839676; font-size: 12px; }
+  & .objective-brief__progress li strong { margin-left: auto; text-align: right; color: #63815a; }
+  & .objective-brief__history { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 32px 16px; padding: 14px 17px; border-radius: 18px; color: #6f845f; background: #edf2e0; }
+  & .objective-brief__history-copy { min-width: 0; }
+  & .objective-brief__history-copy > span { font-size: 11px; }
+  & .objective-brief__history h4 { margin: 6px 0; color: inherit; font: 650 13px/1.7 "Noto Sans SC Variable",sans-serif; }
+  & .objective-brief__history p { margin: 0; color: inherit; font-size: 11px; line-height: 1.8; }
+  & .objective-brief__history button { flex: none; border: 0; border-radius: 15px; padding: 10px 14px; background: #dce9c9; color: #688658; font-size: 12px; cursor: pointer; }
+  & .objective-brief__dossier { padding-bottom: 20px; }
+  & .objective-brief__dossier summary > span { display: flex; align-items: center; gap: 9px; }
+  & .objective-brief__dossier summary small { margin-left: auto; color: #98a68c; font-size: 11px; }
+  & .objective-brief__note-evidence { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 0 0 15px; color: #a18e6f; font-size: 12px; line-height: 1.85; }
+  & .objective-brief__note-evidence svg { flex: none; }
+  & .objective-brief__evidence-link { padding: 0; border: 0; background: none; color: #719265; font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  & .objective-brief__revision { display: block; margin: 15px 0 0; padding: 12px 0 0; border-top: 1px dashed #dce4cf; color: #97a58b; font-size: 11px; line-height: 1.8; }
+  & .v3-action-error { display: flex; align-items: center; gap: 7px; margin: 0 32px 17px; padding: 12px 15px; border-radius: 15px; color: #9b7556; background: #f9ebdc; font-size: 12px; }
+}
+@media (max-width:720px),(max-height:590px) { .desktop-app.hud-surface .card-detail .approved-surface__content { top: 55px; } }

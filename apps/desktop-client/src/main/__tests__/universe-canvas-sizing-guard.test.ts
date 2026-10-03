@@ -150,6 +150,12 @@ describe("理解星图画布的尺寸契约", () => {
     expect(source, "高度兜底不见了，塌成 0 会直接量到 0").toMatch(/Math\.max\(1, root\.offsetHeight\)/);
   });
 
+  it("全窗口星空在紧凑外壳下仍然铺满，不再继承纸面内边距", () => {
+    // 200% 真窗口曾被母本里的 .hud-surface .content.full 收进 64/28px
+    // 边距；额外的 page-19 作用域保证这页的几何优先于那条紧凑纸面规则。
+    expect(css).toMatch(/\.hud-surface\.page-19\s+\.content\.full\s*\{\s*inset:\s*0\s*;/);
+  });
+
   it(`${ROOT_CLASS} 必须自带盒子（position: absolute + inset: 0）`, () => {
     expect(
       rulesFor(ROOT_CLASS).length,

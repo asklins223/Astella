@@ -131,6 +131,9 @@ export type NoteDocInlineSegment =
   | { readonly kind: "em"; readonly text: string }
   | { readonly kind: "strike"; readonly text: string }
   | { readonly kind: "code"; readonly text: string }
+  // Keep the original delimiters in text: stored blocks and annotation offsets
+  // retain TeX source; only the reading renderer typesets it.
+  | { readonly kind: "math"; readonly text: string; readonly value: string; readonly display: boolean }
   | { readonly kind: "link"; readonly text: string; readonly href: string }
   /**
    * 行内图片。它**没有** `text`：图片是原子节点，不占一个字符，画出来占的是格线
@@ -146,7 +149,7 @@ export type NoteDocInlineSegment =
  * 只是让"更长的形状在前"这条读起来和跑起来一致。
  */
 const INLINE_PATTERN =
-  /(\*\*[^*\n]+\*\*)|(~~[^~\n]+~~)|(\*[^*\n]+\*)|(`[^`\n]+`)|(!\[[^\]\n]*\]\(([^)\s]+)\))|(\[[^\]\n]*\]\([^)\s]+\))/g;
+  /(`[^`\n]+`)|((?<!\\)\$\$[\s\S]+?(?<!\\)\$\$)|((?<![\\$])\$(?![$\s])(?:\\.|[^$\\\n])*?(?<![\\\s])\$(?!\$))|(\*\*[^*\n]+\*\*)|(~~[^~\n]+~~)|(\*[^*\n]+\*)|(!\[[^\]\n]*\]\(([^)\s]+)\))|(\[[^\]\n]*\]\([^)\s]+\))/g;
 
 export function parseInlineMarkdown(value: string): NoteDocInlineSegment[] {
   const segments: NoteDocInlineSegment[] = [];
@@ -155,7 +158,10 @@ export function parseInlineMarkdown(value: string): NoteDocInlineSegment[] {
     const at = match.index ?? 0;
     if (at > cursor) segments.push({ kind: "text", text: value.slice(cursor, at) });
     const token = match[0];
-    if (token.startsWith("**")) {
+    if (token.startsWith("$")) {
+      const display = token.startsWith("$$");
+      segments.push({ kind: "math", text: token, value: token.slice(display ? 2 : 1, display ? -2 : -1).trim(), display });
+    } else if (token.startsWith("**")) {
       segments.push({ kind: "strong", text: token.slice(2, -2) });
     } else if (token.startsWith("~~")) {
       segments.push({ kind: "strike", text: token.slice(2, -2) });
@@ -201,7 +207,7 @@ export function noteBlockRenderedTextV1(type: string, content: string): string {
   const visibleInline = (text: string): string => parseInlineMarkdown(text)
     .map((segment) => {
       if (segment.kind === "image") return "";
-      if (segment.kind === "code") return segment.text;
+      if (segment.kind === "code" || segment.kind === "math") return segment.text.replace(/\n/g, "");
       return segment.text.replace(/\\([!\"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])/g, "$1");
     })
     .join("");
@@ -216,14 +222,14 @@ export function noteBlockRenderedTextV1(type: string, content: string): string {
         return [lines[0] ?? "", ...lines.slice(2)].flatMap(cells).map(visibleInline).join("");
       }
     }
-    const flattened = value.split("\n").map(visibleInline).join("");
+    const flattened = visibleInline(value).replace(/\n/g, "");
     if (/^(?:\*{3,}|-{3,}|_{3,})$/.test(flattened.trim())) return "";
     return flattened;
   }
 
   // The reader renders list/quote/heading line breaks as `<br>` or sibling spans;
   // Range.toString() concatenates their text nodes without adding a newline.
-  return value.split("\n").map(visibleInline).join("");
+  return visibleInline(value).replace(/\n/g, "");
 }
 
 const MARK_BY_SEGMENT: Partial<Record<NoteDocInlineSegment["kind"], string>> = {

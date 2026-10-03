@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -10,16 +10,14 @@ import {
   CircleAlert,
   Clock3,
   FileText,
-  Flag,
   FolderOpen,
   History,
   Layers3,
   Leaf,
   LoaderCircle,
-  Map as MapIcon,
   RefreshCw,
-  Route,
   Search,
+  Sparkles,
   Target,
   X,
 } from "lucide-react";
@@ -47,6 +45,10 @@ import {
   RendererGatewayError,
   unwrapGatewayResult,
 } from "../../../app/desktop-client";
+import { useCardTactile } from "../../motion/use-card-tactile";
+import { CardCollection } from "./card-collection";
+import { cardStrategyPresentation } from "../review/card-strategy-presentation";
+import { useCardPaperArrival } from "../../motion/card-object-spring";
 import { SurfaceReturnControl } from "../study/SurfaceReturnControl.tsx";
 import { learningRunPhaseLabels } from "../run/learning-run-surface.tsx";
 import { startObjectiveJourney } from "../run/objective-primary-action.ts";
@@ -75,10 +77,7 @@ import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { cardStrategyLabel } from "../review/card-strategy-presentation.ts";
 import {
-  objectiveQuestRegion,
-  orderObjectivesForQuest,
   runModePresentation,
-  type ObjectiveQuestRegion,
 } from "../run/objective-quest-presentation.ts";
 
 type SurfaceHeaderProps = {
@@ -111,7 +110,11 @@ export function ApprovedSurfaceFrame({
   detail,
   headingId,
   children,
+  className = "",
+  surfaceRef,
 }: {
+  readonly className?: string;
+  readonly surfaceRef?: React.RefObject<HTMLElement | null>;
   readonly family: "library" | "writing" | "workshop" | "observatory" | "system";
   readonly eyebrow: string;
   readonly title: string;
@@ -120,7 +123,7 @@ export function ApprovedSurfaceFrame({
   readonly children: React.ReactNode;
 }) {
   return (
-    <section className={`approved-surface approved-surface--${family} task-artifact`} aria-labelledby={headingId}>
+    <section ref={surfaceRef} className={`approved-surface approved-surface--${family} task-artifact ${className}`} aria-labelledby={headingId}>
       <SurfaceHeader eyebrow={eyebrow} headingId={headingId} title={title} detail={detail} />
       <div className="approved-surface__content">{children}</div>
     </section>
@@ -257,39 +260,24 @@ const FILTER_BUCKETS = [
   ...PERSONAL_BUCKETS,
 ] as const satisfies ReadonlyArray<{ key: ObjectiveLibraryFilter; label: string; hint: string }>;
 
-const QUEST_REGIONS = [
-  { key: "ready", label: "待挑战", detail: "需要验证、复习或修补", icon: Flag },
-  { key: "active", label: "远征中", detail: "正在作答或等待复习", icon: Route },
-  { key: "mastered", label: "已掌握", detail: "已有正式证据支撑", icon: Leaf },
-] as const satisfies ReadonlyArray<{
-  key: ObjectiveQuestRegion;
-  label: string;
-  detail: string;
-  icon: typeof Flag;
-}>;
-
 export function ObjectiveLibrarySurface() {
   const invoke = useRoomStore((state) => state.invoke);
   const setActiveObjectiveId = useRoomStore((state) => state.setActiveObjectiveId);
-  const setActiveRunId = useRoomStore((state) => state.setActiveRunId);
   const epochRef = useRef<number | undefined>(undefined);
-  const listRef = useRef<HTMLUListElement>(null);
-  const indexToggleRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const restoredViewRef = useRef(false);
+  const surfaceRef = useRef<HTMLElement>(null);
+  useCardTactile(surfaceRef);
   const loadedCursorsRef = useRef(new Set<string>());
   const [page, setPage] = useState<ObjectiveListPageV3 | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [startingFocus, setStartingFocus] = useState(false);
-  const [focusFailure, setFocusFailure] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [pageFailure, setPageFailure] = useState<string | null>(null);
-  const [primaryFocusId, setPrimaryFocusId] = useState<string | null>(null);
-  const [queuePriorityIds, setQueuePriorityIds] = useState<string[]>([]);
-  const [compactRegion, setCompactRegion] = useState<ObjectiveQuestRegion>("ready");
-  const [indexOpen, setIndexOpen] = useState(false);
   const [query, setQuery] = useState(() => readObjectiveLibraryView().query);
   const [filter, setFilter] = useState<ObjectiveLibraryFilter>(() => readObjectiveLibraryView().filter);
-  const lastObjectiveId = readObjectiveLibraryView().lastObjectiveId;
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [openPackKey, setOpenPackKey] = useState(() => readObjectiveLibraryView().openPackKey);
   useHudPage("goals");
 
   const load = useCallback(async () => {
@@ -305,25 +293,13 @@ export function ObjectiveLibrarySurface() {
         retargetObjectiveLibraryView(workspaceId);
         setQuery("");
         setFilter("all");
+        setFilterMenuOpen(false);
+        setOpenPackKey(null);
       }
       const meta = createRequestMeta(session.workspaceEpoch);
-      const [response, projectionResponse] = await Promise.all([
-        window.ailearn.objective.list({ meta, limit: 60, lifecycle: "active" }),
-        window.ailearn.room.getProjection({ meta }).catch(() => null),
-      ]);
+      const response = await window.ailearn.objective.list({ meta, limit: 60, lifecycle: "active" });
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       setPage(unwrapGatewayResult(response));
-      if (projectionResponse?.workspaceEpoch) epochRef.current = projectionResponse.workspaceEpoch;
-      if (projectionResponse) {
-        const projection = unwrapGatewayResult(projectionResponse);
-        setPrimaryFocusId(projection.primaryFocus.state === "data" ? projection.primaryFocus.data.objective.objectiveId : null);
-        setQueuePriorityIds(projection.queueSummary?.state === "data"
-          ? projection.queueSummary.data.items.map((item) => item.objectiveId)
-          : []);
-      } else {
-        setPrimaryFocusId(null);
-        setQueuePriorityIds([]);
-      }
     } catch (error) {
       setFailure(gatewayErrorMessage(error));
     } finally {
@@ -370,13 +346,11 @@ export function ObjectiveLibrarySurface() {
     }
   }, [loadingMore, page?.nextCursor]);
 
-  useEffect(() => {
-    if (!page || !indexOpen || !listRef.current) return;
-    const frame = window.requestAnimationFrame(() => {
-      if (listRef.current) listRef.current.scrollTop = readObjectiveLibraryView().scrollTop;
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [indexOpen, page?.items.length]);
+  useLayoutEffect(() => {
+    if (loading || !page || !listRef.current || restoredViewRef.current) return;
+    listRef.current.scrollTop = readObjectiveLibraryView().scrollTop;
+    restoredViewRef.current = true;
+  }, [loading, page?.items.length]);
 
   useEffect(() => {
     writeObjectiveLibraryView({ query, filter });
@@ -385,17 +359,7 @@ export function ObjectiveLibrarySurface() {
   // 目标可以直接从笔记学习。只有真正保存了卡片的目标才属于学习卡册；
   // 服务端仅在有关联卡片时下发 cardStrategy，空值不能被画成一张卡。
   const cardItems = useMemo(() => (page?.items ?? []).filter((item) => item.cardStrategy !== null), [page]);
-  const serverFocus = cardItems.find((item) => item.objectiveId === primaryFocusId) ?? null;
-  const activeGoal = serverFocus ?? cardItems.find((item) => isActionable(item.primaryAction)) ?? cardItems[0] ?? null;
-  const counts = useMemo(() => {
-    return cardItems.reduce((summary, item) => {
-      const tone = objectiveStateTone(item.personalState.state);
-      if (objectiveStateNeedsAttention(item.personalState.state)) summary.attention += 1;
-      if (tone === "progress") summary.progress += 1;
-      if (tone === "calm") summary.stable += 1;
-      return summary;
-    }, { attention: 0, progress: 0, stable: 0 });
-  }, [cardItems]);
+  const activeGoal = cardItems[0] ?? null;
   const visibleGoals = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
     return cardItems.filter((item) => {
@@ -411,10 +375,7 @@ export function ObjectiveLibrarySurface() {
         .some((value) => value!.toLocaleLowerCase("zh-CN").includes(normalizedQuery));
     });
   }, [cardItems, filter, query]);
-  const orderedVisibleGoals = useMemo(
-    () => orderObjectivesForQuest(visibleGoals, primaryFocusId, queuePriorityIds),
-    [primaryFocusId, queuePriorityIds, visibleGoals],
-  );
+  const orderedVisibleGoals = visibleGoals;
   /**
    * W7-6 刀二：§8.5「**顶层按笔记显示卡组**，一篇笔记至多一个组；组内才展示卡片」。
    *
@@ -426,312 +387,70 @@ export function ObjectiveLibrarySurface() {
    * 过滤与搜索**先于**分组：§8.5「按内容搜索可以找到卡片并显示所属笔记，不只搜索
    * 组标题」——搜到的是卡，它所在的组跟着出现；而不是先分组再在组标题里搜。
    */
-  const noteGroups = useMemo(() => groupObjectiveCardsByNoteV2(visibleGoals), [visibleGoals]);
-  const questGroups = useMemo(() => {
-    const groups: Record<ObjectiveQuestRegion, ObjectiveListItemV3[]> = { ready: [], active: [], mastered: [] };
-    for (const item of orderedVisibleGoals) groups[objectiveQuestRegion(item.personalState.state)].push(item);
-    return groups;
-  }, [orderedVisibleGoals]);
-  const activeMode = activeGoal ? runModePresentation(activeGoal.primaryAction) : null;
-  const recentGoal = cardItems.find((item) => item.objectiveId === lastObjectiveId) ?? null;
+  const noteGroups = useMemo(() => groupObjectiveCardsByNoteV2(orderedVisibleGoals), [orderedVisibleGoals]);
+  const allNoteGroups = useMemo(() => groupObjectiveCardsByNoteV2(cardItems), [cardItems]);
 
   const openObjective = (objectiveId: string) => {
     writeObjectiveLibraryView({ lastObjectiveId: objectiveId });
     setActiveObjectiveId(objectiveId);
-    invoke("open-objective");
+    invoke("open-objective", { returnTo: { label: "返回学习卡", run: () => invoke("open-objectives") } });
+  };
+  const resetListScroll = () => {
+    writeObjectiveLibraryView({ scrollTop: 0 });
+    if (listRef.current) listRef.current.scrollTop = 0;
   };
 
-  /**
-   * 焦点卡那颗按钮真的去开始/继续，而不是打开详情页（31 号文档 P9）。
-   * 执行处与详情页共用同一个 `startObjectiveJourney`，所以按钮上的动词和
-   * 按下去的去处在两边必然一致。
-   */
-  const startFocus = async (goal: ObjectiveListItemV3) => {
-    if (startingFocus) return;
-    setFocusFailure(null);
-    if (!window.ailearn) {
-      setFocusFailure("这次没有拿到完整的学习凭据，先不开始。");
-      return;
-    }
-    setStartingFocus(true);
-    writeObjectiveLibraryView({ lastObjectiveId: goal.objectiveId });
-    setActiveObjectiveId(goal.objectiveId);
-    try {
-      const started = await startObjectiveJourney(goal.primaryAction, {
-        epochRef,
-        setActiveObjectiveId,
-        setActiveRunId,
-        openRunSurface: () => invoke("validate"),
-        reload: load,
-      });
-      // refresh / view_successor / 等待类不起旅程，留在列表上；
-      // 但「看新版本」这种换了对象的，直接带进详情，免得用户在列表上找不着。
-      if (!started && goal.primaryAction.kind === "view_successor") openObjective(goal.primaryAction.successorObjectiveId);
-    } catch (error) {
-      setFocusFailure(gatewayErrorMessage(error));
-    } finally {
-      setStartingFocus(false);
-    }
-  };
-
-  /**
-   * 这一屏登记给伴星读的可读视图（39d W2-7）。
-   *
-   * **远征册默认是收起来的**：收着的时候屏幕上只有焦点卡与纸上远征图，每个区域
-   * 最多露出两颗节点。所以条目按"当前露出的是哪一份清单"取——收着取远征图那几颗，
-   * 打开才取册子里的行；关键词与筛选也**只在打开时登记**。把看不见的行登记进去，
-   * 她就可能报出一屏根本没显示的东西（屏上那句"另有 N 个目标在远征册"就是为这件事写的）。
-   */
-  const indexCountLine = page?.nextCursor
-    ? `已载入 ${cardItems.length} 张卡`
-    : `共 ${cardItems.length} 张卡`;
-  const regionMoreLine = (nodeCount: number) => `另有 ${nodeCount - 2} 个目标在远征册`;
-  const truncatedRegion = QUEST_REGIONS
-    .map((region) => ({ region, count: questGroups[region.key].length }))
-    .find((entry) => entry.count > 2) ?? null;
-  const activeFilterBucket = FILTER_BUCKETS.find((bucket) => bucket.key === filter) ?? null;
-  const questNodes = QUEST_REGIONS.flatMap((region) => questGroups[region.key]
-    .slice(0, 2)
-    .map((item) => ({ item, stateLine: formatObjectiveState(item.personalState.state) })));
+  const indexCountLine = page?.nextCursor ? `已载入 ${cardItems.length} 张卡` : `共 ${cardItems.length} 张卡`;
+  const activeFilterBucket = FILTER_BUCKETS.find((bucket) => bucket.key === filter);
   const NO_ACTIVE_GOAL_EMPTY = page?.nextCursor
     ? { message: "这批目标还没有学习卡", detail: "可以继续查找后面的目标；笔记本身可以直接学习。" }
-    : { message: "这里还没有学习卡", detail: "笔记本身可以直接学习。选择制作并保存学习卡后，卡片才会出现在这里。" };
-  const goalsNotice
-    = focusFailure
-      ? focusFailure.slice(0, 200)
-      : !activeGoal
-        ? `${NO_ACTIVE_GOAL_EMPTY.message}：${NO_ACTIVE_GOAL_EMPTY.detail}`
-        : indexOpen
-          ? visibleGoals.length === 0
-            ? `已载入范围内没有匹配卡片：${page?.nextCursor ? "可以继续读取后面的目标，或更换条件。" : "换一个关键词或筛选条件。"}`
-            : pageFailure
-              ? pageFailure.slice(0, 200)
-              : !page?.nextCursor && cardItems.length > 0
-                ? "已读到全部学习卡"
-                : null
-          : truncatedRegion
-            ? regionMoreLine(truncatedRegion.count)
-            : null;
+    : { message: "这里还没有学习卡", detail: "从一篇笔记制作学习卡，挑选后收进这里。笔记本身也可以直接学习。" };
+  const goalsNotice = !activeGoal
+    ? `${NO_ACTIVE_GOAL_EMPTY.message}：${NO_ACTIVE_GOAL_EMPTY.detail}`
+    : !visibleGoals.length ? `已载入范围内没有匹配卡片：${page?.nextCursor ? "可以继续读取后面的目标，或更换条件。" : "换一个关键词或筛选条件。"}`
+    : pageFailure ?? (!page?.nextCursor ? "已读到全部学习卡" : null);
   const readableView = useMemo<PageReadableV1 | null>(() => {
     if (loading && !page) return null;
-    const listRows = indexOpen
-      ? orderedVisibleGoals.slice(0, 12).map((item) => ({
-          title: item.conceptLabel ?? item.primaryNoteTitle ?? "未命名学习卡",
-          state: formatObjectiveState(item.personalState.state),
-        }))
-      : questNodes.map((node) => ({ title: node.item.conceptLabel ?? node.item.primaryNoteTitle ?? "未命名学习卡", state: node.stateLine }));
+    const opened = noteGroups.find(group => group.noteKey === openPackKey);
+    const readableItems = opened
+      ? opened.items.slice(0, 12).map((item, index) => ({ ordinal: index + 1, label: (item.conceptLabel ?? "未命名学习卡").slice(0, 120), state: formatObjectiveState(item.personalState.state).slice(0, 40) }))
+      : noteGroups.slice(0, 12).map((group, index) => ({ ordinal: index + 1, label: group.title.slice(0, 120), state: `${(allNoteGroups.find(item => item.noteKey === group.noteKey) ?? group).items.length} 张学习卡` }));
     return {
-      pageId: "goals",
-      title: HUD_PAGES.goals.title,
-      statusLine: activeGoal ? activeMode?.description ?? activeMode?.label ?? "" : NO_ACTIVE_GOAL_EMPTY.message,
+      pageId: "goals", title: HUD_PAGES.goals.title,
+      statusLine: opened ? `已打开卡包：${opened.title}` : query ? `正在查找：${query}` : activeGoal ? "学习卡包收藏" : NO_ACTIVE_GOAL_EMPTY.message,
       metrics: [
-        ...(activeGoal
-          ? [
-              { label: "卡型", value: cardStrategyLabel(activeGoal.cardStrategy).slice(0, 40) },
-              { label: "状态", value: formatObjectiveState(activeGoal.personalState.state).slice(0, 40) },
-            ]
-          : []),
-        { label: "远征册", value: indexCountLine.slice(0, 40) },
-        ...QUEST_REGIONS.map((region) => ({
-          label: region.label,
-          value: `${questGroups[region.key].length} 个`,
-        })),
-      ].slice(0, 6),
-      ...(indexOpen && (query.trim() || filter !== "all")
-        ? {
-            filters: [
-              ...(query.trim() ? [{ label: "关键词", value: query.trim().slice(0, 40) }] : []),
-              ...(filter !== "all" && activeFilterBucket
-                ? [{ label: "筛选", value: activeFilterBucket.label.slice(0, 40) }]
-                : []),
-            ],
-          }
-        : {}),
-      ...(listRows.length > 0
-        ? { items: listRows.map((row, index) => ({ ordinal: index + 1, label: row.title.slice(0, 120), state: row.state.slice(0, 40) })) }
-        : {}),
-      ...(goalsNotice ? { notice: goalsNotice } : {}),
+        { label: "卡包", value: `${page?.nextCursor ? "已载入" : "共"} ${allNoteGroups.length} 套` },
+        { label: "卡片册", value: indexCountLine },
+      ],
+      ...(query.trim() || filter !== "all" ? { filters: [
+        ...(query.trim() ? [{ label: "关键词", value: query.trim().slice(0, 40) }] : []),
+        ...(filter !== "all" && activeFilterBucket ? [{ label: "筛选", value: activeFilterBucket.label }] : []),
+      ] } : {}),
+      ...(readableItems.length ? { items: readableItems } : {}),
+      ...(goalsNotice ? { notice: goalsNotice.slice(0, 200) } : {}),
     };
-  }, [
-    activeGoal, activeMode, activeFilterBucket, filter, goalsNotice, indexCountLine, indexOpen,
-    loading, orderedVisibleGoals, page, query, questGroups, questNodes, visibleGoals.length,
-  ]);
+  }, [activeGoal, activeFilterBucket, allNoteGroups, filter, goalsNotice, indexCountLine, loading, noteGroups, openPackKey, page, query]);
   usePageReadableView(readableView);
 
   return (
-    <ApprovedSurfaceFrame family="workshop" eyebrow="学习证据" headingId="objective-library-title" title={HUD_PAGES.goals.title} detail="沿着真实学习证据，一关一关走到真正掌握">
-      {loading ? <SurfaceDataState kind="loading" message="正在读取学习卡" detail="状态和进度都来自服务器，不是本机推算的。" /> : null}
+    <ApprovedSurfaceFrame family="workshop" className="card-experience card-library" surfaceRef={surfaceRef} eyebrow="我的卡片册" headingId="objective-library-title" title={HUD_PAGES.goals.title} detail="把零散知识，收进自己的收藏册">
+      {loading ? <SurfaceDataState kind="loading" message="正在读取学习卡" detail="马上把你的卡包摆出来。" /> : null}
       {!loading && failure ? <SurfaceDataState kind="error" message="学习卡暂时不可用" detail={failure} onRetry={() => void load()} /> : null}
-      {!loading && !failure && !activeGoal ? (
-        <>
-          <SurfaceDataState kind="empty" message={NO_ACTIVE_GOAL_EMPTY.message} detail={NO_ACTIVE_GOAL_EMPTY.detail} onContinue={page?.nextCursor ? () => void loadMore() : undefined} continueLabel="继续查找学习卡" busy={loadingMore} />
-          {pageFailure ? <p role="alert">{pageFailure}</p> : null}
-        </>
-      ) : null}
-      {!loading && !failure && activeGoal ? (
-        <div className="objective-expedition">
-          <div className="objective-expedition__landscape">
-          <section className="v3-goal-focus objective-expedition__focus" aria-labelledby="goal-focus-title">
-            <div className="objective-expedition__focus-flags" aria-label="本轮模式与状态">
-              <span className="objective-card-type" data-empty={activeGoal.cardStrategy ? "false" : "true"}><span>卡型</span><strong>{cardStrategyLabel(activeGoal.cardStrategy)}</strong></span>
-              <span className={`objective-mode-badge objective-mode-badge--${activeMode?.mode ?? "unavailable"}`}>
-                {activeMode?.label}
-              </span>
-              <span className={`v3-objective-state v3-objective-state--${objectiveStateTone(activeGoal.personalState.state)}`}>
-                <CircleDot size={12} aria-hidden="true" />{formatObjectiveState(activeGoal.personalState.state)}
-              </span>
-            </div>
-            <div className="objective-expedition__focus-copy">
-              <span className="objective-expedition__next"><Flag size={16} aria-hidden="true" />{serverFocus ? "下一关" : "推荐下一关"}</span>
-              <h3 id="goal-focus-title">{activeGoal.conceptLabel ?? activeGoal.primaryNoteTitle ?? "未命名学习卡"}</h3>
-              <blockquote>{activeGoal.publicSummary}</blockquote>
-              <ObjectiveProgressBand
-                segment={progressSegmentForState(activeGoal.personalState.state)}
-                submitted={activeGoal.progress.practiceTrailCount > 0}
-              />
-              <p className="objective-expedition__mode-copy">{activeMode?.description}</p>
-            </div>
-            <div className="objective-expedition__focus-actions">
-              <button type="button" className="v3-goal-focus__action" disabled={startingFocus || !isActionable(activeGoal.primaryAction)} onClick={() => void startFocus(activeGoal)}>
-                <span><small>{startingFocus ? "正在准备路线…" : "从这里继续远征"}</small>{primaryActionLabel(activeGoal.primaryAction)}</span>
-                <ArrowRight size={19} aria-hidden="true" />
-              </button>
-              <p className="v3-goal-focus__hint">{primaryActionDescription(activeGoal.primaryAction)}</p>
-              {focusFailure ? <p className="v3-goal-focus__error" role="alert">{focusFailure}</p> : null}
-              <button type="button" className="v3-goal-focus__detail" onClick={() => openObjective(activeGoal.objectiveId)}>先看挑战简报</button>
-              {recentGoal && recentGoal.objectiveId !== activeGoal.objectiveId ? (
-                <button type="button" className="objective-expedition__recent" onClick={() => openObjective(recentGoal.objectiveId)}>
-                  <History size={16} aria-hidden="true" /><span><small>回到刚才的目标</small><strong>{recentGoal.conceptLabel ?? recentGoal.primaryNoteTitle ?? "未命名学习卡"}</strong></span><ChevronRight size={16} aria-hidden="true" />
-                </button>
-              ) : null}
-            </div>
-            <p className="v3-goal-focus__source" title={activeGoal.primaryNoteTitle ?? "未关联主笔记"}>
-              <BookOpenText size={14} aria-hidden="true" />{activeGoal.primaryNoteTitle ?? "未关联主笔记"}
-            </p>
-          </section>
-
-          <section className="objective-expedition__map" aria-labelledby="expedition-map-title">
-            <header className="objective-expedition__map-heading">
-              <div><MapIcon size={19} aria-hidden="true" /><h3 id="expedition-map-title">纸上远征图</h3></div>
-              <p>路线只表示系统推荐的学习顺序，不代表知识依赖。</p>
-            </header>
-            <div className="objective-expedition__tabs" role="tablist" aria-label="切换地图区域">
-              {QUEST_REGIONS.map((region) => (
-                <button key={region.key} type="button" role="tab" aria-selected={compactRegion === region.key} onClick={() => setCompactRegion(region.key)}>
-                  {region.label}<span>{questGroups[region.key].length}</span>
-                </button>
-              ))}
-            </div>
-            <div className="objective-expedition__route" data-compact-region={compactRegion}>
-              {QUEST_REGIONS.map((region) => {
-                const RegionIcon = region.icon;
-                const nodes = questGroups[region.key];
-                return (
-                  <section key={region.key} className="objective-quest-region" data-region={region.key} aria-labelledby={`quest-region-${region.key}`}>
-                    <header>
-                      <span className="objective-quest-region__icon"><RegionIcon size={17} aria-hidden="true" /></span>
-                      <span><strong id={`quest-region-${region.key}`}>{region.label}</strong><small>{region.detail} · {nodes.length} 个</small></span>
-                    </header>
-                    <ol>
-                      {nodes.slice(0, 2).map((item, index) => (
-                        <li key={item.objectiveId}>
-                          <button
-                            type="button"
-                            className="objective-quest-node"
-                            data-primary={item.objectiveId === activeGoal.objectiveId ? "true" : "false"}
-                            title={item.conceptLabel ?? item.primaryNoteTitle ?? "未命名学习卡"}
-                            onClick={() => openObjective(item.objectiveId)}
-                          >
-                            <span className="objective-quest-node__step" aria-hidden="true">{index + 1}</span>
-                            <span><strong>{item.conceptLabel ?? item.primaryNoteTitle ?? "未命名学习卡"}</strong><small>卡型 · {cardStrategyLabel(item.cardStrategy)}　{formatObjectiveState(item.personalState.state)}</small></span>
-                            <ChevronRight size={15} aria-hidden="true" />
-                          </button>
-                        </li>
-                      ))}
-                      {!nodes.length ? <li className="objective-quest-region__empty">这片区域暂时没有目标</li> : null}
-                    </ol>
-                    {nodes.length > 2 ? <p className="objective-quest-region__more">{regionMoreLine(nodes.length)}</p> : null}
-                  </section>
-                );
-              })}
-            </div>
-          </section>
-          </div>
-
-          <div className="objective-expedition__index" data-open={indexOpen ? "true" : "false"} onKeyDown={(event) => {
-            if (event.key !== "Escape" || !indexOpen) return;
-            event.preventDefault();
-            setIndexOpen(false);
-            indexToggleRef.current?.focus();
-          }}>
-            <button ref={indexToggleRef} type="button" className="objective-expedition__index-toggle" aria-expanded={indexOpen} aria-controls={indexOpen ? "objective-expedition-index-body" : undefined} onClick={() => setIndexOpen((open) => !open)}>
-              <span><Search size={16} aria-hidden="true" /><strong id="goal-ledger-title"><span className="objective-expedition__open-label">打开远征册</span><span className="objective-expedition__close-label">关闭远征册</span></strong></span>
-              <small>{indexCountLine}</small>
-              <X className="objective-expedition__close-icon" size={19} aria-hidden="true" />
-            </button>
-            {indexOpen ? <div id="objective-expedition-index-body" className="objective-expedition__index-body">
-              <label className="v3-goal-search">
-                <Search size={14} aria-hidden="true" />
-                <span className="sr-only">搜索学习卡</span>
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={page?.nextCursor ? "搜索已载入的卡" : "搜索全部学习卡"} />
-              </label>
-              <div className="v3-goal-filters" role="group" aria-label="筛选学习卡">
-                {FILTER_BUCKETS.map((bucket) => (
-                  <button key={bucket.key} type="button" className={filter === bucket.key ? "is-active" : ""} aria-pressed={filter === bucket.key} title={bucket.hint} onClick={() => setFilter(bucket.key)}>
-                    {bucket.label}<span>{bucket.key === "all" ? cardItems.length : counts[bucket.key]}</span>
-                  </button>
-                ))}
-              </div>
-              <ul ref={listRef} className="v3-goal-list" onScroll={(event) => { writeObjectiveLibraryView({ scrollTop: event.currentTarget.scrollTop }); }}>
-                {/* W7-6 刀二：§8.5 的顶层——按笔记成组，组内才展示卡片。
-                    组头那三个数**分开写、各自带标签**（§8.5「状态来源不同应分别标明」）：
-                    「待复习」是排期行在的那些，「可用」是还排不上也用得上的，
-                    「待核对」是引用的原文变了或对不上的。三者不是同一根状态轴上的三档，
-                    合成一个数字就看不出"两张卡要核对、一张只是没到期"。 */}
-                {noteGroups.map((group) => (
-                  <li key={group.noteKey} className="v3-note-group" data-note-group={group.ungrouped ? "ungrouped" : "group"}>
-                    <div className="v3-note-group__head">
-                      <strong className="v3-note-group__title">{group.title}</strong>
-                      <span className="v3-note-group__counts">
-                        <span className="v3-note-group__count v3-note-group__count--due" title="有回访安排在等着（含还没到期的）">待复习 {group.dueCount}</span>
-                        <span className="v3-note-group__count v3-note-group__count--usable" title="可以随时练，没有到期也没有要核对的">可用 {group.usableCount}</span>
-                        <span className="v3-note-group__count v3-note-group__count--check" title="引用的原文变了或对不上，先核对再练">待核对 {group.needsCheckCount}</span>
-                      </span>
-                      {group.ungrouped ? <small className="v3-note-group__note">这些卡没有关联笔记，按它们自己的目标继续练。</small> : null}
-                    </div>
-                    <ul className="v3-note-group__items">
-                      {group.items.map((item) => (
-                        <li key={item.objectiveId}>
-                          <button type="button" className="v3-goal-row" onClick={() => openObjective(item.objectiveId)}>
-                            <span className={`v3-goal-row__marker v3-goal-row__marker--${objectiveStateTone(item.personalState.state)}`} aria-hidden="true" />
-                            <span className="v3-goal-row__body">
-                              <span className="v3-goal-row__title">{item.conceptLabel ?? "未命名学习卡"}</span>
-                              <span className="v3-goal-row__summary">{item.publicSummary}</span>
-                              <span className="v3-objective-tags">
-                                <span className="objective-card-type objective-card-type--row" data-empty={item.cardStrategy ? "false" : "true"}><span>卡型</span><strong>{cardStrategyLabel(item.cardStrategy)}</strong></span>
-                                <span className={`v3-objective-state v3-objective-state--${objectiveStateTone(item.personalState.state)}`} title={objectiveStateHint(item.personalState.state)}>
-                                  <CircleDot size={12} aria-hidden="true" />{formatObjectiveState(item.personalState.state)}
-                                </span>
-                                <span className="v3-goal-row__facts">{formatKnowledgeForm(item.knowledgeForm)}{objectiveProgressChips(item.progress).map((chip) => <Fragment key={chip}>&nbsp;· {chip}</Fragment>)}</span>
-                                <span className="v3-goal-row__meta">建于 {formatDate(item.createdAt)}</span>
-                              </span>
-                            </span>
-                            <span className="v3-goal-row__next"><small>进入详情</small><ChevronRight size={16} aria-hidden="true" /></span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </li>
-                ))}
-                {!visibleGoals.length ? <li className="v3-goal-list__empty" role="status"><Search size={19} aria-hidden="true" /><strong>已载入范围内没有匹配卡片</strong><span>{page?.nextCursor ? "可以继续读取后面的目标，或更换条件。" : "换一个关键词或筛选条件。"}</span></li> : null}
-                {pageFailure ? <li className="v3-goal-list__paging" role="alert"><span>{pageFailure}</span>{page?.nextCursor ? <button type="button" onClick={() => void loadMore()}>重试读取</button> : null}</li> : null}
-                {page?.nextCursor && !pageFailure ? <li className="v3-goal-list__paging"><button type="button" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "正在读取…" : `继续读取（还有 ${Math.max(0, page.total - page.items.length)} 条）`}</button></li> : null}
-                {!page?.nextCursor && cardItems.length > 0 ? <li className="v3-goal-list__end" role="status">已读到全部学习卡</li> : null}
-              </ul>
-            </div> : null}
-          </div>
-        </div>
-      ) : null}
+      {!loading && !failure && !activeGoal ? <>
+        <SurfaceDataState kind="empty" message={NO_ACTIVE_GOAL_EMPTY.message} detail={NO_ACTIVE_GOAL_EMPTY.detail} onContinue={page?.nextCursor ? () => void loadMore() : () => invoke("open-notes")} continueLabel={page?.nextCursor ? "继续查找学习卡" : "去笔记挑一篇"} busy={loadingMore} />
+        {pageFailure ? <p role="alert">{pageFailure}</p> : null}
+      </> : null}
+      {!loading && !failure && activeGoal ? <CardCollection
+        groups={noteGroups} allGroups={allNoteGroups} filterMenuOpen={filterMenuOpen} openPackKey={openPackKey} onPack={setOpenPackKey}
+        query={query} filter={filter} countLine={indexCountLine} hasMore={Boolean(page?.nextCursor)}
+        pageFailure={pageFailure} loadingMore={loadingMore} listRef={listRef}
+        onFilterMenu={setFilterMenuOpen}
+        onOpen={openObjective}
+        onQuery={value => { resetListScroll(); setQuery(value); }}
+        onFilter={value => { resetListScroll(); setFilter(value); }}
+        onMake={() => invoke("open-notes")} onMore={() => void loadMore()}
+        onScroll={scrollTop => writeObjectiveLibraryView({ scrollTop })}
+      /> : null}
     </ApprovedSurfaceFrame>
   );
 }
@@ -778,6 +497,8 @@ const previousResultLabels = {
 } as const;
 
 export function ObjectiveDetailSurface() {
+  const surfaceRef = useRef<HTMLElement>(null);
+  useCardTactile(surfaceRef);
   const activeObjectiveId = useRoomStore((state) => state.activeObjectiveId);
   const setActiveObjectiveId = useRoomStore((state) => state.setActiveObjectiveId);
   const setActiveRunId = useRoomStore((state) => state.setActiveRunId);
@@ -831,11 +552,14 @@ export function ObjectiveDetailSurface() {
     }
   };
 
+  useCardPaperArrival(surfaceRef, !loading && objective ? activeObjectiveId : null);
   const content = objective?.content;
   const detailState = objective?.personalState.state ?? null;
   const evidenceSnapshotCount = objective?.sources.origins.reduce((sum, origin) => sum + origin.evidenceSnapshotIds.length, 0) ?? 0;
   const detailMode = objective ? runModePresentation(objective.primaryAction) : null;
   const previousResult = objective?.personal.latestResult;
+  // 最近一轮与旧练习计数来自不同记录；不能用旧计数的 0 覆盖已经完成的这一轮。
+  const practiceTrailLabel = previousResult ? "已有学习记录" : `${objective?.personal.practiceTrailCount ?? 0} 次练习`;
   const noteChangeImpact = objective?.noteChangeImpact ?? null;
   const needsNoteEvidenceCheck = Boolean(noteChangeImpact && noteChangeImpact.status !== "unaffected");
   const reviewNeedsNoteCheck = Boolean(needsNoteEvidenceCheck && objective?.primaryAction.kind === "create_review_run");
@@ -884,7 +608,7 @@ export function ObjectiveDetailSurface() {
    * 三条事实（正式验证／当前旅程／复习安排）直接取那一列 `<li>` 上屏上的字面，
    * 条目取"资料卷宗"里真正展开的那些出处。
    */
-  const BRIEF_TITLE = "挑战简报";
+  const BRIEF_TITLE = "学习卡详情";
   const detailNotice
     = !activeObjectiveId
       ? `${NO_OBJECTIVE_SELECTED_EMPTY.message}：${NO_OBJECTIVE_SELECTED_EMPTY.detail}`
@@ -914,7 +638,7 @@ export function ObjectiveDetailSurface() {
       metrics: [
         { label: "卡型", value: cardStrategyLabel(content.cardStrategy).slice(0, 40) },
         { label: "状态", value: formatObjectiveState(detailState).slice(0, 40) },
-        { label: "练习", value: `${objective.personal.practiceTrailCount} 次练习`.slice(0, 40) },
+        { label: "练习", value: practiceTrailLabel.slice(0, 40) },
         {
           label: "正式验证",
           value: (objective.personal.initialValidation
@@ -947,56 +671,37 @@ export function ObjectiveDetailSurface() {
         : {}),
       ...(noteEvidenceNotice ? { notice: noteEvidenceNotice.slice(0, 160) } : detailNotice ? { notice: detailNotice } : {}),
     };
-  }, [activeObjectiveId, content, detailNotice, detailState, noteEvidenceNotice, objective, reviewNeedsNoteCheck]);
+  }, [activeObjectiveId, content, detailNotice, detailState, noteEvidenceNotice, objective, practiceTrailLabel, reviewNeedsNoteCheck]);
   usePageReadableView(briefReadableView);
 
   return (
-    <ApprovedSurfaceFrame family="workshop" eyebrow="远征简报" headingId="objective-detail-title" title={BRIEF_TITLE} detail="先看要证明什么，再决定现在是否出发">
+    <ApprovedSurfaceFrame family="workshop" className="card-experience card-detail" surfaceRef={surfaceRef} eyebrow="这一张卡" headingId="objective-detail-title" title={BRIEF_TITLE} detail="看清要点，再用自己的话试一试">
       {!activeObjectiveId ? <SurfaceDataState kind="empty" message={NO_OBJECTIVE_SELECTED_EMPTY.message} detail={NO_OBJECTIVE_SELECTED_EMPTY.detail} /> : null}
       {activeObjectiveId && loading ? <SurfaceDataState kind="loading" message={OBJECTIVE_BRIEF_LINES.loading} detail="这里只显示公开内容，不含答案和评分规则。" /> : null}
       {activeObjectiveId && !loading && failure ? <SurfaceDataState kind="error" message={OBJECTIVE_BRIEF_LINES.unavailable} detail={failure} onRetry={() => void load()} /> : null}
       {activeObjectiveId && !loading && !failure && objective && content && detailState ? (
         <div className="objective-brief">
-          <article className="objective-brief__board">
+          <article className="objective-brief__board" data-strategy={content.cardStrategy}>
+            <div className="objective-brief__postcard">
             <header className="objective-brief__masthead">
               <div className="objective-brief__flags">
-                <span className="objective-card-type objective-card-type--brief" data-empty={content.cardStrategy ? "false" : "true"}><span>学习卡型</span><strong>{cardStrategyLabel(content.cardStrategy)}</strong></span>
-                <span className={`objective-mode-badge objective-mode-badge--${detailMode?.mode ?? "unavailable"}`}>{detailMode?.label}</span>
+                <span className="objective-brief__card-mark" aria-hidden="true">{content.cardStrategy ? cardStrategyPresentation[content.cardStrategy].symbol : "✦"}</span>
+                <span className="objective-card-type objective-card-type--brief" data-empty={content.cardStrategy ? "false" : "true"}><strong>{cardStrategyLabel(content.cardStrategy)}</strong></span>
                 <span className={`v3-objective-state v3-objective-state--${objectiveStateTone(detailState)}`}><CircleDot size={12} aria-hidden="true" />{formatObjectiveState(detailState)}</span>
               </div>
               <h3>{content.conceptLabel ?? "未命名学习卡"}</h3>
-              <p className="v3-objective-summary">{content.publicSummary}</p>
+              {content.publicSummary !== content.conceptLabel ? <p className="v3-objective-summary">{content.publicSummary}</p> : null}
             </header>
 
-            <section className="objective-brief__mission" aria-labelledby="objective-proof-title">
-              <div className="objective-brief__mission-heading"><Target size={24} aria-hidden="true" /><h4 id="objective-proof-title">过这一关，需要你证明</h4></div>
-              <p>不用背原文。请用自己的话说明这条主张，并给出能让它成立的解释、例子或边界。</p>
-              <p className="objective-brief__type-help">学习卡型说明这道题在练什么。正式验证需要用自己的话回答，可选择文字或口述；随卡客观题用于练习。</p>
-              <div className={`objective-brief__mode objective-brief__mode--${detailMode?.mode ?? "unavailable"}`}>
-                <strong>{detailMode?.label}</strong><span>{detailMode?.description}</span>
-              </div>
-            </section>
-
-            <section className="objective-brief__departure" aria-labelledby="learning-ledger-title">
-              <div className="objective-brief__progress">
-                <div className="objective-brief__progress-heading"><h4 id="learning-ledger-title">你已走到这里</h4><span>{objective.personal.practiceTrailCount} 次练习</span></div>
-                <ObjectiveProgressBand
-                  segment={progressSegmentForState(detailState)}
-                  submitted={objective.personal.practiceTrailCount > 0}
-                />
-                <ul>
-                  <li><CheckCircle2 size={16} aria-hidden="true" /><span>正式验证</span><strong>{objective.personal.initialValidation ? objective.personal.initialValidation.status === "ready" && objective.personal.lastCanonicalAt ? "可以再次挑战" : initialValidationLabels[objective.personal.initialValidation.status] : "还没安排"}</strong></li>
-                  <li><Clock3 size={16} aria-hidden="true" /><span>当前旅程</span><strong>{objective.personal.activeRun ? formatRunPhase(objective.personal.activeRun.phase) : "尚未开始"}</strong></li>
-                  <li><CalendarClock size={16} aria-hidden="true" /><span>复习安排</span><strong>{objective.personal.review ? (objective.personal.review.status === "due" ? "已经到期" : formatObjectiveDateTime(objective.personal.review.dueAt)) : "正式验证后安排"}</strong></li>
-                </ul>
-              </div>
+            </div>
+            <section className="objective-brief__departure" aria-label="开始学习">
               <div className="objective-brief__launchpad">
+                <span className="objective-brief__mode-label">{detailMode?.label}</span>
                 <p id="objective-next-action-state">{reviewNeedsNoteCheck ? "先核对原文再开始复习" : objectiveStateHint(detailState)}</p>
-                {noteEvidenceNotice ? (
+                {noteEvidenceNotice && reviewNeedsNoteCheck ? (
                   <p className="objective-brief__note-evidence" role="status">
                     <Leaf size={15} aria-hidden="true" />
                     <span>{noteEvidenceNotice}</span>
-                    {!reviewNeedsNoteCheck ? <button type="button" className="objective-brief__evidence-link" onClick={openNoteEvidence}>翻开原文</button> : null}
                   </p>
                 ) : null}
                 <button
@@ -1013,6 +718,28 @@ export function ObjectiveDetailSurface() {
                 <small id="objective-next-action-why">{reviewNeedsNoteCheck ? "回到笔记，核对旧句和现句后再继续。" : primaryActionDescription(objective.primaryAction)}</small>
               </div>
             </section>
+            <details className="objective-brief__mission">
+              <summary><Target size={16} aria-hidden="true" /><strong id="objective-proof-title">练习说明</strong></summary>
+              <div className="objective-brief__mission-body">
+                <p>用自己的话说清这个要点，再补一个解释、例子或边界。</p>
+                <p className="objective-brief__type-help">可以打字或口述。随卡的客观题只记练习，正式作答才更新掌握状态。</p>
+                <p className="objective-brief__mode-description">{detailMode?.description}</p>
+              </div>
+            </details>
+              <details className="objective-brief__progress">
+                <summary><History size={17} aria-hidden="true" /><strong id="learning-ledger-title">学习足迹</strong><span>{practiceTrailLabel}</span></summary><div className="objective-brief__trail-body">
+                <ObjectiveProgressBand
+                  segment={progressSegmentForState(detailState)}
+                  submitted={objective.personal.practiceTrailCount > 0 || previousResult?.outcome === "practice_completed"}
+                />
+                <ul>
+                  <li><CheckCircle2 size={16} aria-hidden="true" /><span>正式验证</span><strong>{objective.personal.initialValidation ? objective.personal.initialValidation.status === "ready" && objective.personal.lastCanonicalAt ? "可以再次挑战" : initialValidationLabels[objective.personal.initialValidation.status] : "还没安排"}</strong></li>
+                  <li><Clock3 size={16} aria-hidden="true" /><span>当前旅程</span><strong>{objective.personal.activeRun ? formatRunPhase(objective.personal.activeRun.phase) : "尚未开始"}</strong></li>
+                  <li><CalendarClock size={16} aria-hidden="true" /><span>复习安排</span><strong>{objective.personal.review ? (objective.personal.review.status === "due" ? "已经到期" : formatObjectiveDateTime(objective.personal.review.dueAt)) : "正式验证后安排"}</strong></li>
+                </ul>
+              </div></details>
+
+
             {actionFailure ? <p className="v3-action-error" role="alert"><AlertTriangle size={14} aria-hidden="true" />{actionFailure}</p> : null}
 
             {previousResult ? (
@@ -1027,17 +754,19 @@ export function ObjectiveDetailSurface() {
             ) : null}
 
             <details className="objective-brief__dossier">
-              <summary><span><Layers3 size={16} aria-hidden="true" /><strong>资料卷宗</strong></span><small>{objective.sources.origins.length} 条来源 · {evidenceSnapshotCount} 条原文证据</small></summary>
+              <summary><span><Layers3 size={16} aria-hidden="true" /><strong>出处与原文</strong></span><small>{noteEvidenceNotice ? "依据待核对" : `${objective.sources.origins.length} 条来源 · ${evidenceSnapshotCount} 条原文证据`}</small></summary>
               <div className="objective-brief__dossier-body">
+                {noteEvidenceNotice && !reviewNeedsNoteCheck ? <p className="objective-brief__note-evidence" role="status"><Leaf size={15} aria-hidden="true" /><span>{noteEvidenceNotice}</span><button type="button" className="objective-brief__evidence-link" onClick={openNoteEvidence}>翻开原文</button></p> : null}
                 {objective.sources.primaryNote ? <button type="button" className="v3-primary-note" onClick={() => openPrimaryNote(objective.sources.primaryNote!)}><FileText size={17} aria-hidden="true" /><span><small>主笔记</small><strong>{objective.sources.primaryNote.title}</strong></span><ChevronRight size={16} aria-hidden="true" /></button> : <div className="v3-primary-note v3-primary-note--missing"><AlertTriangle size={17} aria-hidden="true" /><span><small>主笔记</small><strong>{PRIMARY_NOTE_MISSING_LINE}</strong></span></div>}
                 {objective.sources.missingOrigin ? <p className="v3-lineage-warning"><AlertTriangle size={14} aria-hidden="true" />部分来源还没对上，验证前建议先补齐。</p> : null}
                 <div className="v3-origin-list">
                   {objective.sources.origins.length ? objective.sources.origins.map((origin, index) => <article key={origin.originId} className="v3-origin-row"><span className="v3-origin-row__index">{String(index + 1).padStart(2, "0")}</span><div><div><strong>{formatOriginKind(origin.kind)}</strong><span>{formatSupportGrade(origin.supportGrade)}</span></div><p>{originFactsLine(origin)}</p><small>{origin.kind === "imported" ? `导入批次 ${origin.importBatchRef}` : formatOriginTrace(origin)}</small></div></article>) : <div className="v3-origin-empty"><FolderOpen size={19} aria-hidden="true" /><strong>{ORIGIN_EMPTY_LINE}</strong><span>这里不会用示例证据填充空白。</span></div>}
                 </div>
                 <footer className="v3-lineage-boundary"><strong>公开边界</strong><p>这里只讲来源关系和学习状态；标准答案、评分依据和原文段落不会提前出现。</p></footer>
+                <footer className="objective-brief__revision"><span>{formatKnowledgeForm(content.knowledgeForm)} · {freshnessLabel(content.freshness)} · {formatLifecycle(content.lifecycle)} · 更新于 {formatObjectiveDateTime(objective.updatedAt)}</span></footer>
               </div>
             </details>
-            <footer className="objective-brief__revision"><span>{formatKnowledgeForm(content.knowledgeForm)} · {freshnessLabel(content.freshness)} · {formatLifecycle(content.lifecycle)} · 更新于 {formatObjectiveDateTime(objective.updatedAt)}</span></footer>
+            
           </article>
         </div>
       ) : null}

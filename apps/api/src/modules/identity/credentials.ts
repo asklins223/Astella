@@ -82,6 +82,22 @@ export interface SessionContext {
    */
   workspaceOwnerId?: string | null;
   /**
+   * 当前空间的 `name` / `workspace_type`，2026-10-03 由 decodeToken 顺带取回。
+   *
+   * 这两列此前没有任何人读，`/auth/me` 就自己又发了一条 `SELECT ... FROM
+   * workspaces`。而 decodeToken 本来就已经在同一事务里读过这一行了（为了
+   * `owner_id` 与 `workspace_epoch`），只是没把列选全。
+   *
+   * 实测代价：每个已认证请求 8 条语句里有 2 条读的是**同一张表的同一行**。
+   * 按实测的 ~117µs/条计，删掉重复读约等于单进程吞吐 +15%。
+   *
+   * 可选而非必填：`issueSession`（登录/注册/切空间的签发路径）不填它们，
+   * 与既有的 `membershipRole` / `workspaceOwnerId` 同一约定——只有逐请求解码
+   * 这条路需要空间的外围属性。
+   */
+  workspaceName?: string | null;
+  workspaceType?: string | null;
+  /**
    * 当前空间的服务端边界令牌（`workspaces.workspace_epoch`，迁移 0261）。
    *
    * 审查 1.3 说服务端"无 workspaceEpoch 概念（只有硬编码 1）→ 无法做某空间全端

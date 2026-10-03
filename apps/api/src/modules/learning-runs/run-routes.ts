@@ -14,6 +14,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { parseBody } from "../../lib/validate.ts";
 import { requireSession } from "../identity/middleware.ts";
+import { acquireSseSlot } from "../../lib/sse-connection-limiter.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import {
   learningTaskDraftSchema,
@@ -66,6 +67,12 @@ import { BoundedAsyncQueue } from "./bounded-async-queue.ts";
 // 计数器就只增不减、队列从此永久满——而且不报错。
 const METRIC_MAX_INFLIGHT = 8;
 const METRIC_MAX_QUEUE = 100;
+
+/**
+ * SSE 限流命名空间（2026-10-03）。与 inbox / card-v2 分开计数：每用户桶按
+ * 流类型独立，进程总上限共享——所以这里放大到 5 条也不会挤掉别人的 inbox 流。
+ */
+const SSE_NAMESPACE = "run-events";
 
 const learningMetricQueue = new BoundedAsyncQueue({
   maxInFlight: METRIC_MAX_INFLIGHT,
@@ -188,7 +195,7 @@ export async function learningRunRoutes(app: FastifyInstance) {
 
   // POST /learning-runs — PREPARE：origin 解析 → 调度授权 → 确定性规划 → 原子写入。
   app.post("/learning-runs", { preHandler: [requireSession] }, async (req, reply) => {
-    if (!(await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:create`, RUN_WRITE_LIMITS.createPerMinute, 60_000))) return;
+    if (await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:create`, RUN_WRITE_LIMITS.createPerMinute, 60_000)) return;
     const body = parseBody(app, createLearningRunV2RequestSchema, req.body);
     try {
       const snapshot = await withWorkspaceTransaction(scopeOf(req), async (tx) => {
@@ -345,7 +352,7 @@ userId: req.session.userId,
     "/v2/learning-runs/:runId/tasks/:taskId/draft",
     { preHandler: [requireSession] },
     async (req, reply) => {
-      if (!(await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:draft`, RUN_WRITE_LIMITS.draftPerMinute, 60_000))) return;
+      if (await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:draft`, RUN_WRITE_LIMITS.draftPerMinute, 60_000)) return;
       const params = taskDraftParamsSchema.safeParse(req.params);
       if (!params.success) throw app.httpErrors.badRequest("run/task id 非法");
       const body = parseBody(app, putLearningTaskDraftRequestV2Schema, req.body);
@@ -426,7 +433,7 @@ userId: req.session.userId,
     "/v2/learning-runs/:runId/tasks/:taskId/submissions",
     { preHandler: [requireSession] },
     async (req, reply) => {
-      if (!(await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:submit`, RUN_WRITE_LIMITS.submitPerMinute, 60_000))) return;
+      if (await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:submit`, RUN_WRITE_LIMITS.submitPerMinute, 60_000)) return;
       const params = taskDraftParamsSchema.safeParse(req.params);
       if (!params.success) throw app.httpErrors.badRequest("run/task id 非法");
       const body = parseBody(app, submitTaskArtifactV2Schema, req.body);
@@ -475,7 +482,7 @@ userId: req.session.userId,
     "/v2/learning-runs/:runId/actions",
     { preHandler: [requireSession] },
     async (req, reply) => {
-      if (!(await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:action`, RUN_WRITE_LIMITS.actionPerMinute, 60_000))) return;
+      if (await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:action`, RUN_WRITE_LIMITS.actionPerMinute, 60_000)) return;
       const params = runParamsSchema.safeParse(req.params);
       if (!params.success) throw app.httpErrors.badRequest("runId 非法");
       const body = parseBody(app, learningRunActionRequestV2Schema, req.body);
@@ -535,7 +542,7 @@ userId: req.session.userId,
     "/v2/learning-runs/:runId/activity-lease",
     { preHandler: [requireSession] },
     async (req, reply) => {
-      if (!(await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:lease`, RUN_WRITE_LIMITS.leasePerMinute, 60_000))) return;
+      if (await runRateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:run:lease`, RUN_WRITE_LIMITS.leasePerMinute, 60_000)) return;
       const params = runParamsSchema.safeParse(req.params);
       if (!params.success) throw app.httpErrors.badRequest("runId 非法");
       const body = parseBody(app, recordLearningRunActivityLeaseRequestV2Schema, req.body);
@@ -591,12 +598,30 @@ userId: req.session.userId,
       if (!Number.isSafeInteger(afterSequence) || afterSequence < 0) {
         throw app.httpErrors.badRequest("lastEventId 非法");
       }
+      // 2026-10-03：SSE 并发上限。此前这条长连事件流校验完 Last-Event-ID 就
+      // 直接 hijack，没有任何连接数约束——hijack 之后它不再经过 Fastify 的
+      // 请求生命周期，一个客户端反复重连留下的半开连接就能长期占住一条。
+      // 与 inbox / card-v2 共用 lib/sse-connection-limiter.ts。
+      //
+      // 放在 hijack **之前**：超限要回一个正常的 429 JSON；一旦 hijack 就只能
+      // 往流里写，等于把一个明确的拒绝变成一条语义不明的流。
+      const sseSlot = acquireSseSlot(SSE_NAMESPACE, `${scope.userId}:${scope.workspaceId}`);
+      if (!sseSlot.ok) {
+        return reply.code(429).send({
+          error: "too_many_connections",
+          message: sseSlot.reason === "total"
+            ? "服务端 SSE 连接已达上限，请稍后重试"
+            : "该空间的运行事件流连接数已达上限",
+        });
+      }
+      const releaseSseSlot = sseSlot.release;
       // fastify 5：先 hijack 再 writeHead——writeHead 抛 ERR_STREAM_WRITE_AFTER_END
       // 只会发生在客户端已断开、socket 已终结时；hijack 前调用会让框架在
       // handler 返回时自动终结流（16-remaining-issues #1：间歇 500 根源之一）。
       reply.hijack();
       if (reply.raw.writableEnded || reply.raw.destroyed) {
         req.log.warn({ runId: params.data.runId }, "sse: socket already closed before hijack");
+        releaseSseSlot();
         return reply;
       }
       try {
@@ -609,6 +634,7 @@ userId: req.session.userId,
       } catch (err) {
         // 客户端在 writeHead 前断开：记录并安静结束，不再冒泡为 500。
         req.log.error({ err, runId: params.data.runId }, "sse: writeHead failed");
+        releaseSseSlot();
         return reply;
       }
       let closed = false;
@@ -635,6 +661,10 @@ userId: req.session.userId,
         if (interval) clearInterval(interval);
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         if (!reply.raw.writableEnded && !reply.raw.destroyed) reply.raw.end();
+        // 2026-10-03：归还 SSE 槽位。放在唯一的收尾路径里而不是散在各个
+        // 调用点，是因为 release 是幂等的——socket 的 close / error / 心跳写
+        // 失败都可能走到这里，少归还一次就等于永久少一个可用槽位。
+        releaseSseSlot();
       };
       const schedulePoll = () => {
         if (interval) clearInterval(interval);

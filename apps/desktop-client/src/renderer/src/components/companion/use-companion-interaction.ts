@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { CompanionChatSession } from "../../app/companion-chat-session";
+import { useRoomStore } from "../../app/room-store";
 import { useCompanionVoiceInput, type CompanionVoiceTranscript } from "./use-companion-voice-input";
 import { useCompanionTransient } from "./use-companion-transient";
 
 export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled: boolean, obscured = false) {
-  const [input, setInput] = useState("");
+  const input = useRoomStore(state => state.companionComposerDraft);
+  const setInput = useRoomStore(state => state.setCompanionComposerDraft);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [voiceDraft, setVoiceDraft] = useState<CompanionVoiceTranscript | null>(null);
   const [voiceRevision, setVoiceRevision] = useState(0);
@@ -23,7 +25,6 @@ export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled
     namespaceRef.current = chat.conversationId;
     if (!wasBound) return;
     setVoiceOpen(false);
-    setInput("");
     setVoiceDraft(null);
     voice.cancel();
   }, [chat.conversationId, voice.cancel]);

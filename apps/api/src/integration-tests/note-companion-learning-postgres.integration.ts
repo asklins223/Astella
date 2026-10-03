@@ -383,6 +383,80 @@ test("选区批注锚定精确原句、按修订更新，且不能伪造选区�
   assert.equal(forged.json().error, "source_message_not_found");
 });
 
+test("没有互动演示的批注也能删除，原文和其他批注仍在", async () => {
+  const excerpt = "利息加入本金后";
+  const anchor = { noteVersionId: fixture.noteVersionId, startBlockOrdinal: 2, startOffset: 0,
+    endBlockOrdinal: 2, endOffset: excerpt.length, excerpt, prefix: "", suffix: "，下一次也会继续产生利息。" };
+  const created = await call("POST", `${path()}/annotations`, { anchor, explanation: "用于核对无演示批注的删除。" });
+  assert.equal(created.statusCode, 200, created.body);
+  const beforeItems = (await call("GET", `${path()}/annotations`)).json().items;
+  const removed = await call("DELETE", `${path()}/annotations/${created.json().annotationId}`, { expectedRevision: 1 });
+  assert.equal(removed.statusCode, 200, removed.body);
+  assert.deepEqual(removed.json(), { removed: true, removedArtifacts: 0 });
+  const afterItems = (await call("GET", `${path()}/annotations`)).json().items;
+  assert.deepEqual(afterItems.map((item: { annotationId: string }) => item.annotationId),
+    beforeItems.filter((item: { annotationId: string }) => item.annotationId !== created.json().annotationId)
+      .map((item: { annotationId: string }) => item.annotationId));
+  const [block] = await admin`SELECT content FROM note_blocks WHERE version_id=${fixture.noteVersionId} AND ordinal=2`;
+  assert.equal(block?.content, "利息加入本金后，下一次也会继续产生利息。");
+});
+
+test("删除批注只连带删除本人同一原句的演示，保留聊天、邻句、速看和他人结果", async () => {
+  const excerpt = "利息加入本金后";
+  const anchor = { noteVersionId: fixture.noteVersionId, startBlockOrdinal: 2, startOffset: 0,
+    endBlockOrdinal: 2, endOffset: excerpt.length, excerpt, prefix: "", suffix: "，下一次也会继续产生利息。" };
+  const reply = await seedAssistantReply({ ...fixture, selectionText: excerpt });
+  const created = await call("POST", `${path()}/annotations`, {
+    anchor, explanation: "删除这条批注时保留伴星对话。", sourceMessageId: reply.messageId,
+  });
+  assert.equal(created.statusCode, 200, created.body);
+  const matchingIds = [randomUUID(), randomUUID()];
+  const retainedIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+  const otherAnchor = { ...anchor, startOffset: 1, endOffset: excerpt.length + 1,
+    excerpt: "息加入本金后，", prefix: "利", suffix: "下一次也会继续产生利息。" };
+  const artifacts = [
+    ...matchingIds.map((id) => ({ id, note: fixture, userId: fixture.userId, sourceKind: "annotation", anchor })),
+    { id: retainedIds[0]!, note: fixture, userId: fixture.userId, sourceKind: "annotation", anchor: otherAnchor },
+    { id: retainedIds[1]!, note: fixture, userId: fixture.userId, sourceKind: "overview", anchor: null },
+    { id: retainedIds[2]!, note: fixture, userId: memberId, sourceKind: "annotation", anchor },
+    { id: retainedIds[3]!, note: foreign, userId: foreign.userId, sourceKind: "annotation",
+      anchor: { ...anchor, noteVersionId: foreign.noteVersionId } },
+  ];
+  await admin.begin(async (tx) => {
+    for (const artifact of artifacts) {
+      await tx`SELECT set_config('app.workspace_id', ${artifact.note.workspaceId}, true)`;
+      await tx`SELECT set_config('app.user_id', ${artifact.userId}, true)`;
+      await tx`INSERT INTO note_learning_artifacts
+        (id,workspace_id,user_id,note_id,note_version_id,source_kind,selection_text,selection_anchor,
+         source_content_hash,generator_ref,title,subject,caution,outline_json,html)
+        VALUES(${artifact.id},${artifact.note.workspaceId},${artifact.userId},${artifact.note.noteId},
+          ${artifact.note.noteVersionId},${artifact.sourceKind},${artifact.anchor?.excerpt ?? null},
+          ${artifact.anchor ? tx.json(artifact.anchor) : null},${"a".repeat(64)},'test-generator',
+          '批注删除核对','原句演示','验收用演示',${tx.json([{ kind: "p", text: "第一步" }])},'<p>演示仍可阅读</p>')`;
+    }
+  });
+  const target = `${path()}/annotations/${created.json().annotationId}`;
+  const denied = await call("DELETE", target, { expectedRevision: 1 }, memberToken);
+  assert.equal(denied.statusCode, 404, denied.body);
+  const changed = await call("PATCH", target, { expectedRevision: 1, explanation: "新的修订仍要核对后才能删除。" });
+  assert.equal(changed.statusCode, 200, changed.body);
+  const stale = await call("DELETE", target, { expectedRevision: 1 });
+  assert.equal(stale.statusCode, 409, stale.body);
+  assert.equal(stale.json().error, "stale_revision");
+  const beforeDelete = await admin`SELECT id FROM note_learning_artifacts WHERE id IN ${admin(matchingIds)}`;
+  assert.equal(beforeDelete.length, 2);
+  const removed = await call("DELETE", target, { expectedRevision: 2 });
+  assert.equal(removed.statusCode, 200, removed.body);
+  assert.deepEqual(removed.json(), { removed: true, removedArtifacts: 2 });
+  const allIds = [...matchingIds, ...retainedIds];
+  const remaining = await admin`SELECT id FROM note_learning_artifacts WHERE id IN ${admin(allIds)}`;
+  assert.deepEqual(remaining.map((row) => row.id).sort(), [...retainedIds].sort());
+  const messages = await admin`SELECT id FROM companion_messages WHERE conversation_id=${reply.conversationId}`;
+  assert.equal(messages.length, 2, "删除批注不能删除伴星对话");
+  const repeat = await call("DELETE", target, { expectedRevision: 2 });
+  assert.equal(repeat.statusCode, 404, repeat.body);
+});
+
 test("回想不用伴星也能从原文开始，线索、揭示和自述会留存", async () => {
   const started = await call("POST", `${path()}/recalls`, {
     requestId: randomUUID(),
@@ -614,6 +688,16 @@ test("拓展笔记由后台任务整理；审核、确认和失败回滚都留�
     drafts: conflictingDrafts.map(({ candidateId, title, blocks }) => ({ candidateId, title, blocks, selected: true })),
   });
   assert.equal(conflictReview.statusCode, 200, conflictReview.body);
+  const batches = await call("GET", `${path()}/expansion-tasks?noteVersionId=${fixture.noteVersionId}`);
+  assert.equal(batches.statusCode, 200, batches.body);
+  assert.ok(batches.json().items.some((item: { taskId: string }) => item.taskId === conflictTaskId));
+  const previous = batches.json().items.find((item: { taskId: string }) => item.taskId === taskId);
+  assert.equal(previous.status, "confirmed", "新批次不能替代旧批次的收下记录");
+  assert.equal(previous.drafts[0].title, drafts[0]!.title, "先前审核保存的草稿还可读取");
+  const hiddenBatches = await call("GET", `${path(foreign.noteId)}/expansion-tasks?noteVersionId=${foreign.noteVersionId}`);
+  assert.equal(hiddenBatches.statusCode, 404, "批次历史仍受笔记可见性与用户作用域限制");
+  const invalidCursor = await call("GET", `${path()}/expansion-tasks?noteVersionId=${fixture.noteVersionId}&before=${randomUUID()}`);
+  assert.equal(invalidCursor.statusCode, 404);
   const conflict = await call("POST", `${path()}/expansion-tasks/${conflictTaskId}/confirm`, {
     candidateIds: conflictingDrafts.map((draft) => draft.candidateId),
   });

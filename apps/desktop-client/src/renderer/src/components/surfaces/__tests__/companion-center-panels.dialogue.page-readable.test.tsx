@@ -67,6 +67,13 @@ afterEach(() => {
 });
 
 describe("伴星中心 · 对话：登记的就是这一屏露出的那几条", () => {
+  it("登记可见正文，粗体、行内代码与链接不露出 Markdown 标记", () => {
+    renderPanel({ items: [message("11111111-1111-4111-8111-111111111111", "assistant", "**先看反例**，再读 `定义` 和[原文](https://example.test)。\n\n下一段")] });
+    const paragraph = document.querySelector(".cc-prose p")!.cloneNode(true) as HTMLElement;
+    paragraph.querySelectorAll(".companion-md__link small").forEach(node => node.remove());
+    expect(publishedView()!.items?.[0].label).toBe(paragraph.textContent);
+    expect(publishedView()!.items?.[0].label).toBe("先看反例，再读 定义 和原文。");
+  });
   it("说话人字与正文首段与 DOM 逐字相同，顺序按屏幕", () => {
     renderPanel();
     const view = publishedView()!;
@@ -74,11 +81,11 @@ describe("伴星中心 · 对话：登记的就是这一屏露出的那几条", 
     expect(view.title).toBe("伴星中心");
     // 没搜索、没报错、有记录 ⇒ 那一格是空的，就不该有 statusLine。
     expect(view.statusLine).toBeUndefined();
-    const rows = [...document.querySelectorAll(".companion-thread article")];
+    const rows = [...document.querySelectorAll(".cc-thread article")];
     expect(rows).toHaveLength(2);
     expect(view.items?.map((entry) => entry.ordinal)).toEqual([1, 2]);
     expect(view.items?.map((entry) => entry.state)).toEqual(
-      rows.map((row) => row.querySelector("b")?.textContent),
+      rows.map((row) => row.querySelector("header strong")?.textContent),
     );
     expect(view.items?.[0].label).toBe(rows[0].querySelector("p")?.textContent);
     // 多段回复只登第一段（屏上是两段 `<p>`，她念第一段就够定位了）。
@@ -90,7 +97,7 @@ describe("伴星中心 · 对话：登记的就是这一屏露出的那几条", 
   it("搜索时那一格的句子进 statusLine，关键词进 filters", () => {
     renderPanel({ query: "惯性", items: [message("33333333-3333-4333-8333-333333333333", "user", "惯性那一章还缺什么")] });
     const view = publishedView()!;
-    expect(view.statusLine).toBe(document.querySelector(".companion-result-status")?.textContent);
+    expect(view.statusLine).toBe(document.querySelector(".cc-result")?.textContent);
     expect(view.statusLine).toBe("找到 1 条对话");
     expect(view.filters).toEqual([{ label: "关键词", value: "惯性" }]);
   });
@@ -98,7 +105,7 @@ describe("伴星中心 · 对话：登记的就是这一屏露出的那几条", 
   it("正在搜索：那一格写什么就登记什么，不是「找到 0 条」", () => {
     renderPanel({ query: "惯性", searching: true, items: [] });
     const view = publishedView()!;
-    expect(view.statusLine).toBe(document.querySelector(".companion-result-status")?.textContent);
+    expect(view.statusLine).toBe(document.querySelector(".cc-result")?.textContent);
     expect(view.statusLine).toBe("正在搜索对话");
   });
 
@@ -106,16 +113,16 @@ describe("伴星中心 · 对话：登记的就是这一屏露出的那几条", 
     renderPanel({ items: [] });
     const view = publishedView()!;
     expect(view.items).toBeUndefined();
-    expect(view.statusLine).toBe(document.querySelector(".companion-section-state strong")?.textContent);
+    expect(view.statusLine).toBe(document.querySelector(".cc-state strong")?.textContent);
     expect(view.notice).toBe(
-      `${document.querySelector(".companion-section-state strong")?.textContent}：${document.querySelector(".companion-section-state span")?.textContent}`,
+      `${document.querySelector(".cc-state strong")?.textContent}：${document.querySelector(".cc-state p")?.textContent}`,
     );
   });
 
   it("这一格读不到时只发状态与原因，一行对话都不发", () => {
     renderPanel({ section: { ok: false, message: "伴星数据暂时不可用" } });
     const view = publishedView()!;
-    expect(view.statusLine).toBe(document.querySelector(".companion-section-state strong")?.textContent);
+    expect(view.statusLine).toBe(document.querySelector(".cc-state strong")?.textContent);
     expect(view.items).toBeUndefined();
     expect(view.filters).toBeUndefined();
     expect(view.notice).toBe(`${view.statusLine}：伴星数据暂时不可用`);

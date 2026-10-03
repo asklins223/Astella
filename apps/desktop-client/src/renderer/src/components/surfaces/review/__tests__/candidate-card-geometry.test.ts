@@ -18,11 +18,11 @@ describe("physical candidate card", () => {
     const camera = new PerspectiveCamera(32, width / height, .1, 100);
     camera.position.z = 15; camera.updateProjectionMatrix(); camera.updateMatrixWorld();
     const world = new Matrix4().makeRotationY(-.25);
-    for (const back of [false, true]) {
-      const projection = cardFaceProjection(camera.projectionMatrix, camera.matrixWorldInverse, world, width, height, 5, back);
-      for (const [x, y] of [[0, 0], [CARD_FACE_WIDTH, 0], [CARD_FACE_WIDTH / 2, CARD_FACE_WIDTH * 5 / 8 / 2]]) {
+    for (const faceWidth of [CARD_FACE_WIDTH, width * .82]) for (const back of [false, true]) {
+      const projection = cardFaceProjection(camera.projectionMatrix, camera.matrixWorldInverse, world, width, height, 5, back, faceWidth);
+      for (const [x, y] of [[0, 0], [faceWidth, 0], [faceWidth / 2, faceWidth * 5 / 8 / 2]]) {
         const projected = new Vector4(x, y, 0, 1).applyMatrix4(projection);
-        const unit = CARD_WIDTH / CARD_FACE_WIDTH;
+        const unit = CARD_WIDTH / faceWidth;
         const point = new Vector3((back ? -1 : 1) * (x * unit - CARD_WIDTH / 2), 2.5 - y * unit,
           (back ? -1 : 1) * (CARD_DEPTH / 2 + .06)).applyMatrix4(world).project(camera);
         expect(projected.x / projected.w).toBeCloseTo((point.x + 1) * width / 2, 7);

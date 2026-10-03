@@ -14,9 +14,12 @@
  *  - 没有收藏时就是一句话，不生成占位内容（§7「没有收藏时保持清爽」）。
  *  - 取消收藏叫「取消收藏」，不叫「删除」：它不动原始回答与日记。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect,useRef,useState } from "react";
 
+import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
 import type { CompanionDiscoveryEntryV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import { usePageReadableView } from "../../hud/use-page-readable-view";
+import { CenterFeedback,CenterSearch,SectionState } from "./companion-center-primitives";
 
 const KIND_LABEL: Record<string, string> = {
   user_utterance: "你说过的",
@@ -42,7 +45,7 @@ export interface DiscoveryPanelProps {
   readonly error: string | null;
   readonly notice: string | null;
   readonly onUncollect: (entry: CompanionDiscoveryEntryV1) => void;
-  readonly onAnnotate: (entry: CompanionDiscoveryEntryV1, annotation: string) => void;
+  readonly onAnnotate: (entry: CompanionDiscoveryEntryV1, annotation: string) => Promise<boolean> | void;
   readonly onRetry: () => void;
 }
 
@@ -50,7 +53,7 @@ function DiscoveryRow(props: {
   entry: CompanionDiscoveryEntryV1;
   busy: boolean;
   onUncollect: (entry: CompanionDiscoveryEntryV1) => void;
-  onAnnotate: (entry: CompanionDiscoveryEntryV1, annotation: string) => void;
+  onAnnotate: (entry: CompanionDiscoveryEntryV1, annotation: string) => Promise<boolean> | void;
 }) {
   const { entry } = props;
   const [editing, setEditing] = useState(false);
@@ -58,102 +61,58 @@ function DiscoveryRow(props: {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
 
-  return <article className="discovery-row" data-kind={entry.kind} data-author={entry.author}>
+  return <article className="cc-discovery-entry" data-kind={entry.kind} data-author={entry.author}>
     <header>
       {/* 作者是**必填**的（schema 里没有"未标"这一档），所以这里总能说出是谁说的。
           §7 要的就是这个：用户保留的 AI 建议若不标作者，读起来就像用户自己写的。 */}
       <strong>{entry.author === "user" ? "你" : "她"}</strong>
-      <span className="tag">{KIND_LABEL[entry.kind] ?? entry.kind}</span>
-      <span className="tag">{SOURCE_LABEL[entry.source] ?? entry.source}</span>
+      <span className="cc-tag">{KIND_LABEL[entry.kind] ?? entry.kind}</span>
+      <span className="cc-tag">{SOURCE_LABEL[entry.source] ?? entry.source}</span>
     </header>
     <p>{entry.body}</p>
-    {editing ? <div className="discovery-row__edit">
+    {editing ? <div className="cc-form">
       <label>
         你的批注
         <textarea ref={inputRef} value={draft} maxLength={2000} onChange={(event) => setDraft(event.target.value)} />
       </label>
-      <div className="discovery-row__actions">
-        <button type="button" className="button" onClick={() => { setEditing(false); setDraft(entry.annotation ?? ""); }}>取消</button>
-        <button type="button" className="button primary" disabled={props.busy} onClick={() => { props.onAnnotate(entry, draft); setEditing(false); }}>保存批注</button>
+      <div className="cc-actions">
+        <button type="button" className="button" disabled={props.busy} onClick={() => { setEditing(false); setDraft(entry.annotation ?? ""); }}>取消</button>
+        <button type="button" className="button primary" disabled={props.busy} onClick={async () => { const saved = await props.onAnnotate(entry, draft); if (saved !== false) setEditing(false); }}>保存批注</button>
       </div>
     </div> : entry.annotation ? <blockquote>你的批注：{entry.annotation}</blockquote> : null}
-    <footer>
-      <button type="button" className="text-action" onClick={() => setEditing((value) => !value)}>{editing ? "收起" : "加批注"}</button>
+    <footer><small>{new Date(entry.createdAt).toLocaleDateString("zh-CN")}</small>
+      <button type="button" className="cc-link" disabled={props.busy} onClick={() => { if (!editing) setDraft(entry.annotation ?? ""); setEditing(value => !value); }}>{editing ? "收起" : "加批注"}</button>
       {/*
         措辞是刻意的：不是「删除」。§7「取消收藏不删除原始回答或日记」——
         叫「删除」会让用户以为那篇日记也没了，而它没有。
       */}
-      <button type="button" className="text-action" disabled={props.busy} onClick={() => props.onUncollect(entry)}>取消收藏</button>
+      <button type="button" className="cc-link" disabled={props.busy} onClick={() => props.onUncollect(entry)}>取消收藏</button>
     </footer>
   </article>;
 }
 
 export function DiscoveryPanel(props: DiscoveryPanelProps) {
+  const [query, setQuery] = useState("");
+  const [author, setAuthor] = useState<"all" | "user" | "assistant" | "study">("all");
   const book = props.section.ok ? props.section.value : null;
-  const studyIds = useMemo(() => new Set((book?.studyVisible ?? []).map((entry) => entry.entryId)), [book]);
-
-  if (!props.section.ok) {
-    return <div className="companion-center__empty" role="alert">
-      <p>发现簿暂时读不到：{props.section.message}</p>
-      <button type="button" className="button" onClick={props.onRetry}>重试</button>
-    </div>;
-  }
-
-  const entries = book?.entries ?? [];
-
-  return <div className="discovery-panel">
-    <header className="discovery-panel__head">
-      <h2>发现簿</h2>
-      <p>你自己留下来的东西：说过的话、她整理的建议、疑问、反例和日记摘录。取消收藏只是不再放在这里，原始回答和日记都还在。</p>
-    </header>    {props.error ? <p role="alert" className="small">{props.error}</p> : null}
-    {props.notice ? <p role="status" className="small">{props.notice}</p> : null}
-
-    {/*
-      没有收藏就是一句话。§7「没有收藏时保持清爽，不生成假内容」——
-      这里刻意不画空卡片、不放示例、不"推荐你先收藏一条"。
-
-      这句话刻意**不写「在日记或回答旁点『留在发现簿』」**：那一处入口按 §7 只出现
-      一次，说过「先不留」之后就不再出现。指向一个可能根本不存在的按钮，是这一条
-      文案原来最要命的毛病——用户照着去找，找不到，只会以为是自己漏了什么。
-    */}
-    {entries.length === 0 ? <div className="companion-center__empty">
-      <p>还没有收藏。她在一句回答刚说完的时候会问一次要不要留下——你点了它就出现在这里，点了「先不留」她就不再问。</p>
-    </div> : <ol className="discovery-list">
-      {entries.map((entry) => <li key={entry.entryId}>
-        <DiscoveryRow entry={entry} busy={props.busy !== null} onUncollect={props.onUncollect} onAnnotate={props.onAnnotate} />
-      </li>)}
-    </ol>}
-
-    {book && book.studyVisible.length > 0 ? <section className="discovery-study" aria-label="书房里放出的痕迹">
-      <h3>书房里放出的 {book.studyVisible.length} 条</h3>
-      <p className="small">只有你标出来的才会出现在书房里，而且要能回到原内容。</p>
-      <ul>
-        {book.studyVisible.map((entry) => <li key={entry.entryId} data-listed={studyIds.has(entry.entryId) || undefined}>
-          {entry.body.slice(0, 40)}{entry.body.length > 40 ? "…" : ""}
-        </li>)}
-      </ul>
-    </section> : null}
+  const entries = (book?.entries ?? []).filter(entry => (author === "all" || author === "study" ? author !== "study" || entry.visibility === "study" : entry.author === author) && `${entry.body} ${entry.annotation ?? ""}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const readable: PageReadableV1 = {
+    pageId: "companion", title: "伴星中心",
+    statusLine: !props.section.ok ? "发现簿暂时读不到" : `${entries.length} 条收藏`,
+    ...(props.error || props.notice ? { notice: (props.error ?? props.notice)!.slice(0, 160) } : {}),
+    ...(query.trim() ? { filters: [{ label: "搜索", value: query.trim().slice(0, 40) }] } : {}),
+    items: entries.slice(0, 12).map((entry, index) => ({ ordinal: index + 1, label: entry.body.slice(0, 120), state: `${entry.author === "user" ? "你" : "她"} · ${SOURCE_LABEL[entry.source] ?? entry.source}`.slice(0, 40) })),
+  };
+  usePageReadableView(readable);
+  if (!props.section.ok) return <div role="alert"><SectionState message="发现簿暂时读不到" detail={props.section.message} onRetry={props.onRetry} /></div>;
+  return <div className="cc-discovery">
+    <div className="cc-toolbar"><CenterSearch value={query} onChange={setQuery} label="搜索收藏与批注" placeholder="搜索收藏与批注" /><span className="cc-muted">{entries.length} 条收藏</span></div>
+    <div className="cc-segments" role="group" aria-label="发现簿筛选">{([["all", "全部"], ["user", "你留下的话"], ["assistant", "她写的话"], ["study", "书房里放出的"]] as const).map(([id, label]) => <button type="button" key={id} aria-pressed={author === id} onClick={() => setAuthor(id)}>{label}</button>)}</div>
+    <CenterFeedback error={props.error} notice={props.notice} />
+    {!book?.entries.length ? <SectionState message="还没有收藏" detail="你在回答旁留下的话会收在这里，之后可以随时补充批注。" />
+      : !entries.length ? <SectionState message="没有符合筛选的收藏" detail="换个关键词，或查看全部收藏。" />
+      : <ol className="cc-discovery-list">{entries.map(entry => <li key={entry.entryId}><DiscoveryRow entry={entry} busy={props.busy !== null} onUncollect={props.onUncollect} onAnnotate={props.onAnnotate} /></li>)}</ol>}
+    {book?.studyVisible.length ? <div className="cc-page-note"><span>书房里放出的 {book.studyVisible.length} 条</span><small>只有你标出来的收藏才会放到书房。</small></div> : null}
+    <p className="cc-muted cc-discovery-footnote">取消收藏会移出发现簿，原始回答和日记仍然保留。</p>
   </div>;
-}
-
-/** 给外层用的小钩子：把 GatewayResult 变成 Section，形状与其它面板一致。 */
-export function useDiscoverySection(load: () => Promise<unknown>): {
-  section: Section<{ version: 1; entries: CompanionDiscoveryEntryV1[]; studyVisible: CompanionDiscoveryEntryV1[] }>;
-  reload: () => void;
-} {
-  const [section, setSection] = useState<Section<{ version: 1; entries: CompanionDiscoveryEntryV1[]; studyVisible: CompanionDiscoveryEntryV1[] }>>({ ok: false, message: "还没读过" });
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let alive = true;
-    // `load` 可能是**同步**抛的（通道不存在时读 `window.ailearn...discovery` 就是
-    // undefined.get）。那会让整个伴星中心跟着崩，而它只该让这一个面板说
-    // 「暂时读不到」。所以先包成 async：同步抛也变成一个 rejected promise。
-    Promise.resolve().then(load).then(
-      (value) => { if (alive) setSection({ ok: true, value: value as never }); },
-      (error: unknown) => { if (alive) setSection({ ok: false, message: error instanceof Error ? error.message : String(error) }); },
-    );
-    return () => { alive = false; };
-  }, [load, tick]);
-  const reload = useCallback(() => setTick((value) => value + 1), []);
-  return { section, reload };
 }

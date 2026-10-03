@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { NoteAnnotationV1 } from "@ailearn/shared/note-annotation-contracts";
 import { plainCompanionBubbleText } from "../../companion/companion-markdown";
@@ -7,6 +7,7 @@ import { plainCompanionBubbleText } from "../../companion/companion-markdown";
 export function NoteAnnotationMark(props: {
   readonly annotation: NoteAnnotationV1;
   readonly number?: number;
+  readonly badge?: boolean;
   readonly open?: boolean;
   readonly children: ReactNode;
   readonly onOpen?: (annotation: NoteAnnotationV1) => void;
@@ -21,6 +22,8 @@ export function NoteAnnotationMark(props: {
   const preview = useRef<HTMLDivElement>(null);
   /** 指针是否在这枚记号**或**它的浮层上。浮层在 portal 里，两边要合成一个判断。 */
   const overPreview = useRef(false);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressPoint = useRef<{ x: number; y: number } | null>(null);
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
   const [shown, setShown] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number; maxWidth: number } | null>(null);
@@ -28,6 +31,13 @@ export function NoteAnnotationMark(props: {
   const plain = plainCompanionBubbleText(props.annotation.explanation).replace(/\s+/gu, " ").trim();
   const characters = Array.from(plain);
   const text = characters.length > 90 ? `${characters.slice(0, 90).join("")}…` : plain;
+
+  const cancelLeave = () => { if (leaveTimer.current) clearTimeout(leaveTimer.current); leaveTimer.current = null; };
+  const leave = () => {
+    cancelLeave();
+    leaveTimer.current = setTimeout(() => { if (!overPreview.current && !preview.current?.contains(document.activeElement)) setShown(false); }, 160);
+  };
+  useEffect(() => () => cancelLeave(), []);
 
   useLayoutEffect(() => { if (props.open) setShown(false); }, [props.open]);
 
@@ -53,18 +63,28 @@ export function NoteAnnotationMark(props: {
     return () => { scroll?.removeEventListener("scroll", dismiss); window.removeEventListener("resize", dismiss); };
   }, [shown, pointer]);
 
-  const open = () => { setShown(false); props.onOpen?.(props.annotation); };
+  const open = () => { cancelLeave(); setShown(false); props.onOpen?.(props.annotation); };
   return <>
-    <span className="note-annotation-anchor" ref={marker} role="button" tabIndex={0}
-      aria-label={`打开批注：${props.annotation.anchor.excerpt}`} aria-expanded={props.open ?? false}
+    <span className={props.badge ? "note-annotation-badge" : "note-annotation-anchor"} ref={marker} role="button" tabIndex={0}
+      aria-label={props.badge ? `批注 ${props.number} · ${props.annotation.sourceMessageId ? "伴星解释" : props.annotation.generationJobId ? "白话解释" : "自己的批注"}：${props.annotation.anchor.excerpt}` : `打开批注：${props.annotation.anchor.excerpt}`} aria-expanded={props.open ?? false}
       aria-describedby={shown && !props.open ? tooltipId : undefined}
       data-number={props.number}
+      onPointerDown={event => { pressPoint.current = { x: event.clientX, y: event.clientY }; setShown(false); }}
       onMouseEnter={event => {
-        if (props.open || !window.matchMedia?.("(hover: hover) and (pointer: fine)").matches) return;
+        cancelLeave();
+        if (event.buttons || props.open || !window.matchMedia?.("(hover: hover) and (pointer: fine)").matches) return;
         setPointer({ x: event.clientX, y: event.clientY }); setPosition(null); setShown(true);
       }}
-      onMouseLeave={() => { if (!overPreview.current) setShown(false); }} onFocus={() => { if (!props.open) { setPointer(null); setPosition(null); setShown(true); } }} onBlur={() => { if (!overPreview.current) setShown(false); }}
-      onClick={event => { event.preventDefault(); event.stopPropagation(); open(); }}
+      onMouseLeave={leave} onFocus={() => { cancelLeave(); if (!props.open) { setPointer(null); setPosition(null); setShown(true); } }} onBlur={leave}
+      onClick={event => {
+        const start = pressPoint.current;
+        pressPoint.current = null;
+        const selection = window.getSelection();
+        const selectingHere = selection && !selection.isCollapsed && selection.rangeCount > 0
+          && selection.getRangeAt(0).intersectsNode(event.currentTarget);
+        if (selectingHere || start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return;
+        event.preventDefault(); event.stopPropagation(); open();
+      }}
       onKeyDown={event => {
         if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setShown(false); }
         else if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); open(); }
@@ -73,8 +93,10 @@ export function NoteAnnotationMark(props: {
       style={position ?? { visibility: "hidden" }}
       // 指针**移进浮层**时不能收起：那上面有「删掉这条」，收起它就永远按不到。
       // 记号自己的 mouseleave 也要看这个标记，两边合成一次「指针在记号或浮层上」。
-      onMouseEnter={() => { overPreview.current = true; }}
-      onMouseLeave={() => { overPreview.current = false; setShown(false); }}
-    ><p>{text}</p><small>点击原句，展开完整批注</small>{props.onDelete ? <div className="note-annotation-preview__actions">{props.onDelete}</div> : null}</div>, document.body) : null}
+      onMouseEnter={() => { cancelLeave(); overPreview.current = true; }}
+      onMouseLeave={() => { overPreview.current = false; leave(); }}
+      onFocus={cancelLeave} onBlur={leave}
+      onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); marker.current?.focus({ preventScroll: true }); setShown(false); } }}
+    ><p>{text}</p><small>{props.badge ? `批注 ${props.number} · 点击角标展开` : "点击原句，展开完整批注"}</small>{props.onDelete ? <div className="note-annotation-preview__actions">{props.onDelete}</div> : null}</div>, document.body) : null}
   </>;
 }

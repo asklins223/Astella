@@ -42,9 +42,9 @@ function delivery(id: number, label: string) {
     deliveryId: `77777777-7777-4777-8777-00000000000${id}`,
     inboxSequence: id,
     state: "delivered",
-    kind: "message",
+    kind: "proposal",
     label,
-    target: { kind: "none" },
+    target: { kind: "proposal", proposalId: "99999999-9999-4999-8999-999999999999" },
     expired: false,
     createdAt: `2026-09-2${4 - id}T00:00:00.000Z`,
     expiresAt: "2026-10-24T00:00:00.000Z",
@@ -96,7 +96,7 @@ function publishedView(): PageReadableV1 | null {
 }
 
 function titles(): (string | null)[] {
-  return [...document.querySelectorAll(".companion-overview h3, .companion-overview__excerpt-label")]
+  return [...document.querySelectorAll(".cc-overview h3, .cc-overview__diary .cc-kicker")]
     .map((node) => node.textContent);
 }
 
@@ -106,20 +106,20 @@ afterEach(() => {
 });
 
 describe("伴星中心 · 概览：三块各露一行，没露出的不登记", () => {
-  it("摘录、两条便签、最近回复都逐字对上，`state` 是各自行上方那个小标题", () => {
+  it("摘录、一条最新提议、最近回复都逐字对上，`state` 是各自行上方那个小标题", () => {
     renderOverview();
     const view = publishedView()!;
     expect(view.pageId).toBe("companion");
     expect(view.title).toBe("伴星中心");
-    const excerpt = document.querySelector(".companion-overview__excerpt")?.textContent;
-    const pendingLabels = [...document.querySelectorAll(".companion-overview__pending li span")]
+    const excerpt = document.querySelector(".cc-overview__diary blockquote")?.textContent;
+    const pendingLabels = [...document.querySelectorAll(".cc-overview__response > p")]
       .map((node) => node.textContent);
-    const reply = document.querySelector(".companion-overview__reply")?.textContent;
+    const reply = document.querySelector(".cc-overview__conversation > p")?.textContent;
     expect(excerpt).toBeTruthy();
-    expect(pendingLabels).toHaveLength(2);
+    expect(pendingLabels).toHaveLength(1);
     expect(view.items?.map((entry) => entry.label)).toEqual([excerpt, ...pendingLabels, reply]);
-    expect(view.items?.map((entry) => entry.state)).toEqual(["原文摘录", "需要你回应", "需要你回应", "最近的对话"]);
-    expect(view.items?.[0].state).toBe(document.querySelector(".companion-overview__excerpt-label")?.textContent);
+    expect(view.items?.map((entry) => entry.state)).toEqual(["原文摘录", "需要你回应", "最近的对话"]);
+    expect(view.items?.[0].state).toBe(document.querySelector(".cc-overview__diary .cc-kicker")?.textContent);
     expect(titles()).toContain("最近一篇日记");
   });
 
@@ -127,13 +127,13 @@ describe("伴星中心 · 概览：三块各露一行，没露出的不登记", 
     renderOverview();
     const view = publishedView()!;
     expect(view.metrics).toEqual([
-      { label: "待回应", value: document.querySelector(".companion-overview__pending .companion-overview__section-head > span:last-of-type")?.textContent ?? "" },
-      { label: "最近日记", value: document.querySelector(".companion-overview__diary time")?.textContent ?? "" },
+      { label: "待回应", value: document.querySelector(".cc-overview__response > div > span")?.textContent ?? "" },
+      { label: "最近日记", value: document.querySelector(".cc-overview__diary time")?.textContent ?? "" },
     ]);
-    expect(view.metrics?.[0].value).toBe("2 件");
+    expect(view.metrics?.[0].value).toBe("2 件提议");
   });
 
-  it("只露两条：第三条便签不登记，但计数说的是全部", () => {
+  it("只露最新提议，计数包含全部待回应提议", () => {
     renderOverview({
       activity: {
         ok: true,
@@ -144,9 +144,9 @@ describe("伴星中心 · 概览：三块各露一行，没露出的不登记", 
     const labels = view.items?.map((entry) => entry.label) ?? [];
     expect(labels).not.toContain("第三条");
     expect(labels).toContain("第一条");
-    expect(labels).toContain("第二条");
-    expect(view.metrics?.find((entry) => entry.label === "待回应")?.value).toBe("3 件");
-    expect(document.body.textContent).toContain("查看全部 3 件");
+    expect(labels).not.toContain("第二条");
+    expect(view.metrics?.find((entry) => entry.label === "待回应")?.value).toBe("3 件提议");
+    expect(document.querySelector(".cc-overview__response")?.textContent).toContain("3 件提议");
   });
 
   it("三块都读不到：登记的是屏上那三句，计数那一格不出现", () => {
@@ -161,8 +161,8 @@ describe("伴星中心 · 概览：三块各露一行，没露出的不登记", 
       "动态暂时读不到。",
       "对话记录暂时读不到。",
     ]);
-    expect(view.items?.map((entry) => entry.label)).toEqual(
-      [...document.querySelectorAll(".companion-overview__state")].map((node) => node.textContent),
+    expect(view.items?.map((entry) => entry.label).sort()).toEqual(
+      [...document.querySelectorAll(".cc-overview__quiet")].map((node) => node.textContent).sort(),
     );
     // 三块都读不到 ⇒ 没有一格写着计数或日期，就不发 `metrics`（不硬凑一个空数组）。
     expect(view.metrics).toBeUndefined();
@@ -173,7 +173,7 @@ describe("伴星中心 · 概览：三块各露一行，没露出的不登记", 
       diary: { ok: true, value: daily({ blocks: [{ type: "image", url: "/api/uploads/11111111-1111-4111-8111-111111111111/notes/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333.jpg", label: "板书照片" }] }) },
     });
     const view = publishedView()!;
-    const state = document.querySelector(".companion-overview__diary .companion-overview__state")?.textContent;
+    const state = document.querySelector(".cc-overview__diary .cc-overview__quiet")?.textContent;
     expect(state).toBe("这篇日记以图片开篇，打开后可按原顺序阅读。");
     expect(view.items?.[0].label).toBe(state);
     expect(view.items?.[0].state).toBe("最近一篇日记");

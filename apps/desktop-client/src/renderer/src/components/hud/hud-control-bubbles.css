@@ -1,0 +1,204 @@
+/* The two island bubbles own their material and type; settings-page identity
+   styles and the old mockup menu no longer participate in their cascade. */
+.hud-surface .hud-control-popover {
+  --bubble-cream: #fff9eb;
+  --bubble-ink: #4f5b4c;
+  --bubble-soft: #798472;
+  --bubble-mint: #deeedc;
+  --bubble-mint-ink: #48715b;
+  --bubble-peach: #f6dbc2;
+  position: absolute;
+  z-index: 80;
+  width: min(352px, calc(100vw - 28px));
+  color: var(--bubble-ink);
+  font: 500 13px/1.5 "Noto Sans SC Variable", "PingFang SC", system-ui, sans-serif;
+  opacity: clamp(0, var(--hud-bubble-presence, 0), 1);
+  transform: translateY(calc((1 - var(--hud-bubble-presence, 0)) * -10px))
+    scaleX(calc(.88 + var(--hud-bubble-presence, 0) * .12))
+    scaleY(calc(.86 + var(--hud-bubble-presence, 0) * .14));
+  transform-origin: var(--hud-bubble-anchor, 90%) -12px;
+  isolation: isolate;
+}
+.hud-surface .hud-control-popover::before {
+  position: absolute;
+  z-index: -1;
+  top: -6px;
+  left: calc(var(--hud-bubble-anchor, 90%) - 9px);
+  width: 18px;
+  height: 18px;
+  content: "";
+  border-radius: 5px;
+  background: var(--bubble-cream);
+  box-shadow: -2px -2px 0 #fffdf5;
+  transform: rotate(45deg);
+}
+.hud-surface .hud-control-popover[data-motion="lite"] { transform: none; }
+.hud-surface .hud-control-popover[data-motion="off"] { transform: none; opacity: 1; }
+.hud-surface .hud-control-popover-exit { pointer-events: none; }
+
+.hud-surface .hud-space-bubble,
+.hud-surface .hud-account-bubble {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--hud-bubble-max-height, calc(100dvh - 96px));
+  min-height: 0;
+  padding: 18px;
+  border: 2px solid #fffdf5;
+  border-radius: 30px;
+  background: var(--bubble-cream);
+  box-shadow: 0 5px 0 rgba(180, 168, 132, .6), 0 12px 26px rgba(72, 57, 34, .18);
+  outline: none;
+}
+.hud-surface .hud-account-bubble { overflow-y: auto; overscroll-behavior: contain; }
+.hud-surface .hud-bubble-header {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: 38px minmax(0, 1fr) 30px;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 15px;
+}
+.hud-surface .hud-bubble-header__icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 15px 18px 14px 17px;
+  color: var(--bubble-mint-ink);
+  background: var(--bubble-mint);
+  transform: rotate(-5deg);
+}
+.hud-surface .hud-bubble-header h2 { margin: 0; font: 800 18px/1.4 "Noto Sans SC Variable", "PingFang SC", sans-serif; letter-spacing: .015em; }
+.hud-surface .hud-bubble-header p { margin: 2px 0 0; font-size: 12px; color: var(--bubble-soft); }
+.hud-surface .hud-bubble-close {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #f1eddc;
+  color: #7c846e;
+  cursor: pointer;
+}
+.hud-surface .hud-bubble-close:hover { background: #e5ead9; }
+.hud-surface .hud-control-popover button {
+  touch-action: manipulation;
+  translate: 0 var(--tactile-drop, 0px);
+  scale: var(--tactile-press, 1);
+  transition: background-color 100ms ease-out, color 100ms ease-out, box-shadow 100ms ease-out;
+}
+.hud-surface .hud-control-popover button:focus-visible,
+.hud-surface .hud-control-popover input:focus-visible { outline: 3px solid #8cba92; outline-offset: 3px; }
+.hud-surface .hud-control-popover button:disabled { opacity: .5; cursor: default; }
+.hud-surface .hud-space-list { min-height: 70px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #c1ceb7 transparent; }
+.hud-surface .hud-space-group { display: grid; gap: 5px; padding-bottom: 8px; }
+.hud-surface .hud-space-group + .hud-space-group { margin-top: 5px; }
+.hud-surface .hud-space-group h3 { margin: 0 8px 3px; font-size: 11px; font-weight: 700; letter-spacing: .05em; color: var(--bubble-soft); }
+.hud-surface .hud-space-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 0;
+  border-radius: 19px;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.hud-surface .hud-space-row:hover:not(:disabled) { background: #f1efdc; }
+.hud-surface .hud-space-row:disabled[data-current="true"] { background: #e6f0dc; opacity: 1; }
+.hud-surface .hud-space-row[data-joined="true"]:not([data-current="true"]) { background: #edf4e5; box-shadow: inset 0 0 0 1px #b8d1aa; }
+.hud-surface .hud-space-row__icon,
+.hud-surface .hud-account-action__icon { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 15px; background: #f5e7c3; color: #967844; }
+.hud-surface .hud-space-row__icon[data-personal="true"] { background: #cfe4c9; color: #608360; }
+.hud-surface .hud-space-row__text { display: grid; min-width: 0; gap: 3px; }
+.hud-surface .hud-space-row__text b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; font-weight: 750; }
+.hud-surface .hud-space-row__text small { font-size: 11px; line-height: 1.5; color: #7d866f; }
+.hud-surface .hud-space-row__arrow { color: #90987c; }
+.hud-surface .hud-bubble-badge { display: inline-flex; gap: 3px; align-items: center; padding: 4px 6px; border-radius: 20px; white-space: nowrap; font-size: 10px; font-weight: 750; background: #f4e7be; }
+.hud-surface .hud-bubble-badge[data-tone="mint"] { background: #cedfc3; color: #567052; }
+.hud-surface .hud-space-search { display: flex; flex: 0 0 auto; gap: 8px; align-items: center; margin-bottom: 12px; padding: 8px 12px; border-radius: 16px; background: #f0efde; color: #8a947c; }
+.hud-surface .hud-space-search input { width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--bubble-ink); font: inherit; }
+.hud-surface .hud-space-footer { flex: 0 0 auto; margin-top: 9px; padding-top: 12px; border-top: 2px dotted #dedfc9; }
+.hud-surface .hud-space-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.hud-surface .hud-bubble-button { display: inline-flex; min-height: 38px; padding: 9px 12px; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 16px; background: #efebd7; color: var(--bubble-ink); font: 700 12px/1.5 "Noto Sans SC Variable", "PingFang SC", sans-serif; cursor: pointer; box-shadow: 0 2px 0 #d9d9bf; }
+.hud-surface .hud-bubble-button:hover:not(:disabled) { background: #e5ebd6; box-shadow: 0 3px 0 #ccd4b7; }
+.hud-surface .hud-bubble-button[data-selected="true"],
+.hud-surface .hud-bubble-button[data-tone="mint"] { background: #d4e9d0; color: #4f775c; box-shadow: 0 2px 0 #afcaa4; }
+.hud-surface .hud-bubble-button[data-tone="peach"] { background: var(--bubble-peach); color: #96623d; box-shadow: 0 2px 0 #daba96; }
+.hud-surface .hud-space-form { margin-top: 12px; padding: 12px; border-radius: 20px; background: #f0f2e2; transform: translateY(calc((1 - var(--tactile-page, 1)) * 5px)); opacity: clamp(0, var(--tactile-page, 1), 1); }
+.hud-surface .hud-space-form__heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.hud-surface .hud-space-form__heading label { font-size: 12px; font-weight: 700; }
+.hud-surface .hud-space-form__heading .hud-bubble-close { width: 24px; height: 24px; background: #e2e7d3; }
+.hud-surface .hud-space-form__line { display: flex; gap: 7px; }
+.hud-surface .hud-space-form__line input { flex: 1 1 0; min-width: 0; min-height: 39px; width: 100%; padding: 9px 11px; border: 1px solid #d6dec7; border-radius: 14px; background: #fffdf3; color: var(--bubble-ink); font: 500 12px/1.5 "Noto Sans SC Variable", "PingFang SC", sans-serif; }
+.hud-surface .hud-control-popover input::placeholder { color: #8b957e; }
+.hud-surface .hud-space-form > p { margin: 8px 0 0; font-size: 11px; color: var(--bubble-soft); }
+.hud-surface .hud-space-manage { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 34px; margin-top: 9px; padding: 6px; border: 0; border-radius: 14px; background: transparent; color: var(--bubble-soft); font: 500 11px/1.5 "Noto Sans SC Variable", "PingFang SC", sans-serif; cursor: pointer; }
+.hud-surface .hud-space-manage:hover { background: #f2f0df; }
+.hud-surface .hud-bubble-status { margin: 0 0 10px; color: var(--bubble-soft); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.hud-surface .hud-bubble-status[data-tone="success"] { color: #598057; }
+.hud-surface .hud-bubble-status[data-tone="error"] { color: #a26044; }
+.hud-surface .hud-bubble-notice { display: grid; justify-items: start; gap: 8px; padding: 10px; margin-bottom: 8px; border-radius: 16px; background: #f8e8d2; }
+.hud-surface .hud-bubble-notice p { margin: 0; font-size: 12px; color: #956146; overflow-wrap: anywhere; }
+
+.hud-surface .hud-account-identity { display: grid; flex: 0 0 auto; grid-template-columns: 54px minmax(0, 1fr); gap: 12px; align-items: center; padding: 16px 14px; margin-bottom: 10px; border-radius: 23px; background: #e5f0dd; }
+.hud-surface .hud-account-identity__avatar,
+.hud-surface .hud-account-identity__seal { display: grid; width: 54px; height: 54px; place-items: center; border: 3px solid #fffdf0; border-radius: 21px; background: #86b38c; color: #fffef1; font: 750 24px/1 "Noto Sans SC Variable", sans-serif; box-shadow: 0 3px 0 #c4d8b6; }
+.hud-surface .hud-account-identity__avatar { object-fit: cover; }
+.hud-surface .hud-account-identity__text { display: grid; min-width: 0; gap: 4px; }
+.hud-surface .hud-account-identity__text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; font-weight: 800; }
+.hud-surface .hud-account-identity__email { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #74866b; }
+.hud-surface .hud-account-identity__text small { font-size: 11px; color: #879476; }
+.hud-surface .hud-account-action { display: grid; flex: 0 0 auto; width: 100%; grid-template-columns: 36px minmax(0, 1fr) 16px; gap: 10px; align-items: center; padding: 12px 8px; border: 0; border-radius: 18px; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.hud-surface .hud-account-action:hover:not(:disabled) { background: #f0efdf; }
+.hud-surface .hud-account-action__icon { width: 36px; height: 36px; border-radius: 14px; background: #e8ecda; color: #809578; }
+.hud-surface .hud-account-action > span:nth-child(2) { display: grid; min-width: 0; gap: 3px; }
+.hud-surface .hud-account-action b { font-size: 14px; font-weight: 750; }
+.hud-surface .hud-account-action small { font-size: 11px; color: var(--bubble-soft); }
+.hud-surface .hud-account-action > svg { color: #929b82; }
+.hud-surface .hud-account-action[data-tone="danger"] .hud-account-action__icon { background: #f6e6d1; color: #ac8057; }
+.hud-surface .hud-account-action[data-tone="danger"] { color: #93714f; }
+.hud-surface .hud-account-footnote { flex: 0 0 auto; margin: 8px 0 0; padding-top: 12px; border-top: 2px dotted #dedfc9; color: #90967e; font-size: 11px; text-align: center; }
+.hud-surface .hud-bubble-confirm { flex: 0 0 auto; margin-top: 10px; padding: 14px; border-radius: 20px; background: #faeed6; transform: translateY(calc((1 - var(--tactile-page, 1)) * 5px)); opacity: clamp(0, var(--tactile-page, 1), 1); }
+.hud-surface .hud-bubble-confirm h3 { margin: 0; font-size: 14px; font-weight: 800; }
+.hud-surface .hud-bubble-confirm p { margin: 7px 0 12px; font-size: 12px; color: #988063; overflow-wrap: anywhere; }
+.hud-surface .hud-bubble-confirm__actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+
+/* Only these two island buttons receive the shared tactile spring. Existing
+   island expansion keeps ownership of all other slots' transforms. */
+.hud-surface .room-control > button.room-control-space,
+.hud-surface .room-control > button.room-control-account { translate: 0 var(--tactile-drop, 0px); scale: var(--tactile-press, 1); }
+.hud-surface .room-control > button.room-control-space.active { background: #e0ecd0; color: #4e7056; border-color: transparent; }
+.hud-surface .room-control > button.room-control-space.active .room-control-space__seal { color: #689066; }
+.hud-surface .room-control-space__text b { font-family: "Noto Sans SC Variable", "PingFang SC", sans-serif; }
+.hud-surface .room-control .room-control-account__seal { background: #8aad84; color: #fffde9; font-family: "Noto Sans SC Variable", "PingFang SC", sans-serif; }
+.hud-surface .room-control > button.room-control-account:active { transform: none; }
+
+@media (max-height: 560px) {
+  .hud-surface .hud-space-bubble, .hud-surface .hud-account-bubble { padding: 13px; border-radius: 24px; }
+  .hud-surface .hud-bubble-header { margin-bottom: 10px; }
+  .hud-surface .hud-space-row { padding: 8px; }
+  .hud-surface .hud-space-list { min-height: 50px; }
+  .hud-surface .hud-space-footer { margin-top: 5px; padding-top: 8px; }
+  .hud-surface .hud-space-manage { min-height: 28px; margin-top: 5px; }
+}
+/* At large text zoom the free height below the trigger matters more than the
+   window height. Let the entire bubble scroll so forms and confirmations remain reachable. */
+.hud-surface .hud-control-popover[data-scroll-whole="true"] .hud-space-bubble { overflow-y: auto; overscroll-behavior: contain; }
+.hud-surface .hud-control-popover[data-scroll-whole="true"] .hud-space-list { flex: 0 0 auto; overflow: visible; }
+@media (prefers-reduced-motion: reduce) {
+  .hud-surface .hud-control-popover { transform: none; opacity: 1; }
+  .hud-surface .hud-control-popover button { translate: none; scale: none; transition: none; }
+  .hud-surface .hud-space-form { transform: none; opacity: 1; }
+}
+@media (prefers-contrast: more) {
+  .hud-surface .hud-space-bubble, .hud-surface .hud-account-bubble { border-color: #708064; }
+  .hud-surface .hud-control-popover { --bubble-soft: #59664f; }
+}

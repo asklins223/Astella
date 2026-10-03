@@ -22,6 +22,10 @@ export function useNotebookExpansionTask(input: {
   const [starting, setStarting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<{ scope: string; items: NoteExpansionTaskV1[]; nextCursor: string | null }>({ scope, items: [], nextCursor: null });
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const historyRequest = useRef(0);
   const readRequest = useRef(0), lookupRequest = useRef(0), actionRequest = useRef(0);
   const inFlight = useRef(false);
   const resolved = useRef(false);
@@ -37,6 +41,9 @@ export function useNotebookExpansionTask(input: {
     buffer.current = { ...current, task, revision: replaced ? 0 : current.revision,
       savedRevision: replaced ? 0 : saved ? current.revision : current.savedRevision };
     setState(buffer.current);
+    if (task) setHistory(current => ({ scope: buffer.current.scope,
+      items: [task, ...(current.scope === buffer.current.scope ? current.items.filter(item => item.taskId !== task.taskId) : [])],
+      nextCursor: current.scope === buffer.current.scope ? current.nextCursor : null }));
   };
   const matches = (expected: TaskBuffer) => buffer.current.scope === expected.scope
     && buffer.current.task?.taskId === expected.task?.taskId && buffer.current.revision === expected.revision;
@@ -85,17 +92,35 @@ export function useNotebookExpansionTask(input: {
     return promise;
   }, []);
 
-  const loadTask = useCallback(async (taskId: string) => {
+  const loadTask = useCallback(async (taskId: string, select = false) => {
     const note = latest.current.note, expected = { ...buffer.current };
     const api = window.ailearn?.noteExpansion;
     if (!note || !api || expected.revision !== expected.savedRevision) return;
-    if (expected.task?.status === "ready" && expected.task.taskId !== taskId) return;
+    if (!select && expected.task?.status === "ready" && expected.task.taskId !== taskId) return;
+    if (select && inFlight.current) return;
     const request = ++readRequest.current;
     try {
       const task = validateReceipt(unwrapGatewayResult(await api.getTask({ meta: createRequestMeta(latest.current.epochRef.current), noteId: note.noteId, taskId })), note, taskId);
       if (request !== readRequest.current || !matches(expected)) return;
       publish(task); resolved.current = true; setError(null);
     } catch (failure) { if (request === readRequest.current && matches(expected)) setError(gatewayErrorMessage(failure)); }
+  }, []);
+
+  const loadHistory = useCallback(async (before?: string) => {
+    const note = latest.current.note, expectedScope = buffer.current.scope;
+    const api = window.ailearn?.noteExpansion;
+    if (!note?.currentVersionId || !api?.listTasks) return;
+    const request = ++historyRequest.current;
+    setHistoryLoading(true); setHistoryError(null);
+    try {
+      const page = unwrapGatewayResult(await api.listTasks({ meta: createRequestMeta(latest.current.epochRef.current), noteId: note.noteId,
+        query: { noteVersionId: note.currentVersionId, ...(before ? { before } : {}) } }));
+      if (request !== historyRequest.current || buffer.current.scope !== expectedScope) return;
+      page.items.forEach(task => validateReceipt(task, note));
+      setHistory(current => ({ scope: expectedScope, items: [...new Map([...(before && current.scope === expectedScope ? current.items : []),
+        ...page.items].map(task => [task.taskId, task])).values()], nextCursor: page.nextCursor }));
+    } catch (failure) { if (request === historyRequest.current && buffer.current.scope === expectedScope) setHistoryError(gatewayErrorMessage(failure)); }
+    finally { if (request === historyRequest.current && buffer.current.scope === expectedScope) setHistoryLoading(false); }
   }, []);
 
   const start = useCallback(async (focusAnchor?: NoteAnnotationAnchorV1, useSavedVersion = false) => {
@@ -178,9 +203,10 @@ export function useNotebookExpansionTask(input: {
 
   useEffect(() => {
     setState(buffer.current); setLoading(false); setStarting(false); setSaving(false); setError(null);
-    if (input.note?.currentVersionId) void loadLatest();
-    return () => { ++readRequest.current; ++lookupRequest.current; ++actionRequest.current; inFlight.current = false; };
-  }, [scope, loadLatest]);
+    setHistory({ scope, items: [], nextCursor: null }); setHistoryLoading(false); setHistoryError(null);
+    if (input.note?.currentVersionId) { void loadLatest(); void loadHistory(); }
+    return () => { ++readRequest.current; ++lookupRequest.current; ++actionRequest.current; ++historyRequest.current; inFlight.current = false; };
+  }, [scope, loadLatest, loadHistory]);
   const task = state.scope === scope ? state.task : null;
   useEffect(() => {
     if (!task || task.status !== "queued" && task.status !== "running") return;
@@ -201,5 +227,8 @@ export function useNotebookExpansionTask(input: {
   return { expansionTask: task, setExpansionTask: setLocalTask, expansionTaskLoading: loading, expansionTaskStarting: starting,
     expansionReviewSaving: saving, expansionTaskError: error, expansionReviewDirty: state.scope === scope && state.revision !== state.savedRevision,
     loadLatestNoteExpansionTask: loadLatest, startNoteExpansionTask: start,
+    expansionTaskHistory: history.scope === scope ? history.items : [], expansionTaskHistoryCursor: history.scope === scope ? history.nextCursor : null,
+    expansionTaskHistoryLoading: historyLoading, expansionTaskHistoryError: historyError, loadNoteExpansionTaskHistory: loadHistory,
+    openNoteExpansionTask: (taskId: string) => loadTask(taskId, true),
     persistNoteExpansionReview: persist, confirmNoteExpansionDrafts: confirm };
 }

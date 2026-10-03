@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createRequestMeta, unwrapGatewayResult } from "../../../app/desktop-client";
 
 /**
@@ -34,13 +34,19 @@ export function TodayBatchOptions({
     initialPaused ? { lockedLength: 0, paused: true, remaining: 0, screenLine: "" } : null,
   );
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [paused, setPaused] = useState(initialPaused ?? false);
+  useEffect(() => { setPaused(initialPaused ?? false); }, [initialPaused]);
 
   const act = useCallback(async (action: "reduce" | "pause" | "resume", reduceBy?: number) => {
-    if (busy) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
+    setFailure(null);
     try {
       const api = window.ailearn;
-      if (!api) return;
+      if (!api) throw new Error("desktop_api_unavailable");
       const response = await api.review.actOnTodayBatch({
         meta: createRequestMeta(epochRef.current),
         request: { action, reduceBy, timeZone },
@@ -48,18 +54,20 @@ export function TodayBatchOptions({
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       const next = unwrapGatewayResult(response);
       setState(next);
+      setPaused(next.paused);
       onResult?.(next);
     } catch {
-      // 失败**不更新那一行**：屏上宁可留着上一句，也不显示一个她没按过的结果。
-      // 这不是"保守"，是「伪称完成」那一侧——句子里带着一个没发生的数。
+      setFailure("这次调整没有保存，请再试一次。原来的安排还在。");
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
-  }, [busy, timeZone, epochRef, onResult]);
+  }, [timeZone, epochRef, onResult]);
 
   return (
     <div className="hud-today-batch">
-      {state ? <p className="hud-today-batch__line">{state.screenLine}</p> : null}
+      {state?.screenLine ? <p className="hud-today-batch__line" role="status">{state.screenLine}</p> : null}
+      {failure ? <p className="hud-today-batch__failure" role="alert">{failure}</p> : null}
       <div className="hud-today-batch__actions">
         <button
           type="button"
@@ -69,7 +77,7 @@ export function TodayBatchOptions({
         >
           今天少做两道
         </button>
-        {state?.paused ? (
+        {paused ? (
           <button
             type="button"
             className="hud-desk-next__act"

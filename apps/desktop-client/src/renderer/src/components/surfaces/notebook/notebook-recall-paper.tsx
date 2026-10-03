@@ -35,13 +35,22 @@ export function NoteRecallPaper(props: {
   const clue = useNotebookPaperPresence(hintOpen && recall.hint ? recall.hint : null, "hint", "fold", play);
   const broadSnapshot = !recall.sectionOrdinal && (recall.answer?.length ?? 0) > 1200;
   useLayoutEffect(() => { questionRef.current?.focus({ preventScroll: true }); }, []);
+  useLayoutEffect(() => {
+    if (!comparisonOpen || !comparison.ref.current) return;
+    comparison.ref.current.focus({ preventScroll: true });
+    comparison.ref.current.scrollIntoView?.({ block: "nearest", behavior: "instant" });
+  }, [comparisonOpen, Boolean(comparison.value)]);
   useEffect(() => {
     if (wantsAnswer.current && recall.answer) { wantsAnswer.current = false; setComparisonOpen(true); }
     if (wantsHint.current && recall.hint) { wantsHint.current = false; setHintOpen(true); }
   }, [recall.answer, recall.hint]);
   useEffect(() => { if (props.failure) { wantsAnswer.current = false; wantsHint.current = false; } }, [props.failure]);
   useLayoutEffect(() => {
-    if (recall.selfReport && !previousReport.current) play(stampRef.current, "stamp");
+    if (recall.selfReport && !previousReport.current) {
+      play(stampRef.current, "stamp");
+      stampRef.current?.focus({ preventScroll: true });
+      stampRef.current?.scrollIntoView?.({ block: "nearest", behavior: "instant" });
+    }
     previousReport.current = recall.selfReport;
   }, [recall.selfReport, play]);
   const reveal = () => {
@@ -73,10 +82,10 @@ export function NoteRecallPaper(props: {
       {!comparisonOpen ? <button type="button" className="button primary" disabled={busy !== null} onClick={reveal}><BookOpen size={16} aria-hidden="true" />{busy === "reveal" ? "正在翻开…" : "翻开原文对照"}</button>
         : <button type="button" className="text-action" onClick={() => setComparisonOpen(false)}>合起对照</button>}
       {!comparisonOpen && (recall.hint || !recall.answer) ? <button type="button" className="text-action" disabled={busy !== null || (!recall.hint && recall.versionState === "older")} onClick={hint}>{busy === "hint" ? "正在取线索…" : hintOpen ? "收起线索" : "看一点线索"}</button> : null}
-      {props.onNew ? <button type="button" className="text-action" disabled={busy !== null} onClick={props.onNew}><RotateCcw size={13} aria-hidden="true" />换一处回想</button> : null}
+      {props.onNew ? <button type="button" className="text-action" disabled={busy !== null} onClick={props.onNew}><RotateCcw size={13} aria-hidden="true" />{busy === "start" ? "正在准备新问题…" : "重新生成回想"}</button> : null}
     </div>
     {props.failure ? <p className="note-recall-paper__error" role="alert">这一步没记下来：{props.failure}</p> : null}
-    {comparison.value ? <section className="note-recall-paper__answer" aria-label="原文对照" ref={comparison.ref} inert={comparison.closing} aria-hidden={comparison.closing || undefined}>
+    {comparison.value ? <section className="note-recall-paper__answer" aria-label="原文对照" tabIndex={-1} ref={comparison.ref} inert={comparison.closing} aria-hidden={comparison.closing || undefined}>
       <header><strong>原文对照</strong><span>笔记 v{recall.noteVersionNumber}{recall.sectionTitle ? ` · ${recall.sectionTitle}` : ""}</span>
         {recall.versionState === "current" && recall.sectionOrdinal ? <button type="button" className="text-action" onClick={() => props.onLocateSection(recall.sectionOrdinal! - 1)}>回到原文</button> : null}</header>
       {recall.versionState === "older" ? <small>笔记后来改过，这里保留的是当时的原文快照。</small> : null}
@@ -86,7 +95,7 @@ export function NoteRecallPaper(props: {
         <span>对照以后，刚才想起来多少？</span><div>{([ ["remembered", "基本想起来了"], ["partly", "想起了一部分"], ["not_yet", "还得重看"] ] as const).map(([value, label]) => <button key={value} type="button" className="button" disabled={busy !== null} onClick={() => void report(value)}>{busy === "report" && reporting === value ? "正在记下…" : label}</button>)}</div>
       </div> : null}
     </section> : null}
-    {recall.selfReport ? <p className="note-recall-paper__saved" ref={stampRef} role="status">已记下 · {recall.selfReport === "remembered" ? "基本想起来了" : recall.selfReport === "partly" ? "想起了一部分" : "还得重看"}{props.reflection ? `\n${props.reflection}` : ""}</p> : null}
+    {recall.selfReport ? <p className="note-recall-paper__saved" ref={stampRef} role="status" tabIndex={-1}>已记下 · {recall.selfReport === "remembered" ? "基本想起来了" : recall.selfReport === "partly" ? "想起了一部分" : "还得重看"}{props.reflection ? `\n${props.reflection}` : ""}</p> : null}
   </article>;
 }
 function PencilMark() { return <ChevronDown size={13} aria-hidden="true" />; }

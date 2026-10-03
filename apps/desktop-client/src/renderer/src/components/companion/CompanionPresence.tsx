@@ -1,3 +1,4 @@
+import { COMPANION_ACCOUNT_CHANGED, publishCompanionAccountChanged } from "./companion-events";
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { X } from "lucide-react";
@@ -288,6 +289,7 @@ export function CompanionPresence() {
     else if (chatPhase === "error") pushCharacterMoment("run_failed");
   }, [chatPhase, pushCharacterMoment]);
   // 账号级 presence（2026-09-16 裁决 3）：跨设备同步，写入走 revision CAS。
+  const accountReadRequest = useRef(0);
   const [accountState, setAccountState] = useState<CompanionAccountStateV1 | null>(null);
   const [accountFailure, setAccountFailure] = useState<string | null>(null);
   const [accountSaving, setAccountSaving] = useState(false);
@@ -337,9 +339,13 @@ export function CompanionPresence() {
   }, [externalModalOpen, setMode]);
 
   const loadCompanionAccount = useCallback(async () => {
+    const request = ++accountReadRequest.current;
+    const scope = useRoomStore.getState().workspaceScopeRevision;
+    const current = () => request === accountReadRequest.current && scope === useRoomStore.getState().workspaceScopeRevision;
     try {
       const session = await window.ailearn.auth.getState({ meta: createRequestMeta() });
       const context = unwrapGatewayResult(session);
+      if (!current()) return;
       if (context.status !== "authenticated" || !context.workspace) {
         // 未登录 / 匿名房间不提供账号级设置，也不把它渲染成失败。
         setAccountState(null);
@@ -349,6 +355,7 @@ export function CompanionPresence() {
       const response = await window.ailearn.companion.account.getState({
         meta: createRequestMeta(context.workspace.workspaceEpoch),
       });
+      if (!current()) return;
       setAccountState(unwrapGatewayResult(response).account);
       setAccountFailure(null);
       // 称呼与账号设置同为账号级，共用这一次已鉴权的 epoch。单独包一层 try：
@@ -360,14 +367,20 @@ export function CompanionPresence() {
         const persona = await window.ailearn.companion.persona.get({
           meta: createRequestMeta(context.workspace.workspaceEpoch),
         });
-        if (persona.ok) setCompanionName(companionDisplayName(persona.data));
+        if (current() && persona.ok) setCompanionName(companionDisplayName(persona.data));
       } catch {
         // 留着默认称呼：拿不到名字不等于她叫模型名（方案 35 B3）。
       }
     } catch (error) {
-      setAccountFailure(gatewayErrorMessage(error));
+      if (current()) setAccountFailure(gatewayErrorMessage(error));
     }
   }, [setCompanionName]);
+
+  useEffect(() => {
+    const refresh = () => { void loadCompanionAccount(); };
+    window.addEventListener(COMPANION_ACCOUNT_CHANGED, refresh);
+    return () => window.removeEventListener(COMPANION_ACCOUNT_CHANGED, refresh);
+  }, [loadCompanionAccount]);
 
   // 伴星中心改了名字，这里当场换过来。写入响应本来就带着新名字，
   // 所以不再拉一遍人格——两处各自拉就会出现"中心已改、气泡还叫旧名字"。
@@ -392,6 +405,7 @@ export function CompanionPresence() {
       });
       setAccountState(unwrapGatewayResult(response));
       setAccountFailure(null);
+      publishCompanionAccountChanged();
     } catch (error) {
       // CAS 冲突不做自动重放：先重新读取账号状态，再由用户重新确认这次改动。
       const message = gatewayErrorMessage(error);
@@ -1618,11 +1632,6 @@ export function CompanionPresence() {
               pageMuted,
               taskActive: Boolean(surface),
               focusUntilTaskEnd: companionFocusUntilTaskEnd,
-              accountState,
-              accountSaving,
-              accountFailure,
-              companionModelId,
-              onCompanionModelChange: setCompanionModelId,
               onScale: setCompanionScale,
               onTogglePageMuted: () => setCompanionSceneMuted(sceneKey, !pageMuted),
               onToggleFocus: () => setCompanionFocusUntilTaskEnd(!companionFocusUntilTaskEnd),
@@ -1631,7 +1640,6 @@ export function CompanionPresence() {
                 setCompanionTemporarilyHidden(true);
               },
               onResetPosition: resetCompanionPosition,
-              onPatchAccount: (patch) => { void patchCompanionAccount(patch); },
             }}
           />
         ) : null}

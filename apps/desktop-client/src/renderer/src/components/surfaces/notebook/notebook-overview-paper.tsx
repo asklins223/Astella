@@ -16,6 +16,8 @@ export function NoteOverviewPaper(props: {
   readonly artifactStarting: boolean;
   readonly onCreateArtifact: () => void;
   readonly onOpenArtifact: (artifact: NoteLearningArtifactV1) => void;
+  readonly onRegenerate?: () => void;
+  readonly regenerating?: boolean;
 }): ReactElement {
   const overview = props.overview;
   const reading = overviewReading(overview);
@@ -30,7 +32,9 @@ export function NoteOverviewPaper(props: {
       <button type="button" className="text-action" disabled={props.dirty || overview.versionState === "older" || props.artifactStarting || props.artifactTask?.status === "queued" || props.artifactTask?.status === "running"}
         onClick={() => props.artifactTask?.status === "ready" && props.artifactTask.artifact ? props.onOpenArtifact(props.artifactTask.artifact) : props.onCreateArtifact()}>
         {props.artifactTask?.status === "ready" ? "打开互动演示" : props.artifactTask?.status === "queued" ? "排队做演示…" : props.artifactTask?.status === "running" ? "正在做演示…" : "做个互动演示"}
-      </button><button type="button" className="text-action" onClick={props.onCollapse}>回正文</button></header>
+      </button>
+      {props.onRegenerate ? <button type="button" className="text-action" disabled={props.regenerating} onClick={props.onRegenerate}>{props.regenerating ? "正在重新生成…" : "重新生成速看"}</button> : null}
+      <button type="button" className="text-action" onClick={props.onCollapse}>回正文</button></header>
     <div className="note-overview-paper__gist">{renderCompanionMarkdown(reading.gist)}</div>
     {reading.points.length ? <ol className="note-overview-paper__points" aria-label="这篇的重点">{reading.points.map((point, index) => {
       const { lead, remainder } = pointLead(point.text);

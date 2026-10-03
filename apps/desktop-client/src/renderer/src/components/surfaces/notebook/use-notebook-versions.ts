@@ -43,16 +43,16 @@ export function useNotebookVersions(input: {
   const [versionsFailure, setVersionsFailure] = useState<string | null>(null);
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
 
-  const loadVersions = async () => {
+  const loadVersions = async (currentVersionId = data?.note.currentVersionId) => {
     const current = data?.note ?? null;
-    if (!api || !current) return;
+    if (!api || !current || !currentVersionId) return;
     setVersionsLoading(true);
     setVersionsFailure(null);
     try {
       const response = await api.note.versions({
         meta: createRequestMeta(epochRef.current),
         noteId: current.noteId,
-        currentVersionId: current.currentVersionId,
+        currentVersionId,
         limit: 50,
       });
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
@@ -78,8 +78,10 @@ export function useNotebookVersions(input: {
       });
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       unwrapGatewayResult(response);
-      await reload();
-      await loadVersions();
+      await reload({ silent: true });
+      // reload publishes new data on the next render. This request still
+      // closes over the previous version, so use the successful restore target.
+      await loadVersions(version.versionId);
     } catch (error) {
       setVersionsFailure(`恢复未确认：${gatewayErrorMessage(error)}`);
     } finally {

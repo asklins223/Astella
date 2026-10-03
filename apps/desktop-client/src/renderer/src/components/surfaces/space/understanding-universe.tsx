@@ -22,8 +22,10 @@ import {
   type GraphEdge,
   type GraphNode,
 } from "./understanding-universe-data.ts";
+import { STAR_PAN_DECAY_MS, starPanRelease, stepStarSpring, type StarMotionMode, type StarSpring } from "./star-map-motion";
 
 const MIN_ZOOM = 0.12;
+const COSMIC_MIN_ZOOM = 0.02;
 const MAX_ZOOM = 4.6;
 const ZOOM_FACTOR = 1.24;
 const ACTIVE_FRAME_INTERVAL = 1000 / 30;
@@ -107,6 +109,8 @@ export interface UnderstandingUniverseProps {
   summaryLabel?: string;
   /** Disables decorative pulses/particles while preserving direct drag feedback. */
   staticMotion?: boolean;
+  motionMode?: StarMotionMode;
+  visualStyle?: "sky" | "cosmic";
   /**
    * 默认给谁画标签。
    * - `density`（理解星图那 19 页）：按缩放层级铺一批，装不下就省略号收尾。
@@ -136,13 +140,16 @@ export interface UnderstandingUniverseHandle {
   fit(): void;
   reset(): void;
   focusNode(nodeId: string): void;
+  getViewport(): UniverseViewport;
+  restoreViewport(viewport: UniverseViewport): void;
 }
 
-interface Viewport {
+export interface UniverseViewport {
   offsetX: number;
   offsetY: number;
   zoom: number;
 }
+type Viewport = UniverseViewport;
 
 interface CanvasSize {
   width: number;
@@ -376,13 +383,17 @@ function stateColor(node: GraphNode, palette: Palette) {
   return (node.state && palette.states[node.state]) || typeColor(node.type, palette);
 }
 
-function nodeRadius(node: GraphNode, zoom: number) {
-  const scale = clamp(Math.pow(zoom, 0.72), 0.28, 1.45);
+function nodeRadius(node: GraphNode, zoom: number, cosmic = false) {
+  const scale = clamp(Math.pow(zoom, 0.72), cosmic ? .05 : .28, 1.45);
   const importance = typeof node.metadata.importance === "number"
     ? clamp(node.metadata.importance, 0, 1)
     : 0.5;
   const semanticScale = node.metadata.visualRole === "memory" ? 0.78 + importance * 0.56 : 0.86;
-  return BASE_RADIUS[node.type] * semanticScale * scale;
+  const radius = BASE_RADIUS[node.type] * semanticScale * scale;
+  // At a very wide fit, keep stars as small lights instead of packing their
+  // normal reading size into one overlapping blob. Hit targets stay generous.
+  const overviewScale = clamp(zoom / .12, .35, 1);
+  return cosmic ? Math.max((node.type === "key_point" ? 4.5 : node.type === "card" ? 13 : 11) * overviewScale, radius) : radius;
 }
 
 function screenPoint(point: Readonly<UniversePoint>, viewport: Viewport) {
@@ -416,6 +427,7 @@ function fitViewport(
   positions: UniversePositions,
   size: CanvasSize,
   insets: UniverseInsets = NO_INSETS,
+  minimumZoom = MIN_ZOOM,
 ): Viewport {
   const points = nodes.map((node) => positions[node.id]).filter(finitePoint);
   if (points.length === 0 || size.width <= 0 || size.height <= 0) {
@@ -437,11 +449,11 @@ function fitViewport(
   const padRight = FIT_PADDING + insets.right;
   const padTop = FIT_PADDING + insets.top;
   const padBottom = FIT_PADDING + insets.bottom;
-  const availableWidth = Math.max(120, size.width - padLeft - padRight);
-  const availableHeight = Math.max(120, size.height - padTop - padBottom);
+  const availableWidth = Math.max(32, size.width - padLeft - padRight);
+  const availableHeight = Math.max(32, size.height - padTop - padBottom);
   const graphWidth = Math.max(180, maxX - minX);
   const graphHeight = Math.max(180, maxY - minY);
-  const zoom = clamp(Math.min(availableWidth / graphWidth, availableHeight / graphHeight), MIN_ZOOM, 1.5);
+  const zoom = clamp(Math.min(availableWidth / graphWidth, availableHeight / graphHeight), minimumZoom, 1.5);
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
   const centerScreenX = padLeft + availableWidth / 2;
@@ -511,22 +523,33 @@ function drawLabelWithLeader(
   context: CanvasRenderingContext2D,
   label: LabelPlacement,
   palette: Palette,
+  cosmic = false,
 ) {
   const plate = { x: label.x, y: label.y, width: label.width, height: LABEL_PLATE_HEIGHT };
   const line = labelLeader({ x: label.nodeX, y: label.nodeY, radius: label.nodeRadius }, plate);
   context.save();
-  context.globalAlpha = label.alpha;
+  context.globalAlpha = label.alpha * (cosmic ? .4 : 1);
   context.strokeStyle = label.color;
   context.lineWidth = 1;
   context.beginPath();
   context.moveTo(snap(line.x1, context), snap(line.y1, context));
   context.lineTo(snap(line.x2, context), snap(line.y2, context));
   context.stroke();
-  context.globalAlpha = label.alpha * 0.45;
+  context.globalAlpha = cosmic ? 0 : label.alpha * 0.45;
   context.beginPath();
   context.arc(label.nodeX, label.nodeY, label.nodeRadius + 5, 0, Math.PI * 2);
   context.stroke();
   context.restore();
+  if (cosmic) {
+    context.save();
+    context.font = '600 12px "Noto Sans SC Variable", "PingFang SC", sans-serif';
+    context.textAlign = "center"; context.textBaseline = "middle";
+    context.fillStyle = label.color; context.globalAlpha = label.alpha;
+    context.shadowColor = "#051831"; context.shadowBlur = 10;
+    context.fillText(label.text, snap(label.x, context), snap(label.y, context) + .5);
+    context.restore();
+    return;
+  }
   drawRoundedLabel(
     context,
     label.text,
@@ -956,6 +979,7 @@ function drawClusterEnvelope(
   palette: Palette,
   emphasized: boolean,
   quality: RenderQuality,
+  cosmic = false,
 ) {
   if (cluster.nodeIds.size < 3 || (quality === "interaction" && !emphasized)) return;
   const center = screenPoint(cluster.center, viewport);
@@ -963,6 +987,20 @@ function drawClusterEnvelope(
   const radiusY = clamp(cluster.radiusY * viewport.zoom, 42, 560);
   const glowRadius = Math.max(radiusX, radiusY);
   const color = cluster.id % 2 === 0 ? palette.envelopeA : palette.envelopeB;
+  if (cosmic) {
+    context.save();
+    context.translate(center.x, center.y);
+    context.rotate(cluster.angle);
+    context.strokeStyle = palette.orbit;
+    context.lineWidth = 1;
+    context.globalAlpha = emphasized ? .32 : .12;
+    context.setLineDash([3, 9]);
+    context.beginPath();
+    context.ellipse(0, 0, radiusX * .88, radiusY * .7, 0, .2, Math.PI * 1.85);
+    context.stroke();
+    context.restore();
+    return;
+  }
   context.save();
   context.translate(center.x, center.y);
   context.rotate(cluster.angle);
@@ -1013,7 +1051,7 @@ function drawEdge(
   context.strokeStyle = highlighted ? palette.edgeGlow : palette.edge;
   context.globalAlpha = highlighted ? 0.95 : dimmed ? 0.1 : quality === "overview" ? 0.7 : 0.78;
   context.lineWidth = highlighted ? 2 : quality === "detail" ? 1 : quality === "overview" ? 0.86 : 0.78;
-  if (edge.metadata?.orphaned === true) context.setLineDash([5, 7]);
+  if (edge.metadata?.orphaned === true || edge.metadata?.suggested === true) context.setLineDash([5, 7]);
   if (highlighted && quality !== "interaction") {
     context.shadowColor = palette.edgeGlow;
     context.shadowBlur = 9;
@@ -1062,6 +1100,73 @@ function drawSimpleStar(
   context.restore();
 }
 
+/** A note is a small constellation; targets and sources have their own lit bodies. */
+function drawCosmicNode(context: CanvasRenderingContext2D, node: GraphNode, radius: number, color: string, emphasized: boolean) {
+  context.lineJoin = "round";
+  context.shadowColor = color;
+  context.shadowBlur = emphasized ? 17 : 9;
+  if (node.type === "note") {
+    const points = [[-.84, -.18], [-.23, -.66], [.28, .25], [.85, -.27], [.55, .7]];
+    context.strokeStyle = color; context.globalAlpha *= .72; context.lineWidth = 1.25;
+    context.beginPath();
+    points.forEach(([x, y], i) => i ? context.lineTo(x * radius, y * radius) : context.moveTo(x * radius, y * radius));
+    context.stroke();
+    context.globalAlpha /= .72;
+    points.forEach(([x, y], i) => {
+      context.fillStyle = i === 2 ? "#f3fff2" : color;
+      context.beginPath(); context.arc(x * radius, y * radius, radius * (i === 2 ? .23 : .14), 0, Math.PI * 2); context.fill();
+    });
+    return;
+  }
+  if (node.type === "source") {
+    context.strokeStyle = color; context.lineWidth = 1.8;
+    context.beginPath(); context.ellipse(0, 0, radius * 1.2, radius * .4, -.33, 0, Math.PI * 2); context.stroke();
+    const body = context.createRadialGradient(-radius * .3, -radius * .35, 0, 0, 0, radius * .82);
+    body.addColorStop(0, "#fff3dc"); body.addColorStop(.46, color); body.addColorStop(1, "#ae746e");
+    context.fillStyle = body;
+    context.beginPath(); context.arc(0, 0, radius * .76, 0, Math.PI * 2); context.fill();
+    context.shadowBlur = 0;
+    context.strokeStyle = "#ffe0bd"; context.lineWidth = 1.8;
+    context.beginPath(); context.ellipse(0, 0, radius * 1.2, radius * .4, -.33, 0, Math.PI); context.stroke();
+    return;
+  }
+  const body = context.createRadialGradient(-radius * .22, -radius * .3, 0, 0, 0, radius);
+  body.addColorStop(0, "#fffbea"); body.addColorStop(.5, color); body.addColorStop(1, node.type === "card" ? "#ddab63" : "#77b6cf");
+  context.fillStyle = body;
+  context.beginPath();
+  if (node.type === "card") {
+    const points = Array.from({ length: 10 }, (_, i) => {
+      const angle = -Math.PI / 2 + i * Math.PI / 5;
+      const r = i % 2 === 0 ? radius : radius * .56;
+      return { x: Math.cos(angle) * r, y: Math.sin(angle) * r };
+    });
+    const first = points[0], last = points[9];
+    context.moveTo((last.x + first.x) / 2, (last.y + first.y) / 2);
+    points.forEach((point, i) => {
+      const next = points[(i + 1) % points.length];
+      context.quadraticCurveTo(point.x, point.y, (point.x + next.x) / 2, (point.y + next.y) / 2);
+    });
+    context.closePath();
+  } else context.arc(0, 0, radius * .68, 0, Math.PI * 2);
+  context.fill();
+  context.shadowBlur = 0;
+  context.strokeStyle = "rgba(255,248,218,.75)"; context.lineWidth = .8; context.stroke();
+}
+
+/** Far dust moves less than the knowledge scene, giving drag a quiet sense of depth. */
+function drawCosmicDepth(context: CanvasRenderingContext2D, viewport: Viewport, width: number, height: number) {
+  context.save(); context.fillStyle = "#d1edec";
+  for (let i = 0; i < 64; i++) {
+    const seed = hashString(`sky-depth:${i}`);
+    const parallax = .035 + seed * .065;
+    const x = ((hashString(`sky-x:${i}`) * width + viewport.offsetX * parallax) % width + width) % width;
+    const y = ((hashString(`sky-y:${i}`) * height + viewport.offsetY * parallax) % height + height) % height;
+    context.globalAlpha = .13 + seed * .34;
+    context.beginPath(); context.arc(x, y, .45 + seed * .65, 0, Math.PI * 2); context.fill();
+  }
+  context.restore();
+}
+
 function drawNode(
   context: CanvasRenderingContext2D,
   screenNode: ScreenNode,
@@ -1072,6 +1177,7 @@ function drawNode(
   highlighted: boolean,
   dimmed: boolean,
   representative: boolean,
+  cosmic = false,
 ) {
   const { node, x, y } = screenNode;
   const radius = representative && quality === "overview"
@@ -1081,7 +1187,19 @@ function drawNode(
   const emphasized = selected || highlighted;
   context.save();
   context.globalAlpha = dimmed ? 0.25 : 1;
-  if (quality === "interaction" && !emphasized) {
+  if (cosmic) {
+    context.save(); context.translate(x, y);
+    drawCosmicNode(context, node, radius, typeColor(node.type, palette), emphasized);
+    if (node.evidenceCoverage && node.evidenceCoverage > 0) {
+      context.strokeStyle = palette.orbit; context.lineWidth = .8;
+      context.beginPath(); context.arc(0, 0, radius * 1.35, 0, Math.PI * 2); context.stroke();
+    }
+    if (node.type === "card" && node.state !== "unseen") {
+      context.fillStyle = color; context.strokeStyle = "#142e42"; context.lineWidth = 1.2;
+      context.beginPath(); context.arc(radius * .72, radius * .7, 3.5, 0, Math.PI * 2); context.fill(); context.stroke();
+    }
+    context.restore();
+  } else if (quality === "interaction" && !emphasized) {
     const scale = node.type === "card" ? 0.42 : node.type === "key_point" ? 0.34 : 0.38;
     drawSimpleStar(context, x, y, radius / 0.28 * scale, color, dimmed ? 0.34 : 0.9);
   } else if (quality === "overview" && node.type === "card" && !representative && !emphasized) {
@@ -1131,6 +1249,8 @@ export const UnderstandingUniverse = forwardRef<
     stateLabels = STATE_LABEL,
     summaryLabel = "知识节点",
     staticMotion = false,
+    motionMode = "full",
+    visualStyle = "sky",
     labelPolicy = "density",
   },
   ref,
@@ -1141,8 +1261,13 @@ export const UnderstandingUniverse = forwardRef<
   const readoutRef = useRef<HTMLSpanElement>(null);
   const tooltipPointRef = useRef<UniversePoint | null>(null);
   const viewportRef = useRef<Viewport>({ offsetX: 0, offsetY: 0, zoom: 1 });
+  const minimumZoomRef = useRef(MIN_ZOOM);
+  minimumZoomRef.current = visualStyle === "cosmic" ? COSMIC_MIN_ZOOM : MIN_ZOOM;
   const targetViewportRef = useRef<Viewport | null>(null);
   const targetViewportResponseRef = useRef(VIEWPORT_RESPONSE_MS);
+  const viewportVelocityRef = useRef<Viewport>({ offsetX: 0, offsetY: 0, zoom: 0 });
+  const nodeSpringsRef = useRef(new Map<string, StarSpring & { target: number }>());
+  const motionModeRef = useRef(motionMode); motionModeRef.current = motionMode;
   const sizeRef = useRef<CanvasSize>({ width: 0, height: 0, dpr: 1 });
   const dragRef = useRef<PointerDrag | null>(null);
   const activePointersRef = useRef<Map<number, UniversePoint>>(new Map());
@@ -1381,7 +1506,7 @@ export const UnderstandingUniverse = forwardRef<
 
   const setViewport = useCallback(
     (next: Viewport, smooth = false, responseMs = VIEWPORT_RESPONSE_MS) => {
-      const normalized = { ...next, zoom: clamp(next.zoom, MIN_ZOOM, MAX_ZOOM) };
+      const normalized = { ...next, zoom: clamp(next.zoom, minimumZoomRef.current, MAX_ZOOM) };
       if (smooth && !reducedMotionRef.current) {
         targetViewportRef.current = normalized;
         targetViewportResponseRef.current = Math.max(24, responseMs);
@@ -1389,6 +1514,7 @@ export const UnderstandingUniverse = forwardRef<
         viewportRef.current = normalized;
         targetViewportRef.current = null;
         targetViewportResponseRef.current = VIEWPORT_RESPONSE_MS;
+        viewportVelocityRef.current = { offsetX: 0, offsetY: 0, zoom: 0 };
       }
       invalidateScene();
     },
@@ -1403,7 +1529,7 @@ export const UnderstandingUniverse = forwardRef<
       const x = anchorX ?? sizeRef.current.width / 2;
       const y = anchorY ?? sizeRef.current.height / 2;
       const world = worldPoint(x, y, current);
-      const zoom = clamp(current.zoom * factor, MIN_ZOOM, MAX_ZOOM);
+      const zoom = clamp(current.zoom * factor, minimumZoomRef.current, MAX_ZOOM);
       setViewport(
         {
           zoom,
@@ -1423,7 +1549,7 @@ export const UnderstandingUniverse = forwardRef<
       const point = getPosition(node.id);
       if (point) activePositions[node.id] = point;
     }
-    setViewport(fitViewport(positionedNodes, activePositions, sizeRef.current, insetsRef.current), true);
+    setViewport(fitViewport(positionedNodes, activePositions, sizeRef.current, insetsRef.current, minimumZoomRef.current), true);
   }, [getPosition, positionedNodes, setViewport]);
 
   const reset = useCallback(() => {
@@ -1437,7 +1563,7 @@ export const UnderstandingUniverse = forwardRef<
         // Ignore storage denial; the in-memory reset still succeeds.
       }
     }
-    setViewport(fitViewport(positionedNodes, positions, sizeRef.current, insetsRef.current), true);
+    setViewport(fitViewport(positionedNodes, positions, sizeRef.current, insetsRef.current, minimumZoomRef.current), true);
   }, [positionedNodes, positions, setViewport, storageKey]);
 
   const focusNode = useCallback(
@@ -1447,12 +1573,15 @@ export const UnderstandingUniverse = forwardRef<
       if (!point) return;
       viewportTouchedRef.current = true;
       const current = viewportRef.current;
-      const zoom = clamp(Math.max(current.zoom, 1.15), MIN_ZOOM, 2.2);
+      const zoom = clamp(Math.max(current.zoom, 1.15), minimumZoomRef.current, 2.2);
+      const safe = insetsRef.current;
+      const centerX = safe.left + Math.max(120, sizeRef.current.width - safe.left - safe.right) / 2;
+      const centerY = safe.top + Math.max(120, sizeRef.current.height - safe.top - safe.bottom) / 2;
       setViewport(
         {
           zoom,
-          offsetX: sizeRef.current.width / 2 - point.x * zoom,
-          offsetY: sizeRef.current.height / 2 - point.y * zoom,
+          offsetX: centerX - point.x * zoom,
+          offsetY: centerY - point.y * zoom,
         },
         true,
         responseMs,
@@ -1469,8 +1598,14 @@ export const UnderstandingUniverse = forwardRef<
       fit,
       reset,
       focusNode: (nodeId) => focusNode(nodeId),
+      getViewport: () => ({ ...viewportRef.current }),
+      restoreViewport: (viewport) => {
+        if (![viewport.offsetX, viewport.offsetY, viewport.zoom].every(Number.isFinite)) return;
+        viewportTouchedRef.current = true;
+        setViewport(viewport);
+      },
     }),
-    [fit, focusNode, reset, zoomAround],
+    [fit, focusNode, reset, zoomAround, setViewport],
   );
 
   /**
@@ -1523,7 +1658,7 @@ export const UnderstandingUniverse = forwardRef<
         point.x > width + cullMargin ||
         point.y > height + cullMargin
       ) continue;
-      const screenNode = { node, ...point, radius: nodeRadius(node, viewport.zoom) };
+      const screenNode = { node, ...point, radius: nodeRadius(node, viewport.zoom, visualStyle === "cosmic") };
       const key = labelGridKey(
         Math.floor(point.x / HIT_CELL_SIZE),
         Math.floor(point.y / HIT_CELL_SIZE),
@@ -1549,6 +1684,7 @@ export const UnderstandingUniverse = forwardRef<
     positionedNodes,
     positions,
     selectedId,
+    visualStyle,
   ]);
 
   const hitTest = useCallback(
@@ -1628,6 +1764,7 @@ export const UnderstandingUniverse = forwardRef<
     const point = getCanvasPoint(event.clientX, event.clientY);
     if (!point) return;
     targetViewportRef.current = null;
+    viewportVelocityRef.current = { offsetX: 0, offsetY: 0, zoom: 0 };
     inertiaRef.current = null;
     markInteraction(true, 0);
     activePointersRef.current.set(event.pointerId, point);
@@ -1668,11 +1805,12 @@ export const UnderstandingUniverse = forwardRef<
         const nextPinch = readPinchGesture(activePointersRef.current);
         const previousPinch = pinchRef.current;
         if (nextPinch && previousPinch) {
+          claimViewport();
           const current = viewportRef.current;
           const anchor = worldPoint(previousPinch.center.x, previousPinch.center.y, current);
           const zoom = clamp(
             current.zoom * (nextPinch.distance / previousPinch.distance),
-            MIN_ZOOM,
+            minimumZoomRef.current,
             MAX_ZOOM,
           );
           viewportRef.current = {
@@ -1705,6 +1843,7 @@ export const UnderstandingUniverse = forwardRef<
           setHoverId(null);
         }
         if (drag.moved) {
+          claimViewport();
           if (drag.nodeId) {
             const offset = customOffsetsRef.current.get(drag.nodeId) ?? { x: 0, y: 0 };
             customOffsetsRef.current.set(drag.nodeId, {
@@ -1727,7 +1866,7 @@ export const UnderstandingUniverse = forwardRef<
       }
       updateHover(point.x, point.y, event.pointerType === "mouse");
     },
-    [getCanvasPoint, invalidateScene, updateHover],
+    [claimViewport, getCanvasPoint, invalidateScene, updateHover],
   );
 
   const finishPointer = useCallback(
@@ -1753,15 +1892,12 @@ export const UnderstandingUniverse = forwardRef<
       event.currentTarget.style.cursor = "grab";
       if (!cancelled && !drag.moved && point) onSelect(hitTest(point.x, point.y)?.node.id ?? null);
       if (drag.moved && drag.nodeId) persistOffsets();
-      if (drag.moved && !drag.nodeId && !cancelled && !reducedMotionRef.current) {
-        const speed = Math.hypot(drag.velocityX, drag.velocityY);
-        if (speed > 0.035) {
-          inertiaRef.current = {
-            velocityX: clamp(drag.velocityX, -2.1, 2.1),
-            velocityY: clamp(drag.velocityY, -2.1, 2.1),
-            lastTime: performance.now(),
-          };
-        }
+      if (drag.moved && !drag.nodeId && !cancelled) {
+        const now = performance.now();
+        const release = starPanRelease(drag.velocityX, drag.velocityY,
+          Math.hypot(drag.lastX - drag.startX, drag.lastY - drag.startY), now - drag.lastTime,
+          reducedMotionRef.current ? "off" : motionModeRef.current);
+        if (release) inertiaRef.current = { ...release, lastTime: now };
       }
       invalidateScene();
       if (point) updateHover(point.x, point.y, event.pointerType === "mouse");
@@ -1831,7 +1967,8 @@ export const UnderstandingUniverse = forwardRef<
     if (width <= 0 || height <= 0) return;
     const viewport = viewportRef.current;
     const palette = paletteRef.current;
-    const animatedTime = reducedMotionRef.current ? 0 : time;
+    const decorativeMotion = !reducedMotionRef.current && motionModeRef.current === "full";
+    const animatedTime = decorativeMotion ? time : 0;
     const quality = renderQuality(
       viewport.zoom,
       positionedNodes.length,
@@ -1881,7 +2018,7 @@ export const UnderstandingUniverse = forwardRef<
           point.x > width + cullMargin ||
           point.y > height + cullMargin
         ) continue;
-        screenNodes.set(node.id, { node, ...point, radius: nodeRadius(node, viewport.zoom) });
+        screenNodes.set(node.id, { node, ...point, radius: nodeRadius(node, viewport.zoom, visualStyle === "cosmic") });
       }
 
       const buckets = new Map<string, ScreenNode[]>();
@@ -1905,11 +2042,13 @@ export const UnderstandingUniverse = forwardRef<
       const dynamicNodeIds = new Set<string>();
       if (selectedId) dynamicNodeIds.add(selectedId);
       if (hoverId) dynamicNodeIds.add(hoverId);
+      for (const nodeId of nodeSpringsRef.current.keys()) dynamicNodeIds.add(nodeId);
       for (const nodeId of highlightedNodeSet) dynamicNodeIds.add(nodeId);
       const dynamicEdges: GraphEdge[] = [];
 
       if (layerContext) {
         layerContext.setTransform(dpr, 0, 0, dpr, 0, 0);
+        if (visualStyle === "cosmic") drawCosmicDepth(layerContext, viewport, width, height);
         const selectedClusterId = selectedId ? clusterModel.nodeToCluster.get(selectedId) : null;
         for (const cluster of clusterModel.clusters) {
           const center = screenPoint(cluster.center, viewport);
@@ -1927,6 +2066,7 @@ export const UnderstandingUniverse = forwardRef<
             palette,
             selectedClusterId === cluster.id,
             quality,
+            visualStyle === "cosmic",
           );
         }
 
@@ -2001,7 +2141,7 @@ export const UnderstandingUniverse = forwardRef<
       const labelBudget = quality === "interaction"
         ? selectedId ? 1 : 0
         : quality === "overview"
-          ? clamp(Math.floor((width * height) / 42_000), 7, 22)
+          ? clamp(Math.floor((width * height) / (visualStyle === "cosmic" ? 80_000 : 42_000)), 7, visualStyle === "cosmic" ? 15 : 22)
           : quality === "balanced"
             ? clamp(Math.floor((width * height) / 18_000), 18, 56)
             : clamp(Math.floor((width * height) / 10_500), 28, 110);
@@ -2026,7 +2166,7 @@ export const UnderstandingUniverse = forwardRef<
             : (quality === "overview" && representative)
               || (quality === "balanced" && (representative || node.type === "card"))
               || quality === "detail");
-          if (!eligible) continue;
+          if (!eligible || (visualStyle === "cosmic" && !forced && node.label === "无标题笔记")) continue;
           // `pinned` 下不能沿用缩略层的字数上限（overview 只有 12 字）：那条上限
           // 与「整句才画」的规则叠加，会把默认视图清成 0 条标签——我把噪声换成了
           // 空白，同样是错的。这里改成按牌子像素宽度量整句，装得下才画。
@@ -2120,11 +2260,12 @@ export const UnderstandingUniverse = forwardRef<
             highlighted,
             dimmed,
             clusterModel.representativeIds.has(screenNode.node.id),
+            visualStyle === "cosmic",
           );
         }
         for (const label of labelPlacements) {
           if (label.dynamic) continue;
-          drawLabelWithLeader(layerContext, label, palette);
+          drawLabelWithLeader(layerContext, label, palette, visualStyle === "cosmic");
         }
       }
       scene = {
@@ -2184,7 +2325,7 @@ export const UnderstandingUniverse = forwardRef<
         false,
         quality,
         animatedTime,
-        !reducedMotionRef.current,
+        decorativeMotion,
       );
     }
     for (const screenNode of scene.dynamicNodes) {
@@ -2192,7 +2333,9 @@ export const UnderstandingUniverse = forwardRef<
       const highlighted = highlightedNodeSet.has(screenNode.node.id);
       drawNode(
         context,
-        screenNode,
+        visualStyle === "cosmic"
+          ? { ...screenNode, radius: screenNode.radius * (1 + (nodeSpringsRef.current.get(screenNode.node.id)?.position ?? 0) * .18) }
+          : screenNode,
         palette,
         quality,
         animatedTime,
@@ -2200,6 +2343,7 @@ export const UnderstandingUniverse = forwardRef<
         highlighted,
         false,
         clusterModel.representativeIds.has(screenNode.node.id),
+        visualStyle === "cosmic",
       );
     }
     // A hover that arrived after the cached layer was baked (the common case —
@@ -2215,7 +2359,7 @@ export const UnderstandingUniverse = forwardRef<
           hoverScreenNode = {
             node: hoverNode,
             ...point,
-            radius: nodeRadius(hoverNode, viewport.zoom),
+            radius: nodeRadius(hoverNode, viewport.zoom, visualStyle === "cosmic"),
           };
         }
       }
@@ -2230,11 +2374,12 @@ export const UnderstandingUniverse = forwardRef<
           true,
           false,
           false,
+          visualStyle === "cosmic",
         );
       }
     }
     for (const label of scene.dynamicLabels) {
-      drawLabelWithLeader(context, label, palette);
+      drawLabelWithLeader(context, label, palette, visualStyle === "cosmic");
     }
   };
 
@@ -2244,22 +2389,43 @@ export const UnderstandingUniverse = forwardRef<
     const elapsed = clamp(time - (lastLoopTimeRef.current || time - 16), 1, 48);
     lastLoopTimeRef.current = time;
 
+    let starMoving = false;
+    for (const [id, spring] of nodeSpringsRef.current) {
+      if (!nodeById.has(id)) { nodeSpringsRef.current.delete(id); continue; }
+      const next = stepStarSpring(spring, spring.target, elapsed / 1000, reducedMotionRef.current ? "off" : motionModeRef.current, .32);
+      const settled = Math.abs(next.position - spring.target) < .001 && Math.abs(next.velocity) < .01;
+      if (next.position !== spring.position || next.velocity !== spring.velocity) dirtyRef.current = true;
+      Object.assign(spring, settled ? { position: spring.target, velocity: 0 } : next);
+      if (!settled) starMoving = true;
+      else if (!spring.target) {
+        nodeSpringsRef.current.delete(id);
+        // Once the contracting star rests, it belongs in the cached layer again.
+        sceneCacheRef.current = null;
+        dirtyRef.current = true;
+      }
+    }
+
     const target = targetViewportRef.current;
     let moving = false;
     if (target) {
       const current = viewportRef.current;
-      const amount = reducedMotionRef.current
-        ? 1
-        : 1 - Math.exp(-elapsed / targetViewportResponseRef.current);
-      const next = {
-        offsetX: current.offsetX + (target.offsetX - current.offsetX) * amount,
-        offsetY: current.offsetY + (target.offsetY - current.offsetY) * amount,
-        zoom: current.zoom + (target.zoom - current.zoom) * amount,
-      };
+      const mode = reducedMotionRef.current ? "off" : motionModeRef.current;
+      // The camera keeps its own position and velocity for all three axes.
+      // Dragging interrupts immediately; another focus retargets this spring.
+      const response = targetViewportResponseRef.current === VIEWPORT_RESPONSE_MS ? .42 : .36;
+      const next = { ...current };
+      for (const axis of ["offsetX", "offsetY", "zoom"] as const) {
+        const spring = stepStarSpring({ position: current[axis], velocity: viewportVelocityRef.current[axis] }, target[axis], elapsed / 1000, mode, response);
+        next[axis] = spring.position;
+        viewportVelocityRef.current[axis] = spring.velocity;
+      }
+      next.zoom = clamp(next.zoom, minimumZoomRef.current, MAX_ZOOM);
       const distance = Math.abs(next.offsetX - target.offsetX) + Math.abs(next.offsetY - target.offsetY) + Math.abs(next.zoom - target.zoom) * 100;
-      if (distance < 0.35) {
+      const speed = Math.abs(viewportVelocityRef.current.offsetX) + Math.abs(viewportVelocityRef.current.offsetY) + Math.abs(viewportVelocityRef.current.zoom) * 100;
+      if (distance < 0.35 && speed < 2) {
         viewportRef.current = target;
         targetViewportRef.current = null;
+        viewportVelocityRef.current = { offsetX: 0, offsetY: 0, zoom: 0 };
       } else {
         viewportRef.current = next;
         moving = true;
@@ -2272,12 +2438,12 @@ export const UnderstandingUniverse = forwardRef<
     if (inertia && !targetViewportRef.current && !dragRef.current) {
       const inertiaElapsed = clamp(time - inertia.lastTime, 1, 34);
       inertia.lastTime = time;
+      const decay = Math.exp(-inertiaElapsed / STAR_PAN_DECAY_MS);
       viewportRef.current = {
         ...viewportRef.current,
-        offsetX: viewportRef.current.offsetX + inertia.velocityX * inertiaElapsed,
-        offsetY: viewportRef.current.offsetY + inertia.velocityY * inertiaElapsed,
+        offsetX: viewportRef.current.offsetX + inertia.velocityX * STAR_PAN_DECAY_MS * (1 - decay),
+        offsetY: viewportRef.current.offsetY + inertia.velocityY * STAR_PAN_DECAY_MS * (1 - decay),
       };
-      const decay = Math.exp(-inertiaElapsed / 235);
       inertia.velocityX *= decay;
       inertia.velocityY *= decay;
       if (Math.hypot(inertia.velocityX, inertia.velocityY) < 0.012) {
@@ -2290,6 +2456,7 @@ export const UnderstandingUniverse = forwardRef<
 
     const animate =
       !reducedMotionRef.current &&
+      motionModeRef.current === "full" &&
       Boolean(selectedId) &&
       time < animationDeadlineRef.current;
     const frameInterval = positionedNodes.length > 1_200
@@ -2303,7 +2470,7 @@ export const UnderstandingUniverse = forwardRef<
       dirtyRef.current = false;
     }
 
-    if (animate || moving || gliding || dirtyRef.current) {
+    if (animate || moving || gliding || starMoving || dirtyRef.current) {
       scheduleFrame();
     }
   };
@@ -2368,7 +2535,7 @@ export const UnderstandingUniverse = forwardRef<
           ? { x: point.x + offset.x, y: point.y + offset.y }
           : point;
       }
-      viewportRef.current = fitViewport(positionedNodes, activePositions, sizeRef.current, insetsRef.current);
+      viewportRef.current = fitViewport(positionedNodes, activePositions, sizeRef.current, insetsRef.current, minimumZoomRef.current);
       invalidateScene();
       persistOffsets();
     }
@@ -2411,7 +2578,7 @@ export const UnderstandingUniverse = forwardRef<
           invalidateScene();
           return;
         }
-        viewportRef.current = fitViewport(positionedNodes, activePositions, sizeRef.current, insetsRef.current);
+        viewportRef.current = fitViewport(positionedNodes, activePositions, sizeRef.current, insetsRef.current, minimumZoomRef.current);
         initializedRef.current = true;
       } else {
         viewportRef.current = {
@@ -2446,7 +2613,8 @@ export const UnderstandingUniverse = forwardRef<
   useEffect(() => {
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
     const updateMotion = () => {
-      reducedMotionRef.current = staticMotion || query.matches;
+      reducedMotionRef.current = staticMotion || query.matches || motionMode === "off";
+      if (query.matches || motionMode !== "full") inertiaRef.current = null;
       requestDraw();
     };
     const updateVisibility = () => {
@@ -2469,7 +2637,17 @@ export const UnderstandingUniverse = forwardRef<
       query.removeEventListener("change", updateMotion);
       document.removeEventListener("visibilitychange", updateVisibility);
     };
-  }, [requestDraw, staticMotion]);
+  }, [requestDraw, staticMotion, motionMode]);
+
+  useEffect(() => {
+    const springs = nodeSpringsRef.current;
+    if (visualStyle !== "cosmic") springs.clear();
+    else {
+      for (const [id, spring] of springs) spring.target = id === selectedId ? 1 : 0;
+      if (selectedId && !springs.has(selectedId)) springs.set(selectedId, { position: 0, velocity: 0, target: 1 });
+    }
+    invalidateScene();
+  }, [selectedId, visualStyle, invalidateScene]);
 
   // hoverId is deliberately absent: hovering must not invalidate the cached
   // scene layer. The hovered star is drawn dynamically in the frame loop, and
@@ -2518,13 +2696,14 @@ export const UnderstandingUniverse = forwardRef<
 
   const classNames = ["universe-canvas-root", className].filter(Boolean).join(" ");
   const selectedAnnouncement = selectedNode
-    ? `已选择${typeLabels?.[selectedNode.type] ?? TYPE_LABEL[selectedNode.type]}：${selectedNode.label}，状态${stateLabels[selectedNode.state ?? ""] ?? "未设置"}`
+    ? `已选择${typeLabels?.[selectedNode.type] ?? TYPE_LABEL[selectedNode.type]}：${selectedNode.label}${selectedNode.state ? `，状态${stateLabels[selectedNode.state] ?? selectedNode.state}` : ""}`
     : `未选择${summaryLabel}`;
 
   return (
     <div
       ref={rootRef}
       className={classNames}
+      data-visual={visualStyle}
       role="region"
       aria-label={title}
       aria-describedby={summaryId}

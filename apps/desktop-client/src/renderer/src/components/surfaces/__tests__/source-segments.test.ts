@@ -5,9 +5,7 @@ import {
   excerpt,
   listSegment,
   parseStateLine,
-  pickFocusSegment,
   segmentText,
-  splitHighlight,
 } from "../source/source-segments.ts";
 
 let ordinal = 0;
@@ -37,6 +35,12 @@ describe("segmentText", () => {
     expect(segmentText(segment("code", "# not a heading\nconst a = 1;"))).toBe("# not a heading\nconst a = 1;");
     expect(segmentText(segment("paragraph", "正文 # 不是标题"))).toBe("正文 # 不是标题");
   });
+
+  it("renders fenced code without its Markdown wrapper, preserving indentation and internal fences", () => {
+    expect(segmentText(segment("code", "```typescript\n  const a = 1;\n```"))).toBe("  const a = 1;");
+    expect(segmentText(segment("code", "~~~~markdown\n```inner```\n~~~~"))).toBe("```inner```");
+    expect(segmentText(segment("code", "```text\nunclosed"))).toBe("unclosed");
+  });
 });
 
 describe("listSegment", () => {
@@ -53,43 +57,6 @@ describe("listSegment", () => {
 
   it("drops blank lines instead of rendering empty bullets", () => {
     expect(listSegment("- 甲\n\n- 乙").items).toEqual(["甲", "乙"]);
-  });
-});
-
-describe("pickFocusSegment", () => {
-  it("prefers a quote, then a substantial paragraph", () => {
-    const quote = segment("quote", "> 提取会重组未来的访问路径。");
-    const long = segment("paragraph", "真正有效的练习，需要让学习者在答案出现之前先经历一次有意义的检索过程。");
-    expect(pickFocusSegment([long, quote])?.id).toBe(quote.id);
-    expect(pickFocusSegment([long])?.id).toBe(long.id);
-  });
-
-  it("never marks a heading as the evidence", () => {
-    const heading = segment("heading", "# 界面链路自检");
-    expect(pickFocusSegment([heading])).toBeNull();
-    expect(pickFocusSegment([heading, segment("code", "const a = 1;")])).toBeNull();
-  });
-
-  it("accepts a short paragraph rather than inventing a target", () => {
-    const short = segment("paragraph", "困难本身不是目标。");
-    expect(pickFocusSegment([short])?.id).toBe(short.id);
-  });
-});
-
-describe("splitHighlight", () => {
-  it("marks a whole sentence, not the first clause it finds", () => {
-    const text = "真正有效的练习，需要让学习者在答案出现之前先经历一次有意义的检索。这正是难点。";
-    const [lead, rest] = splitHighlight(text);
-    expect(lead).toBe("真正有效的练习，需要让学习者在答案出现之前先经历一次有意义的检索。");
-    expect(rest).toBe("这正是难点。");
-  });
-
-  it("marks the whole fragment when it carries no sentence break", () => {
-    expect(splitHighlight("一段没有句号的短句")).toEqual(["一段没有句号的短句", ""]);
-  });
-
-  it("does not cut a one-word lead into its own mark", () => {
-    expect(splitHighlight("好。后面还有很多内容")).toEqual(["好。后面还有很多内容", ""]);
   });
 });
 
@@ -115,7 +82,7 @@ describe("parseStateLine", () => {
   it("tells the queued source apart from the running one", () => {
     expect(parseStateLine("draft")).toContain("排进解析队列");
     expect(parseStateLine("processing")).toContain("正在解析这份材料");
-    expect(parseStateLine("failed")).toContain("重新采集");
+    expect(parseStateLine("failed")).toContain("重新解析");
   });
 });
 

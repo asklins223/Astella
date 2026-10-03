@@ -261,7 +261,7 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     id: "today",
     number: "14",
     title: "今日学习",
-    subtitle: "今天做过和卡住的事，都按时间排在这一页",
+    subtitle: "接着上次学，也把今天的小小积累收进手账",
     plate: "review",
     companion: {
       mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
@@ -275,13 +275,13 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     id: "queue",
     number: "15",
     title: "复习队列",
-    subtitle: "到期项像一叠纸签排好顺序，下一项始终清楚",
+    subtitle: "抽一张小卡片，把学过的慢慢想起来",
     plate: "review",
     companion: {
       mode: "ambient", seat: "left", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
     // 队列按 nextReviewAt 升序，也就是最逾期的在最前；「遗忘风险最高」是一个
     // 系统里不存在的模型，「影响更多目标」也不是排序依据。
-      starter: "最逾期的一项排在最前，纸签旁的理由条写着它为什么在这里。",
+      starter: "到期的小卡片已经排好了；卡盒旁能看接下来的顺序，也能翻开这一张的提醒。",
     },
   },
   assessment: {
@@ -311,7 +311,7 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     id: "search",
     number: "18",
     title: "全局搜索",
-    subtitle: "来源、笔记与目标共用一张检索台，右侧直接预览",
+    subtitle: "在笔记、来源和学习卡里，找回想接着读的那一句",
     plate: "library",
     companion: {
       mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
@@ -322,7 +322,7 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     id: "graph",
     number: "19",
     title: "理解星图",
-    subtitle: "把来源、笔记、学习目标与证据画成一片可漫游的知识宇宙",
+    subtitle: "在星座之间漫游，沿着笔记接回学习",
     plate: "observatory",
     companion: {
       mode: "ambient", seat: "left", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,
@@ -344,7 +344,7 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     id: "settings",
     number: "21",
     title: "设置中心",
-    subtitle: "用柔软 HUD 卡片承载账户、权限、主题、语音与数据",
+    subtitle: "把书房、陪伴和数据调成适合你的样子",
     plate: "system",
     companion: {
       mode: "ambient", seat: "right", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,

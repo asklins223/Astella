@@ -130,6 +130,37 @@ test("runParseSource 把文本来源解析成 ready，而不是 dead 在“找�
   assert.notEqual(job.status, "dead", "job 不能被判定为确定性失败");
 });
 
+for (const titleSource of ["manual", "auto"] as const) {
+  test(`解析标题：${titleSource === "manual" ? "保留用户命名" : "留空时从正文提取"}，搜索投影与来源一致`, async () => {
+    const id = randomUUID(), jobId = randomUUID(), token = randomUUID();
+    const storedTitle = "我给这份材料起的名字";
+    await admin.begin(async tx => {
+      await tx`INSERT INTO sources (id, workspace_id, type, title, status, metadata, created_by)
+        VALUES (${id}, ${WORKSPACE_ID}, 'markdown', ${storedTitle}, 'draft',
+          ${tx.json({ rawContent: "# 原文的标题\n\n这是一段可解析的正文。", titleSource })}, ${USER_ID})`;
+      await tx`INSERT INTO jobs (id, workspace_id, type, payload, status, resource_class,
+        idempotency_key, requested_by, lease_token, attempts, started_at)
+        VALUES (${jobId}, ${WORKSPACE_ID}, 'parse_source', ${tx.json({ sourceId: id })}, 'running', 'default',
+          ${`source-title:${jobId}`}, ${USER_ID}, ${token}, 1, now())`;
+    });
+    try {
+      const { runParseSource } = await import("../handlers/parse-source.ts");
+      await runParseSource({ id: jobId, workspaceId: WORKSPACE_ID, requestedBy: USER_ID, payload: { sourceId: id }, leaseToken: token });
+      const [source] = await admin`SELECT title, status FROM sources WHERE id = ${id}`;
+      const [search] = await admin`SELECT title FROM search_documents WHERE object_id = ${id} AND object_type = 'source'`;
+      assert.equal(source.status, "ready");
+      assert.equal(source.title, titleSource === "manual" ? storedTitle : "原文的标题");
+      assert.equal(search.title, source.title);
+    } finally {
+      await admin.begin(async tx => {
+        await tx`DELETE FROM search_documents WHERE object_id = ${id} AND object_type = 'source'`;
+        await tx`DELETE FROM jobs WHERE id = ${jobId}`;
+        await tx`DELETE FROM sources WHERE id = ${id}`;
+      });
+    }
+  });
+}
+
 /**
  * 审计 F32（也是 F27 剩下的那半）：采集判死时，`sources.status` 必须变成用户看得见的
  * `failed`，并且带上一次失败的原因；已经解析成功或用户已归档的两态不许被改回去。

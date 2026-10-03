@@ -62,6 +62,7 @@ it.each(["end", "start"] as const)("段落边界的 %s 空端点不进入批注�
 
 it("选区浮签提供真正可点击的解释、手写、伴星动作，并限制在可视纸面内", () => {
   const paper = document.createElement("div"); document.body.append(paper);
+  paper.tabIndex = 0;
   vi.spyOn(paper, "getBoundingClientRect").mockReturnValue(new DOMRect(100, 80, 700, 500));
   paper.style.transform = "scale(1.5)";
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(390);
@@ -78,9 +79,11 @@ it("选区浮签提供真正可点击的解释、手写、伴星动作，并限�
   expect(parseFloat(slip.style.top) + slip.offsetHeight).toBeLessThanOrEqual(572);
   fireEvent.click(within(slip).getByRole("button", { name: "写批注" })); expect(onWrite).toHaveBeenCalledTimes(1);
   fireEvent.click(within(slip).getByRole("button", { name: "发给伴星" })); expect(onAskCompanion).toHaveBeenCalledTimes(1);
-  fireEvent.click(within(slip).getByRole("button", { name: "讲讲这段话" })); expect(onExplain).toHaveBeenCalledTimes(1);
+  expect(document.activeElement).toBe(paper);
+  fireEvent.click(within(slip).getByRole("button", { name: "原句解读" })); expect(onExplain).toHaveBeenCalledTimes(1);
   expect(slip.parentElement).toBe(document.body);
   fireEvent.keyDown(slip, { key: "Escape" }); expect(onDismiss).toHaveBeenCalledTimes(1);
+  expect(document.activeElement).toBe(paper);
   paper.remove();
 });
 
@@ -115,7 +118,8 @@ it("批注标记覆盖真实原句并可打开，编号与预览不污染下一�
   const onOpenAnnotation = vi.fn();
   const view = render(<p>{renderNoteInline(content, { annotations: [annotation], onOpenAnnotation })}</p>);
   const marker = view.getByRole("button", { name: "打开批注：本金" });
-  expect(marker.textContent).toBe("本金"); expect(marker.getAttribute("data-number")).toBe("1");
+  expect(marker.textContent).toBe("本金");
+  expect(view.getByRole("button", { name: "批注 1 · 自己的批注：本金" }).getAttribute("data-number")).toBe("1");
   expect(view.container.textContent).toBe("利息加入本金后，下一次也会继续产生利息。");
   fireEvent.click(marker); expect(onOpenAnnotation).toHaveBeenCalledWith(annotation);
 });

@@ -1,5 +1,5 @@
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SpaceSharingNotice } from "../../space-sharing-notice";
 import { SpaceShareButton, noteShareScopeLabel } from "../../space-share-control";
 import type { NoteShareScopeV1 } from "@ailearn/shared/note-share-contracts";
@@ -28,7 +28,8 @@ import {
 } from "./surface-data.tsx";
 import { useSourceImage } from "../source/source-image.ts";
 import { NoteShelfTag } from "./note-shelf-tag.tsx";
-import { Search } from "lucide-react";
+import { BookOpen, Plus, Search, X } from "lucide-react";
+import { useNotebookTouch } from "./use-notebook-touch";
 
 /**
  * Page 07 has two views over the same records, because a shelf and a library
@@ -57,7 +58,9 @@ type TimeTab = (typeof TIME_TABS)[number];
  * shelf every time. Module scope is the session scope for one renderer.
  */
 type LibraryView = "shelf" | "index";
-let persistedLibraryUi: { readonly view: LibraryView; readonly tab: TimeTab } = { view: "shelf", tab: "all" };
+type LibraryMemory = { view: LibraryView; tab: TimeTab; draft: string; query: string; scroll: number };
+const libraryMemory = new Map<number, LibraryMemory>();
+const emptyLibraryMemory = (): LibraryMemory => ({ view: "shelf", tab: "all", draft: "", query: "", scroll: 0 });
 
 function tabLabel(tab: TimeTab): string {
   if (tab === "today") return "今天";
@@ -93,6 +96,11 @@ type NotePage = { readonly items: DesktopNoteListItem[]; readonly nextCursor: st
 
 /** Page 07 — the library as a shelf, with a full index behind it. */
 export function NoteLibrarySurface() {
+  const scope = useRoomStore(state => state.workspaceScopeRevision);
+  return <NoteLibraryContent key={scope} scope={scope} />;
+}
+
+function NoteLibraryContent({ scope }: { readonly scope: number }) {
   const invoke = useRoomStore((state) => state.invoke);
   const setActiveNoteRef = useRoomStore((state) => state.setActiveNoteRef);
   const setReturnTarget = useRoomStore((state) => state.setReturnTarget);
@@ -100,10 +108,14 @@ export function NoteLibrarySurface() {
   const recentNoteId = useRoomStore((state) => state.recentNoteId);
   /** 空间归属：个人空间里整个"共享给空间"的入口不出现。 */
   const spaceIdentity = useRoomStore((state) => state.spaceIdentity);
-  const [view, setView] = useState<LibraryView>(persistedLibraryUi.view);
-  const [tab, setTab] = useState<TimeTab>(persistedLibraryUi.tab);
-  const [draft, setDraft] = useState("");
-  const [query, setQuery] = useState("");
+  const remembered = useRef(libraryMemory.get(scope) ?? emptyLibraryMemory());
+  const [view, setView] = useState<LibraryView>(remembered.current.view);
+  const [tab, setTab] = useState<TimeTab>(remembered.current.tab);
+  const [draft, setDraft] = useState(remembered.current.draft);
+  const [query, setQuery] = useState(remembered.current.query);
+  const libraryRef = useRef<HTMLDivElement | null>(null);
+  useNotebookTouch(libraryRef);
+  const restoredScroll = useRef(false);
   const [creating, setCreating] = useState(false);
   const [createFailure, setCreateFailure] = useState<string | null>(null);
   const [more, setMore] = useState<NotePage | null>(null);
@@ -123,8 +135,9 @@ export function NoteLibrarySurface() {
 
   // Remember the view/tab choice for the next visit in this session.
   useEffect(() => {
-    persistedLibraryUi = { view, tab };
-  }, [tab, view]);
+    remembered.current = { ...remembered.current, view, tab, draft, query };
+    libraryMemory.set(scope, remembered.current);
+  }, [scope, tab, view, draft, query]);
 
   const { data, loading, failure, reload, epochRef } = useSurfaceProjection(async ({ workspaceEpoch }) => {
     const [listedResponse, capabilitiesResponse, trashResponse] = await Promise.all([
@@ -196,6 +209,14 @@ export function NoteLibrarySurface() {
   }, [firstPage, more]);
   const nextCursor = more ? more.nextCursor : data?.page.nextCursor ?? null;
   const showIndex = view === "index" || trash !== null;
+  useLayoutEffect(() => {
+    if (loading || !showIndex || restoredScroll.current) return;
+    const list = libraryRef.current?.querySelector<HTMLElement>(".source-list");
+    if (list) { list.scrollTop = remembered.current.scroll; restoredScroll.current = true; }
+  }, [loading, showIndex]);
+  useLayoutEffect(() => {
+    if (!loading) libraryRef.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+  }, [loading, showIndex]);
   const featured = useMemo(
     () => loaded.find((note) => note.id === (data?.featured?.noteId ?? recentNoteId)) ?? loaded[0] ?? null,
     [loaded, data?.featured?.noteId, recentNoteId],
@@ -256,17 +277,34 @@ export function NoteLibrarySurface() {
   const countPartial = Boolean(nextCursor);
 
   // The index sits one level below the shelf, and the bottom-left pill says so.
+  const shelfReturnTarget = useRef(useRoomStore.getState().returnTarget);
   useEffect(() => {
     if (view !== "index") return undefined;
-    setReturnTarget({ label: "返回书架", run: () => setView("shelf") });
-    return () => setReturnTarget(null);
+    const target = { label: "返回书架", run: () => setView("shelf") };
+    setReturnTarget(target);
+    return () => { if (useRoomStore.getState().returnTarget === target) setReturnTarget(shelfReturnTarget.current); };
   }, [setReturnTarget, view]);
 
   /** Every note entry lands on the reading page, exactly like a cover does. */
   const openNote = (item: DesktopNoteListItem, mode: "preview" | "live-preview" = "preview") => {
     setActiveNoteRef({ noteId: item.id, noteVersionId: item.currentVersionId, mode });
     useRoomStore.getState().setNoteReturnTo("library");
-    invoke("open-notebook");
+    invoke("open-notebook", { returnTo: { label: "返回笔记库", run: () => invoke("open-notes", {
+      returnTo: shelfReturnTarget.current ?? undefined,
+    }) } });
+  };
+
+  /**
+   * 纸上除了卡里那三个真按钮，其余每一处都是「打开这篇笔记」（复盘 #16 的后续）。
+   * 命中的是 section 自己，所以标题、纸签、摘录、空白点下去都算数——不再取决于
+   * 覆盖层和纸面谁压在谁上面（此前标题自带 `position: relative`，整块压在覆盖层
+   * 之上，指针变文本十字、点下去没反应）。卡里的真按钮各有各的去处，从这条路上排除。
+   */
+  const openFromSheet = (event: React.MouseEvent<HTMLElement>) => {
+    if (!featured) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest("button:not(.current-note__open)")) return;
+    openNote(featured);
   };
 
   /** A new note is committed with its first empty version, then opened to write. */
@@ -489,6 +527,9 @@ export function NoteLibrarySurface() {
 
   const submitSearch = (event: React.FormEvent) => {
     event.preventDefault();
+    remembered.current.scroll = 0;
+    const list = libraryRef.current?.querySelector<HTMLElement>(".source-list");
+    if (list) list.scrollTop = 0;
     setQuery(draft);
     setView("index");
   };
@@ -501,7 +542,7 @@ export function NoteLibrarySurface() {
       title={createAllowed ? "新建一篇空笔记并直接开始写" : "当前工作区的身份没有新建笔记的权限"}
       onClick={() => void createNote()}
     >
-      {creating ? "正在新建…" : "新建笔记"}
+      <Plus size={17} aria-hidden="true" />{creating ? "正在新建…" : "新建笔记"}
     </button>
   );
 
@@ -619,6 +660,12 @@ export function NoteLibrarySurface() {
   };
 
   return (
+    <div className="note-library" ref={libraryRef} onScrollCapture={event => {
+      if (event.target instanceof HTMLElement && event.target.matches(".source-list") && !trash) {
+        remembered.current = { ...remembered.current, scroll: event.target.scrollTop };
+        libraryMemory.set(scope, remembered.current);
+      }
+    }}>
     <HudPage page="notes">
       {blocked || emptyPage ? state : null}
       {!blocked && !emptyPage ? (
@@ -628,17 +675,19 @@ export function NoteLibrarySurface() {
               <Search size={18} aria-hidden="true" />
               <label className="sr-only" htmlFor="note-shelf-query">搜索笔记标题</label>
               <input id="note-shelf-query" value={draft} placeholder="找找哪篇笔记…" onChange={(event) => setDraft(event.currentTarget.value)} />
+              {draft ? <button type="button" className="text-action note-library__clear" aria-label="清空搜索" onClick={() => { setDraft(""); setQuery(""); }}><X size={16} aria-hidden="true" /></button> : null}
               <button type="submit" className="button">找笔记</button>
             </form>
           <div className="note-shelf">
-            <section className="current-note">
+            <section className="current-note" onClick={openFromSheet}>
               {/* 整张卡都要能点开（复盘 #16：只有标题那一下能点，点正文、点空白都没反应）。
-                  用一层覆盖整卡的透明按钮，而不是把 <section> 做成 button——卡里还有
-                  「全部笔记」「新建」「继续写」三个真按钮，button 不能嵌套 button。
-                  覆盖层是 section 的第一个子元素，后面那两个绝对定位的动作区按 DOM 顺序
-                  绘在它之上，所以照常可点。 */}
+                  点击挂在 section 上：命中的是它，层级谁压谁都不影响"点得开"。
+                  那层覆盖整卡的透明按钮只留给键盘与读屏——它自己没有 onClick，
+                  回车/空格激活出来的 click 冒泡到 section，走的仍是同一条路。
+                  卡片自身的绘制层级是另一件事（覆盖层压纸面、两行真按钮压覆盖层，
+                  见 hud-surface.css 的 `.current-note__open`）。 */}
               {featured ? (
-                <button type="button" className="current-note__open" onClick={() => openNote(featured)}>
+                <button type="button" className="current-note__open">
                   <span className="sr-only">打开笔记：{featured.title}</span>
                 </button>
               ) : null}
@@ -717,6 +766,11 @@ export function NoteLibrarySurface() {
           </div>
         ) : (
           <section className="source-index note-index" aria-label={trash ? `回收站 · ${trash.items.length} 篇` : "全部笔记"}>
+            <header className="note-library__index-heading">
+              <div><BookOpen size={22} aria-hidden="true" /><h2>{trash ? "暂时收起来的" : "找一篇，接着读"}</h2></div>
+              <div className="actions"><button type="button" className="text-action" onClick={() => { setTrash(null); setView("shelf"); }}>回到书架</button>{!trash ? createButton(true) : null}</div>
+            </header>
+            {createFailure ? <p className="small" role="alert">新建没成功：{createFailure}</p> : null}
             {/* Search and the time tabs filter the live list; the trash is a
                 different list, so they are not drawn while it is open. They used
                 to stay enabled and do nothing — and a submitted search walked the
@@ -738,6 +792,7 @@ export function NoteLibrarySurface() {
                       if (!next.trim()) setQuery("");
                     }}
                   />
+                  {draft ? <button type="button" className="text-action note-library__clear" aria-label="清空搜索" onClick={() => { setDraft(""); setQuery(""); }}><X size={16} aria-hidden="true" /></button> : null}
                   <button type="submit" className="button primary">搜索</button>
                 </form>
 
@@ -749,7 +804,7 @@ export function NoteLibrarySurface() {
                       className={tab === value ? "active" : undefined}
                       aria-pressed={tab === value}
                       title={countPartial && value !== "all" ? "已读部分里符合条件的篇数，筛选会自动读完剩余部分" : undefined}
-                      onClick={() => setTab(value)}
+                      onClick={() => { setTab(value); const list = libraryRef.current?.querySelector<HTMLElement>(".source-list"); if (list) list.scrollTop = 0; remembered.current.scroll = 0; }}
                     >
                       {tabLabel(value)} {countOf(value)}{countPartial && value !== "all" ? "+" : ""}
                     </button>
@@ -806,7 +861,7 @@ export function NoteLibrarySurface() {
                     detail={nextCursor ? "换一个关键词，或继续加载后面的笔记。" : "换一个关键词，或把筛选切回全部。"}
                   />
                 ) : indexed.map((note) => (
-                  <div key={note.id} className="source-sheet note-row" data-kind="笔记">
+                  <div key={note.id} className="source-sheet note-row" data-kind="笔记" data-recent={note.id === recentNoteId}>
                     <span className="source-copy">
                       {renaming?.noteId === note.id ? (
                         <>
@@ -885,6 +940,7 @@ export function NoteLibrarySurface() {
         )
       ) : null}
     </HudPage>
+    </div>
   );
 }
 

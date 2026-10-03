@@ -120,6 +120,8 @@ import {  CompanionActivityTimelineV1,
   companionMemoryConflictResolveResultV1Schema,
   companionMemoryItemV1Schema,
   companionMemoryListV1Schema,
+  companionMemoryRecycleListV1Schema,
+  type CompanionMemoryRecycleListV1,
   companionMemoryRevisionListV1Schema,
   companionMemoryQueueResultV1Schema,
   companionMemoryStarMapV2Schema,
@@ -716,6 +718,7 @@ export async function listCompanionHistory(t: GatewayTransport,
     await t.ensureConnected(requestId);
     const params = new URLSearchParams();
     if (query.before) params.set("before", query.before);
+    if (query.throughMessageId) params.set("throughMessageId", query.throughMessageId);
     if (query.limit !== undefined) params.set("limit", String(query.limit));
     const suffix = params.toString();
     const result = await t.request(
@@ -736,6 +739,7 @@ export async function listCompanionMemories(t: GatewayTransport,
   ): Promise<CompanionMemoryListV1> {
     await t.ensureConnected(requestId);
     const params = new URLSearchParams();
+    if (query.focusMemoryId) params.set("focusMemoryId", query.focusMemoryId);
     if (query.kind) params.set("kind", query.kind);
     if (query.q) params.set("q", query.q);
     if (query.scope) params.set("scope", query.scope);
@@ -1141,6 +1145,14 @@ export async function speakCompanionVoiceSegment(t: GatewayTransport,
 export async function restoreDeletedCompanionMemory(t: GatewayTransport, memoryId: string, requestId?: string): Promise<void> {
   await t.ensureConnected(requestId);
   await t.request(`/companion/memory/${safeUuid(memoryId)}/restore-deleted`, { method: "POST", body: JSON.stringify({}) }, true, true, requestId);
+}
+
+export async function listCompanionMemoryRecycle(t: GatewayTransport, requestId?: string): Promise<CompanionMemoryRecycleListV1> {
+  await t.ensureConnected(requestId);
+  const result = await t.request("/companion/memory/recycle", { method: "GET" }, true, true, requestId);
+  const parsed = companionMemoryRecycleListV1Schema.safeParse(result.body);
+  if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  return parsed.data;
 }
 
 /**

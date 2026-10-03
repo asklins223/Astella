@@ -134,7 +134,10 @@ AS $$
 DECLARE
   v_masked integer;
 BEGIN
-  IF NEW.deleted_at IS NULL OR OLD.deleted_at IS NOT NULL THEN
+  -- 来源的软删由 status='archived' 表达，笔记使用 deleted_at。
+  IF TG_TABLE_NAME = 'sources' THEN
+    IF NEW.status <> 'archived' OR OLD.status = 'archived' THEN RETURN NULL; END IF;
+  ELSIF NEW.deleted_at IS NULL OR OLD.deleted_at IS NOT NULL THEN
     RETURN NULL;
   END IF;
 
@@ -150,14 +153,17 @@ BEGIN
 
   -- 派生摘录与预览一起遮蔽：正文不可读了，摘录里那一句同样不该还留在
   -- 发现簿里。只遮蔽不物理删除——材料重新可访问时还要能放回来。
-  UPDATE public.companion_discovery_entries
+  UPDATE public.companion_discovery_entries AS entry
      SET masked = true, updated_at = now()
-   WHERE source = 'diary'
-     AND NOT masked
-     AND source_id IN (
-       SELECT date FROM public.companion_daily_summaries
-        WHERE delete_reason = 'revoked_source'
-          AND updated_at >= now() - interval '1 minute'
+   WHERE entry.source = 'diary'
+     AND NOT entry.masked
+     AND EXISTS (
+       SELECT 1 FROM public.companion_daily_summaries AS diary
+        WHERE diary.workspace_id = entry.workspace_id
+          AND diary.user_id = entry.user_id
+          AND diary.date = entry.source_id
+          AND diary.delete_reason = 'revoked_source'
+          AND diary.source_event_ids @> ARRAY[NEW.id::text]
      );
 
   RETURN NULL;
@@ -173,7 +179,7 @@ CREATE TRIGGER companion_diary_mask_on_note_delete
 
 DROP TRIGGER IF EXISTS companion_diary_mask_on_source_delete ON public.sources;
 CREATE TRIGGER companion_diary_mask_on_source_delete
-  AFTER UPDATE OF deleted_at ON public.sources
+  AFTER UPDATE OF status ON public.sources
   FOR EACH ROW EXECUTE FUNCTION public.ailearn_mask_diaries_for_revoked_source();
 
 --> statement-breakpoint

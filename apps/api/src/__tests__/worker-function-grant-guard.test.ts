@@ -150,3 +150,25 @@ test("0359 已登记且授对了角色", () => {
     /GRANT EXECUTE ON FUNCTION public\.ailearn_enforce_companion_memory_retention\(\) TO ailearn_worker;/,
   );
 });
+
+test("角色引导重置授权后仍恢复伴星回收、期限和整理函数；三份清单一致", () => {
+  const bootstrap = readFileSync(join(REPO_ROOT, "infra/postgres/roles.sql"), "utf8");
+  const signatures = [
+    ["ailearn_restore_companion_memory(uuid,uuid,uuid)", "ailearn_api"],
+    ["ailearn_purge_expired_companion_memory()", "ailearn_api, ailearn_worker"],
+    ["ailearn_companion_memory_retention_limits()", "ailearn_api, ailearn_worker"],
+    ["ailearn_enforce_companion_memory_retention()", "ailearn_api, ailearn_worker"],
+    ["ailearn_reclaim_stale_memory_organization_leases()", "ailearn_worker"],
+    ["ailearn_commit_memory_organization(uuid,uuid,text,text,integer)", "ailearn_worker"],
+    ["ailearn_enqueue_companion_memory_organize()", "ailearn_worker"],
+    ["ailearn_companion_memory_organization_thresholds()", "ailearn_worker"],
+  ];
+  assert.match(bootstrap, /GRANT EXECUTE ON FUNCTION %s TO %s/);
+  for (const [signature, roles] of signatures) {
+    assert.ok(bootstrap.includes(`('public.${signature}', '${roles}')`), `引导遗漏 ${signature}`);
+    for (const role of roles.split(", ")) {
+      assert.ok(bootstrap.includes(`('${role}', '${signature}')`), `缺失反向断言 ${role}: ${signature}`);
+    }
+    assert.ok(bootstrap.includes(`to_regprocedure('public.${signature}')`), `允许清单遗漏 ${signature}`);
+  }
+});

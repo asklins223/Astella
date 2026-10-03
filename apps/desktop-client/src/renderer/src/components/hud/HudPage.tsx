@@ -10,16 +10,19 @@ export function HudPage({
   page,
   children,
   wide = false,
+  showTitle = true,
 }: {
   readonly page: HudPageId;
   readonly children: ReactNode;
   /** LearningRun papers reserve the companion seat even when using the wide layout. */
   readonly wide?: boolean;
+  /** Pages with their own book header keep the room's title inside that object. */
+  readonly showTitle?: boolean;
 }) {
   const definition = HUD_PAGES[page];
   return (
     <>
-      {page !== "assessment" ? (
+      {page !== "assessment" && showTitle ? (
         <div className="task-title">
           <h1>{definition.title}</h1>
           <p>{definition.subtitle}</p>

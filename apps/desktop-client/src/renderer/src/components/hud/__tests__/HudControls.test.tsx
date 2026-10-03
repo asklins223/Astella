@@ -134,6 +134,36 @@ describe("HudPicker", () => {
     expect(selected).toHaveLength(1);
     expect(selected[0].textContent).toContain("海岸研究室");
   });
+
+  it("退场期间立即退出键盘与读屏路径，旧菜单不能再次提交", () => {
+    const onChange = vi.fn();
+    render(<HudPicker label="进入的空间" value="a" options={options} onChange={onChange} />);
+    const trigger = screen.getByRole("button", { name: /进入的空间/ });
+    fireEvent.click(trigger);
+    const option = screen.getByRole("option", { name: /海岸研究室/ });
+    const list = screen.getByRole("listbox");
+    fireEvent.keyDown(list, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(list.hasAttribute("inert")).toBe(true);
+    fireEvent.click(option);
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(trigger);
+    const reopened = screen.getByRole("listbox");
+    expect(reopened.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(reopened);
+  });
+
+  it("Tab 回到触发器的自然焦点路径，父纸面滚动收起菜单", () => {
+    render(<div data-testid="paper"><HudPicker label="进入的空间" value="a" options={options} onChange={() => {}} /></div>);
+    const trigger = screen.getByRole("button", { name: /进入的空间/ });
+    fireEvent.click(trigger);
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Tab" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    fireEvent.click(trigger);
+    fireEvent.scroll(screen.getByTestId("paper"));
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
 });
 
 describe("HudSlider", () => {

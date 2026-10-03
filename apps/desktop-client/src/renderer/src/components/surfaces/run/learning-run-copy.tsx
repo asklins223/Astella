@@ -332,7 +332,8 @@ export function scheduleImpactText(
       return `本次没有改变复习安排：${rubricResults.length} 个要点里证明了 ${covered.length} 个，还差 ${gaps.join("、")}；这几处补齐了才会推进排程。`;
     }
   }
-  return `本次没有改变复习安排：${scheduleReasonLabels[impact.reasonCode] ?? impact.reasonCode}。`;
+  const reason = scheduleReasonLabels[impact.reasonCode] ?? impact.reasonCode;
+  return `本次没有改变复习安排：${reason}${reason.endsWith("。") ? "" : "。"}`;
 }
 
 export function returnTargetLabel(target: LearningRunPublicSnapshotV2["returnTargetV2"]): string {

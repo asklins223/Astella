@@ -127,7 +127,7 @@ describe("production companion interaction", () => {
     expect(screen.getByRole("article", { name: "等你确认" })).toBeTruthy();
     expect((state.chat as CompanionChatSession).decideProposal).not.toHaveBeenCalled();
   });
-  it("drops text and voice drafts on a real conversation change", async () => {
+  it("preserves the shared text draft and cancels voice on a real conversation change", async () => {
     render(<Harness voiceEnabled />);
     fireEvent.change(screen.getByRole("textbox", { name: "给 小鲸 的消息" }), { target: { value: "旧空间的草稿" } });
     fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
@@ -135,7 +135,7 @@ describe("production companion interaction", () => {
     expect(screen.getByRole("textbox", { name: "识别后的语音文字" })).toBeTruthy();
     patch({ conversationId: "new-conversation", mode: "conversation" });
     expect(screen.queryByRole("textbox", { name: "识别后的语音文字" })).toBeNull();
-    expect((screen.getByRole("textbox", { name: "给 小鲸 的消息" }) as HTMLTextAreaElement).value).toBe("");
+    expect((screen.getByRole("textbox", { name: "给 小鲸 的消息" }) as HTMLTextAreaElement).value).toBe("旧空间的草稿");
   });
   it("preserves a draft written before the first conversation finishes loading", () => {
     state.chat = interactionSession({ conversationId: null });

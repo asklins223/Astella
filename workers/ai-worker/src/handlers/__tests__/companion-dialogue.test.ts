@@ -925,6 +925,80 @@ test("unverifiedNumericClaims：环境块与用户原话里的数字都是合法
   assert.deepEqual(unverifiedNumericClaims("F=ma 就是力等于质量乘加速度。", "牛顿第二定律"), []);
 });
 
+test("unverifiedNumericClaims：原句解释里的明确举例不触发学习读数纠正", () => {
+  // 2026-10-03 实机：这两个假设利率被当作没有查过的统计，追加一轮后
+  // 模型转而回答另一窗口的星图。例子不需要从用户的学习数据中查出。
+  const reply = "只盯一个数容易误会——比如嫌\"3% 太低\"，还要看本金和轮数。\n\n"
+    + "举个具体例子：1000 元，年利率 10%，放三年。\n"
+    + "第一年 1100，第二年 1210，第三年 1331。";
+  assert.deepEqual(unverifiedNumericClaims(reply, "复利让上一轮的利息参与下一轮计算。"), []);
+});
+
+test("unverifiedNumericClaims：假设中的学习数量可以用于说明，随后实际读数仍要核对", () => {
+  assert.deepEqual(unverifiedNumericClaims(
+    "假设每天学 20 分钟，连续 2 周，我们可以比较两种练习安排。\n\n"
+      + "本周你已经学了 23 分钟，活跃卡片有 15 张。",
+    "今日已学 0 分钟",
+  ), ["23分钟", "15张"]);
+});
+
+test("unverifiedNumericClaims：独立的举例标题只覆盖紧随的一段", () => {
+  assert.deepEqual(unverifiedNumericClaims(
+    "**举个具体例子：**\n\n抽出 3 张卡，每张练习 2 次。\n\n"
+      + "你今天做了 8 题。",
+    "今日已学 0 分钟",
+  ), ["8题"]);
+});
+
+test("unverifiedNumericClaims：举例措辞不能放行声称从屏幕查到的读数", () => {
+  assert.deepEqual(unverifiedNumericClaims(
+    "例如，页面显示你本周已经学了 23 分钟；我查到活跃卡片有 15 张。",
+    "今日已学 0 分钟",
+  ), ["23分钟", "15张"]);
+});
+
+test("unverifiedNumericClaims：否定假设的实际读数仍要核对", () => {
+  assert.deepEqual(unverifiedNumericClaims(
+    "这不是假设，你今天学了 23 分钟。",
+    "今日已学 0 分钟",
+  ), ["23分钟"]);
+});
+
+test("unverifiedNumericClaims：利率解释不属于用户的实时学习读数", () => {
+  assert.deepEqual(unverifiedNumericClaims(
+    "光看利率才 3% 容易误判，还要看本金和轮数。复利每轮增长 10%，利息也参与下一轮计算。",
+    "复利让上一轮的利息参与下一轮计算。",
+  ), []);
+});
+
+test("unverifiedNumericClaims：真实学习率与进度仍需要本轮来源", () => {
+  assert.deepEqual(unverifiedNumericClaims(
+    "你本周的正确率是 83%，任务完成进度是 48%。你这周提高了 17%。",
+    "今日已学 0 分钟",
+  ), ["83%", "48%", "17%"]);
+});
+
+test("unverifiedNumericClaims：利率说明不能放行后面的实际学习进度", () => {
+  assert.deepEqual(unverifiedNumericClaims(
+    "复利的年利率是 3%。\n\n你本周的正确率是 83%。",
+    "今日已学 0 分钟",
+  ), ["83%"]);
+});
+
+test("unverifiedNumericClaims：声称从页面查到的利率仍要核对来源", () => {
+  assert.deepEqual(unverifiedNumericClaims(
+    "页面显示年利率是 3%。",
+    "当前页面没有登记利率",
+  ), ["3%"]);
+});
+
+test("unverifiedNumericClaims：举例不能免除对用户实际读数的核对", () => {
+  assert.deepEqual(unverifiedNumericClaims(
+    "例如你本周已经学了 23 分钟，活跃卡片有 15 张。",
+    "今日已学 0 分钟",
+  ), ["23分钟", "15张"]);
+});
+
 test("keepRecomputedBlocks：记忆块里的数字不算出处", () => {
   // 实机：她编的"本周 23 分钟"被抽取器写成了 learning_context，
   // 于是"照上下文核对"这一判据被历史里的谎洗白。记忆/persona 一律不作数。

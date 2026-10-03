@@ -250,9 +250,12 @@ export async function decodeToken(token: string): Promise<SessionContext | null>
     }
 
     // 空间归属人（isWorkspaceOwner 的 OR 判据需要它）与边界令牌（0261）。
+    // 2026-10-03：顺带取回 name / workspace_type——`/auth/me` 此前为了这两列
+    // 又查了一遍同一张表的同一行。列选全的代价是零（同一行已在手上），
+    // 省掉的是每个已认证请求的一次完整往返。
     const workspace = await tx.query.workspaces.findFirst({
       where: eq(workspaces.id, session.workspaceId),
-      columns: { ownerId: true, workspaceEpoch: true },
+      columns: { ownerId: true, workspaceEpoch: true, name: true, workspaceType: true },
     });
 
     // 滑动续期：桌面端把凭据存在本机，只要用户还在用就一直有效，直到绝对上限。
@@ -269,6 +272,11 @@ export async function decodeToken(token: string): Promise<SessionContext | null>
       // 空间行读不到时退回 1（而不是 0）：契约是 positiveInt，0 会让整个会话
       // 在客户端解析失败。读不到只可能是空间刚被删，那种情况下一次请求就会被拒。
       workspaceEpoch: workspace?.workspaceEpoch ?? 1,
+      // 2026-10-03：与 workspaceEpoch 同一份读数，供 /auth/me 复用，
+      // 不再为 name / workspace_type 单独发一次查询。行读不到时留 null，
+      // 由消费方按既有语义兜底（与 workspaceOwnerId 的处理方式一致）。
+      workspaceName: workspace?.name ?? null,
+      workspaceType: workspace?.workspaceType ?? null,
     };
   });
 }

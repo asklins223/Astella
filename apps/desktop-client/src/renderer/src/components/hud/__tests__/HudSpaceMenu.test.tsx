@@ -7,7 +7,7 @@ import type {
   SessionContextV1,
   WorkspaceSummaryV1,
 } from "@ailearn/shared/desktop-ipc-contracts";
-import { HudAccountMenu, SPACE_SEARCH_MINIMUM } from "../HudAccountMenu.tsx";
+import { HudSpaceMenu, SPACE_SEARCH_MINIMUM } from "../HudSpaceMenu.tsx";
 import {
   SPACE_MENU_REFRESH_EVENT,
   takePendingSpaceSwitchReceipt,
@@ -91,12 +91,12 @@ function installListApi(workspaces: readonly WorkspaceSummaryV1[]) {
 }
 
 async function renderMenu(props: { readonly onSwitched?: (workspaceName: string) => void } = {}) {
-  const result = render(<HudAccountMenu notice={null} {...props} />);
+  const result = render(<HudSpaceMenu notice={null} {...props} />);
   await waitFor(() => expect(screen.getByRole("button", { name: /个人书房/ })).toBeTruthy());
   return result;
 }
 
-describe("HudAccountMenu", () => {
+describe("HudSpaceMenu", () => {
   it("每一行都报出身份：个人空间不再只写一个 Personal，成员写明只读", async () => {
     installApi({
       auth: { getState: vi.fn().mockResolvedValue(ok(session(CURRENT.workspaceId), 1)) },
@@ -127,10 +127,11 @@ describe("HudAccountMenu", () => {
         create: createWorkspace,
       },
     });
-    render(<HudAccountMenu notice={null} onSwitched={() => undefined} />);
+    render(<HudSpaceMenu notice={null} onSwitched={() => undefined} />);
+    fireEvent.click(await screen.findByRole("button", { name: "新建空间" }));
     const nameField = await screen.findByLabelText("新协作空间名称");
     fireEvent.change(nameField, { target: { value: "海岸研究室" } });
-    fireEvent.click(screen.getByRole("button", { name: "新建" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
 
     await waitFor(() => expect(createWorkspace).toHaveBeenCalledTimes(1));
     // 主进程创建后会 switchWorkspace，所以这里必须按"换了空间"处理：停车回执 +
@@ -150,12 +151,13 @@ describe("HudAccountMenu", () => {
         }),
       },
     });
-    render(<HudAccountMenu notice={null} onSwitched={() => undefined} />);
+    render(<HudSpaceMenu notice={null} onSwitched={() => undefined} />);
+    fireEvent.click(await screen.findByRole("button", { name: "新建空间" }));
     const nameField = await screen.findByLabelText("新协作空间名称");
     fireEvent.change(nameField, { target: { value: "不该成功的空间" } });
-    fireEvent.click(screen.getByRole("button", { name: "新建" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
 
-    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
     expect(takePendingSpaceSwitchReceipt()).toBeNull();
   });
 
@@ -173,16 +175,16 @@ describe("HudAccountMenu", () => {
       },
     });
     useRoomStore.setState({ activeRunId: "11111111-9999-4999-8999-999999999999" });
-    render(<HudAccountMenu notice={null} onSwitched={onSwitched} />);
+    render(<HudSpaceMenu notice={null} onSwitched={onSwitched} />);
     await waitFor(() => expect(screen.getByRole("button", { name: /海岸研究室/ })).toBeTruthy());
 
     const row = screen.getByRole("button", { name: /海岸研究室/ });
     fireEvent.click(row);
     expect(switchWorkspace).not.toHaveBeenCalled();
     expect(onSwitched).not.toHaveBeenCalled();
-    expect(screen.getByText("再点确认")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "确认切换" })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /海岸研究室/ }));
+    fireEvent.click(screen.getByRole("button", { name: "确认切换" }));
     await waitFor(() => expect(switchWorkspace).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(onSwitched).toHaveBeenCalledWith("海岸研究室"));
   });
@@ -197,7 +199,7 @@ describe("HudAccountMenu", () => {
       },
     });
     useRoomStore.setState({ activeRunId: null });
-    render(<HudAccountMenu notice={null} onSwitched={() => undefined} />);
+    render(<HudSpaceMenu notice={null} onSwitched={() => undefined} />);
     await waitFor(() => expect(screen.getByRole("button", { name: /海岸研究室/ })).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: /海岸研究室/ }));
@@ -240,6 +242,69 @@ describe("HudAccountMenu", () => {
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
     expect(screen.getByRole("button", { name: /海岸研究室/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: "重试" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /个人书房/ })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: /个人书房/ }).getAttribute("aria-current")).toBe("true");
+  });
+
+  it("加入和新建按需展开，切换表单保留草稿并即时交接焦点", async () => {
+    installListApi([CURRENT, OTHER]);
+    await renderMenu();
+    expect(screen.queryByLabelText("协作空间邀请码")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "加入空间" }));
+    const invite = screen.getByLabelText("协作空间邀请码");
+    expect(document.activeElement).toBe(invite);
+    fireEvent.change(invite, { target: { value: "my-draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "新建空间" }));
+    expect(screen.queryByLabelText("协作空间邀请码")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByLabelText("新协作空间名称"));
+    fireEvent.click(screen.getByRole("button", { name: "加入空间" }));
+    expect(screen.getByLabelText("协作空间邀请码")).toHaveProperty("value", "my-draft");
+  });
+
+  it("新建会进入空间，正式测评期间同样需要明确确认；取消不发请求", async () => {
+    const create = vi.fn().mockResolvedValue(ok({ version: 1, workspaceId: OTHER.workspaceId, name: "新书房" }));
+    installApi({ auth: { getState: vi.fn().mockResolvedValue(ok(session(CURRENT.workspaceId), 1)) },
+      workspace: { list: vi.fn().mockResolvedValue(ok({ workspaces: [CURRENT, OTHER] }, 1)), create } });
+    useRoomStore.setState({ activeRunId: "11111111-9999-4999-8999-999999999999" });
+    await renderMenu();
+    fireEvent.click(screen.getByRole("button", { name: "新建空间" }));
+    fireEvent.change(screen.getByLabelText("新协作空间名称"), { target: { value: "新书房" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+    expect(create).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("button", { name: "创建并进入" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "创建" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建并进入" }));
+    await waitFor(() => expect(create).toHaveBeenCalledOnce());
+  });
+
+  it("加入已成功但列表刷新失败，显示成功回执、清空邀请码并提供刷新", async () => {
+    const joinWorkspace = vi.fn().mockResolvedValue(ok(session(CURRENT.workspaceId), 2));
+    installApi({ auth: { getState: vi.fn().mockResolvedValue(ok(session(CURRENT.workspaceId), 1)), joinWorkspace },
+      workspace: { list: vi.fn().mockResolvedValueOnce(ok({ workspaces: [CURRENT, OTHER] }, 1))
+        .mockRejectedValueOnce(new Error("list unavailable")) } });
+    await renderMenu();
+    fireEvent.click(screen.getByRole("button", { name: "加入空间" }));
+    fireEvent.change(screen.getByLabelText("协作空间邀请码"), { target: { value: "invite-token" } });
+    fireEvent.click(screen.getByRole("button", { name: "加入" }));
+    await screen.findByText("已加入学习空间，列表暂时没有更新。刷新后即可选择它。");
+    await waitFor(() => expect(screen.getByLabelText("协作空间邀请码")).toHaveProperty("value", ""));
+    expect(screen.getByRole("button", { name: "重试" })).toBeTruthy();
+    expect(joinWorkspace).toHaveBeenCalledOnce();
+  });
+
+  it("较旧的后台读取迟到时不会覆盖较新的空间列表", async () => {
+    let release: (value: GatewayResultV1<{ workspaces: WorkspaceSummaryV1[] }>) => void = () => {};
+    installApi({ auth: { getState: vi.fn().mockResolvedValue(ok(session(CURRENT.workspaceId), 1)) },
+      workspace: { list: vi.fn().mockResolvedValueOnce(ok({ workspaces: [CURRENT, OTHER] }, 1))
+        .mockImplementationOnce(() => new Promise(resolve => { release = resolve; }))
+        .mockResolvedValueOnce(ok({ workspaces: [CURRENT, OTHER, JOINED] }, 2)) } });
+    await renderMenu();
+    await act(async () => { window.dispatchEvent(new Event(SPACE_MENU_REFRESH_EVENT)); });
+    await act(async () => { window.dispatchEvent(new Event(SPACE_MENU_REFRESH_EVENT)); });
+    await screen.findByRole("button", { name: /山顶读书会/ });
+    await act(async () => { release(ok({ workspaces: [CURRENT, OTHER] }, 1)); });
+    expect(screen.getByRole("button", { name: /山顶读书会/ })).toBeTruthy();
   });
 
   it("joins without leaving the menu, names the joined space, and never reports a switch", async () => {
@@ -259,6 +324,7 @@ describe("HudAccountMenu", () => {
     });
 
     await renderMenu();
+    fireEvent.click(screen.getByRole("button", { name: "加入空间" }));
     fireEvent.change(screen.getByLabelText("协作空间邀请码"), { target: { value: "invite-token-1" } });
     fireEvent.submit((screen.getByRole("button", { name: "加入" }) as HTMLButtonElement).form!);
 
@@ -315,9 +381,11 @@ describe("HudAccountMenu", () => {
     expect(screen.queryByRole("button", { name: /AI Lab/ })).toBeNull();
     expect(screen.getByText("没有匹配「没有这个空间」的学习空间。")).toBeTruthy();
     // 过滤只筛列表：新建与加入邀请码仍然可用，否则空间一多就没法加新空间了。
+    expect(screen.getByRole("button", { name: "新建空间" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "加入空间" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "新建空间" }));
     expect(screen.getByLabelText("新协作空间名称")).toBeTruthy();
-    expect(screen.getByLabelText("协作空间邀请码")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "新建" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "创建" })).toHaveProperty("disabled", true);
   });
 
   it("分组：个人空间在前、协作空间在后，各自只装自己的行", async () => {
@@ -347,7 +415,7 @@ describe("HudAccountMenu", () => {
     installListApi([CURRENT, OTHER, JOINED, NIGHT, SECOND_HOME]);
 
     const { container } = await renderMenu();
-    const order = [...container.querySelectorAll(".space-row")]
+    const order = [...container.querySelectorAll(".hud-space-row")]
       .map((row) => row.querySelector("b")?.textContent);
     // 个人空间一组、协作空间一组，组内最近进入的在前；夜航船没进过，留在服务端
     // 顺序的末尾；第二个个人空间也没进过，跟在个人书房之后。

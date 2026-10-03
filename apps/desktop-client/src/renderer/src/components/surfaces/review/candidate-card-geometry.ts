@@ -21,8 +21,8 @@ export function createCardGeometry(height: number) {
 /** Project the semantic face with the same camera as WebGL, in CSS pixels.
  * Unlike a separate CSS3D camera, this stays registered at browser zoom levels. */
 export function cardFaceProjection(projection: Matrix4, view: Matrix4, world: Matrix4,
-  width: number, height: number, faceHeight: number, back: boolean) {
-  const unit = CARD_WIDTH / CARD_FACE_WIDTH;
+  width: number, height: number, faceHeight: number, back: boolean, faceWidth = CARD_FACE_WIDTH) {
+  const unit = CARD_WIDTH / faceWidth;
   const local = new Matrix4().set(
     back ? -unit : unit, 0, 0, back ? CARD_WIDTH / 2 : -CARD_WIDTH / 2,
     0, -unit, 0, faceHeight / 2,

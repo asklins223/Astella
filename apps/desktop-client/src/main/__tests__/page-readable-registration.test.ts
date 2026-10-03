@@ -20,7 +20,7 @@
  *
  * 放在 main 侧的理由与 `renderer-html-sink-guard.test.ts` 相同：读文件要 `node:fs`。
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -168,26 +168,16 @@ function filesUnderRegistering(registration: Registration): string[] {
 }
 
 /**
- * 有的屏由**别的文件**替它发布可读视图：伴星中心是六个 view 共用一屏，
- * 清单是各面板自己筛出来的（`companion-center-panels.tsx` 里的 `visible =
- * props.items.filter(...).sort(...)`），壳层手里只有未筛的那一批。让壳层报出
- * "她读到的那份清单"就得把那段 filter 再抄一遍——正是这一波在拆的
- * "同一个数两个来源"。所以这类屏的登记要算到面板文件头上。
- *
- * 这一屏其实是**多处共同**发布，各发自己那一份、且互不并存：
- *  - `companion-center-panels.tsx`：记忆／对话／日记／动态／人设／数据六个分区里的那五块清单；
- *  - `companion-center-overview.tsx`：概览那一屏；
- *  - 壳层 `companion-center-surface.tsx`：只有「记忆 → 关联星图」展开态——
- *    `visibleGraph`／`railGroups` 这两个派生值就住在壳层，面板拿不到，
- *    所以这是唯一一块登记必须落在壳层的。
- * 这里只填**面板那一份**：它撑起 `registered`，而壳层自己也发了并不冲突
- * （`filesUnderRegistering` 按文件数登记点时，把记在这里的屏排除掉）。
+ * 有的屏由子面板发布可读视图。伴星中心的七个页面，以及记忆页的星图和
+ * 整理与回收页，分别计算实际可见内容；导航壳不再重复取数或发布清单。
+ * Activity 隐藏页面时解除其登记，只留下当前页。登记跟随实现文件和真实
+ * import 图，不以旧的六页 barrel 或文件位置推定所有权。
  *
  * 记在这里的每一屏都还要过两道核对：面板文件里真有 `usePageReadableView(`，
  * 且壳层文件真的 import 了它（不然就是一个把登记算给自己的空壳）。
  */
-const PUBLISHED_BY_PANEL: Readonly<Record<string, string>> = {
-  companion: "src/renderer/src/components/surfaces/companion/companion-center-panels.tsx",
+const PUBLISHED_BY_PANEL: Readonly<Record<string, string | readonly string[]>> = {
+  companion: ["companion-center-overview", "companion-dialogue-panel", "companion-diary-panel", "companion-memory-panel", "companion-memory-map", "companion-memory-maintenance", "companion-discovery-panel", "companion-activity-panel", "companion-persona-panel"].map(file => `src/renderer/src/components/surfaces/companion/${file}.tsx`),
   candidate: "src/renderer/src/components/surfaces/review/use-card-generation-readable-view.ts",
   generating: "src/renderer/src/components/surfaces/review/use-card-generation-readable-view.ts",
 };
@@ -226,6 +216,22 @@ function registeredViaPanel(shellSource: string, panelSource: string, panelFile:
   return shellSource.includes(`from "${specifier}"`) || shellSource.includes(`from '${specifier}'`);
 }
 
+/** Follow local imports and re-exports after page containers were split from panels. */
+function registeredViaPanels(shellSource: string, shellFile: string, panelFiles: readonly string[]): boolean {
+  const reached = new Set<string>();
+  const walk = (source: string, file: string) => {
+    if (reached.has(file)) return;
+    reached.add(file);
+    for (const match of codeOnly(source).matchAll(/(?:import|export)[^;]*?from\s+["'](\.[^"']+)["']/g)) {
+      const base = join(dirname(file), match[1]);
+      const child = [base, `${base}.tsx`, `${base}.ts`].find(path => existsSync(path) && /\.[jt]sx?$/.test(path));
+      if (child && !reached.has(child)) walk(readFileSync(child, "utf8"), child);
+    }
+  };
+  walk(shellSource, shellFile);
+  return panelFiles.every(file => reached.has(file) && callsPublish(readFileSync(file, "utf8")));
+}
+
 /** 页面身份 → 它自己的组件文件，以及登记落在哪里（自己或它的面板文件）。 */
 function pageRegistration(): Map<string, { file: string; registered: boolean; own: boolean }> {
   const map = new Map<string, { file: string; registered: boolean; own: boolean }>();
@@ -233,7 +239,9 @@ function pageRegistration(): Map<string, { file: string; registered: boolean; ow
     const source = readFileSync(file, "utf8");
     for (const page of hostedPages(source)) {
       const panel = PUBLISHED_BY_PANEL[page];
-      const viaPanel = panel !== undefined && registeredViaPanel(source, readFileSync(panel, "utf8"), panel, file);
+      const viaPanel = panel !== undefined && (typeof panel === "string"
+        ? registeredViaPanel(source, readFileSync(panel, "utf8"), panel, file)
+        : registeredViaPanels(source, file, panel));
       const own = callsPublish(source);
       map.set(page, { file, registered: own || viaPanel, own });
     }

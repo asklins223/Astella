@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { GatewayResultV1, SessionContextV1, WorkspaceAiSettingsV1 } from "@ailearn/shared/desktop-ipc-contracts";
+import type { CompanionAccountPatch, CompanionAccountStateV1 } from "@ailearn/shared/companion-shell-contracts";
 import type { DesktopAiAuditItemV1 } from "@ailearn/shared/desktop-surface-contracts";
 import { AI_CONSENT_VERSION } from "@ailearn/shared/desktop-ipc-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -120,6 +121,7 @@ function auditItem(overrides: Partial<DesktopAiAuditItemV1> = {}): DesktopAiAudi
 }
 
 function installApi(options: {
+  readonly account?: CompanionAccountStateV1;
   readonly role?: "owner" | "member";
   /** 让解散预览失败——界面必须说"数不出来"，不能拿 0 冒充"这里什么都没有"。 */
   dissolvePreviewRejects?: boolean;
@@ -157,10 +159,11 @@ function installApi(options: {
 } = {}) {
   const role = options.role ?? "owner";
   let ai = options.ai ?? aiSettings();
+  let account: CompanionAccountStateV1 = options.account ?? { revision: 5, epoch: 0, globalEnabled: true, diaryEnabled: true };
   const calls: { method: string; input: unknown }[] = [];
   const api = {
     auth: {
-      getState: vi.fn(async () => ok(session(role, { collaborative: options.collaborativeSpace }))),
+      getState: vi.fn(async () => ({ ...ok(session(role, { collaborative: options.collaborativeSpace })), workspaceEpoch: 7 })),
       joinWorkspace: vi.fn(async () => ok(session(role, { collaborative: options.collaborativeSpace }))),
       leaveWorkspace: vi.fn(async (input: unknown) => {
         calls.push({ method: "auth.leaveWorkspace", input });
@@ -173,6 +176,19 @@ function installApi(options: {
       }),
     },
     companion: {
+      memory: { clear: vi.fn(async () => ok({ version: 1 as const, deletedCount: 3 })) },
+      history: { clear: vi.fn(async () => ok({ version: 1 as const, deletedMessages: 7, deletedConversations: 2 })) },
+      data: {
+        export: vi.fn(async (_input: { kind: "all" | "memory" | "audit" }) => ok({ version: 1 as const, saved: true, canceled: false, fileName: "companion-test.json", bytes: 100 })),
+        deleteAudit: vi.fn(async () => ok({ version: 1 as const, deletedAudit: 4, deletedLedger: 2 })),
+      },
+      account: {
+        getState: vi.fn(async () => ({ ...ok({ account, onboardingStates: [] }), workspaceEpoch: 7 })),
+        patchState: vi.fn(async (input: { request: CompanionAccountPatch }) => {
+          account = { ...account, ...input.request, revision: account.revision + 1 };
+          return ok(account);
+        }),
+      },
       answerMode: {
         get: vi.fn(async () => ok({ version: 1 as const, preference: "any" as const, updatedAt: null })),
         patch: vi.fn(async (input: { preference: "voice" | "silent" | "text" | "any" }) =>
@@ -316,6 +332,7 @@ function installApi(options: {
 
 function openSection(label: string) {
   fireEvent.click(screen.getByRole("button", { name: label }));
+  if (label === "伴星设置") fireEvent.click(screen.getByRole("tab", { name: "声音与显示" }));
 }
 
 const createdObjectUrls: string[] = [];
@@ -496,6 +513,9 @@ describe("AI consent is a real control, not a display", () => {
     await screen.findByText("理解空间", { selector: ".space-identity h3" });
 
     openSection("数据与维护");
+    const details = screen.getByText("设备功能状态").closest("details")!;
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
     const row = (await screen.findByText("系统通知")).closest(".settings-row") as HTMLElement;
     const chip = within(row).getByText("未接入");
     expect(chip.getAttribute("title")).toContain("还没有接入这条链路");
@@ -508,6 +528,9 @@ describe("AI consent is a real control, not a display", () => {
     await screen.findByText("理解空间", { selector: ".space-identity h3" });
 
     openSection("AI 数据同意");
+    const details = screen.getByText("查看当前 AI 可用范围").closest("details")!;
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
     const row = (await screen.findByText("伴星读取工作区内容")).closest(".settings-row") as HTMLElement;
     expect(within(row).getByText("已允许")).toBeTruthy();
   });
@@ -518,7 +541,8 @@ describe("AI consent is a real control, not a display", () => {
     // panel renders what it was given rather than a constant.
     render(<SettingsSurface />);
     await screen.findByText("理解空间", { selector: ".space-identity h3" });
-    openSection("语音与伴星");
+    fireEvent.click(screen.getByRole("button", { name: "伴星设置" }));
+    fireEvent.click(screen.getByText("查看当前可用能力"));
 
     const row = (await screen.findByText("对话能力")).closest(".settings-row") as HTMLElement;
     expect(within(row).getByText("已关闭")).toBeTruthy();
@@ -770,7 +794,7 @@ describe("the sound switch", () => {
     installApi();
     render(<SettingsSurface />);
     await screen.findByText("理解空间", { selector: ".space-identity h3" });
-    openSection("语音与伴星");
+    openSection("伴星设置");
 
     const sound = await screen.findByRole("switch", { name: "伴星与环境音" });
     expect(sound.getAttribute("aria-checked")).toBe("true");
@@ -939,9 +963,9 @@ describe("设置页的退出登录", () => {
   });
 });
 
-// ─── 设置 → 语音与伴星：引擎、音色与试听 ─────────────────────────────────
+// ─── 设置 → 伴星设置：引擎、音色与试听 ─────────────────────────────────
 it("播放读数跟着音频事件走：接线不能只挂在挂载 effect 上", async () => {
-  // <audio> 渲染在「语音与伴星」这一屏里，一次性 effect 跑的时候它还不存在。
+  // <audio> 渲染在「伴星设置」这一屏里，一次性 effect 跑的时候它还不存在。
   // 真窗口里踩到过：音频在放，读数却永远停在 0:00 / 0:00、进度条一动不动。
   await openVoiceSection();
   const audio = document.querySelector("audio.settings-voice__source") as HTMLAudioElement;
@@ -973,8 +997,9 @@ async function openVoiceSection(options: Parameters<typeof installApi>[0] = {}) 
   const { api, calls } = installApi({ ...options, collaborativeSpace: true });
   render(<SettingsSurface />);
   await screen.findByText("理解空间", { selector: ".space-identity h3" });
-  openSection("语音与伴星");
-  await waitFor(() => expect(screen.getByText("用哪套声音合成")).toBeTruthy());
+  openSection("伴星设置");
+  if (options.voiceUnavailable) await screen.findByText("音色偏好暂时读不到");
+  else await screen.findAllByRole("button", { name: "试听" });
   return { api, calls };
 }
 
@@ -988,8 +1013,8 @@ it("试听：离开这一屏要停下来，也不把录音源留在脱离的元�
   installApi({});
   const view = render(<SettingsSurface />);
   await screen.findByText("理解空间", { selector: ".space-identity h3" });
-  openSection("语音与伴星");
-  await waitFor(() => expect(screen.getByText("用哪套声音合成")).toBeTruthy());
+  openSection("伴星设置");
+  await screen.findAllByRole("button", { name: "试听" });
   const audio = document.querySelector("audio.settings-voice__source") as HTMLAudioElement;
   let playing = false;
   audio.play = () => { playing = true; return Promise.resolve(); };
@@ -1033,15 +1058,15 @@ it("切到 Edge-TTS：列表只剩固定那一条，写入带成对的引擎与�
   });
 });
 
-it("点某一行「用这一身」：写进去的就是那一行的 voice", async () => {
+it("点某一行「用这个声音」：写进去的就是那一行的 voice", async () => {
   const { calls } = await openVoiceSection();
-  const rows = screen.getAllByRole("button", { name: "用这一身" });
+  const rows = screen.getAllByRole("button", { name: "用这个声音" });
   // 生效那一行根本不给这个按钮（不是给一个点不动的）：45° 之外它还占着一格位置，
   // 留着只会让五行看起来都有同一个可点的动作。
   expect(rows.length).toBe(QWEN_TTS_VOICE_OPTIONS.length - 1);
   const inUseRow = screen.getByText("在用").closest(".settings-row") as HTMLElement;
   expect(inUseRow.textContent).toContain("龙华");
-  expect(within(inUseRow).queryByRole("button", { name: "用这一身" })).toBeNull();
+  expect(within(inUseRow).queryByRole("button", { name: "用这个声音" })).toBeNull();
   fireEvent.click(rows[0]);
   await waitFor(() => {
     const write = calls.find((call) => call.method === "voicePreference.patch");
@@ -1121,6 +1146,9 @@ it("外发记录：还有更早的就给下一页，offset 按已读到的条数
   fireEvent.click(await screen.findByRole("button", { name: "更早的记录" }));
   await waitFor(() => expect(calls.filter((c) => c.method === "getAiAuditLog")).toHaveLength(2));
   expect(calls.filter((c) => c.method === "getAiAuditLog")[1]!.input).toMatchObject({ offset: 2 });
+  fireEvent.click(await screen.findByRole("button", { name: "较新的记录" }));
+  await waitFor(() => expect(calls.filter((c) => c.method === "getAiAuditLog")).toHaveLength(3));
+  expect(calls.filter((c) => c.method === "getAiAuditLog")[2]!.input).toMatchObject({ offset: 0 });
 });
 
 it("外发记录：空清单说没有记录，不是一片空白", async () => {
@@ -1294,6 +1322,10 @@ describe("设置中心把这一屏登记给伴星读（39d W2-7）", () => {
     await screen.findByText("理解空间", { selector: ".space-identity h3" });
     openSection(label);
     await screen.findByRole("heading", { name: label, level: 2 });
+    if (label === "伴星设置") {
+      if (options.voiceUnavailable) await screen.findByText("音色偏好暂时读不到");
+      else await screen.findAllByRole("button", { name: "试听" });
+    }
     return installed.api;
   }
 
@@ -1304,7 +1336,7 @@ describe("设置中心把这一屏登记给伴星读（39d W2-7）", () => {
    */
   function rowTitles(): string[] {
     return [...document.querySelectorAll(".settings-row")]
-      .filter((row) => (row.closest("details") as HTMLDetailsElement | null)?.open !== false)
+      .filter(row => !row.closest('[style*="display: none"]') && (row.closest("details") as HTMLDetailsElement | null)?.open !== false)
       .map((row) => row.querySelector(".settings-row__body > b")?.textContent ?? "");
   }
 
@@ -1321,7 +1353,7 @@ describe("设置中心把这一屏登记给伴星读（39d W2-7）", () => {
   }
 
   function stateOf(label: string): string | undefined {
-    return published()!.items!.find((item) => item.label === label)?.state;
+    return published()?.items?.find((item) => item.label === label)?.state;
   }
 
   it("整页读不到时只发那一格状态与原因，分区那份读数一条都不带", async () => {
@@ -1386,7 +1418,8 @@ describe("设置中心把这一屏登记给伴星读（39d W2-7）", () => {
       label: "环境主题",
       value: document.querySelector('.settings-theme[aria-pressed="true"] .settings-theme__label')?.textContent?.trim(),
     });
-    assertRowAccounting(view.items!.map((item) => item.label), ["重播首次进入引导"]);
+    assertRowAccounting(view.items!.map((item) => item.label));
+    expect(screen.getByRole("button", { name: "重新认识书房" })).toBeTruthy();
     for (const label of ["动效等级", "目录行为"]) {
       expect(stateOf(label)).toBe(
         document.querySelector(`[aria-label="${label}"] [aria-checked="true"]`)?.textContent,
@@ -1395,8 +1428,9 @@ describe("设置中心把这一屏登记给伴星读（39d W2-7）", () => {
     expect(stateOf("系统减少动效")).toBe(rowByTitle("系统减少动效").querySelector(".tag")?.textContent);
   });
 
-  it("语音与伴星：音色只登记当前引擎那一份，读不到的那行不演成读到了", async () => {
-    await openSectionOf("语音与伴星", { voice: undefined, voiceUnavailable: true });
+  it("伴星设置：音色只登记当前引擎那一份，读不到的那行不演成读到了", async () => {
+    await openSectionOf("伴星设置", { voice: undefined, voiceUnavailable: true });
+    await waitFor(() => expect(stateOf("用哪套声音合成")).toBe("未读到"));
     const view = published()!;
 
     expect(stateOf("用哪套声音合成"))
@@ -1409,12 +1443,13 @@ describe("设置中心把这一屏登记给伴星读（39d W2-7）", () => {
       const state = stateOf(label);
       expect(state === undefined || rowByTitle(label).querySelector(".tag")?.textContent === state).toBe(true);
     }
-    expect(stateOf("模型状态")).toBe(rowByTitle("模型状态").querySelector(".tag")?.textContent);
+    expect(stateOf("模型状态")).toBeUndefined();
   });
 
   it("音色名单登记的是当前引擎那一份，「在用」那一行对得上那枚 tag", async () => {
     // 默认夹具就是 qwen 那一份名单（`explicit: false`，但引擎与音色读到了）。
-    await openSectionOf("语音与伴星");
+    await openSectionOf("伴星设置");
+    await waitFor(() => expect(published()?.items?.some(item => item.label === QWEN_TTS_VOICE_OPTIONS[0].name)).toBe(true));
     const view = published()!;
     const onScreen = rowTitles().filter((title) => QWEN_TTS_VOICE_OPTIONS.some((option) => option.name === title));
 
@@ -1444,6 +1479,9 @@ describe("设置中心把这一屏登记给伴星读（39d W2-7）", () => {
 
   it("AI 数据同意：同意、四个外发策略与四行授权都按屏上那一刻那格登记", async () => {
     await openSectionOf("AI 数据同意");
+    const details = screen.getByText("查看当前 AI 可用范围").closest("details")!;
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
     const view = published()!;
     assertRowAccounting(view.items!.map((item) => item.label));
 
@@ -1464,10 +1502,11 @@ describe("设置中心把这一屏登记给伴星读（39d W2-7）", () => {
       label: stat.querySelector("span")?.textContent,
       value: stat.querySelector("b")?.textContent,
     })));
-    assertRowAccounting(view.items!.map((item) => item.label),
+    assertRowAccounting(view.items?.map((item) => item.label) ?? [],
       ["导出工作区（只读存档）", "导入 Markdown 笔记", "删除来源与笔记"]);
-    expect(stateOf("可见空间")).toBe(rowByTitle("可见空间").querySelector(".write-line")?.textContent);
-    expect(stateOf("当前工作区")).toBe(rowByTitle("当前工作区").querySelector(".write-line")?.textContent);
+    expect(stateOf("系统通知")).toBeUndefined();
+    expect(stateOf("自动更新")).toBeUndefined();
+    expect(screen.queryByText("可见空间")).toBeNull();
   });
 
   it("换一格目录：那一格跟着换成这一屏的读数，不留上一屏的行", async () => {
@@ -1475,11 +1514,172 @@ describe("设置中心把这一屏登记给伴星读（39d W2-7）", () => {
     const before = published()!;
     expect(before.filters![0]).toEqual({ label: "当前分区", value: "主题与动效" });
 
-    openSection("语音与伴星");
-    await screen.findByRole("heading", { name: "语音与伴星", level: 2 });
+    openSection("伴星设置");
+    await screen.findByRole("heading", { name: "伴星设置", level: 2 });
     const after = published()!;
-    expect(after.filters![0]).toEqual({ label: "当前分区", value: "语音与伴星" });
+    expect(after.filters![0]).toEqual({ label: "当前分区", value: "伴星设置" });
     expect(after.items!.map((item) => item.label).filter((label) => before.items!.some((row) => row.label === label)))
       .toEqual([]);
+  });
+});
+
+
+describe("重构后的伴星设置：规则、设备和数据各有入口", () => {
+  it("随时间主题能接回自动变化；固定日夜仍保留手动选择", async () => {
+    installApi();
+    render(<SettingsSurface />);
+    await screen.findByText("理解空间", { selector: ".space-identity h3" });
+    fireEvent.click(screen.getByRole("button", { name: "主题与动效" }));
+    fireEvent.click(screen.getByRole("button", { name: "夜间场景" }));
+    expect(useRoomStore.getState()).toMatchObject({ theme: "night", themeMode: "manual" });
+    fireEvent.click(screen.getByRole("button", { name: /随时间变化/ }));
+    expect(useRoomStore.getState().themeMode).toBe("system");
+    expect(screen.getByRole("button", { name: /随时间变化/ }).getAttribute("aria-pressed")).toBe("true");
+    act(() => useRoomStore.getState().applyTimeTheme("day"));
+    expect(useRoomStore.getState().theme).toBe("day");
+    expect(screen.getByRole("button", { name: "日间场景" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("恢复伴星摆放只重置本机位置与大小，账号模型与规则保留", async () => {
+    useRoomStore.setState({ companionScale: 1.3, companionPlacementOwner: "user", companionUserAnchor: { x: .95, y: .4 } });
+    const beforeModel = useRoomStore.getState().companionModelId;
+    const { api } = await openRules();
+    fireEvent.click(screen.getByRole("tab", { name: "声音与显示" }));
+    fireEvent.click(screen.getByRole("button", { name: "恢复位置与大小" }));
+    expect(useRoomStore.getState()).toMatchObject({ companionScale: 1, companionPlacementOwner: "semantic", companionUserAnchor: null, companionModelId: beforeModel });
+    expect(api.companion.account.patchState).not.toHaveBeenCalled();
+  });
+
+  it("往返主分类保留伴星子页和未保存的静默时段", async () => {
+    const { api } = await openRules({ account: { revision: 9, epoch: 0, globalEnabled: true, diaryEnabled: true, quietHours: { startLocal: "23:00", endLocal: "07:00", timezone: "Asia/Shanghai" } } });
+    fireEvent.click(screen.getByRole("button", { name: "静默开始时间小时：23" }));
+    fireEvent.click(screen.getByRole("option", { name: "22" }));
+    fireEvent.click(screen.getByRole("tab", { name: "伴星数据" }));
+    fireEvent.click(screen.getByRole("button", { name: "主题与动效" }));
+    fireEvent.click(screen.getByRole("button", { name: "伴星设置" }));
+    expect(screen.getByRole("tab", { name: "伴星数据" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("tab", { name: "陪伴规则" }));
+    expect(screen.getByRole("button", { name: "静默开始时间小时：22" })).toBeTruthy();
+    expect(api.companion.account.patchState).not.toHaveBeenCalled();
+  });
+
+  async function openRules(options: Parameters<typeof installApi>[0] = {}) {
+    const fixture = installApi(options);
+    render(<SettingsSurface />);
+    await screen.findByText("理解空间", { selector: ".space-identity h3" });
+    fireEvent.click(screen.getByRole("button", { name: "伴星设置" }));
+    await screen.findByRole("switch", { name: "自动生成日记" });
+    return fixture;
+  }
+
+  it("规则的写入携带实际 revision，日记独立暂停，内容入口回到伴星中心", async () => {
+    const { api } = await openRules();
+    expect(screen.queryByRole("textbox", { name: "她叫什么" })).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "自动生成日记" }));
+    await waitFor(() => expect(api.companion.account.patchState).toHaveBeenCalledWith(expect.objectContaining({ request: { revision: 5, diaryEnabled: false } })));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "自动生成日记" }).getAttribute("aria-checked")).toBe("false"));
+    fireEvent.click(screen.getByRole("button", { name: "打开伴星中心" }));
+    expect(useRoomStore.getState().surface).toBe("companion-center");
+    expect(useRoomStore.getState().companionCenterTarget).toEqual({ tab: "overview" });
+  });
+
+  it("版本冲突先读回最新规则，保留失败说明，下一次明确操作用新 revision", async () => {
+    const { api } = await openRules();
+    api.companion.account.patchState.mockRejectedValueOnce(new Error("revision conflict"));
+    api.companion.account.getState.mockResolvedValueOnce({ ...ok({ account: { revision: 8, epoch: 0, globalEnabled: true, diaryEnabled: true }, onboardingStates: [] }), workspaceEpoch: 7 });
+    fireEvent.click(screen.getByRole("switch", { name: "自动生成日记" }));
+    await screen.findByText("伴星设置暂时不可用");
+    expect(screen.getByRole("switch", { name: "自动生成日记" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("switch", { name: "自动生成日记" }));
+    await waitFor(() => expect(api.companion.account.patchState).toHaveBeenLastCalledWith(expect.objectContaining({ request: { revision: 8, diaryEnabled: false } })));
+  });
+
+  it("自绘时间选择器只在保存时提交，错误和切换页签不丢掉编辑", async () => {
+    const { api } = await openRules({ account: { revision: 9, epoch: 0, globalEnabled: true, diaryEnabled: true, quietHours: { startLocal: "23:00", endLocal: "07:00", timezone: "Asia/Shanghai" } } });
+    expect(document.querySelector('input[type="time"], select')).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "静默开始时间小时：23" }));
+    fireEvent.click(screen.getByRole("option", { name: "22" }));
+    expect(api.companion.account.patchState).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "伴星数据" }));
+    fireEvent.click(screen.getByRole("tab", { name: "陪伴规则" }));
+    expect(within(screen.getByRole("group", { name: "静默开始时间" })).getByRole("button", { name: "静默开始时间小时：22" }).textContent).toBe("22");
+    api.companion.account.patchState.mockRejectedValueOnce(new Error("save refused"));
+    fireEvent.click(screen.getByRole("button", { name: "保存时段" }));
+    await screen.findByText("伴星设置暂时不可用");
+    expect((screen.getByRole("button", { name: "保存时段" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(api.companion.account.patchState).toHaveBeenCalledWith(expect.objectContaining({ request: { revision: 9, quietHours: { startLocal: "22:00", endLocal: "07:00", timezone: "Asia/Shanghai" } } }));
+  });
+
+  it("每一类数据分别确认，先取消不会写入，成功回执来自真实计数", async () => {
+    const { api } = await openRules();
+    fireEvent.click(screen.getByRole("tab", { name: "伴星数据" }));
+    const clearRows = document.querySelectorAll<HTMLElement>(".settings-companion-clear");
+    fireEvent.click(within(clearRows[0]).getByRole("button", { name: "清除" }));
+    const confirmation = screen.getByRole("group", { name: "确认清空全部记忆" });
+    expect(confirmation.textContent).toContain("30 天");
+    expect(api.companion.memory.clear).not.toHaveBeenCalled();
+    fireEvent.click(within(clearRows[0]).getByRole("button", { name: "取消" }));
+    fireEvent.click(within(clearRows[1]).getByRole("button", { name: "清除" }));
+    expect(screen.getByRole("group", { name: "确认清空连续对话记录" }).textContent).toContain("不可恢复");
+    fireEvent.click(screen.getByRole("button", { name: "确认清空连续对话记录" }));
+    await screen.findByText("已清除 7 条消息、2 段对话；动态收件箱已重新建立。");
+    expect(api.companion.history.clear).toHaveBeenCalledTimes(1);
+    expect(api.companion.memory.clear).not.toHaveBeenCalled();
+    fireEvent.click(within(clearRows[2]).getByRole("button", { name: "清除" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除操作与邀请记录" }));
+    await screen.findByText("已删除 4 条操作记录和 2 条邀请记录。");
+  });
+
+  it("导出提供三种实际范围，数据同意只跳转到统一授权页", async () => {
+    const { api } = await openRules();
+    fireEvent.click(screen.getByRole("tab", { name: "伴星数据" }));
+    expect(screen.getByText(/副本保存在本机/).textContent).toContain("下载 / 理解书房 / 伴星");
+    fireEvent.click(screen.getByRole("button", { name: /导出记忆与关联/ }));
+    await waitFor(() => expect(api.companion.data.export).toHaveBeenCalledWith(expect.objectContaining({ kind: "memory", meta: expect.objectContaining({ workspaceEpoch: 7 }) })));
+    await screen.findByText(/已保存 companion-test.json/);
+    fireEvent.click(screen.getByRole("button", { name: "查看数据同意" }));
+    expect(useRoomStore.getState().settingsSection).toBe("data");
+    expect(api.workspace.updateAiConsent).not.toHaveBeenCalled();
+    expect(api.workspace.updateAiDataPolicy).not.toHaveBeenCalled();
+  });
+
+  it("打开清除确认时焦点留在取消，Esc 收起后回到原操作且不清除数据", async () => {
+    const { api } = await openRules();
+    fireEvent.click(screen.getByRole("tab", { name: "伴星数据" }));
+    const historyRow = document.querySelectorAll<HTMLElement>(".settings-companion-clear")[1];
+    const open = within(historyRow).getByRole("button", { name: "清除" });
+    fireEvent.click(open);
+    expect(document.activeElement).toBe(within(historyRow).getByRole("button", { name: "取消" }));
+    expect(document.activeElement).not.toBe(screen.getByRole("button", { name: "确认清空连续对话记录" }));
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(screen.queryByRole("group", { name: "确认清空连续对话记录" })).toBeNull();
+    expect(document.activeElement).toBe(within(historyRow).getByRole("button", { name: "清除" }));
+    expect(useRoomStore.getState().surface).toBe("settings");
+    expect(api.companion.history.clear).not.toHaveBeenCalled();
+    expect(api.companion.memory.clear).not.toHaveBeenCalled();
+    expect(api.companion.data.deleteAudit).not.toHaveBeenCalled();
+  });
+
+  it("试听页签往返会停止旧播放，重新试听后仍接收真实进度事件", async () => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(async () => undefined);
+    await openRules();
+    fireEvent.click(screen.getByRole("tab", { name: "声音与显示" }));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "试听" }).length).toBeGreaterThan(1));
+    fireEvent.click(screen.getAllByRole("button", { name: "试听" })[0]);
+    const audio = document.querySelector<HTMLAudioElement>(".settings-companion-voice audio")!;
+    Object.defineProperty(audio, "duration", { configurable: true, value: 12 });
+    audio.currentTime = 4;
+    fireEvent.loadedMetadata(audio); fireEvent.timeUpdate(audio);
+    expect(screen.getByText("0:04 / 0:12")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "陪伴规则" }));
+    expect(pause).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "声音与显示" }));
+    await screen.findAllByRole("button", { name: "试听" });
+    fireEvent.click(screen.getAllByRole("button", { name: "试听" })[0]);
+    audio.currentTime = 6;
+    fireEvent.loadedMetadata(audio); fireEvent.timeUpdate(audio);
+    expect(screen.getByText("0:06 / 0:12")).toBeTruthy();
   });
 });

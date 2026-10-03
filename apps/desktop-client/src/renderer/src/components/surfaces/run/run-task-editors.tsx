@@ -698,17 +698,16 @@ export function InteractionEditor({
 
   if (interaction.kind === "text_response" && value.kind === "text") {
     return (
-      <label className="run-text-editor" style={{ display: "block", height: "100%" }}>
+      <label className="run-text-editor">
         <span className="sr-only">用自己的话回答</span>
         <textarea
           aria-label="用自己的话回答"
-          style={{ resize: "none", outline: "none", display: "block" }}
           maxLength={interaction.maxChars}
           value={value.text}
           onChange={(event) => onChange({ ...value, text: event.target.value })}
-          placeholder="用自己的话作答。可以举一个具体学习情境，但不要查看来源……"
+          placeholder="先写下你能想起的内容，也可以分点回答。"
         />
-        <small className="meta" style={{ display: "block", marginTop: 6, textAlign: "right" }}>{value.text.length} / {interaction.maxChars}</small>
+        <small className="meta run-text-editor__count">{value.text.length} / {interaction.maxChars}</small>
       </label>
     );
   }

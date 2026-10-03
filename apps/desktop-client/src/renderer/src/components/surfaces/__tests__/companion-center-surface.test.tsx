@@ -9,6 +9,7 @@ import type {
   CompanionDailySummaryV1,
   CompanionHistoryItemV1,
   CompanionMemoryItemV1,
+  CompanionMemoryRecycleListV1,
   CompanionMemoryStarMapV2,
   CompanionPersonaPendingV1,
   CompanionPersonaV1,
@@ -283,7 +284,7 @@ function installApi() {
       },
       memory: {
         starMap: vi.fn(async () => ok(starMap())),
-        list: vi.fn(async () => ok({ version: 2, items: [memoryItem()] })),
+        list: vi.fn(async (_input: Parameters<Window["ailearn"]["companion"]["memory"]["list"]>[0]) => ok({ version: 2, items: [memoryItem()] })),
         revisions: vi.fn(async (input: { readonly memoryId: string }) => ok({
           version: 1 as const,
           memoryItemId: input.memoryId,
@@ -293,9 +294,13 @@ function installApi() {
         confirm: vi.fn(async () => ok(memoryItem())),
         remove: vi.fn(async () => ok({ version: 1, ok: true })),
         clear: vi.fn(async () => ok({ deletedCount: 1 })),
+        recycleList: vi.fn(async (): Promise<GatewayResultV1<CompanionMemoryRecycleListV1>> => ok({ version: 1, items: [] })),
+        conflicts: vi.fn(async () => ok({ version: 1, items: [] })),
+        restoreDeleted: vi.fn(async () => ok(memoryItem())),
+        erase: vi.fn(async () => ok({ version: 1, ok: true })),
         // 40 §7 发现簿。取消收藏回 `{ status }` 而不是记忆体（服务端 204）。
         discovery: {
-          get: vi.fn(async () => ok({ version: 1, entries: [], studyVisible: [] })),
+          get: vi.fn(async () => ok({ version: 1, entries: [] as ReturnType<typeof discoveryEntry>[], studyVisible: [] as ReturnType<typeof discoveryEntry>[] })),
           collect: vi.fn(async () => ok({ status: "collected", entry: discoveryEntry() })),
           uncollect: vi.fn(async () => ok({ status: "uncollected" })),
           annotate: vi.fn(async () => ok({ status: "annotated" })),
@@ -314,7 +319,8 @@ function installApi() {
         activate: vi.fn(async () => ok({ version: 1 as const, ok: true as const, profile: personaProfile(), profileRevision: 2 })),
       },
       history: {
-        list: vi.fn(async () => ok({ version: 1, items: [historyItem()], nextCursor: null })),
+        list: vi.fn(async (_input: { meta: unknown; query?: { before?: string; limit?: number; throughMessageId?: string } }) => ok({ version: 1, items: [historyItem()], nextCursor: null as string | null })),
+        search: vi.fn(async (_input: { meta: unknown; query: { q: string; limit?: number } }) => ok({ version: 1, query: _input.query.q, items: [historyItem()] })),
         clear: vi.fn(async () => ok({ deletedCount: 1 })),
       },
       data: { deleteAudit: vi.fn(async () => ok({ deletedCount: 1 })) },
@@ -323,11 +329,15 @@ function installApi() {
       activity: {
         timeline: vi.fn(async (): Promise<GatewayResultV1<CompanionActivityTimelineV1>> => { throw new Error("activity unavailable"); }),
         ack: vi.fn(async () => ok({ ...delivery(1), state: "dismissed" as const })),
+        present: vi.fn(async () => ok({ ...delivery(1), state: "displayed" as const })),
       },
       // 默认是"读不到"，各用例再 mockResolvedValue 成自己的形状。
       // 这里必须把返回类型标出来：不标的话 `async () => { throw }` 推成
       // `Promise<never>`，第一个 mockResolvedValue 就把 mock 钉死在那个对象上。
       daily: {
+        hide: vi.fn(async () => ok({ version: 1, ok: true })),
+        unhide: vi.fn(async () => ok({ version: 1, ok: true })),
+        remove: vi.fn(async () => ok({ version: 1, ok: true })),
         // 参数也要标出来：不标的话 `calls` 推成空元组，用例里读 `calls.at(-1)[0].date`
         // 是类型错误——而 vitest 只剥类型不做检查，这条会一路绿到 typecheck。
         get: vi.fn(async (
@@ -361,6 +371,7 @@ function ShellSessionProbe() {
 
 beforeEach(() => {
   shellMode = null;
+  useRoomStore.setState({ companionComposerDraft: "", companionCenterTarget: null });
   // jsdom 没有这两个浏览器接口，而星图画布组件在挂载时会用到它们。
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
@@ -414,635 +425,311 @@ function renderCompanionCenter() {
   );
 }
 
-describe("the companion center reads the shell's companion session", () => {
-  it("shows a real diary excerpt and at most two pending items on the overview", async () => {
-    const api = installApi();
-    api.companion.daily.get.mockResolvedValue(ok(dailySummary()));
-    api.companion.activity.timeline.mockResolvedValue(ok({ version: 1, items: [delivery(1), delivery(2), delivery(3)], nextCursor: 3, serverTime: UPDATED_AT }));
-    renderCompanionCenter();
+describe("重构后的伴星中心", () => {
+  it("提供七个内容页面，规则与数据管理有独立设置入口", async () => {
+    installApi(); renderCompanionCenter();
+    expect(screen.getAllByRole("tab").map(tab => tab.textContent?.replace(/0[1-7]/g, ""))).toEqual(["近况", "对话", "日记", "记忆", "发现簿", "动态", "人格"]);
+    expect(screen.getByRole("tablist", { name: "伴星中心分区" }).getAttribute("aria-orientation")).toBe("vertical");
+    expect(await screen.findByRole("heading", { name: /接着聊/ })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "设置" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "伴星设置" }));
+    expect(useRoomStore.getState().surface).toBe("settings");
+    expect(useRoomStore.getState().settingsSection).toBe("companion");
+  });
 
+  it("竖排导航的上下与首尾键即时切页并保留焦点，隐藏页面不进入阅读路径", async () => {
+    installApi(); renderCompanionCenter();
+    await screen.findByRole("heading", { name: /接着聊/ });
+    let current = screen.getByRole("tab", { name: "近况" });
+    current.focus();
+    for (const [key, label] of [["ArrowDown", "对话"], ["ArrowDown", "日记"], ["ArrowUp", "对话"], ["End", "人格"], ["Home", "近况"]]) {
+      fireEvent.keyDown(current, { key });
+      current = screen.getByRole("tab", { name: label });
+      expect(document.activeElement).toBe(current);
+      expect(current.getAttribute("aria-selected")).toBe("true");
+      expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+      expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe(current.id);
+    }
+    await screen.findByRole("heading", { name: /接着聊/ });
+  });
+
+  it("近况展示真实日记，只把提议计算为需要回应", async () => {
+    const api = installApi();
+    const proposal = { ...delivery(3), kind: "proposal" as const, target: { kind: "proposal" as const, proposalId: MESSAGE_ID } };
+    api.companion.daily.get.mockResolvedValue(ok(dailySummary()));
+    api.companion.activity.timeline.mockResolvedValue(ok({ version: 1, items: [delivery(1), proposal], nextCursor: 3, serverTime: UPDATED_AT }));
+    renderCompanionCenter();
     expect(await screen.findByText("原文摘录")).toBeTruthy();
     expect(screen.getByText(/晚上十点他说想慢慢来/)).toBeTruthy();
-    expect(await screen.findByText("待确认记忆 3")).toBeTruthy();
-    expect(screen.getByText("待确认记忆 2")).toBeTruthy();
+    expect(await screen.findByText("1 件提议")).toBeTruthy();
     expect(screen.queryByText("待确认记忆 1")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /读完整篇/ }));
+    fireEvent.click(screen.getByRole("button", { name: "读完整篇" }));
     expect(screen.getByRole("tab", { name: "日记" }).getAttribute("aria-selected")).toBe("true");
   });
 
-  it("keeps failed and unavailable overview sections distinct", async () => {
+  it("各块失败独立呈现，仍能继续到对话页", async () => {
     const api = installApi();
     api.companion.daily.get.mockResolvedValue(ok(dailySummary({ status: "failed", blocks: [], failureReason: "model_unavailable" })));
     renderCompanionCenter();
     expect(await screen.findByText("这一天她没能写下来。")).toBeTruthy();
     expect(screen.getByText("动态暂时读不到。")).toBeTruthy();
     expect(screen.getByText("可以先从这道例题入手。")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /查看原因/ }));
-    expect(await screen.findByText(/她试了几次没写出来/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "开始交流" }));
+    expect(await screen.findByLabelText(/继续问/)).toBeTruthy();
   });
 
-  it("reports empty overview sections without fabricated counts", async () => {
-    const api = installApi();
-    api.companion.daily.get.mockResolvedValue(ok(dailySummary({ status: "not_generated", blocks: [], generatedAt: null })));
-    api.companion.history.list.mockResolvedValue(ok({ version: 1, items: [], nextCursor: null }));
-    api.companion.activity.timeline.mockResolvedValue(ok({ version: 1, items: [], nextCursor: 0, serverTime: UPDATED_AT }));
-    renderCompanionCenter();
-    expect(await screen.findByText(/这里还没有日记/)).toBeTruthy();
-    expect(screen.getByText("目前没有待回应的事。")).toBeTruthy();
-    expect(screen.getByText("你们还没有留下对话。")).toBeTruthy();
-    expect(document.querySelector(".companion-overview__pending")?.textContent).not.toMatch(/0 件/);
-  });
-  it("opens on the companion desk and loads the star map only when requested", async () => {
-    const api = installApi();
-    renderCompanionCenter();
-    expect(await screen.findByRole("heading", { name: /在这里/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "和她聊聊" })).toBeTruthy();
+  it("未访问页面不读取数据，星图在明确打开时读取", async () => {
+    const api = installApi(); renderCompanionCenter();
+    await screen.findByRole("heading", { name: /接着聊/ });
+    expect(api.companion.memory.list).not.toHaveBeenCalled();
     expect(api.companion.memory.starMap).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
-    expect(await screen.findByRole("button", { name: /我更喜欢从例子开始理解概念/ })).toBeTruthy();
+    await screen.findByRole("button", { name: /我更喜欢从例子开始理解概念/ });
     expect(api.companion.memory.starMap).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "查看关联星图" }));
-    const index = await screen.findByRole("listbox", { name: "星图等价节点索引" });
-    expect(index.textContent).toContain("牛顿第二定律笔记");
+    fireEvent.click(screen.getByRole("button", { name: "关联星图" }));
+    expect((await screen.findByLabelText("星图节点列表")).textContent).toContain("牛顿第二定律笔记");
     expect(api.companion.memory.starMap).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText("伴星中心暂时不可用")).toBeNull();
   });
 
-  it("opens the same conversation the companion overlay renders", async () => {
-    installApi();
-    renderCompanionCenter();
-
-    fireEvent.click(await screen.findByRole("tab", { name: "对话" }, { timeout: 5000 }));
-    fireEvent.click(await screen.findByRole("button", { name: /继续交流/ }));
-
+  it("中心输入与轻聊共用草稿，切换页面保留尚未发送的内容", async () => {
+    installApi(); renderCompanionCenter();
+    fireEvent.click(screen.getByRole("tab", { name: "对话" }));
+    const input = await screen.findByLabelText(/继续问/);
+    fireEvent.change(input, { target: { value: "我还想继续问这件事" } });
+    expect(useRoomStore.getState().companionComposerDraft).toBe("我还想继续问这件事");
+    fireEvent.click(screen.getByRole("tab", { name: "人格" }));
+    fireEvent.click(screen.getByRole("tab", { name: "对话" }));
+    expect((screen.getByLabelText(/继续问/) as HTMLTextAreaElement).value).toBe("我还想继续问这件事");
+    fireEvent.click(screen.getByRole("button", { name: "语音与轻聊" }));
     expect(shellMode).toBe("conversation");
-    // 服务端确认的对话记录按全局时间排在同一页上。
-    await screen.findByText("可以先从这道例题入手。");
   });
 
-  it("preserves the memory list search and selection after exploring the star map", async () => {
-    installApi();
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "记忆" }));
-    const row = await screen.findByRole("button", { name: /我更喜欢从例子开始理解概念/ });
-    fireEvent.click(row);
+  it("对话读取失败可重试，并保留可编辑的输入", async () => {
+    const api = installApi(); api.companion.history.list.mockRejectedValue(new Error("history unavailable"));
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "对话" }));
+    expect(await screen.findByText("连续对话当前不可用")).toBeTruthy();
+    expect(screen.getByLabelText(/继续问/)).toBeTruthy();
+    api.companion.history.list.mockResolvedValue(ok({ version: 1, items: [historyItem()], nextCursor: null }));
+    fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
+    expect(await screen.findByText("可以先从这道例题入手。")).toBeTruthy();
+  });
+
+  it("末页返回空游标后不再重复请求上一页", async () => {
+    const api = installApi();
+    api.companion.history.list.mockImplementation(async input => ok({ version: 1, items: [historyItem()], nextCursor: input.query?.before ? null : "older-page" }));
+    useRoomStore.setState({ companionCenterTarget: { tab: "dialogue" } }); renderCompanionCenter();
+    fireEvent.click(await screen.findByRole("button", { name: "加载更早记录" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "加载更早记录" })).toBeNull());
+    expect(api.companion.history.list.mock.calls.at(-1)?.[0].query?.before).toBe("older-page");
+  });
+
+  it("搜索通过真实接口读取；正在编辑的查询不会冒充已应用筛选", async () => {
+    const api = installApi(); renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "对话" }));
+    await screen.findByText("可以先从这道例题入手。");
+    fireEvent.change(screen.getByLabelText("搜索全部对话正文"), { target: { value: "例题" } });
+    expect(useRoomStore.getState().pageReadableView?.view?.filters).toBeUndefined();
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    await waitFor(() => expect(api.companion.history.search).toHaveBeenCalledWith(expect.objectContaining({ query: { q: "例题", limit: 50 } })));
+    expect(await screen.findByRole("button", { name: "返回最新对话" })).toBeTruthy();
+  });
+
+  it("旧消息定位使用目标读取，并把焦点交给那条消息", async () => {
+    const api = installApi();
+    useRoomStore.setState({ companionCenterTarget: { tab: "dialogue", focusMessageId: MESSAGE_ID } }); renderCompanionCenter();
+    await waitFor(() => expect(api.companion.history.list).toHaveBeenCalledWith(expect.objectContaining({ query: { limit: 50, throughMessageId: MESSAGE_ID } })));
+    await waitFor(() => expect(document.activeElement?.id).toBe("companion-message-" + MESSAGE_ID));
+  });
+
+  it("关联记忆即使不在最近一批中也按目标读取", async () => {
+    const api = installApi();
+    useRoomStore.setState({ companionCenterTarget: { tab: "memory", focusMemoryId: MEMORY_ID } }); renderCompanionCenter();
+    expect((await screen.findByRole("button", { name: /我更喜欢从例子开始理解概念/ })).getAttribute("aria-pressed")).toBe("true");
+    expect(api.companion.memory.list).toHaveBeenCalledWith(expect.objectContaining({ query: { includeCandidates: true, includeArchived: true, focusMemoryId: MEMORY_ID } }));
+  });
+
+  it("星图往返保留列表筛选与选中记忆", async () => {
+    installApi(); renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
+    await screen.findByRole("button", { name: /我更喜欢从例子开始理解概念/ });
     fireEvent.change(screen.getByLabelText("筛选记忆列表"), { target: { value: "例子" } });
-    fireEvent.click(screen.getByRole("button", { name: "查看关联星图" }));
-    await screen.findByRole("listbox", { name: "星图等价节点索引" });
+    fireEvent.click(screen.getByRole("button", { name: "关联星图" })); await screen.findByLabelText("星图节点列表");
     fireEvent.click(screen.getByRole("button", { name: "返回记忆列表" }));
     expect((screen.getByLabelText("筛选记忆列表") as HTMLInputElement).value).toBe("例子");
     expect(screen.getByRole("button", { name: /我更喜欢从例子开始理解概念/ }).getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("lands memory and message deep links in their new sections", async () => {
-    installApi();
-    useRoomStore.setState({ companionCenterTarget: { tab: "memory", focusMemoryId: MEMORY_ID } });
-    renderCompanionCenter();
+  it("从星图打开较早的记忆会补读目标，等待时不跳回最近一条", async () => {
+    const api = installApi();
+    let resolveTarget!: (value: GatewayResultV1<{ version: 2; items: CompanionMemoryItemV1[] }>) => void;
+    const target = new Promise<GatewayResultV1<{ version: 2; items: CompanionMemoryItemV1[] }>>(resolve => { resolveTarget = resolve; });
+    api.companion.memory.list.mockImplementation(async input => input.query?.focusMemoryId === MEMORY_ID ? target : ok({ version: 2, items: [secondMemoryItem()] }));
+    useRoomStore.setState({ companionCenterTarget: { tab: "memory" } }); renderCompanionCenter();
+    await screen.findByRole("button", { name: /这个月完成力学复习/ });
+    fireEvent.click(screen.getByRole("button", { name: "关联星图" }));
+    fireEvent.click(await screen.findByRole("button", { name: /记忆\s*我更喜欢从例子开始理解概念/ }));
+    fireEvent.click(screen.getByRole("button", { name: "查看这条记忆" }));
+    expect(await screen.findByText("正在定位这条记忆…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /这个月完成力学复习/ })).toBeNull();
+    resolveTarget(ok({ version: 2, items: [secondMemoryItem(), memoryItem()] }));
     expect((await screen.findByRole("button", { name: /我更喜欢从例子开始理解概念/ })).getAttribute("aria-pressed")).toBe("true");
-    useRoomStore.getState().setCompanionCenterTarget({ tab: "dialogue", focusMessageId: MESSAGE_ID });
-    expect(await screen.findByRole("article")).toBeTruthy();
-    await waitFor(() => expect(document.activeElement?.id).toBe(`companion-message-${MESSAGE_ID}`));
   });
 
-  it("scopes destructive confirmation to the selected memory", async () => {
+  it("从回收区恢复较早记忆后按目标补读并选中它", async () => {
     const api = installApi();
-    api.companion.memory.list.mockResolvedValue(ok({ version: 2, items: [memoryItem(), secondMemoryItem()] }));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "记忆" }));
-
-    const first = await screen.findByRole("button", { name: /我更喜欢从例子开始理解概念/ });
-    fireEvent.click(first);
-    fireEvent.click(screen.getByRole("button", { name: "删除" }));
-    expect(screen.getByRole("button", { name: "确认删除" })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: /这个月完成力学复习/ }));
-    expect(screen.queryByRole("button", { name: "确认删除" })).toBeNull();
-    expect(screen.getByRole("button", { name: "删除" })).toBeTruthy();
+    api.companion.memory.list.mockImplementation(async input => ok({ version: 2, items: input.query?.focusMemoryId === MEMORY_ID ? [secondMemoryItem(), memoryItem()] : [secondMemoryItem()] }));
+    api.companion.memory.recycleList.mockResolvedValue(ok({ version: 1, items: [{ id: MEMORY_ID, kind: "preference", content: memoryItem().content, deletedAt: "2026-10-01T08:00:00.000Z", purgeAfter: "2026-10-31T08:00:00.000Z", sourceEventId: null }] }));
+    useRoomStore.setState({ companionCenterTarget: { tab: "memory" } }); renderCompanionCenter();
+    fireEvent.click(await screen.findByRole("button", { name: "整理与回收" }));
+    fireEvent.click(await screen.findByRole("button", { name: "恢复这条记忆" }));
+    expect((await screen.findByRole("button", { name: /我更喜欢从例子开始理解概念/ })).getAttribute("aria-pressed")).toBe("true");
+    expect(api.companion.memory.restoreDeleted).toHaveBeenCalledWith(expect.objectContaining({ memoryId: MEMORY_ID }));
+    expect(api.companion.memory.list).toHaveBeenCalledWith(expect.objectContaining({ query: expect.objectContaining({ focusMemoryId: MEMORY_ID }) }));
   });
 
-  it("confirms a candidate and deletes only the selected memory after confirmation", async () => {
-    const api = installApi();
-    const candidate = { ...memoryItem(), candidate: true, userConfirmed: false, pinned: false, sourceType: "model_inferred" as const };
+  it("候选确认和删除分别执行，删除需要当前记忆的确认", async () => {
+    const api = installApi(); const candidate = { ...memoryItem(), candidate: true, userConfirmed: false, pinned: false, sourceType: "model_inferred" as const };
     api.companion.memory.list.mockResolvedValueOnce(ok({ version: 2, items: [candidate] }));
-    api.companion.memory.list.mockResolvedValue(ok({ version: 2, items: [memoryItem()] }));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "记忆" }));
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
     fireEvent.click(await screen.findByRole("button", { name: "确认写入" }));
     await waitFor(() => expect(api.companion.memory.confirm).toHaveBeenCalledWith(expect.objectContaining({ memoryId: MEMORY_ID })));
     fireEvent.click(await screen.findByRole("button", { name: "删除" }));
     expect(api.companion.memory.remove).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
     await waitFor(() => expect(api.companion.memory.remove).toHaveBeenCalledWith(expect.objectContaining({ memoryId: MEMORY_ID })));
+    expect(await screen.findByRole("button", { name: "撤回删除" })).toBeTruthy();
   });
 
-  it("saves a persona name and scopes data clearing to one confirmed category", async () => {
-    const api = installApi();
-    api.companion.persona.get.mockResolvedValue(ok({ ...persona(), profile: personaProfile(), profileRevision: 1 }));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "设置" }));
-    fireEvent.change(await screen.findByLabelText("她叫什么"), { target: { value: "新名字" } });
-    fireEvent.click(screen.getByRole("button", { name: "改名" }));
-    await waitFor(() => expect(api.companion.persona.patch).toHaveBeenCalledWith(expect.objectContaining({ request: expect.objectContaining({ name: "新名字" }) })));
-    fireEvent.click(screen.getByRole("button", { name: "数据与隐私" }));
-    const clearButtons = screen.getAllByRole("button", { name: "清除" });
-    fireEvent.click(clearButtons[0]);
-    expect(api.companion.memory.clear).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "确认清除" }));
-    await waitFor(() => expect(api.companion.memory.clear).toHaveBeenCalledTimes(1));
-    expect(api.companion.history.clear).not.toHaveBeenCalled();
-    expect(api.companion.data.deleteAudit).not.toHaveBeenCalled();
+  it("切到另一条记忆会收起之前的删除确认", async () => {
+    const api = installApi(); api.companion.memory.list.mockResolvedValue(ok({ version: 2, items: [memoryItem(), secondMemoryItem()] }));
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
+    await screen.findByRole("button", { name: /我更喜欢从例子开始理解概念/ });
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(screen.getByRole("button", { name: "确认删除" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /这个月完成力学复习/ }));
+    expect(screen.queryByRole("button", { name: "确认删除" })).toBeNull();
   });
 
-  it("shows account-scoped persona versions and restores a selected version with the current revision", async () => {
+  it("记忆和回收区的彻底清除先聚焦取消，Esc 只收起确认并恢复原操作", async () => {
     const api = installApi();
-    api.companion.persona.get.mockResolvedValue(ok({ ...persona(), profile: personaProfile(4), profileRevision: 4 }));
-    api.companion.persona.versions.mockResolvedValue(ok({
-      version: 1,
-      currentRevision: 4,
-      versions: [{
-        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        revision: 3,
-        examplesRevision: 3,
-        author: "user",
-        action: "update",
-        reason: "手动修改",
-        moduleScope: ["companion"],
-        profile: {
-          presetId: null,
-          name: "旧名字",
-          personalityTags: ["温柔"],
-          speakingStyle: "简洁",
-          examples: [],
-          activeness: "moderate",
-          boundaries: { allowPlayful: true },
-        },
-        createdAt: UPDATED_AT,
-      }],
-    }));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "设置" }));
-    fireEvent.click(await screen.findByRole("button", { name: "人格与边界" }));
-    fireEvent.click(await screen.findByRole("button", { name: "恢复第 3 版" }));
-    await waitFor(() => expect(api.companion.persona.restore).toHaveBeenCalledWith(expect.objectContaining({ revision: 3, currentRevision: 4 })));
-  });
+    api.companion.memory.recycleList.mockResolvedValue(ok({ version: 1, items: [{ id: MEMORY_ID, kind: "preference", content: memoryItem().content, deletedAt: "2026-10-01T08:00:00.000Z", purgeAfter: "2026-10-31T08:00:00.000Z", sourceEventId: null }] }));
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
+    fireEvent.click(await screen.findByRole("button", { name: "彻底清除" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "取消彻底清除" }));
+    const confirmation = screen.getByRole("button", { name: "确认彻底清除" });
+    confirmation.focus();
+    expect(fireEvent.keyDown(confirmation, { key: "Escape" })).toBe(false);
+    expect(screen.queryByRole("button", { name: "确认彻底清除" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "彻底清除" }));
 
-  it("keeps persona versions beyond the first twenty reachable", async () => {
-    const api = installApi();
-    api.companion.persona.get.mockResolvedValue(ok({ ...persona(), profile: personaProfile(21), profileRevision: 21 }));
-    api.companion.persona.versions.mockResolvedValue(ok({
-      version: 1,
-      currentRevision: 21,
-      versions: Array.from({ length: 21 }, (_, index) => ({
-        id: `00000000-0000-4000-8000-${String(21 - index).padStart(12, "0")}`,
-        revision: 21 - index,
-        examplesRevision: 21 - index,
-        author: "user" as const,
-        action: "update" as const,
-        reason: null,
-        moduleScope: ["companion"],
-        profile: null,
-        createdAt: UPDATED_AT,
-      })),
-    }));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "设置" }));
-    fireEvent.click(await screen.findByRole("button", { name: "人格与边界" }));
-    expect(screen.queryByRole("button", { name: "恢复第 1 版" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "查看更早版本（1）" }));
-    expect(await screen.findByRole("button", { name: "恢复第 1 版" })).toBeTruthy();
-  });
-
-  it("processes pending activity only in the activity section", async () => {
-    const api = installApi();
-    api.companion.activity.timeline.mockResolvedValue(ok({ version: 1, items: [delivery(1)], nextCursor: 1, serverTime: UPDATED_AT }));
-    renderCompanionCenter();
-    expect(await screen.findByText("待确认记忆 1")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "忽略" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /查看动态/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "忽略" }));
-    await waitFor(() => expect(api.companion.activity.ack).toHaveBeenCalledWith(expect.objectContaining({ request: expect.objectContaining({ deliveryId: delivery(1).deliveryId, transition: "dismissed" }) })));
-  });
-
-  /**
-   * 日记页（用户 2026-09-21 的裁决：「这跟系统统计数据有什么区别？」）。
-   * 旧实现把 12 个计数拼成一句"…的学习小结：新增学习卡 4 张；…"再挂一张数字表；
-   * 现在这一页只有她自己写的那段话，所以这两条用例守的是"数字不许回来"。
-   */
-  it("renders the diary as her own prose, with no statistics table", async () => {
-    const api = installApi();
-    api.companion.daily.get.mockResolvedValue(ok<CompanionDailySummaryV1>({
-      version: 1,
-      revision: 1,
-      selectedId: null,
-      date: "2026-09-20",
-      status: "generated",
-      generatedAt: "2026-09-20T16:00:00.000Z",
-      failureReason: null,
-      selectionReason: "这段把共同核对的过程留了下来。",
-      blocks: [{ type: "text", text: "晚上十点他说想慢慢来，我就把复习那件事咽回去了。" }],
-      memory: { memoryItemId: MEMORY_ID, candidate: true },
-      hidden: false,
-      hiddenAt: null,
-    }));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "日记" }));
-
-    const prose = await screen.findByText(/晚上十点他说想慢慢来/);
-    expect(prose.tagName).toBe("P");
-    expect(screen.getByText("她选了这段：这段把共同核对的过程留了下来。")).toBeTruthy();
-    // 正文里不许有阿拉伯数字——那正是"这跟系统统计数据有什么区别"的形状。
-    expect(prose.textContent).not.toMatch(/\d/);
-    const card = prose.closest("article");
-    expect(card?.querySelectorAll("dl")).toHaveLength(0);
-    expect(card?.textContent).not.toMatch(/新建笔记|生成学习卡|发起后台任务|到访页面|你说的话|伴星回复|学习小结/);
-
-    fireEvent.click(screen.getByRole("button", { name: "查看关联记忆" }));
+    fireEvent.click(screen.getByRole("button", { name: "整理与回收" }));
+    fireEvent.click(await screen.findByRole("button", { name: "彻底清除" }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "取消" }));
+    expect(fireEvent.keyDown(document.activeElement!, { key: "Escape" })).toBe(false);
+    expect(screen.queryByRole("button", { name: "确认彻底清除" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "彻底清除" }));
     expect(screen.getByRole("tab", { name: "记忆" }).getAttribute("aria-selected")).toBe("true");
+    expect(api.companion.memory.erase).not.toHaveBeenCalled();
+    expect(api.companion.memory.remove).not.toHaveBeenCalled();
   });
 
-  /**
-   * 她自己摆进来的图与原文，按她给的顺序出现在正文里。
-   *
-   * jsdom 取不到图片字节（没有真实的 source.getImage 通道），所以这里断言的是
-   * **位置与图注**——图那一格无论显示成图还是显示成"图片取不回来（图注）"，
-   * 都占在她放它的那个位置上。真的显示出来没有，走 CDP 在运行中的界面里看。
-   */
-  it("places her embedded image and quote where she put them, not all at the end", async () => {
-    const api = installApi();
-    api.companion.daily.get.mockResolvedValue(ok<CompanionDailySummaryV1>({
-      revision: 1,
-      version: 1,
-      selectedId: null,
-      date: "2026-09-20",
-      status: "generated",
-      generatedAt: "2026-09-20T16:00:00.000Z",
-      failureReason: null,
-      selectionReason: null,
-      blocks: [
-        { type: "text", text: "下午那张图我看了很久。" },
-        { type: "image", url: "/api/uploads/notes/alpha.png", label: "《IndexTTS》· 第 1 张", alt: "声码器流程图" },
-        { type: "text", text: "原文里那句话我一直记着。" },
-        { type: "quote", label: "《IndexTTS》里写着", text: "降低语义 Codec 帧率之后，音质几乎没掉。" },
-      ],
-      memory: null,
-      hidden: false,
-      hiddenAt: null,
-    }));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "日记" }));
-
-    const first = await screen.findByText(/下午那张图我看了很久/);
-    const card = first.closest("article");
-    const order = [...(card?.children ?? [])].map((node) => node.textContent ?? "");
-    expect(order[0]).toContain("下午那张图我看了很久");
-    expect(order[1]).toContain("《IndexTTS》· 第 1 张");
-    expect(order[2]).toContain("原文里那句话我一直记着");
-    expect(order[3]).toContain("降低语义 Codec 帧率之后");
-    // 引用块用的是记录页那个组件：长原文自己会量高折叠，这里不重复实现。
-    expect(card?.querySelector("figure.companion-record__quote")).toBeTruthy();
-    expect(screen.queryByText(/查看关联记忆/)).toBeNull();
+  it("手动记忆保存失败时保留输入，切页后仍可继续修改", async () => {
+    const api = installApi(); api.companion.memory.create.mockRejectedValue(new Error("create failed"));
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
+    fireEvent.click(await screen.findByRole("button", { name: "手动添加" }));
+    fireEvent.change(screen.getByLabelText("新记忆内容"), { target: { value: "我习惯先看例子" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存记忆" }));
+    await waitFor(() => expect(api.companion.memory.create).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("tab", { name: "日记" })); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
+    expect((screen.getByLabelText("新记忆内容") as HTMLTextAreaElement).value).toBe("我习惯先看例子");
   });
 
-  it.each([
-    ["consent_required", /「允许发送到外部模型服务」没有开启/],
-    ["model_unavailable", /她试了几次没写出来/],
-    ["diary_output_invalid", /还是在报数/],
-    // 这次改动之前写下的失败行没有成因这一列。
-    [null, /不会用推测内容填充这一天/],
-  ] as const)("names why she could not write the day (%s) instead of promising a retry on read", async (reason, expected) => {
-    const api = installApi();
-    api.companion.daily.get.mockResolvedValue(ok<CompanionDailySummaryV1>({
-      version: 1,
-      revision: 1,
-      selectedId: null,
-      date: "2026-09-20",
-      status: "failed",
-      generatedAt: "2026-09-20T16:00:00.000Z",
-      failureReason: reason,
-      selectionReason: null,
-      blocks: [],
-      memory: null,
-      hidden: false,
-      hiddenAt: null,
-    }));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "日记" }));
-
-    await screen.findByText("这一天她没能写下来");
-    expect(screen.getByText(expected)).toBeTruthy();
-    // 读取不会触发重新生成，旧文案那句"可稍后重试"是假承诺；正文也不许出现在失败态里。
-    expect(screen.queryByText(/可稍后重试/)).toBeNull();
-    expect(screen.queryByText(/晚上十点/)).toBeNull();
+  it("整理与回收走真实回收接口", async () => {
+    const api = installApi(); renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
+    fireEvent.click(await screen.findByRole("button", { name: "整理与回收" }));
+    expect(await screen.findByText("回收区是空的")).toBeTruthy();
+    expect(api.companion.memory.recycleList).toHaveBeenCalled();
   });
 
-  /**
-   * B4（评审 §6 从 B3 接的一条）：气泡里的空白节奏。
-   *
-   * 实测那条回复是单个 `<p>`、6 个 `\n`、225px 高——`pre-wrap` 把模型写的每个
-   * 换行都排成一行，段中就出现三行高的空档。切段只认「两个及以上连续换行」，
-   * 段内的单个换行是作者自己的换行，必须原样留着。
-   */
-  it("splits a bubble into paragraphs at blank runs but keeps single line breaks", async () => {
+  it("日记按原来的正文、图片、引文顺序阅读", async () => {
     const api = installApi();
-    api.companion.history.list.mockResolvedValue(ok({
-      version: 1,
-      items: [{ ...historyItem(), blocks: [{ type: "text", text: "本周累计 154 分钟。\n\n\n你说得对，刚才那几个数是凭印象说的。\n现在去查真实数据。" }] }],
-      nextCursor: null,
-    }));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "对话" }));
-
-    const article = await screen.findByText("本周累计 154 分钟。");
-    const paragraphs = [...article.closest("article")!.querySelectorAll("p")];
-    expect(paragraphs).toHaveLength(2);
-    expect(paragraphs[0].textContent).toBe("本周累计 154 分钟。");
-    // 第二个换行没被吞掉：它仍然在同一段里。
-    expect(paragraphs[1].textContent).toBe("你说得对，刚才那几个数是凭印象说的。\n现在去查真实数据。");
+    api.companion.daily.get.mockResolvedValue(ok(dailySummary({ blocks: [{ type: "text", text: "第一段正文" }, { type: "image", url: "https://example.test/diary.png", alt: "她画的小图", label: "她画的" }, { type: "quote", text: "他当时说的话", label: "原话" }, { type: "text", text: "最后一段正文" }] })));
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "日记" }));
+    await screen.findByText("第一段正文");
+    expect([...document.querySelectorAll(".cc-diary-prose > *")].map(node => node.tagName)).toEqual(["P", "FIGURE", "FIGURE", "P"]);
+    expect(document.querySelector(".cc-diary-prose > :nth-child(2)")?.textContent).toContain("她画的");
+    expect(document.querySelector(".cc-diary-prose > :nth-child(3)")?.textContent).toContain("他当时说的话");
   });
 
-  /**
-   * 月历上的「她写过哪几天」。标记来自新的月度读接口；读不到时必须说出来，
-   * 不能让「没有点」被读成「这个月她什么都没写」——那是两条不同的事实。
-   */
-  it("marks the days she actually wrote, and says so when the marks cannot be read", async () => {
-    const api = installApi();
-    api.companion.daily.get.mockResolvedValue(ok(dailySummary()));
-    api.companion.daily.month.mockResolvedValue(ok({
-      version: 1,
-      month: "2026-09",
-      days: [
-        { date: "2026-09-18", status: "generated" },
-        { date: "2026-09-19", status: "failed" },
-      ],
-    }));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "日记" }));
+  it("最新日记的隐藏使用读回的真实日期，并重新读取月历", async () => {
+    const api = installApi(); api.companion.daily.get.mockResolvedValue(ok(dailySummary()));
+    api.companion.daily.month.mockResolvedValue(ok({ version: 1, month: "2026-09", days: [] }));
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "日记" }));
+    await screen.findByText("晚上十点他说想慢慢来，我就把复习那件事咽回去了。");
+    const before = api.companion.daily.month.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "藏起来" }));
+    await waitFor(() => expect(api.companion.daily.hide).toHaveBeenCalledWith(expect.objectContaining({ date: "2026-09-20" })));
+    await waitFor(() => expect(api.companion.daily.month.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it("月历失败有明确说明，Escape 只关闭月历", async () => {
+    const api = installApi(); api.companion.daily.get.mockResolvedValue(ok(dailySummary()));
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "日记" }));
     fireEvent.click(await screen.findByRole("button", { name: /^选择日记日期/ }));
-
-    const written = await screen.findByRole("button", { name: "18 日，她写过" });
-    expect(written.querySelector(".companion-record__calendar-mark")?.getAttribute("data-status")).toBe("generated");
-    expect(screen.getByRole("button", { name: "19 日，她没写成" }).querySelector(".companion-record__calendar-mark")?.getAttribute("data-status")).toBe("failed");
-    // 没写过的那一天照样可点：点开是「这一天还没有日记」，那是一个诚实的答案。
-    expect(screen.getByRole("button", { name: "15" }).hasAttribute("disabled")).toBe(false);
-    expect(screen.queryByText(/这次没读出来/)).toBeNull();
-  });
-
-  it("admits when the month marks could not be read instead of showing an empty calendar", async () => {
-    const api = installApi();
-    api.companion.daily.get.mockResolvedValue(ok(dailySummary()));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "日记" }));
-    fireEvent.click(await screen.findByRole("button", { name: /^选择日记日期/ }));
-
-    // 默认 mock 就是「读不到」——这正是要披露的那种情况。
-    await screen.findByText(/这个月她写过哪几天，这次没读出来/);
-    expect(document.querySelectorAll(".companion-record__calendar-mark")).toHaveLength(0);
-  });
-
-  /**
-   * B4（评审 P12）记忆卡模板。
-   *
-   * jsdom 不加载样式表，所以这里守的是**DOM 顺序与信息归并**：正文是卡片的第一个
-   * 子元素、元信息收成一行。高度与「一屏几张」只能在真机量，走
-   * apps/desktop-client/scripts/tmp-cc-b4.mjs。
-   */
-  it("leads the memory card with its text and collapses meta into one line", async () => {
-    installApi();
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "记忆" }));
-
-    const card = await screen.findByRole("button", { name: /我更喜欢从例子开始理解概念/ });
-    const body = card.querySelector("strong");
-    expect(body?.textContent).toBe("我更喜欢从例子开始理解概念");
-    expect(card.firstElementChild).toBe(body);
-
-    const meta = card.querySelector("span");
-    expect(meta?.textContent).toContain("偏好");
-    expect(meta?.textContent).toContain("已固定");
-    // 类型、状态、时间全在这一行里：旧的独立标签位与日期行都要消失，否则还是三层抢同级。
-    expect(card.querySelectorAll("b")).toHaveLength(0);
-    expect(card.querySelectorAll("small")).toHaveLength(0);
-    // 状态用色点表达，但文字留着——颜色不能是唯一载体。
-    expect(meta?.querySelector("i.is-pinned")).not.toBeNull();
-  });
-
-  /**
-   * B4（评审 P13）星图右栏：48 条同一个长相的平铺列表改成按时间/类型分组，
-   * 失效关联单独成组，行内图标换成与图例同源的颜色点。
-   */
-  it("groups the star-map index by time and type, with dead links in their own group", async () => {
-    const api = installApi();
-    api.companion.memory.starMap.mockResolvedValue(ok(starMapWithOrphan()));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "记忆" }));
-    fireEvent.click(screen.getByRole("button", { name: "查看关联星图" }));
-
-    const index = await screen.findByRole("listbox", { name: "星图等价节点索引" });
-    const rows = [...index.querySelectorAll('button[role="option"]')];
-    expect(rows).toHaveLength(3);
-
-    const groups = [...index.children];
-    expect(groups.length).toBeGreaterThan(1);
-    for (const group of groups) {
-      expect(group.getAttribute("role")).toBe("group");
-      const title = group.querySelector("h4");
-      expect(title).not.toBeNull();
-      expect(group.getAttribute("aria-labelledby")).toBe(title?.id);
-      expect(group.querySelectorAll('button[role="option"]').length).toBeGreaterThan(0);
-    }
-    // 每一行都在某个分组里，没有游离的平铺行。
-    expect(rows.filter((row) => row.closest("div[role='group']") === null)).toHaveLength(0);
-
-    const dead = rows.find((row) => row.textContent?.includes("关联内容已不存在"));
-    const alive = rows.find((row) => row.textContent?.includes("牛顿第二定律笔记"));
-    expect(dead?.getAttribute("data-state")).toBe("orphaned");
-    expect(dead?.parentElement).not.toBe(alive?.parentElement);
-    expect(dead?.parentElement?.querySelector("h4")?.textContent).toContain("失效");
-
-    // 颜色点取代了 <CircleDot>，颜色由 data-role/data-state 决定，与图例同源。
-    expect(rows[0].querySelector("svg")).toBeNull();
-    expect(rows[0].querySelector("i")).not.toBeNull();
-  });
-
-  /**
-   * 日记的日期筛选（2026-09-22 用户指定：「换成历史纪录那里的那种日期面板，
-   * 平时缩放起来，用户点击才展开，页面上保留前一天后一天的切换按钮」）。
-   */
-  it("keeps the diary calendar collapsed until the date pill is clicked", async () => {
-    const api = installApi();
-    api.companion.daily.get.mockResolvedValue(ok(dailySummary()));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "日记" }));
-
-    const trigger = await screen.findByRole("button", { name: /^选择日记日期/ });
-    expect(trigger.getAttribute("aria-expanded")).toBe("false");
-    expect(document.querySelector(".companion-record__calendar")).toBeNull();
-
-    fireEvent.click(trigger);
-    expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("group", { name: "选择日期" })).toBeTruthy();
-    // 翻页不进口历：前一天 / 后一天仍然摆在页面上。
-    expect(screen.getByRole("button", { name: "前一天" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "后一天" })).toBeTruthy();
-  });
-
-  it("reaches a day the five-button strip could never offer, then folds itself away", async () => {
-    const api = installApi();
-    api.companion.daily.get.mockResolvedValue(ok(dailySummary()));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "日记" }));
-    const callsBefore = api.companion.daily.get.mock.calls.length;
-    fireEvent.click(await screen.findByRole("button", { name: /^选择日记日期/ }));
-
-    const calendar = screen.getByRole("group", { name: "选择日期" });
-    // 旧的日期条只给 anchor 往回 5 天；9 月 1 日从来点不到。
-    const first = [...calendar.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.firstChild?.textContent === "1");
-    expect(first).toBeTruthy();
-    expect(first?.disabled).toBe(false);
-    fireEvent.click(first!);
-
-    // 取数前要先 await 会话（readAuthenticatedSession），所以这里必须等一拍；
-    // 同步断言会读到「还没发出去」的调用表。
-    await waitFor(() => expect(api.companion.daily.get.mock.calls.at(-1)?.[0].date).toBe("2026-09-01"));
-    expect(api.companion.daily.get.mock.calls.length).toBeGreaterThan(callsBefore);
-    expect(document.querySelector(".companion-record__calendar")).toBeNull();
-  });
-
-  /**
-   * Escape 的分工：伴星中心整页不是 dialog，App 上挂着全局 Escape = 回书桌
-   * （`App.tsx` 里 `shouldIgnoreGlobalShortcut` 认 `defaultPrevented`）。
-   * 日历开着时按 Escape 只准收日历，所以处理器必须声明这次按键被吃掉。
-   */
-  it("claims the Escape key so closing the calendar does not leave the centre", async () => {
-    const api = installApi();
-    api.companion.daily.get.mockResolvedValue(ok(dailySummary()));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "日记" }));
-    fireEvent.click(await screen.findByRole("button", { name: /^选择日记日期/ }));
-    expect(document.querySelector(".companion-record__calendar")).toBeTruthy();
-
-    // fireEvent 会把更新包进 act，并且「preventDefault 被调用过」时返回 false。
+    expect(await screen.findByText("这个月的日记标记暂时读不到。")).toBeTruthy();
     expect(fireEvent.keyDown(document, { key: "Escape" })).toBe(false);
     expect(document.querySelector(".companion-record__calendar")).toBeNull();
   });
 
-  /**
-   * B6（评审 P18）：进行中要有看得见的反馈。以前点下去只有一行字变成「正在保存…」，
-   * 界面像没反应。`data-busy` 只挂在**自己知道在忙**的那颗按钮上。
-   */
-  it("puts the spinner on the button that is actually working, not on the whole row", async () => {
-    const api = installApi();
-    api.companion.memory.create.mockImplementation(() => new Promise(() => undefined));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "记忆" }));
-    fireEvent.click(screen.getByRole("button", { name: "手动添加" }));
-    fireEvent.change(screen.getByLabelText("新记忆内容"), { target: { value: "我习惯先看例子" } });
-
-    const save = screen.getByRole("button", { name: "保存记忆" });
-    fireEvent.click(save);
-
-    await waitFor(() => expect(save.getAttribute("data-busy")).toBe("true"));
-    expect(document.querySelectorAll('.companion-inline-form button[data-busy="true"]')).toHaveLength(1);
+  it("日记读取失败时日期导航仍可使用", async () => {
+    installApi(); renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "日记" }));
+    expect(await screen.findByText("日记当前不可用")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "前一天" })).toBeTruthy();
   });
 
-  it("keeps tab panels associated with the active navigation tab", async () => {
-    installApi();
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "对话" }));
-    const first = document.querySelector("#companion-panel-dialogue");
-    expect(first).toBeTruthy();
+  it("发现簿保存失败保留正在编辑的批注", async () => {
+    const api = installApi(); api.companion.memory.discovery.get.mockResolvedValue(ok({ version: 1, entries: [discoveryEntry()], studyVisible: [] }));
+    api.companion.memory.discovery.annotate.mockRejectedValue(new Error("annotation failed"));
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "发现簿" }));
+    fireEvent.click(await screen.findByRole("button", { name: "加批注" }));
+    fireEvent.change(screen.getByLabelText("你的批注"), { target: { value: "保留这句话" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存批注" }));
+    await waitFor(() => expect(api.companion.memory.discovery.annotate).toHaveBeenCalled());
+    expect((screen.getByLabelText("你的批注") as HTMLTextAreaElement).value).toBe("保留这句话");
+  });
 
+  it("人格改名失败时保留名字草稿，中心不再清空数据", async () => {
+    const api = installApi(); api.companion.persona.get.mockResolvedValue(ok({ ...persona(), profile: personaProfile(), profileRevision: 1 }));
+    api.companion.persona.patch.mockRejectedValue(new Error("rename failed"));
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "人格" }));
+    fireEvent.change(await screen.findByLabelText("她叫什么"), { target: { value: "新名字" } }); fireEvent.click(screen.getByRole("button", { name: "改名" }));
+    await waitFor(() => expect(api.companion.persona.patch).toHaveBeenCalledWith(expect.objectContaining({ request: expect.objectContaining({ name: "新名字", revision: 1 }) })));
+    expect((screen.getByLabelText("她叫什么") as HTMLInputElement).value).toBe("新名字");
+    expect(screen.queryByRole("button", { name: "清除" })).toBeNull();
+  });
+
+  it("完整版本记录可展开，恢复时携带当前版本号", async () => {
+    const api = installApi(); api.companion.persona.get.mockResolvedValue(ok({ ...persona(), profile: personaProfile(21), profileRevision: 21 }));
+    api.companion.persona.versions.mockResolvedValue(ok({ version: 1, currentRevision: 21, versions: Array.from({ length: 21 }, (_, index) => ({ id: "00000000-0000-4000-8000-" + String(21 - index).padStart(12, "0"), revision: 21 - index, examplesRevision: 21 - index, author: "user" as const, action: "update" as const, reason: null, moduleScope: ["companion"], profile: null, createdAt: UPDATED_AT })) }));
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "人格" }));
+    fireEvent.click(await screen.findByText("人格版本记录 · 21 版"));
+    fireEvent.click(screen.getByRole("button", { name: "恢复第 1 版" }));
+    await waitFor(() => expect(api.companion.persona.restore).toHaveBeenCalledWith(expect.objectContaining({ revision: 1, currentRevision: 21 })));
+  });
+
+  it("动态进入后才呈现投递；忽略产生真实回执", async () => {
+    const api = installApi(); api.companion.activity.timeline.mockResolvedValue(ok({ version: 1, items: [delivery(1)], nextCursor: 1, serverTime: UPDATED_AT }));
+    renderCompanionCenter(); await screen.findByRole("heading", { name: /接着聊/ });
+    expect(api.companion.activity.present).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("tab", { name: "动态" }));
-    await screen.findByRole("heading", { name: "动态", level: 3 });
-    const second = document.querySelector("#companion-panel-activity");
-    expect(second).not.toBe(first);
-    expect(screen.getByRole("tab", { name: "动态" }).getAttribute("aria-controls")).toBe(second?.id);
+    fireEvent.click(await screen.findByRole("button", { name: "忽略" }));
+    await waitFor(() => expect(api.companion.activity.ack).toHaveBeenCalledWith(expect.objectContaining({ request: expect.objectContaining({ deliveryId: delivery(1).deliveryId, transition: "dismissed" }) })));
   });
 
-  it("pauses automatic diaries independently and persists the switch", async () => {
-    const api = installApi();
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "设置" }));
-    fireEvent.click(screen.getByRole("button", { name: "日记生成" }));
-    const toggle = await screen.findByRole("switch", { name: "自动生成日记" });
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
-
-    fireEvent.click(toggle);
-    await waitFor(() => expect(api.companion.account.patchState).toHaveBeenCalledWith(expect.objectContaining({
-      request: { revision: 0, diaryEnabled: false },
-    })));
-    await waitFor(() => expect(screen.getByRole("switch", { name: "自动生成日记" }).getAttribute("aria-checked")).toBe("false"));
-  });
-});
-
-describe("the star map expansion publishes what that screen shows (39d W2-7)", () => {
-  function published() {
-    return useRoomStore.getState().pageReadableView?.view ?? null;
-  }
-
-  it("展开星图后：计数那格、三个筛选、节点索引行都取自屏幕", async () => {
-    installApi();
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "记忆" }));
-    await screen.findByRole("button", { name: "查看关联星图" });
-    // 列表那一格先登记过；展开之后必须由星图接手（不是残留）。
-    expect(published()?.filters?.some((entry) => entry.label === "记忆类型")).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "查看关联星图" }));
-    await screen.findByRole("listbox", { name: "星图等价节点索引" });
-    // 星图是**读回来的**：等到那一格真的换成星图那份再断言（等"目标态"，不是等"发过东西"）。
-    await waitFor(() => expect(published()?.filters?.some((entry) => entry.label === "记忆类型")).toBe(true));
-
-    const view = published()!;
-    expect(view.pageId).toBe("companion");
-    expect(view.statusLine).toBe(document.querySelector(".companion-map-view__head > span")?.textContent);
-    expect(view.statusLine).toMatch(/个节点 · \d+ 条关系/);
-    const triggers = [...document.querySelectorAll(".companion-map-view__filters .companion-select > button span")]
-      .map((node) => node.textContent);
-    expect(triggers.length).toBeGreaterThanOrEqual(3);
-    expect(view.filters?.map((entry) => entry.value).slice(0, 3)).toEqual(triggers.slice(0, 3));
-
-    const buttons = [...document.querySelectorAll(".companion-map-index button")];
-    const items = view.items ?? [];
-    expect(items).toHaveLength(buttons.length);
-    items.forEach((entry, index) => {
-      const cell = buttons[index].textContent ?? "";
-      expect(cell).toBe(entry.label);
-    });
-    const groupTitles = [...document.querySelectorAll(".companion-map-index h4")].map((node) => node.querySelector("span")?.previousSibling?.textContent?.trim());
-    expect(new Set(view.items!.map((entry) => entry.state))).toEqual(
-      new Set(groupTitles.filter((title): title is string => Boolean(title))),
-    );
-  });
-
-  it("收着星图回到列表：登记换回列表那份，两套筛选不并存", async () => {
-    installApi();
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "记忆" }));
-    fireEvent.click(await screen.findByRole("button", { name: "查看关联星图" }));
-    await screen.findByRole("listbox", { name: "星图等价节点索引" });
-    await waitFor(() => expect(published()?.filters?.some((entry) => entry.label === "记忆类型")).toBe(true));
-    fireEvent.click(screen.getByRole("button", { name: /返回记忆列表/ }));
-    await waitFor(() => expect(published()?.filters?.some((entry) => entry.label === "记忆类型")).toBe(false));
-    expect(published()?.filters?.some((entry) => entry.label === "类型")).toBe(true);
-  });
-
-  /**
-   * 星图读回来是失败的：屏幕上换成「记忆星图当前不可用」这张纸，登记必须跟着换。
-   * 这一条钉的是过去真发生过的形状——报错纸已经盖掉清单，那一格却还在报节点计数。
-   * 三个下拉在屏幕上还在，但读不到时只给状态与原因（与伴星中心其余分区同一口径）。
-   */
-  it("星图读不到：那一格跟着换成不可用，不留下节点计数", async () => {
-    const api = installApi();
-    api.companion.memory.starMap.mockRejectedValue(new Error("star map unavailable"));
-    renderCompanionCenter();
-    fireEvent.click(await screen.findByRole("tab", { name: "记忆" }));
-    fireEvent.click(screen.getByRole("button", { name: "查看关联星图" }));
-    await screen.findByText("记忆星图当前不可用");
-
-    const view = published()!;
-    expect(view.statusLine).toBe(document.querySelector(".companion-map-view__canvas .companion-section-state strong")?.textContent);
-    expect(view.notice).toContain("记忆星图当前不可用");
-    expect(view.items).toBeUndefined();
-    expect(view.filters).toBeUndefined();
+  it("键盘切换立即移动焦点与活动面板，隐藏页不登记可读内容", async () => {
+    installApi(); renderCompanionCenter();
+    const first = screen.getByRole("tab", { name: "近况" }); fireEvent.keyDown(first, { key: "End" });
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "人格" }));
+    expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe("companion-tab-persona");
+    fireEvent.keyDown(document.activeElement!, { key: "Home" });
+    expect(screen.getByRole("tab", { name: "近况" }).getAttribute("aria-selected")).toBe("true");
   });
 });

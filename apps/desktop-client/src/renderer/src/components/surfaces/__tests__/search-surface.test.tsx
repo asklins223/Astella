@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { GatewayResultV1, SessionContextV1 } from "@ailearn/shared/desktop-ipc-contracts";
 import type { DesktopSearchItem } from "@ailearn/shared/desktop-surface-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -96,6 +96,8 @@ function longNote() {
 function installApi(options: {
   readonly search?: (input: { query: string; cursor?: string }) => Promise<GatewayResultV1<unknown>>;
   readonly objectiveList?: () => Promise<GatewayResultV1<unknown>>;
+  readonly noteRead?: () => Promise<GatewayResultV1<unknown>>;
+  readonly objectiveRead?: (objectiveId: string) => Promise<GatewayResultV1<unknown>>;
 } = {}) {
   const searchCalls: { query: string; cursor?: string }[] = [];
   const api = {
@@ -107,16 +109,25 @@ function installApi(options: {
         return ok({ items: [noteItem()], total: 1, nextCursor: null });
       }),
     },
-    note: { get: vi.fn(async () => ok(longNote())) },
-    source: { get: vi.fn() },
+    note: { get: vi.fn(async () => options.noteRead ? options.noteRead() : ok(longNote())) },
+    source: { get: vi.fn(async () => ok({ source: { title: "来源正文", status: "ready" }, segments: [{ text: "来源正文里的 Needle" }] })) },
     objective: {
-      get: vi.fn(),
+      get: vi.fn(async (input: { objectiveId: string }) => {
+        if (options.objectiveRead) return options.objectiveRead(input.objectiveId);
+        if (options.objectiveList) await options.objectiveList();
+        return ok({
+          content: { publicSummary: "目标正文", freshness: "fresh" },
+          sources: { missingOrigin: false, primaryNote: null },
+          personal: { initialValidation: null },
+          personalState: { state: input.objectiveId === WEAK_OBJECTIVE_ID ? "fragile" : "stable" },
+        });
+      }),
       list: vi.fn(async () => options.objectiveList
         ? options.objectiveList()
         : ok({
             items: [
               { objectiveId: WEAK_OBJECTIVE_ID, personalState: { state: "fragile" } },
-              { objectiveId: STRONG_OBJECTIVE_ID, personalState: { state: "validated" } },
+              { objectiveId: STRONG_OBJECTIVE_ID, personalState: { state: "stable" } },
             ],
             total: 2,
             nextCursor: null,
@@ -128,13 +139,15 @@ function installApi(options: {
 }
 
 beforeEach(() => {
-  useRoomStore.setState({ searchQuery: "", searchTypeFilter: "all", searchWeakOnly: false });
+  useRoomStore.setState({ searchResume: null, searchQuery: "", searchTypeFilter: "all", searchWeakOnly: false });
+  useRoomStore.setState({ surface: null, activeNoteRef: null, activeSourceId: null, activeObjectiveId: null, noteReturnTo: "library", returnTarget: null });
   // jsdom has no scrolling implementation; the desk scrolls its own index pane.
-  Object.defineProperty(Element.prototype, "scrollTo", { configurable: true, value: () => undefined });
+  Object.defineProperty(Element.prototype, "scrollTo", { configurable: true, value: function (this: HTMLElement, options: ScrollToOptions) { this.scrollTop = options.top ?? 0; } });
   Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: () => undefined });
 });
 
 afterEach(() => {
+  useRoomStore.setState({ searchResume: null });
   cleanup();
   Reflect.deleteProperty(window, "ailearn");
   Reflect.deleteProperty(Element.prototype, "scrollTo");
@@ -154,7 +167,7 @@ describe("the preview reaches the match", () => {
     const paragraph = await screen.findByText(/第三十六段才提到/, {}, { timeout: 3000 });
     expect(paragraph.querySelector(".mark")?.textContent).toBe("Needle");
     // …and the index snippet is not repeated when the body already carries it.
-    expect(screen.queryByText(/索引片段里的/)).toBeNull();
+    expect(within(document.querySelector(".preview-page") as HTMLElement).queryByText(/索引片段里的/)).toBeNull();
   });
 });
 
@@ -170,7 +183,7 @@ describe("the weak-only filter", () => {
     useRoomStore.setState({ searchQuery: "目标", searchWeakOnly: true });
     render(<SearchSurface />);
 
-    await screen.findByText("脆弱的目标");
+    await waitFor(() => expect(document.querySelector(".index-card b")?.textContent).toBe("脆弱的目标"));
     expect(screen.queryByText("已巩固的目标")).toBeNull();
   });
 
@@ -187,7 +200,7 @@ describe("the weak-only filter", () => {
     render(<SearchSurface />);
 
     // A pressed filter that silently stops filtering is worse than an error.
-    await screen.findByText("无法核对目标状态");
+    await screen.findByText("暂时无法核对学习卡状态");
     expect(screen.queryByText("已巩固的目标")).toBeNull();
   });
 });
@@ -216,8 +229,8 @@ describe("keyset paging", () => {
     useRoomStore.setState({ searchQuery: "Needle" });
     render(<SearchSurface />);
 
-    const depth = await screen.findByText(/共 100 条，约 5 页/, {}, { timeout: 3000 });
-    expect(depth.textContent).toContain("按更新时间从新到旧顺序读取");
+    const depth = await screen.findByText(/共 100 条，按最近更新排列/, {}, { timeout: 3000 });
+    expect(depth.textContent).toContain("按最近更新排列");
   });
 
   it("keeps the loaded list and retries the same page when a later page fails", async () => {
@@ -257,14 +270,14 @@ describe("state that has to survive leaving the page", () => {
     });
     useRoomStore.setState({ searchQuery: "Needle", searchTypeFilter: "objective", searchWeakOnly: true });
     const first = render(<SearchSurface />);
-    await screen.findByText("脆弱的目标", {}, { timeout: 3000 });
+    await waitFor(() => expect(document.querySelector(".index-card b")?.textContent).toBe("脆弱的目标"));
 
     // TaskSurface remounts the subtree on every navigation (`key={renderedSurface}`).
     first.unmount();
     render(<SearchSurface />);
 
     expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("Needle");
-    expect(await screen.findByRole("button", { name: /结果类型：只看目标/ })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /结果类型：只看学习卡/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /证据不足/ }).getAttribute("aria-pressed")).toBe("true");
   });
 });
@@ -277,5 +290,172 @@ describe("the result list", () => {
 
     const listbox = await screen.findByRole("listbox", {}, { timeout: 3000 });
     expect(screen.getByRole("searchbox").getAttribute("aria-controls")).toBe(listbox.id);
+  });
+});
+
+describe("连续搜索与内容跳转", () => {
+  it("新词的等待期立即废弃旧回执；按 Enter 搜新词不会打开旧记录或重复发请求", async () => {
+    let release: (page: GatewayResultV1<unknown>) => void = () => undefined;
+    const { api, searchCalls } = installApi({ search: input => input.query === "旧词"
+      ? new Promise(resolve => { release = resolve; })
+      : Promise.resolve(ok({ items: [{ ...noteItem(), title: "新关键词的笔记" }], total: 1, nextCursor: null })) });
+    useRoomStore.setState({ searchQuery: "旧词" });
+    render(<SearchSurface />);
+    await waitFor(() => expect(api.search.global).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "新词" } });
+    await act(async () => release(ok({ items: [{ ...noteItem(), title: "迟到的旧结果" }], total: 1, nextCursor: null })));
+    expect(screen.queryByRole("option", { name: /迟到的旧结果/ })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Enter" });
+    await screen.findByRole("option", { name: /新关键词的笔记/ });
+    expect(useRoomStore.getState().surface).toBeNull();
+    await new Promise(resolve => setTimeout(resolve, 190));
+    expect(searchCalls.map(call => call.query)).toEqual(["旧词", "新词"]);
+  });
+
+  it("方向键挑选时输入仍留在搜索框，输入法确认不打开记录", async () => {
+    installApi({ search: async () => ok({ items: [noteItem(), { ...noteItem(), objectId: "another", title: "另一篇" }], total: 2, nextCursor: null }) });
+    useRoomStore.setState({ searchQuery: "Needle" });
+    render(<SearchSurface />);
+    await screen.findByRole("option", { name: /另一篇/ });
+    const box = screen.getByRole("searchbox"); box.focus();
+    fireEvent.keyDown(box, { key: "ArrowDown" });
+    fireEvent.keyDown(box, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(box);
+    expect(screen.getByRole("option", { name: /另一篇/ }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(box, { key: "Enter", isComposing: true });
+    expect(useRoomStore.getState().surface).toBeNull();
+    fireEvent.change(box, { target: { value: "继续输入" } });
+    expect((box as HTMLInputElement).value).toBe("继续输入");
+  });
+
+  it("输入法组合过程中不发送半成品关键词，确认后再搜索", async () => {
+    const { api, searchCalls } = installApi();
+    render(<SearchSurface />);
+    await screen.findByText("输入关键词开始查找");
+    const box = screen.getByRole("searchbox");
+    fireEvent.compositionStart(box);
+    fireEvent.change(box, { target: { value: "shu" } });
+    await screen.findAllByText("写好关键词就会开始查找");
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
+    expect(api.search.global).not.toHaveBeenCalled();
+    fireEvent.change(box, { target: { value: "书房" } });
+    fireEvent.compositionEnd(box);
+    await screen.findByRole("option");
+    expect(searchCalls.map(call => call.query)).toEqual(["书房"]);
+    expect(useRoomStore.getState().surface).toBeNull();
+  });
+
+  it("预览与打开失败各有重试，打开失败不变成分页失败", async () => {
+    let recovered = false;
+    const { api } = installApi({ noteRead: async () => { if (!recovered) throw new Error("暂时无法读取这篇笔记"); return ok(longNote()); } });
+    useRoomStore.setState({ searchQuery: "Needle" });
+    render(<SearchSurface />);
+    const retry = await screen.findByRole("button", { name: "重新读取预览" });
+    fireEvent.click(screen.getByRole("button", { name: "打开完整笔记" }));
+    await waitFor(() => expect(document.querySelector('.search-preview__foot [role="alert"]')).not.toBeNull());
+    expect(document.querySelector(".search-page-error")).toBeNull();
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    recovered = true; fireEvent.click(retry);
+    await screen.findByText(/第三十六段才提到/);
+    const reads = api.note.get.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "打开完整笔记" }));
+    await waitFor(() => expect(useRoomStore.getState().surface).toBe("notebook"));
+    expect(api.note.get).toHaveBeenCalledTimes(reads);
+    expect(useRoomStore.getState().noteReturnTo).toBe("search");
+    expect(useRoomStore.getState().returnTarget?.label).toBe("返回搜索");
+  });
+
+  it("没有正文版本的笔记不能误打开上一篇", async () => {
+    installApi({ noteRead: async () => ok({ ...longNote(), currentVersionId: null }) });
+    useRoomStore.setState({ searchQuery: "Needle" });
+    render(<SearchSurface />);
+    await screen.findByText(/第三十六段才提到/);
+    fireEvent.click(screen.getByRole("button", { name: "打开完整笔记" }));
+    await screen.findByText("这篇笔记暂时没有可打开的正文版本。");
+    expect(useRoomStore.getState().surface).toBeNull();
+    expect(useRoomStore.getState().activeNoteRef).toBeNull();
+  });
+
+  it("等候打开的旧笔记不会覆盖新的搜索意图，也不阻止打开新结果", async () => {
+    let release: (detail: GatewayResultV1<unknown>) => void = () => undefined;
+    let pending = true;
+    installApi({
+      search: async input => ok({ items: input.query === "Needle" ? [noteItem()] : [objectiveItem(WEAK_OBJECTIVE_ID, "新的学习卡")], total: 1, nextCursor: null }),
+      noteRead: () => pending ? new Promise(resolve => { release = resolve; }) : Promise.resolve(ok(longNote())),
+    });
+    useRoomStore.setState({ searchQuery: "Needle" });
+    render(<SearchSurface />);
+    fireEvent.click(await screen.findByRole("button", { name: "打开完整笔记" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "新的" } });
+    await screen.findByRole("option", { name: /学习卡/ });
+    fireEvent.click(await screen.findByRole("button", { name: "打开学习卡" }));
+    expect(useRoomStore.getState().activeObjectiveId).toBe(WEAK_OBJECTIVE_ID);
+    pending = false;
+    await act(async () => release(ok(longNote())));
+    expect(useRoomStore.getState().surface).toBe("objective-detail");
+    expect(useRoomStore.getState().activeNoteRef).toBeNull();
+  });
+
+  it("返回重新读取到第二页并恢复选中纸签、列表与预览的位置", async () => {
+    const second: DesktopSearchItem = { ...noteItem(), objectType: "source", objectId: "later-source", title: "第二页来源" };
+    const { api } = installApi({ search: async input => ok({ items: input.cursor ? [second] : [noteItem()], total: 2, nextCursor: input.cursor ? null : "NEXT" }) });
+    useRoomStore.setState({ searchQuery: "Needle" });
+    const first = render(<SearchSurface />);
+    fireEvent.click(await screen.findByRole("button", { name: "继续读取" }));
+    fireEvent.click(await screen.findByRole("option", { name: /第二页来源/ }));
+    await screen.findByText(/来源正文里的/);
+    const list = document.querySelector<HTMLElement>(".search-index")!;
+    const paper = document.querySelector<HTMLElement>(".preview-page")!;
+    list.scrollTop = 155; fireEvent.scroll(list); paper.scrollTop = 70; fireEvent.scroll(paper);
+    fireEvent.click(screen.getByRole("button", { name: "打开这份来源" }));
+    expect(useRoomStore.getState().returnTarget?.label).toBe("返回搜索");
+    expect(useRoomStore.getState().searchResume).toMatchObject({ selectedKey: "source:later-source", loadedCount: 2, indexScrollTop: 155, previewScrollTop: 70 });
+    first.unmount(); render(<SearchSurface />);
+    await waitFor(() => expect(api.search.global).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(screen.getByRole("option", { name: /第二页来源/ }).getAttribute("aria-selected")).toBe("true"));
+    await waitFor(() => expect(document.querySelector<HTMLElement>(".search-index")!.scrollTop).toBe(155));
+    await waitFor(() => expect(document.querySelector<HTMLElement>(".preview-page")!.scrollTop).toBe(70));
+  });
+
+  it("窄窗口合回预览立即解除 inert，焦点回到刚才的纸签", async () => {
+    installApi(); useRoomStore.setState({ searchQuery: "Needle" }); render(<SearchSurface />);
+    const row = await screen.findByRole("option");
+    fireEvent.click(row);
+    await screen.findByRole("dialog", { name: "搜索内容预览" });
+    expect(document.querySelector(".search-results")?.hasAttribute("inert")).toBe(true);
+    fireEvent.keyDown(screen.getByRole("button", { name: "打开完整笔记" }), { key: "Escape" });
+    expect(document.querySelector(".search-results")?.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(row);
+    expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("Needle");
+  });
+});
+
+describe("待巩固只检查实际命中，空的过滤页仍能继续", () => {
+  it("较早的弱卡不依赖最近 100 条样本，过滤后空页仍可读取下一页", async () => {
+    const { api } = installApi({ search: async input => ok({ items: input.cursor ? [objectiveItem(WEAK_OBJECTIVE_ID, "较早的待巩固卡")] : [objectiveItem(STRONG_OBJECTIVE_ID, "已经巩固的卡")], total: 2, nextCursor: input.cursor ? null : "OLDER" }) });
+    useRoomStore.setState({ searchQuery: "卡", searchTypeFilter: "objective", searchWeakOnly: true });
+    render(<SearchSurface />);
+    await screen.findByText("这一页没有待巩固的学习卡");
+    fireEvent.click(screen.getByRole("button", { name: "继续读取" }));
+    await screen.findByRole("option", { name: /较早的待巩固.*卡/ });
+    expect(screen.queryByRole("option", { name: /已经巩固/ })).toBeNull();
+    expect(api.objective.list).not.toHaveBeenCalled();
+    expect(api.objective.get).toHaveBeenCalledTimes(2);
+  });
+
+  it("切回笔记会关闭学习卡专属筛选，空间切换清掉搜索位置", async () => {
+    installApi();
+    useRoomStore.setState({ searchQuery: "Needle", searchTypeFilter: "objective", searchWeakOnly: true });
+    render(<SearchSurface />);
+    fireEvent.click(screen.getByRole("button", { name: "结果类型：只看笔记" }));
+    expect(useRoomStore.getState().searchWeakOnly).toBe(false);
+    expect(screen.queryByRole("button", { name: "证据不足" })).toBeNull();
+    await screen.findByRole("option");
+    fireEvent.click(screen.getByRole("option"));
+    fireEvent.click(screen.getByRole("button", { name: "打开完整笔记" }));
+    await waitFor(() => expect(useRoomStore.getState().searchResume).not.toBeNull());
+    act(() => useRoomStore.getState().resetWorkspaceScope());
+    expect(useRoomStore.getState().searchResume).toBeNull();
+    expect(useRoomStore.getState().searchQuery).toBe("");
   });
 });

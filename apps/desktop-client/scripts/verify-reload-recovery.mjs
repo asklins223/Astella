@@ -37,7 +37,7 @@ await page.locator('.task-surface--card-generation').waitFor({ timeout: 8000 })
 await page.waitForTimeout(1500)
 report.workbenchPage = await page.locator('.desktop-app').getAttribute('data-hud-page')
 report.workbenchTitle = await page.locator('.task-title h1').textContent().catch(() => null)
-report.boardTag = await page.locator('.card-generation-board .tag').first().textContent().catch(() => null)
+report.boardTag = await page.locator('.card-making-workshop .card-generation-progress__name').first().textContent().catch(() => null)
 report.candidateQuestion = await page.locator('.candidate-study-card h2').textContent().catch(() => null)
 await page.screenshot({ path: resolve('scripts/cardgen-verify', '7-after-reload-workbench.png') })
 report.problems = problems

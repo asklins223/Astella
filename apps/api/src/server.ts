@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { closeDatabase, db } from "./db/client.ts";
+import { closeDatabase, db, dbPoolOptionsMax } from "./db/client.ts";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import sensible from "@fastify/sensible";
@@ -48,6 +48,7 @@ import { companionHomeProjectionRoutes } from "./modules/companion-conversation/
 import { dailySummaryRoutes } from "./modules/companion-conversation/daily-summary-routes.ts";
 import { deliveryTimelineRoutes } from "./modules/companion-conversation/timeline-routes.ts";
 import { voiceRoutes } from "./modules/learning-sessions/voice-routes.ts";
+import { adminRoutes } from "./modules/admin/routes.ts";
 import { desktopTrustRoutes, resolveApiBindHost } from "./modules/desktop-trust/routes.ts";
 import { cleanupExpiredSessions } from "./modules/identity/service.ts";
 import { purgeSoftDeletedNotes } from "./modules/note/maintenance.ts";
@@ -59,6 +60,11 @@ import {
 import { runLearningTtlMaintenance } from "./modules/learning-sessions/ttl-maintenance.ts";
 import { runLearningRunProcessingTick, setLearningRunProcessingWaker, closeStructuredSolutionSql } from "./modules/learning-runs/processing/run-processing-tick.ts";
 import { createGracefulShutdown } from "./server/graceful-shutdown.ts";
+import {
+  QUEUE_SAMPLE_INTERVAL_MS,
+  SAMPLE_INTERVAL_MS,
+  sampleMetricsSeries,
+} from "./lib/metrics-series.ts";
 import {
   getMetricsText,
   getMetricsContentType,
@@ -72,7 +78,22 @@ import {
   dbPoolActiveConnections,
   dbMigrationVersion,
   dbRlsDeniedTotal,
+  dbPoolMaxConnections,
+  dbServerConnectionsTotal,
 } from "./lib/metrics.ts";
+
+/**
+ * DB gauge 刷新间隔（2026-10-03）。
+ *
+ * 原先写死 30 秒。池打满是**持续状态**，30 秒的采样周期意味着一轮短压测
+ * （实测 5~6 秒）从头到尾都读不到变化——这正是"连接池是瓶颈"这件事长期
+ * 在指标上不可见的原因之一。默认 5 秒，仍远大于这条查询自身耗时，且回调
+ * 已有 in-flight 守卫。
+ */
+export function resolveDbGaugeIntervalMs(raw: string | undefined): number {
+  const parsed = Number(raw ?? 5_000);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 5_000;
+}
 
 const trustProxyValue = process.env.TRUST_PROXY?.trim();
 const normalizedTrustProxyValue = trustProxyValue?.toLowerCase();
@@ -330,6 +351,12 @@ async function main() {
   const releaseMigrations = Number(process.env.MIGRATION_COUNT ?? "0");
   setReleaseInfo(releaseVersion, releaseCommit, releaseMigrations);
 
+  // 2026-10-03：池上限是静态值，启动时设一次即可。有了这个分母，
+  // `ailearn_db_pool_active_connections / ailearn_db_pool_max_connections`
+  // 才能直接当饱和度告警——而饱和度是 postgres.js 不公开排队计数时
+  // 唯一可靠的"池在排队"信号。
+  dbPoolMaxConnections.set(dbPoolOptionsMax());
+
   await app.register(authRoutes);
   await app.register(desktopTrustRoutes);
   await app.register(noteRoutes);
@@ -403,10 +430,17 @@ async function main() {
   await app.register(deliveryTimelineRoutes);
   await app.register(voiceRoutes);
 
+  // 运维管理面板（/admin）。未设置足够强度的 ADMIN_PANEL_TOKEN 时**不注册任何
+  // 路由**（见 modules/admin/auth.ts）——不是注册了再拒绝，所以这个调用本身
+  // 在默认部署下是完全 inert 的。
+  await app.register(adminRoutes);
+
   const PORT = Number(process.env.PORT ?? 4000);
   const HOST = resolveApiBindHost();
 
   let dbGaugeTimer: NodeJS.Timeout | undefined;
+  let metricsSeriesTimer: NodeJS.Timeout | undefined;
+  let queueSeriesTimer: NodeJS.Timeout | undefined;
   let sessionCleanupTimer: NodeJS.Timeout | undefined;
   let notePurgeTimer: NodeJS.Timeout | undefined;
   let learningRunProcessingTimer: NodeJS.Timeout | undefined;
@@ -423,6 +457,10 @@ async function main() {
       // 30s 发 DB gauge 查询。
       if (dbGaugeTimer) clearInterval(dbGaugeTimer);
       dbGaugeTimer = undefined;
+      if (metricsSeriesTimer) clearInterval(metricsSeriesTimer);
+      metricsSeriesTimer = undefined;
+      if (queueSeriesTimer) clearInterval(queueSeriesTimer);
+      queueSeriesTimer = undefined;
       if (sessionCleanupTimer) clearInterval(sessionCleanupTimer);
       sessionCleanupTimer = undefined;
       if (notePurgeTimer) clearInterval(notePurgeTimer);
@@ -569,31 +607,71 @@ async function main() {
 
   // 每小时定时清理
   if (!shutdown.isShuttingDown()) {
-    // 2026-08-11（可观测性）：DB 池活跃连接 + 迁移版本周期 gauge（30s）——
+    // 2026-08-11（可观测性）：DB 池活跃连接 + 迁移版本周期 gauge——
     // 此前两个 gauge 定义后从未 set，空转。
+    // 2026-10-03：口径与刷新频率都改了。见下面两条查询的注释。
     // 2026-08-11：in-flight 守卫变量（回调重叠防护，见下方注释）
     let dbGaugeRunning = false;
+    // 2026-10-03：30s → 5s。原频率下"池被打满"这种持续状态只能在采样点撞上
+    // 一次才看得见——实测一轮 5 秒压测期间它一直是陈旧的旧值。5s 仍远大于这条
+    // 查询自身的耗时（count(*) 走 pg_stat_activity 的索引，通常 < 5ms），
+    // 而且已有 in-flight 守卫兜底重叠。
+    const dbGaugeIntervalMs = resolveDbGaugeIntervalMs(process.env.DB_GAUGE_INTERVAL_MS);
     dbGaugeTimer = setInterval(async () => {
       // 2026-08-11（review 修复）：in-flight 守卫——DB 慢查询时上一轮未完成
       // 则跳过本轮，避免回调重叠堆积。
       if (dbGaugeRunning) return;
       dbGaugeRunning = true;
       try {
-        const [poolRow, migRow] = await Promise.all([
+        const [poolRow, serverRow, migRow] = await Promise.all([
+          // 池饱和度：只看**本进程**的连接。此前这条查的是全库所有进程，
+          // API 与 worker 的连接混在一个数里，谁也看不出自己的池有没有打满。
+          // application_name 由 db/client.ts 给连接池设置（'ailearn_api'）。
+          // 同时排除本连接自己，否则活跃数永远至少有 1，饱和度算不出真信号。
+          db.execute(sql`
+            SELECT count(*)::int AS n
+            FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND application_name = 'ailearn_api'
+              AND pid <> pg_backend_pid()
+          `),
+          // 全库连接数：副本数 × 池上限 对 max_connections 的预算只看这个。
+          // 它是原 gauge 真正在测的东西，只是名字与它测的东西对不上。
           db.execute(sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database()`),
           db.execute(sql`SELECT max(id)::int AS v FROM drizzle.__drizzle_migrations`),
         ]);
         const poolRows = poolRow as Array<Record<string, unknown>>;
+        const serverRows = serverRow as Array<Record<string, unknown>>;
         const migRows = migRow as Array<Record<string, unknown>>;
         dbPoolActiveConnections.set(Number(poolRows[0]?.n ?? 0));
+        dbServerConnectionsTotal.set(Number(serverRows[0]?.n ?? 0));
         dbMigrationVersion.set(Number(migRows[0]?.v ?? 0));
       } catch (err) {
         app.log.warn({ err }, "db gauges refresh failed");
       } finally {
         dbGaugeRunning = false;
       }
-    }, 30_000);
+    }, dbGaugeIntervalMs);
     dbGaugeTimer?.unref?.();
+
+    // 运维面板的图表数据源（/admin）。
+    //
+    // 与 dbGauge 分开：那一组是**给 Prometheus 抓的瞬时 gauge**，这一组是
+    // **给面板画趋势的时序窗口**。两者节奏与口径都不同（15 秒 vs 5 秒），
+    // 混在一起会让告警的采样语义被面板的采样需求污染。
+    //
+    // 启动时立刻采一次：否则面板打开后的第一个 15 分钟只有一条线。
+    void sampleMetricsSeries(true);
+    metricsSeriesTimer = setInterval(() => {
+      void sampleMetricsSeries(false);
+    }, SAMPLE_INTERVAL_MS);
+    metricsSeriesTimer.unref?.();
+
+    // 队列深度要打一次库，所以走自己的更慢节奏（30 秒 vs 15 秒）。
+    queueSeriesTimer = setInterval(() => {
+      void sampleMetricsSeries(true);
+    }, QUEUE_SAMPLE_INTERVAL_MS);
+    queueSeriesTimer.unref?.();
 
     sessionCleanupTimer = setInterval(async () => {
       try {

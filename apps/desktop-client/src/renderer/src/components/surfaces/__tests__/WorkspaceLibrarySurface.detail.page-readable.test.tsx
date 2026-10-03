@@ -114,7 +114,7 @@ function metric(label: string): string | undefined {
 /** 那一列三条事实：`<span>` 是名字，`<strong>` 是屏上写着的那个值。 */
 function factLines(): Map<string, string | null> {
   const map = new Map<string, string | null>();
-  for (const li of document.querySelectorAll(".objective-brief__departure ul li")) {
+  for (const li of document.querySelectorAll(".objective-brief__trail-body ul li")) {
     const name = li.querySelector("span")?.textContent ?? "";
     map.set(name, li.querySelector("strong")?.textContent ?? null);
   }
@@ -146,7 +146,7 @@ describe("挑战简报：她说出的每一句都是屏上写着的", () => {
     expect(metric("正式验证")).toBe(facts.get("正式验证"));
     expect(metric("当前旅程")).toBe(facts.get("当前旅程"));
     expect(metric("复习安排")).toBe(facts.get("复习安排"));
-    expect(metric("练习")).toBe(document.querySelector(".objective-brief__progress-heading span")?.textContent);
+    expect(metric("练习")).toBe(document.querySelector(".objective-brief__progress summary span")?.textContent);
     expect(metric("卡型")).toBe(document.querySelector(".objective-card-type--brief strong")?.textContent);
     expect(metric("状态")).toBe(document.querySelector(".objective-brief__flags .v3-objective-state")?.textContent);
     // 出处行：`label` 就是那行的 `<strong>`，`state` 就是那行的 `<p>` 整句

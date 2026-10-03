@@ -22,6 +22,25 @@ const props = () => ({ artifact, paperRef: null, ready: true, error: null, motio
   referenceBlocks: [block], onLocateReference: vi.fn(), onRetry: vi.fn() });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
+it("演示可以单独重新生成，生成中与失败时旧画面仍在，新结果不会自动替换当前演示", () => {
+  const onRegenerate = vi.fn(), onOpenGenerated = vi.fn();
+  const input = { ...props(), onRegenerate, onOpenGenerated };
+  const next = { ...artifact, artifactId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", title: "新的演示" };
+  const task = { taskId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", noteId: artifact.noteId, noteVersionId: artifact.noteVersionId,
+    sourceKind: "overview" as const, selectionAnchor: null, status: "running" as const, artifact: null, failureReason: null, createdAt: artifact.createdAt };
+  const view = render(<NotebookLearningArtifactPaper {...input} />);
+  fireEvent.click(view.getByRole("button", { name: "重新生成演示" })); expect(onRegenerate).toHaveBeenCalledOnce();
+  view.rerender(<NotebookLearningArtifactPaper {...input} regenerationTask={task} />);
+  expect((view.getByRole("button", { name: "重新生成演示" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(view.getByTitle("动态教学演示").getAttribute("src")).toContain(artifact.artifactId);
+  view.rerender(<NotebookLearningArtifactPaper {...input} regenerationTask={{ ...task, status: "failed", failureReason: "unknown" }} />);
+  expect(view.getByTitle("动态教学演示")).toBeTruthy(); expect(view.getByRole("button", { name: "再试一次" })).toBeTruthy();
+  view.rerender(<NotebookLearningArtifactPaper {...input} regenerationTask={{ ...task, status: "ready", artifact: next }} />);
+  expect(view.getByTitle("动态教学演示").getAttribute("src")).toContain(artifact.artifactId);
+  expect(onOpenGenerated).not.toHaveBeenCalled();
+  fireEvent.click(view.getByRole("button", { name: "打开新演示" })); expect(onOpenGenerated).toHaveBeenCalledWith(next);
+});
+
 it("画面占主位，文字说明在隔离窗口外保留，原句默认合起且能准确回跳", () => {
   const input = props();
   const view = render(<NotebookLearningArtifactPaper {...input} />);

@@ -3,6 +3,8 @@ import type { NoteLearningArtifactV1 } from "@ailearn/shared/note-learning-artif
 import type { NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
 import { plainTextForGroundingV1 } from "@ailearn/shared/note-dynamic-artifact/round-artifact-measure";
 import { ArtifactFrameHost } from "../source/artifact-frame-host";
+import type { NoteLearningArtifactTaskV1 } from "@ailearn/shared/note-learning-artifact-contracts";
+import { TaskSlip } from "./task-slip";
 
 export function NotebookLearningArtifactPaper(props: {
   readonly artifact: NoteLearningArtifactV1;
@@ -13,6 +15,11 @@ export function NotebookLearningArtifactPaper(props: {
   readonly referenceBlocks: readonly NoteBlockProjectionV1[];
   readonly onLocateReference: (blockOrdinal: number) => void;
   readonly onRetry: () => void;
+  readonly onRegenerate?: () => void;
+  readonly regenerationStarting?: boolean;
+  readonly regenerationTask?: NoteLearningArtifactTaskV1 | null;
+  readonly regenerationError?: string | null;
+  readonly onOpenGenerated?: (artifact: NoteLearningArtifactV1) => void;
 }) {
   const { artifact } = props;
   const referenceOrdinal = (quote: string): number | null => {
@@ -25,12 +32,21 @@ export function NotebookLearningArtifactPaper(props: {
     <header className="note-learning-artifact-paper__meta">
       <span className="tag">概念示意</span>
       <span>笔记 v{artifact.noteVersionNumber}{artifact.versionState === "older" ? " · 旧版记录" : ""}</span>
+      {props.onRegenerate ? <button type="button" className="text-action" disabled={props.regenerationStarting || props.regenerationTask?.status === "queued" || props.regenerationTask?.status === "running"}
+        onClick={props.onRegenerate}>{props.regenerationStarting ? "正在创建演示…" : "重新生成演示"}</button> : null}
       {artifact.selectionText ? <details className="note-learning-artifact-paper__source">
         <summary>对照原句</summary>
         <blockquote>{artifact.selectionText}</blockquote>
         {artifact.selectionAnchor && artifact.versionState === "current" ? <button type="button" className="text-action" onClick={() => props.onLocateReference(artifact.selectionAnchor!.startBlockOrdinal)}>回到这句</button> : null}
       </details> : null}
     </header>
+    {props.regenerationStarting || props.regenerationTask && props.regenerationTask.artifact?.artifactId !== artifact.artifactId ? <aside className="notebook-regeneration" aria-label="新互动演示的进度">
+      <TaskSlip kind="artifact" status={props.regenerationStarting ? "queued" : props.regenerationTask!.status}
+        failureReason={props.regenerationTask?.failureReason} onRetry={props.onRegenerate} />
+      {props.regenerationTask?.status === "ready" && props.regenerationTask.artifact ? <button type="button" className="text-action" onClick={() => props.onOpenGenerated?.(props.regenerationTask!.artifact!)}>打开新演示</button> : null}
+      <small>当前演示仍可使用，之前的演示留在学习记录里。</small>
+    </aside> : null}
+    {props.regenerationError ? <p className="notebook-regeneration" role="alert">这次演示没能创建：{props.regenerationError}</p> : null}
     {props.ready ? <ArtifactFrameHost artifactId={artifact.artifactId} contentOnly motion={props.motion} /> : <>
       <h3>{artifact.title}</h3>
       <p className="note-learning-artifact-paper__subject">{artifact.subject}</p>

@@ -20,6 +20,7 @@ const historySearchQuerySchema = z.object({
 
 const historyListQuerySchema = z.object({
   before: z.string().max(2_000).optional(),
+  throughMessageId: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).optional().default(50),
 });
 
@@ -33,11 +34,13 @@ export async function continuousHistoryRoutes(app: FastifyInstance) {
       const result = await listContinuousHistory({ ...scopeOfSession(req.session),
 userId: req.session.userId,
         before: query.data.before,
+        throughMessageId: query.data.throughMessageId,
         limit: query.data.limit,
       });
       if (result.invalidCursor) {
         return reply.code(400).send({ error: "invalid_cursor", message: "历史游标无效或已过期" });
       }
+      if (result.missingMessage) return reply.code(404).send({ error: "message_not_found", message: "这条对话记录已不存在" });
       return reply.header("Cache-Control", "no-store").send(result.value);
     },
   );

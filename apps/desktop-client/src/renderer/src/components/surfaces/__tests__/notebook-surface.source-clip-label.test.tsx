@@ -106,6 +106,40 @@ afterEach(() => {
 });
 
 describe("「来源片段」在一块屏上只许表示一个数", () => {
+  it("读到中途打开原始资料，再经真实页面加载接回原来的阅读位置", async () => {
+    useRoomStore.setState({ workspaceScopeRevision: useRoomStore.getState().workspaceScopeRevision + 1 });
+    const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const scroller = this.closest<HTMLDivElement>(".notebook-desk__scroll");
+      const top = this.matches(".notebook-desk__scroll") ? 200 : this.hasAttribute("data-block-ordinal") ? 300 - (scroller?.scrollTop ?? 0) : 0;
+      return { top, bottom: top + 1000, left: 0, right: 800, width: 800, height: 1000 } as DOMRect;
+    });
+    try {
+      const first = await show(false);
+      const scroller = first.getByLabelText("正在阅读");
+      scroller.scrollTop = 350;
+      fireEvent.scroll(scroller);
+      fireEvent.click(first.getByRole("button", { name: "资料袋" }));
+      fireEvent.click(first.getByRole("button", { name: "打开只读原始资料" }));
+      const target = useRoomStore.getState().returnTarget;
+      first.unmount();
+      act(() => target?.run());
+      const next = render(<NotebookSurface />);
+      for (let i = 0; i < 14; i += 1) await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+      expect(next.getByLabelText("正在阅读").scrollTop).toBe(350);
+    } finally { rect.mockRestore(); }
+  });
+  it("打开原始资料后，笔记卸载不清掉返回原篇与阅读模式的路径", async () => {
+    const view = await show();
+    fireEvent.click(view.getByRole("button", { name: "打开只读原始资料" }));
+    expect(useRoomStore.getState().surface).toBe("source-detail");
+    const target = useRoomStore.getState().returnTarget;
+    expect(target?.label).toBe("返回笔记");
+    view.unmount();
+    expect(useRoomStore.getState().returnTarget).toBe(target);
+    act(() => target?.run());
+    expect(useRoomStore.getState().surface).toBe("notebook");
+    expect(useRoomStore.getState().activeNoteRef).toEqual({ noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "preview" });
+  });
   it("默认正文可见、资料收起；收起资料不再向伴星登记隐藏片段", async () => {
     const view = await show(false);
     expect(view.container.querySelector(".note-transcript")?.textContent).toContain("正文一段。");

@@ -39,13 +39,8 @@ import {
   noteLearningArtifactTaskPageV1Schema,
   noteLearningArtifactTaskV1Schema,
 } from "@ailearn/shared/note-learning-artifact-contracts";
-import { BrowserWindow, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent, type WebContents } from "electron";
-import { randomBytes } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import { rename, rm, stat, writeFile } from "node:fs/promises";
-import { basename } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
+import { app, BrowserWindow, clipboard, ipcMain, shell, type IpcMainInvokeEvent, type WebContents } from "electron";
+import { saveCompanionExportFile } from "./companion-export-file";
 import { z } from "zod";
 import {
   DESKTOP_API_SERVICE_ID,
@@ -314,6 +309,7 @@ import {
   companionMemoryCorrectInputV1Schema,
   companionMemoryListQuerySchema,
   companionMemoryListV1Schema,
+  companionMemoryRecycleListV1Schema,
   companionMemoryRevisionListV1Schema,
   companionMemoryQueueResultV1Schema,
   companionMemoryStarMapV2Schema,
@@ -874,6 +870,12 @@ channel(DESKTOP_IPC_CHANNELS.companionMemoryRestoreDeleted, companionMemoryIdInp
     return null;
   }, z.null());
 
+  channel(DESKTOP_IPC_CHANNELS.companionMemoryRecycleList, runtimeInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.listCompanionMemoryRecycle(gateway.gatewayTransport, input.meta.requestId);
+  }, companionMemoryRecycleListV1Schema);
+
 channel(DESKTOP_IPC_CHANNELS.companionMemoryErase, companionMemoryIdInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
@@ -1164,38 +1166,17 @@ channel(DESKTOP_IPC_CHANNELS.companionMemoryCreate, companionMemoryCreateInputSc
     return gateway.companionBridge?.clearCompanionBridgeContext(input.meta.requestId);
   }, companionBridgeStateV1Schema);
 
-  channel(DESKTOP_IPC_CHANNELS.companionDataExport, companionDataExportInputSchema, async (_event, window, input) => {
+  channel(DESKTOP_IPC_CHANNELS.companionDataExport, companionDataExportInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    const date = new Date().toISOString().slice(0, 10);
-    const descriptor = input.kind === "all"
-      ? { title: "导出全部伴星数据", defaultPath: `ailearn-companion-${date}.ndjson`, name: "NDJSON", extension: "ndjson" }
-      : input.kind === "memory"
-        ? { title: "导出伴星记忆", defaultPath: `ailearn-companion-memory-${date}.json`, name: "JSON", extension: "json" }
-        : { title: "导出伴星审计记录", defaultPath: `ailearn-companion-audit-${date}.json`, name: "JSON", extension: "json" };
-    const selection = await dialog.showSaveDialog(window, {
-      title: descriptor.title,
-      defaultPath: descriptor.defaultPath,
-      filters: [{ name: descriptor.name, extensions: [descriptor.extension] }],
-    });
-    if (selection.canceled || !selection.filePath) {
-      return { version: 1 as const, saved: false, canceled: true, fileName: null, bytes: 0 };
-    }
     const response = await ns_companion.openCompanionExport(gateway.gatewayTransport, input.kind, input.meta.requestId);
-    const partialPath = `${selection.filePath}.partial-${randomBytes(6).toString("hex")}`;
     try {
-      await pipeline(Readable.fromWeb(response.body as never), createWriteStream(partialPath, { flags: "wx" }));
-      await rename(partialPath, selection.filePath);
-      const saved = await stat(selection.filePath);
-      return {
-        version: 1 as const,
-        saved: true,
-        canceled: false,
-        fileName: basename(selection.filePath),
-        bytes: saved.size,
-      };
-    } catch {
-      await rm(partialPath, { force: true }).catch(() => undefined);
+      return await saveCompanionExportFile({
+        downloadsPath: app.getPath("downloads"), kind: input.kind, response,
+        beforeCommit: () => assertEpoch(input.meta, getActiveWorkspaceEpoch()),
+      });
+    } catch (cause) {
+      if (cause instanceof DesktopGatewayFailure) throw cause;
       throw new DesktopGatewayFailure("safe_internal_error", "user_action");
     }
   }, companionExportResultV1Schema);

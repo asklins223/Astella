@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { useRoomStore } from "../app/room-store";
-import { createRequestMeta, unwrapGatewayResult } from "../app/desktop-client";
 import { CardGenerationSurface } from "./CardGenerationSurface";
 import { GraphSurface } from "./surfaces/space/graph-surface.tsx";
 import { ReviewSurface } from "./surfaces/review/ReviewSurface.tsx";
 import { StudySurface } from "./surfaces/study/StudySurface.tsx";
 import { ResumableSurface } from "./surfaces/library/ResumableSurface.tsx";
-import { LearningRunSurface } from "./surfaces/run/learning-run-surface.tsx";
+import { ValidationSurface } from "./surfaces/run/validation-surface";
 import { SurfaceReturnControl } from "./surfaces/study/SurfaceReturnControl.tsx";
 import {
   ObjectiveDetailSurface,
@@ -22,7 +21,6 @@ import { SettingsSurface } from "./surfaces/settings/settings-surface.tsx";
 import { SourceDetailSurface } from "./surfaces/source/source-detail-surface.tsx";
 import { SourceLibrarySurface } from "./surfaces/source/source-library-surface.tsx";
 import { resolveSceneMotionMode, sceneMotionDuration } from "../scene/scene-motion";
-import type { DesktopRouteV1 } from "@ailearn/shared/desktop-ipc-contracts";
 
 type ResolvedMotionMode = "full" | "lite" | "off";
 
@@ -30,79 +28,6 @@ function useResolvedMotionMode(): ResolvedMotionMode {
   const motionPreference = useRoomStore((state) => state.motionMode);
   const reducedMotion = useRoomStore((state) => state.reducedMotion);
   return resolveSceneMotionMode(motionPreference, reducedMotion);
-}
-
-async function navigateThroughMainResolver(route: DesktopRouteV1, learningRunId?: string): Promise<DesktopRouteV1> {
-  if (!window.ailearn) throw new Error("desktop API is unavailable");
-  const resolveResponse = await window.ailearn.navigation.resolve({
-    meta: createRequestMeta(),
-    route,
-    ...(learningRunId ? { learningRunId } : {}),
-  });
-  const resolved = unwrapGatewayResult(resolveResponse);
-  if (resolved.current.scope !== "workspace") throw new Error("navigation did not resolve to the current workspace");
-  const goResponse = await window.ailearn.navigation.go({
-    meta: createRequestMeta(resolved.current.workspaceEpoch),
-    route: resolved.current.route,
-    entryKind: "user",
-    ...(learningRunId ? { learningRunId } : {}),
-  });
-  const navigated = unwrapGatewayResult(goResponse);
-  if (navigated.current.scope !== "workspace") throw new Error("navigation did not commit to the current workspace");
-  return navigated.current.route;
-}
-
-function ValidationSurface() {
-  const invoke = useRoomStore((state) => state.invoke);
-  const activeRunId = useRoomStore((state) => state.activeRunId);
-  const clearActiveRun = useRoomStore((state) => state.setActiveRunId);
-  const setActiveObjectiveId = useRoomStore((state) => state.setActiveObjectiveId);
-  const setActiveNoteRef = useRoomStore((state) => state.setActiveNoteRef);
-  const setNavigationGuard = useRoomStore((state) => state.setNavigationGuard);
-  const handleRunExit = useCallback(async (runId: string, request?: { route: DesktopRouteV1; objectiveId?: string; reflectionRoundId?: string }) => {
-    // Remove the sensitive Player tree before asking main to resolve the
-    // return route. Main may then complete FormalAssessmentGuard release only
-    // after the renderer has yielded a frame with the task context unmounted.
-    clearActiveRun(null);
-    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-    let resolvedRoute: DesktopRouteV1 = request?.route ?? { kind: "review.queue" };
-    try {
-      resolvedRoute = await navigateThroughMainResolver(resolvedRoute, runId);
-    } catch {
-      // A deleted, forbidden, disabled, or otherwise unresolvable server target
-      // must not be replayed by the renderer. Resolve the current Room route
-      // through main as the single safe fallback.
-      try {
-        resolvedRoute = await navigateThroughMainResolver({ kind: "room.home" });
-      } catch {
-        resolvedRoute = { kind: "room.home" };
-      }
-    }
-    if (resolvedRoute.kind === "note.detail") {
-      setActiveNoteRef({ noteId: resolvedRoute.noteId, noteVersionId: null, mode: "preview",
-        learningRoundId: request?.route.kind === "note.detail" && request.route.noteId === resolvedRoute.noteId ? request.reflectionRoundId : undefined });
-      invoke("open-notebook");
-    } else invoke(resolvedRoute.kind === "review.queue" ? "review" : "home");
-    if (request?.objectiveId) {
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-      setActiveObjectiveId(request.objectiveId);
-      invoke("open-objective");
-    }
-  }, [clearActiveRun, invoke, setActiveNoteRef, setActiveObjectiveId]);
-
-  useEffect(() => {
-    if (!activeRunId) {
-      setNavigationGuard(null);
-      return;
-    }
-    const runId = activeRunId;
-    setNavigationGuard(() => { void handleRunExit(runId); });
-    return () => setNavigationGuard(null);
-  }, [activeRunId, handleRunExit, setNavigationGuard]);
-
-  return (
-    <LearningRunSurface onExit={activeRunId ? (request) => { void handleRunExit(activeRunId, request); } : undefined} />
-  );
 }
 
 function fallbackIntentForSurface(surface: NonNullable<ReturnType<typeof useRoomStore.getState>["surface"]>) {
@@ -180,7 +105,7 @@ export function TaskSurface() {
       if (renderedSurface !== surface) return;
       const frame = window.requestAnimationFrame(() => {
         const selector = renderedSurface === "search"
-          ? ".search-field input"
+          ? "[data-search-query], .search-field input"
           : renderedSurface === "review"
             ? "[data-review-return-focus='true'], [data-surface-initial-focus], .surface-close"
             : "[data-surface-initial-focus], .surface-close";

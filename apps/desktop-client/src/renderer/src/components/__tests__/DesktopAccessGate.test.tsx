@@ -24,6 +24,7 @@ import {
   type SubscriptionTopicM2,
 } from "@ailearn/shared/desktop-ipc-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { publishGateInvalidation } from "../../app/gate-invalidation.ts";
 import { useRoomStore } from "../../app/room-store.ts";
 import { DesktopAccessGate } from "../DesktopAccessGate.tsx";
 
@@ -264,6 +265,21 @@ describe("DesktopAccessGate 的失效判据（F01）", () => {
     expect(onWorkspaceBoundaryReset).not.toHaveBeenCalled();
     // 连接本来就是 ready：复核不该顺带强制重连。
     expect(harness.retryConnection).not.toHaveBeenCalled();
+  });
+
+  it("业务响应合同错误只复核会话，不清空当前卡片或焦点", async () => {
+    const harness = installApi();
+    const { onWorkspaceBoundaryReset, room } = await renderReadyGate();
+    room.focus();
+    useRoomStore.setState({ surface: "objective-detail", activeObjectiveId: "card-1" });
+    const sessionReads = harness.getState.mock.calls.length;
+    act(() => publishGateInvalidation("unsupported_contract"));
+    await waitFor(() => expect(harness.getState.mock.calls.length).toBe(sessionReads + 1));
+    expect(screen.getByTestId("room-focus")).toBe(room);
+    expect(document.activeElement).toBe(room);
+    expect(useRoomStore.getState().surface).toBe("objective-detail");
+    expect(useRoomStore.getState().activeObjectiveId).toBe("card-1");
+    expect(onWorkspaceBoundaryReset).not.toHaveBeenCalled();
   });
 
   it("复核发现真的换了空间：清空工作区视图，换成新边界的会话", async () => {

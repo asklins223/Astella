@@ -634,13 +634,6 @@
   letter-spacing: .08em;
 }
 
-.companion-hud__setting-meta {
-  margin: -3px 0 0;
-  color: var(--companion-muted);
-  font-size: 10.5px;
-  line-height: 1.4;
-}
-
 .companion-hud__permission-note {
   margin: -3px 0 2px;
   padding: 8px 10px;
@@ -649,21 +642,6 @@
   line-height: 1.5;
   border-radius: 11px 15px 10px 13px;
   background: rgba(205, 235, 217, .34);
-}
-
-.companion-hud__setting-row {
-  display: flex;
-  min-height: 32px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.companion-hud__setting-label {
-  flex: 0 0 auto;
-  color: var(--companion-ink);
-  font-size: 12px;
-  font-weight: 650;
 }
 
 .companion-hud__scale {
@@ -731,8 +709,7 @@
   grid-column: 1 / -1;
 }
 
-.companion-hud__setting-buttons button,
-.companion-hud__choice button {
+.companion-hud__setting-buttons button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -746,93 +723,9 @@
   cursor: pointer;
 }
 
-.companion-hud__setting-buttons button[aria-pressed="true"],
-.companion-hud__choice button[aria-pressed="true"] {
+.companion-hud__setting-buttons button[aria-pressed="true"] {
   border-color: var(--companion-mint-strong);
   background: var(--companion-mint);
-}
-
-.companion-hud__choice {
-  display: flex;
-  flex: 0 1 auto;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.companion-hud__choice button {
-  min-height: 44px;
-  padding: 5px 11px;
-}
-
-/* 静默时段开关（自绘，替掉原生那个黑方块复选框）。 */
-.companion-hud__switch {
-  position: relative;
-  flex: 0 0 auto;
-  width: 44px;
-  /* 珠子那颗药丸只有 24px 高、42px 宽，是**画**出来的；命中区交给这个 44×44 的按钮本体，
-     药丸挪到 ::before 上居中，视觉尺寸一分不变（方案 35 C1）。 */
-  height: 44px;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  transition: background-color 150ms ease-out, border-color 150ms ease-out;
-}
-
-.companion-hud__switch::before {
-  position: absolute;
-  top: 50%;
-  left: 1px;
-  width: 42px;
-  height: 24px;
-  border: 1.5px solid rgba(201, 164, 126, .7);
-  border-radius: 999px;
-  /* 关态也要看得出是"轨道 + 珠子"：纯白底上的白珠子会读成一个空药丸。 */
-  background: rgba(201, 164, 126, .3);
-  content: "";
-  transform: translateY(-50%);
-  transition: background-color 150ms ease-out, border-color 150ms ease-out;
-}
-
-.companion-hud__switch > span {
-  position: absolute;
-  top: 50%;
-  left: 3px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fffdf5;
-  box-shadow: 0 1px 3px rgba(91, 62, 39, .25);
-  transform: translateY(-50%);
-  transition: transform 160ms var(--ease-out);
-}
-
-.companion-hud__switch[aria-checked="true"]::before {
-  border-color: var(--companion-mint-strong);
-  background: var(--companion-mint);
-}
-
-.companion-hud__switch[aria-checked="true"] > span {
-  transform: translate(18px, -50%);
-}
-
-.companion-hud__time-range {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 7px;
-  color: var(--companion-muted);
-  font-size: 11.5px;
-}
-
-.companion-hud__time-range input[type="time"] {
-  min-height: 44px;
-  padding: 4px 8px;
-  color: var(--companion-ink);
-  font-size: 11.5px;
-  border: 1.5px solid rgba(201, 164, 126, .62);
-  border-radius: 11px;
-  background: rgba(255, 255, 255, .7);
 }
 
 /* 聊天记录视图：头部 / 工具行（搜索·日期）/ 列表。纯浏览页，无输入行。 */
@@ -946,9 +839,7 @@
 /* 面板内按钮的悬停只体现在背景/描边上，同样需要一条过渡避免硬切。 */
 .companion-hud__menu-index > button,
 .companion-hud__action-list > button,
-.companion-hud__setting-buttons button,
-.companion-hud__choice button,
-.companion-hud__switch {
+.companion-hud__setting-buttons button {
   transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
 }
 
@@ -965,8 +856,7 @@
 
   .companion-hud__menu-index > button:hover,
   .companion-hud__action-list > button:hover,
-  .companion-hud__setting-buttons button:hover,
-  .companion-hud__choice button:hover {
+  .companion-hud__setting-buttons button:hover {
     background: rgba(205, 235, 217, .58);
   }
 }
@@ -1017,9 +907,7 @@
   .companion-hud__controls > button,
   .companion-hud__menu-index > button,
   .companion-hud__action-list > button,
-  .companion-hud__setting-buttons button,
-  .companion-hud__choice button,
-  .companion-hud__switch {
+  .companion-hud__setting-buttons button {
     transition: none;
   }
 

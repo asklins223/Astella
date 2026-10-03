@@ -1,776 +1,259 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { DesktopSearchItem, DesktopSourceDetail } from "@ailearn/shared/desktop-surface-contracts";
-import type { LearningObjectiveSurfaceV3, ObjectivePersonalStateV3 } from "@ailearn/shared/learning-objective-surface-contracts";
-import type { NoteDetailV1, NoteBlockProjectionV1 } from "@ailearn/shared/note-projection-contracts";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { ArrowDown, ArrowLeft, ArrowRight, BookOpen, ChevronRight, FileText, Layers3, Leaf, Search, Sprout, X } from "lucide-react";
+import type { DesktopSearchItem } from "@ailearn/shared/desktop-surface-contracts";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
-import { useRoomStore, type SearchTypeFilter } from "../../../app/room-store";
-import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
-import { X } from "lucide-react";
+import { useRoomStore } from "../../../app/room-store";
 import { HudPage } from "../../hud/HudPage";
-import { HudPicker } from "../../hud/HudControls";
 import { useHudPage } from "../../hud/use-hud-page";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
-import { freshnessLabel } from "../run/objective-state-copy.ts";
 import { HUD_PAGES } from "../../hud/hud-pages";
-import { SurfaceDataState, formatRelative, readAuthenticatedSession, useSurfaceProjection } from "../notebook/surface-data.tsx";
+import { SurfaceDataState, formatRelative } from "../notebook/surface-data";
+import { containsQuery, markQuery, noResultEmpty, NO_QUERY_EMPTY, objectKey, openLabel, previewGap, previewParagraphs, PREVIEW_EMPTY, SEARCH_STATE_LINES, stripHighlight, TYPE_FILTERS, typeFilterLabel, typeLabel } from "./search-presenter";
+import { useSearchDesk } from "./use-search-desk";
+import { useSearchMotion } from "./use-search-motion";
 
-const PAGE_SIZE = 24;
-const TYPE_FILTERS = ["all", "note", "source", "objective"] as const;
-/** Objective personal states that really mean "the evidence is not enough yet". */
-const WEAK_OBJECTIVE_STATES: readonly ObjectivePersonalStateV3[] = ["unvalidated", "fragile", "needs_repair"];
-/** 证据不足筛选只核对最近这么多条目标，徽标据此标注为抽样。 */
-const WEAK_OBJECTIVE_SAMPLE = 100;
+const TYPE_ICONS = { all: Layers3, note: BookOpen, source: FileText, objective: Sprout };
+const TYPE_NAMES = { all: "全部", note: "笔记", source: "来源", objective: "学习卡" };
 
-type TypeFilter = SearchTypeFilter;
-
-type SearchPreview =
-  | { kind: "loading"; key: string }
-  | { kind: "note"; key: string; detail: NoteDetailV1 }
-  | { kind: "source"; key: string; detail: DesktopSourceDetail }
-  | { kind: "objective"; key: string; detail: LearningObjectiveSurfaceV3 }
-  | { kind: "error"; key: string; message: string };
-
-function objectKey(item: Pick<DesktopSearchItem, "objectType" | "objectId">): string {
-  return `${item.objectType}:${item.objectId}`;
-}
-
-function typeLabel(objectType: DesktopSearchItem["objectType"]): string {
-  switch (objectType) {
-    case "note": return "笔记";
-    case "source": return "来源";
-    case "objective": return "目标";
-  }
-}
-
-function typeFilterLabel(filter: TypeFilter): string {
-  switch (filter) {
-    case "all": return "全部类型";
-    case "note": return "只看笔记";
-    case "source": return "只看来源";
-    case "objective": return "只看目标";
-  }
-}
-
-/** The same four states the filter can be in, as a drawn list. */
-const TYPE_FILTER_OPTIONS: ReadonlyArray<readonly [TypeFilter, string]> = TYPE_FILTERS.map(
-  (filter) => [filter, typeFilterLabel(filter)] as const,
-);
-
-/** The one action the preview offers, named for the record it would open. */
-function openLabel(objectType: DesktopSearchItem["objectType"]): string {
-  switch (objectType) {
-    case "note": return "打开完整笔记";
-    case "source": return "打开这份来源";
-    case "objective": return "打开学习卡";
-  }
-}
-
-/**
- * 这一屏那几句状态字各写一次：JSX 与登记给伴星的可读视图共用同一份。
- * 抄成两处就是两个来源，而**视图字段写错不会红**（只有形状校验那道会喊），
- * 最后只会变成"她说的与屏幕上不是一句"。
- */
-const SEARCH_STATE_LINES = {
-  confirmingSession: "正在确认工作区",
-  searchingList: "正在搜索",
-  sessionUnavailable: "搜索范围暂时不可用",
-  listUnavailable: "搜索暂时不可用",
-  cannotCheckStates: "无法核对目标状态",
-} as const;
-const NO_QUERY_EMPTY = {
-  message: "输入关键词开始查找",
-  detail: "来源、笔记与学习卡共用同一组结果；选中后右侧直接预览。",
-} as const;
-const PREVIEW_EMPTY = {
-  message: "右侧预览等待一次选择",
-  detail: "在左侧选中一条结果，这里会读取它的真实内容与缺口。",
-} as const;
-/** 空结果有两条不同的说法（普通关键词没命中 vs 证据不足筛没了），两句都必须在屏上。 */
-function noResultEmpty(weakOnly: boolean, query: string): { readonly message: string; readonly detail: string } {
-  return weakOnly
-    ? { message: "没有证据不足的目标命中", detail: "可以关掉“证据不足”筛选，或换一个关键词。" }
-    : { message: `没有找到“${query.trim()}”`, detail: "可以换一个关键词，或把类型切回全部。" };
-}
-
-/**
- * The mockup marks the searched phrase inside the reading body instead of
- * printing the index snippet a second time, so the query is wrapped in place
- * and the preview never repeats the same sentence twice.
- */
-function markQuery(text: string, query: string): React.ReactNode {
-  const needle = query.trim();
-  if (!needle) return text;
-  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
-  if (parts.length === 1) return text;
-  return parts.map((part, index) => (
-    // `split` with a capture group alternates text / match / text / match…
-    index % 2 === 1 ? <span className="mark" key={index}>{part}</span> : part
-  ));
-}
-
-/** The server wraps snippet hits in «…»; the reading page highlights for real, so the markers come off. */
-function stripHighlight(text: string): string {
-  return text.replace(/[«»]/g, "");
-}
-
-/** Note blocks are stored with light markup; the paper only wants reading text. */
-function displayBlockContent(value: string): string {
-  if (!/<\/?[a-z][^>]*>/i.test(value)) return value.trim();
-  return value
-    .replace(/<br\s*\/?\s*>/gi, "\n")
-    .replace(/<\/?(?:h[1-6]|p|strong|em|ul|ol|li|blockquote|code|pre)\b[^>]*>/gi, "")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .trim();
-}
-
-function containsQuery(text: string, query: string): boolean {
-  const needle = query.trim().toLowerCase();
-  return needle.length > 0 && text.toLowerCase().includes(needle);
-}
-
-/**
- * The window of paragraphs the reader should see. Taking the first N blocks
- * means a note whose match sits in block 40 previews as six unhighlighted
- * paragraphs while the row claims "匹配 3 处" — so the window follows the match
- * and keeps a little context on both sides.
- */
-function windowAroundMatch(texts: readonly string[], query: string, size: number): string[] {
-  if (texts.length <= size) return [...texts];
-  const hit = texts.findIndex((text) => containsQuery(text, query));
-  if (hit < 0) return texts.slice(0, size);
-  const start = Math.max(0, Math.min(hit - Math.floor(size / 2), texts.length - size));
-  return texts.slice(start, start + size);
-}
-
-function noteParagraphs(blocks: readonly NoteBlockProjectionV1[], query: string): string[] {
-  const readable = blocks
-    .filter((block) => block.type === "paragraph" || block.type === "quote" || block.type === "heading")
-    .map((block) => displayBlockContent(block.content))
-    .filter((text) => text.length > 0);
-  return windowAroundMatch(readable, query, 6);
-}
-
-function previewTitle(preview: SearchPreview): string {
-  switch (preview.kind) {
-    case "note": return preview.detail.title || "未命名笔记";
-    case "source": return preview.detail.source.title;
-    case "objective": return preview.detail.content.conceptLabel ?? "未命名学习卡";
-    default: return "";
-  }
-}
-
-function previewParagraphs(preview: SearchPreview, query: string): string[] {
-  if (preview.kind === "note") return noteParagraphs(preview.detail.currentVersion.blocks, query);
-  if (preview.kind === "source") {
-    const readable = preview.detail.segments
-      .map((segment) => segment.text.trim())
-      .filter((text) => text.length > 0);
-    return windowAroundMatch(readable, query, 5);
-  }
-  if (preview.kind === "objective") return [preview.detail.content.publicSummary];
-  return [];
-}
-
-/** The gap note only appears when the server really reports a missing link. */
-function previewGap(preview: SearchPreview): string | null {
-  if (preview.kind === "objective") {
-    if (preview.detail.sources.missingOrigin) return "这条目标还没有出处，结论暂时追不回材料。";
-    /**
-     * 那两格**状态名一律取 `freshnessLabel` 那一份**，后半句才是搜索这一面自己的话。
-     * 同一个服务端值在笔记页说「来源已有更新」、在这里说「来源已经过期」，
-     * 是 `objective-state-copy` 这个模块存在时要拦的那一件事（它的注释写的就是这种形状）。
-     */
-    if (preview.detail.content.freshness === "source_outdated") {
-      return `${freshnessLabel(preview.detail.content.freshness)}——这一条要重新核对。`;
-    }
-    if (preview.detail.content.freshness === "legacy_unreviewed") {
-      return `${freshnessLabel(preview.detail.content.freshness)}——这条目标的结论可能已经漂移。`;
-    }
-    if (preview.detail.personal.initialValidation?.status === "deferred") return "初次验证被推迟，证据仍待补齐。";
-    return null;
-  }
-  if (preview.kind === "note") {
-    if (preview.detail.sourceId === null) return "这篇笔记还没有绑定来源，证据链是断开的。";
-    if (preview.detail.currentVersion.blocks.length === 0) return "这篇笔记当前版本还没有可读内容。";
-    return null;
-  }
-  if (preview.kind === "source") {
-    if (preview.detail.source.status === "failed") return "这份来源解析失败，正文段落可能不完整。";
-    if (preview.detail.source.status === "processing") return "这份来源仍在解析，现在读到的是部分内容。";
-    if (preview.detail.segments.length === 0) return "这份来源还没有可用正文段落。";
-    return null;
-  }
-  return null;
-}
-
-/**
- * Page 18 — one search desk over the real global index.
- *
- * The query, its type filter, the opaque `nextCursor` page and every failure
- * branch come from `ailearn.search.global`; the right page previews the selected
- * record through the same typed reads the detail pages use. The query, filter
- * and weak-only toggle live in the room store because the surface is remounted
- * on every navigation — see `SearchTypeFilter` in room-store.
- */
 export function SearchSurface() {
-  const invoke = useRoomStore((state) => state.invoke);
-  const setActiveSourceId = useRoomStore((state) => state.setActiveSourceId);
-  const setActiveObjectiveId = useRoomStore((state) => state.setActiveObjectiveId);
-  const setActiveNoteRef = useRoomStore((state) => state.setActiveNoteRef);
-  const query = useRoomStore((state) => state.searchQuery);
-  const setQuery = useRoomStore((state) => state.setSearchQuery);
-  const typeFilter = useRoomStore((state) => state.searchTypeFilter);
-  const setTypeFilter = useRoomStore((state) => state.setSearchTypeFilter);
-  const weakOnly = useRoomStore((state) => state.searchWeakOnly);
-  const setWeakOnly = useRoomStore((state) => state.setSearchWeakOnly);
-  const [sessionReady, setSessionReady] = useState(false);
-  const [sessionFailure, setSessionFailure] = useState<string | null>(null);
-  const [sessionTick, setSessionTick] = useState(0);
-  const [items, setItems] = useState<DesktopSearchItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [searching, setSearching] = useState(false);
-  const [searchFailure, setSearchFailure] = useState<string | null>(null);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [preview, setPreview] = useState<SearchPreview | null>(null);
-  const [openingKey, setOpeningKey] = useState<string | null>(null);
-  const epochRef = useRef<number | undefined>(undefined);
-  /** Monotonic guard so a slow earlier response can never overwrite a newer page. */
-  const searchSeqRef = useRef(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const indexRef = useRef<HTMLDivElement>(null);
-  const optionRefs = useRef(new Map<string, HTMLElement>());
-  const listId = useId();
+  const [composing, setComposing] = useState(false);
+  const desk = useSearchDesk(composing);
+  const setQuery = useRoomStore(state => state.setSearchQuery);
+  const setType = useRoomStore(state => state.setSearchTypeFilter);
+  const setWeakOnly = useRoomStore(state => state.setSearchWeakOnly);
+  const root = useRef<HTMLElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const index = useRef<HTMLDivElement>(null);
+  const paperScroll = useRef<HTMLDivElement>(null);
+  const previewRoot = useRef<HTMLElement>(null);
+  const openButton = useRef<HTMLButtonElement>(null);
+  const rows = useRef(new Map<string, HTMLDivElement>());
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [compact, setCompact] = useState(false);
+  const keyboardBrowsing = useRef(false);
+  const focusPreview = useRef(false);
+  const returnFromPreview = useRef(false);
+  const focusSearch = useRef(false);
+  const restoredIndex = useRef<string | null>(null);
+  const restoredPreview = useRef<string | null>(null);
+  const snapshot = useRef<ReturnType<typeof useRoomStore.getState>["searchResume"]>(null);
+  const listId = useId(), previewId = useId(), queryId = useId();
+  const listBusy = desk.searching || desk.filterBusy || desk.restoring;
+  const hasQuery = Boolean(desk.value);
+  const selected = desk.selected;
+  const preview = desk.preview;
+  const readyPreview = preview && preview.kind !== "loading" && preview.kind !== "error" ? preview : null;
+  const previewBody = readyPreview ? previewParagraphs(readyPreview, desk.value) : [];
+  const bodyHasMatch = previewBody.some(text => containsQuery(text, desk.value));
+  const gap = readyPreview ? previewGap(readyPreview) : null;
   useHudPage("search");
+  useSearchMotion(root, desk.filter, `${desk.identity}:${selected ? objectKey(selected) : "empty"}:${previewOpen}`);
 
-  const objectiveIndex = useSurfaceProjection(async ({ workspaceEpoch }) => {
-    if (!weakOnly) return null;
-    const response = await window.ailearn.objective.list({ meta: createRequestMeta(workspaceEpoch), limit: WEAK_OBJECTIVE_SAMPLE });
-    return unwrapGatewayResult(response);
-  }, [weakOnly]);
-
-  const weakObjectiveIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const item of objectiveIndex.data?.items ?? []) {
-      if (WEAK_OBJECTIVE_STATES.includes(item.personalState.state)) ids.add(item.objectiveId);
-    }
-    return ids;
-  }, [objectiveIndex.data]);
-
+  useLayoutEffect(() => {
+    const node = root.current;
+    if (!node) return;
+    const fit = () => setCompact(node.getBoundingClientRect().width < 690);
+    fit();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
+    observer?.observe(node);
+    return () => observer?.disconnect();
+  }, []);
+  useEffect(() => { input.current?.focus({ preventScroll: true }); }, [desk.sessionReady]);
   useEffect(() => {
-    let active = true;
-    setSessionReady(false);
-    setSessionFailure(null);
-    void readAuthenticatedSession(epochRef)
-      .then(() => active && setSessionReady(true))
-      .catch((error: unknown) => active && setSessionFailure(gatewayErrorMessage(error)));
-    return () => { active = false; };
-  }, [sessionTick]);
+    keyboardBrowsing.current = false; setPreviewOpen(false);
+    restoredIndex.current = null; restoredPreview.current = null;
+    index.current?.scrollTo({ top: 0 });
+  }, [desk.identity]);
 
-  useEffect(() => inputRef.current?.focus(), [sessionReady]);
-
-  const runSearch = useCallback(async (value: string, cursor?: string) => {
-    if (!window.ailearn) {
-      setSearchFailure("桌面端 API 不可用，无法执行全局搜索。");
-      return;
-    }
-    const seq = ++searchSeqRef.current;
-    const firstPage = cursor === undefined;
-    setSearching(true);
-    setSearchFailure(null);
-    try {
-      const response = await window.ailearn.search.global({
-        meta: createRequestMeta(epochRef.current),
-        query: value,
-        ...(typeFilter === "all" ? {} : { type: typeFilter }),
-        limit: PAGE_SIZE,
-        ...(cursor === undefined ? {} : { cursor }),
-      });
-      // A newer request (new keystroke or filter change) owns the list now.
-      if (seq !== searchSeqRef.current) return;
-      if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
-      const page = unwrapGatewayResult(response);
-      setTotal(page.total);
-      setNextCursor(page.nextCursor);
-      setItems((current) => {
-        if (firstPage) return page.items;
-        const seen = new Set(current.map(objectKey));
-        return [...current, ...page.items.filter((item) => !seen.has(objectKey(item)))];
-      });
-    } catch (error) {
-      if (seq !== searchSeqRef.current) return;
-      if (firstPage) {
-        setItems([]);
-        setTotal(0);
-        setNextCursor(null);
-      }
-      setSearchFailure(gatewayErrorMessage(error));
-    } finally {
-      if (seq === searchSeqRef.current) setSearching(false);
-    }
-  }, [typeFilter]);
-
-  useEffect(() => {
-    const value = query.trim();
-    if (!value) {
-      // Invalidate any in-flight page before clearing, so a late response
-      // cannot repopulate an emptied list.
-      searchSeqRef.current += 1;
-      setItems([]);
-      setTotal(0);
-      setNextCursor(null);
-      setSearchFailure(null);
-      setSearching(false);
-      setSelectedKey(null);
-      return undefined;
-    }
-    // The first search must wait for the workspace epoch; firing earlier just
-    // fails assertEpoch and shows a false "unavailable" error.
-    if (!sessionReady) return undefined;
-    // A new query or filter replaces the list, so the reader starts at the top
-    // of the new one instead of inheriting the previous scroll position.
-    indexRef.current?.scrollTo({ top: 0 });
-    const timer = window.setTimeout(() => { void runSearch(value); }, 220);
-    return () => window.clearTimeout(timer);
-  }, [query, runSearch, sessionReady]);
-
-  const filterFailure = weakOnly ? objectiveIndex.failure : null;
-
-  const visible = useMemo(() => {
-    if (!weakOnly) return items;
-    // 目标状态读不到时不能假装筛过了：宁可让空态说明原因，也不要在
-    // 「证据不足」按下的情况下展示未过滤的结果。
-    if (filterFailure) return [];
-    return items.filter((item) => item.objectType === "objective" && weakObjectiveIds.has(item.objectId));
-  }, [items, filterFailure, weakObjectiveIds, weakOnly]);
-
-  useEffect(() => {
-    if (visible.length === 0) {
-      setSelectedKey(null);
-      return;
-    }
-    setSelectedKey((current) => (current && visible.some((item) => objectKey(item) === current) ? current : objectKey(visible[0])));
-  }, [visible]);
-
-  const selected = visible.find((item) => objectKey(item) === selectedKey) ?? null;
-
-  useEffect(() => {
-    if (!selected) {
-      setPreview(null);
-      return undefined;
-    }
-    let active = true;
-    const key = objectKey(selected);
-    setPreview({ kind: "loading", key });
-    const load = async () => {
-      if (!window.ailearn) throw new Error("桌面端 API 不可用，无法读取预览。");
-      if (selected.objectType === "note") {
-        const response = await window.ailearn.note.get({ meta: createRequestMeta(epochRef.current), noteId: selected.objectId });
-        return { kind: "note", key, detail: unwrapGatewayResult(response) } as const;
-      }
-      if (selected.objectType === "source") {
-        const response = await window.ailearn.source.get({ meta: createRequestMeta(epochRef.current), sourceId: selected.objectId });
-        return { kind: "source", key, detail: unwrapGatewayResult(response) } as const;
-      }
-      const response = await window.ailearn.objective.get({ meta: createRequestMeta(epochRef.current), objectiveId: selected.objectId });
-      return { kind: "objective", key, detail: unwrapGatewayResult(response) } as const;
+  const remember = () => {
+    if (!desk.settled) return;
+    const position = {
+      identity: desk.identity, selectedKey: desk.selectedKey, loadedCount: desk.items.length,
+      indexScrollTop: index.current?.scrollTop ?? 0, previewScrollTop: paperScroll.current?.scrollTop ?? 0,
     };
-    void load()
-      .then((next) => { if (active) setPreview(next); })
-      .catch((error: unknown) => { if (active) setPreview({ kind: "error", key, message: gatewayErrorMessage(error) }); });
-    return () => { active = false; };
-  }, [selected]);
-
-  const openItem = useCallback(async (item: DesktopSearchItem) => {
-    if (!window.ailearn || openingKey !== null) return;
-    const key = objectKey(item);
-    setOpeningKey(key);
-    try {
-      if (item.objectType === "source") {
-        setActiveSourceId(item.objectId);
-        invoke("open-source");
-        return;
-      }
-      if (item.objectType === "objective") {
-        setActiveObjectiveId(item.objectId);
-        invoke("open-objective");
-        return;
-      }
-      const response = await window.ailearn.note.get({ meta: createRequestMeta(epochRef.current), noteId: item.objectId });
-      const note = unwrapGatewayResult(response);
-      if (note.currentVersionId) setActiveNoteRef({ noteId: note.noteId, noteVersionId: note.currentVersionId });
-      invoke("open-notebook");
-    } catch (error) {
-      setSearchFailure(gatewayErrorMessage(error));
-    } finally {
-      setOpeningKey((current) => (current === key ? null : current));
+    snapshot.current = position;
+    useRoomStore.getState().setSearchResume(position);
+  };
+  snapshot.current = desk.settled ? {
+    identity: desk.identity, selectedKey: desk.selectedKey, loadedCount: desk.items.length,
+    indexScrollTop: index.current?.scrollTop ?? 0, previewScrollTop: paperScroll.current?.scrollTop ?? 0,
+  } : snapshot.current?.identity === desk.identity ? snapshot.current : null;
+  useEffect(() => () => {
+    const saved = snapshot.current;
+    if (saved && JSON.parse(saved.identity)[0] === useRoomStore.getState().workspaceScopeRevision) {
+      useRoomStore.getState().setSearchResume({ ...saved, indexScrollTop: index.current?.scrollTop ?? saved.indexScrollTop, previewScrollTop: paperScroll.current?.scrollTop ?? saved.previewScrollTop });
     }
-  }, [invoke, openingKey, setActiveNoteRef, setActiveObjectiveId, setActiveSourceId]);
+  }, []);
 
-  const selectByOffset = (offset: number) => {
-    if (visible.length === 0) return;
-    const index = visible.findIndex((item) => objectKey(item) === selectedKey);
-    const next = Math.min(Math.max((index < 0 ? 0 : index) + offset, 0), visible.length - 1);
-    const key = objectKey(visible[next]);
-    setSelectedKey(key);
-    const element = optionRefs.current.get(key);
-    // Focus without the browser's scroll jump, then bring the row in gently.
-    element?.focus({ preventScroll: true });
-    element?.scrollIntoView({ block: "nearest" });
+  useLayoutEffect(() => {
+    if (!desk.settled || restoredIndex.current === desk.identity) return;
+    if (desk.resume?.identity === desk.identity) index.current?.scrollTo({ top: desk.resume.indexScrollTop });
+    restoredIndex.current = desk.identity;
+  }, [desk.settled, desk.identity, desk.resume]);
+  useLayoutEffect(() => {
+    if (!selected) return;
+    const key = `${desk.identity}:${objectKey(selected)}`;
+    if (restoredPreview.current === key) return;
+    const isResuming = desk.resume?.identity === desk.identity && desk.resume.selectedKey === objectKey(selected);
+    if (isResuming && !readyPreview) return;
+    const top = isResuming ? desk.resume!.previewScrollTop : 0;
+    paperScroll.current?.scrollTo({ top }); restoredPreview.current = key;
+  }, [desk.identity, selected, readyPreview, desk.resume]);
+  useLayoutEffect(() => {
+    if (previewOpen && focusPreview.current) { openButton.current?.focus({ preventScroll: true }); focusPreview.current = false; }
+    if (!previewOpen && returnFromPreview.current) {
+      const row = desk.selectedKey ? rows.current.get(desk.selectedKey) : null;
+      (focusSearch.current ? input.current : row ?? input.current)?.focus({ preventScroll: true });
+      returnFromPreview.current = false; focusSearch.current = false;
+    }
+  }, [previewOpen]);
+
+  const choose = (item: DesktopSearchItem, reveal = true) => {
+    desk.setSelectedKey(objectKey(item));
+    if (reveal && compact) { focusPreview.current = true; setPreviewOpen(true); }
+  };
+  const moveSelection = (offset: number, fromInput = false) => {
+    if (!desk.visible.length || listBusy) return;
+    const current = desk.visible.findIndex(item => objectKey(item) === desk.selectedKey);
+    const next = fromInput && !keyboardBrowsing.current ? Math.max(current, 0) : Math.min(Math.max(current + offset, 0), desk.visible.length - 1);
+    keyboardBrowsing.current = true;
+    const item = desk.visible[next];
+    choose(item, false);
+    const row = rows.current.get(objectKey(item));
+    if (!fromInput) row?.focus({ preventScroll: true });
+    row?.scrollIntoView({ block: "nearest" });
+  };
+  const closePreview = () => {
+    returnFromPreview.current = true;
+    setPreviewOpen(false);
+  };
+  const openSelected = () => { if (selected && !listBusy) { remember(); void desk.openItem(selected); } };
+  const keys = (event: KeyboardEvent<HTMLElement>, fromInput = false) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); moveSelection(event.key === "ArrowDown" ? 1 : -1, fromInput); }
+    if (event.key === "Enter" || !fromInput && event.key === " ") {
+      event.preventDefault();
+      if (selected && !listBusy) openSelected(); else if (fromInput) void desk.runSearch();
+    }
+    if (!fromInput && event.key === "ArrowRight" && selected) {
+      event.preventDefault(); focusPreview.current = true; setPreviewOpen(true);
+      if (!compact) { openButton.current?.focus(); focusPreview.current = false; }
+    }
   };
 
-  const retry = () => {
-    // Re-verify the session first (it also refreshes the workspace epoch).
-    // When a query is pending, the search effect reruns it automatically as
-    // soon as the session is confirmed again.
-    setSessionTick((value) => value + 1);
-  };
+  const empty = noResultEmpty(desk.weakOnly, desk.query, Boolean(desk.nextCursor));
+  const progressLabel = desk.weakOnly ? `${desk.items.length} / ${desk.total} 张 · 证据不足 ${desk.visible.length} 张` : `${desk.items.length} / ${desk.total} 条`;
+  const depthLine = desk.weakOnly ? `已查 ${desk.items.length} 张命中的学习卡；只保留还没验证、有些生疏或需要重学的内容。` : `共 ${desk.total} 条，按最近更新排列。`;
+  const tailLine = desk.nextCursor ? null : desk.items.length < desk.total
+    ? `已到读取上限（前 ${desk.items.length} 条），请缩小关键词或筛选范围` : "已到末尾";
+  const indexStateLine = !desk.sessionReady && !desk.sessionFailure ? SEARCH_STATE_LINES.confirmingSession
+    : desk.sessionFailure ? SEARCH_STATE_LINES.sessionUnavailable : !hasQuery ? NO_QUERY_EMPTY.message
+      : listBusy ? composing ? "写好关键词就会开始查找" : desk.filterBusy ? "正在看看哪些需要巩固" : SEARCH_STATE_LINES.searchingList
+        : desk.filterFailure ? SEARCH_STATE_LINES.cannotCheckStates : desk.searchFailure && !desk.items.length ? SEARCH_STATE_LINES.listUnavailable
+          : !desk.visible.length ? empty.message : null;
+  const notice = desk.sessionFailure ? `${SEARCH_STATE_LINES.sessionUnavailable}：${desk.sessionFailure}`
+    : !hasQuery ? `${NO_QUERY_EMPTY.message}：${NO_QUERY_EMPTY.detail}`
+      : listBusy ? indexStateLine
+        : desk.filterFailure ? `${SEARCH_STATE_LINES.cannotCheckStates}：${desk.filterFailure}`
+          : desk.searchFailure ? `${SEARCH_STATE_LINES.listUnavailable}：${desk.searchFailure}`
+            : !desk.visible.length ? `${empty.message}：${empty.detail}` : tailLine;
+  const readable = useMemo<PageReadableV1 | null>(() => !desk.sessionReady && !desk.sessionFailure ? null : {
+    pageId: "search", title: HUD_PAGES.search.title, statusLine: indexStateLine ?? progressLabel,
+    metrics: hasQuery ? [{ label: "结果", value: progressLabel.slice(0, 40) }, { label: "查找范围", value: depthLine.slice(0, 40) }] : [],
+    filters: [{ label: "类型", value: typeFilterLabel(desk.filter) }, ...(hasQuery ? [{ label: "关键词", value: desk.value.slice(0, 40) }] : []), ...(desk.weakOnly ? [{ label: "证据不足筛选", value: "证据不足" }] : [])],
+    ...(desk.visible.length ? { items: desk.visible.slice(0, 12).map((item, i) => ({ ordinal: i + 1, label: (item.title || "未命名内容").slice(0, 120), state: typeLabel(item.objectType) })) } : {}),
+    ...(notice ? { notice: notice.slice(0, 200) } : {}),
+  }, [desk.sessionReady, desk.sessionFailure, desk.filter, desk.value, desk.weakOnly, desk.visible, hasQuery, progressLabel, depthLine, notice, indexStateLine]);
+  usePageReadableView(readable);
 
-  const hasQuery = Boolean(query.trim());
-  const weakCount = weakObjectiveIds.size;
-  const objectiveData = objectiveIndex.data;
-  /** The weak-state set only covers the objectives the list actually returned. */
-  const objectiveTruncated = objectiveData ? objectiveData.total > objectiveData.items.length : false;
-  const listBusy = searching || (weakOnly && objectiveIndex.loading);
-  /** No cursor and a remainder below means the server's depth cap was hit. */
-  const searchTruncated = nextCursor === null && items.length < total;
-  const progressLabel = weakOnly
-    ? `${visible.length} 条证据不足目标`
-    : `${items.length} / ${total} 条`;
-  // keyset 分页只能顺序推进，所以先把总深度讲清楚，而不是让读者点到撞上限才知道。
-  const estimatedPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const gap = preview ? previewGap(preview) : null;
-  const previewKey = preview && preview.kind !== "loading" && preview.kind !== "error" ? preview.key : null;
-  const previewBody = previewKey && preview ? previewParagraphs(preview, query) : [];
-  // 只有当正文窗口里真的带着关键词时，才不必再印一遍索引片段；
-  // 关键词落在标题或图片说明里时，片段是唯一的命中锚点。
-  const bodyHasMatch = previewBody.some((text) => containsQuery(text, query));
-
-  /**
-   * 这一屏登记给伴星读的可读视图（39d W2-7）。
-   *
-   * 页签上的计数、读取深度那一行、"证据不足"那颗标签、逐条结果的类型字，
-   * 全部**复用页面已经在渲染的派生值**（`progressLabel` / `depthLine` /
-   * `weakChipLabel` / `typeLabel`），一个都不在这里重算。
-   * `notice` 是一条按优先级选出的屏上原话：确认不了工作区 ＞ 没输入 ＞ 读结果中 ＞
-   * 核不了状态 ＞ 搜索失败 ＞ 没有命中 ＞ 还没选中任何一条 ＞ 读到哪儿了。
-   */
-  const emptyState = noResultEmpty(weakOnly, query);
-  const weakChipLabel
-    = `证据不足${objectiveData ? ` ${weakCount}${objectiveTruncated ? "+" : ""}` : ""}`;
-  const depthLine
-    = weakOnly
-      ? `命中 ${total} 条，其中证据不足 ${visible.length} 条；按更新时间从新到旧顺序读取。`
-      : `共 ${total} 条，约 ${estimatedPages} 页；按更新时间从新到旧顺序读取。`;
-  const tailLine
-    = nextCursor !== null ? null : searchTruncated
-      ? `已到读取上限（前 ${items.length} 条），请缩小关键词或筛选范围`
-      : "已到末尾";
-  const indexStateLine
-    = !sessionReady && !sessionFailure
-      ? SEARCH_STATE_LINES.confirmingSession
-      : sessionFailure
-        ? SEARCH_STATE_LINES.sessionUnavailable
-        : !hasQuery
-          ? NO_QUERY_EMPTY.message
-          : listBusy && items.length === 0
-            ? SEARCH_STATE_LINES.searchingList
-            : filterFailure
-              ? SEARCH_STATE_LINES.cannotCheckStates
-              : searchFailure && items.length === 0
-                ? SEARCH_STATE_LINES.listUnavailable
-                : visible.length === 0
-                  ? emptyState.message
-                  : null;
-  const searchNotice
-    = sessionFailure
-      ? `${SEARCH_STATE_LINES.sessionUnavailable}：${sessionFailure.slice(0, 60)}`
-      : !hasQuery
-        ? `${NO_QUERY_EMPTY.message}：${NO_QUERY_EMPTY.detail}`
-        : filterFailure
-          ? `${SEARCH_STATE_LINES.cannotCheckStates}：${filterFailure}「证据不足」筛选需要目标状态才能生效，所以这里不显示未过滤的结果。`
-          : searchFailure && items.length === 0
-            ? `${SEARCH_STATE_LINES.listUnavailable}：${searchFailure.slice(0, 60)}`
-            : visible.length === 0
-              ? `${emptyState.message}：${emptyState.detail}`
-              : !selected
-                ? `${PREVIEW_EMPTY.message}：${PREVIEW_EMPTY.detail}`
-                : tailLine;
-  const readableView = useMemo<PageReadableV1 | null>(() => {
-    // 连工作区都还没确认、也没报错：这一屏什么都还没开始，什么都不登记。
-    if (!sessionReady && !sessionFailure) return null;
-    return {
-      pageId: "search",
-      title: HUD_PAGES.search.title,
-      statusLine: indexStateLine ?? progressLabel,
-      metrics: [
-        { label: "结果", value: progressLabel.slice(0, 40) },
-        { label: "读取深度", value: depthLine.slice(0, 40) },
-      ],
-      filters: [
-        { label: "类型", value: typeFilterLabel(typeFilter).slice(0, 40) },
-        ...(hasQuery ? [{ label: "关键词", value: query.trim().slice(0, 40) }] : []),
-        ...(weakOnly ? [{ label: "证据不足筛选", value: weakChipLabel.slice(0, 40) }] : []),
-      ],
-      ...(visible.length > 0
-        ? {
-            items: visible.slice(0, 12).map((item, index) => ({
-              ordinal: index + 1,
-              label: (item.title ?? "未命名内容").slice(0, 120),
-              state: typeLabel(item.objectType).slice(0, 40),
-            })),
-          }
-        : {}),
-      ...(searchNotice ? { notice: searchNotice.slice(0, 200) } : {}),
-    };
-  }, [
-    depthLine, hasQuery, indexStateLine, progressLabel, query, searchNotice,
-    sessionFailure, sessionReady, typeFilter, visible, weakChipLabel, weakOnly,
-  ]);
-  usePageReadableView(readableView);
-
-  return (
-    <HudPage page="search">
-      <section className="search-desk">
+  return <HudPage page="search">
+    <section ref={root} className="search-desk" data-has-query={hasQuery} data-has-results={desk.visible.length > 0} data-compact={compact} data-preview-open={previewOpen} onKeyDown={event => {
+      if (event.key === "Escape" && compact && previewOpen) { event.preventDefault(); event.stopPropagation(); closePreview(); }
+      else if (event.key === "Escape" && desk.query) { event.preventDefault(); event.stopPropagation(); setQuery(""); input.current?.focus(); }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        if (compact && previewOpen) { focusSearch.current = true; closePreview(); } else input.current?.focus();
+      }
+    }}>
+      <div className="search-tools" inert={compact && previewOpen || undefined}>
         <div className="search-command">
-          <b aria-hidden="true">⌕</b>
-          <label className="sr-only" htmlFor="search-desk-query">搜索来源、笔记与学习卡</label>
-          <input
-            id="search-desk-query"
-            ref={inputRef}
-            type="search"
-            value={query}
-            aria-controls={listId}
-            onChange={(event) => setQuery(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                selectByOffset(1);
-                return;
-              }
-              if (event.key === "ArrowUp") {
-                event.preventDefault();
-                selectByOffset(-1);
-                return;
-              }
-              // The drawn clear button owns emptying the field with a pointer;
-              // Escape mirrors it without leaving the page.
-              if (event.key === "Escape" && query) {
-                event.preventDefault();
-                event.stopPropagation();
-                setQuery("");
-                return;
-              }
-              if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
-              if (!selected) return;
-              event.preventDefault();
-              void openItem(selected);
-            }}
-            placeholder="输入概念、问题或来源…"
-          />
-          {query ? (
-            <button
-              type="button"
-              className="search-command__clear"
-              aria-label="清空搜索关键词"
-              onClick={() => { setQuery(""); inputRef.current?.focus(); }}
-            >
-              <X size={13} strokeWidth={2.4} aria-hidden="true" />
-            </button>
-          ) : null}
-          <HudPicker
-            label="结果类型"
-            variant="tag"
-            value={typeFilter}
-            options={TYPE_FILTER_OPTIONS}
-            onChange={setTypeFilter}
-          />
-          <button
-            type="button"
-            className="tag red"
-            aria-pressed={weakOnly}
-            disabled={objectiveIndex.loading && !objectiveIndex.data}
-            title={filterFailure
-              ? `无法读取目标状态：${filterFailure}`
-              : weakOnly && objectiveTruncated && objectiveData
-                ? `目标较多，仅核对了最近 ${objectiveData.items.length} 条（共 ${objectiveData.total} 条），更早的目标可能未计入`
-                : "只留下还没正式答过、有点生疏或上次答错的目标"}
-            onClick={() => setWeakOnly(!weakOnly)}
-          >
-            {weakChipLabel}
-          </button>
+          <span className="search-command__icon" aria-hidden="true"><Search size={23} strokeWidth={2.5} /></span>
+          <label className="sr-only" htmlFor={queryId}>搜索来源、笔记与学习卡</label>
+          <input id={queryId} ref={input} data-search-query="true" type="search" maxLength={500} value={desk.query} aria-controls={hasQuery ? listId : undefined} aria-activedescendant={selected ? `${listId}-${objectKey(selected)}` : undefined}
+            placeholder="想找什么？写下一个关键词…" onChange={event => setQuery(event.currentTarget.value)} onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} onKeyDown={event => keys(event, true)} />
+          {desk.query ? <button type="button" className="search-command__clear" aria-label="清空搜索关键词" onClick={() => { setQuery(""); input.current?.focus(); }}><X size={17} aria-hidden="true" /></button> : <kbd className="search-command__shortcut" aria-hidden="true">⌘ K</kbd>}
         </div>
-
-        {/* The count is announced once per settled search instead of relying on
-            the visual list to convey it. */}
-        <p className="sr-only" role="status" aria-live="polite">
-          {sessionReady && hasQuery && !listBusy && !searchFailure && !filterFailure ? progressLabel : ""}
-        </p>
-
-        <div className="search-layout">
-          <div className="search-index" ref={indexRef}>
-            {!sessionReady && !sessionFailure ? (
-              <SurfaceDataState kind="loading" message={SEARCH_STATE_LINES.confirmingSession} detail="搜索的是这个空间已建好索引的内容。" />
-            ) : null}
-            {sessionFailure ? (
-              <SurfaceDataState kind="error" message={SEARCH_STATE_LINES.sessionUnavailable} detail={sessionFailure} onRetry={retry} />
-            ) : null}
-            {sessionReady && !hasQuery ? (
-              <SurfaceDataState kind="empty" message={NO_QUERY_EMPTY.message} detail={NO_QUERY_EMPTY.detail} />
-            ) : null}
-            {sessionReady && hasQuery && listBusy && items.length === 0 ? (
-              <SurfaceDataState kind="loading" message={SEARCH_STATE_LINES.searchingList} detail="结果只来自当前工作区的全局搜索接口。" />
-            ) : null}
-            {sessionReady && hasQuery && !listBusy && filterFailure ? (
-              <SurfaceDataState
-                kind="error"
-                message={SEARCH_STATE_LINES.cannotCheckStates}
-                detail={`${filterFailure}「证据不足」筛选需要目标状态才能生效，所以这里不显示未过滤的结果。`}
-                onRetry={() => void objectiveIndex.reload()}
-              />
-            ) : null}
-            {sessionReady && hasQuery && !listBusy && !filterFailure && searchFailure && items.length === 0 ? (
-              <SurfaceDataState kind="error" message={SEARCH_STATE_LINES.listUnavailable} detail={searchFailure} onRetry={retry} />
-            ) : null}
-            {sessionReady && hasQuery && !listBusy && !filterFailure && !searchFailure && visible.length === 0 ? (
-              <SurfaceDataState
-                kind="empty"
-                message={emptyState.message}
-                detail={emptyState.detail}
-              />
-            ) : null}
-            {sessionReady && hasQuery && visible.length > 0 ? (
-              <div id={listId} role="listbox" aria-label="搜索结果" aria-busy={listBusy || undefined}>
-                {visible.map((item) => {
-                  const key = objectKey(item);
-                  const active = key === selectedKey;
-                  return (
-                    <div
-                      key={key}
-                      ref={(element) => {
-                        if (element) optionRefs.current.set(key, element);
-                        else optionRefs.current.delete(key);
-                      }}
-                      role="option"
-                      aria-selected={active}
-                      tabIndex={active ? 0 : -1}
-                      className={`index-card${active ? " selected" : ""}`}
-                      onClick={() => setSelectedKey(key)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          void openItem(item);
-                          return;
-                        }
-                        if (event.key === "ArrowDown") {
-                          event.preventDefault();
-                          selectByOffset(1);
-                          return;
-                        }
-                        if (event.key === "ArrowUp") {
-                          event.preventDefault();
-                          selectByOffset(-1);
-                        }
-                      }}
-                    >
-                      <span className="kind">{typeLabel(item.objectType)}</span>
-                      <div>
-                        <b>{item.title ?? "未命名内容"}</b>
-                        <div className="small">
-                          {item.matchCount ? `匹配 ${item.matchCount} 处 · ` : ""}索引于 {formatRelative(item.indexedAt)}
-                        </div>
-                      </div>
-                      <span aria-hidden="true">›</span>
-                    </div>
-                  );
-                })}
-                {searchFailure ? (
-                  // A failed "read more" must not blank the page that already
-                  // works: the error stays inline with the loaded list, and the
-                  // retry repeats the same page instead of restarting the search.
-                  <div className="index-progress" role="alert">
-                    <span>{searchFailure}</span>
-                    <button
-                      type="button"
-                      className="button"
-                      disabled={searching || nextCursor === null}
-                      onClick={() => { if (nextCursor !== null) void runSearch(query.trim(), nextCursor); }}
-                    >
-                      {searching ? "正在读取…" : "重试这一页"}
-                    </button>
-                  </div>
-                ) : null}
-                <div className="index-progress">
-                  <span>{progressLabel}</span>
-                  {nextCursor !== null ? (
-                    <button type="button" className="button" disabled={searching} onClick={() => void runSearch(query.trim(), nextCursor)}>
-                      {searching ? "正在读取…" : "继续读取"}
-                    </button>
-                  ) : (
-                    <span>{tailLine}</span>
-                  )}
-                </div>
-                <p className="small index-depth">{depthLine}</p>
-              </div>
-            ) : null}
+        <div className="search-filter-row">
+          <nav className="search-types" aria-label="结果类型">
+            <span className="search-types__cushion" aria-hidden="true" />
+            {TYPE_FILTERS.map(type => { const Icon = TYPE_ICONS[type]; return <button type="button" key={type} aria-pressed={desk.filter === type} aria-label={`结果类型：${typeFilterLabel(type)}`} onClick={() => setType(type)}><Icon size={16} aria-hidden="true" /><span>{TYPE_NAMES[type]}</span></button>; })}
+          </nav>
+          {desk.filter === "objective" ? <button type="button" className="search-weak" aria-pressed={desk.weakOnly} title="只看还没验证、有些生疏或需要重学的学习卡" onClick={() => setWeakOnly(!desk.weakOnly)}><Sprout size={15} aria-hidden="true" />证据不足<span className="search-weak__switch" aria-hidden="true" /></button> : <span className="search-scope"><Leaf size={14} aria-hidden="true" />这个学习空间</span>}
+        </div>
+      </div>
+      <p className="sr-only" role="status" aria-live="polite">{desk.sessionReady && hasQuery ? listBusy ? indexStateLine : !desk.searchFailure && !desk.filterFailure ? progressLabel : "" : ""}</p>
+      {!hasQuery ? <div className="search-welcome">
+        <div className="search-welcome__objects" aria-hidden="true"><span><BookOpen size={48} strokeWidth={1.8} /></span><span><FileText size={43} strokeWidth={1.8} /></span><i><Search size={36} strokeWidth={2.3} /></i></div>
+        {!desk.sessionReady && !desk.sessionFailure ? <SurfaceDataState kind="loading" message={SEARCH_STATE_LINES.confirmingSession} detail="正在准备这个学习空间的内容。" />
+          : desk.sessionFailure ? <SurfaceDataState kind="error" message={SEARCH_STATE_LINES.sessionUnavailable} detail={desk.sessionFailure} onRetry={desk.retry} />
+            : <><p className="search-welcome__eyebrow">把那一点灵感找回来</p><h2>{NO_QUERY_EMPTY.message}</h2><p>{NO_QUERY_EMPTY.detail}</p><div className="search-shortcuts"><span><kbd>↑</kbd><kbd>↓</kbd>挑选纸签</span><span><kbd>Enter</kbd>打开完整内容</span><span><kbd>Esc</kbd>清空关键词</span></div></>}
+      </div> : <div className="search-layout">
+        <div className="search-results" inert={compact && previewOpen || undefined}>
+          <header className="search-index__heading"><span>找到的纸签</span><small>{listBusy ? indexStateLine : `${desk.total} ${desk.filter === "objective" ? "张" : "条"}命中`}</small></header>
+          <div className="search-index" ref={index} onScroll={remember}>
+            {!desk.sessionReady && !desk.sessionFailure ? <SurfaceDataState kind="loading" message={SEARCH_STATE_LINES.confirmingSession} detail="正在准备这个学习空间的内容。" /> : null}
+            {desk.sessionFailure ? <SurfaceDataState kind="error" message={SEARCH_STATE_LINES.sessionUnavailable} detail={desk.sessionFailure} onRetry={desk.retry} /> : null}
+            {desk.sessionReady && listBusy && !desk.visible.length ? <SurfaceDataState kind="loading" message={indexStateLine!} detail={composing ? "输入法确认后，纸签就会来。" : "纸签马上就来。"} /> : null}
+            {desk.sessionReady && !listBusy && desk.filterFailure ? <SurfaceDataState kind="error" message={SEARCH_STATE_LINES.cannotCheckStates} detail={desk.filterFailure} onRetry={desk.retryFilter} /> : null}
+            {desk.sessionReady && !listBusy && desk.searchFailure && !desk.items.length ? <SurfaceDataState kind="error" message={SEARCH_STATE_LINES.listUnavailable} detail={desk.searchFailure} onRetry={desk.retry} /> : null}
+            {desk.sessionReady && !listBusy && !desk.filterFailure && !desk.searchFailure && !desk.visible.length ? <SurfaceDataState kind="empty" message={empty.message} detail={empty.detail} /> : null}
+            <div id={listId} role="listbox" aria-label="搜索结果" aria-busy={listBusy || undefined}>
+              {desk.visible.map(item => {
+                const key = objectKey(item), active = key === desk.selectedKey, Icon = TYPE_ICONS[item.objectType];
+                return <div key={key} id={`${listId}-${key}`} ref={node => { if (node) rows.current.set(key, node); else rows.current.delete(key); }} role="option" aria-selected={active} aria-disabled={listBusy || undefined} tabIndex={active ? 0 : -1}
+                  className={`index-card${active ? " selected" : ""}`} data-kind={item.objectType} aria-controls={previewId} onClick={() => { if (!listBusy) choose(item); }} onDoubleClick={() => { if (!listBusy) { remember(); void desk.openItem(item); } }} onKeyDown={event => keys(event)}>
+                  <span className="index-card__icon" aria-hidden="true"><Icon size={22} strokeWidth={2} /></span>
+                  <div className="index-card__text"><span className="index-card__meta"><span className="kind">{typeLabel(item.objectType)}</span>{item.matchCount ? <span>匹配 {item.matchCount} 处</span> : null}</span><b>{markQuery(item.title || "未命名内容", desk.value)}</b><p>{markQuery(stripHighlight(item.snippet), desk.value)}</p></div>
+                  <ChevronRight size={16} className="index-card__arrow" aria-hidden="true" />
+                </div>;
+              })}
+              {desk.items.length > 0 ? <div className="search-index__tail">
+                {desk.searchFailure ? <div className="search-page-error" role="alert"><p>{desk.searchFailure}</p><button type="button" className="button" disabled={listBusy || !desk.nextCursor} onClick={() => { if (desk.nextCursor) void desk.runSearch(desk.nextCursor); }}>重试这一页</button></div> : null}
+                <div className="index-progress"><span>{progressLabel}</span>{desk.nextCursor ? <button type="button" className="button" disabled={listBusy} onClick={() => void desk.runSearch(desk.nextCursor!)}>{listBusy ? "正在读取…" : "继续读取"}<ArrowDown size={14} aria-hidden="true" /></button> : <span>{tailLine}</span>}</div>
+                <p className="index-depth">{depthLine}</p>
+              </div> : null}
+            </div>
           </div>
-
-          <article className="preview-page">
-            {!selected ? (
-              <SurfaceDataState kind="empty" message={PREVIEW_EMPTY.message} detail={PREVIEW_EMPTY.detail} />
-            ) : (
-              <>
-                {gap ? (
-                  <div className="margin-note">
-                    <b>缺口</b>
-                    <br />
-                    {gap}
-                  </div>
-                ) : null}
-                <span className="tag green">{typeLabel(selected.objectType)}预览</span>
-                <h2>{selected.title ?? previewTitle(preview ?? { kind: "loading", key: "" }) ?? "未命名内容"}</h2>
-                {/* The index snippet only stands in until the body itself carries
-                    the match; when the window cannot reach it (the hit sits in
-                    the title, an image caption or an omitted block) the snippet
-                    stays as the one match-anchored line. */}
-                {(!previewKey || !bodyHasMatch) && selected.snippet ? (
-                  <p>
-                    <span className="mark">{markQuery(stripHighlight(selected.snippet), query)}</span>
-                  </p>
-                ) : null}
-                {preview?.kind === "loading" ? <p className="small" role="status">正在读取完整内容…</p> : null}
-                {preview?.kind === "error" ? (
-                  <p className="small" role="alert">{preview.message}</p>
-                ) : null}
-                {previewKey
-                  ? previewBody.map((text, index) => (
-                      <p key={`${previewKey}-${index}`}>{markQuery(text, query)}</p>
-                    ))
-                  : null}
-                {preview?.kind === "objective" ? (
-                  <p className="small">
-                    {preview.detail.sources.primaryNote ? `主来源：${preview.detail.sources.primaryNote.title}` : "没有主来源笔记"}
-                    {" · "}
-                    更新于 {formatRelative(preview.detail.updatedAt)}
-                  </p>
-                ) : null}
-                <button
-                  type="button"
-                  className="button primary"
-                  disabled={openingKey !== null}
-                  onClick={() => void openItem(selected)}
-                >
-                  {openingKey === objectKey(selected) ? "正在打开…" : openLabel(selected.objectType)}
-                </button>
-              </>
-            )}
-          </article>
+          <p className="search-results__hint"><kbd>↑ ↓</kbd>挑选 <span>·</span><kbd>Enter</kbd>打开 <span>·</span>点选预览</p>
         </div>
-      </section>
-    </HudPage>
-  );
+        {desk.visible.length > 0 ? <aside ref={previewRoot} id={previewId} className="search-preview" role={compact && previewOpen ? "dialog" : undefined} aria-modal={compact && previewOpen || undefined} aria-label="搜索内容预览" onKeyDown={event => {
+          if (compact && previewOpen && event.key === "Tab") {
+            const controls = [...(previewRoot.current?.querySelectorAll<HTMLElement>('button:not(:disabled), [tabindex="0"]') ?? [])];
+            if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls.at(-1)?.focus(); }
+            else if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0]?.focus(); }
+          }
+        }}>
+          <div className="search-preview__paper">
+            <header className="search-preview__head"><span><BookOpen size={16} aria-hidden="true" />{selected ? `${typeLabel(selected.objectType)}预览` : "接着读"}</span><button type="button" className="search-preview__close" aria-label="收起预览" onClick={closePreview}><ArrowLeft size={16} aria-hidden="true" /><span>纸签</span></button></header>
+            <div className="preview-page" ref={paperScroll} tabIndex={0} role="region" aria-label="预览正文" onScroll={remember}>
+              {!selected ? <div className="search-preview__empty"><BookOpen size={44} strokeWidth={1.5} aria-hidden="true" /><h2>{PREVIEW_EMPTY.message}</h2><p>{PREVIEW_EMPTY.detail}</p></div> : <>
+                <h2>{selected.title || "未命名内容"}</h2>
+                <p className="search-preview__meta">{selected.matchCount ? `关键词匹配 ${selected.matchCount} 处 · ` : ""}更新于 {formatRelative(selected.indexedAt)}</p>
+                {(!readyPreview || !bodyHasMatch) && selected.snippet ? <p className="search-preview__snippet">{markQuery(stripHighlight(selected.snippet), desk.value)}</p> : null}
+                {preview?.kind === "loading" ? <p className="search-preview__loading" role="status">正在展开内容…</p> : null}
+                {preview?.kind === "error" ? <div className="search-preview__error" role="alert"><p>{preview.message}</p><button type="button" className="button" onClick={desk.retryPreview}>重新读取预览</button></div> : null}
+                {previewBody.map((text, i) => <p key={`${readyPreview?.key}-${i}`}>{markQuery(text, desk.value)}</p>)}
+                {gap ? <div className="margin-note"><b>阅读提示</b><p>{gap}</p></div> : null}
+                {readyPreview?.kind === "objective" ? <p className="search-preview__origin">{readyPreview.detail.sources.primaryNote ? `来自笔记《${readyPreview.detail.sources.primaryNote.title}》` : "这张学习卡还没有主来源笔记"}</p> : null}
+              </>}
+            </div>
+            {selected ? <footer className="search-preview__foot">
+              {desk.openFailure ? <p role="alert">{desk.openFailure}</p> : <span>先读命中附近的内容</span>}
+              <button type="button" ref={openButton} className="button primary" disabled={desk.openingKey !== null || listBusy} onClick={openSelected}>{desk.openingKey === objectKey(selected) ? "正在打开…" : openLabel(selected.objectType)}<ArrowRight size={17} aria-hidden="true" /></button>
+            </footer> : null}
+          </div>
+        </aside> : null}
+      </div>}
+    </section>
+  </HudPage>;
 }

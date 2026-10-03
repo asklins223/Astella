@@ -55,7 +55,11 @@ function parseResponse(raw: string) {
     throw new NoteExpansionOutputError("拓展草稿不是可审核的结构化内容");
   }
   const result = generatedResponseSchema.safeParse(value);
-  if (!result.success) throw new NoteExpansionOutputError("拓展草稿缺少标题、正文或原文来处");
+  if (!result.success) {
+    const fields = result.error.issues.slice(0, 4)
+      .map((issue) => `${issue.path.join(".") || "root"}:${issue.code}`).join(", ");
+    throw new NoteExpansionOutputError(`拓展草稿输出不符合约定（${fields}）`);
+  }
   const titles = result.data.drafts.map((draft) => draft.title.trim().toLocaleLowerCase());
   if (new Set(titles).size !== titles.length) throw new NoteExpansionOutputError("拓展草稿出现了重复标题");
   return result.data;
@@ -146,7 +150,9 @@ function buildPrompt(blocks: readonly SourceBlock[], focused: boolean) {
     "请从用户正在读的笔记出发，写 2 到 4 篇真正有助于继续理解的短拓展笔记。用自然、通俗的中文，不用学习理论术语。",
     focused ? "用户选中了一段，因此围绕这处概念向前置知识、相邻概念、实际用法或边界继续展开。" : "从整篇笔记中选择最值得继续了解的不同方向。",
     "每篇必须是能单独读懂的知识草稿，不要只写概念名称或学习计划。relationship 用一两句说明它和原笔记的具体关系。sourceReferences 必须引用下方原文中确实存在的句子，作为这条拓展关系的来处。拓展正文可以增加原文之外的常识，但请把不确定或超出原文的内容用‘补充理解’等自然措辞标明，不能假装它是原文事实。",
-    "返回严格 JSON：{\"drafts\":[{\"title\":\"短标题\",\"relationship\":\"与原笔记的关系\",\"sourceReferences\":[{\"blockOrdinal\":原文段落序号,\"quote\":\"原文逐字摘录\"}],\"blocks\":[{\"type\":\"heading|paragraph|list|quote|code\",\"content\":\"正文\"}]}]}。每篇至少 2 个正文块，每条引用必须对应自己的方向。不要输出 Markdown 围栏或额外文本。",
+    "只返回 JSON，顶层只含 drafts 数组，包含 2 到 4 篇草稿。每篇只含 title、relationship、sourceReferences、blocks 四个字段。title 为 2 到 120 字；relationship 为 12 到 500 字。",
+    "sourceReferences 包含 1 到 3 个对象，每个只含 blockOrdinal（下方原文段落序号，必须是整数）和 quote（对应段落中 8 到 320 字的逐字摘录）。每条引用必须对应自己的拓展方向。",
+    "blocks 包含 2 到 30 个正文块，每块只含 type 和 content。type 必须是 paragraph、heading、list、quote、code 中的一个具体值，不要把多个类型用竖线拼在一起。content 为非空字符串，每块不超过 8000 字，每篇正文总长不超过 20000 字。不要输出 Markdown 围栏或额外字段。",
     "笔记原文：",
     source,
   ].join("\n\n");

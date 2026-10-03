@@ -303,7 +303,12 @@ async function withStepDeadline<T>(
   });
   try {
     const value = await Promise.race([run(signal), deadline]);
-    if (value === "timed out") {
+    if (outer.aborted) {
+      return { ok: false, failure: { ok: false, class: "cancelled", message: "task aborted during step" } };
+    }
+    // A provider may catch the deadline's AbortError and return a result before
+    // our timer wins the race. The signal's owner still determines the outcome.
+    if (value === "timed out" || signal.aborted) {
       return { ok: false, failure: { ok: false, class: "timeout", message: `step exceeded ${budget}ms` } };
     }
     return { ok: true, value };

@@ -19,6 +19,7 @@ import {
   RevisionConflictError,
 } from "../modules/note/service.ts";
 import { computeContentHash } from "../modules/note/content-hash.ts";
+import { docFromSnapshot, readNoteTitle } from "../modules/note/doc-fragment.ts";
 // ─
 
 /**
@@ -181,6 +182,11 @@ describe("note/service createNote", () => {
     assert.ok(result);
     assert.equal(result!.note.id, NOTE_ID);
     assert.equal(result!.note.title, "手动标题");
+    const storedDoc = mock._insertCalls.find((call: { data: { state?: Uint8Array } }) => call.data.state)?.data.state;
+    assert.ok(storedDoc, "创建的正文必须带着标题一起写入共享文档");
+    const doc = docFromSnapshot(storedDoc);
+    assert.deepEqual(readNoteTitle(doc), { title: "手动标题", titleSource: "manual" });
+    doc.destroy();
   });
 
   it("自动提取标题当未提供 title", async () => {

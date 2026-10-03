@@ -32,7 +32,6 @@ export function NotebookArtifactTaskPaper(props: {
       <header><strong>互动演示</strong><span>做好后可以从这里打开</span></header>
       {tasks.map((task) => (
         <div className="note-learning-artifact-task-paper__row" key={task.taskId}>
-          <p>为这篇笔记做演示</p>
           <TaskSlip kind="artifact" status={task.status}
             failureReason={task.failureReason ?? error}
             onRetry={() => onStart(task)}

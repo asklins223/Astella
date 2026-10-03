@@ -3,47 +3,83 @@ import { useRoomStore } from "../../../app/room-store";
 
 type PaperKind = "page" | "index" | "side" | "fold" | "stamp";
 export type PlayPaperMotion = (element: HTMLElement | null, kind: PaperKind, closing?: boolean) => Animation | null;
+type PaperState = { x: number; y: number; scale: number; rotate: number; opacity: number };
+type PaperFrame = { value: PaperState; velocity: PaperState };
+const rest: PaperState = { x: 0, y: 0, scale: 1, rotate: 0, opacity: 1 };
+const still: PaperState = { x: 0, y: 0, scale: 0, rotate: 0, opacity: 0 };
+const channels = ["x", "y", "scale", "rotate", "opacity"] as const;
+
+/** Sample the current trajectory, including velocity, before a reversal. */
+function sample(frames: readonly PaperFrame[], progress: number): PaperFrame {
+  const at = Math.max(0, Math.min(frames.length - 1, progress * (frames.length - 1)));
+  const a = frames[Math.floor(at)]!, b = frames[Math.min(frames.length - 1, Math.ceil(at))]!;
+  const fraction = at - Math.floor(at);
+  return { value: Object.fromEntries(channels.map(key => [key, a.value[key] + (b.value[key] - a.value[key]) * fraction])) as PaperState,
+    velocity: Object.fromEntries(channels.map(key => [key, a.velocity[key] + (b.velocity[key] - a.velocity[key]) * fraction])) as PaperState };
+}
+
+function trajectory(from: PaperFrame, target: PaperState, duration: number): PaperFrame[] {
+  const frames: PaperFrame[] = [{ value: { ...from.value }, velocity: { ...from.velocity } }];
+  const count = Math.ceil(duration / 8), dt = duration / count / 1000;
+  for (let i = 0; i < count; i++) {
+    const previous = frames.at(-1)!, value = { ...previous.value }, velocity = { ...previous.velocity };
+    for (const key of channels) {
+      velocity[key] += ((target[key] - value[key]) * 360 - velocity[key] * 30) * dt;
+      value[key] += velocity[key] * dt;
+    }
+    frames.push({ value, velocity });
+  }
+  frames.push({ value: target, velocity: still });
+  return frames;
+}
 
 /** One interruptible motion owner; editor contents never unmount to animate. */
 export function useNotebookPaperMotion(): PlayPaperMotion {
   const mode = useRoomStore(state => state.motionMode);
   const reduced = useRoomStore(state => state.reducedMotion);
   const animations = useRef(new Map<HTMLElement, Animation>());
+  const tracks = useRef(new Map<HTMLElement, { frames: readonly PaperFrame[]; duration: number }>());
   useEffect(() => {
     return () => {
       for (const animation of animations.current.values()) animation.cancel();
       animations.current.clear();
+      tracks.current.clear();
     };
   }, []);
   useLayoutEffect(() => {
     if (mode !== "off" && !reduced) return;
     for (const animation of animations.current.values()) animation.cancel();
     animations.current.clear();
+    tracks.current.clear();
   }, [mode, reduced]);
 
   return useCallback((element, kind, closing = false) => {
     if (!element) return null;
     const previous = animations.current.get(element);
     const current = getComputedStyle(element);
-    const interrupted = previous ? { opacity: current.opacity, transform: current.transform } : null;
+    const track = tracks.current.get(element);
+    const interrupted = previous && track ? sample(track.frames, Number(previous.currentTime ?? 0) / track.duration) : null;
     previous?.cancel();
     animations.current.delete(element);
+    tracks.current.delete(element);
     if (mode === "off" || reduced || typeof element.animate !== "function") return null;
-    const easing = current.getPropertyValue("--hud-ease-out").trim();
-    if (!easing) return null;
-    const distance = kind === "index" ? -28 : kind === "side" ? 32 : 24;
-    const displaced = { opacity: .35, transform: kind === "fold" ? "translateY(-12px) scaleY(.97)" : kind === "stamp" ? "scale(1.12) rotate(-6deg)" : `translateX(${distance}px)` };
-    const resting = { opacity: 1, transform: kind === "fold" ? "translateY(0) scaleY(1)" : kind === "stamp" ? "scale(1) rotate(-3deg)" : "translateX(0)" };
-    const from = interrupted ?? (closing ? resting : displaced);
-    const to = closing ? displaced : resting;
-    const frames = mode === "lite" ? [{ opacity: from.opacity }, { opacity: to.opacity }] : [from, to];
+    const easing = current.getPropertyValue("--hud-ease-out").trim() || "ease-out";
+    const displaced: PaperState = { ...rest, opacity: 0, ...(kind === "fold" ? { y: -12, scale: .98 }
+      : kind === "stamp" ? { scale: 1.08, rotate: -4 } : { x: kind === "index" ? -26 : kind === "side" ? 34 : 18 }) };
+    const from = interrupted ?? { value: closing ? rest : displaced, velocity: still };
+    const to = closing ? displaced : rest;
+    const duration = mode === "lite" ? 120 : closing ? 280 : 480;
+    const path = trajectory(from, to, duration);
+    const frames = mode === "lite" ? [{ opacity: from.value.opacity }, { opacity: to.opacity }]
+      : path.map(({ value }) => ({ opacity: Math.max(0, Math.min(1, value.opacity)), transform: `translate(${value.x}px, ${value.y}px) scale(${value.scale}) rotate(${value.rotate}deg)` }));
     const animation = element.animate(frames, {
-      duration: mode === "lite" ? 120 : closing ? 160 : kind === "index" ? 200 : 220,
-      easing,
+      duration,
+      easing: mode === "lite" ? easing : "linear",
     });
     animations.current.set(element, animation);
+    tracks.current.set(element, { frames: path, duration });
     void animation.finished.catch(() => undefined).then(() => {
-      if (animations.current.get(element) === animation) animations.current.delete(element);
+      if (animations.current.get(element) === animation) { animations.current.delete(element); tracks.current.delete(element); }
     });
     return animation;
   }, [mode, reduced]);
@@ -58,6 +94,8 @@ export function useNotebookPaperPresence<T>(value: T | null, identity: string, k
   const ref = useRef<HTMLElement | null>(null);
   const open = value !== null;
   useLayoutEffect(() => {
+    if (open && !present) { setPresent(true); return; }
+    if (!present) return;
     if (open) {
       setPresent(true);
       play(ref.current, kind);
@@ -66,7 +104,7 @@ export function useNotebookPaperPresence<T>(value: T | null, identity: string, k
     const animation = play(ref.current, kind, true);
     if (!animation) { setPresent(false); return; }
     void animation.finished.then(() => { if (latest.current === null) setPresent(false); }).catch(() => undefined);
-  }, [open, identity, kind, play]);
+  }, [open, present, identity, kind, play]);
   return { ref, value: value ?? (present ? last.current : null), closing: !open };
 }
 

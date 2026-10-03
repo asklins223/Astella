@@ -1,27 +1,7 @@
-/**
- * 设置页「声音」那一簇：音色偏好、试听播放器、以及它们的读写。
- *
- * ## 为什么从 `settings-surface.tsx` 拆出来（2026-09-29）
- *
- * 那个文件 3139 行、`SettingsSurface` 单个函数 2603 行，29 个 state 按前缀聚成
- * voice / invite / inventory / audit / ai / profile / dissolve 等簇。这是第一簇（voice），
- * 也是唯一一簇**不读任何页面级数据**的：它只要 `epochRef` 与一句 `setFailureNotice`。
- *
- * 拆分的判据见 `AGENTS.md` §工程结构与分层：单函数超过 400 行或 hook 超过 25 个就是信号。
- *
- * ## 刻意留在页面里的那一半
- *
- * 读取那一个 effect 和 invites / members / inventory 的读取写在**同一个 effect** 里
- * （`settings-surface.tsx` 的 `setVoicePreference` 那处），所以它跟着留下了——
- * 它只用本 hook 返回的 setter，边界是干净的。要拆它得先把那个 effect 按域分开，
- * 那是另一步的事。
- *
- * ⚠️ 搬过来时逐字保留了实现：`wireVoiceAudio` 的事件解绑、`previewVoice` 里
- * `preload="none"` 那段录音的 src 清理，都是踩过坑写下来的，不要"顺手简化"。
- */
-import { useEffect, useRef, useState } from "react";
-import type { CompanionVoicePreferenceV1, TtsEngineV1, TtsVoiceOptionV1 } from "@ailearn/shared";
-import { createRequestMeta, unwrapGatewayResult, gatewayErrorMessage } from "../../../app/desktop-client";
+/** Account voice preferences and a device-local preview player. */
+import type { CompanionVoicePreferenceV1,TtsEngineV1,TtsVoiceOptionV1 } from "@ailearn/shared";
+import { useEffect,useRef,useState } from "react";
+import { createRequestMeta,gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
 
 export function useSettingsVoice(input: {
   readonly epochRef: { current: number | undefined };
@@ -34,6 +14,7 @@ export function useSettingsVoice(input: {
   const [voicePreference, setVoicePreference] = useState<CompanionVoicePreferenceV1 | null>(null);
   const [voicePreferenceRead, setVoicePreferenceRead] = useState(false);
   const [voiceSaving, setVoiceSaving] = useState(false);
+  const voiceSavingRef = useRef(false);
   /** 录音放不出来时的读数（例如资产没打进包）：控件在响但没声音，比没控件更难查。 */
   const [voicePreviewError, setVoicePreviewError] = useState<string | null>(null);
   const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -52,7 +33,8 @@ export function useSettingsVoice(input: {
    * 但那是兜底，不该由界面产生）。
    */
   const changeVoice = async (engine: TtsEngineV1, voice: string) => {
-    if (voiceSaving) return;
+    if (voiceSavingRef.current) return;
+    voiceSavingRef.current = true;
     setVoiceSaving(true);
     setFailureNotice(null);
     try {
@@ -65,6 +47,7 @@ export function useSettingsVoice(input: {
     } catch (error) {
       setFailureNotice(gatewayErrorMessage(error));
     } finally {
+      voiceSavingRef.current = false;
       setVoiceSaving(false);
     }
   };
@@ -130,6 +113,10 @@ export function useSettingsVoice(input: {
       element.removeAttribute("src");
       element.load();
     }
+    // Activity keeps the DOM while suspending effects. Reopening must wire it again.
+    wiredAudioRef.current = null;
+    voiceAudioHandlersRef.current = null;
+    setVoicePlayer(null);
   }, []);
 
   const toggleVoicePlayer = () => {

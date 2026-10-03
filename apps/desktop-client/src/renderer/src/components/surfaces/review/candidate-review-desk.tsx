@@ -1,30 +1,46 @@
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, CircleAlert, Eye, LoaderCircle, RefreshCw, RotateCcw, X } from "lucide-react";
 import type { CardGenerationSession } from "./use-card-generation-session";
 import { candidateDecisionLabel, exposureLabel, firstValidationLabel, isActionableUndecidedCandidate, revealCooldownHours } from "./candidate-review-model";
 import { cardGenerationRecoveryReasonLabel, cardGenerationStatusLabel, cardGenerationSyncReportText } from "./card-generation-status";
 import { CardGenerationRecoveryActions } from "./card-generation-recovery-actions";
 import { CandidateReviewCard } from "./candidate-review-card";
-import { CandidateReviewBox, CandidateReviewCommit } from "./candidate-review-box";
+import { CandidateReviewBox } from "./candidate-review-box";
+import { useCardTactile } from "../../motion/use-card-tactile";
 import { useCandidateReviewMotion } from "./use-candidate-review-motion";
 
 export function CandidateReviewDesk({ session }: { readonly session: CardGenerationSession }) {
   const { run, candidates, activeCandidate: card, activeCandidateIndex, reviewOpen, activeReveal, busyAction, revealing, loading,
     failure, actionFailure, revealFailure, exposure, exposureFailure, practiceQuotaView, actionableUndecidedCount, syncReport, resync, returnToNote } = session;
-  const motion = useCandidateReviewMotion(card?.candidateRevisionId ?? null);
+  const locked = busyAction !== null || revealing;
+  const motion = useCandidateReviewMotion(card?.candidateRevisionId ?? null, locked);
+  useCardTactile(motion.deskRef);
   const [lastDecisionId, setLastDecisionId] = useState<string | null>(null);
   const undoRef = useRef<HTMLButtonElement>(null);
+  const pendingReviewFocus = useRef(false);
   const currentKey = useRef(card?.candidateRevisionId);
   currentKey.current = card?.candidateRevisionId;
-  const locked = busyAction !== null || revealing;
   const lastDecision = candidates.find((candidate) => candidate.candidateId === lastDecisionId && candidate.reviewDecision !== "undecided" && candidate.publishState === "unpublished");
   const undoCard = card?.reviewDecision !== "undecided" && card?.publishState === "unpublished" ? card : lastDecision;
 
+  useLayoutEffect(() => {
+    if (locked || !pendingReviewFocus.current) return;
+    const next = card && isActionableUndecidedCandidate(card)
+      ? motion.decisionRef.current
+      : motion.deskRef.current?.querySelector<HTMLButtonElement>("[data-candidate-save]:not(:disabled)") ?? undoRef.current;
+    if (next) {
+      next.focus({ preventScroll: true });
+      pendingReviewFocus.current = false;
+    }
+  }, [card, lastDecisionId, locked, motion.decisionRef, motion.deskRef]);
+
   const onReview: CardGenerationSession["review"] = async (candidate, decision, reason) => {
+    const from = motion.stageRef.current?.getBoundingClientRect();
     const confirmed = await session.review(candidate, decision, reason);
     if (confirmed) {
+      pendingReviewFocus.current = true;
       motion.setPane("front"); motion.resetTilt();
-      if (decision !== "undo") { setLastDecisionId(candidate.candidateId); motion.fly(candidate, decision); }
+      if (decision !== "undo") { setLastDecisionId(candidate.candidateId); motion.fly(candidate, decision, from); }
       else setLastDecisionId(null);
     }
     return confirmed;
@@ -37,12 +53,17 @@ export function CandidateReviewDesk({ session }: { readonly session: CardGenerat
     if (await session.revealCandidate(card) && currentKey.current === key) motion.setPane("answers");
   };
 
-  return <div className="candidate-review-table" ref={motion.deskRef} data-card-strategy={card?.strategy ?? "none"} data-motion={motion.mode}>
+  return <div className="candidate-review-table card-experience" ref={motion.deskRef} data-card-strategy={card?.strategy ?? "none"} data-motion={motion.mode}>
     <header className="candidate-desk__header">
-      <div className="candidate-card__meta" role="status" aria-live="polite">
-        <span>{card ? `候选 ${activeCandidateIndex + 1} / ${candidates.length}` : "候选卡审核"}<b>{actionableUndecidedCount ? ` · ${actionableUndecidedCount} 张还没决定` : candidates.length ? " · 可审核卡都已决定" : ""}</b>{practiceQuotaView ? <small> · {practiceQuotaView}</small> : null}</span>
-        <span className="tag green">{card ? candidateDecisionLabel(card) : run ? cardGenerationStatusLabel(run.status) : "正在接回候选"}</span>
+      <div className="candidate-desk__title"><div><h1>候选卡审核</h1>
+        <div className="candidate-card__meta" role="status" aria-live="polite">
+          <span>{card ? `挑选这一叠 · ${activeCandidateIndex + 1} / ${candidates.length}` : "候选卡审核"}<b>{actionableUndecidedCount ? ` · ${actionableUndecidedCount} 张还没决定` : candidates.length ? " · 可审核卡都已决定" : ""}</b></span>
+          <span className="tag green">{card ? candidateDecisionLabel(card) : run ? cardGenerationStatusLabel(run.status) : "正在接回候选"}</span>
+        </div>
       </div>
+        {session.canRegenerate ? <button type="button" className="button candidate-desk__regenerate" disabled={locked || loading} onClick={() => void session.regenerate()}><RotateCcw size={16} aria-hidden="true" />{busyAction === "regenerate" ? "正在重新生成…" : "重新生成学习卡"}</button> : null}
+      </div>
+      {run?.sourceOutdated ? <p className="candidate-desk__source-notice" role="status">笔记已经更新，这一叠依据旧版。重新生成会使用最新已保存的内容。</p> : null}
       <div className="candidate-desk__tools">
         <div className="candidate-desk__navigation" aria-label="切换候选卡">
           <button type="button" className="button" aria-label="上一张" disabled={locked || !card || activeCandidateIndex === 0} onClick={() => session.moveCandidate(-1)}><ArrowLeft size={17} aria-hidden="true" /></button>
@@ -54,6 +75,7 @@ export function CandidateReviewDesk({ session }: { readonly session: CardGenerat
         {!run?.recovery && card && !failure ? <button type="button" className="text-action candidate-desk__return" onClick={returnToNote}>返回笔记</button> : null}
       </div>
       {card ? <p className="candidate-desk__validation"><Eye size={13} aria-hidden="true" /><span>{activeReveal || exposure?.exposureStatus === "exposed" ? firstValidationLabel(exposure, exposureFailure) : `看答案后，首次正式验证延后 ${revealCooldownHours} 小时；翻档案不影响。`}</span>{activeReveal ? <small>{exposureLabel(exposure, exposureFailure)}</small> : null}</p> : null}
+      {practiceQuotaView ? <details className="candidate-desk__practice-note"><summary>随卡练习的准备情况</summary><p>{practiceQuotaView}</p></details> : null}
     </header>
 
     {card && !failure ? <CandidateReviewCard session={session} motion={motion} onReview={onReview} /> : <section className="candidate-desk__empty" role={failure ? "alert" : "status"}>
@@ -79,12 +101,11 @@ export function CandidateReviewDesk({ session }: { readonly session: CardGenerat
               从头到尾要的结果，逐张点「保留」只是通往它的一段路。所以重点色放在
               保存那颗上：它一屏只出现一次，而「保留」要在同一叠里被点很多次，
               每次都抢焦点只会让人以为每点一下就结束了。 */}
-          <button type="button" className="button" ref={motion.decisionRef} disabled={locked} aria-label="保留（等着保存到卡组）" onClick={() => void onReview(card, "keep")}><Check size={18} aria-hidden="true" />{busyAction === `${card.candidateId}:keep` ? "正在保留…" : "保留这张"}</button>
+          <button type="button" className="button candidate-keep" ref={motion.decisionRef} disabled={locked} aria-label="保留（等着保存到卡组）" onClick={() => void onReview(card, "keep")}><Check size={18} aria-hidden="true" />{busyAction === `${card.candidateId}:keep` ? "正在保留…" : "保留这张"}</button>
         </> : null}
         {reviewOpen && undoCard ? <button ref={undoRef} type="button" className="button" disabled={locked} aria-label="撤销决定" title={undoCard.objective.publicSummary} onClick={() => void onReview(undoCard, "undo")}><RotateCcw size={16} aria-hidden="true" /><span className="candidate-desk__label">{busyAction === `${undoCard.candidateId}:undo` ? "正在撤销…" : undoCard === card ? "撤销决定" : "撤销上一张"}</span><span className="candidate-desk__short-label">{busyAction === `${undoCard.candidateId}:undo` ? "撤销中…" : "撤销"}</span></button> : null}
         {run?.recovery && card ? <CardGenerationRecoveryActions session={session} /> : null}
       </div>
-      <CandidateReviewCommit session={session} />
     </footer>
 
   </div>;

@@ -1331,6 +1331,38 @@ test("RUN-V2-START-IDEMPOTENCY-01：同 key 并发 V2 start 只产生一个 run"
   }
 });
 
+test("RUN-WRITE-RATE-LIMIT：正常请求进入五条写路径，超额请求保留 429 且不继续写入", async () => {
+  const seeded = await seed();
+  const app = await buildLearningRunApp();
+  try {
+    const headers = { authorization: `Bearer ${seeded.token}` };
+    const runId = randomUUID(), taskId = randomUUID();
+    // 故意缺失必填字段。未超额时必须进入 body 校验并返回 400，不能空返回 200。
+    for (const request of [
+      { method: "POST" as const, url: "/learning-runs" },
+      { method: "PUT" as const, url: `/v2/learning-runs/${runId}/tasks/${taskId}/draft` },
+      { method: "POST" as const, url: `/v2/learning-runs/${runId}/tasks/${taskId}/submissions` },
+      { method: "POST" as const, url: `/v2/learning-runs/${runId}/actions` },
+      { method: "POST" as const, url: `/v2/learning-runs/${runId}/activity-lease` },
+    ]) {
+      const response = await app.inject({ ...request, headers, payload: {} });
+      assert.equal(response.statusCode, 400, `${request.url}: ${response.body}`);
+    }
+    // 前面已用掉一次 create 额度；第 21 次被挡，不能落进校验或事务。
+    for (let count = 2; count <= 21; count += 1) {
+      const response = await app.inject({ method: "POST", url: "/learning-runs", headers, payload: {} });
+      assert.equal(response.statusCode, count <= 20 ? 400 : 429, response.body);
+      if (count === 21) {
+        assert.equal(response.json().error, "RATE_LIMITED");
+        assert.ok(Number(response.headers["retry-after"]) > 0);
+      }
+    }
+  } finally {
+    await app.close();
+    await seeded.cleanup();
+  }
+});
+
 test("RUN-V2-WIRE-01：HTTP V2 draft/submit receipt → response-loss replay → worker result/return", async () => {
   const seeded = await seed();
   const app = await buildLearningRunApp();

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { TodayBatchOptions } from "../library/HomeSuggestionCard.tsx";
 
 function installApi(impl: { act: (input: unknown) => Promise<unknown> }) {
@@ -63,6 +63,40 @@ describe("§12.1 今日复习那三颗动作", () => {
     installApi({ act: async () => { throw new Error("offline"); } });
     const { container } = render(<TodayBatchOptions {...PROPS} />);
     (screen.getByText("今天少做两道") as HTMLButtonElement).click();
-    await waitFor(() => expect(container.querySelector(".hud-today-batch__line")).toBeNull());
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "这次调整没有保存，请再试一次。原来的安排还在。");
+    expect(container.querySelector(".hud-today-batch__line")).toBeNull();
+    expect(screen.getByRole("button", { name: "先停一下" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("keeps the existing receipt on failure, then clears the failure after a successful retry", async () => {
+    let fail = false;
+    installApi({ act: async () => {
+      if (fail) throw new Error("offline");
+      return { action: "pause", lockedLength: 5, paused: true, remaining: 4, screenLine: "上一份安排仍在，剩下 4 道。" };
+    } });
+    render(<TodayBatchOptions {...PROPS} />);
+    fireEvent.click(screen.getByRole("button", { name: "先停一下" }));
+    await screen.findByRole("status");
+    fail = true;
+    fireEvent.click(screen.getByRole("button", { name: "接着做" }));
+    await screen.findByRole("alert");
+    expect(screen.getByRole("status").textContent).toBe("上一份安排仍在，剩下 4 道。");
+    expect(screen.getByRole("button", { name: "接着做" })).toBeTruthy();
+    fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "接着做" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("follows a refreshed paused state and sends only one action during a rapid double click", async () => {
+    let resolve!: (value: unknown) => void;
+    const act = vi.fn(() => new Promise(result => { resolve = result; }));
+    installApi({ act });
+    const view = render(<TodayBatchOptions {...PROPS} initialPaused={false} />);
+    view.rerender(<TodayBatchOptions {...PROPS} initialPaused={true} />);
+    const resume = screen.getByRole("button", { name: "接着做" });
+    fireEvent.click(resume); fireEvent.click(resume);
+    expect(act).toHaveBeenCalledTimes(1);
+    resolve({ action: "resume", lockedLength: 5, paused: false, remaining: 4, screenLine: "可以接着做。" });
+    await screen.findByRole("button", { name: "先停一下" });
   });
 });

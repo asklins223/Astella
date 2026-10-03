@@ -638,20 +638,21 @@
 .hud-surface .notebook-hud .note-annotation-history__more { min-height: 44px; padding: 7px 12px; color: var(--hud-ink); border: 1px solid var(--hud-line); border-radius: 13px 15px; background: var(--hud-paper-light); cursor: pointer; }
 .hud-surface .notebook-hud .note-annotation-history__more:disabled { opacity: .6; cursor: wait; }
 /* The selected passage keeps its tools inside the visible paper, even in a long paragraph. */
-.notebook-selection-actions {
-  position: fixed; z-index: 110; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 9px; box-sizing: border-box;
-  width: max-content; margin: 0; padding: 7px 10px; border: 3px solid var(--hud-cream);
-  border-radius: 16px 19px 14px 18px; background: var(--hud-mint); box-shadow: 0 5px 12px rgba(54,39,21,.17);
+ .notebook-selection-actions {
+  position: fixed; z-index: 110; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; box-sizing: border-box;
+  width: max-content; margin: 0; padding: 7px; border: 2px solid #fff9e8;
+  border-radius: 19px; background: #f7f4de; color: #4b654b; box-shadow: 0 3px 0 #c0caa3, 0 8px 22px #34492d2a;
 }
 .notebook-selection-actions .text-action {
-  display: inline-flex; align-items: center; gap: 5px; min-height: 31px; padding: 4px 6px;
-  border: 0; border-radius: 8px 11px 7px 10px; background: transparent; color: #344e3b;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 35px; padding: 6px 9px;
+  border: 0; border-radius: 13px; background: transparent; color: #53694d; scale: var(--note-touch-scale, 1);
   box-shadow: none; font: 700 12px/1.5 "Noto Sans SC Variable", sans-serif; white-space: nowrap;
 }
-.notebook-selection-actions .text-action:hover:not(:disabled) { background: var(--hud-paper-light); }
-.notebook-selection-actions .text-action:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-.notebook-selection-actions .text-action:disabled { opacity: .55; cursor: default; }
-.notebook-selection-actions__reason { flex-basis: 100%; color: #344e3b; font: 11px/1.7 "Noto Sans SC Variable", sans-serif; }
+.notebook-selection-actions .notebook-selection-actions__companion { background: #dcebc7; color: #476a43; }
+.notebook-selection-actions .text-action:hover:not(:disabled) { background: #e8eed3; }
+.notebook-selection-actions .text-action:focus-visible { outline: 3px solid #71a883; outline-offset: 2px; }
+.notebook-selection-actions .text-action:disabled { opacity: .45; cursor: default; }
+.notebook-selection-actions__reason { flex-basis: 100%; padding: 4px 8px; color: #8c7952; font: 11px/1.7 "Noto Sans SC Variable", sans-serif; }
 .hud-surface .notebook-hud .note-annotation-task-error { max-width: 420px; margin: 9px 0; color: var(--hud-clay); font-size: 12px; }
 
 @media (max-width: 760px) {
@@ -1162,14 +1163,15 @@
   font-size: 11px;
 }
 .hud-surface .notebook-hud .note-learning-artifact-task-paper {
-  margin: 16px 0;
+  max-width: 72ch;
+  margin: 16px auto 24px;
   padding: 13px 16px;
+  font-size: 17px;
   color: var(--hud-ink);
-  border: 3px dashed var(--hud-cream);
-  border-radius: 17px 22px 18px 20px;
+  border: 1px solid var(--hud-line);
+  border-radius: 18px;
   background: color-mix(in srgb, var(--hud-mint) 38%, var(--hud-paper-light));
-  box-shadow: var(--hud-shadow-small);
-  transform: rotate(-.08deg);
+  box-shadow: none;
 }
 .hud-surface .notebook-hud .note-learning-artifact-task-paper > header {
   display: flex;
@@ -1190,8 +1192,7 @@
   padding: 9px 0;
   border-top: 1px dashed var(--hud-line);
 }
-.hud-surface .notebook-hud .note-learning-artifact-task-paper__row > p { grid-column: 1 / -1; margin: 0; color: var(--hud-ink); font-size: 13px; line-height: 1.6; }
-.hud-surface .notebook-hud .note-learning-artifact-task-paper__row > .task-slip { grid-column: 1 / -1; margin: 3px 0 0; }
+.hud-surface .notebook-hud .note-learning-artifact-task-paper__row > .task-slip { grid-column: 1 / -1; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
 .hud-surface .notebook-hud .note-learning-artifact-task-paper__row > button {
   min-height: 36px;
   padding: 4px 11px;
@@ -1307,34 +1308,33 @@
   gap: 10px;
   margin: 10px 0;
   padding: 10px 13px 11px;
-  border: 3px solid rgba(255, 252, 235, .78);
-  border-radius: 16px 20px 15px 19px;
+  border: 1px solid rgba(255, 252, 235, .78);
+  border-radius: 18px;
   background: color-mix(in srgb, var(--hud-mint) 34%, var(--hud-cream));
-  box-shadow: var(--hud-shadow-small);
+  box-shadow: 0 2px 0 #d9dec64d;
 }
 .hud-surface .task-slip--failed {
   background: color-mix(in srgb, var(--hud-peach) 22%, var(--hud-cream));
 }
 .hud-surface .task-slip__body { flex: 1; min-width: 0; }
 .hud-surface .task-slip__lead { display: block; font-size: 13px; line-height: 1.5; }
-.hud-surface .task-slip__note { margin: 3px 0 0; color: var(--hud-soft); font-size: 11px; line-height: 1.65; }
+.hud-surface .task-slip__note { margin: 3px 0 0; color: var(--hud-soft); font-size: 12px; line-height: 1.65; }
 .hud-surface .task-slip__action {
   flex: none;
-  min-height: 34px;
+  min-height: 36px;
   padding: 5px 13px;
-  border: 2px solid #af522c;
-  border-radius: 13px 17px 12px 15px;
+  border: 1px solid #c29172;
+  border-radius: 13px;
   background: var(--hud-peach);
-  color: #3e2d22;
+  color: #795840;
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
-  transition: transform 160ms var(--hud-ease-out), box-shadow 160ms ease;
+  transition: translate 160ms var(--hud-ease-out), box-shadow 160ms ease;
 }
 @media (hover: hover) and (pointer: fine) {
-  .hud-surface .task-slip__action:hover { transform: translateY(-2px) scale(1.02); box-shadow: var(--hud-shadow-control-hover); }
+  .hud-surface .task-slip__action:hover { translate: 0 -1px; box-shadow: 0 3px 7px #70533014; }
 }
-.hud-surface .task-slip__action:active { transform: scale(.96); transition-duration: 110ms; }
 
 /* 呼吸的那一下。它是"还活着"的旁证，不是状态本身——去掉它，文字仍然说清了
    在做什么、在排队还是做完了。减少动效下换成静态的一枚点，不留空白。 */
@@ -1362,7 +1362,7 @@
   .hud-surface .task-slip__mark { animation: none; }
   .hud-surface .task-slip__action,
   .hud-surface .task-slip__action:hover,
-  .hud-surface .task-slip__action:active { transform: none; }
+  .hud-surface .task-slip__action:active { translate: none; }
 }
 
 /* ── 底部这一排：唯一的主按钮，其余收成带图标的去路 ───────────────────────

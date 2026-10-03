@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ChevronsRight, Gauge, House, Moon, Orbit, Settings2, Sun, Volume2, VolumeX } from "lucide-react";
 import { useRoomStore } from "../../app/room-store";
 import { spaceRoleLabel } from "../../app/space-identity";
 import { publishGateInvalidation } from "../../app/gate-invalidation";
 import { resolveSceneMotionMode } from "../../scene/scene-motion";
-import { HudAccountCard, accountAvatarSrcFor, accountInitial } from "./HudAccountCard";
-import { HudAccountMenu } from "./HudAccountMenu";
+import { accountAvatarSrcFor, accountInitial } from "./HudAccountCard";
+import { HudControlPopover } from "./HudControlPopover";
+import type { HudMenuKind } from "./use-hud-popover-motion";
+import { useTactileSurface } from "../motion/use-tactile-surface";
 import { useHudPageClasses } from "./use-hud-page";
 import {
   SPACE_MENU_OPEN_EVENT,
@@ -35,25 +37,9 @@ function SpaceSealIcon() {
   );
 }
 
-/**
- * Room control island (mockup `controls()`), collapsed to one seal by default.
- *
- * The interaction is the previous island's: a single trigger circle sits at the
- * pill's right end, the pill's skin scales out of it through the right-anchored
- * 300ms morph, and the slots fade in 65ms behind it. The learning-space seal
- * opens 04B's `.home-menu` card. The motion-mode slot (mockup
- * 没有画它，但上一版灵动岛有) is restored so 动效等级和它的指示灯始终可触达.
- *
- * `decorative` renders the pill already open (mockup 04A paints the decorative
- * `controls()` on the first-entry paper; nothing behind it has a space to act
- * on, so there is nothing to collapse into).
- *
- * 折叠入口（2026-09-18 交互修复，二次返工）：触发印章常驻药丸最右端的
- * 原位置——折叠时它是唯一圆点，展开后留在原地、图标换成双箭头，再点一下
- * 即从原位置缩回；不额外新增收起槽位。点空白与 Esc 保留。
- * 导航与收起同时响应，CSS 继续完成折叠，不在输入路径上等待动画。
+/** Room island. The persistent space label and avatar open one independent, anchored bubble.
+ * Closing input takes effect immediately; retained visual presence only completes the spring.
  */
-
 export function HudRoomControl({ decorative = false }: { readonly decorative?: boolean }) {
   /**
    * `decorative` 是 04A 首次进入那张纸上的装饰态药丸（还没有空间可操作）。
@@ -70,7 +56,6 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
   const motionModeRaw = useRoomStore((state) => state.motionMode);
   const cycleMotionMode = useRoomStore((state) => state.cycleMotionMode);
   const setSettingsSection = useRoomStore((state) => state.setSettingsSection);
-  const setHudPage = useRoomStore((state) => state.setHudPage);
   /** 顶栏常驻空间胶囊的唯一数据源：门禁每次读到已验证会话都会发布。 */
   const spaceIdentity = useRoomStore((state) => state.spaceIdentity);
   /** 账户槽位与设置页读同一个来源：门禁每次读到已验证会话都发布，与小空间胶囊同一时机。 */
@@ -79,8 +64,10 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
   const onboardingOpen = useRoomStore((state) => state.onboardingOpen);
   const motionMode = resolveSceneMotionMode(motionModeRaw, useRoomStore((state) => state.reducedMotion));
   const [expanded, setExpanded] = useState(false);
-  const [spaceMenuOpen, setSpaceMenuOpen] = useState(false);
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [menuKind, setMenuKind] = useState<HudMenuKind | null>(null);
+  const spaceMenuOpen = menuKind === "space";
+  const accountMenuOpen = menuKind === "account";
+  const popoverId = useId();
   const [spaceNotice, setSpaceNotice] = useState<string | null>(null);
   /**
    * 切换成功回执。必须由这个常驻宿主持有：surface 自己的 state 活不过切换引起的
@@ -93,6 +80,7 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
   const spaceRef = useRef<HTMLButtonElement>(null);
   const accountRef = useRef<HTMLButtonElement>(null);
 
+  useTactileSurface(rootRef, "room-control");
   const isExpanded = decorative || onboardingOpen || expanded;
 
   useEffect(() => {
@@ -108,7 +96,7 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
       takePendingSpaceMenuRequest();
       const notice = (event as CustomEvent<{ notice?: unknown }>).detail?.notice;
       setSpaceNotice(typeof notice === "string" ? notice : null);
-      setSpaceMenuOpen(true);
+      setMenuKind("space");
       setExpanded(true);
     };
     if (parked) onRequest(new CustomEvent(SPACE_MENU_OPEN_EVENT, { detail: { notice: parked.notice } }));
@@ -139,43 +127,23 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
   // takes it back down to the seal.
   useEffect(() => {
     if (surface || onboardingOpen) {
-      setSpaceMenuOpen(false);
-      setAccountMenuOpen(false);
+      setMenuKind(null);
       setExpanded(false);
     }
   }, [onboardingOpen, surface]);
 
-  // Mockup 04B hangs its chrome on `page-04 space-returning` (collapsed rail,
-  // the space bubble). While the learning-space menu is open the shell
-  // republishes page 04 over whatever surface is running; closing hands the
-  // page identity back to the surface that published it — no remount involved.
-  useEffect(() => {
-    if (!spaceMenuOpen) return undefined;
-    const previousPage = useRoomStore.getState().hudPage;
-    setHudPage("space");
-    return () => {
-      setHudPage(previousPage === "space" ? "home" : previousPage);
-    };
-  }, [setHudPage, spaceMenuOpen]);
-
-  // Mirrors the store's published page (including the override above) onto
-  // `.desktop-app`, so the 04B chrome lands even if a future surface forgets
-  // to call `useHudPage` itself.
+  // A bubble does not republish page identity or move the companion seat.
   useHudPageClasses();
 
   useEffect(() => {
     if (!isExpanded || decorative) return undefined;
     const collapse = () => {
-      setSpaceMenuOpen(false);
-      setAccountMenuOpen(false);
+      setMenuKind(null);
       setExpanded(false);
     };
     const closeFromOutside = (event: PointerEvent) => {
       const target = event.target as Node;
-      // The space menu is a sibling of the pill (it is positioned by the
-      // generated `.home-menu` rule), so "outside" has to name both boxes —
-      // otherwise the pointerdown that means to press a menu row unmounts the
-      // menu before the click ever fires.
+      // The anchored bubble and island are siblings: a press inside either remains inside.
       if (rootRef.current?.contains(target)) return;
       if (menuRef.current?.contains(target)) return;
       collapse();
@@ -186,18 +154,20 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopPropagation();
+      const cancel = menuRef.current?.querySelector<HTMLButtonElement>("[data-hud-cancel]:not(:disabled)");
+      if (cancel) { cancel.click(); return; }
       if (spaceMenuOpen) {
-        setSpaceMenuOpen(false);
-        window.requestAnimationFrame(() => spaceRef.current?.focus({ preventScroll: true }));
+        setMenuKind(null);
+        spaceRef.current?.focus({ preventScroll: true });
         return;
       }
       if (accountMenuOpen) {
-        setAccountMenuOpen(false);
-        window.requestAnimationFrame(() => accountRef.current?.focus({ preventScroll: true }));
+        setMenuKind(null);
+        accountRef.current?.focus({ preventScroll: true });
         return;
       }
       collapse();
-      window.requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }));
+      triggerRef.current?.focus({ preventScroll: true });
     };
     window.addEventListener("pointerdown", closeFromOutside, true);
     window.addEventListener("keydown", closeOnEscape, true);
@@ -209,8 +179,7 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
 
   const toggleExpanded = () => {
     if (isExpanded) {
-      setSpaceMenuOpen(false);
-      setAccountMenuOpen(false);
+      setMenuKind(null);
       setExpanded(false);
       return;
     }
@@ -219,8 +188,7 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
   };
 
   const collapseAndRun = (action: () => void) => {
-    setSpaceMenuOpen(false);
-    setAccountMenuOpen(false);
+    setMenuKind(null);
     setExpanded(false);
     action();
   };
@@ -233,8 +201,7 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
   };
 
   const collapse = () => {
-    setSpaceMenuOpen(false);
-    setAccountMenuOpen(false);
+    setMenuKind(null);
     setExpanded(false);
   };
 
@@ -248,24 +215,18 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
    */
   const openSpaceMenu = () => {
     setSpaceNotice(null);
-    setAccountMenuOpen(false);
-    if (spaceMenuOpen) {
-      setSpaceMenuOpen(false);
-      return;
-    }
-    setSpaceMenuOpen(true);
+    setMenuKind(current => current === "space" ? null : "space");
     setExpanded(true);
   };
 
-  /** 账户小框与空间菜单互斥：同一个人一次只看一张卡，两张叠在一起没人读得懂。 */
   const openAccountMenu = () => {
-    setSpaceMenuOpen(false);
-    if (accountMenuOpen) {
-      setAccountMenuOpen(false);
-      return;
-    }
-    setAccountMenuOpen(true);
+    setMenuKind(current => current === "account" ? null : "account");
     setExpanded(true);
+  };
+
+  const closeMenu = () => {
+    setMenuKind(null);
+    (spaceMenuOpen ? spaceRef : accountRef).current?.focus({ preventScroll: true });
   };
 
   return (
@@ -290,7 +251,8 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
           data-readonly={spaceIdentity?.role === "member" || undefined}
           disabled={decorative}
           aria-expanded={spaceMenuOpen}
-          aria-haspopup="true"
+          aria-haspopup="dialog"
+          aria-controls={spaceMenuOpen ? popoverId : undefined}
           aria-label={spaceIdentity
             ? `当前学习空间 ${spaceIdentity.name}，${spaceRoleLabel(spaceIdentity)}，打开空间菜单`
             : "正在读取你当前的学习空间"}
@@ -376,7 +338,8 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
           disabled={decorative}
           inert={!isExpanded || undefined}
           aria-expanded={accountMenuOpen}
-          aria-haspopup="true"
+          aria-haspopup="dialog"
+          aria-controls={accountMenuOpen ? popoverId : undefined}
           aria-label={account
             ? `当前登录账号 ${account.displayName ?? account.email}（${account.email}），打开账户菜单`
             : "正在读取这台设备登录的账号"}
@@ -406,27 +369,21 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
           <i className={`room-control-trigger__status room-control-trigger__status--${motionMode}`} aria-hidden="true" />
         </button>
       </div>
-      {!decorative && isExpanded && spaceMenuOpen ? (
-        <div ref={menuRef} className="room-control-menu">
-          <HudAccountMenu
-            notice={spaceNotice}
-            onSwitched={(workspaceName) => {
-              collapse();
-              // 先停车再失效：门禁重挂载后药丸可能还没挂上监听，停车保证它取得到。
-              requestSpaceSwitchReceipt(workspaceName);
-              // The whole room is scoped to one verified workspace, so a switch
-              // is a boundary change: reuse the gate's own invalidation path
-              // rather than patching each surface's cursor by hand.
-              publishGateInvalidation("stale_workspace");
-            }}
-          />
-        </div>
-      ) : null}
-      {!decorative && isExpanded && accountMenuOpen ? (
-        <div ref={menuRef} className="room-control-menu">
-          <HudAccountCard onOpenAccount={() => openSettings("account")} />
-        </div>
-      ) : null}
+      {!decorative ? <HudControlPopover
+        kind={isExpanded ? menuKind : null}
+        rootRef={menuRef}
+        spaceRef={spaceRef}
+        accountRef={accountRef}
+        id={popoverId}
+        notice={spaceNotice}
+        onClose={closeMenu}
+        onOpenAccount={() => openSettings("account")}
+        onSwitched={(workspaceName) => {
+          collapse();
+          requestSpaceSwitchReceipt(workspaceName);
+          publishGateInvalidation("stale_workspace");
+        }}
+      /> : null}
       {switchReceipt !== null ? (
         <p className="room-control-receipt" role="status">
           已进入「{switchReceipt}」

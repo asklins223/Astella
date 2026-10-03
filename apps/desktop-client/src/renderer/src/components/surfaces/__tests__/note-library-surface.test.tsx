@@ -166,8 +166,6 @@ describe("NoteLibrarySurface · 边界与多数据", () => {
     // 否则就是把"点不动"换成了"点什么都只算打开"。
     // 两次点击各自单独渲染：真实场景里第一次点击就已经切去研究册，书架随之
     // 卸载，不存在"点了继续写再点卡片"这条路。
-    // （jsdom 不跑 CSS，这里能证明两个处理器互相独立；覆盖层不吞掉按钮的
-    // 绘制顺序要靠活应用复核，见方案 §3 第 3 条。）
     stubGateway({ live: [NOTE("n1", "笔记一"), NOTE("n2", "笔记二")] });
     render(<NoteLibrarySurface />);
     const openCard = await screen.findByRole("button", { name: /打开笔记：笔记一/ });
@@ -182,6 +180,36 @@ describe("NoteLibrarySurface · 边界与多数据", () => {
     render(<NoteLibrarySurface />);
     await screen.findByRole("button", { name: /打开笔记：笔记一/ });
     fireEvent.click(screen.getByRole("button", { name: "打开笔记" }));
+    expect(useRoomStore.getState().activeNoteRef).toMatchObject({ noteId: "n1", mode: "preview" });
+  });
+
+  /**
+   * 2026-10-03 用户报：鼠标移到主卡标题上，指针变成可复制的文本样子，点下去进不去笔记。
+   * 根因是 `.current-note h2` 自带 `position: relative`——它和整卡覆盖层同在定位层，
+   * 且排在覆盖层之后，于是标题整块压在覆盖层上，成为一块"只能划、不能用"的死区。
+   * 两头都修了：层级在 hud-surface.css 里写死（覆盖层 z-index 1、两行真按钮 z-index 2），
+   * 点击则改挂在卡片自身（section）上，命中的是它——这条用例因此不必再依赖
+   * "覆盖层一定压得住纸面"这个 jsdom 证不出来的前提。
+   */
+  it("标题那一块点得开，卡内的「全部笔记」仍走它自己的路", async () => {
+    stubGateway({ live: [NOTE("n1", "笔记一"), NOTE("n2", "笔记二")] });
+    render(<NoteLibrarySurface />);
+
+    const openCard = await screen.findByRole("button", { name: /打开笔记：笔记一/ });
+    const title = screen.getByRole("heading", { name: "笔记一" });
+    // 覆盖层与标题是同一张纸上的兄弟：一个在上，一个在纸面里。
+    expect(openCard.parentElement).toBe(title.parentElement);
+
+    // 卡内的真按钮各有各的去处，不能被"点卡片"这条路径吃掉。
+    fireEvent.click(screen.getByRole("button", { name: /全部笔记/ }));
+    await waitFor(() => expect(screen.getByRole("search")).toBeTruthy());
+    expect(useRoomStore.getState().activeNoteRef).toBeNull();
+
+    // 视图选择按会话记在模块作用域里（产品行为），用完把书架还回去，后面几条才有起点。
+    fireEvent.click(screen.getByRole("button", { name: "回到书架" }));
+    await screen.findByRole("button", { name: /打开笔记：笔记一/ });
+
+    fireEvent.click(screen.getByRole("heading", { name: "笔记一" }));
     expect(useRoomStore.getState().activeNoteRef).toMatchObject({ noteId: "n1", mode: "preview" });
   });
 

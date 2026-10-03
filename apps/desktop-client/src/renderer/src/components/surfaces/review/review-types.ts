@@ -36,4 +36,6 @@ export type LoadedReviewQueue = {
 export type ReviewFailure = {
   readonly message: string;
   readonly source: "queue" | "pagination" | "start" | "defer";
+  /** Retry stays bound to the failed item even if the reader flips to another card. */
+  readonly reviewId?: string;
 };

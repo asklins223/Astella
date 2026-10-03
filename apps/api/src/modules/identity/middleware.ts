@@ -11,6 +11,9 @@ declare module "fastify" {
       workspaceOwnerId?: string | null;
       /** 空间边界令牌（0261）：由 decodeToken 读回 `workspaces.workspace_epoch`。 */
       workspaceEpoch: number;
+      /** 2026-10-03：decodeToken 同一行顺带取回，供 /auth/me 免掉重复查询。 */
+      workspaceName?: string | null;
+      workspaceType?: string | null;
     };
   }
 }

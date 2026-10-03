@@ -552,8 +552,8 @@ async function openNotebookFromToday(window) {
 
 async function readCardGenerationDiagnostics(window) {
   return window.evaluate(() => ({
-    heading: document.querySelector('.task-title h1')?.textContent?.trim() ?? null,
-    runMeta: document.querySelector('.card-generation-board__footer')?.textContent?.trim() ?? null,
+    heading: document.querySelector('.task-title h1, .candidate-desk__title h1, .card-making__header h1')?.textContent?.trim() ?? null,
+    runMeta: document.querySelector('.card-making__footer')?.textContent?.trim() ?? null,
     hudState: document.querySelector('.card-generation-hud-state')?.textContent?.trim() ?? null,
     error: document.querySelector('.card-generation-hud-state[role="alert"]')?.textContent?.trim() ?? null,
     candidates: [...document.querySelectorAll('.candidate-study-card')].map((node) => ({
@@ -573,9 +573,9 @@ async function readCardGenerationDiagnostics(window) {
 }
 
 async function waitForCardGenerationSurface(window) {
-  // 页 12「学习卡生成中」渲染 .card-generation-board，页 13「候选卡审核」渲染
+  // 页 12「学习卡生成中」渲染 .card-making-workshop，页 13「候选卡审核」渲染
   // .candidate-review-table；两者都在 .task-surface--card-generation 里。
-  const paper = window.locator('.task-surface--card-generation .card-generation-board, .task-surface--card-generation .candidate-review-table').first()
+  const paper = window.locator('.task-surface--card-generation .card-making-workshop, .task-surface--card-generation .candidate-review-table').first()
   try {
     await paper.waitFor({ state: 'visible', timeout: 30_000 })
     return
@@ -905,7 +905,7 @@ async function runOwnerJourney(window) {
   if (await generationRecoveryButton.count()) {
     await generationRecoveryButton.first().click()
     await window.waitForFunction(
-      () => Boolean(document.querySelector('.task-surface--card-generation .card-generation-board, .task-surface--card-generation .candidate-review-table')),
+      () => Boolean(document.querySelector('.task-surface--card-generation .card-making-workshop, .task-surface--card-generation .candidate-review-table')),
       undefined,
       { timeout: 15_000 },
     )
@@ -913,8 +913,8 @@ async function runOwnerJourney(window) {
       throw new Error(`Packaged Owner Card Generation recovery failed: ${await window.locator('.card-generation-hud-state[role="alert"]').innerText()}`)
     }
     const generationContract = await window.evaluate(() => ({
-      heading: document.querySelector('.task-title h1')?.textContent?.trim() ?? null,
-      runMetaVisible: Boolean(document.querySelector('.card-generation-board__footer')),
+      heading: document.querySelector('.task-title h1, .candidate-desk__title h1, .card-making__header h1')?.textContent?.trim() ?? null,
+      runMetaVisible: Boolean(document.querySelector('.card-making__footer')),
       candidateVisible: Boolean(document.querySelector('.candidate-study-card')),
       hudStateVisible: Boolean(document.querySelector('.card-generation-hud-state')),
       // 本机推断出来的"成功"控件在服务端合同里不存在，必须为 0。

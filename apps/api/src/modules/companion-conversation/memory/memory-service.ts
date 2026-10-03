@@ -700,9 +700,12 @@ export async function listRecycledMemories(
   id: string; kind: string; content: string; deletedAt: string; purgeAfter: string; sourceEventId: string | null;
 }>> {
   const rows = await executor.execute<{
-    id: string; kind: string; content: string; deleted_at: Date; purge_after: Date | null; source_event_id: string | null;
+    id: string; kind: string; content: string; deleted_at: string; purge_after: string; source_event_id: string | null;
   }>(sql`
-    SELECT id, kind, content, deleted_at, purge_after, source_event_id
+    SELECT id, kind, content,
+           to_char(deleted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS deleted_at,
+           to_char(COALESCE(purge_after, deleted_at + interval '30 days') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS purge_after,
+           source_event_id
       FROM assistant_memory_items
      WHERE workspace_id = ${scope.workspaceId}
        AND user_id = ${scope.userId}
@@ -711,14 +714,14 @@ export async function listRecycledMemories(
      LIMIT 200
   `);
   const list = Array.isArray(rows) ? rows : ((rows as { rows?: unknown[] } | null)?.rows ?? []) as Array<{
-    id: string; kind: string; content: string; deleted_at: Date; purge_after: Date | null; source_event_id: string | null;
+    id: string; kind: string; content: string; deleted_at: string; purge_after: string; source_event_id: string | null;
   }>;
   return list.map((row) => ({
     id: String(row.id),
     kind: String(row.kind),
     content: String(row.content ?? "").slice(0, 200),
-    deletedAt: row.deleted_at instanceof Date ? row.deleted_at.toISOString() : String(row.deleted_at),
-    purgeAfter: row.purge_after instanceof Date ? row.purge_after.toISOString() : String(row.purge_after ?? ""),
+    deletedAt: row.deleted_at,
+    purgeAfter: row.purge_after,
     sourceEventId: row.source_event_id ?? null,
   }));
 }
@@ -925,6 +928,7 @@ export async function listMemories(
   input: {
     kind?: MemoryKindV2;
     q?: string;
+    focusMemoryId?: string;
     scope?: MemoryScopeV2;
     includeCandidates?: boolean;
     includeArchived?: boolean;
@@ -945,6 +949,15 @@ export async function listMemories(
     ))
     .orderBy(desc(assistantMemoryItems.pinned), desc(assistantMemoryItems.updatedAt))
     .limit(MEMORY_LIST_LIMIT);
+  if (input.focusMemoryId && !rows.some(row => row.id === input.focusMemoryId)) {
+    const focused = await executor.select().from(assistantMemoryItems).where(and(
+      eq(assistantMemoryItems.id, input.focusMemoryId),
+      eq(assistantMemoryItems.workspaceId, scope.workspaceId),
+      eq(assistantMemoryItems.userId, scope.userId),
+      isNull(assistantMemoryItems.deletedAt),
+    )).limit(1);
+    if (focused[0]) return [toContract(focused[0]), ...rows.slice(0, MEMORY_LIST_LIMIT - 1).map(toContract)];
+  }
   return rows.map(toContract);
 }
 
@@ -1050,7 +1063,7 @@ export async function clearMemories(
     ON CONFLICT (user_id, kind, source_event_id) DO NOTHING
   `);
   const updated = await executor.update(assistantMemoryItems)
-    .set({ deletedAt: now, updatedAt: now })
+    .set({ deletedAt: now, updatedAt: now, purgeAfter: new Date(now.getTime() + MEMORY_RECYCLE_BIN_DAYS * 24 * 60 * 60 * 1000) })
     .where(and(
       eq(assistantMemoryItems.workspaceId, scope.workspaceId),
       eq(assistantMemoryItems.userId, scope.userId),
@@ -1091,11 +1104,19 @@ export async function resolveMemoryConflict(
   const kept = await getMemory(executor, scope, keepId);
   const removed = await getMemory(executor, scope, removeId);
   if (!kept || !removed) return false;
-  if (kept.conflictGroup !== removed.conflictGroup) return false;
-  await executor.update(assistantMemoryItems)
+  if (keepId === removeId || !kept.conflictGroup || kept.conflictGroup !== removed.conflictGroup) return false;
+  await deleteMemory(executor, scope, removeId, now);
+  const remaining = await executor.select({ id: assistantMemoryItems.id })
+    .from(assistantMemoryItems)
+    .where(and(
+      eq(assistantMemoryItems.workspaceId, scope.workspaceId),
+      eq(assistantMemoryItems.userId, scope.userId),
+      eq(assistantMemoryItems.conflictGroup, kept.conflictGroup),
+      isNull(assistantMemoryItems.deletedAt),
+    ));
+  if (remaining.length <= 1) await executor.update(assistantMemoryItems)
     .set({ conflictGroup: null, updatedAt: now })
     .where(eq(assistantMemoryItems.id, keepId));
-  await deleteMemory(executor, scope, removeId, now);
   return true;
 }
 

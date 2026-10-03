@@ -123,7 +123,7 @@ describe("40 §7 · 留在发现簿：只有一次机会", () => {
   it("机会只挂在最新那一条回答旁，同一屏里只有一处", () => {
     renderPanel();
     expect(keepButtons().length).toBe(2); // 「留在发现簿」+「先不留」
-    const articlesWithKeep = [...document.querySelectorAll(".companion-thread article")]
+    const articlesWithKeep = [...document.querySelectorAll(".cc-thread article")]
       .filter((article) => article.querySelector(".discovery-keep"));
     expect(articlesWithKeep).toHaveLength(1);
     expect(articlesWithKeep[0]!.id).toBe(`companion-message-${ASSISTANT_ID}`);
@@ -244,8 +244,8 @@ describe("40 §7 · 发现簿空态不再指向不存在的按钮", () => {
         onRetry={noop}
       />,
     );
-    const empty = document.querySelector(".companion-center__empty")?.textContent ?? "";
-    expect(empty).toContain("问一次要不要留下");
+    const empty = document.querySelector(".cc-state")?.textContent ?? "";
+    expect(empty).toContain("你在回答旁留下的话");
     expect(empty).not.toMatch(/在日记或回答旁点/);
     expect(empty).not.toMatch(/在回答旁点/);
   });

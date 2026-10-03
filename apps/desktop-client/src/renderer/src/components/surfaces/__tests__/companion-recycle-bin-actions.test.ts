@@ -22,7 +22,7 @@ import { expect, test } from "vitest";
 const CLIENT = resolve(import.meta.dirname, "..", "..", "..", "..", "..", "..");
 const read = (...parts: string[]) => readFileSync(join(CLIENT, ...parts), "utf8");
 
-const panels = read("src", "renderer", "src", "components", "surfaces", "companion", "companion-center-panels.tsx");
+const panels = read("src", "renderer", "src", "components", "surfaces", "companion", "companion-memory-panel.tsx");
 const surface = read("src", "renderer", "src", "components", "surfaces", "companion", "companion-center-surface.tsx");
 const ipcCompanion = read("src", "main", "desktop-ipc-companion.ts");
 const preload = read("src", "preload", "index.ts");
@@ -43,12 +43,12 @@ test("彻底清除自己说清不可逆 —— 不靠「删除」那颗按钮的
   const start = panels.indexOf("function MemoryEraseAction");
   const body = panels.slice(start, panels.indexOf("\n}", start));
   // 不可逆 + 没有回收区，两句都要在。
-  expect(body).toMatch(/找不回|不可逆|撤不了/);  // 措辞里必须说不逆
+  expect(body).toMatch(/找不回|不可逆|撤不了|无法恢复/);  // 措辞里必须说不逆
   expect(body).toMatch(/回收区/);  // 必须说明没有回收区，否则用户以为还能撤
   // 而「删除」那颗按钮的措辞是另一回事，它说的是进回收区。
   const deleteStart = panels.indexOf("function MemoryDeleteAction");
   const deleteBody = panels.slice(deleteStart, panels.indexOf("\n}", deleteStart));
-  expect(!/找不回|撤不了/.test(deleteBody)).toBe(true)  // "不可逆的措辞漏到了删除那一侧 —— 那会让「删除」也被当成不可逆";
+  expect(!/找不回|撤不了|无法恢复/.test(deleteBody)).toBe(true)  // "不可逆的措辞漏到了删除那一侧 —— 那会让「删除」也被当成不可逆";
 });
 
 test("两条通道都在：主进程 + preload + 共享契约", () => {
@@ -78,8 +78,8 @@ test("【自证】判据认得出「把彻底清除并成删除的第三个按�
   // 退化形状：两个入口共用一套措辞与一次确认。
   const degraded = '<button>删除</button>{active ? <button onClick={onErase}>确认删除</button> : null}';
   expect(degraded).toMatch(/确认删除/);  // 自证样本：退化形状确实共用「确认删除」
-  expect(!/找不回|撤不了/.test(degraded)).toBe(true)  // "自证：退化形状里没有不可逆措辞，所以第 2 条会逮住它";
+  expect(!/找不回|撤不了|无法恢复/.test(degraded)).toBe(true)  // "自证：退化形状里没有不可逆措辞，所以第 2 条会逮住它";
   // 正控制：真代码里有。
   const start = panels.indexOf("function MemoryEraseAction");
-  expect(panels.slice(start, start + 900)).toMatch(/找不回/);  // 正控制：当前确有不可逆措辞
+  expect(panels.slice(start, start + 900)).toMatch(/找不回|无法恢复/);  // 正控制：当前确有不可逆措辞
 });

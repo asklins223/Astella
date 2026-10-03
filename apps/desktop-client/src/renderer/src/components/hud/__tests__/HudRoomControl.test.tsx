@@ -217,6 +217,35 @@ describe("顶栏账户槽位", () => {
     expect(screen.getByRole("button", { name: /^退出登录/ })).toBeTruthy();
   });
 
+  it("打开空间气泡保留当前页面身份、任务和伴星座位合同", () => {
+    stubAccountGateway();
+    useRoomStore.setState({ hudPage: "note-read", surface: "notebook", onboardingOpen: false });
+    render(<div className="hud-surface"><HudRoomControl /></div>);
+    fireEvent.click(screen.getByRole("button", { name: /^当前学习空间|正在读取你当前/ }));
+    expect(useRoomStore.getState().hudPage).toBe("note-read");
+    expect(useRoomStore.getState().surface).toBe("notebook");
+    useRoomStore.setState({ surface: null, hudPage: "home" });
+  });
+
+  it("Esc 先取消退出确认，再关闭气泡，每一步焦点及时响应", () => {
+    stubAccountGateway();
+    useRoomStore.setState({ surface: null, onboardingOpen: false });
+    useRoomStore.getState().setAccountIdentity({ email: "asklins@example.com", displayName: null });
+    render(<div className="hud-surface"><HudRoomControl /></div>);
+    fireEvent.click(screen.getByRole("button", { name: /^当前登录账号/ }));
+    const exit = screen.getByRole("button", { name: /^退出登录/ });
+    fireEvent.click(exit);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("button", { name: "确认退出" })).toBeNull();
+    expect(document.activeElement).toBe(exit);
+    fireEvent.keyDown(window, { key: "Escape" });
+    const account = screen.getByRole("button", { name: /^当前登录账号/ });
+    expect(account.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(account);
+    const closing = document.querySelector(".hud-control-popover-exit");
+    expect(closing?.hasAttribute("inert")).toBe(true);
+  });
+
   it("账户小框与空间菜单互斥：一屏上不会同时挂两张卡", () => {
     stubAccountGateway();
     useRoomStore.getState().setSpaceIdentity({ name: "我的书房", role: "owner", isPersonal: true });

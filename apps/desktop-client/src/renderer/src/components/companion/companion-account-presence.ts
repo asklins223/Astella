@@ -45,7 +45,7 @@ export function companionInterventionHint(level: CompanionInterventionLevel): st
       ? `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分`
       : `${minutes} 分钟`;
   return `她主动开口的最小间隔：约 ${span}一次。`
-    + "说话长短在「人格」页的活跃度里调；到点的提醒不受这一档限制。";
+    + "说话长短在伴星中心「人格」页的表达分量里调；到点的提醒不受这一档限制。";
 }
 
 /**

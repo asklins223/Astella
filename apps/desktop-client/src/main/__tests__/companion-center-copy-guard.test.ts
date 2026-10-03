@@ -25,11 +25,9 @@ const read = (relative: string): string => {
 };
 
 // 2026-09-23：伴星中心拆成概述/面板两片，这句说明跟着「人格」面板搬到了
-// `companion-center-panels.tsx`。守卫按设计跟着文案走，不跟着文件名。
-const surface = read("src/renderer/src/components/surfaces/companion/companion-center-panels.tsx");
-const activenessLine = surface
-  .split("\n")
-  .find((text: string) => text.includes("<h4>活跃度</h4>")) ?? "";
+// `companion-persona-panel.tsx`。守卫按设计跟着文案走，不跟着文件名。
+const surface = read("src/renderer/src/components/surfaces/companion/companion-persona-panel.tsx");
+const activenessLine = surface.slice(surface.indexOf('<CenterSection title="表达分量"'), surface.indexOf('<CenterSection title={PERSONA_SECTIONS.boundaries}'));
 
 describe("「活跃度」不再冒充频率开关", () => {
   it("那颗旋钮的说明句还在——文案被挪走也要有人来看一眼", () => {

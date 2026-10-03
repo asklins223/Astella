@@ -273,10 +273,11 @@ describe("CardGenerationSurface · 候选审核", () => {
     expect(container.querySelector(".candidate-flip-face--front")?.hasAttribute("inert")).toBe(true);
     expect(container.querySelector(".candidate-flip-face--back")?.hasAttribute("inert")).toBe(false);
     expect(state.revealCalls).toHaveLength(0);
-    expect(screen.getByText("重建机制")).toBeTruthy();
+    expect(screen.getByText("预计用时")).toBeTruthy();
+    expect(screen.queryByText("候选版本")).toBeNull();
   });
 
-  it("题面强调安全呈现，完整卡面没有内部滚区，决定与保存在卡外", async () => {
+  it("题面安全呈现，长卡面可以独立滚动，决定与保存在卡外", async () => {
     stubGateway([{ candidateId: "cand-1", statement: "利息加入**本金**，保留 <script> 字面文字", reviewDecision: "undecided", publishState: "unpublished" }]);
     useRoomStore.setState({ activeCardGenerationRunId: RUN_ID });
     const { container } = render(<CardGenerationSurface />);
@@ -285,7 +286,9 @@ describe("CardGenerationSurface · 候选审核", () => {
     expect(container.querySelector("script")).toBeNull();
     expect(container.querySelectorAll(".candidate-card__body")).toHaveLength(2);
     expect(container.querySelector(".candidate-card__scroll")).toBeNull();
-    expect(container.querySelector(".candidate-card__canvas")).not.toBeNull();
+    expect(container.querySelector(".candidate-card__canvas")?.getAttribute("aria-hidden")).toBe("true");
+    await waitFor(() => expect(container.querySelector(".candidate-flip-stage")?.getAttribute("data-card-3d")).toBe("unavailable"));
+    expect(screen.getByRole("region", { name: "候选卡题面" }).getAttribute("tabindex")).toBe("0");
     const keep = screen.getByRole("button", { name: /^保留（等着保存到卡组）/ });
     expect(keep.closest(".candidate-card__body")).toBeNull();
     expect(keep.closest(".candidate-desk__footer")).not.toBeNull();
@@ -326,6 +329,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     expect(screen.getByText("第一张")).toBeTruthy();
     release();
     await waitFor(() => expect(screen.getByText("第二张")).toBeTruthy());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: /^保留（等着保存到卡组）/ })));
   });
 
   it("答案尚未返回时，结束审核与其它决定等待这一笔读取完成", async () => {
@@ -445,7 +449,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     // 两句必须分得开——两颗按钮的区别如果只在按钮的字面上，回执上看不出来，
     // 用户就要等到下一次看到复习日期才知道自己刚才按的是哪颗。
     expect(document.querySelector(".candidate-review-slip__receipt")?.textContent)
-      .toBe("已确认 1 个目标映射 · 这次只保存到卡组，没有安排复习");
+      .toBe("已收好 1 张学习卡 · 这次只保存到卡组，没有安排复习");
     expect(screen.queryByText(/第一次复习排在/)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /保存并开启复习（1 张）/ }));
@@ -454,7 +458,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     // 整句 `toBe`：这一屏以前吃过三次"把两句拼成屏幕上根本不存在的一句"。
     await waitFor(() => expect(
       document.querySelector(".candidate-review-slip__receipt")?.textContent,
-    ).toBe(`已确认 1 个目标映射 · 第一次复习排在 ${formatDate(FIRST_REVIEW_AT)}`));
+    ).toBe(`已收好 1 张学习卡 · 第一次复习排在 ${formatDate(FIRST_REVIEW_AT)}`));
   });
 
   /**
@@ -474,7 +478,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     await waitFor(() => expect(state.activateCalls).toHaveLength(1));
     await waitFor(() => expect(
       document.querySelector(".candidate-review-slip__receipt")?.textContent,
-    ).toBe("已确认 1 个目标映射 · 第一次复习的日期还没排出来"));
+    ).toBe("已收好 1 张学习卡 · 第一次复习的日期还没排出来"));
     expect(document.querySelector(".candidate-review-slip__receipt")?.textContent)
       .not.toContain("没有安排复习");
   });
@@ -503,7 +507,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     await waitFor(() => expect(state.activateCalls).toHaveLength(1));
     await waitFor(() => expect(
       document.querySelector(".candidate-review-slip__receipt")?.textContent,
-    ).toBe(`已确认 1 个目标映射 · 第一次复习排在 ${formatDate("2026-09-27T12:00:00.000Z")}`));
+    ).toBe(`已收好 1 张学习卡 · 第一次复习排在 ${formatDate("2026-09-27T12:00:00.000Z")}`));
   });
 
   it("保留后卡片说出新状态，并自动走到下一张未决候选", async () => {
@@ -619,7 +623,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     expect(meta?.textContent).toContain("已写出 3 / 8 张候选");
     // 0249 之前这句是真的（计数要到整批提交才读得到），现在留着就是一句谎。
     expect(meta?.textContent).not.toContain("要等这一批写完");
-    expect(document.querySelector(".card-generation-progress__gauge")?.hasAttribute("hidden")).toBe(false);
+    expect(document.querySelector(".card-making__meter")?.hasAttribute("hidden")).toBe(false);
     // 步数依旧不报：run.status 还在那个大事务里。
     expect(meta?.textContent).not.toContain("待进行");
   });
@@ -656,12 +660,12 @@ describe("CardGenerationSurface · 候选审核", () => {
     render(<CardGenerationSurface />);
 
     await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
-    const meta = (document.querySelector(".candidate-card__meta")?.textContent ?? "");
+    const meta = (document.querySelector(".candidate-desk__header")?.textContent ?? "");
     // 两个数只说"点名的那几张"：一句里混进"带练习件 N 张"（含自愿交的）与
     // "点名 3 张里漏了 1 张"，读者按前者数出 4、按后者数出 2，两句互相打脸。
-    expect(meta).toContain("该配练习件的 3 张里，2 张配上了、1 张没配上");
+    expect(document.querySelector(".candidate-desk__practice-note p")?.textContent).toContain("该配练习件的 3 张里，2 张配上了、1 张没配上");
     // 缺额不能把原有的两个读数挤掉
-    expect(meta).toContain("候选 1 / 3");
+    expect(meta).toContain("挑选这一叠 · 1 / 3");
     expect(meta).toContain("3 张还没决定");
   });
 
@@ -689,8 +693,8 @@ describe("CardGenerationSurface · 候选审核", () => {
     render(<CardGenerationSurface />);
 
     await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
-    const meta = (document.querySelector(".candidate-card__meta")?.textContent ?? "");
-    expect(meta).toContain("该配练习件的 2 张都配上了");
+    const meta = (document.querySelector(".candidate-desk__header")?.textContent ?? "");
+    expect(document.querySelector(".candidate-desk__practice-note p")?.textContent).toContain("该配练习件的 2 张都配上了");
     expect(meta).not.toContain("没配上");
   });
 
@@ -724,7 +728,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     render(<CardGenerationSurface />);
 
     await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
-    const meta = (document.querySelector(".candidate-card__meta")?.textContent ?? "");
+    const meta = (document.querySelector(".candidate-desk__header")?.textContent ?? "");
     expect(meta).not.toContain("练习件");
     expect(meta).not.toContain("该配的");
   });

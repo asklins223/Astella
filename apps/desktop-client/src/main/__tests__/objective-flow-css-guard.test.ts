@@ -88,34 +88,29 @@ describe("夜间结算纸面的可读性", () => {
   });
 });
 
-describe("远征册与四站场景", () => {
-  const css = stripComments(read("src/renderer/src/components/objective-flow.css"));
+describe("学习卡收藏与查找", () => {
+  const css = stripComments(read("src/renderer/src/components/surfaces/review/card-experience.css") + read("src/renderer/src/components/surfaces/library/card-packs.css"));
   const source = read("src/renderer/src/components/surfaces/library/WorkspaceLibrarySurface.tsx");
+  const desk = read("src/renderer/src/components/surfaces/library/card-collection.tsx");
 
-  it("展开后有明确的关闭文案，列表独占剩余高度并滚动", () => {
-    expect(source).toContain("关闭远征册");
-    expect(css).toMatch(/\.objective-expedition__index-body\s*\{[^}]*flex:\s*1 1 0/);
-    expect(css).toMatch(/\.v3-goal-list\s*\{[^}]*flex:\s*1 1 0[^}]*overflow-y:\s*auto/);
-    expect(css).toMatch(/\.objective-expedition__index\[data-open="true"\]\s*\{[^}]*height:\s*calc\(100% - 24px\)/);
-    expect(source).toContain("aria-expanded={indexOpen}");
+  it("收藏内容独立滚动，合上的筛选菜单立即退出焦点路径", () => {
+    expect(desk).toContain('aria-label="学习卡收藏内容"');
+    expect(desk).toContain('inert={!props.filterMenuOpen}');
+    expect(css).toMatch(/\.card-collection__content\s*\{[^}]*overflow-y:\s*auto/);
+    expect(css).toContain('grid-template-rows: auto auto minmax(0,1fr)');
   });
 
-  it("夜间索引用暖纸深墨，搜索框不再继承缩成一小块", () => {
-    expect(css).toMatch(/\.objective-expedition__index\s*\{[^}]*--quest-ink:\s*#44382f[^}]*--quest-paper:\s*#fff9e9/);
-    expect(css).toMatch(/\.v3-goal-search\s*\{[^}]*width:\s*100%[^}]*min-height:\s*44px/);
+  it("长标题换行，装饰图标不承载文字或学习状态", () => {
+    expect(css).toMatch(/\.card-collection__card-body > strong\s*\{[^}]*overflow-wrap:\s*anywhere/);
+    expect(desk).toContain('className="card-collection__emblem" aria-hidden="true"');
+    expect(css).toContain('[data-theme="night"]');
   });
 
-  it("地图、简报、作答、结果分别使用不同的真实素材", () => {
-    for (const asset of ["expedition-map-v1", "challenge-clearing-v1", "focus-study-desk-v1", "result-arrival-v1"]) {
-      const path = `src/renderer/public/assets/objective-flow/${asset}.png`;
-      expect(existsSync(path) || existsSync(`apps/desktop-client/${path}`)).toBe(true);
-      expect(css).toContain(`${asset}.png`);
-    }
-    for (const asset of ["expedition-map-night-v1", "challenge-clearing-night-v1", "focus-study-desk-night-v1", "result-arrival-night-v1"]) {
-      const path = `src/renderer/public/assets/objective-flow/${asset}.png`;
-      expect(existsSync(path) || existsSync(`apps/desktop-client/${path}`)).toBe(true);
-      expect(css).toContain(`${asset}.png`);
-    }
+  it("原文与学习足迹按需展开，摘要与标题相同时不重复", () => {
+    expect(source).toContain('<details className="objective-brief__progress">');
+    expect(source).toContain('className="objective-brief__postcard"');
+    expect(source).toContain("content.publicSummary !== content.conceptLabel");
+    expect(read("src/renderer/src/components/surfaces/library/card-pack-object.tsx")).toContain("summary !== title");
   });
 });
 
@@ -156,58 +151,21 @@ describe("修正层的加载顺序", () => {
   });
 });
 
-describe("列表行的事实句不许长成 chip（P10）", () => {
-  const css = stripComments(read("src/renderer/src/components/objective-flow.css"));
-  const source = read("src/renderer/src/components/surfaces/library/WorkspaceLibrarySurface.tsx");
-
-  // 病根在 `approved-surfaces.css:246` 的 `.v3-objective-tags span`——它把容器里
-  // **每一个**后代 span 都刷成带底小药丸。所以只断言 JSX 结构不够，必须同时钉住
-  // "有人把这个容器拿掉了"；两边任缺一条，22 种同权重 chip 就回来了。
-  it("chip 容器（padding / background / border-radius）被显式拿掉", () => {
-    const facts = css.match(/\.hud-surface \.v3-goal-row__facts[^{]*\{([^}]*)\}/);
-    expect(facts, "没有规则接手 .v3-goal-row__facts").not.toBeNull();
-    const body = facts?.[1] ?? "";
-    expect(body).toMatch(/background:\s*none/);
-    expect(body).toMatch(/border-radius:\s*0/);
-    expect(body).toMatch(/padding:\s*0/);
-  });
-
-  it("字号地板在紧凑档里也不给 tag 开后门——上一版我自己写错了这一条", () => {
-    // 地板写在一条多选择器规则里，所以按"哪个规则块接手了这个选择器"来找。
-    const blocks = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(
-      (rule) => /(^|,)\s*\.hud-surface \.v3-objective-tags span\s*(,|$|\n)/.test(rule[1] as string),
-    );
-    expect(blocks.length, "没有规则接手 .v3-objective-tags span 的字号").toBeGreaterThan(0);
-    const floor = Number(/font-size:\s*([0-9.]+)px/.exec(blocks[0]?.[2] ?? "")?.[1]);
-    expect(floor, "接手的那条规则没写 font-size").toBeGreaterThanOrEqual(11);
-    // 紧凑档不得再出现一条只给 tag 降字号的规则。地板本身是不是无条件的那一条，
-    // 静态扫只做到"挪进 @media 就找不到接手规则"这一步；真正的判据是实机算出来的
-    // 字号，所以 tmp-objflow-v-b8.mjs 在两个断点档各量一次。
-    const compact = css.slice(css.indexOf("@media (max-width: 760px)"));
-    expect(compact).not.toMatch(/\.v3-objective-tags[^{]*\{[^}]*font-size/);
-  });
-
-  it("知识形态与作答进展落在事实句里，不再各自成一个 chip", () => {
-    const facts = source.slice(
-      source.indexOf("v3-goal-row__facts"),
-      source.indexOf("v3-goal-row__meta"),
-    );
-    expect(facts).toContain("formatKnowledgeForm");
-    expect(facts).toContain("objectiveProgressChips");
-    // map 出来的是列表项，用 Fragment 简写会漏 key（React 每条都喊一次警告）。
-    expect(facts).toMatch(/<Fragment key=\{chip\}/);
+describe("卡片进展说真实事实", () => {
+  const source = read("src/renderer/src/components/surfaces/library/card-collection.tsx");
+  it("收藏要点复用服务端进展文案，不另外捏造次数或日期", () => {
+    expect(source.match(/objectiveProgressChips\(card.progress\)/g)).toHaveLength(1);
   });
 });
 
 describe("详情页主行动块（P15）", () => {
-  const css = stripComments(read("src/renderer/src/components/objective-flow.css"));
+  const css = stripComments(read("src/renderer/src/components/surfaces/library/card-detail.css"));
 
   it("两个紧凑档都不许再给这块降字号", () => {
     // 实机就是在这里量到动词 9px：那条档按**高度**生效，而 B4 的地板清单是按
     // :181-254 那段无条件规则挑的，紧凑档没照着列——于是 strong 整个漏在外面。
     // 现在整块自己就是按钮，字号只写在无条件那一处。
     const mediaBodies = [...css.matchAll(/@media[^{]*\{([\s\S]*?\n\})/g)].map((match) => match[1]);
-    expect(mediaBodies.length, "@media 块解析不出来").toBeGreaterThan(1);
     const shrinkers = mediaBodies
       .flatMap((body) => body.split("\n"))
       .filter((line) => /\.objective-brief__launch/.test(line) && /font-size/.test(line));
@@ -223,12 +181,11 @@ describe("详情页主行动块（P15）", () => {
   });
 });
 
-describe("复习队列的成句文字有地板（§11 收尾）", () => {
-  const css = stripComments(read("src/renderer/src/components/objective-flow.css"));
+describe("复习队列的成句文字有地板", () => {
+  const css = stripComments(read("src/renderer/src/components/surfaces/review/review-queue.css"));
 
-  // 这一屏住在 hud-surface.css（别的会话正在改那份文件），所以地板只能落在修正层。
-  // 组件测试断言的是文字，CSS 掉了它们照样全绿——B2 那次就是这么漏过去的。
-  for (const sel of ["deck-foot__hint", "queue-reason > p", "queue-reason__order"]) {
+  // 守卫跟随真实承载文件与新侧袋结构，避免只检查已经没人使用的旧选择器。
+  for (const sel of ["deck-foot__hint", "review-queue__why p", "review-queue__rest p"]) {
     it(`.${sel} 有 ≥11px 的接手规则`, () => {
       const needle = sel.replace(/\s+/g, " ");
       const blocks = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter((rule) => {

@@ -134,6 +134,7 @@ function installApi(
             noteChangeImpact: null,
           })),
           teaching: vi.fn(async () => ok({
+            round: { roundId: "77777777-7777-4777-8777-777777777777", drivingQuestion: "这篇笔记想说明什么？" },
             teaching: {
               version: 1 as const,
               teachingId: "88888888-8888-4888-8888-888888888888",
@@ -195,10 +196,30 @@ afterEach(() => {
   window.getSelection()?.removeAllRanges();
   vi.useRealTimers();
   Reflect.deleteProperty(window, "ailearn");
-  useRoomStore.setState({ activeNoteRef: null, surface: null });
+  useRoomStore.setState({ activeNoteRef: null, surface: null, returnTarget: null });
 });
 
 describe("阅读页画的是编辑器里那一份", () => {
+  it("keeps the explicit journal return when opening a note from today's history", async () => {
+    const returnTo = { label: "返回今日学习", run: vi.fn() };
+    useRoomStore.setState({ returnTarget: returnTo });
+    const view = await show([block("paragraph", "从今日学习回看这篇笔记。")]);
+    expect(useRoomStore.getState().returnTarget).toBe(returnTo);
+    view.unmount();
+    expect(useRoomStore.getState().returnTarget).toBe(returnTo);
+    act(() => useRoomStore.getState().returnTarget?.run());
+    expect(returnTo.run).toHaveBeenCalledOnce();
+  });
+  it("opens an older round's history even when this note has another open round", async () => {
+    const view = await show([block("paragraph", "同一篇里有一轮新的学习。")], undefined, undefined, true);
+    await act(async () => {
+      useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID, mode: "preview", learningRoundId: "99999999-4999-4999-8999-999999999999" } });
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(view.getByRole("region", { name: "学习记录" })).toBeTruthy();
+    expect(view.queryByRole("region", { name: "这一轮学习" })).toBeNull();
+    expect(useRoomStore.getState().hudPage).toBe("note-history");
+  });
   it.each(["current", "older"] as const)("历史里的 %s 批注在回想往返后仍打开具体原句，并返回原记录页", async versionState => {
     const date = "2026-10-01T00:00:00.000Z", excerpt = "上一轮的利息计入下一轮本金。";
     const annotation = noteAnnotationV1Schema.parse({ annotationId: "33333333-4333-4333-8333-333333333333", noteId: NOTE_ID,
@@ -225,10 +246,10 @@ describe("阅读页画的是编辑器里那一份", () => {
     expect(view.getByRole("region", { name: "学习记录" })).toBeTruthy();
   });
 
-  it("学习入口稳定附在册页边缘，不因历史记录改名或换位", async () => {
+  it("正文、学习入口和记录保持顺序，不因已有记录改名或换位", async () => {
     const view = await show([block("paragraph", "Tool 是 Agent 调用外部能力的入口。")]);
     const navigation = view.getByRole("navigation", { name: "笔记学习" });
-    expect(Array.from(navigation.querySelectorAll("button")).map(button => button.textContent?.trim())).toEqual(["速看", "回想", "往外学"]);
+    expect(Array.from(navigation.querySelectorAll("button")).map(button => button.getAttribute("aria-label") ?? button.textContent?.trim())).toEqual(["正文", "速看", "回想", "往外学", "学习记录"]);
     expect(view.body().textContent).toContain("Tool 是 Agent 调用外部能力的入口。");
     expect(view.queryByRole("button", { name: "和伴星聊聊" })).toBeNull();
     expect(view.queryByRole("button", { name: "也可以问伴星" })).toBeNull();
@@ -296,7 +317,7 @@ describe("阅读页画的是编辑器里那一份", () => {
     expect(view.container.querySelector(".notebook-volume__article-head")).toBeNull();
   });
 
-  it("互动讲解保留原句段落锚点，并能从记录跳回正文", async () => {
+  it("互动讲解保留原句段落锚点，从演示返回正文后批注角标仍能打开原句", async () => {
     const selectionText = "选中句子";
     const artifact = {
       artifactId: "44444444-4444-4444-8444-444444444444",
@@ -329,7 +350,15 @@ describe("阅读页画的是编辑器里那一份", () => {
       versionState: "current" as const,
       createdAt: "2026-09-29T00:00:00.000Z",
     };
-    const view = await show([block("heading", "例子"), block("paragraph", "这是选中句子。")], undefined, [artifact]);
+    const annotation = noteAnnotationV1Schema.parse({
+      annotationId: "33333333-4333-4333-8333-333333333333", noteId: NOTE_ID,
+      anchor: artifact.selectionAnchor, explanation: "这条解释仍在原句旁边。",
+      sourceMessageId: null, generationJobId: null, revision: 1, versionState: "current",
+      createdAt: artifact.createdAt, updatedAt: artifact.createdAt,
+    });
+    const view = await show([block("heading", "例子"), block("paragraph", "这是选中句子。")],
+      undefined, [artifact], false, undefined, undefined, [annotation]);
+    expect(view.body().querySelectorAll(".note-annotation-badge")).toHaveLength(1);
     fireEvent.click(view.getByRole("button", { name: "学习记录" }));
     fireEvent.click(view.getByRole("button", { name: "打开这份互动讲解" }));
     const source = view.getByText("对照原句").closest("details")!;
@@ -338,7 +367,33 @@ describe("阅读页画的是编辑器里那一份", () => {
     expect(source.textContent).toContain(selectionText);
     fireEvent.click(within(source).getByRole("button", { name: "回到这句" }));
     expect(view.body().querySelector('[data-block-ordinal="1"]')?.getAttribute("data-block-focused")).toBe("true");
+    const badge = view.body().querySelector<HTMLButtonElement>(".note-annotation-badge");
+    expect(badge).not.toBeNull();
+    fireEvent.click(badge!);
+    expect(within(view.getByRole("region", { name: "原句批注" })).getByText(annotation.explanation)).toBeTruthy();
   });
+
+  it.each(["计算 $A = P(1 + r)^n$，再核对。", "$$\nA = P(1 + r)^n\n$$"])(
+    "含公式的段落仍按原文字流核对批注：%s", async content => {
+      const excerpt = noteBlockRenderedTextV1("paragraph", content);
+      const date = "2026-10-03T00:00:00.000Z";
+      const annotation = noteAnnotationV1Schema.parse({
+        annotationId: "33333333-4333-4333-8333-333333333333", noteId: NOTE_ID,
+        anchor: { noteVersionId: VERSION_ID, startBlockOrdinal: 0, endBlockOrdinal: 0,
+          startOffset: 0, endOffset: excerpt.length, excerpt, prefix: "", suffix: "" },
+        explanation: "本金、利率和轮数一起决定结果。", sourceMessageId: null,
+        generationJobId: null, revision: 1, versionState: "current", createdAt: date, updatedAt: date,
+      });
+      const view = await show([block("paragraph", content)], undefined, undefined, false,
+        undefined, undefined, [annotation]);
+      expect(view.body().querySelector(".katex")).not.toBeNull();
+      const badge = view.body().querySelector<HTMLButtonElement>(".note-annotation-badge");
+      expect(badge).not.toBeNull();
+      expect(view.queryByText(/需核对/)).toBeNull();
+      fireEvent.click(badge!);
+      expect(within(view.getByRole("region", { name: "原句批注" })).getByText(annotation.explanation)).toBeTruthy();
+    },
+  );
 
   it("旧学习轮次不会自动插入首次阅读纸面", async () => {
     const view = await show([block("paragraph", "这是正文里的原句。")], undefined, undefined, true);

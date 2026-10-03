@@ -24,7 +24,7 @@ it("紧凑目录打开后焦点进入目录，Escape 关闭并回到可见触发
   const directory = view.getByRole("complementary", { name: "笔记目录" });
   expect(directory.contains(document.activeElement)).toBe(true);
   expect(view.queryByRole("group", { name: "正文视图" })).toBeNull();
-  expect(view.getByText("正文仍然留在册页。").closest("[hidden]")).toBeTruthy();
+  expect(view.getByText("正文仍然留在册页。").closest("[inert]")).toBeTruthy();
   fireEvent.keyDown(document.activeElement!, { key: "Escape" });
   expect(view.queryByRole("complementary", { name: "笔记目录" })).toBeNull();
   expect(document.activeElement).toBe(trigger); expect(trigger.closest("[hidden]")).toBeNull();

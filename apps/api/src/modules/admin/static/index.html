@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>运维面板 · ailearn</title>
+    <!-- 空 data URI：面板不需要站点图标，而浏览器默认会去打 /favicon.ico，
+         在这个只注册了几条路由的服务上那是一条注定 404 的请求（CSP 的
+         img-src 允许 data:，所以这里不会连带触发一次策略拒绝）。 -->
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/admin/styles.css" />
+  </head>
+  <body>
+    <!-- 启动闸：没有令牌就停在解锁层，连一次数据请求都不发。 -->
+    <div class="gate" id="gate" data-state="locked">
+      <form class="gate__card" id="gate-form" autocomplete="off">
+        <div class="gate__mark" aria-hidden="true"></div>
+        <h1 class="gate__title">运维面板</h1>
+        <p class="gate__hint">
+          这个面板能读取跨空间的队列、审计与配置状态。请输入部署时设置的
+          <code>ADMIN_PANEL_TOKEN</code>。
+        </p>
+        <div class="field">
+          <label class="field__label" for="gate-token">运维令牌</label>
+          <input
+            class="field__input"
+            id="gate-token"
+            type="password"
+            name="token"
+            spellcheck="false"
+            placeholder="••••••••••••••••"
+            required
+          />
+        </div>
+        <p class="gate__error" id="gate-error" role="alert" hidden></p>
+        <button class="btn btn--primary btn--block" type="submit" id="gate-submit">
+          <span class="btn__label">进入面板</span>
+        </button>
+        <p class="gate__foot">
+          令牌只保存在本标签页内存中，关闭页面即失效；不会写入 localStorage。
+        </p>
+      </form>
+    </div>
+
+    <!-- 主壳 -->
+    <div class="shell" id="shell" hidden>
+      <header class="topbar">
+        <div class="topbar__brand">
+          <span class="topbar__mark" aria-hidden="true"></span>
+          <span class="topbar__name">运维面板</span>
+          <span class="topbar__env" id="env-badge"></span>
+        </div>
+        <div class="topbar__right">
+          <span class="pulse" id="conn-pill" data-state="idle">
+            <span class="pulse__dot" aria-hidden="true"></span>
+            <span class="pulse__text" id="conn-text">就绪</span>
+          </span>
+          <button class="btn btn--ghost btn--icon" id="refresh" type="button" title="刷新当前视图">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+              <path d="M20 4v4h-4" />
+            </svg>
+            <span class="sr-only">刷新</span>
+          </button>
+          <button class="btn btn--ghost" id="lock" type="button">锁定</button>
+        </div>
+      </header>
+
+      <div class="body">
+        <nav class="rail" aria-label="面板视图">
+          <div class="rail__indicator" id="rail-indicator" aria-hidden="true"></div>
+          <button class="rail__item is-active" type="button" data-view="overview">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6z"/></svg>
+            <span>概览</span>
+          </button>
+          <button class="rail__item" type="button" data-view="metrics">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h3V9H4zM10.5 19h3V4h-3zM17 19h3v-7h-3z"/></svg>
+            <span>指标</span>
+          </button>
+          <button class="rail__item" type="button" data-view="logs">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v2H5zM5 11h14v2H5zM5 17h9v2H5z"/></svg>
+            <span>日志</span>
+          </button>
+          <button class="rail__item" type="button" data-view="queues">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v4H4zM4 14h16v4H4z"/></svg>
+            <span>队列</span>
+          </button>
+          <button class="rail__item" type="button" data-view="config">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" stroke-width="1.6"/></svg>
+            <span>配置</span>
+          </button>
+          <div class="rail__foot">
+            <div class="rail__meta"><span id="uptime">—</span></div>
+          </div>
+        </nav>
+
+        <main class="content" id="content" tabindex="-1"></main>
+      </div>
+    </div>
+
+    <!-- 应用绘制的确认框（不用原生 confirm） -->
+    <div class="modal" id="modal" hidden>
+      <div class="modal__scrim" data-close="1"></div>
+      <div class="modal__card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <h2 class="modal__title" id="modal-title"></h2>
+        <p class="modal__body" id="modal-body"></p>
+        <div class="modal__actions">
+          <button class="btn btn--ghost" type="button" data-close="1" id="modal-cancel">取消</button>
+          <button class="btn btn--primary" type="button" id="modal-confirm">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="/admin/app.js" type="module"></script>
+  </body>
+</html>

@@ -552,7 +552,7 @@ async function show(
     // 再走真实的"切回阅读态"：`switchMode("read")` 会顺手发起一次自动保存，
     // 而主要动作那一行只在阅读态才画——"有未提交编辑"因此只可能在这里被用户看到。
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "预览" }));
+      fireEvent.click(screen.getByRole("button", { name: "阅读" }));
       await vi.advanceTimersByTimeAsync(50);
     });
   }
@@ -596,10 +596,11 @@ afterEach(() => {
 });
 
 describe("笔记学习入口", () => {
-  it("第一次看笔记时保留正文，三个学习页签位置稳定", async () => {
+  it("第一次看笔记时保留正文，学习页签和记录始终能直接返回", async () => {
     const { container } = await show([listItem()], { leaf: "reading" });
     const start = within(container).getByRole("navigation", { name: "笔记学习" });
-    expect(within(start).getAllByRole("button").map((item) => item.textContent?.trim())).toEqual(["速看", "回想", "往外学"]);
+    expect(within(start).getAllByRole("button").map((item) => item.getAttribute("aria-label") ?? item.textContent?.trim())).toEqual(["正文", "速看", "回想", "往外学", "学习记录"]);
+    expect(within(start).getByRole("button", { name: "正文" }).getAttribute("aria-pressed")).toBe("true");
     expect(container.querySelector(".note-transcript")?.textContent).toContain("质量是惯性大小的唯一量度。");
     expect(container.querySelector(".note-expansion-shelf")?.closest("[hidden]")).toBeTruthy();
     expect(container.querySelector("#notebook-learning-leaf")).toBeNull();

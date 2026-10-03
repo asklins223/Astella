@@ -214,6 +214,7 @@ const desktopApi: AILearnDesktopApiM2 = {
       // 回收区的两个动作。与 remove 的差别是**时间**：remove 进回收区等 30 天，
       // restoreDeleted 撤回，erase 是不可逆的「现在就删干净」。
       restoreDeleted: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryRestoreDeleted, input),
+      recycleList: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryRecycleList, input),
       erase: (input) => invoke(DESKTOP_IPC_CHANNELS.companionMemoryErase, input),
       // 40 §7 发现簿。uncollect **不是** delete：它不动原始回答与日记。
       discovery: {
@@ -361,6 +362,7 @@ const desktopApi: AILearnDesktopApiM2 = {
     list: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionList, input),
     startTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionStartTask, input),
     latestTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionLatestTask, input),
+    listTasks: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionListTasks, input),
     getTask: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionGetTask, input),
     review: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionReview, input),
     confirm: (input) => invoke(DESKTOP_IPC_CHANNELS.noteExpansionConfirm, input),

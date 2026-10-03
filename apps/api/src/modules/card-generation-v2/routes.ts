@@ -22,6 +22,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { requireOwner, requireSession } from "../identity/middleware.ts";
 import { parseBody } from "../../lib/validate.ts";
+import { acquireSseSlot } from "../../lib/sse-connection-limiter.ts";
 import { uuidParamSchema } from "../../lib/pagination.ts";
 import {
   createCardGenerationRunRequestV2Schema,
@@ -87,6 +88,12 @@ import {
 } from "./desktop-projection.ts";
 import { scopeOfSession } from "../../db/client.ts";
 import { buildSimpleErrorBody } from "../../lib/error-envelope.ts";
+
+/**
+ * SSE 限流命名空间（2026-10-03）。与 inbox / run-events 分开计数，
+ * 共享同一个进程级总上限。语义见 lib/sse-connection-limiter.ts 顶部说明。
+ */
+const SSE_NAMESPACE = "card-gen-events";
 
 const eventsQuerySchema = z.object({
   after: z.coerce.number().int().min(0).optional().default(0),
@@ -276,8 +283,24 @@ export async function cardGenerationV2Routes(app: FastifyInstance) {
     if (!Number.isSafeInteger(afterSequence) || afterSequence < 0) {
       return reply.code(400).send({ error: "invalid_last_event_id", message: "无效的 Last-Event-ID" });
     }
+    // 2026-10-03：SSE 并发上限。此前这条长连事件流没有任何连接数约束，
+    // 与 inbox / run-events 共用 lib/sse-connection-limiter.ts。
+    // 放在 hijack 之前，超限才能回一个明确的 429 JSON 而不是一条语义不明的流。
+    const sseSlot = acquireSseSlot(SSE_NAMESPACE, `${context(req).userId}:${context(req).workspaceId}`);
+    if (!sseSlot.ok) {
+      return reply.code(429).send({
+        error: "too_many_connections",
+        message: sseSlot.reason === "total"
+          ? "服务端 SSE 连接已达上限，请稍后重试"
+          : "该空间的卡片生成事件流连接数已达上限",
+      });
+    }
+    const releaseSseSlot = sseSlot.release;
     reply.hijack();
-    if (reply.raw.writableEnded || reply.raw.destroyed) return reply;
+    if (reply.raw.writableEnded || reply.raw.destroyed) {
+      releaseSseSlot();
+      return reply;
+    }
     // SSE headers
     try {
       reply.raw.writeHead(200, {
@@ -289,6 +312,7 @@ export async function cardGenerationV2Routes(app: FastifyInstance) {
     } catch (error) {
       req.log.warn({ error, runId: req.params.runId }, "card generation SSE writeHead failed");
       if (!reply.raw.writableEnded && !reply.raw.destroyed) reply.raw.end();
+      releaseSseSlot();
       return reply;
     }
     let lastSeq = afterSequence;
@@ -303,6 +327,9 @@ export async function cardGenerationV2Routes(app: FastifyInstance) {
       if (interval) clearInterval(interval);
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       if (!reply.raw.writableEnded && !reply.raw.destroyed) reply.raw.end();
+      // 2026-10-03：归还 SSE 槽位。release 幂等，所以 close / error / 心跳写失败
+      // 多条路径都调 stopStream 也不会多减。
+      releaseSseSlot();
     };
     // Send initial comment
     if (!safeSseWrite(reply.raw, ": connected\n\n")) {

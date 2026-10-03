@@ -127,6 +127,6 @@ describe("未完成的学习（审计 F24）", () => {
     });
     render(<ResumableSurface />);
     await screen.findByText("目标 1");
-    expect(screen.getByText(/这里先列出 20 项，共 22 项/)).toBeTruthy();
+    expect(screen.getByText(/这里列出最近的 20 项，当前共 22 项/)).toBeTruthy();
   });
 });

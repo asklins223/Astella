@@ -24,6 +24,22 @@ const props = (): ComponentProps<typeof NoteAnnotationSidePage> => ({ annotation
   onAsk: vi.fn(), onCreateArtifact: vi.fn(), onOpenArtifact: vi.fn(), onRetry: vi.fn(), onSettings: vi.fn() });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+it("同一句的多条批注只占句尾角标，每条可独立预览、键盘打开，不增加选区文字或正文行", () => {
+  const annotations = [1, 2, 3, 4].map(n => ({ ...annotation, annotationId: id(n + 10), explanation: `第 ${n} 条解释` }));
+  const onOpen = vi.fn();
+  const view = render(<ReadingBlockContent block={{ ordinal: 1, type: "paragraph", content: "声音配音后面仍接原文。" }} mark={null} annotations={annotations} onOpenAnnotation={onOpen} />);
+  const badges = [...view.container.querySelectorAll<HTMLElement>(".note-annotation-badge")];
+  expect(badges.map(badge => badge.dataset.number)).toEqual(["1", "2", "3", "4"]);
+  expect(badges.every(badge => badge.textContent === "")).toBe(true);
+  expect(view.container.querySelector(".note-overlapping-annotations")).toBeNull();
+  expect(view.container.querySelectorAll("p")).toHaveLength(1);
+  expect(view.container.textContent).toBe("声音配音后面仍接原文。");
+  fireEvent.focus(badges[2]!); expect(view.getByRole("tooltip").textContent).toContain("第 3 条解释");
+  fireEvent.keyDown(badges[2]!, { key: "Enter" }); expect(onOpen).toHaveBeenCalledWith(annotations[2]);
+  fireEvent.click(badges[3]!); expect(onOpen).toHaveBeenLastCalledWith(annotations[3]);
+  expect(view.container.querySelector(".note-annotation-anchor .note-annotation-badge")).toBeNull();
+});
+
 it("长解释按 Markdown 排版，演示入口出现在原句和解释之前，模型 HTML 只显示为文字", () => {
   const input = props();
   const view = render(<NoteAnnotationSidePage {...input} />);

@@ -1,0 +1,54 @@
+/* An open mint folio keeps the source, task controls and emerging questions together. */
+.desktop-app.hud-surface .task-surface--card-generation:has(.card-generating) { background-image: url("/assets/learning-room/v1/posters/task-scenes/card-making-atelier-day-v1.png"); }
+.desktop-app.hud-surface:is([data-theme="night"],[data-theme="dark"]) .task-surface--card-generation:has(.card-generating) { background-image: url("/assets/learning-room/v1/posters/task-scenes/card-making-atelier-night-v1.png"); }
+.desktop-app.hud-surface .task-surface:has(.card-generating) .content { top: 86px; bottom: 83px; }
+.desktop-app.hud-surface .card-generating { height: 100%; min-height: 0; }
+.desktop-app.hud-surface .card-generating .card-making-workshop { display: grid; grid-template-columns: minmax(245px,.43fr) minmax(0,1fr); gap: 15px; width: 100%; height: 100%; min-width: 0; min-height: 0; padding: 16px; border: 3px solid #fffef1; border-radius: 32px 36px 34px 30px; background: #dbe9d5; box-shadow: 0 5px 0 #aabea380,0 16px 30px #344f3226; color: #47604d; transform: translateY(var(--card-object-y,0px)); opacity: clamp(0,var(--card-object-open,1),1); }
+.card-making__paper { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 13px 14px; scrollbar-width: thin; scrollbar-color: #a9bda3 transparent; }
+.card-making__header { padding-bottom: 17px; border-bottom: 1px solid #b9cdb2; }
+.card-making__eyebrow { color: #577854; font-size: 11px; font-weight: 650; }
+.desktop-app.hud-surface .card-making__header h1 { margin: 6px 0 0; color: #3f644b; font: 740 23px/1.5 "Noto Sans SC Variable",sans-serif; letter-spacing: -.025em; }
+.card-making__source { display: flex; align-items: flex-start; gap: 8px; margin: 18px 0 22px; }
+.card-making__source > svg { flex: none; margin-top: 3px; color: #709069; }
+.card-making__note { min-width: 0; margin: 0; color: #526d4d; font-size: 12px; line-height: 1.85; overflow-wrap: anywhere; }
+.desktop-app.hud-surface .card-making-workshop .card-generation-progress { display: block; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.desktop-app.hud-surface .card-making-workshop .card-generation-progress__name { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 9px; color: #41684c; font: 700 17px/1.6 "Noto Sans SC Variable",sans-serif; }
+.card-generation-progress__name > svg { flex: none; margin-top: 4px; }
+.desktop-app.hud-surface .card-making-workshop .card-generation-progress__meta { margin: 0; color: #536e50; font-size: 12px; line-height: 1.85; }
+.card-making__counts { display: flex; flex-wrap: wrap; gap: 19px; margin: 22px 0 12px; }
+.card-making__counts div { display: grid; gap: 5px; }
+.card-making__counts dt { color: #54724f; font-size: 11px; }
+.card-making__counts dd { margin: 0; color: #41644a; font-size: 27px; font-weight: 700; line-height: 1.2; }
+.card-making__counts dd small { color: #5b7554; font-size: 11px; font-weight: 500; }
+.card-making__meter { height: 5px; margin: 18px 0; border-radius: 4px; background: #bcd1b3; }
+.card-making__meter > span { display: block; width: var(--making-progress,0%); height: 100%; border-radius: inherit; background: #6f9975; }
+.card-making__reassurance,.card-making__background-note { margin: 14px 0 0; color: #54714e; font-size: 11px; line-height: 1.85; }
+.card-making__state,.card-making__recovery { display: grid; justify-items: start; gap: 12px; color: #709069; }
+.card-making__state h2,.card-making__recovery h2 { margin: 0; color: #41684c; font: 700 19px/1.6 "Noto Sans SC Variable",sans-serif; }
+.card-making__state p,.card-making__recovery p { margin: 0; color: #526d4d; font-size: 12px; line-height: 1.85; overflow-wrap: anywhere; }
+.card-making__recovery .actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.card-making__footer { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 25px; }
+.desktop-app.hud-surface .card-making__footer .button { display: flex; align-items: center; gap: 7px; border-radius: 21px; background: #fffdf0; border: 2px solid #fffef8; box-shadow: 0 3px 0 #a4bb9a80; color: #476a4c; font-size: 12px; padding: 10px 15px; }
+.desktop-app.hud-surface .card-making__footer .button.primary { background: #f7d7bc; border-color: #fff9e8; box-shadow: 0 3px 0 #c8a88c70; color: #725341; }
+.desktop-app.hud-surface .card-making__footer .text-action { display: inline-flex; align-items: center; gap: 5px; color: #4a6e4f; font-size: 12px; }
+.card-making__sync-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 20px; color: #587451; font-size: 10px; }
+.desktop-app.hud-surface .card-making__sync-row .card-making__sync { display: flex; align-items: center; gap: 5px; padding: 4px 0; color: #4a6e4f; font-size: 11px; }
+.card-making__failure,.card-making__source-notice,.desktop-app.hud-surface .card-making-workshop .card-generation-board__sync-report { margin: 14px 0 0; padding: 10px 12px; border: 1px solid #e4cd9e; border-radius: 14px; background: #fff1d3; color: #785b3f; font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.desktop-app.hud-surface .card-making-workshop .card-generation-landing { display: flex; flex-direction: column; min-width: 0; min-height: 0; margin: 0; padding: 23px 24px 17px; border: 2px solid #fffef8; border-radius: 23px 28px 25px 22px; background: #fffdf3; box-shadow: 0 3px 0 #aebf9f80; }
+.card-generation-landing > header { display: flex; flex: none; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 18px; padding-bottom: 17px; border-bottom: 1px dashed #dce4ce; color: #637d57; }
+.desktop-app.hud-surface .card-making-workshop .card-generation-landing h2 { margin: 0; color: #4b6b50; font: 700 18px/1.6 "Noto Sans SC Variable",sans-serif; }
+.card-generation-landing > header > span { font-size: 11px; }
+.desktop-app.hud-surface .card-making-workshop .card-generation-landing__list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-content: start; gap: 20px; margin: 0; padding: 23px 4px 13px; min-height: 0; overflow: auto; overscroll-behavior: contain; list-style: none; scrollbar-width: thin; scrollbar-color: #c2d3b2 transparent; }
+.desktop-app.hud-surface .card-making-workshop .card-generation-landing__item { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; min-width: 0; padding: 18px; border: 2px solid #fffef8; border-radius: 21px 24px 22px 20px; background: #f2f5e5; box-shadow: 1px 4px 0 #d7e0c7,0 7px 13px #50664715; transform: translateY(var(--card-object-y,0px)); opacity: clamp(0,var(--card-object-open,1),1); }
+.card-generation-landing__item > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; color: #607e55; font-size: 10px; }
+.desktop-app.hud-surface .card-making-workshop .card-generation-landing__type { padding: 5px 8px; border-radius: 11px; background: #dfeacb; color: #507549; font-size: 10px; }
+.desktop-app.hud-surface .card-making-workshop .card-generation-landing__concept { max-width: 100%; white-space: normal; color: #45634b; font: 700 15px/1.75 "Noto Sans SC Variable",sans-serif; overflow-wrap: anywhere; }
+.desktop-app.hud-surface .card-making-workshop .card-generation-landing__prompt { display: block; max-width: 100%; white-space: normal; color: #526b4c; font-size: 12px; line-height: 1.85; overflow-wrap: anywhere; }
+.card-generation-landing__item > small { width: 100%; margin-top: auto; padding-top: 11px; border-top: 1px dashed #cad8ba; color: #607856; font-size: 10px; }
+.card-making__empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; min-height: 0; gap: 10px; padding: 28px 8px 20px; text-align: center; }
+.card-making__pack { --pack-color: #b1d9d4; --pack-color-light: #d4ede5; --pack-color-dark: #81b2a5; --pack-ink: #527f72; display: block; padding-top: 14px; }
+.card-making__empty h3 { margin: 0; color: #4a6b50; font: 650 17px/1.7 "Noto Sans SC Variable",sans-serif; }
+.card-making__empty p { max-width: 290px; margin: 0; color: #5e7854; font-size: 12px; line-height: 1.9; }
+@media (max-width:1000px) { .desktop-app.hud-surface .card-generating .card-making-workshop { grid-template-columns: minmax(235px,.5fr) minmax(0,1fr); gap: 10px; padding: 13px; } .desktop-app.hud-surface .card-making-workshop .card-generation-landing { padding: 20px 17px 16px; } .desktop-app.hud-surface .card-making-workshop .card-generation-landing__list { grid-template-columns: minmax(0,1fr); } }
+@media (max-width:760px),(max-height:590px) { .desktop-app.hud-surface .task-surface:has(.card-generating) .content { top: 64px; bottom: 65px; } .desktop-app.hud-surface .card-generating .card-making-workshop { display: block; overflow: auto; padding: 12px; border-radius: 25px; } .card-making__paper { min-height: 0; padding: 13px; } .card-making__header { padding-bottom: 12px; } .card-making__source { margin: 13px 0 17px; } .card-making__footer { margin-top: 20px; } .card-making__sync-row { margin-top: 15px; padding-top: 12px; } .desktop-app.hud-surface .card-making-workshop .card-generation-landing { margin-top: 20px; min-height: 330px; } .desktop-app.hud-surface .card-making-workshop .card-generation-landing__list { overflow: visible; } .card-making__empty { min-height: 290px; } .card-making__pack .card-pack-object__scene { width: 171px; height: 204px; } .card-making__pack .card-pack-art { position: absolute; width: 214px; height: 255px; transform: scale(.8); transform-origin: 0 0; } }
+@media (prefers-contrast:more) { .card-making__note,.card-making__reassurance,.card-making__background-note,.card-making__sync-row { color: #3d583f; } }

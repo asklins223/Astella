@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ObjectiveLibrarySurface } from "../library/WorkspaceLibrarySurface.tsx";
 import { retargetObjectiveLibraryView } from "../run/objective-library-view-state.ts";
@@ -87,16 +87,15 @@ afterEach(() => {
  * 而"哪一处显示了它"正是本文件要钉的东西。
  */
 function rowText(): string {
-  return document.querySelector(".v3-goal-row")?.textContent ?? "";
+  return document.querySelector(".card-collection__card")?.textContent ?? "";
 }
 
 async function openIndex(): Promise<void> {
-  const toggle = await waitFor(() => {
-    const button = document.querySelector<HTMLButtonElement>(".objective-expedition__index-toggle");
-    expect(button).not.toBeNull();
-    return button!;
-  });
-  fireEvent.click(toggle);
+  await waitFor(() => expect(document.querySelector(".card-collection__content")).not.toBeNull());
+}
+
+async function openPack(title: string) {
+  fireEvent.click(await screen.findByRole("button", { name: `打开卡包：${title}` }));
 }
 
 describe("理解目标列表行", () => {
@@ -105,6 +104,7 @@ describe("理解目标列表行", () => {
     render(<ObjectiveLibrarySurface />);
 
     await openIndex();
+    await openPack("物理笔记");
     await waitFor(() => expect(rowText()).toContain("还没正式答过"));
     expect(document.body.textContent).not.toContain("unvalidated");
   });
@@ -123,6 +123,7 @@ describe("理解目标列表行", () => {
     render(<ObjectiveLibrarySurface />);
 
     await openIndex();
+    await openPack("物理笔记");
     await waitFor(() => expect(rowText()).toContain("已经答对过"));
     expect(rowText()).toContain("正式答过 · 今天");
     expect(rowText()).toContain("复习 5 天后");
@@ -150,6 +151,7 @@ describe("理解目标列表行", () => {
     render(<ObjectiveLibrarySurface />);
 
     await openIndex();
+    await openPack("物理笔记");
     await waitFor(() => expect(rowText()).toMatch(/后才能正式答/));
     // 时间点必须渲染成"月日 时分"，不能把 ISO 串漏到界面上。
     expect(rowText()).toMatch(/\d+月\d+日 \d{2}:\d{2} 后才能正式答/);
@@ -180,10 +182,10 @@ describe("卡库按笔记成组（39 §8.5）", () => {
   }
 
   function groupHeads(): HTMLElement[] {
-    return [...document.querySelectorAll<HTMLElement>(".v3-note-group")];
+    return [...document.querySelectorAll<HTMLElement>(".card-collection__pack[data-note-group]")];
   }
 
-  it("顶层按笔记成组，一篇一个组；组头那三个数分开写", async () => {
+  it("顶层按笔记成组，一篇一个组；卡的真实复习安排保留在要点上", async () => {
     await renderIndex([
       row({ objectiveId: "00000000-0000-4000-8000-0000000000a1", primaryNoteId: NOTE_A, primaryNoteTitle: "力学笔记" }),
       row({ objectiveId: "00000000-0000-4000-8000-0000000000a2", primaryNoteId: NOTE_A, primaryNoteTitle: "力学笔记" }),
@@ -194,16 +196,14 @@ describe("卡库按笔记成组（39 §8.5）", () => {
         progress: { practiceTrailCount: 0, lastCanonicalAt: null, reviewDueAt: future(), initialValidation: null, validationNotBefore: null },
       }),
     ]);
-    const heads = groupHeads();
-    expect(heads.length).toBe(2);
-    // 组头那三个数**各自带标签**（§8.5「状态来源不同应分别标明」）。合成一个总数
-    // 就看不出"这张要核对、那张只是没到期"。
-    expect(heads[0]!.textContent).toContain("待复习");
-    expect(heads[0]!.textContent).toContain("可用");
-    expect(heads[0]!.textContent).toContain("待核对");
-    // 光学那篇有一张排着期的 ⇒ 它的「待复习」是 1，力学那篇是 0。
-    expect(heads.find((head) => head.textContent?.includes("光学笔记"))?.textContent).toContain("待复习 1");
-    expect(heads.find((head) => head.textContent?.includes("力学笔记"))?.textContent).toContain("待复习 0");
+    expect(groupHeads()).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "打开卡包：力学笔记" }).textContent).toContain("2 张学习卡");
+    await openPack("光学笔记");
+    expect(document.querySelectorAll(".card-collection__card")).toHaveLength(1);
+    expect(rowText()).toContain("复习 5 天后");
+    fireEvent.click(screen.getByRole("button", { name: "全部卡包" }));
+    await openPack("力学笔记");
+    expect(document.querySelectorAll(".card-collection__card")).toHaveLength(2);
   });
 
   it("正对照：没有笔记的那些进「未关联笔记」组，且不混进真实笔记的组", async () => {
@@ -225,8 +225,9 @@ describe("卡库按笔记成组（39 §8.5）", () => {
     await renderIndex([
       row({ objectiveId: "00000000-0000-4000-8000-0000000000a1", primaryNoteId: NOTE_A, primaryNoteTitle: "力学笔记", conceptLabel: "惯性与质量" }),
     ]);
-    expect(document.querySelectorAll(".v3-goal-row").length).toBe(1);
-    expect(document.querySelector(".v3-goal-row__title")?.textContent).toBe("惯性与质量");
+    await openPack("力学笔记");
+    expect(document.querySelectorAll(".card-collection__card").length).toBe(1);
+    expect(document.querySelector(".card-collection__card-body > strong")?.textContent).toBe("惯性与质量");
   });
 
   it("没有制作卡片的笔记目标不占焦点卡、卡组或卡片计数", async () => {
@@ -235,11 +236,12 @@ describe("卡库按笔记成组（39 §8.5）", () => {
       row({ objectiveId: "00000000-0000-4000-8000-0000000000b1", primaryNoteId: NOTE_B, primaryNoteTitle: "已制卡笔记", conceptLabel: "已保存卡片" }),
     ]);
 
-    expect(document.querySelector("#goal-focus-title")?.textContent).toBe("已保存卡片");
+    await openPack("已制卡笔记");
+    expect(document.querySelector(".card-collection__card-body > strong")?.textContent).toBe("已保存卡片");
     expect(groupHeads()).toHaveLength(1);
     expect(groupHeads()[0]?.textContent).toContain("已制卡笔记");
-    expect(document.querySelectorAll(".v3-goal-row")).toHaveLength(1);
-    expect(document.querySelector(".objective-expedition__index-toggle")?.textContent).toContain("共 1 张卡");
+    expect(document.querySelectorAll(".card-collection__card")).toHaveLength(1);
+    expect(document.querySelector(".card-collection__welcome")?.textContent).toContain("共 1 张卡");
     expect(document.body.textContent).not.toContain("无卡笔记目标");
   });
 
@@ -260,9 +262,10 @@ describe("卡库按笔记成组（39 §8.5）", () => {
     expect(document.querySelector(".objective-quest-node")).toBeNull();
 
     fireEvent.click(continueButton);
-    await waitFor(() => expect(document.querySelector("#goal-focus-title")?.textContent).toBe("后续页卡片"));
+    await openPack("物理笔记");
+    expect(document.querySelector(".card-collection__card-body > strong")?.textContent).toBe("后续页卡片");
     expect(api.objective.list).toHaveBeenCalledTimes(2);
     expect(api.objective.list.mock.calls[1]?.[0]?.cursor).toBe("later");
-    expect(document.querySelector(".objective-expedition__index-toggle")?.textContent).toContain("共 1 张卡");
+    expect(document.querySelector(".card-collection__welcome")?.textContent).toContain("共 1 张卡");
   });
 });

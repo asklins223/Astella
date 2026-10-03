@@ -10,12 +10,12 @@ import { useRoomStore } from "../../../app/room-store.ts";
  * 阅读屏上的版本标签必须跟着**真正渲染的那一份**（审计 F35）。
  *
  * 病是这么来的：正文优先画实时文档（未定版），标签却一直写「版本 v1」与
- * 「不可变版本：v1」——而 v1 是创建时那个空版本。用户以为自己读的是已定版的内容，
+ * 「已存版本 v1」——而 v1 是创建时那个空版本。用户以为自己读的是已定版的内容，
  * 实际读的是还没定版的那一份；列表卡与详情面也因此各说一套。
  *
  * 这一组钉两种来源各说各的实话：
- *  - 正文来自实时文档 → "未定版的当前内容"（并写明已存到哪一版），不出现"不可变版本"；
- *  - 正文来自已存版本（没有实时文档）→ "版本 v1" / "不可变版本：v1 · hash"。
+ *  - 正文来自实时文档 → "当前草稿"（并写明已存到哪一版），不出现"不可变版本"；
+ *  - 正文来自已存版本（没有实时文档）→ "版本 v1" / "已存版本 v1 · hash"。
  */
 
 const NOTE_ID = "11111111-1111-4111-8111-111111111111";
@@ -84,7 +84,7 @@ afterEach(() => {
 });
 
 describe("阅读屏的版本标签（审计 F35）", () => {
-  it("正文来自实时文档：写「未定版的当前内容」，不冒充「不可变版本」", async () => {
+  it("正文来自实时文档：写「当前草稿」，不冒充「不可变版本」", async () => {
     // 实时文档有正文；已存的 v1 是空的（正是审计现场的形状）。
     installApi(seedUpdate("新标题", ["刚写进去的那一段"]), [{ ordinal: 1, type: "paragraph", content: "" }]);
     vi.useFakeTimers();
@@ -93,7 +93,7 @@ describe("阅读屏的版本标签（审计 F35）", () => {
     await settle();
 
     // 假时钟下 waitFor 会自旋：settle 已经把这一屏推到位，直接断言。
-    expect(screen.getAllByText(/未定版的当前内容/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/当前草稿/).length).toBeGreaterThan(0);
     // 反向：这一屏不许出现"不可变版本"（那一版是空的，那句话是假的）。
     expect(screen.queryByText(/不可变版本/)).toBeNull();
     // 正文确实是实时文档里那一段。
@@ -109,7 +109,7 @@ describe("阅读屏的版本标签（审计 F35）", () => {
 
     expect(document.querySelector(".note-transcript")?.textContent).toContain("这一版正文还没有段落");
     expect(document.querySelector(".note-transcript")?.textContent).not.toContain("已定版的正文");
-    expect(screen.getAllByText(/未定版的当前内容/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/当前草稿/).length).toBeGreaterThan(0);
   });
 
   it("实时正文与已存版本一致时，版本标签确实显示不可变版本", async () => {
@@ -119,7 +119,7 @@ describe("阅读屏的版本标签（审计 F35）", () => {
     render(<NotebookSurface />);
     await settle();
     expect(document.querySelector(".note-transcript")?.textContent).toContain("已定版的正文");
-    expect(screen.getAllByText(/不可变版本：v1/).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/未定版的当前内容/)).toBeNull();
+    expect(screen.getAllByText(/已存版本 v1/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/当前草稿/)).toBeNull();
   });
 });
