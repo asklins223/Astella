@@ -50,7 +50,12 @@ const api: AILearnDesktopApi = {
   /**
    * 更新状态是主进程单方面推过来的（检查中 / 下载进度 / 已就绪），所以这里只订阅、
    * 只退订——没有"订阅 id"可言，也不走 `subscriptions` 那套 topic 重放。
-   * 首帧先补一次当前快照，免得界面在主进程下一次推送前一直空着。
+   *
+   * 这里**只做订阅，不做首帧补读**：`requestMetaSchema` 是 strictObject，要
+   * version / contractVersion / requestId / correlationId / clientStartedAt 五项，
+   * 而 preload 里没有渲染层那份 `createRequestMeta()`。硬凑一份必然缺字段，
+   * `readPayload` 判 invalid_request，补读会静默失败——比不补更难查。
+   * 补读交给渲染层：见 `app/update-status.ts` 的 `primeUpdateStatus()`。
    */
   onUpdateState: (listener) => {
     let active = true
@@ -65,12 +70,6 @@ const api: AILearnDesktopApi = {
     }
 
     ipcRenderer.on(UPDATE_STATE_CHANNEL, handleState)
-    void ipcRenderer
-      .invoke(DESKTOP_IPC_CHANNELS.updateGetState, { meta: { requestId: crypto.randomUUID() } })
-      .then((result: { ok: boolean; data?: { state: unknown } }) => {
-        if (result.ok && result.data) deliver(result.data.state)
-      })
-      .catch(() => undefined)
 
     return () => {
       active = false
@@ -204,6 +203,13 @@ const desktopApi: AILearnDesktopApiM2 = {
     createRun: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunCreate, input),
     reviseRun: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunRevise, input),
     controlRun: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunControl, input),
+    listMethods: (input) => invoke(DESKTOP_IPC_CHANNELS.agentMethodsList, input),
+    proposeMethod: (input) => invoke(DESKTOP_IPC_CHANNELS.agentMethodPropose, input),
+    reviseMethod: (input) => invoke(DESKTOP_IPC_CHANNELS.agentMethodRevise, input),
+    controlMethod: (input) => invoke(DESKTOP_IPC_CHANNELS.agentMethodControl, input),
+    getMethodHistory: (input) => invoke(DESKTOP_IPC_CHANNELS.agentMethodHistory, input),
+    getMethodUses: (input) => invoke(DESKTOP_IPC_CHANNELS.agentMethodUses, input),
+    feedbackMethod: (input) => invoke(DESKTOP_IPC_CHANNELS.agentMethodFeedback, input),
   },
   companion: {
     home: {

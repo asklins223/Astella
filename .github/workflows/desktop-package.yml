@@ -143,6 +143,78 @@ jobs:
         # `--publish never` 不影响 `latest.yml` 的生成：那份清单挂在
         # `event.isWriteUpdateInfo` 上，与是否真的上传无关。
         run: npm run package:win:x64 -- --publish never
+      - name: Verify installer lifecycle (install → reopen → uninstall)
+        shell: pwsh
+        working-directory: apps/desktop-client
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # 「能打出来」和「装得上、卸得掉」是两件事。这个 step 走一遍后者，
+          # 放在**上传之前**：装不上的包不该变成 artifact，更不该变成 Release。
+          #
+          # NSIS 静默安装：`/S` 静默，`/D=` 指定目录（oneClick:false 时
+          # electron-builder 仍支持这两个开关；`/currentuser` 是为了确定
+          # 不触发 UAC，runner 上没有提权交互）。
+          $ErrorActionPreference = 'Stop'
+          $releaseDir = (Resolve-Path 'release').Path
+          $installer = Get-ChildItem -Path $releaseDir -Filter 'ailearn-*-win-x64.exe' -File | Select-Object -First 1
+          if (-not $installer) { throw "找不到 Windows 安装包" }
+          Write-Host "安装包: $($installer.Name)  $([math]::Round($installer.Length / 1MB, 1)) MB"
+
+          $installDir = Join-Path $env:RUNNER_TEMP ("ailearn-install-" + [guid]::NewGuid().ToString('N'))
+          $appExe = Join-Path $installDir '理解引擎.exe'
+
+          # 卸载器默认放在 exe 同目录，名字是 `<productName> Uninstaller.exe`。
+          $uninstaller = Join-Path $installDir '理解引擎 Uninstaller.exe'
+
+          function Invoke-Checked([string]$File, [string[]]$Args) {
+            $p = Start-Process -FilePath $File -ArgumentList $Args -PassThru -Wait
+            if ($p.ExitCode -ne 0) { throw "退出码 $($p.ExitCode): $File $($Args -join ' ')" }
+          }
+
+          Write-Host '--- 1/4 静默安装 ---'
+          Invoke-Checked $installer.FullName @('/S', "/currentuser", "/D=$installDir")
+          if (-not (Test-Path -LiteralPath $appExe)) { throw "安装后没有 $appExe" }
+          Write-Host "已安装到 $installDir"
+
+          # 装出来的东西必须带得上更新通道：electron-updater 被 Vite 拆成懒加载
+          # chunk 放在 out/main/ 下，漏了它就等于没有自动更新。
+          $asar = Join-Path $installDir 'resources\app.asar'
+          if (-not (Test-Path -LiteralPath $asar)) { throw "安装后没有 resources\app.asar" }
+          Write-Host "app.asar $(([math]::Round((Get-Item $asar).Length / 1MB, 1))) MB"
+
+          Write-Host '--- 2/4 覆盖安装（这就是 electron-updater 走的升级分支）---'
+          Invoke-Checked $installer.FullName @('/S', '/currentuser', "/D=$installDir")
+          if (-not (Test-Path -LiteralPath $appExe)) { throw "覆盖安装后 $appExe 消失了" }
+          Write-Host '覆盖安装通过'
+
+          Write-Host '--- 3/4 启动已安装的程序 ---'
+          $app = Start-Process -FilePath $appExe -WorkingDirectory $installDir -PassThru
+          Start-Sleep -Seconds 25
+          $alive = -not $app.HasExited
+          if (-not $alive) { Write-Host "已安装程序提前退出，退出码 $($app.ExitCode)"; throw '已安装程序没能活到冒烟结束' }
+          Write-Host "已安装程序存活（pid $($app.Id)）"
+          Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+
+          Write-Host '--- 4/4 卸载 ---'
+          # NSIS 卸载器会派生一个子进程并立即返回父进程，所以等目录真的消失，
+          # 而不是等父进程退出就算完。
+          if (-not (Test-Path -LiteralPath $uninstaller)) {
+            $found = Get-ChildItem -Path $installDir -Filter '*ninstaller*.exe' -Recurse | Select-Object -First 1
+            if (-not $found) { throw '安装目录里找不到卸载器' }
+            $uninstaller = $found.FullName
+          }
+          Write-Host "卸载器: $(Split-Path -Leaf $uninstaller)"
+          Invoke-Checked $uninstaller @('/S', '/currentuser')
+          $deadline = (Get-Date).AddSeconds(120)
+          while ((Test-Path -LiteralPath $installDir) -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+          }
+          if (Test-Path -LiteralPath $installDir) { throw "卸载后安装目录仍在：$installDir" }
+          Write-Host '卸载后安装目录已消失'
+
+          Write-Host '安装 → 覆盖安装 → 启动 → 卸载 全链路通过'
+          Remove-Item -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
@@ -224,6 +296,85 @@ jobs:
         working-directory: apps/desktop-client
         # 同 Windows 那一节：CI + tag checkout 会让 electron-builder 自行尝试发布。
         run: npm run package:mac:${{ inputs.mac_arch || 'arm64' }} -- --publish never
+      - name: Verify macOS deliverables (zip → app bundle → launch)
+        working-directory: apps/desktop-client
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_ARCH: ${{ inputs.mac_arch || 'arm64' }}
+        run: |
+          set -euo pipefail
+          # macOS 自动更新走的是 **zip**（ShipIt 提取的就是它），dmg 只管首次安装。
+          # 所以"能装上"要验两件不同的事：dmg 挂得起来、zip 里有可用的 .app。
+          # 这一步放在上传之前：发出去的包自己都验不过，就别发。
+          zip_path="release/ailearn-${RELEASE_VERSION}-mac-${RELEASE_ARCH}.zip"
+          dmg_path="release/ailearn-${RELEASE_VERSION}-mac-${RELEASE_ARCH}.dmg"
+          test -s "$zip_path" || { echo "::error::缺少 $zip_path" >&2; exit 1; }
+          test -s "$dmg_path" || { echo "::error::缺少 $dmg_path" >&2; exit 1; }
+
+          echo '--- 1/4 解开 zip，验证 ShipIt 真正拿到的那一份可用 ---'
+          # 不去 grep \`unzip -l\` 的清单：zip 里的路径是中文（理解引擎.app），
+          # runner 的 locale 是 C.UTF-8，grep 碰到非法字节会直接判定为二进制而**不计数**，
+          # 于是一条本来有 10 行的清单会报 0——而且它报的还不是"没有 MacOS"，
+          # 是"没有匹配"，排查方向会被带到完全错误的地方。
+          # 直接解开更实在：ShipIt 做的就是这件事，验它等于验真家伙。
+          zip_dir="$(mktemp -d "$RUNNER_TEMP/ailearn-zip.XXXXXX")"
+          ditto -x -k "$zip_path" "$zip_dir"
+          zipped_app="$(find "$zip_dir" -maxdepth 2 -name '*.app' -type d | head -1)"
+          test -n "$zipped_app" || { echo "::error::zip 里没有 .app" >&2; exit 1; }
+          echo "zip 里的 bundle: $(basename "$zipped_app")"
+          test -x "$zipped_app/Contents/MacOS/理解引擎" || {
+            echo "::error::zip 里的 .app 没有可执行文件" >&2; exit 1; }
+          test -s "$zipped_app/Contents/Info.plist" || { echo "::error::zip 里的 .app 没有 Info.plist" >&2; exit 1; }
+          test -s "$zipped_app/Contents/Resources/app.asar" || { echo "::error::zip 里的 .app 没有 app.asar" >&2; exit 1; }
+          rm -rf "$zip_dir"
+
+          echo '--- 2/4 挂载 dmg 并核对 bundle ---'
+          mount_dir="$(mktemp -d "$RUNNER_TEMP/ailearn-dmg.XXXXXX")"
+          hdiutil attach "$dmg_path" -mountpoint "$mount_dir" -nobrowse -quiet
+          trap 'hdiutil detach "$mount_dir" -quiet || true; rm -rf "$mount_dir"' EXIT
+          # 传了 -mountpoint 就意味着卷一定落在 mount_dir 里，不必再去猜 /Volumes/…：
+          # 猜错时会走进"找不到 .app"的分支，而真实原因只是猜错了位置。
+          app="$(find "$mount_dir" -maxdepth 2 -name '*.app' -type d | head -1)"
+          test -n "$app" && test -d "$app" || { echo "::error::dmg 里找不到 .app" >&2; exit 1; }
+          echo "bundle: $app"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist"
+          test -s "$app/Contents/Resources/icon.icns" || { echo "::error::bundle 里没有 icon.icns" >&2; exit 1; }
+
+          # 自动更新的那半条命：electron-updater 被 Vite 拆成懒加载 chunk，
+          # 它不在包里 = 没有自动更新。
+          asar="$app/Contents/Resources/app.asar"
+          test -s "$asar" || { echo "::error::bundle 里没有 app.asar" >&2; exit 1; }
+          npx --yes asar list "$asar" > /tmp/ailearn-asar-list.txt 2>/dev/null || true
+          grep -q '^/out/main/index.js$' /tmp/ailearn-asar-list.txt || {
+            echo "::error::asar 里没有 out/main/index.js" >&2; exit 1; }
+          updater_chunk="$(grep -c '^/out/main/main-.*\.js$' /tmp/ailearn-asar-list.txt || true)"
+          if [ "$updater_chunk" -lt 1 ]; then
+            echo "::error::asar 里找不到 electron-updater 的懒加载 chunk（out/main/main-*.js）" >&2
+            exit 1
+          fi
+          echo "electron-updater chunk 已随包分发：${updater_chunk} 个"
+
+          echo '--- 3/4 启动 bundle ---'
+          "$app/Contents/MacOS/理解引擎" > "$RUNNER_TEMP/ailearn-launch.log" 2>&1 &
+          app_pid=$!
+          sleep 25
+          if ! kill -0 "$app_pid" 2>/dev/null; then
+            wait "$app_pid" || true
+            echo '::error::已安装的 macOS 应用提前退出' >&2
+            tail -40 "$RUNNER_TEMP/ailearn-launch.log" >&2 || true
+            exit 1
+          fi
+          echo "已安装应用存活（pid ${app_pid}）"
+          kill "$app_pid" 2>/dev/null || true
+          wait "$app_pid" 2>/dev/null || true
+
+          echo '--- 4/4 latest-mac.yml 指向的就是这份 zip ---'
+          cat release/latest-mac.yml
+          grep -q "path: ailearn-${RELEASE_VERSION}-mac-${RELEASE_ARCH}.zip" release/latest-mac.yml || {
+            echo "::error::latest-mac.yml 的 path 与实际 zip 不一致" >&2; exit 1; }
+
+          echo 'dmg / zip / bundle / 启动 / 更新清单 全链路通过'
       - name: Upload macOS installers
         uses: actions/upload-artifact@v4
         with:

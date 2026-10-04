@@ -40,6 +40,26 @@ const CHECK_CACHE_MS = 6 * 60 * 60 * 1000
 /** 单次检查的网络超时，避免窗口一直挂在"正在检查"。 */
 const CHECK_TIMEOUT_MS = 30_000
 
+/**
+ * Release 仓库。与 `electron-builder.yml` 的 `publish.github` 是同一处配置的两个
+ * 副本——这里再写一遍，是为了让「去下载页」那条链接能自己算出来，而不用把整份
+ * 打包配置读进运行时。**改仓库地址时两处要一起改。**
+ */
+const PUBLISH_OWNER = 'asklins223'
+const PUBLISH_REPO = 'ai-learning-system'
+const DESKTOP_TAG_PREFIX = 'desktop-v'
+
+/**
+ * 对应版本的 Release 页。
+ *
+ * macOS 未签名时安装不了，界面要给出"去下载页手动装"的路——那条链接必须真的有
+ * href，不能是个点了没反应的 `<a>`。按 tag 规则（desktop-v<version>）拼，
+ * 与 `.github/scripts/desktop-version.mjs` 的 DESKTOP_TAG_PREFIX 是同一套约定。
+ */
+function releasePageUrl(version: string): string {
+  return `https://github.com/${PUBLISH_OWNER}/${PUBLISH_REPO}/releases/tag/${DESKTOP_TAG_PREFIX}${version}`
+}
+
 interface PersistedCheck {
   readonly checkedAt: number
   readonly state: UpdateStateV1
@@ -48,6 +68,22 @@ interface PersistedCheck {
 let currentState: UpdateStateV1 | null = null
 let autoUpdater: import('electron-updater').AppUpdater | null = null
 let macosUnsigned: boolean | null = null
+
+/**
+ * 当前正在做的是哪一步。
+ *
+ * ## 为什么必须区分
+ *
+ * `electron-updater` 把两类完全不同的事都塞进 `error` 事件：查不到版本信息
+ * （GitHub 403 限额、断网）和更新本身真的坏了（校验不过、装不上）。
+ * 前者是"没问到"，后者是"坏了"，对用户是两句话。
+ *
+ * 不区分的话，一次限额会先被 error 事件判成 `failed`（渲染层据此弹一条
+ * "这次更新没能完成"），随后 checkForUpdates 的 catch 又把它改成 `unreachable`——
+ * 也就是说**用户会收到一条纯属捏造的失败通知**，而实际上更新啥事都没发生。
+ */
+type UpdateOperation = 'check' | 'download' | 'install' | null
+let operation: UpdateOperation = null
 
 function statePath(): string {
   return join(app.getPath('userData'), 'update-state.json')
@@ -180,6 +216,8 @@ async function loadAutoUpdater(): Promise<import('electron-updater').AppUpdater 
           phase: 'available',
           availableVersion: info.version,
           releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : null,
+          // macOS 未签名那条提示里的「下载页」靠这个字段；没有它那条链接点不动。
+          releaseUrl: releasePageUrl(info.version),
           message: null,
           installBlockedReason: detectMacosUnsigned() ? 'macosUnsigned' : null,
         }),
@@ -224,7 +262,9 @@ async function loadAutoUpdater(): Promise<import('electron-updater').AppUpdater 
     })
 
     loaded.on('error', (error: Error) => {
-      failed(error.message || '更新失败')
+      // 检查阶段的失败是"没问到"，不是"更新坏了"——见 UpdateOperation 的说明。
+      if (operation === 'check') unreachable(error.message || '暂时拿不到更新信息。')
+      else failed(error.message || '更新失败')
     })
 
     autoUpdater = loaded
@@ -256,6 +296,7 @@ export async function checkForUpdates(options: { userInitiated: boolean }): Prom
   if (!updater) return failed('更新模块加载失败。')
 
   publish(updateStateV1Schema.parse({ ...getUpdateState(), phase: 'checking', message: null }))
+  operation = 'check'
 
   try {
     const result = await updater.checkForUpdates()
@@ -267,17 +308,22 @@ export async function checkForUpdates(options: { userInitiated: boolean }): Prom
     return getUpdateState()
   } catch (error) {
     return unreachable(error instanceof Error ? error.message : '暂时拿不到更新信息。')
+  } finally {
+    operation = null
   }
 }
 
 export async function downloadUpdate(): Promise<UpdateStateV1> {
   const updater = await loadAutoUpdater()
   if (!updater) return failed('更新模块加载失败。')
+  operation = 'download'
   try {
     await updater.downloadUpdate()
     return getUpdateState()
   } catch (error) {
     return failed(error instanceof Error ? error.message : '下载失败。')
+  } finally {
+    operation = null
   }
 }
 
@@ -290,11 +336,14 @@ export async function installUpdate(): Promise<UpdateStateV1> {
     return failed('这份 macOS 安装包没有代码签名，系统不允许自动替换应用。请到下载页手动安装。')
   }
 
+  operation = 'install'
   try {
     updater.quitAndInstall(false, true)
     return getUpdateState()
   } catch (error) {
     return failed(error instanceof Error ? error.message : '安装失败。')
+  } finally {
+    operation = null
   }
 }
 
@@ -302,4 +351,19 @@ export async function installUpdate(): Promise<UpdateStateV1> {
 export function primeUpdateStateFromCache(): void {
   const cached = loadPersistedCheck()
   if (cached) publish(cached.state)
+}
+
+/**
+ * 只给测试用：清掉模块级的三个单例。
+ *
+ * `currentState` / `autoUpdater` / `macosUnsigned` 是这个模块的私有状态，
+ * 而 `electron-updater` 只在第一次调用时加载——测试之间不复位的话，第二条用例
+ * 会拿到上一条留下的 autoUpdater，整个文件只能跑第一条。
+ * 生产代码路径里没有任何地方调用它。
+ */
+export function resetUpdateModuleForTests(): void {
+  currentState = null
+  autoUpdater = null
+  macosUnsigned = null
+  operation = null
 }

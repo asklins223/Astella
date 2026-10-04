@@ -101,6 +101,25 @@ export function hasActionableUpdate(state: UpdateStateV1): boolean {
 }
 
 /**
+ * 补读一次当前状态。
+ *
+ * 必须由渲染层做：preload 拿不到 `createRequestMeta()`，而 `requestMetaSchema`
+ * 是 strictObject，缺任何一个字段都会被 `readPayload` 判成 invalid_request——
+ * 补读静默失败，界面就一直空着，直到主进程下一次推送。
+ *
+ * 主进程启动时会用上次的结果打底（`primeUpdateStateFromCache`），那一帧不会再推
+ * 第二遍，所以**只靠订阅会漏掉「重启后就有一个新版本」**。补的就是这一下。
+ */
+async function primeUpdateStatus(): Promise<void> {
+  try {
+    const result = await window.ailearn.update.getState({ meta: createRequestMeta() });
+    if (result.ok) useUpdateStatus.getState().accept(result.data.state);
+  } catch {
+    // 主进程不可用（浏览器预览）时保持 idle 即可，不要抛。
+  }
+}
+
+/**
  * 主进程那条推送的唯一订阅点。挂在伴星通知中心（见
  * `use-companion-notification-sources.ts`）——那是整块通知机制本来就有的落点，
  * 它的生命周期与窗口一致，所以更新状态不会因为进出设置页而丢。
@@ -110,6 +129,7 @@ export function useUpdateStatusSubscription(): void {
     // `ailearnDesktop` 在浏览器预览（无 preload）下不存在，那里没有主进程。
     const bridge = window.ailearnDesktop;
     if (!bridge) return;
+    void primeUpdateStatus();
     return bridge.onUpdateState(state => useUpdateStatus.getState().accept(state));
   }, []);
 }
