@@ -110,6 +110,10 @@ jobs:
           echo "version=$(node -e "console.log(require('./release/desktop-version.json').version)")" >> "$GITHUB_OUTPUT"
           echo "Windows build version: $(node -e "console.log(require('./release/desktop-version.json').version)")"
       - name: Configure Windows signing
+        # shell 必须显式声明：windows runner 默认是 pwsh，而下面这段是 bash
+        # （`set -euo pipefail` / `[ -n … ]` / `$GITHUB_ENV`）。macOS runner 默认就是
+        # bash，那一侧不需要这一行。
+        shell: bash
         # ⚠️ 不能写成 `CSC_LINK: ${{ secrets.WIN_CSC_LINK }}`——secret 不存在时
         # GitHub 会把它渲染成**空字符串但仍然定义**，electron-builder 于是认为
         # "签名已配置"，去把空串当前缀证书路径解析：
