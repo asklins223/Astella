@@ -183,16 +183,26 @@ jobs:
           Write-Host '--- 1/3 静默安装 ---'
           Invoke-Checked $installer.FullName @('/S')
 
+          # 装到哪里**不去猜**：注册表的 DisplayName 由 NSIS 模板写成 APP_FILENAME，
+          # 目录名也未必等于产品名（中文名 + 版本都可能参与）。三条路依次试，
+          # 都不中就把 Programs 目录原样列出来——否则报错只有一句"找不到"，
+          # 下一个人还得从头猜一遍当初猜错了什么。
           $installDir = $null
           $uninstallKey = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue |
-            Where-Object { $_.GetValue('DisplayName') -eq '理解引擎' } | Select-Object -First 1
+            Where-Object { $_.GetValue('InstallLocation') -and (Test-Path -LiteralPath ([string]$_.GetValue('InstallLocation'))) -and $_.GetValue('InstallLocation') -like '*理解引擎*' } |
+            Select-Object -First 1
           if ($uninstallKey) { $installDir = [string]$uninstallKey.GetValue('InstallLocation') }
-          if (-not $installDir -or -not (Test-Path -LiteralPath $installDir)) {
-            $candidate = Join-Path $env:LOCALAPPDATA 'Programs\理解引擎'
-            if (Test-Path -LiteralPath $candidate) { $installDir = $candidate }
+
+          if (-not $installDir) {
+            $hit = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Programs') -Filter '理解引擎.exe' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+            if ($hit) { $installDir = $hit.DirectoryName }
           }
-          if (-not $installDir -or -not (Test-Path -LiteralPath $installDir)) {
-            throw "安装后找不到安装目录（注册表与 %LOCALAPPDATA%\Programs 都没有）"
+
+          if (-not $installDir) {
+            $listing = (Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'Programs') -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty Name) -join ', '
+            throw "安装器跑完了，但没在 %LOCALAPPDATA%\Programs 下找到 理解引擎.exe。`n实际内容: [$listing]"
           }
           $appExe = Join-Path $installDir '理解引擎.exe'
           if (-not (Test-Path -LiteralPath $appExe)) { throw "安装目录里没有 $appExe" }
