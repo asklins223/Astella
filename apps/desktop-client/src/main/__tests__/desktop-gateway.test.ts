@@ -2291,15 +2291,16 @@ describe("account AI settings", () => {
     await gateway.connect();
     const projection = await ns_source.getCapabilities(gateway.gatewayTransport, );
 
-    // 剪贴板与 ASR 通道已经实现（clipboardReadLinks / companionVoiceTranscribe，
-    // 后者 2026-09-18 接线：本地 SenseVoice 优先、云 `/voice/transcribe` 兜底），
-    // 其余仍没有对应通道——答案来自通道注册表，而不是服务端。
+    // 剪贴板、ASR 与自动更新通道已经实现（clipboardReadLinks /
+    // companionVoiceTranscribe / updateCheck），其余仍没有对应通道——答案来自通道
+    // 注册表，而不是服务端。自动更新 2026-10-04 接线：检查 / 下载 / 重启安装，
+    // 更新源是 GitHub Releases 直连。
     expect(projection.nativeCapabilities).toEqual({
       filePicker: "unavailable",
       clipboard: "available",
       notifications: "unavailable",
       asr: "available",
-      updates: "unavailable",
+      updates: "available",
       live2d: "unavailable",
     });
     expect(capabilityProjectionSchema.safeParse(projection).success).toBe(true);

@@ -3,6 +3,7 @@ import { SettingRow, SettingsInlineState, type SettingsReadable } from "./settin
 import { SettingsCompanionPanel } from "./settings-companion-panel";
 import { SettingsAccountPanel } from "./settings-account-panel.tsx";
 import { SettingsExportGroup } from "./settings-export-group.tsx";
+import { SettingsUpdateGroup, useUpdateStatus } from "./settings-update-panel.tsx";
 import { SettingsThemePicker, themeLabel } from "./settings-theme-picker.tsx";
 import { SettingsInviteJoinField } from "./settings-invite-join-field.tsx";
 import { SettingsMotionPreview } from "./settings-motion-preview";
@@ -319,6 +320,11 @@ export function SettingsSurface() {
   const setSettingsAttention = useRoomStore((state) => state.setSettingsAttention);
   const setHudPage = useRoomStore((state) => state.setHudPage);
   const closeSurface = useRoomStore((state) => state.closeSurface);
+  /**
+   * 更新状态是一条常驻的推送：主进程检查/下载/安装的每一步都推过来，
+   * 设置页只是把它摆出来。订阅在 `useUpdateStatus` 里随挂载建立、随卸载退订。
+   */
+  const update = useUpdateStatus();
   const invoke = useRoomStore((state) => state.invoke);
   const { replayIntro } = useHomeV2();
   const [directoryMode, setDirectoryMode] = useState<DirectoryRailMode>(readDirectoryRailMode);
@@ -1874,6 +1880,13 @@ export function SettingsSurface() {
             onImport={importMarkdownFiles}
             onImported={invoke}
             onCloseSurface={closeSurface}
+          />
+          <SettingsUpdateGroup
+            state={update.state}
+            busy={update.busy}
+            onCheck={update.check}
+            onDownload={update.download}
+            onInstall={update.install}
           />
         </div>
 

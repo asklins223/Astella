@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -16,6 +16,22 @@ const evidenceRoot = resolve(appRoot, '../../.impeccable/evidence')
 const execFileAsync = promisify(execFile)
 const require = createRequire(import.meta.url)
 const { extractFile, listPackage } = require('@electron/asar')
+
+/**
+ * 打包后的可执行文件名就是 `productName`（electron-builder 拿它当 bundle 名）。
+ * 这里从 `electron-builder.yml` 读，而不是把「AI Learn」抄一遍——2026-10-04 产品名
+ * 改成「理解引擎」时，抄写的那份就静默失效了：脚本找不到包，报的还是"请先跑
+ * `npm run dist`"，而 dist 其实已经跑过、包就在那儿。
+ */
+function packagedProductName() {
+  const configPath = resolve(appRoot, 'electron-builder.yml')
+  if (!existsSync(configPath)) return 'AI Learn'
+  const line = readFileSync(configPath, 'utf8').split('\n').find((row) => /^productName:\s*/.test(row))
+  const name = line?.replace(/^productName:\s*/, '').trim()
+  return name || 'AI Learn'
+}
+
+const productName = packagedProductName()
 const rejectedRuntimeMedia = [
   'graph-entry-fog-v1.mp4',
   'validation-ink-bloom-v1.mp4',
@@ -39,12 +55,12 @@ const outManifestPath = resolve(appRoot, 'out/renderer/assets/learning-room/v1/m
 
 function candidateExecutables() {
   if (process.platform === 'darwin') {
-    return [resolve(appRoot, 'release/mac-arm64/AI Learn.app/Contents/MacOS/AI Learn')]
+    return [resolve(appRoot, `release/mac-arm64/${productName}.app/Contents/MacOS/${productName}`)]
   }
   if (process.platform === 'win32') {
-    return [resolve(appRoot, 'release/win-unpacked/AI Learn.exe')]
+    return [resolve(appRoot, `release/win-unpacked/${productName}.exe`)]
   }
-  return [resolve(appRoot, 'release/linux-unpacked/AI Learn')]
+  return [resolve(appRoot, `release/linux-unpacked/${productName}`)]
 }
 
 function packagedExecutable() {

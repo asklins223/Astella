@@ -1,0 +1,73 @@
+/* 设置页「更新」那一组。
+ *
+ * 配色沿用设置册的薄荷／奶油纸面，不另起一套色——这几行是设置页的一部分，
+ * 不是"系统对话框"。
+ *
+ * 动效只做两件事：进度条填充用 `transform: scaleX`（合成层，不触发布局），
+ * 以及按钮按下时原有的 3px 阴影收成 1px。**没有循环动画**——下载中如果有一个
+ * 不停转的圈，读起来像"还在忙"而不是"在下载"，而真实的百分比才是进度本身。
+ * prefers-reduced-motion 下过渡归零，但进度条仍然按真实字节推进。
+ */
+
+.hud-surface .settings-update__progress {
+  color: #4a7559;
+  font: 700 12px/1.45 "Noto Sans SC Variable", sans-serif;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-surface .settings-progress {
+  grid-column: 1 / -1;
+  position: relative;
+  height: 8px;
+  margin: 2px 0 6px;
+  border-radius: 999px;
+  background: #e4ecd8;
+  overflow: hidden;
+}
+
+.hud-surface .settings-progress__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8bc3a3, #a9d4b4);
+  transform-origin: left center;
+  transition: transform 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* 「暂时没问到」与「更新坏了」必须长得不一样：前者用纸面中性色，
+   后者才用暖色。后者出现得少，才配得上显眼。 */
+.hud-surface .settings-note {
+  grid-column: 1 / -1;
+  margin: 6px 0 2px;
+  color: #5f7a5c;
+  font: 12px/1.75 "Noto Sans SC Variable", sans-serif;
+  overflow-wrap: anywhere;
+}
+
+.hud-surface .settings-note a {
+  color: #3f7a55;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.hud-surface .settings-note--error {
+  color: #955d45;
+}
+
+.hud-surface .settings-update-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid #a1cfab;
+  border-radius: 999px;
+  background: #edf5df;
+  color: #3f7a55;
+  font: 700 11px/1.5 "Noto Sans SC Variable", sans-serif;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-surface .settings-progress__fill { transition: none; }
+}

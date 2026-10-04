@@ -1,0 +1,232 @@
+name: Desktop release
+
+# ============================================================================
+# 桌面端发版：desktop-v* tag → 两端并行打包 → 汇总 → 建 Draft Release → 公开
+# ============================================================================
+#
+# ## 为什么 tag 叫 `desktop-v*` 而不是 `v*`
+#
+# 这个仓库把客户端和服务端放在一个 git 仓库里，但两条版本线的节奏不同：
+# 服务端按 `release/version.json` 发 `v0.5.0`，桌面端按 `release/desktop-version.json`
+# 发 `desktop-v0.1.0`。如果两端都用 `v*` 前缀，`inspectExactReleaseTags` 会把对方的
+# tag 当成版本冲突，而 `ci.yml` 的 `push.tags: ["v*"]` 也会被桌面端的每次发版拽起来
+# （后端那套 typecheck + E2E + 基础设施，与装一个客户端包毫无关系）。
+#
+# `desktop-v*` 两边都不匹配，所以：
+#   - 服务端版本契约看不见它（`parseReleaseTag('desktop-v1.0.0')` 返回 null）；
+#   - ci.yml 不会被它触发（tag 不是以 `v` 开头）。
+#
+# 代价是多打七个字，但换来"看一眼 tag 就知道是哪一端在发版"，以及两条线互不干扰。
+#
+# ## 为什么先建 Draft 再公开
+#
+# 更新器读的是 Release 里的资产。如果边传边公开，更新器可能在只传了一半的时候
+# 就看到这条 Release——然后去下一个还没传完的 `latest.yml`，或者去下一个还没传完的
+# 安装包。所以：**全部资产传完并校验过，才把 draft 翻成 published**。
+#
+# ## 版本从哪来
+#
+# 唯一来源是 `release/desktop-version.json`，构建前由
+# `.github/scripts/desktop-version.mjs` 同步到 `apps/desktop-client/package.json`
+# 与其 lockfile——electron-builder 的 `${version}` 取自 package.json，
+# 产物名 `ailearn-<version>-win-x64.exe` 里的版本号就是这么来的。
+# tag 必须与它一致，否则两端产物与 Release 标题会各说各话。
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 版本号（留空则用 tag / release/desktop-version.json）
+        type: string
+        default: ""
+      mac_arch:
+        description: macOS 架构
+        type: choice
+        default: arm64
+        options:
+          - arm64
+          - x64
+
+permissions:
+  contents: read
+
+# 同一个 tag 被重新推送时，新一轮应当取代上一轮，而不是两轮都把 Release 传一遍。
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  resolve:
+    name: Resolve release version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      from_tag: ${{ steps.resolve.outputs.from_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/desktop-client/package-lock.json
+
+      - name: Resolve and verify the release version
+        id: resolve
+        run: |
+          set -euo pipefail
+          node .github/scripts/desktop-version.mjs --check
+
+          requested="${{ inputs.version }}"
+          is_tag="false"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            tag_version="$(node .github/scripts/desktop-version.mjs --tag "${{ github.ref_name }}")"
+            is_tag="true"
+            if [ -z "$requested" ]; then requested="$tag_version"; fi
+            # tag 与唯一来源不一致时直接停：继续下去只会得到一个"标题写 v1.2.0、
+            # 产物里却是 0.1.0"的 Release，而更新器读到的是后者。
+            source_version="$(node -e "console.log(require('./release/desktop-version.json').version)")"
+            if [ "$tag_version" != "$source_version" ]; then
+              echo "::error::tag ${{ github.ref_name }} 指向 $tag_version，但 release/desktop-version.json 是 $source_version。请先改版本号再打 tag。" >&2
+              exit 1
+            fi
+          fi
+
+          if [ -n "$requested" ]; then
+            node .github/scripts/desktop-version.mjs --set "$requested"
+          fi
+          version="$(node -e "console.log(require('./release/desktop-version.json').version)")"
+          node .github/scripts/desktop-version.mjs --check
+
+          tag="desktop-v${version}"
+          if [ "${{ github.ref_type }}" = "tag" ]; then tag="${{ github.ref_name }}"; fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "from_tag=${is_tag}" >> "$GITHUB_OUTPUT"
+          echo "release tag: ${tag}  version: ${version}"
+
+  build:
+    name: Build both platforms
+    needs: resolve
+    uses: ./.github/workflows/desktop-package.yml
+    with:
+      version: ${{ needs.resolve.outputs.version }}
+      mac_arch: ${{ inputs.mac_arch || 'arm64' }}
+    secrets: inherit
+
+  release:
+    name: Publish release
+    needs: [resolve, build]
+    # 只有带 tag 的那次才发 Release。手动触发的是"打个包看看"，不该改写公开的发布页。
+    if: needs.resolve.outputs.from_tag == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/desktop-client/package-lock.json
+
+      - name: Download both platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Verify cross-platform version consistency
+        env:
+          WINDOWS_VERSION: ${{ needs.build.outputs.windows_version }}
+          MACOS_VERSION: ${{ needs.build.outputs.macos_version }}
+          MACOS_ARCH: ${{ needs.build.outputs.macos_arch }}
+          EXPECTED_VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "expected=${EXPECTED_VERSION} windows=${WINDOWS_VERSION} macos=${MACOS_VERSION}"
+          test "$WINDOWS_VERSION" = "$EXPECTED_VERSION"
+          test "$MACOS_VERSION" = "$EXPECTED_VERSION"
+
+          # 两个平台必须打出**同一个版本**的包：自动更新按版本号判新旧，
+          # 两端版本分叉意味着"一半用户永远升不到最新"。
+          win_installer="artifacts/ailearn-${EXPECTED_VERSION}-win-x64.exe"
+          win_blockmap="${win_installer}.blockmap"
+          mac_zip="artifacts/ailearn-${EXPECTED_VERSION}-mac-${MACOS_ARCH}.zip"
+          mac_dmg="artifacts/ailearn-${EXPECTED_VERSION}-mac-${MACOS_ARCH}.dmg"
+
+          for f in "$win_installer" "$win_blockmap" "$mac_zip" "$mac_dmg"; do
+            if [ ! -s "$f" ]; then echo "::error::缺少发布产物: $f" >&2; exit 1; fi
+            echo "ok  $f  ($(du -h "$f" | cut -f1))"
+          done
+
+          # electron-builder 在 publish.provider 配好时会写出这两个更新清单。
+          # 少了 latest.yml，Windows 客户端就永远看不到新版本；
+          # 少了 latest-mac.yml，macOS 同理。**必须在上传前查**。
+          latest_win="artifacts/latest.yml"
+          latest_mac="artifacts/latest-mac.yml"
+          if [ ! -s "$latest_win" ]; then
+            echo "::error::缺少 ${latest_win}：没有它，Windows 自动更新拿不到版本信息。" >&2
+            exit 1
+          fi
+          if [ ! -s "$latest_mac" ]; then
+            echo "::warning::缺少 ${latest_mac}：macOS 自动更新将无法发现新版本（该端目前也需要签名才能安装更新）。"
+          else
+            echo "ok  ${latest_mac}"
+          fi
+
+          echo "--- latest.yml ---"
+          cat "$latest_win"
+
+      - name: Write release notes
+        run: |
+          cat > release-notes.md <<'EOF'
+          **安装包未签名**：macOS 首次打开请右键 → 打开；Windows 首次运行会经过 SmartScreen。
+          macOS 的**自动更新安装**需要代码签名，当前尚未配置证书——请手动下载 dmg 安装。
+          Windows 的自动更新不受此限制。
+
+          更新走 GitHub Releases 直连下载，不经过本项目服务器。
+          EOF
+
+      - name: Create draft release and upload all assets
+        id: upload
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: 理解引擎 ${{ needs.resolve.outputs.tag }}
+          # 变更清单交给 GitHub 自己按 tag 区间生成（比在 runner 上手搓 git log
+          # 可靠：runner 里只有浅检出，父提交常常不在本地）。
+          generate_release_notes: true
+          body_path: release-notes.md
+          draft: true
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(needs.resolve.outputs.version, '-') }}
+          files: |
+            artifacts/latest.yml
+            artifacts/ailearn-${{ needs.resolve.outputs.version }}-win-x64.exe
+            artifacts/ailearn-${{ needs.resolve.outputs.version }}-win-x64.exe.blockmap
+            artifacts/ailearn-${{ needs.resolve.outputs.version }}-mac-${{ needs.build.outputs.macos_arch }}.zip
+            artifacts/ailearn-${{ needs.resolve.outputs.version }}-mac-${{ needs.build.outputs.macos_arch }}.dmg
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.upload.outputs.id }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RELEASE_ID" ]; then
+            echo "::error::Release action 没有返回 Release ID，无法公开" >&2
+            exit 1
+          fi
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=false >/dev/null
+          echo "全部资产已上传，Release ${{ needs.resolve.outputs.tag }} 已公开"

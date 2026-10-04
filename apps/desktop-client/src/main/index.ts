@@ -14,6 +14,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { createAssetResponsePlan, mimeTypeForPath } from './asset-response'
 import { VoiceAsrModelStore, voiceAsrModelSources } from './voice-asr-model-store'
+import { primeUpdateStateFromCache } from './desktop-update'
 import { voiceAsrModelDirectory } from '../shared/voice-asr-model-path'
 import { createVoiceAsrModelResponder } from './voice-asr-model-route'
 import { VOICE_ASR_MODEL_ROUTE_PREFIX } from '@ailearn/shared/voice-asr-model-contracts'
@@ -642,6 +643,13 @@ if (!app.requestSingleInstanceLock()) {
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null)
+  /**
+   * 用上一次查到的结果给界面打底（2026-10）。不联网、不预取安装包——
+   * 只是让「有新版本 vX.Y.Z」这类提示在用户点开设置页之前就已经在。
+   * GitHub 匿名 API 有 60 次/小时/IP 的限额，所以自动检查走 6 小时缓存，
+   * 真正联网的那一次由渲染层主动触发。
+   */
+  primeUpdateStateFromCache()
   /**
    * 本地语音识别模型的仓库（2026-10）。它**不在安装包里**：目录是空的，
    * 用户在设置里点过下载之后才会有第一份字节。清掉上一次没下完的半截文件，

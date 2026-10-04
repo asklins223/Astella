@@ -56,6 +56,7 @@ import "./components/surfaces/companion-center.css";
 import "./components/surfaces/settings/settings-companion.css";
 import "./components/surfaces/settings/settings-book.css";
 import "./components/surfaces/settings/settings-voice-model.css";
+import "./components/surfaces/settings/settings-update.css";
 import "./components/companion/companion-notifications.css";
 
 /* ── 4b. 功能层：各页面自己的版式 ───────────────────────────────────────── */

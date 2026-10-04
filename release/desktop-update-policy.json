@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "mode": "optional",
+    "minimumSupportedVersion": null,
+    "message": "这是一个可选更新，不会打断你正在做的事。"
+  }
+}

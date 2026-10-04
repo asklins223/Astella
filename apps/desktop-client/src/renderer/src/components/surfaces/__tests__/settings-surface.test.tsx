@@ -1519,8 +1519,10 @@ describe("设置中心把这一屏登记给伴星读（39d W2-7）", () => {
       value: stat.querySelector("b")?.textContent,
     })));
     assertRowAccounting(view.items?.map((item) => item.label) ?? [],
-      ["导出工作区（只读存档）", "导入 Markdown 笔记", "删除来源与笔记"]);
+      ["导出工作区（只读存档）", "导入 Markdown 笔记", "删除来源与笔记", "客户端更新"]);
     expect(stateOf("系统通知")).toBeUndefined();
+    // 「自动更新」这一行属于"设备功能状态"分组，不登记进"数据与维护"这一格，
+    // 所以在数据与维护的视角里它本就不该出现——与接线状态无关。
     expect(stateOf("自动更新")).toBeUndefined();
     expect(screen.queryByText("可见空间")).toBeNull();
   });

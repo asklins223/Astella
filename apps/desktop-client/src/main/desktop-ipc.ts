@@ -12,6 +12,12 @@ import { registerWorkspaceChannels, authUpdateProfileInputSchema, authAvatarUplo
 import { registerCompanionChannels, runtimeInputSchema, companionMemoryIdInputSchema, sourceListInputSchema, sourceCreateInputSchema, sourceGetInputSchema, sourceNotesInputSchema, sourceUpdateInputSchema, sourceCreateNoteInputSchema, sourceArchiveInputSchema, sourceReparseInputSchema, sourceRestoreInputSchema, sourceImageGetInputSchema } from "./desktop-ipc-companion";
 import * as ns_note from "./desktop-gateway-ns-note";
 import * as ns_companion from "./desktop-gateway-ns-companion";
+import {
+  checkForUpdates,
+  downloadUpdate,
+  getUpdateState,
+  installUpdate,
+} from "./desktop-update";
 import * as ns_learning from "./desktop-gateway-ns-learning";
 import * as ns_workspace from "./desktop-gateway-ns-workspace";
 import * as ns_auth from "./desktop-gateway-ns-auth";
@@ -69,6 +75,12 @@ import {
   isWebLinkUrl,
   shellOpenExternalRequestV1Schema,
   shellOpenExternalResultV1Schema,
+  updateGetStateInputV1Schema,
+  updateGetStateResultV1Schema,
+  updateCheckInputV1Schema,
+  updateDownloadInputV1Schema,
+  updateInstallInputV1Schema,
+  updateStateV1Schema,
   desktopContractSnapshotSchema,
   desktopNamespaceM2Values,
   desktopRouteKindM2Values,
@@ -1802,6 +1814,26 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     await shell.openExternal(new URL(input.request.url).toString());
     return { opened: true as const };
   }, undefined, shellOpenExternalResultV1Schema);
+
+  // 自动更新。更新源是 GitHub Releases，主进程直连，不过 apps/api；
+  // 状态由 desktop-update 单方面推给渲染层，这里只收四个动作。
+  installHandler(DESKTOP_IPC_CHANNELS.updateGetState, updateGetStateInputV1Schema, options, () => {
+    return { state: getUpdateState() };
+  }, undefined, updateGetStateResultV1Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.updateCheck, updateCheckInputV1Schema, options, async (_event, _window, input) => {
+    // schema 的 `.default(false)` 在**输出**上补值，`z.input` 上仍是可选的，
+    // 所以这里显式收口——渲染层不传就是"非主动触发"，走 6 小时缓存。
+    return checkForUpdates({ userInitiated: input.userInitiated === true });
+  }, undefined, updateStateV1Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.updateDownload, updateDownloadInputV1Schema, options, async () => {
+    return downloadUpdate();
+  }, undefined, updateStateV1Schema);
+
+  installHandler(DESKTOP_IPC_CHANNELS.updateInstall, updateInstallInputV1Schema, options, async () => {
+    return installUpdate();
+  }, undefined, updateStateV1Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.subscriptionsSubscribe, subscribeInputSchema, options, (_event, window, input) => {
     if (input.topic.kind !== "runtime" && activeWorkspaceEpoch < 1) {

@@ -194,7 +194,10 @@ const NATIVE_CAPABILITY_CHANNELS: Readonly<Record<keyof NativeCapabilityProjecti
   // ASR：2026-09-18 起接了真实语音链路——本地 SenseVoice（WASM）优先，云
   // `/voice/transcribe` 兜底，通道存在即视为可用。
   asr: DESKTOP_IPC_CHANNELS.companionVoiceTranscribe,
-  updates: null,
+  // 自动更新：2026-10-04 起接了真实通道（检查 / 下载 / 重启安装，更新源是
+  // GitHub Releases 直连，不过 apps/api）。通道存在即视为可用——设置页那枚
+  // 能力芯片据此从「未接入」翻成「已接入」，不再与旁边真正的检查按钮自相矛盾。
+  updates: DESKTOP_IPC_CHANNELS.updateCheck,
   live2d: null,
 };
 

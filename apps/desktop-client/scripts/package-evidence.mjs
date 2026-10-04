@@ -23,17 +23,32 @@ async function digestFile(path) {
   return createHash('sha256').update(await readFile(path)).digest('hex')
 }
 
-function packagedArtifactPath() {
-  if (process.platform === 'darwin' && process.arch === 'arm64') {
-    return resolve(appRoot, 'release/AI Learn-0.1.0-mac-arm64.zip')
-  }
-  if (process.platform === 'win32' && process.arch === 'x64') {
-    return resolve(appRoot, 'release/AI Learn-0.1.0-win-x64.nsis.zip')
-  }
-  if (process.platform === 'linux' && process.arch === 'x64') {
-    return resolve(appRoot, 'release/AI Learn-0.1.0-linux-x64.AppImage')
-  }
-  throw new Error(`No packaged artifact mapping for ${process.platform}/${process.arch}`)
+/**
+ * 产物名跟着 `artifactName` 走：`ailearn-${version}-${os}-${arch}.${ext}`。
+ * 版本取自 package.json（electron-builder 的 `${version}` 就是它），
+ * 前缀取自 electron-builder.yml 的 artifactName——两处都不再抄写。
+ *
+ * 这段曾经把「AI Learn-0.1.0-…-win-x64.nsis.zip」整串硬编码：改名和改 artifactName
+ * 各让它失效一次，而它只在真正取证据时才跑，所以两次都没被及时发现。
+ */
+async function packagedArtifactPath() {
+  const config = readFileSync(resolve(appRoot, 'electron-builder.yml'), 'utf8')
+  const artifactLine = config.split('\n').find((row) => /^artifactName:\s*/.test(row))
+  if (!artifactLine) throw new Error('electron-builder.yml is missing artifactName')
+  const version = JSON.parse(await readFile(resolve(appRoot, 'package.json'), 'utf8')).version
+
+  const os = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux'
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+  const extension = process.platform === 'darwin' ? 'zip' : process.platform === 'win32' ? 'exe' : 'AppImage'
+  const name = artifactLine
+    .replace(/^artifactName:\s*/, '')
+    .replace(/\$\{version\}/g, version)
+    .replace(/\$\{os\}/g, os)
+    .replace(/\$\{arch\}/g, arch)
+    .replace(/\$\{ext\}/g, extension)
+    .trim()
+
+  return resolve(appRoot, 'release', name)
 }
 
 const captureManifest = JSON.parse(await readFile(captureInputPath, 'utf8'))
@@ -61,7 +76,7 @@ const memberEvidence = memberSmokeInfo?.authMode === 'member'
   : smokeInfo.authMode === 'member'
     ? smokeInfo
     : null
-const packagedArtifact = packagedArtifactPath()
+const packagedArtifact = await packagedArtifactPath()
 const packageArtifactSha256 = await digestFile(packagedArtifact)
 const packagedOwnerJourneyPassed = ownerEvidence?.ownerJourney?.authenticated === true
   && ownerEvidence.ownerJourney?.cardGeneration === true

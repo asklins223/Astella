@@ -653,6 +653,11 @@ export const DESKTOP_IPC_CHANNELS = {
   clipboardReadLinks: "ailearn.v1.clipboard.readLinks",
   clipboardWriteText: "ailearn.v1.clipboard.writeText",
   shellOpenExternal: "ailearn.v1.shell.openExternal",
+  // 自动更新：检查 → 下载 → 重启安装。更新源是 GitHub Releases（直连，不过服务端）。
+  updateGetState: "ailearn.v1.update.getState",
+  updateCheck: "ailearn.v1.update.check",
+  updateDownload: "ailearn.v1.update.download",
+  updateInstall: "ailearn.v1.update.install",
 } as const;
 
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
@@ -1345,6 +1350,87 @@ export const shellOpenExternalResultV1Schema = z.strictObject({
 });
 export type ShellOpenExternalRequestV1 = z.infer<typeof shellOpenExternalRequestV1Schema>;
 export type ShellOpenExternalResultV1 = z.infer<typeof shellOpenExternalResultV1Schema>;
+
+/**
+ * 桌面端自动更新的对外状态。
+ *
+ * ## 为什么下载不走自家服务端
+ *
+ * 检查走 `api.github.com`，安装包走 GitHub 的 CDN —— `apps/api` 完全不在这条链路上。
+ * 更新带宽不落在自家服务器上，自家 API 挂掉也不影响用户升级。
+ * 代价是 GitHub 匿名 API 有 60 次/小时/IP 的限额，NAT 后的办公网容易撞上，
+ * 所以主进程对检查做了缓存，撞限额时按 `unreachable` 报（"暂时没拿到新版本信息"），
+ * **不是**按 `failed` 报（"更新坏了"）——这两件事对用户是完全不同的含义。
+ */
+export const updatePhaseValues = [
+  /** 还没查过，或已查过且拿到了结果但已经过期到需要重查。 */
+  "idle",
+  "checking",
+  /** 查过了，当前就是最新。 */
+  "upToDate",
+  /** 有新版本可装，还没开始下载。 */
+  "available",
+  "downloading",
+  /** 已下完，等用户点"重启安装"。 */
+  "ready",
+  /** 拿不到更新信息：断网、GitHub 限额、超时。**不是**更新本身出错。 */
+  "unreachable",
+  /** 更新流程真的坏了：校验不过、磁盘写不下、安装器启动失败。 */
+  "failed",
+] as const;
+export const updatePhaseSchema = z.enum(updatePhaseValues);
+export type UpdatePhase = z.infer<typeof updatePhaseSchema>;
+
+export const updateStateV1Schema = z.strictObject({
+  phase: updatePhaseSchema,
+  /** 当前正在运行的版本（读 `app.getVersion()`）。 */
+  currentVersion: z.string().min(1),
+  /** 可更新的目标版本；没有可更新版本时为 null。 */
+  availableVersion: z.string().min(1).nullable(),
+  releaseNotes: z.string().nullable(),
+  releaseUrl: z.string().nullable(),
+  /** 0–100，整数。不在下载态时为 null。 */
+  percent: z.number().int().min(0).max(100).nullable(),
+  /** 已下载字节 / 总字节，用于渲染真实进度条而不是假动画。 */
+  transferred: z.number().int().min(0).nullable(),
+  total: z.number().int().min(0).nullable(),
+  /** phase 为 failed 时的说明；其余为 null。 */
+  message: z.string().nullable(),
+  /**
+   * macOS 上未签名的包装不上（Squirrel.Mac 校验代码签名）。主进程读出这个事实
+   * 交给渲染层如实说，而不是让用户点完"重启安装"才看到一个没头没尾的失败。
+   */
+  installBlockedReason: z.enum(["macosUnsigned"]).nullable(),
+  checkedAt: z.string().min(1).nullable(),
+});
+export type UpdateStateV1 = z.infer<typeof updateStateV1Schema>;
+
+export const updateCheckInputV1Schema = z.strictObject({
+  meta: requestMetaSchema,
+  /** true 表示用户主动点的"检查更新"，可以忽略缓存立刻联网。 */
+  userInitiated: z.boolean().default(false),
+});
+export const updateDownloadInputV1Schema = z.strictObject({
+  meta: requestMetaSchema,
+});
+export const updateInstallInputV1Schema = z.strictObject({
+  meta: requestMetaSchema,
+});
+export const updateGetStateInputV1Schema = z.strictObject({
+  meta: requestMetaSchema,
+});
+export const updateGetStateResultV1Schema = z.strictObject({
+  state: updateStateV1Schema,
+});
+export type UpdateGetStateResultV1 = z.infer<typeof updateGetStateResultV1Schema>;
+
+/**
+ * 主进程 → 渲染层的更新状态推送。
+ *
+ * 刻意不走 `subscriptions`：更新只有一路单向状态流，没有 topic 订阅/重放语义，
+ * 与 `WINDOW_STATE_CHANNEL` 是同一类"主进程推、渲染层订阅并可退订"的通道。
+ */
+export const UPDATE_STATE_CHANNEL = "ailearn.v1.update.state" as const;
 
 export const actionCapabilityValues = [
   "source.read", "source.create", "source.update", "source.archive", "source.createNote",
@@ -2235,6 +2321,20 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
    */
   readonly shell: {
     openExternal(input: { meta: RequestMetaV1; request: ShellOpenExternalRequestV1 }): Promise<GatewayResultV1<ShellOpenExternalResultV1>>;
+  };
+  /**
+   * 桌面端自动更新。更新源是 GitHub Releases：主进程直连 api.github.com 与
+   * GitHub CDN，**不经过 apps/api**——更新带宽不落在自家服务器上。
+   *
+   * 状态由主进程单方面推给渲染层（见 `UPDATE_STATE_CHANNEL`），所以这里只有
+   * 四个动作，没有订阅。
+   */
+  readonly update: {
+    getState(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<UpdateGetStateResultV1>>;
+    /** `userInitiated` 为 true 时忽略缓存立刻联网（用户在设置页点了「检查更新」）。 */
+    check(input: { meta: RequestMetaV1; userInitiated?: boolean }): Promise<GatewayResultV1<UpdateStateV1>>;
+    download(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<UpdateStateV1>>;
+    install(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<UpdateStateV1>>;
   };
   readonly room: {
     getProjection(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof roomProjectionV1Schema>>>;

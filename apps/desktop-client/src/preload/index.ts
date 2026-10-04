@@ -3,8 +3,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AILearnDesktopApi } from './index.d'
 import {
   DESKTOP_IPC_CHANNELS,
+  UPDATE_STATE_CHANNEL,
   desktopContractSnapshotSchema,
   gatewayEventSchema,
+  updateStateV1Schema,
   type AILearnDesktopApiM2,
   type GatewayEventV1
 } from '@ailearn/shared/desktop-ipc-contracts'
@@ -43,6 +45,36 @@ const api: AILearnDesktopApi = {
     return () => {
       active = false
       ipcRenderer.removeListener(WINDOW_STATE_CHANNEL, handleState)
+    }
+  },
+  /**
+   * 更新状态是主进程单方面推过来的（检查中 / 下载进度 / 已就绪），所以这里只订阅、
+   * 只退订——没有"订阅 id"可言，也不走 `subscriptions` 那套 topic 重放。
+   * 首帧先补一次当前快照，免得界面在主进程下一次推送前一直空着。
+   */
+  onUpdateState: (listener) => {
+    let active = true
+
+    const deliver = (snapshot: unknown): void => {
+      const parsed = updateStateV1Schema.safeParse(snapshot)
+      if (active && parsed.success) listener(parsed.data)
+    }
+
+    const handleState = (_event: Electron.IpcRendererEvent, snapshot: unknown): void => {
+      deliver(snapshot)
+    }
+
+    ipcRenderer.on(UPDATE_STATE_CHANNEL, handleState)
+    void ipcRenderer
+      .invoke(DESKTOP_IPC_CHANNELS.updateGetState, { meta: { requestId: crypto.randomUUID() } })
+      .then((result: { ok: boolean; data?: { state: unknown } }) => {
+        if (result.ok && result.data) deliver(result.data.state)
+      })
+      .catch(() => undefined)
+
+    return () => {
+      active = false
+      ipcRenderer.removeListener(UPDATE_STATE_CHANNEL, handleState)
     }
   }
 }
@@ -130,6 +162,12 @@ const desktopApi: AILearnDesktopApiM2 = {
   },
   shell: {
     openExternal: (input) => invoke(DESKTOP_IPC_CHANNELS.shellOpenExternal, input)
+  },
+  update: {
+    getState: (input) => invoke(DESKTOP_IPC_CHANNELS.updateGetState, input),
+    check: (input) => invoke(DESKTOP_IPC_CHANNELS.updateCheck, input),
+    download: (input) => invoke(DESKTOP_IPC_CHANNELS.updateDownload, input),
+    install: (input) => invoke(DESKTOP_IPC_CHANNELS.updateInstall, input)
   },
   window: {
     getState: (input) => invoke(DESKTOP_IPC_CHANNELS.windowGetState, input),

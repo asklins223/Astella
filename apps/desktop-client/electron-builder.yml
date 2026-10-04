@@ -1,8 +1,18 @@
 appId: com.asklins.ailearn
-# 产品名 2026-10-04 定为「理解引擎」。artifactName 用 ${productName}，
-# 所以产物名就是 `理解引擎-0.1.0-mac-arm64.dmg` / `理解引擎-0.1.0-win-x64.exe`。
+# 产品名 2026-10-04 定为「理解引擎」，这是**装完之后**用户看到的名字：
+# 应用包名、窗口标题、开始菜单项、Dock 图标旁的标题都取自它。
 productName: 理解引擎
 copyright: Copyright © 2026 理解引擎
+
+# electron-updater 的更新源。客户端直连 GitHub Releases：
+# 检查走 api.github.com，下载走 GitHub 的 CDN——**不经过 apps/api**，
+# 所以更新带宽不落在自家服务器上，也不会因为自家 API 挂掉而更新不了。
+# 这里只提供 owner/repo；真正的 Release 由 desktop-release.yml 以
+# 「先建 Draft、资产传完再公开」的方式发布，避免更新器读到半成品。
+publish:
+  provider: github
+  owner: asklins223
+  repo: ai-learning-system
 
 directories:
   output: release
@@ -35,13 +45,18 @@ mac:
   # TCC 直接把 getUserMedia 判拒 —— 只放开主进程的权限闸是不够的。
   extendInfo:
     NSMicrophoneUsageDescription: 理解引擎 需要用麦克风把你的话转给伴星。
-  # 没有配 APPLE_IDENTITY / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID，
-  # 仓库里也没有签名证书。所以明确写死：只公证流程不跑、hardenedRuntime 不开。
-  # 写在这里而不是只靠环境变量，是为了让"产物是未签名的"这件事在配置里看得见，
-  # 而不是靠 CI 里那句 CSC_IDENTITY_AUTO_DISCOVERY=false 悄悄兜住。
-  identity: null
-  hardenedRuntime: false
-  notarize: false
+  # 签名**不写死**在这里，由环境变量决定——这是 macOS 自动更新能不能用的分水岭：
+  # Squirrel.Mac 会校验「新旧两个 .app 的代码签名是否同一开发者」，未签名的应用
+  # 会被拒（下载成功、安装失败）。Windows 的 NSIS 路线没有这个约束，未签名可用。
+  #
+  # 所以这里刻意不设 `identity: null` / `notarize: false`：那两条等于**主动关掉**
+  # electron-builder 的签名与公证（schema 里 notarize 的语义是「是否禁用公证」）。
+  # 保持默认即可自动适配两种情况：
+  #   - 仓库没配 MAC_CSC_LINK / APPLE_ID 等 secret → 找不到证书，electron-builder
+  #     自行跳过签名，产物未签名（desktop-package.yml 会设
+  #     CSC_IDENTITY_AUTO_DISCOVERY=false 省掉翻证书库的功夫）；
+  #   - 配上了 → 自动签名 + 自动公证，macOS 自动更新随之可用，无需改任何配置。
+  # 目前仓库尚未配置这些 secret，所以产物仍是未签名的。
 
 win:
   target:
@@ -51,9 +66,9 @@ win:
   # 桌面学习房是单窗口应用，不需要管理员权限。显式写 asInvoker 而不是留默认：
   # 提权会让安装程序往 Program Files 写，用户目录下的免安装包和绿色版都用不了。
   requestedExecutionLevel: asInvoker
-  # 没有配 CSC_LINK / CSC_KEY_PASSWORD，产物必然未签名。这一条只做"资源改写"：
-  # 把图标、版本信息、文件描述写进 exe/安装器；不碰签名。关掉的话装出来的 exe
-  # 连图标都是 Electron 默认的那个。
+  # 未配 CSC_LINK / CSC_KEY_PASSWORD 时产物必然未签名（见上方 mac 段的说明）。
+  # 这一条只做"资源改写"：把图标、版本信息、文件描述写进 exe/安装器；不碰签名。
+  # 关掉的话装出来的 exe 连图标都是 Electron 默认的那个。
   signAndEditExecutable: true
 
 linux:
@@ -74,4 +89,11 @@ nsis:
   # 这三份是**入库**的——.gitignore 里那几条 `!apps/desktop-client/build/` 否定规则
   # 就是为它们存在的（原先路径写错成 apps/desktop/，一直没生效）。
   # 要换图标：改这三份即可，配置本身不用动。
-artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+#
+# 产物名刻意用 ASCII 的 `ailearn`，**不用** ${productName}：
+#   - 产品名「理解引擎」只影响装完之后的显示名，与文件名无关；
+#   - Release 资产名会直接进 latest.yml / latest-mac.yml 被客户端解析，
+#     而 GitHub 资产 URL、Windows 的 NSIS 差分下载、macOS 的 ShipIt 都对
+#     非 ASCII 文件名有各种边角问题（编码、URL 百分号转义）。
+#   - 两者各取所需：显示名中文，文件名 ASCII。
+artifactName: ailearn-${version}-${os}-${arch}.${ext}

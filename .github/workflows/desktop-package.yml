@@ -7,9 +7,13 @@ name: Desktop package
 # 启动的包看看"，不该被一串还没跑通的门禁挡住。两边刻意不互相 depends_on——
 # 质量闸挂了照样能出包，只是那个包别拿去发版。
 #
-# 也没有代码签名：仓库里没有 Windows 证书，也没有 Apple 证书/notarization 凭据。
-# 产物是**未签名**的——macOS 首次打开要右键 → 打开，Windows 会弹 SmartScreen。
-# 这是当前的已知状态，不是这个工作流偷懒。
+# 手动跑（不带版本号）时用 release/desktop-version.json 里的版本；被 desktop-release.yml
+# 以 desktop-v* tag 调用时，用 tag 里的版本。
+#
+# 也没有代码签名：仓库尚未配置 Windows 证书与 Apple 证书/notarization 凭据。
+# 产物是**未签名**的——macOS 首次打开要右键 → 打开，Windows 会弹 SmartScreen，
+# 且 macOS 的自动更新安装会被 Squirrel.Mac 拒（见 apps/desktop-client/src/main/desktop-update.ts）。
+# 配好 secret 后本文件无需改动即可自动签名。
 
 on:
   workflow_dispatch:
@@ -21,23 +25,43 @@ on:
         options:
           - arm64
           - x64
-  # 打版前先出一份双平台包看看效果。
-  push:
-    tags:
-      - "v*"
+      version:
+        description: 版本号（留空则用 release/desktop-version.json）
+        type: string
+        default: ""
+  workflow_call:
+    inputs:
+      mac_arch:
+        description: macOS 架构
+        type: choice
+        default: arm64
+        options:
+          - arm64
+          - x64
+      version:
+        description: 版本号（留空则用 release/desktop-version.json）
+        type: string
+        default: ""
+    outputs:
+      windows_version:
+        description: Windows 实际构建版本
+        value: ${{ jobs.windows.outputs.version }}
+      macos_version:
+        description: macOS 实际构建版本
+        value: ${{ jobs.macos.outputs.version }}
+      macos_arch:
+        description: macOS 实际构建架构
+        value: ${{ jobs.macos.outputs.arch }}
 
 permissions:
   contents: read
 
 concurrency:
-  group: desktop-package-${{ github.ref }}
+  group: desktop-package-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   NODE_VERSION: "22"
-  # 两个平台都没有签名证书。不关掉自动发现，electron-builder 会先去翻 runner 的
-  # 证书库、翻不到再退回来，产物一样是未签名的，只是每次多花时间加一堆 warning。
-  CSC_IDENTITY_AUTO_DISCOVERY: "false"
   # 出包用的渲染层变体，与 desktop-client.yml 的 package-smoke 保持一致：
   # 装出来的包要跟质量闸验过的是同一份界面。
   VITE_HOME_SCENE_VARIANT: v2
@@ -47,6 +71,8 @@ jobs:
     name: Windows x64 (NSIS)
     runs-on: windows-latest
     timeout-minutes: 90
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -66,8 +92,23 @@ jobs:
       - name: Install desktop-client dependencies
         working-directory: apps/desktop-client
         run: npm ci --no-audit --no-fund
+      - name: Resolve desktop version
+        id: version
+        run: |
+          node .github/scripts/desktop-version.mjs --check
+          if [ -n "${{ inputs.version }}" ]; then
+            node .github/scripts/desktop-version.mjs --set "${{ inputs.version }}"
+          fi
+          node .github/scripts/desktop-version.mjs --check
+          echo "version=$(node -e "console.log(require('./release/desktop-version.json').version)")" >> "$GITHUB_OUTPUT"
+          echo "Windows build version: $(node -e "console.log(require('./release/desktop-version.json').version)")"
       - name: Build and package Windows installer
         working-directory: apps/desktop-client
+        env:
+          # 没配证书时关掉自动发现，electron-builder 就不会去翻证书库再退回来。
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.WIN_CSC_LINK && 'false' || 'true' }}
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: npm run package:win:x64
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
@@ -79,6 +120,8 @@ jobs:
           # error 而不是 warn，让空产物当场把这一环判红。
           if-no-files-found: error
           retention-days: 30
+          # 安装包已经是 7z 压缩过的，再压一遍只浪费上传时间。
+          compression-level: 0
 
   macos:
     name: macOS ${{ inputs.mac_arch || 'arm64' }} (dmg + zip)
@@ -86,6 +129,9 @@ jobs:
     # electron-builder 另下一份 x64 的 Electron 来交叉打，不需要 Rosetta 跑构建。
     runs-on: macos-14
     timeout-minutes: 120
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      arch: ${{ inputs.mac_arch || 'arm64' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -101,8 +147,25 @@ jobs:
       - name: Install desktop-client dependencies
         working-directory: apps/desktop-client
         run: npm ci --no-audit --no-fund
+      - name: Resolve desktop version
+        id: version
+        run: |
+          node .github/scripts/desktop-version.mjs --check
+          if [ -n "${{ inputs.version }}" ]; then
+            node .github/scripts/desktop-version.mjs --set "${{ inputs.version }}"
+          fi
+          node .github/scripts/desktop-version.mjs --check
+          echo "version=$(node -e "console.log(require('./release/desktop-version.json').version)")" >> "$GITHUB_OUTPUT"
+          echo "macOS build version: $(node -e "console.log(require('./release/desktop-version.json').version)")"
       - name: Build and package macOS installers
         working-directory: apps/desktop-client
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CSC_LINK && 'false' || 'true' }}
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run package:mac:${{ inputs.mac_arch || 'arm64' }}
       - name: Upload macOS installers
         uses: actions/upload-artifact@v4
@@ -113,6 +176,7 @@ jobs:
             apps/desktop-client/release/*.zip
           if-no-files-found: error
           retention-days: 30
+          compression-level: 0
 
   summary:
     name: Packaging summary
