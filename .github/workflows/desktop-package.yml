@@ -180,7 +180,7 @@ jobs:
             Write-Host "  ok  $(Split-Path -Leaf $File) $($Args -join ' ')  (cwd=$([System.IO.Path]::GetFileName($env:RUNNER_TEMP)))"
           }
 
-          Write-Host '--- 1/3 静默安装 ---'
+          Write-Host '--- 1/4 静默安装 ---'
           Invoke-Checked $installer.FullName @('/S')
 
           # 装到哪里**不去猜**：注册表的 DisplayName 由 NSIS 模板写成 APP_FILENAME，
@@ -214,12 +214,16 @@ jobs:
           if (-not (Test-Path -LiteralPath $asar)) { throw '安装后没有 resources\app.asar' }
           Write-Host "app.asar $(([math]::Round((Get-Item $asar).Length / 1MB, 1))) MB"
 
-          Write-Host '--- 2/3 启动已安装的程序 ---'
-          # oneClick 的更新路径就是"再跑一次这个安装器"，所以跑两遍正是
-          # electron-updater 在 Windows 上做的事（覆盖安装 + 替换文件）。
-          Invoke-Checked $installer.FullName @('/S')
+          Write-Host '--- 2/4 覆盖安装（Windows 上的真实更新路径）---'
+          # electron-updater 在 Windows 上**不是**简单地把同一个安装器再跑一遍：
+          # 它额外传 `--updated`，让安装器走"更新"分支而不是"全新安装"分支。
+          # 少了这个开关，安装器发现已存在安装后会去找旧卸载器并等它的交互，
+          # 在无人值守 runner 上就一直等着——实测就是 180s 超时。
+          Invoke-Checked $installer.FullName @('/S', '--updated')
           if (-not (Test-Path -LiteralPath $appExe)) { throw '覆盖安装后 exe 消失了' }
-          Write-Host '  ok  覆盖安装通过（electron-updater 在 Windows 上走的就是这条）'
+          Write-Host '  ok  覆盖安装通过（与 electron-updater 在 Windows 上走同一条分支）'
+
+          Write-Host '--- 3/4 启动已安装的程序 ---'
 
           $app = Start-Process -FilePath $appExe -WorkingDirectory $env:RUNNER_TEMP -PassThru
           Start-Sleep -Seconds 25
@@ -230,7 +234,7 @@ jobs:
           & taskkill.exe /PID $app.Id /T /F 2>$null | Out-Null
           Start-Sleep -Seconds 3
 
-          Write-Host '--- 3/3 卸载 ---'
+          Write-Host '--- 4/4 卸载 ---'
           $uninstaller = Get-ChildItem -Path $installDir -Filter 'Uninstall*.exe' -Recurse -ErrorAction SilentlyContinue |
             Select-Object -First 1
           if (-not $uninstaller) { throw "安装目录里找不到卸载器：$installDir" }
@@ -242,7 +246,7 @@ jobs:
             Start-Sleep -Milliseconds 500
           }
           if (Test-Path -LiteralPath $installDir) {
-            # 目录还在就把还活着的相关进程打出来：这种��况基本就是有孤儿没被杀干净。
+            # 目录还在就把还活着的相关进程打出来：这种情况基本就是有孤儿没被杀干净。
             $left = (Get-ChildItem -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object).Count
             Get-Process -ErrorAction SilentlyContinue |
               Where-Object { $_.Path -and $_.Path.StartsWith($installDir, [System.StringComparison]::OrdinalIgnoreCase) } |
