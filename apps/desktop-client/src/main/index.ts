@@ -8,9 +8,9 @@ import {
   systemPreferences,
   type WebContents
 } from 'electron'
-import { createReadStream } from 'node:fs'
+import { createReadStream, mkdirSync, writeFileSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { createAssetResponsePlan, mimeTypeForPath } from './asset-response'
 import { VoiceAsrModelStore, voiceAsrModelSources } from './voice-asr-model-store'
@@ -641,7 +641,46 @@ if (!app.requestSingleInstanceLock()) {
   })
 }
 
-app.whenReady().then(async () => {
+/**
+ * 启动链上任何一步抛错，都要变成**一句看得见的失败 + 一个非零退出码**，
+ * 绝不能变成"双击之后什么都没发生"。
+ *
+ * ## 为什么要专门加这个 catch（2026-10）
+ *
+ * 下面那个 `whenReady()` 的回调里第 721 行是 `await createMainWindow()`，而
+ * `window-all-closed` 在非 macOS 上是 `app.quit()`。于是只要启动链任何一步抛错：
+ *
+ *   createMainWindow() reject → 没人接（unhandled rejection）→ 窗口从没建出来
+ *   → BrowserWindow 里没有窗口 → app 认为窗口全关 → window-all-closed 触发
+ *   → app.quit() → **退出码 0，stdout/stderr 一行都没有**
+ *
+ * Windows 上实测就是这样：安装正常（35 秒、app.asar 281MB 齐全），启动后 40 秒内
+ * "干净地退出"，退出码 0，日志全空。macOS 上同一个 bug 不暴露——因为 darwin 分支
+ * 的 `window-all-closed` 不 quit，进程会留着。
+ *
+ * 也就是说：**一个真实的启动失败，在 Windows 上伪装成了正常退出**。这个 catch
+ * 不能定位到根因（那要一台 Windows 机器），但它让下一次 CI 跑就能读到
+ * "到底是哪一步抛的"，并且给用户一个错误而不是一片空白。
+ */
+function reportStartupFailure(error: unknown): void {
+  const message = error instanceof Error ? (error.stack ?? error.message) : String(error)
+  // stderr：Electron 在 Windows 上会把主进程的 console.error 转发到父进程的 stderr，
+  // CI 那边 `Start-Process -RedirectStandardError` 收得到。
+  console.error('[ailearn] 启动失败：', message)
+  // userData 下留一份：用户报障时可以直接拿到，不依赖他截得到终端。
+  try {
+    const logPath = join(app.getPath('userData'), 'startup-failure.log')
+    mkdirSync(dirname(logPath), { recursive: true })
+    writeFileSync(logPath, `${new Date().toISOString()}\n${message}\n`, 'utf8')
+  } catch {
+    // 连日志都写不下去时不能反过来再抛一次——那会盖掉原始错误。
+  }
+  // 退出码非 0：CI 与用户都能分辨"启动失败"和"正常退出"。原来这里是 0。
+  app.exit(1)
+}
+
+app.whenReady()
+  .then(async () => {
   Menu.setApplicationMenu(null)
   /**
    * 用上一次查到的结果给界面打底（2026-10）。不联网、不预取安装包——
@@ -723,7 +762,8 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createMainWindow()
   })
-})
+  })
+  .catch(reportStartupFailure)
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
