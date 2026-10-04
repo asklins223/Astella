@@ -224,21 +224,25 @@ jobs:
           $appOut = Join-Path $env:RUNNER_TEMP 'ailearn-installed-app.out.log'
           $appErr = Join-Path $env:RUNNER_TEMP 'ailearn-installed-app.err.log'
           $env:ELECTRON_ENABLE_LOGGING = '1'
-          # ⚠️ --no-sandbox 是**探测用的妥协**，不是产品该有的运行方式。
+          # `--log-file` 收的是 **Chromium 自己的日志**（GPU / 子进程 / 网络 / 协议
+          # 注册），这些**不进** stdout/stderr。前面几轮之所以"日志全空"，就是因为
+          # 只接了 stdout/stderr——那些信息在另一条通道里。带上 `--v=1` 打开详细级别。
+          $chromiumLog = Join-Path $env:RUNNER_TEMP 'ailearn-chromium.log'
+          # `--no-sandbox` 是**探测用的妥协**，不是产品该有的运行方式。
           #
-          # 裸跑时它在 GitHub 的 windows runner 上 40 秒内退出、退出码 0、日志全空——
-          # 连我们新加的"启动失败要报错"守卫都没触发（说明不是主进程抛错）。
-          # 这与 Chromium 在受限环境里起不了沙箱的表现一致：子进程一路
-          # "sandbox initialization failed"，GPU 放弃后应用自己退出。
-          # 本仓库早就知道这件事：scripts/smoke-packaged.mjs:444 早就只在
-          # Linux 上传 --no-sandbox —— 只是 Windows 这边**从来没在 CI 上把装好的
-          # 应用跑起来过**（desktop-client.yml 只做 --dir 后的冒烟，且不覆盖这条），
-          # 所以一直没撞上。
+          # ⚠️ 已排除的假设（都实测过，别再走回头路）：
+          #   · 不是主进程抛错 —— 我们加的"启动失败要报错"守卫一次都没触发；
+          #   · 不是沙箱 —— 带不带 --no-sandbox 结果逐字节相同（40 秒、退出码 0、空日志）。
+          # 剩下的形态是"应用干净退出、退出码 0、没有任何输出"，说明它没走到
+          # 我们埋日志的地方。**这一步在 CI 上已经试不出更多东西了**，
+          # 真正的信息需要一台 Windows 机器上看实际现象（窗口有没有出现）。
           #
-          # 分清两件事：这个开关只让**探测**跑得起来，不改变"用户双击就闪退"这个
-          # 事实——普通用户在真实 Windows 上有完整沙箱，理论上是能跑的；但裸装的
-          # 未签名应用是否真的能用，仍需要一台真实 Windows 机器验证。
-          $app = Start-Process -FilePath $appExe -ArgumentList @('--no-sandbox') -WorkingDirectory $env:RUNNER_TEMP `
+          # 仓库里其实早就有同类妥协：scripts/smoke-packaged.mjs:444 只在 Linux 上
+          # 传 --no-sandbox。只是 Windows 这边从来没在 CI 上把**装好的应用**跑起来过
+          # （desktop-client.yml 只做 --dir 后的冒烟，且不覆盖安装后的产物）。
+          $app = Start-Process -FilePath $appExe `
+            -ArgumentList @('--no-sandbox', '--enable-logging', '--v=1', "--log-file=$chromiumLog") `
+            -WorkingDirectory $env:RUNNER_TEMP `
             -RedirectStandardOutput $appOut -RedirectStandardError $appErr -PassThru
           Start-Sleep -Seconds 40
           if ($app.HasExited) {
@@ -247,7 +251,7 @@ jobs:
             # "已安装程序提前退出"，而应用到底报了什么一个字都看不到。
             # 逐行打印则每行都稳定出现在 Actions 日志里。
             Write-Host "::error::已安装程序提前退出，退出码 $($app.ExitCode)"
-            foreach ($logPath in @($appOut, $appErr)) {
+            foreach ($logPath in @($appOut, $appErr, $chromiumLog)) {
               $label = Split-Path -Leaf $logPath
               if (-not (Test-Path -LiteralPath $logPath)) { Write-Host "[$label] (没有输出)"; continue }
               $lines = @(Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue)
