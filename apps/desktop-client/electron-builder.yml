@@ -77,12 +77,23 @@ linux:
     - AppImage
 
 nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
-  # 未签名的安装包被 SmartScreen 拦下时，"更多信息 → 仍要运行"这条路要能走通，
-  # 前提是用户知道去哪找。装完留一个卸载入口。
+  # 2026-10-04 由 oneClick: false 改为 true。
+  #
+  # 原来选"向导式"是为了让用户自己挑安装目录，但**向导式安装器在无人值守的
+  # runner 上跑不了 /S**：它有一个 `PageEx custom` 的"选安装范围"页（nsDialogs 画的），
+  # NSIS 静默模式会跳过绘制，可 MultiUser 的模式判定仍需要一次显式决策，于是安装器
+  # 就那么一直等着——CI 上表现为安装 step 挂到超时，症状与"安装器坏了"完全一样。
+  #
+  # oneClick 模式没有那一页，/S 静默安装可靠（消费级 Electron 应用的通行做法：
+  # VS Code / Slack / Notion 都是一键装）。同时省掉一次提权交互。
+  # 代价：用户不能再自己挑安装目录，改为装到 %LOCALAPPDATA%\Programs\理解引擎。
+  oneClick: true
+  # 装完留一个开始菜单入口和桌面快捷方式。
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  # 未签名的安装包被 SmartScreen 拦下时，"更多信息 → 仍要运行"这条路要能走通，
+  # 前提是用户知道去哪找。
+  shortcutName: 理解引擎
 
 # 图标在 apps/desktop-client/build/（electron-builder 的 buildResources 默认目录）：
   # icon.icns 给 macOS，icon.ico 给 Windows，icon.png 是 1024×1024 的母版。

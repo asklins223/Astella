@@ -143,52 +143,33 @@ jobs:
         # `--publish never` 不影响 `latest.yml` 的生成：那份清单挂在
         # `event.isWriteUpdateInfo` 上，与是否真的上传无关。
         run: npm run package:win:x64 -- --publish never
-      - name: Verify installer lifecycle (install → reopen → uninstall)
+      - name: Verify installer lifecycle (install → launch → uninstall)
         shell: pwsh
         working-directory: apps/desktop-client
         env:
           EXPECTED_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          # 「能打出来」和「装得上、卸得掉」是两件事。这个 step 走一遍后者，
+          # 「能打出来」和「装得上、卸得掉」是��件事。这个 step 走后者，
           # 放在**上传之前**：装不上的包不该变成 artifact，更不该变成 Release。
           #
-          # NSIS 静默安装：`/S` 静默，`/D=` 指定目录（oneClick:false 时
-          # electron-builder 仍支持这两个开关；`/currentuser` 是为了确定
-          # 不触发 UAC，runner 上没有提权交互）。
+          # oneClick 安装器没有"选目录 / 选安装范围"页，`/S` 静默安装可靠；
+          # 装到 %LOCALAPPDATA%\Programs\理解引擎。**装到哪里不猜**——从注册表读
+          # electron-builder 自己写下的 InstallLocation，读不到再退回按名字找。
           $ErrorActionPreference = 'Stop'
           $releaseDir = (Resolve-Path 'release').Path
           $installer = Get-ChildItem -Path $releaseDir -Filter 'ailearn-*-win-x64.exe' -File | Select-Object -First 1
-          if (-not $installer) { throw "找不到 Windows 安装包" }
+          if (-not $installer) { throw '找不到 Windows 安装包' }
           Write-Host "安装包: $($installer.Name)  $([math]::Round($installer.Length / 1MB, 1)) MB"
 
-          $installDir = Join-Path $env:RUNNER_TEMP ("ailearn-install-" + [guid]::NewGuid().ToString('N'))
-          $appExe = Join-Path $installDir '理解引擎.exe'
-
-          # 卸载器默认放在 exe 同目录，名字是 `<productName> Uninstaller.exe`。
-          $uninstaller = Join-Path $installDir '理解引擎 Uninstaller.exe'
-
-          function Invoke-Checked([string]$File, [string[]]$Args, [int]$TimeoutMs = 180000, [string]$WorkingDirectory = $null) {
+          function Invoke-Checked([string]$File, [string[]]$Args, [int]$TimeoutMs = 180000) {
             $logBase = Join-Path $env:RUNNER_TEMP ("ailearn-installer-" + [guid]::NewGuid().ToString('N'))
             $stdoutPath = "$logBase.out.log"
             $stderrPath = "$logBase.err.log"
-
-            # 绝不能在**待卸载目录里**当工作目录：Windows 进程持有 CWD 的句柄，
-            # CWD 落在目标目录内会让最后那次删除永久失败——表现是"卸载器退出码 0
-            # 但目录还在"，排查极其费劲。工作目录一旦落进 installDir 就换到 TEMP。
-            $cwd = $WorkingDirectory
-            $resolvedFile = (Resolve-Path -LiteralPath $File).Path
-            if (-not $cwd -or $cwd.StartsWith($installDir, [System.StringComparison]::OrdinalIgnoreCase)) {
-              $cwd = $env:RUNNER_TEMP
-            }
-            if (-not (Test-Path -LiteralPath $cwd)) { $cwd = $env:RUNNER_TEMP }
-
-            $p = Start-Process -FilePath $resolvedFile -ArgumentList $Args -WorkingDirectory $cwd `
+            # 绝不用 -Wait：它没有超时上限，某个页面在无人值守 runner 上等决策时，
+            # 整个 job 会一路走到 90 分钟上限，只留一句 "step timed out"。
+            $p = Start-Process -FilePath $File -ArgumentList $Args -WorkingDirectory $env:RUNNER_TEMP `
               -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath `
               -WindowStyle Hidden -PassThru
-            # 不用 Start-Process -Wait：它没有超时上限。某个 NSIS 页面在无人值守的
-            # runner 上等确认时，整个 job 会一路挂到 90 分钟上限，只留一句
-            # "step timed out"——连卡在哪一步都看不到。这里给它 3 分钟，
-            # 拿不到就杀掉进程树，并把 stdout/stderr 原样打出来。
             if (-not $p.WaitForExit($TimeoutMs)) {
               & taskkill.exe /PID $p.Id /T /F 2>$null | Out-Null
               throw "超时 ${TimeoutMs}ms: $(Split-Path -Leaf $File) $($Args -join ' ')`n--- stdout ---`n$(Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue)`n--- stderr ---`n$(Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue)"
@@ -196,59 +177,70 @@ jobs:
             if ($p.ExitCode -ne 0) {
               throw "退出码 $($p.ExitCode): $(Split-Path -Leaf $File) $($Args -join ' ')`n--- stderr ---`n$(Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue)"
             }
-            Write-Host "  ok  $(Split-Path -Leaf $File) $($Args -join ' ')  (cwd=$(Split-Path -Leaf $cwd))"
+            Write-Host "  ok  $(Split-Path -Leaf $File) $($Args -join ' ')  (cwd=$([System.IO.Path]::GetFileName($env:RUNNER_TEMP)))"
           }
 
-          Write-Host '--- 1/4 静默安装 ---'
-          Invoke-Checked $installer.FullName @('/S', '/currentuser', "/D=$installDir")
-          if (-not (Test-Path -LiteralPath $appExe)) { throw "安装后没有 $appExe" }
+          Write-Host '--- 1/3 静默安装 ---'
+          Invoke-Checked $installer.FullName @('/S')
+
+          $installDir = $null
+          $uninstallKey = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue |
+            Where-Object { $_.GetValue('DisplayName') -eq '理解引擎' } | Select-Object -First 1
+          if ($uninstallKey) { $installDir = [string]$uninstallKey.GetValue('InstallLocation') }
+          if (-not $installDir -or -not (Test-Path -LiteralPath $installDir)) {
+            $candidate = Join-Path $env:LOCALAPPDATA 'Programs\理解引擎'
+            if (Test-Path -LiteralPath $candidate) { $installDir = $candidate }
+          }
+          if (-not $installDir -or -not (Test-Path -LiteralPath $installDir)) {
+            throw "安装后找不到安装目录（注册表与 %LOCALAPPDATA%\Programs 都没有）"
+          }
+          $appExe = Join-Path $installDir '理解引擎.exe'
+          if (-not (Test-Path -LiteralPath $appExe)) { throw "安装目录里没有 $appExe" }
           Write-Host "已安装到 $installDir"
 
           # 装出来的东西必须带得上更新通道：electron-updater 被 Vite 拆成懒加载
-          # chunk 放在 out/main/ 下，漏了它就等于没有自动更新。
+          # chunk 放在 out/main/ 下，漏了它就等于没有自动更新——而这从外面看不出来。
           $asar = Join-Path $installDir 'resources\app.asar'
-          if (-not (Test-Path -LiteralPath $asar)) { throw "安装后没有 resources\app.asar" }
+          if (-not (Test-Path -LiteralPath $asar)) { throw '安装后没有 resources\app.asar' }
           Write-Host "app.asar $(([math]::Round((Get-Item $asar).Length / 1MB, 1))) MB"
 
-          Write-Host '--- 2/4 覆盖安装（这就是 electron-updater 走的升级分支）---'
-          Invoke-Checked $installer.FullName @('/S', '/currentuser', "/D=$installDir")
-          if (-not (Test-Path -LiteralPath $appExe)) { throw "覆盖安装后 $appExe 消失了" }
+          Write-Host '--- 2/3 启动已安装的程序 ---'
+          # oneClick 的更新路径就是"再跑一次这个安装器"，所以跑两遍正是
+          # electron-updater 在 Windows 上做的事（覆盖安装 + 替换文件）。
+          Invoke-Checked $installer.FullName @('/S')
+          if (-not (Test-Path -LiteralPath $appExe)) { throw '覆盖安装后 exe 消失了' }
+          Write-Host '  ok  覆盖安装通过（electron-updater 在 Windows 上走的就是这条）'
 
-          Write-Host '--- 3/4 启动已安装的程序 ---'
           $app = Start-Process -FilePath $appExe -WorkingDirectory $env:RUNNER_TEMP -PassThru
           Start-Sleep -Seconds 25
           if ($app.HasExited) { throw "已安装程序提前退出，退出码 $($app.ExitCode)" }
           Write-Host "  ok  已安装程序存活（pid $($app.Id)）"
-          # Electron 会派生一串子进程（渲染 / GPU / 工具）。只杀父进程会留下持有
-          # installDir 句柄的孤儿，最后那次卸载就永远删不掉目录。
+          # Electron 会派生渲染 / GPU / 工具进程。只杀父进程会留下持有 installDir
+          # 句柄的孤儿，最后那次卸载就永远删不掉目录——必须杀整棵树。
           & taskkill.exe /PID $app.Id /T /F 2>$null | Out-Null
           Start-Sleep -Seconds 3
 
-          Write-Host '--- 4/4 卸载 ---'
-          # NSIS 卸载器会派生子进程并立刻返回父进程，所以等目录真的消失，
-          # 而不是父进程退出就算完。
-          if (-not (Test-Path -LiteralPath $uninstaller)) {
-            $found = Get-ChildItem -Path $installDir -Filter '*nstaller*.exe' -Recurse | Select-Object -First 1
-            if (-not $found) { throw '安装目录里找不到卸载器' }
-            $uninstaller = $found.FullName
-          }
-          Write-Host "卸载器: $(Split-Path -Leaf $uninstaller)"
-          Invoke-Checked $uninstaller @('/S', '/currentuser')
+          Write-Host '--- 3/3 卸载 ---'
+          $uninstaller = Get-ChildItem -Path $installDir -Filter 'Uninstall*.exe' -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $uninstaller) { throw "安装目录里找不到卸载器：$installDir" }
+          Write-Host "卸载器: $($uninstaller.Name)"
+          Invoke-Checked $uninstaller.FullName @('/S')
+          # NSIS 卸载器会派生子进程并立刻返回父进程，所以等目录真的消失。
           $deadline = (Get-Date).AddSeconds(120)
           while ((Test-Path -LiteralPath $installDir) -and (Get-Date) -lt $deadline) {
             Start-Sleep -Milliseconds 500
           }
           if (Test-Path -LiteralPath $installDir) {
-            # 目录还在时把还活着的进程打出来：绝大多数情况就是有孤儿没被杀干净。
+            # 目录还在就把还活着的相关进程打出来：这种��况基本就是有孤儿没被杀干净。
             $left = (Get-ChildItem -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object).Count
             Get-Process -ErrorAction SilentlyContinue |
               Where-Object { $_.Path -and $_.Path.StartsWith($installDir, [System.StringComparison]::OrdinalIgnoreCase) } |
               Select-Object Id, ProcessName, Path | Format-Table | Out-String | Write-Host
             throw "卸载后安装目录仍在（剩余 $left 项）：$installDir"
           }
-          Write-Host '安装 → 覆盖安装 → 启动 → 卸载 全链路通过' 
           Write-Host '安装 → 覆盖安装 → 启动 → 卸载 全链路通过'
-          Remove-Item -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue
+
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
