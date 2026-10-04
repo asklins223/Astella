@@ -167,13 +167,40 @@ jobs:
           # 卸载器默认放在 exe 同目录，名字是 `<productName> Uninstaller.exe`。
           $uninstaller = Join-Path $installDir '理解引擎 Uninstaller.exe'
 
-          function Invoke-Checked([string]$File, [string[]]$Args) {
-            $p = Start-Process -FilePath $File -ArgumentList $Args -PassThru -Wait
-            if ($p.ExitCode -ne 0) { throw "退出码 $($p.ExitCode): $File $($Args -join ' ')" }
+          function Invoke-Checked([string]$File, [string[]]$Args, [int]$TimeoutMs = 180000, [string]$WorkingDirectory = $null) {
+            $logBase = Join-Path $env:RUNNER_TEMP ("ailearn-installer-" + [guid]::NewGuid().ToString('N'))
+            $stdoutPath = "$logBase.out.log"
+            $stderrPath = "$logBase.err.log"
+
+            # 绝不能在**待卸载目录里**当工作目录：Windows 进程持有 CWD 的句柄，
+            # CWD 落在目标目录内会让最后那次删除永久失败——表现是"卸载器退出码 0
+            # 但目录还在"，排查极其费劲。工作目录一旦落进 installDir 就换到 TEMP。
+            $cwd = $WorkingDirectory
+            $resolvedFile = (Resolve-Path -LiteralPath $File).Path
+            if (-not $cwd -or $cwd.StartsWith($installDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+              $cwd = $env:RUNNER_TEMP
+            }
+            if (-not (Test-Path -LiteralPath $cwd)) { $cwd = $env:RUNNER_TEMP }
+
+            $p = Start-Process -FilePath $resolvedFile -ArgumentList $Args -WorkingDirectory $cwd `
+              -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath `
+              -WindowStyle Hidden -PassThru
+            # 不用 Start-Process -Wait：它没有超时上限。某个 NSIS 页面在无人值守的
+            # runner 上等确认时，整个 job 会一路挂到 90 分钟上限，只留一句
+            # "step timed out"——连卡在哪一步都看不到。这里给它 3 分钟，
+            # 拿不到就杀掉进程树，并把 stdout/stderr 原样打出来。
+            if (-not $p.WaitForExit($TimeoutMs)) {
+              & taskkill.exe /PID $p.Id /T /F 2>$null | Out-Null
+              throw "超时 ${TimeoutMs}ms: $(Split-Path -Leaf $File) $($Args -join ' ')`n--- stdout ---`n$(Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue)`n--- stderr ---`n$(Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue)"
+            }
+            if ($p.ExitCode -ne 0) {
+              throw "退出码 $($p.ExitCode): $(Split-Path -Leaf $File) $($Args -join ' ')`n--- stderr ---`n$(Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue)"
+            }
+            Write-Host "  ok  $(Split-Path -Leaf $File) $($Args -join ' ')  (cwd=$(Split-Path -Leaf $cwd))"
           }
 
           Write-Host '--- 1/4 静默安装 ---'
-          Invoke-Checked $installer.FullName @('/S', "/currentuser", "/D=$installDir")
+          Invoke-Checked $installer.FullName @('/S', '/currentuser', "/D=$installDir")
           if (-not (Test-Path -LiteralPath $appExe)) { throw "安装后没有 $appExe" }
           Write-Host "已安装到 $installDir"
 
@@ -186,21 +213,22 @@ jobs:
           Write-Host '--- 2/4 覆盖安装（这就是 electron-updater 走的升级分支）---'
           Invoke-Checked $installer.FullName @('/S', '/currentuser', "/D=$installDir")
           if (-not (Test-Path -LiteralPath $appExe)) { throw "覆盖安装后 $appExe 消失了" }
-          Write-Host '覆盖安装通过'
 
           Write-Host '--- 3/4 启动已安装的程序 ---'
-          $app = Start-Process -FilePath $appExe -WorkingDirectory $installDir -PassThru
+          $app = Start-Process -FilePath $appExe -WorkingDirectory $env:RUNNER_TEMP -PassThru
           Start-Sleep -Seconds 25
-          $alive = -not $app.HasExited
-          if (-not $alive) { Write-Host "已安装程序提前退出，退出码 $($app.ExitCode)"; throw '已安装程序没能活到冒烟结束' }
-          Write-Host "已安装程序存活（pid $($app.Id)）"
-          Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          if ($app.HasExited) { throw "已安装程序提前退出，退出码 $($app.ExitCode)" }
+          Write-Host "  ok  已安装程序存活（pid $($app.Id)）"
+          # Electron 会派生一串子进程（渲染 / GPU / 工具）。只杀父进程会留下持有
+          # installDir 句柄的孤儿，最后那次卸载就永远删不掉目录。
+          & taskkill.exe /PID $app.Id /T /F 2>$null | Out-Null
+          Start-Sleep -Seconds 3
 
           Write-Host '--- 4/4 卸载 ---'
-          # NSIS 卸载器会派生一个子进程并立即返回父进程，所以等目录真的消失，
-          # 而不是等父进程退出就算完。
+          # NSIS 卸载器会派生子进程并立刻返回父进程，所以等目录真的消失，
+          # 而不是父进程退出就算完。
           if (-not (Test-Path -LiteralPath $uninstaller)) {
-            $found = Get-ChildItem -Path $installDir -Filter '*ninstaller*.exe' -Recurse | Select-Object -First 1
+            $found = Get-ChildItem -Path $installDir -Filter '*nstaller*.exe' -Recurse | Select-Object -First 1
             if (-not $found) { throw '安装目录里找不到卸载器' }
             $uninstaller = $found.FullName
           }
@@ -210,9 +238,15 @@ jobs:
           while ((Test-Path -LiteralPath $installDir) -and (Get-Date) -lt $deadline) {
             Start-Sleep -Milliseconds 500
           }
-          if (Test-Path -LiteralPath $installDir) { throw "卸载后安装目录仍在：$installDir" }
-          Write-Host '卸载后安装目录已消失'
-
+          if (Test-Path -LiteralPath $installDir) {
+            # 目录还在时把还活着的进程打出来：绝大多数情况就是有孤儿没被杀干净。
+            $left = (Get-ChildItem -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object).Count
+            Get-Process -ErrorAction SilentlyContinue |
+              Where-Object { $_.Path -and $_.Path.StartsWith($installDir, [System.StringComparison]::OrdinalIgnoreCase) } |
+              Select-Object Id, ProcessName, Path | Format-Table | Out-String | Write-Host
+            throw "卸载后安装目录仍在（剩余 $left 项）：$installDir"
+          }
+          Write-Host '安装 → 覆盖安装 → 启动 → 卸载 全链路通过' 
           Write-Host '安装 → 覆盖安装 → 启动 → 卸载 全链路通过'
           Remove-Item -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue
       - name: Upload Windows installer
