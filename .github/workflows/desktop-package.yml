@@ -134,7 +134,15 @@ jobs:
           fi
       - name: Build and package Windows installer
         working-directory: apps/desktop-client
-        run: npm run package:win:x64
+        # ⚠️ `--publish never` 是必需的，不是可选优化。
+        # electron-builder 在 CI 里默认按 `onTagOrDraft` 发布：runner 上 `CI=true`，
+        # 而 checkout 的 ref 正是 tag，于是它**自己去发** Release，没有 token 就炸在
+        # `PublishManager.awaitTasks`（日志里只剩一串 asyncTaskManager 栈，完全看不出
+        # 是"它想自己发布"）。Release 由 desktop-release.yml 统一建（先 Draft、
+        # 资产传完再公开），这里只需要产物，所以明确让它别碰发布。
+        # `--publish never` 不影响 `latest.yml` 的生成：那份清单挂在
+        # `event.isWriteUpdateInfo` 上，与是否真的上传无关。
+        run: npm run package:win:x64 -- --publish never
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
@@ -214,7 +222,8 @@ jobs:
           fi
       - name: Build and package macOS installers
         working-directory: apps/desktop-client
-        run: npm run package:mac:${{ inputs.mac_arch || 'arm64' }}
+        # 同 Windows 那一节：CI + tag checkout 会让 electron-builder 自行尝试发布。
+        run: npm run package:mac:${{ inputs.mac_arch || 'arm64' }} -- --publish never
       - name: Upload macOS installers
         uses: actions/upload-artifact@v4
         with:
