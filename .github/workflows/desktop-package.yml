@@ -1,0 +1,136 @@
+name: Desktop package
+
+# 这个工作流**只打包**：装依赖 → 构建 → 出安装包 → 上传产物。
+#
+# 为什么不并进 desktop-client.yml：那边是质量闸（typecheck / vitest / 房间层守卫 /
+# 装完冒烟），任何一个红了都拿不到产物。这里的存在意义是"先拿到一个能装、能双击
+# 启动的包看看"，不该被一串还没跑通的门禁挡住。两边刻意不互相 depends_on——
+# 质量闸挂了照样能出包，只是那个包别拿去发版。
+#
+# 也没有代码签名：仓库里没有 Windows 证书，也没有 Apple 证书/notarization 凭据。
+# 产物是**未签名**的——macOS 首次打开要右键 → 打开，Windows 会弹 SmartScreen。
+# 这是当前的已知状态，不是这个工作流偷懒。
+
+on:
+  workflow_dispatch:
+    inputs:
+      mac_arch:
+        description: macOS 架构
+        type: choice
+        default: arm64
+        options:
+          - arm64
+          - x64
+  # 打版前先出一份双平台包看看效果。
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-package-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  # 两个平台都没有签名证书。不关掉自动发现，electron-builder 会先去翻 runner 的
+  # 证书库、翻不到再退回来，产物一样是未签名的，只是每次多花时间加一堆 warning。
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
+  # 出包用的渲染层变体，与 desktop-client.yml 的 package-smoke 保持一致：
+  # 装出来的包要跟质量闸验过的是同一份界面。
+  VITE_HOME_SCENE_VARIANT: v2
+
+jobs:
+  windows:
+    name: Windows x64 (NSIS)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            apps/desktop-client/package-lock.json
+            packages/shared/package-lock.json
+      - name: Install linked shared dependencies
+        working-directory: packages/shared
+        run: npm ci --no-audit --no-fund
+      # @ailearn/shared 是 file: 依赖（file:../../packages/shared）。上一条装的是
+      # 它**自己的**依赖，装在共享包目录里；这条把它装进 desktop-client 的
+      # node_modules。少任何一条，electron-vite 都会在解析 @ailearn/shared 时
+      # 拿到一份缺依赖的快照。
+      - name: Install desktop-client dependencies
+        working-directory: apps/desktop-client
+        run: npm ci --no-audit --no-fund
+      - name: Build and package Windows installer
+        working-directory: apps/desktop-client
+        run: npm run package:win:x64
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-x64-${{ github.run_id }}
+          path: apps/desktop-client/release/*.exe
+          # 打包这条链路最容易的失败不是报错，而是"什么都没产出但步骤是绿的"
+          # （target 被覆盖成 --dir、artifacts 全被 gitignore、artifactName 写错）。
+          # error 而不是 warn，让空产物当场把这一环判红。
+          if-no-files-found: error
+          retention-days: 30
+
+  macos:
+    name: macOS ${{ inputs.mac_arch || 'arm64' }} (dmg + zip)
+    # macos-14 是 Apple Silicon runner，本机架构就是 arm64；x64 产物靠
+    # electron-builder 另下一份 x64 的 Electron 来交叉打，不需要 Rosetta 跑构建。
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            apps/desktop-client/package-lock.json
+            packages/shared/package-lock.json
+      - name: Install linked shared dependencies
+        working-directory: packages/shared
+        run: npm ci --no-audit --no-fund
+      - name: Install desktop-client dependencies
+        working-directory: apps/desktop-client
+        run: npm ci --no-audit --no-fund
+      - name: Build and package macOS installers
+        working-directory: apps/desktop-client
+        run: npm run package:mac:${{ inputs.mac_arch || 'arm64' }}
+      - name: Upload macOS installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos-${{ inputs.mac_arch || 'arm64' }}-${{ github.run_id }}
+          path: |
+            apps/desktop-client/release/*.dmg
+            apps/desktop-client/release/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  summary:
+    name: Packaging summary
+    # 只汇总，不装不建。windows / macos 是两个互不依赖的并行 job，
+    # 一端红了另一端照样把包传上来，最后在这里合成一个结论。
+    needs: [windows, macos]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report packaging outcome
+        env:
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+          MACOS_RESULT: ${{ needs.macos.result }}
+        run: |
+          echo "windows: ${WINDOWS_RESULT}"
+          echo "macos:   ${MACOS_RESULT}"
+          if [ "${WINDOWS_RESULT}" != "success" ] || [ "${MACOS_RESULT}" != "success" ]; then
+            echo "::warning::至少一端没出包，见上面失败步骤"
+            exit 1
+          fi

@@ -20,6 +20,10 @@
     "evidence:manifest": "node --experimental-strip-types scripts/evidence-manifest.ts --input scripts/fixtures/evidence-manifest.input.json --output .impeccable/evidence/manifest.json --root ../..",
     "package:smoke": "node scripts/smoke-packaged.mjs",
     "package:evidence": "npm run package:smoke && node scripts/package-evidence.mjs",
+    "package:win:x64": "npm run build && electron-builder --win --x64",
+    "package:mac:arm64": "npm run build && electron-builder --mac --arm64",
+    "package:mac:x64": "npm run build && electron-builder --mac --x64",
+    "package:linux:x64": "npm run build && electron-builder --linux --x64",
     "preview": "electron-vite preview",
     "dist": "npm run typecheck && npm run test && npm run build && electron-builder"
   },

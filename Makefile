@@ -238,6 +238,7 @@ DESKTOP_PROJECT := ailearn-dev
 
 .PHONY: desktop-client-install desktop-client-dev desktop-client-build desktop-client-dist \
 	desktop-client-dist-arm64 desktop-client-dist-linux desktop-client-dist-win \
+	desktop-client-dist-mac \
 	desktop-client-up desktop-client-down desktop-client-logs
 
 # Install desktop Electron dependencies.
@@ -258,17 +259,24 @@ desktop-client-build:
 desktop-client-dist:
 	cd $(DESKTOP_CLIENT_DIR) && npm run dist
 
+# 下面四个 target 只构建 + 打包，不跑 typecheck / vitest（`dist` 会跑那两道门禁）。
+# 双平台的 CI 打包流程见 .github/workflows/desktop-package.yml。
+
 # Package for Apple Silicon only (smaller, faster build).
 desktop-client-dist-arm64:
-	cd $(DESKTOP_CLIENT_DIR) && npm run dist:arm64
+	cd $(DESKTOP_CLIENT_DIR) && npm run package:mac:arm64
 
-# Linux x64 AppImage/deb build (CI/Ubuntu runner).
+# Linux x64 AppImage build (CI/Ubuntu runner).
 desktop-client-dist-linux:
-	cd $(DESKTOP_CLIENT_DIR) && npm run dist:linux
+	cd $(DESKTOP_CLIENT_DIR) && npm run package:linux:x64
 
-# Windows x64 NSIS/portable build (CI/Windows runner or a configured Wine host).
+# Windows x64 NSIS installer (CI/Windows runner or a configured Wine host).
 desktop-client-dist-win:
-	cd $(DESKTOP_CLIENT_DIR) && npm run dist:win
+	cd $(DESKTOP_CLIENT_DIR) && npm run package:win:x64
+
+# macOS dmg+zip (Apple Silicon; package:mac:x64 for the Intel build).
+desktop-client-dist-mac:
+	cd $(DESKTOP_CLIENT_DIR) && npm run package:mac:arm64
 
 # Manually start the shared development Docker stack (without the Electron app).
 desktop-client-up:

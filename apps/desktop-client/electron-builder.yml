@@ -19,6 +19,11 @@ files:
 asar: true
 compression: maximum
 
+# `electron-builder.yml` 只回答"一个 target 长什么样"：出 nsis 安装包还是 dmg。
+# "这次打哪个架构"交给 package.json 里的 package:win:x64 / package:mac:arm64 / ...
+# 以及 .github/workflows/desktop-package.yml——两处都用 `--win --x64` 这类命令行
+# 开关覆盖，所以这里**故意不写 arch**，避免和脚本互相覆盖后打出没人要的架构。
+
 mac:
   category: public.app-category.education
   target:
@@ -28,12 +33,26 @@ mac:
   # TCC 直接把 getUserMedia 判拒 —— 只放开主进程的权限闸是不够的。
   extendInfo:
     NSMicrophoneUsageDescription: AI Learn 需要用麦克风把你的话转给伴星。
+  # 没有配 APPLE_IDENTITY / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID，
+  # 仓库里也没有签名证书。所以明确写死：只公证流程不跑、hardenedRuntime 不开。
+  # 写在这里而不是只靠环境变量，是为了让"产物是未签名的"这件事在配置里看得见，
+  # 而不是靠 CI 里那句 CSC_IDENTITY_AUTO_DISCOVERY=false 悄悄兜住。
+  identity: null
+  hardenedRuntime: false
+  notarize: false
 
 win:
   target:
     - target: nsis
       arch:
         - x64
+  # 桌面学习房是单窗口应用，不需要管理员权限。显式写 asInvoker 而不是留默认：
+  # 提权会让安装程序往 Program Files 写，用户目录下的免安装包和绿色版都用不了。
+  requestedExecutionLevel: asInvoker
+  # 没有配 CSC_LINK / CSC_KEY_PASSWORD，产物必然未签名。这一条只做"资源改写"：
+  # 把图标、版本信息、文件描述写进 exe/安装器；不碰签名。关掉的话装出来的 exe
+  # 连图标都是 Electron 默认的那个。
+  signAndEditExecutable: true
 
 linux:
   category: Education
@@ -43,5 +62,13 @@ linux:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  # 未签名的安装包被 SmartScreen 拦下时，"更多信息 → 仍要运行"这条路要能走通，
+  # 前提是用户知道去哪找。装完留一个卸载入口。
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
 
+# 没有 build/icon.icns / build/icon.ico：electron-builder 会回落到 Electron 默认图标，
+# 两个平台的安装包和开始菜单项都是那个蓝色原子。要换成自己的图标就把 512×512 的
+# png / ico / icns 放进 apps/desktop-client/build/（buildResources 默认目录），
+# 不用改配置。
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
