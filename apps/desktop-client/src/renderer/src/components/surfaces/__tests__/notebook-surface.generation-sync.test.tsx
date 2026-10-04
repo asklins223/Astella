@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NotebookSurface } from "../notebook/notebook-surface.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
@@ -192,7 +192,7 @@ describe("NotebookSurface · 学习卡生成状态同步", () => {
     useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
     const { getByTitle, queryByText } = render(<NotebookSurface />);
 
-    const entry = await waitFor(() => getByTitle("这次生成在后台进行，来回翻看不会打断它"));
+    const entry = await waitFor(() => getByTitle("这一批已经写好，等你逐张决定留哪些"));
     expect(entry.textContent).toContain("审核学习卡");
     expect(queryByText("生成学习卡")).toBeNull();
 
@@ -221,23 +221,27 @@ describe("NotebookSurface · 学习卡生成状态同步", () => {
   });
 
   /**
-   * 入口那一下现在**直接开跑**。
-   *
-   * 改这一下之前它开的是方案页——17 颗 chip，而默认值本来就是全开
-   * （`DEFAULT_GENERATION_OPTIONS`）。多数人按这一下只要的是默认值，却得先看完
-   * 17 个选择才拿得到。方案页没有删，降级成入口旁边的「调整这次」。
-   * 所以这条量的是：按入口 ⇒ 一次 start、跳工位；按「调整这次」才开方案页。
+   * 2026-10-04 用户决定：入口从"按下去直接用默认档开跑"改成"按下去先开
+   * 「这次想怎么练？」"。过去多数人按这一下只要的是默认档，却根本不知道自己
+   * 挑走了什么——直到卡片出来了才发现方向不对，而那一批已经跑完。
+   * 现在这一格只有一颗按钮，方向、数量、详略、卡型都在那张屏上，选完才开始。
    */
-  it("没有 run 时入口直接用默认档开跑；要改参数才进方案页", async () => {
+  it("没有 run 时入口开方案屏，选完才开始生成", async () => {
     const { gateway, state } = stubGateway(null);
     useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
-    const { getByText, getByRole, queryByRole } = render(<NotebookSurface />);
+    const { findByRole, queryByRole, findByText } = render(<NotebookSurface />);
 
-    const entry = await waitFor(() => getByText("生成学习卡"));
+    const entry = await findByRole("button", { name: "生成学习卡" });
     expect(gateway.subscriptions.subscribe).not.toHaveBeenCalled();
-    expect(queryByRole("dialog")).toBeNull();
+    // 按下去之前没有任何生成任务被创建。
+    expect(state.startCalls).toBe(0);
 
     fireEvent.click(entry);
+    const dialog = await findByRole("dialog", { name: "这次想怎么练？" });
+    expect(dialog).toBeTruthy();
+    expect(state.startCalls).toBe(0);
+
+    fireEvent.click(await findByRole("button", { name: "开始生成" }));
     await waitFor(() => expect(useRoomStore.getState().surface).toBe("card-generation"));
     expect(useRoomStore.getState().activeCardGenerationRunId).toBe(RUN_ID);
     expect(state.startCalls).toBe(1);
@@ -247,29 +251,44 @@ describe("NotebookSurface · 学习卡生成状态同步", () => {
       detailThreshold: "balanced",
       quantity: { kind: "adaptive", hardMaxCards: 8 },
     });
-    // 直接开跑的那一下**不**开方案页——否则就是把那 17 颗 chip 又摆回第一屏。
-    expect(queryByRole("dialog")).toBeNull();
-
-    // 仍然摸得到完整方案：入口旁边那颗次要动作。
-    fireEvent.click(getByRole("button", { name: "调整这次" }));
-    expect(await waitFor(() => getByText("开始生成"))).toBeTruthy();
   });
 
-  it("被服务端拒绝后重读状态：入口翻到真实阶段，不再反复撞同一个拒绝", async () => {
+  it("这一格始终留着「再来一批」：等着挑时去看那批，旁边补一颗「重新生成学习卡」", async () => {
+    // 2026-10-04 用户决定（第二次）：这一格曾被并成一颗按钮，于是"再来一批"这个
+    // 决定在"有事发生"的时候整个不存在（用户只能先去进度页里找），而且正文改过
+    // 之后那颗仍然读作「查看生成进度」。两颗按钮回答的是两个不同的问题。
+    const { state } = stubGateway("review_ready");
+    useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
+    const { findByRole } = render(<NotebookSurface />);
+
+    const entry = await findByRole("button", { name: "学习卡：待激活" });
+    expect(entry.textContent).toContain("审核学习卡");
+    expect(document.querySelectorAll(".notebook-card-entry").length).toBe(1);
+    // 「调整这次」撤掉了：它按下去开的就是「重新生成学习卡」按下去开的那张方案屏，
+    // 两颗同义按钮只会要用户先认出哪一颗是哪一颗。
+    expect(screen.queryByText("调整这次")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "重新生成学习卡" }));
+    await screen.findByRole("dialog", { name: "这次想怎么练？" });
+    expect(state.startCalls).toBe(0);
+  });
+
+  it("被服务端拒绝后重读状态：方案屏上说明失败，入口翻到真实阶段，不再反复撞同一个拒绝", async () => {
     const { state } = stubGateway(null, [], { startRejects: true });
     useRoomStore.setState({ activeNoteRef: { noteId: NOTE_ID, noteVersionId: VERSION_ID } });
-    const { getByText, getAllByRole, getByTitle } = render(<NotebookSurface />);
+    const { findByRole, getAllByRole, getByTitle } = render(<NotebookSurface />);
 
-    fireEvent.click(await waitFor(() => getByText("生成学习卡")));
+    fireEvent.click(await findByRole("button", { name: "生成学习卡" }));
+    fireEvent.click(await findByRole("button", { name: "开始生成" }));
 
-    // 拒绝留在纸面上说，同时投影重读：入口翻到这篇笔记真实的阶段。
-    // 入口直接开跑之后没有方案页可留，所以这句落在纸面上，按复数查。
+    // 拒绝留在方案屏上说，同时投影重读：入口翻到这篇笔记真实的阶段。
     await waitFor(() => expect(getAllByRole("alert").length).toBeGreaterThan(0));
-    const entry = await waitFor(() => getByTitle("这次生成在后台进行，来回翻看不会打断它"));
+    const entry = await waitFor(() => getByTitle("这一批已经写好，等你逐张决定留哪些"));
     expect(entry.textContent).toContain("审核学习卡");
     expect(state.startCalls).toBe(1);
 
-    // 再点入口是去看那一批，不是再开一次生成。
+    // 关掉方案屏再点入口，是去看那一批，不是再开一次生成。
+    fireEvent.click(await findByRole("button", { name: "关闭生成方案" }));
     fireEvent.click(entry);
     expect(state.startCalls).toBe(1);
   });

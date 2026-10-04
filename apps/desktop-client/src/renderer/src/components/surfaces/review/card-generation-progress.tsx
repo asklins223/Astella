@@ -1,7 +1,7 @@
 import { ArrowLeft, CircleAlert, FileText, LoaderCircle, RefreshCw, RotateCcw, Square } from "lucide-react";
 import { useRef, type CSSProperties } from "react";
 import type { CardGenerationCandidateV1 } from "@ailearn/shared/card-generation-desktop-contracts";
-import { useCardPaperArrival } from "../../motion/card-object-spring";
+import { useCardVisibleArrival } from "../../motion/card-object-spring";
 import { CardPackArt } from "../library/card-pack-object";
 import { useCardPackMotion } from "../library/use-card-pack-motion";
 import { cardGenerationRecoveryReasonLabel, cardGenerationStatusLabel, cardGenerationSyncReportText, isCardGenerationInFlight, isCardGenerationStopped } from "./card-generation-status";
@@ -13,7 +13,9 @@ import type { CardGenerationSession } from "./use-card-generation-session";
 
 function WrittenCard({ candidate, index }: { candidate: CardGenerationCandidateV1; index: number }) {
   const paperRef = useRef<HTMLLIElement>(null);
-  useCardPaperArrival(paperRef, candidate.candidateId);
+  // 同样用「一直可见」那一档：这一列的意义就是**一张张多出来**，而"刚出来的那张先
+  // 透明半秒"会把用户最想看的那一条藏起来。
+  useCardVisibleArrival(paperRef, candidate.candidateId);
   return <li ref={paperRef} data-testid="card-generation-landing-item" className="card-generation-landing__item">
     <header><span className="card-generation-landing__type">{cardStrategyPresentation[candidate.strategy].symbol} · {cardStrategyPresentation[candidate.strategy].label}</span><span>{String(index + 1).padStart(2, "0")}</span></header>
     <strong className="card-generation-landing__concept"><CandidateText text={candidate.objective.publicSummary} /></strong>

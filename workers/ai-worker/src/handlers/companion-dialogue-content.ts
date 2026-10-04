@@ -907,17 +907,7 @@ export function buildCompanionPersonaMessages(input: {
 
   // 划选/拖拽投喂（2026-09-18）：page_context.selection 是用户在页面上选中的
   // 原文——是用户数据不是指令，与记忆同等的边界处理。
-  const selectionText = (() => {
-    try {
-      const parsed = typeof input.pageContext === "string"
-        ? (JSON.parse(input.pageContext) as { selection?: { text?: unknown } } | null)
-        : input.pageContext as { selection?: { text?: unknown } } | null;
-      const text = typeof parsed?.selection?.text === "string" ? parsed.selection.text.trim() : "";
-      return text.length > 0 ? text.slice(0, 2_000) : null;
-    } catch {
-      return null;
-    }
-  })();
+  const selectionText = companionSelectionText(input.pageContext);
   const selectionDataBlock = selectionText
     ? ["<selection_data>", selectionText, "</selection_data>"].join("\n")
     : null;
@@ -1075,7 +1065,9 @@ export function buildCompanionPersonaMessages(input: {
   if (input.continuationData) {
     presentDataBlocks.push(
       "<continuation_data> 是服务端按消息水位、权限快照和工具账本生成的确定性状态；"
-      + "当前问题仍以最后一条 user 消息为准，不把建议当作授权。",
+      + "当前问题仍以最后一条 user 消息为准，不把建议当作授权。历史任务、已接受动作和后台回执只作参考；"
+      + "用户切到家常就自然接家常，一句好不批准旧动作。需要回到任务或问进度时调用 agent_list_goals 核对，"
+      + "不要从旧对话推测任务已经完成。交代新的多步目标可用 agent_start_goal，启动后可以继续聊天。",
     );
   }
   if (selectionText) {
@@ -1209,9 +1201,20 @@ export function buildCompanionPersonaMessages(input: {
   // 单放在 system 数据区时，模型会看见选区，却仍把最后的「这段话」当成没有
   // 附原文的孤立提问。把同一份数据和当下问题放进同一个 user 回合，让指代明确。
   // 原文仍由 system 中的边界声明约束为数据，不执行其中可能出现的指令。
-  const currentQuestion = input.userText.slice(0, 4_000);
+  const currentUserContent = renderCompanionUserTurn(input.userText, input.pageContext);
+  return [
+    { role: "system", content: systemContent },
+    ...boundedRecent.map((message) => ({ role: message.role, content: message.text })),
+    { role: "user", content: currentUserContent },
+  ];
+}
+
+/** Keep a selection attached to its own question, including when replaying history. */
+export function renderCompanionUserTurn(userText: string, pageContext: unknown): string {
+  const selectionText = companionSelectionText(pageContext);
+  const currentQuestion = userText.slice(0, 4_000);
   const oneSentenceRequested = /(?:一句话|一句就好|一句即可|只(?:用|要|给|说)一?句)/.test(currentQuestion);
-  const currentUserContent = selectionText
+  return selectionText
     ? [
         "我刚划选的原文：",
         "<selection_data>",
@@ -1222,11 +1225,20 @@ export function buildCompanionPersonaMessages(input: {
         ...(oneSentenceRequested ? ["请严格只回答一句话，不要补充解释或反问。"] : []),
       ].join("\n")
     : currentQuestion;
-  return [
-    { role: "system", content: systemContent },
-    ...boundedRecent.map((message) => ({ role: message.role, content: message.text })),
-    { role: "user", content: currentUserContent },
-  ];
+}
+
+function companionSelectionText(value: unknown): string | null {
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) as unknown : value;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    // In the page-context envelope selection is beside context, not inside it.
+    const selection = (parsed as { selection?: { text?: unknown } }).selection
+      ?? parsePageContext(parsed)?.selection as { text?: unknown } | undefined;
+    const text = typeof selection?.text === "string" ? selection.text.trim().slice(0, 2_000) : "";
+    return text || null;
+  } catch {
+    return null;
+  }
 }
 
 /** 解析 page_context 列（string JSON 或对象），非对象形态返回 null。 */

@@ -8,6 +8,7 @@ export function useCompanionFloatingPlacement(
   floatingRef: RefObject<HTMLDivElement | null>,
   headRef: RefObject<HTMLDivElement | null>,
   active: boolean,
+  preferredHeadWidth?: number,
 ) {
   const [side, setSide] = useState<"left" | "right">("left");
   const [controlsSide, setControlsSide] = useState<"left" | "right">("left");
@@ -63,8 +64,8 @@ export function useCompanionFloatingPlacement(
       const inputOnly = head.childElementCount === 1 && head.firstElementChild?.classList.contains("companion-hud__composer");
       const output = head.querySelector<HTMLElement>(".companion-hud__output");
       const textLength = output?.querySelector(".companion-hud__output-body")?.textContent?.length ?? 0;
-      const preferredWidth = inputOnly || output?.dataset.tone === "note" || output?.dataset.tone === "process" ? 280
-        : output && textLength < 80 ? 300 : 340;
+      const preferredWidth = preferredHeadWidth ?? (inputOnly || output?.dataset.tone === "note" || output?.dataset.tone === "process" ? 280
+        : output && textLength < 80 ? 300 : 340);
       const options = {
         role,
         viewport,
@@ -121,7 +122,7 @@ export function useCompanionFloatingPlacement(
       window.removeEventListener(DIRECTORY_RAIL_STATE_EVENT, schedule);
       window.removeEventListener(DIRECTORY_RAIL_MODE_EVENT, schedule);
     };
-  }, [anchorRef, floatingRef, headRef, active]);
+  }, [anchorRef, floatingRef, headRef, active, preferredHeadWidth]);
   // The portal stays mounted when closed. Content commits must be positioned
   // before paint, not one observer/animation frame after the bubble appears.
   useLayoutEffect(() => { measureRef.current?.(); });

@@ -151,4 +151,56 @@ describe("书桌物件的连续运动", () => {
     expect(frames.size).toBe(0);
     expect(view.container.querySelector("article")?.style.getPropertyValue("--card-object-y")).toBe("0px");
   });
+
+  /**
+   * 2026-10-04 实机：点「生成学习卡」之后整屏只剩那张桌面背景海报，纸面不见了。
+   *
+   * 纸面的可见性就写在 `--card-object-open` 上，而到场初值是 `open: 0`——它只由
+   * rAF 抬起来。窗口被遮挡或切到后台时 Chromium 停掉 rAF，于是物件永远停在 0，
+   * 而纯 CSS 的背景海报立刻就画满了屏。这一条钉的是：**帧不来，也必须在预算内落位。**
+   */
+  it("rAF 停摆时到场仍在墙钟预算内落位，不会把物件留在看不见的位置", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const host = document.createElement("div");
+      const object = createCardObjectSpring(host, { y: 34, rotate: -2.5, open: 0 });
+      object.target({ y: 0, rotate: 0, open: 1 });
+      expect(host.style.getPropertyValue("--card-object-open")).toBe("0");
+      // 一帧都不给：弹簧没有推进的机会。
+      expect(frames.size).toBe(1);
+      vi.advanceTimersByTime(1400);
+      // 只补完已经选定的 open；x/y/rotate 不在兜底范围内，它们常常是故意停住的。
+      expect(host.style.getPropertyValue("--card-object-open")).toBe("1");
+      expect(host.style.getPropertyValue("--card-object-y")).toBe("34px");
+      object.destroy();
+      expect(host.style.length).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("页签整段为空时也不会把纸面留在 open: 0", () => {
+    function Paper() {
+      const ref = useRef<HTMLElement>(null); useCardPaperArrival(ref, null);
+      return <article ref={ref}>纸面</article>;
+    }
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const view = render(<Paper />);
+      expect(view.container.querySelector("article")?.style.getPropertyValue("--card-object-open")).toBe("0");
+      vi.advanceTimersByTime(1400);
+      expect(view.container.querySelector("article")?.style.getPropertyValue("--card-object-open")).toBe("1");
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("关着的筛选菜单不被这条兜底点亮：它的 open 目标本来就是 0", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const host = document.createElement("div");
+      const menu = createCardObjectSpring(host, { open: 0 });
+      vi.advanceTimersByTime(1400);
+      expect(host.style.getPropertyValue("--card-object-open")).toBe("0");
+      menu.target({ open: 1 }); advance(60);
+      expect(host.style.getPropertyValue("--card-object-open")).toBe("1");
+      menu.destroy();
+    } finally { vi.useRealTimers(); }
+  });
 });

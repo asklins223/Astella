@@ -42,9 +42,10 @@ import { eq, and, inArray, isNull, lt, sql } from "drizzle-orm";
 import { users, workspaceMembers, workspaces } from "@ailearn/shared/db-schema/identity";
 import { sessions } from "@ailearn/shared/db-schema/session";
 import {
-  assumeActor,
+  commitAssumedActor,
   db,
   withActorTransaction,
+  WorkspaceTransactionContextError,
   SYSTEM_USER_ID,
   type ApiTransaction,
 } from "../../db/client.ts";
@@ -232,31 +233,91 @@ export async function decodeToken(token: string): Promise<SessionContext | null>
     // 嵌套校验只认同一个 actor，所以 actor 在这里从 SYSTEM_USER_ID 换成
     // 令牌真正的主人——用一次显式的 `set_config`，语义是"这条事务从现在起
     // 代表这个已认证用户"。
-    await assumeActor(tx, session.userId, session.workspaceId);
+    //
+    // 2026-10-03：这次 set_config 不再单独发一条语句，而是与它之后那两条
+    // 读取合并（见下方），内存侧的记账改由 commitAssumedActor 完成。
 
-    const membership = await tx.query.workspaceMembers.findFirst({
-      where: and(
-        eq(workspaceMembers.workspaceId, session.workspaceId),
-        eq(workspaceMembers.userId, session.userId),
-      ),
-      columns: { leftAt: true, role: true },
-    });
-    // ADR-0009: 无 membership 行或 left_at 非空（已退出）——用户被移出/退出后
+    // ─── 2026-10-03：换 actor + 读作用域合并成一条语句 ───────────────────
+    //
+    // 原来是三条：assumeActor 的 set_config、workspace_members 的读、workspaces
+    // 的读。后两条**必须**等第一条生效才拿得到行（RLS 策略按 app.user_id /
+    // app.workspace_id 过滤），所以它们只能顺序发——但不必分三条往返。
+    //
+    // 用 `WITH cfg AS MATERIALIZED` 把 set_config 放进同一条语句：MATERIALIZED
+    // 是文档保证的"主查询之前求值"，于是子查询读到的就是新上下文。回读校验
+    // 也没丢——set_config 的返回值本身就是 CTE 的输出列，一并带回来比对，
+    // 与 applyActorConfig 的判据逐项相同。
+    //
+    // 顺序万一不成立会怎样：两张表的 actor_read 都要求 app.* 与谓词相等，
+    // 读不到就是**读不到**（0 行），decodeToken 随即走"吊销并返回 null"那条
+    // 既有分支，客户端拿到 401。是响亮的失败，不存在静默读到别人数据的可能。
+    // 这条性质与真实策略一起验证过（scripts/probe-session-context-merge.mjs）。
+    const scopeRows = await tx.execute(sql`
+      WITH cfg AS MATERIALIZED (
+        SELECT
+          pg_catalog.set_config('app.workspace_id', ${session.workspaceId}, true) AS workspace_id,
+          pg_catalog.set_config('app.user_id', ${session.userId}, true) AS user_id,
+          pg_catalog.set_config('app.session_token', ${tokenHash}, true) AS session_token
+      )
+      SELECT
+        cfg.workspace_id AS applied_workspace_id,
+        cfg.user_id AS applied_user_id,
+        cfg.session_token AS applied_session_token,
+        m.role AS membership_role,
+        m.left_at AS membership_left_at,
+        w.owner_id AS workspace_owner_id,
+        w.workspace_epoch AS workspace_epoch,
+        w.name AS workspace_name,
+        w.workspace_type AS workspace_type
+      FROM cfg
+      LEFT JOIN LATERAL (
+        SELECT role, left_at FROM ${workspaceMembers}
+        WHERE ${workspaceMembers.workspaceId} = ${session.workspaceId}
+          AND ${workspaceMembers.userId} = ${session.userId}
+        LIMIT 1
+      ) m ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT owner_id, workspace_epoch, name, workspace_type FROM ${workspaces}
+        WHERE ${workspaces.id} = ${session.workspaceId}
+        LIMIT 1
+      ) w ON TRUE
+    `);
+    const scope = scopeRows[0] as {
+      applied_workspace_id?: string | null;
+      applied_user_id?: string | null;
+      applied_session_token?: string | null;
+      membership_role?: string | null;
+      membership_left_at?: Date | string | null;
+      workspace_owner_id?: string | null;
+      workspace_epoch?: number | null;
+      workspace_name?: string | null;
+      workspace_type?: string | null;
+    } | undefined;
+    // 回读校验：与 applyActorConfig 同一判据，数据库若没接受这三个值就当场拒绝。
+    if (
+      (scope?.applied_workspace_id ?? "") !== session.workspaceId
+      || (scope?.applied_user_id ?? "") !== session.userId
+      || (scope?.applied_session_token ?? "") !== tokenHash
+    ) {
+      throw new WorkspaceTransactionContextError("database rejected actor transaction context");
+    }
+    commitAssumedActor(tx, session.userId, session.workspaceId, tokenHash);
+
+    const membershipRole = scope?.membership_role ?? null;
+    const membershipLeftAt = scope?.membership_left_at ?? null;
+    const workspaceOwnerId = scope?.workspace_owner_id ?? null;
+    const workspaceEpoch = scope?.workspace_epoch ?? 1;
+    const workspaceName = scope?.workspace_name ?? null;
+    const workspaceType = scope?.workspace_type ?? null;
+
+    // ADR-0009：无 membership 行或 left_at 非空（已退出）——用户被移出/退出后
     // 立即吊销 session。旧写法用 `membershipRole !== null` 区分"join 未命中"与
     // "活跃成员（left_at 为 NULL）"；现在 membership 行本身在手上，判据更直白。
-    if (!membership || membership.leftAt !== null) {
+    // 注意"行不存在"与"left_at 非空"要分开判：前者是 LEFT JOIN 补出的 NULL。
+    if (!scope || scope.membership_left_at === undefined || membershipLeftAt !== null) {
       await tx.delete(sessions).where(eq(sessions.token, tokenHash));
       return null;
     }
-
-    // 空间归属人（isWorkspaceOwner 的 OR 判据需要它）与边界令牌（0261）。
-    // 2026-10-03：顺带取回 name / workspace_type——`/auth/me` 此前为了这两列
-    // 又查了一遍同一张表的同一行。列选全的代价是零（同一行已在手上），
-    // 省掉的是每个已认证请求的一次完整往返。
-    const workspace = await tx.query.workspaces.findFirst({
-      where: eq(workspaces.id, session.workspaceId),
-      columns: { ownerId: true, workspaceEpoch: true, name: true, workspaceType: true },
-    });
 
     // 滑动续期：桌面端把凭据存在本机，只要用户还在用就一直有效，直到绝对上限。
     // 低频写入由 nextSessionExpiry 的阈值保证（见常量注释）。
@@ -267,16 +328,16 @@ export async function decodeToken(token: string): Promise<SessionContext | null>
     return {
       userId: session.userId,
       workspaceId: session.workspaceId,
-      membershipRole: membership.role ?? null,
-      workspaceOwnerId: workspace?.ownerId ?? null,
+      membershipRole,
+      workspaceOwnerId,
       // 空间行读不到时退回 1（而不是 0）：契约是 positiveInt，0 会让整个会话
       // 在客户端解析失败。读不到只可能是空间刚被删，那种情况下一次请求就会被拒。
-      workspaceEpoch: workspace?.workspaceEpoch ?? 1,
+      workspaceEpoch,
       // 2026-10-03：与 workspaceEpoch 同一份读数，供 /auth/me 复用，
       // 不再为 name / workspace_type 单独发一次查询。行读不到时留 null，
       // 由消费方按既有语义兜底（与 workspaceOwnerId 的处理方式一致）。
-      workspaceName: workspace?.name ?? null,
-      workspaceType: workspace?.workspaceType ?? null,
+      workspaceName,
+      workspaceType,
     };
   });
 }

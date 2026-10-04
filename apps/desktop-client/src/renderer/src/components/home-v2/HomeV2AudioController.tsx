@@ -9,6 +9,11 @@ import { useHomeProjectionInvalidation } from "../../app/home-projection";
 import { shouldRunHomeV2Ambient } from "./home-v2";
 import { setHomeV2VoiceLevel } from "../../app/companion-voice-level";
 import {
+  isCompanionMicrophoneActive, isCompanionNotificationSpeechActive,
+  setCompanionNotificationVoiceHost, stopCompanionNotificationSpeech, subscribeCompanionAudioPriority,
+} from "../companion/companion-notification-voice";
+import type { CompanionNotificationAudio } from "../companion/companion-notifications";
+import {
   isCompanionSpeechActive,
   setCompanionVoiceHost,
   stopCompanionSpeech,
@@ -284,6 +289,7 @@ export function HomeV2AudioController() {
   const workspaceEpochRef = useRef(invalidation.workspaceEpoch);
   workspaceEpochRef.current = invalidation.workspaceEpoch;
   const audibleRef = useRef(false);
+  const notificationAudioCache = useRef(new Map<CompanionNotificationAudio, Promise<AudioBuffer>>());
 
   const stopVoicePlayback = useCallback((immediate = true) => {
     const playback = voiceRef.current;
@@ -337,13 +343,14 @@ export function HomeV2AudioController() {
   const playVoiceBuffer = useCallback(async (
     buffer: AudioBuffer,
     onProgress: (fraction: number) => void,
+    allowed: () => boolean = () => true,
   ): Promise<void> => {
     const graph = graphRef.current;
-    if (!graph || !userInitiatedAudibleRef.current) {
+    if (!graph || !userInitiatedAudibleRef.current || isCompanionMicrophoneActive() || !allowed()) {
       return;
     }
     await graph.context.resume();
-    if (graphRef.current !== graph || !userInitiatedAudibleRef.current) return;
+    if (graphRef.current !== graph || !userInitiatedAudibleRef.current || isCompanionMicrophoneActive() || !allowed()) return;
     stopVoicePlayback();
     return new Promise<void>((resolve) => {
       const source = graph.context.createBufferSource();
@@ -517,6 +524,29 @@ export function HomeV2AudioController() {
     return decodeBase64Audio(graph.context, unwrapGatewayResult(response).audioBase64);
   }, [ensureGraph]);
 
+  const synthesizeNotification = useCallback(async (text: string, clip?: CompanionNotificationAudio): Promise<AudioBuffer> => {
+    const graph = ensureGraph();
+    if (clip) {
+      const cached = notificationAudioCache.current.get(clip);
+      if (cached) return cached;
+      const pending = fetch(new URL(`/assets/companion-notifications/${clip}.mp3`, window.location.href))
+        .then(async response => {
+          if (!response.ok) throw new Error("notification audio unavailable");
+          return graph.context.decodeAudioData(await response.arrayBuffer());
+        });
+      notificationAudioCache.current.set(clip, pending);
+      void pending.catch(() => notificationAudioCache.current.delete(clip));
+      return pending;
+    }
+    const speakApi = window.ailearn?.companion?.voice?.speak;
+    if (!speakApi) throw new Error("notification voice unavailable");
+    const response = await speakApi.call(window.ailearn.companion.voice, {
+      meta: createRequestMeta(workspaceEpochRef.current ?? undefined),
+      request: { version: 1, text, purpose: "notification" },
+    });
+    return decodeBase64Audio(graph.context, unwrapGatewayResult(response).audioBase64);
+  }, [ensureGraph]);
+
   /**
    * 一段音频的结局上报（0247）。不 await、不 unwrap、不抛——**上报反噬朗读**是
    * 比"少一行统计"严重得多的失败，所以这里把所有异常咽掉。
@@ -547,7 +577,7 @@ export function HomeV2AudioController() {
   // 全应用因此只有一个 AudioContext 和一条嘴型通道。
   useEffect(() => {
     setCompanionVoiceHost({
-      audible: () => userInitiatedAudibleRef.current,
+      audible: () => userInitiatedAudibleRef.current && !isCompanionMicrophoneActive(),
       synthesize: synthesizeVoice,
       synthesizeSegment: synthesizeVoiceSegment,
       play: playVoiceBuffer,
@@ -559,6 +589,23 @@ export function HomeV2AudioController() {
   }, [playVoiceBuffer, stopVoicePlayback, synthesizeVoice, synthesizeVoiceSegment, reportSegmentOutcome, voiceProgress]);
 
   useEffect(() => {
+    setCompanionNotificationVoiceHost({
+      available: () => userInitiatedAudibleRef.current && !isCompanionSpeechActive() && !isCompanionMicrophoneActive(),
+      synthesize: synthesizeNotification,
+      play: (buffer, allowed) => playVoiceBuffer(buffer, () => undefined, allowed),
+      stop: stopVoicePlayback,
+    });
+    return () => setCompanionNotificationVoiceHost(null);
+  }, [playVoiceBuffer, stopVoicePlayback, synthesizeNotification]);
+
+  useEffect(() => subscribeCompanionAudioPriority(() => {
+    if (!isCompanionMicrophoneActive()) return;
+    // Recording also invalidates a touch/cue request that has not finished decoding.
+    voiceRequestGenerationRef.current++;
+    stopVoicePlayback();
+  }), [stopVoicePlayback]);
+
+  useEffect(() => {
     const graph = graphRef.current;
     if (!graph) return;
     const now = graph.context.currentTime;
@@ -566,6 +613,7 @@ export function HomeV2AudioController() {
     if (!audible) graph.ambientGain.gain.setValueAtTime(0, now);
     if (!userInitiatedAudible) {
       voiceRequestGenerationRef.current += 1;
+      stopCompanionNotificationSpeech();
       stopVoicePlayback();
       void graph.context.suspend().catch(() => undefined);
       return;
@@ -614,7 +662,7 @@ export function HomeV2AudioController() {
       // 回复朗读优先（2026-09-19）：用户主动问出来的那条回复是他要的反馈，提示音是背景。
       // 背景抢掉正在念的回复，听感上就是"气泡回来了却没发音"——所以正在念的时候，
       // 这次提示音直接丢弃（不排队、也不打断），连请求都不发。
-      if (isCompanionSpeechActive()) return;
+      if (isCompanionSpeechActive() || isCompanionNotificationSpeechActive() || isCompanionMicrophoneActive()) return;
       const requestGeneration = ++voiceRequestGenerationRef.current;
       // 提示音和对话台词共用同一路音频：没有回复在念时，提示音先到就先占住。
       stopVoicePlayback();
@@ -637,8 +685,10 @@ export function HomeV2AudioController() {
             requestGeneration !== voiceRequestGenerationRef.current
             || graphRef.current !== active
             || !audibleRef.current
+            || isCompanionSpeechActive() || isCompanionNotificationSpeechActive() || isCompanionMicrophoneActive()
           ) return;
-          await playVoiceBuffer(buffer, () => undefined);
+          await playVoiceBuffer(buffer, () => undefined, () => requestGeneration === voiceRequestGenerationRef.current
+            && !isCompanionSpeechActive() && !isCompanionNotificationSpeechActive() && !isCompanionMicrophoneActive());
         })
         .catch((error: unknown) => {
           if (requestGeneration !== voiceRequestGenerationRef.current) return;

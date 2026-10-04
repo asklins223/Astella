@@ -113,12 +113,13 @@ apps/desktop-client/src/renderer/public/assets/learning-room/v1/layers/home-v2/
 apps/desktop-client/src/renderer/public/assets/learning-room/v1/foreground/
 # 本地环境变量文件
 apps/desktop-client/.env.development
-# 本地语音识别（sherpa-onnx WASM 运行时 + SenseVoice 模型，模型单文件 239MB）
-apps/desktop-client/src/renderer/public/models/asr/
+# 本地语音识别的 sherpa-onnx WASM 运行时（十几 MB，跟着安装包走；运行时本身仍是本地拉取）
 apps/desktop-client/src/renderer/public/sherpa/
-# 伴星语音识别模型本体与 tokenizer（大文件，本地保留）
+# **模型本体不再放在仓库里的任何目录**（2026-10）：它不进安装包，由用户在设置里
+# 下到 `<userData>/voice-models/`。下面两条只挡"开发时顺手又拷了一份回来"的情况。
 model.int8.onnx
 tokens.txt
+apps/desktop-client/src/renderer/public/models/
 # —— 2026-09-22：临时探针脚本与过程图一律不入库 ——
 # 各处的 tmp-* 探针（CDP 量界面、一次性验证、造数据）是**本地工具**，不是产品代码。
 # 它们会被下一次 `git add -A` 顺手带进来，所以按名字挡住；要长期保留的探针请改名并
@@ -131,6 +132,10 @@ tokens.txt
 # 同类的反向命名一次性脚本（如 `see2-tmp.mjs`），同样只是本地工具
 **/*-tmp.mjs
 **/*-tmp.mts
+# `tools_tmp/` 是同一类现场，命名在目录名**尾部**，上面那几条前缀规则抓不到它，
+# 于是一次 `git add -A` 把两个 CDP 量界面的 .py 探针带进了版本库（2026-10-04 修正）。
+# 两个探针彼此 import，所以按目录挡，不按文件名逐个列。
+tools_tmp/
 # `__scratch*` 是同一类现场：为某一次排查临时铺的用例，用完即弃
 **/__scratch*
 # 2026-09-23 登录页「内框」的一次性排查脚本（文件头自述「临时验证脚本」，

@@ -3,19 +3,25 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>运维面板 · ailearn</title>
+    <title>运维控制台 · ailearn</title>
     <!-- 空 data URI：面板不需要站点图标，而浏览器默认会去打 /favicon.ico，
          在这个只注册了几条路由的服务上那是一条注定 404 的请求（CSP 的
          img-src 允许 data:，所以这里不会连带触发一次策略拒绝）。 -->
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/admin/styles.css" />
   </head>
-  <body>
+  <body data-view="gate">
+    <!-- 门厅舞台：3D 仪器挂在这里。进入面板后 canvas 会搬到各视图自己的
+         舞台里（同一个 WebGL 上下文），扁平视图不挂场景。 -->
+    <div class="gate-stage" id="gate-stage" aria-hidden="true"></div>
+    <div class="vignette" aria-hidden="true"></div>
+
     <!-- 启动闸：没有令牌就停在解锁层，连一次数据请求都不发。 -->
     <div class="gate" id="gate" data-state="locked">
       <form class="gate__card" id="gate-form" autocomplete="off">
-        <div class="gate__mark" aria-hidden="true"></div>
-        <h1 class="gate__title">运维面板</h1>
+        <div class="gate__mark" aria-hidden="true"><span></span></div>
+        <p class="gate__eyebrow">ailearn · control deck</p>
+        <h1 class="gate__title">运维控制台</h1>
         <p class="gate__hint">
           这个面板能读取跨空间的队列、审计与配置状态。请输入部署时设置的
           <code>ADMIN_PANEL_TOKEN</code>。
@@ -34,7 +40,7 @@
         </div>
         <p class="gate__error" id="gate-error" role="alert" hidden></p>
         <button class="btn btn--primary btn--block" type="submit" id="gate-submit">
-          <span class="btn__label">进入面板</span>
+          <span>接入控制台</span>
         </button>
         <p class="gate__foot">
           令牌只保存在本标签页内存中，关闭页面即失效；不会写入 localStorage。
@@ -42,20 +48,45 @@
       </form>
     </div>
 
-    <!-- 主壳 -->
+    <!-- 主壳：顶部页签 + 内容区（没有左栏——仪器占主区，导航不该抢它的宽度） -->
     <div class="shell" id="shell" hidden>
       <header class="topbar">
         <div class="topbar__brand">
           <span class="topbar__mark" aria-hidden="true"></span>
-          <span class="topbar__name">运维面板</span>
+          <span class="topbar__name">控制台</span>
           <span class="topbar__env" id="env-badge"></span>
         </div>
+        <nav class="tabs" aria-label="面板视图">
+          <button class="tab is-active" type="button" data-view="overview">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7.5 4.3v8.6L12 20.2 4.5 15.9V7.3z"/><path d="M12 8.2l3.6 2.1v4.2L12 16.6l-3.6-2.1v-4.2z"/></svg>
+            <span>总览</span>
+          </button>
+          <button class="tab" type="button" data-view="queues">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h16v4H4zM4 14h16v4H4z"/><path d="M7.5 8.5h.01M7.5 16h.01"/></svg>
+            <span>任务与队列</span>
+          </button>
+          <button class="tab" type="button" data-view="logs">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14M5 10.5h9M5 15.5h14M5 20h7"/><path d="M17.5 9.5l2.5 2.5-2.5 2.5"/></svg>
+            <span>日志</span>
+          </button>
+          <button class="tab" type="button" data-view="metrics">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h3.4l2.2-6 3.2 12 2.6-8 1.8 4h4.8"/></svg>
+            <span>指标</span>
+          </button>
+          <button class="tab" type="button" data-view="config">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/><path d="M9.5 5v4M15 10v4M11 15v4"/></svg>
+            <span>模型配置</span>
+          </button>
+        </nav>
         <div class="topbar__right">
           <span class="pulse" id="conn-pill" data-state="idle">
             <span class="pulse__dot" aria-hidden="true"></span>
             <span class="pulse__text" id="conn-text">就绪</span>
           </span>
-          <button class="btn btn--ghost btn--icon" id="refresh" type="button" title="刷新当前视图">
+          <span class="topbar__meta" id="uptime">—</span>
+          <span class="topbar__meta topbar__meta--dim" id="release"></span>
+          <span class="topbar__clock" id="clock" aria-hidden="true"></span>
+          <button class="btn btn--icon" id="refresh" type="button" title="刷新当前视图">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M20 12a8 8 0 1 1-2.34-5.66" />
               <path d="M20 4v4h-4" />
@@ -66,36 +97,7 @@
         </div>
       </header>
 
-      <div class="body">
-        <nav class="rail" aria-label="面板视图">
-          <div class="rail__indicator" id="rail-indicator" aria-hidden="true"></div>
-          <button class="rail__item is-active" type="button" data-view="overview">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6z"/></svg>
-            <span>概览</span>
-          </button>
-          <button class="rail__item" type="button" data-view="metrics">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h3V9H4zM10.5 19h3V4h-3zM17 19h3v-7h-3z"/></svg>
-            <span>指标</span>
-          </button>
-          <button class="rail__item" type="button" data-view="logs">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v2H5zM5 11h14v2H5zM5 17h9v2H5z"/></svg>
-            <span>日志</span>
-          </button>
-          <button class="rail__item" type="button" data-view="queues">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v4H4zM4 14h16v4H4z"/></svg>
-            <span>队列</span>
-          </button>
-          <button class="rail__item" type="button" data-view="config">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" stroke-width="1.6"/></svg>
-            <span>配置</span>
-          </button>
-          <div class="rail__foot">
-            <div class="rail__meta"><span id="uptime">—</span></div>
-          </div>
-        </nav>
-
-        <main class="content" id="content" tabindex="-1"></main>
-      </div>
+      <main class="content" id="content" tabindex="-1"></main>
     </div>
 
     <!-- 应用绘制的确认框（不用原生 confirm） -->

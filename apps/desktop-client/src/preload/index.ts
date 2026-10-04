@@ -160,6 +160,12 @@ const desktopApi: AILearnDesktopApiM2 = {
     // 由 main 带会话令牌取回，这里只把那条通道接出来。
     getImage: (input) => invoke(DESKTOP_IPC_CHANNELS.sourceImageGet, input)
   },
+  agent: {
+    listRuns: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunsList, input),
+    createRun: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunCreate, input),
+    reviseRun: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunRevise, input),
+    controlRun: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunControl, input),
+  },
   companion: {
     home: {
       getProjection: (input) => invoke(DESKTOP_IPC_CHANNELS.companionHomeGetProjection, input)
@@ -174,7 +180,19 @@ const desktopApi: AILearnDesktopApiM2 = {
       // 一段音频播没播成（0247）：只有渲染进程知道，所以由它回报。
       reportPlaybackOutcome: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoicePlaybackOutcome, input),
       // 语音转文本（2026-09-18）：本地 SenseVoice 优先，这条云通道是兜底。
-      transcribe: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceTranscribe, input)
+      transcribe: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceTranscribe, input),
+      /**
+       * 本地识别模型（2026-10）：模型不进安装包，用户自己在设置里下。
+       *
+       * 这一族**只管模型在不在本机**，不碰音频——识别在渲染进程的 worker 里就地
+       * 发生。主进程手里只有一份磁盘上的字节，没有别的。
+       */
+      asrModel: {
+        getState: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceAsrModelState, input),
+        download: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceAsrModelDownload, input),
+        cancel: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceAsrModelCancel, input),
+        remove: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceAsrModelRemove, input)
+      }
     },
     // 聊天发送链路（2026-09-18）：建/复用 dialogue → 发 turn → 轮询消息。
     chat: {

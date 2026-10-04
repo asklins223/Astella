@@ -1,0 +1,62 @@
+/* A task is one of the companion's light bubbles; its full record belongs in the conversation book. */
+.companion-goal-tab { position: absolute; top: var(--companion-controls-y, 57%); left: var(--companion-controls-x, -4px); transform: translate(-50%, calc(-50% - 108px)); display: inline-flex; align-items: center; gap: 6px; width: max-content; max-width: 170px; padding: 7px 11px; border: 2px solid var(--hud-paper-light, #fffaf0); border-radius: 14px 18px 13px 16px; background: var(--hud-mint, #e0e7cc); color: var(--hud-ink, #493a2c); box-shadow: var(--hud-shadow-small); font: inherit; font-size: 12px; cursor: pointer; pointer-events: auto; }
+.companion-goal-float .companion-goal-bubble { padding: 9px 13px 11px; background: var(--hud-cream); }
+.companion-goal-bubble__header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 5px; font-size: 11px; color: var(--hud-soft); }
+.companion-goal-bubble__header > span { padding: 2px 8px; border-radius: 8px 10px 7px 9px; background: var(--hud-mint); color: var(--hud-ink); }
+.companion-goal-bubble button, .companion-goal-journal button { font: inherit; color: inherit; cursor: pointer; }
+.companion-goal-bubble button:disabled, .companion-goal-journal button:disabled { opacity: .45; cursor: default; }
+.companion-goal-bubble__header button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; background: transparent; border-radius: 50%; }
+.companion-goal-bubble__body { max-height: min(270px, 40dvh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--hud-line) transparent; }
+.companion-goal-bubble:has(.companion-goal-edit) :is(.companion-goal-bubble__intent,.companion-goal-bubble__hint,.companion-goal-bubble__body h2) { display: none; }
+.companion-goal-bubble__body h2 { margin: 5px 0 8px; font: inherit; font-size: 17px; font-weight: 650; line-height: 1.5; color: var(--hud-ink); outline: none; }
+.companion-goal-bubble__intent { margin: 0 0 12px; font-size: 12px; line-height: 1.65; color: var(--hud-soft); overflow-wrap: anywhere; }
+.companion-goal-bubble__results { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.companion-goal-bubble__results button { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 4px 8px; border: 1px solid #69825435; border-radius: 10px 13px 9px 12px; background: var(--hud-mint); color: #355339; font-size: 12px; }
+.companion-goal-bubble__results button.companion-goal-bubble__more-results { background: transparent; border-color: transparent; color: var(--hud-soft); font-size: 11px; }
+.companion-goal-bubble__hint { margin: 0; font-size: 12px; line-height: 1.7; color: var(--hud-soft); }
+.companion-goal-bubble__footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; padding-top: 6px; border-top: 1px dashed var(--hud-line); }
+.companion-goal-bubble__footer button { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 2px 0; border: 0; background: transparent; font-size: 11px; }
+.companion-goal-bubble__footer button:last-child { color: #42613f; }
+.companion-goal-bubble__paging { display: flex; justify-content: center; align-items: center; gap: 14px; margin-top: 5px; font-size: 10px; color: var(--hud-soft); }
+.companion-goal-bubble__paging button { display: grid; place-items: center; width: 28px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: transparent; }
+.companion-goal-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 12px; }
+.companion-goal-controls button, .companion-goal-edit button, button.companion-goal-primary { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; padding: 6px 9px; border: 1px solid var(--hud-line); border-radius: 10px 13px 9px 12px; background: var(--hud-paper-light); font-size: 12px; }
+button.companion-goal-primary { background: var(--hud-mint); color: #355339; border-color: #69825445; }
+.companion-goal-edit { padding-top: 10px; font-size: 12px; }
+.companion-goal-edit label { display: grid; gap: 6px; }
+.companion-goal-edit textarea { box-sizing: border-box; width: 100%; min-height: 78px; max-height: 140px; resize: vertical; padding: 8px 10px; border: 1px solid var(--hud-line); border-radius: 12px 16px 10px 14px; background: var(--hud-paper-light); font: inherit; line-height: 1.65; color: var(--hud-ink); }
+.companion-goal-edit small { display: block; margin: 5px 0 8px; font-size: 10px; color: var(--hud-soft); }
+.companion-goal-edit > div { display: flex; gap: 6px; }
+.companion-goal-error { margin: 10px 0; font-size: 12px; line-height: 1.7; color: #985630; }
+.companion-goal-error button { margin-left: 8px; border: 0; background: transparent; text-decoration: underline; font-size: 12px; }
+.companion-goal-bubble :is(button,textarea):focus-visible, .companion-goal-journal :is(button,textarea,summary):focus-visible, .companion-goal-tab:focus-visible { outline: 2px solid var(--hud-green); outline-offset: 2px; }
+.companion-goal-journal { padding: 10px 0 24px; color: var(--hud-ink); font-size: 14px; line-height: 1.8; }
+.companion-goal-journal h3 { margin: 12px 0 8px; font: 700 21px/1.6 "Noto Serif SC Variable", "Songti SC", serif; outline: none; }
+.companion-goal-journal h4 { margin: 0 0 10px; font-size: 12px; font-weight: 550; color: var(--hud-soft); }
+.companion-goal-journal__intro { margin: 0 0 20px; color: var(--hud-soft); font-size: 12px; }
+.companion-goal-journal__index { list-style: none; padding: 0; margin: 0; }
+.companion-goal-journal__index li { border-bottom: 1px dashed var(--hud-line); }
+.companion-goal-journal__index button { display: flex; align-items: center; justify-content: space-between; gap: 15px; width: 100%; padding: 17px 2px; border: 0; background: transparent; text-align: left; }
+.companion-goal-journal__index small { display: block; margin-bottom: 6px; color: var(--hud-soft); font-size: 11px; }
+.companion-goal-journal__index strong { display: block; font-size: 14px; font-weight: 550; }
+.companion-goal-journal__index em { display: block; margin-top: 7px; font-size: 11px; font-style: normal; color: #42613f; }
+.companion-goal-journal__back { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0; border: 0; background: transparent; font-size: 12px !important; color: var(--hud-soft) !important; }
+.companion-goal-journal__eyebrow { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; font-size: 11px; color: var(--hud-soft); }
+.companion-goal-journal__eyebrow > span:first-child { padding: 2px 8px; background: var(--hud-mint); border-radius: 8px 11px 7px 9px; color: #42613f; }
+.companion-goal-journal__intent { margin: 0 0 23px; font-size: 14px; line-height: 1.9; white-space: pre-wrap; overflow-wrap: anywhere; }
+.companion-goal-journal__results { margin: 0 0 20px; }
+.companion-goal-journal__results button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 0; border: 0; border-bottom: 1px dashed var(--hud-line); background: transparent; text-align: left; color: #42613f; }
+.companion-goal-journal__results button > span { flex: 1; }
+.companion-goal-journal__results strong { font-size: 14px; font-weight: 550; }
+.companion-goal-journal__results small { display: block; font-size: 10px; color: var(--hud-soft); }
+.companion-goal-journal__next { margin: 20px 0; padding: 10px 0 17px; border-block: 1px dashed var(--hud-line); }
+.companion-goal-journal__next > p { margin: 0; font-size: 12px; color: var(--hud-soft); }
+.companion-goal-journal__summary { margin: 24px 0; }
+.companion-goal-journal__summary .companion-record__body { font-size: 14px; line-height: 1.9; }
+.companion-goal-journal__process { margin-top: 24px; font-size: 12px; color: var(--hud-soft); }
+.companion-goal-journal__process summary { cursor: pointer; padding-block: 10px; }
+.companion-goal-journal__process ol { list-style: none; padding: 0; }
+.companion-goal-journal__process li { padding: 12px 0; border-top: 1px dashed var(--hud-line); }
+.companion-goal-journal__process li > span { float: right; }
+.companion-goal-journal__process li > p { margin: 6px 0 0; color: #985630; }
+@media (prefers-reduced-motion: reduce) { .companion-goal-float .companion-goal-bubble, .companion-goal-tab svg { animation: none !important; } }

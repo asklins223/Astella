@@ -1,3 +1,4 @@
+import { executeTurn } from "@ailearn/agent-core";
 import {
   auditHash,
   boundedToolCallIdentity,
@@ -279,7 +280,20 @@ export async function runCompanionAgentLoop(args: {
     // 超时预算收紧，见 deadlineAt。
     deadlineMs: COMPANION_AGENT_DEADLINE_MS,
   };
-  const definitions = resolveAllCompanionAgentTools(meta.permissionLevel, event.constraints);
+  // Latest-turn attention is independent of durable goals and historical actions.
+  const toolIntent = await companionNeedsTool(args.provider, args.baseMessages, {
+      job: args.ctx,
+      runId: args.read.runId,
+      userId: args.read.userId,
+      permissionLevel: meta.permissionLevel,
+      stepTimeoutMs: Math.min(8_000, deadlineAt - Date.now()),
+      currentActiveTransaction: currentWorkerWorkspaceTransaction,
+      verifyAttempt: (attempt) => isJobLeaseActive({ ...args.ctx, leaseToken: attempt.leaseToken }),
+    });
+  const userRequiresTool = companionStepRequiresTool(toolIntent);
+  const userAskedForAction = toolIntent === true;
+  const definitions = resolveAllCompanionAgentTools(meta.permissionLevel, event.constraints)
+    .filter(definition => toolIntent === true || (toolIntent === null && definition.riskClass === "read"));
   const toolDefinitions = definitions.map((definition) => ({
     name: definition.name,
     description: definition.description,
@@ -316,24 +330,8 @@ export async function runCompanionAgentLoop(args: {
   let messages = args.baseMessages
     .filter((message) => message.role !== "system")
     .map((message) => ({ role: message.role, content: message.content } as AgentMessage));
-  // 工具需要与否由模型理解本轮语义；简称、代词和间接表达不能靠动词表穷举。
-  /**
-   * 本轮是不是"得做事才能回答"。P3-alt（39b §9.5，**独立于 S1 探针结果、必做**）：
-   * 分类器返回 `null`（8 秒超时、异常、答复不是那个形状）时**按 true 处理**——
-   * 判据在 `companionStepRequiresTool` 里，那里写着为什么 null 不等于不需要。
-   */
-  const userRequiresTool = companionStepRequiresTool(
-    await companionNeedsTool(args.provider, args.baseMessages, {
-      job: args.ctx,
-      runId: args.read.runId,
-      userId: args.read.userId,
-      permissionLevel: meta.permissionLevel,
-      stepTimeoutMs: Math.min(8_000, deadlineAt - Date.now()),
-      currentActiveTransaction: currentWorkerWorkspaceTransaction,
-      verifyAttempt: (attempt) => isJobLeaseActive({ ...args.ctx, leaseToken: attempt.leaseToken }),
-    }),
-  );
-  const userAskedForAction = userRequiresTool;
+  const currentRequest = [...messages].reverse().find((message) => message.role === "user");
+  if (!currentRequest) throw new Error("companion turn is missing its current user request");
   // "她报的数字有没有出处"要比对的出处 = 本轮给她的**数据**：system 里的环境块/记忆块，
   // 以及用户自己说过的话。**不含她自己说过的话**——实机 2026-09-21 她先编了一次
   // "本周 23 分钟"（真值 60），下一轮就照着自己的历史复述这个数，
@@ -357,6 +355,7 @@ export async function runCompanionAgentLoop(args: {
     messages = await loadContinuation(event, messages, args.continuationProposalId);
   }
   let stepCount = resolveAgentStepCountForResume(meta);
+  const resumedStepCount = stepCount;
   let toolCallCount = meta.toolCallCount;
   /**
    * 本轮可见正文的分段（④-b）：每个产出文本的步各占一段，按顺序拼接。
@@ -403,7 +402,11 @@ export async function runCompanionAgentLoop(args: {
   let stepBudget = budget.maxSteps;
   /** 终答步违约的宽限额度：整轮一次。 */
   let finalStepGraceUsed = false;
-  while (stepCount < stepBudget) {
+  return executeTurn<CompanionAgentLoopResult>({
+    signal: args.ctx.signal, now: Date.now,
+    limits: () => ({ maxSteps: stepBudget - resumedStepCount, deadlineAt }),
+    budgetError: () => new CompanionAgentBudgetExceededError("companion agent step budget exceeded"),
+    advance: async () => {
     if (args.ctx.signal.aborted) throw new Error("companion agent aborted");
     if (Date.now() >= deadlineAt) {
       throw new CompanionAgentBudgetExceededError("companion agent deadline exceeded");
@@ -474,6 +477,9 @@ export async function runCompanionAgentLoop(args: {
         ...(toolDefinitions.length > 0
           ? ["只有在你确实要调用工具时，调用之前才用一句话说明打算做什么然后停下，把结论留到工具结果回来之后；如果你这一轮不调用工具，就把答复完整说完，不要为了简短而省略该说的内容。"]
           : []),
+        "最后一条 user 消息是当前交流的主线。历史任务、已接受动作、后台回执不会把下一句闲聊变成续做任务；一句好不批准旧动作。",
+        "交代多步目标时优先用 agent_start_goal，接下后由后台决定步骤并生成，当前聊天可继续。accepted 不表示完成；进度用 agent_list_goals 核对。",
+        "交代目标和后台交付不要求切换页面或开始朗读。只有用户当前明确要求打开/前往某个页面时才调用导航工具；不要为了接任务自行跳去学习页。",
         `当前 Agent 预算：最多 ${stepBudget} 步。`,
         ...(finalAnswerOnly
           ? ["这是最后一步：不再提供工具，请直接用已有信息给出最终答复。不要把前面步骤已经对用户说过的话原样再说一遍——这里要给出结论或补充新信息。"]
@@ -989,12 +995,15 @@ export async function runCompanionAgentLoop(args: {
         }
         messages.push({ role: "assistant", content: said });
       }
-      messages.push({
-        role: "user",
-        content: unverifiedClaims.length > 0
+      messages.push(...companionStepCorrectionMessages({
+        currentRequest,
+        alreadyDisplayed: stepEmitted,
+        instruction: unverifiedClaims.length > 0
           ? `（系统提示：你报了 ${unverifiedClaims.slice(0, 4).join("、")} 这些数字，`
             + "但这一轮你没有调用任何工具，给定的上下文里也没有这些数字。"
             + "要么现在调用对应的工具查真实数字，要么不要说具体数值。）"
+          : unverifiedQuotes.length > 0
+            ? "回复中的引文与本轮原文不一致。核对当前问题所附选区或已读取的材料；把自己的解释明确写成解释，不要冒充逐字引文，也不要为此改答实时页面。"
           : lookupClaim
             // 对她"我查过/没查到"的冒称，**指出该调哪个工具**比指责她没调有用：
             // 实机 2026-09-21 第一版只说"你没有调用任何工具"，她回得更起劲——
@@ -1012,7 +1021,7 @@ export async function runCompanionAgentLoop(args: {
               : "（系统提示：你还没有调用任何工具，所以那件事一件也没有发生。"
                 + "要么在这一轮调用合适的工具再回答，要么直接回答用户；"
                 + "不要说已经做过，也不要只说你要去做。）",
-      });
+      }));
       await finishStep(event, stepId, "succeeded", sha256Utf8V1(said));
       await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
       logger.warn(
@@ -1030,7 +1039,7 @@ export async function runCompanionAgentLoop(args: {
         },
         "companion agent step needs a steer; cause in `by`",
       );
-      continue;
+      return { kind: "continue" };
     }
     if (calls.length === 0) {
       // ④-b：可见正文是**每一步 content 的顺序拼接**（工具步前的开场白也在里面）。
@@ -1094,7 +1103,7 @@ export async function runCompanionAgentLoop(args: {
       }
       await finishStep(event, stepId, "succeeded", sha256Utf8V1(text));
       await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
-      return { status: "completed", text, blocks: richBlocks, memoryRefs: [] };
+      return { kind: "settled", result: { status: "completed", text, blocks: richBlocks, memoryRefs: [] } };
     }
     if (calls.length > COMPANION_AGENT_MAX_TOOL_CALLS_PER_STEP) {
       await finishStep(event, stepId, "failed", undefined, "AGENT_TOOL_CALL_LIMIT");
@@ -1255,7 +1264,7 @@ export async function runCompanionAgentLoop(args: {
             status: "waiting_for_confirmation",
             waitingProposalId: record.proposalId,
           });
-          return { status: "waiting_for_confirmation", proposalId: record.proposalId, memoryRefs: [] };
+          return { kind: "settled", result: { status: "waiting_for_confirmation", proposalId: record.proposalId, memoryRefs: [] } };
         }
         if (record.status === "succeeded") {
           messages.push({
@@ -1371,7 +1380,7 @@ export async function runCompanionAgentLoop(args: {
       if (run.kind === "waiting") {
         await finishStep(event, stepId, "waiting");
         await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta(), status: "waiting_for_confirmation", waitingProposalId: run.proposalId });
-        return { status: "waiting_for_confirmation", proposalId: run.proposalId, memoryRefs: [] };
+        return { kind: "settled", result: { status: "waiting_for_confirmation", proposalId: run.proposalId, memoryRefs: [] } };
       }
       const execution = run.execution;
       await recoverCompanionRunFailureSpanBestEffort({
@@ -1407,8 +1416,9 @@ export async function runCompanionAgentLoop(args: {
     }
     await finishStep(event, stepId, "succeeded", auditHash(messages.slice(-calls.length)));
     await updateRunMeta(event, { stepCount, toolCallCount, elapsedMsDelta: elapsedDelta() });
-  }
-  throw new CompanionAgentBudgetExceededError("companion agent step budget exceeded");
+    return { kind: "continue" };
+    },
+  });
 }
 
 // 读工具族已搬到 companion-read-tools.ts（B2）。纯搬运：判据、上限、SQL 一字未改。
@@ -1428,6 +1438,7 @@ import {
   AGENT_LOOP_MAX_STEPS,
   actionSteerBudget,
   planStepSteer,
+  companionStepCorrectionMessages,
   planWithheldFinalStepCalls,
   stepHoldChars,
   type CompanionAgentLoopResult,

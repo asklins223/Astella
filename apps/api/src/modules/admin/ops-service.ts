@@ -157,6 +157,74 @@ export async function readRecentFailures(limit = 50): Promise<RecentFailure[]> {
   }));
 }
 
+/* ─── 失败聚合（面板「队列」页的失败段） ───────────────────────────────── */
+
+/**
+ * 一条失败分组：同一作业类型下、同一安全错误名的一组失败。
+ *
+ * 为什么要有聚合：`ailearn_admin_recent_job_failures` 返回的是**逐条**失败，
+ * 面板上 20 条「记忆提取 · unknown · Error」平铺出来是一堵同质的墙——读的人
+ * 数不出有几种病、哪种最重，而这两件事恰恰是失败列表唯一该回答的。
+ * 聚合键刻意包含 status（failed / dead）：同样是 timeout，还能重试的与
+ * 重试用尽的，处置完全不同。
+ */
+export interface FailureGroup {
+  key: string;
+  jobType: string;
+  status: string;
+  category: string | null;
+  name: string | null;
+  code: string | null;
+  /** 受控摘要（与 sample.failure.summary 同源）。 */
+  summary: string;
+  count: number;
+  /** 组内最近一次失败的时间（ISO）。 */
+  lastSeen: string | null;
+  /** 组内单条最大尝试次数——「3 次用尽」与「1 次就死」的信号。 */
+  attemptsMax: number;
+  /** 一个样例：展开分组时要看单条细节（id / 工作空间 / 时间）。 */
+  sample: RecentFailure;
+}
+
+/** 纯函数：把逐条失败折成分组。输入已按时间倒序（SQL 里排好），这里不依赖。 */
+export function groupFailures(failures: RecentFailure[]): FailureGroup[] {
+  const groups = new Map<string, FailureGroup>();
+  for (const failure of failures) {
+    const key = [
+      failure.jobType,
+      failure.status,
+      failure.failure.category ?? "-",
+      failure.failure.name ?? "-",
+      failure.failure.code ?? "-",
+    ].join("|");
+    const seen = failure.finishedAt ?? failure.scheduledAt;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.count += 1;
+      existing.attemptsMax = Math.max(existing.attemptsMax, failure.attempts);
+      if (seen && (!existing.lastSeen || seen > existing.lastSeen)) existing.lastSeen = seen;
+      continue;
+    }
+    groups.set(key, {
+      key,
+      jobType: failure.jobType,
+      status: failure.status,
+      category: failure.failure.category,
+      name: failure.failure.name,
+      code: failure.failure.code,
+      summary: failure.failure.summary,
+      count: 1,
+      lastSeen: seen,
+      attemptsMax: failure.attempts,
+      sample: failure,
+    });
+  }
+  // 条数多的排前面；同数量时新近的排前面（ISO 字符串比较即时间顺序）。
+  return [...groups.values()].sort(
+    (a, b) => b.count - a.count || (b.lastSeen ?? "").localeCompare(a.lastSeen ?? ""),
+  );
+}
+
 export interface RecentAudit {
   id: string;
   workspaceId: string;

@@ -11,7 +11,7 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { stableStringify, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import { logger } from "../lib/logger.ts";
 import { readJobPayloadString } from "@ailearn/shared";
 import { createProvider, withThinkingDisabled } from "../lib/ai-provider.ts";
@@ -27,11 +27,11 @@ import { companionSummaryTotal } from "../lib/metrics.ts";
 import { parseMemoryExtractJson } from "./companion-memory-extractor.ts";
 import {
   boundCompanionRecentHistory,
-  textOfCompanionBlocks,
   REPLAY_WINDOW_MESSAGES,
 } from "./companion-dialogue-content.ts";
 import type { JobPayload } from "./index.ts";
 import { runWorkerAiTask } from "./worker-ai-task.ts";
+import { companionHistoryText, readCompanionHistoryRows, type CompanionHistoryRow } from "./companion-dialogue-store.ts";
 
 class SummarizerOutputError extends Error {
   constructor() {
@@ -73,6 +73,7 @@ export interface SummarizerSnapshotMessage {
   role: string;
   contentSha256: string;
   blocks: unknown;
+  pageContext?: unknown;
 }
 
 export interface SummarizerSnapshot {
@@ -82,14 +83,17 @@ export interface SummarizerSnapshot {
   sourceHash: string;
 }
 
-function transcriptLine(row: Pick<SummarizerSnapshotMessage, "role" | "blocks">): string {
+function transcriptLine(row: Pick<SummarizerSnapshotMessage, "role" | "blocks" | "pageContext">): string {
   const text = Array.isArray(row.blocks)
     ? (row.blocks as Array<{ type?: string; text?: unknown }>)
         .filter((block) => block.type === "text")
         .map((block) => String(block.text ?? ""))
         .join("")
     : "";
-  return `${row.role === "assistant" ? "桌宠" : "用户"}：${text}`;
+  const contextualText = row.role === "user"
+    ? companionHistoryText({ role: "user", blocks: row.blocks, page_context: row.pageContext })
+    : text;
+  return `${row.role === "assistant" ? "桌宠" : "用户"}：${contextualText}`;
 }
 
 /**
@@ -236,53 +240,20 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
     // 先用和对话 prompt 相同的 20 条 + 字符预算规则找到真实裁剪点。
     // 这样，被 24k 字符预算挤出 prompt、但仍在最近 20 条里的旧消息也能进入摘要，
     // 而不是留下“摘要没覆盖、原文也没回放”的空档。
-    const tailRows = await tx.execute<{
-      seq: string;
-      role: string;
-      blocks: unknown;
-    }>(sql`
-      SELECT seq::text AS seq, role, blocks
-      FROM companion_messages
-      WHERE conversation_id = ${conversationId}
-        AND role IN ('user', 'assistant')
-        AND kind NOT IN ('cancelled', 'error')
-      ORDER BY seq DESC
-      LIMIT ${REPLAY_WINDOW_MESSAGES}
-    `);
+    const tailRows = await readCompanionHistoryRows(tx, conversationId, { limit: REPLAY_WINDOW_MESSAGES });
     const visibleTail = boundCompanionRecentHistory(tailRows.slice().reverse().map((row) => ({
       seq: row.seq,
       role: row.role as "user" | "assistant",
-      text: textOfCompanionBlocks(row.blocks),
+      text: companionHistoryText(row),
     })));
     const tailStartSeq = visibleTail[0]?.seq;
 
     // 100 行只是数据库分页大小，不是会话摘要边界。真实边界由上面的回放选择器确定，
     // 实际输入则由 SUMMARIZER_INPUT_CHARS 限定；长会话不再被固定 200 行截断。
-    const sourceRows: Array<{
-      id: string;
-      seq: string;
-      role: string;
-      content_sha256: string;
-      blocks: unknown;
-    }> = [];
+    const sourceRows: CompanionHistoryRow[] = [];
     let beforeSeq = tailStartSeq;
     while (true) {
-      const rows = await tx.execute<{
-        id: string;
-        seq: string;
-        role: string;
-        content_sha256: string;
-        blocks: unknown;
-      }>(sql`
-        SELECT id::text AS id, seq::text AS seq, role, content_sha256, blocks
-        FROM companion_messages
-        WHERE conversation_id = ${conversationId}
-          AND role IN ('user', 'assistant')
-          AND kind NOT IN ('cancelled', 'error')
-          ${beforeSeq ? sql`AND seq < ${beforeSeq}::bigint` : sql``}
-        ORDER BY seq DESC
-        LIMIT 100
-      `);
+      const rows = await readCompanionHistoryRows(tx, conversationId, { beforeSeq, limit: 100 });
       if (rows.length === 0) break;
       sourceRows.push(...rows);
       const candidate = buildSummarizerSnapshot(sourceRows.map((row) => ({
@@ -291,6 +262,7 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
         role: row.role,
         contentSha256: row.content_sha256,
         blocks: row.blocks,
+        pageContext: row.page_context,
       })));
       if (candidate.transcript.length >= SUMMARIZER_INPUT_CHARS) break;
       beforeSeq = rows.at(-1)!.seq;
@@ -302,6 +274,7 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
       role: row.role,
       contentSha256: row.content_sha256,
       blocks: row.blocks,
+      pageContext: row.page_context,
     })));
   });
 
@@ -312,7 +285,7 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
 
   const messages = buildSummarizerMessages(snapshot.transcript);
   const generationParameters = { temperature: 0.2, maxTokens: 1_000, responseFormat: "json_object" as const };
-  const inputSnapshotHash = sha256Utf8V1(canonicalJsonV1({
+  const inputSnapshotHash = sha256Utf8V1(stableStringify({
     taskVersion: 1,
     conversationId,
     sourceHash: snapshot.sourceHash,
@@ -386,28 +359,18 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
     `);
     if (!conversation[0]) return false;
 
-    const currentSourceRows = await tx.execute<{
-      id: string;
-      seq: string;
-      role: string;
-      content_sha256: string;
-      blocks: unknown;
-    }>(sql`
-      SELECT id::text AS id, seq::text AS seq, role, content_sha256, blocks
-      FROM companion_messages
-      WHERE conversation_id = ${conversationId}
-        AND role IN ('user', 'assistant')
-        AND kind NOT IN ('cancelled', 'error')
-        AND seq >= ${snapshot.coverageFromSeq}::bigint
-        AND seq <= ${snapshot.coverageThroughSeq}::bigint
-      ORDER BY seq DESC
-    `);
+    const currentSourceRows = await readCompanionHistoryRows(tx, conversationId, {
+      fromSeq: snapshot.coverageFromSeq!,
+      beforeSeq: (BigInt(snapshot.coverageThroughSeq!) + 1n).toString(),
+      limit: SUMMARIZER_INPUT_CHARS,
+    });
     const currentSnapshot = buildSummarizerSnapshot(currentSourceRows.map((row) => ({
       id: row.id,
       seq: row.seq,
       role: row.role,
       contentSha256: row.content_sha256,
       blocks: row.blocks,
+      pageContext: row.page_context,
     })));
     if (
       currentSnapshot.coverageFromSeq !== snapshot.coverageFromSeq

@@ -167,6 +167,7 @@ export const companionTurnRuns = pgTable(
   (t) => ({
     conversationGenerationUnique: uniqueIndex("companion_turn_runs_conversation_generation_unique").on(t.conversationId, t.generation),
     idempotencyUnique: uniqueIndex("companion_turn_runs_idempotency_unique").on(t.conversationId, t.idempotencyKeyHash),
+    userMessageIdx: index("companion_turn_runs_user_message_id_idx").on(t.userMessageId),
     activeUnique: uniqueIndex("companion_turn_runs_active_unique")
       .on(t.conversationId)
       .where(sql`status IN ('accepted', 'running', 'waiting_for_confirmation', 'cancel_requested')`),

@@ -246,6 +246,10 @@
 .companion-record__citation { margin: 10px 0; color: var(--hud-green); font-size: 13px; }
 .companion-record__code { max-width: 100%; margin: 10px 0; padding: 12px; overflow: auto; color: var(--hud-ink); background: #efe3bd; border-radius: 14px 18px 16px 13px; font: 12px/1.7 ui-monospace, monospace; }
 .companion-hud__voice > p { display: flex; gap: 8px; line-height: 1.7; }
+/* 本机没装识别模型时的那一格（2026-10）。它替代的是「开始录音」那颗按钮，
+   所以用与它同一种"被按住不放"的语气，只是把出路摆出来。 */
+.companion-hud__voice > .companion-hud__voice-missing { flex-direction: column; align-items: flex-start; gap: 9px; margin: 0; padding: 12px 14px; border: 1px dashed #9fb887; border-radius: 16px 19px 15px 18px; background: #f0f4e2; color: #5c6f4f; font-size: clamp(11px, .82vw, 12.5px); font-weight: 500; }
+.companion-hud__voice > .companion-hud__voice-missing .button { min-height: 32px; padding: 0 14px; font-size: 12px; }
 .companion-hud__voice > footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 10px; }
 .companion-hud__voice-wave { display: flex; height: 64px; align-items: center; justify-content: center; gap: 5px; }
 .companion-hud__voice-wave i { width: 4px; height: 26px; border-radius: 4px; background: #3d6445; animation: companion-interaction-wave 550ms ease-in-out infinite alternate; }

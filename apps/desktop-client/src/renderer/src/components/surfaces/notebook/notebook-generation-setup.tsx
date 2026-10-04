@@ -84,8 +84,9 @@ export function GenerationSetup(props: {
   return <section className="generation-setup card-making-note" ref={paperRef} data-motion-mode={motionMode} data-reduced-motion={reducedMotion} role="dialog" aria-modal="true" aria-labelledby="generation-setup-title" onKeyDown={event => {
     if (event.key === "Escape") { event.stopPropagation(); closeGenerationSetup(); }
     if (event.key !== "Tab") return;
+    // `inert` 在生成中把这一片收起来；收起来的控件不该再被 Tab 走一遍。
     const controls = [...event.currentTarget.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), textarea:not(:disabled), summary")]
-      .filter(element => !element.closest("details:not([open])") || element.matches("summary"));
+      .filter(element => !element.closest("[inert]") && (!element.closest("details:not([open])") || element.matches("summary")));
     const first = controls[0], last = controls.at(-1);
     if (event.shiftKey && document.activeElement === first && last) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last && first) { event.preventDefault(); first.focus(); }
@@ -96,8 +97,14 @@ export function GenerationSetup(props: {
       <p>选一个方向就可以开始。卡片写好后，再由你挑选收藏。</p>
       <button autoFocus type="button" className="generation-setup__close" aria-label="关闭生成方案" onClick={closeGenerationSetup}>×</button>
     </header>
-    <fieldset className="generation-options" disabled={startingGeneration}>
-      <legend className="sr-only">生成方案</legend>
+    {/*
+      这一片是**滚动容器**，所以是 div 而不是 fieldset。
+      Chromium 里 fieldset 即使 `overflow: auto` 也照常算出 scrollHeight，却没有可滚的
+      溢出区——`scrollTop` 永远是 0。于是选项被裁在原地、滚轮推不动（2026-10-04 实机：
+      「这个界面还不能滚动」）。分组语义用 role="group" 补回，"生成中不许再改"用 inert
+      表达，作用与 `<fieldset disabled>` 相同。
+    */}
+    <div className="generation-options" role="group" aria-label="生成方案" inert={startingGeneration || undefined}>
       <div className="making-purpose" ref={purposeRef} role="group" aria-label="学习方向"><div ref={cushionRef} className="making-purpose__cushion" aria-hidden="true" />{LEARNING_GOALS.map(item => {
         const Icon = goalDetails[item.value].icon;
         return <button type="button" key={item.value} className="making-purpose__choice" aria-label={item.label} aria-pressed={options.learningGoal === item.value} onClick={() => setOptions(current => ({ ...current, learningGoal: item.value }))}>
@@ -135,7 +142,7 @@ export function GenerationSetup(props: {
           {feedbackReasons.length ? <label className="making-feedback__note"><span>再说具体一点 <small>可选</small></span><textarea className="generation-options__note" value={feedbackNote} maxLength={2000} placeholder="例如：多留一些能解释原因的卡，把重复的要点合起来。" aria-label="重新生成的补充说明" onChange={event => setFeedbackNote(event.currentTarget.value)} /></label> : null}
         </div>
       </details> : null}
-    </fieldset>
+    </div>
     <footer className="generation-setup__footer">
       <p role={generationFailure ? "alert" : undefined}>{generationFailure ? `任务未开始：${generationFailure}` : dirty ? "笔记改动还没保存，保存后就可以开始。" : "从已保存的整篇笔记出题，写好后逐张挑选。"}</p>
       <div><button type="button" className="generation-setup__cancel" onClick={closeGenerationSetup}>再想想</button><button type="button" className="generation-setup__start" disabled={dirty || startingGeneration || !generationEnabled} onClick={startGeneration}><Sparkles size={17} aria-hidden="true" />{startingGeneration ? "正在创建任务…" : "开始生成"}</button></div>

@@ -174,3 +174,79 @@ test("pino 钩子：即使捕获抛错也仍然调用 method（日志落地优�
   }, 50);
   assert.equal(invoked, true, "捕获失败绝不能影响日志落地");
 });
+
+/* ── 应用环 / 请求环拆分（2026-10-03）─────────────────────────────────── */
+
+test("请求日志：完成的请求进请求环，投影成一行访问日志，不占应用环", () => {
+  const app = new LogRingBuffer(10);
+  const requests = new LogRingBuffer(10);
+  const hook = createLogCaptureHook(app, requests);
+
+  const request = { method: "GET", url: "/v2/home/suggestion", id: "req-1" };
+  fire(hook, [{ res: { statusCode: 200, elapsedTime: 12.34, request } }, "request completed"], () => {}, 30);
+
+  assert.equal(app.size, 0, "请求日志不得挤占应用环——上一版 500 条里应用日志为 0 就是它造成的");
+  const entry = requests.recent()[0];
+  assert.equal(entry.fields.method, "GET");
+  assert.equal(entry.fields.url, "/v2/home/suggestion");
+  assert.equal(entry.fields.reqId, "req-1");
+  assert.equal(entry.fields.statusCode, 200);
+  assert.equal(entry.fields.durationMs, 12.3, "耗时保留一位小数");
+});
+
+test("请求日志：incoming request（只有 req、没有结果）两条环都不进", () => {
+  const app = new LogRingBuffer(10);
+  const requests = new LogRingBuffer(10);
+  const hook = createLogCaptureHook(app, requests);
+
+  fire(hook, [{ req: { method: "POST", url: "/v2/runs", id: "req-2" } }, "incoming request"], () => {}, 30);
+
+  assert.equal(app.size, 0);
+  assert.equal(requests.size, 0, "没有结果的半条请求入表只会制造一半行没有结果");
+});
+
+test("请求日志：读不到 request 时仍保留 statusCode，耗时退回 responseTime", () => {
+  const app = new LogRingBuffer(10);
+  const requests = new LogRingBuffer(10);
+  const hook = createLogCaptureHook(app, requests);
+
+  fire(hook, [{ res: { statusCode: 503 }, responseTime: 8.777 }, "request completed"], () => {}, 50);
+
+  const entry = requests.recent()[0];
+  assert.equal(entry.fields.statusCode, 503);
+  assert.equal(entry.fields.method, null);
+  assert.equal(entry.fields.durationMs, 8.8);
+  assert.equal(entry.level, "error");
+});
+
+test("应用日志：不带 req/res 的条目仍进应用环（拆分不误伤）", () => {
+  const app = new LogRingBuffer(10);
+  const requests = new LogRingBuffer(10);
+  const hook = createLogCaptureHook(app, requests);
+
+  fire(hook, [{ scope: "admin-panel", jobType: "memory_extract" }, "运维面板执行了重试"], () => {}, 30);
+
+  assert.equal(requests.size, 0);
+  assert.equal(app.recent()[0].fields.scope, "admin-panel");
+});
+
+test("subscribe：只推送订阅之后的新条目，退订后停止", () => {
+  const buffer = new LogRingBuffer(10);
+  buffer.push(30, "订阅前", {});
+  const received: string[] = [];
+  const unsubscribe = buffer.subscribe((entry) => received.push(entry.msg));
+
+  buffer.push(30, "订阅后一", {});
+  buffer.push(30, "订阅后二", {});
+  unsubscribe();
+  buffer.push(30, "退订后", {});
+
+  assert.deepEqual(received, ["订阅后一", "订阅后二"]);
+  // 订阅者抛错不影响日志落地（push 不抛）。
+  const throwing = new LogRingBuffer(5);
+  throwing.subscribe(() => {
+    throw new Error("订阅者坏了");
+  });
+  throwing.push(30, "照常落地", {});
+  assert.equal(throwing.size, 1);
+});

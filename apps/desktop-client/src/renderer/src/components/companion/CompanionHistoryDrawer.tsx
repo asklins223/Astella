@@ -14,6 +14,8 @@ import { CompanionRunTraceView } from "./CompanionRunTraceView";
 import { visibleTurnFailure } from "./companion-hud-state";
 import { CompanionProposalChoice, companionProposalExpired } from "./CompanionProposalChoice";
 import { CompanionHistoryComposer } from "./CompanionHistoryComposer";
+import { CompanionGoalJournal } from "./CompanionGoalJournal";
+import type { AgentGoalsController } from "./use-agent-goals";
 
 
 export function CompanionHistoryDrawer({
@@ -29,6 +31,8 @@ export function CompanionHistoryDrawer({
   side,
   onBack,
   onClose,
+  goals,
+  goalTarget,
 }: {
   readonly open: boolean;
   readonly motionMode: "full" | "lite" | "off";
@@ -46,6 +50,8 @@ export function CompanionHistoryDrawer({
   readonly side: "left" | "right";
   readonly onBack: () => void;
   readonly onClose: () => void;
+  readonly goals?: AgentGoalsController;
+  readonly goalTarget?: { runId: string; visit: number } | null;
 }) {
   const chat = useCompanionChat();
   const [mounted, setMounted] = useState(open);
@@ -73,13 +79,16 @@ export function CompanionHistoryDrawer({
   // （搜索 / 月历筛选 / 时间线），返回箭头回到对话视图——微信的聊天记录就是
   // 与聊天共窗的页内切换。入口只是头部右侧的一个图标按钮。
   const [recordOpen, setRecordOpen] = useState(false);
-  const [filter, setFilter] = useState<"all" | "pending">("all");
+  const [filter, setFilter] = useState<"all" | "pending" | "goals">("all");
+  useEffect(() => {
+    if (open && goalTarget) { setRecordOpen(false); setFilter("goals"); }
+  }, [open, goalTarget]);
   const pendingProposals = Object.entries(chat.proposalStates).filter(([, state]) => state.phase !== "ready"
     || Boolean(state.deciding) || (state.proposal.status === "pending" && !companionProposalExpired(state.proposal.expiresAt)));
   const [searchInput, setSearchInput] = useState("");
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [dateFilter, setDateFilter] = useState<string | null>(null);
-  const { listRef, contentRef, atLatest, prevScrollHeightRef, stickToBottomRef, scrollToLatest, handleListScroll, releaseStick, handleListWheel, handleListTouchMove, handleListTouchStart, pendingJumpRef, jumpNotice, setJumpNotice } = useCompanionHistoryScroll({ chat, open, mounted, recordOpen });
+  const { listRef, contentRef, atLatest, prevScrollHeightRef, stickToBottomRef, scrollToLatest, handleListScroll, releaseStick, handleListWheel, handleListTouchMove, handleListTouchStart, pendingJumpRef, jumpNotice, setJumpNotice } = useCompanionHistoryScroll({ chat, open, mounted, recordOpen: recordOpen || filter === "goals" });
 
   const [allResult, setAllResult] = useState<{ revision: number; items: readonly CompanionMessageV1[] } | null>(null);
   const [allRequest, setAllRequest] = useState<{ revision: number; status: "loading" | "error"; error?: string } | null>(null);
@@ -186,11 +195,13 @@ export function CompanionHistoryDrawer({
   const sendText = useCallback(async () => {
     const text = input.trim();
     if (!text) return;
+    setRecordOpen(false);
+    setFilter("all");
     // 自己发言 = 明确想看她的回答：恢复贴底意图。真正的滚动交给 ResizeObserver ——
     // 这一刻消息还没进 DOM，抢跑只会 pin 到一个旧高度上。
     stickToBottomRef.current = true;
     await onSend();
-  }, [onSend, input, setInput]);
+  }, [onSend, input]);
 
   /** 停止由调用方先静音（与交互台同一条路径）。 */
   const stopTurn = useCallback(() => {
@@ -332,8 +343,9 @@ export function CompanionHistoryDrawer({
         {recordOpen ? <button ref={backButtonRef} type="button" className="text-action" onClick={() => { setRecordOpen(false); setSearchInput(""); setDateFilter(null); }} aria-label="返回对话"><ChevronLeft size={16} />返回对话</button> : <>
           <button type="button" className="text-action" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>全部对话</button>
           <button type="button" className="text-action" aria-pressed={filter === "pending"} onClick={() => setFilter("pending")}>待确认 <span className="companion-history__count">{pendingProposals.length}</span></button>
+          {goals ? <button type="button" className="text-action" aria-pressed={filter === "goals"} onClick={() => { setFilter("goals"); void goals.refresh(); }}>交给我的事 <span className="companion-history__count">{goals.items.length}</span></button> : null}
         </>}
-        <span>{recordOpen ? "找一句说过的话" : messageDayLabel(new Date().toISOString())}</span>
+        {filter !== "goals" ? <span>{recordOpen ? "找一句说过的话" : messageDayLabel(new Date().toISOString())}</span> : null}
       </nav>
       <div
         ref={listRef}
@@ -347,7 +359,7 @@ export function CompanionHistoryDrawer({
             原 .companion-history__list 的 flex/gap/padding，容器只留 overflow。 */}
         <div ref={contentRef} className="companion-history__content">
           {/* ── 对话视图：日期分组时间线 ── */}
-          {!recordOpen && filter === "pending" ? <>
+          {!recordOpen && filter === "goals" && goals ? <CompanionGoalJournal key={`${goals.scope}:${goalTarget?.visit ?? 0}`} goals={goals} targetId={goalTarget?.runId ?? null} onChat={onBack} onArtifactOpen={onClose} /> : !recordOpen && filter === "pending" ? <>
             {pendingProposals.length === 0 ? <div className="companion-record__landing"><Sparkles size={32} /><strong>没有等你确认的事情</strong><p>需要你决定的动作会留在这里。</p></div> : pendingProposals.map(([id, state]) => <div className="companion-history__pending" key={id}>
               <CompanionProposalChoice proposalId={id} state={state} context="history" onDecide={decision => { void chat.decideProposal(id, decision); }} onRetry={() => chat.retryProposal(id)} />
             </div>)}

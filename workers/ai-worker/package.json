@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test --test-concurrency=8 $(find src -name '*.test.ts' | sort)",
     "test:companion-dialogue:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-dialogue-postgres.integration.ts",
-    "test:companion-integration:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-scheduler-ticks-postgres.integration.ts src/integration-tests/companion-memory-handlers-postgres.integration.ts src/integration-tests/companion-agent-postgres.integration.ts src/integration-tests/companion-dialogue-postgres.integration.ts src/integration-tests/companion-memory-semantic-dismissal-postgres.integration.ts src/integration-tests/companion-turn-facts-postgres.integration.ts src/integration-tests/companion-answer-exposure-postgres.integration.ts src/integration-tests/companion-thought-candidate-postgres.integration.ts src/integration-tests/companion-read-pagination-task-memory-postgres.integration.ts src/integration-tests/companion-memory-cross-space.integration.ts src/integration-tests/companion-note-visibility-postgres.integration.ts src/integration-tests/companion-failed-partial-postgres.integration.ts",
+    "test:companion-integration:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-scheduler-ticks-postgres.integration.ts src/integration-tests/companion-memory-handlers-postgres.integration.ts src/integration-tests/companion-agent-postgres.integration.ts src/integration-tests/companion-dialogue-postgres.integration.ts src/integration-tests/companion-memory-semantic-dismissal-postgres.integration.ts src/integration-tests/companion-turn-facts-postgres.integration.ts src/integration-tests/companion-answer-exposure-postgres.integration.ts src/integration-tests/companion-thought-candidate-postgres.integration.ts src/integration-tests/companion-read-pagination-task-memory-postgres.integration.ts src/integration-tests/companion-memory-cross-space.integration.ts src/integration-tests/companion-note-visibility-postgres.integration.ts src/integration-tests/companion-failed-partial-postgres.integration.ts src/integration-tests/companion-runtime-recovery-postgres.integration.ts",
     "test:platform-live:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/opencode-go-live.integration.ts",
     "test:card-generation-v3:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/card-generation-v3-simplified-postgres.integration.ts",
     "test:objective-reuse:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/objective-reuse-lookup-postgres.integration.ts",
@@ -28,7 +28,9 @@
     "postgres": "^3.4.5",
     "prom-client": "^15.1.0",
     "undici": "^7.29.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@ailearn/agent-core": "file:../../packages/agent-core",
+    "@ailearn/agent-host": "file:../../packages/agent-host"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

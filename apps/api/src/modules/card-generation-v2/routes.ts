@@ -376,7 +376,11 @@ export async function cardGenerationV2Routes(app: FastifyInstance) {
       } finally {
         pumping = false;
       }
-    }, 2000);
+      // 2026-10-04：2 秒 → 1 秒。生成页的"实时"就等于这条 tick 的间隔——事件落库到
+      // 桌面端收到之间隔着一整个轮询周期，所以 2 秒意味着「点了刷新状态才动」。
+      // 每次 tick 是**一条**按 (run_id, event_seq) 走索引的 select；`pumping` 守卫保证
+      // 库慢时也不会叠加，而长连的数目由 `acquireSseSlot` 的每用户上限（5）兜着。
+    }, 1000);
     interval?.unref();
     // PERF-B6/N4 修复：加 15s heartbeat comment，防止 idle 长连接被代理空闲超时
     // 端到端切断（对齐 companion-events.ts 的保活写法）。

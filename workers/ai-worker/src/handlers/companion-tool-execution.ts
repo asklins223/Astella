@@ -1,3 +1,4 @@
+import { executeAgentGoalTool } from "../agent/companion-tools.ts";
 /**
  * 伴星 agent 的**工具执行**（2026-09-30 拆出，B2）。
  *
@@ -27,7 +28,7 @@ import {
   companionPageLabelV2,
   type CompanionAgentToolDefinitionV1,
 } from "@ailearn/shared";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { stableStringify, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
 
 /**
@@ -91,6 +92,7 @@ export async function executeReadTool(
   definition: CompanionAgentToolDefinitionV1,
   args: Record<string, unknown>,
 ): Promise<AgentToolExecutionResult> {
+  if (definition.name === "agent_list_goals") return executeAgentGoalTool(event, definition.name, args);
   // 外发政策门禁。工具面本来已经把受管工具摘掉了（见 resolveAllCompanionAgentTools），
   // 这里再拦一次是因为**工具名是模型给的**：不复核就等于"下发面没列出来"这件事
   // 只是运气好，而不是一个保证。判定只看服务端解析出的约束，不看模型自述。
@@ -472,7 +474,7 @@ export async function executeReadTool(
         responseFormat: "text" as const,
         model: visionProvider.visionModelId,
       };
-      const inputSnapshotHash = sha256Utf8V1(canonicalJsonV1({
+      const inputSnapshotHash = sha256Utf8V1(stableStringify({
         taskVersion: 1,
         runId: event.read.runId,
         userMessageId: event.read.userMessageId,
@@ -784,6 +786,8 @@ export async function executeDirectTool(
   definition: CompanionAgentToolDefinitionV1,
   args: Record<string, unknown>,
 ): Promise<AgentToolExecutionResult> {
+  if (["agent_start_goal", "agent_revise_goal", "agent_control_goal"].includes(definition.name))
+    return executeAgentGoalTool(event, definition.name, args);
   switch (definition.name) {
     // 模型自改**表达层**（40 §4.8.4）。
     //

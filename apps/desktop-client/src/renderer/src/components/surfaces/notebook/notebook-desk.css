@@ -56,6 +56,7 @@
 .hud-surface .notebook-card-entry__state, .hud-surface .notebook-card-entry__coverage { padding: 2px 6px; border-radius: 8px; background: var(--hud-mint); color: #426646; font-size: 10px; }
 .hud-surface .notebook-card-entry__coverage, .hud-surface .notebook-card-entry[data-status="review_ready"] .notebook-card-entry__state, .hud-surface .notebook-card-entry[data-status="needs_attention"] .notebook-card-entry__state { background: var(--hud-butter); color: #75623b; }
 .hud-surface .notebook-card-entry[data-status="failed"] .notebook-card-entry__state { background: #f5ddc9; color: #944e3b; }
+/* 入口旁边那两颗次要动作：与入口同一行的收边，别让它们自己那一行的外距把这一格撑散。 */
 .hud-surface .notebook-card-entry__tweak, .hud-surface .notebook-card-entry__previous { margin-left: -6px; }
 .hud-surface .notebook-card-entry__tweak:disabled { opacity: .45; cursor: default; }
 .hud-surface .notebook-desk__drawer { position: relative; }

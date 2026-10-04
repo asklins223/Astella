@@ -465,6 +465,49 @@ export async function assumeActor(
   active.context.workspaceId = applied.workspaceId ?? SYSTEM_USER_ID;
 }
 
+/**
+ * 与 `assumeActor` 同一件事，但**不自己发那条 set_config 语句**——它假定调用方
+ * 已经把 set_config 合并进了自己那条复合语句里，并把回读值传进来。
+ *
+ * 2026-10-03：实测每个已认证请求要跑 8 条语句，其中 3 条是重复下发同一组
+ * `app.*` 事务局部变量。第三条（handler 的 `withWorkspaceTransaction`）因为
+ * `set_config(..., true)` 是**事务局部**的，必须在新事务里重发，不能省；
+ * 但 `assumeActor` 那一条可以和它之后"必须等上下文生效才能跑"的那两条读取
+ * 合并成一条语句。
+ *
+ * 合并的安全性前提（已用真实 RLS 策略验证，见
+ * `scripts/probe-session-context-merge.mjs`）：`app.*` 没生效时策略读到的是
+ * **0 行**而不是别人的行——`workspace_members` 的 actor_read 要求
+ * `user_id = app.user_id`、`workspaces` 的 actor_read 要求
+ * `id = app.workspace_id`，两者都拿不到就都挡下。所以求值顺序万一不成立，
+ * 后果是响亮的 401，不可能静默泄漏跨租户数据。
+ *
+ * 本函数只负责**内存侧**的账：校验活动事务、同步 `AsyncLocalStorage` 里的
+ * context。数据库侧的回读校验由调用方在自己的语句里做（那里本来就能取到
+ * `set_config` 的返回值）。
+ */
+export function commitAssumedActor(
+  transaction: ApiTransaction,
+  userId: string,
+  workspaceId: string,
+  sessionToken: string | null,
+): void {
+  const active: ActiveApiWorkspaceTransaction | undefined = apiScope.current();
+  if (!active?.open || active.transaction !== transaction) {
+    throw new WorkspaceTransactionContextError("commitAssumedActor requires the active actor transaction");
+  }
+  // 形状校验与 applyActorConfig 走同一个 normalize：调用方传的必须是合法 UUID。
+  const normalized = apiScope.normalize({ userId, workspaceId });
+  active.context.userId = normalized.userId;
+  active.context.workspaceId = normalized.workspaceId;
+  // sessionToken 理论上不变（同一个令牌的哈希），但仍按 applyActorConfig 的
+  // 同一判据回写，形状不合法就当场拒绝而不是留到后面某次查询才炸。
+  if (sessionToken !== null && !SESSION_TOKEN_PATTERN.test(sessionToken)) {
+    throw new WorkspaceTransactionContextError("sessionToken must be a sha256 hex digest");
+  }
+  active.sessionToken = sessionToken;
+}
+
 /** `app.*` 三个事务局部变量的唯一写入点，带回读校验。 */
 async function applyActorConfig(
   transaction: ApiTransaction,

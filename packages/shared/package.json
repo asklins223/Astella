@@ -628,6 +628,11 @@
       "import": "./src/tts-voice-catalog.ts",
       "default": "./src/tts-voice-catalog.ts"
     },
+    "./voice-asr-model-contracts": {
+      "types": "./src/contracts/voice-asr-model-contracts.ts",
+      "import": "./src/contracts/voice-asr-model-contracts.ts",
+      "default": "./src/contracts/voice-asr-model-contracts.ts"
+    },
     "./voice-expression-tags": {
       "types": "./src/voice-expression-tags.ts",
       "import": "./src/voice-expression-tags.ts",
@@ -637,7 +642,9 @@
       "types": "./src/workspace-transaction.ts",
       "import": "./src/workspace-transaction.ts",
       "default": "./src/workspace-transaction.ts"
-    }
+    },
+    "./agent-contracts": "./src/contracts/agent-contracts.ts",
+    "./agent-capabilities": "./src/agent-capabilities.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

@@ -60,6 +60,14 @@ it("follows new geometry until the user scrolls up, including a frame already qu
   expect(list.scrollTop).toBe(100);
 });
 
+it("keeps a task or search record at its heading when geometry changes", () => {
+  render(<Harness searching />);
+  const list = screen.getByTestId("list");
+  expect(list.scrollTop).toBe(0);
+  act(() => { notifyResize(); vi.advanceTimersByTime(40); });
+  expect(list.scrollTop).toBe(0);
+});
+
 it("loads older conversation pages only while browsing the conversation", () => {
   const view = render(<Harness searching />);
   const list = screen.getByTestId("list");

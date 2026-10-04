@@ -18,7 +18,7 @@ COPY apps/api/package.json apps/api/package-lock.json ./
 # The shared workspace is linked explicitly after dependency installation;
 # omit the repository-external local link here so npm ci remains deterministic
 # inside the container as well as on the host.
-RUN node -e 'const fs=require("node:fs"); const pkg=JSON.parse(fs.readFileSync("package.json","utf8")); delete pkg.dependencies["@ailearn/shared"]; fs.writeFileSync("package.json", JSON.stringify(pkg)); const lock=JSON.parse(fs.readFileSync("package-lock.json","utf8")); delete lock.packages[""]?.dependencies?.["@ailearn/shared"]; delete lock.packages["node_modules/@ailearn/shared"]; delete lock.packages["../../packages/shared"]; fs.writeFileSync("package-lock.json", JSON.stringify(lock));'
+RUN node -e 'const fs=require("node:fs"); const pkg=JSON.parse(fs.readFileSync("package.json","utf8")); for (const name of ["shared","agent-core","agent-host"]) delete pkg.dependencies["@ailearn/"+name]; fs.writeFileSync("package.json", JSON.stringify(pkg)); const lock=JSON.parse(fs.readFileSync("package-lock.json","utf8")); for (const name of ["shared","agent-core","agent-host"]) { delete lock.packages[""]?.dependencies?.["@ailearn/"+name]; delete lock.packages["node_modules/@ailearn/"+name]; delete lock.packages["../../packages/"+name]; } fs.writeFileSync("package-lock.json", JSON.stringify(lock));'
 RUN npm config set registry https://registry.npmmirror.com \
  && npm ci --install-links --no-audit --no-fund
 
@@ -28,13 +28,17 @@ ENV NODE_ENV=development \
     PATH=/app/node_modules/.bin:$PATH
 COPY --from=deps /app/node_modules /app/node_modules
 COPY packages/shared /app/packages/shared
+COPY packages/agent-core /app/packages/agent-core
+COPY packages/agent-host /app/packages/agent-host
 COPY apps/api/package.json ./package.json
 COPY apps/api/tsconfig.json ./tsconfig.json
 COPY apps/api/drizzle.config.ts ./drizzle.config.ts
 COPY apps/api/src ./src
 RUN mkdir -p node_modules/@ailearn \
  && rm -rf node_modules/@ailearn/shared \
- && ln -s /app/packages/shared node_modules/@ailearn/shared
+ && ln -s /app/packages/shared node_modules/@ailearn/shared \
+ && ln -sf /app/packages/agent-core node_modules/@ailearn/agent-core \
+ && ln -sf /app/packages/agent-host node_modules/@ailearn/agent-host
 EXPOSE 4000
 CMD ["npm", "run", "dev"]
 
@@ -43,6 +47,8 @@ FROM base AS prod
 ENV NODE_ENV=production
 COPY --from=deps /app/node_modules /app/node_modules
 COPY packages/shared /app/packages/shared
+COPY packages/agent-core /app/packages/agent-core
+COPY packages/agent-host /app/packages/agent-host
 COPY apps/api/package.json ./package.json
 COPY apps/api/tsconfig.json ./tsconfig.json
 COPY apps/api/tsconfig.prod.json ./tsconfig.prod.json
@@ -56,6 +62,8 @@ COPY apps/api/src ./src
 RUN mkdir -p node_modules/@ailearn \
  && rm -rf node_modules/@ailearn/shared \
  && ln -s /app/packages/shared node_modules/@ailearn/shared \
+ && ln -sf /app/packages/agent-core node_modules/@ailearn/agent-core \
+ && ln -sf /app/packages/agent-host node_modules/@ailearn/agent-host \
  && npm run typecheck -- -p tsconfig.prod.json \
  && npm run build
 # F-027: 以非 root 用户运行

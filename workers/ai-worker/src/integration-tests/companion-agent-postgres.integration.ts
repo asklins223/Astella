@@ -117,6 +117,7 @@ async function seedAgentRun(
       await tx`DELETE FROM companion_messages WHERE conversation_id = ${cid}`;
       await tx`DELETE FROM companion_conversations WHERE id = ${cid}`;
       await tx`DELETE FROM user_companion_account_state WHERE user_id = ${uid}`;
+      await tx`DELETE FROM jobs WHERE workspace_id = ${ws}`;
       await tx`DELETE FROM workspace_members WHERE workspace_id = ${ws}`;
       await tx`DELETE FROM workspaces WHERE id = ${ws}`;
       await tx`DELETE FROM users WHERE id = ${uid}`;
@@ -125,9 +126,18 @@ async function seedAgentRun(
   return { runId, conversationId: cid, userMessageId, cleanup };
 }
 
-function invoke(ws: string, uid: string, payload: Record<string, unknown>) {
+async function invoke(ws: string, uid: string, payload: Record<string, unknown>) {
+  // Intent classification now verifies the real job/run lease through the task kernel.
+  const jobId = randomUUID();
+  await sql.begin(async (tx) => {
+    await tx`SELECT set_config('app.workspace_id', ${ws}, true)`;
+    await tx`SELECT set_config('app.user_id', ${uid}, true)`;
+    await tx`INSERT INTO jobs (id,type,workspace_id,requested_by,payload,status,lease_token,started_at)
+      VALUES (${jobId},'companion_agent',${ws},${uid},${JSON.stringify(payload)}::jsonb,'running','fixture-lease',now())`;
+    await tx`UPDATE companion_turn_runs SET job_id=${jobId} WHERE id=${String(payload.runId)}`;
+  });
   return runCompanionDialogue({
-    id: randomUUID(),
+    id: jobId,
     payload,
     workspaceId: ws,
     requestedBy: uid,

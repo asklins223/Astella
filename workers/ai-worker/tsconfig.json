@@ -17,6 +17,8 @@
     "rootDir": "../..",
     "outDir": "dist",
     "paths": {
+      "@ailearn/agent-core": ["../../packages/agent-core/src/index.ts"],
+      "@ailearn/agent-host": ["../../packages/agent-host/src/index.ts"],
       "@ailearn/shared": [
         "../../packages/shared/src/index.ts"
       ],

@@ -1,0 +1,37 @@
+{
+  "generator": "edge-tts",
+  "voice": "zh-CN-XiaoxiaoNeural",
+  "rate": "+0%",
+  "clips": {
+    "voice-model-needed": {
+      "text": "这台设备还没有语音识别模型。我帮你打开设置了，选择下载，装好后我会提醒你。",
+      "file": "voice-model-needed.mp3",
+      "bytes": 48960
+    },
+    "voice-model-ready": {
+      "text": "语音识别模型已经装好了。现在点语音按钮，就可以和我说话啦。",
+      "file": "voice-model-ready.mp3",
+      "bytes": 38592
+    },
+    "voice-model-failed": {
+      "text": "语音识别模型这次没下载成功。你可以在设置里重试，其他功能照常使用。",
+      "file": "voice-model-failed.mp3",
+      "bytes": 44640
+    },
+    "task-ready": {
+      "text": "你交给我的后台任务完成了，结果已经保存。方便的时候可以打开看看。",
+      "file": "task-ready.mp3",
+      "bytes": 43200
+    },
+    "task-failed": {
+      "text": "后台任务这次没有完成。可以打开原来的页面查看原因，再试一次。",
+      "file": "task-failed.mp3",
+      "bytes": 40896
+    },
+    "review-due": {
+      "text": "今天有学过的知识到了复习时间。方便的时候，和我一起温习一下吧。",
+      "file": "review-due.mp3",
+      "bytes": 40464
+    }
+  }
+}

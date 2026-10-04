@@ -18,6 +18,7 @@ import {
 import {
   FINAL_ANSWER_HOLD_CHARS,
   actionSteerBudget,
+  companionStepCorrectionMessages,
   partitionPersonaPatch,
   planStepSteer,
   planWithheldFinalStepCalls,
@@ -580,6 +581,20 @@ test("joinVisibleSegmentsDeduped：从没下发过的段不能排在已下发段
   ).text, "复习入口准备好啦点前往");
 });
 
+test("内部纠正重附当前选区与问题，不能变成最新用户的另一项请求", () => {
+  const currentRequest = {
+    role: "user" as const,
+    content: "我刚划选的原文：\n<selection_data>利息也会继续产生利息。</selection_data>\n我的问题：解释这段",
+  };
+  for (const alreadyDisplayed of [true, false]) {
+    const messages = companionStepCorrectionMessages({ currentRequest, instruction: "核对引文。", alreadyDisplayed });
+    assert.equal(messages[0].role, "system");
+    assert.match(String(messages[0].content), /不是新的用户请求/);
+    assert.deepEqual(messages.at(-1), currentRequest);
+    assert.equal(messages.filter((message) => message.role === "user").length, 1);
+  }
+});
+
 /**
  * 用户要的是一个"必须动系统才算做到"的动作时，这一步的话要**整段攒住**。
  *
@@ -1001,7 +1016,7 @@ test("工具兜底只处理 required 能力错误，不吞其他错误或同模�
 test("P3-alt：分类器读不到（null）按「要工具」走，只有明确说了 false 才算不要", async () => {
   // 三值里 null 不是"不需要"，是**没读到答复**（超时／异常／形状不对）。原判据
   // `=== true` 把这两支合成一支，fail-open 的产物就是"我帮你找一下"落在屏上。
-  assert.equal(companionStepRequiresTool(null), true, "读不到东西时不许放行纯正文那一步");
+  assert.equal(companionStepRequiresTool(null), false, "意图未知不强制工具，也不继承旧任务授权");
   assert.equal(companionStepRequiresTool(false), false, "明确说了不要工具，就别强制");
   assert.equal(companionStepRequiresTool(true), true);
 
@@ -1014,7 +1029,7 @@ test("P3-alt：分类器读不到（null）按「要工具」走，只有明确�
   } as unknown as AIProvider;
   const decision = await companionNeedsTool(broken, [{ role: "user", content: "帮我把那篇笔记打开" }], toolIntentTaskContext());
   assert.equal(decision, null, "分类器的失败形状是 null（这条变了，上面那条判据就不成立了）");
-  assert.equal(companionStepRequiresTool(decision), true);
+  assert.equal(companionStepRequiresTool(decision), false);
 });
 
 test("不变量：任何一步都不许同时出现 tools:[] 与 toolChoice:\"required\"", () => {

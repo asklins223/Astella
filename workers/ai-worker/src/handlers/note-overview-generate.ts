@@ -2,6 +2,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ChatMessage } from "@ailearn/shared";
 import { readNoteOverviewGenerateJobPayload } from "@ailearn/shared/job-payload-contracts";
+import { loadAgentGenerationContext } from "../agent/generation-context.ts";
 import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
 import * as schema from "@ailearn/shared/db-schema";
 import {
@@ -211,11 +212,13 @@ export async function runNoteOverviewGenerate(job: JobPayload): Promise<void> {
   // lease even when every provider call completed within its own deadline.
   // MAX_CHUNKS bounds this fan-out at six calls.
   const providerTimeout = resolveProviderCallTimeout("note_overview_generate");
+  const agentContext = await loadAgentGenerationContext(job);
   const pointCount = chunks.length === 1 ? 3 : chunks.length === 2 ? 2 : 1;
   const generated: { gist: string; points: OverviewPoint[] }[] = await Promise.all(
     chunks.map(async (chunk, chunkIndex) => {
       const messages: ChatMessage[] = [
         { role: "system", content: "你是笔记里的白话讲解助手。忠实依据用户笔记，引用必须原样来自提供的段落。" },
+        { role: "system", content: agentContext.instructions },
         { role: "user", content: buildPrompt(chunkIndex, chunks.length, pointCount, chunk.lines) },
       ];
       const generationParameters = {
@@ -249,6 +252,7 @@ export async function runNoteOverviewGenerate(job: JobPayload): Promise<void> {
         timeoutMs: providerTimeout,
         isOutputShapeError: (error) => error instanceof NoteOverviewOutputError,
         execute: async (request, signal) => {
+          await agentContext.reserveModelCall();
           const response = await provider.chatCompletion(request, generationParameters, signal);
           return {
             ok: true,

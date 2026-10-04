@@ -4,6 +4,20 @@ import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { isCardGenerationInFlight, isCardGenerationReviewStage, isLandedCandidate } from "./card-generation-status";
 
+/**
+ * 在途轮询的间隔。
+ *
+ * 事件流是"有事件才推"，所以它给的是**延迟**而不是**节奏**；而这一屏要的恰恰是节奏
+ * ——"正在做一套学习卡"下面那道计数与那一列写好的题面，要自己往前走。
+ *
+ * 这一层存在的理由是**流会没有**：服务端的每用户 SSE 上限是 5，而主进程那一侧曾经
+ * 漏过连接（建连句柄到手之前重复建流、窗口重新加载后订阅表没清），占满之后每一次
+ * 订阅都被 429 顶回。流一断，这屏就停在原地不动，只有手动按「刷新状态」才动一下
+ * （2026-10-04 实测）。轮询是那道兜底：它不依赖任何一条长连接，代价是每两秒一次
+ * `getRun`（终态后停），而这正是这一屏本来就要做的那次读。
+ */
+const IN_FLIGHT_POLL_MS = 2000;
+
 /** The generation and review read the same records, including live partial cards. */
 export function useCardGenerationData() {
   const runId = useRoomStore((state) => state.activeCardGenerationRunId);
@@ -113,13 +127,44 @@ export function useCardGenerationData() {
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       subscriptionId = id;
       unsubscribe = api.subscriptions.onEvent(id, () => { void load(false); });
-      } catch { /* Manual refresh remains available if the stream fails. */ }
+      } catch { /* The in-flight poll below carries this screen on its own. */ }
     })();
     return () => {
       disposed = true; unsubscribe?.();
       if (subscriptionId) void api.subscriptions.unsubscribe({ meta: createRequestMeta(epochRef.current), subscriptionId });
     };
   }, [runId, load]);
+
+  /**
+   * 在途轮询：后台还在做这一批的时候，自己按节奏重读一次。
+   *
+   * **只在"还在做"的时候跑**。终态（待审核／已完成／失败…）之后这一屏不再自己变，
+   * 继续轮询就只是白白消耗——而审核台上每点一次「保留」都已经自己重读过一次了。
+   *
+   * 它与事件流是**并联**而不是串联：流在，它把两次重读之间的空档补上；流被限流顶回、
+   * 建不上、或者中途断了，这一屏照样往前走。窗口不可见时停——看不见的时候没有人在等
+   * 那一列题面，重新可见时立刻补读一次。
+   */
+  const inFlight = Boolean(run && isCardGenerationInFlight(run.status));
+  useEffect(() => {
+    if (!runId || !inFlight) return;
+    let timer: number | null = null;
+    const read = () => { void load(false); };
+    const start = (): void => {
+      if (timer !== null) return;
+      timer = window.setInterval(() => {
+        if (document.visibilityState === "hidden") return;
+        read();
+      }, IN_FLIGHT_POLL_MS);
+    };
+    const onVisibility = (): void => { if (document.visibilityState === "visible") read(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    start();
+    return () => {
+      if (timer !== null) window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [runId, inFlight, load]);
 
   return { runId, run, candidates, landedCandidates, practiceQuota, activeCandidateId, setActiveCandidateId,
     loading, failure, noteTitle, waitingForRun: !runId && !runIdHealed, syncReport, epochRef, load, resync };

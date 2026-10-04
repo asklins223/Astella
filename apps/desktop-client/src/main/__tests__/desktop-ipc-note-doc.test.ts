@@ -186,7 +186,7 @@ async function setup(session: {
     on: () => undefined,
     isVisible: () => true,
     isMinimized: () => false,
-    webContents: { isDestroyed: () => false, once: () => undefined, send },
+    webContents: { isDestroyed: () => false, once: () => undefined, on: () => undefined, send },
   } as never;
 
 

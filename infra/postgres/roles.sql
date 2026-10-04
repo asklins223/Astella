@@ -425,6 +425,7 @@ BEGIN
     'assistant_memory_embeddings',
     'assistant_memory_item_revisions',
     'assistant_memory_budget_events',
+    'assistant_memory_source_suppressions',
     'memory_links',
     'conversation_summaries',
     'memory_usage_log',
@@ -442,6 +443,11 @@ BEGIN
   IF to_regclass('public.assistant_memory_budget_events') IS NOT NULL THEN
     GRANT SELECT, INSERT ON TABLE public.assistant_memory_budget_events TO ailearn_worker;
     REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.assistant_memory_budget_events FROM ailearn_worker;
+  END IF;
+  IF to_regclass('public.assistant_memory_source_suppressions') IS NOT NULL THEN
+    -- Extract/admit and explicit forget both consult this immutable source fence.
+    -- Keep migration 0330 grants after the bootstrap REVOKE ALL.
+    GRANT SELECT, INSERT ON TABLE public.assistant_memory_source_suppressions TO ailearn_worker;
   END IF;
 
   -- Exact write privileges exercised by the current worker handlers.  The
@@ -1471,6 +1477,7 @@ BEGIN
       ('assistant_memory_items', true, true, true, true),
       ('assistant_memory_item_revisions', true, true, false, false),
       ('assistant_memory_budget_events', true, true, false, false),
+      ('assistant_memory_source_suppressions', true, true, false, false),
       ('assistant_memory_embeddings', true, true, true, true),
       ('memory_links', true, true, true, true),
       ('conversation_summaries', true, true, true, true),
@@ -1942,3 +1949,21 @@ BEGIN
   END IF;
 END
 $$;
+
+-- Unified Agent host tables retain their explicit worker grants after bootstrap.
+DO $$ DECLARE t text; BEGIN
+  FOREACH t IN ARRAY ARRAY['agent_runs','agent_operations','agent_run_steps','agent_run_events'] LOOP
+    IF to_regclass(format('public.%I',t)) IS NOT NULL THEN
+      EXECUTE format('GRANT SELECT,INSERT,UPDATE ON TABLE public.%I TO ailearn_worker',t);
+    END IF;
+  END LOOP;
+  IF to_regclass('public.agent_run_events_seq_seq') IS NOT NULL THEN
+    GRANT USAGE,SELECT ON SEQUENCE public.agent_run_events_seq_seq TO ailearn_worker;
+  END IF;
+  IF to_regprocedure('public.ailearn_enqueue_agent_recovery()') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.ailearn_agent_scope_current(uuid,uuid) TO ailearn_api,ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_agent_recovery() TO ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_cancel_agent_operations(uuid,integer) TO ailearn_api,ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_agent_job_current(uuid,uuid,uuid,boolean) TO ailearn_worker;
+  END IF;
+END $$;

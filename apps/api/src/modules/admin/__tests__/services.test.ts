@@ -8,7 +8,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { projectSafeError } from "../ops-service.ts";
+import { groupFailures, projectSafeError } from "../ops-service.ts";
 import { estimateQuantile } from "../metrics-service.ts";
 import { parseBucketBound } from "../../../lib/metrics.ts";
 
@@ -101,4 +101,58 @@ test("桶上界：+Inf 必须解析成真正的无穷大，不能变成 0", () =
     { le: 0, count: 4 },
   ];
   assert.equal(estimateQuantile(broken, 0.5), 0, "这条断言记录了修复前的错误行为");
+});
+
+/* ── 失败聚合（2026-10-03：面板「队列」页按原因分组）──────────────────── */
+
+function failure(
+  id: string,
+  jobType: string,
+  status: string,
+  rawError: string,
+  { attempts = 3, at = "2026-10-03T10:00:00.000Z" }: { attempts?: number; at?: string } = {},
+) {
+  return {
+    id,
+    jobType,
+    workspaceId: "ws-1",
+    status,
+    attempts,
+    failure: projectSafeError(rawError),
+    scheduledAt: at,
+    startedAt: null,
+    finishedAt: at,
+  };
+}
+
+test("失败聚合：同类型同原因归一组，计数与最近时间取组内值", () => {
+  const groups = groupFailures([
+    failure("a", "memory_extract", "dead", "operational_error:database:Error", { at: "2026-10-03T09:00:00.000Z" }),
+    failure("b", "memory_extract", "dead", "operational_error:database:Error", { at: "2026-10-03T11:00:00.000Z", attempts: 5 }),
+    failure("c", "memory_extract", "failed", "operational_error:database:Error", { at: "2026-10-03T10:00:00.000Z" }),
+  ]);
+  assert.equal(groups.length, 2, "同原因但状态不同（failed/dead）处置不同，必须分开");
+  const dead = groups.find((g) => g.status === "dead");
+  assert.ok(dead, "应当有一组 dead");
+  assert.equal(dead.count, 2);
+  assert.equal(dead.lastSeen, "2026-10-03T11:00:00.000Z");
+  assert.equal(dead.attemptsMax, 5);
+  assert.equal(dead.sample.id, "a", "样例是组内第一条（输入按时间倒序）");
+});
+
+test("失败聚合：未知错误单独成组；条数多的排前面", () => {
+  const groups = groupFailures([
+    failure("1", "note_expansion", "dead", "free text that does not match the safe projection"),
+    failure("2", "memory_extract", "dead", "operational_error:database:Error"),
+    failure("3", "memory_extract", "dead", "operational_error:database:Error"),
+  ]);
+  assert.equal(groups[0].jobType, "memory_extract");
+  assert.equal(groups[0].count, 2);
+  const unknown = groups.find((g) => g.jobType === "note_expansion");
+  assert.ok(unknown, "应当有一组 note_expansion");
+  assert.equal(unknown.summary, "unknown", "无法解析的错误照旧只显示 unknown，不透传原文");
+});
+
+test("失败聚合：空输入返回空数组（不是 undefined）", () => {
+  assert.deepEqual(groupFailures([]), []);
 });

@@ -2542,6 +2542,20 @@
       "when": 1791000056009,
       "tag": "0366_admin_ops_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 363,
+      "version": "7",
+      "when": 1791000056010,
+      "tag": "0367_companion_runtime_history_and_organize",
+      "breakpoints": true
+    },
+    {
+      "idx": 364,
+      "version": "7",
+      "when": 1791000056011,
+      "tag": "0368_unified_agent_runs",
+      "breakpoints": true
     }
   ]
 }

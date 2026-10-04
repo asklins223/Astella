@@ -1,3 +1,4 @@
+import { runAgentAdvance, tickAgentRecovery, markAgentAdvanceFailed } from "./agent/advance.ts";
 import { sql } from "drizzle-orm";
 import { logger } from "./lib/logger.ts";
 import postgres from "postgres";
@@ -70,6 +71,7 @@ const HANDLERS = {
   parse_source: runParseSource,
   // Companion Agent：统一对话入口（payload 只含 opaque runId）
   companion_agent: runCompanionDialogue,
+  agent_run_advance: runAgentAdvance,
   // 22 真桌宠记忆与上下文：日常提取 / 会话摘要 / embedding 重建
   companion_memory_extract: runCompanionMemoryExtract,
   companion_summarizer: runCompanionSummarizer,
@@ -95,6 +97,7 @@ const HANDLERS = {
  */
 const DEAD_FINALIZERS: Partial<Record<string, (job: { id: string; workspaceId: string; requestedBy: string | null; payload: Record<string, unknown>; leaseToken: string; signal?: AbortSignal }, message: string) => Promise<void>>> = {
   parse_source: markSourceParseFailed,
+  agent_run_advance: markAgentAdvanceFailed,
 };
 
 const POLL_MS = 500;
@@ -523,6 +526,7 @@ export async function tick(): Promise<void> {
   // 方案 29 §9.3：job 已死/缺失的孤儿 run 回收。与上一条同一个理由——必须在 claim
   // 之前跑，被锁死的会话压根没有可 claim 的 job。
   await tickCompanionRunReconcile();
+  await tickAgentRecovery();
   // 方案 29 §4.6：到点提醒兑现（每分钟一次，函数自身幂等）。放在 claim 之前同属
   // "不依赖有没有 job 可认领"这一类后台义务。
   await tickCompanionReminderDelivery();

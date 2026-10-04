@@ -232,6 +232,9 @@
 .desktop-app.hud-surface[data-theme="night"] .run-voice-input__block,
 .desktop-app.hud-surface[data-theme="dark"] .run-voice-input__block { color: #ffd1b8; border-color: rgba(255, 183, 148, 0.52); background: rgba(121, 48, 35, 0.35); }
 .hud-surface .run-voice-input__note { color: var(--quest-soft); border: 1px solid var(--quest-line); background: rgba(255, 255, 255, 0.15); }
+/* 没装识别模型时，紧挨着「开始说」的那颗出路按钮（2026-10）——它替代的正是
+   左边那颗按下去只会被挡住的按钮，所以两者必须挨着。 */
+.hud-surface .run-voice-input__model { justify-content: center; border-style: dashed; }
 .hud-surface .run-voice-input__transcript { display: block; min-height: 0; height: 100%; }
 .hud-surface .run-truefalse { display: grid; gap: 12px; }
 .hud-surface .run-truefalse__claim { padding: 16px; border: 1px solid var(--quest-line-strong); border-radius: 15px 19px 14px 18px; background: rgba(255, 255, 255, 0.17); font: 550 15px/1.65 "Noto Serif SC Variable", "Songti SC", serif; }

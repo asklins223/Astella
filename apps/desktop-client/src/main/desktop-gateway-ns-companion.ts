@@ -1099,7 +1099,7 @@ export async function speakCompanionVoice(t: GatewayTransport,
       "/voice/tts",
       {
         method: "POST",
-        body: JSON.stringify({ text: request.text, voice: COMPANION_VOICE_SPEAK_VOICE }),
+        body: JSON.stringify({ text: request.text, voice: COMPANION_VOICE_SPEAK_VOICE, ...(request.purpose ? { purpose: request.purpose } : {}) }),
       },
       requestId,
     );

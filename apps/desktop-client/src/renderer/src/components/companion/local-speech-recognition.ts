@@ -1,19 +1,40 @@
 /**
- * 伴星本地语音识别路由层（2026-09-18 接线）。
+ * 伴星语音识别的**唯一一条路**：本机上的 SenseVoice（sherpa-onnx WASM worker）。
  *
- * 第一路由：本地 SenseVoice（sherpa-onnx WASM，`/sherpa/asr-worker.js`）——
- * 音频不出设备；worker 拉起失败、模型缺失或识别失败时落第二路由：云通道
- * `POST /voice/transcribe`（SiliconFlow，服务端会签发 voiceArtifactId）。
- * 降级顺序与 （原据 learning-companion/13-…，2026-09-29 已归档）§P6 的三路由设计一致。
+ * ## 为什么没有第二条（2026-10）
+ *
+ * 此前这里是「本地优先 + 云端兜底」：worker 拉不起来就把录音 base64 发给
+ * `POST /voice/transcribe`（硅基流动）。那条路的代价不是"慢一点"——
+ * 是**每一次本地失败都把用户的整段录音送出设备**，而且失败往往发生在用户最需要
+ * 它的时候（模型没装好、内存吃紧、刚说完话）。
+ *
+ * 现在模型改成用户自己下载的附加功能，没装就是没装：这一层直接告诉调用方
+ * 「本机还没有识别模型」，由界面把人领到设置里下载。**没有可回落的地方，
+ * 也就没有"悄悄把录音送出去"的那种可能。**
  */
 
-export type VoiceRoute = "local" | "cloud";
+import { readVoiceAsrModel } from "./voice-asr-model";
+
+export type VoiceRoute = "local";
 
 export interface VoiceTranscription {
   readonly text: string;
   readonly route: VoiceRoute;
-  /** 云通道回执；本地路由没有服务端 artifact。 */
-  readonly voiceArtifactId: string | null;
+}
+
+/**
+ * 本机还不能识别。界面据此把「去设置里下载」摆到用户面前——
+ * 这是一个**可解决的动作**，不是一句"识别失败"。
+ */
+export class AsrModelMissingError extends Error {
+  constructor() {
+    super("本地识别模型尚未安装");
+    this.name = "AsrModelMissingError";
+  }
+}
+
+export function isAsrModelMissing(error: unknown): boolean {
+  return error instanceof AsrModelMissingError;
 }
 
 interface DecodePending {
@@ -31,11 +52,10 @@ let decodeSeq = 0;
 /**
  * 一句说完之后隔多久把整个识别引擎交还内存。
  *
- * 为什么必须交：本地 SenseVoice 一个引擎就是那份 228 MB 的 int8 模型——它经
- * `fetch().arrayBuffer()` 进 JS 堆、再由 `FS.writeFile` 搬进 WASM 堆、最后 onnxruntime
- * 建图还要自己占一份。而语音是**偶尔**用的功能：以前这条 worker 是模块级单例、只在
- * 崩溃时 `terminate`，成功路径上永不下线，于是用户说过一句话之后这几百 MB 就一直
- * 占到应用退出。90s 是"连说几句不用重载"与"说完就走别占着"之间的取值。
+ * 为什么必须交：本地 SenseVoice 一个引擎就是那份 228 MB 的 int8 模型——它进 WASM 堆、
+ * onnxruntime 建图还要再占一份。而语音是**偶尔**用的功能：以前这条 worker 是模块级单例、
+ * 只在崩溃时 `terminate`，成功路径上永不下线，于是用户说过一句话之后这几百 MB 就一直
+ * 占到应用退出。90s 是「连说几句不用重载」与「说完就走别占着」之间的取值。
  */
 const ASR_IDLE_RELEASE_MS = 90_000;
 let releaseTimer = 0;
@@ -53,7 +73,7 @@ function releaseEngine(): void {
 /**
  * 重新计时。触发时先看有没有东西还在跑：解码在途（`pending` 非空）或 init 还没落定
  * （`initReject` 还挂着，`settle()` 清它）都不收，顺延一轮——收了就是把一次正在进行的
- * 识别踢进"worker 已终止"的错误路径，用户那句话白说了。
+ * 识别踢进「worker 已终止」的错误路径，用户那句话白说了。
  */
 function armIdleRelease(): void {
   window.clearTimeout(releaseTimer);
@@ -89,7 +109,7 @@ function spawnWorker(): Worker | null {
     }
   };
   worker.onerror = () => {
-    // 加载失败（文件缺失等）：让 init 与在途解码立刻失败，后续走云通道。
+    // 加载失败（文件缺失等）：让 init 与在途解码立刻失败。
     // 不等 init 的 60s 超时——那会让用户点完「说完了」白等一分钟。
     for (const [, entry] of pending) entry.reject(new Error("asr worker crashed"));
     pending.clear();
@@ -102,7 +122,13 @@ function spawnWorker(): Worker | null {
   return worker;
 }
 
-async function initLocalEngine(): Promise<void> {
+/**
+ * @param mountUrl 主进程给的**同源**模型挂载点，以 `/` 结尾。
+ *   它不是写死的地址：打包后是 `ailearn-app://bundle/device/asr/`，开发时是
+ *   `http://localhost:5173/device/asr/`。worker 把它交给 fetch，两种形态都命中
+ *   页面自己的 CSP `'self'`。
+ */
+async function initLocalEngine(mountUrl: string): Promise<void> {
   if (initPromise) return initPromise;
   const w = spawnWorker();
   if (!w) throw new Error("worker unavailable");
@@ -136,7 +162,7 @@ async function initLocalEngine(): Promise<void> {
         reject(new Error(String(data.message ?? "asr init failed")));
       }
     };
-    w.postMessage({ type: "init" });
+    w.postMessage({ type: "init", mountUrl });
   });
   try {
     await initPromise;
@@ -146,11 +172,11 @@ async function initLocalEngine(): Promise<void> {
   }
 }
 
-async function decodeLocally(sampleRate: number, samples: Float32Array): Promise<string> {
-  // 有人要用了，先把"空闲就收摊"的表停掉——否则上一句留下的定时器会在这句识别中途
+async function decodeLocally(mountUrl: string, sampleRate: number, samples: Float32Array): Promise<string> {
+  // 有人要用了，先把「空闲就收摊」的表停掉——否则上一句留下的定时器会在这句识别中途
   // 把 worker 抽走。
   window.clearTimeout(releaseTimer);
-  await initLocalEngine();
+  await initLocalEngine(mountUrl);
   const w = spawnWorker();
   if (!w) throw new Error("worker unavailable");
   const id = ++decodeSeq;
@@ -176,34 +202,26 @@ async function decodeLocally(sampleRate: number, samples: Float32Array): Promise
   });
 }
 
-/** 本地引擎是否值得一试：探测模型清单文件是否存在（HEAD，不下载 239MB）。 */
-async function probeLocalAsrModel(): Promise<boolean> {
-  try {
-    const response = await fetch("/models/asr/tokens.txt", { method: "HEAD" });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
 export interface TranscribeArgs {
   readonly sampleRate: number;
   readonly samples: Float32Array;
-  readonly wav: ArrayBuffer;
-  readonly durationMs: number;
-  /** 云兜底：走 `window.ailearn.companion.voice.transcribe`（main → SiliconFlow）。 */
-  readonly transcribeViaCloud: () => Promise<{ text: string; voiceArtifactId: string }>;
 }
 
 export async function transcribeRecording(args: TranscribeArgs): Promise<VoiceTranscription> {
-  if (await probeLocalAsrModel()) {
-    try {
-      const text = await decodeLocally(args.sampleRate, args.samples);
-      if (text.length > 0) return { text, route: "local", voiceArtifactId: null };
-    } catch {
-      // 本地失败 → 云兜底，不打断用户。
-    }
+  const model = await readVoiceAsrModel();
+  // 只认「两个文件都在」。下到一半（`downloading`）与下载失败（`error`）都不是"能用"——
+  // 界面要把这两种情况分别领到"继续下"和"重试"，而不是笼统一句"没装好"。
+  if (model.status !== "ready") throw new AsrModelMissingError();
+  return { text: await decodeLocally(model.mountUrl, args.sampleRate, args.samples), route: "local" };
+}
+
+/** 设置页之外的地方只想知道「现在能不能说话」时用它：一次 IPC，不拉 worker。 */
+export async function isLocalAsrReady(): Promise<boolean> {
+  try {
+    return (await readVoiceAsrModel()).status === "ready";
+  } catch {
+    // 连状态都读不到（主进程没接线 / 没登录）时按"还不能"处理：宁可让界面说
+    // "去设置看看"，也不让它启动一个注定失败的两百兆引擎。
+    return false;
   }
-  const cloud = await args.transcribeViaCloud();
-  return { text: cloud.text, route: "cloud", voiceArtifactId: cloud.voiceArtifactId };
 }

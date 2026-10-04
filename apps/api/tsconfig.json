@@ -20,6 +20,8 @@
     // 删除导出则不会报错。rootDir 相应上移到仓库根（noEmit，无产物影响）。
     "rootDir": "../..",
     "paths": {
+      "@ailearn/agent-core": ["../../packages/agent-core/src/index.ts"],
+      "@ailearn/agent-host": ["../../packages/agent-host/src/index.ts"],
       "@ailearn/shared": [
         "../../packages/shared/src/index.ts"
       ],

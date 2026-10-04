@@ -79,15 +79,11 @@ export function boundedToolCallIdentity(
  * `companion_start_learning`，等于系统自己把用户没要过的学习运行推上桌。
  */
 /**
- * 工具意图分类器的三值答复 → 这一步到底要不要强制用工具（39b §9.5 的 P3-alt）。
- *
- * `companionNeedsTool` 的 `null` 不是"不需要"，是**读不到**（8 秒超时、provider 异常、
- * 答复不是那个 JSON 形状）。原来判的是 `=== true`，把这两种混成了一支（fail-open），
- * 而 fail-open 的产物正是最难看的那条缺陷：「我帮你找一下」说出口了、什么都没查。
- * 现在 null 按 true 走——宁可安静几秒，不要把一句没兑现的话落到屏上。
+ * Only a confirmed current-turn intent requires tools. Unknown intent leaves
+ * read capabilities available, but never grants an inherited action authority.
  */
 export function companionStepRequiresTool(decision: boolean | null): boolean {
-  return decision !== false;
+  return decision === true;
 }
 
 /**

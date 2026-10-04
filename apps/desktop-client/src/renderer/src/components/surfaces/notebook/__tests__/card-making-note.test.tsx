@@ -30,7 +30,13 @@ describe("制作学习卡的小纸笺", () => {
     expect(screen.getByText("微调这叠卡").closest("details")?.open).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "开始生成" }));
     expect(onStart).toHaveBeenCalledWith(DEFAULT_GENERATION_OPTIONS, "");
-    expect(screen.getByRole("button", { name: "记住" }).matches(":disabled")).toBe(true);
+    // 开始之后这一片收起来，谁也改不动。
+    // 2026-10-04：这里原本是 `<fieldset disabled>`（`:disabled` 命中每个控件）。
+    // 选项区改成 div 之后 fieldset 不能用——Chromium 不让 fieldset 滚动，而这一片
+    // 就是滚动容器——收起用 `inert`，作用相同但形态换了。
+    const options = document.querySelector(".generation-options")!;
+    expect(options.hasAttribute("inert")).toBe(true);
+    expect(screen.getByRole("button", { name: "记住" }).closest("[inert]")).toBe(options);
   });
   it("卡型、数量与学习方向一起交给生成入口，至少留一种卡型", () => {
     const onStart = vi.fn(); render(<MakingNote onStart={onStart} />);

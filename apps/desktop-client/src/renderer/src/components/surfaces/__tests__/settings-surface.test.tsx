@@ -12,6 +12,7 @@ import { SETTINGS_ATTENTION_AI_CONSENT } from "../../../app/companion-consent-ga
 import { SETTINGS_ATTENTION_MS, SettingsSurface, summaryOfDissolveCounts } from "../settings/settings-surface.tsx";
 import { subscribeGateInvalidation } from "../../../app/gate-invalidation.ts";
 import { clearAccountSignOutNotice, peekAccountSignOutNotice } from "../../../app/account-signout.ts";
+import { openVoiceModelSettings } from "../../companion/open-voice-model-settings";
 
 /**
  * The settings centre's regressions all had the same shape: a value the reader
@@ -383,6 +384,21 @@ afterEach(() => {
     live2dStatus: "loading",
   });
   vi.restoreAllMocks();
+});
+
+it("缺少识别模型的入口直接打开声音与显示，并滚动与聚焦模型卡", async () => {
+  installApi();
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+  try {
+    render(<SettingsSurface />);
+    act(() => openVoiceModelSettings());
+    const card = await screen.findByRole("group", { name: "本机语音识别模型" });
+    await waitFor(() => expect(document.activeElement).toBe(card));
+    expect(screen.getByRole("tab", { name: "声音与显示" }).getAttribute("aria-selected")).toBe("true");
+    expect(useRoomStore.getState().settingsAttention).toBeNull();
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center", behavior: "instant" });
+  } finally { Reflect.deleteProperty(Element.prototype, "scrollIntoView"); }
 });
 
 describe("伴星把读者送到同意卡（2026-09-19）", () => {

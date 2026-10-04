@@ -12,7 +12,7 @@
 .card-making-note .generation-setup__header h2 { margin: 8px 0; color: #354f45; font-size: 31px; line-height: 1.45; letter-spacing: -.02em; }
 .card-making-note .generation-setup__header p { max-width: 42ch; padding-right: 15px; color: #617b69; font-size: 13px; line-height: 1.75; }
 .card-making-note .generation-setup__close { top: 18px; right: 18px; border: 2px solid #fffaf1; color: #8b8160; background: #fff0c8; }
-.card-making-note .generation-options { display: flex; flex: 1 1 auto; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; padding: 23px 29px; overflow-y: auto; scrollbar-gutter: stable; }
+.card-making-note .generation-options { display: flex; flex: 1 1 auto; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; padding: 23px 29px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: #c3d0ae transparent; }
 .making-purpose { position: relative; display: grid; flex: none; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; }
 .making-purpose__cushion { position: absolute; top: 0; left: 0; width: 71px; height: 71px; border: 3px solid #fff5df; border-radius: 46% 54% 49% 51%; background: #ffd9a5; box-shadow: 0 4px 0 #d4bf9890; pointer-events: none; transform: translate3d(var(--card-object-x,0px),var(--card-object-y,0px),0) rotate(var(--card-object-rotate,0deg)) scale(var(--card-object-scale,1)); }
 .making-purpose__choice { position: relative; display: flex; min-width: 0; min-height: 130px; flex-direction: column; align-items: center; gap: 8px; padding: 7px 6px 13px; border: 2px solid transparent; border-radius: 23px; color: #536f5c; background: none; box-shadow: none; cursor: pointer; }

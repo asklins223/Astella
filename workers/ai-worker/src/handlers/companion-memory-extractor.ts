@@ -14,7 +14,7 @@ import { taskEntityFromPersistedPageContext, type CompanionTaskEntityRef } from 
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { readJobPayloadString, resolveCompanionMemoryTemporalMetadata } from "@ailearn/shared";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { stableStringify, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import { logger } from "../lib/logger.ts";
 import { createProvider, withThinkingDisabled } from "../lib/ai-provider.ts";
 import {
@@ -482,14 +482,15 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
         recent: [],
         sourceMessages: [],
         taskEntity: null,
+        conversationId: null,
       };
     }
     // 任务身份只认**服务端落库**的 page_context（39b C8）：learning_run→runId、
     // card/review→cardId；推不出就是 null，task 记忆会因此降级 workspace。
     const taskEntity = taskEntityFromPersistedPageContext(run.page_context);
 
-    const userRows = await tx.execute<{ id: string; blocks: unknown; created_at: Date | string }>(sql`
-      SELECT id, blocks, created_at FROM companion_messages
+    const userRows = await tx.execute<{ id: string; seq: string; blocks: unknown; created_at: Date | string }>(sql`
+      SELECT id, seq::text AS seq, blocks, created_at FROM companion_messages
       WHERE id = ${run.user_message_id}
     `);
     const userMessageId = userRows[0]?.id ?? null;
@@ -521,6 +522,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
         AND id <> ${run.user_message_id}
         AND run_id IS DISTINCT FROM ${runId}
         AND role IN ('user', 'assistant')
+        AND seq < ${userRows[0]?.seq ?? "0"}::bigint
       ORDER BY seq DESC LIMIT 8
     `);
     const recent = historyRows
@@ -559,7 +561,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       }] : []),
     ];
 
-    return { userText, assistantText, userMessageId, assistantMessageId, recent, sourceMessages, taskEntity };
+    return { userText, assistantText, userMessageId, assistantMessageId, recent, sourceMessages, taskEntity, conversationId: run.conversation_id };
   });
 
   if (!context.userText.trim() && !context.assistantText.trim()) {
@@ -579,7 +581,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
   // 所以判不可重试、直接 dead，让 `jobs.last_error` 说真话。
   type ExtractOutput = z.infer<typeof memoryExtractOutputSchema>;
   const generationParameters = { temperature: 0.2, maxTokens: 800, responseFormat: "json_object" as const };
-  const inputSnapshotHash = sha256Utf8V1(canonicalJsonV1({
+  const inputSnapshotHash = sha256Utf8V1(stableStringify({
     taskVersion: 1,
     runId,
     sourceMessages: context.sourceMessages,
@@ -819,17 +821,17 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       }
       await tx.execute(sql`
         INSERT INTO assistant_memory_items
-          (workspace_id, user_id, kind, content, source_event_id, source_speaker, source_basis,
+          (workspace_id, user_id, kind, content, source_event_id, source_session_id, source_speaker, source_basis,
            applies_when, valid_from, valid_until, user_stated, user_confirmed,
-           candidate, importance, confidence, scope, source_type, embedding_status, created_at, updated_at)
+           candidate, importance, confidence, scope, source_type, author_type, embedding_status, created_at, updated_at)
         VALUES
-          (${job.workspaceId}, ${userId}, ${candidate.kind}, ${candidate.content}, ${sourceEventId},
+          (${job.workspaceId}, ${userId}, ${candidate.kind}, ${candidate.content}, ${sourceEventId}, ${context.conversationId}::uuid,
            ${candidate.source.speaker}, ${candidate.sourceBasis}, ${candidate.appliesWhen},
-           ${candidate.source.createdAt ? new Date(candidate.source.createdAt) : null},
-           ${candidate.validUntil ? new Date(candidate.validUntil) : null},
+           ${candidate.source.createdAt ?? null}::timestamptz,
+           ${candidate.validUntil ?? null}::timestamptz,
            ${userStated}, ${userStated}, false,
            ${candidate.importance}, ${candidate.confidence}, ${scope},
-           ${userStated ? "user_stated" : "model_inferred"}, 'pending', now(), now())
+           ${userStated ? "user_stated" : "model_inferred"}, 'extractor', 'pending', now(), now())
         ON CONFLICT (workspace_id, user_id, kind, source_event_id)
           WHERE deleted_at IS NULL AND source_event_id IS NOT NULL
         DO NOTHING

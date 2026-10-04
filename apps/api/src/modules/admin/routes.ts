@@ -32,6 +32,7 @@ import { readMetricsSnapshot } from "./metrics-service.ts";
 import { readOverview } from "./overview-service.ts";
 import {
   AdminActionError,
+  groupFailures,
   readPlatformCounts,
   readQueueBacklog,
   readRecentAudit,
@@ -39,7 +40,11 @@ import {
   runJobAction,
 } from "./ops-service.ts";
 import { readTodo } from "./todo-service.ts";
-import { adminLogBuffer, type LogLevelName } from "../../lib/log-buffer.ts";
+import {
+  adminLogBuffer,
+  adminRequestLogBuffer,
+  type LogLevelName,
+} from "../../lib/log-buffer.ts";
 import { adminMetricsSeries, SAMPLE_INTERVAL_MS } from "../../lib/metrics-series.ts";
 import {
   AUDIT_ACTION_LABELS,
@@ -82,7 +87,18 @@ const STATIC_FILES: Array<{ route: string; file: string; type: string }> = [
   { route: "/admin", file: "index.html", type: STATIC_TYPES[".html"] },
   { route: "/admin/", file: "index.html", type: STATIC_TYPES[".html"] },
   { route: "/admin/app.js", file: "app.js", type: STATIC_TYPES[".js"] },
+  { route: "/admin/ui.js", file: "ui.js", type: STATIC_TYPES[".js"] },
+  { route: "/admin/api-client.js", file: "api-client.js", type: STATIC_TYPES[".js"] },
+  { route: "/admin/format.js", file: "format.js", type: STATIC_TYPES[".js"] },
   { route: "/admin/charts.js", file: "charts.js", type: STATIC_TYPES[".js"] },
+  { route: "/admin/scene.js", file: "scene.js", type: STATIC_TYPES[".js"] },
+  { route: "/admin/views/shared.js", file: "views/shared.js", type: STATIC_TYPES[".js"] },
+  { route: "/admin/views/overview.js", file: "views/overview.js", type: STATIC_TYPES[".js"] },
+  { route: "/admin/views/queues.js", file: "views/queues.js", type: STATIC_TYPES[".js"] },
+  { route: "/admin/views/logs.js", file: "views/logs.js", type: STATIC_TYPES[".js"] },
+  { route: "/admin/views/metrics.js", file: "views/metrics.js", type: STATIC_TYPES[".js"] },
+  { route: "/admin/views/config.js", file: "views/config.js", type: STATIC_TYPES[".js"] },
+  { route: "/admin/vendor/three.bundle.js", file: "vendor/three.bundle.js", type: STATIC_TYPES[".js"] },
   { route: "/admin/styles.css", file: "styles.css", type: STATIC_TYPES[".css"] },
 ];
 
@@ -172,6 +188,10 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ─── 日志 ────────────────────────────────────────────────────────────
+  //
+  // 应用日志与请求日志是**两条独立的有界环**（见 log-buffer.ts 模块头）：
+  // 这里读应用日志；/logs/requests 读投影后的访问日志；/logs/stream 把新
+  // 应用日志以 SSE 推给面板。
 
   // 日志用自己的上界，**不复用 limitQuery（200）**：
   // 环形缓冲的容量是 500，而搜索要的是"在完整缓冲里找"——
@@ -187,7 +207,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (!query.success) return fail(reply, 400, "bad_request", "日志查询参数非法");
     return reply.send({
       entries: adminLogBuffer.recent({
-        limit: query.data.limit ?? 100,
+        limit: query.data.limit ?? 200,
         minLevel: query.data.level as LogLevelName | undefined,
       }),
       capacity: adminLogBuffer.capacity,
@@ -195,6 +215,87 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       /** 说明这段数据的性质：进程内最近窗口，不是完整日志。 */
       scope: "in-process ring buffer (not persisted)",
     });
+  });
+
+  const requestsQuery = z.object({
+    limit: z.coerce.number().int().min(1).max(300).optional(),
+    /** 只看 4xx/5xx。访问日志最常见的用法就是「刚才哪个请求炸了」。 */
+    onlyProblems: z.enum(["1", "0", "true", "false"]).optional(),
+  });
+
+  api.get("/admin/api/logs/requests", async (request, reply) => {
+    const query = requestsQuery.safeParse(request.query ?? {});
+    if (!query.success) return fail(reply, 400, "bad_request", "请求日志查询参数非法");
+    const onlyProblems = query.data.onlyProblems === "1" || query.data.onlyProblems === "true";
+    const entries = adminRequestLogBuffer.recent({ limit: query.data.limit ?? 150 });
+    const filtered = onlyProblems
+      ? entries.filter((entry) => {
+          const status = entry.fields.statusCode;
+          return typeof status === "number" && status >= 400;
+        })
+      : entries;
+    return reply.send({
+      entries: filtered,
+      capacity: adminRequestLogBuffer.capacity,
+      size: adminRequestLogBuffer.size,
+      onlyProblems,
+      scope: "completed requests only (in-process ring buffer)",
+    });
+  });
+
+  /**
+   * 实时推送（SSE）：应用日志 + 请求完成事件。
+   *
+   * 客户端用 **fetch 流**而不是 EventSource 消费：EventSource 不能带
+   * Authorization 头，令牌只能塞 query string——那会把它留在访问日志与浏览器
+   * 历史里。fetch + ReadableStream 保住 Bearer 鉴权，代价是 40 行的解析。
+   *
+   * 两条事件流共用一条连接：`event: log` 是应用日志（日志页的实时尾随与
+   * 3D 场景的脉冲），`event: req` 是访问日志（实时表）。访问日志的"每条请求"
+   * 在 dev 下也只有个位数量级，不值得为它再开一条连接。
+   *
+   * `reply.hijack()` 之后 Fastify 不再管这个响应（onSend 里那套 CSP 不适用，
+   * 对事件流本来也不需要），因此头部与生命周期清理都要自己来。客户端的
+   * 断开以 socket 的 close 事件为准——SSE 没有请求体，收不到别的信号。
+   */
+  api.get("/admin/api/logs/stream", async (request, reply) => {
+    reply.hijack();
+    const raw = reply.raw;
+    raw.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-store",
+      Connection: "keep-alive",
+      // nginx 之类的缓冲代理会把 SSE 攒成一次性响应；显式关掉。
+      "X-Accel-Buffering": "no",
+    });
+    raw.write("retry: 3000\n\n");
+
+    const write = (event: string, entry: unknown) => {
+      // 慢客户端保护：socket 攒了超过 1MB 未写出就跳过这条，而不是把内存
+      // 无限堆在进程里。丢的是"最新几条"而不是连接本身。
+      if (raw.writableEnded || raw.writableLength > 1_000_000) return;
+      raw.write(`event: ${event}\ndata: ${JSON.stringify(entry)}\n\n`);
+    };
+
+    const unsubscribeLogs = adminLogBuffer.subscribe((entry) => write("log", entry));
+    const unsubscribeRequests = adminRequestLogBuffer.subscribe((entry) => write("req", entry));
+
+    const heartbeat = setInterval(() => {
+      if (!raw.writableEnded) raw.write(": ping\n\n");
+    }, 15_000);
+    heartbeat.unref?.();
+
+    let closed = false;
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(heartbeat);
+      unsubscribeLogs();
+      unsubscribeRequests();
+    };
+    request.raw.on("close", cleanup);
+    raw.on("close", cleanup);
+    return reply;
   });
 
   // ─── 队列 / 审计 / 计数 ─────────────────────────────────────────────
@@ -238,18 +339,28 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   api.get("/admin/api/queues", async (_request, reply) => {
     const [backlog, failures, counts] = await Promise.all([
       readQueueBacklog(),
-      readRecentFailures(20),
+      // 一次取满函数上界（200）：失败清单既要给「按原因聚合」用，也要给展开后
+      // 的样例行用。只取 20 条时聚合出来的原因分布是失真的。
+      readRecentFailures(200),
       readPlatformCounts(),
     ]);
+    const withLabels = <T extends { jobType: string; status: string }>(row: T) => ({
+      ...row,
+      label: JOB_TYPE_LABELS[row.jobType] ?? row.jobType,
+      statusLabel: JOB_STATUS_LABELS[row.status] ?? row.status,
+    });
     return reply.send({
       ...backlog,
       // byType 的人话名已在 service 层译好（readQueueBacklog），这里不再重复映射。
       byType: backlog.byType,
-      recentFailures: failures.map((row) => ({
-        ...row,
-        label: JOB_TYPE_LABELS[row.jobType] ?? row.jobType,
-        statusLabel: JOB_STATUS_LABELS[row.status] ?? row.status,
+      // 聚合与样例行同源（同一批 200 条），面板上两处数字不会打架。
+      failureGroups: groupFailures(failures).map((group) => ({
+        ...group,
+        label: JOB_TYPE_LABELS[group.jobType] ?? group.jobType,
+        statusLabel: JOB_STATUS_LABELS[group.status] ?? group.status,
+        sample: withLabels(group.sample),
       })),
+      recentFailures: failures.map(withLabels),
       counts,
     });
   });
@@ -286,10 +397,15 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  /**
+   * 保存配置改动。请求体是**补丁**（platforms / capabilities / tts 的子集），
+   * 服务端把它合并到磁盘上的现状——理由见 config-service.ts 的 writeConfig：
+   * 整文件替换会把面板看不见的明文密钥抹掉。
+   */
   api.put("/admin/api/config", async (request, reply) => {
     const body = request.body;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
-      return fail(reply, 400, "bad_request", "请求体必须是配置对象");
+      return fail(reply, 400, "bad_request", "请求体必须是配置补丁对象（platforms / capabilities / tts）");
     }
     try {
       const result = await writeConfig(body);

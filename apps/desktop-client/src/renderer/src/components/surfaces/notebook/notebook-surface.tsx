@@ -115,6 +115,7 @@ import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
 import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
 import { useNotebookAnnotationState } from "./use-notebook-annotation-state.ts";
 import { useNotebookLearningArtifactState } from "./use-notebook-learning-artifact-state.ts";
+import { prepareNotebookTaskNotification } from "./notebook-task-notifications";
 import { useNotebookExpansionState } from "./use-notebook-expansion-state.ts";
 import { useNotebookExpansionTask } from "./use-notebook-expansion-task.ts";
 import { useNotebookRoundState } from "./use-notebook-round-state.ts";
@@ -123,6 +124,7 @@ import { useNotebookSaveState } from "./use-notebook-save-state.ts";
 import { useNotebookPractice } from "./use-notebook-practice.ts";
 import { useNotebookInspectedRound } from "./use-notebook-inspected-round.ts";
 import { useNotebookOverview } from "./use-notebook-overview.ts";
+import { useNotebookGoalResult } from "./use-notebook-goal-result.ts";
 import { NoteRecallPaper } from "./notebook-recall-paper.tsx";
 import { NoteOverviewPaper } from "./notebook-overview-paper.tsx";
 import { GenerationSetup } from "./notebook-generation-setup.tsx";
@@ -1183,6 +1185,14 @@ const noteDocLive = useNoteDocLiveView(
 
   /** 「速看」整簇（7 个 state + 读 + 发起 + 三个派生）已于 2026-09-29 收进
       `use-notebook-overview.ts`。它只依赖 `note` 与 `epochRef` 两样。 */
+  const requestedGoalResult = activeNoteRef?.noteId === note?.noteId ? activeNoteRef?.learningResult : undefined;
+  const goalResult = useNotebookGoalResult(note?.noteId, requestedGoalResult, epochRef);
+  const clearGoalResultSelection = () => {
+    const room = useRoomStore.getState();
+    if (room.activeNoteRef?.noteId === note?.noteId && room.activeNoteRef?.learningResult) {
+      room.setActiveNoteRef({ ...room.activeNoteRef, learningResult: undefined, learningView: undefined });
+    }
+  };
   const {
     overviewRows, setOverviewRows,
     overviewLoading, setOverviewLoading, overviewError, setOverviewError,
@@ -1191,13 +1201,21 @@ const noteDocLive = useNoteDocLiveView(
     overviewOpen, setOverviewOpen, overviewPaperRef,
     loadNoteOverviews, loadLatestNoteOverviewTask, startNoteOverviewTask,
     noteOverviews, taskForCurrentVersion, latestNoteOverview,
-  } = useNotebookOverview({ note, epochRef });
+  } = useNotebookOverview({ note, epochRef, requestedOverview: requestedGoalResult?.kind === "note_overview"
+    ? goalResult.result?.kind === "note_overview" ? goalResult.result.overview : null : undefined });
   const { learningView, setLearningView, rememberReadingPosition } = useNotebookLearningView({
     noteId: note?.noteId ?? null,
     leaf, recallVisit,
     scrollRef: leafScrollRef, inReading: leaf === "reading",
     ready: !loading && !failure && Boolean(note),
   });
+  useEffect(() => {
+    if (loading || failure || !note || activeNoteRef?.noteId !== note.noteId || !activeNoteRef.learningView) return;
+    if (activeNoteRef.learningView === "overview") { setLeaf("reading"); setLearningView("overview"); setOverviewOpen(true); }
+    else if (activeNoteRef.learningView === "artifact") { setLeaf("reading"); setLearningView("artifact"); }
+    else setLeaf(activeNoteRef.learningView);
+    useRoomStore.getState().setActiveNoteRef({ ...activeNoteRef, learningView: undefined });
+  }, [activeNoteRef, note?.noteId, loading, failure, setLearningView]);
   const [olderRounds, setOlderRounds] = useState<NoteLearningRoundHistoryV1 | null>(null);
   const [olderBusy, setOlderBusy] = useState(false);
   const [olderFailure, setOlderFailure] = useState<string | null>(null);
@@ -1280,6 +1298,7 @@ const noteDocLive = useNoteDocLiveView(
     const current = store.activeNoteRef;
     if (current?.noteId === note.noteId && current.noteVersionId === note.currentVersionId) return;
     store.setActiveNoteRef({
+      ...(current?.noteId === note.noteId ? current : {}),
       noteId: note.noteId,
       noteVersionId: note.currentVersionId,
       mode: current?.noteId === note.noteId ? current.mode : "preview",
@@ -1331,12 +1350,14 @@ const noteDocLive = useNoteDocLiveView(
     }
     const request = ++learningArtifactTaskRequestRef.current;
     setLearningArtifactTaskError(null);
+    const notifyTask = prepareNotebookTaskNotification(note, epochRef.current);
     try {
       const page = unwrapGatewayResult(await api.noteLearningArtifact.listTasks({
         meta: createRequestMeta(epochRef.current),
         noteId: note.noteId,
         query: { noteVersionId: note.currentVersionId },
       }));
+      for (const task of page.items) if (["queued", "running"].includes(task.status)) notifyTask(task, "artifact");
       if (request !== learningArtifactTaskRequestRef.current) return;
       setLearningArtifactTasks(page.items);
       const completed = page.items.flatMap((task) => task.artifact ? [task.artifact] : []);
@@ -1369,7 +1390,15 @@ const noteDocLive = useNoteDocLiveView(
     () => note && learningArtifactRows?.noteId === note.noteId ? learningArtifactRows.items : [],
     [note?.noteId, learningArtifactRows],
   );
-  const activeLearningArtifact = noteLearningArtifacts.find((item) => item.artifactId === activeLearningArtifactId) ?? null;
+  const activeLearningArtifact = requestedGoalResult?.kind === "note_dynamic_artifact"
+    ? goalResult.result?.kind === "note_dynamic_artifact" ? goalResult.result.artifact : null
+    : noteLearningArtifacts.find((item) => item.artifactId === activeLearningArtifactId) ?? null;
+
+  useEffect(() => {
+    if (goalResult.result?.kind === "note_dynamic_artifact") {
+      setActiveLearningArtifactId(goalResult.result.artifact.artifactId);
+    }
+  }, [goalResult.result]);
 
   const runningArtifactTaskIds = learningArtifactTasks
     .filter((task) => task.status === "queued" || task.status === "running")
@@ -1984,6 +2013,7 @@ const noteDocLive = useNoteDocLiveView(
     learningArtifactStartingRef.current = true;
     setLearningArtifactTaskStarting(true);
     setLearningArtifactTaskError(null);
+    const notifyTask = prepareNotebookTaskNotification(note, epochRef.current);
     try {
       const task = unwrapGatewayResult(await api.noteLearningArtifact.startTask({
         meta: createRequestMeta(epochRef.current),
@@ -1995,6 +2025,7 @@ const noteDocLive = useNoteDocLiveView(
           ...(anchor ? { selectionAnchor: anchor } : {}),
         },
       }));
+      notifyTask(task, "artifact");
       if (request === learningArtifactTaskRequestRef.current && expectedScope === learningArtifactScopeRef.current) {
         setLearningArtifactTasks((current) => [task, ...current.filter((item) => item.taskId !== task.taskId)]);
         if (task.artifact) {
@@ -2185,6 +2216,7 @@ const noteDocLive = useNoteDocLiveView(
    * 不留"上次点过哪"这种会跟人走的读数。
    */
   const locateTeachingReference = (ordinal: number): void => {
+    clearGoalResultSelection();
     setLeaf("reading");
     setLearningView("body");
     if (isNoteEditingMode(mode)) requestAnimationFrame(() => editorRef.current?.focusPosition({ block: ordinal, offset: 0 }));
@@ -2192,6 +2224,7 @@ const noteDocLive = useNoteDocLiveView(
     setFocusedBlockOrdinal(ordinal);
   };
   const openNoteAnnotation = (annotation: NoteAnnotationV1): void => {
+    clearGoalResultSelection();
     annotationOrigin.current = "body";
     const located = currentNoteAnnotations.some(item => item.annotationId === annotation.annotationId);
     if (located && !readingBlocks.some((block) => block.ordinal === annotation.anchor.startBlockOrdinal)) setShowAllBlocks(true);
@@ -2550,18 +2583,17 @@ const noteDocLive = useNoteDocLiveView(
 
 
   /**
-   * 入口按下去的那一下。
+   * 入口按下去的那一下（2026-10-04 用户决定）。
    *
-   * 干净的工作稿直接开跑；有未保存改动时**开那屏方案**，因为拦下它的理由只写在
-   * 那一屏的底栏上（「请先保存当前改动，再从已保存版本开始生成。」）。改成直接
-   * 开跑之后，若还沿用 `startGeneration` 那个 `dirty` 早退，用户按下去就是
-   * **什么也没发生**——一颗不解释自己为什么不动的按钮比那屏选项更糟。
-   * 所以这一档仍然去方案屏，让挡住它的那句话在原地。
+   * 干净的工作稿过去是**直接开跑**的，方案屏收在旁边的「调整这次」里。那样多数人
+   * 按这一下只要的是默认档，却根本不知道自己挑走了什么——直到卡片出来了才发现方向
+   * 不对，而那一批已经跑完。现在这一格只有一颗按钮，按它就开「这次想怎么练？」：
+   * 方向、数量、详略、卡型都在那儿，用户先说清要什么，再开始生成。
+   *
+   * 未保存的改动也不用再单独分一条路：挡住它的那句话（「笔记改动还没保存，保存后
+   * 就可以开始。」）本来就写在方案屏的底栏上，进得去就看得见。
    */
-  const startGenerationFromEntry = () => {
-    if (generationNeedsSavedVersion) { setOptionsOpen(true); return; }
-    void startGeneration();
-  };
+  const openGenerationSetup = () => { setOptionsOpen(true); };
 
   /**
    * 提交这一轮的问题：没有进行中轮次时开一轮，已经有了就是改写那一句。
@@ -2887,6 +2919,7 @@ const noteDocLive = useNoteDocLiveView(
     requestAnimationFrame(() => requestAnimationFrame(() => historyDetailRef.current?.scrollIntoView?.({ block: "start" })));
   };
   const openFootprintRecall = (record: NoteRecallRecordV1) => {
+    clearGoalResultSelection();
     rememberReadingPosition();
     closeSidePage();
     openRecall(record, "history");
@@ -2900,6 +2933,13 @@ const noteDocLive = useNoteDocLiveView(
     setOpenAnnotationId(annotation.annotationId);
   };
   const openFootprintArtifact = (artifact: NoteLearningArtifactV1) => {
+    // A selected receipt may lie beyond the gallery's first page. Keep it
+    // available when the reader explicitly switches to normal note controls.
+    setLearningArtifactRows(current => ({
+      noteId: artifact.noteId, nextCursor: current?.noteId === artifact.noteId ? current.nextCursor : null,
+      items: [artifact, ...(current?.noteId === artifact.noteId ? current.items.filter(item => item.artifactId !== artifact.artifactId) : [])],
+    }));
+    clearGoalResultSelection();
     rememberReadingPosition();
     closeSidePage();
     setActiveLearningArtifactId(artifact.artifactId);
@@ -2957,6 +2997,32 @@ const noteDocLive = useNoteDocLiveView(
     };
   }, [noteGenerationRunId, reload]);
 
+  /**
+   * 后台还在做这一批时的兜底轮询。
+   *
+   * 事件流推的是"有事件才来"，这一格要的是"那一行状态自己往前走"——而流是会被顶回的
+   * （服务端每用户 SSE 上限 5，主进程那一侧曾经漏过连接；占满之后每一次订阅都 429，
+   * 入口就会一直停在旧阶段：明明已经写好了还读作「查看生成进度」，或者反过来）。
+   *
+   * **只在真在跑的时候跑**，而且比工作台慢一倍：这一页的 `reload` 是整份投影（笔记、
+   * 能力、资料袋、最新一批），不是工作台那种只读一条 run 的轻量重读；而这一格慢半拍
+   * 没有人会察觉——用户盯着的是刚点下去那一页。
+   */
+  const noteGenerationInFlight = Boolean(noteGeneration && isCardGenerationInFlight(noteGeneration.status));
+  useEffect(() => {
+    if (!noteGenerationRunId || !noteGenerationInFlight) return undefined;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      void reload({ silent: true });
+    }, 4000);
+    const onVisibility = (): void => { if (document.visibilityState === "visible") void reload({ silent: true }); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [noteGenerationRunId, noteGenerationInFlight, reload]);
+
   const openGeneration = () => {
     const run = noteGeneration ?? latestRun;
     if (!run) return;
@@ -2994,6 +3060,7 @@ const noteDocLive = useNoteDocLiveView(
   // 模式跟随 activeNoteRef 走：从工作台"返回笔记"时，用户回到的是离开时的
   // 编辑/阅读模式，而不是每次都被重置成阅读页。
   const switchMode = (next: NoteBodyMode) => {
+    clearGoalResultSelection();
     setLeaf("reading");
     setLearningView("body");
     setOverviewOpen(false);
@@ -3150,22 +3217,36 @@ const noteDocLive = useNoteDocLiveView(
   );
 
   const generationRun = noteGeneration ?? latestRun;
-  const generationEntry = noteCardGenerationEntry(generationRun, note?.currentVersionId, generationNeedsSavedVersion);
-  const { startsNewRun, sourceChanged, blockedByGeneration } = generationEntry;
+  const { startsNewRun, sourceChanged, blockedByGeneration, offersRegenerate } = noteCardGenerationEntry(
+    generationRun, note?.currentVersionId, generationNeedsSavedVersion);
   const generationAction = (
     <>
       <NotebookCardEntry status={startsNewRun ? undefined : generationRun?.status} busy={startingGeneration} triggerRef={generationTriggerRef}
         startLabel={generationRun && !sourceChanged ? "重新生成学习卡" : "生成学习卡"}
         disabled={saving || startsNewRun && (!generationEnabled || blockedByGeneration)}
         partialSourceNotice={!startsNewRun && noteGeneration?.sourceCapped ? sourceCappedNotice(noteGeneration.sourceCapped) : null}
-        title={blockedByGeneration ? "旧版笔记还在生成，请先查看旧版进度并停止，再生成最新版本"
-          : startsNewRun ? generationReason ?? (generationNeedsSavedVersion ? "先保存当前改动，再从已保存版本开始生成" : sourceChanged ? "按当前已保存的笔记生成学习卡" : "用最新已保存的笔记再生成一套")
-          : generationRun?.status === "activated" ? "查看已保存的学习卡" : "这次生成在后台进行，来回翻看不会打断它"}
-        onClick={startsNewRun ? startGenerationFromEntry : openGeneration} />
-      {startsNewRun ? <button type="button" className="text-action notebook-card-entry__tweak" disabled={!generationEnabled || saving || startingGeneration || blockedByGeneration}
-        title="换学习方向、详略、卡片上限或题型；也可以针对上一次生成说明原因" onClick={() => setOptionsOpen(true)}>调整这次</button> : null}
-      {generationRun && startsNewRun ? <button type="button" className="text-action notebook-card-entry__previous" onClick={openGeneration}>{sourceChanged ? "查看旧版生成" : "查看上次生成"}</button> : null}
-      {generationRun && !startsNewRun && !isCardGenerationInFlight(generationRun.status) ? <button type="button" className="text-action notebook-card-entry__tweak" disabled={!generationEnabled || saving || startingGeneration} onClick={() => setOptionsOpen(true)}>重新生成学习卡</button> : null}
+        title={generationReason
+          ?? (blockedByGeneration ? "旧版笔记还在生成，请先查看旧版进度并停止，再生成最新版本"
+            : startsNewRun
+              ? generationRun && !sourceChanged ? "用最新已保存的笔记再生成一套"
+                : sourceChanged ? "按当前已保存的笔记生成学习卡"
+                  : generationNeedsSavedVersion ? "先保存当前改动，再从已保存版本开始生成"
+                    : "先说这次想怎么练，选完就开始生成"
+              : generationRun?.status === "activated" ? "查看已保存的学习卡"
+                : generationRun?.status === "review_ready" ? "这一批已经写好，等你逐张决定留哪些"
+                  : "这次生成在后台进行，来回翻看不会打断它")}
+        onClick={startsNewRun ? openGenerationSetup : openGeneration} />
+      {/*
+        「重新生成学习卡」只在这一颗**去看手上那一批**的时候补位（`offersRegenerate`）。
+        另外两种情形里主按钮自己就是"另开一批"：正文改过了就该说「生成学习卡」（这一版
+        还没有任何一批卡），上次那批停了就说「重新生成学习卡」——旁边再挂一颗同义的，
+        用户要先认出哪一颗是哪一颗才知道按哪一颗。
+        正在生成时一颗都不出现：此刻唯一能做的是"停下来"，而那一颗在进度页上。
+      */}
+      {offersRegenerate ? <button type="button" className="text-action notebook-card-entry__tweak" disabled={!generationEnabled || saving || startingGeneration}
+        title="按最新已保存的笔记再生成一套；也可以先说明这次想怎么练" onClick={openGenerationSetup}>重新生成学习卡</button> : null}
+      {generationRun && startsNewRun ? <button type="button" className="text-action notebook-card-entry__previous"
+        onClick={openGeneration}>{sourceChanged ? "查看旧版生成" : "查看上次生成"}</button> : null}
     </>
   );
 
@@ -3307,6 +3388,7 @@ const noteDocLive = useNoteDocLiveView(
 
 
   const openExpansionPage = () => {
+    clearGoalResultSelection();
     rememberReadingPosition();
     closeSidePage();
     setLeaf("expansion");
@@ -3323,6 +3405,7 @@ const noteDocLive = useNoteDocLiveView(
     hasUnversionedChanges: readingUnversionedContent || dirty,
     save: () => save("manual"),
     open: (kind) => {
+      clearGoalResultSelection();
       if (kind === "artifact") return;
       rememberReadingPosition(); closeSidePage();
       if (kind === "expansion") setLeaf("expansion");
@@ -3346,6 +3429,7 @@ const noteDocLive = useNoteDocLiveView(
       return latest.task || page.items.some(item => item.versionState === "current" && item.generationJobId && item.coverage) ? "existing" : "missing";
     },
     start: (kind, regenerate) => {
+      clearGoalResultSelection();
       if (kind === "artifact") {
         const source = artifactRegenerationSource.current;
         if (source) void startNoteLearningArtifactTask(source.sourceKind, source.anchor, true);
@@ -3362,6 +3446,7 @@ const noteDocLive = useNoteDocLiveView(
     },
   });
   const regenerateArtifact = (artifact: NoteLearningArtifactV1) => {
+    openFootprintArtifact(artifact);
     artifactRegenerationSource.current = { sourceKind: artifact.sourceKind, ...(artifact.selectionAnchor ? { anchor: artifact.selectionAnchor } : {}) };
     learningEntry.prepare("artifact", true);
   };
@@ -3369,7 +3454,14 @@ const noteDocLive = useNoteDocLiveView(
   const readPageBody = note ? (
     <>
       {leaf === "reading" ? <>
-      {learningView === "overview" && !latestNoteOverview ? <NotebookLearningPage kind="overview" title={readTitle || note.title} version={note.currentVersion.versionNo}
+      {((learningView === "overview" && requestedGoalResult?.kind === "note_overview")
+        || (learningView === "artifact" && requestedGoalResult?.kind === "note_dynamic_artifact")) && !goalResult.result ? <SurfaceDataState
+          kind={goalResult.error ? "error" : "loading"}
+          message={goalResult.error ? "这份结果暂时没读到" : "正在翻开这份结果"}
+          detail={goalResult.error ?? "正在读取手记里保存的这一份内容。"}
+          onRetry={goalResult.retry}
+          action={<button type="button" className="text-action" onClick={() => { clearGoalResultSelection(); setLearningView("body"); }}>回正文</button>} /> : null}
+      {learningView === "overview" && !latestNoteOverview && requestedGoalResult?.kind !== "note_overview" ? <NotebookLearningPage kind="overview" title={readTitle || note.title} version={note.currentVersion.versionNo}
         state={learningEntry.checking === "overview" ? "loading" : overviewTaskStarting ? "queued" : taskForCurrentVersion?.status === "ready" ? "loading" : taskForCurrentVersion?.status ?? (overviewTaskError || learningEntry.error ? "failed" : "empty")}
         error={taskForCurrentVersion?.failureReason ?? overviewTaskError ?? learningEntry.error}
         onPrepare={() => learningEntry.prepare("overview")} onBody={() => setLearningView("body")}
@@ -3380,7 +3472,7 @@ const noteDocLive = useNoteDocLiveView(
               overview={latestNoteOverview}
               paperRef={overviewPaperRef}
               dirty={dirty}
-              onCollapse={() => { setOverviewOpen(false); setLearningView("body"); }}
+              onCollapse={() => { clearGoalResultSelection(); setOverviewOpen(false); setLearningView("body"); }}
               onLocateReference={locateTeachingReference}
               onOpenExpansionPage={openExpansionPage}
               onAskCompanion={askCompanionAboutNote}
@@ -4120,8 +4212,8 @@ const noteDocLive = useNoteDocLiveView(
                 onOpenDirectory={() => { setHistoryOpen(false); setSourceBagOpen(false); setOpenAnnotationId(null); setAnnotationTaskOpen(false); }}
                 learningView={leaf === "reading" ? learningView : leaf}
                 onLearning={learningEntry.request}
-                onBody={() => { rememberReadingPosition(); closeSidePage(); setLeaf("reading"); setLearningView("body"); setOverviewOpen(false); }}
-                onHistory={() => { rememberReadingPosition(); closeSidePage(); setLeaf("history"); }}
+                onBody={() => { clearGoalResultSelection(); rememberReadingPosition(); closeSidePage(); setLeaf("reading"); setLearningView("body"); setOverviewOpen(false); }}
+                onHistory={() => { clearGoalResultSelection(); rememberReadingPosition(); closeSidePage(); setLeaf("history"); }}
                 primaryAction={isNoteEditingMode(mode) && leaf === "reading" && learningView === "body" && canSave ? <button type="button" className="button primary"
                     disabled={saving} onClick={() => void save("manual")}>{saveState === "error" ? "重试保存" : saving ? "正在保存…" : "保存版本"}</button> : null}
                 taskActions={leaf === "expansion" && expansionTask?.status === "ready" ? <>

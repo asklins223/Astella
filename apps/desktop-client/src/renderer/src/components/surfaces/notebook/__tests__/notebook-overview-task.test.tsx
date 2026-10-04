@@ -3,14 +3,13 @@ import { createRef } from "react";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { noteDetailV1Schema } from "@ailearn/shared/note-projection-contracts";
-import { noteOverviewTaskV1Schema } from "@ailearn/shared/note-overview-contracts";
+import { noteOverviewTaskV1Schema, type NoteOverviewV1 } from "@ailearn/shared/note-overview-contracts";
 import { useNotebookOverview } from "../use-notebook-overview";
 import { useNotebookLearningView } from "../use-notebook-learning-view";
 
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
-it("关起学习页继续读，速看迟到完成只更新结果；主动打开才切回速看", async () => {
-  vi.useFakeTimers();
+function overviewFixture() {
   const noteId = "11111111-4111-4111-8111-111111111111";
   const versionId = "22222222-4222-4222-8222-222222222222";
   const createdAt = "2026-09-30T00:00:00.000Z";
@@ -29,6 +28,12 @@ it("关起学习页继续读，速看迟到完成只更新结果；主动打开�
       generationJobId: "55555555-4555-4555-8555-555555555555", sourceMessageId: null, conversationId: null, versionState: "current", createdAt,
     },
   });
+  return { noteId, note, ready };
+}
+
+it("关起学习页继续读，速看迟到完成只更新结果；主动打开才切回速看", async () => {
+  vi.useFakeTimers();
+  const { noteId, note, ready } = overviewFixture();
   const ok = <T,>(data: T) => ({ ok: true, data });
   const latestTask = vi.fn(async () => ok({ version: 1, task: null }));
   const getTask = vi.fn(async () => ok(ready));
@@ -55,4 +60,24 @@ it("关起学习页继续读，速看迟到完成只更新结果；主动打开�
   act(() => { result.current.setOverviewOpen(true); result.current.setLearningView("overview"); });
   expect(result.current.learningView).toBe("overview");
   expect(result.current.latestNoteOverview?.overviewId).toBe(ready.overview!.overviewId);
+});
+
+it("选中的结果尚未读取时不回退到其他速看；解除选择后重新跟随最新生成", async () => {
+  const { noteId, note, ready } = overviewFixture();
+  Object.defineProperty(window, "ailearn", { configurable: true, value: { noteOverview: {
+    latestTask: vi.fn(async () => ({ ok: true, data: { version: 1, task: ready } })),
+  } } });
+  const view = renderHook(({ requestedOverview }: { requestedOverview: NoteOverviewV1 | null | undefined }) =>
+    useNotebookOverview({ note, epochRef: { current: undefined }, requestedOverview }),
+    { initialProps: { requestedOverview: null as NoteOverviewV1 | null | undefined } });
+  await act(async () => {
+    view.result.current.setOverviewRows({ noteId, items: [ready.overview!], nextCursor: null });
+  });
+  expect(view.result.current.taskForCurrentVersion?.status).toBe("ready");
+  expect(view.result.current.latestNoteOverview).toBeNull();
+  const selected = { ...ready.overview!, overviewId: "66666666-4666-4666-8666-666666666666", body: "从手记选择的旧结果" };
+  view.rerender({ requestedOverview: selected });
+  expect(view.result.current.latestNoteOverview?.body).toBe("从手记选择的旧结果");
+  view.rerender({ requestedOverview: undefined });
+  expect(view.result.current.latestNoteOverview?.overviewId).toBe(ready.overview!.overviewId);
 });

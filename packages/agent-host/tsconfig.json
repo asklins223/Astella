@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "NodeNext", "moduleResolution": "NodeNext",
+    "strict": true, "noUnusedLocals": true, "noUnusedParameters": true,
+    "skipLibCheck": true, "allowImportingTsExtensions": true, "noEmit": true,
+    "paths": {
+      "@ailearn/agent-core": ["../agent-core/src/index.ts"],
+      "@ailearn/shared/agent-contracts": ["../shared/src/contracts/agent-contracts.ts"],
+      "@ailearn/shared/*": ["../shared/src/contracts/*.ts", "../shared/src/*.ts", "../shared/src/*/index.ts"],
+      "drizzle-orm": ["./node_modules/drizzle-orm/index.d.ts"],
+      "drizzle-orm/*": ["./node_modules/drizzle-orm/*/index.d.ts", "./node_modules/drizzle-orm/*.d.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

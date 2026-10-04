@@ -13,6 +13,10 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { createAssetResponsePlan, mimeTypeForPath } from './asset-response'
+import { VoiceAsrModelStore, voiceAsrModelSources } from './voice-asr-model-store'
+import { voiceAsrModelDirectory } from '../shared/voice-asr-model-path'
+import { createVoiceAsrModelResponder } from './voice-asr-model-route'
+import { VOICE_ASR_MODEL_ROUTE_PREFIX } from '@ailearn/shared/voice-asr-model-contracts'
 import { ARTIFACT_HOST, isArtifactFrameUrl, isArtifactId } from '../shared/artifact-frame'
 import {
   artifactDocumentContentSecurityPolicy,
@@ -143,8 +147,9 @@ async function artifactDocumentResponse(requestUrl: URL, method: string): Promis
   })
 }
 
-function registerAppProtocol(): void {
+function registerAppProtocol(voiceAsrModel: VoiceAsrModelStore): void {
   const rendererRoot = resolve(__dirname, '../renderer')
+  const respondVoiceAsr = createVoiceAsrModelResponder(voiceAsrModel)
 
   /**
    * `rendererRoot` 整个进程里不会变，它的 realpath 没必要每个资源请求都再问一次磁盘
@@ -203,6 +208,20 @@ function registerAppProtocol(): void {
     }
 
     if (requestedPath.includes('\0')) return response(400, 'Invalid path', request.method)
+
+    /**
+     * `device/asr/…`：用户自己下的本地识别模型，落在 userData 而不是安装包里。
+     *
+     * 之所以挂在**与页面同一个 host**（`bundle`）而不是另开一个 scheme：同源就意味着
+     * 渲染层 fetch 它时 CSP 的 `'self'` 直接命中，不用在 connect-src 上多开一条口子——
+     * 「为了下一份模型给页面开外连」这件事因此根本不存在，开发模式与打包模式走同一条。
+     *
+     * 路径是**保留前缀**且只认清单里那两个文件名：前缀之后给什么都回 404，
+     * 于是这条路由没有能力读出 userData 里的任何别的东西。
+     */
+    if (requestedPath === VOICE_ASR_MODEL_ROUTE_PREFIX.slice(0, -1) || requestedPath.startsWith(VOICE_ASR_MODEL_ROUTE_PREFIX)) {
+      return respondVoiceAsr(requestedPath.slice(VOICE_ASR_MODEL_ROUTE_PREFIX.length), request)
+    }
 
     const assetPath = requestedPath || 'index.html'
     const absolutePath = resolve(rendererRoot, assetPath)
@@ -298,6 +317,8 @@ function rendererContentSecurityPolicy(): string {
     // metadata 永远不加载，点了没声也没有报错）。
     "media-src 'self' blob:",
     "font-src 'self' data:",
+    // 模型在**页面自己的 origin** 上：打包后是 app scheme 的保留前缀（`'self'` 命中），
+    // 开发时由 Vite 开发服务器在同一 origin 提供。这里因此不需要为它多开一条 connect-src。
     `connect-src 'self' blob:${devConnectSources}`,
     "worker-src 'self' blob:",
     "object-src 'none'",
@@ -621,7 +642,17 @@ if (!app.requestSingleInstanceLock()) {
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null)
-  registerAppProtocol()
+  /**
+   * 本地语音识别模型的仓库（2026-10）。它**不在安装包里**：目录是空的，
+   * 用户在设置里点过下载之后才会有第一份字节。清掉上一次没下完的半截文件，
+   * 免得「占了多少空间」这句话算在已经没人要的进度上。
+   */
+  const voiceAsrModel = new VoiceAsrModelStore(
+    voiceAsrModelDirectory({ env: process.env, userDataDir: app.getPath('userData') }),
+    { sources: voiceAsrModelSources(process.env) }
+  )
+  await voiceAsrModel.sweepPartialFiles()
+  registerAppProtocol(voiceAsrModel)
   registerRendererSecurityPolicy()
   registerWindowIpc()
   registerM1DesktopIpc({
@@ -648,7 +679,10 @@ app.whenReady().then(async () => {
     ),
     // 刀五：动态产物往这儿写。传函数不在注册期求值，与读侧 `artifactSourcePath`
     // （上面那个）共用同一个 `app.getPath('userData')` 来源，落点必然一致。
-    artifactUserDataDir: () => app.getPath('userData')
+    artifactUserDataDir: () => app.getPath('userData'),
+    // 语音识别模型的仓库。与协议层那一条路由共用**同一个 store 实例**：
+    // 下载写进去的与 worker 读出来的必须是同一个目录，不能各拼一次路径。
+    voiceAsrModelStore: voiceAsrModel
   })
 
   app.on('web-contents-created', (_event, contents) => {

@@ -42,7 +42,6 @@ import {
   companionViewportCorrection,
   companionWorldAnchorFromProjectedFoot,
   shouldCommitCompanionDrag,
-  type CompanionCuePriority,
 } from "./companion-home-placement";
 import { WindowLive2D, type WindowLive2DStatus } from "./WindowLive2D";
 import {
@@ -54,6 +53,9 @@ import { companionDisplayName, subscribeCompanionDisplayName } from "./companion
 import { CompanionHud, type CompanionHudAction } from "./CompanionHud";
 import { useCompanionSeatBudget } from "./use-companion-seat-budget";
 import { createCueDeliveryReporter, findCueDelivery } from "./companion-cue-delivery";
+import { useCompanionProactiveCue } from "./use-companion-proactive-cue";
+import { CompanionNotificationCenter } from "./CompanionNotificationCenter";
+import { useCompanionCueLifecycle } from "./use-companion-cue-lifecycle";
 import { hasForeignModal } from "./companion-modal-ownership";
 import { useCompanionChat } from "../../app/companion-chat-session";
 import type { CompanionAgentNodeState } from "../../app/companion-agent-nodes";
@@ -234,8 +236,18 @@ export function CompanionPresence() {
   }, [awakening]);
   /** 中介帧的展开节拍；卸载时清掉，避免 setState 落在已卸载的树上。 */
   const wakeTimerRef = useRef<number | null>(null);
-  useEffect(() => () => {
-    if (wakeTimerRef.current !== null) window.clearTimeout(wakeTimerRef.current);
+  useEffect(() => {
+    const cancelWake = (event: MouseEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest(".companion-hud__controls")) return;
+      if (wakeTimerRef.current !== null) window.clearTimeout(wakeTimerRef.current);
+      wakeTimerRef.current = null;
+      setAwakening(false);
+    };
+    document.addEventListener("click", cancelWake, true);
+    return () => {
+      document.removeEventListener("click", cancelWake, true);
+      if (wakeTimerRef.current !== null) window.clearTimeout(wakeTimerRef.current);
+    };
   }, []);
   const [touchKind, setTouchKind] = useState<"head" | "body" | null>(null);
   const [homeCue, setHomeCue] = useState<string | null>(null);
@@ -246,6 +258,7 @@ export function CompanionPresence() {
   const cueOpeningRef = useRef(false);
   useEffect(() => setCueOpenError(null), [homeCueThoughtId]);
   const [externalModalOpen, setExternalModalOpen] = useState(false);
+  const [taskBubbleOpen, setTaskBubbleOpen] = useState(false);
   const { mode, setMode, assistantCue, liveReply, phase: chatPhase, companionName, setCompanionName } = useCompanionChat();
   const engaged = mode !== "closed";
   /**
@@ -315,6 +328,9 @@ export function CompanionPresence() {
   presencePausedRef.current = presencePaused;
 
   useEffect(() => {
+    if (wakeTimerRef.current !== null) window.clearTimeout(wakeTimerRef.current);
+    wakeTimerRef.current = null;
+    setAwakening(false);
     setMode("closed");
   }, [hudPage, setMode]);
 
@@ -435,30 +451,7 @@ export function CompanionPresence() {
     };
   }, [dragging]);
 
-  const prioritizedCue = useMemo((): {
-    readonly priority: CompanionCuePriority;
-    readonly text: string;
-    readonly zone: "desk" | "shelf" | "window" | "rest";
-    readonly key: string;
-    readonly inboxSequence: number;
-    readonly thoughtId: string | null;
-    readonly origin: "thought" | "reminder" | "system";
-  } | null => {
-    if (companionProjection.loading || companionProjection.failure) return null;
-    const proactive = companionProjection.projection?.proactiveCue;
-    if (!proactive) return null;
-    return {
-      priority: "ordinary",
-      text: proactive.text,
-      zone: "rest",
-      key: `ordinary:${proactive.revision}`,
-      // 投影里 cue 的 revision 就是那条投递行的 inboxSequence（readProactiveCue 直接取的），
-      // 展示回执要靠它对回 `assistant_deliveries`。
-      inboxSequence: proactive.revision,
-      thoughtId: proactive.thoughtId ?? null,
-      origin: proactive.origin,
-    };
-  }, [companionProjection.failure, companionProjection.loading, companionProjection.projection]);
+  const prioritizedCue = useCompanionProactiveCue(companionProjection.projection?.proactiveCue ?? null);
 
   /**
    * 气泡的展示回执：这句话在屏幕上露出来过（displayed）、用户点开过（acted）。
@@ -686,78 +679,84 @@ export function CompanionPresence() {
     return () => { settle.kill(); };
   }, [touchKind]);
 
-  useEffect(() => {
-    if (presencePaused || companionSilenced || homeV2IntroVisible || !prioritizedCue) return;
-    if (shownCueRef.current === prioritizedCue.key) return;
-    if (prioritizedCue.priority === "ordinary") {
-      let lastAt = 0;
-      try {
-        lastAt = Number(window.localStorage.getItem("ailearn.home-v2.last-ordinary-cue") ?? "0");
-      } catch {
-        // A privacy-restricted session may not expose persistent storage.
-      }
-      // 只是显示去抖：她多久主动开口一次由服务端按 intervention_level 决定。
-      // 触发式（提醒/系统事件）在这一步直接放行。
-      if (!companionCueAllowed({
-        origin: prioritizedCue.origin,
-        priority: prioritizedCue.priority,
-        lastOrdinaryCueAt: lastAt,
-        now: Date.now(),
-      })) return;
-    }
-    const revealAt = prioritizedCue.priority === "ordinary" ? 3.2 : 1.05;
-    // 到点的**提醒**是用户亲口要过的东西（0238），不是她随口一提：气泡要停得久，
-    // 而且必须念出口——只在头顶闪 7.4 秒的闹钟等于没有闹钟。
-    const isCommitment = prioritizedCue.origin === "reminder";
-    const hideAt = prioritizedCue.priority === "ordinary"
-      ? (prioritizedCue.thoughtId || isCommitment ? 30 : 7.4)
-      : 5;
-    const cueTimeline = gsap.timeline();
-    const cueTarget = {
-      cueKey: prioritizedCue.key,
-      inboxSequence: prioritizedCue.inboxSequence,
-    };
-    cueTimeline.call(() => {
-      shownCueRef.current = prioritizedCue.key;
-      revealedCueRef.current = cueTarget;
-      // Cues may choose a contextual semantic perch, but a hand-placed world
-      // anchor is immutable until the user drags or explicitly resets it.
-      if (!dragRef.current && placementOwnerRef.current === "semantic") {
-        setCompanionHomePlacement(prioritizedCue.zone);
-      }
-      setHomeCue(prioritizedCue.text);
-      setHomeCueThoughtId(prioritizedCue.thoughtId);
-      // 主动开口不只是长出一个气泡：她得先有个"咦，你看这边"的动作。
-      pushCharacterMoment("reminder");
-      if (prioritizedCue.priority !== "ordinary" || isCommitment) {
-        speakHomeV2Cue(prioritizedCue.text);
-      }
-      window.dispatchEvent(new CustomEvent("ailearn:home-v2-sound", { detail: { kind: "footstep" } }));
+  useEffect(() => { shownCueRef.current = null; }, [workspaceScopeRevision]);
+
+  useCompanionCueLifecycle({
+    cue: prioritizedCue?.origin === "thought" ? prioritizedCue : null,
+    paused: presencePaused || companionSilenced || homeV2IntroVisible,
+    scopeRevision: workspaceScopeRevision,
+    start: (prioritizedCue) => {
+      if (shownCueRef.current === prioritizedCue.key) return;
       if (prioritizedCue.priority === "ordinary") {
+        let lastAt = 0;
         try {
-          window.localStorage.setItem("ailearn.home-v2.last-ordinary-cue", String(Date.now()));
+          lastAt = Number(window.localStorage.getItem("ailearn.home-v2.last-ordinary-cue") ?? "0");
         } catch {
-          // The cue can still be shown without persisting its low-frequency gate.
+          // A privacy-restricted session may not expose persistent storage.
         }
+        // 只是显示去抖：她多久主动开口一次由服务端按 intervention_level 决定。
+        // 触发式（提醒/系统事件）在这一步直接放行。
+        if (!companionCueAllowed({
+          origin: prioritizedCue.origin,
+          priority: prioritizedCue.priority,
+          lastOrdinaryCueAt: lastAt,
+          now: Date.now(),
+        })) return;
       }
-      void cueDeliveryReporter.shown(cueTarget);
-    }, undefined, revealAt);
-    cueTimeline.call(() => {
-      setHomeCue(null);
-      setHomeCueThoughtId(null);
-      revealedCueRef.current = null;
-    }, undefined, hideAt);
-    return () => {
-      cueTimeline.kill();
-      // Losing focus or opening a task cancels the cue lifecycle. Clear any
-      // text already revealed so resuming cannot leave a one-shot prompt
-      // pinned indefinitely after its timeline has been destroyed, and return a
-      // borrowed position immediately.
-      setHomeCue(null);
-      setHomeCueThoughtId(null);
-      revealedCueRef.current = null;
-    };
-  }, [companionProjection.projection, companionSilenced, cueDeliveryReporter, homeV2IntroVisible, presencePaused, prioritizedCue, setCompanionHomePlacement]);
+      const revealAt = prioritizedCue.priority === "ordinary" ? 3.2 : 1.05;
+      // 到点的**提醒**是用户亲口要过的东西（0238），不是她随口一提：气泡要停得久，
+      // 而且必须念出口——只在头顶闪 7.4 秒的闹钟等于没有闹钟。
+      const isCommitment = prioritizedCue.origin === "reminder";
+      const hideAt = prioritizedCue.priority === "ordinary"
+        ? (prioritizedCue.thoughtId || isCommitment ? 30 : 7.4)
+        : 5;
+      const cueTimeline = gsap.timeline();
+      const cueTarget = {
+        cueKey: prioritizedCue.key,
+        inboxSequence: prioritizedCue.inboxSequence,
+      };
+      cueTimeline.call(() => {
+        shownCueRef.current = prioritizedCue.key;
+        revealedCueRef.current = cueTarget;
+        // Cues may choose a contextual semantic perch, but a hand-placed world
+        // anchor is immutable until the user drags or explicitly resets it.
+        if (!dragRef.current && placementOwnerRef.current === "semantic") {
+          setCompanionHomePlacement(prioritizedCue.zone);
+        }
+        setHomeCue(prioritizedCue.text);
+        setHomeCueThoughtId(prioritizedCue.thoughtId);
+        // 主动开口不只是长出一个气泡：她得先有个"咦，你看这边"的动作。
+        pushCharacterMoment("reminder");
+        if (prioritizedCue.priority !== "ordinary" || isCommitment) {
+          speakHomeV2Cue(prioritizedCue.text);
+        }
+        window.dispatchEvent(new CustomEvent("ailearn:home-v2-sound", { detail: { kind: "footstep" } }));
+        if (prioritizedCue.priority === "ordinary") {
+          try {
+            window.localStorage.setItem("ailearn.home-v2.last-ordinary-cue", String(Date.now()));
+          } catch {
+            // The cue can still be shown without persisting its low-frequency gate.
+          }
+        }
+        void cueDeliveryReporter.shown(cueTarget);
+      }, undefined, revealAt);
+      cueTimeline.call(() => {
+        setHomeCue(null);
+        setHomeCueThoughtId(null);
+        revealedCueRef.current = null;
+      }, undefined, hideAt);
+      return () => {
+        cueTimeline.kill();
+        // Losing focus or opening a task cancels the cue lifecycle. Clear any
+        // text already revealed so resuming cannot leave a one-shot prompt
+        // pinned indefinitely after its timeline has been destroyed, and return a
+        // borrowed position immediately.
+        setHomeCue(null);
+        setHomeCueThoughtId(null);
+        revealedCueRef.current = null;
+      };
+    },
+  });
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -1489,7 +1488,7 @@ export function CompanionPresence() {
 
   // 回复/发送占用交互台；页面 starter 只作为交互台里的上下文提示，绝不再单独
   // 漂浮成一张会遮正文的页面气泡。
-  const hudOccupied = Boolean(liveReply) || chatPhase === "sending";
+  const hudOccupied = Boolean(liveReply) || chatPhase === "sending" || taskBubbleOpen;
 
   return (
     <Fragment>
@@ -1574,7 +1573,9 @@ export function CompanionPresence() {
                   return;
                 }
                 setInviteTrigger((value) => value + 1);
-                const next = mode === "closed" ? "conversation" : "closed";
+                const next = mode === "closed" && wakeTimerRef.current === null ? "conversation" : "closed";
+                if (wakeTimerRef.current !== null) window.clearTimeout(wakeTimerRef.current);
+                wakeTimerRef.current = null;
                 // 「被叫醒的中介帧」（方案 §5 第 4 项）：先让她在头顶冒一个「嗯？」，
                 // 交互台晚一个身位再展开。只等 180ms（气泡入场落位），不等它 900ms 的
                 // 全部寿命——把输入区压在动画后面近一秒会直接变成"卡"。lite / off /
@@ -1583,7 +1584,6 @@ export function CompanionPresence() {
                   setAwakening(true);
                   // 连点两次时后一次必须撤掉前一次的节拍，否则两个定时器都会
                   // `setMode("conversation")`——第二次点击等于没生效。
-                  if (wakeTimerRef.current !== null) window.clearTimeout(wakeTimerRef.current);
                   wakeTimerRef.current = window.setTimeout(() => {
                     wakeTimerRef.current = null;
                     setMode("conversation");
@@ -1619,6 +1619,7 @@ export function CompanionPresence() {
 
         {!presenceHidden && !companionUnavailable && companionPolicy.interaction !== "none" ? (
           <CompanionHud
+            onTaskBubbleOpenChange={setTaskBubbleOpen}
             motionMode={motionMode}
             floatingBlocked={homeV2ModalOpen || externalModalOpen}
             voiceEnabled={!assessmentMode}
@@ -1703,6 +1704,16 @@ export function CompanionPresence() {
         </div>
       ) : null}
       </div>
+
+      <CompanionNotificationCenter
+        replyBusy={chatPhase === "sending"}
+        blocked={assessmentMode || onboardingOpen || homeV2ModalOpen || externalModalOpen || taskBubbleOpen || mode === "history" || windowState !== "visible"}
+        muted={masterMuted || accountState?.voiceOff === true}
+        quietHours={accountState?.quietHours}
+        passiveMuted={companionSilenced || companionTemporarilyHidden || companionAccountDisabled
+          || accountState?.presence?.presence === "dnd" || accountState?.presence?.presence === "offline"
+          || accountState?.notificationBoundary?.notificationsEnabled === false}
+      />
 
       {/* 恢复芯片必须挂在存在层**之外**（2026-09-19 逐页审计发现）：伴星隐藏时
           `.companion-presence` 自身 aria-hidden，首页 V2 场景上该层被

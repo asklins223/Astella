@@ -689,8 +689,8 @@ export function InteractionEditor({
     return (
       <VoiceTeachbackEditor
         maxSeconds={interaction.maxSeconds}
-        value={{ confirmedTranscript: value.confirmedTranscript, voiceArtifactRef: value.voiceArtifactRef, correctionMethod: value.correctionMethod }}
-        onChange={(next) => onChange({ ...value, confirmedTranscript: next.confirmedTranscript, voiceArtifactRef: next.voiceArtifactRef, correctionMethod: next.correctionMethod })}
+        value={{ confirmedTranscript: value.confirmedTranscript, correctionMethod: value.correctionMethod }}
+        onChange={(next) => onChange({ ...value, confirmedTranscript: next.confirmedTranscript, correctionMethod: next.correctionMethod })}
         onBusyChange={onVoiceBusyChange}
       />
     );

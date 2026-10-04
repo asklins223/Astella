@@ -1,3 +1,4 @@
+import { agentGoalToolManifest } from "./agent-capabilities.ts";
 import { z } from "zod";
 import {
   COMPANION_PAGE_DESTINATIONS_V2,
@@ -76,6 +77,7 @@ function companionOpenPageDescriptionV2(): string {
 }
 
 const REGISTERED_TOOLS: readonly RegisteredTool[] = [
+  ...agentGoalToolManifest,
   tool("companion_read_context", "读取当前用户在当前 workspace 的学习上下文。", "read", false, emptyParameters, emptyArguments),
   tool("companion_read_current_page", "读取用户此刻屏幕上正显示的内容：页面标题、状态行、计数器、按屏幕顺序编号的条目、空态与当前筛选。用户说「这一页」「第N张」「为什么这么慢/卡住」时先调它——别用别的工具的数字代替眼前这屏。返回 available=false 表示这一页没有可读内容，要问她是在哪儿看到的，不要据此推断系统没问题。", "read", false, emptyParameters, emptyArguments),
   tool("companion_read_history", "读取当前伴星对话的有限历史摘要。", "read", false, { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 20 } }, additionalProperties: false }, z.object({ limit: z.number().int().min(1).max(20).optional() }).strict()),

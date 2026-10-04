@@ -132,6 +132,23 @@ export interface ProcessingTickResult {
 }
 
 /**
+ * 批内并发度（2026-10-03）。
+ *
+ * 默认 4：与 worker 侧 `DEFAULT_QUEUE_CONCURRENCY` 同值，也与「一次 Critic 调用
+ * ~8 秒」相称——4 路并发时一轮 tick 的最坏耗时仍是单条的耗时，而不是 4 倍。
+ * 上界 16：再高对吞吐的边际收益迅速衰减，而每路都可能同时持有事务连接，
+ * 会去挤 HTTP 请求的池（API 主池只有 25 条，见 db/client.ts）。
+ */
+export const DEFAULT_RUN_PROCESSING_CONCURRENCY = 4;
+export const MAX_RUN_PROCESSING_CONCURRENCY = 16;
+
+export function resolveRunProcessingConcurrency(raw: string | undefined): number {
+  const parsed = Number(raw ?? DEFAULT_RUN_PROCESSING_CONCURRENCY);
+  if (!Number.isInteger(parsed) || parsed <= 0) return DEFAULT_RUN_PROCESSING_CONCURRENCY;
+  return Math.min(parsed, MAX_RUN_PROCESSING_CONCURRENCY);
+}
+
+/**
  * 让轮询循环立刻再跑一次（2026-09-20 实走复盘 #6）。
  *
  * 打分 outbox 此前固定 10 秒一跳，用户提交后**平均要干等 5 秒**才有人开始处理，
@@ -165,29 +182,72 @@ export async function runLearningRunProcessingTick(
   // 新鲜的（120s），即使前面若干条耗时超长也不会波及后续行。claim 内部
   // FOR UPDATE SKIP LOCKED + 租约条件保证并发安全；租约过期被其它实例重领的
   // 行，本实例后续 mark/release 的 lease_owner CAS 会正确失效（no-op）。
+  //
+  // ─── 2026-10-03：逐条认领改为「小批量认领 + 批内并发」────────────────
+  // 上面那条 B#1/R1 约束保护的是它**自己描述的那个失效模式**：大批量认领 +
+  // 串行处理，于是靠后行等到轮到时租约已过期。它保护的不是"批量认领"本身——
+  // `ailearn_claim_run_processing` 的 FOR UPDATE SKIP LOCKED 与统一租约，对
+  // 并发认领者本来就是安全的；而**批内并发恰好消除了租约失效的成因**：
+  // 并发 C 时一批 C 行同时开始处理，一轮最坏耗时仍是**单条**的耗时
+  // （一次 Critic 约 8s），而不是 C×8s。租约在 claim 时打 120s，到"最后一行
+  // 开始处理"那一刻只过了约 8s，租约依然新鲜。
+  //
+  // 反过来说：**串行是租约问题的症状，不是病因**。并发之后租约安全性比原实现
+  // 更强——原实现里第 15 行要等 14×8=112s 才开始处理，那才是真正贴着 120s
+  // 租约边缘走的地方。
+  //
+  // 批大小同时受 maxCommands 剩余额度约束，避免最后一轮多认领再丢弃。
   let processed = 0;
   let failed = 0;
+  const concurrency = resolveRunProcessingConcurrency(process.env.RUN_PROCESSING_CONCURRENCY);
 
   while (processed + failed < maxCommands) {
+    const batchSize = Math.min(concurrency, maxCommands - (processed + failed));
     const now = new Date();
     const claimedRows = await db.execute(sql`
       SELECT * FROM public.ailearn_claim_run_processing(
-        ${workerId}, ${LEASE_SECONDS * 1000}, 1, ${now.toISOString()}
+        ${workerId}, ${LEASE_SECONDS * 1000}, ${batchSize}, ${now.toISOString()}
       )
     `);
     const claimed = (claimedRows as unknown) as ClaimedCommand[];
     if (claimed.length === 0) break;
-    const row = claimed[0];
 
-    try {
-      await processClaimedCommand(row, workerId);
-      processed += 1;
-    } catch (err) {
+    // 批内并发。用 allSettled 而不是 all：一条命令炸了不能连坐同批的其它
+    // 命令——这与原串行实现的失败隔离完全一致（原实现里一条失败只累加 failed
+    // 并继续下一条）。
+    const outcomes = await Promise.allSettled(
+      claimed.map((row) => processClaimedCommand(row, workerId)),
+    );
+
+    // 结算按认领顺序逐条走，保证日志与事件写入的相对顺序稳定可复现。
+    for (let index = 0; index < claimed.length; index += 1) {
+      const outcome = outcomes[index];
+      if (outcome.status === "fulfilled") {
+        processed += 1;
+        continue;
+      }
+      failed += 1;
+      await settleFailedCommand(claimed[index], outcome.reason, workerId);
+    }
+  }
+  return { processed, failed };
+}
+
+/**
+ * 把一条失败的命令结算成 `recoverable_error`（2026-10-03 从主循环抽出）。
+ *
+ * 抽取的原因是并发批处理：原来这段逻辑内联在 try/catch 里，与"认领→处理"
+ * 严格交替；批并发之后处理与结算必须分开，否则一条失败命令的结算会挡住同批
+ * 其它命令的启动。**函数体自原 catch 块逐字搬运**，行为不变。
+ */
+async function settleFailedCommand(row: ClaimedCommand, err: unknown, workerId: string): Promise<void> {
       // 2026-08-15（§13.2 recoverable_error）：业务可恢复错误不再无限重试
       // （tick failed 循环），而是把 Run 置为 recoverable_error + failure
       // （用户可 retry_assessment/retry_commit/retry_prepare 或 end）。
       // Critic 网络失败已在事务外 fail closed（not_assessable，不走到这里）。
-      failed += 1;
+      // 原先这里第一行是 `failed += 1;`——那是主循环的局部计数器，搬进本函数
+      // 后已由调用方在 await 之前累加（见 runLearningRunProcessingTick 的批结算
+      // 循环），否则要么编译不过、要么计数两遍。
       // M6（2026-08-24 审查）：内部错误详情（Postgres 驱动/约束名/内部路径）
       // 只进服务端日志；事件 payload 只带稳定的 stage/code，绝不原样经 SSE
       // 推给客户端。
@@ -307,9 +367,6 @@ export async function runLearningRunProcessingTick(
           "[run-tick] mark processed failed",
         );
       });
-    }
-  }
-  return { processed, failed };
 }
 
 interface ClaimedCommand {

@@ -36,6 +36,8 @@ type IdTarget = { readonly table: string; readonly column: string } | {
  * 目标列名与参数名对不上的（第二条用例）要么改参数名，要么改到名字说的是那一列。
  */
 const PARAM_TARGETS: Readonly<Record<string, Readonly<Record<string, IdTarget>>>> = {
+  agent_revise_goal: { runId: { table: "agent_runs", column: "id" } },
+  agent_control_goal: { runId: { table: "agent_runs", column: "id" } },
   companion_read_note: {
     noteId: { table: "notes", column: "id" },
     noteVersionId: { table: "note_versions", column: "id" },
@@ -90,9 +92,11 @@ const snake = (value: string) => value.replace(/Id$/, "").replace(/[A-Z]/g, (c) 
  * 所以扫描范围取 handlers/ 整个目录的源码并集。
  */
 const HANDLERS_DIR = new URL("../handlers/", import.meta.url).pathname;
-const runtimeSource = readdirSync(HANDLERS_DIR)
-  .filter((n) => n.endsWith(".ts") && !n.endsWith(".test.ts"))
-  .map((n) => readFileSync(resolve(HANDLERS_DIR, n), "utf8"))
+const HOST_DIR = resolve(import.meta.dirname, "../../../../packages/agent-host/src");
+const runtimeSource = [HANDLERS_DIR, resolve(HANDLERS_DIR, "../agent"), HOST_DIR].flatMap(dir => readdirSync(dir)
+  .filter(n => n.endsWith(".ts") && !n.endsWith(".test.ts"))
+  .map(n => resolve(dir, n)))
+  .map(path => readFileSync(path, "utf8"))
   .join("\n");
 
 /** 收集每个工具参数表里的 `*Id` 参数。 */

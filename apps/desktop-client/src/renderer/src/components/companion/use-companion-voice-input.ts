@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  createRequestMeta,
   gatewayErrorMessage,
-  requireWorkspaceEpoch,
-  unwrapGatewayResult,
 } from "../../app/desktop-client";
 import { CompanionVoiceRecorder } from "./voice-recorder";
-import { transcribeRecording } from "./local-speech-recognition";
+import { guideVoiceModelDownload } from "./voice-model-notifications";
+import { holdCompanionMicrophone } from "./companion-notification-voice";
+import { stopCompanionSpeech } from "../../app/companion-voice-playback";
+import { isAsrModelMissing, isLocalAsrReady, transcribeRecording } from "./local-speech-recognition";
 import {
   COMPANION_VAD_INITIAL_STATE,
   companionVadStep,
@@ -14,25 +14,28 @@ import {
 } from "./companion-voice-vad";
 
 /**
- * 伴星语音输入（2026-09-18）。
+ * 伴星语音输入（2026-09-18；2026-10 只剩本机这一条路）。
  *
- * 录音结束后把真实转写和 artifact 交给 HUD 的独立语音气泡，用户可修改后发送。
+ * 录音结束后把转写文字交给 HUD 的独立语音气泡，用户可修改后发送。
  *
  * 交互是「点一下开始说」：录到足够人声后，连续静音由 VAD 判定收尾（见
  * companion-voice-vad），不需要用户再点一次。
+ *
+ * 模型是用户在设置里自己下的附加功能（见 `voice-asr-model.ts`）。没装时这里
+ * **不猜、不重试**，直接告诉界面「去设置里下载」——那条路有可点的下一步，
+ * 而一句「识别失败」没有。
  */
 
 export type CompanionVoicePhase = "idle" | "listening" | "transcribing";
 
 export interface CompanionVoiceTranscript {
   readonly text: string;
-  /** 云转写回执；本地路由没有服务端 artifact（见 local-speech-recognition）。 */
-  readonly voiceArtifactId: string | null;
 }
 
 export interface CompanionVoiceInputOptions {
   readonly disabled?: boolean;
   readonly onTranscript: (transcript: CompanionVoiceTranscript) => void | Promise<void>;
+  readonly onModelMissing?: () => void;
 }
 
 export interface CompanionVoiceInput {
@@ -60,16 +63,8 @@ export interface CompanionVoiceInput {
    * UI 一起重渲，而麦克风呼吸环只关心一个 CSS 变量。
    */
   readonly subscribeLevel: (listener: (level: number) => void) => () => void;
-}
-
-/** WAV 可以到几 MB，展开成参数列表会撑爆调用栈；分块编码。 */
-function encodeBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 0x8_000;
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
-  }
-  return btoa(binary);
+  /** 本机还没装识别模型（这一刻 voiceDraft 一定为空）。 */
+  readonly modelMissing: boolean;
 }
 
 export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): CompanionVoiceInput {
@@ -77,11 +72,13 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
   const [phase, setPhase] = useState<CompanionVoicePhase>("idle");
   const [note, setNote] = useState<string | null>(null);
   const [noteRevision, setNoteRevision] = useState(0);
+  const [modelMissing, setModelMissing] = useState(false);
   const [supported] = useState(() => CompanionVoiceRecorder.isSupported());
   const phaseRef = useRef<CompanionVoicePhase>("idle");
   phaseRef.current = phase;
   const recorderRef = useRef<CompanionVoiceRecorder | null>(null);
   const startingRef = useRef(false);
+  const releaseMicrophoneRef = useRef<(() => void) | null>(null);
   const vadRef = useRef<CompanionVadState>(COMPANION_VAD_INITIAL_STATE);
   const listenersRef = useRef(new Set<(level: number) => void>());
 
@@ -120,37 +117,35 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
         showNote("好像没录到内容，再试一次");
         return;
       }
-      const epoch = await requireWorkspaceEpoch();
-      if (operation !== operationRef.current) return;
       const transcription = await transcribeRecording({
         sampleRate: recording.sampleRate,
         samples: recording.samples,
-        wav: recording.wav,
-        durationMs: recording.durationMs,
-        transcribeViaCloud: async () => {
-          const response = await window.ailearn.companion.voice.transcribe({
-            meta: createRequestMeta(epoch),
-            request: {
-              version: 1,
-              audioBase64: encodeBase64(new Uint8Array(recording.wav)),
-              durationMs: Math.max(200, Math.round(recording.durationMs)),
-              language: "zh-CN",
-            },
-          });
-          const result = unwrapGatewayResult(response);
-          return { text: result.text, voiceArtifactId: result.voiceArtifactId };
-        },
       });
       if (operation !== operationRef.current) return;
       phaseRef.current = "idle";
       setPhase("idle");
-      showNote(transcription.route === "cloud" ? "识别好了，可以修改后发送" : "本地识别好了，可以修改后发送；音频没有离开设备");
-      await options.onTranscript({ text: transcription.text, voiceArtifactId: transcription.voiceArtifactId });
+      setModelMissing(false);
+      showNote("识别好了，可以修改后发送；这段录音没有离开设备");
+      await options.onTranscript({ text: transcription.text });
     } catch (error) {
       if (operation !== operationRef.current) return;
       phaseRef.current = "idle";
       setPhase("idle");
+      // 「本机还没装模型」不是失败提示：它有自己的下一步（去设置里下载），
+      // 与其在这里喊一句"识别失败"，不如把人领过去。
+      if (isAsrModelMissing(error)) {
+        setModelMissing(true);
+        showNote("这台设备还没有语音识别模型，先去设置里下载");
+        options.onModelMissing?.();
+        guideVoiceModelDownload();
+        return;
+      }
       showNote(`识别失败：${gatewayErrorMessage(error)}`);
+    } finally {
+      if (operation === operationRef.current) {
+        releaseMicrophoneRef.current?.();
+        releaseMicrophoneRef.current = null;
+      }
     }
   }, [emitLevel, options, showNote]);
 
@@ -163,10 +158,33 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
       showNote("当前设备没有可用的麦克风");
       return;
     }
-    const operation = ++operationRef.current;
+    // 「正在起录」这道闸先落下：下面第一件事就是一次 await，不先占住的话，
+    // 连点两下「开始录音」会开两个麦克风。
     startingRef.current = true;
-    vadRef.current = COMPANION_VAD_INITIAL_STATE;
+    const operation = ++operationRef.current;
+    let modelChecked = false;
     try {
+      /**
+       * 先判模型，再碰麦克风。
+       *
+       * 顺序是有讲究的：模型是用户自己下的附加功能，没装时这一句根本不可能被识别。
+       * 反过来先开麦，用户要的麦克风授权弹窗照弹、权限也给了，然后被告知说不了话——
+       * 白要一次授权，还白等一句「没有模型」。所以这里在**建录音器之前**就问一次。
+       */
+      const ready = await isLocalAsrReady();
+      if (operation !== operationRef.current) return;
+      modelChecked = true;
+      if (!ready) {
+        setModelMissing(true);
+        showNote("这台设备还没有语音识别模型，先去设置里下载");
+        options.onModelMissing?.();
+        guideVoiceModelDownload();
+        return;
+      }
+      setModelMissing(false);
+      stopCompanionSpeech();
+      releaseMicrophoneRef.current = holdCompanionMicrophone();
+      vadRef.current = COMPANION_VAD_INITIAL_STATE;
       const recorder = new CompanionVoiceRecorder({
         onLevel: (level) => {
           emitLevel(level);
@@ -191,19 +209,23 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
     } catch {
       if (operation !== operationRef.current) return;
       recorderRef.current = null;
+      releaseMicrophoneRef.current?.();
+      releaseMicrophoneRef.current = null;
       phaseRef.current = "idle";
       setPhase("idle");
-      showNote("麦克风不可用或未授权");
+      showNote(modelChecked ? "麦克风不可用或未授权" : "暂时读不到本机语音状态，请稍后再试");
     } finally {
       if (operation === operationRef.current) startingRef.current = false;
     }
-  }, [emitLevel, options.disabled, showNote]);
+  }, [emitLevel, options, showNote]);
 
   const cancel = useCallback(() => {
     operationRef.current += 1;
     const recorder = recorderRef.current;
     recorderRef.current = null;
     startingRef.current = false;
+    releaseMicrophoneRef.current?.();
+    releaseMicrophoneRef.current = null;
     emitLevel(0);
     phaseRef.current = "idle";
     setPhase("idle");
@@ -224,8 +246,10 @@ export function useCompanionVoiceInput(options: CompanionVoiceInputOptions): Com
     operationRef.current += 1;
     const recorder = recorderRef.current;
     recorderRef.current = null;
+    releaseMicrophoneRef.current?.();
+    releaseMicrophoneRef.current = null;
     if (recorder) void recorder.stop().catch(() => undefined);
   }, []);
 
-  return { phase, note, noteRevision, supported, toggle, cancel, dismissNote, subscribeLevel };
+  return { phase, note, noteRevision, supported, toggle, cancel, dismissNote, subscribeLevel, modelMissing };
 }

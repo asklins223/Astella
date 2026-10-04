@@ -164,17 +164,20 @@ describe("§16.20 只读成员与公共制卡入口", () => {
       expect(screen.queryByText(READONLY_COPY)).toBeNull();
       expect(screen.queryByText(OFF_COPY)).toBeNull();
     });
-    // 按类名取**入口那颗**，不按 title 猜：入口旁边还有一颗「调整这次」，
-    // 两颗的提示里都有「生成」，`findByTitle` 会撞上两个而报不出是哪一颗。
+    // 按类名取**入口那颗**，不按 title 猜：入口附近还有版本历史、资料袋等别的按钮。
     const entry = await waitFor(() => {
       const found = document.querySelector<HTMLButtonElement>(".notebook-card-entry");
       expect(found).not.toBeNull();
       return found!;
     });
     expect(entry.disabled).toBe(false);
-    // 次要那颗也必须同时可点——权限够的时候两档都通。
-    const tweak = document.querySelector<HTMLButtonElement>(".notebook-card-entry__tweak");
-    expect(tweak).not.toBeNull();
-    expect(tweak!.disabled).toBe(false);
+    // 「调整这次」撤掉了（它按下去开的就是入口按下去开的那张方案屏），但"再来一批"
+    // 这一档仍然留着：权限够的时候它也必须同时可点（2026-10-04 用户决定）。
+    expect(document.querySelectorAll(".notebook-card-entry").length).toBe(1);
+    expect(document.querySelector(".notebook-card-entry__tweak")).toBeNull();
+    if (document.querySelector(".notebook-card-entry__tweak, .notebook-card-entry__previous")) {
+      const secondary = document.querySelector<HTMLButtonElement>(".notebook-card-entry__tweak, .notebook-card-entry__previous")!;
+      expect(secondary.disabled).toBe(false);
+    }
   });
 });

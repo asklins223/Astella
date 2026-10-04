@@ -22,6 +22,11 @@
  *
  * ## 写回的真实约束
  *
+ * 写回是**补丁合并**（见 {@link mergeConfigPatch}），不是整文件替换：面板按
+ * 快照重建用户改过的那几个字段，而快照里明文密钥是脱敏的——整文件替换会在
+ * 「改一个 baseUrl」时顺手把密钥抹掉。合并的基底始终是磁盘上的现状，面板看
+ * 不见的字段留在原地。
+ *
  * compose 把 `./config` 以 **`:ro`** 挂进容器（dev 与 prod 两侧都是，见
  * docker-compose.dev.yml / docker-compose.yml），所以按默认部署配置**一定**写不
  * 回去。这里**不假装成功**：探测写权限，失败时返回明确的 `config_read_only` 与
@@ -89,6 +94,14 @@ export interface PlatformView {
   /** 脱敏后的 key 描述：引用了哪个变量、是否已注入。**永不含真实 key**。 */
   apiKey: { mode: "env-ref" | "literal-redacted" | "unset"; envVar: string | null; resolved: boolean };
   options: Record<string, unknown> | null;
+  /**
+   * 平台级的模型字段（契约里的可选项）。面板不编辑它们，但**保存时必须原样
+   * 带回去**：编辑器按快照重建整个配置文件，快照里没有的字段会在一次保存后
+   * 被静默删掉——那是"改 baseUrl 顺手弄丢 visionModel"的事故形态。
+   */
+  model: string | null;
+  visionModel: string | null;
+  embeddingModel: string | null;
   /** 该平台被哪些能力引用（面板上直接看出「删了会打断谁」）。 */
   usedByCapabilities: string[];
 }
@@ -338,6 +351,9 @@ export async function readConfigSnapshot(): Promise<ConfigSnapshot> {
     options: definition.options && typeof definition.options === "object"
       ? (definition.options as Record<string, unknown>)
       : null,
+    model: typeof definition.model === "string" ? definition.model : null,
+    visionModel: typeof definition.visionModel === "string" ? definition.visionModel : null,
+    embeddingModel: typeof definition.embeddingModel === "string" ? definition.embeddingModel : null,
     usedByCapabilities: [],
   }));
 
@@ -387,31 +403,125 @@ export class ConfigWriteError extends Error {
   }
 }
 
+/** 顶层允许出现在补丁里的键。拼错的键要是被静默忽略，那是一类查不出来的 bug。 */
+const PATCH_KEYS = ["platforms", "capabilities", "tts"] as const;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 /**
- * 校验并写回配置文件。
+ * 把补丁合并到现有配置上（纯函数，不改入参）。
  *
- * 顺序刻意是 **先校验后落盘**：写坏 JSON 的代价是整个 provider 解析 fail closed
- * （loadPlatformConfig 抛错 → 整条 AI 链路不可用），远高于「这次没保存成功」。
- * 任何 blocking 问题存在时拒绝写入，并把问题原样返回给面板。
+ * 语义：
+ *   - `platforms.<id>`：字段级浅合并——补丁里出现的键覆盖，未出现的保持；
+ *     值为 `null` 表示删掉该键；`platforms.<id> = null` 表示删掉整个平台。
+ *   - `capabilities.<capability>`：**整体替换**该能力的映射（它本来就是几个
+ *     标量字段的集合，字段级合并反而要处理"删 model"这种半状态）。
+ *   - `tts`：整体替换；`null` 删除。
+ *   - 补丁里没提到的平台 / 能力：原样保留。
+ */
+export function mergeConfigPatch(
+  base: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...base };
+
+  if ("tts" in patch) {
+    if (patch.tts === null) delete merged.tts;
+    else merged.tts = patch.tts;
+  }
+
+  if (isPlainObject(patch.platforms)) {
+    const platforms: Record<string, unknown> = isPlainObject(merged.platforms) ? { ...merged.platforms } : {};
+    for (const [id, fields] of Object.entries(patch.platforms)) {
+      if (fields === null) {
+        delete platforms[id];
+        continue;
+      }
+      if (!isPlainObject(fields)) continue;
+      const current: Record<string, unknown> = isPlainObject(platforms[id])
+        ? { ...(platforms[id] as Record<string, unknown>) }
+        : {};
+      for (const [key, value] of Object.entries(fields)) {
+        if (value === null) delete current[key];
+        else current[key] = value;
+      }
+      platforms[id] = current;
+    }
+    merged.platforms = platforms;
+  }
+
+  if (isPlainObject(patch.capabilities)) {
+    const capabilities: Record<string, unknown> = isPlainObject(merged.capabilities) ? { ...merged.capabilities } : {};
+    for (const [capability, mapping] of Object.entries(patch.capabilities)) {
+      if (mapping === null) delete capabilities[capability];
+      else capabilities[capability] = mapping;
+    }
+    merged.capabilities = capabilities;
+  }
+
+  return merged;
+}
+
+/**
+ * 校验并写回配置文件（**补丁语义**，见 {@link mergeConfigPatch}）。
+ *
+ * 为什么不是整文件替换：面板按快照重建配置，而快照里**明文 apiKey 是脱敏的**
+ * （literal-redacted，值不回浏览器）。整文件替换意味着「改一个 baseUrl 会把
+ * 写死在文件里的密钥抹掉」——那是不可接受的事故形态。补丁把「面板能表达的」
+ * 与「面板看不见但必须原样保留的」分开，后者永远不离开磁盘。
+ *
+ * 顺序刻意是 **先读现状 → 再合并 → 后校验 → 最后落盘**：写坏 JSON 的代价是
+ * 整个 provider 解析 fail closed（loadPlatformConfig 抛错 → 整条 AI 链路不可
+ * 用），远高于「这次没保存成功」。任何 blocking 问题存在时拒绝写入，并把问题
+ * 原样返回给面板。
  *
  * 写成功后清解析缓存，否则本进程会继续用**旧的**配置，而面板显示的是新的——
  * 一个「界面说改好了、实际还在用旧的」的面板比没有面板更坏。
  */
-export async function writeConfig(raw: unknown): Promise<{ snapshot: ConfigSnapshot; changed: boolean }> {
+export async function writeConfig(patch: unknown): Promise<{ snapshot: ConfigSnapshot; changed: boolean }> {
   const path = resolveConfigPath();
 
   // 防路径逃逸：配置路径只允许来自环境变量/默认值，不接受请求体里的路径。
   if (!isAbsolute(path)) {
     throw new ConfigWriteError("invalid_path", `配置路径必须是绝对路径：${path}`);
   }
+  if (!isPlainObject(patch)) {
+    throw new ConfigWriteError("invalid_config", "请求体必须是配置补丁对象");
+  }
+  const unknownKeys = Object.keys(patch).filter((key) => !(PATCH_KEYS as readonly string[]).includes(key));
+  if (unknownKeys.length > 0) {
+    throw new ConfigWriteError(
+      "invalid_config",
+      `补丁里有不认识的顶层键：${unknownKeys.join("、")}（允许：${PATCH_KEYS.join("、")}）`,
+    );
+  }
 
-  const issues = validateConfig(raw);
+  // 以磁盘上的现状为合并基底。不存在 → 空基底；存在但不可解析 → 明确拒绝：
+  // 合并无从谈起，且默默覆盖会把损坏文件里还救得回来的部分一起送走。
+  const inspection = await inspectPath(path);
+  let base: Record<string, unknown> = {};
+  if (inspection.exists) {
+    try {
+      const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
+      if (!isPlainObject(parsed)) throw new Error("根不是对象");
+      base = parsed;
+    } catch {
+      throw new ConfigWriteError(
+        "unreadable_config",
+        "磁盘上的配置不是合法 JSON 对象，无法在它上面做合并保存；先修好文件再让面板来改。",
+      );
+    }
+  }
+
+  const merged = mergeConfigPatch(base, patch);
+  const issues = validateConfig(merged);
   const blocking = issues.filter((issue) => issue.blocking);
   if (blocking.length > 0) {
     throw new ConfigWriteError("invalid_config", blocking.map((i) => `${i.path || "(root)"}: ${i.message}`).join("; "));
   }
 
-  const inspection = await inspectPath(path);
   if (!inspection.writable) {
     throw new ConfigWriteError(
       "config_read_only",
@@ -419,7 +529,7 @@ export async function writeConfig(raw: unknown): Promise<{ snapshot: ConfigSnaps
     );
   }
 
-  const serialized = `${JSON.stringify(raw, null, 2)}\n`;
+  const serialized = `${JSON.stringify(merged, null, 2)}\n`;
 
   await mkdir(dirname(path), { recursive: true });
 

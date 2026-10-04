@@ -174,6 +174,84 @@ test("写入：合法配置原子落盘并可被重新解析", async () => {
   assert.deepEqual(leftovers, []);
 });
 
+/* ── 补丁合并（2026-10-03：面板可编辑配置）────────────────────────────── */
+
+test("合并：补丁只改 baseUrl，明文密钥与 options 原样保留（不被抹掉）", async () => {
+  await withTempConfig({
+    platforms: {
+      lit: {
+        type: "openai_compatible",
+        apiKey: "sk-literal-stays-on-disk",
+        baseUrl: "https://old.invalid/v1",
+        options: { disableThinking: true },
+      },
+    },
+    capabilities: { agent_turn: { platform: "lit", model: "m" } },
+  });
+
+  const result = await writeConfig({ platforms: { lit: { baseUrl: "https://new.invalid/v1" } } });
+  assert.equal(result.changed, true);
+
+  const onDisk = JSON.parse(await readFile(resolveConfigPath(), "utf8"));
+  assert.equal(onDisk.platforms.lit.baseUrl, "https://new.invalid/v1");
+  assert.equal(onDisk.platforms.lit.apiKey, "sk-literal-stays-on-disk", "面板看不见的密钥必须留在磁盘上");
+  assert.deepEqual(onDisk.platforms.lit.options, { disableThinking: true });
+  // 回应里也不含明文密钥。
+  assert.equal(JSON.stringify(result.snapshot).includes("sk-literal-stays-on-disk"), false);
+});
+
+test("合并：apiKey 换成环境变量引用后生效；capabilities 映射整体替换", async () => {
+  await withTempConfig({
+    platforms: { a: { type: "openai_compatible", apiKey: "sk-plain" }, b: { type: "mock" } },
+    capabilities: { agent_turn: { platform: "a", model: "old" } },
+  });
+
+  await writeConfig({
+    platforms: { a: { apiKey: "${NEW_KEY}" } },
+    capabilities: { agent_turn: { platform: "b", model: "new-model" } },
+  });
+
+  const onDisk = JSON.parse(await readFile(resolveConfigPath(), "utf8"));
+  assert.equal(onDisk.platforms.a.apiKey, "${NEW_KEY}");
+  assert.deepEqual(onDisk.capabilities.agent_turn, { platform: "b", model: "new-model" });
+});
+
+test("合并：tts 整体替换，null 删除；未提到的平台保持原样", async () => {
+  await withTempConfig({
+    ...VALID,
+    tts: { engine: "edge", edge: { voice: "zh-CN-XiaoyiNeural" } },
+  });
+
+  await writeConfig({ tts: { engine: "qwen" } });
+  let onDisk = JSON.parse(await readFile(resolveConfigPath(), "utf8"));
+  assert.deepEqual(onDisk.tts, { engine: "qwen" });
+  assert.ok(onDisk.platforms.demo, "未提到的平台必须原样保留");
+
+  await writeConfig({ tts: null });
+  onDisk = JSON.parse(await readFile(resolveConfigPath(), "utf8"));
+  assert.equal("tts" in onDisk, false);
+});
+
+test("合并：补丁里的未知顶层键被拒绝（拼错的键不许静默忽略）", async () => {
+  const { path } = await withTempConfig(VALID);
+  const before = await readFile(path, "utf8");
+  await assert.rejects(
+    () => writeConfig({ platfroms: {} }),
+    (error: unknown) => error instanceof ConfigWriteError && error.code === "invalid_config",
+  );
+  assert.equal(await readFile(path, "utf8"), before, "被拒绝的写入不应碰磁盘");
+});
+
+test("合并：磁盘上是坏 JSON 时拒绝合并保存（不覆盖可能还能救的内容）", async () => {
+  const { path } = await withTempConfig("{ broken json");
+  const before = await readFile(path, "utf8");
+  await assert.rejects(
+    () => writeConfig({ tts: { engine: "edge" } }),
+    (error: unknown) => error instanceof ConfigWriteError && error.code === "unreadable_config",
+  );
+  assert.equal(await readFile(path, "utf8"), before);
+});
+
 test("写入：只读路径明确报错 config_read_only，不假装成功", async () => {
   const { dir, path } = await withTempConfig(VALID);
   // 用只读目录制造 EACCES（macOS 上对**目录**的写权限位最可靠）。

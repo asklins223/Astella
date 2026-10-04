@@ -1,3 +1,4 @@
+import { agentRoutes } from "./modules/agent/routes.ts";
 import { sql } from "drizzle-orm";
 import { closeDatabase, db, dbPoolOptionsMax } from "./db/client.ts";
 import Fastify from "fastify";
@@ -395,6 +396,7 @@ async function main() {
   await app.register(companionShellRoutes);
   await app.register(learningMetricRoutes);
   await app.register(companionConversationRoutes);
+  await app.register(agentRoutes);
   // 40 §7 发现簿（本人收藏的视图）。取消收藏不删原始内容，见 discovery-service 的文件头。
   await app.register(companionDiscoveryRoutes);
   await app.register(companionRunDiagnosticsRoutes);

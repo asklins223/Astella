@@ -22,7 +22,28 @@
 /** 非白名单异常的对外统一摘要：绝不外传驱动/供应商原文。 */
 export const TOOL_FAILURE_SAFE_SUMMARY = "工具执行失败，请稍后再试";
 
-import { COMPANION_AGENT_MAX_STEPS, type CompanionContentBlockV1 } from "@ailearn/shared";
+import { COMPANION_AGENT_MAX_STEPS, type CompanionContentBlockV1, type AgentTurnRequest } from "@ailearn/shared";
+
+/** Internal repair cannot take the place of the user's current request. */
+export function companionStepCorrectionMessages(input: {
+  currentRequest: AgentTurnRequest["messages"][number];
+  instruction: string;
+  alreadyDisplayed: boolean;
+}): AgentTurnRequest["messages"] {
+  return [
+    {
+      role: "system",
+      content: [
+        "这是本轮的内部核对，不是新的用户请求。继续处理下方原样重附的当前问题与选区；历史问题不需要重新回答，实时页面也不能替换用户已经选定的原文。",
+        input.instruction,
+        input.alreadyDisplayed
+          ? "上一段已向用户显示，只补充与当前问题有关的必要核对、纠正或工具结果；不重新从头解释，也不补答旧话题。"
+          : "上一段尚未显示，可以修正后完整回答当前问题。",
+      ].join("\n"),
+    },
+    { ...input.currentRequest, role: "user" },
+  ];
+}
 
 /**
  * 终答步攒够这么多字符才开始下发（见 `runStreamingAgentStep.holdUntilChars`）。

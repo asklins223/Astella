@@ -104,6 +104,10 @@ export function TaskSurface() {
     if (renderedSurface) {
       if (renderedSurface !== surface) return;
       const frame = window.requestAnimationFrame(() => {
+        // A destination such as voice-model settings can choose a more specific target.
+        // Keep that focus instead of replacing it with the generic return control.
+        if (document.activeElement instanceof HTMLElement && surfaceRef.current?.contains(document.activeElement)
+          && document.activeElement.getClientRects().length && !document.activeElement.closest("[inert], [aria-hidden='true']")) return;
         const selector = renderedSurface === "search"
           ? "[data-search-query], .search-field input"
           : renderedSurface === "review"

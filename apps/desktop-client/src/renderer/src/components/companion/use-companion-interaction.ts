@@ -13,8 +13,9 @@ export function useCompanionInteraction(chat: CompanionChatSession, voiceEnabled
   const namespaceRef = useRef(chat.conversationId);
   const voice = useCompanionVoiceInput({
     disabled: chat.phase === "sending" || !voiceEnabled,
-    onTranscript: ({ text, voiceArtifactId }) => {
-      setVoiceDraft({ text, voiceArtifactId });
+    onModelMissing: () => { setVoiceOpen(false); setVoiceDraft(null); },
+    onTranscript: ({ text }) => {
+      setVoiceDraft({ text });
       setVoiceRevision(value => value + 1);
       setVoiceOpen(true);
     },

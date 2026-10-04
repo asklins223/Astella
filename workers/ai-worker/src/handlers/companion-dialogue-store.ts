@@ -23,7 +23,7 @@ import { lockJobLease, type JobLeaseContext } from "../lib/job-lease.ts";
 // 2026-08-25（AI 设计审计修复）：复用 content 模块的同一实现，消除拆分时
 // 复制出的双份 parsePageContext（两份漂移会让编排层与 DB 层对同一
 // page_context 得出不同判定）。content→store 无依赖边，不构成循环。
-import { parsePageContext } from "./companion-dialogue-content.ts";
+import { parsePageContext, renderCompanionUserTurn, textOfCompanionBlocks } from "./companion-dialogue-content.ts";
 import type { CompanionContextHandoffSnapshotV1 } from "./companion-dialogue-content.ts";
 import type { CompanionMemoryDirectoryEntry } from "./companion-memory-vector.ts";
 import type { PlaybookCatalogEntry } from "./companion-playbooks.ts";
@@ -134,6 +134,66 @@ export interface ConversationSummaryReadRow extends Record<string, unknown> {
   coverage_from_seq: string | null;
   coverage_through_seq: string | null;
   coverage_source_hash: string | null;
+}
+
+export interface CompanionHistoryRow extends Record<string, unknown> {
+  id: string;
+  seq: string;
+  role: "user" | "assistant";
+  blocks: unknown;
+  content_sha256: string;
+  page_context: unknown;
+}
+
+// A cancelled/superseded request is no longer waiting for an answer. Its user
+// message keeps kind='text', so checking message.kind alone does not exclude it.
+function companionHistoryCondition(conversationId: string, beforeSeq?: string) {
+  return sql`
+    m.conversation_id = ${conversationId}
+    AND m.role IN ('user', 'assistant')
+    AND m.kind NOT IN ('cancelled', 'error')
+    ${beforeSeq ? sql`AND m.seq < ${beforeSeq}::bigint` : sql``}
+    AND NOT EXISTS (
+      SELECT 1 FROM companion_turn_runs cancelled_run
+      WHERE cancelled_run.user_message_id = m.id
+        AND cancelled_run.status IN ('cancelled', 'superseded')
+    )
+  `;
+}
+
+/** Dialogue and summarizer use the same rows and the same selection-aware text. */
+export async function readCompanionHistoryRows(
+  tx: WorkerTransaction,
+  conversationId: string,
+  options: { beforeSeq?: string; fromSeq?: string; limit: number },
+): Promise<CompanionHistoryRow[]> {
+  const rows = await tx.execute<CompanionHistoryRow>(sql`
+    SELECT m.id, m.seq::text AS seq, m.role, m.blocks, m.content_sha256,
+           (SELECT jsonb_build_object('selection', coalesce(r.page_context->'selection', r.page_context->'context'->'selection'))
+            FROM companion_turn_runs r
+            WHERE r.user_message_id = m.id AND m.role = 'user'
+            ORDER BY r.created_at DESC LIMIT 1) AS page_context
+    FROM companion_messages m
+    WHERE ${companionHistoryCondition(conversationId, options.beforeSeq)}
+      ${options.fromSeq ? sql`AND m.seq >= ${options.fromSeq}::bigint` : sql``}
+    ORDER BY m.seq DESC LIMIT ${options.limit}
+  `);
+  return Array.from(rows);
+}
+
+export async function countCompanionHistoryMessages(
+  tx: WorkerTransaction, conversationId: string, beforeSeq: string,
+): Promise<bigint> {
+  const rows = await tx.execute<{ message_count: string }>(sql`
+    SELECT count(*)::text AS message_count FROM companion_messages m
+    WHERE ${companionHistoryCondition(conversationId, beforeSeq)}
+  `);
+  return BigInt(rows[0]?.message_count ?? "0");
+}
+
+export function companionHistoryText(row: Pick<CompanionHistoryRow, "role" | "blocks" | "page_context">): string {
+  const text = textOfCompanionBlocks(row.blocks);
+  return row.role === "user" ? renderCompanionUserTurn(text, row.page_context) : text;
 }
 
 /** Persist once per run. Retries read and reuse the committed prompt snapshot. */

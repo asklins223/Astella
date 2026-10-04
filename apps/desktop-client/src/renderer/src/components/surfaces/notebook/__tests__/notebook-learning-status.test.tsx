@@ -22,14 +22,20 @@ it.each([["review_ready", "待激活", "审核学习卡"], ["activated", "已完
   expect(view.getByText(action)).toBeTruthy();
   expect(open).toHaveBeenCalledOnce();
 });
-/** 这一叠结束且没保存时，入口是**重新做一份**，不该说成「去查看」。 */
-it("上一轮结束在没保存到卡组时，入口说「制作学习卡」而不是「查看…」", () => {
+/**
+ * 这一叠结束且没保存时，入口是**重新做一份**，不该说成「去查看」。
+ *
+ * 2026-10-04：这一格只剩一颗按钮，"没在发生任何事"就由**不传 status** 表达，
+ * 文字恒为「生成学习卡」——它按下去开的是「这次想怎么练？」，不是某一轮的工位。
+ * 落点的完整判据在 `note-card-generation-entry` 的用例里。
+ */
+it("没有正在发生的那一批时，入口说「生成学习卡」而不是「查看…」", () => {
   const open = vi.fn();
-  const view = render(<NotebookCardEntry status="closed_without_activation" title="重新开始" onClick={open} />);
-  expect(view.getByText("制作学习卡")).toBeTruthy();
+  const view = render(<NotebookCardEntry title="先说这次想怎么练，选完就开始生成" onClick={open} />);
+  expect(view.getByText("生成学习卡")).toBeTruthy();
   expect(view.queryByText(/查看/)).toBeNull();
-  // 无障碍名直接就是可见文字，不宣称这一轮还开着。
-  expect(view.getByRole("button", { name: /制作学习卡/ })).toBeTruthy();
+  // 无障碍名直接就是可见文字，不宣称某一轮还开着。
+  expect(view.getByRole("button", { name: "生成学习卡" })).toBeTruthy();
 });
 it("准备页区分读取与生成阶段，首次生成、失败重试、继续阅读各有实际动作", () => {
   const prepare = vi.fn(), retry = vi.fn(), body = vi.fn();

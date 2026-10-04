@@ -414,7 +414,7 @@ export type RestChannelDeps = {
   noteDocStreams: Map<string, NoteDocStreamEntry>;
   noteDocPresenceToReplay: Map<string, string>;
   noteDocCache: NoteDocCacheStore;
-  ensureCardGenerationStream: (runId: string) => void;
+  trackCardGenerationRun: (runId: string) => void;
   requireActionCapability: (capability: string, requestId?: string) => Promise<void>;
 };
 
@@ -428,7 +428,7 @@ export function registerRestChannels(deps: RestChannelDeps): void {
     contract, getActiveWorkspaceEpoch, ns_rest, gateway, options, emit,
     getActiveWorkspaceId, setActiveWorkspaceId, setActiveWorkspaceEpoch,
     noteDocCacheKey, persistNoteDocLocal, noteDocStreams, noteDocPresenceToReplay,
-    noteDocCache, ensureCardGenerationStream, requireActionCapability,
+    noteDocCache, trackCardGenerationRun, requireActionCapability,
   } = deps;
 
 channel(DESKTOP_IPC_CHANNELS.inviteCreate, inviteCreateInputSchema, async (_event, _window, input) => {
@@ -1022,7 +1022,7 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
       throw new DesktopGatewayFailure("conflict", "resync_first");
     }
     const accepted = await ns_note.startCardGenerationRun(gateway.gatewayTransport, request, input.commandId, input.meta.requestId);
-    ensureCardGenerationStream(accepted.runId);
+    trackCardGenerationRun(accepted.runId);
     return accepted;
   }, undefined, cardGenerationJobAcceptedV1Schema);
 
@@ -1031,7 +1031,7 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     await requireActionCapability("card_generation.start", input.meta.requestId);
     const snapshot = await ns_note.getCardGenerationRun(gateway.gatewayTransport, input.runId, input.meta.requestId);
-    ensureCardGenerationStream(snapshot.runId);
+    trackCardGenerationRun(snapshot.runId);
     return snapshot;
   }, undefined, cardGenerationRunSnapshotV1Schema);
 
@@ -1039,7 +1039,7 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
     requireM2Route(contract, "note.cardGeneration");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     await requireActionCapability("card_generation.start", input.meta.requestId);
-    ensureCardGenerationStream(input.runId);
+    trackCardGenerationRun(input.runId);
     return ns_note.getCardGenerationCandidates(gateway.gatewayTransport, input.runId, input.meta.requestId);
   }, undefined, cardGenerationCandidateListV1Schema);
 
@@ -1049,7 +1049,7 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
     await requireActionCapability("card_generation.review", input.meta.requestId);
     const request = desktopCandidateReviewRequestV2Schema.parse(input.request);
     if (request.runId !== input.runId) throw new DesktopGatewayFailure("invalid_request", "user_action");
-    ensureCardGenerationStream(input.runId);
+    trackCardGenerationRun(input.runId);
     return ns_note.reviewCardGeneration(gateway.gatewayTransport, input.runId, request, input.commandId, input.meta.requestId);
   }, undefined, cardGenerationReviewResultV1Schema);
 
@@ -1059,7 +1059,7 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
     await requireActionCapability("card_generation.reveal", input.meta.requestId);
     const request = desktopRevealCandidateRequestV2Schema.parse(input.request);
     if (request.candidateId !== input.candidateId) throw new DesktopGatewayFailure("invalid_request", "user_action");
-    ensureCardGenerationStream(input.runId);
+    trackCardGenerationRun(input.runId);
     return ns_note.revealCardGenerationCandidate(gateway.gatewayTransport, input.runId, input.candidateId, request, input.commandId, input.meta.requestId);
   }, undefined, candidateRevealV2Schema);
 
@@ -1083,7 +1083,7 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
     await requireActionCapability("card_generation.activate", input.meta.requestId);
     const request = desktopCardGenerationActivationSelectionV1Schema.parse(input.request);
     if (request.runId !== input.runId) throw new DesktopGatewayFailure("invalid_request", "user_action");
-    ensureCardGenerationStream(input.runId);
+    trackCardGenerationRun(input.runId);
     return ns_note.activateCardGeneration(gateway.gatewayTransport, input.runId, request, input.commandId, input.meta.requestId);
   }, undefined, cardActivationReceiptDesktopV1Schema);
 
@@ -1091,7 +1091,7 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
     requireM2Route(contract, "note.cardGeneration");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     await requireActionCapability("card_generation.cancel", input.meta.requestId);
-    ensureCardGenerationStream(input.runId);
+    trackCardGenerationRun(input.runId);
     return ns_note.cancelCardGeneration(gateway.gatewayTransport, input.runId, input.commandId, input.meta.requestId);
   }, undefined, cardGenerationCancelResultV1Schema);
 
@@ -1100,7 +1100,7 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     await requireActionCapability("card_generation.retry", input.meta.requestId);
     // 重试会在同一 run 上重新出版本与候选，流必须跟着这条 run 走（与 cancel 同理）。
-    ensureCardGenerationStream(input.runId);
+    trackCardGenerationRun(input.runId);
     return ns_note.retryCardGeneration(gateway.gatewayTransport, input.runId, input.commandId, input.meta.requestId);
   }, undefined, cardGenerationRetryResultV1Schema);
 
@@ -1108,7 +1108,7 @@ installHandler(DESKTOP_IPC_CHANNELS.noteGet, noteGetInputSchema, options, async 
     requireM2Route(contract, "note.cardGeneration");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     await requireActionCapability("card_generation.close", input.meta.requestId);
-    ensureCardGenerationStream(input.runId);
+    trackCardGenerationRun(input.runId);
     return ns_note.closeCardGeneration(gateway.gatewayTransport, input.runId, input.expectedReviewDraftRevision, input.commandId, input.meta.requestId);
   }, undefined, cardGenerationCloseResultV1Schema)
 }

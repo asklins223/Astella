@@ -50,7 +50,7 @@ function handlerSources(dir: string, out: string[] = []): string[] {
   }
   return out;
 }
-const RUNTIME_SOURCE = handlerSources(HANDLERS_DIR)
+const RUNTIME_SOURCE = [...handlerSources(HANDLERS_DIR), ...handlerSources(resolve(HANDLERS_DIR, "../agent"))]
   .map((f) => readFileSync(f, "utf8"))
   .join("\n");
 /** 取出某个顶层函数体的文本（花括号配平；够用且不需要解析器）。 */
@@ -70,8 +70,8 @@ function functionBody(name: string): string {
 
 function handledTools(): Set<string> {
   const arms = new Set<string>();
-  for (const fn of ["executeReadTool", "executeDirectTool"]) {
-    for (const match of functionBody(fn).matchAll(/case "(companion_[a-z_]+)"/g)) arms.add(match[1]);
+  for (const fn of ["executeReadTool", "executeDirectTool", "executeAgentGoalTool"]) {
+    for (const match of functionBody(fn).matchAll(/case "((?:companion_|agent_)[a-z_]+)"/g)) arms.add(match[1]);
   }
   return arms;
 }
@@ -191,8 +191,8 @@ test("每一条 case 都长在派活规则真会送去的那个执行器里", ()
     || /riskClass === "read"[\s\S]{0,40}\?\s*await executeReadTool/.test(RUNTIME_SOURCE);
   assert.ok(dispatch, "派活规则的形状变了（不再按 riskClass=read 分流）——这条判据要先跟着改");
 
-  const readArms = new Set([...functionBody("executeReadTool").matchAll(/case "(companion_[a-z_]+)"/g)].map((m) => m[1]));
-  const directArms = new Set([...functionBody("executeDirectTool").matchAll(/case "(companion_[a-z_]+)"/g)].map((m) => m[1]));
+  const readArms = new Set([...functionBody("executeReadTool").matchAll(/case "((?:companion_|agent_)[a-z_]+)"/g)].map((m) => m[1]));
+  const directArms = new Set([...functionBody("executeDirectTool").matchAll(/case "((?:companion_|agent_)[a-z_]+)"/g)].map((m) => m[1]));
   const both = [...readArms].filter((name) => directArms.has(name));
   assert.deepEqual(both, [], "同一个工具在两处各有一个 case：派活规则送过去的那一个才是活的，另一个是第二份实现");
 

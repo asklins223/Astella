@@ -18,6 +18,8 @@ export const COMPANION_VOICE_SPEAK_VOICE = "zh-CN-XiaoxiaoNeural" as const;
 export const companionVoiceSpeakRequestV1Schema = z.strictObject({
   version: z.literal(1),
   text: z.string().trim().min(1).max(COMPANION_VOICE_MAX_TEXT_LENGTH),
+  /** Notification narration always uses Edge TTS, independent of dialogue voice preferences. */
+  purpose: z.literal("notification").optional(),
 });
 export type CompanionVoiceSpeakRequestV1 = z.infer<typeof companionVoiceSpeakRequestV1Schema>;
 

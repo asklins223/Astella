@@ -1,3 +1,4 @@
+import { registerAgentChannels } from "./desktop-ipc-agent";
 import type { GatewayTransport } from "./desktop-gateway-transport";
 import type { InputSchema, ParsedMeta } from "./desktop-ipc";
 import {
@@ -660,6 +661,7 @@ const voicePreferencePatchInputSchema = z.strictObject({
  * 通道体一个字没改——搬的是**位置**，不是**行为**。
  */
 export function registerCompanionChannels(deps: CompanionChannelDeps): void {
+  registerAgentChannels(deps);
   const {
     channel, installHandler, requireM2Route, requireAnyM2Route, assertEpoch,
     contract, getActiveWorkspaceEpoch,

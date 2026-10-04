@@ -22,13 +22,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NoteOverviewTaskV1, NoteOverviewV1 } from "@ailearn/shared/note-overview-contracts";
 import type { NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
 import { createRequestMeta, unwrapGatewayResult, gatewayErrorMessage } from "../../../app/desktop-client";
+import { prepareNotebookTaskNotification } from "./notebook-task-notifications";
 
 export function useNotebookOverview(input: {
   readonly note: NoteDetailV1 | null;
   /** 共享的 epoch 游标：每个请求都拿它算 meta，回包里推进它。 */
   readonly epochRef: { current: number | undefined };
+  /** undefined: normal gallery; null: an explicitly selected result is not loaded. */
+  readonly requestedOverview?: NoteOverviewV1 | null;
 }) {
-  const { note, epochRef } = input;
+  const { note, epochRef, requestedOverview } = input;
 
   const [overviewRows, setOverviewRows] = useState<{ noteId: string; items: NoteOverviewV1[]; nextCursor: string | null } | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
@@ -76,12 +79,14 @@ export function useNotebookOverview(input: {
     if (!api?.noteOverview) return;
     const request = ++overviewTaskRequestRef.current;
     setOverviewTaskError(null);
+    const notifyTask = prepareNotebookTaskNotification(note, epochRef.current);
     try {
       const result = unwrapGatewayResult(await api.noteOverview.latestTask({
         meta: createRequestMeta(epochRef.current),
         noteId: note.noteId,
         query: { noteVersionId: note.currentVersionId },
       }));
+      if (result.task && ["queued", "running"].includes(result.task.status)) notifyTask(result.task, "overview");
       if (request === overviewTaskRequestRef.current) setOverviewTask(result.task);
       return result;
     } catch (error) {
@@ -101,12 +106,14 @@ export function useNotebookOverview(input: {
     startingRef.current = true;
     setOverviewTaskStarting(true);
     setOverviewTaskError(null);
+    const notifyTask = prepareNotebookTaskNotification(note, epochRef.current);
     try {
       const task = unwrapGatewayResult(await api.noteOverview.startTask({
         meta: createRequestMeta(epochRef.current),
         noteId: note.noteId,
         request: { noteVersionId: note.currentVersionId, requestId: crypto.randomUUID() },
       }));
+      notifyTask(task, "overview");
       if (request === overviewTaskRequestRef.current) setOverviewTask(task);
     } catch (error) {
       if (request === overviewTaskRequestRef.current) setOverviewTaskError(gatewayErrorMessage(error));
@@ -177,7 +184,7 @@ export function useNotebookOverview(input: {
     && overview.generationJobId !== null && overview.coverage !== null);
   const taskForCurrentVersion = overviewTask && overviewTask.noteId === note?.noteId
     && overviewTask.noteVersionId === note?.currentVersionId ? overviewTask : null;
-  const latestNoteOverview = currentNoteOverviews[0]
+  const latestNoteOverview = requestedOverview !== undefined ? requestedOverview : currentNoteOverviews[0]
     ?? (taskForCurrentVersion?.status === "ready" ? taskForCurrentVersion.overview : null);
 
   return {

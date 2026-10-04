@@ -1519,6 +1519,8 @@ describe("DesktopGateway", () => {
       authorization: "Bearer test-voice-token",
       body: { text: request.text, voice: "zh-CN-XiaoxiaoNeural" },
     }]);
+    await ns_companion.speakCompanionVoice(gateway.gatewayTransport, { ...request, purpose: "notification" }, "request-notification-voice");
+    expect(ttsRequests[1].body).toEqual({ text: request.text, voice: "zh-CN-XiaoxiaoNeural", purpose: "notification" });
   });
 
   it("fails closed on non-audio, oversized and failed companion voice responses", async () => {

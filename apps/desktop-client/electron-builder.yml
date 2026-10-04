@@ -10,6 +10,10 @@ files:
   # Defense in depth: production renderer builds already omit these archives.
   # Keep the package boundary explicit if an externally supplied out/ is used.
   - '!out/renderer/assets/3d{,/**/*}'
+  # 语音识别模型是**用户自己在设置里下的附加功能**，不进安装包（2026-10）。
+  # public 树里已经没有 models/ 了；这一条挡的是"有人又把一份拷回 public/"与
+  # "用了一份外部提供的 out/"这两种情况——它们都会让安装包平白多 239MB。
+  - '!out/renderer/models{,/**/*}'
   - package.json
 
 asar: true

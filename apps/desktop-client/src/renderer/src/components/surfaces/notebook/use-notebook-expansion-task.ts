@@ -3,6 +3,7 @@ import type { NoteDetailV1 } from "@ailearn/shared/note-projection-contracts";
 import type { NoteAnnotationAnchorV1 } from "@ailearn/shared/note-annotation-contracts";
 import { noteExpansionReviewV1Schema, type NoteExpansionDraftV1, type NoteExpansionLinkV1, type NoteExpansionTaskV1 } from "@ailearn/shared/note-expansion-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
+import { prepareNotebookTaskNotification } from "./notebook-task-notifications";
 
 type TaskBuffer = { scope: string; task: NoteExpansionTaskV1 | null; revision: number; savedRevision: number };
 type Lookup = { ok: true; task: NoteExpansionTaskV1 | null } | { ok: false };
@@ -69,12 +70,14 @@ export function useNotebookExpansionTask(input: {
     const api = window.ailearn?.noteExpansion;
     if (!api) { setError("已有草稿暂时读不到，请重试读取。"); return Promise.resolve({ ok: false }); }
     const request = ++readRequest.current, lookup = ++lookupRequest.current;
+    const notifyTask = prepareNotebookTaskNotification(note, latest.current.epochRef.current);
     setLoading(true); setError(null);
     const promise = (async (): Promise<Lookup> => {
       try {
         const result = unwrapGatewayResult(await api.latestTask({ meta: createRequestMeta(latest.current.epochRef.current), noteId: note.noteId, query: { noteVersionId: note.currentVersionId! } }));
         if (request !== readRequest.current || buffer.current.scope !== expected.scope) return { ok: false };
         const task = result.task ? validateReceipt(result.task, note) : null;
+        if (task && ["queued", "running"].includes(task.status)) notifyTask(task, "expansion");
         if (matches(expected)) publish(task);
         resolved.current = true;
         return { ok: true, task: buffer.current.task };
@@ -132,6 +135,7 @@ export function useNotebookExpansionTask(input: {
     inFlight.current = true;
     const request = ++actionRequest.current;
     setStarting(true); setError(null);
+    const notifyTask = prepareNotebookTaskNotification(note, epochRef.current);
     try {
       if (!resolved.current) {
         const result = await loadLatest();
@@ -146,6 +150,7 @@ export function useNotebookExpansionTask(input: {
       ++readRequest.current;
       const task = validateReceipt(unwrapGatewayResult(await api.startTask({ meta: createRequestMeta(epochRef.current), noteId: note.noteId,
         request: { noteVersionId: note.currentVersionId, requestId: crypto.randomUUID(), ...(focusAnchor ? { focusAnchor } : {}) } })), note);
+      notifyTask(task, "expansion");
       if (request === actionRequest.current && buffer.current.scope === expectedScope) {
         if (matches(expected)) publish(task);
         else setError("当前草稿又有新修改，已保留在本页，请先保存。");

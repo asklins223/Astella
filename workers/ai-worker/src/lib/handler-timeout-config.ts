@@ -29,6 +29,7 @@ const DEFAULT_TIMEOUTS: Record<string, number> = {
   // 症状不是报错而是 reaper 抢在 abort 前把 job 收回、run 停在 running。
   // 现在整条链由 resolveCompanionAgentBudget() 派生，见该函数。
   companion_agent: MAX_ALLOWED_TIMEOUT_MS,
+  agent_run_advance: MAX_ALLOWED_TIMEOUT_MS,
   // 2026-09-15 审计（设计 P1-13）：此前只覆盖 parse_source + companion_agent，
   // 其余 4 种 job 落到 GLOBAL_DEFAULT_MS(90s)。HEAD 的同名映射覆盖了它那个时代的
   // **全部** job 类型——job 类型换代后映射没跟上，属覆盖率回归。补齐现在的 6 种。

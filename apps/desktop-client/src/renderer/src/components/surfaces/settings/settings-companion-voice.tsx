@@ -5,8 +5,11 @@ import { WINDOW_LIVE2D_MODEL_REGISTRY,type WindowLive2DModelId } from "../../com
 import { HudSegmented,HudSlider,HudSwitch } from "../../hud/HudControls";
 import { useCompanionResource } from "../companion/use-companion-resource";
 import { SettingsAnswerModeRow } from "./settings-answer-mode-row";
+import { VOICE_ASR_MODEL_SIZE_LINE,voiceAsrModelPercent,voiceAsrModelStatusLine } from "../../companion/voice-asr-model";
 import { ANSWER_MODE_OPTIONS,TTS_ENGINE_OPTIONS,pendingReadLine,percentLine,voicePlayerLine,voicesForEngine } from "./settings-data-tables";
 import { SettingRow,SettingsInlineState,type SettingsReadable } from "./settings-primitives";
+import { SettingsVoiceModelCard } from "./settings-voice-model";
+import { useVoiceAsrModel } from "./use-voice-asr-model";
 import { SettingsVoicePanel } from "./settings-voice-panel";
 import { useSettingsVoice } from "./use-settings-voice";
 
@@ -24,6 +27,7 @@ export function SettingsCompanionVoice(props: { onReadable: (value: SettingsRead
   const [error, setError] = useState<string | null>(null);
   const [answerSaving, setAnswerSaving] = useState(false);
   const voice = useSettingsVoice({ epochRef: voiceResource.epochRef, setFailureNotice: setError });
+  const asrModel = useVoiceAsrModel();
   useEffect(() => {
     voice.setVoicePreference(voiceResource.section?.ok ? voiceResource.section.value : null);
     voice.setVoicePreferenceRead(!voiceResource.loading);
@@ -37,14 +41,25 @@ export function SettingsCompanionVoice(props: { onReadable: (value: SettingsRead
     catch (cause) { setError(gatewayErrorMessage(cause)); }
     finally { setAnswerSaving(false); }
   };
+  // 这一页的可读镜像**只有一份**，在父组件这里合成。模型那张卡也曾自己往上报，
+  // 于是子组件的 effect 与这里的 effect 互相覆盖——谁后跑谁赢，跑赢的那份把另一份抹掉。
+  const asrPercent = asrModel.state ? voiceAsrModelPercent(asrModel.state) : null;
+  const asrStatus = asrModel.readFailure ? "unknown" : asrModel.state?.status ?? null;
   const readable: SettingsReadable = {
-    statusLine: error ?? voice.voicePreviewError ?? (voice.voicePlayer ? voicePlayerLine(voice.voicePlayer) : "声音与显示"),
-    metrics: [{ label: "伴星大小", value: percentLine(scale) }],
+    statusLine: error ?? voice.voicePreviewError ?? asrModel.actionFailure ?? asrModel.readFailure ?? (voice.voicePlayer ? voicePlayerLine(voice.voicePlayer) : "声音与显示"),
+    metrics: [
+      { label: "伴星大小", value: percentLine(scale) },
+      { label: "识别模型大小", value: VOICE_ASR_MODEL_SIZE_LINE },
+    ],
     filters: [{ label: "伴星与环境音", value: masterMuted ? "已关闭" : "已开启" }, { label: "书桌上的形象", value: WINDOW_LIVE2D_MODEL_REGISTRY[model].displayName }],
     items: [
       { label: "默认作答方式", state: answerMode ? ANSWER_MODE_OPTIONS.find(option => option[0] === answerMode.preference)?.[1] : pendingReadLine(!answer.loading) },
       { label: "用哪套声音合成", state: voice.voicePreference ? TTS_ENGINE_OPTIONS.find(option => option[0] === voice.voicePreference?.engine)?.[1] : pendingReadLine(voice.voicePreferenceRead) },
       ...voicesForEngine(voice.voicePreference?.engine).map(option => ({ label: option.name, ...(voice.voicePreference?.voice === option.voice ? { state: "在用" } : {}) })),
+      { label: "语音识别模型", state: voiceAsrModelStatusLine(asrStatus) },
+      ...(asrPercent === null || asrModel.state?.status !== "downloading" ? [] : [{ label: "下载进度", state: `${asrPercent}%` }]),
+      ...(asrModel.state?.activeSource ? [{ label: "当前下载来源", state: asrModel.state.activeSource }] : []),
+      ...(asrModel.state?.installedAt ? [{ label: "装好于", state: new Date(asrModel.state.installedAt).toLocaleDateString() }] : []),
     ],
   };
   const serialized = JSON.stringify(readable);
@@ -64,6 +79,9 @@ export function SettingsCompanionVoice(props: { onReadable: (value: SettingsRead
       <audio ref={voice.voiceAudioRef} className="settings-voice__source" preload="none" />
       {voiceResource.section && !voiceResource.section.ok ? <SettingsInlineState title="音色偏好暂时读不到" detail={voiceResource.section.message} tone="error" onRetry={() => void voiceResource.reload()} /> : null}
       {voice.voicePreviewError ? <SettingsInlineState title="这一段没试听成" detail={voice.voicePreviewError} tone="error" /> : null}
+    </section>
+    <section className="settings-companion-chapter"><header><h3>语音输入</h3><p>说话给她听。这是可选的附加功能，模型装在这台设备上，不跟着安装包走。</p></header>
+      <SettingsVoiceModelCard model={asrModel} />
     </section>
   </div>;
 }

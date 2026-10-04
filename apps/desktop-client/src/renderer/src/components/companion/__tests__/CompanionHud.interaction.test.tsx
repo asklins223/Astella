@@ -56,6 +56,17 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("production companion interaction", () => {
+  it("returns to the conversation when sending from the task page in the journal", async () => {
+    const send = vi.fn(async () => true);
+    state.chat = interactionSession({ send });
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "对话手记" }));
+    fireEvent.click(screen.getByRole("button", { name: "交给我的事 0" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "继续问 小鲸" }), { target: { value: "我们先聊聊晚饭吧" } });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "发送" })));
+    expect(send).toHaveBeenCalledWith({ text: "我们先聊聊晚饭吧" });
+    expect(screen.getByRole("button", { name: "全部对话" }).getAttribute("aria-pressed")).toBe("true");
+  });
   it("closes input synchronously on send and recovers rejected text without opening a permanent bubble", async () => {
     let finish!: (value: boolean) => void;
     const send = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve; }));
@@ -104,12 +115,12 @@ describe("production companion interaction", () => {
     render(<Harness voiceEnabled />);
     fireEvent.change(screen.getByRole("textbox", { name: "给 小鲸 的消息" }), { target: { value: "文字草稿" } });
     fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
-    await act(async () => (state.voiceOptions as CompanionVoiceInputOptions).onTranscript({ text: "真实识别的文字", voiceArtifactId: "artifact-id" }));
+    await act(async () => (state.voiceOptions as CompanionVoiceInputOptions).onTranscript({ text: "真实识别的文字" }));
     expect(send).not.toHaveBeenCalled();
     const voice = screen.getByRole("region", { name: "语音气泡" });
     fireEvent.change(within(voice).getByRole("textbox", { name: "识别后的语音文字" }), { target: { value: "修改后的文字" } });
     await act(async () => fireEvent.click(within(voice).getByRole("button", { name: "发送" })));
-    expect(send).toHaveBeenCalledWith({ text: "修改后的文字", voiceArtifactId: "artifact-id" });
+    expect(send).toHaveBeenCalledWith({ text: "修改后的文字" });
     expect(screen.queryByRole("region", { name: "语音气泡" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "气泡轻聊" }));
     expect((screen.getByRole("textbox", { name: "给 小鲸 的消息" }) as HTMLTextAreaElement).value).toBe("文字草稿");
@@ -131,7 +142,7 @@ describe("production companion interaction", () => {
     render(<Harness voiceEnabled />);
     fireEvent.change(screen.getByRole("textbox", { name: "给 小鲸 的消息" }), { target: { value: "旧空间的草稿" } });
     fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
-    await act(async () => (state.voiceOptions as CompanionVoiceInputOptions).onTranscript({ text: "旧语音", voiceArtifactId: null }));
+    await act(async () => (state.voiceOptions as CompanionVoiceInputOptions).onTranscript({ text: "旧语音" }));
     expect(screen.getByRole("textbox", { name: "识别后的语音文字" })).toBeTruthy();
     patch({ conversationId: "new-conversation", mode: "conversation" });
     expect(screen.queryByRole("textbox", { name: "识别后的语音文字" })).toBeNull();

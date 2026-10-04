@@ -26,9 +26,13 @@ const rejectedRuntimeMedia = [
 ]
 // 2026-10-01：旧 3D 学习房归档包（`assets/3d/`）已整条删除，public 树不再有任何
 // 需要排除的目录，`packageExcludedPrefixes` 与 `electron.vite.config.ts` 里的
-// `releasePublicAssetsPlugin` 一同退场。这份清单现在**故意留空**——若日后又要排除什么，
-// 加回来，别让归档包顺着 public 目录进安装包。
-const packageExcludedPrefixes = []
+// `releasePublicAssetsPlugin` 一同退场。
+// 2026-10：重新有了一条 —— **语音识别模型不进安装包**。它变成用户在设置里自己下载
+// 的附加功能（239MB），落点在 `<userData>/voice-models/`，public 树里没有对应目录。
+// 这一条是那道边界的**判据**：谁把一份模型拷回 `out/renderer/models/`，
+// 打包冒烟会在 `npm run package:smoke` 这一步红掉，而不是等用户下载完 200MB
+// 之后才发现安装包大了一圈。
+const packageExcludedPrefixes = ['out/renderer/models/']
 const packagedManifestEntry = 'out/renderer/assets/learning-room/v1/manifest.json'
 const runtimeManifestPath = resolve(appRoot, 'src/renderer/public/assets/learning-room/v1/manifest.json')
 const outManifestPath = resolve(appRoot, 'out/renderer/assets/learning-room/v1/manifest.json')
@@ -164,7 +168,7 @@ async function inspectPackagedArtifact(executable) {
 
   const excludedArchiveEntries = archiveEntries.filter((entry) => packageExcludedPrefixes.some((prefix) => entry === prefix.slice(0, -1) || entry.startsWith(prefix)))
   if (excludedArchiveEntries.length) {
-    throw new Error(`Reference-only archives entered app.asar: ${excludedArchiveEntries.slice(0, 12).join(', ')}`)
+    throw new Error(`Package-excluded paths entered app.asar: ${excludedArchiveEntries.slice(0, 12).join(', ')}`)
   }
   // 2026-09-16 裁决移除 orb，打包产物不得再包含它（Live2D 是唯一形态）；
   // 2026-10-01 旧书房底板整条删除后，`objects/` 整个目录都已不在产物里。

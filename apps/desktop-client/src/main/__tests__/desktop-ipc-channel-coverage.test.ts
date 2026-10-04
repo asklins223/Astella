@@ -187,7 +187,7 @@ async function register(gateway: DesktopGateway = stubGateway()) {
   const fakeWindow = {
     isDestroyed: () => false,
     once: () => undefined,
-    webContents: { isDestroyed: () => false, once: () => undefined, send: vi.fn() },
+    webContents: { isDestroyed: () => false, once: () => undefined, on: () => undefined, send: vi.fn() },
   } as never;
   registerM1DesktopIpc({
     gateway,

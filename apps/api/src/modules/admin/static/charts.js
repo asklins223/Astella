@@ -1,45 +1,31 @@
 /* ============================================================
-   面板图表基元
+   运维面板 · 图表基元
    ------------------------------------------------------------
-   全部用 createElementNS 画 SVG，没有图表库，也没有构建步骤。
+   全部用 createElementNS 画 SVG，没有图表库：面板由 Fastify 静态托管、
+   零依赖启动，需要的又只有三种形状，为它们引入一个几百 KB 的运行时
+   并不划算。SVG 而不是 canvas：曲线是 DOM，读屏能读、CSS 动效接管。
 
-   为什么不用库：面板要能被一个 Fastify 静态托管、零依赖启动；而
-   这里需要的只有「平滑折线 + 面积渐变 + 柱条」三种形状，为它们引入
-   一个几百 KB 的运行时并不划算。顺带一提，用 SVG 而不是 <canvas>
-   是有意的——曲线是 DOM，可以被读屏软件读出数值，也可以被 CSS 动效
-   直接接管。
-
-   所有形状都遵守同一条规矩：**没有数据就不画**。空窗口画一条平线
-   等于说「一直是 0」，而事实是「还不知道」——那是两件事。
+   三条读图规矩（第一版踩过的坑）：
+   1. **没有数据就不画**。空窗口画平线等于说「一直是 0」，而事实是
+      「还不知道」——那是两件事。
+   2. **null 是断点，不是 0**。两点之间缺采样时断开曲线，而不是连一条
+      直线过去假装当时有读数。
+   3. **给量程留头**，且只按**窗口内**的最大值缩放——一个尖峰把其余
+      全部压成贴底直线，是"图在撒谎"最常见的形态。悬停读数补足精度。
    ============================================================ */
 
-const NS = "http://www.w3.org/2000/svg";
+import { formatByUnit } from "./format.js";
+import { el, svg } from "./ui.js";
 
-function svgEl(tag, attrs = {}) {
-  const node = document.createElementNS(NS, tag);
-  for (const [key, value] of Object.entries(attrs)) {
-    if (value === null || value === undefined) continue;
-    node.setAttribute(key, String(value));
-  }
-  return node;
-}
-
-/** viewBox 坐标 → 像素坐标。图表按固定 viewBox 画，由 CSS 拉伸到容器宽。 */
 const VIEW_W = 600;
-const VIEW_H = 180;
+const VIEW_H = 170;
+const PAD_Y = 14;
 
-/**
- * Catmull-Rom → 三次贝塞尔，得到一条穿过所有点的平滑曲线。
- *
- * 为什么不用直线连接：15 秒一个采样点、总共几十个点，直线段会让图看起来
- * 像锯齿而不是趋势。平滑曲线的代价是它暗示了"点之间是连续的"——对速率
- * 这种本来就是连续量来说没问题。
- */
-function smoothPath(points, tension = 0.32) {
+/** 平滑曲线：Catmull-Rom → 三次贝塞尔，只作用于连续段内部。 */
+function smoothPath(points, tension = 0.3) {
   if (points.length === 0) return "";
-  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y} L ${points[0].x + 0.01} ${points[0].y}`;
   if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
-
   let d = `M ${points[0].x} ${points[0].y}`;
   for (let i = 0; i < points.length - 1; i += 1) {
     const p0 = points[i - 1] ?? points[i];
@@ -55,46 +41,57 @@ function smoothPath(points, tension = 0.32) {
   return d;
 }
 
-/** 在 viewBox 里把 (index, value) 映射成像素坐标。 */
-function project(values, index) {
+/** 窗口内有效值的统计（峰值/末值），供标题与读数使用。 */
+export function summarize(values) {
   const finite = values.filter((v) => typeof v === "number" && Number.isFinite(v));
-  if (finite.length === 0) return null;
-  const max = Math.max(...finite, 0);
-  // 全部相等时（常见于"一直是 0"）给一个人为的量程，
-  // 否则分母为 0 会得到 NaN，图直接消失。
-  const span = max === 0 ? 1 : max;
-  const pad = VIEW_H * 0.12;
-  const usable = VIEW_H - pad * 2;
-  const x = values.length === 1 ? VIEW_W / 2 : (index / (values.length - 1)) * VIEW_W;
-  const y = pad + usable - (Math.max(0, values[index] ?? 0) / span) * usable;
-  return { x, y };
+  if (finite.length === 0) return { count: 0, last: null, peak: null, min: null };
+  return {
+    count: finite.length,
+    last: finite[finite.length - 1],
+    peak: Math.max(...finite),
+    min: Math.min(...finite),
+  };
 }
 
 let gradientSeq = 0;
 
 /**
- * 面积折线图。
+ * 面积折线图（带时间轴与悬停读数）。
  *
- * @param values 数值序列；`null` 表示该采样点**没有值**（不是 0）。
- * @returns <figure>；无有效数据时返回带说明的占位，不返回空图。
+ * @param values 数值序列（null = 该时刻没有采样）
+ * @param times  与 values 等长的 epoch ms 序列（null 时退化为纯索引轴）
+ * @param onHover 悬停回调 `(index | null) => void`。用来做**跨图共享时间光标**：
+ *               指标页在任一图上悬停时，其余图同步显示同一点的竖线。
  */
-export function areaChart({ values, color = "var(--accent)", label = "", valueText = "", emptyHint = "正在积累数据…" }) {
-  const finite = values.filter((v) => typeof v === "number" && Number.isFinite(v));
-  const figure = document.createElement("figure");
-  figure.className = "chart";
+export function areaChart({
+  values,
+  times = null,
+  color = "var(--cyan)",
+  label = "",
+  unit = "count",
+  valueText = "",
+  emptyHint = "正在积累数据…",
+  onHover = null,
+  tall = false,
+}) {
+  const figure = el("figure", { class: `chart${tall ? " chart--tall" : ""}` });
+  const stats = summarize(values);
 
-  if (finite.length < 2) {
-    figure.append(
-      Object.assign(document.createElement("div"), {
-        className: "chart__empty",
-        textContent: emptyHint,
-      }),
-    );
+  if (stats.count < 2) {
+    figure.append(el("div", { class: "chart__empty", text: emptyHint }));
     return figure;
   }
 
+  const max = Math.max(stats.peak ?? 0, 0);
+  const span = max === 0 ? 1 : max * 1.12; // 留 12% 头，峰值不贴顶
+  const usable = VIEW_H - PAD_Y * 2;
+  const xAt = (index) => (values.length === 1 ? VIEW_W / 2 : (index / (values.length - 1)) * VIEW_W);
+  const yAt = (value) => PAD_Y + usable - (Math.max(0, value) / span) * usable;
+  // 全 0 时把线压在底部稍上一点，避免和坐标轴重叠成"没有数据"。
+  const yZero = yAt(0);
+
   const gradientId = `chart-grad-${++gradientSeq}`;
-  const svg = svgEl("svg", {
+  const chartSvg = svg("svg", {
     viewBox: `0 0 ${VIEW_W} ${VIEW_H}`,
     preserveAspectRatio: "none",
     class: "chart__svg",
@@ -102,125 +99,150 @@ export function areaChart({ values, color = "var(--accent)", label = "", valueTe
     "aria-label": `${label}：${valueText}`,
   });
 
-  const defs = svgEl("defs");
-  const gradient = svgEl("linearGradient", { id: gradientId, x1: "0", y1: "0", x2: "0", y2: "1" });
+  const defs = svg("defs");
+  const gradient = svg("linearGradient", { id: gradientId, x1: "0", y1: "0", x2: "0", y2: "1" });
   gradient.append(
-    svgEl("stop", { offset: "0%", "stop-color": color, "stop-opacity": "0.28" }),
-    svgEl("stop", { offset: "100%", "stop-color": color, "stop-opacity": "0" }),
+    svg("stop", { offset: "0%", "stop-color": color, "stop-opacity": "0.32" }),
+    svg("stop", { offset: "100%", "stop-color": color, "stop-opacity": "0" }),
   );
   defs.append(gradient);
-  svg.append(defs);
+  chartSvg.append(defs);
 
-  // 横向参考线：给"高/低"一个视觉锚点，而不是只有曲线孤零零地飘着。
+  // 横向参考线：0 / 中 / 顶，给高低一个锚。
   for (const ratio of [0, 0.5, 1]) {
-    const y = VIEW_H * 0.12 + (VIEW_H * 0.76) * (1 - ratio);
-    svg.append(svgEl("line", { x1: 0, x2: VIEW_W, y1: y, y2: y, class: "chart__grid" }));
+    chartSvg.append(svg("line", {
+      x1: 0, x2: VIEW_W,
+      y1: yAt(span * ratio), y2: yAt(span * ratio),
+      class: "chart__grid",
+    }));
   }
 
-  const points = [];
-  const valueAt = [];
+  // 按连续段切分：null 即断点，不在缺口上连线。
+  const segments = [];
+  let current = [];
   for (let i = 0; i < values.length; i += 1) {
     const value = typeof values[i] === "number" && Number.isFinite(values[i]) ? values[i] : null;
-    valueAt.push(value);
-    const projected = project(values, i);
-    if (value !== null && projected) points.push(projected);
+    if (value === null) {
+      if (current.length > 0) segments.push(current);
+      current = [];
+      continue;
+    }
+    current.push({ x: xAt(i), y: yAt(value), index: i, value });
   }
+  if (current.length > 0) segments.push(current);
 
-  const line = smoothPath(points);
-  if (!line) return figure;
-
-  const areaPath = `${line} L ${points[points.length - 1].x.toFixed(2)} ${VIEW_H} L ${points[0].x.toFixed(2)} ${VIEW_H} Z`;
-
-  svg.append(
-    svgEl("path", { d: areaPath, fill: `url(#${gradientId})`, stroke: "none" }),
-    svgEl("path", {
+  let animationDelay = 0;
+  for (const segment of segments) {
+    if (segment.length === 0) continue;
+    const line = smoothPath(segment);
+    if (!line) continue;
+    const baseY = Math.min(VIEW_H, Math.max(yZero, ...segment.map((p) => p.y)));
+    const area = `${line} L ${segment[segment.length - 1].x.toFixed(2)} ${baseY} L ${segment[0].x.toFixed(2)} ${baseY} Z`;
+    chartSvg.append(svg("path", { d: area, fill: `url(#${gradientId})`, stroke: "none" }));
+    const path = svg("path", {
       d: line,
       fill: "none",
       stroke: color,
-      "stroke-width": "2.5",
+      "stroke-width": "2.2",
       "stroke-linecap": "round",
       "stroke-linejoin": "round",
       "vector-effect": "non-scaling-stroke",
       class: "chart__line",
-    }),
-  );
+    });
+    // 每段依次展开，读起来像"数据正在流过来"；reduced-motion 下由 CSS 瞬时完成。
+    path.style.setProperty("--delay", `${animationDelay}ms`);
+    animationDelay += 90;
+    chartSvg.append(path);
+  }
 
   // 末点标记：一眼看出"现在在哪"。
-  const last = points[points.length - 1];
-  svg.append(
-    svgEl("circle", { cx: last.x, cy: last.y, r: 4.5, fill: color, class: "chart__dot" }),
-    svgEl("circle", { cx: last.x, cy: last.y, r: 9, fill: color, opacity: "0.18" }),
+  const lastIndex = values.length - 1 - [...values].reverse().findIndex((v) => typeof v === "number" && Number.isFinite(v));
+  if (lastIndex >= 0 && lastIndex < values.length) {
+    const lastValue = values[lastIndex];
+    chartSvg.append(
+      svg("circle", { cx: xAt(lastIndex), cy: yAt(lastValue), r: 4, fill: color, class: "chart__dot" }),
+      svg("circle", { cx: xAt(lastIndex), cy: yAt(lastValue), r: 9, fill: color, opacity: "0.16" }),
+    );
+  }
+
+  // 悬停层：竖线 + 点 + 浮动读数。
+  const hoverLine = svg("line", { class: "chart__crosshair", x1: 0, x2: 0, y1: PAD_Y, y2: VIEW_H - PAD_Y, visibility: "hidden" });
+  const hoverDot = svg("circle", { class: "chart__hoverdot", r: 4, fill: color, visibility: "hidden" });
+  chartSvg.append(hoverLine, hoverDot);
+  figure.append(chartSvg);
+
+  const tip = el("div", { class: "chart__tip", hidden: true });
+  figure.append(tip);
+
+  const axis = el("div", { class: "chart__axis" },
+    el("span", { text: times ? clockOf(times[0]) : "起点" }),
+    el("span", { text: times ? clockOf(times[Math.floor(times.length / 2)]) : "" }),
+    el("span", { text: times ? clockOf(times[times.length - 1]) : "现在" }),
   );
+  figure.append(axis);
 
-  figure.append(svg);
+  const hideCursor = () => {
+    hoverLine.setAttribute("visibility", "hidden");
+    hoverDot.setAttribute("visibility", "hidden");
+    tip.hidden = true;
+  };
 
-  const caption = document.createElement("figcaption");
-  caption.className = "chart__caption";
-  caption.textContent = valueText;
-  figure.append(caption);
+  /**
+   * 画出某索引处的光标。`withTip=false` 时只画竖线与点——
+   * 跨图联动时，别的图不该弹自己的读数气泡。
+   */
+  const paintCursor = (index, { withTip = true } = {}) => {
+    if (index === null || index === undefined) {
+      hideCursor();
+      return;
+    }
+    const value = values[index];
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      hideCursor();
+      return;
+    }
+    const x = xAt(index);
+    hoverLine.setAttribute("x1", String(x));
+    hoverLine.setAttribute("x2", String(x));
+    hoverLine.setAttribute("visibility", "visible");
+    hoverDot.setAttribute("cx", String(x));
+    hoverDot.setAttribute("cy", String(yAt(value)));
+    hoverDot.setAttribute("visibility", "visible");
+    if (!withTip) return;
 
-  // 供调用方拿到"数据为空"这件事（例如决定要不要显示"采样中"提示）。
-  figure.dataset.points = String(points.length);
-  figure.dataset.missing = String(values.length - valueAt.filter((v) => v !== null).length);
+    tip.hidden = false;
+    tip.textContent = times?.[index]
+      ? `${formatByUnit(value, unit)} · ${clockOf(times[index])}`
+      : formatByUnit(value, unit);
+    // 让提示贴住指针、靠边时自动收进容器内。
+    const figureRect = figure.getBoundingClientRect();
+    const xPercent = (x / VIEW_W) * figureRect.width;
+    tip.style.setProperty("--x", `${Math.min(Math.max(xPercent, 40), figureRect.width - 40)}px`);
+  };
+
+  // 供跨图联动调用（指标页的共享时间光标）。
+  figure.applyCursor = (index) => paintCursor(index, { withTip: false });
+
+  const indexAt = (event) => {
+    const rect = chartSvg.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    return Math.round(ratio * (values.length - 1));
+  };
+  chartSvg.addEventListener("pointermove", (event) => {
+    const index = indexAt(event);
+    paintCursor(index);
+    onHover?.(index);
+  });
+  chartSvg.addEventListener("pointerleave", () => {
+    paintCursor(null);
+    onHover?.(null);
+  });
+
+  figure.dataset.points = String(stats.count);
   return figure;
 }
 
-/**
- * 迷你走势线——嵌在统计砖里，宽度自适应，不占独立卡片。
- */
-export function sparkline({ values, color = "var(--accent)" }) {
-  const svg = svgEl("svg", {
-    viewBox: `0 0 ${VIEW_W} 60`,
-    preserveAspectRatio: "none",
-    class: "spark",
-    "aria-hidden": "true",
-  });
-  const points = [];
-  for (let i = 0; i < values.length; i += 1) {
-    if (typeof values[i] !== "number" || !Number.isFinite(values[i])) continue;
-    const max = Math.max(...values.filter((v) => typeof v === "number"), 0);
-    const span = max === 0 ? 1 : max;
-    const x = values.length === 1 ? VIEW_W / 2 : (i / (values.length - 1)) * VIEW_W;
-    points.push({ x, y: 56 - (Math.max(0, values[i]) / span) * 50 });
-  }
-  if (points.length >= 2) {
-    svg.append(svgEl("path", {
-      d: smoothPath(points),
-      fill: "none",
-      stroke: color,
-      "stroke-width": "3",
-      "stroke-linecap": "round",
-      "stroke-linejoin": "round",
-      "vector-effect": "non-scaling-stroke",
-      opacity: "0.75",
-    }));
-  }
-  return svg;
-}
-
-/**
- * 水平堆叠条 —— 队列的构成（等待 / 执行中 / 失败 / 停止）。
- *
- * 用一条而不是四行数字：比例关系是这里真正要看的东西。
- */
-export function stackedBar({ segments }) {
-  const total = segments.reduce((sum, segment) => sum + segment.value, 0);
-  const bar = document.createElement("div");
-  bar.className = "stack";
-
-  if (total <= 0) {
-    bar.classList.add("stack--empty");
-    return bar;
-  }
-
-  for (const segment of segments) {
-    if (segment.value <= 0) continue;
-    const piece = document.createElement("span");
-    piece.className = "stack__piece";
-    piece.style.setProperty("--w", `${(segment.value / total) * 100}%`);
-    piece.style.setProperty("--c", segment.color);
-    piece.title = `${segment.label} ${segment.value}`;
-    bar.append(piece);
-  }
-  return bar;
+function clockOf(epochMs) {
+  if (typeof epochMs !== "number" || !Number.isFinite(epochMs)) return "";
+  return new Date(epochMs).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 }

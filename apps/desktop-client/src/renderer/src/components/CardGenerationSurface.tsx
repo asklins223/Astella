@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { useCardTactile } from "./motion/use-card-tactile";
-import { useCardPaperArrival } from "./motion/card-object-spring";
+import { useCardVisibleArrival } from "./motion/card-object-spring";
 import { HudPage } from "./hud/HudPage";
 import { useHudPage } from "./hud/use-hud-page";
 import { CardGenerationProgress } from "./surfaces/review/card-generation-progress";
@@ -12,7 +12,10 @@ import { useCardGenerationReadableView } from "./surfaces/review/use-card-genera
 function GeneratingCardDesk({ session }: { readonly session: CardGenerationSession }) {
   const rootRef = useRef<HTMLDivElement>(null);
   useCardTactile(rootRef);
-  useCardPaperArrival(rootRef, session.runId ?? "reading");
+  // 到场用「一直可见」那一档而不是 `useCardPaperArrival`：这一页是**唯一一页用户正
+  // 在等它动**的地方，进去之后最想看到的是"已经开始做了"，而不是一张从透明里
+  // 慢慢浮出来的纸（帧一被节流就只剩背景，2026-10-04 实机等 2–3 秒）。
+  useCardVisibleArrival(rootRef, session.runId ?? "reading");
   return <div ref={rootRef} className="card-generating card-experience"><CardGenerationProgress session={session} /></div>;
 }
 

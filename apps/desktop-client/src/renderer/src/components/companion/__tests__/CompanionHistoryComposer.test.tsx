@@ -7,6 +7,7 @@ import type { CompanionVoiceInput } from "../use-companion-voice-input";
 const voice: CompanionVoiceInput = {
   phase: "idle", note: null, noteRevision: 0, supported: true,
   toggle: () => {}, cancel: () => {}, dismissNote: () => {}, subscribeLevel: () => () => {},
+  modelMissing: false,
 };
 const props = {
   input: "", onInputChange: vi.fn(), onSend: vi.fn(async () => {}), voice,

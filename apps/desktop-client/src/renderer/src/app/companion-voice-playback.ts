@@ -1,4 +1,5 @@
 import { gatewayErrorMessage } from "./desktop-client";
+import { stopCompanionNotificationSpeech } from "../components/companion/companion-notification-voice";
 import type {
   CompanionVoicePlaybackOutcomeRequestV1,
   CompanionVoiceSpeakSegmentRequestV2,
@@ -86,6 +87,18 @@ let generation = 0;
 let sequence = 0;
 let activePlanId: string | null = null;
 const listeners = new Set<(progress: CompanionSpeechProgress) => void>();
+const activityListeners = new Set<() => void>();
+
+function setActiveSpeechPlan(next: string | null): void {
+  if (activePlanId === next) return;
+  activePlanId = next;
+  for (const listener of activityListeners) listener();
+}
+
+export function subscribeCompanionSpeechActivity(listener: () => void): () => void {
+  activityListeners.add(listener);
+  return () => { activityListeners.delete(listener); };
+}
 
 /** 播放进度的广播节流：逐帧广播会带着 React 一起 60Hz 重渲气泡。 */
 const PROGRESS_INTERVAL_MS = 80;
@@ -164,7 +177,7 @@ function emit(progress: CompanionSpeechProgress): void {
 
 export function setCompanionVoiceHost(next: CompanionVoiceHost | null): void {
   host = next;
-  if (!next) stopCompanionSpeech();
+  if (!next) { stopCompanionSpeech(); stopCompanionNotificationSpeech(); }
 }
 
 export function subscribeCompanionSpeech(listener: (progress: CompanionSpeechProgress) => void): () => void {
@@ -175,7 +188,7 @@ export function subscribeCompanionSpeech(listener: (progress: CompanionSpeechPro
 export function stopCompanionSpeech(): void {
   const planId = activePlanId;
   if (planId === null) return;
-  activePlanId = null;
+  setActiveSpeechPlan(null);
   generation += 1;
   host?.stop();
   emit({ planId, phase: "stopped", segmentIndex: -1, segmentCount: 0, visibleChars: 0 });
@@ -281,7 +294,7 @@ async function runSpeech(run: SpeechRun): Promise<void> {
       });
       if (run.runGeneration !== generation) return;
     }
-    activePlanId = null;
+    setActiveSpeechPlan(null);
     emit({
       planId: run.planId,
       phase: "finished",
@@ -291,7 +304,7 @@ async function runSpeech(run: SpeechRun): Promise<void> {
     });
   } catch (error) {
     if (run.runGeneration !== generation) return;
-    activePlanId = null;
+    setActiveSpeechPlan(null);
     emit({
       planId: run.planId,
       phase: "failed",
@@ -658,7 +671,7 @@ async function runQueuedSpeech(args: {
       inFlight = null;
       report(segment, "played", pending.startedAtMs);
     }
-    activePlanId = null;
+    setActiveSpeechPlan(null);
     // 降级只发生在"**一段都没播出来**且确实尝试过"的整轮上——这才是
     // "她说话但没声音"的真实场景。播出了任何一段就正常收尾，个别段被跳过
     // 不打断朗读、也不向用户报"语音不可用"。
@@ -691,7 +704,7 @@ async function runQueuedSpeech(args: {
     // 这条出口以前只 emit 失败，于是服务端只剩 synth ok 行，"给了音频却没响"
     // 与"客户端根本没在线"又变得一样（§12 C5）。
     reportAbandoned();
-    activePlanId = null;
+    setActiveSpeechPlan(null);
     emit({
       planId: args.planId,
       phase: "failed",
@@ -710,6 +723,7 @@ async function runQueuedSpeech(args: {
 
 /** 开始一句流式台词。Agent 正文使用 strictSegments，只接受服务端签发的片段引用。 */
 export function beginCompanionSpeechLine(options: { readonly strictSegments?: boolean } = {}): CompanionSpeechSession {
+  stopCompanionNotificationSpeech();
   stopCompanionSpeech();
   const planId = `speech-${(sequence += 1)}`;
   const activeHost = host;
@@ -739,7 +753,7 @@ export function beginCompanionSpeechLine(options: { readonly strictSegments?: bo
   };
 
   if (mode === "voice" && activeHost) {
-    activePlanId = planId;
+    setActiveSpeechPlan(planId);
     void runQueuedSpeech({ planId, runGeneration: generation, host: activeHost, queue });
   }
 
@@ -805,6 +819,7 @@ export function beginCompanionSpeechLine(options: { readonly strictSegments?: bo
 export function speakCompanionLine(text: string): CompanionSpeechHandle | null {
   const segments = splitForSpeech(text);
   if (segments.length === 0) return null;
+  stopCompanionNotificationSpeech();
   const totalChars = text.trim().length;
   const planId = `speech-${(sequence += 1)}`;
 
@@ -815,7 +830,7 @@ export function speakCompanionLine(text: string): CompanionSpeechHandle | null {
     return { planId, mode: "silent", segments, segmentCount: segments.length, stop: () => undefined };
   }
 
-  activePlanId = planId;
+  setActiveSpeechPlan(planId);
   const runGeneration = generation;
   void runSpeech({ planId, runGeneration, host: activeHost, segments, totalChars });
   return {
@@ -831,7 +846,7 @@ export function speakCompanionLine(text: string): CompanionSpeechHandle | null {
 
 /** 测试用：清掉宿主、订阅者与在途计划。 */
 export function resetCompanionVoicePlayback(): void {
-  activePlanId = null;
+  setActiveSpeechPlan(null);
   generation += 1;
   host = null;
   listeners.clear();

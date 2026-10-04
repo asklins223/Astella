@@ -18,7 +18,7 @@ import { sql } from "drizzle-orm";
 import { isFormalAnswerInProgress } from "../lib/formal-answer-signal.ts";
 import { createHash } from "node:crypto";
 import { companionLeakGateVersionV1 } from "@ailearn/shared/companion-leak-gates";
-import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
+import { stableStringify, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import type { WorkerTransaction } from "../db.ts";
 import { readCompanionThoughtJobPayload } from "@ailearn/shared";
 import { PET_PERSONA_PRESET_VERSION } from "@ailearn/shared/pet-persona-presets";
@@ -1043,7 +1043,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
       const messages = [{ role: "user" as const, content: prompt }];
       const generationParameters = { temperature: 0.9, maxTokens: 500, responseFormat: "json_object" as const };
       const provider = await thoughtProvider();
-      const inputSnapshotHash = sha256Utf8V1(canonicalJsonV1({
+      const inputSnapshotHash = sha256Utf8V1(stableStringify({
         taskVersion: 2,
         today: thoughtMaterial.today,
         personaProfileRevision: thoughtMaterial.personaProfileRevision,
@@ -1091,7 +1091,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
     } catch (err) {
       if (err instanceof JobLeaseLostError) throw err;
       throwIfJobAborted(job);
-      logger.warn({ jobId: job.id, err: err instanceof Error ? err.message : String(err) }, "companion thought llm batch failed; deterministic only");
+      logger.warn({ jobId: job.id, err }, "companion thought llm batch failed; deterministic only");
     }
   }
   if (candidates.length === 0) {
@@ -1168,7 +1168,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
       const messages = [{ role: "user" as const, content: prompt }];
       const generationParameters = { temperature: 0.9, maxTokens: 400, responseFormat: "json_object" as const };
       const provider = await thoughtProvider();
-      const inputSnapshotHash = sha256Utf8V1(canonicalJsonV1({
+      const inputSnapshotHash = sha256Utf8V1(stableStringify({
         taskVersion: 2,
         candidateDedupeKey: candidate.dedupeKey,
         candidateText: candidate.text,
@@ -1221,7 +1221,7 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
     } catch (err) {
       if (err instanceof JobLeaseLostError) throw err;
       throwIfJobAborted(job);
-      logger.warn({ jobId: job.id, err: err instanceof Error ? err.message : String(err) }, "companion thought expression llm failed; keeping the validated base line");
+      logger.warn({ jobId: job.id, err }, "companion thought expression llm failed; keeping the validated base line");
     }
 
     // 原句过不了闸、改写也没救回来 ⇒ 这一条不送。过去这里没有这一道：兜底是

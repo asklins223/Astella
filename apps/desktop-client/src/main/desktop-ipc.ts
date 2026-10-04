@@ -7,6 +7,7 @@ import { registerRestChannels } from "./desktop-ipc-rest";
 import { registerSourceChannels, noteListInputSchema, noteCreateInputSchema, noteGetInputSchema, noteVersionsInputSchema, noteVersionRestoreInputSchema, noteImageUploadInputSchema } from "./desktop-ipc-source";
 import { registerLearningChannels, shellOpenExternalInputSchema, windowThemeInputSchema, subscribeInputSchema, unsubscribeInputSchema, titlebarThemeOutputSchema, focusOutputSchema, subscriptionOutputSchema, closedSubscriptionOutputSchema, activityGetTodayInputSchema, statsGetOverviewAllInputSchema, assessmentDisputeGetInputSchema, assessmentDisputeOpenInputSchema, assessmentDisputeSupplementInputSchema, assessmentDisputeCloseInputSchema, assessmentDisputeSupplementResultV2Schema, noteIdInputSchema, noteLearningRoundOpenInputSchema, noteLearningRoundCreateInputSchema, noteLearningRoundReviseInputSchema, noteLearningRoundPersonalHistoryInputSchema, noteLearningRoundHistoryInputSchema, noteLearningRoundRouteInputSchema, noteLearningRoundTeachingInputSchema, noteLearningRoundPreparePracticeInputSchema, noteLearningRoundExplainInputSchema, artifactEnsureInputSchema, artifactEnsureResultSchema, noteLearningRoundCloseInputSchema, noteLearningRoundReopenInputSchema, noteLearningRoundResumeInputSchema, setPersonalRelationDecisionInputSchema, noteDeepeningInputSchema, searchGlobalInputSchema, noteSaveInputSchema, noteDocStateInputSchema, noteDocSyncUpdateInputSchema, noteDocSyncTitleInputSchema, noteSetShareInputSchema, noteDocPresenceInputSchema, noteDocDraftSaveInputSchema, noteDocDraftNoteInputSchema, cardGenerationStartInputSchema, cardGenerationGetRunInputSchema, cardGenerationGetCandidatesInputSchema, cardGenerationReviewInputSchema, cardGenerationRevealInputSchema, cardGenerationExposureInputSchema, cardGenerationActivateInputSchema, cardGenerationCancelInputSchema, cardGenerationRetryInputSchema, cardGenerationCloseInputSchema } from "./desktop-ipc-learning";
 import { registerAuthChannels } from "./desktop-ipc-auth";
+import { createRunStreamLedger, reconcileRunStreams, stopRunStreams, type RunStreamPorts } from "./desktop-ipc-run-streams";
 import { registerWorkspaceChannels, authUpdateProfileInputSchema, authAvatarUploadInputSchema, authAvatarGetInputSchema, authLeaveWorkspaceInputSchema, inviteCreateInputSchema, inviteRevokeInputSchema, memberRemoveInputSchema, revokeOutputSchema, memberRemoveOutputSchema } from "./desktop-ipc-workspace";
 import { registerCompanionChannels, runtimeInputSchema, companionMemoryIdInputSchema, sourceListInputSchema, sourceCreateInputSchema, sourceGetInputSchema, sourceNotesInputSchema, sourceUpdateInputSchema, sourceCreateNoteInputSchema, sourceArchiveInputSchema, sourceReparseInputSchema, sourceRestoreInputSchema, sourceImageGetInputSchema } from "./desktop-ipc-companion";
 import * as ns_note from "./desktop-gateway-ns-note";
@@ -368,6 +369,9 @@ import {
 } from "./note-doc-cache-store.ts";
 export type { NoteDocCacheStore };
 import { ensureArtifactStored } from "./artifact-store";
+import { VoiceAsrModelStore } from "./voice-asr-model-store";
+import { voiceAsrModelMountUrl } from "./voice-asr-model-route";
+import { voiceAsrModelSnapshotV1Schema } from "@ailearn/shared/voice-asr-model-contracts";
 import type { WindowStateSnapshot } from "../shared/window-state";
 
 type WindowResolver = (contents: WebContents, sourceUrl: string) => BrowserWindow | null;
@@ -393,6 +397,14 @@ export type DesktopIpcRegistrationOptions = {
    * `() => app.getPath("userData")`，测试给临时目录。
    */
   readonly artifactUserDataDir?: () => string;
+  /**
+   * 本地语音识别模型的仓库（读状态 / 下载 / 中止 / 移除）。
+   *
+   * 缺注入不是"功能降级"，而是接线错误：这四条通道当场喊 `configuration_error`。
+   * 模型不进安装包，所以**它必须是用户点过下载之后才存在**的那一份**——主进程
+   * 读不到别处去拿一个"应该有"的模型，那正是把 239 MB 偷偷塞回安装包的老路。
+   */
+  readonly voiceAsrModelStore?: VoiceAsrModelStore;
 };
 
 const m1InputBase = { meta: requestMetaSchema };
@@ -772,10 +784,9 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
   let activeWorkspaceId: string | null = null;
   let eventRevision = 0;
   const subscriptions = new Map<string, SubscriptionRecord>();
-  const trackedLearningRunIds = new Set<string>();
-  const learningRunStreams = new Map<string, () => void>();
-  const trackedCardGenerationRunIds = new Set<string>();
-  const cardGenerationStreams = new Map<string, () => void>();
+  // run 事件流的账本与规矩在 `desktop-ipc-run-streams.ts`；这里只把它接到闭包上。
+  const learningRunStreams = createRunStreamLedger();
+  const cardGenerationStreams = createRunStreamLedger();
   /** 伴星会话事件流：conversationId → 停止函数（每个会话至多一条）。 */
   const companionChatStreams = new Map<string, () => void>();
   /**
@@ -858,10 +869,7 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     return runIds;
   };
 
-  const stopLearningRunStreams = (): void => {
-    for (const stop of learningRunStreams.values()) stop();
-    learningRunStreams.clear();
-  };
+  const stopLearningRunStreams = (): void => stopRunStreams(learningRunStreams);
 
   const hasCardGenerationSubscription = (): boolean => {
     for (const subscription of subscriptions.values()) {
@@ -870,10 +878,7 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     return false;
   };
 
-  const stopCardGenerationStreams = (): void => {
-    for (const stop of cardGenerationStreams.values()) stop();
-    cardGenerationStreams.clear();
-  };
+  const stopCardGenerationStreams = (): void => stopRunStreams(cardGenerationStreams);
 
   const hasCompanionChatSubscription = (conversationId?: string): boolean => {
     for (const subscription of subscriptions.values()) {
@@ -1078,6 +1083,18 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     windowLifecycleBound.add(window);
     window.once("closed", () => releaseSubscriptionsForWindow(window));
     window.webContents.once("destroyed", () => releaseSubscriptionsForWindow(window));
+    // 重新加载（开发时的热重载、手动刷新）**不会**销毁 webContents，所以订阅表里那一
+    // 份旧订阅会一直留在账上：没人来退订，它支撑着的那条流也就没人关。开发循环里每按
+    // 一次刷新就多占一条，而服务端的每用户 SSE 上限只有 5——占满之后生成页再也收不到
+    // 事件（就是"页面不动、只有手动刷新状态才动"那一条）。主框架导航只有重载这一种，
+    // 所以在这一刻把这个窗口的订阅整份清掉：新文档会重新订，退订 IPC 找不到记录也只
+    // 是 not_found，渲染层本来就吞掉它。
+    window.webContents.on("did-start-navigation", (_event, _url, _isInPlace, isMainFrame) => {
+      if (!isMainFrame) return;
+      clearSubscriptionsForWindow(window);
+      if (!hasLearningRunSubscription()) stopLearningRunStreams(); else ensureTrackedLearningRunStreams();
+      if (!hasCardGenerationSubscription()) stopCardGenerationStreams(); else ensureTrackedCardGenerationStreams();
+    });
     // M16：窗口进出前台立刻收/放伴星那两条常连接。fence 心跳里还有同一道兜底，
     // 所以漏一次事件（例如窗口在本模块注册之后才创建）最坏只到 60 秒。
     const onVisibilityChange = (): void => reconcileCompanionStreamsForVisibility();
@@ -1099,38 +1116,6 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     }
   };
 
-  const ensureLearningRunStream = (runId: string): void => {
-    trackedLearningRunIds.add(runId);
-    if (!hasLearningRunSubscription() || learningRunStreams.has(runId)) return;
-    const streamWorkspaceEpoch = activeWorkspaceEpoch;
-    void gateway.watchLearningRunEvents(
-      runId,
-      async () => {
-        if (streamWorkspaceEpoch !== activeWorkspaceEpoch) return;
-        await refreshLearningRunSubscription(runId);
-      },
-    ).then((stop) => {
-      if (!hasLearningRunSubscription() || streamWorkspaceEpoch !== activeWorkspaceEpoch) {
-        stop();
-        return;
-      }
-      learningRunStreams.set(runId, stop);
-    }).catch(() => {
-      formalAssessmentGuard.failClosed("disconnected");
-    });
-  };
-
-  const ensureTrackedLearningRunStreams = (): void => {
-    const subscribed = subscribedRunIds("learningRun");
-    for (const runId of [...trackedLearningRunIds]) {
-      if (subscribed.has(runId)) continue;
-      trackedLearningRunIds.delete(runId);
-      learningRunStreams.get(runId)?.();
-      learningRunStreams.delete(runId);
-    }
-    for (const runId of subscribed) ensureLearningRunStream(runId);
-  };
-
   const refreshCardGenerationSubscription = async (runId: string, eventCursor: number): Promise<void> => {
     try {
       const snapshot = await ns_note.getCardGenerationRun(gateway.gatewayTransport, runId);
@@ -1146,35 +1131,49 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     }
   };
 
-  const ensureCardGenerationStream = (runId: string): void => {
-    trackedCardGenerationRunIds.add(runId);
-    if (!hasCardGenerationSubscription() || cardGenerationStreams.has(runId)) return;
-    const streamWorkspaceEpoch = activeWorkspaceEpoch;
-    void gateway.watchCardGenerationEvents(
-      runId,
-      async (eventCursor) => {
-        if (streamWorkspaceEpoch !== activeWorkspaceEpoch) return;
-        await refreshCardGenerationSubscription(runId, eventCursor);
-      },
-    ).then((stop) => {
-      if (!hasCardGenerationSubscription() || streamWorkspaceEpoch !== activeWorkspaceEpoch) {
-        stop();
-        return;
-      }
-      cardGenerationStreams.set(runId, stop);
-    }).catch(() => undefined);
+  /**
+   * 两族流的端口：账本只问这四件事，闭包里的东西全靠它们进来。
+   *
+   * `subscribed()` 是**唯一**的"谁在看"来源，而订阅表的每一次增删都调一次
+   * `reconcile` —— 账本因此不可能与订阅表分叉。这正是原来漏掉的那一条：连接只会
+   * 越攒越多，直到服务端的每用户 SSE 上限把它们全数顶回（详见
+   * `desktop-ipc-run-streams.ts` 开头那段实测）。
+   */
+  const learningRunStreamPorts: RunStreamPorts = {
+    watch: (runId, onSequence) => gateway.watchLearningRunEvents(runId, onSequence),
+    refresh: async (runId) => { await refreshLearningRunSubscription(runId); },
+    subscribed: () => subscribedRunIds("learningRun"),
+    workspaceEpoch: () => activeWorkspaceEpoch,
+    onLost: () => formalAssessmentGuard.failClosed("disconnected"),
   };
 
-  const ensureTrackedCardGenerationStreams = (): void => {
-    const subscribed = subscribedRunIds("cardGeneration");
-    for (const runId of [...trackedCardGenerationRunIds]) {
-      if (subscribed.has(runId)) continue;
-      trackedCardGenerationRunIds.delete(runId);
-      cardGenerationStreams.get(runId)?.();
-      cardGenerationStreams.delete(runId);
-    }
-    for (const runId of subscribed) ensureCardGenerationStream(runId);
+  const cardGenerationStreamPorts: RunStreamPorts = {
+    watch: (runId, onSequence) => gateway.watchCardGenerationEvents(runId, onSequence),
+    refresh: refreshCardGenerationSubscription,
+    subscribed: () => subscribedRunIds("cardGeneration"),
+    workspaceEpoch: () => activeWorkspaceEpoch,
+    // 建不上就留给渲染层自己的重读路径；这里不伪造事件。
   };
+
+  const ensureTrackedLearningRunStreams = (): void => reconcileRunStreams(learningRunStreams, learningRunStreamPorts);
+
+  /** 与 `trackCardGenerationRun` 同一条纪律：写侧只登记，开流交给订阅侧。 */
+  const trackLearningRun = (runId: string): void => {
+    learningRunStreams.tracked.add(runId);
+  };
+
+  /**
+   * 记下"有这么一条 run"，**不在这里开流**。
+   *
+   * 写侧（开始生成／审核／翻面／保存／停止／重试／收尾）知道 runId，可它不知道有谁
+   * 在看。以前这一发顺手就开流，于是每一次写都可能在没人订阅的情况下占一条长连接。
+   * 现在写侧只登记，开流交给订阅侧，两边对上了才连。
+   */
+  const trackCardGenerationRun = (runId: string): void => {
+    cardGenerationStreams.tracked.add(runId);
+  };
+
+  const ensureTrackedCardGenerationStreams = (): void => reconcileRunStreams(cardGenerationStreams, cardGenerationStreamPorts);
 
   /**
    * 伴星会话 SSE（§5.3）：每个会话维持一条流，事件逐帧转发给订阅方。
@@ -1500,7 +1499,8 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     pendingReturnMarkerStore, noteDocCache,
     recoverPersistedReturnMarker, rememberSession,
     startCompanionLifecycle, stopCompanionLifecycle, stopCompanionChatStreams,
-    stopLearningRunStreams, stopCardGenerationStreams, trackedLearningRunIds, trackedCardGenerationRunIds,
+    stopLearningRunStreams, stopCardGenerationStreams,
+    trackedLearningRunIds: learningRunStreams.tracked, trackedCardGenerationRunIds: cardGenerationStreams.tracked,
   });
 
 
@@ -1526,8 +1526,9 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     assertEpochBoundaryExempt, safeWorkspaceEpoch, formalAssessmentGuard,
     pendingReturnMarkerStore, noteDocCache, recoverPersistedReturnMarker, rememberSession,
     startCompanionLifecycle, stopCompanionLifecycle, stopCompanionChatStreams,
-    stopLearningRunStreams, stopCardGenerationStreams, trackedLearningRunIds,
-    trackedCardGenerationRunIds, clearSubscriptionsForWindow,
+    stopLearningRunStreams, stopCardGenerationStreams,
+    trackedLearningRunIds: learningRunStreams.tracked, trackedCardGenerationRunIds: cardGenerationStreams.tracked,
+    clearSubscriptionsForWindow,
   });
 
 
@@ -1553,9 +1554,10 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     assertEpochBoundaryExempt, safeWorkspaceEpoch, formalAssessmentGuard,
     pendingReturnMarkerStore, noteDocCache, recoverPersistedReturnMarker, rememberSession,
     startCompanionLifecycle, stopCompanionLifecycle, stopCompanionChatStreams,
-    stopLearningRunStreams, stopCardGenerationStreams, trackedLearningRunIds,
-    trackedCardGenerationRunIds, clearSubscriptionsForWindow,
-    ensureLearningRunStream: ensureLearningRunStream as never,
+    stopLearningRunStreams, stopCardGenerationStreams,
+    trackedLearningRunIds: learningRunStreams.tracked, trackedCardGenerationRunIds: cardGenerationStreams.tracked,
+    clearSubscriptionsForWindow,
+    trackLearningRun: trackLearningRun as never,
     maybeInjectPackagedLearningRunResponseLoss: maybeInjectPackagedLearningRunResponseLoss as never,
     resolveReturnContract: resolveReturnContract as never,
     syncFormalGuard: syncFormalGuard as never,
@@ -1601,7 +1603,7 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     setActiveWorkspaceEpoch: (value: number) => { activeWorkspaceEpoch = value; },
     noteDocCacheKey, persistNoteDocLocal, noteDocStreams, noteDocPresenceToReplay,
     noteDocCache,
-    ensureCardGenerationStream: ensureCardGenerationStream as never,
+    trackCardGenerationRun: trackCardGenerationRun as never,
     requireActionCapability: requireActionCapability as never,
   });
 
@@ -1736,6 +1738,45 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     return { focused: true as const };
   }, undefined, focusOutputSchema);
 
+  /**
+   * 本地语音识别模型的四条设备级通道。
+   *
+   * **不要求工作区纪元**：模型在这台机器上，不在某个空间里。用户在设置页第一次
+   * 点「下载」时可能还没登录任何空间，用 `assertEpoch` 会把这一次正当操作判成
+   * `stale_workspace`，界面上只剩一句看不懂的失败。
+   *
+   * `mountUrl` 交的是**页面所在那个 origin** 下的保留前缀（算法见
+   * `voiceAsrModelMountUrl`）：打包后由 app scheme 路由提供，开发时由开发服务器提供，
+   * 两种形态都同源。
+   */
+  const voiceAsrModelMountUrlFor = (window: BrowserWindow): string => {
+    try {
+      return voiceAsrModelMountUrl(window.webContents.getURL(), process.env.ELECTRON_RENDERER_URL);
+    } catch {
+      throw new DesktopGatewayFailure("configuration_error", "never");
+    }
+  };
+  for (const [channelName, run] of [
+    [DESKTOP_IPC_CHANNELS.companionVoiceAsrModelState, null],
+    [DESKTOP_IPC_CHANNELS.companionVoiceAsrModelDownload, "startDownload"],
+    [DESKTOP_IPC_CHANNELS.companionVoiceAsrModelCancel, "cancel"],
+    [DESKTOP_IPC_CHANNELS.companionVoiceAsrModelRemove, "remove"],
+  ] as const) {
+    channel(channelName, runtimeInputSchema, async (_event, window, input) => {
+      assertEpochBoundaryExempt(input.meta, activeWorkspaceEpoch);
+      const store = options.voiceAsrModelStore;
+      if (!store) throw new DesktopGatewayFailure("configuration_error", "never");
+      // 下载是长任务：发起即返回，进度靠再去读状态拿。把 239 MB 的等待压在
+      // 一次 invoke 里，用户切走设置页就会把它一起带走。
+      if (run) await store[run]();
+      return voiceAsrModelSnapshotV1Schema.parse({
+        version: 1,
+        mountUrl: voiceAsrModelMountUrlFor(window),
+        ...(await store.state()),
+      });
+    }, voiceAsrModelSnapshotV1Schema);
+  }
+
   installHandler(DESKTOP_IPC_CHANNELS.clipboardReadLinks, runtimeInputSchema, options, () => {
     // 外部复制的链接只在这里过一遍：剪贴板原文截断后提取候选地址，
     // 原文永不过桥，渲染层拿到的只有至多 3 个 http(s) 地址。
@@ -1769,14 +1810,9 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     const subscriptionId = generatedOpaqueId("subscription");
     bindWindowLifecycle(window);
     subscriptions.set(subscriptionId, { window, topic: input.topic });
-    if (input.topic.kind === "learningRun") {
-      ensureLearningRunStream(input.topic.runId);
-      ensureTrackedLearningRunStreams();
-    }
-    if (input.topic.kind === "cardGeneration") {
-      ensureCardGenerationStream(input.topic.runId);
-      ensureTrackedCardGenerationStreams();
-    }
+    // 订阅表就是"谁在看"的唯一事实：增删两端都只调 reconcile，由它对着表开流/收流。
+    if (input.topic.kind === "learningRun") ensureTrackedLearningRunStreams();
+    if (input.topic.kind === "cardGeneration") ensureTrackedCardGenerationStreams();
     if (input.topic.kind === "companionChat") {
       // eventCursor 缺省 0（无回合游标的降级路径）：主进程从头重放，渲染层
       // 按 runId/generation 过滤，不会把历史帧渲染成本轮回复。
@@ -1792,8 +1828,11 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
     const subscription = subscriptions.get(input.subscriptionId);
     if (!subscription || subscription.window !== window) throw new DesktopGatewayFailure("not_found", "never");
     subscriptions.delete(input.subscriptionId);
-    if (!hasLearningRunSubscription()) stopLearningRunStreams();
-    if (!hasCardGenerationSubscription()) stopCardGenerationStreams();
+    // 退订也要对齐账本：**按 run 逐条**对，而不是"一个都不剩就全关"。
+    // 只在归零时全关的话，"笔记页还订着 A、工作台退订了 B"这种切换会把 B 的流留着，
+    // 而 B 已经没人看了——长连接就是这么一点点攒到服务端的每用户上限的。
+    if (hasLearningRunSubscription()) ensureTrackedLearningRunStreams(); else stopLearningRunStreams();
+    if (hasCardGenerationSubscription()) ensureTrackedCardGenerationStreams(); else stopCardGenerationStreams();
     // 一篇笔记可能被多个窗口同时订阅，所以不能"有一条退订就关连接"。
     reconcileNoteDocStreams();
     if (subscription.topic.kind === "companionChat" && !hasCompanionChatSubscription(subscription.topic.conversationId)) {

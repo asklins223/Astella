@@ -422,7 +422,7 @@ export type LearningChannelDeps = {
   trackedCardGenerationRunIds: Set<string>;
   clearSubscriptionsForWindow: (window: BrowserWindow) => void;
   // ── 这一族特有的五个（也是闭包函数）──
-  ensureLearningRunStream: (runId: string) => void;
+  trackLearningRun: (runId: string) => void;
   maybeInjectPackagedLearningRunResponseLoss: (operation: "draft" | "submit" | "action") => void;
   resolveReturnContract: (contractValue: unknown) => Promise<void>;
   syncFormalGuard: (snapshot: unknown) => void;
@@ -659,7 +659,7 @@ export function registerLearningChannels(deps: LearningChannelDeps): void {
     startCompanionLifecycle, stopCompanionLifecycle, stopCompanionChatStreams,
     stopLearningRunStreams, stopCardGenerationStreams, trackedLearningRunIds,
     trackedCardGenerationRunIds, clearSubscriptionsForWindow,
-    ensureLearningRunStream, maybeInjectPackagedLearningRunResponseLoss, resolveReturnContract,
+    trackLearningRun, maybeInjectPackagedLearningRunResponseLoss, resolveReturnContract,
     syncFormalGuard, syncFormalGuardFromResult,
   } = deps;
 
@@ -753,7 +753,7 @@ installHandler(DESKTOP_IPC_CHANNELS.learningRunGet, learningRunGetInputSchema, o
     requireM2Route(contract, "learningRun.detail");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     const snapshot = await ns_learning.getLearningRun(gateway.gatewayTransport, input.runId, input.meta.requestId);
-    ensureLearningRunStream(snapshot.runId);
+    trackLearningRun(snapshot.runId);
     syncFormalGuard(snapshot);
     return snapshot;
   }, undefined, learningRunPublicSnapshotV2Schema);
@@ -762,7 +762,7 @@ installHandler(DESKTOP_IPC_CHANNELS.learningRunGet, learningRunGetInputSchema, o
     requireM2Route(contract, "learningRun.detail");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
     const snapshot = await ns_learning.startLearningRun(gateway.gatewayTransport, { ...input.request, version: 2 }, input.commandId, input.meta.requestId);
-    ensureLearningRunStream(snapshot.runId);
+    trackLearningRun(snapshot.runId);
     syncFormalGuard(snapshot);
     emit("learningRun", { kind: "learning_run_changed", runId: snapshot.runId, revision: snapshot.runRevision }, getActiveWorkspaceEpoch());
     return snapshot;
@@ -771,14 +771,14 @@ installHandler(DESKTOP_IPC_CHANNELS.learningRunGet, learningRunGetInputSchema, o
   installHandler(DESKTOP_IPC_CHANNELS.learningRunGetDraft, learningRunDraftGetInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "learningRun.detail");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    ensureLearningRunStream(input.runId);
+    trackLearningRun(input.runId);
     return ns_learning.getLearningRunDraft(gateway.gatewayTransport, input.runId, input.taskId, input.meta.requestId);
   }, undefined, learningTaskDraftV2Schema.nullable());
 
   installHandler(DESKTOP_IPC_CHANNELS.learningRunSaveDraft, learningRunDraftSaveInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "learningRun.detail");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    ensureLearningRunStream(input.runId);
+    trackLearningRun(input.runId);
     const receipt = await ns_learning.saveLearningRunDraft(gateway.gatewayTransport, input.runId, input.taskId, input.request, input.commandId, input.meta.requestId);
     emit("learningRun", { kind: "learning_run_changed", runId: receipt.runId, revision: receipt.runRevision }, getActiveWorkspaceEpoch());
     maybeInjectPackagedLearningRunResponseLoss("draft");
@@ -788,7 +788,7 @@ installHandler(DESKTOP_IPC_CHANNELS.learningRunGet, learningRunGetInputSchema, o
   installHandler(DESKTOP_IPC_CHANNELS.learningRunSubmit, learningRunSubmitInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "learningRun.detail");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    ensureLearningRunStream(input.runId);
+    trackLearningRun(input.runId);
     const receipt = await ns_learning.submitLearningRunArtifact(gateway.gatewayTransport, input.runId, input.taskId, input.request, input.commandId, input.meta.requestId);
     try {
       syncFormalGuard(await ns_learning.getLearningRun(gateway.gatewayTransport, input.runId, input.meta.requestId));
@@ -803,7 +803,7 @@ installHandler(DESKTOP_IPC_CHANNELS.learningRunGet, learningRunGetInputSchema, o
   installHandler(DESKTOP_IPC_CHANNELS.learningRunAction, learningRunActionInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "learningRun.detail");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    ensureLearningRunStream(input.runId);
+    trackLearningRun(input.runId);
     const response = await ns_learning.applyLearningRunAction(gateway.gatewayTransport, input.runId, input.request, input.commandId, input.meta.requestId);
     syncFormalGuardFromResult(response);
     emit("learningRun", { kind: "learning_run_changed", runId: response.runId, revision: response.snapshot.runRevision }, getActiveWorkspaceEpoch());
@@ -814,7 +814,7 @@ installHandler(DESKTOP_IPC_CHANNELS.learningRunGet, learningRunGetInputSchema, o
   installHandler(DESKTOP_IPC_CHANNELS.learningRunGetResult, learningRunGetInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "learningRun.detail");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    ensureLearningRunStream(input.runId);
+    trackLearningRun(input.runId);
     const result = await ns_learning.getLearningRunResult(gateway.gatewayTransport, input.runId, input.meta.requestId);
     // The result DTO intentionally carries no private phase field. Re-read the
     // strict public snapshot before returning it so a completed/ended run can
@@ -849,7 +849,7 @@ installHandler(DESKTOP_IPC_CHANNELS.learningRunGet, learningRunGetInputSchema, o
   installHandler(DESKTOP_IPC_CHANNELS.learningRunGetReturnContract, learningRunGetInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "learningRun.detail");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    ensureLearningRunStream(input.runId);
+    trackLearningRun(input.runId);
     const contractValue = await ns_learning.getLearningRunReturnContract(gateway.gatewayTransport, input.runId, input.meta.requestId);
     await resolveReturnContract(contractValue);
     return contractValue;
@@ -858,14 +858,14 @@ installHandler(DESKTOP_IPC_CHANNELS.learningRunGet, learningRunGetInputSchema, o
   installHandler(DESKTOP_IPC_CHANNELS.learningRunRecordActivityLease, learningRunLeaseInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "learningRun.detail");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    ensureLearningRunStream(input.runId);
+    trackLearningRun(input.runId);
     return ns_learning.recordLearningRunActivityLease(gateway.gatewayTransport, input.runId, input.request, input.meta.requestId);
   }, undefined, recordLearningRunActivityLeaseOutputV2Schema);
 
   installHandler(DESKTOP_IPC_CHANNELS.learningRunAbandon, learningRunAbandonInputSchema, options, async (_event, _window, input) => {
     requireM2Route(contract, "learningRun.detail");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    ensureLearningRunStream(input.runId);
+    trackLearningRun(input.runId);
     const response = await ns_learning.abandonLearningRun(gateway.gatewayTransport, input.runId, input.request, input.commandId, input.meta.requestId);
     syncFormalGuardFromResult(response);
     emit("learningRun", { kind: "learning_run_changed", runId: response.runId, revision: response.snapshot.runRevision }, getActiveWorkspaceEpoch());

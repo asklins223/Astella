@@ -16,6 +16,7 @@ import type { CompanionAgentNode, CompanionAgentNodeState } from "../../app/comp
 import { CompanionAgentRail, type CompanionAgentRailProgress, type CompanionAgentRailTurnState } from "./companion-agent-rail";
 import { COMPANION_AGENT_PERMISSION_OPTIONS, COMPANION_INTERVENTION_OPTIONS, COMPANION_PRESENCE_OPTIONS, companionInterventionHint, quietHoursPatch, quietHoursWithBoundary, type QuietHoursBoundary } from "./companion-account-presence";
 import { companionBubbleHoldMs, companionBubblePreviewText, companionBubbleText } from "./companion-bubble-reveal";
+import { openVoiceModelSettings as openVoiceModelSettingsAction } from "./open-voice-model-settings";
 import { createCompanionBubbleFollow, type CompanionBubbleFollow } from "./companion-bubble-follow";
 import { plainCompanionBubbleText } from "./companion-markdown";
 import { beginNoteReplySaveAttempt, isReadyNoteReplyForSave, resolveNoteReplySaveTarget } from "./note-reply-save";
@@ -24,9 +25,12 @@ import { visibleTurnFailure } from "./companion-hud-state";
 import { useCompanionInteraction } from "./use-companion-interaction";
 import { useCompanionFloatingPlacement } from "./use-companion-floating-placement";
 import { useCompanionPaperPlacement } from "./use-companion-paper-placement";
+import { CompanionGoalBubble } from "./CompanionGoalBubble";
+import { useAgentGoals } from "./use-agent-goals";
 import { CompanionReplyPapers, CompanionStatusPaper } from "./CompanionReplyPapers";
 import { CompanionNoteExplanationContext } from "./CompanionNoteExplanationContext";
 import { useNoteCompanionExplanations } from "./note-companion-explanation";
+import { prepareNotebookTaskNotification } from "../surfaces/notebook/notebook-task-notifications";
 
 export interface CompanionHudAction {
   readonly id: string;
@@ -62,6 +66,7 @@ export interface CompanionHudProps {
    */
   readonly onAgentToolState?: (state: CompanionAgentNodeState) => void;
   readonly floatingBlocked?: boolean;
+  readonly onTaskBubbleOpenChange?: (open: boolean) => void;
 }
 
 type MoreView = "menu" | "actions";
@@ -127,12 +132,22 @@ export function CompanionHud({
   onRunAction,
   onAgentToolState,
   floatingBlocked = false,
+  onTaskBubbleOpenChange,
 }: CompanionHudProps) {
   const chat = useCompanionChat();
   const [moreView, setMoreView] = useState<MoreView>("menu");
   /** Settings use their own scrollable paper beside the actual model. */
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const interaction = useCompanionInteraction(chat, voiceEnabled, floatingBlocked || settingsOpen || chat.mode === "history");
+  const [goalBubbleOpen, setGoalBubbleOpen] = useState(false);
+  useEffect(() => { onTaskBubbleOpenChange?.(goalBubbleOpen); return () => onTaskBubbleOpenChange?.(false); }, [goalBubbleOpen, onTaskBubbleOpenChange]);
+  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
+  const [goalHistoryTarget, setGoalHistoryTarget] = useState<{ runId: string; visit: number } | null>(null);
+  const interaction = useCompanionInteraction(chat, voiceEnabled, floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history");
+  const goals = useAgentGoals(chat.phase, id => {
+    interaction.closeVoice(); setSettingsOpen(false); chat.setMode("closed"); setSelectedGoalId(id); setGoalBubbleOpen(true);
+  });
+  useEffect(() => { setGoalBubbleOpen(false); setSelectedGoalId(null); setGoalHistoryTarget(null); }, [goals.scope]);
+  useEffect(() => { if (chat.mode !== "closed") setGoalBubbleOpen(false); if (chat.mode !== "history") setGoalHistoryTarget(null); }, [chat.mode]);
   const { input, setInput, voice } = interaction;
   /** 回合结束后只发布一次的稳定摘要（方案 §3 无障碍）：流式文本不再是持续 live region。 */
   const [turnSummary, setTurnSummary] = useState("");
@@ -362,9 +377,11 @@ export function CompanionHud({
     expansionTaskRequestRef.current = { key, requestId };
     setExpansionTaskState("starting");
     setExpansionTaskMessage(null);
+    const meta = createRequestMeta();
+    const notifyTask = prepareNotebookTaskNotification({ noteId: intent.noteId, currentVersionId: intent.noteVersionId, title: intent.noteTitle }, meta.workspaceEpoch);
     try {
       const task = unwrapGatewayResult(await api.noteExpansion.startTask({
-        meta: createRequestMeta(),
+        meta,
         noteId: intent.noteId,
         request: {
           noteVersionId: intent.noteVersionId,
@@ -373,6 +390,7 @@ export function CompanionHud({
           conversationId,
         },
       }));
+      notifyTask(task, "expansion");
       window.dispatchEvent(new CustomEvent("ailearn:note-expansion-task-started", {
         detail: { noteId: intent.noteId, taskId: task.taskId },
       }));
@@ -442,7 +460,7 @@ export function CompanionHud({
   const speakingRef = useRef(false);
   const replyActivityUntilRef = useRef(0);
   const replyObscuredRef = useRef(false);
-  replyObscuredRef.current = floatingBlocked || settingsOpen || chat.mode === "history";
+  replyObscuredRef.current = floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history";
   const noteReplyActivity = () => {
     replyActivityUntilRef.current = performance.now() + 2_500;
     interaction.outputActivity();
@@ -801,7 +819,7 @@ export function CompanionHud({
     el.style.height = `${Math.min(112, Math.max(40, el.scrollHeight))}px`;
   }, [input, chat.mode]);
   // Input sizing precedes placement, so its first visible frame uses the final geometry.
-  const { side, controlsSide } = useCompanionFloatingPlacement(hudRef, floatingRef, headRef, !floatingBlocked && !settingsOpen && chat.mode !== "history");
+  const { side, controlsSide } = useCompanionFloatingPlacement(hudRef, floatingRef, headRef, !floatingBlocked && !settingsOpen && !goalBubbleOpen && chat.mode !== "history");
 
   /**
    * 停止后气泡要定格住"她已经说出来的那几句"，可停止流程会把草稿清掉——所以在草稿
@@ -827,7 +845,7 @@ export function CompanionHud({
     return () => window.clearTimeout(timer);
   }, [chat.dismissStopNotice, chat.stopNotice, activeNoteExplanation?.id, activeNoteExplanation?.phase, activeNoteExplanation?.text]);
 
-  const sendText = useCallback(async (textOverride?: string, voiceArtifactId?: string, fromVoice = false) => {
+  const sendText = useCallback(async (textOverride?: string, fromVoice = false) => {
     const text = (textOverride ?? input).trim();
     if (!text) return;
     if (!fromVoice) setInput("");
@@ -845,7 +863,6 @@ export function CompanionHud({
       const selection = chat.feedSelection ?? chat.feedNoteAnchor?.anchor.excerpt;
       const sent = await chat.send({
         text,
-        ...(voiceArtifactId ? { voiceArtifactId } : {}),
         ...(chat.feedNoteAnchor ? { noteAnchor: chat.feedNoteAnchor } : {}),
         ...(selection ? { selection: { text: selection } } : {}),
       });
@@ -1134,10 +1151,16 @@ export function CompanionHud({
     setProposalNotice(next);
   }, [pendingProposalId, chat.proposalStates]);
 
+  // 语音模型在设置 → 伴星 → 声音与显示。与边缘设置里那条走同一个通道：设分区 → 开设置页。
+  const openVoiceModelSettings = useCallback(() => {
+    openVoiceModelSettingsAction();
+    interaction.closeVoice();
+  }, [interaction]);
+
   return (
     <div ref={hudRef} className="companion-hud" data-mode={chat.mode} data-motion={motionMode} data-side={side} data-controls-side={controlsSide}>
       {createPortal(
-        <div ref={floatingRef} className="companion-hud--floating hud-surface" data-companion-owned="true" data-motion={motionMode} data-mode={chat.mode} data-side={side} data-blocked={floatingBlocked || settingsOpen || chat.mode === "history" || undefined}>
+        <div ref={floatingRef} className="companion-hud--floating hud-surface" data-companion-owned="true" data-motion={motionMode} data-mode={chat.mode} data-side={side} data-blocked={floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history" || undefined}>
           <div ref={headRef} className="companion-hud__head" aria-label="伴星的轻量交互">
             {railVisible ? (
               <CompanionAgentRail
@@ -1290,14 +1313,22 @@ export function CompanionHud({
                 {voice.phase === "listening" ? <div className="companion-hud__voice-wave" aria-label="正在录音"><i /><i /><i /><i /><i /><i /><i /></div> : null}
                 {voice.phase === "transcribing" ? <p role="status"><Loader2 className="companion-hud__spin" size={18} />识别完成后，你可以修改再发送。</p> : null}
                 {interaction.voiceDraft ? <textarea aria-label="识别后的语音文字" value={interaction.voiceDraft.text} onChange={event => interaction.setVoiceDraftText(event.target.value)} placeholder="识别后的文字…" /> : null}
-                {voice.note ? <p className="companion-hud__output-note" role="status">{voice.note}</p> : null}
+                {voice.note && !voice.modelMissing ? <p className="companion-hud__output-note" role="status">{voice.note}</p> : null}
+                {/**
+                 * 没装模型时，「开始录音」按钮是不该有的：它按下去只会被挡住。
+                 * 换成一句有出处的说明和一个真能走通的下一步。
+                 */}
+                {voice.modelMissing ? <p className="companion-hud__voice-missing" role="status">
+                  语音识别模型是可选的附加功能，装在这台设备上，录音不会离开它。
+                  <button type="button" className="button" onClick={openVoiceModelSettings}>去设置里下载</button>
+                </p> : null}
                 <footer>
                   <button type="button" className="text-action" onClick={interaction.closeVoice}>这次不发</button>
                   {voice.phase === "listening" ? <button type="button" className="button primary" onClick={voice.toggle}><Square size={13} />结束录音</button> : voice.phase === "idle" && interaction.voiceDraft ? <button type="button" className="button primary" disabled={!interaction.voiceDraft.text.trim() || chat.phase === "sending"} onClick={() => {
                     const draft = interaction.voiceDraft; if (!draft) return;
                     interaction.closeVoice();
-                    void sendText(draft.text, draft.voiceArtifactId ?? undefined, true).then(sent => { if (sent) interaction.consumeVoiceDraft(draft); }).catch(() => undefined);
-                  }}><Send size={16} />发送</button> : voice.phase === "idle" ? <button type="button" className="button primary" onClick={voice.toggle}><Mic size={16} />开始录音</button> : null}
+                    void sendText(draft.text, true).then(sent => { if (sent) interaction.consumeVoiceDraft(draft); }).catch(() => undefined);
+                  }}><Send size={16} />发送</button> : voice.phase === "idle" && !voice.modelMissing ? <button type="button" className="button primary" onClick={voice.toggle}><Mic size={16} />开始录音</button> : null}
                 </footer>
               </section>
             ) : null}
@@ -1346,7 +1377,7 @@ export function CompanionHud({
               </section>
             ) : null}
           </div>
-          <CompanionReplyPapers key={chat.conversationId ?? "unbound"} chat={chat} paused={floatingBlocked || settingsOpen || chat.mode === "history"} extra={chat.feedNoteIntent ? <CompanionStatusPaper identity={`note:${chat.feedNoteIntent.noteTitle}:${recallSaveState}:${expansionTaskState}`} paused={floatingBlocked || chat.phase === "sending" || recallSaveState === "saving" || expansionTaskState === "starting"}>{chat.feedNoteIntent ? (
+          <CompanionReplyPapers key={chat.conversationId ?? "unbound"} chat={chat} paused={floatingBlocked || settingsOpen || goalBubbleOpen || chat.mode === "history"} extra={chat.feedNoteIntent ? <CompanionStatusPaper identity={`note:${chat.feedNoteIntent.noteTitle}:${recallSaveState}:${expansionTaskState}`} paused={floatingBlocked || chat.phase === "sending" || recallSaveState === "saving" || expansionTaskState === "starting"}>{chat.feedNoteIntent ? (
             <div className={`companion-hud__note-overview${chat.feedNoteIntent.kind === "expansion" ? " companion-hud__note-overview--expansion" : ""}`} aria-live="polite">
               <span>《{chat.feedNoteIntent.noteTitle}》· 按打开时的版本整理</span>
               {(chat.feedNoteIntent.kind === "recall" || chat.feedNoteIntent.kind === "recall_hint") && chat.liveReply && recallSaveState === "error" ? (
@@ -1381,6 +1412,11 @@ export function CompanionHud({
         <button type="button" onPointerDown={playButtonBounce} onClick={() => { interaction.closeVoice(); setSettingsOpen(false); chat.setMode("history"); }} title="对话手记" aria-label="对话手记"><History size={18} aria-hidden="true" /></button>
         <button ref={moreControlRef} type="button" data-active={chat.mode === "actions" || settingsOpen || undefined} onPointerDown={playButtonBounce} onClick={() => { interaction.closeVoice(); chat.setMode(chat.mode === "actions" ? "closed" : "actions"); }} title="设置与快捷操作" aria-label="设置与快捷操作"><Settings2 size={18} aria-hidden="true" /></button>
       </nav> : null}
+      <CompanionGoalBubble anchorRef={hudRef} motionMode={motionMode} blocked={floatingBlocked || settingsOpen || chat.mode === "history"}
+        open={goalBubbleOpen} selectedId={selectedGoalId} goals={goals} onSelect={setSelectedGoalId}
+        onOpen={() => { interaction.closeVoice(); setSettingsOpen(false); chat.setMode("closed"); setGoalBubbleOpen(true); }}
+        onClose={() => setGoalBubbleOpen(false)} onDetails={runId => { setGoalBubbleOpen(false); setGoalHistoryTarget({ runId, visit: Date.now() }); chat.setMode("history"); }}
+        onChat={() => { setGoalBubbleOpen(false); interaction.closeVoice(); setSettingsOpen(false); chat.setMode("conversation"); }} />
       {settingsOpen ? createPortal(
         <CompanionEdgeSettings
           anchorRef={hudRef}
@@ -1396,6 +1432,8 @@ export function CompanionHud({
       <div className="companion-hud__sr-status" role="status">{turnSummary}</div>
       <div className="companion-hud__sr-status" role="status">{proposalNotice}</div>
       <CompanionHistoryDrawer
+        goals={goals}
+        goalTarget={goalHistoryTarget}
         open={chat.mode === "history"}
         motionMode={motionMode}
         voice={voice}

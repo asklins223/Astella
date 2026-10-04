@@ -55,6 +55,8 @@ import "./components/card-generation-flow.css";
 import "./components/surfaces/companion-center.css";
 import "./components/surfaces/settings/settings-companion.css";
 import "./components/surfaces/settings/settings-book.css";
+import "./components/surfaces/settings/settings-voice-model.css";
+import "./components/companion/companion-notifications.css";
 
 /* ── 4b. 功能层：各页面自己的版式 ───────────────────────────────────────── */
 import "./components/surfaces/note-hud.css";
@@ -91,6 +93,7 @@ import "./components/companion/companion-feed.css";
 import "./components/companion/companion-proposal-choice.css";
 import "./components/companion/companion-run-trace.css";
 import "./components/companion/companion-interaction.css";
+import "./components/companion/companion-goals.css";
 
 /**
  * 本文件刻意不导出任何东西：它唯一的作用是「被 import 时按上面那张单子把 CSS 注入」。

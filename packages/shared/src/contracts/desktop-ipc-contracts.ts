@@ -1,3 +1,4 @@
+import { agentRunV1Schema, agentRunListV1Schema, createAgentRunV1Schema, reviseAgentRunV1Schema, controlAgentRunV1Schema } from "./agent-contracts.ts";
 import {
   type CompanionDiscoveryEntryV1,
   type CompanionDiscoveryKind,
@@ -138,6 +139,8 @@ import {
   type CompanionVoiceSpeakRequestV1,
   type CompanionVoiceSpeakSegmentRequestV2,
 } from "./companion-voice-contracts.ts";
+// 本地语音识别模型（2026-10：不进安装包，用户自己在设置里下）。
+import { voiceAsrModelSnapshotV1Schema } from "./voice-asr-model-contracts.ts";
 // 伴星聊天发送链路（2026-09-18 接线）：建/复用 dialogue、发 turn、拉消息。
 import {
   companionChatEnsureResultV1Schema,
@@ -372,6 +375,12 @@ export const DESKTOP_IPC_CHANNELS = {
   companionVoiceSpeak: "ailearn.v1.companion.voice.speak",
   companionVoiceSpeakSegment: "ailearn.v1.companion.voice.speakSegment",
   companionVoicePlaybackOutcome: "ailearn.v1.companion.voice.playbackOutcome",
+  // 本地语音识别模型的四条：读状态 / 开始下载 / 中止 / 移除。
+  // **它们是设备级的**：模型在这台机器上，不在谁的名下，所以这四条不要求工作区纪元。
+  companionVoiceAsrModelState: "ailearn.v1.companion.voice.asrModel.state",
+  companionVoiceAsrModelDownload: "ailearn.v1.companion.voice.asrModel.download",
+  companionVoiceAsrModelCancel: "ailearn.v1.companion.voice.asrModel.cancel",
+  companionVoiceAsrModelRemove: "ailearn.v1.companion.voice.asrModel.remove",
   companionAccountGetState: "ailearn.v1.companion.account.getState",
   companionAccountPatchState: "ailearn.v1.companion.account.patchState",
   companionOnboardingTransition: "ailearn.v1.companion.onboarding.transition",
@@ -437,6 +446,10 @@ export const DESKTOP_IPC_CHANNELS = {
   companionAuditDelete: "ailearn.v1.companion.audit.delete",
   // 伴星聊天发送链路 + 语音转文本（2026-09-18 接线，companion-chat-desktop-contracts）。
   companionVoiceTranscribe: "ailearn.v1.companion.voice.transcribe",
+  agentRunsList: "ailearn.v1.agent.runs.list",
+  agentRunCreate: "ailearn.v1.agent.runs.create",
+  agentRunRevise: "ailearn.v1.agent.runs.revise",
+  agentRunControl: "ailearn.v1.agent.runs.control",
   companionChatEnsureConversation: "ailearn.v1.companion.chat.ensureConversation",
   companionChatSendTurn: "ailearn.v1.companion.chat.sendTurn",
   companionChatListMessages: "ailearn.v1.companion.chat.listMessages",
@@ -2195,6 +2208,12 @@ export interface AILearnDesktopApiM1 {
 }
 
 export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
+  readonly agent: {
+    listRuns(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof agentRunListV1Schema>>>;
+    createRun(input: { meta: RequestMetaV1; request: z.infer<typeof createAgentRunV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunV1Schema>>>;
+    reviseRun(input: { meta: RequestMetaV1; runId: string; request: z.infer<typeof reviseAgentRunV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunV1Schema>>>;
+    controlRun(input: { meta: RequestMetaV1; runId: string; request: z.infer<typeof controlAgentRunV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunV1Schema>>>;
+  };
   readonly subscriptions: SubscriptionApiM2;
   /**
    * 系统剪贴板里的候选链接。渲染层被权限策略挡在剪贴板外，
@@ -2313,6 +2332,18 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
         meta: RequestMetaV1;
         request: import("./companion-voice-contracts.ts").CompanionVoiceTranscribeRequestV1;
       }): Promise<GatewayResultV1<z.infer<typeof companionVoiceTranscribeResultV1Schema>>>;
+      /**
+       * 本地识别模型（2026-10）：**设备级**的四条，读状态 / 下载 / 中止 / 移除。
+       *
+       * 渲染层不用它们识别——识别在 worker 里读 `device/asr/` 那条同源路径。
+       * 这里只回答「模型在不在这台机器上、下到哪了」。
+       */
+      readonly asrModel: {
+        getState(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof voiceAsrModelSnapshotV1Schema>>>;
+        download(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof voiceAsrModelSnapshotV1Schema>>>;
+        cancel(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof voiceAsrModelSnapshotV1Schema>>>;
+        remove(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof voiceAsrModelSnapshotV1Schema>>>;
+      };
     };
     /**
      * 聊天发送链路（2026-09-18 接线）：建/复用 dialogue → 发 turn → 轮询

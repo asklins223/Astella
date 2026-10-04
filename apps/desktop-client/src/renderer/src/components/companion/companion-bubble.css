@@ -1,15 +1,64 @@
+/* Proactive text needs its own paper surface over both room scenes. */
+.companion-bubble {
+  position: absolute;
+  z-index: 6;
+  bottom: var(--companion-lane-bubble, calc(100% + 60px));
+  left: 50%;
+  width: max-content;
+  max-width: min(280px, 36vw);
+  padding: 11px 15px 12px;
+  color: var(--hud-ink, #493a2c);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.6;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--hud-line, #d7c8b1);
+  border-radius: 24px 27px 8px 24px;
+  background: var(--hud-cream, #fff8e9);
+  box-shadow: 0 0 0 3px rgb(255 252 235 / 88%), var(--hud-shadow-small, 0 8px 18px rgb(30 24 15 / 18%));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
 
+.companion-bubble::after {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  content: "";
+  border-right: 1px solid var(--hud-line, #d7c8b1);
+  border-bottom: 1px solid var(--hud-line, #d7c8b1);
+  background: var(--hud-cream, #fff8e9);
+  transform: translate(-50%, -6px) rotate(45deg);
+}
 
 .companion-bubble__text {
   display: block;
 }
 
+.companion-bubble--touch,
+.companion-bubble--touch::after {
+  background: var(--hud-butter, #f3d678);
+}
+
 /* 窄窗口下的折行保护（沿用旧 home-cue 的断点）。 */
 @media (max-width: 1247px) {
+  .companion-bubble {
+    max-width: min(240px, 54vw);
+  }
 }
 
 /* 入场：一句轻快的上浮 + 收缩弹出，与 home-v2 HUD 同一缓动曲线。 */
 @media (prefers-reduced-motion: no-preference) {
+  .companion-bubble[data-motion="full"] {
+    animation: companion-bubble-in 240ms var(--hud-ease-out, ease-out) both;
+  }
+  .companion-bubble[data-motion="lite"] {
+    animation: companion-bubble-in 120ms ease-out both;
+  }
 }
 
 @keyframes companion-bubble-in {
@@ -37,7 +86,7 @@ button.companion-cue-open {
   left: 50%;
   display: block;
   width: max-content;
-  max-width: min(240px, 30vw);
+  max-width: min(280px, 36vw);
   margin: 0;
   padding: 0;
   appearance: none;
@@ -49,6 +98,15 @@ button.companion-cue-open {
   transform: translateX(-50%);
   pointer-events: auto;
   cursor: pointer;
+}
+
+button.companion-cue-open .companion-bubble {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  max-width: none;
+  transform: none;
 }
 
 button.companion-cue-open:focus-visible {
@@ -96,6 +154,10 @@ button.companion-cue-open:focus-visible {
 
 /* 通道已经由按钮负责居中，气泡在这条链里只做竖直入场，不再重复 translateX。 */
 @media (prefers-reduced-motion: no-preference) {
+  button.companion-cue-open .companion-bubble[data-motion="full"],
+  button.companion-cue-open .companion-bubble[data-motion="lite"] {
+    animation-name: companion-bubble-in-in-place;
+  }
 }
 
 @keyframes companion-bubble-in-in-place {
@@ -113,6 +175,6 @@ button.companion-cue-open:focus-visible {
 /* 窄窗口下的折行保护（与 `.companion-bubble` 那条同值，按容器改挂到按钮上）。 */
 @media (max-width: 1247px) {
   button.companion-cue-open {
-    max-width: min(210px, 54vw);
+    max-width: min(240px, 54vw);
   }
 }

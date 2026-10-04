@@ -242,11 +242,11 @@ export function useCompanionHistoryScroll({ chat, open, mounted, recordOpen }: {
     let frame = 0;
     const observer = new ResizeObserver(() => {
       // 有待处理跳转时让路：补页与居中定位不能被贴底覆盖（见 pendingJumpRef 注释）。
-      if (frame || !stickToBottomRef.current || pendingJumpRef.current) return;
+      if (recordOpen || frame || !stickToBottomRef.current || pendingJumpRef.current) return;
       frame = window.requestAnimationFrame(() => {
         frame = 0;
         // 搜索跳转或用户上滚可能发生在排队后的这一帧，执行时再次核对意图。
-        if (!stickToBottomRef.current || pendingJumpRef.current) return;
+        if (recordOpen || !stickToBottomRef.current || pendingJumpRef.current) return;
         pinToLatest();
       });
     });
@@ -256,14 +256,14 @@ export function useCompanionHistoryScroll({ chat, open, mounted, recordOpen }: {
       observer.disconnect();
       if (frame) window.cancelAnimationFrame(frame);
     };
-  }, [open, mounted, pinToLatest]);
+  }, [open, mounted, recordOpen, pinToLatest]);
 
 
-  // 打开抽屉（含切到聊天记录视图）自动定位到最新一条（要求 ③），并恢复贴底意图：
-  // 上一次阅读时「松手」的状态不该跨开关残留。
+  // Conversation opens at the latest message; record/task pages open at their heading.
   useEffect(() => {
     if (!open || !mounted) return;
     if (pendingJumpRef.current) return;
+    if (recordOpen) { stickToBottomRef.current = false; if (listRef.current) listRef.current.scrollTop = 0; return; }
     stickToBottomRef.current = true;
     const frame = window.requestAnimationFrame(pinToLatest);
     return () => window.cancelAnimationFrame(frame);

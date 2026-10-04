@@ -1,6 +1,7 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { classifyThrownAsStepFailure, type AiAttemptToken } from "@ailearn/shared/ai-task-kernel";
 import { readNoteDynamicArtifactGenerateJobPayload } from "@ailearn/shared/job-payload-contracts";
+import { loadAgentGenerationContext } from "../agent/generation-context.ts";
 import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
 import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
 import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
@@ -98,15 +99,16 @@ async function readFrozenInput(job: JobPayload, input: ReturnType<typeof readNot
   });
 }
 
-function jsonArtifactProvider(provider: ReturnType<typeof createGovernedProvider>, job: JobPayload): DynamicArtifactProviderV1 {
+function jsonArtifactProvider(provider: ReturnType<typeof createGovernedProvider>, job: JobPayload, context: Awaited<ReturnType<typeof loadAgentGenerationContext>>): DynamicArtifactProviderV1 {
   return async (input, step) => {
     try {
       if (job.signal?.aborted) return { ok: false, class: "cancelled", message: "动态演示任务已取消" };
       if (!(await isJobLeaseActive(job))) {
         return { ok: false, class: "lease_lost", message: "动态演示 worker 已失去任务租约" };
       }
+      await context.reserveModelCall();
       const result = await provider.chatCompletion(
-        [{ role: "user", content: buildDynamicArtifactPrompt(input) }],
+        [{ role: "system", content: context.instructions }, { role: "user", content: buildDynamicArtifactPrompt(input) }],
         { temperature: 0.4, maxTokens: ARTIFACT_COMPLETION_TOKENS_V1, responseFormat: "json_object", disableThinking: true },
         step.signal,
       );
@@ -165,7 +167,7 @@ export async function runNoteDynamicArtifactGenerate(job: JobPayload): Promise<v
       && isJobLeaseActive(job)
   );
   const result = await runDynamicArtifactV1({
-    provider: jsonArtifactProvider(provider, job),
+    provider: jsonArtifactProvider(provider, job, await loadAgentGenerationContext(job)),
     modelId: provider.modelId,
     maxModelCalls: 2,
     maxDurationMs: 100_000,

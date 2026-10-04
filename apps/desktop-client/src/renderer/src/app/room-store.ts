@@ -91,6 +91,9 @@ export function normalizePersistedCompanionPlacement(input: unknown): PersistedC
  */
 export type NoteTargetRef = {
   readonly noteId: string;
+  /** Open this exact saved result rather than whichever generation is newest. */
+  readonly learningResult?: { readonly kind: "note_overview" | "note_dynamic_artifact"; readonly artifactId: string; readonly taskId: string };
+  readonly learningView?: "overview" | "artifact" | "expansion" | "history";
   /** 唯一消费方 notebook-surface 只按 noteId 读当前版本；缺版本就如实为 null。 */
   readonly noteVersionId: string | null;
   readonly mode?: NoteBodyMode;

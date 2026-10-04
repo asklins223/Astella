@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LoaderCircle, Mic, Square } from "lucide-react";
+import { Download, LoaderCircle, Mic, Square } from "lucide-react";
 import { CompanionVoiceRecorder } from "../../companion/voice-recorder";
-import { transcribeRecording } from "../../companion/local-speech-recognition";
-import { createRequestMeta, requireWorkspaceEpoch, unwrapGatewayResult } from "../../../app/desktop-client";
+import { isAsrModelMissing, isLocalAsrReady, transcribeRecording } from "../../companion/local-speech-recognition";
+import { openVoiceModelSettings } from "../../companion/open-voice-model-settings";
+import { guideVoiceModelDownload } from "../../companion/voice-model-notifications";
+import { holdCompanionMicrophone } from "../../companion/companion-notification-voice";
+import { stopCompanionSpeech } from "../../../app/companion-voice-playback";
 import { microphoneAvailabilityCopy, probeMicrophone, type MicrophoneAvailability } from "../../voice-capability";
 
 const MAX_RECORDING_SECONDS = 60;
@@ -14,7 +17,7 @@ const MIN_TRANSCRIBE_MS = 200;
  * 这个交互此前**没有输入组件**：`voice_teachback` 只渲染一段"当前设备没有可用的
  * 语音输入"的阻塞文案，`voice` 载荷类型与录音器都在，但没人把声音送进去，于是
  * 换到语音作答对所有人都是死路。本组件补的就是这一截：
- * 录音 → 转写（本地优先、云兜底）→ 可校对 → 交给作答载荷。
+ * 录音 → 本机转写 → 可校对 → 交给作答载荷。
  *
  * 交互用「点一下开始、点一下结束」而不是伴星那边的 VAD 自动收尾：复述本身可能
  * 接近 `maxSeconds`，中途停顿是被允许的表达节奏，自动掐断会把话说一半截掉。
@@ -22,7 +25,6 @@ const MIN_TRANSCRIBE_MS = 200;
 
 export interface VoiceTeachbackValue {
   readonly confirmedTranscript: string;
-  readonly voiceArtifactRef?: string;
   readonly correctionMethod?: "none" | "re_recorded" | "manual_text_edit";
 }
 
@@ -41,7 +43,11 @@ export function VoiceTeachbackEditor({
   const [mic, setMic] = useState<MicrophoneAvailability | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [seconds, setSeconds] = useState(0);
+  const [modelMissing, setModelMissing] = useState(false);
   const recorderRef = useRef<CompanionVoiceRecorder | null>(null);
+  const operationRef = useRef(0);
+  const startingRef = useRef(false);
+  const releaseMicrophoneRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     onBusyChange(phase !== "idle");
@@ -80,38 +86,32 @@ export function VoiceTeachbackEditor({
     const recorder = recorderRef.current;
     if (!recorder) return;
     recorderRef.current = null;
+    const operation = operationRef.current;
     setPhase("transcribing");
-    const recording = await recorder.stop();
+    let recording;
+    try { recording = await recorder.stop(); } catch {
+      if (operation === operationRef.current) { setPhase("idle"); setNote("录音没能保存，可以再试一次。"); releaseMicrophoneRef.current?.(); releaseMicrophoneRef.current = null; }
+      return;
+    }
+    if (operation !== operationRef.current) return;
     if (!recording || recording.samples.length === 0) {
       setPhase("idle");
       setNote("没录到声音，可以再录一次，或者改用文本作答。");
+      releaseMicrophoneRef.current?.(); releaseMicrophoneRef.current = null;
       return;
     }
     if (recording.durationMs < MIN_TRANSCRIBE_MS) {
       setPhase("idle");
       setNote("这段太短了（不到 0.2 秒），再说长一点。");
+      releaseMicrophoneRef.current?.(); releaseMicrophoneRef.current = null;
       return;
     }
     try {
-      const epoch = await requireWorkspaceEpoch();
       const transcription = await transcribeRecording({
         sampleRate: recording.sampleRate,
         samples: recording.samples,
-        wav: recording.wav,
-        durationMs: recording.durationMs,
-        transcribeViaCloud: async () => {
-          const response = await window.ailearn.companion.voice.transcribe({
-            meta: createRequestMeta(epoch),
-            request: {
-              version: 1,
-              audioBase64: toBase64(new Uint8Array(recording.wav)),
-              durationMs: recording.durationMs,
-              language: "zh-CN",
-            },
-          });
-          return unwrapGatewayResult(response);
-        },
       });
+      if (operation !== operationRef.current) return;
       if (transcription.text.trim().length === 0) {
         setNote("这段录音没听出内容，再录一次长一点的说法试试。");
       } else {
@@ -120,36 +120,62 @@ export function VoiceTeachbackEditor({
       onChange({
         confirmedTranscript: transcription.text.trim(),
         correctionMethod: value.confirmedTranscript.trim() ? "re_recorded" : "none",
-        ...(transcription.voiceArtifactId ? { voiceArtifactRef: transcription.voiceArtifactId } : {}),
       });
     } catch (error) {
-      setNote(`转写没成功（${error instanceof Error ? error.name : "未知原因"}）。可以重录，或改用文本作答。`);
+      if (operation !== operationRef.current) return;
+      // 没装模型：这不是"这次没说好"，是这台设备还不能说话。给一个能走通的下一步，
+      // 并把按钮收起来——让人对着一个按下去只会被挡住的按钮反复点没有意义。
+      setModelMissing(isAsrModelMissing(error));
+      if (isAsrModelMissing(error)) guideVoiceModelDownload();
+      setNote(isAsrModelMissing(error)
+        ? "这台设备还没有语音识别模型，先下载再说话。"
+        : "这段没能转成文字，可以重录，或改用文本作答。");
     } finally {
-      setPhase("idle");
+      if (operation === operationRef.current) { setPhase("idle"); releaseMicrophoneRef.current?.(); releaseMicrophoneRef.current = null; }
     }
   }, [onChange, value.confirmedTranscript]);
 
   stopAndTranscribeRef.current = stopAndTranscribe;
 
   const start = useCallback(async () => {
+    if (startingRef.current || recorderRef.current) return;
+    startingRef.current = true;
+    const operation = ++operationRef.current;
     setNote(null);
-    const availability = await probeMicrophone();
-    setMic(availability);
-    if (availability.state !== "ready") return;
-    const recorder = new CompanionVoiceRecorder();
     try {
-      await recorder.start();
-    } catch (error) {
-      const name = error instanceof DOMException ? error.name : "UnknownError";
-      setMic({ state: "start-failed", errorName: name });
-      return;
-    }
-    recorderRef.current = recorder;
-    setSeconds(0);
-    setPhase("recording");
+      const ready = await isLocalAsrReady();
+      if (operation !== operationRef.current) return;
+      if (!ready) { setModelMissing(true); guideVoiceModelDownload(); return; }
+      setModelMissing(false);
+      const availability = await probeMicrophone();
+      if (operation !== operationRef.current) return;
+      setMic(availability);
+      if (availability.state !== "ready") return;
+      const recorder = new CompanionVoiceRecorder();
+      stopCompanionSpeech();
+      releaseMicrophoneRef.current = holdCompanionMicrophone();
+      try {
+        await recorder.start();
+      } catch (error) {
+        if (operation !== operationRef.current) return;
+        releaseMicrophoneRef.current?.(); releaseMicrophoneRef.current = null;
+        const name = error instanceof DOMException ? error.name : "UnknownError";
+        setMic({ state: "start-failed", errorName: name });
+        return;
+      }
+      if (operation !== operationRef.current) { void recorder.stop().catch(() => undefined); return; }
+      recorderRef.current = recorder;
+      setSeconds(0);
+      setPhase("recording");
+    } catch {
+      if (operation === operationRef.current) {
+        setNote("暂时读不到本机语音状态，请稍后再试。");
+        releaseMicrophoneRef.current?.(); releaseMicrophoneRef.current = null;
+      }
+    } finally { if (operation === operationRef.current) startingRef.current = false; }
   }, []);
 
-  useEffect(() => () => { void recorderRef.current?.stop(); }, []);
+  useEffect(() => () => { operationRef.current++; startingRef.current = false; void recorderRef.current?.stop().catch(() => undefined); recorderRef.current = null; releaseMicrophoneRef.current?.(); releaseMicrophoneRef.current = null; }, []);
 
   const blocked = mic !== null && mic.state !== "ready";
   const reason = mic ? microphoneAvailabilityCopy(mic) : "";
@@ -165,7 +191,7 @@ export function VoiceTeachbackEditor({
           <button
             type="button"
             className="button"
-            disabled={phase === "transcribing" || blocked}
+            disabled={phase === "transcribing"}
             onClick={() => void start()}
           >
             {phase === "transcribing" ? <LoaderCircle size={14} aria-hidden="true" /> : <Mic size={14} aria-hidden="true" />}
@@ -173,6 +199,16 @@ export function VoiceTeachbackEditor({
           </button>
         )}
         <small className="meta">单段最长 {recordingCapSeconds} 秒，到点自动转写；转写结果可以先改字再交。</small>
+        {/**
+         * 「开始说」被挡住时，紧挨着它给出路：这台设备还不能说话 →
+         * 去装那个可选的模型。放在同一行而不是另起一块，是因为它替代的正是
+         * 左边那颗按下去只会被挡住的按钮。
+         */}
+        {modelMissing ? (
+          <button type="button" className="button run-voice-input__model" onClick={openVoiceModelSettings}>
+            <Download size={14} aria-hidden="true" />去设置里下载识别模型
+          </button>
+        ) : null}
       </div>
       {blocked ? <p className="run-voice-input__block" role="alert">{reason}</p> : null}
       {note ? <p className="run-voice-input__note" role="status">{note}</p> : null}
@@ -187,14 +223,4 @@ export function VoiceTeachbackEditor({
       </label>
     </div>
   );
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let binary = "";
-  // 一次展开整个 WAV 会撑爆调用栈，分块编码。
-  const chunkSize = 0x8_000;
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
-  }
-  return btoa(binary);
 }

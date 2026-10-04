@@ -71,6 +71,7 @@ const ttsBodySchema = z.object({
   text: z.string().min(1).max(2000),
   /** 朗读只允许已审核的固定 voice；扩展需新增 profile mapping。 */
   voice: z.literal("zh-CN-XiaoxiaoNeural").optional(),
+  purpose: z.literal("notification").optional(),
 });
 
 const COMPANION_ASR_MODEL = "FunAudioLLM/SenseVoiceSmall";
@@ -501,7 +502,9 @@ userId: session.userId,
         // 任何 `withWorkspaceTransaction` 里，所以这里应当恒为 undefined——恒真正是
         // 它该有的样子：它防的是将来有人把合成搬进某个事务。
         scope: { workspaceId: req.session!.workspaceId, userId: req.session!.userId, currentActiveTransaction: currentApiWorkspaceTransaction },
-        selection: await resolveSelectionForSynthesis(req.session!, req.log),
+        selection: body.purpose === "notification"
+          ? { engine: "edge", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenVoice: "", explicit: true }
+          : await resolveSelectionForSynthesis(req.session!, req.log),
         onQwenFallback: (error) => req.log.warn({ err: error }, "qwen tts failed; falling back to edge-tts"),
       });
       return reply

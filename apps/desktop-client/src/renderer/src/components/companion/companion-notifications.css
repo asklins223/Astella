@@ -1,0 +1,71 @@
+.companion-notifications {
+  position: fixed;
+  z-index: 75;
+  width: min(326px, calc(100vw - 24px));
+  color: #3d514a;
+  font-family: inherit;
+  pointer-events: none;
+}
+.companion-notifications[hidden] { display: none; }
+.companion-notifications[data-collapsed="true"] { width: max-content; max-width: calc(100vw - 24px); }
+.companion-notifications button { pointer-events: auto; cursor: pointer; }
+.companion-notifications button:disabled { cursor: default; opacity: .52; }
+.companion-notifications button { transform: translateY(var(--tactile-drop, 0px)) scale(var(--tactile-press, 1)); }
+.companion-notification-paper {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  max-height: min(460px, calc(100vh - 68px));
+  padding: 15px 17px 11px;
+  border: 1.5px solid #fffdf3;
+  border-radius: 22px 22px 22px 7px;
+  background: #fffaf0;
+  box-shadow: 0 4px 0 #cfddc8, 0 12px 30px #26392c20;
+  transform-origin: right bottom;
+  transform: translateY(calc((1 - var(--tactile-page, 1)) * 9px)) scale(calc(.965 + var(--tactile-page, 1) * .035));
+  opacity: var(--tactile-page, 1);
+}
+.companion-notifications[data-side="right"] .companion-notification-paper { border-radius: 22px 22px 7px 22px; transform-origin: left bottom; }
+.companion-notifications[data-side="detached"] .companion-notification-paper { border-radius: 22px; }
+.companion-notification-paper__header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: #647e6d; font-size: 11px; font-weight: 650; letter-spacing: .035em; }
+.companion-notification-paper__header > span:nth-child(2), .companion-notification-paper__header > strong { flex: 1; min-width: 0; }
+.companion-notification-paper__seal { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 12px; background: #e0efdc; color: #548469; flex: 0 0 auto; }
+.companion-notification-paper[data-kind="task"] .companion-notification-paper__seal { background: #ece4fa; color: #8a73a1; }
+.companion-notification-paper[data-kind="review"] .companion-notification-paper__seal { background: #fbebc6; color: #9c8450; }
+.companion-notification-paper__header button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #7b8b7d; }
+.companion-notification-paper__header button:hover { background: #e9eedf; }
+.companion-notification-paper__content { overflow: auto; min-height: 0; overscroll-behavior: contain; }
+.companion-notification-paper__content h2 { margin: 0 0 8px; font-family: inherit; font-size: 17px; font-weight: 750; line-height: 1.45; letter-spacing: -.025em; color: #3a5546; overflow-wrap: anywhere; }
+.companion-notification-paper__content p { margin: 0; font-size: 13px; line-height: 1.85; overflow-wrap: anywhere; white-space: pre-line; }
+.companion-notification-paper__actions { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+.companion-notification-paper__actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; padding: 7px 12px; border: 0; border-radius: 12px; background: #e2efd9; box-shadow: 0 2px 0 #b7ceb1; color: #42644c; font-size: 12px; font-weight: 700; }
+.companion-notification-paper__actions button[data-kind="cancel"] { background: #f1eee3; color: #6c7566; box-shadow: 0 2px 0 #dddaca; }
+.companion-notification-paper__actions button[data-kind="navigate"] { background: #f6dcc7; color: #815b42; box-shadow: 0 2px 0 #ddbaa0; }
+.companion-notification-paper__actions button:hover { filter: brightness(1.025); }
+.companion-notification-paper__footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 14px; font-size: 10px; color: #7f8d77; }
+.companion-notification-paper__footer button { display: inline-flex; align-items: center; gap: 5px; padding: 3px 0; border: 0; background: transparent; color: inherit; font-size: 10px; text-align: left; }
+.companion-notification-paper__voice { min-width: 0; flex: 1; }
+.companion-notification-paper__voice span { min-width: 0; }
+.companion-notification-paper__error { margin: 10px 0 0; color: #a45c42; font-size: 12px; line-height: 1.6; }
+.companion-notification-paper__progress { margin-top: 12px; }
+.companion-notification-paper__progress > span { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; color: #70806a; font-size: 11px; }
+.companion-notification-paper__progress progress { display: block; width: 100%; height: 7px; border: 0; border-radius: 8px; overflow: hidden; background: #e6ebd9; }
+.companion-notification-paper__progress progress::-webkit-progress-bar { background: #e6ebd9; border-radius: 8px; }
+.companion-notification-paper__progress progress::-webkit-progress-value { background: #8ab287; border-radius: 8px; }
+.companion-notifications__rail { display: flex; align-items: center; justify-content: flex-end; gap: 7px; margin-top: 10px; }
+.companion-notifications__badge, .companion-notifications__next { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 5px 10px; border: 1px solid #ffffff90; border-radius: 20px; background: #eef4df; box-shadow: 0 2px 0 #bacdad; color: #546d55; font-size: 11px; }
+.companion-notifications__badge b { min-width: 17px; padding: 1px 4px; border-radius: 8px; background: #769b72; color: #fffef6; text-align: center; font-size: 10px; }
+.companion-notifications__next { background: #fff8e8; color: #7f8367; }
+.companion-notification-inbox { border-radius: 22px; padding-bottom: 10px; }
+.companion-notification-inbox__list { overflow: auto; overscroll-behavior: contain; }
+.companion-notification-inbox__list > button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 11px 7px; border: 0; border-radius: 10px; background: transparent; text-align: left; color: #647461; }
+.companion-notification-inbox__list > button:hover { background: #edf1df; }
+.companion-notification-inbox__list > button[data-unread="true"] { color: #3f6048; }
+.companion-notification-inbox__list strong { display: block; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.companion-notification-inbox__list small { display: block; margin-top: 3px; font-size: 10px; color: #85917b; }
+@media (prefers-reduced-motion: reduce) {
+  .companion-notifications button, .companion-notification-paper { transform: none; opacity: 1; }
+}
+@media (prefers-contrast: more) {
+  .companion-notification-paper { border-color: #526d4e; color: #223e2b; }
+}

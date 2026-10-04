@@ -45,7 +45,7 @@ export async function tickCompanionMemoryOrganizeScheduler(): Promise<void> {
     // 不推进 lastTickAt：下一轮立刻重试。这与「兜底清理」类调度器相反，
     // 理由是那个文件头写着的 2026-10-02 事故——持续失败又没有节流会打满日志。
     logger.warn(
-      { err: err instanceof Error ? err.message : String(err) },
+      { err },
       "companion memory organize enqueue failed; retrying next tick",
     );
   }

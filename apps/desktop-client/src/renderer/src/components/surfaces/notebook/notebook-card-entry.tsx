@@ -13,14 +13,16 @@ export function NotebookCardEntry(props: {
   readonly busy?: boolean;
   readonly disabled?: boolean;
   readonly title: string;
+  /** 这一下是**另开一批**时的说法。没有它就是"生成学习卡"。 */
   readonly startLabel?: string;
   readonly partialSourceNotice?: string | null;
   readonly onClick: () => void;
   readonly triggerRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const state = props.status ? STATES[props.status] ?? "查看状态" : props.busy ? "创建中" : null;
-  // Status is supplied only when this entry opens that run. New source and
-  // stopped-run entries use a start label instead.
+  // Status is supplied only when this entry opens that run. A new-source or
+  // stopped-run entry says what it starts instead, so the two destinations never
+  // borrow each other's wording.
   const destinationLabel = props.status && props.status !== "closed_without_activation"
     ? cardGenerationEntryLabel(props.status)
     : props.startLabel ?? "生成学习卡";

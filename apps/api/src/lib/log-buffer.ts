@@ -14,6 +14,29 @@
  * 这些字段——比解析 stdout 的 JSON 文本可靠（dev 下 stdout 走 pino-pretty，
  * 根本不是 JSON）。
  *
+ * ## 两条环：应用日志与请求日志分开
+ *
+ * 第一版把两者塞进同一条 500 条环里，后果是**应用日志被请求日志挤没**：
+ * Fastify 每个请求打两条（incoming request / request completed），面板自己的
+ * 轮询就足以在几分钟内把整条环刷成请求噪音——实测 500 条里应用日志 0 条。
+ * 而「日志」页存在的意义恰恰是看应用日志（scope / runId / 报错）。
+ *
+ * 所以拆成两条独立的有界环：
+ *   - {@link adminLogBuffer}：应用日志，容量 500（`ADMIN_LOG_BUFFER_SIZE` 可调）；
+ *   - {@link adminRequestLogBuffer}：请求日志，容量 300。
+ * 面板因此能同时给出「应用日志流」与「访问日志表」两个视图，互不挤占。
+ *
+ * ## 请求日志要投影，不能原样存
+ *
+ * 钩子拿到的是**序列化前**的原始对象：`req` / `res` 是 Fastify 的请求与应答
+ * 实例，{@link normalizeValue} 只能给出 `{__type:"_request"}`——面板上就是
+ * `req=[object Object]`，一条读不出任何东西的日志。这里在捕获时做**白名单
+ * 投影**：从应答实例读回其 request（method / url / id），连同 statusCode 与
+ * elapsedTime 压平成一行访问日志。不复制对象、不碰 headers / body。
+ *
+ * 只有「request completed」会入库；「incoming request」被刻意丢掉——两条日志
+ * 描述的是同一次请求，都留下会让访问日志表里一半的行没有结果。
+ *
  * ## 边界：它不是审计日志
  *
  * 这是一个**有界的最近窗口**，进程重启即清空，不落盘、不可检索、不导出。
@@ -50,7 +73,12 @@ export interface CapturedLog {
   fields: Record<string, unknown>;
 }
 
+export type LogListener = (entry: CapturedLog) => void;
+
 export const DEFAULT_CAPACITY = 500;
+
+/** 请求日志环的容量。比应用日志小：它的读法是「扫一眼最近的请求」，不是检索。 */
+export const DEFAULT_REQUEST_CAPACITY = 300;
 
 /**
  * 字段值的最大字符串长度。
@@ -88,11 +116,81 @@ function normalizeValue(value: unknown): unknown {
   return String(value);
 }
 
+/* ── Fastify 请求 / 应答的受控投影（访问日志一行） ─────────────────────── */
+
+export interface ProjectedRequestFields {
+  method: string;
+  url: string;
+  reqId: string | null;
+}
+
+/**
+ * 从 Fastify 请求实例读出 method / url / id。
+ *
+ * 用**形状**判定而不是构造器名：构造器名（`_Request`）是私有实现细节，
+ * 跨 Fastify 版本会漂；而 method + url 同时是字符串这件事，一个普通对象
+ * 几乎不可能碰巧满足。
+ */
+export function projectRequestFields(value: unknown): ProjectedRequestFields | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as { method?: unknown; url?: unknown; id?: unknown };
+  if (typeof candidate.method !== "string" || typeof candidate.url !== "string") return null;
+  return {
+    method: candidate.method,
+    url: candidate.url,
+    reqId: typeof candidate.id === "string" ? candidate.id : null,
+  };
+}
+
+/** 完成日志的投影形状：一行访问日志的全部列。 */
+export interface ProjectedCompletion {
+  method: string | null;
+  url: string | null;
+  reqId: string | null;
+  statusCode: number;
+  durationMs: number | null;
+}
+
+/**
+ * 从 Fastify 应答实例投影出完成日志：`reply.request` 带出 method / url，
+ * reply 自己给 statusCode 与 elapsedTime（毫秒，Fastify 在 onSend 阶段写入）。
+ *
+ * 读不到 request 时仍然返回（statusCode 在，行就是有用的）；读不到
+ * statusCode 才放弃——没有结果的访问日志行没有意义。
+ */
+export function projectCompletedRequest(reply: unknown): ProjectedCompletion | null {
+  if (!reply || typeof reply !== "object") return null;
+  const candidate = reply as { statusCode?: unknown; elapsedTime?: unknown; request?: unknown };
+  if (typeof candidate.statusCode !== "number") return null;
+  const request = projectRequestFields(candidate.request);
+  const elapsed = typeof candidate.elapsedTime === "number" && Number.isFinite(candidate.elapsedTime)
+    ? Math.round(candidate.elapsedTime * 10) / 10
+    : null;
+  return {
+    method: request?.method ?? null,
+    url: request?.url ?? null,
+    reqId: request?.reqId ?? null,
+    statusCode: candidate.statusCode,
+    durationMs: elapsed,
+  };
+}
+
+/** 完成投影 + Fastify 自带的 responseTime（两个耗时来源取先有的那个）。 */
+function projectCompletion(resValue: unknown, responseTime: unknown): ProjectedCompletion | null {
+  const projected = projectCompletedRequest(resValue);
+  if (!projected) return null;
+  if (projected.durationMs === null && typeof responseTime === "number" && Number.isFinite(responseTime)) {
+    projected.durationMs = Math.round(responseTime * 10) / 10;
+  }
+  return projected;
+}
+
 export class LogRingBuffer {
   readonly capacity: number;
   #entries: CapturedLog[] = [];
   #next: number;
   #seq = 0;
+  #listeners = new Set<LogListener>();
 
   constructor(capacity: number = DEFAULT_CAPACITY) {
     this.capacity = Math.max(1, Math.floor(capacity));
@@ -108,14 +206,23 @@ export class LogRingBuffer {
       kept[key] = normalizeValue(value);
       taken += 1;
     }
-    this.#entries[this.#next] = {
+    const entry: CapturedLog = {
       seq: ++this.#seq,
       time: time.toISOString(),
       level: levelName(level),
       msg: typeof msg === "string" ? msg : String(msg),
       fields: kept,
     };
+    this.#entries[this.#next] = entry;
     this.#next = (this.#next + 1) % this.capacity;
+    for (const listener of this.#listeners) {
+      // 订阅者（SSE 连接）抛错不能影响日志落地，也不能拖垮其它订阅者。
+      try {
+        listener(entry);
+      } catch {
+        /* 单个订阅者失败只丢它自己 */
+      }
+    }
   }
 
   get size(): number {
@@ -140,6 +247,19 @@ export class LogRingBuffer {
       if (ordered.length >= limit) break;
     }
     return ordered;
+  }
+
+  /**
+   * 订阅新条目（SSE 实时流用）。返回退订函数。
+   *
+   * 只推送给**此刻之后**产生的条目：订阅者先取 `recent()` 拿历史，再靠 seq
+   * 去重拼接，避免「补历史」与「推实时」之间出现盲区。
+   */
+  subscribe(listener: LogListener): () => void {
+    this.#listeners.add(listener);
+    return () => {
+      this.#listeners.delete(listener);
+    };
   }
 
   clear(): void {
@@ -175,6 +295,9 @@ function resolveCapacity(): number {
 
 export const adminLogBuffer = new LogRingBuffer(resolveCapacity());
 
+/** 请求（访问）日志环。见模块头「两条环」一节。 */
+export const adminRequestLogBuffer = new LogRingBuffer(DEFAULT_REQUEST_CAPACITY);
+
 /**
  * pino `hooks.logMethod` 的实现。
  *
@@ -182,11 +305,12 @@ export const adminLogBuffer = new LogRingBuffer(resolveCapacity());
  * 钩子的常见写法是 `method.apply(this, args)`。
  *
  * 捕获本身刻意不做任何防护：缓冲写失败绝不能影响日志落地，所以 `push` 用的是
- * 纯内存操作，没有 IO。`try` 只围住捕获本身，`method.apply` 在 `finally` 之外
- * 的位置——不，更正：它必须在捕获失败时**依然**被调用，因此放在 try 之后而非其中。
+ * 纯内存操作，没有 IO。`try` 只围住捕获本身，`method.apply` 在 try 之后的位置，
+ * 保证捕获失败时日志依然落地。
  */
 export function createLogCaptureHook(
   buffer: LogRingBuffer = adminLogBuffer,
+  requestBuffer: LogRingBuffer = adminRequestLogBuffer,
 ): NonNullable<NonNullable<pino.LoggerOptions["hooks"]>["logMethod"]> {
   return function logCaptureHook(this: unknown, args, method, level) {
     try {
@@ -229,7 +353,21 @@ export function createLogCaptureHook(
         msg = typeof second === "string" ? second : "(no message)";
         fields = Object.assign({}, ...objects([...tail, second]));
       }
-      buffer.push(level, msg, fields);
+
+      // 完成日志进请求环（投影成一行访问日志）；「incoming request」只有 req、
+      // 没有结果，丢掉。两者都不是 → 应用日志。判定理由见模块头。
+      const completion = projectCompletion(fields.res, fields.responseTime);
+      if (completion) {
+        requestBuffer.push(level, msg, {
+          method: completion.method,
+          url: completion.url,
+          reqId: completion.reqId,
+          statusCode: completion.statusCode,
+          durationMs: completion.durationMs,
+        });
+      } else if (!projectRequestFields(fields.req)) {
+        buffer.push(level, msg, fields);
+      }
     } catch {
       // 捕获失败不得影响日志落地——这里只是"这次没抓到"。
     }

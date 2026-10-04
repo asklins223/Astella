@@ -2,6 +2,7 @@ import type { CompanionAccountPatch } from "@ailearn/shared/companion-shell-cont
 import { ArrowUpRight,BookOpen } from "lucide-react";
 import { Activity,useEffect,useRef,useState,type ReactNode } from "react";
 import { useRoomStore } from "../../../app/room-store";
+import { SETTINGS_ATTENTION_VOICE_MODEL } from "../../companion/open-voice-model-settings";
 import { COMPANION_AGENT_PERMISSION_OPTIONS,COMPANION_INTERVENTION_OPTIONS,COMPANION_PRESENCE_OPTIONS,companionInterventionHint,quietHoursPatch,quietHoursWithBoundary } from "../../companion/companion-account-presence";
 import { HudSegmented,HudSwitch } from "../../hud/HudControls";
 import { SettingsCompanionData } from "./settings-companion-data";
@@ -40,6 +41,15 @@ function QuietHoursEditor(props: { value: NonNullable<CompanionAccountPatch["qui
 export function SettingsCompanionPanel(props: { onReadable: (value: SettingsReadable) => void; capabilities: ReactNode }) {
   const [chapter, setChapter] = useState<Chapter>("rules");
   const rootRef = useRef<HTMLDivElement>(null);
+  const attention = useRoomStore(state => state.settingsAttention);
+  useEffect(() => {
+    if (attention !== SETTINGS_ATTENTION_VOICE_MODEL) return;
+    if (chapter !== "voice") { setChapter("voice"); return; }
+    const card = rootRef.current?.querySelector<HTMLElement>(".settings-voice-model");
+    card?.scrollIntoView({ block: "center", behavior: "instant" });
+    card?.focus({ preventScroll: true });
+    useRoomStore.getState().setSettingsAttention(null);
+  }, [attention, chapter]);
   const motionMode = useRoomStore(state => state.motionMode);
   const reducedMotion = useRoomStore(state => state.reducedMotion);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);

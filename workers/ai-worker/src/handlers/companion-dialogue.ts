@@ -100,6 +100,9 @@ import {
   isCompanionMemoryContextEnabled,
   enqueueCompanionMemoryJobs,
   readConversationSummary,
+  readCompanionHistoryRows,
+  countCompanionHistoryMessages,
+  companionHistoryText,
   persistCompanionContextHandoffSnapshot,
   GROUNDED_TUTOR_PROMPT_ID,
   computeGroundedTutorPromptSha256,
@@ -378,36 +381,21 @@ export async function runCompanionDialogue(
         const currentUserSeq = userRows[0]?.seq ?? "0";
         // 先在 SQL 排除非对话与失败消息，再按模型真实采用的字符预算裁尾；摘要水位
         // 必须从这份相同的可见尾部计算，不能让 system 注记占掉最近消息名额。
-        const historyRows = await tx.execute<{ seq: string; role: string; kind: string; blocks: unknown }>(sql`
-          SELECT seq::text AS seq, role, kind, blocks FROM companion_messages
-          WHERE conversation_id = ${run.conversation_id}
-            AND id <> ${run.user_message_id}
-            AND role IN ('user', 'assistant')
-            AND seq < ${currentUserSeq}::bigint
-            AND kind NOT IN ('cancelled', 'error')
-          ORDER BY seq DESC LIMIT ${REPLAY_WINDOW_MESSAGES}
-        `);
+        const historyRows = await readCompanionHistoryRows(tx, run.conversation_id, {
+          beforeSeq: currentUserSeq, limit: REPLAY_WINDOW_MESSAGES,
+        });
         const recentWithSeq = historyRows
           .slice()
           .reverse()
           .map((m) => ({
             seq: m.seq,
             role: m.role as "user" | "assistant",
-            text: textOfCompanionBlocks(m.blocks),
+            text: companionHistoryText(m),
           }));
         const visibleRecent = boundCompanionRecentHistory(recentWithSeq);
         const recentMessages = visibleRecent.map(({ role, text }) => ({ role, text }));
         const historyStartSeq = visibleRecent[0]?.seq ?? currentUserSeq;
-        const historyCountRows = await tx.execute<{ message_count: string }>(sql`
-          SELECT count(*)::text AS message_count
-          FROM companion_messages
-          WHERE conversation_id = ${run.conversation_id}
-            AND id <> ${run.user_message_id}
-            AND role IN ('user', 'assistant')
-            AND seq < ${currentUserSeq}::bigint
-            AND kind NOT IN ('cancelled', 'error')
-        `);
-        const totalHistoryMessages = BigInt(historyCountRows[0]?.message_count ?? "0");
+        const totalHistoryMessages = await countCompanionHistoryMessages(tx, run.conversation_id, currentUserSeq);
         const clippedMessageCount = Number(
           totalHistoryMessages > BigInt(visibleRecent.length)
             ? totalHistoryMessages - BigInt(visibleRecent.length)

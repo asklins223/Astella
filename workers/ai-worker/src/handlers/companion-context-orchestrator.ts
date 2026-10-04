@@ -35,7 +35,7 @@ export interface ContextMemoryItem {
 }
 
 export interface ContextAssemblyResult {
-  residentMemories: { kind: string; content: string; epistemicStatus?: string | null }[];
+  residentMemories: { kind: string; content: string; epistemicStatus?: string | null; userConfirmed?: boolean }[];
   memoryDirectory: CompanionMemoryDirectoryEntry[];
   /** §4.6.10 手册目录：只有标题与触发条件，正文按 id 展开。 */
   playbookCatalog: PlaybookCatalogEntry[];
@@ -193,6 +193,7 @@ export async function assembleCompanionContext(
   const residentMemories = budgetedItems.map((item) => ({
     kind: item.kind,
     content: item.content,
+    userConfirmed: item.userConfirmed,
     // 认识状态随正文进上下文：有争议/已替代的条目要标出来，
     // 否则她会把它们当定论复述（§4.5.4 / §4.6.3「停止自动作确定陈述」）。
     epistemicStatus: item.epistemicStatus,

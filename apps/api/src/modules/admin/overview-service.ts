@@ -24,7 +24,7 @@ import {
   isMemoryVectorRebuildEnabled,
   isPetProfileEnabled,
 } from "../../config/learning-companion-flags.ts";
-import { adminLogBuffer } from "../../lib/log-buffer.ts";
+import { adminLogBuffer, adminRequestLogBuffer } from "../../lib/log-buffer.ts";
 import { CAPABILITY_LABELS } from "./labels.ts";
 
 export interface CapabilityFlagView {
@@ -49,7 +49,11 @@ export interface OverviewSnapshot {
   database: { poolMax: number | null };
   capabilities: CapabilityFlagView[];
   config: { path: string; exists: boolean };
-  logBuffer: { capacity: number; size: number };
+  /** 两条环分开报数：应用日志与请求日志（见 lib/log-buffer.ts 模块头）。 */
+  logBuffer: {
+    app: { capacity: number; size: number };
+    requests: { capacity: number; size: number };
+  };
 }
 
 /** 进程启动时刻。取模块加载时间近似——不需要为此多存一个全局。 */
@@ -128,8 +132,8 @@ export async function readOverview(configPath: string, configExists: boolean): P
     capabilities,
     config: { path: configPath, exists: configExists },
     logBuffer: {
-      capacity: adminLogBuffer.capacity,
-      size: adminLogBuffer.size,
+      app: { capacity: adminLogBuffer.capacity, size: adminLogBuffer.size },
+      requests: { capacity: adminRequestLogBuffer.capacity, size: adminRequestLogBuffer.size },
     },
   };
 }

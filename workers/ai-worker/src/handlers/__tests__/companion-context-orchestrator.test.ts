@@ -100,7 +100,7 @@ test("普通对话只注入 resident 正文和 active 元数据目录", async ()
 
   // epistemicStatus 随正文一起进上下文（40 §4.5.4）：有争议/已替代的条目
   // 必须能被标出来，否则她会把它们当定论复述。`null` = 有据，不用标。
-  assert.deepEqual(context.residentMemories, [{ kind: "goal", content: "本周想搞懂光合作用", epistemicStatus: null }]);
+  assert.deepEqual(context.residentMemories, [{ kind: "goal", content: "本周想搞懂光合作用", epistemicStatus: null, userConfirmed: true }]);
   assert.deepEqual(context.memoryDirectory, [{
     memoryId: activeId,
     kind: "preference",

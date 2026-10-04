@@ -2,13 +2,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * 本地 ASR 路由的失败路径（2026-09-19）。
+ * 本地 ASR 路由（2026-10：只此一条路）。
  *
  * 这一层最贵的错法是「安静地慢」：worker 脚本加载失败时只走 onerror，不会发
- * ready/fatal 消息，于是 init 要等满 60 秒超时，用户点完「说完了」白等一分钟才
- * 落到云通道。这里锁住两件事——崩溃即刻回落，以及死掉的 worker 不被复用。
+ * ready/fatal 消息，于是 init 要等满 60 秒超时，用户点完「说完了」白等一分钟。
+ * 这里锁三件事——崩溃即刻失败、死掉的 worker 不被复用、空闲到点必须收摊。
+ *
+ * 还锁了**没有第二条路**这件事本身：模型没装时抛的是 `AsrModelMissingError`，
+ * 而不是某个"先发出去试试"的兜底。将来谁又想加一条云通道，这条会红。
  */
-
 class FakeWorker {
   static instances: FakeWorker[] = [];
   onmessage: ((event: MessageEvent) => void) | null = null;
@@ -37,10 +39,35 @@ class FakeWorker {
   }
 }
 
-function stubRuntime(): void {
+const MOUNT_URL = "ailearn-app://bundle/device/asr/";
+
+function snapshot(status: "absent" | "downloading" | "ready" | "error") {
+  return {
+    version: 1,
+    modelId: "sensevoice-int8-zh-en-ja-ko-yue",
+    mountUrl: MOUNT_URL,
+    status,
+    expectedBytes: 239_549_735,
+    receivedBytes: status === "ready" ? 239_549_735 : 0,
+    installedBytes: status === "ready" ? 239_549_735 : 0,
+    files: [],
+    failure: null,
+    installedAt: null,
+  } as never;
+}
+
+function stubRuntime(status: "absent" | "downloading" | "ready" | "error" = "ready"): void {
   FakeWorker.instances = [];
   vi.stubGlobal("Worker", FakeWorker);
-  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true })));
+  vi.stubGlobal("window", Object.assign(globalThis.window, {
+    ailearn: {
+      companion: {
+        voice: {
+          asrModel: { getState: vi.fn(async () => ({ ok: true, data: snapshot(status), meta: {} })) },
+        },
+      },
+    },
+  }));
   vi.resetModules();
 }
 
@@ -48,58 +75,67 @@ async function loadModule() {
   return import("../local-speech-recognition");
 }
 
-const args = (transcribeViaCloud: () => Promise<{ text: string; voiceArtifactId: string }>) => ({
-  sampleRate: 16_000,
-  samples: new Float32Array(1_600),
-  wav: new ArrayBuffer(8),
-  durationMs: 300,
-  transcribeViaCloud,
-});
+const args = () => ({ sampleRate: 16_000, samples: new Float32Array(1_600) });
 
 describe("local speech recognition routing", () => {
-  beforeEach(stubRuntime);
+  beforeEach(() => stubRuntime());
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
-  it("falls back to the cloud route immediately when the worker fails to load", async () => {
-    const { transcribeRecording } = await loadModule();
-    const cloud = vi.fn(async () => ({ text: "云端结果", voiceArtifactId: "va-1" }));
+  it("refuses to recognise without an installed model and never reaches for the network", async () => {
+    stubRuntime("absent");
+    const { transcribeRecording, isAsrModelMissing } = await loadModule();
     const started = Date.now();
-    const pending = transcribeRecording(args(cloud));
 
-    await vi.waitFor(() => expect(FakeWorker.instances).toHaveLength(1));
-    FakeWorker.instances[0]!.failLoad();
-
-    const result = await pending;
-    expect(result).toEqual({ text: "云端结果", route: "cloud", voiceArtifactId: "va-1" });
-    expect(cloud).toHaveBeenCalledTimes(1);
-    // 60s 的 init 超时意味着这里会挂满一分钟；崩溃必须当场打断它。
+    await expect(transcribeRecording(args())).rejects.toSatisfy((error: unknown) => isAsrModelMissing(error));
+    // 一个 worker 都不该被拉起：模型都没有，拉引擎只是白占几百 MB。
+    expect(FakeWorker.instances).toHaveLength(0);
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
-  it("discards the crashed worker so the next attempt spawns a fresh one", async () => {    const { transcribeRecording } = await loadModule();
-    const cloud = vi.fn(async () => ({ text: "云端", voiceArtifactId: "va-2" }));
+  it("treats a half-finished or failed download as \"not installed\" too", async () => {
+    for (const status of ["downloading", "error"] as const) {
+      stubRuntime(status);
+      const { transcribeRecording, isAsrModelMissing } = await loadModule();
+      await expect(transcribeRecording(args())).rejects.toSatisfy((error: unknown) => isAsrModelMissing(error));
+      expect(FakeWorker.instances).toHaveLength(0);
+    }
+  });
 
-    const first = transcribeRecording(args(cloud));
+  it("hands the worker the mount URL the main process reported, not a hard-coded path", async () => {
+    const { transcribeRecording } = await loadModule();
+    const pending = transcribeRecording(args());
+    await vi.waitFor(() => expect(FakeWorker.instances).toHaveLength(1));
+    const worker = FakeWorker.instances[0]!;
+    expect(worker.posted[0]).toEqual({ type: "init", mountUrl: MOUNT_URL });
+    worker.emit({ type: "ready" });
+    await vi.waitFor(() => expect(worker.posted.some((message) => message.type === "decode")).toBe(true));
+    const decode = worker.posted.find((message) => message.type === "decode")!;
+    worker.emit({ type: "result", id: decode.id, text: "本地结果" });
+    await expect(pending).resolves.toEqual({ text: "本地结果", route: "local" });
+  });
+
+  it("fails at once when the worker fails to load, and never reuses the dead one", async () => {
+    const { transcribeRecording } = await loadModule();
+
+    const first = transcribeRecording(args());
     await vi.waitFor(() => expect(FakeWorker.instances).toHaveLength(1));
     const dead = FakeWorker.instances[0]!;
     dead.failLoad();
-    await first;
+    await expect(first).rejects.toThrow(/crashed/);
     expect(dead.terminated).toBe(true);
 
-    const second = transcribeRecording(args(cloud));
+    const second = transcribeRecording(args());
     await vi.waitFor(() => expect(FakeWorker.instances).toHaveLength(2));
     const live = FakeWorker.instances[1]!;
+    expect(live).not.toBe(dead);
     live.emit({ type: "ready" });
-
     await vi.waitFor(() => expect(live.posted.some((message) => message.type === "decode")).toBe(true));
     const decode = live.posted.find((message) => message.type === "decode")!;
     live.emit({ type: "result", id: decode.id, text: "本地结果" });
-
-    await expect(second).resolves.toEqual({ text: "本地结果", route: "local", voiceArtifactId: null });
-    expect(cloud).toHaveBeenCalledTimes(1);
+    await expect(second).resolves.toEqual({ text: "本地结果", route: "local" });
   });
 
   /**
@@ -116,9 +152,8 @@ describe("local speech recognition routing", () => {
         await vi.advanceTimersByTimeAsync(ms);
       };
       const { transcribeRecording } = await loadModule();
-      const cloud = vi.fn(async () => ({ text: "云端", voiceArtifactId: "va-3" }));
 
-      const first = transcribeRecording(args(cloud));
+      const first = transcribeRecording(args());
       await flush();
       expect(FakeWorker.instances).toHaveLength(1);
       const worker = FakeWorker.instances[0]!;
@@ -136,7 +171,7 @@ describe("local speech recognition routing", () => {
       await flush(90_000 - 89_000 + 1_000);
       expect(worker.terminated).toBe(true);
 
-      const second = transcribeRecording(args(cloud));
+      const second = transcribeRecording(args());
       await flush();
       expect(FakeWorker.instances).toHaveLength(2);
       const next = FakeWorker.instances[1]!;
@@ -147,7 +182,6 @@ describe("local speech recognition routing", () => {
       expect(nextDecode).toBeTruthy();
       next.emit({ type: "result", id: nextDecode!.id, text: "第二句" });
       await expect(second).resolves.toMatchObject({ text: "第二句", route: "local" });
-      expect(cloud).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

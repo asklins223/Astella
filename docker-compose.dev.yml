@@ -122,6 +122,10 @@ services:
     volumes:
       - ./apps/api/src:/app/src
       - ./packages/shared:/app/packages/shared
+      - ./packages/agent-core/src:/app/packages/agent-core/src
+      - ./packages/agent-core/package.json:/app/packages/agent-core/package.json:ro
+      - ./packages/agent-host/src:/app/packages/agent-host/src
+      - ./packages/agent-host/package.json:/app/packages/agent-host/package.json:ro
     command: ["npm", "run", "db:migrate"]
     networks:
       - ailearn_net
@@ -145,6 +149,10 @@ services:
     volumes:
       - ./apps/api/src:/app/src
       - ./packages/shared:/app/packages/shared
+      - ./packages/agent-core/src:/app/packages/agent-core/src
+      - ./packages/agent-core/package.json:/app/packages/agent-core/package.json:ro
+      - ./packages/agent-host/src:/app/packages/agent-host/src
+      - ./packages/agent-host/package.json:/app/packages/agent-host/package.json:ro
     command: ["npm", "run", "db:seed"]
     networks:
       - ailearn_net
@@ -263,6 +271,10 @@ services:
     volumes:
       - ./apps/api/src:/app/src
       - ./packages/shared:/app/packages/shared
+      - ./packages/agent-core/src:/app/packages/agent-core/src
+      - ./packages/agent-core/package.json:/app/packages/agent-core/package.json:ro
+      - ./packages/agent-host/src:/app/packages/agent-host/src
+      - ./packages/agent-host/package.json:/app/packages/agent-host/package.json:ro
       - ./config:/app/config:ro
     networks:
       - ailearn_net
@@ -352,6 +364,10 @@ services:
     volumes:
       - ./workers/ai-worker/src:/app/src
       - ./packages/shared:/app/packages/shared
+      - ./packages/agent-core/src:/app/packages/agent-core/src
+      - ./packages/agent-core/package.json:/app/packages/agent-core/package.json:ro
+      - ./packages/agent-host/src:/app/packages/agent-host/src
+      - ./packages/agent-host/package.json:/app/packages/agent-host/package.json:ro
       - ./config:/app/config:ro
     networks:
       - ailearn_net

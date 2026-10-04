@@ -46,11 +46,19 @@ export function withJobTransaction<T>(
  * Fail closed before any handler side effect. The second abort check closes
  * the window where cancellation fires while the lease lookup is in flight.
  */
+async function assertAgentJobCurrent(tx: WorkerTransaction, job: JobLeaseContext, lock: boolean) {
+  const rows = await tx.execute<{ ok: boolean }>(sql`SELECT ailearn_agent_job_current(
+    ${job.id},${job.workspaceId},${job.requestedBy},${lock}) AS ok`);
+  if (rows[0]?.ok !== true) throw new JobLeaseLostError(job.id, "inactive");
+}
+
 export async function assertJobLease(job: JobLeaseContext): Promise<void> {
   throwIfJobAborted(job);
   const activeLease = await withWorkerWorkspaceTransaction(
     { workspaceId: job.workspaceId, userId: job.requestedBy },
-    (tx) => tx.query.jobs.findFirst({
+    async (tx) => {
+      await assertAgentJobCurrent(tx, job, false);
+      return tx.query.jobs.findFirst({
       columns: { id: true },
       where: and(
         eq(schema.jobs.id, job.id),
@@ -58,7 +66,8 @@ export async function assertJobLease(job: JobLeaseContext): Promise<void> {
         eq(schema.jobs.status, "running"),
         eq(schema.jobs.leaseToken, job.leaseToken),
       ),
-    }),
+      });
+    },
   );
   throwIfJobAborted(job);
   if (!activeLease) {
@@ -80,6 +89,7 @@ export async function lockJobLease(
     tx,
     { workspaceId: job.workspaceId, userId: job.requestedBy },
   );
+  await assertAgentJobCurrent(tx, job, true);
   const [activeLease] = await tx
     .select({ id: schema.jobs.id })
     .from(schema.jobs)
