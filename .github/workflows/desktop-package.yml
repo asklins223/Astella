@@ -31,13 +31,16 @@ on:
         default: ""
   workflow_call:
     inputs:
+      # ⚠️ 可复用工作流的 input 只支持 boolean / number / string——**没有 choice**
+      # （`options` 是 workflow_dispatch 独有的）。下面写成 choice 会让整个
+      # desktop-release.yml 在"解析被调用工作流"这一步就失败，症状是
+      # `failed to parse called workflow ... Unexpected value 'choice'`，
+      # 而且 run 里一个 job 都不出现。合法值由调用方保证（desktop-release.yml
+      # 传的就是同一个 arm64 / x64 二选一）。
       mac_arch:
-        description: macOS 架构
-        type: choice
+        description: macOS 架构（arm64 或 x64）
+        type: string
         default: arm64
-        options:
-          - arm64
-          - x64
       version:
         description: 版本号（留空则用 release/desktop-version.json）
         type: string
