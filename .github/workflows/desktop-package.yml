@@ -97,6 +97,10 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Resolve desktop version
         id: version
+        # Windows runner 的默认 shell 是 PowerShell，而这段是 bash 语法
+        # （`[ -n … ]` / `$GITHUB_OUTPUT`）。不显式声明 shell 的话，PowerShell 会在
+        # 第一行就报 `Missing '(' after 'if' in if statement`。
+        shell: bash
         run: |
           node .github/scripts/desktop-version.mjs --check
           if [ -n "${{ inputs.version }}" ]; then
@@ -105,19 +109,39 @@ jobs:
           node .github/scripts/desktop-version.mjs --check
           echo "version=$(node -e "console.log(require('./release/desktop-version.json').version)")" >> "$GITHUB_OUTPUT"
           echo "Windows build version: $(node -e "console.log(require('./release/desktop-version.json').version)")"
+      - name: Configure Windows signing
+        # ⚠️ 不能写成 `CSC_LINK: ${{ secrets.WIN_CSC_LINK }}`——secret 不存在时
+        # GitHub 会把它渲染成**空字符串但仍然定义**，electron-builder 于是认为
+        # "签名已配置"，去把空串当前缀证书路径解析：
+        #   • empty password will be used for code signing  reason=CSC_KEY_PASSWORD is not defined
+        #   ⨯ .../apps/desktop-client not a file
+        # 两条日志都不指向真正的原因。所以只有 secret 真存在时才写进 GITHUB_ENV。
+        run: |
+          set -euo pipefail
+          if [ -n "${{ secrets.WIN_CSC_LINK }}" ]; then
+            echo "CSC_LINK=${{ secrets.WIN_CSC_LINK }}" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=${{ secrets.WIN_CSC_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "Windows code signing: 已启用"
+          else
+            # 让 electron-builder 自己去找证书，找不到就干净地跳过。
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=true" >> "$GITHUB_ENV"
+            echo "Windows code signing: 未配置，产物将未签名"
+          fi
       - name: Build and package Windows installer
         working-directory: apps/desktop-client
-        env:
-          # 没配证书时关掉自动发现，electron-builder 就不会去翻证书库再退回来。
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.WIN_CSC_LINK && 'false' || 'true' }}
-          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: npm run package:win:x64
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
           name: desktop-windows-x64-${{ github.run_id }}
-          path: apps/desktop-client/release/*.exe
+          # 不只是安装包：`latest.yml` 是自动更新的版本清单（缺了 Windows 客户端
+          # 永远看不到新版本），`*.exe.blockmap` 是差分下载索引。少了任何一个，
+          # Release 都发不出去。
+          path: |
+            apps/desktop-client/release/*.exe
+            apps/desktop-client/release/*.exe.blockmap
+            apps/desktop-client/release/latest.yml
           # 打包这条链路最容易的失败不是报错，而是"什么都没产出但步骤是绿的"
           # （target 被覆盖成 --dir、artifacts 全被 gitignore、artifactName 写错）。
           # error 而不是 warn，让空产物当场把这一环判红。
@@ -160,15 +184,32 @@ jobs:
           node .github/scripts/desktop-version.mjs --check
           echo "version=$(node -e "console.log(require('./release/desktop-version.json').version)")" >> "$GITHUB_OUTPUT"
           echo "macOS build version: $(node -e "console.log(require('./release/desktop-version.json').version)")"
+      - name: Configure macOS signing and notarization
+        # 同 Windows 那一节：secret 缺失时不能把空串写进 CSC_LINK，否则
+        # electron-builder 会拿空前缀当证书路径，报一条完全指不到根因的
+        # "not a file"。
+        run: |
+          set -euo pipefail
+          if [ -n "${{ secrets.MAC_CSC_LINK }}" ]; then
+            echo "CSC_LINK=${{ secrets.MAC_CSC_LINK }}" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=${{ secrets.MAC_CSC_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "macOS code signing: 已启用"
+          else
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=true" >> "$GITHUB_ENV"
+            echo "macOS code signing: 未配置，产物将未签名（macOS 自动更新安装将不可用）"
+          fi
+          # 公证凭据存在才会真的去跑 notarize；缺了就让 electron-builder 自行跳过。
+          if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
+            echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
+            echo "APPLE_APP_SPECIFIC_PASSWORD=${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
+            echo "macOS notarization: 已启用"
+          else
+            echo "macOS notarization: 未配置"
+          fi
       - name: Build and package macOS installers
         working-directory: apps/desktop-client
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CSC_LINK && 'false' || 'true' }}
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run package:mac:${{ inputs.mac_arch || 'arm64' }}
       - name: Upload macOS installers
         uses: actions/upload-artifact@v4
@@ -177,6 +218,8 @@ jobs:
           path: |
             apps/desktop-client/release/*.dmg
             apps/desktop-client/release/*.zip
+            apps/desktop-client/release/*.blockmap
+            apps/desktop-client/release/latest-mac.yml
           if-no-files-found: error
           retention-days: 30
           compression-level: 0

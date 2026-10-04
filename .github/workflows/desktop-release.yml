@@ -213,6 +213,7 @@ jobs:
           prerelease: ${{ contains(needs.resolve.outputs.version, '-') }}
           files: |
             artifacts/latest.yml
+            artifacts/latest-mac.yml
             artifacts/ailearn-${{ needs.resolve.outputs.version }}-win-x64.exe
             artifacts/ailearn-${{ needs.resolve.outputs.version }}-win-x64.exe.blockmap
             artifacts/ailearn-${{ needs.resolve.outputs.version }}-mac-${{ needs.build.outputs.macos_arch }}.zip
