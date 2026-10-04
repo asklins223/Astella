@@ -32,9 +32,7 @@ if (!ADMIN) throw new Error("需要 DATABASE_URL（夹具要建 user/workspace/n
 const sql = postgres(ADMIN, { max: 2 });
 
 const { withWorkspaceTransaction } = await import("../db/client.ts");
-const { sealEvidenceSnapshotsV2 } = await import(
-  "../modules/card-generation-v2/evidence-seal-service.ts"
-);
+const { sealEvidenceSnapshotsV2 } = await import("@ailearn/card-generation");
 const { loadEvidencePreviewItems } = await import(
   "../modules/card-generation-v2/evidence-preview.ts"
 );

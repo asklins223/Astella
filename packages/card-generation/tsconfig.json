@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "NodeNext", "moduleResolution": "NodeNext",
+    "strict": true, "noUnusedLocals": true, "noUnusedParameters": true,
+    "skipLibCheck": true, "allowImportingTsExtensions": true, "noEmit": true,
+    "paths": {
+      "@ailearn/shared/db-schema": ["../shared/src/db-schema/index.ts"],
+      "@ailearn/shared/db-schema/*": ["../shared/src/db-schema/*.ts"],
+      "@ailearn/shared/card-generation-v2-contracts": ["../shared/src/contracts/card-generation-v2-contracts.ts"],
+      "@ailearn/shared/card-generation-v2-hashing": ["../shared/src/card-generation-v2-hashing.ts"],
+      "@ailearn/shared/card-generation-v2-pipeline": ["../shared/src/card-generation-v2-pipeline/index.ts"],
+      "@ailearn/shared/hash-canonical-v2": ["../shared/src/hash-canonical-v2.ts"],
+      "@ailearn/shared/note-visibility-condition": ["../shared/src/note-visibility-condition.ts"],
+      "@ailearn/shared": ["../shared/src/index.ts"],
+      "@ailearn/shared/*": ["../shared/src/contracts/*.ts", "../shared/src/*.ts", "../shared/src/*/index.ts"],
+      "drizzle-orm": ["./node_modules/drizzle-orm/index.d.ts"],
+      "drizzle-orm/*": ["./node_modules/drizzle-orm/*/index.d.ts", "./node_modules/drizzle-orm/*.d.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -1979,12 +1979,22 @@ const noteDocLive = useNoteDocLiveView(
 
   const {
     expansionTask, setExpansionTask, expansionTaskLoading, expansionTaskStarting,
-    expansionReviewSaving, expansionTaskError, expansionReviewDirty,
+    expansionReviewSaving, expansionTaskError, expansionTaskErrorAction, retryNoteExpansionTask, expansionReviewDirty,
     loadLatestNoteExpansionTask, startNoteExpansionTask,
     persistNoteExpansionReview, confirmNoteExpansionDrafts,
     expansionTaskHistory, expansionTaskHistoryCursor, expansionTaskHistoryLoading, expansionTaskHistoryError,
     loadNoteExpansionTaskHistory, openNoteExpansionTask,
-  } = useNotebookExpansionTask({ note, dirty, epochRef, onConfirmed: (links) => {
+  } = useNotebookExpansionTask({ note, dirty, epochRef,
+    requestedTask: requestedGoalResult?.kind === "note_expansion" && requestedGoalResult.noteVersionId
+      ? { taskId: requestedGoalResult.taskId, noteVersionId: requestedGoalResult.noteVersionId } : undefined,
+    onStarted: (task) => {
+      const room = useRoomStore.getState();
+      if (room.activeNoteRef?.noteId !== task.noteId) return;
+      room.setActiveNoteRef({ ...room.activeNoteRef, noteVersionId: task.noteVersionId, learningResult: {
+        kind: "note_expansion", artifactId: task.taskId, taskId: task.taskId, noteVersionId: task.noteVersionId,
+      } });
+    },
+    onConfirmed: (links) => {
     links.forEach(expansion => window.dispatchEvent(new CustomEvent("ailearn:note-expansion-saved", {
       detail: { noteId: note!.noteId, expansion },
     })));
@@ -3388,7 +3398,7 @@ const noteDocLive = useNoteDocLiveView(
 
 
   const openExpansionPage = () => {
-    clearGoalResultSelection();
+    if (requestedGoalResult?.kind !== "note_expansion") clearGoalResultSelection();
     rememberReadingPosition();
     closeSidePage();
     setLeaf("expansion");
@@ -3405,7 +3415,7 @@ const noteDocLive = useNoteDocLiveView(
     hasUnversionedChanges: readingUnversionedContent || dirty,
     save: () => save("manual"),
     open: (kind) => {
-      clearGoalResultSelection();
+      if (kind !== "expansion" || requestedGoalResult?.kind !== "note_expansion") clearGoalResultSelection();
       if (kind === "artifact") return;
       rememberReadingPosition(); closeSidePage();
       if (kind === "expansion") setLeaf("expansion");
@@ -3429,7 +3439,7 @@ const noteDocLive = useNoteDocLiveView(
       return latest.task || page.items.some(item => item.versionState === "current" && item.generationJobId && item.coverage) ? "existing" : "missing";
     },
     start: (kind, regenerate) => {
-      clearGoalResultSelection();
+      if (kind !== "expansion") clearGoalResultSelection();
       if (kind === "artifact") {
         const source = artifactRegenerationSource.current;
         if (source) void startNoteLearningArtifactTask(source.sourceKind, source.anchor, true);
@@ -3437,7 +3447,7 @@ const noteDocLive = useNoteDocLiveView(
       }
       rememberReadingPosition();
       closeSidePage();
-      if (kind === "expansion") { openExpansionPage(); void startNoteExpansionTask(undefined, true); }
+      if (kind === "expansion") { setLeaf("expansion"); void startNoteExpansionTask(undefined, true); }
       else {
         setLeaf("reading"); setLearningView(kind);
         if (kind === "overview") { setOverviewOpen(true); if (regenerate || !latestNoteOverview) void startNoteOverviewTask(false); }
@@ -3619,6 +3629,7 @@ const noteDocLive = useNoteDocLiveView(
       {(<div hidden={leaf !== "expansion"}>{(
       <section className="note-expansion-shelf" aria-label="从这篇往外学">
         <header>
+          {expansionTask && expansionTask.noteVersionId !== note.currentVersionId ? <p className="note-expansion-shelf__intro">这批草稿来自之前保存的笔记版本。仍可修改和收下；引用保留原版本，当前正文已更新。</p> : null}
           {expansionTask?.status === "ready" || expansionTask?.status === "confirmed" || noteExpansions.length ? <p className="note-expansion-shelf__intro">每篇都有来处。先翻开看看，再决定收下哪篇。</p> : null}
           <div className="note-expansion-shelf__actions">
             {!expansionTaskLoading && !expansionTaskStarting && (expansionTask?.status === "ready" || expansionTask?.status === "confirmed" || !expansionTask && noteExpansions.length > 0) ? (
@@ -3634,21 +3645,21 @@ const noteDocLive = useNoteDocLiveView(
           kind="expansion" title={readTitle || note.title} version={note.currentVersion.versionNo}
           state={expansionTaskStarting ? "queued" : expansionTaskLoading || learningEntry.checking === "expansion" ? "loading" : expansionTask?.status === "failed" || expansionTaskError || learningEntry.error ? "failed" : expansionTask?.status === "queued" || expansionTask?.status === "running" ? expansionTask.status : "empty"}
           error={expansionTask?.failureReason ?? expansionTaskError ?? learningEntry.error}
-          onPrepare={() => learningEntry.prepare("expansion")} onBody={() => { setLeaf("reading"); setLearningView("body"); }}
+          onPrepare={() => learningEntry.prepare("expansion")} onBody={() => { clearGoalResultSelection(); setLeaf("reading"); setLearningView("body"); }}
           onRetry={() => expansionTask?.status === "failed" ? void startNoteExpansionTask(undefined, true) : void learningEntry.request("expansion")} onSettings={openAiConsentSettings} /> : null}
         {expansionTask && (expansionTask.status === "ready" || expansionTask.status === "confirmed") ? (
               <NoteExpansionDrafts
                 key={expansionTask.taskId}
                 task={expansionTask}
                 saving={expansionReviewSaving || expansionTaskStarting}
-                locateTeachingReference={locateTeachingReference}
+                locateTeachingReference={expansionTask.noteVersionId === note.currentVersionId ? locateTeachingReference : undefined}
                 setExpansionTask={setExpansionTask}
                 persistNoteExpansionReview={persistNoteExpansionReview}
               />
         ) : null}
-        {expansionTaskError ? <p className="note-expansion-task-error" role="alert">{expansionTaskError} <button type="button" className="text-action" disabled={expansionReviewSaving || expansionTaskLoading} onClick={() => expansionTask?.status === "ready" ? void persistNoteExpansionReview(expansionTask.drafts) : void loadLatestNoteExpansionTask()}>{expansionTask?.status === "ready" ? "重试保存" : "重试读取"}</button></p> : null}
+        {expansionTaskError ? <p className="note-expansion-task-error" role="alert">{expansionTaskError} <button type="button" className="text-action" disabled={expansionReviewSaving || expansionTaskLoading || expansionTaskStarting} onClick={() => void retryNoteExpansionTask()}>{({ read: "重试读取", start: "重试生成", save: "重试保存", confirm: "重试收下" })[expansionTaskErrorAction]}</button></p> : null}
         {expansionTaskHistory.some(task => task.taskId !== expansionTask?.taskId) || expansionTaskHistoryError ? <details className="notebook-expansion-history" onToggle={event => { if (event.currentTarget.open) void loadNoteExpansionTaskHistory(); }}>
-          <summary>之前整理的草稿 · 笔记 v{note.currentVersion.versionNo}</summary>
+          <summary>之前整理的草稿{expansionTask && expansionTask.noteVersionId !== note.currentVersionId ? " · 同一原文版本" : ` · 笔记 v${note.currentVersion.versionNo}`}</summary>
           <p>重新生成会另开一批，之前未收下的草稿和修改仍保留。</p>
           <ul>{expansionTaskHistory.filter(task => task.taskId !== expansionTask?.taskId).map(task => <li key={task.taskId}>
             <button type="button" className="text-action" disabled={expansionReviewDirty || expansionReviewSaving || expansionTaskStarting}

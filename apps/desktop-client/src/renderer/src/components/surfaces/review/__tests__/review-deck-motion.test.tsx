@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { useRef } from "react";
+import { StrictMode, useRef } from "react";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRoomStore } from "../../../../app/room-store";
@@ -89,6 +89,23 @@ describe("复习牌堆的连续运动", () => {
     expect(Number(card.style.opacity)).toBeLessThan(1);
     for (let i = 0; i < 100; i++) advance();
     expect(card.style.opacity).toBe("0");
+    expect(frames.size).toBe(0);
+  });
+
+  /**
+   * 松手之后牌要回弹，是**弹簧跑起来**的结果，而弹簧要一帧一帧跑。
+   * StrictMode（main.tsx 就这么挂的）把卸载也跑一遍：卸载取消掉那一帧，帧号却没
+   * 交还，于是"已经有循环在跑"永远成立。牌堆从挂载那一刻起就没有弹簧了 ——
+   * 拖到哪儿就停在哪儿，再也回不来（`use-tactile-surface.ts` 记着同一条，
+   * 那是同一条的第一处，这里是第二处）。
+   */
+  it("StrictMode 跑两遍 effect，松手后牌仍弹回堆上并安静下来", () => {
+    const view = render(<StrictMode><Fixture /></StrictMode>), card = view.getByTestId("card-0");
+    fireEvent.click(view.getByRole("button", { name: "接手" }));
+    expect(x(card)).toBe(-40);
+    fireEvent.click(view.getByRole("button", { name: "松手" }));
+    for (let i = 0; i < 200; i++) advance();
+    expect(x(card)).toBe(0);
     expect(frames.size).toBe(0);
   });
 });

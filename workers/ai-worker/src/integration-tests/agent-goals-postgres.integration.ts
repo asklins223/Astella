@@ -185,7 +185,8 @@ test("checkpoint restart, child receipt wake, retained artifacts and revision fe
   await advance.invoke(async tx => {
     await tx.execute(query`INSERT INTO agent_operations(id,run_id,workspace_id,user_id,revision,tool_call_id,capability,job_id)
       VALUES(${operationId},${run.runId},${scope.workspaceId},${scope.userId},1,'overview','note_overview_generate',${jobId})`);
-    await tx.execute(query`INSERT INTO jobs(id,type,workspace_id,requested_by,payload,status) VALUES(${jobId},'note_overview_generate',${scope.workspaceId},${scope.userId},'{}','pending')`);
+    // payload 冻结的必须是同一份笔记版本：回执靠它确认产物属于这一次操作（agent-host artifact-receipt）。
+    await tx.execute(query`INSERT INTO jobs(id,type,workspace_id,requested_by,payload,status) VALUES(${jobId},'note_overview_generate',${scope.workspaceId},${scope.userId},${JSON.stringify({ noteId: f.input.noteId, noteVersionId: f.input.noteVersionId })}::jsonb,'pending')`);
   });
   await advance.applyStep(prepared.step, response, [{ role: "tool", toolCallId: "provider-1", content: '{"status":"accepted"}' }]);
   await advance.release(false);
@@ -288,4 +289,53 @@ test("GT-01/02 actual overview generation adopts approved feedback, follows one 
   assert.doesNotMatch(explanation(outputs[1]), everydayExample);
   assert.match(explanation(outputs[2]), everydayExample);
   assert.match((await workerPorts.transaction(scope, tx => loadAgentLearningContext(tx, scope))).preferences[0].content, /以后讲学习内容/);
+});
+
+/**
+ * note_read 的能力路径围栏（42 阶段 1 D 追加）。
+ *
+ * 读笔记与读拓展草稿是同类问题：先 `store.invoke` 核对、再另起无围栏事务去读的话，
+ * 取消或修订可能夹在中间。两条读能力现在都在同一次 invoke 的事务里完成读取；
+ * 这里用**真实能力调用**钉住它的后果：租约活着且材料在冻结集合里就读得到，
+ * 目标一停，同一个租约的迟到读取立刻被 advance 围栏拒掉，而且什么账本都不增。
+ */
+test("note_read stays inside the advance fence: active lease reads, cancelled goal does not", async () => {
+  const f = await fixture(["叶绿体利用光能制造有机物。", "光合作用把光能变成化学能。"]), scope = { workspaceId: f.workspaceId, userId: f.userId };
+  const run = await api.create(scope, { requestId: randomUUID(), goal: "整理这篇笔记", inputs: [f.input] });
+  const rootLease = await lease(scope, run.runId), advance = createAgentAdvanceStore(workerPorts, rootLease, run.runId, 1);
+  assert.ok(await advance.acquire(), "活跃租约必须能拿到目标");
+
+  const ledger = async () => {
+    const [row] = await admin`
+      SELECT (SELECT count(*)::int FROM agent_operations WHERE run_id=${run.runId}) AS operations,
+             (SELECT count(*)::int FROM jobs WHERE workspace_id=${scope.workspaceId}) AS jobs,
+             (SELECT model_calls::int FROM agent_runs WHERE id=${run.runId}) AS model_calls`;
+    return [row.operations, row.jobs, row.model_calls];
+  };
+  const before = await ledger();
+
+  // 活跃租约 + 冻结输入：走真实能力路径，读得到这一版正文。
+  const page = await invokeNoteCapability(advance, {
+    id: "provider-note-read", name: "note_read",
+    arguments: { noteId: f.input.noteId, noteVersionId: f.input.noteVersionId },
+  }) as { status: string; title: string; noteVersionId: string; totalBlocks: number; truncated: boolean; body: string };
+  assert.equal(page.status, "succeeded");
+  assert.equal(page.title, "光合作用");
+  assert.equal(page.noteVersionId, f.input.noteVersionId);
+  assert.equal(page.totalBlocks, 2);
+  assert.equal(page.truncated, false);
+  assert.match(page.body, /叶绿体利用光能制造有机物。/);
+  assert.deepEqual(await ledger(), before, "只读不得留下 operation、job 或模型调用");
+
+  // 目标停掉之后，同一个租约的迟到读取必须被围栏拒掉，而不是读到已经不该读的内容。
+  await api.control(scope, run.runId, 1, "cancel");
+  await assert.rejects(invokeNoteCapability(advance, {
+    id: "provider-late-read", name: "note_read",
+    arguments: { noteId: f.input.noteId, noteVersionId: f.input.noteVersionId },
+  }), (error: Error & { code?: string }) => {
+    assert.equal(error.code, "advance_obsolete", `取消后应当被围栏拒掉，实际 ${error.code}：${error.message}`);
+    return true;
+  });
+  assert.deepEqual(await ledger(), before, "被拒的读取同样不碰账本");
+  await advance.release(false);
 });

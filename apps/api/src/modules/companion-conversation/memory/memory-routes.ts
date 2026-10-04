@@ -42,6 +42,7 @@ import {
   listRecycledMemories,
   MemorySourceSuppressedError,
   MemoryRevisionConflictError,
+  MemoryGlobalScopeRejectedError,
   moveMemoryBudgetTier,
   pinMemory,
   resolveMemoryConflict,
@@ -57,6 +58,35 @@ import {
 } from "./memory-service.ts";
 import { getMemoryStarMap } from "./memory-star-map.ts";
 import { isMemoryContextEnabled, isMemoryVectorRebuildEnabled } from "../../../config/learning-companion-flags.ts";
+import {
+  accountPreferenceRejectionMessage,
+  type AccountPreferenceWriteRejection,
+} from "@ailearn/shared/companion-memory-scope";
+
+/**
+ * 账号级（跨空间）写入被拒时的对外回执（42 阶段 1 E）。
+ *
+ * 状态码取 **422**：请求本身合法（体校验过了、kind 也在枚举里），不合法的是
+ * **这份内容配上这个范围**——所以它是"能理解但做不到"，不是 400（体写错了），
+ * 也不是 409（版本冲突）。三句拒绝文案住在共享模块，API、伴星工具与提案确认链
+ * 共用同一份，避免"这里改了、那里没改"。
+ */
+export const MEMORY_GLOBAL_SCOPE_REJECTED_STATUS = 422;
+
+/** 领域错误 → 4xx 回执。导出给测试：状态码与文案都是对外契约，不该只活在 handler 里。 */
+export function memoryGlobalScopeRejection(error: MemoryGlobalScopeRejectedError): {
+  statusCode: number;
+  body: { error: string; reason: AccountPreferenceWriteRejection; message: string };
+} {
+  return {
+    statusCode: MEMORY_GLOBAL_SCOPE_REJECTED_STATUS,
+    body: {
+      error: "memory_global_scope_rejected",
+      reason: error.reason,
+      message: accountPreferenceRejectionMessage(error.reason),
+    },
+  };
+}
 
 const memoryParamsSchema = z.object({ id: z.string().uuid() });
 
@@ -317,6 +347,10 @@ export async function memoryRoutes(app: FastifyInstance) {
             message: "这条来源已被忘记；如需重新保存，请作为新的手动记忆添加。",
           });
         }
+        if (error instanceof MemoryGlobalScopeRejectedError) {
+          const rejection = memoryGlobalScopeRejection(error);
+          return reply.code(rejection.statusCode).send(rejection.body);
+        }
         throw error;
       }
       // §9.9：记录候选创建指标
@@ -558,6 +592,10 @@ export async function memoryRoutes(app: FastifyInstance) {
             message: "这条记忆已有新版本；请重新读取后再修订。",
             currentRevision: error.currentRevision,
           });
+        }
+        if (error instanceof MemoryGlobalScopeRejectedError) {
+          const rejection = memoryGlobalScopeRejection(error);
+          return reply.code(rejection.statusCode).send(rejection.body);
         }
         throw error;
       }

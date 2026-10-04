@@ -24,6 +24,27 @@ const helpersSource = readFileSync(
   "utf8",
 );
 
+/**
+ * 2026-10-04：run 事件的写入、错误类与 `RunContext` 已下沉到制卡领域包
+ * `packages/card-generation`。
+ *
+ * 为什么这一条要改扫描目标而**不是**放宽断言：原来那几条守的是"`helpers.ts` 里
+ * 有一个 `insertEvent`，且 `serializeCandidatePublic` 的函数体到它之前为止不泄
+ * 私有字段"。实现搬走之后，按旧路径扫会一路绿到底——判据扫一个已经没有那段代码的
+ * 文件，等于没有判据。所以改成扫**新的实际承载文件**，断言一个字都不松。
+ *
+ * ⚠️ 层数：本文件在 `apps/api/src/__tests__/`，到仓库根是**四**层
+ * （`__tests__` → `src` → `api` → `apps` → 根）。数少一层的症状是 ENOENT，
+ * 而"只读文件内容"的判据在读不到时会一路绿到底——所以下面直接让 `readFileSync`
+ * 在模块加载期抛，而不是给个空串糊过去。
+ */
+const CARD_GENERATION_PKG = resolve(
+  import.meta.dirname, "../../../../packages/card-generation/src",
+);
+const packageErrorsSource = readFileSync(resolve(CARD_GENERATION_PKG, "errors.ts"), "utf8");
+const packageTypesSource = readFileSync(resolve(CARD_GENERATION_PKG, "types.ts"), "utf8");
+const packageEventsSource = readFileSync(resolve(CARD_GENERATION_PKG, "events.ts"), "utf8");
+
 const serverSource = readFileSync(
   resolve(import.meta.dirname, "../server.ts"),
   "utf8",
@@ -213,17 +234,22 @@ describe("Card Generation V2 routes contract", () => {
 
 describe("Card Generation V2 helpers contract", () => {
   it("exports CardGenerationV2ServiceError with code and statusCode", () => {
-    assert.ok(helpersSource.includes(`class CardGenerationV2ServiceError`));
+    // 类的**定义**现在在制卡领域包里（那里是唯一实现）；helpers.ts 只是转出它。
+    assert.ok(packageErrorsSource.includes(`class CardGenerationV2ServiceError`));
     // 2026-08-24（§4.4 第二批）：CardGenerationV2ServiceError 继承 shared 纯逻辑层
     // 的 CardGenerationPipelineErrorV2（后者继承 DomainError）——下沉的 seal/
     // binding-plan 纯函数抛 shared 类，instanceof 边界不受影响。code/statusCode
     // 由基类提供；验证继承链与构造参数传递。
     assert.ok(
-      helpersSource.includes(`extends CardGenerationPipelineErrorV2`)
-        || helpersSource.includes(`extends DomainError`),
+      packageErrorsSource.includes(`extends CardGenerationPipelineErrorV2`)
+        || packageErrorsSource.includes(`extends DomainError`),
     );
-    assert.ok(helpersSource.includes(`code`));
-    assert.ok(helpersSource.includes(`statusCode`));
+    assert.ok(packageErrorsSource.includes(`code`));
+    assert.ok(packageErrorsSource.includes(`statusCode`));
+    // API 侧仍然转出同一个类：**所有现役错误边界（sendServiceError、worker 门闩、
+    // 测试里的 instanceof）认的必须是这一个 class 对象**，不是 API 自己再声明一个
+    // 同名类。少了这一行，转出就断了，而断法是静默的。
+    assert.ok(helpersSource.includes(`export { CardGenerationV2ServiceError }`));
   });
 
   it("exports NO_STORE with private, no-store", () => {
@@ -231,7 +257,8 @@ describe("Card Generation V2 helpers contract", () => {
   });
 
   it("exports RunContext type", () => {
-    assert.ok(helpersSource.includes(`type RunContext`));
+    assert.ok(packageTypesSource.includes(`type RunContext`));
+    assert.ok(helpersSource.includes(`export type { RunContext }`));
   });
 
   it("exports serializeRunPublic", () => {
@@ -243,7 +270,9 @@ describe("Card Generation V2 helpers contract", () => {
   });
 
   it("exports insertEvent", () => {
-    assert.ok(helpersSource.includes(`async function insertEvent`));
+    assert.ok(packageEventsSource.includes(`async function insertEvent`));
+    // helpers.ts 只**转出**，不再自己声明一份——两份实现就是事件序会有两个答案。
+    assert.ok(helpersSource.includes(`export { insertEvent, insertEventBatch }`));
   });
 
   it("exports getCandidateForAction", () => {
@@ -258,9 +287,14 @@ describe("Card Generation V2 helpers contract", () => {
     // serializeCandidatePublic 的返回对象不得含 canonicalAnswer/explanation 等
     // 私有内容字段（§22.3）。helpers.ts 中 BLOCKED_EVENT_PAYLOAD_KEYS 也会
     // 出现这些词，因此只检查 serializeCandidatePublic 函数体内部。
+    // ⚠️ 窗口的右界是"下一个导出"，**不是**"insertEvent 在哪"：2026-10-04 那次
+    // 抽取把 insertEvent 搬走了，按旧边界切会得到 -1、退化成 `fnStart + 2000`
+    // 的定长窗口，于是函数体后半段（也就是真正写着字段映射的那一半）落在检查之外
+    // ——判据看上去还在跑，实际已经不覆盖它要防的东西了。
     const fnStart = helpersSource.indexOf("function serializeCandidatePublic");
-    const fnEnd = helpersSource.indexOf("export async function insertEvent", fnStart);
-    const fnBody = helpersSource.slice(fnStart, fnEnd > 0 ? fnEnd : fnStart + 2000);
+    const fnEnd = helpersSource.indexOf("export function summarizePlanPracticeQuotaV2", fnStart);
+    assert.ok(fnStart >= 0 && fnEnd > fnStart, "serializeCandidatePublic 的函数边界没找到：这一格要按新形状重写");
+    const fnBody = helpersSource.slice(fnStart, fnEnd);
     assert.ok(!fnBody.includes(`canonicalAnswer`), "serializeCandidatePublic must not expose canonicalAnswer");
     assert.ok(!fnBody.includes(`explanation`), "serializeCandidatePublic must not expose explanation");
     assert.ok(!fnBody.includes(`learningSupport`), "serializeCandidatePublic must not expose learningSupport");

@@ -121,6 +121,11 @@
       "import": "./src/contracts/companion-memory-desktop-contracts.ts",
       "default": "./src/contracts/companion-memory-desktop-contracts.ts"
     },
+    "./companion-memory-scope": {
+      "types": "./src/companion-memory-scope.ts",
+      "import": "./src/companion-memory-scope.ts",
+      "default": "./src/companion-memory-scope.ts"
+    },
     "./companion-discovery-contracts": {
       "types": "./src/contracts/companion-discovery-contracts.ts",
       "import": "./src/contracts/companion-discovery-contracts.ts"
@@ -511,6 +516,11 @@
       "types": "./src/note-visibility.ts",
       "import": "./src/note-visibility.ts",
       "default": "./src/note-visibility.ts"
+    },
+    "./note-visibility-condition": {
+      "types": "./src/note-visibility-condition.ts",
+      "import": "./src/note-visibility-condition.ts",
+      "default": "./src/note-visibility-condition.ts"
     },
     "./objective-card-groups-v2": {
       "types": "./src/objective-card-groups-v2.ts",

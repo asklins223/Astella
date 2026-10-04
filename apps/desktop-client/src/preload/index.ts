@@ -162,6 +162,7 @@ const desktopApi: AILearnDesktopApiM2 = {
   },
   agent: {
     listRuns: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunsList, input),
+    getRunHistory: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunHistory, input),
     createRun: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunCreate, input),
     reviseRun: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunRevise, input),
     controlRun: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunControl, input),

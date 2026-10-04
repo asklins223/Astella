@@ -25,12 +25,14 @@ export function CompanionSelect<T extends string>({
   options,
   onChange,
   paper = false,
+  disabled = false,
 }: {
   readonly ariaLabel: string;
   readonly value: T;
   readonly options: ReadonlyArray<CompanionSelectOption<T>>;
   readonly onChange: (value: T) => void;
   readonly paper?: boolean;
+  readonly disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -56,6 +58,8 @@ export function CompanionSelect<T extends string>({
   useEffect(() => {
     if (open) listboxRef.current?.focus();
   }, [open]);
+
+  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
 
   const openMenu = (initialIndex = selectedIndex) => {
     setActiveIndex(initialIndex);
@@ -129,6 +133,7 @@ export function CompanionSelect<T extends string>({
       <button
         ref={triggerRef}
         type="button"
+        disabled={disabled}
         className="companion-select__trigger"
         aria-haspopup="listbox"
         aria-expanded={open}

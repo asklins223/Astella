@@ -266,6 +266,13 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ailearn_migrator;
 -- migration-schema access beyond the read-only readiness query below.
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON ALL TABLES IN SCHEMA public TO ailearn_api;
+
+DO $$ BEGIN
+  IF to_regclass('public.agent_run_revisions') IS NOT NULL THEN
+    REVOKE ALL ON TABLE public.agent_run_revisions FROM PUBLIC,ailearn_api,ailearn_worker;
+    GRANT SELECT,INSERT ON TABLE public.agent_run_revisions TO ailearn_api,ailearn_worker;
+  END IF;
+END $$;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ailearn_api;
 
 -- Memory history is append-only. Both runtimes may read it; the database trigger
@@ -423,6 +430,7 @@ BEGIN
     'pet_profiles',
     'assistant_memory_items',
     'assistant_memory_embeddings',
+    'companion_procedural_playbooks',
     'assistant_memory_item_revisions',
     'assistant_memory_budget_events',
     'assistant_memory_source_suppressions',
@@ -560,6 +568,11 @@ BEGIN
     -- UPDATE 在 bootstrap 的 REVOKE ALL 之后静默跳过（调用点按"弱事实"吞错），
     -- 关系状态因此永远停在初值。
     GRANT SELECT, INSERT, UPDATE ON TABLE public.pet_profiles TO ailearn_worker;
+  END IF;
+  -- Preserve 0348's grants: memory revision triggers invalidate derived methods,
+  -- and the worker's existing playbook handlers read, insert and update them.
+  IF to_regclass('public.companion_procedural_playbooks') IS NOT NULL THEN
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_procedural_playbooks TO ailearn_worker;
   END IF;
   IF to_regclass('public.companion_persona_profiles') IS NOT NULL THEN
     GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_persona_profiles TO ailearn_worker;
@@ -760,7 +773,7 @@ BEGIN
     WHERE n.nspname = 'public'
   LOOP
     EXECUTE format(
-      'GRANT EXECUTE ON FUNCTION %s TO ailearn_api, ailearn_worker', fn.signature
+      'GRANT EXECUTE ON FUNCTION %s TO ailearn_migrator, ailearn_api, ailearn_worker', fn.signature
     );
   END LOOP;
 END
@@ -877,10 +890,19 @@ BEGIN
   -- "预期权限"清单只抓**多出来的**授权、抓不到**缺失的**，所以 role-bootstrap 不报、
   -- 调用方又把它 catch 成一行 warn——症状是"另一个空间怎么不记得"，查无实据（doc 34 L8）。
   IF to_regprocedure('public.ailearn_fanout_global_companion_memory(uuid)') IS NOT NULL THEN
+    ALTER FUNCTION public.ailearn_fanout_global_companion_memory(uuid) OWNER TO ailearn_migrator;
     REVOKE ALL ON FUNCTION public.ailearn_fanout_global_companion_memory(uuid)
       FROM PUBLIC, ailearn_api;
     GRANT EXECUTE ON FUNCTION public.ailearn_fanout_global_companion_memory(uuid)
       TO ailearn_worker;
+  END IF;
+  IF to_regprocedure('public.ailearn_sync_global_companion_memory_copies()') IS NOT NULL THEN
+    ALTER FUNCTION public.ailearn_sync_global_companion_memory_copies() OWNER TO ailearn_migrator;
+  END IF;
+  IF to_regprocedure('public.ailearn_fanout_agent_global_preference(uuid)') IS NOT NULL THEN
+    ALTER FUNCTION public.ailearn_fanout_agent_global_preference(uuid) OWNER TO ailearn_migrator;
+    REVOKE ALL ON FUNCTION public.ailearn_fanout_agent_global_preference(uuid) FROM PUBLIC, ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_fanout_agent_global_preference(uuid) TO ailearn_api;
   END IF;
   -- 0343：worker 不获得 assistant_deliveries 的 UPDATE 权限，只能在一次记忆
   -- 遗忘/修订已完成后，调用这个带 owner/workspace/memory 三重约束的收尾函数。
@@ -1178,6 +1200,31 @@ BEGIN
 END
 $$;
 
+-- Unified Agent host tables retain their explicit worker grants after bootstrap.
+DO $$ DECLARE t text; BEGIN
+  FOREACH t IN ARRAY ARRAY['agent_runs','agent_operations','agent_run_steps','agent_run_events'] LOOP
+    IF to_regclass(format('public.%I',t)) IS NOT NULL THEN
+      EXECUTE format('GRANT SELECT,INSERT,UPDATE ON TABLE public.%I TO ailearn_worker',t);
+    END IF;
+  END LOOP;
+  IF to_regclass('public.agent_run_events_seq_seq') IS NOT NULL THEN
+    GRANT USAGE,SELECT ON SEQUENCE public.agent_run_events_seq_seq TO ailearn_worker;
+  END IF;
+  FOREACH t IN ARRAY ARRAY['ailearn_agent_scope_current(uuid,uuid)','ailearn_enqueue_agent_recovery()',
+    'ailearn_cancel_agent_operations(uuid,integer)','ailearn_agent_job_current(uuid,uuid,uuid,boolean)',
+    'ailearn_agent_job_event()'] LOOP
+    IF to_regprocedure('public.' || t) IS NOT NULL THEN
+      EXECUTE format('ALTER FUNCTION %s OWNER TO ailearn_migrator',to_regprocedure('public.' || t));
+    END IF;
+  END LOOP;
+  IF to_regprocedure('public.ailearn_enqueue_agent_recovery()') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.ailearn_agent_scope_current(uuid,uuid) TO ailearn_api,ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_agent_recovery() TO ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_cancel_agent_operations(uuid,integer) TO ailearn_api,ailearn_worker;
+    GRANT EXECUTE ON FUNCTION public.ailearn_agent_job_current(uuid,uuid,uuid,boolean) TO ailearn_worker;
+  END IF;
+END $$;
+
 -- Executable least-privilege verification.  Keeping this next to the grants
 -- makes the production role-grants service fail before API/Worker start if a
 -- future schema or grant change expands access unexpectedly.
@@ -1251,6 +1298,7 @@ BEGIN
       'companion_context_handoff_snapshots',
       'companion_run_failure_spans',
       'assistant_memory_item_revisions',
+      'agent_run_revisions',
       'assistant_memory_budget_events',
       'companion_persona_profile_versions'
     )
@@ -1475,7 +1523,13 @@ BEGIN
       -- 0170/0173 只给 SELECT；0178 补 INSERT/UPDATE（关系状态写入 + 每日衰减）。
       ('pet_profiles', true, true, true, false),
       ('assistant_memory_items', true, true, true, true),
+      ('companion_procedural_playbooks', true, true, true, false),
       ('assistant_memory_item_revisions', true, true, false, false),
+      ('agent_run_revisions', true, true, false, false),
+      ('agent_runs', true, true, true, false),
+      ('agent_operations', true, true, true, false),
+      ('agent_run_steps', true, true, true, false),
+      ('agent_run_events', true, true, true, false),
       ('assistant_memory_budget_events', true, true, false, false),
       ('assistant_memory_source_suppressions', true, true, false, false),
       ('assistant_memory_embeddings', true, true, true, true),
@@ -1700,6 +1754,10 @@ BEGIN
     -- 0267：跨空间记忆铺开（与上面那条 GRANT 成对，两份清单一起改）。
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_fanout_global_companion_memory(uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_scope_current(uuid,uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_enqueue_agent_recovery()')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_cancel_agent_operations(uuid,integer)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_job_current(uuid,uuid,uuid,boolean)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)')
     AND p.oid IS DISTINCT FROM
@@ -1750,6 +1808,9 @@ BEGIN
   JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public'
     AND has_function_privilege('ailearn_api', p.oid, 'EXECUTE')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_scope_current(uuid,uuid)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_cancel_agent_operations(uuid,integer)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_fanout_agent_global_preference(uuid)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_purge_companion_audit_ttl(integer,integer)')
     AND p.oid IS DISTINCT FROM
@@ -1853,6 +1914,12 @@ BEGIN
     INTO missing
     FROM (VALUES
       ('ailearn_worker', 'ailearn_claim_jobs(integer,integer,integer)'),
+      ('ailearn_api', 'ailearn_agent_scope_current(uuid,uuid)'),
+      ('ailearn_worker', 'ailearn_agent_scope_current(uuid,uuid)'),
+      ('ailearn_api', 'ailearn_cancel_agent_operations(uuid,integer)'),
+      ('ailearn_worker', 'ailearn_cancel_agent_operations(uuid,integer)'),
+      ('ailearn_worker', 'ailearn_enqueue_agent_recovery()'),
+      ('ailearn_worker', 'ailearn_agent_job_current(uuid,uuid,uuid,boolean)'),
       ('ailearn_worker', 'ailearn_reap_stale_jobs(integer,integer)'),
       ('ailearn_worker', 'ailearn_renew_job_lease(uuid,uuid,text)'),
       ('ailearn_worker', 'ailearn_finish_job(uuid,uuid,text)'),
@@ -1864,6 +1931,7 @@ BEGIN
       ('ailearn_worker', 'ailearn_run_companion_memory_maintenance()'),
       ('ailearn_worker', 'ailearn_reclaim_stale_companion_proposals()'),
       ('ailearn_worker', 'ailearn_fanout_global_companion_memory(uuid)'),
+      ('ailearn_api', 'ailearn_fanout_agent_global_preference(uuid)'),
       ('ailearn_worker', 'ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)'),
       ('ailearn_api', 'ailearn_restore_companion_memory(uuid,uuid,uuid)'),
       ('ailearn_api', 'ailearn_purge_expired_companion_memory()'),
@@ -1949,21 +2017,3 @@ BEGIN
   END IF;
 END
 $$;
-
--- Unified Agent host tables retain their explicit worker grants after bootstrap.
-DO $$ DECLARE t text; BEGIN
-  FOREACH t IN ARRAY ARRAY['agent_runs','agent_operations','agent_run_steps','agent_run_events'] LOOP
-    IF to_regclass(format('public.%I',t)) IS NOT NULL THEN
-      EXECUTE format('GRANT SELECT,INSERT,UPDATE ON TABLE public.%I TO ailearn_worker',t);
-    END IF;
-  END LOOP;
-  IF to_regclass('public.agent_run_events_seq_seq') IS NOT NULL THEN
-    GRANT USAGE,SELECT ON SEQUENCE public.agent_run_events_seq_seq TO ailearn_worker;
-  END IF;
-  IF to_regprocedure('public.ailearn_enqueue_agent_recovery()') IS NOT NULL THEN
-    GRANT EXECUTE ON FUNCTION public.ailearn_agent_scope_current(uuid,uuid) TO ailearn_api,ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_enqueue_agent_recovery() TO ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_cancel_agent_operations(uuid,integer) TO ailearn_api,ailearn_worker;
-    GRANT EXECUTE ON FUNCTION public.ailearn_agent_job_current(uuid,uuid,uuid,boolean) TO ailearn_worker;
-  END IF;
-END $$;

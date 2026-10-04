@@ -27,6 +27,8 @@ import { assertJobLease, lockJobLease, withJobTransaction } from "../lib/job-lea
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import { MemoryExtractOutputError } from "../lib/non-retryable-errors.ts";
 import { withoutQuotedNames } from "./companion-dialogue-content.ts";
+// 跨空间作用范围的**唯一**判据：抽取侧与 API 写入端共用（42 阶段 1 E）。
+import { memoryScopeForKind } from "@ailearn/shared/companion-memory-scope";
 import {
   companionMemoryMutationLockKey,
   MEMORY_CONTENT_SIMILARITY_THRESHOLD,
@@ -113,80 +115,14 @@ export function isMemoryExtractConfidenceAccepted(confidence: number): boolean {
 }
 
 /**
- * 跨空间同步的判据（2026-09-22 Owner 裁决 + 当日收紧）。
+ * 跨空间同步的判据（2026-09-22 Owner 裁决 + 当日收紧）住在
+ * `@ailearn/shared/companion-memory-scope`，见文件头的 import。
  *
- * 裁决是"跟空间关联性不强的记忆需要带过去"，同时要求**收紧**——因为"关联性不强"
- * 如果只按种类粗判，会把空间专属的东西带到别的空间去。
+ * 它是**唯一**一份：worker 抽取侧与 API 写入端共用（42 阶段 1 E）。这里不再留第二份
+ * 正则——同一句产品决定在两处各判一次，早晚漂移，而漂移的方向通常是写入端那份更松。
  *
- * ─── 拿真实数据定出来的两条 ───
- * dev 库那批真种子记忆（45 条）里能看到很清楚的分界：
- *
- *   可携带：习惯在晚上九点之后写笔记 / 看新概念时更想先看反例 / 偏好短节奏学习
- *   该留下：用户正在备考日语N3，考试时间为下个月 / 用户正在学习数据库索引优化 /
- *           用户之前主要专注于 N3 相关工作，近期开始接触数据库索引优化
- *
- * 于是：
- *   1. **只有 `preference` 可能跨空间**。`interaction_note` 实测记的多半是"用户
- *      当前在做什么"（上面第三条就是它），那是空间内容，改回本地。另外三种本来
- *      就绑定空间内的对象。
- *   2. `preference` 里还要再分一次：关于**怎么学**的（时段、节奏、顺序、环境、
- *      称呼）跟人走；提到**具体科目/考试/项目**的留在原空间——那些东西在另一个
- *      空间里根本不存在。
- *
- * ─── 两道判据，任一判本地就本地 ───
- *   - 模型给 `binding`（它在对话现场，能看见"这句话是在说这门课还是说我"）；
- *   - 服务端确定性规则（见 `memoryLooksWorkspaceBound`），**可以否决模型**：
- *     模型说 portable 但内容里有明确的"这个班/这门课/考试"，一律按本地。
- *
- * 缺省 fail-closed：模型没说、规则也没说 → 本地。宁可少带，不可错带。
+ * 两道判据任一判本地就本地：`memoryScopeForKind(kind, modelScope, binding, content)`。
  */
-const CROSS_SPACE_KINDS = new Set<string>(["preference"]);
-
-/**
- * 内容里出现"空间专属"信号的确定性判据。
- *
- * 两类：
- *   - **明确的本地指代**：这个班 / 我们组 / 这门课 / 本学期的……
- *   - **具体科目、考试、项目**：日语、物理、贝叶斯、N3、考试、期中、答辩……
- *     （第二个列表只用于 `preference`，所以像"喜欢在安静时段学习"这种不带科目的
- *     偏好不会被误判成本地。）
- *
- * 导出给测试用。改这个正则等于改"什么记忆会跨空间"，所以它有专门的用例。
- */
-const LOCAL_REFERENCE_PATTERN =
-  /(这个|该|本|我们|咱们|此)(空间|房间|工作区|协作|班级|班|课|课程|小组|团队|项目|学期|门课)|(这|本)(学期|门课|门|节课|次考试)|(期中|期末|月考|模拟考|统考|答辩|deadline|截止日期)/;
-
-const SUBJECT_OR_EXAM_PATTERN =
-  /(日语|英语|数学|物理|化学|生物|语文|历史|地理|政治|编程|数据库|索引|算法|贝叶斯|统计|概率|线性代数|微积分|N[1-5]|雅思|托福|考研|高考|中考|四级|六级|考试|备考|证书|认证)/i;
-
-/** `preference` 的内容看起来是否绑定了这个空间。 */
-export function memoryLooksWorkspaceBound(content: string): boolean {
-  return LOCAL_REFERENCE_PATTERN.test(content) || SUBJECT_OR_EXAM_PATTERN.test(content);
-}
-
-/** 一条记忆该落在哪个 scope 上。导出给测试与调用方共用，避免第二套判据。 */
-export function memoryScopeForKind(
-  kind: string,
-  modelScope?: string,
-  binding?: string,
-  content?: string,
-): "global" | "workspace" | "task" {
-  if (CROSS_SPACE_KINDS.has(kind)) {
-    // 两道判据任一判本地就本地。规则那一道可以否决模型。
-    //
-    // 注意这里是 `!== "portable"` 而不是 `=== "local"`：缺省必须落在**本地**。
-    // 契约（schema）的默认值也是 local，但函数不能依赖调用方先过 schema——
-    // 直接调这个函数的地方（测试、以后的批量重算）同样要 fail-closed。
-    // 实测抓到过：写成 `=== "local"` 时 `binding` 为 undefined 会返回 global，
-    // 与契约的默认值方向相反，等于开了一个"漏传就跨空间"的口子。
-    if (binding !== "portable") return "workspace";
-    if (content !== undefined && memoryLooksWorkspaceBound(content)) return "workspace";
-    return "global";
-  }
-  // 非跨空间种类尊重模型给的 task（"只在这一轮有用"的细分），其余一律 workspace。
-  if (modelScope === "task") return "task";
-  return "workspace";
-}
 
 /**
  * "系统随时算得出来的那份统计"不是记忆（实机 2026-09-21）。

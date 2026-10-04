@@ -2,13 +2,24 @@ import { sql } from "drizzle-orm";
 import { reduceOperationReceipt } from "@ailearn/agent-core";
 import { agentOperationV1Schema, type AgentScopeV1 } from "@ailearn/shared/agent-contracts";
 import { agentTurnResultSchema, type AgentTurnRequest, type AgentTurnResult } from "@ailearn/shared";
+import { readOperationArtifactReceipt } from "./artifact-receipt.ts";
 import { AgentStoreError, enqueueAdvance, projectRun, queryRows, readRun, requireVisibleInput,
   type AgentRunRow, type AgentSqlExecutor, type AgentStorePorts } from "./store.ts";
 
 export interface AgentAdvanceLease { id: string; workspaceId: string; requestedBy: string | null; leaseToken: string; signal?: AbortSignal }
 export interface AgentStepRow { id: string; ordinal: number; context_snapshot: AgentTurnRequest; request_hash: string; response: AgentTurnResult | null; applied: boolean }
 
-export function createAgentAdvanceStore(ports: AgentStorePorts, lease: AgentAdvanceLease, runId: string, revision: number) {
+/**
+ * 工厂返回值的具名形状。`Tx` 保留 ports 里的真实事务类型，`invoke` 回调拿到的就是
+ * 它；用 `ReturnType<typeof createAgentAdvanceStore>` 会退回默认窄口，擦掉事务类型，
+ * 所以调用者要显式用它。
+ */
+export type AgentAdvanceStore<Tx extends AgentSqlExecutor = AgentSqlExecutor> =
+  ReturnType<typeof createAgentAdvanceStore<Tx>>;
+
+export function createAgentAdvanceStore<Tx extends AgentSqlExecutor = AgentSqlExecutor>(
+  ports: AgentStorePorts<Tx>, lease: AgentAdvanceLease, runId: string, revision: number,
+) {
   if (!lease.requestedBy) throw new AgentStoreError(403, "missing_actor", "目标缺少发起人。");
   const scope: AgentScopeV1 = { workspaceId: lease.workspaceId, userId: lease.requestedBy };
   async function fence(tx: AgentSqlExecutor, run: AgentRunRow, receiptsOnly = false) {
@@ -87,7 +98,7 @@ export function createAgentAdvanceStore(ports: AgentStorePorts, lease: AgentAdva
         return waiting || settled ? "settled" as const : "continue" as const;
       });
     },
-    async invoke<T>(action: (tx: AgentSqlExecutor, run: AgentRunRow) => Promise<T>) {
+    async invoke<T>(action: (tx: Tx, run: AgentRunRow) => Promise<T>) {
       return ports.transaction(scope, async tx => { const run = await readRun(tx, scope, runId, true); await fence(tx, run); return action(tx, run); });
     },
     async release(needsAdvance: boolean) {
@@ -114,15 +125,15 @@ async function consumeEvents(tx: AgentSqlExecutor, scope: AgentScopeV1, run: Age
         sql`SELECT * FROM agent_operations WHERE id=${event.operation_id} AND run_id=${run.id}`);
       const current = agentOperationV1Schema.parse({ operationId: op.id, runId: run.id, revision: op.revision, scope,
         jobId: op.job_id, capability: op.capability, status: op.status, lastEventSeq: Number(op.last_event_seq), artifact: op.artifact, error: op.error });
-      const [artifact] = await queryRows<{ artifact: unknown }>(tx, sql`SELECT jsonb_build_object('kind','note_overview','id',id,
-        'jobId',generation_job_id,'noteId',note_id,'noteVersionId',note_version_id) AS artifact FROM note_overviews WHERE generation_job_id=${op.job_id}
-        AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
-        UNION ALL SELECT jsonb_build_object('kind','note_dynamic_artifact','id',id,'jobId',generation_job_id,'noteId',note_id,'noteVersionId',note_version_id)
-        FROM note_learning_artifacts WHERE generation_job_id=${op.job_id} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId} LIMIT 1`);
+      // 产物由能力、job、归属与 payload 冻结的材料四层一起绑定判定，见 artifact-receipt。
+      // 读不到就说明还没有真实保存记录：即使 job 报成功也只能停在 outcome_unknown。
+      const artifact = await readOperationArtifactReceipt(tx, {
+        capability: op.capability, jobId: op.job_id, scope, inputs: run.inputs,
+      });
       const status = artifact ? "succeeded" : event.job_status === "running" ? "running"
         : event.job_status === "succeeded" ? "outcome_unknown" : ["dead","failed"].includes(event.job_status) ? "failed" : "accepted";
       const reduced = reduceOperationReceipt(current, { ...current, seq: Number(event.seq), status,
-        artifact: artifact ? current.artifact ?? agentOperationV1Schema.shape.artifact.parse(artifact.artifact) : null,
+        artifact: artifact ? current.artifact ?? artifact : null,
         authoritative: true, error: status === "failed" ? "这部分生成没有完成，请核对材料和设置后再试。"
           : status === "outcome_unknown" ? "任务已结束，但产物回执暂时读不到，先不重复生成。" : null });
       if (reduced.accepted) {

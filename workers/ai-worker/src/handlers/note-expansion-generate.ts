@@ -3,6 +3,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ChatMessage } from "@ailearn/shared";
 import { readNoteExpansionGenerateJobPayload } from "@ailearn/shared/job-payload-contracts";
+import { loadAgentGenerationContext } from "../agent/generation-context.ts";
 import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
 import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
 import { noteAnchorMatchesV1 } from "@ailearn/shared/note-annotation-contracts";
@@ -168,6 +169,11 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
   }));
   if (existing) return;
 
+  // 目标被修订或停止时先停下：整篇拓展要读全部正文并做一次模型调用，
+  // 放在读材料之前判断，失败得早也省掉一次白跑。UI 直接发起的拓展没有
+  // agentRunId，这里只会拿到伴星风格与已确认偏好，行为与笔记旁的其他生成一致。
+  const agentContext = await loadAgentGenerationContext(job);
+
   const source = await loadSource(job, input);
   const governance = await resolveAIGovernanceContext(job.workspaceId, job.requestedBy);
   if (!governance.consentOk) throw new AIConsentRequiredError();
@@ -180,6 +186,7 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
   );
   const messages: ChatMessage[] = [
     { role: "system", content: "你是笔记旁的知识拓展助手。忠实引用用户给出的笔记来解释为什么拓展方向相关；区分原文与补充理解，不伪造来源。" },
+    { role: "system", content: agentContext.instructions },
     { role: "user", content: buildPrompt(source.blocks, Boolean(input.focusAnchor)) },
   ];
   const generationParameters = {
@@ -212,6 +219,9 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
     timeoutMs: Math.min(resolveProviderCallTimeout("note_expansion_generate"), MAX_PROVIDER_CALL_MS),
     isOutputShapeError: (error) => error instanceof NoteExpansionOutputError,
     execute: async (request, signal) => {
+      // 每次真正调用模型前重新占一次目标预算：模型在事务外跑，目标可能已被
+      // 修订或停止，不能靠进入时的判断。
+      await agentContext.reserveModelCall();
       const response = await provider.chatCompletion(request, generationParameters, signal);
       return {
         ok: true,

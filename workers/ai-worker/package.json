@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test --test-concurrency=8 $(find src -name '*.test.ts' | sort)",
     "test:companion-dialogue:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-dialogue-postgres.integration.ts",
+    "test:agent-integration:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/agent-goals-postgres.integration.ts src/integration-tests/agent-history-postgres.integration.ts src/integration-tests/agent-expansion-postgres.integration.ts src/integration-tests/agent-learning-preferences-postgres.integration.ts",
     "test:companion-integration:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-scheduler-ticks-postgres.integration.ts src/integration-tests/companion-memory-handlers-postgres.integration.ts src/integration-tests/companion-agent-postgres.integration.ts src/integration-tests/companion-dialogue-postgres.integration.ts src/integration-tests/companion-memory-semantic-dismissal-postgres.integration.ts src/integration-tests/companion-turn-facts-postgres.integration.ts src/integration-tests/companion-answer-exposure-postgres.integration.ts src/integration-tests/companion-thought-candidate-postgres.integration.ts src/integration-tests/companion-read-pagination-task-memory-postgres.integration.ts src/integration-tests/companion-memory-cross-space.integration.ts src/integration-tests/companion-note-visibility-postgres.integration.ts src/integration-tests/companion-failed-partial-postgres.integration.ts src/integration-tests/companion-runtime-recovery-postgres.integration.ts",
     "test:platform-live:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/opencode-go-live.integration.ts",
     "test:card-generation-v3:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/card-generation-v3-simplified-postgres.integration.ts",
@@ -21,6 +22,7 @@
   },
   "dependencies": {
     "@ailearn/shared": "file:../../packages/shared",
+    "@ailearn/card-generation": "file:../../packages/card-generation",
     "@aws-sdk/client-s3": "^3.1090.0",
     "@smithy/node-http-handler": "^4.9.9",
     "drizzle-orm": "^0.45.2",

@@ -23,7 +23,12 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..");
-const API_ROOT = "apps/api/src";
+/**
+ * 入队点的**实际承载文件**扫哪几棵。2026-10-04（H）创建事务搬进制卡领域包之后，
+ * 第一次生成那一发不再写在 API 里——只扫 `apps/api/src` 会把它漏出分母，于是
+ * "六个入口"少一个，而台账与判据照样全绿：新入口没人登记也没人拦。
+ */
+const RUNTIME_ROOTS = ["apps/api/src", "packages/card-generation/src"];
 const V3_TASKS_FILE = "workers/ai-worker/src/card-generation-v3/tasks.ts";
 const DISPATCHER_FILE = "workers/ai-worker/src/handlers/card-generation-v2-handler.ts";
 
@@ -59,8 +64,13 @@ const ENTRY_JOB_TYPES: Record<string, string[]> = {
     "card_candidate_refine_v3", "card_generation_simplified_v1",
   ],
   "apps/api/src/modules/card-generation-v2/generation-run-service.ts": [
-    // 第一次生成，与质量门全失败后的"再生成一次"（同一 jobType，payload 里带 mode 区分来意）。
-    "card_generation_simplified_v1", "card_generation_simplified_v1",
+    // 只剩质量门全失败后的"再生成一次"（同一 jobType，payload 里带 mode 区分来意）。
+    // 第一次生成那一发随创建事务搬到了下面的 packages 入口。
+    "card_generation_simplified_v1",
+  ],
+  "packages/card-generation/src/creation.ts": [
+    // 第一次生成（H 之后：创建事务是领域包里的唯一实现，API 只剩调用与重试）。
+    "card_generation_simplified_v1",
   ],
 };
 
@@ -104,7 +114,7 @@ function enqueueSitesIn(file: string, source: string): Site[] {
   return sites;
 }
 
-function runtimeApiSources(): Array<{ rel: string; text: string }> {
+function runtimeSources(): Array<{ rel: string; text: string }> {
   const out: Array<{ rel: string; text: string }> = [];
   const walk = (relDir: string) => {
     for (const entry of readdirSync(join(REPO_ROOT, relDir))) {
@@ -116,12 +126,12 @@ function runtimeApiSources(): Array<{ rel: string; text: string }> {
       }
     }
   };
-  walk(API_ROOT);
+  RUNTIME_ROOTS.forEach(walk);
   return out.sort((a, b) => a.rel.localeCompare(b.rel));
 }
 
 function allSites(): Site[] {
-  return runtimeApiSources().flatMap((f) => enqueueSitesIn(f.rel, f.text));
+  return runtimeSources().flatMap((f) => enqueueSitesIn(f.rel, f.text));
 }
 
 function groupByFile(sites: Site[]): Record<string, string[]> {
@@ -146,9 +156,12 @@ function quotedLiteral(name: string): RegExp {
  * 里面那句 `'card_generation_plan'` 是迁移 0163 的部分唯一索引谓词（现在没人写那一档了，
  * 但改它要新迁移＋动 journal，是另一刀；已登记在 39d-w71 §7.4 末）。镜像与迁移不一致
  * 比"旧名字出现在谓词里"严重得多，不能靠改这份文件让扫描变绿。
+ *
+ * `packages/card-generation/src` 在扫描根里：创建事务搬过去之后，那棵源码树同样**不许**
+ * 把旧名字写回来——不扫它就等于给新家开了一道没上锁的门。
  */
 function findPatternHits(pattern: RegExp): string[] {
-  const roots = ["apps/api/src", "apps/desktop-client/src", "workers/ai-worker/src", "packages/shared/src"];
+  const roots = ["apps/api/src", "apps/desktop-client/src", "workers/ai-worker/src", "packages/shared/src", "packages/card-generation/src"];
   const hits: string[] = [];
   const walk = (rel: string) => {
     for (const entry of readdirSync(join(REPO_ROOT, rel))) {
@@ -174,6 +187,13 @@ test("分母自证：真读到了那六个入口，且每一处都只有一个 j
   const sites = allSites();
   assert.equal(sites.length, 7,
     `读到 ${sites.length} 个制卡 outbox 入队点（六个链入口＋一发与链无关的投影）：walk 或判据坏了`);
+  // 分母不能靠"总数没变"蒙混过去：某处搬包（H 就是这么把第一次生成搬走的）会让
+  // 旧根少读一个、新根补上一个，总数仍是 7。逐根点名，才知道读到的是哪几棵源码树。
+  for (const root of RUNTIME_ROOTS) {
+    assert.ok(sites.some((site) => site.file.startsWith(`${root}/`)),
+      `${root} 这一棵里一处入队点都没读到 ⇒ 扫描根写错了，`
+      + "搬进这棵树的新入口会静默逃出台账（总数可能仍是 7，读到的是别处那几发）");
+  }
   for (const site of sites) {
     assert.equal(site.literals.length, 1,
       `${site.file} 那一发的 jobType 表达式里有 ${site.literals.length} 个字面量`

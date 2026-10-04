@@ -10,7 +10,7 @@
 >
 > UI 补充决定：伴星以轻气泡完成日常交流与任务操作，完整内容融入现有“我们的对话手记”。默认突出状态、成果与下一步，长要求、交付与过程逐级展开；轻气泡保留完整操作，Markdown 正确渲染。
 >
-> 实施记录：[阶段 0 的实际实现、窗口与模型验证及保留范围](../../../workers/ai-worker/src/integration-tests/agent-goals-experience-qa.md)。下文是目标方案，不将全项目迁移、完整成长或所有验收项写成已完成。
+> 实施记录：[实际实现、窗口与模型验证及保留范围](../../../workers/ai-worker/src/integration-tests/agent-goals-experience-qa.md)。已覆盖阶段 0 和阶段 1 的拓展、目标历史、合作规则控制、真实草稿读取与全局软删回收同步；制卡领域创建和事件写入已收拢，逐卡回执完成独立数据库复验。制卡接入 Agent 的完整生命周期正在隔离副本中并行实施，尚未交付；完整成长闭环及后续阶段仍未完成。下文是目标方案，不将全项目迁移、完整成长或所有验收项写成已完成。
 >
 > 阅读分工：[41](./41-note-companion-learning-experience-2026-09-28.md)定义笔记与学习事实；[41a](./41a-unified-agent-foundation-2026-09-28.md)保留可靠执行基础；[40](./40-companion-long-term-experience-and-diary-prd-2026-09-25.md)定义人格、记忆与日记；[40b](./40b-companion-runtime-and-observability-2026-09-27.md)保留运行、失败与观测边界。本文负责全项目 Agent 系统、持续身份、目标编排、能力组织与成长闭环，以及伴星与纸面的共同体验。冲突取舍见 §15。
 

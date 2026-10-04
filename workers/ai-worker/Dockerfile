@@ -11,7 +11,7 @@ FROM base AS deps
 COPY workers/ai-worker/package.json workers/ai-worker/package-lock.json workers/ai-worker/.npmrc ./
 # Keep the local shared source out of npm's dependency tree; the dev/prod
 # stages mount/copy it and expose it through the package link explicitly.
-RUN node -e 'const fs=require("node:fs"); const pkg=JSON.parse(fs.readFileSync("package.json","utf8")); for (const name of ["shared","agent-core","agent-host"]) delete pkg.dependencies["@ailearn/"+name]; fs.writeFileSync("package.json", JSON.stringify(pkg)); const lock=JSON.parse(fs.readFileSync("package-lock.json","utf8")); for (const name of ["shared","agent-core","agent-host"]) { delete lock.packages[""]?.dependencies?.["@ailearn/"+name]; delete lock.packages["node_modules/@ailearn/"+name]; delete lock.packages["../../packages/"+name]; } fs.writeFileSync("package-lock.json", JSON.stringify(lock));'
+RUN node -e 'const fs=require("node:fs"); const pkg=JSON.parse(fs.readFileSync("package.json","utf8")); for (const name of ["shared","agent-core","agent-host","card-generation"]) delete pkg.dependencies["@ailearn/"+name]; fs.writeFileSync("package.json", JSON.stringify(pkg)); const lock=JSON.parse(fs.readFileSync("package-lock.json","utf8")); for (const name of ["shared","agent-core","agent-host","card-generation"]) { delete lock.packages[""]?.dependencies?.["@ailearn/"+name]; delete lock.packages["node_modules/@ailearn/"+name]; delete lock.packages["../../packages/"+name]; } fs.writeFileSync("package-lock.json", JSON.stringify(lock));'
 RUN npm config set registry https://registry.npmmirror.com \
  && npm ci --install-links --no-audit --no-fund
 
@@ -23,6 +23,7 @@ COPY --from=deps /app/node_modules /app/node_modules
 COPY packages/shared /app/packages/shared
 COPY packages/agent-core /app/packages/agent-core
 COPY packages/agent-host /app/packages/agent-host
+COPY packages/card-generation /app/packages/card-generation
 COPY workers/ai-worker/package.json ./package.json
 COPY workers/ai-worker/tsconfig.json ./tsconfig.json
 COPY workers/ai-worker/src ./src
@@ -32,7 +33,8 @@ RUN rm -rf node_modules/@ailearn/shared \
  && mkdir -p node_modules/@ailearn \
  && ln -sf /app/packages/shared node_modules/@ailearn/shared \
  && ln -sf /app/packages/agent-core node_modules/@ailearn/agent-core \
- && ln -sf /app/packages/agent-host node_modules/@ailearn/agent-host
+ && ln -sf /app/packages/agent-host node_modules/@ailearn/agent-host \
+ && ln -sf /app/packages/card-generation node_modules/@ailearn/card-generation
 EXPOSE 9100
 CMD ["npm", "run", "dev"]
 
@@ -47,10 +49,12 @@ COPY workers/ai-worker/src /app/workers/ai-worker/src
 COPY packages/shared /app/packages/shared
 COPY packages/agent-core /app/packages/agent-core
 COPY packages/agent-host /app/packages/agent-host
+COPY packages/card-generation /app/packages/card-generation
 RUN mkdir -p /app/node_modules/@ailearn \
  && ln -s /app/packages/shared /app/node_modules/@ailearn/shared \
  && ln -sf /app/packages/agent-core /app/node_modules/@ailearn/agent-core \
- && ln -sf /app/packages/agent-host /app/node_modules/@ailearn/agent-host
+ && ln -sf /app/packages/agent-host /app/node_modules/@ailearn/agent-host \
+ && ln -sf /app/packages/card-generation /app/node_modules/@ailearn/card-generation
 RUN cd /app/workers/ai-worker && npm run build
 WORKDIR /app/workers/ai-worker
 # F-027: 以非 root 用户运行

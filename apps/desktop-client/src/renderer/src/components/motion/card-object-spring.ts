@@ -135,44 +135,21 @@ export function useCardObjectSpring(ref: RefObject<HTMLElement | null>, initial:
   return controller;
 }
 
-export function useCardPaperArrival(ref: RefObject<HTMLElement | null>, pageKey: string | null) {
-  const object = useCardObjectSpring(ref, { y: 34, rotate: -2.5, open: 0 });
-  const lastKey = useRef<string | null>(null);
-  const budget = useRef<number | null>(null);
-  useLayoutEffect(() => {
-    if (!object.current) return;
-    // 到场是这一族里**唯一**把 `open: 0` 当过程量的用法（别的物件关掉就是关掉），
-    // 所以"必须出现在屏上"这条兜底也放在这一层：pageKey 整段为空时没有人会来调
-    // `target`，帧不来时也不会有人来推——纸面会一直停在看不见的位置，而纯 CSS 的
-    // 背景海报立刻就画满了屏（2026-10-04 实机：生成学习卡只换了一张桌面背景）。
-    if (budget.current === null) {
-      budget.current = window.setTimeout(() => {
-        budget.current = null;
-        if (!object.current || object.current.pose().open >= 1) return;
-        object.current.target(resting);
-        object.current.snap();
-      }, REVEAL_BUDGET_MS);
-    }
-    if (!pageKey || lastKey.current === pageKey) return;
-    object.current.target(resting);
-    if (lastKey.current) object.current.kick({ y: 420, rotate: -38 });
-    lastKey.current = pageKey;
-  });
-  useLayoutEffect(() => () => { if (budget.current !== null) { window.clearTimeout(budget.current); budget.current = null; } }, []);
-  return object;
-}
-
 /**
- * 「这张纸一直在屏上，只是刚被放上来」的到场。
+ * 纸面到场：**内容第一帧就在屏上**，到位过程只剩一小段位移与转角。
  *
- * 与 `useCardPaperArrival` 只差初值里的 `open`，而那一个数决定的是**能不能用**：
- * 后者从 `open: 0` 起步，纸面要靠 rAF 一帧帧抬起来才看得见，于是帧被节流的时候
- * （窗口被遮挡、切到后台、主线程正忙着跑制卡任务）用户看到的就是「点生成学习卡只换
- * 了一张桌面背景，内容卡片迟迟不出现」（2026-10-04 实机：等 2–3 秒，有时更久）。
+ * 这一族里原来的到场初值是 `open: 0`——纸面从完全透明开始，靠 rAF 一帧帧抬起来才
+ * 看得见。它有一个墙钟兜底（`REVEAL_BUDGET_MS`），可那只在"帧彻底不来"时才救得了；
+ * 帧照常来的时候，内容仍然要先在 `opacity: 0` 上待满那一下弹簧。实测两处：
+ *   - 生成学习卡：点下去之后只剩桌面背景海报，内容卡片 2–3 秒后才出现；
+ *   - 学习卡列表：卡包已渲染完（8 套在 DOM 里）却停在 `opacity: 0`，**1672ms** 才
+ *     可见；翻开一套卡包，4 张卡同样从 `opacity: 0` 熬到 **1442ms**。
  *
- * **内容在不在屏上不该由入场动画决定**。这一档初值就是 `open: 1`：第一帧画出来，到位
- * 过程只剩一段很短的位移与转角（读者仍然看得出纸是被放上来的），而"帧不来"最多让
- * 位移停在半路，不会让内容消失——`REVEAL_BUDGET_MS` 那道兜底在这一档根本用不上。
+ * **内容在不在屏上不该由入场动画决定。** 初值就是 `open: 1`：第一帧画出来，读者的
+ * "纸是被放上来的"由那 18px／1.2° 的落位承担；"帧不来"最多让位移停在半路，不会让内容
+ * 消失，`REVEAL_BUDGET_MS` 那道兜底在这一档根本用不上。
+ *
+ * 关键帧换页时（`pageKey` 变了）重新落位一次，且**只**换位移——不重新藏起来。
  */
 export function useCardVisibleArrival(ref: RefObject<HTMLElement | null>, pageKey: string | null) {
   const object = useCardObjectSpring(ref, { y: 18, rotate: -1.2, open: 1 });

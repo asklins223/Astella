@@ -10,10 +10,13 @@ export type AgentGoalsController = ReturnType<typeof useAgentGoals>;
 /** Reads a projection only. Closing a bubble or journal never stops execution. */
 export function useAgentGoals(chatPhase: string, onReady: (runId: string) => void) {
   const scope = useRoomStore(state => state.workspaceScopeRevision);
-  const [snapshot, setSnapshot] = useState<{ scope: number; items: AgentRunV1[] }>({ scope, items: [] });
+  const [snapshot, setSnapshot] = useState<{ scope: number; items: AgentRunV1[]; nextCursor: string | null; expanded: boolean }>({ scope, items: [], nextCursor: null, expanded: false });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<string | null>(null);
+  const [moreLoading, setMoreLoading] = useState(false);
+  const [moreError, setMoreError] = useState<string | null>(null);
+  const moreSequence = useRef(0), moreLocked = useRef(false);
   const sequence = useRef(0);
   const locked = useRef(false);
   const statuses = useRef(new Map<string, string>());
@@ -40,7 +43,12 @@ export function useAgentGoals(chatPhase: string, onReady: (runId: string) => voi
         }
         statuses.current.set(key, run.status);
       }
-      setSnapshot({ scope, items: page.items }); setError(null);
+      setSnapshot(previous => ({ scope,
+        items: previous.scope === scope && previous.expanded
+          ? [...page.items, ...previous.items.filter(item => !page.items.some(fresh => fresh.runId === item.runId))] : page.items,
+        nextCursor: previous.scope === scope && previous.expanded ? previous.nextCursor : page.nextCursor,
+        expanded: previous.scope === scope && previous.expanded,
+      })); setError(null);
     } catch (cause) {
       if (current() && request === sequence.current) setError(gatewayErrorMessage(cause));
     } finally { if (current() && request === sequence.current) setLoading(false); }
@@ -48,7 +56,9 @@ export function useAgentGoals(chatPhase: string, onReady: (runId: string) => voi
 
   useEffect(() => {
     ++sequence.current; locked.current = false; statuses.current.clear();
-    setSnapshot({ scope, items: [] }); setPending(null); setError(null); setLoading(true);
+    ++moreSequence.current; moreLocked.current = false;
+    setSnapshot({ scope, items: [], nextCursor: null, expanded: false }); setPending(null); setError(null); setLoading(true);
+    setMoreLoading(false); setMoreError(null);
     void refresh();
     const focus = () => { if (!document.hidden) void refresh(); };
     window.addEventListener("focus", focus);
@@ -65,6 +75,20 @@ export function useAgentGoals(chatPhase: string, onReady: (runId: string) => voi
     return () => window.clearInterval(timer);
   }, [watching, refresh]);
 
+  const loadMore = useCallback(async () => {
+    if (!current() || snapshot.scope !== scope || !snapshot.nextCursor || moreLocked.current) return;
+    const request = ++moreSequence.current;
+    moreLocked.current = true; setMoreLoading(true); setMoreError(null);
+    try {
+      const page = unwrapGatewayResult(await window.ailearn.agent.listRuns({ meta: createRequestMeta(), query: { cursor: snapshot.nextCursor } }));
+      if (!current() || request !== moreSequence.current) return;
+      // A refreshed or locally updated goal wins over an older pagination response.
+      setSnapshot(previous => ({ scope, expanded: true, nextCursor: page.nextCursor,
+        items: [...previous.items, ...page.items.filter(item => !previous.items.some(known => known.runId === item.runId))] }));
+    } catch (cause) { if (current() && request === moreSequence.current) setMoreError(gatewayErrorMessage(cause)); }
+    finally { if (current() && request === moreSequence.current) { moreLocked.current = false; setMoreLoading(false); } }
+  }, [scope, snapshot]);
+
   const change = useCallback(async (run: AgentRunV1, action: "cancel" | "pause" | "resume" | { goal: string }) => {
     if (locked.current || !current()) return false;
     locked.current = true; ++sequence.current; setPending(run.runId); setError(null);
@@ -77,12 +101,13 @@ export function useAgentGoals(chatPhase: string, onReady: (runId: string) => voi
       if (!current()) return false;
       ++sequence.current;
       statuses.current.set(`${updated.runId}:${updated.revision}`, updated.status);
-      setSnapshot(previous => ({ scope, items: [updated, ...previous.items.filter(item => item.runId !== updated.runId)] }));
+      setSnapshot(previous => ({ ...previous, scope, items: [updated, ...previous.items.filter(item => item.runId !== updated.runId)] }));
       return true;
     } catch (cause) {
       if (current()) { await refresh(); if (current()) setError(`${gatewayErrorMessage(cause)} 请核对最新状态后重试。`); }
       return false;
     } finally { if (current()) { locked.current = false; setPending(null); } }
   }, [scope, refresh]);
-  return { items, scope, error, loading, pending, refresh, change };
+  return { items, scope, error, loading, pending, refresh, change, loadMore, moreLoading, moreError,
+    nextCursor: snapshot.scope === scope ? snapshot.nextCursor : null };
 }

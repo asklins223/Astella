@@ -7,6 +7,7 @@ import { prepareNotebookTaskNotification } from "./notebook-task-notifications";
 
 type TaskBuffer = { scope: string; task: NoteExpansionTaskV1 | null; revision: number; savedRevision: number };
 type Lookup = { ok: true; task: NoteExpansionTaskV1 | null } | { ok: false };
+type RetryAction = "read" | "start" | "save" | "confirm";
 
 /** Task receipts never replace a newer edit or a different note's buffer. */
 export function useNotebookExpansionTask(input: {
@@ -14,8 +15,10 @@ export function useNotebookExpansionTask(input: {
   readonly dirty: boolean;
   readonly epochRef: { current: number | undefined };
   readonly onConfirmed: (links: NoteExpansionLinkV1[]) => void;
+  readonly onStarted?: (task: NoteExpansionTaskV1) => void;
+  readonly requestedTask?: { readonly taskId: string; readonly noteVersionId: string };
 }) {
-  const scope = `${input.note?.noteId ?? ""}:${input.note?.currentVersionId ?? ""}`;
+  const scope = `${input.note?.noteId ?? ""}:${input.note?.currentVersionId ?? ""}:${input.requestedTask?.noteVersionId ?? ""}:${input.requestedTask?.taskId ?? ""}`;
   const latest = useRef(input); latest.current = input;
   const buffer = useRef<TaskBuffer>({ scope, task: null, revision: 0, savedRevision: 0 });
   const [state, setState] = useState(buffer.current);
@@ -23,6 +26,8 @@ export function useNotebookExpansionTask(input: {
   const [starting, setStarting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorAction, setErrorAction] = useState<RetryAction>("read");
+  const reportError = (message: string, action: RetryAction) => { setError(message); setErrorAction(action); };
   const [history, setHistory] = useState<{ scope: string; items: NoteExpansionTaskV1[]; nextCursor: string | null }>({ scope, items: [], nextCursor: null });
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -48,8 +53,9 @@ export function useNotebookExpansionTask(input: {
   };
   const matches = (expected: TaskBuffer) => buffer.current.scope === expected.scope
     && buffer.current.task?.taskId === expected.task?.taskId && buffer.current.revision === expected.revision;
-  const validateReceipt = (task: NoteExpansionTaskV1, note: NoteDetailV1, taskId?: string) => {
-    if (task.noteId !== note.noteId || task.noteVersionId !== note.currentVersionId || taskId && task.taskId !== taskId) {
+  const validateReceipt = (task: NoteExpansionTaskV1, note: NoteDetailV1, taskId?: string,
+    expectedVersion = latest.current.requestedTask?.noteVersionId ?? note.currentVersionId) => {
+    if (task.noteId !== note.noteId || task.noteVersionId !== expectedVersion || taskId && task.taskId !== taskId) {
       throw new Error("收到的草稿不属于这篇笔记和批次，请重试读取。");
     }
     return task;
@@ -68,21 +74,24 @@ export function useNotebookExpansionTask(input: {
     if (!note?.currentVersionId) return Promise.resolve({ ok: false });
     if (initialRead.current?.scope === expected.scope) return initialRead.current.promise;
     const api = window.ailearn?.noteExpansion;
-    if (!api) { setError("已有草稿暂时读不到，请重试读取。"); return Promise.resolve({ ok: false }); }
+    if (!api) { reportError("已有草稿暂时读不到，请重试读取。", "read"); return Promise.resolve({ ok: false }); }
     const request = ++readRequest.current, lookup = ++lookupRequest.current;
     const notifyTask = prepareNotebookTaskNotification(note, latest.current.epochRef.current);
     setLoading(true); setError(null);
     const promise = (async (): Promise<Lookup> => {
       try {
-        const result = unwrapGatewayResult(await api.latestTask({ meta: createRequestMeta(latest.current.epochRef.current), noteId: note.noteId, query: { noteVersionId: note.currentVersionId! } }));
+        const requested = latest.current.requestedTask;
+        const result = requested
+          ? { task: unwrapGatewayResult(await api.getTask({ meta: createRequestMeta(latest.current.epochRef.current), noteId: note.noteId, taskId: requested.taskId })) }
+          : unwrapGatewayResult(await api.latestTask({ meta: createRequestMeta(latest.current.epochRef.current), noteId: note.noteId, query: { noteVersionId: note.currentVersionId! } }));
         if (request !== readRequest.current || buffer.current.scope !== expected.scope) return { ok: false };
-        const task = result.task ? validateReceipt(result.task, note) : null;
+        const task = result.task ? validateReceipt(result.task, note, requested?.taskId) : null;
         if (task && ["queued", "running"].includes(task.status)) notifyTask(task, "expansion");
         if (matches(expected)) publish(task);
         resolved.current = true;
         return { ok: true, task: buffer.current.task };
       } catch (failure) {
-        if (request === readRequest.current && buffer.current.scope === expected.scope) setError(`已有草稿没读到：${gatewayErrorMessage(failure)}`);
+        if (request === readRequest.current && buffer.current.scope === expected.scope) reportError(`已有草稿没读到：${gatewayErrorMessage(failure)}`, "read");
         return { ok: false };
       } finally {
         // Polling can supersede this receipt without owning the lookup's loading state.
@@ -106,7 +115,7 @@ export function useNotebookExpansionTask(input: {
       const task = validateReceipt(unwrapGatewayResult(await api.getTask({ meta: createRequestMeta(latest.current.epochRef.current), noteId: note.noteId, taskId })), note, taskId);
       if (request !== readRequest.current || !matches(expected)) return;
       publish(task); resolved.current = true; setError(null);
-    } catch (failure) { if (request === readRequest.current && matches(expected)) setError(gatewayErrorMessage(failure)); }
+    } catch (failure) { if (request === readRequest.current && matches(expected)) reportError(gatewayErrorMessage(failure), "read"); }
   }, []);
 
   const loadHistory = useCallback(async (before?: string) => {
@@ -117,7 +126,7 @@ export function useNotebookExpansionTask(input: {
     setHistoryLoading(true); setHistoryError(null);
     try {
       const page = unwrapGatewayResult(await api.listTasks({ meta: createRequestMeta(latest.current.epochRef.current), noteId: note.noteId,
-        query: { noteVersionId: note.currentVersionId, ...(before ? { before } : {}) } }));
+        query: { noteVersionId: latest.current.requestedTask?.noteVersionId ?? note.currentVersionId, ...(before ? { before } : {}) } }));
       if (request !== historyRequest.current || buffer.current.scope !== expectedScope) return;
       page.items.forEach(task => validateReceipt(task, note));
       setHistory(current => ({ scope: expectedScope, items: [...new Map([...(before && current.scope === expectedScope ? current.items : []),
@@ -131,7 +140,7 @@ export function useNotebookExpansionTask(input: {
     const expectedScope = buffer.current.scope;
     if (!note?.currentVersionId || dirty && !useSavedVersion || inFlight.current) return;
     const api = window.ailearn?.noteExpansion;
-    if (!api) { setError("拓展任务暂时不可用，可以重试。"); return; }
+    if (!api) { reportError("拓展任务暂时不可用，可以重试。", "start"); return; }
     inFlight.current = true;
     const request = ++actionRequest.current;
     setStarting(true); setError(null);
@@ -144,18 +153,18 @@ export function useNotebookExpansionTask(input: {
       if (buffer.current.task?.status === "queued" || buffer.current.task?.status === "running") return;
       // Save pending edits before replacing the displayed batch.
       if (buffer.current.revision !== buffer.current.savedRevision) {
-        setError("当前草稿还有修改未保存。先重试保存，再整理新的一批。"); return;
+        reportError("当前草稿还有修改未保存。先重试保存，再整理新的一批。", "save"); return;
       }
       const expected = { ...buffer.current };
       ++readRequest.current;
       const task = validateReceipt(unwrapGatewayResult(await api.startTask({ meta: createRequestMeta(epochRef.current), noteId: note.noteId,
-        request: { noteVersionId: note.currentVersionId, requestId: crypto.randomUUID(), ...(focusAnchor ? { focusAnchor } : {}) } })), note);
+        request: { noteVersionId: note.currentVersionId, requestId: crypto.randomUUID(), ...(focusAnchor ? { focusAnchor } : {}) } })), note, undefined, note.currentVersionId);
       notifyTask(task, "expansion");
       if (request === actionRequest.current && buffer.current.scope === expectedScope) {
-        if (matches(expected)) publish(task);
-        else setError("当前草稿又有新修改，已保留在本页，请先保存。");
+        if (matches(expected)) { publish(task); latest.current.onStarted?.(task); }
+        else reportError("当前草稿又有新修改，已保留在本页，请先保存。", "save");
       }
-    } catch (failure) { if (request === actionRequest.current && buffer.current.scope === expectedScope) setError(gatewayErrorMessage(failure)); }
+    } catch (failure) { if (request === actionRequest.current && buffer.current.scope === expectedScope) reportError(gatewayErrorMessage(failure), "start"); }
     finally { if (request === actionRequest.current && buffer.current.scope === expectedScope) { inFlight.current = false; setStarting(false); } }
   }, [loadLatest]);
 
@@ -165,17 +174,17 @@ export function useNotebookExpansionTask(input: {
     const api = window.ailearn?.noteExpansion;
     if (!note || !expected.task || expected.task.status !== "ready" || inFlight.current || expected.revision === expected.savedRevision) return;
     const review = noteExpansionReviewV1Schema.safeParse({ drafts: expected.task.drafts.map(({ candidateId, title, blocks, selected }) => ({ candidateId, title, blocks, selected })) });
-    if (!review.success) { setError("每篇草稿都需要标题和正文，正文不能超过 20000 字。补完整后重试保存。"); return; }
-    if (!api) { setError("草稿还在本页，暂时没能保存，请重试。"); return; }
+    if (!review.success) { reportError("每篇草稿都需要标题和正文，正文不能超过 20000 字。补完整后重试保存。", "save"); return; }
+    if (!api) { reportError("草稿还在本页，暂时没能保存，请重试。", "save"); return; }
     const request = ++actionRequest.current;
     inFlight.current = true; setSaving(true); setError(null);
     try {
       const task = validateReceipt(unwrapGatewayResult(await api.review({ meta: createRequestMeta(epochRef.current), noteId: note.noteId, taskId: expected.task.taskId, review: review.data })), note, expected.task.taskId);
       if (request !== actionRequest.current || buffer.current.scope !== expected.scope) return;
       if (matches(expected)) publish(task, true);
-      else setError("还有新的修改未保存，草稿已保留，请重试保存。");
+      else reportError("还有新的修改未保存，草稿已保留，请重试保存。", "save");
     } catch (failure) {
-      if (request === actionRequest.current && buffer.current.scope === expected.scope) setError(`草稿已保留，保存没成功：${gatewayErrorMessage(failure)}`);
+      if (request === actionRequest.current && buffer.current.scope === expected.scope) reportError(`草稿已保留，保存没成功：${gatewayErrorMessage(failure)}`, "save");
     } finally { if (request === actionRequest.current && buffer.current.scope === expected.scope) { inFlight.current = false; setSaving(false); } }
   }, []);
 
@@ -186,23 +195,23 @@ export function useNotebookExpansionTask(input: {
     const candidateIds = expected.task.drafts.filter(draft => draft.selected && !expected.task!.confirmedCandidateIds?.includes(draft.candidateId)).map(draft => draft.candidateId);
     if (!candidateIds.length) return;
     const review = noteExpansionReviewV1Schema.safeParse({ drafts: expected.task.drafts.map(({ candidateId, title, blocks, selected }) => ({ candidateId, title, blocks, selected })) });
-    if (!review.success) { setError("先补完整草稿的标题和正文，再确认收下。"); return; }
-    if (!api) { setError("草稿还在本页，暂时不能收下，请重试。"); return; }
+    if (!review.success) { reportError("先补完整草稿的标题和正文，再确认收下。", "confirm"); return; }
+    if (!api) { reportError("草稿还在本页，暂时不能收下，请重试。", "confirm"); return; }
     const request = ++actionRequest.current;
     inFlight.current = true; setSaving(true); setError(null);
     try {
       const reviewed = validateReceipt(unwrapGatewayResult(await api.review({ meta: createRequestMeta(epochRef.current), noteId: note.noteId, taskId: expected.task.taskId, review: review.data })), note, expected.task.taskId);
       if (request !== actionRequest.current || buffer.current.scope !== expected.scope) return;
-      if (!matches(expected)) { setError("草稿刚有新的修改，已保留在本页。检查后再次确认收下。"); return; }
+      if (!matches(expected)) { reportError("草稿刚有新的修改，已保留在本页。检查后再次确认收下。", "confirm"); return; }
       publish(reviewed, true);
       const saved = unwrapGatewayResult(await api.confirm({ meta: createRequestMeta(epochRef.current), noteId: note.noteId, taskId: expected.task.taskId, request: { candidateIds } }));
       if (request !== actionRequest.current || !matches(expected)) return;
-      if (saved.length !== candidateIds.length || saved.some(link => link.sourceNoteId !== note.noteId || link.sourceNoteVersionId !== note.currentVersionId || link.sourceTaskId !== expected.task!.taskId)) throw new Error("收下回执与这批草稿不一致，请重新读取。");
+      if (saved.length !== candidateIds.length || saved.some(link => link.sourceNoteId !== note.noteId || link.sourceNoteVersionId !== expected.task!.noteVersionId || link.sourceTaskId !== expected.task!.taskId)) throw new Error("收下回执与这批草稿不一致，请重新读取。");
       const confirmedCandidateIds = [...new Set([...(reviewed.confirmedCandidateIds ?? []), ...candidateIds])];
       publish({ ...reviewed, status: reviewed.drafts.every(draft => confirmedCandidateIds.includes(draft.candidateId)) ? "confirmed" : "ready", confirmedCandidateIds }, true);
       latest.current.onConfirmed(saved);
     } catch (failure) {
-      if (request === actionRequest.current && buffer.current.scope === expected.scope) setError(`草稿已保留，这次没能收下：${gatewayErrorMessage(failure)}`);
+      if (request === actionRequest.current && buffer.current.scope === expected.scope) reportError(`草稿已保留，这次没能收下：${gatewayErrorMessage(failure)}`, "confirm");
     } finally { if (request === actionRequest.current && buffer.current.scope === expected.scope) { inFlight.current = false; setSaving(false); } }
   }, []);
 
@@ -224,13 +233,16 @@ export function useNotebookExpansionTask(input: {
   useEffect(() => {
     const started = (event: Event) => {
       const detail = (event as CustomEvent<{ noteId?: unknown; taskId?: unknown }>).detail;
-      if (detail?.noteId === latest.current.note?.noteId && typeof detail?.taskId === "string") void loadTask(detail.taskId);
+      if (!latest.current.requestedTask && detail?.noteId === latest.current.note?.noteId && typeof detail?.taskId === "string") void loadTask(detail.taskId);
     };
     window.addEventListener("ailearn:note-expansion-task-started", started);
     return () => window.removeEventListener("ailearn:note-expansion-task-started", started);
   }, [loadTask]);
   return { expansionTask: task, setExpansionTask: setLocalTask, expansionTaskLoading: loading, expansionTaskStarting: starting,
-    expansionReviewSaving: saving, expansionTaskError: error, expansionReviewDirty: state.scope === scope && state.revision !== state.savedRevision,
+    expansionReviewSaving: saving, expansionTaskError: error, expansionTaskErrorAction: errorAction,
+    retryNoteExpansionTask: () => errorAction === "start" ? start(undefined, true) : errorAction === "save" ? persist(buffer.current.task?.drafts ?? [])
+      : errorAction === "confirm" ? confirm() : loadLatest(),
+    expansionReviewDirty: state.scope === scope && state.revision !== state.savedRevision,
     loadLatestNoteExpansionTask: loadLatest, startNoteExpansionTask: start,
     expansionTaskHistory: history.scope === scope ? history.items : [], expansionTaskHistoryCursor: history.scope === scope ? history.nextCursor : null,
     expansionTaskHistoryLoading: historyLoading, expansionTaskHistoryError: historyError, loadNoteExpansionTaskHistory: loadHistory,

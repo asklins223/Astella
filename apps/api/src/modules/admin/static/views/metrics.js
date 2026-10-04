@@ -1,14 +1,13 @@
 /* ============================================================
-   视图 · 指标（图墙）
+   视图 · 指标（左读数常驻 + 右图墙）
    ------------------------------------------------------------
-   这一页刻意**不用 3D**：连续时序要的是精确读数，空间化只会伤害它。
-   构图是仪表盘的另一面——车站牌式的数字横带 + 大尺度图墙：
+   布局：左边一列**一眼读数**（sticky，滚动曲线时数字不离开视线），
+   右边是图墙——任一图上悬停，所有图同步同一点的时间竖线：
+   「同一时刻各处发生了什么」是这个页面唯一要回答的问题。
 
-     · 横带：headline 里那些"一眼值"（成功率、速率、p95、池、RLS…）
-     · 图墙：精选曲线，无卡片壳；任一图上悬停，所有图同步同一点的时间
-       竖线——"同一时刻各处发生了什么"是这个页面唯一要回答的问题
-     · 最慢路由：p95 排序的前 N 条（服务端算好）
-     · 原始指标：折叠在最后，给告警集成与深挖
+   最慢路由与原始指标在页面底部通栏：前者是离散事实（表格），后者是深挖入口
+   （折叠）。分位数是估算（直方图插值），只用于看趋势；告警仍以 /metrics
+   原始序列为准。
    ============================================================ */
 
 import { api } from "../api-client.js";
@@ -17,12 +16,12 @@ import {
   formatNumber, formatPercent, formatRateValue,
 } from "../format.js";
 import { el, section, table, emptyState } from "../ui.js";
-import { SERIES_COLORS, seriesValues } from "./shared.js";
-import { areaChart, summarize } from "../charts.js";
+import { SERIES_COLORS, seriesChart } from "./shared.js";
+import { summarize } from "../charts.js";
 
 export const view = {
   title: "指标",
-  lede: "先给结论，再给曲线，原始转储在最后。耗时是估算值（按直方图分桶插值），看趋势足够，精确告警仍以原始指标为准。",
+  lede: "左边是此刻的读数（滚动时保持可见），右边是曲线。耗时按直方图插值估算，看趋势足够，精确告警仍以原始指标为准。",
   load: loadMetrics,
 };
 
@@ -33,16 +32,24 @@ const RANGES = [
   { label: "30 分钟", value: 30 * 60 * 1000 },
 ];
 
-function tickerItem(key, value, { tone = "", unit = "", empty = false } = {}) {
-  return el("div", { class: "ticker__item" },
-    el("span", { class: "ticker__k", text: key }),
+function readoutRow(key, value, { tone = "", empty = false, id, sub = null } = {}) {
+  return el("div", { class: "readout-row" },
+    el("span", { class: "readout-row__k" }, key, sub ? el("span", { class: "dim", text: ` · ${sub}` }) : null),
     el("span", {
-      class: `ticker__v${tone ? ` ticker__v--${tone}` : ""}${empty ? " ticker__v--empty" : ""}`,
-      dataset: { statId: `ticker-${key}` },
+      class: `readout-row__v${tone ? ` readout-row__v--${tone}` : ""}${empty ? " readout-row__v--empty" : ""}`,
+      dataset: id ? { statId: id } : {},
       text: value,
     }),
-    unit ? el("span", { class: "ticker__unit", text: unit }) : null,
   );
+}
+
+function byUnit(unit, value) {
+  switch (unit) {
+    case "rate": return `${formatRateValue(value)} 次/分`;
+    case "duration": return formatLatency(value);
+    case "bytes": return formatBytes(value);
+    default: return formatCount(value);
+  }
 }
 
 async function loadMetrics(ctx) {
@@ -52,36 +59,67 @@ async function loadMetrics(ctx) {
   ]);
   const wrap = el("div", {});
   const allPoints = series.points ?? [];
-  const lastPoint = allPoints.length ? allPoints[allPoints.length - 1] : null;
+  const last = allPoints.length ? allPoints[allPoints.length - 1] : null;
   const h = data.headline;
-  ctx.onMetrics?.(h, lastPoint);
 
-  /* ── 数字横带 ── */
+  /* ── 布局：左读数（sticky）+ 右图墙 ── */
+  const layout = el("div", { class: "metric-layout" });
+
   const successRate = h.httpSuccessRate;
-  wrap.append(el("div", { class: "ticker" },
-    tickerItem("成功率", successRate === null ? "—" : formatPercent(successRate), {
-      tone: successRate === null ? "" : successRate < 0.99 ? "bad" : "ok",
-      empty: successRate === null,
-    }),
-    tickerItem("请求", formatRateValue(lastPoint?.requestsPerMinute ?? null), { unit: "次/分", empty: lastPoint?.requestsPerMinute == null }),
-    tickerItem("失败", formatRateValue(lastPoint?.errorsPerMinute ?? null), {
-      unit: "次/分",
-      tone: (lastPoint?.errorsPerMinute ?? 0) > 0 ? "bad" : "ok",
-      empty: lastPoint?.errorsPerMinute == null,
-    }),
-    tickerItem("p95", formatLatency(lastPoint?.p95Seconds ?? null), { tone: (lastPoint?.p95Seconds ?? 0) > 1 ? "warn" : "", empty: lastPoint?.p95Seconds == null }),
-    tickerItem("排队", formatCount(lastPoint?.queuePending ?? null), { empty: lastPoint?.queuePending == null }),
-    tickerItem("结算积压", formatCount(h.outboxPendingTotal), { tone: (h.outboxOldestPendingSeconds ?? 0) > 120 ? "warn" : "" }),
-    tickerItem("数据库连接", h.dbPoolActive === null ? "—" : formatCount(h.dbPoolActive), { empty: h.dbPoolActive === null }),
-    tickerItem("RLS 拒绝", formatCount(h.dbRlsDenied), { tone: h.dbRlsDenied > 0 ? "warn" : "ok" }),
-    tickerItem("事务失败", formatCount(h.dbTransactionFailures), { tone: h.dbTransactionFailures > 0 ? "warn" : "" }),
-    tickerItem("事件循环", h.eventLoopLagSeconds === null ? "—" : `${Math.round(h.eventLoopLagSeconds * 1000)}`, { unit: "ms", tone: (h.eventLoopLagSeconds ?? 0) > 0.5 ? "warn" : "", empty: h.eventLoopLagSeconds === null }),
-    tickerItem("堆内存", formatBytes(h.heapUsedBytes), { empty: h.heapUsedBytes === null }),
-    tickerItem("常驻", formatBytes(h.rssBytes), { empty: h.rssBytes === null }),
-    tickerItem("请求累计", formatNumber(h.httpRequestsTotal)),
-  ));
+  layout.append(
+    el("div", { class: "metric-readout" },
+      el("div", { class: "section__head", style: "border-bottom:0;padding-bottom:6px" },
+        el("span", { class: "section__label", text: "一眼读数" }),
+        el("span", { class: "section__note", text: "实时" }),
+      ),
+      el("div", { class: "readout" },
+        readoutRow("成功率", successRate === null ? "—" : formatPercent(successRate), {
+          tone: successRate === null ? "" : successRate < 0.99 ? "bad" : "ok",
+          empty: successRate === null, id: "m-success",
+          sub: h.httpErrors5xxTotal > 0 ? `5xx ${formatCount(h.httpErrors5xxTotal)}` : null,
+        }),
+        readoutRow("请求速率", formatRateValue(last?.requestsPerMinute ?? null), {
+          sub: "次/分", empty: last?.requestsPerMinute == null, id: "m-rate",
+        }),
+        readoutRow("响应耗时 p95", formatLatency(last?.p95Seconds ?? null), {
+          tone: (last?.p95Seconds ?? 0) > 1 ? "warn" : "",
+          empty: last?.p95Seconds == null, id: "m-lat",
+        }),
+        readoutRow("失败速率", formatRateValue(last?.errorsPerMinute ?? null), {
+          sub: "次/分", tone: (last?.errorsPerMinute ?? 0) > 0 ? "bad" : "ok",
+          empty: last?.errorsPerMinute == null, id: "m-err",
+        }),
+        readoutRow("排队任务", formatCount(last?.queuePending ?? null), {
+          empty: last?.queuePending == null, id: "m-queue",
+        }),
+        readoutRow("结算积压", formatCount(h.outboxPendingTotal), {
+          tone: (h.outboxOldestPendingSeconds ?? 0) > 120 ? "warn" : "", id: "m-outbox",
+          sub: h.outboxOldestPendingSeconds === null ? null : `最老 ${formatCount(Math.round(h.outboxOldestPendingSeconds))}s`,
+        }),
+        readoutRow("数据库连接", h.dbPoolActive === null ? "—" : formatCount(h.dbPoolActive), {
+          empty: h.dbPoolActive === null, id: "m-pool",
+        }),
+        readoutRow("事务失败", formatCount(h.dbTransactionFailures), {
+          tone: h.dbTransactionFailures > 0 ? "warn" : "ok", id: "m-txfail",
+        }),
+        readoutRow("RLS 拒绝", formatCount(h.dbRlsDenied), {
+          tone: h.dbRlsDenied > 0 ? "warn" : "ok", id: "m-rls",
+        }),
+        readoutRow("事件循环", h.eventLoopLagSeconds === null ? "—" : `${Math.round(h.eventLoopLagSeconds * 1000)} ms`, {
+          tone: (h.eventLoopLagSeconds ?? 0) > 0.5 ? "warn" : "",
+          empty: h.eventLoopLagSeconds === null, id: "m-lag",
+        }),
+        readoutRow("堆内存", formatBytes(h.heapUsedBytes), {
+          empty: h.heapUsedBytes === null, id: "m-heap",
+          sub: h.rssBytes === null ? null : `常驻 ${formatBytes(h.rssBytes)}`,
+        }),
+        readoutRow("请求累计", formatNumber(h.httpRequestsTotal), { id: "m-total" }),
+      ),
+    ),
+  );
 
-  /* ── 图墙（共享时间光标）── */
+  /* ── 右：图墙（共享时间光标）── */
+  const right = el("div", {});
   const chartsArea = el("div", {});
   const chips = el("div", { class: "chips" });
   function renderRangeChips() {
@@ -101,62 +139,59 @@ async function loadMetrics(ctx) {
       chartsArea.replaceChildren(el("div", { class: "chart__empty", text: "这个窗口里点还不够——把窗口放宽到 30 分钟，或等几分钟再看。" }));
       return;
     }
-    const times = points.map((point) => point.t ?? null);
-    const figures = [];
-
+    const figureEls = [];
     const cells = (series.series ?? []).map((meta) => {
-      const values = seriesValues(points, meta.key);
-      const stats = summarize(values);
+      const stats = summarize(points.map((point) => (typeof point[meta.key] === "number" ? point[meta.key] : null)));
       const cell = el("div", { class: "chart-cell" },
         el("div", { class: "chart-cell__head" },
           el("span", { class: "chart-cell__title", title: meta.hint, text: meta.label }),
           el("span", {
             class: "chart-cell__now",
-            text: stats.last === null ? "暂无读数" : `当前 ${formatByUnitFor(meta.unit, stats.last)}${stats.peak > Math.max(stats.last, 0.0001) ? ` · 峰值 ${formatByUnitFor(meta.unit, stats.peak)}` : ""}`,
+            text: stats.last === null
+              ? "暂无读数"
+              : `当前 ${byUnit(meta.unit, stats.last)}${stats.peak > Math.max(stats.last, 0.0001) ? ` · 峰值 ${byUnit(meta.unit, stats.peak)}` : ""}`,
           }),
         ),
       );
-      const figure = areaChart({
-        values,
-        times,
+      const figureEl = seriesChart({
+        points,
+        key: meta.key,
         color: SERIES_COLORS[meta.key],
-        label: meta.label,
         unit: meta.unit,
-        valueText: meta.hint,
-        emptyHint: "这段时间没有采样",
         tall: true,
         onHover: (index) => {
           // 跨图共享：这个点在哪，所有图的竖线就都画在哪。
-          for (const other of figures) {
-            if (other !== figure) other.applyCursor?.(index);
+          for (const other of figureEls) {
+            if (other !== figureEl) other.applyCursor?.(index);
           }
         },
       });
-      cell.append(figure);
-      figures.push(figure);
+      cell.append(figureEl);
+      figureEls.push(figureEl);
       return cell;
     });
-
     chartsArea.replaceChildren(el("div", { class: "chart-wall" }, ...cells));
   }
 
   renderRangeChips();
   renderCharts();
-  wrap.append(section("走势", "缺口 = 那段没有采样，不是 0", el("div", { class: "row row--between" },
+  right.append(section("走势", "缺口 = 那段没有采样，不是 0", el("div", { class: "row row--between" },
     chips,
     el("span", { class: "section__note", text: "悬停任一图，所有图同步同一点" }),
   ), el("div", { class: "u-mt-10" }, chartsArea)));
+  layout.append(right);
+  wrap.append(layout);
 
-  /* ── 最慢路由 ── */
+  /* ── 最慢路由（通栏）── */
   const routes = data.slowestRoutes ?? [];
   wrap.append(section("最慢的路由", "按 p95 排序 · 样本数为 0 的路由不参与",
     routes.length === 0
-      ? el("div", { class: "table" }, emptyState("还没有带流量的路由", "有请求打到服务之后，这里会按 p95 从慢到快列出前 8 条。"))
+      ? emptyState("还没有带流量的路由", "有请求打到服务之后，这里会按 p95 从慢到快列出前 8 条。")
       : el("div", { class: "table" },
           table(
             ["方法", "路由", "p95", "样本数"],
             routes.map((row) => [
-              el("span", { class: "badge badge--info badge--mono", text: row.method }),
+              el("span", { class: "badge badge--neutral badge--mono", text: row.method }),
               el("span", { class: "mono", text: row.route }),
               row.p95 === null ? "—" : formatMs(row.p95 * 1000),
               formatCount(row.count),
@@ -165,7 +200,7 @@ async function loadMetrics(ctx) {
           ),
         )));
 
-  /* ── 原始指标（折叠在最后）── */
+  /* ── 原始指标（通栏，折叠）── */
   const families = [...data.business, ...data.process];
   const rawBody = el("div", {});
   const rawSearch = el("input", {
@@ -184,10 +219,10 @@ async function loadMetrics(ctx) {
       return;
     }
     rawBody.replaceChildren(...visible.map((family) => {
-      const card = el("details", { class: "disclosure" });
+      const item = el("details", { class: "disclosure" });
       const summary = el("summary", {},
         el("span", { text: family.label ?? family.name }),
-        el("span", { class: "badge badge--mono", title: family.name, text: `${family.type} · ${family.samples.length}` }),
+        el("span", { class: "badge badge--neutral badge--mono", title: family.name, text: `${family.type} · ${family.samples.length}` }),
       );
       const body = el("div", { class: "disclosure__body" });
       body.append(el("p", { class: "disclosure__help", text: family.help }));
@@ -195,12 +230,12 @@ async function loadMetrics(ctx) {
       if (family.histograms?.length) {
         body.append(table(
           ["标签", "条数", "p50", "p95", "溢出"],
-          family.histograms.map((item) => [
-            el("span", { class: "mono", text: Object.entries(item.labels).map(([k, v]) => `${k}=${v}`).join(" ") || "—" }),
-            formatCount(item.count),
-            item.p50 === null ? "—" : formatMs(item.p50 * 1000),
-            item.p95 === null ? "—" : formatMs(item.p95 * 1000),
-            (item.overflowRatio ?? 0) > 0.001 ? formatPercent(item.overflowRatio) : "0%",
+          family.histograms.map((histogram) => [
+            el("span", { class: "mono", text: Object.entries(histogram.labels).map(([k, v]) => `${k}=${v}`).join(" ") || "—" }),
+            formatCount(histogram.count),
+            histogram.p50 === null ? "—" : formatMs(histogram.p50 * 1000),
+            histogram.p95 === null ? "—" : formatMs(histogram.p95 * 1000),
+            (histogram.overflowRatio ?? 0) > 0.001 ? formatPercent(histogram.overflowRatio) : "0%",
           ]),
           { numericColumns: [1, 2, 3, 4] },
         ));
@@ -215,11 +250,11 @@ async function loadMetrics(ctx) {
           { numericColumns: [1] },
         ));
         if (family.samples.length > samples.length) {
-          body.append(el("p", { class: "stat__hint", text: `只显示前 ${samples.length} 条，共 ${family.samples.length} 条。` }));
+          body.append(el("p", { class: "figure__hint", text: `只显示前 ${samples.length} 条，共 ${family.samples.length} 条。` }));
         }
       }
-      card.append(summary, body);
-      return card;
+      item.append(summary, body);
+      return item;
     }));
   }
   rawSearch.addEventListener("input", renderRaw);
@@ -230,13 +265,4 @@ async function loadMetrics(ctx) {
   ));
 
   return wrap;
-}
-
-function formatByUnitFor(unit, value) {
-  switch (unit) {
-    case "rate": return formatRateValue(value) === "—" ? "—" : `${formatRateValue(value)} 次/分`;
-    case "duration": return formatLatency(value);
-    case "bytes": return formatBytes(value);
-    default: return formatCount(value);
-  }
 }

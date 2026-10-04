@@ -1,16 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
 import {
   buildExtractMessages,
   isVolatileStatisticMemory,
   isMemoryExtractConfidenceAccepted,
   isMemoryValidityRangeUsable,
   memoryExtractOutputSchema,
-  memoryScopeForKind,
   parseMemoryExtractJson,
   resolveMemoryExtractSource,
   isMemorySourceSuppressed,
 } from "../companion-memory-extractor.ts";
+// 范围判据住在共享层（42 阶段 1 E）。抽取器只调用它，不自带一份。
+import { memoryScopeForKind } from "@ailearn/shared/companion-memory-scope";
 import {
   resolveCompanionMemoryTemporalMetadata,
   type CompanionMemoryTemporalMetadataInput,
@@ -291,7 +293,7 @@ test("prompt 用现行准入反例区分临时请求、条件偏好、引用、�
 // 0256 那条迁移里的解禁规则跑在 plpgsql（SECURITY DEFINER，跨用户扫），
 // 判据的正主是这个文件的 isVolatileStatisticMemory。两处各写一份正则，
 // 早晚会漂——这条测试把两边按同一批样本对齐，漂了就红。
-import { readFileSync, readdirSync } from "node:fs";
+// `readFileSync` / `readdirSync` 见文件头的 import。
 
 function migrationStatTests(): { window: RegExp; quantity: RegExp } {
   const url = new URL(
@@ -354,6 +356,9 @@ test("每个用 json_object 取回的伴星 handler 都必须关思考", () => {
 });
 
 // ─── 跨空间记忆的判据（2026-09-22 裁决 + 收紧）──────────────────────────
+// 判据本体在 `@ailearn/shared/companion-memory-scope`（42 阶段 1 E）。这里断言的是
+// **worker 这一侧的用法**：仍然按模型 binding + 确定性规则两道判、缺省本地，
+// 而且抽取器不再自带第二份正则——那份判据现在同时管着手动保存的写入端。
 // 这些断言直接对着 dev 库那批真种子记忆写：分界线是从数据里读出来的，不是猜的。
 
 test("跨空间判据：只有 preference 可能跨空间，其余留在原空间", () => {
@@ -412,4 +417,17 @@ test("跨空间判据：非跨空间种类仍尊重模型给的 task 细分", ()
   assert.equal(memoryScopeForKind("goal", "task", "local", "这一轮的目标"), "task");
   // 跨空间种类不吃 task：偏好不是"这一轮"的东西。
   assert.equal(memoryScopeForKind("preference", "task", "portable", "喜欢先看反例"), "global");
+});
+
+test("范围判据只有一份：抽取器调用共享层，不自带正则或第二套判定", () => {
+  // 判据一旦在抽取器和写入端各有一份，漂移的方向通常是写入端那份更松——那正是
+  // 42 阶段 1 E 要补的洞。所以这里守的是"只有一处定义"，而不只是"值对不对"。
+  const source = readFileSync(new URL("../companion-memory-extractor.ts", import.meta.url), "utf8");
+  assert.match(source, /from "@ailearn\/shared\/companion-memory-scope"/,
+    "抽取器没有走共享判据：写入端与抽取端可能已经各判各的");
+  for (const duplicated of ["LOCAL_REFERENCE_PATTERN", "SUBJECT_OR_EXAM_PATTERN", "CROSS_SPACE_KINDS"]) {
+    assert.ok(!source.includes(duplicated), `抽取器里又出现了一份 ${duplicated}：判据不再唯一`);
+  }
+  // 调用点仍要按"两道判据"传参：少传 binding 会让缺省方向翻面（见共享层注释）。
+  assert.match(source, /memoryScopeForKind\(candidate\.kind, candidate\.scope, candidate\.binding, candidate\.content\)/);
 });

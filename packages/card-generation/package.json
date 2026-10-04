@@ -1,0 +1,7 @@
+{
+  "name": "@ailearn/card-generation", "version": "0.1.0", "private": true, "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": { "@ailearn/shared": "file:../shared", "drizzle-orm": "^0.45.2" },
+  "devDependencies": { "typescript": "^5.9.3", "tsx": "^4.20.5", "@types/node": "^24.0.0" }
+}

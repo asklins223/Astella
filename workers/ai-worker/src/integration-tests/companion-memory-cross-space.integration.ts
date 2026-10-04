@@ -17,7 +17,8 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
-import { memoryScopeForKind } from "../handlers/companion-memory-extractor.ts";
+// 范围判据的唯一来源（42 阶段 1 E：抽取侧与 API 写入端共用同一份）。
+import { memoryScopeForKind } from "@ailearn/shared/companion-memory-scope";
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 
 // 两个池，分工写死在下面（这份文件曾经整份只有一条 `DATABASE_URL_API`：

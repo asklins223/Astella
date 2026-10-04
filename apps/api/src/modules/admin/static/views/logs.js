@@ -1,14 +1,15 @@
 /* ============================================================
-   视图 · 日志（终端）
+   视图 · 日志（级别栏 + 终端）
    ------------------------------------------------------------
-   一个终端，两种流，工具栏切换：
+   左边一列是**过滤器**，右边是流：
 
-     · **应用日志**：服务说过的话，SSE 实时尾随；级别筛选、关键词搜索
-       （本地过滤，焦点与光标不因重绘丢失）。
-     · **访问日志**：完成的请求，一行一条（方法 + 路径 + 状态 + 耗时）。
-       它回答的是另一个问题——「刚才哪个请求慢了/炸了」。
+     · **应用日志**：左栏按级别列出计数（全部 / 常规以上 / … / 只有问题），
+       点一行筛一类；右侧终端实时尾随（SSE），支持关键词搜索与暂停。
+     · **访问日志**：左栏换成"全部 / 只看失败"与数量；右侧一行一条请求
+       （方法 + 路径 + 状态 + 耗时）——它回答「刚才哪个请求慢了/炸了」。
 
-   这一页刻意保持**平面**：日志是线性检索，空间化只会让人找不到东西。
+   计数按**当前窗口**统计（不是全量），所以它同时也是分布读数：
+   一眼看出"警告多不多"，再决定要不要钻进去。
    ============================================================ */
 
 import { api } from "../api-client.js";
@@ -17,7 +18,7 @@ import { el, emptyState, ICONS, icon } from "../ui.js";
 
 export const view = {
   title: "日志",
-  lede: "上面是服务说过的话（实时推送，只保留内存里最近一批）；下面是完成的请求。重启都会清空——完整日志仍在容器里。",
+  lede: "左边按级别筛选（数字是当前窗口里的条数），右边是实时流。内存里只保留最近一批，重启即清空——完整日志仍在容器里。",
   fill: true,
   load: loadLogs,
 };
@@ -105,24 +106,24 @@ function levelAtLeast(entryLevel, minLevel) {
 }
 
 async function loadLogs(ctx) {
-  /* ── 工具栏 ── */
-  const modeTabs = el("div", { class: "chips" });
-  const filterChips = el("div", { class: "chips" });
+  /* ── 左栏：过滤器（按模式切换内容）── */
+  const levelsRail = el("div", { class: "levels" });
+
+  /* ── 右侧：工具栏 + 流 ── */
+  const modeTabs = el("div", { class: "seg", role: "group", "aria-label": "日志流" });
   const searchInput = el("input", { class: "field__input", type: "search", style: "flex:1;min-width:180px" });
   const countNote = el("span", { class: "term__count" });
   const pauseButton = el("button", { class: "btn btn--sm", type: "button" });
 
   const toolbar = el("div", { class: "term__toolbar" },
     modeTabs,
-    el("span", { style: "width:1px;height:18px;background:var(--hairline)" }),
-    filterChips,
     searchInput,
     pauseButton,
     countNote,
   );
   const body = el("div", { class: "term__body" });
-  // 直接返回终端（不再套一层 div）：全高视图靠 flex 链撑开，中间多一层会断掉。
   const term = el("div", { class: "term" }, toolbar, body);
+  const layout = el("div", { class: "log-layout" }, levelsRail, term);
 
   /* ── 两条流的数据窗口 ── */
   let appEntries = [];
@@ -134,35 +135,20 @@ async function loadLogs(ctx) {
     modeTabs.replaceChildren(
       ...[["app", "应用日志"], ["requests", "访问日志"]].map(([value, label]) =>
         el("button", {
-          class: "chip", type: "button",
+          class: "seg__item", type: "button",
           "aria-pressed": state.mode === value ? "true" : "false",
           text: label,
-          onclick: () => { state.mode = value; renderModeTabs(); renderFilterChips(); render(); },
+          onclick: () => { state.mode = value; renderModeTabs(); renderToolbar(); paintRail(); render(); },
         })),
     );
   }
 
-  function renderFilterChips() {
+  function renderToolbar() {
     if (state.mode === "app") {
-      filterChips.replaceChildren(...LEVELS.map((level) =>
-        el("button", {
-          class: "chip", type: "button",
-          "aria-pressed": level.value === state.level ? "true" : "false",
-          text: level.label,
-          onclick: () => { state.level = level.value; renderFilterChips(); render(); },
-        })));
       searchInput.placeholder = "搜消息、字段值，比如 runId 或报错关键词";
       searchInput.value = state.search;
       pauseButton.hidden = false;
     } else {
-      filterChips.replaceChildren(
-        el("button", {
-          class: "chip", type: "button",
-          "aria-pressed": state.requestsOnlyProblems ? "true" : "false",
-          text: "只看失败",
-          onclick: () => { state.requestsOnlyProblems = !state.requestsOnlyProblems; renderFilterChips(); render(); },
-        }),
-      );
       searchInput.placeholder = "搜路径，比如 /v2/home";
       searchInput.value = state.requestSearch;
       pauseButton.hidden = true;
@@ -197,7 +183,55 @@ async function loadLogs(ctx) {
     }
   });
 
-  /* ── 渲染 ── */
+  /**
+   * 左栏过滤器：应用模式按级别列出计数；访问模式是"全部 / 只看失败"。
+   * 计数是**当前窗口**的分布——它同时告诉你"警告多不多"。
+   */
+  function paintRail() {
+    if (state.mode === "app") {
+      // 一次遍历数出各级别的条数（每来一条日志都要更新左栏，别做 5 次 filter）。
+      const tally = { trace: 0, debug: 0, info: 0, warn: 0, error: 0, fatal: 0, silent: 0 };
+      for (const entry of appEntries) tally[entry.level] = (tally[entry.level] ?? 0) + 1;
+      const atLeast = (level) => Object.entries(tally)
+        .reduce((sum, [name, count]) => sum + ((LEVEL_ORDER[name] ?? 0) >= (LEVEL_ORDER[level] ?? 0) ? count : 0), 0);
+      levelsRail.replaceChildren(...LEVELS.map((level) => {
+        const count = atLeast(level.value);
+        const tone = level.value === "error" && count > 0 ? "bad"
+          : level.value === "warn" && count > 0 ? "warn" : "";
+        return el("button", {
+          class: "level-row", type: "button",
+          "aria-pressed": level.value === state.level ? "true" : "false",
+          onclick: () => { state.level = level.value; paintRail(); render(); },
+        },
+          el("span", { text: level.label }),
+          el("span", { class: `level-row__count${tone ? ` level-row__count--${tone}` : ""}`, text: String(count) }),
+        );
+      }));
+      return;
+    }
+
+    const problems = requests.filter((entry) => (entry.fields.statusCode ?? 0) >= 400).length;
+    levelsRail.replaceChildren(
+      el("button", {
+        class: "level-row", type: "button",
+        "aria-pressed": state.requestsOnlyProblems ? "false" : "true",
+        onclick: () => { state.requestsOnlyProblems = false; paintRail(); render(); },
+      },
+        el("span", { text: "全部请求" }),
+        el("span", { class: "level-row__count", text: String(requests.length) }),
+      ),
+      el("button", {
+        class: "level-row", type: "button",
+        "aria-pressed": state.requestsOnlyProblems ? "true" : "false",
+        onclick: () => { state.requestsOnlyProblems = true; paintRail(); render(); },
+      },
+        el("span", { text: "只看失败" }),
+        el("span", { class: `level-row__count${problems > 0 ? " level-row__count--warn" : ""}`, text: String(problems) }),
+      ),
+    );
+  }
+
+  /* ── 渲染流 ── */
   function render() {
     if (state.mode === "app") {
       const needle = state.search.trim();
@@ -230,7 +264,7 @@ async function loadLogs(ctx) {
     if (visible.length === 0) {
       body.replaceChildren(emptyState(
         state.requestsOnlyProblems ? "这段时间没有失败的请求" : "还没有完成的请求",
-        state.requestsOnlyProblems ? "取消「只看失败」看全部访问。" : "请求完成后会实时出现在这里。",
+        state.requestsOnlyProblems ? "切到「全部请求」看完整访问。" : "请求完成后会实时出现在这里。",
         state.requestsOnlyProblems ? "good" : "",
       ));
       return;
@@ -249,21 +283,24 @@ async function loadLogs(ctx) {
   requestCapacity = initialRequests.capacity ?? 300;
 
   renderModeTabs();
-  renderFilterChips();
+  renderToolbar();
+  paintRail();
   render();
 
-  const atTop = () => {
-    const content = document.querySelector(".content");
-    // 终端区域自己的滚动：看"最新"的位置在顶部。
-    return body.scrollTop < 40;
-  };
+  const atTop = () => body.scrollTop < 40;
   function appendLiveLog(entry) {
     appEntries = [entry, ...appEntries].slice(0, 500);
+    // 暂停的语义是"画面冻住"：只更新左栏计数，不重绘流本身。
+    // （此前 paused 分支也会 render()，新日志照常插到顶部——暂停形同虚设。）
     if (state.paused || state.mode !== "app") {
-      if (state.mode === "app") render();
+      if (state.mode === "app") {
+        paintRail();
+        if (state.paused) countNote.textContent = `已暂停 · 缓冲 ${appEntries.length}/${appCapacity}`;
+      }
       return;
     }
     const matches = levelAtLeast(entry.level, state.level) && matchesSearch(entry, state.search.trim());
+    paintRail();
     if (!matches) {
       countNote.textContent = `有未显示的新日志 · 缓冲 ${appEntries.length}/${appCapacity}`;
       return;
@@ -281,6 +318,7 @@ async function loadLogs(ctx) {
     requestRerenderPending = true;
     requestAnimationFrame(() => {
       requestRerenderPending = false;
+      paintRail();
       if (state.mode === "requests") render();
     });
   }
@@ -293,5 +331,5 @@ async function loadLogs(ctx) {
   ctx.onCleanup?.(() => unsubscribeLogs?.());
   ctx.onCleanup?.(() => unsubscribeRequests?.());
 
-  return term;
+  return layout;
 }

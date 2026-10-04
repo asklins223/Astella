@@ -132,6 +132,24 @@ test("本模块只接记忆族：别的一个都不接，来了就报错而不�
     "非记忆工具进了记忆族却没被拒——那说明 default 分支不见了");
 });
 
+test("full 档修订也走共享的账号级范围判据（42 阶段 1 E 复审补齐）", () => {
+  // `full` 档是裸 SQL，不经 API 的 `correctMemory`；它自己那一份判据必须是**共享的**。
+  // 两处各写一份正则时，漂移的方向通常是直执行那份更松——而 `full` 档恰恰是用户
+  // 不需要确认的那一条路，守卫松在它上面等于没有守卫。
+  const source = readFileSync(join(HANDLERS, "companion-memory-tools.ts"), "utf8");
+  assert.match(source, /accountPreferenceWriteDecision\(/,
+    "直执行修订没有过账号级范围判据");
+  assert.ok(!/LOCAL_REFERENCE_PATTERN|SUBJECT_OR_EXAM_PATTERN|CROSS_SPACE_KINDS/.test(source),
+    "记忆工具里又出现了一份范围正则：判据不再唯一");
+  // 判据必须落在 UPDATE 之前，否则源行与跨空间副本已经被改过了。
+  const guard = source.indexOf("accountPreferenceWriteDecision(");
+  const update = source.indexOf("UPDATE assistant_memory_items", guard);
+  assert.ok(guard >= 0 && update > guard,
+    "范围守卫不在修订的 UPDATE 之前：拒绝来了也已经改过行");
+  // 从锁住的当前行读真实 kind/scope：靠入参猜 scope 就是"输入省略就绕过去"。
+  assert.match(source, /SELECT id, revision, kind, scope, content, applies_when/);
+});
+
 test("【自证】正控制：判据认得出「两边都有分支」与「标签长错边」这两种形状", () => {
   // 这条判据的全部力气在两把执行器的差集上；这里用合成输入证明它不是恒真。
   const readSet = new Set(["companion_read_memory"]);

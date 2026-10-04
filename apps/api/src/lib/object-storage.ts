@@ -10,6 +10,7 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
+  HeadBucketCommand,
   NoSuchKey,
 } from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
@@ -114,6 +115,17 @@ function getClient(): S3Client {
 
 export interface UploadResult {
   etag: string;
+}
+
+/**
+ * 探一次桶：HeadBucket 成功即"凭证与桶都可用"。
+ *
+ * 给运维面板的"对象存储"读数用——它走的是**与业务同一份凭证与客户端**，
+ * 所以面板上显示"可用"就是业务真的能读写；另配一套探测口径只会掩盖差异。
+ * 失败原样抛出，由调用方决定怎么呈现。
+ */
+export async function probeStorageBucket(): Promise<void> {
+  await getClient().send(new HeadBucketCommand({ Bucket: getBucket() }));
 }
 
 /**

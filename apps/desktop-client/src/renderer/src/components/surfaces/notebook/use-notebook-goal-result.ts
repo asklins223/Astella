@@ -14,7 +14,7 @@ export function useNotebookGoalResult(noteId: string | undefined, requested: Not
   const key = `${scope}:${noteId}:${requested?.kind}:${requested?.taskId}:${requested?.artifactId}:${attempt}`;
   const [saved, setSaved] = useState<{ key: string; result: SavedResult | null; error: string | null } | null>(null);
   useEffect(() => {
-    if (!noteId || !requested) return;
+    if (!noteId || !requested || requested.kind === "note_expansion") return;
     let obsolete = false;
     void (async () => {
       try {
@@ -41,5 +41,5 @@ export function useNotebookGoalResult(noteId: string | undefined, requested: Not
     return () => { obsolete = true; };
   }, [key]);
   const current = saved?.key === key ? saved : { key, result: null, error: null };
-  return { ...current, loading: Boolean(noteId && requested && saved?.key !== key), retry };
+  return { ...current, loading: Boolean(noteId && requested && requested.kind !== "note_expansion" && saved?.key !== key), retry };
 }

@@ -25,6 +25,8 @@ import {
 } from "../../../app/companion-chat-session.tsx";
 import { useRoomStore } from "../../../app/room-store.ts";
 import { CompanionCenterSurface } from "../companion/companion-center-surface.tsx";
+import { RendererGatewayError } from "../../../app/desktop-client.ts";
+import { accountPreferenceRejectionMessage } from "@ailearn/shared/companion-memory-scope";
 
 /**
  * 伴星中心与伴星叠加层是**兄弟节点**：一个在任务面里，一个挂在 App 外壳。
@@ -290,7 +292,10 @@ function installApi() {
           memoryItemId: input.memoryId,
           items: [],
         })),
-        create: vi.fn(async (): Promise<GatewayResultV1<CompanionMemoryItemV1>> => ok(memoryItem())),
+        create: vi.fn(async (_input: Parameters<Window["ailearn"]["companion"]["memory"]["create"]>[0]): Promise<GatewayResultV1<CompanionMemoryItemV1>> => ok(memoryItem())),
+        correct: vi.fn(async (_input: Parameters<Window["ailearn"]["companion"]["memory"]["correct"]>[0]) => ok({ ...memoryItem(), revision: 2 })),
+        archive: vi.fn(async () => ok({ ...memoryItem(), archived: true })),
+        restore: vi.fn(async () => ok(memoryItem())),
         confirm: vi.fn(async () => ok(memoryItem())),
         remove: vi.fn(async () => ok({ version: 1, ok: true })),
         clear: vi.fn(async () => ok({ deletedCount: 1 })),
@@ -640,6 +645,96 @@ describe("重构后的伴星中心", () => {
     await waitFor(() => expect(api.companion.memory.create).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("tab", { name: "日记" })); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
     expect((screen.getByLabelText("新记忆内容") as HTMLTextAreaElement).value).toBe("我习惯先看例子");
+  });
+
+  it("合作方式只展示偏好，并保留真实范围、来源、条件和确认状态", async () => {
+    const api = installApi();
+    const rule = { ...memoryItem(), scope: "global" as const, appliesWhen: "讲解新概念时", pinned: false };
+    api.companion.memory.list.mockResolvedValue(ok({ version: 2, items: [rule, secondMemoryItem()] }));
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
+    fireEvent.click(await screen.findByRole("button", { name: "合作方式" }));
+    expect(screen.getByText("我们怎样合作")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /这个月完成力学复习/ })).toBeNull();
+    expect(screen.getByText("所有书房")).toBeTruthy();
+    expect(screen.getByText("讲解新概念时")).toBeTruthy();
+    expect(screen.getByText("用户确认")).toBeTruthy();
+    expect(screen.getAllByText("已确认")).toHaveLength(2);
+    expect(screen.queryByText("正在使用")).toBeNull();
+  });
+
+  it("合作方式保存失败保留范围与例外，重试按原输入提交", async () => {
+    const api = installApi(); api.companion.memory.create.mockRejectedValueOnce(new RendererGatewayError({
+      code: "memory_global_condition_bound", safeMessageKey: "error.memory_global_condition_bound", retry: "never",
+    }));
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
+    fireEvent.click(await screen.findByRole("button", { name: "合作方式" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加合作方式" }));
+    fireEvent.change(screen.getByLabelText("新记忆内容"), { target: { value: "讲解时先举例再解释" } });
+    fireEvent.change(screen.getByLabelText("新记忆适用条件"), { target: { value: "正式作答时不要主动提示" } });
+    fireEvent.click(screen.getByRole("button", { name: "新记忆适用书房" }));
+    fireEvent.click(screen.getByRole("option", { name: "所有书房" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存合作方式" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "保存合作方式" }).hasAttribute("disabled")).toBe(false));
+    expect(await screen.findByText(accountPreferenceRejectionMessage("applies_when_workspace_bound"))).toBeTruthy();
+    expect((screen.getByLabelText("新记忆内容") as HTMLTextAreaElement).value).toBe("讲解时先举例再解释");
+    expect((screen.getByLabelText("新记忆适用条件") as HTMLTextAreaElement).value).toBe("正式作答时不要主动提示");
+    expect(screen.getByRole("button", { name: "新记忆适用书房" }).textContent).toBe("所有书房");
+    api.companion.memory.create.mockResolvedValue(ok({ ...memoryItem(), scope: "global", appliesWhen: "正式作答时不要主动提示" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存合作方式" }));
+    await waitFor(() => expect(api.companion.memory.create).toHaveBeenCalledTimes(2));
+    expect(api.companion.memory.create).toHaveBeenLastCalledWith(expect.objectContaining({ request: {
+      kind: "preference", content: "讲解时先举例再解释", scope: "global", appliesWhen: "正式作答时不要主动提示",
+    } }));
+    expect(await screen.findByText("已保存，适用于所有书房。")).toBeTruthy();
+    expect(screen.queryByLabelText("新记忆内容")).toBeNull();
+  });
+
+  it("仅修订适用条件也能保存，并提交编辑开始时的 revision", async () => {
+    const api = installApi();
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
+    fireEvent.click(await screen.findByRole("button", { name: "合作方式" }));
+    fireEvent.click(screen.getByRole("button", { name: "修订" }));
+    expect(screen.getByRole("button", { name: "保存修订" }).hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByLabelText("修订后的适用条件"), { target: { value: "新概念讲解时，做题时先让我试试" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修订" }));
+    await waitFor(() => expect(api.companion.memory.correct).toHaveBeenCalledWith(expect.objectContaining({ memoryId: MEMORY_ID,
+      request: { content: memoryItem().content, appliesWhen: "新概念讲解时，做题时先让我试试", expectedRevision: 1 } })));
+    expect(await screen.findByText(/已修订为第 2 版，适用于这个书房/)).toBeTruthy();
+    expect(screen.queryByLabelText("纠正后的记忆内容")).toBeNull();
+  });
+
+  it("编辑期间后台刷新不会抬高 expectedRevision；冲突时保留正文与条件", async () => {
+    const api = installApi();
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
+    fireEvent.click(await screen.findByRole("button", { name: "纠正" }));
+    fireEvent.change(screen.getByLabelText("纠正后的记忆内容"), { target: { value: "先让我举例，再补充解释" } });
+    fireEvent.change(screen.getByLabelText("修订后的适用条件"), { target: { value: "轻松讨论时" } });
+    api.companion.memory.list.mockResolvedValue(ok({ version: 2, items: [{ ...memoryItem(), revision: 2, content: "后台保存的另一条解释习惯" }] }));
+    fireEvent(window, new Event("ailearn:companion-records-changed"));
+    await screen.findByRole("button", { name: /后台保存的另一条解释习惯/ });
+    api.companion.memory.correct.mockRejectedValue(new Error("revision conflict"));
+    fireEvent.click(screen.getByRole("button", { name: "保存修订" }));
+    await waitFor(() => expect(api.companion.memory.correct).toHaveBeenCalledWith(expect.objectContaining({ request: {
+      content: "先让我举例，再补充解释", appliesWhen: "轻松讨论时", expectedRevision: 1,
+    } })));
+    await waitFor(() => expect(screen.getByRole("button", { name: "保存修订" }).hasAttribute("disabled")).toBe(false));
+    expect((screen.getByLabelText("纠正后的记忆内容") as HTMLTextAreaElement).value).toBe("先让我举例，再补充解释");
+    expect((screen.getByLabelText("修订后的适用条件") as HTMLTextAreaElement).value).toBe("轻松讨论时");
+    expect(screen.queryByText(/已修订为第/)).toBeNull();
+  });
+
+  it("合作方式停用与恢复都等待真实回执，显示保存状态", async () => {
+    const api = installApi();
+    renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "记忆" }));
+    fireEvent.click(await screen.findByRole("button", { name: "合作方式" }));
+    api.companion.memory.list.mockResolvedValue(ok({ version: 2, items: [{ ...memoryItem(), archived: true }] }));
+    fireEvent.click(screen.getByRole("button", { name: "暂时不用" }));
+    expect(await screen.findByRole("button", { name: "恢复这条规则" })).toBeTruthy();
+    expect(api.companion.memory.archive).toHaveBeenCalledWith(expect.objectContaining({ memoryId: MEMORY_ID }));
+    api.companion.memory.list.mockResolvedValue(ok({ version: 2, items: [memoryItem()] }));
+    fireEvent.click(screen.getByRole("button", { name: "恢复这条规则" }));
+    await screen.findByRole("button", { name: "暂时不用" });
+    expect(api.companion.memory.restore).toHaveBeenCalledWith(expect.objectContaining({ memoryId: MEMORY_ID }));
   });
 
   it("整理与回收走真实回收接口", async () => {

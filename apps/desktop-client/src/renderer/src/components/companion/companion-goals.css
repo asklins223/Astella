@@ -59,4 +59,10 @@ button.companion-goal-primary { background: var(--hud-mint); color: #355339; bor
 .companion-goal-journal__process li { padding: 12px 0; border-top: 1px dashed var(--hud-line); }
 .companion-goal-journal__process li > span { float: right; }
 .companion-goal-journal__process li > p { margin: 6px 0 0; color: #985630; }
+.companion-goal-journal__revisions { margin-top: 16px; font-size: 12px; color: var(--hud-soft); }
+.companion-goal-journal__revisions summary { padding-block: 10px; cursor: pointer; }
+.companion-goal-journal__revisions > details { margin-block: 8px; padding: 0 0 10px 12px; border-left: 2px solid var(--hud-line); }
+.companion-goal-journal__revisions > details > summary { display: flex; justify-content: space-between; gap: 12px; color: var(--hud-ink); }
+.companion-goal-journal__revisions small { font-size: 10px; color: var(--hud-soft); }
+.companion-goal-journal__revisions .companion-goal-journal__intent { margin-bottom: 10px; color: var(--hud-ink); }
 @media (prefers-reduced-motion: reduce) { .companion-goal-float .companion-goal-bubble, .companion-goal-tab svg { animation: none !important; } }

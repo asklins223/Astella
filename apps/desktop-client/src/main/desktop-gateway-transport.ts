@@ -122,6 +122,14 @@ function domainErrorCode(status: number, body: unknown): GatewayErrorCode | null
   if (!body || typeof body !== "object" || !("error" in body)) return null;
   const token = (body as { error?: unknown }).error;
   if (typeof token !== "string") return null;
+  if (status === 422 && token === "memory_global_scope_rejected") {
+    switch ((body as { reason?: unknown }).reason) {
+      case "kind_not_preference": return "memory_global_kind_rejected";
+      case "content_workspace_bound": return "memory_global_content_bound";
+      case "applies_when_workspace_bound": return "memory_global_condition_bound";
+      default: return null;
+    }
+  }
   const teachingCode = NOTE_TEACHING_DOMAIN_CODES[token];
   if (teachingCode?.status === status) return teachingCode.code;
   if (status === 413 && token === "note_too_long") return "note_artifact_too_long";

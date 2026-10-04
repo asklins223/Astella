@@ -1,5 +1,12 @@
 /**
- * 运维管理面板（`/admin/*`）。
+ * 运维管理面板（默认挂在 `/admin`，可用 `ADMIN_PANEL_PATH` 换成随机前缀）。
+ *
+ * ## 挂载路径可混淆
+ *
+ * `ADMIN_PANEL_PATH`（如 `/panel-6b3f9c2d`）把静态壳与全部数据接口整体
+ * 挪到一个不好猜的前缀下。它是**降低扫描噪声**，不是鉴权：真正的边界仍然
+ * 是 `ADMIN_PANEL_TOKEN` 与 requireAdmin。未设置时回落 `/admin` 并记一条
+ * 提示日志；形状非法（带大写、`..`、连续斜杠）同样回落到 `/admin`。
  *
  * ## fail closed 的实现方式
  *
@@ -40,6 +47,15 @@ import {
   runJobAction,
 } from "./ops-service.ts";
 import { readTodo } from "./todo-service.ts";
+import {
+  InfraActionError,
+  readContainerLogs,
+  readContainerStats,
+  readContainers,
+  readDatabaseView,
+  readStorageView,
+  runContainerAction,
+} from "./infra-service.ts";
 import {
   adminLogBuffer,
   adminRequestLogBuffer,
@@ -83,24 +99,38 @@ const STATIC_TYPES: Record<string, string> = {
  * 逐个列出而不是挂一个静态目录：新增文件必须在这里显式出现，
  * 否则它要么打不开（漏注册）要么被无意暴露（漏审查）。
  */
-const STATIC_FILES: Array<{ route: string; file: string; type: string }> = [
-  { route: "/admin", file: "index.html", type: STATIC_TYPES[".html"] },
-  { route: "/admin/", file: "index.html", type: STATIC_TYPES[".html"] },
-  { route: "/admin/app.js", file: "app.js", type: STATIC_TYPES[".js"] },
-  { route: "/admin/ui.js", file: "ui.js", type: STATIC_TYPES[".js"] },
-  { route: "/admin/api-client.js", file: "api-client.js", type: STATIC_TYPES[".js"] },
-  { route: "/admin/format.js", file: "format.js", type: STATIC_TYPES[".js"] },
-  { route: "/admin/charts.js", file: "charts.js", type: STATIC_TYPES[".js"] },
-  { route: "/admin/scene.js", file: "scene.js", type: STATIC_TYPES[".js"] },
-  { route: "/admin/views/shared.js", file: "views/shared.js", type: STATIC_TYPES[".js"] },
-  { route: "/admin/views/overview.js", file: "views/overview.js", type: STATIC_TYPES[".js"] },
-  { route: "/admin/views/queues.js", file: "views/queues.js", type: STATIC_TYPES[".js"] },
-  { route: "/admin/views/logs.js", file: "views/logs.js", type: STATIC_TYPES[".js"] },
-  { route: "/admin/views/metrics.js", file: "views/metrics.js", type: STATIC_TYPES[".js"] },
-  { route: "/admin/views/config.js", file: "views/config.js", type: STATIC_TYPES[".js"] },
-  { route: "/admin/vendor/three.bundle.js", file: "vendor/three.bundle.js", type: STATIC_TYPES[".js"] },
-  { route: "/admin/styles.css", file: "styles.css", type: STATIC_TYPES[".css"] },
+const STATIC_FILES: Array<{ path: string; file: string; type: string }> = [
+  // path 是相对挂载前缀的部分；"" 是面板首页（同时注册带尾斜杠的等价路由）。
+  { path: "", file: "index.html", type: STATIC_TYPES[".html"] },
+  { path: "/app.js", file: "app.js", type: STATIC_TYPES[".js"] },
+  { path: "/ui.js", file: "ui.js", type: STATIC_TYPES[".js"] },
+  { path: "/api-client.js", file: "api-client.js", type: STATIC_TYPES[".js"] },
+  { path: "/format.js", file: "format.js", type: STATIC_TYPES[".js"] },
+  { path: "/charts.js", file: "charts.js", type: STATIC_TYPES[".js"] },
+  { path: "/views/shared.js", file: "views/shared.js", type: STATIC_TYPES[".js"] },
+  { path: "/views/overview.js", file: "views/overview.js", type: STATIC_TYPES[".js"] },
+  { path: "/views/queues.js", file: "views/queues.js", type: STATIC_TYPES[".js"] },
+  { path: "/views/logs.js", file: "views/logs.js", type: STATIC_TYPES[".js"] },
+  { path: "/views/metrics.js", file: "views/metrics.js", type: STATIC_TYPES[".js"] },
+  { path: "/views/config.js", file: "views/config.js", type: STATIC_TYPES[".js"] },
+  { path: "/views/infra.js", file: "views/infra.js", type: STATIC_TYPES[".js"] },
+  { path: "/styles.css", file: "styles.css", type: STATIC_TYPES[".css"] },
 ];
+
+/**
+ * 解析面板挂载前缀。非法形状或未设置时回落 `/admin`（并留一条日志）。
+ *
+ * 纯函数（实参形式）便于测试；默认读 `process.env`。
+ */
+export function resolveAdminPath(raw: string | undefined = process.env.ADMIN_PANEL_PATH): string {
+  const value = (raw ?? "").trim();
+  if (value.length === 0) return "/admin";
+  if (!/^\/[a-z0-9][a-z0-9_-]*(\/[a-z0-9][a-z0-9_-]*)*$/.test(value)) {
+    logger.warn({ scope: "admin-panel", value }, "ADMIN_PANEL_PATH 形状非法（小写字母/数字/连字符，不能含 ..），回落 /admin");
+    return "/admin";
+  }
+  return value.replace(/\/+$/, "");
+}
 
 const LOG_LEVELS = ["trace", "debug", "info", "warn", "error", "fatal"] as const;
 
@@ -135,15 +165,24 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // 真正的边界在下面的 `/admin/api/*`：跨空间的队列、审计、配置与密钥状态
   // 全在那里，一条都要令牌。
 
+  const base = resolveAdminPath();
+  if (base === "/admin") {
+    logger.warn({ scope: "admin-panel" }, "面板挂在默认 /admin；建议设置 ADMIN_PANEL_PATH（如 /panel-$(openssl rand -hex 4)）降低扫描噪声");
+  }
+
   const serveStatic = (filename: string, contentType: string) => async (_request: unknown, reply: {
     type: (value: string) => { send: (body: string | Buffer) => unknown };
   }) => {
-    const body = await readFile(join(STATIC_ROOT, filename));
+    const raw = await readFile(join(STATIC_ROOT, filename), "utf8");
+    // 首页里的资源地址与前端请求前缀都由这里注入：面板整体可以搬家，
+    // 静态文件不用跟着改。
+    const body = filename === "index.html" ? raw.replaceAll("__BASE__", base) : raw;
     return reply.type(contentType).send(body);
   };
 
-  for (const { route, file, type } of STATIC_FILES) {
-    app.get(route, serveStatic(file, type));
+  for (const entry of STATIC_FILES) {
+    app.get(`${base}${entry.path}`, serveStatic(entry.file, entry.type));
+    if (entry.path === "") app.get(`${base}/`, serveStatic(entry.file, entry.type));
   }
 
   // ─── 数据接口：一条都要令牌 ────────────────────────────────────────────
@@ -153,17 +192,18 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // 而漏掉的后果是**新端点默认公开**。作用域把边界钉在结构上。
   await app.register(async (api) => {
     api.addHook("onRequest", requireAdmin);
+    const apiBase = `${base}/api`;
 
   // ─── 概览 ────────────────────────────────────────────────────────────
 
-  api.get("/admin/api/overview", async (_request, reply) => {
+  api.get(`${apiBase}/overview`, async (_request, reply) => {
     const config = await readConfigSnapshot();
     return reply.send(await readOverview(config.path, config.exists));
   });
 
   // ─── 指标 ────────────────────────────────────────────────────────────
 
-  api.get("/admin/api/metrics", async (_request, reply) => {
+  api.get(`${apiBase}/metrics`, async (_request, reply) => {
     return reply.send(await readMetricsSnapshot());
   });
 
@@ -176,7 +216,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
    * （比如 p95 从全站改成按路由）对应的中文说明也要跟着改，
    * 两边分开放就会漂。
    */
-  api.get("/admin/api/metrics/series", async (_request, reply) => {
+  api.get(`${apiBase}/metrics/series`, async (_request, reply) => {
     const points = adminMetricsSeries.recent();
     return reply.send({
       points,
@@ -202,7 +242,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     level: z.enum(LOG_LEVELS).optional(),
   });
 
-  api.get("/admin/api/logs", async (request, reply) => {
+  api.get(`${apiBase}/logs`, async (request, reply) => {
     const query = logsQuery.safeParse(request.query ?? {});
     if (!query.success) return fail(reply, 400, "bad_request", "日志查询参数非法");
     return reply.send({
@@ -223,7 +263,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     onlyProblems: z.enum(["1", "0", "true", "false"]).optional(),
   });
 
-  api.get("/admin/api/logs/requests", async (request, reply) => {
+  api.get(`${apiBase}/logs/requests`, async (request, reply) => {
     const query = requestsQuery.safeParse(request.query ?? {});
     if (!query.success) return fail(reply, 400, "bad_request", "请求日志查询参数非法");
     const onlyProblems = query.data.onlyProblems === "1" || query.data.onlyProblems === "true";
@@ -250,15 +290,15 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
    * Authorization 头，令牌只能塞 query string——那会把它留在访问日志与浏览器
    * 历史里。fetch + ReadableStream 保住 Bearer 鉴权，代价是 40 行的解析。
    *
-   * 两条事件流共用一条连接：`event: log` 是应用日志（日志页的实时尾随与
-   * 3D 场景的脉冲），`event: req` 是访问日志（实时表）。访问日志的"每条请求"
-   * 在 dev 下也只有个位数量级，不值得为它再开一条连接。
+   * 两条事件流共用一条连接：`event: log` 是应用日志的实时尾随，
+   * `event: req` 是访问日志（实时表）。访问日志的"每条请求"在 dev 下也只有
+   * 个位数量级，不值得为它再开一条连接。
    *
    * `reply.hijack()` 之后 Fastify 不再管这个响应（onSend 里那套 CSP 不适用，
    * 对事件流本来也不需要），因此头部与生命周期清理都要自己来。客户端的
    * 断开以 socket 的 close 事件为准——SSE 没有请求体，收不到别的信号。
    */
-  api.get("/admin/api/logs/stream", async (request, reply) => {
+  api.get(`${apiBase}/logs/stream`, async (request, reply) => {
     reply.hijack();
     const raw = reply.raw;
     raw.writeHead(200, {
@@ -304,7 +344,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
    * 首屏待办。**首屏的纲**：它回答「我现在该做什么」，而不是「读数是多少」。
    * 每个条目都带一个真实可执行的动作（见 todo-service.ts 的模块注释）。
    */
-  api.get("/admin/api/todo", async (_request, reply) => {
+  api.get(`${apiBase}/todo`, async (_request, reply) => {
     return reply.send(await readTodo());
   });
 
@@ -315,7 +355,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
    * 全部钉在 0366 的 SECURITY DEFINER 函数里，服务层再收一次参数校验。
    * 绝不支持「全部类型一把梭」：跨全部空间的批量操作影响面不可控。
    */
-  api.post("/admin/api/jobs/actions", async (request, reply) => {
+  api.post(`${apiBase}/jobs/actions`, async (request, reply) => {
     const parsed = z.object({
       jobType: z.string().trim().min(1).max(64),
       action: z.enum(["retry", "purge"]),
@@ -336,7 +376,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  api.get("/admin/api/queues", async (_request, reply) => {
+  api.get(`${apiBase}/queues`, async (_request, reply) => {
     const [backlog, failures, counts] = await Promise.all([
       readQueueBacklog(),
       // 一次取满函数上界（200）：失败清单既要给「按原因聚合」用，也要给展开后
@@ -365,7 +405,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
-  api.get("/admin/api/audit", async (request, reply) => {
+  api.get(`${apiBase}/audit`, async (request, reply) => {
     const query = z.object({ limit: limitQuery }).safeParse(request.query ?? {});
     if (!query.success) return fail(reply, 400, "bad_request", "审计查询参数非法");
     const entries = await readRecentAudit(query.data.limit ?? 50);
@@ -378,9 +418,70 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
+  // ─── 基础设施（容器 / 数据库 / 对象存储）──────────────────────────────
+  //
+  // Docker 能力由 `ADMIN_DOCKER_SOCKET` 决定：未设置就返回 available:false，
+  // 面板显示"未接入"而不是报错。服务的白名单在 service 层（只认本 compose
+  // 项目里的容器），路由层只做参数形状校验。
+
+  /** compose 服务名的形状；与 compose 的命名规则一致。 */
+  const serviceName = z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/);
+
+  api.get(`${apiBase}/infra`, async (_request, reply) => {
+    const [docker, database, storage] = await Promise.all([
+      readContainers(),
+      readDatabaseView(),
+      readStorageView(),
+    ]);
+    return reply.send({ docker, database, storage });
+  });
+
+  api.get(`${apiBase}/infra/containers/:service/logs`, async (request, reply) => {
+    const params = z.object({ service: serviceName }).safeParse(request.params);
+    const query = z.object({ tail: z.coerce.number().int().min(10).max(500).optional() }).safeParse(request.query ?? {});
+    if (!params.success || !query.success) return fail(reply, 400, "bad_request", "服务名或 tail 非法");
+    try {
+      return reply.send(await readContainerLogs(params.data.service, query.data.tail ?? 200));
+    } catch (error) {
+      if (error instanceof InfraActionError) return fail(reply, 400, error.code, error.message);
+      return fail(reply, 500, "internal_error", "读取容器日志失败");
+    }
+  });
+
+  api.get(`${apiBase}/infra/containers/:service/stats`, async (request, reply) => {
+    const params = z.object({ service: serviceName }).safeParse(request.params);
+    if (!params.success) return fail(reply, 400, "bad_request", "服务名非法");
+    try {
+      return reply.send(await readContainerStats(params.data.service));
+    } catch (error) {
+      if (error instanceof InfraActionError) return fail(reply, 400, error.code, error.message);
+      return fail(reply, 500, "internal_error", "读取容器用量失败");
+    }
+  });
+
+  /**
+   * 容器操作（start / stop / restart）。
+   *
+   * 挂载 docker socket 等于把宿主机的 root 权限交给服务进程，所以边界按
+   * 「只碰自己这套栈」钉死：动作用白名单动词、目标按 compose 服务名解析，
+   * 不接受容器 id。每个动作都会留下一条服务日志。
+   */
+  api.post(`${apiBase}/infra/containers/:service/action`, async (request, reply) => {
+    const params = z.object({ service: serviceName }).safeParse(request.params);
+    const body = z.object({ action: z.enum(["start", "stop", "restart"]) }).safeParse(request.body ?? {});
+    if (!params.success || !body.success) return fail(reply, 400, "bad_request", "服务名或动作非法");
+    try {
+      return reply.send(await runContainerAction(params.data.service, body.data.action));
+    } catch (error) {
+      if (error instanceof InfraActionError) return fail(reply, 400, error.code, error.message);
+      logger.error({ scope: "admin-infra", err: error }, "容器操作失败");
+      return fail(reply, 500, "internal_error", "容器操作失败，细节见服务日志");
+    }
+  });
+
   // ─── 配置读写 ───────────────────────────────────────────────────────
 
-  api.get("/admin/api/config", async (_request, reply) => {
+  api.get(`${apiBase}/config`, async (_request, reply) => {
     const snapshot = await readConfigSnapshot();
     return reply.send({
       ...snapshot,
@@ -402,7 +503,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
    * 服务端把它合并到磁盘上的现状——理由见 config-service.ts 的 writeConfig：
    * 整文件替换会把面板看不见的明文密钥抹掉。
    */
-  api.put("/admin/api/config", async (request, reply) => {
+  api.put(`${apiBase}/config`, async (request, reply) => {
     const body = request.body;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return fail(reply, 400, "bad_request", "请求体必须是配置补丁对象（platforms / capabilities / tts）");

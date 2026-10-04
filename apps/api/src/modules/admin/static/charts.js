@@ -102,7 +102,7 @@ export function areaChart({
   const defs = svg("defs");
   const gradient = svg("linearGradient", { id: gradientId, x1: "0", y1: "0", x2: "0", y2: "1" });
   gradient.append(
-    svg("stop", { offset: "0%", "stop-color": color, "stop-opacity": "0.32" }),
+    svg("stop", { offset: "0%", "stop-color": color, "stop-opacity": "0.13" }),
     svg("stop", { offset: "100%", "stop-color": color, "stop-opacity": "0" }),
   );
   defs.append(gradient);
@@ -143,7 +143,7 @@ export function areaChart({
       d: line,
       fill: "none",
       stroke: color,
-      "stroke-width": "2.2",
+      "stroke-width": "1.8",
       "stroke-linecap": "round",
       "stroke-linejoin": "round",
       "vector-effect": "non-scaling-stroke",
@@ -160,8 +160,8 @@ export function areaChart({
   if (lastIndex >= 0 && lastIndex < values.length) {
     const lastValue = values[lastIndex];
     chartSvg.append(
-      svg("circle", { cx: xAt(lastIndex), cy: yAt(lastValue), r: 4, fill: color, class: "chart__dot" }),
-      svg("circle", { cx: xAt(lastIndex), cy: yAt(lastValue), r: 9, fill: color, opacity: "0.16" }),
+      svg("circle", { cx: xAt(lastIndex), cy: yAt(lastValue), r: 3.2, fill: color, class: "chart__dot" }),
+      svg("circle", { cx: xAt(lastIndex), cy: yAt(lastValue), r: 7, fill: color, opacity: "0.14" }),
     );
   }
 

@@ -19,6 +19,10 @@
     "paths": {
       "@ailearn/agent-core": ["../../packages/agent-core/src/index.ts"],
       "@ailearn/agent-host": ["../../packages/agent-host/src/index.ts"],
+      // 2026-10-04（J）：run 事件的唯一实现在制卡领域包。指到**实时源码**而不是
+      // node_modules 的安装期快照——与上面 shared 那条同一个分叉（改动对 typecheck
+      // 与 tsx 运行都要看得见），少这一条，worker 仍会对着旧快照编事件写入。
+      "@ailearn/card-generation": ["../../packages/card-generation/src/index.ts"],
       "@ailearn/shared": [
         "../../packages/shared/src/index.ts"
       ],

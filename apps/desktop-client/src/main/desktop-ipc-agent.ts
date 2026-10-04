@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { DESKTOP_IPC_CHANNELS, requestMetaSchema } from "@ailearn/shared/desktop-ipc-contracts";
-import { agentRunV1Schema, agentRunListV1Schema, createAgentRunV1Schema, reviseAgentRunV1Schema, controlAgentRunV1Schema } from "@ailearn/shared/agent-contracts";
+import { agentRunV1Schema, agentRunListV1Schema, agentRunListQueryV1Schema, agentRunHistoryV1Schema, agentRunHistoryQueryV1Schema, createAgentRunV1Schema, reviseAgentRunV1Schema, controlAgentRunV1Schema } from "@ailearn/shared/agent-contracts";
 import { DesktopGatewayFailure } from "./desktop-gateway-failure";
 import type { CompanionChannelDeps } from "./desktop-ipc-companion";
 
@@ -18,9 +18,17 @@ export function registerAgentChannels(deps: Pick<CompanionChannelDeps, "channel"
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }
-  channel(DESKTOP_IPC_CHANNELS.agentRunsList, z.object(base).strict(), (_event, _window, input) => {
-    authorize(input.meta); return request("/agent/runs", "GET", agentRunListV1Schema, input.meta.requestId);
+  const queryString = (query: Record<string, unknown> | undefined) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query ?? {})) if (value !== undefined) params.set(key, String(value));
+    return params.size ? `?${params}` : "";
+  };
+  channel(DESKTOP_IPC_CHANNELS.agentRunsList, z.object({ ...base, query: agentRunListQueryV1Schema.optional() }).strict(), (_event, _window, input) => {
+    authorize(input.meta); return request(`/agent/runs${queryString(input.query)}`, "GET", agentRunListV1Schema, input.meta.requestId);
   }, agentRunListV1Schema);
+  channel(DESKTOP_IPC_CHANNELS.agentRunHistory, z.object({ ...base, runId: uuid, query: agentRunHistoryQueryV1Schema.optional() }).strict(), (_event, _window, input) => {
+    authorize(input.meta); return request(`/agent/runs/${input.runId}/history${queryString(input.query)}`, "GET", agentRunHistoryV1Schema, input.meta.requestId);
+  }, agentRunHistoryV1Schema);
   channel(DESKTOP_IPC_CHANNELS.agentRunCreate, z.object({ ...base, request: createAgentRunV1Schema }).strict(), (_event, _window, input) => {
     authorize(input.meta); return request("/agent/runs", "POST", agentRunV1Schema, input.meta.requestId, input.request);
   }, agentRunV1Schema);

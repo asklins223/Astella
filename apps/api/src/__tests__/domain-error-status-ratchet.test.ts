@@ -3,6 +3,9 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { DomainError } from "@ailearn/shared";
+import { AgentStoreError } from "@ailearn/agent-host";
+import { asDomainError, buildSimpleErrorBody } from "../lib/error-envelope.ts";
 
 /**
  * P2-6：**带 `statusCode` 的错误类必须被 `asDomainError` 认得出来。**
@@ -61,9 +64,20 @@ function collect(root: string = API_ROOT): Finding[] {
 }
 
 const OFFENDING: Readonly<Record<string, readonly string[]>> = {
-  // 带 statusCode 的错误类走的是自己的内部基类，且那个基类**本身**要么继承
-  // DomainError、要么由信封显式特判。列在这里是**有意的**，不是漏网。
-  "modules/card-generation-v2/helpers.ts": ["CardGenerationV2ServiceError"],
+  // 2026-10-04：制卡的 `CardGenerationV2ServiceError` 连同创建事务一起搬进了
+  // `packages/card-generation`（领域服务），所以它不再出现在本文件扫描的
+  // `apps/api/src` 范围里——原来那条登记随之作废，按"表里不许留陈年旧账"的
+  // 规则删掉。继承链本身没变（`…ServiceError → CardGenerationPipelineErrorV2 →
+  // DomainError`），也不需要新登记：`asDomainError` 认的是 DomainError 及其
+  // 子类，那条链没动。
+  //
+  // 副作用要说清楚：**这一格现在不再覆盖那个类**。它下一次要被人改动时，形状
+  // 已经在别的包里——真要守住它，得在 packages/card-generation 侧另立一条，
+  // 而不是把这条登记留着假装还管用。
+  //
+  // 2026-10-04（L）已补：下面「搬出扫描范围的制卡错误类」那条用例用**运行时**
+  // `asDomainError` / `DomainError` 继承 / class 身份核对这个类。它守的是本文件
+  // 原本要守的那件事（错误边界认不认得它），只是换了落点——不是新开一个口子。
 };
 
 test("带 statusCode 的错误类都被 asDomainError 认得出来", () => {
@@ -85,6 +99,56 @@ test("带 statusCode 的错误类都被 asDomainError 认得出来", () => {
     + " OFFENDING 表里并写明理由——别只是把它从检查里删掉。\n"
     + offenders.join("\n"),
   );
+});
+
+/**
+ * 补上被搬出扫描范围的那一格：制卡的 `CardGenerationV2ServiceError`（H，2026-10-04）。
+ *
+ * 它连同创建事务搬进 `packages/card-generation` 之后，上面那条判据**扫不到它了**——
+ * `OFFENDING` 里那条登记随之作废是按规矩做的（表里不许留陈年旧账），可副作用是
+ * 错误边界这一格空了出来。所以这里补的是**运行时**核对，不是文本匹配：
+ *
+ *   1. 抛出来的实例仍然被 `lib/error-envelope.ts` 的 `asDomainError` 认得出来。认不出，
+ *      `code` / `statusCode` 就成了装饰——真正把状态码送出去的是某个调用方里的
+ *      `instanceof` 分支，换个端点抛同一个错就会静悄悄变成 500。
+ *   2. 继承链一路通到 shared 的 `DomainError`（中间隔着纯逻辑层的
+ *      `CardGenerationPipelineErrorV2`，那一层是有意的）。
+ *   3. API 的 `helpers.ts` 与领域包导出的是**同一个 class 对象**。断法是静默的：
+ *      两处 `instanceof` 会各认各的，而所有文本断言照样全绿。
+ *
+ * 这是**运行时 import 后**比引用，不是 `readFileSync` 里找类名——所以判据落在
+ * "现在真的会坏"的那件事上。
+ */
+test("搬出扫描范围的制卡错误类：错误边界认得它，helpers 与领域包是同一个 class", async () => {
+  const helpers = await import("../modules/card-generation-v2/helpers.ts");
+  const domain = await import("@ailearn/card-generation");
+  const helpersError = helpers.CardGenerationV2ServiceError;
+
+  const err = new helpersError("stale_run_status", 409, "运行状态已被并发修改，请刷新");
+  assert.ok(err instanceof DomainError,
+    "继承链断在 DomainError 之前 ⇒ asDomainError 会把它当普通 Error，statusCode 变装饰");
+  assert.equal(asDomainError(err), err,
+    "错误边界认不出这个类 ⇒ 制卡失败会走 Fastify 的兜底，成 500 且不留痕");
+  // 破坏样本：判据不能因为放宽而恒真——非领域错误仍然必须被拒。
+  assert.equal(asDomainError(new Error("boom")), null);
+  assert.equal(asDomainError({ code: "x", statusCode: 409 }), null);
+  // 边界这一格真的把状态码与错误码送出去（现役 routes 就是这么调的）。
+  assert.deepEqual(buildSimpleErrorBody(err),
+    { error: "stale_run_status", message: "运行状态已被并发修改，请刷新" });
+  assert.equal(buildSimpleErrorBody(err).statusCode, undefined, "信封里不该凭空多个 statusCode");
+  // helpers 只是转出：现役错误边界认的必须是领域包里那一个 class。
+  assert.equal(helpersError, domain.CardGenerationV2ServiceError,
+    "helpers 转出的不是领域包里那一个 class ⇒ 两处 instanceof 会各认各的，转出就断了");
+});
+
+test("Agent 错误沿用领域基类，错误码与信封保持一致", () => {
+  const error = new AgentStoreError(409, "advance_obsolete", "当前执行已经停止。");
+  assert.ok(error instanceof DomainError);
+  assert.equal(asDomainError(error), error);
+  assert.equal(error.statusCode, 409);
+  assert.deepEqual(buildSimpleErrorBody(error), {
+    error: "advance_obsolete", message: "当前执行已经停止。",
+  });
 });
 
 test("OFFENDING 表里登记的类确实还在，且理由不是空的", () => {

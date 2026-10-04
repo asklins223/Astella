@@ -18,7 +18,8 @@ const run: AgentRunV1 = { version: 1, runId: "run", revision: 2, identityId: "id
   artifacts: [{ ...artifact, id: "older" }, artifact], summary: "**速看已做好**\n\n- 已保留原文事实\n- 可以调整要求", error: null,
   modelCalls: 4, maxModelCalls: 16, createdAt: "2026-10-04T01:00:00Z", updatedAt: "2026-10-04T01:00:00Z" };
 function controller(item = run): AgentGoalsController { return { items: [item], scope: 1, error: null, loading: false, pending: null,
-  refresh: vi.fn(async () => {}), change: vi.fn(async () => true) }; }
+  refresh: vi.fn(async () => {}), change: vi.fn(async () => true), nextCursor: null,
+  loadMore: vi.fn(async () => {}), moreLoading: false, moreError: null }; }
 function bubble(goals = controller()) {
   return <CompanionGoalBubble anchorRef={{ current: null }} motionMode="off" blocked={false} open selectedId="run" goals={goals}
     onOpen={vi.fn()} onClose={vi.fn()} onSelect={vi.fn()} onDetails={vi.fn()} onChat={vi.fn()} />;
@@ -28,7 +29,7 @@ it("keeps detailed Markdown in the journal and exposes only the latest compatibl
   expect(screen.queryByText("速看已做好")).toBeNull();
   expect(screen.getAllByRole("button", { name: "速看" })).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "速看" }));
-  expect(room.setActiveNoteRef).toHaveBeenCalledWith(expect.objectContaining({ learningResult: { kind: "note_overview", artifactId: "saved", taskId: "job" } }));
+  expect(room.setActiveNoteRef).toHaveBeenCalledWith(expect.objectContaining({ learningResult: { kind: "note_overview", artifactId: "saved", taskId: "job", noteVersionId: "version" } }));
   view.unmount();
   render(<CompanionGoalJournal goals={controller()} targetId="run" onChat={vi.fn()} onArtifactOpen={vi.fn()} />);
   expect(screen.getByText("速看已做好").tagName).toBe("STRONG");
@@ -76,9 +77,45 @@ it("does not open a saved artifact after its workspace has changed", () => {
 it("takes an interactive result directly to its saved artifact page", () => {
   openAgentArtifact({ ...artifact, kind: "note_dynamic_artifact" }, 1);
   expect(room.setActiveNoteRef).toHaveBeenCalledWith(expect.objectContaining({
-    learningView: "artifact", learningResult: { kind: "note_dynamic_artifact", artifactId: "saved", taskId: "job" },
+    learningView: "artifact", learningResult: { kind: "note_dynamic_artifact", artifactId: "saved", taskId: "job", noteVersionId: "version" },
   }));
   expect(room.invoke).toHaveBeenCalledWith("open-notebook");
+});
+it("opens expansion as the exact saved draft batch and labels it as a choice to review", () => {
+  const goals = controller();
+  const expansion = { ...artifact, kind: "note_expansion" as const, id: "job" };
+  render(bubble({ ...goals, items: [{ ...run, status: "completed", artifacts: [expansion], operations: [{
+    operationId: "operation", runId: run.runId, revision: run.revision, scope: { workspaceId: "workspace", userId: "user" },
+    capability: "note_expansion_generate", jobId: "job", status: "succeeded", lastEventSeq: 1, artifact: expansion, error: null,
+  }] }] }));
+  fireEvent.click(screen.getByRole("button", { name: "拓展草稿" }));
+  expect(room.setActiveNoteRef).toHaveBeenCalledWith(expect.objectContaining({ learningView: "expansion",
+    learningResult: { kind: "note_expansion", artifactId: "job", taskId: "job", noteVersionId: "version" } }));
+  expect(screen.getByText(/翻开后可以修改、挑选/)).toBeTruthy();
+});
+it("puts a later read-only answer ahead of retained artifacts without claiming a new generation", () => {
+  const reading = { ...run, revision: 3, status: "completed" as const, goal: "核对上一批修改后的拓展草稿",
+    artifacts: [{ ...artifact, kind: "note_expansion" as const, id: "earlier", jobId: "earlier-job" },
+      { ...artifact, kind: "note_expansion" as const }], operations: [], summary: "**已核对修改后的正文**" };
+  const view = render(bubble(controller(reading)));
+  expect(screen.getByText("这次的答复留在手记里，之前的成果也保留着。")).toBeTruthy();
+  expect(screen.queryByText(/拓展草稿已留好/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "拓展草稿" }));
+  expect(room.setActiveNoteRef).toHaveBeenCalledWith(expect.objectContaining({ learningView: "expansion" }));
+  view.unmount();
+  render(<CompanionGoalJournal goals={controller(reading)} targetId="run" onChat={vi.fn()} onArtifactOpen={vi.fn()} />);
+  const answer = screen.getByText("已核对修改后的正文"), retained = screen.getByRole("region", { name: "做好的成果" });
+  expect(answer.compareDocumentPosition(retained) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /拓展草稿 · 第 1 批/ }));
+  expect(room.setActiveNoteRef).toHaveBeenLastCalledWith(expect.objectContaining({
+    learningResult: { kind: "note_expansion", artifactId: "earlier", taskId: "earlier-job", noteVersionId: "version" },
+  }));
+  fireEvent.click(screen.getByRole("button", { name: /拓展草稿 · 第 2 批/ }));
+  expect(room.setActiveNoteRef).toHaveBeenLastCalledWith(expect.objectContaining({
+    learningResult: { kind: "note_expansion", artifactId: "saved", taskId: "job", noteVersionId: "version" },
+  }));
+  fireEvent.click(screen.getByText("查看生成记录 · 0 项"));
+  expect(screen.getByText("这次没有启动生成。")).toBeTruthy();
 });
 it("keeps additional notes' results reachable through progressive disclosure in the bubble", () => {
   const inputs = [1, 2, 3, 4].map(index => ({ kind: "note_version" as const, noteId: `note-${index}`, noteVersionId: `version-${index}` }));

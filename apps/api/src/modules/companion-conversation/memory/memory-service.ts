@@ -21,6 +21,10 @@ import {
   MEMORY_SEMANTIC_SIMILARITY_THRESHOLD,
 } from "@ailearn/shared/db-schema/assistant-memory";
 import type { CompanionMemoryBudgetTier } from "@ailearn/shared/db-schema/assistant-memory";
+import {
+  accountPreferenceWriteDecision,
+  type AccountPreferenceWriteRejection,
+} from "@ailearn/shared/companion-memory-scope";
 import { closeDeliveriesForMemoryItem } from "../delivery/delivery-service.ts";
 import { maskEntriesForSource, unmaskEntriesForSource } from "../discovery/discovery-service.ts";
 
@@ -52,6 +56,36 @@ export class MemorySourceSuppressedError extends Error {
     super("This automatic memory source was explicitly forgotten.");
     this.name = "MemorySourceSuppressedError";
   }
+}
+
+/**
+ * 账号级（`scope='global'`）写入被拒（42 阶段 1 E）。
+ *
+ * 判据原先只长在抽取器里，用户在记忆中心手动把本地材料存成账号级偏好时服务端照写不误，
+ * 0371 的受控铺开还会把它复制到别的空间。这里**拒绝**而不降级：本批不实现跨空间降级，
+ * 悄悄把 global 改成 workspace 同样是错回执——用户会以为规则跟着账号走。`reason`
+ * 是稳定字符串，由路由原样回给前端。
+ */
+export class MemoryGlobalScopeRejectedError extends Error {
+  constructor(readonly reason: AccountPreferenceWriteRejection) {
+    super(`Memory cannot be saved as an account-level rule (${reason}).`);
+    this.name = "MemoryGlobalScopeRejectedError";
+  }
+}
+
+/**
+ * 账号级写入守卫：这一行的**最终形状**能不能以 `scope='global'` 存在。
+ * 传最终值（截断后的正文、沿用库里的条件也算）而不是单个输入字段，否则"这次恰好没传
+ * scope"就绕过去了。判据本体与抽取器共用 `@ailearn/shared/companion-memory-scope`。
+ */
+function assertGlobalPreferenceWritable(row: {
+  scope: string;
+  kind: string;
+  content: string;
+  appliesWhen: string | null;
+}): void {
+  const decision = accountPreferenceWriteDecision(row);
+  if (!decision.ok) throw new MemoryGlobalScopeRejectedError(decision.reason);
 }
 
 export type MemoryKindV2 =
@@ -333,6 +367,14 @@ export async function upsertMemory(
       if (existing[0].authorType === "user" && input.userStated !== true) {
         return toContract(existing[0]);
       }
+      // 账号级守卫（42 阶段 1 E）：按最终 shape 判——省略 scope / appliesWhen 是**沿用**
+      // 库里那一条，不是免检**。拦在 UPDATE 之前，源行、副本与 revision/history 都不动。
+      assertGlobalPreferenceWritable({
+        scope: input.scope ?? existing[0].scope,
+        kind: input.kind,
+        content,
+        appliesWhen: input.appliesWhen === undefined ? existing[0].appliesWhen : input.appliesWhen,
+      });
       await executor.update(assistantMemoryItems)
         .set({
           content,
@@ -352,9 +394,12 @@ export async function upsertMemory(
           globalKey: existing[0].globalKey
             ?? ((input.scope ?? existing[0].scope) === "global" ? existing[0].id : null),
           sourceType: input.sourceType ?? existing[0].sourceType,
+          // 词表与 0360 的 `assistant_memory_items_author_type_check` 一致
+          // （user | extractor | companion | maintenance）。旧词 model/background 已被
+          // 0360 迁移成 extractor/maintenance，写旧词会撞 CHECK。
           authorType: input.userStated === true
             ? "user"
-            : (input.sourceType ?? existing[0].sourceType) === "summary" ? "background" : "model",
+            : (input.sourceType ?? existing[0].sourceType) === "summary" ? "maintenance" : "extractor",
           authorId: input.userStated === true ? scope.userId : null,
           epistemicStatus: input.userStated === true ? "supported" : "tentative",
           userStated: input.userStated ?? existing[0].userStated,
@@ -373,6 +418,7 @@ export async function upsertMemory(
         .where(eq(assistantMemoryItems.id, existing[0].id))
         .limit(1);
       await markMemoryConflictIfSimilar(executor, scope, updated[0].id, content);
+      await fanoutAgentGlobalPreference(executor, updated[0]);
       return toContract(updated[0]);
     }
   }
@@ -381,6 +427,13 @@ export async function upsertMemory(
   // 拿不到 id 就写不出这个 key——而没有 key 的 global 行，0268 的触发器永远不认。
   const memoryId = randomUUID();
   const memoryScope = input.scope ?? "workspace";
+  // 账号级守卫（42 阶段 1 E）：拦在 INSERT 之前。缺省是 workspace，本来就不过判据。
+  assertGlobalPreferenceWritable({
+    scope: memoryScope,
+    kind: input.kind,
+    content,
+    appliesWhen: input.appliesWhen ?? null,
+  });
   // ⚠️ 这一段是**原子 upsert**，不是"先查后插"（2026-09-29，P2-11）。
   //
   // 原写法是 check-then-act：上面已经 SELECT 过、没有行，于是走到这里 INSERT。
@@ -418,9 +471,11 @@ export async function upsertMemory(
     scope: memoryScope,
     globalKey: input.globalKeyFrom ?? (memoryScope === "global" ? memoryId : null),
     sourceType: input.sourceType ?? (input.userStated ? "user_stated" : "model_inferred"),
+    // 词表与 0360 的 `assistant_memory_items_author_type_check` 一致，见上面 update 分支的说明。
+    // 候选走的是 extractor：它没被确认，但作者确实是抽取器，不是"模型"这个旧词。
     authorType: input.userStated === true
       ? "user"
-      : (input.sourceType ?? "model_inferred") === "summary" ? "background" : "model",
+      : (input.sourceType ?? "model_inferred") === "summary" ? "maintenance" : "extractor",
     authorId: input.userStated === true ? scope.userId : null,
     epistemicStatus: input.userStated === true ? "supported" : "tentative",
     pinned: input.pinned ?? false,
@@ -486,8 +541,24 @@ export async function upsertMemory(
       .limit(1))[0]
     : undefined);
   if (!current) throw new Error("Memory upsert returned no current row.");
+  // 兜底（42 阶段 1 E）：那条原子 upsert 可能更新的正是一行已经是 global 的记忆（本次
+  // 输入省略了 scope），而它的最终 applies_when 来自 `coalesce(excluded, 库里旧值)`——
+  // 落库前看不到这个形状。抛错让同一事务回滚，源行、副本与 revision/history 保持原样。
+  assertGlobalPreferenceWritable(current);
   if (inserted[0]) await markMemoryConflictIfSimilar(executor, scope, current.id, content);
+  await fanoutAgentGlobalPreference(executor, current);
   return toContract(current);
+}
+
+/** Fanout is part of a global write: failure rolls back the same scoped transaction. */
+async function fanoutAgentGlobalPreference(
+  executor: ApiTransaction,
+  row: { id: string; scope: string; deletedAt: Date | null },
+): Promise<void> {
+  if (row.scope !== "global" || row.deletedAt !== null) return;
+  await executor.execute(sql`
+    SELECT public.ailearn_fanout_agent_global_preference(${row.id}::uuid) AS inserted
+  `);
 }
 
 /** 候选确认（用户确认后参与主动策略；确认后需要生成 embedding）。 */
@@ -536,8 +607,20 @@ export async function deleteMemory(
   now: Date = new Date(),
 ): Promise<boolean> {
   await lockMemoryMutations(executor, scope.userId);
+  // 进回收区：删除与到期时间在**同一条** UPDATE 里写下（A47 的「可恢复」那一半）。
+  //
+  // 为什么必须同一条（42 阶段 1 N）：账号级记忆在别的空间有一份副本，副本同步触发器
+  // （0268 / 0371 的 ailearn_sync_global_companion_memory_copies）在**这条** UPDATE
+  // 之后同步 `deleted_at`。以前到期时间是第二条「只按 id」的 UPDATE 写的，那一条既没有
+  // owner/workspace/未删条件，也发生在同步之后——于是别的空间里的副本/源行只有
+  // `deleted_at` 而 `purge_after` 恒为 NULL，而到期清理的判据要求 purge_after 非空，
+  // 它就永远不会被清理。两列一起写，同一个 `now`，同步时一并带过去。
   const updated = await executor.update(assistantMemoryItems)
-    .set({ deletedAt: now, updatedAt: now })
+    .set({
+      deletedAt: now,
+      purgeAfter: new Date(now.getTime() + MEMORY_RECYCLE_BIN_DAYS * 24 * 60 * 60 * 1000),
+      updatedAt: now,
+    })
     .where(and(
       eq(assistantMemoryItems.id, memoryItemId),
       eq(assistantMemoryItems.workspaceId, scope.workspaceId),
@@ -564,12 +647,6 @@ export async function deleteMemory(
      */
     await maskEntriesForSource(executor, scope, { source: "memory", sourceId: memoryItemId });
 
-    // 进回收区：写下到期时间（A47 的「可恢复」那一半）。
-    // 以前只写 deleted_at，而恢复函数要求 deleted_at IS NULL —— 于是这条
-    // 永远回不来，也没有清理路径。现在两个列一起写/一起清。
-    await executor.update(assistantMemoryItems)
-      .set({ purgeAfter: new Date(now.getTime() + MEMORY_RECYCLE_BIN_DAYS * 24 * 60 * 60 * 1000) })
-      .where(eq(assistantMemoryItems.id, memoryItemId));
     if (updated[0].sourceEventId !== null) {
       await executor.insert(assistantMemorySourceSuppressions)
         .values({
@@ -888,6 +965,14 @@ export async function correctMemory(
     throw new RangeError("Memory validity must end after it starts.");
   }
   if (content === existing.content && !metadataChanged) return existing;
+  // 账号级修订守卫（42 阶段 1 E）：修订**不动 scope**，所以 global 行改完仍是账号级的。
+  // 条件按最终值判：省略即沿用旧条件（照样判），显式 null 即清空（现役语义）。
+  assertGlobalPreferenceWritable({
+    scope: existing.scope,
+    kind: existing.kind,
+    content,
+    appliesWhen: input.appliesWhen === undefined ? existing.appliesWhen : input.appliesWhen,
+  });
   const updated = await executor.update(assistantMemoryItems)
     .set({
       content,

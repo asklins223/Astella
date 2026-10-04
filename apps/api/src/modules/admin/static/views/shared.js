@@ -9,33 +9,51 @@
 import { api } from "../api-client.js";
 import { formatCount } from "../format.js";
 import { el, confirmDialog, toast } from "../ui.js";
+import { areaChart } from "../charts.js";
 
 export const SEVERITY_META = {
-  block: { tone: "bad", dot: "var(--red)" },
-  warn: { tone: "warn", dot: "var(--amber)" },
-  info: { tone: "info", dot: "var(--blue)" },
+  block: { tone: "bad", dot: "var(--bad)" },
+  warn: { tone: "warn", dot: "var(--warn)" },
+  info: { tone: "info", dot: "var(--ink-4)" },
 };
 
 /**
- * 序列配色。判据是**深色仪表上的可区分度**，不是配色好看：
- *  - 请求/错误是并排的两张主图，必须一眼分得开 → 青 vs 红。
- *  - 延迟用紫、积压用琥珀、内存用薄荷：同屏最多同时出现三张图，
- *    彼此在深底上都拉得开。
+ * 图表序列配色（浅色纸面）。
+ *
+ * 判据是**同一张纸上彼此可辨、且不抢读数**：请求用墨蓝（与强调色同族），
+ * 失败用红，其余取低饱和度的紫/琥珀/绿/青/棕/灰——它们在 --series-* 里
+ * 统一登记，图表、图例与徽标引用同一处，不各写一份色值。
  */
 export const SERIES_COLORS = {
-  requestsPerMinute: "var(--cyan)",
-  errorsPerMinute: "var(--red)",
-  p95Seconds: "var(--violet)",
-  eventLoopLagSeconds: "var(--gold)",
-  heapUsedBytes: "var(--mint)",
-  poolActive: "var(--blue)",
-  queuePending: "var(--amber)",
-  outboxPending: "var(--mint)",
+  requestsPerMinute: "var(--series-1)",
+  errorsPerMinute: "var(--series-2)",
+  p95Seconds: "var(--series-3)",
+  eventLoopLagSeconds: "var(--series-4)",
+  heapUsedBytes: "var(--series-5)",
+  poolActive: "var(--series-6)",
+  queuePending: "var(--series-7)",
+  outboxPending: "var(--series-8)",
 };
 
 /** 取一条曲线的原始值序列（缺失点保留 null，图表据此断开）。 */
 export function seriesValues(points, key) {
   return points.map((point) => (typeof point[key] === "number" ? point[key] : null));
+}
+
+/**
+ * 一条时序曲线（供总览/指标共用）。
+ * 标题与"当前值"由调用方排版——这里只负责图和悬停读数。
+ */
+export function seriesChart({ points, key, color, unit, tall = false, onHover = null }) {
+  return areaChart({
+    values: seriesValues(points, key),
+    times: points.map((point) => point.t ?? null),
+    color,
+    unit,
+    tall,
+    onHover,
+    emptyHint: "这段时间没有采样",
+  });
 }
 
 /**
@@ -74,21 +92,20 @@ export async function performJobAction({ jobType, label, action, count }) {
   }
 }
 
-/** 待办卡片：色点 → 文字 → 动作。id 供差异对比与测试锚点。 */
+/** 待办行：色点 → 文字 → 动作（细线行，不是卡片）。 */
 export function todoItemCard(item, { onAction }) {
   const meta = SEVERITY_META[item.severity] ?? SEVERITY_META.info;
-  return el("div", { class: `todo todo--${meta.tone}`, dataset: { todoId: item.id } },
-    el("span", { class: "todo__dot", style: `--c:${meta.dot}` }),
-    el("div", { class: "todo__text" },
-      el("div", { class: "todo__title", text: item.title }),
-      el("div", { class: "todo__detail", text: item.detail }),
+  return el("div", { class: "task", dataset: { todoId: item.id } },
+    el("span", { class: "task__dot", style: `--c:${meta.dot}` }),
+    el("div", {},
+      el("div", { class: "task__title", text: item.title }),
+      el("div", { class: "task__detail", text: item.detail }),
     ),
-    el("button", {
-      class: "btn btn--row",
-      type: "button",
-      text: item.actionLabel,
-      onclick: () => onAction(item),
-    }),
+    el("div", { class: "task__actions" },
+      el("button", {
+        class: "link-btn", type: "button", text: item.actionLabel,
+        onclick: () => onAction(item),
+      }),
+    ),
   );
 }
-

@@ -186,6 +186,18 @@
 .hud-surface .cc-page--memory { display: flex; flex-direction: column; gap: 14px; overflow: hidden; }
 .hud-surface .cc-memory { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
 .hud-surface .cc-memory > :not(.cc-memory-workspace) { flex: none; }
+.hud-surface .cc-memory > .cc-feedback { margin: 0; padding: 7px 12px; }
+.hud-surface .cc-memory-page-tools .cc-segments { padding: 0; }
+.hud-surface .cc-memory > .cc-memory-create { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
+.hud-surface .cc-memory-create[data-cooperation] { grid-template-columns: minmax(0, .65fr) minmax(0, 1fr); align-content: start; }
+.hud-surface .cc-memory-create[data-cooperation] > :is(.cc-memory-content, .cc-actions, .cc-rule-form-note) { grid-column: 1 / -1; }
+.hud-surface .cc-memory-create-title { margin-right: auto; font: 600 17px/1.4 var(--cc-serif); }
+.hud-surface .cc-memory-create > .cc-actions { position: sticky; bottom: -16px; margin-bottom: -16px; padding: 12px 0 16px; background: #edf3db; }
+.hud-surface .cc-rule-intro { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; }
+.hud-surface .cc-rule-intro h3 { font: 600 17px/1.4 var(--cc-serif); }
+.hud-surface .cc-rule-intro p, .hud-surface .cc-rule-form-note { margin-top: 5px; color: var(--cc-muted); font-size: 11px; line-height: 1.7; }
+.hud-surface .cc-rule-intro p { margin-top: 0; }
+.hud-surface .cc-form .cc-rule-conditions textarea { min-height: 64px; }
 .hud-surface .cc-memory-workspace { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); flex: 1; gap: 24px; min-height: 0; }
 .hud-surface .cc-memory-workspace.is-empty { grid-template-columns: minmax(0, 1fr); }
 .hud-surface .cc-memory-list { min-width: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 6px; }
@@ -201,6 +213,8 @@
 .hud-surface .cc-memory-focus { min-width: 0; padding: 20px; border-radius: 26px 30px 26px 28px; background: #f2f5df; overflow-y: auto; scrollbar-width: thin; }
 .hud-surface .cc-memory-detail header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .hud-surface .cc-memory-detail__body { margin: 17px 0 25px; white-space: pre-wrap; font: 500 16px/1.9 var(--cc-serif); overflow-wrap: anywhere; }
+.hud-surface .cc-memory-detail .cc-details > div > small { display: block; line-height: 1.7; }
+.hud-surface .cc-memory-detail .cc-details > .cc-facts { margin-top: 12px; margin-bottom: 0; }
 .hud-surface .cc-facts { display: grid; gap: 9px; margin-bottom: 22px; color: var(--cc-muted); font-size: 11px; }
 .hud-surface .cc-facts div { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 10px; }
 .hud-surface .cc-facts dt { color: #9b917c; }

@@ -8,7 +8,6 @@ import type { ApiTransaction } from "../../db/client.ts";
 import {
   cardGenerationRunsV2,
   cardGenerationCandidatesV2,
-  cardGenerationEventsV2,
   cardDomainEventsV2,
 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
@@ -30,15 +29,16 @@ import {
 } from "@ailearn/shared/card-generation-v2-pipeline";
 export { CardGenerationPipelineErrorV2 };
 
-export class CardGenerationV2ServiceError extends CardGenerationPipelineErrorV2 {
-  constructor(code: string, statusCode: number, message: string) {
-    super(code, statusCode, message);
-  }
-}
+// 2026-10-04：run 事件的写入、错误类与 `RunContext` 已下沉到制卡领域包
+// `@ailearn/card-generation`。这里 import 并**转出**它们，所以本模块原有的调用点
+// （激活/审核/揭示服务、创建事务、几十个测试）一行都不用改，而它们调到的仍然是
+// 领域包里那**同一个 class / 同一份写入实现**——不留第二份。
+import { CardGenerationV2ServiceError } from "@ailearn/card-generation";
+export { CardGenerationV2ServiceError };
+export { insertEvent, insertEventBatch } from "@ailearn/card-generation";
+export type { RunContext } from "@ailearn/card-generation";
 
 export const NO_STORE = { "Cache-Control": "private, no-store" } as const;
-
-export type RunContext = { workspaceId: string; userId: string };
 
 /**
  * 方案 20 §17.1/§22.3：SSE/事件流 payload 白名单裁剪。
@@ -474,62 +474,6 @@ export function summarizePlanPracticeQuotaV2(
     ])),
   );
   return { requiredCount, metCount };
-}
-
-export async function insertEvent(
-  tx: ApiTransaction,
-  workspaceId: string,
-  runId: string,
-  eventType: string,
-  payload: Record<string, unknown> = {},
-) {
-  await insertEventBatch(tx, workspaceId, runId, [{ eventType, payload }]);
-}
-
-/**
- * 批量写事件（P1-1）。
- *
- * `insertEvent` 每写一条要做 **2 个往返**（`SELECT MAX(event_seq)` + `INSERT`），
- * 而激活路径上它是在**按 candidate / 按 mapping 的循环里**被调的
- * （`activation-service.ts` 的 12 步与 12c 步各一个循环）。一批 20 个 candidate
- * 就是 40 次往返，外加 20 次 `MAX()` 扫描——这就是审计里那条 M×(2+10N) 的形状。
- *
- * 这里把 MAX 只查一次、INSERT 合成一次多行写入，N 条事件从 2N 次往返降到 2 次。
- *
- * 语义保持不变：
- *   - `event_seq` 仍按 batch 内的**入参顺序**连续递增，所以消费侧按 seq 读出来的
- *     先后关系与逐条插入完全一致；
- *   - 仍然是 (workspace_id, run_id) 作用域内的单调序列。
- *
- * 顺带把一次 MAX 的竞态窗口从「N 次」缩到「1 次」：原来循环里前一条刚插完、
- * 后一条再算 MAX，中间可能被并发事务插进来；现在整批基于同一个基线。
- *
- * 空数组直接返回——`tx.insert().values([])` 在 drizzle 里是未定义行为，不能喂空。
- */
-export async function insertEventBatch(
-  tx: ApiTransaction,
-  workspaceId: string,
-  runId: string,
-  events: Array<{ eventType: string; payload?: Record<string, unknown> }>,
-): Promise<void> {
-  if (events.length === 0) return;
-  const [row] = await tx
-    .select({ maxSeq: sql<number>`COALESCE(MAX(${cardGenerationEventsV2.eventSeq}), 0)` })
-    .from(cardGenerationEventsV2)
-    .where(and(
-      eq(cardGenerationEventsV2.workspaceId, workspaceId),
-      eq(cardGenerationEventsV2.runId, runId),
-    ));
-  const baseSeq = row?.maxSeq ?? 0;
-  await tx.insert(cardGenerationEventsV2).values(
-    events.map((event, index) => ({
-      workspaceId,
-      runId,
-      eventSeq: baseSeq + index + 1,
-      eventType: event.eventType,
-      payload: event.payload ?? {},
-    })),
-  );
 }
 
 /**

@@ -560,6 +560,30 @@ describe("DesktopGateway", () => {
       .rejects.toMatchObject({ code: "validation" } satisfies Partial<DesktopGatewayFailure>);
   });
 
+  it.each([
+    [422, "kind_not_preference", "memory_global_kind_rejected"],
+    [422, "content_workspace_bound", "memory_global_content_bound"],
+    [422, "applies_when_workspace_bound", "memory_global_condition_bound"],
+    [422, "unknown_reason", "validation"],
+    [409, "content_workspace_bound", "conflict"],
+  ])("maps memory scope rejection %i/%s to %s without exposing response text", async (status, reason, code) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (url.endsWith("/health")) return healthResponse();
+      return new Response(JSON.stringify({ error: "memory_global_scope_rejected", reason,
+        message: "Untrusted response text must not reach the renderer" }), { status });
+    });
+    const gateway = new DesktopGateway(environment());
+    await gateway.connect();
+    await expect(ns_companion.createCompanionMemory(gateway.gatewayTransport, {
+      kind: "preference", content: "讲这篇笔记时先举例", scope: "global",
+    })).rejects.toMatchObject({ code, message: code });
+    await expect(ns_companion.correctCompanionMemory(gateway.gatewayTransport,
+      "00000000-0000-4000-8000-000000000099", { content: "讲解时先举例", appliesWhen: "讲这篇笔记时", expectedRevision: 1 },
+    )).rejects.toMatchObject({ code, message: code });
+  });
+
   describe("session credential persistence", () => {
     const SESSION_USER_ID = "00000000-0000-4000-8000-000000000011";
     const SESSION_WORKSPACE_ID = "00000000-0000-4000-8000-000000000012";

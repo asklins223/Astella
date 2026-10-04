@@ -28,6 +28,8 @@ import {
 } from "@ailearn/shared/card-generation-v2-pipeline";
 import { computeCandidateEvidenceSetHashV2 } from "@ailearn/shared/card-generation-v2-hashing";
 import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
+// run 事件写入复用制卡领域包的唯一实现；`insertEvent` 原样转出，不在这里留第二份。
+import { insertEvent, insertEventBatch } from "@ailearn/card-generation";
 import {
   generationSemanticSpecV2Schema,
   generationInputSnapshotV2Schema,
@@ -504,45 +506,16 @@ export async function insertBindingPlanRow(
   `);
 }
 
-/** 单条 V2 运行事件写入（一次 MAX + 一次 INSERT；语义同 api helpers.insertEvent）。 */
-export async function insertEvent(
-  tx: WorkerTransaction,
-  workspaceId: string,
-  runId: string,
-  eventType: string,
-  payload: Record<string, unknown> = {},
-): Promise<void> {
-  await insertEventsBatched(tx, workspaceId, runId, [{ eventType, payload }]);
-}
-
 /**
- * 批量写入 V2 领域事件（一次 MAX + 一次多行 INSERT）。
- * event_seq 在同一 (workspace, run) 内唯一且递增；批量写入时按插入顺序
- * 顺序分配 seq，避免逐事件 MAX 查询 + INSERT 的 N+1 round-trip。
- * 仅在事务内调用（调用方已持有 run 行锁/事务上下文）。
+ * 单条 V2 运行事件写入：转出制卡领域包 `@ailearn/card-generation` 的那一个实现，
+ * 本模块不保留第二份 MAX+INSERT。
+ *
+ * 并发前提照旧，且不由这段写入保证：`event_seq` 由 MAX+1 分配，MAX+1 本身不保证
+ * 并发安全——两个写者撞上就是唯一索引上的 23505。围栏由调用方持有：事务内的 run 行锁
+ * （`loadV2RunInputs` 的 `FOR UPDATE`、`withWorkerWorkspaceTransaction`）与
+ * workspace/user/lease，撞了只能重开整个短事务重分配 seq。
  */
-async function insertEventsBatched(
-  tx: WorkerTransaction,
-  workspaceId: string,
-  runId: string,
-  events: Array<{ eventType: string; payload: Record<string, unknown> }>,
-): Promise<void> {
-  if (events.length === 0) return;
-  const rows = await tx.execute(sql`
-    SELECT COALESCE(MAX(event_seq), 0) AS max_seq
-    FROM public.card_generation_events_v2
-    WHERE workspace_id = ${workspaceId} AND run_id = ${runId}
-  `);
-  const base = Number(rows[0]?.max_seq ?? 0);
-  await tx.execute(sql`
-    INSERT INTO public.card_generation_events_v2
-      (id, workspace_id, run_id, event_seq, event_type, payload, created_at)
-    VALUES ${sql.join(events.map((e, i) => sql`(
-      gen_random_uuid(), ${workspaceId}, ${runId}, ${base + i + 1},
-      ${e.eventType}, ${JSON.stringify(e.payload)}::jsonb, now()
-    )`), sql`, `)}
-  `);
-}
+export { insertEvent };
 
 /**
  * 落库缺省值。作者链路总会给出提示，这里只兜住"确实没有提示"的行（历史数据、
@@ -621,7 +594,7 @@ export async function insertAuthoredCandidatesBatched(
       `)) as Array<{ candidate_revision_id: string }>;
   const insertedIds = new Set(inserted.map((row) => String(row.candidate_revision_id)));
   const authored = candidates.filter((candidate) => insertedIds.has(candidate.candidateRevisionId));
-  await insertEventsBatched(tx, workspaceId, runId, authored.map((candidate) => ({
+  await insertEventBatch(tx, workspaceId, runId, authored.map((candidate) => ({
     eventType: "card_candidate.authored",
     payload: {
       candidateId: candidate.candidateId,

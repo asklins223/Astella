@@ -12,7 +12,7 @@ import { useCardGenerationReadableView } from "./surfaces/review/use-card-genera
 function GeneratingCardDesk({ session }: { readonly session: CardGenerationSession }) {
   const rootRef = useRef<HTMLDivElement>(null);
   useCardTactile(rootRef);
-  // 到场用「一直可见」那一档而不是 `useCardPaperArrival`：这一页是**唯一一页用户正
+  // 到场用「一直可见」那一档：这一页是**唯一一页用户正
   // 在等它动**的地方，进去之后最想看到的是"已经开始做了"，而不是一张从透明里
   // 慢慢浮出来的纸（帧一被节流就只剩背景，2026-10-04 实机等 2–3 秒）。
   useCardVisibleArrival(rootRef, session.runId ?? "reading");

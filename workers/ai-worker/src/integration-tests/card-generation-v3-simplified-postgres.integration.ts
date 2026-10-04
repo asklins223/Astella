@@ -30,6 +30,12 @@ import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 import { assertFixtureWipeClean, wipeCardGenerationFixtures } from "./card-generation-fixture-cleanup.ts";
+// **只取类型**：下面那些被 `await import(...)` 的模块会在模块作用域开 postgres 连接池
+// （本文件 `after` 负责关它们），类型导入编译后不留痕迹，不触发那次打开。
+import type {
+  CardContentCheckV3TaskInput,
+  CardGenerationV3ProviderPort,
+} from "../card-generation-v3/tasks.ts";
 
 const ADMIN_URL = testDatabaseUrl("DATABASE_URL_MIGRATOR");
 process.env.DATABASE_URL_WORKER ??= testDatabaseUrl("DATABASE_URL_WORKER");
@@ -58,6 +64,14 @@ const REFINE_WORKSPACE_ID = randomUUID();
 /** 全被内容门禁挡下的那一发也要一个自己的空间（在制额度是产品策略 3 个）。 */
 const GATEALL_USER_ID = randomUUID();
 const GATEALL_WORKSPACE_ID = randomUUID();
+/**
+ * 逐候选**终态**那两格（重检没通过）专用的第五个空间：它们要**两条**自己的 run——
+ * 一条"台上还摆着别的可保留候选"、一条"台上就剩被检的这一张"。
+ * 不能挂在前面那个空间上：那几条 run 的终态是上一格留下来的，共享会把
+ * 「这一张没过」和「这批一张都没过」两条分支搅成同一条。
+ */
+const SETTLE_USER_ID = randomUUID();
+const SETTLE_WORKSPACE_ID = randomUUID();
 /** 可疑主张内容检查需要独立额度，避免依赖其他用例的终态。 */
 const SUSPECT_USER_ID = randomUUID();
 const SUSPECT_WORKSPACE_ID = randomUUID();
@@ -76,6 +90,15 @@ const INDEX_SUSPECT_SOURCE = `${INDEX_SUSPECT_CLAIM}，因为最左列缺失会�
 const INDEX_SAFE_CLAIM = "即使存在可用索引，如果表很小或一次查询会匹配表中大部分记录，数据库也可能选择顺序扫描，因为读取整张小表的成本更低。";
 /** 一篇抽不出可学原子的笔记（句子都短于阈值或是操作记录）：零候选是正常结果。 */
 const UNLEARNABLE_BLOCKS = ["见附件。", "待定。", "TODO 补。"];
+/**
+ * 只抽得出一个原子的一篇：整批那一发只会落一张候选。
+ *
+ * 「台上再无可保留候选」那一格要的就是这个前提——拿六句那一篇（会落多张）去试，被检的
+ * 那张没过之后台上还剩别的 passed，两条终态分支会读成同一条。
+ */
+const SINGLE_LEARNABLE_BLOCKS = [
+  "TCP 建立连接时双方各自确认一次序号，确认完成之后才开始传数据。",
+];
 
 type NoteFixture = { noteId: string; versionId: string };
 const notes: Record<string, NoteFixture> = {};
@@ -88,6 +111,11 @@ let rewriteRunId = "";
 let refineRunId = "";
 /** 后面三档共用的主体：整批那一发跑完才落库的那张 passed 修订。 */
 let refineSubjectRevisionId = "";
+/** 取消围栏那一发（复用逐候选那个空间：它此刻的 run 都已终态，在制额度是空的）。 */
+let cancelRefineRunId = "";
+/** 终态两格各自的 run：一条"台上还有别的 passed"，一条"台上就剩被检的这一张"。 */
+let settleSiblingRunId = "";
+let settleLastPassRunId = "";
 let suspectRunId = "";
 
 async function seedNote(key: string, title: string, blocks: string[], owner: { workspaceId: string; userId: string } = { workspaceId: WORKSPACE_ID, userId: USER_ID }): Promise<NoteFixture> {
@@ -241,7 +269,7 @@ function countingGenerate() {
 before(async () => {
   await admin.begin(async (tx) => {
     for (const id of [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID, REFINE_USER_ID,
-      GATEALL_USER_ID, SUSPECT_USER_ID]) {
+      GATEALL_USER_ID, SUSPECT_USER_ID, SETTLE_USER_ID]) {
       await tx`INSERT INTO users (id, email, password_hash)
         VALUES (${id}, ${`cardgen-v3-${id}@example.invalid`}, 'unused')
         ON CONFLICT (id) DO NOTHING`;
@@ -262,6 +290,11 @@ before(async () => {
     await tx`INSERT INTO workspaces (id, owner_id, name)
       VALUES (${SUSPECT_WORKSPACE_ID}, ${SUSPECT_USER_ID}, 'Card Gen V3 Suspect Claim IT')
       ON CONFLICT (id) DO NOTHING`;
+    await tx`INSERT INTO workspaces (id, owner_id, name)
+      VALUES (${SETTLE_WORKSPACE_ID}, ${SETTLE_USER_ID}, 'Card Gen V3 Settle IT')
+      ON CONFLICT (id) DO NOTHING`;
+    await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
+      VALUES (${SETTLE_WORKSPACE_ID}, ${SETTLE_USER_ID}, 'owner') ON CONFLICT DO NOTHING`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
       VALUES (${GATEALL_WORKSPACE_ID}, ${GATEALL_USER_ID}, 'owner') ON CONFLICT DO NOTHING`;
     await tx`INSERT INTO workspace_members (workspace_id, user_id, role)
@@ -310,6 +343,26 @@ before(async () => {
     { workspaceId: REFINE_WORKSPACE_ID, userId: REFINE_USER_ID });
   refineRunId = (await createRun(notes.refine.versionId, `v3-refine-${randomUUID()}`,
     { workspaceId: REFINE_WORKSPACE_ID, userId: REFINE_USER_ID })).runId;
+  // 取消围栏那一发要**自己的** run：它会把 run 停在 `cancelled`，与上面那一条共享 run
+  // 会把后面几格的终态判据搅在一起。仍放逐候选那个空间（此时那条 run 尚未终态，在制
+  // 额度占 1，再加 1 仍在产品策略的 3 之内），不去把那道闸调大。
+  notes.cancelrefine = await seedNote("cancelrefine", "取消围栏要重检的那一篇", LEARNABLE_BLOCKS,
+    { workspaceId: REFINE_WORKSPACE_ID, userId: REFINE_USER_ID });
+  cancelRefineRunId = (await createRun(notes.cancelrefine.versionId, `v3-cancel-refine-${randomUUID()}`,
+    { workspaceId: REFINE_WORKSPACE_ID, userId: REFINE_USER_ID })).runId;
+  // 终态两格：一条台面上有多张（被检那张没过，台上还有别的 passed），一条只有一张。
+  // 放在**自己那一个空间**：那个空间此刻在制额度是 0（`refineRunId` 已终态、
+  // `cancelRefineRunId` 已 cancelled），两条一起入制也只占 2，仍在产品策略的 3 之内。
+  notes.settlesibling = await seedNote("settlesibling", "台上还有别的可保留候选那一篇",
+    LEARNABLE_BLOCKS, { workspaceId: SETTLE_WORKSPACE_ID, userId: SETTLE_USER_ID });
+  settleSiblingRunId = (await createRun(notes.settlesibling.versionId,
+    `v3-settle-sibling-${randomUUID()}`,
+    { workspaceId: SETTLE_WORKSPACE_ID, userId: SETTLE_USER_ID })).runId;
+  notes.settlelast = await seedNote("settlelast", "台上就剩被检这一张那一篇",
+    SINGLE_LEARNABLE_BLOCKS, { workspaceId: SETTLE_WORKSPACE_ID, userId: SETTLE_USER_ID });
+  settleLastPassRunId = (await createRun(notes.settlelast.versionId,
+    `v3-settle-last-${randomUUID()}`,
+    { workspaceId: SETTLE_WORKSPACE_ID, userId: SETTLE_USER_ID })).runId;
   notes.allgated = await seedNote("allgated", "两句都被题面门挡下那一发",
     ["TCP 提供可靠有序的字节流传输。水在标准大气压下 100 摄氏度沸腾。"],
     { workspaceId: GATEALL_WORKSPACE_ID, userId: GATEALL_USER_ID });
@@ -335,9 +388,9 @@ after(async () => {
   try {
     report = await wipeCardGenerationFixtures(admin,
       [WORKSPACE_ID, OTHER_WORKSPACE_ID, FAIL_SHAPE_WORKSPACE_ID, REFINE_WORKSPACE_ID,
-        GATEALL_WORKSPACE_ID, SUSPECT_WORKSPACE_ID],
+        GATEALL_WORKSPACE_ID, SUSPECT_WORKSPACE_ID, SETTLE_WORKSPACE_ID],
       [USER_ID, OTHER_USER_ID, FAIL_SHAPE_USER_ID, REFINE_USER_ID, GATEALL_USER_ID,
-        SUSPECT_USER_ID]);
+        SUSPECT_USER_ID, SETTLE_USER_ID]);
   } finally {
     await admin.end({ timeout: 5 }).catch(() => undefined);
     const { closeDatabase: closeWorkerDatabase } = await import("../db.ts");
@@ -1449,6 +1502,21 @@ async function countReports(candidateRevisionId: string): Promise<number> {
   return Number(rows[0]?.n ?? 0);
 }
 
+/**
+ * 这一 run 落了几条**完成回执**（`simplified_completed`）。
+ *
+ * 为什么单列一个读数：`eventPayload` 读的是"最新一条"，那一格自己分不出"这一发新写的"
+ * 与"上一批那一条旧的"。逐候选两发真实各付了 1／2 发，而整批那一发的旧回执恰好也是
+ * 2——不数条数，重检那一格就能拿旧回执冒充自己那一条（这正是它此前绿着的原因）。
+ */
+async function countCompletedReceipts(runId: string): Promise<number> {
+  const rows = await admin`
+    SELECT count(*)::int AS n FROM card_generation_events_v2
+    WHERE run_id = ${runId} AND event_type = 'card_generation.simplified_completed'
+  ` as unknown as Array<{ n: number }>;
+  return Number(rows[0]?.n ?? 0);
+}
+
 test("简化链先把这一 run 推到 review_ready（后面三档都要一个有可审核候选的 run）", async () => {
   const job = await claimSimplifiedJob(refineRunId);
   const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
@@ -1468,6 +1536,8 @@ test("逐候选那一发·重检：只重过检查这条腿，内容一字不动
   const beforeReadout = await candidateRevisionReadout(refineRunId, refineSubjectRevisionId);
   assert.ok(beforeReadout, "主体修订必须读得到，否则下面全部判据都是空集");
   const reportsBefore = await countReports(refineSubjectRevisionId);
+  const receiptsBefore = await countCompletedReceipts(refineRunId);
+  assert.ok(receiptsBefore > 0, "整批那一发先要留下一条回执，这一格才有对照");
 
   await enqueueRefineJob({
     runId: refineRunId,
@@ -1490,15 +1560,31 @@ test("逐候选那一发·重检：只重过检查这条腿，内容一字不动
   const reportsAfter = await countReports(refineSubjectRevisionId);
   assert.ok(reportsAfter === reportsBefore + 1,
     `重检要留下一份新报告（读到 ${reportsAfter}，原本 ${reportsBefore}）——没有它这条腿等于没跑`);
+
+  // 回执必须是**这一发新落的那一条**：条数 +1 与"上一批那条旧事件"这一读法分开判。
+  assert.equal(await countCompletedReceipts(refineRunId), receiptsBefore + 1,
+    "重检这一发要自己落一条完成回执（收口语境写错时它恒定 0 行，库里只剩上一批那条旧读数）");
   const completed = await eventPayload(refineRunId, "card_generation.simplified_completed");
+  assert.equal(completed.settleScope, "candidate_refine",
+    "回执要说得清这一发是从哪条腿收的口——整批与逐候选共用一个写入点，缺这一格就分不出来");
   assert.equal(Number(completed.modelCalls), 1,
-    "重检一张只有检查这一发：读成 0 是白跑，读成 2 是多付了一发");
+    "重检一张只有检查这一发：读成 0 是白跑，读成 2 是拿上一批那条旧回执充数");
+  assert.equal(Number(completed.rewriteCalls), 0, "重检不动内容，不许记成改写那一发");
+  assert.deepEqual(completed.passed, [refineSubjectRevisionId],
+    "回执里放行的就是重检的这一张（对着修订 id 核身份，不对着张数核）");
+  const verdicts = completed.verdicts as unknown as Array<{ objectiveLocalId: string; verdict: string }>;
+  assert.equal(verdicts.length, 1, "重检只判这一张：多于一条说明它顺手重跑了整批");
+  assert.equal(completed.status, await runStatus(refineRunId),
+    "回执里的终态要与库里 run 此刻的终态是同一个（写出口与读出口不许分叉）");
 });
 
 test("逐候选那一发·按反馈重生成：出新修订、旧的标 superseded，两发调用记全", async () => {
   const previous = refineSubjectRevisionId;
   const beforeReadout = await candidateRevisionReadout(refineRunId, previous);
   assert.ok(beforeReadout);
+  // 同上：上一格那条回执就在库里，且它的 modelCalls 恰好也是 2——不先数条数，
+  // 下面"两发调用记全"这一格能被整批那一发的旧读数满足掉。
+  const receiptsBefore = await countCompletedReceipts(refineRunId);
 
   await enqueueRefineJob({
     runId: refineRunId,
@@ -1528,9 +1614,18 @@ test("逐候选那一发·按反馈重生成：出新修订、旧的标 supersed
   const rewritten = await eventPayload(refineRunId, "card_candidate.rewritten");
   assert.equal(rewritten.reason, "user_feedback",
     "事件要分得清这次改写是用户点的还是检查判的——归错了，成本就记不到人头上");
+  assert.equal(await countCompletedReceipts(refineRunId), receiptsBefore + 1,
+    "按反馈重生成这一发要自己落一条完成回执");
   const completed = await eventPayload(refineRunId, "card_generation.simplified_completed");
+  assert.equal(completed.settleScope, "candidate_refine");
   assert.equal(Number(completed.modelCalls), 2,
     "改写一发＋检查一发；少记就是这一发没真发出去");
+  assert.equal(Number(completed.rewriteCalls), 1,
+    "改写那一次也要单独记账：它与检查是两次不同的调用");
+  assert.deepEqual(completed.passed, [rows[0]!.candidate_revision_id],
+    "放行的是新落的那一版，不是上一版（放行了 superseded 的旧修订＝审核台摆两张同目标的卡）");
+  assert.equal(completed.status, await runStatus(refineRunId),
+    "回执里的终态要与库里 run 此刻的终态是同一个");
   refineSubjectRevisionId = String(rows[0].candidate_revision_id);
 });
 
@@ -1573,6 +1668,269 @@ test("整批重排那一档：同一 run 再开一版计划，上一版没激活
   ` as unknown as Array<{ n: number }>;
   assert.ok(Number(freshOnStage[0]?.n) > 0, "这一版要有新候选落在台上");
   assert.equal(await runStatus(refineRunId), "review_ready");
+});
+
+// 取消围栏的反例。逐候选那一发现在**真的会写 run 终态**（此前它收不动 run，
+// 写没写从库里都看不出来），于是"收口语境放宽"这件事必须配一条反例钉住：
+// run 的状态在这一发在途时被改掉，迟到的那份结论就只能作废。
+//
+// 取消的时机做在**检查那一发的端口里**：段 1 的接单读与段 5 的收口写之间只有模型调用
+// 这一个窗口，检查端口是唯一能确定地落在窗口里的位置（真实链上由用户在 UI 按取消，
+// 同一时刻发生同一件事）。反例要判的是两件：终态不被改回去，完成回执也不许补写。
+test("用户取消之后在途的重检：迟到结果不许把 run 改回来、也不许补写回执", async () => {
+  const setupJob = await claimSimplifiedJob(cancelRefineRunId);
+  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  await processV2OutboxJob(setupJob);
+  await assertJobCompleted(setupJob.id);
+  assert.equal(await runStatus(cancelRefineRunId), "review_ready",
+    "先把这一批推到审核台，取消围栏才有主体");
+  const subject = await admin`
+    SELECT candidate_revision_id FROM card_generation_candidates_v2
+    WHERE run_id = ${cancelRefineRunId} AND quality_state = 'passed'
+      AND publish_state = 'unpublished'
+    ORDER BY created_at LIMIT 1
+  ` as unknown as Array<{ candidate_revision_id: string }>;
+  assert.ok(subject[0], "先要有一张 passed 的候选，重检才有主体");
+
+  await enqueueRefineJob({
+    runId: cancelRefineRunId,
+    workspaceId: REFINE_WORKSPACE_ID,
+    candidateRevisionId: subject[0].candidate_revision_id,
+    mode: "recheck",
+  });
+  const job = await claimSimplifiedJob(cancelRefineRunId, { jobType: "card_candidate_refine_v3" });
+  const receiptsBefore = await countCompletedReceipts(cancelRefineRunId);
+  const reportsBefore = await countReports(subject[0].candidate_revision_id);
+
+  const {
+    createDeterministicCardCandidateRewriteV3Provider,
+    createDeterministicCardContentCheckV3Provider,
+    createDeterministicCardGenerateV3Provider,
+  } = await import("../card-generation-v3/deterministic.ts");
+  const { processCardCandidateRefineV3Job } = await import("../card-generation-v3/handler.ts");
+  const innerCheck = createDeterministicCardContentCheckV3Provider();
+  /** 检查在途 ＝ 用户按了取消：这一发此后拿到的结论已经没人要了。 */
+  const cancelWhileChecking = {
+    modelId: `${innerCheck.modelId}-cancel-mid-flight`,
+    async complete(request: Parameters<typeof innerCheck.complete>[0]) {
+      await admin`
+        UPDATE card_generation_runs_v2 SET status = 'cancelled', updated_at = now()
+        WHERE id = ${cancelRefineRunId} AND workspace_id = ${REFINE_WORKSPACE_ID}
+      `;
+      return innerCheck.complete(request);
+    },
+  };
+
+  // 直接调处理函数（不走分发点）：要的是"这一发在 run 状态被改掉之后仍会跑完段 4/5"
+  // 这个形状——分发点自己会在外层再围一道，那道围栏与这里要判的段 5 CAS 是两件事。
+  await processCardCandidateRefineV3Job(job, {
+    generate: createDeterministicCardGenerateV3Provider(),
+    check: cancelWhileChecking,
+    rewrite: createDeterministicCardCandidateRewriteV3Provider(),
+  });
+
+  assert.equal(await runStatus(cancelRefineRunId), "cancelled",
+    "用户按下的取消不许被一次迟到的检查结论撤销（屏上说了已取消，服务端就得是已取消）");
+  // 这一格不许空过：这一格里**租约始终在我们手上**（只按了取消，没动租约），所以段 5
+  // 的事务照常提交，被挡下的只有收口那次写——质量报告因此确实多了一份，正好证明这一发
+  // 真跑到了写结果那一步（否则上面那两行恒真）。
+  assert.equal(await countReports(subject[0].candidate_revision_id), reportsBefore + 1,
+    "这一发要真跑到段 5（租约还在、质量报告照落），否则上面那两行只是「什么都没发生」");
+  assert.equal(await countCompletedReceipts(cancelRefineRunId), receiptsBefore,
+    "run 已不在这一发允许收走的那一档上：一发不许补写完成回执，那一条会被当成这一发的库内读数");
+});
+
+// ── 逐候选那一发的**终态判据**：这一张没过时，run 该落在哪 ────────────────
+//
+// 上面那几格走的是"重检通过"这一侧。缺的是另一侧，而且缺它就等于没测到终态判据：
+// 逐候选那一发只判一张，拿这一张去判整个 run 是错的——台上还摆着别的 passed 候选时，
+// 把 run 打成 needs_attention 等于替用户否决了他没否决过的候选。
+//
+// 两格共用一条检查桩：它把**被检的那一张**判成 `insufficient`（确定性那一版对
+// LEARNABLE_BLOCKS 恒交 keep，用它当桩这两格会读成"重检通过"，白跑）。
+// 其余候选不在这一发的检查范围里（重检只过一张），桩不碰它们。
+
+/** 检查桩：把指定 objectiveLocalId 判成 `insufficient`，其余照抄确定性那一版的裁决。 */
+function insufficientForSubjectCheck(
+  inner: CardGenerationV3ProviderPort<CardContentCheckV3TaskInput>,
+  subjectLocalId: string,
+): CardGenerationV3ProviderPort<CardContentCheckV3TaskInput> {
+  return {
+    modelId: `${inner.modelId}-insufficient-subject`,
+    async complete(request: Parameters<typeof inner.complete>[0]) {
+      const baseline = JSON.parse((await inner.complete(request)).text) as {
+        perCandidate: Array<Record<string, unknown> & { objectiveLocalId: string; issues: unknown[] }>;
+        setIssues: unknown[];
+      };
+      return {
+        text: JSON.stringify({
+          perCandidate: baseline.perCandidate.map((entry) => entry.objectiveLocalId === subjectLocalId
+            ? {
+              ...entry,
+              verdict: "insufficient",
+              issues: [{
+                code: "grounding_not_enough",
+                severity: "hard",
+                detail: "这一版重检后依据仍不足以支撑结论（测试桩刻意判不过）。",
+              }],
+            }
+            : entry),
+          setIssues: baseline.setIssues,
+        }),
+      };
+    },
+  };
+}
+
+/** 台面上（未激活也未让路）可保留的候选：终态判据问的就是这批。 */
+async function reviewablePassedCandidates(runId: string) {
+  const rows = await admin`
+    SELECT candidate_revision_id, plan_objective_local_id FROM card_generation_candidates_v2
+    WHERE run_id = ${runId} AND publish_state = 'unpublished' AND quality_state = 'passed'
+    ORDER BY created_at
+  ` as unknown as Array<{ candidate_revision_id: string; plan_objective_local_id: string }>;
+  return rows;
+}
+
+/**
+ * 重检这一张没过，台上还摆着别的可保留候选 ⇒ 终态**仍** review_ready。
+ *
+ * 这一格不许空过：回执条数 +1 证明段 5 真的收口了（收口语境写错时回执一条不落），
+ * 所以「review_ready」必须是这一发**重新算**出来的，不是它压根没碰留下的原值。
+ */
+test("重检这一张没过、台上还有别的可保留候选：终态仍 review_ready，且不挂质量失败", async () => {
+  const setupJob = await claimSimplifiedJob(settleSiblingRunId);
+  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  await processV2OutboxJob(setupJob);
+  await assertJobCompleted(setupJob.id);
+  assert.equal(await runStatus(settleSiblingRunId), "review_ready");
+
+  const onStage = await reviewablePassedCandidates(settleSiblingRunId);
+  assert.ok(onStage.length >= 2,
+    `这一格的前提是台上至少两张可保留候选（读到 ${onStage.length}）——只有一张的话两条终态分支读成同一条`);
+  const subject = onStage[0]!;
+  const before = await candidateRevisionReadout(settleSiblingRunId, subject.candidate_revision_id);
+  const reportsBefore = await countReports(subject.candidate_revision_id);
+  const receiptsBefore = await countCompletedReceipts(settleSiblingRunId);
+
+  await enqueueRefineJob({
+    runId: settleSiblingRunId,
+    workspaceId: SETTLE_WORKSPACE_ID,
+    candidateRevisionId: subject.candidate_revision_id,
+    mode: "recheck",
+  });
+  const job = await claimSimplifiedJob(settleSiblingRunId, { jobType: "card_candidate_refine_v3" });
+  const {
+    createDeterministicCardCandidateRewriteV3Provider,
+    createDeterministicCardContentCheckV3Provider,
+    createDeterministicCardGenerateV3Provider,
+  } = await import("../card-generation-v3/deterministic.ts");
+  const { processCardCandidateRefineV3Job } = await import("../card-generation-v3/handler.ts");
+  await processCardCandidateRefineV3Job(job, {
+    generate: createDeterministicCardGenerateV3Provider(),
+    check: insufficientForSubjectCheck(
+      createDeterministicCardContentCheckV3Provider(), subject.plan_objective_local_id),
+    rewrite: createDeterministicCardCandidateRewriteV3Provider(),
+  });
+
+  // 1) 这一张真的判不过了，且没被动过内容
+  const after = await candidateRevisionReadout(settleSiblingRunId, subject.candidate_revision_id);
+  assert.equal(after?.quality_state, "failed", "检查判 insufficient ⇒ 这一张不再可保留");
+  assert.equal(after?.candidate_revision_hash, before?.candidate_revision_hash,
+    "重检不许改内容——判不过也不许替他改");
+  assert.equal(Number(after?.revision), Number(before?.revision), "重检不出新修订");
+  assert.equal(after?.publish_state, "unpublished", "判不过的这一张仍留在台上等人工，不许悄悄消失");
+  assert.equal(await countReports(subject.candidate_revision_id), reportsBefore + 1,
+    "判不过也要留下这一份报告——它是这一发跑过的证据");
+  // 2) run 终态：还有别的 passed ⇒ 仍 review_ready，且不许挂着质量失败
+  const remaining = await reviewablePassedCandidates(settleSiblingRunId);
+  assert.equal(remaining.length, onStage.length - 1,
+    `台上恰好少了被检的那一张（原本 ${onStage.length}，剩 ${remaining.length}）`);
+  assert.equal(await runStatus(settleSiblingRunId), "review_ready",
+    "台上还有可保留的候选时，重检没通过不许把整个 run 打成 needs_attention（那是替用户否决）");
+  const runRow = (await admin`
+    SELECT error_code, error_message FROM card_generation_runs_v2 WHERE id = ${settleSiblingRunId} LIMIT 1
+  ` as unknown as Array<{ error_code: string | null; error_message: string | null }>)[0];
+  assert.equal(runRow?.error_code, null,
+    "review_ready 不许同时挂着 quality_gate_failed：状态与失败码必须出自同一个判断");
+  assert.equal(runRow?.error_message, null, "同上（文案格）");
+  // 3) 这一发的回执：确为新增，且描述的是**这一发**判过的那一张
+  assert.equal(await countCompletedReceipts(settleSiblingRunId), receiptsBefore + 1,
+    "重检没通过也要落一条完成回执：这一发真付过钱，账要留");
+  const completed = await eventPayload(settleSiblingRunId, "card_generation.simplified_completed");
+  assert.equal(completed.settleScope, "candidate_refine");
+  assert.equal(Number(completed.modelCalls), 1, "只重过检查这一条腿");
+  assert.equal(Number(completed.rewriteCalls), 0, "判不过不触发改写（重检不改内容）");
+  assert.deepEqual(completed.passed, [],
+    "这一发一张都没放行：passed 说的是这一发的结论，不是整个 run 的台面");
+  assert.equal(completed.status, "review_ready",
+    "回执里的 status 是 run 终态，不是本发裁决的直接翻译");
+  const verdicts = completed.verdicts as unknown as Array<{ objectiveLocalId: string; verdict: string }>;
+  assert.deepEqual(verdicts.map((entry) => entry.objectiveLocalId),
+    [subject.plan_objective_local_id], "回执只记这一发判过的那一张");
+  assert.equal(verdicts[0]?.verdict, "insufficient");
+});
+
+/** 重检这一张没过，台上再无可保留候选 ⇒ needs_attention，且失败码要挂上。 */
+test("重检这一张没过、台上再无可保留候选：终态 needs_attention 并带 quality_gate_failed", async () => {
+  const setupJob = await claimSimplifiedJob(settleLastPassRunId);
+  const { processV2OutboxJob } = await import("../handlers/card-generation-v2-handler.ts");
+  await processV2OutboxJob(setupJob);
+  await assertJobCompleted(setupJob.id);
+  assert.equal(await runStatus(settleLastPassRunId), "review_ready");
+
+  const onStage = await reviewablePassedCandidates(settleLastPassRunId);
+  assert.equal(onStage.length, 1,
+    `这一格的前提是台上就剩一张（读到 ${onStage.length}）——这篇只抽得出一个原子，多了就分不出"最后一张"`);
+  const subject = onStage[0]!;
+  const before = await candidateRevisionReadout(settleLastPassRunId, subject.candidate_revision_id);
+  const reportsBefore = await countReports(subject.candidate_revision_id);
+  const receiptsBefore = await countCompletedReceipts(settleLastPassRunId);
+
+  await enqueueRefineJob({
+    runId: settleLastPassRunId,
+    workspaceId: SETTLE_WORKSPACE_ID,
+    candidateRevisionId: subject.candidate_revision_id,
+    mode: "recheck",
+  });
+  const job = await claimSimplifiedJob(settleLastPassRunId, { jobType: "card_candidate_refine_v3" });
+  const {
+    createDeterministicCardCandidateRewriteV3Provider,
+    createDeterministicCardContentCheckV3Provider,
+    createDeterministicCardGenerateV3Provider,
+  } = await import("../card-generation-v3/deterministic.ts");
+  const { processCardCandidateRefineV3Job } = await import("../card-generation-v3/handler.ts");
+  await processCardCandidateRefineV3Job(job, {
+    generate: createDeterministicCardGenerateV3Provider(),
+    check: insufficientForSubjectCheck(
+      createDeterministicCardContentCheckV3Provider(), subject.plan_objective_local_id),
+    rewrite: createDeterministicCardCandidateRewriteV3Provider(),
+  });
+
+  const after = await candidateRevisionReadout(settleLastPassRunId, subject.candidate_revision_id);
+  assert.equal(after?.quality_state, "failed");
+  assert.equal(after?.candidate_revision_hash, before?.candidate_revision_hash, "判不过也不许替他改内容");
+  assert.equal(Number(after?.revision), Number(before?.revision), "重检不出新修订");
+  assert.equal(await countReports(subject.candidate_revision_id), reportsBefore + 1,
+    "判不过也要留下这一份报告");
+  assert.equal((await reviewablePassedCandidates(settleLastPassRunId)).length, 0,
+    "台上确实一张可保留的都不剩了");
+  assert.equal(await runStatus(settleLastPassRunId), "needs_attention",
+    "台上再无可保留候选时终态必须落到 needs_attention（这才是这一发该给用户看的信号）");
+  const runRow = (await admin`
+    SELECT error_code, error_message FROM card_generation_runs_v2 WHERE id = ${settleLastPassRunId} LIMIT 1
+  ` as unknown as Array<{ error_code: string | null; error_message: string | null }>)[0];
+  assert.equal(runRow?.error_code, "quality_gate_failed",
+    "needs_attention 必须带得上失败码：屏上那句提示是从这一格取的");
+  assert.ok(String(runRow?.error_message ?? "").length > 0, "失败原因不许是空串（要能读出是哪一档判据）");
+  assert.equal(await countCompletedReceipts(settleLastPassRunId), receiptsBefore + 1,
+    "这一发也要留完成回执");
+  const completed = await eventPayload(settleLastPassRunId, "card_generation.simplified_completed");
+  assert.equal(completed.settleScope, "candidate_refine");
+  assert.equal(Number(completed.modelCalls), 1, "只重过检查这一条腿");
+  assert.equal(Number(completed.rewriteCalls), 0, "重检不改写");
+  assert.deepEqual(completed.passed, [], "这一发一张都没放行");
+  assert.equal(completed.status, "needs_attention");
 });
 
 // 与"零候选是正常结果"那格成一对：那一格判的是**抽不出原子**（provider 自己交回

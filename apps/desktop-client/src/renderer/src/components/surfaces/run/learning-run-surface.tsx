@@ -139,7 +139,7 @@ import { NoteRunReceipt } from "../notebook/note-run-receipt.tsx";
 import { LearningRunArrival, LearningRunArrivalEvidence } from "./learning-run-arrival.tsx";
 import { LearningRunEvidenceBand } from "./learning-run-evidence-band.tsx";
 import { useTactileSurface } from "../../motion/use-tactile-surface";
-import { useCardPaperArrival } from "../../motion/card-object-spring";
+import { useCardVisibleArrival } from "../../motion/card-object-spring";
 import { LearningRunDock } from "./learning-run-dock.tsx";
 import { LearningRunFocusRail, LearningRunQuestionHeading } from "./learning-run-focus-header.tsx";
 import {
@@ -313,7 +313,7 @@ export function LearningRunBody({ runId, onExit, onPageChange }: LearningRunBody
   const primaryContentRef = useRef<HTMLDivElement | null>(null);
   const tactileRootRef = useRef<HTMLDivElement>(null);
   useTactileSurface(tactileRootRef, `${snapshot?.phase ?? "loading"}:${snapshot?.activeTask?.taskId ?? "none"}:${snapshot?.activeTask?.activeVariant.variantId ?? "none"}:${resultState.kind}`);
-  useCardPaperArrival(tactileRootRef, snapshot && snapshot.originV2.kind !== "note_round"
+  useCardVisibleArrival(tactileRootRef, snapshot && snapshot.originV2.kind !== "note_round"
     ? `${snapshot.phase}:${snapshot.activeTask?.taskId ?? "none"}:${snapshot.activeTask?.activeVariant.variantId ?? "none"}:${resultState.kind}` : null);
   const discoveryResultKey = resultState.kind === "result"
     ? `${resultState.value.runId}:${resultState.value.result.snapshotId}:${resultState.value.result.outcome}`

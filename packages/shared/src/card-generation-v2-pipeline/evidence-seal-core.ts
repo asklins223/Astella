@@ -1,10 +1,15 @@
 /**
  * 方案 20 R4：Evidence Seal 纯逻辑层（§14.1/§14.3/§10.1 step 1-2）。
  *
- * 2026-08-24（AI 设计审查 §4.4 第二批）：自 apps/api evidence-seal-service.ts
+ * 2026-08-24（AI 设计审查 §4.4 第二批）：自 apps/api 的 evidence seal IO 壳
  * 拆出——类型、sourceScope 过滤、hash 计算、seal 计划构建均为纯逻辑，
  * 下沉至 packages/shared 供 worker 与 api 平级消费；DB 写入（snapshots +
- * eligibility 落库）留在 api 的 IO 壳（evidence-seal-service.ts）。
+ * eligibility 落库）留给 IO 壳。
+ *
+ * 2026-10-04：那个 IO 壳也不再住在 api ——它搬到了制卡领域包
+ * `packages/card-generation/src/evidence-seal.ts`（`apps/api/.../
+ * evidence-seal-service.ts` 已删）。**纯规则仍然只有本文件这一份**：新壳只调
+ * `planEvidenceSnapshotsV2`，不复制过滤与 hash。
  *
  * 硬约束（§14.3/§14.4）不变：
  * - evidenceSnapshotHash 用 `computeEvidenceSnapshotHashV2`

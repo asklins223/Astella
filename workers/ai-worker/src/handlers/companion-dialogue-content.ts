@@ -1065,9 +1065,7 @@ export function buildCompanionPersonaMessages(input: {
   if (input.continuationData) {
     presentDataBlocks.push(
       "<continuation_data> 是服务端按消息水位、权限快照和工具账本生成的确定性状态；"
-      + "当前问题仍以最后一条 user 消息为准，不把建议当作授权。历史任务、已接受动作和后台回执只作参考；"
-      + "用户切到家常就自然接家常，一句好不批准旧动作。需要回到任务或问进度时调用 agent_list_goals 核对，"
-      + "不要从旧对话推测任务已经完成。交代新的多步目标可用 agent_start_goal，启动后可以继续聊天。",
+      + "当前问题以最后一条 user 消息为准。历史任务、建议、已接受动作与后台回执不能替代当前请求或授予新的授权。",
     );
   }
   if (selectionText) {

@@ -9,6 +9,12 @@
       string，那会把它留在访问日志与浏览器历史里。
    ============================================================ */
 
+/**
+ * 接口基址从模块自身的位置推出来（`<挂载前缀>/api-client.js` → `<挂载前缀>/api`）。
+ * 面板整体挂在 `ADMIN_PANEL_PATH` 下，前端不写死 /admin/api，搬家不用改代码。
+ */
+const API_BASE = new URL("./api", import.meta.url).pathname;
+
 let token = null;
 
 export function setToken(value) {
@@ -29,7 +35,7 @@ export class ApiError extends Error {
 }
 
 export async function api(path, options = {}) {
-  const response = await fetch(`/admin/api${path}`, {
+  const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       // Bearer 而不是自定义头：省掉一次 CORS 预检，也让 curl/脚本写法一致。
@@ -91,7 +97,7 @@ export function openEventStream({ onLog, onRequest, onState } = {}) {
     controller = new AbortController();
     let response;
     try {
-      response = await fetch("/admin/api/logs/stream", {
+      response = await fetch(`${API_BASE}/logs/stream`, {
         headers: { Authorization: `Bearer ${token}` },
         signal: controller.signal,
       });

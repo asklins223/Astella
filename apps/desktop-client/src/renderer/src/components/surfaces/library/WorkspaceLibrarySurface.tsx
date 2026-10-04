@@ -48,7 +48,7 @@ import {
 import { useCardTactile } from "../../motion/use-card-tactile";
 import { CardCollection } from "./card-collection";
 import { cardStrategyPresentation } from "../review/card-strategy-presentation";
-import { useCardPaperArrival } from "../../motion/card-object-spring";
+import { useCardVisibleArrival } from "../../motion/card-object-spring";
 import { SurfaceReturnControl } from "../study/SurfaceReturnControl.tsx";
 import { learningRunPhaseLabels } from "../run/learning-run-surface.tsx";
 import { startObjectiveJourney } from "../run/objective-primary-action.ts";
@@ -552,7 +552,7 @@ export function ObjectiveDetailSurface() {
     }
   };
 
-  useCardPaperArrival(surfaceRef, !loading && objective ? activeObjectiveId : null);
+  useCardVisibleArrival(surfaceRef, !loading && objective ? activeObjectiveId : null);
   const content = objective?.content;
   const detailState = objective?.personalState.state ?? null;
   const evidenceSnapshotCount = objective?.sources.origins.reduce((sum, origin) => sum + origin.evidenceSnapshotIds.length, 0) ?? 0;

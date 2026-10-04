@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, type RefObject } from "react";
 import { ArrowLeft, Check, ChevronDown, Layers3, Search, Sparkles, X } from "lucide-react";
 import type { ObjectiveCardGroupV2 } from "@ailearn/shared/objective-card-groups-v2";
 import type { ObjectiveListItemV3 } from "@ailearn/shared/learning-objective-surface-contracts";
-import { useCardObjectSpring, useCardPaperArrival } from "../../motion/card-object-spring";
+import { useCardObjectSpring, useCardVisibleArrival } from "../../motion/card-object-spring";
 import { CardPackObject, CardPackLearningCard, CardPackCardSpot } from "./card-pack-object";
 import { cardStrategyPresentation } from "../review/card-strategy-presentation";
 import { formatObjectiveState, objectiveProgressChips } from "../run/objective-state-copy";
@@ -27,7 +27,7 @@ export function CardCollection(props: {
   const openGroup = props.groups.find(group => group.noteKey === openPackKey);
   const openHeadingRef = useRef<HTMLHeadingElement>(null);
   const lastOpenKey = useRef(openPackKey), firstMount = useRef(true);
-  useCardPaperArrival(rootRef, "packs");
+  useCardVisibleArrival(rootRef, "packs");
   const menu = useCardObjectSpring(menuRef, { open: props.filterMenuOpen ? 1 : 0 });
   const wasMenuOpen = useRef(props.filterMenuOpen);
   useLayoutEffect(() => {
@@ -89,7 +89,7 @@ export function CardCollection(props: {
           </div>
           {opened ? <ul className="card-collection__cards" data-count={Math.min(group.items.length, 3)} aria-label={`${group.title}的学习卡`}>{group.items.map((card, index) => {
             const strategy = card.cardStrategy ? cardStrategyPresentation[card.cardStrategy] : null;
-            return <CardPackCardSpot key={card.objectiveId}><CardPackLearningCard id={card.objectiveId} index={index} title={card.conceptLabel ?? "未命名学习卡"} strategy={card.cardStrategy} strategyLabel={strategy?.label} symbol={strategy?.symbol} summary={card.publicSummary} state={formatObjectiveState(card.personalState.state)} progress={objectiveProgressChips(card.progress).join(" · ")} onOpen={() => props.onOpen(card.objectiveId)} /></CardPackCardSpot>;
+            return <CardPackCardSpot key={card.objectiveId} id={card.objectiveId}><CardPackLearningCard id={card.objectiveId} index={index} title={card.conceptLabel ?? "未命名学习卡"} strategy={card.cardStrategy} strategyLabel={strategy?.label} symbol={strategy?.symbol} summary={card.publicSummary} state={formatObjectiveState(card.personalState.state)} progress={objectiveProgressChips(card.progress).join(" · ")} onOpen={() => props.onOpen(card.objectiveId)} /></CardPackCardSpot>;
           })}</ul> : null}
         </li>;
       })}</ul>

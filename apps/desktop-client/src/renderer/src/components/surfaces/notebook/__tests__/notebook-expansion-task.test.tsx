@@ -22,7 +22,8 @@ const ok = <T,>(data: T) => ({ ok: true, data });
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
 function install() {
   const api = { latestTask: vi.fn(async () => ok({ version: 1, task: task() as NoteExpansionTaskV1 | null })),
-    getTask: vi.fn(async () => ok(task())), startTask: vi.fn(async () => ok(task({ taskId: id(12) }))),
+    getTask: vi.fn(async (_request: { noteId: string; taskId: string }) => ok(task())),
+    startTask: vi.fn(async (_request: { noteId: string; request: { noteVersionId: string; requestId: string } }) => ok(task({ taskId: id(12) }))),
     review: vi.fn(async (request: { review: { drafts: NoteExpansionTaskV1["drafts"] } }) => ok(task({ drafts: task().drafts.map(draft => ({ ...draft, ...request.review.drafts.find(item => item.candidateId === draft.candidateId) })) }))),
     confirm: vi.fn(async (_request: { taskId: string; request: { candidateIds: string[] } }) => ok([link])) };
   Object.defineProperty(window, "ailearn", { configurable: true, value: { noteExpansion: api } });
@@ -30,6 +31,107 @@ function install() {
 }
 const input = () => ({ note, dirty: false, epochRef: { current: undefined }, onConfirmed: vi.fn() });
 afterEach(() => { cleanup(); Reflect.deleteProperty(window, "ailearn"); vi.restoreAllMocks(); });
+
+it("手记打开指定旧版草稿，修改和收下仍绑定原批次，不读取或生成新版", async () => {
+  const api = install(), props = { ...input(), requestedTask: { taskId: id(3), noteVersionId: id(20) } };
+  const old = task({ noteVersionId: id(20) });
+  api.getTask.mockResolvedValue(ok(old));
+  api.review.mockImplementation(async request => ok({ ...old, drafts: old.drafts.map(draft => ({ ...draft, ...request.review.drafts.find(item => item.candidateId === draft.candidateId) })) }));
+  const oldLink = { ...link, sourceNoteVersionId: id(20) };
+  api.confirm.mockResolvedValue(ok([oldLink]));
+  const view = renderHook(() => useNotebookExpansionTask(props)); await act(async () => {});
+  expect(view.result.current.expansionTask?.noteVersionId).toBe(id(20));
+  expect(api.latestTask).not.toHaveBeenCalled(); expect(api.startTask).not.toHaveBeenCalled();
+  await act(async () => window.dispatchEvent(new CustomEvent("ailearn:note-expansion-task-started", { detail: { noteId: note.noteId, taskId: id(12) } })));
+  expect(api.getTask).toHaveBeenCalledTimes(1);
+  act(() => view.result.current.setExpansionTask(current => ({ ...current!, drafts: current!.drafts.map((draft, index) => index ? draft : { ...draft, selected: true }) })));
+  await act(async () => view.result.current.confirmNoteExpansionDrafts());
+  expect(api.confirm.mock.calls[0]?.[0]).toMatchObject({ taskId: id(3), request: { candidateIds: [id(4)] } });
+  expect(props.onConfirmed).toHaveBeenCalledWith([oldLink]);
+  expect(view.result.current.expansionTaskError).toBeNull();
+});
+
+it("指定旧版草稿回执不符时显示读取错误，重试仍只读取同一批次", async () => {
+  const api = install(), props = { ...input(), requestedTask: { taskId: id(3), noteVersionId: id(20) } };
+  const view = renderHook(() => useNotebookExpansionTask(props)); await act(async () => {});
+  expect(view.result.current.expansionTask).toBeNull();
+  expect(view.result.current.expansionTaskError).toContain("已有草稿没读到");
+  api.getTask.mockResolvedValue(ok(task({ noteVersionId: id(20) })));
+  await act(async () => view.result.current.loadLatestNoteExpansionTask());
+  expect(view.result.current.expansionTask?.noteVersionId).toBe(id(20));
+  expect(api.getTask.mock.calls).toHaveLength(2);
+  expect(api.latestTask).not.toHaveBeenCalled(); expect(api.startTask).not.toHaveBeenCalled();
+});
+
+it("旧版草稿重新生成绑定当前笔记版本，接收成功后才切到新批次", async () => {
+  const api = install(), onStarted = vi.fn();
+  const props = { ...input(), onStarted, requestedTask: { taskId: id(3), noteVersionId: id(20) } };
+  const old = task({ noteVersionId: id(20) });
+  const next = task({ taskId: id(12), status: "queued", drafts: [] });
+  api.getTask.mockImplementation(async request => ok(request.taskId === old.taskId ? old : next));
+  const pending = deferred<ReturnType<typeof ok<NoteExpansionTaskV1>>>();
+  api.startTask.mockImplementationOnce(() => pending.promise);
+  const view = renderHook(current => useNotebookExpansionTask(current), { initialProps: props });
+  await act(async () => {});
+  let request!: Promise<void>;
+  act(() => { request = view.result.current.startNoteExpansionTask(); });
+  expect(api.startTask.mock.calls[0]?.[0]).toMatchObject({ noteId: note.noteId, request: { noteVersionId: note.currentVersionId } });
+  expect(view.result.current.expansionTask?.taskId).toBe(old.taskId);
+  expect(onStarted).not.toHaveBeenCalled();
+  await act(async () => { pending.resolve(ok(next)); await request; });
+  expect(onStarted).toHaveBeenCalledWith(next);
+  view.rerender({ ...props, requestedTask: { taskId: next.taskId, noteVersionId: next.noteVersionId } });
+  await act(async () => {});
+  expect(view.result.current.expansionTask?.taskId).toBe(next.taskId);
+  expect(view.result.current.expansionTaskError).toBeNull();
+  expect(api.latestTask).not.toHaveBeenCalled();
+  expect(api.startTask).toHaveBeenCalledTimes(1);
+});
+
+it("旧版重新生成失败或收到旧版本回执，仍保留原批次并可重试", async () => {
+  const api = install(), onStarted = vi.fn();
+  const old = task({ noteVersionId: id(20) });
+  api.getTask.mockResolvedValue(ok(old));
+  const view = renderHook(() => useNotebookExpansionTask({ ...input(), onStarted,
+    requestedTask: { taskId: old.taskId, noteVersionId: old.noteVersionId } }));
+  await act(async () => {});
+  api.startTask.mockRejectedValueOnce(new Error("断线"));
+  await act(async () => view.result.current.startNoteExpansionTask());
+  expect(view.result.current.expansionTask?.taskId).toBe(old.taskId);
+  expect(view.result.current.expansionTaskError).toBeTruthy();
+  api.startTask.mockResolvedValueOnce(ok({ ...old, taskId: id(12) }));
+  await act(async () => view.result.current.startNoteExpansionTask());
+  expect(view.result.current.expansionTask?.taskId).toBe(old.taskId);
+  expect(view.result.current.expansionTaskError).toBeTruthy();
+  expect(view.result.current.expansionTaskStarting).toBe(false);
+  expect(api.startTask).toHaveBeenCalledTimes(2);
+  expect(onStarted).not.toHaveBeenCalled();
+  expect(view.result.current.expansionTaskErrorAction).toBe("start");
+  await act(async () => view.result.current.retryNoteExpansionTask());
+  expect(api.startTask).toHaveBeenCalledTimes(3);
+  expect(onStarted).toHaveBeenCalledWith(task({ taskId: id(12) }));
+  expect(api.review).not.toHaveBeenCalled();
+});
+
+it("离开旧批次后晚到的新任务回执不接管当前页面", async () => {
+  const api = install(), onStarted = vi.fn();
+  const props = { ...input(), onStarted, requestedTask: { taskId: id(3), noteVersionId: id(20) } };
+  const old = task({ noteVersionId: id(20) });
+  api.getTask.mockResolvedValue(ok(old));
+  const pending = deferred<ReturnType<typeof ok<NoteExpansionTaskV1>>>();
+  api.startTask.mockImplementationOnce(() => pending.promise);
+  const view = renderHook(current => useNotebookExpansionTask(current), { initialProps: props });
+  await act(async () => {});
+  let request!: Promise<void>;
+  act(() => { request = view.result.current.startNoteExpansionTask(); });
+  const other = task({ taskId: id(13), noteId: id(14), noteVersionId: id(21) });
+  api.getTask.mockResolvedValue(ok(other));
+  view.rerender({ ...props, note: { ...note, noteId: other.noteId }, requestedTask: { taskId: other.taskId, noteVersionId: other.noteVersionId } });
+  await act(async () => {});
+  await act(async () => { pending.resolve(ok(task({ taskId: id(12) }))); await request; });
+  expect(view.result.current.expansionTask?.taskId).toBe(other.taskId);
+  expect(onStarted).not.toHaveBeenCalled();
+});
 
 it("重新生成使用新请求编号，旧草稿可从批次记录重新打开；未保存修改阻止切批次和生成", async () => {
   const api = install();

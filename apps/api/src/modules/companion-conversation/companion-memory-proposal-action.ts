@@ -9,10 +9,12 @@ import {
   correctMemory,
   deleteMemory,
   getMemory,
+  MemoryGlobalScopeRejectedError,
   MemoryRevisionConflictError,
   upsertMemory,
   type MemoryKindV2,
 } from "./memory/memory-service.ts";
+import { accountPreferenceRejectionMessage } from "@ailearn/shared/companion-memory-scope";
 import { CompanionConversationError } from "./turn/turn-service.ts";
 
 type ProposalPayload = { kind: string; [key: string]: unknown };
@@ -20,6 +22,24 @@ type MemoryProposal = {
   conversation_id: string;
   source_message_id: string | null;
 };
+
+/**
+ * 账号级（跨空间）写入被拒 → 现役 companion 错误合同的 4xx（42 阶段 1 E）。
+ *
+ * 必须显式映射：提案确认链的错误一路冒到 `POST /proposals/:id/decision`，那条路由只认
+ * `CompanionConversationError`，别的异常按 5xx 脱敏回一句"服务器内部错误"——用户点了
+ * 确认，却不知道记忆到底改没改。
+ *
+ * 用 `INVALID_REQUEST` + 422 而不是 `ACTION_STALE`/409：提案与版本都是新鲜的，不合法的
+ * 是"这份内容配上这个范围"。抛出即整笔事务回滚，提案不会被 `succeedSyncProposal` 结账。
+ */
+function accountScopeRejected(error: MemoryGlobalScopeRejectedError): CompanionConversationError {
+  return new CompanionConversationError(
+    "INVALID_REQUEST",
+    422,
+    accountPreferenceRejectionMessage(error.reason),
+  );
+}
 
 export interface CompanionMemoryProposalOutcome {
   resultRef: string | null;
@@ -93,6 +113,7 @@ export async function executeCompanionMemoryProposalAction(input: {
       if (error instanceof MemoryRevisionConflictError) {
         throw new CompanionConversationError("ACTION_STALE", 409, "memory revision changed");
       }
+      if (error instanceof MemoryGlobalScopeRejectedError) throw accountScopeRejected(error);
       throw error;
     }
   }
@@ -132,22 +153,30 @@ export async function executeCompanionMemoryProposalAction(input: {
   if (!temporal.ok) {
     throw new CompanionConversationError("ACTION_STALE", 409, "memory temporal metadata is not grounded in the source");
   }
-  const saved = await upsertMemory(input.tx, scope, {
-    kind: action.memoryKind as MemoryKindV2,
-    content: action.content,
-    sourceEventId: input.proposal.source_message_id,
-    sourceSessionId: input.proposal.conversation_id,
-    sourceSpeaker: "user",
-    sourceBasis: "direct_statement",
-    appliesWhen: temporal.appliesWhen,
-    validFrom: new Date(source.created_at),
-    validUntil: temporal.validUntil ? new Date(temporal.validUntil) : null,
-    userStated: true,
-    candidate: false,
-    importance: 0.8,
-    confidence: 0.9,
-    scope: "workspace",
-    sourceType: "user_stated",
-  });
+  // 这里的写入今天恒为 workspace，守卫按构造不会触发；仍要走同一条映射，
+  // 是为了"任何一个写入口都不会把账号级拒绝变成 500"。
+  let saved;
+  try {
+    saved = await upsertMemory(input.tx, scope, {
+      kind: action.memoryKind as MemoryKindV2,
+      content: action.content,
+      sourceEventId: input.proposal.source_message_id,
+      sourceSessionId: input.proposal.conversation_id,
+      sourceSpeaker: "user",
+      sourceBasis: "direct_statement",
+      appliesWhen: temporal.appliesWhen,
+      validFrom: new Date(source.created_at),
+      validUntil: temporal.validUntil ? new Date(temporal.validUntil) : null,
+      userStated: true,
+      candidate: false,
+      importance: 0.8,
+      confidence: 0.9,
+      scope: "workspace",
+      sourceType: "user_stated",
+    });
+  } catch (error) {
+    if (error instanceof MemoryGlobalScopeRejectedError) throw accountScopeRejected(error);
+    throw error;
+  }
   return { resultRef: saved.memoryItemId, safeSummary: "已保存记忆" };
 }

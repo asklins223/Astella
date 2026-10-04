@@ -11,10 +11,17 @@ export const operationStatusText: Record<AgentRunV1["operations"][number]["statu
   cancelled: "已停止", outcome_unknown: "正在核对结果",
 };
 export function artifactLabel(artifact: AgentArtifactRefV1, run?: AgentRunV1) {
-  const label = artifact.kind === "note_overview" ? "速看" : "互动演示";
+  const label = { note_overview: "速看", note_dynamic_artifact: "互动演示", note_expansion: "拓展草稿" }[artifact.kind];
   if (!run || new Set(run.inputs.map(input => input.noteId)).size < 2) return label;
   const index = run.inputs.findIndex(input => input.noteId === artifact.noteId && input.noteVersionId === artifact.noteVersionId);
   return index < 0 ? label : `笔记 ${index + 1} 的${label}`;
+}
+export function artifactBatchLabel(artifact: AgentArtifactRefV1, run: AgentRunV1) {
+  const batches = run.artifacts.filter(item => item.kind === artifact.kind
+    && item.noteId === artifact.noteId && item.noteVersionId === artifact.noteVersionId);
+  const index = batches.findIndex(item => item.id === artifact.id);
+  const label = artifactLabel(artifact, run);
+  return batches.length > 1 && index >= 0 ? `${label} · 第 ${index + 1} 批` : label;
 }
 export function latestGoalArtifacts(run: AgentRunV1) {
   const latest = new Map<string, AgentArtifactRefV1>();
@@ -39,15 +46,26 @@ export function goalNextHint(run: AgentRunV1) {
   if (run.status === "failed") return "可以调整要求再继续，已经做好的内容会保留。";
   if (run.status === "paused") return "不再推进新步骤，已经启动的生成会收回结果。";
   if (run.status === "cancelled") return "未完成的生成已停止，之前的成果仍能打开。";
-  if (run.status === "completed") return "方便时再看，也可以接着和我聊。";
+  if (run.status === "completed") {
+    if (run.operations.some(operation => operation.status === "succeeded" && operation.artifact?.kind === "note_expansion"))
+      return "拓展草稿已留好，翻开后可以修改、挑选，再决定收下哪些。";
+    if (run.summary && !run.operations.some(operation => operation.artifact))
+      return run.artifacts.length ? "这次的答复留在手记里，之前的成果也保留着。" : "这次的答复留在手记里，可以接着和我聊。";
+    return "方便时再看，也可以接着和我聊。";
+  }
   return "你可以继续读书或聊天，我会把进展留在这里。";
 }
 export function openAgentArtifact(artifact: AgentArtifactRefV1, scope: number) {
   const room = useRoomStore.getState();
   if (room.workspaceScopeRevision !== scope) return false;
   room.setActiveNoteRef({ noteId: artifact.noteId, noteVersionId: artifact.noteVersionId,
-    learningView: artifact.kind === "note_overview" ? "overview" : "artifact",
-    learningResult: { kind: artifact.kind, artifactId: artifact.id, taskId: artifact.jobId } });
+    learningView: artifact.kind === "note_overview" ? "overview" : artifact.kind === "note_expansion" ? "expansion" : "artifact",
+    learningResult: { kind: artifact.kind, artifactId: artifact.id, taskId: artifact.jobId, noteVersionId: artifact.noteVersionId } });
   room.invoke("open-notebook");
   return true;
+}
+
+export function operationLabel(capability: string) {
+  const labels: Record<string, string> = { note_overview_generate: "整理速看", note_dynamic_artifact_generate: "准备互动演示", note_expansion_generate: "整理拓展草稿" };
+  return labels[capability] ?? "处理学习内容";
 }

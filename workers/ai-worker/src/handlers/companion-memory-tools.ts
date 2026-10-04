@@ -31,6 +31,11 @@ import {
   companionMemoryMutationLockKey,
   MEMORY_CONTENT_SIMILARITY_THRESHOLD,
 } from "@ailearn/shared/db-schema/assistant-memory";
+// 跨空间范围判据的唯一来源：抽取侧、API 写入端与这里的直执行共用（42 阶段 1 E）。
+import {
+  accountPreferenceRejectionMessage,
+  accountPreferenceWriteDecision,
+} from "@ailearn/shared/companion-memory-scope";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { logger } from "../lib/logger.ts";
 import { createEmbeddingProvider } from "../lib/ai-provider.ts";
@@ -389,13 +394,15 @@ export async function executeCompanionMemoryTool(
           const currentRows = await tx.execute<{
             id: string;
             revision: number;
+            kind: string;
+            scope: string;
             content: string;
             applies_when: string | null;
             valid_from: Date | string | null;
             valid_until: Date | string | null;
             source_event_id: string | null;
           }>(sql`
-            SELECT id, revision, content, applies_when, valid_from, valid_until,
+            SELECT id, revision, kind, scope, content, applies_when, valid_from, valid_until,
                    source_event_id
               FROM assistant_memory_items
              WHERE id = ${memoryId}::uuid
@@ -428,6 +435,24 @@ export async function executeCompanionMemoryTool(
             || (hasValidFrom && nextValidFrom !== currentValidFrom)
             || (hasValidUntil && nextValidUntil !== currentValidUntil);
           if (!changed) return { kind: "unchanged" as const, revision: current.revision };
+
+          // 账号级（跨空间）范围守卫（42 阶段 1 E）：`full` 档这条裸 SQL 绕开了 API 的
+          // `correctMemory`，所以它**自己**也要过一次判据——判据与那条共用同一份
+          // （`@ailearn/shared/companion-memory-scope`），不留第二套正则。
+          // 判的是**最终形状**：修订不改 scope，所以 global 行改完仍是账号级的；
+          // 条件省略即沿用库里那一条，照样要判。拦在 UPDATE 之前，源行、副本、
+          // CAS 修订号与只追加历史都不动。
+          const accountScope = accountPreferenceWriteDecision({
+            scope: current.scope,
+            kind: current.kind,
+            content,
+            appliesWhen: nextAppliesWhen,
+          });
+          if (!accountScope.ok) {
+            throw new CompanionToolError(
+              `这条账号级规则没有改动：${accountPreferenceRejectionMessage(accountScope.reason)}`,
+            );
+          }
 
           const updatedRows = await tx.execute<{ revision: number }>(sql`
             UPDATE assistant_memory_items

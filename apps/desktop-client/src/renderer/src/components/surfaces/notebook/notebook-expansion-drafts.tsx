@@ -17,7 +17,7 @@ const icons = { preview: Eye, "live-preview": PencilLine, source: Code2 };
 type Props = {
   readonly task: NoteExpansionTaskV1;
   readonly saving: boolean;
-  readonly locateTeachingReference: (ordinal: number) => void;
+  readonly locateTeachingReference?: (ordinal: number) => void;
   readonly setExpansionTask: Dispatch<SetStateAction<NoteExpansionTaskV1 | null>>;
   readonly persistNoteExpansionReview: (drafts: NoteExpansionDraftV1[]) => Promise<void>;
 };
@@ -145,7 +145,7 @@ function ExpansionDraftPage(props: {
   readonly canEdit: boolean;
   readonly onUpdate: (changes: Partial<Pick<NoteExpansionDraftV1, "title" | "blocks" | "selected">>) => void;
   readonly onPersist: () => void;
-  readonly onLocate: (block: number) => void;
+  readonly onLocate?: (block: number) => void;
 }) {
   const [document] = useState(() => {
     const doc = new Y.Doc();
@@ -176,7 +176,9 @@ function ExpansionDraftPage(props: {
     </div>
     {mode === "preview" ? <h2 className="note-expansion-draft__title" tabIndex={-1}>{props.draft.title}</h2> : <textarea className="note-expansion-draft__title" aria-label={`拓展草稿 ${props.index + 1} 标题`} rows={1} maxLength={200} value={props.draft.title} disabled={props.locked} onChange={(event) => props.onUpdate({ title: event.currentTarget.value.replace(/\r?\n/g, " ") })} />}
     <p className="note-expansion-draft__relationship">{props.draft.relationship}</p>
-    <details className="note-expansion-draft__sources"><summary>这篇草稿从哪里接出来</summary>{props.draft.sourceReferences.map((reference) => <button key={`${reference.blockOrdinal}:${reference.quote}`} type="button" className="text-action" onClick={() => props.onLocate(reference.blockOrdinal)}><q>{reference.quote}</q>回原文</button>)}</details>
+    <details className="note-expansion-draft__sources"><summary>这篇草稿从哪里接出来</summary>{props.draft.sourceReferences.map((reference) => props.onLocate
+      ? <button key={`${reference.blockOrdinal}:${reference.quote}`} type="button" className="text-action" onClick={() => props.onLocate?.(reference.blockOrdinal)}><q>{reference.quote}</q>回原文</button>
+      : <blockquote key={`${reference.blockOrdinal}:${reference.quote}`}>{reference.quote}<small>原版本第 {reference.blockOrdinal} 段</small></blockquote>)}</details>
     {pendingMode ? <p role="status">输入法确认后会切换草稿视图。</p> : null}
     <div className="note-transcript" hidden={mode !== "preview"}>{props.draft.blocks.map((block, ordinal) => <ReadingBlock key={ordinal} block={{ ...block, ordinal }} mark={null} />)}</div>
     <div className="note-draft" hidden={mode === "preview"}>

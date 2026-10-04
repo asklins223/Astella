@@ -103,6 +103,15 @@ export function formatDateTime(iso) {
   return date.toLocaleString("zh-CN", { hour12: false });
 }
 
+/** 紧凑日期时间（MM-DD HH:mm）：表格列里不换行，且比完整时间戳好扫。 */
+export function formatShortDateTime(iso) {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 /** 相对时间：运维读「3 分钟前」比读时间戳快，超过一天退回时间戳。 */
 export function formatAgo(iso, now = Date.now()) {
   if (!iso) return "—";

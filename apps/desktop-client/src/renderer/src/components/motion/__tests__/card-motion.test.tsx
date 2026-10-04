@@ -6,7 +6,7 @@ import { useRoomStore } from "../../../app/room-store";
 import { stepCardSpring } from "../card-spring";
 import { useCardTactile } from "../use-card-tactile";
 import { createCandidateCardSpring } from "../../surfaces/review/candidate-card-spring";
-import { createCardObjectSpring, useCardPaperArrival } from "../card-object-spring";
+import { createCardObjectSpring, useCardVisibleArrival } from "../card-object-spring";
 
 let time = 0, nextFrame = 0;
 let frames = new Map<number, FrameRequestCallback>();
@@ -140,7 +140,7 @@ describe("书桌物件的连续运动", () => {
   });
   it("输入和计时重渲染不重播到场动画，系统减少动态立即收敛", () => {
     function Paper({ page, value }: { page: string | null; value: string }) {
-      const ref = useRef<HTMLElement>(null); useCardPaperArrival(ref, page);
+      const ref = useRef<HTMLElement>(null); useCardVisibleArrival(ref, page);
       return <article ref={ref}>{value}</article>;
     }
     const view = render(<Paper page="answer-one" value="" />); advance(100);
@@ -150,6 +150,58 @@ describe("书桌物件的连续运动", () => {
     act(() => useRoomStore.setState({ reducedMotion: true }));
     expect(frames.size).toBe(0);
     expect(view.container.querySelector("article")?.style.getPropertyValue("--card-object-y")).toBe("0px");
+  });
+
+  /**
+   * 2026-10-04 实机（第二处，用户报的）：学习卡列表页"卡一下"。
+   *
+   * 量出来的形状：卡包已经渲染完（DOM 里有 8 套），`.card-collection` 却停在
+   * `opacity: 0` 上直到 **1672ms**；翻开一套卡包，4 张卡同样从 `opacity: 0` 熬到
+   * **1442ms**——正好是 `REVEAL_BUDGET_MS` 那道墙钟兜底。也就是说帧**照常在来**，
+   * 可内容仍旧要先在不可见的状态下待满一整下弹簧。
+   *
+   * 所以这里钉的是契约本身：**内容在不在屏上不由入场动画决定**。第一帧就要能读。
+   */
+  it("到场第一帧就可见：内容不会被入场动画藏在 opacity: 0 后面", () => {
+    function Shelf() {
+      const ref = useRef<HTMLElement>(null); useCardVisibleArrival(ref, "packs");
+      return <section ref={ref}>8 套卡包</section>;
+    }
+    const view = render(<Shelf />);
+    const shelf = view.container.querySelector("section")!;
+    expect(shelf.style.getPropertyValue("--card-object-open")).toBe("1");
+    // 落位过程仍在（读者看得出纸是被放上来的），但它只动位移与转角。
+    expect(shelf.style.getPropertyValue("--card-object-y")).not.toBe("0px");
+    advance(100);
+    expect(shelf.style.getPropertyValue("--card-object-y")).toBe("0px");
+  });
+
+  it("关键帧换了也只重新落位，不重新藏起来", () => {
+    function Card({ page }: { page: string }) {
+      const ref = useRef<HTMLElement>(null); useCardVisibleArrival(ref, page);
+      return <article ref={ref}>一张卡</article>;
+    }
+    const view = render(<Card page="card-a" />); advance(100);
+    view.rerender(<Card page="card-b" />);
+    const card = view.container.querySelector("article")!;
+    expect(card.style.getPropertyValue("--card-object-open")).toBe("1");
+    advance(100);
+    expect(card.style.getPropertyValue("--card-object-open")).toBe("1");
+  });
+
+  it("一帧都不给时内容照样在屏上（这一档不需要那道墙钟兜底）", () => {
+    function Shelf() {
+      const ref = useRef<HTMLElement>(null); useCardVisibleArrival(ref, null);
+      return <section ref={ref}>纸面</section>;
+    }
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const view = render(<Shelf />);
+      const shelf = view.container.querySelector("section")!;
+      expect(shelf.style.getPropertyValue("--card-object-open")).toBe("1");
+      vi.advanceTimersByTime(10_000);
+      expect(shelf.style.getPropertyValue("--card-object-open")).toBe("1");
+    } finally { vi.useRealTimers(); }
   });
 
   /**
@@ -174,20 +226,6 @@ describe("书桌物件的连续运动", () => {
       expect(host.style.getPropertyValue("--card-object-y")).toBe("34px");
       object.destroy();
       expect(host.style.length).toBe(0);
-    } finally { vi.useRealTimers(); }
-  });
-
-  it("页签整段为空时也不会把纸面留在 open: 0", () => {
-    function Paper() {
-      const ref = useRef<HTMLElement>(null); useCardPaperArrival(ref, null);
-      return <article ref={ref}>纸面</article>;
-    }
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    try {
-      const view = render(<Paper />);
-      expect(view.container.querySelector("article")?.style.getPropertyValue("--card-object-open")).toBe("0");
-      vi.advanceTimersByTime(1400);
-      expect(view.container.querySelector("article")?.style.getPropertyValue("--card-object-open")).toBe("1");
     } finally { vi.useRealTimers(); }
   });
 

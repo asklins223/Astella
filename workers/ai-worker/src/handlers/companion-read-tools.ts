@@ -18,7 +18,7 @@
  * 判据、上限、SQL 一个字没改。调用点在 `companion-agent-runtime.ts`，从这里 import。
  */
 
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { pageReadableV1Schema } from "@ailearn/shared/companion-bridge-contracts";
 import { noteVisibleSqlText } from "@ailearn/shared/note-visibility";
 import { PAGE_KIND_LABELS } from "./companion-here-and-now.ts";
@@ -101,12 +101,29 @@ export function sourceNotReadyNote(status: string): string {
 }
 
 /**
+ * 笔记读取实际需要的那个端口：**只有 execute**，且只把行当作普通对象数组交出来。
+ *
+ * 这个函数不写任何东西，也不需要事务的其余能力。把它收窄成结构化的最小面，
+ * Agent 调用点就能把它自己的执行器适配过来（`queryRows` 已经是同一件事的另一半），
+ * 于是那次读取可以和可见性/冻结输入的核对待在**同一次事务**里 —— 否则取消或修订
+ * 可能夹在「核对通过」与「真的读到」之间。
+ *
+ * 声明最小面而不是 `WorkerTransaction`：声明一个自己没有的能力，只会让下一个调用点
+ * 以为它可以写。行类型也不在这里泛化 —— 驱动返回的是带品牌的 RowList，把它泛化过来
+ * 只会逼调用点去断言「这其实就是个数组」；所以窄到 `Record<string, unknown>[]`，
+ * 具名的行类型留给下面每条查询自己声明。
+ */
+export interface ReadPageSqlExecutor {
+  execute(query: SQL): Promise<Record<string, unknown>[]>;
+}
+
+/**
  * 笔记读取的**数据装载半**（39d W6-2；集测直接调它，走的是与工具同一份生产 SQL，
  * 不是复刻形状）。可见性与 read_note 的旧实现同一句话（noteVisibleSqlText）：
  * 缺它时协作空间里成员甲的伴星能读出成员乙私有笔记的正文。
  */
 export async function loadNoteReadPage(
-  tx: Parameters<Parameters<typeof withWorkerWorkspaceTransaction>[1]>[0],
+  tx: ReadPageSqlExecutor,
   input: { workspaceId: string; userId: string; noteId: string; noteVersionId?: string; startOrdinal: number; maxChars: number },
 ): Promise<{
   title: string; versionId: string; ageMinutes: number;
@@ -116,7 +133,7 @@ export async function loadNoteReadPage(
   truncated: boolean;
   nextStartOrdinal: number | null;
 } | null> {
-  const heads = await tx.execute<NoteReadRow>(sql`
+  const heads = await tx.execute(sql`
     SELECT n.title,
            COALESCE(requested_version.id, n.current_version_id)::text AS version_id,
            (EXTRACT(EPOCH FROM (now() - n.updated_at)) / 60)::int AS age_minutes
@@ -132,20 +149,20 @@ export async function loadNoteReadPage(
       AND (${input.noteVersionId ?? null}::uuid IS NULL OR requested_version.id IS NOT NULL)
     LIMIT 1
   `);
-  const head = heads[0];
+  const head = heads[0] as NoteReadRow | undefined;
   if (!head) return null;
-  const blocks = await tx.execute<{ ordinal: string; content: string }>(sql`
+  const blocks = await tx.execute(sql`
     SELECT nb.ordinal::text AS ordinal, nb.content
     FROM note_blocks nb
     WHERE nb.version_id = ${head.version_id}::uuid
       AND nb.ordinal >= ${input.startOrdinal}
     ORDER BY nb.ordinal
   `);
-  const totals = await tx.execute<{ total: string }>(sql`
+  const totals = await tx.execute(sql`
     SELECT count(*)::text AS total FROM note_blocks nb
     WHERE nb.version_id = ${head.version_id}::uuid
   `);
-  const images = await tx.execute<{ id: string; total: string }>(sql`
+  const images = await tx.execute(sql`
     SELECT a.id::text AS id, count(*) OVER () AS total
     FROM note_image_assets a
     WHERE a.workspace_id = ${input.workspaceId}
@@ -156,10 +173,10 @@ export async function loadNoteReadPage(
   `);
   // 分页与续读指针在装载半里完成（组合点只有这一处）：工具与集测看到的是同一页。
   const page = paginateReadBlocks(
-    blocks.map((row) => ({ ordinal: Number(row.ordinal), content: row.content })),
+    (blocks as { ordinal: string; content: string }[]).map((row) => ({ ordinal: Number(row.ordinal), content: row.content })),
     input.maxChars,
   );
-  const totalBlocks = Number(totals[0]?.total ?? 0);
+  const totalBlocks = Number((totals[0] as { total?: string } | undefined)?.total ?? 0);
   const nextStartOrdinal = page.endOrdinal !== null && page.endOrdinal < totalBlocks
     ? page.endOrdinal + 1
     : null;
@@ -168,8 +185,8 @@ export async function loadNoteReadPage(
     versionId: head.version_id,
     ageMinutes: head.age_minutes,
     totalBlocks,
-    imageIds: images.map((row) => row.id),
-    imageTotal: Number(images[0]?.total ?? 0),
+    imageIds: (images as { id: string }[]).map((row) => row.id),
+    imageTotal: Number((images[0] as { total?: string } | undefined)?.total ?? 0),
     page,
     truncated: nextStartOrdinal !== null || page.blockTextTruncated,
     nextStartOrdinal,

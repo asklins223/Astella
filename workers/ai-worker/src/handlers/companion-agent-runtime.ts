@@ -1,4 +1,5 @@
 import { executeTurn } from "@ailearn/agent-core";
+import { AGENT_GOAL_HANDOFF_INSTRUCTIONS } from "../agent/goal-handoff-instructions.ts";
 import {
   auditHash,
   boundedToolCallIdentity,
@@ -477,8 +478,7 @@ export async function runCompanionAgentLoop(args: {
         ...(toolDefinitions.length > 0
           ? ["只有在你确实要调用工具时，调用之前才用一句话说明打算做什么然后停下，把结论留到工具结果回来之后；如果你这一轮不调用工具，就把答复完整说完，不要为了简短而省略该说的内容。"]
           : []),
-        "最后一条 user 消息是当前交流的主线。历史任务、已接受动作、后台回执不会把下一句闲聊变成续做任务；一句好不批准旧动作。",
-        "交代多步目标时优先用 agent_start_goal，接下后由后台决定步骤并生成，当前聊天可继续。accepted 不表示完成；进度用 agent_list_goals 核对。",
+        AGENT_GOAL_HANDOFF_INSTRUCTIONS,
         "交代目标和后台交付不要求切换页面或开始朗读。只有用户当前明确要求打开/前往某个页面时才调用导航工具；不要为了接任务自行跳去学习页。",
         `当前 Agent 预算：最多 ${stepBudget} 步。`,
         ...(finalAnswerOnly

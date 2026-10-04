@@ -27,7 +27,7 @@ const EVIDENCE_SNAPSHOT = "00000000-0000-4000-8000-000000000010";
 
 let candidate: LearningCardCandidateRevisionV2;
 let grounding: GroundingCriticReportV2;
-let manifest: { workspaceId: string; sourceSnapshotId: string; evidence: import("../modules/card-generation-v2/evidence-seal-service.ts").SealedEvidenceEntryV2[] };
+let manifest: { workspaceId: string; sourceSnapshotId: string; evidence: import("@ailearn/card-generation").SealedEvidenceEntryV2[] };
 let eligibility: Array<{ evidenceSnapshotId: string; eligibilityEpoch: number; status: string; stateHash: string }>;
 
 beforeEach(() => {

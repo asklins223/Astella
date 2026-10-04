@@ -1,6 +1,7 @@
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import sharedPackage from '../../packages/shared/package.json'
 
 /**
  * `@ailearn/shared` 的实时源码别名（2026-09-21 建立；2026-09-30 改为按 exports 逐条生成）。
@@ -55,7 +56,8 @@ function targetFile(entry: unknown): string | null {
  * 2. exports 指向的文件若不存在，这里**加载即抛**，而不是等到某一个测试文件收集失败；
  * 3. 与 B5「零通配符」那条硬约束同向——别名也是逐条的。
  */
-const pkg = JSON.parse(readFileSync(resolve(pkgDir, 'package.json'), 'utf8')) as {
+// 静态导入让开发配置追踪 exports 的变化，新增能力不再落回安装期快照。
+const pkg = sharedPackage as {
   exports?: Record<string, unknown>
 }
 

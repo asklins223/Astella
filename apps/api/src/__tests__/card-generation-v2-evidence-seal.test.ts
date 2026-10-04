@@ -1,5 +1,5 @@
 /**
- * 方案 20 R4 — evidence-seal-service 单测。
+ * 方案 20 R4 — evidence seal 单测。
  *
  * 覆盖：
  * - whole_note：全 block 封证据，offset 全跨
@@ -7,6 +7,10 @@
  * - selection endOffset 超长 → 抛错
  * - image/code block 不封文本证据
  * - evidenceSnapshotHash 稳定（同输入同 hash）
+ *
+ * 2026-10-04：落库那一层连同纯逻辑一起搬进制卡领域包
+ * `@ailearn/card-generation`（原来的 `evidence-seal-service.ts` 已删），
+ * 断言原样保留——它们守的是"seal 写出去的行"，不是"文件住在哪"。
  */
 
 import assert from "node:assert/strict";
@@ -15,7 +19,7 @@ import {
   sealEvidenceSnapshotsV2,
   filterBlocksBySourceScope,
   computeSealedEvidenceSnapshotHashV2,
-} from "../modules/card-generation-v2/evidence-seal-service.ts";
+} from "@ailearn/card-generation";
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const SOURCE_SNAPSHOT_ID = "00000000-0000-4000-8000-000000000002";

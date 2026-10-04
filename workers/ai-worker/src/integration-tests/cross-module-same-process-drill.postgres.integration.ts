@@ -172,7 +172,9 @@ test("§1b · 投递是**幂等**的：同一 systemEventId 重复投递不产�
 });
 
 test("§2 · 记忆写入与召回：跨空间的那一档是**显式**的，且缺省必须落在本地", async () => {
-  const { memoryScopeForKind, memoryLooksWorkspaceBound } = await import("../handlers/companion-memory-extractor.ts");
+  const { memoryScopeForKind, memoryLooksWorkspaceBound } = await import(
+    "@ailearn/shared/companion-memory-scope"
+  );
   // 这一族最贵的一种错是一条记忆跑到了别人的空间。判据落在**纯函数**那一层：
   // 它决定作用域，而作用域决定"这条会不会跨空间"。
   //

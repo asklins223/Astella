@@ -1,15 +1,12 @@
 /* ============================================================
-   视图 · 模型配置
+   视图 · 模型配置（主从）
    ------------------------------------------------------------
-   这页在可写部署里是**编辑器**，在只读部署里是**说明页**——两种状态都
-   如实呈现，不做"看着能点、点了报错"的假控件。
+   左列表是平台清单（名字 + 密钥状态），右详情是**被选中平台**的编辑表单；
+   保存/放弃/导出常驻页头带——改到一半不用滚回底部找按钮。
 
-   编辑器按「补丁」的思路工作：
-     - 每个输入都对着配置里的一个具体字段（baseUrl / apiKey / model…）；
-     - 保存时只提交**被改过的字段**（PUT /admin/api/config 是补丁合并）；
-     - 明文密钥不属于"可表达"的字段——面板从来看不见它，所以它也永远不会
-       被面板写回去（服务端在磁盘上原地保留）。输入框显示的要么是 `${VAR}`
-       引用，要么是"写死在文件里（不改动）"。
+   编辑器按「补丁」工作：每个输入对着配置里的一个具体字段，保存时只提交
+   被改过的字段（PUT /admin/api/config 是补丁合并）。明文密钥不属于"可表达"
+   的字段——面板从来看不见它，所以也永远不会被写回去（服务端原地保留）。
 
    能力开关（LEARNING_RUN_ENABLED 这类）是**环境变量**，改它要改 compose 再
    重启；面板只展示实际生效值，不给假开关。
@@ -43,6 +40,7 @@ function snapshotToDraft(snapshot) {
       // 明文密钥显示为空并锁住：它不回浏览器，也不该被面板写坏。
       apiKey: platform.apiKey.mode === "env-ref" ? `\${${platform.apiKey.envVar}}` : "",
       apiKeyLocked: platform.apiKey.mode === "literal-redacted",
+      apiKeyMode: platform.apiKey.mode,
       options: platform.options,
       model: platform.model,
       visionModel: platform.visionModel,
@@ -54,6 +52,8 @@ function snapshotToDraft(snapshot) {
       },
     }])),
     capabilities: Object.fromEntries((snapshot.capabilities ?? []).map((capability) => [capability.capability, {
+      // 服务端给的人话名要带进草稿：表格里显示中文而不是 agent_turn 这种代号。
+      label: capability.label ?? null,
       platform: capability.platform,
       model: capability.model,
       visionModel: capability.visionModel,
@@ -95,6 +95,13 @@ function draftToPatch(current) {
   return patch;
 }
 
+function keyBadge(platform) {
+  if (platform.apiKeyLocked) return badge("密钥写死在文件里", "warn");
+  if (platform.apiKeyMode === "unset") return badge("不需要密钥", "neutral");
+  if (platform.apiKey && platform.apiKey.includes("${")) return badge("引用环境变量", "ok");
+  return badge("字面密钥", "warn");
+}
+
 async function loadConfig(ctx) {
   const [snapshot, overview] = await Promise.all([
     api("/config"),
@@ -114,194 +121,9 @@ async function loadConfig(ctx) {
     dirty = false;
   }
 
-  const wrap = el("div", {});
-  const saveBar = el("div", { class: "actions" });
-  const dirtyFlag = el("span", { class: "dirty-flag", text: "有未保存的改动", hidden: !dirty });
-  function markDirty() {
-    dirty = true;
-    dirtyFlag.hidden = false;
-    saveButton.disabled = false;
-  }
-  function markClean() {
-    dirty = false;
-    dirtyFlag.hidden = true;
-    saveButton.disabled = true;
-  }
-
-  /* ── 状态横幅 ── */
-  wrap.append(
-    el("div", { class: `banner banner--${writable ? "ok" : "warn"}` },
-      el("span", { class: "banner__icon", text: writable ? "✓" : "!" }),
-      el("span", {},
-        writable
-          ? "这个部署的配置目录可写：下面的改动会保存到配置文件，之后需要重启服务才会生效（面板会提醒你）。"
-          : `面板只能看，不能写：${snapshot.readOnlyReason ?? (snapshot.exists ? "配置文件不可写。" : "配置文件不存在。")} 要改配置请编辑 ${snapshot.path} 后重启服务。`,
-      ),
-    ),
-  );
-
-  /* ── 配置问题（有问题先看问题）── */
-  if (snapshot.issues.length > 0) {
-    wrap.append(section("配置问题", `${snapshot.issues.length} 处`, el("ul", { class: "issue-list" },
-      ...snapshot.issues.map((issue) =>
-        el("li", { class: "issue", dataset: { blocking: String(issue.blocking) } },
-          codeTag(issue.path || "(root)"),
-          el("span", { text: issue.message }),
-        )),
-    )));
-  }
-  if (snapshot.unresolvedEnvRefs.length > 0) {
-    wrap.append(el("div", { class: "banner banner--warn" },
-      el("span", { class: "banner__icon", text: "!" }),
-      el("span", {},
-        `有 ${snapshot.unresolvedEnvRefs.length} 个密钥没配：`,
-        snapshot.unresolvedEnvRefs.join("、"),
-        "。这些模型服务现在用不了，调用会失败。",
-      ),
-    ));
-  }
-
-  /* ── 能力开关（环境变量，只读）── */
-  if (overview?.capabilities?.length) {
-    wrap.append(section("现在能用哪些功能", "改这个要改环境变量并重启",
-      el("div", { class: "grid grid--wide" },
-        ...overview.capabilities.map((capability) =>
-          el("div", { class: "panel" },
-            el("div", { class: "stat__label" },
-              el("span", { text: capability.label }),
-              badge(capability.enabled ? "可用" : "未启用", capability.enabled ? "on" : "off"),
-            ),
-            el("div", { class: "stat__hint", text: capability.detail }),
-            el("div", { class: "u-mt-10" }, codeTag(capability.key)),
-          )),
-      )));
-  }
-
-  /* ── 模型服务商（可编辑：baseUrl / apiKey 引用）── */
-  const platformRows = [];
-  for (const [id, platform] of Object.entries(draft.platforms)) {
-    const baseUrlInput = el("input", {
-      class: "field__input", type: "text", spellcheck: "false",
-      value: platform.baseUrl, placeholder: "https://…",
-      disabled: !writable,
-      oninput: (event) => { platform.baseUrl = event.target.value; markDirty(); },
-    });
-    const apiKeyInput = el("input", {
-      class: "field__input", type: "text", spellcheck: "false",
-      value: platform.apiKey,
-      placeholder: platform.apiKeyLocked ? "（写死在文件里，不显示也不改动）" : "${ENV_VAR}",
-      disabled: !writable || platform.apiKeyLocked,
-      oninput: (event) => { platform.apiKey = event.target.value; markDirty(); },
-    });
-    platformRows.push(
-      el("div", { class: "cfg-item" },
-        el("div", { class: "cfg-item__id" },
-          el("div", { class: "cfg-item__name", text: id }),
-          el("div", { class: "cfg-item__badges" },
-            badge(platform.type, "info"),
-            badge(
-              platform.apiKeyLocked ? "密钥写死在文件里"
-                : platform.apiKey ? (platform.apiKey.includes("${") ? "引用环境变量" : "字面密钥")
-                  : "不需要密钥",
-              platform.apiKeyLocked ? "warn" : "off",
-            ),
-          ),
-          el("div", {
-            class: "cfg-item__note",
-            text: platform.usedByCapabilities.length > 0
-              ? `被 ${platform.usedByCapabilities.join("、")} 使用`
-              : "目前没有任何功能用它",
-          }),
-        ),
-        el("div", { class: "cfg-item__fields" },
-          el("div", { class: "field" },
-            el("label", { class: "field__label", text: "接口地址" }),
-            baseUrlInput,
-            platform.apiKeyLocked ? el("div", { class: "field__note", text: "该平台密钥以明文写在文件里；面板不读它，保存时也不会碰它。" }) : null,
-          ),
-          el("div", { class: "field" },
-            el("label", { class: "field__label", text: "密钥来源" }),
-            apiKeyInput,
-            el("div", {
-              class: "field__note",
-              text: platform.apiKeyLocked
-                ? "要换成环境变量引用，先在文件里手动替换一次。"
-                : "留空表示不需要密钥；写 ${VAR} 表示从环境变量读取。",
-            }),
-          ),
-        ),
-      ),
-    );
-  }
-
-  wrap.append(section("模型服务商",
-    writable ? "编辑后点保存 · 增删平台请直接改文件" : `只读 · 要改：编辑 ${snapshot.path}`,
-    ...platformRows));
-
-  /* ── 能力 → 模型（可编辑：platform / model）── */
-  const platformIds = Object.keys(draft.platforms);
-  const capabilityRows = [];
-  for (const [name, capability] of Object.entries(draft.capabilities)) {
-    const select = el("select", {
-      class: "field__input",
-      disabled: !writable,
-      onchange: (event) => { capability.platform = event.target.value; markDirty(); },
-    }, ...platformIds.map((id) => {
-      const option = el("option", { value: id, text: id });
-      if (id === capability.platform) option.selected = true;
-      return option;
-    }));
-    if (!platformIds.includes(capability.platform)) {
-      const option = el("option", { value: capability.platform, text: `${capability.platform}（未定义）` });
-      option.selected = true;
-      select.prepend(option);
-    }
-    const modelInput = el("input", {
-      class: "field__input", type: "text", spellcheck: "false",
-      value: capability.model, placeholder: "model id",
-      disabled: !writable,
-      oninput: (event) => { capability.model = event.target.value; markDirty(); },
-    });
-    capabilityRows.push(
-      el("div", { class: "cfg-item" },
-        el("div", { class: "cfg-item__id" },
-          el("div", { class: "cfg-item__name", text: name }),
-          el("div", { class: "cfg-item__badges" },
-            badge(capability.resolvable ? "当前可用" : "会用兜底", capability.resolvable ? "on" : "warn"),
-          ),
-          capability.problem ? el("div", { class: "cfg-item__note", text: capability.problem }) : null,
-        ),
-        el("div", { class: "cfg-item__fields" },
-          el("div", { class: "field" },
-            el("label", { class: "field__label", text: "服务商" }),
-            select,
-          ),
-          el("div", { class: "field" },
-            el("label", { class: "field__label", text: "模型" }),
-            modelInput,
-            capability.visionModel ? el("div", { class: "field__note", text: `视觉模型：${capability.visionModel}（不改动）` }) : null,
-            capability.embeddingModel ? el("div", { class: "field__note", text: `嵌入模型：${capability.embeddingModel}（不改动）` }) : null,
-          ),
-        ),
-      ),
-    );
-  }
-
-  wrap.append(section("每种功能用哪个模型",
-    writable ? "编辑后点保存" : `只读 · 要改：编辑 ${snapshot.path}`,
-    ...capabilityRows));
-
-  /* ── TTS（保持只读展示：JSON 结构，改它请用文件）── */
-  if (draft.tts) {
-    wrap.append(section("语音合成", `只读 · 要改：编辑 ${snapshot.path}`,
-      el("div", { class: "panel" },
-        el("pre", { class: "mono u-m-0", style: "white-space:pre-wrap;margin:0", text: JSON.stringify(draft.tts, null, 2) }),
-      )));
-  }
-
-  /* ── 动作 ── */
+  /* ── 常驻页头的动作（保存/放弃/导出/重读）── */
   const saveButton = el("button", {
-    class: "btn btn--primary", type: "button", disabled: !dirty,
+    class: "btn btn--sm btn--primary", type: "button", disabled: !dirty,
     onclick: async () => {
       saveButton.disabled = true;
       try {
@@ -324,35 +146,238 @@ async function loadConfig(ctx) {
     },
   }, el("span", { text: "保存改动" }));
 
-  const resetButton = el("button", {
-    class: "btn", type: "button", hidden: !writable,
-    onclick: () => { draft = null; dirty = false; ctx.reload(); },
-  }, el("span", { text: "放弃改动" }));
+  const dirtyFlag = el("span", { class: "dirty-flag", text: "未保存", hidden: !dirty });
+  function markDirty() {
+    dirty = true;
+    dirtyFlag.hidden = false;
+    saveButton.disabled = !writable;
+  }
+  function markClean() {
+    dirty = false;
+    dirtyFlag.hidden = true;
+    saveButton.disabled = true;
+  }
 
+  const resetButton = el("button", {
+    class: "btn btn--sm", type: "button", text: "放弃", hidden: !writable,
+    onclick: () => { draft = null; dirty = false; ctx.reload(); },
+  });
   const exportButton = el("button", {
-    class: "btn", type: "button", text: "导出 JSON",
+    class: "btn btn--sm", type: "button", text: "导出 JSON",
     onclick: () => exportConfig(snapshot),
   });
-
   const rereadButton = el("button", {
-    class: "btn", type: "button", text: "重新读取",
+    class: "btn btn--sm", type: "button", text: "重新读取",
     onclick: () => { draft = null; dirty = false; ctx.reload(); },
   });
+  ctx.setHeadActions?.(saveButton, dirtyFlag, resetButton, exportButton, rereadButton);
+  ctx.setHeadExtra?.();
 
-  saveBar.append(saveButton, resetButton, exportButton, rereadButton, dirtyFlag,
-    el("span", { class: "path-note", text: snapshot.path }));
+  if (dirty) saveButton.disabled = !writable;
 
-  if (!writable) {
-    saveBar.querySelectorAll("button").forEach((button) => {
-      if (button.textContent.includes("保存") || button.textContent.includes("放弃")) button.disabled = true;
-    });
+  const wrap = el("div", {});
+
+  /* ── 状态横幅 ── */
+  wrap.append(
+    el("div", { class: `banner banner--${writable ? "ok" : "warn"}` },
+      el("span", {},
+        writable
+          ? "这个部署的配置目录可写：改动保存后需要重启服务才会生效。"
+          : `面板只能看，不能写：${snapshot.readOnlyReason ?? (snapshot.exists ? "配置文件不可写。" : "配置文件不存在。")} 要改配置请编辑文件后重启服务。`,
+      ),
+    ),
+  );
+
+  /* ── 配置问题（有问题先看问题）── */
+  if (snapshot.issues.length > 0) {
+    wrap.append(section("配置问题", `${snapshot.issues.length} 处`, el("ul", { class: "issue-list" },
+      ...snapshot.issues.map((issue) =>
+        el("li", { class: "issue", dataset: { blocking: String(issue.blocking) } },
+          codeTag(issue.path || "(root)"),
+          el("span", { text: issue.message }),
+        )),
+    )));
   }
-  wrap.append(saveBar);
+  if (snapshot.unresolvedEnvRefs.length > 0) {
+    wrap.append(el("div", { class: "banner banner--warn" },
+      el("span", {},
+        `有 ${snapshot.unresolvedEnvRefs.length} 个密钥没配：${snapshot.unresolvedEnvRefs.join("、")}。这些模型服务现在用不了，调用会失败。`,
+      ),
+    ));
+  }
+
+  /* ── 模型服务商：主从 ── */
+  const platformIds = Object.keys(draft.platforms);
+  const list = el("div", { class: "list", role: "tablist", "aria-label": "模型服务商" });
+  const detail = el("div", { class: "detail" });
+  let selected = 0;
+
+  const rowNodes = platformIds.map((id, index) => {
+    const row = el("button", {
+      class: "list-row", type: "button", role: "tab",
+      "aria-pressed": "false",
+      onclick: () => select(index),
+    },
+      el("span", { class: "list-row__name", text: id }),
+      el("span", { class: "list-row__nums" },
+        draft.platforms[id].usedByCapabilities.length > 0
+          ? el("span", { class: "dim", text: `被 ${draft.platforms[id].usedByCapabilities.length} 项使用` })
+          : el("span", { class: "dim", text: "未使用" }),
+      ),
+    );
+    return row;
+  });
+  list.append(...rowNodes);
+
+  function select(index) {
+    selected = index;
+    rowNodes.forEach((node, i) => node.setAttribute("aria-pressed", String(i === index)));
+    paintPlatform(platformIds[index]);
+  }
+
+  function paintPlatform(id) {
+    const platform = draft.platforms[id];
+    if (!platform) return;
+
+    const baseUrlInput = el("input", {
+      class: "field__input field__input--mono", type: "text", spellcheck: "false",
+      value: platform.baseUrl, placeholder: "https://…",
+      disabled: !writable,
+      oninput: (event) => { platform.baseUrl = event.target.value; markDirty(); },
+    });
+    const apiKeyInput = el("input", {
+      class: "field__input field__input--mono", type: "text", spellcheck: "false",
+      value: platform.apiKey,
+      placeholder: platform.apiKeyLocked ? "（写死在文件里，不显示也不改动）" : "${ENV_VAR}",
+      disabled: !writable || platform.apiKeyLocked,
+      oninput: (event) => { platform.apiKey = event.target.value; markDirty(); },
+    });
+
+    detail.replaceChildren(
+      el("div", { class: "detail__head" },
+        el("div", {},
+          el("div", { class: "detail__title", text: id }),
+          el("div", { class: "dim", style: "font-size:11.5px;margin-top:3px", text: platform.usedByCapabilities.length > 0 ? `被 ${platform.usedByCapabilities.join("、")} 使用` : "目前没有任何功能用它" }),
+        ),
+        el("div", { class: "row", style: "gap:6px" },
+          badge(platform.type, "info"),
+          keyBadge(platform),
+        ),
+      ),
+      el("div", { class: "cfg-item u-mt-14" },
+        el("div", { class: "field" },
+          el("label", { class: "field__label", text: "接口地址" }),
+          baseUrlInput,
+          platform.apiKeyLocked
+            ? el("div", { class: "field__note", text: "该平台密钥以明文写在文件里；面板不读它，保存时也不会碰它。" })
+            : null,
+        ),
+        el("div", { class: "field" },
+          el("label", { class: "field__label", text: "密钥来源" }),
+          apiKeyInput,
+          el("div", { class: "field__note", text: platform.apiKeyLocked ? "要换成环境变量引用，先在文件里手动替换一次。" : "留空表示不需要密钥；写 ${VAR} 表示从环境变量读取。" }),
+        ),
+      ),
+      platform.options
+        ? el("div", { class: "dim", style: "font-size:11.5px;margin-top:12px" },
+            `provider 选项（不在面板编辑）：${JSON.stringify(platform.options)}`)
+        : null,
+    );
+  }
+
+  if (platformIds.length > 0) {
+    wrap.append(section("模型服务商", writable ? "选中后编辑 · 保存常驻页头" : `只读 · 要改：编辑 ${snapshot.path}`,
+      el("div", { class: "split" }, list, detail)));
+    select(0);
+  } else {
+    wrap.append(section("模型服务商", "0 个", el("div", { class: "empty" },
+      el("strong", { text: "配置里没有任何平台" }),
+      "新增平台请直接编辑配置文件。")));
+  }
+
+  /* ── 能力 → 模型 ── */
+  const capabilityNames = Object.keys(draft.capabilities);
+  wrap.append(section("每种功能用哪个模型", writable ? "编辑后点保存" : `只读 · 要改：编辑 ${snapshot.path}`,
+    el("div", { class: "table" },
+      el("table", {},
+        el("thead", {}, el("tr", {},
+          el("th", { text: "功能" }),
+          el("th", { text: "服务商" }),
+          el("th", { text: "模型" }),
+          el("th", { text: "状态" }),
+        )),
+        el("tbody", {},
+          ...capabilityNames.map((name) => {
+            const capability = draft.capabilities[name];
+            const selectEl = el("select", {
+              class: "field__input",
+              disabled: !writable,
+              onchange: (event) => { capability.platform = event.target.value; markDirty(); },
+            }, ...platformIds.map((id) => {
+              const option = el("option", { value: id, text: id });
+              if (id === capability.platform) option.selected = true;
+              return option;
+            }));
+            if (!platformIds.includes(capability.platform)) {
+              const option = el("option", { value: capability.platform, text: `${capability.platform}（未定义）` });
+              option.selected = true;
+              selectEl.prepend(option);
+            }
+            const modelInput = el("input", {
+              class: "field__input field__input--mono", type: "text", spellcheck: "false",
+              value: capability.model, placeholder: "model id",
+              disabled: !writable,
+              oninput: (event) => { capability.model = event.target.value; markDirty(); },
+            });
+            return el("tr", {},
+              el("td", {},
+                el("span", { text: capability.label ?? name }),
+                capability.label ? el("div", { class: "dim", style: "font-size:11px" }, codeTag(name)) : null,
+                capability.visionModel ? el("div", { class: "dim", style: "font-size:11px", text: `视觉模型 ${capability.visionModel}（不改动）` }) : null,
+                capability.embeddingModel ? el("div", { class: "dim", style: "font-size:11px", text: `嵌入模型 ${capability.embeddingModel}（不改动）` }) : null,
+              ),
+              el("td", { style: "min-width:170px" }, selectEl),
+              el("td", { style: "min-width:220px" }, modelInput),
+              el("td", {},
+                badge(capability.resolvable ? "当前可用" : "会用兜底", capability.resolvable ? "ok" : "warn"),
+                capability.problem ? el("div", { class: "dim", style: "font-size:11px;margin-top:4px", text: capability.problem }) : null,
+              ),
+            );
+          }),
+        ),
+      ),
+    ),
+  ));
+
+  /* ── 能力开关（环境变量，只读）── */
+  if (overview?.capabilities?.length) {
+    wrap.append(section("现在能用哪些功能", "改这个要改环境变量并重启",
+      el("div", { class: "caps" },
+        ...overview.capabilities.map((capability) =>
+          el("div", { class: "cap" },
+            el("div", { class: "cap__head" },
+              el("span", { class: "cap__name", text: capability.label }),
+              badge(capability.enabled ? "可用" : "未启用", capability.enabled ? "ok" : "neutral"),
+            ),
+            el("div", { class: "cap__detail", text: capability.detail }),
+            el("div", { class: "cap__code" }, codeTag(capability.key)),
+          )),
+      )));
+  }
+
+  /* ── TTS（只读展示：JSON 结构，改它请用文件）── */
+  if (draft.tts) {
+    wrap.append(section("语音合成", `只读 · 要改：编辑 ${snapshot.path}`,
+      el("pre", { class: "code-block", text: JSON.stringify(draft.tts, null, 2) })));
+  }
+
+  wrap.append(el("div", { class: "u-mt-14" },
+    el("span", { class: "path-note", text: snapshot.path })));
 
   return wrap;
 }
 
-/** 把当前快照导出成 JSON 文件（与旧版一致：apiKey 只会是 ${ENV} 引用）。 */
+/** 把当前快照导出成 JSON 文件（apiKey 只会是 ${ENV} 引用，永不含明文）。 */
 async function exportConfig(snapshot) {
   const payload = {
     platforms: Object.fromEntries(

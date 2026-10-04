@@ -25,9 +25,14 @@
  *
  * 语义调用数由这里**自己数**并写进完成事件（`modelCalls`）——§16.28 那句"普通短文本
  * 成功路径刚好 2 次"要能在库里读到，而不是只在进程里断言一次。
+ *
+ * 段 4/5 也是审核台上那两发（逐候选重检／按反馈重生成）走的那条腿，所以段 5 那个
+ * 写入点带着**收口语境**（`SimplifiedSettleScope`）：整批那一发在在制档上收，逐候选
+ * 那一发在审核台档（`review_ready`／`needs_attention`）上收。少了这一格，逐候选那一发
+ * 收不动 run：`simplified_completed` 一条不写，库里读到的完成回执是上一批那条旧事件。
  */
 import { randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import {
   currentWorkerWorkspaceTransaction,
   withWorkerWorkspaceTransaction,
@@ -124,6 +129,27 @@ const FIRST_RUN_STATUSES = new Set(["queued"]);
 const REPLAN_RUN_STATUSES = new Set(["review_ready", "needs_attention", "checking"]);
 /** 逐候选那一发（重检／按反馈重生成）只在"这一批已经摆到审核台上"时接手。 */
 const REFINE_RUNNABLE_STATUSES_V3 = new Set(["review_ready", "needs_attention"]);
+
+/** 这一发把结果写进 run 时处在哪条腿上：决定 CAS 的来源状态与终态判据。 */
+type SimplifiedSettleScope = "batch_generation" | "candidate_refine";
+
+/**
+ * 唯一结果写入点（`writeSimplifiedCheckResults`）这一发**从哪些状态收走 run**。
+ *
+ * 为什么不是一个并集：两条腿从不同的档位接手——整批那一发永远在在制档
+ * （`queued`…`checking`），逐候选那一发接手时 run 已经停在审核台档
+ * （`review_ready`／`needs_attention`，它就是从那一档被派出来的）。
+ * 收口语境写死成在制档时，逐候选那一发收不动 run，`simplified_completed` 一条不写，
+ * 库里读到的完成回执是**上一批那条旧事件**（§16.28 的读数来源于是对不上这一发
+ * 真实付了几发）。
+ *
+ * 逐候选那一档**直接由它的接单门闩推出来**（`REFINE_RUNNABLE_STATUSES_V3`），
+ * 两份名单各写一遍就是这类漂移再来的入口：接得进、收不走。
+ */
+const SETTLE_FROM_STATUSES: Record<SimplifiedSettleScope, SQL | SQL[]> = {
+  batch_generation: sql`('queued', 'source_sealing', 'planning', 'authoring', 'checking')`,
+  candidate_refine: [...REFINE_RUNNABLE_STATUSES_V3].map((status) => sql`${status}`),
+};
 
 /**
  * 整批那一发的来意写在 payload 里而不是另开 jobType：两种来意跑的是同一条五段链、
@@ -598,6 +624,11 @@ async function runContentCheckLegV3(args: {
   }
 
   // ── 段 5：落库与终态（短事务）───────────────────────────────────────
+  // 这一发是从哪条腿进来的：整批那一发在在制档上收，逐候选那一发在审核台档上收。
+  // 两件事因此不同——收走 run 的来源状态集合，以及"这一批还有没有可保留的候选"
+  // 该问本批还是该问整个 run（见 `writeSimplifiedCheckResults`）。
+  const settleScope: SimplifiedSettleScope =
+    job.jobType === "card_candidate_refine_v3" ? "candidate_refine" : "batch_generation";
   await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
     await writeSimplifiedCheckResults(tx, {
       workspaceId,
@@ -608,11 +639,12 @@ async function runContentCheckLegV3(args: {
       unchecked: checkOutput.unchecked,
       modelCalls: modelCalls(),
       rewriteCalls: rewriteCount(),
+      settleScope,
     });
     // 规模留痕按"这一发真的读过截断文本"记一次：整批那一发在段 3 已经记过，
     // 这里再记就会把同一批数成两条；逐候选那一发（重检／按反馈改写）不经过段 3，
     // 而它同样经 `loadV2RunInputs` 拿到截断过的源文本——所以由这一处记。
-    if (job.jobType === "card_candidate_refine_v3") {
+    if (settleScope === "candidate_refine") {
       await emitSourceContentCapEvent(tx, { workspaceId, runId, cap: loaded.sourceContentCap });
     }
     await fenceV2OutboxLease(tx, job);
@@ -924,12 +956,13 @@ async function finishNoCards(
     // 用户在模型调用在途时按了「取消生成」：屏上已经说了已取消，模型 ~30 秒后回来
     // 却把这一轮改写成 no_cards_recommended，outbox job 随后被当成正常完成 ack 掉——
     // 那次取消**不可恢复**，而且屏上正在显示的那个结果与服务端已经对不上了。
-    // 所以终局写一律带 CAS：只在它仍停在我们预期的工作态上才落。
+    // 所以终局写一律带 CAS：只在它仍停在我们预期的工作态上才落（这一发只在整批那条
+    // 腿上，走的来源状态集合与段 5 的整批档同一份，见 `SETTLE_FROM_STATUSES`）。
     const written = await tx.execute(sql`
       UPDATE public.card_generation_runs_v2
       SET status = 'no_cards_recommended', error_code = NULL, error_message = NULL, updated_at = now()
       WHERE id = ${runId} AND workspace_id = ${workspaceId}
-        AND status IN ('queued', 'source_sealing', 'planning', 'authoring', 'checking')
+        AND status IN ${SETTLE_FROM_STATUSES.batch_generation}
       RETURNING id
     `);
     if (!written.count) return;
@@ -942,6 +975,11 @@ async function finishNoCards(
   }, { isolated: true });
 }
 
+/**
+ * 段 5 的**唯一**结果写入点：binding plan ＋ 质量报告 ＋ 逐候选 `quality_state`
+ * ＋ run 终态 ＋ 这一发的完成回执，全部在这里落。整批那一发与审核台上的逐候选那一发
+ * 共用它，所以门禁、报告形状、终态判据只有一份；起第二份就会有第二天只改一边。
+ */
 async function writeSimplifiedCheckResults(
   tx: WorkerTransaction,
   args: {
@@ -953,9 +991,10 @@ async function writeSimplifiedCheckResults(
     unchecked: ReadonlyArray<string>;
     modelCalls: number;
     rewriteCalls: number;
+    settleScope: SimplifiedSettleScope;
   },
 ): Promise<void> {
-  const { workspaceId, runId, candidates, sealed } = args;
+  const { workspaceId, runId, candidates, sealed, settleScope } = args;
   const byLocalId = new Map(candidates.map((candidate) => [candidate.planObjectiveLocalId, candidate]));
   const passedRevisionIds = new Set<string>();
 
@@ -1012,18 +1051,40 @@ async function writeSimplifiedCheckResults(
     `);
   }
 
-  const status = passedRevisionIds.size > 0 ? "review_ready" : "needs_attention";
-  // 同上：被取消的 run 不许被迟到的模型结果改写。
+  // run 终态。**判据随收口语境换，问的不是同一个问题**：
+  //
+  // - 整批那一发刚刚把这一批每张都判过了，`passedRevisionIds` 就是全批的答案；
+  // - 逐候选那一发只过了一张。拿这一张判整个 run 等于说"这张没过 ⇒ 这批一张都没过"，
+  //   于是审核台上还摆着另外几张 passed 的那一批会被迟到的这一发打成 needs_attention。
+  //   那一档改问库（`hasReviewablePassedCandidateV3`）：台上还剩几张可保留的。
+  //
+  // 两个问法都发生在上面那圈逐候选更新**之后**，所以本发刚写下的那张算在里面。
+  const needsAttention = settleScope === "candidate_refine"
+    ? !(await hasReviewablePassedCandidateV3(tx, workspaceId, runId))
+    : passedRevisionIds.size === 0;
+  const status = needsAttention ? "needs_attention" : "review_ready";
+  const settledErrorMessage = needsAttention
+    ? (settleScope === "candidate_refine"
+      ? "重检后审核台上没有可保留的候选了"
+      : "批量内容检查没有放行任何一张")
+    : null;
+  // 终态写带 CAS：只在 run 仍停在这一发允许收走的那一档上才落，被取消／已激活／
+  // 已过期的 run 不许被迟到的模型结果改写。来源状态集合按收口语境取
+  // （见 `SETTLE_FROM_STATUSES`）——放宽它等于允许一次迟到的结果撤销用户按下的取消。
   const settled = await tx.execute(sql`
     UPDATE public.card_generation_runs_v2
     SET status = ${status},
-        error_code = ${status === "needs_attention" ? "quality_gate_failed" : null},
-        error_message = ${status === "needs_attention" ? "批量内容检查没有放行任何一张" : null},
+        error_code = ${needsAttention ? "quality_gate_failed" : null},
+        error_message = ${settledErrorMessage},
         updated_at = now()
     WHERE id = ${runId} AND workspace_id = ${workspaceId}
-      AND status IN ('queued', 'source_sealing', 'planning', 'authoring', 'checking')
+      AND status IN ${SETTLE_FROM_STATUSES[settleScope]}
     RETURNING id
   `);
+  // CAS 0 行只说明一件事：run 已经不在这一发允许收走的那一档上（被取消了、已激活、
+  // 已过期，或已被别的 job 推到别的档）。于是终态与回执不由这一发写——**仅此而已**：
+  // 它与租约无关（租约由本段之后的 `fenceV2OutboxLease` 单独核，租约不在了它会抛，
+  // 整笔事务连同这一发刚写的候选与质量报告一起回滚）。
   if (!settled.count) return;
   await insertEvent(tx, workspaceId, runId, "card_generation.simplified_completed", {
     modelCalls: args.modelCalls,
@@ -1035,7 +1096,30 @@ async function writeSimplifiedCheckResults(
     unchecked: args.unchecked,
     status,
     rewriteCalls: args.rewriteCalls,
+    settleScope,
   });
+}
+
+/**
+ * 这个 run 的审核台上（未激活也未让路）还剩几张可保留的候选。
+ *
+ * 只给逐候选那一发判终态用——整批那一发手里就有全批的判据，不必回库。
+ * 过滤 `publish_state='unpublished'` 是为了只数**当前这一版**的台面：换一批之后
+ * 上一版那些 passed 的候选只是 `superseded`，把它们算进来会让"这一版一张都没过"
+ * 的 run 永远停在 review_ready。
+ */
+async function hasReviewablePassedCandidateV3(
+  tx: WorkerTransaction,
+  workspaceId: string,
+  runId: string,
+): Promise<boolean> {
+  const rows = await tx.execute(sql`
+    SELECT 1 FROM public.card_generation_candidates_v2
+    WHERE workspace_id = ${workspaceId} AND run_id = ${runId}
+      AND publish_state = 'unpublished' AND quality_state = 'passed'
+    LIMIT 1
+  `);
+  return rows.length > 0;
 }
 
 /**

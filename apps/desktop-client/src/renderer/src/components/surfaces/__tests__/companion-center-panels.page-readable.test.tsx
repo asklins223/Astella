@@ -177,6 +177,20 @@ afterEach(() => {
 });
 
 describe("伴星中心 · 记忆：登记的清单就是屏上露出的那份", () => {
+  it("合作方式的可读清单只含偏好，状态与屏上保存状态一致", async () => {
+    renderPanel({ cooperation: true });
+    await waitFor(() => expect(publishedView()?.filters?.[0].value).toBe("合作方式"));
+    expect(publishedView()?.items).toEqual([{ ordinal: 1, label: "喜欢先给结论再讲理由", state: "偏好· 已确认" }]);
+    expect(screen.queryByText("这周在啃音色的跨语言迁移")).toBeNull();
+  });
+
+  it("添加表单替换清单时，不向 Agent 登记已隐藏的记忆行", async () => {
+    renderPanel({ cooperation: true, createOpen: true });
+    await waitFor(() => expect(publishedView()?.statusLine).toBe("正在添加记忆"));
+    expect(publishedView()?.items).toBeUndefined();
+    expect(document.querySelector(".cc-memory-list")).toBeNull();
+  });
+
   it("条目的顺序、正文与「类型· 状态」都与 DOM 逐字相同（候选排在最前）", async () => {
     renderPanel();
     await waitFor(() => expect(publishedView()).not.toBeNull());

@@ -1,7 +1,7 @@
 import { Leaf, Sparkles } from "lucide-react";
 import { useRef, type CSSProperties, type ReactNode } from "react";
 import { useCardPackMotion } from "./use-card-pack-motion";
-import { useCardPaperArrival } from "../../motion/card-object-spring";
+import { useCardVisibleArrival } from "../../motion/card-object-spring";
 
 export function cardPackTint(identity: string): number {
   let hash = 0;
@@ -32,9 +32,9 @@ export function CardPackObject({ identity, title, count, opened, onToggle, child
   </button>;
 }
 
-export function CardPackCardSpot({ children }: { children: ReactNode }) {
+export function CardPackCardSpot({ id, children }: { id: string; children: ReactNode }) {
   const spotRef = useRef<HTMLLIElement>(null);
-  useCardPaperArrival(spotRef, "card");
+  useCardVisibleArrival(spotRef, id);
   return <li ref={spotRef}>{children}</li>;
 }
 

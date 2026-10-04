@@ -19,6 +19,14 @@ export function useReviewDeckMotion(deckRef: RefObject<HTMLElement | null>, iden
   const tracks = useRef(new Map<HTMLElement, Track>());
   const held = useRef<HTMLElement | null>(null);
   const frame = useRef(0), last = useRef(0);
+  /**
+   * 「循环正在跑」与「待跑的那一帧」是**两件事**，必须分开记。
+   * 早先只用帧号兼任这两件事：卸载时 `cancelAnimationFrame` 把那一帧取走了，帧号却
+   * 还留在 ref 里，于是 `start()` 的"已经有循环在跑"永远成立 —— 此后整叠牌再也不排帧。
+   * StrictMode（main.tsx 就这么挂的）把卸载也跑一遍，所以这不是假想：牌堆从挂载
+   * 那一刻起就没有弹簧，拖完松手只会把牌停在手指放开的地方再也回不来。
+   */
+  const running = useRef(false);
   const paint = (element: HTMLElement, track: Track) => {
     const [x, y, angle, scale, opacity] = track.values.map(value => value.value);
     element.style.transform = modeRef.current === "full" ? `translate3d(${x}px, ${y}px, 0) rotate(${angle}deg) scale(${scale})` : "none";
@@ -37,9 +45,17 @@ export function useReviewDeckMotion(deckRef: RefObject<HTMLElement | null>, iden
       else moving = true;
       paint(element, track);
     }
-    frame.current = moving ? requestAnimationFrame(tick) : 0;
+    // 手里那张牌由 `drag` 直接写，不进弹簧；而"还要不要继续跑"也不由它决定，
+    // 否则别人全静止的时候这一帧就断了。
+    if (moving) frame.current = requestAnimationFrame(tick);
+    else { frame.current = 0; running.current = false; }
   };
-  const start = () => { if (!frame.current) { last.current = performance.now(); frame.current = requestAnimationFrame(tick); } };
+  const start = () => {
+    if (running.current) return;
+    running.current = true;
+    last.current = performance.now();
+    frame.current = requestAnimationFrame(tick);
+  };
   useLayoutEffect(() => {
     const deck = deckRef.current;
     if (!deck) return;
@@ -61,8 +77,15 @@ export function useReviewDeckMotion(deckRef: RefObject<HTMLElement | null>, iden
     observer?.observe(deck);
     return () => observer?.disconnect();
   }, [deckRef, identity, mode]);
+  // 取消那一帧，并把它交还 —— StrictMode 会把挂载/卸载跑两遍，帧号留在手里
+  // 就再也排不出下一帧（`use-tactile-surface.ts` 记着同一条，这里是同一条的第二处）。
+  // 手里那张牌也要放开：换了一叠牌之后还按着旧的那张，弹簧会一直跳过它。
   useLayoutEffect(() => () => {
     cancelAnimationFrame(frame.current);
+    frame.current = 0;
+    last.current = 0;
+    running.current = false;
+    held.current = null;
     tracks.current.clear();
   }, []);
 

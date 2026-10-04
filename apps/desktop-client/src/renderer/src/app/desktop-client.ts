@@ -5,6 +5,7 @@ import {
   type RequestMetaV1,
 } from "@ailearn/shared/desktop-ipc-contracts";
 import { publishGateInvalidation } from "./gate-invalidation";
+import { accountPreferenceRejectionMessage } from "@ailearn/shared/companion-memory-scope";
 
 let requestSequence = 0;
 
@@ -146,6 +147,12 @@ export function gatewayErrorMessage(error: unknown): string {
       return "这条学习内容已经不存在或不再对当前账号可见。";
     case "feature_disabled":
       return "这项学习能力当前未在本环境启用。";
+    case "memory_global_kind_rejected":
+      return accountPreferenceRejectionMessage("kind_not_preference");
+    case "memory_global_content_bound":
+      return accountPreferenceRejectionMessage("content_workspace_bound");
+    case "memory_global_condition_bound":
+      return accountPreferenceRejectionMessage("applies_when_workspace_bound");
     // 2026-09-19 补映射：这些码此前落到 default 兜底句，用户看不出发生了什么。
     case "invalid_request":
     case "validation":

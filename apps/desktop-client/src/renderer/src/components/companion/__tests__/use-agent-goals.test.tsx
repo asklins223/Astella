@@ -27,7 +27,7 @@ const run = (status: AgentRunV1["status"] = "running", revision = 1): AgentRunV1
 const listRuns = vi.fn(), controlRun = vi.fn(), reviseRun = vi.fn();
 beforeEach(() => {
   state.scope = 1; vi.clearAllMocks();
-  listRuns.mockResolvedValue({ version: 1, items: [run()] });
+  listRuns.mockResolvedValue({ version: 1, items: [run()], nextCursor: null });
   Object.defineProperty(window, "ailearn", { configurable: true, value: { agent: { listRuns, controlRun, reviseRun } } });
   Object.defineProperty(document, "hidden", { configurable: true, value: false });
 });
@@ -92,4 +92,57 @@ it("still collects a paused child's receipt without opening a surface or repeati
   listRuns.mockResolvedValue({ version: 1, items: [run("completed")] });
   await act(async () => { await view.result.current.refresh(); await view.result.current.refresh(); });
   expect(notify).toHaveBeenCalledTimes(1); expect(onReady).not.toHaveBeenCalled();
+});
+
+it("keeps loaded older tasks across refreshes and retries a failed page without losing its bookmark", async () => {
+  const first = { ...run("completed"), runId: "first" }, older = { ...run("completed"), runId: "older" };
+  listRuns.mockImplementation(({ query }) => query?.cursor
+    ? Promise.resolve({ version: 1, items: [older], nextCursor: null })
+    : Promise.resolve({ version: 1, items: [first], nextCursor: "page-2" }));
+  const view = renderHook(() => useAgentGoals("idle", vi.fn()));
+  await waitFor(() => expect(view.result.current.nextCursor).toBe("page-2"));
+  listRuns.mockRejectedValueOnce(new Error("暂时无法翻页"));
+  await act(async () => { await view.result.current.loadMore(); });
+  expect(view.result.current.moreError).toBe("暂时无法翻页");
+  expect(view.result.current.nextCursor).toBe("page-2");
+  await act(async () => { await view.result.current.loadMore(); });
+  expect(view.result.current.items.map(item => item.runId)).toEqual(["first", "older"]);
+  expect(view.result.current.nextCursor).toBeNull();
+  await act(async () => { await view.result.current.refresh(); });
+  expect(view.result.current.items.map(item => item.runId)).toEqual(["first", "older"]);
+  expect(view.result.current.nextCursor).toBeNull();
+});
+
+it("does not let an older pagination response overwrite a locally controlled task", async () => {
+  const olderPage = deferred<unknown>();
+  listRuns.mockImplementation(({ query }) => query?.cursor ? olderPage.promise
+    : Promise.resolve({ version: 1, items: [run("completed")], nextCursor: "page-2" }));
+  const view = renderHook(() => useAgentGoals("idle", vi.fn()));
+  await waitFor(() => expect(view.result.current.nextCursor).toBe("page-2"));
+  let loading!: Promise<void>;
+  act(() => { loading = view.result.current.loadMore(); });
+  const paused = { ...run("paused"), runId: "older" };
+  controlRun.mockResolvedValueOnce(paused);
+  await act(async () => { await view.result.current.change(paused, "pause"); });
+  await act(async () => { olderPage.resolve({ version: 1, items: [{ ...paused, status: "running" }], nextCursor: null }); await loading; });
+  expect(view.result.current.items.find(item => item.runId === "older")?.status).toBe("paused");
+});
+
+it("discards an older page after switching spaces without releasing the new space's pending page", async () => {
+  const old = deferred<unknown>(), current = deferred<unknown>();
+  listRuns.mockImplementation(({ query }) => query?.cursor ? (state.scope === 1 ? old.promise : current.promise)
+    : Promise.resolve({ version: 1, items: [run("completed")], nextCursor: "page-2" }));
+  const view = renderHook(() => useAgentGoals("idle", vi.fn()));
+  await waitFor(() => expect(view.result.current.nextCursor).toBe("page-2"));
+  let oldPage!: Promise<void>;
+  act(() => { oldPage = view.result.current.loadMore(); });
+  state.scope = 2; view.rerender();
+  await waitFor(() => expect(view.result.current.nextCursor).toBe("page-2"));
+  let newPage!: Promise<void>;
+  act(() => { newPage = view.result.current.loadMore(); });
+  await act(async () => { old.resolve({ version: 1, items: [{ ...run("completed"), runId: "private-old" }], nextCursor: null }); await oldPage; });
+  expect(view.result.current.moreLoading).toBe(true);
+  expect(view.result.current.items.some(item => item.runId === "private-old")).toBe(false);
+  await act(async () => { current.resolve({ version: 1, items: [], nextCursor: null }); await newPage; });
+  expect(view.result.current.moreLoading).toBe(false);
 });

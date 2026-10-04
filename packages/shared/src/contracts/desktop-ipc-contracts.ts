@@ -1,4 +1,4 @@
-import { agentRunV1Schema, agentRunListV1Schema, createAgentRunV1Schema, reviseAgentRunV1Schema, controlAgentRunV1Schema } from "./agent-contracts.ts";
+import { agentRunV1Schema, agentRunListV1Schema, agentRunListQueryV1Schema, agentRunHistoryV1Schema, agentRunHistoryQueryV1Schema, createAgentRunV1Schema, reviseAgentRunV1Schema, controlAgentRunV1Schema } from "./agent-contracts.ts";
 import {
   type CompanionDiscoveryEntryV1,
   type CompanionDiscoveryKind,
@@ -447,6 +447,7 @@ export const DESKTOP_IPC_CHANNELS = {
   // 伴星聊天发送链路 + 语音转文本（2026-09-18 接线，companion-chat-desktop-contracts）。
   companionVoiceTranscribe: "ailearn.v1.companion.voice.transcribe",
   agentRunsList: "ailearn.v1.agent.runs.list",
+  agentRunHistory: "ailearn.v1.agent.runs.history",
   agentRunCreate: "ailearn.v1.agent.runs.create",
   agentRunRevise: "ailearn.v1.agent.runs.revise",
   agentRunControl: "ailearn.v1.agent.runs.control",
@@ -1021,6 +1022,9 @@ export const gatewayErrorCodeValues = [
   "feature_disabled",
   "not_found",
   "validation",
+  "memory_global_kind_rejected",
+  "memory_global_content_bound",
+  "memory_global_condition_bound",
   "conflict",
   "rate_limited",
   "network_timeout",
@@ -2209,7 +2213,8 @@ export interface AILearnDesktopApiM1 {
 
 export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
   readonly agent: {
-    listRuns(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof agentRunListV1Schema>>>;
+    listRuns(input: { meta: RequestMetaV1; query?: z.input<typeof agentRunListQueryV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunListV1Schema>>>;
+    getRunHistory(input: { meta: RequestMetaV1; runId: string; query?: z.input<typeof agentRunHistoryQueryV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunHistoryV1Schema>>>;
     createRun(input: { meta: RequestMetaV1; request: z.infer<typeof createAgentRunV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunV1Schema>>>;
     reviseRun(input: { meta: RequestMetaV1; runId: string; request: z.infer<typeof reviseAgentRunV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunV1Schema>>>;
     controlRun(input: { meta: RequestMetaV1; runId: string; request: z.infer<typeof controlAgentRunV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunV1Schema>>>;
