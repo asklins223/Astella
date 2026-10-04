@@ -215,13 +215,17 @@ jobs:
           Write-Host "app.asar $(([math]::Round((Get-Item $asar).Length / 1MB, 1))) MB"
 
           Write-Host '--- 2/4 覆盖安装（Windows 上的真实更新路径）---'
-          # electron-updater 在 Windows 上**不是**简单地把同一个安装器再跑一遍：
-          # 它额外传 `--updated`，让安装器走"更新"分支而不是"全新安装"分支。
-          # 少了这个开关，安装器发现已存在安装后会去找旧卸载器并等它的交互，
-          # 在无人值守 runner 上就一直等着——实测就是 180s 超时。
-          Invoke-Checked $installer.FullName @('/S', '--updated')
+          # 参数**逐字照抄** electron-updater 的 NsisUpdater.doInstall()
+          # （node_modules/electron-updater/out/NsisUpdater.js:107-122）：
+          #     --updated      走更新分支，而不是全新安装分支
+          #     /S             静默
+          #     --force-run    即使检测到程序在跑也继续
+          #     /D=<安装目录>   明确覆盖到当前所在目录
+          # 自己另发明一套参数等于在测一条 electron-updater 根本不会走的路径——
+          # 那样"更新能用"就成了一句没有依据的话。
+          Invoke-Checked $installer.FullName @('--updated', '/S', '--force-run', "/D=$installDir")
           if (-not (Test-Path -LiteralPath $appExe)) { throw '覆盖安装后 exe 消失了' }
-          Write-Host '  ok  覆盖安装通过（与 electron-updater 在 Windows 上走同一条分支）'
+          Write-Host '  ok  覆盖安装通过（参数与 electron-updater 逐字一致）'
 
           Write-Host '--- 3/4 启动已安装的程序 ---'
 
