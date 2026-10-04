@@ -5,9 +5,13 @@ __pycache__/
 *.pyc
 dist/
 build/
-!apps/desktop/build/
-!apps/desktop/build/icon.png
-!apps/desktop/build/icon.icns
+# electron-builder 的图标资源必须入库，否则 CI 上打出来的包全是 Electron 默认图标。
+# 这里的路径原先写的是 `apps/desktop/`——那个目录不存在（本项目是 apps/desktop-client/），
+# 三条否定规则从来没生效过，图标也就一直进不了仓库。
+!apps/desktop-client/build/
+!apps/desktop-client/build/icon.png
+!apps/desktop-client/build/icon.icns
+!apps/desktop-client/build/icon.ico
 .env
 .env.local
 *.log

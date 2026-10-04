@@ -22,10 +22,14 @@
 
 - Stable fallback posters: `posters/home-v2/lighthouse/lighthouse-{day,dusk,night}-poster-v1.png`. All three use the approved 1672 × 941 lighthouse geometry; dusk and night are lighting references, never independent layouts.
 - These three posters paint the homepage and the layer underneath task hosts. Each task host paints its own registered scene from `taskPosters`.
-- The three posters are distributed with the repository (no longer blocked by `.gitignore` since 2026-10-03): `RoomStage` paints exactly these files and the manifest carries their SHA-256. The `layers/home-v2/` pack below is what stays local.
-- Production layers: `layers/home-v2/lighthouse/`. D0 is the clean room plate, D1 is a cropped water texture, D2 contains three window-structure crops, D3 contains desk/shelf/rest furniture groups, D4 contains the telescope plus two independently masked page pieces, and D6 contains only two cropped bottom-corner occluders. D5 remains the independent Live2D and semantic-feedback layer.
-- ⚠️ 这 13 层 × 3 时段共 39 张**目前只登记在 manifest 里，尚未由 `RoomStage` 按深度带渲染**——
-  房间是单张 poster 打底。`home-scene-profile.ts` 的 `LIGHTHOUSE_HOME_SCENE_PROFILE`
+- The three posters are distributed with the repository (no longer blocked by `.gitignore` since 2026-10-03): `RoomStage` paints exactly these files and the manifest carries their SHA-256.
+- ⚠️ `layers/home-v2/` 这 39 张**2026-10-04 起不再登记进 manifest**，文件也仍不在仓库里（`.gitignore` 挡住）。
+  此前它们"登记在册但没有消费点"，而 `npm run build` 第一步的 `validate:room-layers` 要求每条登记都有对应文件——
+  两者相加的结果是：**全新 clone 永远跑不过 `npm run build`**，CI 上任何桌面端构建／打包都出不来。
+  按你的决定，改为不登记（`roomLayers: []`），而不是把这 10MB 塞进仓库。
+  图仍在本地 `.gitignore` 放行的目录里；要接分层渲染时，把文件和登记一起加回来。
+- Production layers (local only, unregistered): `layers/home-v2/lighthouse/`. D0 is the clean room plate, D1 is a cropped water texture, D2 contains three window-structure crops, D3 contains desk/shelf/rest furniture groups, D4 contains the telescope plus two independently masked page pieces, and D6 contains only two cropped bottom-corner occluders. D5 remains the independent Live2D and semantic-feedback layer.
+- 这批层**尚未由 `RoomStage` 按深度带渲染**——房间是单张 poster 打底。`home-scene-profile.ts` 的 `LIGHTHOUSE_HOME_SCENE_PROFILE`
   （相机区域、家具锚点、环境动效）配套齐全，要接上分层渲染从那份配置开始。
 - Clean plates and the telescope were produced with OpenAI ImageGen from the owner-approved room geometry. The project-local sources live in `.impeccable/review/home-v2-lighthouse-layer-sources-v1`; no third-party reference image was supplied.
 - `scripts/extract-room-scene-assets.mjs` applies the shared time-template specification at `scripts/fixtures/lighthouse-home-scene-assets.input.json`. It performs coordinate-preserving FFmpeg crops, scaling, RGBA conversion, and polygon masks. `scripts/sync-room-scene-manifest.mjs` records registrations and hashes.

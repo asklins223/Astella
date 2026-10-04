@@ -1,23 +1,60 @@
-# 理解书房品牌图标
+# 理解引擎 — 品牌图标与产品名
 
-用户于 2026-10-04 选定的卡通形象图标。
+产品名 **理解引擎**，2026-10-04 由用户定名。此前叫 `AI Learn`（electron-builder
+的 `productName`、窗口标题、NSMicrophoneUsageDescription、package.json description
+已一并改掉）。
 
-- 文件：`study-mascot-icon.png`
-- 格式：PNG，1254 × 1254 像素，薄荷绿背景。
-- 形象：奶油白的小书灵抱着薄荷色笔记本，折页耳朵与暖金星角形成识别点。
-- 生成方式：内置 `image_gen.imagegen` 工具；保留用户选定的原始输出，未裁切或重绘。
+- 图标母版：`app-icon.png`，1024 × 1024，RGBA。
+- 形象：薄荷蓝背景上的小书灵——奶油白身体、深蓝眼睛、头顶一枚星形触角，
+  抱着薄荷色笔记本，坐落在摊开的书上，身后是半透明的披风／星环。
+- 来源：用户 2026-10-04 直接提供的图，**未经裁切或重绘**。
 
-## 原始生成提示词
+## 从母版派生的三份产物
 
-```text
-Use case: logo-brand / illustration-story
-Asset type: one finished cartoon mascot desktop app icon for a warm personal learning study called 理解书房.
-Primary request: Create an adorable, genuinely appealing original cartoon companion character as the entire app icon. The character itself should be the memorable brand, with a charming expressive face and bold simple silhouette. No typography anywhere.
-Character design: a small cream-white "book spirit", round and slightly pear-shaped like a soft mochi dumpling, with a huge head and tiny compact body. Its distinctive silhouette has two short soft page-shaped tufts at the top of its head: the left one bends like a dog-eared book page, the right one is a rounded golden star-shaped tuft, attached to the head. Keep these tufts simple and chunky. Big glossy dark-jade oval eyes with tiny cream highlights, subtly raised brows, one small joyful curved mouth, warm peach blush cheeks. It feels curious, clever, and companionable rather than babyish. Two tiny mitten arms affectionately hug a chunky mint-green closed notebook against its chest; the notebook has one ivory page block and a gold bookmark tab, absolutely no text. Two tiny rounded feet. The head and face dominate the composition; the notebook occupies only the lower quarter. No extra accessories.
-Art direction: beautiful contemporary 2D cartoon mascot illustration, graphic and carefully hand-shaped, gently rounded deep-jade outlines, large flat warm color areas, very restrained soft cel shading. A polished character that belongs beside fresh cream paper surfaces, mint controls and a cute Live2D study companion. Cheerful, fresh, warm, modern. More like a beautifully designed sticker mascot than a generic glossy 3D toy.
-Composition: ONE character centered, straight-on with a slight playful head tilt, tightly framed as a square application icon. Character occupies roughly 78% of the image height and 70% of width. Large legible face, readable silhouette at 32–64px. One simple solid pale mint backdrop #BCDCC8, full square canvas with NO outer border and no floating tile within the canvas. Only a tiny soft contact shadow beneath the feet.
-Palette: warm ivory #FFF7E5 body, mint jade #70B99A notebook, deep muted jade #345D50 outlines and eyes, honey apricot #EFC36E star tuft and bookmark, subtle peach #EAA88E cheeks. Limit to this coherent fresh palette.
-Constraints: original mascot, not any existing branded or game character. Output just the actual finished icon artwork, no sheet, no comparison panels, no mockup. Smooth clean edges. Make it deeply cute and visually balanced.
-Avoid: 理 or any written character, letters, monograms, words, generic book-and-sparkle logo, abstract folded ribbon, realistic origami, hard geometric emblem, metallic material, glass, glossy 3D render, excessive gradients, heavy depth, sepia vintage paper, complex room scene, detailed props, decorative orbit rings, scattered stars, watermarks.
+`apps/desktop-client/build/` 下是 electron-builder 真正吃进去的图标资源：
+
+| 文件 | 用途 | 生成方式 |
+| --- | --- | --- |
+| `icon.png` | 1024×1024 母版，electron-builder 的兜底输入 | 本目录 `app-icon.png` 同尺寸副本 |
+| `icon.icns` | macOS Dock / Finder / 安装包 | `iconutil`，11 个尺寸（16→1024，含 @2x） |
+| `icon.ico` | Windows 开始菜单 / 任务栏 / 安装包 | Pillow，16/24/32/48/64/128/256 七档 |
+
+三者都在**版本控制内**。`.gitignore` 里 `build/` 那条会挡掉它们，靠紧随其后的
+`!apps/desktop-client/build/` 否定规则放行——这组规则原先写的是 `apps/desktop/`，
+而本项目的应用目录叫 `apps/desktop-client/`，所以图标一直进不了仓库（详见
+`.gitignore` 注释）。
+
+## 圆角与透明
+
+母版是**整幅满铺 + 22.37% 圆角 + 四角透明**。macOS 与 Windows 都不会替应用图标
+自己裁圆角，圆角属于图标本身；用户给的原图四角是白底，所以统一转成透明，
+让 Dock、任务栏、开始菜单里都是同一枚圆角方形。
+
+## 换图标时
+
+改这一张母版，然后重新生成上面三份即可，`electron-builder.yml` 不用动：
+
+```bash
+# 1) 母版（圆角 + 透明）
+python3 - <<'PY'
+from PIL import Image, ImageDraw
+S = 1024
+im = Image.open("<新图>").convert("RGB").resize((S, S), Image.LANCZOS)
+mask = Image.new("L", (S, S), 0)
+ImageDraw.Draw(mask).rounded_rectangle([0, 0, S-1, S-1], radius=int(S*0.2237), fill=255)
+out = im.convert("RGBA"); out.putalpha(mask)
+out.save("apps/desktop-client/build/icon.png")
+PY
+
+# 2) icns（macOS 原生工具）
+cd apps/desktop-client/build && rm -rf icon.iconset && mkdir icon.iconset
+#   按上文表格的尺寸导出到 icon.iconset/ 后：
+iconutil -c icns icon.iconset -o icon.icns
+
+# 3) ico（Windows）
+python3 -c "
+from PIL import Image
+Image.open('apps/desktop-client/build/icon.png').save(
+    'apps/desktop-client/build/icon.ico', format='ICO',
+    sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
 ```
-

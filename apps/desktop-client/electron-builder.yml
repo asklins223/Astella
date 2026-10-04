@@ -1,6 +1,8 @@
 appId: com.asklins.ailearn
-productName: AI Learn
-copyright: Copyright © 2026 AI Learn
+# 产品名 2026-10-04 定为「理解引擎」。artifactName 用 ${productName}，
+# 所以产物名就是 `理解引擎-0.1.0-mac-arm64.dmg` / `理解引擎-0.1.0-win-x64.exe`。
+productName: 理解引擎
+copyright: Copyright © 2026 理解引擎
 
 directories:
   output: release
@@ -32,7 +34,7 @@ mac:
   # 伴星语音输入要用麦克风。macOS 少了这条描述，系统弹窗根本不会出现，
   # TCC 直接把 getUserMedia 判拒 —— 只放开主进程的权限闸是不够的。
   extendInfo:
-    NSMicrophoneUsageDescription: AI Learn 需要用麦克风把你的话转给伴星。
+    NSMicrophoneUsageDescription: 理解引擎 需要用麦克风把你的话转给伴星。
   # 没有配 APPLE_IDENTITY / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID，
   # 仓库里也没有签名证书。所以明确写死：只公证流程不跑、hardenedRuntime 不开。
   # 写在这里而不是只靠环境变量，是为了让"产物是未签名的"这件事在配置里看得见，
@@ -67,8 +69,9 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
 
-# 没有 build/icon.icns / build/icon.ico：electron-builder 会回落到 Electron 默认图标，
-# 两个平台的安装包和开始菜单项都是那个蓝色原子。要换成自己的图标就把 512×512 的
-# png / ico / icns 放进 apps/desktop-client/build/（buildResources 默认目录），
-# 不用改配置。
+# 图标在 apps/desktop-client/build/（electron-builder 的 buildResources 默认目录）：
+  # icon.icns 给 macOS，icon.ico 给 Windows，icon.png 是 1024×1024 的母版。
+  # 这三份是**入库**的——.gitignore 里那几条 `!apps/desktop-client/build/` 否定规则
+  # 就是为它们存在的（原先路径写错成 apps/desktop/，一直没生效）。
+  # 要换图标：改这三份即可，配置本身不用动。
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}

@@ -585,7 +585,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
     ...nativeWindowChrome(process.platform),
     autoHideMenuBar: true,
     backgroundColor: '#211914',
-    title: 'AI Learn',
+    title: '理解引擎',
     webPreferences: {
       preload: resolve(__dirname, '../preload/index.js'),
       contextIsolation: true,

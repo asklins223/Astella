@@ -73,18 +73,14 @@ describe("learning-room manifest boundary", () => {
     expect(manifest.normalized.assets["registerPosters.day"]).toBe("posters/auth-register/register-worktable-day-v1.png");
     expect(manifest.normalized.assets["registerPosters.dusk"]).toBe("posters/auth-register/register-worktable-dusk-v1.png");
     expect(manifest.normalized.assets["registerPosters.night"]).toBe("posters/auth-register/register-worktable-night-v1.png");
-    expect(manifest.roomLayers).toHaveLength(39);
-    expect(new Set(manifest.roomLayers.map((layer) => layer.theme))).toEqual(new Set(["day", "dusk", "night"]));
-    expect(new Set(manifest.roomLayers.filter((layer) => layer.theme === "day").map((layer) => layer.depth))).toEqual(
-      new Set(["D0", "D1", "D2", "D3", "D4", "D6"]),
-    );
-    expect(manifest.roomLayers.every((layer) => (
-      layer.sourceSize.width > 0
-      && layer.sourceSize.height > 0
-      && layer.sha256.length === 64
-      && layer.license.length > 0
-      && layer.releaseApproval
-    ))).toBe(true);
+    // 39 张分层图**不在仓库里**（.gitignore 挡住 layers/home-v2/），所以 2026-10-04 起
+    // manifest 不再登记它们：登记了却取不到文件，`validate:room-layers` 会让全新 clone
+    // 的 `npm run build` 永远失败，CI 上任何桌面端构建／打包都出不来。
+    // 这些层至今没有任何运行时代码读取（RoomStage 只画 homeV2Posters 三张底板），
+    // 文件本身仍留在本地；要接分层渲染时，把文件和登记一起加回来。
+    // 分层的结构校验没有因此消失——下面那组用合成 fixture 的用例仍然逐条守着
+    // path 越界、重复 order、未知 anchor、越界 registration、缺 alpha。
+    expect(manifest.roomLayers).toEqual([]);
     expect(manifest.normalized.assets["homeV2Posters.day"]).toBe(
       "posters/home-v2/lighthouse/lighthouse-day-poster-v1.png",
     );
@@ -103,14 +99,14 @@ describe("learning-room manifest boundary", () => {
     const manifest = parseLearningRoomManifest(sourceManifest);
     const registered = Object.values(manifest.normalized.assets);
 
-    // 正控制：灯塔底板与 39 层分层素材**确实**登记在册，所以下面那条否定断言不是空转。
+    // 正控制：灯塔底板与各任务场景**确实**登记在册，所以下面那条否定断言不是空转。
     expect(manifest.normalized.assets["homeV2Posters.day"]).toBe(
       "posters/home-v2/lighthouse/lighthouse-day-poster-v1.png",
     );
-    expect(manifest.normalized.assets["roomLayers.0"]).toBe(
-      "layers/home-v2/lighthouse/lighthouse-day-d0-v1.png",
-    );
-    expect(manifest.roomLayers.length).toBeGreaterThan(0);
+    // 分层素材自 2026-10-04 起不再登记（文件不在仓库里，见上面那条注释），
+    // 所以 manifest 里不该再留下任何 layers/ 入口。
+    expect(manifest.normalized.assets["roomLayers.0"]).toBeUndefined();
+    expect(registered.some((assetPath) => assetPath.startsWith("layers/"))).toBe(false);
     for (const [family, posters] of Object.entries(manifest.taskPosters)) {
       for (const theme of ["day", "night"] as const) {
         expect(manifest.normalized.assets[`taskPosters.${family}.${theme}`]).toBe(posters[theme].path);
@@ -152,9 +148,12 @@ describe("learning-room manifest boundary", () => {
     expect(() => parseLearningRoomManifest(withUnknownAuthPoster)).toThrow();
 
     // `window.mask` 这条遍历路径的载体已随旧书房删除，改由分层素材的 `path` 承担同一判据。
+    // 真实 manifest 自 2026-10-04 起不再登记分层，所以这里自己塞一条进去再把它写坏——
+    // 判据要守的是「path 越界必须被拒」，不是某一张特定的分层图。
     const withTraversal = JSON.parse(JSON.stringify(sourceManifest)) as {
       roomLayers: { path: string }[];
     };
+    withTraversal.roomLayers = [{ path: "posters/home-v2/lighthouse/lighthouse-day-poster-v1.png" }];
     withTraversal.roomLayers[0].path = "../outside.png";
     expect(() => parseLearningRoomManifest(withTraversal)).toThrow();
   });
@@ -328,37 +327,16 @@ describe("learning-room manifest boundary", () => {
     expect(mediaAssetUrl(manifest, manifest.authPosters.day.path)).toBe(
       "/assets/learning-room/v1/posters/auth-alcove/auth-alcove-day-v1.png",
     );
-    expect(mediaAssetUrl(manifest, manifest.roomLayers[0].path)).toBe(
-      "/assets/learning-room/v1/layers/home-v2/lighthouse/lighthouse-day-d0-v1.png",
-    );
+    // 分层素材的同源 URL 由上一条用例的合成 manifest 覆盖；真实 manifest 里
+    // 自 2026-10-04 起没有分层可解析，所以这里不再引用 roomLayers[0]。
     expect(() => mediaAssetUrl(manifest, "https://example.com/asset.webp")).toThrow();
     expect(() => mediaAssetUrl(manifest, "unregistered.webp")).toThrow();
   });
 
-  it("keeps every time variant on the same cropped geometry and below the texture budget", () => {
-    const manifest = parseLearningRoomManifest(sourceManifest);
-    const identity = (assetId: string) => assetId.replace(/-(DAY|DUSK|NIGHT)$/u, "");
-    const groups = new Map<string, typeof manifest.roomLayers>();
-    for (const layer of manifest.roomLayers) {
-      const key = identity(layer.assetId);
-      groups.set(key, [...(groups.get(key) ?? []), layer]);
-    }
-    for (const variants of groups.values()) {
-      expect(variants).toHaveLength(3);
-      expect(new Set(variants.map((layer) => JSON.stringify({
-        depth: layer.depth,
-        order: layer.order,
-        sourceSize: layer.sourceSize,
-        registration: layer.registration,
-      }))).size).toBe(1);
-    }
-    for (const time of ["day", "dusk", "night"] as const) {
-      const layers = manifest.roomLayers.filter((layer) => layer.theme === time);
-      expect(layers.filter((layer) => layer.depth === "D6")).toHaveLength(2);
-      expect(layers.every((layer) => layer.depth === "D0"
-        || layer.sourceSize.width * layer.sourceSize.height < 1672 * 941)).toBe(true);
-      const rgbaBytes = layers.reduce((sum, layer) => sum + layer.sourceSize.width * layer.sourceSize.height * 4, 0);
-      expect(rgbaBytes).toBeLessThanOrEqual(48 * 1024 * 1024);
-    }
-  });
+  // 原先这里有一条「每个分层资产的 day/dusk/night 三态共用同一裁切几何、且单时段
+  // 纹理预算 ≤ 48MB」的用例，遍历的是真实 manifest 的 39 条 roomLayers。
+  // 2026-10-04 起这些图不再登记（文件不在仓库里），那条用例已经没有对象可遍历——
+  // 留着只会变成「循环体一次都不执行」的假绿。它验的是**素材数据**的内在一致，
+  // 不是 schema 或代码行为，所以没有等价物可以改写成合成 fixture。
+  // 分层素材重新入库并登记时，把它和那批图一起加回来。
 });

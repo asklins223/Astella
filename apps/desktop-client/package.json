@@ -1,7 +1,7 @@
 {
   "name": "ailearn-desktop-client",
   "version": "0.1.0",
-  "description": "AI Learn immersive desktop study room",
+  "description": "理解引擎 immersive desktop study room",
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
