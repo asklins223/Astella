@@ -228,7 +228,23 @@ jobs:
             -RedirectStandardOutput $appOut -RedirectStandardError $appErr -PassThru
           Start-Sleep -Seconds 40
           if ($app.HasExited) {
-            throw "已安装程序提前退出，退出码 $($app.ExitCode)`n--- stdout ---`n$(Get-Content -LiteralPath $appOut -Raw -ErrorAction SilentlyContinue)`n--- stderr ---`n$(Get-Content -LiteralPath $appErr -Raw -ErrorAction SilentlyContinue)"
+            # 日志要**逐行 Write-Host**，不能拼进 throw 的多行字符串里：
+            # GitHub 的日志分组会把多行异常消息吞掉，表现为只剩一句
+            # "已安装程序提前退出"，而应用到底报了什么一个字都看不到。
+            # 逐行打印则每行都稳定出现在 Actions 日志里。
+            Write-Host "::error::已安装程序提前退出，退出码 $($app.ExitCode)"
+            foreach ($logPath in @($appOut, $appErr)) {
+              $label = Split-Path -Leaf $logPath
+              if (-not (Test-Path -LiteralPath $logPath)) { Write-Host "[$label] (没有输出)"; continue }
+              $lines = @(Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue)
+              if ($lines.Count -eq 0) { Write-Host "[$label] (空)"; continue }
+              Write-Host "[$label] $($lines.Count) 行:"
+              # 只打前后各 60 行：整份可能有几万行，全打会把真正的错误淹掉。
+              $lines | Select-Object -First 60 | ForEach-Object { Write-Host "  | $_" }
+              if ($lines.Count -gt 120) { Write-Host "  | ... 中间省略 $($lines.Count - 120) 行 ..." }
+              if ($lines.Count -gt 60) { $lines | Select-Object -Last 60 | ForEach-Object { Write-Host "  | $_" } }
+            }
+            throw "已安装程序提前退出，退出码 $($app.ExitCode)（应用日志见上）"
           }
           Write-Host "  ok  已安装程序存活（pid $($app.Id)）"
           # Electron 会派生渲染 / GPU / 工具进程。只杀父进程会留下持有 installDir
