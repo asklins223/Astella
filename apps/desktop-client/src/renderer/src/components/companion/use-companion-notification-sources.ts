@@ -7,6 +7,7 @@ import { useRoomStore } from "../../app/room-store";
 import { notifyCompanion, useCompanionNotifications } from "./companion-notifications";
 import { clearCompanionTaskWatches } from "./companion-notification-tasks";
 import { useVoiceModelNotifications } from "./use-voice-model-notifications";
+import { useUpdateNotifications } from "./use-update-notifications";
 
 async function reportActivity(scope: number, sequence: number, transition: "displayed" | "acted" | "dismissed"): Promise<void> {
   const api = window.ailearn?.companion?.activity;
@@ -41,6 +42,8 @@ function deliverActivityCue(cue: CompanionHomeProjectionV1["proactiveCue"], scop
 
 export function useCompanionNotificationSources(): void {
   useVoiceModelNotifications();
+  // 更新同理：设备级、有窗口级生命周期，所以挂在通知中心而不是设置页里。
+  useUpdateNotifications();
   const scope = useRoomStore(state => state.workspaceScopeRevision);
   const { projection, reload } = useHomeProjection();
   const companion = useCompanionHomeProjection();

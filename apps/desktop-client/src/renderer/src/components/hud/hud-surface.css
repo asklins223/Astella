@@ -3283,3 +3283,49 @@
    顺序变了，也不会把「更多」的标题挤进返回键那一格。 */
 .hud-surface .companion-hud__more > header { grid-template-columns: 44px minmax(0, 1fr) 44px; }
 .hud-surface .companion-hud__more > header strong { text-align: center; }
+
+/* ===========================================================================
+ * 设置齿轮上的"有新版本"角标（2026-10）
+ *
+ * 为什么同时要伴星通知和这枚角标：通知是**一次性的**——读过就沉进通知中心；
+ * 而"书房有新版本"这件事用户可能几天后才会想起来看设置。角标是常驻的，
+ * 关掉设置页、切到笔记页都还在，是那条不靠记忆的线索。
+ *
+ * 形状也带信息：`available`（还没下载）是**空心**环，`ready`（已下好待安装）
+ * 是**实心**点，并换用更暖的颜色。纯靠颜色区分对色觉障碍用户无效，
+ * 填充与否在任何屏幕上都读得出来。
+ *
+ * 选择器必须带 `.room-control`（同本文件 `.room-control-account__*` 的理由）：
+ * `hud-pages.css` 里那条 `.hud-surface .room-control span` 特异度是 (0,2,1)，
+ * 少这一档角标会被撑成 36px 填满整个按钮。
+ * ============================================================================ */
+.hud-surface .room-control .room-control-update {
+  position: relative;
+}
+
+.hud-surface .room-control .room-control-update__dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid rgba(41, 29, 22, .88);
+  border-radius: 50%;
+  background: #8bc3a3;
+}
+
+/* 已下载完待安装：从"有个新版本"升级成"该动手了"，所以换实心 + 暖色。 */
+.hud-surface .room-control .room-control-update__dot.is-ready {
+  background: #efb366;
+}
+
+/* 紧凑态（≤760px，即 200% 缩放）按钮只有 36px，角标跟着缩一号。 */
+@media (max-width: 760px) {
+  .hud-surface .room-control .room-control-update__dot {
+    top: 3px;
+    right: 3px;
+    width: 8px;
+    height: 8px;
+    border-width: 1.5px;
+  }
+}

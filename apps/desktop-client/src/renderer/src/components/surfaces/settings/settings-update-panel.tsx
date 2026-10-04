@@ -19,26 +19,13 @@
  * （它校验新旧两个 .app 的代码签名是否同一开发者）。主进程会把这个事实带过来，
  * 这里提前说明，而不是让用户点完"重启安装"再撞上一个没头没尾的失败。
  */
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import type { ReactElement } from "react";
 import { Download, RefreshCw, Sparkles } from "lucide-react";
 
 import { SettingRow } from "./settings-primitives.tsx";
 import { createRequestMeta } from "../../../app/desktop-client";
+import { hasActionableUpdate } from "../../../app/update-status";
 import type { UpdateStateV1 } from "@ailearn/shared/desktop-ipc-contracts";
-
-const IDLE_STATE: UpdateStateV1 = {
-  phase: "idle",
-  currentVersion: "",
-  availableVersion: null,
-  releaseNotes: null,
-  releaseUrl: null,
-  percent: null,
-  transferred: null,
-  total: null,
-  message: null,
-  installBlockedReason: null,
-  checkedAt: null,
-};
 
 function megabytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -167,66 +154,11 @@ function describe(state: UpdateStateV1): string {
 }
 
 /**
- * 把主进程推来的更新状态接过来。
- *
- * 单独抽成 hook 是为了让设置面板只管摆位：订阅、退订、首次取快照这三件事
- * 与界面无关，而且**必须**在卸载时退订——否则每次进出设置页都会多挂一个监听。
+ * 设置页顶部那枚"有新版"的小标记，复用同一份状态，不另开一条订阅。
  */
-export function useUpdateStatus(): {
-  readonly state: UpdateStateV1;
-  readonly busy: boolean;
-  readonly check: () => void;
-  readonly download: () => void;
-  readonly install: () => void;
-} {
-  const [state, setState] = useState<UpdateStateV1>(IDLE_STATE);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    // `ailearnDesktop` 在浏览器预览（无 preload）下是 undefined；那里没有主进程，
-    // 也就没有更新可言，保持 idle 即可，不要抛。
-    const bridge = window.ailearnDesktop;
-    if (!bridge) return;
-    return bridge.onUpdateState(setState);
-  }, []);
-
-  const run = useCallback(async (action: () => Promise<unknown>) => {
-    setBusy(true);
-    try {
-      await action();
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  const check = useCallback(() => {
-    void run(async () => {
-      const result = await window.ailearn.update.check({ meta: createRequestMeta(), userInitiated: true });
-      if (result.ok) setState(result.data);
-    });
-  }, [run]);
-
-  const download = useCallback(() => {
-    void run(async () => {
-      const result = await window.ailearn.update.download({ meta: createRequestMeta() });
-      if (result.ok) setState(result.data);
-    });
-  }, [run]);
-
-  const install = useCallback(() => {
-    void run(async () => {
-      const result = await window.ailearn.update.install({ meta: createRequestMeta() });
-      if (result.ok) setState(result.data);
-    });
-  }, [run]);
-
-  return { state, busy, check, download, install };
-}
-
-/** 设置页顶部那枚"有新版"的小标记，复用同一份状态，不另开一条订阅。 */
 export function UpdateBadge(props: { readonly state: UpdateStateV1 }): ReactElement | null {
   const { state } = props;
-  if (state.phase !== "available" && state.phase !== "ready") return null;
+  if (!hasActionableUpdate(state)) return null;
   return (
     <span className="settings-update-badge" role="status">
       <Sparkles size={13} aria-hidden="true" />

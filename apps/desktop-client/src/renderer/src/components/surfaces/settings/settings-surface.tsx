@@ -3,7 +3,8 @@ import { SettingRow, SettingsInlineState, type SettingsReadable } from "./settin
 import { SettingsCompanionPanel } from "./settings-companion-panel";
 import { SettingsAccountPanel } from "./settings-account-panel.tsx";
 import { SettingsExportGroup } from "./settings-export-group.tsx";
-import { SettingsUpdateGroup, useUpdateStatus } from "./settings-update-panel.tsx";
+import { SettingsUpdateGroup, UpdateBadge } from "./settings-update-panel.tsx";
+import { useUpdateStatus } from "../../../app/update-status";
 import { SettingsThemePicker, themeLabel } from "./settings-theme-picker.tsx";
 import { SettingsInviteJoinField } from "./settings-invite-join-field.tsx";
 import { SettingsMotionPreview } from "./settings-motion-preview";
@@ -321,8 +322,9 @@ export function SettingsSurface() {
   const setHudPage = useRoomStore((state) => state.setHudPage);
   const closeSurface = useRoomStore((state) => state.closeSurface);
   /**
-   * 更新状态是一条常驻的推送：主进程检查/下载/安装的每一步都推过来，
-   * 设置页只是把它摆出来。订阅在 `useUpdateStatus` 里随挂载建立、随卸载退订。
+   * 更新状态读的是 app 级 store（`app/update-status.ts`），**不是**本页自己订阅。
+   * 伴星通知与 HUD 角标读的是同一份，所以这里不能再挂第二条 `onUpdateState`：
+   * 两条订阅会各收到一次推送，而设置页一关，通知那条链路就跟着断。
    */
   const update = useUpdateStatus();
   const invoke = useRoomStore((state) => state.invoke);
@@ -1883,10 +1885,10 @@ export function SettingsSurface() {
           />
           <SettingsUpdateGroup
             state={update.state}
-            busy={update.busy}
-            onCheck={update.check}
-            onDownload={update.download}
-            onInstall={update.install}
+            busy={update.checking || update.downloading || update.installing}
+            onCheck={() => { void update.check(); }}
+            onDownload={() => { void update.download(); }}
+            onInstall={() => { void update.install(); }}
           />
         </div>
 

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronsRight, Gauge, House, Moon, Orbit, Settings2, Sun, Volume2, VolumeX } from "lucide-react";
 import { useRoomStore } from "../../app/room-store";
+import { hasActionableUpdate, useUpdateStatus } from "../../app/update-status";
 import { spaceRoleLabel } from "../../app/space-identity";
 import { publishGateInvalidation } from "../../app/gate-invalidation";
 import { resolveSceneMotionMode } from "../../scene/scene-motion";
@@ -193,6 +194,12 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
     action();
   };
 
+  // 更新角标读的是 app 级 store，与伴星通知、设置页同一份。这里只读，不订阅。
+  const updateState = useUpdateStatus(state => state.state);
+  const updateAvailable = hasActionableUpdate(updateState);
+  const updatePhase = updateState.phase;
+  const updateVersion = updateState.availableVersion ?? "";
+
   const openSettings = (section: "account" | "appearance") => {
     collapseAndRun(() => {
       setSettingsSection(section);
@@ -320,13 +327,22 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
         </button>
         <button
           type="button"
+          className={updateAvailable ? "room-control-update" : undefined}
           disabled={decorative}
           inert={!isExpanded || undefined}
-          aria-label="打开设置中心"
-          title="设置中心"
+          aria-label={updateAvailable ? `打开设置中心（有新版本 ${updateVersion}）` : "打开设置中心"}
+          title={updateAvailable ? `设置中心 · 有新版本 ${updateVersion}` : "设置中心"}
           onClick={() => openSettings("appearance")}
         >
           <Settings2 aria-hidden="true" />
+          {/* 角标用「色点 + 形状变化」而不是单纯一个红点：色觉障碍下也能靠形状认出来。
+              `ready`（已下好待安装）比 `available`（还没下载）更值得点，所以换实心。 */}
+          {updateAvailable ? (
+            <i
+              className={updatePhase === "ready" ? "room-control-update__dot is-ready" : "room-control-update__dot"}
+              aria-hidden="true"
+            />
+          ) : null}
         </button>
         {/* 账户槽位以前只是一个 `UserRound` 图标，点下去直接跳到设置页：屏幕上没有
             任何一处回答「现在登录的是谁」，而换账号要的退出恰好无处可点。现在它是
