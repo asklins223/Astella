@@ -224,7 +224,21 @@ jobs:
           $appOut = Join-Path $env:RUNNER_TEMP 'ailearn-installed-app.out.log'
           $appErr = Join-Path $env:RUNNER_TEMP 'ailearn-installed-app.err.log'
           $env:ELECTRON_ENABLE_LOGGING = '1'
-          $app = Start-Process -FilePath $appExe -WorkingDirectory $env:RUNNER_TEMP `
+          # ⚠️ --no-sandbox 是**探测用的妥协**，不是产品该有的运行方式。
+          #
+          # 裸跑时它在 GitHub 的 windows runner 上 40 秒内退出、退出码 0、日志全空——
+          # 连我们新加的"启动失败要报错"守卫都没触发（说明不是主进程抛错）。
+          # 这与 Chromium 在受限环境里起不了沙箱的表现一致：子进程一路
+          # "sandbox initialization failed"，GPU 放弃后应用自己退出。
+          # 本仓库早就知道这件事：scripts/smoke-packaged.mjs:444 早就只在
+          # Linux 上传 --no-sandbox —— 只是 Windows 这边**从来没在 CI 上把装好的
+          # 应用跑起来过**（desktop-client.yml 只做 --dir 后的冒烟，且不覆盖这条），
+          # 所以一直没撞上。
+          #
+          # 分清两件事：这个开关只让**探测**跑得起来，不改变"用户双击就闪退"这个
+          # 事实——普通用户在真实 Windows 上有完整沙箱，理论上是能跑的；但裸装的
+          # 未签名应用是否真的能用，仍需要一台真实 Windows 机器验证。
+          $app = Start-Process -FilePath $appExe -ArgumentList @('--no-sandbox') -WorkingDirectory $env:RUNNER_TEMP `
             -RedirectStandardOutput $appOut -RedirectStandardError $appErr -PassThru
           Start-Sleep -Seconds 40
           if ($app.HasExited) {
