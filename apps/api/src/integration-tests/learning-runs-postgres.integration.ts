@@ -19,7 +19,7 @@
  *
  * 上面那句"统一经 scoped()"在 2026-09-24 之前是不成立的：16 处裸 `sql` 校验没有
  * 带上下文，受限角色下全被 RLS 挡成 0 行（9 条用例红）。加新校验时请继续走
- * scoped()——本文件现已接入 CI（`.github/workflows/ci.yml` 的 fresh-migrations
+ * scoped()——本文件现已接入 CI（`.github/workflows/main-ci.yml` 的 fresh-migrations
  * job，用的就是受限角色），漏一次会在 CI 上直接变红，而不是等到某人手跑。
  */
 

@@ -129,7 +129,7 @@ Electron 43 + electron-vite 5 + Vite 7 + React 19 + TypeScript（独立桌面客
 - AI Worker 进程（`workers/ai-worker`），后台任务消费
 - 完整设计 Token 体系（`apps/desktop-client/src/renderer/src/styles.css`），含日间/夜间双主题
 - Docker Compose 开发环境（`docker-compose.dev.yml`）和生产配置（`docker-compose.yml`）
-- CI 流水线（`.github/workflows/ci.yml`），含 ESLint、安全审计、迁移测试、生产构建、镜像扫描、服务健康检查
+- CI 流水线（`.github/workflows/main-ci.yml`），含 ESLint、安全审计、迁移测试、生产构建、镜像扫描、服务健康检查
 - 桌面客户端与服务端的 Vitest 单元测试
 
 ## Product Principles

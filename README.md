@@ -130,7 +130,7 @@ AUTH_COOKIE_SECURE=false
 
 ### 2. 构建与发布
 
-生产镜像由 CI 流水线（`.github/workflows/ci.yml`）从 `docker-compose.yml` 构建，并通过 Trivy 漏洞扫描门禁。本地如需手动验证生产镜像，可直接使用 docker compose：
+生产镜像由 CI 流水线（`.github/workflows/main-ci.yml`）从 `docker-compose.yml` 构建，并通过 Trivy 漏洞扫描门禁。本地如需手动验证生产镜像，可直接使用 docker compose：
 
 ```bash
 docker compose -f docker-compose.yml config --quiet

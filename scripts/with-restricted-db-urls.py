@@ -2,7 +2,7 @@
 """用**受限角色**跑集测：把 `DATABASE_URL_API` / `DATABASE_URL_WORKER` 换成 CI 用的那两个角色再执行命令。
 
 为什么要有这台：dev 根 `.env` 里四条 `DATABASE_URL*` 的用户**全是 `ailearn`**（`pg_roles` 里
-`rolsuper=t, rolbypassrls=t`），而 CI（`.github/workflows/ci.yml:386-387`）把 `_API`/`_WORKER`
+`rolsuper=t, rolbypassrls=t`），而 CI（`.github/workflows/main-ci.yml:386-387`）把 `_API`/`_WORKER`
 指到 `ailearn_api`/`ailearn_worker`（`NOBYPASSRLS`）。于是同一批隔离类用例在两边结论相反：
 本地拿超户跑，"无 session context 应当零行"这种断言**必红**（2026-09-25 实测 107 条里红 5 条，
 全是这一族），而那 5 条换成真角色后 2/2、逐条绿。红本身不是产品回归，但**每次都要重新误判一遍**

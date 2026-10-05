@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 const workflow = readFileSync(
-  new URL("../workflows/ci.yml", import.meta.url),
+  new URL("../workflows/main-ci.yml", import.meta.url),
   "utf8",
 );
 const coverageGate = readFileSync(

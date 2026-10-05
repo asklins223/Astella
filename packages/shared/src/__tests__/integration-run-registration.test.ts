@@ -27,7 +27,7 @@ const SURFACES = [
   "apps/desktop-client/package.json",
   "packages/shared/package.json",
   "workers/ai-worker/package.json",
-  ".github/workflows/ci.yml",
+  ".github/workflows/main-ci.yml",
 ];
 const SURFACE_DIRS = ["scripts"];
 

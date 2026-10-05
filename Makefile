@@ -35,7 +35,7 @@ DEV_PROFILES := --profile storage
 # Local development stack: dev image targets, source bind mounts and hot
 # reload.  This is the default `make up` target — there is no separate
 # production stack for local use anymore.  CI still builds production images
-# from docker-compose.yml directly (see .github/workflows/ci.yml), but that
+# from docker-compose.yml directly (see .github/workflows/main-ci.yml), but that
 # file is no longer wired to any local Makefile target.
 ensure-db-volume:
 	@set -e; if ! docker volume inspect "$(DEV_DB_VOLUME)" >/dev/null 2>&1; then \

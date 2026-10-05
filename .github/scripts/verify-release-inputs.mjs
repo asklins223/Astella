@@ -12,7 +12,7 @@ import {
 } from "./version-contract.mjs";
 
 const requiredFiles = [
-  ".github/workflows/ci.yml",
+  ".github/workflows/main-ci.yml",
   "docker-compose.yml",
   "docker-compose.dev.yml",
   "infra/postgres/init.sql",
@@ -53,7 +53,7 @@ const requiredManifestFields = [
   "approvals",
 ];
 
-const ciWorkflow = readFileSync(".github/workflows/ci.yml", "utf8");
+const ciWorkflow = readFileSync(".github/workflows/main-ci.yml", "utf8");
 if (!/\bnode\s+\.github\/scripts\/release-manifest-contract\.mjs\b/.test(ciWorkflow)) {
   fail("CI must invoke the exact-tag release manifest verifier");
 }

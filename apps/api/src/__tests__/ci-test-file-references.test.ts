@@ -3,7 +3,7 @@
  *
  * 病是这么来的：`apps/api/package.json` 的 `test:companion-integration:postgres`
  * 里写着 `assistant-deliveries-kind-constraint-postgres.integration.ts`，
- * 盘上那个文件却没有 `-postgres` 后缀；`.github/workflows/ci.yml` 又点着
+ * 盘上那个文件却没有 `-postgres` 后缀；`.github/workflows/main-ci.yml` 又点着
  * `db-commit-port.integration.ts`，而那个测试早就不在了。两处都在
  * `fresh-migrations` 那条链上，`ci.yml` 的注释还写着"其中 kind-constraint 那条
  * 锁死『代码 kind 集合 == 库约束』"——**锁不锁得住取决于那个文件跑没跑**，
