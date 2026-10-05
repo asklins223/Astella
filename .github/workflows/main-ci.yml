@@ -498,7 +498,10 @@ jobs:
     name: Fresh PostgreSQL Migrations
     runs-on: ubuntu-latest
     needs: typecheck
-    timeout-minutes: 20
+    # 53 个步骤、其中三十多条是真库集成测试（每条自己起事务、跑完即落盘），
+    # 20 分钟不够：2026-10-05 实测正好在第 25 步（note learning round 约束）
+    # 跑满 20:00 被掐，结论记成 cancelled —— 看起来像失败，其实是根本没跑完。
+    timeout-minutes: 50
     services:
       postgres:
         # pgvector 镜像，不是 vanilla postgres:16-alpine。
