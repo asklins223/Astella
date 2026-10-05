@@ -85,12 +85,27 @@ jobs:
             workers/ai-worker/package-lock.json
             packages/shared/package-lock.json
             packages/ai-quality/package-lock.json
+            packages/agent-core/package-lock.json
+            packages/agent-host/package-lock.json
 
       - name: Install repository tooling
         run: npm ci --no-audit --no-fund
 
       - name: Install shared
         working-directory: packages/shared
+        run: npm ci --no-audit --no-fund
+
+      - name: Install agent-core
+        working-directory: packages/agent-core
+        run: npm ci --no-audit --no-fund
+
+      # apps/api/tsconfig.json 把 `@ailearn/agent-host` 映射到
+      # `../../packages/agent-host/src/index.ts`，所以 TypeCheck API 一步就会把
+      # agent-host 的源码拉进同一个 program —— 它依赖的 `zod` 也必须**装在那个包里**。
+      # 本地 workspace 提升掩盖了这件事：`TypeCheck API` 在 CI 上报
+      # `long-goals.ts(2,19): Cannot find module 'zod'`（2026-10-05 实测）。
+      - name: Install agent-host
+        working-directory: packages/agent-host
         run: npm ci --no-audit --no-fund
 
       - name: Install ai-quality
@@ -175,11 +190,20 @@ jobs:
             apps/api/package-lock.json
             workers/ai-worker/package-lock.json
             packages/shared/package-lock.json
+            packages/agent-core/package-lock.json
+            packages/agent-host/package-lock.json
 
       - name: Install shared
         working-directory: packages/shared
         run: npm ci --no-audit --no-fund
 
+      - name: Install agent-core
+        working-directory: packages/agent-core
+        run: npm ci --no-audit --no-fund
+
+      - name: Install agent-host
+        working-directory: packages/agent-host
+        run: npm ci --no-audit --no-fund
       - name: Install API
         working-directory: apps/api
         run: npm ci --no-audit --no-fund
@@ -458,6 +482,8 @@ jobs:
             apps/api/package-lock.json
             workers/ai-worker/package-lock.json
             packages/shared/package-lock.json
+            packages/agent-core/package-lock.json
+            packages/agent-host/package-lock.json
 
       - name: Prepare raw PostgreSQL test evidence
         run: |
@@ -475,6 +501,13 @@ jobs:
         working-directory: packages/shared
         run: npm ci --no-audit --no-fund
 
+      - name: Install agent-core
+        working-directory: packages/agent-core
+        run: npm ci --no-audit --no-fund
+
+      - name: Install agent-host
+        working-directory: packages/agent-host
+        run: npm ci --no-audit --no-fund
       - name: Install API
         working-directory: apps/api
         # NODE_ENV=production would otherwise omit tsx, which db:migrate uses.
