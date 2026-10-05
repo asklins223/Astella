@@ -22,13 +22,46 @@ import {
   cardGenerationRunOutboxV2,
 } from "@ailearn/shared/db-schema/card-generation-v2";
 import {
-  createGenerationRunV2,
   getGenerationRunV2,
   getGenerationRunCandidatesV2,
   closeGenerationRunV2,
   cancelGenerationRunV2,
 } from "../modules/card-generation-v2/generation-run-service.ts";
 import { CardGenerationV2ServiceError } from "../modules/card-generation-v2/helpers.ts";
+import { createGenerationRunInTransaction, type RunContext } from "@ailearn/card-generation";
+import { withWorkspaceTransaction } from "../db/client.ts";
+
+/**
+ * 这份用例测的是**领域**行为（幂等 replay、版本读不到、在制批次拒绝、outbox 入队），
+ * 不是 agent 那一层。
+ *
+ * 2026-10-05：`createGenerationRunV2` 变成 agent store 的一层外壳——先查 note_versions
+ * 拿 noteId，再经 `startDomainAgentRequest` → `invokeCardGenerationCapability` 才落到
+ * 领域函数 `createGenerationRunInTransaction`。领域逻辑本身没变，只是外面多了几层，
+ * 而这几层要的不再是这个 mock 能答的东西（agent_runs 幂等查询、companion 身份与权限、
+ * 配额锁、operation 回执、projectRun 的 zod 行）。
+ *
+ * 所以这里直调领域函数，而不是给 agent 搭一整套替身：被测对象回到用例本来的对象，
+ * 调用点一行没改，mock 也还是原来那个。外壳那一层另有
+ * `agent-card-generation-postgres.integration.ts` 对真库验整条链路。
+ */
+async function createGenerationRunV2(
+  ctx: RunContext,
+  noteVersionId: string,
+  body: Parameters<typeof createGenerationRunInTransaction>[3],
+  idempotencyKey: string,
+) {
+  return withWorkspaceTransaction(ctx, (tx) => createGenerationRunInTransaction(
+    // mock 只实现领域读法；类型上它要的是一个更宽的 tx 端口。
+    tx as unknown as Parameters<typeof createGenerationRunInTransaction>[0],
+    ctx,
+    noteVersionId,
+    body,
+    idempotencyKey,
+    // 与 `invokeCardGenerationCapability` 用的是同一组默认值（未设环境变量时）。
+    { maxInFlightRuns: 3, dailyRunLimit: 50 },
+  ));
+}
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const USER_ID = "00000000-0000-4000-8000-000000000002";
@@ -113,10 +146,9 @@ function makeBaseRun(status = "review_ready") {
 function setupTx(impl: Record<string, unknown>) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tx: any = {
-    // 2026-10-05：方案 42 把这条链路接进了 agent。`createGenerationRunV2` 现在先查
-    // `note_versions` 拿到 noteId（要交给 `agentDirectRequestV1Schema` 校验，那上面
-    // `noteId` 是必填），这条查询走的是 `tx.execute`。默认行里补上 `note_id`，
-    // 否则 noteId 是 undefined，zod 直接把用例挡在业务逻辑之前。
+    // `execute` 在领域路径上只被两处用到：advisory lock（忽略返回值）与 outbox 行的
+    // 读回。给一行带 note_id 的默认行是为了让「读回 outbox」那步不至于拿到 undefined
+    // ——原先默认行只有 workspace_id/user_id，那一步交回空数组。
     execute: async () => [{ workspace_id: WORKSPACE_ID, user_id: USER_ID, note_id: NOTE_ID }],
     ...impl,
   };
@@ -204,9 +236,8 @@ describe("createGenerationRunV2", () => {
 
   it("throws note_version_not_found when version does not exist", async () => {
     setupTx({
-      // 同上：查 `note_versions` 现在走 `tx.execute`，返回空行才是"这版读不到"。
-      // 只把 `query.noteVersions.findFirst` 置空已经不够了——那条查询不再被调用。
-      execute: async () => [],
+      // 领域函数查版本走的是 `tx.query.noteVersions.findFirst`（不是 agent 外壳那条
+      // `tx.execute` 的 note_id 预查），所以「读不到」在这里就该由它置空。
       select: () => ({
         from: () => ({
           where: () => ({

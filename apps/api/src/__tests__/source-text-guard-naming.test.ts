@@ -92,8 +92,20 @@ function unnamedSourceTextGuards(): string[] {
  *          memory-upsert-atomicity / shared-no-grabbag-constants / note-single-projection
  *        （都加了 `-source-guard` 后缀，且已确认**无任何外部引用**）
  *
+ * 2026-10-05 补记：这份基线当时**已经不准了**——2026-09-29 之后又进来过
+ * 没有 marker 的源码文本测试，实测已到 51，判据一直红着没人管。
+ * 这次连同方案 42 新增的那份一起收干净（52 → 50）：
+ *   - `workers/ai-worker/src/handlers/__tests__/embedding-call-audit-attribution`
+ *     （方案 42 新增）→ 加 `-source-guard` 后缀
+ *   - `apps/api/src/__tests__/migration-no-transaction-directive`（历史欠账）
+ *     → 加 `-source-guard` 后缀
+ * 两份都确认过**无任何外部引用**（CI 点名、package.json 脚本、import 均无）。
+ * 基线数字不变（50），因为收的是文件名而不是豁免。
+ *
  * 教训写在这里：基线必须由**判据自己**数一遍，不能用另一份脚本的结果——
  * 两份脚本口径不同时，棘轮就松了，而棘轮松了等于没有。
+ * 另一条同源的教训：**基线红着的时间会很长**，所以每次新增这类测试都要当场
+ * 确认判据仍然是绿的，而不是"先提交，以后再说"。
  *
  * 改一个名字就把它减一，并在同一处写明改了哪个——
  * 这样"还剩多少"始终是文件里的一个真数，而不是一次性的印象。

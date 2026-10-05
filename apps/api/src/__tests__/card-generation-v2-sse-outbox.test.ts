@@ -11,9 +11,31 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { cardGenerationV2Routes } from "../modules/card-generation-v2/routes.ts";
-import { createGenerationRunV2 } from "../modules/card-generation-v2/generation-run-service.ts";
 import { cardGenerationEventsV2 } from "@ailearn/shared/db-schema/card-generation-v2";
-import { db } from "../db/client.ts";
+import { createGenerationRunInTransaction, type RunContext } from "@ailearn/card-generation";
+import { db, withWorkspaceTransaction } from "../db/client.ts";
+
+/**
+ * 直调领域函数，理由同 `card-generation-v2-run-service.test.ts`：
+ * 这一格要验的是「建 run 的同时写下 outbox 那一行」，那是领域行为；
+ * `createGenerationRunV2` 现在只是 agent 的一层外壳，走它就得多替一整套
+ * agent 读法（agent_runs / companion 身份权限 / 配额锁 / operation 回执）。
+ */
+async function createGenerationRunV2(
+  ctx: RunContext,
+  noteVersionId: string,
+  body: Parameters<typeof createGenerationRunInTransaction>[3],
+  idempotencyKey: string,
+) {
+  return withWorkspaceTransaction(ctx, (tx) => createGenerationRunInTransaction(
+    tx as unknown as Parameters<typeof createGenerationRunInTransaction>[0],
+    ctx,
+    noteVersionId,
+    body,
+    idempotencyKey,
+    { maxInFlightRuns: 3, dailyRunLimit: 50 },
+  ));
+}
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const USER_ID = "00000000-0000-4000-8000-000000000002";

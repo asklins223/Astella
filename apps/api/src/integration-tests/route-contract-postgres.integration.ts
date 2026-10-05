@@ -231,6 +231,31 @@ test("契约：目标「暂不安排」与「恢复」两条 route 的形状", a
     await sql`INSERT INTO notes (id, workspace_id, created_by, title)
       VALUES (${noteId}, ${identity.workspaceId}, ${identity.userId}, '暂不安排契约那一篇')`;
 
+    // 「恢复并开启」要真的排得上，前提是**有人替她开过授权**。
+    //
+    // 2026-10-05 补记：7dce8ae3（w7-8）给唯一调度边界加了来源级授权判定，其中
+    // `never_authorized` 那一档明确写着「创建卡、读过笔记或结束一轮都不默认授权未来提醒」
+    // ⇒ 排不上 ⇒ `resume` 如实回 409 `objective_held`。而本用例的夹具只插了一篇笔记，
+    // 从没建立过任何授权来源，于是它一直在 409 上红，报错写着 409 !== 200——
+    // 看不出是夹具缺东西。
+    //
+    // 判据自己说的两样都要给：`learning_objective_origins_v2` 里目标落在哪篇笔记上
+    // （note 档血缘），以及那篇笔记上有一条 active 的订阅。
+    // note 档血缘按 `loo_v2_kind_fields_chk`（0175）还要求 note_version_id 非空，
+    // 所以先给这篇笔记落一个版本。
+    const noteVersionId = randomUUID();
+    await sql`INSERT INTO note_versions (id, workspace_id, note_id, version_no, content_hash, content_json, created_by)
+      VALUES (${noteVersionId}, ${identity.workspaceId}, ${noteId}, 1, ${"a".repeat(64)},
+              ${JSON.stringify({ blocks: [] })}, ${identity.userId})`;
+    await sql`INSERT INTO learning_objective_origins_v2
+        (id, workspace_id, origin_id, objective_id, objective_revision_id, origin_kind, note_id, note_version_id, integrity)
+      VALUES (${randomUUID()}, ${identity.workspaceId}, ${randomUUID()}, ${objectiveId}, ${randomUUID()},
+              'note', ${noteId}, ${noteVersionId}, 'verified')`;
+    await sql`INSERT INTO review_subscriptions_v2
+        (id, workspace_id, user_id, source, subject_type, subject_id, status, scope_note)
+      VALUES (${randomUUID()}, ${identity.workspaceId}, ${identity.userId},
+              'note_subscription', 'note', ${noteId}, 'active', '恢复并开启的契约夹具')`;
+
     // 1) 请求体非法 ⇒ 400，且形状与全仓统一（{error, message}）
     const rejected = await app.inject({
       method: "POST",

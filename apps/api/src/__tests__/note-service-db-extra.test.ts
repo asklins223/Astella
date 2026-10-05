@@ -81,7 +81,18 @@ function createMockExecutor(config: MockConfig = {}): any {
         return {
           returning: () => chainable(insertReturning[insertIdx++] ?? []),
           onConflictDoUpdate: () => chainable(undefined),
-          onConflictDoNothing: () => chainable(undefined),
+          onConflictDoNothing: () => ({
+            // 2026-10-05：`materializeBackfilledNoteDoc` 走的是
+            // `.values().onConflictDoNothing({ target }).returning({ noteId })`。
+            // 原先这里只交回一个 chainable，上面再没有 `returning` ⇒ `inserted`
+            // 是 undefined，`inserted.length` 抛
+            // "Cannot read properties of undefined (reading 'length')"——
+            // 报错位置离真正的原因隔了好几层。
+            // 与 `values().returning()` 共用同一条 `insertReturning` 队列：
+            // 两者在 drizzle 里都是同一条链上的返回行，按调用先后取下一项。
+            returning: () => chainable(insertReturning[insertIdx++] ?? []),
+            then: (resolve: any, reject: any) => Promise.resolve(undefined).then(resolve, reject),
+          }),
           then: (resolve: any, reject: any) => Promise.resolve(undefined).then(resolve, reject),
         };
       },
@@ -643,6 +654,7 @@ describe("note/service computeContentHash", () => {
 describe("note/service restoreNoteVersion", () => {
   it("笔记不存在时返回 null", async () => {
     const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
       selectResult: [[]], // noteRows empty
     });
 
@@ -652,6 +664,7 @@ describe("note/service restoreNoteVersion", () => {
 
   it("目标版本不存在时返回 null", async () => {
     const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
       selectResult: [[{ id: NOTE_ID, currentVersionId: "other-v", workspaceId: WS_ID }]],
       noteVersionsFindFirstQueue: [null], // target version not found
     });
@@ -669,6 +682,7 @@ describe("note/service restoreNoteVersion", () => {
       contentJson: { blocks: [{ type: "paragraph", content: "old" }] },
     };
     const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
       selectResult: [[{ id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test" }]],
       noteVersionsFindFirstQueue: [targetVersion],
       noteBlocksFindMany: [{ type: "paragraph", content: "old", ordinal: 0 }],
@@ -692,6 +706,7 @@ describe("note/service restoreNoteVersion", () => {
       contentJson: { blocks: [{ type: "paragraph", content: "old" }] },
     };
     const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
       selectResult: [[{ id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test" }]],
       noteVersionsFindFirstQueue: [targetVersion],
       noteBlocksFindMany: [{ type: "paragraph", content: "old", ordinal: 0 }],
@@ -713,6 +728,7 @@ describe("note/service restoreNoteVersion", () => {
 
   it("笔记不存在时不更新搜索索引", async () => {
     const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
       selectResult: [[]], // noteRows empty
     });
 
@@ -728,6 +744,7 @@ describe("note/service restoreNoteVersion", () => {
 
   it("目标版本不存在时不更新搜索索引", async () => {
     const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
       selectResult: [[{ id: NOTE_ID, currentVersionId: "other-v", workspaceId: WS_ID }]],
       noteVersionsFindFirstQueue: [null], // target version not found
     });
@@ -752,6 +769,7 @@ describe("note/service restoreNoteVersion", () => {
       contentJson: { blocks: [{ type: "heading", content: "恢复后的标题" }] },
     };
     const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
       selectResult: [[{
         id: NOTE_ID,
         currentVersionId: "current-v",
@@ -779,6 +797,7 @@ describe("note/service restoreNoteVersion", () => {
       contentJson: { blocks: [{ type: "heading", content: "版本内容标题" }] },
     };
     const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
       selectResult: [[{
         id: NOTE_ID,
         currentVersionId: "current-v",
@@ -806,6 +825,7 @@ describe("note/service restoreNoteVersion", () => {
     };
     const oldUpdatedAt = new Date("2020-01-01T00:00:00Z");
     const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
       selectResult: [[{
         id: NOTE_ID,
         currentVersionId: "current-v",
@@ -835,6 +855,7 @@ describe("note/service restoreNoteVersion", () => {
 
   it("baseVersionId 与 currentVersionId 不匹配时抛出 RevisionConflictError", async () => {
     const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
       selectResult: [[{
         id: NOTE_ID,
         currentVersionId: "server-v2",
@@ -864,6 +885,7 @@ describe("note/service restoreNoteVersion", () => {
       contentJson: { blocks: [{ type: "paragraph", content: "old" }] },
     };
     const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
       selectResult: [[{
         id: NOTE_ID,
         currentVersionId: "current-v",
@@ -886,6 +908,7 @@ describe("note/service restoreNoteVersion", () => {
   it("软删除的笔记恢复版本时返回 null", async () => {
     // selectResult 为空数组模拟 WHERE deleted_at IS NULL 过滤后无匹配
     const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
       selectResult: [[]], // noteRows empty — 软删除笔记被过滤
     });
 
@@ -901,6 +924,7 @@ describe("note/service restoreNoteVersion", () => {
 
   it("软删除笔记恢复时不抛出异常，静默返回 null", async () => {
     const mock = createMockExecutor({
+      notesFindFirst: { id: NOTE_ID, currentVersionId: "current-v", workspaceId: WS_ID, title: "Test", titleSource: "manual" },
       selectResult: [[]],
     });
 
