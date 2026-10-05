@@ -448,9 +448,27 @@ jobs:
           $uninstallArgs += '/S'
           $uninstallArgs += "/D=$installDir"
 
-          # 把注册表整个摊开看——这是唯一能直接读到"卸载器以为它装在哪"的地方。
-          # 之前那条判据（"键是否消失"）不可靠：卸载**前**也显示没找到，
-          # 分不清"本来就不在"和"被删了"。
+          # ── 卸载器到底怎么跑的？三种可能，一次跑完看清 ──
+          #
+          # 上一轮用快捷方式确认了：section 根本没开始跑，退出点在 un.onInit。
+          # 而 un.onInit 里唯一会这么干的地方是 checkAppRunning —— 它用
+          # `Path.StartsWith('$INSTDIR')` 找"应用还在不在"。
+          #
+          # 这里有个很要命的地方：**卸载器自己就住在 $INSTDIR 里**
+          # （$INSTDIR\Uninstall 理解引擎.exe），所以它会把自己当成"应用还在跑"，
+          # 进kill 循环、杀不掉自己（KILL_PROCESS 找的是 理解引擎.exe，不含自己），
+          # 两次之后 MessageBox /SD IDCANCEL → Quit。
+          #
+          # 真实用户为什么没事：NSIS 卸载器默认会把自己复制到 %TEMP%\nsi*.tmp\ 再跑，
+          # 那条路径不以 $INSTDIR 开头，就匹配不到自己。我们如果让它就地运行（`_?=`），
+          # 反而会撞上这个自我匹配。
+          #
+          # 下面把三组参数各跑一遍，只为看清它到底走哪条路：
+          #   A  /S /currentuser /D=<dir>                （就地解析 $INSTDIR）
+          #   B  /S /currentuser（不传 /D，让 NSIS 自己从注册表解析）
+          #   C  /S /currentuser _?=<dir>（明确就地运行，不复制到 temp）
+          # 每组之后都记录：temp 里有没有 nsi*.tmp、自己有没有被复制走、目录少没少。
+          # 把安装注册表整个摊开看——这是唯一能直接读到"卸载器以为它装在哪"的地方。
           function Show-InstallRegistry([string]$Tag) {
             foreach ($root in @(
                 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
@@ -459,27 +477,23 @@ jobs:
               foreach ($k in @(Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue)) {
                 $v = Get-ItemProperty -LiteralPath $k.PSPath -ErrorAction SilentlyContinue
                 if (-not $v) { continue }
-                # 不去 split 路径再拼通配符——PowerShell 里反斜杠的转义很容易写错，
-                # 拼出来的模式匹配不到自己要找的东西。直接按关键字匹配。
                 $label = "$($v.DisplayName) $($v.InstallLocation) $($v.UninstallString)"
                 if ($label -match 'ailearn|理解引擎') {
                   Write-Host "  [$Tag] $($k.PSChildName)"
-                  Write-Host "        DisplayName        = $($v.DisplayName)"
-                  Write-Host "        InstallLocation    = $($v.InstallLocation)"
-                  Write-Host "        DisplayInstallLoc  = $($v.DisplayInstallLocation)"
-                  Write-Host "        UninstallString    = $($v.UninstallString)"
+                  Write-Host "        DisplayName     = $($v.DisplayName)"
+                  Write-Host "        InstallLocation = $($v.InstallLocation)"
+                  Write-Host "        UninstallString = $($v.UninstallString)"
                 }
               }
             }
           }
-          Show-InstallRegistry 'before'
 
           # ── 判断"卸载 section 到底跑没跑"的干净判据 ──
           #
-          # 卸载器删快捷方式（uninstaller.nsh:204 左右）在删文件之前。所以：
-          #   快捷方式还在 → section 根本没开始跑，它在前面就 Quit/Abort 了
-          #                 （那一段唯一会这么干的地方是 un.onInit 里的 checkAppRunning）
-          #   快捷方式没了 → section 跑过了，那文件还在只能是 RMDir 的目标路径不对
+          # 删快捷方式（uninstaller.nsh:204 附近）在删文件之前。所以：
+          #   快捷方式还在 → section 根本没开始跑，它在 un.onInit 就退出了
+          #   快捷方式没了 → section 跑过了，文件还在只能是 RMDir 的目标路径不对
+          # 上一轮正是靠这条确认了"section 根本没跑"。
           function Show-Shortcuts([string]$Tag) {
             $roots = @(
               (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'),
@@ -493,87 +507,68 @@ jobs:
               $found += @(Get-ChildItem -LiteralPath $r -Filter '*理解引擎*' -Recurse -ErrorAction SilentlyContinue |
                             Select-Object -ExpandProperty FullName)
             }
-            Write-Host "  [$Tag] 快捷方式 $($found.Count) 个$($(if ($found.Count) { '：' + (($found | ForEach-Object { Split-Path -Leaf $_ }) -join ', ') } else { '（无）' }))"
+            Write-Host "  [$Tag] 快捷方式 $($found.Count) 个"
             return $found.Count
           }
+
+          Show-InstallRegistry 'before'
           $scBefore = Show-Shortcuts 'before'
 
-          Collect-NsisLogs 'before'
-          Invoke-Checked $uninstaller.FullName $uninstallArgs
-          Collect-NsisLogs 'after1'
-
-          # NSIS 卸载器会派生子进程并立刻返回父进程，所以等目录真的消失。
-          $deadline = (Get-Date).AddSeconds(120)
-          while ((Test-Path -LiteralPath $installDir) -and (Get-Date) -lt $deadline) {
-            Start-Sleep -Milliseconds 500
+          function Get-NsisTempDirs {
+            @(Get-ChildItem -Path $env:TEMP -Directory -Filter 'nsi*' -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty FullName)
+          }
+          function Get-UninstallProcesses {
+            @(Get-Process -ErrorAction SilentlyContinue |
+              Where-Object { $_.ProcessName -like '*Uninstall*' })
           }
 
-          # 目录还在：先做两件事——把还活着的进程列出来（这是上一轮真正的原因），
-          # 再清一次场重试卸载。Windows 上"文件被占用"常常是卸载器先跑、
-          # 应用还没退干净造成的，重试一次通常就成了。
-          if (Test-Path -LiteralPath $installDir) {
-            $blockers = Get-AppProcesses $installDir
-            Write-Host "  目录仍在，先列出占着它的进程："
-            if ($blockers.Count -eq 0) {
-              Write-Host "    （没有活着的进程占用——不是句柄问题）"
-            } else {
-              $blockers | Select-Object Id, ProcessName, Path | Format-Table | Out-String | Write-Host
-              foreach ($proc in $blockers) {
-                & taskkill.exe /PID $proc.Id /T /F 2>$null | Out-Null
-              }
+          $variants = @(
+            @{ Tag = 'A /S /currentuser /D='; Args = @('/currentuser', '/S', "/D=$installDir") },
+            @{ Tag = 'B /S /currentuser（靠注册表解析 $INSTDIR）'; Args = @('/currentuser', '/S') },
+            @{ Tag = 'C /S /currentuser _?=（就地运行）'; Args = @('/currentuser', '/S', "_?=$installDir") }
+          )
+
+          foreach ($variant in $variants) {
+            Write-Host "  —— 变体 $($variant.Tag)"
+            Write-Host "     temp 里的 nsi* 目录（跑之前）：$((Get-NsisTempDirs) -join ', ')"
+            foreach ($extra in Get-AppProcesses $installDir) {
+              & taskkill.exe /PID $extra.Id /T /F 2>$null | Out-Null
             }
-            Write-Host "  清场后重试卸载一次（同一套参数）"
-            $retryArgs = @($uninstallArgs)
-            if ($retryArgs -notcontains "_?=$installDir") { $retryArgs += "_?=$installDir" }
-            Invoke-Checked $uninstaller.FullName $retryArgs
-            Collect-NsisLogs 'after2'
-            $retry = (Get-Date).AddSeconds(60)
-            while ((Test-Path -LiteralPath $installDir) -and (Get-Date) -lt $retry) {
+            try {
+              Invoke-Checked $uninstaller.FullName $variant.Args 120000
+            } catch {
+              Write-Host "     变体 $($variant.Tag) 抛错：$($_.Exception.Message)"
+            }
+            # 给 NSIS 复制到 temp 的那份时间跑完
+            $settle = (Get-Date).AddSeconds(45)
+            while ((Get-UninstallProcesses).Count -gt 0 -and (Get-Date) -lt $settle) {
               Start-Sleep -Milliseconds 500
             }
+            Write-Host "     跑之后 temp 里的 nsi* 目录：$((Get-NsisTempDirs) -join ', ')"
+            Write-Host "     还在跑的 Uninstall 进程：$(((Get-UninstallProcesses | ForEach-Object { \"$($_.Id)#$($_.Path)\" }) -join ', '))（空 = 无）"
+            if (Test-Path -LiteralPath $installDir) {
+              $remain = (Get-ChildItem -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object).Count
+              Write-Host "     目录仍在，剩 $remain 项"
+              # 快捷方式是"section 跑没跑"的判据，每轮都看一下
+              Write-Host "     快捷方式：$((Show-Shortcuts 'variant') 个)"
+            } else {
+              Write-Host "     ★ 目录已被删除 —— 这一组参数是对的"
+              break
+            }
           }
 
           if (Test-Path -LiteralPath $installDir) {
-            # 到这一步还剩东西，就把**具体是哪些**列出来。上一轮只报了一个
-            # "剩余 79 项"的数字，读者根本没法判断是残留占位文件还是真没删掉。
-            # 卸载器自己的日志：它停在哪一步，只有这份日志说得清。
-            Get-ChildItem -Path $diagDir -Filter '*nstall*' -ErrorAction SilentlyContinue | ForEach-Object {
-              Write-Host "  [NSIS 日志 $($_.Name)]"
-              Get-Content -LiteralPath $_.FullName -Tail 80 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "    | $_" }
-            }
             $left = @(Get-ChildItem -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue)
             Write-Host "  卸载后仍在，剩余 $($left.Count) 项，前 15 项："
             $left | Select-Object -First 15 -ExpandProperty FullName | ForEach-Object { Write-Host "    $_" }
-            $stillRunning = Get-AppProcesses $installDir
-            Write-Host "  相关进程：$((($stillRunning | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ', '))（空 = 无）"
-            # 这条是判据：键被删了 = 卸载 section 跑完了，那文件还在就只能是 $INSTDIR
-            # 指错了地方（NSIS 的 `RMDir /r $INSTDIR` 对着空路径执行，不报错）。
             Show-InstallRegistry 'after'
             $scAfter = Show-Shortcuts 'after'
             Write-Host "  快捷方式：卸载前 $scBefore 个 → 卸载后 $scAfter 个"
-            if ($scAfter -eq $scBefore -and $scBefore -gt 0) {
-              Write-Host "  → 快捷方式一个没少，说明卸载 section **根本没开始跑**（在 un.onInit 的 checkAppRunning 里就退出了）"
-            } elseif ($scAfter -lt $scBefore) {
-              Write-Host "  → 快捷方式被删了，说明 section **跑过了**；文件还在只能是 RMDir 的目标路径不对"
-            }
             throw "卸载后安装目录仍在（剩余 $($left.Count) 项）：$installDir"
           }
-
-          # 启动失败是在中途记录下来而不是当场抛的——当场抛的话，后面的对照
-          # （未安装的 win-unpacked 能不能起）和诊断 artifact 上传就都跑不到了，
-          # 证据会跟失败一起丢。所以到这里再统一判红。
-          #
-          # 这行是这道闸的意义所在：**装上打不开的包不该发出去**。
-          # 它现在拦得住，正是因为判据换成了"安装目录下有没有活着的进程"
-          # （见上面 Get-AppProcesses 旁那条注释）。
-          # 读的是本步骤自己设的 PowerShell 变量——启动失败时只记录不抛，
-          # 就是为了能走到这里。
-          # 诊断**无条件**收集一份。之前只在启动失败的分支里拷，于是启动一成功
-          # 这个目录就是空的，upload-artifact 拿不到任何东西（if-no-files-found: warn
-          # 会安静地跳过）——上一轮就这样白跑了一回。
-          foreach ($logPath in @($appOut, $appErr, $chromiumLog)) {
-          }
           Write-Host '全新安装 → 启动 → 卸载 全链路通过'
+
           # 诊断收集放进 finally：前三次都是因为"收集"写在某个 throw 之后、
           # 或者只在某个分支里，于是失败时它一次都没跑过——artifact 永远是空的。
           # finally 不挑路径：装不上、起不来、卸不掉，上面哪条 throw 先触发都照样收。
