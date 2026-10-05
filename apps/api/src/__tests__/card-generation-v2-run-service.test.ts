@@ -113,7 +113,11 @@ function makeBaseRun(status = "review_ready") {
 function setupTx(impl: Record<string, unknown>) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tx: any = {
-    execute: async () => [{ workspace_id: WORKSPACE_ID, user_id: USER_ID }],
+    // 2026-10-05：方案 42 把这条链路接进了 agent。`createGenerationRunV2` 现在先查
+    // `note_versions` 拿到 noteId（要交给 `agentDirectRequestV1Schema` 校验，那上面
+    // `noteId` 是必填），这条查询走的是 `tx.execute`。默认行里补上 `note_id`，
+    // 否则 noteId 是 undefined，zod 直接把用例挡在业务逻辑之前。
+    execute: async () => [{ workspace_id: WORKSPACE_ID, user_id: USER_ID, note_id: NOTE_ID }],
     ...impl,
   };
   db.transaction = (async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)) as typeof db.transaction;
@@ -200,6 +204,9 @@ describe("createGenerationRunV2", () => {
 
   it("throws note_version_not_found when version does not exist", async () => {
     setupTx({
+      // 同上：查 `note_versions` 现在走 `tx.execute`，返回空行才是"这版读不到"。
+      // 只把 `query.noteVersions.findFirst` 置空已经不够了——那条查询不再被调用。
+      execute: async () => [],
       select: () => ({
         from: () => ({
           where: () => ({

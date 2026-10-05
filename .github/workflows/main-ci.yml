@@ -226,6 +226,9 @@ jobs:
         working-directory: packages/card-generation
         run: npm ci --no-audit --no-fund
 
+      - name: Install ai-quality
+        working-directory: packages/ai-quality
+        run: npm ci --no-audit --no-fund
       - name: Install API
         working-directory: apps/api
         run: npm ci --no-audit --no-fund
