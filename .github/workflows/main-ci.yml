@@ -5,11 +5,10 @@ on:
   schedule:
     # Nightly at 02:00 UTC — runs full nightly E2E suite (ADR-0008 §6)
     - cron: "0 2 * * *"
+  # 只在打 tag 时跑。按用户决定：main 的普通推送不再触发 CI，
+  # 回归留给发版这一刻，省掉每次推送的 runner 开销。
   push:
-    branches: [main, master, "codex/**"]
-    tags: ["v*"]
-  pull_request:
-    branches: [main, master]
+    tags: ["v*", "desktop-v*"]
 
 permissions:
   contents: read
@@ -1493,7 +1492,7 @@ jobs:
           path: ${{ runner.temp }}/release-evidence
           if-no-files-found: warn
           retention-days: 90
-+  alpha-infrastructure:
+  alpha-infrastructure:
     name: Alpha Infrastructure (Monitoring + Backup, OPS-01)
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
