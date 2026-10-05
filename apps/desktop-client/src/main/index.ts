@@ -8,7 +8,7 @@ import {
   systemPreferences,
   type WebContents
 } from 'electron'
-import { createReadStream, mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, createReadStream, mkdirSync, writeFileSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
@@ -611,6 +611,17 @@ async function createMainWindow(): Promise<BrowserWindow> {
 
   registerWindowLifecycle(window)
 
+  window.on('ready-to-show', () => traceBoot('renderer-ready-to-show'))
+  window.on('closed', () => traceBoot('window-closed'))
+  // 渲染进程没了是最需要看见的一种：它不会让主进程抛错，窗口却就此消失，
+  // 最终表现成"应用自己退出了"。
+  window.webContents.on('render-process-gone', (_event, details) =>
+    traceBoot(`render-process-gone reason=${details.reason} exitCode=${details.exitCode}`))
+  window.webContents.on('did-fail-load', (_event, code, description, url) =>
+    traceBoot(`did-fail-load code=${code} description=${description} url=${url}`))
+  window.webContents.on('preload-error', (_event, preloadPath, error) =>
+    traceBoot(`preload-error path=${preloadPath} message=${error.message}`))
+
   window.once('ready-to-show', () => {
     window.show()
   })
@@ -629,7 +640,13 @@ async function createMainWindow(): Promise<BrowserWindow> {
  * "已同步"。锁按 userData 目录生效，因此协同验收仍可以用不同的 `--user-data-dir`
  * 起两个互不干扰的实例。
  */
-if (!app.requestSingleInstanceLock()) {
+const singleInstanceLock = app.requestSingleInstanceLock()
+traceBoot(`single-instance-lock=${singleInstanceLock}`)
+
+if (!singleInstanceLock) {
+  // 拿不到锁就立刻退出——这是"另一个实例已在跑"，不是故障，所以不打错误日志。
+  // 但它必须被看见：Windows 上这段以前完全无声，排查时看不出应用是走到这里退的。
+  traceBoot('quit-because-single-instance-lock-lost')
   app.quit()
 } else {
   app.on('second-instance', () => {
@@ -662,6 +679,38 @@ if (!app.requestSingleInstanceLock()) {
  * 不能定位到根因（那要一台 Windows 机器），但它让下一次 CI 跑就能读到
  * "到底是哪一步抛的"，并且给用户一个错误而不是一片空白。
  */
+/**
+ * 启动轨迹（2026-10）。
+ *
+ * ## 为什么需要它
+ *
+ * CI 实测：Windows 上装好的应用退出码 0、无 stderr、`startup-failure.log` 也不存在
+ * ——也就是说主进程**没有抛错**。Chromium 日志显示它完成了 browser/GPU/network
+ * 进程启动后约 **200ms** 就退出了，而 `Code Cache/js` 只有 16KB（我们那份 bundle
+ * 压缩后是 7MB 级别），说明**渲染层根本没把应用代码加载起来**。
+ *
+ * 到这一步为止 we've 排除了：主进程抛错、沙箱、缺文件。剩下的是"它在哪一步停了"，
+ * 而 stdout/stderr 与 Chromium 日志都答不上来——所以在这里自己写一份。
+ *
+ * ## 它是诊断用的，失败也不该连累启动
+ *
+ * 每个里程碑 appendFileSync 一次，同步落盘。写不进去（userData 不可写、磁盘满）
+ * 就静默跳过：这个文件的存在是为了定位问题，它自己出问题绝不能变成新的启动失败。
+ * 它只往 userData 写，不打 console，所以正常运行时对用户**完全无感**。
+ */
+function traceBoot(milestone: string): void {
+  try {
+    appendFileSync(
+      resolve(app.getPath('userData'), 'boot-trace.log'),
+      `${new Date().toISOString()} pid=${process.pid} ${milestone}\n`,
+    )
+  } catch {
+    // 诊断设施不该制造故障。
+  }
+}
+
+traceBoot('module-loaded (main/index.ts 顶层执行完毕)')
+
 function reportStartupFailure(error: unknown): void {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error)
   // stderr：Electron 在 Windows 上会把主进程的 console.error 转发到父进程的 stderr，
@@ -681,6 +730,7 @@ function reportStartupFailure(error: unknown): void {
 
 app.whenReady()
   .then(async () => {
+  traceBoot('whenReady-resolved')
   Menu.setApplicationMenu(null)
   /**
    * 用上一次查到的结果给界面打底（2026-10）。不联网、不预取安装包——
@@ -699,8 +749,11 @@ app.whenReady()
     { sources: voiceAsrModelSources(process.env) }
   )
   await voiceAsrModel.sweepPartialFiles()
+  traceBoot('voice-asr-swept')
   registerAppProtocol(voiceAsrModel)
+  traceBoot('app-protocol-registered')
   registerRendererSecurityPolicy()
+  traceBoot('renderer-security-policy-registered')
   registerWindowIpc()
   registerM1DesktopIpc({
     resolveWindow: windowFor,
@@ -757,7 +810,9 @@ app.whenReady()
     callback(grantedPermissions.has(permission) && fromAppPage)
   })
 
+  traceBoot('ipc-registered')
   await createMainWindow()
+  traceBoot('main-window-created-and-loaded')
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createMainWindow()
@@ -766,5 +821,6 @@ app.whenReady()
   .catch(reportStartupFailure)
 
 app.on('window-all-closed', () => {
+  traceBoot('window-all-closed')
   if (process.platform !== 'darwin') app.quit()
 })
