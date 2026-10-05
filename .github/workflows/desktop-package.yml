@@ -288,13 +288,6 @@ jobs:
               Write-Host "[$label] 末尾 25 行（共 $((Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue).Count) 行，完整文件见 artifact）:"
               Get-Content -LiteralPath $logPath -Tail 25 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  | $_" }
             }
-            foreach ($logPath in @($appOut, $appErr, $chromiumLog)) {
-              if (Test-Path -LiteralPath $logPath) { Copy-Item -LiteralPath $logPath -Destination $diagDir -Force }
-            }
-            $userDataDir = Join-Path $env:APPDATA 'ailearn-desktop-client'
-            if (Test-Path -LiteralPath $userDataDir) {
-              Copy-Item -LiteralPath $userDataDir -Destination (Join-Path $diagDir 'userData') -Recurse -Force -ErrorAction SilentlyContinue
-            }
             # 标记留在输出里，让后面的对照与上传照常执行——
             # 抛出去的话，证据反而会跟它一起丢。
             $startup_failed = '1'
@@ -400,19 +393,27 @@ jobs:
 
           # NSIS 自己会写安装日志（模板里的 `${LogSet} on`），它在 NSIS 执行到哪一步
           # 崩掉时是唯一的证据。没有它，上面那个"静默 Quit"只能靠猜。
-          $nsisLogDir = Join-Path $env:RUNNER_TEMP 'nsis-uninstall-logs'
-          New-Item -ItemType Directory -Force -Path $nsisLogDir | Out-Null
-          # LogText 默认写到 $TEMP 或可执行文件旁边，两处都收。
-          Get-ChildItem -Path $env:TEMP, $installDir -Filter '*.log' -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match 'install|uninstall' } |
-            ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $nsisLogDir -Force -ErrorAction SilentlyContinue }
+          # ⚠️ NSIS 的日志必须**直接落进 $diagDir**。上一轮我把它收到
+          # $RUNNER_TEMP/nsis-uninstall-logs——那个目录根本没被上传，于是白收一场。
+          # LogText 默认写在 $TEMP 或可执行文件旁边，两处都扫。
+          function Collect-NsisLogs([string]$Tag) {
+            Get-ChildItem -Path $env:TEMP, $installDir -Filter '*.log' -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -match 'install|uninstall|nsis' } |
+              ForEach-Object {
+                $dest = Join-Path $diagDir "$Tag-$($_.Name)"
+                Copy-Item -LiteralPath $_.FullName -Destination $dest -Force -ErrorAction SilentlyContinue
+              }
+            # 有些 LogText 版本写的是 .txt
+            Get-ChildItem -Path $env:TEMP, $installDir -Include '*.txt' -Recurse -Depth 1 -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -match 'install|uninstall|nsis' } |
+              ForEach-Object {
+                Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $diagDir "$Tag-$($_.Name)") -Force -ErrorAction SilentlyContinue
+              }
+          }
 
+          Collect-NsisLogs 'before'
           Invoke-Checked $uninstaller.FullName @('/S')
-
-          # 把卸载器自己写的日志也收进去（它是在运行的瞬间产生的，上面那次收不到）。
-          Get-ChildItem -Path $env:TEMP, $installDir -Filter '*.log' -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match 'install|uninstall' } |
-            ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $nsisLogDir -Force -ErrorAction SilentlyContinue }
+          Collect-NsisLogs 'after1'
 
           # NSIS 卸载器会派生子进程并立刻返回父进程，所以等目录真的消失。
           $deadline = (Get-Date).AddSeconds(120)
@@ -436,6 +437,7 @@ jobs:
             }
             Write-Host "  清场后重试卸载一次"
             Invoke-Checked $uninstaller.FullName @('/S')
+            Collect-NsisLogs 'after2'
             $retry = (Get-Date).AddSeconds(60)
             while ((Test-Path -LiteralPath $installDir) -and (Get-Date) -lt $retry) {
               Start-Sleep -Milliseconds 500
@@ -445,10 +447,10 @@ jobs:
           if (Test-Path -LiteralPath $installDir) {
             # 到这一步还剩东西，就把**具体是哪些**列出来。上一轮只报了一个
             # "剩余 79 项"的数字，读者根本没法判断是残留占位文件还是真没删掉。
-            # 卸载器自己的日志也带出来：$nsisLogDir 里那份说明它停在哪一步。
-            Get-ChildItem -Path $nsisLogDir -ErrorAction SilentlyContinue | ForEach-Object {
+            # 卸载器自己的日志：它停在哪一步，只有这份日志说得清。
+            Get-ChildItem -Path $diagDir -Filter '*nstall*' -ErrorAction SilentlyContinue | ForEach-Object {
               Write-Host "  [NSIS 日志 $($_.Name)]"
-              Get-Content -LiteralPath $_.FullName -Tail 60 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "    | $_" }
+              Get-Content -LiteralPath $_.FullName -Tail 80 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "    | $_" }
             }
             $left = @(Get-ChildItem -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue)
             Write-Host "  卸载后仍在，剩余 $($left.Count) 项，前 15 项："
@@ -467,6 +469,18 @@ jobs:
           # （见上面 Get-AppProcesses 旁那条注释）。
           # 读的是本步骤自己设的 PowerShell 变量——启动失败时只记录不抛，
           # 就是为了能走到这里。
+          # 诊断**无条件**收集一份。之前只在启动失败的分支里拷，于是启动一成功
+          # 这个目录就是空的，upload-artifact 拿不到任何东西（if-no-files-found: warn
+          # 会安静地跳过）——上一轮就这样白跑了一回。
+          foreach ($logPath in @($appOut, $appErr, $chromiumLog)) {
+            if (Test-Path -LiteralPath $logPath) { Copy-Item -LiteralPath $logPath -Destination $diagDir -Force }
+          }
+          $userDataDir = Join-Path $env:APPDATA 'ailearn-desktop-client'
+          if (Test-Path -LiteralPath $userDataDir) {
+            Copy-Item -LiteralPath $userDataDir -Destination (Join-Path $diagDir 'userData') -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          Write-Host "  诊断产物：$((Get-ChildItem -Path $diagDir -Recurse -File -ErrorAction SilentlyContinue | Measure-Object).Count) 个文件"
+
           if ('$startup_failed' -eq '1') {
             throw '已安装的程序在 40 秒内没活起来——装得上、起不来，这道闸必须拦住发版（完整日志见 ailearn-windows-startup-diag artifact）'
           }
