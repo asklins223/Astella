@@ -112,6 +112,17 @@ jobs:
         working-directory: packages/ai-quality
         run: npm ci --no-audit --no-fund
 
+      # 2026-10-05：`@ailearn/card-generation` 与 `@ailearn/agent-host` 都是被
+      # `apps/api/tsconfig.json` 的 paths 指到**活源码**的包（`../../packages/*/src`），
+      # 所以 api 打包/跑测试时会把它们的源码拉进同一个 program——它们自己的依赖
+      # 必须装在那个包里。`card-generation` 此前连 lockfile 都没有，于是
+      # `Build API` 报 `Could not resolve "drizzle-orm"`（来自它的 creation.ts / events.ts）。
+      # 本次补上 lockfile（lockfileVersion 3，根元数据与 package.json 一致）并在此安装。
+
+      - name: Install card-generation
+        working-directory: packages/card-generation
+        run: npm ci --no-audit --no-fund
+
       - name: Install API
         working-directory: apps/api
         run: npm ci --no-audit --no-fund
@@ -204,6 +215,17 @@ jobs:
       - name: Install agent-host
         working-directory: packages/agent-host
         run: npm ci --no-audit --no-fund
+      # 2026-10-05：`@ailearn/card-generation` 与 `@ailearn/agent-host` 都是被
+      # `apps/api/tsconfig.json` 的 paths 指到**活源码**的包（`../../packages/*/src`），
+      # 所以 api 打包/跑测试时会把它们的源码拉进同一个 program——它们自己的依赖
+      # 必须装在那个包里。`card-generation` 此前连 lockfile 都没有，于是
+      # `Build API` 报 `Could not resolve "drizzle-orm"`（来自它的 creation.ts / events.ts）。
+      # 本次补上 lockfile（lockfileVersion 3，根元数据与 package.json 一致）并在此安装。
+
+      - name: Install card-generation
+        working-directory: packages/card-generation
+        run: npm ci --no-audit --no-fund
+
       - name: Install API
         working-directory: apps/api
         run: npm ci --no-audit --no-fund
@@ -306,6 +328,25 @@ jobs:
 
       - name: Install ai-quality
         working-directory: packages/ai-quality
+        run: npm ci --no-audit --no-fund
+
+      # 2026-10-05：`@ailearn/card-generation` 与 `@ailearn/agent-host` 都是被
+      # `apps/api/tsconfig.json` 的 paths 指到**活源码**的包（`../../packages/*/src`），
+      # 所以 api 打包/跑测试时会把它们的源码拉进同一个 program——它们自己的依赖
+      # 必须装在那个包里。`card-generation` 此前连 lockfile 都没有，于是
+      # `Build API` 报 `Could not resolve "drizzle-orm"`（来自它的 creation.ts / events.ts）。
+      # 本次补上 lockfile（lockfileVersion 3，根元数据与 package.json 一致）并在此安装。
+
+      - name: Install agent-core
+        working-directory: packages/agent-core
+        run: npm ci --no-audit --no-fund
+
+      - name: Install agent-host
+        working-directory: packages/agent-host
+        run: npm ci --no-audit --no-fund
+
+      - name: Install card-generation
+        working-directory: packages/card-generation
         run: npm ci --no-audit --no-fund
 
       - name: Run shared contract unit tests
@@ -446,7 +487,14 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:16-alpine
+        # pgvector 镜像，不是 vanilla postgres:16-alpine。
+        #
+        # `0052_supervisor_agent_v1_schema` 起（4b95288a / v0.6，早于本批改动）
+        # 有十余份迁移 `CREATE EXTENSION IF NOT EXISTS vector`，vanilla 镜像不带这个
+        # 扩展，`Fresh PostgreSQL Migrations` 报
+        # `extension "vector" is not available`。迁移要的是 pg16 + 向量扩展，
+        # 所以换官方 pgvector 维护的同版本镜像，不动任何一份 SQL。
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: ailearn
           POSTGRES_PASSWORD: ci-migration-only-password
@@ -508,6 +556,17 @@ jobs:
       - name: Install agent-host
         working-directory: packages/agent-host
         run: npm ci --no-audit --no-fund
+      # 2026-10-05：`@ailearn/card-generation` 与 `@ailearn/agent-host` 都是被
+      # `apps/api/tsconfig.json` 的 paths 指到**活源码**的包（`../../packages/*/src`），
+      # 所以 api 打包/跑测试时会把它们的源码拉进同一个 program——它们自己的依赖
+      # 必须装在那个包里。`card-generation` 此前连 lockfile 都没有，于是
+      # `Build API` 报 `Could not resolve "drizzle-orm"`（来自它的 creation.ts / events.ts）。
+      # 本次补上 lockfile（lockfileVersion 3，根元数据与 package.json 一致）并在此安装。
+
+      - name: Install card-generation
+        working-directory: packages/card-generation
+        run: npm ci --no-audit --no-fund
+
       - name: Install API
         working-directory: apps/api
         # NODE_ENV=production would otherwise omit tsx, which db:migrate uses.
