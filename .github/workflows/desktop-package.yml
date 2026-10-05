@@ -428,12 +428,31 @@ jobs:
           # 已在生产上用了很久的调用方式。下面的注册表断言就是用来判定这次有没有修对。
           $uninstallArgs = @('/S', "/D=$installDir")
 
-          # 判定用：卸载器跑完，注册表里那两把键都该被删掉（uninstaller.nsh:250-254）。
-          # 键没了 = 卸载 section 真的跑完了，那么文件还在就只能是 $INSTDIR 指错了地方。
-          $uninstallKey = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
-            Where-Object { $_.InstallLocation -and $_.InstallLocation.StartsWith($installDir, [System.StringComparison]::OrdinalIgnoreCase) } |
-            Select-Object -First 1
-          Write-Host "  卸载前注册表：$($(if ($uninstallKey) { $uninstallKey.PSChildName } else { '<没找到>' }))"
+          # 把注册表整个摊开看——这是唯一能直接读到"卸载器以为它装在哪"的地方。
+          # 之前那条判据（"键是否消失"）不可靠：卸载**前**也显示没找到，
+          # 分不清"本来就不在"和"被删了"。
+          function Show-InstallRegistry([string]$Tag) {
+            foreach ($root in @(
+                'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+                'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+                'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')) {
+              foreach ($k in @(Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue)) {
+                $v = Get-ItemProperty -LiteralPath $k.PSPath -ErrorAction SilentlyContinue
+                if (-not $v) { continue }
+                # 不去 split 路径再拼通配符——PowerShell 里反斜杠的转义很容易写错，
+                # 拼出来的模式匹配不到自己要找的东西。直接按关键字匹配。
+                $label = "$($v.DisplayName) $($v.InstallLocation) $($v.UninstallString)"
+                if ($label -match 'ailearn|理解引擎') {
+                  Write-Host "  [$Tag] $($k.PSChildName)"
+                  Write-Host "        DisplayName        = $($v.DisplayName)"
+                  Write-Host "        InstallLocation    = $($v.InstallLocation)"
+                  Write-Host "        DisplayInstallLoc  = $($v.DisplayInstallLocation)"
+                  Write-Host "        UninstallString    = $($v.UninstallString)"
+                }
+              }
+            }
+          }
+          Show-InstallRegistry 'before'
 
           Collect-NsisLogs 'before'
           Invoke-Checked $uninstaller.FullName $uninstallArgs
@@ -483,14 +502,7 @@ jobs:
             Write-Host "  相关进程：$((($stillRunning | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ', '))（空 = 无）"
             # 这条是判据：键被删了 = 卸载 section 跑完了，那文件还在就只能是 $INSTDIR
             # 指错了地方（NSIS 的 `RMDir /r $INSTDIR` 对着空路径执行，不报错）。
-            $keyAfter = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
-              Where-Object { $_.InstallLocation -and $_.InstallLocation.StartsWith($installDir, [System.StringComparison]::OrdinalIgnoreCase) } |
-              Select-Object -First 1
-            if ($keyAfter) {
-              Write-Host "  卸载注册表键仍在 → 卸载 section 很可能**根本没跑完**（它在 RMDir 之前就 Quit/Abort 了）"
-            } else {
-              Write-Host "  卸载注册表键已消失 → 卸载 section 跑完了，文件还在只能是 \$INSTDIR 指错了目录（/D= 没生效或被忽略）"
-            }
+            Show-InstallRegistry 'after'
             throw "卸载后安装目录仍在（剩余 $($left.Count) 项）：$installDir"
           }
 
