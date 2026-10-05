@@ -24,7 +24,6 @@ const EDITOR_TOOLS: readonly EditorToolSpec[] = [
   { Icon: ListOrdered, label: "有序列表", title: "变成有序列表", run: (editor) => editor.toggleOrderedList() },
   { Icon: CodeXml, label: "代码块", title: "插入代码区块", run: (editor) => editor.insertCodeBlock() },
   { Icon: Minus, label: "分隔线", title: "插入分隔线", run: (editor) => editor.insertHr() },
-  { Icon: Link2, label: "链接", title: "插入链接（⌘/Ctrl+K）", run: (editor) => editor.toggleLink("https://") },
 ];
 
 export function NotebookEditorTools(props: {
@@ -33,12 +32,15 @@ export function NotebookEditorTools(props: {
   readonly canUpload: boolean;
   readonly fileInputRef: RefObject<HTMLInputElement | null>;
   readonly onImages: (files: FileList | null) => void;
+  readonly onLink: () => void;
 }) {
   return <>
     <div className="editor-tools" role="toolbar" aria-label="Markdown 格式工具">
       {EDITOR_TOOLS.map(tool => <button key={tool.label} type="button" className="tool" disabled={!props.editable}
         aria-label={tool.label} title={tool.title} onMouseDown={event => event.preventDefault()}
         onClick={() => { if (props.editorRef.current) tool.run(props.editorRef.current); }}><tool.Icon size={16} aria-hidden="true" /></button>)}
+      <button type="button" className="tool" disabled={!props.editable} aria-label="链接" title="插入链接（⌘/Ctrl+K）"
+        onMouseDown={event => event.preventDefault()} onClick={props.onLink}><Link2 size={16} aria-hidden="true" /></button>
       <button type="button" className="tool" disabled={!props.editable || !props.canUpload} aria-label="插入图片"
         title="图片可粘贴或拖入正文" onMouseDown={event => event.preventDefault()} onClick={() => props.fileInputRef.current?.click()}><ImagePlus size={16} aria-hidden="true" /></button>
       <span className="editor-tools-legend">改动自动同步 · 图片可粘贴或拖入</span>

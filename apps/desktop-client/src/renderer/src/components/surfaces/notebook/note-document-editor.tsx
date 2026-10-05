@@ -18,10 +18,10 @@ export function NoteDocumentEditor({ mode, ref, ...props }: ComponentProps<typeo
   useEffect(() => {
     if (!editor) return;
     const inSource = () => latest.current.mode === "source" && sourceRef.current !== null;
-    const wrap = (before: string, after = "") => sourceRef.current?.surround(before, after);
+    const wrap = (before: string, after = "", emptyText = "") => sourceRef.current?.surround(before, after, emptyText);
     const handle: NoteMarkdownEditorHandle = {
       ...editor,
-      focus: () => inSource() ? sourceRef.current!.focusPosition(sourceRef.current!.getPosition()) : editor.focus(),
+      focus: () => inSource() ? sourceRef.current!.focus() : editor.focus(),
       insertText: (text) => inSource() ? sourceRef.current!.insertText(text) : editor.insertText(text),
       toggleStrong: () => inSource() ? wrap("**", "**") : editor.toggleStrong(),
       toggleEmphasis: () => inSource() ? wrap("*", "*") : editor.toggleEmphasis(),
@@ -30,7 +30,7 @@ export function NoteDocumentEditor({ mode, ref, ...props }: ComponentProps<typeo
       toggleBlockquote: () => inSource() ? sourceRef.current!.toggleLinePrefix("> ", /^> /) : editor.toggleBlockquote(),
       toggleBulletList: () => inSource() ? sourceRef.current!.toggleLinePrefix("- ", /^(?:[-+*]|\d+\.) /) : editor.toggleBulletList(),
       toggleOrderedList: () => inSource() ? sourceRef.current!.toggleLinePrefix("1. ", /^(?:[-+*]|\d+\.) /) : editor.toggleOrderedList(),
-      toggleLink: (href) => inSource() ? wrap("[", `](${href})`) : editor.toggleLink(href),
+      toggleLink: (href) => inSource() ? wrap("[", `](${href})`, href) : editor.toggleLink(href),
       insertCodeBlock: () => inSource() ? wrap("```\n", "\n```") : editor.insertCodeBlock(),
       insertHr: () => inSource() ? wrap("\n---\n") : editor.insertHr(),
       getPosition: () => inSource() ? sourceRef.current!.getPosition() : editor.getPosition(),

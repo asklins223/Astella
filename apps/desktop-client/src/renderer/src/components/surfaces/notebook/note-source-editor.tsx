@@ -12,11 +12,12 @@ import type { NoteDocumentPosition } from "./note-source-bridge";
 
 export type NoteSourceEditorHandle = {
   readonly insertText: (text: string) => void;
-  readonly surround: (before: string, after?: string) => void;
+  readonly surround: (before: string, after?: string, emptyText?: string) => void;
   readonly toggleLinePrefix: (prefix: string, existing: RegExp) => void;
   readonly getPosition: () => NoteDocumentPosition;
   readonly focusPosition: (position: NoteDocumentPosition) => void;
   readonly isComposing: () => boolean;
+  readonly focus: () => void;
 };
 
 /** A retained code view of the live document. Undo remains in the document, not CodeMirror. */
@@ -137,10 +138,10 @@ export function NoteSourceEditor(props: {
     };
     props.handleRef.current = {
       insertText,
-      surround: (before, after = "") => {
+      surround: (before, after = "", emptyText = "") => {
         if (latest.current.disabled) return;
         const range = view.state.selection.main;
-        const selected = view.state.sliceDoc(range.from, range.to);
+        const selected = view.state.sliceDoc(range.from, range.to) || emptyText;
         const wrapped = after.length > 0 && range.from >= before.length
           && view.state.sliceDoc(range.from - before.length, range.from) === before
           && view.state.sliceDoc(range.to, range.to + after.length) === after;
@@ -179,6 +180,7 @@ export function NoteSourceEditor(props: {
         view.focus();
       },
       isComposing: () => view.compositionStarted,
+      focus: () => view.focus(),
     };
     return () => { unsubscribe(); props.handleRef.current = null; viewRef.current = null; view.destroy(); };
   }, [props.editor, props.handleRef]);

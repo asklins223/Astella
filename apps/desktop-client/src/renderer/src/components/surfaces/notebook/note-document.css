@@ -21,6 +21,10 @@
 .hud-surface .notebook-version-choice h3 { font: 700 24px/1.5 "Noto Sans SC Variable", sans-serif; margin: 0 0 14px; }
 .hud-surface .notebook-version-choice p { font-size: 14px; line-height: 1.8; }
 .hud-surface .notebook-version-choice .actions { flex-wrap: wrap; gap: 8px 12px; margin-top: 24px; }
+.hud-surface .notebook-link-editor { pointer-events: auto; }
+.hud-surface .notebook-link-editor label { display: grid; gap: 8px; font-size: 14px; }
+.hud-surface .notebook-link-editor input { width: 100%; box-sizing: border-box; padding: 10px 12px; color: var(--hud-ink); border: 1px solid var(--hud-line); border-radius: 12px; background: var(--hud-paper-light); }
+.hud-surface .notebook-link-editor input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .hud-surface .note-annotation-anchor { position: relative; border-radius: 4px; background: color-mix(in srgb, var(--hud-butter) 32%, transparent); box-shadow: inset 0 -2px #d7bf80; box-decoration-break: clone; cursor: pointer; }
 .hud-surface .note-annotation-anchor::after { content: attr(data-number); margin-inline: 3px; color: #917847; vertical-align: super; font: 700 11px/1 "Noto Sans SC Variable", sans-serif; }
 /* 两个编辑态的批注记号（41 §1.4）。它们**不包住正文**——可编辑预览那一格的首要

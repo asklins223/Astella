@@ -99,6 +99,7 @@ import { isNoteEditingMode, type NoteBodyMode } from "./note-document-mode";
 import { useNotebookBodyMode } from "./use-notebook-body-mode";
 import { NotebookDesk } from "./notebook-desk";
 import { NotebookEditorTools } from "./notebook-editor-tools";
+import { useNotebookLinkEditor } from "./notebook-link-editor";
 import { noteOutline } from "./note-outline";
 import { useNotebookLearningView } from "./use-notebook-learning-view";
 import { useNotebookLearningEntry, type NoteLearningTask } from "./use-notebook-learning-entry";
@@ -1102,6 +1103,7 @@ const noteDocLive = useNoteDocLiveView(
     note?.currentVersionId ?? null,
   );
   const editable = Boolean(note?.permissions.canEdit) && noteDocLive.authorizedScope !== "readonly";
+  const linkEditor = useNotebookLinkEditor(editorRef, activeNoteRef?.noteId ?? null, editable);
   const canSave = Boolean(note?.permissions.canSave) && noteDocLive.authorizedScope !== "readonly";
   const { mode, changeMode, pendingMode } = useNotebookBodyMode({
     noteId: note?.noteId ?? null,
@@ -3055,7 +3057,7 @@ const noteDocLive = useNoteDocLiveView(
       void save("manual");
     } else if (key === "k") {
       event.preventDefault();
-      editorRef.current?.toggleLink("https://");
+      linkEditor.open();
     }
   };
 
@@ -4112,7 +4114,7 @@ const noteDocLive = useNoteDocLiveView(
     : learningView === "recall" ? "先自己想想，再翻开原文" : learningView === "overview" ? "抓住要点，回原文核对"
       : isNoteEditingMode(mode) ? "写下理解，留下可回看的版本" : "原文还在，接着往下读";
 
-  const editChrome = note ? <NotebookEditorTools editorRef={editorRef} editable={editable} canUpload={Boolean(note.permissions.canSave)} fileInputRef={imageUploads.fileInputRef} onImages={imageUploads.queueFiles} /> : null;
+  const editChrome = note ? <NotebookEditorTools editorRef={editorRef} editable={editable} canUpload={Boolean(note.permissions.canSave)} fileInputRef={imageUploads.fileInputRef} onImages={imageUploads.queueFiles} onLink={linkEditor.open} /> : null;
 
   // Both editors stay attached to the shared document throughout this visit.
   // Saving snapshots the draft, so fields remain editable during the request.
@@ -4167,6 +4169,7 @@ const noteDocLive = useNoteDocLiveView(
     <>
       <div className="task-title notebook-page-title"><h1>{pageTitle}</h1><p>{pageSubtitle}</p></div>
       <main className="content notebook-space">
+        {linkEditor.dialog}
         <article
           className="notebook-workspace notebook-hud"
           aria-busy={loading || undefined}

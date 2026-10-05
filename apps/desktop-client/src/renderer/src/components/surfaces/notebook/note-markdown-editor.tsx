@@ -14,7 +14,7 @@ import {
   insertHrCommand,
   toggleEmphasisCommand,
   toggleInlineCodeCommand,
-  toggleLinkCommand,
+  linkSchema,
   toggleStrongCommand,
   wrapInBlockquoteCommand,
   wrapInBulletListCommand,
@@ -642,7 +642,15 @@ function MilkdownControls({
       toggleBlockquote: () => run(command(wrapInBlockquoteCommand.key)),
       toggleBulletList: () => run(command(wrapInBulletListCommand.key)),
       toggleOrderedList: () => run(command(wrapInOrderedListCommand.key)),
-      toggleLink: (href) => run(command(toggleLinkCommand.key, { href })),
+      toggleLink: (href) => run((editor) => editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const { from, to } = view.state.selection;
+        const tr = view.state.tr;
+        if (from === to) tr.insertText(href, from);
+        tr.addMark(from, from === to ? from + href.length : to, linkSchema.type(ctx).create({ href }));
+        view.dispatch(tr.scrollIntoView());
+        view.focus();
+      })),
       insertCodeBlock: () => run(command(createCodeBlockCommand.key)),
       insertHr: () => run(command(insertHrCommand.key)),
       applySource: (markdown) => withReadyEditor(getInstance(), (editor) => editor.action((ctx) => {
