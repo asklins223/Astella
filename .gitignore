@@ -159,3 +159,6 @@ apps/desktop-client/prototypes/
 .env.bak*
 # 本地 electron/vite 构建日志（`> .devlog` 重定向的产物，不是产品代码）
 apps/desktop-client/.devlog
+
+# Windows 安装生命周期测试的诊断产物（CI 上传成 artifact）
+apps/desktop-client/ailearn-diagnostics/

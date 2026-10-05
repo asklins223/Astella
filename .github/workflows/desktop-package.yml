@@ -144,6 +144,7 @@ jobs:
         # `event.isWriteUpdateInfo` 上，与是否真的上传无关。
         run: npm run package:win:x64 -- --publish never
       - name: Verify installer lifecycle (install → launch → uninstall)
+        id: lifecycle
         shell: pwsh
         working-directory: apps/desktop-client
         env:
@@ -221,6 +222,11 @@ jobs:
           # 上 app.quit()：窗口自己关掉了。而窗口为什么会关（渲染层没加载起来？
           # 自定义 app scheme 失败？），只有应用自己的日志说得清。没有它，这里就只有
           # 一句"提前退出"，等于什么都没查。
+          # 诊断目录：stdout / stderr / Chromium 日志 / userData 都往这里收。
+          # 它在 workspace 里的固定位置，后面的 upload step 才拿得到（$RUNNER_TEMP
+          # 里的东西 upload-artifact 也能读，但 workspace 路径更直观）。
+          $diagDir = 'ailearn-diagnostics'
+          New-Item -ItemType Directory -Force -Path $diagDir | Out-Null
           $appOut = Join-Path $env:RUNNER_TEMP 'ailearn-installed-app.out.log'
           $appErr = Join-Path $env:RUNNER_TEMP 'ailearn-installed-app.err.log'
           $env:ELECTRON_ENABLE_LOGGING = '1'
@@ -251,18 +257,24 @@ jobs:
             # "已安装程序提前退出"，而应用到底报了什么一个字都看不到。
             # 逐行打印则每行都稳定出现在 Actions 日志里。
             Write-Host "::error::已安装程序提前退出，退出码 $($app.ExitCode)"
+            # 只把**末尾**若干行打进 step 日志（GitHub 会截断长输出，325 行只露出 11 行）；
+            # 完整文件由下一条 Upload diagnostics step 作为 artifact 带走。
             foreach ($logPath in @($appOut, $appErr, $chromiumLog)) {
               $label = Split-Path -Leaf $logPath
               if (-not (Test-Path -LiteralPath $logPath)) { Write-Host "[$label] (没有输出)"; continue }
-              $lines = @(Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue)
-              if ($lines.Count -eq 0) { Write-Host "[$label] (空)"; continue }
-              Write-Host "[$label] $($lines.Count) 行:"
-              # 只打前后各 60 行：整份可能有几万行，全打会把真正的错误淹掉。
-              $lines | Select-Object -First 60 | ForEach-Object { Write-Host "  | $_" }
-              if ($lines.Count -gt 120) { Write-Host "  | ... 中间省略 $($lines.Count - 120) 行 ..." }
-              if ($lines.Count -gt 60) { $lines | Select-Object -Last 60 | ForEach-Object { Write-Host "  | $_" } }
+              Write-Host "[$label] 末尾 25 行（共 $((Get-Content -LiteralPath $logPath -ErrorAction SilentlyContinue).Count) 行，完整文件见 artifact）:"
+              Get-Content -LiteralPath $logPath -Tail 25 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  | $_" }
             }
-            throw "已安装程序提前退出，退出码 $($app.ExitCode)（应用日志见上）"
+            foreach ($logPath in @($appOut, $appErr, $chromiumLog)) {
+              if (Test-Path -LiteralPath $logPath) { Copy-Item -LiteralPath $logPath -Destination $diagDir -Force }
+            }
+            $userDataDir = Join-Path $env:APPDATA 'ailearn-desktop-client'
+            if (Test-Path -LiteralPath $userDataDir) {
+              Copy-Item -LiteralPath $userDataDir -Destination (Join-Path $diagDir 'userData') -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            # 标记留在输出里，让后面的对照与上传照常执行——
+            # 抛出去的话，证据反而会跟它一起丢。
+            "startup_failed=1" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8
           }
           Write-Host "  ok  已安装程序存活（pid $($app.Id)）"
           # Electron 会派生渲染 / GPU / 工具进程。只杀父进程会留下持有 installDir
@@ -325,6 +337,18 @@ jobs:
             throw "卸载后安装目录仍在（剩余 $left 项）：$installDir"
           }
           Write-Host '全新安装 → 启动 → 卸载 全链路通过'
+
+      - name: Upload startup diagnostics
+        # 完整日志走 artifact 而不是 step 日志：GitHub 会截断长输出
+        # （上一轮 325 行只露出 11 行，恰好把最该看的尾巴切掉了）。
+        # `if: always()`：应用启动失败时正是最需要这份证据的时候。
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ailearn-windows-startup-diag-${{ github.run_id }}
+          path: apps/desktop-client/ailearn-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Probe update-over-install (non-blocking)
         # ⚠️ 这条**不阻断**，而且必须不阻断——但它绝不能被悄悄删掉或者标成通过。
