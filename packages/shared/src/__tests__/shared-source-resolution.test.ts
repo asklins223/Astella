@@ -33,23 +33,62 @@ const PACKAGES = ["apps/api", "workers/ai-worker"] as const;
 
 const RESOLVE_SNIPPET = `console.log(import.meta.resolve(${JSON.stringify(PROBE_SUBPATH)}))`;
 
-/** 从某个包目录里，问 tsx：这条 import 最终落在哪个文件。解析失败就抛出（不许被当成"落在别处"）。 */
+/**
+ * 从宿主包的 tsconfig 出发，问 tsx：这条 import 最终落在哪个文件。
+ * 解析失败就抛出（不许被当成"落在别处"）。
+ *
+ * ## 为什么 cwd 不是宿主包本身（2026-10-05 改）
+ *
+ * 第一版把 cwd 设成 `apps/api`，靠"从那里启动，`--import tsx` 自然能解析到 tsx"。
+ * 那是**借了宿主包的 node_modules**：CI 的 `Shared contracts` job 只 `npm ci` 了
+ * `packages/shared`，`apps/api/node_modules` 在 runner 上根本不存在，于是 tsx 解析不到，
+ * 这条腿报的是 `node:internal/modules/package_json_reader:314`——一个跟映射毫无关系的错。
+ * 本地有装所以绿，CI 没装所以红：判据被安装产物绑架了。
+ *
+ * 改法：cwd 用 `packages/shared`（tsx 一定在这儿），用 `TSX_TSCONFIG_PATH` 显式指定
+ * **宿主那份** tsconfig。判据问的问题没变——"宿主包的 paths 映射在运行时还指向活源码吗"，
+ * 映射坏掉照样红（指到一份不存在的 tsconfig 或坏掉的 paths 都过不去），
+ * 但不再依赖"三个包都装过"。
+ */
 function resolvedFrom(cwdRel: string): string {
+  const probeCwd = import.meta.dirname; // packages/shared/src/__tests__ —— tsx 必装的地方
+  const hostTsconfig = join(REPO_ROOT, cwdRel, "tsconfig.json");
   let out: string;
   try {
     out = execFileSync(
       "node",
       ["--import", "tsx", "--input-type=module", "-e", RESOLVE_SNIPPET],
-      { cwd: join(REPO_ROOT, cwdRel), encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"] },
+      {
+        cwd: probeCwd,
+        encoding: "utf8",
+        timeout: 60_000,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, TSX_TSCONFIG_PATH: hostTsconfig },
+      },
     );
   } catch (error) {
-    const stderr = (error as { stderr?: string }).stderr ?? "";
-    throw new Error(`${cwdRel} 里连解析都做不到（那不等于"读的是活源码"）：${stderr.split("\n")[0] ?? String(error)}`);
+    throw new Error(`${cwdRel} 里连解析都做不到（那不等于"读的是活源码"）：${describeFailure(error)}`);
   }
   const lines = out.split("\n").map((line) => line.trim()).filter(Boolean);
   assert.equal(lines.length, 1, `${cwdRel} 的解析读数不是一行：${JSON.stringify(out)}`);
   assert.ok(lines[0].startsWith("file://"), `${cwdRel} 交回的不是 file URL：${lines[0]}`);
   return resolve(new URL(lines[0]).pathname);
+}
+
+/**
+ * 报错时真正有用的那几行，而不是堆栈首行。
+ *
+ * Node 的 stderr 长这样：第一行是 `file:///…/package_json_reader.js:314`，紧跟着才是
+ * `[ERR_…]: 真正的说明`。只取 `split("\n")[0]` 拿到的是文件路径，等于什么都没说——
+ * 上面那 314 就是这么来的：对着一个模块解析错误读文件行号。
+ */
+function describeFailure(error: unknown): string {
+  const stderr = (error as { stderr?: string }).stderr ?? "";
+  const meaningful = stderr
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !/^file:\/\/\/.*:\d+$/.test(line) && !/^\s*at\s/.test(line) && !/^-+$/.test(line));
+  return meaningful.slice(0, 2).join(" ") || String(error);
 }
 
 /**
@@ -85,7 +124,15 @@ test("行为腿自己的正控制：没解析出来的东西不能被判成「�
   try {
     execFileSync("node",
       ["--import", "tsx", "--input-type=module", "-e", 'console.log(import.meta.resolve("@ailearn/shared/这一份合同不存在-zz"))'],
-      { cwd: join(REPO_ROOT, "apps/api"), encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"] });
+      {
+        // 与上面那条探针**同一套环境**，否则这一格就成了一次换了条件的对照：
+        // 它要证明的是"解析失败会被当成失败"，不是"换个 cwd 会不会失败"。
+        cwd: import.meta.dirname,
+        encoding: "utf8",
+        timeout: 60_000,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, TSX_TSCONFIG_PATH: join(REPO_ROOT, "apps/api", "tsconfig.json") },
+      });
   } catch {
     threw = true;
   }

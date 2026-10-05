@@ -27,8 +27,12 @@ import { test } from "node:test";
 const REPO_ROOT = join(import.meta.dirname, "..", "..", "..", "..");
 const read = (relative: string): string => readFileSync(join(REPO_ROOT, relative), "utf8");
 
-const REVIEW_SURFACE = "apps/desktop-client/src/renderer/src/components/CardGenerationSurface.tsx";
-void REVIEW_SURFACE;
+// 2026-10-05：审核台重构后 `CardGenerationSurface.tsx` 只剩摆位，构造 intent 的
+// 逻辑下沉到了它调用的 session hook 里。这条反向断言**没有失效**——审核台仍然发
+// `create_new`——失效的是**指针**：它还盯着那个已经不含 `intent` 字样的文件。
+// 按本文件开头的规矩（指向错的台账比没有台账更坏），改的是指针，不是断言。
+// 调用关系仍可复核：`CardGenerationSurface.tsx` 第 8 行导入、第 23 行调用本 hook。
+const REVIEW_SURFACE = "apps/desktop-client/src/renderer/src/components/surfaces/review/use-card-generation-session.ts";
 const ACTIVATION_SERVICE = "apps/api/src/modules/card-generation-v2/activation-service.ts";
 const V2_CONTRACTS = "packages/shared/src/contracts/card-generation-v2-contracts.ts";
 const PLAN_ASSEMBLY = "workers/ai-worker/src/card-generation-v3/plan-assembly.ts";

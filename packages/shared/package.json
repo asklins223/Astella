@@ -557,6 +557,11 @@
       "import": "./src/pg-text-array.ts",
       "default": "./src/pg-text-array.ts"
     },
+    "./platform-config": {
+      "types": "./src/platform-config.ts",
+      "import": "./src/platform-config.ts",
+      "default": "./src/platform-config.ts"
+    },
     "./platform-config-node": {
       "types": "./src/platform-config-node.ts",
       "import": "./src/platform-config-node.ts",
