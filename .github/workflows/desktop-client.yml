@@ -2,18 +2,9 @@ name: Desktop client
 
 on:
   workflow_dispatch:
+  # 同 ci.yml：只在打 tag 时跑，main 的普通推送不再触发。
   push:
-    branches: [main, master, "codex/**"]
-    paths:
-      - "apps/desktop-client/**"
-      - "packages/shared/**"
-      - ".github/workflows/desktop-client.yml"
-  pull_request:
-    branches: [main, master]
-    paths:
-      - "apps/desktop-client/**"
-      - "packages/shared/**"
-      - ".github/workflows/desktop-client.yml"
+    tags: ["desktop-v*", "v*"]
 
 permissions:
   contents: read
