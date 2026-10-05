@@ -551,7 +551,7 @@ jobs:
               $remain = (Get-ChildItem -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object).Count
               Write-Host "     目录仍在，剩 $remain 项"
               # 快捷方式是"section 跑没跑"的判据，每轮都看一下
-              Write-Host "     快捷方式：$((Show-Shortcuts 'variant') 个)"
+              Write-Host "     快捷方式：$((Show-Shortcuts 'variant')) 个"
             } else {
               Write-Host "     ★ 目录已被删除 —— 这一组参数是对的"
               break
