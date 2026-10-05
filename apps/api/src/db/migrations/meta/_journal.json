@@ -2584,6 +2584,69 @@
       "when": 1791000056015,
       "tag": "0372_agent_global_memory_recycle",
       "breakpoints": true
+    },
+    {
+      "idx": 369,
+      "version": "7",
+      "when": 1791000056016,
+      "tag": "0373_agent_card_execution",
+      "breakpoints": true
+    },
+    {
+      "idx": 370,
+      "version": "7",
+      "when": 1791000056017,
+      "tag": "0374_agent_growth_methods",
+      "breakpoints": true
+    },
+    {
+      "idx": 371,
+      "version": "7",
+      "when": 1791000056018,
+      "tag": "0375_companion_retention_repair",
+      "breakpoints": true
+    },
+    {
+      "idx": 372,
+      "version": "7",
+      "when": 1791000056019,
+      "tag": "0376_memory_organization_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 373,
+      "version": "7",
+      "when": 1791000056020,
+      "tag": "0377_companion_model_call_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 374,
+      "version": "7",
+      "when": 1791000056021,
+      "tag": "0378_agent_long_goal_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 375,
+      "version": "7",
+      "when": 1791000057021,
+      "tag": "0379_companion_scoped_guidance",
+      "breakpoints": true
+    },
+    {
+      "idx": 376,
+      "version": "7",
+      "when": 1791000058021,
+      "tag": "0380_agent_requests_and_turn_attention",
+      "breakpoints": true
+    },
+    {
+      "idx": 377,
+      "version": "7",
+      "when": 1791000059021,
+      "tag": "0381_agent_explicit_request_authority",
+      "breakpoints": true
     }
   ]
 }

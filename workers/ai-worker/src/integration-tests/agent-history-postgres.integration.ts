@@ -20,17 +20,18 @@ import { createHash, randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
+import * as schema from "@ailearn/shared/db-schema";
 import { sql as query } from "drizzle-orm";
 import { createAgentAdvanceStore, createAgentStore, type AgentStorePorts } from "@ailearn/agent-host";
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
-import { closeDatabase } from "../db.ts";
+import { closeDatabase, type WorkerTransaction } from "../db.ts";
 import { invokeNoteCapability } from "../agent/note-capabilities.ts";
 
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
 const apiClient = postgres(testDatabaseUrl("DATABASE_URL_API"), { max: 2 });
 const workerClient = postgres(testDatabaseUrl("DATABASE_URL_WORKER"), { max: 2 });
-function ports(client: ReturnType<typeof postgres>): AgentStorePorts {
-  const db = drizzle(client);
+function ports(client: ReturnType<typeof postgres>): AgentStorePorts<WorkerTransaction> {
+  const db = drizzle(client, { schema });
   return { id: randomUUID, transaction: (scope, action) => db.transaction(async tx => {
     await tx.execute(query`SELECT set_config('app.workspace_id',${scope.workspaceId},true),set_config('app.user_id',${scope.userId},true)`);
     return action(tx);
@@ -131,13 +132,13 @@ async function completedOperation(scope: Scope, runId: string, revision: number,
   const child = await invokeNoteCapability(advance, {
     id: `overview-${randomUUID()}`, name: "note_overview_generate",
     arguments: { noteId: note.noteId, noteVersionId: note.noteVersionId },
-  }) as { operationId: string; jobId: string };
+  }) as { operationId: string; execution: { kind: "job"; id: string } };
   await advance.release(false);
   const overviewId = randomUUID();
   await admin.begin(async tx => {
     await tx`INSERT INTO note_overviews(id,workspace_id,user_id,note_id,note_version_id,body,generation_job_id)
-      VALUES(${overviewId},${scope.workspaceId},${scope.userId},${note.noteId},${note.noteVersionId},'光能转化为有机物中的化学能。',${child.jobId})`;
-    await tx`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id IN (${first.id},${child.jobId})`;
+      VALUES(${overviewId},${scope.workspaceId},${scope.userId},${note.noteId},${note.noteVersionId},'光能转化为有机物中的化学能。',${child.execution.id})`;
+    await tx`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id IN (${first.id},${child.execution.id})`;
   });
   const receipt = await lease(scope, runId, revision);
   const reader = createAgentAdvanceStore(workerPorts, receipt, runId, revision);
@@ -146,7 +147,7 @@ async function completedOperation(scope: Scope, runId: string, revision: number,
   const projected = await api.get(scope, runId);
   assert.equal(projected.operations.find(operation => operation.operationId === child.operationId)?.status, "succeeded",
     "产物真的落在领域表里，才算这次操作做成了");
-  return { jobId: child.jobId, operationId: child.operationId, overviewId };
+  return { jobId: child.execution.id, operationId: child.operationId, overviewId };
 }
 
 /** Drizzle 会把数据库错误包一层，断言要落在 SQLSTATE 上而不是包装文字。 */

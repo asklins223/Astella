@@ -22,7 +22,9 @@
  *     那条边界由 origin ＋ CSP ＋ 导航闸守，探针在
  *     `scripts/probe-artifact-isolation.mts`。
  *
- * 因此 `ALLOWED` 名单**今天仍是空的，而且不再预期会有"模板文件"登记进来**：
+ * `ALLOWED` 只登记公共公式组件：它接收 TeX，由关闭 trust 且有长度/扩展/尺寸上限
+ * 的 KaTeX 生成排版 HTML，异常保留字面原文。模型正文与产物仍不可直接注入。
+ * 不预期会有"模板文件"登记进来：
  * 模板在 `src/main/artifact-template.ts`（主进程侧，不在本守卫的扫描根里，也从不进渲染进程）。
  * 谁要往 `src/renderer/**` 里加 DOMParser／innerHTML 落点，得先在这里登记并说明为什么。
  *
@@ -62,10 +64,13 @@ const SINK_PATTERNS: ReadonlyArray<{ label: string; test: RegExp }> = [
 /**
  * 允许出现上列形状的文件（相对仓库内 `apps/desktop-client/`）。
  *
- * 空名单是**今天的真值**，不是占位：解析重建尚未实现，所以还没有任何文件该有 DOMParser。
- * W4-1 落地时把重建器路径加进来（并在这里留一行说明它为什么是唯一的）。
+ * 仅放行 KaTeX 的一个落点，其边界另由下方源码约束和真实公式渲染用例核对。
+ * 模型 Markdown 自身仍全部走 React 文本/元素。
  */
-const ALLOWED: ReadonlyArray<{ path: string; allow: readonly string[] }> = [];
+const MATH_RENDERER = "src/renderer/src/components/content/readable-math.tsx";
+const ALLOWED: ReadonlyArray<{ path: string; allow: readonly string[] }> = [
+  { path: MATH_RENDERER, allow: ["dangerouslySetInnerHTML"] },
+];
 
 /** 注释粗剥：只剥块注释与整行 `//` 注释，够用来把说明文字与代码形状分开。 */
 function stripComments(source: string): string {
@@ -108,6 +113,21 @@ const allowFor = (path: string): readonly string[] =>
   ALLOWED.find((entry) => path.endsWith(entry.path))?.allow ?? [];
 
 describe("渲染进程没有 HTML 注入点（D4 §5.1）", () => {
+  it("唯一公式落点仅使用有边界的 KaTeX HTML，不能把原始内容送入 HTML", () => {
+    const source = stripComments(readFileSync(MATH_RENDERER, "utf8"));
+    expect(source).toContain('import { renderToString } from "katex"');
+    expect(source).toContain('props.value.length > 10_000');
+    expect(source).toContain('renderToString(props.value,');
+    expect(source).toContain('trust: false');
+    expect(source).toContain('throwOnError: true');
+    expect(source).toContain('maxExpand: 1000');
+    expect(source).toContain('maxSize: 20');
+    expect(source.match(/dangerouslySetInnerHTML/g)).toHaveLength(1);
+    expect(source).toContain('dangerouslySetInnerHTML={{ __html: html }}');
+    expect(source).not.toMatch(/__html:\s*props\./);
+    expect(source).toContain('>{props.source}</span>');
+  });
+
   it("产品源码里不存在任何 HTML 注入点", () => {
     const files = SCAN_ROOTS.flatMap((root) => walk(root));
     // 阳性对照的第一半：守卫必须真的读到了文件。读不到而全绿是最坏的假绿。

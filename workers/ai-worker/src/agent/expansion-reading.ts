@@ -1,7 +1,7 @@
 /**
  * 42 阶段 1 D：`note_expansion_read` 的领域读取与有界分页。
  *
- * 拓展草稿不是笔记，是目标自己排出来的后台产物，权威来源是 `agent_operations.artifact`
+ * 拓展草稿不是笔记，是目标自己排出来的后台产物，权威来源是 `agent_operations.result`
  * 与领域行之间的绑定，不是「这篇笔记对我可见」——同一空间里另一个目标也读过同一篇笔记，
  * 把它拿过来交付就是越权。授权判定与分页放在同一个文件：两者共用「草稿数组 + 位置」这一份
  * 输入形状，拆开就会出现「分页算好了、授权判错了」的半截结果。
@@ -413,7 +413,7 @@ interface ExpansionTaskRow extends Record<string, unknown> {
   job_status: string;
   drafts: unknown;
   confirmed_candidate_ids: unknown;
-  artifact: unknown;
+  result: unknown;
   operation_revision: number;
   drafts_updated_at: string;
 }
@@ -434,7 +434,7 @@ export async function readExpansionDrafts(
            j.status::text AS job_status,
            n.drafts,
            n.confirmed_candidate_ids,
-           o.artifact,
+           o.result,
            o.revision::int AS operation_revision,
            to_char(n.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS drafts_updated_at
     FROM public.note_expansion_tasks n
@@ -452,12 +452,13 @@ export async function readExpansionDrafts(
      AND o.workspace_id = n.workspace_id
      AND o.user_id = n.user_id
      AND o.status = 'succeeded'
-     AND o.artifact IS NOT NULL
-     AND o.artifact->>'kind' = 'note_expansion'
-     AND o.artifact->>'id' = n.id::text
-     AND o.artifact->>'jobId' = n.id::text
-     AND o.artifact->>'noteId' = n.note_id::text
-     AND o.artifact->>'noteVersionId' = n.note_version_id::text
+     AND o.result IS NOT NULL
+     AND o.result->>'kind' = 'artifact'
+     AND o.result->'artifact'->>'kind' = 'note_expansion'
+     AND o.result->'artifact'->>'id' = n.id::text
+     AND o.result->'artifact'->>'jobId' = n.id::text
+     AND o.result->'artifact'->>'noteId' = n.note_id::text
+     AND o.result->'artifact'->>'noteVersionId' = n.note_version_id::text
     JOIN public.agent_runs r
       ON r.id = o.run_id AND r.workspace_id = n.workspace_id AND r.user_id = n.user_id
     JOIN public.notes src
@@ -480,7 +481,8 @@ export async function readExpansionDrafts(
   const row = rows[0];
   if (!row) return null;
 
-  const artifact = row.artifact as { id?: string; jobId?: string } | null;
+  // 0373 起 operation 的产物列改名 `result`，存的是包好的 `{kind:"artifact",artifact}`。
+  const artifact = (row.result as { artifact?: { id?: string; jobId?: string } } | null)?.artifact ?? null;
   if (artifact?.id !== row.task_id || artifact?.jobId !== row.task_id) return null;
 
   const parsed = draftsSchema.safeParse(row.drafts);

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { z } from "zod";
-import { agentGoalToolManifest, noteAgentCapabilityManifest } from "../agent-capabilities.ts";
+import { agentGoalToolManifest, noteAgentCapabilityManifest, agentGoalExecutionManifest, resolveAgentGoalExecutionManifest } from "../agent-capabilities.ts";
 import { agentToolParameters } from "../agent-tool-parameters.ts";
 import { createAgentRunV1Schema } from "../contracts/agent-contracts.ts";
+import { getCompanionAgentTool, validateCompanionAgentToolArguments } from "../companion-agent-registry.ts";
 
 test("the same capability schema supplies model bounds and rejects invalid or expanded authority", () => {
   const start = agentGoalToolManifest.find(entry => entry.definition.name === "agent_start_goal")!;
@@ -16,6 +17,31 @@ test("the same capability schema supplies model bounds and rejects invalid or ex
   const read = noteAgentCapabilityManifest.find(entry => entry.definition.name === "note_read")!;
   assert.equal(read.argumentSchema.safeParse({ noteId: "invalid", noteVersionId: "invalid", startOrdinal: 0 }).success, false);
   assert.equal((read.definition.parameters as { required: string[] }).required.includes("startOrdinal"), false);
+});
+
+test("目标只获得真实材料可用的能力，缺材料仍可明确交付 needs_input", () => {
+  const names = (entries: ReturnType<typeof resolveAgentGoalExecutionManifest>) => entries.map(entry => entry.definition.name);
+  assert.deepEqual(names(resolveAgentGoalExecutionManifest({ notes: [], methods: [] })),
+    ["agent_calculate", "agent_read_public_document", "agent_deliver_goal"]);
+  const notes = [{ noteId: "11111111-1111-4111-8111-111111111111", noteVersionId: "22222222-2222-4222-8222-222222222222" }];
+  const methods = [{ methodId: "33333333-3333-4333-8333-333333333333", revision: 2 }];
+  const full = resolveAgentGoalExecutionManifest({ notes, methods });
+  assert.deepEqual(names(full), names([...agentGoalExecutionManifest]));
+  const read = full.find(entry => entry.definition.name === "note_read")!;
+  const properties = read.definition.parameters.properties as Record<string, { enum: string[] }>;
+  assert.deepEqual(properties.noteId.enum, [notes[0]!.noteId]);
+  assert.deepEqual(properties.noteVersionId.enum, [notes[0]!.noteVersionId]);
+  const method = full.find(entry => entry.definition.name === "agent_read_method")!;
+  const methodProperties = method.definition.parameters.properties as Record<string, { enum: (string | number)[] }>;
+  assert.deepEqual(methodProperties.methodId.enum, [methods[0]!.methodId]);
+  assert.deepEqual(methodProperties.expectedRevision.enum, [2]);
+  const withoutMethod = names(resolveAgentGoalExecutionManifest({ notes, methods: [] }));
+  assert.ok(withoutMethod.includes("note_read"));
+  assert.ok(withoutMethod.includes("card_generation_generate"));
+  assert.ok(!withoutMethod.includes("agent_read_method"));
+  const onlyMethod = names(resolveAgentGoalExecutionManifest({ notes: [], methods }));
+  assert.ok(onlyMethod.includes("agent_read_method"));
+  assert.ok(!onlyMethod.includes("note_read"));
 });
 
 test("目标文本不在模型的参数里：要求只能由执行器取本轮原话", () => {
@@ -40,7 +66,18 @@ test("目标文本不在模型的参数里：要求只能由执行器取本轮�
     goal: "整理", inputs: [] }).success, true);
 });
 test("unsupported model parameter constraints fail during registration instead of silently weakening validation", () => {
-  assert.throws(() => agentToolParameters(z.object({ value: z.string().regex(/^safe$/) })), /Unsupported agent string constraint/);
-  assert.throws(() => agentToolParameters(z.object({ value: z.union([z.string(),z.number()]) })), /Unsupported agent parameter contract/);
+  assert.throws(() => agentToolParameters(z.object({ value: z.string().transform(value => value.length) })), /Unsupported agent parameter transform/);
+  assert.throws(() => agentToolParameters(z.object({ value: z.string().regex(/^safe$/i) })), /Unsupported agent string regex flags/);
+  assert.throws(() => agentToolParameters(z.lazy(() => z.string())), /Unsupported agent parameter contract/);
   assert.deepEqual(agentToolParameters(z.number().int().positive().max(4)), { type: "integer", exclusiveMinimum: 0, maximum: 4 });
+});
+
+test("companion capabilities derive UUID, variant bounds and refinements from the actual validator", () => {
+  const card = getCompanionAgentTool("companion_open_card")!.parameters as { properties: Record<string, { format?: string }> };
+  assert.equal(card.properties.cardId.format, "uuid");
+  const variant = getCompanionAgentTool("companion_switch_task_variant")!.parameters as { properties: Record<string, { maxLength?: number }> };
+  assert.equal(variant.properties.alternativeId.maxLength, 200);
+  assert.equal(validateCompanionAgentToolArguments("companion_save_memory", { kind: "preference", content: "简短", appliesWhen: "今天" }).success, false);
+  assert.deepEqual(agentToolParameters(z.union([z.literal(1), z.literal(2), z.literal(3)])), { type: "integer", enum: [1, 2, 3] });
+  assert.deepEqual(agentToolParameters(z.string().max(200).nullable().optional()), { anyOf: [{ type: "string", maxLength: 200 }, { type: "null" }] });
 });

@@ -46,6 +46,15 @@ export async function resolveGovernedCardGenerationProvider(input: {
   chainLabel: "card-generation-v3";
   /** 只进错误消息：这一条链自己的环境变量名。 */
   llmModeLabel: string;
+  /**
+   * 真实归属引用（`card_generation_runs_v2.id` 与 outbox 项 id）。
+   *
+   * **不要**把它们填进 `job_id`：那一列的契约是 jobs 表里的行，制卡走的是 V2 outbox，
+   * 填进去会让"按 job 聚合成本"指向一个永远 join 不上的东西——比留空更坏，
+   * 因为它看起来有归属。制卡没有 jobs 行，所以 `jobId` 就该是 null，
+   * 真实引用走 `correlation`，按 `operation` + 这些字段能定位到具体那一次生成。
+   */
+  correlation?: Readonly<Record<string, string>>;
   governance?: AIGovernanceContext;
   providerName?: string;
   providerConfig?: AIProviderRuntimeConfig;
@@ -87,8 +96,15 @@ export async function resolveGovernedCardGenerationProvider(input: {
         input.workspaceId,
         // AI P0-8（2026-09-15 审计）：制卡是最重的 LLM 消费者，接上 ai_audit_log 的
         // 唯一写入口（userId 为 null 时按契约不写审计行）。
+        // 这里**不传 jobId**：制卡没有 jobs 行，outbox / generation run 的 id 不是
+        // jobs.id，填进 `ai_audit_log.job_id` 只会造出一条指向空处的假归属。
         input.userId
-          ? { userId: input.userId, operation: input.operation, dataCategories: ["note_content"] }
+          ? {
+            userId: input.userId,
+            operation: input.operation,
+            dataCategories: ["note_content"],
+            ...(input.correlation ? { correlation: input.correlation } : {}),
+          }
           : undefined,
       )
     : rawProvider;

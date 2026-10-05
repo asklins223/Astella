@@ -1,3 +1,4 @@
+import { acceptVerifiedSpaceArrival, clearSpaceArrival } from "./hud/space-arrival";
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import {
   Suspense,
@@ -959,15 +960,20 @@ export function DesktopAccessGate({
         // 出现「菜单说 A、胶囊说 B」。登出后视图不再是 ready，这里保留最后一次的
         // 值——届时药丸本身也不在屏幕上。
         const identity = {
+          workspaceId: next.session.workspace.workspaceId,
+          workspaceEpoch: next.session.workspaceEpoch,
+          userId: next.session.user.userId,
+          deploymentRef: next.session.deploymentRef ?? "desktop",
           name: next.session.workspace.name,
           role: next.session.workspace.role,
           isPersonal: next.session.workspace.isPersonal,
         };
-        const identityBoundary = [identity.name, identity.role, String(identity.isPersonal)].join(":");
+        const identityBoundary = [identity.userId, identity.deploymentRef, identity.workspaceId, identity.workspaceEpoch, identity.name, identity.role, String(identity.isPersonal)].join(":");
         if (spaceIdentityBoundaryRef.current !== identityBoundary) {
           spaceIdentityBoundaryRef.current = identityBoundary;
           useRoomStore.getState().setSpaceIdentity(identity);
         }
+        acceptVerifiedSpaceArrival(next.session, identity);
         // 账号身份与空间身份同一时机、同一来源发布：顶栏那个小框要回答「我是谁」，
         // 而它不该为这句话自己发请求——设置页已经有一份档案，两处各读各的就会打架。
         const account = {
@@ -985,6 +991,7 @@ export function DesktopAccessGate({
         // 位置与焦点都留在原处；上面这些发布语句已经把这趟读到的会话对齐了。
         if (silentReverify && !boundaryChanged && viewPhaseRef.current === "ready") return;
       }
+      if (next.phase !== "ready") clearSpaceArrival();
       setView(next);
     };
 

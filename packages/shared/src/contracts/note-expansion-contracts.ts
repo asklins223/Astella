@@ -44,6 +44,7 @@ export const noteExpansionTaskStatusV1Schema = z.enum(["queued", "running", "rea
 export const noteExpansionTaskFailureReasonV1Schema = z.enum(["ai_consent_required", "source_too_long", "unknown"]);
 export const noteExpansionTaskV1Schema = z.strictObject({
   taskId: z.string().uuid(),
+  agentRunId: z.string().uuid().optional(),
   noteId: z.string().uuid(),
   noteVersionId: z.string().uuid(),
   focusAnchor: noteAnnotationAnchorV1Schema.nullable(),

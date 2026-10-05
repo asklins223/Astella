@@ -88,7 +88,7 @@ async function readPendingStats(
   tx: Parameters<Parameters<typeof withWorkerWorkspaceTransaction>[1]>[0],
   scope: PlaybookScope,
 ): Promise<{ backlog: number; oldestPendingAt: Date | null; lastSuccessAt: Date | null }> {
-  const pending = rowsOf<{ backlog: number; oldest_pending_at: Date | null }>(await tx.execute(sql`
+  const pending = rowsOf<{ backlog: number; oldest_pending_at: Date | string | null }>(await tx.execute(sql`
     SELECT COUNT(*)::bigint AS backlog, MIN(updated_at) AS oldest_pending_at
       FROM assistant_memory_items
      WHERE workspace_id = ${scope.workspaceId}
@@ -99,7 +99,7 @@ async function readPendingStats(
        AND archived_at IS NULL
        AND kind <> 'judgment'
   `));
-  const state = rowsOf<{ last_success_at: Date | null }>(await tx.execute(sql`
+  const state = rowsOf<{ last_success_at: Date | string | null }>(await tx.execute(sql`
     SELECT last_success_at
       FROM companion_memory_organization_state
      WHERE workspace_id = ${scope.workspaceId}
@@ -107,8 +107,8 @@ async function readPendingStats(
   `));
   return {
     backlog: Number(pending[0]?.backlog ?? 0),
-    oldestPendingAt: pending[0]?.oldest_pending_at ?? null,
-    lastSuccessAt: state[0]?.last_success_at ?? null,
+    oldestPendingAt: databaseDate(pending[0]?.oldest_pending_at),
+    lastSuccessAt: databaseDate(state[0]?.last_success_at),
   };
 }
 
@@ -118,7 +118,7 @@ async function loadCandidates(
   scope: PlaybookScope,
   limit: number,
 ): Promise<PendingRow[]> {
-  return rowsOf<PendingRow>(await tx.execute(sql`
+  return rowsOf<Omit<PendingRow, "valid_until"> & { valid_until: Date | string | null }>(await tx.execute(sql`
     SELECT id, kind, content, revision, budget_tier, pinned, applies_when,
            valid_until, source_event_id, source_event_ids,
            -- 独立事件数：同一事件反复摘要只算一份，所以按 source_event_id 去重计数，
@@ -134,7 +134,14 @@ async function loadCandidates(
        AND kind <> 'judgment'
      ORDER BY pinned ASC, importance DESC, updated_at ASC
      LIMIT ${limit}
-  `));
+  `)).map(row => ({ ...row, valid_until: databaseDate(row.valid_until) }));
+}
+
+function databaseDate(value: Date | string | null | undefined): Date | null {
+  if (value == null) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error("Invalid memory organization timestamp");
+  return date;
 }
 
 /**
@@ -150,19 +157,24 @@ async function findSameFactTwin(
   candidate: PendingRow,
 ): Promise<{ id: string; revision: number; contradicts: boolean } | null> {
   const twins = rowsOf<{ id: string; revision: number; same_source: boolean }>(await tx.execute(sql`
-    SELECT id, revision, (source_event_id IS NOT DISTINCT FROM ${candidate.source_event_id}) AS same_source
-      FROM assistant_memory_items
-     WHERE workspace_id = ${scope.workspaceId}
-       AND user_id = ${scope.userId}
-       AND id <> ${candidate.id}
-       AND kind = ${candidate.kind}
-       AND deleted_at IS NULL
-       AND dismissed_at IS NULL
-       AND archived_at IS NULL
-       AND 1 - (embedding <=> (
-             SELECT embedding FROM assistant_memory_items WHERE id = ${candidate.id}
-           )) > ${MEMORY_CONTENT_SIMILARITY_THRESHOLD}
-     ORDER BY updated_at DESC
+    SELECT m.id, m.revision, (m.source_event_id IS NOT DISTINCT FROM ${candidate.source_event_id}) AS same_source
+      FROM assistant_memory_items m
+      JOIN assistant_memory_embeddings e ON e.memory_id=m.id AND e.workspace_id=m.workspace_id AND e.user_id=m.user_id
+      JOIN assistant_memory_items original ON original.id=${candidate.id}
+        AND original.workspace_id=m.workspace_id AND original.user_id=m.user_id
+      JOIN assistant_memory_embeddings source_embedding ON source_embedding.memory_id=original.id
+        AND source_embedding.workspace_id=original.workspace_id AND source_embedding.user_id=original.user_id
+     WHERE m.workspace_id = ${scope.workspaceId}
+       AND m.user_id = ${scope.userId}
+       AND m.id <> ${candidate.id}
+       AND m.kind = ${candidate.kind}
+       AND m.deleted_at IS NULL AND original.deleted_at IS NULL
+       AND m.dismissed_at IS NULL AND m.archived_at IS NULL
+       AND m.embedding_status='ready' AND original.embedding_status='ready'
+       AND e.model_revision=source_embedding.model_revision
+       AND m.embedding_profile_version IS NOT DISTINCT FROM original.embedding_profile_version
+       AND 1 - (e.embedding <=> source_embedding.embedding) > ${MEMORY_CONTENT_SIMILARITY_THRESHOLD}
+     ORDER BY m.updated_at DESC
      LIMIT 1
   `));
   const twin = twins[0];
@@ -215,9 +227,9 @@ async function removeExpiredMemory(
 ): Promise<boolean> {
   const result = rowsOf<{ id: string }>(await tx.execute(sql`
     UPDATE assistant_memory_items
-       SET deleted_at = ${now},
-           purge_after = ${new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)},
-           updated_at = ${now}
+       SET deleted_at = ${now.toISOString()},
+           purge_after = ${new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString()},
+           updated_at = ${now.toISOString()}
      WHERE id = ${candidate.id}
        AND workspace_id = ${scope.workspaceId}
        AND user_id = ${scope.userId}
@@ -349,7 +361,7 @@ export async function runCompanionMemoryOrganize(input: {
 
   return withWorkerWorkspaceTransaction(scope, async (tx) => {
     // 与删除/纠正同一把锁：整理与用户的手动改动不能交错（§4.5.6 护栏 5）。
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(${companionMemoryMutationLockKey(input.userId)})`);
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${companionMemoryMutationLockKey(input.userId)},0))`);
 
     const stats = await readPendingStats(tx, scope);
     const decision = memoryOrganizationGate({
@@ -371,7 +383,7 @@ export async function runCompanionMemoryOrganize(input: {
     const movedIds: string[] = [];
     const removedIds: string[] = [];
     const mergedIds: string[] = [];
-    const playbookKeys = new Map<string, MemoryOrganizationCandidate>();
+    const playbookKeys = new Map<string, MemoryOrganizationCandidate & { memoryRevision: number }>();
 
     for (const candidate of candidates) {
       const twin = await findSameFactTwin(tx, scope, candidate);
@@ -411,6 +423,7 @@ export async function runCompanionMemoryOrganize(input: {
           // 概括落 Procedural 层（§4.6.10），不在这里改写事实记忆。
           playbookKeys.set(`${candidate.kind}:${candidate.applies_when ?? "general"}`, {
             memoryId: candidate.id,
+            memoryRevision: candidate.revision,
             kind: candidate.kind,
             sameFactTwinId: null,
             sameFactTwinContradicts: false,
@@ -436,10 +449,11 @@ export async function runCompanionMemoryOrganize(input: {
           triggerCondition: entry.appliesWhen ?? "当前话题涉及这类记忆时",
           steps: [`先看有没有与这条同类的既有记忆（kind=${entry.kind}）`],
           exceptions: ["用户当场提出相反的说法时，以用户为准，不按手册走"],
-          evidence: [{ memoryId: entry.memoryId }],
+          evidence: [{ memoryId: entry.memoryId, memoryRevision: entry.memoryRevision }],
           epistemicStatus: "tentative",
           author: "maintenance",
         });
+        if (!written) continue;
         playbooksWritten += 1;
         logger.info(
           { playbookId: written.playbookId, version: written.version, memoryId: entry.memoryId },
@@ -457,9 +471,8 @@ export async function runCompanionMemoryOrganize(input: {
     const surface = memoryOrganizationSurface([...movedIds, ...mergedIds], removedIds);
     const committed = await commitMemoryOrganization(tx, scope, holder, surface, stats.backlog);
     if (!committed) {
-      // 提交失败 = 租约丢了或状态被别人推进。这一轮的**处置已经落地**，
-      // 但状态位不能推进——下次 tick 会再选一次，会重复整理。
-      logger.warn({ workspaceId: scope.workspaceId, userId: scope.userId, holder }, "memory organization commit lost the lease");
+      // All mutations belong to this lease; a lost commit rolls back the same transaction.
+      throw new Error("memory organization lease expired before commit");
     }
 
     logger.info(

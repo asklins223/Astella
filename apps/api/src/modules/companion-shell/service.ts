@@ -22,7 +22,7 @@
 
 import { randomBytes } from "node:crypto";
 import { DomainError } from "@ailearn/shared";
-import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, lte, or, sql } from "drizzle-orm";
 import {
   withWorkspaceTransaction,
   type ApiTransaction,
@@ -39,6 +39,8 @@ import {
 } from "@ailearn/shared/db-schema/companion";
 import {
   CompanionOnboardingErrorCode,
+  COMPANION_GUIDE_VERSION,
+  COMPANION_GUIDE_STEP_IDS,
   type CompanionAccountPatch,
   type CompanionAccountStateV1,
   type CompanionOnboardingActiveRun,
@@ -114,6 +116,7 @@ function buildActiveRun(params: {
   entryMode: CompanionOnboardingEntryMode;
   runId: string;
   stepId: string;
+  topicId?: CompanionOnboardingActiveRun["topicId"];
   workspaceId: string;
   now: Date;
 }): CompanionOnboardingActiveRun {
@@ -122,6 +125,7 @@ function buildActiveRun(params: {
     entryMode: params.entryMode,
     runStatus: "in_progress",
     stepId: params.stepId,
+    ...(params.topicId ? { topicId: params.topicId } : {}),
     // 服务端签发的不透明 resume 令牌；验证 = 客户端提交值与此行字段一致
     // （user/onboardingVersion/runId/base revision/expiry 均已绑定在当前行）。
     resumeTokenRef: randomBytes(24).toString("hex"),
@@ -133,6 +137,9 @@ function buildActiveRun(params: {
 function serializeOnboarding(row: OnboardingRow): CompanionOnboardingStateV1 {
   return {
     onboardingVersion: row.onboardingVersion,
+    scope: row.workspaceId ? "space" : "account",
+    workspaceId: row.workspaceId ?? undefined,
+    visitedStepIds: row.visitedStepIds ?? [],
     revision: row.revision,
     offerStatus: row.offerStatus,
     offerDisposition: row.offerDisposition ?? undefined,
@@ -202,11 +209,13 @@ export interface OnboardingTransitionInput {
   workspaceId: string;
   version: string;
   action: TransitionAction;
+  scope?: "account" | "space";
   /** 客户端持有的 base revision（CAS 乐观锁）；不传则基于服务端当前状态执行。 */
   revision?: number;
   /** pause/resume/abandon 必须带当前 runId；start/replay 由服务端签发。 */
   runId?: string;
   stepId?: string;
+  topicId?: CompanionOnboardingActiveRun["topicId"];
   resumeTokenRef?: string;
 }
 
@@ -222,6 +231,7 @@ async function casUpdateOnboarding(
     offerDisposition?: CompanionOnboardingDisposition | null;
     activeRun?: CompanionOnboardingActiveRun | null;
     lastRun?: CompanionOnboardingLastRun | null;
+    visitedStepIds?: string[];
   },
 ): Promise<OnboardingRow> {
   const setValues: Partial<OnboardingRow> = {
@@ -234,6 +244,7 @@ async function casUpdateOnboarding(
   }
   if (patch.activeRun !== undefined) setValues.activeRun = patch.activeRun;
   if (patch.lastRun !== undefined) setValues.lastRun = patch.lastRun;
+  if (patch.visitedStepIds !== undefined) setValues.visitedStepIds = patch.visitedStepIds;
 
   const [updated] = await tx
     .update(userCompanionOnboarding)
@@ -281,6 +292,11 @@ export async function transitionOnboarding(
     throw new CompanionStateError(INVALID_ONBOARDING_VERSION, 400, "invalid onboarding version");
   }
 
+  const scopeKey = input.scope === "space" ? input.workspaceId : "account";
+  if (version === COMPANION_GUIDE_VERSION && input.stepId && !(COMPANION_GUIDE_STEP_IDS as readonly string[]).includes(input.stepId)) {
+    throw new CompanionStateError("INVALID_GUIDE_STEP", 400, "unknown guide step");
+  }
+
   return withWorkspaceTransaction(
     { workspaceId: input.workspaceId, userId: input.userId },
     async (tx) => {
@@ -290,6 +306,7 @@ export async function transitionOnboarding(
         .where(and(
           eq(userCompanionOnboarding.userId, input.userId),
           eq(userCompanionOnboarding.onboardingVersion, version),
+          eq(userCompanionOnboarding.scopeKey, scopeKey),
         ))
         .for("update");
 
@@ -298,27 +315,29 @@ export async function transitionOnboarding(
       const now = new Date();
 
       if (!row) {
-        if (input.action === "start" || input.action === "skip") {
+        if (input.action === "start" || input.action === "skip" || input.action === "complete" || input.action === "replay") {
           // 首访：start 建 not_offered 初始行（revision 0），skip 直接建终态行。
           try {
             await tx.insert(userCompanionOnboarding).values({
               userId: input.userId,
               onboardingVersion: version,
+              scopeKey,
+              workspaceId: input.scope === "space" ? input.workspaceId : null,
               revision: 0,
-              offerStatus: input.action === "start" ? "not_offered" : "consumed",
-              offerDisposition: input.action === "start"
+              offerStatus: ["start", "replay"].includes(input.action) ? "not_offered" : "consumed",
+              offerDisposition: ["start", "replay"].includes(input.action)
                 ? undefined
-                : "skipped",
-              lastRun: input.action === "start"
+                : input.action === "complete" ? "completed" : "skipped",
+              lastRun: ["start", "replay"].includes(input.action)
                 ? undefined
                 : buildLastRun({
                     entryMode: "first_run",
-                    disposition: "skipped",
+                    disposition: input.action === "complete" ? "completed" : "skipped",
                     at: now,
                   }),
               createdAt: now,
               updatedAt: now,
-            });
+            }).onConflictDoNothing();
           } catch (err) {
             // 并发建行：唯一约束 (user_id, onboarding_version) 冲突，重读获胜行。
             if (isUniqueViolation(err)) {
@@ -346,6 +365,19 @@ export async function transitionOnboarding(
       }
 
       switch (input.action) {
+        case "advance": {
+          if (!row.activeRun || row.activeRun.runId !== input.runId || !input.stepId) {
+            throw new CompanionStateError(CompanionOnboardingErrorCode.RUN_NOT_FOUND, 409, "advance requires the active run and step");
+          }
+          if (row.activeRun.resumeWorkspaceRef !== input.workspaceId) {
+            throw new CompanionStateError(CompanionOnboardingErrorCode.CROSS_WORKSPACE_RESUME_DENIED, 409, "guide belongs to another workspace");
+          }
+          const updated = await casUpdateOnboarding(tx, row, {
+            activeRun: { ...row.activeRun, stepId: input.stepId, ...(input.topicId ? { topicId: input.topicId } : {}) },
+            visitedStepIds: [...new Set([...(row.visitedStepIds ?? []), row.activeRun.stepId])].slice(-100),
+          });
+          return { state: serializeOnboarding(updated) };
+        }
         case "start": {
           if (row.offerStatus === "consumed") throw alreadyConsumedError();
           if (row.offerStatus === "offered") {
@@ -365,7 +397,8 @@ export async function transitionOnboarding(
           const activeRun = buildActiveRun({
             entryMode: "first_run",
             runId: refs.runId ?? randomToken(),
-            stepId: refs.stepId ?? INITIAL_ONBOARDING_STEP_ID,
+            topicId: input.topicId,
+            stepId: refs.stepId ?? (version === COMPANION_GUIDE_VERSION ? "room" : INITIAL_ONBOARDING_STEP_ID),
             workspaceId: input.workspaceId,
             now,
           });
@@ -400,6 +433,17 @@ export async function transitionOnboarding(
         }
 
         case "complete": {
+          if (input.runId && row.activeRun?.runId !== input.runId) {
+            throw new CompanionStateError(CompanionOnboardingErrorCode.RUN_NOT_FOUND, 409, "completion belongs to a replaced run");
+          }
+          if (row.activeRun?.entryMode === "manual_replay") {
+            const updated = await casUpdateOnboarding(tx, row, {
+              activeRun: null,
+              visitedStepIds: [...new Set([...(row.visitedStepIds ?? []), row.activeRun.stepId])].slice(-100),
+              lastRun: buildLastRun({ entryMode: "manual_replay", disposition: "completed", at: now }),
+            });
+            return { state: serializeOnboarding(updated) };
+          }
           if (row.offerStatus === "consumed") {
             if (row.offerDisposition === "completed") {
               return { state: serializeOnboarding(row) };
@@ -416,6 +460,7 @@ export async function transitionOnboarding(
             offerDisposition: "completed",
             activeRun: null,
             lastRun,
+            visitedStepIds: [...new Set([...(row.visitedStepIds ?? []), ...(row.activeRun ? [row.activeRun.stepId] : [])])].slice(-100),
           });
           return { state: serializeOnboarding(updated) };
         }
@@ -465,7 +510,7 @@ export async function transitionOnboarding(
               "pause requires the current runId",
             );
           }
-          if (row.offerStatus === "consumed") throw alreadyConsumedError();
+          if (row.offerStatus === "consumed" && row.activeRun?.entryMode !== "manual_replay") throw alreadyConsumedError();
           if (!row.activeRun) {
             throw new CompanionStateError(
               CompanionOnboardingErrorCode.RUN_NOT_FOUND,
@@ -485,7 +530,7 @@ export async function transitionOnboarding(
             return { state: serializeOnboarding(row) };
           }
           const updated = await casUpdateOnboarding(tx, row, {
-            activeRun: { ...row.activeRun, runStatus: "paused" },
+            activeRun: { ...row.activeRun, runStatus: "paused", ...(input.stepId ? { stepId: input.stepId } : {}) },
           });
           return { state: serializeOnboarding(updated) };
         }
@@ -498,7 +543,7 @@ export async function transitionOnboarding(
               "resume requires the current runId",
             );
           }
-          if (row.offerStatus === "consumed") throw alreadyConsumedError();
+          if (row.offerStatus === "consumed" && row.activeRun?.entryMode !== "manual_replay") throw alreadyConsumedError();
           if (!row.activeRun) {
             throw new CompanionStateError(
               CompanionOnboardingErrorCode.RUN_NOT_FOUND,
@@ -512,9 +557,6 @@ export async function transitionOnboarding(
               409,
               "runId does not match the active run",
             );
-          }
-          if (row.activeRun.runStatus === "in_progress") {
-            return { state: serializeOnboarding(row) };
           }
           // resume token 校验：令牌绑定 user（行内）/runId/base revision（已校验）/expiry。
           if (!input.resumeTokenRef || input.resumeTokenRef !== row.activeRun.resumeTokenRef) {
@@ -542,6 +584,7 @@ export async function transitionOnboarding(
               "resume token is scoped to another workspace",
             );
           }
+          if (row.activeRun.runStatus === "in_progress") return { state: serializeOnboarding(row) };
           const updated = await casUpdateOnboarding(tx, row, {
             activeRun: { ...row.activeRun, runStatus: "in_progress" },
           });
@@ -549,7 +592,7 @@ export async function transitionOnboarding(
         }
 
         case "replay": {
-          if (row.offerStatus === "not_offered") {
+          if (row.offerStatus === "not_offered" && version !== COMPANION_GUIDE_VERSION) {
             throw new CompanionStateError(
               CompanionOnboardingErrorCode.INVALID_TRANSITION,
               409,
@@ -562,11 +605,15 @@ export async function transitionOnboarding(
           const activeRun = buildActiveRun({
             entryMode: "manual_replay",
             runId: refs.runId ?? randomToken(),
-            stepId: refs.stepId ?? INITIAL_ONBOARDING_STEP_ID,
+            topicId: input.topicId,
+            stepId: refs.stepId ?? (version === COMPANION_GUIDE_VERSION ? "room" : INITIAL_ONBOARDING_STEP_ID),
             workspaceId: input.workspaceId,
             now,
           });
-          const updated = await casUpdateOnboarding(tx, row, { activeRun });
+          const updated = await casUpdateOnboarding(tx, row, {
+            activeRun,
+            ...(row.offerStatus === "not_offered" ? { offerStatus: "offered" as const } : {}),
+          });
           return { state: serializeOnboarding(updated) };
         }
       }
@@ -752,7 +799,10 @@ export async function getCompanionOverview(
       tx
         .select()
         .from(userCompanionOnboarding)
-        .where(eq(userCompanionOnboarding.userId, userId)),
+        .where(and(eq(userCompanionOnboarding.userId, userId), or(
+          eq(userCompanionOnboarding.scopeKey, "account"),
+          eq(userCompanionOnboarding.workspaceId, workspaceId),
+        ))),
       fetchAccountRow(tx, userId),
     ]);
     onboardingRows.sort((a, b) => a.onboardingVersion.localeCompare(b.onboardingVersion));

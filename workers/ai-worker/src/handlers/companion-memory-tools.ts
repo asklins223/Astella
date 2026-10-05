@@ -1,3 +1,5 @@
+import { reserveCompanionProviderCall } from "./companion-agent-events.ts";
+import { readCompanionMemoryWriteSource } from "./companion-memory-write-source.ts";
 /**
  * 伴星 agent 的**记忆工具族**（2026-10-01 从 `companion-tool-execution.ts` 搬出）。
  *
@@ -24,7 +26,6 @@
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
-  resolveCompanionMemoryTemporalMetadata,
   type CompanionAgentToolDefinitionV1,
 } from "@ailearn/shared";
 import {
@@ -36,9 +37,14 @@ import {
   accountPreferenceRejectionMessage,
   accountPreferenceWriteDecision,
 } from "@ailearn/shared/companion-memory-scope";
+import { toTextArrayLiteral } from "@ailearn/shared/pg-text-array";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { logger } from "../lib/logger.ts";
 import { createEmbeddingProvider } from "../lib/ai-provider.ts";
+import {
+  createGovernedEmbeddingProvider,
+  resolveAIGovernanceContext,
+} from "../lib/governance.ts";
 import { JobLeaseLostError, throwIfJobAborted } from "../lib/job-lease.ts";
 import { resolveProviderCallTimeout } from "../lib/handler-timeout-config.ts";
 import {
@@ -138,9 +144,31 @@ export async function executeCompanionMemoryTool(
       // 查询向量必须在开事务**之前**算：retrieveCompanionMemories 的约定是
       // precomputedEmbedding=null 表示"已试过且失败 → 直接降级 keyword"，
       // 绝不在事务里重试外部调用（事务被网络调用占住是另一类稳定性事故）。
+      //
+      // 这一发和 `companion-memory-embedding.ts` 是**同一条治理边界**：送出去的是用户
+      // 原话（`args.query`），不是服务端算出来的向量。上游曾经直接
+      // `createEmbeddingProvider()`——不查 `user_ai_settings` 的同意、不查数据外发政策、
+      // 不过 PII 净化，于是"没同意外发"的人照样把原话送去了向量模型，而同一批调用在
+      // 重建那条路上是受管的（治理口径按调用族分裂，审计表里也查不到这笔）。
+      // 这里接上与重建同款的出口；查不到治理上下文或政策拒发时按"没有向量"降级到
+      // 关键词检索（`retrieveCompanionMemories` 的 `!opts.provider` 分支就是它）。
       let provider: EmbeddingProviderLike | null = null;
       try {
-        provider = await createEmbeddingProvider();
+        const govCtx = await resolveAIGovernanceContext(event.ctx.workspaceId, event.read.userId);
+        if (govCtx.consentOk) {
+          const rawProvider = await createEmbeddingProvider(govCtx);
+          provider = rawProvider
+            ? createGovernedEmbeddingProvider(rawProvider, govCtx, event.ctx.workspaceId, {
+              // 送出去的是用户自己打的那句话：`user_answer`。
+              // `event.ctx.id` 是 jobs 行（伴星对话 job），不是 run id。
+              userId: event.read.userId,
+              operation: "companion_memory_recall_embedding",
+              reserveCall: () => reserveCompanionProviderCall(event),
+              jobId: event.ctx.id,
+              dataCategories: ["user_answer"],
+            })
+            : null;
+        }
       } catch {
         provider = null;
       }
@@ -288,7 +316,7 @@ export async function executeCompanionMemoryTool(
                epistemic_status, author_type, embedding_status, created_at, updated_at)
             VALUES
               (${event.ctx.workspaceId}, ${event.read.userId}, 'judgment', ${text},
-               ${sourceEventIds}::text[], 'companion', 'companion_interpretation', NULL,
+               ${toTextArrayLiteral(sourceEventIds)}::text[], 'companion', 'companion_interpretation', NULL,
                false, false,
                false, 0.3, 0.6, 'workspace', 'model_inferred',
                ${epistemicStatus}, 'companion', 'none', now(), now())
@@ -322,34 +350,9 @@ export async function executeCompanionMemoryTool(
       const inserted = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         async (tx) => {
-          const sourceRows = await tx.execute<{ created_at: Date; source_text: string }>(sql`
-            SELECT created_at,
-                   coalesce((
-                     SELECT string_agg(b->>'text', '')
-                     FROM jsonb_array_elements(blocks) b
-                     WHERE b->>'type' = 'text'
-                   ), '') AS source_text
-              FROM companion_messages
-             WHERE id = ${event.read.userMessageId}::uuid
-               AND conversation_id = ${event.read.conversationId}::uuid
-               AND workspace_id = ${event.ctx.workspaceId}
-               AND user_id = ${event.read.userId}
-               AND role = 'user'
-             LIMIT 1
-          `);
-          const source = (Array.isArray(sourceRows) ? sourceRows : [])[0];
-          if (!source) throw new CompanionToolError("当前这句话的来源已无法核对，这次没有写入记忆");
-          const temporal = resolveCompanionMemoryTemporalMetadata({
-            kind,
-            content,
-            sourceQuote,
-            appliesWhen,
-            validUntil,
-            sourceText: source.source_text,
+          const temporal = await readCompanionMemoryWriteSource(tx, event, {
+            kind, content, sourceQuote, appliesWhen, validUntil,
           });
-          if (!temporal.ok) {
-            throw new CompanionToolError("这条记忆的适用条件或期限无法从你的原话核对，这次没有写入");
-          }
           const rows = await tx.execute<{ id: string }>(sql`
             INSERT INTO assistant_memory_items
               (workspace_id, user_id, kind, content, source_event_id, source_session_id,
@@ -359,7 +362,7 @@ export async function executeCompanionMemoryTool(
             VALUES
               (${event.ctx.workspaceId}, ${event.read.userId}, ${kind}, ${content},
                ${event.read.userMessageId}, ${event.read.conversationId}, 'user', 'direct_statement',
-               ${temporal.appliesWhen}, ${source.created_at}, ${temporal.validUntil ? new Date(temporal.validUntil) : null},
+               ${temporal.appliesWhen}, ${temporal.createdAt}, ${temporal.validUntil ? new Date(temporal.validUntil) : null},
                true, true, false, 0.8, 0.9, 'workspace', 'user_stated', false, 'pending')
             RETURNING id
           `);
@@ -562,6 +565,9 @@ export async function executeCompanionMemoryTool(
     case "companion_read_playbook": {
       const playbookId = String(args.playbookId);
       const expectedVersion = Number(args.expectedVersion);
+      if (!event.read.playbookCatalog.some(entry => entry.playbookId === playbookId && entry.version === expectedVersion)) {
+        throw new CompanionToolError("这个方法不在本轮有效目录中，请重新核对。");
+      }
       const playbook = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         (tx) => readPlaybookById(
@@ -569,6 +575,8 @@ export async function executeCompanionMemoryTool(
           { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
           playbookId,
           expectedVersion,
+          { kind: "conversation", id: event.read.runId, revision: 1,
+            sourceKey: `${event.read.runId}:${playbookId}:${expectedVersion}` },
         ),
       );
       if (!playbook) {

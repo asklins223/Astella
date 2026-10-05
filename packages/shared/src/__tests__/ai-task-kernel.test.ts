@@ -378,6 +378,23 @@ test("异常也能分类：超时字样算 timeout、租约字样算 lease_lost�
   assert.equal(classifyThrownAsStepFailure("字符串也能进来").class, "transport");
 });
 
+test("确定性 HTTP 拒绝及其 cause 不重放；超时、限流和服务故障仍保留一次重试", async () => {
+  for (const status of [400, 401, 402, 403, 404, 422, 408, 429, 503]) {
+    const original = Object.assign(new Error(`provider HTTP ${status}`), { status });
+    const wrapped = new Error("governed provider rejected", { cause: original });
+    const retryable = [408, 429, 503].includes(status);
+    const h = harness([wrapped, ok("恢复后的结果")]);
+    const receipt = await runAiTask(h.definition, { ctx: ctx(), attempt: attempt(), currentActiveTransaction: NO_TX });
+    assert.equal(h.executeCalls, retryable ? 2 : 1, `HTTP ${status} 的实际重放次数`);
+    assert.equal(h.commitCalls, retryable ? 1 : 0);
+    assert.equal(receipt.outcome, retryable ? "committed" : "failed");
+    if (!retryable) {
+      assert.equal(receipt.failure?.class, [401, 402, 403].includes(status) ? "permission" : "invalid_input");
+      assert.match(receipt.failure!.message, new RegExp(`HTTP ${status}`));
+    }
+  }
+});
+
 test("外部调用边界：活动事务里跑内核 ⇒ 当场拒绝，一次模型都不发", async () => {
   // 类型上 `execute` 拿不到事务对象，但闭包能偷到——这一个读数挡的就是偷的那种
   // （D5 §5.2 第二件）。这里给的是"有活动事务"的返回值；真实作用域那一头见集测。

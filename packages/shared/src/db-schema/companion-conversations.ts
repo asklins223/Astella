@@ -154,9 +154,11 @@ export const companionTurnRuns = pgTable(
     // Companion Agent v1 frozen runtime state.
     permissionLevel: text("permission_level").$type<"read_only" | "guided" | "full">(),
     permissionSnapshot: jsonb("permission_snapshot"),
+    turnInterpretation: jsonb("turn_interpretation"),
     budgetSnapshot: jsonb("budget_snapshot"),
     stepCount: integer("step_count").notNull().default(0),
     toolCallCount: integer("tool_call_count").notNull().default(0),
+    modelCallCount: integer("model_call_count").notNull().default(0),
     /** 已消耗的 Agent 执行毫秒数（跨确认续跑累计，不含等待用户确认的时间）。 */
     agentElapsedMs: integer("agent_elapsed_ms").notNull().default(0),
     waitingProposalId: uuid("waiting_proposal_id"),

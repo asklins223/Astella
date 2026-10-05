@@ -70,8 +70,11 @@ export function useSurfaceProjection<T>(
       else setFailure(message);
     } finally {
       if (request !== requestRef.current) return;
-      if (preservesExistingData) setRefreshing(false);
-      else setLoading(false);
+      // Focus can replace an explicit reload with a silent request. That
+      // newest request owns both flags, including the older request's loading
+      // flag; otherwise successful data can leave the page disabled forever.
+      setLoading(false);
+      setRefreshing(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);

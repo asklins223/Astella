@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useRoomStore } from "../../app/room-store";
 import { paperSpringAtRest, stepPaperSpring, type PaperSpring } from "../motion/paper-spring";
 
-export type HudMenuKind = "space" | "account";
+export type HudMenuKind = "space" | "account" | "guide";
 
 /** Keep one presentation object through close/reopen. Logical input changes immediately. */
 export function useHudPopoverMotion(kind: HudMenuKind | null, rootRef: RefObject<HTMLDivElement | null>,

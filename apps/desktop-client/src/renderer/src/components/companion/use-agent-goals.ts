@@ -3,6 +3,7 @@ import type { AgentRunV1 } from "@ailearn/shared/agent-contracts";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../app/desktop-client";
 import { useRoomStore } from "../../app/room-store";
 import { notifyCompanion } from "./companion-notifications";
+import { COMPANION_RECORDS_CHANGED } from "./companion-events";
 
 export const agentGoalActive = (run: AgentRunV1) => ["queued", "running", "waiting"].includes(run.status);
 export type AgentGoalsController = ReturnType<typeof useAgentGoals>;
@@ -62,8 +63,9 @@ export function useAgentGoals(chatPhase: string, onReady: (runId: string) => voi
     void refresh();
     const focus = () => { if (!document.hidden) void refresh(); };
     window.addEventListener("focus", focus);
+    window.addEventListener(COMPANION_RECORDS_CHANGED, focus);
     document.addEventListener("visibilitychange", focus);
-    return () => { ++sequence.current; window.removeEventListener("focus", focus); document.removeEventListener("visibilitychange", focus); };
+    return () => { ++sequence.current; window.removeEventListener("focus", focus); window.removeEventListener(COMPANION_RECORDS_CHANGED, focus); document.removeEventListener("visibilitychange", focus); };
   }, [scope, refresh]);
   useEffect(() => { if (chatPhase !== "sending") void refresh(); }, [chatPhase, refresh]);
   const items = snapshot.scope === scope ? snapshot.items : [];
@@ -89,14 +91,26 @@ export function useAgentGoals(chatPhase: string, onReady: (runId: string) => voi
     finally { if (current() && request === moreSequence.current) { moreLocked.current = false; setMoreLoading(false); } }
   }, [scope, snapshot]);
 
-  const change = useCallback(async (run: AgentRunV1, action: "cancel" | "pause" | "resume" | { goal: string }) => {
+  const ensure = useCallback(async (runId: string) => {
+    try {
+      const run = unwrapGatewayResult(await window.ailearn.agent.getRun({ meta: createRequestMeta(), runId }));
+      if (!current()) return;
+      setSnapshot(previous => {
+        const known = previous.items.find(item => item.runId === run.runId);
+        const newest = known && (known.revision > run.revision || (known.revision === run.revision && known.updatedAt >= run.updatedAt)) ? known : run;
+        return { ...previous, scope, expanded: true, items: [newest, ...previous.items.filter(item => item.runId !== run.runId)] };
+      });
+      setError(null);
+    } catch (cause) { if (current()) setError(gatewayErrorMessage(cause)); }
+  }, [scope]);
+  const change = useCallback(async (run: AgentRunV1, action: "cancel" | "pause" | "resume" | { goal: string; longGoal?: AgentRunV1["longGoal"] }) => {
     if (locked.current || !current()) return false;
     locked.current = true; ++sequence.current; setPending(run.runId); setError(null);
     try {
       const meta = createRequestMeta();
       const result = typeof action === "string"
         ? await window.ailearn.agent.controlRun({ meta, runId: run.runId, request: { expectedRevision: run.revision, action } })
-        : await window.ailearn.agent.reviseRun({ meta, runId: run.runId, request: { expectedRevision: run.revision, goal: action.goal } });
+        : await window.ailearn.agent.reviseRun({ meta, runId: run.runId, request: { expectedRevision: run.revision, ...action } });
       const updated = unwrapGatewayResult(result);
       if (!current()) return false;
       ++sequence.current;
@@ -108,6 +122,6 @@ export function useAgentGoals(chatPhase: string, onReady: (runId: string) => voi
       return false;
     } finally { if (current()) { locked.current = false; setPending(null); } }
   }, [scope, refresh]);
-  return { items, scope, error, loading, pending, refresh, change, loadMore, moreLoading, moreError,
+  return { items, scope, error, loading, pending, refresh, change, ensure, loadMore, moreLoading, moreError,
     nextCursor: snapshot.scope === scope ? snapshot.nextCursor : null };
 }

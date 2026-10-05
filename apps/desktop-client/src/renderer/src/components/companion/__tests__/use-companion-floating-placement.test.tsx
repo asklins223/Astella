@@ -10,7 +10,7 @@ let roleBox = { left: 1150, right: 1410, top: 420, bottom: 780, width: 260, heig
 let animatedRoleBox: typeof roleBox | null = null;
 let hudBox: typeof roleBox | null = null;
 const bodyBox = { left: 80, right: 1010, top: 100, bottom: 750, width: 930, height: 650 };
-function Harness({ papers = false, open = true, input = false, active = true, home = true, controls = true }: { papers?: boolean; open?: boolean; input?: boolean; active?: boolean; home?: boolean; controls?: boolean }) {
+function Harness({ papers = false, open = true, input = false, active = true, home = true, controls = true, height = 180, bounded = false }: { papers?: boolean; open?: boolean; input?: boolean; active?: boolean; home?: boolean; controls?: boolean; height?: number; bounded?: boolean }) {
   const anchor = useRef<HTMLDivElement>(null);
   const floating = useRef<HTMLDivElement>(null);
   const head = useRef<HTMLDivElement>(null);
@@ -21,7 +21,7 @@ function Harness({ papers = false, open = true, input = false, active = true, ho
     <div className="companion-presence" data-surface={home ? "room" : "notes"}><div className="companion-scene-anchor"><div className="companion-visual-shell"><div className="companion-character-motion"><div className="window-live2d" /></div></div><div ref={anchor} className="companion-hud" data-controls-side={controlsSide} data-layout-width="260" data-layout-height="360">{controls ? <div className="companion-hud__controls" data-layout-width="44" data-layout-height="179"><button aria-label="气泡轻聊" /></div> : null}</div></div></div>
     {createPortal(<div ref={floating} data-side={side}><div ref={head}>{open ? input
       ? <section className="companion-hud__composer" data-layout-height="124"><textarea aria-label="轻聊输入" /></section>
-      : <p data-layout-height="180">这是真实高度的回复区域</p> : null}</div><div className="companion-hud__papers">{papers ? <article>额外的卡片内容</article> : null}</div></div>, document.body)}
+      : <p data-layout-height={height} data-bounded-height={bounded || undefined}>这是真实高度的回复区域</p> : null}</div><div className="companion-hud__papers">{papers ? <article>额外的卡片内容</article> : null}</div></div>, document.body)}
   </div>;
 }
 
@@ -38,7 +38,9 @@ beforeEach(() => {
     return Number(this.dataset.layoutWidth) || 0;
   });
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
-    return Number(this.dataset.layoutHeight) || 0;
+    const naturalHeight = Number(this.dataset.layoutHeight) || 0;
+    const cap = Number.parseFloat(this.closest<HTMLElement>("[data-side]")?.style.getPropertyValue("--companion-head-max-h") ?? "");
+    return this.dataset.boundedHeight && this.style.maxHeight !== "none" && Number.isFinite(cap) ? Math.min(naturalHeight, cap) : naturalHeight;
   });
   // Animated overflow is intentionally much taller than the layout boxes.
   vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(680);
@@ -79,6 +81,18 @@ it("uses stable layout height rather than animated scroll overflow and hides a m
   roleBox = { ...roleBox, width: 0, height: 0 };
   view.rerender(<Harness />);
   expect(floating.dataset.placementReady).toBeUndefined();
+});
+
+it("grows for a task with more results and shrinks again without reusing the old flex cap", () => {
+  const view = render(<Harness height={120} bounded />);
+  const floating = document.querySelector<HTMLElement>("[data-side]")!;
+  expect(floating.style.getPropertyValue("--companion-head-max-h")).toBe("120px");
+  view.rerender(<Harness height={310} bounded />);
+  expect(floating.style.getPropertyValue("--companion-head-max-h")).toBe("310px");
+  expect(floating.style.getPropertyValue("--companion-head-y")).toBe("94px");
+  view.rerender(<Harness height={160} bounded />);
+  expect(floating.style.getPropertyValue("--companion-head-max-h")).toBe("160px");
+  expect(floating.style.getPropertyValue("--companion-head-y")).toBe("244px");
 });
 
 function screenInput() { return document.querySelector("textarea[aria-label='轻聊输入']"); }

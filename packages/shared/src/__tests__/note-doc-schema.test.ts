@@ -269,6 +269,16 @@ test("删除线两侧对称：序列化写 ~~，解析也认得 ~~", () => {
   );
 });
 
+test("未闭合美元金额不能跨越行内代码，把代码里的美元当公式闭合符", () => {
+  assert.deepEqual(parseInlineMarkdown("价格 $100 和 $200；`$P=UI$`；公式 $P=UI$。"), [
+    { kind: "text", text: "价格 $100 和 $200；" },
+    { kind: "code", text: "$P=UI$" },
+    { kind: "text", text: "；公式 " },
+    { kind: "math", text: "$P=UI$", value: "P=UI", display: false },
+    { kind: "text", text: "。" },
+  ]);
+});
+
 test("批注用阅读页真正显示出来的字做服务端选区校验", () => {
   assert.equal(noteBlockRenderedTextV1("paragraph", "有 **粗体** 和 [链接](https://a.test) ![图](x)\\~\n下一行"), "有 粗体 和 链接 ~下一行");
   assert.equal(noteBlockRenderedTextV1("paragraph", "| 名称 | 说明 |\n| --- | --- |\n| 伴星 | 用来互动 |"), "名称说明伴星用来互动");

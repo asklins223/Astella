@@ -47,7 +47,7 @@ const facts = {
 };
 
 function material(pieces: DiaryPiece[]): DiaryMaterial {
-  return { pieces, subject: pickDiarySubject(pieces), embeds: [], previousOpenings: [], quietDay: false };
+  return { pieces, subject: pickDiarySubject(pieces), embeds: [], previousOpenings: [], previousMotifs: [], quietDay: false };
 }
 
 const draft: DiaryDraft = {
@@ -131,7 +131,12 @@ test("没走到选择（失败行）时 selected_id 与 source_event_ids 都是�
   // source_event_ids 同理（0363）——没有素材就没有来源，撤权时也就无从匹配。
   const query = upsert({ draft: null, guard: undefined, failureReason: "model_unavailable" });
   assert.equal(param(query, 8), null, "selected_id 应为 null");
-  assert.equal(param(query, 9), null, "source_event_ids 应为 null");
+  // 空**数组**而不是 null：这一列是 text[]，「没选过」是它自己的一个取值
+  // （`{}`），不是「未知」。写成 null 会让 `source_event_ids @> ARRAY[...]`
+  // 求值为 NULL 而不是 false，撤权遮蔽那条触发器就再也匹配不到这一篇。
+  // 2026-10-05：这里原本断的是 null，而它在驱动层根本发不出去——JS 数组会被
+  // postgres.js 序列化成行构造器 `()`，空数组直接是语法错误（见 pg-text-array.ts）。
+  assert.equal(param(query, 9), "{}", "source_event_ids 应为空数组字面量");
   assert.equal(param(query, 13), "failed", "没有成稿时状态是 failed，不是 generated");
   assert.equal(param(query, 14), "model_unavailable");
 });

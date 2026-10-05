@@ -1545,6 +1545,8 @@ describe("DesktopGateway", () => {
     }]);
     await ns_companion.speakCompanionVoice(gateway.gatewayTransport, { ...request, purpose: "notification" }, "request-notification-voice");
     expect(ttsRequests[1].body).toEqual({ text: request.text, voice: "zh-CN-XiaoxiaoNeural", purpose: "notification" });
+    await ns_companion.speakCompanionVoice(gateway.gatewayTransport, { ...request, purpose: "guidance" }, "request-guide-voice");
+    expect(ttsRequests[2].body).toEqual({ text: request.text, voice: "zh-CN-XiaoxiaoNeural", purpose: "guidance" });
   });
 
   it("fails closed on non-audio, oversized and failed companion voice responses", async () => {
@@ -2291,8 +2293,8 @@ describe("account AI settings", () => {
     await gateway.connect();
     const projection = await ns_source.getCapabilities(gateway.gatewayTransport, );
 
-    // 剪贴板、ASR 与自动更新通道已经实现（clipboardReadLinks /
-    // companionVoiceTranscribe / updateCheck），其余仍没有对应通道——答案来自通道
+    // 剪贴板、本机 ASR 模型管理与自动更新通道已经实现（clipboardReadLinks /
+    // companionVoiceAsrModelState / updateCheck），其余仍没有对应通道——答案来自通道
     // 注册表，而不是服务端。自动更新 2026-10-04 接线：检查 / 下载 / 重启安装，
     // 更新源是 GitHub Releases 直连。
     expect(projection.nativeCapabilities).toEqual({

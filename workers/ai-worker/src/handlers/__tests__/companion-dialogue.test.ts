@@ -192,6 +192,34 @@ test("T0：回合编码是原生多轮（历史是真 messages，上下文是 sy
   }
 });
 
+test("方法目录、人格和固定协议进入同一 system 消息，当前提问仍为最后一条 user", () => {
+  const messages = buildCompanionPersonaMessages({
+    userText: "今天只是想聊晚饭。", recentMessages: [], pageContext: null,
+    methodCatalog: "<method_catalog>先读新材料，再整理速看。</method_catalog>",
+    petProfile: { name: "小伴星", speakingStyle: "简洁温暖", personalityTags: [], examples: [] },
+  });
+  assert.equal(messages.filter(message => message.role === "system").length, 1);
+  assert.ok(String(messages[0].content).includes(COMPANION_IDENTITY_BOUNDARY_V2));
+  assert.match(String(messages[0].content), /小伴星/);
+  assert.match(String(messages[0].content), /<method_catalog>先读新材料/);
+  assert.deepEqual(messages.at(-1), { role: "user", content: "今天只是想聊晚饭。" });
+});
+
+test("超预算的页面或旧摘要整块省略，当前问题和确定性接续仍完整保留", () => {
+  const receipts: import("@ailearn/agent-core").AgentContextReceipt[] = [];
+  const messages = buildCompanionPersonaMessages({
+    userText: "今晚想做什么菜？", recentMessages: [], pageContext: { old: "x".repeat(20000) },
+    conversationSummary: `<conversation_summary>${"旧任务".repeat(6000)}</conversation_summary>`,
+    continuationData: "<continuation_data>current watermark</continuation_data>",
+    contextReceipt: values => receipts.push(...values),
+  });
+  assert.equal(receipts.find(item => item.id === "page_context")?.status, "budget_omitted");
+  assert.equal(receipts.find(item => item.id === "summary")?.status, "budget_omitted");
+  assert.match(String(messages[0].content), /<continuation_data>current watermark<\/continuation_data>/);
+  assert.ok(!String(messages[0].content).includes('"old":"x'));
+  assert.deepEqual(messages.at(-1), { role: "user", content: "今晚想做什么菜？" });
+});
+
 test("grounded tutor：只把受限证据放入 provider 输入", () => {
   const messages = buildCompanionPersonaMessages({
     userText: "这个结论为什么成立？",
@@ -828,6 +856,7 @@ test("containsCompanionInternalToken：上下文回显与裸 uuid 都算泄露�
   assert.equal(containsCompanionInternalToken("我把 activeMemories 里那条念给你听"), true);
   assert.equal(containsCompanionInternalToken("pageContext 显示你在笔记页"), true);
   assert.equal(containsCompanionInternalToken("3f2e1369-7595-466c-af76-6cea5ee7440f 这张卡"), true);
+  assert.equal(containsCompanionInternalToken("已完成（runId 5864b838…，版本 1）"), true);
   assert.equal(containsCompanionInternalToken("刚看到 character.cue 变了"), true);
   // 正常中文句子、以及她真该说的话，都不许被这条误伤
   assert.equal(containsCompanionInternalToken("今天想继续昨天那三个公式吗？"), false);
@@ -1159,4 +1188,21 @@ test("unverifiedQuoteClaims：课本话冒充原文要红，真引文要绿", ()
 
 test("normalizeQuotedPassage：空格、Markdown 标记与斜杠不算差异", () => {
   assert.equal(normalizeQuotedPassage("> I = U / R。"), normalizeQuotedPassage("I=U/R。"));
+});
+
+test("引文核对：计算示例的引用排版不会触发重复纠正，原文声明仍核对", () => {
+  const example = "> **示例检查**：如果 $k=100\\ \\text{N/m}$，$x=0.05\\ \\text{m}$，则 $F=5\\ \\text{N}$。";
+  assert.deepEqual(unverifiedQuoteClaims(example, "胡克定律 F=kx，仅在弹性限度内适用。"), []);
+  const note = "> **注意**：如果题目中给出的长度是厘米（cm），必须先换算成米（m）再代入计算，否则结果会出错。";
+  assert.deepEqual(unverifiedQuoteClaims(note, "胡克定律 F=kx，仅在弹性限度内适用。"), []);
+  assert.equal(unverifiedQuoteClaims("原文的提醒：\n\n" + note, "胡克定律 F=kx").length, 1);
+  assert.equal(unverifiedQuoteClaims("笔记原文如下：\n\n" + example, "胡克定律 F=kx").length, 1);
+  assert.equal(unverifiedQuoteClaims("> 原文的示例：弹簧总是满足 F=kx，没有任何限制。", "胡克定律 F=kx").length, 1);
+});
+
+test("引文核对：不同引用块独立匹配，不能用示例放行另一段假引文", () => {
+  const first = "电流与电压成正比，电阻保持不变。";
+  const second = "公式为 I=U/R，单位采用伏特、欧姆与安培。";
+  assert.deepEqual(unverifiedQuoteClaims(`> ${first}\n\n解释一会儿。\n\n> ${second}`, `${first}\n${second}`), []);
+  assert.equal(unverifiedQuoteClaims("> 示例：设电压12伏，电阻4欧姆，电流3安培。\n\n> 电流永远不受电阻影响，原文明确这样写。", first).length, 1);
 });

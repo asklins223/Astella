@@ -15,6 +15,7 @@ export const COMPANION_AGENT_CONTRACT_VERSION = 1 as const;
 export const COMPANION_AGENT_MAX_STEPS = 8;
 export const COMPANION_AGENT_MAX_TOOL_CALLS_PER_STEP = 4;
 export const COMPANION_AGENT_MAX_TOOL_CALLS = 12;
+export const COMPANION_AGENT_MAX_MODEL_CALLS = 12;
 export const COMPANION_AGENT_DEADLINE_MS = 120_000;
 export const COMPANION_AGENT_TOOL_TIMEOUT_MS = 10_000;
 
@@ -188,6 +189,7 @@ export const companionAgentBudgetSnapshotV1Schema = z.object({
   maxSteps: z.number().int().positive().max(COMPANION_AGENT_MAX_STEPS),
   maxToolCallsPerStep: z.literal(COMPANION_AGENT_MAX_TOOL_CALLS_PER_STEP),
   maxToolCalls: z.literal(COMPANION_AGENT_MAX_TOOL_CALLS),
+  maxModelCalls: z.literal(COMPANION_AGENT_MAX_MODEL_CALLS).optional(),
   deadlineMs: z.literal(COMPANION_AGENT_DEADLINE_MS),
 }).strict();
 export type CompanionAgentBudgetSnapshotV1 = z.infer<

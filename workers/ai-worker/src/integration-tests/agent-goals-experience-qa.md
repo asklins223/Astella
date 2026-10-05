@@ -215,3 +215,13 @@ L 的错误信封及结构守卫经独立检查：API 32/32、shared 11/11，补
 API 与 worker 的制卡领域包开发/生产构建均通过。修复 worker 容器缺少新包的实际运行故障后，仅重建并启动这两个服务，核对均 healthy；桌面重新连接后能接续原目标。没有将构建成功替代真实 Agent 制卡验收。
 
 制卡 adapter、领域执行引用、父子预算、持久唤醒/恢复/取消和可审核交付绑定仍需实施。当前没有注册虚假 jobs 制卡任务，也没有把 outbox 接受或 run 状态当作完整可审核交付证明。完整成长闭环、制卡体验与阶段 2–4 仍未完成。
+
+## 阶段 1 制卡接入（2026-10-04）
+
+P/Q/R 三个实际 DeepSeek Harness 会话（space-bunny-free · Max）并行实现，主会话负责前端和严格审查。Q 未形成最终报告时主会话接手关键绑定/围栏/真实事务端口；R 按审查修正夹具并运行真实专用库，不以类型检查代替整链。具体范围、问题与最终证据见 [制卡主会话验收](../../../outputs/agent-42-implementation/phase1-card-root-acceptance.md)。
+
+已合入：公共 operation 的 execution/result、真实 card run + 初始 outbox、能力 manifest 与领域创建适配、note/card 共同上下文与逐次 provider 预算、受控初始绑定和父围栏、取消/修订/持久恢复/结果核对；零推荐是正常结果。候选需要用户审核保存，不自动激活或排复习。轻气泡提供指定批次入口，详细结果 Markdown 在手记显示。
+
+验证：新增 19 项 PostgreSQL 集测全部通过，覆盖幂等作用域、租约、逐次重试预算、父围栏前后变化、真实候选交付、零推荐、结果未知有限核对、重复/乱序和恢复；旧笔记/历史/拓展/偏好 34 pass + 1 实际模型门控 skip，现役制卡 V3 24 pass。主会话补验 completed 父目标之后实际领域审核动作仍可执行、旧目标不重开且预算不变，1 pass。合入后的前端 3 文件 / 33 项通过，shared/API/desktop/worker/core/host 类型检查通过，API/worker 构建通过。日常库 0373 应用成功，角色引导成功；角色引导还在尚未安装 0373 的旧隔离库通过，相关守卫 19/19。API ready 与 worker metrics 正常。
+
+真实窗口和实际模型制卡链尚未通过：最后一轮桌面热更新后出现空白页，原生窗口工具随后返回 noWindowsAvailable；未成功提交新的制卡目标，故障原因待定位。CJS 构建仍有既有 import.meta 警告。重启 worker 出现记忆 retention sweep 错误；本批 roles 差异只涉及制卡函数和 evidence_quote_copies_v2，不修改既有 retention 函数，需独立核对其原因。阶段 1 的完整成长/候选审核回执及后续阶段仍按方案继续，不把本批能力接入称为全方案完成。

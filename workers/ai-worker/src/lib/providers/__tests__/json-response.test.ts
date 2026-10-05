@@ -9,7 +9,22 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { extractJsonFromText } from "../json-response.ts";
+import { buildAgentTurnMessages, extractJsonFromText } from "../json-response.ts";
+
+test("agent transport keeps policy/persona in one system block and the full goal once", () => {
+  const goal = "g".repeat(8000);
+  const messages = buildAgentTurnMessages("host policy", [
+    { role: "system", content: "persona and scoped memory" },
+    { role: "user", content: goal },
+    { role: "assistant", content: "", toolCalls: [{ id: "call-1", name: "agent_calculate", arguments: { expression: "12/4" } }] },
+    { role: "tool", toolCallId: "call-1", content: '{"result":3}' },
+  ]);
+  assert.deepEqual(messages.map(message => message.role), ["system", "user", "assistant", "tool"]);
+  assert.equal(messages[0].content, "host policy\n\npersona and scoped memory");
+  assert.equal(messages[1].content, goal);
+  assert.equal(messages[3].tool_call_id, "call-1");
+  assert.equal(messages[2].tool_calls?.[0].function.arguments, '{"expression":"12/4"}');
+});
 
 test("单一 JSON 直接解析（含 ```json 围栏）", () => {
   assert.deepEqual(extractJsonFromText('{"atoms":[1]}'), { atoms: [1] });

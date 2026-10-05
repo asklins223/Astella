@@ -317,22 +317,13 @@ fingerprint: `mock:${this.modelId}:${this.visionModelId}:native_tools`,
       .map((message) => String(message.content ?? ""))
       .join("\n");
 
-    /**
-     * 工具意图分类器（`companion-tool-intent.ts`）问的是"下一步是否必须调用工具"，
-     * 并要求只回 `{"needsTool":true|false}`。mock 以前回的是那句 `{"status":"mock"}`
-     * ——JSON 合法但没有那个键 ⇒ 分类器**恒为 null**，而 null 走的正是 fail-open 那一支。
-     * 于是所有 mock 驱动的用例都悄悄站在"分类器读不到东西"这个非默认状态上。
-     * 现在按合同回一个布尔（默认 false＝不需要工具，与这些用例本来的形状一致），
-     * 需要"她说要做事"那一支的用例用 `【mock:wants-tool】` 点名。
-     */
-    const isToolIntentCall = messages.some((message) =>
-      message.role === "system"
-      && String(typeof message.content === "string" ? message.content : "").includes("needsTool"));
+    // Fixture attention mirrors the production structured contract.
+    const isToolIntentCall = messages.some(message => message.role === "system"
+      && String(message.content).includes("goalObjectIndex"));
     if (isToolIntentCall) {
-      const needsTool = messages.some((message) =>
-        message.role === "user"
-        && String(typeof message.content === "string" ? message.content : "").includes("【mock:wants-tool】"));
-      const decided = JSON.stringify({ needsTool });
+      const action = userContent.includes("【mock:wants-tool】");
+      const decided = JSON.stringify({ intent: action ? "task" : "conversation", toolUse: action ? "act" : "none",
+        subjects: [], goalRelation: action ? "new" : "unrelated", candidateOperations: [], ambiguities: [] });
       return { content: decided, usage: this.estimateUsage(userContent, decided) };
     }
 

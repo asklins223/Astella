@@ -22,11 +22,13 @@ import { plainCompanionBubbleText } from "./companion-markdown";
 import { beginNoteReplySaveAttempt, isReadyNoteReplyForSave, resolveNoteReplySaveTarget } from "./note-reply-save";
 import { CompanionHistoryDrawer } from "./CompanionHistoryDrawer";
 import { visibleTurnFailure } from "./companion-hud-state";
+import { shouldSendCompanionOnEnter } from "./companion-composer-key";
 import { useCompanionInteraction } from "./use-companion-interaction";
 import { useCompanionFloatingPlacement } from "./use-companion-floating-placement";
 import { useCompanionPaperPlacement } from "./use-companion-paper-placement";
 import { CompanionGoalBubble } from "./CompanionGoalBubble";
 import { useAgentGoals } from "./use-agent-goals";
+import { COMPANION_GOAL_JOURNAL_OPEN } from "./companion-events";
 import { CompanionReplyPapers, CompanionStatusPaper } from "./CompanionReplyPapers";
 import { CompanionNoteExplanationContext } from "./CompanionNoteExplanationContext";
 import { useNoteCompanionExplanations } from "./note-companion-explanation";
@@ -148,6 +150,16 @@ export function CompanionHud({
   });
   useEffect(() => { setGoalBubbleOpen(false); setSelectedGoalId(null); setGoalHistoryTarget(null); }, [goals.scope]);
   useEffect(() => { if (chat.mode !== "closed") setGoalBubbleOpen(false); if (chat.mode !== "history") setGoalHistoryTarget(null); }, [chat.mode]);
+  useEffect(() => {
+    const open = (event: Event) => {
+      const target = (event as CustomEvent<{ runId: string; scope: number }>).detail;
+      if (!target || target.scope !== useRoomStore.getState().workspaceScopeRevision || typeof target.runId !== "string") return;
+      interaction.closeVoice(); setSettingsOpen(false); setGoalBubbleOpen(false);
+      void goals.refresh(); setGoalHistoryTarget({ runId: target.runId, visit: Date.now() }); chat.setMode("history");
+    };
+    window.addEventListener(COMPANION_GOAL_JOURNAL_OPEN, open);
+    return () => window.removeEventListener(COMPANION_GOAL_JOURNAL_OPEN, open);
+  }, [goals.scope, goals.refresh, chat.setMode, interaction.closeVoice]);
   const { input, setInput, voice } = interaction;
   /** 回合结束后只发布一次的稳定摘要（方案 §3 无障碍）：流式文本不再是持续 live region。 */
   const [turnSummary, setTurnSummary] = useState("");
@@ -1257,7 +1269,7 @@ export function CompanionHud({
                     value={input}
                     onChange={(event) => setInput(event.currentTarget.value)}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                      if (shouldSendCompanionOnEnter(event)) {
                         event.preventDefault();
                         void sendText();
                       }
@@ -1446,7 +1458,7 @@ export function CompanionHud({
         side={side}
         onBack={() => {
           chat.setMode("conversation");
-          window.requestAnimationFrame(() => moreControlRef.current?.focus({ preventScroll: true }));
+          window.requestAnimationFrame(() => composerRef.current?.focus({ preventScroll: true }));
         }}
         onClose={() => {
           chat.setMode("closed");

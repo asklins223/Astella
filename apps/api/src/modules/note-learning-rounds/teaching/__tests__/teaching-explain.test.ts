@@ -6,6 +6,9 @@
  * 落库与权限那半边在 `note-learning-round-teaching-postgres.integration.ts`（双口径）。
  */
 import { test } from "node:test";
+
+// 每一次外发的真实身份：provider 的治理出口按它建，缺了就抛错。
+const scope = { workspaceId: "00000000-0000-0000-0000-000000000001", userId: "00000000-0000-0000-0000-000000000002" };
 import assert from "node:assert/strict";
 import {
   NOTE_TEACHING_EXPLAIN_TASK_ID,
@@ -90,9 +93,9 @@ test("确定性解释：材料里没有可读正文时返回 null（不编一句
 
 test("确定性 provider：拼不出来时是 invalid_input（不可重试那一类）", async () => {
   const provider = deterministicTeachingExplainProviderV1();
-  const ok = await provider(input(), { signal: new AbortController().signal });
+  const ok = await provider(input(), { signal: new AbortController().signal, scope });
   assert.equal(ok.ok, true);
-  const empty = await provider(input({ blocks: [] }), { signal: new AbortController().signal });
+  const empty = await provider(input({ blocks: [] }), { signal: new AbortController().signal, scope });
   assert.equal(empty.ok, false);
   assert.equal((empty as { class: string }).class, "invalid_input");
 });
@@ -112,6 +115,7 @@ test("任务定义：身份与预算形状（换 provider 不该动这些）", a
   const task = createNoteTeachingExplainTaskV1({
     provider: deterministicTeachingExplainProviderV1(),
     input: input(),
+    scope,
   });
   assert.equal(task.id, NOTE_TEACHING_EXPLAIN_TASK_ID);
   assert.equal(task.version, NOTE_TEACHING_EXPLAIN_TASK_VERSION);

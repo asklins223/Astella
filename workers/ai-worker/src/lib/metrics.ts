@@ -144,6 +144,11 @@ export const companionDiaryTotal = new Counter({
   registers: [registry],
 });
 
+/** Provider 指标的读取口：测试与 /metrics 自检都用它，不另开一条聚合路径。 */
+export async function providerMetricSnapshot(): Promise<string> {
+  return registry.metrics();
+}
+
 // ─── Provider 指标（ADR-0006 §2 Provider 维度）───────────────────────────
 //
 // 此前 worker 侧只有 Job 维度，Provider 维度（模型调用）一个指标都没有：
@@ -170,10 +175,15 @@ export const PROVIDER_CALL_KINDS = ["chat", "stream", "agent_turn", "embed"] as 
 export const PROVIDER_CALL_OUTCOMES = [
   "success",
   "timeout",
+  "cancelled",
+  "blocked",
   "schema_failure",
   "config_error",
   "error",
 ] as const;
+
+export type ProviderCallKind = (typeof PROVIDER_CALL_KINDS)[number];
+export type ProviderCallOutcome = (typeof PROVIDER_CALL_OUTCOMES)[number];
 
 /**
  * provider 调用计数器（按 provider × 方法 × 终态）。
@@ -262,6 +272,53 @@ export const providerCallTokensTotal = new Counter({
   labelNames: ["provider", "kind", "direction"] as const,
   registers: [registry],
 });
+
+/**
+ * 记一次外发调用。**全仓唯一**碰这三个 provider 指标的地方。
+ *
+ * ## 为什么必须是这一个函数
+ *
+ * 调用量、耗时、token 是三份不同的量，但它们**描述同一次外发**。若让
+ * `createGovernedProvider` 自己分别 inc/observe，任何一个漏掉的分支
+ * （抛错的 catch、流式没有 usage、被治理门拦下根本没发出去）都会让三份量
+ * 互相矛盾——于是"调用数对得上但 token 对不上"这种问题无法定位。
+ * 收口到一个函数之后：**一次外发 = 一次 recordProviderCall**，
+ * 三份量要么一起记、要么一起不记。
+ *
+ * ## token 只在真的有 usage 时记
+ *
+ * 流式接口的返回类型不带 usage（`AIProvider.chatCompletionStream` 只回
+ * `{content, toolCalls?, finishReason?}`）。那种情况 `promptTokens`/`completionTokens`
+ * 留空 → 这一次不递增 token 计数器，**不用 0 补齐**：补 0 会让"没报 usage"
+ * 和"真的没用 token"在图上长得一样，于是流式成本永远显示为 0 而不是"未知"。
+ */
+export function recordProviderCall(input: {
+  provider: string;
+  kind: ProviderCallKind;
+  outcome: ProviderCallOutcome;
+  /** 这一次外发从开始到结束的墙钟（秒）。被治理门拦下时是接近 0 的值。 */
+  durationSeconds: number;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+}): void {
+  providerCallsTotal.inc({
+    provider: input.provider,
+    kind: input.kind,
+    outcome: input.outcome,
+  });
+  providerCallDurationSeconds.observe(
+    { provider: input.provider, kind: input.kind },
+    input.durationSeconds,
+  );
+  const prompt = input.promptTokens;
+  const completion = input.completionTokens;
+  if (typeof prompt === "number" && Number.isFinite(prompt) && prompt > 0) {
+    providerCallTokensTotal.inc({ provider: input.provider, kind: input.kind, direction: "prompt" }, prompt);
+  }
+  if (typeof completion === "number" && Number.isFinite(completion) && completion > 0) {
+    providerCallTokensTotal.inc({ provider: input.provider, kind: input.kind, direction: "completion" }, completion);
+  }
+}
 
 /**
  * 启动一个轻量 HTTP 服务器暴露 /metrics 端点。

@@ -1,16 +1,43 @@
 import { z } from "zod";
-import { postJsonToPublicEndpoint, type PublicJsonRequester } from "@ailearn/shared/public-json-http";
+import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
+import { createGovernedApiRequester } from "../../../lib/ai-governance.ts";
+import { productionAiGovernancePorts } from "../../../governance/ai-governance-runtime.ts";
 import { roundTeachingContentV1Schema } from "@ailearn/shared/note-learning-round-contracts";
-import { firstNonEmpty } from "../../../lib/assessment-critic-config.ts";
-import type { TeachingExplainInputV1, TeachingExplainProviderV1 } from "./teaching-explain.ts";
+import { resolveSystemPlatform } from "@ailearn/shared/platform-config-node";
+import { resolveDashScopeTextEndpoint, resolveOpenAIChatCompletionsUrl } from "@ailearn/shared/ai-endpoints";
+import type { TeachingExplainInputV1, TeachingExplainProviderV1, TeachingExplainScope } from "./teaching-explain.ts";
 import { roundTargetDraftSchema } from "./round-target-contract.ts";
 
 export type TeachingModelConfig = { url: string; key: string; model: string };
 export function resolveTeachingModelConfig(): TeachingModelConfig | null {
-  const url = firstNonEmpty(process.env.NOTE_TEACHING_URL, process.env.ASSESSMENT_CRITIC_URL);
-  const key = firstNonEmpty(process.env.NOTE_TEACHING_KEY, process.env.ASSESSMENT_CRITIC_KEY, process.env.DASHSCOPE_API_KEY);
-  const model = firstNonEmpty(process.env.NOTE_TEACHING_MODEL, process.env.ASSESSMENT_CRITIC_MODEL) ?? "qwen-plus";
-  return url && key ? { url, key, model } : null;
+  const platform = resolveSystemPlatform("text_generation");
+  if (!platform?.baseUrl || !platform.apiKey || !platform.model || platform.type === "mock") return null;
+  if (!["openai_compatible", "dashscope", "siliconflow"].includes(platform.type)) {
+    throw new Error("Teaching requires a configured JSON chat provider in text_generation");
+  }
+  const url = platform.type === "dashscope" ? resolveDashScopeTextEndpoint(platform.baseUrl).url
+    : resolveOpenAIChatCompletionsUrl(platform.baseUrl);
+  return { url, key: platform.apiKey, model: platform.model };
+}
+
+/** The task identity that owns every teaching model call, for cost and audit bucketing. */
+const TEACHING_EXPLAIN_OPERATION = "note_teaching_explain";
+
+/**
+ * 讲解这一次外发的治理出口：冻结快照的笔记正文 + 学习者自己的理解。
+ * 类别由**调用点**声明——治理层算得出"这段是文本"，算不出"这段是笔记正文还是用户答案"。
+ */
+function governedRequesterFor(scope: TeachingExplainScope | undefined): PublicJsonRequester {
+  if (!scope?.workspaceId || !scope?.userId) {
+    throw new Error("teaching model call requires the real workspace and initiating user scope");
+  }
+  return createGovernedApiRequester(
+    { workspaceId: scope.workspaceId, userId: scope.userId },
+    TEACHING_EXPLAIN_OPERATION,
+    ["note_content", "user_answer"],
+    // 同意与审计的实现由宿主装配接进来（identity 域），边界本身不认识它们。
+    productionAiGovernancePorts,
+  );
 }
 
 const outputSchema = roundTeachingContentV1Schema.extend({
@@ -55,11 +82,15 @@ export function buildTeachingPrompt(input: TeachingExplainInputV1): string {
 /** One HTTP call; timeout/retry/call accounting belong to the common task kernel. */
 export function llmTeachingExplainProvider(options: {
   config: TeachingModelConfig | null;
+  /** 可信宿主端口（显式测试注入）。给了它就不再建治理出口——它已经是宿主选定的出口。 */
   requester?: PublicJsonRequester;
 }): TeachingExplainProviderV1 {
-  const requester = options.requester ?? postJsonToPublicEndpoint;
   return async (input, step) => {
     if (!options.config) return { ok: false, class: "invalid_input", message: "teaching_model_unconfigured" };
+    // 治理出口按**本次调用**的真实 scope 现建，不在构造期固定：provider 实例是长驻的，
+    // 构造期拿到的那个身份会在同一进程里被用到别的用户身上。
+    // 生产没注入 requester 时缺 scope 必须抛错——"没有身份的外发"不能是一个能跑通的形状。
+    const requester = options.requester ?? governedRequesterFor(step.scope);
     if (!input.blocks.some((block) => block.text.trim())) {
       return { ok: false, class: "invalid_input", message: "teaching_material_missing" };
     }

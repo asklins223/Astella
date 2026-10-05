@@ -8,6 +8,7 @@ import {
   isRoomSceneLayerRegistrationWithinWorld,
   projectWorldPoint,
   resolveRoomSceneLayerRegistrationRect,
+  SCENE_WORLD,
   solveHomography,
   unprojectScreenPoint,
   type SceneQuad,
@@ -51,6 +52,47 @@ describe("computeStageMatrix", () => {
   it("rejects non-positive viewport dimensions", () => {
     expect(() => computeStageMatrix(0, 700)).toThrow(RangeError);
     expect(() => computeStageMatrix(1024, Number.NaN)).toThrow(RangeError);
+  });
+});
+
+/**
+ * 放开原生窗口比例锁之后，用户能把窗口摆成任意比例，最大化更是直接铺满屏幕。
+ * 底板必须仍然是"铺满 + 等比裁切"：露出填充色条和把底图拉变形，是这次放开
+ * 唯一不能出现的两种退化，所以按视口比例扫一遍钉死。
+ */
+describe("cover 撑满在任意窗口比例下都不露边、不变形", () => {
+  // 覆盖用户真能摆出来的形状：16:9 原生、最大化常见的 16:10、21:9 带鱼、
+  // 竖屏，以及比最小窗口更极端的两端。
+  const viewports = [
+    [1440, 810], [1280, 720], [1920, 1080], [2560, 1080], [3440, 1440],
+    [2560, 1600], [1728, 1117], [1280, 1600], [900, 1600],
+  ] as const;
+
+  it("每一档视口下舞台都不小于视口，所以没有可露的边", () => {
+    // 容差只吃掉浮点误差：`SCENE_WORLD.width * (height / SCENE_WORLD.height)`
+    // 恰好等于宽度时，二进制浮点会差最后几个 ulp（例如 3440x1440 差 5e-13 px）。
+    // 真要出现看得见的边，差的是几十上百像素，不是这一层。
+    const EPSILON = 1e-9;
+    for (const [width, height] of viewports) {
+      const matrix = computeStageMatrix(width, height);
+      expect(matrix.renderedWidth, `${width}x${height} 露出了左右边`).toBeGreaterThanOrEqual(width - EPSILON);
+      expect(matrix.renderedHeight, `${width}x${height} 露出了上下边`).toBeGreaterThanOrEqual(height - EPSILON);
+    }
+  });
+
+  it("每一档视口下底图都保持房间世界比例，所以不会被拉变形", () => {
+    for (const [width, height] of viewports) {
+      const matrix = computeStageMatrix(width, height);
+      expect(matrix.renderedWidth / matrix.renderedHeight).toBeCloseTo(SCENE_WORLD.aspectRatio, 9);
+    }
+  });
+
+  it("裁切量居中，多出来的部分两边各一半", () => {
+    for (const [width, height] of viewports) {
+      const matrix = computeStageMatrix(width, height);
+      expect(matrix.offsetX).toBeCloseTo(-(matrix.renderedWidth - width) / 2, 9);
+      expect(matrix.offsetY).toBeCloseTo(-(matrix.renderedHeight - height) / 2, 9);
+    }
   });
 });
 

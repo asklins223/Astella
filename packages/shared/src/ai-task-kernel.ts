@@ -247,6 +247,18 @@ export interface RunAiTaskOptions<TOutput> {
 /** `output_shape` 之外的错误由调用方自己分类；这里给一个把异常变成分类结果的收口。 */
 export function classifyThrownAsStepFailure(err: unknown): AiStepFailure {
   const message = describeThrown(err);
+  // Preserve structured request rejection across the kernel boundary. A bad
+  // request or access denial cannot be repaired by replaying the same call.
+  let current = err;
+  for (let depth = 0; depth < 5 && current !== null && typeof current === "object"; depth += 1) {
+    const value = current as { status?: unknown; statusCode?: unknown; cause?: unknown };
+    const status = value.status ?? value.statusCode;
+    if (typeof status === "number" && Number.isInteger(status) && status >= 400 && status < 500
+      && status !== 408 && status !== 429) {
+      return { ok: false, class: [401, 402, 403].includes(status) ? "permission" : "invalid_input", message };
+    }
+    current = value.cause;
+  }
   if (err instanceof Error && (err.name === "AbortError" || /abort/i.test(err.name))) {
     return { ok: false, class: "cancelled", message };
   }

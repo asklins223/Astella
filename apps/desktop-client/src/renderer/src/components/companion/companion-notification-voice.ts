@@ -2,7 +2,7 @@ import type { CompanionNotificationAudio } from "./companion-notifications";
 
 export interface NotificationVoiceHost {
   readonly available: () => boolean;
-  readonly synthesize: (text: string, clip?: CompanionNotificationAudio) => Promise<AudioBuffer>;
+  readonly synthesize: (text: string, clip?: CompanionNotificationAudio, purpose?: "notification" | "guidance") => Promise<AudioBuffer>;
   readonly play: (buffer: AudioBuffer, allowed: () => boolean) => Promise<void>;
   readonly stop: () => void;
 }
@@ -51,6 +51,7 @@ export async function speakCompanionNotification(input: {
   readonly id: string;
   readonly text: string;
   readonly clip?: CompanionNotificationAudio;
+  readonly purpose?: "notification" | "guidance";
   readonly allowed: () => boolean;
   readonly report: (phase: NotificationVoicePhase) => void;
 }): Promise<void> {
@@ -65,8 +66,8 @@ export async function speakCompanionNotification(input: {
   let deadline: ReturnType<typeof setTimeout> | undefined;
   try {
     const buffer = await Promise.race([
-      currentHost.synthesize(input.text, input.clip),
-      new Promise<never>((_, reject) => { deadline = setTimeout(() => reject(new Error("notification audio deadline")), 8_000); }),
+      currentHost.synthesize(input.text, input.clip, input.purpose),
+      new Promise<never>((_, reject) => { deadline = setTimeout(() => reject(new Error("notification audio deadline")), input.purpose === "guidance" ? 20_000 : 8_000); }),
     ]);
     clearTimeout(deadline);
     if (operation !== generation) return;

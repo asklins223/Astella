@@ -103,6 +103,10 @@ export type NoteTargetRef = {
 export type ReviewTargetRef = { readonly scheduleId: string; readonly objectiveId: string };
 /** 顶栏空间胶囊要说的三件事：在哪个空间、什么身份、是不是自己的空间。 */
 export type SpaceIdentity = {
+  readonly workspaceId?: string;
+  readonly workspaceEpoch?: number;
+  readonly userId?: string;
+  readonly deploymentRef?: string;
   readonly name: string;
   readonly role: "owner" | "member";
   readonly isPersonal: boolean;
@@ -128,6 +132,7 @@ export type AccountAvatar = {
 export type CompanionCenterTarget = {
   readonly tab: "overview" | "memory" | "dialogue" | "activity" | "diary" | "discovery" | "persona" | "data";
   readonly focusMemoryId?: string;
+  readonly focusMethodId?: string;
   readonly focusMessageId?: string;
 };
 
@@ -209,6 +214,7 @@ type RoomStore = {
   masterMuted: boolean;
   onboardingSeen: boolean;
   onboardingOpen: boolean;
+  companionGuideOpen: boolean;
   companionMoment: CompanionMoment;
   pendingHomeCompletion: PendingHomeCompletion | null;
   activeHomeCompletion: ActiveHomeCompletion | null;
@@ -329,6 +335,7 @@ type RoomStore = {
   setMasterMuted: (muted: boolean) => void;
   openOnboarding: () => void;
   finishOnboarding: () => void;
+  setCompanionGuideOpen: (open: boolean) => void;
   setCompanionMoment: (moment: CompanionMoment) => void;
   queueHomeCompletion: (id: string) => void;
   beginPendingHomeCompletion: (id: string) => void;
@@ -390,6 +397,7 @@ export const useRoomStore = create<RoomStore>()(
       ambientRequested: false,
       masterMuted: false,
       onboardingSeen: false,
+      companionGuideOpen: false,
       onboardingOpen: false,
       companionMoment: "idle",
       pendingHomeCompletion: null,
@@ -598,6 +606,7 @@ export const useRoomStore = create<RoomStore>()(
       setMasterMuted: (masterMuted) => set({ masterMuted }),
       openOnboarding: () => set({ onboardingOpen: true }),
       finishOnboarding: () => set({ onboardingOpen: false, onboardingSeen: true }),
+      setCompanionGuideOpen: (companionGuideOpen) => set({ companionGuideOpen }),
       setCompanionMoment: (companionMoment) => set({ companionMoment }),
       queueHomeCompletion: (id) => {
         const normalizedId = id.trim();

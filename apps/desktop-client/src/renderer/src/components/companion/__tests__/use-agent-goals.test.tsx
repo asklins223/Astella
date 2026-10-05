@@ -3,6 +3,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AgentRunV1 } from "@ailearn/shared/agent-contracts";
 import { useAgentGoals } from "../use-agent-goals";
+import { publishCompanionRecordsChanged } from "../companion-events";
 
 const state = vi.hoisted(() => ({ scope: 1 }));
 const notify = vi.hoisted(() => vi.fn());
@@ -24,14 +25,55 @@ const run = (status: AgentRunV1["status"] = "running", revision = 1): AgentRunV1
   inputs: [], operations: [], artifacts: [], summary: null, error: null, modelCalls: 1, maxModelCalls: 16,
   createdAt: "2026-10-04T01:00:00Z", updatedAt: "2026-10-04T01:00:00Z",
 });
-const listRuns = vi.fn(), controlRun = vi.fn(), reviseRun = vi.fn();
+const listRuns = vi.fn(), controlRun = vi.fn(), reviseRun = vi.fn(), getRun = vi.fn();
 beforeEach(() => {
   state.scope = 1; vi.clearAllMocks();
   listRuns.mockResolvedValue({ version: 1, items: [run()], nextCursor: null });
-  Object.defineProperty(window, "ailearn", { configurable: true, value: { agent: { listRuns, controlRun, reviseRun } } });
+  Object.defineProperty(window, "ailearn", { configurable: true, value: { agent: { listRuns, controlRun, reviseRun, getRun } } });
   Object.defineProperty(document, "hidden", { configurable: true, value: false });
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
+
+it("a notebook acceptance refreshes the unified journal and one completion produces one notification", async () => {
+  listRuns.mockResolvedValue({ version: 1, items: [], nextCursor: null });
+  const view = renderHook(() => useAgentGoals("idle", vi.fn()));
+  await waitFor(() => expect(view.result.current.loading).toBe(false));
+  listRuns.mockResolvedValue({ version: 1, items: [run("waiting")], nextCursor: null });
+  act(() => publishCompanionRecordsChanged());
+  await waitFor(() => expect(view.result.current.items[0]?.status).toBe("waiting"));
+  expect(notify).not.toHaveBeenCalled();
+  listRuns.mockResolvedValue({ version: 1, items: [run("completed")], nextCursor: null });
+  await act(async () => { await view.result.current.refresh(); await view.result.current.refresh(); });
+  expect(notify).toHaveBeenCalledTimes(1);
+});
+
+it("loads a linked older task directly and preserves a newer local revision over a late read", async () => {
+  const older = { ...run("completed"), runId: "older", revision: 2 };
+  const late = deferred<AgentRunV1>();
+  getRun.mockReturnValueOnce(late.promise);
+  const view = renderHook(() => useAgentGoals("idle", vi.fn()));
+  await waitFor(() => expect(view.result.current.loading).toBe(false));
+  let reading!: Promise<void>;
+  act(() => { reading = view.result.current.ensure("older"); });
+  expect(getRun).toHaveBeenCalledWith({ meta: {}, runId: "older" });
+  const updated = { ...older, status: "paused" as const, revision: 3 };
+  controlRun.mockResolvedValueOnce(updated);
+  await act(async () => { await view.result.current.change(older, "pause"); });
+  await act(async () => { late.resolve(older); await reading; });
+  expect(view.result.current.items.find(item => item.runId === "older")).toEqual(updated);
+});
+
+it("discards a direct linked-task read after changing spaces", async () => {
+  const late = deferred<AgentRunV1>();
+  getRun.mockReturnValueOnce(late.promise);
+  const view = renderHook(() => useAgentGoals("idle", vi.fn()));
+  await waitFor(() => expect(view.result.current.loading).toBe(false));
+  let reading!: Promise<void>;
+  act(() => { reading = view.result.current.ensure("private-old"); });
+  state.scope = 2; view.rerender();
+  await act(async () => { late.resolve({ ...run("completed"), runId: "private-old" }); await reading; });
+  expect(view.result.current.items.some(item => item.runId === "private-old")).toBe(false);
+});
 
 it("discards a response from the previous space even when it arrives after the current list", async () => {
   const old = deferred<unknown>();
@@ -79,8 +121,8 @@ it("still collects a paused child's receipt without opening a surface or repeati
   vi.useFakeTimers();
   const paused = run("paused");
   paused.operations = [{ operationId: "operation", runId: "goal", revision: 1,
-    scope: { workspaceId: "space", userId: "user" }, capability: "note_overview_generate", jobId: "job",
-    status: "running", lastEventSeq: 0, artifact: null, error: null }];
+    scope: { workspaceId: "space", userId: "user" }, capability: "note_overview_generate", execution: { kind: "job", id: "job" },
+    status: "running", lastEventSeq: 0, result: null, error: null }];
   listRuns.mockResolvedValue({ version: 1, items: [paused] });
   const onReady = vi.fn(); const view = renderHook(() => useAgentGoals("idle", onReady));
   await act(async () => { await Promise.resolve(); });

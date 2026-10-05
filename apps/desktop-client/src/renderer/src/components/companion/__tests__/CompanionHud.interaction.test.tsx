@@ -56,6 +56,26 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("production companion interaction", () => {
+  it.each(["bubble", "journal"] as const)("%s keeps IME candidate Enter and Shift+Enter local, then sends once on ordinary Enter", async view => {
+    const send = vi.fn(async () => true);
+    state.chat = interactionSession({ send });
+    render(<Harness />);
+    if (view === "journal") fireEvent.click(screen.getByRole("button", { name: "对话手记" }));
+    const input = screen.getByRole("textbox", { name: view === "bubble" ? "给 小鲸 的消息" : "继续问 小鲸" });
+    fireEvent.change(input, { target: { value: "中文选字仍是草稿" } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true, keyCode: 13 });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: false, keyCode: 229 });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true, keyCode: 13 });
+    expect(send).not.toHaveBeenCalled();
+    expect((input as HTMLTextAreaElement).value).toBe("中文选字仍是草稿");
+    if (view === "journal") {
+      fireEvent.keyDown(input, { key: "Escape", isComposing: true });
+      expect(screen.getByRole("textbox", { name: "继续问 小鲸" })).toBe(input);
+    }
+    await act(async () => fireEvent.keyDown(input, { key: "Enter", keyCode: 13 }));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith({ text: "中文选字仍是草稿" });
+  });
   it("returns to the conversation when sending from the task page in the journal", async () => {
     const send = vi.fn(async () => true);
     state.chat = interactionSession({ send });
@@ -97,7 +117,11 @@ describe("production companion interaction", () => {
   });
   it("filters actual pending confirmations without executing or losing the shared draft", () => {
     const decideProposal = vi.fn(async () => undefined);
-    state.chat = interactionSession({ proposalStates: { pending: interactionProposal() }, decideProposal });
+    const pending = interactionProposal() as Extract<ReturnType<typeof interactionProposal>, { phase: "ready" }>;
+    state.chat = interactionSession({ proposalStates: { pending,
+      executing: { ...pending, proposal: { ...pending.proposal, status: "executing" } },
+      finished: interactionProposal("succeeded"), expired: interactionProposal("pending", "2000-01-01T00:00:00Z"),
+    }, decideProposal });
     render(<Harness />);
     fireEvent.change(screen.getByRole("textbox", { name: "给 小鲸 的消息" }), { target: { value: "仍未发送的这句话" } });
     fireEvent.click(screen.getByRole("button", { name: "对话手记" }));

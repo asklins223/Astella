@@ -1,6 +1,6 @@
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Copy, CornerDownRight, Sparkles, UserRound } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Copy, CornerDownRight, Quote, Sparkles, UserRound } from "lucide-react";
 import type { CompanionContentBlockV1, CompanionMessageV1 } from "@ailearn/shared/companion-conversation-contracts";
 import type { CompanionChatSession } from "../../app/companion-chat-session";
 import { companionMessageText, desktopRouteFromAgentRoute } from "../../app/companion-chat-session";
@@ -14,6 +14,7 @@ import { renderCompanionMarkdown } from "./companion-markdown";
 import { openExternalLink } from "../../app/external-link";
 import { copyText } from "../../app/clipboard";
 import { companionMessageCopyText } from "./companion-message-copy";
+import { journalProposalNeedsAttention } from "./companion-journal-model";
 
 /**
  * 「聊天记录」子级页面（2026-09-19，微信式）。
@@ -59,7 +60,9 @@ export function messageDayLabel(value: string): string {
 export function shouldShowRunTrace(trace: CompanionRunTrace): boolean {
   return trace.summary.stepCount > 1
     || trace.summary.toolCallCount > 0
-    || trace.nodes.length > 0;
+    || trace.summary.status === "failed"
+    || trace.summary.status === "waiting_for_confirmation"
+    || trace.nodes.some(node => node.state === "outcome_unknown" || node.state === "unavailable" || node.state === "not_executed" || node.state === "failed");
 }
 
 export function stopSummary(trace: CompanionRunTrace | null): string {
@@ -186,8 +189,13 @@ export function CompanionQuoteBlock({
   useLayoutEffect(() => {
     const text = textRef.current;
     if (!text || expanded) return;
-    // 8px 容差：一行的零头不值得为它多一个按钮。
-    setOverflowing(text.scrollHeight - text.clientHeight > 8);
+    // 附页关闭时没有几何；展开或行宽改变后，再判断原文是否需要继续展开。
+    const measure = () => setOverflowing(text.scrollHeight - text.clientHeight > 8);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(text);
+    return () => observer.disconnect();
   }, [block.text, expanded]);
   return (
     <figure className="companion-record__quote" data-expanded={expanded ? "true" : undefined}>
@@ -271,40 +279,37 @@ export function CompanionChatRecordArticle({
   const trace = message.role === "assistant"
     ? chat.runTraces.find((item) => item.summary.assistantMessageId === message.id) ?? null
     : null;
-  const traceProposalIds = new Set(trace?.nodes.flatMap((node) => node.proposalId ? [node.proposalId] : []) ?? []);
+  const references = richBlocks.filter(block => block.type === "quote" || block.type === "citation");
+  const results = richBlocks.filter(block => block.type !== "quote" && block.type !== "citation");
+  const proposalIds = message.role === "assistant" ? [...new Set([
+    ...message.blocks.flatMap(block => block.type === "action_ref" ? [block.proposalId] : []),
+    ...trace?.nodes.flatMap(node => node.proposalId ? [node.proposalId] : []) ?? [],
+  ])] : [];
+  const pending = proposalIds.filter(id => journalProposalNeedsAttention(chat.proposalStates[id]));
+  const settled = proposalIds.filter(id => !journalProposalNeedsAttention(chat.proposalStates[id]));
+  const choices = (ids: readonly string[]) => ids.map(id => <CompanionProposalChoice key={id} proposalId={id}
+    state={chat.proposalStates[id]} context="history"
+    onDecide={decision => { void chat.decideProposal(id, decision); }} onRetry={() => chat.retryProposal(id)} />);
   return (
-    <article className={richBlocks.length > 0 ? "companion-record__rich-turn" : undefined} data-message-id={message.id} data-role={message.role} data-kind={message.kind} data-cancelled={message.kind === "cancelled" || undefined}>
+    <article className={richBlocks.length > 0 ? "companion-record__turn companion-record__rich-turn" : "companion-record__turn"} data-message-id={message.id} data-role={message.role} data-kind={message.kind} data-cancelled={message.kind === "cancelled" || undefined}>
       <header><span className="companion-record__author"><i className="companion-record__avatar" aria-hidden="true">{message.role === "user" ? <UserRound size={15} /> : <Sparkles size={15} />}</i><strong>{message.role === "user" ? "你" : chat.companionName}{message.kind === "voice_transcript" ? " · 语音" : ""}</strong></span><time>{messageTime(message.createdAt)}</time></header>
-      {selection ? <CompanionQuoteBlock block={{ type: "quote", label: "引用的原文", text: selection.text }} /> : null}
+      {selection ? <details className="companion-record__selection"><summary><Quote size={14} aria-hidden="true" /><span>引用的原文</span><q>{selection.text.slice(0, 96)}</q></summary><CompanionQuoteBlock block={{ type: "quote", label: "当时选中的原文", text: selection.text }} /></details> : null}
       {/* 正文从 §4.8 起保留 markdown，由这里排版（抽屉与记录页共用本组件）。 */}
       <div className="companion-record__body">{renderCompanionMarkdown(companionMessageText({ ...message, blocks: message.blocks.filter(block => block.type === "text") }))}</div>
-      <CompanionMessageRichBlocks blocks={richBlocks} chat={chat} />
+      {results.length ? <div className="companion-record__results"><CompanionMessageRichBlocks blocks={results} chat={chat} /></div> : null}
       {message.kind === "cancelled" ? <p className="companion-record__stopped">你在这里停下了{stopSummary(trace)}</p> : null}
       {message.kind === "error" ? <p className="companion-record__stopped">这一轮没能说完{stopSummary(trace)}</p> : null}
-      {trace && shouldShowRunTrace(trace) ? (
+      {pending.length ? <div className="companion-record__decisions">{choices(pending)}</div> : null}
+      {references.length || settled.length || (trace && shouldShowRunTrace(trace)) ? <div className="companion-record__attachments">
+        {references.length ? <details className="companion-record__references"><summary><Quote size={14} aria-hidden="true" />引用与出处 <small>{references.length}</small></summary><CompanionMessageRichBlocks blocks={references} chat={chat} /></details> : null}
+        {settled.length ? <details className="companion-record__decision-history"><summary>确认记录 <small>{settled.length}</small></summary>{choices(settled)}</details> : null}
+        {trace && shouldShowRunTrace(trace) ? (
         <CompanionRunTraceView
           trace={trace}
-          defaultOpen={trace.summary.status === "waiting_for_confirmation" || trace.summary.status === "failed" || trace.nodes.some(node => node.state === "waiting_confirmation" || node.state === "outcome_unknown")}
-          proposalStates={chat.proposalStates}
-          onDecideProposal={(proposalId, decision) => { void chat.decideProposal(proposalId, decision); }}
-          onRetryProposal={(proposalId) => { void chat.retryProposal(proposalId); }}
+          defaultOpen={false}
+          quiet
         />
-      ) : null}
-      {message.role === "assistant"
-        ? message.blocks.filter((block) => block.type === "action_ref" && !traceProposalIds.has(block.proposalId)).map((block) => block.type === "action_ref"
-          ? (
-              <div className="companion-history__legacy-proposal" key={block.proposalId}>
-                <small>这项选择来自较早的过程记录，原执行节点已不可用。</small>
-                <CompanionProposalChoice
-                  proposalId={block.proposalId}
-                  state={chat.proposalStates[block.proposalId]}
-                  context="history"
-                  onDecide={(decision) => { void chat.decideProposal(block.proposalId, decision); }}
-                />
-              </div>
-            )
-          : null)
-        : null}
+      ) : null}</div> : null}
       <div className="companion-record__actions"><button type="button" className="text-action" onClick={() => {
         void copyText(companionMessageCopyText(message)).then((copied) => setCopyNote(copied ? "已复制" : "复制失败，请重试"));
       }}><Copy size={16} />{copyNote ?? "复制文字"}</button></div>

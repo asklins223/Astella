@@ -3,28 +3,28 @@ import { DomainError } from "@ailearn/shared";
 import { agentRunV1Schema, type AgentRunV1, type AgentScopeV1, type AgentInputRefV1, type AgentRunHistoryV1 } from "@ailearn/shared/agent-contracts";
 import type { AgentTurnRequest } from "@ailearn/shared";
 import { canonicalJsonV1 } from "@ailearn/shared/content-hash";
+import { executeTurn } from "@ailearn/agent-core";
+import { agentDirectRequestV1Schema, type AgentDirectRequestV1 } from "@ailearn/shared/agent-request-contracts";
+import { getAgentCapability } from "@ailearn/shared/agent-capability-catalog";
+import {listAgentLongGoals,requireAgentLongGoal} from "./long-goals.ts";
+import type { AgentLongGoalsQueryV1 } from "@ailearn/shared/agent-long-goal-contracts";
 import {
-  agentHistoryRevisionWindow, archiveSupersededRunRevision, decodeAgentRunListCursor,
-  encodeAgentRunListCursor, projectAgentRunHistoryV1,
+  agentHistoryRevisionWindow, agentOperationArtifacts, archiveSupersededRunRevision,
+  decodeAgentRunListCursor, encodeAgentRunListCursor, projectAgentOperation, projectAgentRunHistoryV1,
   resolveAgentHistoryLimit, resolveAgentRunListLimit,
   type AgentOperationRow, type AgentRevisionRow,
 } from "./history.ts";
 
 export interface AgentSqlExecutor { execute(query: SQL): Promise<unknown> }
-/**
- * `Tx` 是宿主**真实**的事务类型（worker 是 `WorkerTransaction`，API 是
- * `ApiTransaction`），默认窄端口只够现有 SQL。回调里拿到的仍是宿主当前那一段事务：
- * 这里只保留类型，不新建、不包装，也不开第二个没有围栏的事务。
- */
+/** Tx 是宿主真实的事务类型（worker WorkerTransaction / API ApiTransaction）：只保留类型，不包装。 */
 export interface AgentStorePorts<Tx extends AgentSqlExecutor = AgentSqlExecutor> {
   transaction<T>(scope: AgentScopeV1, action: (tx: Tx) => Promise<T>): Promise<T>;
   id(): string;
   ensureIdentity?(tx: AgentSqlExecutor, scope: AgentScopeV1): Promise<void>;
+  acceptDirectCapability?(tx: Tx, scope: AgentScopeV1, run: AgentRunRow,
+    call: { id: string; name: string; arguments: Record<string, unknown> }): Promise<unknown>;
 }
-/**
- * 领域错误：形状与所有调用点不变（`statusCode` / `code` / `message`），
- * 只是改挂在 shared 的 `DomainError` 上，让 `asDomainError` 认得出这一族。
- */
+/** 领域错误：形状与调用点不变，挂在 shared 的 DomainError 上以便 asDomainError 认得出。 */
 export class AgentStoreError extends DomainError {
   constructor(statusCode: number, code: string, message: string) {
     super({ name: "AgentStoreError", statusCode, code, message });
@@ -44,6 +44,8 @@ export interface AgentRunRow {
   advance_job_id: string | null; advance_lease_token: string | null;
   revision_started_at: Date | string | null;
   created_at: Date | string; updated_at: Date | string;
+  long_goal_ref?: AgentRunV1["longGoal"];
+  direct_request?: AgentDirectRequestV1 | null;
 }
 export async function readRun(tx: AgentSqlExecutor, scope: AgentScopeV1, id: string, lock = false): Promise<AgentRunRow> {
   const [row] = await queryRows<AgentRunRow>(tx, sql`SELECT * FROM agent_runs
@@ -76,11 +78,10 @@ export function projectRunFromOperations(
   return agentRunV1Schema.parse({
     version: 1, runId: run.id, identityId: run.identity_id, revision: run.revision, goal: run.goal,
     status: run.status, conversationId: run.conversation_id, inputs: run.inputs,
-    operations: operations.filter(o => o.revision === run.revision).map(o => ({
-      operationId: o.id, runId: run.id, revision: o.revision, scope, capability: o.capability, jobId: o.job_id,
-      status: o.status, lastEventSeq: Number(o.last_event_seq), artifact: o.artifact, error: o.error,
-    })),
-    artifacts: operations.flatMap(o => o.artifact ? [o.artifact] : []),
+    longGoal:run.long_goal_ref??null,
+    operations: operations.filter(o => o.revision === run.revision)
+      .map(o => projectAgentOperation(scope, run.id, o)),
+    artifacts: agentOperationArtifacts(operations),
     summary: run.summary, error: run.error, modelCalls: run.model_calls, maxModelCalls: run.max_model_calls,
     createdAt: iso(run.created_at), updatedAt: iso(run.updated_at),
   });
@@ -89,10 +90,7 @@ export async function projectRun(tx: AgentSqlExecutor, scope: AgentScopeV1, run:
   const grouped = await readRunOperations(tx, scope, [run.id]);
   return projectRunFromOperations(scope, run, grouped.get(run.id) ?? []);
 }
-/**
- * 读一个目标的版本历史。锁住 run 行：历史由「当前版 + 多条存档」拼成，
- * 中途被一次 revise 提交就会混版。
- */
+/** 锁住 run 行：历史由「当前版 + 多条存档」拼成，中途被 revise 提交就会混版。 */
 export async function readRunHistory(
   tx: AgentSqlExecutor, scope: AgentScopeV1, run: AgentRunRow,
   query: { topRevision: number; limit: number },
@@ -101,11 +99,10 @@ export async function readRunHistory(
   const window = agentHistoryRevisionWindow(query.topRevision, query.limit);
   const ceiling = includeCurrent ? run.revision - 1 : window.top;
   const archivedLimit = includeCurrent ? query.limit - 1 : query.limit;
-  // 窗口要有下界：只加上界时，一页里的未存档号会把更早页的存档也捞进来，
-  // 同一版在两页里各出现一次。列清单写死，不用 `SELECT *`——
+  // 窗口要有下界，只加上界会让同一版在两页里各出现一次。列清单写死不用 SELECT *：
   // to_char 别名与原列同名，重复输出列名取哪一个由驱动决定。
   const recorded = archivedLimit > 0 && window.bottom <= ceiling ? await queryRows<AgentRevisionRow>(tx, sql`
-    SELECT revision,goal,status,conversation_id,inputs,summary,error,model_calls,max_model_calls,superseded_by_revision,
+    SELECT revision,goal,status,conversation_id,inputs,long_goal_ref,summary,error,model_calls,max_model_calls,superseded_by_revision,
       to_char(started_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS started_at,
       to_char(last_active_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS last_active_at,
       to_char(recorded_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS recorded_at
@@ -120,7 +117,7 @@ export async function readRunHistory(
   return projectAgentRunHistoryV1({
     scope, runId: run.id, currentRevision: run.revision, topRevision: query.topRevision, limit: query.limit,
     current: {
-      scope, goal: run.goal, status: run.status, conversationId: run.conversation_id, inputs: run.inputs,
+      scope, goal: run.goal, status: run.status, conversationId: run.conversation_id, inputs: run.inputs,longGoal:run.long_goal_ref,
       summary: run.summary, error: run.error, modelCalls: run.model_calls, maxModelCalls: run.max_model_calls,
       startedAt: clock?.started_at ?? null, lastActiveAt: clock?.last_active_at ?? new Date(run.updated_at).toISOString(),
     },
@@ -140,11 +137,11 @@ export async function requireVisibleInput(tx: AgentSqlExecutor, scope: AgentScop
     AND n.deleted_at IS NULL AND (n.share_scope='shared' OR n.created_by=${scope.userId})`);
   if (!row) throw new AgentStoreError(404, "input_not_found", "这版笔记现在读不到，请重新选择材料。");
 }
-async function requireAgentAuthority(tx: AgentSqlExecutor, scope: AgentScopeV1) {
+async function requireAgentAuthority(tx: AgentSqlExecutor, scope: AgentScopeV1, directRequest = false) {
   const [identity] = await queryRows<{ id: string; epoch: number; global_enabled: boolean; agent_settings: { permissionLevel?: string } }>(tx,
     sql`SELECT id,epoch,global_enabled,agent_settings FROM user_companion_account_state WHERE user_id=${scope.userId}`);
-  if (!identity?.global_enabled) throw new AgentStoreError(403, "agent_disabled", "伴星当前已关闭。");
-  if (identity.agent_settings.permissionLevel === "read_only") throw new AgentStoreError(403, "read_only", "当前权限仅允许查看。");
+  if (!identity || (!directRequest && !identity.global_enabled)) throw new AgentStoreError(403, "agent_disabled", "伴星当前已关闭。");
+  if (!directRequest && identity.agent_settings.permissionLevel === "read_only") throw new AgentStoreError(403, "read_only", "当前权限仅允许查看。");
   return identity;
 }
 async function lockRunQuota(tx: AgentSqlExecutor, scope: AgentScopeV1) {
@@ -158,15 +155,20 @@ async function requireRunCapacity(tx: AgentSqlExecutor, scope: AgentScopeV1, cur
 }
 export function createAgentStore<Tx extends AgentSqlExecutor = AgentSqlExecutor>(ports: AgentStorePorts<Tx>) {
   return {
-    async create(scope: AgentScopeV1, input: { requestId: string; goal: string; inputs: AgentInputRefV1[]; conversationId?: string }) {
+    async create(scope: AgentScopeV1, input: { requestId: string; goal: string; inputs: AgentInputRefV1[]; conversationId?: string;longGoal?:NonNullable<AgentRunV1["longGoal"]>; directRequest?: AgentDirectRequestV1 }) {
+      const directRequest = input.directRequest ? agentDirectRequestV1Schema.parse(input.directRequest) : null;
+      if (directRequest && (!ports.acceptDirectCapability || !input.inputs.some(ref =>
+        ref.noteId === directRequest.noteId && ref.noteVersionId === directRequest.request.noteVersionId)))
+        throw new AgentStoreError(400, "request_input_mismatch", "这次请求与材料引用没有对上。");
       return ports.transaction(scope, async tx => {
         const [account] = await queryRows(tx, sql`SELECT id FROM user_companion_account_state WHERE user_id=${scope.userId}`);
         if (!account) {
           if (!ports.ensureIdentity) throw new AgentStoreError(403, "identity_not_ready", "请先打开伴星，建立当前账号的伴星身份。");
           await ports.ensureIdentity(tx, scope);
         }
-        const identity = await requireAgentAuthority(tx, scope);
+        const identity = await requireAgentAuthority(tx, scope, directRequest !== null);
         for (const ref of input.inputs) await requireVisibleInput(tx, scope, ref);
+        if(input.longGoal) await requireAgentLongGoal(tx,scope,input.longGoal);
         if (input.conversationId) {
           const [conversation] = await queryRows(tx, sql`SELECT id FROM companion_conversations WHERE id=${input.conversationId}
             AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId}`);
@@ -177,15 +179,38 @@ export function createAgentStore<Tx extends AgentSqlExecutor = AgentSqlExecutor>
           WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId} AND request_id=${input.requestId}`);
         if (existing) {
           if (existing.goal !== input.goal || existing.conversation_id !== (input.conversationId ?? null)
-            || canonicalJsonV1(existing.inputs) !== canonicalJsonV1(input.inputs))
+            || canonicalJsonV1(existing.inputs) !== canonicalJsonV1(input.inputs)
+            || canonicalJsonV1(existing.long_goal_ref??null)!==canonicalJsonV1(input.longGoal??null))
             throw new AgentStoreError(409, "request_conflict", "这次请求已有另一份要求，请重新提交。");
+          if (canonicalJsonV1(existing.direct_request ?? null) !== canonicalJsonV1(directRequest))
+            throw new AgentStoreError(409, "request_conflict", "这次请求已有另一份设置，请重新提交。");
           return projectRun(tx, scope, existing);
         }
         await requireRunCapacity(tx, scope);
         const [run] = await queryRows<AgentRunRow>(tx, sql`INSERT INTO agent_runs(workspace_id,user_id,identity_id,account_epoch,
-          request_id,conversation_id,goal,inputs) VALUES(${scope.workspaceId},${scope.userId},${identity.id},${identity.epoch},
-          ${input.requestId},${input.conversationId ?? null},${input.goal},${JSON.stringify(input.inputs)}::jsonb) RETURNING *`);
-        await enqueueAdvance(tx, scope, run.id, run.revision, `agent-start:${run.id}:1`);
+          request_id,conversation_id,goal,inputs,long_goal_ref,direct_request) VALUES(${scope.workspaceId},${scope.userId},${identity.id},${identity.epoch},
+          ${input.requestId},${input.conversationId ?? null},${input.goal},${JSON.stringify(input.inputs)}::jsonb,
+          ${input.longGoal?JSON.stringify(input.longGoal):null}::jsonb,${directRequest ? JSON.stringify(directRequest) : null}::jsonb) RETURNING *`);
+        if (directRequest) {
+          const entry = getAgentCapability(directRequest.capability);
+          const call = { id: `domain:${input.requestId}`, name: directRequest.capability,
+            arguments: { noteId: directRequest.noteId, noteVersionId: directRequest.request.noteVersionId } };
+          if (!entry?.surfaces.includes("goal") || !entry.argumentSchema.safeParse(call.arguments).success)
+            throw new AgentStoreError(400, "unknown_capability", "这项能力当前不能接受请求。");
+          // The button selected the capability. Acceptance, Run and operation
+          // commit together, without an additional planning model.
+          await executeTurn({ now: Date.now, limits: () => ({ maxSteps: 1, deadlineAt: Date.now() + 10000 }),
+            budgetError: () => new AgentStoreError(422, "acceptance_expired", "这次请求暂时没有接受。"),
+            advance: async () => {
+              const receipt = await ports.acceptDirectCapability!(tx, scope, { ...run, direct_request: directRequest }, call);
+              const messages = [{ role: "assistant" as const, content: "", toolCalls: [call] },
+                { role: "tool" as const, toolCallId: call.id, content: JSON.stringify(receipt) }];
+              await tx.execute(sql`UPDATE agent_runs SET status='waiting',messages=${JSON.stringify(messages)}::jsonb,updated_at=now() WHERE id=${run.id}`);
+              run.status = "waiting"; run.messages = messages;
+              return { kind: "settled", result: undefined };
+            },
+          });
+        } else await enqueueAdvance(tx, scope, run.id, run.revision, `agent-start:${run.id}:1`);
         return projectRun(tx, scope, run);
       });
     },
@@ -195,15 +220,16 @@ export function createAgentStore<Tx extends AgentSqlExecutor = AgentSqlExecutor>
      * 它是**位置书签**而非快照：一页在走读期间被推进，它会移到游标之前
      * （本次读不到），但历史不删已完成成果，它仍在第一页里读得到。
      */
-    list(scope: AgentScopeV1, query: { limit?: unknown; cursor?: string } = {}) {
+    list(scope: AgentScopeV1, query: { limit?: unknown; cursor?: string; longGoalMemoryId?: string } = {}) {
       return ports.transaction(scope, async tx => {
         const limit = resolveAgentRunListLimit(query.limit);
         const cursor = query.cursor === undefined ? null : decodeAgentRunListCursor(query.cursor, scope);
-        if (query.cursor !== undefined && !cursor)
+        if (query.cursor !== undefined && (!cursor || cursor.longGoalMemoryId !== query.longGoalMemoryId))
           throw new AgentStoreError(400, "invalid_cursor", "这个位置已经读不到了，请从头再看一次。");
         const rows = await queryRows<AgentRunRow & { cursor_updated_at: string }>(tx, sql`
           SELECT *,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_updated_at
           FROM agent_runs WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
+          ${query.longGoalMemoryId ? sql`AND long_goal_ref->>'memoryId'=${query.longGoalMemoryId}` : sql``}
           ${cursor ? sql`AND (updated_at,id) < (${cursor.updatedAt}::timestamptz,${cursor.runId}::uuid)` : sql``}
           ORDER BY updated_at DESC,id DESC LIMIT ${limit + 1}`);
         const page = rows.slice(0, limit);
@@ -213,12 +239,13 @@ export function createAgentStore<Tx extends AgentSqlExecutor = AgentSqlExecutor>
           version: 1 as const,
           items: page.map(r => projectRunFromOperations(scope, r, grouped.get(r.id) ?? [])),
           nextCursor: rows.length > limit && last
-            ? encodeAgentRunListCursor(scope, { updatedAt: last.cursor_updated_at, runId: last.id })
+            ? encodeAgentRunListCursor(scope, { updatedAt: last.cursor_updated_at, runId: last.id, longGoalMemoryId: query.longGoalMemoryId })
             : null,
         };
       });
     },
     get(scope: AgentScopeV1, id: string) { return ports.transaction(scope, async tx => projectRun(tx, scope, await readRun(tx, scope, id))); },
+    longGoals(scope:AgentScopeV1,query:AgentLongGoalsQueryV1={}){return ports.transaction(scope,tx=>listAgentLongGoals(tx,scope,query));},
     /** 读一个目标的版本历史；`beforeRevision` 含边界，跨用户/跨空间与 get 一样读不到。 */
     history(scope: AgentScopeV1, id: string, query: { limit?: unknown; beforeRevision?: number } = {}) {
       return ports.transaction(scope, async tx => {
@@ -233,18 +260,23 @@ export function createAgentStore<Tx extends AgentSqlExecutor = AgentSqlExecutor>
         return readRunHistory(tx, scope, run, { topRevision: before ?? run.revision, limit });
       });
     },
-    async revise(scope: AgentScopeV1, id: string, expectedRevision: number, goal: string) {
+    async revise(scope: AgentScopeV1, id: string, expectedRevision: number, goal: string,
+      longGoal?: AgentRunRow["long_goal_ref"]) {
       return ports.transaction(scope, async tx => {
         const old = await readRun(tx, scope, id, true);
         // CAS 先判：失败时一行都不写，历史也不会多出一条。
         if (old.revision !== expectedRevision) throw new AgentStoreError(409, "revision_conflict", "这件事刚刚更新了，请看最新状态再修改。");
         const identity = await requireAgentAuthority(tx, scope);
+        const goalRef = longGoal === undefined ? old.long_goal_ref : longGoal;
+        if(goalRef) await requireAgentLongGoal(tx,scope,goalRef);
         for (const input of old.inputs) await requireVisibleInput(tx, scope, input);
         await lockRunQuota(tx, scope);
         await requireRunCapacity(tx, scope, id);
         await cancelOutstanding(tx, scope, old);
         const [run] = await queryRows<AgentRunRow>(tx, sql`UPDATE agent_runs SET revision=revision+1,goal=${goal},status='queued',
-          account_epoch=${identity.epoch},resume_from_revision=NULL,messages='[]',summary=NULL,error=NULL,advance_job_id=NULL,
+          direct_request=NULL,
+          account_epoch=${identity.epoch},long_goal_ref=${goalRef ? JSON.stringify(goalRef) : null}::jsonb,
+          resume_from_revision=NULL,messages='[]',summary=NULL,error=NULL,advance_job_id=NULL,
           advance_lease_token=NULL,revision_started_at=now(),updated_at=now()
           WHERE id=${id} AND workspace_id=${scope.workspaceId} AND user_id=${scope.userId} RETURNING *`);
         if (!run) throw new AgentStoreError(409, "revision_conflict", "这件事刚刚更新了，请看最新状态再修改。");
@@ -260,7 +292,8 @@ export function createAgentStore<Tx extends AgentSqlExecutor = AgentSqlExecutor>
         if (old.revision !== expectedRevision) throw new AgentStoreError(409, "revision_conflict", "请先查看这件事的最新状态。");
         if (action === "resume" && old.status !== "paused" && old.status !== "failed") return projectRun(tx, scope, old);
         if (action === "resume") {
-          const identity = await requireAgentAuthority(tx, scope);
+          const identity = await requireAgentAuthority(tx, scope, Boolean(old.direct_request));
+          if(old.long_goal_ref) await requireAgentLongGoal(tx,scope,old.long_goal_ref);
           if (identity.id !== old.identity_id || identity.epoch !== old.account_epoch)
             throw new AgentStoreError(409, "account_changed", "伴星设置已经改变，请修改要求后重新继续。");
           await lockRunQuota(tx, scope);

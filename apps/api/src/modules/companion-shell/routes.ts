@@ -180,9 +180,11 @@ userId: req.session.userId,
           workspaceId: req.session.workspaceId,
           version: req.params.version,
           action: body.action,
+          scope: body.scope,
           revision: body.revision,
           runId: body.runId,
           stepId: body.stepId,
+          topicId: body.topicId,
           resumeTokenRef: body.resumeTokenRef,
         });
       } catch (err) {

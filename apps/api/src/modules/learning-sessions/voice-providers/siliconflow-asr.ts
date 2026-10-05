@@ -40,6 +40,13 @@ export interface SiliconFlowAsrOptions {
    */
   requester?: AsrRequester;
   /**
+   * 调用方的取消信号（客户端断开 / 上层收口）。
+   *
+   * 内核那一份 `step.signal` 已经在用，两者**合并**而不是二选一：只认内核那份的话，
+   * 客户端先断开时请求还会跑完自己 55s 的整任务预算。
+   */
+  signal?: AbortSignal;
+  /**
    * 这一次转写属于谁（**必填、无默认**）。语音是最贵的一种输入：用户举着麦克风
    * 等，一次没成就要重来。所以"重试几次、算不算瞬时故障"必须有地方钉住，
    * 而钉住它需要知道是谁的哪一段音频（进幂等键与检查点身份）。
@@ -246,13 +253,14 @@ export async function siliconFlowTranscribe(
           body: input.bytes,
           // 单步时长由内核的 signal 管（它已经是 `min(stepTimeoutMs, 剩余预算)`），
           // 这里不再自己 `setTimeout` 一个数字——同一个预算只准有一个来源。
-          signal: step.signal,
+          // 内核步预算 ∩ 调用方取消：两个来源都要能掐掉这一次 multipart POST。
+          signal: options.signal ? AbortSignal.any([step.signal, options.signal]) : step.signal,
         });
       } catch (err) {
         // 连接层失败（DNS/代理/对端断开）。本函数不接受外部取消信号，所以按下去的
         // 只可能是这一步自己的超时；两者都可重试，最终仍 fail closed。
         const message = err instanceof Error ? err.message : String(err);
-        return step.signal.aborted
+        return (step.signal.aborted || options.signal?.aborted)
           ? { ok: false as const, class: "timeout" as const, message: `SiliconFlow ASR 超时：${message}` }
           : { ok: false as const, class: "transport" as const, message: `SiliconFlow ASR 网络错误：${message}` };
       }

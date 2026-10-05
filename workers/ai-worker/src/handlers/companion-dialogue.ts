@@ -1,3 +1,5 @@
+import { reserveCompanionProviderCall } from "./companion-agent-events.ts";
+import { renderPlaybookCatalog } from "./companion-playbooks.ts";
 /**
  * companion_agent Worker handler（03 合同 §8.1/§9，runbook 6.4 步骤 5-7）。
  *
@@ -33,6 +35,7 @@ import { assessAnswerExposure, isFormalAnswerLivePage, recordCompanionAnswerExpo
 import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger.ts";
+import { ProviderRequestError } from "../lib/provider-request-error.ts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { loadHereAndNow, renderHereAndNow } from "./companion-here-and-now.ts";
 import { loadThisTurnFacts } from "./companion-this-turn-facts.ts";
@@ -59,7 +62,9 @@ import {
 } from "@ailearn/shared";
 import { PET_PERSONA_PRESET_VERSION } from "@ailearn/shared/pet-persona-presets";
 import { runCompanionAgentLoop } from "./companion-agent-runtime.ts";
-import { CompanionAgentBudgetExceededError } from "../lib/non-retryable-errors.ts";
+import { CompanionAgentBudgetExceededError, CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
+import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
+import type { AgentMemoryContextSourceV1 } from "@ailearn/shared/agent-contracts";
 import {
   companionSegmentId,
   splitCommittedDisplaySegments,
@@ -681,7 +686,7 @@ export async function runCompanionDialogue(
     // AI P0-8（2026-09-15 审计）：接上 ai_audit_log 的唯一写入口 logAICall——
     // 此前全仓零生产调用，而 DEFAULT_AI_DATA_POLICY.auditLogging 默认为 true，
     // 等于审计/成本记录完全空转。只写元数据，不写内容。
-    { userId: read.userId, operation: "companion_agent", jobId: ctx.id, dataCategories: ["user_answer", "note_content"] },
+    { userId: read.userId, operation: "companion_agent", jobId: ctx.id, reserveCall: () => reserveCompanionProviderCall({ ctx, read }), dataCategories: ["user_answer", "note_content"] },
   );
   // 思考档备用 provider（2026-09-19 退化回复闸）：主链路关思考时，网关/模型退化
   // 窗口会把答案缩成一两个词且自我复制进历史。agent loop 检测到退化答案时用它
@@ -690,7 +695,7 @@ export async function runCompanionDialogue(
     createProvider(textRes.providerName, textRes.providerConfig),
     govCtx,
     ctx.workspaceId,
-    { userId: read.userId, operation: "companion_agent", jobId: ctx.id, dataCategories: ["user_answer", "note_content"] },
+    { userId: read.userId, operation: "companion_agent", jobId: ctx.id, reserveCall: () => reserveCompanionProviderCall({ ctx, read }), dataCategories: ["user_answer", "note_content"] },
   );
   /**
    * 跨模型兜底 provider（方案 29 §9.6 / B8）。
@@ -709,7 +714,7 @@ export async function runCompanionDialogue(
       ),
       govCtx,
       ctx.workspaceId,
-      { userId: read.userId, operation: "companion_agent_fallback", jobId: ctx.id, dataCategories: ["user_answer", "note_content"] },
+      { userId: read.userId, operation: "companion_agent_fallback", jobId: ctx.id, reserveCall: () => reserveCompanionProviderCall({ ctx, read }), dataCategories: ["user_answer", "note_content"] },
     )
     : undefined;
 
@@ -742,11 +747,6 @@ export async function runCompanionDialogue(
             pageContext: read.pageContext,
           },
         ),
-      );
-      await recordCompanionMemoryContextExposure(
-        { workspaceId: ctx.workspaceId, userId: read.userId },
-        read.runId,
-        memoryContext,
       );
       read.residentMemories = memoryContext.residentMemories;
       read.memoryDirectory = memoryContext.memoryDirectory;
@@ -782,12 +782,20 @@ export async function runCompanionDialogue(
     proposals: read.proposals ?? [],
     memoryRefs: memoryContext.memoryRefs,
     memoryDirectory: memoryContext.memoryDirectory,
+    memorySourceVersions: [] as AgentMemoryContextSourceV1[],
   };
   const handoffDraft = buildCompanionContextHandoffSnapshotV1({
     ...handoffInput,
     modelMessages: [],
   });
+  const admittedSources = new Set<string>();
   const messages = buildCompanionPersonaMessages({
+    scope: { workspaceId: ctx.workspaceId, userId: read.userId },
+    methodCatalog: read.groundedTutorContext ? "" : renderPlaybookCatalog(read.playbookCatalog),
+    contextReceipt: receipts => {
+      for (const source of receipts) if (source.status === "included") admittedSources.add(source.id);
+      logger.info({ runId: read.runId, sources: receipts }, "agent context budget receipt");
+    },
     userText: read.userText,
     recentMessages: read.recentMessages,
     pageContext: read.pageContext,
@@ -801,6 +809,11 @@ export async function runCompanionDialogue(
     continuationData: renderCompanionContextHandoff(handoffDraft),
     petProfile: read.petProfile,
   });
+  const residentSources = admittedSources.has("resident_memory") ? memoryContext.memorySourceVersions?.resident ?? [] : [];
+  const directorySources = admittedSources.has("memory_directory") ? memoryContext.memorySourceVersions?.directory ?? [] : [];
+  handoffInput.memoryRefs = admittedSources.has("resident_memory") ? memoryContext.memoryRefs : [];
+  handoffInput.memoryDirectory = admittedSources.has("memory_directory") ? memoryContext.memoryDirectory : [];
+  handoffInput.memorySourceVersions = [...residentSources, ...directorySources];
   const proposedHandoffSnapshot = buildCompanionContextHandoffSnapshotV1({
     ...handoffInput,
     modelMessages: messages,
@@ -812,6 +825,10 @@ export async function runCompanionDialogue(
     runId: read.runId,
     snapshot: proposedHandoffSnapshot,
     sha256: proposedHandoffSha256,
+  }).catch(async error => {
+    if (error instanceof CompanionContextChangedError)
+      await markCompanionRunFailed(read, ctx.workspaceId, error.code, true, error.message, "execution");
+    throw error;
   });
   // A retry must replay the exact committed messages and memory receipt set, even if
   // background memory maintenance changed what a fresh retrieval would return.
@@ -819,6 +836,11 @@ export async function runCompanionDialogue(
   memoryContext = { ...memoryContext, memoryRefs: committedHandoff.snapshot.memoryRefs };
   read.memoryRefs = memoryContext.memoryRefs;
   read.memoryDirectory = committedHandoff.snapshot.memoryDirectory ?? [];
+  const directoryIds = new Set(read.memoryDirectory.map(source => source.memoryId));
+  const committedSourceIds = [...new Set(committedHandoff.snapshot.memorySourceVersions?.map(source => source.memoryId) ?? [])];
+  await recordCompanionMemoryContextExposure({ workspaceId: ctx.workspaceId, userId: read.userId }, read.runId, {
+    residentMemoryIds: committedSourceIds.filter(id => !directoryIds.has(id)), usedMemoryIds: committedSourceIds,
+  });
 
   // 量的是**要发出去的那份请求**，不是中间变量：`<conversation_summary>` 这条链
   // 单元级早就绿了，缺的是"真回合里它到底进没进 system 消息"这一环的证据
@@ -1019,20 +1041,25 @@ export async function runCompanionDialogue(
     // 预算耗尽（步数/工具数/执行时间）是确定性失败：标记 recoverable=false，
     // 队列侧同时按不可重试处理，避免空转重投（见 isNonRetryableError）。
     const budgetExceeded = err instanceof CompanionAgentBudgetExceededError;
+    const contextChanged = err instanceof CompanionContextChangedError;
     // 交付管线主动叫停（增量校验命中泄露/超限、fence 失联）：同样不可重试——
     // 重投不会让"泄露"消失。已下发的部分必然是最终文本的前缀，客户端按 error 收尾。
     const streamStopped = err instanceof CompanionStreamStoppedError;
+    const providerRejected = err instanceof ProviderRequestError;
+    const rateLimited = providerRejected && err.status === 429;
     await markCompanionRunFailed(
       read,
       ctx.workspaceId,
-      budgetExceeded ? "AGENT_BUDGET_EXCEEDED" : "INTERNAL_ERROR",
-      !budgetExceeded && !streamStopped,
-      budgetExceeded
+      contextChanged ? err.code : budgetExceeded ? "AGENT_BUDGET_EXCEEDED" : rateLimited ? "RATE_LIMITED" : providerRejected ? "PROVIDER_UNAVAILABLE" : "INTERNAL_ERROR",
+      !budgetExceeded && !streamStopped && !(providerRejected && [401,402,403].includes(err.status)),
+      contextChanged ? err.message : budgetExceeded
         ? "companion agent budget exceeded"
         : streamStopped
           ? `companion stream stopped: ${streamingDelivery.failureReason() ?? "delivery pipeline"}`.slice(0, 240)
-          : "companion agent execution failed",
-      streamStopped ? "delivery" : budgetExceeded ? "execution" : "transport",
+          : rateLimited ? "模型服务暂时繁忙，请稍后重试；已经完成的操作仍保留。"
+            : providerRejected ? "模型服务暂时无法完成这次请求，已经完成的操作仍保留。"
+              : "companion agent execution failed",
+      streamStopped ? "delivery" : budgetExceeded || contextChanged ? "execution" : "transport",
     );
     // 她已经说出来的那半句不能随失败一起消失（2026-09-19）。
     await persistFailedPartial({
@@ -1151,7 +1178,8 @@ export async function runCompanionDialogue(
       });
       if (!batched) return;
     } catch (err) {
-      await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", true, "companion delta write failed", "delivery");
+      await markCompanionRunFailed(read, ctx.workspaceId, err instanceof CompanionContextChangedError ? err.code : "INTERNAL_ERROR",
+        true, err instanceof CompanionContextChangedError ? err.message : "companion delta write failed", "delivery");
       throw err;
     }
   } else if (!(await streamingDelivery.writeTail(assistantText))) {
@@ -1189,6 +1217,7 @@ export async function runCompanionDialogue(
     await withWorkerWorkspaceTransaction(
       { workspaceId: ctx.workspaceId, userId: read.userId },
       async (tx) => {
+        await assertCompanionContextSourcesCurrent(tx, { workspaceId: ctx.workspaceId, userId: read.userId }, read.runId);
         const alive = await tx.execute<{ id: string }>(sql`
           UPDATE companion_turn_runs
           SET status = 'running', updated_at = now()
@@ -1441,7 +1470,8 @@ export async function runCompanionDialogue(
     // 写阶段失败：终态事务回滚，但前面已落库的 delta 仍然存在；显式
     // 投影 failed/error，避免 job retry/dead-letter 后 run 永久停在 running。
     logger.warn({ jobId: ctx.id, runId, err }, "companion_agent write phase failed");
-    await markCompanionRunFailed(read, ctx.workspaceId, "INTERNAL_ERROR", true, "companion response commit failed", "delivery");
+    await markCompanionRunFailed(read, ctx.workspaceId, err instanceof CompanionContextChangedError ? err.code : "INTERNAL_ERROR",
+      true, err instanceof CompanionContextChangedError ? err.message : "companion response commit failed", "delivery");
     await persistFailedPartial({
       workspaceId: ctx.workspaceId,
       userId: read.userId,

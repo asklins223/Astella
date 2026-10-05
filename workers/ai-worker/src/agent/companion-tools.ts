@@ -22,7 +22,7 @@ export function goalRequestFromUserTurn(userText: unknown): GoalRequest {
 }
 
 /** 执行器只用到 store 的这几个动作；默认是本模块的真实 store，测试可换窄端口。 */
-export type AgentGoalToolStore = Pick<typeof agentStore, "create" | "list" | "revise" | "control">;
+export type AgentGoalToolStore = Pick<typeof agentStore, "create" | "list" | "revise" | "control" | "longGoals">;
 
 export async function executeAgentGoalTool(
   event: AgentEventContext, name: string, args: Record<string, unknown>, store: AgentGoalToolStore = agentStore,
@@ -32,10 +32,15 @@ export async function executeAgentGoalTool(
   const input = manifest.argumentSchema.parse(args);
   const scope = { workspaceId: event.ctx.workspaceId, userId: event.read.userId };
   switch (name) {
+  case "agent_list_long_goals": {
+    const page=await store.longGoals(scope,{...input,limit:5});
+    return {value:{nextCursor:page.nextCursor,items:page.items.map(goal=>({ref:goal.ref,
+      content:goal.content.slice(0,200),appliesWhen:goal.appliesWhen,taskCount:goal.taskCount}))},safeSummary:"已核对确认的长期目标与实际任务"};
+  }
   case "agent_list_goals": {
-    const result = await store.list(scope);
-    return { value: { items: result.items.map(run => ({ runId: run.runId, revision: run.revision, goal: run.goal.slice(0,300),
-      status: run.status, artifacts: run.artifacts, summary: run.summary?.slice(0,1000) ?? null })) }, safeSummary: "已核对手边目标的真实状态" };
+    const result = await store.list(scope,{limit:5,cursor:input.cursor as string|undefined,longGoalMemoryId:input.longGoalMemoryId as string|undefined});
+    return { value: { nextCursor:result.nextCursor,items: result.items.map(run => ({ runId: run.runId, revision: run.revision, goal: run.goal.slice(0,300),
+      status: run.status, artifactCount: run.artifacts.length, summary: run.summary?.slice(0,200) ?? null })) }, safeSummary: "已核对手边目标的真实状态" };
   }
   }
   let run;
@@ -55,14 +60,13 @@ export async function executeAgentGoalTool(
           AND deleted_at IS NULL AND (share_scope='shared' OR created_by=${scope.userId})`));
       if (note?.current_version_id) inputs = [{ kind: "note_version", noteId: note.id, noteVersionId: note.current_version_id }];
     }
-    if (inputs.length === 0) return { value: { status: "not_executed", reason: "请先定位要处理的笔记并读取它的真实版本，再交给持续目标。" }, safeSummary: "还需要确定这件事使用的材料" };
     // 要求来自本轮原话；材料与版本仍按实际读取冻结；requestId 绑定本轮，模型修复重试不重复接。
     run = await store.create(scope, { requestId: event.read.runId, goal: request.goal, inputs,
-      conversationId: event.read.conversationId });
+      conversationId: event.read.conversationId,...(input.longGoal?{longGoal:input.longGoal as {memoryId:string;revision:number}}:{}) });
     break;
   }
   case "agent_revise_goal": {
-    run = await store.revise(scope, String(input.runId), Number(input.expectedRevision), String(input.goal));
+    run = await store.revise(scope, String(input.runId), Number(input.expectedRevision), String(input.goal), input.longGoal as Parameters<typeof store.revise>[4]);
     break;
   }
   case "agent_control_goal": {

@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { synthesizeTtsBytes, type TtsEngineDeps } from "../tts-engine.ts";
+import type { ApiAIGovernanceDependencies } from "../../../../lib/ai-governance.ts";
 import { EdgeTtsError } from "../edge-tts.ts";
 import type { TtsEngineConfig } from "../tts-config.ts";
 
@@ -32,10 +33,31 @@ const bytes = (text: string): Uint8Array => new TextEncoder().encode(`audio:${te
  * 读数传 `() => undefined`——内核会在发外部调用前核一次，这里应当恒真通过。
  */
 const TEST_SCOPE = {
-  workspaceId: "w-test",
-  userId: "u-test",
+  // 真 UUID：治理出口要在事务作用域里核身份，占位串过不了那一关——
+  // 而那一关正是本轮接上的东西，用假 ID 会把整条链测成"不治理也过"。
+  workspaceId: "00000000-0000-0000-0000-00000000w001".replace("w", "a"),
+  userId: "00000000-0000-0000-0000-00000000b001".replace("b", "c"),
   currentActiveTransaction: () => undefined,
 };
+
+/**
+ * 离线的治理依赖：查设置与写审计都在内存里。
+ *
+ * 缺省实现会连库——单测连库就不叫单测了。这里注入的形状与生产同构
+ * （consentAt/consentVersion 决定同意，auditLogging 决定写不写审计），
+ * 所以治理在不在、门有没有拦，这些用例照样判得出来。
+ */
+const governance = {
+  settings: async () => ({
+    requiresConsent: false,
+    consentAt: new Date(),
+    consentVersion: "v1",
+    // 默认政策是 fail-closed 的（sendToExternal=false）。测试要显式把它打开——
+    // 否则"治理门存在"这件事会被默认拒绝掩盖掉。
+    dataPolicy: { sendToExternal: true, sendImageContent: false, piiDetection: true, auditLogging: true },
+  }),
+  audit: async () => undefined,
+} satisfies ApiAIGovernanceDependencies;
 const streamOf = (text: string): ReadableStream<Uint8Array> =>
   new ReadableStream<Uint8Array>({
     start(controller) {
@@ -45,6 +67,7 @@ const streamOf = (text: string): ReadableStream<Uint8Array> =>
   });
 
 const baseDeps = (overrides: Partial<TtsEngineDeps>): TtsEngineDeps => ({
+  governance,
   collectStream: async (stream) => {
     const chunks: Uint8Array[] = [];
     const reader = stream.getReader();
@@ -64,6 +87,17 @@ const baseDeps = (overrides: Partial<TtsEngineDeps>): TtsEngineDeps => ({
     return out;
   },
   ...overrides,
+});
+
+test("拿到 qwen 连接后音频出错：如实记失败，再为 edge 的真实成功记另一条账",async()=>{
+  const outcomes:string[]=[];
+  const result=await synthesizeTtsBytes({text:"完整音频才算完成",edgeVoice:"zh-CN-XiaoxiaoNeural",queueKey:"audio-failed",scope:TEST_SCOPE,
+    deps:baseDeps({loadConfig:()=>makeConfig("qwen","fixture"),
+      governance:{...governance,audit:async row=>{outcomes.push(`${row.provider}:${row.status}`);}},
+      qwenSynthesize:async()=>({contentType:"audio/mpeg",stream:new ReadableStream<Uint8Array>({start(controller){controller.error(new Error("audio failed"));}})}),
+      edgeSynthesize:async(_text,voice)=>({audio:bytes("fallback"),contentType:"audio/mpeg",voice}),
+    })});
+  assert.equal(result.engine,"edge");assert.deepEqual(outcomes,["qwen:error","edge:success"]);
 });
 
 test("qwen 成功：返回 qwen 字节，不调用 edge", async () => {

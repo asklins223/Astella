@@ -120,6 +120,7 @@ export type DesktopCardGenerationActivationSelectionV1 = z.infer<typeof desktopC
 export const cardGenerationJobAcceptedV1Schema = z.strictObject({
   version: z.literal(1),
   runId: uuidSchema,
+  agentRunId: uuidSchema.optional(),
   status: cardGenerationRunStatusV2Schema,
 });
 export type CardGenerationJobAcceptedV1 = z.infer<typeof cardGenerationJobAcceptedV1Schema>;

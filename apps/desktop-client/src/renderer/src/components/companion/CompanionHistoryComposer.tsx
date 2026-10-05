@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { Loader2, Mic, Plus, Send, Square } from "lucide-react";
 import type { CompanionVoiceInput } from "./use-companion-voice-input";
+import { isCompanionComposition, shouldSendCompanionOnEnter } from "./companion-composer-key";
 
 /** The Demo's two-row paper composer, connected to the shared production draft. */
 export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, voiceEnabled, companionName, sending, stopping, onStop, onVoiceToggle, onPageActions }: {
@@ -33,8 +34,9 @@ export function CompanionHistoryComposer({ input, onInputChange, onSend, voice, 
     <textarea ref={composerRef} rows={1} value={input} onChange={event => onInputChange(event.currentTarget.value)}
       placeholder="想聊哪一句，或只是想说说话…" aria-label={`继续问 ${companionName}`}
       onKeyDown={event => {
+        if (isCompanionComposition(event.nativeEvent)) return;
         if (event.key === "Escape") { event.preventDefault(); event.currentTarget.blur(); return; }
-        if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void onSend(); }
+        if (shouldSendCompanionOnEnter(event)) { event.preventDefault(); void onSend(); }
       }} />
     <div className="companion-history__compose-tools">
       <button type="button" className="companion-history__tool" onClick={onPageActions} aria-label="当前页面快捷操作" title="当前页面快捷操作"><Plus size={21} /></button>

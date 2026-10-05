@@ -198,6 +198,29 @@ describe("useSurfaceProjection refreshOnFocus", () => {
 
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
   });
+
+  it.each(["focus", "explicit"] as const)("clears both progress flags when the newest request is %s", async newest => {
+    installApi();
+    let resolveOlder!: (value: string) => void, resolveNewer!: (value: string) => void;
+    const older = new Promise<string>(resolve => { resolveOlder = resolve; });
+    const newer = new Promise<string>(resolve => { resolveNewer = resolve; });
+    const read = vi.fn().mockResolvedValueOnce("first").mockReturnValueOnce(older).mockReturnValueOnce(newer);
+    render(<Probe read={read} options={{ refreshOnFocus: true }} />);
+    await waitFor(() => expect(latest?.data).toBe("first"));
+    const focus = () => { window.dispatchEvent(new Event("focus")); };
+    await act(async () => { if (newest === "focus") void latest!.reload(); else focus(); });
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+    await act(async () => { if (newest === "focus") focus(); else void latest!.reload(); });
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
+    await act(async () => { resolveNewer("newer"); await newer; });
+    await waitFor(() => expect(latest?.data).toBe("newer"));
+    expect(latest?.loading).toBe(false);
+    expect(latest?.refreshing).toBe(false);
+    await act(async () => { resolveOlder("older"); await older; });
+    expect(latest?.data).toBe("newer");
+    expect(latest?.loading).toBe(false);
+    expect(latest?.refreshing).toBe(false);
+  });
 });
 
 describe("parseImageBlock", () => {

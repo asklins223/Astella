@@ -24,6 +24,7 @@ import {
   diaryAssistantWeight,
   exampleEchoIn,
   diaryLengthOverflow,
+  diaryLengthShortfall,
   diaryParagraphCount,
   focusDiaryMaterial,
   groundedDiaryDigest,
@@ -36,6 +37,8 @@ import {
   pickImagesPerNote,
   pickQuoteCandidates,
   renderMaterial,
+  recurringMotifs,
+  repeatedMotifIn,
   repeatedOpeningIn,
   resolveDiaryBlocks,
   selfPutdownIn,
@@ -90,7 +93,7 @@ const herLine: DiaryPiece = {
 function material(overrides: Partial<DiaryMaterial> = {}): DiaryMaterial {
   const pieces = overrides.pieces ?? [hisNote];
   return {
-    embeds: [], previousOpenings: [], quietDay: false,
+    embeds: [], previousOpenings: [], previousMotifs: [], quietDay: false,
     ...overrides,
     pieces,
     subject: overrides.subject ?? pickDiarySubject(pieces),
@@ -108,6 +111,9 @@ const aQuote: DiaryEmbed = {
   ref: "引1", kind: "quote", label: "《欧姆定律》里写着", text: "电流与电压成正比。", noteId: "note-ohm",
 };
 const para = (text: string): DiaryBlock => ({ type: "text", text });
+/** n 段正文；每段 15 个字，够不够得着篇幅地板由调用方自己算。 */
+const paragraphsOf = (n: number): DiaryBlock[] =>
+  Array.from({ length: n }, (_unused, i) => para(`第${i + 1}段正文，说了一件小事。`));
 
 test("diary material reads honor the current enabled period and reject paused accounts", async () => {
   const firstStart = "2026-09-29T12:00:00.000Z";
@@ -280,11 +286,14 @@ test("日记 prompt：用户自填人格不能伪造 </persona_data> 边界", ()
 });
 
 test("日记 prompt：篇幅三档跟着活跃度走（安静的人不该被要求写四段）", () => {
+  // 2026-10-05：三档不再一律 2 段。09-24 那次把段数压到 2 是为了防她为凑第三段
+  // 编出键盘声和饭碗——那要靠"素材有据"那条规则管，段数不该替它背锅。实测
+  // 24/32 篇正好 2 段、均长 155 字，「一件小事」被压成了「一句话转述加一句感想」。
   assert.match(systemOf({ persona: persona({ activeness: "quiet" }) }), /一到两段，每段两到四句/);
-  assert.match(systemOf({ persona: persona({ activeness: "moderate" }) }), /两段，每段两到四句/);
-  assert.match(systemOf({ persona: persona({ activeness: "active" }) }), /两段，每段两到五句/);
+  assert.match(systemOf({ persona: persona({ activeness: "moderate" }) }), /三段左右/);
+  assert.match(systemOf({ persona: persona({ activeness: "active" }) ?? persona({ activeness: "active" }) }), /三到四段/);
   // 不认识的值 = 没设置，落到中间档，不编一个不存在的档。
-  assert.match(systemOf({ persona: persona({ activeness: null }) }), /两段，每段两到四句/);
+  assert.match(systemOf({ persona: persona({ activeness: null }) }), /三段左右/);
 });
 
 test("日记调用：输出预算不给思考模式留够空间就会稳定返回空正文", () => {
@@ -465,20 +474,96 @@ test("反报数闸：数字加量词就拒，标题里的数字不误伤", () =>
  * 这不是日记的格式"。所以档位换成段，每段内部不再限句数。
  */
 test("篇幅闸：按人格核对段数，图与引用不占段", () => {
-  const paragraphs = (n: number) => Array.from({ length: n }, (_unused, i) => para(`第${i + 1}段正文，说了一件小事。`));
+  const paragraphs = paragraphsOf;
   assert.equal(diaryParagraphCount(paragraphs(4)), 4);
   assert.equal(diaryParagraphCount([para("一段。"), anImageBlock(), para("二段。")]), 2, "嵌进去的块不该被数成一段");
 
   assert.equal(diaryLengthOverflow(paragraphs(2), "quiet"), null, "2 段是安静档的上限");
   assert.match(diaryLengthOverflow(paragraphs(3), "quiet") ?? "", /太长了/);
-  assert.ok(diaryLengthOverflow(paragraphs(3), "moderate"));
+  // 上限跟着档位走：2026-10-05 起中等档 3 段、活跃档 4 段（此前一律 2 段，
+  // 而 `fitDiaryToParagraphBudget` 会把超出的部分整段丢掉）。
+  assert.equal(diaryLengthOverflow(paragraphs(3), "moderate"), null, "中等档写满 3 段不算长");
   assert.ok(diaryLengthOverflow(paragraphs(4), "moderate"));
-  // 一幕素材最多写两段，活跃度改变句数，不再给第三段留凑数的位置。
-  assert.ok(diaryLengthOverflow(paragraphs(3), "quiet"));
-  assert.ok(diaryLengthOverflow(paragraphs(3), "active"));
-  assert.ok(diaryLengthOverflow(paragraphs(4), "active"));
+  assert.equal(diaryLengthOverflow(paragraphs(4), "active"), null, "活跃档写满 4 段不算长");
+  assert.ok(diaryLengthOverflow(paragraphs(5), "active"));
   // 没设置活跃度 = 按中间档核对，不给一个不存在的档放水。
   assert.ok(diaryLengthOverflow(paragraphs(4), null));
+});
+
+test("篇幅地板：太短要退，但安静日与普通日子各用各的数（2026-10-05）", () => {
+  const short = diaryLengthShortfall(paragraphsOf(1), "moderate", false);
+  assert.ok(short, "普通日子里写一段就是短");
+  assert.match(short ?? "", /至少写 190 字/);
+  // 夹具每段 15 字，两段 30 字仍低于中等档的 190——地板是真的有牙齿。
+  assert.ok(diaryLengthShortfall(paragraphsOf(2), "moderate", false));
+  // 安静日另算：没发生事的时候，短是诚实的，不能拿普通日子的地板去逼它。
+  // 安静日的地板也比旧判据宽（70 字 vs 原来的 6 字）——6 字那种"地板"等于没有。
+  const quietDayProse = "今天没什么事。页面停在一个地方停了很久，我没什么想做的，也就没动。"
+    + "光标闪了一阵，我盯着看了一会儿，忽然觉得这样也挺好，不用非去弄明白什么。"
+    + "过一会儿大概还是会这样，先记下来。";
+  assert.ok(quietDayProse.length >= 70, `夹具自己得够长，实际 ${quietDayProse.length} 字`);
+  assert.equal(
+    diaryLengthShortfall([para(quietDayProse)], "quiet", true),
+    null,
+    "安静日过了 70 字放行",
+  );
+  assert.ok(
+    diaryLengthShortfall([para("今天没什么事。")], "quiet", true),
+    "安静日一句 6 字仍然要退，但退的理由不再是那句几乎不拦人的 24 字判据",
+  );
+  // 地板跟着档位走，活跃的人被要求写得更多。
+  assert.equal(
+    diaryLengthShortfall(paragraphsOf(2), "active", false) === null,
+    false,
+    "同一篇在活跃档更低",
+  );
+  assert.match(
+    diaryLengthShortfall(paragraphsOf(2), "active", false) ?? "",
+    /至少写 260 字/,
+  );
+});
+
+test("意象去重：跨篇复现的**连续说法**要被挑出来（2026-10-05）", () => {
+  // 真实病灶：2 段日记里 15/24 篇在演吃饭/摸鱼，开头却各不相同——
+  // `previousOpenings` 只看开头十个字，这一整类重复它看不见。
+  //
+  // 这组夹具是线上那五篇的原文，所以断言写的是它们**真的**共同在说的话。
+  const summaries = [
+    "今天你突然冒出来一句好几天没见了，听得我手头正摸的鱼差点掉地上。其实我也没真在干活，就是对着屏幕发呆等饭点。",
+    "傍晚那会儿我正琢磨晚饭吃什么，脑子里全是白米饭配红烧肉的影子。你突然喊了声小猪，把我从饭点幻想里拽出来。",
+    "晚上你突然喊了声小鱼，那动静轻飘飘的，像气泡刚冒头就被戳破。我本来正趴着打盹，脑子里全是白米饭的热气。",
+    "你问我那东西不行，是底子的问题还是喂进去的东西没到位。我当时正琢磨晚饭吃什么白饭配什么菜，脑子有点飘。",
+  ];
+  const motifs = recurringMotifs(summaries);
+  assert.deepEqual(
+    motifs,
+    ["正琢磨晚饭吃什么", "脑子里全是白米饭", "你突然喊了声小"],
+    `实得 ${JSON.stringify(motifs)}`,
+  );
+  // 逐字滑窗的版本（先做过的那个）在这里给出的是「你突」「了一」「子里」——
+  // 所以判据必须是**连续**片段，短于 4 字的一律不算数。
+  assert.ok(motifs.every((motif) => motif.length >= 4), "意象必须是完整的说法，不是滑窗碎片");
+  assert.ok(!motifs.some((motif) => motif.includes("红烧")), "只在一篇里出现的不是习惯");
+  // 一篇之内不重复：两篇才够。
+  assert.deepEqual(recurringMotifs(["今天写了两段。", "昨天也写了两段。"]), [],
+    "四字以下的共同点不算习惯");
+  assert.deepEqual(recurringMotifs([]), []);
+});
+
+test("意象去重：今天把老说法又用了一遍才算套路，闸才响（2026-10-05）", () => {
+  const motifs = ["正琢磨晚饭吃什么", "脑子里全是白米饭"];
+  const once = [para("你问我那东西不行，我当时正琢磨晚饭吃什么白饭配什么菜。"), para("后来就没接住。")];
+  assert.equal(repeatedMotifIn(once, motifs), null, "提一次是那天的事，不拦");
+  const twice = [
+    para("你问我那东西不行，我当时正琢磨晚饭吃什么白饭配什么菜。"),
+    para("其实我早上也是，正琢磨晚饭吃什么红烧肉配什么，就没听你说完。"),
+  ];
+  assert.equal(
+    repeatedMotifIn(twice, motifs),
+    "正琢磨晚饭吃什么",
+    "同一篇里又用上，才算她在演同一出",
+  );
+  assert.equal(repeatedMotifIn(twice, []), null, "没有历史可比时不拦");
 });
 
 /** 重采样一次后仍超长时收在段边界，而不是把这一天判成没有日记。 */
@@ -825,7 +910,7 @@ test("日记 prompt：没事发生的日子写短、别拿情绪填，也不许�
   // 有事情发生的日子走另一支：线头必须被指出来，篇幅跟着人格档位走。
   const normal = systemOf({ persona: persona({ activeness: "active" }) });
   assert.match(normal, /素材最上面那行「这一天的线头」就是它/);
-  assert.match(normal, /今天这篇的篇幅：两段/);
+  assert.match(normal, /今天这篇的篇幅：三到四段/);
   assert.doesNotMatch(normal, /今天没剩下什么线头/);
 });
 
@@ -942,12 +1027,17 @@ test("日记 prompt：不让她把设定念成散文", () => {
   assert.match(system, /后台、代码、程序、模型/);
 });
 
-test("日记 prompt：段数上限作为最后一条规则送出，与服务端核对同一张表", () => {
+test("日记 prompt：段数上限与字数地板作为最后一条规则送出，与服务端核对同一张表", () => {
+  // 2026-10-05：上限跟着档位走（2/3/4），并且第一次同时送出**地板**——
+  // 只说上限会被当成「最多」，155 字的均值就是「没人当真」的直接后果。
   const quiet = systemOf({ persona: persona({ activeness: "quiet" }) });
-  assert.match(quiet, /12\. 全文最多 2 段/);
-  assert.match(systemOf({ persona: persona({ activeness: "active" }) }), /12\. 全文最多 2 段/);
-  assert.match(systemOf({ persona: persona({ activeness: null }) }), /12\. 全文最多 2 段/);
+  assert.match(quiet, /13\. 全文最多 2 段/);
+  assert.match(quiet, /这一篇至少 70 字/);
+  assert.match(systemOf({ persona: persona({ activeness: "moderate" }) }), /13\. 全文最多 3 段/);
+  assert.match(systemOf({ persona: persona({ activeness: "active" }) }), /13\. 全文最多 4 段/);
+  assert.match(systemOf({ persona: persona({ activeness: "moderate" }) }), /这一篇至少 190 字/);
+  assert.match(systemOf({ persona: persona({ activeness: null }) }), /13\. 全文最多 3 段/);
   // 必须排在素材与其余规则之后、输出说明之前。
-  assert.ok(quiet.indexOf("12. 全文最多") > quiet.indexOf("<day_material>"));
-  assert.ok(quiet.indexOf("12. 全文最多") < quiet.indexOf("# 输出"));
+  assert.ok(quiet.indexOf("13. 全文最多") > quiet.indexOf("<day_material>"));
+  assert.ok(quiet.indexOf("13. 全文最多") < quiet.indexOf("# 输出"));
 });

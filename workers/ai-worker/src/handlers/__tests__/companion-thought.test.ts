@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { containsCompanionInternalToken } from "../companion-dialogue-content.ts";
 import {
   buildDeterministicThoughts,
@@ -391,8 +392,7 @@ test("原句过不了闸就是 null：不许拿候选原句当兜底（39d W6-1 
  * 注释里提到这句也算——所以先把注释剥掉再数，否则这条闸会因为自己文件里的说明文字而红。
  */
 test("送达链上没有『拿原句顶上』这条路（静态闸，39d W6-1 G10）", () => {
-  const source = readFileSync(new URL("../companion-thought.ts", import.meta.url), "utf8");
-  const code = source.split("\n").filter((line) => !line.trim().startsWith("*") && !line.trim().startsWith("//")).join("\n");
+  const code = withoutComments(readFileSync(new URL("../companion-thought.ts", import.meta.url), "utf8"));
   assert.match(code, /finalizeThoughtExpression\(candidate\.text, candidate\.grounding\)/,
     "候选原句必须走 `finalizeThoughtExpression`——绕开它就是把整道表达闸关掉");
   assert.doesNotMatch(code, /selectThoughtExpression\(\[candidate\.text\][^\n]*\?\?\s*candidate\.text/,
@@ -435,4 +435,52 @@ test("向量文本解析", () => {
   assert.deepEqual(parseVectorText("[1,2,3]"), [1, 2, 3]);
   assert.equal(parseVectorText("not a vector"), null);
   assert.equal(parseVectorText("[1,x,3]"), null);
+});
+
+/**
+ * 去掉注释再判源码形状。
+ *
+ * 这条判据要认的是**真正被调用**的那一处，而不是注释里提到的那一处：
+ * 治理出口的说明注释本身就得写出旧写法（"此前是裸 `createEmbeddingProvider()`"），
+ * 不剥掉的话这条判据会在自己的注释上报自己没过——报的还是一条它抓不到的缺口。
+ */
+function withoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+}
+
+test("语义去重的向量要走治理出口，不能裸建 provider", () => {
+  // 这一发送的是定稿正文（可能含用户原话），与生成链路同属一次外发。
+  // 上游是裸 embedding provider 构造：`thoughtProvider()` 拿不到同意时只是
+  // 抛错降级，向量那一步照样发出去——没同意的账号仍把正文送进向量模型，
+  // 且 `ai_audit_log` 里查不到这一笔。
+  const source = withoutComments(
+    readFileSync(join(import.meta.dirname, "..", "companion-thought.ts"), "utf8"));
+
+  // 唯一的向量出口：必须经 `resolveAIGovernanceContext` 拿治理上下文，
+  // 再由 `createGovernedEmbeddingProvider` 包一层（同意/政策/PII）。
+  assert.ok(!/createEmbeddingProvider\(\s*\)/.test(source),
+    "还有一处不带治理上下文的 createEmbeddingProvider()：向量调用绕过同意与外发政策");
+  assert.match(source, /createGovernedEmbeddingProvider\(/,
+    "语义去重的向量没有过治理包装");
+  assert.match(source, /resolveAIGovernanceContext\(job\.workspaceId, userId\)/,
+    "向量出口没有解析治理上下文");
+
+  // 治理上下文拿不到（未同意/政策拒发/provider 缺失）时必须**不去发**，
+  // 而不是发出去再降级——降级的那一步就是没同意也外发。
+  const gate = source.indexOf("embeddingGovCtx.consentOk");
+  assert.ok(gate > 0, "向量出口没有同意闸");
+  const create = source.indexOf("createEmbeddingProvider(embeddingGovCtx)", gate);
+  assert.ok(create > gate, "建 provider 的动作不在同意闸之后");
+
+  // 生成链路已有的治理形状不能被这次改动带坏。
+  assert.match(source, /createGovernedProvider\(/, "生成链路的治理包装不见了");
+
+  // 归属也要跟着交出去。
+  assert.match(source, /operation: "companion_thought_dedupe_embedding"/,
+    "去重向量没有声明 operation：成本与合规归因都按它分桶");
+  assert.match(source, /jobId: job\.id/, "去重向量没带 jobs 行：这一笔挂不到任何 job 上");
+  assert.match(source, /dataCategories: \["user_answer"\]/,
+    "去重向量送出去的是含用户原话的定稿正文，不声明类别时设置页「带出去的内容」是空的");
 });

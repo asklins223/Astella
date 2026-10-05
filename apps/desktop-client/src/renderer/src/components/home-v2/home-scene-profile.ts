@@ -62,7 +62,7 @@ export const LIGHTHOUSE_HOME_SCENE_PROFILE: HomeSceneProfileV1 = Object.freeze({
     "review-cards": [278, 350] as const,
     "desk-lamp": [225, 302] as const,
     "shelf-search": [1298, 250] as const,
-    "magic-catalog": [1432, 340] as const,
+    "bookshelf": [1432, 340] as const,
     "shelf-notebook": [1324, 418] as const,
     "window-stars": [836, 174] as const,
     "rest-cushion": [1510, 686] as const,

@@ -3,12 +3,6 @@
 .hud-surface .notebook-hud [hidden] { display: none !important; }
 
 .hud-surface .note-document-editor { min-width: 0; }
-.hud-surface .note-math { position: relative; }
-.hud-surface .note-math[data-display="true"] { display: block; max-width: 100%; overflow-x: auto; padding-block: 6px; }
-.hud-surface .note-math__source { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.hud-surface .note-math .katex-display { margin: .65em 0; text-align: start; }
-.hud-surface .note-math .katex { font-size: 1.08em; }
-.hud-surface .note-math-error { white-space: pre-wrap; overflow-wrap: anywhere; }
 .hud-surface .note-source-editor { min-width: 0; color: var(--hud-ink); }
 .hud-surface .note-source-editor__tools { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
 .hud-surface .note-source-editor__input { min-width: 0; background: transparent; }

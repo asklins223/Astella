@@ -1,8 +1,9 @@
 # Home V2 魔法小屋验收记录
 
 > 状态：CURRENT_EVIDENCE · 预览验收记录（`VITE_HOME_SCENE_VARIANT=v2`），不改变 `implementation-freeze`
-> 文档版本：v1.0
+> 文档版本：v1.1
 > 日期：2026-09-11
+> 2026-10-05 用户决定：**魔法目录整页删除**（含 §12.1「只推一件」那张便签与「小屋收藏」面板）。理由是目录里列的每一条都已经是房间里四件东西（书桌／书架／星窗／休息角）上的入口，它退化成了一份重复的全屏清单。本记录里与目录相关的验收项、证据名，以及 §3 第 4／5 条随之失效——见文末「魔法目录删除后的现状」。房间本身的验收矩阵不变。
 > 适用范围：Home V2 首页的权威验收视口矩阵、证据位置、相对原始计划的偏离，以及仍然诚实的缺口
 > 上游设计：[Design System：理解书房 Desktop V1 + Home V2 Preview](../../DESIGN.md)
 > 上游产品：[Product：Home V2 预览覆盖合同](../../PRODUCT.md)
@@ -72,4 +73,25 @@ Home V2 的验收尺寸不是设计偏好，而是原生窗口的能力边界：
 - **伴星语音缺少真实服务/打包运行证据。** 桌面端当前已实现短提示 TTS、总静音/任务静默和 Live2D 口型采样；本次没有启动 API/TTS provider，且烟测因后端不可用停在工作区投影错误，因此这里只以类型检查、单测和构建为证据。
 - **旧矩阵的跨文档扫尾未完成。** `docs/design/frontend-quality-gates-and-visual-regression-plan.md`（含 §「最小桌面 = 1024×700」矩阵行）、`docs/design/desktop-design-system-and-frozen-component-contract.md`、`docs/design/first-golden-slice-product-and-ux-spec.md`、`docs/design/static-asset-production.md`、`docs/design/frontend-ui-refactor-guideline.md`、`docs/design/2-5d-learning-room-master-guideline.md` 与 `docs/design/desktop-visual-ui-implementation-snapshot.md` 仍按 `1024×700` 描述验收或历史证据。本次只纠正 `DESIGN.md`、`PRODUCT.md`、`MOTION-01` 与本记录；其余文档需要一次显式修订，不能继续引用不可达尺寸。
 - ~~**`MOTION-01` §8.1 的“V1 默认 adapter 是 orb”与预览首页的 Live2D 默认**……~~ **2026-09-16 已收敛**：`MOTION-01` §8.1 现写明唯一 adapter 是窗口内 Live2D（orb 已移除），首页与任务面同形；剩余约束只有许可与打包 Gate。
-- **目录页眉新增入口的证据待补。** 动效模式与中断恢复入口进入目录页眉后，目录场景截图需要重新采集，才能证明“单一低频入口表面”在真实打包画面里成立。
+- ~~**目录页眉新增入口的证据待补。** 动效模式与中断恢复入口进入目录页眉后，目录场景截图需要重新采集，才能证明“单一低频入口表面”在真实打包画面里成立。~~ **2026-10-05 随目录删除而作废**：下面「魔法目录删除后的现状」说明了这两项各自现在的落点。
+
+## 6. 魔法目录删除后的现状（2026-10-05 用户决定）
+
+**删掉的东西**：全屏 `<dialog class="home-v2-catalog">`（`HomeV2Catalog`）、HUD 上的放大镜入口、功能弹窗里的「查看全部功能」、注册表里的 `catalog` 功能条目与只服务那张清单页的五个分组（`HOME_FEATURE_GROUPS` / `catalogOrder` / `catalogVisible`）、以及 §12.1「只推一件」便签（`HomeNextStep` 与它的测试）和「小屋收藏」面板（纪念物摆入/收起、完成轨迹特效、这个空间让不让伴星主动开口）。对应的 CSS 一并删除：`.home-v2-catalog*` / `.home-v2-collection*` / `.home-v2-feature-row*` / `.home-next-step*`。
+
+**因此本记录以下条目作废**：§2 验收矩阵里的「魔法目录」场景组（`home-v2-catalog-1440x810`、`home-v2-catalog-zoom-200`）、§3 第 4 条（动效模式入口落在目录页眉）与第 5 条（中断恢复入口落在目录内）、以及上面那条目录页眉证据缺口。
+
+**这些能力现在在哪**：
+
+| 原位置 | 现在的落点 |
+| --- | --- |
+| 目录里的功能清单 | 房间四件东西——书桌（今日下一步／今日复习／当前学习目标）、书架（研究册／全部笔记／来源资料／搜索）、星窗（目标／理解星图）、休息角（伴星中心）；设置中心仍走原有入口 |
+| 目录页眉的总静音 | 设置中心「伴星与环境音」（`settings-companion-voice.tsx`），本机总静音，同时管环境音与伴星语音 |
+| 目录页眉的动效模式 | 房间控制岛（`HudRoomControl`） |
+| 中断恢复 | 书桌「今日下一步」按 `soleActiveRun` 直达那一条，多条时进「未完成的学习」清单（`HomeV2Experience.runFeature` 的 `continue` 分支，审计 F24） |
+| §12.1 那句理由 | 仍在：书桌条目上读 `useHomeNextStepProjection()` 的真实读数。随便签一起去掉的只有「换一个」与「暂不处理」两颗按钮 |
+| 小屋收藏的**读**（已摆好的纪念物） | 仍在房间场景里由 `HomeV2Keepsakes` 绘制。随面板一起去掉的是**摆入/收起**、完成轨迹的选择与那个空间的主动开口开关 |
+
+**HUD 主按钮**：没有主目标时不再跳去另一张页面，写「看看今天」，把镜头走到书桌（`HomeV2ObjectLayer.runPrimary` → `focusRegion("desk")`；文案来自 `home-presentation.ts`）。
+
+**随之空出来的写链路（尚未清理）**：`useCompanionHomeProjection().patchRoomProfile` 在渲染层已无调用方（小屋收藏是它唯一的消费者）。服务端合同、路由、IPC 与 preload 都还在——**是否一并收掉留待后续决定**，本次只删界面。

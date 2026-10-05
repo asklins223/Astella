@@ -27,12 +27,28 @@ export function useCompanionFloatingPlacement(
     // Layout heights exclude the pop animation's transform and shadow overflow.
     // scrollHeight includes those, feeding the overshoot back into placement.
     const contentHeight = () => {
+      // The last placement also caps a task bubble's flex body. Lift that cap
+      // only during this synchronous layout read; otherwise a larger task can
+      // never grow beyond the previous task's height. Restore it before paint.
       const children = Array.from(head.children) as HTMLElement[];
-      const gap = Number.parseFloat(getComputedStyle(head).rowGap) || 0;
-      return children.reduce((height, child) => {
-        const style = getComputedStyle(child);
-        return height + child.offsetHeight + (Number.parseFloat(style.marginTop) || 0) + (Number.parseFloat(style.marginBottom) || 0);
-      }, Math.max(0, children.length - 1) * gap);
+      const constraints = [head, ...children].map(element => ({
+        element,
+        value: element.style.getPropertyValue("max-height"),
+        priority: element.style.getPropertyPriority("max-height"),
+      }));
+      for (const { element } of constraints) element.style.setProperty("max-height", "none");
+      try {
+        const gap = Number.parseFloat(getComputedStyle(head).rowGap) || 0;
+        return children.reduce((height, child) => {
+          const style = getComputedStyle(child);
+          return height + child.offsetHeight + (Number.parseFloat(style.marginTop) || 0) + (Number.parseFloat(style.marginBottom) || 0);
+        }, Math.max(0, children.length - 1) * gap);
+      } finally {
+        for (const { element, value, priority } of constraints) {
+          if (value) element.style.setProperty("max-height", value, priority);
+          else element.style.removeProperty("max-height");
+        }
+      }
     };
     const measure = () => {
       const anchor = presence.querySelector<HTMLElement>(".window-live2d") ?? presence.querySelector<HTMLElement>(".companion-visual-shell");

@@ -265,3 +265,34 @@ test("qwen 按用户串行、全局有界并发、连接按身份分槽", async 
 
   resetQwenTestState();
 });
+
+test("取消同用户排队任务后，后续请求仍能开工且不泄漏名额", { timeout: 2000 }, async () => {
+  resetQwenTestState();
+  const first = await startTask(USER_A, "第一段");
+  const controller = new AbortController();
+  const cancelled = queueTask(USER_A, "不再需要的一段", { ...QWEN_TEST_BASE_OPTS, signal: controller.signal });
+  const rejected = assert.rejects(cancelled, /取消/);
+  controller.abort(); await rejected;
+  serveTaskBody(first.ws); await pumpStream((await first.result).stream); await settleTicks();
+  const next = await startTask(USER_A, "下一段");
+  serveTaskBody(next.ws); await pumpStream((await next.result).stream); await settleTicks();
+  assert.equal(qwenTtsActiveTaskCount(), 0); assert.equal(qwenTtsQueuedKeyCount(), 0);
+  resetQwenTestState();
+});
+
+test("取消等待全局名额的任务不会在稍后吞掉归还的名额", { timeout: 2000 }, async () => {
+  await withMaxConcurrency("1", async () => {
+    resetQwenTestState();
+    const first = await startTask(USER_A, "第一段");
+    const controller = new AbortController();
+    const cancelled = queueTask(USER_B, "等待中的段落", { ...QWEN_TEST_BASE_OPTS, signal: controller.signal });
+    const rejected = assert.rejects(cancelled, /取消/);
+    await settleTicks(); controller.abort(); await rejected;
+    serveTaskBody(first.ws); await pumpStream((await first.result).stream); await settleTicks();
+    assert.equal(qwenTtsActiveTaskCount(), 0);
+    const next = await startTask(USER_B, "下一段");
+    serveTaskBody(next.ws); await pumpStream((await next.result).stream); await settleTicks();
+    assert.equal(qwenTtsActiveTaskCount(), 0); assert.equal(qwenTtsQueuedKeyCount(), 0);
+    resetQwenTestState();
+  });
+});

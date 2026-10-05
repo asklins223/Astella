@@ -38,10 +38,12 @@ function foreignMessage(): MessageEvent {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-09-26T10:00:00Z"));
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
 });
 afterEach(() => {
   vi.useRealTimers();
   cleanup();
+  vi.restoreAllMocks();
 });
 
 describe("ArtifactFrameHost", () => {
@@ -102,6 +104,56 @@ describe("ArtifactFrameHost", () => {
     expect(screen.getByText(/这份动态内容没能跑起来，已停止等待/)).toBeTruthy();
     expect(container.querySelector("iframe")).toBeNull();
     // 重建与降级都发生在看门的节拍上，主页面（本测试自身）从未被卡住。
+  });
+
+  it("窗口隐藏期间暂停心跳看门，返回后保留同一画面并给心跳恢复时间", async () => {
+    const visibility = vi.spyOn(document, "visibilityState", "get");
+    const { container } = render(
+      <ArtifactFrameHost artifactId={ARTIFACT_ID} isTrustedFrameSource={trusted} />,
+    );
+    act(() => { window.dispatchEvent(frameMessage("ready", { stepCount: 2 })); });
+    const originalFrame = container.querySelector("iframe");
+    act(() => {
+      visibility.mockReturnValue("hidden");
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(container.querySelector("iframe")).toBe(originalFrame);
+    expect(screen.queryByText(/没能跑起来/)).toBeNull();
+
+    act(() => {
+      visibility.mockReturnValue("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(container.querySelector("iframe")).toBe(originalFrame);
+    act(() => { window.dispatchEvent(frameMessage("heartbeat")); });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(container.querySelector("iframe")).toBe(originalFrame);
+    expect(screen.getByText("这一页讲了 2 个要点")).toBeTruthy();
+  });
+
+  it("隐藏时加载不消耗重建机会；显示后真正无心跳仍有限重建并降级", async () => {
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    const { container } = render(
+      <ArtifactFrameHost artifactId={ARTIFACT_ID} isTrustedFrameSource={trusted} />,
+    );
+    const originalFrame = container.querySelector("iframe");
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(container.querySelector("iframe")).toBe(originalFrame);
+
+    act(() => {
+      visibility.mockReturnValue("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(container.querySelector("iframe")).toBe(originalFrame);
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(container.querySelector("iframe")).not.toBe(originalFrame);
+    expect(container.querySelector("iframe")).toBeTruthy();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(screen.getByText(/没能跑起来/)).toBeTruthy();
   });
 
   it("心跳消失一次 → 重建后 ready 回来（崩溃被重建救回），不再降级", async () => {

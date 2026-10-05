@@ -240,8 +240,6 @@ import {
   companionVoiceSpeakSegmentRequestV2Schema,
   companionVoicePlaybackOutcomeRequestV1Schema,
   companionVoicePlaybackOutcomeResultV1Schema,
-  companionVoiceTranscribeRequestV1Schema,
-  companionVoiceTranscribeResultV1Schema,
 } from "@ailearn/shared/companion-voice-contracts";
 import {
   COMPANION_DISCOVERY_KINDS,
@@ -265,6 +263,8 @@ import {
   companionAgentRoutesListResultV1Schema,
   companionChatOpenThoughtRequestV1Schema,
   companionChatOpenThoughtResultV1Schema,
+  companionChatListThoughtsRequestV1Schema,
+  companionChatListThoughtsResultV1Schema,
   companionChatCancelRunRequestV1Schema,
   companionChatCancelRunResultV1Schema,
   companionRunNodesListRequestV1Schema,
@@ -478,10 +478,6 @@ const companionVoicePlaybackOutcomeInputSchema = z.strictObject({
   meta: requestMetaSchema,
   request: companionVoicePlaybackOutcomeRequestV1Schema,
 });
-const companionVoiceTranscribeInputSchema = z.strictObject({
-  ...m1InputBase,
-  request: companionVoiceTranscribeRequestV1Schema,
-});
 const companionChatEnsureInputSchema = z.strictObject({
   ...m1InputBase,
   request: companionChatEnsureRequestV1Schema,
@@ -513,6 +509,10 @@ const companionChatRunNodesInputSchema = z.strictObject({
 const companionChatOpenThoughtInputSchema = z.strictObject({
   ...m1InputBase,
   request: companionChatOpenThoughtRequestV1Schema,
+});
+const companionChatListThoughtsInputSchema = z.strictObject({
+  ...m1InputBase,
+  request: companionChatListThoughtsRequestV1Schema,
 });
 const companionChatCancelRunInputSchema = z.strictObject({
   ...m1InputBase,
@@ -765,13 +765,6 @@ channel(DESKTOP_IPC_CHANNELS.companionHomeGetProjection, runtimeInputSchema, asy
     return ns_companion.recordCompanionVoicePlaybackOutcome(gateway.gatewayTransport, input.request, input.meta.requestId);
   }, companionVoicePlaybackOutcomeResultV1Schema);
 
-  // 语音转文本 + 聊天发送链路（2026-09-18）：与其余伴星通道同一路由门控。
-  channel(DESKTOP_IPC_CHANNELS.companionVoiceTranscribe, companionVoiceTranscribeInputSchema, async (_event, _window, input) => {
-    requireM2Route(contract, "room.home");
-    assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    return ns_companion.transcribeCompanionVoice(gateway.gatewayTransport, input.request, input.meta.requestId);
-  }, companionVoiceTranscribeResultV1Schema);
-
   channel(DESKTOP_IPC_CHANNELS.companionChatEnsureConversation, companionChatEnsureInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
@@ -816,7 +809,14 @@ channel(DESKTOP_IPC_CHANNELS.companionHomeGetProjection, runtimeInputSchema, asy
     return ns_companion.listCompanionRunNodes(gateway.gatewayTransport, input.request, input.meta.requestId);
   }, companionRunNodesListResultV1Schema);
 
-  // 念头主动开场（切片④，2026-09-18）：与其余伴星通道同一路由门控。
+  // 念想历史只读，不消耗表达；与其余伴星通道共用路由与空间 epoch 门控。
+  channel(DESKTOP_IPC_CHANNELS.companionChatListThoughts, companionChatListThoughtsInputSchema, async (_event, _window, input) => {
+    requireM2Route(contract, "room.home");
+    assertEpoch(input.meta, getActiveWorkspaceEpoch());
+    return ns_companion.listCompanionThoughts(gateway.gatewayTransport, input.request, input.meta.requestId);
+  }, companionChatListThoughtsResultV1Schema);
+
+  // 气泡念头主动开场：只有用户点气泡时才消费念头并写入对话。
   channel(DESKTOP_IPC_CHANNELS.companionChatOpenThought, companionChatOpenThoughtInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "room.home");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());

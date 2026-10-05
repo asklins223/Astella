@@ -35,7 +35,7 @@ import { buildIndex, shortPath, type CssRule } from "../renderer-class-index";
  * 不接受「先放着」这种没有归因的条目。
  */
 const EXEMPT: Readonly<Record<string, string>> = {
-  "katex": "note-math.tsx 的 KaTeX renderToString 生成公式 DOM；note-math-reading.test.tsx 验证实际输出",
+  "katex": "公共 readable-math.tsx 的 KaTeX renderToString 生成公式 DOM；note-math-reading.test.tsx 验证实际输出",
   "katex-display": "同上，displayMode 生成的独立公式容器，样式从 styles.ts 加载",
   "cm-editor": "CodeMirror 运行时生成的源码编辑器根节点",
   "cm-scroller": "CodeMirror 运行时生成的文字排版容器，滚动由册页接管",

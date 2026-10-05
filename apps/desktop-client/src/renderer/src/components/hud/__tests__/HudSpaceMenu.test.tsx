@@ -1,3 +1,4 @@
+import { useSpaceArrival, clearSpaceArrival } from "../space-arrival";
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -10,7 +11,6 @@ import type {
 import { HudSpaceMenu, SPACE_SEARCH_MINIMUM } from "../HudSpaceMenu.tsx";
 import {
   SPACE_MENU_REFRESH_EVENT,
-  takePendingSpaceSwitchReceipt,
 } from "../space-menu-events.ts";
 import { subscribeGateInvalidation } from "../../../app/gate-invalidation.ts";
 import { useRoomStore } from "../../../app/room-store.ts";
@@ -33,7 +33,7 @@ afterEach(() => {
   Reflect.deleteProperty(window, "ailearn");
   useRoomStore.setState({ activeRunId: null });
   gateInvalidations.length = 0;
-  takePendingSpaceSwitchReceipt();
+  clearSpaceArrival();
   // 最近使用是本机记录：上一个用例写下的时间戳不能变成下一个用例的排序依据。
   window.localStorage.clear();
 });
@@ -136,7 +136,7 @@ describe("HudSpaceMenu", () => {
     await waitFor(() => expect(createWorkspace).toHaveBeenCalledTimes(1));
     // 主进程创建后会 switchWorkspace，所以这里必须按"换了空间"处理：停车回执 +
     // 让门禁重验。若不重验，界面会继续用旧空间的 session 上下文发请求。
-    expect(takePendingSpaceSwitchReceipt()).toBe("海岸研究室");
+    expect(useSpaceArrival.getState().current).toBeNull(); // Arrival awaits the verified gate, not the create callback.
     expect(gateInvalidations).toContain("stale_workspace");
   });
 
@@ -158,7 +158,7 @@ describe("HudSpaceMenu", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建" }));
 
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
-    expect(takePendingSpaceSwitchReceipt()).toBeNull();
+    expect(useSpaceArrival.getState().current).toBeNull();
   });
 
 

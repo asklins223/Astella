@@ -1,3 +1,5 @@
+import { createDefaultAIPolicy, normalizeWorkspaceAIPolicy, prepareGovernedAIPayload, AIConsentRequiredError, AIDataPolicyDeniedError, type WorkspaceAIPolicy } from "@ailearn/agent-host";
+export { createDefaultAIPolicy, normalizeWorkspaceAIPolicy, enforcePrivacyGovernanceWithPolicy, detectAndSanitizePII, sanitizePIIInObject, DEFAULT_AI_DATA_POLICY, prepareGovernedAIPayload, AIConsentRequiredError, AIDataPolicyDeniedError, type WorkspaceAIPolicy } from "@ailearn/agent-host";
 /**
  * N-011: Worker 端 AI 隐私治理模块。
  *
@@ -10,13 +12,14 @@
  */
 
 import { eq } from "drizzle-orm";
-import { safeErrorMessage, DomainError, AI_CONSENT_REQUIRED_CODE } from "@ailearn/shared";
+import { safeErrorMessage, DomainError } from "@ailearn/shared";
 import { resolveSystemPlatform } from "@ailearn/shared/platform-config-node";
 import type { AITaskType } from "@ailearn/shared/task-router";
 import { getCapabilityForTask, getTaskComplexity } from "@ailearn/shared/task-router";
 import { db, withWorkerWorkspaceTransaction } from "../db.ts";
 import * as schema from "@ailearn/shared/db-schema";
 import { logger } from "./logger.ts";
+import { recordProviderCall, type ProviderCallKind, type ProviderCallOutcome } from "./metrics.ts";
 
 /**
  * Stable, privacy-safe governance error used by the job projection layer.
@@ -26,25 +29,6 @@ import { logger } from "./logger.ts";
  * web app offer the correct recovery action without exposing provider or
  * user content in `jobs.last_error`.
  */
-export class AIConsentRequiredError extends DomainError {
-  // 设计 P1-15（2026-09-15 审计）：机器码取共享常量，与 API 侧分类器同源，
-  // 避免两侧各自写字符串字面量导致改名后分类静默失效。
-  readonly code = AI_CONSENT_REQUIRED_CODE;
-
-  constructor() {
-    super({ name: "AIConsentRequiredError", code: AI_CONSENT_REQUIRED_CODE, message: "AI consent not signed for this workspace", statusCode: 403 });
-  }
-}
-
-/** A workspace policy rejected the data before it reached a provider. */
-export class AIDataPolicyDeniedError extends DomainError {
-  readonly code = "ai_data_policy_denied";
-
-  constructor(reason: string) {
-    super({ name: "AIDataPolicyDeniedError", code: "ai_data_policy_denied", message: reason, statusCode: 403 });
-  }
-}
-
 /**
  * AI P0-1（2026-09-15 审计）：`AI_REQUIRE_CONFIGURED_PROVIDER=true` 时，系统级
  * provider 未配置（会回退 mock）视为**配置错误**而非可降级状态——mock 会产出固定
@@ -72,50 +56,6 @@ export function isConfiguredProviderRequired(
   raw: string | undefined = process.env.AI_REQUIRE_CONFIGURED_PROVIDER,
 ): boolean {
   return raw === "true";
-}
-
-export interface WorkspaceAIPolicy {
-  sendToExternal: boolean;
-  sendImageContent?: boolean;
-  piiDetection: boolean;
-  auditLogging: boolean;
-}
-
-export const DEFAULT_AI_DATA_POLICY: WorkspaceAIPolicy = {
-  sendToExternal: false,
-  sendImageContent: false,
-  piiDetection: true,
-  auditLogging: true,
-};
-
-/**
- * QUAL-28: Factory function that returns a fresh copy of the default AI
- * data policy. Use this instead of `{ ...DEFAULT_AI_DATA_POLICY }` to
- * centralise the creation logic and avoid accidental shared references.
- */
-export function createDefaultAIPolicy(): WorkspaceAIPolicy {
-  return { ...DEFAULT_AI_DATA_POLICY };
-}
-
-export function normalizeWorkspaceAIPolicy(value: unknown): WorkspaceAIPolicy {
-  if (!value || typeof value !== "object") return createDefaultAIPolicy();
-  const policy = value as Partial<WorkspaceAIPolicy>;
-  // QUAL-28: 直接从 DEFAULT_AI_DATA_POLICY 读取字段默认值是安全的，
-  // 因为只是读操作而非创建引用副本。仅在需要返回完整新对象时使用 createDefaultAIPolicy()。
-  return {
-    sendToExternal: typeof policy.sendToExternal === "boolean"
-      ? policy.sendToExternal
-      : DEFAULT_AI_DATA_POLICY.sendToExternal,
-    sendImageContent: typeof policy.sendImageContent === "boolean"
-      ? policy.sendImageContent
-      : DEFAULT_AI_DATA_POLICY.sendImageContent,
-    piiDetection: typeof policy.piiDetection === "boolean"
-      ? policy.piiDetection
-      : DEFAULT_AI_DATA_POLICY.piiDetection,
-    auditLogging: typeof policy.auditLogging === "boolean"
-      ? policy.auditLogging
-      : DEFAULT_AI_DATA_POLICY.auditLogging,
-  };
 }
 
 /**
@@ -407,224 +347,13 @@ export async function resolveAIGovernanceContext(
  * Luhn checksum validation for bank card numbers.
  * Returns true if the digit string passes the Luhn algorithm.
  */
-function luhnCheck(num: string): boolean {
-  let sum = 0;
-  let isEven = false;
-  for (let i = num.length - 1; i >= 0; i--) {
-    let digit = parseInt(num[i], 10);
-    if (isNaN(digit)) return false;
-    if (isEven) {
-      digit *= 2;
-      if (digit > 9) digit -= 9;
-    }
-    sum += digit;
-    isEven = !isEven;
-  }
-  return sum % 10 === 0;
-}
-
-/**
- * PII 正则模式定义。
- *
- * PERF-12 修复：所有正则在模块加载时一次性预编译为 `compiled` 字段，
- * 之后 detectAndSanitizePII 的每次调用都复用同一实例，不再每次创建新 RegExp。
- *
- * 复用安全性说明：String.prototype.match() 和 String.prototype.replace()
- * 内部会重置 g 标志 RegExp 的 lastIndex，因此单个预编译实例在多次调用间
- * 不会出现 lastIndex 状态泄漏问题（仅在 test()/exec() 场景才有此风险）。
- *
- * 保留 source 和 flags 字段是为了调试和未来动态重建正则的需求。
- *
- * QUAL-12: 修复 [A-Z|a-z] → [A-Za-z]（`|` 曾被误写为字面管道符）。
- * QUAL-13: 银行卡模式新增 Luhn 校验，避免对任意长数字（时间戳、订单号等）误匹配。
- */
-interface PIIPatternDef {
-  source: string;
-  flags: string;
-  label: string;
-  /** Optional post-match validation (e.g. Luhn check for bank cards). */
-  validate?: (match: string) => boolean;
-  /** PERF-12 修复：预编译的 RegExp 实例，避免每次调用重新创建 */
-  compiled: RegExp;
-}
-
-const PII_PATTERN_DEFS: PIIPatternDef[] = [
-  { source: "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b", flags: "g", label: "email", compiled: /(?:)/g },
-  { source: "\\b1[3-9]\\d{9}\\b", flags: "g", label: "phone", compiled: /(?:)/g },
-  { source: "\\b\\d{6}(18|19|20)\\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\\d|3[01])\\d{3}[\\dXx]\\b", flags: "g", label: "id_card", compiled: /(?:)/g },
-  { source: "\\b\\d{16,19}\\b", flags: "g", label: "bank_card", validate: luhnCheck, compiled: /(?:)/g },
-  // SEC-01: Additional PII patterns
-  // SEC-10 修复：IPv4 地址正则需要排除版本号误匹配。
-  // 原正则 \b...\b 会匹配 "1.2.3.4" 这样的版本号字符串。
-  // 修复策略：使用 negative lookbehind/lookahead 排除前后还有数字或点的上下文。
-  // 注意：JS 正则不支持固定宽度 lookbehind 在所有引擎中，但 V8 支持。
-  // (?<!\d\.)(?<!\d) 确保前面不是数字或"数字."，(?!\.?\d) 确保后面不是。
-  { source: "(?<!\\d\\.)(?<!\\d)\\b(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\b(?!\\.?\\d)", flags: "g", label: "ip_address", compiled: /(?:)/g },
-];
-// PERF-12 修复：模块加载时一次性编译所有正则表达式
-for (const def of PII_PATTERN_DEFS) {
-  def.compiled = new RegExp(def.source, def.flags);
-}
-
-interface PIIDetectionResult {
-  hasPII: boolean;
-  detectedTypes: string[];
-  sanitizedText: string;
-}
-
-export function detectAndSanitizePII(text: string): PIIDetectionResult {
-  const detectedTypes = new Set<string>();
-  let sanitizedText = text;
-
-  for (const def of PII_PATTERN_DEFS) {
-    // PERF-12 修复：使用模块加载时预编译的 RegExp，不再每次创建新实例。
-    // 注意：String.match() 和 String.replace() 不会修改 g 标志 RegExp 的 lastIndex，
-    // 因此单个实例在多次调用间是安全的。
-    const pattern = def.compiled;
-    const matches = text.match(pattern);
-    if (!matches || matches.length === 0) continue;
-
-    // QUAL-13: If a validation function is defined, only count matches that pass.
-    const validMatches = def.validate
-      ? matches.filter(def.validate)
-      : matches;
-    if (validMatches.length === 0) continue;
-
-    detectedTypes.add(def.label);
-    // 脱敏：保留首尾字符，中间用 *** 替代
-    // QUAL-24: Reuse the same pattern — replace() resets lastIndex internally.
-    sanitizedText = sanitizedText.replace(pattern, (match) => {
-      if (def.validate && !def.validate(match)) return match;
-      if (match.length <= 4) return "***";
-      return match[0] + "***" + match[match.length - 1];
-    });
-  }
-
-  return {
-    hasPII: detectedTypes.size > 0,
-    detectedTypes: Array.from(detectedTypes),
-    sanitizedText,
-  };
-}
-
-/**
- * N-011: 对对象中的所有字符串值进行 PII 脱敏。
- * 递归遍历对象，对所有字符串字段进行 PII 检测和脱敏。
- */
-export function sanitizePIIInObject<T>(obj: T): { data: T; detectedTypes: string[] } {
-  const allDetectedTypes = new Set<string>();
-
-  function sanitizeValue(value: unknown): unknown {
-    if (typeof value === "string") {
-      const result = detectAndSanitizePII(value);
-      for (const t of result.detectedTypes) allDetectedTypes.add(t);
-      return result.sanitizedText;
-    }
-    if (Array.isArray(value)) {
-      return value.map(sanitizeValue);
-    }
-    if (value !== null && typeof value === "object") {
-      // QUAL-07 fix: Preserve Date instances and other non-plain objects.
-      // Previously, all objects were converted to plain objects via
-      // Object.entries(), losing prototype chain and type information.
-      if (value instanceof Date) {
-        return new Date(value.getTime());
-      }
-      const result: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(value)) {
-        result[k] = sanitizeValue(v);
-      }
-      return result;
-    }
-    return value;
-  }
-
-  return { data: sanitizeValue(obj) as T, detectedTypes: Array.from(allDetectedTypes) };
-}
-
-/**
- * 使用预解析的 policy 执行隐私治理检查，避免重复查询 workspaces 表。
- * 与 resolveAIGovernanceContext 配合使用。
- */
-export function enforcePrivacyGovernanceWithPolicy(
-  policy: WorkspaceAIPolicy,
-  workspaceId: string,
-  dataCategories: string[],
-  data: Record<string, unknown>,
-  providerName: string,
-): {
-  allowed: boolean;
-  reason?: string;
-  sanitizedData: Record<string, unknown>;
-  piiDetectedTypes: string[];
-} {
-  const provider = providerName.toLowerCase();
-
-  // 1. sendToExternal 门禁：非 mock provider + sendToExternal=false → 拒绝
-  if (provider !== "mock" && !policy.sendToExternal) {
-    return {
-      allowed: false,
-      reason: "Workspace policy forbids sending data to external AI providers (sendToExternal=false). Owner must enable this in workspace settings.",
-      sanitizedData: data,
-      piiDetectedTypes: [],
-    };
-  }
-
-  if (provider !== "mock" && dataCategories.includes("image_content") && !policy.sendImageContent) {
-    return {
-      allowed: false,
-      reason: "Workspace policy has not authorized sending image content to external AI providers (sendImageContent=false).",
-      sanitizedData: data,
-      piiDetectedTypes: [],
-    };
-  }
-
-  // 2. PII 检测和脱敏
-  let sanitizedData = data;
-  let piiDetectedTypes: string[] = [];
-  if (policy.piiDetection && provider !== "mock") {
-    const result = sanitizePIIInObject(data);
-    sanitizedData = result.data;
-    piiDetectedTypes = result.detectedTypes;
-    if (piiDetectedTypes.length > 0) {
-      logger.info(
-        { workspaceId, detectedTypes: piiDetectedTypes, categories: dataCategories },
-        "PII detected and sanitized before sending to external AI provider",
-      );
-    }
-  }
-
-  return { allowed: true, sanitizedData, piiDetectedTypes };
-}
-
-function containsImageContent(value: unknown, depth = 0): boolean {
-  if (depth > 8 || value === null || typeof value !== "object") return false;
-  if (Array.isArray(value)) return value.some((item) => containsImageContent(item, depth + 1));
-  const record = value as Record<string, unknown>;
-  if (record.type === "image" || "image_url" in record || "imageUrl" in record) return true;
-  return Object.values(record).some((item) => containsImageContent(item, depth + 1));
-}
-
 function governedPayload(
   context: Pick<AIGovernanceContext, "consentOk" | "policy">,
   workspaceId: string,
   providerName: string,
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (!context.consentOk && providerName.toLowerCase() !== "mock") {
-    throw new AIConsentRequiredError();
-  }
-  const categories = ["text_content"];
-  if (containsImageContent(payload)) categories.push("image_content");
-  const result = enforcePrivacyGovernanceWithPolicy(
-    context.policy,
-    workspaceId,
-    categories,
-    payload,
-    providerName,
-  );
-  if (!result.allowed) throw new AIDataPolicyDeniedError(result.reason ?? "AI data policy denied the request");
-  return result.sanitizedData;
+  return prepareGovernedAIPayload({ context, workspaceId, providerName, payload });
 }
 
 /**
@@ -656,6 +385,8 @@ function governedPayload(
  */
 export interface GovernedProviderAuditContext {
   userId: string;
+  /** The owning turn reserves every real attempt, including fallbacks and auxiliary models. */
+  reserveCall?: () => Promise<void>;
   /** 能力/操作名前缀（如 "companion_agent"），与方法名合成 operation 落库。 */
   operation: string;
   /**
@@ -669,6 +400,116 @@ export interface GovernedProviderAuditContext {
    */
   dataCategories?: readonly string[];
   jobId?: string | null;
+  /**
+   * `job_id` 之外的结构化归属。**只写进结构化日志，不进 `ai_audit_log.job_id`。**
+   *
+   * `job_id` 的契约是"jobs 表里的那一行"。有些调用压根没有 jobs 行
+   * （制卡走 V2 outbox），把 outbox 或 generation run 的 id 填进去会让这一列
+   * 在"按 job 聚合成本"时指向一个永远 join 不上的东西——比留空更坏，因为
+   * 它看起来有归属。这类调用方把真实引用（runId / outbox id）放进这里，
+   * 按 `operation` + 这些字段即可定位到具体那一次生成。
+   */
+  correlation?: Readonly<Record<string, string>>;
+}
+
+/**
+ * 把一次外发里抛出来的东西归到终态上。
+ *
+ * 取消与超时必须分开：两者都会把 provider 的在途 HTTP 掐掉，但处置完全不同
+ * ——取消是用户/任务自己按的（不可重试、不是故障），超时是上游慢
+ * （要告警、要重试）。混进 `error` 之后，"模型不稳定"和"用户改了主意"
+ * 在同一张图上。
+ */
+function classifyProviderOutcome(err: unknown, signal: AbortSignal | undefined): ProviderCallOutcome {
+  if (err instanceof AIDataPolicyDeniedError || err instanceof AIConsentRequiredError) return "blocked";
+  const name = (err as { name?: unknown } | null)?.name;
+  const code = (err as { code?: unknown } | null)?.code;
+  if (code === "AGENT_BUDGET_EXCEEDED") return "blocked";
+  if (name === "TimeoutError" || code === "UND_ERR_CONNECT_TIMEOUT") return "timeout";
+  if (name === "AbortError" || signal?.aborted) return "cancelled";
+  return "error";
+}
+
+/**
+ * 治理包装器登记表：包装后的对象 → 它是为哪个 workspace 建的。
+ *
+ * 同一份 provider 在同一个 workspace 上被包两次时，`recordCall` 会跑两遍——
+ * 审计多一行、调用量与 token 各记一次。于是这里让重复包装**直接返回已有包装**：
+ * 策略与工作区没变，第二次包装不会带来任何新语义，只是把同一次外发记两遍。
+ * 不同 workspace 的重复包装**不**短路：那是一次真实的换上下文（政策可能不同），
+ * 该发生的治理必须发生。
+ */
+const governedWrappers = new WeakMap<object, { raw: object; workspaceId: string; consentOk: boolean; policy: string; audit?: GovernedProviderAuditContext }>();
+function equivalentGovernance(known: NonNullable<ReturnType<typeof governedWrappers.get>>, context: Pick<AIGovernanceContext, "consentOk" | "policy">, workspaceId: string, audit?: GovernedProviderAuditContext): boolean {
+  return known.workspaceId===workspaceId && known.consentOk===context.consentOk
+    && known.policy===JSON.stringify(context.policy) && known.audit===audit;
+}
+
+/**
+ * 造出这一次 provider 的记录口。主 provider 与独立 embedding provider
+ * **共用同一个工厂**——它们记的是同一件事（一次外发），分成两份就会各自漂移，
+ * 而漂移的方向通常是"某条路径忘了记"而不是"多记"。
+ *
+ * 记两样，各有各的理由：
+ *   - 指标（`recordProviderCall`）：一次外发的客观事实，**不依赖审计上下文**。
+ *     审计可以被政策关掉、也可以因为没有可信 actor 而整个不传，但调用量、
+ *     耗时、token 不该跟着一起消失。
+ *   - 审计行（`logAICall`）：合规与成本归因，需要 userId，因此只在 `audit` 存在时写。
+ *
+ * 每次外发只调它一次（成功 / 抛错 / 被治理门拦下，三条路径互斥）。
+ */
+function createCallRecorder(input: {
+  providerId: string;
+  modelId: string;
+  context: Pick<AIGovernanceContext, "consentOk" | "policy">;
+  workspaceId: string;
+  audit?: GovernedProviderAuditContext;
+}): (method: string, kind: ProviderCallKind, startedAt: number, outcome?: {
+  costTokens?: number | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  status?: string;
+  errorMessage?: string | null;
+  dataSizeBytes?: number | null;
+  metricOutcome?: ProviderCallOutcome;
+}) => void {
+  const { providerId, modelId, context, workspaceId, audit } = input;
+  return (method, kind, startedAt, outcome = {}) => {
+    const durationMs = Math.round(performance.now() - startedAt);
+    recordProviderCall({
+      provider: providerId,
+      kind,
+      outcome: outcome.metricOutcome ?? (outcome.status === "error" ? "error" : "success"),
+      durationSeconds: durationMs / 1000,
+      // 没有 usage 的调用（流式接口）传 null，指标侧不递增——不用 0 冒充。
+      promptTokens: outcome.promptTokens ?? null,
+      completionTokens: outcome.completionTokens ?? null,
+    });
+    if (!audit) return;
+    if (audit.correlation) {
+      logger.info(
+        { workspaceId, operation: `${audit.operation}:${method}`, ...audit.correlation },
+        "AI call recorded without a jobs row; correlation kept in logs",
+      );
+    }
+    void logAICall(
+      {
+        workspaceId,
+        userId: audit.userId,
+        jobId: audit.jobId ?? null,
+        provider: providerId,
+        modelId,
+        operation: `${audit.operation}:${method}`,
+        dataCategories: audit.dataCategories ? [...audit.dataCategories] : undefined,
+        costTokens: outcome.costTokens ?? null,
+        durationMs,
+        status: outcome.status ?? "success",
+        errorMessage: outcome.errorMessage ?? null,
+        dataSizeBytes: outcome.dataSizeBytes ?? null,
+      },
+      { policy: context.policy },
+    );
+  };
 }
 
 export function createGovernedProvider(
@@ -677,55 +518,45 @@ export function createGovernedProvider(
   workspaceId: string,
   audit?: GovernedProviderAuditContext,
 ): import("./ai-provider.ts").AIProvider {
-  /**
-   * 记录一次外发调用（fire-and-forget）。logAICall 内部捕获全部异常并返回 false，
-   * 因此不会产生未处理拒绝，也不会阻塞主流程；policy.auditLogging=false 时它会
-   * 自行跳过（不多写库）。
-   */
-  const recordCall = (
-    method: string,
-    startedAt: number,
-    outcome: {
-      costTokens?: number | null;
-      status?: string;
-      errorMessage?: string | null;
-      dataSizeBytes?: number | null;
-    } = {},
-  ): void => {
-    if (!audit) return;
-    void logAICall(
-      {
-        workspaceId,
-        userId: audit.userId,
-        jobId: audit.jobId ?? null,
-        provider: provider.id,
-        modelId: provider.modelId,
-        operation: `${audit.operation}:${method}`,
-        dataCategories: audit.dataCategories ? [...audit.dataCategories] : undefined,
-        costTokens: outcome.costTokens ?? null,
-        durationMs: Math.round(performance.now() - startedAt),
-        status: outcome.status ?? "success",
-        errorMessage: outcome.errorMessage ?? null,
-        dataSizeBytes: outcome.dataSizeBytes ?? null,
-      },
-      { policy: context.policy },
-    );
-  };
-
+  const known = governedWrappers.get(provider);
+  if (known && equivalentGovernance(known, context, workspaceId, audit)) return provider;
+  if (known) provider = known.raw as typeof provider;
+  const recordCall = createCallRecorder({
+    providerId: provider.id,
+    modelId: provider.modelId,
+    context,
+    workspaceId,
+    audit,
+  });
   const governed: import("./ai-provider.ts").AIProvider = {
     ...provider,
     chatCompletion: async (messages, options, signal) => {
-      const data = governedPayload(context, workspaceId, provider.id, { messages });
       const startedAt = performance.now();
+      let data: Record<string, unknown>;
+      try {
+        data = governedPayload(context, workspaceId, provider.id, { messages });
+        signal?.throwIfAborted();
+        await audit?.reserveCall?.();
+      } catch (err) {
+        recordCall("chat_completion", "chat", startedAt, {
+          status: "blocked",
+          metricOutcome: classifyProviderOutcome(err, signal),
+          errorMessage: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
       try {
         const result = await provider.chatCompletion(data.messages as typeof messages, options, signal);
-        recordCall("chat_completion", startedAt, {
+        recordCall("chat_completion", "chat", startedAt, {
           costTokens: result.usage?.totalTokens ?? null,
+          promptTokens: result.usage?.promptTokens ?? null,
+          completionTokens: result.usage?.completionTokens ?? null,
         });
         return result;
       } catch (err) {
-        recordCall("chat_completion", startedAt, {
+        recordCall("chat_completion", "chat", startedAt, {
           status: "error",
+          metricOutcome: classifyProviderOutcome(err, signal),
           errorMessage: err instanceof Error ? err.message : String(err),
         });
         throw err;
@@ -734,8 +565,20 @@ export function createGovernedProvider(
   };
   if (provider.chatCompletionStream) {
     governed.chatCompletionStream = async (messages, options, signal, onDelta) => {
-      const data = governedPayload(context, workspaceId, provider.id, { messages });
       const startedAt = performance.now();
+      let data: Record<string, unknown>;
+      try {
+        data = governedPayload(context, workspaceId, provider.id, { messages });
+        signal?.throwIfAborted();
+        await audit?.reserveCall?.();
+      } catch (err) {
+        recordCall("chat_completion_stream", "stream", startedAt, {
+          status: "blocked",
+          metricOutcome: classifyProviderOutcome(err, signal),
+          errorMessage: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
       try {
         const result = await provider.chatCompletionStream!(
           data.messages as typeof messages,
@@ -744,12 +587,13 @@ export function createGovernedProvider(
           onDelta,
         );
         // 流式接口的返回类型只有 { content }（无 usage）——AI#9 已确认这是接口缺口；
-        // 这里如实记 null，不伪造 token 数。
-        recordCall("chat_completion_stream", startedAt, { costTokens: null });
+        // 这里如实记 null，不伪造 token 数（指标侧同样不递增 token）。
+        recordCall("chat_completion_stream", "stream", startedAt, { costTokens: null });
         return result;
       } catch (err) {
-        recordCall("chat_completion_stream", startedAt, {
+        recordCall("chat_completion_stream", "stream", startedAt, {
           status: "error",
+          metricOutcome: classifyProviderOutcome(err, signal),
           errorMessage: err instanceof Error ? err.message : String(err),
         });
         throw err;
@@ -758,17 +602,32 @@ export function createGovernedProvider(
   }
   if (provider.executeAgentTurn) {
     governed.executeAgentTurn = async (request, signal) => {
-      const data = governedPayload(context, workspaceId, provider.id, { request });
       const startedAt = performance.now();
+      let data: Record<string, unknown>;
+      try {
+        data = governedPayload(context, workspaceId, provider.id, { request });
+        signal?.throwIfAborted();
+        await audit?.reserveCall?.();
+      } catch (err) {
+        recordCall("execute_agent_turn", "agent_turn", startedAt, {
+          status: "blocked",
+          metricOutcome: classifyProviderOutcome(err, signal),
+          errorMessage: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
       try {
         const result = await provider.executeAgentTurn!(data.request as typeof request, signal);
-        recordCall("execute_agent_turn", startedAt, {
+        recordCall("execute_agent_turn", "agent_turn", startedAt, {
           costTokens: result.usage?.totalTokens ?? null,
+          promptTokens: result.usage?.promptTokens ?? null,
+          completionTokens: result.usage?.completionTokens ?? null,
         });
         return result;
       } catch (err) {
-        recordCall("execute_agent_turn", startedAt, {
+        recordCall("execute_agent_turn", "agent_turn", startedAt, {
           status: "error",
+          metricOutcome: classifyProviderOutcome(err, signal),
           errorMessage: err instanceof Error ? err.message : String(err),
         });
         throw err;
@@ -777,15 +636,28 @@ export function createGovernedProvider(
   }
   if (provider.embed) {
     governed.embed = async (text, signal) => {
-      const data = governedPayload(context, workspaceId, provider.id, { text });
       const startedAt = performance.now();
+      let data: Record<string, unknown>;
+      try {
+        data = governedPayload(context, workspaceId, provider.id, { text });
+        signal?.throwIfAborted();
+        await audit?.reserveCall?.();
+      } catch (err) {
+        recordCall("embed", "embed", startedAt, {
+          status: "blocked",
+          metricOutcome: classifyProviderOutcome(err, signal),
+          errorMessage: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
       try {
         const result = await provider.embed!(String(data.text ?? ""), signal);
-        recordCall("embed", startedAt, { dataSizeBytes: String(data.text ?? "").length });
+        recordCall("embed", "embed", startedAt, { dataSizeBytes: String(data.text ?? "").length });
         return result;
       } catch (err) {
-        recordCall("embed", startedAt, {
+        recordCall("embed", "embed", startedAt, {
           status: "error",
+          metricOutcome: classifyProviderOutcome(err, signal),
           errorMessage: err instanceof Error ? err.message : String(err),
         });
         throw err;
@@ -799,22 +671,68 @@ export function createGovernedProvider(
   if (provider.getCapabilities) {
     governed.getCapabilities = provider.getCapabilities.bind(provider);
   }
+  governedWrappers.set(governed, { raw: provider, workspaceId, consentOk: context.consentOk, policy: JSON.stringify(context.policy), audit });
   return governed;
 }
 
-/** Same boundary for the standalone embedding provider used by memory search. */
+/**
+ * 独立 embedding provider 的同一条边界（记忆召回、向量重建、语义去重都走它）。
+ *
+ * 与 `createGovernedProvider` 共用同一份记录口径：同样的同意/政策/PII 门、
+ * 同样的 `recordProviderCall`（kind 恒为 `embed`）、同样的审计行。
+ * 此前这里**只有**治理门、没有记录口，于是三类向量调用既不进指标，
+ * 也不写 `ai_audit_log`——"记忆相关的向量调用花了多少"没有任何数据来源。
+ */
 export function createGovernedEmbeddingProvider(
   provider: import("./ai-provider.ts").EmbeddingProviderLike,
   context: Pick<AIGovernanceContext, "consentOk" | "policy">,
   workspaceId: string,
+  audit?: GovernedProviderAuditContext,
 ): import("./ai-provider.ts").EmbeddingProviderLike {
-  return {
+  const known = governedWrappers.get(provider);
+  if (known && equivalentGovernance(known, context, workspaceId, audit)) return provider;
+  if (known) provider = known.raw as typeof provider;
+  const recordCall = createCallRecorder({
+    providerId: provider.id,
+    modelId: provider.embeddingModelId,
+    context,
+    workspaceId,
+    audit,
+  });
+  const governed: import("./ai-provider.ts").EmbeddingProviderLike = {
     ...provider,
     embed: async (text, signal) => {
-      const data = governedPayload(context, workspaceId, provider.id, { text });
-      return provider.embed(String(data.text ?? ""), signal);
+      const startedAt = performance.now();
+      let data: Record<string, unknown>;
+      try {
+        data = governedPayload(context, workspaceId, provider.id, { text });
+        signal?.throwIfAborted();
+        await audit?.reserveCall?.();
+      } catch (err) {
+        recordCall("embed", "embed", startedAt, {
+          status: "blocked",
+          metricOutcome: classifyProviderOutcome(err, signal),
+          errorMessage: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
+      const payloadText = String(data.text ?? "");
+      try {
+        const result = await provider.embed(payloadText, signal);
+        recordCall("embed", "embed", startedAt, { dataSizeBytes: payloadText.length });
+        return result;
+      } catch (err) {
+        recordCall("embed", "embed", startedAt, {
+          status: "error",
+          metricOutcome: classifyProviderOutcome(err, signal),
+          errorMessage: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
     },
   };
+  governedWrappers.set(governed, { raw: provider, workspaceId, consentOk: context.consentOk, policy: JSON.stringify(context.policy), audit });
+  return governed;
 }
 
 export interface AICallAuditParams {

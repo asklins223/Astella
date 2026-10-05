@@ -83,6 +83,7 @@ export function projectCardGenerationJobAcceptedV1(value: unknown): CardGenerati
   return cardGenerationJobAcceptedV1Schema.parse({
     version: 1,
     runId: server.runId,
+    ...(server.agentRunId ? { agentRunId: server.agentRunId } : {}),
     status: server.status,
   });
 }

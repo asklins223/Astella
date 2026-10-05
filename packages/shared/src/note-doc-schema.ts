@@ -121,7 +121,7 @@ const textNode = (content: string): PmJson => ({ type: "text", text: content });
 
 /**
  * 行内 Markdown 的解析结果。**这份定义就是行内语法的唯一事实源**：
- * 阅读页拿它画段（`note-blocks.ts` 的 `parseInlineMarkdown` 现在转过来调它），
+ * 笔记阅读与伴星手记拿它画段，
  * 服务端把块写进 fragment 也拿它建 mark。两处各解析一遍的结局是"编辑器里的粗体
  * 和阅读页里的粗体不是同一批"，那种错位没人喊。
  */
@@ -149,7 +149,7 @@ export type NoteDocInlineSegment =
  * 只是让"更长的形状在前"这条读起来和跑起来一致。
  */
 const INLINE_PATTERN =
-  /(`[^`\n]+`)|((?<!\\)\$\$[\s\S]+?(?<!\\)\$\$)|((?<![\\$])\$(?![$\s])(?:\\.|[^$\\\n])*?(?<![\\\s])\$(?!\$))|(\*\*[^*\n]+\*\*)|(~~[^~\n]+~~)|(\*[^*\n]+\*)|(!\[[^\]\n]*\]\(([^)\s]+)\))|(\[[^\]\n]*\]\([^)\s]+\))/g;
+  /(`[^`\n]+`)|((?<!\\)\$\$[\s\S]+?(?<!\\)\$\$)|((?<![\\$])\$(?![$\s])(?:\\.|[^$`\\\n])*?(?<![\\\s])\$(?!\$))|(\*\*[^*\n]+\*\*)|(~~[^~\n]+~~)|(\*[^*\n]+\*)|(!\[[^\]\n]*\]\(([^)\s]+)\))|(\[[^\]\n]*\]\([^)\s]+\))/g;
 
 export function parseInlineMarkdown(value: string): NoteDocInlineSegment[] {
   const segments: NoteDocInlineSegment[] = [];
@@ -180,6 +180,21 @@ export function parseInlineMarkdown(value: string): NoteDocInlineSegment[] {
   }
   if (cursor < value.length) segments.push({ kind: "text", text: value.slice(cursor) });
   return segments;
+}
+
+/** Shared table grammar for notebook selection and conversation presentation.
+ * Rows include the separator row; escaped pipes stay within their cell. */
+export function parseMarkdownTable(content: string): readonly (readonly string[])[] | null {
+  const lines = content.trim().split("\n").map((line) => line.trim());
+  if (lines.length < 2) return null;
+  if (!lines.every((line) => line.startsWith("|") && line.endsWith("|"))) return null;
+  const cells = (line: string) => line
+    .slice(1, -1)
+    .split(/(?<!\\)\|/)
+    .map((cell) => cell.trim().replace(/\\\|/g, "|"));
+  const separator = cells(lines[1] ?? "");
+  if (separator.length === 0 || !separator.every((cell) => /^:?-{2,}:?$/.test(cell))) return null;
+  return lines.map((line) => cells(line));
 }
 
 /**
@@ -213,15 +228,8 @@ export function noteBlockRenderedTextV1(type: string, content: string): string {
     .join("");
 
   if (type === "paragraph") {
-    const lines = value.trim().split("\n").map((line) => line.trim());
-    if (lines.length >= 2 && lines.every((line) => line.startsWith("|") && line.endsWith("|"))) {
-      const cells = (line: string) => line.slice(1, -1).split(/(?<!\\)\|/)
-        .map((cell) => cell.trim().replace(/\\\|/g, "|"));
-      const separator = cells(lines[1] ?? "");
-      if (separator.length > 0 && separator.every((cell) => /^:?-{2,}:?$/.test(cell))) {
-        return [lines[0] ?? "", ...lines.slice(2)].flatMap(cells).map(visibleInline).join("");
-      }
-    }
+    const table = parseMarkdownTable(value);
+    if (table) return [table[0] ?? [], ...table.slice(2)].flat().map(visibleInline).join("");
     const flattened = visibleInline(value).replace(/\n/g, "");
     if (/^(?:\*{3,}|-{3,}|_{3,})$/.test(flattened.trim())) return "";
     return flattened;
@@ -448,7 +456,7 @@ export function noteBlocksToPmNodes(blocks: readonly NoteDocBlockSpec[]): PmJson
             .map((line) => ({ type: "list_item", content: [{ type: "paragraph", content: inlineContent(line) }] })),
         };
       case "image": {
-        // 图片块的 content 就是它的 Markdown（`![说明](地址)`），与 `note-blocks.ts`
+        // 图片块的 content 就是它的 Markdown（`![说明](地址)`），与公共行内解析器
         // 存的约定一致；地址与说明从 Markdown 里取，因为 PM 的 image 节点是属性不是文本。
         // 写出去的形状是 `paragraph > image`——编辑器里图片只有这一个位置（它是行内节点），
         // 规格把图片挂在 `inline` 组上，顶层放不下。投影那一侧再把"整段一张图"认回 `image`。

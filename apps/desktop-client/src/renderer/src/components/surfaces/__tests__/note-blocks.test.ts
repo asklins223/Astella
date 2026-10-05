@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseMarkdownTable } from "../notebook/note-blocks.ts";
+import { parseMarkdownTable } from "@ailearn/shared/note-doc-schema";
 
 /**
  * 阅读页的表格识别。

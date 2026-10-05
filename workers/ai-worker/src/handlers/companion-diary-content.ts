@@ -122,6 +122,15 @@ export interface DiaryMaterial {
   /** 前几天日记的开头，用来掐掉"每天同一句式"。 */
   previousOpenings: string[];
   /**
+   * 前几天日记里反复出现的意象，用来掐掉"每天演同一出"。
+   *
+   * `previousOpenings` 只能拦开头那十个字，于是有一整类重复它看不见：同一批
+   * 东西被反复写。她的 persona 只有"吃"和"摸鱼"两招，每篇又都原样注入人格，
+   * 结果 24 篇两段日记里 15 篇在演同一个梗。这里把那批意象摆出来让她避开。
+   * 取法见 {@link recurringMotifs}。
+   */
+  previousMotifs: string[];
+  /**
    * 这一天几乎没有留下动静（没有对话、没有笔记、没有学习）。
    *
    * 09-24 的实录：这种日子她会写两段纯情绪的散文（「像是等待某种确切的回应」
@@ -481,6 +490,108 @@ export function repeatedOpeningIn(opening: string, previousOpenings: string[]): 
 }
 
 /**
+ * 反复用过的**意象**（2026-10-05）。
+ *
+ * `repeatedOpeningIn` 只拦开头那十个字，于是"每天同一句式"之外还剩一整类重复：
+ * 同一批东西被反复写。她的 persona 只有"吃"和"摸鱼"两招，而人格那段每篇都原样
+ * 注入，于是**每天一篇都在把这两招再演一遍**——实测 24 篇两段日记里 15 篇都在
+ * 演吃饭/摸鱼，10-03 与 10-04 甚至是同一出（都是"你突然喊了我一声"）。
+ *
+ * 开头不撞、主题天天撞，比开头撞更难读：开头撞一次是巧合，天天撞是模板。
+ *
+ * 取法刻意笨：中文没有空格分词，与其接一个分词器，不如取**跨篇复现的连续片段**
+ * （见 {@link recurringMotifs}）。要求它同时出现在**两篇以上**，而且不许短到
+ * 只是把词切开——一条真实的说法（「琢磨晚饭吃什么」）才有可能是习惯，
+ * 「你突」这种滑窗碎片只会让提示词变成噪音。
+ */
+const MOTIF_MIN_CHARS = 4;
+
+/** 一个片段里全部是汉字才算候选；带标点、数字或拉丁字母的一律跳过。 */
+function isHanOnly(value: string): boolean {
+  return /^[\u4e00-\u9fa5]+$/.test(value);
+}
+
+/**
+ * 两个文本的**极大公共子串**（不可再向左或向右延长的那些）。
+ *
+ * 中文没有空格分词，逐字滑窗取 2-gram 会取出一堆「你突」「了一」「子里」这样的
+ * 碎片——实测把真实语料喂进去，8 个意象里 6 个是这种东西，比不喂更糟。
+ *
+ * 换一条路：**看两篇之间最长的那几段重合**。跨篇复现的长片段是真实的说法
+ * （「琢磨晚饭吃什么」「白米饭」「脑子里全是」），而不是把一个词切开又接上
+ * 下一段的残渣——因为它必须是**连续**的。
+ */
+function maximalSharedRuns(left: string, right: string, minLength: number): string[] {
+  const runs: string[] = [];
+  for (let start = 0; start < left.length; start += 1) {
+    let best = 0;
+    // 起点上最长的那一段：一旦断了就再也接不上，所以不用回溯。
+    for (let length = minLength; start + length <= left.length; length += 1) {
+      if (!right.includes(left.slice(start, start + length))) break;
+      best = length;
+    }
+    if (best === 0) continue;
+    const run = left.slice(start, start + best);
+    if (!isHanOnly(run)) continue;
+    // 被同一处起点的更长片段盖住，或整体是前面某段的一部分 → 不是极大。
+    if (runs.some((kept) => kept.includes(run))) continue;
+    runs.push(run);
+  }
+  return runs;
+}
+
+/**
+ * 从最近几篇日记里取"她老在用"的说法，按跨篇复现的程度降序。
+ *
+ * 只喂给她**别再用**——不给"该用什么"。后者只能由她从当天素材里长出来，
+ * 一旦开始指派意象，日记就成了按清单填空。
+ */
+export function recurringMotifs(summaries: readonly string[], limit = 6): string[] {
+  const usable = summaries.map((s) => String(s ?? "")).filter((s) => s.trim().length > 0);
+  // 记的是**几篇**出现过，不是几对。两篇重合只说明那一对像，跨三篇才是习惯。
+  const documents = new Map<string, Set<number>>();
+  for (let i = 0; i < usable.length; i += 1) {
+    for (let j = i + 1; j < usable.length; j += 1) {
+      for (const run of maximalSharedRuns(usable[i], usable[j], MOTIF_MIN_CHARS)) {
+        const seen = documents.get(run) ?? new Set<number>();
+        seen.add(i);
+        seen.add(j);
+        documents.set(run, seen);
+      }
+    }
+  }
+
+  const ranked = [...documents.entries()]
+    // 跨两篇才算习惯：只在一篇里出现的是那天的事，不是这几天的偏好。
+    .filter(([, seen]) => seen.size >= 2)
+    .sort((a, b) => (b[1].size - a[1].size) || (b[0].length - a[0].length) || a[0].localeCompare(b[0]));
+
+  const chosen: string[] = [];
+  for (const [run] of ranked) {
+    if (chosen.length >= limit) break;
+    // 选中的长片段会盖住自己的子串与同义碎片，否则同一件事会以几种长度各占一行。
+    if (chosen.some((kept) => kept.includes(run) || run.includes(kept))) continue;
+    chosen.push(run);
+  }
+  return chosen;
+}
+
+/** 今天这一篇有没有把前几天用滥的意象再写一遍。 */
+export function repeatedMotifIn(
+  blocks: DiaryBlock[],
+  previousMotifs: readonly string[],
+): string | null {
+  if (previousMotifs.length === 0) return null;
+  const prose = blocks
+    .filter((block): block is Extract<DiaryBlock, { type: "text" }> => block.type === "text")
+    .map((block) => block.text)
+    .join("");
+  if (prose.length === 0) return null;
+  // 两遍才算真在用：一篇日记里偶然提一次"饭"是那天的事。
+  return previousMotifs.find((motif) => prose.split(motif).length - 1 >= 2) ?? null;
+}
+
+/**
  * 按标点收尾的截断。
  *
  * 图注是给她的一句话，硬切会在屏幕上留下「…看着比我的饭」这种断句（09-24 实跑）。
@@ -561,25 +672,55 @@ export function diaryImageLabel(
 }
 
 /**
- * 篇幅档位：按**段**算。
+ * 篇幅档位：按**段**算，并带一条**字数地板**。
+ *
+ * ## 为什么从「最多两段」改回 3–4 段（2026-10-05）
  *
  * 第一版按句数收（安静 5 句），用户回来说"太短了有些，而且只有一段，
- * 这不是日记的格式"。日记的样子是一段一段往下走，不是一坨话——所以档位
- * 从"几句"换成"几段"，每段内部不再限句数（那才是流水账味道的来源）。
+ * 这不是日记的格式"。改成按段之后，09-24 又把所有人格档位压成 **2 段**，
+ * 理由是实测她「只给一句对话，仍按三段的篇幅补出了键盘声、饭碗和不存在的后续」。
  *
- * 一幕素材最多写两段。09-24 非落库试稿只给她一句对话，她仍按三段的篇幅
- * 补出了键盘声、饭碗和不存在的后续。段数不是越多越像日记；活跃档可以在同一幕里
- * 多说一两句，但不能为凑第三段发明第二件事。
+ * 那次把两件事混成了一件：
+ * - **该守的**是"不发明素材里没有的事实"——键盘声和不存在的后续确实是编的；
+ * - **该松的**是"允许写几段"——段数从来不是编造的成因。
+ *
+ * 于是 2 段成了每篇日记的硬天花板：32 篇里 24 篇正好 2 段、均长 155 字，
+ * 而 `fitDiaryToParagraphBudget` 会把第 3 段起的内容**直接丢掉**。
+ * 「一件小事」被压成了「一件事的一句话转述加一句感想」。
+ *
+ * 现在：**段数放开 + 字数地板**。地板由服务端核对（见 `diaryLengthShortfall`），
+ * 抗编造继续交给"素材有据"那条规则，不再靠压段数——两件事各自归位。
  */
-const DIARY_LENGTH_TIER: Record<CompanionPersonaActiveness, { paragraphs: number; word: string; line: string }> = {
-  quiet: { paragraphs: 2, word: "安静", line: "一到两段，每段两到四句；说完就停。" },
-  moderate: { paragraphs: 2, word: "适度", line: "两段，每段两到四句；第二段仍写同一件事。" },
-  active: { paragraphs: 2, word: "活跃", line: "两段，每段两到五句；可以多说一句自己的念头，不另起话题。" },
+const DIARY_LENGTH_TIER: Record<
+  CompanionPersonaActiveness,
+  { paragraphs: number; minChars: number; word: string; line: string }
+> = {
+  quiet: {
+    paragraphs: 2, minChars: 70, word: "安静",
+    line: "一到两段，每段两到四句；说完就停。",
+  },
+  moderate: {
+    paragraphs: 3, minChars: 190, word: "适度",
+    line: "三段左右，写的是**同一件事**：第一段那件事本身，后面两段是当时你没写出来的部分——"
+      + "你注意到了什么、心里怎么绕的、哪一句你当时没接。仍然只写这一件事，不另起一件。",
+  },
+  active: {
+    paragraphs: 4, minChars: 260, word: "活跃",
+    line: "三到四段，写的是**同一件事**：第一段那件事本身，后面几段是当时你没写出来的部分——"
+      + "你注意到了什么、心里怎么绕的、哪一句你当时没接、当时脑子里还飘着别的什么。"
+      + "仍然只写这一件事，不另起一件。",
+  },
 };
 
 function tierOf(activeness: CompanionPersonaActiveness | null) {
   return DIARY_LENGTH_TIER[activeness ?? "moderate"];
 }
+
+/**
+ * 安静日的地板：没发生什么事的时候，唯一诚实的写法就是短。
+ * 两段 70 字已经是"她真的有点想说的"的样子，再压就只剩情绪形容词了。
+ */
+const QUIET_DAY_MIN_CHARS = 70;
 
 /** 一段正文 = 一个 text 块；图和引用块跟着它前面那段走，不单独计段。 */
 export function diaryParagraphCount(blocks: DiaryBlock[]): number {
@@ -594,6 +735,33 @@ export function diaryLengthOverflow(
   return diaryParagraphCount(blocks) <= tier.paragraphs
     ? null
     : `太长了。你是${tier.word}的人，这一篇${tier.line}段落之外不必再补一段感想收尾。`;
+}
+
+/**
+ * 正文是不是短到不像一篇日记（2026-10-05）。
+ *
+ * 改篇幅之前这里只有一句 `prose.length < 24`：24 个字是「她写了点什么」的下限，
+ * 几乎不拦任何东西，于是 155 字的均值一路走到今天。现在按人格档位给地板，
+ * 安静日另算——没发生事的时候，短是诚实的。
+ *
+ * **只在第一轮退**（与 `diaryLengthOverflow`、问句收尾那些同一口径）：她要是
+ * 写完两遍还是这个长度，收下比让这一天没有日记好。这一条永远是地板不是天花板，
+ * 宁可比地板短，不拿一天换一个两段的事故。
+ */
+export function diaryLengthShortfall(
+  blocks: DiaryBlock[],
+  activeness: CompanionPersonaActiveness | null,
+  quietDay: boolean,
+): string | null {
+  const prose = blocks
+    .filter((block): block is Extract<DiaryBlock, { type: "text" }> => block.type === "text")
+    .map((block) => block.text)
+    .join("");
+  const floor = quietDay ? QUIET_DAY_MIN_CHARS : tierOf(activeness).minChars;
+  if (prose.length >= floor) return null;
+  return `太短了，不像一篇日记。这一篇至少写 ${floor} 字：把那件事写开——`
+    + "你当时注意到了什么、心里怎么绕的、哪句话你没接上。只写这一件事，不要靠重复和"
+    + "同义改写凑字。";
 }
 
 /**
@@ -722,6 +890,13 @@ export function buildDiaryPrompt(input: {
     "日记也用这个口气，只是**没有人在听**：不抛问题、不接话、不向谁交代。",
     "长度按下文的篇幅档，不按聊天那一套；关于他的事只许写素材里有的。",
     "你的想象可以出现，但要让人听得出那是一个念头；写成真的发生过的动作，必须在素材里找得到。",
+    // 人味主要来自"当时心里在发生什么"，而那恰恰是最不像事实、最容易被规则
+    // 一起砍掉的东西（规则 4 过去写的是「没写的不要补」，把"别编"说成了"不许写
+    // 内心"，于是她只剩复述）。这里把边界划清：可编的是**想法与感受**，
+    // 不可编的是**发生过的事**。
+    "**心里在想什么是这一篇最该写的部分**，不要只把事情复述一遍：他说了什么你写什么，"
+    + "你自己当时怎么想、哪一下让你停了手、为什么当时没说出口——这些都写，"
+    + "写得越具体越像你自己。",
     "",
     "# 你的口气",
     personaBlock,
@@ -759,10 +934,19 @@ export function buildDiaryPrompt(input: {
         + "   素材是给你回忆用的，不是清单，不是每一行都要安排一句话。"
       : "2. 今天没剩下什么线头：写一小段就好，或者就写一句今天没什么事。"
         + "别拿情绪和感受来填，也别写成他问了什么、说了什么。",
-    "3. 写你自己：如果素材里确有你没答好、说错或翻漏的地方，就平着记下来；没有就别安排一次失误。",
+    "3. 写你自己，而且要写足。素材里凡有你当时**犹豫、卡住、没说出口、事后想起来还别扭**的地方，",
+    "   都平着写下来——那才是这一篇里只有你能写的部分。没有失误可记也可以记别的：",
+    "   当时你其实想说什么、为什么没接。你在写今天的自己，不是给他交一份汇报。",
     "   不道歉也不自贬。",
-    "4. 他做过什么、你自己实际做过什么，都只认素材。没写的后续、动作和现场布景不要补。",
-    "   不确定的事就留白，不靠猜测撑篇幅。",
+    // 过去这条写的是「没写的后续、动作和现场布景不要补」，把"别编事实"一路
+    // 说成了"不许写心里在发生什么"——于是她只能复述素材，人味全在这一条里被
+    // 砍掉了。现在把两类东西分开：**发生过的事**只认素材，**当时的想法与感受**
+    // 本来就不在素材里，正文里点明，那不是编造。
+    "4. 分清两类东西：**发生过的事**只认素材——他做过什么、你实际做过什么、之后又发生了什么，",
+    "   素材里没有就不写，不编后续、不编动作、不编现场的布景。",
+    "   **当时你的想法和感受**没有这个限制，那本来就只有你知道，必须写出来；",
+    "   不确定的事就留白，别拿猜测当事实。",
+    "   篇幅不够的时候，写深一点，不要靠编。",
     "5. 谁说的别记反：线头里「你先说」是对方开口，「我回答」是你接的话。素材里标「你说」的是他说的，",
     "   标「我说」「我主动开口说的是」",
     "   「我提醒过你」的是你说的；别把自己说过的话写成他让你做的事。",
@@ -788,10 +972,21 @@ export function buildDiaryPrompt(input: {
     input.material.previousOpenings.length > 0
       ? input.material.previousOpenings.map((opening) => `   · ${opening}`).join("\n")
       : "   （这是你第一次写日记。）",
+    // 开头不撞不等于不重复：同一批东西换个开头再写一遍，读三篇就知道是一个模子。
+    // 意象比开头更早暴露这件事——她最近老在写的东西，在这里摆出来让她绕开。
+    "12. 这几个词是你前几天日记里反复写的。今天不要再拿它们当这一篇的主干：",
+    input.material.previousMotifs.length > 0
+      ? `   ${input.material.previousMotifs.join("、")}`
+      : "   （暂时没有。）",
+    "    绕开它们不等于非得写点别的。今天素材里是什么就写什么，只是别又落到那几个词上。",
     // 篇幅放在最后一条：实测把规则写在中间的设定段里，同一人格会交回 15 句再交回 7 句
     // （2026-09-21 两次真跑）。规则离输出越近越容易被执行。
     // 安静日的"写短、别拿情绪填"说在规矩 2 与篇幅档里，不在这里重复第二遍。
-    `12. 全文最多 ${lengthTier.paragraphs} 段，说完就停，不要另起一段补感想收尾。`,
+    // 地板也在这条里说一遍：上限说在外面会被当成"最多"，下限不说就没人当真，
+    // 而 155 字的均值正是"没人当真"的直接后果（2026-10-05 实测 32 篇）。
+    `13. 全文最多 ${lengthTier.paragraphs} 段，说完就停，不要另起一段补感想收尾。`,
+    `    这一篇至少 ${input.material.quietDay ? QUIET_DAY_MIN_CHARS : lengthTier.minChars} 字。`
+      + "写不满不是因为今天没事，是因为你只把事情复述了一遍——把那件事写开。",
     "",
     "# 输出",
     "只输出 JSON。通常只需要正文：",

@@ -52,6 +52,10 @@ export const CompanionOnboardingRunStatusSchema = z.enum([
   "in_progress",
   "paused",
 ]);
+export const COMPANION_GUIDE_VERSION = "companion-guide-v1";
+export const COMPANION_GUIDE_TOPIC_IDS = ["welcome", "space", "sources", "reading", "agent", "review", "settings"] as const;
+export const COMPANION_GUIDE_STEP_IDS = ["room", "notes", "reading", "agent", "return", "space", "sources", "review", "settings"] as const;
+export const companionGuideScopeSchema = z.enum(["account", "space"]);
 export type CompanionOnboardingRunStatus = z.infer<
   typeof CompanionOnboardingRunStatusSchema
 >;
@@ -63,6 +67,7 @@ export const companionOnboardingActiveRunSchema = z.object({
   entryMode: CompanionOnboardingEntryModeSchema,
   runStatus: CompanionOnboardingRunStatusSchema,
   stepId: z.string().min(1).max(100),
+  topicId: z.enum(COMPANION_GUIDE_TOPIC_IDS).optional(),
   /** 服务端签发的不透明恢复令牌引用；resume 时必须与行内值一致才放行。 */
   resumeTokenRef: z.string().min(1).max(200),
   /** 签发 run 时的 workspace；resume 必须同 workspace，跨 workspace 不复用。 */
@@ -85,6 +90,9 @@ export type CompanionOnboardingLastRun = z.infer<
 
 export const companionOnboardingStateV1Schema = z.object({
   onboardingVersion: z.string().min(1).max(100),
+  scope: companionGuideScopeSchema.optional(),
+  workspaceId: z.string().uuid().optional(),
+  visitedStepIds: z.array(z.string().min(1).max(64)).max(100).optional(),
   /** 乐观并发版本：每次写入 +1；客户端提交 base revision 做 CAS。 */
   revision: z.number().int().min(0),
   offerStatus: CompanionOnboardingOfferStatusSchema,
@@ -94,6 +102,9 @@ export const companionOnboardingStateV1Schema = z.object({
   lastRun: companionOnboardingLastRunSchema.optional(),
   updatedAt: z.string().datetime(),
 }).strict().superRefine((state, ctx) => {
+  if ((state.scope === "space") !== Boolean(state.workspaceId)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "space progress requires its workspace identity", path: ["workspaceId"] });
+  }
   if (state.offerStatus === "consumed" && !state.offerDisposition) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -123,17 +134,21 @@ export const TransitionActionSchema = z.enum([
   "replay",
   "complete",
   "abandon",
+  "advance",
 ]);
 export type TransitionAction = z.infer<typeof TransitionActionSchema>;
 
 export const onboardingTransitionRequestSchema = z.object({
   action: TransitionActionSchema,
+  /** Space scope is always the authenticated current workspace; clients cannot name another. */
+  scope: companionGuideScopeSchema.optional(),
   /** 客户端持有的 base revision（CAS 乐观锁）；不传则按服务端当前状态执行。 */
   revision: z.number().int().min(0).optional(),
   /** pause/resume/abandon 必须带当前 runId；start/replay 不带时由服务端签发。 */
   runId: z.string().min(1).max(100).optional(),
   /** start/replay 时可选指定起始 stepId（缺省为服务端初始 step）。 */
   stepId: z.string().min(1).max(100).optional(),
+  topicId: z.enum(COMPANION_GUIDE_TOPIC_IDS).optional(),
   /** resume 时必须提交与 activeRun.resumeTokenRef 一致的令牌。 */
   resumeTokenRef: z.string().min(1).max(200).optional(),
 }).strict();

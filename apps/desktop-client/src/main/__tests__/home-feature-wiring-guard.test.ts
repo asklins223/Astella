@@ -12,6 +12,7 @@
  * 所以这道门禁双向检查：标成 native 的必须真有分支，有分支的不许还标着 pending。
  * `HomeFeatureNoticeDialog` 本身**保留**——它是未来真·未接入功能唯一的落点，
  * 删掉它才会让"诚实 pending"彻底没有实现。
+ * （2026-10-05：魔法目录整页删除，它曾经是第二个 native 条目。）
  */
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -42,8 +43,8 @@ const handledIds = [
 
 
 /** 注册表里最终被判成 native 的 id：走名单的 + 直接写死 `availability: "native"` 的。
- *  `catalog` 属于后者（它是房间内的目录动作，不是"某条待接入页面"），
- *  只看 WIRED 名单会把它误报成"已接线却写着未接入"。 */
+ *  `companion-center` 属于后者（它是整块 surface 的一条入口，不走 pending 文案那条路），
+ *  只看 WIRED 名单不会把它误报成"已接线却写着未接入"。 */
 const nativeIds = new Set<string>(wiredIds);
 for (const match of registry.matchAll(/id: "([a-z][a-z0-9-]*)"[^\n]*availability: "native"/g)) {
   if (match[1]) nativeIds.add(match[1]);

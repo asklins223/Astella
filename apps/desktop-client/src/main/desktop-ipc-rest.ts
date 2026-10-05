@@ -250,8 +250,6 @@ import {
   companionVoiceSpeakSegmentRequestV2Schema,
   companionVoicePlaybackOutcomeRequestV1Schema,
   companionVoicePlaybackOutcomeResultV1Schema,
-  companionVoiceTranscribeRequestV1Schema,
-  companionVoiceTranscribeResultV1Schema,
 } from "@ailearn/shared/companion-voice-contracts";
 import {
   companionChatEnsureRequestV1Schema,

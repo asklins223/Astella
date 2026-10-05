@@ -9,8 +9,8 @@ import type { AgentGoalsController } from "../use-agent-goals";
 import { openAgentArtifact } from "../agent-goal-presentation";
 
 vi.mock("../use-companion-floating-placement", () => ({ useCompanionFloatingPlacement: () => ({ side: "left" }) }));
-const room = vi.hoisted(() => ({ workspaceScopeRevision: 1, setActiveNoteRef: vi.fn(), invoke: vi.fn() }));
-vi.mock("../../../app/room-store", () => ({ useRoomStore: { getState: () => room } }));
+const room = vi.hoisted(() => ({ workspaceScopeRevision: 1, setActiveNoteRef: vi.fn(), setActiveCardGenerationRunId: vi.fn(), invoke: vi.fn() }));
+vi.mock("../../../app/room-store", () => ({ useRoomStore: Object.assign((select: (state: typeof room) => unknown) => select(room), { getState: () => room }) }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const artifact = { kind: "note_overview" as const, id: "saved", jobId: "job", noteId: "note", noteVersionId: "version" };
 const run: AgentRunV1 = { version: 1, runId: "run", revision: 2, identityId: "identity",
@@ -18,7 +18,7 @@ const run: AgentRunV1 = { version: 1, runId: "run", revision: 2, identityId: "id
   artifacts: [{ ...artifact, id: "older" }, artifact], summary: "**速看已做好**\n\n- 已保留原文事实\n- 可以调整要求", error: null,
   modelCalls: 4, maxModelCalls: 16, createdAt: "2026-10-04T01:00:00Z", updatedAt: "2026-10-04T01:00:00Z" };
 function controller(item = run): AgentGoalsController { return { items: [item], scope: 1, error: null, loading: false, pending: null,
-  refresh: vi.fn(async () => {}), change: vi.fn(async () => true), nextCursor: null,
+  refresh: vi.fn(async () => {}), ensure: vi.fn(async()=>{}), change: vi.fn(async () => true), nextCursor: null,
   loadMore: vi.fn(async () => {}), moreLoading: false, moreError: null }; }
 function bubble(goals = controller()) {
   return <CompanionGoalBubble anchorRef={{ current: null }} motionMode="off" blocked={false} open selectedId="run" goals={goals}
@@ -86,12 +86,57 @@ it("opens expansion as the exact saved draft batch and labels it as a choice to 
   const expansion = { ...artifact, kind: "note_expansion" as const, id: "job" };
   render(bubble({ ...goals, items: [{ ...run, status: "completed", artifacts: [expansion], operations: [{
     operationId: "operation", runId: run.runId, revision: run.revision, scope: { workspaceId: "workspace", userId: "user" },
-    capability: "note_expansion_generate", jobId: "job", status: "succeeded", lastEventSeq: 1, artifact: expansion, error: null,
+    capability: "note_expansion_generate", execution: { kind: "job", id: "job" }, status: "succeeded", lastEventSeq: 1, result: { kind: "artifact", artifact: expansion }, error: null,
   }] }] }));
   fireEvent.click(screen.getByRole("button", { name: "拓展草稿" }));
   expect(room.setActiveNoteRef).toHaveBeenCalledWith(expect.objectContaining({ learningView: "expansion",
     learningResult: { kind: "note_expansion", artifactId: "job", taskId: "job", noteVersionId: "version" } }));
   expect(screen.getByText(/翻开后可以修改、挑选/)).toBeTruthy();
+});
+it("opens the exact card run for user review from both the light bubble and journal", () => {
+  const cards = { kind: "card_candidates" as const, id: "card-run", noteId: "note", noteVersionId: "version" };
+  const ready: AgentRunV1 = { ...run, status: "completed", artifacts: [cards], operations: [{
+    operationId: "card-operation", runId: run.runId, revision: run.revision,
+    scope: { workspaceId: "workspace", userId: "user" }, capability: "card_generation_generate",
+    execution: { kind: "card_generation", id: cards.id }, status: "succeeded", lastEventSeq: 2,
+    result: { kind: "artifact", artifact: cards }, error: null,
+  }] };
+  const view = render(bubble(controller(ready)));
+  expect(screen.getByText(/你决定收下哪些，再保存到卡组/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "待审核学习卡" }));
+  expect(room.setActiveNoteRef).toHaveBeenCalledWith({ noteId: "note", noteVersionId: "version" });
+  expect(room.setActiveCardGenerationRunId).toHaveBeenCalledWith("card-run");
+  expect(room.invoke).toHaveBeenCalledWith("open-card-generation");
+  expect(room.setActiveCardGenerationRunId.mock.invocationCallOrder[0]).toBeLessThan(room.invoke.mock.invocationCallOrder[0]);
+  view.unmount(); vi.clearAllMocks();
+  const onArtifactOpen = vi.fn();
+  render(<CompanionGoalJournal goals={controller(ready)} targetId="run" onChat={vi.fn()} onArtifactOpen={onArtifactOpen} />);
+  fireEvent.click(screen.getByRole("button", { name: /待审核学习卡.*由你审核与保存/ }));
+  expect(room.setActiveCardGenerationRunId).toHaveBeenCalledWith("card-run");
+  expect(onArtifactOpen).toHaveBeenCalledOnce();
+  vi.clearAllMocks();
+  expect(openAgentArtifact(cards, 2)).toBe(false);
+  expect(room.setActiveCardGenerationRunId).not.toHaveBeenCalled();
+  expect(room.invoke).not.toHaveBeenCalled();
+});
+it("treats no card recommendation as an answer without inventing an artifact or an error", () => {
+  const answer: AgentRunV1 = { ...run, status: "completed", artifacts: [], summary: "**这段更适合阅读理解**\n\n- 先理清概念，再决定是否练习。", operations: [{
+    operationId: "card-operation", runId: run.runId, revision: run.revision,
+    scope: { workspaceId: "workspace", userId: "user" }, capability: "card_generation_generate",
+    execution: { kind: "card_generation", id: "card-run" }, status: "succeeded", lastEventSeq: 2,
+    result: { kind: "no_cards_recommended", reasonCodes: ["insufficient_content"] }, error: null,
+  }] };
+  const view = render(bubble(controller(answer)));
+  expect(screen.getByText(/这次没有推荐生成学习卡/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "待审核学习卡" })).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByText("这段更适合阅读理解")).toBeNull();
+  view.unmount();
+  render(<CompanionGoalJournal goals={controller(answer)} targetId="run" onChat={vi.fn()} onArtifactOpen={vi.fn()} />);
+  expect(screen.getByText("这段更适合阅读理解").tagName).toBe("STRONG");
+  expect(screen.getByText("这次不建议制卡")).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "做好的成果" })).toBeNull();
+  expect(room.setActiveCardGenerationRunId).not.toHaveBeenCalled();
 });
 it("puts a later read-only answer ahead of retained artifacts without claiming a new generation", () => {
   const reading = { ...run, revision: 3, status: "completed" as const, goal: "核对上一批修改后的拓展草稿",

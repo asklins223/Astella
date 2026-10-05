@@ -69,6 +69,7 @@ import type {
 } from "@ailearn/shared/card-generation-v2-contracts";
 import type { CardContentCheckV3Output } from "@ailearn/shared/card-generation-v3-contracts";
 import {
+  AI_TASK_RETRYABLE_FAILURE_CLASSES,
   runAiTask,
   type AiAttemptToken,
   type AiStepFailure,
@@ -100,6 +101,13 @@ import {
   createDeterministicCardContentCheckV3Provider,
   createDeterministicCardGenerateV3Provider,
 } from "./deterministic.ts";
+import {
+  agentCardExecutionPorts,
+  resolveAgentCardExecution,
+  withAgentCardJobTransaction,
+  type AgentCardExecution,
+} from "./agent-fence.ts";
+import { loadAgentExecutionContext } from "../agent/execution-context.ts";
 import type { CardGenerateV3AssemblyResult } from "./plan-assembly.ts";
 import type {
   CardContentCheckV3TaskOutput,
@@ -179,19 +187,60 @@ function capV3PromptBlocks(
   });
 }
 
-/** 数端口被打了几发（§16.28 的读数来源）。 */
-function counting<T>(inner: CardGenerationV3ProviderPort<T>): [CardGenerationV3ProviderPort<T>, () => number] {
+/**
+ * 数端口被打了几发（§16.28 的读数来源），并在**每一次真正发出的调用之前**跑一次
+ * `beforeComplete`。
+ *
+ * 为什么收费点落在这里而不是 `runV3TaskOnKernel` 的入口：入口一次任务只被穿一次，
+ * 而内核在合同解析失败时会自动补采样一次、逐张改写后还要再过一次重检——这些**都
+ * 是真实的 provider 调用**，都要记到父目标上。反过来，只恢复已提交结果的那条路径
+ * （计划与候选已在库、从内容检查接上）一次 `complete` 都不会发生，于是也就一次都不记。
+ *
+ * `beforeComplete` 为空（没有 Agent 归属的普通制卡）时这一层是纯计数，行为与今天逐字相同。
+ */
+function counting<T>(
+  inner: CardGenerationV3ProviderPort<T>,
+  beforeComplete?: () => Promise<void>,
+): [CardGenerationV3ProviderPort<T>, () => number] {
   let calls = 0;
   return [
     {
       modelId: inner.modelId,
       async complete(request) {
+        // 先收费再计数：收费被拒（父预算用完／目标已停）时这一次**没有真正发出去**，
+        // 计数若已经加过，落库的 modelCalls 就会报多一发。
+        if (beforeComplete) await beforeComplete();
         calls += 1;
         return inner.complete(request);
       },
     },
     () => calls,
   ];
+}
+
+/**
+ * 这一发 outbox 的 Agent 归属与「每次调用前向父目标收费」的那一份上下文。
+ *
+ * 没有绑定时 `reserve` 是空实现：用户在页面上自己点的制卡、以及审核台上的后续几发，
+ * 一次也不记到任何目标上（它们的 outbox 与任何 `agent_operations` 行无关）。
+ */
+async function loadCardAgentExecutionContext(
+  job: PendingOutboxJob,
+  execution: AgentCardExecution,
+  signal: AbortSignal | undefined,
+) {
+  if (!execution.binding) {
+    return {
+      binding: null,
+      instructions: "",
+      async reserveModelCall() {},
+    };
+  }
+  return loadAgentExecutionContext(
+    { workspaceId: job.workspaceId, userId: execution.binding.userId },
+    agentCardExecutionPorts(job, execution.binding),
+    signal,
+  );
 }
 
 async function readNoteTitle(workspaceId: string, noteVersionId: string): Promise<string> {
@@ -242,14 +291,21 @@ export async function processCardGenerationSimplifiedJob(
 ): Promise<void> {
   const workspaceId = job.workspaceId;
   const runId = job.runId;
-  const generateCalls = counting(providers.generate);
-  const checkCalls = counting(providers.check);
-  const rewriteCalls = counting(providers.rewrite);
+  // 归属读一次即定论：初始那一发有主，审核台之后的新 outbox 没有主。
+  const agentExecution = await resolveAgentCardExecution(job);
+  const agentContext = await loadCardAgentExecutionContext(job, agentExecution, signal);
+  const reserveAgentCall = () => agentContext.reserveModelCall();
+  const generateCalls = counting(providers.generate, reserveAgentCall);
+  const checkCalls = counting(providers.check, reserveAgentCall);
+  const rewriteCalls = counting(providers.rewrite, reserveAgentCall);
   const modelCalls = () => generateCalls[1]() + checkCalls[1]() + rewriteCalls[1]();
+  /** 每一段短事务的统一入口：先判父围栏（先锁 Agent run），再跑这一段原有读写。 */
+  const withJobTransaction = <T>(action: (tx: WorkerTransaction) => Promise<T>) =>
+    withAgentCardJobTransaction(job, agentExecution, action);
 
   // ── 段 1：读（短事务，锁 run）──────────────────────────────────────────
   const replanning = jobModeV3(job) === "replan";
-  const prepared = await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
+  const prepared = await withJobTransaction(async (tx) => {
     const loaded = await loadV2RunInputs(tx, workspaceId, runId);
     const status = String(loaded.run.status);
     if (!(replanning ? REPLAN_RUN_STATUSES : RUNNABLE_STATUSES).has(status)) {
@@ -278,7 +334,7 @@ export async function processCardGenerationSimplifiedJob(
       planVersion,
       previousPlanRevisionId: loaded.plan?.planRevisionId ?? null,
     };
-  }, { isolated: true });
+  });
 
   if (prepared.kind === "skipped") {
     logger.info({ runId, status: prepared.status }, "[v3-pipeline] run not runnable, job is a no-op");
@@ -407,7 +463,7 @@ export async function processCardGenerationSimplifiedJob(
     );
     gateRejections = gated.rejected;
 
-    await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
+    await withJobTransaction(async (tx) => {
       await insertSimplifiedPlanRow(tx, workspaceId, runId, assembled!.plan, planVersion, previousPlanRevisionId);
       await insertAuthoredCandidatesBatched(
         tx, workspaceId, runId, candidates, hintsByCandidateRevisionId, { skipExisting: true },
@@ -450,12 +506,13 @@ export async function processCardGenerationSimplifiedJob(
         workspaceId, runId, cap: loaded.sourceContentCap,
       });
       await fenceV2OutboxLease(tx, job);
-    }, { isolated: true });
+    });
   }
 
   if (assembled?.plan.result.kind === "no_cards_recommended" && candidates.length === 0) {
     await finishNoCards(
       job,
+      agentExecution,
       assembled.plan.result.kind === "no_cards_recommended" ? assembled.plan.result.reasonCodes : [],
       modelCalls(),
     );
@@ -468,13 +525,14 @@ export async function processCardGenerationSimplifiedJob(
     // 全数挡下"，`gateRejections` 里写着是哪几道门挡的。以前这里递一个空数组，
     // 终态就只剩"这篇没出卡"三个字——2026-09-27 量 C16 那篇（两句都被题面门挡下）时，
     // 就是这么把已知的原因丢掉的。
-    await finishNoCards(job, [...new Set(gateRejections.flatMap((entry) => entry.codes))],
+    await finishNoCards(job, agentExecution, [...new Set(gateRejections.flatMap((entry) => entry.codes))],
       modelCalls());
     return;
   }
 
   await runContentCheckLegV3({
     job,
+    agentExecution,
     workspaceId,
     runId,
     loaded,
@@ -499,6 +557,8 @@ export async function processCardGenerationSimplifiedJob(
  */
 async function runContentCheckLegV3(args: {
   job: PendingOutboxJob;
+  /** 父围栏归属；逐候选那一发恒无绑定（审核台的新 outbox 不认领）。 */
+  agentExecution: AgentCardExecution;
   workspaceId: string;
   runId: string;
   loaded: Awaited<ReturnType<typeof loadV2RunInputs>>;
@@ -515,9 +575,11 @@ async function runContentCheckLegV3(args: {
   modelCalls: () => number;
 }): Promise<void> {
   const {
-    job, workspaceId, runId, loaded, plan, runOnKernel,
+    job, agentExecution, workspaceId, runId, loaded, plan, runOnKernel,
     checkProvider, rewriteProvider, rewriteCount, modelCalls,
   } = args;
+  const withJobTransaction = <T>(action: (tx: WorkerTransaction) => Promise<T>) =>
+    withAgentCardJobTransaction(job, agentExecution, action);
   let candidates = args.candidates;
   const hintsByCandidateRevisionId = args.hintsByCandidateRevisionId;
 
@@ -589,6 +651,7 @@ async function runContentCheckLegV3(args: {
     if (rebuilt.length > 0) {
       await commitRewrittenRevisionsV3({
         job,
+        agentExecution,
         workspaceId,
         runId,
         previousCandidates: candidates,
@@ -629,7 +692,7 @@ async function runContentCheckLegV3(args: {
   // 该问本批还是该问整个 run（见 `writeSimplifiedCheckResults`）。
   const settleScope: SimplifiedSettleScope =
     job.jobType === "card_candidate_refine_v3" ? "candidate_refine" : "batch_generation";
-  await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
+  await withJobTransaction(async (tx) => {
     await writeSimplifiedCheckResults(tx, {
       workspaceId,
       runId,
@@ -648,7 +711,7 @@ async function runContentCheckLegV3(args: {
       await emitSourceContentCapEvent(tx, { workspaceId, runId, cap: loaded.sourceContentCap });
     }
     await fenceV2OutboxLease(tx, job);
-  }, { isolated: true });
+  });
 }
 
 /**
@@ -658,6 +721,7 @@ async function runContentCheckLegV3(args: {
  */
 async function commitRewrittenRevisionsV3(args: {
   job: PendingOutboxJob;
+  agentExecution: AgentCardExecution;
   workspaceId: string;
   runId: string;
   previousCandidates: ReadonlyArray<LearningCardCandidateRevisionV2>;
@@ -666,8 +730,8 @@ async function commitRewrittenRevisionsV3(args: {
   rewriteCalls: number;
   rewriteReason: "content_check" | "user_feedback";
 }): Promise<void> {
-  const { job, workspaceId, runId, previousCandidates, rebuilt, hintsByCandidateRevisionId } = args;
-  await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
+  const { job, agentExecution, workspaceId, runId, previousCandidates, rebuilt, hintsByCandidateRevisionId } = args;
+  await withAgentCardJobTransaction(job, agentExecution, async (tx) => {
     for (const next of rebuilt) {
       const previous = previousCandidates.find(
         (candidate) => candidate.candidateRevisionId
@@ -692,7 +756,7 @@ async function commitRewrittenRevisionsV3(args: {
       });
     }
     await fenceV2OutboxLease(tx, job);
-  }, { isolated: true });
+  });
 }
 
 /**
@@ -724,11 +788,15 @@ export async function processCardCandidateRefineV3Job(
       "card_candidate_refine_v3 的 payload 缺 candidateRevisionId",
     );
   }
+  // 逐候选那一发是用户自己在审核台上的明确动作，它的新 outbox **没有**与任何
+  // `agent_operations` 行绑定：所以这里既没有父围栏也不向任何目标收费，即使这一批
+  // 最初是由伴星发起的。已经 `completed` 的目标不该拦住用户后来的重检与重写。
+  const agentExecution: AgentCardExecution = { binding: null };
   const checkCalls = counting(providers.check);
   const rewriteCalls = counting(providers.rewrite);
   const modelCalls = () => checkCalls[1]() + rewriteCalls[1]();
 
-  const prepared = await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
+  const prepared = await withAgentCardJobTransaction(job, agentExecution, async (tx) => {
     const loaded = await loadV2RunInputs(tx, workspaceId, runId);
     const status = String(loaded.run.status);
     // 只接受"这一批已经摆到审核台上"的两个状态：`queued/planning/authoring/checking`
@@ -755,7 +823,7 @@ export async function processCardCandidateRefineV3Job(
     }
     await fenceV2OutboxLease(tx, job);
     return { kind: "ready" as const, loaded, subject, hints };
-  }, { isolated: true });
+  });
 
   if (prepared.kind !== "ready") {
     // `skipped`＝这一批还没摆到审核台上（或终态了）；`vanished`＝要领的那条修订已经被
@@ -809,6 +877,7 @@ export async function processCardCandidateRefineV3Job(
     hintsByCandidateRevisionId.set(built.candidate.candidateRevisionId, built.hints);
     await commitRewrittenRevisionsV3({
       job,
+      agentExecution,
       workspaceId,
       runId,
       previousCandidates: [subject],
@@ -822,6 +891,7 @@ export async function processCardCandidateRefineV3Job(
 
   await runContentCheckLegV3({
     job,
+    agentExecution,
     workspaceId,
     runId,
     loaded,
@@ -893,14 +963,14 @@ async function runV3TaskOnKernel<TInput, TOutput>(
  * 各钉一格在 `card-generation-v3-simplified-postgres.integration.ts`）：
  * `output_shape` 是确定性失败，而内核已经按预算把那一次补采样花掉了，队列再重投只是
  * 把同一笔钱再烧一遍 ⇒ 判**不可重试**（这正是接内核之前那句"内核已按预算重试过一次"
- * 该有却没有的落点）。其余类别留在可重试那一侧——被 abort 与整条管道预算那两档，
- * 分发点自己会改成不可重试（`processV2OutboxJob` 的 catch）。
+ * 该有却没有的落点）。其余类别遵循公共内核的重试集合；HTTP 400 等确定性拒绝
+ * 不被领域包装改成传输故障。取消与整条管道预算由分发点另行收口。
  */
 function kernelFailureError(taskId: string, failure: AiStepFailure | null): Error {
   const judged: AiStepFailure = failure
     ?? { ok: false, class: "submission_failed", message: `${taskId} 的回执既不是 committed，也没带失败类别` };
   return new CardGenerationProviderError(
-    judged.class === "output_shape" ? "non-retryable" : "retryable",
+    judged.class === "output_shape" || !AI_TASK_RETRYABLE_FAILURE_CLASSES.has(judged.class) ? "non-retryable" : "retryable",
     `${taskId} output rejected: ${judged.class} — ${judged.message}`.slice(0, 600),
   );
 }
@@ -948,11 +1018,12 @@ async function insertSimplifiedPlanRow(
 
 async function finishNoCards(
   job: PendingOutboxJob,
+  agentExecution: AgentCardExecution,
   reasonCodes: readonly string[],
   modelCalls: number,
 ): Promise<void> {
   const { workspaceId, runId } = job;
-  await withWorkerWorkspaceTransaction({ workspaceId, userId: null }, async (tx) => {
+  await withAgentCardJobTransaction(job, agentExecution, async (tx) => {
     // 用户在模型调用在途时按了「取消生成」：屏上已经说了已取消，模型 ~30 秒后回来
     // 却把这一轮改写成 no_cards_recommended，outbox job 随后被当成正常完成 ack 掉——
     // 那次取消**不可恢复**，而且屏上正在显示的那个结果与服务端已经对不上了。
@@ -972,7 +1043,7 @@ async function finishNoCards(
       modelCalls,
     });
     await fenceV2OutboxLease(tx, job);
-  }, { isolated: true });
+  });
 }
 
 /**

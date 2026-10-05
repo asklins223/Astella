@@ -116,14 +116,13 @@ export async function executeCompanionAgentTurnWithToolChoiceFallback(args: {
   provider: AIProvider;
   fallbackProvider?: AIProvider;
   signal: AbortSignal;
-  executeTurn?: (provider: AIProvider, request: AgentTurnRequest, signal: AbortSignal) => Promise<AgentTurnResult>;
+  executeTurn: (provider: AIProvider, request: AgentTurnRequest, signal: AbortSignal) => Promise<AgentTurnResult>;
   onFallback?: (error: ProviderRequestError, fallbackProvider: AIProvider) => void;
 }): Promise<{ result: AgentTurnResult; provider: AIProvider }> {
   if (typeof args.provider.executeAgentTurn !== "function") {
     throw new Error("provider does not support companion agent turns");
   }
-  const executeTurn = args.executeTurn
-    ?? ((provider: AIProvider, request: AgentTurnRequest, signal: AbortSignal) => provider.executeAgentTurn!(request, signal));
+  const executeTurn = args.executeTurn;
   try {
     return {
       result: await executeTurn(args.provider, args.request, args.signal),

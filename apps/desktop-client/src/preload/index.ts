@@ -199,6 +199,8 @@ const desktopApi: AILearnDesktopApiM2 = {
   },
   agent: {
     listRuns: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunsList, input),
+    listLongGoals:(input)=>invoke(DESKTOP_IPC_CHANNELS.agentLongGoalsList,input),
+    getRun:(input)=>invoke(DESKTOP_IPC_CHANNELS.agentRunGet,input),
     getRunHistory: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunHistory, input),
     createRun: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunCreate, input),
     reviseRun: (input) => invoke(DESKTOP_IPC_CHANNELS.agentRunRevise, input),
@@ -224,8 +226,6 @@ const desktopApi: AILearnDesktopApiM2 = {
       speakSegment: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceSpeakSegment, input),
       // 一段音频播没播成（0247）：只有渲染进程知道，所以由它回报。
       reportPlaybackOutcome: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoicePlaybackOutcome, input),
-      // 语音转文本（2026-09-18）：本地 SenseVoice 优先，这条云通道是兜底。
-      transcribe: (input) => invoke(DESKTOP_IPC_CHANNELS.companionVoiceTranscribe, input),
       /**
        * 本地识别模型（2026-10）：模型不进安装包，用户自己在设置里下。
        *
@@ -252,6 +252,7 @@ const desktopApi: AILearnDesktopApiM2 = {
       listRunNodes: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatRunNodes, input),
       // 念头主动开场（切片④）：点击念头气泡，她先开口。
       openThought: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatOpenThought, input),
+      listThoughts: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatListThoughts, input),
       // 停止本轮（2026-09-19）：服务端原子取消 + 已输出文本留档。
       cancelRun: (input) => invoke(DESKTOP_IPC_CHANNELS.companionChatCancelRun, input)
     },

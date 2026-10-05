@@ -41,7 +41,7 @@ import {
   CompanionToolUnavailableError as RuntimeCompanionToolUnavailableError,
   joinVisibleSegmentsDeduped,
 } from "../companion-agent-runtime.ts";
-import { runStreamingAgentStep } from "../companion-agent-streaming-step.ts";
+import { canRetryCompanionStream, runStreamingAgentStep } from "../companion-agent-streaming-step.ts";
 import { classifyCompanionToolFailure } from "../companion-tool-outcome.ts";
 import { CompanionToolUnavailableError } from "../companion-tool-result.ts";
 import {
@@ -54,12 +54,21 @@ import {
 // 继续从 runtime 那个 re-export 取，会让「哪个文件有测试」这件事说不清。
 import { taskQueueToolResult, currentPageToolResult } from "../companion-read-tools.ts";
 import { NOTE_SEARCH_MAX_TERMS, noteSearchTerms } from "../companion-dialogue-content.ts";
-import { companionNeedsTool } from "../companion-tool-intent.ts";
+import { interpretCompanionTurn } from "../companion-tool-intent.ts";
 import { MockProvider } from "../../lib/providers/mock.ts";
 import { ProviderRequestError } from "../../lib/provider-request-error.ts";
 import { CompanionStreamStoppedError } from "../companion-dialogue-stream.ts";
 import type { AIProvider } from "../../lib/ai-provider.ts";
 import type { AgentTurnRequest, AgentTurnResult } from "@ailearn/shared";
+
+test("rate, account and authorization rejections do not repeat through a buffered fallback", () => {
+  const state={emitted:false,now:10,deadline:100};
+  for (const status of [401,402,403,429]) assert.equal(canRetryCompanionStream(new ProviderRequestError({provider:"real",status}),state),false);
+  assert.equal(canRetryCompanionStream(new ProviderRequestError({provider:"real",status:504}),state),true);
+  assert.equal(canRetryCompanionStream(new Error("empty stream"),state),true);
+  assert.equal(canRetryCompanionStream(new Error("socket closed"),{...state,emitted:true}),false);
+  assert.equal(canRetryCompanionStream(new Error("socket closed"),{...state,now:100}),false);
+});
 
 function toolIntentTaskContext(signal = new AbortController().signal) {
   return {
@@ -1005,6 +1014,7 @@ test("工具兜底只处理 required 能力错误，不吞其他错误或同模�
         provider: primary,
         fallbackProvider: fallback,
         signal: new AbortController().signal,
+        executeTurn: (provider, request, signal) => provider.executeAgentTurn!(request, signal),
       }),
       (error) => error === testCase.error,
       testCase.label,
@@ -1013,23 +1023,23 @@ test("工具兜底只处理 required 能力错误，不吞其他错误或同模�
   }
 });
 
-test("P3-alt：分类器读不到（null）按「要工具」走，只有明确说了 false 才算不要", async () => {
-  // 三值里 null 不是"不需要"，是**没读到答复**（超时／异常／形状不对）。原判据
-  // `=== true` 把这两支合成一支，fail-open 的产物就是"我帮你找一下"落在屏上。
+test("分类器不可用时不强制工具，不继承历史执行授权", async () => {
+  // null 是分类未完成，不强制动作。运行宿主仅保留只读工具面，当前提问
+  // 仍可回答；只有明确 true 才开放当前权限允许的行动能力。
   assert.equal(companionStepRequiresTool(null), false, "意图未知不强制工具，也不继承旧任务授权");
   assert.equal(companionStepRequiresTool(false), false, "明确说了不要工具，就别强制");
   assert.equal(companionStepRequiresTool(true), true);
 
   // 上面那句是判据，这一句是**"读不到真的会发生"**：provider 炸了的时候
-  // `companionNeedsTool` 回的就是 null（不是 false）。两头接起来才是 fail-closed。
+  // `interpretCompanionTurn` 保留 uncertain（不是否认需要工具）。两头接起来才是 fail-closed。
   const broken = {
     chatCompletion: async () => {
       throw new Error("provider down");
     },
   } as unknown as AIProvider;
-  const decision = await companionNeedsTool(broken, [{ role: "user", content: "帮我把那篇笔记打开" }], toolIntentTaskContext());
-  assert.equal(decision, null, "分类器的失败形状是 null（这条变了，上面那条判据就不成立了）");
-  assert.equal(companionStepRequiresTool(decision), false);
+  const decision = await interpretCompanionTurn(broken, [{ role: "user", content: "帮我把那篇笔记打开" }], toolIntentTaskContext());
+  assert.equal(decision.toolUse, "uncertain", "解释失败保留不确定性，不能放开写工具");
+  assert.equal(companionStepRequiresTool(null), false);
 });
 
 test("不变量：任何一步都不许同时出现 tools:[] 与 toolChoice:\"required\"", () => {
@@ -1133,16 +1143,16 @@ test("mock 守 provider 合同：required 必回工具调用，工具面为空�
   // 分类器那一支也必须回合同形状。以前它回的是 `{"status":"mock"}`——合法 JSON、
   // 没有 needsTool 键 ⇒ 每个 mock 驱动的用例都站在"读不到"那一格上。
   const judged = await mock.chatCompletion([
-    { role: "system", content: "你只判断下一步是否必须调用应用工具。只输出 JSON：{\"needsTool\":true}" },
+    { role: "system", content: "本轮注意力解释包含 goalObjectIndex，输出完整结构合同" },
     { role: "user", content: "帮我复习光合作用" },
   ], { maxTokens: 60, temperature: 0, responseFormat: "json_object" });
-  assert.equal(JSON.parse(judged.content).needsTool, false);
+  assert.equal(JSON.parse(judged.content).toolUse, "none");
   const judgedAction = await mock.chatCompletion([
-    { role: "system", content: "你只判断下一步是否必须调用应用工具。只输出 JSON：{\"needsTool\":true}" },
+    { role: "system", content: "本轮注意力解释包含 goalObjectIndex，输出完整结构合同" },
     { role: "user", content: "打开那篇笔记【mock:wants-tool】" },
   ], { maxTokens: 60, temperature: 0, responseFormat: "json_object" });
-  assert.equal(JSON.parse(judgedAction.content).needsTool, true);
-  assert.equal(await companionNeedsTool(mock, [
+  assert.equal(JSON.parse(judgedAction.content).toolUse, "act");
+  assert.equal((await interpretCompanionTurn(mock, [
     { role: "user", content: "打开那篇笔记【mock:wants-tool】" },
-  ], toolIntentTaskContext()), true, "整条链（mock 答复 → 分类器解析）要接得上");
+  ], toolIntentTaskContext())).toolUse, "act", "整条链（mock 答复 → 分类器解析）要接得上");
 });

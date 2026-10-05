@@ -16,6 +16,7 @@ export const createNoteDynamicArtifactTaskV1Schema = z.strictObject({
 export const noteLearningArtifactTaskStatusV1Schema = z.enum(["queued", "running", "ready", "failed"]);
 export const noteLearningArtifactTaskV1Schema = z.strictObject({
   taskId: z.string().uuid(),
+  agentRunId: z.string().uuid().optional(),
   noteId: z.string().uuid(),
   noteVersionId: z.string().uuid(),
   sourceKind: z.enum(["overview", "annotation"]),

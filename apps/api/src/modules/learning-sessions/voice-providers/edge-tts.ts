@@ -25,8 +25,24 @@ export interface EdgeTtsProviderOptions {
   /** 容器鉴权共享 token（优先于 env EDGE_TTS_AUTH_TOKEN） */
   authToken?: string;
   timeoutMs?: number;
+  /**
+   * 调用方的取消信号（内核步预算 / 客户端断开）。
+   *
+   * 与内部那个 30s 超时控制器合并，而不是取代它：两个来源都要能掐掉这次 fetch，
+   * 谁先到算谁。
+   */
+  signal?: AbortSignal;
   /** 测试注入 fetch */
   fetchImpl?: typeof fetch;
+}
+
+/** 把两个来源合成一个 signal：任一按下都真的中止 fetch。 */
+function linkedAbortController(signal: AbortSignal | undefined): AbortController {
+  const controller = new AbortController();
+  if (!signal) return controller;
+  if (signal.aborted) controller.abort(signal.reason);
+  else signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
+  return controller;
 }
 
 export interface EdgeTtsSynthesizeResult {
@@ -190,7 +206,10 @@ async function edgeTtsSynthesizeUngated(
   // 容器鉴权 token：优先 options.authToken（测试注入/显式配置），兜底 env
   const authToken = options.authToken ?? process.env.EDGE_TTS_AUTH_TOKEN;
 
-  const controller = new AbortController();
+  // 已取消：连请求都不发。传一个已经 aborted 的 signal 给 fetch 也能拦住，
+  // 但那依赖 fetch 自己的语义——在 provider 这一层拒绝，形状更确定。
+  if (options.signal?.aborted) throw new EdgeTtsError("CANCELLED", "语音合成已取消");
+  const controller = linkedAbortController(options.signal);
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   try {
@@ -291,7 +310,10 @@ async function edgeTtsSynthesizeStreamUngated(
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const authToken = options.authToken ?? process.env.EDGE_TTS_AUTH_TOKEN;
 
-  const controller = new AbortController();
+  // 已取消：连请求都不发。传一个已经 aborted 的 signal 给 fetch 也能拦住，
+  // 但那依赖 fetch 自己的语义——在 provider 这一层拒绝，形状更确定。
+  if (options.signal?.aborted) throw new EdgeTtsError("CANCELLED", "语音合成已取消");
+  const controller = linkedAbortController(options.signal);
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   try {

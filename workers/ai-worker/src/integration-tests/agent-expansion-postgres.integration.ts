@@ -22,15 +22,17 @@ import { randomUUID, createHash } from "node:crypto";
 import { after, test } from "node:test";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
+import * as schema from "@ailearn/shared/db-schema";
 import { sql as query } from "drizzle-orm";
-import { createAgentStore, createAgentAdvanceStore, type AgentStorePorts } from "@ailearn/agent-host";
+import { createAgentStore, createAgentAdvanceStore, readOperationResultReceipt,
+  type AgentStorePorts, type OperationReceiptRequest, type OperationReceiptV1 } from "@ailearn/agent-host";
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
-import { readOperationArtifactReceipt } from "../../../../packages/agent-host/src/artifact-receipt.ts";
 import { invokeNoteCapability } from "../agent/note-capabilities.ts";
+import type { AgentWorkerAdvanceStore } from "../agent/store.ts";
 import { readExpansionDrafts, type ExpansionReadResult } from "../agent/expansion-reading.ts";
 import { noteAgentCapabilityManifest } from "@ailearn/shared/agent-capabilities";
 import { loadAgentGenerationContext } from "../agent/generation-context.ts";
-import { closeDatabase } from "../db.ts";
+import { closeDatabase, type WorkerTransaction } from "../db.ts";
 
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
 const apiClient = postgres(testDatabaseUrl("DATABASE_URL_API"), { max: 2 });
@@ -44,8 +46,8 @@ const { withWorkspaceTransaction, closeDatabase: closeApiDatabase } =
 const { updateNoteExpansionTaskDrafts } =
   await import("../../../../apps/api/src/modules/note-expansions/service.ts");
 
-function ports(client: ReturnType<typeof postgres>): AgentStorePorts {
-  const db = drizzle(client);
+function ports(client: ReturnType<typeof postgres>): AgentStorePorts<WorkerTransaction> {
+  const db = drizzle(client, { schema });
   return {
     id: randomUUID,
     transaction: (scope, action) => db.transaction(async (tx) => {
@@ -136,8 +138,8 @@ async function lease(scope: { workspaceId: string; userId: string }, runId: stri
   return { id: String(job.id), workspaceId: scope.workspaceId, requestedBy: scope.userId, leaseToken };
 }
 
-type Child = { status: string; operationId: string; jobId: string; reused?: boolean };
-function startExpansion(advance: ReturnType<typeof createAgentAdvanceStore>, noteId: string, noteVersionId: string, providerCallId: string) {
+type Child = { status: string; operationId: string; execution: { kind: "job"; id: string }; reused?: boolean };
+function startExpansion(advance: AgentWorkerAdvanceStore, noteId: string, noteVersionId: string, providerCallId: string) {
   return invokeNoteCapability(advance, { id: providerCallId, name: EXPANSION, arguments: { noteId, noteVersionId } }) as Promise<Child>;
 }
 
@@ -215,7 +217,7 @@ test("拓展语义幂等不重排；job 成功但没有真实保存记录时不�
   const child = await startExpansion(advance, f.input.noteId, f.input.noteVersionId, "provider-1");
   assert.equal(child.status, "accepted", "accepted 只是接受，不是完成");
   const repeated = await startExpansion(advance, f.input.noteId, f.input.noteVersionId, "provider-2");
-  assert.equal(repeated.jobId, child.jobId);
+  assert.equal(repeated.execution.id, child.execution.id);
   assert.equal(repeated.operationId, child.operationId);
   const [{ n }] = await admin`SELECT count(*)::int n FROM jobs WHERE type=${EXPANSION} AND workspace_id=${scope.workspaceId}`;
   assert.equal(n, 1, "同一目标同一版本的拓展只应排一个 job");
@@ -223,30 +225,30 @@ test("拓展语义幂等不重排；job 成功但没有真实保存记录时不�
   await finishAdvance(first.id);
 
   // 0368 的触发器记录 child job 的真实状态，并排一次续跑。
-  await admin`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id=${child.jobId}`;
+  await admin`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id=${child.execution.id}`;
   const unknown = await settle(scope, run.runId);
   assert.equal(unknown.operations[0]!.status, "outcome_unknown");
   assert.deepEqual(unknown.artifacts, [], "没有真实保存记录就没有产物");
   assert.match(unknown.operations[0]!.error ?? "", /回执暂时读不到/);
   const [{ allowed }] = await workerPorts.transaction(scope, (tx) => tx.execute(
-    query`SELECT ailearn_agent_job_current(${child.jobId},${scope.workspaceId},${scope.userId},false) AS allowed`)) as { allowed: boolean }[];
+    query`SELECT ailearn_agent_job_current(${child.execution.id},${scope.workspaceId},${scope.userId},false) AS allowed`)) as { allowed: boolean }[];
   assert.equal(allowed, true, "结果未知不等于可以重做一次");
   const [{ rerun }] = await admin`SELECT count(*)::int rerun FROM jobs WHERE type=${EXPANSION} AND workspace_id=${scope.workspaceId}`;
   assert.equal(rerun, 1, "回执不确定时不得再排一个生成");
 
   // 草稿真的落库之后，回执才被采用；产物指向 taskId = jobId 和那一版笔记。
-  await saveDraft(f.input.noteId, f.input.noteVersionId, child.jobId, scope.userId, scope.workspaceId, child.operationId);
+  await saveDraft(f.input.noteId, f.input.noteVersionId, child.execution.id, scope.userId, scope.workspaceId, child.operationId);
   assert.equal(await reconcile(run.runId, child.operationId), 1, "真实落库后应当能被再次核对");
   const delivered = await settle(scope, run.runId);
   assert.equal(delivered.operations[0]!.status, "succeeded");
   assert.equal(delivered.operations[0]!.error, null, "成功后不该留着未知回执的话术");
   assert.deepEqual(delivered.artifacts, [{
-    kind: "note_expansion", id: child.jobId, jobId: child.jobId,
+    kind: "note_expansion", id: child.execution.id, jobId: child.execution.id,
     noteId: f.input.noteId, noteVersionId: f.input.noteVersionId,
   }]);
 
   // 已存的只是待选草稿：用户还没有收下任何一篇，也不会自动制卡。
-  const [task] = await admin`SELECT confirmed_candidate_ids,confirmed_at FROM note_expansion_tasks WHERE id=${child.jobId}`;
+  const [task] = await admin`SELECT confirmed_candidate_ids,confirmed_at FROM note_expansion_tasks WHERE id=${child.execution.id}`;
   assert.equal(task?.confirmed_candidate_ids, null);
   assert.equal(task?.confirmed_at, null);
   const [{ notes }] = await admin`SELECT count(*)::int notes FROM notes WHERE workspace_id=${scope.workspaceId}`;
@@ -264,49 +266,65 @@ test("两份冻结材料之间串错产物：类型、归属、payload 材料与
   const child = await startExpansion(advance, f.input.noteId, f.input.noteVersionId, "provider-first-note");
   await advance.release(false);
   await finishAdvance(first.id);
-  const read = (overrides: Partial<Parameters<typeof readOperationArtifactReceipt>[1]> = {}) =>
-    workerPorts.transaction(scope, (tx) => readOperationArtifactReceipt(tx, {
-      capability: EXPANSION, jobId: child.jobId, scope, inputs: [f.input, secondInput], ...overrides,
+  // 回执现在按 execution 分派并返回三档：result / failed / pending。
+  // 这里这一格全是「认得出产物」与「认不出」的对立——认不出对 job 执行体一律是
+  // pending（领域事实还不足以定性），不是 failed：没有任何一条分支说这次操作明确失败。
+  const read = (overrides: Partial<OperationReceiptRequest> = {}) =>
+    workerPorts.transaction(scope, (tx) => readOperationResultReceipt(tx, {
+      capability: EXPANSION, execution: child.execution, scope, inputs: [f.input, secondInput], ...overrides,
     }));
-  await saveDraft(f.input.noteId, f.input.noteVersionId, child.jobId, scope.userId, scope.workspaceId, child.operationId);
-  assert.ok(await read(), "逐字对上的草稿才是这次操作的产物");
+  const artifactOf = (receipt: OperationReceiptV1) => {
+    assert.equal(receipt.kind, "result", `应当认出产物，实际是 ${receipt.kind}`);
+    assert.ok(receipt.kind === "result" && receipt.result.kind === "artifact");
+    return receipt.result.artifact;
+  };
+  const notDelivered = (receipt: OperationReceiptV1, why: string) =>
+    assert.equal(receipt.kind, "pending", why);
+  await saveDraft(f.input.noteId, f.input.noteVersionId, child.execution.id, scope.userId, scope.workspaceId, child.operationId);
+  assert.deepEqual(artifactOf(await read()), {
+    kind: "note_expansion", id: child.execution.id, jobId: child.execution.id,
+    noteId: f.input.noteId, noteVersionId: f.input.noteVersionId,
+  }, "逐字对上的草稿才是这次操作的产物");
 
   // 串到同一空间的另一份冻结材料上：payload 说第一篇，草稿却是第二篇。
-  await repointDraft(child.jobId, secondInput.noteId, secondInput.noteVersionId);
-  assert.equal(await read(), null, "另一份材料的产物不能顶替这次操作");
+  await repointDraft(child.execution.id, secondInput.noteId, secondInput.noteVersionId);
+  notDelivered(await read(), "另一份材料的产物不能顶替这次操作");
   // 同一篇笔记的另一个版本：noteId 对上了也还不算。
-  await repointDraft(child.jobId, f.input.noteId, f.otherVersionId);
-  assert.equal(await read(), null, "别的版本的产物不能顶替这次操作");
+  await repointDraft(child.execution.id, f.input.noteId, f.otherVersionId);
+  notDelivered(await read(), "别的版本的产物不能顶替这次操作");
   // 换个能力去读：类型不对就不成立。
-  assert.equal(await read({ capability: "note_overview_generate" }), null);
+  notDelivered(await read({ capability: "note_overview_generate" }), "类型不对不成立");
   // 未登记的能力永远拿不到产物。
-  assert.equal(await read({ capability: "note_expansion_generate_v2" }), null);
+  notDelivered(await read({ capability: "note_expansion_generate_v2" }), "未登记能力没有产物");
   // 换 user / 换 workspace 读同一行，读不到别人的草稿。
-  assert.equal(await read({ scope: { workspaceId: scope.workspaceId, userId: randomUUID() } }), null);
-  assert.equal(await read({ scope: { workspaceId: f.otherWorkspaceId, userId: scope.userId } }), null);
-  // 换 job：别的 job 的草稿不认。
-  assert.equal(await read({ jobId: randomUUID() }), null);
+  notDelivered(await read({ scope: { workspaceId: scope.workspaceId, userId: randomUUID() } }), "读不到别人的草稿");
+  notDelivered(await read({ scope: { workspaceId: f.otherWorkspaceId, userId: scope.userId } }), "读不到别的空间的草稿");
+  // 换执行体：别的 job 的草稿不认。
+  notDelivered(await read({ execution: { kind: "job", id: randomUUID() } }), "别的 job 的草稿不认");
+  // 换一个**种类的执行体**去读同一行：kind 也是绑定的一部分，只有 job 才配这三类产物。
+  notDelivered(await read({ execution: { kind: "card_generation", id: randomUUID() } }),
+    "card_generation 执行体不配笔记产物的回执");
 
   // payload 与草稿都指向第三篇，而那一篇根本没被冻结进这个目标：仍然不认。
   // ::text 必须显式写：postgres.js 把参数发成 unknown，jsonb_build_object 的 any 参数无隐式来源，报 42P18。
   await admin.begin(async (tx) => {
     await tx`UPDATE jobs SET payload=payload || jsonb_build_object('noteId',${outside.noteId}::text,'noteVersionId',${outside.noteVersionId}::text)
-      WHERE id=${child.jobId}`;
+      WHERE id=${child.execution.id}`;
   });
-  await repointDraft(child.jobId, outside.noteId, outside.noteVersionId);
-  assert.equal(await read(), null, "payload 自己也对得上，但材料不在目标的冻结集合里");
-  assert.ok(await read({ inputs: [f.input, secondInput, outside] }), "补进冻结集合才可能成立");
+  await repointDraft(child.execution.id, outside.noteId, outside.noteVersionId);
+  notDelivered(await read(), "payload 自己也对得上，但材料不在目标的冻结集合里");
+  artifactOf(await read({ inputs: [f.input, secondInput, outside] }));
 
   // 走一遍真实的状态机：串错的草稿不会被 store 报成完成，改回来才会。
   await admin`UPDATE jobs SET payload=payload || jsonb_build_object(
     'noteId',${f.input.noteId}::text,'noteVersionId',${f.input.noteVersionId}::text)
-    WHERE id=${child.jobId}`;
-  await repointDraft(child.jobId, secondInput.noteId, secondInput.noteVersionId);
-  await admin`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id=${child.jobId}`;
+    WHERE id=${child.execution.id}`;
+  await repointDraft(child.execution.id, secondInput.noteId, secondInput.noteVersionId);
+  await admin`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id=${child.execution.id}`;
   const crossed = await settle(scope, run.runId);
   assert.equal(crossed.operations[0]!.status, "outcome_unknown", "串到另一份材料的草稿不能报完成");
   assert.deepEqual(crossed.artifacts, []);
-  await repointDraft(child.jobId, f.input.noteId, f.input.noteVersionId);
+  await repointDraft(child.execution.id, f.input.noteId, f.input.noteVersionId);
   assert.equal(await reconcile(run.runId, child.operationId), 1);
   const settled = await settle(scope, run.runId);
   assert.equal(settled.operations[0]!.status, "succeeded", "改回本次操作真正要的那一版后才交付");
@@ -323,23 +341,23 @@ test("核对预算用尽后，只有逐字对上的真实草稿才会再醒一�
   const child = await startExpansion(advance, f.input.noteId, f.input.noteVersionId, "provider-recovery");
   await advance.release(false);
   await finishAdvance(first.id);
-  await admin`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id=${child.jobId}`;
+  await admin`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id=${child.execution.id}`;
   assert.equal((await settle(scope, run.runId)).operations[0]!.status, "outcome_unknown");
 
   // 核对预算已用尽：此时唯一还能唤醒目标的理由就是产物真的落库了。
   assert.equal(await reconcile(run.runId, child.operationId, { exhausted: true }), 0,
     "没有任何真实保存记录时不得再唤醒");
-  await saveDraft(secondInput.noteId, secondInput.noteVersionId, child.jobId, scope.userId, scope.workspaceId, child.operationId);
+  await saveDraft(secondInput.noteId, secondInput.noteVersionId, child.execution.id, scope.userId, scope.workspaceId, child.operationId);
   assert.equal(await reconcile(run.runId, child.operationId, { exhausted: true }), 0,
     "串到另一份材料的草稿不得让未知结果反复唤醒");
-  await repointDraft(child.jobId, f.input.noteId, f.input.noteVersionId);
+  await repointDraft(child.execution.id, f.input.noteId, f.input.noteVersionId);
   assert.equal(await reconcile(run.runId, child.operationId, { exhausted: true }), 1,
     "真实落库且逐字对上的草稿必须还能把目标叫醒一次");
 
   const settled = await settle(scope, run.runId);
   assert.equal(settled.operations[0]!.status, "succeeded");
   assert.equal(settled.artifacts[0]!.kind, "note_expansion");
-  assert.equal(settled.artifacts[0]!.id, child.jobId);
+  assert.equal(settled.artifacts[0]!.id, child.execution.id);
 });
 
 test("目标被停掉或被新要求替代后，拓展不再调用模型；模型调用记在目标预算上", async () => {
@@ -351,7 +369,7 @@ test("目标被停掉或被新要求替代后，拓展不再调用模型；模�
   const child = await startExpansion(advance, f.input.noteId, f.input.noteVersionId, "provider-fence");
 
   const jobContext = {
-    id: child.jobId, workspaceId: scope.workspaceId, requestedBy: scope.userId, leaseToken: randomUUID(),
+    id: child.execution.id, workspaceId: scope.workspaceId, requestedBy: scope.userId, leaseToken: randomUUID(),
     payload: { noteId: f.input.noteId, noteVersionId: f.input.noteVersionId,
       requestId: child.operationId, agentRunId: run.runId, agentRevision: 1 },
   };
@@ -389,12 +407,12 @@ type Scope = { workspaceId: string; userId: string };
 const inApi = <T>(scope: Scope, action: (tx: Parameters<Parameters<typeof withWorkspaceTransaction>[1]>[0]) => Promise<T>) =>
   withWorkspaceTransaction(scope, action);
 
-function readDrafts(store: ReturnType<typeof createAgentAdvanceStore>, args: Record<string, unknown>) {
+function readDrafts(store: AgentWorkerAdvanceStore, args: Record<string, unknown>) {
   return invokeNoteCapability(store, { id: randomUUID(), name: READ, arguments: args }) as Promise<ExpansionReadResult>;
 }
 
 /** 断言这一页真的读到了正文，并把类型收窄到带正文的那一支。 */
-async function readPage(store: ReturnType<typeof createAgentAdvanceStore>, args: Record<string, unknown>) {
+async function readPage(store: AgentWorkerAdvanceStore, args: Record<string, unknown>) {
   const page = await readDrafts(store, args);
   if (!page.available) throw new assert.AssertionError({ message: `这一页应当读得到，实际：${page.reason}` });
   return page;
@@ -447,9 +465,9 @@ async function deliveredExpansion(
   const child = await startExpansion(advance, f.input.noteId, f.input.noteVersionId, providerCallId);
   await advance.release(false);
   await finishAdvance(first.id);
-  await admin`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id=${child.jobId}`;
+  await admin`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id=${child.execution.id}`;
   assert.equal((await settle(scope, run.runId)).operations[0]!.status, "outcome_unknown");
-  await saveDraft(f.input.noteId, f.input.noteVersionId, child.jobId, scope.userId, scope.workspaceId, child.operationId);
+  await saveDraft(f.input.noteId, f.input.noteVersionId, child.execution.id, scope.userId, scope.workspaceId, child.operationId);
   assert.equal(await reconcile(run.runId, child.operationId), 1, "真实落库后应当能被再次核对");
   assert.equal((await settle(scope, run.runId)).operations[0]!.status, "succeeded");
   return { run, child };
@@ -469,10 +487,10 @@ test("读取读到的是当前保存的草稿：手动修改看得见，超长�
   // 目标被新要求替代到第 2 版：成果属于第 1 版的操作，但仍属于同一个 run，仍读得到。
   assert.equal((await api.revise(scope, run.runId, 1, "换一个方向继续")).revision, 2);
   const store = await reader(scope, run.runId, 2);
-  const args = { noteId: f.input.noteId, noteVersionId: f.input.noteVersionId, taskId: child.jobId };
+  const args = { noteId: f.input.noteId, noteVersionId: f.input.noteVersionId, taskId: child.execution.id };
 
   const firstPage = await readPage(store, args);
-  assert.equal(firstPage.taskId, child.jobId);
+  assert.equal(firstPage.taskId, child.execution.id);
   assert.equal(firstPage.taskState, "ready", "草稿已存但用户还没收下，仍是等挑选的 ready");
   assert.equal(firstPage.available, true);
   assert.equal(firstPage.confirmed, false);
@@ -489,8 +507,8 @@ test("读取读到的是当前保存的草稿：手动修改看得见，超长�
   // 用户在草稿册里改过：标题、正文都要读到改过的那一版，而不是库里生成时那一版。
   const long = Array.from({ length: 19_990 }, (_, index) => String(index % 10)).join("") + "结尾标记";
   const editedTitle = "光合作用的能量来源（用户改过）";
-  const candidateId = await currentCandidateId(child.jobId);
-  await inApi(scope, (tx) => updateNoteExpansionTaskDrafts(tx, scope, f.input.noteId, child.jobId, {
+  const candidateId = await currentCandidateId(child.execution.id);
+  await inApi(scope, (tx) => updateNoteExpansionTaskDrafts(tx, scope, f.input.noteId, child.execution.id, {
     drafts: [{ candidateId, title: editedTitle, selected: true,
       blocks: [{ type: "paragraph", content: long }] }],
   }));
@@ -532,7 +550,7 @@ test("读取读到的是当前保存的草稿：手动修改看得见，超长�
   // 用户在分页期间又改了草稿：拿旧令牌续读必须被挡下，并说清是重来。
   const stale = { startCandidateOrdinal: 1, startBlockOrdinal: 1, startBlockOffset: 100, draftsUpdatedAt: edited.draftsUpdatedAt };
   const secondTitle = "光合作用的能量来源（用户又改过）";
-  await inApi(scope, (tx) => updateNoteExpansionTaskDrafts(tx, scope, f.input.noteId, child.jobId, {
+  await inApi(scope, (tx) => updateNoteExpansionTaskDrafts(tx, scope, f.input.noteId, child.execution.id, {
     drafts: [{ candidateId, title: secondTitle, selected: true, blocks: [{ type: "paragraph", content: long }] }],
   }));
   const reopened = await readPage(store, args);
@@ -542,7 +560,7 @@ test("读取读到的是当前保存的草稿：手动修改看得见，超长�
 
   // 只读：不新建 operation/job，不动目标预算，不改确认态。
   assert.deepEqual(await counts(scope, run.runId), ledgerBefore, "读取不得留下任何 operation、job 或模型调用");
-  const [confirmed] = await admin`SELECT confirmed_candidate_ids FROM note_expansion_tasks WHERE id=${child.jobId}`;
+  const [confirmed] = await admin`SELECT confirmed_candidate_ids FROM note_expansion_tasks WHERE id=${child.execution.id}`;
   assert.equal(confirmed.confirmed_candidate_ids, null, "读取不收下任何草稿");
   const [{ notes }] = await admin`SELECT count(*)::int notes FROM notes WHERE workspace_id=${scope.workspaceId}`;
   assert.equal(notes, 1, "读取不会把草稿变成新笔记");
@@ -556,8 +574,8 @@ test("越权读取一律读不到：另一个目标、另一个用户、另一�
   const { run, child } = await deliveredExpansion(scope, f, "provider-scope", [f.input, v2]);
   assert.equal((await api.revise(scope, run.runId, 1, "换一个方向继续")).revision, 2);
   const store = await reader(scope, run.runId, 2);
-  const args = { noteId: f.input.noteId, noteVersionId: f.input.noteVersionId, taskId: child.jobId };
-  assert.equal((await readPage(store, args)).taskId, child.jobId, "本目标读自己的成果");
+  const args = { noteId: f.input.noteId, noteVersionId: f.input.noteVersionId, taskId: child.execution.id };
+  assert.equal((await readPage(store, args)).taskId, child.execution.id, "本目标读自己的成果");
 
   // 同一空间里的另一个目标：材料一样、用户一样，只有 run 不同 —— 不读。
   const otherRun = await api.create(scope, { requestId: randomUUID(), goal: "另一件事", inputs: [f.input] });
@@ -578,16 +596,16 @@ test("越权读取一律读不到：另一个目标、另一个用户、另一�
 
   // 不在冻结集合里的版本：能力层先挡下，与上面那条是不同的边界。
   const outside = await anotherNote(scope, "浮力", "浮力来自液体对物体的托举。");
-  await rejectsWith(readDrafts(store, { noteId: outside.noteId, noteVersionId: outside.noteVersionId, taskId: child.jobId }),
+  await rejectsWith(readDrafts(store, { noteId: outside.noteId, noteVersionId: outside.noteVersionId, taskId: child.execution.id }),
     "input_outside_goal");
 
   // 领域行的材料与 job payload 对不上：读侧不认这一批。
   await admin.begin(async (tx) => {
-    await tx`UPDATE jobs SET payload=payload || jsonb_build_object('noteVersionId',${f.otherVersionId}::text) WHERE id=${child.jobId}`;
+    await tx`UPDATE jobs SET payload=payload || jsonb_build_object('noteVersionId',${f.otherVersionId}::text) WHERE id=${child.execution.id}`;
   });
   await rejectsWith(readDrafts(store, args), "expansion_task_not_found");
   await admin.begin(async (tx) => {
-    await tx`UPDATE jobs SET payload=payload || jsonb_build_object('noteVersionId',${f.input.noteVersionId}::text) WHERE id=${child.jobId}`;
+    await tx`UPDATE jobs SET payload=payload || jsonb_build_object('noteVersionId',${f.input.noteVersionId}::text) WHERE id=${child.execution.id}`;
   });
 
   // 材料失权：源笔记被软删之后，同一个目标里的旧 revision 成果也不再读得到。
@@ -609,12 +627,12 @@ test("不能把目标输入乙的批次当成输入甲那次操作的成果", as
 
   // 草稿行被改指到输入乙那一篇：它同样在冻结集合里、同样可见，
   // 但 job payload 冻结的是输入甲 —— 读侧必须按 payload 判，不能只看「在不在 inputs 里」。
-  await repointDraft(child.jobId, secondInput.noteId, secondInput.noteVersionId);
+  await repointDraft(child.execution.id, secondInput.noteId, secondInput.noteVersionId);
   await rejectsWith(readDrafts(store, {
-    noteId: secondInput.noteId, noteVersionId: secondInput.noteVersionId, taskId: child.jobId }), "expansion_task_not_found");
+    noteId: secondInput.noteId, noteVersionId: secondInput.noteVersionId, taskId: child.execution.id }), "expansion_task_not_found");
 
   // 材料不在目标冻结集合里时，能力层就先挡住：这份材料没交给这个目标。
   const outside = await anotherNote(scope, "浮力", "浮力来自液体对物体的托举。");
   await rejectsWith(readDrafts(store, {
-    noteId: outside.noteId, noteVersionId: outside.noteVersionId, taskId: child.jobId }), "input_outside_goal");
+    noteId: outside.noteId, noteVersionId: outside.noteVersionId, taskId: child.execution.id }), "input_outside_goal");
 });

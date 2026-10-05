@@ -39,6 +39,7 @@ import { logger } from "../lib/logger.ts";
 import { assertJobLease, JobLeaseLostError, throwIfJobAborted, withJobTransaction } from "../lib/job-lease.ts";
 import { createEmbeddingProvider } from "../lib/ai-provider.ts";
 import {
+  createGovernedEmbeddingProvider,
   createGovernedProvider,
   resolveAIGovernanceContext,
   resolveProviderForTask,
@@ -1141,9 +1142,29 @@ export async function runCompanionThought(job: JobPayload): Promise<void> {
   // 一次调度最多送 `maxDeliveredPerRun` 条，同一件事由 dedupeKey 挡着。
   //
   // 表达升级（切片③）：多候选挑一 + grounding 校验，模板兜底。
+  //
+  // 语义去重的向量与上面那条生成链路是**同一次外发**（送的是这一条念头的定稿正文，
+  // 里面可能有用户的原话），所以走同一道治理门：同意 + 数据外发政策 + PII 净化，
+  // 与 `companion-memory-embedding.ts` / `companion-memory-tools.ts` 同一口径。
+  // 此前这里是裸 `createEmbeddingProvider()`——`thoughtProvider()` 拿不到同意时
+  // 只是抛错降级，**向量那一步照样发出去**：于是"没同意"的账号仍会把定稿正文送进向量
+  // 模型，审计表里也没有这一笔。查不到治理上下文时跳过向量、退回 bigram 去重，
+  // 与上面 `isDuplicateThought` 既有的降级分支是同一条。
   let embeddingProvider: Awaited<ReturnType<typeof createEmbeddingProvider>> = null;
   try {
-    embeddingProvider = await createEmbeddingProvider();
+    const embeddingGovCtx = await resolveAIGovernanceContext(job.workspaceId, userId);
+    if (embeddingGovCtx.consentOk) {
+      const rawEmbeddingProvider = await createEmbeddingProvider(embeddingGovCtx);
+      embeddingProvider = rawEmbeddingProvider
+        ? createGovernedEmbeddingProvider(rawEmbeddingProvider, embeddingGovCtx, job.workspaceId, {
+          // 送出去的是这一条念头的定稿正文（由用户语境生成，可能含用户原话）。
+          userId,
+          operation: "companion_thought_dedupe_embedding",
+          jobId: job.id,
+          dataCategories: ["user_answer"],
+        })
+        : null;
+    }
   } catch {
     embeddingProvider = null;
   }

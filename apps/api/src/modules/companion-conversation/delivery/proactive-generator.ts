@@ -12,9 +12,11 @@
 
 import { z } from "zod";
 import { createHash, randomUUID } from "node:crypto";
-import { postJsonToPublicEndpoint } from "@ailearn/shared/public-json-http";
+import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
 import { runAiTask, type AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
 import { resolveAssessmentCriticConfig } from "../../../lib/assessment-critic-config.ts";
+import { createGovernedApiRequester } from "../../../lib/ai-governance.ts";
+import { productionAiGovernancePorts } from "../../../governance/ai-governance-runtime.ts";
 
 /**
  * 记忆候选生成的单次调用预算（设计 P1-11，2026-09-15 审计）。
@@ -97,6 +99,18 @@ export async function generateMemoryCandidates(
   if (!config) return null;
   const { url, key, model } = config;
 
+  // 默认出口是**绑定真实 workspace/user 的治理出口**，不是裸的 SSRF 守卫：
+  // 同意、数据外发政策、PII 净化与审计行都在这一层，`postJsonToPublicEndpoint`
+  // 仍装在它里面（凭据与完整 URL 不进审计元数据）。
+  // operation 沿用内核那个稳定任务名，成本与合规按它分桶。
+  // 送出去的是这次 run 的结算事实与目标标签：`claim` + `user_answer`。
+  const requester = createGovernedApiRequester(
+    { workspaceId: scope.workspaceId, userId: scope.userId },
+    MEMORY_CANDIDATE_TASK_ID,
+    ["claim", "user_answer"],
+    productionAiGovernancePorts,
+  );
+
   const prompt = [
     "你是学习伴星的记忆整理器。根据一次三分钟巩固的结果，输出 JSON：",
     `{"learningContext":{"content":"一句话学习洞察（用户掌握或缺口，中文，不含答案正文，不超过 200 字）","needsFollowup":true},"interactionNote":{"content":"值得后续提醒的交互备注（无则省略整个字段，不超过 200 字）"}}`,
@@ -128,11 +142,11 @@ export async function generateMemoryCandidates(
     usageContext: { modelId: model, promptVersion: MEMORY_CANDIDATE_PROMPT_VERSION, resourceClass: "maintenance" },
     prepare: async () => ({ url, key, model, prompt }),
     execute: async (prepared, step) => {
-      let response: Awaited<ReturnType<typeof postJsonToPublicEndpoint>>;
+      let response: Awaited<ReturnType<PublicJsonRequester>>;
       try {
         // 预算由内核的 `step.signal` 统一给（它已经是 min(stepTimeoutMs, 剩余预算)），
         // 这里不再自己 AbortSignal.timeout 一个数字——同一个预算只准有一个来源。
-        response = await postJsonToPublicEndpoint(
+        response = await requester(
           prepared.url,
           { Authorization: `Bearer ${prepared.key}`, "Content-Type": "application/json" },
           {

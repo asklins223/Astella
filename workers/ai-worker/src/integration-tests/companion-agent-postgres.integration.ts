@@ -126,14 +126,14 @@ async function seedAgentRun(
   return { runId, conversationId: cid, userMessageId, cleanup };
 }
 
-async function invoke(ws: string, uid: string, payload: Record<string, unknown>) {
+async function invoke(ws: string, uid: string, payload: { runId: string; proposalId?: string }) {
   // Intent classification now verifies the real job/run lease through the task kernel.
   const jobId = randomUUID();
   await sql.begin(async (tx) => {
     await tx`SELECT set_config('app.workspace_id', ${ws}, true)`;
     await tx`SELECT set_config('app.user_id', ${uid}, true)`;
     await tx`INSERT INTO jobs (id,type,workspace_id,requested_by,payload,status,lease_token,started_at)
-      VALUES (${jobId},'companion_agent',${ws},${uid},${JSON.stringify(payload)}::jsonb,'running','fixture-lease',now())`;
+      VALUES (${jobId},'companion_agent',${ws},${uid},${tx.json(payload)},'running','fixture-lease',now())`;
     await tx`UPDATE companion_turn_runs SET job_id=${jobId} WHERE id=${String(payload.runId)}`;
   });
   return runCompanionDialogue({
@@ -301,9 +301,10 @@ test("§16.39(a)：闲聊那一圈不许留下任何正式学习记录的行", a
 
 test("Agent：工具循环的审计行与 agent.tool SSE 事件符合共享合同", async () => {
   const { workspaceId, userId } = await seedBase();
-  // mock provider 会被指示调用 companion_read_context；工具面每轮全给，
-  // 不再有"要命中哪个技能才拿得到它"这一步。
-  const f = await seedAgentRun(workspaceId, userId, { userText: "看一下我的学习进度" });
+  // 剧本同时声明工具意图和 provider 工具调用，走真实注意力解析与执行循环。
+  const f = await seedAgentRun(workspaceId, userId, {
+    userText: "看一下我的学习进度【mock:wants-tool】",
+  });
   try {
     await invoke(workspaceId, userId, { runId: f.runId });
     const s = await readState(workspaceId, userId, f);
@@ -358,7 +359,7 @@ test("Agent：工具循环的审计行与 agent.tool SSE 事件符合共享合�
 test("Agent：终答步仍回 tool_calls → 给一次宽限并交付答复，不判 failed", async () => {
   const { workspaceId, userId } = await seedBase();
   const f = await seedAgentRun(workspaceId, userId, {
-    userText: "看一下我的学习进度【mock:tool-after-withheld】",
+    userText: "看一下我的学习进度【mock:wants-tool】【mock:tool-after-withheld】",
   });
   try {
     await invoke(workspaceId, userId, { runId: f.runId });

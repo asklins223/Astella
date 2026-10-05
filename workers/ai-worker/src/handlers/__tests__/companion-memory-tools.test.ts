@@ -150,6 +150,54 @@ test("full 档修订也走共享的账号级范围判据（42 阶段 1 E 复审�
   assert.match(source, /SELECT id, revision, kind, scope, content, applies_when/);
 });
 
+test("记忆召回的查询向量要走治理出口，不能裸建 provider", () => {
+  // `companion_recall_memory` 送出去的是 `args.query`——用户自己打的那句话。
+  // 它与记忆向量重建那条路是同一次外发、同一条治理边界，但上游这里是裸的
+  // embedding provider 构造：不查 `user_ai_settings` 的同意、不查数据外发政策、
+  // 不过 PII 净化。于是治理口径按调用族分裂成两半，且这半边在 `ai_audit_log`
+  // 里一行都留不下（向量重建那条路一直有审计行）。
+  const source = withoutComments(readFileSync(join(HANDLERS, "companion-memory-tools.ts"), "utf8"));
+
+  assert.ok(!/createEmbeddingProvider\(\s*\)/.test(source),
+    "还有一处不带治理上下文的 createEmbeddingProvider()：召回查询向量绕过同意与外发政策");
+  assert.match(source, /resolveAIGovernanceContext\(event\.ctx\.workspaceId, event\.read\.userId\)/,
+    "召回向量出口没有解析治理上下文");
+  assert.match(source, /createGovernedEmbeddingProvider\(/,
+    "召回向量没有过治理包装（PII 净化与出网政策都在这一层）");
+
+  // 同意闸必须落在建 provider 之前：没同意外发就是不能建，
+  // 不是"建了再降级"——降级本身已经把原话送出去了。
+  const consentGate = source.indexOf("govCtx.consentOk");
+  const build = source.indexOf("createEmbeddingProvider(govCtx)");
+  assert.ok(consentGate > 0, "召回向量出口没有同意闸");
+  assert.ok(build > consentGate, "建向量 provider 的动作不在同意闸之后");
+
+  // 与重建那条路同口径：治理拿不到就整段跳过，关键词检索本来就是既定降级
+  // （`retrieveCompanionMemories` 的 `!opts.provider` 分支），不是把召回整条判失败。
+  assert.match(source, /if \(provider\) \{/,
+    "拿不到向量 provider 时不该整条跳过——关键词降级才是既定路径");
+
+  // 归属也要跟着交出去：owner 是谁、这笔外发属于哪个 job、送出去的是哪类内容。
+  assert.match(source, /operation: "companion_memory_recall_embedding"/,
+    "召回向量没有声明 operation：成本与合规归因都按它分桶");
+  assert.match(source, /dataCategories: \["user_answer"\]/,
+    "召回向量送出去的是用户原话，不声明类别时设置页「带出去的内容」对这条是空的");
+  assert.match(source, /jobId: event\.ctx\.id/,
+    "召回向量没带 jobs 行：这一笔挂不到任何 job 上");
+});
+
+/**
+ * 去掉注释再判源码形状。
+ *
+ * 治理出口的说明注释本身就得写出旧写法；不剥掉的话这条判据会在自己的注释上
+ * 报一条它抓不到的缺口。
+ */
+function withoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+}
+
 test("【自证】正控制：判据认得出「两边都有分支」与「标签长错边」这两种形状", () => {
   // 这条判据的全部力气在两把执行器的差集上；这里用合成输入证明它不是恒真。
   const readSet = new Set(["companion_read_memory"]);

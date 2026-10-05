@@ -1,3 +1,4 @@
+import { publishCompanionRecordsChanged } from "../../companion/companion-events";
 import { NoteReflectionShelf } from "./note-reflection-shelf.tsx";
 import { noteLearningScene, notePracticeResultCopy, roundTrackNextV1, roundTrackV1 } from "./note-learning-flow.ts";
 import { stageReflectionAppend } from "./note-reflection-document.ts";
@@ -84,7 +85,7 @@ import { startObjectiveJourney } from "../run/objective-primary-action.ts";
 import { ArtifactFrameHost } from "../source/artifact-frame-host.tsx";
 import { NotebookLearningArtifactPaper } from "./notebook-learning-artifact-paper";
 import { RoundNotice } from "./round-notice.tsx";
-import { parseMarkdownTable } from "./note-blocks.ts";
+import { parseMarkdownTable } from "@ailearn/shared/note-doc-schema";
 import { isHorizontalRule, noteInlineDisplayText, noteInlineImages, renderNoteInline } from "./note-reading-inline.tsx";
 import { sourceImageObjectKeyFromUrl } from "@ailearn/shared/source-image-contracts";
 import { markdownToBlocks } from "@ailearn/shared/markdown-parser";
@@ -173,7 +174,7 @@ import { NoteLearningFootprint, type FootprintKind } from "./note-learning-footp
  * written locally before the server confirms it.
  *
  * 正文在编辑器里是**真 Markdown**（Milkdown 所见即所得），在服务端是分类型的块，
- * 两边只经 `note-blocks.ts` 那一份换算，所以"打开一篇没改过的笔记就显示未提交"
+ * 两边只经 shared 的 `note-doc-schema.ts` 那一份换算，所以"打开一篇没改过的笔记就显示未提交"
  * 这种漂移不存在。撤销由编辑器自己的 history 承担，这一页不再维护第二套。
  */
 /**
@@ -2577,6 +2578,7 @@ const noteDocLive = useNoteDocLiveView(
       });
       if (response.workspaceEpoch) epochRef.current = response.workspaceEpoch;
       const accepted = unwrapGatewayResult(response);
+      if (accepted.agentRunId) publishCompanionRecordsChanged();
       setActiveCardGenerationRunId(accepted.runId);
       resetGenerationFeedback();
       setOptionsOpen(false);

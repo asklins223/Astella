@@ -4,7 +4,7 @@ import { runInNewContext } from "node:vm";
 import { afterEach, expect, test, vi } from "vitest";
 import { assembleArtifactDocument } from "../../../../../main/artifact-surface";
 
-afterEach(() => { document.body.innerHTML = ""; });
+afterEach(() => { document.body.innerHTML = ""; document.documentElement.removeAttribute("data-artifact-motion"); });
 
 /**
  * 这一份模板**不再**有播放器，也不再有静态分镜（2026-09-28 用户裁决）。
@@ -17,7 +17,7 @@ afterEach(() => { document.body.innerHTML = ""; });
  * 留下来的判据是三条，每一条都在钉"删掉的东西不该以别的形式回来"：
  *   - 讲解条数由**我们自己**渲染的文字等价数出来（`data-artifact-outline-count`），
  *     不向产物要——让它报自己的步数等于让它决定界面上写"共几步"；
- *   - `motion: reduced` 只转给产物自己声明的 `window.setLessonMotion`，模板不重排 DOM；
+ *   - `motion: reduced` 暂停常见动画并转给产物的 `window.setLessonMotion`，模板不重排 DOM；
  *   - 模型写的 `<style>`/`<script>` 各归其位（样式进 `<head>`、脚本进 `</body>` 前），
  *     且这段搬运发生在主进程，模板自己那份脚本不受影响。
  */
@@ -84,7 +84,7 @@ test("产物没声明条数时退回数文字等价的条数，而不是数成 0
   expect(messages.find((message) => message.phase === "ready")?.stepCount).toBe(4);
 });
 
-test("reduced 只转给产物自己声明的钩子，模板不重排 DOM", () => {
+test("reduced 转给产物自己声明的钩子，模板不重排 DOM", () => {
   const parsed = bootTemplate(CONTENT_V1);
   if (!parsed) return;
   document.body.innerHTML = parsed.body.innerHTML;
@@ -148,8 +148,65 @@ test("产物没声明钩子时模板不报错，也不重排 DOM", () => {
     channel: "ailearn:artifact-frame", direction: "host->frame", command: "motion", motion: "reduced",
   } })).not.toThrow();
   expect(document.querySelector("#ailearn-artifact-root")!.innerHTML).toBe(before);
-  // 没有钩子就没有"产物报错误"——那份页面照旧跑，宿主不替它下结论。
+  expect(document.documentElement.getAttribute("data-artifact-motion")).toBe("reduced");
+  // 缺钩子仍有公共暂停兜底，不因此摘除页面或改变手动交互。
   expect(messages.some((message) => message.phase === "error")).toBe(false);
+});
+
+test("缺播放钩子的页面也能 Off/Full 往返，系统减少动态优先且手动交互保留", () => {
+  const parsed = bootTemplate(CONTENT_V1.replace(/<script data-lesson>[\s\S]*?<\/script>/, ""));
+  if (!parsed) return;
+  document.body.innerHTML = parsed.body.innerHTML;
+  const root = document.getElementById("ailearn-artifact-root")!;
+  const svg = root.querySelector("svg")!;
+  const pauseSvg = vi.fn();
+  const resumeSvg = vi.fn();
+  Object.assign(svg, { pauseAnimations: pauseSvg, unpauseAnimations: resumeSvg });
+  const userPausedSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  const resumeUserSvg = vi.fn();
+  const pauseUserSvg = vi.fn();
+  Object.assign(userPausedSvg, { animationsPaused: () => true, pauseAnimations: pauseUserSvg, unpauseAnimations: resumeUserSvg });
+  root.appendChild(userPausedSvg);
+  const running = { playState: "running", pause: vi.fn(() => { running.playState = "paused"; }),
+    play: vi.fn(() => { running.playState = "running"; }) };
+  const userPaused = { playState: "paused", pause: vi.fn(), play: vi.fn() };
+  const listeners: Record<string, (event: { data: unknown }) => void> = {};
+  let mediaChanged = () => {};
+  const media = { matches: false, addEventListener: (_type: string, handler: () => void) => { mediaChanged = handler; } };
+  const frameDocument = {
+    documentElement: document.documentElement, body: document.body, readyState: "complete",
+    getElementById: document.getElementById.bind(document), getAnimations: () => [running, userPaused],
+  };
+  runInNewContext(parsed.querySelector("script:not([data-lesson])")!.textContent!, {
+    document: frameDocument, parent: { postMessage: vi.fn() }, getComputedStyle, setInterval: vi.fn(),
+    window: { matchMedia: () => media,
+      addEventListener: (type: string, handler: (event: { data: unknown }) => void) => { listeners[type] = handler; } },
+  });
+  const before = root.innerHTML;
+  const sendMotion = (motion: string) => listeners.message!({ data: {
+    channel: "ailearn:artifact-frame", direction: "host->frame", command: "motion", motion,
+  } });
+  sendMotion("reduced");
+  sendMotion("reduced");
+  expect(running.pause).toHaveBeenCalledOnce();
+  expect(userPaused.pause).not.toHaveBeenCalled();
+  expect(pauseSvg).toHaveBeenCalled();
+  media.matches = true;
+  sendMotion("full");
+  expect(document.documentElement.getAttribute("data-artifact-motion")).toBe("reduced");
+  expect(running.play).not.toHaveBeenCalled();
+  media.matches = false;
+  mediaChanged();
+  expect(document.documentElement.getAttribute("data-artifact-motion")).toBe("full");
+  expect(running.play).toHaveBeenCalledOnce();
+  expect(userPaused.play).not.toHaveBeenCalled();
+  expect(resumeSvg).toHaveBeenCalled();
+  expect(pauseUserSvg).not.toHaveBeenCalled();
+  expect(resumeUserSvg).not.toHaveBeenCalled();
+  expect(root.innerHTML).toBe(before);
+  const hostStyle = parsed.querySelector("style[data-artifact-host]")!.textContent!;
+  expect(hostStyle).toContain("animation-play-state: paused !important");
+  expect(hostStyle).toContain("transition: none !important");
 });
 
 test("模型写的样式进 head、脚本进 body 末尾，root 里只剩内容", () => {

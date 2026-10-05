@@ -5,6 +5,13 @@ import { logger } from "../lib/logger.ts";
 import { buildAgentTurnMessages } from "../lib/providers/json-response.ts";
 import { createCompanionEnvelopeDecoder } from "./companion-dialogue-envelope.ts";
 import { CompanionStreamStoppedError } from "./companion-dialogue-stream.ts";
+import { ProviderRequestError } from "../lib/provider-request-error.ts";
+
+/** A different response transport cannot repair an account or rate rejection. */
+export function canRetryCompanionStream(error: unknown, state: { emitted: boolean; now: number; deadline: number }): boolean {
+  return !state.emitted && state.now < state.deadline && !(error instanceof CompanionStreamStoppedError)
+    && !(error instanceof ProviderRequestError && [401, 402, 403, 429].includes(error.status));
+}
 
 /**
  * 单步的真实流式执行（2026-09-19 ④-b 起覆盖**每一步**，不再只是终答步）。

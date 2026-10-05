@@ -32,8 +32,8 @@ function operation(overrides: Record<string, unknown> = {}) {
   return {
     operationId: OPERATION, runId: RUN, revision: 1,
     scope: { workspaceId: WORKSPACE, userId: USER },
-    capability: "note_overview_generate", jobId: ARTIFACT.jobId, status: "succeeded",
-    lastEventSeq: 2, artifact: ARTIFACT, error: null, ...overrides,
+    capability: "note_overview_generate", execution: { kind: "job", id: ARTIFACT.jobId }, status: "succeeded",
+    lastEventSeq: 2, result: { kind: "artifact", artifact: ARTIFACT }, error: null, ...overrides,
   };
 }
 function history(items: unknown[], rest: Record<string, unknown> = {}) {
@@ -80,6 +80,51 @@ test("历史查询：默认一页 20、按 revision 往回翻，越界游标不�
   assert.equal(agentRunHistoryQueryV1Schema.parse({ beforeRevision: "4", limit: "5" }).beforeRevision, 4);
   for (const bad of [{ beforeRevision: "0" }, { beforeRevision: "-1" }, { beforeRevision: "1.5" }, { limit: "51" }, { offset: "10" }])
     assert.equal(agentRunHistoryQueryV1Schema.safeParse(bad).success, false, JSON.stringify(bad));
+});
+
+test("operation 自带的一致性：结果必须属于它自己的 execution 与 capability", () => {
+  const CARD_RUN = "99999999-9999-4999-8999-999999999999";
+  const CARD_ARTIFACT = { kind: "card_candidates", id: CARD_RUN, noteId: ARTIFACT.noteId, noteVersionId: ARTIFACT.noteVersionId };
+  const cardOperation = (overrides: Record<string, unknown> = {}) => operation({
+    capability: "card_generation_generate", execution: { kind: "card_generation", id: CARD_RUN },
+    result: { kind: "artifact", artifact: CARD_ARTIFACT }, ...overrides,
+  });
+  assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [cardOperation()] })).success, true);
+  // capability 不对：执行体对了也不能结案。
+  assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [cardOperation({ capability: "note_overview_generate" })] })).success, false);
+  assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [cardOperation({
+    result: { kind: "no_cards_recommended", reasonCodes: ["no_learnable_objective"] } })] })).success, true);
+  assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [cardOperation({
+    capability: "note_overview_generate",
+    result: { kind: "no_cards_recommended", reasonCodes: ["no_learnable_objective"] } })] })).success, false);
+});
+
+test("operation 自带的一致性：结果必须属于它自己的 execution", () => {
+  const base = operation();
+  assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [base] })).success, true);
+  // 笔记产物挂在制卡执行体上：不成立。
+  assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [operation({
+    execution: { kind: "card_generation", id: "99999999-9999-4999-8999-999999999999" } })] })).success, false);
+  // 制卡候选挂在 job 执行体上：同样不成立。
+  assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [operation({
+    result: { kind: "artifact", artifact: { kind: "card_candidates", id: ARTIFACT.id, noteId: ARTIFACT.noteId, noteVersionId: ARTIFACT.noteVersionId } } })] })).success, false);
+  // 无卡推荐不配 job 执行体：正常收口也不是笔记产物的收口。
+  assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [operation({
+    result: { kind: "no_cards_recommended", reasonCodes: ["no_learnable_objective"] } })] })).success, false);
+  const CARD_CAPABILITY = "card_generation_generate";
+  assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [operation({
+    capability: CARD_CAPABILITY,
+    execution: { kind: "card_generation", id: ARTIFACT.id },
+    result: { kind: "artifact", artifact: { kind: "card_candidates", id: ARTIFACT.id, noteId: ARTIFACT.noteId, noteVersionId: ARTIFACT.noteVersionId } } })] })).success, true);
+  // 理由条数与长度有上限：领域事件可能被写坏，投影不能因此被撑破。
+  assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [operation({
+    capability: CARD_CAPABILITY,
+    execution: { kind: "card_generation", id: ARTIFACT.id },
+    result: { kind: "no_cards_recommended", reasonCodes: Array.from({ length: 21 }, (_, i) => `c${i}`) } })] })).success, false);
+  assert.equal(agentRunRevisionV1Schema.safeParse(revision({ operations: [operation({
+    capability: CARD_CAPABILITY,
+    execution: { kind: "card_generation", id: ARTIFACT.id },
+    result: { kind: "no_cards_recommended", reasonCodes: ["x".repeat(101)] } })] })).success, false);
 });
 
 test("历史项：形状与时间各自合法，跨字段的一致性写在历史这一层", () => {

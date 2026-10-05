@@ -42,6 +42,13 @@ export interface QwenTtsOptions {
   instruction?: string;
   /** 连接/任务超时 ms（默认 30s） */
   timeoutMs?: number;
+  /**
+   * 调用方的取消信号（内核步预算 / 客户端断开）。
+   *
+   * 取消不是"不接了"，而是**真的**告诉上游别再生成：流读期间取消会走下面那条
+   * 已有的 `finish-task + directive=cancel` 路径把音频生成掐掉，WS 随之归还。
+   */
+  signal?: AbortSignal;
   /** 测试注入 WebSocket 构造器 */
   WebSocketImpl?: typeof WebSocket;
 }
@@ -93,13 +100,26 @@ export function resolveQwenTtsMaxConcurrency(
 let activeQwenTasks = 0;
 const qwenTaskWaiters: Array<() => void> = [];
 
-async function acquireQwenTaskSlot(): Promise<void> {
+async function acquireQwenTaskSlot(signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
   if (activeQwenTasks < resolveQwenTtsMaxConcurrency()) {
     activeQwenTasks += 1;
     return;
   }
   // 无可用名额：挂起；releaseQwenTaskSlot 会把名额**直接移交**过来（计数不变）。
-  await new Promise<void>((resolveWaiter) => qwenTaskWaiters.push(resolveWaiter));
+  await new Promise<void>((resolveWaiter, rejectWaiter) => {
+    const grant = () => { signal?.removeEventListener("abort", cancel); resolveWaiter(); };
+    const cancel = () => {
+      const index = qwenTaskWaiters.indexOf(grant);
+      if (index < 0) return;
+      qwenTaskWaiters.splice(index, 1);
+      signal?.removeEventListener("abort", cancel);
+      rejectWaiter(new QwenTtsError("CANCELLED", "qwen TTS 已取消"));
+    };
+    qwenTaskWaiters.push(grant);
+    signal?.addEventListener("abort", cancel, { once: true });
+    if (signal?.aborted) cancel();
+  });
 }
 
 function releaseQwenTaskSlot(): void {
@@ -175,6 +195,18 @@ function bindTaskSlotToStream(
  * 改动，不该藏在一个 provider 的接线里。理由的完整版见 `edge-tts.ts` 的
  * `edgeTtsSynthesizeStream`。
  */
+/** 等一个可取消的等待：调用方按下取消就立刻走，不把这一段排在队列里白等。 */
+async function waitUnlessAborted(work: Promise<unknown>, signal: AbortSignal | undefined): Promise<void> {
+  if (!signal) { await work; return; }
+  if (signal.aborted) throw new QwenTtsError("CANCELLED", "qwen TTS 已取消");
+  await new Promise<void>((resolveWait, rejectWait) => {
+    const onAbort = (): void => rejectWait(new QwenTtsError("CANCELLED", "qwen TTS 已取消"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(() => { signal.removeEventListener("abort", onAbort); resolveWait(); },
+      (error) => { signal.removeEventListener("abort", onAbort); rejectWait(error); });
+  });
+}
+
 export async function qwenTtsSynthesizeStreamForUser(
   queueKey: string,
   text: string,
@@ -195,19 +227,21 @@ export async function qwenTtsSynthesizeStreamForUser(
     if (qwenQueueTails.get(queueKey) === tail) qwenQueueTails.delete(queueKey);
   });
 
-  await previous; // 同键串行：等前一段（含它的音频）彻底结束
-  await acquireQwenTaskSlot(); // 全局名额（排队期间不占名额）
-
+  let acquired = false;
   let released = false;
   const releaseOnce = (): void => {
     if (released) return;
     released = true;
-    releaseQwenTaskSlot();
+    if (acquired) releaseQwenTaskSlot();
     finishTask();
   };
 
   let handedOff = false;
   try {
+    await waitUnlessAborted(previous, options.signal);
+    await acquireQwenTaskSlot(options.signal);
+    acquired = true;
+    options.signal?.throwIfAborted();
     const result = await qwenTtsSynthesizeStream(text, options);
     handedOff = true;
     return { ...result, stream: bindTaskSlotToStream(result.stream, releaseOnce) };
@@ -304,6 +338,7 @@ export function qwenIdleConnectionCount(): number {
 function acquireQwenConnection(
   options: QwenTtsOptions,
 ): Promise<PooledQwenConnection> {
+  if (options.signal?.aborted) return Promise.reject(new QwenTtsError("CANCELLED", "qwen TTS 已取消"));
   const key = connectionKey(options);
   const idle = idleConnections.get(key);
   /**
@@ -339,11 +374,22 @@ function acquireQwenConnection(
   });
   return new Promise<PooledQwenConnection>((resolve, reject) => {
     let settled = false;
+    const timer = setTimeout(() => cancel(new QwenTtsError("TIMEOUT", "qwen TTS 建连超时")), options.timeoutMs ?? 30_000);
+    const onAbort = () => cancel(new QwenTtsError("CANCELLED", "qwen TTS 已取消"));
     const settle = (fn: () => void): void => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
       fn();
     };
+    function cancel(error: QwenTtsError) {
+      if (settled) return;
+      settle(() => reject(error));
+      try { socket.close(); } catch { /* Already closed. */ }
+    }
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    if (options.signal?.aborted) { onAbort(); return; }
     socket.on("open", () => settle(() => resolve({ socket, alive: true, idleTimer: null, key })));
     socket.on("error", (err) => settle(() => reject(
       new QwenTtsError("NETWORK_ERROR", `qwen TTS WebSocket 错误：${err instanceof Error ? err.message : String(err)}`),
@@ -414,8 +460,12 @@ export async function qwenTtsSynthesizeStream(
       if (!settled) fail(new QwenTtsError("TIMEOUT", "qwen TTS 任务超时"));
     }, timeoutMs);
 
+    // 先声明再赋值：cleanup 可能在流建立之前就被超时/错误路径调到。
+    let externalAbort: (() => void) | null = null;
     const cleanup = (reusable: boolean): void => {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbortBeforeStream);
+      if (externalAbort) options.signal?.removeEventListener("abort", externalAbort);
       if (cancelTimer) {
         clearTimeout(cancelTimer);
         cancelTimer = null;
@@ -423,6 +473,10 @@ export async function qwenTtsSynthesizeStream(
       releaseQwenConnection(conn, reusable, WebSocketImpl);
     };
 
+    // 建流之前按下取消：与超时同一条失败路径，连接由 cleanup 关掉。
+    const onAbortBeforeStream = (): void => {
+      if (!settled) fail(new QwenTtsError("CANCELLED", "qwen TTS 已取消"));
+    };
     const fail = (err: Error): void => {
       if (settled && controller) {
         // 流已建立（task-started 后）出错：错误通过流传播（reject 已无意义）。
@@ -440,6 +494,9 @@ export async function qwenTtsSynthesizeStream(
       controller = null;
       rejectPromise(err);
     };
+
+    if (options.signal?.aborted) { onAbortBeforeStream(); return; }
+    options.signal?.addEventListener("abort", onAbortBeforeStream, { once: true });
 
     const sendJson = (obj: unknown): void => {
       if (socket.readyState === WebSocketImpl.OPEN) {
@@ -503,25 +560,36 @@ export async function qwenTtsSynthesizeStream(
         // 建立输出流并发送文本
         if (!settled) {
           settled = true;
+          const cancelUpstream = (): void => {
+            if (!finished) {
+              sendJson({
+                header: { action: "finish-task", task_id: taskId, streaming: "duplex" },
+                payload: { input: { directive: "cancel" } },
+              });
+              cancelTimer = setTimeout(() => {
+                cleanup(false); // 服务端未及时确认 → 强制弃连
+              }, CANCEL_SETTLE_TIMEOUT_MS);
+            } else {
+              cleanup(true);
+            }
+          };
+          // 调用方在流读期间按下取消：走与前端打断完全相同的那条路，
+          // 所以上游看到的是同一个 cancel 指令，WS 也照样归还。
           const stream = new ReadableStream<Uint8Array>({
             start(c) { controller = c; },
-            cancel() {
-              // 15b 二期：前端打断 → 发 cancel 指令，等服务端 task-finished 归还连接
-              if (!finished) {
-                sendJson({
-                  header: { action: "finish-task", task_id: taskId, streaming: "duplex" },
-                  payload: { input: { directive: "cancel" } },
-                });
-                cancelTimer = setTimeout(() => {
-                  cleanup(false); // 服务端未及时确认 → 强制弃连
-                }, CANCEL_SETTLE_TIMEOUT_MS);
-              } else {
-                cleanup(true);
-              }
-            },
+            // 15b 二期：前端打断 → 发 cancel 指令，等服务端 task-finished 归还连接
+            cancel() { cancelUpstream(); },
           });
+          externalAbort = (): void => {
+            cancelUpstream();
+            controller?.error(new QwenTtsError("CANCELLED", "qwen TTS 已取消"));
+            controller = null;
+          };
+          if (options.signal?.aborted) externalAbort();
+          else options.signal?.addEventListener("abort", externalAbort, { once: true });
           resolvePromise({ stream, contentType: "audio/mpeg" });
         }
+        if (options.signal?.aborted) return;
         if (!textSent) {
           textSent = true;
           sendJson({
@@ -558,18 +626,8 @@ export async function qwenTtsSynthesizeStream(
 
     socket.on("close", () => {
       // 正常 task-finished 后关闭 → 已 resolve/close；异常提前关闭 → 失败
-      if (!settled || controller) {
-        if (controller) {
-          try {
-            controller.close();
-          } catch {
-            // 流已被 cancel → 忽略
-          }
-          controller = null;
-        } else if (!settled) {
-          fail(new QwenTtsError("NETWORK_ERROR", "qwen TTS 连接提前关闭"));
-        }
-      }
+      if (!finished) fail(new QwenTtsError("NETWORK_ERROR", "qwen TTS 连接提前关闭"));
+      cleanup(false);
     });
   });
 }

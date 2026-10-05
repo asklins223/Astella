@@ -1,3 +1,4 @@
+import { startDomainAgentRequest, agentRunForDomainExecution } from "../../agent/runtime.ts";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import { withWorkspaceTransaction } from "../../db/client.ts";
@@ -17,7 +18,7 @@ import {
 } from "@ailearn/shared/note-learning-artifact-contracts";
 import type { z } from "zod";
 import { visibleNotesCondition } from "../note/visibility.ts";
-import { classifyJobFailureReason, createJob } from "../job/service.ts";
+import { classifyJobFailureReason } from "../job/service.ts";
 
 export type NoteLearningArtifactScopeV1 = { workspaceId: string; userId: string };
 type StartInput = z.infer<typeof createNoteDynamicArtifactTaskV1Schema>;
@@ -113,19 +114,9 @@ export async function startNoteLearningArtifactTask(scope: NoteLearningArtifactS
     }
   });
 
-  const job = await createJob({
-    type: JobType.NOTE_DYNAMIC_ARTIFACT_GENERATE,
-    workspaceId: scope.workspaceId,
-    requestedBy: scope.userId,
-    idempotencyKey: `note-dynamic-artifact:${noteId}:${input.noteVersionId}:${input.requestId}`,
-    payload: {
-      noteId,
-      noteVersionId: input.noteVersionId,
-      requestId: input.requestId,
-      sourceKind: input.sourceKind,
-      ...(input.selectionAnchor ? { anchor: input.selectionAnchor } : {}),
-    },
-  });
+  const { operation } = await startDomainAgentRequest(scope, { capability: "note_dynamic_artifact_generate", noteId, request: input }, "为这版笔记制作互动演示。");
+  if (operation.execution.kind !== "job") throw new Error("note capability returned a different execution");
+  const job = { id: operation.execution.id };
   return withWorkspaceTransaction(scope, (tx) => getNoteLearningArtifactTask(tx, scope, noteId, job.id));
 }
 
@@ -150,6 +141,7 @@ async function projectTask(tx: ApiTransaction, scope: NoteLearningArtifactScopeV
   else status = "failed";
   return noteLearningArtifactTaskV1Schema.parse({
     taskId: job.id,
+    agentRunId: await agentRunForDomainExecution(tx, scope, "job", job.id),
     noteId,
     noteVersionId: input.noteVersionId,
     sourceKind: input.sourceKind,

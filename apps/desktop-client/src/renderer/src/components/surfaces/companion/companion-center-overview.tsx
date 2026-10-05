@@ -5,13 +5,14 @@ CompanionDailySummaryV1,
 CompanionHistoryPageV1,
 } from "@ailearn/shared/companion-memory-desktop-contracts";
 import { ArrowRight,BookOpen,MessageCircle,Sparkles } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { plainCompanionBubbleText } from "../../companion/companion-markdown";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
 import { formatDate,formatRelative } from "../notebook/surface-data.tsx";
 
 import { needsDeliveryResponse,type Section } from "./companion-center-model";
+import { CompanionCapabilityGuide, companionDiscoverableCapabilities } from "./companion-capability-guide";
 
 /**
  * 概览页屏上就那几句小标题与状态字，各写一次：JSX 与登记给伴星的可读视图引用同一份
@@ -49,6 +50,7 @@ export function CompanionCenterOverview({
   readonly onContinue: () => void;
   readonly onGo: (tab: "dialogue" | "memory" | "diary" | "activity") => void;
 }) {
+  const [guideOpen, setGuideOpen] = useState(false);
   const latest = diary.ok ? diary.value : null;
   const excerpt = latest?.status === "generated"
     ? latest.blocks.find((block) => block.type === "text" || block.type === "quote")
@@ -67,7 +69,7 @@ export function CompanionCenterOverview({
   const latestReplyExcerpt = latestReplyText?.type === "text" ? plainCompanionBubbleText(latestReplyText.text).split(/\n\s*\n/)[0] : null;
 
   /**
-   * 这一屏登记给伴星读的是**三块此刻各自露出的那一行**（39d W2-7 最后一块）。
+   * 登记三块各自露出的那一行，以及用户已展开的能力说明；收起内容不注入。
    *
    * `state` 一律是"这一行属于屏上哪一个小标题"（同一个字段只准一个含义）：
    * 日记有摘录时那一行挂在「原文摘录」下面，所以它的小标题就是「原文摘录」，
@@ -78,6 +80,7 @@ export function CompanionCenterOverview({
     const push = (label: string, state: string) => {
       if (label.trim() && rows.length < 12) rows.push({ label, state });
     };
+    if (guideOpen) companionDiscoverableCapabilities.forEach(item => push(item.presentation.discovery!, item.presentation.label));
     if (!diary.ok) push(OVERVIEW_STATES.diaryUnavailable, OVERVIEW_TITLES.diary);
     else if (latest?.status === "generated") {
       if (excerptText) push(excerptText, OVERVIEW_TITLES.excerpt);
@@ -110,11 +113,12 @@ export function CompanionCenterOverview({
         state: row.state.slice(0, 40),
       })),
     };
-  }, [activity, diary, history, latest?.date, latest?.status, excerptText, pending]);
+  }, [activity, diary, history, latest?.date, latest?.status, excerptText, pending, guideOpen]);
   usePageReadableView(overviewReadableView);
 
   return <div className="cc-overview">
     <div className="cc-overview__greeting"><div><span className="cc-kicker">一起留下的日常</span><h3>和 {companionName} 接着聊</h3></div><button type="button" className="cc-button is-primary" onClick={onContinue}><MessageCircle size={17} aria-hidden="true" />开始交流<ArrowRight size={15} aria-hidden="true" /></button></div>
+    <CompanionCapabilityGuide onContinue={onContinue} onOpenChange={setGuideOpen} />
     {activity.ok && pending.length > 0 ? <section className="cc-overview__response" aria-labelledby="companion-pending-title"><div><Sparkles size={17} aria-hidden="true" /><h3 id="companion-pending-title">{OVERVIEW_TITLES.pending}</h3><span>{pending.length} 件提议</span></div><p>{pending[0].label}</p><button type="button" className="cc-link" onClick={() => onGo("activity")}>查看提议<ArrowRight size={14} /></button></section> : null}
     <div className="cc-overview__reading">
       <section className="cc-overview__diary" aria-labelledby="companion-latest-diary-title"><header><BookOpen size={18} aria-hidden="true" /><h3 id="companion-latest-diary-title">{OVERVIEW_TITLES.diary}</h3>{latest?.date ? <time>{formatDate(latest.date)}</time> : null}</header>

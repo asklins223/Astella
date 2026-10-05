@@ -33,6 +33,7 @@ import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { insertStreamEvent } from "./companion-dialogue-store.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
 import { CompanionToolError } from "./companion-tool-result.ts";
+import { readCompanionMemoryWriteSource } from "./companion-memory-write-source.ts";
 
 export async function buildActionPayload(
   event: AgentEventContext,
@@ -137,6 +138,13 @@ export async function createAgentProposal(
   await withWorkerWorkspaceTransaction(
     { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
     async (tx) => {
+      if (parsedPayload.data.kind === "save_memory") {
+        const memory = parsedPayload.data;
+        await readCompanionMemoryWriteSource(tx, event, {
+          kind: memory.memoryKind, content: memory.content, sourceQuote: memory.sourceQuote,
+          appliesWhen: memory.appliesWhen, validUntil: memory.validUntil,
+        });
+      }
       const pending = await tx.execute<{ id: string }>(sql`
         SELECT id FROM companion_action_proposals
         WHERE conversation_id = ${event.read.conversationId} AND status = 'pending'

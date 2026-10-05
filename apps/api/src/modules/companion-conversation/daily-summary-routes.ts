@@ -14,6 +14,7 @@ import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { requireSession } from "../identity/middleware.ts";
 import { scopeOfSession, withWorkspaceTransaction, type ApiTransaction } from "../../db/client.ts";
 import { companionDailySummaries } from "@ailearn/shared/db-schema/companion-memory";
+import { toTextArrayLiteral } from "@ailearn/shared/pg-text-array";
 
 function isDailySummaryEnabled(): boolean {
   // §15.3：该 flag 独立于 COMPANION_JOURNEY_V2，默认关闭，.env 显式开启。
@@ -63,6 +64,8 @@ export async function maskDiaryAndExcerptsForRevokedSources(
   if (ids.length === 0) return { maskedDiaryDates: [], maskedEntries: 0 };
 
   // 一次查全：GIN 索引在 source_event_ids 上，`&&` 是数组相交。
+  // 数组参数给字面量：postgres.js 把 JS 数组序列化成行构造器 `($1,$2)`，在
+  // `text[]` 语境里那是 record 不是数组（见 @ailearn/shared/pg-text-array）。
   const rows = await executor.execute<{ date: string }>(sql`
     UPDATE companion_daily_summaries
        SET deleted_at = now(), delete_reason = 'revoked_source',
@@ -70,7 +73,7 @@ export async function maskDiaryAndExcerptsForRevokedSources(
      WHERE workspace_id = ${scope.workspaceId}
        AND user_id = ${scope.userId}
        AND deleted_at IS NULL
-       AND source_event_ids && ${ids}::text[]
+       AND source_event_ids && ${toTextArrayLiteral(ids)}::text[]
     RETURNING date
   `);
   const dates = (Array.isArray(rows) ? rows : []).map((row) => row.date);
@@ -83,7 +86,7 @@ export async function maskDiaryAndExcerptsForRevokedSources(
      WHERE workspace_id = ${scope.workspaceId}
        AND user_id = ${scope.userId}
        AND source = 'diary'
-       AND source_id = ANY(${dates}::text[])
+       AND source_id = ANY(${toTextArrayLiteral(dates)}::text[])
        AND NOT masked
     RETURNING id
   `);

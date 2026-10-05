@@ -69,7 +69,7 @@ export async function readOperationArtifactReceipt(
   if (!parsed.success) return null;
   const artifact = parsed.data;
   // 查询已绑死 job 与材料；这里再钉一遍不变量，并要求材料确实被这个目标冻结过。
-  if (artifact.jobId !== request.jobId) return null;
+  if (artifact.kind === "card_candidates" || artifact.jobId !== request.jobId) return null;
   if (!request.inputs.some((input) => input.noteId === artifact.noteId && input.noteVersionId === artifact.noteVersionId)) return null;
   return artifact;
 }

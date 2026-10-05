@@ -1,5 +1,9 @@
+import { useCompanionGuide } from "../companion/guidance/use-companion-guide";
+import { CompanionGuidanceStage } from "../companion/guidance/CompanionGuidanceStage";
+import { GUIDE_OPEN_EVENT, GUIDE_PRACTICE_EVENT, GUIDE_TOPICS, type GuideTopicId } from "../companion/guidance/guide-definitions";
+import { SpaceArrival } from "./SpaceArrival";
 import { useEffect, useId, useRef, useState } from "react";
-import { ChevronsRight, Gauge, House, Moon, Orbit, Settings2, Sun, Volume2, VolumeX } from "lucide-react";
+import { ChevronsRight, Compass, Gauge, House, Moon, Orbit, Settings2, Sun, Volume2, VolumeX } from "lucide-react";
 import { useRoomStore } from "../../app/room-store";
 import { hasActionableUpdate, useUpdateStatus } from "../../app/update-status";
 import { spaceRoleLabel } from "../../app/space-identity";
@@ -12,10 +16,7 @@ import { useTactileSurface } from "../motion/use-tactile-surface";
 import { useHudPageClasses } from "./use-hud-page";
 import {
   SPACE_MENU_OPEN_EVENT,
-  requestSpaceSwitchReceipt,
   takePendingSpaceMenuRequest,
-  takePendingSpaceSwitchReceipt,
-  SPACE_SWITCH_RECEIPT_EVENT,
 } from "./space-menu-events";
 
 /**
@@ -70,16 +71,14 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
   const accountMenuOpen = menuKind === "account";
   const popoverId = useId();
   const [spaceNotice, setSpaceNotice] = useState<string | null>(null);
-  /**
-   * 切换成功回执。必须由这个常驻宿主持有：surface 自己的 state 活不过切换引起的
-   * 门禁重挂载（设置页原先 setNotice 之后同一 tick 就被卸载，提示从未出现过）。
-   */
-  const [switchReceipt, setSwitchReceipt] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const spaceRef = useRef<HTMLButtonElement>(null);
   const accountRef = useRef<HTMLButtonElement>(null);
+  const guideRef = useRef<HTMLButtonElement>(null);
+  const guide = useCompanionGuide();
+  const guideMenuOpen = menuKind === "guide";
 
   useTactileSurface(rootRef, "room-control");
   const isExpanded = decorative || onboardingOpen || expanded;
@@ -105,24 +104,30 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
     return () => window.removeEventListener(SPACE_MENU_OPEN_EVENT, onRequest);
   }, [decorative]);
 
-  // 切换回执：药丸在切换引起的重挂载里取回停车值；若药丸没被卸载，则走 live 事件。
   useEffect(() => {
-    const onReceipt = (event: Event) => {
-      const name = (event as CustomEvent<{ workspaceName?: unknown }>).detail?.workspaceName;
-      if (typeof name !== "string" || name.length === 0) return;
-      setSwitchReceipt(name);
+    useRoomStore.getState().setCompanionGuideOpen(!decorative && (Boolean(guide.session) || guideMenuOpen && isExpanded));
+    return () => useRoomStore.getState().setCompanionGuideOpen(false);
+  }, [guideMenuOpen, isExpanded, decorative, guide.session]);
+  useEffect(() => {
+    if (decorative) return;
+    const open = (event: Event) => {
+      const topic = (event as CustomEvent<{ topic?: GuideTopicId }>).detail?.topic;
+      if (topic && GUIDE_TOPICS.some(item => item.id === topic)) { guide.start(topic); setMenuKind(null); }
+      else { guide.pause(); setMenuKind("guide"); }
+      setExpanded(true);
     };
-    const parked = takePendingSpaceSwitchReceipt();
-    if (parked) setSwitchReceipt(parked);
-    window.addEventListener(SPACE_SWITCH_RECEIPT_EVENT, onReceipt);
-    return () => window.removeEventListener(SPACE_SWITCH_RECEIPT_EVENT, onReceipt);
-  }, []);
-
+    window.addEventListener(GUIDE_OPEN_EVENT, open);
+    return () => window.removeEventListener(GUIDE_OPEN_EVENT, open);
+  }, [decorative, guide.start, guide.pause]);
   useEffect(() => {
-    if (switchReceipt === null) return undefined;
-    const timer = window.setTimeout(() => setSwitchReceipt(null), 6_000);
-    return () => window.clearTimeout(timer);
-  }, [switchReceipt]);
+    const attend = () => {
+      if (!guideMenuOpen && !guide.session) return;
+      guide.pause(); setMenuKind(null); setExpanded(false);
+    };
+    window.addEventListener("ailearn:companion-guide-pause", attend);
+    window.addEventListener("ailearn:companion-open-chat", attend);
+    return () => { window.removeEventListener("ailearn:companion-open-chat", attend); window.removeEventListener("ailearn:companion-guide-pause", attend); };
+  }, [guideMenuOpen, guide.session, guide.pause]);
 
   // The island's own collapse rule: any open surface or the onboarding overlay
   // takes it back down to the seal.
@@ -137,8 +142,9 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
   useHudPageClasses();
 
   useEffect(() => {
-    if (!isExpanded || decorative) return undefined;
+    if ((!isExpanded && !guide.session) || decorative) return undefined;
     const collapse = () => {
+      if (guideMenuOpen) guide.pause();
       setMenuKind(null);
       setExpanded(false);
     };
@@ -155,8 +161,15 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopPropagation();
+      if (guide.session && !menuKind) {
+        event.stopImmediatePropagation();
+        guide.pause(); triggerRef.current?.focus({ preventScroll: true }); return;
+      }
       const cancel = menuRef.current?.querySelector<HTMLButtonElement>("[data-hud-cancel]:not(:disabled)");
       if (cancel) { cancel.click(); return; }
+      if (guideMenuOpen) {
+        guide.pause(); setMenuKind(null); guideRef.current?.focus({ preventScroll: true }); return;
+      }
       if (spaceMenuOpen) {
         setMenuKind(null);
         spaceRef.current?.focus({ preventScroll: true });
@@ -176,7 +189,7 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
       window.removeEventListener("pointerdown", closeFromOutside, true);
       window.removeEventListener("keydown", closeOnEscape, true);
     };
-  }, [isExpanded, decorative, spaceMenuOpen, accountMenuOpen]);
+  }, [isExpanded, decorative, spaceMenuOpen, accountMenuOpen, guideMenuOpen, guide.pause, guide.session, menuKind]);
 
   const toggleExpanded = () => {
     if (isExpanded) {
@@ -189,6 +202,7 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
   };
 
   const collapseAndRun = (action: () => void) => {
+    guide.pause();
     setMenuKind(null);
     setExpanded(false);
     action();
@@ -221,19 +235,22 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
    * 卡其实同一条毛病。关卡时岛保持展开：岛是岛的开关，卡是卡的开关，两件事各管一次点击。
    */
   const openSpaceMenu = () => {
+    if (spaceRef.current?.dataset.companionGuideTarget) window.dispatchEvent(new CustomEvent(GUIDE_PRACTICE_EVENT));
+    else guide.pause();
     setSpaceNotice(null);
     setMenuKind(current => current === "space" ? null : "space");
     setExpanded(true);
   };
 
   const openAccountMenu = () => {
+    guide.pause();
     setMenuKind(current => current === "account" ? null : "account");
     setExpanded(true);
   };
 
   const closeMenu = () => {
     setMenuKind(null);
-    (spaceMenuOpen ? spaceRef : accountRef).current?.focus({ preventScroll: true });
+    (guideMenuOpen ? guideRef : spaceMenuOpen ? spaceRef : accountRef).current?.focus({ preventScroll: true });
   };
 
   return (
@@ -344,6 +361,12 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
             />
           ) : null}
         </button>
+        <button ref={guideRef} type="button" className={guideMenuOpen ? "room-control-guide active" : "room-control-guide"}
+          disabled={decorative} inert={!isExpanded || undefined} aria-label="伴星带路" title="伴星带路"
+          aria-expanded={guideMenuOpen} aria-haspopup="dialog" aria-controls={guideMenuOpen ? popoverId : undefined}
+          onClick={() => { guide.pause(); setMenuKind(current => current === "guide" ? null : "guide"); setExpanded(true); }}>
+          <Compass aria-hidden="true" />
+        </button>
         {/* 账户槽位以前只是一个 `UserRound` 图标，点下去直接跳到设置页：屏幕上没有
             任何一处回答「现在登录的是谁」，而换账号要的退出恰好无处可点。现在它是
             一张脸（有头像用头像，否则用与设置页同一套首字母印章），点开小框。 */}
@@ -390,21 +413,19 @@ export function HudRoomControl({ decorative = false }: { readonly decorative?: b
         rootRef={menuRef}
         spaceRef={spaceRef}
         accountRef={accountRef}
+        guideRef={guideRef}
+        guide={guide}
         id={popoverId}
         notice={spaceNotice}
         onClose={closeMenu}
         onOpenAccount={() => openSettings("account")}
-        onSwitched={(workspaceName) => {
+        onSwitched={() => {
           collapse();
-          requestSpaceSwitchReceipt(workspaceName);
           publishGateInvalidation("stale_workspace");
         }}
       /> : null}
-      {switchReceipt !== null ? (
-        <p className="room-control-receipt" role="status">
-          已进入「{switchReceipt}」
-        </p>
-      ) : null}
+      {!decorative ? <SpaceArrival /> : null}
+      {!decorative ? <CompanionGuidanceStage guide={guide} /> : null}
     </>
   );
 }

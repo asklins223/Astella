@@ -12,6 +12,8 @@ import { createCompanionLearningRunContextGrantRequestV1Schema, createMenuPropos
 import { cancelCompanionRun } from "./turn/companion-cancel.ts";
 import { openCompanionEventStream, listCompanionAgentRoutes, listCompanionRunNodes } from "./turn/companion-events.ts";
 import { openCompanionThought } from "./turn/thought-service.ts";
+import { listCompanionThoughts } from "./turn/thought-history.ts";
+import { companionChatListThoughtsRequestV1Schema } from "@ailearn/shared/companion-chat-desktop-contracts";
 import {
   ensureCompanionInbox,
   listCompanionMessages,
@@ -490,6 +492,27 @@ userId: req.session.userId,
         );
         }
         throw err;
+      }
+    },
+  );
+
+  app.get<{ Querystring: { before?: string; limit?: string } }>(
+    "/companion/thoughts",
+    { preHandler: [requireSession, requireCompanionDialogue] },
+    async (req, reply) => {
+      if (!(await rateLimited(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:read`, COMPANION_RATE_LIMITS.readQueriesPerMinute.limit, COMPANION_RATE_LIMITS.readQueriesPerMinute.windowMs))) return;
+      try {
+        const request = companionChatListThoughtsRequestV1Schema.safeParse({
+          version: 1,
+          limit: parsePaginationInt(req.query.limit, 30),
+          ...(req.query.before ? { before: req.query.before } : {}),
+        });
+        if (!request.success) throw new CompanionConversationError("INVALID_REQUEST", 400, "invalid thought history query");
+        const result = await listCompanionThoughts({ ...scopeOfSession(req.session), userId: req.session.userId, request: request.data });
+        return reply.header("cache-control", "no-store").send(result);
+      } catch (error) {
+        if (error instanceof CompanionConversationError) return reply.code(error.statusCode).send(buildCompanionErrorBody(error, { recoverable: true, requestId: req.id }));
+        throw error;
       }
     },
   );

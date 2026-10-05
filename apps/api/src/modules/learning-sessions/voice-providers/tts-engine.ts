@@ -22,6 +22,14 @@ import { edgeTtsSynthesize, EdgeTtsError, type EdgeTtsProviderOptions } from "./
 import { loadTtsEngineConfig } from "./tts-config.ts";
 import type { ResolvedTtsSelection } from "./tts-preference.ts";
 import { qwenTtsSynthesizeStreamForUser, type QwenTtsOptions } from "./qwen-tts.ts";
+import { AIConsentRequiredError, AIDataPolicyDeniedError } from "@ailearn/agent-host";
+import { createGovernedMediaCall, type ApiAIGovernanceDependencies } from "../../../lib/ai-governance.ts";
+import { productionAiGovernancePorts } from "../../../governance/ai-governance-runtime.ts";
+
+/** 治理拒绝与"上游挂了"是两回事：拒绝不该触发降级重试。 */
+function isGovernanceDenial(error: unknown): boolean {
+  return error instanceof AIConsentRequiredError || error instanceof AIDataPolicyDeniedError;
+}
 
 /**
  * 2026-10-02（41a）：**有界**的合成路径接到统一内核。
@@ -59,6 +67,60 @@ export interface TtsEngineDeps {
   loadConfig?: typeof loadTtsEngineConfig;
   /** 测试注入字节收集（缺省用 ReadableStream 全量读取）。 */
   collectStream?: (stream: ReadableStream<Uint8Array>) => Promise<Uint8Array>;
+  /**
+   * 治理出口的依赖（查设置、写审计行）。测试注入这一份即可让整条合成**离线**跑完。
+   *
+   * 做成可选不是为了"生产可以不治理"：生产走宿主装配好的那一份
+   * （`productionAiGovernancePorts`，即 identity 的同意读与审计写）。
+   * 它存在的唯一理由是单测不能连库。
+   */
+  governance?: ApiAIGovernanceDependencies;
+}
+
+function abortError(): Error {
+  return Object.assign(new Error("tts synthesis aborted"), { name: "AbortError" });
+}
+
+/**
+ * 读流直到 EOF，但在外层信号按下时**真的把读端掐掉**。
+ *
+ * 只 `raceAbort` 而不 cancel 的话，qwen 的 WebSocket 会继续占着连接直到它自己
+ * 30s 超时——用户已经不听这一段了，上游还在替他把音频生成完。
+ *
+ * 注入的 `collect` 拿不到读端（它自己 `getReader()`），那种情况下只能停止等待；
+ * 那是测试接缝，真实上游取消在生产默认那条路上是生效的。
+ */
+async function collectWithCancel(
+  stream: ReadableStream<Uint8Array>,
+  signal: AbortSignal | undefined,
+  collect: (stream: ReadableStream<Uint8Array>) => Promise<Uint8Array>,
+  ownsReader: boolean,
+): Promise<Uint8Array> {
+  if (!signal) return collect(stream);
+  signal.throwIfAborted();
+  if (!ownsReader) return collect(stream);
+  const reader = stream.getReader();
+  const onAbort = () => { void reader.cancel(abortError()).catch(() => undefined); };
+  signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    const chunks: Uint8Array[] = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) chunks.push(value);
+    }
+    let total = 0;
+    for (const chunk of chunks) total += chunk.length;
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      out.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return out;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
 }
 
 /** qwen 流 → 字节（句子级合成总量 30–60KB，缓冲无压力）。 */
@@ -83,6 +145,7 @@ async function defaultCollectStream(stream: ReadableStream<Uint8Array>): Promise
 
 export interface SynthesizeTtsBytesArgs {
   text: string;
+  signal?: AbortSignal;
   /** edge 音色（仅 edge 引擎使用）；qwen 音色固定走 config，不混用。 */
   edgeVoice: string;
   /** edge 语速（如 "+10%"）；qwen 语速走 config。 */
@@ -169,15 +232,21 @@ export async function synthesizeTtsBytes(args: SynthesizeTtsBytesArgs): Promise<
     },
     usageContext: { modelId: engine === "qwen" ? cfg.qwen.model : "edge-tts", promptVersion: TTS_PROMPT_VERSION, resourceClass: "interactive_ai" },
     prepare: async () => ({ engine }),
-    // `step` 这一层**刻意不用**：两个 provider 各自带自己的传输超时
-    // （edge 30s / qwen 30s），真正拆掉 socket 的是那两个。
-    // 内核的步预算不是空的——`withStepDeadline` 用 `Promise.race` 与计时器赛跑，
-    // 所以「这一发最多占多久」由内核兜住；两层的职责是「谁掐传输」与
-    // 「谁兜住整步」的区别，不是重复。
-    //
-    // 把 `step.signal` 透进两个 provider 需要改它们的签名（`edgeTtsSynthesize`
-    // 现在自建 AbortController + timer），那是另一次改动，不夹在这次里。
-    execute: async (prepared, _step): Promise<AiStepResult<TtsBytesResult>> => {
+    execute: async (prepared, step): Promise<AiStepResult<TtsBytesResult>> => {
+      // 治理出口按**每一次真实上游调用**建一个：qwen 一次、降级 edge 再一次。
+      // 两次真实调用就是两条审计——降级不是"同一次调用换了条路"。
+      // 伴星段的预热命中根本走不到这里（那一段在别处已经合成过），
+      // 所以缓存不会制造出第二条审计行。
+      const governedCall = async (provider: "qwen" | "edge") => createGovernedMediaCall(
+        { workspaceId: args.scope.workspaceId, userId: args.scope.userId },
+        provider === "qwen" ? "voice_synthesis_qwen" : "voice_synthesis_edge",
+        // 送出去的是这一段要被念出来的正文。
+        ["text_content"],
+        // 门与净化都在**真的发出去之前**。默认那份依赖由宿主装配（identity 的同意读
+        // 与审计写），测试注入自己的一份——生产的门不因此有任何开口子。
+        deps.governance ?? productionAiGovernancePorts,
+      );
+
       try {
         if (prepared.engine === "qwen" && cfg.qwen.workspaceId) {
           const qwenOptions: QwenTtsOptions = {
@@ -190,17 +259,41 @@ export async function synthesizeTtsBytes(args: SynthesizeTtsBytesArgs): Promise<
             ...(cfg.qwen.instruction ? { instruction: cfg.qwen.instruction } : {}),
           };
           try {
-            const result = await qwenSynthesize(args.queueKey, args.text, qwenOptions);
-            const audio = await collectStream(result.stream);
-            if (audio.length === 0) throw new Error("qwen tts returned empty audio");
-            return { ok: true as const, output: { audio, engine: "qwen" as const, contentType: result.contentType } };
+            // 门与净化都在**真的发出去之前**：没同意 / 政策拒发时这一次 qwen 压根不发，
+            // 更不会因为它失败而落到 edge 再发一次（降级不能变成绕过门的第二条路）。
+            const call = await governedCall("qwen");
+            const spoken = call.prepareText(args.text, "qwen");
+            const result = await call.run({ provider: "qwen", modelId: cfg.qwen.model }, async () => {
+              const upstream = await qwenSynthesize(args.queueKey, spoken, { ...qwenOptions, signal: step.signal });
+              const audio = await collectWithCancel(upstream.stream, step.signal, collectStream, deps.collectStream === undefined);
+              step.signal.throwIfAborted();
+              if (audio.length === 0) throw new Error("qwen tts returned empty audio");
+              return { audio, contentType: upstream.contentType };
+            });
+            return { ok: true as const, output: { ...result, engine: "qwen" as const } };
           } catch (error) {
+            // 用户自己停下的、或治理门拒发的：都**不再降级**。
+            // 降级是一次新的外发；用户已经停下、或这个人本来就不该外发时，
+            // 再发一次恰好是最不该发生的那一次。
+            if (step.signal.aborted) {
+              failureError = abortError();
+              return { ok: false as const, class: "cancelled" as const, message: "语音合成被取消" };
+            }
+            if (isGovernanceDenial(error)) {
+              failureError = error;
+              return { ok: false as const, class: "permission" as const,
+                message: error instanceof Error ? error.message : String(error) };
+            }
             args.onQwenFallback?.(error);
-            // 落到 edge 兜底。
+            // 落到 edge 兜底——edge 自己也会过一次治理门。
           }
         }
 
-        const edge = await edgeSynthesize(stripVoiceExpressionTags(args.text), args.edgeVoice, edgeOptions);
+        const edgeCall = await governedCall("edge");
+        // 净化后的文本才是真送出去的那份；edge 之前还要剥语气标签。
+        const edgeText = stripVoiceExpressionTags(edgeCall.prepareText(args.text, "edge"));
+        const edge = await edgeCall.run({ provider: "edge", modelId: "edge-tts" },
+          () => edgeSynthesize(edgeText, args.edgeVoice, { ...edgeOptions, signal: step.signal }));
         if (edge.audio.length === 0) {
           const empty = new EdgeTtsError("EMPTY_AUDIO", "edge-tts 返回空音频（fail closed）");
           failureError = empty;
@@ -209,6 +302,10 @@ export async function synthesizeTtsBytes(args: SynthesizeTtsBytesArgs): Promise<
         return { ok: true as const, output: { audio: edge.audio, engine: "edge" as const, contentType: edge.contentType } };
       } catch (error) {
         failureError = error;
+        if (step.signal.aborted) {
+          failureError = abortError();
+          return { ok: false as const, class: "cancelled" as const, message: "语音合成被取消" };
+        }
         return {
           ok: false as const,
           class: "transport" as const,
@@ -239,6 +336,7 @@ export async function synthesizeTtsBytes(args: SynthesizeTtsBytesArgs): Promise<
         hash: ttsInputHash(args.text, args.edgeVoice, args.edgeRate ?? "+0%", engine),
       },
       permissionLevel: "server",
+      signal: args.signal,
     },
     attempt: {
       taskId: task.id,

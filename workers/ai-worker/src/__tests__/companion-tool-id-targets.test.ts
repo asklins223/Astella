@@ -36,6 +36,9 @@ type IdTarget = { readonly table: string; readonly column: string } | {
  * 目标列名与参数名对不上的（第二条用例）要么改参数名，要么改到名字说的是那一列。
  */
 const PARAM_TARGETS: Readonly<Record<string, Readonly<Record<string, IdTarget>>>> = {
+  agent_start_goal: { longGoalMemoryId: { table: "assistant_memory_items", column: "id" } },
+  agent_list_goals: { longGoalMemoryId: { table: "assistant_memory_items", column: "id" } },
+  agent_list_long_goals: { memoryId: { table: "assistant_memory_items", column: "id" } },
   agent_revise_goal: { runId: { table: "agent_runs", column: "id" } },
   agent_control_goal: { runId: { table: "agent_runs", column: "id" } },
   companion_read_note: {

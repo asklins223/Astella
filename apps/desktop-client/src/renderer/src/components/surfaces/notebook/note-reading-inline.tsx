@@ -8,7 +8,7 @@ import { useSourceImage } from "../source/source-image.ts";
 import { openExternalLink } from "../../../app/external-link";
 import { NoteAnnotationMark } from "./note-annotation-mark";
 import type { NoteCompanionExplanation } from "../../companion/note-companion-explanation";
-import { NoteMath } from "./note-math";
+import { ReadableMath } from "../../content/readable-math";
 
 /**
  * 阅读页怎么画一块正文。
@@ -229,7 +229,7 @@ export function renderNoteInline(
       );
     } else if (atom.kind === "math") {
       const anchored = annotations.find(item => item.range[0] < atom.end && item.range[1] > atom.start);
-      const formula = <NoteMath source={atom.text} value={atom.value} display={atom.display} />;
+      const formula = <ReadableMath source={atom.text} value={atom.value} display={atom.display} />;
       const badges = annotations.filter(item => item.endsHere && item.range[1] > atom.start && item.range[1] <= atom.end);
       node = <span key={key}>{anchored ? <NoteAnnotationMark annotation={anchored.annotation}
         open={anchored.annotation.annotationId === options.openAnnotationId} onOpen={options.onOpenAnnotation}>{formula}</NoteAnnotationMark> : formula}

@@ -65,8 +65,20 @@ export type TeachingExplainOutputV1 = RoundTeachingContentV1 & {
  */
 export type TeachingExplainProviderV1 = (
   input: TeachingExplainInputV1,
-  step: { readonly signal: AbortSignal },
+  step: { readonly signal: AbortSignal; readonly scope: TeachingExplainScope },
 ) => Promise<AiStepResult<TeachingExplainOutputV1>>;
+
+/**
+ * 这一次外发是谁发起的。
+ *
+ * 它跟着 step 走而不是跟着 provider 的构造走：provider 实例在路由里是**长驻**的，
+ * 而 scope 是每一次调用的真实值（同一进程里服务多个用户）。把它固定在构造期，
+ * 就会变成"用上一个用户的身份给下一个用户外发"——而那正是治理出口要挡的东西。
+ */
+export interface TeachingExplainScope {
+  readonly workspaceId: string;
+  readonly userId: string;
+}
 
 /**
  * 「这一段正文说的是什么」的可读化：只做最小的一层标记剥离。
@@ -180,6 +192,11 @@ const TEACHING_TASK_DEADLINE_MS = 110_000;
 
 export type NoteTeachingExplainTaskDepsV1 = {
   provider: TeachingExplainProviderV1;
+  /**
+   * 本次外发的真实 workspace/user。**必填**：provider 的治理出口按它建，
+   * 缺了 scope 就没法证明"谁同意了这笔外发"，因此不留默认值。
+   */
+  scope: TeachingExplainScope;
   /** 冻结好的输入（路由在短事务里读齐：轮次＋快照块＋最新计划）。 */
   input: TeachingExplainInputV1;
   usageContext?: AiTaskDefinition<TeachingExplainInputV1, TeachingExplainOutputV1>["usageContext"];
@@ -213,7 +230,7 @@ export function createNoteTeachingExplainTaskV1(
     // 与评估那一步同一形状（`run-critic.ts` 那个 per-call 定义）。它**不在这里读库**：
     // "校验权限与业务版本"那一步在冻结输入的那个事务里已经做过。
     prepare: async () => deps.input,
-    execute: async (input, step) => deps.provider(input, { signal: step.signal }),
+    execute: async (input, step) => deps.provider(input, { signal: step.signal, scope: deps.scope }),
     // 恒等提交：产物行的写入在路由的第二段短事务里（服务层 `createTeaching`），
     // 内核这一步没有可提交的业务写入——与评估那一步同一分工。
     commit: async (_ctx, _attempt, output) => ({
@@ -244,6 +261,7 @@ export async function runTeachingExplainV1(options: {
   attemptId?: string;
 }): Promise<AiStepResult<TeachingExplainOutputV1> & { attemptRef: string; modelCalls: number }> {
   const task = createNoteTeachingExplainTaskV1({ provider: options.provider, input: options.input,
+    scope: options.scope,
     maxModelCalls: options.maxModelCalls, maxDurationMs: options.maxDurationMs,
     usageContext: { modelId: options.modelId ?? "deterministic", promptVersion: NOTE_TEACHING_EXPLAIN_PROMPT_VERSION,
       resourceClass: "interactive_ai" } });

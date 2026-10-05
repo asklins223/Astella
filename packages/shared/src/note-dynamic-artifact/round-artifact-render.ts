@@ -8,7 +8,7 @@
  * HUD 油漆，只解决了"不像书房"，没解决"不是教具"。
  *
  * 现在**画面由模型整份写**（`document`：`<style>` ＋ 标记 ＋ `<svg>` ＋ `<script>`），
- * 这一层只负责它真正该负责的四件事：
+ * 这一层只负责它真正该负责的三件事：
  *
  *   1. **纸**：示意声明、标题、概念、补充说明、一块凹槽——模型写的那一页落在凹槽里。
  *      母本的取值在这里写死（产物跑在不透明 origin 上，取不到宿主的 `--hud-*`），
@@ -17,12 +17,9 @@
  *      正文里逐字找到的，不是模型写的。
  *   3. **文字等价**：`outline` 渲染成真实 DOM，**在 frame 之外、永远在屏上**。脚本
  *      不跑、动效关掉、frame 降级时，讲解内容一条不少地读得到（§6.3）。
- *   4. **动效桥**：把宿主的 `motion` 指令转给模型自己声明的 `window.setLessonMotion`。
  *
- * ## 播放器脚本里一个模型字符都没有
- *
- * 模板（`artifact-template.ts`）是那份握手脚本；这里只留一个转发器。模型写什么由它自己
- * 写，服务端不替它插一个字——所以"模型能改播放器"这件事不成立。
+ * 动效由展示宿主管理（`artifact-template.ts`）；保存成果只保留模型自己的页面脚本。
+ * 不再附第二份动效转发器，避免重复通知和过期 load 回调覆盖用户最新的档位。
  */
 import { escapeArtifactTextV1, ROUND_ARTIFACT_MAX_CHARS_V1 } from "./round-artifact.ts";
 import {
@@ -133,33 +130,6 @@ const ARTIFACT_STYLE_V1 = `<style>
   font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif}
 </style>`;
 
-/**
- * 动效桥。**一个模型字符都没有**：只是把宿主的 `motion` 指令转给模型自己声明的
- * `window.setLessonMotion`。模型没声明就什么都不做——它的页面照旧跑，宿主的
- * `prefers-reduced-motion` 仍是第一优先，模板那一侧已经把指令发出去了。
- *
- * 刻意**不**在这里造控制条：上一版的播放／上一步／下一步是"把这几格按顺序推一遍"，
- * 而模型写的页面有自己的玩法（能 Push 的塔、能拨的指针），通用控制条套上去只会
- * 让它变成又一张填好的表格。
- */
-const ARTIFACT_MOTION_BRIDGE_V1 = `<script>
-(function () {
-  function forward(motion) {
-    var fn = window.setLessonMotion;
-    if (typeof fn === 'function') { try { fn(motion); } catch (error) { /* 页面自己的问题，不拖垮宿主 */ } }
-  }
-  window.addEventListener('message', function (event) {
-    var data = event.data;
-    if (!data || data.channel !== 'ailearn:artifact-frame') return;
-    if (data.direction !== 'host->frame') return;
-    if (data.command === 'motion' && (data.motion === 'full' || data.motion === 'reduced')) forward(data.motion);
-  });
-  // 页面自己注册得晚一点时补发一次当前档位。
-  var current = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduced' : 'full';
-  window.addEventListener('load', function () { forward(current); });
-})();
-</script>`;
-
 function renderEvidenceV1(nodes: readonly ArtifactNodeV1[]): string {
   if (nodes.length === 0) return "";
   const items = nodes.map((node) => (
@@ -225,7 +195,6 @@ export function buildDynamicArtifactHtmlV1(
     + renderEvidenceV1(nodes)
     + renderTextEquivalentV1(nodes)
     + `</div>`
-    + ARTIFACT_MOTION_BRIDGE_V1
     + scriptTags;
 
   const length = artifactCodepointCountV1(html);

@@ -35,6 +35,8 @@
  */
 
 import { llmTeachingExplainProvider, resolveTeachingModelConfig } from "./teaching/teaching-llm.ts";
+import { createGovernedApiRequester } from "../../lib/ai-governance.ts";
+import { productionAiGovernancePorts } from "../../governance/ai-governance-runtime.ts";
 import { createRoundTargetGrounder, type RoundTargetGrounder } from "./target-grounding.ts";
 import type { TeachingExplainProviderV1 } from "./teaching/teaching-explain.ts";
 import {
@@ -93,7 +95,13 @@ export function createRoundRuntimeCollaborators(
     external: true,
   };
   const artifact = overrides.artifact ?? {
-    provider: llmDynamicArtifactProvider({ config: modelConfig }),
+    provider: ((input, step) => {
+      if (!step.scope?.workspaceId || !step.scope.userId) throw new Error("artifact model call requires the initiating user scope");
+      return llmDynamicArtifactProvider({ config: modelConfig,
+        requester: createGovernedApiRequester(
+          step.scope, "note_dynamic_artifact", ["note_content"], productionAiGovernancePorts),
+      })(input, step);
+    }) satisfies DynamicArtifactProviderV1,
     modelId: configuredModelId,
   };
 

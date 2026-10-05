@@ -46,6 +46,8 @@ import {
 } from "@ailearn/shared/companion-voice-contracts";
 import { DesktopGatewayFailure } from "./desktop-gateway-failure";
 import type { SessionCredentialStore } from "./desktop-gateway-credentials";
+import type { CompanionGuidanceAudioCache } from "./companion-guidance-audio-cache";
+import type { CompanionGuidanceVoiceProfileV1 } from "@ailearn/shared/companion-voice-contracts";
 import type { RoomProjectionV1 } from "@ailearn/shared/room-projection-contracts";
 import type { LearningDashboardV2 } from "@ailearn/shared/learning-objective-surface-contracts";
 import type {
@@ -191,9 +193,9 @@ const NATIVE_CAPABILITY_CHANNELS: Readonly<Record<keyof NativeCapabilityProjecti
   filePicker: null,
   clipboard: DESKTOP_IPC_CHANNELS.clipboardReadLinks,
   notifications: null,
-  // ASR：2026-09-18 起接了真实语音链路——本地 SenseVoice（WASM）优先，云
-  // `/voice/transcribe` 兜底，通道存在即视为可用。
-  asr: DESKTOP_IPC_CHANNELS.companionVoiceTranscribe,
+  // 本机识别由 renderer 的 SenseVoice 执行；这里投影已接入的模型管理能力。
+  // 模型是否就位仍以 getState 的真实状态为准，不由通道存在推断。
+  asr: DESKTOP_IPC_CHANNELS.companionVoiceAsrModelState,
   // 自动更新：2026-10-04 起接了真实通道（检查 / 下载 / 重启安装，更新源是
   // GitHub Releases 直连，不过 apps/api）。通道存在即视为可用——设置页那枚
   // 能力芯片据此从「未接入」翻成「已接入」，不再与旁边真正的检查按钮自相矛盾。
@@ -221,6 +223,7 @@ export class GatewayTransport {
   // **逐字搬移**：由脚本按 TS AST 的精确源区间切出后原样放入。
 
   // `sessionWorkspaceReturn` 是登录前的回跳工作区（纯状态字段）。
+  pendingWorkspaceArrival: import("@ailearn/shared/desktop-ipc-contracts").WorkspaceArrivalV1 | null = null;
   sessionWorkspaceReturn: { email: string; workspaceId: string } | null = null;
   // `loadSession` 用已存凭据恢复会话——**本来就属于传输层**，第四刀搬 `restoreStoredCredential` 时漏了它。
   async loadSession(requestId?: string): Promise<SessionContextV1> {
@@ -234,9 +237,17 @@ export class GatewayTransport {
       if (parsed.data.workspaceEpoch > this.workspaceEpoch) {
         this.workspaceEpoch = parsed.data.workspaceEpoch;
       }
+      const deploymentRef = this.configuration?.config.apiOrigin ?? "unconfigured";
+      const arrival = this.pendingWorkspaceArrival;
+      const validArrival = arrival && arrival.userId === parsed.data.userId
+        && arrival.workspaceId === workspace?.workspaceId && arrival.workspaceEpoch === this.workspaceEpoch
+        && arrival.deploymentRef === deploymentRef && Date.now() - Date.parse(arrival.acceptedAt) < 30_000;
+      if (!validArrival) this.pendingWorkspaceArrival = null;
       this.currentSession = sessionContextSchema.parse({
         version: 1,
         status: "authenticated",
+        deploymentRef,
+        ...(validArrival ? { workspaceArrival: arrival } : {}),
         user: {
           userId: parsed.data.userId,
           email: parsed.data.email,
@@ -300,6 +311,7 @@ export class GatewayTransport {
       credentials: SessionCredentialStore | null,
       connection: ApiConnectionStateV1,
       trust: LocalApiTrustV1,
+      readonly guidanceAudioCache: CompanionGuidanceAudioCache | null = null,
     ) {
       this.configuration = configuration;
       this.configurationError = configurationError;
@@ -310,6 +322,7 @@ export class GatewayTransport {
 
   // ── 状态 ────────────────────────────────────────────────────────
     readonly activeRequests = new Map<string, AbortController>();
+    guidanceVoiceProfile: { key: string; at: number; value: Promise<CompanionGuidanceVoiceProfileV1> } | null = null;
   // ── 连接与凭据（2026-09-30 第四刀） ────────────────────────────────
   //
   // `ensureConnected` 被全类 **198 个方法**调用——它是整个网关的入口门，

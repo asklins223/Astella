@@ -14,6 +14,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { createAssetResponsePlan, mimeTypeForPath } from './asset-response'
 import { VoiceAsrModelStore, voiceAsrModelSources } from './voice-asr-model-store'
+import { CompanionGuidanceAudioCache } from './companion-guidance-audio-cache'
 import { primeUpdateStateFromCache } from './desktop-update'
 import { voiceAsrModelDirectory } from '../shared/voice-asr-model-path'
 import { createVoiceAsrModelResponder } from './voice-asr-model-route'
@@ -38,7 +39,6 @@ import {
   TITLE_BAR_THEME_CHANNEL,
 } from '../shared/window-state'
 import {
-  HOME_WINDOW_ASPECT_RATIO,
   HOME_WINDOW_INITIAL_CONTENT_SIZE,
   HOME_WINDOW_MINIMUM_SIZE
 } from '../shared/window-geometry'
@@ -580,8 +580,6 @@ async function createMainWindow(): Promise<BrowserWindow> {
     minWidth: HOME_WINDOW_MINIMUM_SIZE.width,
     minHeight: HOME_WINDOW_MINIMUM_SIZE.height,
     useContentSize: true,
-    maximizable: false,
-    fullscreenable: false,
     show: false,
     ...nativeWindowChrome(process.platform),
     autoHideMenuBar: true,
@@ -600,13 +598,17 @@ async function createMainWindow(): Promise<BrowserWindow> {
     }
   })
 
-  // The room and every semantic hit target share one 16:9 logical coordinate
-  // system. Keeping the native content window on that ratio removes the
-  // alternate tall/wide compositions that previously exposed background bars
-  // or forced image deformation. Programmatic capture sizes are validated
-  // separately because Electron intentionally does not apply this constraint
-  // to setSize/setContentSize calls.
-  window.setAspectRatio(HOME_WINDOW_ASPECT_RATIO)
+  // 曾经这里调 `window.setAspectRatio(16/9)` 把原生窗口锁死成 16:9，并配合
+  // `maximizable: false` 让最大化/全屏整条路都关掉。那条锁挡的不是渲染能力，
+  // 是一张会露边、会被拉变形的底板——而这两件事渲染层本来就不该有：
+  // `.scene-reference-frame[data-scene-fit="cover"]` 按 `--scene-world-aspect`
+  // 把参考画幅放大到至少覆盖视口（`max(100%, …)`），再由 `.room-backplate`
+  // 的 `object-fit: cover` 按比例裁切，所以任何窗口比例下底板都是满的、
+  // 比例不变的，只是裁掉的部分随比例变化。
+  //
+  // 也就是说，比例锁换来的"永远不露边"并不依赖原生锁比；锁比反而让用户没法把
+  // 书房放到整块屏幕上。现在窗口只保留下限（`HOME_WINDOW_MINIMUM_SIZE`）：
+  // 小于此尺寸，纸面正文与伴星座位才真的会挤到一起，那才是真正的能力边界。
   installWindowZoomShortcuts(window.webContents, process.platform)
 
   registerWindowLifecycle(window)
@@ -776,6 +778,9 @@ app.whenReady()
     // 决定 7：断网可编辑要能跨过重启，所以这份是本机的那一篇正文，落盘。
     noteDocCache: new FileNoteDocCacheStore(
       resolve(app.getPath('userData'), 'note-doc-cache.json')
+    ),
+    guidanceAudioCache: new CompanionGuidanceAudioCache(
+      resolve(app.getPath('userData'), 'companion-guidance-audio')
     ),
     // 刀五：动态产物往这儿写。传函数不在注册期求值，与读侧 `artifactSourcePath`
     // （上面那个）共用同一个 `app.getPath('userData')` 来源，落点必然一致。

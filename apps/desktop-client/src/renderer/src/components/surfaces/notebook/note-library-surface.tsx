@@ -539,6 +539,7 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
       type="button"
       className={primary ? "button primary" : "button"}
       disabled={!createAllowed || creating}
+      data-guide-anchor="notes"
       title={createAllowed ? "新建一篇空笔记并直接开始写" : "当前工作区的身份没有新建笔记的权限"}
       onClick={() => void createNote()}
     >

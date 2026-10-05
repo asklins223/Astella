@@ -716,7 +716,7 @@ export async function eraseMemory(
   now: Date = new Date(),
 ): Promise<boolean> {
   await lockMemoryMutations(executor, scope.userId);
-  const owned = await executor.select({ id: assistantMemoryItems.id })
+  const owned = await executor.select({ id: assistantMemoryItems.id, kind: assistantMemoryItems.kind, sourceEventId: assistantMemoryItems.sourceEventId })
     .from(assistantMemoryItems)
     .where(and(
       eq(assistantMemoryItems.id, memoryItemId),
@@ -728,12 +728,11 @@ export async function eraseMemory(
 
   // 先结账交付，免得留下指向一条已经不存在行的排队中气泡。
   await closeDeliveriesForMemoryItem(executor, scope, { memoryItemId, transition: "dismissed" }, now);
-  await executor.execute(sql`
-    DELETE FROM assistant_memory_item_revisions WHERE memory_id = ${memoryItemId}::uuid
-  `);
-  await executor.execute(sql`
-    DELETE FROM assistant_memory_embeddings WHERE memory_id = ${memoryItemId}::uuid
-  `);
+  // Child snapshots and embeddings are removed by their scoped parent FK cascade.
+  // The append-only revision role remains append-only.
+  await maskEntriesForSource(executor,scope,{source:"memory",sourceId:memoryItemId});
+  if (owned[0].sourceEventId) await executor.insert(assistantMemorySourceSuppressions)
+    .values({userId:scope.userId,kind:owned[0].kind,sourceEventId:owned[0].sourceEventId}).onConflictDoNothing();
   const removed = await executor.delete(assistantMemoryItems)
     .where(and(
       eq(assistantMemoryItems.id, memoryItemId),

@@ -305,6 +305,25 @@ export async function isMemorySourceSuppressed(
   return rows[0]?.suppressed === true;
 }
 
+/** Once a source was routed to an explicit memory action, that action owns its
+ * writes. Extraction from later history must not bypass a pending, rejected or
+ * expired decision, nor recreate a corrected/forgotten version after success. */
+export async function memorySourceHasActionProposal(
+  tx: WorkerTransaction,
+  scope: { workspaceId: string; userId: string },
+  sourceMessageId: string,
+): Promise<boolean> {
+  const rows = await tx.execute<{ delegated: boolean }>(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM companion_action_proposals
+      WHERE workspace_id=${scope.workspaceId} AND user_id=${scope.userId}
+        AND source_message_id=${sourceMessageId}::uuid
+        AND payload->>'kind' IN ('save_memory','correct_memory','forget_memory')
+    ) AS delegated
+  `);
+  return rows[0]?.delegated === true;
+}
+
 /** Suppress only a similar, dismissed memory of the same semantic kind. */
 export async function hasDismissedMemoryTwin(
   tx: WorkerTransaction,
@@ -704,6 +723,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
   // 用户明确"忽略"过的事，下一轮抽取不能再当成新事端上来（doc 34 L14 的后半）。
   let skippedDismissedTwins = 0;
   let skippedForgottenSources = 0;
+  let skippedActionSources = 0;
   // 本轮的页面身份（39b C8）：有它 task 记忆才落 task 档并绑定；没有就全部降级 workspace。
   const taskEntity: CompanionTaskEntityRef | null = context.taskEntity;
   let taskScopeDowngrades = 0;
@@ -726,6 +746,10 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       // 用不可变用户消息 ID 作为来源身份：同一条原话在后续 run 的上下文中
       // 再次被抽取时会命中现有唯一键，而不是生成一条新的“来源”。
       const sourceEventId = candidate.source.messageId;
+      if (await memorySourceHasActionProposal(tx, { workspaceId: job.workspaceId, userId }, sourceEventId)) {
+        skippedActionSources += 1;
+        continue;
+      }
       if (await isMemorySourceSuppressed(tx, userId, candidate.kind, sourceEventId)) {
         skippedForgottenSources += 1;
         continue;
@@ -851,7 +875,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
     {
       jobId: job.id,
       runId,
-      count: candidates.length - skippedDismissedTwins - skippedForgottenSources,
+      count: candidates.length - skippedDismissedTwins - skippedForgottenSources - skippedActionSources,
       // 分母：模型给了几条
       attempted: confidenceAccepted.length,
       // 分子按原因分开
@@ -862,6 +886,7 @@ export async function runCompanionMemoryExtract(job: JobPayload): Promise<void> 
       duplicateSourceKindDropped,
       dismissedTwinsSkipped: skippedDismissedTwins,
       forgottenSourcesSkipped: skippedForgottenSources,
+      actionSourcesSkipped: skippedActionSources,
     },
     "memory extract completed",
   );

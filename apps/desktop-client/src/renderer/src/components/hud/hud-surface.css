@@ -1007,22 +1007,6 @@
    标题和所有行都滚在这个盒子里，`100vh - 96px` 正是药丸 77px 顶偏移之下留得
    下的高度（77 + (100vh - 96) = 100vh - 19）。 */
 
-/* 切换成功回执。它挂在药丸这一层而不是任何 surface 里：切换会重挂载整棵房间，
-   surface 自己的 state 活不过那一次重挂载。皮肤与药丸同源，避免被读成第三个浮层。 */
-.hud-surface .room-control-receipt {
-  position: absolute;
-  z-index: 30;
-  top: 78px;
-  right: 25px;
-  margin: 0;
-  padding: 7px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 999px;
-  background: rgba(41, 29, 22, 0.88);
-  box-shadow: var(--hud-shadow-small);
-  color: #fff9e9;
-  font-size: 13px;
-}
 .hud-surface .first-space .invite-line input {
   min-width: 0;
   flex: 1;

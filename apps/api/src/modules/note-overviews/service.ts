@@ -1,3 +1,4 @@
+import { startDomainAgentRequest, agentRunForDomainExecution } from "../../agent/runtime.ts";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../db/client.ts";
 import { withWorkspaceTransaction } from "../../db/client.ts";
@@ -14,7 +15,7 @@ import {
 import type { createNoteOverviewTaskV1Schema } from "@ailearn/shared/note-overview-contracts";
 import type { z } from "zod";
 import { visibleNotesCondition } from "../note/visibility.ts";
-import { classifyJobFailureReason, createJob } from "../job/service.ts";
+import { classifyJobFailureReason } from "../job/service.ts";
 
 export type NoteOverviewScopeV1 = { workspaceId: string; userId: string };
 type StartOverviewInput = z.infer<typeof createNoteOverviewTaskV1Schema>;
@@ -111,13 +112,9 @@ export async function startNoteOverviewTask(
     if (!version) throw new NoteOverviewError("note_version_not_found", "这篇笔记的当前版本暂时读不到。");
   });
 
-  const job = await createJob({
-    type: JobType.NOTE_OVERVIEW_GENERATE,
-    workspaceId: scope.workspaceId,
-    requestedBy: scope.userId,
-    idempotencyKey: `note-overview:${noteId}:${input.noteVersionId}:${input.requestId}`,
-    payload: { noteId, noteVersionId: input.noteVersionId, requestId: input.requestId },
-  });
+  const { operation } = await startDomainAgentRequest(scope, { capability: "note_overview_generate", noteId, request: input }, "整理这版笔记的速看。");
+  if (operation.execution.kind !== "job") throw new Error("note capability returned a different execution");
+  const job = { id: operation.execution.id };
   return withWorkspaceTransaction(scope, (tx) => getNoteOverviewTask(tx, scope, noteId, job.id));
 }
 
@@ -145,6 +142,7 @@ async function taskForJob(tx: ApiTransaction, scope: NoteOverviewScopeV1, note: 
     : null;
   return noteOverviewTaskV1Schema.parse({
     taskId: job.id,
+    agentRunId: await agentRunForDomainExecution(tx, scope, "job", job.id),
     noteId,
     noteVersionId,
     status,

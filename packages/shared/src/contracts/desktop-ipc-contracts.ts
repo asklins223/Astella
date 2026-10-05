@@ -475,6 +475,7 @@ export const DESKTOP_IPC_CHANNELS = {
   companionChatCancelRun: "ailearn.v1.companion.chat.cancelRun",
   // 念头主动开场（切片④，2026-09-18）。
   companionChatOpenThought: "ailearn.v1.companion.chat.openThought",
+  companionChatListThoughts: "ailearn.v1.companion.chat.listThoughts",
   // LearningRun 页面只读上下文 + 一次性 grounded tutor 授权。HTTP 协议不变，
   // 这里只把既有服务端端点收进 Electron 的 typed bridge。
   companionLearningRunGetContext: "ailearn.v1.companion.learningRun.getContext",
@@ -1770,6 +1771,20 @@ export const sessionUserSchema = z.strictObject({
   displayName: nonEmptyStringSchema.optional(),
 });
 
+/** A transient accepted switch, rechecked by the access gate before presentation. */
+export const workspaceArrivalV1Schema = z.strictObject({
+  id: uuidSchema,
+  requestId: nonEmptyStringSchema,
+  userId: uuidSchema,
+  deploymentRef: nonEmptyStringSchema,
+  fromWorkspaceId: uuidSchema.nullable(),
+  workspaceId: uuidSchema,
+  workspaceEpoch: positiveIntSchema,
+  reason: z.enum(["switch", "create"]),
+  acceptedAt: isoTimestampSchema,
+});
+export type WorkspaceArrivalV1 = z.infer<typeof workspaceArrivalV1Schema>;
+
 export const sessionContextSchema = z.union([
   z.strictObject({
     version: z.literal(1),
@@ -1796,6 +1811,8 @@ export const sessionContextSchema = z.union([
   z.strictObject({
     version: z.literal(1),
     status: z.enum(["authenticated", "reauth_required", "api_unavailable", "api_untrusted"]),
+    deploymentRef: nonEmptyStringSchema.optional(),
+    workspaceArrival: workspaceArrivalV1Schema.optional(),
     user: sessionUserSchema,
     workspace: workspaceContextSchema.nullable(),
     membership: z.strictObject({ role: z.enum(["owner", "member"]) }).nullable(),
@@ -2515,6 +2532,10 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
         meta: RequestMetaV1;
         request: import("./companion-chat-desktop-contracts.ts").CompanionChatOpenThoughtRequestV1;
       }): Promise<GatewayResultV1<import("./companion-chat-desktop-contracts.ts").CompanionChatOpenThoughtResultV1>>;
+      listThoughts(input: {
+        meta: RequestMetaV1;
+        request: import("./companion-chat-desktop-contracts.ts").CompanionChatListThoughtsRequestV1;
+      }): Promise<GatewayResultV1<import("./companion-chat-desktop-contracts.ts").CompanionChatListThoughtsResultV1>>;
       /**
        * 停止本轮（2026-09-19）：服务端原子取消 + 写 turn.cancelled(reason=user)，
        * worker 在 fence 处把已输出的文本以 kind='cancelled' 留档。

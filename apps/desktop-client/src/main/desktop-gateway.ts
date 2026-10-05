@@ -2,6 +2,7 @@ import { noteReflectionPageV1Schema, noteReflectionWriteResultV1Schema, type Not
 import type { NoteDocLocalSession } from "./desktop-gateway-ns-note";
 const noteDocLocalSessions = new Map<string, NoteDocLocalSession>();
 import * as ns_note from "./desktop-gateway-ns-note";
+import type { CompanionGuidanceAudioCache } from "./companion-guidance-audio-cache";
 import { noteAnnotationPageV1Schema, noteAnnotationWriteResultV1Schema, createNoteAnnotationTaskV1Schema, noteAnnotationLatestTaskQueryV1Schema, noteAnnotationLatestTaskV1Schema, noteAnnotationTaskV1Schema, type NoteAnnotationCommandV1 } from "@ailearn/shared/note-annotation-contracts";
 import {
   createNoteOverviewTaskV1Schema,
@@ -198,17 +199,13 @@ import {
 import {
   COMPANION_VOICE_MAX_AUDIO_BYTES,
   COMPANION_VOICE_SPEAK_VOICE,
-  COMPANION_VOICE_TRANSCRIBE_MAX_AUDIO_BYTES,
   companionVoicePlaybackOutcomeResultV1Schema,
   companionVoiceSpeakResultV1Schema,
-  companionVoiceTranscribeResultV1Schema,
   type CompanionVoicePlaybackOutcomeRequestV1,
   type CompanionVoicePlaybackOutcomeResultV1,
   type CompanionVoiceSpeakRequestV1,
   type CompanionVoiceSpeakSegmentRequestV2,
   type CompanionVoiceSpeakResultV1,
-  type CompanionVoiceTranscribeRequestV1,
-  type CompanionVoiceTranscribeResultV1,
 } from "@ailearn/shared/companion-voice-contracts";
 import {
   companionAgentRoutesListResultV1Schema,
@@ -662,6 +659,7 @@ export class DesktopGateway {
     private readonly env: NodeJS.ProcessEnv = process.env,
     options: {
       credentials?: SessionCredentialStore | null;
+      guidanceAudioCache?: CompanionGuidanceAudioCache;
       /**
        * 协同传输的实现。默认用真的 Hocuspocus provider；测试里换成假的，才能断言
        * "该不该建这条连接"（门控）与"帧怎么转发"，而不是去连一个真服务端。
@@ -700,6 +698,7 @@ export class DesktopGateway {
       options.credentials ?? null,
       connection,
       trust,
+      options.guidanceAudioCache ?? null,
     );
     this.bridge = new CompanionBridge(this.transport);
   }

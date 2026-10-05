@@ -26,6 +26,7 @@ export function CompanionCenterSurface() {
   const [tab, setTab] = useState<CompanionCenterTab>(routeTarget?.tab && routeTarget.tab !== "data" ? routeTarget.tab : "overview");
   const [refreshKey, setRefreshKey] = useState(0);
   const [focusMemoryId, setFocusMemoryId] = useState<string | null>(routeTarget?.focusMemoryId ?? null);
+  const [focusMethodId, setFocusMethodId] = useState<string | null>(routeTarget?.focusMethodId ?? null);
   const [focusMessageId, setFocusMessageId] = useState<string | null>(routeTarget?.focusMessageId ?? null);
   const [diaryDate, setDiaryDate] = useState<string | null>(null);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -45,6 +46,7 @@ export function CompanionCenterSurface() {
     if (routeTarget.tab === "data") { room.setSettingsSection("companion"); room.invoke("open-settings"); return; }
     setTab(routeTarget.tab);
     if (routeTarget.focusMemoryId) setFocusMemoryId(routeTarget.focusMemoryId);
+    if (routeTarget.focusMethodId) setFocusMethodId(routeTarget.focusMethodId);
     if (routeTarget.focusMessageId) setFocusMessageId(routeTarget.focusMessageId);
   }, [routeTarget]);
   const navigate = (next: CompanionCenterTab) => setTab(next);
@@ -81,7 +83,7 @@ export function CompanionCenterSurface() {
               {page.id === "overview" ? <CompanionOverviewPage refreshKey={refreshKey} onGo={navigate} onDiary={date => { setDiaryDate(date); navigate("diary"); }} /> : null}
               {page.id === "dialogue" ? <CompanionDialoguePage refreshKey={refreshKey} focusMessageId={focusMessageId} onFocusConsumed={() => setFocusMessageId(null)} /> : null}
               {page.id === "diary" ? <CompanionDiaryPage refreshKey={refreshKey} requestedDate={diaryDate} onMemory={id => { setFocusMemoryId(id); navigate("memory"); }} onSettings={openSettings} /> : null}
-              {page.id === "memory" ? <CompanionMemoryPage refreshKey={refreshKey} requestedMemoryId={focusMemoryId} onFocusConsumed={() => setFocusMemoryId(null)} /> : null}
+              {page.id === "memory" ? <CompanionMemoryPage refreshKey={refreshKey} requestedMemoryId={focusMemoryId} requestedMethodId={focusMethodId} onMethodFocusConsumed={()=>setFocusMethodId(null)} onFocusConsumed={() => setFocusMemoryId(null)} /> : null}
               {page.id === "discovery" ? <CompanionDiscoveryPage refreshKey={refreshKey} /> : null}
               {page.id === "activity" ? <CompanionActivityPage refreshKey={refreshKey} onMemory={id => { setFocusMemoryId(id); navigate("memory"); }} onMessage={id => { setFocusMessageId(id); navigate("dialogue"); }} /> : null}
               {page.id === "persona" ? <CompanionPersonaPage refreshKey={refreshKey} onSettings={openSettings} /> : null}

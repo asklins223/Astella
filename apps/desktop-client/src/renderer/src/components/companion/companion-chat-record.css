@@ -267,20 +267,6 @@
   cursor: pointer;
 }
 
-/* 较早轮次的选择卡（CompanionChatRecord.tsx:260）。这个类名以前在全部 CSS 里查无此规则，
-   于是那句"原执行节点已不可用"和卡片就裸排在消息里，跟上面那条正文粘成一片。 */
-.companion-history__legacy-proposal {
-  display: grid;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-.companion-history__legacy-proposal > small {
-  color: var(--companion-muted);
-  font-size: 10px;
-  line-height: 1.45;
-}
-
 /* 她带我去哪儿（方案 29 §4.8）：落点跟在正文下面，属于这条消息本身。 */
 .companion-record__nav {
   display: flex;
@@ -337,6 +323,47 @@
 .companion-md__list li {
   margin: 1px 0;
 }
+
+.companion-md__quote {
+  margin: 4px 0;
+  padding: 2px 0 2px 10px;
+  border-inline-start: 2px solid var(--companion-mint-strong);
+  color: var(--companion-muted);
+}
+
+.companion-md__divider {
+  margin: 9px 0;
+  border: 0;
+  border-top: 1px dashed var(--companion-line);
+}
+
+.companion-md__table-scroll {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  margin-block: 5px;
+}
+
+.companion-md__table-scroll:focus-visible {
+  outline: 2px solid var(--companion-mint-strong);
+  outline-offset: 2px;
+}
+
+.companion-md__table {
+  width: 100%;
+  border-collapse: collapse;
+  font: inherit;
+  text-align: start;
+}
+
+.companion-md__table :is(th, td) {
+  min-width: 80px;
+  padding: 6px 9px;
+  border-bottom: 1px solid var(--companion-line);
+  vertical-align: top;
+}
+
+.companion-md__table th { font-weight: 700; }
 
 .companion-md__code {
   overflow-x: auto;

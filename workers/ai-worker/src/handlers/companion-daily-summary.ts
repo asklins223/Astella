@@ -33,6 +33,7 @@ import {
 } from "@ailearn/shared";
 import { sourceImageUrlFromObjectKey } from "@ailearn/shared/source-image-contracts";
 import { PET_PERSONA_PRESET_VERSION } from "@ailearn/shared/pet-persona-presets";
+import { toTextArrayLiteral } from "@ailearn/shared/pg-text-array";
 import { logger } from "../lib/logger.ts";
 import { assertJobLease, isJobLeaseActive, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
 import { currentWorkerWorkspaceTransaction } from "../db.ts";
@@ -96,6 +97,7 @@ import {
   diaryAssistantWeight,
   diaryImageLabel,
   diaryLengthOverflow,
+  diaryLengthShortfall,
   diaryParagraphCount,
   endsInQuestion,
   exampleEchoIn,
@@ -108,7 +110,9 @@ import {
   pickDiarySubject,
   pickImagesPerNote,
   pickQuoteCandidates,
+  repeatedMotifIn,
   repeatedOpeningIn,
+  recurringMotifs,
   renderMaterial,
   resolveDiaryBlocks,
   stripEmbedRefs,
@@ -637,15 +641,19 @@ async function collectMaterial(tx: WorkerTransaction, scope: DayScope): Promise<
   // 有一条就够用了，而新写的日子会自己把这份清单填起来。
   // 不用 `summary NOT LIKE '%的学习小结：%'` 那种写法去精确只排前者：
   // 那等于把已删除模板的字面量永久留在代码里。
-  const openingRows = await tx.execute<{ opening: string }>(sql`
-    SELECT left(summary, 24) AS opening
+  //
+  // 意象取**近 6 篇**而不是同样 3 篇：跨篇复现要在够多的篇数上才看得出来，
+  // 而这里判的是"她最近老在写什么"，那是几天的习惯，不是一篇的回声。
+  const historyRows = await tx.execute<{ opening: string; summary: string }>(sql`
+    SELECT left(summary, 24) AS opening, summary
     FROM companion_daily_summaries
     WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
       AND date < ${scope.date} AND status = 'generated' AND summary <> ''
       AND blocks <> '[]'::jsonb
     ORDER BY date DESC
-    LIMIT 3
+    LIMIT 6
   `);
+  const history = Array.isArray(historyRows) ? historyRows : [];
 
   const rowsIn = (rows: unknown) => (Array.isArray(rows) ? rows.length : 0);
   events =
@@ -657,7 +665,8 @@ async function collectMaterial(tx: WorkerTransaction, scope: DayScope): Promise<
     pieces,
     subject,
     embeds,
-    previousOpenings: (Array.isArray(openingRows) ? openingRows : []).map((r) => r.opening),
+    previousOpenings: history.slice(0, 3).map((r) => r.opening),
+    previousMotifs: recurringMotifs(history.map((r) => String(r.summary ?? ""))),
     quietDay: events === 0,
   };
 }
@@ -1035,6 +1044,23 @@ if (droppedRefs.length > 0) logger.warn({ jobId: job.id, date, droppedRefs }, "c
         if (prose.length < (prepared.material.quietDay ? 6 : 24)) {
           return retryable("正文太短，不像一篇日记。写一件今天真实发生过的事，再写你自己。");
         }
+        // 地板比那句 24 字的旧判据宽，只在第一轮退：她写两遍还是这个长度就收下，
+        // 宁可短一段，也不让这一天没有日记（口径与下面的上限、问句收尾一致）。
+        if (env.retryIndex === 0) {
+          const short = diaryLengthShortfall(
+            blocks,
+            persona.activeness,
+            prepared.material.quietDay,
+          );
+          if (short) return retryable(short);
+          const motif = repeatedMotifIn(blocks, prepared.material.previousMotifs);
+          if (motif) {
+            return retryable(
+              `「${motif}」你前几天已经写过好几篇了。今天换个写法，`
+              + "或者从今天的素材里换个角度写——别又落在同一个词上。",
+            );
+          }
+        }
         const counted = countingToneIn(prose);
         if (counted) return retryable(`你在报数（${counted}）。重写，把数字全去掉。`);
         const firstAttempt = env.retryIndex === 0;
@@ -1326,6 +1352,10 @@ export function diarySummaryUpsertSql(input: {
   const paragraphs = input.draft
     ? input.draft.blocks.filter((block) => block.type === "text").map((block) => block.text)
     : [];
+  // `source_event_ids` 是 text[]：必须给字面量，不能给 JS 数组。postgres.js 把数组
+  // 序列化成行构造器 `($1,$2)`，空数组直接是 `()`——两条分支（选材前失败 / 成稿）
+  // 都会在这里炸，日记一篇都落不了库（09-30 起连续 6 天，详见 pg-text-array.ts）。
+  const sourceEventIdsLiteral = toTextArrayLiteral(input.guard?.sourceEventIds ?? []);
   return sql`
     INSERT INTO companion_daily_summaries
       (workspace_id, user_id, date, timezone, facts, blocks, summary, selection_reason, selected_id,
@@ -1338,7 +1368,7 @@ export function diarySummaryUpsertSql(input: {
        ${paragraphs.join("\n\n")},
        ${input.guard?.selectionReason ?? null},
        ${input.guard?.selectedId ?? null},
-       ${input.guard?.sourceEventIds ?? null},
+       ${sourceEventIdsLiteral}::text[],
        ${input.guard?.personaProfileRevision ?? null},
        ${input.guard?.personaExamplesRevision ?? null},
        ${input.guard?.defaultExpressionVersion ?? null},

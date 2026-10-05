@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 /**
  * 网关的「登录与账号」那一族里**已解锁**的部分 —— 2026-09-30 从 `DesktopGateway` 类搬出。
  *
@@ -341,14 +342,16 @@ export async function reauthenticate(t: GatewayTransport, b: CompanionBridge, pa
     if (!wanted || wanted.email !== current.user.email || session.status !== "authenticated") return session;
     if (session.workspace?.workspaceId === wanted.workspaceId) return session;
     try {
-      return await switchWorkspace(t, b, wanted.workspaceId, requestId);
+      return await switchWorkspace(t, b, wanted.workspaceId, requestId, "restore");
     } catch {
       return session;
     }
   }
 
-export async function switchWorkspace(t: GatewayTransport, b: CompanionBridge, workspaceId: string, requestId?: string): Promise<SessionContextV1> {
+export async function switchWorkspace(t: GatewayTransport, b: CompanionBridge, workspaceId: string, requestId?: string, reason: "switch" | "create" | "restore" = "switch"): Promise<SessionContextV1> {
     await t.ensureConnected(requestId);
+    const previous = t.currentSession;
+    t.pendingWorkspaceArrival = null;
     await b.clearCompanionBridgeContext(requestId).catch(() => undefined);
     const result = await t.request("/auth/switch-workspace", {
       method: "POST",
@@ -362,7 +365,20 @@ export async function switchWorkspace(t: GatewayTransport, b: CompanionBridge, w
     t.workspaceEpoch += 1;
     t.roomProjectionCache = null;
     await t.persistCredential(t.credentialPersistence === "safe_storage");
-    return t.loadSession();
+    const session = await t.loadSession();
+    if (reason !== "restore" && session.status === "authenticated" && session.workspace
+      && previous?.user?.userId === session.user.userId && previous.workspace?.workspaceId !== session.workspace.workspaceId) {
+      t.pendingWorkspaceArrival = {
+        id: randomUUID(), requestId: requestId ?? randomUUID(), userId: session.user.userId,
+        deploymentRef: session.deploymentRef ?? t.configuration!.config.apiOrigin,
+        fromWorkspaceId: previous.workspace?.workspaceId ?? null,
+        workspaceId: session.workspace.workspaceId, workspaceEpoch: session.workspaceEpoch,
+        reason, acceptedAt: new Date().toISOString(),
+      };
+      t.currentSession = { ...session, workspaceArrival: t.pendingWorkspaceArrival };
+      return t.currentSession;
+    }
+    return session;
   }
 
 export async function createWorkspace(t: GatewayTransport, b: CompanionBridge, name: string, requestId?: string): Promise<CreateWorkspaceResultV1> {
@@ -378,7 +394,7 @@ export async function createWorkspace(t: GatewayTransport, b: CompanionBridge, n
       name: payload.workspaceName,
     });
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    await switchWorkspace(t, b, parsed.data.workspaceId, requestId);
+    await switchWorkspace(t, b, parsed.data.workspaceId, requestId, "create");
     return parsed.data;
   }
 

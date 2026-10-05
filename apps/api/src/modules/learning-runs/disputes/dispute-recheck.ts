@@ -49,7 +49,9 @@ import {
 } from "@ailearn/shared/db-schema";
 import { noteBlocks } from "@ailearn/shared/db-schema/note";
 import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
-import { postJsonToPublicEndpoint, type PublicJsonRequester } from "@ailearn/shared/public-json-http";
+import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
+import { createGovernedApiRequester } from "../../../lib/ai-governance.ts";
+import { productionAiGovernancePorts } from "../../../governance/ai-governance-runtime.ts";
 import { runAiTask, type AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
 import {
   decideDisputeRecheckV2,
@@ -635,11 +637,20 @@ export async function runDisputeRecheckV2(
 
     // ── 事务外执行：签名里没有 tx（类型上就拿不到）───────────────────
     execute: async (taskInput, step) => {
+      // 注入的 requester 是**可信宿主端口**（显式测试用）；没注入时按本次复核的真实
+      // scope 现建治理出口。生产没有"无治理的默认"这一种形状。
+      // 送出去的是原题、学习者的原回答与评分依据：`user_answer` + `claim`。
+      const send = env.requester ?? createGovernedApiRequester(
+        { workspaceId: input.workspaceId, userId: input.userId },
+        DISPUTE_RECHECK_TASK_ID,
+        ["user_answer", "claim"],
+        productionAiGovernancePorts,
+      );
       const { facts } = taskInput;
       const rubricUnitIds = facts.rubricUnits.map((u) => u.rubricUnitId);
       let response: { status: number; body: unknown };
       try {
-        response = await (env.requester ?? postJsonToPublicEndpoint)(
+        response = await send(
           url,
           { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
           {

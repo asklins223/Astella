@@ -78,6 +78,9 @@ const FORBIDDEN_EXACT: ReadonlySet<string> = new Set([
   "packages/shared/src/pet-persona-presets.ts",
   // 领域装配：工具面、主动策略、闸与记忆载荷
   "packages/shared/src/companion-agent-registry.ts",
+  "packages/shared/src/companion-capability-manifest.ts",
+  "packages/shared/src/agent-capability-catalog.ts",
+  "packages/shared/src/agent-capability-manifests.ts",
   "packages/shared/src/companion-proactive-policy.ts",
   "packages/shared/src/companion-proactive-quota.ts",
   "packages/shared/src/companion-leak-gates.ts",

@@ -625,7 +625,7 @@ async function captureTime(name, hour, minute, captureMatrix = false) {
 
       for (const [region, objectId] of [
         ["desk", "desk-book"],
-        ["shelf", "magic-catalog"],
+        ["shelf", "bookshelf"],
         ["window", "window-stars"],
         ["rest", "rest-cushion"],
       ]) {
@@ -691,32 +691,14 @@ async function captureTime(name, hour, minute, captureMatrix = false) {
         actionLabels: [...document.querySelectorAll(".home-v2-feature-notice button")].map((button) => button.textContent?.trim()),
         live2dPaused: document.querySelector(".window-live2d")?.getAttribute("data-paused") === "true",
       }));
-      if (noticeContract.taskSurface || !noticeContract.live2dPaused || !noticeContract.actionLabels.includes("知道了") || !noticeContract.actionLabels.includes("查看全部功能")) {
+      if (noticeContract.taskSurface || !noticeContract.live2dPaused || !noticeContract.actionLabels.includes("知道了")) {
         throw new Error(`Home V2 pending sheet contract failed: ${JSON.stringify(noticeContract)}`);
       }
       await page.screenshot({ path: resolve(reviewRoot, "home-v2-day-feature-notice.png") });
-      await page.getByRole("button", { name: "查看全部功能" }).click();
-      await page.locator(".home-v2-catalog[open]").waitFor({ state: "visible" });
-      await page.waitForTimeout(420);
-      const catalogContract = await page.evaluate(() => ({
-        groups: [...document.querySelectorAll(".home-v2-catalog__group")].map((group) => group.querySelector("h3")?.textContent?.trim()),
-        featureIds: [...document.querySelectorAll(".home-v2-catalog [data-feature]")].map((feature) => feature.getAttribute("data-feature")),
-        horizontalOverflow: document.querySelector(".home-v2-catalog__scroll")
-          ? document.querySelector(".home-v2-catalog__scroll").scrollWidth - document.querySelector(".home-v2-catalog__scroll").clientWidth
-          : null,
-      }));
-      if (catalogContract.groups.length !== 5 || catalogContract.featureIds.length !== 19 || new Set(catalogContract.featureIds).size !== 19 || catalogContract.horizontalOverflow > 1) {
-        throw new Error(`Home V2 catalog contract failed: ${JSON.stringify(catalogContract)}`);
-      }
-      await writeFile(resolve(reviewRoot, "home-v2-day-catalog.json"), `${JSON.stringify(catalogContract, null, 2)}\n`);
-      await page.screenshot({ path: resolve(reviewRoot, "home-v2-day-catalog.png") });
-
-      await page.locator('.home-v2-catalog [data-feature="all-notes"]').click();
-      await page.locator(".home-v2-feature-notice[open]").waitFor({ state: "visible" });
+      // 2026-10-05：魔法目录整页删除，这颗「查看全部功能」连同它通往的那张清单一起没了。
+      // 弹窗只剩「知道了」，之后回到房间总览。
       await page.keyboard.press("Escape");
-      await page.waitForFunction(() => !document.querySelector(".home-v2-feature-notice")?.hasAttribute("open") && document.querySelector(".home-v2-catalog")?.hasAttribute("open"));
-      await page.keyboard.press("Escape");
-      await page.waitForFunction(() => !document.querySelector(".home-v2-catalog")?.hasAttribute("open") && document.querySelector(".home-v2-objects")?.getAttribute("data-active-zone") === "desk");
+      await page.waitForFunction(() => !document.querySelector(".home-v2-feature-notice")?.hasAttribute("open"));
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => document.querySelector(".home-v2-objects")?.getAttribute("data-active-zone") === "wide");
 
@@ -754,42 +736,45 @@ async function captureTime(name, hour, minute, captureMatrix = false) {
           await page.evaluate(() => new Promise((resolveFrame) => {
             requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
           }));
-          await page.evaluate(() => window.dispatchEvent(new CustomEvent("ailearn:home-v2-run-feature", { detail: { featureId: "catalog" } })));
-          await page.locator(".home-v2-catalog[open]").waitFor({ state: "visible" });
+          // 200% 下要盯的是房间里真实存在的那层浮层：紧凑导航点开的区域功能签条。
+          // （这一段原本盯的是魔法目录——2026-10-05 整页删除。）
+          await page.locator("#home-v2-compact-zone-desk").click();
+          await page.locator(".home-v2-region-menu[data-region='desk']").waitFor({ state: "visible" });
           await page.waitForTimeout(420);
-          const compactCatalogOverflow = await page.locator(".home-v2-catalog__scroll").evaluate((node) => node.scrollWidth - node.clientWidth);
-          if (compactCatalogOverflow > 1) throw new Error(`Home V2 compact catalog overflowed: ${compactCatalogOverflow}`);
-          const compactCatalogContract = await page.evaluate(() => {
+          const compactMenuOverflow = await page.locator(".home-v2-region-menu").evaluate((node) => node.scrollWidth - node.clientWidth);
+          if (compactMenuOverflow > 1) throw new Error(`Home V2 compact region menu overflowed: ${compactMenuOverflow}`);
+          const compactMenuContract = await page.evaluate(() => {
             const rectOf = (node) => {
               const rect = node.getBoundingClientRect();
               return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
             };
-            const catalog = document.querySelector(".home-v2-catalog[open]");
-            const header = catalog?.querySelector(".home-v2-catalog__header");
-            const buttons = [...(header?.querySelectorAll("button") ?? [])];
+            const menu = document.querySelector(".home-v2-region-menu[data-region='desk']");
+            const header = menu?.querySelector("header");
+            const buttons = [...(menu?.querySelectorAll(".home-v2-region-menu__features button") ?? [])];
             return {
               viewport: { width: window.innerWidth, height: window.innerHeight },
-              catalog: catalog ? rectOf(catalog) : null,
+              menu: menu ? rectOf(menu) : null,
               header: header ? rectOf(header) : null,
               buttons: buttons.map(rectOf),
               horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
             };
           });
-          const compactRects = [compactCatalogContract.catalog, compactCatalogContract.header, ...compactCatalogContract.buttons];
+          const compactRects = [compactMenuContract.menu, compactMenuContract.header, ...compactMenuContract.buttons];
           if (
-            compactCatalogContract.horizontalOverflow > 1
+            compactMenuContract.horizontalOverflow > 1
             || compactRects.some((rect) => !rect
               || rect.left < -1
               || rect.top < -1
-              || rect.right > compactCatalogContract.viewport.width + 1
-              || rect.bottom > compactCatalogContract.viewport.height + 1)
-            || compactCatalogContract.buttons.some((rect) => rect.width < 44 || rect.height < 44)
+              || rect.right > compactMenuContract.viewport.width + 1
+              || rect.bottom > compactMenuContract.viewport.height + 1)
+            || compactMenuContract.buttons.some((rect) => rect.width < 44 || rect.height < 44)
           ) {
-            throw new Error(`Home V2 compact catalog escaped the visible viewport: ${JSON.stringify(compactCatalogContract)}`);
+            throw new Error(`Home V2 compact region menu escaped the visible viewport: ${JSON.stringify(compactMenuContract)}`);
           }
-          await writeFile(resolve(reviewRoot, `home-v2-${name}-zoom-200-catalog.json`), `${JSON.stringify(compactCatalogContract, null, 2)}\n`);
-          await captureElectronViewport(electronApp, resolve(reviewRoot, `home-v2-${name}-zoom-200-catalog.png`));
-          await page.getByRole("button", { name: "关闭魔法目录" }).click();
+          await writeFile(resolve(reviewRoot, `home-v2-${name}-zoom-200-region-menu.json`), `${JSON.stringify(compactMenuContract, null, 2)}\n`);
+          await captureElectronViewport(electronApp, resolve(reviewRoot, `home-v2-${name}-zoom-200-region-menu.png`));
+          await page.keyboard.press("Escape");
+          await page.waitForFunction(() => !document.querySelector(".home-v2-region-menu"));
         }
         await writeFile(resolve(reviewRoot, `home-v2-${name}-zoom-${zoomFactor * 100}.json`), `${JSON.stringify(contract, null, 2)}\n`);
         if (zoomFactor === 2) {

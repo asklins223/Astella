@@ -17,7 +17,9 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { runAiTask, type AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
-import { postJsonToPublicEndpoint, type PublicJsonRequester } from "@ailearn/shared/public-json-http";
+import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
+import { createGovernedApiRequester } from "../../../lib/ai-governance.ts";
+import { productionAiGovernancePorts } from "../../../governance/ai-governance-runtime.ts";
 import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
 import type { LearningTargetSnapshotV2 } from "@ailearn/shared";
 import { DomainError } from "@ailearn/shared";
@@ -261,6 +263,16 @@ export function createOpenAICompatibleCritic(env: {
       }
       const { url, key, model } = config;
 
+      // 注入的 requester 是**可信宿主端口**（显式测试用）；没注入时按本次调用的
+      // 真实 scope 现建治理出口。生产没有"无治理的默认"这一种形状。
+      // 送出去的是学习者的作答与评分判据：`user_answer` + `claim`。
+      const send = env.requester ?? createGovernedApiRequester(
+        { workspaceId: scope.workspaceId, userId: scope.userId },
+        "assessment_critic",
+        ["user_answer", "claim"],
+        productionAiGovernancePorts,
+      );
+
       type Verdicts = RubricVerdictOutput[];
       const task: AiTaskDefinition<CriticInput, Verdicts> = {
         id: "assessment_critic",
@@ -280,7 +292,7 @@ export function createOpenAICompatibleCritic(env: {
         execute: async (taskInput, step) => {
           let response: { status: number; body: unknown };
           try {
-            response = await (env.requester ?? postJsonToPublicEndpoint)(
+            response = await send(
               url,
               {
                 Authorization: `Bearer ${key}`,

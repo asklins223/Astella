@@ -52,7 +52,7 @@ import { LightboxViewer } from "../source/image-viewer.tsx";
  * 这里用的是 Web 端笔记编辑器那一套：CommonMark + GFM 的 ProseMirror 文档、
  * `history` 承担撤销栈、`listener` 把整篇 Markdown 交出去，正文本身是**真
  * Markdown**——`#`、`> `、`- `、围栏都由编辑器自己写，不再靠工具按钮往纯文本里
- * 拼标记。保存合同存的仍是分类型的块，换算在 `note-blocks.ts` 里收口。
+ * 拼标记。保存合同存的仍是分类型的块，换算在 shared 的 `note-doc-schema.ts` 里收口。
  *
  * 三个自有插件补上写作时的实际需要：
  * - 图片粘贴/拖拽拦截：剪贴板或拖拽里只要有图片就交给父组件上传，正文里先落一个

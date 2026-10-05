@@ -20,6 +20,7 @@ import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger.ts";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
 import { lockJobLease, type JobLeaseContext } from "../lib/job-lease.ts";
+import { assertCompanionHandoffSourcesCurrent, assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
 // 2026-08-25（AI 设计审计修复）：复用 content 模块的同一实现，消除拆分时
 // 复制出的双份 parsePageContext（两份漂移会让编排层与 DB 层对同一
 // page_context 得出不同判定）。content→store 无依赖边，不构成循环。
@@ -231,6 +232,7 @@ export async function persistCompanionContextHandoffSnapshot(args: {
         RETURNING snapshot, snapshot_sha256
       `);
       if (inserted[0]) {
+        await assertCompanionHandoffSourcesCurrent(tx, args, inserted[0].snapshot);
         return {
           snapshot: inserted[0].snapshot,
           sha256: inserted[0].snapshot_sha256,
@@ -253,6 +255,7 @@ export async function persistCompanionContextHandoffSnapshot(args: {
       if (sha256Utf8V1(canonicalJsonV1(row.snapshot)) !== row.snapshot_sha256) {
         throw new Error("committed companion context handoff snapshot failed content verification");
       }
+      await assertCompanionHandoffSourcesCurrent(tx, args, row.snapshot);
       return { snapshot: row.snapshot, sha256: row.snapshot_sha256 };
     },
   );
@@ -354,6 +357,7 @@ export async function emitCompanionTtsSegments(args: {
         // Voice events are durable user-visible output too; a superseded worker
         // must not publish them after losing the same lease that fenced deltas.
         await lockJobLease(tx, args.job);
+        await assertCompanionContextSourcesCurrent(tx, { workspaceId: args.workspaceId, userId: args.userId }, args.runId);
         const alive = await tx.execute<{ id: string }>(sql`
           UPDATE companion_turn_runs
           SET status = 'running', updated_at = now()

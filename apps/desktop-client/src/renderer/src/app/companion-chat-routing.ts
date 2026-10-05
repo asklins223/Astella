@@ -230,3 +230,10 @@ export function companionTurnErrorMessage(error: unknown): string {
   }
   return gatewayErrorMessage(error);
 }
+
+export function companionReplyFailureMessage(code: unknown, recoverable: unknown): string {
+  if (code === "CONTEXT_STALE") return "这一轮引用的记忆已变更或撤回。重新发送，我会按现在的内容继续。";
+  if (code === "RATE_LIMITED") return "模型服务暂时繁忙，稍后再试就好。已经做好的内容还在。";
+  if (code === "PROVIDER_UNAVAILABLE") return "模型服务暂时不可用，已经做好的内容还在。";
+  return recoverable === false ? "这一轮没能完成。重新说一遍就好。" : "这一轮没能完成，可以再试一次。";
+}

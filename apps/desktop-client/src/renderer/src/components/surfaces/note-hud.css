@@ -25,6 +25,9 @@
 
 .hud-surface .note-shelf-search input { min-width: 0; flex: 1; font-size: 14px; }
 .hud-surface .note-shelf-search input::placeholder { color: var(--hud-soft); opacity: 1; }
+/* 搜索纸签自带描边，聚焦让它自己转暖——指针来源不再有全局硬环可借。 */
+.hud-surface .note-library-desk .note-shelf-search { transition: border-color 160ms ease; }
+.hud-surface .note-library-desk .note-shelf-search:focus-within { border-color: #9fbd94; }
 .hud-surface .note-library-desk .note-shelf { flex: 1; min-height: 0; height: auto; }
 /* 「全部笔记 · N」：架上**唯一**的第二条出路。它不能和右下角那颗主按钮同档——
    那颗是"接着写"，这颗只是"去索引里翻"，所以照次级纸签收：浅纸底、软墨字。
@@ -683,76 +686,6 @@
   .hud-surface .note-library-desk .book-cover h3 { font-size: 12px; }
   .hud-surface .notebook-hud .notebook-note { font-size: 12px; }
 }
-
-/* ── 首页「只推一件」（39 §12.1）──────────────────────────────────────────
-   这一条此前**渲染层一个调用都没有**：服务端、路由、IPC、preload、合同都齐了，
-   连「理由必填非空」「swappableCount 为 0 时那颗按钮不画」都写死了，但没有人调。
-   于是 §12.1 那两句最要紧的承诺一句也没兑现——「可换一个或暂不处理」的两颗按钮
-   在产品里**不存在**。
-
-   排版纪律：理由由服务端按真读数生成，渲染层一个字不改写（与今日复习那一批同一条
-   纪律，见 `TodayBatchSurface`）。空理由就是一句没有出处的断言。 */
-.hud-surface .home-next-step {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  margin: 0 0 12px;
-  padding: 13px 16px;
-  border-left: 4px solid var(--hud-mint-deep, var(--hud-green));
-  border-radius: 0 15px 14px 0;
-  background: var(--hud-paper-light);
-  color: var(--hud-ink);
-}
-.hud-surface .home-next-step--quiet {
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-  border-left: 0;
-  border-radius: 13px 18px 12px 16px;
-  color: var(--hud-soft);
-  font-size: 13px;
-}
-.hud-surface .home-next-step__head { margin: 0; font-size: 15px; font-weight: 650; line-height: 1.7; }
-.hud-surface .home-next-step__reason { margin: 0; color: var(--hud-soft); font-size: 13px; line-height: 1.75; }
-.hud-surface .home-next-step__failure {
-  margin: 0;
-  padding-left: 10px;
-  border-left: 3px solid var(--hud-peach);
-  color: var(--hud-ink);
-  font-size: 13px;
-  line-height: 1.7;
-}
-.hud-surface .home-next-step__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.hud-surface .home-next-step ul { margin: 4px 0 0; padding-left: 20px; color: var(--hud-ink); font-size: 14px; line-height: 1.8; }
-/* 「今天没有到期的事」这一档（39 §12.1）给的是**入口**，不是一句建议，也没有
-   假统计。所以它收掉薄荷左标、居中，并把那三条从项目符号列表摊成一行小纸签：
-   那是"可以去哪儿"，摆成清单就成了待办。 */
-.hud-surface .home-next-step--empty {
-  align-items: center;
-  border-left: 0;
-  border-radius: 17px 21px 16px 19px;
-  text-align: center;
-}
-.hud-surface .home-next-step--empty ul {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px 10px;
-  margin: 3px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.hud-surface .home-next-step--empty li {
-  padding: 5px 12px 6px;
-  color: var(--hud-ink);
-  border: 3px solid rgba(255, 252, 235, 0.72);
-  border-radius: 11px 14px 10px 13px;
-  background: var(--hud-cream);
-  box-shadow: var(--hud-shadow-small);
-  font-size: 13px;
-  line-height: 1.5;
-}
-.hud-surface .home-next-step p { margin: 0; }
 
 /* ── 一次失败的四种样子（39 §13.3／§13.4）────────────────────────────────
    此前所有失败都是同一条 `.small.notebook-note` 灰字 + `role="alert"`，摆在

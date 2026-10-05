@@ -1,4 +1,4 @@
-/* A little card collection on the study desk. The content sets the layout. */
+/* Shared card materials and controls. Each page retains its own scene plate. */
 .desktop-app.hud-surface:is(.page-10,.page-11,.page-12,.page-13,.page-15,.page-16,.page-17),
 .card-experience {
   --card-ink: #354f45;
@@ -19,7 +19,6 @@
   --card-peach: #f5d5c0;
   --card-yellow: #f5dfa0;
 }
-.desktop-app.hud-surface .task-surface:not(.task-surface--card-generation):has(.card-experience) { background-image: none; }
 .desktop-app.hud-surface .card-experience { --quest-ink: var(--card-ink); --quest-soft: var(--card-soft); --quest-paper: var(--card-paper); --quest-cream: var(--card-paper); --quest-line: var(--card-line); --quest-line-strong: var(--card-line); --quest-grass-text: #4b8068; }
 .desktop-app.hud-surface .task-surface:has(.card-experience) :is(.task-title,.approved-surface__heading) { border: 3px solid #fff9eb; border-radius: 22px; background: var(--card-mint); box-shadow: 0 3px 0 #b6c8b870, 0 5px 14px #243b2820; padding: 10px 17px; }
 .desktop-app.hud-surface .task-surface:has(.card-experience) :is(.task-title h1,.approved-surface__heading h2) { font: 820 22px/1.25 "Noto Sans SC Variable", "PingFang SC", sans-serif; color: var(--card-ink); letter-spacing: -.015em; }

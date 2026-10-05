@@ -8,6 +8,8 @@
  */
 
 import { sql } from "drizzle-orm";
+import { budgetAgentContextRecords } from "@ailearn/agent-core";
+import type { AgentMemoryContextSourceV1 } from "@ailearn/shared/agent-contracts";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { taskEntityFromPersistedPageContext } from "./companion-task-memory.ts";
 import { logger } from "../lib/logger.ts";
@@ -24,6 +26,7 @@ import {
 
 export interface ContextMemoryItem {
   memoryId: string;
+  revision: number;
   kind: string;
   content: string;
   importance: number;
@@ -35,6 +38,7 @@ export interface ContextMemoryItem {
 }
 
 export interface ContextAssemblyResult {
+  memorySourceVersions?: { resident: AgentMemoryContextSourceV1[]; directory: AgentMemoryContextSourceV1[] };
   residentMemories: { kind: string; content: string; epistemicStatus?: string | null; userConfirmed?: boolean }[];
   memoryDirectory: CompanionMemoryDirectoryEntry[];
   /** §4.6.10 手册目录：只有标题与触发条件，正文按 id 展开。 */
@@ -50,7 +54,7 @@ export interface ContextAssemblyResult {
   directoryTokenEstimate: number;
 }
 
-type Executor = { execute(query: unknown): Promise<unknown> };
+type Executor = import("@ailearn/agent-host").AgentSqlExecutor;
 
 const MEMORY_REF_MAX = 3;
 const MEMORY_REF_CONTENT_MAX = 80;
@@ -96,22 +100,17 @@ async function readOrganizationSurface(
 export function budgetCompanionMemoryDirectory(
   entries: CompanionMemoryDirectoryEntry[],
 ): { entries: CompanionMemoryDirectoryEntry[]; tokenEstimate: number } {
-  let tokenEstimate = 0;
-  const budgeted: CompanionMemoryDirectoryEntry[] = [];
-  for (const entry of entries) {
-    if (budgeted.length >= MEMORY_DIRECTORY_MAX_COUNT) break;
-    const bounded: CompanionMemoryDirectoryEntry = {
+  const compact = entries.map((entry): CompanionMemoryDirectoryEntry => ({
       ...entry,
       title: entry.title.trim().slice(0, 56),
       appliesWhen: entry.appliesWhen?.trim().slice(0, 64) || null,
-    };
-    if (!bounded.title) continue;
-    const estimate = estimateDirectoryTokens(bounded);
-    if (tokenEstimate + estimate > MEMORY_DIRECTORY_TOKEN_BUDGET) continue;
-    budgeted.push(bounded);
-    tokenEstimate += estimate;
-  }
-  return { entries: budgeted, tokenEstimate };
+    })).filter(entry => entry.title);
+  const result = budgetAgentContextRecords(compact, {
+    maxItems: MEMORY_DIRECTORY_MAX_COUNT, maxTokens: MEMORY_DIRECTORY_TOKEN_BUDGET,
+    measure: entry => ({ characters: JSON.stringify(entry).length,
+      bytes: Buffer.byteLength(JSON.stringify(entry), "utf8"), tokens: estimateDirectoryTokens(entry) }),
+  });
+  return { entries: result.items, tokenEstimate: result.tokens };
 }
 
 /**
@@ -161,34 +160,24 @@ export async function assembleCompanionContext(
   const directoryRows = await retrieveActiveCompanionMemoryDirectory(tx, scope, taskEntity);
   const items: ContextMemoryItem[] = residentRows.map((item) => ({
     memoryId: item.memoryId,
+    revision: item.revision,
     kind: item.kind,
-    content: item.content.slice(0, MEMORY_CONTENT_MAX),
+    content: item.content,
     importance: item.importance,
     pinned: item.pinned,
     lastUsedAt: item.lastUsedAt,
     userConfirmed: item.userConfirmed,
     epistemicStatus: item.epistemicStatus,
-  }));
+  })).filter(item => item.content.length <= MEMORY_CONTENT_MAX);
 
   // Resident 正文独立占预算；active 目录使用自己的 token/条数预算。
-  let budgetUsed = 0;
-  let residentTokenEstimate = 0;
-  let residentByteCount = 0;
-  const budgetedItems: typeof items = [];
-  for (const item of items) {
-    if (budgetedItems.length >= RESIDENT_MEMORY_MAX_COUNT) break;
-    const byteCount = Buffer.byteLength(item.content, "utf8");
-    const tokenEstimate = Math.ceil(byteCount / 3);
-    if (
-      budgetUsed + item.content.length > RESIDENT_MEMORY_CHAR_BUDGET
-      || residentByteCount + byteCount > RESIDENT_MEMORY_BYTE_BUDGET
-      || residentTokenEstimate + tokenEstimate > RESIDENT_MEMORY_TOKEN_BUDGET
-    ) continue;
-    budgetedItems.push(item);
-    budgetUsed += item.content.length;
-    residentByteCount += byteCount;
-    residentTokenEstimate += tokenEstimate;
-  }
+  const residentBudget = budgetAgentContextRecords(items, {
+    maxItems: RESIDENT_MEMORY_MAX_COUNT, maxCharacters: RESIDENT_MEMORY_CHAR_BUDGET,
+    maxBytes: RESIDENT_MEMORY_BYTE_BUDGET, maxTokens: RESIDENT_MEMORY_TOKEN_BUDGET,
+    measure: item => { const bytes = Buffer.byteLength(item.content, "utf8");
+      return { characters: item.content.length, bytes, tokens: Math.ceil(bytes / 3) }; },
+  });
+  const { items: budgetedItems, characters: budgetUsed, tokens: residentTokenEstimate, bytes: residentByteCount } = residentBudget;
 
   const residentMemories = budgetedItems.map((item) => ({
     kind: item.kind,
@@ -204,7 +193,7 @@ export async function assembleCompanionContext(
   // 记忆讲"关于用户的什么"。目录有界（PLAYBOOK_CATALOG_LIMIT），正文不进来。
   const playbooks = input.playbooksDisabled
     ? []
-    : await retrievePlaybookCatalog(tx as never, scope);
+    : await retrievePlaybookCatalog(tx, scope);
   // §4.5.10/§4.6.9：整理结论「至多一段」，不自动成为对外消息，
   // 只作为带来源的后台产物出现在下一轮上下文里。
   const organizationSurface = input.playbooksDisabled ? null : await readOrganizationSurface(tx as never, scope);
@@ -243,6 +232,10 @@ export async function assembleCompanionContext(
   );
 
   return {
+    memorySourceVersions: {
+      resident: budgetedItems.map(item => ({ memoryId: item.memoryId, revision: item.revision })),
+      directory: directory.entries.map(item => ({ memoryId: item.memoryId, revision: item.revision })),
+    },
     residentMemories,
     memoryDirectory: directory.entries,
     playbookCatalog: playbooks,

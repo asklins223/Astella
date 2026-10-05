@@ -27,6 +27,7 @@ import {
   agentTurnResultSchema,
   companionAgentSettingsV1Schema,
   COMPANION_AGENT_CONTRACT_VERSION,
+  COMPANION_AGENT_MAX_MODEL_CALLS,
   type AgentTurnResult,
   type CompanionAgentBudgetSnapshotV1,
   type CompanionAgentPermissionLevel,
@@ -41,9 +42,37 @@ import { z } from "zod";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { insertStreamEvent } from "./companion-dialogue-store.ts";
 import { lockJobLease } from "../lib/job-lease.ts";
+import { CompanionAgentBudgetExceededError } from "../lib/non-retryable-errors.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
+import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
+import { agentTurnInterpretationV1Schema, type AgentTurnInterpretationV1, type AgentAttentionObjectV1 } from "@ailearn/shared/agent-contracts";
 
 const persistedAgentStepCheckpointSchema = agentTurnResultSchema;
+
+/** Reserve at the provider boundary; checkpoint reads and denied external policy consume no calls. */
+export async function reserveCompanionProviderCall(event: {
+  ctx: AgentEventContext["ctx"];
+  read: Pick<AgentEventContext["read"], "userId" | "runId" | "accountEpoch" | "generation">;
+}): Promise<void> {
+  if (event.ctx.requestedBy !== event.read.userId) throw new CompanionAgentBudgetExceededError("companion initiating user changed");
+  await withWorkerWorkspaceTransaction({ workspaceId: event.ctx.workspaceId, userId: event.read.userId }, async tx => {
+    await lockJobLease(tx, event.ctx);
+    await assertCompanionContextSourcesCurrent(tx, { workspaceId: event.ctx.workspaceId, userId: event.read.userId }, event.read.runId);
+    const rows = await tx.execute(sql`UPDATE companion_turn_runs r
+      SET model_call_count=model_call_count+1,updated_at=now()
+      FROM user_companion_account_state a
+      WHERE r.id=${event.read.runId} AND r.workspace_id=${event.ctx.workspaceId}
+        AND r.user_id=${event.read.userId}
+        AND EXISTS (SELECT 1 FROM jobs j WHERE j.id=${event.ctx.id}
+          AND j.type='companion_agent' AND j.payload->>'runId'=r.id::text)
+        AND r.account_epoch=${event.read.accountEpoch} AND r.generation=${event.read.generation}
+        AND r.status IN ('accepted','running','waiting_for_confirmation')
+        AND a.user_id=r.user_id AND a.global_enabled AND a.epoch=r.account_epoch
+        AND r.model_call_count<${COMPANION_AGENT_MAX_MODEL_CALLS}
+      RETURNING r.model_call_count`);
+    if (!rows.length) throw new CompanionAgentBudgetExceededError("companion provider budget exhausted or turn obsolete");
+  });
+}
 
 const storedAgentStepCheckpointEnvelopeSchema = z.object({
   key: z.object({
@@ -89,6 +118,8 @@ export function decodeCompanionAgentStepCheckpoint(
 }
 
 export interface AgentRunMeta {
+  turnInterpretation?: AgentTurnInterpretationV1;
+  relatedGoals?: AgentAttentionObjectV1[];
   permissionLevel: CompanionAgentPermissionLevel;
   stepCount: number;
   /** 未完成的唯一模型步骤；可在 lease reclaim 后用检查点继续。 */
@@ -105,7 +136,10 @@ export const DEFAULT_SETTINGS = {
   permissionLevel: "guided" as const,
 };
 
-export async function readRunMeta(args: AgentEventContext): Promise<AgentRunMeta> {
+export async function readRunMeta(args: {
+  ctx: Pick<AgentEventContext["ctx"], "workspaceId">;
+  read: Pick<AgentEventContext["read"], "userId" | "runId">;
+}): Promise<AgentRunMeta> {
   return withWorkerWorkspaceTransaction(
     { workspaceId: args.ctx.workspaceId, userId: args.read.userId },
     async (tx) => {
@@ -118,8 +152,14 @@ export async function readRunMeta(args: AgentEventContext): Promise<AgentRunMeta
         account_epoch: number;
         global_enabled: boolean;
         agent_elapsed_ms: number;
+        turn_interpretation: unknown;
+        related_goals: Array<{ id: string; revision: number }>;
       }>(sql`
-        SELECT r.permission_level,
+        SELECT r.permission_level, r.turn_interpretation,
+               COALESCE((SELECT jsonb_agg(jsonb_build_object('id',g.id,'revision',g.revision))
+                 FROM (SELECT id,revision FROM agent_runs
+                   WHERE conversation_id=r.conversation_id AND workspace_id=r.workspace_id AND user_id=r.user_id
+                   ORDER BY updated_at DESC,id LIMIT 8) g), '[]'::jsonb) AS related_goals,
                GREATEST(r.step_count, (
                  SELECT COUNT(*)::int FROM companion_agent_steps s WHERE s.run_id = r.id
                )) AS step_count,
@@ -139,12 +179,15 @@ export async function readRunMeta(args: AgentEventContext): Promise<AgentRunMeta
                COALESCE(s.global_enabled, true) AS global_enabled
         FROM companion_turn_runs r
         LEFT JOIN user_companion_account_state s ON s.user_id = r.user_id
-        WHERE r.id = ${args.read.runId}
+        WHERE r.id = ${args.read.runId} AND r.workspace_id=${args.ctx.workspaceId} AND r.user_id=${args.read.userId}
         LIMIT 1
       `);
       const row = rows[0];
       const settings = companionAgentSettingsV1Schema.safeParse(row?.agent_settings);
+      const attention = agentTurnInterpretationV1Schema.safeParse(row?.turn_interpretation);
       return {
+        ...(attention.success ? { turnInterpretation: attention.data } : {}),
+        relatedGoals: (row?.related_goals ?? []).map(goal => ({ kind: "agent_run" as const, id: goal.id, revision: goal.revision })),
         permissionLevel: row?.permission_level
           ?? (settings.success ? settings.data.permissionLevel : DEFAULT_SETTINGS.permissionLevel),
         stepCount: Number(row?.step_count ?? 0),
@@ -216,6 +259,7 @@ export async function updateRunMeta(
   patch: {
     permissionLevel?: CompanionAgentPermissionLevel;
     permissionSnapshot?: unknown;
+    turnInterpretation?: AgentTurnInterpretationV1;
     budgetSnapshot?: CompanionAgentBudgetSnapshotV1;
     providerCapabilityFingerprint?: string;
     stepCount?: number;
@@ -228,6 +272,7 @@ export async function updateRunMeta(
   const fields = [
     patch.permissionLevel === undefined ? null : sql`permission_level = ${patch.permissionLevel}`,
     patch.permissionSnapshot === undefined ? null : sql`permission_snapshot = ${JSON.stringify(patch.permissionSnapshot)}`,
+    patch.turnInterpretation === undefined ? null : sql`turn_interpretation = ${JSON.stringify(agentTurnInterpretationV1Schema.parse(patch.turnInterpretation))}::jsonb`,
     patch.budgetSnapshot === undefined ? null : sql`budget_snapshot = ${JSON.stringify(patch.budgetSnapshot)}`,
     patch.providerCapabilityFingerprint === undefined ? null : sql`provider_capability_fingerprint = ${patch.providerCapabilityFingerprint}`,
     patch.stepCount === undefined ? null : sql`step_count = ${patch.stepCount}`,

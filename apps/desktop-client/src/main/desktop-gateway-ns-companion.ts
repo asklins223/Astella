@@ -36,6 +36,8 @@ import {  CompanionAgentRoutesListRequestV1,
   CompanionChatListMessagesResultV1,
   CompanionChatOpenThoughtRequestV1,
   CompanionChatOpenThoughtResultV1,
+  CompanionChatListThoughtsRequestV1,
+  CompanionChatListThoughtsResultV1,
   CompanionChatProposalDecideRequestV1,
   CompanionChatProposalDecideResultV1,
   CompanionChatProposalGetRequestV1,
@@ -49,6 +51,7 @@ import {  CompanionAgentRoutesListRequestV1,
   companionChatEnsureResultV1Schema,
   companionChatListMessagesResultV1Schema,
   companionChatOpenThoughtResultV1Schema,
+  companionChatListThoughtsResultV1Schema,
   companionChatProposalDecideResultV1Schema,
   companionChatProposalGetResultV1Schema,
   companionChatSendTurnResultV1Schema,
@@ -146,17 +149,14 @@ import {  CompanionAccountPatch,
   onboardingTransitionResponseSchema,
 } from "@ailearn/shared/companion-shell-contracts";
 import {  COMPANION_VOICE_SPEAK_VOICE,
-  COMPANION_VOICE_TRANSCRIBE_MAX_AUDIO_BYTES,
   CompanionVoicePlaybackOutcomeRequestV1,
   CompanionVoicePlaybackOutcomeResultV1,
   CompanionVoiceSpeakRequestV1,
   CompanionVoiceSpeakResultV1,
   CompanionVoiceSpeakSegmentRequestV2,
-  CompanionVoiceTranscribeRequestV1,
-  CompanionVoiceTranscribeResultV1,
   companionVoicePlaybackOutcomeResultV1Schema,
+  companionGuidanceVoiceProfileV1Schema,
   companionVoiceSpeakResultV1Schema,
-  companionVoiceTranscribeResultV1Schema,
 } from "@ailearn/shared/companion-voice-contracts";
 import {
   companionDiscoveryBookV1Schema,
@@ -819,6 +819,19 @@ export async function openCompanionExport(t: GatewayTransport,
     return response;
   }
 
+export async function listCompanionThoughts(t: GatewayTransport,
+  request: CompanionChatListThoughtsRequestV1,
+  requestId?: string,
+): Promise<CompanionChatListThoughtsResultV1> {
+  await t.ensureConnected(requestId);
+  const query = new URLSearchParams({ limit: String(request.limit ?? 30) });
+  if (request.before) query.set("before", safeUuid(request.before));
+  const result = await t.request(`/companion/thoughts?${query}`, { method: "GET" }, true, true, requestId);
+  const parsed = companionChatListThoughtsResultV1Schema.safeParse(result.body);
+  if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+  return parsed.data;
+}
+
 export async function openCompanionThought(t: GatewayTransport, 
     request: CompanionChatOpenThoughtRequestV1,
     requestId?: string,
@@ -1093,25 +1106,53 @@ export async function speakCompanionVoice(t: GatewayTransport,
     request: CompanionVoiceSpeakRequestV1,
     requestId?: string,
   ): Promise<CompanionVoiceSpeakResultV1> {
-    await t.ensureConnected(requestId);
-    // 只提交纯文本 + 已审核的固定 voice，响应是 raw audio/mpeg。
-    const result = await t.requestAudioBytes(
-      "/voice/tts",
-      {
-        method: "POST",
-        body: JSON.stringify({ text: request.text, voice: COMPANION_VOICE_SPEAK_VOICE, ...(request.purpose ? { purpose: request.purpose } : {}) }),
-      },
-      requestId,
-    );
-    const parsed = companionVoiceSpeakResultV1Schema.safeParse({
-      version: 1,
-      mimeType: "audio/mpeg",
-      audioBase64: Buffer.from(result.bytes).toString("base64"),
-      byteLength: result.bytes.byteLength,
-      voice: COMPANION_VOICE_SPEAK_VOICE,
+    const synthesize = async (): Promise<CompanionVoiceSpeakResultV1> => {
+      await t.ensureConnected(requestId);
+      // Only plain text and a reviewed voice profile cross the wire; audio is raw MPEG.
+      const result = await t.requestAudioBytes(
+        "/voice/tts",
+        {
+          method: "POST",
+          body: JSON.stringify({ text: request.text, voice: COMPANION_VOICE_SPEAK_VOICE, ...(request.purpose ? { purpose: request.purpose } : {}) }),
+        },
+        requestId,
+      );
+      const parsed = companionVoiceSpeakResultV1Schema.safeParse({
+        version: 1,
+        mimeType: "audio/mpeg",
+        audioBase64: Buffer.from(result.bytes).toString("base64"),
+        byteLength: result.bytes.byteLength,
+        voice: result.headers.get("X-Ailearn-Tts-Voice") ?? COMPANION_VOICE_SPEAK_VOICE,
+      });
+      if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+      return parsed.data;
+    };
+    const session = t.currentSession;
+    const deployment = t.configuration?.config.apiOrigin;
+    if (request.purpose !== "guidance" || !t.guidanceAudioCache || !deployment || session?.status !== "authenticated") return synthesize();
+    const userId = session.user.userId, token = t.token;
+    const isCurrent = () => t.currentSession?.status === "authenticated" && t.currentSession.user.userId === userId && t.token === token;
+    const profileKey = `${deployment}:${userId}:${t.transportEpoch}`;
+    if (t.guidanceVoiceProfile?.key !== profileKey || Date.now() - t.guidanceVoiceProfile.at >= 60_000) {
+      const value = (async () => {
+        await t.ensureConnected(requestId);
+        const response = await t.request("/voice/guidance-profile", { method: "GET" }, true, true, requestId);
+        const parsed = companionGuidanceVoiceProfileV1Schema.safeParse(response.body);
+        if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+        return parsed.data;
+      })();
+      t.guidanceVoiceProfile = { key: profileKey, at: Date.now(), value };
+      void value.catch(() => { if (t.guidanceVoiceProfile?.value === value) t.guidanceVoiceProfile = null; });
+    }
+    const profile = await t.guidanceVoiceProfile.value;
+    if (!isCurrent()) throw new DesktopGatewayFailure("cancelled", "never");
+    const audio = await t.guidanceAudioCache.resolve({ deployment, userId }, request.text, profile, async () => {
+      const result = await synthesize();
+      if (!isCurrent()) throw new DesktopGatewayFailure("cancelled", "never");
+      return result;
     });
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
+    if (!isCurrent()) throw new DesktopGatewayFailure("cancelled", "never");
+    return audio;
   }
 
 export async function speakCompanionVoiceSegment(t: GatewayTransport, 
@@ -1221,64 +1262,6 @@ export async function summarizeRecentCompanionHistory(t: GatewayTransport, reque
       requestId,
     );
     const parsed = companionMemoryQueueResultV1Schema.safeParse(result.body);
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
-  }
-
-export async function transcribeCompanionVoice(t: GatewayTransport, 
-    request: CompanionVoiceTranscribeRequestV1,
-    requestId?: string,
-  ): Promise<CompanionVoiceTranscribeResultV1> {
-    await t.ensureConnected(requestId);
-    const configuration = t.configuration;
-    if (!configuration) throw new DesktopGatewayFailure("configuration_error", "user_action");
-    const bytes = Buffer.from(request.audioBase64, "base64");
-    if (bytes.byteLength === 0 || bytes.byteLength > COMPANION_VOICE_TRANSCRIBE_MAX_AUDIO_BYTES) {
-      throw new DesktopGatewayFailure("validation", "user_action");
-    }
-    const form = new FormData();
-    form.set("purpose", "companion_dialogue");
-    form.set("language", request.language);
-    form.set("durationMs", String(request.durationMs));
-    form.set("file", new Blob([bytes], { type: "audio/wav" }), "companion-input.wav");
-
-    const headers = new Headers();
-    if (t.token) headers.set("Authorization", `Bearer ${t.token}`);
-    const controller = requestId ? new AbortController() : undefined;
-    if (requestId && controller) t.activeRequests.set(requestId, controller);
-    let response: Response;
-    try {
-      response = await fetch(new URL("/voice/transcribe", `${configuration.config.apiOrigin}/`), {
-        method: "POST",
-        headers,
-        body: form,
-        signal: controller?.signal,
-        redirect: "manual",
-      });
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new DesktopGatewayFailure("cancelled", "never", { localEffect: "request_cancelled" });
-      }
-      t.connection = { version: 1, kind: "api_unavailable" };
-      throw new DesktopGatewayFailure("api_unavailable", "safe_retry");
-    } finally {
-      if (requestId && controller && t.activeRequests.get(requestId) === controller) t.activeRequests.delete(requestId);
-    }
-    if (response.status >= 300 && response.status < 400 && response.status !== 304) {
-      t.connection = { version: 1, kind: "api_untrusted", reason: "wrong_service" };
-      throw new DesktopGatewayFailure("api_untrusted", "user_action");
-    }
-    let body: unknown = null;
-    try {
-      body = await response.json();
-    } catch {
-      body = null;
-    }
-    if (!response.ok && response.status === 401 && t.tokenIsRestored) {
-      await t.discardStoredCredential();
-    }
-    if (!response.ok) throw t.mapResponseError(response.status, response.headers, undefined, body);
-    const parsed = companionVoiceTranscribeResultV1Schema.safeParse(body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
   }

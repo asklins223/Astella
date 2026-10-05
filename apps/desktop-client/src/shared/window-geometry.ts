@@ -1,58 +1,42 @@
-export const HOME_WINDOW_WORLD_SIZE = Object.freeze({ width: 1920, height: 1080 });
+/**
+ * 原生内容窗口的尺寸约束（2026-10 放开最大化时收缩到只剩下限）。
+ *
+ * 这里曾经还有一整套比例锁：`HOME_WINDOW_WORLD_SIZE`、`HOME_WINDOW_ASPECT_RATIO`、
+ * `HOME_WINDOW_RATIO_TOLERANCE`、`isHomeWindowAspectRatio`，以及
+ * `homeWindowSizeProblems` 里"必须接近 16:9"那条分支。它们描述的是
+ * `window.setAspectRatio(...)` + `maximizable: false` 这条已经拆掉的原生锁比。
+ * 锁比拆掉后，"不露边、底图不变形"由渲染层的 cover 摆位承担
+ * （`styles.css` 的 `.scene-reference-frame[data-scene-fit="cover"]` 与
+ * `.room-backplate` 的 `object-fit: cover`），比例不再是窗口的能力边界，
+ * 继续留着这套断言只会让验收矩阵拒绝用户真实能摆出来的尺寸。
+ *
+ * 仍然成立、也仍然只有原生窗口能保证的，是尺寸下限：小于此值纸面正文与伴星
+ * 座位会挤到一起。这是这里唯一剩下的规则。
+ */
 
-export const HOME_WINDOW_ASPECT_RATIO = HOME_WINDOW_WORLD_SIZE.width / HOME_WINDOW_WORLD_SIZE.height;
-
-// Keep 125% browser zoom in the full spatial room while 150% and 200% can
-// intentionally cross into the compact semantic-room breakpoint.
 export const HOME_WINDOW_INITIAL_CONTENT_SIZE = Object.freeze({ width: 1440, height: 810 });
 export const HOME_WINDOW_MINIMUM_SIZE = Object.freeze({ width: 1280, height: 720 });
 
-// The native window is ratio-locked by `window.setAspectRatio` and clamped to
-// `HOME_WINDOW_MINIMUM_SIZE`. This is the single tolerance used by
-// `isHomeWindowAspectRatio` and `homeWindowSizeProblems`; the capture harness
-// (`apps/desktop-client/scripts/capture-home-v2.mjs`) mirrors the same value in
-// its own `HOME_WINDOW_RATIO_TOLERANCE` literal because it runs outside the
-// TypeScript build.
-export const HOME_WINDOW_RATIO_TOLERANCE = 0.002;
-
-export function isHomeWindowAspectRatio(
-  size: Readonly<{ width: number; height: number }>,
-  tolerance = HOME_WINDOW_RATIO_TOLERANCE,
-): boolean {
-  return Number.isFinite(size.width)
-    && Number.isFinite(size.height)
-    && size.width > 0
-    && size.height > 0
-    && Math.abs(size.width / size.height - HOME_WINDOW_ASPECT_RATIO) <= tolerance;
-}
-
 /**
- * Acceptance sizes must satisfy both native rules: at least
- * `HOME_WINDOW_MINIMUM_SIZE` and within `HOME_WINDOW_RATIO_TOLERANCE` of the
- * `16:9` window ratio. Returns one human-readable problem per violated
- * rule, and an empty array when the size is a reachable Home V2 content size.
+ * Acceptance sizes must be at least `HOME_WINDOW_MINIMUM_SIZE` and positive
+ * finite numbers. Returns one human-readable problem per violated rule, and an
+ * empty array when the size is a reachable content size.
  *
- * This is why `1024x700` cannot be a Home V2 acceptance size: it is narrower
- * than the locked minimum and off-ratio, so the native window cannot produce
- * it and the capture harness rejects it.
+ * Off-ratio sizes are accepted on purpose: the window is no longer ratio-locked,
+ * so `1024x700` is reachable only in the sense that it is below the minimum, and
+ * a maximised ultrawide size is both reachable and expected.
  */
 export function homeWindowSizeProblems(width: number, height: number): string[] {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
     return [`Home window content size ${width}x${height} is not a positive finite size`];
   }
 
-  const problems: string[] = [];
   if (width < HOME_WINDOW_MINIMUM_SIZE.width || height < HOME_WINDOW_MINIMUM_SIZE.height) {
-    problems.push(
+    return [
       `Home window content size ${width}x${height} is below the locked `
       + `${HOME_WINDOW_MINIMUM_SIZE.width}x${HOME_WINDOW_MINIMUM_SIZE.height} minimum`,
-    );
+    ];
   }
-  if (Math.abs(width / height - HOME_WINDOW_ASPECT_RATIO) > HOME_WINDOW_RATIO_TOLERANCE) {
-    problems.push(
-      `Home window content size ${width}x${height} does not preserve the `
-      + `${HOME_WINDOW_WORLD_SIZE.width}:${HOME_WINDOW_WORLD_SIZE.height} window ratio`,
-    );
-  }
-  return problems;
+
+  return [];
 }

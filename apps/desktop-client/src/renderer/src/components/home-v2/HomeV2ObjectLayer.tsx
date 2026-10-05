@@ -34,7 +34,7 @@ const REGION_COPY: Readonly<Record<ObjectZone, Readonly<{
   icon: LucideIcon;
 }>>> = Object.freeze({
   desk: { id: "desk-book", label: "书桌", detail: "今日下一步与今日复习", icon: BookOpenText },
-  shelf: { id: "magic-catalog", label: "书架", detail: "研究册、笔记、资料与搜索", icon: Search },
+  shelf: { id: "bookshelf", label: "书架", detail: "研究册、笔记、资料与搜索", icon: Search },
   window: { id: "window-stars", label: "星窗", detail: "学习目标与理解星图", icon: Orbit },
   rest: { id: "rest-cushion", label: "休息角", detail: "伴星、日记、人格与记忆", icon: MessageCircle },
 });
@@ -123,8 +123,7 @@ function CompactZoneNavigation({ onZone }: { readonly onZone: (zone: ObjectZone)
   );
 }
 
-function HomeV2Hud({ introVisible, loading, state, title, primaryLabel, theme, motionMode, onPrimary, onCatalog }: {
-  readonly introVisible: boolean;
+function HomeV2Hud({ loading, state, title, primaryLabel, theme, motionMode, onPrimary }: {
   readonly loading: boolean;
   readonly state: string;
   readonly title: string;
@@ -132,15 +131,13 @@ function HomeV2Hud({ introVisible, loading, state, title, primaryLabel, theme, m
   readonly theme: "day" | "night";
   readonly motionMode: "full" | "lite" | "off";
   readonly onPrimary: () => void;
-  readonly onCatalog: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const rootRef = useRef<HTMLElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const hudTitle = introVisible ? "先从桌上的书开始" : primaryLabel;
-  const hudDetail = introVisible ? "它会带你回到今天真正停下的位置。" : title;
+  const hudTitle = primaryLabel;
+  const hudDetail = title;
 
-  useEffect(() => { setExpanded(introVisible); }, [introVisible]);
   useEffect(() => {
     if (!expanded) return;
     const closeFromOutside = (event: PointerEvent) => {
@@ -163,18 +160,17 @@ function HomeV2Hud({ introVisible, loading, state, title, primaryLabel, theme, m
   useHudPage("home");
 
   return (
-    <aside ref={rootRef} className={`home-v2-hud${expanded ? " home-v2-hud--expanded" : ""}`} data-state={loading ? "loading" : state} data-intro={introVisible || undefined} data-theme={theme} data-motion-mode={motionMode} aria-labelledby="home-v2-hud-title" aria-describedby="home-v2-hud-detail" onKeyDown={(event) => { if (event.key === "Escape" && expanded) { event.preventDefault(); event.stopPropagation(); collapse(); } }}>
+    <aside ref={rootRef} className={`home-v2-hud${expanded ? " home-v2-hud--expanded" : ""}`} data-state={loading ? "loading" : state} data-theme={theme} data-motion-mode={motionMode} aria-labelledby="home-v2-hud-title" aria-describedby="home-v2-hud-detail" onKeyDown={(event) => { if (event.key === "Escape" && expanded) { event.preventDefault(); event.stopPropagation(); collapse(); } }}>
       <span className="home-v2-hud__skin" aria-hidden="true"><i /><i /><i /></span>
       <button ref={triggerRef} type="button" className="home-v2-hud__trigger" aria-expanded={expanded} aria-label={expanded ? "收起今日下一步" : `展开今日下一步：${hudTitle}`} onClick={() => setExpanded((current) => !current)}>
         <span className="home-v2-hud__signal" aria-hidden="true" />
-        <span className="home-v2-hud__trigger-copy"><small>{loading ? "正在同步" : introVisible ? "从这里开始" : "今日下一步"}</small><strong id="home-v2-hud-title">{hudTitle}</strong></span>
+        <span className="home-v2-hud__trigger-copy"><small>{loading ? "正在同步" : "今日下一步"}</small><strong id="home-v2-hud-title">{hudTitle}</strong></span>
         {expanded ? <ChevronLeft size={16} strokeWidth={1.8} aria-hidden="true" /> : <ChevronRight size={16} strokeWidth={1.8} aria-hidden="true" />}
       </button>
       <div className="home-v2-hud__panel" aria-hidden={!expanded} inert={!expanded}>
         <p id="home-v2-hud-detail" aria-live="polite">{hudDetail}</p>
         <div className="home-v2-hud__actions">
-          <button type="button" className="home-v2-hud__primary" disabled={loading} onClick={() => { setExpanded(false); onPrimary(); }}><BookOpenText size={17} strokeWidth={1.8} aria-hidden="true" /><span>{introVisible ? "去书桌" : primaryLabel}</span></button>
-          <button type="button" aria-label="打开魔法目录" title="魔法目录" onClick={() => { setExpanded(false); onCatalog(); }}><Search size={17} strokeWidth={1.8} aria-hidden="true" /></button>
+          <button type="button" className="home-v2-hud__primary" disabled={loading} onClick={() => { setExpanded(false); onPrimary(); }}><BookOpenText size={17} strokeWidth={1.8} aria-hidden="true" /><span>{primaryLabel}</span></button>
         </div>
       </div>
     </aside>
@@ -191,7 +187,7 @@ export function HomeV2ObjectLayer() {
   const motionPreference = useRoomStore((state) => state.motionMode);
   const reducedMotion = useRoomStore((state) => state.reducedMotion);
   const motionMode = resolveSceneMotionMode(motionPreference, reducedMotion);
-  const { zone, focusRegion, exitRegion, runFeature, introVisible } = useHomeV2();
+  const { zone, focusRegion, exitRegion, runFeature } = useHomeV2();
   const [portalHost, setPortalHost] = useState<HTMLElement | null>(null);
 
   useLayoutEffect(() => {
@@ -230,6 +226,11 @@ export function HomeV2ObjectLayer() {
   if (surface || onboardingOpen || viewPreset !== "room") return null;
 
   const portalTarget = portalHost ?? document.body;
+  /**
+   * 没有主目标时（`primaryIntent` 为 null），主按钮不再把人带去另一张页面，
+   * 而是**把镜头走到书桌**——今天的那一件、今日复习与目标都在那里。
+   * 2026-10-05 用户决定：原来这条分支指向的魔法目录整页删除。
+   */
   const runPrimary = () => {
     if (home.retry) {
       reload();
@@ -243,10 +244,6 @@ export function HomeV2ObjectLayer() {
       runFeature("current-target");
       return;
     }
-    if (home.primaryLabel === "查看学习空间目录") {
-      runFeature("catalog");
-      return;
-    }
     focusRegion("desk");
   };
 
@@ -256,7 +253,7 @@ export function HomeV2ObjectLayer() {
         {zone !== "wide" ? <div className="home-v2-room-backdrop" aria-hidden="true" onPointerDown={exitRegion} /> : null}
         {zone === "wide" ? (Object.keys(REGION_COPY) as ObjectZone[]).map((region) => <RoomRegion key={region} zone={region} onActivate={() => focusRegion(region)} />) : null}
       </div>
-      {createPortal(<HomeV2Hud introVisible={introVisible} loading={home.blockingLoading} state={home.notebookState} title={home.title} primaryLabel={home.primaryLabel} theme={theme} motionMode={motionMode} onPrimary={runPrimary} onCatalog={() => runFeature("catalog")} />, portalTarget)}
+      {createPortal(<HomeV2Hud loading={home.blockingLoading} state={home.notebookState} title={home.title} primaryLabel={home.primaryLabel} theme={theme} motionMode={motionMode} onPrimary={runPrimary} />, portalTarget)}
       {zone === "wide"
         ? createPortal(<CompactZoneNavigation onZone={focusRegion} />, portalTarget)
         : createPortal(<RegionFeatureMenu zone={zone} onBack={exitRegion} />, portalTarget)}

@@ -264,6 +264,25 @@ export type PinnedRequester = (
 export type FetchUrlDependencies = {
   resolveAddress?: AddressResolver;
   request?: PinnedRequester;
+  /**
+   * 每个 hop 在**外发之前**被调用一次，拿到的是该 hop 已经解析好的 URL。
+   *
+   * 放在这里而不是让调用方自己先看一眼，是因为重定向链上的每一跳都可能落到
+   * 调用方不允许的地方：只校验初始 URL 等于把第二个 hop 交给运气。
+   */
+  validateUrl?: (url: URL) => void;
+  /**
+   * 响应成功（2xx）、**读取正文之前**被调用一次，参数是原始 content-type 头。
+   *
+   * 在读取之前而不是之后，是为了让"PDF / 图片 / 二进制"这类内容**根本没被读进
+   * 内存**——`readAgentPublicDocument` 要的就是这个：它不解析二进制，也没有浏览器。
+   */
+  acceptContentType?: (contentType: string) => void;
+  /**
+   * 置为 true 时返回值带上**实际**的 url 与 content-type（含重定向后的最终 URL）。
+   * 默认 / 未置位时返回形状与此前完全一致，老调用方不受影响。
+   */
+  includeResponseMetadata?: boolean;
 };
 
 function abortReason(signal: AbortSignal): Error {
@@ -996,6 +1015,10 @@ function extractHtmlTitle(html: string): string | null {
 export interface FetchedContent {
   text: string;
   title: string | null;
+  /** 仅当 `dependencies.includeResponseMetadata === true` 时出现：重定向后的实际 URL。 */
+  url?: string;
+  /** 同上：响应的实际 content-type 头。 */
+  contentType?: string;
 }
 
 /**
@@ -1020,6 +1043,9 @@ export async function fetchUrlContentOnce(
     if (parsed.username || parsed.password) {
       throw new Error("URL credentials are not allowed");
     }
+    // 调用方的额外准入（每个 hop 一次）。放在 DNS 解析与外发之前：
+    // 这一跳一旦不满足调用方的范围要求，就不该产生任何网络请求。
+    dependencies.validateUrl?.(parsed);
 
     const ac = new AbortController();
     const timeout = setTimeout(
@@ -1056,17 +1082,24 @@ export async function fetchUrlContentOnce(
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
 
+      // content-type 准入在读取正文之前：不被接受的类型根本不会进入内存。
+      dependencies.acceptContentType?.(res.contentType);
+
       const decoder = new TextDecoder("utf-8", { fatal: false });
       const rawText = decoder.decode(res.body);
 
       // extractHtmlTitle 必须在 extractTextFromHtml 之前调用——
       // 后者会剥离所有 HTML 标签，剥离后无法再提取 <title>。
-      if (res.contentType.toLowerCase().includes("text/html")) {
+      if (res.contentType.toLowerCase().includes("text/html") || res.contentType.toLowerCase().includes("application/xhtml+xml")) {
         const title = extractHtmlTitle(rawText);
         const text = extractTextFromHtml(rawText, currentUrl, ac.signal);
-        return { text, title };
+        return dependencies.includeResponseMetadata
+          ? { text, title, url: currentUrl, contentType: res.contentType }
+          : { text, title };
       }
-      return { text: rawText, title: null };
+      return dependencies.includeResponseMetadata
+        ? { text: rawText, title: null, url: currentUrl, contentType: res.contentType }
+        : { text: rawText, title: null };
     } finally {
       clearTimeout(timeout);
       signal?.removeEventListener("abort", abortFromParent);

@@ -15,8 +15,8 @@
  * `v2Inflight` 操作在途表（唯一的另一个写者）。
  */
 
-import { sql } from "drizzle-orm";
-import { db, type WorkerTransaction } from "../db.ts";
+import { sql, type SQL } from "drizzle-orm";
+import { db } from "../db.ts";
 import { logger } from "../lib/logger.ts";
 
 /** 错误文本落库/落日志前的统一脱敏与截断（两条链与 worker 入口共用）。 */
@@ -224,20 +224,43 @@ export async function renewV2OutboxLease(jobId: string, leaseToken: string): Pro
 }
 
 /**
- * Fence a V2 pipeline at the transaction boundary.  The lease update is part
- * of the same transaction as the pipeline writes, so a reaper that won the
- * token CAS makes the whole transaction roll back instead of leaving a late
- * candidate/run mutation behind.
+ * 只需要「能执行一条 SQL」的句柄。租约判定被两处共用——管道里的收尾围栏，以及
+ * Agent 父预算记账前那次核验——后者拿到的是 agent 那段受限事务的 executor，
+ * 把它当整条 `WorkerTransaction` 收下会逼调用方去断言一个它并不拥有的形状。
  */
-export async function fenceV2OutboxLease(tx: WorkerTransaction, job: PendingOutboxJob): Promise<void> {
-  const rows = await tx.execute<{ id: string }>(sql`
+export interface OutboxLeaseTx {
+  execute(query: SQL): Promise<unknown>;
+}
+
+/**
+ * 在**调用方这一段事务里**核实并续租 outbox，返回租约是否还在。
+ *
+ * 单独的具名函数（而不是只留 `fenceV2OutboxLease`）是因为 Agent 记账那一格需要在
+ * 「核实租约」与「给父目标加钱」之间保持同一段事务：先提交记账、再在外面查租约，
+ * 会把一次已知失去租约的调用记成新的付费请求。
+ */
+export async function renewV2OutboxLeaseInTransaction(
+  tx: OutboxLeaseTx, job: PendingOutboxJob,
+): Promise<boolean> {
+  const rows = await tx.execute(sql`
     UPDATE public.card_generation_run_outbox_v2
     SET lease_expires_at = now() + make_interval(secs => ${V2_OUTBOX_LEASE_TIMEOUT_MS / 1000})
     WHERE id = ${job.id} AND status = 'processing' AND lease_token = ${job.leaseToken}
       AND lease_expires_at > now()
     RETURNING id
   `);
-  if (rows.length === 0) {
+  if (!Array.isArray(rows)) throw new Error("Unexpected outbox lease result");
+  return rows.length > 0;
+}
+
+/**
+ * Fence a V2 pipeline at the transaction boundary.  The lease update is part
+ * of the same transaction as the pipeline writes, so a reaper that won the
+ * token CAS makes the whole transaction roll back instead of leaving a late
+ * candidate/run mutation behind.
+ */
+export async function fenceV2OutboxLease(tx: OutboxLeaseTx, job: PendingOutboxJob): Promise<void> {
+  if (!await renewV2OutboxLeaseInTransaction(tx, job)) {
     throw new Error("V2 outbox lease lost before transaction commit");
   }
 }
@@ -454,4 +477,3 @@ export async function reapStaleV2OutboxJobs(limit = 100): Promise<number> {
   `);
   return rows.length;
 }
-

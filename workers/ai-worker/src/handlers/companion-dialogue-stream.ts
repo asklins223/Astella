@@ -25,6 +25,7 @@ import {
 } from "./companion-dialogue-content.ts";
 import { resolveFactSpans, withholdPartialFactSpanTail, type FactSpanValues } from "./companion-fact-spans.ts";
 import type { ReadContext } from "./companion-dialogue-store.ts";
+import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
 
 /** 行内标记：出现在哪里都可能被后续文本配对改写。 */
 const INLINE_UNSTABLE_CHARS = "*_~`[]()";
@@ -231,6 +232,7 @@ export function createCompanionStreamDelivery(args: CompanionDeliveryArgs): Comp
           // Stream deltas are durable and user-visible before the model step
           // finishes, so fence each flush with the same job lease as commits.
           await lockJobLease(tx, args.job);
+          await assertCompanionContextSourcesCurrent(tx, { workspaceId: args.ctx.workspaceId, userId: args.read.userId }, args.read.runId);
           const alive = await tx.execute<{ id: string }>(sql`
             UPDATE companion_turn_runs
             SET status = 'running', updated_at = now()

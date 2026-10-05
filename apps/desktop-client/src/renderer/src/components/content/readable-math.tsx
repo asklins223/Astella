@@ -1,8 +1,9 @@
 import { useMemo } from "react";
 import { renderToString } from "katex";
 
-/** Visual TeX and the source character stream have separate jobs. */
-export function NoteMath(props: { source: string; value: string; display: boolean }) {
+/** Notes and conversations share bounded KaTeX rendering. Only its generated HTML
+ * reaches the DOM; original source is retained for notebook selection offsets. */
+export function ReadableMath(props: { source: string; value: string; display: boolean }) {
   const html = useMemo(() => {
     try {
       if (props.value.length > 10_000) return null;

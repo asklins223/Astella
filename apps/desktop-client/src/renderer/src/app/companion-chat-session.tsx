@@ -363,7 +363,7 @@ type CompanionReplyStreamOutcome =
 // 纯函数（路由落点 / 文案 / nav chip 可见性 / 两个错误映射）在 `companion-chat-routing.ts`——
 // 它们一个 hook 都没有，留在 Provider 文件里只是当初图省事。
 // 本文件内部也要调其中几个，所以是「导入 + 再导出」。
-import { desktopRouteFromAgentRoute, companionMessageText, applyRouteToRoom, navChipSharesTarget, navChipsStillOutsideMessages, readCompleteCompanionHistory, isCompanionRunConflict, companionTurnErrorMessage } from "./companion-chat-routing";
+import { desktopRouteFromAgentRoute, companionMessageText, applyRouteToRoom, navChipSharesTarget, navChipsStillOutsideMessages, readCompleteCompanionHistory, isCompanionRunConflict, companionTurnErrorMessage, companionReplyFailureMessage } from "./companion-chat-routing";
 export { desktopRouteFromAgentRoute, companionMessageText, applyRouteToRoom, navChipSharesTarget, navChipsStillOutsideMessages, readCompleteCompanionHistory, isCompanionRunConflict, companionTurnErrorMessage } from "./companion-chat-routing";
 
 const CompanionChatContext = createContext<CompanionChatSession | null>(null);
@@ -1261,9 +1261,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
           settle({
             kind: "failed",
             code: typeof payload.code === "string" ? payload.code : null,
-            message: payload.recoverable === false
-              ? "这一轮没能完成。重新说一遍就好。"
-              : "这一轮没能完成，可以再试一次。",
+            message: companionReplyFailureMessage(payload.code, payload.recoverable),
           });
         }
         });

@@ -11,7 +11,7 @@ const journal = JSON.parse(readFileSync(
   "utf8",
 )) as { entries: Array<{ tag: string }> };
 const registry = readFileSync(
-  new URL("../../../../packages/shared/src/companion-agent-registry.ts", import.meta.url),
+  new URL("../../../../packages/shared/src/companion-capability-manifest.ts", import.meta.url),
   "utf8",
 );
 

@@ -3,6 +3,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { after, test } from "node:test";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
+import * as schema from "@ailearn/shared/db-schema";
 import { sql as query } from "drizzle-orm";
 import { createAgentStore, createAgentAdvanceStore, type AgentStorePorts } from "@ailearn/agent-host";
 import { agentTurnResultSchema, type AgentTurnRequest } from "@ailearn/shared";
@@ -10,14 +11,24 @@ import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
 import { invokeNoteCapability } from "../agent/note-capabilities.ts";
 import { loadAgentGenerationContext } from "../agent/generation-context.ts";
 import { loadAgentLearningContext } from "../agent/learning-context.ts";
-import { closeDatabase } from "../db.ts";
+import { buildAgentGoalRequest } from "../agent/goal-context.ts";
+import { invokeBasicCapability } from "../agent/basic-capabilities.ts";
+import { AGENT_GOAL_DELIVERY_CAPABILITY, type AgentGoalDeliveryV1 } from "@ailearn/shared/agent-contracts";
+import { closeDatabase, type WorkerTransaction } from "../db.ts";
+import { closeDatabase as closeApiDatabase } from "../../../../apps/api/src/db/client.ts";
+import { startNoteOverviewTask } from "../../../../apps/api/src/modules/note-overviews/service.ts";
+import { startNoteLearningArtifactTask } from "../../../../apps/api/src/modules/note-learning-artifacts/service.ts";
+import { startNoteExpansionTask } from "../../../../apps/api/src/modules/note-expansions/service.ts";
+import { createGenerationRunV2 } from "../../../../apps/api/src/modules/card-generation-v2/generation-run-service.ts";
+import { assertFixtureWipeClean, wipeCardGenerationFixtures } from "./card-generation-fixture-cleanup.ts";
+import { runAgentAdvance } from "../agent/advance.ts";
 import { runNoteOverviewGenerate } from "../handlers/note-overview-generate.ts";
 
 const admin = postgres(testDatabaseUrl("DATABASE_URL_MIGRATOR"), { max: 2 });
 const apiClient = postgres(testDatabaseUrl("DATABASE_URL_API"), { max: 2 });
 const workerClient = postgres(testDatabaseUrl("DATABASE_URL_WORKER"), { max: 2 });
-function ports(client: ReturnType<typeof postgres>): AgentStorePorts {
-  const db = drizzle(client);
+function ports(client: ReturnType<typeof postgres>): AgentStorePorts<WorkerTransaction> {
+  const db = drizzle(client, { schema });
   return { id: randomUUID, transaction: (scope, action) => db.transaction(async tx => {
     await tx.execute(query`SELECT set_config('app.workspace_id',${scope.workspaceId},true),set_config('app.user_id',${scope.userId},true)`);
     return action(tx);
@@ -29,24 +40,21 @@ const api = createAgentStore({ ...ports(apiClient), ensureIdentity: async (tx, s
 const workerPorts = ports(workerClient);
 const fixtures: { userId: string; workspaceIds: string[] }[] = [];
 after(async () => {
+  let report;
   try {
-  for (const fixture of fixtures) await admin.begin(async tx => {
-    for (const workspaceId of fixture.workspaceIds) {
-      await tx`DELETE FROM agent_runs WHERE workspace_id=${workspaceId}`;
-      await tx`DELETE FROM note_overviews WHERE workspace_id=${workspaceId}`;
-      await tx`DELETE FROM note_learning_artifacts WHERE workspace_id=${workspaceId}`;
-      await tx`UPDATE notes SET current_version_id=NULL WHERE workspace_id=${workspaceId}`;
-      await tx`DELETE FROM note_blocks WHERE workspace_id=${workspaceId}`;
-      await tx`DELETE FROM note_versions WHERE workspace_id=${workspaceId}`;
-      await tx`DELETE FROM notes WHERE workspace_id=${workspaceId}`;
-      await tx`DELETE FROM jobs WHERE workspace_id=${workspaceId}`;
-      await tx`DELETE FROM workspaces WHERE id=${workspaceId}`;
-    }
-    await tx`DELETE FROM user_companion_account_state WHERE user_id=${fixture.userId}`;
-    await tx`DELETE FROM user_ai_settings WHERE user_id=${fixture.userId}`;
-    await tx`DELETE FROM users WHERE id=${fixture.userId}`;
-  });
-  } finally { await Promise.all([admin.end(), apiClient.end(), workerClient.end(), closeDatabase()]); }
+    for (const fixture of fixtures) await admin.begin(async tx => {
+      await tx`SET LOCAL app.allow_history_mutation = 'on'`;
+      for (const workspaceId of fixture.workspaceIds) {
+        await tx`DELETE FROM agent_runs WHERE workspace_id=${workspaceId}`;
+        await tx`DELETE FROM note_overviews WHERE workspace_id=${workspaceId}`;
+        await tx`DELETE FROM note_learning_artifacts WHERE workspace_id=${workspaceId}`;
+        await tx`DELETE FROM jobs WHERE workspace_id=${workspaceId}`;
+      }
+    });
+    if (fixtures.length) report = await wipeCardGenerationFixtures(admin,
+      fixtures.flatMap(fixture => fixture.workspaceIds), fixtures.map(fixture => fixture.userId));
+  } finally { await Promise.all([admin.end(), apiClient.end(), workerClient.end(), closeDatabase(), closeApiDatabase()]); }
+  if (report) assertFixtureWipeClean(report);
 });
 async function fixture(content = ["叶绿体利用光能制造有机物。"], title = "光合作用") {
   const userId = randomUUID(), workspaceIds = [randomUUID(),randomUUID()], noteId = randomUUID(), noteVersionId = randomUUID();
@@ -87,22 +95,94 @@ async function lease(scope: { workspaceId: string; userId: string }, runId: stri
 }
 const request: AgentTurnRequest = { role: "companion_agent", systemPrompt: "fixture", messages: [{ role: "user", content: "整理" }], tools: [], toolChoice: "auto", maxTokens: 200, temperature: 0 };
 
+test("a greeting without a delivery cannot complete a durable goal or publish a false summary", async () => {
+  const f = await fixture(), scope = { workspaceId: f.workspaceId, userId: f.userId };
+  const run = await api.create(scope, { requestId: randomUUID(), goal: "请实际核对12/4", inputs: [] });
+  const job = await lease(scope, run.runId), advance = createAgentAdvanceStore(workerPorts, job, run.runId, 1);
+  await advance.acquire();
+  const greeting = agentTurnResultSchema.parse({content:"嗨，还没有收到任务。",toolCalls:[],finishReason:"stop",usage:null,providerRequestId:null});
+  for (const index of [1, 2]) {
+    const built = await buildAgentGoalRequest(advance, await advance.read());
+    assert.deepEqual(built.tools.map(tool => tool.name), ["agent_calculate", "agent_read_public_document", "agent_deliver_goal"],
+      "a goal without note inputs or confirmed methods must not offer their executors");
+    assert.ok(!built.systemPrompt.includes("no_cards_recommended"), "unavailable domain instructions do not occupy this model step");
+    const {step} = await advance.step(built, `greeting-${index}`);
+    await advance.saveResponse(step, greeting);
+    const outcome = await advance.applyStep(step, greeting, []);
+    const projection = await api.get(scope, run.runId);
+    assert.equal(outcome, index === 1 ? "continue" : "settled");
+    assert.equal(projection.status, index === 1 ? "running" : "failed");
+    assert.equal(projection.summary, null, "a stopped model is not a delivery");
+  }
+});
+
+test("the real calculator result supports an explicit delivery, with a committed summary owned by that receipt", async () => {
+  const f = await fixture(), scope = { workspaceId: f.workspaceId, userId: f.userId };
+  const run = await api.create(scope, { requestId: randomUUID(), goal: "请实际核对12/4", inputs: [] });
+  const job = await lease(scope, run.runId), advance = createAgentAdvanceStore(workerPorts, job, run.runId, 1);
+  await advance.acquire();
+  const built = await buildAgentGoalRequest(advance, await advance.read()), {step} = await advance.step(built, "calculation-delivery");
+  const delivery: AgentGoalDeliveryV1 = {outcome:"completed",summary:"12 / 4 = 3。",requirements:[{requirement:"实际核对12/4",fulfilled:true,evidenceCallIds:["calc"],textOnly:false}]};
+  const response = agentTurnResultSchema.parse({content:"忽略这段无依据的闲聊",toolCalls:[
+    {id:"calc",name:"agent_calculate",arguments:{expression:"12/4"}},
+    {id:"delivery",name:AGENT_GOAL_DELIVERY_CAPABILITY,arguments:delivery},
+  ],finishReason:"tool_calls",usage:null,providerRequestId:null});
+  await advance.saveResponse(step,response);
+  const calculated = await invokeBasicCapability(advance,response.toolCalls[0]!);
+  assert.equal(await advance.applyStep(step,response,[
+    {role:"tool",toolCallId:"calc",content:JSON.stringify(calculated)},
+    {role:"tool",toolCallId:"delivery",content:JSON.stringify({status:"proposed",kind:"goal_delivery",delivery})},
+  ]),"settled");
+  const completed = await api.get(scope,run.runId);
+  assert.equal(completed.status,"completed");assert.equal(completed.summary,delivery.summary);
+});
+
+test("a declared missing input pauses the same task, preserving a readable next step", async () => {
+  const f = await fixture(), scope = { workspaceId: f.workspaceId, userId: f.userId };
+  const run = await api.create(scope,{requestId:randomUUID(),goal:"请读取公开文档",inputs:[]});
+  const job = await lease(scope,run.runId), advance = createAgentAdvanceStore(workerPorts,job,run.runId,1);
+  await advance.acquire();
+  const built = await buildAgentGoalRequest(advance,await advance.read()), {step}=await advance.step(built,"needs-document-url");
+  const delivery: AgentGoalDeliveryV1={outcome:"needs_input",summary:"请补充要读取的公开网址。",requirements:[{requirement:"读取公开文档",fulfilled:false,evidenceCallIds:[],textOnly:false}]};
+  const response=agentTurnResultSchema.parse({content:null,toolCalls:[{id:"delivery",name:AGENT_GOAL_DELIVERY_CAPABILITY,arguments:delivery}],finishReason:"tool_calls",usage:null,providerRequestId:null});
+  await advance.saveResponse(step,response);
+  await advance.applyStep(step,response,[{role:"tool",toolCallId:"delivery",content:JSON.stringify({status:"proposed",kind:"goal_delivery",delivery})}]);
+  const paused=await api.get(scope,run.runId);assert.equal(paused.status,"paused");assert.equal(paused.summary,delivery.summary);
+  assert.equal(paused.revision,1);assert.deepEqual(paused.artifacts,[]);
+});
+
+test("goal context keeps the complete 8,000-character request once under the shared identity", async () => {
+  const f=await fixture(), scope={workspaceId:f.workspaceId,userId:f.userId}, goal="完整要求".repeat(2000);
+  const run=await api.create(scope,{requestId:randomUUID(),goal,inputs:[]});
+  const job=await lease(scope,run.runId), advance=createAgentAdvanceStore(workerPorts,job,run.runId,1);
+  await advance.acquire();
+  const built=await buildAgentGoalRequest(advance,await advance.read());
+  assert.deepEqual(built.messages,[{role:"user",content:goal}]);
+  assert.match(built.systemPrompt,/你是一起长期学习的 AI 桌宠/);
+  assert.doesNotMatch(built.systemPrompt,/用户只是打招呼时/);
+  assert.ok(built.tools.some(tool=>tool.name===AGENT_GOAL_DELIVERY_CAPABILITY));
+});
+
 test("semantic capability identity, paused receipts and failed continuation reuse completed work", async () => {
   const f = await fixture(), scope = { workspaceId: f.workspaceId, userId: f.userId };
   const run = await api.create(scope, { requestId: randomUUID(), goal: "做速看", inputs: [f.input] });
   const first = await lease(scope, run.runId), advance = createAgentAdvanceStore(workerPorts, first, run.runId, 1);
   await advance.acquire();
+  const materialRequest = await buildAgentGoalRequest(advance, await advance.read());
+  const materialProperties = materialRequest.tools.find(tool => tool.name === "note_read")!.parameters.properties as Record<string, { enum: string[] }>;
+  assert.deepEqual(materialProperties.noteId.enum, [f.input.noteId]);
+  assert.deepEqual(materialProperties.noteVersionId.enum, [f.input.noteVersionId]);
   const call = { id: "provider-first", name: "note_overview_generate", arguments: { noteId: f.input.noteId, noteVersionId: f.input.noteVersionId } };
-  const child = await invokeNoteCapability(advance, call) as { operationId: string; jobId: string };
-  const repeated = await invokeNoteCapability(advance, { ...call, id: "different-provider-id" }) as { jobId: string; operationId: string };
-  assert.equal(repeated.jobId, child.jobId); assert.equal(repeated.operationId, child.operationId);
+  const child = await invokeNoteCapability(advance, call) as { operationId: string; execution: { kind: "job"; id: string } };
+  const repeated = await invokeNoteCapability(advance, { ...call, id: "different-provider-id" }) as { execution: { kind: "job"; id: string }; operationId: string };
+  assert.equal(repeated.execution.id, child.execution.id); assert.equal(repeated.operationId, child.operationId);
   await api.control(scope, run.runId, 1, "pause");
   await assert.rejects(advance.step(request, "late"), /被新的要求替代/);
   const artifactId = randomUUID();
   await admin.begin(async tx => {
     await tx`INSERT INTO note_overviews(id,workspace_id,user_id,note_id,note_version_id,body,generation_job_id)
-      VALUES(${artifactId},${scope.workspaceId},${scope.userId},${f.input.noteId},${f.input.noteVersionId},'成果',${child.jobId})`;
-    await tx`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id IN (${first.id},${child.jobId})`;
+      VALUES(${artifactId},${scope.workspaceId},${scope.userId},${f.input.noteId},${f.input.noteVersionId},'成果',${child.execution.id})`;
+    await tx`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id IN (${first.id},${child.execution.id})`;
   });
   const pausedLease = await lease(scope, run.runId), receipt = createAgentAdvanceStore(workerPorts, pausedLease, run.runId, 1);
   assert.equal((await receipt.acquire())?.status, "paused");
@@ -114,8 +194,9 @@ test("semantic capability identity, paused receipts and failed continuation reus
   const retried = await api.control(scope, run.runId, 1, "resume"); assert.equal(retried.revision, 2);
   const next = await lease(scope, run.runId, 2), continuing = createAgentAdvanceStore(workerPorts, next, run.runId, 2);
   await continuing.acquire();
-  const reused = await invokeNoteCapability(continuing, { ...call, id: "third-provider-id" }) as { reused: boolean; jobId: string };
-  assert.equal(reused.reused, true); assert.equal(reused.jobId, child.jobId);
+  const reused = await invokeNoteCapability(continuing, { ...call, id: "third-provider-id" }) as unknown as
+    { reused: boolean; execution: { kind: "job"; id: string } };
+  assert.equal(reused.reused, true); assert.equal(reused.execution.id, child.execution.id);
   const [{ n }] = await admin`SELECT count(*)::int n FROM jobs WHERE type='note_overview_generate' AND workspace_id=${scope.workspaceId}`;
   assert.equal(n, 1);
 });
@@ -131,8 +212,8 @@ test("approved active preferences remain scoped, temporary goals do not rewrite 
   const run = await api.create(scope, { requestId: randomUUID(), goal: "这一次只给公式，不要例子", inputs: [f.input] });
   const first = await lease(scope, run.runId), advance = createAgentAdvanceStore(workerPorts, first, run.runId, 1);
   await advance.acquire();
-  const child = await invokeNoteCapability(advance, { id: "child", name: "note_overview_generate", arguments: { noteId: f.input.noteId, noteVersionId: f.input.noteVersionId } }) as { jobId: string };
-  const context = await loadAgentGenerationContext({ id: child.jobId, workspaceId: scope.workspaceId, requestedBy: scope.userId,
+  const child = await invokeNoteCapability(advance, { id: "child", name: "note_overview_generate", arguments: { noteId: f.input.noteId, noteVersionId: f.input.noteVersionId } }) as { execution: { kind: "job"; id: string } };
+  const context = await loadAgentGenerationContext({ id: child.execution.id, workspaceId: scope.workspaceId, requestedBy: scope.userId,
     leaseToken: randomUUID(), payload: { agentRunId: run.runId, agentRevision: 1 } });
   assert.match(context.instructions, /先举日常例子/); assert.match(context.instructions, /这一次只给公式/);
   await admin`UPDATE agent_runs SET model_calls=14 WHERE id=${run.runId}`;
@@ -202,7 +283,10 @@ test("checkpoint restart, child receipt wake, retained artifacts and revision fe
   await advance.acquire();
   const current = await api.get(scope, run.runId);
   assert.equal(current.operations[0].status, "succeeded"); assert.equal(current.artifacts[0].id, artifactId);
-  assert.equal(current.artifacts[0].jobId, jobId);
+  // 笔记产物那一档才带 jobId：产物是按种类收窄的联合类型，先收窄再断言属性。
+  const delivered = current.artifacts[0];
+  assert.ok(delivered.kind !== "card_candidates", "这一格交付的是笔记产物，不是制卡候选");
+  assert.equal(delivered.jobId, jobId);
   const checkpoint = await advance.step(request, "second-hash");
   const answer = agentTurnResultSchema.parse({ content: "已做好速看", toolCalls: [], finishReason: "stop", usage: null, providerRequestId: null });
   await advance.saveResponse(checkpoint.step, answer);
@@ -235,7 +319,7 @@ test("cancelled child commits are fenced and unknown outcomes never become autom
   assert.equal((await api.get(scope, run.runId)).operations[0].status, "outcome_unknown");
   await api.control(scope, run.runId, 1, "cancel");
   const rows = await workerPorts.transaction(scope, tx => tx.execute(query`SELECT ailearn_agent_job_current(${jobId},${scope.workspaceId},${scope.userId},false) AS allowed`));
-  const [{ allowed }] = rows as { allowed: boolean }[];
+  const [{ allowed }] = rows as unknown as { allowed: boolean }[];
   assert.equal(allowed, false);
   assert.equal((await api.get(scope, run.runId)).status, "cancelled");
   await assert.rejects(resumed.invoke(async () => "late effect"), /被新的要求替代/);
@@ -271,15 +355,15 @@ test("GT-01/02 actual overview generation adopts approved feedback, follows one 
     const run = await api.create(scope, { requestId: randomUUID(), goal, inputs: [input] });
     const rootLease = await lease(scope, run.runId), advance = createAgentAdvanceStore(workerPorts, rootLease, run.runId, 1);
     await advance.acquire();
-    const child = await invokeNoteCapability(advance, { id: sample, name: "note_overview_generate", arguments: { noteId: input.noteId, noteVersionId: input.noteVersionId } }) as { jobId: string };
+    const child = await invokeNoteCapability(advance, { id: sample, name: "note_overview_generate", arguments: { noteId: input.noteId, noteVersionId: input.noteVersionId } }) as { execution: { kind: "job"; id: string } };
     const leaseToken = randomUUID();
-    const [job] = await admin`UPDATE jobs SET status='running',started_at=now(),lease_token=${leaseToken} WHERE id=${child.jobId} RETURNING payload`;
-    await runNoteOverviewGenerate({ id: child.jobId, workspaceId: scope.workspaceId, requestedBy: scope.userId, payload: job.payload, leaseToken });
-    const [saved] = await admin`SELECT body,overview_points FROM note_overviews WHERE generation_job_id=${child.jobId}`;
+    const [job] = await admin`UPDATE jobs SET status='running',started_at=now(),lease_token=${leaseToken} WHERE id=${child.execution.id} RETURNING payload`;
+    await runNoteOverviewGenerate({ id: child.execution.id, workspaceId: scope.workspaceId, requestedBy: scope.userId, payload: job.payload, leaseToken });
+    const [saved] = await admin`SELECT body,overview_points FROM note_overviews WHERE generation_job_id=${child.execution.id}`;
     assert.ok(saved?.body);
     outputs.push({ sample, body: String(saved.body), explanations: saved.overview_points.map((point: { explanation: string }) => point.explanation) });
     await advance.release(false);
-    await admin`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id IN (${rootLease.id},${child.jobId})`;
+    await admin`UPDATE jobs SET status='succeeded',lease_token=NULL,finished_at=now() WHERE id IN (${rootLease.id},${child.execution.id})`;
   }
   // Save the actual outputs for semantic review; format checks alone cannot judge adaptation.
   console.log(JSON.stringify({ fixture: "GT-01/02", outputs }));
@@ -338,4 +422,105 @@ test("note_read stays inside the advance fence: active lease reads, cancelled go
   });
   assert.deepEqual(await ledger(), before, "被拒的读取同样不碰账本");
   await advance.release(false);
+});
+
+
+test("the notebook overview button atomically accepts one Agent Run and completes from a real receipt without a planning call", async () => {
+  const f = await fixture(), scope = { workspaceId: f.workspaceId, userId: f.userId }, requestId = randomUUID();
+  const input = { requestId, noteVersionId: f.input.noteVersionId };
+  const accepted = await startNoteOverviewTask(scope, f.input.noteId, input);
+  assert.ok(accepted.agentRunId);
+  const repeated = await startNoteOverviewTask(scope, f.input.noteId, input);
+  assert.equal(repeated.agentRunId, accepted.agentRunId);
+  assert.equal(repeated.taskId, accepted.taskId);
+  const [created] = await admin`SELECT r.direct_request,r.model_calls,count(o.id)::int AS operations FROM agent_runs r
+    JOIN agent_operations o ON o.run_id=r.id WHERE r.id=${accepted.agentRunId!} GROUP BY r.id`;
+  assert.equal(created.model_calls, 0);
+  assert.equal(created.operations, 1);
+  assert.equal(created.direct_request.capability, "note_overview_generate");
+  await admin`INSERT INTO note_overviews(workspace_id,user_id,note_id,note_version_id,body,source_references,generation_job_id)
+    VALUES(${scope.workspaceId},${scope.userId},${f.input.noteId},${f.input.noteVersionId},'光能用于制造有机物。',
+      '[{"blockOrdinal":1,"quote":"叶绿体利用光能制造有机物。"}]'::jsonb,${accepted.taskId})`;
+  await admin`UPDATE jobs SET status='succeeded',finished_at=now() WHERE id=${accepted.taskId}`;
+  const rootLease = await lease(scope, accepted.agentRunId!);
+  await runAgentAdvance({ ...rootLease, payload: { runId: accepted.agentRunId, revision: 1 } });
+  const finished = await api.get(scope, accepted.agentRunId!);
+  assert.equal(finished.status, "completed");
+  assert.equal(finished.modelCalls, 0);
+  assert.equal(finished.artifacts[0]?.kind, "note_overview");
+  const steps = await admin`SELECT execution_kind FROM agent_run_steps WHERE run_id=${accepted.agentRunId!}`;
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].execution_kind, "declared_request");
+});
+
+test("selected demonstration and expansion buttons preserve their validated anchors under their own Agent Run", async () => {
+  const f = await fixture(), scope = { workspaceId: f.workspaceId, userId: f.userId };
+  const anchor = { noteVersionId: f.input.noteVersionId, startBlockOrdinal: 1, endBlockOrdinal: 1,
+    startOffset: 0, endOffset: 15, excerpt: "叶绿体利用光能制造有机物。", prefix: "", suffix: "" };
+  anchor.endOffset = anchor.excerpt.length;
+  const demo = await startNoteLearningArtifactTask(scope, f.input.noteId, { noteVersionId: f.input.noteVersionId,
+    requestId: randomUUID(), sourceKind: "annotation", selectionAnchor: anchor });
+  const expansion = await startNoteExpansionTask(scope, f.input.noteId, { noteVersionId: f.input.noteVersionId,
+    requestId: randomUUID(), focusAnchor: anchor });
+  assert.ok(demo.agentRunId && expansion.agentRunId);
+  assert.notEqual(demo.agentRunId, expansion.agentRunId);
+  const [demoJob] = await admin`SELECT payload FROM jobs WHERE id=${demo.taskId}`;
+  const [expansionJob] = await admin`SELECT payload FROM jobs WHERE id=${expansion.taskId}`;
+  assert.deepEqual(demoJob.payload.anchor, anchor);
+  assert.equal(demoJob.payload.sourceKind, "annotation");
+  assert.deepEqual(expansionJob.payload.focusAnchor, anchor);
+  assert.equal(demoJob.payload.agentRunId, demo.agentRunId);
+  assert.equal(expansionJob.payload.agentRunId, expansion.agentRunId);
+  const before = await admin`SELECT count(*)::int AS n FROM agent_runs WHERE user_id=${scope.userId}`;
+  await assert.rejects(startNoteLearningArtifactTask(scope, f.input.noteId, { noteVersionId: f.input.noteVersionId,
+    requestId: randomUUID(), sourceKind: "annotation", selectionAnchor: { ...anchor, excerpt: "伪造选区" } }), /选中的原句/);
+  const after = await admin`SELECT count(*)::int AS n FROM agent_runs WHERE user_id=${scope.userId}`;
+  assert.equal(after[0].n, before[0].n, "invalid material creates neither a Run nor an operation");
+});
+
+test("the card button keeps the complete domain options and its original review Run while owning it through Agent", async () => {
+  const f = await fixture(), scope = { workspaceId: f.workspaceId, userId: f.userId };
+  const body = { version: 2 as const, noteVersionId: f.input.noteVersionId, sourceScope: { kind: "whole_note" as const },
+    learningGoal: "apply" as const, detailThreshold: "deep" as const, quantity: { kind: "adaptive" as const, hardMaxCards: 19 },
+    preferredStrategies: [], clientRequestId: randomUUID() };
+  const key = randomUUID();
+  const accepted = await createGenerationRunV2(scope, f.input.noteVersionId, body, key);
+  assert.ok(accepted.agentRunId);
+  const replay = await createGenerationRunV2(scope, f.input.noteVersionId, body, key);
+  assert.equal(replay.runId, accepted.runId);
+  assert.equal(replay.agentRunId, accepted.agentRunId);
+  const [stored] = await admin`SELECT r.direct_request,r.model_calls,o.card_generation_run_id,o.card_generation_outbox_id
+    FROM agent_runs r JOIN agent_operations o ON o.run_id=r.id WHERE r.id=${accepted.agentRunId!}`;
+  assert.deepEqual(stored.direct_request.request, body);
+  assert.equal(stored.card_generation_run_id, accepted.runId);
+  assert.ok(stored.card_generation_outbox_id);
+  assert.equal(stored.model_calls, 0);
+  await assert.rejects(createGenerationRunV2(scope, f.input.noteVersionId,
+    { ...body, quantity: { kind: "adaptive", hardMaxCards: 8 } }, key), /另一份设置/);
+});
+
+test("manual page generation survives Companion off/read-only while cancellation, epochs and autonomous authority stay enforced", async () => {
+  const f = await fixture(), scope = { workspaceId: f.workspaceId, userId: f.userId };
+  await admin`INSERT INTO user_companion_account_state(user_id,global_enabled,agent_settings)
+    VALUES(${scope.userId},false,'{"version":1,"permissionLevel":"read_only"}')`;
+  const accepted = await startNoteOverviewTask(scope, f.input.noteId,
+    { noteVersionId: f.input.noteVersionId, requestId: randomUUID() });
+  assert.ok(accepted.agentRunId);
+  await workerPorts.transaction(scope, async tx => {
+    const rows = await tx.execute(query`SELECT ailearn_agent_job_current(${accepted.taskId}::uuid,${scope.workspaceId}::uuid,${scope.userId}::uuid,false) AS allowed`);
+    assert.equal(rows[0].allowed, true, "the explicitly chosen capability is still authorized");
+  });
+  await assert.rejects(api.create(scope, { requestId: randomUUID(), goal: "自选动作", inputs: [f.input] }), /伴星当前已关闭/);
+  await api.control(scope, accepted.agentRunId!, 1, "cancel");
+  await workerPorts.transaction(scope, async tx => {
+    const rows = await tx.execute(query`SELECT ailearn_agent_job_current(${accepted.taskId}::uuid,${scope.workspaceId}::uuid,${scope.userId}::uuid,false) AS allowed`);
+    assert.equal(rows[0].allowed, false);
+  });
+  const next = await startNoteOverviewTask(scope, f.input.noteId,
+    { noteVersionId: f.input.noteVersionId, requestId: randomUUID() });
+  await admin`UPDATE user_companion_account_state SET epoch=epoch+1 WHERE user_id=${scope.userId}`;
+  await workerPorts.transaction(scope, async tx => {
+    const rows = await tx.execute(query`SELECT ailearn_agent_job_current(${next.taskId}::uuid,${scope.workspaceId}::uuid,${scope.userId}::uuid,false) AS allowed`);
+    assert.equal(rows[0].allowed, false, "account revocation invalidates even a direct request");
+  });
 });

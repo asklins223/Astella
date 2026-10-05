@@ -12,6 +12,14 @@ beforeEach(() => {
 afterEach(() => { setCompanionNotificationVoiceHost(null); setCompanionVoiceHost(null); vi.useRealTimers(); });
 
 describe("shared notification voice channel", () => {
+  it("passes guidance purpose through the existing graph and drops an interrupted guide's late audio", async () => {
+    let resolve!: (buffer: AudioBuffer) => void;
+    host.synthesize = vi.fn(() => new Promise<AudioBuffer>(done => { resolve = done; }));
+    const pending = run({ id: "guide", purpose: "guidance" });
+    expect(host.synthesize).toHaveBeenCalledWith("模型装好了", undefined, "guidance");
+    stopCompanionNotificationSpeech("guide"); resolve(buffer); await pending;
+    expect(host.play).not.toHaveBeenCalled();
+  });
   it("does not request audio while a reply, mute or another policy blocks it", async () => {
     await run({ allowed: () => false }); expect(host.synthesize).not.toHaveBeenCalled();
     setCompanionNotificationVoiceHost({ ...host, available: () => false }); await run(); expect(host.synthesize).not.toHaveBeenCalled();

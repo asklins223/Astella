@@ -10,7 +10,7 @@
 | --- | --- |
 | 笔记学习的页面、流程、状态与验收 | [41 · 从一篇笔记出发的轻量学习体验](./41-note-companion-learning-experience-2026-09-28.md) |
 | 模型执行、重试、检查点、提交与后台隔离 | [41a · 统一 Agent 基础](./41a-unified-agent-foundation-2026-09-28.md) |
-| 全项目 Agent：代码分层、上下文、持续身份、目标/能力、成长闭环与 UI | [42 · 统一 Agent 系统与伴星成长](./42-unified-agent-and-companion-experience-2026-10-04.md)（2026-10-04 用户决定；产品与技术目标，不代表已经实现） |
+| 全项目 Agent：代码分层、上下文、持续身份、目标/能力、成长闭环与 UI | [42 · 统一 Agent 系统与伴星成长](./42-unified-agent-and-companion-experience-2026-10-04.md)（2026-10-05 本轮架构缺口已修复并验收；实际证据与长期效果限制见 §14.6，设备与心跳窗口验收保持有效） |
 | 首次使用、新空间认识、空间切换到达、预制指引动画与岛内重看 | [43 · 伴星带路与空间到达](./43-companion-guidance-and-space-arrival-2026-10-04.md)（2026-10-04 用户决定；实施排在 42 之后，未做实现与窗口验收） |
 | 伴星人格、记忆准入、日记 | [40 · 伴星长期陪伴与日记产品设计](./40-companion-long-term-experience-and-diary-prd-2026-09-25.md) |
 | 伴星运行时分层、失败表达、可观测性 | [40b · 伴星运行时、部署与可观测性](./40b-companion-runtime-and-observability-2026-09-27.md) |

@@ -189,7 +189,12 @@ export function ArtifactFrameHost({
   // 心跳看门：只在没降级时值守。心跳消失 ⇒ 摘掉重挂一次；第二次 ⇒ 降级。
   useEffect(() => {
     if (phase.kind === "degraded") return;
+    // Electron may suspend a hidden window's frame timers. A visibility change
+    // starts a fresh heartbeat allowance instead of treating that pause as a crash.
+    const resetHeartbeatAllowance = () => { lastBeatRef.current = Date.now(); };
+    document.addEventListener("visibilitychange", resetHeartbeatAllowance);
     const timer = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
       if (Date.now() - lastBeatRef.current <= watchdogMs) return;
       lastBeatRef.current = Date.now();
       if (attempt >= MAX_FRAME_ATTEMPTS) {
@@ -202,7 +207,10 @@ export function ArtifactFrameHost({
       setContentHeight(null);
       setPhase({ kind: "waiting" });
     }, 500);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", resetHeartbeatAllowance);
+    };
   }, [phase.kind, attempt, watchdogMs]);
 
   if (phase.kind === "degraded") {

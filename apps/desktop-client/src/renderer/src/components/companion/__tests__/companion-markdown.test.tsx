@@ -76,6 +76,87 @@ describe("renderCompanionMarkdown（§4.8：可见正文保留结构，由渲染
     // 没闭合的标记按字面留着，不吞掉半句话
     expect(plainCompanionBubbleText("这一步要**先关燃气")).toBe("这一步要**先关燃气");
   });
+
+  it("真实学习回复的独立/行内公式共享 KaTeX，粗体里的公式也能排版", () => {
+    show("先看电功率：\n\n$$\nP = UI\n$$\n\n其中 $I=\\frac{P}{U}$，**这次用 $P=UI$**。");
+    expect(screen.getAllByRole("math").map(node => node.getAttribute("aria-label")))
+      .toEqual(["P = UI", "I=\\frac{P}{U}", "P=UI"]);
+    expect(screen.getByTestId("root").querySelectorAll(".katex")).toHaveLength(3);
+    expect(screen.getByTestId("root").querySelector(".mfrac")).not.toBeNull();
+    expect(screen.getByTestId("root").querySelector("strong .note-math")).not.toBeNull();
+  });
+
+  it("流式公式、美元金额和代码保留内容；错误 TeX 原文可核对", () => {
+    show("价格 $100 和 $200；`$P=UI$`；还在写 $$ P = UI；转义 \\$x\\$。");
+    expect(screen.queryAllByRole("math")).toHaveLength(0);
+    expect(screen.getByTestId("root").textContent).toContain("价格 $100 和 $200");
+    expect(screen.getByText("$P=UI$").tagName).toBe("CODE");
+    cleanup();
+    show("$$ \\broken{x} $$");
+    expect(screen.getByTestId("root").querySelector(".note-math-error")?.textContent).toBe("$$ \\broken{x} $$");
+  });
+
+  it("公式不能创建链接/脚本，过长输入保留原文而不进入排版", () => {
+    show("$\\href{javascript:alert(1)}{x}$\n\n$$ \\htmlClass{onerror}{x} $$\n\n$" + "a".repeat(10_001) + "$");
+    const root = screen.getByTestId("root");
+    expect(root.querySelector("a, script, img, [onerror]")).toBeNull();
+    expect(root.querySelector(".note-math-error")?.textContent).toContain("a".repeat(10_001));
+  });
+
+  it("引用、嵌套列表、删除线和分隔线保留各自层级", () => {
+    show("> **注意**\n> 需要重新核对。\n\n3. 第一步\n   - 核对 $P=UI$\n   - ~~旧结论~~\n4. 第二步\n\n---");
+    const root = screen.getByTestId("root");
+    expect(root.querySelector("blockquote strong")?.textContent).toBe("注意");
+    expect(root.querySelector("ol")?.getAttribute("start")).toBe("3");
+    expect(root.querySelector("ol > li > ul")?.children).toHaveLength(2);
+    expect(root.querySelector("del")?.textContent).toBe("旧结论");
+    expect(root.querySelector("hr")).not.toBeNull();
+  });
+
+  it("表格使用公共语法，格内转义竖线不增列，公式和真实链接保持可用", () => {
+    show("| 项目 | 说明 |\n| --- | --- |\n| a\\|b | **电功率** $P=UI$ |\n| 来源 | [手册](https://example.com) |");
+    const table = screen.getByRole("table");
+    expect([...table.querySelectorAll("th")].map(cell => cell.textContent)).toEqual(["项目", "说明"]);
+    expect(table.querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(table.querySelectorAll("tbody tr")[0].children).toHaveLength(2);
+    expect(table.querySelector("td")?.textContent).toBe("a|b");
+    expect(screen.getByRole("math").getAttribute("aria-label")).toBe("P=UI");
+    fireEvent.click(screen.getByText("手册"));
+    expect(opened).toEqual(["https://example.com"]);
+    expect(screen.getByRole("region", { name: "回复中的表格" }).tabIndex).toBe(0);
+  });
+
+  it("轻气泡不念闭合公式标记，半截标记和乘法仍按原文保留", () => {
+    expect(plainCompanionBubbleText("**用 $P=UI$**，再看 $I=\\frac{P}{U}$。"))
+      .toBe("用 P=UI，再看 I=\\frac{P}{U}。");
+    expect(plainCompanionBubbleText("面积 = 长 * 宽 * 高；还在写 $P=UI"))
+      .toBe("面积 = 长 * 宽 * 高；还在写 $P=UI");
+    expect(plainCompanionBubbleText("__先看这里__")).toBe("先看这里");
+  });
+
+  it("真实交付中的双重编码换行排成段落/列表，代码与 TeX 不被改写", () => {
+    show("第一段已做好。\\n\\n- **速看**已保存\\n- 卡片待审核\\n\\n代码是 `\\n\\n`，公式 **$\\nabla f$**。");
+    const root = screen.getByTestId("root");
+    expect(root.querySelectorAll("ul li")).toHaveLength(2);
+    expect(root.querySelectorAll("p")).toHaveLength(2);
+    expect(root.querySelector("code")?.textContent).toBe("\\n\\n");
+    expect(screen.getByRole("math").getAttribute("aria-label")).toBe("\\nabla f");
+    expect(plainCompanionBubbleText("已做好。\\n\\n下一步由你选。"))
+      .toBe("已做好。\n\n下一步由你选。");
+  });
+
+  it("只有代码里的换行示例或一条普通字面转义，不触发正文解码", () => {
+    show("解释 `\\n\\n`，这里只写 \\n；\n\n```js\nconst text = '\\n\\n';\n```");
+    const root = screen.getByTestId("root");
+    expect(root.textContent).toContain("这里只写 \\n；");
+    expect(root.querySelector("pre")?.textContent).toBe("const text = '\\n\\n';");
+  });
+
+  it("混有编码段落时，跨行公式里的 nabla 命令仍是原始 TeX", () => {
+    show("独立公式：\n$$\n\\nabla f\n$$\n\n已做好。\\n\\n下一步由你选。");
+    expect(screen.getByRole("math").getAttribute("aria-label")).toBe("\\nabla f");
+    expect(screen.getByText("下一步由你选。").tagName).toBe("P");
+  });
 });
 
 describe("链接（方案 35 F7）", () => {

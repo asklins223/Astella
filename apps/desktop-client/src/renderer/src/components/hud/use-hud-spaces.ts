@@ -5,7 +5,7 @@ import { useRoomStore } from "../../app/room-store";
 import { markSpaceUsed, readSpaceRecents } from "../../app/space-recents";
 import { readAuthenticatedSession } from "../../app/surface-session";
 import { publishGateInvalidation } from "../../app/gate-invalidation";
-import { requestSpaceSwitchReceipt, SPACE_MENU_REFRESH_EVENT } from "./space-menu-events";
+import { SPACE_MENU_REFRESH_EVENT } from "./space-menu-events";
 
 type SpaceState = {
   session: SessionContextV1 | null;
@@ -75,7 +75,7 @@ export function useHudSpaces(onSwitched?: (name: string) => void) {
     const nextRecents = markSpaceUsed(id);
     if (mounted.current) setRecents(nextRecents);
     if (onSwitched) onSwitched(name);
-    else { requestSpaceSwitchReceipt(name); publishGateInvalidation("stale_workspace"); }
+    else { publishGateInvalidation("stale_workspace"); }
   };
 
   const enter = async (workspace: WorkspaceSummaryV1, confirmed = false) => {
@@ -103,7 +103,6 @@ export function useHudSpaces(onSwitched?: (name: string) => void) {
       const nextRecents = markSpaceUsed(created.workspaceId);
       if (mounted.current) setRecents(nextRecents);
       // Main creates AND enters: the existing gate invalidation remains mandatory.
-      requestSpaceSwitchReceipt(name);
       publishGateInvalidation("stale_workspace");
     } catch (error) {
       if (mounted.current) setMessage({ text: gatewayErrorMessage(error), tone: "error" });

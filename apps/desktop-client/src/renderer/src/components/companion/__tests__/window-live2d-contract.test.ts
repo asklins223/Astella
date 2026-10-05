@@ -299,6 +299,7 @@ describe("window Live2D policy", () => {
       .toEqual({ group: "Spray", index: 0 });
     // 一轮说完必须把眼镜摘下来，否则一副圆脸眼镜挂到下一次对话。
     expect(momentCueForWindowLive2D("reply_completed", "whale")).toEqual({ costume: null });
+    expect(momentCueForWindowLive2D("space_arrived", "whale")).toEqual({ motion: { group: "Bubble", index: 0 }, costume: null });
   });
 
   it("道具层：穿着写资产值，脱了写 0，脸部参数与表情自己的参数都不碰", () => {

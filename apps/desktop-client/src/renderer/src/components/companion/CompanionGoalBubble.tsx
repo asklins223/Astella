@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronLeft, ChevronRight, LoaderCircle, Settings2, X } from "lucide-react";
 import { useCompanionFloatingPlacement } from "./use-companion-floating-placement";
 import { CompanionGoalControls } from "./CompanionGoalControls";
+import { isCompanionComposition } from "./companion-composer-key";
 import { agentGoalActive, type AgentGoalsController } from "./use-agent-goals";
 import { artifactLabel, goalHeadline, goalNextHint, goalStatusText, goalTitle, latestGoalArtifacts, openAgentArtifact } from "./agent-goal-presentation";
 
@@ -27,7 +28,7 @@ export function CompanionGoalBubble({ anchorRef, motionMode, blocked, open, sele
   useEffect(() => {
     if (!visible) return;
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      if (event.key !== "Escape" || event.defaultPrevented || isCompanionComposition(event)) return;
       event.preventDefault(); event.stopPropagation();
       if (adjusting) { setAdjusting(false); adjustRef.current?.focus({ preventScroll: true }); }
       else { onClose(); buttonRef.current?.focus({ preventScroll: true }); }

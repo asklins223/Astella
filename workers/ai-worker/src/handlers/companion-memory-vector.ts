@@ -8,6 +8,7 @@
  */
 
 import { sql } from "drizzle-orm";
+import { toTextArrayLiteral } from "@ailearn/shared/pg-text-array";
 import type { CompanionTaskEntityRef } from "./companion-task-memory.ts";
 import { logger } from "../lib/logger.ts";
 
@@ -140,12 +141,11 @@ export function extractQueryKeywords(query: string, maxKeywords = 12): string[] 
   return keywords;
 }
 
-/** 将已消毒的关键词数组序列化为 PostgreSQL text[] 字面量。 */
-export function toTextArrayLiteral(values: string[]): string {
-  const items = values.map((v) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`);
-  return `{${items.join(",")}}`;
-}
-
+/**
+ * `toTextArrayLiteral` 已下沉到 `@ailearn/shared/pg-text-array`（API 侧的日记遮蔽
+ * 读路径要同一份实现）。这里转出是为了不打断既有的调用方与测试导入。
+ */
+export { toTextArrayLiteral } from "@ailearn/shared/pg-text-array";
 function mapMemoryRow(row: Record<string, unknown>): RetrievedMemory {
   return {
     memoryId: String(row.id ?? row.memory_id ?? ""),

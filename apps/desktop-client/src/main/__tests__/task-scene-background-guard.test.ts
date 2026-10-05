@@ -19,8 +19,8 @@ const { document } = window;
 const getComputedStyle = window.getComputedStyle.bind(window);
 const style = document.createElement("style");
 
-// Load task background declarations in their real renderer order. A later
-// collection rule used to erase this desk even when its own CSS was correct.
+// Load task background declarations in their real renderer order. Shared card
+// styles must not erase the collection, queue, or either dedicated making desk.
 const cardStyles = new Set([
   "./components/surfaces/review/card-experience.css",
   "./components/surfaces/library/card-study-scene.css",
@@ -70,13 +70,22 @@ afterAll(() => style.remove());
 
 describe("task scene background regression", () => {
   for (const [intent, family, filename] of scenes) {
-    it.each(["day", "night"] as const)(`${intent} keeps its original %s scene`, (theme) => {
+    it.each(["day", "night"] as const)(`${intent} keeps its original %s scene`, (theme) => withCardBackgrounds(() => {
       const { surface } = resolveRoomIntent(intent);
       const root = document.createElement("div");
       root.className = "desktop-app hud-surface";
       root.dataset.theme = theme;
       const host = document.createElement("section");
       host.className = `task-surface task-surface--spatial task-surface--${surface}`;
+      // These are the rendered page roots: a bare host misses the :has()
+      // override that exposed the homepage behind both populated pages.
+      if (surface === "objective-library" || surface === "review") {
+        const content = document.createElement("div");
+        content.className = surface === "objective-library"
+          ? "approved-surface approved-surface--workshop task-artifact card-library card-experience"
+          : "queue-desk review-queue card-experience";
+        host.append(content);
+      }
       root.append(host);
       document.body.append(root);
 
@@ -86,7 +95,7 @@ describe("task scene background regression", () => {
       expect(getComputedStyle(host).backgroundImage).toBe(`url("${manifest.basePath}/${expectedPath}")`);
       expect(manifest.taskPosters[family][theme].path).toBe(expectedPath);
       expect(manifest.normalized.assets[`taskPosters.${family}.${theme}`]).toBe(expectedPath);
-    });
+    }));
   }
 
   it("ships the original PNGs plus the candidate tabletop and drafting atelier with registered hashes", () => {

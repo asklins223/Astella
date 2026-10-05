@@ -15,7 +15,6 @@ export const HOME_FEATURE_ICONS: Readonly<Record<HomeFeatureIconId, LucideIcon>>
   book: BookOpenText,
   calendar: CalendarCheck2,
   cards: SquareStack,
-  catalog: BookOpenText,
   companion: MessageCircle,
   notebook: BookOpenText,
   orbit: Orbit,

@@ -1,0 +1,70 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useRoomStore } from "../../../../app/room-store";
+import { CompanionGuideBook } from "../CompanionGuideBook";
+import { CompanionGuidanceStage } from "../CompanionGuidanceStage";
+import type { CompanionGuideController } from "../use-companion-guide";
+const runFeature = vi.fn();
+vi.mock("../../../home-v2/HomeV2Experience", () => ({ useHomeV2: () => ({ runFeature }) }));
+const guide = () => ({ account: null, identity: { name: "共享书房", role: "member", isPersonal: false }, session: { topic: "welcome", index: 1, scope: "account" }, invitation: null, contents: { status: "ready", total: 0, notes: [] }, start: vi.fn(), skip: vi.fn(), pause: vi.fn(), next: vi.fn(), end: vi.fn(), resume: null, reloadContents: vi.fn(), pending: false, revision: 0 }) as CompanionGuideController;
+beforeEach(() => { runFeature.mockReset(); useRoomStore.setState({ surface: null, destination: "room", motionMode: "off", reducedMotion: false, masterMuted: true, hudPage: "home", spaceIdentity: { name: "共享书房", role: "member", isPersonal: false } }); vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} }); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it("offers a complete first walk before the individual topics and closes the directory when started", () => {
+  const controller = guide(), close = vi.fn(); controller.session = null;
+  render(<CompanionGuideBook guide={controller} onClose={close} />);
+  fireEvent.click(screen.getByRole("button", { name: /跟我完整走一遍/ }));
+  expect(controller.start).toHaveBeenCalledWith("welcome", false);
+  expect(close).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: /读懂一篇笔记/ }));
+  expect(controller.start).toHaveBeenLastCalledWith("reading", false);
+  expect(screen.queryByText("用自己的话，记下来")).toBeNull();
+});
+it("presents the entire route and a complete static scene when motion is Off", () => {
+  const controller = guide();
+  const { container } = render(<CompanionGuidanceStage guide={controller} />);
+  expect(container.querySelector(".guidance-stage")).toBeNull();
+  expect(document.body.querySelector('.guidance-scene[data-phase="2"]')).toBeTruthy();
+  expect(screen.getByRole("navigation", { name: "连续带路路线" }).querySelectorAll("li")).toHaveLength(5);
+  expect(screen.getByRole("button", { name: "第 2 站：找到笔记" }).getAttribute("aria-current")).toBe("step");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /演示画面 1/ }));
+  expect(document.body.querySelector('.guidance-scene[data-phase="0"]')).toBeTruthy();
+});
+it("keeps the tour alive through a real visit and continues to the next chapter", () => {
+  const controller = guide();
+  runFeature.mockImplementation(() => useRoomStore.setState({ surface: "note-library" }));
+  render(<CompanionGuidanceStage guide={controller} />);
+  fireEvent.click(screen.getByRole("button", { name: "先去实际试试" }));
+  expect(runFeature).toHaveBeenCalledWith("all-notes");
+  expect(controller.pause).not.toHaveBeenCalled();
+  expect(document.body.querySelector('.guidance-stage[data-view="practice"]')).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "接着，读懂一句" }));
+  expect(controller.next).toHaveBeenCalledWith(1);
+  expect(document.body.querySelector('.guidance-stage[data-view="tour"]')).toBeTruthy();
+});
+it("carries the same sheet from the note to its explanation, including a quick reversal", () => {
+  const controller = guide();
+  const { rerender } = render(<CompanionGuidanceStage guide={controller} />);
+  const paper = document.body.querySelector(".guidance-scene__folio");
+  controller.session = { topic: "welcome", index: 2, scope: "account" };
+  rerender(<CompanionGuidanceStage guide={controller} />);
+  expect(document.body.querySelector(".guidance-scene__folio")).toBe(paper);
+  expect(screen.getByRole("button", { name: "演示：选中这句请伴星解释" })).toBeTruthy();
+  controller.session = { topic: "welcome", index: 1, scope: "account" };
+  rerender(<CompanionGuidanceStage guide={controller} />);
+  expect(document.body.querySelector(".guidance-scene__folio")).toBe(paper);
+  expect(controller.pause).not.toHaveBeenCalled();
+});
+it("keeps pause, completion and real conversation separate", () => {
+  const controller = guide();
+  render(<CompanionGuidanceStage guide={controller} />);
+  fireEvent.click(screen.getByRole("button", { name: "稍后继续" }));
+  expect(controller.pause).toHaveBeenCalledOnce(); expect(controller.end).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "结束带看" }));
+  expect(controller.end).toHaveBeenCalledOnce();
+  const chat = vi.fn(); window.addEventListener("ailearn:companion-open-chat", chat);
+  fireEvent.click(screen.getByRole("button", { name: "问一句" }));
+  expect(chat).toHaveBeenCalledOnce();
+  window.removeEventListener("ailearn:companion-open-chat", chat);
+});

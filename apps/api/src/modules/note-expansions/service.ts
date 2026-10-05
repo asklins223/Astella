@@ -1,3 +1,4 @@
+import { startDomainAgentRequest, agentRunForDomainExecution } from "../../agent/runtime.ts";
 import { createHash } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -26,7 +27,7 @@ import {
 import { readNoteExpansionGenerateJobPayload } from "@ailearn/shared/job-payload-contracts";
 import type { z } from "zod";
 import { visibleNotesCondition } from "../note/visibility.ts";
-import { classifyJobFailureReason, createJob } from "../job/service.ts";
+import { classifyJobFailureReason } from "../job/service.ts";
 import { createNote } from "../note/service.ts";
 import { isAssistantReplyForNote } from "../note/companion-source.ts";
 
@@ -158,19 +159,9 @@ export async function startNoteExpansionTask(scope: NoteExpansionScopeV1, noteId
     }
   });
 
-  const job = await createJob({
-    type: JobType.NOTE_EXPANSION_GENERATE,
-    workspaceId: scope.workspaceId,
-    requestedBy: scope.userId,
-    idempotencyKey: `note-expansion:${noteId}:${input.noteVersionId}:${input.requestId}`,
-    payload: {
-      noteId,
-      noteVersionId: input.noteVersionId,
-      requestId: input.requestId,
-      ...(input.focusAnchor ? { focusAnchor: input.focusAnchor } : {}),
-      ...(input.sourceMessageId && input.conversationId ? { sourceMessageId: input.sourceMessageId, conversationId: input.conversationId } : {}),
-    },
-  });
+  const { operation } = await startDomainAgentRequest(scope, { capability: "note_expansion_generate", noteId, request: input }, "根据这版笔记准备可挑选的知识拓展草稿。");
+  if (operation.execution.kind !== "job") throw new Error("note capability returned a different execution");
+  const job = { id: operation.execution.id };
   return withWorkspaceTransaction(scope, (tx) => getNoteExpansionTask(tx, scope, noteId, job.id));
 }
 
@@ -198,6 +189,7 @@ async function taskForJob(
   else status = "failed";
   return noteExpansionTaskV1Schema.parse({
     taskId: job.id,
+    agentRunId: await agentRunForDomainExecution(tx, scope, "job", job.id),
     noteId,
     noteVersionId: input.noteVersionId,
     focusAnchor: input.focusAnchor ?? null,

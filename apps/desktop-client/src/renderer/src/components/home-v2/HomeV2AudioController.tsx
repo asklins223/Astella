@@ -524,7 +524,7 @@ export function HomeV2AudioController() {
     return decodeBase64Audio(graph.context, unwrapGatewayResult(response).audioBase64);
   }, [ensureGraph]);
 
-  const synthesizeNotification = useCallback(async (text: string, clip?: CompanionNotificationAudio): Promise<AudioBuffer> => {
+  const synthesizeNotification = useCallback(async (text: string, clip?: CompanionNotificationAudio, purpose: "notification" | "guidance" = "notification"): Promise<AudioBuffer> => {
     const graph = ensureGraph();
     if (clip) {
       const cached = notificationAudioCache.current.get(clip);
@@ -542,7 +542,7 @@ export function HomeV2AudioController() {
     if (!speakApi) throw new Error("notification voice unavailable");
     const response = await speakApi.call(window.ailearn.companion.voice, {
       meta: createRequestMeta(workspaceEpochRef.current ?? undefined),
-      request: { version: 1, text, purpose: "notification" },
+      request: { version: 1, text, purpose },
     });
     return decodeBase64Audio(graph.context, unwrapGatewayResult(response).audioBase64);
   }, [ensureGraph]);

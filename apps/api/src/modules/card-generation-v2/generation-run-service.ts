@@ -1,12 +1,6 @@
-/**
- * Card Generation V2 — GenerationRun 查询与动作端点（方案 20 §17.1–17.2）。
- *
- * 2026-10-04：创建事务本体已下沉到制卡领域包 `@ailearn/card-generation`
- * （`createGenerationRunInTransaction`）。本文件保留**原来的公开签名**
- * `createGenerationRunV2(ctx, noteVersionId, body, idempotencyKey)`：它仍然
- * 用 `withWorkspaceTransaction` 开事务，然后把执行器交给那一份唯一实现去跑。
- * 路由、测试与错误边界的调用点一行都没改。
- */
+import { startDomainAgentRequest } from "../../agent/runtime.ts";
+/** Card generation keeps its domain Run and review flow. Creation accepts one
+ * Agent Run and its real domain operation atomically through the host. */
 
 import { and, eq, desc, inArray, sql } from "drizzle-orm";
 import { withWorkspaceTransaction } from "../../db/client.ts";
@@ -27,7 +21,6 @@ import {
 // (笔记, 人) 在制守卫读的是同一个数组。
 import {
   ACTIVE_GENERATION_RUN_STATUSES,
-  createGenerationRunInTransaction,
 } from "@ailearn/card-generation";
 import {
   sanitizeEventPayloadV2,
@@ -43,28 +36,25 @@ import {
   type RunContext,
 } from "./helpers.ts";
 
-/** R34/§22.6：解析正整数 env（非法/非正 → 默认值）。 */
-function parsePositiveIntEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === "") return fallback;
-  const parsed = Number(raw.trim());
-  return Number.isInteger(parsed) && parsed >= 1 ? parsed : fallback;
-}
-
 export async function createGenerationRunV2(
   ctx: RunContext,
   noteVersionId: string,
   body: CreateCardGenerationRunRequestV2,
   idempotencyKey: string,
-): Promise<{ runId: string; status: string }> {
-  // 限额是**宿主**的决定（每个部署的 abuse 预算不同），所以 env 解析留在这一侧，
-  // 作为明确 options 传进领域实现——领域包不读 env。默认值与解析规则与下沉前一致。
-  return withWorkspaceTransaction(ctx, async (tx) =>
-    createGenerationRunInTransaction(tx, ctx, noteVersionId, body, idempotencyKey, {
-      maxInFlightRuns: parsePositiveIntEnv("CARD_GENERATION_V2_MAX_INFLIGHT_RUNS", 3),
-      dailyRunLimit: parsePositiveIntEnv("CARD_GENERATION_V2_DAILY_RUN_LIMIT", 50),
-    }),
-  );
+): Promise<{ runId: string; status: string; agentRunId?: string }> {
+  const noteId = await withWorkspaceTransaction(ctx, async tx => {
+    const [row] = await tx.execute<{ note_id: string }>(sql`SELECT note_id FROM note_versions
+      WHERE id=${noteVersionId} AND workspace_id=${ctx.workspaceId}`);
+    if (!row) throw new CardGenerationV2ServiceError("note_version_not_found", 404, "这版笔记现在读不到。");
+    return row.note_id;
+  });
+  const { run, operation } = await startDomainAgentRequest(ctx, { capability: "card_generation_generate", noteId, request: body },
+    "根据这版笔记准备待审核学习卡，保存决定由用户审核后作出。", idempotencyKey);
+  if (operation.execution.kind !== "card_generation") throw new Error("card capability returned a different execution");
+  const domain = await getGenerationRunV2(ctx, operation.execution.id);
+  if (!domain) throw new CardGenerationV2ServiceError("run_not_found", 404, "这批学习卡现在读不到。");
+  return { runId: operation.execution.id, status: domain.status, agentRunId: run.runId };
+
 }
 
 export async function getGenerationRunV2(ctx: RunContext, runId: string) {

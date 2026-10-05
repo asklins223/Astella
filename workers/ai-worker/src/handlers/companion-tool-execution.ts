@@ -1,4 +1,7 @@
+import { reserveCompanionProviderCall } from "./companion-agent-events.ts";
 import { executeAgentGoalTool } from "../agent/companion-tools.ts";
+import { executeBasicCapability } from "../agent/basic-capabilities.ts";
+import { executeExternalCapability } from "../agent/external-capabilities.ts";
 /**
  * 伴星 agent 的**工具执行**（2026-09-30 拆出，B2）。
  *
@@ -92,7 +95,7 @@ export async function executeReadTool(
   definition: CompanionAgentToolDefinitionV1,
   args: Record<string, unknown>,
 ): Promise<AgentToolExecutionResult> {
-  if (definition.name === "agent_list_goals") return executeAgentGoalTool(event, definition.name, args);
+  if (["agent_list_goals","agent_list_long_goals"].includes(definition.name)) return executeAgentGoalTool(event, definition.name, args);
   // 外发政策门禁。工具面本来已经把受管工具摘掉了（见 resolveAllCompanionAgentTools），
   // 这里再拦一次是因为**工具名是模型给的**：不复核就等于"下发面没列出来"这件事
   // 只是运气好，而不是一个保证。判定只看服务端解析出的约束，不看模型自述。
@@ -100,6 +103,16 @@ export async function executeReadTool(
     throw new CompanionToolBlockedError(VISION_EGRESS_DENIED_MESSAGE);
   }
   switch (definition.name) {
+    case "agent_read_public_document": {
+      const userTexts = [event.read.userText, ...event.read.recentMessages.filter(message => message.role === "user").slice(-3).map(message => message.text)];
+      const value = await executeExternalCapability({ workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+        { name: definition.name, arguments: args }, userTexts, event.ctx.signal);
+      return { value, safeSummary: value.truncated ? "已读取公开文档的一部分，来源与覆盖范围已保留" : "已读取公开文档，来源与正文已核对" };
+    }
+    case "agent_calculate": {
+      const result=executeBasicCapability({name:definition.name,arguments:args});
+      return {value:result,safeSummary:`计算结果：${result.value}`};
+    }
     case "companion_read_context": {
       const page = parsePageContext(event.read.pageContext);
       const result = await withWorkerWorkspaceTransaction(
@@ -462,7 +475,16 @@ export async function executeReadTool(
         // jobId 是 ai_audit_log.job_id —— 与本 handler 其它审计行同一口径（job 的
         // id，不是 run 的 id）。这一列当前没有外键，填错不会炸库，只会让成本/合规
         // 记录按 job 聚合时对不上号。
-        { userId: event.read.userId, operation: "companion_read_image", jobId: event.ctx.id },
+        // `image_content` 与 `companion-daily-summary-image.ts` 同口径：这一次外发
+        // 的是图片字节，不声明类别时审计行的类别列是空的——设置页"带出去的内容"
+        // 对这条永远是空的，而它恰恰是最该被看见的一次外发。
+        {
+          userId: event.read.userId,
+          operation: "companion_read_image",
+          reserveCall: () => reserveCompanionProviderCall(event),
+          jobId: event.ctx.id,
+          dataCategories: ["image_content"],
+        },
       );
       const systemPrompt = "你是看图的那双眼睛，替一个学习助手转述图里的内容。"
         + "只说图上确实看得见的东西：文字按原文抄（公式、表格、代码用 markdown 保持结构），"

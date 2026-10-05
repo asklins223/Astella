@@ -69,21 +69,24 @@ export function CompanionRunTraceView({
   proposalStates,
   onDecideProposal,
   onRetryProposal,
+  quiet = false,
 }: {
   readonly trace: CompanionRunTrace;
   readonly defaultOpen?: boolean;
   readonly proposalStates?: Readonly<Record<string, CompanionProposalUiState>>;
   readonly onDecideProposal?: (proposalId: string, decision: "confirm" | "reject") => void;
   readonly onRetryProposal?: (proposalId: string) => void;
+  readonly quiet?: boolean;
 }) {
   const expired = companionRunTraceExpired(trace);
   const stateLabel = runStateLabel(trace.summary.status);
   return (
     <details className="companion-history__trace" open={defaultOpen}>
       <summary>
-        <span>执行过程</span>
-        <small>{stateLabel} · {trace.summary.stepCount} 步 · {trace.summary.toolCallCount} 次工具</small>
+        <span>做事经过</span>
+        <small>{quiet ? stateLabel : `${stateLabel} · ${trace.summary.stepCount} 步 · ${trace.summary.toolCallCount} 次工具`}</small>
       </summary>
+      {quiet ? <p className="companion-history__trace-meta">这次共 {trace.summary.stepCount} 步，{trace.summary.toolCallCount} 次工具调用。</p> : null}
       {expired ? (
         <p className="companion-history__trace-expired">过程记录已过期，只保留近期对话过程。</p>
       ) : (

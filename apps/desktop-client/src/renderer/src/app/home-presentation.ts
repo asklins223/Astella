@@ -98,7 +98,7 @@ export function homePresentation(projection: RoomProjectionV1 | null, loading: b
   } else if (primaryFailed) {
     title = "学习记录暂未送达";
     detail = failure || "当前学习目标暂时无法读取";
-    primaryLabel = retry ? "重新读取" : "查看学习空间目录";
+    primaryLabel = retry ? "重新读取" : "看看今天";
     primaryIntent = null;
   } else if (focusTitle) {
     title = focusTitle;
@@ -106,9 +106,12 @@ export function homePresentation(projection: RoomProjectionV1 | null, loading: b
     primaryLabel = primaryActionLabel(projection) ?? "查看当前目标";
     primaryIntent = actionAvailable ? "continue" : "open-objective";
   } else {
+    // 没有主目标时主按钮**留在房间里**：镜头走到书桌，那里本来就摆着今日下一步、
+    // 今日复习与当前学习目标。（2026-10-05 用户决定：原来这里把人带去魔法目录，
+    // 那张重复的全屏清单整页删除。）
     title = "从一份真正想弄懂的材料开始";
-    detail = "学习空间目录已经把学习路径和全部功能整理好了";
-    primaryLabel = "查看学习空间目录";
+    detail = "今天还没有定下主目标，书桌上有今天真正停下的位置";
+    primaryLabel = "看看今天";
     primaryIntent = null;
   }
 

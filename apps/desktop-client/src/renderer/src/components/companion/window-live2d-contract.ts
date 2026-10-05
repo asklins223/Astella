@@ -147,6 +147,7 @@ export type WindowLive2DCharacterMoment =
   | "tool_failed"
   | "awaiting_confirmation"
   | "reply_completed"
+  | "space_arrived"
   | "reminder"
   | "celebration"
   | "run_failed";
@@ -348,6 +349,7 @@ const WHALE_MOMENT_CUE: Readonly<Partial<Record<WindowLive2DCharacterMoment, Win
   tool_failed: { overlay: "soul", costume: null, holdMs: 3_200 },
   awaiting_confirmation: { overlay: "question", holdMs: 6_000 },
   reply_completed: { costume: null },
+  space_arrived: { motion: { group: "Bubble", index: 0 }, costume: null },
   reminder: { overlay: "surprised", holdMs: 3_000 },
   celebration: { overlay: "hearts", costume: null, holdMs: 3_000 },
   run_failed: { overlay: "soul", costume: null, holdMs: 3_200 },

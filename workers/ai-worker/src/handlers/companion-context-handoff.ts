@@ -21,6 +21,7 @@
  */
 
 import type { ChatMessage } from "@ailearn/shared";
+import type { AgentMemoryContextSourceV1 } from "@ailearn/shared/agent-contracts";
 import { canonicalJsonV1, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import type { CompanionMemoryDirectoryEntry } from "./companion-memory-vector.ts";
 
@@ -86,6 +87,8 @@ export interface CompanionContextHandoffSnapshotV1 {
   memoryRefs: Array<{ memoryId: string; kind: string; content: string }>;
   /** Absent only on handoff snapshots written before the active directory existed. */
   memoryDirectory?: CompanionMemoryDirectoryEntry[];
+  /** Only sources actually admitted to the prompt, with their immutable version. */
+  memorySourceVersions?: AgentMemoryContextSourceV1[];
   modelMessages: ChatMessage[];
 }
 
@@ -119,6 +122,7 @@ export interface CompanionContextHandoffInputV1 {
   proposals: CompanionContextHandoffSnapshotV1["proposals"];
   memoryRefs: CompanionContextHandoffSnapshotV1["memoryRefs"];
   memoryDirectory?: CompanionMemoryDirectoryEntry[];
+  memorySourceVersions?: AgentMemoryContextSourceV1[];
   modelMessages: ChatMessage[];
 }
 
@@ -199,6 +203,9 @@ export function buildCompanionContextHandoffSnapshotV1(
       revision: Math.max(1, Math.trunc(entry.revision)),
       epistemicStatus: entry.epistemicStatus?.slice(0, 16) ?? null,
     })),
+    ...(input.memorySourceVersions !== undefined
+      ? { memorySourceVersions: input.memorySourceVersions.map(source => ({ ...source })) }
+      : {}),
     modelMessages: input.modelMessages.map(({ role, content }) => ({ role, content })),
   };
 }

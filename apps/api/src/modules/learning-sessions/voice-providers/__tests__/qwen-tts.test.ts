@@ -17,6 +17,7 @@ import {
   pumpStream,
   resetQwenTestState,
   serveTaskBody,
+  settleTicks,
 } from "../qwen-tts-test-doubles.ts";
 
 const BASE_OPTS = QWEN_TEST_BASE_OPTS;
@@ -141,4 +142,22 @@ test("qwen TTS 连接复用全套（串行场景）", async () => {
   resetState();
   await scenarioCancel();
   resetState(); // 清掉 IDLE 连接的 60s 空闲 timer，避免挂住事件循环
+});
+
+test("建连期间的取消关闭 socket；已开始音频的取消和意外断连均不能成为正常 EOF",async()=>{
+  resetState();
+  const abort=new AbortController();
+  const connecting=qwenTtsSynthesizeStream("正在建连",{...BASE_OPTS,signal:abort.signal});
+  const rejected=assert.rejects(connecting,error=>error instanceof QwenTtsError&&error.code==="CANCELLED");
+  await settleTicks();abort.abort();await rejected;
+  assert.equal(MockWebSocket.instances[0].closed,true);
+  resetState();
+  const runningAbort=new AbortController();
+  const task=await launchQwenTask(()=>qwenTtsSynthesizeStream("已经开始",{...BASE_OPTS,signal:runningAbort.signal}));task.ws.serverEvent("task-started");
+  const stream=(await task.result).stream;runningAbort.abort();
+  await assert.rejects(()=>pump(stream),error=>error instanceof QwenTtsError&&error.code==="CANCELLED");
+  task.ws.serverEvent("task-finished");resetState();
+  const broken=await startTask("中途断开");broken.ws.serverEvent("task-started");const body=(await broken.result).stream;
+  broken.ws.close();await assert.rejects(()=>pump(body),error=>error instanceof QwenTtsError&&error.code==="NETWORK_ERROR");
+  resetState();
 });

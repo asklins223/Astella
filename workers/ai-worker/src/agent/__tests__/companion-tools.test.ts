@@ -39,6 +39,7 @@ function harness(options: { userText?: unknown; pageContext?: unknown } = {}) {
         createdAt: "2026-10-04T00:00:00.000Z", updatedAt: "2026-10-04T00:00:00.000Z" } satisfies AgentRunV1;
     },
     async list() { throw new Error("不该读目标目录"); },
+    async longGoals() { return { version: 1 as const, items: [], nextCursor: null }; },
     async revise() { throw new Error("本组不测 revise"); },
     async control() { throw new Error("本组不测 control"); },
   } satisfies AgentGoalToolStore;
@@ -87,7 +88,7 @@ test("历史与页面都不替代这一轮的要求", async () => {
   assert.equal(creates[0]!.input.goal, USER_TURN, "页面提示与选区都不是要求来源");
 });
 
-test("空原话、超长原话和未定位材料均不创建目标", async () => {
+test("空原话和超长原话不创建目标", async () => {
   for (const [userText, reason] of [[undefined, "empty"], ["", "empty"], ["   \n ", "empty"],
     ["把".repeat(8_001), "too_long"]] as const) {
     const { event, store, creates } = harness({ userText });
@@ -97,12 +98,14 @@ test("空原话、超长原话和未定位材料均不创建目标", async () =>
     assert.match((result.value as { reason: string }).reason, /明确交代|太长/);
     assert.equal(goalRequestFromUserTurn(userText).ok, false);
   }
-  // 未定位到真实笔记的页面提示不能作为材料引用。
-  const { event, store, creates } = harness({ pageContext: { pageKind: "note", title: "欧姆定律" } });
-  const result = await executeAgentGoalTool(event, "agent_start_goal", { inputs: [] }, store);
-  assert.equal(creates.length, 0);
-  assert.equal((result.value as { status: string }).status, "not_executed");
-  assert.match((result.value as { reason: string }).reason, /笔记/);
+});
+
+test("基础任务不依赖笔记；未定位的页面也不会伪造材料引用", async () => {
+  const { event, store, creates } = harness({ userText: "帮我算出 (18 + 24) / 6", pageContext: { pageKind: "note", title: "欧姆定律" } });
+  await executeAgentGoalTool(event, "agent_start_goal", { inputs: [] }, store);
+  assert.equal(creates.length, 1);
+  assert.deepEqual(creates[0]!.input.inputs, []);
+  assert.equal(creates[0]!.input.goal, "帮我算出 (18 + 24) / 6");
 });
 
 test("目标文本的判据就是 create 输入合同本身，不另写一份上限", () => {

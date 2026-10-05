@@ -264,8 +264,6 @@ import {
   companionVoiceSpeakSegmentRequestV2Schema,
   companionVoicePlaybackOutcomeRequestV1Schema,
   companionVoicePlaybackOutcomeResultV1Schema,
-  companionVoiceTranscribeRequestV1Schema,
-  companionVoiceTranscribeResultV1Schema,
 } from "@ailearn/shared/companion-voice-contracts";
 // 伴星聊天发送链路（2026-09-18）：建/复用 dialogue、发 turn、拉消息。
 import {
@@ -389,6 +387,7 @@ import type { WindowStateSnapshot } from "../shared/window-state";
 type WindowResolver = (contents: WebContents, sourceUrl: string) => BrowserWindow | null;
 
 export type DesktopIpcRegistrationOptions = {
+  readonly guidanceAudioCache?: import("./companion-guidance-audio-cache").CompanionGuidanceAudioCache;
   readonly resolveWindow: WindowResolver;
   readonly getWindowState: (window: BrowserWindow) => WindowStateSnapshot;
   readonly setTitlebarTheme: (window: BrowserWindow, theme: "day" | "night") => boolean;
@@ -701,6 +700,7 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
 
   const gateway = options.gateway ?? new DesktopGateway(options.env, {
     credentials: options.credentials ?? createSessionCredentialStore(),
+    guidanceAudioCache: options.guidanceAudioCache,
   });
   const env = options.env ?? process.env;
   const contract = contractSnapshot(gateway, env);

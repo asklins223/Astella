@@ -126,8 +126,12 @@
 .hud-surface .settings-hud .write-line { display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px; max-width: 100%; min-width: 0; border: 1px solid #dbe5ce; border-radius: 15px; background: #f3f7e8; color: #58785a; font: 12px/1.5 "Noto Sans SC Variable", sans-serif; overflow-wrap: anywhere; }
 .hud-surface .settings-hud .write-line__icon { flex: none; color: #6c9371; }
 .hud-surface .settings-hud .hud-field { display: flex; gap: 9px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-.hud-surface .settings-hud .hud-field input { flex: 1; min-width: 0; min-height: 40px; padding: 9px 13px; border: 2px solid #dce6d0; border-radius: 17px; background: #fffef7; box-shadow: inset 0 2px 0 #edf0df; color: var(--settings-ink); font: 13px/1.5 "Noto Sans SC Variable", sans-serif; }
+.hud-surface .settings-hud .hud-field input { flex: 1; min-width: 0; min-height: 40px; padding: 9px 13px; border: 2px solid #dce6d0; border-radius: 17px; background: #fffef7; box-shadow: inset 0 2px 0 #edf0df; color: var(--settings-ink); font: 13px/1.5 "Noto Sans SC Variable", sans-serif; transition: border-color 160ms ease; }
 .hud-surface .settings-hud .hud-field input::placeholder { color: #859080; }
+/* 指针来源没有硬环了，描边转暖就是这条字段的聚焦回音；键盘另有第 131 行的硬环。
+   （`hud-controls.css` 里那条 `.hud-field input:focus` 被本页更具体的输入样式压住，
+   所以聚焦态必须在这里自己画一份，否则设置里的字段点了没有反应。） */
+.hud-surface .settings-hud .hud-field input:focus { border-color: #9fbd94; }
 .hud-surface .settings-hud .hud-field input:focus-visible { outline-offset: 1px; }
 .hud-surface .settings-field { display: grid; gap: 7px; margin-top: 14px; }
 .hud-surface .settings-field__label { color: #5a745a; font-size: 12px; font-weight: 700; }

@@ -36,7 +36,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createContext, runInContext } from "node:vm";
 import {
   ARTIFACT_ILLUSTRATION_NOTICE_V1,
   ARTIFACT_MAX_STEPS_V1,
@@ -289,7 +288,7 @@ test("任务版本必须上到 3：换的是合同，v2 留下的检查点与半
   assert.equal(DYNAMIC_ARTIFACT_TASK_VERSION, 3);
   assert.match(source, /DYNAMIC_ARTIFACT_TASK_VERSION = 3/,
     "改了合同却没改 taskVersion：v2 的检查点会被这一版当成同一发任务复用");
-  assert.equal(DYNAMIC_ARTIFACT_PROMPT_VERSION, "note-dynamic-artifact-v5");
+  assert.equal(DYNAMIC_ARTIFACT_PROMPT_VERSION, "note-dynamic-artifact-v7");
   assert.equal(DYNAMIC_ARTIFACT_TASK_ID, "note_dynamic_artifact_v1");
   assert.equal(DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1, "note_dynamic_artifact_v1@v3",
     "落库那一列记的还是旧版本：事后查不出这一份是按哪一版合同做的");
@@ -762,12 +761,10 @@ test("模型那三段各自落在该落的地方：样式提到落点之前、�
   const stageAt = html.indexOf('<div class="ailearn-art__scene" data-stage>');
   const stageEnd = html.indexOf("</div><section class=\"ailearn-art__evidence\"");
   const scriptAt = html.lastIndexOf("<script data-lesson>");
-  const bridgeAt = html.indexOf("<script>\n(function ()");
   assert.ok(styleAt < rootAt, "模型样式排在纸面之后：它会盖掉母本的取值（这份产物是自包含的，注入顺序就是优先级）");
   assert.ok(stageAt < stageEnd, "凹槽的开口没找到");
   assert.ok(stageAt > rootAt);
   assert.ok(scriptAt > stageEnd, "模型脚本被塞进了凹槽里：它在落点还没排完时就跑了");
-  assert.ok(scriptAt > bridgeAt, "模型的脚本在动效桥之前：动效桥加载时模型还没注册 setLessonMotion，档位补发就落空了");
   // 凹槽里是模型写的那一页的**标记**（样式与脚本都不在里面）。
   const inStage = html.slice(stageAt, stageEnd);
   assert.ok(inStage.includes("<svg"), "模型写的那一页没落进凹槽：屏幕上只剩一块空纸");
@@ -917,12 +914,10 @@ test("自包含：产物里没有任何外部资源引用（connect-src 'none' �
   assert.equal(/<script[^>]+src=/i.test(built.html), false);
   assert.equal(/url\(/i.test(built.html), false, "样式里引用了外部资源：frame 的 CSP 下这拿不到");
   assert.equal(/https?:\/\//i.test(built.html), false);
-  // 动效桥里那个 channel 字符串不是资源引用，但顺手钉一下：它不许被改成一条真的地址。
-  assert.ok(built.html.includes("'ailearn:artifact-frame'"));
 });
 
 test("注入：材料与模型的文案只能成为文本（模型的**页面**是它自己的，服务端那一圈不是）", () => {
-  // 基准页面里不带脚本，这样产物里 `<script>` 的数量就只有一个数可数：动效桥那一个。
+  // 基准页面不带脚本；保存成果也不再附带另一份宿主转发器。
   const cleanPage = MODEL_PAGE.replace(/<script>[\s\S]*?<\/script>/, "");
   const doc = docFor({
     title: "<script>alert(1)</script>",
@@ -944,7 +939,7 @@ test("注入：材料与模型的文案只能成为文本（模型的**页面**�
   });
   assert.ok(built.ok);
   const scripts = built.html.match(/<script[\s>]/g) ?? [];
-  assert.equal(scripts.length, 1, `产物里有 ${scripts.length} 段脚本：文案带进来了一个`);
+  assert.equal(scripts.length, 0, `产物里有 ${scripts.length} 段脚本：文案带进来了一个`);
   assert.equal(/<img\b/i.test(built.html), false, "材料里的标签开出了新节点：这是「产物同文档」那条路上的头一个注入点");
   assert.equal(/<svg[^>]*onload/i.test(built.html), false);
   assert.equal(/<[^>]*\son\w+\s*=/i.test(built.html), false, "文案里的 on*= 变成了真的事件属性");
@@ -956,42 +951,13 @@ test("注入：材料与模型的文案只能成为文本（模型的**页面**�
   assert.ok(built.html.includes(ARTIFACT_ILLUSTRATION_NOTICE_V1));
 });
 
-test("动效桥：模板脚本里一个模型字符都没有，只把宿主的档位转给模型自己的 setLessonMotion", () => {
+test("保存成果只含模型自己的脚本，动效转发由展示宿主唯一负责", () => {
   const built = renderOf(docFor({ title: "标题里的标记ZZZ" }));
   assert.ok(built.ok);
-  const bridge = /<script>\n([\s\S]*?)\n<\/script>/.exec(built.html)?.[1];
-  assert.ok(bridge, "产物里找不到动效桥那一段：宿主的动效指令就没有转发器了");
-  assert.equal(bridge.includes("ZZZ"), false,
-    "模型的文字进了模板脚本：于是「模型能改播放器」这件事成立了，而它本该连一个字符都插不进去");
-  assert.ok(bridge.includes("setLessonMotion"), "转发器不再找模型自己声明的那个钩子了");
-
-  // 真跑一遍：桩只提供这一段脚本真正用到的那几个入口（window.addEventListener /
-  // matchMedia / 模型自己挂上去的 setLessonMotion），别的都不给——它多要一个就红。
-  const handlers: Record<string, Array<(event: unknown) => void>> = { message: [], load: [] };
-  const received: string[] = [];
-  const windowStub: Record<string, unknown> = {
-    matchMedia: (query: string) => ({ matches: query.includes("reduce") }),
-    addEventListener: (name: string, handler: (event: { data?: unknown }) => void) => {
-      handlers[name]?.push(handler as (event: unknown) => void);
-    },
-  };
-  windowStub.setLessonMotion = (motion: string) => { received.push(motion); };
-  runInContext(bridge, createContext({ window: windowStub }));
-
-  handlers.load!.forEach((handler) => handler({}));
-  assert.deepEqual(received, ["reduced"],
-    "页面注册得晚时没有补发当前档位：系统开了「减少动效」而模型后注册，于是这一份照旧在动");
-
-  const post = (data: unknown) => handlers.message!.forEach((handler) => handler({ data }));
-  post({ channel: "ailearn:artifact-frame", direction: "host->frame", command: "motion", motion: "reduced" });
-  assert.deepEqual(received, ["reduced", "reduced"], "宿主发了 reduced 档位，模型没收到");
-  // 别的通道、别的方向、别的档位：一律不转发。父侧只按 source 认 frame，模型这一侧不许有第二个入口。
-  post({ channel: "别的通道", direction: "host->frame", command: "motion", motion: "reduced" });
-  post({ channel: "ailearn:artifact-frame", direction: "frame->host", command: "motion", motion: "reduced" });
-  post({ channel: "ailearn:artifact-frame", direction: "host->frame", command: "别的命令", motion: "reduced" });
-  post({ channel: "ailearn:artifact-frame", direction: "host->frame", command: "motion", motion: "随便" });
-  post(null);
-  assert.equal(received.length, 2, "这一段转发器认错了消息：它会把不属于这一条通道的指令也递下去");
+  const scripts = [...built.html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
+  assert.ok(scripts.length > 0, "模型自身的交互脚本仍然保留");
+  assert.ok(scripts.every(script => script[1]!.includes("data-lesson")));
+  assert.ok(!built.html.includes("host->frame"), "不在保存成果里另养一份宿主控制逻辑");
 });
 
 test("渲染器注释里的判据与实现同源（防止注释说的和代码做的分家）", () => {
@@ -1000,8 +966,7 @@ test("渲染器注释里的判据与实现同源（防止注释说的和代码�
   assert.ok(render.includes("已核对"),
     "渲染器的输入契约没写明「已核对」：将来有人把未经核对的节点直接递进来");
   assert.ok(render.includes("frame 之外"), "注释里没写清文字等价为什么在 frame 之外：§6.3 那一道会退回去");
-  assert.ok(render.includes("一个模型字符都没有"),
-    "动效桥那条「服务端不替模型插一个字」的声明不见了：那正是它该守住的那一句");
+  assert.ok(render.includes("动效由展示宿主管理"), "保存渲染器不再重复维护宿主控制逻辑");
   for (const dead of ["ailearn-bars", "ailearn-flow"]) {
     assert.ok(!codeOnly(render).includes(dead), `渲染器里还留着 ${dead}`);
   }
@@ -1149,6 +1114,8 @@ test("提示词：完整材料与问题保留，保存与原文回查字段不�
   const lines = prompt.split("\n");
   const format = JSON.parse(lines.find(line => line.startsWith('{"title"'))!);
   assert.deepEqual(Object.keys(format), ["title", "subject", "caution", "document", "outline"]);
+  assert.equal(format.outline[0].evidenceOrdinal, INPUT.blocks[0]!.ordinal);
+  assert.ok(INPUT.blocks[0]!.text.includes(format.outline[0].evidenceQuote));
   const material = JSON.parse(lines.at(-1)!);
   assert.deepEqual(material.blocks, INPUT.blocks.map(({ ordinal, type, text }) => ({ ordinal, type, text })));
   assert.equal(material.question, INPUT.drivingQuestion);

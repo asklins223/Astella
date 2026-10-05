@@ -1,3 +1,4 @@
+import { useSpaceArrival } from "../hud/space-arrival";
 import { COMPANION_ACCOUNT_CHANGED, publishCompanionAccountChanged } from "./companion-events";
 // 样式表改由 `styles.ts` 统一按顺序注入（2026-09-29）——见该文件顶部的分层说明。
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
@@ -114,6 +115,8 @@ export function CompanionPresence() {
   const reducedMotion = useRoomStore((state) => state.reducedMotion);
   const motionMode = resolveSceneMotionMode(motionPreference, reducedMotion);
   const onboardingOpen = useRoomStore((state) => state.onboardingOpen);
+  const guideOpen = useRoomStore(state => state.companionGuideOpen);
+  const arrival = useSpaceArrival(state => state.current);
   const companionMoment = useRoomStore((state) => state.companionMoment);
   const masterMuted = useRoomStore((state) => state.masterMuted);
   const companionPosition = useRoomStore((state) => state.companionPosition);
@@ -140,7 +143,6 @@ export function CompanionPresence() {
   const resetCompanionPosition = useRoomStore((state) => state.resetCompanionPosition);
   const {
     runFeature: runHomeV2Feature,
-    introVisible: homeV2IntroVisible,
     modalOpen: homeV2ModalOpen,
     zone: homeV2Zone,
   } = useHomeV2();
@@ -324,6 +326,20 @@ export function CompanionPresence() {
   // globalEnabled=false 是账号级关闭：形象不出现，但用户可以在同一处重新开启。
   const companionAccountDisabled = isCompanionAccountDisabled(accountState);
   const presenceHidden = companionPolicy.mode === "hidden" || onboardingOpen || companionTemporarilyHidden || companionAccountDisabled;
+  useEffect(() => {
+    // Explicitly opening the guide puts away the previous conversation paper.
+    // Opening a new conversation during the guide still yields to that new intent below.
+    if (guideOpen) setMode("closed");
+  }, [guideOpen, setMode]);
+  const guidePreviousMode = useRef(mode);
+  useEffect(() => {
+    const previous = guidePreviousMode.current; guidePreviousMode.current = mode;
+    if (guideOpen && previous === "closed" && mode !== "closed") window.dispatchEvent(new Event("ailearn:companion-guide-pause"));
+  }, [guideOpen, mode]);
+  useEffect(() => {
+    if (!arrival || guideOpen || assessmentMode || companionTemporarilyHidden || companionAccountDisabled || mode !== "closed") return;
+    pushCharacterMoment("space_arrived");
+  }, [arrival?.id, guideOpen, assessmentMode, companionTemporarilyHidden, companionAccountDisabled, mode, pushCharacterMoment]);
   const presencePaused = presenceHidden || homeV2ModalOpen || externalModalOpen || windowState !== "visible";
   presencePausedRef.current = presencePaused;
 
@@ -683,7 +699,7 @@ export function CompanionPresence() {
 
   useCompanionCueLifecycle({
     cue: prioritizedCue?.origin === "thought" ? prioritizedCue : null,
-    paused: presencePaused || companionSilenced || homeV2IntroVisible,
+    paused: presencePaused || companionSilenced || guideOpen,
     scopeRevision: workspaceScopeRevision,
     start: (prioritizedCue) => {
       if (shownCueRef.current === prioritizedCue.key) return;
@@ -1392,7 +1408,7 @@ export function CompanionPresence() {
   // （放在 companionUnavailable 声明之后，见该常量定义处。）
 
   const completionCue = presentedCompanionMoment === "confirm" ? "这次学习已经收好，新的理解正回到小屋里。" : null;
-  const visibleHomeCue = completionCue ?? (homeV2IntroVisible ? null : homeCue);
+  const visibleHomeCue = completionCue ?? (guideOpen ? null : homeCue);
   /**
    * 她这一轮在做什么，由服务端那条 cue 的 `intent` 决定**姿势**（2026-09-20 接入）。
    *
@@ -1707,7 +1723,7 @@ export function CompanionPresence() {
 
       <CompanionNotificationCenter
         replyBusy={chatPhase === "sending"}
-        blocked={assessmentMode || onboardingOpen || homeV2ModalOpen || externalModalOpen || taskBubbleOpen || mode === "history" || windowState !== "visible"}
+        blocked={assessmentMode || onboardingOpen || guideOpen || homeV2ModalOpen || externalModalOpen || taskBubbleOpen || mode === "history" || windowState !== "visible"}
         muted={masterMuted || accountState?.voiceOff === true}
         quietHours={accountState?.quietHours}
         passiveMuted={companionSilenced || companionTemporarilyHidden || companionAccountDisabled

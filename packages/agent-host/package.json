@@ -1,7 +1,25 @@
 {
-  "name": "@ailearn/agent-host", "version": "0.1.0", "private": true, "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc --noEmit" },
-  "dependencies": { "@ailearn/agent-core": "file:../agent-core", "@ailearn/shared": "file:../shared", "drizzle-orm": "^0.45.2", "zod": "^3.23.8" },
-  "devDependencies": { "typescript": "^5.9.3", "tsx": "^4.20.5", "@types/node": "^24.0.0" }
+  "name": "@ailearn/agent-host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ai-governance-policy": "./src/ai-governance-policy.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ailearn/agent-core": "file:../agent-core",
+    "@ailearn/shared": "file:../shared",
+    "drizzle-orm": "^0.45.2",
+    "zod": "^3.23.8",
+    "@ailearn/card-generation": "file:../card-generation"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "tsx": "^4.20.5",
+    "@types/node": "^24.0.0"
+  }
 }

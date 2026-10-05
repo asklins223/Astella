@@ -69,18 +69,43 @@ input, textarea, blockquote, q {
   user-select: text;
 }
 
-button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible, [tabindex="-1"]:focus-visible {
+/* ── 焦点：键盘拿硬环，鼠标拿纸壳 ─────────────────────────────────────────
+   Chromium 对**文本字段**在鼠标点击下也保留 `:focus-visible`（按钮不会），所以一条
+   不加区分的 `input:focus-visible` 会在"点一下"时凭空长出 3px 硬环，悬在半径为 0 的
+   裸 textarea 外 3px 处——正是"点输入框就出现一个强调的方框"。它还和字段纸壳自己的
+   聚焦态叠成两层轮廓（DESIGN.md：字段的聚焦提示可以跟随纸签外壳，避免多层轮廓争夺注意）。
+
+   于是按输入来源分两路：
+     · 按钮 / 链接 / [tabindex] —— 点击本来就不匹配 `:focus-visible`，硬环只服务键盘。
+     · 文本字段 —— 键盘来源仍留硬环；指针来源交回纸壳与光标，纸壳在哪张样式表里
+       就由那张表画自己的聚焦态（`:focus-within` / `:focus`）。
+
+   模态由 `app/input-modality.ts` 写在 :root 上。这条指针规则刻意写成 `!important`：
+   它是**策略**，不是某张纸的局部样式，必须赢过后面三十多份样式表里各自为政的
+   `:focus-visible`（它们各自重新画了一遍环，最高一条是
+   `.desktop-app.hud-surface .card-experience :is(button,summary,input,textarea):focus-visible`
+   的 (0,4,1)）。靠特异度赛跑是条错路——本文件第一层就得压住后面所有层，每多一份新
+   样式表就多一次失手的机会；`!important` 把"谁画环"收成一处，`.sr-only` 与
+   `prefers-reduced-motion` 那几条也是同一个理由。
+
+   祖先取 `body` 而不是 `.desktop-app`：制卡设置页等表单是 portal 到 `document.body` 的
+   （`notebook-surface.tsx`、`image-viewer.tsx`…），挂在 `.desktop-app` 下面会漏掉它们。
+
+   收掉硬环之后，字段自己那条聚焦态（`:focus` / `:focus-within` 的描边、底色、纸壳）
+   就是点击唯一的回音——所以「字段有没有自己的聚焦态」也是这份契约的一部分，
+   由 `scripts/focus-ring-cascade-probe.mjs` 在真实 Chromium 里逐个字段核对。 */
+button:focus-visible, a:focus-visible, [tabindex="-1"]:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 3px;
 }
 
-/* Chromium keeps `:focus-visible` on text fields for every focus source, so the
-   ring above also painted on a plain mouse click and read as a border appearing
-   inside the field. Search fields own a plate that already draws their focus
-   state, so keep the hard ring for keyboard users only. The modality attribute
-   is published by app/input-modality.ts. */
-:root[data-input-modality="pointer"] input[type="search"]:focus-visible {
-  outline: 0;
+input:focus-visible, textarea:focus-visible, select:focus-visible, [contenteditable]:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+:root[data-input-modality="pointer"] body :is(input, textarea, select, [contenteditable], [contenteditable="plaintext-only"], [role="textbox"], [role="searchbox"], [role="combobox"]):focus-visible {
+  outline: 0 !important;
 }
 
 button:disabled {

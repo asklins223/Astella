@@ -5,6 +5,7 @@ import { useCompanionChat } from "../../../app/companion-chat-session";
 import { stopCompanionSpeech } from "../../../app/companion-voice-playback";
 import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
 import { useRoomStore } from "../../../app/room-store";
+import { shouldSendCompanionOnEnter } from "../../companion/companion-composer-key";
 import { DialoguePanel } from "./companion-dialogue-panel";
 import { useCompanionResource } from "./use-companion-resource";
 import { useDialogueDiscoveryKeep } from "./use-dialogue-discovery-keep";
@@ -78,7 +79,7 @@ export function CompanionDialoguePage({ refreshKey, focusMessageId, onFocusConsu
   const composer = <form className="cc-composer" onSubmit={event => { event.preventDefault(); void send(); }}>
     {chat.feedDiaryAnchor ? <p className="cc-composer__reference">正在聊 {chat.feedDiaryAnchor.date} 的日记 · 第 {chat.feedDiaryAnchor.version} 版</p> : null}
     {chat.feedSelection ? <p className="cc-composer__reference">带入的原文：{chat.feedSelection.slice(0, 120)} <button type="button" className="cc-link" onClick={chat.dismissFeedSelection}>移除</button></p> : null}
-    <textarea rows={2} value={input} maxLength={8000} onChange={event => setInput(event.currentTarget.value)} aria-label={`继续问 ${chat.companionName}`} placeholder="想说点什么？从这里接着聊…" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} />
+    <textarea rows={2} value={input} maxLength={8000} onChange={event => setInput(event.currentTarget.value)} aria-label={`继续问 ${chat.companionName}`} placeholder="想说点什么？从这里接着聊…" onKeyDown={event => { if (shouldSendCompanionOnEnter(event)) { event.preventDefault(); void send(); } }} />
     <div><span>Enter 发送 · Shift + Enter 换行</span><button type="button" className="cc-link" onClick={() => chat.setMode("conversation")}>语音与轻聊</button>{chat.phase === "sending" ? <button type="button" className="cc-button" disabled={chat.cancelling} onClick={() => { stopCompanionSpeech(); void chat.cancel(); }}><Square size={13} />{chat.cancelling ? "正在停止…" : "停止"}</button> : null}<button type="submit" className="cc-button is-primary" disabled={!input.trim() || preparing}><Send size={16} />{preparing ? "正在发送…" : chat.phase === "sending" ? "发送并接替" : "发送"}</button></div>
     {chat.failure ? <p role="alert" className="cc-composer__error">{chat.failure}</p> : null}
   </form>;

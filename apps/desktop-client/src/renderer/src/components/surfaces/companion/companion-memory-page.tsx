@@ -1,7 +1,10 @@
 import type { CompanionMemoryKindV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
 import { Archive,Map,RotateCcw } from "lucide-react";
-import { useEffect,useRef,useState } from "react";
+import { Activity,useEffect,useRef,useState } from "react";
+import { CompanionMethodsPage } from "./companion-methods-page";
+import { CompanionLongGoalsPage } from "./companion-long-goals-page";
 import { gatewayErrorMessage,unwrapGatewayResult } from "../../../app/desktop-client";
+import { useRoomStore } from "../../../app/room-store";
 import { SectionState } from "./companion-center-primitives";
 import { CompanionMemoryMaintenance } from "./companion-memory-maintenance";
 import { CompanionMemoryMap } from "./companion-memory-map";
@@ -10,7 +13,25 @@ import type { CooperationScope } from "./companion-memory-rule-fields";
 import { MEMORY_SCOPE_LABEL } from "./companion-center-model";
 import { publishCompanionRecordsChanged,useCompanionRecordsRefresh,useCompanionResource } from "./use-companion-resource";
 
-export function CompanionMemoryPage({ refreshKey, requestedMemoryId, onFocusConsumed }: { refreshKey: number; requestedMemoryId: string | null; onFocusConsumed: () => void }) {
+type MemoryPageProps = { refreshKey: number; requestedMemoryId: string | null; onFocusConsumed: () => void;
+  requestedMethodId?: string | null; onMethodFocusConsumed?: () => void };
+export function CompanionMemoryPage(props: MemoryPageProps) {
+  const [view,setView] = useState<"all" | "cooperation" | "methods" | "goals">("all");
+  useEffect(() => { if (props.requestedMemoryId) setView("all"); },[props.requestedMemoryId]);
+  useEffect(() => { if (props.requestedMethodId) setView("methods"); },[props.requestedMethodId]);
+  return <>
+    <div className="cc-segments cc-memory-views" role="group" aria-label="记忆视图">
+      <button type="button" aria-pressed={view==="all"} onClick={()=>setView("all")}>全部记忆</button>
+      <button type="button" aria-pressed={view==="cooperation"} onClick={()=>setView("cooperation")}>合作方式</button>
+      <button type="button" aria-pressed={view==="methods"} onClick={()=>setView("methods")}>我们的方法</button>
+      <button type="button" aria-pressed={view==="goals"} onClick={()=>setView("goals")}>长期目标</button>
+    </div>
+    <Activity mode={view==="methods" ? "visible" : "hidden"}><CompanionMethodsPage refreshKey={props.refreshKey} requestedId={props.requestedMethodId} onFocusConsumed={props.onMethodFocusConsumed} /></Activity>
+    <Activity mode={view==="goals" ? "visible" : "hidden"}><CompanionLongGoalsPage refreshKey={props.refreshKey} onMemory={id=>{useRoomStore.getState().setCompanionCenterTarget({tab:"memory",focusMemoryId:id});setView("all");}} /></Activity>
+    <Activity mode={view==="all" || view==="cooperation" ? "visible" : "hidden"}><CompanionMemoryRecordsPage {...props} cooperation={view==="cooperation"} onViewMemory={()=>setView("all")} /></Activity>
+  </>;
+}
+function CompanionMemoryRecordsPage({ refreshKey, requestedMemoryId, onFocusConsumed, cooperation, onViewMemory }: MemoryPageProps & { cooperation: boolean; onViewMemory: () => void }) {
   const [anchorId, setAnchorId] = useState(requestedMemoryId);
   const resource = useCompanionResource(async meta => {
     const result = await window.ailearn.companion.memory.list({ meta, query: { includeCandidates: true, includeArchived: true, ...(anchorId ? { focusMemoryId: anchorId } : {}) } });
@@ -21,7 +42,7 @@ export function CompanionMemoryPage({ refreshKey, requestedMemoryId, onFocusCons
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<"all" | CompanionMemoryKindV1>("all");
   const [filter, setFilter] = useState<MemoryStateFilter>("all");
-  const [cooperation, setCooperation] = useState(false);
+  useEffect(() => { setKind(cooperation ? "preference" : "all"); setFilter("all"); setQuery(""); if (cooperation) setCreateKind("preference"); },[cooperation]);
   const [mapOpen, setMapOpen] = useState(false);
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -47,7 +68,7 @@ export function CompanionMemoryPage({ refreshKey, requestedMemoryId, onFocusCons
   useEffect(() => {
     if (!requestedMemoryId) return;
     setAnchorId(requestedMemoryId);
-    setSelectedId(requestedMemoryId); setQuery(""); setKind("all"); setFilter("all"); setCooperation(false); setMapOpen(false); setMaintenanceOpen(false);
+    setSelectedId(requestedMemoryId); setQuery(""); setKind("all"); setFilter("all"); onViewMemory(); setMapOpen(false); setMaintenanceOpen(false);
   }, [requestedMemoryId]);
   useEffect(() => {
     if (!requestedMemoryId || !resource.section || resource.loading) return;
@@ -78,7 +99,7 @@ export function CompanionMemoryPage({ refreshKey, requestedMemoryId, onFocusCons
     });
   };
   const openMemory = (id: string) => {
-    setAnchorId(id); setSelectedId(id); setQuery(""); setKind("all"); setFilter("all"); setCooperation(false);
+    setAnchorId(id); setSelectedId(id); setQuery(""); setKind("all"); setFilter("all"); onViewMemory();
     setMapOpen(false); setMaintenanceOpen(false);
   };
   const create = () => void write("create", async () => {
@@ -88,7 +109,7 @@ export function CompanionMemoryPage({ refreshKey, requestedMemoryId, onFocusCons
       request: { kind: createKind, content, scope: createKind === "preference" ? createScope : "workspace", appliesWhen: createAppliesWhen.trim() || null } }));
     setSelectedId(created.memoryItemId); setCreateContent(""); setCreateAppliesWhen(""); setCreateScope("workspace"); setCreateOpen(false);
     setQuery(""); setKind(cooperation && created.kind === "preference" ? "preference" : "all"); setFilter("all");
-    if (created.kind !== "preference") setCooperation(false);
+    if (created.kind !== "preference") onViewMemory();
     setNotice(`已保存，适用于${MEMORY_SCOPE_LABEL[created.scope]}。`);
     await resource.reload({ silent: true });
   });
@@ -112,10 +133,7 @@ export function CompanionMemoryPage({ refreshKey, requestedMemoryId, onFocusCons
   if (maintenanceOpen) return <CompanionMemoryMaintenance refreshKey={refreshKey} onBack={() => setMaintenanceOpen(false)} onRestore={id => { openMemory(id); setLastDeleted(null); setNotice("这条记忆已恢复。"); void resource.reload({ silent: true }); }} />;
   if (mapOpen) return <CompanionMemoryMap refreshKey={refreshKey} memories={items} onBack={() => setMapOpen(false)} onMemory={openMemory} />;
   return <>
-    <div className="cc-page-tools cc-memory-page-tools"><div className="cc-segments" role="group" aria-label="记忆视图">
-      <button type="button" aria-pressed={!cooperation} onClick={() => { setCooperation(false); setKind("all"); setFilter("all"); setQuery(""); }}>全部记忆</button>
-      <button type="button" aria-pressed={cooperation} onClick={() => { setCooperation(true); setKind("preference"); setFilter("all"); setQuery(""); setCreateKind("preference"); }}>合作方式</button>
-    </div><div className="cc-actions"><button type="button" className="cc-link" onClick={() => setMapOpen(true)}><Map size={15} aria-hidden="true" />关联星图</button><button type="button" className="cc-link" onClick={() => setMaintenanceOpen(true)}><Archive size={15} aria-hidden="true" />整理与回收</button></div></div>
+    <div className="cc-page-tools cc-memory-page-tools"><div className="cc-actions"><button type="button" className="cc-link" onClick={() => setMapOpen(true)}><Map size={15} aria-hidden="true" />关联星图</button><button type="button" className="cc-link" onClick={() => setMaintenanceOpen(true)}><Archive size={15} aria-hidden="true" />整理与回收</button></div></div>
     {lastDeleted ? <div className="cc-undo" role="status"><span>已删除：{lastDeleted.content}</span><button type="button" className="cc-link" disabled={busy !== null} onClick={() => void write("undo", async () => { unwrapGatewayResult(await window.ailearn.companion.memory.restoreDeleted({ meta: resource.meta(), memoryId: lastDeleted.id })); openMemory(lastDeleted.id); setLastDeleted(null); setNotice("这条记忆已恢复。"); await resource.reload({ silent: true }); })}><RotateCcw size={14} />撤回删除</button></div> : null}
     <MemoryPanel section={resource.section} items={items} focus={selected} revisions={selectedId && revisions.section?.ok && revisions.section.value.memoryItemId === selectedId ? revisions.section.value.items : null} revisionsError={selectedId && revisions.section && !revisions.section.ok && !revisions.loading ? revisions.section.message : null} onRetryRevisions={() => void revisions.reload()}
       query={query} kind={kind} pinFilter={filter} busy={busy} error={error} notice={notice} confirmDelete={confirmDelete} confirmErase={confirmErase}

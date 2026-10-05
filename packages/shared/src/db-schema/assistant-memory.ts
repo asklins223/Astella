@@ -161,7 +161,7 @@ export const assistantMemoryItems = pgTable(
  * 而不是靠每个调用方自觉。
  */
 export type CompanionPlaybookEpistemicStatus = "supported" | "tentative" | "disputed";
-export type CompanionPlaybookAuthor = "companion" | "extractor" | "maintenance";
+export type CompanionPlaybookAuthor = "user" | "companion" | "extractor" | "maintenance";
 
 export const companionProceduralPlaybooks = pgTable(
   "companion_procedural_playbooks",
@@ -186,6 +186,12 @@ export const companionProceduralPlaybooks = pgTable(
     version: integer("version").notNull().default(1),
     epistemicStatus: text("epistemic_status").notNull().default("tentative"),
     author: text("author").notNull().default("companion"),
+    methodState: text("method_state").notNull().default("candidate"),
+    userControlled: boolean("user_controlled").notNull().default(false),
+    capabilityRefs: jsonb("capability_refs").notNull().default(sql`'[]'::jsonb`),
+    sourceRunId: uuid("source_run_id"),
+    sourceRunRevision: integer("source_run_revision"),
+    changeReason: text("change_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -196,6 +202,23 @@ export const companionProceduralPlaybooks = pgTable(
       .on(t.workspaceId, t.userId, t.title),
   }),
 );
+
+export const companionMethodRevisions = pgTable("companion_method_revisions", {
+  methodId: uuid("method_id").notNull().references(() => companionProceduralPlaybooks.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull(), userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  revision: integer("revision").notNull(), snapshot: jsonb("snapshot").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).defaultNow().notNull(),
+}, t => ({ pk: primaryKey({ columns: [t.methodId,t.revision] }) }));
+
+export const companionMethodUses = pgTable("companion_method_uses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  methodId: uuid("method_id").notNull().references(() => companionProceduralPlaybooks.id, { onDelete: "cascade" }),
+  workspaceId: uuid("workspace_id").notNull(), userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  methodRevision: integer("method_revision").notNull(), contextKind: text("context_kind").notNull(),
+  contextId: uuid("context_id").notNull(), contextRevision: integer("context_revision").notNull(), sourceKey: text("source_key").notNull(),
+  feedback: text("feedback"), comment: text("comment"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(), feedbackAt: timestamp("feedback_at", { withTimezone: true }),
+}, t => ({ sourceUnique: uniqueIndex("companion_method_uses_source_unique").on(t.workspaceId,t.userId,t.methodId,t.methodRevision,t.sourceKey) }));
 
 export const assistantMemoryItemRevisions = pgTable(
   "assistant_memory_item_revisions",

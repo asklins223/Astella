@@ -402,7 +402,7 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
           onOpenExisting={openSource}
         />
 
-        <section className="source-index" aria-label="来源资料索引">
+        <section data-guide-anchor="sources" className="source-index" aria-label="来源资料索引">
           <form className="search-line" onSubmit={(event) => void submitSearch(event)} role="search">
             <Search size={18} aria-hidden="true" />
             <label className="sr-only" htmlFor="source-library-query">搜索标题或正文</label>

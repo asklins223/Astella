@@ -14,7 +14,7 @@
  * - TTS provider 经 EDGE_TTS_BASE_URL 调 Docker 容器（带 X-Edge-TTS-Token）。
  */
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { parseBody } from "../../lib/validate.ts";
 import { Readable } from "node:stream";
 import { requireAiConsent } from "../identity/ai-consent-gate.ts";
@@ -26,7 +26,10 @@ import { edgeTtsSynthesizeStream, EdgeTtsError } from "./voice-providers/edge-tt
 import { stripVoiceExpressionTags } from "@ailearn/shared/voice-expression-tags";
 import { qwenTtsSynthesizeStreamForUser, QwenTtsError } from "./voice-providers/qwen-tts.ts";
 import { loadTtsEngineConfig } from "./voice-providers/tts-config.ts";
+import { guidanceVoiceProfile } from "./voice-providers/guidance-voice-profile.ts";
 import { synthesizeTtsBytes } from "./voice-providers/tts-engine.ts";
+import { createGovernedMediaCall } from "../../lib/ai-governance.ts";
+import { productionAiGovernancePorts } from "../../governance/ai-governance-runtime.ts";
 import { takeWarmCompanionSegment, warmCompanionSegment } from "./companion-tts-warm.ts";
 import { resolveTtsSelection, type ResolvedTtsSelection } from "./voice-providers/tts-preference.ts";
 import {
@@ -71,7 +74,7 @@ const ttsBodySchema = z.object({
   text: z.string().min(1).max(2000),
   /** 朗读只允许已审核的固定 voice；扩展需新增 profile mapping。 */
   voice: z.literal("zh-CN-XiaoxiaoNeural").optional(),
-  purpose: z.literal("notification").optional(),
+  purpose: z.enum(["notification", "guidance"]).optional(),
 });
 
 const COMPANION_ASR_MODEL = "FunAudioLLM/SenseVoiceSmall";
@@ -182,6 +185,36 @@ function rejectDisabledCompanionVoice(reply: { code(statusCode: number): { send(
  * 回调响过就说明最后尝试的是 edge。不带这一笔的话 `companion_tts_outcomes.engine`
  * 只在成功时有值，报表里 "edge failed=0" 会和真实的 EdgeTtsError 同时成立。
  */
+/**
+ * 把一条上游音频流接到响应上，并在**客户端真的断开**时把上游一起掐掉。
+ *
+ * `req.raw.close` 只是"请求体读完了"——正常的长响应在请求体读完后照样要写很久，
+ * 拿它当打断信号等于每一段流式朗读刚开始就被当成"客户端走了"。
+ * 真正的信号在响应这一侧：`reply.raw.close` 且 `writableFinished` 还没置位。
+ */
+function pipeAudioToReply(
+  reply: { raw: import("node:http").ServerResponse },
+  stream: ReadableStream<Uint8Array>,
+  aborted?: AbortController,
+): void {
+  const nodeStream = Readable.fromWeb(stream as unknown as import("node:stream/web").ReadableStream);
+  nodeStream.on("error", () => reply.raw.destroy());
+  nodeStream.pipe(reply.raw);
+  reply.raw.on("close", () => {
+    if (reply.raw.writableFinished) return;
+    aborted?.abort();
+    nodeStream.destroy();
+  });
+}
+
+function responseAbortController(reply: Pick<FastifyReply, "raw">): AbortController {
+  const controller = new AbortController();
+  const close = () => { if (!reply.raw.writableFinished) controller.abort(); };
+  reply.raw.once("close", close);
+  reply.raw.once("finish", () => reply.raw.removeListener("close", close));
+  return controller;
+}
+
 async function synthesizeCompanionSegmentBytes(args: {
   text: string;
   voice: string;
@@ -190,6 +223,7 @@ async function synthesizeCompanionSegmentBytes(args: {
   scope: { workspaceId: string; userId: string; currentActiveTransaction: () => unknown };
   log: { warn: (obj: unknown, msg: string) => void };
   ordinal: number;
+  signal?: AbortSignal;
 }): Promise<{ audio: Uint8Array; engine: "qwen" | "edge" }> {
   let attempted: "qwen" | "edge" = args.selection.engine;
   try {
@@ -198,6 +232,7 @@ async function synthesizeCompanionSegmentBytes(args: {
       edgeVoice: args.voice,
       queueKey: args.queueKey,
       scope: args.scope,
+      signal: args.signal,
       selection: args.selection,
       onQwenFallback: (error) => {
         attempted = "edge";
@@ -217,6 +252,9 @@ export async function voiceRoutes(app: FastifyInstance) {
   // 每稳定句一条独立流；generation/segmentId/ordinal 由客户端维持；打断时
   // 客户端 abort HTTP（上游连接中断）并递增 audio fence。
   app.post("/voice/tts/stream", { preHandler: [requireSession, requireAiConsent] }, async (req, reply) => {
+    // 客户端断开 → 取消本次外发。两个 provider 都会真的收到它（WS 发 cancel、
+    // edge 拆 fetch），而不是只在本进程里停止等待。
+    const aborted = responseAbortController(reply);
     if (rejectDisabledCompanionVoice(reply, "COMPANION_STREAMING_VOICE_V1_ENABLED")) return;
     if (!(await rateLimitVoice(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:tts`, COMPANION_RATE_LIMITS.ttsPerMinute.limit, COMPANION_RATE_LIMITS.ttsPerMinute.windowMs))) return;
     const parsed = companionTtsStreamRequestV1Schema.safeParse(req.body ?? {});
@@ -244,34 +282,46 @@ export async function voiceRoutes(app: FastifyInstance) {
           req.log.warn("qwen tts workspaceId missing; falling back to edge-tts");
         } else {
           try {
-            const result = await qwenTtsSynthesizeStreamForUser(
-              `${req.session.workspaceId}:${req.session.userId}`,
-              parsed.data.text,
-              {
-                workspaceId: cfg.workspaceId,
-                apiKey: process.env.DASHSCOPE_API_KEY ?? "",
-                model: cfg.model,
-                // qwen 音色固定走 config（前端 voice 是 edge 音色，不混用）。
-                voice: cfg.voice,
-                format: cfg.format,
-                sampleRate: cfg.sampleRate,
-                // 15b 二期：指令控制（高质量声音描述，config tts.qwen.instruction）
-                instruction: cfg.instruction,
-              },
+            // 门与净化在**真的建连之前**：没同意/政策拒发时这一次 qwen 压根不发。
+            // 净化后的文本才是真送出去的那份。
+            const call = await createGovernedMediaCall(
+              { workspaceId: req.session.workspaceId, userId: req.session.userId },
+              "voice_tts_stream_qwen",
+              ["text_content"],
+              productionAiGovernancePorts,
             );
+            const spoken = call.prepareText(parsed.data.text, "qwen");
+            // openStream：成功只代表拿到了上游连接。审计挂在流上，读到 EOF 才算成功，
+            // 中途出错或被客户端打断都按真实结局记。
+            const tracked = await call.openStream({ provider: "qwen", modelId: cfg.model }, async () => {
+              const result = await qwenTtsSynthesizeStreamForUser(
+                `${req.session.workspaceId}:${req.session.userId}`,
+                spoken,
+                {
+                  workspaceId: cfg.workspaceId,
+                  apiKey: process.env.DASHSCOPE_API_KEY ?? "",
+                  model: cfg.model,
+                  // qwen 音色固定走 config（前端 voice 是 edge 音色，不混用）。
+                  voice: cfg.voice,
+                  format: cfg.format,
+                  sampleRate: cfg.sampleRate,
+                  // 15b 二期：指令控制（高质量声音描述，config tts.qwen.instruction）
+                  instruction: cfg.instruction,
+                  signal: aborted.signal,
+                },
+              );
+              return { stream: result.stream, contentType: result.contentType };
+            });
             reply.hijack();
             reply.raw.writeHead(200, {
-              "Content-Type": result.contentType,
+              "Content-Type": tracked.contentType,
               "Cache-Control": "no-store",
               "Transfer-Encoding": "chunked",
             });
-            const nodeStream = Readable.fromWeb(result.stream as unknown as import("node:stream/web").ReadableStream);
-            nodeStream.on("error", () => reply.raw.destroy());
-            nodeStream.pipe(reply.raw);
-            req.raw.on("close", () => nodeStream.destroy()); // 打断 → 关闭上游 WS
+            pipeAudioToReply(reply, tracked.stream, aborted);
             return;
           } catch (err) {
-            // 响应头尚未发出：qwen 任务失败（WS 抖动/限流）降级 edge 重合成，
+            // 响应头尚未发出：qwen 任务失败（WS 抖动/限流/被治理门拒发）降级 edge 重合成，
             // 客户端拿到的仍是一段完整音频（2026-09-19 语音链路兜底）。
             req.log.warn({ err }, "qwen tts stream failed before headers; falling back to edge-tts");
           }
@@ -280,26 +330,34 @@ export async function voiceRoutes(app: FastifyInstance) {
       // 2026-08-13（引擎兼容）：情感/富语言标签是 qwen-audio 专属能力——
       // edge-tts 会把 `[excited]` 等标签当普通文字朗读，合成前必须剥离。
       // （emotion 字段仍由 worker 解析下发，Live2D 表情与引擎无关。）
-      const edgeText = stripVoiceExpressionTags(parsed.data.text);
-      const result = await edgeTtsSynthesizeStream(
-        edgeText,
-        parsed.data.voice ?? "",
-        {
-          baseUrl: process.env.EDGE_TTS_BASE_URL,
-          // 2026-08-12（伴星语音设置）：语速随请求下发（服务端有默认）。
-          ...(parsed.data.rate ? { rate: parsed.data.rate } : {}),
-        },
+      const edgeCall = await createGovernedMediaCall(
+        { workspaceId: req.session.workspaceId, userId: req.session.userId },
+        "voice_tts_stream_edge",
+        ["text_content"],
+        productionAiGovernancePorts,
       );
+      // 净化后的文本才是真送出去的那份；edge 合成前还要剥掉 qwen 专属的语气标签。
+      const edgeText = stripVoiceExpressionTags(edgeCall.prepareText(parsed.data.text, "edge"));
+      const tracked = await edgeCall.openStream({ provider: "edge", modelId: "edge-tts" }, async () => {
+        const result = await edgeTtsSynthesizeStream(
+          edgeText,
+          parsed.data.voice ?? "",
+          {
+            baseUrl: process.env.EDGE_TTS_BASE_URL,
+            // 2026-08-12（伴星语音设置）：语速随请求下发（服务端有默认）。
+            ...(parsed.data.rate ? { rate: parsed.data.rate } : {}),
+            signal: aborted.signal,
+          },
+        );
+        return { stream: result.stream, contentType: result.contentType };
+      });
       reply.hijack();
       reply.raw.writeHead(200, {
-        "Content-Type": result.contentType,
+        "Content-Type": tracked.contentType,
         "Cache-Control": "no-store",
         "Transfer-Encoding": "chunked",
       });
-      const nodeStream = Readable.fromWeb(result.stream as unknown as import("node:stream/web").ReadableStream);
-      nodeStream.on("error", () => reply.raw.destroy());
-      nodeStream.pipe(reply.raw);
-      req.raw.on("close", () => nodeStream.destroy()); // 打断 → abort 上游
+      pipeAudioToReply(reply, tracked.stream, aborted);
     } catch (err) {
       if (err instanceof EdgeTtsError || err instanceof QwenTtsError) {
         return reply.code(502).send({
@@ -310,6 +368,10 @@ export async function voiceRoutes(app: FastifyInstance) {
       throw err;
     }
   });
+
+  // The client checks this small identity once per minute; replay never resynthesizes a cached clip.
+  app.get("/voice/guidance-profile", { preHandler: [requireSession] }, async (_req, reply) =>
+    reply.header("Cache-Control", "no-store").send(guidanceVoiceProfile(loadTtsEngineConfig())));
 
   // POST /voice/tts：朗读（TTS 合成 → mp3），经 edge-tts Docker 容器。
   // ─── 音色偏好与试听（设置 → 语音与伴星）───────────────────────────────
@@ -415,6 +477,7 @@ export async function voiceRoutes(app: FastifyInstance) {
   // Companion branch（§11.3）：请求含 conversationId/runId/...（strict ref）时，重读
   // voice.segment.ready 事件验证后合成；普通朗读请求直接走固定 profile。
   app.post("/voice/tts", { preHandler: [requireSession, requireAiConsent] }, async (req, reply) => {
+    const aborted = responseAbortController(reply);
     const raw = (req.body ?? {}) as Record<string, unknown>;
     if (typeof raw === "object" && raw !== null && "conversationId" in raw) {
       if (rejectDisabledCompanionVoice(reply, "COMPANION_VOICE_DIALOGUE_V1_ENABLED")) return;
@@ -472,6 +535,7 @@ userId: session.userId,
           scope: { workspaceId: session.workspaceId, userId: session.userId, currentActiveTransaction: currentApiWorkspaceTransaction },
           log: req.log,
           ordinal: parsed.data.ordinal,
+          signal: aborted.signal,
         }),
       });
       if (result.statusCode !== 200) {
@@ -496,6 +560,7 @@ userId: session.userId,
       // 够不着 qwen WebSocket 引擎。
       const result = await synthesizeTtsBytes({
         text: body.text,
+        signal: aborted.signal,
         edgeVoice: body.voice ?? "zh-CN-XiaoxiaoNeural",
         queueKey: `${req.session!.workspaceId}:${req.session!.userId}`,
         // 41a：合成归属 + 「当前作用域有没有活动事务」那一个读数。路由处理函数不在
@@ -504,12 +569,16 @@ userId: session.userId,
         scope: { workspaceId: req.session!.workspaceId, userId: req.session!.userId, currentActiveTransaction: currentApiWorkspaceTransaction },
         selection: body.purpose === "notification"
           ? { engine: "edge", edgeVoice: "zh-CN-XiaoxiaoNeural", qwenVoice: "", explicit: true }
-          : await resolveSelectionForSynthesis(req.session!, req.log),
+          : body.purpose === "guidance"
+            ? { ...resolveTtsSelection(null, loadTtsEngineConfig()), engine: "qwen" }
+            : await resolveSelectionForSynthesis(req.session!, req.log),
         onQwenFallback: (error) => req.log.warn({ err: error }, "qwen tts failed; falling back to edge-tts"),
       });
       return reply
         .type(result.contentType)
         .header("Cache-Control", "no-store")
+        .headers(body.purpose === "guidance" ? { "X-Ailearn-Tts-Voice": result.engine === "qwen"
+          ? loadTtsEngineConfig().qwen.voice : loadTtsEngineConfig().edge.voice } : {})
         .send(Buffer.from(result.audio));
     } catch (err) {
       if (err instanceof EdgeTtsError) {
@@ -563,6 +632,8 @@ userId: session.userId,
   // 请求：multipart/form-data，字段 file=<音频>（mp3/wav/m4a；SenseVoice 支持）。
   // 响应：{ text, asrProvider, asrModel }（逐字 transcript；ASR 失败 → 4xx/5xx fail closed）。
   app.post("/voice/transcribe", { preHandler: [requireSession, requireAiConsent] }, async (req, reply) => {
+    const aborted = responseAbortController(reply);
+    req.raw.on("aborted", () => aborted.abort());
     if (!(await rateLimitVoice(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:asr`, COMPANION_RATE_LIMITS.asrPerMinute.limit, COMPANION_RATE_LIMITS.asrPerMinute.windowMs))) return;
     if (!(await rateLimitVoice(reply, req.id, `${req.session.workspaceId}:${req.session.userId}:asr:hour`, COMPANION_RATE_LIMITS.asrPerHour.limit, COMPANION_RATE_LIMITS.asrPerHour.windowMs))) return;
     let part;
@@ -640,16 +711,28 @@ userId: session.userId,
         });
       }
       try {
+        // 云端 ASR 的治理出口：同意 + 数据外发政策 + 审计（字节数/类别/状态/时长）。
+        // **没有** prepareText：送出去的是音频字节，文本 PII 净化对它不成立，
+        // 声称"这段语音做了文本 PII"是假的，所以类型上就不给这条路开口子。
+        const asrCall = await createGovernedMediaCall(
+          { workspaceId: req.session.workspaceId, userId: req.session.userId },
+          "voice_asr_companion",
+          ["audio_content"],
+          productionAiGovernancePorts,
+        );
+        asrCall.noteBytes(audio.length);
         const result = await transcribeCompanionDialogueAudio({ ...scopeOfSession(req.session),
 userId: req.session.userId,
           audio,
           filename,
           asrProvider: {
-            transcribe: (buf, fn) => siliconFlowTranscribe(buf, fn, {
-              apiKey: process.env.SILICONFLOW_API_KEY,
-              scope: scopeOfSession(req.session),
-              currentActiveTransaction: currentApiWorkspaceTransaction,
-            }),
+            transcribe: (buf, fn) => asrCall.run({ provider: "siliconflow", modelId: COMPANION_ASR_MODEL },
+              () => siliconFlowTranscribe(buf, fn, {
+                apiKey: process.env.SILICONFLOW_API_KEY,
+                scope: scopeOfSession(req.session),
+                currentActiveTransaction: currentApiWorkspaceTransaction,
+                signal: aborted.signal,
+              })),
           },
           asrProviderName: "siliconflow",
           asrModel: COMPANION_ASR_MODEL,
@@ -672,11 +755,23 @@ userId: req.session.userId,
     }
 
     try {
-      const result = await siliconFlowTranscribe(new Uint8Array(audio), filename, {
-        apiKey: process.env.SILICONFLOW_API_KEY,
-        scope: scopeOfSession(req.session),
-        currentActiveTransaction: currentApiWorkspaceTransaction,
-      });
+      // 与伴星分支同一道治理出口、同一份审计口径（两个分支是同一个上游调用点）。
+      const plainAsrCall = await createGovernedMediaCall(
+        { workspaceId: req.session.workspaceId, userId: req.session.userId },
+        "voice_asr_transcription",
+        ["audio_content"],
+        productionAiGovernancePorts,
+      );
+      plainAsrCall.noteBytes(audio.length);
+      const result = await plainAsrCall.run(
+        { provider: "siliconflow", modelId: process.env.VOICE_ASR_MODEL ?? "FunAudioLLM/SenseVoiceSmall" },
+        () => siliconFlowTranscribe(new Uint8Array(audio), filename, {
+          apiKey: process.env.SILICONFLOW_API_KEY,
+          scope: scopeOfSession(req.session),
+          currentActiveTransaction: currentApiWorkspaceTransaction,
+          signal: aborted.signal,
+        }),
+      );
       return reply.send({
         text: result.text,
         asrProvider: "siliconflow",

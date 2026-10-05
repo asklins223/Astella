@@ -17,6 +17,7 @@ import { test } from "node:test";
 import {
   buildCardGenerateV3Prompt,
   buildCardContentCheckV3Prompt,
+  buildCardCandidateRewriteV3Prompt,
   createCardGenerateV3Task,
   createCardContentCheckV3Task,
   createCardCandidateRewriteV3Task,
@@ -267,11 +268,17 @@ function checkInputFor(assembled: ReturnType<typeof assembleCardGenerationV3>): 
 test("提示词组装：正文块、可用依据、已有目标、预算上限、用户请求都要进 prompt", () => {
   const prompt = buildCardGenerateV3Prompt(generateInput);
   assert.ok(prompt.includes("间隔重复把复习安排在快忘的时候"), "正文块要进 prompt");
-  assert.ok(prompt.includes(BLOCK_ONE), "正文块要按真块 id 标出来，否则依据挂不上句");
+  assert.ok(prompt.includes("[原文第 1 段]"), "用正文实际顺序把可读位置与可用依据关联");
+  assert.ok(prompt.includes(`${EVIDENCE_A}（原文第 1 段）`));
+  assert.ok(!prompt.includes(BLOCK_ONE), "内部块身份留在服务端映射，避免混进学习解释");
   assert.ok(prompt.includes(EVIDENCE_A), "可用依据的 id 要进 prompt");
   assert.ok(prompt.includes("已有的目标：说出重读为什么不够"), "已有目标要进 prompt");
   assert.ok(prompt.includes("最多 3 个"), "预算上限要进 prompt（activationHardMax）");
   assert.ok(prompt.includes("no_cards_recommended"), "零候选是正常结果要说清");
+  const exampleLine = prompt.split("\n").find(line => line.startsWith('{"planIntent":{'))!;
+  const example = cardGenerateV3OutputSchema.parse(JSON.parse(exampleLine));
+  assert.deepEqual(example.candidates[0]!.evidenceSnapshotIds, [EVIDENCE_A]);
+  assert.equal(typeof example.candidates[0]!.front.cue, "string");
   const withRequest = buildCardGenerateV3Prompt({ ...generateInput, userRequest: "只要边界相关" });
   assert.ok(withRequest.includes("只要边界相关"), "用户请求要进 prompt");
 });
@@ -325,9 +332,9 @@ test("一份判据：依据越界不在草稿级判，留给组装后的确定�
 
 // ── ② 合同即闸 ─────────────────────────────────────────────────────────
 
-test("合同即闸：候选引用未提案的 localId ⇒ 那一条剔掉并留因（整批不红）", async () => {
-  const broken = JSON.parse(generateJson([candidateContent("obj-1")]));
-  broken.candidates[0].objectiveLocalId = "obj-不存在";
+test("合同即闸：一条候选引用未提案的 localId，保留其余合法候选并留因", async () => {
+  const broken = JSON.parse(generateJson([candidateContent("obj-1"), candidateContent("obj-2")]));
+  broken.candidates[1].objectiveLocalId = "obj-不存在";
   const provider = scriptedProvider([JSON.stringify(broken)]);
   const task = createCardGenerateV3Task({
     provider: provider as CardGenerationV3ProviderPort<CardGenerateV3TaskInput>,
@@ -336,9 +343,31 @@ test("合同即闸：候选引用未提案的 localId ⇒ 那一条剔掉并留�
   });
   const receipt = await task.execute(generateInput, environment(provider.modelId));
   assert.ok(receipt.ok, `整批不该为一条坏候选红掉：${receipt.ok ? "" : receipt.message}`);
-  assert.equal(receipt.output.acceptedCount, 0, "坏的那一条不许变成草稿");
+  assert.equal(receipt.output.acceptedCount, 1, "只保留合法候选，坏的那一条不许变成草稿");
   assert.match(receipt.output.droppedCandidates[0]!.reason, /未提案/,
     "剔掉要带因——静默丢会让零候选读起来像模型没出卡（第八发真模型少一格 front.cue 时同样按这条走）");
+});
+
+test("全部候选的依据格式或提案引用无效时报告 output_shape，不冒充材料无知识点", async () => {
+  for (const defect of ["numeric-evidence", "unproposed-objective", "empty-candidates"] as const) {
+    const broken = JSON.parse(generateJson([candidateContent("obj-1")]));
+    if (defect === "numeric-evidence") broken.candidates[0].evidenceSnapshotIds = [1];
+    if (defect === "unproposed-objective") broken.candidates[0].objectiveLocalId = "obj-不存在";
+    if (defect === "empty-candidates") broken.candidates = [];
+    const provider = scriptedProvider([JSON.stringify(broken)]);
+    const task = createCardGenerateV3Task({
+      provider: provider as CardGenerationV3ProviderPort<CardGenerateV3TaskInput>,
+      prepare: async () => generateInput,
+      commit: async () => { throw new Error("无效候选不许提交"); },
+    });
+    const receipt = await task.execute(generateInput, environment(provider.modelId));
+    assert.equal(receipt.ok, false, defect);
+    if (!receipt.ok) {
+      assert.equal(receipt.class, "output_shape");
+      assert.doesNotMatch(receipt.message, /no_learnable_objective/);
+      if (defect === "numeric-evidence") assert.match(receipt.message, /evidenceSnapshotIds.*Expected string/);
+    }
+  }
 });
 
 test("合同即闸：no_cards 还带着候选 ⇒ output_shape", async () => {
@@ -652,6 +681,43 @@ test("检查提示词：每一张候选与每条依据都要在场", () => {
 });
 
 // ── ⑦ 增量改写的身份（与首稿共用同一段组装）────────────────────────────
+
+test("改写请求使用 JSON 内容合同，冻结事实完整保留，并拒绝混入其他目标", async () => {
+  const content = candidateContent("obj-1");
+  const first = buildCandidateRevisionV3({
+    draft: expandToDrafts([content])[0]!, plan: assemblyPlanFor(content), runId: RUN_ID,
+    strategy: "why", reasonCodes: ["priority-important"], evidenceSetHash: SNAPSHOT_HASH,
+  }).candidate;
+  const input: CardCandidateRewriteV3TaskInput = {
+    runId: RUN_ID, sourceContent: "原文完整事实：提取练习是先自己想出答案，再核对。",
+    candidate: first, hints: content.hints,
+    issues: [{ code: "content_mismatch", detail: "不要把提取练习误写成重新阅读" }],
+    evidenceManifest,
+  };
+  const prompt = buildCardCandidateRewriteV3Prompt(input);
+  assert.match(prompt, /只输出 JSON/);
+  for (const field of ["answerParts", "judgingPoints", "front", "evidenceSnapshotIds", "estimatedReviewSeconds"])
+    assert.ok(prompt.includes(field), `模型要收到真实合同字段 ${field}`);
+  assert.match(prompt, /rewrites\.judgingPoints\[\]/);
+  assert.ok(prompt.includes(JSON.stringify(first.presentation.front)), "现有题面以真实 cue/prompt 对象进入同一内容合同");
+  assert.ok(prompt.includes(input.sourceContent));
+  assert.ok(prompt.includes(EVIDENCE_A));
+  assert.doesNotMatch(prompt, /objectiveDraft|presentationDraft/);
+  const provider = scriptedProvider([
+    JSON.stringify({ rewrites: [content] }),
+    JSON.stringify({ rewrites: [content, candidateContent("other-objective")] }),
+    JSON.stringify({ rewrites: [candidateContent("other-objective")] }),
+  ]);
+  const task = createCardCandidateRewriteV3Task({ provider, prepare: async () => input, commit: async () => {} });
+  const result = await task.execute(input, environment(provider.modelId));
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.output.draft.objectiveLocalId, "obj-1");
+  for (let i = 0; i < 2; i += 1) {
+    const invalid = await task.execute(input, environment(provider.modelId));
+    assert.equal(invalid.ok, false);
+    if (!invalid.ok) assert.equal(invalid.class, "output_shape");
+  }
+});
 
 test("改写：同一张卡长出新修订，旧修订留在 derivedFrom 里", () => {
   const draft = expandToDrafts([candidateContent("obj-1")])[0]!;

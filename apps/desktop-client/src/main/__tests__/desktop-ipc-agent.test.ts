@@ -40,3 +40,25 @@ it("rejects invalid query and stale workspace before calling the gateway, and re
   request.mockResolvedValueOnce({ body: { version: 1, runId, currentRevision: 3, items: [], unrecordedRevisions: [] } });
   await expect(invoke({ meta, runId })).rejects.toThrow();
 });
+it("reads a linked task outside the first page through the exact typed route and rejects obsolete scope", async () => {
+  const run = {version:1,runId,identityId:runId,revision:1,goal:"较早的任务",status:"completed",conversationId:null,
+    inputs:[],longGoal:null,operations:[],artifacts:[],summary:"已做好",error:null,modelCalls:2,maxModelCalls:16,
+    createdAt:"2026-10-04T00:00:00Z",updatedAt:"2026-10-04T00:00:00Z"};
+  request.mockResolvedValueOnce({body:run});
+  expect(await handlers.get(DESKTOP_IPC_CHANNELS.agentRunGet)!({meta,runId})).toEqual(run);
+  expect(request).toHaveBeenLastCalledWith(`/agent/runs/${runId}`,{method:"GET"},true,true,meta.requestId);
+  request.mockClear();
+  await expect(handlers.get(DESKTOP_IPC_CHANNELS.agentRunGet)!({meta:{...meta,workspaceEpoch:1},runId})).rejects.toThrow("stale_workspace");
+  await expect(handlers.get(DESKTOP_IPC_CHANNELS.agentRunGet)!({meta,runId:"wrong"})).rejects.toThrow();
+  expect(request).not.toHaveBeenCalled();
+});
+it("passes the long-goal search and filtered task bookmarks without changing their identity", async () => {
+  request.mockResolvedValueOnce({body:{version:1,items:[],nextCursor:null}});
+  await handlers.get(DESKTOP_IPC_CHANNELS.agentLongGoalsList)!({meta,query:{limit:5,memoryId:runId,query:"索引",cursor:"bookmark"}});
+  const url=new URL(request.mock.calls.at(-1)![0],"http://localhost");
+  expect(url.pathname).toBe("/agent/long-goals");
+  expect(Object.fromEntries(url.searchParams)).toEqual({limit:"5",memoryId:runId,query:"索引",cursor:"bookmark"});
+  request.mockResolvedValueOnce({body:{version:1,items:[],nextCursor:null}});
+  await handlers.get(DESKTOP_IPC_CHANNELS.agentRunsList)!({meta,query:{longGoalMemoryId:runId,cursor:"task-bookmark"}});
+  expect(request.mock.calls.at(-1)![0]).toContain(`longGoalMemoryId=${runId}`);
+});

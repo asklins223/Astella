@@ -431,6 +431,8 @@ BEGIN
     'assistant_memory_items',
     'assistant_memory_embeddings',
     'companion_procedural_playbooks',
+    'companion_method_revisions',
+    'companion_method_uses',
     'assistant_memory_item_revisions',
     'assistant_memory_budget_events',
     'assistant_memory_source_suppressions',
@@ -573,6 +575,22 @@ BEGIN
   -- and the worker's existing playbook handlers read, insert and update them.
   IF to_regclass('public.companion_procedural_playbooks') IS NOT NULL THEN
     GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_procedural_playbooks TO ailearn_worker;
+  END IF;
+  IF to_regclass('public.companion_memory_organization_state') IS NOT NULL THEN
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_memory_organization_state TO ailearn_worker;
+  END IF;
+  IF to_regclass('public.companion_memory_organization_leases') IS NOT NULL THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.companion_memory_organization_leases TO ailearn_worker;
+  END IF;
+  IF to_regclass('public.companion_method_revisions') IS NOT NULL THEN
+    GRANT SELECT, INSERT ON TABLE public.companion_method_revisions TO ailearn_api, ailearn_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.companion_method_revisions FROM ailearn_api, ailearn_worker;
+  END IF;
+  IF to_regclass('public.companion_method_uses') IS NOT NULL THEN
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_method_uses TO ailearn_api;
+    GRANT SELECT, INSERT ON TABLE public.companion_method_uses TO ailearn_worker;
+    REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.companion_method_uses FROM ailearn_worker;
+    REVOKE DELETE, TRUNCATE ON TABLE public.companion_method_uses FROM ailearn_api;
   END IF;
   IF to_regclass('public.companion_persona_profiles') IS NOT NULL THEN
     GRANT SELECT, INSERT, UPDATE ON TABLE public.companion_persona_profiles TO ailearn_worker;
@@ -719,6 +737,7 @@ BEGIN
     'card_generation_semantic_specs_v2',
     'card_generation_input_snapshots_v2',
     'evidence_snapshots_v2',
+    'evidence_quote_copies_v2',
     'evidence_redactions_v2',
     'semantic_support_reports_v2',
     'learning_objective_evidence_bindings_v2',
@@ -1212,7 +1231,14 @@ DO $$ DECLARE t text; BEGIN
   END IF;
   FOREACH t IN ARRAY ARRAY['ailearn_agent_scope_current(uuid,uuid)','ailearn_enqueue_agent_recovery()',
     'ailearn_cancel_agent_operations(uuid,integer)','ailearn_agent_job_current(uuid,uuid,uuid,boolean)',
-    'ailearn_agent_job_event()'] LOOP
+    'ailearn_agent_run_authorized(uuid)',
+    'ailearn_agent_card_job_current(uuid,uuid,boolean)',
+    'ailearn_agent_card_execution_binding(uuid,uuid)',
+    'ailearn_propagate_playbook_evidence_change()',
+    'ailearn_enforce_companion_memory_retention()',
+    'ailearn_companion_memory_retention_limits()',
+    'ailearn_commit_memory_organization(uuid,uuid,text,text,integer)',
+    'ailearn_agent_card_run_event()','ailearn_agent_job_event()'] LOOP
     IF to_regprocedure('public.' || t) IS NOT NULL THEN
       EXECUTE format('ALTER FUNCTION %s OWNER TO ailearn_migrator',to_regprocedure('public.' || t));
     END IF;
@@ -1223,6 +1249,21 @@ DO $$ DECLARE t text; BEGIN
     GRANT EXECUTE ON FUNCTION public.ailearn_cancel_agent_operations(uuid,integer) TO ailearn_api,ailearn_worker;
     GRANT EXECUTE ON FUNCTION public.ailearn_agent_job_current(uuid,uuid,uuid,boolean) TO ailearn_worker;
   END IF;
+  IF to_regprocedure('public.ailearn_agent_run_authorized(uuid)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.ailearn_agent_run_authorized(uuid) TO ailearn_worker;
+  END IF;
+  IF to_regprocedure('public.ailearn_agent_method_sources_current(uuid,uuid,uuid)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.ailearn_agent_method_sources_current(uuid,uuid,uuid) TO ailearn_api, ailearn_worker;
+  END IF;
+  -- 升级前的 roles 引导也会执行：0373 尚未安装时跳过新函数。
+  IF to_regprocedure('public.ailearn_agent_card_job_current(uuid,uuid,boolean)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.ailearn_agent_card_job_current(uuid,uuid,boolean) TO ailearn_worker;
+  END IF;
+  IF to_regprocedure('public.ailearn_agent_card_execution_binding(uuid,uuid)') IS NOT NULL THEN
+    GRANT EXECUTE ON FUNCTION public.ailearn_agent_card_execution_binding(uuid,uuid) TO ailearn_worker;
+  END IF;
+  -- 触发器函数（jobs 上的 agent_job_event、制卡 run 上的 agent_card_run_event）不给任何
+  -- 角色 EXECUTE：触发执行不查 session 用户的权限。
 END $$;
 
 -- Executable least-privilege verification.  Keeping this next to the grants
@@ -1298,6 +1339,8 @@ BEGIN
       'companion_context_handoff_snapshots',
       'companion_run_failure_spans',
       'assistant_memory_item_revisions',
+      'companion_method_revisions',
+      'companion_method_uses',
       'agent_run_revisions',
       'assistant_memory_budget_events',
       'companion_persona_profile_versions'
@@ -1328,6 +1371,19 @@ BEGIN
   IF mismatch IS NOT NULL THEN
     RAISE EXCEPTION 'API privilege matrix mismatch: %', mismatch;
   END IF;
+
+  SELECT string_agg(format('%I.%I',n.nspname,c.relname), ', ') INTO mismatch
+  FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+  WHERE n.nspname='public' AND c.relname IN ('companion_method_revisions','companion_method_uses') AND (
+    NOT has_table_privilege('ailearn_api',c.oid,'SELECT')
+    OR NOT has_table_privilege('ailearn_api',c.oid,'INSERT')
+    OR has_table_privilege('ailearn_api',c.oid,'UPDATE') <> (c.relname='companion_method_uses')
+    OR has_table_privilege('ailearn_api',c.oid,'DELETE')
+    OR has_table_privilege('ailearn_api',c.oid,'TRUNCATE')
+    OR has_table_privilege('ailearn_api',c.oid,'REFERENCES')
+    OR has_table_privilege('ailearn_api',c.oid,'TRIGGER')
+  );
+  IF mismatch IS NOT NULL THEN RAISE EXCEPTION 'API method history/feedback privilege matrix mismatch: %',mismatch; END IF;
 
   IF to_regclass('public.companion_run_failure_spans') IS NOT NULL AND (
     NOT has_table_privilege('ailearn_api', 'public.companion_run_failure_spans', 'SELECT')
@@ -1524,6 +1580,10 @@ BEGIN
       ('pet_profiles', true, true, true, false),
       ('assistant_memory_items', true, true, true, true),
       ('companion_procedural_playbooks', true, true, true, false),
+      ('companion_memory_organization_state', true, true, true, false),
+      ('companion_memory_organization_leases', true, true, true, true),
+      ('companion_method_revisions', true, true, false, false),
+      ('companion_method_uses', true, true, false, false),
       ('assistant_memory_item_revisions', true, true, false, false),
       ('agent_run_revisions', true, true, false, false),
       ('agent_runs', true, true, true, false),
@@ -1561,6 +1621,7 @@ BEGIN
       ('card_generation_semantic_specs_v2', true, true, false, false),
       ('card_generation_input_snapshots_v2', true, true, false, false),
       ('evidence_snapshots_v2', true, true, false, false),
+      ('evidence_quote_copies_v2', true, true, false, false),
       ('evidence_redactions_v2', true, true, false, false),
       ('semantic_support_reports_v2', true, true, false, false),
       ('learning_objective_evidence_bindings_v2', true, true, false, false),
@@ -1757,7 +1818,12 @@ BEGIN
     AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_scope_current(uuid,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_enqueue_agent_recovery()')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_cancel_agent_operations(uuid,integer)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_method_sources_current(uuid,uuid,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_job_current(uuid,uuid,uuid,boolean)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_run_authorized(uuid)')
+    -- 0373：制卡这一发的父围栏与初始归属读取（与上面 GRANT 成对，两份清单一起改）。
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_card_job_current(uuid,uuid,boolean)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_card_execution_binding(uuid,uuid)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_close_companion_memory_delivery(uuid,uuid,uuid,text)')
     AND p.oid IS DISTINCT FROM
@@ -1810,6 +1876,7 @@ BEGIN
     AND has_function_privilege('ailearn_api', p.oid, 'EXECUTE')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_scope_current(uuid,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_cancel_agent_operations(uuid,integer)')
+    AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_agent_method_sources_current(uuid,uuid,uuid)')
     AND p.oid IS DISTINCT FROM to_regprocedure('public.ailearn_fanout_agent_global_preference(uuid)')
     AND p.oid IS DISTINCT FROM
       to_regprocedure('public.ailearn_purge_companion_audit_ttl(integer,integer)')
@@ -1914,12 +1981,22 @@ BEGIN
     INTO missing
     FROM (VALUES
       ('ailearn_worker', 'ailearn_claim_jobs(integer,integer,integer)'),
+      ('ailearn_api', 'ailearn_agent_method_sources_current(uuid,uuid,uuid)'),
+      ('ailearn_worker', 'ailearn_agent_method_sources_current(uuid,uuid,uuid)'),
       ('ailearn_api', 'ailearn_agent_scope_current(uuid,uuid)'),
       ('ailearn_worker', 'ailearn_agent_scope_current(uuid,uuid)'),
       ('ailearn_api', 'ailearn_cancel_agent_operations(uuid,integer)'),
       ('ailearn_worker', 'ailearn_cancel_agent_operations(uuid,integer)'),
       ('ailearn_worker', 'ailearn_enqueue_agent_recovery()'),
       ('ailearn_worker', 'ailearn_agent_job_current(uuid,uuid,uuid,boolean)'),
+      ('ailearn_worker', 'ailearn_agent_run_authorized(uuid)'),
+      -- 0373：制卡这一发的父围栏。缺它时链内每一段短事务与每次模型调用前的判定都会
+      -- permission denied，而调用方多半把异常 catch 成一行 warn——父围栏静默失效，
+      -- 表现是"用户已经停下的目标，那批卡片还在跑完并烧预算"。
+      ('ailearn_worker', 'ailearn_agent_card_job_current(uuid,uuid,boolean)'),
+      -- 0373：初始归属读取。缺它时 worker 读不到绑定，所有 Agent 制卡被误认成普通制卡，
+      -- 父预算与围栏静默失效。
+      ('ailearn_worker', 'ailearn_agent_card_execution_binding(uuid,uuid)'),
       ('ailearn_worker', 'ailearn_reap_stale_jobs(integer,integer)'),
       ('ailearn_worker', 'ailearn_renew_job_lease(uuid,uuid,text)'),
       ('ailearn_worker', 'ailearn_finish_job(uuid,uuid,text)'),

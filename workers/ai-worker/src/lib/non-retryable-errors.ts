@@ -110,6 +110,15 @@ export class CompanionAgentBudgetExceededError extends Error {
   }
 }
 
+/** A source change requires a fresh user turn, never a replay of its old prompt. */
+export class CompanionContextChangedError extends Error {
+  readonly code = "CONTEXT_STALE" as const;
+  constructor() {
+    super("这一轮引用的记忆已变更或撤回。请重新发送，我会按现在的内容继续。");
+    this.name = "CompanionContextChangedError";
+  }
+}
+
 /**
  * 伴星记忆抽取的输出不可用（方案 29 §4.3）。
  *
@@ -183,6 +192,7 @@ export function isNonRetryableError(error: unknown): boolean {
 
   // Agent 预算耗尽同理：run 级预算跨重投累计，重试不可能恢复。
   if (error instanceof CompanionAgentBudgetExceededError) return true;
+  if (error instanceof CompanionContextChangedError) return true;
 
   // 记忆抽取输出不合规同理：内部已重试过一次采样，重投不会给出更好的输出。
   if (error instanceof MemoryExtractOutputError) return true;

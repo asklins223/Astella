@@ -25,7 +25,7 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { users } from "./identity.ts";
+import { users, workspaces } from "./identity.ts";
 import type { CompanionAgentSettingsV1 } from "../contracts/companion-agent-contracts.ts";
 
 // ─── CompanionOnboardingStateV1 形状（02-3 冻结）───────────────────────────
@@ -39,6 +39,7 @@ export type CompanionOnboardingActiveRun = {
   entryMode: CompanionOnboardingEntryMode;
   runStatus: "in_progress" | "paused";
   stepId: string;
+  topicId?: typeof import("../contracts/companion-shell-contracts.ts").COMPANION_GUIDE_TOPIC_IDS[number];
   resumeTokenRef: string;
   resumeWorkspaceRef?: string;
   expiresAt: string;
@@ -58,6 +59,9 @@ export const userCompanionOnboarding = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     onboardingVersion: text("onboarding_version").notNull(),
+    scopeKey: text("scope_key").notNull().default("account"),
+    workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }),
+    visitedStepIds: jsonb("visited_step_ids").$type<string[]>().notNull().default([]),
     revision: integer("revision").notNull().default(0),
     // 自动欢迎资格严格等于 offer_status = 'not_offered'；consumed 是单调终态。
     offerStatus: text("offer_status")
@@ -71,7 +75,7 @@ export const userCompanionOnboarding = pgTable(
   (t) => ({
     // account + version 唯一；跨设备同步通过 revision CAS 竞争（01-3 §12.5）。
     userVersionUnique: uniqueIndex("user_companion_onboarding_user_version_unique_idx")
-      .on(t.userId, t.onboardingVersion),
+      .on(t.userId, t.onboardingVersion, t.scopeKey),
     offerStatusIdx: index("user_companion_onboarding_offer_status_idx").on(
       t.userId, t.offerStatus,
     ),

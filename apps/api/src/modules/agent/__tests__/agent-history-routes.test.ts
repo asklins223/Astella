@@ -167,12 +167,35 @@ test("直接调用 store 的那条路径也拿不到失控的 limit", () => {
 });
 
 test("历史页只覆盖一页的 revision 号，缺省名单不越界也不虚报", () => {
+  // 0373 之后 `agent_operations` 存的是包好的 `result`，执行体由 job_id /
+  // card_generation_run_id 两列 XOR 给出；这一格钉的是**读投影**的换算，不是某一列。
   const operations = [
     { id: "44444444-4444-4444-8444-000000000001", revision: 3, capability: "note_overview_generate",
-      job_id: "66666666-6666-4666-8666-666666666661", status: "succeeded", last_event_seq: 1,
-      artifact: { kind: "note_overview", id: "55555555-5555-4555-8555-555555555551",
+      job_id: "66666666-6666-4666-8666-666666666661",
+      card_generation_run_id: null, card_generation_outbox_id: null,
+      status: "succeeded", last_event_seq: 1,
+      result: { kind: "artifact", artifact: {
+        kind: "note_overview", id: "55555555-5555-4555-8555-555555555551",
         jobId: "66666666-6666-4666-8666-666666666661",
-        noteId: "77777777-7777-4777-8777-777777777771", noteVersionId: "88888888-8888-4888-8888-888888888881" },
+        noteId: "77777777-7777-4777-8777-777777777771", noteVersionId: "88888888-8888-4888-8888-888888888881" } },
+      error: null },
+    // 制卡那一档：执行体落在 card_generation_run_id 上，job_id 为空；产物没有 jobId。
+    { id: "44444444-4444-4444-8444-000000000002", revision: 3, capability: "card_generation_generate",
+      job_id: null,
+      card_generation_run_id: "99999999-9999-4999-8999-999999999991",
+      card_generation_outbox_id: "aaaa9999-9999-4999-8999-999999999991",
+      status: "succeeded", last_event_seq: 1,
+      result: { kind: "artifact", artifact: {
+        kind: "card_candidates", id: "99999999-9999-4999-8999-999999999991",
+        noteId: "77777777-7777-4777-8777-777777777771", noteVersionId: "88888888-8888-4888-8888-888888888881" } },
+      error: null },
+    // 零推荐也是成功收口：它有 result，但**不是** artifact，所以不进 artifacts 投影。
+    { id: "44444444-4444-4444-8444-000000000003", revision: 3, capability: "card_generation_generate",
+      job_id: null,
+      card_generation_run_id: "99999999-9999-4999-8999-999999999992",
+      card_generation_outbox_id: "aaaa9999-9999-4999-8999-999999999992",
+      status: "succeeded", last_event_seq: 1,
+      result: { kind: "no_cards_recommended", reasonCodes: ["source_not_learnable"] },
       error: null },
   ];
   const recorded = [2, 1].map(revision => ({
@@ -192,9 +215,14 @@ test("历史页只覆盖一页的 revision 号，缺省名单不越界也不虚�
   assert.deepEqual(page.unrecordedRevisions, [], "全部存档过，不能虚报缺省");
   assert.equal(page.nextBeforeRevision, null);
   // 新版的产物不进旧版，旧版也不吞掉自己那一份。
-  assert.deepEqual(page.items[0]?.artifacts.length, 1);
+  // 两类产物各一张；零推荐那一行**不**产出一张 artifact——它是成功收口，不是产物。
+  assert.deepEqual(page.items[0]?.artifacts.map(a => a.kind), ["note_overview", "card_candidates"]);
   assert.deepEqual(page.items.slice(1).map(item => item.artifacts.length), [0, 0]);
   assert.deepEqual(page.items.slice(1).map(item => item.goal), ["第 2 版的要求", "第 1 版的要求"]);
+  // 执行体的 kind 由列给出，不靠「哪一列有值」猜；结果必须逐字属于该执行体。
+  assert.deepEqual(page.items[0]?.operations.map(o => o.execution.kind), ["job", "card_generation", "card_generation"]);
+  assert.deepEqual(page.items[0]?.operations.map(o => o.result?.kind),
+    ["artifact", "artifact", "no_cards_recommended"]);
 
   const gap = projectAgentRunHistoryV1({
     scope: SCOPE, runId: RUN, currentRevision: 800, topRevision: 800, limit: 20,

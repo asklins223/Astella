@@ -119,7 +119,11 @@
 .hud-surface .cc-page-note { padding-top: 18px; margin-top: 22px; border-top: 1px solid var(--cc-line); }
 .hud-surface .cc-form { display: grid; gap: 12px; padding: 16px; background: #edf3db; border: 1px solid var(--cc-line); border-radius: 22px; }
 .hud-surface .cc-form label { display: grid; gap: 6px; color: var(--cc-muted); font-size: 12px; }
-.hud-surface .cc-form textarea { width: 100%; min-height: 90px; resize: vertical; padding: 10px 12px; border: 1px solid var(--cc-line); border-radius: 15px; background: #fffcee; font-size: 14px; line-height: 1.7; }
+.hud-surface .cc-form input { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--cc-line); border-radius: 14px; background: #fffcee; color: var(--cc-ink); font: inherit; transition: border-color 160ms ease; }
+.hud-surface .cc-form textarea { width: 100%; min-height: 90px; resize: vertical; padding: 10px 12px; border: 1px solid var(--cc-line); border-radius: 15px; background: #fffcee; font-size: 14px; line-height: 1.7; transition: border-color 160ms ease; }
+/* 这一页的字段自带描边，所以聚焦让描边转暖就够了；键盘另有 3px 硬环，
+   两层各管各的来源，不叠在同一条边上。 */
+.hud-surface .cc-form :is(input, textarea):focus { border-color: #4d9c80; }
 .hud-surface .cc-form small { margin-right: auto; color: var(--cc-muted); font-size: 11px; }
 .hud-surface .cc-segments { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px 0; }
 .hud-surface .cc-segments button { padding: 6px 11px; border: 1px solid transparent; border-radius: 15px; background: transparent; color: var(--cc-muted); font-size: 12px; }
@@ -136,6 +140,20 @@
 /* Nearness: an open diary leaf beside the last exchange. */
 .hud-surface .cc-overview__greeting { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
 .hud-surface .cc-overview__greeting h3 { margin-top: 7px; font: 600 19px/1.5 var(--cc-serif); overflow-wrap: anywhere; }
+.hud-surface .cc-capability-guide { margin: 0 0 22px; border-bottom: 1px solid var(--cc-line); }
+.hud-surface .cc-capability-guide > summary { display: flex; align-items: center; gap: 10px; padding: 10px 0 14px; color: var(--cc-ink); cursor: pointer; list-style: none; font-size: 13px; }
+.hud-surface .cc-capability-guide > summary::-webkit-details-marker { display: none; }
+.hud-surface .cc-capability-guide > summary small { display: block; margin-top: 4px; color: var(--cc-muted); font-size: 11px; font-weight: 400; }
+.hud-surface .cc-capability-guide > summary::after { content: "⌄"; margin-left: auto; font-size: 18px; }
+.hud-surface .cc-capability-guide[open] > summary::after { transform: rotate(180deg); }
+.hud-surface .cc-capability-guide__body { padding: 0 0 18px 26px; font-size: 12px; line-height: 1.8; }
+.hud-surface .cc-capability-guide__body > p { margin: 0 0 14px; }
+.hud-surface .cc-capability-guide__body dl { display: grid; gap: 12px; margin: 0 0 18px; }
+.hud-surface .cc-capability-guide__body dl > div { min-width: 0; }
+.hud-surface .cc-capability-guide__body dt { color: var(--cc-ink); font-weight: 600; }
+.hud-surface .cc-capability-guide__body dd { margin: 3px 0 0; color: var(--cc-muted); overflow-wrap: anywhere; }
+.hud-surface .cc-capability-guide__restriction { padding: 10px 12px; border-radius: 12px; background: #fff0c6; }
+.hud-surface .cc-capability-guide__restriction .cc-link { margin-left: 8px; }
 .hud-surface .cc-overview__reading { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 28px; }
 .hud-surface .cc-overview__reading h3 { font: 600 16px/1.5 var(--cc-serif); }
 .hud-surface .cc-overview__diary { padding: 23px 24px; border: 2px solid #f1e1b8; border-radius: 24px 30px 26px 28px; background: #fffced; box-shadow: 0 4px 0 #efe3c1; }
@@ -175,8 +193,15 @@
 .hud-surface .cc-prose :where(ul, ol) { padding-left: 20px; }
 .hud-surface .cc-prose pre { max-width: 100%; overflow-x: auto; background: #eee9dc; padding: 12px; border-radius: 17px; }
 .hud-surface .cc-thread__waiting { font-size: 12px; color: var(--cc-muted); }
-.hud-surface .cc-composer { flex: none; padding: 13px 15px 12px; border: 1px solid #c8cbb6; border-radius: 24px; background: #fffcee; box-shadow: 0 -6px 20px #faf5e9; }
+/* 对话输入的聚焦提示落在**纸壳**上，不落在输入框上。输入框本身是无边框、
+   无圆角、通栏的裸 textarea，任何画在它身上的环都会是一个悬在圆角奶油壳里的
+   直角框——正是"点一下就出现一个强调的方框"。壳自己换一圈更暖的边，指针和键盘
+   都读得到，形状也跟纸面一致（DESIGN.md：提示跟随纸签外壳）。 */
+.hud-surface .cc-composer { flex: none; padding: 13px 15px 12px; border: 1px solid #c8cbb6; border-radius: 24px; background: #fffcee; box-shadow: 0 -6px 20px #faf5e9; transition: border-color 160ms ease, box-shadow 160ms ease; }
+.hud-surface .cc-composer:focus-within { border-color: #4d9c80; box-shadow: 0 -6px 20px #faf5e9, 0 0 0 3px #4d9c8038; }
 .hud-surface .cc-composer textarea { display: block; width: 100%; min-height: 48px; max-height: 140px; padding: 0; resize: vertical; border: 0; outline: 0; background: transparent; font-size: 14px; line-height: 1.7; }
+/* 壳已经画了聚焦态，字段就不再补一层（这条要压得住本文件第 59 行的 `.cc-book` 通用环）。 */
+.hud-surface .cc-composer :is(input, textarea):focus-visible { outline: 0; }
 .hud-surface .cc-composer > div { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 9px; }
 .hud-surface .cc-composer > div > span { margin-right: auto; color: #a39b8a; font-size: 10px; }
 .hud-surface .cc-composer__reference { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 10px; color: var(--cc-muted); font-size: 11px; }
@@ -335,17 +360,17 @@
 .hud-surface .cc-version small { display: block; margin-top: 4px; font-size: 10px; }
 
 /* CompanionSelect's listbox is part of this leaf, including its actual popup. */
-.hud-surface .cc-book .companion-select { position: relative; display: inline-flex; min-width: 0; }
-.hud-surface .cc-book .companion-select__trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 38px; padding: 6px 12px; border: 1px solid var(--cc-line); border-radius: 19px; background: #fffcee; color: var(--cc-ink); font-size: 11px; cursor: pointer; }
-.hud-surface .cc-book .companion-select__trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hud-surface .cc-book .companion-select__trigger svg { flex: none; color: #6a967a; transition: transform 140ms ease-out; }
-.hud-surface .cc-book .companion-select[data-open="true"] .companion-select__trigger svg { transform: rotate(180deg); }
-.hud-surface .cc-book .companion-select__menu { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: max(100%, 168px); max-height: 264px; overflow-y: auto; margin: 0; padding: 6px; list-style: none; border: 1px solid #b9bea7; border-radius: 18px; background: #fffcee; color: var(--cc-ink); box-shadow: 0 8px 25px #3e422a25; }
-.hud-surface .cc-book .companion-select[data-flip="up"] .companion-select__menu { top: auto; bottom: calc(100% + 6px); }
-.hud-surface .cc-book .companion-select__option { display: grid; grid-template-columns: 14px minmax(0, 1fr); align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px 10px; border: 0; border-radius: 12px; background: transparent; color: var(--cc-ink); font-size: 12px; text-align: left; cursor: pointer; }
-.hud-surface .cc-book .companion-select__option > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hud-surface .cc-book .companion-select__option svg { color: #348c78; }
-.hud-surface .cc-book .companion-select__option:is(.is-active, .is-selected) { background: #def0d1; color: #4f6547; }
+:is(.hud-surface .cc-book, .companion-goal-edit) .companion-select { position: relative; display: inline-flex; min-width: 0; }
+:is(.hud-surface .cc-book, .companion-goal-edit) .companion-select__trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 38px; padding: 6px 12px; border: 1px solid var(--cc-line); border-radius: 19px; background: #fffcee; color: var(--cc-ink); font-size: 11px; cursor: pointer; }
+:is(.hud-surface .cc-book, .companion-goal-edit) .companion-select__trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.hud-surface .cc-book, .companion-goal-edit) .companion-select__trigger svg { flex: none; color: #6a967a; transition: transform 140ms ease-out; }
+:is(.hud-surface .cc-book, .companion-goal-edit) .companion-select[data-open="true"] .companion-select__trigger svg { transform: rotate(180deg); }
+:is(.hud-surface .cc-book, .companion-goal-edit) .companion-select__menu { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: max(100%, 168px); max-height: var(--companion-select-menu-height, 264px); overflow-y: auto; margin: 0; padding: 6px; list-style: none; border: 1px solid #b9bea7; border-radius: 18px; background: #fffcee; color: var(--cc-ink); box-shadow: 0 8px 25px #3e422a25; }
+:is(.hud-surface .cc-book, .companion-goal-edit) .companion-select[data-flip="up"] .companion-select__menu { top: auto; bottom: calc(100% + 6px); }
+:is(.hud-surface .cc-book, .companion-goal-edit) .companion-select__option { display: grid; grid-template-columns: 14px minmax(0, 1fr); align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px 10px; border: 0; border-radius: 12px; background: transparent; color: var(--cc-ink); font-size: 12px; text-align: left; cursor: pointer; }
+:is(.hud-surface .cc-book, .companion-goal-edit) .companion-select__option > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.hud-surface .cc-book, .companion-goal-edit) .companion-select__option svg { color: #348c78; }
+:is(.hud-surface .cc-book, .companion-goal-edit) .companion-select__option:is(.is-active, .is-selected) { background: #def0d1; color: #4f6547; }
 .hud-surface .cc-book .companion-memory-universe { --universe-motion-feedback: 90ms; --universe-motion-panel: 150ms; --ease-standard: var(--hud-ease-out); }
 .hud-surface .cc-book .companion-memory-universe :is(.universe-canvas-controls, .universe-canvas-tooltip) { --universe-ac-plate: #fff9e9; --universe-ac-plate-deep: #f0eedb; --universe-ac-border: #bacda8; --universe-ac-border-strong: #5aa28b; --universe-ac-shadow: 0 5px 12px #102f3b38; --universe-ink: #415c4f; --universe-muted: #607c6e; --universe-faint: #778b75; border-radius: 22px; }
 .hud-surface .cc-book[data-motion="off"] :where(button, .cc-switch i) { transition: none; }
@@ -439,3 +464,44 @@
 .hud-surface .cc-page::-webkit-scrollbar-thumb, .hud-surface .cc-memory-list::-webkit-scrollbar-thumb, .hud-surface .cc-memory-focus::-webkit-scrollbar-thumb { border-radius: 12px; background: #d3e1b8; }
 
 .hud-surface .cc-book .button:hover { transform: none; }
+
+/* Methods are a quiet index and a readable leaf within the memory book. */
+.hud-surface .cc-memory-views { flex: none; }
+.hud-surface :is(.cc-methods,.cc-long-goals) { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
+.hud-surface .cc-methods > .cc-search { flex: none; }
+.hud-surface :is(.cc-methods-workspace,.cc-long-goals-workspace) { display: grid; grid-template-columns: minmax(0,1fr); min-height: 0; flex: 1; gap: 24px; }
+.hud-surface :is(.cc-methods-workspace,.cc-long-goals-workspace).has-selection { grid-template-columns: minmax(160px,.65fr) minmax(0,1.35fr); }
+.hud-surface :is(.cc-methods-index,.cc-long-goals-index) { min-width: 0; overflow-y: auto; scrollbar-width: thin; }
+.hud-surface :is(.cc-methods-index,.cc-long-goals-index) > button { display: grid; gap: 7px; text-align: left; width: 100%; padding: 15px 12px; border: 0; border-bottom: 1px dashed var(--cc-line); border-radius: 17px; background: transparent; color: var(--cc-ink); }
+.hud-surface :is(.cc-methods-index,.cc-long-goals-index) > button[aria-pressed="true"] { background: var(--cc-mint,#def0d1); }
+.hud-surface :is(.cc-methods-index,.cc-long-goals-index) small, .hud-surface :is(.cc-methods-index,.cc-long-goals-index) span { color: var(--cc-muted); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.hud-surface :is(.cc-methods-index,.cc-long-goals-index) strong { font-size: 14px; font-weight: 650; line-height: 1.65; overflow-wrap: anywhere; }
+.hud-surface :is(.cc-method-detail,.cc-long-goal-detail) { min-width: 0; overflow-y: auto; scrollbar-width: thin; padding: 14px 8px 26px; }
+.hud-surface :is(.cc-method-detail,.cc-long-goal-detail) > header { display: flex; gap: 12px; justify-content: space-between; align-items: center; }
+.hud-surface :is(.cc-method-detail,.cc-long-goal-detail) h3 { font-size: 21px; line-height: 1.55; margin: 20px 0 10px; overflow-wrap: anywhere; }
+.hud-surface .cc-method-condition { color: var(--cc-muted); font-size: 12px; line-height: 1.8; }
+.hud-surface .cc-method-steps { padding-left: 22px; margin: 23px 0; font-size: 14px; line-height: 1.9; }
+.hud-surface .cc-method-steps li { padding: 0 0 12px 6px; overflow-wrap: anywhere; }
+.hud-surface .cc-method-steps p { margin: 0; }
+.hud-surface .cc-method-reason { margin: 18px 0; font-size: 12px; line-height: 1.8; color: var(--cc-muted); }
+.hud-surface :is(.cc-method-detail,.cc-long-goal-detail) .cc-details { margin-top: 20px; line-height: 1.8; font-size: 12px; }
+.hud-surface :is(.cc-method-detail,.cc-long-goal-detail) .cc-details summary { cursor: pointer; padding: 6px 0; }
+.hud-surface .cc-method-use { padding: 12px 0; border-top: 1px dashed var(--cc-line); }
+.hud-surface :is(.cc-method-detail,.cc-long-goal-detail) input { width: 100%; padding: 10px 12px; border: 1px solid var(--cc-line); border-radius: 14px; background: #fffcee; font: inherit; }
+.hud-surface :is(.cc-method-detail,.cc-long-goal-detail) button[aria-pressed="true"] { color: #42613f; text-decoration: underline; }
+@media (max-width: 1000px) {
+  .hud-surface :is(.cc-methods-workspace,.cc-long-goals-workspace).has-selection { grid-template-columns: minmax(0,1fr); }
+  .hud-surface :is(.cc-methods-workspace,.cc-long-goals-workspace) { overflow-y: auto; }
+  .hud-surface :is(.cc-methods-index,.cc-long-goals-index), .hud-surface :is(.cc-method-detail,.cc-long-goal-detail) { overflow: visible; }
+}
+
+.hud-surface .cc-long-goals .cc-page-tools { align-items: center; gap: 12px; }
+.hud-surface .cc-long-goals .cc-page-tools .cc-search { flex: 1; }
+.hud-surface .cc-long-goal-create { flex: none; padding: 15px 0; border-bottom: 1px dashed var(--cc-line); }
+.hud-surface :is(.cc-long-goal-create,.cc-long-goal-detail .cc-form) > button { justify-self: start; }
+.hud-surface .cc-long-goal-statement { font-size: 21px; line-height: 1.65; margin: 20px 0 14px; overflow-wrap: anywhere; }
+.hud-surface .cc-long-goal-statement p { margin: 0; }
+.hud-surface .cc-long-goal-task { width: 100%; display: grid; gap: 6px; padding: 15px 0; border: 0; border-top: 1px dashed var(--cc-line); background: transparent; text-align: left; color: var(--cc-ink); }
+.hud-surface .cc-long-goal-task strong { font-size: 13px; line-height: 1.7; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.hud-surface .cc-long-goal-task small, .hud-surface .cc-long-goal-task span { color: var(--cc-muted); font-size: 11px; line-height: 1.7; }
+.hud-surface .cc-long-goal-task:hover span { color: var(--cc-ink); }

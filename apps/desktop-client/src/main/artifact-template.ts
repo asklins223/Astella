@@ -13,9 +13,8 @@
  *
  * 产物渲染在 `#ailearn-artifact-root` 里，并**可选**地声明
  * `window.setLessonMotion(motion)`：`'reduced'` 时关掉自动播放与循环动画、停在最有
- * 信息量的那一帧。声明了就受宿主指令管；没声明就由它自己的
- * `prefers-reduced-motion` 决定——我们不替它造一个通用控制条（那正是把教具变回
- * 填好的表格的那一步）。
+ * 信息量的那一帧。模板为 CSS、SVG 和 Web Animations 提供暂停兜底，脚本自己的
+ * 自动播放由这个钩子处理。系统减少动态始终优先；暂停不改写教具的内容与交互。
  *
  * 「共几步」不再由产物登记：讲解的条数是**服务端渲染出来的真实 DOM**（文字等价与依据
  * 回执，frame 之外、永远在屏上），所以步数由 `root` 上的 `data-artifact-outline-count`
@@ -41,6 +40,12 @@ const ARTIFACT_DOCUMENT_TEMPLATE = `<!doctype html>
   /* The host owns the document viewport; the generated page owns its contents. */
   html, body { height: auto !important; min-height: 0 !important; overflow: hidden !important; }
   #ailearn-artifact-root { box-sizing: border-box; width: 100%; }
+  html[data-artifact-motion="reduced"] #ailearn-artifact-root *,
+  html[data-artifact-motion="reduced"] #ailearn-artifact-root *::before,
+  html[data-artifact-motion="reduced"] #ailearn-artifact-root *::after {
+    animation-play-state: paused !important;
+    transition: none !important;
+  }
 </style>
 </head>
 <body>
@@ -62,10 +67,13 @@ const ARTIFACT_DOCUMENT_TEMPLATE = `<!doctype html>
       root.replaceChildren.apply(root, Array.from(scene.childNodes));
     }
   }
-  var prefersReduced = window.matchMedia
-    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    : false;
-  var motion = prefersReduced ? 'reduced' : 'full';
+  var reducedMedia = window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)')
+    : null;
+  var requestedMotion = 'full';
+  var motion = reducedMedia && reducedMedia.matches ? 'reduced' : 'full';
+  var hostPausedAnimations = [];
+  var hostPausedSvgs = [];
 
   function post(phase, extra) {
     var message = { channel: CHANNEL, direction: 'frame->host', phase: phase };
@@ -90,21 +98,58 @@ const ARTIFACT_DOCUMENT_TEMPLATE = `<!doctype html>
     return root.querySelectorAll('[data-artifact-outline]').length;
   }
 
-  /** 把动效档位转给产物自己声明的钩子。没声明就什么都不做。 */
+  function applyMotion() {
+    motion = requestedMotion === 'reduced' || (reducedMedia && reducedMedia.matches) ? 'reduced' : 'full';
+    document.documentElement.setAttribute('data-artifact-motion', motion);
+    if (motion === 'reduced' && root) root.querySelectorAll('svg').forEach(function (svg) {
+      if (typeof svg.pauseAnimations !== 'function' || hostPausedSvgs.includes(svg)) return;
+      if (typeof svg.animationsPaused === 'function' && svg.animationsPaused()) return;
+      svg.pauseAnimations();
+      hostPausedSvgs.push(svg);
+    });
+    else if (motion === 'full') {
+      hostPausedSvgs.forEach(function (svg) { if (typeof svg.unpauseAnimations === 'function') svg.unpauseAnimations(); });
+      hostPausedSvgs = [];
+    }
+    if (motion === 'reduced' && typeof document.getAnimations === 'function') {
+      document.getAnimations().forEach(function (animation) {
+        if (animation.playState !== 'running') return;
+        animation.pause();
+        hostPausedAnimations.push(animation);
+      });
+    } else if (motion === 'full') {
+      hostPausedAnimations.forEach(function (animation) {
+        if (animation.playState === 'paused') animation.play();
+      });
+      hostPausedAnimations = [];
+    }
+  }
+
+  /** 宿主暂停常见动画，再通知产物处理脚本自己的播放。 */
   function forwardMotion(next) {
-    motion = next;
+    requestedMotion = next;
+    applyMotion();
     var fn = window.setLessonMotion;
     if (typeof fn !== 'function') return;
-    try { fn(next); } catch (error) { /* 产物自己的问题：报出去，但不摘 frame */ post('error', { detail: 'setLessonMotion failed' }); }
+    try { fn(motion); } catch (error) { /* 产物自己的问题：报出去，但不摘 frame */ post('error', { detail: 'setLessonMotion failed' }); }
+  }
+
+  applyMotion();
+  if (reducedMedia && typeof reducedMedia.addEventListener === 'function') {
+    reducedMedia.addEventListener('change', function () { forwardMotion(requestedMotion); });
   }
 
   window.addEventListener('message', function (event) {
     var data = event.data;
     if (!data || data.channel !== CHANNEL || data.direction !== 'host->frame') return;
     if (data.command === 'motion' && (data.motion === 'full' || data.motion === 'reduced')) {
+      // The host owns this command. An immutable older page may contain its
+      // former forwarding listener; it must not apply the same command again.
+      if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
       forwardMotion(data.motion);
     }
-  });
+  }, true);
+  window.addEventListener('load', function () { forwardMotion(requestedMotion); });
 
   window.addEventListener('error', function (event) {
     post('error', { detail: String((event && event.message) || 'unknown') });

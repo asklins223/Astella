@@ -33,6 +33,7 @@
 import "./styles.css";
 import "@milkdown/kit/prose/view/style/prosemirror.css";
 import "katex/dist/katex.min.css";
+import "./components/content/readable-math.css";
 import "./components/home-room.css";
 
 /* ── 2. 视觉母本 ────────────────────────────────────────────────────────── */
@@ -95,9 +96,12 @@ import "./components/companion/companion-proposal-choice.css";
 import "./components/companion/companion-run-trace.css";
 import "./components/companion/companion-interaction.css";
 import "./components/companion/companion-goals.css";
+import "./components/companion/companion-journal.css";
 
 /**
  * 本文件刻意不导出任何东西：它唯一的作用是「被 import 时按上面那张单子把 CSS 注入」。
  * `main.tsx` 写 `import "./styles";` 即可。
  */
 export {};
+
+import "./components/companion/guidance/companion-guidance.css";

@@ -329,6 +329,7 @@ async function runRuntimeFallbackSmoke(
       provider: primary,
       fallbackProvider: fallback,
       signal: AbortSignal.timeout(90_000),
+      executeTurn: (provider, request, signal) => provider.executeAgentTurn!(request, signal),
       onFallback: (error) => { fallbackReason = error.providerCode; },
     });
     const calls = execution.result.toolCalls ?? [];

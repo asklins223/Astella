@@ -77,3 +77,34 @@ describe("首页实物与鼠标热区的样式接线", () => {
     }
   });
 });
+
+/**
+ * 原生窗口的比例锁已经拆掉（`main/index.ts` 不再 `setAspectRatio`，也允许最大化），
+ * 窗口可以是任意比例。这三条把"铺满、不变形、不露填充色条"钉在样式上：
+ * 参考画幅按 cover 放大到至少覆盖视口，底图等比裁切，首页不给自己垫背景色。
+ * 三条任何一条被改回去，用户就会在最大化后看到边条或被拉扁的书房。
+ */
+describe("任意窗口比例下的底板摆位", () => {
+  it("参考画幅按 cover 放大到至少覆盖视口，而不是缩到视口以内", () => {
+    const cover = baseCss.slice(
+      baseCss.indexOf('.scene-reference-frame[data-scene-fit="contain"]'),
+    );
+    const rule = cover.slice(0, cover.indexOf("}"));
+
+    // contain 那一档才是 `min()`（缩到视口以内）；cover 必须是 `max()`。
+    expect(rule).toContain("width: min(");
+    expect(baseCss).toMatch(/\.scene-reference-frame \{[^}]*width: max\(100%/);
+    expect(baseCss).toMatch(/\.scene-reference-frame \{[^}]*height: max\(100%/);
+  });
+
+  it("底图等比裁切，绝不拉伸铺满", () => {
+    const rule = baseCss.slice(baseCss.indexOf(".room-backplate {"));
+    expect(rule.slice(0, rule.indexOf("}"))).toContain("object-fit: cover");
+    expect(baseCss).not.toMatch(/\.room-backplate \{[^}]*object-fit: fill/);
+  });
+
+  it("首页不垫任何背景色，所以画幅之外只剩下一张铺满的底图", () => {
+    const rule = homeCss.slice(homeCss.indexOf(".scene-stage > .room-reference-frame"));
+    expect(rule.slice(0, rule.indexOf("}"))).toContain("background: transparent");
+  });
+});

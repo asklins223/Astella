@@ -22,6 +22,7 @@
     "test:run-and-dashboard-contracts:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/learning-run-origin-contract.integration.ts src/integration-tests/learning-metrics-postgres.integration.ts src/integration-tests/learning-dashboard.integration.ts",
     "test:route-contract:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/route-contract-postgres.integration.ts",
     "test:companion:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-migration-postgres.integration.ts src/integration-tests/companion-conversation-postgres.integration.ts",
+    "test:companion-guidance:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/companion-guidance-postgres.integration.ts",
     "test:review-schedule-boundary:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/review-schedule-boundary-postgres.integration.ts",
     "test:review-subscriptions:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/review-subscriptions-postgres.integration.ts",
     "test:reminder-subject-gate:postgres": "node --import tsx --test --test-concurrency=1 src/integration-tests/reminder-note-subject-gate-postgres.integration.ts",

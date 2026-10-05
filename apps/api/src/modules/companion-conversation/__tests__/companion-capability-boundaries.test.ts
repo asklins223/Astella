@@ -119,6 +119,7 @@ const ON_REQUEST_GATED_ROUTES: RouteCase[] = [
 const PRE_HANDLER_GATED_ROUTES: RouteCase[] = [
   { label: "dialogue: learning-context", flag: "COMPANION_DIALOGUE_V1_ENABLED", method: "GET", url: "/companion/learning-context" },
   { label: "dialogue: continuous history", flag: "COMPANION_DIALOGUE_V1_ENABLED", method: "GET", url: "/companion/history" },
+  { label: "dialogue: thought history", flag: "COMPANION_DIALOGUE_V1_ENABLED", method: "GET", url: "/companion/thoughts" },
   { label: "dialogue: history search", flag: "COMPANION_DIALOGUE_V1_ENABLED", method: "GET", url: "/companion/history/search?q=x" },
   { label: "dialogue: inbox ensure", flag: "COMPANION_DIALOGUE_V1_ENABLED", method: "POST", url: "/companion/inbox/ensure", payload: {} },
 ];

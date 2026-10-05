@@ -5,6 +5,7 @@ useId,
 useRef,
 useState,
 type KeyboardEvent as ReactKeyboardEvent,
+type CSSProperties,
 } from "react";
 
 export type CompanionSelectOption<T extends string = string> = {
@@ -37,6 +38,7 @@ export function CompanionSelect<T extends string>({
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [flipUp, setFlipUp] = useState(false);
+  const [menuHeight, setMenuHeight] = useState(264);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const listboxRef = useRef<HTMLDivElement | null>(null);
@@ -60,17 +62,22 @@ export function CompanionSelect<T extends string>({
   }, [open]);
 
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
+  useEffect(() => {
+    if (open && activeIndex >= 0) listboxRef.current?.querySelectorAll<HTMLElement>('[role="option"]')[activeIndex]?.scrollIntoView?.({block:"nearest"});
+  }, [open, activeIndex]);
 
   const openMenu = (initialIndex = selectedIndex) => {
     setActiveIndex(initialIndex);
     const root = rootRef.current;
     if (root) {
       const trigger = root.getBoundingClientRect();
-      const scroller = root.closest(".cc-page, .cc-memory-focus");
+      const scroller = root.closest(".cc-page, .cc-memory-focus, .companion-goal-bubble__body, .companion-goal-journal");
       const bounds = scroller?.getBoundingClientRect();
       const spaceBelow = (bounds ? bounds.bottom : window.innerHeight) - trigger.bottom;
       const spaceAbove = trigger.top - (bounds ? bounds.top : 0);
-      setFlipUp(spaceBelow < 264 && spaceAbove > spaceBelow);
+      const above = spaceBelow < 264 && spaceAbove > spaceBelow;
+      setFlipUp(above);
+      setMenuHeight(Math.max(40, Math.min(264, (above ? spaceAbove : spaceBelow) - 12)));
     }
     setOpen(true);
   };
@@ -127,6 +134,7 @@ export function CompanionSelect<T extends string>({
     <div
       ref={rootRef}
       className={`companion-select${paper ? " is-paper" : ""}`}
+      style={{ "--companion-select-menu-height": `${menuHeight}px` } as CSSProperties}
       data-open={open ? "true" : undefined}
       data-flip={flipUp && open ? "up" : undefined}
     >

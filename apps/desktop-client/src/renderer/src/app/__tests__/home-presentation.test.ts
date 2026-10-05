@@ -125,7 +125,7 @@ describe("homePresentation", () => {
 
     expect(homePresentation(presentation({ primaryFocus: { state: "empty" } }), false, null)).toMatchObject({
       title: "从一份真正想弄懂的材料开始",
-      primaryLabel: "查看学习空间目录",
+      primaryLabel: "看看今天",
       primaryIntent: null,
       primaryLoading: false,
       retry: false,
@@ -333,7 +333,7 @@ describe("homePresentation", () => {
   it("does not fabricate a note from dashboard mode when RoomProjection has no note", () => {
     expect(homePresentation(projection({ mode: "notes_without_objectives" }), false, null)).toMatchObject({
       title: "从一份真正想弄懂的材料开始",
-      primaryLabel: "查看学习空间目录",
+      primaryLabel: "看看今天",
       primaryIntent: null,
       note: null,
       noteCount: null,
@@ -441,8 +441,8 @@ describe("homePresentation", () => {
   it("keeps an empty room honest about totals it cannot know", () => {
     expect(homePresentation(presentation(), false, null)).toEqual({
       title: "从一份真正想弄懂的材料开始",
-      detail: "学习空间目录已经把学习路径和全部功能整理好了",
-      primaryLabel: "查看学习空间目录",
+      detail: "今天还没有定下主目标，书桌上有今天真正停下的位置",
+      primaryLabel: "看看今天",
       primaryIntent: null,
       retry: false,
       blockingLoading: false,
@@ -581,8 +581,8 @@ describe("homePresentation", () => {
       activeRunSummary: { state: "data", data: { activeCount: 1, items: [{ runId: "11111111-1111-4111-8111-111111111111", objectiveId: "22222222-2222-4222-8222-222222222222", phase: "paused", conceptLabel: "轨道周期", updatedAt: "2026-09-23T00:00:00.000Z" }] } },
     }), false, "temporary offline")).toEqual({
       title: "从一份真正想弄懂的材料开始",
-      detail: "学习空间目录已经把学习路径和全部功能整理好了",
-      primaryLabel: "查看学习空间目录",
+      detail: "今天还没有定下主目标，书桌上有今天真正停下的位置",
+      primaryLabel: "看看今天",
       primaryIntent: null,
       retry: false,
       blockingLoading: false,

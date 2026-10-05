@@ -9,7 +9,9 @@
 import type { ApiTransaction } from "../../../db/client.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { runAiTask, type AiTaskDefinition } from "@ailearn/shared/ai-task-kernel";
-import type { postJsonToPublicEndpoint } from "@ailearn/shared/public-json-http";
+import { createGovernedApiRequester } from "../../../lib/ai-governance.ts";
+import { productionAiGovernancePorts } from "../../../governance/ai-governance-runtime.ts";
+import type { PublicJsonRequester } from "@ailearn/shared/public-json-http";
 import { resolveAssessmentCriticConfig } from "../../../lib/assessment-critic-config.ts";
 import { sql } from "drizzle-orm";
 import {
@@ -185,6 +187,16 @@ async function generatePersonalizedProactiveText(
   if (!config) return null;
   const { url, key, model } = config;
 
+  // 默认出口是**绑定真实 workspace/user 的治理出口**：同意、数据外发政策、
+  // PII 净化与审计行都在这一层，SSRF 守卫仍装在它里面。
+  // 送出去的就是 `topMemories` 那几条用户记忆正文，外加本次学习结果与目标标签。
+  const requester = createGovernedApiRequester(
+    { workspaceId: scope.workspaceId, userId: scope.userId },
+    PERSONALIZED_PROACTIVE_TASK_ID,
+    ["memory_content", "claim"],
+    productionAiGovernancePorts,
+  );
+
   const memoryBlock = input.topMemories
     .slice(0, 3)
     .map((m, i) => `[记忆${i + 1}] ${m.slice(0, 200)}`)
@@ -221,10 +233,9 @@ async function generatePersonalizedProactiveText(
     usageContext: { modelId: model, promptVersion: PERSONALIZED_PROACTIVE_PROMPT_VERSION, resourceClass: "maintenance" },
     prepare: async () => ({ url, key, model, prompt }),
     execute: async (prepared, step) => {
-      let response: Awaited<ReturnType<typeof postJsonToPublicEndpoint>>;
+      let response: Awaited<ReturnType<PublicJsonRequester>>;
       try {
-        const { postJsonToPublicEndpoint: post } = await import("@ailearn/shared/public-json-http");
-        response = await post(
+        response = await requester(
           prepared.url,
           { Authorization: `Bearer ${prepared.key}`, "Content-Type": "application/json" },
           {

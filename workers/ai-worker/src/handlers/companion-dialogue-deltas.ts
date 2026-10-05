@@ -13,11 +13,12 @@ import { sql } from "drizzle-orm";
 import { withWorkerWorkspaceTransaction } from "../db.ts";
 import { chunkTextIntoDeltas } from "./companion-dialogue-content.ts";
 import type { ReadContext } from "./companion-dialogue-store.ts";
+import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
 
 interface BatchedDeltasArgs {
   assistantText: string;
   ctx: { workspaceId: string };
-  read: ReadContext;
+  read: Pick<ReadContext, "userId" | "runId" | "conversationId" | "generation" | "accountEpoch">;
   expiresAt: string;
   notifyCompanionEvent: (tx: { execute(q: unknown): Promise<unknown> }, seq: number) => Promise<void>;
 }
@@ -34,6 +35,7 @@ export async function writeBatchedDeltas(args: BatchedDeltasArgs): Promise<boole
     const written = await withWorkerWorkspaceTransaction(
       { workspaceId: ctx.workspaceId, userId: read.userId },
       async (tx) => {
+        await assertCompanionContextSourcesCurrent(tx, { workspaceId: ctx.workspaceId, userId: read.userId }, read.runId);
         const alive = await tx.execute<{ id: string }>(sql`
           UPDATE companion_turn_runs
           SET status = 'running', updated_at = now()

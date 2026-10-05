@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  HOME_FEATURE_GROUPS,
   HOME_FEATURE_IDS,
-  HOME_FEATURE_REGISTRY_V1,
   HOME_FEATURE_REGION_IDS,
+  HOME_FEATURE_REGISTRY_V1,
   getHomeFeature,
   homeFeatureRegistryIssues,
-  homeFeaturesForGroup,
   homeFeaturesForRegion,
 } from "../home-feature-registry.ts";
 
@@ -17,19 +15,20 @@ describe("HomeFeatureRegistryV1", () => {
     expect(homeFeatureRegistryIssues()).toEqual([]);
   });
 
-  it("keeps every room feature in its region and every non-catalog feature in the directory", () => {
+  it("hangs every room feature on one of the four objects in the room", () => {
     const regionFeatureIds = HOME_FEATURE_REGION_IDS.flatMap((region) => homeFeaturesForRegion(region).map((feature) => feature.id));
     const expectedRegionIds = HOME_FEATURE_REGISTRY_V1.filter((feature) => feature.region !== "system").map((feature) => feature.id);
     expect(new Set(regionFeatureIds)).toEqual(new Set(expectedRegionIds));
+  });
 
-    const catalogFeatureIds = HOME_FEATURE_GROUPS.flatMap((group) => homeFeaturesForGroup(group.id).map((feature) => feature.id));
-    const expectedCatalogIds = HOME_FEATURE_REGISTRY_V1.filter((feature) => feature.catalogVisible).map((feature) => feature.id);
-    expect(new Set(catalogFeatureIds)).toEqual(new Set(expectedCatalogIds));
-    expect(catalogFeatureIds).not.toContain("catalog");
+  it("no longer carries the catalog page that used to duplicate the room", () => {
+    // 2026-10-05 用户决定：魔法目录整页删除。那张全屏清单里的每一条都已经是房间里
+    // 四件东西上的一个入口，所以「catalog」这条功能本身不该再存在。
+    expect(HOME_FEATURE_IDS).not.toContain("catalog");
+    expect(HOME_FEATURE_REGISTRY_V1.map((feature) => feature.id)).not.toContain("catalog");
   });
 
   it("keeps every implemented surface executable and leaves write-only features pending", () => {
-    expect(getHomeFeature("catalog").availability).toBe("native");
     expect(getHomeFeature("companion-center").availability).toBe("native");
     expect(HOME_FEATURE_REGISTRY_V1.filter((feature) => feature.availability === "native").map((feature) => feature.id)).toEqual([
       "continue",
@@ -38,7 +37,6 @@ describe("HomeFeatureRegistryV1", () => {
       "all-notes",
       "sources",
       "global-search",
-      "catalog",
       "current-target",
       "understanding-graph",
       "companion-center",

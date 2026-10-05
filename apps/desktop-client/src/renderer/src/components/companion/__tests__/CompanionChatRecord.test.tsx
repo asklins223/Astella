@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CompanionMessageV1 } from "@ailearn/shared/companion-conversation-contracts";
 import type { CompanionChatSession } from "../../../app/companion-chat-session.tsx";
+import type { CompanionRunTrace } from "../../../app/companion-agent-nodes";
 import { useSourceImage } from "../../surfaces/source/source-image.ts";
 import { hasForeignModal } from "../companion-modal-ownership.ts";
 import { CompanionChatRecordArticle, MonthCalendar } from "../CompanionChatRecord.tsx";
+import { interactionProposal, interactionSession } from "./companion-interaction-fixtures";
 
 // 站内图字节通道整模块换掉：这三态是渲染分支的契约，不该靠真 fetch 去凑。
 vi.mock("../../surfaces/source/source-image.ts", () => ({ useSourceImage: vi.fn() }));
@@ -54,7 +56,8 @@ describe("手记里的选文和系统复制", () => {
       blocks: [{ type: "text", text: "请用通俗易懂的话解释这段。" }],
       selection: { text: "第二段：间隔重复把复习排在快忘还没忘的时刻。", sharing: "user_selected" },
     })} chat={session()} />);
-    const quote = screen.getByText("第二段：间隔重复把复习排在快忘还没忘的时刻。");
+    const quote = screen.getByText("第二段：间隔重复把复习排在快忘还没忘的时刻。", { selector: "q" });
+    expect(quote.closest("details")?.open).toBe(false);
     expect(screen.getByText("引用的原文")).toBeTruthy();
     expect(quote.compareDocumentPosition(screen.getByText("请用通俗易懂的话解释这段。")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "复制文字" }));
@@ -79,6 +82,45 @@ describe("手记里的选文和系统复制", () => {
     expect(writeText).toHaveBeenLastCalledWith(expect.objectContaining({ request: {
       text: "复习要花在快忘的时候。\n\n笔记原文\n间隔重复把复习排在快忘还没忘的时刻。",
     } }));
+  });
+});
+
+describe("手记正文与附页的阅读层级", () => {
+  const runTrace = (status: CompanionRunTrace["summary"]["status"] = "succeeded"): CompanionRunTrace => ({
+    summary: { version: 1, runId: "11111111-1111-4111-8111-111111111111", status, generation: 1,
+      stepCount: 1, toolCallCount: 0, maxSteps: 4, maxToolCalls: 4, assistantMessageId: message().id, nodeCount: 1 },
+    nodes: [{ key: "status:1", kind: "thinking", label: "思考中", state: "succeeded", toolName: null, summary: null, proposalId: null }],
+  });
+  it("普通成功闲聊不展示过程；工具记录与引用默认折叠，正文和可操作成果先出现", () => {
+    const ordinary = render(<CompanionChatRecordArticle message={message()} chat={interactionSession({ runTraces: [runTrace()] })} />);
+    expect(ordinary.container.querySelector(".companion-history__trace")).toBeNull();
+    ordinary.unmount();
+    const ordinaryTrace = runTrace();
+    const trace = { ...ordinaryTrace, summary: { ...ordinaryTrace.summary, toolCallCount: 1 } };
+    const { container } = render(<CompanionChatRecordArticle message={message({ blocks: [
+      { type: "text", text: "我把重点整理好了。" },
+      { type: "quote", label: "读到的原文", text: "这一段支撑了整理结果。" },
+      { type: "nav", label: "打开成果", route: { kind: "note", noteId: "55555555-5555-4555-8555-555555555555" } },
+    ] })} chat={interactionSession({ runTraces: [trace] })} />);
+    const references = container.querySelector<HTMLDetailsElement>(".companion-record__references")!;
+    const process = container.querySelector<HTMLDetailsElement>(".companion-history__trace")!;
+    expect(references.open).toBe(false); expect(process.open).toBe(false);
+    expect(screen.getByRole("button", { name: "打开成果" }).closest("details")).toBeNull();
+    expect(container.querySelector(".companion-record__body")!.compareDocumentPosition(references) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(process.querySelector("summary")?.textContent).not.toContain("次工具");
+  });
+  it("同一个确认同时出现在消息和过程时只展示一次，按钮在折叠区外；完成后留下折叠的确认记录", () => {
+    const waiting = runTrace("waiting_for_confirmation");
+    const trace = { ...waiting, nodes: [{ ...waiting.nodes[0], proposalId: "proposal" }] };
+    const msg = message({ blocks: [{ type: "text", text: "你选好后我再收下。" }, { type: "action_ref", proposalId: "proposal" }] });
+    const decideProposal = vi.fn();
+    const view = render(<CompanionChatRecordArticle message={msg} chat={interactionSession({ runTraces: [trace], proposalStates: { proposal: interactionProposal() }, decideProposal })} />);
+    const confirm = screen.getByRole("button", { name: "确认执行" });
+    expect(confirm.closest("details")).toBeNull(); expect(view.container.querySelectorAll(".companion-choice-card")).toHaveLength(1);
+    fireEvent.click(confirm); expect(decideProposal).toHaveBeenCalledWith("proposal", "confirm");
+    view.rerender(<CompanionChatRecordArticle message={msg} chat={interactionSession({ runTraces: [trace], proposalStates: { proposal: interactionProposal("succeeded") }, decideProposal })} />);
+    expect(view.container.querySelector<HTMLDetailsElement>(".companion-record__decision-history")?.open).toBe(false);
+    expect(screen.queryByRole("button", { name: "确认执行" })).toBeNull();
   });
 });
 
@@ -353,6 +395,21 @@ describe("引用块的高度上限（实机量到一条长引用把正文撑到 
     const toggle = screen.getByRole("button", { name: "展开原文" });
     expect(text.contains(toggle)).toBe(false);
     expect(toggle.parentElement?.classList.contains("companion-record__quote")).toBe(true);
+  });
+
+  it("关闭的附页起初没有几何，打开后仍能读完整的长引用", () => {
+    let measure!: () => void;
+    const disconnect = vi.fn();
+    vi.stubGlobal("ResizeObserver", class { constructor(callback: () => void) { measure = callback; } observe() {} disconnect = disconnect; });
+    fake(0, 0);
+    const view = render(<CompanionChatRecordArticle message={quoteMessage()} chat={session()} />);
+    expect(screen.queryByRole("button", { name: "展开原文" })).toBeNull();
+    const attachment = view.container.querySelector<HTMLDetailsElement>(".companion-record__references")!;
+    attachment.open = true;
+    fake(1256, 168); act(() => measure());
+    fireEvent.click(screen.getByRole("button", { name: "展开原文" }));
+    expect(view.container.querySelector(".companion-record__quote")?.getAttribute("data-expanded")).toBe("true");
+    expect(disconnect).toHaveBeenCalled();
   });
 });
 

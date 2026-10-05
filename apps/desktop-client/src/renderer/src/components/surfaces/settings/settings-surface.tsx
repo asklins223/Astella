@@ -2047,7 +2047,7 @@ export function SettingsSurface() {
     notice={notice}
     failureNotice={failureNotice}
     onDismissNotice={() => { setNotice(null); setFailureNotice(null); }}
-    onReplayIntro={() => { closeSurface(); replayIntro(); }}
+    onReplayIntro={replayIntro}
   >{(visitedSections.includes(section) ? visitedSections : [...visitedSections, section]).map(id => <Activity key={id} mode={id === section ? "visible" : "hidden"}>
     <div className="settings-section-content" data-settings-active={id === section ? "true" : "false"}>{id === section ? panel.body : PANELS[id]().body}</div>
   </Activity>)}</SettingsBook>;

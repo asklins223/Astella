@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { AgentStoreError } from "@ailearn/agent-host";
+import { agentLongGoalsQueryV1Schema } from "@ailearn/shared/agent-long-goal-contracts";
+import type { AgentRunV1 } from "@ailearn/shared/agent-contracts";
 import { z } from "zod";
 import {
   createAgentRunV1Schema, reviseAgentRunV1Schema, controlAgentRunV1Schema,
@@ -16,7 +18,7 @@ function isZodError(error: unknown): boolean {
     || (error instanceof Error && error.name === "ZodError"
       && Array.isArray((error as Error & { issues?: unknown }).issues));
 }
-async function respond(reply: FastifyReply, action: () => Promise<unknown>) {
+export async function respondToAgentRequest(reply: FastifyReply, action: () => Promise<unknown>) {
   try { return await action(); }
   catch (error) {
     if (error instanceof AgentStoreError) {
@@ -27,7 +29,9 @@ async function respond(reply: FastifyReply, action: () => Promise<unknown>) {
   }
 }
 // 空间与用户只来自会话：查询串里带的不信，游标里带的也必须逐字对上。
-function scope(req: FastifyRequest) { return { workspaceId: req.session!.workspaceId, userId: req.session!.userId }; }
+export function agentRequestScope(req: FastifyRequest) { return { workspaceId: req.session!.workspaceId, userId: req.session!.userId }; }
+const respond = respondToAgentRequest;
+const scope = agentRequestScope;
 type Scope = ReturnType<typeof scope>;
 
 /** 路由真正执行的那几个动作。抽出来是为了能带着假 store 走真实解析与错误映射。 */
@@ -35,7 +39,7 @@ export function createAgentRouteHandlers(store: {
   list(scope: Scope, query: { limit?: unknown; cursor?: string }): Promise<unknown>;
   get(scope: Scope, id: string): Promise<unknown>;
   create(scope: Scope, input: unknown): Promise<unknown>;
-  revise(scope: Scope, id: string, expectedRevision: number, goal: string): Promise<unknown>;
+  revise(scope: Scope, id: string, expectedRevision: number, goal: string, longGoal?: AgentRunV1["longGoal"]): Promise<unknown>;
   control(scope: Scope, id: string, expectedRevision: number, action: "cancel" | "pause" | "resume"): Promise<unknown>;
   history(scope: Scope, id: string, query: { limit?: unknown; beforeRevision?: number }): Promise<unknown>;
 }) {
@@ -48,7 +52,7 @@ export function createAgentRouteHandlers(store: {
       store.create(scope(req), createAgentRunV1Schema.parse(req.body))),
     revise: (req: FastifyRequest, reply: FastifyReply) => respond(reply, () => {
       const input = reviseAgentRunV1Schema.parse(req.body);
-      return store.revise(scope(req), runParams.parse(req.params).runId, input.expectedRevision, input.goal);
+      return store.revise(scope(req), runParams.parse(req.params).runId, input.expectedRevision, input.goal, input.longGoal);
     }),
     control: (req: FastifyRequest, reply: FastifyReply) => respond(reply, () => {
       const input = controlAgentRunV1Schema.parse(req.body);
@@ -63,6 +67,7 @@ export async function agentRoutes(app: FastifyInstance) {
   const handlers = createAgentRouteHandlers(agentStore);
   // 默认第一页 20 条；还有结果时返回 nextCursor。
   app.get("/agent/runs", { preHandler: [requireSession] }, handlers.list);
+  app.get("/agent/long-goals",{preHandler:[requireSession]},(req,reply)=>respond(reply,()=>agentStore.longGoals(scope(req),agentLongGoalsQueryV1Schema.parse(req.query??{}))));
   app.get("/agent/runs/:runId", { preHandler: [requireSession] }, handlers.get);
   app.post("/agent/runs", { preHandler: [requireSession] }, handlers.create);
   app.patch("/agent/runs/:runId", { preHandler: [requireSession] }, handlers.revise);

@@ -46,6 +46,7 @@ export const noteOverviewTaskStatusV1Schema = z.enum(["queued", "running", "read
 export const noteOverviewTaskFailureReasonV1Schema = z.enum(["ai_consent_required", "unknown"]);
 export const noteOverviewTaskV1Schema = z.strictObject({
   taskId: z.string().uuid(),
+  agentRunId: z.string().uuid().optional(),
   noteId: z.string().uuid(),
   noteVersionId: z.string().uuid(),
   status: noteOverviewTaskStatusV1Schema,

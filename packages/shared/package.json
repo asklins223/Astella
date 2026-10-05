@@ -21,6 +21,11 @@
       "import": "./src/ai-endpoints.ts",
       "default": "./src/ai-endpoints.ts"
     },
+    "./agent-growth-contracts": {
+      "types": "./src/contracts/agent-growth-contracts.ts",
+      "import": "./src/contracts/agent-growth-contracts.ts",
+      "default": "./src/contracts/agent-growth-contracts.ts"
+    },
     "./ai-task-kernel": {
       "types": "./src/ai-task-kernel.ts",
       "import": "./src/ai-task-kernel.ts",
@@ -547,6 +552,11 @@
       "import": "./src/pet-persona-presets.ts",
       "default": "./src/pet-persona-presets.ts"
     },
+    "./pg-text-array": {
+      "types": "./src/pg-text-array.ts",
+      "import": "./src/pg-text-array.ts",
+      "default": "./src/pg-text-array.ts"
+    },
     "./platform-config-node": {
       "types": "./src/platform-config-node.ts",
       "import": "./src/platform-config-node.ts",
@@ -654,7 +664,18 @@
       "default": "./src/workspace-transaction.ts"
     },
     "./agent-contracts": "./src/contracts/agent-contracts.ts",
-    "./agent-capabilities": "./src/agent-capabilities.ts"
+    "./agent-capabilities": "./src/agent-capabilities.ts",
+    "./agent-long-goal-contracts": "./src/contracts/agent-long-goal-contracts.ts",
+    "./agent-capability-catalog": {
+      "types": "./src/agent-capability-catalog.ts",
+      "import": "./src/agent-capability-catalog.ts",
+      "default": "./src/agent-capability-catalog.ts"
+    },
+    "./agent-request-contracts": {
+      "types": "./src/contracts/agent-request-contracts.ts",
+      "import": "./src/contracts/agent-request-contracts.ts",
+      "default": "./src/contracts/agent-request-contracts.ts"
+    }
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

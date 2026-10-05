@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CompanionCenterOverview } from "../companion/companion-center-overview.tsx";
 import {
   companionActivityTimelineV1Schema,
@@ -21,6 +21,9 @@ import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts"
  */
 
 const noop = () => undefined;
+vi.mock("../companion/use-companion-resource", () => ({
+  useCompanionResource: () => ({ section: null, failure: null, reload: noop }),
+}));
 
 function daily(overrides: Record<string, unknown> = {}) {
   return companionDailySummaryV1Schema.parse({
@@ -106,6 +109,23 @@ afterEach(() => {
 });
 
 describe("伴星中心 · 概览：三块各露一行，没露出的不登记", () => {
+  it("能力说明只有用户展开后才按真实屏上顺序登记，收起后移除", async () => {
+    renderOverview();
+    const guide = document.querySelector<HTMLDetailsElement>(".cc-capability-guide")!;
+    const initial = publishedView()!.items!;
+    expect(initial).toHaveLength(3);
+    guide.open = true;
+    fireEvent(guide, new Event("toggle"));
+    await waitFor(() => expect(document.querySelectorAll(".cc-capability-guide dl > div").length).toBeGreaterThan(0));
+    const visible = [...document.querySelectorAll(".cc-capability-guide dl > div")].map(node => ({
+      label: node.querySelector("dd")!.textContent!.slice(0, 120),
+      state: node.querySelector("dt")!.textContent!.slice(0, 40),
+    }));
+    expect(publishedView()!.items!.slice(0, visible.length).map(({ label, state }) => ({ label, state }))).toEqual(visible);
+    guide.open = false;
+    fireEvent(guide, new Event("toggle"));
+    await waitFor(() => expect(publishedView()!.items).toEqual(initial));
+  });
   it("摘录、一条最新提议、最近回复都逐字对上，`state` 是各自行上方那个小标题", () => {
     renderOverview();
     const view = publishedView()!;

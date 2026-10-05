@@ -24,7 +24,7 @@ import type { NoteLearningArtifactTaskV1 } from "@ailearn/shared/note-learning-a
 import { noteBlockText } from "./surface-data.tsx";
 import { isHorizontalRule, noteInlineDisplayText, noteInlineImages, renderNoteInline, renderNotePlainText } from "./note-reading-inline.tsx";
 import { noteBlockRenderedTextV1 } from "@ailearn/shared/note-doc-schema";
-import { parseMarkdownTable } from "./note-blocks.ts";
+import { parseMarkdownTable } from "@ailearn/shared/note-doc-schema";
 import { parseImageBlock } from "./surface-data.tsx";
 import { useSourceImage } from "../source/source-image.ts";
 import { ZoomableReadingImage } from "../source/image-viewer.tsx";

@@ -9,24 +9,141 @@ export const agentOperationStatusV1Schema = z.enum([
 export const agentScopeV1Schema = z.object({
   workspaceId: z.string().uuid(), userId: z.string().uuid(),
 }).strict();
+export const agentMemoryContextSourceV1Schema = z.object({
+  memoryId: z.string().uuid(), revision: z.number().int().positive(),
+}).strict();
+export type AgentMemoryContextSourceV1 = z.infer<typeof agentMemoryContextSourceV1Schema>;
 export const agentInputRefV1Schema = z.object({
   kind: z.literal("note_version"), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
 }).strict();
-export const agentArtifactRefV1Schema = z.object({
-  kind: z.enum(["note_overview", "note_dynamic_artifact", "note_expansion"]),
-  id: z.string().uuid(), jobId: z.string().uuid(), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
+export const agentLongGoalRefV1Schema = z.object({ memoryId:z.string().uuid(),revision:z.number().int().positive() }).strict();
+
+/** Current-turn attention is an interpretation, never a grant to execute. */
+export const agentAttentionObjectV1Schema = z.object({
+  kind: z.enum(["note", "note_version", "card", "learning_run", "agent_run", "memory", "key_point"]),
+  id: z.string().uuid(), revision: z.number().int().positive().optional(), versionId: z.string().uuid().optional(),
 }).strict();
+export type AgentAttentionObjectV1 = z.infer<typeof agentAttentionObjectV1Schema>;
+export const agentTurnInterpretationProposalV1Schema = z.object({
+  intent: z.enum(["conversation", "question", "task", "task_control", "mixed"]),
+  toolUse: z.enum(["none", "read", "act", "uncertain"]),
+  subjects: z.array(z.object({ description: z.string().max(120), objectIndex: z.number().int().nonnegative().optional() }).strict()).max(6),
+  goalRelation: z.enum(["unrelated", "new", "continue", "revise", "control", "discuss", "unclear"]),
+  goalObjectIndex: z.number().int().nonnegative().optional(),
+  candidateOperations: z.array(z.string().min(1).max(100)).max(6),
+  ambiguities: z.array(z.string().max(200)).max(6),
+}).strict();
+export const agentTurnInterpretationV1Schema = agentTurnInterpretationProposalV1Schema.omit({ subjects: true, goalObjectIndex: true }).extend({
+  version: z.literal(1), requestHash: z.string().regex(/^[a-f0-9]{64}$/),
+  subjects: z.array(z.object({ description: z.string().max(120), reference: agentAttentionObjectV1Schema.nullable() }).strict()).max(6),
+  goalReference: agentAttentionObjectV1Schema.nullable(),
+  status: z.enum(["interpreted", "uncertain"]),
+}).strict();
+export type AgentTurnInterpretationV1 = z.infer<typeof agentTurnInterpretationV1Schema>;
+
+export const AGENT_GOAL_DELIVERY_CAPABILITY = "agent_deliver_goal";
+export const agentGoalDeliveryV1Schema = z.object({
+  outcome: z.enum(["completed", "needs_input", "failed"]),
+  summary: z.string().trim().min(1).max(12000),
+  requirements: z.array(z.object({
+    requirement: z.string().trim().min(1).max(500),
+    fulfilled: z.boolean(),
+    evidenceCallIds: z.array(z.string().min(1).max(200)).max(10).default([]),
+    textOnly: z.boolean().default(false),
+  }).strict()).min(1).max(20),
+}).strict();
+export type AgentGoalDeliveryV1 = z.infer<typeof agentGoalDeliveryV1Schema>;
+
+/**
+ * 一次操作真正推进的是哪一个执行体：回执按 kind+id 绑定，换执行体不换身份。
+ * `job` 落在 jobs 行上；`card_generation` 直接落在真实制卡 run 上（没有准备用的假 jobs）。
+ */
+export const agentExecutionRefV1Schema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("job"), id: z.string().uuid() }).strict(),
+  z.object({ kind: z.literal("card_generation"), id: z.string().uuid() }).strict(),
+]);
+export type AgentExecutionRefV1 = z.infer<typeof agentExecutionRefV1Schema>;
+
+/** 三类笔记产物保留 jobId（权威事实在那张 jobs 行上）；制卡候选没有 jobId。 */
+export const agentArtifactRefV1Schema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("note_overview"),
+    id: z.string().uuid(), jobId: z.string().uuid(), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
+  }).strict(),
+  z.object({
+    kind: z.literal("note_dynamic_artifact"),
+    id: z.string().uuid(), jobId: z.string().uuid(), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
+  }).strict(),
+  z.object({
+    kind: z.literal("note_expansion"),
+    id: z.string().uuid(), jobId: z.string().uuid(), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
+  }).strict(),
+  z.object({
+    // id 是真实 card_generation_runs_v2.id。
+    kind: z.literal("card_candidates"),
+    id: z.string().uuid(), noteId: z.string().uuid(), noteVersionId: z.string().uuid(),
+  }).strict(),
+]);
+
+/** 唯一登记制卡能力的名字；card 侧两种结果只配它。 */
+export const AGENT_CARD_GENERATION_CAPABILITY = "card_generation_generate";
+
+/** 无卡推荐的依据条数与长度上限：理由取领域事件里已保存的 reasonCodes，不猜正文。 */
+export const AGENT_OPERATION_RESULT_MAX_REASON_CODES = 20;
+export const AGENT_OPERATION_REASON_CODE_MAX_LENGTH = 100;
+
+/** artifact 与 no_cards_recommended 都是成功收口；伪造一个空 artifact 才是失败。 */
+export const agentOperationResultV1Schema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("artifact"), artifact: agentArtifactRefV1Schema }).strict(),
+  z.object({
+    kind: z.literal("no_cards_recommended"),
+    reasonCodes: z.array(z.string().min(1).max(AGENT_OPERATION_REASON_CODE_MAX_LENGTH))
+      .max(AGENT_OPERATION_RESULT_MAX_REASON_CODES),
+  }).strict(),
+]);
+export type AgentOperationResultV1 = z.infer<typeof agentOperationResultV1Schema>;
+
+/**
+ * 结果必须真的属于这次 execution 与这个 capability——reducer 接受 `succeeded` 的硬条件，
+ * 唯一一份判定：
+ *   - note 三类：capability 非制卡 ∧ artifact.jobId === job execution.id；
+ *   - card_candidates / no_cards_recommended：capability === card_generation_generate
+ *     ∧ execution.kind === "card_generation"（前者再要求 artifact.id === execution.id）。
+ */
+export function agentOperationResultMatchesExecutionV1(
+  execution: AgentExecutionRefV1,
+  result: AgentOperationResultV1,
+  capability: string,
+): boolean {
+  if (result.kind === "no_cards_recommended") {
+    return capability === AGENT_CARD_GENERATION_CAPABILITY && execution.kind === "card_generation";
+  }
+  const artifact = result.artifact;
+  if (artifact.kind === "card_candidates") {
+    return capability === AGENT_CARD_GENERATION_CAPABILITY
+      && execution.kind === "card_generation" && artifact.id === execution.id;
+  }
+  return execution.kind === "job" && artifact.jobId === execution.id;
+}
+
 export const agentOperationV1Schema = z.object({
   operationId: z.string().uuid(), runId: z.string().uuid(), revision: z.number().int().positive(),
-  scope: agentScopeV1Schema, capability: z.string().min(1).max(100), jobId: z.string().uuid(),
+  scope: agentScopeV1Schema, capability: z.string().min(1).max(100),
+  execution: agentExecutionRefV1Schema,
   status: agentOperationStatusV1Schema, lastEventSeq: z.number().int().nonnegative(),
-  artifact: agentArtifactRefV1Schema.nullable(), error: z.string().max(1000).nullable(),
-}).strict();
+  result: agentOperationResultV1Schema.nullable(), error: z.string().max(1000).nullable(),
+}).strict().superRefine((operation, ctx) => {
+  // 读出来的投影自身必须自洽：挂着别人的结果在被 reducer 看见之前就已非法。
+  if (operation.result !== null
+    && !agentOperationResultMatchesExecutionV1(operation.execution, operation.result, operation.capability)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["result"], message: "结果必须属于这一次 execution 与 capability" });
+  }
+});
 export const agentOperationEventV1Schema = z.object({
   operationId: z.string().uuid(), runId: z.string().uuid(), revision: z.number().int().positive(),
-  scope: agentScopeV1Schema, jobId: z.string().uuid(), seq: z.number().int().positive(),
+  scope: agentScopeV1Schema, execution: agentExecutionRefV1Schema, seq: z.number().int().positive(),
   status: agentOperationStatusV1Schema,
-  artifact: agentArtifactRefV1Schema.nullable(), error: z.string().max(1000).nullable(),
+  result: agentOperationResultV1Schema.nullable(), error: z.string().max(1000).nullable(),
   authoritative: z.boolean(),
 }).strict();
 export const agentRunV1Schema = z.object({
@@ -34,6 +151,7 @@ export const agentRunV1Schema = z.object({
   revision: z.number().int().positive(), goal: z.string().min(1).max(8000),
   status: agentRunStatusV1Schema, conversationId: z.string().uuid().nullable(),
   inputs: z.array(agentInputRefV1Schema).max(20),
+  longGoal:agentLongGoalRefV1Schema.nullable().optional(),
   operations: z.array(agentOperationV1Schema).max(100), artifacts: z.array(agentArtifactRefV1Schema).max(100),
   summary: z.string().max(12000).nullable(), error: z.string().max(1000).nullable(),
   modelCalls: z.number().int().nonnegative(), maxModelCalls: z.number().int().positive(),
@@ -58,10 +176,12 @@ export const agentRunListCursorV1Schema = z.object({
   userId: z.string().uuid(),
   updatedAt: z.string().datetime(),
   runId: z.string().uuid(),
+  longGoalMemoryId: z.string().uuid().optional(),
 }).strict();
 export const agentRunListQueryV1Schema = z.object({
   limit: z.coerce.number().int().min(1).max(AGENT_RUN_LIST_MAX_LIMIT).optional().default(AGENT_RUN_LIST_DEFAULT_LIMIT),
   cursor: z.string().min(1).max(512).optional(),
+  longGoalMemoryId: z.string().uuid().optional(),
 }).strict();
 export const agentRunListV1Schema = z.object({
   version: z.literal(1),
@@ -72,9 +192,11 @@ export const agentRunListV1Schema = z.object({
 export const createAgentRunV1Schema = z.object({
   requestId: z.string().uuid(), goal: z.string().trim().min(1).max(8000),
   conversationId: z.string().uuid().optional(), inputs: z.array(agentInputRefV1Schema).max(20).default([]),
+  longGoal:agentLongGoalRefV1Schema.optional(),
 }).strict();
 export const reviseAgentRunV1Schema = z.object({
   expectedRevision: z.number().int().positive(), goal: z.string().trim().min(1).max(8000),
+  longGoal: agentLongGoalRefV1Schema.nullable().optional(),
 }).strict();
 export const controlAgentRunV1Schema = z.object({
   expectedRevision: z.number().int().positive(), action: z.enum(["cancel", "pause", "resume"]),
@@ -93,6 +215,7 @@ export const agentRunRevisionV1Schema = z.object({
   goal: z.string().min(1).max(8000), status: agentRunStatusV1Schema,
   conversationId: z.string().uuid().nullable(),
   inputs: z.array(agentInputRefV1Schema).max(20),
+  longGoal:agentLongGoalRefV1Schema.nullable().optional(),
   operations: z.array(agentOperationV1Schema).max(100),
   artifacts: z.array(agentArtifactRefV1Schema).max(100),
   summary: z.string().max(12000).nullable(), error: z.string().max(1000).nullable(),
@@ -155,9 +278,11 @@ export const agentRunHistoryV1Schema = z.object({
 });
 
 export type AgentRunV1 = z.infer<typeof agentRunV1Schema>;
+export type CreateAgentRunV1 = z.infer<typeof createAgentRunV1Schema>;
 export type AgentRunStatusV1 = z.infer<typeof agentRunStatusV1Schema>;
 export type AgentOperationV1 = z.infer<typeof agentOperationV1Schema>;
 export type AgentOperationEventV1 = z.infer<typeof agentOperationEventV1Schema>;
+export type AgentOperationStatusV1 = z.infer<typeof agentOperationStatusV1Schema>;
 export type AgentArtifactRefV1 = z.infer<typeof agentArtifactRefV1Schema>;
 export type AgentInputRefV1 = z.infer<typeof agentInputRefV1Schema>;
 export type AgentScopeV1 = z.infer<typeof agentScopeV1Schema>;

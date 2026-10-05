@@ -398,9 +398,20 @@ export function buildAgentTurnMessages(
   tool_call_id?: string;
   tool_calls?: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }>;
 }> {
+  // Compatible transports do not all support consecutive system messages.
+  // Keep the host policy and persona in one ordered system block; user input
+  // and tool history retain their roles and order.
+  let firstConversationMessage = 0;
+  const systemParts = [systemPrompt];
+  while (messages[firstConversationMessage]?.role === "system") {
+    const content = messages[firstConversationMessage]!.content;
+    if (typeof content !== "string") break;
+    systemParts.push(content);
+    firstConversationMessage += 1;
+  }
   return [
-    { role: "system", content: systemPrompt },
-    ...messages.map((m) => ({
+    { role: "system", content: systemParts.filter(Boolean).join("\n\n") },
+    ...messages.slice(firstConversationMessage).map((m) => ({
       role: m.role,
       content: m.content,
       ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}),

@@ -259,3 +259,29 @@ export const companionChatOpenThoughtResultV1Schema = z.strictObject({
   text: z.string().min(1).max(200),
 });
 export type CompanionChatOpenThoughtResultV1 = z.infer<typeof companionChatOpenThoughtResultV1Schema>;
+
+/** 已表达的念想册页；候选、被抑制的文案与运行时推理不进入阅读合同。 */
+export const companionThoughtV1Schema = z.strictObject({
+  id: z.string().uuid(),
+  text: z.string().min(1).max(200),
+  status: z.enum(["delivered", "spent", "expired"]),
+  createdAt: z.string().datetime(),
+  deliveredAt: z.string().datetime(),
+  openedAt: z.string().datetime().nullable(),
+  expiresAt: z.string().datetime(),
+});
+export type CompanionThoughtV1 = z.infer<typeof companionThoughtV1Schema>;
+
+export const companionChatListThoughtsRequestV1Schema = z.strictObject({
+  version: z.literal(1),
+  before: z.string().uuid().optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+export type CompanionChatListThoughtsRequestV1 = z.infer<typeof companionChatListThoughtsRequestV1Schema>;
+
+export const companionChatListThoughtsResultV1Schema = z.strictObject({
+  version: z.literal(1),
+  items: z.array(companionThoughtV1Schema).max(50),
+  nextBefore: z.string().uuid().nullable(),
+});
+export type CompanionChatListThoughtsResultV1 = z.infer<typeof companionChatListThoughtsResultV1Schema>;

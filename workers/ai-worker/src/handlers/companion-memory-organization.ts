@@ -221,15 +221,15 @@ export async function acquireMemoryOrganizationLease(
 ): Promise<boolean> {
   await tx.execute(sql`
     INSERT INTO companion_memory_organization_state (workspace_id, user_id, updated_at)
-    VALUES (${scope.workspaceId}, ${scope.userId}, ${now})
+    VALUES (${scope.workspaceId}, ${scope.userId}, ${now.toISOString()})
     ON CONFLICT (workspace_id, user_id) DO NOTHING
   `);
   try {
     await tx.execute(sql`
       INSERT INTO companion_memory_organization_leases
         (workspace_id, user_id, holder, acquired_at, expires_at)
-      VALUES (${scope.workspaceId}, ${scope.userId}, ${holder}, ${now},
-              ${new Date(now.getTime() + ttlMs)})
+      VALUES (${scope.workspaceId}, ${scope.userId}, ${holder}, ${now.toISOString()},
+              ${new Date(now.getTime() + ttlMs).toISOString()})
       ON CONFLICT (workspace_id, user_id) DO NOTHING
     `);
   } catch {
@@ -240,7 +240,7 @@ export async function acquireMemoryOrganizationLease(
     SELECT EXISTS (
       SELECT 1 FROM companion_memory_organization_leases
        WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
-         AND holder = ${holder} AND expires_at > ${now}
+         AND holder = ${holder} AND expires_at > ${now.toISOString()}
     ) AS held
   `);
   return rowsOf<{ held: boolean }>(await held)[0]?.held === true;

@@ -101,11 +101,11 @@ describe("导航及时响应", () => {
 describe("顶栏灵动岛的折叠结构", () => {
   afterEach(cleanup);
 
-  it("岛是扁平的 8 颗 button，槽位能被样式表那条选择器点到", () => {
+  it("岛是扁平的 9 颗 button，槽位能被样式表那条选择器点到", () => {
     const { root, chip, trigger } = renderIsland();
 
     // 包裹层一旦加进来，children 变成 3，:nth-child 错峰与 > button 全部失配。
-    expect(root.children).toHaveLength(8);
+    expect(root.children).toHaveLength(9);
     [...root.children].forEach((child) => expect(child.tagName).toBe("BUTTON"));
     expect(root.firstElementChild).toBe(chip);
     expect(root.lastElementChild).toBe(trigger);
