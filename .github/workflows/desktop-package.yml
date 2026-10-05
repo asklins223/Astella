@@ -414,8 +414,29 @@ jobs:
               }
           }
 
+          # `/D=<目录>` 是**必须带**的，不是可选。electron-updater 调卸载器时一直带
+          # （out/NsisUpdater.js：['--updated', '/S', '--force-run', `/D=${installDir}`]），
+          # 我们之前只传了 `/S`。
+          #
+          # NSIS 的 $INSTDIR 由安装器写进注册表、卸载器再读回来。这个 app 用的是
+          # **per-user oneClick**（nsis.oneClick: true），注册表键在 HKCU 下，而
+          # `initMultiUser` 宏会按 32/64 位视图去找它。读不到时 $INSTDIR 就是空的或错的，
+          # 模板末尾那句 `RMDir /r $INSTDIR` 于是**对着一个空路径执行**：
+          # 退出码 0、一个文件都没删、没有任何进程占用——正好是我们看到的全部现象。
+          #
+          # `/D=` 直接把 $INSTDIR 钉死，绕开注册表那一步。这不是猜：它是 electron-updater
+          # 已在生产上用了很久的调用方式。下面的注册表断言就是用来判定这次有没有修对。
+          $uninstallArgs = @('/S', "/D=$installDir")
+
+          # 判定用：卸载器跑完，注册表里那两把键都该被删掉（uninstaller.nsh:250-254）。
+          # 键没了 = 卸载 section 真的跑完了，那么文件还在就只能是 $INSTDIR 指错了地方。
+          $uninstallKey = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+            Where-Object { $_.InstallLocation -and $_.InstallLocation.StartsWith($installDir, [System.StringComparison]::OrdinalIgnoreCase) } |
+            Select-Object -First 1
+          Write-Host "  卸载前注册表：$($(if ($uninstallKey) { $uninstallKey.PSChildName } else { '<没找到>' }))"
+
           Collect-NsisLogs 'before'
-          Invoke-Checked $uninstaller.FullName @('/S')
+          Invoke-Checked $uninstaller.FullName $uninstallArgs
           Collect-NsisLogs 'after1'
 
           # NSIS 卸载器会派生子进程并立刻返回父进程，所以等目录真的消失。
@@ -438,8 +459,8 @@ jobs:
                 & taskkill.exe /PID $proc.Id /T /F 2>$null | Out-Null
               }
             }
-            Write-Host "  清场后重试卸载一次"
-            Invoke-Checked $uninstaller.FullName @('/S')
+            Write-Host "  清场后重试卸载一次（这次显式带上 _?= 与 /D=）"
+            Invoke-Checked $uninstaller.FullName ($uninstallArgs + @("_?=$installDir"))
             Collect-NsisLogs 'after2'
             $retry = (Get-Date).AddSeconds(60)
             while ((Test-Path -LiteralPath $installDir) -and (Get-Date) -lt $retry) {
@@ -460,6 +481,16 @@ jobs:
             $left | Select-Object -First 15 -ExpandProperty FullName | ForEach-Object { Write-Host "    $_" }
             $stillRunning = Get-AppProcesses $installDir
             Write-Host "  相关进程：$((($stillRunning | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ', '))（空 = 无）"
+            # 这条是判据：键被删了 = 卸载 section 跑完了，那文件还在就只能是 $INSTDIR
+            # 指错了地方（NSIS 的 `RMDir /r $INSTDIR` 对着空路径执行，不报错）。
+            $keyAfter = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+              Where-Object { $_.InstallLocation -and $_.InstallLocation.StartsWith($installDir, [System.StringComparison]::OrdinalIgnoreCase) } |
+              Select-Object -First 1
+            if ($keyAfter) {
+              Write-Host "  卸载注册表键仍在 → 卸载 section 很可能**根本没跑完**（它在 RMDir 之前就 Quit/Abort 了）"
+            } else {
+              Write-Host "  卸载注册表键已消失 → 卸载 section 跑完了，文件还在只能是 \$INSTDIR 指错了目录（/D= 没生效或被忽略）"
+            }
             throw "卸载后安装目录仍在（剩余 $($left.Count) 项）：$installDir"
           }
 
