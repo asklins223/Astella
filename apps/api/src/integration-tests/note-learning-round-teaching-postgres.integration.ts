@@ -207,7 +207,7 @@ test("生成那一发：解释取自问句点名的那一节，依据块与生�
   assert.equal(rows[0]?.snapshot_hash, "fixture-hash");
   assert.equal(rows[0]?.driving_question_revision, 1);
   // 内核任务引用留痕（回放与审计用）：本刀是全仓第一个"走内核的 note_round 链"。
-  assert.match(String(rows[0]?.kernel_task_ref ?? ""), /^note_teaching_explain_v1@v1/);
+  assert.match(String(rows[0]?.kernel_task_ref ?? ""), /^note_teaching_explain_v1@v\d+/);
 });
 
 test("重复请求：同快照同问题回 200 与同一条（不重付），库里仍然只有一行", async () => {

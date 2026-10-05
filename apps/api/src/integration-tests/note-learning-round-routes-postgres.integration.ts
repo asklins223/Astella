@@ -192,7 +192,11 @@ test("创建：服务端定那一版正文，预算由服务端签发，回执�
   assert.equal(round.sourceContentHash, first.content_hash, "快照里那份哈希必须是正文现在这一版的哈希");
   assert.equal(first.current_version_id, versionA);
   // 预算：三项都来自服务端那份常量（客户端没有这一格可填）。
-  assert.deepEqual(round.budgets, { maxModelCalls: 8, maxWallClockSeconds: 900, maxTasks: 6 });
+  // 2026-10-05：8/900 是"产物是一小段 steps JSON"那时的值，已按
+  // `round-budgets.ts` 里记的理由抬到 16/1800（真窗实测：讲解+核对吃掉 163s，
+  // 用户点一次「换一种讲解」就把 8 次用完，于是讲解成功而产物缺席）。
+  // 抬的是预算不是纪律——内核的类别表、检查点、租约与 deadline 一条没动。
+  assert.deepEqual(round.budgets, { maxModelCalls: 16, maxWallClockSeconds: 1800, maxTasks: 6 });
   // 摘录此刻是真的还没有（依据由后面规划那一步产生），不是"忘了填"。
   assert.deepEqual(round.evidenceSnapshotIds, []);
 });
@@ -708,7 +712,15 @@ test("另起一轮：旧的那一条封存成 superseded，新的那一条冻住
     assert.equal(newPlan.statusCode, 200);
     const plans = body(newPlan).plans as Array<{ plan: unknown }>;
     assert.equal(plans.length, 1, "另起一轮也必须带上新的阅读路线");
-    assert.match(JSON.stringify(plans[0].plan), /索引为什么还可能让查询变慢/);
+    // 2026-10-05 更正：这里原断言「新计划里含旧问题」，那是把计划当成了问题的派生物。
+    // 计划由 `buildRoundReadingPlan(question, blocks)` 从**教学块的小节标题**推导，
+    // 与问题句无关；本用例刚把正文换成没有小节的单段（"后来补的那一段"），
+    // 于是走兜底那一条——这正是它该做的：不拿旧计划冒充新内容的路线。
+    // 问题沿用另有断言在上面一行（`reopened.round.drivingQuestion`）。
+    const reopenedPlan = plans[0].plan as { steps: Array<{ text: string }> };
+    assert.ok(reopenedPlan.steps.length >= 1, "计划至少要有一步");
+    assert.match(JSON.stringify(reopenedPlan), /从保存的正文里找出支持这个判断的依据/,
+      "正文里已无小节，计划应走兜底；出现旧问题的读法说明它在复用旧计划的路线");
 
     // 旧的那一条：进了终态、原因写的是被取代，且仍读得到（历史不重写）。
     const oldRows = (await fixtureSql`

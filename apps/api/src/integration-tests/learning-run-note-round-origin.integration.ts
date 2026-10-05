@@ -152,15 +152,29 @@ test("note_round: 开着的轮次 → run 建得出，公开视图与 return_tar
       },
     );
 
-    // 调度决议（没有 pending 安排时）：no_effect / not_authorized —— §9.1 结束
-    // 一轮不默认授权未来提醒，note_round 从不 create_initial。
+    // 调度决议（没有 pending 安排时）。
+    //
+    // 2026-10-05 更正：这里原写着「no_effect / not_authorized —— note_round 从不
+    // create_initial」，那是 §9.1 的字面读法，已被 2026-09-28 的用户裁定取代：
+    // **「卡激活本身就算显式意图」**。本文件的夹具（`seedV2Fixture`）会给这颗目标建
+    // 一张 active 的 `learning_cards_v2`，于是 `cardActivationIsIntent` 为真 ⇒ 判为
+    // `covered` ⇒ 首次回访排得上（create_initial）。
+    //
+    // §9.1 那句「结束一轮不默认授权未来提醒」管的是**没有卡、也没订阅**的情形：
+    // `decideSourceAuthorizationV2` 的 `never_authorized` 那一档仍然在，另有用例守着。
     const contractRows = await readAsWorkspace(scenario, (tx) => tx`
       SELECT scheduling_authorization FROM learning_run_private_contracts WHERE run_id = ${runId} LIMIT 1
     `);
-    assert.deepEqual(contractRows[0].scheduling_authorization, {
-      kind: "no_effect",
-      reasonCode: "not_authorized",
-    });
+    const authorization = contractRows[0].scheduling_authorization;
+    assert.ok(authorization !== null && typeof authorization === "object");
+    assert.ok("kind" in authorization && "keyPointId" in authorization
+      && "schedulerPolicyId" in authorization && "targetFingerprint" in authorization);
+    assert.equal(typeof authorization.targetFingerprint, "string");
+    // 不断言 targetFingerprint 的具体值：它由冻结快照算出来，夹具里是哨兵哈希。
+    assert.equal(authorization.kind, "create_initial");
+    assert.equal(authorization.keyPointId, seeded.objectiveId);
+    assert.equal(authorization.schedulerPolicyId, "discrete-v2");
+    assert.match(String(authorization.targetFingerprint), /^[0-9a-f]{64}$/);
     const scheduleCount = await readAsWorkspace(scenario, (tx) => tx`
       SELECT count(*)::int AS n FROM review_schedules WHERE subject_id = ${seeded.objectiveId}
     `);
@@ -180,10 +194,10 @@ test("note_round: 同一目标已有 pending 安排 → consume_pending（§9.5 
       await tx`
         INSERT INTO review_schedules
           (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at,
-           interval_days, generation, policy_version)
+           interval_days, generation, policy_version, review_dimension)
         VALUES (
           ${randomUUID()}, ${seeded.workspaceId}, ${seeded.userId}, 'card', ${seeded.objectiveId},
-          'pending', now() - interval '1 hour', 3, 1, 'discrete-v2'
+          'pending', now() - interval '1 hour', 3, 1, 'discrete-v2', 'recall'
         )
       `;
     });
@@ -229,9 +243,9 @@ test("note_round: 尚未到期的笔记回访不被当场练习提前消费", as
       await tx`SELECT set_config('app.user_id', ${seeded.userId}, true)`;
       await tx`INSERT INTO review_schedules
         (id, workspace_id, user_id, subject_type, subject_id, status, next_review_at,
-         interval_days, generation, policy_version)
+         interval_days, generation, policy_version, review_dimension)
         VALUES (${scheduleId}, ${seeded.workspaceId}, ${seeded.userId}, 'card', ${seeded.objectiveId},
-          'pending', now() + interval '1 day', 1, 1, 'discrete-v2')`;
+          'pending', now() + interval '1 day', 1, 1, 'discrete-v2', 'recall')`;
     });
     const created = await withWorkspaceTransaction(
       { workspaceId: seeded.workspaceId, userId: seeded.userId },
