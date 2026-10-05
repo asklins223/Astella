@@ -414,19 +414,39 @@ jobs:
               }
           }
 
-          # `/D=<目录>` 是**必须带**的，不是可选。electron-updater 调卸载器时一直带
-          # （out/NsisUpdater.js：['--updated', '/S', '--force-run', `/D=${installDir}`]），
-          # 我们之前只传了 `/S`。
+          # ⚠️ **参数不要自己拼，读注册表里记的那一条。**
           #
-          # NSIS 的 $INSTDIR 由安装器写进注册表、卸载器再读回来。这个 app 用的是
-          # **per-user oneClick**（nsis.oneClick: true），注册表键在 HKCU 下，而
-          # `initMultiUser` 宏会按 32/64 位视图去找它。读不到时 $INSTDIR 就是空的或错的，
-          # 模板末尾那句 `RMDir /r $INSTDIR` 于是**对着一个空路径执行**：
-          # 退出码 0、一个文件都没删、没有任何进程占用——正好是我们看到的全部现象。
+          # 这个 app 是 per-user oneClick（nsis.oneClick: true）。注册表里写着的
+          #   UninstallString = "...\Uninstall 理解引擎.exe" /currentuser
+          # 那个 **`/currentuser` 是必需的**：它对应模板里的 `initMultiUser` 宏，
+          # 卸载器靠它知道自己在按哪种安装模式工作，从而把 $INSTDIR 指向 per-user 那把
+          # 键。我们之前只传 `/S`，于是 $INSTDIR 是错的，模板末尾那句
+          # `RMDir /r $INSTDIR` 对着一个不存在的路径执行——
+          # 退出码 0、一个文件都没删、没有任何进程占用，正是我们连着看到的全部现象。
           #
-          # `/D=` 直接把 $INSTDIR 钉死，绕开注册表那一步。这不是猜：它是 electron-updater
-          # 已在生产上用了很久的调用方式。下面的注册表断言就是用来判定这次有没有修对。
-          $uninstallArgs = @('/S', "/D=$installDir")
+          # 所以这里从 UninstallString 里把参数原样取出来用。OS 已经把"卸载这个 app
+          # 到底该带哪些开关"记下来了，照着它做比我们自己猜要可靠得多——
+          # 这一条是踩了六轮之后才想明白的，前面几轮一直在猜参数。
+          $uninstallArgs = @()
+          $regEntry = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+            Where-Object { $_.UninstallString -and $_.UninstallString -like '*Uninstall*' -and $_.UninstallString -like "*ailearn*" } |
+            Select-Object -First 1
+          if ($regEntry -and $regEntry.UninstallString) {
+            $cmdline = $regEntry.UninstallString
+            if ($cmdline.StartsWith('"')) {
+              # 形如 "C:\...\Uninstall 理解引擎.exe" /currentuser
+              $close = $cmdline.IndexOf('"', 1)
+              $uninstallArgs = @($cmdline.Substring($close + 1).Trim() -split '\s+' | Where-Object { $_ })
+            } else {
+              $uninstallArgs = @($cmdline -split '\s+' | Select-Object -Skip 1 | Where-Object { $_ })
+            }
+          }
+          Write-Host "  注册表记录的卸载参数：$($uninstallArgs -join ' ')"
+          if ($uninstallArgs -notcontains '/currentuser') {
+            throw "从 UninstallString 里没解析出 /currentuser（原始值：$($regEntry.UninstallString)）——per-user 卸载少了它就是删不掉目录"
+          }
+          $uninstallArgs += '/S'
+          $uninstallArgs += "/D=$installDir"
 
           # 把注册表整个摊开看——这是唯一能直接读到"卸载器以为它装在哪"的地方。
           # 之前那条判据（"键是否消失"）不可靠：卸载**前**也显示没找到，
@@ -478,8 +498,10 @@ jobs:
                 & taskkill.exe /PID $proc.Id /T /F 2>$null | Out-Null
               }
             }
-            Write-Host "  清场后重试卸载一次（这次显式带上 _?= 与 /D=）"
-            Invoke-Checked $uninstaller.FullName ($uninstallArgs + @("_?=$installDir"))
+            Write-Host "  清场后重试卸载一次（同一套参数）"
+            $retryArgs = @($uninstallArgs)
+            if ($retryArgs -notcontains "_?=$installDir") { $retryArgs += "_?=$installDir" }
+            Invoke-Checked $uninstaller.FullName $retryArgs
             Collect-NsisLogs 'after2'
             $retry = (Get-Date).AddSeconds(60)
             while ((Test-Path -LiteralPath $installDir) -and (Get-Date) -lt $retry) {
