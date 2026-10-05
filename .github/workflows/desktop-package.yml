@@ -166,15 +166,22 @@ jobs:
           if (-not $installer) { throw '找不到 Windows 安装包' }
           Write-Host "安装包: $($installer.Name)  $([math]::Round($installer.Length / 1MB, 1)) MB"
 
-          function Invoke-Checked([string]$File, [string[]]$Args, [int]$TimeoutMs = 180000) {
+          function Invoke-Checked([string]$File, [string[]]$Args, [int]$TimeoutMs = 180000, [string]$WorkDir = $env:RUNNER_TEMP, [switch]$NoHidden) {
+            # $NoHidden：NSIS 卸载器在非静默分支会弹 MessageBox。带 -WindowStyle Hidden 时，
+            # 隐藏窗口里的 MessageBox 立刻返回非 IDOK，于是流程落到 `Quit`——
+            # 症状是"什么都没删、退出码 0"。让它正常显示，行为才和真实用户一致。
+            # $WorkDir：卸载器从自己的安装目录启动，与"程序和功能"一致。
             $logBase = Join-Path $env:RUNNER_TEMP ("ailearn-installer-" + [guid]::NewGuid().ToString('N'))
             $stdoutPath = "$logBase.out.log"
             $stderrPath = "$logBase.err.log"
             # 绝不用 -Wait：它没有超时上限，某个页面在无人值守 runner 上等决策时，
             # 整个 job 会一路走到 90 分钟上限，只留一句 "step timed out"。
-            $p = Start-Process -FilePath $File -ArgumentList $Args -WorkingDirectory $env:RUNNER_TEMP `
-              -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath `
-              -WindowStyle Hidden -PassThru
+            $sp = @{
+              FilePath = $File; ArgumentList = $Args; WorkingDirectory = $WorkDir; PassThru = $true
+              RedirectStandardOutput = $stdoutPath; RedirectStandardError = $stderrPath
+            }
+            if (-not $NoHidden) { $sp['WindowStyle'] = 'Hidden' }
+            $p = Start-Process @sp
             if (-not $p.WaitForExit($TimeoutMs)) {
               & taskkill.exe /PID $p.Id /T /F 2>$null | Out-Null
               throw "超时 ${TimeoutMs}ms: $(Split-Path -Leaf $File) $($Args -join ' ')`n--- stdout ---`n$(Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue)`n--- stderr ---`n$(Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue)"
@@ -523,11 +530,20 @@ jobs:
               Where-Object { $_.ProcessName -like '*Uninstall*' })
           }
 
+          # ⚠️ 上一轮的三条硬事实，方向都指在"/S 没被 NSIS 认出来"：
+          #   · 只传 /S 时连 ns*.tmp 临时目录都没建 —— 卸载器立刻就退了
+          #   · 经 cmd /c 那次**卡满 120 秒** —— 那只有 un.onInit 的**非静默**分支会弹
+          #     MessageBox MB_OKCANCEL，静默分支根本不弹窗
+          #   · 而 Invoke-Checked 一直带 -WindowStyle Hidden：隐藏窗口里的 MessageBox
+          #     立刻返回非 IDOK → 落 `Quit`，症状正是"什么都没删、退出码 0"
+          #
+          # 所以下面两组把这两个变量都拿掉：**不加 -WindowStyle Hidden**、
+          # **工作目录设成安装目录**（与"程序和功能"一致）。
           $variants = @(
-            @{ Tag = 'D 只传 /S（不带 /currentuser、不带 /D=）'; Args = @('/S') },
-            @{ Tag = 'E /S /D=（不带 /currentuser）'; Args = @('/S', "/D=$installDir") },
-            @{ Tag = 'F 经 cmd /c，模拟"程序和功能"真正调用卸载器的那条路'; CmdLine = ('""{0}" /currentuser /S"' -f $uninstaller.FullName) },
-            @{ Tag = 'A /currentuser /S /D='; Args = @('/currentuser', '/S', "/D=$installDir") }
+            @{ Tag = 'D2 /S，可弹窗 + cwd=安装目录'; Args = @('/S'); Visible = $true; WorkDir = $installDir },
+            @{ Tag = 'G2 /currentuser /S，可弹窗 + cwd=安装目录'; Args = @('/currentuser', '/S'); Visible = $true; WorkDir = $installDir },
+            @{ Tag = 'H /silent（NSIS 也认这个词）'; Args = @('/silent'); Visible = $true; WorkDir = $installDir },
+            @{ Tag = 'D 只传 /S（对照，已知失败）'; Args = @('/S') }
           )
 
           foreach ($variant in $variants) {
@@ -537,14 +553,12 @@ jobs:
               & taskkill.exe /PID $extra.Id /T /F 2>$null | Out-Null
             }
             try {
-              if ($variant.CmdLine) {
-                # 走 cmd：Windows 的"程序和功能"就是这样拼命令行的，
-                # 而 Start-Process -ArgumentList 会自己重新引号化，两者未必一样。
-                Write-Host "     实际命令行：cmd /c $($variant.CmdLine)"
-                Invoke-Checked 'cmd.exe' @('/c', $variant.CmdLine) 120000
+              Write-Host "     实际参数：$($variant.Args -join ' ')（可弹窗=$([bool]$variant.Visible)，cwd=$(if ($variant.WorkDir) { Split-Path -Leaf $variant.WorkDir } else { 'RUNNER_TEMP' })）"
+              $wd = if ($variant.WorkDir) { $variant.WorkDir } else { $env:RUNNER_TEMP }
+              if ($variant.Visible) {
+                Invoke-Checked $uninstaller.FullName $variant.Args 150000 $wd -NoHidden
               } else {
-                Write-Host "     实际参数：$($variant.Args -join ' ')"
-                Invoke-Checked $uninstaller.FullName $variant.Args 120000
+                Invoke-Checked $uninstaller.FullName $variant.Args 150000
               }
             } catch {
               Write-Host "     变体 $($variant.Tag) 抛错：$($_.Exception.Message)"
