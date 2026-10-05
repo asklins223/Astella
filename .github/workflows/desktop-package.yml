@@ -515,7 +515,7 @@ jobs:
           $scBefore = Show-Shortcuts 'before'
 
           function Get-NsisTempDirs {
-            @(Get-ChildItem -Path $env:TEMP -Directory -Filter 'nsi*' -ErrorAction SilentlyContinue |
+            @(Get-ChildItem -Path $env:TEMP -Directory -Filter 'ns*.tmp' -ErrorAction SilentlyContinue |
               Select-Object -ExpandProperty FullName)
           }
           function Get-UninstallProcesses {
@@ -524,19 +524,28 @@ jobs:
           }
 
           $variants = @(
-            @{ Tag = 'A /S /currentuser /D='; Args = @('/currentuser', '/S', "/D=$installDir") },
-            @{ Tag = 'B /S /currentuser（靠注册表解析 $INSTDIR）'; Args = @('/currentuser', '/S') },
-            @{ Tag = 'C /S /currentuser _?=（就地运行）'; Args = @('/currentuser', '/S', "_?=$installDir") }
+            @{ Tag = 'D 只传 /S（不带 /currentuser、不带 /D=）'; Args = @('/S') },
+            @{ Tag = 'E /S /D=（不带 /currentuser）'; Args = @('/S', "/D=$installDir") },
+            @{ Tag = 'F 经 cmd /c，模拟"程序和功能"真正调用卸载器的那条路'; CmdLine = ('""{0}" /currentuser /S"' -f $uninstaller.FullName) },
+            @{ Tag = 'A /currentuser /S /D='; Args = @('/currentuser', '/S', "/D=$installDir") }
           )
 
           foreach ($variant in $variants) {
             Write-Host "  —— 变体 $($variant.Tag)"
-            Write-Host "     temp 里的 nsi* 目录（跑之前）：$((Get-NsisTempDirs) -join ', ')"
+            Write-Host "     temp 里的 ns* 目录（跑之前）：$((Get-NsisTempDirs) -join ', ')"
             foreach ($extra in Get-AppProcesses $installDir) {
               & taskkill.exe /PID $extra.Id /T /F 2>$null | Out-Null
             }
             try {
-              Invoke-Checked $uninstaller.FullName $variant.Args 120000
+              if ($variant.CmdLine) {
+                # 走 cmd：Windows 的"程序和功能"就是这样拼命令行的，
+                # 而 Start-Process -ArgumentList 会自己重新引号化，两者未必一样。
+                Write-Host "     实际命令行：cmd /c $($variant.CmdLine)"
+                Invoke-Checked 'cmd.exe' @('/c', $variant.CmdLine) 120000
+              } else {
+                Write-Host "     实际参数：$($variant.Args -join ' ')"
+                Invoke-Checked $uninstaller.FullName $variant.Args 120000
+              }
             } catch {
               Write-Host "     变体 $($variant.Tag) 抛错：$($_.Exception.Message)"
             }
@@ -545,7 +554,7 @@ jobs:
             while ((Get-UninstallProcesses).Count -gt 0 -and (Get-Date) -lt $settle) {
               Start-Sleep -Milliseconds 500
             }
-            Write-Host "     跑之后 temp 里的 nsi* 目录：$((Get-NsisTempDirs) -join ', ')"
+            Write-Host "     跑之后 temp 里的 ns*.tmp 目录：$((Get-NsisTempDirs) -join ', ')"
             Write-Host "     还在跑的 Uninstall 进程：$(((Get-UninstallProcesses | ForEach-Object { \"$($_.Id)#$($_.Path)\" }) -join ', '))（空 = 无）"
             if (Test-Path -LiteralPath $installDir) {
               $remain = (Get-ChildItem -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object).Count
