@@ -72,8 +72,20 @@ import {
 } from "./labels.ts";
 import { logger } from "../../lib/logger.ts";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const STATIC_ROOT = join(__dirname, "static");
+// 这一行在**模块顶层**求值，所以"取不到自己所在目录"不是延后失败，是导入即崩。
+//
+// 2026-10-05 实测：生产镜像的 CMD 是 `node dist/server.cjs`，而构建是
+// `esbuild --format=cjs` —— CJS 里 `import.meta` 是空的，于是
+// `fileURLToPath(undefined)` 抛 ERR_INVALID_ARG_TYPE，容器启动即崩、进入 crash-loop。
+// dev 阶段跑的是 `npm run dev`（tsx 走 src，ESM，`import.meta.url` 有值），所以
+// 本地怎么试都是好的，只有真实产物会炸。
+//
+// 两边都成立的那一份目录：ESM 用 `import.meta.url`，CJS 用它自带的 `__dirname`。
+// `typeof` 对未声明标识符求值不会抛，所以这一行在 ESM 下也是安全的。
+const moduleDir = typeof __dirname !== "undefined"
+  ? __dirname
+  : dirname(fileURLToPath(import.meta.url));
+const STATIC_ROOT = join(moduleDir, "static");
 
 /** 面板自身的 CSP。无内联资源，所以 `script-src 'self'` 就够。 */
 const ADMIN_CSP = [

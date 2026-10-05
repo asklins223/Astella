@@ -13,6 +13,21 @@
 
 \set ON_ERROR_STOP on
 
+-- 向量扩展必须**先于迁移**存在。
+--
+-- `0052_supervisor_agent_v1_schema` 起有十余份迁移 `CREATE EXTENSION IF NOT EXISTS
+-- vector`，但它们跑在 `ailearn_migrator` 上，而建扩展是超级用户权限 ⇒
+-- `permission denied to create extension "vector"`。
+--
+-- 0052 的注释本来就写着这件事该由本脚本负责（"fresh DB 由 init 脚本创建 extension，
+-- 现有 volume 由管理员 bootstrap"），而 `infra/postgres/init.sql` 此前只建了
+-- uuid-ossp 与 pg_trgm，唯独漏了 vector ⇒ 文档与实现对不上，fresh 库必然卡在 0052。
+-- 这里补的是既有 volume 这条路径；`init.sql` 同步补，两条路径都覆盖到。
+--
+-- 镜像必须带 pgvector（CI 已从 postgres:16-alpine 换成 pgvector/pgvector:pg16）；
+-- 扩展不在镜像里时这一行会自己失败，而不是把问题留到迁移中途。
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- Fail early when the wrapper was bypassed without supplying secrets.  The
 -- values are quoted by psql's :'name' syntax before PostgreSQL sees them, then
 -- held in transaction-local custom settings for the procedural checks below.
