@@ -474,6 +474,30 @@ jobs:
           }
           Show-InstallRegistry 'before'
 
+          # ── 判断"卸载 section 到底跑没跑"的干净判据 ──
+          #
+          # 卸载器删快捷方式（uninstaller.nsh:204 左右）在删文件之前。所以：
+          #   快捷方式还在 → section 根本没开始跑，它在前面就 Quit/Abort 了
+          #                 （那一段唯一会这么干的地方是 un.onInit 里的 checkAppRunning）
+          #   快捷方式没了 → section 跑过了，那文件还在只能是 RMDir 的目标路径不对
+          function Show-Shortcuts([string]$Tag) {
+            $roots = @(
+              (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'),
+              (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'),
+              [Environment]::GetFolderPath('Desktop'),
+              [Environment]::GetFolderPath('CommonDesktopDirectory')
+            )
+            $found = @()
+            foreach ($r in $roots) {
+              if (-not $r -or -not (Test-Path -LiteralPath $r)) { continue }
+              $found += @(Get-ChildItem -LiteralPath $r -Filter '*理解引擎*' -Recurse -ErrorAction SilentlyContinue |
+                            Select-Object -ExpandProperty FullName)
+            }
+            Write-Host "  [$Tag] 快捷方式 $($found.Count) 个$($(if ($found.Count) { '：' + (($found | ForEach-Object { Split-Path -Leaf $_ }) -join ', ') } else { '（无）' }))"
+            return $found.Count
+          }
+          $scBefore = Show-Shortcuts 'before'
+
           Collect-NsisLogs 'before'
           Invoke-Checked $uninstaller.FullName $uninstallArgs
           Collect-NsisLogs 'after1'
@@ -525,6 +549,13 @@ jobs:
             # 这条是判据：键被删了 = 卸载 section 跑完了，那文件还在就只能是 $INSTDIR
             # 指错了地方（NSIS 的 `RMDir /r $INSTDIR` 对着空路径执行，不报错）。
             Show-InstallRegistry 'after'
+            $scAfter = Show-Shortcuts 'after'
+            Write-Host "  快捷方式：卸载前 $scBefore 个 → 卸载后 $scAfter 个"
+            if ($scAfter -eq $scBefore -and $scBefore -gt 0) {
+              Write-Host "  → 快捷方式一个没少，说明卸载 section **根本没开始跑**（在 un.onInit 的 checkAppRunning 里就退出了）"
+            } elseif ($scAfter -lt $scBefore) {
+              Write-Host "  → 快捷方式被删了，说明 section **跑过了**；文件还在只能是 RMDir 的目标路径不对"
+            }
             throw "卸载后安装目录仍在（剩余 $($left.Count) 项）：$installDir"
           }
 
