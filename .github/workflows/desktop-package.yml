@@ -157,6 +157,10 @@ jobs:
           # electron-builder 自己写下的 InstallLocation，读不到再退回按名字找。
           $ErrorActionPreference = 'Stop'
           $startup_failed = '0'
+          # 诊断目录先建好：finally 里要用它，而 finally 一定要成立。
+          $diagDir = 'ailearn-diagnostics'
+          New-Item -ItemType Directory -Force -Path $diagDir | Out-Null
+          $appOut = $null; $appErr = $null; $chromiumLog = $null
           $releaseDir = (Resolve-Path 'release').Path
           $installer = Get-ChildItem -Path $releaseDir -Filter 'ailearn-*-win-x64.exe' -File | Select-Object -First 1
           if (-not $installer) { throw '找不到 Windows 安装包' }
@@ -181,6 +185,7 @@ jobs:
             Write-Host "  ok  $(Split-Path -Leaf $File) $($Args -join ' ')  (cwd=$([System.IO.Path]::GetFileName($env:RUNNER_TEMP)))"
           }
 
+          try {
           Write-Host '--- 1/4 静默安装 ---'
           Invoke-Checked $installer.FullName @('/S')
 
@@ -239,8 +244,6 @@ jobs:
           # 诊断目录：stdout / stderr / Chromium 日志 / userData 都往这里收。
           # 它在 workspace 里的固定位置，后面的 upload step 才拿得到（$RUNNER_TEMP
           # 里的东西 upload-artifact 也能读，但 workspace 路径更直观）。
-          $diagDir = 'ailearn-diagnostics'
-          New-Item -ItemType Directory -Force -Path $diagDir | Out-Null
           $appOut = Join-Path $env:RUNNER_TEMP 'ailearn-installed-app.out.log'
           $appErr = Join-Path $env:RUNNER_TEMP 'ailearn-installed-app.err.log'
           $env:ELECTRON_ENABLE_LOGGING = '1'
@@ -473,18 +476,27 @@ jobs:
           # 这个目录就是空的，upload-artifact 拿不到任何东西（if-no-files-found: warn
           # 会安静地跳过）——上一轮就这样白跑了一回。
           foreach ($logPath in @($appOut, $appErr, $chromiumLog)) {
-            if (Test-Path -LiteralPath $logPath) { Copy-Item -LiteralPath $logPath -Destination $diagDir -Force }
-          }
-          $userDataDir = Join-Path $env:APPDATA 'ailearn-desktop-client'
-          if (Test-Path -LiteralPath $userDataDir) {
-            Copy-Item -LiteralPath $userDataDir -Destination (Join-Path $diagDir 'userData') -Recurse -Force -ErrorAction SilentlyContinue
-          }
-          Write-Host "  诊断产物：$((Get-ChildItem -Path $diagDir -Recurse -File -ErrorAction SilentlyContinue | Measure-Object).Count) 个文件"
-
-          if ('$startup_failed' -eq '1') {
-            throw '已安装的程序在 40 秒内没活起来——装得上、起不来，这道闸必须拦住发版（完整日志见 ailearn-windows-startup-diag artifact）'
           }
           Write-Host '全新安装 → 启动 → 卸载 全链路通过'
+          # 诊断收集放进 finally：前三次都是因为"收集"写在某个 throw 之后、
+          # 或者只在某个分支里，于是失败时它一次都没跑过——artifact 永远是空的。
+          # finally 不挑路径：装不上、起不来、卸不掉，上面哪条 throw 先触发都照样收。
+          } finally {
+            try {
+              foreach ($logPath in @($appOut, $appErr, $chromiumLog)) {
+                if ($logPath -and (Test-Path -LiteralPath $logPath)) { Copy-Item -LiteralPath $logPath -Destination $diagDir -Force -ErrorAction SilentlyContinue }
+              }
+              $userDataDir = Join-Path $env:APPDATA 'ailearn-desktop-client'
+              if (Test-Path -LiteralPath $userDataDir) {
+                Copy-Item -LiteralPath $userDataDir -Destination (Join-Path $diagDir 'userData') -Recurse -Force -ErrorAction SilentlyContinue
+              }
+              $collected = (Get-ChildItem -Path $diagDir -Recurse -File -ErrorAction SilentlyContinue | Measure-Object).Count
+              Write-Host "  诊断产物：$collected 个文件（目录 $diagDir）"
+              if ($collected -eq 0) { Write-Host "  ::warning::一个诊断文件都没收集到——artifact 会是空的，下一轮就等于白跑" }
+            } catch {
+              Write-Host "  收集诊断时出错（不影响本步骤的结论）：$($_.Exception.Message)"
+            }
+          }
 
       - name: Upload startup diagnostics
         # 完整日志走 artifact 而不是 step 日志：GitHub 会截断长输出
