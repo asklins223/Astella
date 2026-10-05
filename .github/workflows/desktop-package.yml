@@ -393,6 +393,15 @@ jobs:
             }
           }
 
+          # GitHub 的 `shell: pwsh` 是 `pwsh -command ". '{0}'"`——脚本跑完后**它会把
+          # $LASTEXITCODE 当成这一步的退出码**。上面为了清场调过 taskkill.exe，
+          # 杀已经不存在的进程时它返回非 0，于是脚本明明全跑通、最后一句还打印了
+          #「诊断产物：47 个文件」，退出码却仍是 1。
+          #
+          # 显式 exit 0 断掉这个继承。真正失败时走的是 try 里那条 throw，
+          # 它在 exit 之前就抛出去了，不会被这里盖掉。
+          exit 0
+
       - name: Probe uninstall (non-blocking)
         # ⚠️ **卸载这条至今没有被验证过**，它现在只做探测、不拦发版。
         #
@@ -654,6 +663,7 @@ jobs:
           Write-Host '::warning::卸载这一条**保持未验证**：上面是探测结果，不是「通过」。'
             真正验过的是全新安装、启动、装与不装都能跑、app.asar 完整、electron-updater
             分块在包里。卸载能否把目录删干净，CI 到这一步给不出证据。
+          exit 0
 
       - name: Upload startup diagnostics
         # 完整日志走 artifact 而不是 step 日志：GitHub 会截断长输出
