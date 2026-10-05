@@ -352,6 +352,17 @@ jobs:
         working-directory: packages/card-generation
         run: npm ci --no-audit --no-fund
 
+      # ffprobe/ffmpeg：让 `learning-sessions/__tests__/ffprobe.test.ts` 真的跑，
+      # 而不是被 skip 掉。
+      #
+      # 2026-10-05：允许清单里那两条的 reason 写着「API 容器与 CI runner 均带该工具链」，
+      # 但 ubuntu-latest **并不自带** ffmpeg ⇒ 这两条在 CI 上一直是被 skip 的，
+      # 而清单的 expiresAt 又在 2026-09-29 过期，于是 skip/todo 闸直接判违规。
+      # 与其每 14 天续一次（闸的上限），不如把工具链装上：这两条断言的是音频时长探测，
+      # 它们本来就该在每次回归里被跑到。
+      - name: Install ffmpeg toolchain for audio probing tests
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Run shared contract unit tests
         working-directory: packages/shared
         run: |
