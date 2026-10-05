@@ -37,6 +37,18 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      # 把**附注 tag 对象**取回来。
+      #
+      # `actions/checkout` 对 tag 触发的运行，会把 `refs/tags/<tag>` 建成一个直接指向
+      # commit 的**轻量 ref**——即使那个 tag 在远端本来就是附注的。
+      # `verify-release-inputs.mjs` 用 `git cat-file -t refs/tags/<tag>` 判附注性，
+      # 于是在 runner 上读到 `commit`，报「must be annotated, got Git object type commit」。
+      # 2026-10-05 实测：手工打的附注 tag `v0.5.0`，同一条命令本地交回 `tag`、
+      # runner 上交回 `commit`。⇒ 不取回 tag 对象，这道闸会把每一次发版都挡住，
+      # 而它真正想挡的是"轻量 tag 不可复现"。
+      - name: Fetch annotated tag objects
+        run: git fetch --force --no-tags origin '+refs/tags/*:refs/tags/*'
+
       # A release must be reproducible from Git alone. This also catches a
       # journal entry whose SQL file was left untracked in a local workspace.
       - name: Verify clean checkout and required release files
