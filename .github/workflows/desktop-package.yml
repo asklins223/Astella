@@ -144,7 +144,6 @@ jobs:
         # `event.isWriteUpdateInfo` 上，与是否真的上传无关。
         run: npm run package:win:x64 -- --publish never
       - name: Verify installer lifecycle (install → launch → uninstall)
-        id: lifecycle
         shell: pwsh
         working-directory: apps/desktop-client
         env:
@@ -157,6 +156,7 @@ jobs:
           # 装到 %LOCALAPPDATA%\Programs\理解引擎。**装到哪里不猜**——从注册表读
           # electron-builder 自己写下的 InstallLocation，读不到再退回按名字找。
           $ErrorActionPreference = 'Stop'
+          $startup_failed = '0'
           $releaseDir = (Resolve-Path 'release').Path
           $installer = Get-ChildItem -Path $releaseDir -Filter 'ailearn-*-win-x64.exe' -File | Select-Object -First 1
           if (-not $installer) { throw '找不到 Windows 安装包' }
@@ -215,13 +215,27 @@ jobs:
           if (-not (Test-Path -LiteralPath $asar)) { throw '安装后没有 resources\app.asar' }
           Write-Host "app.asar $(([math]::Round((Get-Item $asar).Length / 1MB, 1))) MB"
 
+          # ── 判断"应用是不是活着" ──
+          #
+          # ⚠️ 这里**不能**看 Start-Process 返回的那个句柄。实测（2026-10-05）：
+          # NSIS 静默安装完成后 electron-builder 会**自动把应用拉起来一次**
+          # （runAfterFinish）。于是同一个应用在 CI 上起了两个：
+          #
+          #   pid=7744 single-instance-lock=true  … renderer-ready-to-show  ← 真正在跑
+          #   pid=1104 single-instance-lock=false … quit-because-lock-lost  ← 脚本拉的那个
+          #
+          # Start-Process 拿到的是第二个（第一个已经把锁拿走了），它立刻退出，
+          # 于是被判成"应用提前退出"。**应用一直是好的，错的是这把尺子。**
+          #
+          # 正确判据：安装目录底下**有没有活着的进程**。顺带用 OrdinalIgnoreCase
+          # 比较——Windows 的路径不区分大小写，用 -like 会在盘符大小写不一致时漏掉。
+          function Get-AppProcesses([string]$Root) {
+            @(Get-Process -ErrorAction SilentlyContinue |
+              Where-Object { $_.Path -and $_.Path.StartsWith($Root, [System.StringComparison]::OrdinalIgnoreCase) })
+          }
+
           Write-Host '--- 2/4 启动已安装的程序 ---'
 
-          # 把应用自己的 stdout/stderr 收下来。实测这台机器上装好的程序会在 25 秒内
-          # **干净地退出（退出码 0）**——对应 index.ts 里 `window-all-closed` 在非 macOS
-          # 上 app.quit()：窗口自己关掉了。而窗口为什么会关（渲染层没加载起来？
-          # 自定义 app scheme 失败？），只有应用自己的日志说得清。没有它，这里就只有
-          # 一句"提前退出"，等于什么都没查。
           # 诊断目录：stdout / stderr / Chromium 日志 / userData 都往这里收。
           # 它在 workspace 里的固定位置，后面的 upload step 才拿得到（$RUNNER_TEMP
           # 里的东西 upload-artifact 也能读，但 workspace 路径更直观）。
@@ -235,23 +249,32 @@ jobs:
           # 只接了 stdout/stderr——那些信息在另一条通道里。带上 `--v=1` 打开详细级别。
           $chromiumLog = Join-Path $env:RUNNER_TEMP 'ailearn-chromium.log'
           # `--no-sandbox` 是**探测用的妥协**，不是产品该有的运行方式。
+          # 仓库里本来就有同类妥协：scripts/smoke-packaged.mjs:444 只在 Linux 上
+          # 传 --no-sandbox。
           #
-          # ⚠️ 已排除的假设（都实测过，别再走回头路）：
-          #   · 不是主进程抛错 —— 我们加的"启动失败要报错"守卫一次都没触发；
-          #   · 不是沙箱 —— 带不带 --no-sandbox 结果逐字节相同（40 秒、退出码 0、空日志）。
-          # 剩下的形态是"应用干净退出、退出码 0、没有任何输出"，说明它没走到
-          # 我们埋日志的地方。**这一步在 CI 上已经试不出更多东西了**，
-          # 真正的信息需要一台 Windows 机器上看实际现象（窗口有没有出现）。
-          #
-          # 仓库里其实早就有同类妥协：scripts/smoke-packaged.mjs:444 只在 Linux 上
-          # 传 --no-sandbox。只是 Windows 这边从来没在 CI 上把**装好的应用**跑起来过
-          # （desktop-client.yml 只做 --dir 后的冒烟，且不覆盖安装后的产物）。
+          # ⚠️ 排查过程中排除掉的假设（都实测过，别再走回头路）：
+          #   · 不是主进程抛错 —— "启动失败要报错"守卫一次都没触发，userData 里
+          #     也没有 startup-failure.log；
+          #   · 不是沙箱 —— 带不带 --no-sandbox 结果逐字节相同；
+          #   · 不是应用打不开 —— boot-trace 显示它走到了 renderer-ready-to-show，
+          #     窗口建好了、渲染层 ready 了，也没触发 window-all-closed。
+          # 真正的错在这把尺子：NSIS 装完会自动把应用拉起来一次，于是同一个应用
+          # 起了两个，脚本 Start-Process 拿到的是**拿不到单实例锁而立刻退掉**的
+          # 第二个，于是被判成"提前退出"。所以上面 Get-AppProcesses 才是对的判据。
+          # 先把安装器自己拉起的那一个收掉，否则单实例锁会让下面这次白跑。
+          # 它没做过什么事——boot-trace 显示它拿不到锁就直接退出了。
+          foreach ($stale in Get-AppProcesses $installDir) {
+            & taskkill.exe /PID $stale.Id /T /F 2>$null | Out-Null
+          }
+          Start-Sleep -Seconds 3
+
           $app = Start-Process -FilePath $appExe `
             -ArgumentList @('--no-sandbox', '--enable-logging', '--v=1', "--log-file=$chromiumLog") `
             -WorkingDirectory $env:RUNNER_TEMP `
             -RedirectStandardOutput $appOut -RedirectStandardError $appErr -PassThru
           Start-Sleep -Seconds 40
-          if ($app.HasExited) {
+          $running = Get-AppProcesses $installDir
+          if ($running.Count -eq 0) {
             # 日志要**逐行 Write-Host**，不能拼进 throw 的多行字符串里：
             # GitHub 的日志分组会把多行异常消息吞掉，表现为只剩一句
             # "已安装程序提前退出"，而应用到底报了什么一个字都看不到。
@@ -274,13 +297,26 @@ jobs:
             }
             # 标记留在输出里，让后面的对照与上传照常执行——
             # 抛出去的话，证据反而会跟它一起丢。
-            "startup_failed=1" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            $startup_failed = '1'
           }
-          Write-Host "  ok  已安装程序存活（pid $($app.Id)）"
-          # Electron 会派生渲染 / GPU / 工具进程。只杀父进程会留下持有 installDir
-          # 句柄的孤儿，最后那次卸载就永远删不掉目录——必须杀整棵树。
-          & taskkill.exe /PID $app.Id /T /F 2>$null | Out-Null
-          Start-Sleep -Seconds 3
+          # 报告**所有**活着的进程，不只是 Start-Process 给的那一个：真正在跑的
+          # 未必是它（见上面那条注释）。写清楚 pid，读日志的人才知道该看谁。
+          Write-Host "  ok  已安装程序存活（$($running.Count) 个进程：$((($running | ForEach-Object { $_.Id }) -join ', '))）"
+          # Electron 会派生渲染 / GPU / 工具进程。必须杀整棵树，否则剩下的进程会持有
+          # installDir 的句柄，最后那次卸载就永远删不掉目录（实测残留 79 项）。
+          foreach ($proc in $running) {
+            & taskkill.exe /PID $proc.Id /T /F 2>$null | Out-Null
+          }
+          # 等句柄真正释放。杀完立刻卸载，偶尔会撞上"文件还被占用"——那种失败
+          # 几乎没有信息量，所以这里等到位再往下走。
+          $gone = (Get-Date).AddSeconds(30)
+          while ((Get-AppProcesses $installDir).Count -gt 0 -and (Get-Date) -lt $gone) {
+            Start-Sleep -Milliseconds 500
+          }
+          $still = Get-AppProcesses $installDir
+          if ($still.Count -gt 0) {
+            Write-Host "  警告：仍有进程占用安装目录，卸载可能删不干净：$((($still | ForEach-Object { $_.ProcessName }) -join ', '))"
+          }
 
           Write-Host '--- 3/4 同一份产物，不经安装器再起一次 ---'
           # 这条是为了把两个假设分开：
@@ -298,22 +334,37 @@ jobs:
             $probeOut = Join-Path $env:RUNNER_TEMP 'ailearn-unpacked.out.log'
             $probeErr = Join-Path $env:RUNNER_TEMP 'ailearn-unpacked.err.log'
             $probeLog = Join-Path $env:RUNNER_TEMP 'ailearn-unpacked-chromium.log'
+            # 两份产物共用同一个 userData（`<userData>` 按应用名走，不按 exe 路径），
+            # 所以**上一段那个实例还活着的话，单实例锁会让这次直接退**。上一段已经
+            # 把它们杀干净并等句柄释放了；这里再杀一次兜底。
+            $unpackedRoot = (Resolve-Path (Join-Path (Resolve-Path 'release').Path 'win-unpacked')).Path
+            foreach ($stale in Get-AppProcesses $unpackedRoot) {
+              & taskkill.exe /PID $stale.Id /T /F 2>$null | Out-Null
+            }
             $raw = Start-Process -FilePath $unpacked `
               -ArgumentList @('--no-sandbox', '--enable-logging', '--v=1', "--log-file=$probeLog") `
               -WorkingDirectory $env:RUNNER_TEMP `
               -RedirectStandardOutput $probeOut -RedirectStandardError $probeErr -PassThru
             Start-Sleep -Seconds 40
-            if ($raw.HasExited) {
-              Write-Host "::warning::未安装的 win-unpacked **也**起不来（退出码 $($raw.ExitCode)）→ 应用自身问题，与安装器无关"
+            # 同样按"win-unpacked 目录下有没有活着的进程"判，而不是看单个句柄——
+            # 上一轮这里报的"未安装的也起不来"就是被单实例锁误伤的假象。
+            $unpackedRunning = Get-AppProcesses $unpackedRoot
+            if ($unpackedRunning.Count -eq 0) {
+              Write-Host "::warning::未安装的 win-unpacked **也**起不来（启动的进程已退出）→ 应用自身问题，与安装器无关"
               foreach ($p in @($probeOut, $probeErr, $probeLog)) {
                 if (-not (Test-Path -LiteralPath $p)) { continue }
                 Write-Host "[$(Split-Path -Leaf $p)]"
                 Get-Content -LiteralPath $p -Tail 40 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  | $_" }
               }
             } else {
-              Write-Host "  ok  未安装的 win-unpacked 存活（pid $($raw.Id)）→ 应用能跑，问题在安装器"
-              & taskkill.exe /PID $raw.Id /T /F 2>$null | Out-Null
-              Start-Sleep -Seconds 3
+              Write-Host "  ok  未安装的 win-unpacked 也存活（$($unpackedRunning.Count) 个进程：$((($unpackedRunning | ForEach-Object { $_.Id }) -join ', '))）→ 装与不装都能跑"
+              foreach ($proc in $unpackedRunning) {
+                & taskkill.exe /PID $proc.Id /T /F 2>$null | Out-Null
+              }
+              $gone2 = (Get-Date).AddSeconds(30)
+              while ((Get-AppProcesses $unpackedRoot).Count -gt 0 -and (Get-Date) -lt $gone2) {
+                Start-Sleep -Milliseconds 500
+              }
             }
           }
 
@@ -322,19 +373,66 @@ jobs:
             Select-Object -First 1
           if (-not $uninstaller) { throw "安装目录里找不到卸载器：$installDir" }
           Write-Host "卸载器: $($uninstaller.Name)"
+          # 先确保没有任何进程占着这个目录。上一轮残留 79 项就是这么来的：
+          # 前面只杀了 Start-Process 给的那**一个** pid，而 Electron 派生的
+          # 渲染 / GPU / 工具进程还活着、还攥着 installDir 里的文件句柄。
+          foreach ($leftover in Get-AppProcesses $installDir) {
+            Write-Host "  卸载前清场：pid $($leftover.Id) $($leftover.ProcessName)"
+            & taskkill.exe /PID $leftover.Id /T /F 2>$null | Out-Null
+          }
+
           Invoke-Checked $uninstaller.FullName @('/S')
+
           # NSIS 卸载器会派生子进程并立刻返回父进程，所以等目录真的消失。
           $deadline = (Get-Date).AddSeconds(120)
           while ((Test-Path -LiteralPath $installDir) -and (Get-Date) -lt $deadline) {
             Start-Sleep -Milliseconds 500
           }
+
+          # 目录还在：先做两件事——把还活着的进程列出来（这是上一轮真正的原因），
+          # 再清一次场重试卸载。Windows 上"文件被占用"常常是卸载器先跑、
+          # 应用还没退干净造成的，重试一次通常就成了。
           if (Test-Path -LiteralPath $installDir) {
-            # 目录还在就把还活着的相关进程打出来：这种情况基本就是有孤儿没被杀干净。
-            $left = (Get-ChildItem -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object).Count
-            Get-Process -ErrorAction SilentlyContinue |
-              Where-Object { $_.Path -and $_.Path.StartsWith($installDir, [System.StringComparison]::OrdinalIgnoreCase) } |
-              Select-Object Id, ProcessName, Path | Format-Table | Out-String | Write-Host
-            throw "卸载后安装目录仍在（剩余 $left 项）：$installDir"
+            $blockers = Get-AppProcesses $installDir
+            Write-Host "  目录仍在，先列出占着它的进程："
+            if ($blockers.Count -eq 0) {
+              Write-Host "    （没有活着的进程占用——不是句柄问题）"
+            } else {
+              $blockers | Select-Object Id, ProcessName, Path | Format-Table | Out-String | Write-Host
+              foreach ($proc in $blockers) {
+                & taskkill.exe /PID $proc.Id /T /F 2>$null | Out-Null
+              }
+            }
+            Write-Host "  清场后重试卸载一次"
+            Invoke-Checked $uninstaller.FullName @('/S')
+            $retry = (Get-Date).AddSeconds(60)
+            while ((Test-Path -LiteralPath $installDir) -and (Get-Date) -lt $retry) {
+              Start-Sleep -Milliseconds 500
+            }
+          }
+
+          if (Test-Path -LiteralPath $installDir) {
+            # 到这一步还剩东西，就把**具体是哪些**列出来。上一轮只报了一个
+            # "剩余 79 项"的数字，读者根本没法判断是残留占位文件还是真没删掉。
+            $left = @(Get-ChildItem -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue)
+            Write-Host "  卸载后仍在，剩余 $($left.Count) 项，前 15 项："
+            $left | Select-Object -First 15 -ExpandProperty FullName | ForEach-Object { Write-Host "    $_" }
+            $stillRunning = Get-AppProcesses $installDir
+            Write-Host "  相关进程：$((($stillRunning | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ', '))（空 = 无）"
+            throw "卸载后安装目录仍在（剩余 $($left.Count) 项）：$installDir"
+          }
+
+          # 启动失败是在中途记录下来而不是当场抛的——当场抛的话，后面的对照
+          # （未安装的 win-unpacked 能不能起）和诊断 artifact 上传就都跑不到了，
+          # 证据会跟失败一起丢。所以到这里再统一判红。
+          #
+          # 这行是这道闸的意义所在：**装上打不开的包不该发出去**。
+          # 它现在拦得住，正是因为判据换成了"安装目录下有没有活着的进程"
+          # （见上面 Get-AppProcesses 旁那条注释）。
+          # 读的是本步骤自己设的 PowerShell 变量——启动失败时只记录不抛，
+          # 就是为了能走到这里。
+          if ('$startup_failed' -eq '1') {
+            throw '已安装的程序在 40 秒内没活起来——装得上、起不来，这道闸必须拦住发版（完整日志见 ailearn-windows-startup-diag artifact）'
           }
           Write-Host '全新安装 → 启动 → 卸载 全链路通过'
 
