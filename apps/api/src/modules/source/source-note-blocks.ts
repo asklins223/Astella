@@ -17,7 +17,7 @@ function noteBlockContent(block: ParsedBlock): string {
     case "quote":
       return block.content.replace(/^>\s?/gm, "");
     case "list":
-      return block.content.replace(/^\s*(?:[-*+]|\d+[.)])\s+/gm, "");
+      return block.content.replace(/^\s*[-*+]\s+/gm, "");
     case "code": {
       const lines = block.content.split("\n");
       const fence = /^\s*(`{3,}|~{3,})[^`~]*$/.exec(lines[0] ?? "");

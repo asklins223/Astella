@@ -21,7 +21,7 @@ import {
   wrapInHeadingCommand,
   wrapInOrderedListCommand,
 } from "@milkdown/kit/preset/commonmark";
-import { gfm } from "@milkdown/kit/preset/gfm";
+import { gfm, tableSchema } from "@milkdown/kit/preset/gfm";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import { clipboard } from "@milkdown/kit/plugin/clipboard";
 import { $prose, callCommand, insert, replaceAll } from "@milkdown/kit/utils";
@@ -507,6 +507,7 @@ function MilkdownBody({ fragment, initialMarkdown, onChange, disabled, onImagePa
     .use(withNoteDocAttrs(bulletListSchema) as never)
     .use(withNoteDocAttrs(orderedListSchema) as never)
     .use(withNoteDocAttrs(imageSchema) as never)
+    .use(withNoteDocAttrs(tableSchema) as never)
     // 正文与这份文档之间由 ySyncPlugin 双向同步：编辑器打字就是文档的操作，
     // 界面不再经手"整篇正文"。
     .use($prose(() => ySyncPlugin(fragment)))

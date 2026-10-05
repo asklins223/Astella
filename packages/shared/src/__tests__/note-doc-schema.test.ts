@@ -26,6 +26,15 @@ import {
 
 const roundTrip = (blocks: NoteDocBlockSpec[]) => pmNodesToNoteBlocks(noteBlocksToPmNodes(blocks));
 
+test("粗体里的单星号保留为乘号，不拆散外层标记", () => {
+  assert.deepEqual(parseInlineMarkdown("**长 * 宽 * 高** 为什么相乘？"), [
+    { kind: "strong", text: "长 * 宽 * 高" },
+    { kind: "text", text: " 为什么相乘？" },
+  ]);
+  assert.equal(noteBlockRenderedTextV1("paragraph", "**长 * 宽 * 高**"), "长 * 宽 * 高");
+  assert.deepEqual(roundTrip([{ type: "paragraph", content: "**长 * 宽 * 高**" }]), [{ type: "paragraph", content: "**长 * 宽 * 高**" }]);
+});
+
 test("六种块写得进去也投得回来，字符串一个字都不变", () => {
   const blocks: NoteDocBlockSpec[] = [
     { type: "paragraph", content: "一句普通的话" },
@@ -101,8 +110,8 @@ test("证据链的两个属性跟着块走一个来回", () => {
 /**
  * 编辑器会产出、而服务端**从不写**的那些节点。
  *
- * 它们只能手写 JSON 来测：服务端那半的规格里没有 table / html / ordered_list 的
- * 完整形状（真正的形状归 Milkdown）。投影认不出来的后果是"字还在但意思变了"，
+ * 用编辑器 JSON 核对表格、有序列表、分隔线与 HTML 的投影，
+ * 并与服务端的结构转换保持一致。投影认不出来的后果是"字还在但意思变了"，
  * 所以每一条都断言投影出来的**文本形状**，不只是不抛错。
  */
 test("编辑器产出的有序列表、分隔线、表格、html 都投影成既有约定的样子", () => {
@@ -130,8 +139,7 @@ test("编辑器产出的有序列表、分隔线、表格、html 都投影成既
     ] },
   ];
   const [list, rule, table, html, rich] = pmNodesToNoteBlocks(editorNodes as never);
-  // 编号归进 list 时丢掉，与换形状之前一致（`LIST_MARKER` 连 `\d+.` 一起剥）。
-  assert.deepEqual({ type: list!.type, content: list!.content }, { type: "list", content: "第一步\n第二步" });
+  assert.deepEqual({ type: list!.type, content: list!.content }, { type: "list", content: "1. 第一步\n2. 第二步" });
   assert.equal(rule!.content, "---");
   assert.equal(table!.type, "paragraph", "表格在存的约定里就是一个段落");
   assert.equal(table!.content, "| 列甲 | 列乙 |\n| --- | --- |\n| 1 | 2 |");
@@ -315,4 +323,12 @@ test("表格单元里的换行与竖线不会把整张表打回散文", () => {
   // 两列还是两列：单元里的 `|` 转义过，不会被当成列分隔符。第三行才是数据行。
   const dataRow = lines[lines.length - 1]!;
   assert.equal(dataRow.slice(1, -1).split(/(?<!\\)\|/).length, 2, dataRow);
+});
+
+
+test("表格列的居中和右对齐经过结构存储仍保留", () => {
+  const content = "| 名称 | 数量 |\n| :---: | ---: |\n| 项目 | 2 |";
+  assert.deepEqual(roundTrip([{ type: "paragraph", content }]), [{ type: "paragraph", content }]);
+  const nodes = noteBlocksToPmNodes([{ type: "paragraph", content }]);
+  assert.deepEqual(nodes[0]?.content?.[0]?.content?.map(cell => cell.attrs?.alignment), ["center", "right"]);
 });

@@ -3,6 +3,7 @@ import type { CardGenerationCandidateV1, CardGenerationPracticeQuotaV1, CardGene
 import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult } from "../../../app/desktop-client";
 import { isCardGenerationInFlight, isCardGenerationReviewStage, isLandedCandidate } from "./card-generation-status";
+import { isActionableUndecidedCandidate } from "./candidate-review-model";
 
 /**
  * 在途轮询的间隔。
@@ -89,7 +90,7 @@ export function useCardGenerationData() {
       setPracticeQuota(nextQuota);
       setLandedCandidates(isCardGenerationReviewStage(nextRun.status) ? [] : nextCandidates.filter((candidate) => isLandedCandidate(candidate.qualityState)));
       setActiveCandidateId((current) => nextCandidates.some((candidate) => candidate.candidateId === current)
-        ? current : nextCandidates.find((candidate) => candidate.reviewDecision === "undecided")?.candidateId ?? nextCandidates[0]?.candidateId ?? null);
+        ? current : nextCandidates.find(isActionableUndecidedCandidate)?.candidateId ?? nextCandidates[0]?.candidateId ?? null);
       lastStatusRef.current = nextRun.status;
       setFailure(null);
       return nextRun.status;

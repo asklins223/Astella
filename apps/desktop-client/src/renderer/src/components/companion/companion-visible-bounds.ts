@@ -27,6 +27,17 @@ export function companionControlsBounds(role: Rect, viewport: { width: number; h
   return { side, left, right: left + size.width, top: center - size.height / 2, bottom: center + size.height / 2 } as const;
 }
 
+/** Read the rendered hit areas after publishing the current control position. */
+export function companionHudControlBounds(hud: HTMLElement): Rect[] {
+  return [...hud.querySelectorAll<HTMLElement>(".companion-hud__controls, .companion-goal-tab")].flatMap(control => {
+    const box = control.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0 || getComputedStyle(control).visibility === "hidden") return [];
+    // Leave room for bubble tails, focus rings and the paper's settling motion.
+    const gutter = 24;
+    return [{ left: box.left - gutter, right: box.right + gutter, top: box.top - gutter, bottom: box.bottom + gutter }];
+  });
+}
+
 export interface Live2DDrawableBox { x: number; y: number; width: number; height: number }
 
 /** Cubism's part ancestry identifies hair meshes without guessing a face width. */

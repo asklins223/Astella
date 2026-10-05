@@ -68,6 +68,7 @@ export type CreateJobInput = {
 
 export type JobFailureReason =
   | "ai_consent_required"
+  | "ai_data_policy_denied"
   | "unknown";
 
 /**
@@ -88,7 +89,9 @@ export function classifyJobFailureReason(
   lastError: string | null | undefined,
 ): JobFailureReason | null {
   if (!lastError) return null;
-  if (readSafeErrorCode(lastError) === AI_CONSENT_REQUIRED_CODE) {
+  const code = readSafeErrorCode(lastError);
+  if (code === "ai_data_policy_denied") return "ai_data_policy_denied";
+  if (code === AI_CONSENT_REQUIRED_CODE) {
     return "ai_consent_required";
   }
   return "unknown";

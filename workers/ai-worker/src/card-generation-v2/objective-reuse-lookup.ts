@@ -34,7 +34,7 @@
  * 等于让一次复用把新卡挂到一条已退役的目标上。
  */
 import { sql } from "drizzle-orm";
-import type { ObjectiveReuseCandidateV2 } from "@ailearn/shared/objective-reuse-rules-v2";
+import { objectiveReuseClaimHashV2, type ObjectiveReuseCandidateV2 } from "@ailearn/shared/objective-reuse-rules-v2";
 import type { WorkerTransaction } from "../db.ts";
 
 /**
@@ -51,6 +51,7 @@ export async function loadReusableObjectivesForNoteV2(
   const rows = (await tx.execute(sql`
     SELECT lo.objective_id,
            lor.knowledge_form,
+           lor.canonical_answer,
            -- 同一块切两段会封出两个快照 id，所以按**块**去重而不是按快照。
            COALESCE(
              ARRAY(
@@ -102,11 +103,12 @@ export async function loadReusableObjectivesForNoteV2(
           AND loo.note_id = ${input.noteId}
       )
     ORDER BY lo.objective_id
-  `)) as Array<{ objective_id: string; knowledge_form: string; block_ids: string[] | null }>;
+  `)) as Array<{ objective_id: string; knowledge_form: string; canonical_answer: unknown; block_ids: string[] | null }>;
 
   return rows.map((row) => ({
     objectiveId: String(row.objective_id),
     blockIds: (row.block_ids ?? []).map(String),
     knowledgeForm: String(row.knowledge_form),
+    claimHash: objectiveReuseClaimHashV2(row.canonical_answer),
   }));
 }

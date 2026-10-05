@@ -16,7 +16,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decideObjectiveReuseV2, type ObjectiveReuseCandidateV2 } from "../objective-reuse-rules-v2.ts";
+import { decideObjectiveReuseV2, objectiveReuseClaimHashV2, type ObjectiveReuseCandidateV2 } from "../objective-reuse-rules-v2.ts";
 
 const BLOCK_A = "b-1";
 const BLOCK_B = "b-2";
@@ -25,11 +25,13 @@ const existing = (over: Partial<ObjectiveReuseCandidateV2> = {}): ObjectiveReuse
   objectiveId: "11111111-1111-4111-8111-111111111111",
   blockIds: [BLOCK_A],
   knowledgeForm: "fact",
+  claimHash: "claim-a",
   ...over,
 });
 
-test("§4.2 同篇 ＋ 同块 ＋ 同形态 ⇒ 落到既有那一颗上，并交回可复核的判据", () => {
+test("§4.2 同篇 ＋ 同块 ＋ 同形态 ＋ 同主张 ⇒ 落到既有那一颗上，并交回可复核的判据", () => {
   const decided = decideObjectiveReuseV2({
+    candidateClaimHash: "claim-a",
     candidateBlockIds: [BLOCK_A, BLOCK_B],
     knowledgeForm: "fact",
     existing: [existing()],
@@ -46,6 +48,7 @@ test("§4.2 同篇 ＋ 同块 ＋ 同形态 ⇒ 落到既有那一颗上，并�
 
 test("§4.2 无法确定时保留差异：两个都命中 ⇒ 仍然新建，且说的是 ambiguous", () => {
   const decided = decideObjectiveReuseV2({
+    candidateClaimHash: "claim-a",
     candidateBlockIds: [BLOCK_A],
     knowledgeForm: "fact",
     existing: [
@@ -60,6 +63,7 @@ test("§4.2 无法确定时保留差异：两个都命中 ⇒ 仍然新建，且
 
 test("§4.2 不同能力维度分别记：块完全一样但形态不同 ⇒ 不复用", () => {
   const decided = decideObjectiveReuseV2({
+    candidateClaimHash: "claim-a",
     candidateBlockIds: [BLOCK_A],
     // 「记住定义」与「在综合情境中使用」是两条不同的回访需求。
     knowledgeForm: "application_rule",
@@ -72,6 +76,7 @@ test("§4.2 不同能力维度分别记：块完全一样但形态不同 ⇒ 不
 
 test("正对照：没有块锚的既有目标**不被认领**（把「不知道」当成「是同一条」是最容易犯的错）", () => {
   const decided = decideObjectiveReuseV2({
+    candidateClaimHash: "claim-a",
     candidateBlockIds: [BLOCK_A],
     knowledgeForm: "fact",
     // 老数据：没有块锚。
@@ -83,6 +88,7 @@ test("正对照：没有块锚的既有目标**不被认领**（把「不知道�
 
 test("新候选自己没有块锚时也不复用——那是「无法确定」，不是「是新东西」", () => {
   const decided = decideObjectiveReuseV2({
+    candidateClaimHash: "claim-a",
     candidateBlockIds: [],
     knowledgeForm: "fact",
     existing: [existing()],
@@ -94,6 +100,7 @@ test("新候选自己没有块锚时也不复用——那是「无法确定」�
 
 test("真的没有任何既有目标 ⇒ 建新的（首篇笔记那一档）", () => {
   const decided = decideObjectiveReuseV2({
+    candidateClaimHash: "claim-a",
     candidateBlockIds: [BLOCK_A],
     knowledgeForm: "fact",
     existing: [],
@@ -104,10 +111,39 @@ test("真的没有任何既有目标 ⇒ 建新的（首篇笔记那一档）", 
 
 test("块不交集 ⇒ 建新的（同一篇里另一处出处，是确实新增的内容）", () => {
   const decided = decideObjectiveReuseV2({
+    candidateClaimHash: "claim-a",
     candidateBlockIds: [BLOCK_B],
     knowledgeForm: "fact",
     existing: [existing({ blockIds: [BLOCK_A] })],
   });
   assert.equal(decided.outcome, "create_new");
   assert.equal(decided.outcome === "create_new" ? decided.reason : "", "no_match");
+});
+
+
+test("同块同形态的不同知识点不得继承另一知识点的学习记录", () => {
+  const answer = (text: string, unitId = "u1") => ({ kind: "text", unit: { unitId, text } });
+  const decided = decideObjectiveReuseV2({
+    candidateBlockIds: [BLOCK_A], knowledgeForm: "fact",
+    candidateClaimHash: objectiveReuseClaimHashV2(answer("left 之前均小于目标，right 之后均大于等于目标")),
+    existing: [existing({ claimHash: objectiveReuseClaimHashV2(answer("候选区间为 [left,right)，初始 left=0、right=n")) })],
+  });
+  assert.deepEqual(decided, { outcome: "create_new", reason: "unconfirmed_claim" });
+  assert.equal(objectiveReuseClaimHashV2(answer("同一主张", "old")), objectiveReuseClaimHashV2(answer("同一主张", "new")));
+});
+
+test("无法读取答案主张的旧目标不参与复用", () => {
+  for (const claimHash of [undefined, null]) {
+    assert.deepEqual(decideObjectiveReuseV2({
+      candidateBlockIds: [BLOCK_A], knowledgeForm: "fact", candidateClaimHash: "claim-a",
+      existing: [existing({ claimHash })],
+    }), { outcome: "create_new", reason: "unconfirmed_claim" });
+  }
+  assert.equal(objectiveReuseClaimHashV2([]), null);
+});
+
+test("主张比较保留代码缩进和公式边界差异", () => {
+  const answer = (text: string) => ({ kind: "text", unit: { unitId: "u1", text } });
+  assert.notEqual(objectiveReuseClaimHashV2(answer("if x:\n  return x")), objectiveReuseClaimHashV2(answer("if x:\nreturn x")));
+  assert.notEqual(objectiveReuseClaimHashV2(answer("right=n")), objectiveReuseClaimHashV2(answer("right=n-1")));
 });

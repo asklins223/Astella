@@ -85,8 +85,13 @@ export const noteDocSchemaSpec = {
     code_block: { content: "text*", group: "block", code: true, attrs: blockAttrs },
     blockquote: { content: "block+", group: "block", attrs: blockAttrs },
     bullet_list: { content: "list_item+", group: "block", attrs: blockAttrs },
-    ordered_list: { content: "list_item+", group: "block", attrs: blockAttrs },
-    list_item: { content: "paragraph+" },
+    ordered_list: { content: "list_item+", group: "block", attrs: { order: { default: 1 }, ...blockAttrs } },
+    list_item: { content: "paragraph+", attrs: { label: { default: "•" }, listType: { default: "bullet" }, spread: { default: false }, checked: { default: null } } },
+    table: { content: "table_header_row table_row+", group: "block", attrs: blockAttrs },
+    table_header_row: { content: "table_header*" },
+    table_row: { content: "table_cell*" },
+    table_header: { content: "paragraph", isolating: true, attrs: { colspan: { default: 1 }, rowspan: { default: 1 }, colwidth: { default: null }, alignment: { default: "left" } } },
+    table_cell: { content: "paragraph", isolating: true, attrs: { colspan: { default: 1 }, rowspan: { default: 1 }, colwidth: { default: null }, alignment: { default: "left" } } },
     image: { inline: true, group: "inline", attrs: { src: { default: "" }, alt: { default: "" }, ...blockAttrs } },
     hr: { group: "block" },
     // `inline: true` 不是装饰：prosemirror-model 判行内只看 `!(spec.inline || name=="text")`，
@@ -149,7 +154,7 @@ export type NoteDocInlineSegment =
  * 只是让"更长的形状在前"这条读起来和跑起来一致。
  */
 const INLINE_PATTERN =
-  /(`[^`\n]+`)|((?<!\\)\$\$[\s\S]+?(?<!\\)\$\$)|((?<![\\$])\$(?![$\s])(?:\\.|[^$`\\\n])*?(?<![\\\s])\$(?!\$))|(\*\*[^*\n]+\*\*)|(~~[^~\n]+~~)|(\*[^*\n]+\*)|(!\[[^\]\n]*\]\(([^)\s]+)\))|(\[[^\]\n]*\]\([^)\s]+\))/g;
+  /(`[^`\n]+`)|((?<!\\)\$\$[\s\S]+?(?<!\\)\$\$)|((?<![\\$])\$(?![$\s])(?:\\.|[^$`\\\n])*?(?<![\\\s])\$(?!\$))|(\*\*(?:[^*\n]|\*(?!\*))+?\*\*)|(~~[^~\n]+~~)|(\*[^*\n]+\*)|(!\[[^\]\n]*\]\(([^)\s]+)\))|(\[[^\]\n]*\]\([^)\s]+\))/g;
 
 export function parseInlineMarkdown(value: string): NoteDocInlineSegment[] {
   const segments: NoteDocInlineSegment[] = [];
@@ -363,7 +368,12 @@ function tableToMarkdown(node: PmJson): string {
   if (body.length === 0) return "";
   const hasHeader = rows.some((row) => row.type === "table_header_row");
   const widths = cellsOf(rows.find((row) => row.type === "table_header_row") ?? rows[0]!);
-  const separator = `| ${widths.map(() => "---").join(" | ")} |`;
+  const header = rows.find((row) => row.type === "table_header_row") ?? rows[0]!;
+  const headerCells = (header.content ?? []).filter((cell) => CELLS[cell.type]);
+  const separator = `| ${widths.map((_, index) => {
+    const alignment = headerCells[index]?.attrs?.alignment;
+    return alignment === "center" ? ":---:" : alignment === "right" ? "---:" : "---";
+  }).join(" | ")} |`;
   return hasHeader ? [body[0], separator, ...body.slice(1)].join("\n") : [separator, ...body].join("\n");
 }
 
@@ -373,10 +383,8 @@ function tableToMarkdown(node: PmJson): string {
  * 认不出的节点类型**当段落画**而不是丢掉那块：那可能只是对端是更新的一版客户端
  * 新增了一种块，因为一个类型名没认出来就不画人家写的字，是最坏的一种保守。
  *
- * 有序列表归进 `list` 会**丢编号**，`code_block` 的语言标记也会丢：这两条不是退化，
- * 是与换形状之前一致——`note_blocks` 从来存不下它们（`LIST_MARKER` 连 `\d+.` 一起剥）。
- * 现在文档是事实源，所以丢的只是投影那一侧：编辑器里编号与语言仍在，搜索/卡片读到的
- * 正文也仍和以前一样。
+ * 编号列表以带序号的 list 正文投影，避免来源转笔记或恢复版本时变成圆点。
+ * 代码语言标记仍由文档保存，块投影保留代码正文。
  */
 export function pmNodesToNoteBlocks(nodes: readonly PmJson[]): NoteDocBlockSpec[] {
   return nodes.map((node) => {
@@ -394,7 +402,10 @@ export function pmNodesToNoteBlocks(nodes: readonly PmJson[]): NoteDocBlockSpec[
         return {
           type: "list",
           content: (node.content ?? [])
-            .map((item) => (item.content ?? []).map(collectInline).join("\n"))
+            .map((item, index) => {
+              const text = (item.content ?? []).map(collectInline).join("\n");
+              return node.type === "ordered_list" ? `${Number(node.attrs?.order ?? 1) + index}. ${text}` : text;
+            })
             .join(LIST_ITEM_SEPARATOR),
           ...extras,
         };
@@ -447,14 +458,17 @@ export function noteBlocksToPmNodes(blocks: readonly NoteDocBlockSpec[]): PmJson
         return { type: "code_block", attrs, content: inlineContent(block.content, "raw") };
       case "quote":
         return { type: "blockquote", attrs, content: [{ type: "paragraph", content: inlineContent(block.content) }] };
-      case "list":
+      case "list": {
+        const lines = block.content.split(LIST_ITEM_SEPARATOR);
+        const ordered = lines.every(line => /^\s*\d+[.)]\s+/.test(line));
         return {
-          type: "bullet_list",
-          attrs,
-          content: block.content
-            .split(LIST_ITEM_SEPARATOR)
-            .map((line) => ({ type: "list_item", content: [{ type: "paragraph", content: inlineContent(line) }] })),
+          type: ordered ? "ordered_list" : "bullet_list",
+          attrs: ordered ? { ...attrs, order: Number.parseInt(lines[0]!.trim(), 10) } : attrs,
+          content: lines.map((line, index) => ({ type: "list_item",
+            ...(ordered ? { attrs: { label: `${Number.parseInt(lines[0]!.trim(), 10) + index}.`, listType: "ordered", spread: false } } : {}),
+            content: [{ type: "paragraph", content: inlineContent(ordered ? line.replace(/^\s*\d+[.)]\s+/, "") : line) }] })),
         };
+      }
       case "image": {
         // 图片块的 content 就是它的 Markdown（`![说明](地址)`），与公共行内解析器
         // 存的约定一致；地址与说明从 Markdown 里取，因为 PM 的 image 节点是属性不是文本。
@@ -467,8 +481,22 @@ export function noteBlocksToPmNodes(blocks: readonly NoteDocBlockSpec[]): PmJson
           content: [{ type: "image", attrs: { src: parsed.src, alt: parsed.alt } }],
         };
       }
-      default:
+      default: {
+        const table = block.type === "paragraph" ? parseMarkdownTable(block.content) : null;
+        if (table && table.length > 2) {
+          const [header, separators, ...rows] = table;
+          const alignments = (separators ?? []).map(separator => separator.endsWith(":")
+            ? (separator.startsWith(":") ? "center" : "right") : "left");
+          const row = (cells: readonly string[], isHeader: boolean): PmJson => ({
+            type: isHeader ? "table_header_row" : "table_row",
+            content: cells.map((value, index) => ({ type: isHeader ? "table_header" : "table_cell",
+              attrs: { alignment: alignments[index] ?? "left" },
+              content: [{ type: "paragraph", content: inlineContent(value) }] })),
+          });
+          return { type: "table", attrs, content: [row(header ?? [], true), ...rows.map(cells => row(cells, false))] };
+        }
         return { type: "paragraph", attrs, content: inlineContent(block.content) };
+      }
     }
   });
 }

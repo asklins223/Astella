@@ -251,7 +251,8 @@ export async function runCompanionSummarizer(job: JobPayload): Promise<void> {
     // 100 行只是数据库分页大小，不是会话摘要边界。真实边界由上面的回放选择器确定，
     // 实际输入则由 SUMMARIZER_INPUT_CHARS 限定；长会话不再被固定 200 行截断。
     const sourceRows: CompanionHistoryRow[] = [];
-    let beforeSeq = tailStartSeq;
+    // 用户主动“整理近期对话”也应覆盖仍在回放窗口里的短对话；后台压缩才只取裁剪点之前。
+    let beforeSeq = job.payload.includeRecent === true ? undefined : tailStartSeq;
     while (true) {
       const rows = await readCompanionHistoryRows(tx, conversationId, { beforeSeq, limit: 100 });
       if (rows.length === 0) break;

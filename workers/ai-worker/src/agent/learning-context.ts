@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { queryRows, listAgentMethods, type AgentSqlExecutor } from "@ailearn/agent-host";
 import type { AgentScopeV1 } from "@ailearn/shared/agent-contracts";
+import { resolveCompanionPersonaProfile } from "@ailearn/shared/pet-persona-presets";
 import {
   ADOPTABLE_EPISTEMIC_STATUSES,
   ADOPTABLE_PREFERENCE_SCOPES,
@@ -41,7 +42,9 @@ export async function loadAgentLearningContext(tx: AgentSqlExecutor, scope: Agen
       AND budget_tier IN ('resident','active') AND deleted_at IS NULL AND dismissed_at IS NULL AND archived_at IS NULL
       AND (valid_from IS NULL OR valid_from<=now()) AND (valid_until IS NULL OR valid_until>now())
     ORDER BY pinned DESC,importance DESC,updated_at DESC,id LIMIT ${AGENT_PREFERENCE_LIMIT}`);
-  return { persona: persona?.profile ?? null, preferences: adoptAgentPreferences(rows),
+  // 账号没写过人格档案时给系统默认人格，而不是 null：正式学习也由"某个人"来做，
+  // 而不是一个没有性格的通用助手（用户 2026-10-05 的决定）。
+  return { persona: resolveCompanionPersonaProfile(persona?.profile ?? null), preferences: adoptAgentPreferences(rows),
     methods: (await listAgentMethods(tx,scope,true)).map(method => ({ methodId: method.methodId, revision: method.revision,
       title: method.title, appliesWhen: method.appliesWhen })) };
 }

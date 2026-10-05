@@ -143,7 +143,6 @@ import {
   avatarUploadResultV1Schema,
   inviteCreatedV1Schema,
   inviteListResultV1Schema,
-  markdownImportResultV1Schema,
   memberListResultV1Schema,
   NOTE_DOC_BLOCKS_MAX_COUNT,
   noteDocStateResultV1Schema,
@@ -1905,16 +1904,15 @@ export function registerM1DesktopIpc(options: DesktopIpcRegistrationOptions): AI
    * 之前真窗口里它永远落进 `TodayBatchSurface` 的失败分支（见 `desktop-gateway.ts`
    * 里那个 `readTodayBatch` 的注释）。
    *
-   * `timeZone` 收在 `request` 里，**不放在 `meta` 旁边**：它决定服务端算「今天」的时区，
-   * 按 UTC 算会在午夜前后切错一次。
+   * `timeZone` 按 preload/共享接口放在 `meta` 旁边；它决定服务端算「今天」的时区。
    */
   installHandler(DESKTOP_IPC_CHANNELS.todayBatchRead, z.strictObject({
     ...m1InputBase,
-    request: z.strictObject({ timeZone: z.string().min(1).max(80) }),
+    timeZone: z.string().min(1).max(80),
   }), options, async (_event, _window, input) => {
     requireM2Route(contract, "note.library");
     assertEpoch(input.meta, activeWorkspaceEpoch);
-    return gateway.readTodayBatch(input.request.timeZone, input.meta.requestId);
+    return gateway.readTodayBatch(input.timeZone, input.meta.requestId);
   });
 
   installHandler(DESKTOP_IPC_CHANNELS.homeSuggestionAct, z.strictObject({

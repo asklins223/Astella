@@ -25,8 +25,9 @@ const STATE_TO_SEGMENT: Record<ObjectivePersonalStateV3, number | null> = {
   // 精确的那句话由状态 chip 来说，这一段只报位置。
   stable: 2,
   fragile: 2,
-  due_review: 2,
-  scheduled: 2,
+  // 排期既可以来自正式结果，也可以在新卡激活时直接建立；排期本身不证明答对过。
+  due_review: null,
+  scheduled: null,
   // 原文变了 / 收起来了 / 被新卡替代：这条目标上没有正在走的位置。
   outdated: null,
   archived: null,
@@ -45,7 +46,17 @@ const OUTCOME_TO_SEGMENT: Record<string, number | null> = {
   not_assessable: null,
 };
 
-export function progressSegmentForState(state: string): number | null {
+export function progressSegmentForState(state: string, evidence?: {
+  readonly lastCanonicalAt: string | null;
+  readonly practiceTrailCount: number;
+  readonly latestOutcome?: string | null;
+}): number | null {
+  if ((state === "scheduled" || state === "due_review") && evidence) {
+    if (evidence.latestOutcome === "demonstrated") return 2;
+    if (["partial", "needs_repair", "practice_completed"].includes(evidence.latestOutcome ?? "")) return 1;
+    if (evidence.lastCanonicalAt) return 2;
+    return evidence.practiceTrailCount > 0 ? 1 : 0;
+  }
   return Object.hasOwn(STATE_TO_SEGMENT, state) ? STATE_TO_SEGMENT[state as ObjectivePersonalStateV3] : null;
 }
 

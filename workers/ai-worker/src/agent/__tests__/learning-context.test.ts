@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { AgentSqlExecutor } from "@ailearn/agent-host";
+import { getDefaultPersonaPreset } from "@ailearn/shared/pet-persona-presets";
 import { loadAgentLearningContext } from "../learning-context.ts";
 import {
   ADOPTABLE_EPISTEMIC_STATUSES,
@@ -85,7 +86,8 @@ test("读出来的那一行仍要过一遍白名单——守卫接在真实调�
     [row({ epistemic_status: "disputed" }), row({ epistemic_status: "tentative" })],
   ]);
   const context = await loadAgentLearningContext(tx, SCOPE);
-  assert.equal(context.persona, null);
+  // 偏好被丢弃与人格有没有读到是两件事：这一条钉的是偏好白名单，别被默认人格盖住。
+  assert.equal(context.persona?.name, getDefaultPersonaPreset().name);
   assert.equal(context.preferences.length, 1);
   assert.equal(context.preferences[0]?.memoryId, MEMORY_ID);
   assert.equal(context.preferences[0]?.epistemicStatus, "tentative");
@@ -108,11 +110,14 @@ test("查询向数据库要的是正向白名单与最多 4 条", async () => {
   assert.ok(bound.includes(String(AGENT_PREFERENCE_LIMIT)), "上限没有传给数据库");
 });
 
-test("人格是账号级的：读得到就用，读不到就是 null", async () => {
+test("人格是账号级的：读得到就用，读不到就用系统默认人格", async () => {
   const profile = { name: "小伴", speakingStyle: "先讲人话", personalityTags: ["耐心"], examples: [] };
   const present = await loadAgentLearningContext(executor([[{ profile }], []]).tx, SCOPE);
   assert.equal(present.persona?.name, "小伴");
+  // 没有人格行时不是 null，而是系统默认人格（用户 2026-10-05 的决定）：
+  // 正式学习也是"某个人"在做，不是一个没有性格的通用助手。
   const missing = await loadAgentLearningContext(executor([[], []]).tx, SCOPE);
-  assert.equal(missing.persona, null, "没有人格行时应当是 null，而不是空壳");
+  assert.equal(missing.persona?.name, getDefaultPersonaPreset().name);
+  assert.notEqual(missing.persona, null, "默认人格是有人格的，不是空壳");
   assert.deepEqual(missing.preferences, []);
 });

@@ -489,6 +489,13 @@ export const submitDisputeSupplementV2Schema = z.strictObject({
 });
 export type SubmitDisputeSupplementV2Input = z.infer<typeof submitDisputeSupplementV2Schema>;
 
+/** HTTP receipt after saving a supplement; the existing recheck stays closed. */
+export const submitDisputeSupplementResultV2Schema = z.strictObject({
+  version: z.literal(2),
+  disputeId: z.string().uuid(),
+  accepted: z.literal(true),
+});
+
 /**
  * 一次重新检查的落库形状。
  *
@@ -739,7 +746,7 @@ export function assessmentDisputeSurfaceCopyV2(
       };
     case "closed_held":
       return {
-        headline: "这份异议已结束，这一项已设为「暂不安排」。",
+        headline: "这份异议已结束。",
         detail: reasonLine,
         withholdsConclusion: false,
         acceptsSupplement: false,

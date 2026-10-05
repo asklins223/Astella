@@ -157,6 +157,8 @@ const SYSTEM_LEVEL_READS: Record<string, number> = {
   "modules/search/service.ts": 3,
   // `onAuthenticate` 按 `shareScope` + 空间拒连接，那是比"按人可见"更强的要求。
   "modules/note/collaboration.ts": 1,
+  // 受保护的写路径已验权；这里只取旧标题作变更比较，不返回或投影旧标题。
+  "modules/note/document-state.ts": 1,
   // `checkExportSize` 是体积保险丝，刻意取超集（见该处的注释）。
   "modules/export/service.ts": 1,
   // 写入过程中"这篇还在不在"的复查：把它按人筛会把一次并发删除变成对可见性不足的假报错。
@@ -202,6 +204,9 @@ const OBJECTIVE_GUARD_TOKENS = [
  * 只能随着修好而变小。
  */
 const OBJECTIVE_SYSTEM_LEVEL_READS: Record<string, number> = {
+  // 与 search/service 同一索引维护职责；查询出口仍由 searchDocumentsVisibleSql 按查看者过滤。
+  // 仅存当前公开修订，不取答案/判分点；共享笔记标题另外按 shareScope 筛选。
+  "modules/learning-objectives/search-projection.ts": 2,
   // 39d W5-6 刀六：`linkPersonalBindingToObjectiveV2` 里那一发只为**判据快照**取两列——
   // `current_objective_revision_id` 与 `revision`（"当初凭什么说它们是同一条"的那份记录）。
   // 没有题面、没有概念标题，所以不是内容读点。真正的可见性在**上一个函数**

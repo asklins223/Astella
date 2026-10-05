@@ -729,7 +729,11 @@ export function ObjectiveDetailSurface() {
               <details className="objective-brief__progress">
                 <summary><History size={17} aria-hidden="true" /><strong id="learning-ledger-title">学习足迹</strong><span>{practiceTrailLabel}</span></summary><div className="objective-brief__trail-body">
                 <ObjectiveProgressBand
-                  segment={progressSegmentForState(detailState)}
+                  segment={progressSegmentForState(detailState, {
+                    lastCanonicalAt: objective.personal.lastCanonicalAt,
+                    practiceTrailCount: objective.personal.practiceTrailCount,
+                    latestOutcome: previousResult?.outcome,
+                  })}
                   submitted={objective.personal.practiceTrailCount > 0 || previousResult?.outcome === "practice_completed"}
                 />
                 <ul>

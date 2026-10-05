@@ -40,13 +40,23 @@ function book(entries: CompanionDiscoveryEntryV1[], studyVisible: CompanionDisco
 }
 
 describe("发现簿面板", () => {
+  it("收藏的模型原话保留排版，用户字面输入不被解释成格式", () => {
+    const original = entry({ body: "12×13 = **156**。\n\n步骤里保存 `key`。" });
+    render(<DiscoveryPanel {...book([original, entry({ entryId: "22222222-2222-4222-8222-222222222222", author: "user", kind: "user_utterance", body: "请保留 **156** 和 `key` 的字面写法。" })])} />);
+    const model = document.querySelector('[data-author="assistant"]');
+    expect(model?.querySelector("strong:not(header strong)")?.textContent).toBe("156");
+    expect(model?.querySelector("code")?.textContent).toBe("key");
+    expect(document.querySelector('[data-author="user"] p')?.textContent).toBe("请保留 **156** 和 `key` 的字面写法。");
+    expect(original.body).toBe("12×13 = **156**。\n\n步骤里保存 `key`。");
+  });
+
   it("每条都**标清作者与来源**（§7「各自标清作者和来源」）", () => {
     render(<DiscoveryPanel {...book([entry({ author: "assistant", kind: "kept_ai_suggestion", source: "assistant_reply" })])} />);
     // 她整理的建议：作者写「她」，不写成用户自己的话。
     expect(document.querySelector('[data-author="assistant"]')).not.toBeNull();
     expect(screen.getByText("她")).toBeTruthy();
     expect(screen.getByText("她整理的")).toBeTruthy();
-    expect(screen.getByText("一次回答")).toBeTruthy();
+    expect(screen.getByText("一段对话")).toBeTruthy();
   });
 
   it("取消收藏**不叫删除** —— 叫「删除」会让用户以为日记也没了", () => {
@@ -63,9 +73,21 @@ describe("发现簿面板", () => {
     expect(document.body.textContent ?? "").not.toMatch(/示例|比如|为你推荐/);
   });
 
-  it("书房里只露出用户标出来的那几条", () => {
-    render(<DiscoveryPanel {...book([entry({ entryId: "22222222-2222-4222-8222-222222222222", visibility: "study" })], [entry({ entryId: "22222222-2222-4222-8222-222222222222", visibility: "study" })])} />);
-    expect(screen.getByText(/书房里放出的 1 条/)).toBeTruthy();
+  it("入口能去对话和日记，未接通的书房展示不占筛选位置", () => {
+    const onBrowse = vi.fn();
+    render(<DiscoveryPanel {...book([])} onBrowse={onBrowse} />);
+    act(() => screen.getByRole("button", { name: "去对话挑一句" }).click());
+    act(() => screen.getByRole("button", { name: "去日记挑一段" }).click());
+    expect(onBrowse.mock.calls).toEqual([["dialogue"], ["diary"]]);
+    expect(screen.queryByText("书房里放出的")).toBeNull();
+  });
+
+  it("回到原文带回原消息身份，不用收藏正文搜索猜位置", () => {
+    const onSource = vi.fn();
+    const original = entry({ source: "assistant_reply", sourceId: "22222222-2222-4222-8222-222222222222" });
+    render(<DiscoveryPanel {...book([original])} onSource={onSource} />);
+    act(() => screen.getByRole("button", { name: "回到原文" }).click());
+    expect(onSource).toHaveBeenCalledWith(original);
   });
 
   it("没有「成长里程碑」这类需要被维护的指标（§7 明令不自动生产）", () => {
@@ -77,7 +99,7 @@ describe("发现簿面板", () => {
     const onRetry = vi.fn();
     render(<DiscoveryPanel {...book([])} section={{ ok: false, message: "网络断了" }} onRetry={onRetry} />);
     expect(screen.getByRole("alert").textContent).toContain("网络断了");
-    act(() => { screen.getByRole("button", { name: "重试" }).click(); });
+    act(() => { screen.getByRole("button", { name: "重新读取" }).click(); });
     expect(onRetry).toHaveBeenCalled();
   });
 

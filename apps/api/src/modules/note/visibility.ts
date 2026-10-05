@@ -85,17 +85,27 @@ export function searchDocumentsVisibleSql(): string {
         AND ${noteVisibleSqlText("visible_note", "v.viewer")}
     ))
     OR (search_document.object_type = 'objective' AND (
-      -- 目标这一支与 visibleObjectivesCondition 同一句话：判据走「目标 → 卡 → 笔记」，
-      -- 没有带笔记来源的卡 = 没有可追溯的私有来源，不受这条边界约束。
-      NOT EXISTS (SELECT 1 FROM public.learning_cards_v2 objective_card
+      -- 与 visibleObjectivesCondition 一致：无卡的轮次目标仍可能带私有笔记来源。
+      (NOT EXISTS (SELECT 1 FROM public.learning_cards_v2 objective_card
                   WHERE objective_card.objective_id = search_document.object_id
                     AND objective_card.note_version_id IS NOT NULL)
+       AND NOT EXISTS (SELECT 1 FROM public.learning_objective_origins_v2 objective_origin
+                       WHERE objective_origin.objective_id = search_document.object_id
+                         AND objective_origin.origin_kind = 'note'
+                         AND objective_origin.note_id IS NOT NULL))
       OR EXISTS (SELECT 1 FROM public.learning_cards_v2 objective_card
                  JOIN public.note_versions objective_version ON objective_version.id = objective_card.note_version_id
                  JOIN public.notes objective_note ON objective_note.id = objective_version.note_id
                  WHERE objective_card.objective_id = search_document.object_id
                    AND objective_note.deleted_at IS NULL
                    AND ${noteVisibleSqlText("objective_note", "v.viewer")})
+      OR EXISTS (SELECT 1 FROM public.learning_objective_origins_v2 objective_origin
+                 JOIN public.notes origin_note ON origin_note.id = objective_origin.note_id
+                 WHERE objective_origin.objective_id = search_document.object_id
+                   AND objective_origin.origin_kind = 'note'
+                   AND origin_note.workspace_id = search_document.workspace_id
+                   AND origin_note.deleted_at IS NULL
+                   AND ${noteVisibleSqlText("origin_note", "v.viewer")})
     )))`;
 }
 

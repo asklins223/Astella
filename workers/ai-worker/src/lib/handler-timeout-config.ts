@@ -49,7 +49,7 @@ const DEFAULT_TIMEOUTS: Record<string, number> = {
   // 独立笔记速看最多 6 个文本分段；3 组模型调用和一次带租约的持久化。
   note_overview_generate: 100_000,
   note_annotation_explain: 60_000,
-  note_dynamic_artifact_generate: 110_000,
+  note_dynamic_artifact_generate: MAX_ALLOWED_TIMEOUT_MS,
   note_expansion_generate: 100_000,
 };
 
@@ -167,6 +167,11 @@ export function resolveCompanionAgentBudget(jobType = "companion_agent"): Compan
     // 持久化余量给 delta 回放 / TTS 段 / 终态事务，确保它们发生在 abort 之前。
     loopDeadlineMs: Math.max(1, handlerAbortMs - COMPANION_AGENT_PERSISTENCE_MARGIN_MS),
   };
+}
+
+/** Keep structured page generation and its bounded retry inside the live lease. */
+export function resolveNoteDynamicArtifactBudget(): CompanionAgentBudget {
+  return resolveCompanionAgentBudget("note_dynamic_artifact_generate");
 }
 
 /** Exposed for logging / diagnostics. */

@@ -13,6 +13,7 @@ const ENV_KEYS = [
   "WORKER_TIMEOUT_PARSE_SOURCE_MS",
   "WORKER_TIMEOUT_COMPANION_AGENT_MS",
   "WORKER_PROVIDER_TIMEOUT_MS",
+  "WORKER_TIMEOUT_NOTE_DYNAMIC_ARTIFACT_GENERATE_MS",
 ];
 
 const savedEnv: Record<string, string | undefined> = {};
@@ -70,6 +71,17 @@ test("provider budget leaves time for persistence", () => {
     resolveHandlerTimeout("parse_source") - resolveProviderCallTimeout("parse_source"),
     15_000,
   );
+});
+
+test("dynamic artifact generation finishes inside the handler and follows its override", async () => {
+  const { resolveNoteDynamicArtifactBudget, COMPANION_AGENT_PERSISTENCE_MARGIN_MS } = await import("../lib/handler-timeout-config.ts");
+  const budget = resolveNoteDynamicArtifactBudget();
+  assert.equal(budget.handlerAbortMs, resolveHandlerTimeout("note_dynamic_artifact_generate"));
+  assert.equal(budget.loopDeadlineMs, budget.handlerAbortMs - COMPANION_AGENT_PERSISTENCE_MARGIN_MS);
+  assert.ok(budget.loopDeadlineMs < budget.handlerAbortMs);
+  assert.ok(budget.handlerAbortMs < budget.leaseMs);
+  process.env.WORKER_TIMEOUT_NOTE_DYNAMIC_ARTIFACT_GENERATE_MS = "60000";
+  assert.equal(resolveNoteDynamicArtifactBudget().loopDeadlineMs, 45_000);
 });
 
 /**

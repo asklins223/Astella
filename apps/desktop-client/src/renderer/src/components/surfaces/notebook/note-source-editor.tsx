@@ -13,6 +13,7 @@ import type { NoteDocumentPosition } from "./note-source-bridge";
 export type NoteSourceEditorHandle = {
   readonly insertText: (text: string) => void;
   readonly surround: (before: string, after?: string) => void;
+  readonly toggleLinePrefix: (prefix: string, existing: RegExp) => void;
   readonly getPosition: () => NoteDocumentPosition;
   readonly focusPosition: (position: NoteDocumentPosition) => void;
   readonly isComposing: () => boolean;
@@ -137,9 +138,39 @@ export function NoteSourceEditor(props: {
     props.handleRef.current = {
       insertText,
       surround: (before, after = "") => {
+        if (latest.current.disabled) return;
         const range = view.state.selection.main;
         const selected = view.state.sliceDoc(range.from, range.to);
-        insertText(`${before}${selected}${after}`);
+        const wrapped = after.length > 0 && range.from >= before.length
+          && view.state.sliceDoc(range.from - before.length, range.from) === before
+          && view.state.sliceDoc(range.to, range.to + after.length) === after;
+        if (wrapped) {
+          view.dispatch({ changes: [
+            { from: range.from - before.length, to: range.from, insert: "" },
+            { from: range.to, to: range.to + after.length, insert: "" },
+          ], selection: { anchor: range.from - before.length, head: range.to - before.length } });
+        } else {
+          view.dispatch({ changes: { from: range.from, to: range.to, insert: `${before}${selected}${after}` },
+            selection: { anchor: range.from + before.length, head: range.to + before.length } });
+        }
+        view.focus();
+      },
+      toggleLinePrefix: (prefix, existing) => {
+        if (latest.current.disabled) return;
+        const selection = view.state.selection;
+        const range = selection.main;
+        const first = view.state.doc.lineAt(range.from).number;
+        const last = view.state.doc.lineAt(range.to > range.from ? range.to - 1 : range.to).number;
+        const lines = Array.from({ length: last - first + 1 }, (_, offset) => view.state.doc.line(first + offset));
+        const remove = lines.every(line => line.text.trimStart().startsWith(prefix));
+        const changes = ChangeSet.of(lines.map(line => {
+          const indent = line.text.length - line.text.trimStart().length;
+          const content = line.text.slice(indent);
+          const oldPrefix = existing.exec(content)?.[0] ?? "";
+          return { from: line.from + indent, to: line.from + indent + oldPrefix.length, insert: remove ? "" : prefix };
+        }), view.state.doc.length);
+        view.dispatch({ changes, selection: selection.map(changes) });
+        view.focus();
       },
       getPosition: () => noteSourcePosition(view.state.doc.toString(), view.state.selection.main.head),
       focusPosition: (position) => {

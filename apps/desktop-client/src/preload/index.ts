@@ -149,9 +149,6 @@ const desktopApi: AILearnDesktopApiM2 = {
     list: (input) => invoke(DESKTOP_IPC_CHANNELS.memberList, input),
     remove: (input) => invoke(DESKTOP_IPC_CHANNELS.memberRemove, input)
   },
-  markdownImport: {
-    run: (input) => invoke(DESKTOP_IPC_CHANNELS.settingsMarkdownImport, input)
-  },
   capabilities: {
     get: (input) => invoke(DESKTOP_IPC_CHANNELS.capabilitiesGet, input)
   },
@@ -382,6 +379,8 @@ const desktopApi: AILearnDesktopApiM2 = {
     // 编辑器里的图写进对象存储。渲染层不持有令牌也够不到 API 源，只交出字节，
     // 由 main 以 multipart 送出，回传的是可以写进正文的站内地址。
     uploadImage: (input) => invoke(DESKTOP_IPC_CHANNELS.noteImageUpload, input),
+    // 导出成一个装满 .md 的目录（一篇一个）。落盘在 main，渲染层只拿到回执。
+    exportMarkdown: (input) => invoke(DESKTOP_IPC_CHANNELS.notesMarkdownExport, input),
     cardGeneration: {
       start: (input) => invoke(DESKTOP_IPC_CHANNELS.noteCardGenerationStart, input),
       getRun: (input) => invoke(DESKTOP_IPC_CHANNELS.noteCardGenerationGetRun, input),

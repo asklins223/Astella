@@ -14,7 +14,7 @@
  *    过了 schema 却悬空，只有落库后的投影会炸）。
  *  - **不越权决定题型**：`strategy`/`transformationKind` 只放合法占位，整批分配在
  *    `plan-assembly.ts` 覆盖（教训见 card-generation-v2-contracts.ts:404-414）。
- *  - `practiceItem` 不生成：`plan-assembly.ts` 那条"缺省时按答案派生"的规则照旧生效。
+ *  - `practiceItem` 按模型给出的练习保留；缺省时仍仅按有序步骤/配对答案派生。
  */
 import {
   cardGenerateV3CandidateContentSchema,
@@ -31,13 +31,14 @@ import type {
   LearningObjectiveDraftV2,
 } from "@ailearn/shared/card-generation-v2-contracts";
 import type { TaskIntentV1 } from "@ailearn/shared/learning-run-contracts";
+import { practiceItemCrossRefError } from "@ailearn/shared/card-generation-v2-contracts";
 
 type RubricUnitV2 = LearningObjectiveDraftV2["rubric"]["units"][number];
 
 /** 占位策略；真实值由整批分配覆盖。 */
 const PLACEHOLDER_STRATEGY = "recall" as const;
 
-const TRANSFORMATION_BY_STRATEGY: Record<string, CardPresentationDraftV2["transformationKind"]> = {
+export const TRANSFORMATION_BY_STRATEGY: Record<CardPresentationDraftV2["strategy"], CardPresentationDraftV2["transformationKind"]> = {
   recall: "retrieval_definition",
   cloze: "mechanism_reconstruction",
   compare: "structured_comparison",
@@ -129,6 +130,7 @@ export function expandCardGenerateV3ContentV3(input: {
     knowledgeForm: proposal?.knowledgeForm ?? "fact",
     preferredTaskIntents: [...new Set(content.judgingPoints.map((point) => point.facet as TaskIntentV1))].slice(0, 6),
     canonicalAnswer: buildCanonicalAnswer(content),
+    ...(content.practiceItem ? { practiceItem: content.practiceItem } : {}),
     learningSupport: {
       explanation: content.explanation,
       ...(content.boundary ? { boundary: content.boundary } : {}),
@@ -204,6 +206,13 @@ export function expandCardGenerateV3OutputV3(raw: unknown): ExpandOutputV3 {
       continue;
     }
     const content = parsedCandidate.data;
+    if (content.practiceItem) {
+      const crossRefError = practiceItemCrossRefError(content.practiceItem);
+      if (crossRefError) {
+        droppedInvalid.push({ objectiveLocalId: content.objectiveLocalId, reason: `练习引用无效：${crossRefError}` });
+        continue;
+      }
+    }
     const proposal = proposals.get(content.objectiveLocalId);
     if (!proposal) {
       // 提案对不上的引用在**合同那一层**就该被拒（信封不判，这里判）：仍旧剔掉并留因。
@@ -282,6 +291,7 @@ export function contentFromObjectiveDraftV3(input: {
     },
     hints: input.hints,
     estimatedReviewSeconds: presentation.estimatedReviewSeconds,
+    ...(draft.practiceItem ? { practiceItem: draft.practiceItem } : {}),
     evidenceSnapshotIds: draft.evidenceRefIds,
   };
 }

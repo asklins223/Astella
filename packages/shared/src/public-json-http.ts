@@ -169,7 +169,32 @@ export interface PublicJsonResponse {
  * 调用也走这里。装在这一层，一处覆盖两个进程的全部模型 HTTP 调用；
  * 按 host 分键，所以一个上游挂掉不会连坐同进程里其它上游。
  */
-import { sharedAiCircuitBreaker } from "./circuit-breaker.ts";
+import { sharedAiCircuitBreaker, type CircuitBreaker } from "./circuit-breaker.ts";
+
+/** Preserve gateway HTTP failures even when the gateway sends an HTML error page. */
+export function decodePublicJsonResponse(
+  host: string,
+  status: number,
+  statusText: string,
+  raw: string,
+  breaker: Pick<CircuitBreaker, "recordFailure" | "recordSuccess"> = sharedAiCircuitBreaker,
+): PublicJsonResponse {
+  const upstreamFailure = status >= 500 || status === 429;
+  let body: unknown = null;
+  try {
+    body = raw ? JSON.parse(raw) : null;
+  } catch (cause) {
+    if (status >= 200 && status < 300) {
+      breaker.recordFailure(host);
+      throw new Error(`AI endpoint returned invalid JSON (${status})`, { cause });
+    }
+    // Provider adapters classify non-success responses by status. HTML must not
+    // hide a timeout/rate limit or become user-visible model output.
+  }
+  if (upstreamFailure) breaker.recordFailure(host);
+  else breaker.recordSuccess(host);
+  return { status, statusText, body };
+}
 
 export type PublicJsonRequester = (
   url: string,
@@ -253,25 +278,13 @@ export const postJsonToPublicEndpoint: PublicJsonRequester = async (
       response.once("end", () => {
         clearTimeout(totalTimer);
         const raw = Buffer.concat(chunks).toString("utf8");
-        let parsedBody: unknown = null;
         try {
-          parsedBody = raw ? JSON.parse(raw) : null;
+          resolve(decodePublicJsonResponse(
+            parsed.host, response.statusCode ?? 0, response.statusMessage ?? "", raw,
+          ));
         } catch (error) {
-          reject(new Error(`AI endpoint returned invalid JSON (${response.statusCode ?? 0})`, { cause: error }));
-          return;
+          reject(error);
         }
-        // P0-14：5xx/429 计入连续失败并可能打开熔断；其余（2xx/3xx/普通 4xx）记成功。
-        // 判据的默认值在 CircuitBreaker 里，这里不重写第二份。
-        if ((response.statusCode ?? 0) >= 500 || response.statusCode === 429) {
-          sharedAiCircuitBreaker.recordFailure(parsed.host);
-        } else {
-          sharedAiCircuitBreaker.recordSuccess(parsed.host);
-        }
-        resolve({
-          status: response.statusCode ?? 0,
-          statusText: response.statusMessage ?? "",
-          body: parsedBody,
-        });
       });
     });
     // A hung TCP/TLS connect (blocked container egress, required proxy, or a

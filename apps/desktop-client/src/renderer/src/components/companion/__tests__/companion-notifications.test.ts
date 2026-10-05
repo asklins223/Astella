@@ -70,4 +70,38 @@ describe("notice placement", () => {
     const result = placeCompanionNotification({ viewport: { width: 1440, height: 810 }, paper: { width: 326, height: 250 }, companion: { left: 1110, top: 420, width: 160, height: 300 }, obstacles: [{ left: 750, top: 420, width: 344, height: 260 }] });
     expect(result.top + 250).toBeLessThanOrEqual(420);
   });
+  it.each(["left", "right"] as const)("keeps a notice close to the %s seat when the task tab and controls occupy its side", side => {
+    const mirror = (rect: { left: number; top: number; width: number; height: number }) => side === "right" ? rect : { ...rect, left: 1440 - rect.left - rect.width };
+    const companion = mirror({ left: 1202, top: 600, width: 218, height: 198 });
+    const obstacles = [
+      mirror({ left: 1105, top: 572, width: 104, height: 40 }),
+      mirror({ left: 1160, top: 616, width: 38, height: 174 }),
+    ];
+    const result = placeCompanionNotification({ viewport: { width: 1440, height: 810 }, paper: { width: 326, height: 249 }, companion, obstacles });
+    expect(result.side).not.toBe("detached");
+    // The paper stays just above the task tab, rather than jumping to the HUD.
+    expect(result.top + 249).toBeLessThanOrEqual(obstacles[0].top - 12);
+    expect(companion.top - (result.top + 249)).toBeLessThanOrEqual(64);
+    expect(result.left).toBeLessThan(companion.left + companion.width);
+    expect(result.left + 326).toBeGreaterThan(companion.left);
+
+    const badge = placeCompanionNotification({ viewport: { width: 1440, height: 810 }, paper: { width: 84, height: 40 }, companion, obstacles, compact: true });
+    expect(companion.top - (badge.top + 40)).toBeGreaterThanOrEqual(12);
+    expect(companion.top - (badge.top + 40)).toBeLessThanOrEqual(64);
+    expect(badge.side).not.toBe("detached");
+  });
+  it("uses a nearby side when a reply occupies the space above the character", () => {
+    const companion = { left: 700, top: 400, width: 180, height: 200 };
+    const reply = { left: 630, top: 120, width: 320, height: 264 };
+    const result = placeCompanionNotification({ viewport: { width: 1440, height: 810 }, paper: { width: 326, height: 249 }, companion, obstacles: [reply] });
+    expect(result.left + 326).toBeLessThanOrEqual(companion.left - 12);
+    expect(companion.left - (result.left + 326)).toBeLessThanOrEqual(32);
+    expect(result.top).toBeGreaterThanOrEqual(reply.top + reply.height);
+    expect(result.side).toBe("left");
+  });
+  it("keeps an unavailable character's notice accessible at the bottom of the window", () => {
+    const result = placeCompanionNotification({ viewport: { width: 1440, height: 810 }, paper: { width: 326, height: 249 }, companion: null });
+    expect(result.side).toBe("detached");
+    expect(result.top).toBe(539);
+  });
 });

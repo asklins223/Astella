@@ -158,12 +158,35 @@ describe("判定的异议", () => {
   });
 
   it("勾掉那一格时只结束争议，不动排期", async () => {
-    stub(disputeView());
+    stub(disputeView(), {
+      close: vi.fn(async () => ok({ version: 2, disputeId: DISPUTE_ID, status: "closed_held", outcome: "closed", dismissedPendingSchedules: 0 })),
+    });
     renderStrip();
     fireEvent.click(await screen.findByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "结束这份异议" }));
     await waitFor(() => expect(api.close).toHaveBeenCalledTimes(1));
     expect(api.close.mock.calls[0][0].request).toMatchObject({ holdObjective: false });
+    expect(await screen.findByRole("status")).toHaveProperty("textContent", expect.stringContaining("复习安排保持原样"));
+    expect(screen.queryByText(/这一项已设为/)).toBeNull();
+  });
+
+  it("未决异议在页面内补充，支持必填、取消和保存", async () => {
+    stub(disputeView({ status: "recheck_undetermined", recheckOutcome: "undetermined" }));
+    const prompt = vi.spyOn(window, "prompt");
+    renderStrip();
+    fireEvent.click(await screen.findByRole("button", { name: "补充说明" }));
+    fireEvent.click(screen.getByRole("button", { name: "记下补充说明" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", expect.stringContaining("还是空的"));
+    expect(api.supplement).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole("textbox", { name: "补充一句" }), { target: { value: "本轮原文未变，补充说明需要保留。" } });
+    fireEvent.click(screen.getByRole("button", { name: "先不补充" }));
+    expect(screen.queryByRole("textbox", { name: "补充一句" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "补充说明" }));
+    expect(screen.getByRole("textbox", { name: "补充一句" })).toHaveProperty("value", "本轮原文未变，补充说明需要保留。");
+    fireEvent.click(screen.getByRole("button", { name: "记下补充说明" }));
+    await waitFor(() => expect(api.supplement).toHaveBeenCalledTimes(1));
+    expect(api.supplement.mock.calls[0][0].request).toMatchObject({ assessmentId: ASSESSMENT_ID, supplement: "本轮原文未变，补充说明需要保留。" });
+    expect(prompt).not.toHaveBeenCalled();
   });
 
   /**

@@ -32,7 +32,7 @@ import {
   readJobPayloadString,
 } from "@ailearn/shared";
 import { sourceImageUrlFromObjectKey } from "@ailearn/shared/source-image-contracts";
-import { PET_PERSONA_PRESET_VERSION } from "@ailearn/shared/pet-persona-presets";
+import { PET_PERSONA_PRESET_VERSION, resolveCompanionPersonaProfile } from "@ailearn/shared/pet-persona-presets";
 import { toTextArrayLiteral } from "@ailearn/shared/pg-text-array";
 import { logger } from "../lib/logger.ts";
 import { assertJobLease, isJobLeaseActive, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
@@ -228,6 +228,9 @@ async function collectFacts(tx: WorkerTransaction, scope: DayScope): Promise<Dai
  * 取值收窄的口径与对话链路一致（`companion-dialogue.ts:303-338`）：库里可能是
  * null / 数组 / 任意对象，不认识的当"没设置"，绝不原样透进 prompt。
  * 白名单直接用共享契约，不再抄第三份。
+ *
+ * 账号没写过档案时用**系统默认人格**，不是"空白人格"——日记要读得出是谁在写，
+ * 否则第一篇日记就落成通用口吻，而用户以为她一直是这样的。
  */
 async function collectPersona(tx: WorkerTransaction, scope: DayScope): Promise<DiaryPersona> {
   const rows = await tx.execute<{
@@ -243,26 +246,15 @@ async function collectPersona(tx: WorkerTransaction, scope: DayScope): Promise<D
   const profile = typeof row?.profile === "object" && row.profile !== null && !Array.isArray(row.profile)
     ? row.profile as Record<string, unknown>
     : null;
-  if (!profile) {
-    return {
-      name: "伴星",
-      personalityTags: [],
-      speakingStyle: "",
-      examples: [],
-      activeness: null,
-      boundaries: null,
-      revision: Number(row?.revision ?? 0),
-      defaultExpressionVersion: String(PET_PERSONA_PRESET_VERSION),
-    };
-  }
-  const activeness = companionPersonaActivenessV1Schema.safeParse(profile.activeness);
-  const boundaries = companionPersonaBoundariesV1Schema.safeParse(profile.boundaries);
+  const effective = resolveCompanionPersonaProfile(profile);
+  const activeness = companionPersonaActivenessV1Schema.safeParse(effective.activeness);
+  const boundaries = companionPersonaBoundariesV1Schema.safeParse(effective.boundaries);
   return {
-    name: typeof profile.name === "string" ? profile.name : "伴星",
-    personalityTags: Array.isArray(profile.personalityTags) ? profile.personalityTags.map(String) : [],
-    speakingStyle: typeof profile.speakingStyle === "string" ? profile.speakingStyle : "",
-    examples: Array.isArray(profile.examples)
-      ? (profile.examples as Array<{ text?: unknown }>)
+    name: typeof effective.name === "string" ? effective.name : "伴星",
+    personalityTags: Array.isArray(effective.personalityTags) ? effective.personalityTags.map(String) : [],
+    speakingStyle: typeof effective.speakingStyle === "string" ? effective.speakingStyle : "",
+    examples: Array.isArray(effective.examples)
+      ? (effective.examples as Array<{ text?: unknown }>)
           .map((e) => slice(e.text, 200))
           .filter((text) => text.length > 0)
       : [],

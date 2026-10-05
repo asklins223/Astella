@@ -8,6 +8,7 @@ import { scopeOfSession, withWorkspaceTransaction } from "../../db/client.ts";
 import { companionPetProfileChangedTotal } from "../../lib/metrics.ts";
 import {
   activatePetProfilePendingRevision,
+  getDefaultPersonaPreset,
   getPetProfileState,
   getPresetById,
   listPetProfileVersions,
@@ -55,9 +56,10 @@ export async function petProfileRoutes(app: FastifyInstance) {
       const scope = scopeOfSession(req.session);
       const state = await withWorkspaceTransaction(scope, (tx) => getPetProfileState(tx, scope));
       const profile = state.profile;
-      const preset: PetPersonaPreset | null = profile?.presetId
-        ? getPresetById(profile.presetId)
-        : null;
+      // 「正在生效的是哪套预设」永远有答案：选了哪套就是哪套，没选就是系统默认人格。
+      // 此前这里是 null，于是人格页在没有档案时既认不出当前预设，也把表达分量与
+      // 边界三颗开关全部 disable 掉——用户看到的是「还没配置」，而不是「默认是谁」。
+      const preset: PetPersonaPreset = getPresetById(profile?.presetId) ?? getDefaultPersonaPreset();
       return reply.header("Cache-Control", "no-store").send({
         version: 1,
         profile,

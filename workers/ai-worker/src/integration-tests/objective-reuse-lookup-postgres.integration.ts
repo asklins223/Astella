@@ -21,6 +21,7 @@
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
+import { objectiveReuseClaimHashV2 } from "@ailearn/shared/objective-reuse-rules-v2";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 
@@ -118,7 +119,7 @@ async function seedObjective(input: {
        learning_support, scoring_rubric, relations, evidence_bindings,
        semantic_target_fingerprint, target_revision_hash, private_payload_hash, hints)
     VALUES (${revisionId}, ${WORKSPACE_ID}, ${objectiveId}, 1, ${input.form},
-            '一句话目标', '一句话摘要', '{}'::text[], '[]'::jsonb,
+            '一句话目标', '一句话摘要', '{}'::text[], ${fixtureSql.json({ kind: "text", unit: { unitId: "fixture", text: "一句话目标" } })},
             '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, ${fixtureSql.json(bindingsValue)},
             ${fingerprint}, ${zeroHash}, ${zeroHash}, '[]'::jsonb)`;
   // origin 的 evidence_snapshot_ids **故意留空**——照生产的样子（见头注），
@@ -200,13 +201,19 @@ test("W7-5 刀二：读出来的候选直接喂判据，同块同形态那一条
     });
     // BLOCK_B 上只有一颗 fact 目标 ⇒ 应当唯一命中。
     const decided = decideObjectiveReuseV2({
+      candidateClaimHash: objectiveReuseClaimHashV2({ kind: "text", unit: { unitId: "new", text: "一句话目标" } }),
       candidateBlockIds: [BLOCK_B],
       knowledgeForm: "fact",
       existing: candidates,
     });
     assert.equal(decided.outcome, "reuse");
+    assert.deepEqual(decideObjectiveReuseV2({
+      candidateBlockIds: [BLOCK_B], knowledgeForm: "fact", existing: candidates,
+      candidateClaimHash: objectiveReuseClaimHashV2({ kind: "text", unit: { unitId: "new", text: "另一知识点" } }),
+    }), { outcome: "create_new", reason: "unconfirmed_claim" });
     // BLOCK_A 上有**两颗** fact（另一颗 archived 被排除了，所以只剩一颗）⇒ 唯一命中。
     const decidedA = decideObjectiveReuseV2({
+      candidateClaimHash: objectiveReuseClaimHashV2({ kind: "text", unit: { unitId: "new", text: "一句话目标" } }),
       candidateBlockIds: [BLOCK_A],
       knowledgeForm: "fact",
       existing: candidates,
@@ -214,6 +221,7 @@ test("W7-5 刀二：读出来的候选直接喂判据，同块同形态那一条
     assert.equal(decidedA.outcome, "reuse", "归档那颗被排除后，BLOCK_A 上只剩一颗 fact");
     // 形态不同 ⇒ 判据自己挡掉（那是判据那一层的事，这里只确认输入够用）。
     const decidedOtherForm = decideObjectiveReuseV2({
+      candidateClaimHash: objectiveReuseClaimHashV2({ kind: "text", unit: { unitId: "new", text: "一句话目标" } }),
       candidateBlockIds: [BLOCK_B],
       knowledgeForm: "procedure",
       existing: candidates,

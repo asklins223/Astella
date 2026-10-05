@@ -174,7 +174,7 @@
 .hud-surface .cc-overview__memory-link { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 17px 0; border: 0; border-top: 1px solid var(--cc-line); background: transparent; text-align: left; }
 .hud-surface .cc-overview__memory-link small { display: block; margin-top: 4px; color: var(--cc-muted); font-size: 11px; }
 
-/* Conversation keeps the input at hand while the history owns its scroll. */
+/* The dialogue archive gives its reading space to history, with search kept above. */
 .hud-surface .cc-page--dialogue { overflow: hidden; padding-bottom: 18px; }
 .hud-surface .cc-dialogue { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .hud-surface .cc-dialogue__tools { display: flex; align-items: center; gap: 12px; flex: none; margin-bottom: 14px; }
@@ -185,27 +185,15 @@
 .hud-surface .cc-thread__day::before, .hud-surface .cc-thread__day::after { content: ""; flex: 1; border-top: 1px solid var(--cc-line); }
 .hud-surface .cc-thread article { padding: 5px 0 20px; margin-bottom: 20px; border-bottom: 1px solid var(--cc-line); overflow-wrap: anywhere; }
 .hud-surface .cc-thread article[data-role="user"] { padding: 12px 16px; margin-left: 32px; border: 0; border-radius: 8px 8px 2px 8px; background: #edeee1; }
-.hud-surface .cc-thread article > header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 12px; }
+.hud-surface .cc-thread article > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 18px; margin-bottom: 10px; font-size: 12px; }
+.hud-surface .cc-thread__meta { display: flex; align-items: center; gap: 8px; flex: none; }
+.hud-surface .cc-thread__meta .discovery-keep__bookmark { margin-block: -5px; }
 .hud-surface .cc-thread header time { color: var(--cc-muted); font-size: 10px; }
 .hud-surface .cc-thread article > small { display: block; color: #9d715b; font-size: 11px; }
 .hud-surface .cc-prose { font-size: 14px; line-height: 1.9; }
 .hud-surface .cc-prose p + p { margin-top: 10px; }
 .hud-surface .cc-prose :where(ul, ol) { padding-left: 20px; }
 .hud-surface .cc-prose pre { max-width: 100%; overflow-x: auto; background: #eee9dc; padding: 12px; border-radius: 17px; }
-.hud-surface .cc-thread__waiting { font-size: 12px; color: var(--cc-muted); }
-/* 对话输入的聚焦提示落在**纸壳**上，不落在输入框上。输入框本身是无边框、
-   无圆角、通栏的裸 textarea，任何画在它身上的环都会是一个悬在圆角奶油壳里的
-   直角框——正是"点一下就出现一个强调的方框"。壳自己换一圈更暖的边，指针和键盘
-   都读得到，形状也跟纸面一致（DESIGN.md：提示跟随纸签外壳）。 */
-.hud-surface .cc-composer { flex: none; padding: 13px 15px 12px; border: 1px solid #c8cbb6; border-radius: 24px; background: #fffcee; box-shadow: 0 -6px 20px #faf5e9; transition: border-color 160ms ease, box-shadow 160ms ease; }
-.hud-surface .cc-composer:focus-within { border-color: #4d9c80; box-shadow: 0 -6px 20px #faf5e9, 0 0 0 3px #4d9c8038; }
-.hud-surface .cc-composer textarea { display: block; width: 100%; min-height: 48px; max-height: 140px; padding: 0; resize: vertical; border: 0; outline: 0; background: transparent; font-size: 14px; line-height: 1.7; }
-/* 壳已经画了聚焦态，字段就不再补一层（这条要压得住本文件第 59 行的 `.cc-book` 通用环）。 */
-.hud-surface .cc-composer :is(input, textarea):focus-visible { outline: 0; }
-.hud-surface .cc-composer > div { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 9px; }
-.hud-surface .cc-composer > div > span { margin-right: auto; color: #a39b8a; font-size: 10px; }
-.hud-surface .cc-composer__reference { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 10px; color: var(--cc-muted); font-size: 11px; }
-.hud-surface .cc-composer__error { padding-top: 8px; color: #9f4c35; font-size: 12px; }
 
 /* Memories are little keepsakes, opened beside their collection. */
 .hud-surface .cc-page--memory { display: flex; flex-direction: column; gap: 14px; overflow: hidden; }
@@ -284,7 +272,7 @@
 .hud-surface .cc-diary-sheet h3 { margin: 8px 0; font: 600 21px/1.5 var(--cc-serif); }
 .hud-surface .cc-diary-sheet header small { color: #a0947d; font-size: 10px; }
 .hud-surface .cc-diary-prose { margin: 24px 0; font: 400 16px/2 var(--cc-serif); }
-.hud-surface .cc-diary-prose > p { margin-bottom: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.hud-surface .cc-diary-paragraph > p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .hud-surface .cc-diary-reason { margin: 24px 0; padding: 13px 15px; border-left: 2px solid #c0c9a7; background: #f1f1e5; color: var(--cc-muted); font-size: 12px; }
 .hud-surface .cc-diary-sheet footer { padding-top: 10px; }
 .hud-surface .cc-diary-hidden { display: flex; justify-content: space-between; padding: 10px 13px; margin-bottom: 15px; background: #e7eadb; color: var(--cc-muted); font-size: 12px; }
@@ -298,7 +286,9 @@
 .hud-surface .cc-discovery-list li { min-width: 0; }
 .hud-surface .cc-discovery-entry { height: 100%; padding: 22px; border: 2px solid #f0dfc4; border-radius: 25px 30px 24px 28px; background: #fff5e2; box-shadow: 0 4px 0 #eee2c5; }
 .hud-surface .cc-discovery-entry header { display: flex; gap: 8px; align-items: center; }
-.hud-surface .cc-discovery-entry > p { margin: 13px 0; white-space: pre-wrap; font: 550 14px/1.9 var(--cc-serif); overflow-wrap: anywhere; }
+.hud-surface .cc-discovery-entry > p,
+.hud-surface .cc-discovery-body { margin: 13px 0; font: 550 14px/1.9 var(--cc-serif); overflow-wrap: anywhere; }
+.hud-surface .cc-discovery-entry > p { white-space: pre-wrap; }
 .hud-surface .cc-discovery-entry blockquote { padding: 12px 15px; border-left: 2px solid #a9b791; background: #eeefe2; font-size: 13px; white-space: pre-wrap; }
 .hud-surface .cc-discovery-entry footer { display: flex; align-items: center; gap: 16px; margin-top: 15px; }
 .hud-surface .cc-discovery-entry footer small { margin-right: auto; color: var(--cc-muted); font-size: 10px; }
@@ -351,6 +341,24 @@
 .hud-surface .cc-switch i { display: block; height: 20px; width: 20px; border-radius: 50%; background: #fffcee; box-shadow: 0 1px 3px #0002; transform: translateX(0); transition: transform 260ms cubic-bezier(.2, .9, .25, 1.18); }
 .hud-surface .cc-switch[data-on="true"] { background: #7fc59a; }
 .hud-surface .cc-switch[data-on="true"] i { transform: translateX(16px); }
+/* 「谁写的」小标：她能自己改了，所以屏上要看得见。 */
+.hud-surface .cc-origin { display: inline-block; margin-left: 7px; padding: 2px 7px; border-radius: 9px; font-size: 9px; font-weight: 500; letter-spacing: .02em; vertical-align: 2px; }
+.hud-surface .cc-origin[data-origin="user"] { background: #e3ecf5; color: #4d6a86; }
+.hud-surface .cc-origin[data-origin="assistant"] { background: #f0e6f6; color: #75588a; }
+.hud-surface .cc-origin-line { display: flex; align-items: center; }
+.hud-surface .cc-origin-line .cc-origin { margin-left: 0; }
+
+/* 换人格之前的那一问：就地摊在卡片下面，不弹窗——这一页是纸面，不是网页。 */
+.hud-surface .cc-switch-sheet { margin-top: 16px; padding: 20px 22px; border: 2px solid #9dd2a8; border-radius: 22px; background: #eaf4e0; }
+.hud-surface .cc-switch-sheet h4 { font-size: 14px; }
+.hud-surface .cc-switch-sheet__lead { margin: 9px 0 4px; font-size: 12px; line-height: 1.8; }
+.hud-surface .cc-switch-list--pick { margin: 6px 0 0; padding: 0; list-style: none; }
+.hud-surface .cc-switch-list--pick > li { border-bottom: 1px solid #cfe0c1; }
+.hud-surface .cc-switch-list--pick > li:last-child { border-bottom: 0; }
+.hud-surface .cc-switch-list--pick label { display: flex; align-items: flex-start; gap: 11px; padding: 11px 0; cursor: pointer; }
+.hud-surface .cc-switch-list--pick input { margin: 3px 0 0; flex: none; accent-color: #5f9a6d; }
+.hud-surface .cc-switch-list--pick input:checked + span strong { text-decoration: line-through; opacity: .65; }
+.hud-surface .cc-switch-sheet__actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .hud-surface .cc-persona-pending { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 19px; border-radius: 22px; border: 2px solid #f2dfa9; background: #fff0c9; }
 .hud-surface .cc-persona-pending small { display: block; margin: 6px 0; color: var(--cc-muted); font-size: 10px; }
 .hud-surface .cc-persona-pending p { font-size: 12px; }
@@ -412,7 +420,6 @@
   .hud-surface .cc-map__workspace { grid-template-columns: minmax(0, 1fr); min-height: 490px; }
   .hud-surface .cc-map__index { max-height: 200px; }
   .hud-surface .cc-diary-sheet { padding: 22px; }
-  .hud-surface .cc-composer > div > span { display: none; }
 }
 @container companion-reading (max-width: 420px) {
   .hud-surface .cc-house-header { padding: 14px 16px 10px; min-height: 68px; gap: 9px; }
@@ -450,10 +457,23 @@
 .hud-surface .cc-book summary::-webkit-details-marker { display: none; }
 .hud-surface .cc-book summary::before { content: ""; width: 8px; height: 8px; flex: none; border-right: 2px solid #7aac83; border-bottom: 2px solid #7aac83; transform: rotate(-45deg); transition: transform 220ms ease; }
 .hud-surface .cc-book details[open] > summary::before { transform: rotate(45deg); }
-.hud-surface .discovery-keep { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; padding: 10px 14px; border-radius: 18px; background: #f5eccf; color: #99845b; font-size: 11px; }
-.hud-surface .discovery-keep--kept { background: #e7f0d4; color: #6d8b60; }
-.hud-surface .discovery-keep__notice { width: 100%; color: #799168; }
-.hud-surface .discovery-keep__error { width: 100%; color: #b47855; }
+.hud-surface .discovery-keep__bookmark { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #98a58e; box-shadow: none; cursor: pointer; transition: color 120ms ease, background-color 120ms ease; }
+.hud-surface .discovery-keep__bookmark:hover:not([aria-disabled="true"]), .hud-surface .discovery-keep__bookmark:focus-visible { background: #e8efd8; color: #4b7861; }
+.hud-surface .discovery-keep__bookmark[aria-pressed="true"] { color: #34876c; }
+.hud-surface .discovery-keep__bookmark[data-failed="true"] { color: #a05d3e; background: #fff0e3; }
+.hud-surface .discovery-keep__bookmark[aria-disabled="true"] { opacity: .45; cursor: wait; }
+.hud-surface .discovery-keep__notice { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.hud-surface .discovery-keep__error { display: flex; align-items: flex-start; gap: 8px; width: 100%; margin-top: 10px; padding: 10px 12px; border: 1px solid #e8c1a8; border-radius: 11px; background: #fff0e3; color: #955638; }
+.hud-surface .discovery-keep__error > svg { flex: none; margin-top: 3px; }
+.hud-surface .discovery-keep__error strong { font-size: 12px; font-weight: 700; }
+.hud-surface .discovery-keep__error p { margin: 4px 0 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.hud-surface .cc-diary-paragraph { position: relative; margin-block: 22px; padding-right: 32px; scroll-margin-block: 24px; }
+.hud-surface .cc-diary-paragraph > .discovery-keep__bookmark { position: absolute; right: 0; top: 2px; }
+.hud-surface .cc-diary-paragraph > p { margin: 0; }
+.hud-surface .cc-book .cc-diary-paragraph:focus { outline: none; }
+.hud-surface .cc-diary-source-notice { padding: 10px 12px; border-radius: 12px; background: #fff0de; color: #896141; font-size: 12px; line-height: 1.7; }
+.hud-surface .cc-discovery-add { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; padding-bottom: 18px; border-bottom: 1px solid var(--cc-line); color: var(--cc-muted); font-size: 12px; }
+.hud-surface .cc-discovery-entry footer { flex-wrap: wrap; }
 .hud-surface .cc-book[data-motion="off"] :where(button, i, summary::before) { transition: none; }
 @media (prefers-reduced-motion: reduce) { .hud-surface .cc-book :where(button, i, summary::before) { transition: none; } }
 

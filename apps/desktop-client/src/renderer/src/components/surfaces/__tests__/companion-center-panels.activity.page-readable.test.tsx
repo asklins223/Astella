@@ -171,7 +171,7 @@ describe("伴星中心 · 动态：三段各说各的，折叠里的不算露出
     const view = publishedView()!;
     expect(view.pageId).toBe("companion");
     expect(view.title).toBe("伴星中心");
-    const cards = [...[document.querySelector(".cc-learning-continuation .cc-state strong"), document.querySelector(".cc-timeline .cc-state strong"), document.querySelector(".cc-journey > p:last-child")].filter((node): node is Element => node !== null)].map((node) => node.textContent);
+    const cards = [...[document.querySelector(".cc-learning-continuation .cc-state strong"), document.querySelector(".cc-timeline .cc-state strong"), document.querySelector(".cc-journey > div > p")].filter((node): node is Element => node !== null)].map((node) => node.textContent);
     expect(cards).toHaveLength(3);
     expect(view.items?.map((entry) => entry.label)).toEqual(cards);
     expect(view.items?.map((entry) => entry.ordinal)).toEqual([1, 2, 3]);

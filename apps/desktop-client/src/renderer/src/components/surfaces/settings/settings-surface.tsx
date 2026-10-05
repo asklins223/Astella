@@ -393,7 +393,7 @@ export function SettingsSurface() {
   const [ownerBusy, setOwnerBusy] = useState<string | null>(null);
   const [removeCandidate, setRemoveCandidate] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [importBusy, setImportBusy] = useState(false);
+  const [markdownExporting, setMarkdownExporting] = useState(false);
   const [drift, setDrift] = useState<SearchDriftResultV1 | null>(null);
   const [reindexResult, setReindexResult] = useState<SearchReindexResultV1 | null>(null);
   /**
@@ -657,6 +657,35 @@ export function SettingsSurface() {
       setFailureNotice(gatewayErrorMessage(error));
     } finally {
       setAiSaving(null);
+    }
+  };
+
+  /**
+   * 笔记导出为 Markdown 目录。落盘由主进程做，读者在系统对话框里选文件夹；
+   * 取消不算失败，回执里 `canceled` 与计数是分开的几件事。
+   *
+   * 失败的那几篇**要照实报数**：回执恒满足 `exported + failed === total`，
+   * 只说「导出了 N 篇」会让人以为整个空间都存下来了。
+   */
+  const exportNotesMarkdown = async () => {
+    if (markdownExporting) return;
+    setMarkdownExporting(true);
+    setNotice(null);
+    setFailureNotice(null);
+    try {
+      const response = await window.ailearn.note.exportMarkdown({ meta: createRequestMeta(epochRef.current) });
+      const result = unwrapGatewayResult(response);
+      if (result.canceled) {
+        setNotice("已取消导出，没有写入任何文件。");
+        return;
+      }
+      setNotice(result.failed > 0
+        ? `已导出 ${result.exported} 篇到 ${result.directory}，${result.failed} 篇没写成（这一篇取不到或写不进去，可以再导一次）。`
+        : `已导出 ${result.exported} 篇到 ${result.directory}。`);
+    } catch (error) {
+      setFailureNotice(gatewayErrorMessage(error));
+    } finally {
+      setMarkdownExporting(false);
     }
   };
 
@@ -1023,34 +1052,6 @@ export function SettingsSurface() {
       setFailureNotice(gatewayErrorMessage(error));
     } finally {
       setProfileBusy(null);
-    }
-  };
-
-  /** Markdown 批量导入：文件名（去扩展名）作标题，正文是 UTF-8 文本。 */
-  const importMarkdownFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0 || importBusy) return;
-    setImportBusy(true);
-    setNotice(null);
-    setFailureNotice(null);
-    try {
-      const items = await Promise.all(Array.from(files).slice(0, 100).map(async (file) => ({
-        title: file.name.replace(/\.(md|markdown|txt)$/i, "").slice(0, 200),
-        content: await file.text(),
-      })));
-      const response = await window.ailearn.markdownImport.run({
-        meta: createRequestMeta(epochRef.current),
-        items,
-        importId: crypto.randomUUID(),
-      });
-      const result = unwrapGatewayResult(response);
-      setNotice(result.failed > 0
-        ? `已导入 ${result.imported} 篇，${result.failed} 条失败；失败条目可在重试时一起再导。`
-        : `已导入 ${result.imported} 篇笔记。`);
-      setInventoryEpoch((value) => value + 1);
-    } catch (error) {
-      setFailureNotice(gatewayErrorMessage(error));
-    } finally {
-      setImportBusy(false);
     }
   };
 
@@ -1887,9 +1888,9 @@ export function SettingsSurface() {
           <SettingsExportGroup
             currentRole={currentRole}
             exporting={exporting}
-            importBusy={importBusy}
+            markdownExporting={markdownExporting}
             onExport={exportWorkspace}
-            onImport={importMarkdownFiles}
+            onExportMarkdown={exportNotesMarkdown}
             onImported={invoke}
             onCloseSurface={closeSurface}
           />

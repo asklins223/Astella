@@ -22,6 +22,7 @@ import {
   COMPANION_AGENT_MAX_MODEL_CALLS,
   COMPANION_AGENT_MAX_TOOL_CALLS_PER_STEP,
   COMPANION_AGENT_MAX_STEPS,
+  COMPANION_AGENT_TOOL_LABELS,
   allowedMainRouteV2Schema,
   getCompanionAgentTool,
   resolveAllCompanionAgentTools,
@@ -1425,7 +1426,9 @@ export async function runCompanionAgentLoop(args: {
         if (parsedRoute.success) {
           pushRichBlock({
             type: "nav",
-            label: (execution.routeLabel ?? definition.description).slice(0, 80),
+            // 兜底用注册表里的展示名（「正在带你去那个页面」），不是工具描述：
+            // 这一块会渲染成「可以接着看这里」那张纸签，描述是写给模型的用法说明。
+            label: (execution.routeLabel ?? COMPANION_AGENT_TOOL_LABELS[definition.name] ?? definition.description).slice(0, 80),
             route: parsedRoute.data,
           });
         } else {

@@ -169,6 +169,11 @@ export class NoteDynamicArtifactOutputError extends Error {
   readonly code = "NOTE_DYNAMIC_ARTIFACT_OUTPUT_INVALID" as const;
 }
 
+/** 生成内核已用完本次调用和时长预算，队列不能再重置预算自动跑整轮。 */
+export class NoteDynamicArtifactAttemptExhaustedError extends Error {
+  readonly code = "NOTE_DYNAMIC_ARTIFACT_ATTEMPT_EXHAUSTED" as const;
+}
+
 /** A note expansion draft failed a deterministic evidence or output check. */
 export class NoteExpansionOutputError extends Error {
   readonly code = "NOTE_EXPANSION_OUTPUT_INVALID" as const;
@@ -202,6 +207,7 @@ export function isNonRetryableError(error: unknown): boolean {
   if (error instanceof NoteOverviewOutputError) return true;
   if (error instanceof NoteAnnotationOutputError) return true;
   if (error instanceof NoteDynamicArtifactOutputError) return true;
+  if (error instanceof NoteDynamicArtifactAttemptExhaustedError) return true;
   if (error instanceof NoteExpansionOutputError) return true;
 
   // 2026-08-12+（15a 根因修复）：AI 同意/协议缺失（sendToExternal=false、

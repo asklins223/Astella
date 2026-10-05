@@ -57,7 +57,6 @@ async function launchChromium() {
 
 /** 每个字段都带上真实页面上的外壳，量到的才是读者眼睛里的那一圈。 */
 const FIELDS = [
-  { id: "cc-composer", label: "伴星中心·对话输入", html: `<div class="cc-book"><div class="cc-house-main"><div class="cc-paper"><div class="cc-composer"><textarea placeholder="想说点什么？"></textarea></div></div></div></div>`, note: "textarea 无边框无圆角，靠 .cc-composer 的纸壳" },
   { id: "cc-form", label: "伴星中心·表单输入", html: `<div class="cc-book"><div class="cc-form"><label>标题<input type="text" placeholder="标题"></label></div></div>` },
   { id: "cc-form-area", label: "伴星中心·表单长文", html: `<div class="cc-book"><div class="cc-form"><textarea placeholder="说明"></textarea></div></div>` },
   { id: "cc-search", label: "伴星中心·搜索字段", html: `<div class="cc-book"><div class="cc-search"><input type="search" placeholder="搜索"></div></div>`, note: "已有 :focus-within 纸壳" },

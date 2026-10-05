@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { companionFloatingPlacement } from "./companion-interaction-placement";
 import { DIRECTORY_RAIL_MODE_EVENT, DIRECTORY_RAIL_STATE_EVENT } from "../DirectoryRail";
-import { companionControlsBounds, companionLayoutBounds } from "./companion-visible-bounds";
+import { companionControlsBounds, companionHudControlBounds, companionLayoutBounds } from "./companion-visible-bounds";
 
 export function useCompanionFloatingPlacement(
   anchorRef: RefObject<HTMLDivElement | null>,
@@ -84,6 +84,7 @@ export function useCompanionFloatingPlacement(
         : output && textLength < 80 ? 300 : 340);
       const options = {
         role,
+        controls: hud ? companionHudControlBounds(hud) : [],
         viewport,
         headWidth: preferredWidth,
         hasPapers: Boolean(floating.querySelector(".companion-hud__papers")?.childElementCount),
@@ -117,6 +118,7 @@ export function useCompanionFloatingPlacement(
     const resize = new ResizeObserver(schedule);
     const anchor = presence.querySelector<HTMLElement>(".window-live2d") ?? presence.querySelector<HTMLElement>(".companion-visual-shell");
     if (anchor) resize.observe(anchor);
+    for (const control of presence.querySelectorAll(".companion-hud__controls, .companion-goal-tab")) resize.observe(control);
     resize.observe(presence);
     resize.observe(head);
     const mutation = new MutationObserver(schedule);

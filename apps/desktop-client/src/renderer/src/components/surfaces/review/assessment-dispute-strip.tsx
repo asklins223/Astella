@@ -90,6 +90,8 @@ export function AssessmentDisputeStrip({ assessmentId, workspaceEpoch, onWorkspa
   const [composing, setComposing] = useState(false);
   const [kind, setKind] = useState<AssessmentDisputeKindV2>("explanation_faulty");
   const [statement, setStatement] = useState("");
+  const [supplementing, setSupplementing] = useState(false);
+  const [supplement, setSupplement] = useState("");
   const [holdObjective, setHoldObjective] = useState(true);
   const epochRef = useRef(workspaceEpoch);
   epochRef.current = workspaceEpoch;
@@ -190,6 +192,8 @@ export function AssessmentDisputeStrip({ assessmentId, workspaceEpoch, onWorkspa
       if (response.workspaceEpoch) onWorkspaceEpoch?.(response.workspaceEpoch);
       unwrapGatewayResult(response);
       setNotice("补充说明已记下；已落库的复核结论不会被重开。");
+      setSupplementing(false);
+      setSupplement("");
       await reload();
     } catch (error) {
       setFailure(gatewayErrorMessage(error));
@@ -329,10 +333,7 @@ export function AssessmentDisputeStrip({ assessmentId, workspaceEpoch, onWorkspa
             type="button"
             className="button"
             disabled={busy !== null}
-            onClick={() => {
-              const text = window.prompt("补充一句（不会重开已经落库的复核）");
-              if (text !== null) void submitSupplement(text);
-            }}
+            onClick={() => { setSupplementing(true); setFailure(null); }}
           >
             补充说明
           </button>
@@ -356,6 +357,21 @@ export function AssessmentDisputeStrip({ assessmentId, workspaceEpoch, onWorkspa
           <p className="assessment-dispute-strip__hint">这份异议已经收尾，不需要再按一次。</p>
         )}
       </div>
+      {copy?.acceptsSupplement && supplementing ? (
+        <div className="assessment-dispute-strip__form">
+          <label className="assessment-dispute-strip__label" htmlFor="assessment-dispute-supplement">补充一句</label>
+          <textarea id="assessment-dispute-supplement" autoFocus rows={3} maxLength={2000}
+            value={supplement} onChange={(event) => setSupplement(event.target.value)}
+            placeholder="写下需要补充的条件或说明。" disabled={busy !== null} />
+          <p className="assessment-dispute-strip__hint">补充会保存到这份异议，已经保存的复核结论不会重开。</p>
+          <div className="assessment-dispute-strip__actions">
+            <button type="button" className="button primary" disabled={busy !== null} onClick={() => void submitSupplement(supplement)}>
+              {busy === "supplement" ? "正在记下…" : "记下补充说明"}
+            </button>
+            <button type="button" className="button" disabled={busy !== null} onClick={() => { setSupplementing(false); setFailure(null); }}>先不补充</button>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -217,6 +217,7 @@ export async function writeActivationNoteOrigin(
     objectiveId: string;
     objectiveRevisionId: string;
     noteVersionId: string | null;
+    evidenceSnapshotIds?: string[];
   },
 ): Promise<{ written: boolean; origin: ObjectiveOriginV3 | null }> {
   if (!input.noteVersionId) return { written: false, origin: null };
@@ -233,6 +234,7 @@ export async function writeActivationNoteOrigin(
     kind: "note",
     noteId: versionRows[0].noteId,
     noteVersionId: input.noteVersionId,
+    evidenceSnapshotIds: [...new Set(input.evidenceSnapshotIds ?? [])],
     integrity: "verified",
   });
   return { written: created, origin };

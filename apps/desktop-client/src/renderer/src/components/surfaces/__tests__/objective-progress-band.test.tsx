@@ -38,7 +38,7 @@ describe("状态到位置的查表", () => {
   });
 
   it("三段各至少有一个状态落在上面——不能有一段是空的", () => {
-    const hit = new Set(ALL_STATES.map(progressSegmentForState).filter((s) => s !== null));
+    const hit = new Set(ALL_STATES.map((state) => progressSegmentForState(state)).filter((s) => s !== null));
     expect([...hit].sort()).toEqual([0, 1, 2]);
   });
 
@@ -54,6 +54,16 @@ describe("状态到位置的查表", () => {
     expect(progressSegmentForOutcome("declared_unable")).toBeNull();
     expect(progressSegmentForOutcome("demonstrated")).toBe(2);
     expect(progressSegmentForOutcome("practice_completed")).toBe(1);
+  });
+
+  it("新卡只建立复习排期时，仍显示还没答过", () => {
+    const newCard = { lastCanonicalAt: null, practiceTrailCount: 0 };
+    expect(progressSegmentForState("scheduled", newCard)).toBe(0);
+    expect(progressSegmentForState("due_review", newCard)).toBe(0);
+    expect(progressSegmentForState("scheduled")).toBeNull();
+    expect(progressSegmentForState("scheduled", { ...newCard, practiceTrailCount: 1, latestOutcome: "practice_completed" })).toBe(1);
+    expect(progressSegmentForState("scheduled", { ...newCard, lastCanonicalAt: "2026-10-05T00:00:00Z", latestOutcome: "demonstrated" })).toBe(2);
+    expect(progressSegmentForState("scheduled", { ...newCard, lastCanonicalAt: "2026-10-05T00:00:00Z", latestOutcome: "needs_repair" })).toBe(1);
   });
 });
 

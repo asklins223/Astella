@@ -233,6 +233,20 @@ function sessionStub() {
 }
 
 describe("companion centre desktop IPC", () => {
+  it("queries discovery state with the public flat identity and still rejects a stale workspace", async () => {
+    const state = companionStubs.getCompanionDiscoveryState = vi.fn().mockResolvedValue({ collected: true, entryId: MEMORY_ID, annotation: null });
+    const gateway = { getDeploymentConfig: () => undefined, getSession: registerAuthStub("getSession", vi.fn()).mockResolvedValue(sessionStub()) } as unknown as DesktopGateway;
+    await register(gateway);
+    await requiredHandler(DESKTOP_IPC_CHANNELS.authGetState)(event, { meta });
+    const identity = { kind: "kept_ai_suggestion", source: "assistant_reply", sourceId: MEMORY_ID } as const;
+    const handler = requiredHandler(DESKTOP_IPC_CHANNELS.companionDiscoveryState);
+    expect(await handler(event, { meta: scopedMeta, ...identity })).toMatchObject({ ok: true, data: { collected: true, entryId: MEMORY_ID }, workspaceEpoch: 9 });
+    expect(state.mock.calls[0].slice(1)).toEqual([identity, meta.requestId]);
+    expect(await handler(event, { meta: { ...scopedMeta, workspaceEpoch: 8 }, ...identity })).toMatchObject({ ok: false, error: { code: "stale_workspace" } });
+    expect(await handler(event, { meta: scopedMeta, query: identity })).toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    expect(state).toHaveBeenCalledOnce();
+  });
+
   it("导出通道校验实际范围和纪元，直接保存副本，不打开系统保存对话框", async () => {
     electronMock.downloadsPath = await mkdtemp(join(tmpdir(), "companion-export-ipc-"));
     try {

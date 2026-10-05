@@ -39,6 +39,13 @@ type SourceSearchDocument = {
   body: string | null;
 };
 
+function sourceSearchBody(source: { origin: string | null; metadata: unknown }, segments: { text: string }[]): string {
+  if (segments.length > 0) return segments.map(segment => segment.text).join("\n");
+  const metadata = (source.metadata ?? {}) as { rawContent?: unknown; url?: unknown };
+  return [source.origin, typeof metadata.rawContent === "string" ? metadata.rawContent : "",
+    typeof metadata.url === "string" ? metadata.url : ""].filter(Boolean).join("\n");
+}
+
 /**
  * Keep best-effort projection writes on the request connection via a savepoint.
  *
@@ -473,7 +480,12 @@ export async function updateSource(
     .update(sources)
     .set(updates)
     .where(and(eq(sources.id, sourceId), eq(sources.workspaceId, workspaceId)));
-  return getSource(executor, sourceId, workspaceId);
+  const detail = await getSource(executor, sourceId, workspaceId);
+  if (detail && detail.source.status !== SourceStatus.ARCHIVED) await upsertSearchDocument(executor, {
+    workspaceId, objectType: "source", objectId: sourceId,
+    title: detail.source.title, body: sourceSearchBody(detail.source, detail.segments),
+  });
+  return detail;
 }
 
 /**
@@ -602,14 +614,7 @@ export async function restoreSource(
     .where(and(eq(sources.id, sourceId), eq(sources.workspaceId, workspaceId)));
 
   // 与 `search/service.ts` 的 reindex 同一口径：有片段用片段正文，否则用元数据兜底。
-  const metadata = (source.metadata ?? {}) as { rawContent?: unknown; url?: unknown };
-  const body = segments.length > 0
-    ? segments.map((segment) => segment.text).join("\n")
-    : [
-        source.origin,
-        typeof metadata.rawContent === "string" ? metadata.rawContent : "",
-        typeof metadata.url === "string" ? metadata.url : "",
-      ].filter(Boolean).join("\n");
+  const body = sourceSearchBody(source, segments);
   await upsertSearchDocument(executor, {
     workspaceId,
     objectType: "source",

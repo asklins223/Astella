@@ -275,7 +275,7 @@ export const HUD_PAGES: Readonly<Record<HudPageId, HudPageDefinition>> = {
     id: "queue",
     number: "15",
     title: "复习队列",
-    subtitle: "抽一张小卡片，把学过的慢慢想起来",
+    subtitle: "到期的小卡片排好了，慢慢把学过的想起来",
     plate: "review",
     companion: {
       mode: "ambient", seat: "left", framing: "bust", interaction: "on-demand", proactive: "silent", draggable: false,

@@ -40,8 +40,9 @@ import {
 import { BrowserWindow, clipboard, dialog, ipcMain, shell, type IpcMainInvokeEvent, type WebContents } from "electron";
 import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { rename, rm, stat, writeFile } from "node:fs/promises";
+import { readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename } from "node:path";
+import { exportNotesAsMarkdown } from "./note-markdown-export";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { z } from "zod";
@@ -122,7 +123,7 @@ import {
   avatarUploadResultV1Schema,
   inviteCreatedV1Schema,
   inviteListResultV1Schema,
-  markdownImportResultV1Schema,
+  notesMarkdownExportResultV1Schema,
   memberListResultV1Schema,
   NOTE_DOC_BLOCKS_MAX_COUNT,
   noteDocStateResultV1Schema,
@@ -494,14 +495,11 @@ export const memberRemoveInputSchema = z.strictObject({ ...m1InputBase, userId: 
 const workspaceDissolveInputSchema = z.strictObject({ ...m1InputBase, workspaceId: uuidSchema });
 const workspaceDissolvePreviewInputSchema = workspaceDissolveInputSchema;
 const workspaceTransferOwnershipInputSchema = z.strictObject({ ...m1InputBase, workspaceId: uuidSchema, toUserId: uuidSchema });
-const markdownImportInputSchema = z.strictObject({
-  ...m1InputBase,
-  items: z.array(z.strictObject({
-    title: z.string().max(200).optional(),
-    content: z.string().min(1).max(500_000),
-  })).min(1).max(100),
-  importId: z.string().min(1).max(100),
-});
+/**
+ * Markdown 目录导出没有入参：范围就是「这个调用者看得见的全部笔记」，由服务端按人判。
+ * 客户端不再传一篇篇的 id ——那等于让界面替服务端决定谁能看什么。
+ */
+const notesMarkdownExportInputSchema = z.strictObject({ ...m1InputBase });
 export const revokeOutputSchema = z.strictObject({ revoked: z.literal(true) });
 export const memberRemoveOutputSchema = z.strictObject({ removed: z.literal(true) });
 const workspaceDissolvePreviewOutputSchema = dissolvePreviewResultV1Schema;
@@ -634,6 +632,45 @@ installHandler(DESKTOP_IPC_CHANNELS.workspaceList, runtimeInputSchema, options, 
     };
   }, workspaceExportResultV1Schema)
 
+/**
+ * 笔记导出为 Markdown 目录：紧挨着上面那条整库导出，因为它们在设置页是同一组里的两行，
+ * 而差别是**读者与形态**——上面那条要 owner、给一个 JSON；这条任何成员都能按自己看得见的
+ * 范围导、给一个装满 `.md` 的目录。
+ *
+ * 分工也和上面一样：服务端出数据（可见性在服务端按人判），本机负责落盘。落盘这一段
+ * 委托给 `note-markdown-export.ts`，因为「文件名怎么起、撞名怎么办、失败怎么数」是
+ * 一份有自己判据的纯逻辑，不该埋在这条通道里。
+ */
+channel(DESKTOP_IPC_CHANNELS.notesMarkdownExport, notesMarkdownExportInputSchema, async (_event, window, input) => {
+  requireM2Route(contract, "settings.section");
+  assertEpoch(input.meta, getActiveWorkspaceEpoch());
+  return exportNotesAsMarkdown({
+    listNotes: () => ns_note.listNotesForMarkdownExport(gateway.gatewayTransport, input.meta.requestId),
+    fetchMarkdown: (noteId) => ns_note.fetchNoteMarkdown(gateway.gatewayTransport, noteId, input.meta.requestId),
+    pickDirectory: async () => {
+      const selection = await dialog.showOpenDialog(window, {
+        title: "导出笔记为 Markdown",
+        // createDirectory：读者可以在这个对话框里当场新建一个文件夹，而不是被要求
+        // 先自己去 Finder 建好再回来。
+        properties: ["openDirectory", "createDirectory"],
+        defaultPath: `书房笔记 ${new Date().toISOString().slice(0, 10)}`,
+      });
+      return selection.canceled ? null : (selection.filePaths[0] ?? null);
+    },
+    existingNames: async (directory) => {
+      // 目录里读者自己的文件不能被覆盖：只取文件名，且一律小写去撞——
+      // macOS 上 `读书.md` 与 `读书.MD` 是同一个文件。
+      try {
+        return new Set((await readdir(directory)).map((name) => name.toLowerCase()));
+      } catch {
+        // 读不到就当目录是空的：真撞上时 writeFile 的行为由下面的 flag 兜住。
+        return new Set<string>();
+      }
+    },
+    writeNote: (filePath, text) => writeFile(filePath, text, "utf8"),
+  });
+}, notesMarkdownExportResultV1Schema);
+
 channel(DESKTOP_IPC_CHANNELS.workspaceRename, workspaceRenameInputSchema, async (_event, _window, input) => {
     requireM2Route(contract, "settings.section");
     assertEpoch(input.meta, getActiveWorkspaceEpoch());
@@ -669,10 +706,4 @@ channel(DESKTOP_IPC_CHANNELS.workspaceDissolve, workspaceDissolveInputSchema, as
     return ns_workspace.transferWorkspaceOwnership(gateway.gatewayTransport, input.workspaceId, input.toUserId, input.meta.requestId);
   }, workspaceTransferOwnershipOutputSchema);
 
-  // Markdown 批量导入（F-033 幂等，Owner）。
-  channel(DESKTOP_IPC_CHANNELS.settingsMarkdownImport, markdownImportInputSchema, async (_event, _window, input) => {
-    requireM2Route(contract, "settings.section");
-    assertEpoch(input.meta, getActiveWorkspaceEpoch());
-    return gateway.importMarkdown(input.items, input.importId, input.meta.requestId);
-  }, markdownImportResultV1Schema)
 }

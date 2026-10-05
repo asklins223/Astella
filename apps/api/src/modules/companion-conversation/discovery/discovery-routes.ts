@@ -81,6 +81,7 @@ export async function companionDiscoveryRoutes(app: FastifyInstance): Promise<vo
       collectEntry(tx, scope, parsed.data.request),
     );
     if (out.status === "rejected") {
+      if (out.reason === "source_unavailable") return reply.code(404).send({ error: "not_found", message: "原日记或收藏时的版本当前不可访问" });
       // 作者标错、来源不对、书房超限都在这里挡下，并如实说明是哪一条。
       return reply.code(422).send({ error: out.reason, message: "这一条不能放进发现簿" });
     }

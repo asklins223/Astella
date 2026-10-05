@@ -1,5 +1,6 @@
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
 import type { CompanionPersonaPendingRevisionV1,CompanionPersonaPendingV1,CompanionPersonaPresetV1,CompanionPersonaProfileV1,CompanionPersonaProfileVersionV1,CompanionPersonaV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import { personaOriginOf, type PersonaSwitchOption, type SwitchableField } from "@ailearn/shared/pet-persona-merge";
 import { useId,useMemo,useState } from "react";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
@@ -27,7 +28,7 @@ type PersonaPendingProps = {
   readonly onRetryPending?: () => void;
 };
 
-type PersonaPanelProps = { section: Section<CompanionPersonaV1>; persona: CompanionPersonaV1 | null; versions: CompanionPersonaProfileVersionV1[] | null; versionsError: string | null; busy: string | null; error: string | null; notice: string | null; onPreset: (preset: CompanionPersonaPresetV1) => void; onActiveness: (value: CompanionPersonaProfileV1["activeness"]) => void; onBoundary: (key: (typeof BOUNDARY_ITEMS)[number][0]) => void; onReset: () => void; onRestore: (revision: number) => void; onReloadVersions: () => void; onRename: (name: string) => Promise<boolean> | void; onSettings?: () => void; onRetry: () => void } & PersonaPendingProps;
+type PersonaPanelProps = { section: Section<CompanionPersonaV1>; persona: CompanionPersonaV1 | null; versions: CompanionPersonaProfileVersionV1[] | null; versionsError: string | null; busy: string | null; error: string | null; notice: string | null; onPreset: (preset: CompanionPersonaPresetV1) => void; onActiveness: (value: CompanionPersonaProfileV1["activeness"]) => void; onBoundary: (key: (typeof BOUNDARY_ITEMS)[number][0]) => void; onReset: () => void; onRestore: (revision: number) => void; onReloadVersions: () => void; onRename: (name: string) => Promise<boolean> | void; onSettings?: () => void; onRetry: () => void; switchTarget?: CompanionPersonaPresetV1 | null; switchOptions?: readonly PersonaSwitchOption[]; overwrite?: readonly SwitchableField[]; onOverwrite?: (fields: readonly SwitchableField[]) => void; onSwitchCancel?: () => void; onSwitchConfirm?: () => void } & PersonaPendingProps;
 
 function CompanionNameRow(props: { readonly current: string; readonly busy: boolean; readonly onRename: (name: string) => Promise<boolean> | void }) {
   const [draft, setDraft] = useState<string | null>(null);
@@ -74,6 +75,64 @@ const PERSONA_NO_PENDING = "现在没有排队的人格版本。";
 
 const PERSONA_PENDING_LOADING = "正在读取待生效版本…";
 
+/** 这一项是谁写的 —— 屏上要能看见「她改的」，否则"她能自己改"只是后台的事。 */
+function OriginBadge({ origin }: { readonly origin: string }) {
+  if (origin === "preset") return null;
+  return <span className="cc-origin" data-origin={origin}>{origin === "user" ? "你改的" : "她改的"}</span>;
+}
+
+/**
+ * 换人格之前的那一问。
+ *
+ * 为什么不是"直接换掉"：点一次卡片就把她攒下的语气、口头禅和你调过的开关清空，
+ * 而事后只有一句"已保存"。这里把**只有你们改过的那些**列出来，逐项让用户决定
+ * 留不留；名字不在其中（她改不了，你也起过）。
+ *
+ * 默认全部保留：用户要点第二下才发生不可逆的那件事。
+ */
+function PersonaSwitchSheet(props: {
+  readonly target: CompanionPersonaPresetV1;
+  readonly options: readonly PersonaSwitchOption[];
+  readonly overwrite: readonly SwitchableField[];
+  readonly busy: boolean;
+  readonly onChange: (fields: readonly SwitchableField[]) => void;
+  readonly onCancel: () => void;
+  readonly onConfirm: () => void;
+}) {
+  const kept = props.options.length - props.overwrite.length;
+  const toggle = (field: SwitchableField) => props.onChange(
+    props.overwrite.includes(field) ? props.overwrite.filter((entry) => entry !== field) : [...props.overwrite, field],
+  );
+  return <div className="cc-switch-sheet" role="group" aria-label={`换成 ${props.target.name} 之前`}>
+    <h4>换成「{props.target.name}」</h4>
+    {props.options.length === 0
+      ? <p className="cc-muted">你和她的改动都还是预设原样，这次换过去不会有东西被盖掉。</p>
+      : <><p className="cc-switch-sheet__lead">下面这些不是预设写的，<strong>默认全部替你留着</strong>。勾上的才会换成新预设的样子。</p>
+        <ul className="cc-switch-list cc-switch-list--pick">{props.options.map(option => <li key={option.field}>
+          <label>
+            <input
+              type="checkbox"
+              checked={props.overwrite.includes(option.field)}
+              disabled={props.busy}
+              onChange={() => toggle(option.field)}
+            />
+            <span>
+              <strong>{option.label}<OriginBadge origin={option.origin} /></strong>
+              <small>现在：{option.current || "（空）"}</small>
+              {option.changes ? <small>换过去会变成：{option.next || "（空）"}</small> : null}
+            </span>
+          </label>
+        </li>)}</ul>
+        <p className="cc-muted">名字不在其中：她改不了，你也起过。</p></>}
+    <div className="cc-switch-sheet__actions">
+      <button type="button" onClick={props.onCancel} disabled={props.busy}>取消</button>
+      <button type="button" className="button primary" onClick={props.onConfirm} disabled={props.busy}>
+        {props.busy ? "正在换…" : props.options.length === 0 ? `换成「${props.target.name}」` : `就这样换（保留 ${kept} 项）`}
+      </button>
+    </div>
+  </div>;
+}
+
 export function PersonaPanel(props: PersonaPanelProps) {
   const olderVersionsId = useId();
   const personaReadableView = useMemo<PageReadableV1 | null>(() => {
@@ -115,6 +174,8 @@ export function PersonaPanel(props: PersonaPanelProps) {
   usePageReadableView(personaReadableView);
   if (!props.section.ok || !props.persona) return <SectionState message={PERSONA_UNAVAILABLE} detail={!props.section.ok ? props.section.message : undefined} onRetry={props.onRetry} />;
   const profile = props.persona.profile ?? props.persona.activePreset;
+  // 来源只挂在账号档案上。还没有档案时生效的是系统默认人格，那一档全部算 preset。
+  const fieldOrigin = props.persona.profile?.fieldOrigin;
   const currentRevision = props.persona.profileRevision;
   const pendingRevision = props.pending?.pending?.revision ?? null;
   const versionCard = (version: CompanionPersonaProfileVersionV1) => <article key={version.id} className="cc-version" data-pending={version.revision === pendingRevision || undefined}>
@@ -128,8 +189,8 @@ export function PersonaPanel(props: PersonaPanelProps) {
       <section className="cc-persona-identity" aria-label="当前人格">
         <span className="cc-kicker">当前第 {currentRevision} 版 · 账号共享</span>
         <h3>{profile?.name ?? "伴星"}</h3>
-        <div className="cc-tags">{profile?.personalityTags.map(tag => <span className="cc-tag" key={tag}>{tag}</span>)}</div>
-        <p>{profile?.speakingStyle ?? "正在使用系统默认表达。"}</p>
+        <div className="cc-tags">{profile?.personalityTags.map(tag => <span className="cc-tag" key={tag}>{tag}</span>)}<OriginBadge origin={personaOriginOf(fieldOrigin, "personalityTags")} /></div>
+        <p>{profile?.speakingStyle ?? "正在使用系统默认表达。"}<OriginBadge origin={personaOriginOf(fieldOrigin, "speakingStyle")} /></p>
         {profile?.examples.length ? <blockquote>{profile.examples[0].text}</blockquote> : null}
       </section>
       <section className="cc-persona-name"><h4>她叫什么</h4><p>用在署名、对话和书桌旁的称呼。</p>
@@ -137,15 +198,19 @@ export function PersonaPanel(props: PersonaPanelProps) {
       </section>
     </div>
     <CenterSection title={PERSONA_SECTIONS.appearance} detail="每份都是完整的表达方式，包含名字、语气、示例与边界。选择后会生成新版本。">
-      <div className="cc-persona-presets">{props.persona.presets.map(preset => <button key={preset.presetId} type="button" aria-pressed={profile?.presetId === preset.presetId} disabled={props.busy !== null} onClick={() => props.onPreset(preset)}><span><strong>{preset.name}</strong>{profile?.presetId === preset.presetId ? <small>当前预设</small> : null}</span><p>{preset.speakingStyle}</p><small>{preset.personalityTags.join(" · ")}</small></button>)}</div>
+      <div className="cc-persona-presets">{props.persona.presets.map(preset => <button key={preset.presetId} type="button" aria-pressed={props.switchTarget ? props.switchTarget.presetId === preset.presetId : profile?.presetId === preset.presetId} disabled={props.busy !== null} onClick={() => props.onPreset(preset)}><span><strong>{preset.name}</strong>{profile?.presetId === preset.presetId ? <small>当前预设</small> : null}</span><p>{preset.speakingStyle}</p><small>{preset.personalityTags.join(" · ")}</small></button>)}</div>
+      {props.switchTarget && props.onSwitchConfirm && props.onSwitchCancel && props.onOverwrite
+        ? <PersonaSwitchSheet target={props.switchTarget} options={props.switchOptions ?? []} overwrite={props.overwrite ?? []} busy={props.busy !== null} onChange={props.onOverwrite} onCancel={props.onSwitchCancel} onConfirm={props.onSwitchConfirm} />
+        : null}
     </CenterSection>
     <div className="cc-persona-expression">
       <CenterSection title="表达分量" detail="决定她一次说多少、日记写多细。">
-        <div className="cc-segments" role="group" aria-label="人格表达分量">{(["quiet", "moderate", "active"] as const).map(value => <button key={value} type="button" aria-pressed={profile?.activeness === value} disabled={!profile || props.busy !== null} onClick={() => props.onActiveness(value)}>{activenessLabel(value)}</button>)}</div>
+        <div className="cc-segments" role="group" aria-label="人格表达分量">{(["quiet", "moderate", "active"] as const).map(value => <button key={value} type="button" aria-pressed={profile?.activeness === value} disabled={props.busy !== null} onClick={() => props.onActiveness(value)}>{activenessLabel(value)}</button>)}</div>
+        <p className="cc-muted cc-origin-line"><OriginBadge origin={personaOriginOf(fieldOrigin, "activeness")} />她可以自己调这一档，你也可以。</p>
         <p className="cc-muted">主动介入的时机和间隔在伴星设置里管理。</p>{props.onSettings ? <button type="button" className="cc-link" onClick={props.onSettings}>调整主动介入</button> : null}
       </CenterSection>
       <CenterSection title={PERSONA_SECTIONS.boundaries} detail="这些边界只影响她怎样表达。">
-        <div className="cc-switch-list">{BOUNDARY_ITEMS.map(([key, label, detail]) => <button key={key} type="button" role="switch" aria-checked={profile?.boundaries[key] === true} disabled={!profile || props.busy !== null} onClick={() => props.onBoundary(key)}><span><strong>{label}</strong><small>{detail}</small></span><span className="cc-switch" data-on={profile?.boundaries[key] === true || undefined} aria-hidden="true"><i /></span></button>)}</div>
+        <div className="cc-switch-list">{BOUNDARY_ITEMS.map(([key, label, detail]) => <button key={key} type="button" role="switch" aria-checked={profile?.boundaries[key] === true} disabled={props.busy !== null} onClick={() => props.onBoundary(key)}><span><strong>{label}</strong><OriginBadge origin={personaOriginOf(fieldOrigin, `boundaries.${key}`)} /><small>{detail}</small></span><span className="cc-switch" data-on={profile?.boundaries[key] === true || undefined} aria-hidden="true"><i /></span></button>)}</div>
       </CenterSection>
     </div>
     <CenterSection title={PERSONA_SECTIONS.pending} detail="她自己的调整会先排在这里。生效条件以这一版的说明为准。">

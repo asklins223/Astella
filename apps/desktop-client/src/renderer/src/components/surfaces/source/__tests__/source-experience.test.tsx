@@ -7,6 +7,12 @@ import { SourceDetailSurface } from "../source-detail-surface";
 import { CaptureStrip } from "../source-capture";
 
 const ok = <T,>(data: T) => ({ ok: true as const, workspaceEpoch: 1, data });
+/** jsdom 的 File 没有 text()；批量收录逐份读文件，所以测试里的文件得自己带上。 */
+const mdFile = (name: string, body: string) => {
+  const file = new File([body], name, { type: "text/markdown" });
+  Object.defineProperty(file, "text", { value: () => Promise.resolve(body) });
+  return file;
+};
 const source = (id: string, title: string) => ({ id, title, type: "text", status: "ready", origin: null,
   workspaceId: "workspace", createdBy: "reader", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z",
   noteCount: 0, metadata: null, cardProgress: { pendingReviewRuns: 0, activeObjectives: 0 } });
@@ -36,10 +42,10 @@ function installApi() {
 }
 const cards = () => [...document.querySelectorAll(".source-sheet strong")].map(node => node.textContent);
 const paste = (target: Element | Document, text: string) => fireEvent.paste(target, { clipboardData: { getData: () => text } });
-function capture(onCaptured = vi.fn(), onOpenExisting = vi.fn()) {
+function capture(onCaptured = vi.fn(), onOpenExisting = vi.fn(), onBatchCaptured = vi.fn()) {
   const view = render(<CaptureStrip disabled={false} lockedReason={null} epochRef={{ current: 1 }} receipt={null}
-    summary={<p>材料架</p>} onCaptured={onCaptured} onOpenExisting={onOpenExisting} />);
-  return { ...view, onCaptured, onOpenExisting };
+    summary={<p>材料架</p>} onCaptured={onCaptured} onBatchCaptured={onBatchCaptured} onOpenExisting={onOpenExisting} />);
+  return { ...view, onCaptured, onOpenExisting, onBatchCaptured };
 }
 beforeEach(() => {
   useRoomStore.setState(state => ({ workspaceScopeRevision: state.workspaceScopeRevision + 1,
@@ -150,6 +156,64 @@ describe("少一步的材料录入", () => {
     expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "正文" }));
   });
 
+  it("一次选多份：逐份建来源，收完报数，失败的留在这一屏上", async () => {
+    const api = installApi();
+    // 第二份撞上解析队列上限：它必须自己算失败，而不是把整批拖成一条红。
+    api.source.create
+      .mockResolvedValueOnce(ok({ source: sources[0], segments, duplicateOf: null }))
+      .mockRejectedValueOnce(new (await import("../../../../app/desktop-client")).RendererGatewayError(
+        { code: "rate_limited", safeMessageKey: "rate_limited", retry: "safe_retry" } as never))
+      .mockResolvedValueOnce(ok({ source: sources[1], segments, duplicateOf: null }));
+    const onBatchCaptured = vi.fn();
+    capture(vi.fn(), vi.fn(), onBatchCaptured);
+    const files = [mdFile("甲.md", "# 一"), mdFile("乙.md", "# 二"), mdFile("丙.md", "# 三")];
+    fireEvent.change(screen.getByLabelText("文本文件"), { target: { files } });
+
+    await waitFor(() => expect(api.source.create).toHaveBeenCalledTimes(3));
+    // 逐份走正常收录流程：正文是文件内容，标题取文件名（去掉扩展名）。
+    expect(api.source.create.mock.calls.map((call) => call[0].request)).toEqual([
+      { content: "# 一", title: "甲" },
+      { content: "# 二", title: "乙" },
+      { content: "# 三", title: "丙" },
+    ]);
+    await waitFor(() => expect(onBatchCaptured).toHaveBeenCalledWith({ accepted: 2, failed: 1 }));
+    // 没进来的那一份要点名：读者要知道该补哪一份，而不是只看到「收下 2 份」。
+    expect(await screen.findByText(/乙\.md/)).toBeTruthy();
+    expect(screen.getByText(/解析队列满了/)).toBeTruthy();
+    // 收完不弹采集表单：多份的时候那张表单只会挡住进度。
+    expect(screen.queryByRole("dialog", { name: "采集新来源" })).toBeNull();
+  });
+
+  it("一次选超过上限：超出的那几份要点名，不许静默消失", async () => {
+    const api = installApi();
+    capture();
+    const files = Array.from({ length: 52 }, (_, index) => mdFile(`第${index}篇.md`, `# 第${index}篇`));
+    fireEvent.change(screen.getByLabelText("文本文件"), { target: { files } });
+    await waitFor(() => expect(api.source.create).toHaveBeenCalledTimes(50));
+    expect(await screen.findByText(/另外 2 份/)).toBeTruthy();
+    expect(screen.getByText(/一次最多收 50 份/)).toBeTruthy();
+  });
+
+  it("拖进来多份与选文件同一条路：直接建来源，不劝读者去别处拖", async () => {
+    const api = installApi();
+    capture();
+    const strip = document.querySelector(".capture-strip")!;
+    fireEvent.drop(strip, { dataTransfer: { files: [mdFile("甲.md", "# 一"), mdFile("乙.md", "# 二")] } });
+    await waitFor(() => expect(api.source.create).toHaveBeenCalledTimes(2));
+  });
+
+  it("一批里读不出来的文件不影响同一批的其他文件", async () => {
+    const api = installApi();
+    capture();
+    const good = mdFile("好.md", "# 好");
+    const unreadable = new File(["# 坏"], "坏.md", { type: "text/markdown" });
+    Object.defineProperty(unreadable, "text", { value: () => Promise.reject(new Error("读不出来")) });
+    fireEvent.change(screen.getByLabelText("文本文件"), { target: { files: [unreadable, good] } });
+    await waitFor(() => expect(api.source.create).toHaveBeenCalledTimes(1));
+    expect(api.source.create.mock.calls[0][0]).toMatchObject({ request: { title: "好" } });
+    expect(await screen.findByText(/读不出来/)).toBeTruthy();
+  });
+
   it("文件读取晚于收起操作时，不重新打开附页", async () => {
     installApi(); capture(); const pending = deferred();
     const file = new File(["content"], "材料.md", { type: "text/markdown" });
@@ -162,6 +226,35 @@ describe("少一步的材料录入", () => {
 });
 
 describe("原文与附页", () => {
+  it("Markdown 表格保留行列和行内格式，片段证据仍指向原始文字", async () => {
+    const api = installApi();
+    const text = "| 输入 | 输出 |\n| :---: | ---: |\n| **[3,1,2]** | `[1,2,3]` |\n| a\\|b | c |";
+    api.source.get.mockResolvedValueOnce(ok({ source: sources[0], segments: [{ ...segments[1], text, charEnd: 6 + text.length }] }));
+    useRoomStore.setState({ activeSourceId: "first" });
+    render(<SourceDetailSurface />);
+    const table = await screen.findByRole("table");
+    expect(table.querySelectorAll("tr")).toHaveLength(3);
+    expect(table.querySelector("th")?.style.textAlign).toBe("center");
+    expect(table.querySelectorAll("th")[1]?.style.textAlign).toBe("right");
+    expect([...table.querySelectorAll("th")].map(node => node.textContent)).toEqual(["输入", "输出"]);
+    expect(table.querySelector("strong")?.textContent).toBe("[3,1,2]");
+    expect(table.querySelector("code")?.textContent).toBe("[1,2,3]");
+    expect(table.textContent).toContain("a|b");
+    expect(table.textContent).not.toContain("---");
+    expect(table.closest("[data-source-segment]")?.getAttribute("data-source-segment")).toBe("segment-1");
+    expect(api.source.get).toHaveBeenCalledTimes(1);
+  });
+
+  it("来源编号列表保留起始序号", async () => {
+    const api = installApi();
+    api.source.get.mockResolvedValueOnce(ok({ source: sources[0], segments: [{ ...segments[1],
+      segmentType: "list", text: "3. 第一项\n4. 第二项" }] }));
+    useRoomStore.setState({ activeSourceId: "first" }); render(<SourceDetailSurface />);
+    const list = await screen.findByRole("list");
+    expect(list.getAttribute("start")).toBe("3");
+    expect(list.textContent).toContain("第一项");
+  });
+
   it("与材料标题相同的第一个标题只排一次，但仍是可定位的真实片段", async () => {
     const api = installApi();
     api.source.get.mockResolvedValueOnce(ok({ source: sources[0], segments: [{ ...segments[0], text: "# 记忆研究" }, segments[1]] }));

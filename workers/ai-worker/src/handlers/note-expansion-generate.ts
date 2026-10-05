@@ -22,6 +22,7 @@ import { assertJobLease, lockJobLease, withJobTransaction } from "../lib/job-lea
 import { NoteExpansionOutputError } from "../lib/non-retryable-errors.ts";
 import { runWorkerAiTask } from "./worker-ai-task.ts";
 import { noteLearningSnapshotHash } from "./note-learning-snapshot.ts";
+import { buildNoteExpansionPrompt, type NoteExpansionSourceBlock } from "./note-expansion-prompt.ts";
 import type { JobPayload } from "./index.ts";
 
 const MAX_SOURCE_CHARS = 24_000;
@@ -41,14 +42,16 @@ const generatedDraftSchema = z.strictObject({
   blocks: z.array(z.strictObject({
     type: z.enum(["paragraph", "heading", "code", "list", "quote"]),
     content: z.string().trim().min(1).max(8_000),
-  })).min(2).max(30),
+  }).transform((block) => block.type === "list"
+    ? { ...block, content: block.content.replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+/gm, "") }
+    : block)).min(2).max(30),
 }).refine((draft) => draft.blocks.reduce((total, block) => total + block.content.length, 0) <= 20_000, {
   message: "拓展草稿正文超过长度上限",
 });
 
 const generatedResponseSchema = z.strictObject({ drafts: z.array(generatedDraftSchema).min(2).max(4) });
 
-type SourceBlock = { ordinal: number; type: string; content: string };
+type SourceBlock = NoteExpansionSourceBlock;
 
 function parseResponse(raw: string) {
   let value: unknown;
@@ -145,20 +148,6 @@ async function loadSource(job: JobPayload, input: ReturnType<typeof readNoteExpa
   });
 }
 
-function buildPrompt(blocks: readonly SourceBlock[], focused: boolean) {
-  const source = blocks.map((block) => `[原文第 ${block.ordinal} 段]\n${noteBlockRenderedTextV1(block.type, block.content)}`).join("\n\n");
-  return [
-    "请从用户正在读的笔记出发，写 2 到 4 篇真正有助于继续理解的短拓展笔记。用自然、通俗的中文，不用学习理论术语。",
-    focused ? "用户选中了一段，因此围绕这处概念向前置知识、相邻概念、实际用法或边界继续展开。" : "从整篇笔记中选择最值得继续了解的不同方向。",
-    "每篇必须是能单独读懂的知识草稿，不要只写概念名称或学习计划。relationship 用一两句说明它和原笔记的具体关系。sourceReferences 必须引用下方原文中确实存在的句子，作为这条拓展关系的来处。拓展正文可以增加原文之外的常识，但请把不确定或超出原文的内容用‘补充理解’等自然措辞标明，不能假装它是原文事实。",
-    "只返回 JSON，顶层只含 drafts 数组，包含 2 到 4 篇草稿。每篇只含 title、relationship、sourceReferences、blocks 四个字段。title 为 2 到 120 字；relationship 为 12 到 500 字。",
-    "sourceReferences 包含 1 到 3 个对象，每个只含 blockOrdinal（下方原文段落序号，必须是整数）和 quote（对应段落中 8 到 320 字的逐字摘录）。每条引用必须对应自己的拓展方向。",
-    "blocks 包含 2 到 30 个正文块，每块只含 type 和 content。type 必须是 paragraph、heading、list、quote、code 中的一个具体值，不要把多个类型用竖线拼在一起。content 为非空字符串，每块不超过 8000 字，每篇正文总长不超过 20000 字。不要输出 Markdown 围栏或额外字段。",
-    "笔记原文：",
-    source,
-  ].join("\n\n");
-}
-
 export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
   const input = readNoteExpansionGenerateJobPayload(job.payload);
   if (!job.requestedBy) throw new NoteExpansionOutputError("拓展任务缺少发起人");
@@ -187,7 +176,7 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
   const messages: ChatMessage[] = [
     { role: "system", content: "你是笔记旁的知识拓展助手。忠实引用用户给出的笔记来解释为什么拓展方向相关；区分原文与补充理解，不伪造来源。" },
     { role: "system", content: agentContext.instructions },
-    { role: "user", content: buildPrompt(source.blocks, Boolean(input.focusAnchor)) },
+    { role: "user", content: buildNoteExpansionPrompt(source.blocks, Boolean(input.focusAnchor)) },
   ];
   const generationParameters = {
     temperature: 0.35,
@@ -214,7 +203,7 @@ export async function runNoteExpansionGenerate(job: JobPayload): Promise<void> {
     inputSnapshotRef: { kind: "note_version", id: source.noteVersionId, hash: inputSnapshotHash },
     input: messages,
     modelId: provider.modelId,
-    promptVersion: `${provider.promptVersion}:note-expansion-draft-v1`,
+    promptVersion: `${provider.promptVersion}:note-expansion-draft-v2`,
     resourceClass: "interactive_ai",
     timeoutMs: Math.min(resolveProviderCallTimeout("note_expansion_generate"), MAX_PROVIDER_CALL_MS),
     isOutputShapeError: (error) => error instanceof NoteExpansionOutputError,

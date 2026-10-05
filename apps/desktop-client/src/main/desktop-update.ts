@@ -115,6 +115,18 @@ let macosUnsigned: boolean | null = null
 type UpdateOperation = 'check' | 'download' | 'install' | null
 let operation: UpdateOperation = null
 
+/** 原始更新错误可能带本机路径、响应正文或栈；界面只展示能指导下一步的原因。 */
+function updateFailureMessage(error: unknown, action: Exclude<UpdateOperation, null>): string {
+  const detail = error instanceof Error ? error.message : String(error ?? '')
+  if (/app-update\.ya?ml|dev-app-update\.ya?ml/i.test(detail)) return '这份安装包缺少更新配置，请使用正式安装包后再检查。'
+  if (/rate limit|\b429\b/i.test(detail)) return 'GitHub 的查询次数用完了，请稍后再检查。'
+  if (/ENOSPC|no space left/i.test(detail)) return '设备可用空间不足，请腾出空间后重试。'
+  if (/ERR_INTERNET_DISCONNECTED|ENOTFOUND|EAI_AGAIN|ECONN|ETIMEDOUT|network|timeout/i.test(detail)) return '暂时无法连接更新服务，请检查网络后重试。'
+  if (/sha512|checksum|signature|code sign/i.test(detail)) return '安装包校验未通过，请重新下载或到下载页获取安装包。'
+  if (/\b404\b|release.*not found|no published versions/i.test(detail)) return '更新服务暂时没有可用的发布版本，请稍后再检查。'
+  return action === 'check' ? '暂时没拿到新版本信息，请稍后再检查。' : action === 'download' ? '这次下载没有完成，可以稍后重试。' : '这次安装没有完成，请到下载页手动安装。'
+}
+
 function statePath(): string {
   return join(app.getPath('userData'), 'update-state.json')
 }
@@ -308,8 +320,8 @@ async function loadAutoUpdater(): Promise<import('electron-updater').AppUpdater 
 
     loaded.on('error', (error: Error) => {
       // 检查阶段的失败是"没问到"，不是"更新坏了"——见 UpdateOperation 的说明。
-      if (operation === 'check') unreachable(error.message || '暂时拿不到更新信息。')
-      else failed(error.message || '更新失败')
+      if (operation === 'check') unreachable(updateFailureMessage(error, 'check'))
+      else failed(updateFailureMessage(error, operation ?? 'download'))
     })
 
     autoUpdater = loaded
@@ -352,7 +364,7 @@ export async function checkForUpdates(options: { userInitiated: boolean }): Prom
     }
     return getUpdateState()
   } catch (error) {
-    return unreachable(error instanceof Error ? error.message : '暂时拿不到更新信息。')
+    return unreachable(updateFailureMessage(error, 'check'))
   } finally {
     operation = null
   }
@@ -366,7 +378,7 @@ export async function downloadUpdate(): Promise<UpdateStateV1> {
     await updater.downloadUpdate()
     return getUpdateState()
   } catch (error) {
-    return failed(error instanceof Error ? error.message : '下载失败。')
+    return failed(updateFailureMessage(error, 'download'))
   } finally {
     operation = null
   }
@@ -386,7 +398,7 @@ export async function installUpdate(): Promise<UpdateStateV1> {
     updater.quitAndInstall(false, true)
     return getUpdateState()
   } catch (error) {
-    return failed(error instanceof Error ? error.message : '安装失败。')
+    return failed(updateFailureMessage(error, 'install'))
   } finally {
     operation = null
   }

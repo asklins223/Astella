@@ -13,6 +13,8 @@ import { CompanionMemoryPage } from "./companion-memory-page";
 import { CompanionOverviewPage } from "./companion-overview-page";
 import { CompanionPersonaPage } from "./companion-persona-page";
 import { useCompanionTactile } from "./use-companion-tactile";
+import { discoverySourceTarget } from "./companion-discovery-targets";
+import type { CompanionDiscoveryEntryV1 } from "@ailearn/shared/desktop-ipc-contracts";
 
 const PAGE_ICONS = { overview: HeartHandshake, dialogue: MessageCircle, diary: NotebookPen, memory: Library, discovery: BookOpen, activity: Sparkles, persona: CircleUserRound };
 
@@ -29,6 +31,7 @@ export function CompanionCenterSurface() {
   const [focusMethodId, setFocusMethodId] = useState<string | null>(routeTarget?.focusMethodId ?? null);
   const [focusMessageId, setFocusMessageId] = useState<string | null>(routeTarget?.focusMessageId ?? null);
   const [diaryDate, setDiaryDate] = useState<string | null>(null);
+  const [diarySource, setDiarySource] = useState<{ sourceId: string; revision?: number } | null>(null);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const houseRef = useRef<HTMLDivElement>(null);
   useCompanionTactile(houseRef, tab);
@@ -50,6 +53,13 @@ export function CompanionCenterSurface() {
     if (routeTarget.focusMessageId) setFocusMessageId(routeTarget.focusMessageId);
   }, [routeTarget]);
   const navigate = (next: CompanionCenterTab) => setTab(next);
+  const openDiscoverySource = (entry: CompanionDiscoveryEntryV1) => {
+    const target = discoverySourceTarget(entry);
+    if (!target) return;
+    if (target.kind === "dialogue") { setFocusMessageId(target.messageId); navigate("dialogue"); }
+    else if (target.kind === "memory") { setFocusMemoryId(target.memoryId); navigate("memory"); }
+    else { setDiaryDate(target.date); setDiarySource({ sourceId: target.sourceId, revision: target.revision }); navigate("diary"); }
+  };
   const tabKeyDown = (event: KeyboardEvent, index: number) => {
     const count = CENTER_PAGES.length;
     const next = event.key === "Home" ? 0 : event.key === "End" ? count - 1
@@ -80,11 +90,11 @@ export function CompanionCenterSurface() {
           {/* Activity preserves unfinished edits while removing hidden pages' effects and readable views. */}
           {CENTER_PAGES.map(page => <Activity key={page.id} mode={tab === page.id ? "visible" : "hidden"}>
             <section className={`cc-page cc-page--${page.id}`} id={`companion-panel-${page.id}`} role="tabpanel" aria-labelledby={`companion-tab-${page.id}`} tabIndex={-1}>
-              {page.id === "overview" ? <CompanionOverviewPage refreshKey={refreshKey} onGo={navigate} onDiary={date => { setDiaryDate(date); navigate("diary"); }} /> : null}
-              {page.id === "dialogue" ? <CompanionDialoguePage refreshKey={refreshKey} focusMessageId={focusMessageId} onFocusConsumed={() => setFocusMessageId(null)} /> : null}
-              {page.id === "diary" ? <CompanionDiaryPage refreshKey={refreshKey} requestedDate={diaryDate} onMemory={id => { setFocusMemoryId(id); navigate("memory"); }} onSettings={openSettings} /> : null}
+              {page.id === "overview" ? <CompanionOverviewPage refreshKey={refreshKey} onGo={navigate} onDiary={date => { setDiaryDate(date); setDiarySource(null); navigate("diary"); }} /> : null}
+              {page.id === "dialogue" ? <CompanionDialoguePage refreshKey={refreshKey} focusMessageId={focusMessageId} onFocusConsumed={() => setFocusMessageId(null)} companionName={chat.companionName} /> : null}
+              {page.id === "diary" ? <CompanionDiaryPage refreshKey={refreshKey} requestedDate={diaryDate} sourceTarget={diarySource} onSourceConsumed={() => setDiarySource(null)} onMemory={id => { setFocusMemoryId(id); navigate("memory"); }} onSettings={openSettings} /> : null}
               {page.id === "memory" ? <CompanionMemoryPage refreshKey={refreshKey} requestedMemoryId={focusMemoryId} requestedMethodId={focusMethodId} onMethodFocusConsumed={()=>setFocusMethodId(null)} onFocusConsumed={() => setFocusMemoryId(null)} /> : null}
-              {page.id === "discovery" ? <CompanionDiscoveryPage refreshKey={refreshKey} /> : null}
+              {page.id === "discovery" ? <CompanionDiscoveryPage refreshKey={refreshKey} onSource={openDiscoverySource} onBrowse={next => { if (next === "diary") { setDiaryDate(null); setDiarySource(null); } else setFocusMessageId(null); navigate(next); }} /> : null}
               {page.id === "activity" ? <CompanionActivityPage refreshKey={refreshKey} onMemory={id => { setFocusMemoryId(id); navigate("memory"); }} onMessage={id => { setFocusMessageId(id); navigate("dialogue"); }} /> : null}
               {page.id === "persona" ? <CompanionPersonaPage refreshKey={refreshKey} onSettings={openSettings} /> : null}
             </section>

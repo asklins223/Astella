@@ -386,7 +386,7 @@ export function buildTodayVerdict(
   }
   /** 后台失败那一句：它不需要用户做什么，但不能不说。 */
   const backgroundLine = background > 0
-    ? `另有 ${background} 条后台任务失败已记录；它们没有可以打开的对象，会在必要时自动重试，不需要你处理。`
+    ? `另有 ${background} 条后台任务失败已记录；已有内容仍然保留。如需这些结果，可以回到原页面重新尝试。`
     : null;
 
   const metrics: TodayMetric[] = [];

@@ -59,3 +59,20 @@ it("returns to the saved conversation position after viewing confirmations or en
   fireEvent.click(screen.getByRole("button", { name: "返回对话" }));
   act(() => vi.advanceTimersByTime(32)); expect(list.scrollTop).toBe(234);
 });
+
+it("search previews show readable assistant text, retain user literals and jump to the original message", async () => {
+  const messages = [
+    { id: "assistant-search", role: "assistant", blocks: [{ type: "text", text: "12×13 = **156**。" }], createdAt: "2026-10-05T09:01:00Z" },
+    { id: "user-search", role: "user", blocks: [{ type: "text", text: "请保留字面量 **156**" }], createdAt: "2026-10-05T09:00:00Z" },
+  ];
+  state.chat = interactionSession({ messages: messages as never, fetchAllMessages: vi.fn(async () => messages as never) });
+  render(<Journal />);
+  fireEvent.click(screen.getByRole("button", { name: "聊天记录" }));
+  await act(async () => fireEvent.change(screen.getByRole("textbox", { name: "搜索聊天记录" }), { target: { value: "156" } }));
+  const hit = screen.getByRole("button", { name: /12×13 = 156/ });
+  expect(hit.textContent).not.toContain("**");
+  expect(hit.querySelector("mark")?.textContent).toBe("156");
+  expect(screen.getByRole("button", { name: /请保留字面量/ }).textContent).toContain("**156**");
+  fireEvent.click(hit);
+  expect(screen.getByRole("textbox", { name: "继续问 小鲸" })).toBeTruthy();
+});

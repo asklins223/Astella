@@ -1,7 +1,7 @@
 import { useLayoutEffect, useState, type RefObject } from "react";
 import { companionHistoryPlacement } from "./companion-interaction-placement";
 import { DIRECTORY_RAIL_MODE_EVENT, DIRECTORY_RAIL_STATE_EVENT } from "../DirectoryRail";
-import { companionLayoutBounds } from "./companion-visible-bounds";
+import { companionHudControlBounds, companionLayoutBounds } from "./companion-visible-bounds";
 
 /** Shared placement for the book and settings paper; underlying geometry stays intact. */
 export function useCompanionPaperPlacement(
@@ -28,7 +28,8 @@ export function useCompanionPaperPlacement(
       }
       const box = companionLayoutBounds(anchor, "head");
       if (box.right <= box.left || box.bottom <= box.top) { delete drawer.dataset.placementReady; return; }
-      const placement = companionHistoryPlacement(box, document.documentElement.clientWidth, preferredWidth);
+      const placement = companionHistoryPlacement(box, document.documentElement.clientWidth, preferredWidth,
+        anchorRef.current ? companionHudControlBounds(anchorRef.current) : []);
       drawer.style.setProperty("--companion-paper-x", `${Math.round(placement.left)}px`);
       drawer.style.setProperty("--companion-paper-w", `${Math.round(placement.width)}px`);
       drawer.dataset.placementReady = "true";
@@ -42,6 +43,7 @@ export function useCompanionPaperPlacement(
       frame = requestAnimationFrame(() => { frame = 0; measure(); });
     };
     const resize = new ResizeObserver(schedule);
+    for (const control of presence.querySelectorAll(".companion-hud__controls, .companion-goal-tab")) resize.observe(control);
     const mutation = new MutationObserver(schedule);
     mutation.observe(presence, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class", "data-user-anchor", "data-projection-state"] });
     const app = presence.closest(".desktop-app");

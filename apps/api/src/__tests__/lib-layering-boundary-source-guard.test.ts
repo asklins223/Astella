@@ -122,12 +122,14 @@ const CROSS_MODULE_BASELINE: ReadonlySet<string> = new Set([
   "modules/companion-journey/journey-hook.ts",
   "modules/companion-shell/answer-mode-preference.ts",
   "modules/identity/ai-consent-gate.ts",
+  "modules/identity/ai-consent-service.ts", // 账号级 AI 边界供伴星记忆提交校验，不能各域另造一份设置。
   "modules/identity/middleware.ts",
   "modules/identity/service.ts",
   "modules/job/service.ts",
   "modules/learning-objectives/action-resolver.ts",
   "modules/learning-objectives/change-impact-service.ts",
   "modules/learning-objectives/origin-service.ts",
+  "modules/learning-objectives/search-projection.ts", // 目标公开索引随制卡、轮次及笔记写入同步，共用领域投影契约。
   "modules/learning-objectives/surface-service.ts",
   "modules/learning-runs/run-service.ts",
   "modules/note/companion-source.ts",

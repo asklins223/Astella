@@ -71,7 +71,7 @@ describe("未完成的学习：她读到的就是屏幕上那一份", () => {
     render(<ResumableSurface />);
 
     const headline = screen.getByRole("heading", { level: 2 });
-    expect(headline.textContent).toBe("未完成的学习");
+    expect(headline.textContent).toBe("接着上次学");
     const rows = await screen.findAllByText(/^未命名目标$|^轨道周期$|^音色的跨语言迁移$/);
     expect(rows).toHaveLength(3);
     await waitFor(() => expect(publishedView()).not.toBeNull());
@@ -90,7 +90,7 @@ describe("未完成的学习：她读到的就是屏幕上那一份", () => {
     expect(view.metrics?.find((metric) => metric.label === "共")?.value).toBe("25 项");
     expect(view.metrics?.find((metric) => metric.label === "先列出")?.value).toBe("3 项");
     // 数得出更多时，她那侧也要读到"其余还没列出来"这一句，不能拿 3 条冒充 25 条。
-    expect(view.notice).toBe(screen.getByText(/^这里先列出 \d+ 项，共 \d+ 项/).textContent);
+    expect(view.notice).toBe(screen.getByText(/^这里列出最近的 \d+ 项，当前共 \d+ 项/).textContent);
   });
 
   it("投影里这一节读失败了：登记的是读不到，不是一个猜出来的数", async () => {

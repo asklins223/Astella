@@ -147,13 +147,29 @@ export async function collectEntry(
   });
   if (!gate.allow) return { status: "rejected", reason: gate.reason };
 
+  // A stale diary page must not bring deleted/revoked excerpts back by
+  // collecting again. Paragraph identity also binds the published revision.
+  if (source === "diary") {
+    const target = /^(\d{4}-\d{2}-\d{2})(?::v([1-9]\d*):b\d+:p\d+)?$/.exec(input.sourceId);
+    const date = target ? new Date(`${target[1]}T00:00:00Z`) : null;
+    if (!target || !date || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== target[1]) return { status: "rejected", reason: "source_unavailable" };
+    const diaries = await executor.execute<{ revision: number }>(sql`
+      SELECT revision FROM companion_daily_summaries
+      WHERE workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
+        AND date = ${target[1]} AND status = 'generated' AND deleted_at IS NULL
+      LIMIT 1
+    `);
+    const diary = (Array.isArray(diaries) ? diaries : [])[0];
+    if (!diary || target[2] && diary.revision !== Number(target[2])) return { status: "rejected", reason: "source_unavailable" };
+  }
+
   const rows = existingId
     ? await executor.execute(sql`
         UPDATE companion_discovery_entries
         SET visible = true, masked = false,
             body = ${input.body},
-            annotation = ${input.annotation ?? null},
-            visibility = ${input.visibility ?? "private"},
+            annotation = CASE WHEN ${input.annotation !== undefined} THEN ${input.annotation ?? null} ELSE annotation END,
+            visibility = CASE WHEN ${input.visibility !== undefined} THEN ${input.visibility ?? "private"} ELSE visibility END,
             updated_at = now()
         WHERE id = ${existingId} AND workspace_id = ${scope.workspaceId} AND user_id = ${scope.userId}
         RETURNING *
@@ -166,7 +182,7 @@ export async function collectEntry(
         RETURNING *
       `);
 
-  const row = (Array.isArray(rows) ? rows : [])[0] as typeof companionDiscoveryEntries.$inferSelect | undefined;
+  const row = (Array.isArray(rows) ? rows : [])[0] as DiscoveryRow | undefined;
   if (!row) return { status: "rejected", reason: "write_conflict" };
   return { status: existingId ? "already_collected" : "collected", entry: toContract(row) };
 }

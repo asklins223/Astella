@@ -22,6 +22,10 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
+import Fastify from "fastify";
+import { reviewSubscriptionResultV2Schema } from "@ailearn/shared";
+import { reviewRoutes } from "../modules/review/routes.ts";
+import { issueSession, revokeSession } from "../modules/identity/session-service.ts";
 
 const fixtureUrl = process.env.DATABASE_URL_MIGRATOR ?? process.env.DATABASE_URL;
 if (!fixtureUrl || !process.env.DATABASE_URL_API) {
@@ -165,4 +169,30 @@ test("W7-3 刀五：读不到的那一篇翻 404 那一档，不翻 500", async 
       "订阅只能立在本人的书房里；读不到那一档要能被路由翻成 404",
     );
   });
+});
+
+test("真实订阅路由回执符合桌面合同，开启和暂停都能读到保存后的状态", async () => {
+  const app = Fastify({ logger: false });
+  const { token } = await issueSession(USER_ID, WORKSPACE_ID);
+  try {
+    await app.register(reviewRoutes);
+    await app.ready();
+    for (const [action, status] of [["activate", "active"], ["pause", "paused"]] as const) {
+      const response = await app.inject({
+        method: "POST", url: `/v2/reviews/subscriptions/${action}`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { source: "note_subscription", subjectId: NOTE_ID },
+      });
+      assert.equal(response.statusCode, 200, response.body);
+      const result = reviewSubscriptionResultV2Schema.parse(response.json());
+      assert.equal(result.subscription.subjectId, NOTE_ID);
+      assert.equal(result.subscription.status, status);
+      const read = await app.inject({ method: "GET", url: "/v2/reviews/subscriptions/notes",
+        headers: { authorization: `Bearer ${token}` } });
+      assert.equal(read.json().items.find((row: { subjectId: string }) => row.subjectId === NOTE_ID)?.status, status);
+    }
+  } finally {
+    await revokeSession(token);
+    await app.close();
+  }
 });

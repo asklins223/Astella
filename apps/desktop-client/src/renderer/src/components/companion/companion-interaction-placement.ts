@@ -10,29 +10,39 @@ export interface CompanionFloatingPlacement {
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(value, Math.max(low, high)));
 const rect = (left: number, top: number, width: number, height: number): Rect & { width: number; height: number } => ({ left, top, width, height, right: left + width, bottom: top + height });
 
+/** The character and its entry points share one protected interaction seat. */
+function interactionBounds(role: Rect, controls: readonly Rect[]): Rect {
+  return controls.reduce((bounds, control) => ({
+    left: Math.min(bounds.left, control.left), right: Math.max(bounds.right, control.right),
+    top: Math.min(bounds.top, control.top), bottom: Math.max(bounds.bottom, control.bottom),
+  }), role);
+}
+
 /** Keeps the conversation book beside the protected head; tails may sit beneath it. */
-export function companionHistoryPlacement(role: Rect, viewportWidth: number, preferredWidth = 760) {
+export function companionHistoryPlacement(role: Rect, viewportWidth: number, preferredWidth = 760, controls: readonly Rect[] = []) {
+  const bounds = interactionBounds(role, controls);
   const edge = 18;
   const gap = 16;
-  const leftRoom = Math.max(0, role.left - gap - edge);
-  const rightRoom = Math.max(0, viewportWidth - role.right - gap - edge);
+  const leftRoom = Math.max(0, bounds.left - gap - edge);
+  const rightRoom = Math.max(0, viewportWidth - bounds.right - gap - edge);
   let side: "left" | "right" = (role.left + role.right) / 2 >= viewportWidth / 2 ? "left" : "right";
   if (side === "left" && leftRoom < 300 && rightRoom > leftRoom) side = "right";
   if (side === "right" && rightRoom < 300 && leftRoom > rightRoom) side = "left";
   const width = Math.min(preferredWidth, side === "left" ? leftRoom : rightRoom);
-  const left = side === "left" ? role.left - gap - width : role.right + gap;
+  const left = side === "left" ? bounds.left - gap - width : bounds.right + gap;
   return { side, left: clamp(left, edge, viewportWidth - width - edge), width };
 }
 
 /** Measures only floating surfaces; never changes a page's seat or width. */
-export function companionFloatingPlacement({ role, viewport, headHeight, headWidth: preferredWidth = 340, hasPapers = false, paperWidth: preferredPaperWidth = 360 }: {
-  role: Rect; viewport: { width: number; height: number }; headHeight: number; headWidth?: number; hasPapers?: boolean; paperWidth?: number;
+export function companionFloatingPlacement({ role, controls = [], viewport, headHeight, headWidth: preferredWidth = 340, hasPapers = false, paperWidth: preferredPaperWidth = 360 }: {
+  role: Rect; controls?: readonly Rect[]; viewport: { width: number; height: number }; headHeight: number; headWidth?: number; hasPapers?: boolean; paperWidth?: number;
 }): CompanionFloatingPlacement {
+  const bounds = interactionBounds(role, controls);
   const edge = 14;
   const ceiling = Math.min(58, viewport.height * .15);
   const gap = 16;
-  const availableLeft = Math.max(0, role.left - edge - gap);
-  const availableRight = Math.max(0, viewport.width - role.right - edge - gap);
+  const availableLeft = Math.max(0, bounds.left - edge - gap);
+  const availableRight = Math.max(0, viewport.width - bounds.right - edge - gap);
   let side: "left" | "right" = (role.left + role.right) / 2 >= viewport.width / 2 ? "left" : "right";
   // A dragged role may sit at the centre. Use the other side only when the chosen
   // side cannot hold a readable paper and the other side actually can.
@@ -42,14 +52,14 @@ export function companionFloatingPlacement({ role, viewport, headHeight, headWid
   const headWidth = Math.min(preferredWidth, viewport.width - edge * 2);
   let height = Math.min(Math.max(0, headHeight), viewport.height - ceiling - edge);
   if (hasPapers && viewport.height < 550) height = Math.min(height, (viewport.height - ceiling - edge - gap) * .5);
-  const above = role.top - gap - height >= ceiling;
+  const above = bounds.top - gap - height >= ceiling;
   let head = above
-    ? rect(clamp((role.left + role.right - headWidth) / 2, edge, viewport.width - headWidth - edge), role.top - gap - height, headWidth, height)
-    : rect(side === "left" ? Math.max(edge, role.left - gap - Math.min(headWidth, available)) : role.right + gap,
+    ? rect(clamp((role.left + role.right - headWidth) / 2, edge, viewport.width - headWidth - edge), bounds.top - gap - height, headWidth, height)
+    : rect(side === "left" ? Math.max(edge, bounds.left - gap - Math.min(headWidth, available)) : bounds.right + gap,
       clamp(role.top, ceiling, viewport.height - height - edge), Math.min(headWidth, Math.max(180, available)), height);
   if (available < 180) {
-    const aboveSpace = Math.max(0, role.top - gap - ceiling);
-    const belowSpace = Math.max(0, viewport.height - edge - role.bottom - gap);
+    const aboveSpace = Math.max(0, bounds.top - gap - ceiling);
+    const belowSpace = Math.max(0, viewport.height - edge - bounds.bottom - gap);
     height = Math.min(height, Math.max(aboveSpace, belowSpace));
     if (hasPapers && Math.min(aboveSpace, belowSpace) < 100) {
       // A narrow side corridor needs a shared vertical stack. Reserve readable
@@ -58,10 +68,10 @@ export function companionFloatingPlacement({ role, viewport, headHeight, headWid
       height = Math.min(height, Math.max(0, Math.max(aboveSpace, belowSpace) - gap - 100));
     }
     head = rect(clamp((role.left + role.right - headWidth) / 2, edge, viewport.width - headWidth - edge),
-      aboveSpace >= belowSpace ? role.top - gap - height : role.bottom + gap, headWidth, height);
+      aboveSpace >= belowSpace ? bounds.top - gap - height : bounds.bottom + gap, headWidth, height);
   }
   const paperWidth = Math.min(preferredPaperWidth, available >= 180 ? available : viewport.width - edge * 2);
-  let paperLeft = side === "left" ? Math.max(edge, role.left - gap - paperWidth) : Math.min(role.right + gap, viewport.width - paperWidth - edge);
+  let paperLeft = side === "left" ? Math.max(edge, bounds.left - gap - paperWidth) : Math.min(bounds.right + gap, viewport.width - paperWidth - edge);
   let paperTop = ceiling;
   let paperBottom = viewport.height - edge;
   const horizontalCollision = paperLeft < head.right + gap && paperLeft + paperWidth > head.left - gap;
@@ -87,8 +97,8 @@ export function companionFloatingPlacement({ role, viewport, headHeight, headWid
   if (available < 180) {
     paperLeft = clamp((role.left + role.right - paperWidth) / 2, edge, viewport.width - paperWidth - edge);
     const corridors = [
-      { top: ceiling, bottom: Math.max(ceiling, role.top - gap) },
-      { top: Math.min(viewport.height - edge, role.bottom + gap), bottom: viewport.height - edge },
+      { top: ceiling, bottom: Math.max(ceiling, bounds.top - gap) },
+      { top: Math.min(viewport.height - edge, bounds.bottom + gap), bottom: viewport.height - edge },
     ].flatMap(corridor => {
       if (head.height === 0 || head.bottom <= corridor.top || head.top >= corridor.bottom) return [corridor];
       return [{ top: corridor.top, bottom: Math.max(corridor.top, head.top - gap) },

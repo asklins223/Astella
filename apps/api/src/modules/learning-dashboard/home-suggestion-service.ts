@@ -235,9 +235,12 @@ export async function actOnTodayBatchV2(
 
   // **已做的不因为批次变短而消失**——她已经做了的那几道是她做了的。所以减量到 2 之后
   // 说"你做了 3 道"是**对的**，而把三道抹成 2 才是失真。
-  const remaining = Math.max(0, lockedLength - doneCount);
+  const batch = await loadLimitedBatchV2(tx, { ...ctx, now, lockedLength });
+  // 锁定长度是容量，不是候选数：空账号不能凭容量生成不存在的题目。
+  const remaining = Math.min(batch.items.length, Math.max(0, lockedLength - doneCount));
   const decided = decideTodayBatchOptionV2(
-    { lockedLength, remaining, paused, reduceBy: ctx.reduceBy },
+    // 减量已经落库，只生成回执，不能再减一遍。
+    { lockedLength, remaining, paused, reduceBy: 0 },
     ctx.action,
   );
   return {

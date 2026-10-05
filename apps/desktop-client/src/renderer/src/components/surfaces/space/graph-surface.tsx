@@ -157,11 +157,12 @@ const NODE_TYPE_LABEL: Record<GraphNode["type"], string> = {
   key_point: "证据卫星",
 };
 
-function objectiveUniverseState(state: string): string {
+function objectiveUniverseState(personal: ObjectiveNode["personal"]): string {
+  const state = personal.state;
   if (state === "needs_repair" || state === "fragile" || state === "outdated") return "misunderstood";
   if (state === "due_review") return "due_review";
   if (state === "stable") return "reviewed";
-  if (state === "learning" || state === "scheduled") return "preliminary_understood";
+  if ((state === "learning" || state === "scheduled") && (personal.lastCanonicalEventId || personal.practiceTrailCount > 0)) return "preliminary_understood";
   return "unseen";
 }
 
@@ -226,7 +227,7 @@ function toUniverseGraph(
         type: "card",
         label: graphNodeLabel(node),
         description: node.publicSummary,
-        state: objectiveUniverseState(node.personal.state),
+        state: objectiveUniverseState(node.personal),
         parentId: null,
         evidenceCoverage: evidenceDegreeForNode > 0 ? 1 : null,
         metadata: { objectiveState: node.personal.state },

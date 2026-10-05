@@ -45,6 +45,7 @@ export function ResumableSurface() {
   const batchEpochRef = useRef<number | undefined>(undefined);
   const items = useMemo(() => (summary?.state === "data" ? summary.data.items : []), [summary]);
   const total = summary?.state === "data" ? summary.data.activeCount : 0;
+  const pageTitle = "接着上次学";
   /**
    * 屏上 header 那一行只写一次：登记给伴星的 `statusLine` 复用同一个表达式。
    * 分成两处写就是两份文案，早晚会分叉。
@@ -73,7 +74,7 @@ export function ResumableSurface() {
     if (!summary && !failure) return null;
     return {
       pageId: "resumable",
-      title: "未完成的学习",
+      title: pageTitle,
       statusLine: headLine,
       metrics: [
         { label: "共", value: `${total} 项` },
@@ -106,7 +107,7 @@ export function ResumableSurface() {
         <header className="resumable-index__head">
           <span className="resumable-index__bookmark" aria-hidden="true"><Bookmark size={26} /></span>
           <div><p className="eyebrow">书签还夹在这里</p>
-          <h2 id="resumable-title">接着上次学</h2>
+          <h2 id="resumable-title">{pageTitle}</h2>
           <p className="small">{headLine}</p>
           </div>
           <button type="button" className="button" onClick={() => invoke("continue")}><Leaf size={16} aria-hidden="true" />今日学习</button>

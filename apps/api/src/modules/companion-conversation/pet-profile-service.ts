@@ -16,9 +16,12 @@ import {
 import { users } from "@ailearn/shared/db-schema/identity";
 import { getPresetById } from "@ailearn/shared/pet-persona-presets";
 export {
+  DEFAULT_PERSONA_PRESET_ID,
+  getDefaultPersonaPreset,
   PET_PERSONA_PRESETS,
   getPresetById,
   PET_PERSONA_PRESET_VERSION,
+  resolveCompanionPersonaProfile,
   type PetProfileActiveness,
   type PetPersonaPreset,
   type PetPersonaPresetBoundaries,
@@ -435,6 +438,12 @@ export function expressionResetProfile(
   current: CompanionPersonaProfileContent,
 ): CompanionPersonaProfileContent {
   const preset = getPresetById(current.presetId);
+  const fieldOrigin = { ...current.fieldOrigin };
+  // 被重置回预设值的两项，来源也跟着回退到 preset：从此归预设管，下次换人格
+  // 就可以直接被覆盖。若留着「她改的」，用户会看到一个已经清干净的语气
+  // 还被标记成"她写的"，下一次换人格时无端多问一句。
+  delete fieldOrigin.speakingStyle;
+  delete fieldOrigin.examples;
   return {
     presetId: current.presetId,
     name: current.name,
@@ -443,6 +452,7 @@ export function expressionResetProfile(
     examples: preset?.examples ?? current.examples,
     activeness: current.activeness,
     boundaries: current.boundaries,
+    fieldOrigin,
   };
 }
 

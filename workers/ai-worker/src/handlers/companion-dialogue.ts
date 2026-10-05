@@ -60,7 +60,7 @@ import {
   type PetPersonaPresetBoundaries,
   type PetProfileActiveness,
 } from "@ailearn/shared";
-import { PET_PERSONA_PRESET_VERSION } from "@ailearn/shared/pet-persona-presets";
+import { PET_PERSONA_PRESET_VERSION, resolveCompanionPersonaProfile } from "@ailearn/shared/pet-persona-presets";
 import { runCompanionAgentLoop } from "./companion-agent-runtime.ts";
 import { CompanionAgentBudgetExceededError, CompanionContextChangedError } from "../lib/non-retryable-errors.ts";
 import { assertCompanionContextSourcesCurrent } from "./companion-context-sources.ts";
@@ -478,28 +478,31 @@ export async function runCompanionDialogue(
           && !Array.isArray(personaProfileContent)
           ? personaProfileContent as Record<string, unknown>
           : null;
-        const petProfile = petProfileRow
-          ? {
-              name: String(petProfileRow.name ?? "伴星"),
-              speakingStyle: String(petProfileRow.speakingStyle ?? ""),
-              personalityTags: Array.isArray(petProfileRow.personalityTags)
-                ? petProfileRow.personalityTags.map(String)
-                : [],
-              examples: Array.isArray(petProfileRow.examples)
-                ? (petProfileRow.examples as Array<{ text?: unknown }>)
-                    .map((e) => ({ text: String(e.text ?? "") }))
-                    .filter((e) => e.text.length > 0)
-                : [],
-              // 活跃度与边界进对话链路（方案 29 §3.3，抱怨 #2）。取值按契约白名单
-              // 收窄，不认识的写 null——宁可当"没设置"也不要把她导向一个不存在的档。
-              activeness: ACTIVENESS_VALUES.has(String(petProfileRow.activeness ?? ""))
-                ? (petProfileRow.activeness as PetProfileActiveness)
-                : null,
-              boundaries: isPetBoundaryObject(petProfileRow.boundaries)
-                ? petProfileRow.boundaries
-                : null,
-            }
-          : null;
+        // 账号没写过人格档案（revision 0）时，**生效的人格是系统默认人格**，不是"没有人格"。
+        // 此前这里给 null，于是她的性格来自通用角色底座——"没选人格也能正常聊天"，
+        // 而选不选人格对第一句话毫无影响（用户 2026-10-05 的决定）。
+        // 注意这不动版本记账：persona_profile_revision 仍然是 0，档案行仍然是空的。
+        const effectivePersona = resolveCompanionPersonaProfile(petProfileRow);
+        const petProfile = {
+          name: String(effectivePersona.name ?? "伴星"),
+          speakingStyle: String(effectivePersona.speakingStyle ?? ""),
+          personalityTags: Array.isArray(effectivePersona.personalityTags)
+            ? effectivePersona.personalityTags.map(String)
+            : [],
+          examples: Array.isArray(effectivePersona.examples)
+            ? (effectivePersona.examples as Array<{ text?: unknown }>)
+                .map((e) => ({ text: String(e.text ?? "") }))
+                .filter((e) => e.text.length > 0)
+            : [],
+          // 活跃度与边界进对话链路（方案 29 §3.3，抱怨 #2）。取值按契约白名单
+          // 收窄，不认识的写 null——宁可当"没设置"也不要把她导向一个不存在的档。
+          activeness: ACTIVENESS_VALUES.has(String(effectivePersona.activeness ?? ""))
+            ? (effectivePersona.activeness as PetProfileActiveness)
+            : null,
+          boundaries: isPetBoundaryObject(effectivePersona.boundaries)
+            ? effectivePersona.boundaries
+            : null,
+        };
         const groundedTutorContext = await readGroundedTutorContext(
           tx,
           run.page_context,

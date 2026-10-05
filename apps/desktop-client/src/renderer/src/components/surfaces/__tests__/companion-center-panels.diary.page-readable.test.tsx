@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DiaryPanel } from "../companion/companion-center-panels.tsx";
 import { todayIsoDate } from "../companion/companion-diary-day.ts";
 import type { CompanionDailySummaryV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
@@ -23,6 +23,8 @@ const noop = () => undefined;
 function daily(overrides: Partial<CompanionDailySummaryV1> = {}): CompanionDailySummaryV1 {
   return {
     version: 1,
+    revision: 1,
+    hidden: false,
     date: todayIsoDate(),
     status: "generated",
     generatedAt: "2026-09-24T21:00:00.000Z",
@@ -68,9 +70,15 @@ function publishedView(): PageReadableV1 | null {
   return useRoomStore.getState().pageReadableView?.view ?? null;
 }
 
+const scroll = vi.fn();
+beforeEach(() => {
+  scroll.mockClear();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scroll });
+});
 afterEach(() => {
   cleanup();
-  useRoomStore.setState({ pageReadableView: null });
+  Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+  useRoomStore.setState({ pageReadableView: null, motionMode: "full", reducedMotion: false });
 });
 
 describe("伴星中心 · 日记：只说那一刻屏幕上写着的", () => {
@@ -79,7 +87,7 @@ describe("伴星中心 · 日记：只说那一刻屏幕上写着的", () => {
     const view = publishedView()!;
     expect(view.pageId).toBe("companion");
     expect(view.title).toBe("伴星中心");
-    const prose = [...document.querySelectorAll(".cc-diary-prose > p")].map((node) => node.textContent);
+    const prose = [...document.querySelectorAll(".cc-diary-paragraph > p")].map((node) => node.textContent);
     expect(prose).toHaveLength(2);
     expect(view.items?.map((entry) => entry.label)).toEqual(prose);
     expect(view.items?.map((entry) => entry.ordinal)).toEqual([1, 2]);
@@ -142,5 +150,51 @@ describe("伴星中心 · 日记：只说那一刻屏幕上写着的", () => {
     const view = publishedView()!;
     expect(view.statusLine).toBe(document.querySelector(".cc-state strong")?.textContent);
     expect(view.items).toBeUndefined();
+  });
+
+  it("同一文本块的两个段落有独立收藏入口，各自提交对应的原话", () => {
+    const keep = vi.fn();
+    renderPanel({
+      section: { ok: true, value: daily({ date: "2026-10-04", revision: 2, blocks: [{ type: "text", text: "第一段。\n\n第二段。" }] }) },
+      discoveryFor: request => ({ state: "offer", busy: false, failure: null, feedback: null, onKeep: () => keep(request) }),
+    });
+    const buttons = screen.getAllByRole("button", { name: "把这一段原话留在发现簿" });
+    expect(buttons.every(button => !button.textContent && button.parentElement?.classList.contains("cc-diary-paragraph"))).toBe(true);
+    expect([...document.querySelectorAll(".cc-diary-paragraph > p")].map(node => node.textContent)).toEqual(["第一段。", "第二段。"]);
+    fireEvent.click(buttons[0]!);
+    fireEvent.click(buttons[1]!);
+    expect(keep.mock.calls.map(([request]) => request)).toEqual([
+      { kind: "diary_excerpt", source: "diary", sourceId: "2026-10-04:v2:b0:p0", author: "assistant", body: "第一段。" },
+      { kind: "diary_excerpt", source: "diary", sourceId: "2026-10-04:v2:b0:p1", author: "assistant", body: "第二段。" },
+    ]);
+  });
+
+  it.each([
+    { motionMode: "full" as const, reducedMotion: false, behavior: "smooth" },
+    { motionMode: "off" as const, reducedMotion: false, behavior: "auto" },
+    { motionMode: "full" as const, reducedMotion: true, behavior: "auto" },
+  ])("返回段落立即交接键盘焦点，滚动遵守 $motionMode / reducedMotion=$reducedMotion", ({ motionMode, reducedMotion, behavior }) => {
+    useRoomStore.setState({ motionMode, reducedMotion });
+    const consumed = vi.fn();
+    renderPanel({
+      section: { ok: true, value: daily({ date: "2026-10-04", blocks: [{ type: "text", text: "第一段。\n\n第二段。" }] }) },
+      sourceTarget: { sourceId: "2026-10-04:v1:b0:p1", revision: 1 },
+      onSourceConsumed: consumed,
+    });
+    expect(document.activeElement?.getAttribute("data-source-id")).toBe("2026-10-04:v1:b0:p1");
+    expect(scroll).toHaveBeenCalledWith({ block: "center", behavior });
+    expect(consumed).toHaveBeenCalledOnce();
+  });
+
+  it("日记已经改版时说明实际版本，不把焦点移到新版的同号段落", () => {
+    const consumed = vi.fn();
+    renderPanel({
+      section: { ok: true, value: daily({ date: "2026-10-04", revision: 2 }) },
+      sourceTarget: { sourceId: "2026-10-04:v1:b0:p1", revision: 1 },
+      onSourceConsumed: consumed,
+    });
+    expect(screen.getByRole("status").textContent).toContain("收藏来自第 1 版，这里是当前第 2 版");
+    expect(scroll).not.toHaveBeenCalled();
+    expect(consumed).not.toHaveBeenCalled();
   });
 });

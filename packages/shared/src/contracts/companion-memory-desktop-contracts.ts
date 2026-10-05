@@ -21,6 +21,8 @@ import {
   companionSelectionV1Schema,
   companionTextBlockV1Schema,
 } from "./companion-conversation-contracts.ts";
+import type { CompanionPersonaProfileContent } from "../db-schema/companion-memory.ts";
+import { applyPersonaSwitch, type SwitchableField } from "../pet-persona-merge.ts";
 
 // ─── 记忆条目（§3.3 memory-routes.ts 的 MemoryItemV2）────────────────────
 
@@ -385,6 +387,23 @@ export const companionPersonaBoundariesV1Schema = z.strictObject({
 });
 export type CompanionPersonaBoundariesV1 = z.infer<typeof companionPersonaBoundariesV1Schema>;
 
+/** 人格每一项是谁写的。换预设时只有 `preset` 来源的项被覆盖。 */
+export const personaOriginV1Schema = z.enum(["preset", "user", "assistant"]);
+export const personaFieldOriginV1Schema = z.strictObject({
+  name: personaOriginV1Schema.optional(),
+  personalityTags: personaOriginV1Schema.optional(),
+  speakingStyle: personaOriginV1Schema.optional(),
+  examples: personaOriginV1Schema.optional(),
+  activeness: personaOriginV1Schema.optional(),
+  boundaries: z.strictObject({
+    allowPlayful: personaOriginV1Schema.optional(),
+    allowNudgeLearning: personaOriginV1Schema.optional(),
+    allowVoiceTags: personaOriginV1Schema.optional(),
+    catchphrase: personaOriginV1Schema.optional(),
+  }).optional(),
+});
+export type PersonaFieldOriginV1 = z.infer<typeof personaFieldOriginV1Schema>;
+
 /** Account-scoped persona override. Workspace relationship metrics travel separately. */
 export const companionPersonaProfileV1Schema = z.strictObject({
   id: z.string().uuid(),
@@ -396,6 +415,7 @@ export const companionPersonaProfileV1Schema = z.strictObject({
   examples: z.array(z.strictObject({ text: z.string().min(1).max(200) })).max(5),
   activeness: companionPersonaActivenessV1Schema,
   boundaries: companionPersonaBoundariesV1Schema,
+  fieldOrigin: personaFieldOriginV1Schema.optional(),
   revision: z.number().int().positive(),
   createdAt: isoTimestampSchema,
   updatedAt: isoTimestampSchema,
@@ -447,6 +467,7 @@ export const companionPersonaPatchV1Schema = z.strictObject({
   examples: z.array(z.strictObject({ text: z.string().min(1).max(200) })).max(5),
   activeness: companionPersonaActivenessV1Schema,
   boundaries: companionPersonaBoundariesV1Schema,
+  fieldOrigin: personaFieldOriginV1Schema.optional(),
 });
 export type CompanionPersonaPatchV1 = z.infer<typeof companionPersonaPatchV1Schema>;
 
@@ -555,7 +576,54 @@ export const companionPersonaActivatedV1Schema = z.strictObject({
 });
 export type CompanionPersonaActivatedV1 = z.infer<typeof companionPersonaActivatedV1Schema>;
 
-/** 页面改动一项设置时，用它把「整套档案 + 这一项」拼成合法请求体。 */
+/**
+ * 页面改动一项设置时，用它把「整套档案 + 这一项」拼成合法请求体。
+ *
+ * 改过的那几项来源打 `user` —— 这是"换人格时这几项会被问一句"的数据来源。
+ * 只打**真的变了**的那些边界键：把没动过的键也标成 user 的话，用户下次换人格
+ * 会看到一排本来没人碰过的开关问他要不要保留。
+ *
+ * 收的是**档案内容**而不是那条带 id/时间戳的契约行：账号还没有档案时（revision 0，
+ * 生效的是系统默认人格），控件同样要能改 —— 那时没有 id 可传。
+ */
+export function companionPersonaPatchFromContent(
+  base: CompanionPersonaProfileContent,
+  revision: number,
+  change: {
+    readonly presetId?: string | null;
+    readonly activeness?: CompanionPersonaActivenessV1;
+    readonly boundaries?: CompanionPersonaBoundariesV1;
+    readonly name?: string;
+  },
+): CompanionPersonaPatchV1 {
+  const fieldOrigin = { ...base.fieldOrigin };
+  if (change.name !== undefined && change.name !== base.name) fieldOrigin.name = "user";
+  if (change.activeness !== undefined && change.activeness !== base.activeness) fieldOrigin.activeness = "user";
+  if (change.boundaries) {
+    const boundaries = { ...change.boundaries };
+    const origin = { ...fieldOrigin.boundaries };
+    for (const key of ["allowPlayful", "allowNudgeLearning", "allowVoiceTags", "catchphrase"] as const) {
+      if (boundaries[key] === undefined) continue;
+      if (boundaries[key] === base.boundaries[key]) delete boundaries[key];
+      else origin[key] = "user";
+    }
+    if (Object.keys(origin).length > 0) fieldOrigin.boundaries = origin;
+  }
+  return companionPersonaPatchV1Schema.parse({
+    revision,
+    presetId: change.presetId !== undefined ? change.presetId : base.presetId,
+    // 名字以前是"跟着档案原样带回"的：整条写入路径（`PATCH /companion/pet-profile`）
+    // 一直收 `name`，界面却没有任何地方能改它，于是她叫什么只能由预设决定。
+    name: change.name ?? base.name,
+    personalityTags: base.personalityTags,
+    speakingStyle: base.speakingStyle,
+    examples: base.examples,
+    activeness: change.activeness ?? base.activeness,
+    boundaries: change.boundaries ?? base.boundaries,
+    fieldOrigin,
+  });
+}
+
 export function companionPersonaPatchFromProfile(
   profile: CompanionPersonaProfileV1,
   change: {
@@ -565,35 +633,24 @@ export function companionPersonaPatchFromProfile(
     readonly name?: string;
   },
 ): CompanionPersonaPatchV1 {
-  return companionPersonaPatchV1Schema.parse({
-    revision: profile.revision,
-    presetId: change.presetId !== undefined ? change.presetId : profile.presetId,
-    // 名字以前是"跟着档案原样带回"的：整条写入路径（`PATCH /companion/pet-profile`）
-    // 一直收 `name`，界面却没有任何地方能改它，于是她叫什么只能由预设决定。
-    name: change.name ?? profile.name,
-    personalityTags: profile.personalityTags,
-    speakingStyle: profile.speakingStyle,
-    examples: profile.examples,
-    activeness: change.activeness ?? profile.activeness,
-    boundaries: change.boundaries ?? profile.boundaries,
-  });
+  return companionPersonaPatchFromContent(profile, profile.revision, change);
 }
 
-/** 应用一套服务端预设：预设自带完整档案内容，所以不需要已有 profile。 */
-export function companionPersonaPatchFromPreset(
-  preset: CompanionPersonaPresetV1,
+/**
+ * 换一套预设的请求体。
+ *
+ * 走 `applyPersonaSwitch` 而不是"整份覆盖"：她和你改过的那几项会按 `overwrite`
+ * 逐项决定去留（见 `pet-persona-merge.ts`）。`overwrite` 默认为空 —— 也就是全保留。
+ *
+ * `base` 是当前的生效内容（账号档案，没有就用系统默认人格），`revision` 是它的 CAS 号。
+ */
+export function companionPersonaPatchFromPresetSwitch(
+  base: CompanionPersonaProfileContent,
   revision: number,
+  preset: CompanionPersonaPresetV1,
+  overwrite: readonly SwitchableField[] = [],
 ): CompanionPersonaPatchV1 {
-  return companionPersonaPatchV1Schema.parse({
-    revision,
-    presetId: preset.presetId,
-    name: preset.name,
-    personalityTags: preset.personalityTags,
-    speakingStyle: preset.speakingStyle,
-    examples: preset.examples,
-    activeness: preset.activeness,
-    boundaries: preset.boundaries,
-  });
+  return companionPersonaPatchV1Schema.parse({ revision, ...applyPersonaSwitch(base, preset, overwrite) });
 }
 
 // ─── 连续对话历史（产品层不暴露 conversation）──────────────────────────

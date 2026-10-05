@@ -798,6 +798,11 @@ export function DesktopAccessGate({
   /** 上一次发布给顶栏胶囊的空间身份；只在真的变了时写 store，避免每次 ready 都刷一遍订阅者。 */
   const spaceIdentityBoundaryRef = useRef<string | null>(null);
   const lastTrustedSessionRef = useRef<ReadyDesktopSession | null>(null);
+  const settingsReturnRef = useRef<{
+    userId: string;
+    workspaceId: string;
+    section: ReturnType<typeof useRoomStore.getState>["settingsSection"];
+  } | null>(null);
   // Set when an invite redemption fails right after login: the next bootstrap
   // resolves into the workspace phase so the failure has a surface to land on.
   const pendingWorkspaceNoticeRef = useRef<string | null>(null);
@@ -904,6 +909,17 @@ export function DesktopAccessGate({
       requestBootstrap(false, true);
       return;
     }
+    // 服务短暂离线没有证明身份或工作区改变。隐藏内容并复核，保留原任务落点；
+    // 若复核真的换了边界，apply(ready) 仍会清空旧领域状态。
+    if (code === "api_unavailable") {
+      requestBootstrap(false);
+      return;
+    }
+    const previous = lastTrustedSessionRef.current;
+    const room = useRoomStore.getState();
+    settingsReturnRef.current = code === "stale_workspace" && previous && room.surface === "settings"
+      ? { userId: previous.user.userId, workspaceId: previous.workspace.workspaceId, section: room.settingsSection }
+      : null;
     onWorkspaceBoundaryReset?.();
     readyBoundaryRef.current = null;
     if (["auth_required", "api_untrusted", "configuration_error", "unsupported_contract"].includes(code)) {
@@ -947,21 +963,26 @@ export function DesktopAccessGate({
           next.session.workspaceEpoch,
         ].join(":");
         const boundaryChanged = readyBoundaryRef.current !== null && readyBoundaryRef.current !== nextBoundary;
-        if (boundaryChanged) {
-          const previous = lastTrustedSessionRef.current;
-          const room = useRoomStore.getState();
-          // 同空间的改名或 AI 政策会推进权限纪元。旧请求仍要失效，但设置操作
-          // 完成后应留在正在调整的分区，不能把用户赶回首页。
-          const settingsSection = room.surface === "settings"
+        const pendingSettings = settingsReturnRef.current;
+        settingsReturnRef.current = null;
+        const previous = lastTrustedSessionRef.current;
+        const room = useRoomStore.getState();
+        const settingsSection = pendingSettings?.userId === next.session.user.userId
+          && pendingSettings.workspaceId === next.session.workspace.workspaceId
+          ? pendingSettings.section
+          : boundaryChanged && room.surface === "settings"
             && previous?.user.userId === next.session.user.userId
             && previous.workspace.workspaceId === next.session.workspace.workspaceId
             ? room.settingsSection : null;
+        if (boundaryChanged) {
+          // 同空间的改名或 AI 政策会推进权限纪元。旧请求仍要失效，但设置操作
+          // 完成后应留在正在调整的分区，不能把用户赶回首页。
           onWorkspaceBoundaryReset?.();
-          if (settingsSection) {
-            useRoomStore.getState().invoke("open-settings");
-            useRoomStore.getState().setSettingsSection(settingsSection);
-            useRoomStore.getState().setHudPage("settings", "returning");
-          }
+        }
+        if (settingsSection) {
+          useRoomStore.getState().invoke("open-settings");
+          useRoomStore.getState().setSettingsSection(settingsSection);
+          useRoomStore.getState().setHudPage("settings", "returning");
         }
         readyBoundaryRef.current = nextBoundary;
         lastTrustedSessionRef.current = next.session;
@@ -1040,8 +1061,10 @@ export function DesktopAccessGate({
               if (event.data.state.kind === "ready") return;
               const decision = decideRuntimeGate(event.data.state);
               if (decision.kind === "blocked") {
-                onWorkspaceBoundaryReset?.();
-                readyBoundaryRef.current = null;
+                if (decision.connection.kind !== "api_unavailable") {
+                  onWorkspaceBoundaryReset?.();
+                  readyBoundaryRef.current = null;
+                }
                 generationRef.current += 1;
                 setFormFailure(null);
                 setView(isConfigurationBoundary(decision.connection)
@@ -1432,7 +1455,7 @@ export function DesktopAccessGate({
           </span>
           <p>{retryAt
             ? `请在 ${retryAt} 后再试。`
-            : "为保护已有学习记录，应用尚未读取任何工作区内容。"}
+            : "重新连接学习服务后，应用会继续读取工作区内容。"}
           </p>
         </div>
         {view.retryAction ? (

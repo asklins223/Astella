@@ -67,7 +67,7 @@ test("重复收藏走 UPDATE，不插第二行 —— 共用身份", async () =>
     },
   } as unknown as ApiTransaction;
   await collectEntry(tx2, scope, {
-    kind: "diary_excerpt", source: "diary", sourceId: "d1", author: "assistant", body: "摘录",
+    kind: "kept_ai_suggestion", source: "assistant_reply", sourceId: "r1", author: "assistant", body: "原话",
   });
   const joined = log.join("\n");
   assert.match(joined, /UPDATE companion_discovery_entries/i, "已收藏过却走了 INSERT —— 会长出第二行");

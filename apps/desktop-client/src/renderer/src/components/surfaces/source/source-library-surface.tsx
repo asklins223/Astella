@@ -84,6 +84,8 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
   const [searching, setSearching] = useState(false);
   const [searchNotice, setSearchNotice] = useState<{ readonly tone: "info" | "error"; readonly text: string } | null>(null);
   const [captured, setCaptured] = useState<{ readonly sourceId: string; readonly title: string } | null>(null);
+  /** 一次收下多份时的收据。单独一格：单份那条说的是「这一份怎么样了」，批量这条说的是「这一批」。 */
+  const [batchReceipt, setBatchReceipt] = useState<string | null>(null);
   /** The bounded poll gave up while the server was still parsing. */
   const [stalled, setStalled] = useState(false);
   const pollAttemptsRef = useRef(0);
@@ -253,7 +255,32 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
   const handleCaptured = useCallback(async (sourceId: string, title: string) => {
     searchRequest.current++;
     setSearching(false);
+    setBatchReceipt(null);
     setCaptured({ sourceId, title });
+    setStatus("all");
+    setDraft("");
+    setQuery("");
+    setFullTextIds([]);
+    setSearchNotice(null);
+    pollAttemptsRef.current = 0;
+    setStalled(false);
+    await reload({ silent: true });
+  }, [reload, setStatus]);
+
+  /**
+   * 一次收下多份之后的那一句。
+   *
+   * 收据与单份分开：**逐份调 `handleCaptured` 会刷新 N 次索引**，而读者在这几十秒里
+   * 只想看到「收下了几份、有没有没进来的」。没进来的那几份由采集栏自己列着，
+   * 这里只报数——两处各说各话的话，同一份材料会在两个地方被说成不同的样子。
+   */
+  const handleBatchCaptured = useCallback(async (result: { readonly accepted: number; readonly failed: number }) => {
+    searchRequest.current++;
+    setSearching(false);
+    setCaptured(null);
+    setBatchReceipt(result.failed > 0
+      ? `已收下 ${result.accepted} 份材料，正在解析；另有 ${result.failed} 份没能收下，采集栏里列着是哪几份。`
+      : `已收下 ${result.accepted} 份材料，正在解析，完成后这张索引会自动更新。`);
     setStatus("all");
     setDraft("");
     setQuery("");
@@ -295,7 +322,7 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
   const capturedRow = captured
     ? [...items, ...archived].find((item) => item.id === captured.sourceId) ?? null
     : null;
-  const receipt = captured ? captureReceipt(captured.title, capturedRow?.status ?? null) : null;
+  const receipt = batchReceipt ?? (captured ? captureReceipt(captured.title, capturedRow?.status ?? null) : null);
   const truncatedForTab = status === "archived" ? archivedTruncated : truncated;
 
   /**
@@ -399,6 +426,7 @@ function SourceLibraryContent({ scope }: { readonly scope: number }) {
             </p>
           }
           onCaptured={handleCaptured}
+          onBatchCaptured={handleBatchCaptured}
           onOpenExisting={openSource}
         />
 

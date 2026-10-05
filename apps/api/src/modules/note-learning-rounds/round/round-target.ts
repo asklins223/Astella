@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { refreshObjectiveSearchProjections } from "../../learning-objectives/search-projection.ts";
 import { and, eq, sql } from "drizzle-orm";
 import type { ApiTransaction } from "../../../db/client.ts";
 import {
@@ -144,6 +145,7 @@ export async function persistRoundTarget(tx: ApiTransaction, scope: RoundScopeV1
   await tx.execute(sql`INSERT INTO note_learning_round_targets
     (workspace_id,user_id,round_id,driving_question_revision,objective_id,objective_revision_id,application_scenario)
     VALUES (${scope.workspaceId},${scope.userId},${round.roundId},${round.drivingQuestionRevision},${objectiveId},${objectiveRevisionId},${applicationScenario})`);
+  await refreshObjectiveSearchProjections(tx, scope.workspaceId, [objectiveId]);
   return objectiveId;
 }
 

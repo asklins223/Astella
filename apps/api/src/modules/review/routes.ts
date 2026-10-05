@@ -369,13 +369,15 @@ userId: req.session.userId,
   // 显示成已停。两个字段都回，是因为"这次没改动"（连点两下）与"停掉了但别人还
   // 撑着"是两件不同的事，合成一个布尔会被念成同一句。
   const subscriptionBody = (change: SubscriptionChangeV2) => ({
-    source: change.subscription.source,
-    subjectType: change.subscription.subjectType,
-    subjectId: change.subscription.subjectId,
-    status: change.subscription.status,
-    scopeNote: change.subscription.scopeNote,
-    createdAt: change.subscription.createdAt,
-    pausedAt: change.subscription.pausedAt,
+    subscription: {
+      source: change.subscription.source,
+      subjectType: change.subscription.subjectType,
+      subjectId: change.subscription.subjectId,
+      status: change.subscription.status,
+      scopeNote: change.subscription.scopeNote,
+      createdAt: change.subscription.createdAt,
+      pausedAt: change.subscription.pausedAt,
+    },
     changed: change.changed,
     stillCoveredBy: change.stillCoveredBy,
   });

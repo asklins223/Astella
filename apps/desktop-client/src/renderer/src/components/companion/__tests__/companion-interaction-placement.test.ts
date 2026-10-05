@@ -5,6 +5,14 @@ import type { Rect } from "../companion-home-placement";
 const overlaps = (a: Rect, b: Rect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 
 describe("conversation book placement", () => {
+  it.each([340, 760])("keeps a %ipx settings paper or book clear of the task tab and controls", (width) => {
+    const role = { left: 1150, right: 1410, top: 530, bottom: 790 };
+    const controls = [{ left: 1098, right: 1142, top: 600, bottom: 780 },
+      { left: 1030, right: 1160, top: 510, bottom: 550 }];
+    const paper = companionHistoryPlacement(role, 1440, width, controls);
+    expect(paper.width).toBe(width);
+    expect(paper.left + paper.width).toBeLessThanOrEqual(controls[1].left - 16);
+  });
   it.each([
     { width: 1440, role: { left: 100, right: 390, top: 530, bottom: 790 }, side: "right" },
     { width: 1440, role: { left: 1130, right: 1420, top: 530, bottom: 790 }, side: "left" },
@@ -27,6 +35,30 @@ describe("conversation book placement", () => {
 });
 
 describe("floating companion placement", () => {
+  it.each([124, 220, 380, 680])("keeps %ipx floating content and rich papers outside either interaction seat", (headHeight) => {
+    for (const viewport of [{ width: 1440, height: 810 }, { width: 720, height: 405 }]) {
+      for (const side of ["left", "right"] as const) {
+        const role = { left: viewport.width - 240, right: viewport.width - 20, top: viewport.height - 240, bottom: viewport.height - 20 };
+        const controls = [
+          { left: role.left - 60, right: role.left - 8, top: viewport.height - 185, bottom: viewport.height - 12 },
+          { left: role.left - 115, right: role.left + 15, top: viewport.height - 260, bottom: viewport.height - 220 },
+        ];
+        const mirror = (box: Rect): Rect => side === "left" ? box : { ...box, left: viewport.width - box.right, right: viewport.width - box.left };
+        const protectedRole = mirror(role), protectedControls = controls.map(mirror);
+        const layout = companionFloatingPlacement({ role: protectedRole, controls: protectedControls, viewport, headHeight, hasPapers: true });
+        for (const box of [layout.head, layout.papers]) {
+          expect(box.width).toBeGreaterThanOrEqual(180);
+          expect(box.height).toBeGreaterThan(0);
+          expect(box.left).toBeGreaterThanOrEqual(14);
+          expect(box.right).toBeLessThanOrEqual(viewport.width - 14);
+          expect(box.top).toBeGreaterThanOrEqual(48);
+          expect(box.bottom).toBeLessThanOrEqual(viewport.height - 14);
+          for (const control of [protectedRole, ...protectedControls]) expect(overlaps(box, control)).toBe(false);
+        }
+        expect(overlaps(layout.head, layout.papers)).toBe(false);
+      }
+    }
+  });
   it.each([
     { role: { left: 100, right: 390, top: 530, bottom: 790 }, viewport: { width: 1440, height: 810 }, dock: "above" },
     { role: { left: 496, right: 704, top: 150, bottom: 390 }, viewport: { width: 720, height: 405 }, dock: "left" },

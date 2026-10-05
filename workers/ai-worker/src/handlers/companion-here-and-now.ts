@@ -27,6 +27,7 @@ import { askableFactSpanKeys, loadFactSpans } from "./companion-fact-spans.ts";
 import { readLivePageView, type LivePageView } from "./companion-live-view.ts";
 import { findNearestNoteTitle, findNoteRuns } from "./companion-note-reads.ts";
 import { ACTIVE_LEARNING_RUN_PHASES } from "@ailearn/shared/learning-run-contracts";
+import { getDefaultPersonaPreset } from "@ailearn/shared/pet-persona-presets";
 
 const FALLBACK_TIMEZONE = "Asia/Shanghai";
 
@@ -394,12 +395,15 @@ export async function loadHereAndNow(
       EXTRACT(HOUR FROM now() AT TIME ZONE ${tzSubquery(scope.userId)})::int hour_of_day
   `))[0];
 
+  // 缺省取**系统默认人格**，不再写死 '伴星' / 'moderate'：她开口时的身份来自默认人格，
+  // 环境快照却报另一个名字与另一档话量，用户会当场看出"这地方说的是谁"。
+  const defaultPersona = getDefaultPersonaPreset();
   const petRows = await tx.execute<{
     name: string; activeness: string; interaction_count: number; last_active_at: Date | null;
     boundaries: Record<string, unknown> | null;
   }>(sql`
-    SELECT coalesce(a.profile->>'name', '伴星') AS name,
-           coalesce(a.profile->>'activeness', 'moderate') AS activeness,
+    SELECT coalesce(a.profile->>'name', ${defaultPersona.name}) AS name,
+           coalesce(a.profile->>'activeness', ${defaultPersona.activeness}) AS activeness,
            coalesce(r.interaction_count, 0) AS interaction_count,
            r.last_active_at,
            a.profile->'boundaries' AS boundaries

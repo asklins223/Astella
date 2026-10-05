@@ -89,7 +89,7 @@ export function SettingsDataBoundaryGroup(props: {
         {auditPage.items.map((item) => (
           <SettingRow
             key={item.id}
-            title={`${item.provider} · ${item.modelId}`}
+            title={`${item.provider === "openai_compatible" ? "外部模型服务" : item.provider} · ${item.modelId}`}
             detail={`${formatObjectiveDateTime(item.createdAt)} · 带出去的内容：${item.dataCategories.map((category) => AUDIT_CATEGORY_LABELS[category] ?? category).join("、")}`}
           >
             <span className={item.status === "success" ? "tag green" : "tag"}>{AUDIT_STATUS_LABELS[item.status]}</span>

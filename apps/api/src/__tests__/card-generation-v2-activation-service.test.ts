@@ -816,6 +816,9 @@ function setupFlexibleTx(options: {
         }
         return {
           where: () => makeWhereResult(tableRows(tName)),
+          innerJoin: (joinedTable: unknown) => ({
+            where: () => makeWhereResult(tableRows((joinedTable as Record<symbol, unknown>)?.[Symbol.for("drizzle:Name")] as string | undefined)),
+          }),
         };
       },
     }),
@@ -845,6 +848,43 @@ function setupFlexibleTx(options: {
 
   return { insertCalls, updateCalls };
 }
+
+describe("activateCardCandidatesV2 — answer claim identity", () => {
+  const reusePlan = {
+    result: { kind: "author_candidates", recommendedCardCount: 1, activationHardMax: 5,
+      objectives: [{ objectiveLocalId: "obj-1", changeContext: { kind: "reuse_existing_objective", objectiveId: OBJECTIVE_ID } }], existingActions: [] },
+  };
+  const revision = (text: string) => ({ ...makeObjectiveRevision(), knowledgeForm: "fact",
+    canonicalAnswer: { kind: "text", unit: { unitId: "previous-unit", text } } });
+
+  it("an old plan cannot merge different claims from the same source block", async () => {
+    const { insertCalls } = setupFlexibleTx({ plan: reusePlan,
+      tableRowsOverride: { learning_objective_revisions_v2: [revision("another learning target")] } });
+    const result = await activateCardCandidatesV2({ workspaceId: WORKSPACE_ID, userId: USER_ID }, makeRequest(), "claim-new");
+    assert.notEqual(result.mappings[0]!.objectiveId, OBJECTIVE_ID);
+    const target = insertCalls.find(call => (call.table as Record<symbol, unknown>)[Symbol.for("drizzle:Name")] === "learning_objective_revisions_v2");
+    assert.deepEqual(target?.values.canonicalAnswer, makeCandidate().objectiveDraft.canonicalAnswer);
+  });
+
+  it("confirmed equal claims reuse the existing identity despite local unit IDs changing", async () => {
+    const { insertCalls } = setupFlexibleTx({ plan: reusePlan,
+      tableRowsOverride: { learning_objective_revisions_v2: [revision("answer")] } });
+    const result = await activateCardCandidatesV2({ workspaceId: WORKSPACE_ID, userId: USER_ID }, makeRequest(), "claim-same");
+    assert.equal(result.mappings[0]!.objectiveId, OBJECTIVE_ID);
+    assert.equal(result.mappings[0]!.cardId, CARD_ID_EXISTING);
+    assert.equal(insertCalls.some(call => (call.table as Record<symbol, unknown>)[Symbol.for("drizzle:Name")] === "learning_objectives_v2"), false);
+  });
+
+  it("explicit reuse of a different answer is rejected before a card is written", async () => {
+    const { insertCalls } = setupFlexibleTx({
+      tableRowsOverride: { learning_objective_revisions_v2: [revision("another learning target")] } });
+    const request = makeRequest();
+    request.selectedCandidates[0]!.intent = { kind: "reuse_existing_objective", objectiveId: OBJECTIVE_ID };
+    await assert.rejects(() => activateCardCandidatesV2({ workspaceId: WORKSPACE_ID, userId: USER_ID }, request, "claim-mismatch"),
+      (error: CardGenerationV2ServiceError) => error.code === "reuse_target_mismatch");
+    assert.equal(insertCalls.some(call => (call.table as Record<symbol, unknown>)[Symbol.for("drizzle:Name")] === "learning_cards_v2"), false);
+  });
+});
 
 describe("activateCardCandidatesV2 — guards", () => {
   it("throws invalid_state when run is not review_ready", async () => {

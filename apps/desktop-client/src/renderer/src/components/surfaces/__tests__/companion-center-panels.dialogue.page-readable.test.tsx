@@ -51,7 +51,6 @@ function renderPanel(props: Partial<DialoguePanelProps> = {}) {
     onQuery: noop,
     onSearch: noop,
     onLoadMore: noop,
-    onContinue: noop,
     onRetry: noop,
   } satisfies DialoguePanelProps;
   render(<DialoguePanel {...base} {...props} />);

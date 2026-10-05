@@ -570,7 +570,9 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
       message={trashTotal > 0 ? "笔记都在回收站里" : "还没有任何笔记"}
       detail={trashTotal > 0
         ? `回收站里有 ${trashTotal} 篇被删除的笔记，可以随时恢复。`
-        : "新建一篇空笔记直接开始写，或者从来源详情里带着证据开始。"}
+        : createAllowed
+          ? "新建一篇空笔记直接开始写，或者从来源详情里带着证据开始。"
+          : "这里会展示你能阅读的笔记；可以先到来源库看看共享材料。"}
       action={(
         <>
           <div className="actions">
@@ -759,7 +761,7 @@ function NoteLibraryContent({ scope }: { readonly scope: number }) {
               {Array.from({ length: Math.max(0, COVER_CAPACITY - shelfCovers.length) }, (_, index) => (
                 <div key={`slot-${index}`} className="book-cover book-empty" aria-hidden="true">
                   <h3>{index === 0 ? "空册位" : ""}</h3>
-                  <small>{index === 0 ? "新建一篇，或从来源详情开始写" : ""}</small>
+                  <small>{index === 0 ? (createAllowed ? "新建一篇，或从来源详情开始写" : "等待可阅读的笔记") : ""}</small>
                 </div>
               ))}
             </section>

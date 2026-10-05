@@ -6,6 +6,7 @@ import type {
   DesktopSourceSegment,
 } from "@ailearn/shared/desktop-surface-contracts";
 import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts";
+import { parseMarkdownTable } from "@ailearn/shared/note-doc-schema";
 import { useRoomStore } from "../../../app/room-store";
 import { createRequestMeta, gatewayErrorMessage, unwrapGatewayResult, RendererGatewayError } from "../../../app/desktop-client";
 import { HudPage } from "../../hud/HudPage";
@@ -38,6 +39,7 @@ import {
 import { useSourceImage } from "./source-image.ts";
 import { ZoomableReadingImage } from "./image-viewer.tsx";
 import { useSourceMotion, useSourceSheetMotion } from "./use-source-motion";
+import { renderNoteInline } from "../notebook/note-reading-inline";
 
 const readingPositions = new Map<string, number>();
 
@@ -720,13 +722,15 @@ function SegmentBody({
   readonly workspaceEpoch?: number;
 }) {
   if (segment.segmentType === "code") return <pre className="code-block"><code>{segmentText(segment)}</code></pre>;
-  if (segment.segmentType === "heading") return <h3 className="serif">{segmentText(segment)}</h3>;
+  const inline = (text: string) => renderNoteInline(text, { workspaceEpoch });
+  if (segment.segmentType === "heading") return <h3 className="serif">{inline(segmentText(segment))}</h3>;
   if (segment.segmentType === "list") {
     const { ordered, items } = listSegment(segment.text);
     const List = ordered ? "ol" : "ul";
+    const start = ordered ? Number(/^\s*(\d+)\.\s/.exec(segment.text)?.[1] ?? 1) : undefined;
     return (
-      <List className="list-block">
-        {items.map((item, index) => <li key={index}>{item}</li>)}
+      <List className="list-block" start={start}>
+        {items.map((item, index) => <li key={index}>{inline(item)}</li>)}
       </List>
     );
   }
@@ -735,8 +739,20 @@ function SegmentBody({
     return <SegmentImage segment={segment} workspaceEpoch={workspaceEpoch} />;
   }
   const text = segmentText(segment);
-  if (segment.segmentType === "quote") return <p className="quote">{text}</p>;
-  return <p>{text}</p>;
+  if (segment.segmentType === "quote") return <p className="quote">{inline(text)}</p>;
+  // Tables remain paragraph segments so evidence offsets still refer to the
+  // untouched source. Use the notebook grammar for their reading presentation.
+  const table = parseMarkdownTable(text);
+  if (table) {
+    const [header, separators, ...rows] = table;
+    const alignments = (separators ?? []).map(separator => separator.endsWith(":")
+      ? (separator.startsWith(":") ? "center" as const : "right" as const) : "left" as const);
+    return <div className="source-table-scroll"><table className="source-table">
+      <thead><tr>{header?.map((cell, index) => <th scope="col" key={index} style={{ textAlign: alignments[index] }}>{inline(cell)}</th>)}</tr></thead>
+      <tbody>{rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) => <td key={cellIndex} style={{ textAlign: alignments[cellIndex] }}>{inline(cell)}</td>)}</tr>)}</tbody>
+    </table></div>;
+  }
+  return <p>{inline(text)}</p>;
 }
 
 /**

@@ -4,15 +4,19 @@ import { useCompanionDiaryActions } from "./companion-diary-actions";
 import { todayIsoDate } from "./companion-diary-day";
 import { DiaryPanel } from "./companion-diary-panel";
 import { publishCompanionRecordsChanged,useCompanionRecordsRefresh,useCompanionResource } from "./use-companion-resource";
+import { useDiscoveryBookmarks } from "./use-discovery-bookmarks";
 
 export function CompanionDiaryPage(props: {
   refreshKey: number;
   requestedDate: string | null;
   onMemory: (id: string) => void;
   onSettings: () => void;
+  sourceTarget?: { sourceId: string; revision?: number } | null;
+  onSourceConsumed?: () => void;
 }) {
   const [date, setDate] = useState<string | null>(props.requestedDate);
   const [month, setMonth] = useState((props.requestedDate ?? todayIsoDate()).slice(0, 7));
+  const bookmarks = useDiscoveryBookmarks(props.refreshKey);
   const diary = useCompanionResource(async meta => {
     const result = await window.ailearn.companion.daily.get({ meta, ...(date ? { date } : {}) });
     return result.ok ? { ...result, data: { ...result.data, requestedDate: date } } : result;
@@ -35,7 +39,7 @@ export function CompanionDiaryPage(props: {
       confirmDeleteDiary={actions.confirmingDelete} onConfirmDeleteDiary={actions.setConfirmingDelete}
       busy={actions.busy} notice={actions.notice} onRetry={() => void reload()} marks={marks}
       marksFailure={calendar.section && !calendar.section.ok ? calendar.section.message : calendar.failure}
-      onMarksMonth={setMonth} />
+      onMarksMonth={setMonth} discoveryFor={bookmarks.forRequest} sourceTarget={shownDate === props.requestedDate ? props.sourceTarget : null} onSourceConsumed={props.onSourceConsumed} />
     <div className="cc-page-note"><span>日记是否自动生成，在伴星设置里管理。</span><button type="button" className="cc-link" onClick={props.onSettings}>记录规则</button></div>
   </>;
 }

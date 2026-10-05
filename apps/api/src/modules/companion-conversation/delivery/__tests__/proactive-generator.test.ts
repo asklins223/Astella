@@ -11,7 +11,7 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 
-const { generateMemoryCandidates, memoryCandidateOutputSchema } = await import(
+const { generateMemoryCandidates, memoryCandidateOutputSchema, runResultMemoryContext } = await import(
   "../proactive-generator.ts"
 );
 
@@ -34,6 +34,28 @@ const scope = {
   userId: "u-test",
   currentActiveTransaction: () => undefined,
 };
+
+test("一次正确作答仅记录当次证据，不推断嵌套循环能力或全面掌握", () => {
+  const content = runResultMemoryContext({ outcome: "demonstrated", trustOutcome: "demonstrated", keyPointClaim: "循环不变量" });
+  assert.match(content, /循环不变量/);
+  assert.match(content, /本次回答满足判分点/);
+  assert.match(content, /未验证其他情境或长期掌握/);
+  assert.doesNotMatch(content, /已掌握|复杂嵌套|严谨性尚有提升/);
+});
+
+test("不确定或矛盾结果不写成成功，练习完成不写成正式掌握", () => {
+  const uncertain = runResultMemoryContext({ outcome: "demonstrated", trustOutcome: "not_assessable", keyPointClaim: "半开区间" });
+  assert.match(uncertain, /结果尚待核对/);
+  assert.doesNotMatch(uncertain, /满足判分点/);
+  const practiced = runResultMemoryContext({ outcome: "practice_completed", trustOutcome: "practice_completed", keyPointClaim: "半开区间" });
+  assert.match(practiced, /未据此作正式掌握判断/);
+});
+
+test("未知状态与缺少标签保守表达，长标签不突破记忆容量", () => {
+  const unknown = runResultMemoryContext({ outcome: "future_status", trustOutcome: "future_status", keyPointClaim: "" });
+  assert.match(unknown, /本次学习目标.*结果尚待核对/);
+  assert.ok(runResultMemoryContext({ outcome: "partial", trustOutcome: "partial", keyPointClaim: "长标签".repeat(100) }).length <= 200);
+});
 
 test("真 LLM 生成（.env 配置后真实调用 DashScope）", { skip: !(savedUrl && (savedKey || savedDash)) && "未配置 critic env" }, async () => {
   if (savedUrl) process.env.ASSESSMENT_CRITIC_URL = savedUrl;

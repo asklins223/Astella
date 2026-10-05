@@ -76,11 +76,11 @@ describe("HUD companion surface policies", () => {
     expect(Object.keys(HUD_PAGES)).not.toContain("drawer");
   });
 
-  it("calls review items and graph objectives by their real names even without cards", () => {
-    expect(HUD_PAGES.queue.subtitle).toContain("到期项");
+  it("复习提示到期顺序，星图提示沿笔记回到学习", () => {
+    expect(HUD_PAGES.queue.subtitle).toContain("到期");
     expect(HUD_PAGES.queue.subtitle).not.toContain("学习卡");
-    expect(HUD_PAGES.queue.companion.starter).toContain("一项");
-    expect(HUD_PAGES.graph.subtitle).toContain("学习目标");
+    expect(HUD_PAGES.queue.companion.starter).toContain("到期");
+    expect(HUD_PAGES.graph.subtitle).toContain("笔记");
     expect(HUD_PAGES.graph.subtitle).not.toContain("学习卡");
   });
 });

@@ -34,6 +34,7 @@ import { insertStreamEvent } from "./companion-dialogue-store.ts";
 import type { AgentEventContext } from "./companion-read-tools.ts";
 import { CompanionToolError } from "./companion-tool-result.ts";
 import { readCompanionMemoryWriteSource } from "./companion-memory-write-source.ts";
+import { describeAgentProposal } from "./companion-proposal-copy.ts";
 
 export async function buildActionPayload(
   event: AgentEventContext,
@@ -132,9 +133,10 @@ export async function createAgentProposal(
   if (!parsedPayload.success) throw new CompanionToolError("这次要记的内容没通过校验，先没有写入");
   const proposalId = randomUUID();
   const payloadSha256 = sha256Utf8V1(canonicalJsonV1(parsedPayload.data));
-  const title = `执行${definition.description.slice(0, 30)}`;
-  const targetSummary = definition.description.slice(0, 160);
-  const impactSummary = "该操作会改变学习或伴星状态";
+  // 这三行是**给用户看**的（提案卡），文案来自 payload 而不是工具描述：
+  // 描述是写给模型的行为约束，截断后上屏等于让用户在决定要不要按下去的那一刻
+  // 读一屏「什么时候不该调这个工具」。判据与来由见 `companion-proposal-copy.ts`。
+  const { title, targetSummary, impactSummary } = describeAgentProposal(parsedPayload.data, definition.name);
   await withWorkerWorkspaceTransaction(
     { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
     async (tx) => {

@@ -505,13 +505,16 @@ describe("阅读页画的是编辑器里那一份", () => {
   });
 
   it("表格单元里也走行内解析，且转义过的竖线不另起一列", async () => {
-    const { body } = await show([block("paragraph", "| 列甲 | 列乙 |\n| --- | --- |\n| **粗** | a\\|b |")]);
+    const { body } = await show([block("paragraph", "| 列甲 | 列乙 |\n| :---: | ---: |\n| **粗** | a\\|b |")]);
     const table = body().querySelector("table.md-table")!;
     const cells = [...table.querySelectorAll("tbody td")];
     expect(cells).toHaveLength(2);
     expect(cells[0]?.querySelector("strong")?.textContent).toBe("粗");
     expect(cells[0]?.textContent).not.toContain("**");
     expect(cells[1]?.textContent).toBe("a|b");
+    expect((cells[0] as HTMLElement).style.textAlign).toBe("center");
+    expect((cells[1] as HTMLElement).style.textAlign).toBe("right");
+    expect([...table.querySelectorAll("thead th")].map(cell => (cell as HTMLElement).style.textAlign)).toEqual(["center", "right"]);
     // 分隔行是语法不是内容：跟着画就多出一整行减号。
     expect(table.querySelector("tbody")?.textContent).not.toContain("---");
   });

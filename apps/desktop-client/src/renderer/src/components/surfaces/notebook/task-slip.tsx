@@ -61,6 +61,8 @@ export function TaskSlip(props: {
 
   if (status === "failed") {
     const needsConsent = failureReason === "ai_consent_required";
+    const policyDenied = failureReason === "ai_data_policy_denied";
+    const needsSettings = needsConsent || policyDenied;
     return (
       <div className="task-slip task-slip--failed" role="status" data-task-slip={kind}>
         <span className="task-slip__mark" aria-hidden="true" />
@@ -69,16 +71,19 @@ export function TaskSlip(props: {
           <p className="task-slip__note">
             {needsConsent
               ? "要先开启 AI 使用权限，任务才发得出去。"
+              : policyDenied
+                ? "账号的数据外发策略阻止了这次生成。请到 AI 数据同意设置核对外发开关。"
               : failureReason && failureReason !== "unknown"
                 ? failureReason
                 : "原文没有受影响，可以再来一次。"}
           </p>
         </div>
-        {needsConsent && onOpenSettings
+        {needsSettings && onOpenSettings
           ? <button type="button" className="task-slip__action" onClick={onOpenSettings}>去设置</button>
           : onRetry
             ? <button type="button" className="task-slip__action" onClick={onRetry}>再试一次</button>
             : null}
+        {needsSettings && onOpenSettings && onRetry ? <button type="button" className="task-slip__action" onClick={onRetry}>设置好了，再试一次</button> : null}
       </div>
     );
   }

@@ -19,6 +19,7 @@
  * 审核页、激活与状态机都不需要为新链改判据。
  */
 import { randomUUID } from "node:crypto";
+import { TRANSFORMATION_BY_STRATEGY } from "./expand-content.ts";
 import {
   NoCardReasonCodeValuesV2,
   cardPlanV2Schema,
@@ -52,6 +53,7 @@ import {
 // W7-5 刀三：判据是**纯函数**（不查库、不看模型输出），所以装配这一层只负责
 // 把"新候选的块"与"读侧给来的既有目标"递给它，然后照它交回的结论改 changeContext。
 import {
+  objectiveReuseClaimHashV2,
   decideObjectiveReuseV2,
   type ObjectiveReuseCandidateV2,
 } from "@ailearn/shared/objective-reuse-rules-v2";
@@ -254,6 +256,7 @@ export function assembleCardGenerationV3(
       const decided = decideObjectiveReuseV2({
         candidateBlockIds,
         knowledgeForm: entry.draft.objectiveDraft.knowledgeForm,
+        candidateClaimHash: objectiveReuseClaimHashV2(entry.draft.objectiveDraft.canonicalAnswer),
         existing: reuseCandidates,
       });
       if (decided.outcome === "reuse") {
@@ -265,6 +268,7 @@ export function assembleCardGenerationV3(
             candidateBlockIds: decided.evidence.candidateBlockIds as [string, ...string[]],
             sharedBlockIds: decided.evidence.sharedBlockIds as [string, ...string[]],
             knowledgeForm: decided.evidence.knowledgeForm,
+            claimHash: decided.evidence.claimHash,
           },
         });
       }
@@ -464,7 +468,11 @@ export function buildCandidateRevisionV3(args: BuildCandidateRevisionV3Args): {
       }]
       : [],
     objective: { ...objective, rubric },
-    presentation: { ...draft.presentationDraft, strategy: args.strategy },
+    presentation: {
+      ...draft.presentationDraft,
+      strategy: args.strategy,
+      transformationKind: TRANSFORMATION_BY_STRATEGY[args.strategy],
+    },
     evidenceSetHash: args.evidenceSetHash,
   };
   return {

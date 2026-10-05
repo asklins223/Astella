@@ -17,6 +17,7 @@ import { randomUUID, createHash } from "node:crypto";
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import { testDatabaseUrl } from "@ailearn/shared/integration-test-db-env";
+import { desktopSourceRestoreResultSchema } from "@ailearn/shared/desktop-surface-contracts";
 
 // 夹具那一边用 migrator：CI 的 `DATABASE_URL_API` 是 NOBYPASSRLS 的 `ailearn_api`，
 // 而这份文件是**裸 SQL 建 session/source 行**（不带 app.workspace_id 上下文），在
@@ -120,6 +121,14 @@ test("契约：错误响应统一 {error, message} + 非法 UUID 400 + 软删除
     });
     assert.equal(del.statusCode, 204);
     assert.equal(del.body, "");
+
+    const restored = await app.inject({ method: "POST", url: `/sources/${sourceId}/restore`, headers: auth });
+    assert.equal(restored.statusCode, 200, restored.body);
+    assert.deepEqual(desktopSourceRestoreResultSchema.parse(restored.json()),
+      { sourceId, status: "draft", alreadyActive: false });
+    const repeatedRestore = await app.inject({ method: "POST", url: `/sources/${sourceId}/restore`, headers: auth });
+    assert.deepEqual(desktopSourceRestoreResultSchema.parse(repeatedRestore.json()),
+      { sourceId, status: "draft", alreadyActive: true });
 
     // 4) 分页统一 { items, nextCursor, total }（GET /notes）
     for (let index = 0; index < 2; index += 1) {

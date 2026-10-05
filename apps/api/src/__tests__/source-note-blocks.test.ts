@@ -9,6 +9,27 @@ function segment(text: string, segmentType: ParsedSegment["segmentType"]): Parse
 }
 
 describe("source to rich note blocks", () => {
+  it("keeps numbered steps and a table as structured document nodes through snapshot restore", () => {
+    const raw = "3. 保存当前元素\n4. 移动前缀\n\n| 输入 | 输出 |\n| :---: | ---: |\n| **a\\|b** | `c` |";
+    const segments = parseContent(raw, "markdown");
+    const blocks = sourceNoteBlocks(segments, "markdown").map((block, index) => ({
+      ...block, sourceRef: { sourceId: "source-1", segmentId: `segment-${index}` },
+    }));
+    const doc = emptyFragmentNoteDoc(), restored = emptyFragmentNoteDoc();
+    try {
+      writeFragmentBlocks(doc, blocks);
+      const fragment = doc.getXmlFragment("content");
+      assert.equal((fragment.get(0) as import("yjs").XmlElement).nodeName, "ordered_list");
+      assert.equal((fragment.get(1) as import("yjs").XmlElement).nodeName, "table");
+      const projected = projectFragmentBlocks(doc);
+      assert.equal(projected[0]?.content, "3. 保存当前元素\n4. 移动前缀");
+      assert.equal(projected[1]?.content, "| 输入 | 输出 |\n| :---: | ---: |\n| **a\\|b** | `c` |");
+      writeFragmentBlocks(restored, projected);
+      assert.deepEqual(projectFragmentBlocks(restored), projected);
+      assert.deepEqual(projected.map(block => block.sourceRef), blocks.map(block => block.sourceRef));
+    } finally { doc.destroy(); restored.destroy(); }
+  });
+
   it("normalizes only block wrappers while retaining source offsets, inline marks and evidence refs", () => {
     const raw = "# Heading\n\nA **bold** idea.\n\n> A quote\n> Another line\n\n- First\n- Second\n\n```ts\nconst value = '**literal**';\n```";
     const segments = parseContent(raw, "markdown");
@@ -49,14 +70,14 @@ describe("source to rich note blocks", () => {
     ]);
   });
 
-  it("removes ordered markers and fences without removing code from an unfinished fence", () => {
+  it("preserves ordered steps and removes fences without losing unfinished code", () => {
     assert.deepEqual(sourceNoteBlocks([
       segment("1. First\n2. Second", "list"),
       segment("~~~js\nlet x = 1;\n~~~", "code"),
       segment("```js\nlet y = 2;", "code"),
       segment("```js\nlet z = 3;\n~~~, not a closing fence", "code"),
     ], "markdown").map((block) => block.content), [
-      "First\nSecond", "let x = 1;", "let y = 2;", "let z = 3;\n~~~, not a closing fence",
+      "1. First\n2. Second", "let x = 1;", "let y = 2;", "let z = 3;\n~~~, not a closing fence",
     ]);
   });
 });

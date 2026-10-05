@@ -64,8 +64,9 @@ test("W7-4 刀十 正对照：`reduceBy <= 0` **不许**变成「重算今天该
   }
 });
 
-test("W7-4 刀十：剩余真的为 0 时才可以说「已经做完了」", () => {
+test("空批次不把容量称为真实题数，也不把没有任务称为完成", () => {
   const done = decideTodayBatchOptionV2({ lockedLength: 5, remaining: 0, paused: false }, "reduce");
   assert.equal(done.remaining, 0);
-  assert.match(done.screenLine, /今天的已经做完了/);
+  assert.match(done.screenLine, /没有待复习的卡片/);
+  assert.doesNotMatch(done.screenLine, /做完|做 \d+ 道/);
 });

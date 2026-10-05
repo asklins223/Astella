@@ -33,6 +33,7 @@ import {
   openAssessmentDisputeCommandV2Schema,
   openAssessmentDisputeResultV2Schema,
   supplementAssessmentDisputeCommandV2Schema,
+  submitDisputeSupplementResultV2Schema,
   assessmentDisputeEnvelopeV2Schema,
 } from "@ailearn/shared/assessment-dispute-rules-v2";
 import type { GatewayTransport } from "./desktop-gateway-transport";
@@ -104,7 +105,7 @@ export async function supplementAssessmentDispute(t: GatewayTransport,
       true,
       requestId,
     );
-    const parsed = z.strictObject({ accepted: z.literal(true) }).safeParse(result.body);
+    const parsed = submitDisputeSupplementResultV2Schema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return { accepted: true };
   }

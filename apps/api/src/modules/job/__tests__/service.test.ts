@@ -20,6 +20,11 @@ describe("job failure reason projection", () => {
     assert.equal(classifyJobFailureReason(null), null);
   });
 
+  it("外发策略拒绝保留可恢复的原因，不暴露内部错误原文", () => {
+    assert.equal(classifyJobFailureReason("operational_error:unknown:AIDataPolicyDeniedError:ai_data_policy_denied"), "ai_data_policy_denied");
+    assert.equal(classifyJobFailureReason("模型说 ai_data_policy_denied"), "unknown");
+  });
+
   it("只按脱敏错误的**结构**取码，不再按后缀猜测（P1-15 回归）", () => {
     // 旧实现是 endsWith(":ai_consent_required")：任何以该后缀结尾的文本
     // （模型输出/用户内容被拼进错误消息）都会被误判成"需要签署同意"。

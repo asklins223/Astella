@@ -29,7 +29,7 @@ import { productionAiGovernancePorts } from "../../../governance/ai-governance-r
 const MEMORY_CANDIDATE_TIMEOUT_MS = 8_000;
 
 /** 提示版本进 `usageContext` 与检查点键：换提示词必须让旧产物回放不了。 */
-const MEMORY_CANDIDATE_PROMPT_VERSION = "memory-candidate-v1";
+const MEMORY_CANDIDATE_PROMPT_VERSION = "memory-candidate-v2";
 /** 输入快照的领域身份：一次 run 的结算摘要。跨 run 不复用。 */
 const MEMORY_CANDIDATE_TASK_ID = "companion_memory_candidate";
 
@@ -66,6 +66,29 @@ export const memoryCandidateOutputSchema = z
 export interface GeneratedMemoryCandidates {
   learningContext: string;
   interactionNote: string | null;
+}
+
+/** 结算只提供结果枚举和目标标签，不能据此写出未考察的能力或缺口。 */
+export function runResultMemoryContext(input: {
+  outcome: string;
+  trustOutcome: string;
+  keyPointClaim: string;
+}): string {
+  const label = input.keyPointClaim.replace(/\s+/gu, " ").trim().slice(0, 80);
+  const subject = label ? `围绕「${label}」` : "围绕本次学习目标";
+  const results: Record<string, string> = {
+    demonstrated: "系统记录本次回答满足判分点",
+    partial: "系统记录本次回答仅满足部分判分点",
+    needs_repair: "系统记录本次回答有需要修正的部分",
+    not_assessable: "系统未能确定本次回答的结果",
+    practice_completed: "本次练习已经完成，未据此作正式掌握判断",
+    skipped: "本次练习被跳过",
+    declared_unable: "用户表示这次暂时答不出来",
+  };
+  const result = input.outcome === input.trustOutcome
+    ? results[input.outcome] ?? "本次结果尚待核对"
+    : "本次结果尚待核对";
+  return `${subject}，${result}。这只记录本次表现，未验证其他情境或长期掌握。`;
 }
 
 /**
@@ -119,6 +142,8 @@ export async function generateMemoryCandidates(
     `trustOutcome=${input.trustOutcome}`,
     `objectiveLabel=${input.keyPointClaim.slice(0, 200)}`,
     `scheduleImpact=${input.scheduleImpact}`,
+    "只记录这一次作答的结果。输入没有答案正文或细分题目，不能推断复杂嵌套循环等未考察内容，也不能写成已全面掌握、长期能力或稳定缺口。",
+    "interactionNote 只能提出待确认的后续观察建议，不得把建议写成既定缺口、用户偏好或提醒授权。无需建议时省略。",
     "只输出 JSON。",
   ].join("\n");
 
@@ -184,7 +209,8 @@ export async function generateMemoryCandidates(
       return {
         ok: true as const,
         output: {
-          learningContext: parsed.data.learningContext.content,
+          // 文风不能补足缺失的证据：学习事实以真实结算结果为准。
+          learningContext: runResultMemoryContext(input),
           interactionNote: parsed.data.interactionNote?.content ?? null,
         },
       };

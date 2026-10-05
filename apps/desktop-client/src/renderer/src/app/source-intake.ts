@@ -27,9 +27,6 @@ export const MAX_CAPTURE_BYTES = 900_000;
 /** 收录通道能承载的后缀：API 吃文本，不吃二进制。 */
 export const TEXT_FILE_PATTERN = /\.(txt|md|markdown|mdx|json|jsonc|csv|tsv|ya?ml|toml|ini|log|html?|css|scss|less|jsx?|tsx?|mjs|cjs|vue|svelte|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|sh|bash|zsh|sql|tex)$/i;
 
-/** 单次全局拖放最多当场收录的份数，多出的请分批。 */
-export const MAX_DROP_FILES = 5;
-
 export const captureBytes = (text: string): number => new TextEncoder().encode(text).length;
 
 /** Sizes read in bytes until a kilobyte is worth mentioning at all. */

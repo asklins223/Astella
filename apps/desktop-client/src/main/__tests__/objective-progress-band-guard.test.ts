@@ -37,14 +37,17 @@ describe("三屏共用同一个进度组件", () => {
   // 验收口径写的是"四屏"，作答页这一屏没做：run 快照的 target 里只有题面、
   // 评分规则与练习件，**没有** personalState（learning-target-v2-contracts.ts:125-152）。
   // 在那里挂一条恒为 — 的带子不叫进度语言，叫噪音。
-  it("列表焦点卡与详情页读 personalState，结算页读本次 outcome", () => {
+  it("卡包读真实个人状态，详情读 personalState，结算页读本次 outcome", () => {
     const library = read("library/WorkspaceLibrarySurface.tsx");
     expect(
       // 允许 `segment=` 之后还挂别的 prop（F03 加了 `submitted`），但读数那一句
       // 必须原样是查表调用。
       library.match(/<ObjectiveProgressBand\s+segment=\{progressSegmentForState\(([^)]+)\)\}/g),
       "列表与详情不再是同一个读数来源",
-    ).toHaveLength(2);
+    ).toHaveLength(1);
+    const collection = read("library/card-collection.tsx");
+    expect(collection).toContain("state={formatObjectiveState(card.personalState.state)}");
+    expect(collection).toContain("objectiveProgressChips(card.progress)");
     // 结算屏那一格现在在 `learning-run-arrival.tsx` 里，**它接 outcome、自己在里面查表**
     // （见那个文件里关于「为什么要这么做」的注释）。所以判据是那个组件里确实走查表。
     expect(read("run/learning-run-arrival.tsx"))
@@ -56,7 +59,7 @@ describe("三屏共用同一个进度组件", () => {
     // 就是传字面量或三元式。这条断言把每个调用点钉在查表函数上。
     const calls = SURFACES.flatMap((file) =>
       [...read(file).matchAll(/<ObjectiveProgressBand\s+segment=\{([^}]+)\}/g)].map((match) => ({ file, expr: match[1].trim() })));
-    expect(calls.length, "一个调用点都没找到，这条守卫就是空的").toBeGreaterThanOrEqual(3);
+    expect(calls.length, "详情与结算两处进度带必须仍走共享查表").toBe(2);
     for (const call of calls) {
       expect(call.expr, `${call.file} 的调用点没走查表`).toMatch(/^progressSegmentFor(State|Outcome)\(/);
     }

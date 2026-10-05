@@ -195,7 +195,7 @@ export function AnomalyTriage({
             <span>{backgroundGroups.length} 类 · 不需要你处理</span>
           </h3>
           <p className="small">
-            这些是后台任务（解析、生成、同步）自己的失败，没有可以打开的对象；系统会在必要时自动重试。
+            这些后台任务（解析、生成、同步）未能完成，失败记录已保留。如需这些结果，可以回到原页面重新尝试。
             如果同一件事一直失败，可以在「设置 → 数据与维护」里反馈。
           </p>
           <ul className="day-triage__list">
@@ -471,4 +471,3 @@ export function CompanionRail({ onOpen }: { readonly onOpen: () => void }) {
     </div>
   );
 }
-

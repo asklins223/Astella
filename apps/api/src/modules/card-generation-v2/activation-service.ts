@@ -25,6 +25,7 @@
  * - Equivalence report：target_equivalent_update 要求 equivalenceReportHash 非空
  */
 import { REVIEW_DIMENSION_VALUES_V2 } from "@ailearn/shared/review-dimension-v2";
+import { canAutomaticallyReuseObjectiveV2, sameActivationReuseClaimV2 } from "./activation-reuse-claim.ts";
 
 // 复用判定的读侧已搬到 reuse-resolver.ts（P2-2）。三段都是纯函数，
 // 不 import 任何东西——搬之前量过。
@@ -110,6 +111,7 @@ import {
   insertDomainEvent,
   type RunContext,
 } from "./helpers.ts";
+import { refreshObjectiveSearchProjections } from "../learning-objectives/search-projection.ts";
 
 type ReceiptMapping = {
   candidateRevisionId: string;
@@ -536,6 +538,8 @@ export async function activateCardCandidatesV2(
     // 激活后，上一批里没有再次命中的卡必须退出可复习集合，否则新旧两批会一起
     // 出现在列表与复习队列里。
     await retireSupersededRun(tx, ctx, run.supersedesRunId, mappings);
+    await refreshObjectiveSearchProjections(tx, ctx.workspaceId,
+      [...mappings, ...lifecycleResults].map(item => item.objectiveId));
 
     // 8.6 「保存并开启复习」那一档：**同一个事务里**为每个保存下来的目标建立/关联唯一
     // 那条待处理安排（39d W7-2 裁定 B）。三件事因此同时成立：不部分提交（这一发崩了
@@ -575,11 +579,6 @@ export async function activateCardCandidatesV2(
           objectiveId: mapping.objectiveId,
           scheduleId: authorized.scheduleId ?? undefined,
           // 复用已有安排时报的是**库里那一条的实际到期时间**，不是这次算出来的。
-          // 一句射程说明：这一发今天**只会走 `created: true`**——`mapping.objectiveId` 是
-          // 本条命令里刚 mint 出来的 uuid（`createOrUpdateObjectiveAndCard`），不可能在保存
-          // 之前就挂着一条待处理安排。`false` 那一档要等到有别的路径先给同一个目标排上队
-          // （W7-3 持续授权／W7-8 手动安排）才会活；界面那句"其中 N 张沿用已有的安排"因此
-          // 已经撤掉，恢复它的条件写在这里与 39d D2 §5.4，别只把文案加回来。
           nextReviewAt: new Date(authorized.nextReviewAt as Date).toISOString(),
           created: authorized.created,
           held: false,
@@ -923,28 +922,17 @@ async function createOrUpdateObjectiveAndCard(
     );
   }
 
-  // 39d W7-5 刀四 · §4.2「同一篇笔记已有目标时，新的轮次先匹配和**复用**适用目标」。
-  //
-  // **复用是服务端在计划里已经做完的判断**（`plan-assembly` 那一步，判据见
-  // `@ailearn/shared/objective-reuse-rules-v2`），所以**不要求审核台再发一次 intent**：
-  // 客户端可能拿着旧计划、可能对着错误的候选发，而这里有一份带 `planHash` 的权威计划。
-  // 裁决留在一处——`create_new` 在这里被**重定向**到复用那一支，客户端那侧一个字不改。
-  //
-  // §16.38 那个洞正是"客户端说 create_new ⇒ mint 一颗刚出炉的 objectiveId ⇒ 排期闸
-  // 结构上问不到 0295"。重定向之后 `mapping.objectiveId` 是**真的**那颗目标，
-  // 闸问得到，于是"这颗目标被本人暂不安排"拦得住。
+  // 计划中的复用建议还要核对当前答案主张；同一出处块可能承载不同知识点。
+  // 确认后沿用真实目标身份，让本人「暂不安排」的闸门继续生效。
   if (intent.kind === "create_new") {
     const reuse = resolveReuseFromPlanV2(plan?.result, candidate.planObjectiveLocalId);
     if (reuse) {
-      return createOrUpdateObjectiveAndCard(tx, ctx, runId, noteVersionId, candidate, {
-        kind: "reuse_existing_objective",
-        objectiveId: reuse.objectiveId,
-        // 乐观令牌由**服务端当前读到的那一行**给出：客户端无从判断一颗目标的
-        // lifecycleEpoch（它只在计划里见过一个 id），而服务端读的就是权威值。
-        // **不交 epoch**：这一发是服务端照计划重定向的，不是客户端声明的（见
-        // `resolveReuseFromPlanV2` 头注）。合同里那一格因此改成**可选**——
-        // 必填就会逼着调用方编一个值出来，而编出来的值必然与库里对不上。
-      });
+      if (await canAutomaticallyReuseObjectiveV2(tx, ctx, reuse.objectiveId, objectiveDraft)) {
+        return createOrUpdateObjectiveAndCard(tx, ctx, runId, noteVersionId, candidate, {
+          kind: "reuse_existing_objective",
+          objectiveId: reuse.objectiveId,
+        });
+      }
     }
   }
 
@@ -1196,6 +1184,7 @@ async function createOrUpdateObjectiveAndCard(
         objectiveId,
         objectiveRevisionId,
         noteVersionId,
+        evidenceSnapshotIds: canonicalBindings.map((binding) => binding.evidenceSnapshotId),
       });
 
       return {
@@ -1274,6 +1263,14 @@ async function createOrUpdateObjectiveAndCard(
           "reusable_objective_revision_missing",
           409,
           "这颗目标的当前修订读不到，这一发没有生效；请刷新后重新保存。",
+        );
+      }
+
+      if (!sameActivationReuseClaimV2(objectiveDraft, existingRevision)) {
+        throw new CardGenerationV2ServiceError(
+          "reuse_target_mismatch",
+          409,
+          "这张候选与既有目标的内容不同，不能共用学习记录；请重新生成或单独保存。",
         );
       }
 
@@ -1391,6 +1388,8 @@ async function createOrUpdateObjectiveAndCard(
         objectiveId: intent.objectiveId,
         objectiveRevisionId: existingRevision.objectiveRevisionId,
         noteVersionId,
+        evidenceSnapshotIds: ((existingRevision.evidenceBindings ?? []) as Array<{ evidenceSnapshotId?: string }>)
+          .flatMap((binding) => binding.evidenceSnapshotId ? [binding.evidenceSnapshotId] : []),
       });
 
       return {
@@ -2247,6 +2246,7 @@ async function retireSupersededRun(
       ))
       .returning({ id: learningObjectivesV2.id });
     if (demoted.length === 0) continue;
+    await refreshObjectiveSearchProjections(tx, ctx.workspaceId, [mapping.objectiveId]);
 
     await tx.update(learningCardsV2)
       .set({ lifecycle: "superseded", updatedAt: new Date() })

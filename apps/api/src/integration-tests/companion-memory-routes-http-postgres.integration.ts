@@ -21,6 +21,7 @@ import {
 process.env.COMPANION_MEMORY_VECTOR_V1 = "true";
 // 星图是独立开关（§9.8），只开 VECTOR 时 /memory/star-map 会 404。
 process.env.COMPANION_MEMORY_STAR_MAP_V1 = "true";
+process.env.COMPANION_SUMMARIZER_V1 = "true";
 
 // Test fixture setup creates users/workspaces directly, while the API's own
 // pool can remain on the restricted ailearn_api role for the request path.
@@ -34,6 +35,8 @@ const userA = randomUUID();
 const userB = randomUUID();
 const workspaceId = randomUUID();
 const prefix = userA.slice(0, 8);
+const conversationA = randomUUID();
+const conversationB = randomUUID();
 
 const { memoryRoutes } = await import("../modules/companion-conversation/memory/memory-routes.ts");
 const { issueSession, revokeSession } = await import("../modules/identity/service.ts");
@@ -60,6 +63,11 @@ async function seedIdentity(): Promise<void> {
   await sql`
     INSERT INTO workspace_members (workspace_id, user_id, role)
     VALUES (${workspaceId}, ${userA}, 'owner'), (${workspaceId}, ${userB}, 'member')
+  `;
+  await sql`
+    INSERT INTO companion_conversations (id, workspace_id, user_id, kind, title, title_source, status)
+    VALUES (${conversationA}, ${workspaceId}, ${userA}, 'dialogue', '整理测试甲', 'user', 'active'),
+           (${conversationB}, ${workspaceId}, ${userB}, 'dialogue', '整理测试乙', 'user', 'active')
   `;
 }
 
@@ -88,6 +96,7 @@ after(async () => {
   await sql`DELETE FROM companion_discovery_entries WHERE user_id IN (${userA}, ${userB})`;
   await sql`DELETE FROM companion_daily_summaries WHERE user_id IN (${userA}, ${userB})`;
   await sql`DELETE FROM sources WHERE workspace_id = ${workspaceId}`;
+  await sql`DELETE FROM companion_conversations WHERE workspace_id = ${workspaceId}`;
   await sql`DELETE FROM workspace_members WHERE workspace_id = ${workspaceId}`;
   await sql`DELETE FROM workspaces WHERE id = ${workspaceId}`;
   await sql`DELETE FROM users WHERE id IN (${userA}, ${userB})`;
@@ -130,6 +139,31 @@ test("匿名请求被拒（认证先于能力），已认证请求带 no-store",
   assert.equal(authed.statusCode, 200);
   assert.equal(authed.headers["cache-control"], "no-store");
   assert.deepEqual(authed.json(), { version: 2, items: [] });
+});
+
+test("记忆维护在排队前拒绝未同意、空对话和跨用户会话，不生成必然失败的任务", async () => {
+  const beforeJobs = await sql`SELECT count(*)::int AS n FROM jobs WHERE workspace_id = ${workspaceId}`;
+  for (const url of [`/companion/conversations/${conversationA}/summarize`, "/companion/memory/rebuild-embeddings"]) {
+    const response = await app.inject(req(tokenA, "POST", url));
+    assert.equal(response.statusCode, 403, response.body);
+    assert.equal(response.json().error, "ai_consent_required");
+  }
+  const crossUser = await app.inject(req(tokenA, "POST", `/companion/conversations/${conversationB}/summarize`));
+  assert.equal(crossUser.statusCode, 404, "不能泄露其他用户的会话存在性");
+  const { updateAIConsent, updateAIDataPolicy, getAIPrivacySettings } = await import("../modules/identity/ai-consent-service.ts");
+  await updateAIConsent(workspaceId, userA, "qa-consent-v1");
+  const policy = await getAIPrivacySettings(workspaceId, userA);
+  if (policy?.requiresConsent) {
+    const denied = await app.inject(req(tokenA, "POST", `/companion/conversations/${conversationA}/summarize`));
+    assert.equal(denied.statusCode, 403, denied.body);
+    assert.equal(denied.json().error, "ai_data_policy_denied");
+  }
+  await updateAIDataPolicy(workspaceId, userA, { sendToExternal: true, sendImageContent: false, piiDetection: true, auditLogging: true });
+  const empty = await app.inject(req(tokenA, "POST", `/companion/conversations/${conversationA}/summarize`));
+  assert.equal(empty.statusCode, 409, empty.body);
+  assert.equal(empty.json().error, "conversation_empty");
+  const afterJobs = await sql`SELECT count(*)::int AS n FROM jobs WHERE workspace_id = ${workspaceId}`;
+  assert.equal(afterJobs[0].n, beforeJobs[0].n, "以上拒绝不能先排后台任务");
 });
 
 test("预算状态只返回占用；层级 API 满额时返回候选且不会替用户降层", async () => {

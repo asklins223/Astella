@@ -17,18 +17,18 @@ describe("理解目标库视图态", () => {
   });
 
   it("从别的流程跳进来时清空，但别把当前工作区也清掉", () => {
-    writeObjectiveLibraryView({ query: "惯性", filter: "stable", scrollTop: 240 });
+    writeObjectiveLibraryView({ query: "惯性", filter: "stable", scrollTop: 240, galleryScrollTop: 300, openPackKey: "old-pack" });
     resetObjectiveLibraryView();
     expect(readObjectiveLibraryView()).toEqual({
-      workspaceId: "ws-1", query: "", filter: "all", scrollTop: 0, lastObjectiveId: null,
+      workspaceId: "ws-1", query: "", filter: "all", scrollTop: 0, lastObjectiveId: null, galleryScrollTop: 0, openPackKey: null,
     });
   });
 
   it("换工作区时连工作区标识一起换；上一批目标的筛选对新空间没有意义", () => {
-    writeObjectiveLibraryView({ query: "惯性", filter: "attention" });
+    writeObjectiveLibraryView({ query: "惯性", filter: "attention", galleryScrollTop: 300, openPackKey: "old-pack" });
     retargetObjectiveLibraryView("ws-2");
     expect(readObjectiveLibraryView()).toEqual({
-      workspaceId: "ws-2", query: "", filter: "all", scrollTop: 0, lastObjectiveId: null,
+      workspaceId: "ws-2", query: "", filter: "all", scrollTop: 0, lastObjectiveId: null, galleryScrollTop: 0, openPackKey: null,
     });
   });
 });

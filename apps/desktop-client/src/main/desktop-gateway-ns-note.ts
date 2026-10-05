@@ -31,6 +31,16 @@ new Map<string, NoteDocLocalSession>()
 const noteDocLocalSessions = new Map<string, NoteDocLocalSession>();
 
 const NOTE_DOC_PENDING_MAX = 200;
+
+/**
+ * 单篇笔记 Markdown 的取回上限（5 MB）。
+ *
+ * 按**一篇**给而不是按一批：Markdown 导出的最小单元就是一篇，一篇超限只该是那一篇
+ * 算 `failed`，不该把整批都带走（导出回执里 `exported + failed === total` 就是这个意思）。
+ * 导入那一侧单篇上限是 500 KB，这里给足十倍余量：同一篇笔记经过多轮编辑后可以更大，
+ * 而真到 5 MB 的时候那基本是一本不该用笔记形式读的东西。
+ */
+const NOTE_MARKDOWN_MAX_BYTES = 5 * 1024 * 1024;
 export type NoteDocSyncOutcome = {
   via: "uploaded" | "unchanged" | "queued";
   revision: number;
@@ -116,6 +126,7 @@ import {
 } from "@ailearn/shared/desktop-ipc-contracts";
 import {
   DesktopNoteCreateRequest,
+  DesktopNoteListItem,
   DesktopNoteListPage,
   DesktopNoteMutationResult,
   DesktopNoteVersionList,
@@ -973,6 +984,62 @@ export async function listNotes(t: GatewayTransport, options: { cursor?: string;
     const parsed = desktopNoteListPageSchema.safeParse(result.body);
     if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
     return parsed.data;
+  }
+
+/**
+ * 导出用：把这个调用者**看得见的**全部笔记列出来（不含回收站）。
+ *
+ * 刻意不走「让界面翻页」：导出是主进程里一次跑完的扇出，界面不会一页一页地问，
+ * 而每页只有 100 条——不翻完就等于「导出了一部分却报成功」。所以翻页在这里做完，
+ * 并且**页与页之间按 id 去重**：服务端游标在并发写入下可能把同一篇吐进两页，
+ * 那会让同一篇被写两个文件（第二个覆盖第一个），而回执里的 `exported` 也会多算一篇。
+ *
+ * 顺带说明权限：`GET /notes` 没有 owner 门，可见性在服务端按 `visibleNotesCondition`
+ * 判过了，所以**成员调用这一条拿到的就是他自己的笔记**，不需要客户端再判一次角色。
+ */
+export async function listNotesForMarkdownExport(
+    t: GatewayTransport,
+    requestId?: string,
+  ): Promise<DesktopNoteListItem[]> {
+    const collected: DesktopNoteListItem[] = [];
+    const seen = new Set<string>();
+    let cursor: string | undefined;
+    // 游标分页理论上可翻很多页；这个上限只是防住「服务端游标不前进」导致的死循环，
+    // 它远大于任何一个人写得完的笔记数（每页 100 条，200 页 = 2 万篇）。
+    for (let page = 0; page < 200; page += 1) {
+      const listed = await listNotes(t, { limit: 100, trashed: false, ...(cursor ? { cursor } : {}) }, requestId);
+      for (const note of listed.items) {
+        if (seen.has(note.id)) continue;
+        seen.add(note.id);
+        collected.push(note);
+      }
+      if (!listed.nextCursor || listed.nextCursor === cursor) break;
+      cursor = listed.nextCursor;
+    }
+    return collected;
+  }
+
+/**
+ * 单篇笔记的 Markdown 正文（`GET /export/notes/:id`）。
+ *
+ * 这条路由**没有 owner 门**：可见性由服务端的 `visibleNotesCondition(userId)` 判，
+ * 所以成员导自己看得见的笔记是它本来就允许的事，客户端不再判一遍角色。
+ *
+ * 走 `requestText` 而不是 `request`：响应是 `text/markdown`，
+ * `request()` 会把它 `json()` 成 `null`（见 transport 那条方法的注释）。
+ */
+export async function fetchNoteMarkdown(
+    t: GatewayTransport,
+    noteId: string,
+    requestId?: string,
+  ): Promise<string> {
+    await t.ensureConnected(requestId);
+    const result = await t.requestText(`/export/notes/${safeUuid(noteId)}`, {
+      accept: "text/markdown",
+      contentTypePrefix: "text/",
+      maxBytes: NOTE_MARKDOWN_MAX_BYTES,
+    }, requestId);
+    return result.text;
   }
 
 export async function prepareNoteLearningRoundPractice(t: GatewayTransport, 

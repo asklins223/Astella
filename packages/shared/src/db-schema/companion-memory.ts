@@ -43,6 +43,30 @@ export const assistantMemoryEmbeddings = pgTable(
 
 export type PetProfileActiveness = "quiet" | "moderate" | "active";
 
+/**
+ * 人格每一项「是谁写的」。
+ *
+ * 换人格时只有 `preset` 写的那几项会被新预设覆盖；`user` / `assistant` 的原样留下。
+ * 缺省当作 `preset`——所以没有这个键的旧档案仍然读作"整套都来自预设"，
+ * 不需要回填，也不需要迁移。
+ */
+export type PersonaOrigin = "preset" | "user" | "assistant";
+
+/** 边界里的四项各自记来源：口头禅是她攒的，学习提醒开关是你给的，不该混成一句。 */
+export type PersonaFieldOrigin = {
+  name?: PersonaOrigin;
+  personalityTags?: PersonaOrigin;
+  speakingStyle?: PersonaOrigin;
+  examples?: PersonaOrigin;
+  activeness?: PersonaOrigin;
+  boundaries?: {
+    allowPlayful?: PersonaOrigin;
+    allowNudgeLearning?: PersonaOrigin;
+    allowVoiceTags?: PersonaOrigin;
+    catchphrase?: PersonaOrigin;
+  };
+};
+
 /** 用户跨空间共享的人格表达内容；固定协议与授权边界不在此表。 */
 export type CompanionPersonaProfileContent = {
   presetId: string | null;
@@ -57,6 +81,7 @@ export type CompanionPersonaProfileContent = {
     allowVoiceTags?: boolean;
     catchphrase?: string | null;
   };
+  fieldOrigin?: PersonaFieldOrigin;
 };
 
 /** Account-scoped current persona override. A null profile means current defaults. */

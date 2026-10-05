@@ -20,10 +20,12 @@
  * 否则 404 fail closed。与 canonical 学习事实解耦。
  */
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireSession } from "../../identity/middleware.ts";
+// 整理提交复用身份域的账号 AI 边界，避免先排任务、后台才发现用户未同意。
+import { getAIPrivacySettings } from "../../identity/ai-consent-service.ts";
 import { scopeOfSession, withWorkspaceTransaction } from "../../../db/client.ts";
 import { createJob } from "../../job/service.ts";
 import { companionMemoryCandidateTotal } from "../../../lib/metrics.ts";
@@ -89,6 +91,20 @@ export function memoryGlobalScopeRejection(error: MemoryGlobalScopeRejectedError
 }
 
 const memoryParamsSchema = z.object({ id: z.string().uuid() });
+
+/** 在排队前反馈不可执行的原因，避免用户收到“已开始”后任务才因权限失败。 */
+async function canQueueMemoryAi(scope: { workspaceId: string; userId: string }, reply: FastifyReply): Promise<boolean> {
+  const settings = await getAIPrivacySettings(scope.workspaceId, scope.userId);
+  if (!settings?.consentAt || !settings.consentVersion) {
+    await reply.code(403).send({ error: "ai_consent_required", message: "还没有同意使用 AI 服务，请先在设置中确认后再整理。" });
+    return false;
+  }
+  if (!settings.dataPolicy.sendToExternal && settings.requiresConsent) {
+    await reply.code(403).send({ error: "ai_data_policy_denied", message: "当前不允许外发材料，请在 AI 数据同意中开启文字外发后再整理。" });
+    return false;
+  }
+  return true;
+}
 
 /** 筛选与读取用的完整 kind：含判断记录（40 §4.5.4）。 */
 const memoryKindSchema = z.enum([
@@ -210,6 +226,12 @@ export async function memoryRoutes(app: FastifyInstance) {
       if (!exists) {
         return reply.code(404).send({ error: "conversation_not_found", message: "会话不存在" });
       }
+      if (!await canQueueMemoryAi(scope, reply)) return;
+      const hasMessages = await withWorkspaceTransaction(scope, async (tx) => {
+        const rows = await tx.execute<{ id: string }>(sql`SELECT id FROM companion_messages WHERE conversation_id = ${params.data.id} LIMIT 1`);
+        return rows.length > 0;
+      });
+      if (!hasMessages) return reply.code(409).send({ error: "conversation_empty", message: "还没有可整理的对话，先与伴星聊几句后再试。" });
       await createJob({
         type: "companion_summarizer",
         workspaceId: scope.workspaceId,
@@ -218,6 +240,7 @@ export async function memoryRoutes(app: FastifyInstance) {
           conversationId: params.data.id,
           userId: scope.userId,
           sourceRunId: null,
+          includeRecent: true,
         },
       });
       return reply.header("Cache-Control", "no-store").send({ version: 1, queued: true });
@@ -695,6 +718,7 @@ export async function memoryRoutes(app: FastifyInstance) {
         return reply.code(404).send({ error: "companion_memory_vector_disabled", message: "向量记忆当前未开放" });
       }
       const scope = scopeOfSession(req.session);
+      if (!await canQueueMemoryAi(scope, reply)) return;
       await createJob({
         type: "companion_memory_embedding_rebuild",
         workspaceId: scope.workspaceId,

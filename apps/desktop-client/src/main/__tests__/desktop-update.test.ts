@@ -89,7 +89,8 @@ describe("更新状态机", () => {
     const state = await checkForUpdates({ userInitiated: true });
     // "没问到"和"更新坏了"是两句话，不能混。
     expect(state.phase).toBe("unreachable");
-    expect(state.message).toContain("ERR_INTERNET_DISCONNECTED");
+    expect(state.message).toContain("检查网络");
+    expect(state.message).not.toContain("ERR_INTERNET_DISCONNECTED");
   });
 
   it("error 事件发生在检查期间时也判成 unreachable（GitHub 限额走的是这条）", async () => {
@@ -131,7 +132,16 @@ describe("更新状态机", () => {
     updater.downloadUpdate.mockRejectedValue(new Error("ENOSPC: no space left on device"));
     const state = await downloadUpdate();
     expect(state.phase).toBe("failed");
-    expect(state.message).toContain("ENOSPC");
+    expect(state.message).toContain("可用空间不足");
+  });
+
+  it("缺少打包更新配置时说明真实原因，不显示本机路径或误报断网", async () => {
+    const { checkForUpdates } = await import("../desktop-update");
+    updater.checkForUpdates.mockRejectedValue(new Error("ENOENT: no such file, open '/private/test.app/Contents/Resources/app-update.yml'"));
+    const state = await checkForUpdates({ userInitiated: true });
+    expect(state.phase).toBe("unreachable");
+    expect(state.message).toContain("缺少更新配置");
+    expect(state.message).not.toMatch(/private|app-update|网络/);
   });
 
   it("拿到新版本时带上 release 页地址与未签名标记", async () => {

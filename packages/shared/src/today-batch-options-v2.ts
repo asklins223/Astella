@@ -80,7 +80,7 @@ export function decideTodayBatchOptionV2(
       // 暂停那一行**必须**念出剩余——它是"没有丢掉"的那句话。
       screenLine: remaining > 0
         ? `这一批先停在这里，剩下 ${remaining} 道还在。`
-        : "这一批先停在这里，今天没有没做的了。",
+        : "这一批已暂停，目前没有待复习的卡片。",
     };
   }
 
@@ -92,7 +92,7 @@ export function decideTodayBatchOptionV2(
       remaining,
       screenLine: remaining > 0
         ? `接着做今天这一批，剩下 ${remaining} 道。`
-        : "接着做今天这一批，今天的已经做完了。",
+        : "这一批已恢复，目前没有待复习的卡片。",
     };
   }
 
@@ -107,6 +107,6 @@ export function decideTodayBatchOptionV2(
     remaining,
     screenLine: remaining > 0
       ? `今天先做 ${lockedLength} 道，剩下 ${remaining} 道还在。`
-      : `今天先做 ${lockedLength} 道，今天的已经做完了。`,
+      : "已调整今天的安排，目前没有待复习的卡片。",
   };
 }

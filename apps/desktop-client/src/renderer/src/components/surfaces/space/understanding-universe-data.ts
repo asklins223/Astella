@@ -49,7 +49,7 @@ export const UNIVERSE_STATE_LABEL: Record<string, string> = {
   preliminary_understood: "练过，还不稳",
   reviewed: "已经答对过",
   seen: "已连接",
-  unseen: "没见过",
+  unseen: "未开始",
 };
 
 export interface UnderstandingGraph {

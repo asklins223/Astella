@@ -120,7 +120,9 @@ function createMockExecutor(config: MockConfig = {}): any {
     }),
     query: {
       notes: {
-        findFirst: async () => notesFindFirstQueue[notesFindFirstIdx++],
+        findFirst: async () => config.notesFindFirstQueue
+          ? notesFindFirstQueue[notesFindFirstIdx++]
+          : config.notesFindFirst,
         findMany: async () => [],
       },
       noteVersions: {

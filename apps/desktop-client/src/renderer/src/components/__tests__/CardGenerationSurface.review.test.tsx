@@ -663,7 +663,7 @@ describe("CardGenerationSurface · 候选审核", () => {
     const meta = (document.querySelector(".candidate-desk__header")?.textContent ?? "");
     // 两个数只说"点名的那几张"：一句里混进"带练习件 N 张"（含自愿交的）与
     // "点名 3 张里漏了 1 张"，读者按前者数出 4、按后者数出 2，两句互相打脸。
-    expect(document.querySelector(".candidate-desk__practice-note p")?.textContent).toContain("该配练习件的 3 张里，2 张配上了、1 张没配上");
+    expect(document.querySelector(".candidate-desk__practice-note p")?.textContent).toContain("计划要求的 3 份练习中，2 份已满足要求、1 份未满足");
     // 缺额不能把原有的两个读数挤掉
     expect(meta).toContain("挑选这一叠 · 1 / 3");
     expect(meta).toContain("3 张还没决定");
@@ -694,7 +694,7 @@ describe("CardGenerationSurface · 候选审核", () => {
 
     await waitFor(() => expect(screen.getByText("第一张")).toBeTruthy());
     const meta = (document.querySelector(".candidate-desk__header")?.textContent ?? "");
-    expect(document.querySelector(".candidate-desk__practice-note p")?.textContent).toContain("该配练习件的 2 张都配上了");
+    expect(document.querySelector(".candidate-desk__practice-note p")?.textContent).toContain("计划要求的 2 份练习都已满足");
     expect(meta).not.toContain("没配上");
   });
 

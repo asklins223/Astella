@@ -41,7 +41,7 @@ export const createNoteExpansionTaskV1Schema = z.strictObject({
 export type CreateNoteExpansionTaskV1 = z.infer<typeof createNoteExpansionTaskV1Schema>;
 
 export const noteExpansionTaskStatusV1Schema = z.enum(["queued", "running", "ready", "confirmed", "failed"]);
-export const noteExpansionTaskFailureReasonV1Schema = z.enum(["ai_consent_required", "source_too_long", "unknown"]);
+export const noteExpansionTaskFailureReasonV1Schema = z.enum(["ai_consent_required", "ai_data_policy_denied", "source_too_long", "unknown"]);
 export const noteExpansionTaskV1Schema = z.strictObject({
   taskId: z.string().uuid(),
   agentRunId: z.string().uuid().optional(),

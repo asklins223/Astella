@@ -199,24 +199,15 @@ function literalSubstrates(entries: readonly (readonly [string, readonly string[
 const SUBSTRATE = [
   ["src/renderer/src/styles.css", ["--ink", "--ink-soft", "--paper", "--paper-strong", "--paper-deep", "--accent", "--line", "--line-strong", "--paper-shadow", "--soft-shadow"]],
   ["src/renderer/src/components/companion/companion-hud.css", ["--companion-ivory", "--companion-cream"]],
-] as const;
-/**
- * `objective-flow.css` 的 `--quest-*` 一套**暂时移出范围**，不是判据不要了：
- * 2026-09-23 该文件正被并行会话改（同一批里 `:214` 新开了一档纸，其中
- * `--quest-paper: #fff9e9` 与 `--hud-paper-light #fff9eb` 只差 2 通道，按阈值该收回引用），
- * 而他们的文件是我这轮的写入冲突区。违例与改法已写进 33 号文档 §12「交给并行会话」，
- * 他们收完后把这一行加回 `SUBSTRATE` 即可，判据不用改。
- */
-const SUBSTRATE_OUT_OF_SCOPE: [string, readonly string[]][] = [
   ["src/renderer/src/components/objective-flow.css", ["--quest-soft", "--quest-paper", "--quest-cream", "--quest-butter", "--quest-line", "--quest-ease-out"]],
-];
+] as const;
 
 describe("旧代不许再抄一份被修正层吃定的声明", () => {
   const oldCss = readFileSync(read(OLD), "utf8");
   const fixCss = readFileSync(read(FIX), "utf8");
 
   it("判据读到了东西：两份文件都解析出成堆规则，修正层也真有 `.hud-surface .c` 形状的规则", () => {
-    expect(rules(oldCss).length, "approved-surfaces.css 解析不出规则").toBeGreaterThan(120);
+    expect(rules(oldCss).some(rule => rule.selector.includes(".task-surface")), "approved-surfaces.css 必须读到真实任务页规则").toBe(true);
     expect(rules(fixCss).length, "objective-flow.css 解析不出规则").toBeGreaterThan(240);
     const scoped = [...fixCss.matchAll(/\.hud-surface \.[A-Za-z_][-\w]*(?=[\s,{])/g)].length;
     expect(scoped, "修正层里没有 `.hud-surface .c` 形状的选择器——判据会空转").toBeGreaterThan(20);
@@ -246,13 +237,6 @@ describe("衬底 token 不许重抄母本底色", () => {
 
   it("当前树里没有与母本差 ≤3 通道的衬底字面量", () => {
     expect(literalSubstrates(SUBSTRATE).bad).toEqual([]);
-  });
-
-  it("移出范围的那份欠账是**已知的一条**，不是被静默藏起来", () => {
-    // 他们把这条收掉之后这个断言会红 —— 那时候该做的是把 objective-flow.css 加回 SUBSTRATE。
-    expect(literalSubstrates(SUBSTRATE_OUT_OF_SCOPE).bad).toEqual([
-      "src/renderer/src/components/objective-flow.css --quest-paper: #fff9e9",
-    ]);
   });
 
   it("阈值本身：近义重抄必须报，另立一档不许报", () => {

@@ -10,7 +10,8 @@ let roleBox = { left: 1150, right: 1410, top: 420, bottom: 780, width: 260, heig
 let animatedRoleBox: typeof roleBox | null = null;
 let hudBox: typeof roleBox | null = null;
 const bodyBox = { left: 80, right: 1010, top: 100, bottom: 750, width: 930, height: 650 };
-function Harness({ papers = false, open = true, input = false, active = true, home = true, controls = true, height = 180, bounded = false }: { papers?: boolean; open?: boolean; input?: boolean; active?: boolean; home?: boolean; controls?: boolean; height?: number; bounded?: boolean }) {
+let goalBox = { left: 1030, right: 1150, top: 382, bottom: 420, width: 120, height: 38 };
+function Harness({ papers = false, open = true, input = false, active = true, home = true, controls = true, goal = false, height = 180, bounded = false }: { papers?: boolean; open?: boolean; input?: boolean; active?: boolean; home?: boolean; controls?: boolean; goal?: boolean; height?: number; bounded?: boolean }) {
   const anchor = useRef<HTMLDivElement>(null);
   const floating = useRef<HTMLDivElement>(null);
   const head = useRef<HTMLDivElement>(null);
@@ -18,7 +19,7 @@ function Harness({ papers = false, open = true, input = false, active = true, ho
   useCompanionSeatBudget(anchor, true, 1, "dialogue", home ? "room" : "notes");
   return <div className="desktop-app">
     <main aria-label="正文窗口" />
-    <div className="companion-presence" data-surface={home ? "room" : "notes"}><div className="companion-scene-anchor"><div className="companion-visual-shell"><div className="companion-character-motion"><div className="window-live2d" /></div></div><div ref={anchor} className="companion-hud" data-controls-side={controlsSide} data-layout-width="260" data-layout-height="360">{controls ? <div className="companion-hud__controls" data-layout-width="44" data-layout-height="179"><button aria-label="气泡轻聊" /></div> : null}</div></div></div>
+    <div className="companion-presence" data-surface={home ? "room" : "notes"}><div className="companion-scene-anchor"><div className="companion-visual-shell"><div className="companion-character-motion"><div className="window-live2d" /></div></div><div ref={anchor} className="companion-hud" data-controls-side={controlsSide} data-layout-width="260" data-layout-height="360">{controls ? <div className="companion-hud__controls" data-layout-width="44" data-layout-height="179"><button aria-label="气泡轻聊" /></div> : null}{goal ? <button className="companion-goal-tab">手边的事</button> : null}</div></div></div>
     {createPortal(<div ref={floating} data-side={side}><div ref={head}>{open ? input
       ? <section className="companion-hud__composer" data-layout-height="124"><textarea aria-label="轻聊输入" /></section>
       : <p data-layout-height={height} data-bounded-height={bounded || undefined}>这是真实高度的回复区域</p> : null}</div><div className="companion-hud__papers">{papers ? <article>额外的卡片内容</article> : null}</div></div>, document.body)}
@@ -29,9 +30,15 @@ beforeEach(() => {
   roleBox = { left: 1150, right: 1410, top: 420, bottom: 780, width: 260, height: 360 };
   animatedRoleBox = null;
   hudBox = null;
+  goalBox = { left: 1030, right: 1150, top: 382, bottom: 420, width: 120, height: 38 };
   vi.useFakeTimers();
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    if (this.classList.contains("companion-hud__controls")) {
+      const bounds = controlsBounds();
+      return { ...bounds, width: bounds.right - bounds.left, height: bounds.bottom - bounds.top, x: bounds.left, y: bounds.top, toJSON: () => ({}) };
+    }
+    if (this.classList.contains("companion-goal-tab")) return { ...goalBox, x: goalBox.left, y: goalBox.top, toJSON: () => ({}) };
     return { ...(this.classList.contains("window-live2d") ? animatedRoleBox ?? roleBox : this.classList.contains("companion-visual-shell") ? roleBox : this.classList.contains("companion-hud") ? hudBox ?? roleBox : this.tagName === "MAIN" ? bodyBox : { left: 0, right: 20, top: 0, bottom: 20, width: 20, height: 20 }), x: 0, y: 0, toJSON: () => ({}) };
   });
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
@@ -210,6 +217,33 @@ it("uses the real model container and ink edge, follows the role, and writes onl
   act(() => { window.dispatchEvent(new Event("resize")); vi.advanceTimersByTime(32); });
   expect(floating.dataset.side).toBe("right");
   expect(Number.parseFloat(floating.style.getPropertyValue("--companion-papers-x"))).toBeGreaterThan(roleBox.right);
+});
+
+it.each([124, 180, 310, 660])("keeps a %ipx input, reply or expanded process clear of the task tab and buttons", (height) => {
+  const view = render(<Harness goal height={height} papers />);
+  const floating = document.querySelector<HTMLElement>("[data-side]")!;
+  const assertClear = () => {
+    const box = (surface: "head" | "papers") => {
+      const value = (key: string) => Number.parseFloat(floating.style.getPropertyValue(`--companion-${surface}-${key}`));
+      return { left: value("x"), right: value("x") + value("w"), top: value("y"), bottom: value("y") + value("max-h") };
+    };
+    for (const surface of [box("head"), box("papers")]) {
+      for (const control of [goalBox, controlsBounds()]) {
+        expect(surface.right + 16 <= control.left || surface.left - 16 >= control.right
+          || surface.bottom + 16 <= control.top || surface.top - 16 >= control.bottom).toBe(true);
+      }
+    }
+  };
+  expect(document.querySelector(".companion-goal-tab")).toBeTruthy();
+  assertClear();
+  // The tab can grow and the HUD can use a different scale from the model.
+  goalBox = { left: 820, right: 970, top: 320, bottom: 370, width: 150, height: 50 };
+  hudBox = { left: 1000, right: 1325, top: 420, bottom: 870, width: 325, height: 450 };
+  view.rerender(<Harness goal height={height} papers />);
+  assertClear();
+  view.rerender(<Harness goal input />);
+  expect(screenInput()).toBeTruthy();
+  assertClear();
 });
 
 it("starts task seat measurements after leaving home and clears them on return", () => {

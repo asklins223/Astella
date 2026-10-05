@@ -63,3 +63,15 @@ it.each(["overview", "recall", "expansion"] as const)("%s 的未知失败有可�
   fireEvent.click(view.getByRole("button", { name: "再试一次" }));
   expect(retry).toHaveBeenCalledOnce();
 });
+
+it.each(["overview", "recall", "expansion"] as const)("%s 的外发策略拒绝引导去设置，设置完成后仍可重试", (kind) => {
+  const settings = vi.fn(), retry = vi.fn();
+  const view = render(<NotebookLearningPage kind={kind} title="二分查找" version={2} state="failed" error="ai_data_policy_denied"
+    onPrepare={vi.fn()} onBody={vi.fn()} onRetry={retry} onSettings={settings} />);
+  expect(view.getByText(/账号的数据外发策略阻止/)).toBeTruthy();
+  fireEvent.click(view.getByRole("button", { name: "去设置" }));
+  expect(settings).toHaveBeenCalledOnce();
+  expect(retry).not.toHaveBeenCalled();
+  fireEvent.click(view.getByRole("button", { name: "设置好了，再试一次" }));
+  expect(retry).toHaveBeenCalledOnce();
+});

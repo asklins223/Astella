@@ -58,8 +58,11 @@ test("发现簿的页签真的进了伴星中心", () => {
   const surface = read(
     "src", "renderer", "src", "components", "surfaces", "companion", "companion-center-surface.tsx",
   );
-  expect(surface).toMatch(/\["discovery", "发现簿"\]/);
-  expect(surface).toMatch(/<DiscoveryPanel/);
+  const model = read("src", "renderer", "src", "components", "surfaces", "companion", "companion-center-model.ts");
+  const page = read("src", "renderer", "src", "components", "surfaces", "companion", "companion-discovery-page.tsx");
+  expect(model).toMatch(/id: "discovery", label: "发现簿"/);
+  expect(surface).toMatch(/<CompanionDiscoveryPage/);
+  expect(page).toMatch(/<DiscoveryPanel/);
 });
 
 test("【自证】判据认得出「取消收藏接成 DELETE」这个真实退化", () => {

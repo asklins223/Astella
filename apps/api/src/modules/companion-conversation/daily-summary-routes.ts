@@ -86,7 +86,7 @@ export async function maskDiaryAndExcerptsForRevokedSources(
      WHERE workspace_id = ${scope.workspaceId}
        AND user_id = ${scope.userId}
        AND source = 'diary'
-       AND source_id = ANY(${toTextArrayLiteral(dates)}::text[])
+       AND split_part(source_id, ':', 1) = ANY(${toTextArrayLiteral(dates)}::text[])
        AND NOT masked
     RETURNING id
   `);
@@ -298,7 +298,7 @@ export async function dailySummaryRoutes(app: FastifyInstance) {
            WHERE workspace_id = ${scope.workspaceId}
              AND user_id = ${scope.userId}
              AND source = 'diary'
-             AND source_id = ${parsed.data}
+             AND split_part(source_id, ':', 1) = ${parsed.data}
           RETURNING id
         `);
         const memories = await tx.execute<{ id: string; kind: string }>(sql`
@@ -361,7 +361,7 @@ export async function dailySummaryRoutes(app: FastifyInstance) {
            WHERE workspace_id = ${scope.workspaceId}
              AND user_id = ${scope.userId}
              AND source = 'diary'
-             AND source_id = ${parsed.data}
+             AND split_part(source_id, ':', 1) = ${parsed.data}
              AND NOT masked
           RETURNING id
         `);

@@ -39,6 +39,7 @@ import {
   type CompanionFeedDiaryAnchor,
 } from "../components/companion/companion-feed";
 import type { CompanionFeedNoteAnchor, CompanionNoteIntent } from "../components/companion/companion-feed";
+import { publishCompanionHistoryChanged } from "../components/companion/companion-events";
 import { beginNoteExplanation, completeNoteExplanation, interruptNoteExplanation, progressNoteExplanation, reportNoteExplanationStopFailure, resetNoteExplanations, useNoteCompanionExplanations } from "../components/companion/note-companion-explanation";
 import {
   appendCompanionAgentNode,
@@ -684,6 +685,7 @@ export function CompanionChatProvider({ children }: { readonly children: ReactNo
       historyAllRef.current = null;
       historyRevisionRef.current += 1;
       setHistoryRevision(historyRevisionRef.current);
+      publishCompanionHistoryChanged();
     }
     historyBaselineReadyRef.current = true;
     historyRecentOldestSeqRef.current = result.oldestSeq;

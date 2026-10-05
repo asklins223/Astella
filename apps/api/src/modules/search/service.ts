@@ -8,6 +8,8 @@ import {
 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { notes, noteBlocks, sources, sourceSegments } from "@ailearn/shared/db-schema/note";
 import { searchDocuments } from "@ailearn/shared/db-schema/search";
+// 目标的即时投影与重建必须用同一标题合同，否则漂移修复会反复报旧标题。
+import { objectiveSearchTitle } from "../learning-objectives/search-projection.ts";
 import { searchDocumentsVisibleSql } from "../note/visibility.ts";
 import { SourceStatus } from "@ailearn/shared";
 import { logger } from "../../lib/logger.ts";
@@ -53,18 +55,6 @@ const reindexTopOrder: Record<string, any> = (() => {
     objectives: (fields: any) => [desc(fields.updatedAt), asc(fields.objectiveId)],
   };
 })();
-
-/**
- * 目标搜索文档的标题（审计 F15）。
- *
- * 写入侧（reindex）与判据侧（drift 的"过期标题"）必须用同一句：两边公式一分叉，
- * 每次检测都会报 stale、auto-fix 反复重建，而界面上看到的是"索引老过期"。
- */
-function objectiveSearchTitle(
-  revision: { conceptLabel?: string | null; publicSummary?: string | null } | undefined,
-): string {
-  return revision?.conceptLabel ?? revision?.publicSummary?.slice(0, 80) ?? "未命名目标";
-}
 
 // N#8-1: 进程内记录"该工作区上一次 reindex 是否因单表行数上限被截断"。当域名表真实超过
 // REINDEX_MAX_ROWS_PER_TABLE 时，reindex 必然只索引确定前 LIMIT 子集，drift 也不会读超线实体，
@@ -589,7 +579,7 @@ export async function reindexWorkspaceSearch(
         ? (await executor
             .select({ id: notes.id, title: notes.title })
             .from(notes)
-            .where(and(inArray(notes.id, noteIds), eq(notes.shareScope, "shared"))))
+            .where(and(inArray(notes.id, noteIds), eq(notes.workspaceId, workspaceId), eq(notes.shareScope, "shared"), isNull(notes.deletedAt))))
             .map((n) => [n.id, n.title])
         : [],
     );

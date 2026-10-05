@@ -8,6 +8,7 @@ import { searchDocuments } from "@ailearn/shared/db-schema/search";
 import { learningCardsV2, learningObjectivesV2 } from "@ailearn/shared/db-schema/card-generation-v2";
 import { computeContentHash } from "./content-hash.ts";
 import { upsertSearchDocument, type NoteSearchDocument } from "./search-projection.ts";
+import { refreshNoteObjectiveSearchProjections } from "../learning-objectives/search-projection.ts";
 import { noteShelfStatesByNoteId } from "./shelf-state.ts";
 import { logger } from "../../lib/logger.ts";
 import { DomainError } from "@ailearn/shared";
@@ -723,9 +724,8 @@ export async function setNoteShareScope(
     .where(eq(notes.id, noteId))
     .returning();
 
-  // 搜索索引里没有"可见性"这一列（一张空间级的索引表），所以共享状态变化不需要重算
-  // 索引；查询侧现场 join `notes` 判可见性。反过来说，正因为索引是共享的，
-  // **查询侧那道 join 不能省**——省了就是"私有笔记的正文出现在别人的搜索结果里"。
+  // 笔记正文的可见性仍由查询侧 join 判断；目标索引正文可能带这篇公开标题，需同步移除。
+  await refreshNoteObjectiveSearchProjections(tx, workspaceId, noteId);
   return { note: updated, changed: true };
 }
 
@@ -776,6 +776,7 @@ export async function deleteNote(
   await deleteSearchDocuments(executor, workspaceId, [
     { objectType: "note", objectId: noteId },
   ]);
+  await refreshNoteObjectiveSearchProjections(executor, workspaceId, noteId);
 
   return { ok: true as const };
 }
@@ -853,7 +854,7 @@ export async function restoreDeletedNote(
     });
   }
 
-  // 卡片搜索索引由 card 模块自行维护。
+  await refreshNoteObjectiveSearchProjections(executor, workspaceId, noteId);
 
   return result;
 }
@@ -1216,6 +1217,7 @@ export async function restoreNoteVersion(
       },
     );
 
+    if (titleChanged) await refreshNoteObjectiveSearchProjections(tx, workspaceId, noteId);
     const result = {
       note: {
         ...note,

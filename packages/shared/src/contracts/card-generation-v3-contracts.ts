@@ -30,6 +30,7 @@ import {
   cardPresentationDraftV2Schema,
   knowledgeFormV2Schema,
   learningObjectiveDraftV2Schema,
+  practiceItemV2Schema,
 } from "./card-generation-v2-contracts.ts";
 import { groundingCriticReportV2Schema } from "./card-quality-v2-contracts.ts";
 import { taskIntentSchema } from "./learning-run-contracts.ts";
@@ -101,6 +102,8 @@ export const cardGenerateV3CandidateContentSchema = z.strictObject({
   }),
   hints: cardHintPairV2Schema,
   estimatedReviewSeconds: z.number().int().min(1).max(3600),
+  /** 可执行练习沿用真实作答合同；不给出的内容不能在组装时凭空补成题目。 */
+  practiceItem: practiceItemV2Schema.optional(),
   /** 只能取提示里「可用依据」列出的那些 id（服务端仍会按 sealed 清单复检）。 */
   evidenceSnapshotIds: z.array(z.string().uuid()).min(1).max(100),
 });

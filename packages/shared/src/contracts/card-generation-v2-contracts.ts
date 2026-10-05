@@ -448,6 +448,8 @@ export const plannedObjectiveV2Schema = z
           candidateBlockIds: z.array(z.string().uuid()).min(1).max(20),
           sharedBlockIds: z.array(z.string().uuid()).min(1).max(20),
           knowledgeForm: z.string().min(1).max(60),
+          // 旧计划可能缺少；新计划记录实际答案主张，保存仍会重核当前修订。
+          claimHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
         }),
       }),
     ]),

@@ -114,6 +114,12 @@ const JOB_TYPE_LABELS: Record<string, string> = {
   companion_summarizer: "伴星会话摘要",
   companion_daily_summary: "伴星每日总结",
   companion_memory_embedding_rebuild: "伴星记忆重建",
+  agent_run_advance: "伴星推进任务",
+  note_overview_generate: "整理笔记速看",
+  note_expansion_generate: "生成笔记拓展",
+  note_dynamic_artifact_generate: "生成学习演示",
+  note_annotation_generate: "生成笔记批注",
+  card_generation_v2: "生成学习卡",
 };
 
 const JOB_STATUS_LABELS: Record<string, string> = {

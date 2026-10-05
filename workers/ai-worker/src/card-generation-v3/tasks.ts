@@ -126,8 +126,9 @@ const SERVER_OWNED_LEAVES_V3 = [
 ];
 
 /** 一切 `*Hash` 都由服务端重算（`plan-assembly.ts` 丢弃模型给的那份再算一次），因此也不许出现在"必填"里。 */
-function isServerOwnedKeyV3(key: string): boolean {
-  return SERVER_OWNED_LEAVES_V3.includes(key) || key.endsWith("Hash");
+function isServerOwnedKeyV3(key: string, path: string): boolean {
+  // 练习选项的局部 id 用于正确项引用，与服务端拥有的答案/修订身份不同。
+  return (SERVER_OWNED_LEAVES_V3.includes(key) && !path.includes(".practiceItem")) || key.endsWith("Hash");
 }
 
 /**
@@ -165,14 +166,14 @@ function contractSheetV3(node: unknown, path: string, out: string[], depth = 0):
     case "ZodObject": {
       const shape = n.shape ?? {};
       const required = Object.entries(shape)
-        .filter(([key]) => !isServerOwnedKeyV3(key))
+        .filter(([key]) => !isServerOwnedKeyV3(key, path))
         .filter(([, field]) => (field as { safeParse: (v: unknown) => { success: boolean } })
           .safeParse(undefined).success === false)
         .map(([key]) => key);
       if (path) out.push(`${path} 必填：${required.join("、") || "（这一层没有必填）"}`);
       for (const [key, field] of Object.entries(shape)) {
         // 服务端整棵拿掉的子树（`relations`）不再向模型要，也不往里递归列格子。
-        if (isServerOwnedKeyV3(key)) continue;
+        if (isServerOwnedKeyV3(key, path)) continue;
         contractSheetV3(field, path ? `${path}.${key}` : key, out, depth + 1);
       }
       return;
@@ -259,6 +260,8 @@ export function buildCardGenerateV3Prompt(input: CardGenerateV3TaskInput): strin
     // 默认；把两个方向都说清楚：能独立成题的一句就该出一张，整篇都提不出点才 no_cards。
     "正文里每一句能独立成题的事实、机制或对比都值得制卡；只有整篇都提不出一个值得记的点，才返回 no_cards_recommended（那是正常结果，不是失败）。",
     "题面、答案和判分点要逐项对应。题面要求的每一件事都必须在答案中出现；如同时问公式与单位，答案不能只写公式。只问原文能够支持的内容。",
+    "在原文支持时，为候选附上 practiceItem 可执行练习：事实/定义/因果/边界可用判断或单选，流程用排序，关系/比较可用配对。判断陈述和正确值必须有原文支持；单选的所有选项（含干扰项）都要能追溯给出的依据，不能为了凑数编造。给不出可靠练习时省略 practiceItem。",
+    "practiceItem 中选项的 unitId、配对 leftId/rightId 是练习内部的唯一局部编号（如 opt-1），正确项和顺序必须引用这些编号。练习依据仍只允许给出的 evidenceSnapshotId。",
     "题面、答案、解释和提示面向学习者，用原文内容说明知识；不要在这些文字里写块 id、依据 UUID 或内部字段名。依据身份只放在 evidenceSnapshotIds。",
     "只输出合法 JSON；顶层只有 planIntent、objectiveProposals、candidates。",
     "有候选时 planIntent.kind=author_candidates，recommendedCardCount 是本批候选数；没有可学内容时 planIntent.kind=no_cards_recommended，附 reasonCodes，另两个数组为空。",
@@ -451,6 +454,10 @@ export function buildCardContentCheckV3Prompt(input: CardContentCheckV3TaskInput
         `解释：${candidate.objective.learningSupport.explanation}`,
         `答案：${extractAnswerText(candidate.objective.canonicalAnswer)}`,
         `题面：${candidate.presentation.front.cue} / ${candidate.presentation.front.prompt}`,
+        `题面情境：${candidate.presentation.front.context ?? "（无）"}`,
+        `实际题型：${candidate.presentation.strategy}；转换方式：${candidate.presentation.transformationKind}`,
+        `可执行练习：${JSON.stringify(candidate.objective.practiceItem ?? null)}`,
+        `判分点：${JSON.stringify(candidate.objective.rubric.units)}`,
         `本候选引用的封存原文（可疑时 sourceQuote 必须逐字取自这里）：\n${citedEvidence || "（无可读的引用原文）"}`,
       ].join("\n");
     })
@@ -461,6 +468,9 @@ export function buildCardContentCheckV3Prompt(input: CardContentCheckV3TaskInput
     '- "rewrite"：内容方向可以但需要改写（说明改什么）；',
     '- "insufficient"：依据不足或存在实质疑点——不得作为标准答案。',
     "先逐项核对题面要求与答案：即使已有答案全都正确，只要漏答题面明确要求的一项，也要判 rewrite，并指出具体缺项（例如同时问公式和单位却只答公式）。不能把解释中的内容当作答案里已经写出。",
+    "对算法、代码与公式结论，必须对照给出的原文逐步代入最小边界输入，检查等式、区间长度和分支前提是否能同时成立。不要因为答案出现了原文关键词就判正确；例如 floor((right-left)/2)=0 需要核对实际区间长度，不能把不可能成立的条件当作有效示例。数值、边界或推导错误必须判 rewrite，并写明正确计算及具体改法；没有充分依据可纠正时判 insufficient。",
+    "核对实际题型与题面：cloze 要有可填的空缺，sequence 要要求重建步骤顺序，compare 要明确比较对象，boundary 要判断条件/适用边界，application 要给出可应用的情境，why 要问原因。只有普通回忆问句却标成其他题型时判 rewrite，具体说明怎样调整题面；不要仅凭标签认为合格。",
+    "有可执行练习时，独立核对练习题、正确项和原文一致，选项/配对/排序引用完整，且练习确实检验这个目标；存在错误或无依据的选项时判 rewrite，不以正文答案正确代替练习检查。没有 practiceItem 时不能宣称已有可执行练习。",
     "逐项比较答案与封存原文的条件和范围。不能把使用时的情境条件改成对象的固有性质，也不能增加原文没有要求的限制；即使看起来意思相近，也不能放过这种条件变化。",
     "只把具体且可能影响理解的事实疑点标为待核对；主张过度绝对、漏掉会改变结论的重要条件、或与其引用原文内部矛盾时，单独标记 code=\"suspect_claim\"、severity=\"hard\"，verdict 必须是 \"insufficient\"。",
     "suspect_claim 必须提供 sourceQuote：逐字复制该候选所引用的封存原文中能定位疑点的最短完整句段，并在 detail 里写清疑点和需要核对的原因。不能精确引用时不要伪造引句，仍然判 insufficient 并说明无法定位。",
@@ -789,17 +799,15 @@ export function createCardCandidateRewriteV3Task(
           || rewritten.rewrites[0]!.objectiveLocalId !== input.candidate.planObjectiveLocalId) {
           throw new Error("改写只能交回请求的这一张卡，不能混入其他目标");
         }
-        const previous = input.candidate as unknown as {
-          planObjectiveLocalId: string; objectiveStatement?: string; knowledgeForm?: string;
-        };
+        const previous = input.candidate;
         drafts = {
           rewrites: expandCardGenerateV3OutputV3({
             planIntent: { kind: "author_candidates", recommendedCardCount: 1 },
             objectiveProposals: [{
               objectiveLocalId: previous.planObjectiveLocalId,
-              objectiveStatement: previous.objectiveStatement ?? rewritten.rewrites[0]!.publicSummary,
+              objectiveStatement: previous.objective.objectiveStatement,
               priority: "critical",
-              knowledgeForm: previous.knowledgeForm ?? "fact",
+              knowledgeForm: previous.objective.knowledgeForm,
               rationale: "改写沿用上一版的目标陈述",
             }],
             candidates: rewritten.rewrites,

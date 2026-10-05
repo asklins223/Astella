@@ -61,7 +61,6 @@ import {
   avatarUploadResultV1Schema,
   inviteCreatedV1Schema,
   inviteListResultV1Schema,
-  markdownImportResultV1Schema,
   memberListResultV1Schema,
   renameWorkspaceResultV1Schema,
   dissolvePreviewResultV1Schema,
@@ -77,7 +76,6 @@ import {
   type AvatarUploadResultV1,
   type InviteCreatedV1,
   type InviteListResultV1,
-  type MarkdownImportResultV1,
   type MemberListResultV1,
   type RenameWorkspaceResultV1,
   type CreateWorkspaceResultV1,
@@ -785,27 +783,6 @@ export class DesktopGateway {
     await this.transport.ensureConnected(requestId);
     await this.transport.request(`/members/${userId}`, { method: "DELETE" }, true, true, requestId);
     return { removed: true };
-  }
-
-  /** POST /import/markdown（Owner，F-033 幂等）：完整笔记行不过桥，只报计数。 */
-  async importMarkdown(
-    items: ReadonlyArray<{ title?: string; content: string }>,
-    importId: string,
-    requestId?: string,
-  ): Promise<MarkdownImportResultV1> {
-    await this.transport.ensureConnected(requestId);
-    const result = await this.transport.request("/import/markdown", {
-      method: "POST",
-      body: JSON.stringify({ items, importId }),
-    }, true, true, requestId);
-    const payload = (result.body ?? {}) as Record<string, unknown>;
-    const parsed = markdownImportResultV1Schema.safeParse({
-      version: 1,
-      imported: payload.imported,
-      failed: Array.isArray(payload.errors) ? payload.errors.length : 0,
-    });
-    if (!parsed.success) throw new DesktopGatewayFailure("unsupported_contract", "user_action");
-    return parsed.data;
   }
 
   async getReviewQueue(cursor?: string, limit = 50, requestId?: string): Promise<z.infer<typeof reviewQueueV2Schema>> {

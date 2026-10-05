@@ -32,9 +32,10 @@ import {
 import { createProvider } from "../lib/ai-provider.ts";
 import { extractJsonFromText } from "../lib/providers/json-response.ts";
 import { assertJobLease, isJobLeaseActive, JobLeaseLostError, lockJobLease, withJobTransaction } from "../lib/job-lease.ts";
-import { NoteDynamicArtifactOutputError } from "../lib/non-retryable-errors.ts";
+import { NoteDynamicArtifactOutputError, NoteDynamicArtifactAttemptExhaustedError } from "../lib/non-retryable-errors.ts";
 import { logger } from "../lib/logger.ts";
 import { currentWorkerWorkspaceTransaction } from "../db.ts";
+import { resolveNoteDynamicArtifactBudget } from "../lib/handler-timeout-config.ts";
 import type { JobPayload } from "./index.ts";
 
 const visibleNoteCondition = sql.raw(noteVisibleSqlText(
@@ -170,7 +171,9 @@ export async function runNoteDynamicArtifactGenerate(job: JobPayload): Promise<v
     provider: jsonArtifactProvider(provider, job, await loadAgentGenerationContext(job)),
     modelId: provider.modelId,
     maxModelCalls: 2,
-    maxDurationMs: 100_000,
+    // 内核先结束，再留出安全核对与落库的时间；不要让共享内核的 210s
+    // 默认值越过 Worker 的 120s 租约，被外层杀掉后重新计费整轮。
+    maxDurationMs: resolveNoteDynamicArtifactBudget().loopDeadlineMs,
     input: {
       drivingQuestion,
       blocks: frozen.blocks,
@@ -192,7 +195,7 @@ export async function runNoteDynamicArtifactGenerate(job: JobPayload): Promise<v
     if (result.failureClass === "lease_lost") throw new JobLeaseLostError(job.id, "inactive");
     if (result.failureClass === "cancelled" || job.signal?.aborted) throw new JobLeaseLostError(job.id, "aborted");
     if (result.failure === "contract_rejected") throw new NoteDynamicArtifactOutputError(result.detail);
-    throw new Error(result.detail);
+    throw new NoteDynamicArtifactAttemptExhaustedError(result.detail);
   }
 
   const grounded = groundArtifactStepsV1({ steps: result.doc.outline, blocks: frozen.blocks });

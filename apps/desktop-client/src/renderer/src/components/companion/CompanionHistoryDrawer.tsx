@@ -19,7 +19,7 @@ import { CompanionGoalJournal } from "./CompanionGoalJournal";
 import type { AgentGoalsController } from "./use-agent-goals";
 import { CompanionThoughtJournal } from "./CompanionThoughtJournal";
 import { journalProposalNeedsAttention, journalProposalNeedsDecision } from "./companion-journal-model";
-import { renderCompanionMarkdown } from "./companion-markdown";
+import { plainCompanionBubbleText, renderCompanionMarkdown } from "./companion-markdown";
 import { feedSelectionToCompanion } from "./companion-feed";
 import { useTactileSurface } from "../motion/use-tactile-surface";
 import { useCompanionJournalMotion } from "./use-companion-journal-motion";
@@ -467,7 +467,9 @@ export function CompanionHistoryDrawer({
                   );
                 }
                 const needle = keyword.toLowerCase();
-                const hits = (allMessages ?? []).filter((message) => companionMessageText(message).toLowerCase().includes(needle));
+                const readableText = (message: CompanionMessageV1) => message.role === "assistant"
+                  ? plainCompanionBubbleText(companionMessageText(message)) : companionMessageText(message);
+                const hits = (allMessages ?? []).filter((message) => readableText(message).toLowerCase().includes(needle));
                 return (
                   <>
                     {!calendarOpen ? poolStateBlock : null}
@@ -475,7 +477,7 @@ export function CompanionHistoryDrawer({
                     {hits.map((message) => (
                       <button key={message.id} type="button" className="companion-record__hit" onClick={() => jumpToMessage(message.id)}>
                         <header><span>{message.role === "user" ? "你" : chat.companionName}</span><time>{messageDayLabel(message.createdAt)} {messageTime(message.createdAt)}</time></header>
-                        <p>{highlightText(companionMessageText(message), keyword)}</p>
+                        <p>{highlightText(readableText(message), keyword)}</p>
                       </button>
                     ))}
                     {allMessages != null && hits.length > 0 ? <p className="companion-history__system">共 {hits.length} 条 · 点一条回到它的上下文</p> : null}

@@ -9,18 +9,20 @@ import { resolveSceneMotionMode } from "../scene/scene-motion";
 import { formatRelative } from "./surfaces/notebook/surface-data.tsx";
 import { useSourceMotion } from "./surfaces/source/use-source-motion";
 import {
-  MAX_CAPTURE_BYTES,
-  MAX_DROP_FILES,
-  TEXT_FILE_PATTERN,
-  captureBytes,
   dispatchSourceCaptured,
-  formatCaptureSize,
   hasOpenModal,
   isOwnedDropTarget,
   markLinkSeen,
   readSeenLinks,
-  titleFromFileName,
 } from "../app/source-intake";
+import {
+  MAX_BATCH_CAPTURE_FILES,
+  canCaptureSource,
+  captureSourceTasks,
+  readCaptureFiles,
+  type BatchCaptureOutcome,
+  type CaptureTask,
+} from "../app/source-batch-capture";
 
 gsap.registerPlugin(useGSAP);
 
@@ -29,16 +31,6 @@ function hostOf(url: string): string {
     return new URL(url).host || url;
   } catch {
     return url;
-  }
-}
-
-async function canCaptureSource(): Promise<"allowed" | "denied" | "unknown"> {
-  try {
-    const response = await window.ailearn.capabilities.get({ meta: createRequestMeta() });
-    if (!response.ok) return "unknown";
-    return response.data.actionCapabilities["source.create"] === "allowed" ? "allowed" : "denied";
-  } catch {
-    return "unknown";
   }
 }
 
@@ -312,12 +304,10 @@ export function ClipboardLinkPrompt({ url, onClose }: { readonly url: string; re
   );
 }
 
-type DropOutcome = { readonly name: string; readonly ok: boolean; readonly message: string };
-
 type DropPhase =
   | { kind: "armed" }
   | { kind: "working"; done: number; total: number }
-  | { kind: "report"; outcomes: readonly DropOutcome[]; overflow: boolean; created: { readonly sourceId: string; readonly title: string } | null };
+  | { kind: "report"; outcomes: readonly BatchCaptureOutcome[]; overflow: boolean; created: { readonly sourceId: string; readonly title: string } | null };
 
 export function GlobalDropOverlay() {
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -357,56 +347,32 @@ export function GlobalDropOverlay() {
     const scope = useRoomStore.getState().workspaceScopeRevision;
     const isCurrent = () => batch === batchRef.current && scope === useRoomStore.getState().workspaceScopeRevision;
     const files = [...transfer.files];
-    const overflow = files.length > MAX_DROP_FILES;
-    const kept = files.slice(0, MAX_DROP_FILES);
-    phaseRef.current = { kind: "working", done: 0, total: Math.max(1, kept.length) };
+
+    const tasks: CaptureTask[] = [];
+    const outcomes: BatchCaptureOutcome[] = [];
+    let overflow = false;
+
+    // 进度条先亮起来：读 50 份文件不是零耗时，没有这一帧的话界面像是没接住这次拖放。
+    phaseRef.current = { kind: "working", done: 0, total: Math.max(1, files.length) };
     setPhase(phaseRef.current);
 
-    type Task = { name: string; request: { content: string; title?: string } | { url: string } };
-    const tasks: Task[] = [];
-    const outcomes: DropOutcome[] = [];
-
-    if (kept.length === 0) {
+    if (files.length === 0) {
       // 浏览器里拖出来的链接：没有文件，只有地址文本。
       const text = `${transfer.getData("text/uri-list")}\n${transfer.getData("text/plain")}`;
       const urls = extractCandidateLinks(text);
       if (urls.length === 0) { reset(); return; }
       for (const url of urls) tasks.push({ name: hostOf(url), request: { url } });
     } else {
-      for (const file of kept) {
-        if (!TEXT_FILE_PATTERN.test(file.name)) {
-          outcomes.push({ name: file.name, ok: false, message: `采集通道目前接收文本、Markdown 与代码文件，暂不解析 ${file.name}。` });
-          continue;
-        }
-        if (file.size > MAX_CAPTURE_BYTES) {
-          outcomes.push({ name: file.name, ok: false, message: `这份材料约 ${formatCaptureSize(file.size)}，超过单次采集的 900 KB 上限，请分段采集。` });
-          continue;
-        }
-        let text: string;
-        try {
-          text = await file.text();
-          if (!isCurrent()) return;
-        } catch {
-          if (!isCurrent()) return;
-          outcomes.push({ name: file.name, ok: false, message: "这份文件读不出来，换一种方式粘贴试试。" });
-          continue;
-        }
-        if (!text.trim()) {
-          outcomes.push({ name: file.name, ok: false, message: "这份文件是空的，没有可收的内容。" });
-          continue;
-        }
-        const bytes = captureBytes(text);
-        if (bytes > MAX_CAPTURE_BYTES) {
-          outcomes.push({ name: file.name, ok: false, message: `这份材料约 ${formatCaptureSize(bytes)}，超过单次采集的 900 KB 上限，请分段采集。` });
-          continue;
-        }
-        const title = titleFromFileName(file.name);
-        tasks.push({ name: file.name, request: { content: text, ...(title ? { title } : {}) } });
-      }
+      const read = await readCaptureFiles(files);
+      overflow = read.overflow;
+      tasks.push(...read.tasks);
+      outcomes.push(...read.outcomes);
+      if (!isCurrent()) return;
     }
 
     const total = tasks.length + outcomes.length;
-    if (total === 0) return;
+    // 一份都没成：收掉这一屏。原来这里是直接 return，于是「正在收进第 1/1 份…」会一直挂着。
+    if (total === 0) { reset(); return; }
     setPhase({ kind: "working", done: 0, total });
 
     if (tasks.length > 0) {
@@ -419,35 +385,15 @@ export function GlobalDropOverlay() {
           message: capture === "denied" ? "只有工作区所有者可以采集来源。" : "来源库暂时不可用，稍后再拖一次。",
         });
       } else {
-        let created: { readonly sourceId: string; readonly title: string } | null = null;
-        let done = 0;
-        for (const task of tasks) {
-          if (!isCurrent()) return;
-          try {
-            const response = await window.ailearn.source.create({
-              meta: createRequestMeta(),
-              request: task.request,
-            });
-            if (!isCurrent()) return;
-            const detail = unwrapGatewayResult(response);
-            created = { sourceId: detail.source.id, title: detail.source.title };
-            outcomes.push({
-              name: task.name,
-              ok: true,
-              // 审计 F33：同一个网址不重复建——如实说"已经有一份了"，而不是假装刚收下。
-              message: detail.duplicateOf
-                ? `已经在 ${formatRelative(detail.duplicateOf.createdAt)} 采过，没有重复建一份。`
-                : "已收下，正在解析。",
-            });
-          } catch (error) {
-            if (!isCurrent()) return;
-            outcomes.push({ name: task.name, ok: false, message: gatewayErrorMessage(error) });
-          }
-          done += 1;
-          setPhase({ kind: "working", done, total });
-        }
-        if (created) dispatchSourceCaptured(created.sourceId, created.title);
-        setPhase({ kind: "report", outcomes, overflow, created });
+        // 读文件时已经报过一部分进度（那是"准备"），这里从"开始建来源"重新数一遍，
+        // 所以界面上那一条进度条从头到尾走的是同一件事：收下第几份。
+        const result = await captureSourceTasks(tasks, {
+          isCurrent,
+          onProgress: (done) => { if (isCurrent()) setPhase({ kind: "working", done: outcomes.length + done, total }); },
+        });
+        if (!result) return;
+        if (result.created) dispatchSourceCaptured(result.created.sourceId, result.created.title);
+        setPhase({ kind: "report", outcomes: [...outcomes, ...result.outcomes], overflow, created: result.created });
         return;
       }
     }
@@ -576,7 +522,7 @@ export function GlobalDropOverlay() {
           </>
         ) : report ? (
           <>
-            {report.overflow ? <p>一次最多收 {MAX_DROP_FILES} 份，多出的那几份请分批拖入。</p> : null}
+            {report.overflow ? <p>一次最多收 {MAX_BATCH_CAPTURE_FILES} 份，多出的那几份请分批拖入。</p> : null}
             <ul className="source-intake-drop__report">
               {report.outcomes.map((outcome) => (
                 <li key={outcome.name} data-ok={outcome.ok}>

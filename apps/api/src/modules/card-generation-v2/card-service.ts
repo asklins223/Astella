@@ -16,6 +16,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { refreshObjectiveSearchProjections } from "../learning-objectives/search-projection.ts";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { withWorkspaceTransaction } from "../../db/client.ts";
 import type { ApiTransaction } from "../../db/client.ts";
@@ -209,6 +210,7 @@ export async function archiveCardV2(
     if (objUpdated.length === 0) {
       throw new CardGenerationV2ServiceError("stale_lifecycle_epoch", 409, "目标生命周期已被并发修改，请刷新");
     }
+    await refreshObjectiveSearchProjections(tx, ctx.workspaceId, [objective.objectiveId]);
 
     await tx.update(learningCardsV2)
       .set({ lifecycle: "archived" })

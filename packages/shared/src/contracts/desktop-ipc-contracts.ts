@@ -354,8 +354,9 @@ export const DESKTOP_IPC_CHANNELS = {
   workspaceDissolve: "ailearn.v1.workspace.dissolve",
   workspaceDissolvePreview: "ailearn.v1.workspace.dissolvePreview",
   workspaceTransferOwnership: "ailearn.v1.workspace.transferOwnership",
-  // 数据维护工具：Markdown 批量导入、搜索索引漂移检测与重建。
-  settingsMarkdownImport: "ailearn.v1.settings.markdownImport",
+  // 数据维护工具：搜索索引漂移检测与重建。
+  // （Markdown 批量导入不再走设置页这一门——批量丢文件已并进来源库那条正常收录流程，
+  //   见 `source-intake.ts` 的 `MAX_BATCH_CAPTURE_FILES`。设置页只留导出与索引维护。）
   searchDriftGet: "ailearn.v1.search.drift",
   searchReindex: "ailearn.v1.search.reindex",
   // 任务 14：作答模态偏好（跨设备账号级）。
@@ -499,6 +500,10 @@ export const DESKTOP_IPC_CHANNELS = {
   noteVersions: "ailearn.v1.note.versions",
   noteVersionRestore: "ailearn.v1.note.versionRestore",
   noteImageUpload: "ailearn.v1.note.image.upload",
+  // 笔记导出为 Markdown 目录：一篇一个 .md。**不是**整库导出的兄弟——那条要 owner，
+  // 这条任何成员都能导自己看得见的笔记（服务端 `GET /export/notes/:id` 本来就没有
+  // owner 门，可见性由 `visibleNotesCondition(userId)` 判，见 export/routes.ts）。
+  notesMarkdownExport: "ailearn.v1.notes.markdownExport",
   objectiveList: "ailearn.v1.objective.list",
   objectiveGet: "ailearn.v1.objective.get",
   // 39d W4-3 第三刀：笔记页那张轻量定向表单。四发对应 §16.16 那条判据的四个动作
@@ -1553,6 +1558,30 @@ export const workspaceExportResultV1Schema = z.strictObject({
 });
 export type WorkspaceExportResultV1 = z.infer<typeof workspaceExportResultV1Schema>;
 
+/**
+ * 笔记导出为 Markdown 目录的回执。
+ *
+ * 与整库导出那份回执的差别是**权限**：整库要 owner（服务端 `requireOwner`），这一条
+ * 任何成员都能用——服务端 `GET /notes` 与 `GET /export/notes/:id` 都没有 owner 门，
+ * 「哪些笔记归你」由 `visibleNotesCondition(userId)` 判，所以导出的就是这个人已经
+ * 看得见的那批，协作空间里的成员导出自己的笔记不需要任何额外授权。
+ *
+ * 落盘是「一个目录、一篇一个 .md」，所以这里的落点是 `directory` 而不是 `filePath`。
+ * `exported + failed` 恒等于 `total`：失败的那些也计数，因为读者需要知道**少了几篇**
+ * ——一个只报成功数的回执会让人以为整个空间都存下来了。
+ */
+export const notesMarkdownExportResultV1Schema = z.strictObject({
+  version: z.literal(1),
+  /** 读者在系统对话框里取消了：没有落盘，也没有写过任何文件。 */
+  canceled: z.boolean(),
+  /** 实际写入的目录；取消时为 null。 */
+  directory: z.string().nullable(),
+  total: nonNegativeIntSchema,
+  exported: nonNegativeIntSchema,
+  failed: nonNegativeIntSchema,
+});
+export type NotesMarkdownExportResultV1 = z.infer<typeof notesMarkdownExportResultV1Schema>;
+
 const workspaceSummaryShape = {
   version: z.literal(1),
   workspaceId: uuidSchema,
@@ -1716,14 +1745,6 @@ export const memberListResultV1Schema = z.strictObject({
   total: nonNegativeIntSchema,
 });
 export type MemberListResultV1 = z.infer<typeof memberListResultV1Schema>;
-
-/** POST /import/markdown：完整笔记行不过桥，渲染层只需要计数。 */
-export const markdownImportResultV1Schema = z.strictObject({
-  version: z.literal(1),
-  imported: nonNegativeIntSchema,
-  failed: nonNegativeIntSchema,
-});
-export type MarkdownImportResultV1 = z.infer<typeof markdownImportResultV1Schema>;
 
 /** GET /search/drift：只投影计数与结论，ID 列表留给服务端日志。 */
 export const searchDriftResultV1Schema = z.strictObject({
@@ -2803,6 +2824,14 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
       noteId: Uuid;
       request: NoteImageUploadRequestV1;
     }): Promise<GatewayResultV1<z.infer<typeof noteImageUploadResultV1Schema>>>;
+    /**
+     * 导出成一个装满 `.md` 的目录，一篇一个文件。**任何成员都能用**：范围由服务端按
+     * 「这个调用者看得见什么」判，客户端不传篇目也不判角色——所以协作空间里的成员
+     * 导出的就是他本来就读得到的那批。
+     */
+    exportMarkdown(input: {
+      meta: RequestMetaV1;
+    }): Promise<GatewayResultV1<NotesMarkdownExportResultV1>>;
     readonly cardGeneration: {
       start(input: {
         meta: RequestMetaV1;
@@ -3208,10 +3237,6 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
     drift(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<SearchDriftResultV1>>;
     /** F-011：重建当前工作区搜索索引（Owner）。 */
     reindex(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<SearchReindexResultV1>>;
-  };
-  /** F-033 / G-006：Markdown 批量导入（Owner）。内容是 UTF-8 文本，不是 base64。 */
-  readonly markdownImport: {
-    run(input: { meta: RequestMetaV1; items: ReadonlyArray<{ title?: string; content: string }>; importId: string }): Promise<GatewayResultV1<MarkdownImportResultV1>>;
   };
   readonly learningRun: {
     get(input: { meta: RequestMetaV1; runId: Uuid }): Promise<GatewayResultV1<z.infer<typeof learningRunPublicSnapshotV2Schema>>>;

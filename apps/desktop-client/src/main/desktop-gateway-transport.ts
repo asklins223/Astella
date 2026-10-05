@@ -715,6 +715,74 @@ readonly companionAccountSessionId = randomUUID();
     maxBytes: COMPANION_VOICE_MAX_AUDIO_BYTES,
   }, requestId);
 }
+ /**
+  * 读一个 **text/\*** 响应体。
+  *
+  * 为什么不能靠 `request()`：它无条件 `response.json()`，而 `GET /export/notes/:id`
+  * 回的是 `text/markdown`——JSON 解析失败后 body 被读成 `null`，于是一篇笔记的正文
+  * 变成「服务端没给」，而导出照样报成功。上一条 `requestBinaryBytes` 已经证明这个
+  * transport 里「按 Content-Type 取字节」是既有做法，这里是同一件事的文本那一半。
+  *
+  * 上限按**一篇笔记**给，不是按一批：导出是逐篇取的，一篇超限只该是那一篇失败
+  * （导出回执里 `failed` 记着），不该把整批都带走。
+  */
+ async requestText(
+  path: string,
+  policy: { readonly accept: string; readonly contentTypePrefix: string; readonly maxBytes: number },
+  requestId?: string,
+ ): Promise<{ status: number; text: string; contentType: string; headers: Headers }> {
+  const configuration = this.configuration;
+  if (!configuration) throw new DesktopGatewayFailure("configuration_error", "user_action");
+  const headers = new Headers();
+  headers.set("Accept", policy.accept);
+  if (this.token) headers.set("Authorization", `Bearer ${this.token}`);
+  const controller = requestId ? new AbortController() : undefined;
+  if (requestId && controller) this.activeRequests.set(requestId, controller);
+  try {
+    const response = await fetch(new URL(path, `${configuration.config.apiOrigin}/`), {
+      method: "GET",
+      headers,
+      signal: controller?.signal,
+      redirect: "manual",
+    });
+    if (response.status >= 300 && response.status < 400 && response.status !== 304) {
+      this.connection = { version: 1, kind: "api_untrusted", reason: "wrong_service" };
+      throw new DesktopGatewayFailure("api_untrusted", "user_action");
+    }
+    if (!response.ok) {
+      // 与二进制那条同口径：只有 403 才去碰失败体，那条路上唯一值得区分的是
+      // 「没签 AI 使用同意」；其余状态按状态码分类，不让服务端带的 error 串改写分类。
+      const errorBody = response.status === 403 ? await this.errorBodyForDomainCode(response) : undefined;
+      throw this.mapResponseError(response.status, response.headers, undefined, errorBody, path);
+    }
+    const contentType = response.headers.get("content-type")?.trim().toLowerCase() ?? "";
+    if (!contentType.startsWith(policy.contentTypePrefix)) {
+      // 服务端回了 JSON（多半是错误体），正文不是 Markdown：宁可不写那个文件。
+      await this.discardResponseBody(response);
+      throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    }
+    const declaredLength = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > policy.maxBytes) {
+      await this.discardResponseBody(response);
+      throw new DesktopGatewayFailure("unsupported_contract", "user_action");
+    }
+    return {
+      status: response.status,
+      text: new TextDecoder().decode(await this.readBytesWithinCap(response, policy.maxBytes)),
+      contentType,
+      headers: response.headers,
+    };
+  } catch (error) {
+    if (error instanceof DesktopGatewayFailure) throw error;
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new DesktopGatewayFailure("cancelled", "never", { localEffect: "request_cancelled" });
+    }
+    this.connection = { version: 1, kind: "api_unavailable" };
+    throw new DesktopGatewayFailure("api_unavailable", "safe_retry");
+  } finally {
+    if (requestId && controller && this.activeRequests.get(requestId) === controller) this.activeRequests.delete(requestId);
+  }
+}
   idempotencyKey(operation: string, commandId: string): string {
   const key = `${operation}:${commandId}`;
   const existing = this.commandIdempotency.get(key);

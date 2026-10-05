@@ -110,3 +110,26 @@ test("【自证】判据会红：把 pending 那道闸抽掉必须被抓", () =>
   assert.ok(!/status = 'pending'/.test(broken), "自证：抽掉之后不该再匹配到");
   assert.ok(/status = 'pending'/.test(source), "自证：真实源码里那道闸还在");
 });
+
+/**
+ * ④ 屏上那三行不来自工具描述（2026-10-05）。
+ *
+ * 原来这三行是 `执行${description.slice(0, 30)}` / `description.slice(0, 160)` /
+ * 一句通用兜底。而 description 是**写给模型的行为约束**——屏上实测出来是
+ * 「执行 仅保存用户本轮明确要求记住或以后遵循的新内容；遵循已有偏好、」：
+ * 用户在决定要不要按下去的那一刻，拿到的是一屏「什么时候不该调这个工具」。
+ *
+ * 判据写成「这一族里不得出现 `definition.description`」而不是「文案得像人话」：
+ * 后者需要主观判断，写不成会红的断言；前者正好圈住这一处越界。
+ */
+test("④ 提案的三行文案不得取自工具描述", () => {
+  assert.ok(
+    !code.includes("definition.description"),
+    "提案族里又出现 definition.description——那行会被截断后直接上屏，"
+    + "用户读到的是模型的用法说明而不是「哪件事要变」。文案见 companion-proposal-copy.ts。",
+  );
+  assert.ok(
+    /describeAgentProposal\(/.test(code),
+    "提案族里没有 describeAgentProposal——那三行该由 payload 派生（内容、活跃度、层级、理由），不是由工具名派生。",
+  );
+});

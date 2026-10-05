@@ -216,6 +216,20 @@ describe("IPC 通道覆盖对账", () => {
     electronMock.on.mockClear();
   });
 
+  it("今日复习按真实 preload 参数读取，并保留工作区和输入校验", async () => {
+    const gateway = stubGateway();
+    const { event } = await register(gateway);
+    const handler = electronMock.handlers.get(DESKTOP_IPC_CHANNELS.todayBatchRead)!;
+    const response = await handler(event, { meta, timeZone: "Asia/Shanghai" });
+    expect(response.ok).toBe(true);
+    expect(gateway.readTodayBatch).toHaveBeenCalledWith("Asia/Shanghai", meta.requestId);
+    const stale = await handler(event, { meta: { ...meta, workspaceEpoch: 8 }, timeZone: "Asia/Shanghai" });
+    expect(stale.ok).toBe(false);
+    const malformed = await handler(event, { meta, timeZone: "" });
+    expect(malformed.ok).toBe(false);
+    expect(gateway.readTodayBatch).toHaveBeenCalledOnce();
+  });
+
   it("历史拓展批次经过实际注册入口，原样传递分页并阻止过期工作区", async () => {
     const list = vi.fn(async () => ({ version: 1, items: [], nextCursor: null }));
     noteStub("listNoteExpansionTasks", list);

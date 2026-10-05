@@ -160,8 +160,8 @@ export function cardGenerationRecoveryReasonLabel(reasonCode: string): string {
 export function practiceQuotaLabel(quota: CardGenerationPracticeQuotaV1 | null): string | null {
   if (!quota || quota.requiredCount === 0) return null;
   const missed = quota.requiredCount - quota.metCount;
-  if (missed <= 0) return `该配练习件的 ${quota.requiredCount} 张都配上了`;
-  return `该配练习件的 ${quota.requiredCount} 张里，${quota.metCount} 张配上了、${missed} 张没配上`;
+  if (missed <= 0) return `计划要求的 ${quota.requiredCount} 份练习都已满足`;
+  return `计划要求的 ${quota.requiredCount} 份练习中，${quota.metCount} 份已满足要求、${missed} 份未满足`;
 }
 
 

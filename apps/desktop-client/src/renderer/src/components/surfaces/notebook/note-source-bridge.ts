@@ -6,12 +6,17 @@ export const NOTE_SOURCE_INPUT_ORIGIN = Symbol("note-source-input");
 
 /** Provenance defaults can be filled by Yjs after parsing; they do not change Markdown. */
 export function noteSourceSignature(node: ProseNode): string {
-  type ContentJSON = { attrs?: Record<string, unknown>; content?: ContentJSON[] };
-  const json = node.toJSON();
+  type ContentJSON = { type?: string; attrs?: Record<string, unknown>; content?: ContentJSON[] };
+  // ProseMirror's toJSON reuses node.attrs. Strip provenance only on a copy;
+  // mutating that object silently erases the live document's source anchors.
+  const json = structuredClone(node.toJSON());
   const strip = (value: ContentJSON) => {
     if (value.attrs) {
       delete value.attrs.sourceRef;
       delete value.attrs.imageAssetId;
+      // Milkdown fills this DOM anchor after rendering, while the Markdown
+      // parser leaves it empty. It is derived from the heading's text.
+      if (value.type === "heading") delete value.attrs.id;
       if (value.attrs.title === "") value.attrs.title = null;
       if (value.attrs.alignment === null) value.attrs.alignment = "left";
       if (!Object.keys(value.attrs).length) delete value.attrs;
@@ -19,7 +24,11 @@ export function noteSourceSignature(node: ProseNode): string {
     value.content?.forEach(strip);
   };
   strip(json);
-  return JSON.stringify(json);
+  // Server-seeded and parsed nodes can have the same attributes in different
+  // insertion orders. Object order must not make an unchanged block lose its source.
+  return JSON.stringify(json, (_key, value: unknown) => value && typeof value === "object" && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+    : value);
 }
 
 /** A source view cache is usable only for this exact document. It is never replayed into it. */
@@ -52,6 +61,22 @@ export function preserveNoteNodes(previous: ProseNode, parsed: ProseNode): Prose
     newNodes[lastNew] = oldNodes[lastOld]!;
     lastOld -= 1;
     lastNew -= 1;
+  }
+  // A paste can change several separated blocks. Unchanged blocks between them
+  // still have their own evidence; reuse only signatures that are unique on both
+  // sides so repeated paragraphs never borrow another paragraph's provenance.
+  const originals = new Map<string, ProseNode | null>();
+  for (const node of oldNodes) {
+    const signature = noteSourceSignature(node);
+    originals.set(signature, originals.has(signature) ? null : node);
+  }
+  const signatures = newNodes.map(noteSourceSignature);
+  const counts = new Map<string, number>();
+  for (const signature of signatures) counts.set(signature, (counts.get(signature) ?? 0) + 1);
+  for (let index = first; index <= lastNew; index += 1) {
+    const signature = signatures[index]!;
+    const original = originals.get(signature);
+    if (original && counts.get(signature) === 1) newNodes[index] = original;
   }
   // Only a single, same-type edited block can inherit its old provenance.
   // Insertions and deletions must not move someone else's source to a new block.

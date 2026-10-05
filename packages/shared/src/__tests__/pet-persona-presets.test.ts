@@ -10,7 +10,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { companionPersonaPresetV1Schema } from "../contracts/companion-memory-desktop-contracts.ts";
-import { getPresetById, PET_PERSONA_PRESETS } from "../pet-persona-presets.ts";
+import {
+  DEFAULT_PERSONA_PRESET_ID,
+  getDefaultPersonaPreset,
+  getPresetById,
+  PET_PERSONA_PRESETS,
+  resolveCompanionPersonaProfile,
+} from "../pet-persona-presets.ts";
 
 /** 一套预设里所有会原样进 prompt / 进接口的用户可见文字。 */
 function visibleText(presetId: string): string {
@@ -48,16 +54,33 @@ test("预设文字过得了人格净化：无尖括号、无 emoji", () => {
   }
 });
 
-test("爱吃白饭的大肥鱼：话多，但不催学习", () => {
+test("爱吃白饭的大肥鱼：系统默认人格，话多且边界全开", () => {
   const fish = getPresetById("hungry-fish");
   assert.equal(fish?.name, "爱吃白饭的大肥鱼");
-  assert.equal(fish?.activeness, "active", "吃白饭要靠多说话体现，安静档会把这个人格抹平");
-  assert.equal(fish?.boundaries.allowNudgeLearning, false, "摸鱼的人格不催进度");
+  assert.equal(fish?.activeness, "active", "表达分量＝活跃（用户 2026-10-05 定的默认）");
+  // 边界全部打开：开着玩笑、可以主动提醒、允许语气标签，只留口头禅。
+  assert.equal(fish?.boundaries.allowPlayful, true);
+  assert.equal(fish?.boundaries.allowNudgeLearning, true, "默认人格不关掉学习提醒");
+  assert.equal(fish?.boundaries.allowVoiceTags, true);
   assert.equal(typeof fish?.boundaries.catchphrase, "string", "口头禅是「我去吃饭了」");
-  const otherPresetIds = PET_PERSONA_PRESETS
-    .filter((preset) => preset.presetId !== "hungry-fish")
-    .filter((preset) => preset.activeness === "active" && preset.boundaries.allowNudgeLearning === false)
-    .map((preset) => preset.presetId);
-  assert.deepEqual(otherPresetIds, [], "这套组合是它与其他活泼预设唯一的区别，被撞了要重新配平");
   assert.match(visibleText("hungry-fish"), /吃|饭/, "人格锚在干饭上");
+});
+
+test("系统默认人格是明确指定的那一套，且它本身要过人格净化与接口上限", () => {
+  // 默认人格是产品决定，不能靠"数组第一项"——那样调一次顺序就悄悄换掉了她是谁。
+  assert.equal(PET_PERSONA_PRESETS[0].presetId, "energetic-cat", "默认人格确实不是第一项：这条判据才有意义");
+  const fallback = getDefaultPersonaPreset();
+  assert.equal(fallback.presetId, DEFAULT_PERSONA_PRESET_ID);
+  assert.equal(fallback.presetId, "hungry-fish");
+  assert.equal(companionPersonaPresetV1Schema.safeParse(fallback).success, true);
+  assert.doesNotMatch([fallback.name, fallback.speakingStyle].join("\n"), /[<>]/);
+});
+
+test("没有账号档案时生效的人格是默认人格，不是空白", () => {
+  const fallback = resolveCompanionPersonaProfile(null);
+  assert.equal(fallback.presetId, "hungry-fish");
+  assert.equal(fallback.name, "爱吃白饭的大肥鱼");
+  // 有档案时原样返回——默认人格不是覆盖用户选择。
+  const own = { presetId: "calm-scholar", name: "冷静学霸" };
+  assert.equal(resolveCompanionPersonaProfile(own), own);
 });

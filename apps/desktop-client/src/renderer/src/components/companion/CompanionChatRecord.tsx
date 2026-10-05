@@ -216,14 +216,14 @@ export function CompanionMessageRichBlocks({
   chat,
 }: {
   readonly blocks: readonly CompanionContentBlockV1[];
-  readonly chat: CompanionChatSession;
+  readonly chat?: CompanionChatSession;
 }) {
   return <>
     {blocks.filter((block) => block.type === "nav" || block.type === "quote"
       || block.type === "diagram" || block.type === "card" || block.type === "image" || block.type === "citation" || block.type === "code")
       .map((block, index) => (
         block.type === "nav"
-          ? <NavBlockLine key={`nav-${index}`} block={block} chat={chat} />
+          ? chat ? <NavBlockLine key={`nav-${index}`} block={block} chat={chat} /> : <p className="companion-record__nav companion-record__nav--plain" key={`nav-${index}`}><span>{block.label}</span></p>
           : block.type === "quote"
             ? <CompanionQuoteBlock key={`quote-${index}`} block={block} />
             : block.type === "diagram"

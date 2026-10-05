@@ -185,11 +185,9 @@ describe("隔天复访可疑主张 -> 制卡审核", () => {
     // 原来找的是后者，而前一步刚把叶子开到学习叶——它在屏上不存在。
     // 动作本身没变（回正文），只是要按屏上真正有的那颗点。
     fireEvent.click(screen.getByRole("button", { name: "回到正文" }));
-    // 2026-09-30：原来这里先点「更多笔记操作」再点「制作学习卡」。**前者屏上已经没有了**
-    // ——「制作学习卡」现在就是正文叶抬头那颗 `text-action` 本身，不需要先进一层。
-    // 2026-10-02：入口又收了一级——它**按下去直接用默认档开跑**，方案页挪到旁边的
-    // 「调整这次」。所以这条旅程现在是一下，不再是「开方案页 → 开始生成」两下。
-    fireEvent.click(screen.getByRole("button", { name: "制作学习卡" }));
+    // 先在正文页选好本次生成方式，再提交；疑点仍应跟随这一批保留。
+    fireEvent.click(screen.getByRole("button", { name: "生成学习卡" }));
+    fireEvent.click(await screen.findByRole("button", { name: "开始生成" }));
 
     await waitFor(() => expect(gateway.note.cardGeneration.start).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(useRoomStore.getState().surface).toBe("card-generation"));

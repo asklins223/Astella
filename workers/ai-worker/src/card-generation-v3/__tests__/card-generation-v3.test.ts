@@ -13,6 +13,7 @@
  *  6. **零候选是正常结果**——no_cards 出得来一份合法计划，全被剔除时也出得来。
  */
 import assert from "node:assert/strict";
+import { objectiveReuseClaimHashV2 } from "@ailearn/shared/objective-reuse-rules-v2";
 import { test } from "node:test";
 import {
   buildCardGenerateV3Prompt,
@@ -28,7 +29,7 @@ import {
   type CardGenerateV3TaskInput,
   type CardGenerationV3ProviderPort,
 } from "../tasks.ts";
-import { expandCardGenerateV3OutputV3 } from "../expand-content.ts";
+import { expandCardGenerateV3OutputV3, contentFromObjectiveDraftV3, TRANSFORMATION_BY_STRATEGY } from "../expand-content.ts";
 import {
   assembleCardGenerationV3,
   buildCandidateRevisionV3,
@@ -588,6 +589,8 @@ test("整批分配：题型同时落到计划目标与候选题面，模型自�
       objective.strategy,
       "计划分配的题型必须是候选实际那一份",
     );
+    assert.equal(assembled.candidates[index]!.presentation.transformationKind,
+      TRANSFORMATION_BY_STRATEGY[objective.strategy], "转换方式必须随实际题型更新");
   });
 });
 
@@ -711,7 +714,13 @@ test("改写请求使用 JSON 内容合同，冻结事实完整保留，并拒�
   const task = createCardCandidateRewriteV3Task({ provider, prepare: async () => input, commit: async () => {} });
   const result = await task.execute(input, environment(provider.modelId));
   assert.equal(result.ok, true);
-  if (result.ok) assert.equal(result.output.draft.objectiveLocalId, "obj-1");
+  if (result.ok) {
+    assert.equal(result.output.draft.objectiveLocalId, "obj-1");
+    assert.equal(result.output.draft.objectiveDraft.knowledgeForm, first.objective.knowledgeForm,
+      "改写不能将因果等原形态降为 fact");
+    assert.equal(result.output.draft.objectiveDraft.objectiveStatement, first.objective.objectiveStatement,
+      "改写不能以 publicSummary 替换原目标");
+  }
   for (let i = 0; i < 2; i += 1) {
     const invalid = await task.execute(input, environment(provider.modelId));
     assert.equal(invalid.ok, false);
@@ -972,6 +981,12 @@ function assembledForm(): string {
     : "fact";
 }
 
+function assembledClaimHash(): string | null {
+  const probe = assembleCardGenerationV3(assemblyInput([candidateContent("obj-1")],
+    cardGenerateV3OutputSchema.parse(JSON.parse(generateJson([candidateContent("obj-1")])))));
+  return objectiveReuseClaimHashV2(probe.candidates[0]?.objective.canonicalAnswer);
+}
+
 function reuseInput(over: Record<string, unknown> = {}) {
   return {
     ...assemblyInput([candidateContent("obj-1")],
@@ -983,6 +998,7 @@ function reuseInput(over: Record<string, unknown> = {}) {
       objectiveId: REUSE_OBJECTIVE_ID,
       blockIds: [BLOCK_ONE],
       knowledgeForm: assembledForm(),
+      claimHash: assembledClaimHash(),
     }],
     ...over,
   };
@@ -1051,4 +1067,47 @@ test("W7-5 刀三 正对照：形态不同 ⇒ 仍然是 create_new，哪怕块�
     ? assembled.plan.result.objectives[0]
     : null;
   assert.equal(objective?.changeContext.kind, "create_new");
+});
+
+test("可执行练习经过生成、组装、改写内容映射仍完整，内容检查看到真实题型与练习", () => {
+  const content = candidateContent("obj-practice");
+  content.practiceItem = { kind: "true_false", proposition: "间隔重复把复习安排在快忘的时候。", expected: true, evidenceRefIds: [EVIDENCE_A] };
+  const expanded = expandCardGenerateV3OutputV3(JSON.parse(generateJson([content]))).output;
+  const assembled = assembleCardGenerationV3(assemblyInput(expanded.candidates, expanded));
+  const candidate = assembled.candidates[0]!;
+  assert.deepEqual(candidate.objective.practiceItem, content.practiceItem);
+  const back = contentFromObjectiveDraftV3({ objectiveLocalId: "obj-practice", draft: candidate.objective, presentation: candidate.presentation, hints: content.hints });
+  assert.deepEqual(back.practiceItem, content.practiceItem);
+  const prompt = buildCardContentCheckV3Prompt(checkInputFor(assembled));
+  assert.ok(prompt.includes(`实际题型：${candidate.presentation.strategy}`));
+  assert.ok(prompt.includes(JSON.stringify(content.practiceItem)));
+  assert.ok(prompt.includes("只有普通回忆问句却标成其他题型时判 rewrite"));
+  assert.ok(prompt.includes("判分点"));
+  const changed = structuredClone(content);
+  changed.practiceItem = { ...content.practiceItem, expected: false };
+  const changedExpanded = expandCardGenerateV3OutputV3(JSON.parse(generateJson([changed]))).output;
+  const second = buildCandidateRevisionV3({ draft: changedExpanded.candidates[0]!, plan: assembled.plan,
+    runId: RUN_ID, strategy: candidate.presentation.strategy, reasonCodes: [], evidenceSetHash: SNAPSHOT_HASH,
+    previous: candidate }).candidate;
+  assert.notEqual(second.candidateRevisionHash, candidate.candidateRevisionHash, "练习正确值必须进入修订闭包");
+});
+
+test("单选正确项悬空时只拒绝坏候选，并留下具体原因", () => {
+  const broken = candidateContent("obj-broken");
+  broken.practiceItem = { kind: "single_choice", options: [{ unitId: "a", text: "甲" }, { unitId: "b", text: "乙" }], correctUnitId: "missing" };
+  const output = expandCardGenerateV3OutputV3(JSON.parse(generateJson([broken, candidateContent("obj-good")])));
+  assert.deepEqual(output.output.candidates.map(c => c.objectiveLocalId), ["obj-good"]);
+  assert.match(output.droppedInvalid[0]!.reason, /correctUnitId 不在 options 里/);
+});
+
+
+test("装配保留同来源同形态但答案主张不同的目标", () => {
+  const assembled = assembleCardGenerationV3(reuseInput({
+    reusableObjectives: [{ objectiveId: REUSE_OBJECTIVE_ID, blockIds: [BLOCK_ONE],
+      knowledgeForm: assembledForm(), claimHash: "another-claim" }],
+  }) as unknown as Parameters<typeof assembleCardGenerationV3>[0]);
+  assert.equal(assembled.plan.result.kind, "author_candidates");
+  if (assembled.plan.result.kind === "author_candidates") {
+    assert.equal(assembled.plan.result.objectives[0]!.changeContext.kind, "create_new");
+  }
 });

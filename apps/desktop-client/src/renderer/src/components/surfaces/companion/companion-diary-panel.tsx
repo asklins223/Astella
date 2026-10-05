@@ -2,6 +2,7 @@ import type { PageReadableV1 } from "@ailearn/shared/companion-bridge-contracts"
 import type { CompanionDailyFailureReasonV1,CompanionDailySummaryV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
 import { CalendarDays,ChevronDown,ChevronLeft,ChevronRight } from "lucide-react";
 import { useEffect,useMemo,useRef,useState } from "react";
+import { useRoomStore } from "../../../app/room-store";
 import { CompanionQuoteBlock,CompanionRecordImage,MonthCalendar } from "../../companion/CompanionChatRecord";
 import { HUD_PAGES } from "../../hud/hud-pages";
 import { usePageReadableView } from "../../hud/use-page-readable-view";
@@ -9,6 +10,8 @@ import { formatDate } from "../notebook/surface-data";
 import type { Section } from "./companion-center-model";
 import { CenterFeedback,SectionState } from "./companion-center-primitives";
 import { diaryDayLabel,shiftIsoDate,todayIsoDate } from "./companion-diary-day";
+import { DiscoveryKeepAction, DiscoveryKeepFeedback, type DiscoveryKeepProps, type DiscoveryKeepRequest } from "./companion-discovery-offer";
+import { diaryDiscoveryParagraphs } from "./companion-discovery-targets";
 
 const DIARY_FAILURE_DETAIL: Record<CompanionDailyFailureReasonV1 | "unknown", string> = {
   consent_required: "日记要由她来写，而「允许发送到外部模型服务」没有开启。开启后从第二天开始写。",
@@ -56,6 +59,9 @@ export function DiaryPanel(props: {
   marks: ReadonlyMap<string, "generated" | "failed"> | null;
   marksFailure: string | null;
   onMarksMonth: (month: string) => void;
+  discoveryFor?: (request: DiscoveryKeepRequest) => DiscoveryKeepProps;
+  sourceTarget?: { sourceId: string; revision?: number } | null;
+  onSourceConsumed?: () => void;
 }) {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const navRef = useRef<HTMLDivElement>(null);
@@ -104,7 +110,7 @@ export function DiaryPanel(props: {
     }
     // 只登记她自己写的那几段正文（`<p class="companion-diary-prose">`）；
     // 引文块与图片块由别的组件渲染，这里没有可逐字对上的屏幕文本，就不编。
-    const prose = daily.blocks.filter((block) => block.type === "text" && block.text.trim().length > 0);
+    const prose = diaryDiscoveryParagraphs(daily);
     const reasonItem = daily.selectionReason
       ? [{ ordinal: 1, label: `她选了这段：${daily.selectionReason}` }]
       : [];
@@ -119,7 +125,7 @@ export function DiaryPanel(props: {
               ...reasonItem,
               ...prose.map((block, index) => ({
                 ordinal: reasonItem.length + index + 1,
-                label: (block as { text: string }).text.slice(0, 120),
+                label: block.text.slice(0, 120),
               })),
             ].slice(0, 12),
           }
@@ -128,6 +134,17 @@ export function DiaryPanel(props: {
   }, [props.date, props.failure, props.loading, props.section]);
   usePageReadableView(diaryReadableView);
   const daily = props.section?.ok ? props.section.value : null;
+  const sourceTarget = props.sourceTarget;
+  const paragraphs = daily ? diaryDiscoveryParagraphs(daily) : [];
+  const sourceRef = useRef<HTMLDivElement>(null);
+  const motionOff = useRoomStore(state => state.reducedMotion || state.motionMode === "off");
+  useEffect(() => {
+    if (!sourceTarget || !daily || props.loading || sourceTarget.revision && sourceTarget.revision !== daily.revision) return;
+    const target = [...(sourceRef.current?.querySelectorAll<HTMLElement>("[data-source-id]") ?? [])].find(element => element.dataset.sourceId === sourceTarget.sourceId);
+    target?.scrollIntoView({ block: "center", behavior: motionOff ? "auto" : "smooth" });
+    target?.focus({ preventScroll: true });
+    props.onSourceConsumed?.();
+  }, [sourceTarget, daily, props.loading, motionOff, props.onSourceConsumed]);
   const anchor = props.date ?? daily?.date ?? todayIsoDate(); const today = todayIsoDate();
   return <div className="cc-diary">
     <div className="cc-diary-nav" ref={navRef}>
@@ -146,8 +163,12 @@ export function DiaryPanel(props: {
       {daily.hidden ? <div className="cc-diary-hidden" role="status">这一篇已隐藏，内容仍然保留。<button type="button" className="cc-link" disabled={props.busy} onClick={props.onUnhideDiary}>取消隐藏</button></div> : null}
       <article className="cc-diary-sheet">
         <header><span className="cc-kicker">每日手记</span><h3>{diaryDayLabel(anchor)}</h3><small>{daily.generatedAt ? `生成于 ${formatDate(daily.generatedAt)}` : "生成时间未提供"}</small></header>
-        <div className="cc-diary-prose">{daily.blocks.map((block, index) => block.type === "text"
-          ? <p key={`text-${index}`}>{block.text}</p>
+        {sourceTarget?.revision && sourceTarget.revision !== daily.revision ? <p className="cc-diary-source-notice" role="status">收藏来自第 {sourceTarget.revision} 版，这里是当前第 {daily.revision} 版。原摘录仍保留在发现簿。</p> : null}
+        <div className="cc-diary-prose" ref={sourceRef}>{daily.blocks.map((block, index) => block.type === "text"
+          ? paragraphs.filter(paragraph => paragraph.blockIndex === index).map(paragraph => {
+            const discovery = props.discoveryFor?.(paragraph.request);
+            return <div className="cc-diary-paragraph" key={paragraph.sourceId} data-source-id={paragraph.sourceId} tabIndex={-1}><p>{paragraph.text}</p>{discovery ? <><DiscoveryKeepAction {...discovery} /><DiscoveryKeepFeedback {...discovery} /></> : null}</div>;
+          })
           : block.type === "quote" ? <CompanionQuoteBlock block={block} key={`quote-${index}`} />
           : block.type === "image" ? <CompanionRecordImage block={block} key={`image-${index}`} /> : null)}</div>
         {daily.selectionReason ? <aside className="cc-diary-reason">她选了这段：{daily.selectionReason}</aside> : null}

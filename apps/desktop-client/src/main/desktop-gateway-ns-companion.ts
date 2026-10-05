@@ -1223,7 +1223,7 @@ export async function getCompanionDiscoveryBook(t: GatewayTransport, requestId?:
 
 export async function collectCompanionDiscovery(t: GatewayTransport, request: DiscoveryCollectRequestV1, requestId?: string) {
   await t.ensureConnected(requestId);
-  const result = await t.request("/companion/discovery", { method: "POST", body: JSON.stringify({ request }) }, true, true, requestId);
+  const result = await t.request("/companion/discovery", { method: "POST", body: JSON.stringify({ meta: { requestId }, request }) }, true, true, requestId);
   // 422 = 这一条不能放进簿子（作者标错 / 来源不对 / 书房超限）。原样把
   // body 传回去，让界面能说清是哪一条 —— 笼统的"失败"对用户没有用。
   if (result.status === 422) throw new DesktopGatewayFailure("invalid_request", "user_action");
@@ -1232,13 +1232,13 @@ export async function collectCompanionDiscovery(t: GatewayTransport, request: Di
 
 export async function uncollectCompanionDiscovery(t: GatewayTransport, request: DiscoveryIdentityV1, requestId?: string) {
   await t.ensureConnected(requestId);
-  const result = await t.request("/companion/discovery/uncollect", { method: "POST", body: JSON.stringify({ request }) }, true, true, requestId);
+  const result = await t.request("/companion/discovery/uncollect", { method: "POST", body: JSON.stringify({ meta: { requestId }, request }) }, true, true, requestId);
   return result.body as { status: "uncollected" | "not_collected" };
 }
 
 export async function annotateCompanionDiscovery(t: GatewayTransport, request: { entryId: string; annotation: string | null }, requestId?: string) {
   await t.ensureConnected(requestId);
-  const result = await t.request("/companion/discovery/annotate", { method: "POST", body: JSON.stringify({ request }) }, true, true, requestId);
+  const result = await t.request("/companion/discovery/annotate", { method: "POST", body: JSON.stringify({ meta: { requestId }, request }) }, true, true, requestId);
   return result.body as { status: "annotated" };
 }
 

@@ -209,7 +209,7 @@ export function SettingsUpdateGroup(props: {
 
         {state.phase === "unreachable" && state.message ? (
           <p className="settings-note" role="status">
-            暂时没拿到新版本信息（网络不通，或 GitHub 的查询次数用完了）。{state.message}
+            {state.message}
           </p>
         ) : null}
       </div>

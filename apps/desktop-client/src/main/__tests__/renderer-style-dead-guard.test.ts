@@ -35,6 +35,8 @@ import { buildIndex, shortPath, type CssRule } from "../renderer-class-index";
  * 不接受「先放着」这种没有归因的条目。
  */
 const EXEMPT: Readonly<Record<string, string>> = {
+  "companion-bubble": "CompanionBubble.tsx 的局部 classes 数组发出根类；扫描器未解析 className 标识符",
+  "list-line": "notebook-reading-block.tsx 把 lineClass 交给 renderNoteInline；reading-shape 回归验证真实段落行 DOM",
   "katex": "公共 readable-math.tsx 的 KaTeX renderToString 生成公式 DOM；note-math-reading.test.tsx 验证实际输出",
   "katex-display": "同上，displayMode 生成的独立公式容器，样式从 styles.ts 加载",
   "cm-editor": "CodeMirror 运行时生成的源码编辑器根节点",

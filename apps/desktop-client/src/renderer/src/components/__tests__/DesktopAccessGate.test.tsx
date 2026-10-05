@@ -11,7 +11,7 @@
  *  2. 同代 snapshot_invalidated 只做静默复核：页面与焦点不动，但会话确实被重新确认。
  *  3. 真的换了空间边界仍然收口；卡住的 bootstrap 有能点的重试，而不是无限 spinner。
  */
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   DESKTOP_IPC_CONTRACT_VERSION,
   desktopContractSnapshotSchema,
@@ -224,6 +224,38 @@ afterEach(() => {
 });
 
 describe("DesktopAccessGate 的失效判据（F01）", () => {
+  it("服务短暂离线隐藏内容，重连同一身份后保留笔记落点", async () => {
+    const harness = installApi();
+    const reset = vi.fn(() => useRoomStore.getState().resetWorkspaceScope());
+    render(<DesktopAccessGate onWorkspaceBoundaryReset={reset}><button data-testid="room-focus">学习页面</button></DesktopAccessGate>);
+    await screen.findByTestId("room-focus");
+    useRoomStore.setState({ surface: "notebook", activeNoteRef: { noteId: "note-before-offline", noteVersionId: null } });
+    act(() => harness.emitRuntime({ ...invalidationEvent("runtime"), kind: "connection_changed", data: { kind: "connection_changed", state: { version: 1, kind: "api_unavailable" } } }));
+    await screen.findByRole("button", { name: "重新连接" });
+    expect(screen.queryByTestId("room-focus")).toBeNull();
+    expect(reset).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "重新连接" }));
+    await screen.findByTestId("room-focus");
+    expect(useRoomStore.getState().surface).toBe("notebook");
+    expect(useRoomStore.getState().activeNoteRef?.noteId).toBe("note-before-offline");
+    expect(reset).not.toHaveBeenCalled();
+  });
+
+  it("离线期间身份真的改变，重连仍清空旧笔记状态", async () => {
+    const harness = installApi();
+    const reset = vi.fn(() => useRoomStore.getState().resetWorkspaceScope());
+    render(<DesktopAccessGate onWorkspaceBoundaryReset={reset}><button data-testid="room-focus">学习页面</button></DesktopAccessGate>);
+    await screen.findByTestId("room-focus");
+    useRoomStore.setState({ surface: "notebook", activeNoteRef: { noteId: "private-old-note", noteVersionId: null } });
+    act(() => harness.emitRuntime({ ...invalidationEvent("runtime"), kind: "connection_changed", data: { kind: "connection_changed", state: { version: 1, kind: "api_unavailable" } } }));
+    await screen.findByRole("button", { name: "重新连接" });
+    harness.setSession(session(2, "33333333-3333-4333-8333-333333333333"));
+    fireEvent.click(screen.getByRole("button", { name: "重新连接" }));
+    await screen.findByTestId("room-focus");
+    expect(reset).toHaveBeenCalledOnce();
+    expect(useRoomStore.getState().activeNoteRef).toBeNull();
+  });
+
   it("连续 100 条伴星投递不重来：页面、焦点、房间视图与请求数都不动", async () => {
     const harness = installApi();
     const { onWorkspaceBoundaryReset, room } = await renderReadyGate();
@@ -308,6 +340,21 @@ describe("DesktopAccessGate 的失效判据（F01）", () => {
     expect(useRoomStore.getState().settingsSection).toBe("ai");
     expect(useRoomStore.getState().activeSourceId).toBeNull();
     expect(useRoomStore.getState().spaceIdentity?.workspaceEpoch).toBe(2);
+  });
+
+  it("设置请求遇到 stale_workspace 后，复核同一身份仍回到当前设置分区", async () => {
+    const harness = installApi();
+    const reset = vi.fn(() => useRoomStore.getState().resetWorkspaceScope());
+    render(<DesktopAccessGate onWorkspaceBoundaryReset={reset}><button data-testid="room-focus">学习页面</button></DesktopAccessGate>);
+    await screen.findByTestId("room-focus");
+    useRoomStore.setState({ surface: "settings", settingsSection: "ai", activeSourceId: "old-source" });
+    harness.setSession(session(2));
+    act(() => publishGateInvalidation("stale_workspace"));
+    await waitFor(() => expect(useRoomStore.getState().spaceIdentity?.workspaceEpoch).toBe(2));
+    expect(reset).toHaveBeenCalledOnce();
+    expect(useRoomStore.getState().surface).toBe("settings");
+    expect(useRoomStore.getState().settingsSection).toBe("ai");
+    expect(useRoomStore.getState().activeSourceId).toBeNull();
   });
 
   it("bootstrap 卡住超过时限：无限 spinner 换成能点的重试", async () => {

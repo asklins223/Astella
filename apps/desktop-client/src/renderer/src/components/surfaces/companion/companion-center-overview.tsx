@@ -127,7 +127,7 @@ export function CompanionCenterOverview({
       </section>
       <section className="cc-overview__conversation" aria-labelledby="companion-recent-title"><span className="cc-kicker">上一次的话题</span><h3 id="companion-recent-title">{OVERVIEW_TITLES.recent}</h3>
         {!history.ok ? <p className="cc-overview__quiet">{OVERVIEW_STATES.recentUnavailable}</p> : latestReplyExcerpt ? <><p>{latestReplyExcerpt}</p><time>{latestReply ? formatRelative(latestReply.createdAt) : null}</time></> : <p className="cc-overview__quiet">{OVERVIEW_STATES.recentNone}</p>}
-        <button type="button" className="cc-link" onClick={() => onGo("dialogue")}>接着这段对话<ArrowRight size={15} aria-hidden="true" /></button>
+        <button type="button" className="cc-link" onClick={() => onGo("dialogue")}>{latestReply ? "查看这段对话" : "查看对话记录"}<ArrowRight size={15} aria-hidden="true" /></button>
       </section>
     </div>
     {!activity.ok ? <p className="cc-overview__quiet">{OVERVIEW_STATES.pendingUnavailable}</p> : !pending.length ? <p className="cc-overview__footnote">{OVERVIEW_STATES.pendingNone} <button type="button" className="cc-link" onClick={() => onGo("activity")}>看看最近动态<ArrowRight size={14} /></button></p> : null}

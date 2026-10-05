@@ -472,7 +472,7 @@ describe("重构后的伴星中心", () => {
     expect(screen.getByRole("tab", { name: "日记" }).getAttribute("aria-selected")).toBe("true");
   });
 
-  it("各块失败独立呈现，仍能继续到对话页", async () => {
+  it("各块失败独立呈现，交流入口打开已有轻聊", async () => {
     const api = installApi();
     api.companion.daily.get.mockResolvedValue(ok(dailySummary({ status: "failed", blocks: [], failureReason: "model_unavailable" })));
     renderCompanionCenter();
@@ -480,7 +480,8 @@ describe("重构后的伴星中心", () => {
     expect(screen.getByText("动态暂时读不到。")).toBeTruthy();
     expect(screen.getByText("可以先从这道例题入手。")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "开始交流" }));
-    expect(await screen.findByLabelText(/继续问/)).toBeTruthy();
+    expect(shellMode).toBe("conversation");
+    expect(screen.getByRole("tab", { name: "近况" }).getAttribute("aria-selected")).toBe("true");
   });
 
   it("未访问页面不读取数据，星图在明确打开时读取", async () => {
@@ -496,24 +497,29 @@ describe("重构后的伴星中心", () => {
     expect(api.companion.memory.starMap).toHaveBeenCalledTimes(1);
   });
 
-  it("中心输入与轻聊共用草稿，切换页面保留尚未发送的内容", async () => {
+  it("记录页仅供查阅，切换页面和搜索保留轻聊草稿", async () => {
     installApi(); renderCompanionCenter();
+    useRoomStore.setState({ companionComposerDraft: "我还想继续问这件事" });
     fireEvent.click(screen.getByRole("tab", { name: "对话" }));
-    const input = await screen.findByLabelText(/继续问/);
-    fireEvent.change(input, { target: { value: "我还想继续问这件事" } });
-    expect(useRoomStore.getState().companionComposerDraft).toBe("我还想继续问这件事");
+    await screen.findByText("可以先从这道例题入手。");
+    expect(screen.queryByRole("textbox", { name: /继续问/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /发送|语音与轻聊|继续交流/ })).toBeNull();
+    expect(document.querySelector(".cc-page--dialogue textarea")).toBeNull();
+    fireEvent.change(screen.getByLabelText("搜索全部对话正文"), { target: { value: "例题" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    await screen.findByRole("button", { name: "返回最新对话" });
     fireEvent.click(screen.getByRole("tab", { name: "人格" }));
     fireEvent.click(screen.getByRole("tab", { name: "对话" }));
-    expect((screen.getByLabelText(/继续问/) as HTMLTextAreaElement).value).toBe("我还想继续问这件事");
-    fireEvent.click(screen.getByRole("button", { name: "语音与轻聊" }));
-    expect(shellMode).toBe("conversation");
+    expect((screen.getByLabelText("搜索全部对话正文") as HTMLInputElement).value).toBe("例题");
+    expect(useRoomStore.getState().companionComposerDraft).toBe("我还想继续问这件事");
+    expect(shellMode).toBe("closed");
   });
 
-  it("对话读取失败可重试，并保留可编辑的输入", async () => {
+  it("对话记录读取失败可重试，仍可编辑查询", async () => {
     const api = installApi(); api.companion.history.list.mockRejectedValue(new Error("history unavailable"));
     renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "对话" }));
-    expect(await screen.findByText("连续对话当前不可用")).toBeTruthy();
-    expect(screen.getByLabelText(/继续问/)).toBeTruthy();
+    expect(await screen.findByText("对话记录当前不可用")).toBeTruthy();
+    expect(screen.getByLabelText("搜索全部对话正文")).toBeTruthy();
     api.companion.history.list.mockResolvedValue(ok({ version: 1, items: [historyItem()], nextCursor: null }));
     fireEvent.click(screen.getByRole("button", { name: "重新读取" }));
     expect(await screen.findByText("可以先从这道例题入手。")).toBeTruthy();
@@ -749,7 +755,10 @@ describe("重构后的伴星中心", () => {
     api.companion.daily.get.mockResolvedValue(ok(dailySummary({ blocks: [{ type: "text", text: "第一段正文" }, { type: "image", url: "https://example.test/diary.png", alt: "她画的小图", label: "她画的" }, { type: "quote", text: "他当时说的话", label: "原话" }, { type: "text", text: "最后一段正文" }] })));
     renderCompanionCenter(); fireEvent.click(screen.getByRole("tab", { name: "日记" }));
     await screen.findByText("第一段正文");
-    expect([...document.querySelectorAll(".cc-diary-prose > *")].map(node => node.tagName)).toEqual(["P", "FIGURE", "FIGURE", "P"]);
+    const blocks = [...document.querySelectorAll(".cc-diary-prose > *")];
+    expect(blocks.map(node => node.tagName)).toEqual(["DIV", "FIGURE", "FIGURE", "DIV"]);
+    expect(blocks[0]?.querySelector("p")?.textContent).toBe("第一段正文");
+    expect(blocks[3]?.querySelector("p")?.textContent).toBe("最后一段正文");
     expect(document.querySelector(".cc-diary-prose > :nth-child(2)")?.textContent).toContain("她画的");
     expect(document.querySelector(".cc-diary-prose > :nth-child(3)")?.textContent).toContain("他当时说的话");
   });

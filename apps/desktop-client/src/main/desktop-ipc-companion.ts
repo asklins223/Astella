@@ -120,7 +120,6 @@ import {
   avatarUploadResultV1Schema,
   inviteCreatedV1Schema,
   inviteListResultV1Schema,
-  markdownImportResultV1Schema,
   memberListResultV1Schema,
   NOTE_DOC_BLOCKS_MAX_COUNT,
   noteDocStateResultV1Schema,
@@ -937,17 +936,15 @@ channel(DESKTOP_IPC_CHANNELS.companionDiscoveryAnnotate, z.strictObject({ ...m1I
 
 const companionDiscoveryStateInputSchema = z.strictObject({
   ...m1InputBase,
-  query: z.strictObject({
-    kind: z.enum(COMPANION_DISCOVERY_KINDS),
-    source: z.enum(COMPANION_DISCOVERY_SOURCES),
-    sourceId: z.string().min(1).max(200),
-  }),
+  kind: z.enum(COMPANION_DISCOVERY_KINDS),
+  source: z.enum(COMPANION_DISCOVERY_SOURCES),
+  sourceId: z.string().min(1).max(200),
 });
 
 channel(DESKTOP_IPC_CHANNELS.companionDiscoveryState, companionDiscoveryStateInputSchema, async (_event, _window, input) => {
   requireM2Route(contract, "room.home");
   assertEpoch(input.meta, getActiveWorkspaceEpoch());
-  return ns_companion.getCompanionDiscoveryState(gateway.gatewayTransport, input.query, input.meta.requestId);
+  return ns_companion.getCompanionDiscoveryState(gateway.gatewayTransport, { kind: input.kind, source: input.source, sourceId: input.sourceId }, input.meta.requestId);
 }, z.object({ collected: z.boolean(), entryId: uuidSchema.nullable(), annotation: z.string().nullable() }));
 
 channel(DESKTOP_IPC_CHANNELS.companionMemoryCreate, companionMemoryCreateInputSchema, async (_event, _window, input) => {

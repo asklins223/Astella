@@ -23,7 +23,7 @@ export const noteLearningArtifactTaskV1Schema = z.strictObject({
   selectionAnchor: noteAnnotationAnchorV1Schema.nullable(),
   status: noteLearningArtifactTaskStatusV1Schema,
   artifact: z.lazy(() => noteLearningArtifactV1Schema).nullable(),
-  failureReason: z.enum(["ai_consent_required", "unknown"]).nullable(),
+  failureReason: z.enum(["ai_consent_required", "ai_data_policy_denied", "unknown"]).nullable(),
   createdAt: z.string().datetime({ offset: true }),
 });
 export type NoteLearningArtifactTaskV1 = z.infer<typeof noteLearningArtifactTaskV1Schema>;

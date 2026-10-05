@@ -219,6 +219,23 @@ async function openNode(label: string) {
 }
 
 describe("星图三层展开 · 39d W8-1 §11.2", () => {
+  it("只有排期的新目标显示未开始，有真实练习记录才显示练习过", async () => {
+    const fresh = objectiveNode() as Extract<UnderstandingNodeProjectionV3, { nodeRef: { kind: "objective" } }>;
+    fresh.personal.state = "scheduled";
+    fresh.personal.activeScheduleId = nextId();
+    fresh.personal.nextReviewAt = "2026-10-06T08:00:00Z";
+    const practiced = { ...fresh, nodeRef: { kind: "objective" as const, objectiveId: nextId() }, label: "已经练习的目标",
+      personal: { ...fresh.personal, practiceTrailCount: 1 } };
+    stubGateway({ snapshot: { ...BARE_NOTE_SNAPSHOT, nodes: [fresh, practiced] } });
+    render(<GraphSurface />);
+    const search = await screen.findByRole("combobox", { name: "搜索理解星图" });
+    fireEvent.change(search, { target: { value: fresh.label } });
+    const results = await screen.findByRole("listbox", { name: "搜索结果" });
+    expect((await within(results).findByRole("option", { name: new RegExp(fresh.label) })).textContent).toContain("未开始");
+    fireEvent.change(search, { target: { value: practiced.label } });
+    expect((await within(results).findByRole("option", { name: /已经练习的目标/ })).textContent).toContain("练过，还不稳");
+  });
+
   it("按笔记读时连续换篇，册页保持展开，隐藏画布索引不抢键盘焦点", async () => {
     stubGateway({ snapshot: RICH_SNAPSHOT, deepening: RICH_DEEPENING });
     render(<GraphSurface />);

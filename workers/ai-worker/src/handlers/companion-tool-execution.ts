@@ -33,6 +33,8 @@ import {
 } from "@ailearn/shared";
 import { stableStringify, sha256Utf8V1 } from "@ailearn/shared/content-hash";
 import { withWorkerWorkspaceTransaction, type WorkerTransaction } from "../db.ts";
+import { applyAssistantPersonaEdit, applyAssistantPersonaEdits } from "./companion-persona-self-edit.ts";
+import type { SwitchableField } from "@ailearn/shared/pet-persona-merge";
 
 /**
  * 用户原话存进 `suggestion_pause.reasonCodes` 时能带的最大字数。
@@ -823,38 +825,10 @@ export async function executeDirectTool(
       const reason = String(args.reason).slice(0, 120);
       const outcome = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-        async (tx) => {
-          const current = await tx.execute<{ revision: number; profile: Record<string, unknown> | null }>(sql`
-            SELECT revision, profile FROM companion_persona_profiles
-            WHERE user_id = ${event.read.userId}
-            LIMIT 1
-            FOR UPDATE
-          `);
-          const row = (Array.isArray(current) ? current : [])[0];
-          if (!row?.profile) return "missing" as const;
-          // 写成一样的不算改：否则 revision 被推高、用户看到"改了"却什么都没变。
-          if (row.profile.speakingStyle === speakingStyle) return "unchanged" as const;
-          const rows = await tx.execute<{ revision: number; profile: Record<string, unknown> }>(sql`
-            UPDATE companion_persona_profiles
-            SET profile = jsonb_set(profile, '{speakingStyle}', to_jsonb(${speakingStyle}::text), true),
-                revision = revision + 1, updated_at = now()
-            WHERE user_id = ${event.read.userId} AND revision = ${row.revision}
-            RETURNING revision, profile
-          `);
-          const updated = rows[0];
-          if (!updated) return "missing" as const;
-          await tx.execute(sql`
-            INSERT INTO companion_persona_profile_versions
-              (user_id, revision, examples_revision, author, action, reason, profile)
-            VALUES (${event.read.userId}, ${updated.revision}, ${updated.revision},
-                    'assistant_tool', 'update', ${reason},
-                    ${JSON.stringify(updated.profile)}::jsonb)
-          `);
-          return "changed" as const;
-        },
+        (tx) => applyAssistantPersonaEdit(tx, event.read.userId, "speakingStyle", speakingStyle, reason),
       );
-      if (outcome === "missing") throw new CompanionToolError("没找到你的账号伴星档案，这次没有改动");
-      if (outcome === "unchanged") {
+      if (outcome.kind === "conflict") throw new CompanionToolError("人格档案刚刚被改过，这次没有改动，请重新看一眼");
+      if (outcome.kind === "unchanged") {
         return {
           value: { changed: false },
           safeSummary: "说话方式本来就是这样，没改动",
@@ -865,6 +839,29 @@ export async function executeDirectTool(
         // 明说生效时点：§4.8.4「模型自改在下一次会话建立时生效」。
         safeSummary: "换了一种说话方式；下一次尚未开始的对话会用上",
       };
+    }
+    /**
+     * 改自己的性格标签（「慵懒/贪吃/爱摸鱼」那一行）。
+     *
+     * 与改语气同一条通路、同一套边界，差别只有改的字段：名字仍然不可改，
+     * 版本行的作者与理由照旧记在她名下，用户在人格页能看见是谁动的。
+     */
+    case "companion_revise_own_tags": {
+      const tags = (Array.isArray(args.personalityTags) ? args.personalityTags : [])
+        .map((tag) => String(tag).trim().slice(0, 20))
+        .filter((tag) => tag.length > 0)
+        .slice(0, 8);
+      if (tags.length === 0) throw new CompanionToolError("没有给出有效的性格标签");
+      const reason = String(args.reason ?? "换一组性格标签").slice(0, 120);
+      const outcome = await withWorkerWorkspaceTransaction(
+        { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
+        (tx) => applyAssistantPersonaEdit(tx, event.read.userId, "personalityTags", tags, reason),
+      );
+      if (outcome.kind === "conflict") throw new CompanionToolError("人格档案刚刚被改过，这次没有改动，请重新看一眼");
+      if (outcome.kind === "unchanged") {
+        return { value: { changed: false }, safeSummary: "性格标签本来就是这样，没改动" };
+      }
+      return { value: { changed: true }, safeSummary: `换成了${tags.join("、")}；下一次尚未开始的对话会用上` };
     }
     /**
      * 40 §8.2：用户说「今天别催我学习」⇒ 记下**本地日**；说「可以了」⇒ 清掉。
@@ -929,38 +926,13 @@ export async function executeDirectTool(
       const label = activeness === "quiet" ? "安静" : activeness === "active" ? "活跃" : "适中";
       const outcome = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
-        async (tx) => {
-          const current = await tx.execute<{ revision: number; profile: Record<string, unknown> | null }>(sql`
-            SELECT revision, profile FROM companion_persona_profiles
-            WHERE user_id = ${event.read.userId}
-            LIMIT 1
-            FOR UPDATE
-          `);
-          const row = (Array.isArray(current) ? current : [])[0];
-          if (!row?.profile) return "missing" as const;
-          // 已经是这样了就不写 revision，也不给她一个"已设为"的成功摘要。
-          if (row.profile.activeness === activeness) return "unchanged" as const;
-          const rows = await tx.execute<{ revision: number; profile: Record<string, unknown> }>(sql`
-            UPDATE companion_persona_profiles
-            SET profile = jsonb_set(profile, '{activeness}', to_jsonb(${activeness}::text), true),
-                revision = revision + 1, updated_at = now()
-            WHERE user_id = ${event.read.userId} AND revision = ${row.revision}
-            RETURNING revision, profile
-          `);
-          const updated = rows[0];
-          if (!updated) return "missing" as const;
-          await tx.execute(sql`
-            INSERT INTO companion_persona_profile_versions
-              (user_id, revision, examples_revision, author, action, reason, profile)
-            VALUES (${event.read.userId}, ${updated.revision}, ${updated.revision},
-                    'assistant_tool', 'update', 'Changed by an explicitly requested companion setting.',
-                    ${JSON.stringify(updated.profile)}::jsonb)
-          `);
-          return "changed" as const;
-        },
+        (tx) => applyAssistantPersonaEdit(
+          tx, event.read.userId, "activeness", activeness,
+          "Changed by an explicitly requested companion setting.",
+        ),
       );
-      if (outcome === "missing") throw new CompanionToolError("没找到你的账号伴星档案，这次没有改动");
-      if (outcome === "unchanged") {
+      if (outcome.kind === "conflict") throw new CompanionToolError("人格档案刚刚被改过，这次没有改动，请重新看一眼");
+      if (outcome.kind === "unchanged") {
         return {
           value: { activeness, changed: false },
           safeSummary: `活跃度本来就有「${label}」这一档，没改动`,
@@ -976,7 +948,7 @@ export async function executeDirectTool(
       // 函数体已搬到 companion-memory-tools.ts（按域切，见那里）。
       return executeCompanionMemoryTool(event, definition, args);
     case "companion_set_boundary": {
-      // 只合并显式给出的键（jsonb `||`），不动其它边界。已开始的调用继续使用
+      // 只合并显式给出的键，不动其它边界。已开始的调用继续使用
       // 启动时固定的人格版本；下一次尚未开始的调用才会读到这次修改。
       const patch: Record<string, boolean | string> = {};
       for (const key of ["allowPlayful", "allowNudgeLearning", "allowVoiceTags"] as const) {
@@ -992,47 +964,36 @@ export async function executeDirectTool(
       };
       const describe = (entries: Record<string, string | boolean>) => Object.entries(entries)
         .map(([key, value]) => `${labels[key]}=${typeof value === "boolean" ? (value ? "可以" : "不要") : value}`);
+      // 改了等于没改的那些键不进 edits：让它们在下面如实说"本来就是这样"，
+      // 而不是占一个版本号再假装动过。
       const outcome = await withWorkerWorkspaceTransaction(
         { workspaceId: event.ctx.workspaceId, userId: event.read.userId },
         async (tx) => {
-          const current = await tx.execute<{ revision: number; profile: Record<string, unknown> | null }>(sql`
-            SELECT revision, profile FROM companion_persona_profiles
+          const current = await tx.execute<{ profile: unknown }>(sql`
+            SELECT profile FROM companion_persona_profiles
             WHERE user_id = ${event.read.userId}
             LIMIT 1
             FOR UPDATE
           `);
           const row = (Array.isArray(current) ? current : [])[0];
-          if (!row?.profile) return null;
-          const before = (row.profile.boundaries as Record<string, unknown> | undefined) ?? {};
+          const before = (typeof row?.profile === "object" && row.profile !== null && !Array.isArray(row.profile)
+            ? ((row.profile as Record<string, unknown>).boundaries as Record<string, unknown> | undefined) ?? {}
+            : {});
           const { changed, unchangedKeys } = partitionPersonaPatch(before, patch);
           if (Object.keys(changed).length === 0) {
-            return { boundaries: before, changed: {}, unchangedKeys } as const;
+            return { boundaries: before, changed, unchangedKeys } as const;
           }
-          const rows = await tx.execute<{ revision: number; profile: Record<string, unknown> }>(sql`
-            UPDATE companion_persona_profiles
-               SET profile = jsonb_set(
-                     profile,
-                     '{boundaries}',
-                     coalesce(profile->'boundaries', '{}'::jsonb) || ${JSON.stringify(changed)}::jsonb,
-                     true
-                   ),
-                   revision = revision + 1, updated_at = now()
-             WHERE user_id = ${event.read.userId} AND revision = ${row.revision}
-             RETURNING revision, profile
-          `);
-          const after = (Array.isArray(rows) ? rows : [])[0];
-          if (!after) return null;
-          await tx.execute(sql`
-            INSERT INTO companion_persona_profile_versions
-              (user_id, revision, examples_revision, author, action, reason, profile)
-            VALUES (${event.read.userId}, ${after.revision}, ${after.revision},
-                    'assistant_tool', 'update', 'Changed by an explicitly requested companion setting.',
-                    ${JSON.stringify(after.profile)}::jsonb)
-          `);
-          return { boundaries: (after.profile.boundaries as Record<string, unknown> | undefined) ?? {}, changed, unchangedKeys } as const;
+          const result = await applyAssistantPersonaEdits(
+            tx,
+            event.read.userId,
+            Object.entries(changed).map(([key, value]) => ({ field: `boundaries.${key}` as SwitchableField, value })),
+            "Changed by an explicitly requested companion setting.",
+          );
+          if (result.kind === "conflict") return null;
+          return { boundaries: result.profile.boundaries ?? {}, changed, unchangedKeys } as const;
         },
       );
-      if (!outcome) throw new CompanionToolError("没找到你的账号伴星档案，这次没有改动");
+      if (!outcome) throw new CompanionToolError("人格档案刚刚被改过，这次没有改动，请重新看一眼");
       const parts: string[] = [];
       if (Object.keys(outcome.changed).length > 0) {
         parts.push(`已调整边界：${describe(outcome.changed).join("、")}`);

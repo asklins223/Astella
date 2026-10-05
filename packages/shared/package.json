@@ -549,6 +549,11 @@
       "import": "./src/personal-relation-decision-rules-v2.ts",
       "default": "./src/personal-relation-decision-rules-v2.ts"
     },
+    "./pet-persona-merge": {
+      "types": "./src/pet-persona-merge.ts",
+      "import": "./src/pet-persona-merge.ts",
+      "default": "./src/pet-persona-merge.ts"
+    },
     "./pet-persona-presets": {
       "types": "./src/pet-persona-presets.ts",
       "import": "./src/pet-persona-presets.ts",

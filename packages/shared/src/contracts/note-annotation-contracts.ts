@@ -90,7 +90,7 @@ export const noteAnnotationTaskV1Schema = z.strictObject({
   anchor: noteAnnotationAnchorV1Schema,
   status: z.enum(["queued", "running", "ready", "failed"]),
   annotation: noteAnnotationV1Schema.nullable(),
-  failureReason: z.enum(["ai_consent_required", "unknown"]).nullable(),
+  failureReason: z.enum(["ai_consent_required", "ai_data_policy_denied", "unknown"]).nullable(),
   createdAt: z.string().datetime({ offset: true }),
 });
 export type NoteAnnotationTaskV1 = z.infer<typeof noteAnnotationTaskV1Schema>;

@@ -324,7 +324,12 @@ function installApi(options: {
       get: vi.fn(async () => ok(capabilities(options.companionAllowed ?? false))),
     },
     source: { list: vi.fn(async () => ok({ items: [], nextCursor: null, total: 3 })) },
-    note: { list: vi.fn(async () => ok({ items: [], nextCursor: null, total: 5 })) },
+    note: {
+      list: vi.fn(async () => ok({ items: [], nextCursor: null, total: 5 })),
+      // 默认回一个成功的目录导出；用例要改结果时直接 mockOnce。
+      exportMarkdown: vi.fn(async () => ok({ version: 1 as const, canceled: false, directory: "/Users/reader/Documents/书房笔记",
+        total: 12, exported: 12, failed: 0 })),
+    },
     objective: { list: vi.fn(async () => ok({ items: [], total: 2, nextCursor: null })) },
   };
   Object.defineProperty(window, "ailearn", { configurable: true, value: api });
@@ -865,7 +870,7 @@ describe("workspace export", () => {
     await screen.findByText("理解空间", { selector: ".space-identity h3" });
 
     openSection("数据与维护");
-    fireEvent.click(await screen.findByRole("button", { name: "导出…" }));
+    fireEvent.click(await screen.findByRole("button", { name: "导出为 JSON…" }));
 
     await waitFor(() => expect(api.workspace.export).toHaveBeenCalledTimes(1));
     // The receipt carries the reader's own choice of path, so the confirmation
@@ -879,7 +884,7 @@ describe("workspace export", () => {
     await screen.findByText("理解空间", { selector: ".space-identity h3" });
 
     openSection("数据与维护");
-    fireEvent.click(await screen.findByRole("button", { name: "导出…" }));
+    fireEvent.click(await screen.findByRole("button", { name: "导出为 JSON…" }));
 
     await screen.findByText("已取消导出，没有写入任何文件。");
     expect(screen.queryByRole("alert")).toBeNull();
@@ -891,7 +896,7 @@ describe("workspace export", () => {
     await screen.findByText("理解空间", { selector: ".space-identity h3" });
 
     openSection("数据与维护");
-    const button = await screen.findByRole("button", { name: "导出…" });
+    const button = await screen.findByRole("button", { name: "导出为 JSON…" });
     expect(button.hasAttribute("disabled")).toBe(true);
   });
 
@@ -902,10 +907,71 @@ describe("workspace export", () => {
     await screen.findByText("理解空间", { selector: ".space-identity h3" });
 
     openSection("数据与维护");
-    fireEvent.click(await screen.findByRole("button", { name: "导出…" }));
+    fireEvent.click(await screen.findByRole("button", { name: "导出为 JSON…" }));
 
     await screen.findByRole("alert");
     expect(screen.queryByText(/已导出到/)).toBeNull();
+  });
+});
+
+/**
+ * Markdown 目录导出（成员也能导的那一条）。
+ *
+ * 这一族钉的是**权限口径**：整库导出要 owner，Markdown 导出任何成员都能用——
+ * 范围由服务端按「这个调用者看得见什么」判，界面上不该再出现第二个 owner 门。
+ */
+describe("笔记导出为 Markdown 目录", () => {
+  it("owner 点下去走这一条，回执报出目录与篇数", async () => {
+    const { api } = installApi();
+    render(<SettingsSurface />);
+    await screen.findByText("理解空间", { selector: ".space-identity h3" });
+
+    openSection("数据与维护");
+    fireEvent.click(await screen.findByRole("button", { name: "导出为 Markdown…" }));
+
+    await waitFor(() => expect(api.note.exportMarkdown).toHaveBeenCalledTimes(1));
+    await screen.findByText(/已导出 12 篇到 \/Users\/reader\/Documents\/书房笔记。/);
+  });
+
+  it("成员也能导自己的笔记：按钮可点，且不替服务端判角色", async () => {
+    const { api } = installApi({ role: "member" });
+    render(<SettingsSurface />);
+    await screen.findByText("理解空间", { selector: ".space-identity h3" });
+
+    openSection("数据与维护");
+    const button = await screen.findByRole("button", { name: "导出为 Markdown…" });
+    expect(button.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(button);
+    await waitFor(() => expect(api.note.exportMarkdown).toHaveBeenCalledTimes(1));
+    // 同一屏上整库导出仍然关着——两条导出的权限不是一个口径。
+    expect((await screen.findByRole("button", { name: "导出为 JSON…" })).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("取消只写一句「没有写入任何文件」，不当成失败", async () => {
+    installApi();
+    (window.ailearn.note.exportMarkdown as unknown as { mockResolvedValueOnce: (value: unknown) => void })
+      .mockResolvedValueOnce(ok({ version: 1 as const, canceled: true, directory: null, total: 0, exported: 0, failed: 0 }));
+    render(<SettingsSurface />);
+    await screen.findByText("理解空间", { selector: ".space-identity h3" });
+
+    openSection("数据与维护");
+    fireEvent.click(await screen.findByRole("button", { name: "导出为 Markdown…" }));
+
+    await screen.findByText("已取消导出，没有写入任何文件。");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("有几篇没写成就要照实说少了几篇，不能只报成功的数", async () => {
+    installApi();
+    (window.ailearn.note.exportMarkdown as unknown as { mockResolvedValueOnce: (value: unknown) => void })
+      .mockResolvedValueOnce(ok({ version: 1 as const, canceled: false, directory: "/tmp/书房笔记", total: 12, exported: 10, failed: 2 }));
+    render(<SettingsSurface />);
+    await screen.findByText("理解空间", { selector: ".space-identity h3" });
+
+    openSection("数据与维护");
+    fireEvent.click(await screen.findByRole("button", { name: "导出为 Markdown…" }));
+
+    await screen.findByText(/已导出 10 篇到 \/tmp\/书房笔记，2 篇没写成/);
   });
 });
 
@@ -1519,7 +1585,7 @@ describe("设置中心把这一屏登记给伴星读（39d W2-7）", () => {
       value: stat.querySelector("b")?.textContent,
     })));
     assertRowAccounting(view.items?.map((item) => item.label) ?? [],
-      ["导出工作区（只读存档）", "导入 Markdown 笔记", "删除来源与笔记", "当前版本"]);
+      ["导出笔记为 Markdown", "导出工作区（只读存档）", "删除来源与笔记", "当前版本"]);
     expect(stateOf("系统通知")).toBeUndefined();
     // 「自动更新」这一行属于"设备功能状态"分组，不登记进"数据与维护"这一格，
     // 所以在数据与维护的视角里它本就不该出现——与接线状态无关。

@@ -205,7 +205,9 @@ export function ReadingBlockContent({
   const table = parseMarkdownTable(noteBlockText(block.content));
   if (table) {
     // 第二行是**语法**不是内容（`| --- | --- |` 那一条分隔行），跟着画就多出一整行减号。
-    const [header, , ...rows] = table;
+    const [header, separators, ...rows] = table;
+    const alignments = (separators ?? []).map(separator => separator.endsWith(":")
+      ? (separator.startsWith(":") ? "center" as const : "right" as const) : "left" as const);
     let offset = 0;
     const cell = (value: string, key: string) => {
       const textOffset = offset;
@@ -215,11 +217,11 @@ export function ReadingBlockContent({
     return (
       <table className="md-table">
         <thead>
-          <tr>{header?.map((value, index) => <th key={index}>{cell(value, `h${index}`)}</th>)}</tr>
+          <tr>{header?.map((value, index) => <th scope="col" key={index} style={{ textAlign: alignments[index] }}>{cell(value, `h${index}`)}</th>)}</tr>
         </thead>
         <tbody>
           {rows.map((row, rowIndex) => (
-            <tr key={rowIndex}>{row.map((value, cellIndex) => <td key={cellIndex}>{cell(value, `c${rowIndex}-${cellIndex}`)}</td>)}</tr>
+            <tr key={rowIndex}>{row.map((value, cellIndex) => <td key={cellIndex} style={{ textAlign: alignments[cellIndex] }}>{cell(value, `c${rowIndex}-${cellIndex}`)}</td>)}</tr>
           ))}
         </tbody>
       </table>

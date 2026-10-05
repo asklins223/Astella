@@ -22,6 +22,7 @@ export function CandidateReviewDesk({ session }: { readonly session: CardGenerat
   currentKey.current = card?.candidateRevisionId;
   const lastDecision = candidates.find((candidate) => candidate.candidateId === lastDecisionId && candidate.reviewDecision !== "undecided" && candidate.publishState === "unpublished");
   const undoCard = card?.reviewDecision !== "undecided" && card?.publishState === "unpublished" ? card : lastDecision;
+  const nextReviewable = candidates.find(candidate => candidate.candidateId !== card?.candidateId && isActionableUndecidedCandidate(candidate));
 
   useLayoutEffect(() => {
     if (locked || !pendingReviewFocus.current) return;
@@ -88,6 +89,9 @@ export function CandidateReviewDesk({ session }: { readonly session: CardGenerat
 
     <footer className="candidate-desk__footer">
       <div className="candidate-desk__feedback" aria-live="polite">
+        {card && reviewOpen && card.qualityState === "authored" ? <p role="status">这张卡复查仍未通过，暂不能保存到卡组。可以继续挑选通过检查的卡，或重新生成这一批。
+          {nextReviewable ? <button type="button" className="text-action" disabled={locked} onClick={() => { session.setActiveCandidateId(nextReviewable.candidateId); motion.setPane("front"); }}>继续挑选可保留的卡</button> : null}
+        </p> : null}
         {actionFailure ? <p role="alert">这一步没成功：{actionFailure}</p> : null}
         {revealFailure ? <p role="alert">答案读取没有成功：{revealFailure}<button type="button" className="text-action" disabled={locked} onClick={() => void showAnswers()}>重试</button></p> : null}
         {syncReport ? <p role="status">{cardGenerationSyncReportText(syncReport.status, syncReport.changed)}</p> : null}

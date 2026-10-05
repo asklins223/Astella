@@ -7,7 +7,7 @@ export type CompanionCenterTab = "overview" | "dialogue" | "diary" | "memory" | 
 
 export const CENTER_PAGES = [
   { id: "overview", label: "近况", detail: "接着上次的话，翻翻新留下的事。" },
-  { id: "dialogue", label: "对话", detail: "你们说过的话，可以接着聊，也可以慢慢回看。" },
+  { id: "dialogue", label: "对话", detail: "慢慢翻看你们说过的话，也可以按关键词找回原文。" },
   { id: "diary", label: "日记", detail: "那些值得写下的共同片段。" },
   { id: "memory", label: "记忆", detail: "看看她记住了什么，随时补充或纠正。" },
   { id: "discovery", label: "发现簿", detail: "把想留下的话收在一起，再写上自己的想法。" },

@@ -50,10 +50,10 @@ describe("设置页「客户端更新」", () => {
   });
 
   it("拿不到更新信息是平的语气，不是错误语气", () => {
-    renderGroup({ phase: "unreachable", message: "API rate limit exceeded" });
+    renderGroup({ phase: "unreachable", message: "GitHub 的查询次数用完了，请稍后再检查。" });
     const note = screen.getByRole("status");
     expect(note.textContent).toContain("GitHub 的查询次数用完了");
-    expect(note.textContent).toContain("API rate limit exceeded");
+    expect(note.textContent).not.toContain("API rate limit exceeded");
     // role=status 而不是 alert：这不是错误。
     expect(screen.queryByRole("alert")).toBeNull();
   });

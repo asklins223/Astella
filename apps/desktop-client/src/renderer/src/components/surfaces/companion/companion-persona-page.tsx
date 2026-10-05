@@ -1,4 +1,5 @@
-import { companionPersonaPatchFromPreset,companionPersonaPatchFromProfile,type CompanionPersonaProfileV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import { companionPersonaPatchFromContent,companionPersonaPatchFromPresetSwitch,type CompanionPersonaPresetV1 } from "@ailearn/shared/companion-memory-desktop-contracts";
+import { personaFromDefaultPreset, planPersonaSwitch, type SwitchableField } from "@ailearn/shared/pet-persona-merge";
 import type { GatewayResultV1 } from "@ailearn/shared/desktop-ipc-contracts";
 import { useEffect,useRef,useState } from "react";
 import { useCompanionChat } from "../../../app/companion-chat-session";
@@ -7,6 +8,8 @@ import { companionDisplayName,publishCompanionDisplayName } from "../../companio
 import { SectionState } from "./companion-center-primitives";
 import { PersonaPanel } from "./companion-persona-panel";
 import { publishCompanionRecordsChanged,useCompanionRecordsRefresh,useCompanionResource } from "./use-companion-resource";
+
+type PersonaChange = { name?: string; activeness?: "quiet" | "moderate" | "active"; boundaries?: { allowPlayful?: boolean; allowNudgeLearning?: boolean; allowVoiceTags?: boolean; catchphrase?: string | null } };
 
 export function CompanionPersonaPage(props: { refreshKey: number; onSettings: () => void }) {
   const chat = useCompanionChat();
@@ -39,12 +42,42 @@ export function CompanionPersonaPage(props: { refreshKey: number; onSettings: ()
     } catch (cause) { setError(gatewayErrorMessage(cause)); await reload(); return false; }
     finally { lock.current = false; setBusy(null); }
   };
-  const patch = (changes: Partial<Pick<CompanionPersonaProfileV1, "name" | "activeness" | "boundaries">>, key: string) => {
-    if (!value) return Promise.resolve(false);
-    const current = value.profile ? companionPersonaPatchFromProfile(value.profile, changes) : value.activePreset
-      ? { ...companionPersonaPatchFromPreset(value.activePreset, value.profileRevision), ...changes } : null;
-    return current ? write(key, () => window.ailearn.companion.persona.patch({ meta: persona.meta(), request: current })) : Promise.resolve(false);
+
+  // 「当前生效的人格内容」。账号还没有档案时用系统默认人格当底稿 ——
+  // 这样表达分量与边界那几颗控件从第一眼起就是可点的，点了就落成第 1 版。
+  const effective = value?.profile ?? (value?.activePreset ? personaFromDefaultPreset(value.activePreset) : null);
+  const patch = (changes: PersonaChange, key: string) => {
+    if (!value || !effective) return Promise.resolve(false);
+    const request = companionPersonaPatchFromContent(effective, value.profileRevision, changes);
+    return write(key, () => window.ailearn.companion.persona.patch({ meta: persona.meta(), request }));
   };
+
+  // ── 换人格：先把"会被换掉的是什么"摊开，再让用户自己勾 ──────────────────
+  // 此前点一下卡片就是整份替换：她改过的语气、你改过的名字和开关一起没了，
+  // 没有任何提示。现在只有"不是预设写的那几项"进这个清单，且默认保留。
+  const [switchTarget, setSwitchTarget] = useState<CompanionPersonaPresetV1 | null>(null);
+  const [overwrite, setOverwrite] = useState<readonly SwitchableField[]>([]);
+  const switchPlan = switchTarget && effective ? planPersonaSwitch(effective, switchTarget) : null;
+  const openSwitch = (preset: CompanionPersonaPresetV1) => {
+    if (!value) return;
+    setOverwrite([]);
+    setSwitchTarget(preset);
+  };
+  const confirmSwitch = () => {
+    if (!value || !switchTarget || !effective) return;
+    const previous = value.profileRevision;
+    const request = companionPersonaPatchFromPresetSwitch(effective, previous, switchTarget, overwrite);
+    const kept = (switchPlan?.options.length ?? 0) - overwrite.length;
+    void write(
+      "preset",
+      () => window.ailearn.companion.persona.patch({ meta: persona.meta(), request }),
+      // 明说"换之前的样子存在哪一版"：这是让人敢点的前提。
+      () => [`已换成「${switchTarget.name}」。`, kept > 0 ? `保留了 ${kept} 项你们的改动。` : "", `切换前是第 ${previous} 版，可在下方版本记录里恢复。`]
+        .filter(Boolean)
+        .join(""),
+    ).then((ok) => { if (ok) setSwitchTarget(null); });
+  };
+
   if (!persona.section) return <SectionState message={persona.loading ? "正在读取人格档案" : "人格档案当前不可用"} detail={persona.failure ?? undefined} onRetry={() => void reload()} />;
   return <PersonaPanel section={persona.section} persona={value}
     versions={versions.section?.ok ? versions.section.value.versions : null}
@@ -52,9 +85,11 @@ export function CompanionPersonaPage(props: { refreshKey: number; onSettings: ()
     pending={pending.section?.ok ? pending.section.value : undefined}
     pendingError={pending.section && !pending.section.ok ? pending.section.message : pending.failure}
     busy={busy} error={error} notice={notice} onSettings={props.onSettings}
-    onPreset={preset => { if (value) void write("preset", () => window.ailearn.companion.persona.patch({ meta: persona.meta(), request: companionPersonaPatchFromPreset(preset, value.profileRevision) })); }}
+    switchTarget={switchTarget} switchOptions={switchPlan?.options ?? []} overwrite={overwrite}
+    onOverwrite={fields => setOverwrite(fields)} onSwitchCancel={() => setSwitchTarget(null)} onSwitchConfirm={confirmSwitch}
+    onPreset={openSwitch}
     onActiveness={activeness => void patch({ activeness }, "activeness")}
-    onBoundary={key => { const boundaries = value?.profile?.boundaries ?? value?.activePreset?.boundaries; if (boundaries) void patch({ boundaries: { ...boundaries, [key]: !boundaries[key] } }, "boundary"); }}
+    onBoundary={key => { const boundaries = effective?.boundaries; if (boundaries) void patch({ boundaries: { ...boundaries, [key]: !boundaries[key] } }, "boundary"); }}
     onRename={name => patch({ name }, "name")}
     onReset={() => { if (value) void write("reset", () => window.ailearn.companion.persona.reset({ meta: persona.meta(), revision: value.profileRevision })); }}
     onRestore={revision => { if (value) void write("restore", () => window.ailearn.companion.persona.restore({ meta: persona.meta(), revision, currentRevision: value.profileRevision })); }}

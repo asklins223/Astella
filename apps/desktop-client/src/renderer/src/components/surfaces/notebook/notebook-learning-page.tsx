@@ -21,8 +21,11 @@ export function NotebookLearningPage(props: {
 }) {
   const copy = COPY[props.kind], Icon = copy.Icon;
   const working = props.state === "queued" || props.state === "running" || props.state === "loading";
+  const needsSettings = props.error === "ai_consent_required" || props.error === "ai_data_policy_denied";
   const failureDescription = props.error === "ai_consent_required"
     ? "需要先开启 AI 使用权限，再重试生成。"
+    : props.error === "ai_data_policy_denied"
+      ? "账号的数据外发策略阻止了这次生成。请到 AI 数据同意设置核对外部模型和图片内容的开关。"
     : props.error && props.error !== "unknown" ? props.error
       : "原文还在，已有内容也会保留。可以重新试一次。";
   return <section className="notebook-learning-page" data-state={props.state} aria-label={`${copy.label}准备页`} aria-busy={working}>
@@ -34,7 +37,8 @@ export function NotebookLearningPage(props: {
       {working ? <p className="notebook-learning-page__phase" role="status"><span aria-hidden="true" />{props.state === "loading" ? "正在取回这篇已有的内容…" : props.state === "queued" ? "任务已创建，正在等待处理。" : "后台正在生成，可以继续读原文或离开，回来后仍能查看结果。"}</p> : null}
       <div className="actions">
         {props.state === "empty" ? <button type="button" className="button primary" onClick={props.onPrepare}>{props.kind === "recall" ? "准备回想问题" : `生成${copy.label}内容`}</button>
-          : props.state === "failed" ? <button type="button" className="button primary" onClick={props.error === "ai_consent_required" ? props.onSettings : props.onRetry}>{props.error === "ai_consent_required" ? "去设置" : "再试一次"}</button> : null}
+          : props.state === "failed" ? <button type="button" className="button primary" onClick={needsSettings ? props.onSettings : props.onRetry}>{needsSettings ? "去设置" : "再试一次"}</button> : null}
+        {props.state === "failed" && needsSettings ? <button type="button" className="button" onClick={props.onRetry}>设置好了，再试一次</button> : null}
         <button type="button" className="text-action" onClick={props.onBody}>继续读原文</button>
       </div>
     </div>

@@ -39,6 +39,60 @@ afterEach(async () => {
 });
 
 describe("三种正文视图共用真实编辑器与 Y.Doc", () => {
+  it("生成的源码可再次解析，首尾改动不会吞掉表格后的正文或中间出处", async () => {
+    const doc = new Y.Doc(); docs.push(doc);
+    Y.applyUpdate(doc, Uint8Array.from(atob(seedBlocksUpdate("来源", [
+      { type: "heading", content: "首标题" },
+      { type: "paragraph", content: "有序前缀" },
+      { type: "heading", content: "步骤" },
+      { type: "list", content: "3. 保存 key\n4. 严格大于才右移\n5. 写入 key" },
+      { type: "heading", content: "示例" },
+      { type: "paragraph", content: "| 输入 | 结果 |\n| :---: | ---: |\n| `2,2,1` | **1,2,2** |" },
+      { type: "paragraph", content: "相等元素保留原来的顺序。" },
+      { type: "heading", content: "最后一句" },
+      { type: "paragraph", content: "尾段" },
+    ])), c => c.charCodeAt(0)));
+    const fragment = doc.getXmlFragment("content");
+    for (let index = 0; index < fragment.length; index += 1) {
+      (fragment.get(index) as Y.XmlElement).setAttribute("sourceRef", { sourceId: "source-qa", segmentId: `segment-${index}` } as unknown as string);
+    }
+    const view = await mount(doc);
+    const exported = view.ref.current!.getMarkdown()!;
+    await source(view, exported.replace("首标题", "首标题已校对").replace("尾段", "尾段已校对"));
+    view.mode("live-preview");
+    expect(view.container.querySelectorAll(".ProseMirror table tr")).toHaveLength(2);
+    expect(view.container.querySelector(".ProseMirror table + p")?.textContent).toBe("相等元素保留原来的顺序。");
+    expect(fragment.length).toBe(9);
+    for (let index = 1; index < 8; index += 1) {
+      expect((fragment.get(index) as Y.XmlElement).getAttribute("sourceRef")).toEqual({ sourceId: "source-qa", segmentId: `segment-${index}` });
+    }
+  });
+
+  it("服务端来源表格与编号在真实编辑器中有结构，编辑和重开保留表格证据", async () => {
+    const doc = new Y.Doc(); docs.push(doc);
+    Y.applyUpdate(doc, Uint8Array.from(atob(seedBlocksUpdate("来源", [
+      { type: "list", content: "3. 保存当前元素\n4. 移动前缀" },
+      { type: "paragraph", content: "| 输入 | 输出 |\n| :---: | ---: |\n| **a\\|b** | `c` |" },
+    ])), c => c.charCodeAt(0)));
+    const fragment = doc.getXmlFragment("content"), table = fragment.get(1) as Y.XmlElement;
+    // y-prosemirror stores JSON attributes; Y.XmlElement's public type only lists strings.
+    table.setAttribute("sourceRef", { sourceId: "source-1", segmentId: "segment-2" } as unknown as string);
+    const view = await mount(doc, "live-preview");
+    const root = view.container.querySelector(".ProseMirror")!;
+    expect(root.querySelector("ol")?.getAttribute("start")).toBe("3");
+    expect(root.querySelectorAll("table tr")).toHaveLength(2);
+    expect(root.querySelector("table th")?.getAttribute("style")).toContain("center");
+    expect(root.querySelectorAll("table th")[1]?.getAttribute("style")).toContain("right");
+    expect(root.querySelector("table strong")?.textContent).toBe("a|b");
+    expect((fragment.get(1) as Y.XmlElement).getAttribute("sourceRef")).toEqual({ sourceId: "source-1", segmentId: "segment-2" });
+    view.mode("source");
+    await source(view, view.ref.current!.getMarkdown()!.replace("c", "changed"));
+    expect((fragment.get(1) as Y.XmlElement).getAttribute("sourceRef")).toEqual({ sourceId: "source-1", segmentId: "segment-2" });
+    view.unmount(); const reopened = await mount(doc, "live-preview");
+    expect(reopened.container.querySelector(".ProseMirror table")?.textContent).toContain("changed");
+    expect(reopened.container.querySelector(".ProseMirror ol")?.getAttribute("start")).toBe("3");
+  });
+
   it("切换只改变视图，保留两个编辑器实例、不产生文档写入", async () => {
     const doc = documentWith("甲段", "乙段");
     const view = await mount(doc);
@@ -55,7 +109,7 @@ describe("三种正文视图共用真实编辑器与 Y.Doc", () => {
 
   it("源码语法、标题六级、列表、代码、图片、表格与安全 HTML 跨视图和重开保留", async () => {
     const doc = documentWith("起点"); const view = await mount(doc);
-    const text = '# 一级\n\n###### 六级\n\n- [x] 完成\n- 项目\n\n> 引用\n\n```md\n# 代码里的标题\n```\n\n![图示](https://example.com/a.png)\n\n| 列甲 | 列乙 |\n| --- | --- |\n| 一 | 二 |\n\n<script>alert("x")</script>\n\n尾段  \n换行\n';
+    const text = '# 一级\n\n###### 六级\n\n- [x] 完成\n- 项目\n\n> 引用\n\n```md\n# 代码里的标题\n```\n\n![图示](https://example.com/a.png)\n\n| 列甲 | 列乙 |\n| :---: | ---: |\n| 一 | 二 |\n\n<script>alert("x")</script>\n\n尾段  \n换行\n';
     await source(view, text);
     view.mode("live-preview"); view.mode("preview"); view.mode("source");
     expect(view.ref.current!.getMarkdown()).toBe(text);
@@ -68,6 +122,20 @@ describe("三种正文视图共用真实编辑器与 Y.Doc", () => {
     view.unmount();
     const reopened = await mount(peer);
     expect(reopened.ref.current!.getMarkdown()).toBe(text);
+  });
+
+  it("同时改首尾时，中间未修改的段落仍保留自己的来源", async () => {
+    const doc = documentWith("首段", "有出处的中段", "尾段");
+    const fragment = doc.getXmlFragment("content");
+    const middle = fragment.get(1) as Y.XmlElement<{ sourceRef: { sourceId: string; segmentId: string } }>;
+    const provenance = { sourceId: "source-qa", segmentId: "middle-segment" };
+    middle.setAttribute("sourceRef", provenance);
+    const view = await mount(doc);
+    await source(view, "首段补充\n\n有出处的中段\n\n尾段补充\n");
+    expect((fragment.get(1) as Y.XmlElement).getAttribute("sourceRef")).toEqual(provenance);
+    view.unmount(); const reopened = await mount(doc);
+    expect(reopened.ref.current!.getMarkdown()).toContain("首段补充");
+    expect((fragment.get(1) as Y.XmlElement).getAttribute("sourceRef")).toEqual(provenance);
   });
 
   it("一次源代码局部输入保留其他块的 CRDT 身份与来源属性", async () => {
@@ -108,6 +176,36 @@ describe("三种正文视图共用真实编辑器与 Y.Doc", () => {
     view.mode("source");
     await act(async () => view.ref.current!.redo());
     expect(view.code().state.doc.toString()).toBe("原文\n\n\n");
+  });
+
+  it("源码视图的工具栏可以撤销和重做实际文本改动", async () => {
+    const doc = documentWith("原文 target"); const view = await mount(doc);
+    const initial = view.ref.current!.getMarkdown();
+    await source(view, "原文 TARGET\n");
+    await act(async () => view.ref.current!.undo());
+    expect(view.code().state.doc.toString()).toBe(initial);
+    await act(async () => view.ref.current!.redo());
+    expect(view.code().state.doc.toString()).toBe("原文 TARGET\n");
+  });
+
+  it("源码格式操作作用于所在段落，行内格式保留可继续输入的选区", async () => {
+    const doc = documentWith("这一段正文"); const view = await mount(doc);
+    await source(view, "这一段正文\n第二段正文\n");
+    await act(async () => view.code().dispatch({ selection: { anchor: 3 } }));
+    await act(async () => view.ref.current!.toggleHeading(2));
+    expect(view.code().state.doc.toString()).toBe("## 这一段正文\n第二段正文\n");
+    await act(async () => view.ref.current!.toggleHeading(2));
+    expect(view.code().state.doc.toString()).toBe("这一段正文\n第二段正文\n");
+    await act(async () => view.code().dispatch({ selection: { anchor: 0, head: 11 } }));
+    await act(async () => view.ref.current!.toggleBulletList());
+    expect(view.code().state.doc.toString()).toBe("- 这一段正文\n- 第二段正文\n");
+    await act(async () => view.ref.current!.toggleOrderedList());
+    expect(view.code().state.doc.toString()).toBe("1. 这一段正文\n1. 第二段正文\n");
+    await act(async () => view.code().dispatch({ selection: { anchor: 3, head: 5 } }));
+    await act(async () => view.ref.current!.toggleStrong());
+    expect(view.code().state.sliceDoc(view.code().state.selection.main.from, view.code().state.selection.main.to)).toBe("这一");
+    await act(async () => view.ref.current!.toggleStrong());
+    expect(view.code().state.doc.toString()).toBe("1. 这一段正文\n1. 第二段正文\n");
   });
 
   it("共享撤销只撤自己的输入，保留远端输入", async () => {

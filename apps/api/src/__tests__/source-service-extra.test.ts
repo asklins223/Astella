@@ -267,9 +267,10 @@ describe("source listing", () => {
 
 describe("source updates and deletion", () => {
   it("merges metadata, updates the title, and returns refreshed detail", async () => {
-    const source = { id: "source-1", title: "Old", metadata: { retained: true } };
+    const source = { id: "source-1", title: "Old", status: "ready", origin: "text", metadata: { retained: true } };
     const refreshed = { ...source, title: "New", metadata: { retained: true, added: 1 } };
     let updates: any;
+    let indexed: any;
     // F13（round-4）：updateSource 改为 `select(...).for("update")` 锁定读——
     // 该测试 mock 相应补 `select` 链（返回 base source 供 metadata 合并）；
     // getSource 仍走 `query.sources.findFirst`（返回 refreshed）。
@@ -283,9 +284,11 @@ describe("source updates and deletion", () => {
       }),
       query: {
         sources: { findFirst: async () => refreshed },
-        sourceSegments: { findMany: async () => [{ id: "segment-1" }] },
+        sourceSegments: { findMany: async () => [{ id: "segment-1", text: "原材料正文" }] },
       },
       update: () => updateChain((value) => { updates = value; }),
+      transaction: async (fn: any) => fn(executor),
+      insert: () => ({ values: (value: any) => { indexed = value; return { onConflictDoUpdate: async () => {} }; } }),
     } as any;
 
     const result = await updateSource(executor, "source-1", WORKSPACE_ID, {
@@ -295,7 +298,10 @@ describe("source updates and deletion", () => {
 
     assert.equal(updates.title, "New");
     assert.deepEqual(updates.metadata, { retained: true, added: 1, titleSource: "manual" });
-    assert.deepEqual(result, { source: refreshed, segments: [{ id: "segment-1" }] });
+    assert.deepEqual(result, { source: refreshed, segments: [{ id: "segment-1", text: "原材料正文" }] });
+    assert.equal(indexed.title, "New");
+    assert.equal(indexed.body, "原材料正文");
+    assert.equal(indexed.objectId, "source-1");
   });
 
   it("a title-only rename marks the title manual, and later metadata patches cannot reset it", async () => {
@@ -304,6 +310,8 @@ describe("source updates and deletion", () => {
       select: () => ({ from: () => ({ where: () => ({ limit: () => ({ for: async () => [source] }) }) }) }),
       update: () => updateChain((value: any) => { Object.assign(source, value); }),
       query: { sources: { findFirst: async () => source }, sourceSegments: { findMany: async () => [] } },
+      transaction: async (fn: any) => fn(executor),
+      insert: () => ({ values: () => ({ onConflictDoUpdate: async () => {} }) }),
     } as any;
     await updateSource(executor, source.id, WORKSPACE_ID, { title: "My own title" });
     assert.equal(source.metadata.titleSource, "manual");

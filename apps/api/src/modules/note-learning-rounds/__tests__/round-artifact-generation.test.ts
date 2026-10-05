@@ -288,7 +288,7 @@ test("任务版本必须上到 3：换的是合同，v2 留下的检查点与半
   assert.equal(DYNAMIC_ARTIFACT_TASK_VERSION, 3);
   assert.match(source, /DYNAMIC_ARTIFACT_TASK_VERSION = 3/,
     "改了合同却没改 taskVersion：v2 的检查点会被这一版当成同一发任务复用");
-  assert.equal(DYNAMIC_ARTIFACT_PROMPT_VERSION, "note-dynamic-artifact-v7");
+  assert.equal(DYNAMIC_ARTIFACT_PROMPT_VERSION, "note-dynamic-artifact-v11");
   assert.equal(DYNAMIC_ARTIFACT_TASK_ID, "note_dynamic_artifact_v1");
   assert.equal(DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1, "note_dynamic_artifact_v1@v3",
     "落库那一列记的还是旧版本：事后查不出这一份是按哪一版合同做的");
@@ -620,6 +620,8 @@ test("完成判据：一份规规矩矩的 doc 算达成，指向不存在的块
     artifactCompletionSatisfiedV1({ ...base, outline: base.outline.map((b, i) => (i === 0 ? { ...b, narration: "  " } : b)) }, BLOCKS),
     false,
   );
+  assert.equal(artifactCompletionSatisfiedV1({ ...base, outline: base.outline.map((b, i) => i === 0 ? { ...b, evidenceQuote: "原文里不存在的引句" } : b) }, BLOCKS), false);
+  assert.equal(artifactCompletionSatisfiedV1({ ...base, outline: base.outline.map((b, i) => i === 1 ? { ...b, title: base.outline[0]!.title } : b) }, BLOCKS), false);
   // 判据与内核那一句话同源：同一个读数只许一个来源。
   assert.ok(ARTIFACT_COMPLETION_UNMET_V1.length > 0);
 });
@@ -1114,6 +1116,8 @@ test("提示词：完整材料与问题保留，保存与原文回查字段不�
   const lines = prompt.split("\n");
   const format = JSON.parse(lines.find(line => line.startsWith('{"title"'))!);
   assert.deepEqual(Object.keys(format), ["title", "subject", "caution", "document", "outline"]);
+  assert.equal(new Set(format.outline.map((beat: { title: string }) => beat.title)).size, format.outline.length,
+    "输出示例本身不能带重复标题，诱导模型违反完成条件");
   assert.equal(format.outline[0].evidenceOrdinal, INPUT.blocks[0]!.ordinal);
   assert.ok(INPUT.blocks[0]!.text.includes(format.outline[0].evidenceQuote));
   const material = JSON.parse(lines.at(-1)!);

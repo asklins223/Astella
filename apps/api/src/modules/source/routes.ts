@@ -125,7 +125,7 @@ export async function sourceRoutes(app: FastifyInstance) {
       (transaction) => restoreSource(transaction, req.params.id, req.session.workspaceId),
     );
     if (!result.ok) return reply.code(404).send({ error: "not_found", message: "资源不存在" });
-    return { version: 1, status: result.status, alreadyActive: result.alreadyActive };
+    return { sourceId: params.data.id, status: result.status, alreadyActive: result.alreadyActive };
   });
 
   // POST /sources/:id/create-note — 从来源创建笔记草稿
