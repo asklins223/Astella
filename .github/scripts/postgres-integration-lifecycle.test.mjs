@@ -49,8 +49,17 @@ describe("PostgreSQL integration test lifecycle", () => {
           if (!line.includes("${JSON.stringify(")) continue;
           // `::jsonb` casts are explicit JSON storage and are safe.
           if (line.includes("::jsonb")) continue;
-          // Non-SQL string building (e.g., URL query) is not a DB JSON insert.
-          if (!/\b(INSERT|UPDATE|VALUES|SELECT|DELETE)\b/i.test(line)) continue;
+          // `${...}` 里是 **JS 表达式，不是 SQL**。挖掉插值再找 SQL 关键字——
+          //
+          // 2026-10-05 实测的误报：下面这行是一个纯 throw，被判成了 INSERT
+          //   throw new Error(`presence 没写成 ${values.presence}：${JSON.stringify(back[0].presence)}`);
+          // 原因是 `\bVALUES\b` 带 `/i`，而 `${values.presence}` 里 `values` 前面是 `{`、
+          // 后面是 `.`，两侧都构成词边界 ⇒ 一个普通变量名被当成了 SQL 的 VALUES 子句。
+          //
+          // 真正该命中的形状不受影响：`VALUES (..., ${JSON.stringify(x)})` 里
+          // VALUES 在插值**之外**，挖掉插值后照样能匹配上。
+          const sqlSide = line.replace(/\$\{[^}]*\}/g, " ");
+          if (!/\b(INSERT|UPDATE|VALUES|SELECT|DELETE)\b/i.test(sqlSide)) continue;
           assert.fail(
             `${relative(repositoryRoot, path)}:${i + 1} inserts serialized JSON instead of a JSON value`,
           );
