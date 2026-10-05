@@ -108,7 +108,21 @@ const BASELINE: Readonly<Record<string, number>> = {
   "apps/api/src/modules/learning-runs/run-service.ts": 3505,
   "apps/api/src/modules/learning-runs/processing/run-processing-tick.ts": 2729,
   "apps/api/src/modules/card-generation-v2/activation-service.ts": 2461,
-  "workers/ai-worker/src/handlers/parse-source.ts": 1878,
+  // 2026-10-05：`workers/ai-worker/src/handlers/parse-source.ts` 1878 → 1485，
+  // 从基线里**删掉**这一条。HTML → 正文/标题的提取（`removeElementsByClass`、
+  // 三张 class 模式表、`decodeFormulaAlt`、`imgReplacement`、`extractTextFromHtml`、
+  // `decodeHtmlEntities`、`extractHtmlTitle`，约 430 行）整体移入新建的
+  // `parse-source-html.ts`（440 行）。
+  //
+  // 拆的理由与上面几条一致，也是判据选的是**域**：抓取那一侧回答「这次请求该不该
+  // 发出去、响应该怎么限」（DNS 钉住、重定向逐跳校验、解压、大小上限），
+  // 提取那一侧回答「拿到的 HTML 里哪些是正文」（剥标签、剔噪声、解实体），
+  // 两者没有耦合——提取块零外部依赖，只用自己的模式表和纯字符串函数。
+  // 移动保留的形状：跨文件用到的两个符号由新文件 `export`，原文件顶部 import 回来，
+  // 调用点与签名一字未改。
+  //
+  // 动因：方案 42 给 `FetchUrlDependencies` 补了三段文档注释，把这个已 1878 行的
+  // 文件推到 1912 行，触发「清单不增」。棘轮不接受调大基线，所以拆。
 };
 
 test("神文件清单不增（新增一个超阈值的文件，或把现有的再堆大，都红）", () => {

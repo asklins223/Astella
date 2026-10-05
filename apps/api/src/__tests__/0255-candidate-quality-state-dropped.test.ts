@@ -42,7 +42,10 @@ describe(`Migration ${TAG} — 候选 dropped 终态`, () => {
     const readSites = [
       ["packages/shared/src/contracts/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
       ["packages/shared/src/contracts/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
-      ["apps/desktop-client/src/renderer/src/components/CardGenerationSurface.tsx", /qualityState === "dropped"/],
+      // 2026-10-05：审核台重构后这一档的读点搬到了 review 的 model 里，
+      // `CardGenerationSurface.tsx` 只剩摆位、不再读 qualityState。指针跟着走——
+      // 判据仍然是"每个读 qualityState 的地方都得认识 dropped"，一个没少。
+      ["apps/desktop-client/src/renderer/src/components/surfaces/review/candidate-review-model.ts", /qualityState === "dropped"/],
     ] as const;
     for (const [file, pattern] of readSites) {
       const text = readFileSync(resolve(import.meta.dirname, "../../../..", file), "utf8");
@@ -71,7 +74,10 @@ describe(`Migration ${TAG} — 候选 dropped 终态`, () => {
     const readSites = [
       ["packages/shared/src/contracts/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
       ["packages/shared/src/contracts/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
-      ["apps/desktop-client/src/renderer/src/components/CardGenerationSurface.tsx", /qualityState === "dropped"/],
+      // 2026-10-05：审核台重构后这一档的读点搬到了 review 的 model 里，
+      // `CardGenerationSurface.tsx` 只剩摆位、不再读 qualityState。指针跟着走——
+      // 判据仍然是"每个读 qualityState 的地方都得认识 dropped"，一个没少。
+      ["apps/desktop-client/src/renderer/src/components/surfaces/review/candidate-review-model.ts", /qualityState === "dropped"/],
     ] as const;
     for (const [file, pattern] of readSites) {
       const text = readFileSync(resolve(import.meta.dirname, "../../../..", file), "utf8");
@@ -99,7 +105,10 @@ describe(`Migration ${TAG} — 候选 dropped 终态`, () => {
     const readSites = [
       ["packages/shared/src/contracts/card-generation-v2-contracts.ts", /CandidateQualityStateValuesV2[\s\S]{0,400}"dropped",/],
       ["packages/shared/src/contracts/card-generation-desktop-contracts.ts", /qualityState: z\.enum\(\[[^\]]*"dropped"/],
-      ["apps/desktop-client/src/renderer/src/components/CardGenerationSurface.tsx", /qualityState === "dropped"/],
+      // 2026-10-05：审核台重构后这一档的读点搬到了 review 的 model 里，
+      // `CardGenerationSurface.tsx` 只剩摆位、不再读 qualityState。指针跟着走——
+      // 判据仍然是"每个读 qualityState 的地方都得认识 dropped"，一个没少。
+      ["apps/desktop-client/src/renderer/src/components/surfaces/review/candidate-review-model.ts", /qualityState === "dropped"/],
     ] as const;
     for (const [file, pattern] of readSites) {
       const text = readFileSync(resolve(import.meta.dirname, "../../../..", file), "utf8");

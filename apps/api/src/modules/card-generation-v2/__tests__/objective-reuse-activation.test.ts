@@ -107,7 +107,12 @@ test("W7-5 刀四：复用那一档是**服务端重定向**的，审核台仍�
   // 钉住这个设计决定：客户端不发那一档。它要发就得读计划，而它读不到也不该读——
   // 裁决留在一处，且那一份带 planHash。
   const surface = readFileSync(
-    join(REPO_ROOT, "apps/desktop-client/src/renderer/src/components/CardGenerationSurface.tsx"),
+    // 2026-10-05：审核台重构后 `CardGenerationSurface.tsx` 只剩摆位，构造 intent 的
+    // 逻辑下沉到了它调用的 session hook。**设计决定没变**（审核台仍然发 create_new），
+    // 失效的是指针——它还盯着一个已经不含 `intent` 字样的文件，于是这一格恒红。
+    // 与 packages/shared 那份同款守卫同批修正。调用关系可复核：
+    // `CardGenerationSurface.tsx` 第 8 行导入、第 23 行调用该 hook。
+    join(REPO_ROOT, "apps/desktop-client/src/renderer/src/components/surfaces/review/use-card-generation-session.ts"),
     "utf8",
   );
   assert.ok(surface.includes('intent: { kind: "create_new" }'),
