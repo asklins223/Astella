@@ -71,3 +71,49 @@
 @media (prefers-reduced-motion: reduce) {
   .hud-surface .settings-progress__fill { transition: none; }
 }
+/* 更新这一组排在「数据与维护」最上面，与下面两组之间留一条分隔，
+   让"先处理更新、再处理数据"这个次序在版面上也读得出来。 */
+.hud-surface .settings-group--update {
+  margin-bottom: 26px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid #e8ecdf;
+}
+
+/* 有新版本时的那三件事：改了什么 / 什么时候发的 / 要下多少。
+   键列固定窄、值列占满——三行的标签对齐了，扫一眼就能比出长度。 */
+.hud-surface .settings-update__meta {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 14px;
+  align-items: baseline;
+  margin: 2px 0 6px;
+  padding: 12px 14px;
+  border: 1px solid #dfe9d2;
+  border-radius: 15px;
+  background: #f7faef;
+}
+
+.hud-surface .settings-update__meta dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #6b7f66;
+  font: 700 12px/1.6 "Noto Sans SC Variable", sans-serif;
+  white-space: nowrap;
+}
+
+.hud-surface .settings-update__meta dd {
+  margin: 0;
+  color: #33402f;
+  font: 400 12.5px/1.75 "Noto Sans SC Variable", sans-serif;
+  overflow-wrap: anywhere;
+}
+
+/* 更新说明可能很长（GitHub 自动生成的 notes 会把整个 changelog 铺进来），
+   限高并可滚动：不让它把下面的空间内容统计挤出视野。 */
+.hud-surface .settings-update__notes {
+  max-height: 9em;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}

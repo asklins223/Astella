@@ -56,6 +56,36 @@ const DESKTOP_TAG_PREFIX = 'desktop-v'
  * href，不能是个点了没反应的 `<a>`。按 tag 规则（desktop-v<version>）拼，
  * 与 `.github/scripts/desktop-version.mjs` 的 DESKTOP_TAG_PREFIX 是同一套约定。
  */
+/**
+ * `UpdateInfo.releaseNotes` 是 `string | ReleaseNoteInfo[] | null`——开了
+ * `fullChangelog` 就是数组。拼成纯文本，数组按 `version` 去重后逐条列出。
+ */
+function describeReleaseNotes(
+  notes: string | { version?: string | null; note?: string | null }[] | null | undefined
+): string | null {
+  if (typeof notes === 'string') return notes.trim() ? notes.trim() : null
+  if (!Array.isArray(notes)) return null
+  const lines = notes
+    .map((entry) => {
+      const text = typeof entry.note === 'string' ? entry.note.trim() : ''
+      return text ? `## ${entry.version ?? ''}\n${text}`.trim() : ''
+    })
+    .filter(Boolean)
+  return lines.length ? lines.join('\n\n') : null
+}
+
+/**
+ * 安装包大小。
+ *
+ * 取 `files[0].size`——`latest.yml` / `latest-mac.yml` 里由 electron-builder 写下的
+ * 真实字节数。取不到就返回 null，**不拿下载进度里的 total 顶替**：那要等开始下载
+ * 才知道，而用户是在"还没下载、正在决定要不要更新"的时候就想知道多大。
+ */
+function firstFileSize(info: { files?: readonly { size?: number }[] }): number | null {
+  const file = info.files?.find((entry) => typeof entry.size === 'number')
+  return typeof file?.size === 'number' ? file.size : null
+}
+
 function releasePageUrl(version: string): string {
   return `https://github.com/${PUBLISH_OWNER}/${PUBLISH_REPO}/releases/tag/${DESKTOP_TAG_PREFIX}${version}`
 }
@@ -95,6 +125,9 @@ function initialState(): UpdateStateV1 {
     currentVersion: app.getVersion(),
     availableVersion: null,
     releaseNotes: null,
+    releaseName: null,
+    releaseDate: null,
+    fileSize: null,
     releaseUrl: null,
     percent: null,
     transferred: null,
@@ -215,7 +248,13 @@ async function loadAutoUpdater(): Promise<import('electron-updater').AppUpdater 
           ...getUpdateState(),
           phase: 'available',
           availableVersion: info.version,
-          releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : null,
+          releaseNotes: describeReleaseNotes(info.releaseNotes),
+          // 有标题就先给人看标题——它通常比自动生成的 notes 更像一句人话。
+          releaseName: typeof info.releaseName === 'string' && info.releaseName ? info.releaseName : null,
+          // 发布时刻与安装包大小：用户问"这次更新是什么、多大、什么时候的"，
+          // 答案全在这三个字段里，对端本来就有，不取等于白放着。
+          releaseDate: typeof info.releaseDate === 'string' && info.releaseDate ? info.releaseDate : null,
+          fileSize: firstFileSize(info),
           // macOS 未签名那条提示里的「下载页」靠这个字段；没有它那条链接点不动。
           releaseUrl: releasePageUrl(info.version),
           message: null,
@@ -230,6 +269,12 @@ async function loadAutoUpdater(): Promise<import('electron-updater').AppUpdater 
           ...getUpdateState(),
           phase: 'upToDate',
           availableVersion: null,
+          // 一起清掉：不然"已是最新"的状态上还挂着上一版的版本号、大小和日期，
+          // 读起来像"最新版本有 250MB、昨天发的"，那是在骗人。
+          releaseNotes: null,
+          releaseName: null,
+          releaseDate: null,
+          fileSize: null,
           percent: null,
           message: null,
         }),

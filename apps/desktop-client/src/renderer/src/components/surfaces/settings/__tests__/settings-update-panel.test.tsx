@@ -22,6 +22,9 @@ import { SettingsUpdateGroup } from "../settings-update-panel";
 function state(patch: Partial<UpdateStateV1>): UpdateStateV1 {
   return {
     phase: "idle", currentVersion: "0.1.0", availableVersion: null, releaseNotes: null,
+    releaseName: null,
+    releaseDate: null,
+    fileSize: null,
     releaseUrl: null, percent: null, transferred: null, total: null,
     message: null, installBlockedReason: null, checkedAt: null, ...patch,
   };
@@ -91,5 +94,65 @@ describe("设置页「客户端更新」", () => {
     // 这一屏的行标题要登记给伴星读；标题若随版本变化，那份登记每次发版都会整条抖动。
     expect(screen.getByText("客户端更新")).toBeTruthy();
     expect(screen.getByText(/当前版本 0\.9\.9/)).toBeTruthy();
+  });
+});
+describe("有新版本时给出这次更新的内容、时间与大小", () => {
+  it("三件事都摆出来", () => {
+    renderGroup({
+      phase: "available",
+      availableVersion: "0.2.0",
+      releaseName: "给书房加了新版房间",
+      releaseNotes: "- 修复了若干问题\n- 优化了启动速度",
+      releaseDate: "2026-10-04T12:50:09.026Z",
+      fileSize: 250_043_464,
+    });
+    expect(screen.getByText(/新版本 0\.2\.0/)).toBeTruthy();
+    expect(screen.getByText("给书房加了新版房间")).toBeTruthy();
+    expect(screen.getByText(/2026/)).toBeTruthy();
+    expect(screen.getByText("238.5 MB")).toBeTruthy();
+  });
+
+  it("有标题时优先显示标题，而不是自动生成的 notes", () => {
+    renderGroup({
+      phase: "available",
+      availableVersion: "0.2.0",
+      releaseName: "给书房加了新版房间",
+      releaseNotes: "## What's Changed\n- 一堆自动生成的条目",
+    });
+    // GitHub 自动生成的 notes 往往把整个 changelog 铺进来；标题更像一句人话。
+    expect(screen.getByText("给书房加了新版房间")).toBeTruthy();
+    expect(screen.queryByText(/What's Changed/)).toBeNull();
+  });
+
+  it("只有 notes 没有标题时，退回显示 notes", () => {
+    renderGroup({ phase: "available", availableVersion: "0.2.0", releaseNotes: "- 只写了条目" });
+    expect(screen.getByText("- 只写了条目")).toBeTruthy();
+  });
+
+  it("没有日期或大小时，那一行不出现——不留空位也不写 0 MB", () => {
+    renderGroup({ phase: "available", availableVersion: "0.2.0", fileSize: null, releaseDate: null });
+    expect(screen.queryByText(/安装包大小/)).toBeNull();
+    expect(screen.queryByText(/发布时间/)).toBeNull();
+  });
+
+  it("日期解析不了就不显示那一行", () => {
+    renderGroup({ phase: "available", availableVersion: "0.2.0", releaseDate: "不是日期" });
+    expect(screen.queryByText(/发布时间/)).toBeNull();
+  });
+
+  it("已是最新时，这些字段一并清掉", () => {
+    // 否则会读成"最新版本是 0.2.0、238.5 MB、2026-10-04 发的"——那是在骗人。
+    renderGroup({
+      phase: "upToDate",
+      availableVersion: null,
+      releaseNotes: null,
+      releaseName: null,
+      releaseDate: null,
+      fileSize: null,
+    });
+    expect(screen.queryByText(/安装包大小/)).toBeNull();
+    expect(screen.queryByText(/发布时间/)).toBeNull();
+    expect(screen.queryByText("新版本 0.2.0")).toBeNull();
+    expect(screen.getByText(/已经是最新版本/)).toBeTruthy();
   });
 });

@@ -1846,6 +1846,16 @@ export function SettingsSurface() {
     title: "数据与维护",
     body: (
       <>
+        {/* 更新排在最上面：进这一页的用户多半是冲着"是不是该更新了"来的，
+            那是这一页的第一件事；统计和导出往下压。 */}
+        <SettingsUpdateGroup
+          state={update.state}
+          busy={update.checking || update.downloading || update.installing}
+          onCheck={() => { void update.check(); }}
+          onDownload={() => { void update.download(); }}
+          onInstall={() => { void update.install(); }}
+        />
+
         <section className="settings-group">
           <h3 className="settings-group__title">空间内容</h3>
           <p className="settings-group__note">导出的存档只包含「{currentWorkspace?.name ?? "当前空间"}」；其他空间各自保存。</p>
@@ -1882,13 +1892,6 @@ export function SettingsSurface() {
             onImport={importMarkdownFiles}
             onImported={invoke}
             onCloseSurface={closeSurface}
-          />
-          <SettingsUpdateGroup
-            state={update.state}
-            busy={update.checking || update.downloading || update.installing}
-            onCheck={() => { void update.check(); }}
-            onDownload={() => { void update.download(); }}
-            onInstall={() => { void update.install(); }}
           />
         </div>
 

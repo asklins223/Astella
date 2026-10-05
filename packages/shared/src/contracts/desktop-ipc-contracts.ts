@@ -1,4 +1,8 @@
+import {agentLongGoalsV1Schema,type AgentLongGoalsQueryV1} from "./agent-long-goal-contracts.ts";
 import { agentRunV1Schema, agentRunListV1Schema, agentRunListQueryV1Schema, agentRunHistoryV1Schema, agentRunHistoryQueryV1Schema, createAgentRunV1Schema, reviseAgentRunV1Schema, controlAgentRunV1Schema } from "./agent-contracts.ts";
+import { agentMethodV1Schema, agentMethodListV1Schema, agentMethodHistoryV1Schema, agentMethodUsesV1Schema,
+  agentMethodUseV1Schema, proposeAgentMethodV1Schema, reviseAgentMethodV1Schema, controlAgentMethodV1Schema,
+  agentMethodFeedbackV1Schema } from "./agent-growth-contracts.ts";
 import {
   type CompanionDiscoveryEntryV1,
   type CompanionDiscoveryKind,
@@ -135,7 +139,6 @@ import {
 import {
   companionVoicePlaybackOutcomeResultV1Schema,
   companionVoiceSpeakResultV1Schema,
-  companionVoiceTranscribeResultV1Schema,
   type CompanionVoiceSpeakRequestV1,
   type CompanionVoiceSpeakSegmentRequestV2,
 } from "./companion-voice-contracts.ts";
@@ -445,12 +448,20 @@ export const DESKTOP_IPC_CHANNELS = {
   companionDataExport: "ailearn.v1.companion.data.export",
   companionAuditDelete: "ailearn.v1.companion.audit.delete",
   // 伴星聊天发送链路 + 语音转文本（2026-09-18 接线，companion-chat-desktop-contracts）。
-  companionVoiceTranscribe: "ailearn.v1.companion.voice.transcribe",
   agentRunsList: "ailearn.v1.agent.runs.list",
   agentRunHistory: "ailearn.v1.agent.runs.history",
   agentRunCreate: "ailearn.v1.agent.runs.create",
+  agentLongGoalsList:"ailearn.v1.agent.long-goals.list",
+  agentRunGet:"ailearn.v1.agent.run.get",
   agentRunRevise: "ailearn.v1.agent.runs.revise",
   agentRunControl: "ailearn.v1.agent.runs.control",
+  agentMethodsList: "ailearn.v1.agent.methods.list",
+  agentMethodPropose: "ailearn.v1.agent.method.propose",
+  agentMethodRevise: "ailearn.v1.agent.method.revise",
+  agentMethodControl: "ailearn.v1.agent.method.control",
+  agentMethodHistory: "ailearn.v1.agent.method.history",
+  agentMethodUses: "ailearn.v1.agent.method.uses",
+  agentMethodFeedback: "ailearn.v1.agent.method.feedback",
   companionChatEnsureConversation: "ailearn.v1.companion.chat.ensureConversation",
   companionChatSendTurn: "ailearn.v1.companion.chat.sendTurn",
   companionChatListMessages: "ailearn.v1.companion.chat.listMessages",
@@ -1388,6 +1399,15 @@ export const updateStateV1Schema = z.strictObject({
   /** 可更新的目标版本；没有可更新版本时为 null。 */
   availableVersion: z.string().min(1).nullable(),
   releaseNotes: z.string().nullable(),
+  /**
+   * 这一版的标题。GitHub Release 的 name 通常比自动生成的 notes 更像一句人话，
+   * 有它就先给人看它。
+   */
+  releaseName: z.string().nullable(),
+  /** 发布时刻（ISO 8601）。没有可更新版本、或对端没给时为 null。 */
+  releaseDate: z.string().nullable(),
+  /** 安装包字节数。对端没给 size 时为 null——不拿下载进度里的 total 冒充。 */
+  fileSize: z.number().int().min(0).nullable(),
   releaseUrl: z.string().nullable(),
   /** 0–100，整数。不在下载态时为 null。 */
   percent: z.number().int().min(0).max(100).nullable(),
@@ -2299,11 +2319,20 @@ export interface AILearnDesktopApiM1 {
 
 export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
   readonly agent: {
+    listLongGoals(input:{meta:RequestMetaV1;query?:AgentLongGoalsQueryV1}):Promise<GatewayResultV1<z.infer<typeof agentLongGoalsV1Schema>>>;
+    getRun(input:{meta:RequestMetaV1;runId:string}):Promise<GatewayResultV1<import("./agent-contracts.ts").AgentRunV1>>;
     listRuns(input: { meta: RequestMetaV1; query?: z.input<typeof agentRunListQueryV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunListV1Schema>>>;
     getRunHistory(input: { meta: RequestMetaV1; runId: string; query?: z.input<typeof agentRunHistoryQueryV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunHistoryV1Schema>>>;
     createRun(input: { meta: RequestMetaV1; request: z.infer<typeof createAgentRunV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunV1Schema>>>;
     reviseRun(input: { meta: RequestMetaV1; runId: string; request: z.infer<typeof reviseAgentRunV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunV1Schema>>>;
     controlRun(input: { meta: RequestMetaV1; runId: string; request: z.infer<typeof controlAgentRunV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentRunV1Schema>>>;
+    listMethods(input: { meta: RequestMetaV1 }): Promise<GatewayResultV1<z.infer<typeof agentMethodListV1Schema>>>;
+    proposeMethod(input: { meta: RequestMetaV1; request: z.infer<typeof proposeAgentMethodV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentMethodV1Schema>>>;
+    reviseMethod(input: { meta: RequestMetaV1; methodId: string; request: z.infer<typeof reviseAgentMethodV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentMethodV1Schema>>>;
+    controlMethod(input: { meta: RequestMetaV1; methodId: string; request: z.infer<typeof controlAgentMethodV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentMethodV1Schema>>>;
+    getMethodHistory(input: { meta: RequestMetaV1; methodId: string }): Promise<GatewayResultV1<z.infer<typeof agentMethodHistoryV1Schema>>>;
+    getMethodUses(input: { meta: RequestMetaV1; methodId: string }): Promise<GatewayResultV1<z.infer<typeof agentMethodUsesV1Schema>>>;
+    feedbackMethod(input: { meta: RequestMetaV1; useId: string; request: z.infer<typeof agentMethodFeedbackV1Schema> }): Promise<GatewayResultV1<z.infer<typeof agentMethodUseV1Schema>>>;
   };
   readonly subscriptions: SubscriptionApiM2;
   /**
@@ -2428,15 +2457,6 @@ export interface AILearnDesktopApiM2 extends AILearnDesktopApiM1 {
         meta: RequestMetaV1;
         request: import("./companion-voice-contracts.ts").CompanionVoicePlaybackOutcomeRequestV1;
       }): Promise<GatewayResultV1<z.infer<typeof companionVoicePlaybackOutcomeResultV1Schema>>>;
-      /**
-       * 语音转文本（2026-09-18 接线）：渲染层本地录好 16kHz WAV，main 送到
-       * `POST /voice/transcribe`（purpose=companion_dialogue）。本地 SenseVoice
-       * （WASM）优先，这条云通道是本地引擎不可用时的兜底。
-       */
-      transcribe(input: {
-        meta: RequestMetaV1;
-        request: import("./companion-voice-contracts.ts").CompanionVoiceTranscribeRequestV1;
-      }): Promise<GatewayResultV1<z.infer<typeof companionVoiceTranscribeResultV1Schema>>>;
       /**
        * 本地识别模型（2026-10）：**设备级**的四条，读状态 / 下载 / 中止 / 移除。
        *
