@@ -12,6 +12,7 @@ import {
   extractCriticJson,
   materializeCriticEvidenceRefs,
   parseCriticOutput,
+  parseCriticOutputV2,
   type CriticInput,
 } from "../run-critic.ts";
 import { hashCanonicalV2 } from "@ailearn/shared/hash-canonical-v2";
@@ -52,6 +53,36 @@ test("parseCriticOutput：合法输出通过，confidence 默认 1", () => {
   assert.equal(parsed.length, 1);
   assert.equal(parsed[0].verdict, "covered");
   assert.equal(parsed[0].confidence, 1);
+});
+
+test("V2 判分：不同约定与前提不明不能被模型的 missing/covered 覆盖", () => {
+  const parsed = parseCriticOutputV2(JSON.stringify({
+    premiseChecks: [
+      { rubricItemId: "right-boundary", applicability: "different_convention" },
+      { rubricItemId: "scope", applicability: "uncertain" },
+      { rubricItemId: "invariant", applicability: "applies" },
+    ],
+    verdicts: [
+      { rubricItemId: "right-boundary", verdict: "missing", userFacingReason: "没有说 right 及右边 >= target" },
+      { rubricItemId: "scope", verdict: "covered", userFacingReason: "已覆盖" },
+      { rubricItemId: "invariant", verdict: "covered", userFacingReason: "说明了候选区间和不变量" },
+    ],
+  }), ["right-boundary", "scope", "invariant"]);
+  assert.deepEqual(parsed.map((v) => v.verdict), ["not_assessable", "not_assessable", "covered"]);
+  assert.equal(parsed[0].confidence, 0);
+  assert.match(parsed[0].userFacingReason, /题面未限定/);
+  assert.equal(parsed[2].userFacingReason, "说明了候选区间和不变量");
+});
+
+test("V2 判分：缺少、重复、未知前提核对均 fail closed", () => {
+  const verdicts = [{ rubricItemId: "r1", verdict: "covered", userFacingReason: "已覆盖" }];
+  for (const premiseChecks of [[],
+    [{ rubricItemId: "r1", applicability: "applies" }, { rubricItemId: "r1", applicability: "applies" }],
+    [{ rubricItemId: "r2", applicability: "applies" }],
+  ]) {
+    assert.throws(() => parseCriticOutputV2(JSON.stringify({ premiseChecks, verdicts }), ["r1"]), CriticOutputError);
+  }
+  assert.throws(() => parseCriticOutputV2(JSON.stringify({ verdicts }), ["r1"]), CriticOutputError);
 });
 
 test("parseCriticOutput：markdown 围栏被剥离", () => {

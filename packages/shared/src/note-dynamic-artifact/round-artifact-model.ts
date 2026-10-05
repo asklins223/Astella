@@ -62,7 +62,7 @@ export const DYNAMIC_ARTIFACT_TASK_ID = "note_dynamic_artifact_v1";
  * 按 taskVersion 分开，所以 v2 留下的半份不会被这一版默默复用。
  */
 export const DYNAMIC_ARTIFACT_TASK_VERSION = 3;
-export const DYNAMIC_ARTIFACT_PROMPT_VERSION = "note-dynamic-artifact-v11";
+export const DYNAMIC_ARTIFACT_PROMPT_VERSION = "note-dynamic-artifact-v13";
 
 /** 讲一个动作（"合上书先讲一遍"），不讲一个栏目（"讲解"）。 */
 const ARTIFACT_OUTLINE_TITLE_MAX_V1 = 24;
@@ -135,7 +135,8 @@ export function buildDynamicArtifactPrompt(input: DynamicArtifactInputV1): strin
     "交付前独立核对原文、outline、画面和代码的含义一致：不能强化原文的限定条件，例如允许重复值的有序数组是非递减，不是严格递增。",
     "若演示算法或公式，先用素材中的输入逐步推演，再核对空输入、单元素、重复值与边界。每次移动前保存待用的值和索引；画面、下标、状态说明必须描述同一帧实际发生的动作，不能显示旧下标或尚未发生的结果。",
     "算法演示的比较、移动、写入应有可观察的状态变化。声称已经赋值或移动的那一帧必须显示操作后的数组或对象，不能只变颜色后直接跳到最终答案；暂存的值应独立显示，覆盖或挪动后仍看得见。讨论相等元素的稳定性时，用原始编号等方式区分它们，才能观察相对顺序。生成前逐帧写出实际状态并与说明核对，不以预设文字替代执行过程。",
-    "代码保持完整而简洁，交付前移除待修补逻辑和临时补丁；重置应恢复全部状态，暂停和动效切换必须停止现有计时器，手动单步仍能继续。",
+    "若展示插入排序的稳定性，元素应同时保留值和永不改变的原始身份（例如 2a、2b、1c）；当前位置下标会变化，不能用它代替原始身份。右移时复制元素的值与身份，key 单独暂存并持续显示它的值与身份；最后能看到 1c、2a、2b，才能核对两个 2 的先后。不要把 key 只写在某一步会消失的说明里。",
+    "代码保持完整而简洁，交付前移除待修补逻辑和临时补丁；重置应恢复全部状态，暂停和动效切换必须停止现有计时器，手动单步仍能继续。最后一步明确显示完成，停止播放并禁用已无法继续前进的单步按钮；再次播放时应清楚地重新开始，而不是让用户对着终点反复点击却没有反馈。",
     "页面必须支持 window.setLessonMotion(motion)：reduced 时停止自动播放和循环动画，full 时可恢复；系统 prefers-reduced-motion: reduce 优先。切换不禁用滑块、按钮等手动交互。计算处理零值与边界，避免 Infinity、NaN 或无效动画时长。",
     "为保存网页和回查原文，只返回以下 JSON；这些附属字段不决定网页的画面结构：",
     JSON.stringify({ title: "标题，40字以内", subject: "主题，60字以内", caution: "示意说明，120字以内",

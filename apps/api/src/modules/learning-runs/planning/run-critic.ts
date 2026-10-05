@@ -209,7 +209,7 @@ const CRITIC_ATTEMPT_TIMEOUT_MS = 55_000;
  */
 const CRITIC_TASK_DEADLINE_MS = 110_000;
 /** Critic 提示词与输出合同的版本（评估回执里的 `criticVersion` 就是它，一处一个来源）。 */
-export const CRITIC_PROMPT_VERSION = "critic-snapshot-v2.1";
+export const CRITIC_PROMPT_VERSION = "critic-snapshot-v2.3";
 
 function describeThrownAsMessage(err: unknown): string {
   return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
@@ -301,7 +301,9 @@ export function createOpenAICompatibleCritic(env: {
               {
                 model,
                 messages: [
-                  { role: "system", content: "你是独立评估者，只输出被要求的 JSON。" },
+                  { role: "system", content: taskInput.v2
+                    ? "你是独立评估者，只输出被要求的 JSON。评分之前必须逐项核对评分条件是否适用于题面和用户明确采用的前提。私有参考答案和材料不能自动补成题面未说明的限制；约定不同且题面没有限定时必须在 premiseChecks 中记为 different_convention，不得因为与参考答案的字面表述不同就判为缺漏。前提无法核实时记为 uncertain，不给出确定的对错。"
+                    : "你是独立评估者，只输出被要求的 JSON。" },
                   { role: "user", content: taskInput.v2 ? buildCriticPromptV2(taskInput.v2) : buildCriticPrompt(taskInput) },
                 ],
                 response_format: { type: "json_object" },
@@ -330,7 +332,9 @@ export function createOpenAICompatibleCritic(env: {
             return { ok: false, class: "output_shape", message: "critic returned empty content" };
           }
           try {
-            return { ok: true as const, output: parseCriticOutput(content, taskInput.rubricTargetIds) };
+            return { ok: true as const, output: taskInput.v2
+              ? parseCriticOutputV2(content, taskInput.rubricTargetIds)
+              : parseCriticOutput(content, taskInput.rubricTargetIds) };
           } catch (err) {
             // 每个 frozen rubric 目标恰好一条、未知枚举、缺条——都是输出形状问题。
             return { ok: false, class: "output_shape", message: describeThrownAsMessage(err) };
@@ -415,6 +419,44 @@ export interface CriticInputV2 {
   targetRevisionHash: string;
   snapshotHash: string;
   criticVersion: string;
+}
+
+/** 前提核对不能只留在提示词里：未核对或不同约定不能落成确定的错误判定。 */
+export function parseCriticOutputV2(raw: string, expectedRubricTargetIds: string[]): RubricVerdictOutput[] {
+  const schema = z.object({
+    premiseChecks: z.array(z.object({
+      rubricItemId: z.string().min(1),
+      applicability: z.enum(["applies", "uncertain", "different_convention"]),
+    }).strict()).min(1).max(80),
+    verdicts: criticOutputSchema.shape.verdicts,
+  }).strict();
+  let value: unknown;
+  try { value = JSON.parse(extractCriticJson(raw)); }
+  catch { throw new CriticOutputError("critic output is not valid JSON"); }
+  const result = schema.safeParse(value);
+  if (!result.success) throw new CriticOutputError("critic premise checks missing or invalid");
+  const verdicts = parseCriticOutput(JSON.stringify({ verdicts: result.data.verdicts }), expectedRubricTargetIds);
+  const checks = new Map<string, "applies" | "uncertain" | "different_convention">();
+  const expected = new Set(expectedRubricTargetIds);
+  for (const check of result.data.premiseChecks) {
+    if (!expected.has(check.rubricItemId) || checks.has(check.rubricItemId)) {
+      throw new CriticOutputError("unknown or duplicate premise check");
+    }
+    checks.set(check.rubricItemId, check.applicability);
+  }
+  return verdicts.map((verdict) => {
+    const applicability = checks.get(verdict.rubricItemId);
+    if (!applicability) throw new CriticOutputError("missing rubric premise check");
+    if (applicability === "applies") return verdict;
+    return {
+      ...verdict,
+      verdict: "not_assessable",
+      confidence: 0,
+      userFacingReason: applicability === "different_convention"
+        ? "回答采用的前提与评分标准不同，题面未限定采用哪一种，这一项暂时不作对错判定。"
+        : "题目没有说明评分所需的前提，这一项暂时无法可靠判定。",
+    };
+  });
 }
 
 /** Evidence snapshot rows needed to reconstruct a Critic-only quote. */
@@ -554,13 +596,16 @@ export function buildCriticPromptV2(input: CriticInputV2): string {
     `criticVersion: ${input.criticVersion}`,
     "",
     "【判定规则】",
+    "- 在给出 verdicts 之前，先为每个 rubric 输出一条 premiseChecks：适用前提在题面/公开目标中成立且与回答一致为 applies；用户明确采用另一种自洽约定、题面未限定且标准依赖不同约定为 different_convention；不能确认适用性为 uncertain。后两种情况的 verdict 必须为 not_assessable，不得当成用户漏答。",
+    "- 先核对题面明确限定的算法变体、区间约定与适用前提，再比较答案。题面未限定、用户明确采用另一种自洽约定时，不能仅因参考答案的约定不同而扣分；评分条件因此无法对应时用 not_assessable 说明前提不明，不伪造两种条件等价。",
+    "- 核对边界、等号与最小反例，不能补造用户没表达、也不能由其约定推出的性质。例如闭区间 right 是候选位置，不保证 nums[right] >= target；数组 [1]、target=2、left=right=0 就是反例。半开区间的排除边界不能直接套到闭区间。",
     "- 必须逐条评估每个本次 rubric 单元是否被覆盖（covered）；",
     "- 未覆盖的本次单元 → missing；与核心意思矛盾 → contradicted；",
     "- 答案引入了未被答案/证据支持的推断且无法核实 → 视为 unsupported（missing）；",
     "- covered：用自己的话实质覆盖；不得因表述流畅就给 covered；",
     "- not_assessable：不可辨、过短或无法判断。",
     "",
-    `只输出 JSON：{"verdicts":[{"rubricItemId":"<rubricUnitId>","verdict":"covered|partial|missing|contradicted|not_assessable","userFacingReason":"<给用户看的一句中文说明，不含答案关键内容>","confidence":0..1}]}`,
+    `只输出 JSON：{"premiseChecks":[{"rubricItemId":"<rubricUnitId>","applicability":"applies|uncertain|different_convention"}],"verdicts":[{"rubricItemId":"<rubricUnitId>","verdict":"covered|partial|missing|contradicted|not_assessable","userFacingReason":"<给用户看的一句中文说明，不含答案关键内容>","confidence":0..1}]}`,
     "每个本次 rubric 目标 id 恰好输出一条；不要输出其他内容。",
   ].filter((line) => line !== "").join("\n");
 }

@@ -72,7 +72,7 @@ import {
 import { withWorkspaceTransaction, type ApiTransaction } from "../../../db/client.ts";
 
 /** 复核提示词与输出合同的版本（进 usage 台账；换提示词就换它）。 */
-export const DISPUTE_RECHECK_PROMPT_VERSION = "dispute-recheck-v1";
+export const DISPUTE_RECHECK_PROMPT_VERSION = "dispute-recheck-v2";
 
 /** 任务身份。§8.6 的"分开的任务上下文"从这一个 id 开始，与 `assessment_critic` 不同。 */
 type RecheckDerivationV2 = ReturnType<typeof decideRecheckOutcomeV2>["derivation"];
@@ -237,6 +237,8 @@ export function buildDisputeRecheckPrompt(facts: DisputeRecheckFactsV2): string 
     facts.artifactText,
     "",
     "【判定规则】",
+    "- 独立核对题干、原回答及评分条件各自的前提。用户明确采用闭区间等其他约定、而题干未限定时，应说明题面与评分条件的歧义，无法可靠对应就判 not_assessable、undetermined；不要为了修正原判而臆造两种约定的条件等价。",
+    "- 复核理由中的每个数学断言也要先尝试最小反例。闭区间 right 尚在候选范围，并不保证该位置的值大于等于目标；例如 [1] 中找 2，left=right=0 时该断言不成立。区间内、区间外，严格比较、含等号比较必须各自核对。",
     "- covered：原回答用自己的话实质满足该条评分条件（不要求与标准答案逐字一致）；",
     "- partial：只满足一部分，或要靠提示才成立；",
     "- missing：没有提到或没有满足；",

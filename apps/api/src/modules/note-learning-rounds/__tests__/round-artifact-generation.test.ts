@@ -288,7 +288,7 @@ test("任务版本必须上到 3：换的是合同，v2 留下的检查点与半
   assert.equal(DYNAMIC_ARTIFACT_TASK_VERSION, 3);
   assert.match(source, /DYNAMIC_ARTIFACT_TASK_VERSION = 3/,
     "改了合同却没改 taskVersion：v2 的检查点会被这一版当成同一发任务复用");
-  assert.equal(DYNAMIC_ARTIFACT_PROMPT_VERSION, "note-dynamic-artifact-v11");
+  assert.equal(DYNAMIC_ARTIFACT_PROMPT_VERSION, "note-dynamic-artifact-v13");
   assert.equal(DYNAMIC_ARTIFACT_TASK_ID, "note_dynamic_artifact_v1");
   assert.equal(DYNAMIC_ARTIFACT_GENERATOR_VERSION_V1, "note_dynamic_artifact_v1@v3",
     "落库那一列记的还是旧版本：事后查不出这一份是按哪一版合同做的");
