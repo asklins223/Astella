@@ -530,6 +530,17 @@ describe("DesktopGateway", () => {
     // 已经发生变化"——说的不是这件事。现在它有自己的码与文案。
     [409, "personal_workspace_not_shareable", "personal_workspace_not_shareable"],
   ];
+  it("does not report a missing workspace as an invalid invitation", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/challenge")) return trustResponse(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (url.endsWith("/health")) return healthResponse();
+      return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+    });
+    const gateway = new DesktopGateway(environment()); await gateway.connect();
+    await expect(ns_auth.renameWorkspace(gateway.gatewayTransport, "00000000-0000-4000-8000-000000000012", "新的空间"))
+      .rejects.toMatchObject({ code: "not_found", httpStatus: 404 });
+  });
 
   it.each(authDomainCases)("maps register %i/%s onto the %s auth code", async (status, token, code) => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -2263,6 +2274,39 @@ describe("account AI settings", () => {
       auditLogging: true,
     })).rejects.toMatchObject({ code: "unsupported_contract" } satisfies Partial<DesktopGatewayFailure>);
     expect(sent).toEqual([{ sendToExternal: true, sendImageContent: false, piiDetection: true, auditLogging: true }]);
+  });
+
+  it.each(["consent", "policy"] as const)("invalidates cached permissions immediately after changing %s", async (change) => {
+    let enabled = false;
+    let capabilityReads = 0;
+    mockApi((url) => {
+      if (url.includes("/v1/auth/capabilities")) {
+        capabilityReads += 1;
+        return new Response(JSON.stringify({
+          version: 1,
+          revision: enabled ? "enabled" : "denied",
+          workspaceEpoch: 1,
+          actionCapabilities: Object.fromEntries(actionCapabilityValues.map((key) => [key, enabled ? "allowed" : "denied"])),
+          featureAvailability: Object.fromEntries(featureNameValues.map((key) => [key, { state: "disabled" }])),
+          nativeCapabilities: Object.fromEntries(["filePicker", "clipboard", "notifications", "asr", "updates", "live2d"].map((key) => [key, "unavailable"])),
+        }), { status: 200 });
+      }
+      if (url.includes("/me/ai-consent") || url.includes("/me/ai-data-policy")) {
+        enabled = true;
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }
+      if (url.includes("/me/ai-settings")) return new Response(JSON.stringify(AI_SETTINGS), { status: 200 });
+      return null;
+    });
+    const gateway = new DesktopGateway(environment());
+    await gateway.connect();
+    const denied = await ns_source.getCapabilities(gateway.gatewayTransport);
+    expect((await ns_source.getCapabilities(gateway.gatewayTransport)).revision).toBe(denied.revision);
+    expect(capabilityReads).toBe(1);
+    if (change === "consent") await ns_workspace.updateAiConsent(gateway.gatewayTransport, "ai-consent-v1");
+    else await ns_workspace.updateAiDataPolicy(gateway.gatewayTransport, { ...AI_SETTINGS.dataPolicy, sendToExternal: true });
+    expect((await ns_source.getCapabilities(gateway.gatewayTransport)).revision).toBe("enabled");
+    expect(capabilityReads).toBe(2);
   });
 
   it("reports native capabilities from the desktop shell, not from the server's placeholder", async () => {

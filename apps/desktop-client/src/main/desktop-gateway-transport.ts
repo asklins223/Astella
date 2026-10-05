@@ -120,10 +120,12 @@ const NOTE_TEACHING_DOMAIN_CODES: Record<string, { status: number; code: Gateway
 
 const CONSENT_REQUIRED_TOKEN = "ai_consent_required";
 
-function domainErrorCode(status: number, body: unknown): GatewayErrorCode | null {
+function domainErrorCode(status: number, body: unknown, path: string): GatewayErrorCode | null {
   if (!body || typeof body !== "object" || !("error" in body)) return null;
   const token = (body as { error?: unknown }).error;
   if (typeof token !== "string") return null;
+  // 同名 not_found 也用于空间、文件和内容；只有邀请码链路才表示邀请码无效。
+  if (token === "not_found" && !["/auth/register", "/auth/register-v2", "/auth/join-workspace"].includes(path)) return null;
   if (status === 422 && token === "memory_global_scope_rejected") {
     switch ((body as { reason?: unknown }).reason) {
       case "kind_not_preference": return "memory_global_kind_rejected";
@@ -526,10 +528,10 @@ readonly companionAccountSessionId = randomUUID();
     this.credentialPersistence = "memory";
     await this.credentials?.clear().catch(() => undefined);
 }
-  mapResponseError(status: number, headers: Headers, unauthorizedCode?: GatewayErrorCode, body?: unknown): DesktopGatewayFailure {
+  mapResponseError(status: number, headers: Headers, unauthorizedCode?: GatewayErrorCode, body?: unknown, path = ""): DesktopGatewayFailure {
   const retryAfter = retryAfterFromHeaders(headers);
   const options = { httpStatus: status, ...(retryAfter ? { retryAfter } : {}) };
-  const domainCode = domainErrorCode(status, body);
+  const domainCode = domainErrorCode(status, body, path);
   if (domainCode) return new DesktopGatewayFailure(domainCode, "never", options);
   if (status === 401) return new DesktopGatewayFailure(unauthorizedCode ?? (this.token ? "reauth_required" : "auth_required"), "user_action", options);
   // 403 上只有白名单里那一种 token 会被翻成专用码，其余一律还是 `forbidden`。
@@ -642,7 +644,7 @@ readonly companionAccountSessionId = randomUUID();
     // process can no longer name.
     await this.discardStoredCredential();
   }
-  if (!response.ok && mapErrors) throw this.mapResponseError(response.status, response.headers, unauthorizedCode, body);
+  if (!response.ok && mapErrors) throw this.mapResponseError(response.status, response.headers, unauthorizedCode, body, path);
   if (!response.ok && !allowHttpErrors) throw new DesktopGatewayFailure("api_unavailable", "safe_retry", { httpStatus: response.status });
   return { status: response.status, body, headers: response.headers };
 }
@@ -676,7 +678,7 @@ readonly companionAccountSessionId = randomUUID();
       // 其余状态维持"按状态码分类"，取图那条 404 不会因为服务端也带了一个
       // `error` 字符串就被说成邀请码问题（这个回归是真被既有用例抓到的）。
       const errorBody = response.status === 403 ? await this.errorBodyForDomainCode(response) : undefined;
-      throw this.mapResponseError(response.status, response.headers, undefined, errorBody);
+      throw this.mapResponseError(response.status, response.headers, undefined, errorBody, path);
     }
     const contentType = response.headers.get("content-type")?.trim().toLowerCase() ?? "";
     if (!contentType.startsWith(policy.contentTypePrefix)) {

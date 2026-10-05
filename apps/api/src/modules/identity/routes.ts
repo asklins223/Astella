@@ -334,6 +334,7 @@ export async function authRoutes(app: FastifyInstance, options: AuthRoutesOption
         const statusMap: Record<string, number> = {
           not_found: 404,
           not_member: 403,
+          not_owner: 403,
           not_personal_workspace: 403,
           empty_name: 400,
         };

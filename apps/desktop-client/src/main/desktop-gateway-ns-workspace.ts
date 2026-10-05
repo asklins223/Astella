@@ -141,6 +141,8 @@ export async function updateAiConsent(t: GatewayTransport, consentVersion: strin
       body: JSON.stringify({ consentVersion }),
     }, true, true, requestId);
     // 写入后重新读取：界面显示的是服务端的当前状态，不在客户端拼一份。
+    t.forgetCapabilities();
+    t.roomProjectionCache = null;
     return getWorkspaceAiSettings(t, requestId);
   }
 
@@ -150,5 +152,7 @@ export async function updateAiDataPolicy(t: GatewayTransport, policy: AiDataPoli
       method: "PUT",
       body: JSON.stringify(policy),
     }, true, true, requestId);
+    t.forgetCapabilities();
+    t.roomProjectionCache = null;
     return getWorkspaceAiSettings(t, requestId);
   }

@@ -29,15 +29,14 @@ function systemUsesExternalAI(): boolean {
 }
 
 export async function getAIPrivacySettings(workspaceId: string, userId: string) {
-  const rows = await withWorkspaceTransaction(
-    { workspaceId, userId },
-    (transaction) => transaction
-      .select()
-      .from(userAiSettings)
-      .where(eq(userAiSettings.userId, userId))
-      .limit(1),
-  );
-  const settings = rows[0];
+  const settings = await withWorkspaceTransaction({ workspaceId, userId }, async (transaction) => {
+    const user = await transaction.query.users.findFirst({ where: eq(users.id, userId), columns: { id: true } });
+    if (!user) return null;
+    // 新账号尚未签署时也要有可读取的政策；使用数据库默认值，绝不自动授权。
+    await transaction.insert(userAiSettings).values({ userId }).onConflictDoNothing();
+    const rows = await transaction.select().from(userAiSettings).where(eq(userAiSettings.userId, userId)).limit(1);
+    return rows[0] ?? null;
+  });
   if (!settings) return null;
   return {
     requiresConsent: systemUsesExternalAI(),
@@ -234,4 +233,3 @@ export async function logAICall(params: LogAICallParams): Promise<void> {
     }),
   );
 }
-

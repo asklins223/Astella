@@ -32,7 +32,7 @@
 
 import { and, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { DomainError } from "@ailearn/shared";
-import { adoptWorkspaceContext, db, withActorTransaction, withWorkspaceTransaction } from "../../db/client.ts";
+import { adoptWorkspaceContext, withActorTransaction, withWorkspaceTransaction } from "../../db/client.ts";
 import { inviteCodes, onboardingStates, users, workspaceMembers, workspaces } from "@ailearn/shared/db-schema/identity";
 import { sessions } from "@ailearn/shared/db-schema/session";
 import { deleteObject } from "../../lib/object-storage.ts";
@@ -552,52 +552,54 @@ export async function updateUserProfile(
   userId: string,
   fields: { displayName?: string | null; avatarUrl?: string | null },
 ): Promise<{ ok: true; displayName: string | null; avatarUrl: string | null } | { ok: false; error: UpdateProfileError }> {
-  const updates: Record<string, unknown> = { updatedAt: new Date() };
-  if (fields.displayName !== undefined) {
-    const trimmed = fields.displayName?.trim() ?? null;
-    updates.displayName = trimmed && trimmed.length > 0 ? trimmed.slice(0, 32) : null;
-  }
+  return withActorTransaction({ userId }, async (tx) => {
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (fields.displayName !== undefined) {
+      const trimmed = fields.displayName?.trim() ?? null;
+      updates.displayName = trimmed && trimmed.length > 0 ? trimmed.slice(0, 32) : null;
+    }
 
-  let oldAvatarUrl: string | null = null;
-  if (fields.avatarUrl !== undefined) {
-    // Query old avatarUrl before updating so we can clean it up
-    const existingUser = await db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: { avatarUrl: true },
-    });
-    oldAvatarUrl = existingUser?.avatarUrl ?? null;
+    let oldAvatarUrl: string | null = null;
+    if (fields.avatarUrl !== undefined) {
+      // Query old avatarUrl before updating so we can clean it up
+      const existingUser = await tx.query.users.findFirst({
+        where: eq(users.id, userId),
+        columns: { avatarUrl: true },
+      });
+      oldAvatarUrl = existingUser?.avatarUrl ?? null;
 
-    const trimmed = fields.avatarUrl?.trim() ?? null;
-    updates.avatarUrl = trimmed && trimmed.length > 0 ? trimmed.slice(0, 500) : null;
-  }
+      const trimmed = fields.avatarUrl?.trim() ?? null;
+      updates.avatarUrl = trimmed && trimmed.length > 0 ? trimmed.slice(0, 500) : null;
+    }
 
-  const [updated] = await db
-    .update(users)
-    .set(updates)
-    .where(eq(users.id, userId))
-    .returning({ displayName: users.displayName, avatarUrl: users.avatarUrl });
-  if (!updated) return { ok: false, error: "not_found" };
+    const [updated] = await tx
+      .update(users)
+      .set(updates)
+      .where(eq(users.id, userId))
+      .returning({ displayName: users.displayName, avatarUrl: users.avatarUrl });
+    if (!updated) return { ok: false, error: "not_found" };
 
-  // Clean up old avatar from object storage if it was a site-uploaded avatar
-  // and the new avatar URL is different.
-  // SEC 修复（2026-09 后端审查）：必须确认旧对象键属于当前用户名下
-  // （avatars/{userId}/...）。此前只校验 "/api/uploads/avatars/" 前缀，而
-  // avatarUrlSchema 允许任意该前缀的路径——用户可把 avatarUrl 指向他人头像，
-  // 再修改/清空头像即删除他人存储对象。
-  if (
-    oldAvatarUrl &&
-    oldAvatarUrl.startsWith(`/api/uploads/avatars/${userId}/`) &&
-    oldAvatarUrl !== updates.avatarUrl
-  ) {
-    const oldObjectKey = oldAvatarUrl.replace("/api/uploads/", "");
-    void deleteObject(oldObjectKey).catch((err) => {
-      logger.warn({ err, oldObjectKey }, "failed to delete old avatar");
-    });
-  }
+    // Clean up old avatar from object storage if it was a site-uploaded avatar
+    // and the new avatar URL is different.
+    // SEC 修复（2026-09 后端审查）：必须确认旧对象键属于当前用户名下
+    // （avatars/{userId}/...）。此前只校验 "/api/uploads/avatars/" 前缀，而
+    // avatarUrlSchema 允许任意该前缀的路径——用户可把 avatarUrl 指向他人头像，
+    // 再修改/清空头像即删除他人存储对象。
+    if (
+      oldAvatarUrl &&
+      oldAvatarUrl.startsWith(`/api/uploads/avatars/${userId}/`) &&
+      oldAvatarUrl !== updates.avatarUrl
+    ) {
+      const oldObjectKey = oldAvatarUrl.replace("/api/uploads/", "");
+      void deleteObject(oldObjectKey).catch((err) => {
+        logger.warn({ err, oldObjectKey }, "failed to delete old avatar");
+      });
+    }
 
-  return {
-    ok: true,
-    displayName: updated.displayName,
-    avatarUrl: updated.avatarUrl,
-  };
+    return {
+      ok: true,
+      displayName: updated.displayName,
+      avatarUrl: updated.avatarUrl,
+    };
+  });
 }

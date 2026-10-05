@@ -295,6 +295,21 @@ describe("DesktopAccessGate 的失效判据（F01）", () => {
     expect(harness.getState.mock.calls.length).toBeGreaterThan(1);
   });
 
+  it("同空间政策或改名推进纪元后清理旧领域状态，同时保留设置分区", async () => {
+    const harness = installApi();
+    const reset = vi.fn(() => useRoomStore.getState().resetWorkspaceScope());
+    render(<DesktopAccessGate onWorkspaceBoundaryReset={reset}><button data-testid="room-focus">学习页面</button></DesktopAccessGate>);
+    await screen.findByTestId("room-focus");
+    useRoomStore.setState({ surface: "settings", settingsSection: "ai", activeSourceId: "old-source" });
+    harness.setSession(session(2));
+    act(() => harness.emitRuntime(invalidationEvent("runtime", 2)));
+    await waitFor(() => expect(reset).toHaveBeenCalledTimes(1));
+    expect(useRoomStore.getState().surface).toBe("settings");
+    expect(useRoomStore.getState().settingsSection).toBe("ai");
+    expect(useRoomStore.getState().activeSourceId).toBeNull();
+    expect(useRoomStore.getState().spaceIdentity?.workspaceEpoch).toBe(2);
+  });
+
   it("bootstrap 卡住超过时限：无限 spinner 换成能点的重试", async () => {
     vi.useFakeTimers();
     try {

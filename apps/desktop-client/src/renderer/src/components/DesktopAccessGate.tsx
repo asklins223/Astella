@@ -948,7 +948,20 @@ export function DesktopAccessGate({
         ].join(":");
         const boundaryChanged = readyBoundaryRef.current !== null && readyBoundaryRef.current !== nextBoundary;
         if (boundaryChanged) {
+          const previous = lastTrustedSessionRef.current;
+          const room = useRoomStore.getState();
+          // 同空间的改名或 AI 政策会推进权限纪元。旧请求仍要失效，但设置操作
+          // 完成后应留在正在调整的分区，不能把用户赶回首页。
+          const settingsSection = room.surface === "settings"
+            && previous?.user.userId === next.session.user.userId
+            && previous.workspace.workspaceId === next.session.workspace.workspaceId
+            ? room.settingsSection : null;
           onWorkspaceBoundaryReset?.();
+          if (settingsSection) {
+            useRoomStore.getState().invoke("open-settings");
+            useRoomStore.getState().setSettingsSection(settingsSection);
+            useRoomStore.getState().setHudPage("settings", "returning");
+          }
         }
         readyBoundaryRef.current = nextBoundary;
         lastTrustedSessionRef.current = next.session;

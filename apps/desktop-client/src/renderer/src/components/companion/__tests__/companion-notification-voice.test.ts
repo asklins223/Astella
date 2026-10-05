@@ -66,4 +66,11 @@ describe("shared notification voice channel", () => {
     const report = vi.fn(), pending = run({ report }); await vi.advanceTimersByTimeAsync(8_000); await pending;
     expect(report).toHaveBeenLastCalledWith("failed"); expect(isCompanionNotificationSpeechActive()).toBe(false);
   });
+  it("reports missing AI consent separately and releases the channel without playing", async () => {
+    host.synthesize = vi.fn().mockRejectedValue(Object.assign(new Error("consent required"), { code: "ai_consent_required" }));
+    const report = vi.fn(); await run({ purpose: "guidance", report });
+    expect(report).toHaveBeenLastCalledWith("consent_required");
+    expect(host.play).not.toHaveBeenCalled();
+    expect(isCompanionNotificationSpeechActive()).toBe(false);
+  });
 });

@@ -678,7 +678,9 @@
   /* The label group re-centres on the smaller knob: 25px lead-in from the knob
      against the pill's own 17px trailing padding. */
   .hud-surface.nav-collapsed .return-home {
+    width: auto;
     padding-left: 66px;
+    white-space: nowrap;
   }
 }
 

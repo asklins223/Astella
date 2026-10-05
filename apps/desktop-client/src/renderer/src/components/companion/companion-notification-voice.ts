@@ -7,7 +7,7 @@ export interface NotificationVoiceHost {
   readonly stop: () => void;
 }
 
-export type NotificationVoicePhase = "preparing" | "speaking" | "finished" | "silent" | "failed";
+export type NotificationVoicePhase = "preparing" | "speaking" | "finished" | "silent" | "failed" | "consent_required";
 let host: NotificationVoiceHost | null = null;
 let generation = 0;
 let active: { id: string; phase: NotificationVoicePhase; report: (phase: NotificationVoicePhase) => void } | null = null;
@@ -80,10 +80,10 @@ export async function speakCompanionNotification(input: {
       new Promise<never>((_, reject) => { deadline = setTimeout(() => reject(new Error("notification playback deadline")), buffer.duration * 1_000 + 3_000); }),
     ]);
     if (operation === generation) input.report("finished");
-  } catch {
+  } catch (error) {
     if (operation === generation) {
       if (active?.phase === "speaking") currentHost.stop();
-      input.report("failed");
+      input.report(error && typeof error === "object" && "code" in error && error.code === "ai_consent_required" ? "consent_required" : "failed");
     }
   } finally {
     clearTimeout(deadline);

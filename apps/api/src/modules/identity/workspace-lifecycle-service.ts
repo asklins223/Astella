@@ -22,7 +22,7 @@
 
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { adoptWorkspaceContext, db, withActorTransaction, withWorkspaceTransaction } from "../../db/client.ts";
+import { adoptWorkspaceContext, withActorTransaction, withWorkspaceTransaction } from "../../db/client.ts";
 import { onboardingStates, users, workspaceMembers, workspaces } from "@ailearn/shared/db-schema/identity";
 import { sessions } from "@ailearn/shared/db-schema/session";
 import { RECOVERED_PASSWORD_SENTINEL, canonicalizeEmail, hashPassword, SessionContext } from "./credentials.ts";
@@ -260,37 +260,37 @@ export async function renameWorkspace(
   if (!trimmedName) return { ok: false, error: "empty_name" };
   if (trimmedName.length > MAX_WORKSPACE_NAME_LENGTH) return { ok: false, error: "empty_name" };
 
-  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
-  if (!user) return { ok: false, error: "not_found" };
-
-  // 个人空间：仍然只允许重命名自己那一个（原有规则）。
-  //
-  // 协作空间（审计 F39）：**它的 owner 也能改名**。此前这条把协作空间一律拒掉，
-  // 而界面上唯一的替代出口是不可逆的解散——"名字随手起错了"没有轻的出路是操作
-  // 逻辑问题，改名本身没有任何破坏性。判据与 `transferWorkspaceOwnership` 同一句：
-  // `workspaces.owner_id` 或 membership.role=owner（co-owner 也是 owner）。
-  if (user.personalWorkspaceId !== workspaceId) {
-    const [workspace, membership] = await Promise.all([
-      db.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId), columns: { ownerId: true, workspaceType: true } }),
-      db.query.workspaceMembers.findFirst({
-        where: and(
-          eq(workspaceMembers.workspaceId, workspaceId),
-          eq(workspaceMembers.userId, userId),
-          isNull(workspaceMembers.leftAt),
-        ),
-        columns: { role: true },
-      }),
-    ]);
-    if (!workspace) return { ok: false, error: "not_found" };
-    if (!membership && workspace.ownerId !== userId) return { ok: false, error: "not_member" };
-    const actorIsOwner = workspace.ownerId === userId || membership?.role === "owner";
-    if (!actorIsOwner) return { ok: false, error: "not_owner" };
-    if (workspace.workspaceType !== "collaborative") return { ok: false, error: "not_personal_workspace" };
-  }
-
-  // 读写都在同一个 workspace 事务里：`workspaces` 的租户守卫按
-  // `id = app.workspace_id` 判，裸 db 查询在 RLS 下会读到 0 行。
   return withWorkspaceTransaction({ workspaceId, userId }, async (tx) => {
+    const user = await tx.query.users.findFirst({ where: eq(users.id, userId) });
+    if (!user) return { ok: false, error: "not_found" };
+
+    // 个人空间：仍然只允许重命名自己那一个（原有规则）。
+    //
+    // 协作空间（审计 F39）：**它的 owner 也能改名**。此前这条把协作空间一律拒掉，
+    // 而界面上唯一的替代出口是不可逆的解散——"名字随手起错了"没有轻的出路是操作
+    // 逻辑问题，改名本身没有任何破坏性。判据与 `transferWorkspaceOwnership` 同一句：
+    // `workspaces.owner_id` 或 membership.role=owner（co-owner 也是 owner）。
+    if (user.personalWorkspaceId !== workspaceId) {
+      const [workspace, membership] = await Promise.all([
+        tx.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId), columns: { ownerId: true, workspaceType: true } }),
+        tx.query.workspaceMembers.findFirst({
+          where: and(
+            eq(workspaceMembers.workspaceId, workspaceId),
+            eq(workspaceMembers.userId, userId),
+            isNull(workspaceMembers.leftAt),
+          ),
+          columns: { role: true },
+        }),
+      ]);
+      if (!workspace) return { ok: false, error: "not_found" };
+      if (!membership && workspace.ownerId !== userId) return { ok: false, error: "not_member" };
+      const actorIsOwner = workspace.ownerId === userId || membership?.role === "owner";
+      if (!actorIsOwner) return { ok: false, error: "not_owner" };
+      if (workspace.workspaceType !== "collaborative") return { ok: false, error: "not_personal_workspace" };
+    }
+
+    // 读写都在同一个 workspace 事务里：`workspaces` 的租户守卫按
+    // `id = app.workspace_id` 判，裸 db 查询在 RLS 下会读到 0 行。
     const ws = await tx.query.workspaces.findFirst({ where: eq(workspaces.id, workspaceId) });
     if (!ws) return { ok: false, error: "not_found" };
 
@@ -327,43 +327,43 @@ export async function previewWorkspaceDissolve(
   | { ok: true; counts: { notes: number; sources: number; cards: number; schedules: number } }
   | { ok: false; error: "workspace_not_found" | "actor_is_not_active_owner" | "cannot_dissolve_personal_workspace" }
 > {
-  const [workspace, membership] = await Promise.all([
-    db.query.workspaces.findFirst({
-      where: eq(workspaces.id, workspaceId),
-      columns: { ownerId: true, workspaceType: true },
-    }),
-    db.query.workspaceMembers.findFirst({
-      where: and(
-        eq(workspaceMembers.workspaceId, workspaceId),
-        eq(workspaceMembers.userId, actorUserId),
-        isNull(workspaceMembers.leftAt),
-      ),
-      columns: { role: true },
-    }),
-  ]);
-  if (!workspace) return { ok: false, error: "workspace_not_found" };
-  if (workspace.workspaceType !== "collaborative") {
-    return { ok: false, error: "cannot_dissolve_personal_workspace" };
-  }
-  if (workspace.ownerId !== actorUserId && membership?.role !== "owner") {
-    return { ok: false, error: "actor_is_not_active_owner" };
-  }
+  return withWorkspaceTransaction({ workspaceId, userId: actorUserId }, async (tx) => {
+    const [workspace, membership] = await Promise.all([
+      tx.query.workspaces.findFirst({
+        where: eq(workspaces.id, workspaceId),
+        columns: { ownerId: true, workspaceType: true },
+      }),
+      tx.query.workspaceMembers.findFirst({
+        where: and(
+          eq(workspaceMembers.workspaceId, workspaceId),
+          eq(workspaceMembers.userId, actorUserId),
+          isNull(workspaceMembers.leftAt),
+        ),
+        columns: { role: true },
+      }),
+    ]);
+    if (!workspace) return { ok: false, error: "workspace_not_found" };
+    if (workspace.workspaceType !== "collaborative") {
+      return { ok: false, error: "cannot_dissolve_personal_workspace" };
+    }
+    if (workspace.ownerId !== actorUserId && membership?.role !== "owner") {
+      return { ok: false, error: "actor_is_not_active_owner" };
+    }
 
-  // 四张表一起数：`notes`/`sources` 连外键都靠 workspace_id 判，RLS 下必须带上下文，
-  // 否则受限角色读到 0 行——那会让确认文案说"这里什么都没有"。
-  const [row] = await withWorkspaceTransaction({ workspaceId, userId: actorUserId }, async (tx) =>
-    tx.execute(sql`
-      SELECT
-        (SELECT count(*) FROM notes WHERE workspace_id = ${workspaceId}::uuid)::int AS notes,
-        (SELECT count(*) FROM sources WHERE workspace_id = ${workspaceId}::uuid)::int AS sources,
-        (SELECT count(*) FROM learning_cards_v2 WHERE workspace_id = ${workspaceId}::uuid)::int AS cards,
-        (SELECT count(*) FROM review_schedules WHERE workspace_id = ${workspaceId}::uuid)::int AS schedules
-    `),
-  );
-  const counts = (Array.isArray(row) ? row[0] : row) as {
-    notes: number; sources: number; cards: number; schedules: number;
-  };
-  return { ok: true, counts };
+    // 四张表一起数：`notes`/`sources` 连外键都靠 workspace_id 判，RLS 下必须带上下文，
+    // 否则受限角色读到 0 行——那会让确认文案说"这里什么都没有"。
+    const [row] = await tx.execute(sql`
+        SELECT
+          (SELECT count(*) FROM notes WHERE workspace_id = ${workspaceId}::uuid)::int AS notes,
+          (SELECT count(*) FROM sources WHERE workspace_id = ${workspaceId}::uuid)::int AS sources,
+          (SELECT count(*) FROM learning_cards_v2 WHERE workspace_id = ${workspaceId}::uuid)::int AS cards,
+          (SELECT count(*) FROM review_schedules WHERE workspace_id = ${workspaceId}::uuid)::int AS schedules
+      `);
+    const counts = (Array.isArray(row) ? row[0] : row) as {
+      notes: number; sources: number; cards: number; schedules: number;
+    };
+    return { ok: true, counts };
+  });
 }
 
 export async function dissolveWorkspace(

@@ -170,7 +170,7 @@ export function CompanionNotificationCenter(props: {
   const silent = props.muted || selected?.delivery !== "immediate" && (props.passiveMuted || quiet && selected?.kind !== "reminder");
   const soundNote = voicePhase === "preparing" ? "正在准备播报…" : voicePhase === "speaking" ? "正在轻声提醒你"
     : busy ? microphoneBusy ? "正在录音，本条安静送达" : "伴星正在回复，本条安静送达"
-      : silent ? "安静送达" : voicePhase === "failed" ? "声音暂时不可用，消息已送达" : "消息已送达";
+      : silent ? "安静送达" : voicePhase === "consent_required" ? "语音需要先确认 AI 数据同意，消息已送达" : voicePhase === "failed" ? "声音暂时不可用，消息已送达" : "消息已送达";
   return createPortal(<div ref={rootRef} className="companion-notifications" data-companion-owned="true" data-collapsed={!selected && !inboxOpen || undefined} hidden={props.blocked} onKeyDown={event => {
     if (event.key === "Escape" && (selected || inboxOpen)) { event.preventDefault(); event.stopPropagation(); collapse(); }
   }}>
